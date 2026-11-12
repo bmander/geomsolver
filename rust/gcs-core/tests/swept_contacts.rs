@@ -706,3 +706,54 @@ fn a_drum_end_and_a_cone_point_screwed_through_a_rod_are_cut_through_the_front_d
         cut_within(&case,tol,|cut| tol*cut.faces.iter().map(|f| gcs_core::brep::props::area(cut,f)).sum::<f64>());
     }
 }
+
+/// `spheroid-wheel-screwed-through-rod`: the oblate spheroid about (10.5, 0, 0), semi-axes 6, 6 and 1.5,
+/// its short axis `(0, cos h, −sin h)`, `h = atan(2π·4.75/30)`, screwed about z rising 30 a turn from
+/// −90° to 330° through the rod. Apart from the build as the drum's end (`drum_end_case`): the roll
+/// passes the whole section at every height of the rod (its ends 7.5 below and 27.5 above any), the
+/// windings 30 apart, so the sweep covers at each height the section's width across the screw,
+/// twice the most of `ψ − z_lo(ψ)/a` (the spheroid symmetric under a half turn about its centre's
+/// radius, `z_lo` its lowest point on the upright line at `ψ`): the rod less `20 ∫ ρ W(ρ) dρ`,
+/// 1559.464104558205 from 16 points to 64.
+fn spheroid_wheel_case() -> Case {
+    let h = (std::f64::consts::TAU*4.75/30.).atan();
+    let tool = gcs_core::brep::build::ellipsoid([10.5,0.,0.],[0.,h.cos(),-h.sin()],[1.,0.,0.],[6.,6.,1.5]).unwrap();
+    Case {what:"the spheroid wheel",blank:Some(screwed_rod()),tool,
+        path:gcs_core::brep::trajectory::Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:30.}),
+        roll:[(-90f64).to_radians(),330f64.to_radians()],bar:0.01,volume:1559.464104558205,known:1e-9}
+}
+
+/// `coil-spring-pushed-aslant-through-plate`: the spring — the balls of radius 0.4 about three turns
+/// of the helix of radius 2 about z rising 1.5 a turn from (2, 0, −12), `build::canal` — slid along
+/// (3, 1, 18) through the plate `|x|, |y| ≤ 15`, `0 ≤ z ≤ 4`, from wholly below it to wholly above.
+/// Apart from the build: every line along the slide through the spring crosses the plate within the
+/// slide, so the hole is the plate's thickness times the area of the spring's shadow along the slide on
+/// a level plane — the union of its balls' shadows, ellipses, mapped by `(M Mᵀ)^(-1/2)` (`M` the
+/// projection) to discs of radius 0.4 about the mapped helix, measured by scanlines over discs a
+/// quarter and a tenth of a thousandth apart at 64,000 to 256,000 levels: 3541.9379700, to 5e-7.
+fn coil_spring_case() -> Case {
+    let start = [2.,0.,-12.];
+    let spring = gcs_core::brep::build::canal(start,0.4,[0.;3],[0.,0.,1.],3.*std::f64::consts::TAU,4.5,"spring").unwrap();
+    let plate = prism(&gcs_core::brep::build::square([0.;3],[0.,0.,1.],15.),0.,4.).unwrap();
+    let push = [3.,1.,18.];
+    Case {what:"the coil spring",blank:Some(plate),tool:spring,
+        path:gcs_core::brep::trajectory::Trajectory::Twist(Screw {origin:start,axis:gcs_core::space::unit(push),ratio:0.,advance:gcs_core::space::norm(push)}),
+        roll:[0.,std::f64::consts::TAU],bar:0.002,volume:3541.9379700,known:1e-6}
+}
+
+/// **Free-form faces: a spheroid wheel screwed through a rod and a coil spring pushed aslant through a
+/// plate** (#880 Q1b S6, brep-bench's `swept/spheroid-wheel-screwed-through-rod` and
+/// `swept/coil-spring-pushed-aslant-through-plate`), at the kernel's tolerance, each within its
+/// boundary's area times the tolerance of its volume made apart. The spheroid's face is a ball's affine
+/// image, its contact read numerically as any face's; the spring's tube is a blend (its disc screwed
+/// along the helix), its contact under the slide two curves along it passing smoothly into its ball
+/// ends, each piece ending on the face's boundary at `g`'s root along that edge (`face_contact`), so
+/// the tube's and the cap's sheets share their rail exactly.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about two minutes: a screwed spheroid and a slid coil at the kernel's tolerance")]
+fn a_spheroid_wheel_and_a_coil_spring_are_cut_through_the_front_door() {
+    for case in [spheroid_wheel_case(),coil_spring_case()] {
+        let tol = gcs_core::brep::geom::tolerance(case.blank.as_ref().map_or(0.,|b| b.size()).max(case.tool.size()));
+        cut_within(&case,tol,|cut| tol*cut.faces.iter().map(|f| gcs_core::brep::props::area(cut,f)).sum::<f64>());
+    }
+}

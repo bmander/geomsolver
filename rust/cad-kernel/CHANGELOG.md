@@ -8,6 +8,16 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Free-form faces on the contact's road** (`swept::contacts`, #880 Q1b S6): a piece of contact
+  ending on its face's boundary now ends at the root of `n·v` along that edge, so the pieces either
+  side of an edge the faces are tangent across meet (the coil spring's tube and its ball ends,
+  4.3e-5 apart before); and `piece_curve` takes the tool's `Located` (**breaking**) and unwraps a
+  piece across a face's own seam — a parameter the surface gives no period whose box's two sides are
+  one curve, an extrusion of a closed spline. brep-bench's `swept/coil-spring-pushed-aslant-through-plate`
+  builds, and `swept/spheroid-wheel-screwed-through-rod`, each to a volume made apart from the build,
+  and the screwed ball with a flat the closed class refuses builds through the road to its volume
+  worked apart.
+
 - **The contact's road takes a turn and a screw past the axis** (`swept::contacts`, `swept::trim`,
   `boolean`, #880 Q1b S5): brep-bench's seven S5 cases build through the front door, each to a
   volume computed apart from the build and to a STEP file that reads back as the solid — the rod,
@@ -32,7 +42,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   the patch's edge but kept the coupled step in `u`, and a point of a sheet's end rim where its two
   rates nearly agree settled 3.8e-8 along the rim, which broke a loop in its parameters at the
   kernel's tolerance (the torus screwed through a rod, refused there since the turn's sheets came
-  in); `u` is now stepped alone while `v` is held.
+  in); a foot settled with `v` at the edge is now polished in `u` alone there. (Stepping `u` alone
+  at every step held there, feet the coupled step leaves for the inside: brep-bench's box screwed
+  inside a rod came out 0.015 off.)
 
 ## [0.9.0] - 2026-11-12
 

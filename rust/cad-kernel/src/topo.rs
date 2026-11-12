@@ -552,7 +552,12 @@ impl Brep {
                         let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/8.;
                         let d = distance(f.surface.point(c.pcurve.at(t,e,&f.surface,&self.vertices)),e.point(t,&self.vertices));
                         if d > tol.max(e.tol) {
-                            let kind = match &e.curve { EdgeCurve::Curve(cv) => cv.kind(),EdgeCurve::Degenerate => "degenerate" };
+                            let kind = e.curve.kind();
+                            if crate::debug() {
+                                let pk = match &c.pcurve { Pcurve::Line {..} => "line",Pcurve::Inverse {..} => "inverse",Pcurve::Curve(_) => "curve" };
+                                eprintln!("topo: face {fi} ({}) edge {} ({kind} over {:?}) its {pk} pcurve ends {:?}: at {j}/8 {:?} against {:?}",f.surface.kind(),c.edge,e.t,
+                                    self.uv_ends(f,c),f.surface.point(c.pcurve.at(t,e,&f.surface,&self.vertices)),e.point(t,&self.vertices));
+                            }
                             return Err(format!("face {fi} ({}): edge {}'s pcurve is {d:e} off it, at {j}/8 of its {kind}",f.name,c.edge).into())
                         }
                     }
