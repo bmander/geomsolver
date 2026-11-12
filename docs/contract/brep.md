@@ -241,7 +241,13 @@ a swap made without its callers knowing:
   (`swept_closed::a_ring_turned_about_an_axis_along_its_own_closes_into_its_sweep`). **A run is
   proved, not parted**: where a curve keeps within the tolerance of a surface for a while, no box
   can part its roots nor exclude them, so the run is proved — along the curve against an
-  algebraic surface by the form's enclosure over a whole stretch (`Function::within`), against a
+  algebraic surface by the form's enclosure over a whole stretch (`Function::within`), and along a
+  circle or an ellipse also by the Taylor model of the polynomial the form is along it
+  (`query::Taylored`, the same at every attitude: the form over the curve's box, a box of the
+  world's axes, proved the run beside a circle's touch with a torus only a hair wide, and at one
+  attitude in a dozen the search ran out of boxes and refused a gear member's tool that built in
+  the pair's own frame, #904 A4,
+  `enclosures::a_circle_touching_a_torus_is_read_alike_at_every_attitude`), against a
   sheet piece by piece along a straight path of its parameters between feet found by
   Gauss–Newton, `C(t) − S(path(t))` enclosed so the tangents cancel (`System::run`) — its ends read
   as touches and nothing inside it searched again

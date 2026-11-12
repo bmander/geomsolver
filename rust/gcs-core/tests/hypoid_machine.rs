@@ -206,3 +206,42 @@ fn a_pair_no_mill_balances_is_laid_out_with_its_mill_stated() {
         }
     }
 }
+
+/// The pair at 0.625 of its size, its mill stated (the balance's at that size), standing in its own
+/// frame or, `turned`, in the frame `shaft_drive/drive.sv` holds it in: the bicycle's bottom
+/// bracket, its pitch plane at an attitude no world axis lies in.
+fn scaled_pair(turned: bool) -> String {
+    let call = "pair := HypoidPair(pinion_teeth: 24, gear_teeth: 48, mean_module: 1.25mm,\n  \
+        shaft_angle: 90deg, offset: 15.625mm, spiral_angle: 25deg, backlash: 0.03125mm,\n  \
+        tip_relief: 0.125mm, end_relief: 0.125mm, pressure_shift: 11.2527deg,\n  \
+        cutter_radius: 47.2576mm)\n";
+    let head = "unit mm\nuse std\nuse spiral_bevel.hypoid (HypoidPair)\n";
+    if !turned { return format!("{head}{call}") }
+    format!("{head}place := frame\n\
+        fix(dir == (-0.870151820509, 0.447213595500, -0.206968135870)) place.u\n\
+        fix(dir == (0.231397410491, 0, -0.972859310701)) place.v\n\
+        fix(origin == (0mm, -34.184481591980mm, 0mm)) place\nin place {{\n{call}}}\n")
+}
+
+/// **Whether a member's tool builds does not depend on where the pair stands** (#904 A4): the
+/// gear's generating crown, its tooth space and the neighbour's tooth unioned
+/// (`pair.gear_space.body`), is built in the pair's own frame and in a frame turned to it, the
+/// document solved as `solventc` solves it, and is the same solid. The neighbour's floor circle
+/// lies in the plane tangent to the space's round and touches the round's torus twice; in the
+/// turned frame that reading was refused ("its search read more boxes than any search may", the
+/// run beside each touch proved only a hair wide: `enclosures::a_circle_touching_a_torus_is_read_alike_at_every_attitude`),
+/// and the gear fell back to its field.
+#[test]
+fn the_gears_tool_builds_in_a_frame_turned_to_the_pair() {
+    let examples = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples");
+    let volume = |turned: bool| -> f64 {
+        let mut e = fixtures::unsolved(&scaled_pair(turned),&mut fixtures::beside(&examples,&mut |_,t| t));
+        assert!(gcs_core::solve::solve(&mut e.sketch,gcs_core::solve::SolveOpts::default()).success);
+        let tool = fixtures::solid(&e,"pair.gear_space.body");
+        let built = gcs_core::solid::cad::recipe(&e.sketch,tool).and_then(|j| gcs_core::brep::recipe::build(&j))
+            .unwrap_or_else(|e| panic!("turned {turned}: {e}"));
+        gcs_core::brep::props::volume(&built)
+    };
+    let (own,turned) = (volume(false),volume(true));
+    assert!((own-turned).abs() <= 1e-9*own,"{own} mm³ in its own frame, {turned} mm³ turned");
+}
