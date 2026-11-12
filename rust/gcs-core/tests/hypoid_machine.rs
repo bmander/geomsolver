@@ -246,6 +246,46 @@ fn the_gears_tool_builds_in_a_frame_turned_to_the_pair() {
     assert!((own-turned).abs() <= 1e-9*own,"{own} mm³ in its own frame, {turned} mm³ turned");
 }
 
+/// The gear's cut of `scaled_pair`, its sheet traced (`sweep::traced`), or with the grid its cutter's
+/// band is read on turned each of `phases` past the band's start (`sweep::traced_turned`).
+fn gear_sheets(turned: bool,phases: &[Option<f64>]) -> Vec<Result<gcs_core::brep::sweep::sheet::Fitted,String>> {
+    use gcs_core::brep::sweep::{self,Say};
+    use gcs_core::solid::admission::{admit_body,Options};
+    let examples = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples");
+    let mut e = fixtures::unsolved(&scaled_pair(turned),&mut fixtures::beside(&examples,&mut |_,t| t));
+    assert!(gcs_core::solve::solve(&mut e.sketch,gcs_core::solve::SolveOpts::default()).success);
+    let gear = fixtures::solid(&e,"pair.gear.body");
+    let admission = admit_body(&e.sketch,gear,&Options::default()).unwrap_or_else(|e| panic!("refused: {e}"));
+    let recipe = gcs_core::solid::cad::recipe_static(&e.sketch,gear).unwrap();
+    let say = Say {stage:&|_| {},mark:&|_| {}};
+    let prepared = sweep::prepare(&e.sketch,gear,&recipe,&admission,&say).unwrap_or_else(|r| panic!("{}",r.message));
+    let k = (0..prepared.sweeps()).find(|&k| prepared.sweep_name(&e.sketch,k) == "pair.gear.cut.removal").expect("the gear's cut");
+    phases.iter().map(|phase| match phase {
+        None => sweep::traced(&prepared,k,None,&say),
+        Some(phase) => sweep::traced_turned(&prepared,k,*phase,None,&say),
+    }.map_err(|r| r.message)).collect()
+}
+
+/// **The gear's sheet is traced alike wherever its pair stands** (#904 A4): the gear's cut of
+/// `scaled_pair`, traced in the pair's own frame and in the frame turned to it, is the same sheet —
+/// as many rows and columns, each point the other's carried by the turn. The reach read its band on
+/// a grid a world axis set, which a turn of the pair moved against the cutter; it now reads it from
+/// where the contacts first reach the blank (`Cutter::reach`), and the rows are counted alike where
+/// their span is a whole number of them to rounding (`trace::Tracer::columns`).
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 20 s: the pair solved and its gear's cut traced in two frames")]
+fn the_gears_sheet_is_traced_alike_in_a_frame_turned_to_the_pair() {
+    let [own,turned] = [false,true].map(|turned| gear_sheets(turned,&[None]).remove(0).unwrap());
+    let (own,turned) = (&own.sheet,&turned.sheet);
+    assert_eq!((own.rows,own.columns),(turned.rows,turned.columns));
+    // the frame `scaled_pair` turns the pair into, carrying a point of the pair's own frame there
+    let (u,v) = ([-0.870151820509,0.447213595500,-0.206968135870],[0.231397410491,0.,-0.972859310701]);
+    let w = [u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+    let carried = |p: V| -> V { std::array::from_fn(|k| [0.,-34.184481591980,0.][k]+p[0]*u[k]+p[1]*v[k]+p[2]*w[k]) };
+    let apart = own.points.iter().zip(&turned.points).map(|(&p,&q)| dist(carried(p),q)).fold(0.,f64::max);
+    assert!(apart < 1e-6,"the sheets' points are {apart} mm apart");
+}
+
 /// **Whether the gear builds exactly does not depend on where its pair stands** (#904 A4): the
 /// gear of `scaled_pair`, built by the kernel in the pair's own frame and in the frame turned to
 /// it, is the same solid. Its tool builds in both (`the_gears_tool_builds_in_a_frame_turned_to_the_pair`),
@@ -286,20 +326,8 @@ fn the_gear_builds_alike_in_a_frame_turned_to_the_pair() {
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 14 s: eleven sheets traced")]
 fn the_gears_sheet_is_traced_at_every_phase_of_its_stations() {
-    use gcs_core::brep::sweep::{self,Say};
-    use gcs_core::solid::admission::{admit_body,Options};
-    let examples = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples");
-    let mut e = fixtures::unsolved(&scaled_pair(false),&mut fixtures::beside(&examples,&mut |_,t| t));
-    assert!(gcs_core::solve::solve(&mut e.sketch,gcs_core::solve::SolveOpts::default()).success);
-    let gear = fixtures::solid(&e,"pair.gear.body");
-    let admission = admit_body(&e.sketch,gear,&Options::default()).unwrap_or_else(|e| panic!("refused: {e}"));
-    let recipe = gcs_core::solid::cad::recipe_static(&e.sketch,gear).unwrap();
-    let say = Say {stage:&|_| {},mark:&|_| {}};
-    let prepared = sweep::prepare(&e.sketch,gear,&recipe,&admission,&say).unwrap_or_else(|r| panic!("{}",r.message));
-    let k = (0..prepared.sweeps()).find(|&k| prepared.sweep_name(&e.sketch,k) == "pair.gear.cut.removal").expect("the gear's cut");
-    let refused: Vec<String> = (0..11).filter_map(|i| {
-        let phase = 3.75*i as f64/11.;
-        sweep::traced_turned(&prepared,k,phase.to_radians(),None,&say).err().map(|r| format!("{phase:.3} degrees: {}",r.message))
-    }).collect();
+    let phases: Vec<f64> = (0..11).map(|i| 3.75*i as f64/11.).collect();
+    let refused: Vec<String> = phases.iter().zip(gear_sheets(false,&phases.iter().map(|p| Some(p.to_radians())).collect::<Vec<_>>()))
+        .filter_map(|(phase,sheet)| sheet.err().map(|r| format!("{phase:.3} degrees: {r}"))).collect();
     assert!(refused.is_empty(),"refused at {} of 11 phases: {refused:#?}",refused.len());
 }

@@ -1577,7 +1577,8 @@ placement's rounding falls. Counted from the world's half-plane, a turn of the p
 against the cutter, and the gear at 0.625 was built in its own frame and refused in `drive.sv`'s,
 "the candidate sheet cannot be widened out of the blank"
 (`hypoid_machine::the_gear_builds_alike_in_a_frame_turned_to_the_pair`, slow: the same faces, the
-volume to 1e-9). That refusal was the chart's, at four of eleven phases of the grid within one
+volume to 1e-9; `the_gears_sheet_is_traced_alike_in_a_frame_turned_to_the_pair`, slow: the cut's
+sheet, each point the other's carried, to 1e-6 mm). That refusal was the chart's, at four of eleven phases of the grid within one
 step, in either frame: a margin column's curve leaps a turn round into a far corner's fan a row
 nearer the blank with each column further out, and with the rows trimmed back to before any
 column's leap (`charted`), wherever a column leapt on the row past the blank's last every column's
