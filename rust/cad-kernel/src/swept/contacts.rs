@@ -463,7 +463,7 @@ fn norm_of(v: V) -> f64 { crate::util::space::norm(v) }
 /// that rounding puts it off (`h` there over its slope toward the end) ends there exactly: its root
 /// fell a hair beside it (7e-7 of the section on the leaning torus), beside the rim and the rail that
 /// end there.
-fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,touch: Option<f64>,corners: &[Uv],tol: f64)
+fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,touch: Option<(f64,u32)>,corners: &[Uv],tol: f64)
     -> Vec<crate::geom::Curve> {
     let a = &blend.a;
     let at = |u: f64,v: f64| blend.carry.at(a.point(u),v);
@@ -478,10 +478,16 @@ fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,touch: Option<f64>,
         let (f0,f1,f2,m1,m2) = (f(u,e),f(u,e+STEP),f(u,e+2.*STEP),f(u,e-STEP),f(u,e-2.*STEP));
         [f0,(8.*(f1-m1)-(f2-m2))/(12.*STEP),(16.*(f1+m1)-(f2+m2)-30.*f0)/(24.*STEP*STEP),(f2-2.*f1+2.*m1-m2)/(12.*STEP*STEP*STEP)]
     };
+    // (a section crossing the face simply, an edge's fan on either of its faces: `F = (v − e) h`, `h` its
+    // value less `c₀` over `v − e`, and `c₁ + c₂ w` within the step)
     let h = |u: f64,v: f64| -> f64 {
-        let Some(e) = touch else { return f(u,v) };
+        let Some((e,order)) = touch else { return f(u,v) };
         let [c0,c1,c2,c3] = taylor(u,e);
         let w = v-e;
+        if order == 1 {
+            if w.abs() < STEP { return c1+c2*w }
+            return (f(u,v)-c0)/w
+        }
         if w.abs() < STEP { return c2+c3*w }
         (f(u,v)-c0-c1*w)/(w*w)
     };
@@ -500,25 +506,40 @@ fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,touch: Option<f64>,
     };
     let across: Vec<Vec<Option<usize>>> = (0..n[0]).map(|i| (0..=n[1]).map(|j| root_on(node(i,j),node(i+1,j),values[i][j],values[i+1][j])).collect()).collect();
     let up: Vec<Vec<Option<usize>>> = (0..=n[0]).map(|i| (0..n[1]).map(|j| root_on(node(i,j),node(i,j+1),values[i][j],values[i][j+1])).collect()).collect();
+    // whether a root `p` stands beside corner `c` by no more than `h`'s rounding there puts it off:
+    // its value over its slope toward the root, four times over
+    let rounding = |c: Uv,p: Uv| {
+        let (du,dv) = (p[0]-c[0],p[1]-c[1]);
+        let apart = du.hypot(dv);
+        if !(apart > 0.) { return true }
+        let d = 1e-6;
+        let slope = (h(c[0]+du/apart*d,c[1]+dv/apart*d)-h(c[0],c[1]))/d;
+        apart <= 4.*(h(c[0],c[1])/slope).abs()
+    };
     let mut links: Vec<[usize;2]> = Vec::new();
     for i in 0..n[0] { for j in 0..n[1] {
         let sides = [across[i][j],up[i+1][j],across[i][j+1],up[i][j]];
+        // **a cell at one of `corners`**, the branch leaving the corner through it: `h` nought there
+        // but for its rounding, its zero line clips the corner or passes beside it, a root of rounding
+        // on one or both of the corner's sides besides the root the branch leaves the cell by — which
+        // no pairing joins rightly (three), or joins as a step along the rim from where the branch
+        // leaves, and then onto the corner, the branch arriving tangent to the rim. The corner is the
+        // root they stand for, joined to the one left
+        let at = [node(i,j),node(i+1,j),node(i+1,j+1),node(i,j+1)];
+        if let Some(k) = (0..4).find(|&k| corners.iter().any(|c| (c[0]-at[k][0]).abs() <= 1e-12 && (c[1]-at[k][1]).abs() <= 1e-12)) {
+            // the sides at corner `k` (bottom 0, right 1, top 2, left 3): the side before it and the side after
+            let beside = [(k+3)%4,k];
+            let noise = |x: usize| beside.contains(&x) && sides[x].is_some_and(|r| rounding(at[k],roots[r]));
+            let left: Vec<usize> = (0..4).filter(|&x| !noise(x)).filter_map(|x| sides[x]).collect();
+            if (0..4).any(noise) && left.len() == 1 {
+                roots.push(at[k]);
+                links.push([roots.len()-1,left[0]]);
+                continue
+            }
+        }
         let found: Vec<usize> = sides.iter().flatten().copied().collect();
         match found.len() {
             2 => links.push([found[0],found[1]]),
-            // **a cell at one of `corners`**, the branch leaving the corner through it: `h` nought
-            // there but for its rounding, its zero line clips the corner, a root of rounding on each
-            // of the corner's two sides besides the one the branch leaves by — three, which no
-            // pairing joins. The corner is the root its two sides' stand for, joined to the third
-            3 => {
-                let at = [node(i,j),node(i+1,j),node(i+1,j+1),node(i,j+1)];
-                let Some(k) = (0..4).find(|&k| corners.iter().any(|c| (c[0]-at[k][0]).abs() <= 1e-12 && (c[1]-at[k][1]).abs() <= 1e-12)) else { continue };
-                // the sides at corner `k` (bottom 0, right 1, top 2, left 3): the side before it and the side after
-                let beside = [(k+3)%4,k];
-                let Some(third) = (0..4).filter(|x| !beside.contains(x)).find_map(|x| sides[x]) else { continue };
-                roots.push(at[k]);
-                links.push([roots.len()-1,third]);
-            }
             4 => {
                 // a saddle of `h`: which corners its middle's value joins
                 let [b,r,t,l] = sides.map(Option::unwrap);
@@ -559,7 +580,7 @@ fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,touch: Option<f64>,
     // beyond, `h`'s zero set is where `F` is the rim's own value and rate carried out — the
     // section's fit, a tenth of the tolerance — not nought, and a branch settled on it a twentieth
     // of the roll out stood 2.5e-6 off the tool)
-    let near_rim = |p: Uv| touch.is_some_and(|e| (p[1]-e).abs() < STEP);
+    let near_rim = |p: Uv| touch.is_some_and(|(e,_)| (p[1]-e).abs() < STEP);
     let newton = |k: &dyn Fn(f64,f64) -> f64,mut p: Uv,steps: usize| -> Uv {
         for _ in 0..steps {
             let v = k(p[0],p[1]);
@@ -573,28 +594,23 @@ fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,touch: Option<f64>,
         }
         p
     };
-    // settled on `h`, smooth wherever the two meet; then, off the rim, onto `F` itself from there, a
-    // move no farther than the few tolerances the two differ by (near a fold of the contact, where
-    // the branch leaves the rim and `F = (v − e)² h` is small in both, Newton on `F` alone wandered)
+    // settled on `h`, smooth wherever the two meet; then, off the rim, onto `F` itself from there,
+    // where Newton there settles within a cell of the grid (near a fold of the contact, where the
+    // branch leaves the rim and `F = (v − e)² h` is small in both, Newton on `F` alone wandered off
+    // the branch; and the two differ by the section's fit over the angle the sheet meets the tool at,
+    // shallow near the rim — 6e-5 along the sheet for 3e-6 off the tool, at 1e-7)
+    let cell = [1./n[0] as f64,1./n[1] as f64];
     let onto = |p: Uv| -> Uv {
         let p = newton(&h,p,30);
         if touch.is_none() || near_rim(p) { return p }
-        let q = newton(&f,p,10);
-        if f(q[0],q[1]).abs() < f(p[0],p[1]).abs() && distance(at(q[0],q[1]),at(p[0],p[1])) <= 64.*tol { q } else { p }
+        let q = newton(&f,p,20);
+        let (fp,fq) = (f(p[0],p[1]).abs(),f(q[0],q[1]).abs());
+        if fq < fp && fq <= 1e-3*tol && (q[0]-p[0]).abs() <= cell[0] && (q[1]-p[1]).abs() <= cell[1] { q } else { p }
     };
     let between = |x: Uv,y: Uv| { let p = onto([0.5*(x[0]+y[0]),0.5*(x[1]+y[1])]); (p,at(p[0],p[1])) };
     // an end beside a corner by what `h`'s rounding there puts it off: its value over its slope toward
     // the end, four times over
-    let snapped = |p: Uv| {
-        corners.iter().copied().find(|&c| {
-            let (du,dv) = (p[0]-c[0],p[1]-c[1]);
-            let apart = du.hypot(dv);
-            if !(apart > 0.) { return true }
-            let d = 1e-6;
-            let slope = (h(c[0]+du/apart*d,c[1]+dv/apart*d)-h(c[0],c[1]))/d;
-            apart <= 4.*(h(c[0],c[1])/slope).abs()
-        }).unwrap_or(p)
-    };
+    let snapped = |p: Uv| corners.iter().copied().find(|&c| rounding(c,p)).unwrap_or(p);
     lines.into_iter().filter(|l| l.len() >= 2).filter_map(|l| {
         // each root off the rim settled onto `F` itself (the march's roots are `h`'s)
         let settle = |p: Uv| -> Uv {
@@ -955,33 +971,71 @@ fn shared_paths(carry: &crate::trajectory::Screw,a: &crate::geom::Curve,b: &crat
     placed.into_iter().map(|(_,p)| p).collect()
 }
 
+/// **The stretches of a sharp edge's fan in contact under `twist`** (#880 Q1b S2): the runs of the
+/// edge `e`'s parameter where its velocity is square to a normal of the fan between its two faces'
+/// `[f1, f2]` — where those faces' `n · v` differ in sign — each end a root of one face's `n · v` on
+/// the edge or an end of the edge; a closed edge's run through its seam is one, its end past `t1`.
+pub fn fan_runs(tool: &Brep,e: usize,[f1,f2]: [usize;2],twist: &Twist) -> Vec<[f64;2]> {
+    let edge = &tool.edges[e];
+    let crate::topo::EdgeCurve::Curve(c) = &edge.curve else { return Vec::new() };
+    let normal = |f: usize,p: V| tool.faces[f].outward(p).map_or(0.,|n| crate::util::space::dot(n,twist.velocity(p)));
+    let fan = |t: f64| { let p = c.point(t); normal(f1,p)*normal(f2,p) };
+    const N: usize = 512;
+    let [t0,t1] = edge.t;
+    let ts: Vec<f64> = (0..=N).map(|k| t0+(t1-t0)*k as f64/N as f64).collect();
+    let fs: Vec<f64> = ts.iter().map(|&t| fan(t)).collect();
+    // where the fan's sign turns, each root of one of the two faces' `n · v` on the edge
+    // (the face whose `n · v` turns over the bracket, the bracket's root of it)
+    let root = |a: f64,b: f64| {
+        let side = |f: usize| move |t: f64| normal(f,c.point(t));
+        let (g1,g2) = (side(f1),side(f2));
+        let g: &dyn Fn(f64) -> f64 = if (g1(a) < 0.) != (g1(b) < 0.) { &g1 } else { &g2 };
+        crate::util::roots::bracketed_root(|t: f64| Some(g(t)),a,g(a),b,g(b),1e-14*(1.+t1.abs()))
+    };
+    let mut runs: Vec<[f64;2]> = Vec::new();
+    let mut start: Option<f64> = (fs[0] < 0.).then_some(t0);
+    for k in 0..N {
+        if (fs[k] < 0.) == (fs[k+1] < 0.) { continue }
+        let x = root(ts[k],ts[k+1]);
+        match start.take() { Some(a) => runs.push([a,x]),None => start = Some(x) }
+    }
+    if let Some(a) = start { runs.push([a,t1]) }
+    // a closed edge's run through its seam is one
+    if edge.v[0] == edge.v[1] && runs.len() > 1 && runs[0][0] == t0 && runs[runs.len()-1][1] == t1 {
+        let last = runs.pop().unwrap();
+        runs[0] = [last[0],runs[0][1]+(t1-t0)];
+    }
+    runs
+}
+
 /// **The candidates of the closed solid `tool` sweeps under the constant twist `path` over `roll`**,
-/// short of a whole turn (#880 Q1b S4): each piece of each face's contact carried over the roll, and
-/// the tool at the roll's two ends. Refused, by name, where a face is in contact all over (`Whole`) or
-/// the tool has an edge whose fan is in contact (S2, not yet read).
+/// short of a whole turn (#880 Q1b S4): each piece of each face's contact and each stretch of a sharp
+/// edge's fan in contact (S2, `fan_runs`) carried over the roll, and the tool at the roll's two ends.
+/// Refused, by name, where a face is in contact all over (`Whole`).
 /// With them, the meetings known by construction (P4): each sheet meets its face at either end pose in
 /// that end's rim (`crate::boolean::Given`), never searched for.
 pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2],tol: f64)
     -> Result<(Vec<Brep>,Vec<crate::boolean::Given>),super::closed::Unbuilt> {
     use super::closed::Unbuilt;
     let screw = path.screw().ok_or(Unbuilt::Motion)?;
-    // (refused first, before any face is read: an edge between two faces not smooth there: its fan's contact is S2's)
+    // the sharp edges, each with its two faces: an edge between two faces not smooth there
     let uses = tool.uses();
+    let mut sharp: Vec<(usize,usize,usize)> = Vec::new();
     for (e,edge) in tool.edges.iter().enumerate() {
         if matches!(edge.curve,crate::topo::EdgeCurve::Degenerate) { continue }
         let [(f1,..),(f2,..)] = uses[e][..] else { continue };
         if f1 == f2 { continue }
         let mid = edge.point(0.5*(edge.t[0]+edge.t[1]),&tool.vertices);
         let (Some(n1),Some(n2)) = (tool.faces[f1].outward(mid),tool.faces[f2].outward(mid)) else { return Err(Unbuilt::Curved {at:mid}) };
-        if crate::util::space::dot(n1,n2) < 1.-1e-9 { return Err(Unbuilt::Curved {at:mid}) }
+        if crate::util::space::dot(n1,n2) < 1.-1e-9 { sharp.push((e,f1,f2)) }
     }
     let twist = screw.twist();
     let located = Located::new(tool,tol);
     let mut out = Vec::new();
     let mut given = Vec::new();
-    // every stretch's sheet, the sheet following it along its piece, the face its section lies on and
-    // how its section ends
-    let mut carried_all: Vec<(Carried,Option<usize>,usize,[End;2])> = Vec::new();
+    // every stretch's sheet, the sheet following it along its piece, the faces its section lies on and
+    // the order it touches them in (a contact's two, an edge's fan's one), and how its section ends
+    let mut carried_all: Vec<(Carried,Option<usize>,Vec<usize>,u32,[End;2])> = Vec::new();
     let posed = |t: f64| -> Result<crate::geom::Rigid,Unbuilt> { let q = path.pose(t)?; Ok(crate::geom::Rigid {r:q.r,t:q.p}) };
     let ends = [posed(roll[0])?,posed(roll[1])?];
     for fi in 0..tool.faces.len() {
@@ -1002,9 +1056,39 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
                 let (n,first) = (sheets.len(),carried_all.len());
                 for (k,c) in sheets.into_iter().enumerate() {
                     let next = if k+1 < n { Some(first+k+1) } else if p.closed && n > 1 { Some(first) } else { None };
-                    carried_all.push((c,next,p.face,parts[k].ends));
+                    carried_all.push((c,next,vec![p.face],2,parts[k].ends));
                 }
             },
+        }
+    }
+    // **an edge's fan** (#880 Q1b S2): a sharp edge's point bounds the sweep where its velocity is
+    // square to a normal of the fan between its two faces' — where those faces' `n · v` differ in sign.
+    // Each such stretch of it, its ends where one face's contact reaches the edge, carried over the
+    // roll: its section the edge itself, fitted through points of it, crossing each of its two faces
+    // posed at an end of the roll along the rim, simply
+    for &(e,f1,f2) in &sharp {
+        let edge = &tool.edges[e];
+        let crate::topo::EdgeCurve::Curve(c) = &edge.curve else { continue };
+        let runs = fan_runs(tool,e,[f1,f2],&twist);
+        let [t0,t1] = edge.t;
+        let closed = edge.v[0] == edge.v[1];
+        let whole = closed && runs.len() == 1 && runs[0] == [t0,t1];
+        for run in runs {
+            let at = |t: f64| c.point(if t > t1 { t-(t1-t0) } else { t });
+            let m = 64;
+            let ts: Vec<f64> = (0..=m).map(|k| run[0]+(run[1]-run[0])*k as f64/m as f64).collect();
+            let piece = Piece {face:f1,uv:ts.iter().map(|&t| [t,0.]).collect(),points:ts.iter().map(|&t| at(t)).collect(),
+                ends:[End::Boundary,End::Boundary],closed:whole};
+            let parts = stretches(&piece,tool.size(),&screw);
+            let one = parts.len() == 1;
+            let (n,first) = (parts.len(),carried_all.len());
+            for (k,part) in parts.iter().enumerate() {
+                let between = |a: Uv,b: Uv| { let t = 0.5*(a[0]+b[0]); ([t,0.],at(t)) };
+                let nodes: Vec<(Uv,V)> = part.uv.iter().zip(&part.points).map(|(&u,&p)| (u,p)).collect();
+                let curve = fitted(nodes,&between,tol).ok_or_else(|| Unbuilt::Failed("an edge's fan not fitted".into()))?;
+                let next = if k+1 < n { Some(first+k+1) } else if whole && n > 1 { Some(first) } else { None };
+                carried_all.push((carried(&curve,one && whole,path,roll)?,next,vec![f1,f2],1,part.ends));
+            }
         }
     }
     // **every two sheets given their whole meeting** (#880 Q1b): the paths of the carry both hold,
@@ -1042,11 +1126,11 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
     let jobs: Vec<(usize,usize,usize)> = (0..carried_all.len()).flat_map(|k| (0..2).flat_map(move |e| (0..tool.faces.len()).map(move |fi| (k,e,fi)))).collect();
     let met: Vec<Option<crate::boolean::Given>> = crate::util::par::indices(jobs.len(),|j| {
         let (k,e,fi) = jobs[j];
-        let (c,_,face,section) = &carried_all[k];
+        let (c,_,on,order,section) = &carried_all[k];
         let b = blend(c)?;
         let sheet = &c.sheet.faces[0].surface;
         let f = &poses[e].faces[fi];
-        let touch = (fi == *face).then_some(e as f64);
+        let touch = on.contains(&fi).then_some((e as f64,*order));
         let mut curves: Vec<crate::geom::Curve> = touch.map(|_| c.rims[e].clone()).into_iter().collect();
         let corners: Vec<Uv> = if touch.is_none() { Vec::new() } else {
             [0.,1.].into_iter().zip(section).filter(|(_,end)| matches!(end,End::Singular)).map(|(u,_)| [u,e as f64]).collect()

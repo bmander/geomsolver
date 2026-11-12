@@ -8,6 +8,19 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A tool the closed sweep refuses under a constant twist goes the contact's road**
+  (`swept::closed::closed`, `cut_from`): what it refused as `Curved` is built from its contact's
+  sheets, the end poses and their given meetings, trimmed by membership and judged; where that
+  road refuses too, the `Curved` refusal stands. brep-bench's `swept/v-wheel-screwed-through-rod`
+  and `swept/drum-leaning-to-a-screw` build through it, and the torus through its rod, each to a
+  volume computed apart from the build and to a STEP file that reads back as the solid.
+- **A sharp edge's fan is swept** (`swept::contacts::fan_runs`, `candidates`): each stretch of a
+  sharp edge where its two faces' `n · v` differ in sign is carried as a sheet of its own, where
+  the candidates refused the tool.
+- **Membership reads exactly any tool that is where all its faces' surfaces have it inside**
+  (`swept::member`): faces planes, cylinders, cones, balls or tori, the greatest of their signed
+  distances, taken where every point of the tool's mesh stands on each surface's inner side and
+  held to the tool's point location; it was one ball or one torus.
 - **A torus screwed along a rod is swept, trimmed and cut** (`swept::contacts`, `swept::trim`,
   `swept::member`): brep-bench's `swept/torus-screwed-through-rod` to the groove's volume computed
   apart from the build, within 3e-5 at a tolerance of 1e-5. A tool bounded by one ball or one

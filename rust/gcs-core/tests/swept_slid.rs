@@ -477,15 +477,19 @@ fn membership_reads_the_deepest_pose_first() {
     assert_eq!((Swept {tool:&solid,path:&path,roll:[0.,1.]}).member(p),Ok(true));
 }
 
-/// **A round meeting its neighbour in a sharp rim at a lean is refused by name** (#810's negative
-/// control): a mill whose corner round spans only the eighth of the tube above `v = −π/4`, so the
-/// flat end meets it there at 45° — a sharp circle on the torus, whose fan (the sheet its normals
-/// between the two faces' sweep) is not entered yet. The build and the admission (`closed::reads`)
-/// each refuse it as `Curved` at a point of that rim, never building it wrong.
+/// **A round meeting its neighbour in a sharp rim at a lean builds through its fan** (#810's
+/// negative control, turned by Q1b-S2): a mill whose corner round spans only the eighth of the tube
+/// above `v = −π/4`, so the flat end meets it there at 45° — a sharp circle on the torus, whose fan
+/// (the sheet its normals between the two faces' sweep) the patch road does not enter.  The
+/// admission (`closed::reads`) still refuses it as `Curved` at a point of that rim; the build goes
+/// the contacts road, which carries the rim's stretch where the faces' `n·v` differ in sign as a
+/// sheet of its own, and holds the volume to the meridian's own reading (`advanced`).
 #[test]
-fn a_round_meeting_a_sharp_rim_at_a_lean_is_refused_by_name() {
+fn a_round_meeting_a_sharp_rim_at_a_lean_builds_through_its_fan() {
     use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
     use gcs_core::brep::swept::closed::reads;
+    use gcs_core::brep::swept::patches::Revolved;
+    use crate::swept_patches::advanced;
     let (big,c,h) = (2.,0.5,3.);
     let at = |x: f64,z: f64| [x,0.,z];
     let (s,co) = (-PI/4.).sin_cos();
@@ -495,11 +499,12 @@ fn a_round_meeting_a_sharp_rim_at_a_lean_is_refused_by_name() {
         ProfileEdge::Line {a:at(big,c),b:at(big,h)},ProfileEdge::Line {a:at(big,h),b:at(0.,h)},ProfileEdge::Line {a:at(0.,h),b:at(0.,rim[2])}];
     let tool = revolve(&Profile {origin:at(0.,0.),normal:[0.,1.,0.],names:Vec::new(),loops:vec![edges]},[0.;3],[0.,0.,1.],TAU).unwrap();
     let path = slide(scale(unit([0.5,0.2,-1.]),5.));
-    for refused in [closed(&tool,&path,[0.,1.],0.002,1e-6).map(|_| ()),reads(&tool,&path).map(|_| ())] {
-        match refused {
-            Err(Unbuilt::Curved {at}) => assert!((at[0].hypot(at[1])-rim[0]).abs() <= 1e-9 && (at[2]-rim[2]).abs() <= 1e-9,"on the sharp rim: {at:?}"),
-            other => panic!("refused by name as curved, not {:?}",other.err()),
-        }
+    let built = closed(&tool,&path,[0.,1.],0.002,1e-6).expect("built through its fan");
+    let read = advanced(&Revolved::read(&tool).unwrap(),&tool,&path,[0.,1.],false);
+    assert!((volume(&built)-read).abs() <= 1e-5*read,"{} against {read}",volume(&built));
+    match reads(&tool,&path) {
+        Err(Unbuilt::Curved {at}) => assert!((at[0].hypot(at[1])-rim[0]).abs() <= 1e-9 && (at[2]-rim[2]).abs() <= 1e-9,"on the sharp rim: {at:?}"),
+        other => panic!("refused by name as curved, not {:?}",other.err()),
     }
 }
 

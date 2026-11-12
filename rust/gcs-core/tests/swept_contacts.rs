@@ -387,3 +387,127 @@ fn a_rod_grooved_by_a_leaning_torus_screwed_along_it_is_its_volume() {
         assert!((volume-1460.6300031715).abs() <= 10.*tol,"to {tol:e}, the grooved rod's volume {volume}, apart from the build 1460.6300031715");
     }
 }
+
+
+/// **A sharp edge's fan in contact, in stretches** (#880 Q1b S2's gate, `contacts::fan_runs`): on
+/// each sharp rim of the V wheel and of the leaning drum under their screws, each stretch ends where
+/// `n · v` of one of the edge's two faces is nought (within the tolerance, against the speed), the
+/// two faces' `n · v` differ in sign inside every stretch and agree between them, on a grid a
+/// hundred times finer than the stretches; and each tool has a stretch.
+#[test]
+fn a_sharp_edges_fan_is_in_contact_between_its_faces_contacts() {
+    use gcs_core::brep::swept::contacts::fan_runs;
+    use gcs_core::brep::topo::EdgeCurve;
+    let (s,c) = 25f64.to_radians().sin_cos();
+    let along = [0.,s,c];
+    let drum = prism(&disc(gcs_core::space::sub([10.,0.,0.],gcs_core::space::scale(along,1.5)),along,0.8),0.,3.).unwrap();
+    let drum_screw = Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:1.};
+    for (what,tool,screw) in [("the V wheel",v_wheel(),rod_screw()),("the drum",drum,drum_screw)] {
+        let twist = screw.twist();
+        let uses = tool.uses();
+        let mut stretches = 0;
+        for (e,edge) in tool.edges.iter().enumerate() {
+            let EdgeCurve::Curve(curve) = &edge.curve else { continue };
+            let [(f1,..),(f2,..)] = uses[e][..] else { continue };
+            if f1 == f2 { continue }
+            let [t0,t1] = edge.t;
+            let mid = curve.point(0.5*(t0+t1));
+            let (n1,n2) = (tool.faces[f1].outward(mid).unwrap(),tool.faces[f2].outward(mid).unwrap());
+            if gcs_core::space::dot(n1,n2) > 1.-1e-9 { continue }
+            let at = |t: f64| curve.point(if t > t1 { t-(t1-t0) } else { t });
+            let nv = |f: usize,t: f64| { let p = at(t); gcs_core::space::dot(tool.faces[f].outward(p).unwrap(),twist.velocity(p)) };
+            let speed = |t: f64| gcs_core::space::norm(twist.velocity(at(t)));
+            let runs = fan_runs(&tool,e,[f1,f2],&twist);
+            let closed = edge.v[0] == edge.v[1];
+            for run in &runs {
+                for t in *run {
+                    if !closed && (t == t0 || t == t1) { continue }
+                    let least = nv(f1,t).abs().min(nv(f2,t).abs());
+                    assert!(least <= TOL*speed(t),"{what}: a stretch of edge {e} ends at {t} where n · v is {least}");
+                }
+            }
+            stretches += runs.len();
+            let inside = |t: f64| runs.iter().any(|r| (r[0]..=r[1]).contains(&t) || (r[0]..=r[1]).contains(&(t+(t1-t0))));
+            let n = 51_200;
+            for k in 0..=n {
+                let t = t0+(t1-t0)*k as f64/n as f64;
+                let fan = nv(f1,t)*nv(f2,t);
+                let near = runs.iter().flatten().any(|&r| (r-t).abs() <= 1e-3*(t1-t0) || (r-(t1-t0)-t).abs() <= 1e-3*(t1-t0));
+                if near { continue }
+                assert_eq!(fan < 0.,inside(t),"{what}: edge {e} at {t}, the faces' n · v {} and {}",nv(f1,t),nv(f2,t));
+            }
+        }
+        assert!(stretches > 0,"{what}: a fan in contact");
+    }
+}
+
+/// A built solid written as a STEP file, which reads back as the solid (the S4 gate's closed file).
+fn steps(b: &Brep) {
+    let text = gcs_core::brep::step::write(b,"swept",TOL).unwrap();
+    gcs_core::brep::step_check::verify(&text,&gcs_core::brep::step_check::Solid::of(b)).unwrap_or_else(|e| panic!("its STEP: {e}"));
+}
+
+/// **The front door takes a torus screwed along a rod** (#880 Q1b S4, `swept::closed::cut_from`):
+/// the closed class refuses a torus by what it is (`Curved`), and the contact's road — candidates,
+/// trimmed by membership, judged, and cut from the blank — builds it, to the groove's volume computed
+/// apart from the build (`a_rod_grooved_by_a_leaning_torus_screwed_along_it_is_its_volume`).
+#[test]
+fn a_torus_screwed_through_a_rod_is_cut_through_the_front_door() {
+    use gcs_core::brep::swept::closed::cut_from;
+    use gcs_core::brep::trajectory::Trajectory;
+    let rod = prism(&disc([0.;3],[0.,0.,1.],5.),0.,20.).unwrap();
+    let path = Trajectory::Twist(rod_screw());
+    let roll = [(-108f64).to_radians(),348f64.to_radians()];
+    let grooved = cut_from(&rod,&leaning_torus(),&path,roll,0.01,TOL).unwrap();
+    let volume = gcs_core::brep::props::volume(&grooved);
+    steps(&grooved);
+    assert!((volume-1460.6300031715).abs() <= 10.*TOL,"the grooved rod's volume {volume}, apart from the build 1460.6300031715");
+}
+
+/// **The front door takes a V wheel screwed through a rod** (#880 Q1b S2 and S4, brep-bench's
+/// `swept/v-wheel-screwed-through-rod`): the wheel's two cones meet in a sharp rim, whose stretch
+/// where the cones' `n·v` differ in sign is the fan, carried as a sheet of its own; the groove is
+/// held to its volume computed apart from the build (each point of the rod cut where its helical
+/// invariants `(ρ, z − c φ)` lie in the wheel's shadow, the radii integrated by Gauss–Legendre:
+/// 1554.3809694 at forty points, moving by 1e-5 a doubling), and written as a STEP file that reads
+/// back as the solid.
+#[test]
+fn a_v_wheel_screwed_through_a_rod_is_cut_through_the_front_door() {
+    use gcs_core::brep::swept::closed::cut_from;
+    use gcs_core::brep::trajectory::Trajectory;
+    let rod = prism(&disc([0.;3],[0.,0.,1.],5.),0.,20.).unwrap();
+    let path = Trajectory::Twist(rod_screw());
+    let roll = [(-144f64).to_radians(),384f64.to_radians()];
+    let grooved = cut_from(&rod,&v_wheel(),&path,roll,0.01,TOL).unwrap();
+    let volume = gcs_core::brep::props::volume(&grooved);
+    steps(&grooved);
+    assert!((volume-1554.3809694).abs() <= 10.*TOL,"the grooved rod's volume {volume}, apart from the build 1554.3809694");
+}
+
+/// **The front door takes a drum leaning to a screw** (#880 Q1b S2 and S4, brep-bench's
+/// `swept/drum-leaning-to-a-screw`): a cylinder of radius 0.8 and length 3 about (10, 0, 0), its
+/// axis leaning 25° toward +y, screwed about z rising 1 a turn from −140° to 140° through a ring
+/// sector (radii 8 to 12, z from −1 to 1, 0° to 60°); both rims' fans are carried as sheets, and the
+/// sector cut is held to its volume computed apart from the build (`DRUM_CUT`), and written as a STEP
+/// file that reads back as the solid.
+#[test]
+fn a_drum_leaning_to_a_screw_is_cut_through_the_front_door() {
+    use gcs_core::brep::swept::closed::cut_from;
+    use gcs_core::brep::trajectory::Trajectory;
+    let section = crate::swept_rings::polygon(&[[8.,0.,-1.],[12.,0.,-1.],[12.,0.,1.],[8.,0.,1.]]);
+    let sector = revolve(&section,[0.;3],[0.,0.,1.],std::f64::consts::FRAC_PI_3).unwrap();
+    let (s,c) = 25f64.to_radians().sin_cos();
+    let along = [0.,s,c];
+    let drum = prism(&disc(gcs_core::space::sub([10.,0.,0.],gcs_core::space::scale(along,1.5)),along,0.8),0.,3.).unwrap();
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:1.});
+    let turn = 140f64.to_radians();
+    let cut = cut_from(&sector,&drum,&path,[-turn,turn],0.002,TOL).unwrap();
+    let volume = gcs_core::brep::props::volume(&cut);
+    steps(&cut);
+    assert!((volume-DRUM_CUT).abs() <= 10.*TOL,"the cut sector's volume {volume}, apart from the build {DRUM_CUT}");
+}
+/// The ring sector less the drum's sweep, apart from the build: the strip of helical heights the
+/// drum's shadow covers at each radius integrated by eight-point Gauss–Legendre over sixteen pieces of
+/// each panel between the strip's kinks (where its shadow splits and where its ends cross the
+/// window's), each panel's ends tamed by a cosine (over eight pieces, 2e-10 less).
+const DRUM_CUT: f64 = 50.2500186377;
