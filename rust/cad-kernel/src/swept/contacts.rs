@@ -845,7 +845,16 @@ pub fn carried(curve: &crate::geom::Curve,closed: bool,path: &crate::trajectory:
             };
             let walk = |c: &Curve| -> [Uv;2] { let uv = read_rim(c,64); [uv[0],uv[64]] };
             let [s0,s1] = walk(&a);
-            let [e0,e1] = { let [x,y] = walk(&image); [unwrap(x,s0),unwrap(y,s1)] };
+            // (the end rim's angle the start's turned by the turn, signed as the surface's frame runs
+            // along the axis or against it, not the nearest branch: a turn past half a turn — the pin
+            // swung 280° — read so ran back the short way round)
+            let du = match &s {
+                Surface::Cylinder(f,..) | Surface::Cone(f,..) | Surface::Sphere(f,..) | Surface::Torus(f,..) | Surface::Revolution(f,..) =>
+                    crate::util::space::dot(f.z,axis).signum()*screw.ratio*span,
+                _ => 0.,
+            };
+            let ahead = |x: Uv| [x[0]+du,x[1]];
+            let [e0,e1] = { let [x,y] = walk(&image); [unwrap(x,ahead(s0)),unwrap(y,ahead(s1))] };
             // (on a surface about the axis, a rim's own curve in the parameters, read by the angle about
             // the axis against the edge's parameter, and a rail the line it is there: inverted by the
             // surface, near a pole of it a point's angle was read across the axis, half a turn off)

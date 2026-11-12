@@ -562,6 +562,20 @@ fn coin_turned_case() -> Case {
         roll:[0.,90f64.to_radians()],bar:0.01,volume:46.547001074918,known:1e-9}
 }
 
+/// `pin-swung-through-ring-sector`: the pin `x ∈ [6, 11]`, `y² + z² ≤ 1/4`, turned about z from −140° to
+/// 140°, cut from the ring sector of `drum_case`. Apart from the build: the turn reaches all of the
+/// sector's 60° at each height `z` out to the radius `√(121 + w²)` of the pin's far corners, `w² = 1/4 −
+/// z²`, so the slot is `(π/6) ∫ (121 + w² − 64) dz = (π/6)(57 + 1/6)` and the cut the sector's `80π/3`
+/// less it, closed.
+fn pin_swung_case() -> Case {
+    let section = crate::swept_rings::polygon(&[[8.,0.,-1.],[12.,0.,-1.],[12.,0.,1.],[8.,0.,1.]]);
+    let sector = revolve(&section,[0.;3],[0.,0.,1.],std::f64::consts::FRAC_PI_3).unwrap();
+    let pi = std::f64::consts::PI;
+    Case {what:"the swung pin",blank:Some(sector),tool:prism(&disc([6.,0.,0.],[1.,0.,0.],0.5),0.,5.).unwrap(),
+        path:turn_about_z(),roll:[(-140f64).to_radians(),140f64.to_radians()],bar:0.005,
+        volume:80.*pi/3.-pi/6.*(57.+1./6.),known:1e-9}
+}
+
 /// **A rod spun about a line through it** (#880 Q1b S5, brep-bench's
 /// `swept/rod-spun-about-a-line-through-it`): under the turn each sheet lies on the surface of
 /// revolution of its section's meridian (`meridian_surface`) — the top and bottom lines' sectors on
@@ -587,3 +601,22 @@ fn a_ball_swung_across_its_own_centre_line_is_swept_through_the_front_door() { c
 /// revolution, the lines' sectors on planes.
 #[test]
 fn a_coin_turned_about_a_line_through_its_rim_is_swept_through_the_front_door() { cut_through_the_front_door(&coin_turned_case(),TOL) }
+
+/// **A pin swung through a ring sector** (#880 Q1b S5, brep-bench's
+/// `swept/pin-swung-through-ring-sector`): turned 280°, its end rims' images reach past a whole turn of
+/// the angle about the axis, each read ahead by the turn so that the far end stands where the walk
+/// left it (`carried`).
+#[test]
+fn a_pin_swung_through_a_ring_sector_is_cut_through_the_front_door() { cut_through_the_front_door(&pin_swung_case(),TOL) }
+
+/// **S5's cases at the kernel's own tolerance** (`geom::tolerance`), what the bench builds them at: the
+/// rims' parameter curves on their surfaces of revolution refined until they stand within a tenth of
+/// it of the rim (`carried`).
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about half a minute: four turned sweeps at the kernel's tolerance")]
+fn the_turned_cases_are_cut_at_the_kernels_own_tolerance() {
+    for case in [rod_spun_case(),ball_swung_case(),coin_turned_case(),pin_swung_case()] {
+        let tol = gcs_core::brep::geom::tolerance(case.blank.as_ref().map_or(0.,|b| b.size()).max(case.tool.size()));
+        cut_through_the_front_door(&case,tol);
+    }
+}
