@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solvent</title>
+
+<h1>Solvent</h1>
+<p>Mathy declarative code-cad for an exciting future</p>
+
+<h2>Mathy</h2>
+
+<p>Math provides language for extremely compact descriptions of solids and phenomena.</p>
+
+<p>A napkin ring:<br>
+B<sub>5</sub> ∖ { ρ ≤ 3 }</p>
+
+<p>A rod threaded by a ball:<br>
+{ ρ ≤ 5, 0 ≤ z ≤ 20 } ∖ ⋃<sub>θ ∈ [0, 2160°]</sub> B<sub>1</sub>(5 cos θ, 5 sin θ, −2 + 4θ/360°)</p>
+
+<p>A worm wheel hobbed by its worm:<br>
+K ∖ ⋃<sub>t ∈ [0, 60π]</sub> R<sub>z</sub>(−t/30) R<sub>W</sub>(t) T<br>
+where K is the blank, T the thread and W the worm's axis.</p>
+
+<p>[pretty formatting, show the corresponding solid or movement]</p>
+
+<p>Why not just use that? Furthermore: math doesn't get bogged down in all the traditions of CAD -
+feature trees, edit timelines, operations. CAD has this bad habit of recapitulating manufacturing
+processes. This is a violation of separation of concerns. A mathematical description <em>can</em>
+encode the requirements of manufacturing, but it shouldn't have to.</p>
+
+<h2>Declarative</h2>
+
+<p>The reason why not, to answer the above question, is that an implicit description is only as
+useful as the solution you can wring from it. "The location of Jimmy Hoffa" is an unambiguous and
+1:1 map to a geographical coordinate but that doesn't do anybody any good [ed: a less strange and
+Boomer example]. Likewise you can say [insert an easier-said-than-done description of a solid] but
+if you want to fit it into an assembly, measure it, render it, or manufacture it, you need to
+actually evaluate it into three dimensional space. Traditionally this was a difficult process
+engaged in as a prerequisite of the design process. But what if solvers were really good? What if
+they could just solve basically any solvable problem, allowing the designer to specify the
+<em>problem</em>, and not the <em>solution</em>. This is a <em>declarative</em> language; as opposed
+to traditional imperative CAD processes (and code-CAD languages and libraries). This is part of a
+long tradition [who?] but the difficult work of engineering the requisite solver is within
+reach.</p>
+
+<p>The declarative language in the case of Solvent is geometric, not algebraic. For example in many
+of the set descriptions of brep-bench cases the set description is an algebraic phrase embedding a
+lot of numbers that were themselves solved from an even deeper implicit geometric description.
+Solvent does that. [examples of algebraic implicit definition compared to implicit geometric
+definition]. The result, as above, is a clean break from many of the traditions of CAD. Solvent
+statements are unordered; they are not a recipe for building the solid; they are a description of
+true facts about the solid, and the solver determines if the description is well defined and then
+finds the geometry. As a result there is no timeline or feature tree. The entire assembly is solved
+at once*. [*go into functional principles in the code-cad section].</p>
+
+<h2>Code-cad</h2>
+
+<p>Code-cad is CAD adhering to the principles of code. What are those principles? In a word,
+gittable. Each token between spaces should have some meaning parsable by a human mind, with adjacent
+recombination also parsable by a human mind [ed: this is a terrible description]. The result of
+which generally is that you can edit a few lines of code without messing up the entire document.
+This is generally not true of STEP files; it's certainly not true of STL or Solidworks files, which
+are more like baked cakes than documents. [ed: I feel it's getting worse]. This fundamental property
+underlies the scalability of software in general; it's what makes it possible for tens of thousands
+of people to collaborate in the Linux kernel. Tens of thousands of people collaborate on machines,
+sure (the space shuttle surely), but they don't all dig into the same document; they accomplish this
+via rigid abstraction boundaries and global standards. As a result, open source hardware is sort of
+stuck. Most open source hardware projects just have a folder full of STLs, and if you want to edit
+them, you have to reverse engineer the STLs into a new Solidworks document just to move a hole.</p>
+
+<p>This shortcoming of CAD is well known; there are many code-cad projects, and this is one of
+them.</p>
+
+<p>Code-cad supplies a few constraints not supplied by the above sections - namely, scalability and
+modularity. The aim of Solvent is to be useful for arbitrarily large assemblies, which means that
+you can't literally solve a million parameters to build a car. It accomplishes this via functional
+design principles; ie, each module is a function of its inputs. The modules can be cached as long as
+the inputs don't change, like Jetpack Compose etc, and that's how we do that. [We'll have to tidy
+this up for sure]. Point being, some features of the language do divert from "mathy" and
+"declarative" in service to the requirement that Solvent is also "code-cad".</p>
+
+<h2>For an exciting future</h2>
+
+<p>We are entering a world where everybody can build anything, and this is a tool to make that
+possible. Every person deserves the dignity of deciding what their life should look like, and right
+now most people are denied that dignity by having to use the outputs of a fairly tightly constrained
+design and manufacturing stack. We crush rocks down, melt the parts that melt, hammer them into
+blocks, machine them with mills and lathes and presses, assemble them into heat engines and the
+frames for those heat engines, pave strips of the earth to make it easier to roll those machines
+along them, build our houses so those machines fit inside of them, build all of our belongings so
+they fit inside of those machines, and all of those belongings are made from things that are made
+from melted crushed rock using the same machines that are used to make cars. This is a lot of hand
+waving, but I hope you understand - there are so many other ways to build a world, and some of them
+are deeply pleasant and interesting, and we can't get to them until we break away from our current
+hyper-optimized branch of the tech tree. That's why this CAD is - should be - alien and strange. It
+should be easy to help you express ideas that are alien and strange.</p>
