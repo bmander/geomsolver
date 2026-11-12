@@ -22,7 +22,9 @@ use std::f64::consts::TAU;
 type V = [f64;3];
 
 /// The augmented length of a corner: one radian of turning counts as this many millimetres of
-/// profile, so a fan receives rows like an arc of that radius.
+/// profile, so a fan receives rows like an arc of that radius. Like the trace's spacings, it is a
+/// cut's at unit one: a sheet's stations walk it `Tracer::unit` times over (`Loop::scaled`), so a
+/// cutter twice the size turns through a fan in the same rows.
 const TURN_SCALE: f64 = 0.05;
 /// The same for a cap's rim in a section across a prism (`Across`): a quarter turn there carries a
 /// contact from a cap's to a side's, which may be far apart in time, and the sheet's rows, laid at
@@ -36,11 +38,17 @@ const RIM_SCALE: f64 = 1.;
 /// as long in space as in stations; a fan laid longer leaves columns standing on one curve, a fold
 /// of the fitted sheet. How far the fan carries a contact is the motion's, which the cutter does not
 /// know: a fan laid as long as its contacts' path across it (admission reads that path) would hold
-/// for any motion, where this holds for a draft's few degrees.
+/// for any motion, where this holds for a draft's few degrees. It is laid when the cutter is read,
+/// before any cut's unit is known, so it stays a millimetre at every size.
 const CREASE_SCALE: f64 = 1.;
 /// How near an end of one piece is to the axis to be on it (mm).
 const ON_AXIS: f64 = 1e-5;
 const SAMPLES_PER_PIECE: usize = 64;
+/// How many places of every piece of a section loop the reach asks for contacts in the blank (and
+/// the middle of every convex corner's fan): a piece as short as a tip's round is asked as often
+/// as a flank, whatever the cutter's size, so the faces the walk runs over are the same for a
+/// cutter scaled (#904 A3).
+const REACH_SAMPLES: usize = 32;
 /// Where a piece's face id keeps which meeting of its face it is, above the section's own tag.
 const OCCURRENCE: u32 = 26;
 /// A convex corner's fan as `Loop::starts` tags it: the face before it, with this bit.
@@ -112,6 +120,30 @@ impl Loop {
         Place::Piece {index:self.pieces.len()-1,s:self.pieces.last().unwrap().length()}
     }
     pub fn index_of(&self,face: u32) -> Option<usize> { self.pieces.iter().position(|p| p.face == face) }
+    /// The loop with each corner's fan walked `unit` times as long (`TURN_SCALE` is a cut's at
+    /// unit one).
+    pub fn scaled(mut self,unit: f64) -> Loop { self.turn *= unit; self }
+    /// The length of the pieces a reach's walk runs over, from its start face's to its end face's
+    /// in loop order, each whole and no fan counted: the cut's own length (`Tracer::unit`), which
+    /// a cutter scaled scales, and which moves with no fraction of a face a sampling reads.
+    pub fn walked(&self,reach: &Reach) -> Result<f64,String> {
+        let missing = "a profile face is missing at this station";
+        let (first,last) = (self.index_of(reach.start.face).ok_or(missing)?,self.index_of(reach.end.face).ok_or(missing)?);
+        let n = self.pieces.len();
+        Ok((0..=(last+n-first)%n).map(|k| self.pieces[(first+k)%n].length()).sum())
+    }
+    /// The walk lengths the reach asks at: `per_piece` places evenly within each piece, and the
+    /// middle of each convex corner's fan.
+    fn places(&self,per_piece: usize) -> Vec<f64> {
+        let mut out = Vec::new();
+        for (k,piece) in self.pieces.iter().enumerate() {
+            let start = self.start_of(k);
+            out.extend((0..per_piece).map(|j| start+piece.length()*(j as f64+0.5)/per_piece as f64));
+            let fan = self.corners[k].angle*self.turn;
+            if fan > 0. { out.push(start+piece.length()+0.5*fan); }
+        }
+        out
+    }
     /// Where along the walk each piece starts, and each convex corner's fan (`FAN` and the face
     /// before it), with its face: what a contact at a walk length was made by (#212).
     pub fn starts(&self) -> Vec<(f64,u32)> {
@@ -688,7 +720,7 @@ impl Cutter {
         let station = |c: f64| station[0]+(station[1]-station[0])*(c+0.5)/stations as f64;
         let mut inside_stations = Vec::new();
         let mut face_hits: BTreeMap<u32,(f64,f64)> = BTreeMap::new();
-        let mut order: Option<Vec<u32>> = None;
+        let mut order: Option<Vec<(u32,f64)>> = None;
         let (mut radius_sum,mut radius_count) = (0.,0);
         let (mut spent,mut queried) = ([0.;3],0);
         // half a step off the side, every station's section first, on every core
@@ -699,12 +731,9 @@ impl Cutter {
             let mut hit_here = false;
             let loops = sections.next().expect("a section a station")?;
             for profile in &loops {
-                let total = profile.augmented_length();
-                let count = ((total/0.3).ceil() as usize).max(8);
                 let mut queries = Vec::new();
                 let clock = crate::util::clock::Instant::now();
-                for i in 0..count {
-                    let s = total*i as f64/count as f64;
+                for s in profile.places(REACH_SAMPLES) {
                     let sample = self.sample(profile,s)?;
                     match tracer.nearest(sample,declared,0.) {
                         Ok(Some((p,_))) => queries.push((s,sample,p)),
@@ -740,7 +769,7 @@ impl Cutter {
                 if any {
                     if hit_here { return Err("two section loops of the cutter reach the blank at one station".into()) }
                     hit_here = true;
-                    if order.is_none() { order = Some(profile.pieces.iter().map(|p| p.face).collect()); }
+                    if order.is_none() { order = Some(profile.pieces.iter().map(|p| (p.face,p.length())).collect()); }
                 }
             }
             if hit_here { inside_stations.push(c); }
@@ -763,16 +792,19 @@ impl Cutter {
         let (lo,hi) = (station(first as f64),station(first as f64+span));
         // a unit of station along a prism is a millimetre
         let radius = if cyclic { radius_sum/radius_count.max(1) as f64 } else { 1. };
-        // the walk: the contiguous run of hit faces in loop order, likewise
-        let hit: Vec<usize> = order.iter().enumerate().filter(|(_,f)| face_hits.contains_key(f)).map(|(i,_)| i).collect();
+        // the walk: the contiguous run of hit faces in loop order, the complement of the longest
+        // stretch of faces missed between two hit (by their length: a face missed, and where its
+        // stretch is no longer than another's, the walk turned the wrong way round the loop)
+        let hit: Vec<usize> = order.iter().enumerate().filter(|(_,f)| face_hits.contains_key(&f.0)).map(|(i,_)| i).collect();
         let n = order.len();
-        let mut biggest = (0,0);
+        let mut biggest = (-1.,0);
         for (i,&h) in hit.iter().enumerate() {
             let next = hit[(i+1)%hit.len()];
-            let width = (next as i64-h as i64).rem_euclid(n as i64);
-            if width > biggest.0 { biggest = (width,i); }
+            let width = (next as i64-h as i64).rem_euclid(n as i64) as usize;
+            let missed: f64 = (1..width).map(|k| order[(h+k)%n].1).sum();
+            if missed > biggest.0 { biggest = (missed,i); }
         }
-        let (start_face,end_face) = (order[hit[(biggest.1+1)%hit.len()]],order[hit[biggest.1]]);
+        let (start_face,end_face) = (order[hit[(biggest.1+1)%hit.len()]].0,order[hit[biggest.1]].0);
         Ok(Reach {stations:[lo,hi],start:Anchor {face:start_face,fraction:face_hits[&start_face].0},
             end:Anchor {face:end_face,fraction:face_hits[&end_face].1},faces:hit.len(),radius,spent,queried})
     }

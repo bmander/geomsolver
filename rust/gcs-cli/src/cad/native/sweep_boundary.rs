@@ -133,7 +133,7 @@ fn swept_sheets(session: &Session,cut: &SweptCut,cutter: &Cutter,inside: Inside,
     tolerance: Option<Tolerance>,fitted: &mut dyn FnMut(&Sheet) -> Result<Judged,ExportRefusal>) -> Result<Fitted,ExportRefusal> {
     let (scale,name) = (cut.scale,&cut.name);
     let chart = cut.contacts.as_ref().map_err(Clone::clone).and_then(SweepContacts::chart).at(Stage::Reach)?;
-    let tracer = Tracer {chart,scale,inside,debug:tracing()};
+    let tracer = Tracer {chart,scale,inside,unit:1.,debug:tracing()};
     let started = std::time::Instant::now();
     let reach = session.reach(&cutter,&tracer).at(Stage::Reach)?;
     stage(&format!("`{name}`: contacts reach the blank over {:.1} degrees of stations and {} profile faces ({:?}: \

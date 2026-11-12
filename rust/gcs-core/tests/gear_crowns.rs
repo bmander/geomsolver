@@ -279,16 +279,19 @@ fn built(rewrite: &dyn Fn(String) -> String,tolerance: Option<f64>) -> [(f64,f64
 /// one tooth space each, built by this kernel, takes from each blank the space
 /// `native_surfaces::gear_cells` records of OCCT's construction (120.708817 and 117.137321 mm³),
 /// to the same 1e-3 — so the check stands where the native build is not made.  The drawn sections
-/// took 120.675849 and 117.134204 mm³ by this kernel, which the regions take to 1e-7.
+/// took 120.675849 and 117.134204 mm³ by this kernel while its trace laid its lengths in
+/// millimetres, which the regions took to 1e-7; laid in each cut's own scale (#904 A3: the bevel
+/// pair's crown tooth walks 12.24 mm of faces to the configured pinion's 13.79) the regions take
+/// 120.674907 and 117.132029 mm³, which they are held to, to the same 1e-7.
 #[test]
 fn the_regions_cut_the_recorded_tooth_spaces() {
     let spaces = built(&|text| fixtures::gear::one_space(&fixtures::gear::bevel(&text)),None);
-    for ((member,(volume,blank,_)),(recorded,drawn)) in ["pinion","gear"].iter().zip(spaces)
-        .zip([(120.708817,120.675849),(117.137321,117.134204)]) {
+    for ((member,(volume,blank,_)),(recorded,regions)) in ["pinion","gear"].iter().zip(spaces)
+        .zip([(120.708817,120.674907),(117.137321,117.132029)]) {
         let space = blank-volume;
-        eprintln!("{member}: tooth space {space:.6} mm³, OCCT's {recorded}, the drawn sections' {drawn}");
+        eprintln!("{member}: tooth space {space:.6} mm³, OCCT's {recorded}, the regions' {regions}");
         assert!((space-recorded).abs() < 1e-3*recorded,"{member}: {space} against {recorded}");
-        assert!((space-drawn).abs() < 1e-7*drawn,"{member}: {space} against the drawn sections' {drawn}");
+        assert!((space-regions).abs() < 1e-7*regions,"{member}: {space} against the regions' {regions}");
     }
 }
 

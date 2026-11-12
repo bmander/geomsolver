@@ -270,15 +270,61 @@ fn the_pinion_as_written_is_built_by_sectors() {
     exact.solid.check(1e-6).unwrap();
 }
 
-/// The pair with a 20-tooth pinion: at the gear's heel a corner of the cutter grazes the blank's
+/// **The pinion scaled is built as the pinion is** (#904 A3): every length of the pair 0.625 times
+/// as long — a 1.25 mm module, the offset and the allowances — and cut by the mill its balance finds
+/// there (the configured mill scaled, stated: `hypoid_machine::the_face_mill_scaled_is_found_scaled`),
+/// the pinion is built by sectors with the faces it has at its own size. Its cut is traced in its
+/// own scale (`trace::Tracer::unit`): the crown tooth's faces it walks are 0.625 times as long, and
+/// its sheet is the pinion's, scaled. While the construction's lengths were millimetres the reach,
+/// asking every 0.3 mm, missed the tooth's 0.24 mm tip and walked the wrong way round the tooth,
+/// and a station's contact curve ended inside the blank.
+#[test]
+fn the_pinion_scaled_is_built_as_the_pinion_is() {
+    let s = 0.625;
+    let e = fixtures::gear::read(&fixtures::gear::scaled_as_found(s));
+    let body = fixtures::solid(&e,"pair.pinion.body");
+    let lines = std::sync::Mutex::new(Vec::new());
+    let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
+    let exact = export::exact(&e.sketch,body,None,None,&say).unwrap_or_else(|r| panic!("{r:?}\n{}",lines.lock().unwrap().join("\n")));
+    let said = lines.lock().unwrap().join("\n");
+    let walk = gcs_core::brep::swept::trace::REFERENCE_WALK*s;
+    assert!(said.contains(&format!("`pair.pinion.cut.removal`: contacts reach the blank over 7.5 degrees of stations and 5 \
+        profile faces, {walk:.3} mm of them")),"{said}");
+    assert!(said.contains("`pair.pinion.cut.removal`: sheet 240x66, one chart"),"{said}");
+    assert!(said.contains("turned the sector into 24 copies"),"{said}");
+    assert_eq!(exact.solid.faces.len(),147,"{said}");
+    exact.solid.check(1e-6).unwrap();
+}
+
+/// **Each member of the pair is built alike at every scale** (#904 A3): the pinion at half its size
+/// and at 0.75 and 1.5 times, and the gear at 0.625 and 1.5 times, each cut by its balance's mill
+/// there (`fixtures::gear::scaled_as_found`), are built with the faces each has at its own size.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about a minute: five members of scaled pairs built")]
+fn each_member_of_the_pair_is_built_alike_at_every_scale() {
+    for (member,s,faces) in [("pinion",0.5,147),("pinion",0.75,147),("pinion",1.5,147),("gear",0.625,291),("gear",1.5,291)] {
+        let e = fixtures::gear::read(&fixtures::gear::scaled_as_found(s));
+        let body = fixtures::solid(&e,&format!("pair.{member}.body"));
+        let lines = std::sync::Mutex::new(Vec::new());
+        let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
+        let exact = export::exact(&e.sketch,body,None,None,&say)
+            .unwrap_or_else(|r| panic!("the {member} at {s}: {r:?}\n{}",lines.lock().unwrap().join("\n")));
+        let said = lines.lock().unwrap().join("\n");
+        assert_eq!(exact.solid.faces.len(),faces,"the {member} at {s}: {said}");
+        exact.solid.check(1e-6).unwrap();
+    }
+}
+
+/// The pair with a 21-tooth pinion: at the gear's heel a corner of the cutter grazes the blank's
 /// end relief at some stations and is a fan the sheet's rows stop before at others
 /// (`contact_trace::charted`), so the cut's fitted sheet ends a few microns inside the blank, where
 /// it divides nothing. Carried on past it by its own surface (`sweep::sheet`), the sector splits
-/// into its cells, is turned into every copy, and agrees with its field.
+/// into its cells, is turned into every copy, and agrees with its field. (The 20-tooth pair's did,
+/// until its sheet was laid in its own scale, #904 A3: its rows now reach the corner.)
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 10 s: the 20-tooth pair's gear built and measured")]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 10 s: the 21-tooth pair's gear built and measured")]
 fn a_sheet_ending_in_the_blank_is_carried_out_of_it() {
-    let e = fixtures::gear::read(&fixtures::gear::configure(&fixtures::gear::source(),&[("pinion_teeth",20.)]));
+    let e = fixtures::gear::read(&fixtures::gear::configure(&fixtures::gear::source(),&[("pinion_teeth",21.)]));
     let body = fixtures::solid(&e,"pair.gear.body");
     let lines = std::sync::Mutex::new(Vec::new());
     let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};

@@ -1536,6 +1536,35 @@ and every chart and point's contact times read through the solver, before the mo
 every sheet and every surface point's times the same to the bit, and every chart and point read
 after the same as one read before, none new.
 
+**A traced sheet is laid in its cut's own scale (#904 A3):** the reach (`Cutter::reach`) asks every
+piece of a section loop at the same number of places (`REACH_SAMPLES`, and each convex corner's fan
+at its middle), however long, and its walk is the complement of the longest stretch of faces missed
+between two hit, by their length — at a fixed 0.3 mm the pair at 0.625 missed the crown tooth's
+0.24 mm tip, and a tie of face counts turned the walk the wrong way round the tooth. A cutter of
+revolutions' cut has a unit (`Tracer::unit`): the length of the faces that walk runs over at the
+band's middle station (`Loop::walked`) over `REFERENCE_WALK`, 13.7855 mm, the configured pinion's
+crown tooth's, where the construction's lengths were set (its unit is one). The rows' and columns'
+spacings and the trace's step, how far a curve first runs out of the blank, a fan's walk
+(`Loop::scaled`, `TURN_SCALE`), and the gross fit's distance, its local trust and how near the
+blank a withheld contact is held, are each that many times their constant. A stated tolerance stays
+a physical length (`Tolerance`), as the sector's side clearance (`sector::MARGIN`) does; a screw's
+sheet keeps its own spacings, and a prism's cut stays at unit one (open): its stations are
+millimetres along it and a drafted prism's crease fan is laid when the cutter is read
+(`CREASE_SCALE`). Moving the bar's cap off unit one moves `prism_caps`' and `bar_end.sv`'s volumes
+by up to 5e-6 either way (from 0.5 to 2 of it), past the 1e-6 and 2e-6 they are held to, so its
+scale waits on the fit's own scatter there. So the hypoid
+pair with every length scaled (its mill the balance finds there, `hint(40 * mean_module)` seeding
+it) is traced as the pair is, and built with the same faces
+(`brep_export::the_pinion_scaled_is_built_as_the_pinion_is`, at 0.625;
+`each_member_of_the_pair_is_built_alike_at_every_scale`, slow;
+`hypoid_machine::the_face_mill_scaled_is_found_scaled`). What scaling no longer moves, resolution
+still does, and the configured pinion's cut holds only near its own unit (open): traced at 0.97 or
+1.02 of it a station beside the blank finds no contact near its neighbour's, and at 0.95 or 1.05
+neither row placement fits within the gross bars — by walk length the fit turns 21° from contacts
+a quarter millimetre outside the blank by its first rows, and by length in space a column whose
+curve is short in space crowds its rows and the fit's normal turns 90°. The gear's cut and both
+reliefs hold over 0.85 to 1.2.
+
 **Screws, the constant-twist class (#64):** a sweep under a screw (`f screws(a) l`) is admitted by
 rows S1–S4 (`solid::constant_twist`, docs/generating-sweeps.md): the tool's characteristic (each
 ring's `A cos + B sin + C` roots under the screw's twist, fixed on the tool) walked through the blank,

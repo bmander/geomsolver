@@ -250,7 +250,8 @@ pub fn helical_sheet(name: &str,scale: f64,path: &Trajectory,roll: [f64;2],found
         return Ok(Fitted {face:tube.clone(),sheet,error:0.,faces:tube,parted:Vec::new()})
     }
     let sides = |grid: &Grid| lay(grid,Withheld::Sides);
-    settle(name,scale,sheet,&grid,&sides,inside,near,tolerance,"rows along the characteristic",say)?.and_then(|(mut fitted,kind)| {
+    // (its gross bars at unit one: a screw's sheet is laid by its own spacings, not the trace's)
+    settle(name,scale,1.,sheet,&grid,&sides,inside,near,tolerance,"rows along the characteristic",say)?.and_then(|(mut fitted,kind)| {
         if cut.is_empty() && !found.whole && !found.closed { return Ok(fitted) }
         fitted.faces = fitted.named(kind,&|_| String::new(),found.whole.then_some(AROUND),found.closed).at(Stage::Fit)?;
         let creased = creased_where(found);

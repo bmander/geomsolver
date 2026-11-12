@@ -964,7 +964,7 @@ fitted (`sweep::sheet`, `nurbs::interpolate_net`; a fitted
 edge still in the blank between its nodes — a cutter's corner grazing it at stations where it is
 elsewhere a fan the rows stop before, `contact_trace::charted` — is carried on past it by its own
 surface, `Net::extended`, only where what that puts in the blank is within the fit's bar, else left
-as it is: an edge in the blank divides nothing; `brep_export.rs`'s 20-tooth gear), blank split
+as it is: an edge in the blank divides nothing; `brep_export.rs`'s 21-tooth gear), blank split
 (`boolean::split`), cells judged by the field (`sweep::sector`; else `sector::whole`), sector
 patterned. `brep::export::{exact,step,stl}` is shared by `solventc` and `app/export-worker.ts`
 (`gcs_solid_exact`, and `gcs_solid_exact_note` for the sliver its solid holds, `brep::export::slivers`,

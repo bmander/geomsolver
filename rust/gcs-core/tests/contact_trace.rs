@@ -35,7 +35,7 @@ fn station(angle: f64) -> Station<'static> {
 fn a_traced_contact_curve_is_one_root_carried_out_of_the_blank() {
     let sweep = sweep();
     let inside = |points: &[V]| Ok(points.iter().map(in_post).collect());
-    let tracer = Tracer {chart:sweep.chart().unwrap(),scale:1.,inside:&inside,debug:false};
+    let tracer = Tracer {chart:sweep.chart().unwrap(),scale:1.,inside:&inside,unit:1.,debug:false};
     let (mut traced,mut missed) = (0,0);
     for k in 0..48 {
         let station = station(TAU*(k as f64+0.5)/48.);
@@ -75,7 +75,7 @@ fn a_traced_contact_curve_is_one_root_carried_out_of_the_blank() {
 fn a_sheet_of_contact_curves_is_one_chart() {
     let sweep = sweep();
     let inside = |points: &[V]| Ok(points.iter().map(in_post).collect());
-    let tracer = Tracer {chart:sweep.chart().unwrap(),scale:1.,inside:&inside,debug:false};
+    let tracer = Tracer {chart:sweep.chart().unwrap(),scale:1.,inside:&inside,unit:1.,debug:false};
     // The band the stations reach, coarsely: those whose curve anchors in the post.
     let hits: Vec<f64> = (0..96).map(|k| TAU*(k as f64+0.5)/96.)
         .filter(|&a| tracer.trace(&station(a),0.5,Extent::Blank).is_ok()).collect();
@@ -135,7 +135,7 @@ fn a_sheet_keeps_its_rows_only_while_the_margin_is_one_chart() {
 fn a_sample_without_a_normal_is_degenerate() {
     let sweep = sweep();
     let inside = |points: &[V]| Ok(points.iter().map(in_post).collect());
-    let tracer = Tracer {chart:sweep.chart().unwrap(),scale:1.,inside:&inside,debug:false};
+    let tracer = Tracer {chart:sweep.chart().unwrap(),scale:1.,inside:&inside,unit:1.,debug:false};
     let e = tracer.contacts(Sample {position:[4.,0.,2.],normal:[0.;3]},tracer.wide()).unwrap_err();
     assert!(matches!(e,TraceError::Degenerate(_)),"{e:?}");
     assert_eq!(e.to_string(),"degenerate normal");
@@ -185,7 +185,7 @@ fn a_sheet_is_refined_where_its_withheld_contacts_miss() {
 fn a_refined_sheet_reads_its_new_nodes_where_the_coarse_one_withheld_them() {
     let sweep = sweep();
     let inside = |points: &[V]| Ok(points.iter().map(in_post).collect());
-    let tracer = Tracer {chart:sweep.chart().unwrap(),scale:1.,inside:&inside,debug:false};
+    let tracer = Tracer {chart:sweep.chart().unwrap(),scale:1.,inside:&inside,unit:1.,debug:false};
     let hits: Vec<f64> = (0..96).map(|k| TAU*(k as f64+0.5)/96.)
         .filter(|&a| tracer.trace(&station(a),0.5,Extent::Blank).is_ok()).collect();
     let band = Band {stations:[hits[0],*hits.last().unwrap()],radius:1.,limit:std::f64::consts::TAU};
