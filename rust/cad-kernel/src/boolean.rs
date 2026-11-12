@@ -1329,7 +1329,7 @@ impl<'a> Arrangement<'a> {
                 // the sine off the path, which a given meeting takes no vertex from — the drum's
                 // end rim's two fans, screwed through whole turns, sharing the path of the rim's
                 // points a turn's tenth apart)
-                (Meets::At(roots),Some(curves)) => match on_given(c,e.t,curves,surface,tol.max(e.tol)) {
+                (Meets::At(roots),Some(curves)) if !roots.is_empty() => match on_given(c,e.t,curves,surface,tol.max(e.tol)) {
                     Meets::At(exact) => {
                         let speed = c.speed().max(1e-300);
                         Meets::At(roots.into_iter().map(|(s,touch)| exact.iter().map(|&(x,_)| x)
@@ -1438,6 +1438,15 @@ impl<'a> Arrangement<'a> {
                     d *= 2.;
                 }
             };
+            let (lo,hi) = (reach(-1.),reach(1.));
+            // the edge's own cuts, then the crossings found beside it, each where it stands on the
+            // edge's stretch
+            let found_beside = beside.iter().filter(|&&w| !self.cuts[l.edge].iter().any(|&(_,u)| u == w))
+                .filter_map(|&w| super::tolerant::on_stretch(c,e.t,self.pool.pts[w as usize],tol.max(e.tol)).map(|t| (t,w)));
+            let exact = self.cuts[l.edge].iter().copied().chain(found_beside)
+                .filter(|&(t,w)| w != l.vertex && !rooted.contains(&(l.edge,w)) && t >= lo && t <= hi)
+                .min_by(|x,y| (x.0-l.t).abs().total_cmp(&(y.0-l.t).abs()));
+            let Some((at,w)) = exact else { continue };
             // (a crossing on a meeting given between a face the edge bounds and that surface is
             // where the edge crosses the given curves, exactly, however shallowly the edge meets the
             // surface: two sheets of a sweep crossing along a path at a degree, the rim of one
@@ -1448,15 +1457,6 @@ impl<'a> Arrangement<'a> {
                 .any(|h| { let k = self.shared.index(&self.solids[l.side].faces[h].surface,tol);
                     self.shared.given(k,j) && self.shared.given_curves(k,j).iter().any(|g| distance(g.point(g.inverse(q)),q) <= super::tolerant::ON_CURVE*tol) });
             if on_given { continue }
-            let (lo,hi) = (reach(-1.),reach(1.));
-            // the edge's own cuts, then the crossings found beside it, each where it stands on the
-            // edge's stretch
-            let found_beside = beside.iter().filter(|&&w| !self.cuts[l.edge].iter().any(|&(_,u)| u == w))
-                .filter_map(|&w| super::tolerant::on_stretch(c,e.t,self.pool.pts[w as usize],tol.max(e.tol)).map(|t| (t,w)));
-            let exact = self.cuts[l.edge].iter().copied().chain(found_beside)
-                .filter(|&(t,w)| w != l.vertex && !rooted.contains(&(l.edge,w)) && t >= lo && t <= hi)
-                .min_by(|x,y| (x.0-l.t).abs().total_cmp(&(y.0-l.t).abs()));
-            let Some((at,w)) = exact else { continue };
             self.say.flat_root(self.pool.pts[l.vertex as usize],self.pool.pts[w as usize]);
             self.cuts[l.edge].retain(|&(_,u)| u != l.vertex);
             if !self.cuts[l.edge].iter().any(|&(_,u)| u == w) { self.cuts[l.edge].push((at,w)); }
@@ -2906,7 +2906,8 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool,tol: f64) -
     // sheet's rim on a coincident face beside the turn's axis — spanning the pole's line in them)
     let point_like = |h: &Half| {
         let e = &out[h.edge as usize];
-        matches!(e.curve,EdgeCurve::Curve(_)) && (0..=8).all(|k| distance(e.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/8.,pool),pool.pts[e.v[0] as usize]) <= tol)
+        let ends = e.v.map(|v| pool.pts[v as usize]);
+        matches!(e.curve,EdgeCurve::Curve(_)) && distance(ends[0],ends[1]) <= 2.*tol && (0..=8).all(|k| distance(e.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/8.,pool),pool.pts[e.v[0] as usize]) <= tol)
     };
     let kept: Vec<Half> = halves.iter().filter(|h| !point_like(h)).cloned().collect();
     let cut = poles_cut(f,&kept,out);
@@ -2991,7 +2992,7 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool,tol: f64) -
                     for (k,x) in halves.iter().enumerate() {
                         let e = &out[x.edge as usize];
                         eprintln!("pieces: half {k} edge {} ({}, vertices {:?} at {:?}) along {} nodes {:?} from {:?} to {:?} leave {:.4} back {:.4}, middle {:?}{}",
-                            x.edge,match &e.curve { EdgeCurve::Curve(c) => c.kind(),_ => "degenerate" },e.v,e.v.map(|v| pool.pts[v as usize]),
+                            x.edge,e.curve.kind(),e.v,e.v.map(|v| pool.pts[v as usize]),
                             x.along,ends[k],x.from,x.to,leave[k],arrive_back[k],e.point(0.5*(e.t[0]+e.t[1]),pool),if cycle.contains(&k) { " (this cycle)" } else { "" });
                     }
                 }

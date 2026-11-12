@@ -24,6 +24,11 @@ pub struct Vertex { pub p: V,pub tol: f64 }
 #[derive(Clone,Debug)]
 pub enum EdgeCurve { Curve(Curve),Degenerate }
 
+impl EdgeCurve {
+    /// Its curve's kind, or "degenerate", for what the kernel says of it.
+    pub fn kind(&self) -> &'static str { match self { EdgeCurve::Curve(c) => c.kind(),EdgeCurve::Degenerate => "degenerate" } }
+}
+
 /// A stretch of a curve from `t[0]` at `v[0]` to `t[1]` at `v[1]` (`t[0] < t[1]`; a closed edge
 /// has one vertex at both ends).
 #[derive(Clone,Debug)]
@@ -532,7 +537,7 @@ impl Brep {
                     let corner = tol.max(2.*(self.edges[c.edge as usize].tol+self.edges[next.edge as usize].tol)).max(2.*at);
                     if distance(f.surface.point(a),f.surface.point(b)) > corner || (a[0]-b[0]).abs().max((a[1]-b[1]).abs()) > 1e-3 {
                         if crate::debug() {
-                            let kind = |c: &Coedge| match &self.edges[c.edge as usize].curve { EdgeCurve::Curve(x) => x.kind(),_ => "degenerate" };
+                            let kind = |c: &Coedge| self.edges[c.edge as usize].curve.kind();
                             eprintln!("topo: face {fi} breaks between edge {} ({}, tol {:e}) and edge {} ({}, tol {:e}) at vertex {:?} (tol {at:e}): {:?} and {:?} apart {:e}, corner {corner:e}",
                                 c.edge,kind(c),self.edges[c.edge as usize].tol,next.edge,kind(next),self.edges[next.edge as usize].tol,self.vertices[self.ends(c)[1] as usize].p,
                                 f.surface.point(a),f.surface.point(b),distance(f.surface.point(a),f.surface.point(b)));
