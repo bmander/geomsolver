@@ -69,13 +69,13 @@ fn transverse() -> [(f64, f64); 4] {
     [(18., -0.842856 / c), (18., 0.842856 / c), (24., 3.026666 / c), (24., -3.026666 / c)]
 }
 
-/// **The helical rack's sheet is its transverse envelope carried up a helix**, not traced, and
-/// agrees with the traced sheet: every contact the trace found in the blank (each a root of the
-/// contact equation, exact) lies on it within its own fit, with its normal.
-#[test]
-fn a_helical_racks_sheet_is_its_transverse_envelope_screwed() {
+/// `document`'s gear solved and its cut's sheet built (`sweep::sheet`): carried up its helix, not
+/// traced, within 1e-4 mm of its curve, and every contact the trace finds in the blank (each a
+/// root of the contact equation, exact) on it within its own fit, with its normal to within `bar`
+/// degrees.  The sheet, and the lines said building it.
+fn screwed(document: &str, bar: f64) -> (gcs_core::brep::sweep::sheet::Fitted, Vec<String>) {
     use gcs_core::brep::sweep::{self, sheet::feet_near, Say};
-    let mut e = build(&leaned(SPACE));
+    let mut e = build(document);
     let r = gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
     assert!(r.success, "{}", r.message);
     let gear = e.map.ent_named("gear").unwrap().i();
@@ -87,11 +87,7 @@ fn a_helical_racks_sheet_is_its_transverse_envelope_screwed() {
     let prepared = sweep::prepare(&e.sketch, gear, &recipe, &admission, &say).unwrap_or_else(|r| refused(r));
     let built = sweep::sheet(&prepared, 0, None, &say).unwrap_or_else(|r| refused(r));
     assert!(lines.lock().unwrap().iter().any(|l| l.contains("carried up its helix")), "the sheet was not screwed");
-    // turned tan β / r a millimetre up, one way or the other as the axis is read: the helix of the
-    // pitch circle's lead
-    let want = (LEAN.to_radians().tan() / 20.).to_degrees();
-    assert!(lines.lock().unwrap().iter().any(|l| l.contains(&format!("{want:.4} degrees a millimetre up"))),
-            "the helix is not tan β / r, {want:.4} degrees a millimetre");
+    let said = lines.lock().unwrap().clone();
     let traced = sweep::traced(&prepared, 0, None, &say).unwrap_or_else(|r| refused(r));
     // the blank in the export's millimetres: radius 22 about y, from 0 to 6 along it
     let inside = |p: &[f64; 3]| p[0].hypot(p[2]) < 22. && p[1] > 0. && p[1] < 6.;
@@ -109,8 +105,41 @@ fn a_helical_racks_sheet_is_its_transverse_envelope_screwed() {
     eprintln!("{} traced contacts within {gap:.2e} mm of the screwed sheet, normals within {turn:.2e} degrees (its error {:.2e})",
         points.len(), built.error);
     assert!(built.error < 1e-4, "the screwed sheet is {:.2e} mm off its curve", built.error);
-    assert!(gap <= built.error + 1e-7 && turn < 1e-2,
+    assert!(gap <= built.error + 1e-7 && turn < bar,
             "the traced contacts lie {gap:.2e} mm and {turn:.2e} degrees off the screwed sheet");
+    (built, said)
+}
+
+/// `document`'s gear built exactly: swept, not patterned, what it removes the space the transverse
+/// `tooth` removes by arithmetic (`rack_space`) times the blank's thickness, to 0.01 mm³, and its
+/// STL written only where the material field agrees with it.  `note` follows the volumes said.
+fn cuts_its_space(document: &str, tooth: &[(f64, f64)], note: &str) {
+    use gcs_core::brep::{export, sweep::Say};
+    let mut e = build(document);
+    let r = gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    let gear = e.map.ent_named("gear").unwrap().i();
+    let say = Say { stage: &|l: &str| eprintln!("{l}"), mark: &|_| {} };
+    let exact = export::exact(&e.sketch, gear, None, None, &say).unwrap_or_else(|r| panic!("refused at {:?}: {}", r.stage, r.message));
+    assert!(exact.swept && exact.pattern.is_none());
+    let removed = PI * 22. * 22. * 6. - gcs_core::brep::props::volume(&exact.solid);
+    let want = 6. * rack_space(tooth, 20., [18., 22.], [-PI / 3., PI / 3.], 400, 4000);
+    eprintln!("removed {removed:.5} mm³, the space being {want:.5}{note}");
+    assert!((removed - want).abs() < 0.01, "removed {removed:.5} mm³, the space being {want:.5}");
+    export::stl(&e.sketch, gear, &exact, None, &say).unwrap_or_else(|r| panic!("the STL refused at {:?}: {}", r.stage, r.message));
+}
+
+/// **The helical rack's sheet is its transverse envelope carried up a helix**, not traced, and
+/// agrees with the traced sheet: every contact the trace found in the blank (each a root of the
+/// contact equation, exact) lies on it within its own fit, with its normal.
+#[test]
+fn a_helical_racks_sheet_is_its_transverse_envelope_screwed() {
+    let (built, said) = screwed(&leaned(SPACE), 1e-2);
+    // turned tan β / r a millimetre up, one way or the other as the axis is read: the helix of the
+    // pitch circle's lead
+    let want = (LEAN.to_radians().tan() / 20.).to_degrees();
+    assert!(said.iter().any(|l| l.contains(&format!("{want:.4} degrees a millimetre up"))),
+            "the helix is not tan β / r, {want:.4} degrees a millimetre");
     // its normals are the helicoid's, not the section's: leaned out of the plane square to the axis
     let lean = built.sheet.normals.iter().map(|n| n[1].abs()).fold(0., f64::max);
     assert!(lean > 0.1, "the sheet's normals lie square to the axis (at most {lean:.3} along it)");
@@ -121,19 +150,7 @@ fn a_helical_racks_sheet_is_its_transverse_envelope_screwed() {
 /// material field agrees with it.
 #[test]
 fn a_helical_racks_tooth_space_is_built() {
-    use gcs_core::brep::{export, sweep::Say};
-    let mut e = build(&leaned(SPACE));
-    let r = gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
-    assert!(r.success, "{}", r.message);
-    let gear = e.map.ent_named("gear").unwrap().i();
-    let say = Say { stage: &|l: &str| eprintln!("{l}"), mark: &|_| {} };
-    let exact = export::exact(&e.sketch, gear, None, None, &say).unwrap_or_else(|r| panic!("refused at {:?}: {}", r.stage, r.message));
-    assert!(exact.swept && exact.pattern.is_none());
-    let removed = PI * 22. * 22. * 6. - gcs_core::brep::props::volume(&exact.solid);
-    let want = 6. * rack_space(&transverse(), 20., [18., 22.], [-PI / 3., PI / 3.], 400, 4000);
-    eprintln!("removed {removed:.5} mm³, the space being {want:.5}");
-    assert!((removed - want).abs() < 0.01, "removed {removed:.5} mm³, the space being {want:.5}");
-    export::stl(&e.sketch, gear, &exact, None, &say).unwrap_or_else(|r| panic!("the STL refused at {:?}: {}", r.stage, r.message));
+    cuts_its_space(&leaned(SPACE), &transverse(), "");
 }
 
 /// **A helical gear's STEP is about its spur twin's size** (#826, where it was 8× it): the whole
@@ -227,39 +244,9 @@ fn rounded_transverse() -> Vec<(f64, f64)> {
 /// the trace finds lies on it within its own fit, with its normal.
 #[test]
 fn a_helical_rack_with_rounded_tips_is_screwed() {
-    use gcs_core::brep::sweep::{self, sheet::feet_near, Say};
-    let mut e = build(&rounded(&leaned(SPACE)));
-    let r = gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
-    assert!(r.success, "{}", r.message);
-    let gear = e.map.ent_named("gear").unwrap().i();
-    let admission = admit_body(&e.sketch, gear, &Options::default()).unwrap_or_else(|e| panic!("refused: {e}"));
-    let recipe = gcs_core::solid::cad::recipe_static(&e.sketch, gear).unwrap();
-    let lines = std::sync::Mutex::new(Vec::<String>::new());
-    let say = Say { stage: &|l: &str| { eprintln!("{l}"); lines.lock().unwrap().push(l.to_string()) }, mark: &|_| {} };
-    let refused = |r: gcs_core::solid::export::ExportRefusal| -> ! { panic!("refused at {:?}: {}", r.stage, r.message) };
-    let prepared = sweep::prepare(&e.sketch, gear, &recipe, &admission, &say).unwrap_or_else(|r| refused(r));
-    let built = sweep::sheet(&prepared, 0, None, &say).unwrap_or_else(|r| refused(r));
-    assert!(lines.lock().unwrap().iter().any(|l| l.contains("carried up its helix")), "the sheet was not screwed");
-    let traced = sweep::traced(&prepared, 0, None, &say).unwrap_or_else(|r| refused(r));
-    let inside = |p: &[f64; 3]| p[0].hypot(p[2]) < 22. && p[1] > 0. && p[1] < 6.;
-    let angle = |a: [f64; 3], b: [f64; 3]| (a[0] * b[0] + a[1] * b[1] + a[2] * b[2]).abs().min(1.).acos().to_degrees();
-    let (points, normals): (Vec<[f64; 3]>, Vec<[f64; 3]>) = traced.sheet.points.iter().zip(&traced.sheet.normals)
-        .chain(traced.sheet.withheld.iter().zip(&traced.sheet.withheld_normals))
-        .filter(|(p, _)| inside(p)).map(|(p, n)| (*p, *n)).unzip();
-    assert!(points.len() > 500, "only {} traced contacts in the blank", points.len());
-    let feet = feet_near(&built.face, &points, &vec![[f64::NAN; 2]; points.len()], 0.);
-    let (mut gap, mut turn) = (0f64, 0f64);
-    for (foot, n) in feet.iter().zip(&normals) {
-        let (m, d) = foot.expect("a foot on the sheet");
-        (gap, turn) = (gap.max(d), turn.max(angle(m, *n)));
-    }
-    eprintln!("{} traced contacts within {gap:.2e} mm of the screwed sheet, normals within {turn:.2e} degrees (its error {:.2e})",
-        points.len(), built.error);
-    assert!(built.error < 1e-4, "the screwed sheet is {:.2e} mm off its curve", built.error);
     // (the section's curve is held to 0.05° of the envelope's tangent, `extruded::TURN`: the
     // fillets' tight bends, not the flanks, come nearest it)
-    assert!(gap <= built.error + 1e-7 && turn < 0.05,
-            "the traced contacts lie {gap:.2e} mm and {turn:.2e} degrees off the screwed sheet");
+    screwed(&rounded(&leaned(SPACE)), 0.05);
 }
 
 /// **The rounded rack's tooth space is built**: what it removes is the rounded transverse tooth's
@@ -267,18 +254,7 @@ fn a_helical_rack_with_rounded_tips_is_screwed() {
 /// material field agrees with it.
 #[test]
 fn a_helical_rack_with_rounded_tips_cuts_its_space() {
-    use gcs_core::brep::{export, sweep::Say};
-    let mut e = build(&rounded(&leaned(SPACE)));
-    let r = gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
-    assert!(r.success, "{}", r.message);
-    let gear = e.map.ent_named("gear").unwrap().i();
-    let say = Say { stage: &|l: &str| eprintln!("{l}"), mark: &|_| {} };
-    let exact = export::exact(&e.sketch, gear, None, None, &say).unwrap_or_else(|r| panic!("refused at {:?}: {}", r.stage, r.message));
-    assert!(exact.swept && exact.pattern.is_none());
-    let removed = PI * 22. * 22. * 6. - gcs_core::brep::props::volume(&exact.solid);
-    let want = 6. * rack_space(&rounded_transverse(), 20., [18., 22.], [-PI / 3., PI / 3.], 400, 4000);
     let sharp = 6. * rack_space(&transverse(), 20., [18., 22.], [-PI / 3., PI / 3.], 400, 4000);
-    eprintln!("removed {removed:.5} mm³, the space being {want:.5} ({sharp:.5} by the sharp tooth)");
-    assert!((removed - want).abs() < 0.01, "removed {removed:.5} mm³, the space being {want:.5}");
-    export::stl(&e.sketch, gear, &exact, None, &say).unwrap_or_else(|r| panic!("the STL refused at {:?}: {}", r.stage, r.message));
+    let note = format!(" ({sharp:.5} by the sharp tooth)");
+    cuts_its_space(&rounded(&leaned(SPACE)), &rounded_transverse(), &note);
 }
