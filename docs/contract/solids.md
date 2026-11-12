@@ -374,6 +374,12 @@ placement carries inside the blank; CLI test readers zero the offset.
   the parameter.  `solid_claim.rs`'s `a_claim_over_one_frame_says_what_it_leaves_standing` (a
   peg against a peg held still, against its closed form) and
   `a_train_tied_to_one_parameter_is_judged_as_it_rolls` (the same pegs turned at their ratio).
+  **A refuted pose costs its depth's search, indexed** (#904 A11): where two solids share
+  material, `clear::overlap` searches the deepest ball in the common region at up to 8192
+  points, each the nearest piece of the common boundary (a BVH, `bvh::Bvh::query_nearest`) and
+  whether both solids hold it (`Csg::inside_indexed` over each primitive's `RayIndex`) — the
+  same answers as every piece and every facet read, in their logarithm: a refuted sweep of two
+  gears read every facet of both at every point of every pose, minutes a pose.
   **A swept claim's names resolve as a lone claim's do** (`flatten/resolve.rs`'s `rewrite`): the
   motion it runs along and the solids its body judges are found through instances
   (`frame.body`) and, inside a component, under the instance's prefix; a free variable is left as

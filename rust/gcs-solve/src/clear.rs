@@ -61,9 +61,23 @@ fn overlap(
         }
         upper = upper.min((hi - lo) * 0.5);
     }
+    // the search asks the depth at thousands of points, each the nearest piece of the common
+    // boundary and whether both solids hold it: both indexed, so a point costs the logarithm of a
+    // gear's facets and not all of them (#904 A11) — the same nearest piece, the same crossings
+    let tree = crate::bvh::Bvh::new(common.iter().map(|p| {
+        let b = p.bbox_of();
+        crate::bvh::Bounds { lo: b.lo, hi: b.hi }
+    }));
+    let rays = |c: &solid::Csg| c.prims.iter().map(solid::RayIndex::new).collect::<Vec<_>>();
+    let (arays, brays) = (rays(acsg), rays(bcsg));
     let signed = |x: [f64; 3]| {
-        let d = common.iter().map(|p| point_to_piece(x, p)).fold(f64::INFINITY, f64::min);
-        if acsg.inside(x) && bcsg.inside(x) {
+        let d = std::cell::Cell::new(f64::INFINITY);
+        let at = crate::bvh::Bounds { lo: x, hi: x };
+        tree.query_nearest(|b| b.gap(at), || d.get(), |k| {
+            d.set(d.get().min(point_to_piece(x, &common[k])));
+        });
+        let d = d.get();
+        if acsg.inside_indexed(x, &arays) && bcsg.inside_indexed(x, &brays) {
             d
         } else {
             -d
