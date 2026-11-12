@@ -299,8 +299,8 @@ fn made_of<'a>(sk: &'a Sketch, name: &'a str) -> impl Iterator<Item = usize> + '
 pub fn material_text(sk: &Sketch, name: &str) -> String {
     let Some(m) = sk.materials.get(name) else { return format!("{name}: no material") };
     let beams = sk.beams.iter().filter(|b| b.material.as_deref() == Some(name));
-    let of: Vec<&str> = made_of(sk, name).map(|i| sk.solids[i].name.as_str())
-        .chain(beams.map(|b| b.name.as_str())).collect();
+    let of: Vec<String> = made_of(sk, name).map(|i| sk.solid_name(i))
+        .chain(beams.map(|b| b.name.clone())).collect();
     if of.is_empty() {
         format!("{}, of no solid", m.text())
     } else {

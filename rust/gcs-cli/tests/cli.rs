@@ -2001,3 +2001,38 @@ fn a_solid_reading_is_said() {
     let json = String::from_utf8_lossy(&run(&[path,"--json"]).stdout).into_owned();
     assert!(json.contains("\"error\": ") && !json.contains("\"error\": null"),"{json}");
 }
+
+/// **`--solid` picks a block's copy by the name the language reads** (#904 A14): copy 1 of the
+/// `pin` a `repeat` in the instance `box` makes is `box.pin[1]`, and the `body` of its `planet`
+/// `box.planet[1].body`, never the key with the block's statement id; a name left without the
+/// copy's index says the copies, and one that names nothing the objects there are.
+#[test]
+fn solid_picks_a_blocks_copy_by_its_index() {
+    let dir = std::env::temp_dir().join(format!("solventc-copy-names-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("box.sv");
+    std::fs::write(&source, "unit mm\nuse std\nuse std.solids\n\
+        component Gear(c: point) {\n  in std.top {\n    r := radius(3mm) circle(center: c)\n    \
+        body := solid(std.solids.Prism(face(r), from: 0, to: 4mm))\n  }\n}\n\
+        component Box(n: Int) {\n  repeat n as k {\n    in std.top {\n      c := point\n      \
+        fix((10 * k, 0)) c\n      r := radius(1mm) circle(center: c)\n      \
+        pin := solid(std.solids.Prism(face(r), from: 0, to: 6mm))\n      planet := Gear(c)\n    \
+        }\n  }\n}\nbox := Box(n: 3)\n").unwrap();
+    let (source, stl) = (source.to_str().unwrap(), dir.join("x.stl"));
+    let stl = stl.to_str().unwrap();
+    for name in ["box.pin[1]", "box.planet[1].body"] {
+        let out = run(&[source, "--no-diagnose", "--stl", stl, "--solid", name]);
+        assert_eq!(out.status.code(), Some(0), "{name}: {}", String::from_utf8_lossy(&out.stderr));
+        let bytes = std::fs::read(stl).unwrap();
+        assert!(bytes.starts_with(format!("solvent {name}\0").as_bytes()), "{name}");
+    }
+    let out = run(&[source, "--no-diagnose", "--stl", stl, "--solid", "box.pin"]);
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "{said}");
+    assert!(said.contains("`box.pin[0]`, `box.pin[1]`, `box.pin[2]`"), "{said}");
+    let out = run(&[source, "--no-diagnose", "--stl", stl, "--solid", "box.peg"]);
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(said.contains("no solid called `box.peg`: the objects are ")
+            && said.contains("`box.planet[2].body`") && !said.contains('#'), "{said}");
+    std::fs::remove_dir_all(dir).unwrap();
+}

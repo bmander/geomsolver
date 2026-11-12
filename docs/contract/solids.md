@@ -525,6 +525,21 @@ placement carries inside the blank; CLI test readers zero the offset.
   A name whose face a boolean ate is a *fact the report carries*, never an error.
   E080 a face that is not a loop on one plane, E081 a revolution's axis, E082 a face a body no
   longer has, E084 a section cut across its own view.
+- **A solid is called by the name the language reads it by** (#904 A14, `Sketch::solid_name`):
+  a block's copy by its index on the declaration it holds (`vocab::public_path`) — the `pin` copy
+  1 of a `repeat` in an instance `box` makes is `box.pin[1]`, the `body` of an instance `planet`
+  made there `box.planet[1].body` — never the key it is held by (`box.#15.1.pin`), whose
+  statement id moves whenever the file's statements do.  The key stays `SolidE::name`, what
+  faces, layers, uses and a binding's renaming route by (statement identity under expansion,
+  [relations.md](relations.md)); what is *said* reads `solid_name`: the timings, the reports, a
+  refusal of export, glTF nodes, an STL's header and a STEP product, the objects the page is
+  handed — and a refusal is placed by the solid it so names (`program::refusal_site` reads the
+  name or the key).  **A name picks a solid by one rule** (`Sketch::solid_called`, `solventc --solid`):
+  the name a solid is called, or its key; a name a block's copies go by without their index
+  (`box.pin`) is refused saying each copy, one two solids go by (a copy of a block within a
+  block's copy, its index written once) saying their keys, and one nothing goes by saying the
+  objects there are, so the name to write is learnt from the refusal.
+  `a_solid_a_blocks_copy_makes_is_called_by_its_index` (`tests/face_names.rs`).
 - **One cause is said once** (#572, `program::refused`).  After the solve a solid is refused
   (E080) in its own words only where nothing it is built on is refused (`solid::built_on`: its
   operands, and the solids a region's terms read — the body whose faces a round reads; a body is

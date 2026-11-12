@@ -309,3 +309,78 @@ fn w116(src: &str) -> Vec<(u32, String)> {
     solved(src).diags.iter().filter(|d| d.code.as_str() == "W116")
         .map(|d| (gcs_core::syntax::line_col(src, d.span.lo).0, d.message.clone())).collect()
 }
+
+/// A component whose `repeat` makes a pin and an instance `planet` with a `body`, three copies.
+const BOX: &str = "unit mm\nuse std\nuse std.solids\n\
+    component Gear(c: point) {\n\
+      in std.top {\n\
+        r := radius(3mm) circle(center: c)\n\
+        body := solid(std.solids.Prism(face(r), from: 0, to: 4mm))\n\
+      }\n\
+    }\n\
+    component Box(n: Int) {\n\
+      repeat n as k {\n\
+        in std.top {\n\
+          c := point\n\
+          fix((10 * k, 0)) c\n\
+          r := radius(1mm) circle(center: c)\n\
+          pin := solid(std.solids.Prism(face(r), from: 0, to: 6mm))\n\
+          planet := Gear(c)\n\
+        }\n\
+      }\n\
+    }\n\
+    box := Box(n: 3)\n";
+
+/// **A solid a block's copy makes is called by its index** (#904 A14): copy 1 of the `pin` a
+/// `repeat` in the instance `box` makes is `box.pin[1]`, and the `body` of its `planet`
+/// `box.planet[1].body` — the names the language reads them by — and never the key they are
+/// held by (`box.#15.1.pin`), whose statement id moves whenever the file's statements do.  So
+/// they are reported, timed, written and picked by them (`Sketch::solid_name`, `solid_called`),
+/// the key still picking its solid; and a name that picks none says what there is.
+#[test]
+fn a_solid_a_blocks_copy_makes_is_called_by_its_index() {
+    let e = solved(BOX);
+    let sk = &e.sketch;
+    let mut called: Vec<String> =
+        gcs_core::overview::objects(sk).into_iter().map(|i| sk.solid_name(i)).collect();
+    called.sort();
+    assert_eq!(called, ["box.pin[0]", "box.pin[1]", "box.pin[2]", "box.planet[0].body",
+                        "box.planet[1].body", "box.planet[2].body"]);
+    let policy = gcs_core::solid::ApproximationPolicy::from_unit(0.0);
+    let centre = |i: usize| {
+        let b = sk.evaluated_solid(i, policy).unwrap().world_bounds();
+        [0, 1, 2].map(|k| 0.5 * (b.lo[k] + b.hi[k]))
+    };
+    let apart =
+        |a: [f64; 3], b: [f64; 3]| (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f64>().sqrt();
+    let first = [centre(sk.solid_called("box.pin[0]").unwrap()),
+                 centre(sk.solid_called("box.planet[0].body").unwrap())];
+    for k in 0..3 {
+        let names = [format!("box.pin[{k}]"), format!("box.planet[{k}].body")];
+        for (n, what) in names.iter().enumerate() {
+            let i = sk.solid_called(what).unwrap_or_else(|m| panic!("{what}: {m}"));
+            assert_eq!(&sk.solid_name(i), what);
+            assert!(sk.solids[i].name.contains('#'), "{}", sk.solids[i].name);
+            assert_eq!(sk.solid_called(&sk.solids[i].name), Ok(i), "{what} by its key");
+            // copy k's, standing where copy k's point is
+            let d = apart(centre(i), first[n]);
+            assert!((d - 10.0 * k as f64).abs() < 1e-9, "{what}: {d} from copy 0's");
+            // and written so, a placed copy's name its own (#566)
+            let stl = sk.evaluated_solid(i, policy).unwrap().stl().unwrap();
+            assert!(stl.starts_with(format!("solvent {what}\0").as_bytes()),
+                    "{what}: {:?}", String::from_utf8_lossy(&stl[..40]));
+        }
+    }
+    // a name without the copy's index says the copies
+    for (asked, copy) in [("box.pin", "box.pin"), ("box.planet.body", "box.planet")] {
+        let m = sk.solid_called(asked).unwrap_err();
+        assert!(m.starts_with(&format!("`{asked}` is a solid of each copy of a block")), "{m}");
+        for k in 0..3 {
+            assert!(m.contains(&format!("`{copy}[{k}]")), "{asked}: {m}");
+        }
+    }
+    // and a name nothing goes by, the objects there are, by the names they are picked by
+    let m = sk.solid_called("box.peg[1]").unwrap_err();
+    assert!(m.starts_with("no solid called `box.peg[1]`: the objects are "), "{m}");
+    assert!(called.iter().all(|c| m.contains(&format!("`{c}`"))) && !m.contains('#'), "{m}");
+}

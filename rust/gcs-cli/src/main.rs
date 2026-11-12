@@ -1450,7 +1450,7 @@ fn assembly(sk: &Sketch, e: &mut Elaborated, s: &Source, opts: &Opts, path: &str
     }
     let objects: Vec<usize> = gcs_core::overview::objects(sk).into_iter()
         .filter(|&i| solid.is_none_or(|n| under(&sk.solids[i].name, n)
-            || under(&gcs_core::vocab::public_path(&sk.solids[i].name), n))).collect();
+            || under(&sk.solid_name(i), n))).collect();
     if objects.is_empty() {
         return fail(e, match solid {
             Some(n) => format!("no object called `{n}`, or under it, to write"),
@@ -1512,20 +1512,17 @@ fn canonical(p: &std::path::Path) -> Option<String> {
     p.canonicalize().ok().map(|c| c.to_string_lossy().into_owned())
 }
 
-/// Which solid `--stl` writes.  Named, or the only one there is — a document with one part in it
-/// should not have to say which part.
+/// Which solid `--stl` writes.  Named as the document calls it (`Sketch::solid_called`, a
+/// block's copy by its index), or the only one there is — a document with one part in it should
+/// not have to say which part.
 fn pick_solid(sk: &gcs_core::model::Sketch, name: Option<&str>) -> Result<usize, String> {
     match name {
-        Some(n) => sk
-            .solids
-            .iter()
-            .position(|s| s.name == n)
-            .ok_or_else(|| format!("no solid called `{n}`")),
+        Some(n) => sk.solid_called(n),
         None if sk.solids.is_empty() => Err("this document has no solid to write".into()),
         None => {
             let roots = gcs_core::overview::objects(sk);
             if roots.len() == 1 { return Ok(roots[0]); }
-            let names: Vec<&str> = roots.iter().map(|&i| sk.solids[i].name.as_str()).collect();
+            let names: Vec<String> = roots.iter().map(|&i| sk.solid_name(i)).collect();
             Err(format!("say which solid with --solid: {}", names.join(", ")))
         }
     }

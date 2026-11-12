@@ -51,15 +51,19 @@ impl<'a> Placing<'a> {
 }
 
 /// **Where a refusal is said** (#881): the document's statement that made the solid a message
-/// names — the first name in backticks that is a solid's — placed as `solid_diagnostics` places
-/// it (`Placing`: what a word of a module made, at the document's statement that used it), so a
-/// round's piece refused deep in an export (`` `b.#31.0.#…filled`: its exact construction
-/// disagrees with the field ``) is said at its round.  `None` where the message names no solid,
-/// or none the document holds.
+/// names — the first name in backticks that is a solid's, as the document calls it
+/// (`Sketch::solid_name`, #904) or by its key — placed as `solid_diagnostics` places it
+/// (`Placing`: what a word of a module made, at the document's statement that used it), so a
+/// round's piece refused deep in an export (`` `b.#…filled`: its exact construction disagrees
+/// with the field ``) is said at its round.  Copies a name goes by alike (a block's within a
+/// block's copy) are made by one statement, so the first is placed.  `None` where the message
+/// names no solid, or none the document holds.
 pub fn refusal_site(sk: &Sketch, map: &SourceMap, p: &Program, message: &str)
     -> Option<(Span, Option<StmtId>)> {
-    let solid = message.split('`').skip(1).step_by(2)
-        .find_map(|name| sk.solids.iter().position(|s| s.name == name))?;
+    let solid = message.split('`').skip(1).step_by(2).find_map(|name| {
+        sk.solids.iter().position(|s| s.name == name)
+            .or_else(|| (0..sk.solids.len()).find(|&i| sk.solid_name(i) == name))
+    })?;
     let place = Placing::new(p);
     let (span, stmt) = place.site(Some(map.site_of(EntRef::solid(solid))?));
     place.in_document(span).then_some((span, stmt))

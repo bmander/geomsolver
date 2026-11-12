@@ -614,7 +614,7 @@ pub unsafe extern "C" fn gcs_solid_exact(h: *mut Sketch, idx: i32, kind: i32, to
         let say = gcs_core::brep::sweep::Say { stage: &|_: &str| {}, mark: &|_| {} };
         let made = gcs_core::brep::export::exact(s, i, None, tolerance, &say).and_then(|exact| {
             let bytes = match kind {
-                0 => gcs_core::brep::export::step(&exact, &s.solids[i].name, tolerance, &say).map(String::into_bytes),
+                0 => gcs_core::brep::export::step(&exact, &s.solid_name(i), tolerance, &say).map(String::into_bytes),
                 _ => gcs_core::brep::export::stl(s, i, &exact, tolerance, &say),
             }?;
             // a sliver the solid holds, to be said beside the file (#836)
