@@ -130,18 +130,15 @@ component HypoidPair(pinion_teeth: Int, gear_teeth: Int, mean_module: Length, sh
   // The face mill's settings, read: each flank's margin against undercut, the four the two
   // blades cut on the two members. What chooses the mill is the caller's: its settings stated, or
   // relations over these margins in their place, as this document's balance is.
-  // They are read within the blanks as cut before their end relief, which `regular` cannot read.
-  sharp := {width: blank_design.width, addendum: addendum, back: blank_design.back, relief: 0mm}
-  construction gear_sharp := Blank(gear_cone.generator, gear_cone.ax, sharp)
-  construction pinion_sharp := Blank(pinion_cone.pitch_line, pinion_cone.ax, sharp)
   balance := Balanced(mill.inner_flank, mill.outer_flank, mill.tooth_base, mill.tooth_tip,
     mill.mate_tip, mill.mate_base, mill.reach, crown_roll, pinion_roll, gear_roll,
-    pinion_sharp.material, gear_sharp.material, pitch: crown_pitch, r: rounding)
+    pinion_cone.pitch_line, pinion_cone.ax, gear_cone.generator, gear_cone.ax, blank_design,
+    pitch: crown_pitch, r: rounding)
   margins := {pinion_inner: balance.pinion_inner, pinion_outer: balance.pinion_outer,
     gear_inner: balance.gear_inner, gear_outer: balance.gear_outer,
     pinion_cut: balance.tooth.crown, gear_outer_cut: balance.space.outer_crown,
-    gear_inner_cut: balance.space.inner_crown, pinion: pinion_sharp.material,
-    gear: gear_sharp.material}
+    gear_inner_cut: balance.space.inner_crown, pinion: balance.pinion_blank.material,
+    gear: balance.gear_blank.material}
 
   // The tip relief: a topping beside each crown flank, kinked in the normal section N (square to
   // P on the trace normal, through the cutter's axis) `tip_relief` short of the addendum, and cut
@@ -418,7 +415,12 @@ component Blade(about: line, q: point, half: Angle, opens: Scalar) := { p |
 // read by handed out as `pair.margins`.
 component Balanced(inner: set, outer: set, tooth_base: set, tooth_tip: set, mate_tip: set,
     mate_base: set, reach: set, crown_roll: frame, pinion_roll: frame, gear_roll: frame,
-    pinion_blank: solid, gear_blank: solid, pitch: Angle, r: Length) {
+    pinion_rim: line, pinion_ax: line, gear_rim: line, gear_ax: line, design: BlankDesign,
+    pitch: Angle, r: Length) {
+  // the blanks as cut before their end relief, which `regular` cannot read
+  sharp := {width: design.width, addendum: design.addendum, back: design.back, relief: 0mm}
+  construction pinion_blank := Blank(pinion_rim, pinion_ax, sharp)
+  construction gear_blank := Blank(gear_rim, gear_ax, sharp)
   construction tooth := Tooth(inner, outer, tooth_base, tooth_tip, grow: 0mm, r: r)
   construction space := Space(outer, inner, mate_tip, mate_base, reach, crown_roll, pitch: pitch,
     grow: 0mm, r: r)
@@ -430,8 +432,8 @@ component Balanced(inner: set, outer: set, tooth_base: set, tooth_tip: set, mate
                          seen_from: gear_roll)
   gear_inner := envelope(boundary(inner) over t in (-30deg, 30deg), under: crown_roll,
                          seen_from: gear_roll)
-  pinion_inner regular(by: tooth.crown) within pinion_blank
-  pinion_outer regular(by: tooth.crown) within pinion_blank
-  gear_outer regular(by: space.outer_crown) within gear_blank
-  gear_inner regular(by: space.inner_crown) within gear_blank
+  pinion_inner regular(by: tooth.crown) within pinion_blank.material
+  pinion_outer regular(by: tooth.crown) within pinion_blank.material
+  gear_outer regular(by: space.outer_crown) within gear_blank.material
+  gear_inner regular(by: space.inner_crown) within gear_blank.material
 }
