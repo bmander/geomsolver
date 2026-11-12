@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.11.0] - 2026-11-12
+
 - **A facet the mesh would count as turned is refined past the turning budget** (`mesh`): a
   facet facing against its surface at its middle, thicker than a tenth of the bar — what
   `Mesh::turned` counts and an exporter refuses — is refined whatever the budget that bounds the
