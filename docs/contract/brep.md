@@ -924,7 +924,16 @@ it is a corner of, and the refinement asks only the triangle's middles anew; poi
 1e-9 are welded (filed in a `util::space::Grid` of cells eight welds wide, each looked for in the
 cells a weld about it meets — its own, mostly, where it was 27; with each point's place read once
 for every pass, the same triangles, bit for bit, in a third less time), and a vertex a face's loops pass through twice at one place (a hole touching the
-outer loop, #597) is one corner of its triangulation. An edge is sampled from first pieces no
+outer loop, #597) is one corner of its triangulation. **A face's loops, as sampled, are simple
+polygons in its parameters** (`mesh::crossings`): two chords that meet anywhere but at the corner
+they share — that cross (a crescent thinner than its arcs' chords sag, the drill's end face, #64),
+touch, lie along one another from that corner, or run between the same two corners (a circle's
+segment thinner than its arc's chord sags, its arc one chord, the very chord its line is: a boss's
+end cap poking 28 µm out of a cylinder about another axis, #904 A9) — are split at their middles,
+each edge's samples shared by its faces, until none do; corners are one as the triangulation
+welds them, by id and place, and an edge the face uses twice (a seam, or a slit the face lies
+either side of) is one chord each way, no fault (`brep::a_face_thinner_than_its_chords_sag_still_meshes`,
+`a_segment_thinner_than_its_arcs_chord_sags_still_meshes`). An edge is sampled from first pieces no
 midpoint test can be blind to: a B-spline's knot spans, a family rail's pieces, a screwed rail a
 quarter turn at most (`edge_params`; a coil of four turns has its ends, middle and quarter
 points in one line, and was one chord). `Mesh::turned` counts facets facing against their
