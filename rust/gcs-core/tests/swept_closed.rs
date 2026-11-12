@@ -8,7 +8,7 @@
 //! an L-shaped prism's sweep is its two blocks' sweeps united (`sweep(A ∪ B) = sweep(A) ∪
 //! sweep(B)`), each built alone; and every built solid's points agree with membership at seeded
 //! points. Sampled where it samples.
-use crate::brep::{block,simpson,tetrahedron,total_area};
+use crate::brep::{block,simpson,total_area};
 use gcs_core::brep::boolean::{Op,combined};
 use gcs_core::brep::props::volume;
 use gcs_core::brep::swept::closed::{closed,slid};
@@ -1665,7 +1665,7 @@ fn a_straight_edges_sheet_in_closed_form_is_held_to_the_general_search() {
 /// edge-against-face and three-face readings on every core (`boolean`).
 #[test]
 fn a_tetrahedron_screwed_is_built_to_the_benchs_measures() {
-    let tool = tetrahedron([[5.,1.,1.],[5.,-1.,-1.],[3.,1.,-1.],[3.,-1.,1.]],[2.,-2.,-2.],[6.,2.,2.]);
+    let tool = gcs_core::brep::build::hull(&[[5.,1.,1.],[5.,-1.,-1.],[3.,1.,-1.],[3.,-1.,1.]]).unwrap();
     let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:5.});
     let built = closed(&tool,&path,[0.,540f64.to_radians()],tool.size(),gcs_core::brep::geom::tolerance(tool.size())).unwrap();
     let v = volume(&built);

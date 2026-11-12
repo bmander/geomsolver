@@ -1,7 +1,8 @@
 //! **A body grown** (`std.rounds.Grown`): the points within `d` of a body, `{ p | distance(p,
 //! within) <= d }` over `within := { c | c inside B }`, built exactly (`solid::grown`) as the body
-//! and what lies within reach of each face, edge and corner glued to it, every corner a prism's or
-//! a concave one or a boss's foot, the prisms beside a concave edge cut back to its bisector, at a
+//! and what lies within reach of each face, edge and corner glued to it, every convex corner the
+//! ball's sector (a prism's turned, any other the ball cut back to its wedges' ends), every other a
+//! concave one or a boss's foot, the prisms beside a concave edge cut back to its bisector, at a
 //! boss's foot or a post's to a cone; shrunk read by the field and refused by name.  Held to
 //! closed forms: Steiner's for a polytope, its concave edges' and corners' terms negative, Pappus's
 //! for a band's rims and its foot.
@@ -136,6 +137,50 @@ fn curved_and_slanted_faces_grown_are_built_exactly() {
     for (name, want) in [("gp.body", post), ("gb.body", bar), ("gs.body", slab)] {
         let got = volume(&exact(&e, name).brep);
         assert!((got - want).abs() <= 1e-9 * want, "{name}: {got} against {want}");
+    }
+}
+
+/// The tetrahedron on (3, 3, 3), (3, −3, −3), (−3, 3, −3), (−3, −3, 3) and the octahedron
+/// |x| + |y| + |z| ≤ 10, each the half-spaces behind the planes through its faces' corners.
+const POLYHEDRA: &str = "unit mm\nuse std\nuse std.rounds\n\
+    a := point\nb := point\nc := point\nd := point\n\
+    fix((3, 3, 3)) a\nfix((3, -3, -3)) b\nfix((-3, 3, -3)) c\nfix((-3, -3, 3)) d\n\
+    ab := line(a, b)\nac := line(a, c)\nad := line(a, d)\nbc := line(b, c)\nbd := line(b, d)\n\
+    fa := plane(u: bd, v: bc)\nfb := plane(u: ac, v: ad)\nfc := plane(u: ad, v: ab)\nfd := plane(u: ab, v: ac)\n\
+    tetrahedron := solid({ p |\n  p distance(<= 0mm, along: n) fa\n  p distance(<= 0mm, along: n) fb\n\
+      p distance(<= 0mm, along: n) fc\n  p distance(<= 0mm, along: n) fd\n})\n\
+    xp := point\nxn := point\nyp := point\nyn := point\nzp := point\nzn := point\n\
+    fix((10, 0, 0)) xp\nfix((-10, 0, 0)) xn\nfix((0, 10, 0)) yp\nfix((0, -10, 0)) yn\n\
+    fix((0, 0, 10)) zp\nfix((0, 0, -10)) zn\n\
+    pp := line(xp, yp)\npn := line(xp, yn)\nnp := line(xn, yp)\nnn := line(xn, yn)\n\
+    pu := line(xp, zp)\npd := line(xp, zn)\nnu := line(xn, zp)\nnd := line(xn, zn)\n\
+    o1 := plane(u: pp, v: pu)\no2 := plane(u: pd, v: pp)\no3 := plane(u: pu, v: pn)\no4 := plane(u: pn, v: pd)\n\
+    o5 := plane(u: nu, v: np)\no6 := plane(u: np, v: nd)\no7 := plane(u: nn, v: nu)\no8 := plane(u: nd, v: nn)\n\
+    octahedron := solid({ p |\n  p distance(<= 0mm, along: n) o1\n  p distance(<= 0mm, along: n) o2\n\
+      p distance(<= 0mm, along: n) o3\n  p distance(<= 0mm, along: n) o4\n  p distance(<= 0mm, along: n) o5\n\
+      p distance(<= 0mm, along: n) o6\n  p distance(<= 0mm, along: n) o7\n  p distance(<= 0mm, along: n) o8\n})\n";
+
+/// **A convex corner that is no prism's is the ball cut back to its wedges' ends**: a tetrahedron
+/// grown by 1 (brep-bench's offset/tetrahedron-grown, three faces at each corner, none square to
+/// another) and an octahedron grown by 2 (four at each), each to Steiner's: `V + S d + ½ Σ ℓ (π −
+/// θ) d² + 4π d³ / 3` over its edges' lengths `ℓ` and dihedral angles `θ` — its corners' sectors
+/// one whole ball.
+#[test]
+fn convex_corners_of_any_faces_grown_are_built_exactly() {
+    let e = solved(&format!("{POLYHEDRA}gt := std.rounds.Grown(tetrahedron, d: 1mm)\n\
+                             go := std.rounds.Grown(octahedron, d: 2mm)\n"));
+    let steiner = |v: f64, s: f64, edges: f64, length: f64, theta: f64, d: f64| {
+        v + s * d + edges * length * (PI - theta) / 2.0 * d * d + 4.0 / 3.0 * PI * d.powi(3)
+    };
+    let tetrahedron = steiner(72.0, 72.0 * 3f64.sqrt(), 6.0, 6.0 * 2f64.sqrt(), (1f64 / 3.0).acos(), 1.0);
+    assert!((tetrahedron - 249.53323018738044).abs() <= 1e-12 * tetrahedron, "the bench's closed form");
+    let octahedron = steiner(4000.0 / 3.0, 400.0 * 3f64.sqrt(), 12.0, 10.0 * 2f64.sqrt(), (-1f64 / 3.0).acos(), 2.0);
+    for (name, want, corners) in [("gt.body", tetrahedron, 4), ("go.body", octahedron, 6)] {
+        let x = exact(&e, name);
+        let got = volume(&x.brep);
+        assert!((got - want).abs() <= 1e-9 * want, "{name}: {got} against {want}");
+        let spheres = x.brep.faces.iter().filter(|f| matches!(f.surface, Surface::Sphere(..))).count();
+        assert_eq!(spheres, corners, "{name}: a sector of the ball at each corner");
     }
 }
 

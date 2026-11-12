@@ -5,7 +5,7 @@
 //! mesher faults the brep-bench run found (#elliptic-hole, #horn-torus): a closed rational spline
 //! cut square to its sweep, a torus whose chart pinches at the middle of its box.
 use gcs_core::brep::boolean::{combined,Op};
-use gcs_core::brep::build::{cone,disc,kept,prism,sphere,torus,Profile,ProfileEdge};
+use gcs_core::brep::build::{cone,disc,hull,kept,prism,sphere,torus,Profile,ProfileEdge};
 use gcs_core::brep::geom::{Frame,V};
 use gcs_core::brep::nurbs::BSpline;
 use gcs_core::brep::offset::{grown,sheet_of,shelled,shrunk,thickened,Join,Side};
@@ -14,7 +14,7 @@ use gcs_core::brep::query::{Located,Place};
 use gcs_core::brep::topo::Brep;
 use std::f64::consts::{FRAC_1_SQRT_2,PI};
 use std::sync::Arc;
-use crate::brep::{block,mesh_volume,poly,tetrahedron,total_area};
+use crate::brep::{block,mesh_volume,poly,total_area};
 use gcs_core::space::{cross,sub};
 
 fn close(what: &str,a: f64,b: f64) { assert!((a-b).abs() <= 1e-9*b.abs().max(1.),"{what}: {a} against {b} ({:e})",(a-b)/b); }
@@ -68,7 +68,7 @@ fn an_l_grown_rounds_its_convex_edges_and_shrunk_its_concave_one() {
 /// π − acos(1/3) each.
 #[test]
 fn a_tetrahedron_grown_rounds_its_oblique_edges_and_corners() {
-    let t = tetrahedron([[3.,3.,3.],[3.,-3.,-3.],[-3.,3.,-3.],[-3.,-3.,3.]],[-4.,-4.,-4.],[4.,4.,4.]);
+    let t = hull(&[[3.,3.,3.],[3.,-3.,-3.],[-3.,3.,-3.],[-3.,-3.,3.]]).unwrap();
     let e = 6.*2f64.sqrt();
     let want = 72.+72.*3f64.sqrt()+3.*e*(PI-(1f64/3.).acos())+4.*PI/3.;
     close("grown",volume(&grown(&t,1.,Join::Round).unwrap()),want);
@@ -269,18 +269,14 @@ fn edges_chamfered_one_after_another_mitre_at_their_corners() {
     cube.check(1e-7).unwrap();
     assert_eq!(cube.faces.len(),18);
     close("cube",volume(&cube),1000.-6.*10.*4.+6.*8.);
-    let mut octahedron = block([-10.;3],[10.;3]);
-    let k = 1./3f64.sqrt();
-    for sx in [-1.,1.] { for sy in [-1.,1.] { for sz in [-1.,1.] {
-        octahedron = kept(&octahedron,[sx*10.,0.,0.],[-sx*k,-sy*k,-sz*k],0.).unwrap();
-    } } }
+    let octahedron = hull(&[[10.,0.,0.],[-10.,0.,0.],[0.,10.,0.],[0.,-10.,0.],[0.,0.,10.],[0.,0.,-10.]]).unwrap();
     let mut edges = Vec::new();
     for (i,j) in [(0,1),(1,2),(2,0)] { for si in [-1.,1.] { for sj in [-1.,1.] {
         let mut at = [0.;3];
         (at[i],at[j]) = (si*5.,sj*5.);
         edges.push(at);
     } } }
-    let octahedron = chamfered(octahedron,&edges,4.*k);
+    let octahedron = chamfered(octahedron,&edges,4./3f64.sqrt());
     assert_eq!(octahedron.faces.len(),20);
     close("octahedron",volume(&octahedron),4000./3.-8.*(52.-8.));
 }

@@ -22,8 +22,8 @@ it to crates.io; what changes in each release is in [CHANGELOG.md](CHANGELOG.md)
 - **Topology:** oriented edge uses with p-curves, seams, degenerate poles, and a validity check.
 - **Construction:** spheres, ellipsoids, cones (frustums and cylinders too) and tori by their numbers,
   any solid mapped by an invertible affine map (a shear, a stretch along any axes, a mirror),
-  prisms (drafted too), revolutions, and canals (a ball swept along a helix). Profiles are made of
-  lines, arcs and splines.
+  prisms (drafted too), revolutions, canals (a ball swept along a helix), and the convex hull of
+  points, a plane face for each facet. Profiles are made of lines, arcs and splines.
 - **Sewing:** faces built apart (a B-spline sheet, a planar face, any shell's faces) joined into
   a solid where their boundaries are one curve: poles, vertices and edges merged by tolerant
   topology, each shell turned outward and each void inward.

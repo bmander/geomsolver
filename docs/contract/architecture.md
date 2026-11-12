@@ -35,8 +35,8 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   a crate below the solver** (`cad-kernel`, `rust/cad-kernel/`, MIT OR Apache-2.0, to be
   published on its own): the exact B-rep, its geometry, Booleans, mesher, STEP and recipe
   reader, and the numerical ground both stand on (`util`: `fmath`, `space`, `interval`, `roots`,
-  `linalg`, `json`, `par`, `clock`, `rng`, `bvh`, the exact `expansion`s, a union-find and the
-  Gauss rule).  `gcs-solve` re-exports it as `brep` (beside `brep::sweep` and `brep::export`,
+  `linalg`, `json`, `par`, `clock`, `rng`, `bvh`, the exact `expansion`s and the filtered
+  `predicates` over them, a union-find and the Gauss rule).  `gcs-solve` re-exports it as `brep` (beside `brep::sweep` and `brep::export`,
   which read the model and stay the solver's) and each `util` module under its old name, so
   `crate::fmath`, `gcs_core::brep::geom` and the rest name what they always did.  Nothing in it
   can name the solver or the language.  **The sweep is the kernel's** (#721 F2): the trajectory a

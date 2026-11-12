@@ -60,6 +60,18 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   edge, and the arrangement refused ("a blend's pieces do not close"). The branch is now followed
   down to the edge at halved gaps and ends where it meets it: a screwed torus's carried contact
   arranges with the start pose it passes back through.
+
+## [0.8.0] - 2026-11-11
+
+- **The convex hull of points, as a solid** (`build::hull`): one plane face for each facet, its
+  topology built whole with no block cut and no Boolean, its corners the points given. Quickhull
+  on the exact orientation test finds the triangles, so points on one plane never decide by
+  rounding; the triangles within the tolerance of one plane are one face, grown from the
+  largest's plane and kept a disc, and a point midway along an edge is no corner. A tetrahedron,
+  an octahedron or a pyramid is its corners' hull where it was a block cut by each face's plane
+  (brep-bench's offset/tetrahedron-grown, swept/tetrahedron-screwed and the octahedra), and a
+  convex solid slid along a line the hull of where it starts and where it stops. The filtered
+  orientation and power predicates move into the kernel as `util::predicates`.
 - **A circle or an ellipse against a surface turned from a conic, in closed form**
   (`query::conic_revolution`): the turned surface's algebraic form, read span by span from each
   arc's Bézier poles (`F(ρ, z) F(−ρ, z)`, or `F` alone for an arc symmetric about the axis), is a
@@ -86,6 +98,17 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   crossing there, 2.7e-4 off the rim's: two vertices, and the sheet's face never closed. brep-bench's
   `swept/tumbling-torus`, built by 0.6.3 and refused by 0.7.0 ("a bspline's pieces do not close"),
   builds again: the same solid, in 6 s on the bench's runner where 0.6.3 took 15.
+- **A face's contact under a slide, a turn or a screw, for any surface, carried over the roll**
+  (`swept::contacts`, **new**, #880 Q1b): `face_contact` reads it as the zero set of `n·v` over
+  the face's parameters in pieces (`Contact`, `Piece`, `End`), whole where the motion keeps the
+  face in its own surface; `piece_curve` fits a piece, `carried` carries it exactly over the roll
+  as one blend face (`Carried`), and `candidates` gives every face's sheets and the tool at both
+  ends with their meetings given. A blend face carried by its own carry is inverted off the
+  motion's invariants, exact to rounding. `query::Located::parameter_box` and `holds_parameters`
+  (**new**) read a face's outline in its parameters.
+- `util::space::Region`'s `Vertex` and `Edge` name which vertex or edge of the triangle,
+  `Vertex(u8)` and `Edge(u8)` (**breaking**). `util::par::map_in_order` and `Meter::mark` /
+  `restore` (**new**): parallel readings under a budget are refused at the same point every run.
 
 ## [0.7.0] - 2026-11-11
 
