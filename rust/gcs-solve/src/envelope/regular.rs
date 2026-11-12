@@ -745,7 +745,10 @@ const NEAR: f64 = 1e-2;
 /// within the blank, or the constants describe no problem.
 pub fn worst(k: &[f64], cols: &[f64]) -> Option<Worst> {
     let p = Problem::read(k)?;
-    let key: Vec<u64> = k.iter().map(|v| v.to_bits()).collect();
+    // the margin (`k[0]`, `k[4]`) is the residual's alone: the place searched for is the same
+    // whatever number it is held to, so a reading stepping that number asks the same question
+    let key: Vec<u64> = k.iter().enumerate()
+        .map(|(i, v)| if i == 0 || i == 4 { 0 } else { v.to_bits() }).collect();
     let size = cols.iter().fold(1.0f64, |m, x| m.max(x.abs()));
     let far = |c: &[f64]| c.iter().zip(cols).map(|(a, b)| (a - b).abs()).fold(0.0, f64::max) / size;
     let prev = SEEN.with(|s| {
