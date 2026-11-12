@@ -465,8 +465,20 @@ fn memberships(
         terms: expansion.probes.iter().filter_map(|key| cx.res.of.get(key))
             .map(|p| (p.i(), Vec::new()))
             .collect(),
-        idle: BTreeMap::new(),
+        ..Default::default()
     };
+    // the points `some` binds ([0.212]), each with its quantifier and the set's point it reads
+    let mut groups: BTreeMap<&str, usize> = BTreeMap::new();
+    for (key, (group, owner)) in &expansion.binders {
+        let (Some(p), Some(o)) = (cx.res.of.get(key), cx.res.of.get(owner)) else { continue };
+        let n = groups.len();
+        let g = *groups.entry(group.as_str()).or_insert(n);
+        if g == n {
+            let quantifier = super::regions::Bound { owner: o.i(), stated: Vec::new(), at: None };
+            cx.probes.bound.push(quantifier);
+        }
+        cx.probes.binders.insert(p.i(), g);
+    }
     // memberships, once every kind is built and before anything reads one: `point a in top`
     // names a plane built after the point, and `project` infers its planes from these — and then
     // every point no `in` reached stands in space (`places`), and a plane written over a drawn
@@ -809,6 +821,8 @@ fn solids_and_surfaces(
     generated: &BTreeSet<StmtId>,
     held: &BTreeSet<StmtId>,
 ) -> Result<(), Again> {
+    // what each `some`'s relation put the set's point in, a term of it ([0.212])
+    super::regions::settle_bound(&cx.sk, &mut cx.probes, &mut cx.diags);
     let Elab { sk, res, map, diags, probes, .. } = cx;
     let (body, skip) = (&flat.body, &flat.skip);
     solids(sk, res, map, body, skip, probes, diags);

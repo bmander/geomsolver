@@ -396,6 +396,10 @@ fn region(
         return None;
     }
     if terms.is_empty() {
+        // its set's relation refused already ([0.212]): said once
+        if probes.refused.contains(&p.i()) {
+            return None;
+        }
         let m = "a solid is a region: a set whose body bounds a number (`std.sets.Ball`, not \
                  the sphere it bounds)";
         say(Code::E080, st.span, m.into());
@@ -436,6 +440,14 @@ fn face_planes(sk: &Sketch, terms: &mut [crate::model::RegionTerm]) -> Result<()
             RegionShape::Outside { set } => {
                 if let Target::Set { terms, .. } = set.as_mut() {
                     face_planes(sk, terms)?;
+                }
+            }
+            // a join's sets, a face's among them where a point `some` binds is on one ([0.212])
+            RegionShape::Join { of } => {
+                for t in of.iter_mut() {
+                    if let Target::Set { terms, .. } = t {
+                        face_planes(sk, terms)?;
+                    }
                 }
             }
             RegionShape::Measured { of } => {

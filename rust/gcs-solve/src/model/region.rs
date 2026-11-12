@@ -54,6 +54,13 @@ pub enum RegionShape {
     /// complements, so `{ p | p outside { q | q outside a; q outside b } }` is `a` and `b`
     /// together: a union is the outside of what is outside both.  Held at nothing.
     Outside { set: Box<Target> },
+    /// **The join of sets** ([0.212]): the points on a segment from some point of one operand to
+    /// some point of the other — `{ p | some q in A, r in B: p in Segment(q, r) }`, recognised by
+    /// what the body says at its points, each operand a point of the drawing (`Target::Ent`) or a
+    /// set a `some` binds a point of (`Target::Set`).  Of convex operands the hull of both; read
+    /// where each is the hull of finitely many points, the hull of them all (`solid::joined`),
+    /// its value the most any of the hull's planes stands below the point.  Held at nothing.
+    Join { of: Vec<Target> },
 }
 
 impl RegionShape {
@@ -96,6 +103,7 @@ impl RegionShape {
             RegionShape::Section { face } => vec![EntRef::face(face as usize)],
             RegionShape::Swept { face, .. } => vec![EntRef::face(face as usize)],
             RegionShape::Outside { ref set } => set.entities(),
+            RegionShape::Join { ref of } => of.iter().flat_map(Target::entities).collect(),
         }
     }
 
@@ -138,6 +146,9 @@ impl RegionShape {
             RegionShape::Outside { ref set } => {
                 RegionShape::Outside { set: Box::new(set.remapped(map)?) }
             }
+            RegionShape::Join { ref of } => RegionShape::Join {
+                of: of.iter().map(|t| t.remapped(map)).collect::<Option<_>>()?,
+            },
         })
     }
 }
@@ -202,6 +213,18 @@ impl FaceRef {
 }
 
 impl RegionTerm {
+    /// **Its complement**, as terms taken together: its bound turned round — or, outside a set at
+    /// nothing (one of several statements, as a join's set is), that set's own terms ([0.212]).
+    /// `None` where it turns round to no bound.
+    pub fn turned(&self) -> Option<std::borrow::Cow<'_, [RegionTerm]>> {
+        if let (RegionShape::Outside { set }, crate::vocab::Cmp::Le) = (&self.shape, self.cmp) {
+            let Target::Set { terms, .. } = set.as_ref() else { return None };
+            return Some(std::borrow::Cow::Borrowed(terms));
+        }
+        let cmp = self.cmp.turned()?;
+        Some(std::borrow::Cow::Owned(vec![RegionTerm { cmp, ..self.clone() }]))
+    }
+
     /// The one-sided bound `cmp` on `shape` at `lo`, of no set and no offset.
     pub fn new(shape: RegionShape, cmp: crate::vocab::Cmp, lo: TermNumber) -> RegionTerm {
         RegionTerm { shape, cmp, lo, hi: None, grow: None, name: String::new() }

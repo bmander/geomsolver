@@ -1,0 +1,16 @@
+// Presentation of joins.sv. Model geometry is independent of this drawing.
+model m from "joins.sv"
+
+sheet joins {
+  size (297mm, 210mm)
+  label "JOINS" at (14mm, 18mm)
+  label "One word, the join of two sets: a polytope from what it is the join of" at (14mm, 28mm)
+  label "TETRAHEDRON" at (24mm, 52mm)
+  label "OCTAHEDRON" at (120mm, 52mm)
+  label "PRISMATOID" at (210mm, 52mm)
+  view tetrahedron(m.tetrahedron) from isometric at (55mm, 121mm) scale 5
+  view octahedron(m.octahedron) from isometric at (76mm, 161mm) scale 3.5
+  view prismatoid(m.prismatoid) from isometric at (166mm, 177mm) scale 3.5
+  style .hidden { color: #a1aab4; dash: 3 3 }
+  label "Two opposite edges / a square and its axis / a square and a smaller one turned a quarter." at (24mm, 180mm)
+}

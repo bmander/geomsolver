@@ -60,6 +60,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   edge, and the arrangement refused ("a blend's pieces do not close"). The branch is now followed
   down to the edge at halved gaps and ends where it meets it: a screwed torus's carried contact
   arranges with the start pose it passes back through.
+- **A recipe's `hull` node** (`recipe::Node::Hull`): the convex hull of its `points`
+  (`build::hull`), each face called its `face`, so a solid read as the hull of finitely many points
+  is built without a Boolean.
 
 ## [0.8.0] - 2026-11-11
 

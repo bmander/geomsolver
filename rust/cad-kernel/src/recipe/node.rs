@@ -122,6 +122,9 @@ pub enum Node {
     /// profile moved by the row-major 3x4 `start` (the pose where the interval begins), then carried
     /// by `carry` from there to where it ends — a screw, a turn (a screw of no advance) or a slide.
     Carried { profile: Section,start: [f64;12],carry: crate::geom::Carry },
+    /// The convex hull of `points` (`build::hull`), a plane face for each facet, every face called
+    /// `face`: a join of sets read as the hull of finitely many points (`solid::joined`).
+    Hull { points: Vec<V>,face: String },
 }
 
 /// The path a ball's centre runs (`Node::Canal`): carried by a screw about the line through
@@ -251,6 +254,8 @@ impl Node {
             "carried" => Node::Carried {profile:profile()?,
                 start:rows(n,"start","a carried profile")?.ok_or_else(|| unread("recipe: no `start`".into()))?,
                 carry:carry(field(n,"carry")?)?},
+            "hull" => Node::Hull {points:each(field(n,"points")?.arr(),|p| Ok(crate::vec3(p)))?,
+                face:n.get("face").map_or("",Json::as_str).to_string()},
             k => return Err(unread(format!("recipe: a node of kind `{k}`"))),
         })
     }
@@ -262,7 +267,7 @@ impl Node {
             Node::Placed {..} => "placed",Node::Through {..} => "through",Node::Body(_) => "body",
             Node::Canal {..} => "canal",Node::Region(_) => "region",Node::Grown {..} => "grown",Node::Glued(_) => "glued",
             Node::Lowered(_) => "lowered",
-            Node::Family(_) => "family",Node::Carried {..} => "carried",
+            Node::Family(_) => "family",Node::Carried {..} => "carried",Node::Hull {..} => "hull",
         }
     }
 }

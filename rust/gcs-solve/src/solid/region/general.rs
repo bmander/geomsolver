@@ -217,6 +217,15 @@ fn field_of(sk: &Sketch, name: &str, terms: &[RegionTerm], bounded: bool,
                 };
                 Measure::Signed(Signed(std::sync::Arc::new(at)))
             }
+            // the join of sets ([0.212]): the hull of what each is the hull of, every plane of it
+            // a support plane of the region
+            RegionShape::Join { ref of } => {
+                let hull = crate::solid::joined::Hull::of(sk, of).map_err(named)?;
+                if within {
+                    planes.extend(hull.planes.iter().map(|&(n, d)| (n, d + lo)));
+                }
+                Measure::Signed(Signed(std::sync::Arc::new(move |p| hull.value(p))))
+            }
             // outside a set (#737 P3): where its terms do not all hold, the negated field of the
             // set taken together — so within the union of what each of them turned holds, the box
             // about each of those its support
@@ -229,9 +238,8 @@ fn field_of(sk: &Sketch, name: &str, terms: &[RegionTerm], bounded: bool,
                     let mut boxed = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
                     let mut every = !inner.is_empty();
                     for u in inner {
-                        let Some(cmp) = u.cmp.turned() else { every = false; break };
-                        let turned = RegionTerm { cmp, ..u.clone() };
-                        match field_of(sk, name, std::slice::from_ref(&turned), false, read)
+                        let Some(turned) = u.turned() else { every = false; break };
+                        match field_of(sk, name, &turned, false, read)
                             .ok().and_then(|g| g.support()) {
                             Some(b) => for k in 0..3 {
                                 boxed[k] = [boxed[k][0].min(b[k][0]), boxed[k][1].max(b[k][1])];

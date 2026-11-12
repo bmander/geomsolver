@@ -27,8 +27,9 @@ fn said(d: &Diagnosis) -> String {
     )
 }
 
-/// Every library case of free parameters within `free` whose two readings differ, said.  The
-/// cases are read side by side (`par`), answered in the library's order.
+/// Every library case of free parameters within `free`, and rows to read them by, whose two
+/// readings differ, said.  The cases are read side by side (`par`), answered in the library's
+/// order.
 fn disagreements(free: std::ops::RangeInclusive<usize>) -> Vec<String> {
     gcs_core::par::map(&examples::CASES, |(_, key, _)| {
         if examples::left_to_slow_tier(key) {
@@ -36,7 +37,10 @@ fn disagreements(free: std::ops::RangeInclusive<usize>) -> Vec<String> {
         }
         let mut sk = examples::case(key)?;
         solve(&mut sk, SolveOpts::default());
-        if !free.contains(&gcs_core::system::System::new(&sk).n_free) {
+        // a case of nothing free, or no row to read (points fixed where they are drawn), has no
+        // part to read: both readings skip it
+        let sys = gcs_core::system::System::new(&sk);
+        if !free.contains(&sys.n_free) || sys.n_free == 0 || sys.n_res == 0 {
             return None;
         }
         let (whole, parts) = both(&mut sk);

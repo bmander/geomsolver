@@ -411,8 +411,14 @@ impl<'a> Walk<'a> {
             let out = std::mem::take(&mut self.out);
             let mut next = Vec::with_capacity(out.len());
             let mut any = false;
+            // some points of sets ([0.212]): each binder a point the set's is read with
+            let refused = self.register_binders(&out, &alias);
             let mut rest = out.into_iter();
             while let Some((st, path, sc)) = rest.next() {
+                let Some((st, sc)) = self.binding(st, sc, &alias, &refused) else {
+                    any = true;
+                    continue;
+                };
                 // the notation of sets, read against what its operand is (#783)
                 let Some(st) = self.notation(st, &sc, &alias) else {
                     any = true;
@@ -573,6 +579,81 @@ impl<'a> Walk<'a> {
         if region {
             outside_side(w);
         }
+    }
+
+    /// **Some points of sets** ([0.212]): each relation the parser gave binders (`OpArg::Some`)
+    /// in this round's statements, its binders registered — each a point the body declared beside
+    /// the relation with its membership of its set, made a probe (a point a region solid's terms
+    /// are read at, never a row), with the statement binding it under the use that applied it
+    /// (`Expansion::binders`) — before any statement is read, since a binder's membership stands
+    /// before the relation binding it.  The set's own point must be one a solid reads: a drawn
+    /// point's `some` is refused, since no row says which point of the set it would be; the
+    /// relation refused is returned, to be dropped where it stands.
+    fn register_binders(&mut self, out: &[(Stmt, Vec<PathStep>, Scope)],
+                        alias: &BTreeMap<String, String>) -> BTreeSet<(u32, String)> {
+        let mut refused = BTreeSet::new();
+        for (st, _, sc) in out {
+            let StmtKind::Relation(r) = &st.kind else { continue };
+            let Some(w) = r.form.written().filter(|w| w.binds()) else { continue };
+            let owner = w.ops.first().and_then(|p| self.look(alias).raw(p, sc))
+                .filter(|(p, rest)| rest.is_empty() && self.sets.probes.contains(p))
+                .map(|(p, _)| p);
+            let Some(owner) = owner else {
+                let m = "some points of sets are read where a solid reads its set's point: in the \
+                         body of a set a solid is made of, `solid({ p | some q in A: p in \
+                         Segment(c, q) })`";
+                self.once(Code::E040, w.word.span, m);
+                refused.insert((st.id.0, sc.prefix().to_string()));
+                continue;
+            };
+            // the points one quantifier binds, under the use that applied it
+            let group = format!("{}#{}", sc.prefix(), sc.pred.written.unwrap_or(st.id).0);
+            for (var, _) in w.binders() {
+                let r = Ref { root: var.clone(), path: Vec::new(), span: var.span };
+                match self.look(alias).raw(&r, sc) {
+                    Some((abs, rest)) if rest.is_empty() => {
+                        if !self.sets.binders.contains_key(&abs) {
+                            self.sets.probes.push(abs.clone());
+                            self.sets.binders.insert(abs, (group.clone(), owner.clone()));
+                        }
+                    }
+                    _ => {
+                        let m = format!("`{}`, a point `some` binds, names nothing here", var.text);
+                        self.once(Code::E101, var.span, m);
+                        refused.insert((st.id.0, sc.prefix().to_string()));
+                    }
+                }
+            }
+        }
+        refused
+    }
+
+    /// A statement read as some points of sets bind it ([0.212]): a relation that binds them, its
+    /// binders put aside (`register_binders` read them), and a binder's membership of its set, each
+    /// applied held — its point's equalities stated as bounds at their numbers, as a set measured
+    /// from is (#192), since each is read at a point no row places.  `None` for one refused.
+    fn binding(&self, mut st: Stmt, mut sc: Scope, alias: &BTreeMap<String, String>,
+               refused: &BTreeSet<(u32, String)>) -> Option<(Stmt, Scope)> {
+        // a document binding no point pays nothing here
+        if self.sets.binders.is_empty() && refused.is_empty() {
+            return Some((st, sc));
+        }
+        let StmtKind::Relation(r) = &mut st.kind else { return Some((st, sc)) };
+        let Some(w) = r.form.written_mut() else { return Some((st, sc)) };
+        if w.binds() {
+            if refused.contains(&(st.id.0, sc.prefix().to_string())) {
+                return None;
+            }
+            w.args.retain(|a| !matches!(a, crate::syntax::OpArg::Some { .. }));
+            sc.pred.held = true;
+            return Some((st, sc));
+        }
+        let bound = w.ops.first().and_then(|p| self.look(alias).raw(p, &sc))
+            .is_some_and(|(p, rest)| rest.is_empty() && self.sets.binders.contains_key(&p));
+        if bound {
+            sc.pred.held = true;
+        }
+        Some((st, sc))
     }
 
     /// **Outside a set** (#737 P3): `p outside S` where `S`'s body is several statements, an
@@ -1442,6 +1523,13 @@ pub(super) fn instance_part(lit: &SetLit) -> (Vec<Stmt>, SetLit) {
     if super::developable::within_point(lit) {
         return (Vec::new(), lit.clone());
     }
+    // some points of sets ([0.212]): the points a `some` binds are each use's, and so are their
+    // memberships, which read nothing of the set's point — a body binding any is the set's whole
+    let binds = |st: &Stmt| matches!(&st.kind, StmtKind::Relation(r)
+        if r.form.written().is_some_and(|w| w.binds()));
+    if lit.body.iter().any(binds) {
+        return (Vec::new(), lit.clone());
+    }
     let judged: Vec<_> = lit.body.iter().map(reads).collect();
     // the names that read the point, grown until no statement adds one
     let mut reading: BTreeSet<&str> = BTreeSet::from([lit.bound.text.as_str()]);
@@ -1565,7 +1653,7 @@ fn one_bound(site: &Site) -> Option<(SetLit, bool)> {
 /// that made it.
 pub(super) fn probe(key: String, at: Span) -> Decl {
     let mut point = Decl::point(DeclName::Key(Name { text: key, span: at }), [0.0; 2], None);
-    point.seed = vec![0.7548776662, 0.5698402910, 0.4301597090];
+    point.seed = crate::syntax::PROBE_SEED.to_vec();
     point.seed_text = vec![None; 3];
     point
 }
