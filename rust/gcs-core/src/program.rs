@@ -110,7 +110,7 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap, p: &Program
         }
     }
     diags.extend(views::degenerate(sk, map));
-    diags.extend(views::coplanar(sk, map));
+    diags.extend(views::coplanar(sk, map, &place));
     for i in 0..sk.envelopes.len() {
         // a set's envelope has no side to read after the solve: its contacts are its rows (#283)
         if sk.envelopes[i].surface.is_none() { continue; }

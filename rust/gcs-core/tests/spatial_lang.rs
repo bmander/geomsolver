@@ -327,6 +327,38 @@ a distance(5) b
     assert!(diags.iter().any(|d| d.code.as_str() == "W113"), "{diags:?}");
 }
 
+/// **W113 is said where the document holds it** (#904 A13): a part seated with its front on the
+/// world's reads its own `std.front` — a datum `std`'s `FrameDatums` declares — through the
+/// mate, which is said at the instance's line, naming the datum as the document reads it, and
+/// never at a line of `std` about an anonymous plane.
+#[test]
+fn a_part_seated_on_the_front_is_said_at_its_instance() {
+    let src = "\
+unit mm
+use std
+use std.place (seats, right_of)
+component Plate() {
+  in std.front {
+    c := point hint((20mm, 0mm))
+    c right_of(d: 20mm) std.origin
+  }
+}
+down := axis
+down parallel(sense: opposite) std.z
+std.origin coincident down
+plate := Plate()
+plate seats(turn: 180deg, up: down, east: std.x) std.origin
+";
+    let mut e = read(src);
+    assert!(solve(&mut e.sketch, SolveOpts::default()).success);
+    let diags = solid_diagnostics(&e.sketch, &e.map, &e.program);
+    let w: Vec<_> = diags.iter().filter(|d| d.code.as_str() == "W113").collect();
+    assert_eq!(w.len(), 1, "{diags:?}");
+    let line = src.lines().position(|l| l.starts_with("plate := Plate()")).unwrap() as u32 + 1;
+    assert_eq!(w[0].at(e.text()).0, line, "{:?}", w[0]);
+    assert!(w[0].message.starts_with("`plate.std.front` lies on `std.front`"), "{:?}", w[0]);
+}
+
 /// A plane is two axes and a place: what is not an axis or a line is refused at the slot, and a
 /// plane's origin is its own and not written.  A point drawn in a plane takes no height.
 #[test]

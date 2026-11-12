@@ -179,8 +179,12 @@ pub(crate) fn stand_axes(sk: &mut Sketch) {
 /// standing in one place — where a relation reads points drawn in each: one plane in space, read
 /// twice, and the relation is read in space where the plane would do.  Permitted (a part's plane
 /// turned within the front is the common case, and two parts drawn on one plane relate nothing),
-/// and said once, at the later plane's declaration.
-pub(crate) fn coplanar(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
+/// and said once, at the later plane's declaration — where the document holds it (`Placing`,
+/// #904 A13): a plane a definition of a module declares at the instance that drew it, and a
+/// frame's own datum (`std.front` read in an instance's body) at its frame's, named as the
+/// document reads it (`crank.std.front`), never inside `std`.
+pub(crate) fn coplanar(sk: &Sketch, map: &SourceMap, place: &super::refused::Placing)
+    -> Vec<Diag> {
     use std::collections::BTreeSet;
     // the planes each relation reads drawn points of — a plane's own origin is where the plane
     // stands, not drawing in it
@@ -202,21 +206,45 @@ pub(crate) fn coplanar(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
     let mut out = Vec::new();
     let mut said: BTreeSet<usize> = BTreeSet::new();
     let tol = ON_PLANE * sk.extent().max(1.0);
-    for &(i, j) in &pairs {
-        if !sk.basis(i).coplanar(&sk.basis(j), tol) || !said.insert(j) {
+    let lying: Vec<(usize, usize)> = pairs.into_iter()
+        .filter(|&(i, j)| sk.basis(i).coplanar(&sk.basis(j), tol))
+        .collect();
+    if lying.is_empty() {
+        return out;
+    }
+    // each frame's own datum (#542), by the frame it is of and its name in `FrameDatums`
+    let datums: std::collections::BTreeMap<usize, (usize, &str)> = map.keys()
+        .filter(|(_, e)| e.kind == EntKind::Frame)
+        .filter_map(|(k, e)| {
+            let (frame, datum) = crate::flatten::frame_datum(k)?;
+            let f = map.ent_named(frame).filter(|f| f.kind == EntKind::Frame)?;
+            Some((e.i(), (f.i(), datum)))
+        })
+        .collect();
+    let called = |p: usize| match (map.name_of(EntRef::frame(p)), datums.get(&p)) {
+        (Some(n), _) => n.clone(),
+        (None, Some(&(f, d))) => format!("{}.std.{d}", sk.plane_name(f)),
+        (None, None) => sk.plane_name(p),
+    };
+    for (i, j) in lying {
+        if !said.insert(j) {
             continue;
         }
-        let Some(site) = map.site_of(EntRef::frame(j)) else { continue };
+        // a frame's own datum is declared with its frame, which the document declares
+        let at = datums.get(&j).map_or(j, |&(f, _)| f);
+        let site = map.site_of(EntRef::frame(at)).or_else(|| map.site_of(EntRef::frame(j)));
+        let (span, stmt) = place.site(site);
+        let Some(stmt) = stmt else { continue };
         out.push(Diag::within(
             Code::W113,
-            site.span,
-            site.stmt,
+            span,
+            stmt,
             format!(
                 "`{}` lies on `{}`, and a relation reads points drawn in each: one plane in \
                  space, so the relation is read in space where one plane would read it on the \
                  plane",
-                sk.plane_name(j),
-                sk.plane_name(i)
+                called(j),
+                called(i)
             ),
         ));
     }
