@@ -62,7 +62,7 @@ tooth over (its space cutter's `neighbor` is the inner crown a crown pitch round
 them where the parser says their values stand); the pinion's cone solves against the gear's;
 members roll at `N_c / N`, written as tooth counts (`crown_teeth / pinion_teeth`), not `1 / sin`.
 **The face mill is found, not stated** (#283): `pressure_shift` and `cutter_radius` are formals of
-`HypoidPair` the call leaves to the solve, seeded (`hint(10deg)`, `hint(80mm)`), and `Balanced`
+`HypoidPair` the call leaves to the solve, seeded (`hint(10deg)`, `hint(40 * mean_module)`: the seed scales with the pair, #904 A3), and `Balanced`
 finds them as a designer would — the generated flanks' undercut margins (each flank's radius of
 curvature in a section square to the trace, a module inside and outside the pitch, `Margins`)
 equal at the mean point, which sets the shift, and at the toe, which sets the cutter; a cutter no

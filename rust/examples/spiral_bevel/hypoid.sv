@@ -35,7 +35,7 @@ param end_relief := 0.2mm
 pair := HypoidPair(pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
   mean_module: mean_module, shaft_angle: shaft_angle, offset: offset,
   spiral_angle: spiral_angle, backlash: backlash, tip_relief: tip_relief, end_relief: end_relief,
-  pressure_shift: hint(10deg), cutter_radius: hint(80mm))
+  pressure_shift: hint(10deg), cutter_radius: hint(40 * mean_module))
 // The two settings are found where the pinion's and the gear's margins against undercut are
 // equal, at M and at the toe. Where no mill balances them (a pinion of too few teeth, or too
 // little offset to enlarge it: 10/48, 12/24, 13/27), the call states its mill, and not these.

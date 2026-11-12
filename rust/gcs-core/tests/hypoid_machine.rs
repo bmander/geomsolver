@@ -31,8 +31,8 @@ fn unknown(e: &Elaborated,name: &str) -> f64 {
 
 /// The face mill as found at the configured hypoid: its pressure shift in degrees and its
 /// cutter's radius in millimetres.
-const SHIFT: f64 = 11.2527;
-const CUTTER: f64 = 75.6122;
+const SHIFT: f64 = fixtures::gear::FOUND_MILL[0];
+const CUTTER: f64 = fixtures::gear::FOUND_MILL[1];
 
 #[test]
 fn the_face_mill_is_found_by_balancing_the_undercut_margins() {
@@ -56,6 +56,20 @@ fn the_face_mill_is_found_by_balancing_the_undercut_margins() {
     assert!((dist(c,m)-cutter).abs() < 1e-9*cutter && (dist(c,toe)-cutter).abs() < 1e-9*cutter);
     assert!(dist(c,m) >= dist(o,m),"the cutter no smaller than the mean cone distance");
     assert!(dist(o,toe) < dist(o,m),"the toe nearer the apex than M");
+}
+
+/// **The pair scaled finds its face mill scaled** (#904 A3): with every length of the pair (the
+/// module, the offset and the allowances) 0.625, 0.75 or 1.5 times as long, the balance finds the
+/// same pressure shift and the cutter scaled with the pair — the root its seeds lead to there, the
+/// cutter's seed (`hint(40 * mean_module)`) scaled too.
+#[test]
+fn the_face_mill_scaled_is_found_scaled() {
+    for s in [0.625,0.75,1.5] {
+        let e = fixtures::gear::read(&fixtures::gear::scaled(&fixtures::gear::source(),s));
+        let (shift,cutter) = (unknown(&e,"pair.pressure_shift"),unknown(&e,"pair.cutter_radius"));
+        assert!((shift-SHIFT).abs() < 1e-3,"at {s}: the pressure shift {shift}°");
+        assert!((cutter-CUTTER*s).abs() < 1e-3*s,"at {s}: the cutter radius {cutter} mm against {} mm",CUTTER*s);
+    }
 }
 
 #[test]
@@ -100,7 +114,7 @@ fn the_recorded_machine_states_the_mill_the_suites_were_cut_by() {
 #[test]
 fn at_a_ten_tooth_pinion_no_face_mill_balances_the_undercut() {
     let ten = fixtures::gear::configure(&fixtures::gear::source(),&[("pinion_teeth",10.)]);
-    let seeds = "pressure_shift: hint(10deg), cutter_radius: hint(80mm))";
+    let seeds = "pressure_shift: hint(10deg), cutter_radius: hint(40 * mean_module))";
     assert!(ten.contains(seeds),"the pair leaves its mill to the balance");
     // the mean cone distance at 10:48, 2 mm module: the cutter is no smaller
     let r = 2.*(10f64*10.+48.*48.).sqrt()/2.;
@@ -144,7 +158,7 @@ fn at_no_offset_the_balanced_mill_undercuts_the_pinion_by_its_outer_blade() {
         Ok(_) => panic!("the pinion's cut was admitted at a {shift}° shift"),
         Err(e) => panic!("{e}"),
     }
-    let seeds = "pressure_shift: hint(10deg), cutter_radius: hint(80mm))";
+    let seeds = "pressure_shift: hint(10deg), cutter_radius: hint(40 * mean_module))";
     let symmetric = fixtures::gear::recorded_machine(&text,0.).replacen(
         "cutter_radius: 0.8 * mean_module * sqrt(pinion_teeth^2 + gear_teeth^2) / 2)",
         &format!("cutter_radius: {cutter}mm)"),1);

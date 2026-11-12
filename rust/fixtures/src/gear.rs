@@ -35,10 +35,18 @@ pub fn configure(text: &str,params: &[(&str,f64)]) -> String {
 /// the margins the pair hands its caller and the equal margins the document states of them. Every
 /// number the suites recorded was taken of a pair so cut.
 pub fn recorded_machine(text: &str,shift: f64) -> String {
-    let seeds = "pressure_shift: hint(10deg), cutter_radius: hint(80mm))";
+    stated_machine(text,shift,"0.8 * mean_module * sqrt(pinion_teeth^2 + gear_teeth^2) / 2")
+}
+
+/// `text`, the pair, with the face mill stated at a pressure shift `shift` in degrees and a cutter
+/// of radius `cutter` in millimetres — the mill a balance found, say, cut at another size — and
+/// the balance dropped as `recorded_machine` drops it.
+pub fn machine(text: &str,shift: f64,cutter: f64) -> String { stated_machine(text,shift,&format!("{cutter}mm")) }
+
+fn stated_machine(text: &str,shift: f64,cutter: &str) -> String {
+    let seeds = "pressure_shift: hint(10deg), cutter_radius: hint(40 * mean_module))";
     assert!(text.contains(seeds),"the pair leaves its face mill's settings to the solve, seeded");
-    let stated = format!("pressure_shift: {shift}deg, \
-        cutter_radius: 0.8 * mean_module * sqrt(pinion_teeth^2 + gear_teeth^2) / 2)");
+    let stated = format!("pressure_shift: {shift}deg, cutter_radius: {cutter})");
     let mut out = text.replacen(seeds,&stated,1);
     let call = "  balance := Balanced(";
     let at = out.find(call).expect("the pair finds its face mill's settings by `Balanced`");
@@ -57,6 +65,33 @@ pub fn recorded_machine(text: &str,shift: f64) -> String {
     let lines: Vec<&str> = out.split_inclusive('\n')
         .filter(|l| !l.starts_with("pair.margins.")).collect();
     lines.concat()
+}
+
+/// `text` with every length among its inputs (`param NAME := …mm` at the top level: the module,
+/// the offset and the allowances) `factor` times as long: the pair scaled whole.
+pub fn scaled(text: &str,factor: f64) -> String {
+    let (prog,_) = syntax::parse(text);
+    let lengths: Vec<(String,f64)> = prog.root().body.iter().filter_map(|st| match &st.kind {
+        syntax::StmtKind::Param(p) if p.input.is_some() && p.bound() => {
+            let written = &text[p.span.lo as usize..p.span.hi as usize];
+            let number = written.strip_suffix("mm")?;
+            Some((p.name.text.to_string(),number.trim().parse::<f64>().ok()?*factor))
+        }
+        _ => None,
+    }).collect();
+    assert!(lengths.iter().any(|(name,_)| name == "mean_module"),"the pair states its module in millimetres");
+    let lengths: Vec<(&str,f64)> = lengths.iter().map(|(name,v)| (name.as_str(),*v)).collect();
+    configure_inputs(text,&lengths)
+}
+
+/// The face mill the pair's balance finds as configured: its pressure shift in degrees and its
+/// cutter's radius in millimetres (`hypoid_machine`'s).
+pub const FOUND_MILL: [f64;2] = [11.2527,75.6122];
+
+/// The pair with every length `factor` times as long (`scaled`), cut by the mill its balance finds
+/// there — the configured one scaled (`FOUND_MILL`) — stated.
+pub fn scaled_as_found(factor: f64) -> String {
+    machine(&scaled(&source(),factor),FOUND_MILL[0],FOUND_MILL[1]*factor)
 }
 
 /// `configure` over the document's own inputs alone.

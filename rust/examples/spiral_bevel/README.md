@@ -18,7 +18,7 @@ a sense (`sense: cw`), an ordinate's sign — and the layout solves from those w
 block-triangular order constructs it a block at a time, searching each block's roots for the one
 its bounds say (#217). Five numbers are unknown and the solve finds them: `HypoidPair`'s formals
 `mn`, `rp` and `pa`, which the call leaves out, and the face mill's `pressure_shift` and
-`cutter_radius`, which it leaves to the solve with a seed each (`hint(10deg)`, `hint(80mm)`) — the
+`cutter_radius`, which it leaves to the solve with a seed each (`hint(10deg)`, `hint(40 * mean_module)`, which tracks the pair's size) — the
 only hints in the file.
 
 The layout stands on the pitch plane P, `std.top`, with the gear apex O at its origin. The gear's
