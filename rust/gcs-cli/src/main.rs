@@ -1274,6 +1274,13 @@ fn under(name: &str, asked: &str) -> bool {
     name == asked || name.strip_prefix(asked).is_some_and(|r| r.starts_with('.'))
 }
 
+/// Whether solid `i` is `asked` or something under it (`under`), by its key or by the name the
+/// document calls it (`Sketch::solid_name`: a block's copy by its index).  `wanted` reads the key
+/// alone.
+fn solid_under(sk: &Sketch, i: usize, asked: &str) -> bool {
+    under(&sk.solids[i].name, asked) || under(&sk.solid_name(i), asked)
+}
+
 /// `file:line:col: error[Exxx]: message`.
 ///
 /// Offsets cross from the core in **UTF-8 bytes** and a column counts characters, which
@@ -1464,8 +1471,7 @@ fn assembly(sk: &Sketch, e: &mut Elaborated, s: &Source, opts: &Opts, path: &str
             (--step)".into());
     }
     let objects: Vec<usize> = gcs_core::overview::objects(sk).into_iter()
-        .filter(|&i| solid.is_none_or(|n| under(&sk.solids[i].name, n)
-            || under(&sk.solid_name(i), n))).collect();
+        .filter(|&i| solid.is_none_or(|n| solid_under(sk, i, n))).collect();
     if objects.is_empty() {
         return fail(e, match solid {
             Some(n) => format!("no object called `{n}`, or under it, to write"),

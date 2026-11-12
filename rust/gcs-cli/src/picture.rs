@@ -84,15 +84,12 @@ pub struct Ask<'a> {
 /// The solids a picture draws: the one `--solid` names (else the objects under that name), or
 /// every object the workspace shows; less those `--hide` names.
 fn chosen(sk: &Sketch, ask: &Ask) -> Result<Vec<usize>, String> {
-    // under the name as the document calls it (a block's copy by its index) or by its key
-    let named = |i: usize, n: &str| crate::under(&sk.solids[i].name, n)
-        || crate::under(&sk.solid_name(i), n);
     let mut v = match ask.solid {
         Some(n) => match crate::pick_solid(sk, Some(n)) {
             Ok(i) => vec![i],
             Err(m) => {
                 let v: Vec<usize> = gcs_core::overview::objects(sk).into_iter()
-                    .filter(|&i| named(i, n)).collect();
+                    .filter(|&i| crate::solid_under(sk, i, n)).collect();
                 if v.is_empty() { return Err(m); }
                 v
             }
@@ -100,11 +97,11 @@ fn chosen(sk: &Sketch, ask: &Ask) -> Result<Vec<usize>, String> {
         None => gcs_core::overview::shown_objects(sk),
     };
     for h in ask.hide {
-        if !(0..sk.solids.len()).any(|i| named(i, h)) {
+        if !(0..sk.solids.len()).any(|i| crate::solid_under(sk, i, h)) {
             return Err(format!("no solid called `{h}` to hide"));
         }
     }
-    v.retain(|&i| !ask.hide.iter().any(|h| named(i, h)));
+    v.retain(|&i| !ask.hide.iter().any(|h| crate::solid_under(sk, i, h)));
     if v.is_empty() { return Err("this document has no solid to draw".into()); }
     Ok(v)
 }
