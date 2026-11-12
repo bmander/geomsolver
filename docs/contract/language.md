@@ -602,8 +602,12 @@ closed body hands on a group of its file whole as it reads its numbers (`Walk::f
 the key the file holds it under: its own, `{module}.g`, a used module's path, or a bare import),
 unless a formal or a name of the body hides it; one carrying geometry, itself or through a group
 it names (`carries_geometry`), is E103 at the argument, and an instance is no group of the file
-(`Walk::defined_groups`). `value_read` says a group read as a number is one. `tests/group_values.rs`
-is the gate. Only a number may be
+(`Walk::defined_groups`). `value_read` says a group read as a number is one. A member may name a
+member of the group of an instance the body writes (`margins := {pinion_mean:
+balance.margins.pinion_mean, …}`, #904), whose aliases are made as that instance is expanded,
+after the body's: `Walk::alias_table` reads each alias that read nothing again once the rest are
+in, until a pass reads no more, and a name another alias already gave keeps it
+(`a_group_member_may_name_a_member_of_an_instances_group`). `tests/group_values.rs` is the gate. Only a number may be
 left out of a call ([0.95]): an entity, path, group or set formal left out is E103 at the call
 (`Walk::bind`) — but for **a point formal drawn in a plane formal**, `center: point in on`
 (`Formal::within`), which the instance then owns: `Walk::owned_points` declares it as its body
