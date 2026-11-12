@@ -69,6 +69,19 @@ fn carried(sk: &Sketch, t: [usize; 3], free: &std::collections::BTreeSet<u32>) -
     t.iter().rev().copied().find(|&p| own(p))
 }
 
+/// The two points of the stated orientation `key` its carried point (`carried`) is carried across
+/// the line through; `None` where no point of it moves.
+pub(super) fn line_of(
+    sk: &Sketch,
+    key: &str,
+    free: &std::collections::BTreeSet<u32>,
+) -> Option<[usize; 2]> {
+    let t = triangle(sk, key)?;
+    let q = carried(sk, t, free)?;
+    let mut others = t.into_iter().filter(|&p| p != q);
+    Some([others.next()?, others.next()?])
+}
+
 /// Where the point of the stated orientation `key` a solve carries is carried to (`across`),
 /// nearest first, as the drawing stands: its mirror in the line through the other two, where that
 /// is on the stated side by more than the solve's tolerance, then half that line's length onto
@@ -92,6 +105,15 @@ fn aims(sk: &Sketch, key: &str, free: &std::collections::BTreeSet<u32>) -> Vec<f
         out.push(far);
     }
     out
+}
+
+/// Where the point of the stated orientation `key` a solve carries aims first (`aims`), where the
+/// drawing breaks it: what the block pass's root search reads (`blocks::Search`).
+pub(super) fn aim(sk: &Sketch, key: &str, free: &std::collections::BTreeSet<u32>) -> Option<f64> {
+    if holds(sk, key, bound_tol(sk))? {
+        return None;
+    }
+    aims(sk, key, free).first().copied()
 }
 
 /// Every stated orientation the drawing breaks, by key, with where the point a solve carries

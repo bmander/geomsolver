@@ -47,15 +47,22 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   point of a broken one on the seeds (the last of the three, in the key's order, with a coordinate
   the solve moves; its twins and lifts with it) to its mirror in the line through the other two,
   or half that line's length onto the stated side, and `program::elaborate` elaborates again from
-  there (`crossed_seeds`); `System::steer` steers a broken one after the bounds (a `Choice`, one
-  budget of `STEER_ROUNDS`), from the start and then the solution, kept only where it solves and
-  holds; still broken, `success` false, status **`ORIENTATION_BROKEN`** (7, "a stated orientation
+  there (`crossed_seeds`) — **but not across a line through a point nothing seeded** (#904 A13:
+  `SourceMap::unseeded`, a point the source wrote no seed for still where `scatter` minted it,
+  whose bearing is its creation order's, so a side read against it is noise that carried hinted
+  points wherever the count of points before it pointed); `System::steer` steers a broken one
+  after the bounds (a `Choice`, one budget of `STEER_ROUNDS`), from the start and then the
+  solution, kept only where it solves and holds, and where crossing one point at a time leaves
+  one broken — a figure turned over, its orientations broken together — the block search runs
+  as for a bound; still broken, `success` false, status **`ORIENTATION_BROKEN`** (7, "a stated orientation
   does not hold"; a broken bound is said first), `Diagnosis::orientations_violated` (keys; report
   `orientationsViolated`), the CLI's `orientation broken: ccw(a, b, x)`
   (`report::orientation_text`).  `PlanSolver::solve` replays a stated choice as stated over its
   cache, falls back to the numeric solve where its root breaks one, keeps no `ORIENTATION_BROKEN`
   result, and writes the stated sign back to `branches`.  The block pass's root search
-  (`blocks::Search`) reads bounds only.  A drag (`retry` off), a drawing stating none and one whose
+  (`blocks::Search`) reads the stated orientations beside the bounds, each deciding the block
+  that solves the last of its triangle's coordinates (a block holding a contact is started within
+  its bounds alone, `start_within`).  A drag (`retry` off), a drawing stating none and one whose
   seeds keep theirs solve to the same bits; a traced body's are the locus's at its anchor
   (`locus`), and its drawn instance stands where they hold.  The component classifier still
   applies them itself to the roots its probes find (`boundary::search`: a probe steers nothing).
@@ -445,16 +452,17 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   `acceptance_tol`. The spiral bevel relies on it (`hypoid_layout.rs` holds rough starts).
 - **Words choose roots; the block pass searches for them** (#217, F8): a block is accepted when
   its rows meet `acceptance_tol` **and every bound it decides holds** (`solve::blocks::Search`: a
-  bound whose columns are all solved so far, some the block's own); where not, it is started again —
+  bound whose columns are all solved so far, some the block's own — and so a stated orientation,
+  by its triangle's coordinates, #904 A13); where not, it is started again —
   each broken bound's point carried across it (`across`) and the block mirrored across the plane
   that point crossed (an offset's other hand), from its solution and its start, then `RESTARTS`
   starts with its points scattered about what the blocks before it placed, at their size, and its
   axes turned (a fixed `rng::Rng` stream per start) — each a DogLeg, else followed along the
   Newton homotopy `r(z) = (1 − t) r(start)` (`follow_block`, `HOMOTOPY_STEPS`); a drawing stating
-  no bound has no root to search for. Constants read off the pose (`CKind::reads_pose`) are
-  refreshed before each block (`refresh_consts`) and put back for the polish. A
-  steered solve whose crossings leave a bound broken runs the pass from its start (not under
-  `BlockMode::Off`). **A drawing is judged at its own size**: a failed document solve ending more
+  no bound and no orientation has no root to search for. Constants read off the pose
+  (`CKind::reads_pose`) are refreshed before each block (`refresh_consts`) and put back for the
+  polish. A steered solve whose crossings leave a bound or a stated orientation broken runs the
+  pass from its start (not under `BlockMode::Off`). **A drawing is judged at its own size**: a failed document solve ending more
   than `RESIZE` times the extent it was compiled at is compiled there and solved again from its
   start (`System::resized`), so an unseeded start about the origin at unit size reaches a drawing
   hundreds of millimetres across. **Constants are read again where a solve ends**

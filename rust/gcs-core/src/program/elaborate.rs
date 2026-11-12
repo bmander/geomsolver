@@ -137,6 +137,8 @@ pub(super) fn elaborate_in(
     solids_and_surfaces(&mut cx, &flat, named, faces_settled, pose, &generated, &held_in_space)?;
     expressions(&mut cx, &flat, &on_followed);
     regions_read(&mut cx, &flat, &after_solids);
+    // what nothing seeded, once every seed is in: the seeds say no side of it (#904 A13)
+    cx.map.unseeded = entities::unseeded(&cx.sk, &deferred);
     Ok(finish(cx, &flat))
 }
 

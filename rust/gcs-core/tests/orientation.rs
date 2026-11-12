@@ -250,3 +250,77 @@ fn an_orientation_word_defined_as_a_name_is_read_as_that_name() {
     let e = solved(&apex((3.0, 4.0), "cw(a, b, x)"));
     assert!(close(x_at(&e), (3.0, -4.0)), "cw(a, b, x): {:?}", x_at(&e));
 }
+
+/// A crank's outline, its outer tangents chosen by four stated orientations about its line of
+/// centres from `std.origin` to `c`, a point nothing seeds: `c` stands where its creation order
+/// scattered it (#904 A13).
+const CRANK: &str = "\
+component Crank(throw: Length) {
+  in std.front {
+    c := point
+    c right_of(d: throw) std.origin
+    a := point hint((0mm, 17mm))
+    b := point hint((0mm, -17mm))
+    d := point hint((throw, 10mm))
+    e := point hint((throw, -10mm))
+    lower := line(b, e)
+    small := arc(center: c, start: e, end: d)
+    upper := line(d, a)
+    big := arc(center: std.origin, start: a, end: b)
+    radius(17mm) big
+    radius(10mm) small
+    ccw(std.origin, c, a)
+    ccw(std.origin, c, d)
+    cw(std.origin, c, b)
+    cw(std.origin, c, e)
+    lower tangent(at: p1) big
+    lower tangent(at: p2) small
+    upper tangent(at: p1) small
+    upper tangent(at: p2) big
+  }
+}
+";
+
+/// **A stated orientation is read on seeds the drawing gave, and the root searched for where
+/// crossing one point cannot reach it** (#904 A13): the crank, drawn once and twice — the second
+/// seated turned over, its front on the world's — keeps its four orientations however many
+/// points the document declares before it.  Its line of centres runs to `c`, which nothing
+/// seeds: its scatter depends on how many points came first, and the seeds' sides read against
+/// it were noise that carried the hinted tangent points to wherever it pointed, so some counts
+/// solved to the crossed tangents, steering unable to turn the figure over one point at a time.
+#[test]
+fn a_seated_crank_keeps_its_orientations_whatever_comes_before_it() {
+    let seated = "\
+right_end := point
+right_end coincident std.y
+std.origin distance(-30mm, along: std.y) right_end
+down := axis
+down parallel(sense: opposite) std.z
+std.origin coincident down
+right_crank := Crank(throw: 170mm)
+right_crank seats(turn: 0deg, up: std.z, east: std.x) right_end
+left_crank := Crank(throw: 170mm)
+left_crank seats(turn: 180deg, up: down, east: std.x) std.origin
+";
+    for (body, what) in [(seated, "seated twice"), ("crank := Crank(throw: 170mm)\n", "alone")] {
+        for extra in 0..9 {
+            let pad: String = (0..extra).map(|i| format!("z{i} := point in std.front\n")).collect();
+            let src =
+                format!("unit mm\nuse std\nuse std.place (seats, right_of)\n{pad}{body}{CRANK}");
+            let mut e = read(&src);
+            let r = solve(&mut e.sketch, SolveOpts::default());
+            let broken = gcs_core::solve::orientations_broken(&e.sketch);
+            assert!(r.success && broken.is_empty(),
+                    "{what}, {extra} points before: {r:?}, broken {broken:?}");
+            // the outer tangents: every tangent point on its stated side of the line of centres
+            let prefixes: &[&str] = if body == seated { &["right_crank.", "left_crank."] } else {
+                &["crank."]
+            };
+            for pre in prefixes {
+                let y = |n: &str| e.sketch.point_xy(ent(&e, &format!("{pre}{n}")).i()).1;
+                assert!(y("a") > 16.0 && y("d") > 9.0 && y("b") < -16.0 && y("e") < -9.0,
+                        "{what}, {extra} points before, {pre}: crossed tangents");
+            }
+        }
+    }
+}

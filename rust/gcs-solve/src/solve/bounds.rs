@@ -85,7 +85,7 @@ pub(super) fn movable(sk: &Sketch) -> std::collections::BTreeSet<u32> {
 /// What a solve is steered to hold (§9.6): a bound, by its constraint's index, or an orientation
 /// the document states (#157), by its record's key.
 #[derive(Clone, Debug, PartialEq)]
-enum Choice {
+pub(super) enum Choice {
     Bound(usize),
     Orientation(String),
 }
@@ -101,7 +101,7 @@ fn choices_broken(sk: &Sketch, free: &std::collections::BTreeSet<u32>) -> Vec<(C
 
 impl Choice {
     /// Carry its point to where it reads `aim` (`across`, `orientations::across`).
-    fn across(&self, sk: &mut Sketch, aim: f64, free: &std::collections::BTreeSet<u32>)
+    pub(super) fn across(&self, sk: &mut Sketch, aim: f64, free: &std::collections::BTreeSet<u32>)
         -> Option<usize> {
         match self {
             Choice::Bound(ci) => across(sk, *ci, aim, free),
@@ -109,8 +109,19 @@ impl Choice {
         }
     }
 
+    /// Where its point aims, nearest first, where it does not hold on the drawing as it stands;
+    /// `None` where it holds, or no point of it can be carried.
+    pub(super) fn aim(&self, sk: &Sketch, free: &std::collections::BTreeSet<u32>) -> Option<f64> {
+        match self {
+            Choice::Bound(ci) => bound_reading(sk, &sk.constraints[*ci], bound_tol(sk))
+                .filter(|r| !r.holds)
+                .and_then(|r| r.aims.first().copied()),
+            Choice::Orientation(k) => orientations::aim(sk, k, free),
+        }
+    }
+
     /// Whether it holds on the drawing as it stands.
-    fn holds(&self, sk: &Sketch) -> bool {
+    pub(super) fn holds(&self, sk: &Sketch) -> bool {
         let tol = bound_tol(sk);
         match self {
             Choice::Bound(ci) => {
@@ -125,12 +136,19 @@ impl Choice {
 /// measures carried across its edge (`across`), and each orientation the document states that it
 /// breaks a point of its triangle across the line through the other two (#157,
 /// `orientations::across`) — what the elaborator asks of the seeds, before what is seeded from
-/// them is read.  The points carried.
-pub fn cross_bounds(sk: &mut Sketch) -> Vec<usize> {
+/// them is read.  An orientation whose line, through the two points not carried, runs through
+/// one of `unseeded` — a point nothing seeded, standing where its creation order scattered it —
+/// is not carried (#904 A13): the seeds draw no line there, and a side read against it is noise,
+/// which the solve's steering reads on the solution instead.  The points carried.
+pub fn cross_bounds(sk: &mut Sketch, unseeded: &std::collections::BTreeSet<usize>) -> Vec<usize> {
     let free = movable(sk);
     let mut moved: Vec<usize> =
         broken(sk).into_iter().filter_map(|(ci, aims)| across(sk, ci, aims[0], &free)).collect();
-    for (k, aims) in orientations::broken_aims(sk, &free) {
+    let seeded = |k: &String| orientations::line_of(sk, k, &free)
+        .is_some_and(|l| l.iter().all(|p| !unseeded.contains(p)));
+    let turns: Vec<(String, Vec<f64>)> =
+        orientations::broken_aims(sk, &free).into_iter().filter(|(k, _)| seeded(k)).collect();
+    for (k, aims) in turns {
         if let Some(q) = aims.first().and_then(|&aim| orientations::across(sk, &k, aim, &free)) {
             if !moved.contains(&q) {
                 moved.push(q);
@@ -308,10 +326,12 @@ impl System {
             }
         }
         // what crossing one point at a time cannot reach — a line run the other way round, an
-        // offset's other hand, where every point of a block moves together — the block pass finds
-        // by searching each block's roots for the one its bounds say (`Search`), from where the
-        // solve began; kept only where it solves and every bound and stated orientation holds
-        if !broken(sk).is_empty()
+        // offset's other hand, where every point of a block moves together, a figure turned over
+        // whose stated orientations break together (#904 A13) — the block pass finds by
+        // searching each block's roots for the one its bounds and stated orientations say
+        // (`Search`), from where the solve began; kept only where it solves and every bound and
+        // stated orientation holds
+        if !choices_broken(sk, &free).is_empty()
             && opts.blocks != BlockMode::Off
             && self.block_order().blocks.len() >= 2
         {
