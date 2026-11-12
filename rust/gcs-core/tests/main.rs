@@ -145,6 +145,7 @@ mod geometry_semantics;
 mod group_values;
 mod grown;
 mod held_envelopes;
+mod helical_mesh;
 mod helical_rack;
 mod helix;
 mod meeting;

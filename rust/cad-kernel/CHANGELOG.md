@@ -8,6 +8,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A facet the mesh would count as turned is refined past the turning budget** (`mesh`): a
+  facet facing against its surface at its middle, thicker than a tenth of the bar — what
+  `Mesh::turned` counts and an exporter refuses — is refined whatever the budget that bounds the
+  refinement for a turn short of that, as a sag past the bar is. A long face with a tight bend
+  (a helical gear's tooth space, its root where the rack's tip corners pass) spent the budget
+  on its bends first, and left a facet inside it turned over.
+
 ## [0.8.0] - 2026-11-11
 
 - **The convex hull of points, as a solid** (`build::hull`): one plane face for each facet, its

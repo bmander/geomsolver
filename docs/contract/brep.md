@@ -928,7 +928,12 @@ outer loop, #597) is one corner of its triangulation. An edge is sampled from fi
 midpoint test can be blind to: a B-spline's knot spans, a family rail's pieces, a screwed rail a
 quarter turn at most (`edge_params`; a coil of four turns has its ends, middle and quarter
 points in one line, and was one chord). `Mesh::turned` counts facets facing against their
-surface (thicker than bar/100); the export refuses any. A face whose facets beside an edge face
+surface (thicker than a tenth of the bar); the export refuses any. **The refinement for a turn
+short of that is bounded by a budget, and a facet the export would count is refined past it**, as
+a sag over the bar is: a helical gear's flank, one face the gear's width long whose root bends
+tight, spent the budget on its bends before a facet inside it turned right over was reached, one
+a tooth, and which turned on the chamfers at its ends (#904 A7,
+`helical_mesh::a_helical_gear_chamfered_at_both_faces_meshes_facing_out`). A face whose facets beside an edge face
 against it — a sheet folding along that edge tighter than the edge's chords sag, which no point
 inside the face can mend (a round rim screwed a short lead, its ramp folding against the wall its
 side sweeps over about a tenth of a micrometre) — asks the chords those facets stand on halved, and

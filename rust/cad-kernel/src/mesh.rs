@@ -680,6 +680,16 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
         let mut sag = vec![0_f64;t2.tris.len()];
         // points put in for turning alone, at most twice the triangles the loops made
         let (mut turned,budget) = (0usize,2*t2.tris.len()+64);
+        // whether a facet of normal `n` (a cross product of its sides), its longest side `longest`,
+        // faces against the surface's normal `m` at its middle: what `Mesh::turned` counts. (A facet
+        // thinner than a tenth of the bar is flat within it, and its normal says nothing of the
+        // surface's: a sliver a few nanometres off a boundary side, one with two corners at a pole,
+        // which is dropped, or one whose inner corner a sheet's chart bends past the straight side
+        // its parameters stand beside, 0.35 µm across on the pinion)
+        let against = |n: V,longest: f64,m: V| {
+            let o = dot(n,m);
+            norm(n) > 0.1*bar*longest && if f.reversed { o > 0. } else { o < 0. }
+        };
         // the surface at `uv`: its place, its normal `S_u × S_v` and whether that is sound there (not
         // a pole's)
         let lift = |uv: Uv| -> (V,(V,bool)) {
@@ -724,7 +734,8 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
                     // while the triangle is longer than twice the bar (a turn finer than the sag is no
                     // shape), unless it is turned right over
                     let n = cross(sub(b3.1,a.1),sub(c.1,a.1));
-                    let long = [distance(a.1,b3.1),distance(b3.1,c.1),distance(c.1,a.1)].into_iter().fold(0.,f64::max) > 2.*bar;
+                    let longest = [distance(a.1,b3.1),distance(b3.1,c.1),distance(c.1,a.1)].into_iter().fold(0.,f64::max);
+                    let long = longest > 2.*bar;
                     let out = if f.reversed { -1. } else { 1. };
                     let normals = [read3[0].2,read3[1].2,read3[2].2,centre_normal];
                     let cosines: Vec<f64> = normals.iter().filter_map(|&(m,sound)| {
@@ -733,7 +744,12 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
                     }).collect();
                     let over = cosines.iter().any(|&c| c < 0.);
                     let turns = over || long && cosines.iter().any(|&c| c.min(1.).dacos() > angular);
-                    if t2.pts.len() >= 400_000 || !(s > bar || turns && turned < budget) { continue }
+                    // a facet the export refuses — facing against the surface at its middle, thicker
+                    // than a tenth of the bar (`against`) — is refined whatever the budget, as a sag
+                    // past the bar is: the budget bounds the refinement for a turn short of that, which
+                    // a face's tight bends can spend before the one facet the export counts is reached
+                    let refused = centre_normal.1 && against(n,longest,centre_normal.0);
+                    if t2.pts.len() >= 400_000 || !(s > bar || refused || turns && turned < budget) { continue }
                     let middle = |q: [[f64;2];3]| [(q[0][0]+q[1][0]+q[2][0])/3.,(q[0][1]+q[1][1]+q[2][1])/3.];
                     let q = t.map(|v| t2.pts[v as usize]);
                     let (at,p) = if s > bar || !sliver(&t2,t) { (ti,middle(q)) } else {
@@ -768,14 +784,8 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
         let turned_tris: Vec<usize> = (0..t2.tris.len()).filter(|&ti| inside[ti] && {
             let [(ua,pa,_),(ub,pb,_),(uc,pc,_)] = t2.tris[ti].map(|v| read(&mut at_point,&t2,v as usize));
             let (_,su,sv) = f.surface.d1([(ua[0]+ub[0]+uc[0])/3.,(ua[1]+ub[1]+uc[1])/3.]);
-            // (a triangle thinner than a tenth of the bar is flat within it, and its normal says
-            // nothing of the surface's: a sliver a few nanometres off a boundary side, one with two
-            // corners at a pole, which is dropped, or one whose inner corner a sheet's chart bends
-            // past the straight side its parameters stand beside, 0.35 µm across on the pinion)
-            let nf = cross(sub(pb,pa),sub(pc,pa));
             let longest = distance(pa,pb).max(distance(pb,pc)).max(distance(pc,pa));
-            let o = dot(nf,cross(su,sv));
-            norm(nf) > 0.1*bar*longest && if f.reversed { o > 0. } else { o < 0. }
+            against(cross(sub(pb,pa),sub(pc,pa)),longest,cross(su,sv))
         }).collect();
         let turned = turned_tris.len();
         // the chords of the face's edges those triangles stand on, each to be halved
