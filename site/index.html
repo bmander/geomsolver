@@ -94,3 +94,85 @@ waving, but I hope you understand - there are so many other ways to build a worl
 are deeply pleasant and interesting, and we can't get to them until we break away from our current
 hyper-optimized branch of the tech tree. That's why this CAD is - should be - alien and strange. It
 should be easy to help you express ideas that are alien and strange.</p>
+
+<h2>Quickstart</h2>
+
+<p>Install the compiler, <code>solventc</code>. The language primer is left beside it.</p>
+
+<pre>curl -fsSL https://raw.githubusercontent.com/bmander/geomsolver/main/scripts/install-solventc.sh | sh</pre>
+
+<p>Point an LLM at the
+<a href="https://github.com/bmander/geomsolver/blob/main/docs/solvent-primer.md">primer</a> and give
+it a prompt:</p>
+
+<pre>Read ~/.local/bin/solvent-primer.md. Write part.sv, a Solvent document for [an object].
+Run solventc on it until it solves, then write it out: solventc part.sv --png part.png --step part.step</pre>
+
+<p>[examples: radiatorbot, driveshaft bicycle, interferometer head. For each: the prompt, the
+source, a picture]</p>
+
+<h2>The language</h2>
+
+<p>[a gentle sequence]</p>
+
+<h3>Sets</h3>
+
+<p>A set is the points that satisfy a predicate. A ball of radius 5 about a point
+<code>c</code>, and its sphere:</p>
+
+<pre>ball   := { p | p distance(&lt;= 5mm) c }
+sphere := { p | p distance(5mm) c }</pre>
+
+<p>A set draws nothing; it means what its uses say. <code>q in ball</code> puts a point in it,
+<code>boundary(ball)</code> is its surface, <code>solid(ball)</code> is the body.</p>
+
+<p>[the napkin ring from above, written in Solvent]</p>
+
+<h3>Geometric statements</h3>
+
+<p>Start with what a sketcher does: geometry drawn in a plane, and constraints on it.</p>
+
+<pre>use std
+
+in std.front {
+  a := point
+  b := point hint((30, 10))
+
+  ab := line(a, b)
+  horizontal ab
+  a distance(40) b
+
+  fix((0, 0)) a
+}</pre>
+
+<p>The number in <code>hint(…)</code> is where the solve starts. Every other number is something
+that must be true.</p>
+
+<p>The same words work outside a plane. Two shafts drawn in different planes, held at an angle and
+an offset in space:</p>
+
+<pre>gax angle(90deg) pax
+gax distance(17.5mm) pax</pre>
+
+<p>[going beyond: tangent to a set, things that move, claims]</p>
+
+<h3>Modules</h3>
+
+<p>A component is a function of its inputs.</p>
+
+<pre>component Rung(a: point, b: point, len: Length) {
+  e := line(a, b)
+  horizontal e
+  a distance(len) b
+}
+
+t0 := Rung(l0, r0, len: 50)
+t1 := Rung(l1, r1, len: 50)</pre>
+
+<p>A file is a module, and another file brings it in with <code>use</code>.</p>
+
+<pre>use std
+use std.sets
+use engine.parts</pre>
+
+<p>[etc.]</p>
