@@ -45,8 +45,13 @@ pub trait BlankTopology {
 /// its sweeps left out (`cad::recipe_static`), built by `brep::recipe::build` as the export's
 /// blank stage builds it, in millimetres. Its edges are those two faces meet along (a seam, used
 /// twice by one face, and a pole bound nothing); its faces are read in their trimmed parameters
-/// by `brep::query::Located`. What a host's native kernel supplies otherwise, read without one.
-pub struct KernelBlank { located: crate::brep::query::Located<'static>,edges: Vec<(u32,[(usize,usize,usize);2])> }
+/// by `brep::query::Located`, each face's seams (`Face::seams`) read once and not once a sample.
+/// What a host's native kernel supplies otherwise, read without one.
+pub struct KernelBlank {
+    located: crate::brep::query::Located<'static>,
+    edges: Vec<(u32,[(usize,usize,usize);2])>,
+    seams: Vec<std::collections::BTreeSet<u32>>,
+}
 
 impl KernelBlank {
     pub fn of(sk: &crate::model::Sketch,solid: usize) -> Result<KernelBlank,String> {
@@ -65,7 +70,8 @@ impl KernelBlank {
             }
         }
         let tol = crate::brep::geom::tolerance(b.size());
-        Ok(KernelBlank {located:crate::brep::query::Located::owned(b,tol),edges})
+        let seams = b.faces.iter().map(|f| f.seams()).collect();
+        Ok(KernelBlank {located:crate::brep::query::Located::owned(b,tol),edges,seams})
     }
 }
 
@@ -122,7 +128,7 @@ impl BlankTopology for KernelBlank {
         let normal = if f.reversed { n.map(|x| -x) } else { n };
         // on the trim within the tolerance of an edge that bounds the face (a seam bounds nothing)
         let tol = tolerance.max(self.located.tol);
-        let seams = f.seams();
+        let seams = &self.seams[face];
         let on_trim = f.loops.iter().flatten().filter(|c| !seams.contains(&c.edge))
             .filter(|c| !matches!(b.edges[c.edge as usize].curve,EdgeCurve::Degenerate) && self.located.edge_gap(c.edge,position) <= tol)
             .any(|c| self.located.nearest(c.edge,position).1 <= tol);
