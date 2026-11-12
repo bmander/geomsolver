@@ -71,9 +71,9 @@ use std
 param s := 10mm
 
 a := point
-b := point hint((10, 0, 0))
-c := point hint((5, 9, 0))
-d := point hint((5, 3, 8))
+b := point hint((s, 0, 0))
+c := point hint((s / 2, s, 0))
+d := point hint((s / 2, s / 2, s))
 
 a distance(s) b
 a distance(s) c
