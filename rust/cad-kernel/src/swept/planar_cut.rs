@@ -154,8 +154,7 @@ pub fn cut_at(tool: Cutting,program: &[PlanarStep],t: f64) -> Option<Cut> {
             let w = aim(centre,side);
             let dot = |a: P,b: P| a[0]*b[0]+a[1]*b[1];
             let s = newton(&read,dot(v,w).datan2(dot(u,w)))?;
-            let (sn,cs) = s.dsin_cos();
-            let tangent = [-sn*u[0]+cs*v[0],-sn*u[1]+cs*v[1]];
+            let tangent = tool_at(s).1;
             let outward = [tangent[1]*cross(u,v).signum(),-tangent[0]*cross(u,v).signum()];
             if !(dot(outward,w) > 0.) { return None }
             s
