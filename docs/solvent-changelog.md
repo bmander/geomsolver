@@ -8,8 +8,9 @@ keep the spellings of their day.
 frame's roll turns the solids placed under that frame and no other (§9.8), so a solid placed at an
 instant of another frame's motion stands where it is read through the sweep — a planet's gear
 claimed over its sun's frame stood still while the sun turned half a pitch into it, and the claim
-was refuted where the train runs clear, saying nothing of why. Such a solid is now **W117** at the
-claim's operand, naming the frame it was read at and how to run frames together: write each one's
+was refuted where the train runs clear, saying nothing of why. Such a solid, named by the claim,
+is now **W117** at the claim's operand (a copy so placed inside a body the claim names is a
+pattern's, drawn still, and says nothing), naming the frame it was read at and how to run frames together: write each one's
 value over one declared parameter (`param t: Angle over (a, b)`, `fix(value == t) f` for each),
 draw each solid at its frame (`s := x at f`) and claim over `t`, which stands the drawing at every
 sample with each joint turned at its ratio. Nothing is judged differently.

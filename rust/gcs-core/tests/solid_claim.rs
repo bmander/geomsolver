@@ -625,11 +625,17 @@ claim over sun_turn in (0deg, 60deg) { sun_at clear(1mm) planet_at }
     let worst = v.worst().unwrap();
     assert!((worst - 36.87).abs() < 1.7, "the deepest where the pegs' centres meet: {worst}");
 
-    // a solid under the frame the claim runs over, and one placed under none, leave nothing
-    // standing that would not stand anyway
+    // a solid under the frame the claim runs over, one placed under none, and a body made of a
+    // copy placed at an instant — a pattern's, drawn still — leave nothing standing that would
+    // not stand anyway
     let src = TRAIN.replace("{claim}", "\
 construction sun_at := sun at(under: sun_turn) 0deg
-claim over sun_turn in (0deg, 60deg) { sun_at clear(1mm) planet }
+construction copy := planet at(under: planet_turn) 0deg
+held := solid(copy)
+claim over sun_turn in (0deg, 60deg) {
+  sun_at clear(1mm) planet
+  sun_at clear(1mm) held
+}
 ");
     assert!(read(&src).diags.is_empty(), "{:#?}", read(&src).diags);
 }

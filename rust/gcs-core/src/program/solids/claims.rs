@@ -158,45 +158,30 @@ fn solid_claim(
             return;
         }
     };
+    // **what a claim over the roll of motion `m` leaves standing** (#904 A11): a sweep advances
+    // only the placements under `m` (`diagnose::solid_claims`), so a solid the claim names that is
+    // read at an instant of another frame's motion — a planet in a train claimed over its sun's
+    // frame — is judged where it was read, however the two frames' ratios tie them.  Only the
+    // solids it names: a copy placed at an instant inside a body it names is how a pattern is
+    // drawn (a wheel's spokes, `hypoid_drive`), and stands still because it is drawn still
     if let Some((sweep, m)) = over.and_then(|o| Some((o, o.motion()?))) {
         for (o, &end) in w.ops.iter().zip(&ends) {
-            for (i, other) in standing(sk, end as usize, m) {
-                let (solid, frame) = (&sk.solids[i].name, &sk.motions[other].name);
-                diags.push(Diag::within(Code::W117, o.span, st.id, format!(
-                    "`{solid}` stands still through this claim: it is read at an instant of \
-                     `{frame}`, and a claim over `{f}` turns only what is placed under `{f}`.  \
-                     To run frames together, write each one's value over one declared parameter \
-                     (`param t: Angle over (a, b)`, then `fix(value == t) {frame}`), draw each \
-                     solid at its frame (`s := x at {frame}`) and claim over `t`",
-                    f = sweep.name())));
-            }
+            let s = &sk.solids[end as usize];
+            let SolidDef::Placed { motion, .. } = s.def else { continue };
+            if motion == m { continue; }
+            let frame = &sk.motions[motion as usize].name;
+            diags.push(Diag::within(Code::W117, o.span, st.id, format!(
+                "`{}` stands still through this claim: it is read at an instant of `{frame}`, and \
+                 a claim over `{f}` turns only what is placed under `{f}`.  To run frames \
+                 together, write each one's value over one declared parameter (`param t: Angle \
+                 over (a, b)`, then `fix(value == t) {frame}`), draw each solid at its frame \
+                 (`s := x at {frame}`) and claim over `t`",
+                s.name, f = sweep.name())));
         }
     }
     sk.solid_claims.push(crate::model::SolidClaim::new(requirement, ends[0], ends[1],
         over.cloned(), st.id.0));
     map.record(st, Made::Gauge);
-}
-
-/// **What a claim over the roll of motion `m` leaves standing** (#904 A11): the solids `end` is
-/// made of, itself included, each placed at an instant of another motion, with that motion.  A
-/// sweep advances only the placements under `m` (`diagnose::solid_claims`), so a solid read at
-/// an instant of another frame's roll — a planet in a train claimed over its sun's frame — is
-/// judged where it was read, however the two frames' ratios tie them.  What a placement under
-/// `m` carries moves with it, so the walk stops there.
-fn standing(sk: &Sketch, end: usize, m: u32) -> Vec<(usize, usize)> {
-    let (mut pending, mut seen, mut found) = (vec![end], BTreeSet::new(), Vec::new());
-    while let Some(i) = pending.pop() {
-        if !seen.insert(i) { continue; }
-        let Some(s) = sk.solids.get(i) else { continue };
-        match s.def {
-            crate::model::SolidDef::Placed { motion, .. } if motion == m => continue,
-            crate::model::SolidDef::Placed { motion, .. } => found.push((i, motion as usize)),
-            _ => {}
-        }
-        pending.extend(s.operands().into_iter().map(|o| o as usize));
-    }
-    found.sort_unstable();
-    found
 }
 
 /// The interval a swept claim runs over: a free variable of the drawing, a declared parameter or

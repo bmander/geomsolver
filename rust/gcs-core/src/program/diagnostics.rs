@@ -124,7 +124,7 @@ pub enum Code {
     /// a face path a block over a solid's faces runs over that names no face of the solid, so
     /// the block (a round's, a chamfer's) makes nothing (#760)
     W116,
-    /// a solid a claim over a frame's roll reads that is placed at an instant of another motion:
+    /// a solid a claim over a frame's roll names that is placed at an instant of another motion:
     /// the sweep turns only what is placed under the frame it names, so it stands still (#904 A11)
     W117,
     /// The drift lint (#462, `program::drift`): advisory, asked for and never raised by
