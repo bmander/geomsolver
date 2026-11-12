@@ -481,6 +481,17 @@ fn drum_case() -> Case {
 /// STEP file that reads back as the solid (the S4 gate's closed file).
 fn cut_through_the_front_door(case: &Case,tol: f64) { cut_within(case,tol,|_| 10.*tol) }
 
+impl Case {
+    /// The kernel's own tolerance for the case: at the size of its blank or its tool, the greater.
+    fn tolerance(&self) -> f64 { gcs_core::brep::geom::tolerance(self.blank.as_ref().map_or(0.,|b| b.size()).max(self.tool.size())) }
+}
+
+/// The case cut at the kernel's own tolerance, held to its volume within its boundary's area times it.
+fn cut_within_its_area(case: &Case) {
+    let tol = case.tolerance();
+    cut_within(case,tol,|cut| tol*crate::brep::total_area(cut));
+}
+
 /// `cut_through_the_front_door`, its volume held within what `within` reads off the cut (or what the
 /// volume is known to).
 fn cut_within(case: &Case,tol: f64,within: impl Fn(&Brep) -> f64) {
@@ -523,8 +534,7 @@ fn a_drum_leaning_to_a_screw_is_cut_through_the_front_door() { cut_through_the_f
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about a minute: three screwed sweeps at the kernel's tolerance")]
 fn the_three_cases_are_cut_at_the_kernels_own_tolerance() {
     for case in [torus_case(),v_wheel_case(),drum_case()] {
-        let tol = gcs_core::brep::geom::tolerance(case.blank.as_ref().map_or(0.,|b| b.size()).max(case.tool.size()));
-        cut_through_the_front_door(&case,tol);
+        cut_through_the_front_door(&case,case.tolerance());
     }
 }
 
@@ -675,8 +685,7 @@ fn a_pin_swung_through_a_ring_sector_is_cut_through_the_front_door() { cut_throu
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about half a minute: five turned sweeps at the kernel's tolerance")]
 fn the_turned_cases_are_cut_at_the_kernels_own_tolerance() {
     for case in [rod_spun_case(),ball_swung_case(),coin_turned_case(),pin_swung_case(),cone_spun_case()] {
-        let tol = gcs_core::brep::geom::tolerance(case.blank.as_ref().map_or(0.,|b| b.size()).max(case.tool.size()));
-        cut_through_the_front_door(&case,tol);
+        cut_through_the_front_door(&case,case.tolerance());
     }
 }
 
@@ -702,8 +711,7 @@ fn a_cone_spun_about_a_line_through_it_is_swept_through_the_front_door() { cut_t
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about two minutes: two sweeps of four turns at the kernel's tolerance")]
 fn a_drum_end_and_a_cone_point_screwed_through_a_rod_are_cut_through_the_front_door() {
     for case in [drum_end_case(),cone_point_case()] {
-        let tol = gcs_core::brep::geom::tolerance(case.blank.as_ref().map_or(0.,|b| b.size()).max(case.tool.size()));
-        cut_within(&case,tol,|cut| tol*cut.faces.iter().map(|f| gcs_core::brep::props::area(cut,f)).sum::<f64>());
+        cut_within_its_area(&case);
     }
 }
 
@@ -793,7 +801,6 @@ fn spline_bar_case() -> Case {
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about four minutes: S6's four cases at the kernel's tolerance")]
 fn s6s_free_form_faces_are_cut_through_the_front_door() {
     for case in [spheroid_wheel_case(),coil_spring_case(),drafted_slot_case(),spline_bar_case()] {
-        let tol = gcs_core::brep::geom::tolerance(case.blank.as_ref().map_or(0.,|b| b.size()).max(case.tool.size()));
-        cut_within(&case,tol,|cut| tol*cut.faces.iter().map(|f| gcs_core::brep::props::area(cut,f)).sum::<f64>());
+        cut_within_its_area(&case);
     }
 }

@@ -2246,13 +2246,13 @@ fn a_balls_pipe_is_inverted_off_its_spine() {
 
 /// A ball of radius 1 three out from the world's `z` with a flat: cut by the plane `m · (p − c) =
 /// 0.5`, `m` leaning to the axis, kept below it — its rim a sharp circle leaning to the axis (#780
-/// L2). With `m`.
-fn flattened_ball() -> (Brep,[f64;3]) {
+/// L2).
+fn flattened_ball() -> Brep {
     use gcs_core::space::{add,scale};
     let c = [3.,0.,0.];
     let m = unit([0.35,0.45,0.82]);
     let ball = gcs_core::brep::build::sphere(c,[0.,0.,1.],1.).unwrap();
-    (gcs_core::brep::build::kept(&ball,add(c,scale(m,0.5)),scale(m,-1.),0.).unwrap(),m)
+    gcs_core::brep::build::kept(&ball,add(c,scale(m,0.5)),scale(m,-1.),0.).unwrap()
 }
 
 /// **A ball with a flat screwed is swept through the contact's road** (#780 L2; #880 Q1b S6): its
@@ -2266,7 +2266,7 @@ fn flattened_ball() -> (Brep,[f64;3]) {
 #[test]
 fn a_ball_with_a_flat_screwed_is_swept_through_the_contacts_road() {
     use std::f64::consts::TAU;
-    let (tool,_) = flattened_ball();
+    let tool = flattened_ball();
     let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.5,advance:TAU*0.5*1.5});
     let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap_or_else(|u| panic!("{u:?}"));
     let revolved = gcs_core::brep::swept::patches::Revolved::read(&tool).unwrap();

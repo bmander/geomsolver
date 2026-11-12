@@ -153,7 +153,7 @@ impl BSpline {
     /// `nearest`, a span's Bézier poles in a table of `M` (more than the degree).
     fn nearest_in<const M: usize>(&self,p: V) -> f64 {
         let (deg,n) = (self.degree,self.poles.len());
-        let [a,_] = self.domain();
+        let [a,z] = self.domain();
         let mut spans: Vec<(f64,usize)> = (deg..n).filter(|&s| self.knots[s] < self.knots[s+1]).map(|s| {
             let poles = &self.poles[s-deg..=s];
             let gap: [f64;3] = std::array::from_fn(|i| {
@@ -179,15 +179,13 @@ impl BSpline {
         // (a closed spline passing its seam smoothly, its foot held at one end by the search's clamp,
         // read again from the other end, the nearer kept: a point of a closed spline's extrusion just
         // short of its seam, seeded at the seam's first end, read a foot 0.07 off, #880 Q1b S6)
-        let z = self.domain()[1];
         if t == a || t == z {
+            use crate::util::space::{distance,norm};
             let (da,dz) = (self.ders(a,1),self.ders(z,1));
-            let closed = crate::util::space::distance(da[0],dz[0]) <= 1e-12*(1.+crate::util::space::norm(da[0]))
-                && crate::util::space::distance(da[1],dz[1]) <= 1e-9*crate::util::space::norm(da[1]);
+            let closed = distance(da[0],dz[0]) <= 1e-12*(1.+norm(da[0])) && distance(da[1],dz[1]) <= 1e-9*norm(da[1]);
             if closed {
                 let other = self.refined(p,if t == a { z } else { a });
-                let off = |x: f64| crate::util::space::distance(self.point(x),p);
-                if off(other) < off(t) { return other }
+                if distance(self.point(other),p) < distance(self.point(t),p) { return other }
             }
         }
         t
