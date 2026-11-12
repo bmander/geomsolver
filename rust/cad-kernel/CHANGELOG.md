@@ -13,7 +13,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   apart from the build, within 3e-5 at a tolerance of 1e-5. A tool bounded by one ball or one
   torus is read for membership by its exact signed distance; a trimmed piece proved inside or
   outside the sweep is dropped before its sides are read; and a fitted curve merges nodes within
-  the tolerance, where a cubic through two nodes a hair apart swung 160 off.
+  the tolerance, where a cubic through two nodes a hair apart swung 160 off. It builds to 1e-6 as
+  well: a given meeting is held to the tolerance wherever the arrangement reads a reach, a touch
+  run reaching an edge's own end is read at that end, and an edge whose search against a given
+  partner is refused is read off the given curves.
 - **A sweep's sheets are given their meetings with the tool at the roll's ends**
   (`swept::contacts::candidates`): what of a sheet passes back into the tool where it touches it
   along a rim, the zero set of the distance over its double root, read in the sheet's parameters,

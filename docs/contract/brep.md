@@ -607,7 +607,20 @@ the leaning torus's carried contact re-entering the start pose it touches along 
 meeting is held to the tolerance** where two meetings on a face are crossed (`triple_points`,
 `meeting::Shared::given`): its curves lie on both its surfaces, so the reach a trace is held to —
 the tolerance over the sine of its surfaces' angle — does not apply, and at a point where several
-surfaces are tangent it cut two given curves at a near miss far from where they meet. **A Boolean is the
+surfaces are tangent it cut two given curves at a near miss far from where they meet. So too
+wherever a given meeting's reach is asked: their crossing is kept where the two curves cross, with
+no Newton on the three surfaces (singular where all three are tangent, it slid 3e-3 along the
+valley); a vertex is taken onto a given curve only within `ON_CURVE` tolerances (`points_on`: two
+sheets meeting smoothly along their shared rail, the sine of their angle nought, took a vertex 3e-3
+off it); and an edge of a face given a meeting with another's surface, whose search for where it
+meets that surface is refused, is read off the given curves (`on_given`). **A touch run reaching an
+edge's own end is that end** (`at_its_ends`): a root the edge reaches from its nearer end within
+`ON_CURVE` tolerances of the surface all the way is read there, a touch (a swept sheet's rail
+leaves the pose it starts on tangent to it, and the run's far end was read as a vertex of its own).
+**A piece the collapse made a loop of no length is collapsed too** (`collapsed`, step 3b): a piece a
+few reaches long whose ends the merges made one vertex — one a hair past the reach, beside a piece
+that collapsed — is gone, where it was left a loop round the vertex and the face's pieces did not
+close. **A Boolean is the
 selection, with no other road**: a shell kept on one side and dropped on another is refused (two
 cells joined round an edge), where each face was once kept by its own sides; the fifteen round
 cases that took that road did so because a fitted round leaves the edge some 1e-5 off the face it is

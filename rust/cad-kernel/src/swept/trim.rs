@@ -218,8 +218,34 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
                 u.iter().map(|&(f,_,_)| (f,out.faces[f].surface.kind())).collect::<Vec<_>>());
         }
     }
-    out.check(tol)?;
-    if debug() { eprintln!("trim: built {} faces, volume {:.6}",out.faces.len(),crate::props::volume(&out)) }
+    if let Err(why) = out.check(tol) {
+        if debug() {
+            for (fi,f) in out.faces.iter().enumerate() {
+                for c in f.loops.iter().flatten() {
+                    let e = &out.edges[c.edge as usize];
+                    let crate::topo::EdgeCurve::Curve(cv) = &e.curve else { continue };
+                    let off = (0..=64).map(|k| { let p = e.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/64.,&out.vertices); (f.surface.implicit(p).abs(),k) }).max_by(|x,y| x.0.total_cmp(&y.0)).unwrap();
+                    if off.0 > 0.5*tol { eprintln!("trim: face {fi} ({}) edge {} ({}) over {:?} from {:?} to {:?}: {:.2e} off the face at {}/64",f.surface.kind(),c.edge,cv.kind(),e.t,out.vertices[e.v[0] as usize].p,out.vertices[e.v[1] as usize].p,off.0,off.1) }
+                }
+            }
+        }
+        return Err(why.into())
+    }
+    if debug() {
+        let flux = crate::props::fluxes(&out);
+        eprintln!("trim: built {} faces, volume {:.6}",out.faces.len(),flux.iter().sum::<f64>()/3.);
+        for (i,x) in flux.iter().enumerate() {
+            if x.is_finite() { continue }
+            let f = &out.faces[i];
+            eprintln!("trim:   face {i} ({}): flux {x}, {} loops",f.surface.kind(),f.loops.len());
+            for c in f.loops.iter().flatten() {
+                let e = &out.edges[c.edge as usize];
+                let ends = [c.pcurve.at(e.t[0],e,&f.surface,&out.vertices),c.pcurve.at(e.t[1],e,&f.surface,&out.vertices)];
+                let kind = match &e.curve { crate::topo::EdgeCurve::Curve(cv) => cv.kind(),_ => "degenerate" };
+                eprintln!("trim:     edge {} ({kind}) over {:?}, reversed {}, from {:?} to {:?}, ends in its face {:?}",c.edge,e.t,c.reversed,out.vertices[e.v[0] as usize].p,out.vertices[e.v[1] as usize].p,ends);
+            }
+        }
+    }
     let (lo,hi) = out.bounds();
     let grow = 0.1*distance(lo,hi);
     let foot = [0.5*(lo[0]+hi[0]),0.5*(lo[1]+hi[1]),lo[2]-grow];

@@ -947,7 +947,8 @@ cut alike, and without it nothing lays the rim on the pose's face, which then st
 **The trim of a screwed torus** (`swept_contacts::a_rod_grooved_by_a_leaning_torus_screwed_along_it_is_its_volume`,
 S4's gate for `torus-screwed-through-rod`): the closed sweep trimmed from those candidates, judged,
 and cut from the rod is the groove's volume computed apart from it (1460.6300031715, by the
-helical heights the torus reaches at each radius) within 3e-5, built to 1e-5. Four things it took.
+helical heights the torus reaches at each radius) within ten tolerances, built to 1e-5 and to 1e-6.
+Four things it took.
 **A tool bounded by one ball or one torus is read exactly** (`member::Solid`): its implicit is its
 signed distance, so membership has no sag — a mesh's (a hundredth of the tool) set the hair a
 piece's sides are read at, and two sheets touching along a path stand within a thousandth of each
@@ -960,7 +961,19 @@ nodes a hair apart swung 160 off its branch between them, unread by a span too s
 and the flux and the mesh of the face it bounded read it so; and a branch two of whose roots
 stood at one place was refused whole. Each piece of contact is cut at every double point it
 passes (S1's gate: a piece ends on the face's boundary or where `∇g = 0`), where `|∇g|` falls to
-a least and Newton holds one, as well as where it turns sharply.
+a least and Newton holds one, as well as where it turns sharply. **At a finer tolerance**: a
+branch of a sheet's meeting with a pose is settled on `h` and then onto `F` itself off the rim, a
+move of a few tolerances (`h`'s zero set is where `F` is the rim's own value and rate carried out,
+the section's fit, and a branch settled on it alone stood 2.5e-6 off the tool at 1e-6; Newton on
+`F` alone wandered near a fold, where both its factors are small). The arrangement holds a given
+meeting to the tolerance throughout (`brep.md`): where an edge meets a face whose surface a face it
+bounds is given a meeting with and the search is refused, it is read off the given curves; a
+touch run reaching an edge's own end is that end; two given meetings' crossing is kept where their
+curves cross; and no vertex is taken onto a given meeting's curve from farther than `ON_CURVE`
+tolerances. At a double point's corner, where `h` is nought but for its rounding, its zero line
+clips the corner and leaves a root of rounding on each of the corner's two sides besides the
+branch's own, three in one cell, which no pairing joins: the corner is the root those two stand
+for, joined to the third (`pose_meeting`).
 
 The build's tolerance must be one a fit can hold: a contact fitted within a tenth of
 `geom::tolerance` (5e-10 of the size) takes thousands of spans, and its rim then stands off its face

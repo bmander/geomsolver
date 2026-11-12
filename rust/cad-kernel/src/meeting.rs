@@ -989,6 +989,12 @@ impl Shared {
     /// Whether surfaces `i` and `j`'s meeting was given (`give`): its curves lie on both, known as
     /// a closed form's are and not as a trace's.
     pub fn given(&self,i: usize,j: usize) -> bool { self.was_given.contains(&(i.min(j),i.max(j))) }
+    /// The curves given for surfaces `i` and `j`'s meeting (`give`), asked for or not.
+    pub fn given_curves(&self,i: usize,j: usize) -> Vec<Curve> {
+        let key = (i.min(j),i.max(j));
+        if let Some(c) = self.given.get(&key) { return c.clone() }
+        match self.meetings.get(&(i,j)) { Some(Ssi::Curves(c)) if self.given(i,j) => c.clone(),_ => Vec::new() }
+    }
 }
 
 /// `v` made unit, or left as it is where it has no length.

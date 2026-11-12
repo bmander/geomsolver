@@ -366,7 +366,7 @@ fn each_sheet_is_given_its_meeting_with_the_tool_at_each_end() {
 /// so the cut is 20 A, A the rod's disc covered at radius ρ by the helical heights `z − c φ` the
 /// torus's exact signed distance reaches, over `c` (`scratch: groove.py`, Gauss–Legendre in ρ over
 /// [3.5, 5], each height's depth by golden section over a turn, converged at 12 and 24 points to
-/// 1460.6300031715 left of the rod). Built to 1e-5, within the sections' fit of it.
+/// 1460.6300031715 left of the rod). Built to 1e-5 and to 1e-6, each within ten tolerances of it.
 #[test]
 fn a_rod_grooved_by_a_leaning_torus_screwed_along_it_is_its_volume() {
     use gcs_core::brep::boolean::{combined,Op};
@@ -376,11 +376,14 @@ fn a_rod_grooved_by_a_leaning_torus_screwed_along_it_is_its_volume() {
     let tool = leaning_torus();
     let path = Trajectory::Twist(rod_screw());
     let roll = [(-108f64).to_radians(),348f64.to_radians()];
-    let (cands,given) = candidates(&tool,&path,roll,TOL).unwrap();
     let size = tool.size();
-    let (swept,_) = trimmed(&tool,&path,roll,&cands,&given,0.01,TOL,Trim {resolution:size/32.,hair:4.*TOL}).unwrap();
     let rod = prism(&disc([0.;3],[0.,0.,1.],5.),0.,20.).unwrap();
-    let grooved = combined(&rod,&swept,Op::Cut,TOL).unwrap();
-    let volume = gcs_core::brep::props::volume(&grooved);
-    assert!((volume-1460.6300031715).abs() <= 1e-4,"the grooved rod's volume {volume}, apart from the build 1460.6300031715");
+    for tol in [TOL,0.1*TOL] {
+        let (cands,given) = candidates(&tool,&path,roll,tol).unwrap();
+        let (swept,_) = trimmed(&tool,&path,roll,&cands,&given,0.01,tol,Trim {resolution:size/32.,hair:4.*tol})
+            .unwrap_or_else(|e| panic!("the sweep trimmed to {tol:e}: {e:?}"));
+        let grooved = combined(&rod,&swept,Op::Cut,tol).unwrap();
+        let volume = gcs_core::brep::props::volume(&grooved);
+        assert!((volume-1460.6300031715).abs() <= 10.*tol,"to {tol:e}, the grooved rod's volume {volume}, apart from the build 1460.6300031715");
+    }
 }

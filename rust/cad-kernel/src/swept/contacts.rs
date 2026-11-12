@@ -506,6 +506,19 @@ fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,touch: Option<f64>,
         let found: Vec<usize> = sides.iter().flatten().copied().collect();
         match found.len() {
             2 => links.push([found[0],found[1]]),
+            // **a cell at one of `corners`**, the branch leaving the corner through it: `h` nought
+            // there but for its rounding, its zero line clips the corner, a root of rounding on each
+            // of the corner's two sides besides the one the branch leaves by — three, which no
+            // pairing joins. The corner is the root its two sides' stand for, joined to the third
+            3 => {
+                let at = [node(i,j),node(i+1,j),node(i+1,j+1),node(i,j+1)];
+                let Some(k) = (0..4).find(|&k| corners.iter().any(|c| (c[0]-at[k][0]).abs() <= 1e-12 && (c[1]-at[k][1]).abs() <= 1e-12)) else { continue };
+                // the sides at corner `k` (bottom 0, right 1, top 2, left 3): the side before it and the side after
+                let beside = [(k+3)%4,k];
+                let Some(third) = (0..4).filter(|x| !beside.contains(x)).find_map(|x| sides[x]) else { continue };
+                roots.push(at[k]);
+                links.push([roots.len()-1,third]);
+            }
             4 => {
                 // a saddle of `h`: which corners its middle's value joins
                 let [b,r,t,l] = sides.map(Option::unwrap);
@@ -542,10 +555,13 @@ fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,touch: Option<f64>,
     // each fitted: a point between two of its own settled across it, by Newton on `h`'s gradient —
     // or `F`'s away from the rim, the same zero set and sign at a sixth of the cost
     let d = 1e-7;
-    let near_rim = |p: Uv| touch.is_some_and(|e| (p[1]-e).abs() < 0.05);
-    let onto = |mut p: Uv| -> Uv {
-        for _ in 0..30 {
-            let k: &dyn Fn(f64,f64) -> f64 = if near_rim(p) { &h } else { &f };
+    // (`h` only within a step of the rim, where `F`'s double root leaves Newton nothing to settle on:
+    // beyond, `h`'s zero set is where `F` is the rim's own value and rate carried out — the
+    // section's fit, a tenth of the tolerance — not nought, and a branch settled on it a twentieth
+    // of the roll out stood 2.5e-6 off the tool)
+    let near_rim = |p: Uv| touch.is_some_and(|e| (p[1]-e).abs() < STEP);
+    let newton = |k: &dyn Fn(f64,f64) -> f64,mut p: Uv,steps: usize| -> Uv {
+        for _ in 0..steps {
             let v = k(p[0],p[1]);
             if v == 0. { break }
             let g = [(k(p[0]+d,p[1])-k(p[0]-d,p[1]))/(2.*d),(k(p[0],p[1]+d)-k(p[0],p[1]-d))/(2.*d)];
@@ -556,6 +572,15 @@ fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,touch: Option<f64>,
             if step[0].abs() <= 1e-13 && step[1].abs() <= 1e-13 { break }
         }
         p
+    };
+    // settled on `h`, smooth wherever the two meet; then, off the rim, onto `F` itself from there, a
+    // move no farther than the few tolerances the two differ by (near a fold of the contact, where
+    // the branch leaves the rim and `F = (v − e)² h` is small in both, Newton on `F` alone wandered)
+    let onto = |p: Uv| -> Uv {
+        let p = newton(&h,p,30);
+        if touch.is_none() || near_rim(p) { return p }
+        let q = newton(&f,p,10);
+        if f(q[0],q[1]).abs() < f(p[0],p[1]).abs() && distance(at(q[0],q[1]),at(p[0],p[1])) <= 64.*tol { q } else { p }
     };
     let between = |x: Uv,y: Uv| { let p = onto([0.5*(x[0]+y[0]),0.5*(x[1]+y[1])]); (p,at(p[0],p[1])) };
     // an end beside a corner by what `h`'s rounding there puts it off: its value over its slope toward
@@ -571,7 +596,26 @@ fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,touch: Option<f64>,
         }).unwrap_or(p)
     };
     lines.into_iter().filter(|l| l.len() >= 2).filter_map(|l| {
-        let mut uv: Vec<Uv> = l.iter().map(|&k| roots[k]).collect();
+        // each root off the rim settled onto `F` itself (the march's roots are `h`'s)
+        let settle = |p: Uv| -> Uv {
+            if near_rim(p) { return p }
+            let rail = [p[0] == 0. || p[0] == 1.,p[1] == 0. || p[1] == 1.];
+            // a root on the parameters' boundary stays on it: the root of `F` along that side, beside it
+            if rail[0] || rail[1] {
+                let k = if rail[0] { 1 } else { 0 };
+                let along = |x: f64| { let mut q = p; q[k] = x; f(q[0],q[1]) };
+                let w = 1./n[k] as f64;
+                let (a,b) = ((p[k]-w).max(0.),(p[k]+w).min(1.));
+                let (fa,fb) = (along(a),along(b));
+                if (fa < 0.) == (fb < 0.) { return p }
+                let x = crate::util::roots::bracketed_root(|x: f64| Some(along(x)),a,fa,b,fb,1e-15);
+                let mut q = p;
+                q[k] = x;
+                return q
+            }
+            onto(p)
+        };
+        let mut uv: Vec<Uv> = l.iter().map(|&k| settle(roots[k])).collect();
         let last = uv.len()-1;
         if next[l[0]].len() == 1 { uv[0] = snapped(uv[0]) }
         if next[l[last]].len() == 1 { uv[last] = snapped(uv[last]) }
