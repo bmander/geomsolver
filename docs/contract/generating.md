@@ -938,9 +938,20 @@ the tool a little way into the roll (on the torus, 9° on), reaching the rim whe
 along it, and at a double point of the contact leaving the rim's corner. The rim itself is the
 sheet's own edge, which the arrangement reads lying on the face, and is not given again (given, it
 was laid a second time beside that edge, the two cut a hair apart). `h` is `F` less its value and
-rate at the rim over `(v − e)²`, and within a thousandth of the roll of the rim its Taylor series
-there, by five-point differences, so the two readings are one function (one jumping to the other
-made a sign change of its own along the rail). Each branch is marched over a grid of the
+rate at the rim over `(v − e)²`, and within a hundred-thousandth of the roll of the rim its Taylor
+series there, the one passing smoothly into the other, so the two readings are one function (one
+jumping to the other made a sign change of its own along the rail, and at the kernel's tolerance
+set a branch's points between two curves). **The rim's value and rate are read exactly** — `F` there,
+and its gradient along the carry's own velocity (`Carry::rate`) — and the series' second and third
+terms by differences of that rate: by five-point differences of `F` a thousandth of the roll apart,
+on the leaning torus, whose carry moves a point a tenth of a millimetre in that step past a tube of
+radius 2, the rate took the series' fifth-order truncation, 2.7e-5 for its own 1e-8, and the branch
+beside the rim stood that much times `w` off the tool (4e-8, past the kernel's tolerance, refused
+by the check). A branch is settled on `h` within a thousandth of the roll of the rim and on `F`
+past four, and between on `F` less a share of the rim's value and rate that falls smoothly from all
+of it to none, so its points lie on one curve passing from `h`'s zero set into `F`'s: settled on
+the one or the other across a single edge, they stood between two curves a tenth of the kernel's
+tolerance apart, and the fit chased them until four thousand nodes stood in a span. Each branch is marched over a grid of the
 parameters, its crossings of the cells' edges exact, a branch's end beside a double point's corner
 by no more than `h`'s rounding there puts it set on the corner, and fitted (`fitted`) from seventeen
 of its points, a span split where its middle stands off the curve, measured across its chord from
@@ -1006,9 +1017,10 @@ both rims' fans sheets, to 50.2500186377 (the strip of helical heights its shado
 radius, integrated by Gauss–Legendre between the strip's kinks — where the shadow splits in two and
 where its ends cross the window's — over sixteen pieces of each panel, eight giving 2e-10 less;
 built, 50.2500191). At the
-kernel's own tolerance (`geom::tolerance`, a billionth of the size) the V wheel builds in 61 s to
-1554.3809658 and the drum in 14 s to 50.2500186384; the torus does not yet (a sliver of three given
-meetings on an end pose's torus beside a double point is left a hole in no piece). The sharp-rimmed round slid at a lean, #810's negative control,
+kernel's own tolerance (`geom::tolerance`, a billionth of the size, what the bench builds them at)
+the three are built alike, to their volumes and their STEP files, in about a minute
+(`swept_contacts::the_three_cases_are_cut_at_the_kernels_own_tolerance`, slow tier): the torus to
+1460.6300031967, 2.5e-8 off. The sharp-rimmed round slid at a lean, #810's negative control,
 builds through its fan to the meridian's own reading within 1e-5 of the volume
 (`swept_slid::a_round_meeting_a_sharp_rim_at_a_lean_builds_through_its_fan`), its admission
 (`closed::reads`) still refusing it as `Curved` at the rim.

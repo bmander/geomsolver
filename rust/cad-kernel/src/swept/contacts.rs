@@ -455,7 +455,8 @@ fn norm_of(v: V) -> f64 { crate::util::space::norm(v) }
 /// curvatures across it change order) and leaving it at a double point of the contact tangent to it,
 /// as a curve and not as a step a march cannot land. `h` is read as `F` less its value and rate at
 /// the rim (the section's fit, off the face by up to a tenth of the tolerance, and the contact's own
-/// rounding), over `(v − e)²`, and at the rim by central differences. Each branch is marched across
+/// rounding), over `(v − e)²` — its value and rate read exactly, and at the rim by differences of
+/// that rate. Each branch is marched across
 /// a grid of the parameters as the contact is (`face_contact`), its crossings of the cells' edges
 /// exact, and fitted through points of it within a tenth of the tolerance (`fitted`). A branch ending
 /// beside one of `corners` — where the section ends at a double point of the contact, on the rim, and
@@ -468,28 +469,58 @@ fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,touch: Option<(f64,
     let a = &blend.a;
     let at = |u: f64,v: f64| blend.carry.at(a.point(u),v);
     let f = |u: f64,v: f64| surface.implicit(at(u,v));
-    // `F`'s value, rate, and second and third derivatives across the rim, by five-point differences a
-    // thousandth of the roll apart: within that, `h` its Taylor series' `c₂ + c₃ w`; beyond, `F` less
-    // its value and rate, over `w²` — each read where its rounding is least, and the two one function
-    // (`h` read at the rim alone within a step of it jumped where the two met, a sign change of its
-    // own along the rail)
+    // `F`'s value and rate at the rim read exactly — its value, and its gradient along the carry's own
+    // velocity (`Carry::rate`) — and its second and third derivatives by differences of that rate a
+    // hundred-thousandth of the roll apart: within that, `h` its Taylor series' `c₂ + c₃ w`; beyond,
+    // `F` less its value and rate, over `w²`, and between the series passing smoothly into it — each
+    // read where its rounding is least, and the two one function. (By five-point differences of `F`
+    // a thousandth of the roll apart, the rate took the series' fifth-order truncation: on the leaning
+    // torus, where the carry moves a point a tenth of a millimetre in that step past a tube of radius
+    // 2 and `F`'s cubic term is two thousand times its square's, `c₁` read 2.7e-5 for its own 1e-8,
+    // and `h`'s zero set beside the rim stood that much times `w` off the tool — 4e-8 at the kernel's
+    // tolerance, which the check refused.)
     const STEP: f64 = 1e-3;
+    const SERIES: f64 = 1e-5;
+    let rate = |u: f64,v: f64| { let q = at(u,v); crate::util::space::dot(surface.gradient(q),blend.carry.rate(q)) };
     let taylor = |u: f64,e: f64| -> [f64;4] {
-        let (f0,f1,f2,m1,m2) = (f(u,e),f(u,e+STEP),f(u,e+2.*STEP),f(u,e-STEP),f(u,e-2.*STEP));
-        [f0,(8.*(f1-m1)-(f2-m2))/(12.*STEP),(16.*(f1+m1)-(f2+m2)-30.*f0)/(24.*STEP*STEP),(f2-2.*f1+2.*m1-m2)/(12.*STEP*STEP*STEP)]
+        let (r0,r1,m1) = (rate(u,e),rate(u,e+SERIES),rate(u,e-SERIES));
+        [f(u,e),r0,(r1-m1)/(4.*SERIES),(r1-2.*r0+m1)/(6.*SERIES*SERIES)]
     };
     // (a section crossing the face simply, an edge's fan on either of its faces: `F = (v − e) h`, `h` its
     // value less `c₀` over `v − e`, and `c₁ + c₂ w` within the step)
+    // (the series within half its step, `F`'s own form past it, and between, the one passing smoothly
+    // into the other: they part by the series' truncation there, and a branch crossing where one
+    // jumped to the other had its points between two curves, which the fit chased)
     let h = |u: f64,v: f64| -> f64 {
         let Some((e,order)) = touch else { return f(u,v) };
         let [c0,c1,c2,c3] = taylor(u,e);
         let w = v-e;
-        if order == 1 {
-            if w.abs() < STEP { return c1+c2*w }
-            return (f(u,v)-c0)/w
-        }
-        if w.abs() < STEP { return c2+c3*w }
-        (f(u,v)-c0-c1*w)/(w*w)
+        let series = if order == 1 { c1+c2*w } else { c2+c3*w };
+        let own = || if order == 1 { (f(u,v)-c0)/w } else { (f(u,v)-c0-c1*w)/(w*w) };
+        if w.abs() <= 0.5*SERIES { return series }
+        if w.abs() >= SERIES { return own() }
+        let x = (w.abs()-0.5*SERIES)/(0.5*SERIES);
+        let mu = 1.-x*x*(3.-2.*x);
+        mu*series+(1.-mu)*own()
+    };
+    // **what a branch is settled on**: `h` within a step of the rim, `F`'s zero set beyond four, and
+    // between, `F` less a share of the rim's value and rate that falls smoothly from all of it to none
+    // (`λ`, a smoothstep) — one zero set carried from `h`'s into `F`'s. Settled on `h` within the step
+    // and on `F` past it, a branch crossing the step's edge had its points between two curves that
+    // part there by the rim's value and rate over `w²` and `h`'s slope, a hair at 1e-5 and past a
+    // tenth of the kernel's tolerance; the fit chased them, its nodes stepping back and forth across
+    // that hair until four thousand stood in a span (`fitted`: two of the leaning torus's branches,
+    // the build twice as long)
+    let k = |u: f64,v: f64| -> f64 {
+        let Some((e,order)) = touch else { return f(u,v) };
+        let w = v-e;
+        if w.abs() < STEP { return h(u,v) }
+        let x = ((w.abs()-STEP)/(3.*STEP)).min(1.);
+        let share = 1.-x*x*(3.-2.*x);
+        if share == 0. { return f(u,v)/if order == 1 { w } else { w*w } }
+        let [c0,c1,..] = taylor(u,e);
+        if order == 1 { return (f(u,v)-share*c0)/w }
+        (f(u,v)-share*(c0+c1*w))/(w*w)
     };
     // the grid: as many cells each way as its sides' lengths in space ask, 64 at least
     let length = |p: &dyn Fn(f64) -> V| (0..32).map(|k| distance(p(k as f64/32.),p((k+1) as f64/32.))).sum::<f64>();
@@ -578,8 +609,7 @@ fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,touch: Option<(f64,
     let d = 1e-7;
     // (`h` only within a step of the rim, where `F`'s double root leaves Newton nothing to settle on:
     // beyond, `h`'s zero set is where `F` is the rim's own value and rate carried out — the
-    // section's fit, a tenth of the tolerance — not nought, and a branch settled on it a twentieth
-    // of the roll out stood 2.5e-6 off the tool)
+    // section's fit — not nought, which grows with the distance from the rim)
     let near_rim = |p: Uv| touch.is_some_and(|(e,_)| (p[1]-e).abs() < STEP);
     let newton = |k: &dyn Fn(f64,f64) -> f64,mut p: Uv,steps: usize| -> Uv {
         for _ in 0..steps {
@@ -603,9 +633,9 @@ fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,touch: Option<(f64,
     let onto = |p: Uv| -> Uv {
         let p = newton(&h,p,30);
         if touch.is_none() || near_rim(p) { return p }
-        let q = newton(&f,p,20);
-        let (fp,fq) = (f(p[0],p[1]).abs(),f(q[0],q[1]).abs());
-        if fq < fp && fq <= 1e-3*tol && (q[0]-p[0]).abs() <= cell[0] && (q[1]-p[1]).abs() <= cell[1] { q } else { p }
+        let q = newton(&k,p,20);
+        let (kp,kq) = (k(p[0],p[1]).abs(),k(q[0],q[1]).abs());
+        if kq <= kp && (q[0]-p[0]).abs() <= cell[0] && (q[1]-p[1]).abs() <= cell[1] { q } else { p }
     };
     let between = |x: Uv,y: Uv| { let p = onto([0.5*(x[0]+y[0]),0.5*(x[1]+y[1])]); (p,at(p[0],p[1])) };
     // an end beside a corner by what `h`'s rounding there puts it off: its value over its slope toward
@@ -618,15 +648,15 @@ fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,touch: Option<(f64,
             let rail = [p[0] == 0. || p[0] == 1.,p[1] == 0. || p[1] == 1.];
             // a root on the parameters' boundary stays on it: the root of `F` along that side, beside it
             if rail[0] || rail[1] {
-                let k = if rail[0] { 1 } else { 0 };
-                let along = |x: f64| { let mut q = p; q[k] = x; f(q[0],q[1]) };
-                let w = 1./n[k] as f64;
-                let (a,b) = ((p[k]-w).max(0.),(p[k]+w).min(1.));
+                let i = if rail[0] { 1 } else { 0 };
+                let along = |x: f64| { let mut q = p; q[i] = x; k(q[0],q[1]) };
+                let w = 1./n[i] as f64;
+                let (a,b) = ((p[i]-w).max(0.),(p[i]+w).min(1.));
                 let (fa,fb) = (along(a),along(b));
                 if (fa < 0.) == (fb < 0.) { return p }
                 let x = crate::util::roots::bracketed_root(|x: f64| Some(along(x)),a,fa,b,fb,1e-15);
                 let mut q = p;
-                q[k] = x;
+                q[i] = x;
                 return q
             }
             onto(p)

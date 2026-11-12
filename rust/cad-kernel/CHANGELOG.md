@@ -8,6 +8,12 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A sheet's meeting with the tool beside the rim it touches is read off the rim's exact rate**
+  (`swept::contacts`): the rate across the rim was read by five-point differences of the distance
+  a thousandth of the roll apart, and on a tool whose carry moves far in that step took the series'
+  truncation (2.7e-5 for 1e-8 on the leaning torus), so the meeting beside the rim stood off the
+  tool; and a branch passes smoothly from the rim's reading to the distance's own. The three S4
+  cases now build at the kernel's own tolerance, the torus among them.
 - **A tool the closed sweep refuses under a constant twist goes the contact's road**
   (`swept::closed::closed`, `cut_from`): what it refused as `Curved` is built from its contact's
   sheets, the end poses and their given meetings, trimmed by membership and judged; where that
