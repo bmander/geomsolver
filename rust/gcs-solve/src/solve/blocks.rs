@@ -105,6 +105,7 @@ impl System {
                 bounded: sk.constraints.iter().any(|c| c.bound.is_some() && c.kind.steers())
                     || !sk.orientations.is_empty(),
                 contacts: holds_contacts(sk),
+                searches: holds_searches(sk),
                 search: None,
                 solved: std::collections::BTreeSet::new(),
                 nfev: 0,
@@ -114,8 +115,12 @@ impl System {
             for b in &order.blocks {
                 // a block finding an unknown number from a contact on an envelope or a meshing is
                 // torn at it first: whole, it can come to a root on another sheet of the envelope
-                // that every word it states allows
-                let ok = if pass.contacts && self.finds_numbers(sk, b) {
+                // that every word it states allows.  So is one finding it from a row a search
+                // reads (a flank's least area factor, `envelope::regular`): that row reads
+                // nothing until the rest of its block is placed, so whole it comes to no root, and
+                // every start its root is searched from asks the search afresh, far from any
+                // answer it has (#904)
+                let ok = if (pass.contacts || pass.searches) && self.finds_numbers(sk, b) {
                     self.torn(sk, &mut pass, z, b, true, opts)
                         || self.pass_block(sk, &mut pass, z, b, opts)
                 } else {
@@ -413,14 +418,18 @@ impl System {
     }
 
     /// Whether block `b` holds both an unknown number the drawing declares and the place of a
-    /// contact on an envelope or a meshing.
+    /// contact on an envelope or a meshing, or a row a search reads (`is_searched`).
     fn finds_numbers(&self, sk: &Sketch, b: &SolveBlock) -> bool {
         use crate::constraints::Arg;
         let col = |q: u32| col_among(&self.col_of, &b.cols, q).is_some();
-        sk.free_vars.values().any(|&q| col(q))
-            && sk.constraints.iter().any(|c| {
-                is_contact(c.kind) && c.args.iter().any(|a| matches!(a, Arg::Param(q) if col(*q)))
-            })
+        if !sk.free_vars.values().any(|&q| col(q)) {
+            return false;
+        }
+        let searched: std::collections::BTreeSet<u32> =
+            sk.constraints.iter().filter(|c| is_searched(c)).map(|c| c.id).collect();
+        sk.constraints.iter().any(|c| {
+            is_contact(c.kind) && c.args.iter().any(|a| matches!(a, Arg::Param(q) if col(*q)))
+        }) || b.instances.iter().any(|&(kb, i)| searched.contains(&self.blocks[kb].cids[i]))
     }
 
     /// Where block `b` is torn at its unknowns `held` (`torn`): the instances whose rows are left
@@ -737,6 +746,8 @@ struct Pass {
     framed: bool,
     bounded: bool,
     contacts: bool,
+    /// Whether the drawing holds a row a search reads (`holds_searches`).
+    searches: bool,
     search: Option<Search>,
     solved: std::collections::BTreeSet<usize>,
     nfev: i32,
@@ -762,6 +773,19 @@ const SEEDED_OFF: f64 = 1e-2;
 /// solve takes the block pass first (`System::solve_compiled`).
 pub(super) fn holds_contacts(sk: &Sketch) -> bool {
     sk.constraints.iter().any(|c| is_contact(c.kind))
+}
+
+/// Whether a drawing holds a row a search reads (`is_searched`): solved, as one holding a
+/// contact is, a block at a time first (`System::solve_compiled`).
+pub(super) fn holds_searches(sk: &Sketch) -> bool {
+    sk.constraints.iter().any(is_searched)
+}
+
+/// Whether a constraint states a row whose value a search finds — a flank's least area factor
+/// within its blank (`envelope::regular`), the worst point over the flank's place — and so reads
+/// nothing where the drawing its search reads is not yet placed (#904).  A bound states no row.
+fn is_searched(c: &crate::constraints::Constraint) -> bool {
+    c.kind == crate::constraints::CKind::RegularWithin && c.states_rows()
 }
 
 /// Whether a constraint of kind `kind` holds a point to an envelope in space or to a meshing.

@@ -484,7 +484,11 @@ changelog](../solvent-changelog.md)) says where a rule came from.
 - **A drawing holding contacts on envelopes solves block by block** (#283, #304): a document
   solve whose sketch holds a `PointOnEnvelope` or `PointOnMeshing` (`blocks::holds_contacts`)
   runs the pass first (`First`, not `Rescue`), since a whole-system minimisation reaches a root
-  on another sheet of an envelope that every word allows.  Each block's contacts are seeded at
+  on another sheet of an envelope that every word allows.  So does one holding a row a search
+  reads (`blocks::holds_searches`: a `RegularWithin` stated as an equation, not a bound, #904):
+  from the seeds that search reads a flank its blank does not yet hold, and a whole-system
+  DogLeg steps on nothing, each trial a search afresh (at no offset the hypoid's took some
+  seventy searches, five seconds, before its pass began).  Each block's contacts are seeded at
   its start (`seed_contacts`: the place and the lift sought again with the flanks where the
   blocks before it left them, `seed_param`/`meshing_seed`), but only where the compiled rows are
   more than `SEEDED_OFF` off, so a converged place keeps its sheet; a bound the start alone
@@ -505,7 +509,13 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   swept until still (`TEAR_SWEEPS`), and the rows left over brought to zero by damped Newton
   over the numbers alone, by differences (`TEAR_DIFF`, `TEAR_STEPS`, `TEAR_HALVINGS`).  At most
   `TEAR_MAX` (2) numbers; tried first in such a block, after a failed whole solve elsewhere, and
-  `z` is left as it was where it fails.  The tearing is a fact of the compile's structure, worked
+  `z` is left as it was where it fails.  **A block finding such a number from a row a search
+  reads is torn first too** (#904, `finds_numbers`, `is_searched`: a flank's least area factor
+  within its blank, `envelope::regular`): whole, its row reads nothing until the rest of the block
+  is placed, so it comes to no root, and each start `Search` tries — its points scattered at the
+  drawing's size — asks the search afresh, far from any answer it remembers.  The hypoid's balance
+  so took a hundred searches and twelve seconds before its tearing found what it finds torn first
+  (8.854877°) in six; `regular_cost::the_balance_searches_each_flank_a_few_times` is the gate.  The tearing is a fact of the compile's structure, worked
   out once (`System::tearings`; a steered solve passes the blocks again): each choice is matched
   alone and compared by its widest part (`graph::widest_block`), only the one chosen ordered.
   **Where no statements can be left over for all of them, a block finding them from a contact
