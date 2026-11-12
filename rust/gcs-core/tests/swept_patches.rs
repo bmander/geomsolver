@@ -124,8 +124,8 @@ fn a_bull_nose_slid_at_a_lean_instant_by_instant_is_the_slides_sweep() {
 }
 
 /// **A bull-nose screwed, read instant by instant**: the mill beside the axis, 4 out, screwed a
-/// radian at 2 a turn — under a screw the constant-twist road refuses a torus's face (`Curved`),
-/// and K2's builds it. Its contact runs down the side along the line in the plane through both
+/// radian at 2 a turn — under a screw the closed class refuses a torus's face (`Curved`), and K2's
+/// builds it, as does the contact's road (#880 Q1b). Its contact runs down the side along the line in the plane through both
 /// axes, round the round hugging its flat end, and over the top rim's fan. A helix meets the mill
 /// once, and a radian is short of a return, so each point is entered once and left once: held to
 /// the mill's own volume and `∫ ∫ (n · v)⁺ dA dt` (`advanced`) to a part in a million (its sheet
@@ -137,11 +137,12 @@ fn a_bull_nose_screwed_instant_by_instant_closes_into_its_sweep() {
     let tool = bull_nose(d,1.,0.3,1.);
     let screw = Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:theta,advance};
     let path = as_any(Trajectory::Twist(screw));
-    assert!(matches!(closed(&tool,&Trajectory::Twist(screw),[0.,1.],0.002,1e-6),Err(Unbuilt::Curved {..})),
-        "the constant twist's road refuses a torus screwed");
     let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap_or_else(|u| panic!("{u:?}"));
     let revolved = Revolved::read(&tool).unwrap();
     let worked = advanced(&revolved,&tool,&path,[0.,1.],false);
+    // (the contact's road builds it too, its pose meetings read only where the faces are: #880 Q1b S5)
+    let road = closed(&tool,&Trajectory::Twist(screw),[0.,1.],0.002,1e-6).unwrap_or_else(|u| panic!("the contact's road: {u:?}"));
+    assert!((volume(&road)-worked).abs() <= 1e-6*worked,"the contact's road {} against the volume worked apart {worked}",volume(&road));
     let (lo,hi) = built.bounds();
     let (mc,sigma) = monte_carlo(lo,hi,40_000,5,&defined(&revolved,&path,[0.,1.],600));
     assert!((mc-worked).abs() <= 4.*sigma,"a Monte Carlo of the definition {mc} ± {sigma} against the volume worked apart {worked}");

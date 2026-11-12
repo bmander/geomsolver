@@ -1025,6 +1025,63 @@ builds through its fan to the meridian's own reading within 1e-5 of the volume
 (`swept_slid::a_round_meeting_a_sharp_rim_at_a_lean_builds_through_its_fan`), its admission
 (`closed::reads`) still refusing it as `Curved` at the rim.
 
+**Poles: a turn or a screw past the axis, and rings in contact all round (#880 Q1b S5).** Under a
+turn every point of a section runs round a circle about the axis, so **each sheet lies on the
+surface of revolution of its section's meridian image** `(ρ, h)` (`contacts::meridian_surface`): a
+plane, cylinder or cone where the image is a line within the tolerance, a ball or torus where it is a
+circle (fitted by quarters where its ends meet), else a `Surface::Revolution` of the fitted
+meridian, one surface reused for coincident images (a piece's mirror halves); the sheet's rails are
+circles about the axis, its rims' parameter curves interpolated by angle about the axis (a point near
+the axis takes its neighbour's angle, a torus's `v` its place on its own meridian, the end rim read
+ahead by the turn so a turn past a whole one stands where the walk left it) and refined until they
+stand within a tenth of the tolerance of the rim. Two sheets about one axis meet in circles, which the
+arrangement reads in closed form: the turn's givens are the sheets' closed-form meetings less the
+circles both sections end on (shared rails). **A section is cut where its meridian image folds back
+and where it crosses the axis** (`folds`, `folded`): each side its own sheet, the axis point settled
+onto the surface along the axis and the end `Singular`; an end on the axis does not move, its rail a
+degenerate edge, and a pose meeting's branch from one pole to another meets nothing. **A part is
+buried where its path dips into the tool on both sides** (`buried`): read at seven inner points to
+second order — the face's normal curvature along the motion against the motion's own — where the
+greatest of the faces' signed distances at the point moved a step either way falls below a
+thousandth of the tool times the step's square; a point that does not move abstains. A ball is
+redrawn with its poles off its contact (its contact the great circle through the axis). **A contact
+along a face's own edge is the edge's** — read with the edge's fan, `fan_runs` taking a run where one
+face's `n · v` is nought along at least three samples — **and one along its seam the face's own**
+(the cone spun about a line through it, in contact along its seam's generator). **A piece reaching a
+pole of the face's parameters runs on to it** (`face_contact`): a cone's apex, where no node of the
+grid reads `g`, a branch ended a cell short; pieces meeting at the pole are not joined as across a
+seam. The rod spun about a line through it (41.685706292608, the slices' areas closed in `ρ` and
+Gauss–Legendre in height), the ball swung across its own centre line (59.333194348871), the coin
+turned about a line through its rim (46.547001074918), the pin swung through a ring sector
+(`80π/3 − (π/6)(57 + 1/6)`, closed) and the cone spun about a line through it (288.49505, the arcs
+of each circle the cone holds swept on by the turn, by adaptive Gauss–Kronrod, known to 1e-5) are
+each held to a volume made apart from the build and to a STEP file at 1e-5, and at the kernel's tolerance in the
+slow tier (`swept_contacts::the_turned_cases_are_cut_at_the_kernels_own_tolerance`). Beside the
+circle where the cone's two branches of contact cross, its sheet is covered by both end poses less
+deeply than membership's sag: **a trimmed piece inside the tool at either end of the roll is inside
+the sweep**, read exactly (`Located::solid_place`) before its sides.
+
+**Screwed through whole turns** (`drum-end-screwed-through-rod`, `cone-point-screwed-through-rod`,
+four turns rising 6, `swept_contacts::a_drum_end_and_a_cone_point_screwed_through_a_rod_are_cut_through_the_front_door`,
+slow tier, each within its boundary's area times the kernel's tolerance of the volume made apart: the
+rod less `20 ∫ ρ W(ρ) dρ`, `W` the width of the tool's section at radius `ρ` across the screw, the
+roll passing the whole section at every height of the rod — 1339.548902340676 and 1513.245603582067).
+**A sheet's meeting with a posed face is read only where the face is** (`pose_meeting`, its box grown
+by two cells) **and not along its rim lifted whole turns on**, where the rim lies on the face's surface
+again (a disc whose plane holds the screw's axis, touched by its rim's fan each turn): a touch, `F` a
+square there, crossing nothing, whose rounding the grid read as crumbs of branches. Two fans of one
+rim share the path of the rim's points a tenth of a turn apart and cross along it at under a degree,
+so **an edge's crossing with a surface whose meeting with a face the edge bounds is given is where the
+edge crosses the given curves** (`boolean`): the search's root, that tolerance over the sine off the
+path, is moved onto the given crossing within a thousand tolerances of it, and a flat root lying on a
+given curve is not moved onto another cut. Where membership a hair off **a piece of the tool's own
+face at an end of the roll** cannot settle near that end (the start cone along its base rim, a band
+narrower than the hair), behind it is the tool and ahead of it is swept where the face leads the
+motion there (`trim`). A cycle of a face's pieces no outer cycle holds and smaller than a millionth
+of the face's parameters — three faces of other operands all but tangent at its corner — bounds
+nothing and is left out (`boolean`'s `pieces_of_face`). With these the contact's road also builds
+the screwed bull-nose (`swept_patches`) to the volume worked apart.
+
 **A point's side off the nearest feature's pseudo-normal** (`member::Solid::signed_near`, #880
 Q1b): a point whose nearest point of the tool's mesh lies on a vertex or an edge is read by that
 feature's pseudo-normal — a vertex's, its triangles' unit normals weighted by their angles there; an

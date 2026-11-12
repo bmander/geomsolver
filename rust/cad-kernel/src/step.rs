@@ -354,8 +354,14 @@ pub fn face_net(b: &Brep,fi: usize) -> Option<Result<OnNet,String>> {
 /// halved thirty times still misses, or past 4096 pieces.
 fn bezier_pcurve(uv: &dyn Fn(f64) -> super::geom::Uv,duv: &dyn Fn(f64) -> super::geom::Uv,surface: &Surface,[t0,t1]: [f64;2],
     breaks: &[f64]) -> Option<(Vec<[f64;2]>,Vec<f64>)> {
+    // (a rate not defined where the surface's parameters are not — an edge from a cone's apex, its
+    // pole — read as the chord to a point a millionth of the span along)
+    let rate = |x: f64,y: f64| { let d = duv(x); if d.iter().all(|v| v.is_finite()) { d } else {
+        let (p,q) = (uv(x),uv(x+1e-6*(y-x)));
+        [(q[0]-p[0])/(1e-6*(y-x)),(q[1]-p[1])/(1e-6*(y-x))]
+    } };
     let hermite = |a: f64,b: f64| -> [[f64;2];4] {
-        let (p,q,dp,dq) = (uv(a),uv(b),duv(a),duv(b));
+        let (p,q,dp,dq) = (uv(a),uv(b),rate(a,b),rate(b,a));
         let h = (b-a)/3.;
         [p,[p[0]+h*dp[0],p[1]+h*dp[1]],[q[0]-h*dq[0],q[1]-h*dq[1]],q]
     };
@@ -372,7 +378,7 @@ fn bezier_pcurve(uv: &dyn Fn(f64) -> super::geom::Uv,duv: &dyn Fn(f64) -> super:
         while let Some((a,b,depth)) = stack.pop() {
             let c = hermite(a,b);
             let off = [0.25,0.5,0.75].iter().map(|&f| distance(surface.point(at(&c,f)),surface.point(uv(a+(b-a)*f)))).fold(0.,f64::max);
-            if off > FIT/10. {
+            if !(off <= FIT/10.) {
                 if depth >= 30 || pieces.len()+stack.len() > 4096 { return None }
                 let m = (a+b)/2.;
                 stack.push((m,b,depth+1));

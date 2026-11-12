@@ -173,6 +173,12 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
     let meet = |a: [usize;2],b: [usize;2]| { let (x,y) = if a <= b { (a,b) } else { (b,a) }; every || pairs.contains(&(x,y)) };
     // (a hair past the membership mesh's sag, within which a side does not settle)
     let hair = trim.hair.max(4.*solid.sag);
+    // (the tool posed at the roll's ends, read exactly: a piece inside either is inside the sweep)
+    let posed: Vec<Brep> = roll.iter().map(|&t| -> Result<Brep,Unbuilt> {
+        let q = path.pose(t)?;
+        Ok(tool.moved(&crate::geom::Rigid {r:q.r,t:q.p}))
+    }).collect::<Result<_,_>>()?;
+    let located: Vec<crate::query::Located> = posed.iter().map(|b| crate::query::Located::new(b,tol)).collect();
     let read = std::sync::atomic::AtomicUsize::new(0);
     let kept = std::sync::atomic::AtomicUsize::new(0);
     let side = |f: &crate::topo::Face,points: &mut dyn Iterator<Item=V>| -> Result<Option<bool>,String> {
@@ -191,7 +197,33 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
                 if debug() { eprintln!("trim: a piece of a {} at {p:?}: proved off the boundary",f.surface.kind()) }
                 return Ok(None)
             }
-            let (ahead,behind) = (swept.member(add(p,scale(n,hair))),swept.member(sub(p,scale(n,hair))));
+            // **nor one inside the tool where it stands at an end of the roll** (#880 Q1b S5): read
+            // exactly, where membership's mesh is within its sag of the tool — a sheet near where its
+            // contact's branches cross, covered by both end poses less deeply than that sag, read
+            // as a boundary and kept along with its rail there (the cone spun about a line through it)
+            if located.iter().any(|l| l.solid_place(p) == crate::query::Place::In) {
+                if debug() { eprintln!("trim: a piece of a {} at {p:?}: inside an end pose",f.surface.kind()) }
+                return Ok(None)
+            }
+            let (mut ahead,mut behind) = (swept.member(add(p,scale(n,hair))),swept.member(sub(p,scale(n,hair))));
+            // **a piece of the tool's own face at an end of the roll, read near that end** (#880 Q1b
+            // S5): behind it is the tool; ahead of it the sweep reaches just past that end where the
+            // face leads the motion there, and not where it trails — read so where membership, a
+            // hair off a piece narrower than the hair, stands within its sag of the tool posed a
+            // little way on, and behind read a hair through the tool's base past it (the start cone
+            // of a cone screwed through a rod, along its base rim)
+            if let Err(super::member::Unsettled::Near {at}) = ahead {
+                let span = roll[1]-roll[0];
+                let end = (0..2).find(|&e| (at-roll[e]).abs() <= 1e-2*span.abs() && posed[e].faces.iter().any(|g| crate::ssi::same(&f.surface,&g.surface,tol)));
+                if let Some(e) = end {
+                    let h = 1e-6*span*if e == 0 { 1. } else { -1. };
+                    if let (Ok(q0),Ok(q1)) = (path.pose(roll[e]),path.pose(roll[e]+h)) {
+                        let on = q0.inverse().then(q1).point(p);
+                        let lead = crate::util::space::dot(sub(on,p),n);
+                        if lead.abs() > 1e-9*distance(on,p).max(1e-300) { ahead = Ok(lead > 0.); behind = Ok(true) }
+                    }
+                }
+            }
             if debug() {
                 let of = candidates.iter().enumerate().find_map(|(k,c)| c.faces.iter().position(|g| std::ptr::eq(g,f)).map(|i| (k,i)));
                 eprintln!("trim: a piece of a {} ({of:?}) at {p:?}, normal {n:?}: ahead {ahead:?}, behind {behind:?}",f.surface.kind())
@@ -220,6 +252,13 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
     }
     if let Err(why) = out.check(tol) {
         if debug() {
+            for (fi,f) in out.faces.iter().enumerate().filter(|(_,f)| f.loops.len() > 1) {
+                for (li,l) in f.loops.iter().enumerate() {
+                    let ends: Vec<_> = l.iter().map(|c| { let e = &out.edges[c.edge as usize]; let kind = e.curve.kind();
+                        (c.edge,kind,c.pcurve.at(e.t[0],e,&f.surface,&out.vertices),c.pcurve.at(e.t[1],e,&f.surface,&out.vertices),c.reversed) }).collect();
+                    eprintln!("trim: face {fi} ({}) loop {li}: {ends:?}",f.surface.kind());
+                }
+            }
             for (fi,f) in out.faces.iter().enumerate() {
                 for c in f.loops.iter().flatten() {
                     let e = &out.edges[c.edge as usize];
@@ -251,7 +290,9 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
     let foot = [0.5*(lo[0]+hi[0]),0.5*(lo[1]+hi[1]),lo[2]-grow];
     let half = 0.5*(hi[0]-lo[0]).max(hi[1]-lo[1])+grow;
     let domain = crate::build::prism(&crate::build::square(foot,[0.,0.,1.],half),0.,hi[2]-lo[2]+2.*grow)?;
+    let clock = crate::util::clock::Instant::now();
     super::closed::judge(&out,&swept,&domain,None,&[],tol)?;
+    if crate::timing() { eprintln!("trim: judged in {:?}",clock.elapsed()) }
     Ok((out,report))
 }
 
