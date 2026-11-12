@@ -553,3 +553,116 @@ fn a_claim_over_a_declared_parameter_is_refused_outside_it() {
     refused(format!("{base}claim over nope {{ shown clear(0.5mm) post }}\n"),
             Code::E103, "names no parameter the document declares");
 }
+
+/// Two pegs on wheels 16 apart, each peg 10 out on its wheel and 1.5 in radius: the sun's at
+/// `(10, 0)`, the planet's at `(8, 6)`, where the two pegs' circles cross.  Turned together, the
+/// planet at minus the sun's rate, the pegs pass 2.06 apart at their nearest; the planet held
+/// still, the sun's peg runs into it a little before 37°.  `{claim}` is the train's last lines.
+const TRAIN: &str = "\
+unit mm
+use std
+use std.solids (union)
+use std.place (coords)
+use std.motion (spins)
+param t: Angle over (0deg, 60deg)
+in std.top {
+  c := point hint((16, 0))
+  c coords(du: 16mm, dv: 0mm) std.top
+  sp := point hint((10, 0))
+  sp coords(du: 10mm, dv: 0mm) std.top
+  pp := point hint((8, 6))
+  pp coords(du: 8mm, dv: 6mm) std.top
+  sun_r := radius(1.5mm) circle(center: sp)
+  planet_r := radius(1.5mm) circle(center: pp)
+}
+sun := solid(std.solids.Prism(face(sun_r), from: 0mm, to: 5mm))
+planet := solid(std.solids.Prism(face(planet_r), from: 0mm, to: 5mm))
+sun_turn := frame
+sun_turn spins(1) std.top.origin
+planet_turn := frame
+planet_turn spins(-1) c
+{claim}";
+
+/// The pegs' room at the sun's turn `deg`, the planet turned `-deg` with it, or held still.
+fn pegs_room(deg: f64, held: bool) -> f64 {
+    let rest = 6f64.atan2(-8.0);
+    let (a, p) = (deg.to_radians(), if held { rest } else { rest - deg.to_radians() });
+    let (sun, planet) = ((10.0 * a.cos(), 10.0 * a.sin()), (16.0 + 10.0 * p.cos(), 10.0 * p.sin()));
+    (sun.0 - planet.0).hypot(sun.1 - planet.1) - 3.0
+}
+
+/// **A claim over one frame turns only what is placed under it, and says what it leaves
+/// standing** (#904 A11): the planet read at an instant of its own frame stands where it was read
+/// as the claim runs over the sun's, whatever the two frames' ratios, so the claim is the sun's
+/// peg against a planet held still — refuted where the train is clear.  W117 says so at the
+/// planet, and how to run the frames together; the judging is as before.
+#[test]
+fn a_claim_over_one_frame_says_what_it_leaves_standing() {
+    let src = TRAIN.replace("{claim}", "\
+construction sun_at := sun at(under: sun_turn) 0deg
+construction planet_at := planet at(under: planet_turn) 0deg
+claim over sun_turn in (0deg, 60deg) { sun_at clear(1mm) planet_at }
+");
+    let e = read(&src);
+    let said: Vec<_> = e.diags.iter()
+        .map(|d| (d.code, &src[d.span.lo as usize..d.span.hi as usize])).collect();
+    assert_eq!(said, [(Code::W117, "planet_at")], "{:#?}", e.diags);
+    let m = &e.diags[0].message;
+    assert!(m.starts_with("`planet_at` stands still through this claim: it is read at an instant \
+        of `planet_turn`, and a claim over `sun_turn` turns only what is placed under `sun_turn`"),
+        "{m}");
+    assert!(m.contains("`fix(value == t) planet_turn`"), "{m}");
+    assert!(m.ends_with("and claim over `t`"), "{m}");
+    let [v] = &verdicts(&e)[..] else { panic!("one claim") };
+    assert_eq!(v.holds(), Some(false), "the sun's peg runs into the planet's held still");
+    for p in v.poses() {
+        let t = p.parameter().unwrap();
+        let measured = p.evaluation().unwrap().measured().unwrap();
+        if pegs_room(t, true) > 0.0 {
+            assert!((measured - pegs_room(t, true)).abs() < 0.01, "at {t}: {measured}");
+        }
+    }
+    let worst = v.worst().unwrap();
+    assert!((worst - 36.87).abs() < 1.7, "the deepest where the pegs' centres meet: {worst}");
+
+    // a solid under the frame the claim runs over, one placed under none, and a body made of a
+    // copy placed at an instant — a pattern's, drawn still — leave nothing standing that would
+    // not stand anyway
+    let src = TRAIN.replace("{claim}", "\
+construction sun_at := sun at(under: sun_turn) 0deg
+construction copy := planet at(under: planet_turn) 0deg
+held := solid(copy)
+claim over sun_turn in (0deg, 60deg) {
+  sun_at clear(1mm) planet
+  sun_at clear(1mm) held
+}
+");
+    assert!(read(&src).diags.is_empty(), "{:#?}", read(&src).diags);
+}
+
+/// **A train is claimed as it rolls by tying its frames to one parameter** (#904 A11): each
+/// frame's value written over `t`, each solid drawn at its frame and the claim over `t`, and the
+/// planet turns at its ratio as the sun turns — the room at every sample the closed form's, the
+/// least 2.06 near 22°, where held still the pegs met.
+#[test]
+fn a_train_tied_to_one_parameter_is_judged_as_it_rolls() {
+    let src = TRAIN.replace("{claim}", "\
+fix(value == t) sun_turn
+fix(value == t) planet_turn
+construction sun_at := sun at sun_turn
+construction planet_at := planet at planet_turn
+claim over t in (0deg, 60deg) { sun_at clear(1mm) planet_at }
+");
+    let e = read(&src);
+    assert!(e.diags.is_empty(), "{:#?}", e.diags);
+    let [v] = &verdicts(&e)[..] else { panic!("one claim") };
+    assert_eq!(v.holds(), Some(true), "{}", gcs_core::report::solid_claim_text(v));
+    assert_eq!(v.valid_samples().count(), 37);
+    for p in v.poses() {
+        let t = p.parameter().unwrap();
+        let measured = p.evaluation().unwrap().measured().unwrap();
+        assert!((measured - pegs_room(t, false)).abs() < 0.01,
+                "at {t}: {measured} against {}", pegs_room(t, false));
+    }
+    assert!((v.measured().unwrap() - 2.06).abs() < 0.01, "{:?}", v.measured());
+}

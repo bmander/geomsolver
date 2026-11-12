@@ -8,6 +8,19 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A facet the mesh would count as turned is refined past the turning budget** (`mesh`): a
+  facet facing against its surface at its middle, thicker than a tenth of the bar — what
+  `Mesh::turned` counts and an exporter refuses — is refined whatever the budget that bounds the
+  refinement for a turn short of that, as a sag past the bar is. A long face with a tight bend
+  (a helical gear's tooth space, its root where the rack's tip corners pass) spent the budget
+  on its bends first, and left a facet inside it turned over.
+- **A circle touching an algebraic surface reads alike at every attitude** (`query`): beside a
+  touch, the run a circle or an ellipse keeps within the tolerance of a plane, quadric or torus is
+  proved by the Taylor model of the polynomial the surface's form is along it, as against a
+  surface turned from a conic, besides the form over the curve's box. The box is the world's, and
+  read into the surface's frame it proved the run only a hair wide: a circle in the plane tangent
+  to a torus's tube, at one attitude in a dozen, read past any search's boxes and was refused.
+
 ## [0.10.0] - 2026-11-12
 
 - **The contact's road takes a turn and a screw past the axis** (`swept::contacts`, `swept::trim`,

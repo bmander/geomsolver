@@ -794,9 +794,14 @@ impl SolidE {
 /// would bury the gears.  Otherwise a document that names none — every solid an operand of some
 /// other — has a cycle, which the elaborator has already refused.  The model's own (#409): solid
 /// evaluation asks it of the sketch, and `overview` re-exports it.
+///
+/// **A copy is not made of its source** (#904 A10): `b := a at(under: m) τ` stands a second solid
+/// of `a`'s shape, and `a` is still where it was drawn, so being read at a value does not make
+/// `a` a feature — only being made into something else does.  A sweep is made of its stock: the
+/// swept body is what the stock passes through.
 pub fn objects(sk: &Sketch) -> Vec<usize> {
     let mut used = vec![false; sk.solids.len()];
-    for s in &sk.solids {
+    for s in sk.solids.iter().filter(|s| !matches!(s.def, SolidDef::Placed { .. })) {
         for o in s.operands() {
             if let Some(u) = used.get_mut(o as usize) {
                 *u = true;

@@ -255,7 +255,7 @@ pub(crate) struct World {
     unsited: Vec<usize>,
     /// Every row's columns (`columns`), by its index among the sketch's: read by every instance
     /// over and again, worked out once.
-    cols: Vec<Vec<u32>>,
+    pub(crate) cols: Vec<Vec<u32>>,
     /// Each entity's twins, the inverse of `SourceMap::twin_of`.
     twins: BTreeMap<EntRef, Vec<EntRef>>,
 }

@@ -91,6 +91,53 @@ fn a_continuous_boundary_exports_through_the_field_mesh() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// A body no exact construction builds (#904 A15): the default `--stl` refuses it, writing
+/// nothing, and says beside the refusal, in the core's words, that `--stl-backend mesh` writes it
+/// from its material field; that writes it, and says against the file that it is not built.
+#[test]
+fn a_body_refused_exactly_names_what_writes_its_field() {
+    let dir = std::env::temp_dir().join(format!("solventc-field-read-{}",std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let output = dir.join("tumbled.stl");
+    let refused = run(&[doc("swept_tumble.sv").as_str(),"--stl",output.to_str().unwrap(),"--no-diagnose"]);
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert_eq!(refused.status.code(),Some(1),"{stderr}");
+    assert!(stderr.contains("error[E080]: `tumbled`: "),"{stderr}");
+    assert!(stderr.contains("solventc: `tumbled` is read by its material field, and `--stl-backend mesh` writes that \
+        reading instead"),"{stderr}");
+    assert!(!output.exists());
+    let wrote = run(&[doc("swept_tumble.sv").as_str(),"--stl",output.to_str().unwrap(),"--stl-backend","mesh",
+        "--no-diagnose"]);
+    let stderr = String::from_utf8_lossy(&wrote.stderr);
+    assert_eq!(wrote.status.code(),Some(0),"{stderr}");
+    assert!(stderr.contains("`tumbled` is drawn from its material field, not built"),"{stderr}");
+    gcs_core::mesh::stl_shells(&std::fs::read(&output).unwrap()).unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// `--stl-backend refine` writes a body with swept cuts in any build (#904 A15): the swept
+/// torus's part, its features read off its blank by the core's own kernel, its mesh refined in
+/// the field and held to it.
+#[test]
+fn a_refined_mesh_is_written_without_occt() {
+    let dir = std::env::temp_dir().join(format!("solventc-refine-{}",std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let output = dir.join("part.stl");
+    let result = Command::new(env!("CARGO_BIN_EXE_solventc"))
+        .args([doc("swept_torus.sv").as_str(),"--stl",output.to_str().unwrap(),"--stl-backend","refine","--no-diagnose"])
+        .env_remove("SOLVENT_FEATURES").env_remove("SOLVENT_KERNEL")
+        .output().expect("solventc runs");
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert_eq!(result.status.code(),Some(0),"{stderr}");
+    // its bottom rim and the cut's contour round its side, the top taken by the sweep
+    assert!(stderr.contains("refine: 2 feature curves"),"{stderr}");
+    assert!(stderr.contains(", 0 disagree"),"{stderr}");
+    gcs_core::mesh::stl_shells(&std::fs::read(&output).unwrap()).unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 /// A body whose sweep is outside the generating class is refused before any construction,
 /// with the row it fails and a point, and an earlier output is left as it was: the gear pair
 /// 30 mm off the bevel on a symmetric rack, whose pinion touches the blank twice.
@@ -136,8 +183,8 @@ fn a_developable_band_writes_its_stl_and_refuses_its_step() {
 }
 
 /// A refined mesh the field-agreement probe refuses is never written: the swept torus meshed
-/// so coarsely its facets leave the field, and the earlier output is left as it was.
-#[cfg(feature="occt")]
+/// so coarsely its facets leave the field, and the earlier output is left as it was — in any
+/// build, the blank's features read by the core's own kernel (#904 A15).
 #[test]
 fn a_refined_mesh_the_field_refuses_leaves_the_old_output() {
     let dir = std::env::temp_dir().join(format!("solventc-refine-refusal-{}",std::process::id()));
@@ -1043,6 +1090,43 @@ fn a_run_says_its_stages_and_their_times() {
         "the claim's line points at its statement:\n{stdout}");
     let quiet = run(&[file]);
     assert!(!String::from_utf8_lossy(&quiet.stderr).contains("solventc: ["),"unasked, a pipe hears nothing");
+    std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}
+
+/// **`--json` builds what the text report builds** (#904 A12): unasked, its table is the drawing's
+/// numbers and no solid's measures, so under `--no-check` neither report builds a solid — the JSON
+/// once built every one, past ten minutes on a gearbox the text read in six seconds.  A `--where`
+/// reaching a solid builds it in both, and both say its volume.
+#[test]
+fn the_json_report_builds_no_solid_the_text_report_does_not() {
+    let (path,_) = clearance_document("json");
+    let file = path.to_str().unwrap();
+    let built = |args: &[&str]| {
+        let out = run(&[&[file,"--no-check","--progress"],args].concat());
+        assert_eq!(out.status.code(),Some(0),"{}",String::from_utf8_lossy(&out.stderr));
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        let built: Vec<String> = ["sA_","sB_"].into_iter()
+            .filter(|s| stderr.lines().any(|l| l.contains(&format!("built {s} in")))).map(String::from)
+            .collect();
+        (built,String::from_utf8_lossy(&out.stdout).into_owned())
+    };
+    let (text,_) = built(&[]);
+    assert!(text.is_empty(),"the text report builds {text:?}");
+    let (json,out) = built(&["--json"]);
+    assert_eq!(json,text,"the JSON report builds what the text report does");
+    let positions = |out: &str| gcs_core::json::parse(out).unwrap().get("documents").unwrap()
+        .arr()[0].get("positions").unwrap().clone();
+    let table = positions(&out);
+    assert!(table.get("aA.x").is_some(),"the drawing's numbers are the whole table: {out}");
+    assert!(table.get("sA_.volume").is_none(),"{out}");
+    // asked, in either, and the other solid still not
+    let (json,out) = built(&["--json","--where","sA_"]);
+    assert_eq!(json,["sA_"],"{out}");
+    let volume = positions(&out).get("sA_.volume").map(|v| v.as_f64());
+    assert!(volume.is_some_and(|v| (v-500.).abs() < 1e-6),"{out}");
+    let (text,out) = built(&["--where","sA_"]);
+    assert_eq!(text,["sA_"],"{out}");
+    assert!(out.contains("  sA_.volume = 500\n"),"{out}");
     std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
 
@@ -1963,4 +2047,39 @@ fn a_solid_reading_is_said() {
     assert!(lines.iter().all(|l| l.contains(" ± ") && l.ends_with(", kept")), "{said}");
     let json = String::from_utf8_lossy(&run(&[path,"--json"]).stdout).into_owned();
     assert!(json.contains("\"error\": ") && !json.contains("\"error\": null"),"{json}");
+}
+
+/// **`--solid` picks a block's copy by the name the language reads** (#904 A14): copy 1 of the
+/// `pin` a `repeat` in the instance `box` makes is `box.pin[1]`, and the `body` of its `planet`
+/// `box.planet[1].body`, never the key with the block's statement id; a name left without the
+/// copy's index says the copies, and one that names nothing the objects there are.
+#[test]
+fn solid_picks_a_blocks_copy_by_its_index() {
+    let dir = std::env::temp_dir().join(format!("solventc-copy-names-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("box.sv");
+    std::fs::write(&source, "unit mm\nuse std\nuse std.solids\n\
+        component Gear(c: point) {\n  in std.top {\n    r := radius(3mm) circle(center: c)\n    \
+        body := solid(std.solids.Prism(face(r), from: 0, to: 4mm))\n  }\n}\n\
+        component Box(n: Int) {\n  repeat n as k {\n    in std.top {\n      c := point\n      \
+        fix((10 * k, 0)) c\n      r := radius(1mm) circle(center: c)\n      \
+        pin := solid(std.solids.Prism(face(r), from: 0, to: 6mm))\n      planet := Gear(c)\n    \
+        }\n  }\n}\nbox := Box(n: 3)\n").unwrap();
+    let (source, stl) = (source.to_str().unwrap(), dir.join("x.stl"));
+    let stl = stl.to_str().unwrap();
+    for name in ["box.pin[1]", "box.planet[1].body"] {
+        let out = run(&[source, "--no-diagnose", "--stl", stl, "--solid", name]);
+        assert_eq!(out.status.code(), Some(0), "{name}: {}", String::from_utf8_lossy(&out.stderr));
+        let bytes = std::fs::read(stl).unwrap();
+        assert!(bytes.starts_with(format!("solvent {name}\0").as_bytes()), "{name}");
+    }
+    let out = run(&[source, "--no-diagnose", "--stl", stl, "--solid", "box.pin"]);
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "{said}");
+    assert!(said.contains("`box.pin[0]`, `box.pin[1]`, `box.pin[2]`"), "{said}");
+    let out = run(&[source, "--no-diagnose", "--stl", stl, "--solid", "box.peg"]);
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(said.contains("no solid called `box.peg`: the objects are ")
+            && said.contains("`box.planet[2].body`") && !said.contains('#'), "{said}");
+    std::fs::remove_dir_all(dir).unwrap();
 }

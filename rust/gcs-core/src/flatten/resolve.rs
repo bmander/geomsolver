@@ -1048,9 +1048,36 @@ impl<'a> Walk<'a> {
     /// since a formal may be bound to another instance's formal.
     pub(super) fn alias_table(&self) -> BTreeMap<String, String> {
         let mut alias: BTreeMap<String, String> = BTreeMap::new();
-        for (abs, r, sc) in &self.aliases {
-            if let Some(to) = self.reading(&alias, r, sc) {
-                alias.insert(abs.clone(), to);
+        let mut left: Vec<usize> = Vec::new();
+        for (j, (abs, r, sc)) in self.aliases.iter().enumerate() {
+            match self.reading(&alias, r, sc) {
+                Some(to) => {
+                    alias.insert(abs.clone(), to);
+                }
+                None => left.push(j),
+            }
+        }
+        // an alias read through one made after it — a group's member naming a member of the
+        // group of an instance its body writes (`margins := {mean: balance.margins.mean}`), whose
+        // own group is aliased as that instance is expanded — is read again once those are in,
+        // until a pass reads no more; a name another alias already gave keeps that
+        while !left.is_empty() {
+            let before = left.len();
+            left.retain(|&j| {
+                let (abs, r, sc) = &self.aliases[j];
+                if alias.contains_key(abs) {
+                    return false;
+                }
+                match self.reading(&alias, r, sc) {
+                    Some(to) => {
+                        alias.insert(abs.clone(), to);
+                        false
+                    }
+                    None => true,
+                }
+            });
+            if left.len() == before {
+                break;
             }
         }
         let keys: Vec<String> = alias.keys().cloned().collect();

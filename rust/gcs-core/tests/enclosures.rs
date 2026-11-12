@@ -405,3 +405,67 @@ fn a_spline_edge_hugging_a_fine_net_is_found_where_it_crosses() {
         assert!(gap(t).abs() <= 1e-5,"at {t}, {q:?} off the sheet by {}",gap(t));
     }
 }
+
+/// A rigid motion drawn at random: a uniform turn (a unit quaternion's) and a shift within 80.
+fn rigid(rng: &mut Rng) -> gcs_core::brep::geom::Rigid {
+    let q = loop {
+        let q: [f64;4] = std::array::from_fn(|_| rng.normal(0.,1.));
+        let n = q.iter().map(|x| x*x).sum::<f64>().sqrt();
+        if n > 1e-3 { break q.map(|x| x/n) }
+    };
+    let [a,b,c,d] = q;
+    let r = [[a*a+b*b-c*c-d*d,2.*(b*c-a*d),2.*(b*d+a*c)],
+             [2.*(b*c+a*d),a*a-b*b+c*c-d*d,2.*(c*d-a*b)],
+             [2.*(b*d-a*c),2.*(c*d+a*b),a*a-b*b-c*c+d*d]];
+    gcs_core::brep::geom::Rigid {r,t:std::array::from_fn(|_| rng.uniform(-80.,80.))}
+}
+
+/// **A circle touching a torus is read alike at every attitude** (#904 A4): the circle of a gear
+/// member's tool that lies in the plane tangent to a round's tube (`spiral_bevel/hypoid.sv`'s
+/// gear space at a 1.25 mm module, its neighbour's floor against its own round), crossing the
+/// tube's top circle at five degrees, touches the torus twice. Read in the torus's own frame, at
+/// the attitude the pair stood at in a turned frame (the frames as that build read them), and at
+/// sixty attitudes drawn at random, it is the same two touches every time. Beside each touch the
+/// form along the circle is within its rounding of nought, and the run there was proved only by
+/// the form read over the circle's box in the world's axes, a hair wide; at that attitude, and at
+/// five of the sixty, the search read past its boxes and was refused, and the gear's tool with it.
+#[test]
+fn a_circle_touching_a_torus_is_read_alike_at_every_attitude() {
+    let (big,r,radius) = (45.322065756741964,0.3398654201387436,48.644626106265164);
+    let tol = 2.3731259303869316e-7;
+    let tau = std::f64::consts::TAU;
+    // as the turned build read them
+    let circle = Curve::Circle(Frame {o:[-1.2803239594869638,-26.849594237931058,-44.32932290527235],
+        x:[-0.0452664556130041,-0.09305858537837534,0.994631111359187],
+        y:[0.899255191985413,-0.4374243931095727,-1.3877787807814457e-17],
+        z:[0.43507591025419223,0.8944271909999705,0.1034840679350616]},radius);
+    let torus = Surface::Torus(Frame {o:[-6.135431735790421,-24.95767298012664,-43.55346242346488],
+        x:[0.06008808762735902,-0.14351833113384932,0.9878218009103876],
+        y:[-0.8983865393257918,0.42355930945790515,0.11618578798532093],
+        z:[-0.4350759102541926,-0.8944271909999704,-0.10348406793506168]},big,r);
+    // the same in the torus's own frame: the circle in its tube's tangent plane, its centre 5.257
+    // off the axis
+    let own = Curve::Circle(Frame::new([-0.20315237533471897,-5.253248296156846,-r],[0.,0.,-1.],[1.,0.,0.]),radius);
+    let at_home = Surface::Torus(Frame::WORLD,big,r);
+    let touches = |c: &Curve,s: &Surface,label: &str| -> Vec<f64> {
+        let m = curve_surface(c,[0.,tau],s,tol);
+        let Meets::At(roots) = &m else { panic!("{label}: {m:?}") };
+        assert!(roots.len() == 2 && roots.iter().all(|r| r.1),"{label}: {m:?}");
+        for &(t,_) in roots { assert!(s.implicit(c.point(t)).abs() <= tol,"{label}: {t} off the torus") }
+        roots.iter().map(|r| r.0).collect()
+    };
+    touches(&circle,&torus,"as the turned build read them");
+    let home = touches(&own,&at_home,"in the torus's frame");
+    let mut rng = Rng::new(904);
+    for k in 0..60 {
+        let m = rigid(&mut rng);
+        let label = format!("attitude {k}");
+        let moved = own.moved(&m);
+        let found = touches(&moved,&at_home.moved(&m),&label);
+        // (a touch is a double root, placed to the square root of the tolerance)
+        for (&x,&y) in found.iter().zip(&home) {
+            let off = gcs_core::space::distance(moved.point(x),moved.point(y));
+            assert!(off <= 2.*tol.sqrt(),"{label}: {found:?} against {home:?}, {off} apart");
+        }
+    }
+}

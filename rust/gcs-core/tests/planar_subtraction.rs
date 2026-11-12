@@ -704,6 +704,27 @@ fn a_claim_about_a_cut_wheel_reads_its_exact_build() {
     assert!(!text.contains("poses") && !text.contains("unresolved"), "{text}");
 }
 
+/// **So is one over a declared parameter, at every instant it stands the drawing** (#904 A11): the
+/// claim above swept over a parameter only an idle frame's value and a copy of the star drawn in it
+/// read, every sample the drawing's pose, and each read from the wheel's exact build as the claim at rest is — where the field
+/// meshed at each sample took minutes a pose on a gear and cannot protect this wheel's feature
+/// curves.
+#[test]
+fn a_claim_over_a_parameter_reads_the_cut_wheels_exact_build_at_every_sample() {
+    let src = include_str!("fixtures/star_wheel.sv").replace("claim wheel clear(0.1mm) star",
+        "param phase: Angle over (0deg, 10deg)\nidle := frame\nidle turns(1) stem\n\
+         fix(value == phase) idle\nconstruction idled := star at idle\n\
+         claim over phase { wheel clear(0.1mm) star }");
+    let (e, _) = solved(&src);
+    let [v] = &gcs_core::diagnose::judge_solids(&e.sketch)[..] else { panic!("one claim") };
+    assert_eq!(v.outcome(), gcs_core::diagnose::SolidOutcome::Refuted, "{v:?}");
+    assert_eq!(v.valid_samples().count(), 37, "{v:?}");
+    for p in v.poses() {
+        let i = p.evaluation().ok().and_then(|e| e.measurement().interval()).unwrap();
+        assert!(i.lower() <= 0.0 && 0.0 <= i.upper() && i.upper() < 0.1, "{i:?}");
+    }
+}
+
 /// #644's pinion, the radiator bot's `ShapedSpur` written out: 16 teeth of module 0.8, its rack
 /// shifted +0.3 m and drawn 0.15 mm thick, the blank's edges at its faces chamfered 0.4 mm at 45°
 /// by two cones about the spindle, and one tooth space cut.  The rack tooth's corner loops back

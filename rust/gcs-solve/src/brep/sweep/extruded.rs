@@ -33,7 +33,7 @@ pub fn planar_sheet(cut: &SweptCut,inside: Inside,tolerance: Option<Tolerance>,s
 
 /// The sheet of `cut`, a leaned prism under a rack's roll (#826), built from the envelope of its
 /// section square to the observer's axis carried up a helix (`brep::swept::extruded::screwed`):
-/// where its cutter is an undrafted prism of straight edges, its motion a slide seen from a turn,
+/// where its cutter is an undrafted prism of lines and arcs, its motion a slide seen from a turn,
 /// and its extrusion leans along the slide; none otherwise (it is traced). `inside` asks the blank
 /// (mm); `tolerance` sets the fit's bar (half of it), else the kernel's.
 pub fn screwed_sheet(cut: &SweptCut,inside: Inside,tolerance: Option<Tolerance>,say: &Say) -> Option<Result<Fitted,ExportRefusal>> {

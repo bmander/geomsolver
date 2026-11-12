@@ -241,7 +241,13 @@ a swap made without its callers knowing:
   (`swept_closed::a_ring_turned_about_an_axis_along_its_own_closes_into_its_sweep`). **A run is
   proved, not parted**: where a curve keeps within the tolerance of a surface for a while, no box
   can part its roots nor exclude them, so the run is proved — along the curve against an
-  algebraic surface by the form's enclosure over a whole stretch (`Function::within`), against a
+  algebraic surface by the form's enclosure over a whole stretch (`Function::within`), and along a
+  circle or an ellipse also by the Taylor model of the polynomial the form is along it
+  (`query::Taylored`, the same at every attitude: the form over the curve's box, a box of the
+  world's axes, proved the run beside a circle's touch with a torus only a hair wide, and at one
+  attitude in a dozen the search ran out of boxes and refused a gear member's tool that built in
+  the pair's own frame, #904 A4,
+  `enclosures::a_circle_touching_a_torus_is_read_alike_at_every_attitude`), against a
   sheet piece by piece along a straight path of its parameters between feet found by
   Gauss–Newton, `C(t) − S(path(t))` enclosed so the tangents cancel (`System::run`) — its ends read
   as touches and nothing inside it searched again
@@ -309,9 +315,9 @@ a swap made without its callers knowing:
   a line with no end clipped to a bounded surface's own box. A non-rational net is read by its spans' restricted Bézier
   patches and its boxes halved by smear (above): the hypoid pinion's side, a spline edge a few
   spans long hugging its cut's sheet of 240 × 66 poles, read past any search's boxes from #814 until
-  both (`brep_export::the_pinion_as_written_is_built_by_sectors`;
-  `enclosures::a_spline_edge_hugging_a_fine_net_is_found_where_it_crosses`, its roots held to ones
-  found apart from the kernel); a line is read span by span, clipped to each span's box grown by its
+  both (`enclosures::a_spline_edge_hugging_a_fine_net_is_found_where_it_crosses`, its roots held to
+  ones found apart from the kernel; the pinion's sheet is laid on fewer rows since #904 A4,
+  `brep_export::the_pinion_as_written_is_built_by_sectors`); a line is read span by span, clipped to each span's box grown by its
   size (`net_index`); any other curve over the whole net, and only where that reads past any
   search's boxes (`GaveUp::Most`) over the hull of the spans its pieces reach (`query::reached`:
   halved about a span across, a piece reaching no span's box dropped). The whole first: a curve
@@ -963,11 +969,25 @@ it is a corner of, and the refinement asks only the triangle's middles anew; poi
 1e-9 are welded (filed in a `util::space::Grid` of cells eight welds wide, each looked for in the
 cells a weld about it meets — its own, mostly, where it was 27; with each point's place read once
 for every pass, the same triangles, bit for bit, in a third less time), and a vertex a face's loops pass through twice at one place (a hole touching the
-outer loop, #597) is one corner of its triangulation. An edge is sampled from first pieces no
+outer loop, #597) is one corner of its triangulation. **A face's loops, as sampled, are simple
+polygons in its parameters** (`mesh::crossings`): two chords that meet anywhere but at the corner
+they share — that cross (a crescent thinner than its arcs' chords sag, the drill's end face, #64),
+touch, lie along one another from that corner, or run between the same two corners (a circle's
+segment thinner than its arc's chord sags, its arc one chord, the very chord its line is: a boss's
+end cap poking 28 µm out of a cylinder about another axis, #904 A9) — are split at their middles,
+each edge's samples shared by its faces, until none do; corners are one as the triangulation
+welds them, by id and place, and an edge the face uses twice (a seam, or a slit the face lies
+either side of) is one chord each way, no fault (`brep::a_face_thinner_than_its_chords_sag_still_meshes`,
+`a_segment_thinner_than_its_arcs_chord_sags_still_meshes`). An edge is sampled from first pieces no
 midpoint test can be blind to: a B-spline's knot spans, a family rail's pieces, a screwed rail a
 quarter turn at most (`edge_params`; a coil of four turns has its ends, middle and quarter
 points in one line, and was one chord). `Mesh::turned` counts facets facing against their
-surface (thicker than bar/100); the export refuses any. A face whose facets beside an edge face
+surface (thicker than a tenth of the bar); the export refuses any. **The refinement for a turn
+short of that is bounded by a budget, and a facet the export would count is refined past it**, as
+a sag over the bar is: a helical gear's flank, one face the gear's width long whose root bends
+tight, spent the budget on its bends before a facet inside it turned right over was reached, one
+a tooth, and which turned on the chamfers at its ends (#904 A7,
+`helical_mesh::a_helical_gear_chamfered_at_both_faces_meshes_facing_out`). A face whose facets beside an edge face
 against it — a sheet folding along that edge tighter than the edge's chords sag, which no point
 inside the face can mend (a round rim screwed a short lead, its ramp folding against the wall its
 side sweeps over about a tenth of a micrometre) — asks the chords those facets stand on halved, and
@@ -989,7 +1009,7 @@ fitted (`sweep::sheet`, `nurbs::interpolate_net`; a fitted
 edge still in the blank between its nodes — a cutter's corner grazing it at stations where it is
 elsewhere a fan the rows stop before, `contact_trace::charted` — is carried on past it by its own
 surface, `Net::extended`, only where what that puts in the blank is within the fit's bar, else left
-as it is: an edge in the blank divides nothing; `brep_export.rs`'s 20-tooth gear), blank split
+as it is: an edge in the blank divides nothing; `brep_export.rs`'s gear at 0.625), blank split
 (`boolean::split`), cells judged by the field (`sweep::sector`; else `sector::whole`), sector
 patterned. `brep::export::{exact,step,stl}` is shared by `solventc` and `app/export-worker.ts`
 (`gcs_solid_exact`, and `gcs_solid_exact_note` for the sliver its solid holds, `brep::export::slivers`,

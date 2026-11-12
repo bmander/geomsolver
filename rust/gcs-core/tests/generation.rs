@@ -781,3 +781,100 @@ fn the_kernels_planar_cut_is_the_generated_profiles() {
     }
     assert!(agreed > compared*3/4,"{agreed} of {compared} cuts read");
 }
+
+/// **An ellipse cuts in closed form as a circle does** (#904 A6, `planar_cut::Cutting::Ellipse`):
+/// a helical rack's tip round, sectioned square to the blank's axis, is an ellipse.  Of a circle
+/// written as an ellipse its cut is the circle's; of any other its point is the moved ellipse's
+/// point at the root's parameter, the moved tangent there runs along the material point's velocity
+/// (`F = 0`), the outward normal faces the instant centre on the nearer side and away from it on
+/// the other, and `C′` is the cut's derivative along the roll.  Seeded programs, sampled.
+#[test]
+fn an_ellipse_cuts_as_its_circle_does() {
+    use gcs_core::brep::swept::planar_cut::{cut_at,Cutting,PlanarStep};
+    let mut rng = gcs_core::rng::Rng::new(904);
+    let mut u = |lo: f64,hi: f64| rng.uniform(lo,hi);
+    let cross = |a: [f64;2],b: [f64;2]| a[0]*b[1]-a[1]*b[0];
+    let (mut compared,mut read) = (0,0);
+    for round in 0..40 {
+        let turn = |u: &mut dyn FnMut(f64,f64) -> f64| PlanarStep::Turn {centre:[u(-5.,5.),u(-5.,5.)],ratio:u(0.3,2.)*if u(0.,1.) < 0.5 { -1. } else { 1. }};
+        let slide = |u: &mut dyn FnMut(f64,f64) -> f64| { let a = u(0.,std::f64::consts::TAU); PlanarStep::Slide {direction:[a.cos(),a.sin()],advance:u(2.,20.)} };
+        let program: Vec<PlanarStep> = match round%3 {
+            0 => vec![turn(&mut u)],
+            1 => vec![slide(&mut u),turn(&mut u),PlanarStep::Relative],
+            _ => vec![turn(&mut u),turn(&mut u),PlanarStep::Relative],
+        };
+        let (c,r) = ([u(-3.,3.),u(-3.,3.)],u(0.3,1.));
+        // a stretched, turned circle: conjugate semi-diameters, not its axes
+        let (a,w,b) = (u(0.,std::f64::consts::TAU),u(0.2,1.2),u(0.6,2.5));
+        let (ue,ve) = ([r*a.cos(),r*a.sin()],[w*(a+b).cos(),w*(a+b).sin()]);
+        let moved = |p: [f64;2],t: f64| cut_at(Cutting::Point(p),&program,t).map(|x| (x.c,x.dc));
+        for k in 0..12 {
+            let t = -60.+10.*k as f64;
+            for side in [1.,-1.] {
+                let circle = cut_at(Cutting::Circle {centre:c,radius:r,side},&program,t);
+                let written = cut_at(Cutting::Ellipse {centre:c,u:[r,0.],v:[0.,r],side},&program,t);
+                assert_eq!(circle.is_some(),written.is_some(),"round {round} at {t}: a circle written as an ellipse");
+                if let (Some(p),Some(q)) = (circle,written) {
+                    for k in 0..2 {
+                        assert!((p.c[k]-q.c[k]).abs() <= 1e-12*(1.+p.c[0].hypot(p.c[1])) && (p.dc[k]-q.dc[k]).abs() <= 1e-10*(1.+p.dc[0].hypot(p.dc[1])),
+                            "round {round} at {t}: the circle's cut {:?} {:?} against {:?} {:?}",p.c,p.dc,q.c,q.dc);
+                    }
+                }
+                compared += 1;
+                let Some(cut) = cut_at(Cutting::Ellipse {centre:c,u:ue,v:ve,side},&program,t) else { continue };
+                read += 1;
+                let (sn,cs) = cut.s.sin_cos();
+                let at = |s: f64| [c[0]+ue[0]*s.cos()+ve[0]*s.sin(),c[1]+ue[1]*s.cos()+ve[1]*s.sin()];
+                let tangent = [-sn*ue[0]+cs*ve[0],-sn*ue[1]+cs*ve[1]];
+                let (x,velocity) = moved(at(cut.s),t).expect("a motion");
+                let size = 1.+x[0].hypot(x[1]);
+                assert!((x[0]-cut.c[0]).hypot(x[1]-cut.c[1]) <= 1e-12*size,"round {round} at {t}: the cut is off the ellipse");
+                // the tangent moved: the motion's linear part, read off two points it carries
+                let ahead = moved([at(cut.s)[0]+tangent[0],at(cut.s)[1]+tangent[1]],t).unwrap().0;
+                let along = [ahead[0]-x[0],ahead[1]-x[1]];
+                let speed = velocity[0].hypot(velocity[1]);
+                assert!(cross(along,velocity).abs() <= 1e-10*(1.+speed)*along[0].hypot(along[1]),
+                    "round {round} at {t}: the tangent crosses the velocity, F = {:.3e}",cross(along,velocity));
+                // its derivative along the roll, by central differences
+                let h = 1e-4;
+                let (ahead,behind) = (cut_at(Cutting::Ellipse {centre:c,u:ue,v:ve,side},&program,t+h),
+                    cut_at(Cutting::Ellipse {centre:c,u:ue,v:ve,side},&program,t-h));
+                if let (Some(p),Some(q)) = (ahead,behind) {
+                    for k in 0..2 {
+                        let fd = (p.c[k]-q.c[k])/(2.*h);
+                        assert!((fd-cut.dc[k]).abs() <= 1e-6*(1.+cut.dc[0].hypot(cut.dc[1])),
+                            "round {round} at {t}: C′ {:?} against {fd} by differences",cut.dc);
+                    }
+                }
+                // the outward normal faces the instant centre, as seen from the ellipse's centre, on
+                // the nearer side, and away from it on the other: the centre found from two material
+                // points' velocities, `v_q − v_p = ω J (q − p)`, and `IC = C + J X_t / ω`
+                let sense = cross(ue,ve).signum();
+                let p0 = moved(at(cut.s),t).unwrap();
+                let p1 = moved(c,t).unwrap();
+                let (dq,dv) = ([p1.0[0]-p0.0[0],p1.0[1]-p0.0[1]],[p1.1[0]-p0.1[0],p1.1[1]-p0.1[1]]);
+                let omega = cross(dq,dv)/(dq[0]*dq[0]+dq[1]*dq[1]);
+                if omega.abs() < 1e-9 { continue }
+                let ic = [x[0]-velocity[1]/omega,x[1]+velocity[0]/omega];
+                let outward = [along[1]*sense,-along[0]*sense];
+                let facing = outward[0]*(ic[0]-p1.0[0])+outward[1]*(ic[1]-p1.0[1]);
+                assert!(facing*side > 0.,"round {round} at {t}: side {side}'s cut faces the instant centre {}",
+                    if facing > 0. { "toward" } else { "away" });
+                // and outside the ellipse the nearer side's cut is the nearer of the two
+                if side > 0. {
+                    let other = cut_at(Cutting::Ellipse {centre:c,u:ue,v:ve,side:-1.},&program,t);
+                    let distance = |p: [f64;2]| (p[0]-ic[0]).hypot(p[1]-ic[1]);
+                    // the instant centre in the ellipse's own coordinates (`u`, `v` its basis)
+                    let (moved_u,moved_v) = (moved([c[0]+ue[0],c[1]+ue[1]],t).unwrap().0,moved([c[0]+ve[0],c[1]+ve[1]],t).unwrap().0);
+                    let (mu,mv) = ([moved_u[0]-p1.0[0],moved_u[1]-p1.0[1]],[moved_v[0]-p1.0[0],moved_v[1]-p1.0[1]]);
+                    let r = [ic[0]-p1.0[0],ic[1]-p1.0[1]];
+                    let (a,b) = (cross(r,mv)/cross(mu,mv),cross(mu,r)/cross(mu,mv));
+                    if let Some(other) = other.filter(|_| a*a+b*b > 1.) {
+                        assert!(distance(cut.c) < distance(other.c),"round {round} at {t}: the nearer side's cut is the farther");
+                    }
+                }
+            }
+        }
+    }
+    assert!(read > compared*3/4,"{read} of {compared} ellipse cuts read");
+}

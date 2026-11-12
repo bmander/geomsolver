@@ -80,8 +80,13 @@ symmetric part's protecting balls, have an orthocentre rounding puts anywhere on
 axis, its side with it — and inserted it was a vertex again, 10⁻¹⁵ off: the library rod at its
 reading's size held three corners of an element there, and its drive could not be refined
 (`hulls::the_librarys_rod_is_sized_by_its_sag`, the slow tier). A `construction` solid is never an object. `spiral_bevel` (`hypoid.sv`) is built
-exactly, both members, as every object the page draws is. `solventc --stl-backend refine` skips admission, gated by field agreement
-(`SOLVENT_FEATURES=field`).
+exactly, both members, as every object the page draws is. `solventc --stl-backend refine` skips admission, gated by field agreement; it needs no OCCT
+(#904 A15): the features it protects are read off the static blank as the core's own kernel
+builds it (`blank_features::KernelBlank`, over `brep::query::Located`: the edges two faces meet
+along, each face by its trimmed parameters), by OCCT only where the build has it and it is asked
+for by name, or traced from the field alone (`SOLVENT_FEATURES=field`)
+(`kernel_blank::a_blanks_features_are_read_by_the_core_kernel`,
+`cli::a_refined_mesh_is_written_without_occt`).
 
 **A convex meridian's arc ending on the axis about a centre off it is bounded by its tangent there**
 (`solid/field/profile.rs`'s `convex`, #721 G5): the convex construction bounds an arc's disk only

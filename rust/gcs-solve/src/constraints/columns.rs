@@ -84,8 +84,12 @@ impl Constraint {
             let d = self.args.last().map_or(0.0, Arg::num);
             return self.interior_parts(sk).map(|(r, _)| r.consts(d)).unwrap_or_default();
         }
+        // a margin reading an unknown (#904) is that unknown's map, the row's last column
         if self.kind == CKind::RegularWithin {
-            let margin = self.kind.dimension_slot().map_or(0.0, |i| self.args[i].num());
+            let margin = match self.free {
+                Some(f) => [f.c, f.m],
+                None => [self.kind.dimension_slot().map_or(0.0, |i| self.args[i].num()), 0.0],
+            };
             return self.regular_parts(sk).map(|p| p.consts(margin)).unwrap_or_default();
         }
         // a motion's twist read: its steps (#326), after a stated roll's number or the map onto

@@ -100,8 +100,9 @@ read after the solve where the solve left it (`MotionE::rotation`, `advance`, `F
 
 **Solid placement:** `indexed := source at(under: indexing) 90deg` places a solid at a
 motion's pose; `at:` is a constant Angle, not a hint or sweep. Repeatable, nestable, Boolean
-operands; copy keeps source and motions. `make solventc OCCT=1` enables native STEP via a C ABI
-over OCCT; the core supplies construction data, the CLI owns shapes and catches exceptions. A
+operands; copy keeps source and motions, and the source stays an object of its own unless it
+is `construction` or something else is made of it ([app.md](app.md), #904 A10). `make
+solventc OCCT=1` enables native STEP via a C ABI over OCCT; the core supplies construction data, the CLI owns shapes and catches exceptions. A
 written STEP is parsed back by `native::step_check`; `--verify-step full`
 (`SOLVENT_STEP_VERIFY=full`, slow tier) also reads it through the kernel. Native `--stl` defaults
 to OCCT (`--stl-backend mesh` legacy). STEP+STL build once, check both, then replace each. Native
@@ -151,14 +152,23 @@ points over their fans, `generate::cut_at`, Hermite spans, extruded; `Family::in
 traced (`sweep::traced` kept to compare). `tests/extruded_envelope.rs`, `rack_cut.rs`.
 
 **A helical rack's flank is its transverse envelope carried up a helix (#826):** an undrafted prism
-of straight edges whose extrusion leans along the rack's slide, under a slide seen from a turn (a
+of lines and arcs whose extrusion leans along the rack's slide, under a slide seen from a turn (a
 helical rack against the blank it cuts), is the same set slid along its extrusion, so its section
 by a plane square to the turn's axis at height `h` is the base section slid `h·shift` along the
 rack's line, and the roll carries a section so slid to its own envelope turned about the axis:
 `E_h(t − lag·(h − b)) = R(rate·(h − b))·E_b(t)`, `rate` = `tan β / r` for a rack on a pitch circle
 `r` (`brep::swept::extruded::Screwed`, read where `planar_sheet` reads no plane the motion keeps;
-anything else — an arc in the profile, a drafted prism, a lean across the slide, any other
-motion — is traced). The sheet (`brep::sweep::extruded::screwed_sheet`) is the base section's
+anything else — another curve in the profile, a drafted prism, a lean across the slide, any other
+motion — is traced). An arc of the profile, a hob's tip round (#904 A6), is sectioned as an
+ellipse, its circle's affine image stretched along the lean, on its principal axes; an ellipse
+cuts in closed form as a circle does (`planar_cut::Cutting::Ellipse`: the root of `F` Newton
+finds from the ellipse's support point toward the instant centre, refused unless its outward
+normal faces that way on the side asked), so the round's trochoidal fillet is carried up the
+helix with the flanks, not traced and fitted (it was 1.7e-2 mm and 4° off its contacts). A
+corner where the section runs on smoothly, a round's end, is convex with an empty fan. Its
+heights are an arc's at its ends and where its height turns within its span.
+`generation::an_ellipse_cuts_as_its_circle_does`, `helical_rack::a_helical_rack_with_rounded_tips_is_screwed`
+and `…_cuts_its_space` (the space against the rounded transverse tooth's arithmetic). The sheet (`brep::sweep::extruded::screwed_sheet`) is the base section's
 envelope read as a prism's is, its Hermite spans joined at knots of multiplicity two within a piece,
 carried by the helix's cubic fitted within an eighth of the bar (`helix_fit`): each section pole
 turned and raised by each helix pole, so the net's height runs with `v` alone. The identity is
@@ -283,7 +293,9 @@ inside the pitch line — R the slide's advance a radian over the turn's rate, �
 slant from the slide with its part along the axis dropped — is an undercut, and E3 says it so
 (`brep::swept::admission::Undercut`, #822): the flank, the base circle `R cos αₜ`, the reach and
 the depth allowed, in millimetres, and the rack's shift, the teeth and the flank's end that clear
-it; a fold that is not one keeps E3's own words. `a_helical_racks_undercut_is_said_with_its_numbers`
+it; a fold that is not one keeps E3's own words, which name the tool face whose generated surface
+folds (a crown's flank that undercuts its member: which blade to change, #904 A2;
+`hypoid_machine::at_no_offset_the_pinions_two_flanks_tie`). `a_helical_racks_undercut_is_said_with_its_numbers`
 (14 teeth at 25° refused so, 17 admitted). Building a leaned rack's undercut, as the planar
 subtraction class builds a spur rack's, is left open: its tooth is no prism square to the plane. Built in
 `gcs-cli/src/cad/native/sweep_boundary.rs`: cutters sectioned (`backend/sections.cpp`), contact
@@ -1716,6 +1728,80 @@ and every chart and point's contact times read through the solver, before the mo
 every sheet and every surface point's times the same to the bit, and every chart and point read
 after the same as one read before, none new.
 
+**A traced sheet is laid in its cut's own scale (#904 A3):** the reach (`Cutter::reach`) asks every
+piece of a section loop at the same number of places (`REACH_SAMPLES`, and each convex corner's fan
+at its middle), however long, and its walk is the complement of the longest stretch of faces missed
+between two hit, by their length — at a fixed 0.3 mm the pair at 0.625 missed the crown tooth's
+0.24 mm tip, and a tie of face counts turned the walk the wrong way round the tooth. A cutter of
+revolutions' cut has a unit (`Tracer::unit`): the length of the faces that walk runs over at the
+band's middle station (`Loop::walked`) over `REFERENCE_WALK`, 13.7855 mm, the configured pinion's
+crown tooth's at the mill its balance of profile radii found, where the construction's lengths
+were set (at the mill its balance finds since #904 it walks 13.702 mm, a unit of 0.994). The rows' and columns'
+spacings and the trace's step, how far a curve first runs out of the blank, a fan's walk
+(`Loop::scaled`, `TURN_SCALE`), and the gross fit's distance, its local trust and how near the
+blank a withheld contact is held, are each that many times their constant. A stated tolerance stays
+a physical length (`Tolerance`), as the sector's side clearance (`sector::MARGIN`) does; a screw's
+sheet keeps its own spacings, and a prism's cut stays at unit one (open): its stations are
+millimetres along it and a drafted prism's crease fan is laid when the cutter is read
+(`CREASE_SCALE`). Moving the bar's cap off unit one moves `prism_caps`' and `bar_end.sv`'s volumes
+by up to 5e-6 either way (from 0.5 to 2 of it), past the 1e-6 and 2e-6 they are held to, so its
+scale waits on the fit's own scatter there. So the hypoid
+pair with every length scaled (the cutter stated with the rest, the shift its balance finds the
+same) is traced as the pair is, and built with the same faces
+(`brep_export::the_pinion_scaled_is_built_as_the_pinion_is`, at 0.625;
+`each_member_of_the_pair_is_built_alike_at_every_scale`, slow;
+`hypoid_machine::the_face_mill_scaled_is_found_scaled`). What scaling no longer moves, resolution
+still does, and the configured pinion's cut holds only near its own unit (open): traced at 0.97 or
+1.02 of it a station beside the blank finds no contact near its neighbour's, and at 0.95 or 1.05
+neither row placement fits within the gross bars — by walk length the fit turns 21° from contacts
+a quarter millimetre outside the blank by its first rows, and by length in space a column whose
+curve is short in space crowds its rows and the fit's normal turns 90°. The gear's cut and both
+reliefs hold over 0.85 to 1.2.
+
+**A traced sheet does not depend on where its cut stands (#904 A4):** a cutter of revolutions'
+reach (`Cutter::reach`) reads its `STATIONS` stations a step apart from the half-plane
+`Cutter::of_boundary` counts from, which a world axis picks, and then again from where its
+contacts first reach the blank — the station before the band's first and the first bisected to it,
+to `START` (1e-12 rad) — so the band, the walk and the cut's unit, and the columns laid across the
+band, stand where the cutter and the blank stand, turned together. The sheet's rows are as many as
+keep them `ROW_SPACING` apart, and where its curves end on the trace's grid of walk lengths its
+span is a whole number of spacings: one to rounding (`WHOLE`) is counted so, not one more as a
+placement's rounding falls. Counted from the world's half-plane, a turn of the pair moved the grid
+against the cutter, and the gear at 0.625 was built in its own frame and refused in `drive.sv`'s,
+"the candidate sheet cannot be widened out of the blank"
+(`hypoid_machine::the_gear_builds_alike_in_a_frame_turned_to_the_pair`, slow: the same faces, the
+volume to 1e-9; `the_gears_sheet_is_traced_alike_in_a_frame_turned_to_the_pair`, slow: the cut's
+sheet, each point the other's carried, to 1e-6 mm). That refusal was the chart's, at four of eleven phases of the grid within one
+step, in either frame: a margin column's curve leaps a turn round into a far corner's fan a row
+nearer the blank with each column further out, and with the rows trimmed back to before any
+column's leap (`charted`), wherever a column leapt on the row past the blank's last every column's
+rows stopped in the blank, however far the margins grew. Outside the columns holding the blank
+(their stations reached it, or a contact of theirs lies in it) a column leaping anywhere from the
+blank's first row to the row past its last now goes, with those beyond it, where one holding none
+is left at that side; the rows are then trimmed at the kept columns' leaps as before
+(`contact_trace::a_margin_column_leaping_beside_the_blank_is_dropped_rather_than_the_rows`;
+`hypoid_machine::the_gears_sheet_is_traced_at_every_phase_of_its_stations`, slow, the grid turned
+past the band's start by `Cutter::turned`, `sweep::traced_turned`). So are the configured pair's
+gear cut with a 90.37 mm cutter and both members of the 25-tooth pair built, where that refusal
+was seen too.
+
+**A fold's gap outside the blank is crossed, not turned at (#904 A1/A2):** where a station's root
+meets the other in a fold of the time chart outside the blank and comes back further along the walk
+(within what is left of the curve's extent, the chord across the gap outside the blank), the walk
+crosses the gap and runs on along its own root (`Tracer::trace`), and a row in the gap is the chord's
+point (`Tracer::along`); a fold in the blank, or one past which the root does not come back, is
+turned at as before. Where the fold's locus ends in a cusp among the stations, a station before it
+folds and the one after does not; turned onto the other root, the folding station's rows ran on in
+that root's part of the envelope while its neighbour's stayed on the root they share, and the sheet
+tore between them. At the face mill the configured pair's balance finds (8.8549°, the cutter
+75.6122 mm) the inner flank's fold near its round ends so at the start of the pinion's band, whose
+last station before the cusp holds the blank on both sides of its gap: turned there, its rows ran a
+turn round the pinion, and the fit left its contacts by 0.155 mm and turned 89.7° from them. Its
+cut is now one chart, 69 × 39 (`hypoid_mill_sheet::the_pinions_cut_at_the_found_mill_is_one_chart`),
+and the pinion is built by sectors with 243 faces, 14664.2385 mm³
+(`the_pinion_at_the_found_mill_is_built_by_sectors`); the tip relief its inner flank keeps there, a
+hundredth of a millimetre thick, is sampled as `query::interior` says below.
+
 **Screws, the constant-twist class (#64):** a sweep under a screw (`f screws(a) l`) is admitted by
 rows S1–S4 (`solid::constant_twist`, docs/generating-sweeps.md): the tool's characteristic (each
 ring's `A cos + B sin + C` roots under the screw's twist, fixed on the tool) walked through the blank,
@@ -2497,7 +2583,10 @@ other split as one. A cell's interior points (`query::interior`) are the deepest
 hierarchy of its mesh's triangles, the winding number asked only of the points the choice reaches,
 and one read settling every candidate in the ball about it no triangle enters (a closed mesh's
 winding is constant off it): the deepest candidates of a thin cell, its box's grid, lie mostly
-outside it, and two thousand windings of every triangle were read a cell for its four points.
+outside it, and two thousand windings of every triangle were read a cell for its four points. A
+cell thinner than its first mesh's sag (5e-4 of its box's diagonal) everywhere has no point that
+mesh vouches for, and is read again on one ten times finer (`query::SAGS`, #904 A1/A2:
+`brep::a_cell_thinner_than_its_first_mesh_is_sampled_on_a_finer_one`).
 Under these, the class's Booleans are seeded and traced as any are (brep.md), a cone's step read at
 its radius in the pair's box (`Surface::feature_within`, not at its frame's origin, which may be
 its apex), and a spline's foot found as `brep.md` says. A blank's prism of whole circles about the

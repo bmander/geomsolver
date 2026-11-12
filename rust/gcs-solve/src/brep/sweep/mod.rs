@@ -187,6 +187,12 @@ pub fn traced(prepared: &Prepared,k: usize,tolerance: Option<Tolerance>,say: &Sa
     sheet::swept_sheet(&prepared.cuts[k],&|p: &[[f64;3]]| prepared.inside(p),&|p| prepared.field.value(p),tolerance,say)
 }
 
+/// Sweep `k`'s sheet traced with the grid its cutter's band is read on turned `phase` round its axis
+/// (`sheet::swept_sheet_turned`, #904 A4): what no sheet may depend on.
+pub fn traced_turned(prepared: &Prepared,k: usize,phase: f64,tolerance: Option<Tolerance>,say: &Say) -> Result<sheet::Fitted,ExportRefusal> {
+    sheet::swept_sheet_turned(&prepared.cuts[k],phase,&|p: &[[f64;3]]| prepared.inside(p),&|p| prepared.field.value(p),tolerance,say)
+}
+
 /// How the body is cut from its blank: as one sector, its premises holding, or whole, and why.
 pub enum Plan { Sector(sector::Premises),Whole(String) }
 

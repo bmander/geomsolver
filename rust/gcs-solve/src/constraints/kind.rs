@@ -1624,7 +1624,13 @@ impl CKind {
     /// a margin read at a point a search finds, which there is no root of the drawing to choose
     /// by: it is a verdict, `BOUND_BROKEN` where it does not hold, and steers nothing.
     pub fn steers(self) -> bool {
-        self.boundable() && self != CKind::RegularWithin
+        self.boundable() && !self.searched()
+    }
+
+    /// Whether this kind's residual is read by a search: a flank's least area factor within its
+    /// blank (`envelope::regular`), the worst point over the flank's place (#345, #904).
+    pub fn searched(self) -> bool {
+        self == CKind::RegularWithin
     }
 
     pub fn claimable(self) -> bool {

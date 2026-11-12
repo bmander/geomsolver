@@ -218,9 +218,8 @@ fn a_roll_through_prints_as_written() {
 /// stated 45-degree roll left the space cutter in the blank (E1). Rolled through its blank, each
 /// member's roll ends where the tool's surface, sampled as E1 samples it, is clear of the blank, a
 /// small margin past where it first leaves it, and the gear is admitted.  Cut by the mill the
-/// issue's pair had (`fixtures::gear::recorded_machine`): at a ten-tooth pinion the balance that
-/// finds the mill (#283) has no root — no face mill with these blades leaves the pinion as far from
-/// undercut as the gear (`hypoid_machine::at_a_ten_tooth_pinion_no_face_mill_balances_the_undercut`).
+/// issue's pair had (`fixtures::gear::recorded_machine`), not the one the pair's balance finds
+/// there (#904: `hypoid_machine::the_pair_retargeted_finds_its_shift`).
 #[test]
 fn the_pair_at_ten_teeth_is_admitted_with_no_roll_stated() {
     let text = fixtures::gear::configure(&fixtures::gear::source(),

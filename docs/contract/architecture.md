@@ -125,8 +125,13 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   `--json` is `report::*_json`.
   **Where a name landed is part of the report**: `report::positions` zips `EntKind::scalar_names`
   against `Sketch::entity_params` (`hinge.x`, `base.r`); `--where NAME` filters it (a name and
-  everything under it), `--json` publishes it, narrowed by the same flag.  **And so is what a
-  value came to** (#596): `Elaborated::values` is read by the same rule, each line
+  everything under it), `--json` publishes it, narrowed by the same flag.  **What a body
+  measures is read only where a name asks for it** (#904 A12): a solid's volume, area, bounds and
+  faces, a panel's rulings, a development's lengths are a build each, so `--json` unasked
+  publishes the drawing's numbers and no body's, as the text report builds none unasked; a
+  `--where` reaching a body builds it in either (`positions_where`'s `asked`), and the JSON costs
+  what the text costs (`the_json_report_builds_no_solid_the_text_report_does_not`).
+  **And so is what a value came to** (#596): `Elaborated::values` is read by the same rule, each line
   `report::value_text` (`torque = 0.0864 N·m`), published as `values` (`report::values_json`);
   each claim over values is `report::value_claim_text`, said under the outcome line and published
   as `valueClaims` (`a_documents_values_are_read_and_claimed`).  **A top-level value can be

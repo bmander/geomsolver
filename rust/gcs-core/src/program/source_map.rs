@@ -63,6 +63,9 @@ pub struct SourceMap {
     /// Each root choice an orientation recorded (`Sketch::branches`' key), with the path of the
     /// statement choosing it.
     pub chosen: Vec<(String, InstPath)>,
+    /// The points nothing seeded (#904 A13), each where its creation order scattered it: what
+    /// the seeds say no side of (`program::crossed_seeds`).
+    pub(crate) unseeded: BTreeSet<usize>,
 }
 
 /// One component instance as expanded — see `SourceMap::instances`.

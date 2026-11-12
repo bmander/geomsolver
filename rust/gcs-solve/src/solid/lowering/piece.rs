@@ -135,6 +135,11 @@ fn corner_at(body: &crate::solid::faces::BodyFaces, ids: &[usize], vertex: V, wi
 fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within: bool, section: Section, spill: &Spill)
     -> Result<Vec<Piece>, String> {
     let edges = body.edges_between(ga, gb);
+    // an edge's two faces, `ga`'s first; none where it is not between two
+    let ordered = |e: u32| match *body.faces_of(e) {
+        [f0, f1] => Some(if ga.contains(&f0) { (f0, f1) } else { (f1, f0) }),
+        _ => None,
+    };
     // an edge no line or circle about the faces' common axis carries: the ball rolled along the
     // whole run of them, traced
     // (a straight edge carried only between planes and cylinders along it: a cone's generator is
@@ -167,10 +172,9 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
                 Section::Round(r) => Rolled { at, r, flat: None, ends, cuts: Vec::new(), kept: Vec::new(), wedge: Vec::new(),
                     beyond: None },
                 Section::Flat { la, lb } => {
-                    let &[f0, f1] = body.faces_of(e) else {
+                    let Some((fa, fb)) = ordered(e) else {
                         return Err(unbuilt("an edge not between two faces"));
                     };
-                    let (fa, fb) = if ga.contains(&f0) { (f0, f1) } else { (f1, f0) };
                     let na = body.normal(fa, at);
                     let t = toward(body.normal(fb, at), within);
                     let w = normalised(sub(t, scale(na, dot(t, na)))).ok_or("faces meeting tangent")?;
@@ -182,15 +186,151 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
     }
     let all: Vec<usize> = ga.iter().chain(gb).copied().collect();
     let ends = body.end_sides(&edges, &all);
-    let mut pieces = Vec::new();
+    let mut built = Vec::new();
     for &edge in &edges {
-        let &[f0, f1] = body.faces_of(edge) else {
+        let Some((fa, fb)) = ordered(edge) else {
             return Err(unbuilt("an edge not between two faces"));
         };
-        let (fa, fb) = if ga.contains(&f0) { (f0, f1) } else { (f1, f0) };
-        pieces.extend(piece(body, edge, fa, fb, within, section, &ends, spill)?);
+        built.push(piece(body, edge, fa, fb, within, section, &ends, spill));
+    }
+    // pieces of one line a curved face cuts across, which some of the section's lines pass by: one
+    // run over them, kept outside it
+    for (group, span, inner) in across_cuts(body, &edges, &built, &ends) {
+        let (fa, fb) = ordered(group[0]).expect("a straight edge between two faces");
+        let (fa, fb, section) = in_body_order(fa, fb, section);
+        let whole = run_piece(body, span, fa, fb, within, section, &ends, &inner, spill);
+        for (k, &e) in edges.iter().enumerate() {
+            if group.contains(&e) {
+                built[k] = Ok(Vec::new());
+            }
+        }
+        let k = edges.iter().position(|&e| e == group[0]).expect("a group's edge");
+        built[k] = whole.map(|p| vec![p]);
+    }
+    let mut pieces = Vec::new();
+    for b in built {
+        pieces.extend(b?);
     }
     Ok(pieces)
+}
+
+/// Why a straight run is not cut off by a curved face it ends on: some line along it through its
+/// section passes the face by (a bore across the crease, a pin through it), so the run would go on
+/// past that end — into the run beyond it, where the face cuts the edge in two.
+const PASSED_BY: &str = "a run its curved end does not cut off";
+
+/// Why a piece is not built, as `run` reads it: a run its curved end does not cut off
+/// (`PASSED_BY`), which `across_cuts` joins with the run beyond that end, or any other refusal,
+/// as it is printed.  Printed, the first is `unbuilt(PASSED_BY)`.
+enum Refused {
+    PassedBy,
+    Why(String),
+}
+
+impl From<String> for Refused {
+    fn from(why: String) -> Refused { Refused::Why(why) }
+}
+
+impl From<Refused> for String {
+    fn from(r: Refused) -> String {
+        match r {
+            Refused::PassedBy => unbuilt(PASSED_BY),
+            Refused::Why(why) => why,
+        }
+    }
+}
+
+/// Faces `fa` and `fb` in the body's order, the section turned with them, so two regions over one
+/// edge build one run.
+fn in_body_order(fa: usize, fb: usize, section: Section) -> (usize, usize, Section) {
+    if fb < fa { (fb, fa, section.swapped()) } else { (fa, fb, section) }
+}
+
+/// **Runs of one line a curved face cuts across** (a bore through the crease that only some of
+/// the section's lines meet, so the section passes by it): where a straight edge's piece is not cut
+/// off by the curved face it ends on (`PASSED_BY`), and the edge beyond that face along the same
+/// line, between the same faces, ends on it alone too, both are one run over the two and what
+/// lies between, kept outside the face — what the field reads, a point read against the run
+/// nearest it and within both runs' ends outside the face (`conditions::ends`).  Each group of
+/// `edges` (several where faces cut a line in more than two), its span along the line and the faces
+/// it is kept outside of; none where every piece was built (`built`, `piece`'s for each edge).
+fn across_cuts(body: &crate::solid::faces::BodyFaces, edges: &[u32],
+    built: &[Result<Vec<Piece>, Refused>], ends: &[(usize, f64)]) -> Vec<(Vec<u32>, [V; 2], Vec<Kept>)> {
+    let passed = |k: usize| matches!(&built[k], Err(Refused::PassedBy));
+    if !(0..edges.len()).any(passed) {
+        return Vec::new();
+    }
+    // the surface a straight edge's end at `p` stands on alone (one face, or the pieces of one a
+    // seam splits), a curved one kept outside
+    let cut_at = |p: V| match ends_at(body, ends, p) {
+        Ok((planes, bent)) if planes.is_empty() => match &bent[..] {
+            [k, rest @ ..] if !k.inside && rest.iter().all(|x| x.inside == k.inside && x.face.same(&k.face)) =>
+                Some(k.clone()),
+            _ => None,
+        },
+        _ => None,
+    };
+    let same = |x: &Kept, y: &Kept| x.inside == y.inside && x.face.same(&y.face);
+    let mut out: Vec<(Vec<u32>, [V; 2], Vec<Kept>)> = Vec::new();
+    let mut taken = vec![false; edges.len()];
+    for k in (0..edges.len()).filter(|&k| passed(k)) {
+        if taken[k] {
+            continue;
+        }
+        let Some([a0, a1]) = body.segment(edges[k]) else { continue };
+        let Some(along) = normalised(sub(a1, a0)) else { continue };
+        let faces = sorted(body.faces_of(edges[k]));
+        // the straight edges between the same faces along the same line, each as its span along it
+        let on_line = |p: V| norm(cross(sub(p, a0), along)) <= 1e-9 * (1.0 + norm(p) + norm(a0));
+        let mut line: Vec<(usize, [f64; 2])> = (0..edges.len()).filter(|&j| !taken[j]).filter_map(|j| {
+            let [b0, b1] = body.segment(edges[j])?;
+            (sorted(body.faces_of(edges[j])) == faces && on_line(b0) && on_line(b1)).then(|| {
+                let (s0, s1) = (dot(sub(b0, a0), along), dot(sub(b1, a0), along));
+                (j, [s0.min(s1), s0.max(s1)])
+            })
+        }).collect();
+        line.sort_by(|x, y| x.1[0].total_cmp(&y.1[0]));
+        let at = |s: f64| add(a0, scale(along, s));
+        // each two edges next along the line, joined where the face between them is one and the
+        // same curved face kept outside, and one of them is passed by it
+        let mut group: Vec<(usize, [f64; 2])> = Vec::new();
+        let mut inner: Vec<Kept> = Vec::new();
+        let mut flush = |group: &mut Vec<(usize, [f64; 2])>, inner: &mut Vec<Kept>, out: &mut Vec<_>| {
+            if group.len() > 1 && group.iter().any(|&(j, _)| passed(j)) {
+                for &(j, _) in group.iter() {
+                    taken[j] = true;
+                }
+                let span = [at(group[0].1[0]), at(group[group.len() - 1].1[1])];
+                out.push((group.iter().map(|&(j, _)| edges[j]).collect(), span, std::mem::take(inner)));
+            }
+            group.clear();
+            inner.clear();
+        };
+        for &(j, s) in &line {
+            let joined = group.last().and_then(|&(_, prev): &(usize, [f64; 2])| {
+                let (x, y) = (cut_at(at(prev[1]))?, cut_at(at(s[0]))?);
+                (same(&x, &y) && s[0] > prev[1]).then_some(x)
+            });
+            match joined {
+                Some(cut) => {
+                    if !inner.iter().any(|k| same(k, &cut)) {
+                        inner.push(cut);
+                    }
+                }
+                None => flush(&mut group, &mut inner, &mut out),
+            }
+            group.push((j, s));
+        }
+        flush(&mut group, &mut inner, &mut out);
+    }
+    out
+}
+
+/// A pair of face ids in order.
+fn sorted(faces: &[usize]) -> Vec<usize> {
+    let mut f = faces.to_vec();
+    f.sort_unstable();
+    f
 }
 
 /// The piece along `edge`, where faces `fa` and `fb` meet — a straight one's section swept along
@@ -199,18 +339,19 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
 /// other way from the side the region asks (`within`, convex).
 #[allow(clippy::too_many_arguments)]
 fn piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within: bool, section: Section,
-    ends: &[(usize, f64)], spill: &Spill) -> Result<Vec<Piece>, String> {
+    ends: &[(usize, f64)], spill: &Spill) -> Result<Vec<Piece>, Refused> {
     // the faces in the body's order, so two regions over one edge build one run
-    let (fa, fb, section) = if fb < fa { (fb, fa, section.swapped()) } else { (fa, fb, section) };
+    let (fa, fb, section) = in_body_order(fa, fb, section);
     // the gate: an edge turning the other way, or none (faces meeting tangent), holds nowhere
     if body.convex(edge) != Some(within) {
         return Ok(Vec::new());
     }
     // (`run` rolls a circle whose faces are not all about its axis)
     if body.circle(edge).is_some() {
-        return ring_piece(body, edge, fa, fb, within, section, ends, spill);
+        return Ok(ring_piece(body, edge, fa, fb, within, section, ends, spill)?);
     }
-    run_piece(body, edge, fa, fb, within, section, ends, spill).map(|p| vec![p])
+    let Some(span) = body.segment(edge) else { return Err(unbuilt("a curved edge").into()) };
+    run_piece(body, span, fa, fb, within, section, ends, &[], spill).map(|p| vec![p])
 }
 
 /// Round a circle `edge` where a plane, a cylinder, a cone or a sphere meet about one axis: the
@@ -564,12 +705,12 @@ fn beyond_of(body: &crate::solid::faces::BodyFaces, chained: &Chained, w: usize,
     })
 }
 
-/// Along a straight `edge`: the section beside it swept along it, carried on past each end until
-/// every face there cuts it off.
+/// Along a straight edge from `p0` to `p1` (or several edges of one line, a curved face cutting
+/// across between them that the run is kept outside of all along, `inner`: `across_cuts`): the
+/// section beside it swept along it, carried on past each end until every face there cuts it off.
 #[allow(clippy::too_many_arguments)]
-fn run_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within: bool,
-    section: Section, ends: &[(usize, f64)], spill: &Spill) -> Result<Piece, String> {
-    let Some([p0, p1]) = body.segment(edge) else { return Err(unbuilt("a curved edge")) };
+fn run_piece(body: &crate::solid::faces::BodyFaces, [p0, p1]: [V; 2], fa: usize, fb: usize, within: bool,
+    section: Section, ends: &[(usize, f64)], inner: &[Kept], spill: &Spill) -> Result<Piece, Refused> {
     let length = norm(sub(p1, p0));
     let along = scale(sub(p1, p0), 1.0 / length);
     // each face as the section sees it: a plane its line, a cylinder about a line along the edge
@@ -619,7 +760,7 @@ fn run_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: us
     for &(n, d) in &halves {
         let slope = dot(n, along);
         if slope.abs() < 1e-6 {
-            return Err(unbuilt("a run carried on along the face it ends on"));
+            return Err(unbuilt("a run carried on along the face it ends on").into());
         }
         for &q in &outline {
             let s = (d - dot(n, q)) / slope;
@@ -645,7 +786,7 @@ fn run_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: us
             } else {
                 let deepest = lines.iter().flatten().map(|l| l[0]).fold(f64::NEG_INFINITY, f64::max);
                 if !lines.iter().all(|l| l.is_some_and(|l| deepest <= l[1])) {
-                    return Err(unbuilt("a run its curved end does not cut off"));
+                    return Err(Refused::PassedBy);
                 }
                 deepest
             };
@@ -653,6 +794,12 @@ fn run_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: us
             if !run.kept.contains(&kept) {
                 run.kept.push(kept);
             }
+        }
+    }
+    // a curved face cutting across between edges of the line, the run kept outside it all along
+    for kept in inner {
+        if !run.kept.contains(kept) {
+            run.kept.push(kept.clone());
         }
     }
     // only those reaching into the prism: a square end is the prism's own

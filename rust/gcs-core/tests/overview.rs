@@ -477,6 +477,57 @@ bore cut body
     assert!(!solid_pts.is_empty(), "and edges over them");
 }
 
+/// **A copy is not made of its source** (#904 A10): `b := a at(under: flip) 180deg` stands a
+/// second solid of `a`'s shape half a turn about `flip`, and `a` is still where it was drawn.
+/// Counted an operand, `a` was taken for a feature of its copy and left out of every picture,
+/// the scene, glTF and the STEP assembly, without a word.  A `construction` source is
+/// scaffolding still, and a sweep's stock — what the swept body is the passage of — a feature.
+#[test]
+fn a_solid_read_at_a_value_is_still_an_object() {
+    let src = |source: &str, reads: &str| format!("\
+unit mm
+use std
+use std.solids
+use std.solids (cut)
+use std.motion (turns)
+in std.front {{
+  construction centerline flip_line := line(hint((40, -10)), hint((40, 10)))
+  fix((40, -10)) flip_line.p1
+  fix((40, 10)) flip_line.p2
+}}
+flip := frame
+flip turns(1) flip_line
+in std.top {{
+  rim := radius(10mm) circle(center: std.top.origin)
+  {source}a := solid(std.solids.Prism(face(rim), from: 0, to: 5mm))
+}}
+{reads}
+");
+    let objects = |src: String| {
+        let (prog, errs, _) = gcs_core::library::parse_linked(&src);
+        assert!(errs.is_empty(), "{errs:?}");
+        let mut e = gcs_core::program::elaborate(&prog);
+        assert!(e.ok(), "{:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+        let _ = gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
+        let names = |v: Vec<usize>| -> Vec<String> {
+            v.into_iter().map(|i| e.sketch.solids[i].written_name().to_string()).collect()
+        };
+        let shown = names(gcs_core::overview::shown_objects(&e.sketch));
+        let objects = names(gcs_core::overview::objects(&e.sketch));
+        assert_eq!(shown, objects, "nothing is hidden, so the workspace shows every object");
+        objects
+    };
+    let copy = "b := a at(under: flip) 180deg";
+    assert_eq!(objects(src("", copy)), ["a", "b"], "the source and its copy, both drawn");
+    assert_eq!(objects(src("construction ", copy)), ["b"], "a construction source is not drawn");
+    // a copy of a copy: every one of them stands somewhere
+    assert_eq!(objects(src("", &format!("{copy}\nc := b at(under: flip) 90deg"))), ["a", "b", "c"]);
+    // a copy cut out of a body made of its source: both are features of the body, the one object
+    assert_eq!(objects(src("", &format!("{copy}\nbody := solid(a)\nb cut body"))), ["body"]);
+    let swept = "s := solid({ p | some t in (0deg, 90deg): p in a at(under: flip) t })";
+    assert_eq!(objects(src("", swept)), ["s"], "the swept body is its tool's passage");
+}
+
 /// An object that does not evaluate is not drawn, and the box says why in the core's words
 /// rather than leaving it out silently: a triangle turned about `std.x`, which crosses it, beside
 /// a partial revolve of the same triangle about its own side, which is drawn.  A feature is not

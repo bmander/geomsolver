@@ -14,7 +14,7 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
     super::progress::start();
     let say = brep::sweep::Say {stage:&|line: &str| stage(line),mark:&|m| super::mark(m)};
     let exact = brep::export::exact(sk,body.index,body.admission.as_ref(),tolerance,&say)?;
-    let name = sk.solids[body.index].name.clone();
+    let name = sk.solid_name(body.index);
     let mut staged = output::Staged::new();
     if let Some(path) = step {
         let text = brep::export::step(&exact,&name,tolerance,&say)?;

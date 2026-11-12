@@ -263,7 +263,14 @@ revolution's; between two circles a Cartesian oval, refused) — carried on past
 ends on cut it off (#195's meaning: a square one is the prism's end, one at a slant a half-space it
 is kept within, `Run::within`, the recipe's `"within"` as a point and a normal; a run-out); a
 cylinder or a sphere it ends on carried into until every line of its section's hull has crossed
-it, and kept within or outside that solid; where several faces meet the run's end (two chamfers
+it, and kept within or outside that solid — **and where some line passes it by**, a pin through
+the crease or a bore breaking out of a case's skin in front of a boss's end (#904 A8), the run on
+the far side of it along the same line, between the same faces, ending on it alone too, the two
+are one run over both and the gap, kept outside its surface (`piece::across_cuts`): what the field
+reads, each point within the ends of the run nearest it and both runs' ends one surface; ends on
+two faces (a short slot along the crease, a round end each) still refused, `a run its curved end
+does not cut off` (`round_lowering::a_run_a_pin_cuts_across_is_one_run_kept_outside_it`, the closed
+form to 1e-9; `a_round_between_cylinders_on_skew_axes_is_built`); where several faces meet the run's end (two chamfers
 before it mitred there), carried on until its whole section lies past one and the same of their
 cuts (`fillet::Trim::past`) — each point past some cut is not past the region all of them keep, and
 the run took too little off (`brep_offset::edges_chamfered_one_after_another_mitre_at_their_corners`) (#218, `Run::kept`, `Kept` over a `Surf`, the recipe's
