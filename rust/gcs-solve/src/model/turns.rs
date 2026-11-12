@@ -325,7 +325,8 @@ impl Sketch {
                 _ => {}
             }
         }
-        if self.mirrors.is_empty() {
+        // with no image and nothing carried rigidly, no base is derived
+        if self.mirrors.is_empty() && self.rigid.is_empty() {
             return out;
         }
         // a datum's image is held where it is, as the datum is
