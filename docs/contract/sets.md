@@ -354,7 +354,9 @@ transition a join of joins to its closed forms, a pyramid the join of its apex a
 a capsule a ball about some point of a segment, the join as a component making an octahedron, a
 frustum and an oblique prism, a house the join of a box and a point (an L refused), a box rounded
 by a ball about some point of it, two joins united and said with `or`, the bench's grown tetrahedron
-as a ball about some point of the join, and each refusal.  The experiment the syntax
+as a ball about some point of the join, the case library's documents of it (`rust/examples/
+joins.sv`, `tetrahedron_grown.sv`, `house.sv`, `pyramid.sv`) to their closed forms, the pyramid
+re-dimensioned, and each refusal.  The experiment the syntax
 waited for — the cases before and after, what a join's field costs against its half-spaces', and
 what is left (a relation read by searching every bound point; joins of curved sets, by support
 functions) — is [some-points-of-sets.md](../some-points-of-sets.md).

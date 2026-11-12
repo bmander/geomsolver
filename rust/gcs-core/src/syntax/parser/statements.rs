@@ -1257,8 +1257,10 @@ impl<'a> P<'a> {
                     StmtKind::Decl(d) => Some(&mut d.annotations),
                     StmtKind::Instance(i) => Some(&mut i.annotations),
                     StmtKind::Chain(c) => Some(&mut c.annotations),
-                    // A chain emits its constraints beside the geometry it declares.
+                    // A chain emits its constraints beside the geometry it declares, and what a
+                    // statement holds in place (a set written in `solid(…)`) is its text's.
                     StmtKind::Relation(_) if st.chained != Chained::No => None,
+                    _ if matches!(st.chained, Chained::InPlace(_)) => None,
                     _ => {
                         self.errs.push(SynErr { span: start,
                             message: "geometry modifiers apply to declarations, chains, or component instances".into() });

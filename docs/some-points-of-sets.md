@@ -96,6 +96,15 @@ bounded by a curve), the join of a solid that is not convex, a union said with `
 (read by the field, as a union of balls is), and a continuous sweep of a join exported (read by
 the field, as any body swept continuously is).
 
+## In the case library
+
+Four documents of the app's case library show it (`rust/examples/`, each held to its closed forms
+by `joins::the_librarys_joins_are_their_closed_forms`): `joins.sv`, the `Join` word making a
+tetrahedron, an octahedron and a prismatoid with its sets by name and written in place;
+`tetrahedron_grown.sv`, the bench's case as its description reads; `house.sv`, a box joined to a
+peak and the same box rounded; and `pyramid.sv`, a pyramid whose base and height are dimensions
+it follows.
+
 ## What is refused, and left
 
 - A relation that is neither the segment between bound points nor a ball about one: the field

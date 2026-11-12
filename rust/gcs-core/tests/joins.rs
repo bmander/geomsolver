@@ -272,3 +272,33 @@ fn joins_combine_as_solids_do() {
     assert!(f.side([2.0, 2.0, 2.0]) < 0.0 && f.side([-2.0, -2.0, -2.0]) < 0.0 && f.side([0.0, 0.0, 4.0]) > 0.0);
     close("grown", volume(&exact(&e, "grown").brep), 249.53323018738044);
 }
+
+/// **The library's cases of the join are their closed forms** (`rust/examples/joins.sv`,
+/// `tetrahedron_grown.sv`, `house.sv`, `pyramid.sv`): each solid built exactly to its volume and
+/// faces, and the pyramid re-dimensioned as `solventc --set` does it, its volume following.
+#[test]
+fn the_librarys_joins_are_their_closed_forms() {
+    let steiner = |a: f64, b: f64, c: f64, r: f64| a * b * c + 2.0 * (a * b + b * c + c * a) * r
+        + PI * r * r * (a + b + c) + 4.0 / 3.0 * PI * r.powi(3);
+    let cases: [(&str, &str, usize, f64); 7] = [
+        ("joins", "tetrahedron", 4, 72.0),
+        ("joins", "octahedron", 8, 4000.0 / 3.0),
+        ("joins", "prismatoid", 10, 1696.0),
+        ("tetrahedron_grown", "grown", 14, 249.53323018738044),
+        ("house", "house", 9, 20.0 * 12.0 * 6.0 + 20.0 * 12.0 * 8.0 / 3.0),
+        ("house", "rounded", 26, steiner(20.0, 12.0, 6.0, 2.0)),
+        ("pyramid", "pyramid", 5, 20.0 * 20.0 * 12.0 / 3.0),
+    ];
+    for (key, name, faces, v) in cases {
+        let src = gcs_core::examples::source(key).unwrap_or_else(|| panic!("{key} has no source"));
+        let e = solved(src);
+        let x = exact(&e, name);
+        assert_eq!(x.brep.faces.len(), faces, "{key}: {name}");
+        close(name, volume(&x.brep), v);
+    }
+    // the pyramid follows its dimensions
+    let values = [("h".to_string(), "24".to_string()), ("w".to_string(), "30".to_string())];
+    let (src, _) = gcs_core::edit::rebind(gcs_core::examples::source("pyramid").unwrap(), &values).unwrap();
+    let e = solved(&src);
+    close("re-dimensioned", volume(&exact(&e, "pyramid").brep), 30.0 * 30.0 * 24.0 / 3.0);
+}
