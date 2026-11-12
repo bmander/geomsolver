@@ -3,6 +3,30 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Solvent</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,700;1,400&display=swap">
+<style>
+/* The whole of the page's treatment.  Its colours are the sketcher's (web/app.css): the panel's
+   grey behind code, and the program panel's inks for the classes the core's highlighter gives a
+   run of Solvent (site/highlight.py writes the spans). */
+body { max-width: 38em; margin: 0 auto; padding: 1em; background: #fff; color: #1b1b1f;
+       font: 17px/1.45 "STIX Two Text", Cambria, serif; }
+h1, h2, h3 { font-family: system-ui, sans-serif; }
+math { font-family: "STIX Two Math", "Cambria Math", math; }
+img { max-width: 100%; height: auto; }
+p:has(> img), p:has(> math) { text-align: center; overflow-x: auto; }
+pre, code { font: 0.82em/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+pre { background: #f4f4f5; padding: 0.8em 1em; overflow-x: auto; }
+.sv .comment { color: #6a8759aa; }
+.sv .word { color: #7d3fbf; }
+.sv .type { color: #0f6f6f; }
+.sv .relation { color: #1f77b4; }
+.sv .def { color: #0d3b66; }
+.sv .label { color: #8a6d00; }
+.sv .number { color: #a03000; }
+.sv .seed { color: #6b6b74; }
+.sv .claim { color: #b3001b; }
+.sv .builtin { color: #3a5a99; }
+</style>
 
 <h1>Solvent</h1>
 <p>Mathy declarative code-cad for an exciting future</p>
@@ -65,28 +89,28 @@ is what four balls of radius 10 have in common, when each one's center is 10 fro
 <p>Somebody had to work out 5√3/3 and 10√(2/3). Solvent does that. You write what they were worked
 out from:</p>
 
-<pre>unit mm
-use std
+<pre class="sv"><span class="word">unit</span> <span class="type">mm</span>
+<span class="word">use</span> <span class="type">std</span>
 
-param s := 10mm
+<span class="word">param</span> <span class="def">s</span> := <span class="number">10mm</span>
 
-a := point
-b := point hint((s, 0, 0))
-c := point hint((s / 2, s, 0))
-d := point hint((s / 2, s / 2, s))
+<span class="def">a</span> := <span class="word">point</span>
+<span class="def">b</span> := <span class="word">point</span> <span class="word">hint</span>((s, <span class="seed">0</span>, <span class="seed">0</span>))
+<span class="def">c</span> := <span class="word">point</span> <span class="word">hint</span>((s / <span class="seed">2</span>, s, <span class="seed">0</span>))
+<span class="def">d</span> := <span class="word">point</span> <span class="word">hint</span>((s / <span class="seed">2</span>, s / <span class="seed">2</span>, s))
 
-a distance(s) b
-a distance(s) c
-a distance(s) d
-b distance(s) c
-b distance(s) d
-c distance(s) d
+a <span class="relation">distance</span>(s) b
+a <span class="relation">distance</span>(s) c
+a <span class="relation">distance</span>(s) d
+b <span class="relation">distance</span>(s) c
+b <span class="relation">distance</span>(s) d
+c <span class="relation">distance</span>(s) d
 
-body := solid({ p |
-  p distance(&lt;= s) a
-  p distance(&lt;= s) b
-  p distance(&lt;= s) c
-  p distance(&lt;= s) d
+<span class="def">body</span> := <span class="word">solid</span>({ <span class="def">p</span> |
+  p <span class="relation">distance</span>(&lt;= s) a
+  p <span class="relation">distance</span>(&lt;= s) b
+  p <span class="relation">distance</span>(&lt;= s) c
+  p <span class="relation">distance</span>(&lt;= s) d
 })</pre>
 
 <pre>$ solventc reuleaux.sv --where body.volume --png reuleaux.png
@@ -177,28 +201,28 @@ nothing to install.</p>
 <p>A set is the points that satisfy a predicate. A ball of radius 5 about a point <code>c</code>,
 and its sphere:</p>
 
-<pre>{ p | p distance(&lt;= 5mm) c }
-{ p | p distance(5mm) c }</pre>
+<pre class="sv">{ <span class="def">p</span> | p <span class="relation">distance</span>(&lt;= <span class="number">5mm</span>) c }
+{ <span class="def">p</span> | p <span class="relation">distance</span>(<span class="number">5mm</span>) c }</pre>
 
 <p><code>distance</code> is the primitive. The ball is a line of the standard library, written in
 Solvent, and so is a cylinder:</p>
 
-<pre>component Ball(center: point, r: Length) := { p | p distance(&lt;= r) center }
-component Cylinder(about: line, r: Length) := { p | p distance(&lt;= r) about }</pre>
+<pre class="sv"><span class="word">component</span> <span class="def">Ball</span>(<span class="label">center</span>: <span class="type">point</span>, <span class="label">r</span>: <span class="type">Length</span>) := { <span class="def">p</span> | p <span class="relation">distance</span>(&lt;= r) center }
+<span class="word">component</span> <span class="def">Cylinder</span>(<span class="label">about</span>: <span class="type">line</span>, <span class="label">r</span>: <span class="type">Length</span>) := { <span class="def">p</span> | p <span class="relation">distance</span>(&lt;= r) about }</pre>
 
 <p>The napkin ring from the top of the page is the points in one and not in the other:</p>
 
-<pre>unit mm
-use std
-use std.sets
+<pre class="sv"><span class="word">unit</span> <span class="type">mm</span>
+<span class="word">use</span> <span class="type">std</span>
+<span class="word">use</span> <span class="type">std</span>.<span class="type">sets</span>
 
-c := point
-d := point hint((0, 0, 1))
-through := line(c, d)
+<span class="def">c</span> := <span class="word">point</span>
+<span class="def">d</span> := <span class="word">point</span> <span class="word">hint</span>((<span class="seed">0</span>, <span class="seed">0</span>, <span class="seed">1</span>))
+<span class="def">through</span> := <span class="word">line</span>(c, d)
 
-ball := std.sets.Ball(c, r: 5mm)
-bore := std.sets.Cylinder(through, r: 3mm)
-ring := solid({ p | p in ball; p not in bore })</pre>
+<span class="def">ball</span> := std.sets.<span class="type">Ball</span>(c, <span class="label">r</span>: <span class="number">5mm</span>)
+<span class="def">bore</span> := std.sets.<span class="type">Cylinder</span>(through, <span class="label">r</span>: <span class="number">3mm</span>)
+<span class="def">ring</span> := <span class="word">solid</span>({ <span class="def">p</span> | p <span class="word">in</span> ball; p not <span class="word">in</span> bore })</pre>
 
 <pre>$ solventc ring.sv --where ring.volume
 ring.sv: solved
@@ -209,17 +233,17 @@ ring.sv: solved
 
 <p>Start with what a sketcher does: geometry drawn in a plane, and constraints on it.</p>
 
-<pre>use std
+<pre class="sv"><span class="word">use</span> <span class="type">std</span>
 
-in std.front {
-  a := point
-  b := point hint((30, 10))
+<span class="word">in</span> std.front {
+  <span class="def">a</span> := <span class="word">point</span>
+  <span class="def">b</span> := <span class="word">point</span> <span class="word">hint</span>((<span class="seed">30</span>, <span class="seed">10</span>))
 
-  ab := line(a, b)
-  horizontal ab
-  a distance(40) b
+  <span class="def">ab</span> := <span class="word">line</span>(a, b)
+  <span class="relation">horizontal</span> ab
+  a <span class="relation">distance</span>(<span class="number">40</span>) b
 
-  fix((0, 0)) a
+  <span class="relation">fix</span>((<span class="number">0</span>, <span class="number">0</span>)) a
 }</pre>
 
 <pre>$ solventc line.sv --where b
@@ -246,18 +270,18 @@ drawn in, and <code>distance</code> between them.</p>
 (<a href="https://github.com/bmander/geomsolver/blob/main/rust/examples/catenary.sv">catenary.sv</a>).
 Nothing here knows what a catenary is:</p>
 
-<pre>rope := curve(a, b)
-length(150mm) rope
-rope minimizes integral(p.y over p)</pre>
+<pre class="sv"><span class="def">rope</span> := <span class="word">curve</span>(a, b)
+<span class="relation">length</span>(<span class="number">150mm</span>) rope
+rope <span class="relation">minimizes</span> <span class="word">integral</span>(p.y <span class="word">over</span> <span class="def">p</span>)</pre>
 
 <p>Or a motion. A frame that screws about a spindle, and everything a ball passes through as it
 rides that frame for two turns
 (<a href="https://github.com/bmander/geomsolver/blob/main/rust/examples/swept_spring.sv">swept_spring.sv</a>).
 This is the ⋃ from the top of the page:</p>
 
-<pre>climb := frame
+<pre class="sv"><span class="def">climb</span> := frame
 climb screws(pitch) spindle
-spring := solid({ p | some t in (0deg, turns * 360deg): p in ball.body at(under: climb) t })</pre>
+<span class="def">spring</span> := <span class="word">solid</span>({ <span class="def">p</span> | some t <span class="word">in</span> (<span class="number">0deg</span>, turns * <span class="number">360deg</span>): p <span class="word">in</span> ball.body <span class="word">at</span>(<span class="label">under</span>: climb) t })</pre>
 
 <p><img src="spring.png" width="200" height="160" alt="A coil spring of two turns with round ends"></p>
 
@@ -265,13 +289,13 @@ spring := solid({ p | some t in (0deg, turns * 360deg): p in ball.body at(under:
 sink 4mm under 1kN
 (<a href="https://github.com/bmander/geomsolver/blob/main/rust/examples/sized_cantilever.sv">sized_cantilever.sv</a>):</p>
 
-<pre>param h: Length hint(40mm)
+<pre class="sv"><span class="word">param</span> <span class="def">h</span>: <span class="type">Length</span> <span class="word">hint</span>(<span class="seed">40mm</span>)
 
-scenario tip_load {
-  fixed foot
-  load end P along: down
-  deflection(end, along: down) == sag
-  claim safety(arm) &gt;= 3
+<span class="word">scenario</span> <span class="def">tip_load</span> {
+  <span class="word">fixed</span> foot
+  <span class="word">load</span> end P <span class="label">along</span>: down
+  <span class="relation">deflection</span>(end, <span class="label">along</span>: down) <span class="claim">==</span> sag
+  <span class="word">claim</span> <span class="relation">safety</span>(arm) &gt;= <span class="number">3</span>
 }</pre>
 
 <pre>$ solventc sized_cantilever.sv --where h
@@ -286,29 +310,29 @@ sized_cantilever.sv: solved
 
 <p>A component is a function of its inputs, and a file is a module. In <code>rings.sv</code>:</p>
 
-<pre>unit mm
-use std.sets
+<pre class="sv"><span class="word">unit</span> <span class="type">mm</span>
+<span class="word">use</span> <span class="type">std</span>.<span class="type">sets</span>
 
-component Ring(c: point, hole: line, R: Length, r: Length) := { p |
-  p in std.sets.Ball(c, r: R)
-  p not in std.sets.Cylinder(hole, r: r)
+<span class="word">component</span> <span class="def">Ring</span>(<span class="label">c</span>: <span class="type">point</span>, <span class="label">hole</span>: <span class="type">line</span>, <span class="label">R</span>: <span class="type">Length</span>, <span class="label">r</span>: <span class="type">Length</span>) := { <span class="def">p</span> |
+  p <span class="word">in</span> std.sets.<span class="type">Ball</span>(c, <span class="label">r</span>: R)
+  p not <span class="word">in</span> std.sets.<span class="type">Cylinder</span>(hole, <span class="label">r</span>: r)
 }</pre>
 
 <p>And in another file beside it, two rings on one line, 12 apart:</p>
 
-<pre>unit mm
-use std
-use rings
+<pre class="sv"><span class="word">unit</span> <span class="type">mm</span>
+<span class="word">use</span> <span class="type">std</span>
+<span class="word">use</span> <span class="type">rings</span>
 
-c := point
-d := point hint((0, 0, 1))
-e := point hint((0, 0, 12))
-bore := line(c, d)
-e coincident bore
-c distance(12mm) e
+<span class="def">c</span> := <span class="word">point</span>
+<span class="def">d</span> := <span class="word">point</span> <span class="word">hint</span>((<span class="seed">0</span>, <span class="seed">0</span>, <span class="seed">1</span>))
+<span class="def">e</span> := <span class="word">point</span> <span class="word">hint</span>((<span class="seed">0</span>, <span class="seed">0</span>, <span class="seed">12</span>))
+<span class="def">bore</span> := <span class="word">line</span>(c, d)
+e <span class="relation">coincident</span> bore
+c <span class="relation">distance</span>(<span class="number">12mm</span>) e
 
-big := solid(rings.Ring(c, bore, R: 5mm, r: 3mm))
-small := solid(rings.Ring(e, bore, R: 3mm, r: 1mm))</pre>
+<span class="def">big</span> := <span class="word">solid</span>(rings.<span class="type">Ring</span>(c, bore, <span class="label">R</span>: <span class="number">5mm</span>, <span class="label">r</span>: <span class="number">3mm</span>))
+<span class="def">small</span> := <span class="word">solid</span>(rings.<span class="type">Ring</span>(e, bore, <span class="label">R</span>: <span class="number">3mm</span>, <span class="label">r</span>: <span class="number">1mm</span>))</pre>
 
 <h3>The rest</h3>
 
