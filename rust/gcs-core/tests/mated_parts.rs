@@ -129,7 +129,6 @@ pair := HypoidPair(pinion_teeth: 24, gear_teeth: 48, mean_module: 2mm, shaft_ang
 /// margins — two flanks held to one unknown margin, as `hypoid.sv` holds them — which the pair
 /// solved alone finds, and mated as above.  Before, the solve ran minutes and did not come out.
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 35 s: the pair's balance solved where the mate places it")]
 fn the_hypoid_pair_balanced_by_its_caller_is_mated_by_its_axes() {
     let cutter = fixtures::gear::FOUND_MILL[1];
     let pair = format!("\
@@ -147,4 +146,22 @@ pair.margins.gear_outer regular(pair.least, by: pair.margins.gear_outer_cut) wit
     // the shift the pair finds standing alone (`fixtures::gear::FOUND_MILL`)
     let shift = e.sketch.params[e.sketch.free_vars["pair.pressure_shift"] as usize].value;
     assert!((shift - fixtures::gear::FOUND_MILL[0]).abs() < 1e-4, "the pressure shift {shift}°");
+}
+
+/// What a frame carries rigidly is derived in a drawing with no image (#904 A5).  `mated` places
+/// a part by making its places in space follow its frame (`Sketch::rigid`), and `derived` gave
+/// those back only past its mirrors' images: in a drawing with none, as every one here is,
+/// nothing was carried, the part's places stood free where its frame was to place them, and the
+/// whole solve after did the placing — the balanced pair's in half a minute, now two seconds.
+#[test]
+fn what_a_frame_carries_rigidly_is_derived_with_no_image() {
+    use gcs_core::model::Derivation;
+    let mut sk = fixtures::unsolved_in_examples(SKEW).sketch;
+    assert!(sk.mirrors.is_empty() && sk.rigid.is_empty());
+    assert!(sk.derived().is_empty() && sk.derived_mask().is_empty());
+    sk.rigid.push(Derivation { param: 1, terms: vec![(0, 1.0)] });
+    let derived = sk.derived();
+    let carried = derived.iter().any(|d| d.param == 1 && d.terms == [(0, 1.0)]);
+    assert!(carried, "{} derived", derived.len());
+    assert!(sk.derived_mask()[1]);
 }
