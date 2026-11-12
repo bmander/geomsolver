@@ -1979,6 +1979,43 @@ fn a_face_thinner_than_its_chords_sag_still_meshes() {
     assert!(m.tris.len() > 4);
 }
 
+/// A face thinner than its edges' chords sag whose sampled loop does not cross but folds onto
+/// itself: a circle's segment 28 µm deep — where a boss's end cap pokes out of a cylinder about
+/// another axis, a frame's housing at its dropout (#904 A9) — its arc one chord at a display's bar,
+/// the very chord its line is. The two sides lie on one another and close no triangulation; the
+/// mesher splits sides that touch, as sides that cross, until its loops bound an area.
+#[test]
+fn a_segment_thinner_than_its_arcs_chord_sags_still_meshes() {
+    let (r,depth): (f64,f64) = (24.,0.028);
+    let half = (1.-depth/r).acos();
+    // the segment's area, its depth of one: the mesh's volume no more, and no less than the
+    // triangle its arc's middle and its line's ends make
+    let area = r*r*(2.*half-(2.*half).sin())/2.;
+    // in a leaning plane off the origin, turned every way about its centre: the line's parameters
+    // and the arc's chord's round apart either way, a hair, where the triangulation's corners make
+    // them one (the bicycle's cap, its segment a quarter turn along)
+    let c = [-421.21656051571483,-40.,53.66083310852717];
+    let n = [-0.9866618416234001,0.,0.16278332311487143];
+    let (x,y) = ([0.,1.,0.],[-0.16278332311487143,0.,-0.9866618416234001]);
+    let along = |a: f64| [0,1,2].map(|i| a.cos()*x[i]+a.sin()*y[i]);
+    for k in 0..24 {
+        let turn = PI/2.+TAU*k as f64/24.;
+        let at = |a: f64| [0,1,2].map(|i| c[i]+r*along(turn+a)[i]);
+        let p = Profile {names:vec![],origin:c,normal:n,loops:vec![vec![
+            arc(c,r,n,along(turn),Some([-half,half])),line(at(half),at(-half)),
+        ]]};
+        let b = prism(&p,0.,1.).unwrap();
+        b.check(1e-9).unwrap();
+        for (bar,angular) in [(0.05,0.2),(0.5,0.8),(1e-3,0.01)] {
+            let m = gcs_core::brep::mesh::mesh(&b,bar,angular)
+                .unwrap_or_else(|e| panic!("turned {turn}, at bar {bar}: {e}"));
+            assert_eq!(m.turned,0,"turned {turn}, at bar {bar}");
+            let v = mesh_volume(&m);
+            assert!(v > 0.7*area && v <= area*(1.+1e-6),"turned {turn}, at bar {bar}: {v} against {area}");
+        }
+    }
+}
+
 #[test]
 fn curves_cross_in_closed_form() {
     use gcs_core::brep::geom::Curve;
