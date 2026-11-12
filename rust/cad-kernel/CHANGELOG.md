@@ -22,7 +22,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   volume computed apart from the build and to a STEP file that reads back as the solid.
 - **A sharp edge's fan is swept** (`swept::contacts::fan_runs`, `candidates`): each stretch of a
   sharp edge where its two faces' `n · v` differ in sign is carried as a sheet of its own, where
-  the candidates refused the tool.
+  the candidates refused the tool. `swept::contacts::Carried` gains `rails`, the paths of a sheet's
+  ends (**breaking** for code building a `Carried` literally).
 - **Membership reads exactly any tool that is where all its faces' surfaces have it inside**
   (`swept::member`): faces planes, cylinders, cones, balls or tori, the greatest of their signed
   distances, taken where every point of the tool's mesh stands on each surface's inner side and
@@ -60,9 +61,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   edge, and the arrangement refused ("a blend's pieces do not close"). The branch is now followed
   down to the edge at halved gaps and ends where it meets it: a screwed torus's carried contact
   arranges with the start pose it passes back through.
-- **A recipe's `hull` node** (`recipe::Node::Hull`): the convex hull of its `points`
-  (`build::hull`), each face called its `face`, so a solid read as the hull of finitely many points
-  is built without a Boolean.
+- **A recipe's `hull` node** (`recipe::Node::Hull`, **new**, **breaking** for exhaustive matches):
+  the convex hull of its `points` (`build::hull`), each face called its `face`, so a solid read as
+  the hull of finitely many points is built without a Boolean.
 
 ## [0.8.0] - 2026-11-11
 
