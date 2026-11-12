@@ -44,12 +44,12 @@ pub fn recorded_machine(text: &str,shift: f64) -> String {
 pub fn machine(text: &str,shift: f64,cutter: f64) -> String { stated_machine(text,shift,&format!("{cutter}mm")) }
 
 fn stated_machine(text: &str,shift: f64,cutter: &str) -> String {
-    let seeds = "pressure_shift: hint(10deg), cutter_radius: hint(40 * mean_module))";
-    assert!(text.contains(seeds),"the pair leaves its face mill's settings to the solve, seeded");
+    let seeds = "pressure_shift: hint(10deg), cutter_radius: cutter_radius)";
+    assert!(text.contains(seeds),"the pair leaves its face mill's pressure shift to the solve, seeded");
     let stated = format!("pressure_shift: {shift}deg, cutter_radius: {cutter})");
     let mut out = text.replacen(seeds,&stated,1);
     let call = "  balance := Balanced(";
-    let at = out.find(call).expect("the pair finds its face mill's settings by `Balanced`");
+    let at = out.find(call).expect("the pair reads its flanks' margins by `Balanced`");
     let mut depth = 0;
     let end = at+out[at..].char_indices().find_map(|(k,c)| {
         match c { '(' => depth += 1, ')' => { depth -= 1; if depth == 0 { return Some(k+1); } } _ => {} }
@@ -61,9 +61,10 @@ fn stated_machine(text: &str,shift: f64,cutter: &str) -> String {
     assert!(out[end..].starts_with(margins),"the pair hands its caller the balance's margins");
     end += out[end..].find("}\n").expect("the margins' group closes")+2;
     out.replace_range(at..end,"");
-    // and the balance the document states over them, the lines that read them
+    // and the balance the document states over them, the lines that read them, and the unknown
+    // margin they are held to
     let lines: Vec<&str> = out.split_inclusive('\n')
-        .filter(|l| !l.starts_with("pair.margins.")).collect();
+        .filter(|l| !l.starts_with("pair.margins.") && !l.starts_with("param least:")).collect();
     lines.concat()
 }
 
