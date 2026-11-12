@@ -6,7 +6,6 @@ pub mod output;
 pub mod measure;
 #[cfg(feature="occt")]
 mod native;
-#[cfg(feature="occt")]
 pub mod field_mesh;
 pub mod brep;
 

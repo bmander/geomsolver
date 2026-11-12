@@ -168,6 +168,7 @@ mod jacobians;
 mod jansen;
 mod joint_words;
 mod json_escapes;
+mod kernel_blank;
 mod language_pipeline;
 mod laws;
 mod limit_measure;

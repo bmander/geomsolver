@@ -96,9 +96,12 @@ diagnosed, and the report says where it stands.
                         its topology, surfaces and their numbers; full: that, and read back by
                         the kernel, repaired as a reader would, checked and measured
     --stl-backend NAME  occt, mesh or refine; every solid defaults to the kernel's export (the
-                        core's, or occt as --kernel says), a body with swept cuts included (mesh is
-                        the faceted kernel; refine meshes the material field by the core's Delaunay
-                        refinement, checked by the field-agreement probe)
+                        core's, or occt as --kernel says, where the build has it), its exact build
+                        held to the tolerance, a body with swept cuts included, refused where it is
+                        not built; mesh writes the solid as the workspace draws it, a body read by
+                        its material field from the field, said so; refine meshes the material
+                        field by the core's Delaunay refinement, checked by the field-agreement
+                        probe
     --gltf PATH         write a solid as binary glTF: every face a named node
     --png PATH          draw what the workspace shows as a PNG (a part file: its preview), each
                         object shaded in its instance's colour, depth-buffered, with its creases
@@ -1092,14 +1095,19 @@ fn export(sk: &Sketch, e: &mut Elaborated, s: &Source, opts: &Opts, o: &Output, 
     // boundary construction needs; the core's field refinement (`--stl-backend refine`) needs
     // only the field, and is gated by the field-agreement probe instead.
     // A native export admits the body itself, beside the first of its construction.
-    let native = cfg!(feature="occt") && !cad::rust_kernel() && (step.is_some() || (stl.is_some() && native_stl && !opts.refine));
+    // The faceted STL (`--stl-backend mesh`) is the solid's evaluation, its field's mesh where the
+    // field is its boundary: no class is asked of it, and an exact output refused names it where
+    // it writes the solid (#904 A15).
+    let exact_stl = stl.is_some() && native_stl && !opts.refine;
+    let native = cfg!(feature="occt") && !cad::rust_kernel() && (step.is_some() || exact_stl);
     let mut body = None;
-    if (step.is_some() || (stl.is_some() && !opts.refine)) && solved {
+    if (step.is_some() || exact_stl) && solved {
         if let Ok(i) = pick_solid(sk,solid) {
             let mut b = cad::Body::read(sk,i);
             if b.swept() && !native {
                 if let Err(refusal) = b.admit(sk) {
                     refused(s,sk,e,i,refusal);
+                    if exact_stl { say_field_read(sk,i); }
                     ok = false;
                     stl = None;
                     step = None;
@@ -1109,15 +1117,13 @@ fn export(sk: &Sketch, e: &mut Elaborated, s: &Source, opts: &Opts, o: &Output, 
         }
     }
     if let Some(path) = stl.clone().filter(|_| opts.refine && solved) {
-        #[cfg(feature="occt")]
-        if let Ok(i) = pick_solid(sk,solid) {
-            if let Err(refusal) = cad::field_mesh::export_refine(sk,i,&path) {
+        match pick_solid(sk,solid) {
+            Ok(i) => if let Err(refusal) = cad::field_mesh::export_refine(sk,i,&path) {
                 refused(s,sk,e,i,refusal);
                 ok = false;
-            }
+            },
+            Err(m) => { eprintln!("solventc: {m}"); ok = false; }
         }
-        #[cfg(not(feature="occt"))]
-        { let _ = path; eprintln!("solventc: --stl-backend refine needs a build with the `occt` feature"); ok = false; }
         stl = None;
     }
     if step.is_some() || (stl.is_some() && native_stl) {
@@ -1143,6 +1149,7 @@ fn export(sk: &Sketch, e: &mut Elaborated, s: &Source, opts: &Opts, o: &Output, 
                         // refused admission, nothing is written (the mesh backend's STL included)
                         if refusal.stage == cad::Stage::Admission { stl = None; }
                         refused(s,sk,e,i,refusal);
+                        if exact_stl { say_field_read(sk,i); }
                         ok = false;
                     },
                 }
@@ -1284,6 +1291,14 @@ fn say_unbuilt(sk: &Sketch, i: usize, path: &str) {
     let Ok(solid) = sk.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::Mesh) else { return };
     if let Some(u) = solid.unbuilt() {
         eprintln!("solventc: {path}: {}", gcs_core::report::unbuilt_text(sk, i, u));
+    }
+}
+
+/// Beside an exact STL refused, what writes solid `i` from its material field instead, where its
+/// boundary is the field's (#904 A15): the core's words, given this host's name for its faceted STL.
+fn say_field_read(sk: &Sketch, i: usize) {
+    if let Some(line) = gcs_core::report::field_read_instead(sk, i, "`--stl-backend mesh`") {
+        eprintln!("solventc: {line}");
     }
 }
 

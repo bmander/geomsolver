@@ -1,8 +1,9 @@
 //! Meshing a body's material field directly (docs/field-meshing.md): the region and the 1D
 //! features every field mesher needs, and `--stl-backend refine`, the core's own Delaunay
 //! refinement (`gcs_core::delaunay::refine`). The features are read off the static blank's
-//! kernel topology (OCCT) and the field, or with `SOLVENT_FEATURES=field` traced from the field
-//! alone by the core (`solid::crease`), as the app does.
+//! topology as the kernel that builds the export builds it (the core's own, `KernelBlank`, or
+//! OCCT where it is asked for by name) and the field, or with `SOLVENT_FEATURES=field` traced
+//! from the field alone by the core (`solid::crease`). Nothing here needs OCCT (#904 A15).
 use gcs_core::solid::{MaterialField,export::{AtStage,ExportRefusal,Stage}};
 
 fn setting(name: &str,default: f64) -> f64 {
@@ -135,18 +136,26 @@ fn refine(sk: &gcs_core::model::Sketch,solid: usize) -> Result<Vec<u8>,String> {
 }
 
 /// The 1D features of blank-minus-sweeps, in model units, read by the core
-/// (`solid::blank_features`) off the static blank's native topology and the field; the
-/// `SOLVENT_FEATURE_*` switches say more about them on stderr.
+/// (`solid::blank_features`) off the static blank's topology and the field: the blank built by
+/// the core's own kernel, or by OCCT where the build has it and it is asked for by name
+/// (`--kernel occt`); the `SOLVENT_FEATURE_*` switches say more about them on stderr.
 fn features(sk: &gcs_core::model::Sketch,solid: usize,field: &MaterialField,scale: f64,diagonal: f64)
     -> Result<Vec<Vec<[f64;3]>>,String> {
-    use super::native::{Session,features::NativeBlank};
+    use gcs_core::solid::blank_features::{self,KernelBlank};
     use gcs_core::space::polyline_length;
     let started = std::time::Instant::now();
-    let session = Session::new()?;
-    let blank = session.construct_recipe(&gcs_core::solid::cad::recipe_static(sk,solid)?.recipe)?;
-    let topology = NativeBlank::new(&session,blank)?;
     // `SOLVENT_FEATURE_GRID`: cells a face's contour grid has along each parameter.
-    let found = gcs_core::solid::blank_features::features(&topology,field,scale,diagonal,setting("SOLVENT_FEATURE_GRID",64.) as usize)?;
+    let grid = setting("SOLVENT_FEATURE_GRID",64.) as usize;
+    let ours = || blank_features::features(&KernelBlank::of(sk,solid)?,field,scale,diagonal,grid);
+    #[cfg(feature="occt")]
+    let found = if super::rust_kernel() { ours()? } else {
+        use super::native::{Session,features::NativeBlank};
+        let session = Session::new()?;
+        let blank = session.construct_recipe(&gcs_core::solid::cad::recipe_static(sk,solid)?.recipe)?;
+        blank_features::features(&NativeBlank::new(&session,blank)?,field,scale,diagonal,grid)?
+    };
+    #[cfg(not(feature="occt"))]
+    let found = ours()?;
     eprintln!("solventc:   edge features in {:?}",started.elapsed().saturating_sub(found.contour_time));
     eprintln!("solventc:   face contours in {:?} ({} field readings taking {:.1} s)",found.contour_time,
         found.readings.0,found.readings.1);

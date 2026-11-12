@@ -1820,6 +1820,19 @@ pub fn unbuilt_text(sk: &crate::model::Sketch, i: usize, u: &crate::solid::Unbui
     format!("`{}` is drawn from {from}, {u}", sk.solid_name(i))
 }
 
+/// **What writes a solid whose exact export was refused** (#904 A15): where solid `i`'s boundary
+/// is its material field's (`Sketch::is_swept`: a continuous sweep no ball's tube builds, or a
+/// region only the field builds), the faceted output a host offers — `way`, the host's own name
+/// for it — writes that reading, said beside the refusal so it is not the end of the road.  An
+/// exact export never writes the field in its place: its file is the build held to the export's
+/// tolerance, and a mesh of the field is neither, which the faceted file says against itself
+/// (`unbuilt_text`).  `None` for a solid with no field to write.
+pub fn field_read_instead(sk: &crate::model::Sketch, i: usize, way: &str) -> Option<String> {
+    sk.is_swept(i).then(|| format!(
+        "`{}` is read by its material field, and {way} writes that reading instead: drawn from \
+         the field, not built, and not held to the export's tolerance", sk.solid_name(i)))
+}
+
 /// The same immutable claim result supplies terminal and JSON reports.
 pub fn solid_claim_text(v: &crate::diagnose::SolidVerdict) -> String {
     use crate::diagnose::SolidOutcome;

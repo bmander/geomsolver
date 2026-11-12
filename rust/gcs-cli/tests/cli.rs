@@ -91,6 +91,53 @@ fn a_continuous_boundary_exports_through_the_field_mesh() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// A body no exact construction builds (#904 A15): the default `--stl` refuses it, writing
+/// nothing, and says beside the refusal, in the core's words, that `--stl-backend mesh` writes it
+/// from its material field; that writes it, and says against the file that it is not built.
+#[test]
+fn a_body_refused_exactly_names_what_writes_its_field() {
+    let dir = std::env::temp_dir().join(format!("solventc-field-read-{}",std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let output = dir.join("tumbled.stl");
+    let refused = run(&[doc("swept_tumble.sv").as_str(),"--stl",output.to_str().unwrap(),"--no-diagnose"]);
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert_eq!(refused.status.code(),Some(1),"{stderr}");
+    assert!(stderr.contains("error[E080]: `tumbled`: "),"{stderr}");
+    assert!(stderr.contains("solventc: `tumbled` is read by its material field, and `--stl-backend mesh` writes that \
+        reading instead"),"{stderr}");
+    assert!(!output.exists());
+    let wrote = run(&[doc("swept_tumble.sv").as_str(),"--stl",output.to_str().unwrap(),"--stl-backend","mesh",
+        "--no-diagnose"]);
+    let stderr = String::from_utf8_lossy(&wrote.stderr);
+    assert_eq!(wrote.status.code(),Some(0),"{stderr}");
+    assert!(stderr.contains("`tumbled` is drawn from its material field, not built"),"{stderr}");
+    gcs_core::mesh::stl_shells(&std::fs::read(&output).unwrap()).unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// `--stl-backend refine` writes a body with swept cuts in any build (#904 A15): the swept
+/// torus's part, its features read off its blank by the core's own kernel, its mesh refined in
+/// the field and held to it.
+#[test]
+fn a_refined_mesh_is_written_without_occt() {
+    let dir = std::env::temp_dir().join(format!("solventc-refine-{}",std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let output = dir.join("part.stl");
+    let result = Command::new(env!("CARGO_BIN_EXE_solventc"))
+        .args([doc("swept_torus.sv").as_str(),"--stl",output.to_str().unwrap(),"--stl-backend","refine","--no-diagnose"])
+        .env_remove("SOLVENT_FEATURES").env_remove("SOLVENT_KERNEL")
+        .output().expect("solventc runs");
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert_eq!(result.status.code(),Some(0),"{stderr}");
+    // its bottom rim and the cut's contour round its side, the top taken by the sweep
+    assert!(stderr.contains("refine: 2 feature curves"),"{stderr}");
+    assert!(stderr.contains(", 0 disagree"),"{stderr}");
+    gcs_core::mesh::stl_shells(&std::fs::read(&output).unwrap()).unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 /// A body whose sweep is outside the generating class is refused before any construction,
 /// with the row it fails and a point, and an earlier output is left as it was: the gear pair
 /// 30 mm off the bevel on a symmetric rack, whose pinion touches the blank twice.
@@ -136,8 +183,8 @@ fn a_developable_band_writes_its_stl_and_refuses_its_step() {
 }
 
 /// A refined mesh the field-agreement probe refuses is never written: the swept torus meshed
-/// so coarsely its facets leave the field, and the earlier output is left as it was.
-#[cfg(feature="occt")]
+/// so coarsely its facets leave the field, and the earlier output is left as it was — in any
+/// build, the blank's features read by the core's own kernel (#904 A15).
 #[test]
 fn a_refined_mesh_the_field_refuses_leaves_the_old_output() {
     let dir = std::env::temp_dir().join(format!("solventc-refine-refusal-{}",std::process::id()));

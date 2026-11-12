@@ -587,7 +587,15 @@ placement carries inside the blank; CLI test readers zero the offset.
   the exit unchanged, since what was asked is all there: a quick look is never read as "this
   builds" when the export would refuse it
   (`shell::a_shell_not_built_is_drawn_from_its_field_and_says_why`,
-  `cli::a_picture_of_a_solid_not_built_says_so`).
+  `cli::a_picture_of_a_solid_not_built_says_so`).  The other way round (#904 A15): an exact
+  export refused never writes the field in its place — its file is the build held to the
+  tolerance, and a field's mesh is neither — but where the solid's boundary is its field's
+  (`Sketch::is_swept`) an exact STL refused is followed by what writes that reading, in the core's
+  words with the host's name for its faceted output (`report::field_read_instead`: "`tumbled` is
+  read by its material field, and `--stl-backend mesh` writes that reading instead: …").  The
+  faceted STL is the evaluation's, asked of no class: admission gates the exact outputs only
+  (`kernel_blank::a_field_read_body_is_offered_its_fields_writing`,
+  `cli::a_body_refused_exactly_names_what_writes_its_field`).
 
 - **A face family is a face that runs** (§6.9 [0.97], `solid/family.rs`; #243 L1).
   `solid({ p | some s: p in I(…).f at s })` ([0.199], #737, [0.205]; through 0.198 `sweep(I(…).f
