@@ -8,6 +8,12 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A sweep's sheets are given their meetings with the tool at the roll's ends**
+  (`swept::contacts::candidates`): what of a sheet passes back into the tool where it touches it
+  along a rim, the zero set of the distance over its double root, read in the sheet's parameters,
+  in place of a march that stopped short of the rim; and a given meeting is held to the tolerance
+  where two meetings are crossed (`boolean`'s `triple_points`). Every pair of the leaning torus's
+  candidates is now given, none searched.
 - **A sweep's contact is cut at its double points** (`swept::contacts::face_contact`): a double
   point standing on a node of the grid (the leaning torus's, on its seams' crossing) was walked
   through twice as one closed piece with two corners, and every sheet carried from it was creased.

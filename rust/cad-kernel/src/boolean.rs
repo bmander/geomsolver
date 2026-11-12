@@ -1585,7 +1585,18 @@ impl<'a> Arrangement<'a> {
         // here); a build passing its budget among them reads them again one after another, and is
         // refused where it always is (`par::map_in_order`)
         let pad = self.pad;
-        let sought = crate::util::par::map_in_order(&asked,|&(_,[(_,ci,ti),(_,cj,tj)],[surface,si,sj])| -> Result<Vec<(f64,V)>,String> {
+        // **a given meeting is known to the tolerance** (#880 Q1b): its curves lie on both its
+        // surfaces (`Given`), so it is held to the tolerance and not to the tolerance over the sine of
+        // their angle, a trace's — where a sweep's sheets and its end poses are all tangent at a
+        // double point of its contact, that reach grew without bound, and two given curves leaving
+        // the point a few degrees apart were cut at a crossing a centimetre along it
+        let given: Vec<[bool;2]> = asked.iter().map(|(faces,..)| {
+            let index = |k: (Side,usize)| self.surface_of.get(&k).copied();
+            let base = index(faces[0]);
+            [faces[1],faces[2]].map(|o| match (base,index(o)) { (Some(a),Some(b)) => self.shared.given(a,b),_ => false })
+        }).collect();
+        let sought = crate::util::par::map_in_order(&asked.iter().zip(&given).collect::<Vec<_>>(),
+            |&(&(_,[(_,ci,ti),(_,cj,tj)],[surface,si,sj]),&known)| -> Result<Vec<(f64,V)>,String> {
             if !overlap(&ci.bounds(ti),&cj.bounds(tj),pad) { return Ok(Vec::new()) }
             // two meetings lying along one another cross nowhere (#847: a screwed level edge's
             // sheet touching the cylinder its foot runs on along that foot's helix, which a
@@ -1598,10 +1609,14 @@ impl<'a> Arrangement<'a> {
             // in closed form where `query` has one, else by search (`meeting::crossings`), as far
             // as the shallower of the two meetings anywhere along them is known, each candidate
             // then held to the reach of the two at it
-            let widest = super::meeting::reach_along(&[(ci,ti,si),(cj,tj,sj)],&|o,p| reach_of(surface,o,p));
+            let exact = ON_CURVE*tol;
+            let reach_i = |p: V| if known[0] { exact } else { reach_of(surface,si,p) };
+            let reach_j = |p: V| if known[1] { exact } else { reach_of(surface,sj,p) };
+            let widest = if known[0] && known[1] { exact }
+                else { super::meeting::reach_along(&[(ci,ti,si),(cj,tj,sj)],&|o,p| reach_of(surface,o,p)) };
             Ok(crossings_in(surface,ci,ti,cj,tj,tol).map_err(|r| r.to_string())?.unwrap_or_else(||
                 super::meeting::crossings(ci,ti,cj,tj,widest).into_iter()
-                    .filter(|&(t,u,_)| distance(ci.point(t),cj.point(u)) <= reach_of(surface,si,ci.point(t)).max(reach_of(surface,sj,cj.point(u))))
+                    .filter(|&(t,u,_)| distance(ci.point(t),cj.point(u)) <= reach_i(ci.point(t)).max(reach_j(cj.point(u))))
                     .map(|(t,_,q)| (t,q)).collect()))
         });
         for (&(faces,[(ei,ci,ti),(ej,cj,tj)],three),found) in asked.iter().zip(sought) {
@@ -2928,7 +2943,20 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool) -> Result<
         }
         match host {
             Some(k) => pieces[k].1.push(i),
-            None => return Err(format!("a {} has a hole in no piece",f.surface.kind())),
+            None => {
+                if super::debug() {
+                    for (k,c) in cycles.iter().enumerate() {
+                        let kinds: Vec<&str> = c.iter().map(|h| match &out[h.edge as usize].curve { EdgeCurve::Curve(cv) => cv.kind(),_ => "degenerate" }).collect();
+                        let uv: Vec<(u32,Uv,Uv,V,f64)> = c.iter().map(|h| {
+                            let e = &out[h.edge as usize];
+                            let x = e.point(param(h,out,0.),pool);
+                            (h.edge,h.from,h.to,x,distance(x,f.surface.point(h.from)))
+                        }).collect();
+                        eprintln!("pieces: cycle {k}, area {:.3e}, {kinds:?} along {uv:?}{}",areas[k],if k == i { " (the hole)" } else { "" });
+                    }
+                }
+                return Err(format!("a {} has a hole in no piece",f.surface.kind()))
+            }
         }
     }
     // each cycle is in one piece

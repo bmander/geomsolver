@@ -603,7 +603,11 @@ at gaps halved to the tolerance, the branch's root along the points that far off
 the last — and ends where the last two levels run on to the edge, a point of it, one curve; it
 stopped short before, the stop read as a touch of its own whose other half-branches were traced
 along the edge, and the pieces did not close (`swept_contacts::a_contact_carried_back_through_its_start_pose_is_arranged_with_it`,
-the leaning torus's carried contact re-entering the start pose it touches along its rim). **A Boolean is the
+the leaning torus's carried contact re-entering the start pose it touches along its rim). **A given
+meeting is held to the tolerance** where two meetings on a face are crossed (`triple_points`,
+`meeting::Shared::given`): its curves lie on both its surfaces, so the reach a trace is held to —
+the tolerance over the sine of its surfaces' angle — does not apply, and at a point where several
+surfaces are tangent it cut two given curves at a near miss far from where they meet. **A Boolean is the
 selection, with no other road**: a shell kept on one side and dropped on another is refused (two
 cells joined round an edge), where each face was once kept by its own sides; the fifteen round
 cases that took that road did so because a fitted round leaves the edge some 1e-5 off the face it is

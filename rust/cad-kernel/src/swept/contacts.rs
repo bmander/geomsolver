@@ -367,9 +367,22 @@ pub fn piece_curve(tool: &Brep,piece: &Piece,twist: &Twist,tol: f64) -> Option<c
     idx[0] = 0;
     idx[16] = n-1;
     idx.dedup();
-    let mut nodes: Vec<(Uv,V)> = idx.iter().map(|&i| (uv[i],piece.points[i])).collect();
-    let off = |q: V| distance(q,surface.point(settled_on(surface,twist,surface.inverse(q),h,None,0.)));
+    let nodes: Vec<(Uv,V)> = idx.iter().map(|&i| (uv[i],piece.points[i])).collect();
+    let between = |a: Uv,b: Uv| { let m = settled_on(surface,twist,[0.5*(a[0]+b[0]),0.5*(a[1]+b[1])],h,None,0.); (m,surface.point(m)) };
+    fitted(nodes,&between,tol)
+}
+
+/// **The cubic B-spline through points of a curve known implicitly**, by chord length, within a
+/// tenth of `tol` of the curve: `nodes` its first points (parameters and place), every span whose
+/// middle stands farther than that off the curve given the curve's point between its two
+/// (`between`, from their parameters), until none does — each node a point of the curve, so the fit
+/// closes at a cubic's rate (`piece_curve`, `pose_meeting`). A span's middle is measured from that
+/// point across the span's chord: along it, the two differ only in where along the curve each
+/// stands, and the point is the node the span would be split at.
+fn fitted(mut nodes: Vec<(Uv,V)>,between: &(dyn Fn(Uv,Uv) -> (Uv,V)+Sync),tol: f64) -> Option<crate::geom::Curve> {
     const MOST: usize = 4097;
+    // each span's point between, kept until the span is split
+    let mut mids: Vec<Option<(Uv,V)>> = vec![None;nodes.len()-1];
     loop {
         let mut t = vec![0.];
         for w in nodes.windows(2) { let last = *t.last().unwrap(); t.push(last+distance(w[0].1,w[1].1)); }
@@ -377,16 +390,173 @@ pub fn piece_curve(tool: &Brep,piece: &Piece,twist: &Twist,tol: f64) -> Option<c
         if !(total > 0.) { return None }
         let t: Vec<f64> = t.into_iter().map(|x| x/total).collect();
         let spline = crate::nurbs::interpolate(&nodes.iter().map(|x| x.1).collect::<Vec<_>>(),&t,3)?;
-        let wide: Vec<usize> = (0..nodes.len()-1).filter(|&k| off(spline.point(0.5*(t[k]+t[k+1]))) > 0.1*tol).collect();
+        for k in 0..mids.len() { if mids[k].is_none() { mids[k] = Some(between(nodes[k].0,nodes[k+1].0)) } }
+        // (a span no longer than the tolerance is not split: its middle is off the curve by what its
+        // ends are, where a node is set on a point known exactly and the curve read near it only to
+        // its own rounding — a branch's end on a double point of the contact)
+        let wide: Vec<usize> = (0..nodes.len()-1).filter(|&k| {
+            let chord = crate::util::space::sub(nodes[k+1].1,nodes[k].1);
+            if !(norm_of(chord) > tol) { return false }
+            let d = crate::util::space::sub(spline.point(0.5*(t[k]+t[k+1])),mids[k].unwrap().1);
+            let along = crate::util::space::dot(d,chord)/crate::util::space::dot(chord,chord);
+            norm_of(crate::util::space::sub(d,scale(chord,along))) > 0.1*tol
+        }).collect();
         if wide.is_empty() || nodes.len()+wide.len() > MOST {
             return Some(crate::geom::Curve::BSpline(std::sync::Arc::new(spline)))
         }
         for &k in wide.iter().rev() {
-            let (a,b) = (nodes[k].0,nodes[k+1].0);
-            let m = settled_on(surface,twist,[0.5*(a[0]+b[0]),0.5*(a[1]+b[1])],h,None,0.);
-            nodes.insert(k+1,(m,surface.point(m)));
+            let m = mids[k].unwrap();
+            nodes.insert(k+1,m);
+            mids.splice(k..=k,[None,None]);
         }
     }
+}
+
+fn norm_of(v: V) -> f64 { crate::util::space::norm(v) }
+
+/// **A sheet's whole meeting with a face of the tool posed at an end of the roll** (#880 Q1b): the
+/// sheet `S(u, v) = carry_v(a(u))`, the face's surface `surface`, and their meeting the zero set of
+/// `F(u, v)`, the surface's signed distance at `S(u, v)`, read in the sheet's own parameters. Where
+/// the face is the one the section lies on and the pose the sheet's end at `v = e` (`touch`), the
+/// sheet touches it along that end's rim: `F` vanishes there twice over, `F = (v − e)² h`, and the
+/// meeting is the rim (the caller's) and the zero set of `h` — what of the sheet passes back into the
+/// tool, met transversally, reaching the rim where `h` changes sign along it (where the two surfaces'
+/// curvatures across it change order) and leaving it at a double point of the contact tangent to it,
+/// as a curve and not as a step a march cannot land. `h` is read as `F` less its value and rate at
+/// the rim (the section's fit, off the face by up to a tenth of the tolerance, and the contact's own
+/// rounding), over `(v − e)²`, and at the rim by central differences. Each branch is marched across
+/// a grid of the parameters as the contact is (`face_contact`), its crossings of the cells' edges
+/// exact, and fitted through points of it within a tenth of the tolerance (`fitted`). A branch ending
+/// beside one of `corners` — where the section ends at a double point of the contact, on the rim, and
+/// the branch leaves through it, `h` nought there but for its differences' rounding — by no more than
+/// that rounding puts it off (`h` there over its slope toward the end) ends there exactly: its root
+/// fell a hair beside it (7e-7 of the section on the leaning torus), beside the rim and the rail that
+/// end there.
+fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,touch: Option<f64>,corners: &[Uv],tol: f64)
+    -> Vec<crate::geom::Curve> {
+    let a = &blend.a;
+    let at = |u: f64,v: f64| blend.carry.at(a.point(u),v);
+    let f = |u: f64,v: f64| surface.implicit(at(u,v));
+    // `F`'s value, rate, and second and third derivatives across the rim, by five-point differences a
+    // thousandth of the roll apart: within that, `h` its Taylor series' `c₂ + c₃ w`; beyond, `F` less
+    // its value and rate, over `w²` — each read where its rounding is least, and the two one function
+    // (`h` read at the rim alone within a step of it jumped where the two met, a sign change of its
+    // own along the rail)
+    const STEP: f64 = 1e-3;
+    let taylor = |u: f64,e: f64| -> [f64;4] {
+        let (f0,f1,f2,m1,m2) = (f(u,e),f(u,e+STEP),f(u,e+2.*STEP),f(u,e-STEP),f(u,e-2.*STEP));
+        [f0,(8.*(f1-m1)-(f2-m2))/(12.*STEP),(16.*(f1+m1)-(f2+m2)-30.*f0)/(24.*STEP*STEP),(f2-2.*f1+2.*m1-m2)/(12.*STEP*STEP*STEP)]
+    };
+    let h = |u: f64,v: f64| -> f64 {
+        let Some(e) = touch else { return f(u,v) };
+        let [c0,c1,c2,c3] = taylor(u,e);
+        let w = v-e;
+        if w.abs() < STEP { return c2+c3*w }
+        (f(u,v)-c0-c1*w)/(w*w)
+    };
+    // the grid: as many cells each way as its sides' lengths in space ask, 64 at least
+    let length = |p: &dyn Fn(f64) -> V| (0..32).map(|k| distance(p(k as f64/32.),p((k+1) as f64/32.))).sum::<f64>();
+    let (lu,lv) = (length(&|u| at(u,0.5)),length(&|v| at(0.5,v)));
+    let n = [(lu,lv),(lv,lu)].map(|(x,y)| 64usize.max((64.*x/y.max(1e-300)).min(256.) as usize));
+    let node = |i: usize,j: usize| -> Uv { [i as f64/n[0] as f64,j as f64/n[1] as f64] };
+    let values: Vec<Vec<f64>> = crate::util::par::indices(n[0]+1,|i| (0..=n[1]).map(|j| { let p = node(i,j); h(p[0],p[1]) }).collect());
+    let mut roots: Vec<Uv> = Vec::new();
+    let mut root_on = |p: Uv,q: Uv,fp: f64,fq: f64| -> Option<usize> {
+        if (fp < 0.) == (fq < 0.) || !fp.is_finite() || !fq.is_finite() { return None }
+        let x = crate::util::roots::bracketed_root(|x: f64| Some(h(p[0]+(q[0]-p[0])*x,p[1]+(q[1]-p[1])*x)),0.,fp,1.,fq,1e-13);
+        roots.push([p[0]+(q[0]-p[0])*x,p[1]+(q[1]-p[1])*x]);
+        Some(roots.len()-1)
+    };
+    let across: Vec<Vec<Option<usize>>> = (0..n[0]).map(|i| (0..=n[1]).map(|j| root_on(node(i,j),node(i+1,j),values[i][j],values[i+1][j])).collect()).collect();
+    let up: Vec<Vec<Option<usize>>> = (0..=n[0]).map(|i| (0..n[1]).map(|j| root_on(node(i,j),node(i,j+1),values[i][j],values[i][j+1])).collect()).collect();
+    let mut links: Vec<[usize;2]> = Vec::new();
+    for i in 0..n[0] { for j in 0..n[1] {
+        let sides = [across[i][j],up[i+1][j],across[i][j+1],up[i][j]];
+        let found: Vec<usize> = sides.iter().flatten().copied().collect();
+        match found.len() {
+            2 => links.push([found[0],found[1]]),
+            4 => {
+                // a saddle of `h`: which corners its middle's value joins
+                let [b,r,t,l] = sides.map(Option::unwrap);
+                let mid = node(i,j);
+                let c = h(mid[0]+0.5/n[0] as f64,mid[1]+0.5/n[1] as f64);
+                if (c < 0.) == (values[i][j] < 0.) { links.push([b,r]); links.push([t,l]) } else { links.push([b,l]); links.push([t,r]) }
+            }
+            _ => {}
+        }
+    } }
+    // the polylines: from each end out, then the loops left
+    let mut next: Vec<Vec<usize>> = vec![Vec::new();roots.len()];
+    for (k,&[x,y]) in links.iter().enumerate() { next[x].push(k); next[y].push(k); }
+    let mut used = vec![false;links.len()];
+    let walk = |start: usize,first: usize,used: &mut Vec<bool>| -> Vec<usize> {
+        let mut line = vec![start];
+        let (mut here,mut via) = (start,first);
+        loop {
+            used[via] = true;
+            let [x,y] = links[via];
+            here = if x == here { y } else { x };
+            line.push(here);
+            let Some(&k) = next[here].iter().find(|&&k| !used[k]) else { break };
+            via = k;
+        }
+        line
+    };
+    let mut lines: Vec<Vec<usize>> = Vec::new();
+    for r in 0..roots.len() {
+        if next[r].len() != 1 { continue }
+        if let Some(&k) = next[r].iter().find(|&&k| !used[k]) { lines.push(walk(r,k,&mut used)) }
+    }
+    for k in 0..links.len() { if !used[k] { lines.push(walk(links[k][0],k,&mut used)) } }
+    // each fitted: a point between two of its own settled across it, by Newton on `h`'s gradient —
+    // or `F`'s away from the rim, the same zero set and sign at a sixth of the cost
+    let d = 1e-7;
+    let near_rim = |p: Uv| touch.is_some_and(|e| (p[1]-e).abs() < 0.05);
+    let onto = |mut p: Uv| -> Uv {
+        for _ in 0..30 {
+            let k: &dyn Fn(f64,f64) -> f64 = if near_rim(p) { &h } else { &f };
+            let v = k(p[0],p[1]);
+            if v == 0. { break }
+            let g = [(k(p[0]+d,p[1])-k(p[0]-d,p[1]))/(2.*d),(k(p[0],p[1]+d)-k(p[0],p[1]-d))/(2.*d)];
+            let gg = g[0]*g[0]+g[1]*g[1];
+            if !(gg > 0.) || !v.is_finite() { break }
+            let step = [v*g[0]/gg,v*g[1]/gg];
+            p = [(p[0]-step[0]).clamp(0.,1.),(p[1]-step[1]).clamp(0.,1.)];
+            if step[0].abs() <= 1e-13 && step[1].abs() <= 1e-13 { break }
+        }
+        p
+    };
+    let between = |x: Uv,y: Uv| { let p = onto([0.5*(x[0]+y[0]),0.5*(x[1]+y[1])]); (p,at(p[0],p[1])) };
+    // an end beside a corner by what `h`'s rounding there puts it off: its value over its slope toward
+    // the end, four times over
+    let snapped = |p: Uv| {
+        corners.iter().copied().find(|&c| {
+            let (du,dv) = (p[0]-c[0],p[1]-c[1]);
+            let apart = du.hypot(dv);
+            if !(apart > 0.) { return true }
+            let d = 1e-6;
+            let slope = (h(c[0]+du/apart*d,c[1]+dv/apart*d)-h(c[0],c[1]))/d;
+            apart <= 4.*(h(c[0],c[1])/slope).abs()
+        }).unwrap_or(p)
+    };
+    lines.into_iter().filter(|l| l.len() >= 2).filter_map(|l| {
+        let mut uv: Vec<Uv> = l.iter().map(|&k| roots[k]).collect();
+        let last = uv.len()-1;
+        if next[l[0]].len() == 1 { uv[0] = snapped(uv[0]) }
+        if next[l[last]].len() == 1 { uv[last] = snapped(uv[last]) }
+        uv.dedup();
+        if uv.len() < 2 { return None }
+        // seventeen of its points spread along it, its ends among them, refined where the fit asks
+        let pts: Vec<V> = uv.iter().map(|&p| at(p[0],p[1])).collect();
+        let mut run = vec![0.];
+        for w in pts.windows(2) { let last = *run.last().unwrap(); run.push(last+distance(w[0],w[1])); }
+        let total = *run.last().unwrap();
+        let mut idx: Vec<usize> = (0..=16).map(|k| run.partition_point(|&x| x < total*k as f64/16.).min(pts.len()-1)).collect();
+        idx[0] = 0;
+        idx[16] = pts.len()-1;
+        idx.dedup();
+        fitted(idx.iter().map(|&i| (uv[i],pts[i])).collect(),&between,tol)
+    }).collect()
 }
 
 /// The rigid map carrying what stands at the pose of `t0` to where it stands at `t1` under `path`.
@@ -734,8 +904,9 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
     let located = Located::new(tool,tol);
     let mut out = Vec::new();
     let mut given = Vec::new();
-    // every stretch's sheet, and the sheet following it along its piece
-    let mut carried_all: Vec<(Carried,Option<usize>)> = Vec::new();
+    // every stretch's sheet, the sheet following it along its piece, the face its section lies on and
+    // how its section ends
+    let mut carried_all: Vec<(Carried,Option<usize>,usize,[End;2])> = Vec::new();
     let posed = |t: f64| -> Result<crate::geom::Rigid,Unbuilt> { let q = path.pose(t)?; Ok(crate::geom::Rigid {r:q.r,t:q.p}) };
     let ends = [posed(roll[0])?,posed(roll[1])?];
     for fi in 0..tool.faces.len() {
@@ -756,7 +927,7 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
                 let (n,first) = (sheets.len(),carried_all.len());
                 for (k,c) in sheets.into_iter().enumerate() {
                     let next = if k+1 < n { Some(first+k+1) } else if p.closed && n > 1 { Some(first) } else { None };
-                    carried_all.push((c,next));
+                    carried_all.push((c,next,p.face,parts[k].ends));
                 }
             },
         }
@@ -773,7 +944,7 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
     };
     let blend = |c: &Carried| match &c.sheet.faces[0].surface { Surface::Blend(_,b) => Some(b.clone()),_ => None };
     for i in 0..carried_all.len() { for j in i+1..carried_all.len() {
-        let ((ci,ni),(cj,nj)) = (&carried_all[i],&carried_all[j]);
+        let ((ci,ni,..),(cj,nj,..)) = (&carried_all[i],&carried_all[j]);
         let (Some(bi),Some(_)) = (blend(ci),blend(cj)) else { continue };
         let ((si,ki),(sj,kj)) = (section(ci),section(cj));
         let mut curves = Vec::new();
@@ -787,7 +958,29 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
         }
         given.push(crate::boolean::Given {surfaces:[ci.sheet.faces[0].surface.clone(),cj.sheet.faces[0].surface.clone()],curves});
     } }
-    out.extend(carried_all.into_iter().map(|(c,_)| c.sheet));
-    for m in &ends { out.push(tool.moved(m)); }
+    // **every sheet given its whole meeting with the tool at each end** (`pose_meeting`): the rim it
+    // touches the face its section lies on along, at that end, and what of it passes back into the
+    // tool there, met in its own parameters — sought, a branch arriving at the rim where the two
+    // part as the square of the way was marched to a stop short of it, and at a double point of the
+    // contact, where it leaves the rim's end tangent to the rim, laid beside the rim
+    let poses: Vec<Brep> = ends.iter().map(|m| tool.moved(m)).collect();
+    let jobs: Vec<(usize,usize,usize)> = (0..carried_all.len()).flat_map(|k| (0..2).flat_map(move |e| (0..tool.faces.len()).map(move |fi| (k,e,fi)))).collect();
+    let met: Vec<Option<crate::boolean::Given>> = crate::util::par::indices(jobs.len(),|j| {
+        let (k,e,fi) = jobs[j];
+        let (c,_,face,section) = &carried_all[k];
+        let b = blend(c)?;
+        let sheet = &c.sheet.faces[0].surface;
+        let f = &poses[e].faces[fi];
+        let touch = (fi == *face).then_some(e as f64);
+        let mut curves: Vec<crate::geom::Curve> = Vec::new();
+        let corners: Vec<Uv> = if touch.is_none() { Vec::new() } else {
+            [0.,1.].into_iter().zip(section).filter(|(_,end)| matches!(end,End::Singular)).map(|(u,_)| [u,e as f64]).collect()
+        };
+        curves.extend(pose_meeting(&b,&f.surface,touch,&corners,tol));
+        Some(crate::boolean::Given {surfaces:[sheet.clone(),f.surface.clone()],curves})
+    });
+    given.extend(met.into_iter().flatten());
+    out.extend(carried_all.into_iter().map(|(c,..)| c.sheet));
+    out.extend(poses);
     Ok((out,given))
 }

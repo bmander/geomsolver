@@ -204,7 +204,7 @@ fn a_contact_carried_over_the_roll_is_inverted_exactly_at_its_own_points() {
     assert!(sheets >= 4,"the closed contact in four stretches at least: {sheets}");
     assert!(cands[..sheets].iter().all(|c| matches!(c.faces[..],[ref f] if matches!(f.surface,Surface::Blend(..)))),"each stretch one sheet");
     assert!(cands[sheets..].iter().all(|c| matches!(c.faces[0].surface,Surface::Torus(..))),"the end poses last");
-    assert_eq!(given.len(),sheets*(sheets-1)/2,"every two sheets given their meeting");
+    assert_eq!(given.len(),sheets*(sheets-1)/2+2*sheets,"every two sheets given their meeting, and each sheet its meeting with each end pose");
     for c in &cands[..sheets] {
         let sheet = &c.faces[0].surface;
         for i in 0..=10 { for j in 0..=10 {
@@ -275,7 +275,7 @@ fn every_two_sheets_of_one_carry_are_given_the_paths_they_share() {
     let (cands,given) = candidates(&tool,&path,roll,TOL).unwrap();
     let blend = |s: &Surface| match s { Surface::Blend(_,b) => b.clone(),_ => panic!("a sheet") };
     let mut paths = 0;
-    for g in &given {
+    for g in given.iter().filter(|g| g.surfaces.iter().all(|s| matches!(s,Surface::Blend(..)))) {
         for c in &g.curves {
             let Curve::Iso(..) = c else { panic!("a path of the carry") };
             paths += 1;
@@ -310,4 +310,50 @@ fn every_two_sheets_of_one_carry_are_given_the_paths_they_share() {
     let domain = prism(&square([0.,0.,-30.],[0.,0.,1.],40.),0.,90.).unwrap();
     let operands: Vec<_> = four.iter().map(|&k| &cands[k]).collect();
     if let Err(e) = arrangement_given(&domain,&operands,&among,TOL) { panic!("the double point's four stretches arranged with their paths: {e}") }
+}
+
+
+/// **Each sheet is given its whole meeting with the tool at each end of the roll** (#880 Q1b,
+/// `contacts::pose_meeting`): the sheet touches the pose its own end is carried to along that end's
+/// rim, its distance from it `(v − e)² h` across, so what of it passes back into the tool there is
+/// the zero set of `h`, read in the sheet's own parameters — a curve where a march reached the rim
+/// only as a step it could not land. Every curve given lies on both surfaces within the
+/// tolerance; and at the contact's double point, where every sheet and the pose are tangent, a
+/// branch leaves the corner of a stretch ending there from the corner, to rounding, not from a hair
+/// beside it on the rim or the rail.
+#[test]
+fn each_sheet_is_given_its_meeting_with_the_tool_at_each_end() {
+    use gcs_core::brep::swept::contacts::candidates;
+    use gcs_core::brep::trajectory::Trajectory;
+    let tool = leaning_torus();
+    let path = Trajectory::Twist(rod_screw());
+    let roll = [(-108f64).to_radians(),348f64.to_radians()];
+    let (cands,given) = candidates(&tool,&path,roll,TOL).unwrap();
+    let sheets = cands.len()-2;
+    let poses = [&cands[sheets].faces[0].surface,&cands[sheets+1].faces[0].surface];
+    let posed: Vec<_> = given.iter().filter(|g| matches!(g.surfaces[1],Surface::Torus(..))).collect();
+    assert_eq!(posed.len(),2*sheets,"each sheet given its meeting with each end pose");
+    let mut worst = 0f64;
+    for g in &posed {
+        for c in &g.curves {
+            for k in 0..=32 {
+                let p = c.point(k as f64/32.);
+                for s in &g.surfaces { worst = worst.max(s.implicit(p).abs()); }
+            }
+        }
+    }
+    assert!(worst <= TOL,"the meetings given lie on both surfaces: {worst:e} off");
+    assert!(posed.iter().any(|g| !g.curves.is_empty()),"the sheets pass back into the tool at its ends");
+    // the four stretches ending at the double point: a branch leaving each pose's corner from it
+    let blend = |s: &Surface| match s { Surface::Blend(_,b) => b.clone(),_ => panic!("a sheet") };
+    let ends: Vec<[f64;3]> = (0..sheets).flat_map(|k| { let a = blend(&cands[k].faces[0].surface).a.clone(); [a.point(0.),a.point(1.)] }).collect();
+    let at = *ends.iter().find(|&&p| ends.iter().filter(|&&q| distance(p,q) <= 1e-9).count() == 4).expect("the double point");
+    let mut from_corner = 0;
+    for g in &posed {
+        let b = blend(&g.surfaces[0]);
+        let e = if g.surfaces[1] == *poses[0] { 0. } else { 1. };
+        let corner = b.carry.at(at,e);
+        from_corner += g.curves.iter().filter(|c| [c.point(0.),c.point(1.)].iter().any(|&p| distance(p,corner) <= 1e-9)).count();
+    }
+    assert!(from_corner >= 4,"branches leave the double point's corners from them exactly: {from_corner}");
 }

@@ -920,10 +920,27 @@ another stretch's sheet nowhere or lies in it (`Blend::carried_gap` reads how fa
 carry's invariants): each cut is moved, within a quarter of its stretch, to the point whose path
 stands clearest of the piece's other points, by a thousandth of the tool where one does — a cut at an
 even length on the torus stood 7e-6 from another stretch's paths, and its rail ran beside that sheet
-its whole length, which no search settles. The end poses are not given their meeting with the sheets:
-a buried stretch re-enters the tool a little way into the roll (on the torus, 9° on), so a sheet's
-rim is not the whole of its meeting with the tool at that end, and a meeting given replaces the
-search for that pair; the arrangement lays the rim as an edge the two touch along and traces the rest.
+its whole length, which no search settles. **Each sheet is given its whole meeting with the tool at
+each end** (`pose_meeting`): with every face of the posed tool, the zero set of `F(u, v)`, the face's
+signed distance at the sheet's point, read in the sheet's own parameters; and with the face its
+section lies on, at the end its rim is carried to (`v = e`), where the sheet touches the face along
+the rim and `F = (v − e)² h`, the zero set of `h` alone — what of a buried stretch passes back into
+the tool a little way into the roll (on the torus, 9° on), reaching the rim where `h` changes sign
+along it, and at a double point of the contact leaving the rim's corner. The rim itself is the
+sheet's own edge, which the arrangement reads lying on the face, and is not given again (given, it
+was laid a second time beside that edge, the two cut a hair apart). `h` is `F` less its value and
+rate at the rim over `(v − e)²`, and within a thousandth of the roll of the rim its Taylor series
+there, by five-point differences, so the two readings are one function (one jumping to the other
+made a sign change of its own along the rail). Each branch is marched over a grid of the
+parameters, its crossings of the cells' edges exact, a branch's end beside a double point's corner
+by no more than `h`'s rounding there puts it set on the corner, and fitted (`fitted`) from seventeen
+of its points, a span split where its middle stands off the curve, measured across its chord from
+the point it would be split at. Sought, a branch reaching the rim was marched to a stop a step
+short of it, and at the double point laid beside the rim; given, the arrangement holds a given
+meeting to the tolerance (`boolean`'s `triple_points`), not to the tolerance over the sine of its
+surfaces' angle, a trace's, which at a double point, where every sheet and the pose are tangent,
+grew until two given curves leaving the point a few degrees apart were cut a centimetre along
+(`swept_contacts::each_sheet_is_given_its_meeting_with_the_tool_at_each_end`).
 
 The build's tolerance must be one a fit can hold: a contact fitted within a tenth of
 `geom::tolerance` (5e-10 of the size) takes thousands of spans, and its rim then stands off its face
