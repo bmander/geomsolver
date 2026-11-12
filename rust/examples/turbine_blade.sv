@@ -221,9 +221,9 @@ in std.front {
 index := frame
 index turns(1) engine
 // each swept one pitch from the front plane, then turned back half a pitch to stand centred
-platform_sector := solid(std.solids.Revolution(plat, about: engine, to: pitch_angle))
-wing_f_sector := solid(std.solids.Revolution(fwd_wing, about: engine, to: pitch_angle))
-wing_a_sector := solid(std.solids.Revolution(aft_wing, about: engine, to: pitch_angle))
+construction platform_sector := solid(std.solids.Revolution(plat, about: engine, to: pitch_angle))
+construction wing_f_sector := solid(std.solids.Revolution(fwd_wing, about: engine, to: pitch_angle))
+construction wing_a_sector := solid(std.solids.Revolution(aft_wing, about: engine, to: pitch_angle))
 platform := platform_sector at(under: index) -pitch_angle / 2
 wing_f := wing_f_sector at(under: index) -pitch_angle / 2
 wing_a := wing_a_sector at(under: index) -pitch_angle / 2
