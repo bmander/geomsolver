@@ -251,6 +251,7 @@ mod region_general;
 mod region_solids;
 mod regions;
 mod regular;
+mod regular_cost;
 mod relation_words;
 mod renderer;
 mod revolve;

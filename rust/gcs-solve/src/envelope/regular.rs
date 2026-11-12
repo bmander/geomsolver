@@ -363,6 +363,7 @@ impl Ask<'_> {
 
     /// The area factor, the equation and the conditions with their gradients in the place.
     fn grad(&self, z: [f64; 3]) -> Option<Read<Dual<3>>> {
+        count(|t| t.gradients += 1);
         let cols: Vec<Dual<3>> = self.cols.iter().enumerate().map(|(i, &x)| {
             if i < 3 { Dual::var(z[i], i) } else { Dual::cst(x) }
         }).collect();
@@ -371,12 +372,16 @@ impl Ask<'_> {
         (ok(&r.area) && ok(&r.g) && r.conditions.iter().all(ok)).then_some(r)
     }
 
-    /// The roll on the envelope at `(u, v)` nearest `t`, by Newton on its equation.
+    /// The roll on the envelope at `(u, v)` nearest `t`, by Newton on its equation — read with
+    /// its derivative in the roll as the place's own second-order frame gives it (`held::local`),
+    /// not the whole place differentiated again (`grad`): every place the search tries is put on
+    /// the envelope so, and nothing else of it is asked there.
     fn on(&mut self, u: f64, v: f64, t: f64) -> Option<f64> {
         let mut t = t;
         for _ in 0..30 {
-            let r = self.grad([u, v, t])?;
-            let step = r.g.v / r.g.g[2];
+            self.cols[..3].copy_from_slice(&[u, v, t]);
+            let f = held::local(&self.p.layout, &self.cols, true);
+            let step = f.g / f.dg[2];
             if !step.is_finite() {
                 return None;
             }
@@ -642,6 +647,7 @@ impl Ask<'_> {
 
     /// The worst point, from nothing.
     fn cold(&mut self) -> Option<Worst> {
+        count(|t| t.searches += 1);
         let face = self.face()?;
         let found = self.grid(face);
         let step = [(face[1] - face[0]) / GRID[0] as f64, std::f64::consts::TAU / GRID[1] as f64];
@@ -735,6 +741,39 @@ thread_local! {
 /// Columns asked at, and the worst point found there, if any.
 type Seen = (Vec<f64>, Option<Worst>);
 
+/// What the questions this thread has asked have cost (`tally`), counted and never read by the
+/// search: what a gate holds a solve to.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Tally {
+    /// Searches from nothing (`Ask::cold`): a grid over the tool's face and the roll.
+    pub searches: u64,
+    /// Searches from where a nearby question's worst point was (`Ask::warm`).
+    pub warm: u64,
+    /// Questions answered again from the memo, the columns the same.
+    pub remembered: u64,
+    /// Places read with their gradient in the place (`Ask::grad`).
+    pub gradients: u64,
+}
+
+thread_local! {
+    static TALLY: std::cell::Cell<Tally> = const {
+        std::cell::Cell::new(Tally { searches: 0, warm: 0, remembered: 0, gradients: 0 })
+    };
+}
+
+/// What the questions this thread has asked so far have cost.
+pub fn tally() -> Tally {
+    TALLY.with(|t| t.get())
+}
+
+fn count(f: impl FnOnce(&mut Tally)) {
+    TALLY.with(|t| {
+        let mut now = t.get();
+        f(&mut now);
+        t.set(now);
+    });
+}
+
 const SEEN_MAX: usize = 256;
 const KEEP: usize = 4;
 /// How far the columns may have moved, relative to their size, for the last answer to start
@@ -759,6 +798,7 @@ pub fn worst(k: &[f64], cols: &[f64]) -> Option<Worst> {
     });
     if let Some((c, w)) = &prev {
         if far(c) == 0.0 {
+            count(|t| t.remembered += 1);
             return w.clone();
         }
     }
@@ -766,7 +806,10 @@ pub fn worst(k: &[f64], cols: &[f64]) -> Option<Worst> {
     cols3.extend_from_slice(cols);
     let mut ask = Ask { p: &p, cols: cols3, size };
     let found = match &prev {
-        Some((c, Some(w))) if far(c) <= NEAR => ask.warm(w).or_else(|| ask.cold()),
+        Some((c, Some(w))) if far(c) <= NEAR => {
+            count(|t| t.warm += 1);
+            ask.warm(w).or_else(|| ask.cold())
+        }
         _ => ask.cold(),
     };
     SEEN.with(|s| {

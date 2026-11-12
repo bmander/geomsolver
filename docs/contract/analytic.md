@@ -199,6 +199,9 @@ constants are `Problem::write`'s. **The worst point is searched for**: the face'
 meridian scanned (`face`), a grid of it × turns × rolls (`GRID`, the equation at each roll's pose
 read once, `held::posed`) whose sign changes give contacts, each kept where every condition holds;
 the best four followed by a shrinking 7 × 7 grid in `(u, v)`, the roll on the envelope at each;
+each place put on the envelope by Newton on its equation alone, read with its derivative in the
+roll by the place's own second-order frame (`Ask::on`, `held::local`: no place's gradient is read
+where the search only tries it, #904, `regular_cost::a_search_reads_gradients_only_where_it_polishes`);
 then Newton on the KKT conditions (`kkt`: the Lagrangian's gradient in the place by `Dual<3>`
 over `read`, the envelope's equation and up to two held conditions, the place's Jacobian by
 differences), a multiplier on the wrong side or a free condition broken trying fewer held
@@ -207,7 +210,10 @@ differences), a multiplier on the wrong side or a free condition broken trying f
 `worst` remembers each problem's last answers by its constants. The same columns give the answer
 again, nothing found included (a residual's Jacobian asks where the residual did, and a drawing not
 yet solved has none). Columns within `NEAR` start from the last place and its held conditions
-(`warm`), anything else searches again (`cold`, ~0.1 s). A least found, not a bound proved. A
+(`warm`), anything else searches again (`cold`, ~0.1 s). What the questions cost is counted per
+thread (`regular::tally`: searches from nothing, warm starts, answers remembered, gradients read)
+and never read by the search; `tests/regular_cost.rs` holds a solve to it. A least found, not a
+bound proved. A
 fold between grid points the shrink never reaches is missed, as a sampled check misses one.
 `tests/regular.rs` is the gate. On `spiral_bevel/formate.sv`'s conjugate pinion (the inner cone's
 envelope under the mesh, `pair.gear_tooth.crown` within `pair.pinion_blank.material`), the least
