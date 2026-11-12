@@ -1,7 +1,7 @@
 //! The configured hypoid pinion cut by the face mill its balance finds (#904 A1/A2), the mill stated:
-//! its pressure shift and its cutter's radius written into the pair's call as numbers
-//! (`fixtures::gear::as_found`), so what the kernel builds there is judged apart from the balance
-//! that finds them (`hypoid_machine`).
+//! its pressure shift written into the pair's call as a number beside the cutter's radius the
+//! document states (`fixtures::gear::as_found`), so what the kernel builds there is judged apart
+//! from the balance that finds the shift (`hypoid_machine`).
 use gcs_core::brep::{export,props,sweep::{self,Say}};
 use std::sync::Mutex;
 

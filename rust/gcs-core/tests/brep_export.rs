@@ -344,8 +344,8 @@ fn each_member_of_the_pair_is_built_alike_at_every_scale() {
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 10 s: the scaled pair's gear built and measured")]
 fn a_sheet_ending_in_the_blank_is_carried_out_of_it() {
     let s = 0.625;
-    let e = fixtures::gear::read(&fixtures::gear::machine(&fixtures::gear::scaled(&fixtures::gear::source(),s),
-        11.2527,75.6122*s));
+    let scaled = fixtures::gear::scaled(&fixtures::gear::source(),s);
+    let e = fixtures::gear::read(&fixtures::gear::machine(&scaled,11.2527));
     let body = fixtures::solid(&e,"pair.gear.body");
     let lines = std::sync::Mutex::new(Vec::new());
     let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};

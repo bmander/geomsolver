@@ -38,10 +38,10 @@ pub fn recorded_machine(text: &str,shift: f64) -> String {
     stated_machine(text,shift,"0.8 * mean_module * sqrt(pinion_teeth^2 + gear_teeth^2) / 2")
 }
 
-/// `text`, the pair, with the face mill stated at a pressure shift `shift` in degrees and a cutter
-/// of radius `cutter` in millimetres — the mill a balance found, say, cut at another size — and
-/// the balance dropped as `recorded_machine` drops it.
-pub fn machine(text: &str,shift: f64,cutter: f64) -> String { stated_machine(text,shift,&format!("{cutter}mm")) }
+/// `text`, the pair, with the face mill stated at a pressure shift `shift` in degrees and the
+/// cutter the document states (`param cutter_radius`, scaled with the pair by `scaled`) — the mill
+/// a balance found, say — and the balance dropped as `recorded_machine` drops it.
+pub fn machine(text: &str,shift: f64) -> String { stated_machine(text,shift,"cutter_radius") }
 
 fn stated_machine(text: &str,shift: f64,cutter: &str) -> String {
     let seeds = "pressure_shift: hint(10deg), cutter_radius: cutter_radius, least: hint(0.5))";
@@ -93,16 +93,14 @@ pub const FOUND_MILL: [f64;2] = [8.8549,75.6122];
 
 /// The pair as configured, cut by the mill its balance finds there (`FOUND_MILL`), stated: what the
 /// document's solve makes of the pair, read without the balance's solve.
-pub fn as_found() -> String { machine(&source(),FOUND_MILL[0],FOUND_MILL[1]) }
+pub fn as_found() -> String { machine(&source(),FOUND_MILL[0]) }
 
 /// `as_found`, elaborated and solved.
 pub fn read_as_found() -> program::Elaborated { read(&as_found()) }
 
 /// The pair with every length `factor` times as long (`scaled`), cut by the mill its balance finds
 /// there — the configured one scaled (`FOUND_MILL`) — stated.
-pub fn scaled_as_found(factor: f64) -> String {
-    machine(&scaled(&source(),factor),FOUND_MILL[0],FOUND_MILL[1]*factor)
-}
+pub fn scaled_as_found(factor: f64) -> String { machine(&scaled(&source(),factor),FOUND_MILL[0]) }
 
 /// `configure` over the document's own inputs alone.
 fn configure_inputs(text: &str,params: &[(&str,f64)]) -> String {
