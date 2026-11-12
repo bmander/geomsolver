@@ -540,7 +540,10 @@ impl Brep {
                     for j in (0..=8).filter(|&j| !flat || j%8 == 0) {
                         let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/8.;
                         let d = distance(f.surface.point(c.pcurve.at(t,e,&f.surface,&self.vertices)),e.point(t,&self.vertices));
-                        if d > tol.max(e.tol) { return Err(format!("face {fi} ({}): edge {}'s pcurve is {d:e} off it",f.name,c.edge).into()) }
+                        if d > tol.max(e.tol) {
+                            let kind = match &e.curve { EdgeCurve::Curve(cv) => cv.kind(),EdgeCurve::Degenerate => "degenerate" };
+                            return Err(format!("face {fi} ({}): edge {}'s pcurve is {d:e} off it, at {j}/8 of its {kind}",f.name,c.edge).into())
+                        }
                     }
                 }
                 if settled { continue }

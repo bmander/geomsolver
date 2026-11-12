@@ -289,10 +289,12 @@ fn every_two_sheets_of_one_carry_are_given_the_paths_they_share() {
     }
     let sheets = cands.len()-2;
     assert!(paths > sheets,"the sheets cross back over one another, beyond their rails: {paths} paths");
-    // the double point: where four sections end
+    // the double point: where the most sections end — four stretches, those of them that bound
+    // (`contacts::buried` leaves out the ones that do not)
     let ends: Vec<(usize,[f64;3])> = (0..sheets).flat_map(|k| { let a = blend(&cands[k].faces[0].surface).a.clone(); [(k,a.point(0.)),(k,a.point(1.))] }).collect();
-    let at = ends.iter().map(|&(_,p)| p).find(|&p| ends.iter().filter(|&&(_,q)| distance(p,q) <= 1e-9).count() == 4)
-        .expect("the contact cut at its double point, four stretches ending there");
+    let count = |p: [f64;3]| ends.iter().filter(|&&(_,q)| distance(p,q) <= 1e-9).count();
+    let at = ends.iter().map(|&(_,p)| p).max_by_key(|&p| count(p)).filter(|&p| count(p) >= 2)
+        .expect("the contact cut at its double point, its stretches ending there");
     let four: Vec<usize> = ends.iter().filter(|&&(_,q)| distance(at,q) <= 1e-9).map(|&(k,_)| k).collect();
     let key = |s: &Surface| s.point([0.37,0.61]);
     let of = |i: usize,j: usize| given.iter().find(|g| {
@@ -347,7 +349,9 @@ fn each_sheet_is_given_its_meeting_with_the_tool_at_each_end() {
     // the four stretches ending at the double point: a branch leaving each pose's corner from it
     let blend = |s: &Surface| match s { Surface::Blend(_,b) => b.clone(),_ => panic!("a sheet") };
     let ends: Vec<[f64;3]> = (0..sheets).flat_map(|k| { let a = blend(&cands[k].faces[0].surface).a.clone(); [a.point(0.),a.point(1.)] }).collect();
-    let at = *ends.iter().find(|&&p| ends.iter().filter(|&&q| distance(p,q) <= 1e-9).count() == 4).expect("the double point");
+    let count = |p: [f64;3]| ends.iter().filter(|&&q| distance(p,q) <= 1e-9).count();
+    let at = *ends.iter().max_by_key(|&&p| count(p)).filter(|&&p| count(p) >= 2).expect("the double point");
+    let meeting = count(at);
     let mut from_corner = 0;
     for g in &posed {
         let b = blend(&g.surfaces[0]);
@@ -355,7 +359,7 @@ fn each_sheet_is_given_its_meeting_with_the_tool_at_each_end() {
         let corner = b.carry.at(at,e);
         from_corner += g.curves.iter().filter(|c| [c.point(0.),c.point(1.)].iter().any(|&p| distance(p,corner) <= 1e-9)).count();
     }
-    assert!(from_corner >= 4,"branches leave the double point's corners from them exactly: {from_corner}");
+    assert!(from_corner >= meeting,"branches leave the double point's corners from them exactly: {from_corner} for {meeting} stretches");
 }
 
 
@@ -547,6 +551,17 @@ fn ball_swung_case() -> Case {
         roll:[0.,120f64.to_radians()],bar:0.01,volume:59.333194348871,known:1e-9}
 }
 
+/// `coin-turned-about-a-line-through-its-rim`: the disc `(x − 2)² + z² ≤ 4`, `0 ≤ y ≤ 1/2`, turned 90° about
+/// z. Apart from the build: at `(ρ, z)`, `w = √(4 − z²)`, the disc's points on the circle are one arc
+/// `[lo, hi]`, `lo = acos((2 + w)/ρ)` past `ρ = 2 + w` (else nought) and `hi = min(asin(1/(2ρ)),
+/// acos((2 − w)/ρ))`, which the turn sweeps to `hi − lo + T`; the volume integrated over `ρ` split at
+/// its kinks and over `z = 2 sin θ`, each panel's ends tamed by a cosine: 46.547001074918 at 32 and
+/// 64 points.
+fn coin_turned_case() -> Case {
+    Case {what:"the turned coin",blank:None,tool:prism(&disc([2.,0.,0.],[0.,1.,0.],2.),0.,0.5).unwrap(),path:turn_about_z(),
+        roll:[0.,90f64.to_radians()],bar:0.01,volume:46.547001074918,known:1e-9}
+}
+
 /// **A rod spun about a line through it** (#880 Q1b S5, brep-bench's
 /// `swept/rod-spun-about-a-line-through-it`): under the turn each sheet lies on the surface of
 /// revolution of its section's meridian (`meridian_surface`) — the top and bottom lines' sectors on
@@ -563,3 +578,12 @@ fn a_rod_spun_about_a_line_through_it_is_swept_through_the_front_door() { cut_th
 /// poles off its contact.
 #[test]
 fn a_ball_swung_across_its_own_centre_line_is_swept_through_the_front_door() { cut_through_the_front_door(&ball_swung_case(),TOL) }
+
+/// **A coin turned about a line through its rim** (#880 Q1b S5, brep-bench's
+/// `swept/coin-turned-about-a-line-through-its-rim`): its rim in the plane through the axis is in its
+/// side's contact all round, read as the edge's (`fan_runs`), and cut where it touches the axis, half
+/// way round and where the side's top and bottom lines reach it; its far half, which moves into the
+/// coin, buried; the rest on one horn torus closing at the axis, the other rim's fan on a surface of
+/// revolution, the lines' sectors on planes.
+#[test]
+fn a_coin_turned_about_a_line_through_its_rim_is_swept_through_the_front_door() { cut_through_the_front_door(&coin_turned_case(),TOL) }

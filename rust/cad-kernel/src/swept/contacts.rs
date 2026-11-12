@@ -744,7 +744,7 @@ fn between(path: &crate::trajectory::Trajectory,t0: f64,t1: f64) -> Result<crate
 /// — one face of a blend (`Surface::Blend`) between the curve and its image, its rails the paths of the
 /// curve's ends (`Curve::Iso`), a closed curve's one rail its seam. The carry is held to the path's own
 /// pose at the roll's end.
-pub fn carried(curve: &crate::geom::Curve,closed: bool,path: &crate::trajectory::Trajectory,roll: [f64;2],on: Option<Surface>)
+pub fn carried(curve: &crate::geom::Curve,closed: bool,path: &crate::trajectory::Trajectory,roll: [f64;2],on: Option<Surface>,tol: f64)
     -> Result<Carried,super::closed::Unbuilt> {
     use crate::geom::{Blend,Carry,Curve,Frame};
     use crate::topo::EdgeCurve;
@@ -824,39 +824,56 @@ pub fn carried(curve: &crate::geom::Curve,closed: bool,path: &crate::trajectory:
             // millionth of the size of the axis that of the nearest point clear of it: a rim reaching the
             // axis tangent to it — a horn torus's meridian — stands off it by the square of the way, and
             // a hair along it its angle is rounding's
-            const K: usize = 64;
             let near_axis = |x: V| {
                 let q = crate::util::space::sub(x,screw.origin);
                 let h = crate::util::space::dot(q,crate::util::space::unit(screw.axis));
                 norm_of(crate::util::space::sub(q,scale(crate::util::space::unit(screw.axis),h))) <= 1e-6*size
             };
-            let read_rim = |c: &Curve| -> Vec<Uv> {
-                let pts: Vec<V> = (0..=K).map(|k| c.point((k as f64/K as f64).clamp(1e-9,1.-1e-9))).collect();
+            let read_rim = |c: &Curve,n: usize| -> Vec<Uv> {
+                let pts: Vec<V> = (0..=n).map(|k| c.point(k as f64/n as f64)).collect();
                 let mut uv: Vec<Uv> = pts.iter().map(|&x| about(x)).collect();
-                let clear: Vec<usize> = (0..=K).filter(|&k| !near_axis(pts[k])).collect();
+                let clear: Vec<usize> = (0..=n).filter(|&k| !near_axis(pts[k])).collect();
                 if !clear.is_empty() && !matches!(s,Surface::Plane(_)) {
-                    for k in 0..=K {
+                    for k in 0..=n {
                         if !near_axis(pts[k]) { continue }
                         let j = *clear.iter().min_by_key(|&&j| j.abs_diff(k)).unwrap();
                         uv[k][0] = uv[j][0];
                     }
                 }
-                for k in 1..=K { uv[k] = unwrap(uv[k],uv[k-1]) }
+                for k in 1..=n { uv[k] = unwrap(uv[k],uv[k-1]) }
                 uv
             };
-            let walk = |c: &Curve| -> [Uv;2] { let uv = read_rim(c); [uv[0],uv[K]] };
+            let walk = |c: &Curve| -> [Uv;2] { let uv = read_rim(c,64); [uv[0],uv[64]] };
             let [s0,s1] = walk(&a);
             let [e0,e1] = { let [x,y] = walk(&image); [unwrap(x,s0),unwrap(y,s1)] };
             // (on a surface about the axis, a rim's own curve in the parameters, read by the angle about
             // the axis against the edge's parameter, and a rail the line it is there: inverted by the
             // surface, near a pole of it a point's angle was read across the axis, half a turn off)
             let about_axis = !matches!(s,Surface::Plane(_));
+            // (interpolated through as many points as hold it within a tenth of the tolerance of the
+            // rim between them, from 64 doubled)
             let rim_curve = |c: &Curve,from: Uv| -> Option<Pcurve> {
-                let ts: Vec<f64> = (0..=K).map(|k| k as f64/K as f64).collect();
-                let read = read_rim(c);
-                let shift = unwrap(read[0],from);
-                let pts: Vec<V> = read.iter().map(|uv| [uv[0]+shift[0]-read[0][0],uv[1]+shift[1]-read[0][1],0.]).collect();
-                Some(Pcurve::Curve(std::sync::Arc::new(Curve::BSpline(std::sync::Arc::new(crate::nurbs::interpolate(&pts,&ts,3)?)))))
+                let mut n = 64;
+                loop {
+                    let ts: Vec<f64> = (0..=n).map(|k| k as f64/n as f64).collect();
+                    let read = read_rim(c,n);
+                    let shift = unwrap(read[0],from);
+                    let pts: Vec<V> = read.iter().map(|uv| [uv[0]+shift[0]-read[0][0],uv[1]+shift[1]-read[0][1],0.]).collect();
+                    let spline = crate::nurbs::interpolate(&pts,&ts,3)?;
+                    // (its own error: against the rim's foot on the surface, which a fitted meridian holds
+                    // only to its fit)
+                    let off = (0..n).map(|k| {
+                        let t = (k as f64+0.5)/n as f64;
+                        let (q,x) = (spline.point(t),c.point(t));
+                        let foot = if near_axis(x) { x } else { s.point(about(x)) };
+                        distance(s.point([q[0],q[1]]),foot)
+                    }).fold(0f64,f64::max);
+                    if off <= 0.1*tol || n >= 4096 {
+                        if n >= 1024 && crate::debug() { eprintln!("contacts: a rim's pcurve on a {} through {} points, {off:e} off it",s.kind(),n+1) }
+                        return Some(Pcurve::Curve(std::sync::Arc::new(Curve::BSpline(std::sync::Arc::new(spline)))))
+                    }
+                    n *= 2;
+                }
             };
             let rim_on = |c: &Curve,x: Uv,y: Uv| if about_axis { rim_curve(c,x).unwrap_or(Pcurve::Inverse {a:x,b:y}) } else { Pcurve::Inverse {a:x,b:y} };
             let rail_on_s = |x: Uv,y: Uv| if about_axis { line(x,y) } else { Pcurve::Inverse {a:x,b:y} };
@@ -867,7 +884,9 @@ pub fn carried(curve: &crate::geom::Curve,closed: bool,path: &crate::trajectory:
             let rail_on = |b: &mut Brep,t: f64,ends: [u32;2],[x,y]: [Uv;2]| -> Option<Coedge> {
                 if pole(t) {
                     if !pole_on(t) { return None }
-                    return Some(Coedge {edge:b.edge(EdgeCurve::Degenerate,[0.,1.],ends),reversed:false,pcurve:line(x,y)})
+                    // (at the pole's own `v`: read a hair inside a rim it stood that hair along the tube off)
+                    let v = unwrap(about(a.point(t)),x)[1];
+                    return Some(Coedge {edge:b.edge(EdgeCurve::Degenerate,[0.,1.],ends),reversed:false,pcurve:line([x[0],v],[y[0],v])})
                 }
                 // (an arc about the turn's axis, laid as `ssi` lays a circle two surfaces about it meet in,
                 // so the meeting the arrangement finds along it is it: read as the carried section's
@@ -1244,9 +1263,15 @@ pub fn fan_runs(tool: &Brep,e: usize,[f1,f2]: [usize;2],twist: &Twist) -> Vec<[f
     let [t0,t1] = edge.t;
     let ts: Vec<f64> = (0..=N).map(|k| t0+(t1-t0)*k as f64/N as f64).collect();
     let fs: Vec<f64> = ts.iter().map(|&t| fan(t)).collect();
+    let speed = ts.iter().map(|&t| norm_of(twist.velocity(c.point(t)))).fold(0f64,f64::max);
     // where the fan's sign turns, each root of one of the two faces' `n · v` on the edge
     // (the face whose `n · v` turns over the bracket, the bracket's root of it)
+    // (a root of either at an end of the bracket is the root: a sample standing on it — a symmetric
+    // tool's, the coin's rim's lowest point a sample — read with the other face's sign, the bracket's
+    // far end was taken, a sample off)
     let root = |a: f64,b: f64| {
+        let small = 1e-12*speed;
+        for f in [f1,f2] { for x in [a,b] { if normal(f,c.point(x)).abs() <= small { return x } } }
         let (ga,gb) = (normal(f1,c.point(a)),normal(f1,c.point(b)));
         let f = if (ga < 0.) != (gb < 0.) { f1 } else { f2 };
         let g = |t: f64| normal(f,c.point(t));
@@ -1257,7 +1282,6 @@ pub fn fan_runs(tool: &Brep,e: usize,[f1,f2]: [usize;2],twist: &Twist) -> Vec<[f
     // through it, whose end rims are in contact all round but where its top and bottom lines reach
     // them — the fan stays in contact through it; read by sign alone, its rounding cut the rim there,
     // into runs of no length among them)
-    let speed = ts.iter().map(|&t| norm_of(twist.velocity(c.point(t)))).fold(0f64,f64::max);
     let noise = 1e-12*speed*speed;
     let inside: Vec<bool> = fs.iter().map(|&x| x <= noise).collect();
     let mut runs: Vec<[f64;2]> = Vec::new();
@@ -1330,7 +1354,7 @@ fn folds(at: &dyn Fn(f64) -> V,ts: &[f64],o: V,z: V,tol: f64) -> Vec<(f64,bool)>
 /// **A piece of contact cut where its meridian image folds back** under a turn (`folds`, read on its
 /// own points, each cut at the point nearest the fold, `Singular` there), a closed piece opened at
 /// its first fold; whole where it folds nowhere.
-fn folded(p: &Piece,o: V,z: V,tol: f64) -> Vec<Piece> {
+fn folded(p: &Piece,surface: &Surface,o: V,z: V,tol: f64) -> Vec<Piece> {
     let m = p.points.len();
     if m < 3 { return vec![p.clone()] }
     let at = |t: f64| { let i = (t.floor() as usize).min(m-2); crate::util::space::lerp(p.points[i],p.points[i+1],t-i as f64) };
@@ -1346,7 +1370,17 @@ fn folded(p: &Piece,o: V,z: V,tol: f64) -> Vec<Piece> {
         let f = t-t.floor();
         if on_axis && f > 1e-9 && f < 1.-1e-9 {
             let q = at(t);
-            let h = crate::util::space::dot(crate::util::space::sub(q,o),z);
+            // (settled onto the face's surface along the axis: every point of it there is in contact,
+            // not moving; the chord's own height stood its sag off it, past the kernel's tolerance)
+            let mut h = crate::util::space::dot(crate::util::space::sub(q,o),z);
+            for _ in 0..30 {
+                let x = add(o,scale(z,h));
+                let (f,d) = (surface.implicit(x),crate::util::space::dot(surface.gradient(x),z));
+                if !(d.abs() > 1e-12) { break }
+                let step = f/d;
+                h -= step;
+                if step.abs() <= 1e-15*(1.+h.abs()) { break }
+            }
             let uv = [p.uv[i][0]+f*(p.uv[i+1][0]-p.uv[i][0]),p.uv[i][1]+f*(p.uv[i+1][1]-p.uv[i][1])];
             p.points.insert(i+1,add(o,scale(z,h)));
             p.uv.insert(i+1,uv);
@@ -1377,32 +1411,49 @@ fn folded(p: &Piece,o: V,z: V,tol: f64) -> Vec<Piece> {
 /// **Whether a piece of contact sweeps only the inside of its sweep** (#880 Q1b S5): at a point of
 /// contact the motion carries the point along the face, and to second order its path dips inside the
 /// face or rises off it — `κ_n + k · n`, the face's curvature along the velocity and the path's own
-/// toward its normal. Where the path dips inside on both sides of the point, the point's every pose
-/// over the roll lies inside a pose of the tool just before or after it (at the roll's ends too), so
-/// the piece's sheet bounds nothing: the end disc's line on the rod spun about a line through it,
+/// toward its normal. Where the path dips inside on either side of the point, the point's every pose
+/// over the roll but its first (or its last) lies inside a pose of the tool just before (after) it,
+/// so the piece's sheet bounds nothing past its rim, which the pose there holds: the end disc's line on the rod spun about a line through it,
 /// whose path bends round the axis away from the flat disc, sweeps a band of radius 3 inside the
-/// sweep, which only touches the planes and the ball its rails lie on. Read at nine of the piece's
-/// points, each where the face's signed distance at the point carried a little either way falls
+/// sweep, which only touches the planes and the ball its rails lie on. Read at seven of the piece's
+/// inner points, each where the face's signed distance at the point carried a little either way falls
 /// below nought past its rounding; a piece buried at all of them.
-fn buried(tool: &Brep,p: &Piece,screw: &crate::trajectory::Screw) -> bool {
-    let face = &tool.faces[p.face];
+fn buried(tool: &Brep,p: &Piece,screw: &crate::trajectory::Screw) -> bool { buried_on(tool,&p.points,&[p.face],screw) }
+
+/// `buried` for points on the faces `on` (an edge's two, where its fan is in contact): the tool's
+/// inside there the greater of their signed distances, so a fan's path dips inside where it passes
+/// into both faces' sides (the coin turned about a line through its rim: its rim on the plane through
+/// the axis, in its side's contact all round, moves into the coin where it also stays within the
+/// side, on its far half, which sweeps only the inside).
+fn buried_on(tool: &Brep,points: &[V],on: &[usize],screw: &crate::trajectory::Screw) -> bool {
+    let face = &tool.faces[on[0]];
     let (axis,size) = (crate::util::space::unit(screw.axis),tool.size());
     let twist = screw.twist();
-    let m = p.points.len();
+    let _ = face;
+    let m = points.len();
     // (a point that does not move — on the turn's axis, where a piece ends at a pole — abstains; the
     // piece buried where every other read is, and three are)
-    let reads: Vec<bool> = (0..9).filter_map(|k| {
-        let q = p.points[(k*(m-1))/8];
+    // (read at its inner points: its ends are where it was cut, at a node of the contact where its
+    // burial may change)
+    let reads: Vec<bool> = (1..8).filter_map(|k| {
+        let q = points[(k*(m-1))/8];
         let speed = norm_of(twist.velocity(q));
         if !(speed > 1e-6*size*norm_of(twist.omega).max(1e-300)) { return None }
-        let Some(n) = face.outward(q) else { return Some(false) };
-        let sign = if crate::util::space::dot(n,face.surface.gradient(q)) < 0. { -1. } else { 1. };
+        let mut signs = Vec::new();
+        for &fi in on {
+            let face = &tool.faces[fi];
+            let Some(n) = face.outward(q) else { return Some(false) };
+            signs.push(if crate::util::space::dot(n,face.surface.gradient(q)) < 0. { -1. } else { 1. });
+        }
         let step = 1e-3*size;
         let d = step/speed;
         let moved = |t: f64| crate::geom::Carry::Screw {center:screw.origin,axis,angle:screw.ratio*t,advance:screw.advance/std::f64::consts::TAU*t}.at(q,1.);
-        let f = |x: V| sign*face.surface.implicit(x);
-        let bend = (f(moved(d))+f(moved(-d)))/(step*step);
-        Some(bend*size < -1e-3)
+        let f = |x: V| on.iter().zip(&signs).map(|(&fi,&sg)| sg*tool.faces[fi].surface.implicit(x)).fold(f64::NEG_INFINITY,f64::max);
+        // (either side enough: carried forward into the tool, each pose after the first lies inside
+        // the one just before it; backward, each before the last inside the one just after — the
+        // coin's rim, which moves into the coin and out of it backward through its own face)
+        let dips = |x: V| f(x)/(step*step)*size < -1e-3;
+        Some(dips(moved(d)) || dips(moved(-d)))
     }).collect();
     reads.len() >= 3 && reads.iter().all(|&x| x)
 }
@@ -1472,6 +1523,8 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
     // every stretch's sheet, the sheet following it along its piece, the faces its section lies on and
     // the order it touches them in (a contact's two, an edge's fan's one), and how its section ends
     let mut carried_all: Vec<(Carried,Option<usize>,Vec<usize>,u32,[End;2])> = Vec::new();
+    // where a face's contact ends: on an edge, a node of the contact the edge's fan is cut at
+    let mut junctions: Vec<V> = Vec::new();
     let posed = |t: f64| -> Result<crate::geom::Rigid,Unbuilt> { let q = path.pose(t)?; Ok(crate::geom::Rigid {r:q.r,t:q.p}) };
     let ends = [posed(roll[0])?,posed(roll[1])?];
     for fi in 0..tool.faces.len() {
@@ -1481,7 +1534,8 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
                 return Err(Unbuilt::Curved {at})
             }
             Contact::Pieces(pieces) => for p in pieces {
-                let parts = if turn { folded(&p,axis_o,axis_z,tol) } else { stretches(&p,tool.size(),&screw) };
+                junctions.extend([p.points[0],*p.points.last().unwrap()]);
+                let parts = if turn { folded(&p,&tool.faces[p.face].surface,axis_o,axis_z,tol) } else { stretches(&p,tool.size(),&screw) };
                 let whole = parts.len() == 1;
                 // (each part read for burial alone: a piece crossing the turn's axis buried on one side
                 // of it and bounding on the other, the ball swung across its own centre line)
@@ -1491,7 +1545,7 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
                 for part in &parts {
                     let curve = piece_curve(tool,part,&twist,tol).ok_or_else(|| Unbuilt::Failed("a piece of contact not fitted".into()))?;
                     let surface = on(&curve)?;
-                    sheets.push(carried(&curve,whole && p.closed,path,roll,surface)?);
+                    sheets.push(carried(&curve,whole && p.closed,path,roll,surface,tol)?);
                 }
                 // each stretch followed by the next along the piece (a closed piece's last by its first)
                 let (n,first) = (sheets.len(),carried_all.len());
@@ -1527,6 +1581,17 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
             runs.into_iter().flat_map(|r| {
                 let ts: Vec<f64> = (0..=512).map(|k| r[0]+(r[1]-r[0])*k as f64/512.).collect();
                 let mut cuts: Vec<f64> = folds(&at,&ts,axis_o,axis_z,tol).into_iter().map(|(t,_)| t).collect();
+                // (and where a face's contact ends on the edge: a node of the contact, where the fan's
+                // burial may change — the coin's rim, buried past where its side's top and bottom
+                // lines reach it)
+                for &q in &junctions {
+                    let (t,gap) = located.nearest(e as u32,q);
+                    if gap > tol { continue }
+                    let t = if edge.closed() { r[0]+(t-r[0]).rem_euclid(period) } else { t };
+                    // (one cut where a fold stands at the same point)
+                    if t > r[0]+1e-9*period && t < r[1]-1e-9*period && cuts.iter().all(|&x| distance(at(x),at(t)) > 1e3*tol) { cuts.push(t) }
+                }
+                cuts.sort_by(f64::total_cmp);
                 if cuts.is_empty() { return vec![(r,[End::Boundary;2],whole)] }
                 if whole { let first = cuts[0]; cuts.push(first+period); cuts.remove(0); let mut c = vec![first]; c.extend(cuts); cuts = c; }
                 let mut bounds: Vec<(f64,End)> = Vec::new();
@@ -1545,6 +1610,8 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
             let piece = Piece {face:f1,uv:ts.iter().map(|&t| [t,0.]).collect(),points:ts.iter().map(|&t| at(t)).collect(),
                 ends:run_ends,closed:whole};
             let parts = if turn { vec![piece] } else { stretches(&piece,tool.size(),&screw) };
+            // (a part whose path dips inside both faces' sides sweeps only the inside)
+            let parts: Vec<Piece> = parts.into_iter().filter(|part| !buried_on(tool,&part.points,&[f1,f2],&screw)).collect();
             let one = parts.len() == 1;
             let (n,first) = (parts.len(),carried_all.len());
             for (k,part) in parts.iter().enumerate() {
@@ -1554,7 +1621,7 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
                 let curve = fitted(nodes,&between,tol).ok_or_else(|| Unbuilt::Failed("an edge's fan not fitted".into()))?;
                 let next = if k+1 < n { Some(first+k+1) } else if whole && n > 1 { Some(first) } else { None };
                 let surface = on(&curve)?;
-                carried_all.push((carried(&curve,one && whole,path,roll,surface)?,next,vec![f1,f2],1,part.ends));
+                carried_all.push((carried(&curve,one && whole,path,roll,surface,tol)?,next,vec![f1,f2],1,part.ends));
             }
         }
     }

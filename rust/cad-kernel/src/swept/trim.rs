@@ -258,7 +258,9 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
     let foot = [0.5*(lo[0]+hi[0]),0.5*(lo[1]+hi[1]),lo[2]-grow];
     let half = 0.5*(hi[0]-lo[0]).max(hi[1]-lo[1])+grow;
     let domain = crate::build::prism(&crate::build::square(foot,[0.,0.,1.],half),0.,hi[2]-lo[2]+2.*grow)?;
+    let clock = crate::util::clock::Instant::now();
     super::closed::judge(&out,&swept,&domain,None,&[],tol)?;
+    if crate::timing() { eprintln!("trim: judged in {:?}",clock.elapsed()) }
     Ok((out,report))
 }
 
