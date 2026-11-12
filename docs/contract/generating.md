@@ -283,7 +283,9 @@ inside the pitch line — R the slide's advance a radian over the turn's rate, �
 slant from the slide with its part along the axis dropped — is an undercut, and E3 says it so
 (`brep::swept::admission::Undercut`, #822): the flank, the base circle `R cos αₜ`, the reach and
 the depth allowed, in millimetres, and the rack's shift, the teeth and the flank's end that clear
-it; a fold that is not one keeps E3's own words. `a_helical_racks_undercut_is_said_with_its_numbers`
+it; a fold that is not one keeps E3's own words, which name the tool face whose generated surface
+folds (a crown's flank that undercuts its member: which blade to change, #904 A2;
+`at_no_offset_the_balanced_mill_undercuts_the_pinion_by_its_outer_blade`). `a_helical_racks_undercut_is_said_with_its_numbers`
 (14 teeth at 25° refused so, 17 admitted). Building a leaned rack's undercut, as the planar
 subtraction class builds a spur rack's, is left open: its tooth is no prism square to the plane. Built in
 `gcs-cli/src/cad/native/sweep_boundary.rs`: cutters sectioned (`backend/sections.cpp`), contact

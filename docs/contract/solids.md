@@ -67,7 +67,13 @@ finds them as a designer would — the generated flanks' undercut margins (each 
 curvature in a section square to the trace, a module inside and outside the pitch, `Margins`)
 equal at the mean point, which sets the shift, and at the toe, which sets the cutter; a cutter no
 smaller than R (`gear.M distance(>= R) trace.C`), the root nearest the seeds (11.2527°, 75.6122
-mm; seeds far off reach another, 260 mm from 14°, 60 mm).  Each blade (`Blade`) is
+mm; seeds far off reach another, 260 mm from 14°, 60 mm).  The balance weighs the pinion's
+inner-cut flank against the gear's outer-cut one, the pair that binds once the offset steepens the
+pinion's outer-cut flank; below 7 to 10 mm of offset too little does, and the shift it finds stands
+the outer blade so upright that it undercuts the pinion (at none, 11.68° and an 8.3° blade: E3
+refuses the pinion's cut on the crown's `outer` face, #904 A2;
+`hypoid_machine::at_no_offset_the_balanced_mill_undercuts_the_pinion_by_its_outer_blade`).  A
+balance that weighs the least margin each blade leaves either member is open.  Each blade (`Blade`) is
 `std.sets.ConeThrough` with the side its cone opens to said, so its half reads the unknown shift as
 a number times it plus a number.  At the found cutter the pinion's swept cut is built and agrees
 with its field, but its sheet is fitted as one face, not named by the cutter's (a follow-up);

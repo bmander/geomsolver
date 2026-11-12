@@ -51,7 +51,10 @@ The normal module is stated nowhere: the trace constructs it, and every depth re
 configured the pair is a hypoid 25 mm off, whose 25° spiral and pressure shift design out the
 undercut a symmetric rack develops past about 15 mm of offset — the shift and the cutter found
 by balancing it, 11.25° and 75.6 mm; zero offset is a bevel pair with
-a common apex. The allowances — 0.05 mm normal backlash, 0.2 mm tip relief and 0.2 mm end relief
+a common apex. The balance weighs the pinion's flank the inner blade cuts against the gear's the
+outer blade cuts, which binds only once the offset protects the pinion's other flank: with no
+offset the shift it finds (11.68°) leaves the outer blade at 8.3°, which undercuts the pinion, and
+its cut is refused for that fold on the crown's `outer` face (#904 A2). The allowances — 0.05 mm normal backlash, 0.2 mm tip relief and 0.2 mm end relief
 — are each zero for the conjugate, sharp-edged pair, which is what the test suites record
 (`fixtures::gear` sets the document's own inputs for them).
 

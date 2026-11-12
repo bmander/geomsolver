@@ -116,3 +116,40 @@ fn at_a_ten_tooth_pinion_no_face_mill_balances_the_undercut() {
         }
     }
 }
+
+/// **At no offset the balance finds a mill that undercuts the pinion** (#904 A2). The shift trades
+/// the flanks the inner blade cuts against those the outer blade cuts, and `Balanced` weighs the
+/// pinion's inner-cut flank against the gear's outer-cut one: the pair that binds once the
+/// offset has steepened the pinion's outer-cut flank. With no offset nothing has, and the shift it
+/// finds, 11.68°, stands the outer blade at 8.3°, which undercuts the pinion's flank it cuts — so
+/// the sweep's admission refuses the pinion's cut for a fold on the crown's `outer` face, and
+/// says which face. The same pair cut with no shift, the cutter as found, folds nowhere.
+#[test]
+fn at_no_offset_the_balanced_mill_undercuts_the_pinion_by_its_outer_blade() {
+    use gcs_core::solid::admission::{self,Condition,Error,Options};
+    let text = fixtures::gear::configure(&fixtures::gear::source(),&[("offset",0.)]);
+    let e = fixtures::gear::read(&text);
+    let (shift,cutter) = (unknown(&e,"pair.pressure_shift"),unknown(&e,"pair.cutter_radius"));
+    assert!((shift-11.6757).abs() < 1e-3,"the pressure shift: {shift}°");
+    let admit = |e: &Elaborated| {
+        admission::admit_body(&e.sketch,fixtures::solid(e,"pair.pinion.body"),&Options::default())
+    };
+    match admit(&e) {
+        Err(Error::Refused(r)) => {
+            eprintln!("{r}");
+            assert_eq!(r.condition,Condition::Fold,"{r}");
+            assert!(r.message.contains("`pair.tooth.crown.outer`"),
+                "the fold is said on the outer blade's face: {r}");
+        }
+        Ok(_) => panic!("the pinion's cut was admitted at a {shift}° shift"),
+        Err(e) => panic!("{e}"),
+    }
+    let seeds = "pressure_shift: hint(10deg), cutter_radius: hint(80mm))";
+    let symmetric = fixtures::gear::recorded_machine(&text,0.).replacen(
+        "cutter_radius: 0.8 * mean_module * sqrt(pinion_teeth^2 + gear_teeth^2) / 2)",
+        &format!("cutter_radius: {cutter}mm)"),1);
+    assert!(!symmetric.contains(seeds) && symmetric.contains(&format!("{cutter}mm")));
+    let least = admit(&fixtures::gear::read(&symmetric))
+        .unwrap_or_else(|e| panic!("with no shift: {e}")).sweeps()[0].least_area_factor;
+    assert!(least > 0.3,"with no shift the pinion's least area factor is {least}");
+}
