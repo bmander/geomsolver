@@ -620,6 +620,20 @@ impl Blend {
     /// read sixteen points round). `None` for any other patch: a section of another kind, or a blend
     /// between two curves.
     fn carried_uv(&self,p: V) -> Option<Uv> {
+        let feet = self.carried_feet(p)?;
+        feet.into_iter().map(|(_,_,uv)| (crate::util::space::distance(self.d1(uv).0,p),uv)).min_by(|x,y| x.0.total_cmp(&y.0)).map(|x| x.1)
+    }
+    /// **How far `p`'s path under this patch's carry stands from its section's paths**, in the carry's
+    /// invariants (`carried_uv`): the least gap, and the `v` (unclamped) the section's nearest point is
+    /// carried to to stand level with `p`. Two paths of one carry are one or apart: where the gap is
+    /// nought, `p`'s path lies in the patch, shifted by that `v` along it; where it is not, it meets
+    /// the patch nowhere. `None` for any patch `carried_uv` does not read.
+    pub fn carried_gap(&self,p: V) -> Option<(f64,f64)> {
+        self.carried_feet(p)?.into_iter().map(|(g,v,_)| (g,v)).min_by(|x,y| x.0.total_cmp(&y.0))
+    }
+    /// `carried_uv`'s feet of `p`: each seed's gap in the invariants, its `v` unclamped, and its
+    /// parameters polished by Newton.
+    fn carried_feet(&self,p: V) -> Option<Vec<(f64,f64,Uv)>> {
         let (Curve::BSpline(spline),Curve::BSpline(image)) = (&self.a,&self.b) else { return None };
         if self.ta != self.tb { return None }
         if !Arc::ptr_eq(spline,image) {
@@ -664,7 +678,7 @@ impl Blend {
         seeds.sort_by(|&x,&y| gaps[x].total_cmp(&gaps[y]));
         seeds.truncate(4);
         let span = self.ta[1]-self.ta[0];
-        let mut best: Option<(f64,Uv)> = None;
+        let mut feet = Vec::with_capacity(seeds.len());
         for k in seeds {
             let (lo,hi) = (samples[k.saturating_sub(1)].0,samples[(k+1).min(n-1)].0);
             // (to a hundred-millionth of the section: Newton polishes it)
@@ -680,11 +694,9 @@ impl Blend {
                     (-turns..=turns).map(|m| (angle-a+tau*m as f64)/turn).min_by(|x,y| (x.clamp(0.,1.)-x).abs().total_cmp(&(y.clamp(0.,1.)-y).abs())).unwrap_or(0.)
                 }
             };
-            let uv = self.newton(p,[(t-self.ta[0])/span,v.clamp(0.,1.)]);
-            let d = crate::util::space::distance(self.d1(uv).0,p);
-            if best.is_none_or(|b| d < b.0) { best = Some((d,uv)) }
+            feet.push((gap(self.a.point(t)),v,self.newton(p,[(t-self.ta[0])/span,v.clamp(0.,1.)])));
         }
-        best.map(|b| b.1)
+        Some(feet)
     }
     /// **`inverse` for a line square to a screw's axis, screwed** (`build::screwed`'s sheet): the
     /// screw lifts every point of the line alike, so the ruling level with `p` is at the `v` its
@@ -833,7 +845,10 @@ impl Blend {
             let (b1,b2) = (dot(su,e),dot(sv,e));
             let det = a11*a22-a12*a12;
             if !(det.abs() > 0.) { break }
-            let (du,dv) = ((a22*b1-a12*b2)/det,(a11*b2-a12*b1)/det);
+            let (mut du,dv) = ((a22*b1-a12*b2)/det,(a11*b2-a12*b1)/det);
+            // (`v` held at the patch's edge, `u` stepped alone: the coupled step, clamped, settled a
+            // point of a sheet's end rim 3.8e-8 along it where the sheet's two rates nearly agree)
+            if (uv[1] >= 1. && dv < 0. || uv[1] <= 0. && dv > 0.) && a11 > 0. { du = b1/a11 }
             let mut next = [uv[0]-du,(uv[1]-dv).clamp(0.,1.)];
             next[0] = if self.closed { next[0] } else { next[0].clamp(0.,1.) };
             let moved = (next[0]-uv[0]).abs().max((next[1]-uv[1]).abs());

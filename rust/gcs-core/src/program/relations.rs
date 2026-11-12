@@ -868,6 +868,19 @@ fn face_or_ends(cx: &mut Elab<'_>, r: &Relation, st: &Stmt, shape: &Shape) -> bo
         Shape::Face { point, face } => face_term(&cx.sk, &cx.res, w, *point, face, probes)
             .map_err(|m| (None, m)),
         Shape::Ends { point, edge } => ends_term(w, *point, *edge, probes).map_err(|m| (None, m)),
+        // a point `some` binds on a face ([0.212]): within its loops, on its plane
+        Shape::Section { point, face } if w.word.text == "coincident" && w.args.is_empty()
+            && probes.binders.contains_key(&point.i()) => {
+            use crate::model::{RegionShape, RegionTerm, TermNumber};
+            use crate::vocab::Cmp;
+            let nothing = TermNumber::stated(0.0);
+            let within = RegionTerm::new(RegionShape::Section { face: face.i() as u32 }, Cmp::Le,
+                                         nothing.clone());
+            let plane = RegionShape::Plane { along: *face, from: u32::MAX, sign: 1.0 };
+            let on = RegionTerm { hi: Some(0.0), ..RegionTerm::new(plane, Cmp::In, nothing) };
+            cx.probes.terms.get_mut(&point.i()).expect("a probe's terms").extend([within, on]);
+            return true;
+        }
         Shape::Section { point, face } => {
             super::regions::section_term(&cx.sk, &cx.res, w, *point, *face, probes)
                 .map_err(|m| (None, m))
@@ -1328,8 +1341,38 @@ fn region_or_row(
         }
         return None;
     }
+    // what a quantifier's relation states at the set's point and the points it binds ([0.212]):
+    // read together once every one is stated (`regions::settle_bound`)
+    if let Some(read) = super::regions::bound_by(&cx.sk, &c, &cx.probes) {
+        match read {
+            Ok(_) if grow.is_some() => cx.diags.push(Diag::on(Code::E040, st, "an offset is of \
+                a cone's surface or a plane's, not of what some points of sets put a point in"
+                .into())),
+            Ok(g) => {
+                let b = &mut cx.probes.bound[g];
+                b.at.get_or_insert_with(|| (st.clone(), term_name));
+                b.stated.push(c);
+            }
+            Err(message) => cx.diags.push(Diag::on(Code::E040, st, message)),
+        }
+        return None;
+    }
     if let Some(probe) = probe_of(&cx.sk, &c, &cx.probes) {
-        match region_term(&cx.sk, &c, probe, grow, term_name) {
+        // a point `some` binds on a line (a segment's), its distance from it at nothing: the set
+        // it ranges over may be no solid's ([0.212])
+        let on_line = matches!(c.kind, CKind::PointOnLine3 | CKind::PointOnLine)
+            && c.bound.is_none();
+        let term = match on_line && cx.probes.binders.contains_key(&probe) {
+            true => {
+                let line = c.args[1].ent().i() as u32;
+                let shape = crate::model::RegionShape::Cylinder { line };
+                let at = crate::model::TermNumber::stated(0.0);
+                Ok(crate::model::RegionTerm { name: term_name,
+                    ..crate::model::RegionTerm::new(shape, crate::vocab::Cmp::Le, at) })
+            }
+            false => region_term(&cx.sk, &c, probe, grow, term_name),
+        };
+        match term {
             Ok(t) => cx.probes.terms.get_mut(&probe).expect("a probe's terms").push(t),
             Err(message) => {
                 cx.diags.push(Diag::on(Code::E040, st, message))

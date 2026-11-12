@@ -21,6 +21,100 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   read into the surface's frame it proved the run only a hair wide: a circle in the plane tangent
   to a torus's tube, at one attitude in a dozen, read past any search's boxes and was refused.
 
+## [0.10.0] - 2026-11-12
+
+- **The contact's road takes a turn and a screw past the axis** (`swept::contacts`, `swept::trim`,
+  `boolean`, #880 Q1b S5): brep-bench's seven S5 cases build through the front door, each to a
+  volume computed apart from the build and to a STEP file that reads back as the solid — the rod,
+  cone and ball spun or swung about a line through them, the coin turned about a line through its
+  rim, the pin swung through a ring sector, and the drum's end and the cone's point screwed through a
+  rod. Under a turn each sheet lies on the surface of revolution of its section's meridian (a plane,
+  cylinder, cone, ball or torus where the meridian is a line or a circle, else a fitted
+  `Surface::Revolution`), its rails circles about the axis, so sheets meet in circles; a section is
+  cut where its meridian folds back and where it crosses the axis, a pole of the sheets either side;
+  a part whose path dips into the tool on both sides is buried and left out; a contact along a
+  face's own edge is the edge's fan's, and one along its seam its own; a piece beside a cone's apex
+  runs on to it. `swept::contacts::carried` takes the surface a sheet lies on and the tolerance, and
+  `Carried` gains `blend` (**breaking** for code calling it or building a `Carried` literally). A
+  sheet's meeting with a posed face is read only where the face is, and not along the rim lifted
+  whole turns on where it touches the face again; a trimmed piece inside the tool at an end of the
+  roll is read so exactly, and one of that end's own faces by how it leads the motion where
+  membership cannot settle. The arrangement takes an edge's crossing with a given meeting where the
+  edge crosses the given curves (two sheets crossing at a degree) and leaves a sliver no outer
+  cycle holds, a millionth of its face, out. A STEP pcurve leaving a surface's pole is written by
+  its chord there, where its rate was NaN. The screwed bull-nose builds through the road too.
+- **A point on a blend's edge is inverted onto it exactly** (`geom::Blend`): Gauss–Newton held `v` at
+  the patch's edge but kept the coupled step in `u`, and a point of a sheet's end rim where its two
+  rates nearly agree settled 3.8e-8 along the rim, which broke a loop in its parameters at the
+  kernel's tolerance (the torus screwed through a rod, refused there since the turn's sheets came
+  in); `u` is now stepped alone while `v` is held.
+- **A round between two planes is a cylinder** (`fillet::roll`, `fillet::flat_along`): a run
+  between two planes that ends with no tangent run-on is the prism on the round's section (the
+  corner, its legs to the contacts and the ball's arc) carried past each end and cut off there,
+  with no Boolean where an end is one plane square to the run, where it was a fitted 65 × 129
+  bicubic canal cut by a Boolean. brep-bench's `fillet/box-one-edge` goes from about 120 ms and
+  835 KB of STEP to a few milliseconds and 15 KB, `fillet/notched-cube-inside-corner` from 1.8 s
+  to about 0.1 s, each to its closed forms. `topo::EdgeCurve::kind` (**new**).
+
+## [0.9.0] - 2026-11-12
+
+- **A sheet's meeting with the tool beside the rim it touches is read off the rim's exact rate**
+  (`swept::contacts`): the rate across the rim was read by five-point differences of the distance
+  a thousandth of the roll apart, and on a tool whose carry moves far in that step took the series'
+  truncation (2.7e-5 for 1e-8 on the leaning torus), so the meeting beside the rim stood off the
+  tool; and a branch passes smoothly from the rim's reading to the distance's own. The three S4
+  cases now build at the kernel's own tolerance, the torus among them.
+- **A tool the closed sweep refuses under a constant twist goes the contact's road**
+  (`swept::closed::closed`, `cut_from`): what it refused as `Curved` is built from its contact's
+  sheets, the end poses and their given meetings, trimmed by membership and judged; where that
+  road refuses too, the `Curved` refusal stands. brep-bench's `swept/v-wheel-screwed-through-rod`
+  and `swept/drum-leaning-to-a-screw` build through it, and the torus through its rod, each to a
+  volume computed apart from the build and to a STEP file that reads back as the solid.
+- **A sharp edge's fan is swept** (`swept::contacts::fan_runs`, `candidates`): each stretch of a
+  sharp edge where its two faces' `n · v` differ in sign is carried as a sheet of its own, where
+  the candidates refused the tool. `swept::contacts::Carried` gains `rails`, the paths of a sheet's
+  ends (**breaking** for code building a `Carried` literally).
+- **Membership reads exactly any tool that is where all its faces' surfaces have it inside**
+  (`swept::member`): faces planes, cylinders, cones, balls or tori, the greatest of their signed
+  distances, taken where every point of the tool's mesh stands on each surface's inner side and
+  held to the tool's point location; it was one ball or one torus.
+- **A torus screwed along a rod is swept, trimmed and cut** (`swept::contacts`, `swept::trim`,
+  `swept::member`): brep-bench's `swept/torus-screwed-through-rod` to the groove's volume computed
+  apart from the build, within 3e-5 at a tolerance of 1e-5. A tool bounded by one ball or one
+  torus is read for membership by its exact signed distance; a trimmed piece proved inside or
+  outside the sweep is dropped before its sides are read; and a fitted curve merges nodes within
+  the tolerance, where a cubic through two nodes a hair apart swung 160 off. It builds to 1e-6 as
+  well: a given meeting is held to the tolerance wherever the arrangement reads a reach, a touch
+  run reaching an edge's own end is read at that end, and an edge whose search against a given
+  partner is refused is read off the given curves.
+- **A sweep's sheets are given their meetings with the tool at the roll's ends**
+  (`swept::contacts::candidates`): what of a sheet passes back into the tool where it touches it
+  along a rim, the zero set of the distance over its double root, read in the sheet's parameters,
+  in place of a march that stopped short of the rim; and a given meeting is held to the tolerance
+  where two meetings are crossed (`boolean`'s `triple_points`). Every pair of the leaning torus's
+  candidates is now given, none searched.
+- **A sweep's contact is cut at its double points** (`swept::contacts::face_contact`): a double
+  point standing on a node of the grid (the leaning torus's, on its seams' crossing) was walked
+  through twice as one closed piece with two corners, and every sheet carried from it was creased.
+  A piece turning sharply is now cut there, its ends `Singular`, and the shared paths of the
+  stretches ending there are placed on their exact end. The leaning torus's trim runs in 6 s.
+- **A sweep's contact sheets are fitted at a cubic's rate and given their meetings with one another**
+  (`swept::contacts`): a piece of contact is interpolated through points of the contact, refined
+  where a span strays from it, where it was read along its polyline and doubled to four thousand
+  spans; and every two sheets of one carry are given the paths they share, where their sections
+  cross or touch in the carry's invariants, in place of a search. The leaning torus screwed through
+  its rod: an inverse on a sheet 750 µs to 28 µs, every pair of its candidates arranged, the trim
+  825 s to 26 s.
+- **A meeting arriving at an edge two surfaces touch along ends on it** (`boolean`'s `landing`,
+  `ssi::trace_landing`): near the junction the two part as the square of the distance, so a march
+  stopped short; the stop was read as a touch of its own, its other branches were traced along the
+  edge, and the arrangement refused ("a blend's pieces do not close"). The branch is now followed
+  down to the edge at halved gaps and ends where it meets it: a screwed torus's carried contact
+  arranges with the start pose it passes back through.
+- **A recipe's `hull` node** (`recipe::Node::Hull`, **new**, **breaking** for exhaustive matches):
+  the convex hull of its `points` (`build::hull`), each face called its `face`, so a solid read as
+  the hull of finitely many points is built without a Boolean.
+
 ## [0.8.0] - 2026-11-11
 
 - **The convex hull of points, as a solid** (`build::hull`): one plane face for each facet, its

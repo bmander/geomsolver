@@ -189,7 +189,8 @@ pub fn example(name: &str) -> Option<Sketch> {
         | "weighed_cantilever" | "lightened_web" | "mass_budget_frame" | "sized_gusset"
         | "sized_plate" | "tuning_fork" | "rounded_bracket" | "pressure_pipe" | "gravity_wall"
         | "drilled_plate" | "sized_plank" | "pressed_panel" | "flat_bar_strut"
-        | "cantilever_plate" | "turned_shaft" | "pin_lug" | "conrod_stress" | "sized_conrod" => {
+        | "cantilever_plate" | "turned_shaft" | "pin_lug" | "conrod_stress" | "sized_conrod"
+        | "joins" | "tetrahedron_grown" | "house" | "pyramid" => {
             document(source(name)?, name)
         }
         "rect_fillets" => rect_fillets(100.0, 60.0, 10.0, 0.0),
@@ -281,11 +282,15 @@ pub fn bracket() -> Sketch {
 }
 
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 73] = [
+pub const CASES: [(&str, &str, &str); 77] = [
     ("Mounting flange · solids", "solid_flange", "One stepped radial section turned about its axis, then a circular pattern of through holes; editable dimensions and three solid views."),
     ("V-belt pulley · solids", "solid_pulley", "A full revolution of a stepped section, with a revolved V-groove cutter and a shaft bore."),
     ("Hollow duct elbow · solids", "solid_elbow", "One hollow square section carried round a constrained circular arc; edit the guide angle, bend radius, or wall thickness."),
     ("Hollow reducer · loft", "solid_loft", "One hollow square section run along a dimensioned line, its size the inlet's mixed with the outlet's; change either size, the wall, or the length."),
+    ("Joins · polytopes of their parts", "joins", "`some q in A, r in B: p in Segment(q, r)` — the points between some point of each set, their join: of convex sets the hull. One `Join` word makes a tetrahedron of two opposite edges, an octahedron of a square and its axis, a prismatoid of two squares turned a quarter, sets given by name or written in place; each built exactly as the kernel's hull."),
+    ("A tetrahedron grown · as the bench describes it", "tetrahedron_grown", "brep-bench's offset/tetrahedron-grown written as its description reads, conv{a, b, c, d} ⊕ B₁: the hull of the corners as the join of two edges, then the points a ball of 1 about some point of it reaches — built exactly, its faces moved out, its edges and corners rounded."),
+    ("A house · a solid joined to a point", "house", "a box joined to a peak over it: walls and roof in one solid, the hull of the box's corners and the peak; beside it the box rounded by a ball about some point of it, the box grown. Move the peak or edit the box and both follow."),
+    ("A pyramid · its apex joined to its base", "pyramid", "the points between the apex and some point of a `w` square base, the apex `h` over its middle: the join read off the drawing as it solves, so editing `w` or `h` reshapes it — its volume w² h / 3."),
     ("Pocketed tray · solids", "solid_tray", "Named profile extrusions and nested Boolean bodies: cut a pocket, then add four annular standoffs while preserving the floor."),
     ("Rectangle with fillets", "rect_fillets", "fully constrained; tangent arcs, equal radii, two dimensions"),
     ("Square, one line round a cycle", "square", "`cycle 4 { (s := line) -> perpendicular equal }` — the body ends mid-joint, so each side welds to the next copy's and the wrap closes the loop (issue #38); 1 DOF: it swings about its grounded corner"),
@@ -436,6 +441,10 @@ pub fn source(key: &str) -> Option<&'static str> {
         "solid_tray" => Some(include_str!("../../examples/solid_tray.sv")),
         "solid_loft" => Some(include_str!("../../examples/solid_loft.sv")),
         "nurbs" => Some(include_str!("../../examples/nurbs.sv")),
+        "joins" => Some(include_str!("../../examples/joins.sv")),
+        "tetrahedron_grown" => Some(include_str!("../../examples/tetrahedron_grown.sv")),
+        "house" => Some(include_str!("../../examples/house.sv")),
+        "pyramid" => Some(include_str!("../../examples/pyramid.sv")),
         "catenary" => Some(include_str!("../../examples/catenary.sv")),
         "dido" => Some(include_str!("../../examples/dido.sv")),
         "sized_cantilever" => Some(include_str!("../../examples/sized_cantilever.sv")),

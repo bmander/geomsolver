@@ -167,6 +167,7 @@ mod interval;
 mod io;
 mod jacobians;
 mod jansen;
+mod joins;
 mod joint_words;
 mod json_escapes;
 mod kernel_blank;

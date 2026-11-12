@@ -1449,7 +1449,8 @@ impl<'a> Walk<'a> {
                             self.settle_dim(text, *span, vals, scope)
                         }
                     }
-                    crate::syntax::OpArg::Ent(_) => {}
+                    // a binder's point and where it ranges are names, settled where they stand
+                    crate::syntax::OpArg::Some { .. } | crate::syntax::OpArg::Ent(_) => {}
                 }
             }
         }

@@ -448,8 +448,17 @@ triangle, carried on past each end and cut off there, no net fitted. A fitted fl
 face, and a run chamfered after it that ends on it was refused, nothing cutting a run off at a
 spline: a box's top edges chamfered one after another, each cut off by the plane of the one before
 (`brep::a_box_top_chamfered_unequally_is_ten_planes`, brep-bench's chamfer/box-top-asymmetric;
-`brep::chamfers_between_planes_are_planes`). A run going on tangent into a curved face at an end
-is still fitted, as the piece that takes on from its section is. About one axis the flat is turned: between a plane square
+`brep::chamfers_between_planes_are_planes`). **So a round between two planes is a cylinder**
+(`fillet::roll`): its spine a line and every section the same, the piece is the prism on the
+section (`fillet::round_section`: the corner, its legs to the contacts and the ball's arc, framed
+about the run), its spine and contacts the lines the ball's centre and touches run along. A fitted
+canal there was a net of 65 × 129 poles the Boolean after it cut: brep-bench's fillet/box-one-edge
+took 120 ms and wrote 835 KB of STEP, and fillet/notched-cube-inside-corner 1.8 s
+(`brep::rounds_between_planes_are_cylinders`: convex, concave, and runs whose spines go either way
+along their edges, against their closed forms). Both prisms are cut off at each end as a run is
+(`fillet::carried`), and an end cut by one plane square to the run is where the prism ends,
+nothing intersected. A run going on tangent into a curved face at an end is still fitted, as the
+piece that takes on from its section is. About one axis the flat is turned: between a plane square
 to it, cylinders and cones about it, a closed loop's flat is the section's triangle revolved, a cone
 exact (`fillet::coaxial`; a leg shrunk to a point its apex, [rounds.md](rounds.md)). So is a
 round there (`fillet::roll`, `fillet::revolved`): the section — the corner, its legs to the
@@ -555,7 +564,11 @@ the same in one place — a point onto a vertex within `tol` (`Pool`, each verte
 farthest point merged into it stood: `topo::Vertex::tol`, which `check` reads an edge's end
 against), a vertex onto an edge and an edge onto an edge within `ON_CURVE` tolerances, a point onto
 a meeting within `on_meeting`, a flat root onto a crossing within `FLAT`, a sliver into its edge —
-applied once, in that order. The crossing a flat root goes onto is one of its edge's own cuts, or
+applied once, in that order. A non-rational B-spline's heights over a plane are its distances from
+it, so its reading against a plane (`query::spline_plane`) proves a run where a stretch's heights are
+enclosed within half the tolerance (`HeightsWithin`), settled as one meeting: a contact curve running
+in the plane of a torus's seam circle over a stretch read 185 roots a hair apart and was halved past
+any search's boxes (#880 Q1b). The crossing a flat root goes onto is one of its edge's own cuts, or
 one found beside the edge (`Crossings::beside`): where an edge of the other operand lying along a
 face the edge bounds crosses it. A circle of a torus at a sweep's end pose meets the fitted sheet
 that touches the torus along its rim flatly; the fit crosses the circle within the tolerance of the
@@ -596,7 +609,33 @@ they touch. A meeting bounding a face kept on one side only stays an edge, and a
 edge (a seam) is never taken out (`arrangement::a_boolean_lays_a_touch_and_heals_it_where_a_face_is_kept_on_both_sides`,
 a rod lying on a block united and cut either way; `a_hole_whose_caps_touch_the_bore_and_the_rim_is_cut_whole`,
 the V-twin disc's set-screw hole, its caps tangent to the bore and the rim, at twelve angles, to
-its section's run in closed form; `a_split_heals_a_touch_out_of_each_cell`). **A Boolean is the
+its section's run in closed form; `a_split_heals_a_touch_out_of_each_cell`). **A branch arriving
+at a touch along an edge joins it** (`boolean`'s `landing`, `ssi::trace_landing`, #880 Q1b): along
+the edge, one surface stands off the other by `d²(c(s) + O(d))` a distance `d` across it, so a
+transversal branch of the two's meeting leaves the touch where `c` changes sign, and near it the two
+part too slowly for a march to land. A march stopped beside such an edge is followed down to it —
+at gaps halved to the tolerance, the branch's root along the points that far off the edge nearest
+the last — and ends where the last two levels run on to the edge, a point of it, one curve; it
+stopped short before, the stop read as a touch of its own whose other half-branches were traced
+along the edge, and the pieces did not close (`swept_contacts::a_contact_carried_back_through_its_start_pose_is_arranged_with_it`,
+the leaning torus's carried contact re-entering the start pose it touches along its rim). **A given
+meeting is held to the tolerance** where two meetings on a face are crossed (`triple_points`,
+`meeting::Shared::given`): its curves lie on both its surfaces, so the reach a trace is held to —
+the tolerance over the sine of its surfaces' angle — does not apply, and at a point where several
+surfaces are tangent it cut two given curves at a near miss far from where they meet. So too
+wherever a given meeting's reach is asked: their crossing is kept where the two curves cross, with
+no Newton on the three surfaces (singular where all three are tangent, it slid 3e-3 along the
+valley); a vertex is taken onto a given curve only within `ON_CURVE` tolerances (`points_on`: two
+sheets meeting smoothly along their shared rail, the sine of their angle nought, took a vertex 3e-3
+off it); and an edge of a face given a meeting with another's surface, whose search for where it
+meets that surface is refused, is read off the given curves (`on_given`). **A touch run reaching an
+edge's own end is that end** (`at_its_ends`): a root the edge reaches from its nearer end within
+`ON_CURVE` tolerances of the surface all the way is read there, a touch (a swept sheet's rail
+leaves the pose it starts on tangent to it, and the run's far end was read as a vertex of its own).
+**A piece the collapse made a loop of no length is collapsed too** (`collapsed`, step 3b): a piece a
+few reaches long whose ends the merges made one vertex — one a hair past the reach, beside a piece
+that collapsed — is gone, where it was left a loop round the vertex and the face's pieces did not
+close. **A Boolean is the
 selection, with no other road**: a shell kept on one side and dropped on another is refused (two
 cells joined round an edge), where each face was once kept by its own sides; the fifteen round
 cases that took that road did so because a fitted round leaves the edge some 1e-5 off the face it is
@@ -1041,7 +1080,9 @@ section, each polished by Newton and the nearest in space kept. Seeded from sixt
 the section, the leaning torus's contact under `torus-screwed-through-rod`'s screw — one closed curve
 carried 456° — was read 0.13 to 2.2 off at points of its own sheet
 (`swept_contacts::a_contact_carried_over_the_roll_is_inverted_exactly_at_its_own_points`); `inverse_near`
-runs Newton from its hint first; `step::blend_net`
+runs Newton from its hint first, and while Newton holds `v` at the patch's edge it steps `u` alone
+(the coupled step, clamped, settled a point of a sheet's end rim 3.8e-8 along it where the sheet's two
+rates nearly agree, a loop broken in its parameters at the kernel's tolerance, #880 Q1b S5); `step::blend_net`
 fits quintic along a screw a cubic cannot follow at the fit's cap.  A twisted duct, a thread, an auger's
 flight and a coil lie on blends; a section that changes as it runs stays on its sheets
 (`tests/helix.rs`, `a_rigid_screw_lies_on_its_swept_rim`).
