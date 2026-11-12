@@ -531,6 +531,12 @@ impl Brep {
                     let at = self.vertices[self.ends(c)[1] as usize].tol;
                     let corner = tol.max(2.*(self.edges[c.edge as usize].tol+self.edges[next.edge as usize].tol)).max(2.*at);
                     if distance(f.surface.point(a),f.surface.point(b)) > corner || (a[0]-b[0]).abs().max((a[1]-b[1]).abs()) > 1e-3 {
+                        if crate::debug() {
+                            let kind = |c: &Coedge| match &self.edges[c.edge as usize].curve { EdgeCurve::Curve(x) => x.kind(),_ => "degenerate" };
+                            eprintln!("topo: face {fi} breaks between edge {} ({}, tol {:e}) and edge {} ({}, tol {:e}) at vertex {:?} (tol {at:e}): {:?} and {:?} apart {:e}, corner {corner:e}",
+                                c.edge,kind(c),self.edges[c.edge as usize].tol,next.edge,kind(next),self.edges[next.edge as usize].tol,self.vertices[self.ends(c)[1] as usize].p,
+                                f.surface.point(a),f.surface.point(b),distance(f.surface.point(a),f.surface.point(b)));
+                        }
                         return Err(format!("face {fi} ({}): loop {li} breaks in parameters after use {k}: {a:?} to {b:?}",f.name).into())
                     }
                     let e = &self.edges[c.edge as usize];

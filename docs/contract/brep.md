@@ -1051,7 +1051,9 @@ section, each polished by Newton and the nearest in space kept. Seeded from sixt
 the section, the leaning torus's contact under `torus-screwed-through-rod`'s screw — one closed curve
 carried 456° — was read 0.13 to 2.2 off at points of its own sheet
 (`swept_contacts::a_contact_carried_over_the_roll_is_inverted_exactly_at_its_own_points`); `inverse_near`
-runs Newton from its hint first; `step::blend_net`
+runs Newton from its hint first, and while Newton holds `v` at the patch's edge it steps `u` alone
+(the coupled step, clamped, settled a point of a sheet's end rim 3.8e-8 along it where the sheet's two
+rates nearly agree, a loop broken in its parameters at the kernel's tolerance, #880 Q1b S5); `step::blend_net`
 fits quintic along a screw a cubic cannot follow at the fit's cap.  A twisted duct, a thread, an auger's
 flight and a coil lie on blends; a section that changes as it runs stays on its sheets
 (`tests/helix.rs`, `a_rigid_screw_lies_on_its_swept_rim`).

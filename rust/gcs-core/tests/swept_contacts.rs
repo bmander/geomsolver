@@ -479,13 +479,17 @@ fn drum_case() -> Case {
 /// The case cut through the front door (`swept::closed::cut_from`, or `closed` where it has no
 /// blank) at `tol`, held to its volume within ten tolerances or what it is known to, and written as a
 /// STEP file that reads back as the solid (the S4 gate's closed file).
-fn cut_through_the_front_door(case: &Case,tol: f64) {
+fn cut_through_the_front_door(case: &Case,tol: f64) { cut_within(case,tol,|_| 10.*tol) }
+
+/// `cut_through_the_front_door`, its volume held within what `within` reads off the cut (or what the
+/// volume is known to).
+fn cut_within(case: &Case,tol: f64,within: impl Fn(&Brep) -> f64) {
     let cut = match &case.blank {
         Some(blank) => gcs_core::brep::swept::closed::cut_from(blank,&case.tool,&case.path,case.roll,case.bar,tol),
         None => gcs_core::brep::swept::closed::closed(&case.tool,&case.path,case.roll,case.bar,tol),
     }.unwrap_or_else(|e| panic!("{}: {e:?}",case.what));
     let volume = gcs_core::brep::props::volume(&cut);
-    let within = (10.*tol).max(case.known);
+    let within = within(&cut).max(case.known);
     assert!((volume-case.volume).abs() <= within,"{}: the cut's volume {volume}, apart from the build {}",case.what,case.volume);
     let text = gcs_core::brep::step::write(&cut,"swept",tol).unwrap();
     gcs_core::brep::step_check::verify(&text,&gcs_core::brep::step_check::Solid::of(&cut))
@@ -576,6 +580,61 @@ fn pin_swung_case() -> Case {
         volume:80.*pi/3.-pi/6.*(57.+1./6.),known:1e-9}
 }
 
+/// `cone-spun-about-a-line-through-it`: the cone with its point at `−2w`, `w = (cos 30°, 0, sin 30°)`,
+/// opening at 50° to a base at `5w`, turned 150° about z. Apart from the build: at `(ρ, z)` a point of
+/// the circle at `φ` stands `t = ρ cos 30° cos φ + z sin 30°` along the cone's axis and is in the cone
+/// where `−2 ≤ t ≤ 5` and `ρ² + z² − t² ≤ tan²25° (t + 2)²`, so the cone holds the arcs of the
+/// `t`-intervals that holds on, which the turn sweeps each on by `T`; the measure of their union
+/// times `ρ`, integrated over `ρ` and `z` by adaptive Gauss–Kronrod from as many pieces each way:
+/// 288.4950263 at a hundred-millionth over 64, 288.4950446 at a billionth over 128 and 288.4950501 at
+/// a ten-billionth over 256, still rising by a third as much a step — so known to a hundred-thousandth,
+/// its kinks (where the arcs' ends change what bounds them, merge, or leave the axis) what the
+/// integration is slow on.
+fn cone_spun_case() -> Case {
+    let (s,c) = 30f64.to_radians().sin_cos();
+    let w = [c,0.,s];
+    let tool = gcs_core::brep::build::cone(gcs_core::space::scale(w,-2.),w,0.,7.*25f64.to_radians().tan(),7.).unwrap();
+    Case {what:"the spun cone",blank:None,tool,path:turn_about_z(),roll:[0.,150f64.to_radians()],bar:0.002,volume:288.49505,known:1e-5}
+}
+
+/// The rod of brep-bench's screwed-through-rod cases: radius 5 about z from 0 to 20.
+fn screwed_rod() -> Brep { prism(&disc([0.;3],[0.,0.,1.],5.),0.,20.).unwrap() }
+
+/// Their screw: about z, a radian a radian of the roll, rising 6 a turn, from −90° to 1350°.
+fn rising_six() -> (gcs_core::brep::trajectory::Trajectory,[f64;2]) {
+    (gcs_core::brep::trajectory::Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:6.}),
+        [(-90f64).to_radians(),1350f64.to_radians()])
+}
+
+/// `drum-end-screwed-through-rod`: the drum `4 ≤ x ≤ 12`, `y² + z² ≤ 1.44` screwed through the rod.
+/// Apart from the build: a point `(ρ, φ, z)` is swept where some `θ` of the roll pulls it back into the
+/// drum — `ψ = φ + 2πm − θ`, `h = z − aθ`, `a = 6/2π` — and at radius `ρ` the drum holds `|ψ| ≤ P`
+/// (`ρ cos ψ ≥ 4`, `ρ |sin ψ| ≤ 1.2`) and `|h| ≤ H(ψ) = √(1.44 − ρ² sin² ψ)`; for each `m` the heights
+/// it covers are the one interval `[min (c − H), max (c + H)]` over the `ψ` the roll allows, `c =
+/// a(φ + 2πm − ψ)` (the windings 6 apart, the drum 2.4 tall). Unrolled about the axis the screw moves
+/// each radius's section `(ψ, h)` along `(1, a)`, and the roll passes the whole section at every height
+/// of the rod (its ends 1.5 below and 22.5 above any), so the sweep covers at each height the
+/// section's width across the screw, `W(ρ) = 2 max (ψ + H(ψ)/a)`: the rod less `20 ∫ ρ W(ρ) dρ`,
+/// panels split where the most leaves for the flat end and where `P` changes its bound, each tamed
+/// by a cosine: 1339.548902340676 from 16 points to 64 (and by Gauss–Kronrod over `φ` and `ρ`,
+/// 2e-10 less).
+fn drum_end_case() -> Case {
+    let (path,roll) = rising_six();
+    Case {what:"the drum's end",blank:Some(screwed_rod()),tool:prism(&disc([4.,0.,0.],[1.,0.,0.],1.2),0.,8.).unwrap(),path,roll,
+        bar:0.01,volume:1339.548902340676,known:1e-9}
+}
+
+/// `cone-point-screwed-through-rod`: the cone with its point at `(4, 0, 0)` along x, opening at 60° to
+/// a base at `x = 12`, screwed through the rod. Apart from the build as the drum's end, the cone holding
+/// at radius `ρ` the `|ψ| ≤ P` where `(ρ cos ψ − 4) tan 30° ≥ ρ |sin ψ|`, and `|h| ≤ H(ψ) = √(((ρ cos ψ −
+/// 4) tan 30°)² − ρ² sin² ψ)`: 1513.245603582067 from 16 points to 64, one panel (and by Gauss–Kronrod
+/// over `φ` and `ρ`, 4.5e-9 less).
+fn cone_point_case() -> Case {
+    let (path,roll) = rising_six();
+    let tool = gcs_core::brep::build::cone([4.,0.,0.],[1.,0.,0.],0.,8.*30f64.to_radians().tan(),8.).unwrap();
+    Case {what:"the cone's point",blank:Some(screwed_rod()),tool,path,roll,bar:0.01,volume:1513.245603582067,known:1e-9}
+}
+
 /// **A rod spun about a line through it** (#880 Q1b S5, brep-bench's
 /// `swept/rod-spun-about-a-line-through-it`): under the turn each sheet lies on the surface of
 /// revolution of its section's meridian (`meridian_surface`) — the top and bottom lines' sectors on
@@ -613,10 +672,37 @@ fn a_pin_swung_through_a_ring_sector_is_cut_through_the_front_door() { cut_throu
 /// rims' parameter curves on their surfaces of revolution refined until they stand within a tenth of
 /// it of the rim (`carried`).
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about half a minute: four turned sweeps at the kernel's tolerance")]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about half a minute: five turned sweeps at the kernel's tolerance")]
 fn the_turned_cases_are_cut_at_the_kernels_own_tolerance() {
-    for case in [rod_spun_case(),ball_swung_case(),coin_turned_case(),pin_swung_case()] {
+    for case in [rod_spun_case(),ball_swung_case(),coin_turned_case(),pin_swung_case(),cone_spun_case()] {
         let tol = gcs_core::brep::geom::tolerance(case.blank.as_ref().map_or(0.,|b| b.size()).max(case.tool.size()));
         cut_through_the_front_door(&case,tol);
+    }
+}
+
+/// **A cone spun about a line through it** (#880 Q1b S5, brep-bench's
+/// `swept/cone-spun-about-a-line-through-it`): its two generators in the plane through the axis run on
+/// to its apex, a pole of its parameters where no node of the grid reads its contact, and the one
+/// along its seam is its own (`face_contact`); each crosses the turn's axis and the circle of the cone
+/// where both branches of its contact cross, beside which the sheet is covered by both end poses
+/// less deeply than membership's sag, read exactly against them (`trim`).
+#[test]
+fn a_cone_spun_about_a_line_through_it_is_swept_through_the_front_door() { cut_through_the_front_door(&cone_spun_case(),TOL) }
+
+/// **A drum's end and a cone's point screwed through a rod** (#880 Q1b S5, brep-bench's
+/// `swept/drum-end-screwed-through-rod` and `swept/cone-point-screwed-through-rod`), at the kernel's
+/// tolerance as the bench builds them: four turns, each end disc's rim's fans sharing the path of the
+/// rim's points a tenth of a turn apart, met at a degree (`boolean`'s crossings on a given meeting);
+/// a disc whose plane holds the screw's axis touched each turn by its rim's fan (`pose_meeting`);
+/// and the cone's start pose along its base rim read by how it leads the motion (`trim`). Each cut is
+/// held within its boundary's area times the tolerance, how far a volume moves whose faces stand that
+/// far off true: four turns of grooves, its faces' trims fitted along helices hundreds long, the cone's
+/// cut stood 4.6e-7 off, nineteen tolerances (twelve at 1e-5), the drum's 1.5e-7.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about two minutes: two sweeps of four turns at the kernel's tolerance")]
+fn a_drum_end_and_a_cone_point_screwed_through_a_rod_are_cut_through_the_front_door() {
+    for case in [drum_end_case(),cone_point_case()] {
+        let tol = gcs_core::brep::geom::tolerance(case.blank.as_ref().map_or(0.,|b| b.size()).max(case.tool.size()));
+        cut_within(&case,tol,|cut| tol*cut.faces.iter().map(|f| gcs_core::brep::props::area(cut,f)).sum::<f64>());
     }
 }

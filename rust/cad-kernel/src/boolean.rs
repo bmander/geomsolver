@@ -1323,6 +1323,21 @@ impl<'a> Arrangement<'a> {
             let surface = &solids[other].faces[fi].surface;
             let meets = match (curve_surface_within(c,e.t,surface,tol.max(e.tol),boxes[other][fi],pad),given) {
                 (Meets::Refused(_),Some(curves)) => on_given(c,e.t,curves,surface,tol.max(e.tol)),
+                // (a crossing the search found, where the meeting is given, is where the edge crosses
+                // the given curves: two sheets of a sweep crossing along a path at a degree, an edge
+                // crossing one where it crosses the other is read by the search that tolerance over
+                // the sine off the path, which a given meeting takes no vertex from — the drum's
+                // end rim's two fans, screwed through whole turns, sharing the path of the rim's
+                // points a turn's tenth apart)
+                (Meets::At(roots),Some(curves)) => match on_given(c,e.t,curves,surface,tol.max(e.tol)) {
+                    Meets::At(exact) => {
+                        let speed = c.speed().max(1e-300);
+                        Meets::At(roots.into_iter().map(|(s,touch)| exact.iter().map(|&(x,_)| x)
+                            .filter(|x| (x-s).abs()*speed <= 1e3*tol.max(e.tol)).min_by(|x,y| (x-s).abs().total_cmp(&(y-s).abs()))
+                            .map_or((s,touch),|x| (x,touch))).collect())
+                    }
+                    _ => Meets::At(roots),
+                },
                 (meets,_) => meets,
             };
             let meets = at_its_ends(meets,c,e.t,surface,tol.max(e.tol));
@@ -1423,6 +1438,16 @@ impl<'a> Arrangement<'a> {
                     d *= 2.;
                 }
             };
+            // (a crossing on a meeting given between a face the edge bounds and that surface is
+            // where the edge crosses the given curves, exactly, however shallowly the edge meets the
+            // surface: two sheets of a sweep crossing along a path at a degree, the rim of one
+            // crossing the other was moved onto another cut of the rim 1.6e-4 along it, off the path)
+            let q = self.pool.pts[l.vertex as usize];
+            let j = self.shared.index(s,tol);
+            let on_given = (0..self.solids[l.side].faces.len()).filter(|&h| self.solids[l.side].faces[h].loops.iter().flatten().any(|u| u.edge as usize == l.index))
+                .any(|h| { let k = self.shared.index(&self.solids[l.side].faces[h].surface,tol);
+                    self.shared.given(k,j) && self.shared.given_curves(k,j).iter().any(|g| distance(g.point(g.inverse(q)),q) <= super::tolerant::ON_CURVE*tol) });
+            if on_given { continue }
             let (lo,hi) = (reach(-1.),reach(1.));
             // the edge's own cuts, then the crossings found beside it, each where it stands on the
             // edge's stretch
@@ -2965,9 +2990,9 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool,tol: f64) -
                 if super::debug() {
                     for (k,x) in halves.iter().enumerate() {
                         let e = &out[x.edge as usize];
-                        eprintln!("pieces: half {k} edge {} ({}, vertices {:?} at {:?}) along {} nodes {:?} from {:?} to {:?} leave {:.4} back {:.4}{}",
+                        eprintln!("pieces: half {k} edge {} ({}, vertices {:?} at {:?}) along {} nodes {:?} from {:?} to {:?} leave {:.4} back {:.4}, middle {:?}{}",
                             x.edge,match &e.curve { EdgeCurve::Curve(c) => c.kind(),_ => "degenerate" },e.v,e.v.map(|v| pool.pts[v as usize]),
-                            x.along,ends[k],x.from,x.to,leave[k],arrive_back[k],if cycle.contains(&k) { " (this cycle)" } else { "" });
+                            x.along,ends[k],x.from,x.to,leave[k],arrive_back[k],e.point(0.5*(e.t[0]+e.t[1]),pool),if cycle.contains(&k) { " (this cycle)" } else { "" });
                     }
                 }
                 return Err(format!("a {}'s pieces do not close",f.surface.kind()))
@@ -3053,6 +3078,7 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool,tol: f64) -
         if area.abs() > 4.*sag_uv*uv_len { area } else { fine_area(c,f,out,pool) }
     }).collect();
     let mut pieces: Vec<(usize,Vec<usize>)> = (0..cycles.len()).filter(|&i| areas[i] > 0.).map(|i| (i,vec![i])).collect();
+    let face_area: f64 = areas.iter().filter(|&&a| a > 0.).sum();
     for i in (0..cycles.len()).filter(|&i| areas[i] <= 0.) {
         // a hole goes in the smallest outer cycle holding a point of it, read against that cycle
         // (`reading::holds`). An outer cycle sharing one of its edges is on that edge's other
@@ -3069,6 +3095,10 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool,tol: f64) -
         }
         match host {
             Some(k) => pieces[k].1.push(i),
+            // (a sliver no outer cycle holds, a millionth of the face's parameters — three faces of
+            // other operands all but tangent at a corner of it, their meetings leaving the corner
+            // within rounding of one way — bounds nothing)
+            None if areas[i].abs() <= 1e-6*face_area => {}
             None => {
                 if super::debug() {
                     for (k,c) in cycles.iter().enumerate() {

@@ -845,7 +845,10 @@ impl Blend {
             let (b1,b2) = (dot(su,e),dot(sv,e));
             let det = a11*a22-a12*a12;
             if !(det.abs() > 0.) { break }
-            let (du,dv) = ((a22*b1-a12*b2)/det,(a11*b2-a12*b1)/det);
+            let (mut du,dv) = ((a22*b1-a12*b2)/det,(a11*b2-a12*b1)/det);
+            // (`v` held at the patch's edge, `u` stepped alone: the coupled step, clamped, settled a
+            // point of a sheet's end rim 3.8e-8 along it where the sheet's two rates nearly agree)
+            if (uv[1] >= 1. && dv < 0. || uv[1] <= 0. && dv > 0.) && a11 > 0. { du = b1/a11 }
             let mut next = [uv[0]-du,(uv[1]-dv).clamp(0.,1.)];
             next[0] = if self.closed { next[0] } else { next[0].clamp(0.,1.) };
             let moved = (next[0]-uv[0]).abs().max((next[1]-uv[1]).abs());

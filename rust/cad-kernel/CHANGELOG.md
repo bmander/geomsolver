@@ -8,6 +8,32 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The contact's road takes a turn and a screw past the axis** (`swept::contacts`, `swept::trim`,
+  `boolean`, #880 Q1b S5): brep-bench's seven S5 cases build through the front door, each to a
+  volume computed apart from the build and to a STEP file that reads back as the solid — the rod,
+  cone and ball spun or swung about a line through them, the coin turned about a line through its
+  rim, the pin swung through a ring sector, and the drum's end and the cone's point screwed through a
+  rod. Under a turn each sheet lies on the surface of revolution of its section's meridian (a plane,
+  cylinder, cone, ball or torus where the meridian is a line or a circle, else a fitted
+  `Surface::Revolution`), its rails circles about the axis, so sheets meet in circles; a section is
+  cut where its meridian folds back and where it crosses the axis, a pole of the sheets either side;
+  a part whose path dips into the tool on both sides is buried and left out; a contact along a
+  face's own edge is the edge's fan's, and one along its seam its own; a piece beside a cone's apex
+  runs on to it. `swept::contacts::carried` takes the surface a sheet lies on and the tolerance, and
+  `Carried` gains `blend` (**breaking** for code calling it or building a `Carried` literally). A
+  sheet's meeting with a posed face is read only where the face is, and not along the rim lifted
+  whole turns on where it touches the face again; a trimmed piece inside the tool at an end of the
+  roll is read so exactly, and one of that end's own faces by how it leads the motion where
+  membership cannot settle. The arrangement takes an edge's crossing with a given meeting where the
+  edge crosses the given curves (two sheets crossing at a degree) and leaves a sliver no outer
+  cycle holds, a millionth of its face, out. A STEP pcurve leaving a surface's pole is written by
+  its chord there, where its rate was NaN. The screwed bull-nose builds through the road too.
+- **A point on a blend's edge is inverted onto it exactly** (`geom::Blend`): Gauss–Newton held `v` at
+  the patch's edge but kept the coupled step in `u`, and a point of a sheet's end rim where its two
+  rates nearly agree settled 3.8e-8 along the rim, which broke a loop in its parameters at the
+  kernel's tolerance (the torus screwed through a rod, refused there since the turn's sheets came
+  in); `u` is now stepped alone while `v` is held.
+
 ## [0.9.0] - 2026-11-12
 
 - **A sheet's meeting with the tool beside the rim it touches is read off the rim's exact rate**
