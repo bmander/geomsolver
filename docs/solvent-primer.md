@@ -3167,7 +3167,9 @@ pinion_flank regular(0.3, by: gear_tooth.crown) within pinion_blank.material  //
 
 With no number, or a `>=`, it is a check the solve reports broken (`bound broken`) and does not
 steer by. A number stated outright is an equation, so a cutter's pressure shift left unknown
-solves to where the margin binds. The source must be the tool's face itself, not grown by a
+solves to where the margin binds. The number may be an unknown (`least`, a formal left out):
+two flanks held `regular(least, …)` are held to each other, and the shift solves to where
+neither is nearer its fold. The source must be the tool's face itself, not grown by a
 backlash, and the blank is read as balls, cylinders, cones and half-spaces.
 
 **The B-rep read after the solve is not Solvent.** Trimmed patches, the seams where faces meet,

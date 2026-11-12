@@ -4,6 +4,14 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.213] A flank's margin may read an unknown** (#904). `flank regular(m, by: tool) within
+blank` held a flank's least area factor to a number, and a number reading an unknown was E040
+("a flank's least area factor is held to a number"). It is now an equation like any dimension
+written over an unknown (§6.15.3): `regular(least, …)` on two flanks, `least` a formal left out,
+holds them to each other, so a setting both read — a face mill's pressure shift — is found where
+the two are equally far from their folds. `regular(>= least, …)` is a bound read at the unknown's
+value. Nothing a document wrote before reads differently.
+
 **[0.212] A claim over one frame says what it leaves standing** (#904 A11). A claim over a
 frame's roll turns the solids placed under that frame and no other (§9.8), so a solid placed at an
 instant of another frame's motion stands where it is read through the sweep — a planet's gear

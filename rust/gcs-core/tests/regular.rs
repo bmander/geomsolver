@@ -114,6 +114,49 @@ fn a_stated_margin_solves_the_pressure_shift() {
     assert!(sampled - 0.3 >= -1e-9 && sampled - 0.3 < 5e-3, "{sampled}");
 }
 
+/// The pinion's other flank, the gear tooth's outer cone's envelope under the mesh.
+const OTHER: &str =
+    "pinion_other := envelope(boundary(mill.outer_flank) over t in (-60deg, 60deg), under: gear_turn, seen_from: pinion_turn)";
+
+/// `pair`, the pair given an unknown `least` (a formal it leaves out, seeded at 0.5), and the
+/// pinion's other flank held beside the first.
+pub(crate) fn with_least(shift: f64, stmt: &str, unknown: bool) -> String {
+    let text = pair(shift, &format!("{OTHER}\n  {stmt}"), unknown);
+    let formals = "tip_relief: Length, end_relief: Length, mn: Length, rp: Length, pa: Angle) {";
+    let call = "tip_relief: tip_relief, end_relief: end_relief)";
+    assert!(text.contains(formals) && text.contains(call), "the pair is formed as it was");
+    text.replacen(formals, &formals.replace(") {", ", least: Scalar) {"), 1)
+        .replacen(call, "tip_relief: tip_relief, end_relief: end_relief, least: hint(0.5))", 1)
+}
+
+/// **A margin may read an unknown** (#904): two flanks held regular to one unknown number are
+/// held to each other, the least area factor of each the same, and a setting left to the solve
+/// is found where they tie. The pinion's two flanks, cut by the gear tooth's inner and outer
+/// cones: the pressure shift steepens the one and flattens the other, and the tie is where
+/// neither is nearer its fold. Stated at the shift found, each flank reads the number back, and
+/// the admission samples the lesser.
+#[test]
+fn two_flanks_held_to_one_unknown_margin_tie() {
+    let both = format!("{}\n  pinion_other regular(least, by: gear_tooth.crown) within pinion_blank.material",
+                       regular("least"));
+    let e = fixtures::gear::read(&with_least(12.5, &both, true));
+    let (found, least) = (shift(&e), e.sketch.params[e.sketch.free_vars["pair.least"] as usize].value);
+    eprintln!("the pinion's flanks tie at {found:.6}°, each at {least:.6}");
+    let readings: Vec<f64> = e.sketch.constraints.iter()
+        .filter(|c| c.kind == CKind::RegularWithin).map(|c| c.reading(&e.sketch).unwrap()).collect();
+    assert_eq!(readings.len(), 2);
+    assert!(readings.iter().all(|r| (r - least).abs() < 1e-9), "{readings:?} against {least}");
+    assert!(least > 0.0 && found > 0.0 && found < 20.0, "{found}° {least}");
+    // stated at that shift, the flanks read alike, and the pinion is admitted at that factor
+    let stated = format!("{REGULAR}\n  pinion_other regular(by: gear_tooth.crown) within pinion_blank.material");
+    let e = fixtures::gear::read(&with_least(found, &stated, false));
+    let readings: Vec<f64> = e.sketch.constraints.iter()
+        .filter(|c| c.kind == CKind::RegularWithin).map(|c| c.reading(&e.sketch).unwrap()).collect();
+    assert!(readings.iter().all(|r| (r - least).abs() < 1e-6), "{readings:?} against {least}");
+    let sampled = admitted(&e).expect("the pinion is admitted");
+    assert!(sampled - least >= -1e-9 && sampled - least < 5e-3, "{sampled} against {least}");
+}
+
 /// The pair elaborated, its diagnostics returned rather than asserted.
 fn elaborated(text: &str) -> Elaborated {
     let (mut p, errs) = gcs_core::syntax::parse(text);

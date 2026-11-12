@@ -177,7 +177,10 @@ path over an eased generated and an eased formed flank, a curvature an unknown i
 blank` is `CKind::RegularWithin` (`KernelKey::Regular`, one row of degree 0): the least **area
 factor** `A = (g_t − α g_u − β g_v)/g_t` (`∂X/∂t = α ∂X/∂u + β ∂X/∂v`, least squares) of a held
 envelope over the tool points on `tool`'s face whose contact in the roll interval lies in `blank`,
-less `m`. `A` is what `solid::admission`'s E3 samples by central differences (`area_factor`, its
+less `m` — `m` a number, or `c + m·x` over an unknown `x` (`expr::Free`, #904: the row's last
+column, which no term reads, so `regular(least, …)` on two flanks ties them;
+`regular::two_flanks_held_to_one_unknown_margin_tie`,
+`jacobians::regularity_held_to_an_unknown_agrees_with_finite_differences`). `A` is what `solid::admission`'s E3 samples by central differences (`area_factor`, its
 `least_area_factor`): 1 rolling without sliding, nothing at a fold. `envelope::regular` is the
 evaluator. `Parts::of` reads a `Held::Set` cone or cylinder (others refused). `tool` and `blank`
 are `SolidDef::Region`s whose terms are read as `solid::field::region::Term` reads them, in

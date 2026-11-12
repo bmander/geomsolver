@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.212 — November 2026**
+**Specification, Draft 0.213 — November 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -1954,7 +1954,9 @@ With no number the statement is a bound, `>= 0`: no fold. `regular(>= m, …)` i
 one. Both are verdicts with no root to choose, so a solve breaking one is `BOUND_BROKEN` and
 nothing is steered across it (§9.6). `regular(m, …)`, the number stated outright, is an equation:
 one row that solves a number of the drawing the flank reads (a cutter's pressure angle) at
-which the margin binds. `within` stands between the word and the blank; without it the statement
+which the margin binds. **[0.213]** The number may read an unknown (`regular(least, …)`, `least`
+a formal left out or an input with no value, §6.3): two flanks held to one unknown are held to
+each other, so the settings they read are found where neither is nearer its fold. `within` stands between the word and the blank; without it the statement
 does not parse. A flank of no set, a source that is no face of `tool`, a face grown off the
 source, a solid that is no region, or a term the solve cannot read (a blank's measured term) is
 **E061**, naming why.
