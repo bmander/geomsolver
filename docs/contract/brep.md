@@ -444,15 +444,15 @@ spline: a box's top edges chamfered one after another, each cut off by the plane
 (`brep::a_box_top_chamfered_unequally_is_ten_planes`, brep-bench's chamfer/box-top-asymmetric;
 `brep::chamfers_between_planes_are_planes`). **So a round between two planes is a cylinder**
 (`fillet::roll`): its spine a line and every section the same, the piece is the prism on the
-section at the run's start — the corner, its legs to the contacts and the ball's arc — carried on
-past each end and cut off there, and its spine and contacts the lines the ball's centre and touches
-run along. A fitted canal there was a net of 65 × 129 poles that the Boolean after it cut: brep-bench's
-fillet/box-one-edge took 120 ms and wrote 835 KB of STEP, and takes a few milliseconds and writes
-15 KB; fillet/notched-cube-inside-corner took 1.8 s and takes about a tenth of that. Their volumes
-and areas hold to 1e-11 (`brep::rounds_between_planes_are_cylinders`: convex, concave, and runs
-whose spines go either way along their edges — the arc framed about the prism's axis). A run
-going on tangent into a curved face at an end is still fitted, as the piece that takes on from its
-section is. About one axis the flat is turned: between a plane square
+section (`fillet::round_section`: the corner, its legs to the contacts and the ball's arc, framed
+about the run), its spine and contacts the lines the ball's centre and touches run along. A fitted
+canal there was a net of 65 × 129 poles the Boolean after it cut: brep-bench's fillet/box-one-edge
+took 120 ms and wrote 835 KB of STEP, and fillet/notched-cube-inside-corner 1.8 s
+(`brep::rounds_between_planes_are_cylinders`: convex, concave, and runs whose spines go either way
+along their edges, against their closed forms). Both prisms are cut off at each end as a run is
+(`fillet::carried`), and an end cut by one plane square to the run is where the prism ends,
+nothing intersected. A run going on tangent into a curved face at an end is still fitted, as the
+piece that takes on from its section is. About one axis the flat is turned: between a plane square
 to it, cylinders and cones about it, a closed loop's flat is the section's triangle revolved, a cone
 exact (`fillet::coaxial`; a leg shrunk to a point its apex, [rounds.md](rounds.md)). So is a
 round there (`fillet::roll`, `fillet::revolved`): the section — the corner, its legs to the

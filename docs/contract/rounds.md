@@ -294,8 +294,9 @@ the recipe's corner `"faces"`, `fillet::corner` its three-plane case; plus each 
 ring stretch, cut short at its section even where it ran out past a slanted end, a ring's
 stretch turned only to the corner's meridian, glued there: `dshaft.sv`), `Rolled` (along an edge no line or coaxial circle carries — a tee's crotch, a bore's rim, a
 run-out across a slope: the ball rolled along the whole run, `brep::fillet::roll`, its canal
-fitted — a cylinder, exact, where both faces are planes ([brep.md](brep.md)) — carried past an end and cut off there (`fillet::end_at`'s `Cut`s: the plane, a curved
-end's solid, or — where a face goes on tangent across a seam into another piece's — the section
+fitted (a cylinder, exact, where both faces are planes: [brep.md](brep.md)), carried past an end
+and cut off there (`fillet::end_at`'s `Cut`s: the plane, a curved end's solid, or — where a face
+goes on tangent across a seam into another piece's — the section
 that piece ends at, refused where the ball crosses the seam elsewhere, `seam_aligned`:
 `bullnose.sv`); one per run of the region (`BodyFaces::runs`), winding round both faces or not,
 cut short at a corner's section (the plane of the ball's arc) and glued there (`frustum.sv`); a

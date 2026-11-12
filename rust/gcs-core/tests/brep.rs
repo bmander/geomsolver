@@ -2289,7 +2289,7 @@ fn both_edges_rounded(hi: V,ats: [V;2],r: f64) -> gcs_core::brep::topo::Brep {
 #[test]
 fn a_slabs_top_rounded_from_both_edges_to_half_its_width_is_a_half_cylinder() {
     let both = both_edges_rounded([10.,4.,6.],[[5.,0.,6.],[5.,4.,6.]],2.);
-    assert_eq!(face_kinds(&both),["bspline","bspline","plane","plane","plane","plane","plane"]);
+    assert_eq!(face_kinds(&both),["cylinder","cylinder","plane","plane","plane","plane","plane"]);
     too_large(rounded(&named_box([10.,4.,6.]),&[[5.,0.,6.],[5.,4.,6.]],2.1));
 }
 
@@ -2552,10 +2552,10 @@ fn rounds_between_planes_are_cylinders() {
     let cube = block([0.;3],[10.;3]);
     let round = gcs_core::brep::fillet::roll(&cube,[10.,10.,5.],r,gcs_core::brep::geom::tolerance(cube.size())).unwrap();
     assert!(!round.concave);
-    for (u,[x,y]) in [(0.,[8.,8.]),(1.,[8.,8.])] {
+    for u in [0.,1.] {
         let s = round.spine.point(u);
-        close(s[0],x);
-        close(s[1],y);
+        close(s[0],8.);
+        close(s[1],8.);
     }
     close(gcs_core::space::distance(round.contacts[0].point(0.5),round.spine.point(0.5)),r);
     let rounded_cube = rounded(&cube,&[[10.,10.,5.]],r).unwrap();
@@ -2568,8 +2568,9 @@ fn rounds_between_planes_are_cylinders() {
         loops:vec![poly(&[[0.,0.,0.],[10.,0.,0.],[10.,0.,3.],[3.,0.,3.],[3.,0.,10.],[0.,0.,10.]])]};
     let filled = rounded(&prism(&l,-10.,0.).unwrap(),&[[3.,5.,3.]],r).unwrap();
     filled.check(1e-8).unwrap();
-    assert_eq!(face_kinds(&filled).iter().filter(|&&k| k == "cylinder").count(),1);
-    assert!(face_kinds(&filled).iter().all(|&k| k == "plane" || k == "cylinder"));
+    let kinds = face_kinds(&filled);
+    assert_eq!(kinds[0],"cylinder");
+    assert!(kinds[1..].iter().all(|&k| k == "plane"));
     close(volume(&filled),10.*(51.+corner));
     close(total_area(&filled),502.-20.*r+5.*PI*r+2.*corner);
     // a cube notched at a corner, the notch's three inside edges rounded 3 (brep-bench's

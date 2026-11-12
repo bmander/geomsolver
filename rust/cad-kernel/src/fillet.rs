@@ -288,6 +288,19 @@ pub fn roll_across(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)]) -> Result<Rol
         }
         (lo,hi-lo)
     };
+    // **between two planes the round is a cylinder**, as the flat there is a plane (`flat_along`):
+    // the spine a line and every section the same, the piece is the prism on the section
+    if let (Curve::Line {d,..},true) = (&spine,prismatic(&surfaces,&ends)) {
+        let frame = |u: f64| { let c = spine.point(t0+span*u); (c,[toward(0,c),toward(1,c)]) };
+        let reach = corner_reach(&frame,r,&names())?;
+        holds_ball(b,&uses,&sides_faces,&chain,&ends,&frame,&surfaces,sides,r,tol,&names(),wedge)?;
+        let ((c0,e),c1) = (frame(0.),spine.point(t0+span));
+        let trims: Vec<Trim> = ends.into_iter().map(|x| x.trim).collect();
+        let piece = carried(&round_section(across(c0,e,r),c0,e,r,*d),span,&trims)?;
+        let touch = |c: V,k: usize| add(c,scale(e[k],r));
+        let contacts = [segment(touch(c0,0),touch(c1,0))?,segment(touch(c0,1),touch(c1,1))?];
+        return Ok(Rolled {piece,chain,spine:segment(c0,c1)?,contacts,concave,r,reach,trims})
+    }
     // the spine read along a smooth guide: a trace's own parameter turns at every point it was
     // marched through, which no smooth fit follows; a cubic through its points, by chord length,
     // projected back onto both offsets point by point, is exact and smooth between its ends
@@ -308,35 +321,6 @@ pub fn roll_across(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)]) -> Result<Rol
     let reach = corner_reach(&frame_at,r,&names())?;
     // (read uncached: the band's probes are no stations the fit asks for)
     holds_ball(b,&uses,&sides_faces,&chain,&ends,&frame_of,&surfaces,sides,r,tol,&names(),wedge)?;
-    // **between two planes the round is a cylinder**: the spine is a line and every section the
-    // same, so the piece is the prism on the section at the run's start — the corner, its legs to
-    // the contacts and the ball's arc — carried on past each end and cut off there, a cylinder
-    // face and its strips exact, no canal fitted (as `flat_along` between two planes). A fitted
-    // canal there was a net of thousands of poles that the Boolean after it cut and every measure
-    // integrated. (Not where a face goes on tangent from either: the piece taking on from that
-    // section is fitted.)
-    let planes = surfaces.iter().all(|s| matches!(s,Surface::Plane(_)));
-    let straight = match spine { Curve::Line {d,..} => Some(d),_ => None };
-    if let Some(d) = straight.filter(|_| planes && !ends.is_empty()
-        && !ends.iter().flat_map(|e| &e.trim.cuts).any(|c| matches!(c,Cut::Section {..}))) {
-        let ([c0,c1],e) = ([t0,t0+span].map(|t| spine.point(t)),[toward(0,spine.point(t0)),toward(1,spine.point(t0))]);
-        let corner = across(c0,e,r);
-        let touch = e.map(|d| add(c0,scale(d,r)));
-        // the arc about the prism's own axis, from the contact it turns counter-clockwise from
-        let from = if dot(cross(e[0],e[1]),d) > 0. { e[0] } else { e[1] };
-        let arc = Some([0.,dot(e[0],e[1]).clamp(-1.,1.).dacos()]);
-        use super::build::{prism,Profile,ProfileEdge};
-        let section = Profile {origin:corner,normal:d,loops:vec![vec![ProfileEdge::Line {a:corner,b:touch[0]},
-            ProfileEdge::Arc {frame:Frame::new(c0,d,from),r,span:arc},ProfileEdge::Line {a:touch[1],b:corner}]],
-            names:vec![["a","round","b"].map(String::from).to_vec()]};
-        let trims: Vec<Trim> = ends.into_iter().map(|x| x.trim).collect();
-        let run = prism(&section,0.,span)?;
-        run.check(10.*tol).map_err(|e| format!("the round between {} is no prism: {e}",names()))?;
-        let piece = trimmed(run,&trims)?;
-        let line = |a: V,z: V| BSpline::new(1,vec![0.,0.,1.,1.],vec![a,z]);
-        let contacts = [line(touch[0],add(c1,scale(e[0],r)))?,line(touch[1],add(c1,scale(e[1],r)))?];
-        return Ok(Rolled {piece,chain,spine:line(c0,c1)?,contacts,concave,r,reach,trims})
-    }
     // fitted to the bar asked, or as near it as the densest net comes, no worse than a ten-millionth
     // of the boundary: its contacts are read at what was measured (`Edge::tol`)
     let bar = tol.max(1e-7*b.size());
@@ -492,14 +476,7 @@ fn revolved(b: &Brep,m: &Meeting,onto: &super::geom::Traced,o: V,z: V,r: f64,tol
     };
     let reach = corner_reach(&frame_at,r,names)?;
     holds_ball(b,uses,sides_faces,chain,&[],&frame_at,surfaces,*sides,r,tol,names,wedge)?;
-    // the section: the corner to the first contact, the ball's arc, the second contact back
-    let up = if dot(cross(e[0],e[1]),n) > 0. { n } else { scale(n,-1.) };
-    let arc = Some([0.,dot(e[0],e[1]).clamp(-1.,1.).dacos()]);
-    use super::build::{revolve,Profile,ProfileEdge};
-    let section = Profile {origin:at,normal:n,loops:vec![vec![ProfileEdge::Line {a:at,b:touch[0]},
-        ProfileEdge::Arc {frame:Frame::new(c,up,e[0]),r,span:arc},ProfileEdge::Line {a:touch[1],b:at}]],
-        names:vec![["a","round","b"].map(String::from).to_vec()]};
-    let piece = revolve(&section,o,z,TAU)?;
+    let piece = super::build::revolve(&round_section(at,c,e,r,n),o,z,TAU)?;
     // the spine and each contact a circle about the axis, from the meridian
     let ring = |p: V| -> Result<BSpline,String> {
         let [rho,_,h] = meridian.local(p);
@@ -509,8 +486,24 @@ fn revolved(b: &Brep,m: &Meeting,onto: &super::geom::Traced,o: V,z: V,r: f64,tol
         reach,trims:Vec::new()})
 }
 
+/// The straight curve from `a` to `z` over `[0, 1]`: a spine or a contact along a line.
+fn segment(a: V,z: V) -> Result<BSpline,String> { BSpline::new(1,vec![0.,0.,1.,1.],vec![a,z]) }
+
 /// The curve held still at `q`: a contact or a spine that stands at a point.
-fn still(q: V) -> Result<BSpline,String> { BSpline::new(1,vec![0.,0.,1.,1.],vec![q,q]) }
+fn still(q: V) -> Result<BSpline,String> { segment(q,q) }
+
+/// A round's section in the plane through `corner` square to `axis`: the corner to the contact on
+/// face `a`, the ball's arc about its centre `c` (`e` the ways to its contacts), and back from the
+/// contact on `b` — the arc framed about `axis`, from the contact it turns counter-clockwise from.
+fn round_section(corner: V,c: V,e: [V;2],r: f64,axis: V) -> super::build::Profile {
+    use super::build::{Profile,ProfileEdge};
+    let touch = e.map(|d| add(c,scale(d,r)));
+    let from = if dot(cross(e[0],e[1]),axis) > 0. { e[0] } else { e[1] };
+    let arc = Some([0.,dot(e[0],e[1]).clamp(-1.,1.).dacos()]);
+    Profile {origin:corner,normal:axis,loops:vec![vec![ProfileEdge::Line {a:corner,b:touch[0]},
+        ProfileEdge::Arc {frame:Frame::new(c,axis,from),r,span:arc},ProfileEdge::Line {a:touch[1],b:corner}]],
+        names:vec![["a","round","b"].map(String::from).to_vec()]}
+}
 
 /// The circle of radius `r` about `f`'s origin in its `x`–`y` plane, exactly: a rational quadratic
 /// B-spline of four quarters, starting along `x`.
@@ -865,16 +858,12 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
         }
         (lo,hi-lo)
     };
-    // **between two planes the flat is a plane**: the prism on the section's triangle over the run
-    // carried on past each end, cut off there, exact — a fitted flat is a B-spline face, which a run
-    // chamfered after it and ending on it cannot be cut off at. (Not where a face goes on tangent
-    // from either: the piece taking on from that section is fitted.)
-    let planes = surfaces.iter().all(|s| matches!(s,Surface::Plane(_)));
-    if planes && !ends.is_empty() && !ends.iter().flat_map(|e| &e.trim.cuts).any(|c| matches!(c,Cut::Section {..})) {
+    // **between two planes the flat is a plane**: the prism on the section's triangle — a fitted
+    // flat is a B-spline face, which a run chamfered after it and ending on it cannot be cut off at
+    if prismatic(&surfaces,&ends) {
         let section = triangle(t0);
-        let piece = super::build::prism(&section,0.,dot(sub(edge.point(t0+span),section.origin),section.normal))?;
-        let trims: Vec<Trim> = ends.into_iter().map(|x| x.trim).collect();
-        return trimmed(piece,&trims)
+        let length = dot(sub(edge.point(t0+span),section.origin),section.normal);
+        return carried(&section,length,&ends.into_iter().map(|x| x.trim).collect::<Vec<_>>())
     }
     // the meeting read along a smooth guide, as `roll` reads its spine
     let guide = smooth_guide(&edge,t0,span).ok_or("the meeting could not be read smoothly")?;
@@ -1227,6 +1216,29 @@ fn build_open(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],meeting:
     for c in contact { let e = &mut out.edges[c]; e.tol = e.tol.max(fit); }
     out.check(10.*tol.max(worst))?;
     Ok(out)
+}
+
+/// Whether a run between `surfaces` is a prism: both planes, the run ending at both ends, and no
+/// face going on tangent from either there (the piece taking on from that section is fitted).
+fn prismatic(surfaces: &[Surface;2],ends: &[Stop]) -> bool {
+    surfaces.iter().all(|s| matches!(s,Surface::Plane(_))) && !ends.is_empty()
+        && !ends.iter().flat_map(|e| &e.trim.cuts).any(|c| matches!(c,Cut::Section {..}))
+}
+
+/// The prism on `section` (its normal along the run) over `[0, length]` — the run carried on past
+/// both its ends, `trims` in the order it runs — cut off where it ends: at an end cut by one plane
+/// square to the run, the prism ends there, nothing intersected; any other, by `trimmed`.
+fn carried(section: &super::build::Profile,length: f64,trims: &[Trim]) -> Result<Brep,String> {
+    let n = unit(section.normal);
+    let square = |t: &Trim| match t.cuts[..] {
+        [Cut::Plane {o,keep}] if dot(keep,n).abs() >= 1.-1e-12 => Some(dot(sub(o,section.origin),n)),
+        _ => None,
+    };
+    let [from,to] = match trims { [a,z] => [square(a).unwrap_or(0.),square(z).unwrap_or(length)],_ => [0.,length] };
+    let run = super::build::prism(section,from,to)?;
+    run.check(10.*tolerance(run.size())).map_err(|e| format!("a fillet's run is no prism: {e}"))?;
+    let rest: Vec<Trim> = trims.iter().filter(|&t| trims.len() != 2 || square(t).is_none()).cloned().collect();
+    trimmed(run,&rest)
 }
 
 /// A run's piece cut off by what each end is cut off by, kept on the run's side: a plane's
