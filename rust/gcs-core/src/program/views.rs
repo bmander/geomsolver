@@ -282,11 +282,65 @@ fn points(sk: &Sketch, e: EntRef, out: &mut Vec<usize>, depth: u32) {
 ///
 /// Which planes stand turned as the statements say, and not merely as they were seeded: each
 /// plane both of whose axes are held or placed here.
-pub(crate) fn place(sk: &mut Sketch) -> Vec<bool> {
+pub(crate) fn place(sk: &mut Sketch, memo: &PlaceMemo) -> Vec<bool> {
+    // what was placed from these very statements and seeds before — an earlier pass of
+    // `elaborate`, or this pass with nothing moved since — is placed as it was then
+    let key = fingerprint(sk);
+    if let Some(done) = memo.done.borrow().iter().find(|d| d.key == key) {
+        for &(q, v) in &done.moved {
+            sk.params[q].value = v;
+        }
+        return done.placed.clone();
+    }
+    let before: Vec<u64> = sk.params.iter().map(|p| p.value.to_bits()).collect();
     // a stage of its own (#851): a round's solve and its diagnosis are of everything it places
     let planes = sk.frames.len();
     let placing = || crate::progress::Work::place(planes);
-    crate::progress::during(placing, || place_planes(sk))
+    let placed = crate::progress::during(placing, || place_planes(sk));
+    let moved = sk.params.iter().enumerate()
+        .filter(|(q, p)| p.value.to_bits() != before[*q])
+        .map(|(q, p)| (q, p.value))
+        .collect();
+    memo.done.borrow_mut().push(Placing { key, moved, placed: placed.clone() });
+    placed
+}
+
+/// **The planes placed once for each input** — one `elaborate`'s passes, each a fresh drawing
+/// of the same document, place its planes again from the same statements and seeds, as do the
+/// rounds of one pass where a reading moved nothing; `place` reads only the sketch and writes
+/// only its numbers, so what it placed from one input is what it places from it again: each
+/// input's numbers moved and its planes placed, by the input's fingerprint.
+#[derive(Default)]
+pub(crate) struct PlaceMemo {
+    done: std::cell::RefCell<Vec<Placing>>,
+}
+
+struct Placing {
+    key: [u64; 2],
+    moved: Vec<(usize, f64)>,
+    placed: Vec<bool>,
+}
+
+/// What `place` reads of `sk`, hashed: every number (its value to the bit and whether it is
+/// held), every point, line, axis, plane, lift, turned, mirrored or carried copy and constraint,
+/// as their debug text writes them — two independent 64-bit hashes, so two inputs that differ
+/// share neither.
+fn fingerprint(sk: &Sketch) -> [u64; 2] {
+    struct Hash([u64; 2]);
+    impl std::fmt::Write for Hash {
+        fn write_str(&mut self, s: &str) -> std::fmt::Result {
+            for b in s.bytes() {
+                self.0[0] = (self.0[0] ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3);
+                self.0[1] = (self.0[1] ^ u64::from(b)).wrapping_mul(0x9e37_79b9_7f4a_7c15).rotate_left(29);
+            }
+            Ok(())
+        }
+    }
+    let mut h = Hash([0xcbf2_9ce4_8422_2325, 0x84222325cbf29ce4]);
+    use std::fmt::Write;
+    let _ = write!(h, "{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}", sk.params, sk.points, sk.lines,
+                   sk.axes, sk.frames, sk.lifts, sk.turns, sk.mirrors, sk.rigid, sk.constraints);
+    h.0
 }
 
 /// `place`, unsaid.

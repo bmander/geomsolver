@@ -719,7 +719,16 @@ of its own holding only the interface's members (`Walk::typed`), its numbers bou
 of its own in a group it declares stands in a frame of its own** (`framed::exports_datum`, read by
 `own_frame` beside `Datums::outside`): a mate through the port reads the part's frame. The ports,
 mates and catalogues are Solvent (`std.ports`, `std.bearings`, `std.retaining`); `tests/ports.rs`
-is the gate, and `shaft_drive/drive.sv` the experiment the plan names.
+is the gate, and `shaft_drive/drive.sv` the experiment the plan names.  **A port's frame is stated over
+its `u` and `v`, never its normal** (`std.ports`' `FrameOn`, `seats_in`, `abuts`): `views::place`
+reads a plane's normal off its axes and never solves for it, so a statement over a normal leaves
+every placing round unconverged — the drive's ports, written over normals, took 25 s to place,
+over `u` and `v` 6 s. **And the planes are placed once for each input** (`views::PlaceMemo`, held
+by `elaborate` across its passes): each pass places a fresh drawing of the same document, and
+`place` reads only the sketch and writes only its numbers, so a place from an input already
+placed (the same numbers to the bit, statements and entities, `views::fingerprint`) writes the
+numbers it moved then — the drive's forty placings were twenty inputs, 6 s to 2.8 s, the drive
+before ports 0.9 s to 0.4 s.
 
 - **A name is defined one way, `NAME := VALUE`** ([plan](../definitions-plan.md), Solvent §5,
   [0.29]).  `w := 100` is a value (`StmtKind::Param`), `c := circle(…)` a declaration, `t :=

@@ -21,16 +21,16 @@ interface Grooved { host: solid }
 // A part seated: its frame the seat's, and the room it takes cut from the seat's body.
 s: Seated seats_in h: Seat := {
   s.at.origin coincident h.at.origin
-  s.at.normal parallel(sense: same) h.at.normal
-  h.at.u angle(0deg, about: h.at.normal) s.at.u
+  s.at.u parallel(sense: same) h.at.u
+  h.at.v angle(0deg, about: h.at.u) s.at.v
   s.pocket cut h.host
 }
 
 // Two faces against each other: one point of the axis, the normals facing each other.
 a: Flat abuts b: Flat := {
   a.at.origin coincident b.at.origin
-  a.at.normal parallel(sense: opposite) b.at.normal
-  b.at.u angle(0deg, about: b.at.normal) a.at.u
+  a.at.u parallel(sense: same) b.at.u
+  b.at.v angle(180deg, about: b.at.u) a.at.v
 }
 
 // A ring's groove cut in what it is fitted to.
@@ -44,9 +44,10 @@ component FrameOn(ax: axis, from: point, d: Length, toward: axis, east: axis) {
   at := plane
   at.origin coincident ax
   from distance(d, along: ax) at.origin
-  at.normal parallel(sense: same) toward
-  at.v perpendicular at.u
+  at.u perpendicular toward
   east angle(0deg, about: toward) at.u
+  at.v perpendicular toward
+  at.u angle(90deg, about: toward) at.v
 }
 
 // A seat in `host` on the axis `ax`, `d` along it from `from`, the seated part's axis running

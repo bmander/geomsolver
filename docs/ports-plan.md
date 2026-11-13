@@ -49,12 +49,21 @@ still to decide.
     not length. The brevity comes from P6.
   - The bundles fix a convention, and a designer must know it: a station points the way its
     bearing went in, and the ring is on its trailing side.
-- **What it costs.**
-  - Each port's frame is a solved plane, so the drive has 2803 unknowns against 2008.
-  - The solve takes 36 s against 15 s, and the whole run with claims and pictures 3 min 9 s
-    against 3 min 24 s (building dominates).
-  - A port's frame could be derived rather than solved, as a ring's copies are. That is the next
-    thing to measure.
+- **What it cost, and what that turned out to be.**
+  - At first, placing the planes before the solve took 25 s against 1.2 s. The solve itself is
+    0.2 s either way.
+  - Two causes, neither in the ports' idea:
+    - The ports' frames were stated over their normals. Placement reads a normal off its plane's
+      axes and never solves it, so every placing round ran to its iteration limit. Stated over
+      `u` and `v` (a frame's `u` square to its axis and `v` turned a quarter from it), placing took
+      6 s.
+    - `elaborate`'s passes placed the same planes from the same input again and again: forty
+      placings of twenty inputs. Placed once for each input (`views::PlaceMemo`), placing takes
+      2.8 s.
+  - The drive on ports now elaborates and solves in 13 s, where the drive before ports took 15 s
+    on v0.1.19. The same memo takes the drive before ports to 9.8 s.
+  - What is left is the claims: judging `clear` on the built solids is most of the full run's
+    2 min 40 s, before ports and after.
 
 ## 1. Why
 

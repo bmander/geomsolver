@@ -40,6 +40,8 @@ pub(super) struct Elab<'p> {
     /// Each `claim { … }` block (#460), by its id and the path of the copy it was written in,
     /// to the index its relations carry (`Constraint::witness`): one claim per block per copy.
     pub(super) witnesses: BTreeMap<(StmtId, Vec<crate::ir::PathStep>), u32>,
+    /// The planes placed in this `elaborate`'s passes, by what they were placed from.
+    pub(super) placing: &'p views::PlaceMemo,
 }
 
 impl Elab<'_> {
@@ -88,6 +90,7 @@ pub(super) fn elaborate_in(
     named: &Named,
     faces_settled: bool,
     pose: &super::Stood,
+    placing: &views::PlaceMemo,
 ) -> Result<Elaborated, Again> {
     let mut cx = Elab {
         doc: p,
@@ -99,6 +102,7 @@ pub(super) fn elaborate_in(
         gauges: Gauges::default(),
         probes: Probes::default(),
         witnesses: BTreeMap::new(),
+        placing,
     };
     unit(&mut cx);
     check_text(&mut cx);
@@ -772,7 +776,7 @@ fn twins(cx: &mut Elab<'_>, flat: &Flat<'_>) {
 fn place_planes(
     cx: &mut Elab<'_>, deferred: &[Deferred], held: &BTreeSet<u32>, mut settled: Range<usize>,
 ) {
-    let mut placed = views::place(&mut cx.sk);
+    let mut placed = views::place(&mut cx.sk, cx.placing);
     // each point a motion carries to a stated roll where the motion carries it, from the planes
     // placed, and the planes drawn over such points placed again — a carried frame's over its
     // carried frame's in turn (#366)
@@ -783,7 +787,7 @@ fn place_planes(
             break;
         }
         views::relift(&mut cx.sk);
-        placed = views::place(&mut cx.sk);
+        placed = views::place(&mut cx.sk, cx.placing);
     }
     if crosses_views(&cx.sk, &cx.res, deferred) {
         for _ in 0..4 {
@@ -795,7 +799,7 @@ fn place_planes(
             cx.diags.splice(settled, again);
             settled = found;
             // and the planes placed again over the points the seeds moved
-            placed = views::place(&mut cx.sk);
+            placed = views::place(&mut cx.sk, cx.placing);
             let moved = cx.sk.params.iter().zip(&before)
                 .any(|(p, &b)| (p.value - b).abs() > 1e-12 * (1.0 + b.abs()));
             if !moved {

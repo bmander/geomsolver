@@ -249,8 +249,11 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // direction comes out the other way there (#763), every solid's faces and the directions are
     // named again, read where that solve put each entity (`at_solve::at_solve`) — once
     let mut pose = Stood::new();
+    // each pass places the planes of a fresh drawing of the same document: from the same input,
+    // once (`views::PlaceMemo`)
+    let placing = views::PlaceMemo::default();
     loop {
-        match elaborate_in(p, &refused, &crossed, &named, renamed >= FACE_PASSES, &pose) {
+        match elaborate_in(p, &refused, &crossed, &named, renamed >= FACE_PASSES, &pose, &placing) {
             Ok(mut e) => {
                 // a part mated by what it made starts solved alone and placed whole (#904 A5),
                 // before its seeds are read against its bounds or the drawing solved for its faces
