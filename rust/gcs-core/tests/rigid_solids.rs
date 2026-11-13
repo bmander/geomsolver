@@ -249,3 +249,65 @@ fn a_solid_whose_dimension_reads_the_parameter_is_built_again_where_stood() {
         was = now;
     }
 }
+
+/// A cam — a cylinder about an axis off the centre, a region with no face of its own, whose terms
+/// stand in the world — drawn as it is and placed in a frame the parameter `t` turns about the
+/// centre, and a peg beside it that stands still.
+const CAM: &str = "unit mm\nuse std\nuse std.sets\nuse std.motion (spins)\n\
+    param t: Angle over (0deg, 90deg)\n\
+    a := point\nfix((10mm, 0mm, 0mm)) a\nb := point\nfix((10mm, 0mm, 10mm)) b\n\
+    construction ax := line(a, b)\n\
+    cam := solid({q | q in std.sets.Cylinder(ax, r: 5mm)\n  a distance(in: (0mm, 10mm), along: ax) q})\n\
+    c := point\nfix((30mm, 0mm, 0mm)) c\nd := point\nfix((30mm, 0mm, 10mm)) d\n\
+    construction bx := line(c, d)\n\
+    peg := solid({q | q in std.sets.Cylinder(bx, r: 5mm)\n  c distance(in: (0mm, 10mm), along: bx) q})\n\
+    turn := frame\nturn spins(1) std.top.origin\nfix(value == t) turn\n\
+    cam_at := cam at turn\n\
+    claim over t {\n  cam_at clear(1mm) peg\n}\n";
+
+/// **A placement is its source moved, whatever the source reads** (#412): a solid placed in a
+/// frame its parameter turns is keyed by its source as it is stated and the pose it is placed at
+/// relative to its reference — the page carried by the placement, for a source with no face — so
+/// a source that stands in the world of its own (a region's terms, a sweep's motion) is built once
+/// and moved at each instant, where it was built again at every one: the shaft drive's bevel pair,
+/// stood at a claim's 37 samples, built each member 37 times, half an hour where it takes seconds.
+#[test]
+fn a_placed_solid_whose_source_stands_in_the_world_is_moved_where_stood() {
+    let e = crate::common::read(CAM);
+    let mut sk = e.sketch.clone();
+    assert!(solve::solve(&mut sk, Default::default()).success);
+    let (cam, peg) = (named(&e, "cam_at"), named(&e, "peg"));
+    let at = |sk: &Sketch, i: usize| sk.evaluated_solid(i, ApproximationPolicy::Mesh).unwrap();
+    let (was, pegged) = (at(&sk, cam), at(&sk, peg));
+    for t in [15.0, 45.0, 90.0] {
+        follow::stand(&mut sk, "t", t).expect("stood");
+        let now = at(&sk, cam);
+        assert!(now.same_shape(&was), "the cam at {t}: built again");
+        assert!(!Rc::ptr_eq(&now, &was), "the cam at {t}: did not move");
+        agrees(&format!("the cam at {t}"), &now, &fresh(&sk, cam));
+        assert!(Rc::ptr_eq(&at(&sk, peg), &pegged), "the peg at {t} stands still");
+    }
+}
+
+/// A claim over the parameter reads the cam moved at each sample, and what it measures there is
+/// the gap between the two cylinders: the centres' distance less their radii, the cam's centre
+/// ten from the axis it turns about and the peg's thirty.
+#[test]
+fn a_claim_over_a_parameter_measures_the_placed_solid_where_each_sample_stands_it() {
+    let e = crate::common::read(CAM);
+    let mut sk = e.sketch.clone();
+    assert!(solve::solve(&mut sk, Default::default()).success);
+    let verdicts = gcs_core::diagnose::judge_solids(&sk);
+    assert_eq!(verdicts.len(), 1);
+    let v = &verdicts[0];
+    assert_eq!(v.samples(), 37);
+    for pose in v.poses() {
+        let t = pose.parameter().unwrap().to_radians();
+        let gap = (10.0 * t.cos() - 30.0).hypot(10.0 * t.sin()) - 10.0;
+        let evidence = pose.evaluation().unwrap();
+        let interval = evidence.measurement().interval().unwrap();
+        assert!(interval.lower() <= gap + 1e-9 && gap - 1e-9 <= interval.upper(),
+                "at {t}: {gap} outside {interval:?}");
+    }
+    assert_eq!(v.worst(), Some(0.0), "nearest where the cam faces the peg");
+}

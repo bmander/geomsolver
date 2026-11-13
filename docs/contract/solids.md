@@ -137,9 +137,18 @@ placement carries inside the blank; CLI test readers zero the offset.
   classifier) under the placement `solid::Rigid::between` the two reference poses makes, never
   building it again; the same pose within that tolerance is the evaluation itself.  **A solid
   reading anything in the world itself has its pose in its shape** (`Poses::world`): a region's
-  points, a face family's stations, a body placed or swept under a motion, a revolution about an
-  axis in space or a line in another plane, a face's point in space or another plane, any curve
-  — conservative, so such a solid is reused only where it stands where it stood.
+  points, a face family's stations, a body swept under a motion, a revolution about an axis in
+  space or a line in another plane, a face's point in space or another plane, any curve —
+  conservative, so such a solid is reused only where it stands where it stood.  **But a placement
+  carries its source whatever the source reads**: a placed solid's source is read relative to the
+  reference where the placement puts it, and one that reads the world itself (a hobbed gear's
+  sweep, a bevel member's region) is keyed as it is stated, in the world, beside the placement's
+  pose relative to the reference — the same source at the same relative pose being that solid
+  moved.  A solid of no face is read relative to the page carried by the placements it is
+  (`reads::placing`).  So a gear placed at a frame a parameter turns is built once and moved at
+  each instant (`a_placed_solid_whose_source_stands_in_the_world_is_moved_where_stood`; the shaft
+  drive's bevel pair, rolled over a claim's 37 samples, was built 37 times, 29 minutes where it
+  now takes 43 s).
   `EvaluatedSolid`'s placement is a rotation and a translation (`to_world = R·p + origin`; `None`
   for a fresh one, bit for bit what it was): its own outputs (`boundary`, `bounds`, `edges`, `mesh`,
   `face_edges`, `round_features`) are the shape's; `local_basis` turns a view's plane in, so the
@@ -379,7 +388,12 @@ placement carries inside the blank; CLI test readers zero the offset.
   naming none, E103): a copy of the drawing stood at each sample (`Poses::Stood`,
   `follow::stand`), which places a solid drawn in a frame whose value reads `t` where that value
   puts it (#697, parameters.md's #398 L); a march refused or an instant not reached is a pose
-  failed, saying why.  `solid_claim.rs`'s
+  failed, saying why.  The claim's operands are built and evaluated once where the drawing
+  stands, before its copy is taken (`stood`), so each sample moves them (#412) and every claim
+  over the parameter shares the one build; an operand whose evaluation is in hand, moved, is
+  supplied no exact build again (`supply`) —
+  `a_claim_over_a_parameter_measures_the_placed_solid_where_each_sample_stands_it`.
+  `solid_claim.rs`'s
   `a_claim_over_a_declared_parameter_reads_the_drawing_where_it_stands` (the arm into the post
   through its depth from 42.5° to 47.5°, measured -5, and the closed form's room at every sample
   clear),

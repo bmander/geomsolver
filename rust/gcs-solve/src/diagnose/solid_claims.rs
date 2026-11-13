@@ -163,7 +163,14 @@ fn geometry(sk: &Sketch, c: &SolidClaim) -> Result<clear::GeometricEvidence, Str
 /// is measured from its exact B-rep, as the drawing reads it, and from its field only where the
 /// build is refused, for the field's mesher may fail on a body that builds exactly (#615).
 fn supply(sk: &Sketch, c: &SolidClaim) {
-    for i in [c.a as usize, c.b as usize] { crate::brep::export::supply_exact_of(sk, i) }
+    let policy = crate::solid::ApproximationPolicy::from_unit(crate::solid::REPORT_UNIT);
+    for i in [c.a as usize, c.b as usize] {
+        // an evaluation already in hand, moved where the operand stands, reads no build: a bevel
+        // pair's member placed at a claim's sample was built exactly again, 8 s a pose, for an
+        // evaluation remembered from the first
+        if sk.built_solid(i, policy).is_some_and(|r| r.is_ok()) { continue }
+        crate::brep::export::supply_exact_of(sk, i)
+    }
 }
 
 /// How the claim in hand is judged, pose by pose: what it read once, before its first pose.
@@ -199,7 +206,7 @@ fn poses_of(sk: &Sketch, c: &SolidClaim) -> Poses {
     use crate::model::SolidDef;
     let Some(sw) = &c.over else { return Poses::Current };
     let Some(m) = sw.motion() else {
-        return if sw.is_declared() { stood(sk, sw.name()) } else { Poses::Solved };
+        return if sw.is_declared() { stood(sk, c, sw.name()) } else { Poses::Solved };
     };
     let placed: Vec<(usize, f64)> = sk.solids.iter().enumerate().filter_map(|(i, s)| match &s.def {
         SolidDef::Placed { motion, at, .. } if *motion == m => Some((i, at.value)),
@@ -233,10 +240,20 @@ fn poses_of(sk: &Sketch, c: &SolidClaim) -> Poses {
     read().unwrap_or_else(Poses::Failing)
 }
 
-/// What a claim over the declared parameter `name` reads once: the drawing's march along it.
-fn stood(sk: &Sketch, name: &str) -> Poses {
+/// What a claim over the declared parameter `name` reads once: the drawing's march along it, and
+/// claim `c`'s operands built and evaluated where the drawing stands — kept in what the copy it is
+/// stood on shares with it, so each pose moves them and every claim over the parameter reads the
+/// one build (the planetary's two claims each built its gears' exact B-reps again, 10 s a claim).
+fn stood(sk: &Sketch, c: &SolidClaim, name: &str) -> Poses {
     match crate::follow::followed(sk, name).as_ref() {
-        Ok(_) => Poses::Stood { scratch: sk.clone() },
+        Ok(_) => {
+            supply(sk, c);
+            let policy = crate::solid::ApproximationPolicy::from_unit(crate::solid::REPORT_UNIT);
+            for i in [c.a as usize, c.b as usize] {
+                let _ = sk.evaluated_solid(i, policy);
+            }
+            Poses::Stood { scratch: sk.clone() }
+        }
         Err(e) => Poses::Failing(e.clone()),
     }
 }
