@@ -1023,3 +1023,14 @@ What Q1b leaves to other boxes: the two folds (`ring-pushed-in-past-its-fold`,
 whose meetings do not close or are not proved (`ball-end-mill-screwed-across-ring-sector`,
 `drill-swung-partway-into-ring-sector`, the two bull-noses) are T4's. The frustum's subtraction is
 #699's and #735's.
+
+**Status (S1–S6 built).** Every step is built and gated (`swept_contacts`), and the fourteen cases
+the table names all build through the front door, each held to a volume made apart from the build
+and to a STEP file that reads back as the solid: S4's three at 1e-5 and at the kernel's tolerance,
+S5's seven (the turned five at 1e-5 and the kernel's tolerance, the two screwed at the kernel's), and
+S6's four at the kernel's tolerance (the slow tier holds those at it). Run through brep-bench's own
+case programs on the kernel as it stands, no swept case that built before builds differently, and
+the seven left above are refused as they were (the folds `Folded`; the ball-end mill, the drill and
+the two bull-noses with their meetings not closed; the frustum's subtraction `Wrong`). The road
+reaches past the table too: the screwed bull-nose of `swept_patches` and the screwed ball with a
+flat build through it to their volumes worked apart.

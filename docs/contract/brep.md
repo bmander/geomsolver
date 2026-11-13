@@ -993,7 +993,15 @@ inside the face can mend (a round rim screwed a short lead, its ramp folding aga
 side sweeps over about a tenth of a micrometre) — asks the chords those facets stand on halved, and
 the faces are meshed again with the edges so sampled, up to `TURNED_ROUNDS` times
 (`closed_characteristics::the_drum_screwed_bores_its_helical_groove`, its STL agreeing with the
-field).
+field). **No two faces draw one diagonal**: each face is triangulated alone, its boundary's samples shared
+by id, so two faces may each join the same two samples by an inner side (two samples of an edge
+they share, not neighbours along it, cutting off the sample between) — a side of the written mesh
+four triangles meet at, which a strict reader of an STL refuses though the B-rep is sound.  Once
+every face is meshed, each face past the one that keeps such a side has its two triangles split at
+the side's middle (`mesh::split_shared_diagonals`); a mesh with no such side is untouched, so a
+placed copy's mesh is still a fresh evaluation's (`bindings`).  A seat tube's bore and its top
+tube's wall beside the seat stays' ends (#904 / `shaft_drive` finding 22,
+`frame_cluster::a_seat_tube_its_top_tube_and_both_stays_write_one_closed_mesh`).
 **Phase 2 (the pattern ours):** `brep::pattern` turns a one-sector body into the whole (the
 kernel's union is never made): sides matched by a pitch's turn, revolution faces keep the sector's
 surface with pcurves shifted along `u`, pieces of one surface across a side become one face, a ring
@@ -1080,9 +1088,12 @@ section, each polished by Newton and the nearest in space kept. Seeded from sixt
 the section, the leaning torus's contact under `torus-screwed-through-rod`'s screw — one closed curve
 carried 456° — was read 0.13 to 2.2 off at points of its own sheet
 (`swept_contacts::a_contact_carried_over_the_roll_is_inverted_exactly_at_its_own_points`); `inverse_near`
-runs Newton from its hint first, and while Newton holds `v` at the patch's edge it steps `u` alone
-(the coupled step, clamped, settled a point of a sheet's end rim 3.8e-8 along it where the sheet's two
-rates nearly agree, a loop broken in its parameters at the kernel's tolerance, #880 Q1b S5); `step::blend_net`
+runs Newton from its hint first, and a foot it settles with `v` held at the patch's edge is
+polished in `u` alone there (the coupled step, clamped, settled a point of a sheet's end rim 3.8e-8
+along it where the sheet's two rates nearly agree, a loop broken in its parameters at the kernel's
+tolerance; stepping `u` alone at every step held at the edge feet the coupled step leaves for the
+inside, the box screwed inside a rod 0.015 off, `swept_closed::a_box_screwed_inside_a_rod_is_a_sealed_tunnel_of_its_volume`,
+#880 Q1b S5); `step::blend_net`
 fits quintic along a screw a cubic cannot follow at the fit's cap.  A twisted duct, a thread, an auger's
 flight and a coil lie on blends; a section that changes as it runs stays on its sheets
 (`tests/helix.rs`, `a_rigid_screw_lies_on_its_swept_rim`).

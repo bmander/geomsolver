@@ -8,6 +8,36 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Free-form faces on the contact's road** (`swept::contacts`, #880 Q1b S6): a piece of contact
+  ending on its face's boundary now ends at the root of `n·v` along that edge, so the pieces either
+  side of an edge the faces are tangent across meet (the coil spring's tube and its ball ends,
+  4.3e-5 apart before); and `piece_curve` takes the tool's `Located` (**breaking**) and unwraps a
+  piece across a face's own seam — a parameter the surface gives no period whose box's two sides are
+  one curve, an extrusion of a closed spline. brep-bench's `swept/coil-spring-pushed-aslant-through-plate`
+  builds, and `swept/spheroid-wheel-screwed-through-rod`, each to a volume made apart from the build,
+  and the screwed ball with a flat the closed class refuses builds through the road to its volume
+  worked apart.
+- **Membership's mesh is held to its sag as measured over every triangle** (`swept::member::Solid`):
+  the mesher measures a triangle's sag at its middle and its inner sides' middles, and a point on a
+  drafted cone stood 1.1e-3 off a mesh measured 9.5e-4, which `Swept::beyond` then proved outside the
+  sweep; the sag is now the greater of the mesher's and each triangle's sides' and middle's distance
+  from its face. brep-bench's
+  `swept/drafted-slot-screwed-through-rod` builds, to its volume made apart from the build.
+- **A contact piece is cut where its burial changes** (`swept::contacts`): under a screw or a slide a
+  face's piece is cut, as a corner, where the path of its points passes from dipping inside the tool
+  to rising off it, which is where the sheet's meeting with the posed tool leaves its rim; two
+  stretches with a buried one left out between them are no longer given a rail as neighbours; a
+  smoothly closed B-spline's nearest point found at its seam is refined from the seam's other end
+  too and the nearer kept (`nurbs::BSpline`); and a meeting's walked parameters at a vertex the
+  face's boundary holds take that node's (`boolean`), where at a sheet's nearly singular corner they
+  stood 0.017 off. brep-bench's `swept/spline-bar-screwed-through-rod` builds, to its volume made
+  apart from the build: all of Q1b's fourteen cases now do.
+- **A foot on a blend's edge is polished in `u` after the coupled step** (`geom::Blend`): where 0.10.0
+  stepped `u` alone at every step `v` was held at the patch's edge, Gauss–Newton now takes the
+  coupled step throughout and, its foot settled with `v` at the edge, polishes `u` alone there:
+  stepped alone throughout, feet the coupled step leaves for the inside were held, and
+  brep-bench's box screwed inside a rod came out 0.015 off.
+
 ## [0.11.0] - 2026-11-12
 
 - **A facet the mesh would count as turned is refined past the turning budget** (`mesh`): a

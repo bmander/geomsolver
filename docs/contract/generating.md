@@ -1018,8 +1018,7 @@ past the tolerance (3.7e-8 against 2.45e-8 on the leaning torus), so the edge re
 **The front door** (`closed::closed`, `cut_from`): under a constant twist, what the closed class
 refuses as `Curved` goes the contact's road (`closed::contacts_road`: the candidates, trimmed at a
 hair of four tolerances or a millionth of the tool, judged, cut from the blank), and where that road
-refuses too the closed class's refusal stands, so a ball with a flat screwed, whose road meets no
-closed arrangement yet, is still refused as `Curved` at its circle. S4's three cases are built
+refuses too the closed class's refusal stands. S4's three cases are built
 through it at 1e-5, each written as a STEP file that reads back as the solid
 (`swept_contacts::…_through_the_front_door`): the torus screwed through the rod, to 1460.6300031715;
 the V wheel, its rim's fan a sheet, to 1554.3809694 (the rod cut where the helical invariants
@@ -1093,6 +1092,43 @@ motion there (`trim`). A cycle of a face's pieces no outer cycle holds and small
 of the face's parameters — three faces of other operands all but tangent at its corner — bounds
 nothing and is left out (`boolean`'s `pieces_of_face`). With these the contact's road also builds
 the screwed bull-nose (`swept_patches`) to the volume worked apart.
+
+**Free-form faces (#880 Q1b S6).** A face's contact is read numerically on any surface, so S6 is
+what the faces' shapes leave to the road's later steps. **A piece ending on the face's boundary ends
+at `g`'s root along that edge** (`face_contact`): placed by halving across the boundary in the face's
+own parameters, the coil spring's tube's contact and its ball cap's met the rim between them 4.3e-5
+apart, and the two sheets' rails along that path did not close; read along the edge with the face's
+normal, the two roots are one where the faces are tangent, each its own across a crease. **A face closed
+by its own seam is unwrapped across it** (`piece_curve`, given the tool's `Located`): a parameter the
+surface gives no period, whose box's two sides are one curve in space — an extrusion of a closed
+spline — is read as one a period the box's width, so a piece joined across that seam is fitted
+through points beside one another (fitted across the bar, the spline bar's inner contact took a cubic
+61 long for its 17). **Membership's mesh is held to the sag measured over every triangle** (`member::Solid::new`): the
+mesher reads a triangle's sag at its middle and its inner sides' alone, and on the drafted slot a point
+of the tool's own cone stood 1.1e-3 off a mesh measured 9.5e-4 — past `Swept::beyond`'s margin, so a
+piece of the end pose's face it bounds was proved outside and dropped; each triangle's sides' and
+middle's distance from its face is measured too, the greater taken. The spheroid wheel screwed through a rod
+(1559.464104558205: unrolled, the rod less `20 ∫ ρ W(ρ) dρ`, `W` the section's width across the
+screw), the drafted slot screwed through it (1401.313962654651, the same way, its half height drafted)
+and the coil spring slid aslant through a plate (3541.9379700: the plate less its thickness times the
+spring's shadow along the slide, by scanlines). **A face's contact is cut where its burial changes**
+(`cut_at_burial`, under a screw or a slide): where the path of its points passes from dipping inside
+the tool to rising off it — read at 64 points along the piece and bisected to a point of it — the
+sheet passes from sweeping only the inside to bounding, and its meeting with the posed tool leaves its
+rim there; cut there as a corner (`Singular`), the meeting's branch ends on the corner. Cut at a length
+instead, the spline bar's far contact left a buried stretch beside a bounding one and a sliver where
+they and the pose met that no membership read settled. Two stretches with a buried one left out
+between them are not neighbours and are given no rail: given the one's end as both's, the leaning
+torus's sheets were given a path 0.48 off one of them. A closed spline's nearest point found at its
+seam is refined from the seam's other end too and the nearer kept (`nurbs::BSpline`): held at the
+seam, an extrusion's point beside it read a foot 0.07 off, and a spurious burial. **A meeting's end at a
+vertex the face's boundary holds takes that node's parameters** (`boolean`'s `FaceCut::internal`),
+where both are that point: at a sheet's corner where its two rates nearly agree the walked inverse
+stood 0.017 along the rim from the corner's own, and the meeting hung there, parting nothing. The
+spline bar screwed through the rod (1335.319593047173, unrolled, the most of `acos(x/ρ) − z/a` over
+the section's lower left boundary) joins the other three, each cut at the kernel's tolerance within
+its boundary's area times it (`swept_contacts::s6s_free_form_faces_are_cut_through_the_front_door`,
+slow tier, S6's gate): all of Q1b's fourteen cases build (docs/swept-solid-design.md §13).
 
 **A point's side off the nearest feature's pseudo-normal** (`member::Solid::signed_near`, #880
 Q1b): a point whose nearest point of the tool's mesh lies on a vertex or an edge is read by that
@@ -1576,10 +1612,10 @@ two failures the part turn met kept reduced (`…::a_flat_ends_side_at_an_end_po
 the loop dropped as no edge; `…::a_plane_cutting_a_rims_ring_across_its_meridians_start_closes`, the
 trace stalled at the meridian's start). **Refused by name, never built wrong**: the half drum turned
 part of a turn (`Unsettled`: where its arcs end at its cut, five candidates meet and a cell is
-thinner than the mesh's sag; `…_is_cut_right_or_refused_by_name`, slow tier); a sharp circle
-leaning to a screw's axis (`Curved` at the circle, `swept_closed::a_ball_with_a_flat_screwed_is_refused_by_name`:
-its sheet meets the ball at an end pose and the ball's pipe in curves not yet given in closed form,
-design step 5).
+thinner than the mesh's sag; `…_is_cut_right_or_refused_by_name`, slow tier). A sharp circle
+leaning to a screw's axis the closed class refuses (`Curved` at the circle: its sheet meets the ball
+at an end pose and the ball's pipe in curves not given in closed form), and the contact's road builds
+it (`swept_closed::a_ball_with_a_flat_screwed_is_swept_through_the_contacts_road`, #880 Q1b).
 
 **K2's chart, contacts read at each instant (#721 K2, `brep::swept::instant`):** under a motion no
 constant twist takes, a face of revolution's contact on each ring is still `A cos θ + B sin θ + C = 0`

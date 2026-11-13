@@ -73,6 +73,11 @@ pub(super) fn rings(
         let mut pairs: Vec<(EntRef, EntRef, u32)> = Vec::new();
         for (key, copy) in map.keys() {
             let Some((k, tail)) = copy_of(ring, key) else { continue };
+            // a region solid's probe is a hidden point its set is read at, held in space wherever
+            // the copy stands: the solid's own, turned with nothing (the body it reads is)
+            if crate::flatten::is_probe(tail) {
+                continue;
+            }
             if k == 0 || k >= ring.n || !seen.insert(copy) {
                 continue;
             }

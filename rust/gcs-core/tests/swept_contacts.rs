@@ -481,6 +481,17 @@ fn drum_case() -> Case {
 /// STEP file that reads back as the solid (the S4 gate's closed file).
 fn cut_through_the_front_door(case: &Case,tol: f64) { cut_within(case,tol,|_| 10.*tol) }
 
+impl Case {
+    /// The kernel's own tolerance for the case: at the size of its blank or its tool, the greater.
+    fn tolerance(&self) -> f64 { gcs_core::brep::geom::tolerance(self.blank.as_ref().map_or(0.,|b| b.size()).max(self.tool.size())) }
+}
+
+/// The case cut at the kernel's own tolerance, held to its volume within its boundary's area times it.
+fn cut_within_its_area(case: &Case) {
+    let tol = case.tolerance();
+    cut_within(case,tol,|cut| tol*crate::brep::total_area(cut));
+}
+
 /// `cut_through_the_front_door`, its volume held within what `within` reads off the cut (or what the
 /// volume is known to).
 fn cut_within(case: &Case,tol: f64,within: impl Fn(&Brep) -> f64) {
@@ -523,8 +534,7 @@ fn a_drum_leaning_to_a_screw_is_cut_through_the_front_door() { cut_through_the_f
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about a minute: three screwed sweeps at the kernel's tolerance")]
 fn the_three_cases_are_cut_at_the_kernels_own_tolerance() {
     for case in [torus_case(),v_wheel_case(),drum_case()] {
-        let tol = gcs_core::brep::geom::tolerance(case.blank.as_ref().map_or(0.,|b| b.size()).max(case.tool.size()));
-        cut_through_the_front_door(&case,tol);
+        cut_through_the_front_door(&case,case.tolerance());
     }
 }
 
@@ -675,8 +685,7 @@ fn a_pin_swung_through_a_ring_sector_is_cut_through_the_front_door() { cut_throu
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about half a minute: five turned sweeps at the kernel's tolerance")]
 fn the_turned_cases_are_cut_at_the_kernels_own_tolerance() {
     for case in [rod_spun_case(),ball_swung_case(),coin_turned_case(),pin_swung_case(),cone_spun_case()] {
-        let tol = gcs_core::brep::geom::tolerance(case.blank.as_ref().map_or(0.,|b| b.size()).max(case.tool.size()));
-        cut_through_the_front_door(&case,tol);
+        cut_through_the_front_door(&case,case.tolerance());
     }
 }
 
@@ -702,7 +711,96 @@ fn a_cone_spun_about_a_line_through_it_is_swept_through_the_front_door() { cut_t
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about two minutes: two sweeps of four turns at the kernel's tolerance")]
 fn a_drum_end_and_a_cone_point_screwed_through_a_rod_are_cut_through_the_front_door() {
     for case in [drum_end_case(),cone_point_case()] {
-        let tol = gcs_core::brep::geom::tolerance(case.blank.as_ref().map_or(0.,|b| b.size()).max(case.tool.size()));
-        cut_within(&case,tol,|cut| tol*cut.faces.iter().map(|f| gcs_core::brep::props::area(cut,f)).sum::<f64>());
+        cut_within_its_area(&case);
+    }
+}
+
+/// `spheroid-wheel-screwed-through-rod`: the oblate spheroid about (10.5, 0, 0), semi-axes 6, 6 and 1.5,
+/// its short axis `(0, cos h, −sin h)`, `h = atan(2π·4.75/30)`, screwed about z rising 30 a turn from
+/// −90° to 330° through the rod. Apart from the build as the drum's end (`drum_end_case`): the roll
+/// passes the whole section at every height of the rod (its ends 7.5 below and 27.5 above any), the
+/// windings 30 apart, so the sweep covers at each height the section's width across the screw,
+/// twice the most of `ψ − z_lo(ψ)/a` (the spheroid symmetric under a half turn about its centre's
+/// radius, `z_lo` its lowest point on the upright line at `ψ`): the rod less `20 ∫ ρ W(ρ) dρ`,
+/// 1559.464104558205 from 16 points to 64.
+fn spheroid_wheel_case() -> Case {
+    let h = (std::f64::consts::TAU*4.75/30.).atan();
+    let tool = gcs_core::brep::build::ellipsoid([10.5,0.,0.],[0.,h.cos(),-h.sin()],[1.,0.,0.],[6.,6.,1.5]).unwrap();
+    Case {what:"the spheroid wheel",blank:Some(screwed_rod()),tool,
+        path:gcs_core::brep::trajectory::Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:30.}),
+        roll:[(-90f64).to_radians(),330f64.to_radians()],bar:0.01,volume:1559.464104558205,known:1e-9}
+}
+
+/// `coil-spring-pushed-aslant-through-plate`: the spring — the balls of radius 0.4 about three turns
+/// of the helix of radius 2 about z rising 1.5 a turn from (2, 0, −12), `build::canal` — slid along
+/// (3, 1, 18) through the plate `|x|, |y| ≤ 15`, `0 ≤ z ≤ 4`, from wholly below it to wholly above.
+/// Apart from the build: every line along the slide through the spring crosses the plate within the
+/// slide, so the hole is the plate's thickness times the area of the spring's shadow along the slide on
+/// a level plane — the union of its balls' shadows, ellipses, mapped by `(M Mᵀ)^(-1/2)` (`M` the
+/// projection) to discs of radius 0.4 about the mapped helix, measured by scanlines over discs a
+/// quarter and a tenth of a thousandth apart at 64,000 to 256,000 levels: 3541.9379700, to 5e-7.
+fn coil_spring_case() -> Case {
+    let start = [2.,0.,-12.];
+    let spring = gcs_core::brep::build::canal(start,0.4,[0.;3],[0.,0.,1.],3.*std::f64::consts::TAU,4.5,"spring").unwrap();
+    let plate = prism(&gcs_core::brep::build::square([0.;3],[0.,0.,1.],15.),0.,4.).unwrap();
+    let push = [3.,1.,18.];
+    Case {what:"the coil spring",blank:Some(plate),tool:spring,
+        path:gcs_core::brep::trajectory::Trajectory::Twist(Screw {origin:start,axis:gcs_core::space::unit(push),ratio:0.,advance:gcs_core::space::norm(push)}),
+        roll:[0.,std::f64::consts::TAU],bar:0.002,volume:3541.9379700,known:1e-6}
+}
+
+/// `drafted-slot-screwed-through-rod`: the slot of half discs of radius 1 about (12, ±1.5, 0) carried
+/// along −x to x = 4 drafted 3° inward (`build::drafted`: two planes and two half cones), screwed
+/// through the rod as the drum's end. Apart from the build as the drum's end: at `x` the half discs'
+/// radius is `r(x) = 1 − (12 − x) tan 3°`, and the slot's half height at `(ρ cos ψ, ρ sin ψ)` is `r` where
+/// `|y| ≤ 1.5` and `√(r² − (|y| − 1.5)²)` beyond; the rod less `20 ∫ ρ W(ρ) dρ`, panels split where the
+/// most of `ψ + H/a` leaves the flat end `x = 4` and the flat sides: 1401.313962654651 at 64 points
+/// (1e-12 from 16).
+fn drafted_slot_case() -> Case {
+    use std::f64::consts::{FRAC_PI_2,PI};
+    let normal = [-1.,0.,0.];
+    let arc = |y: f64,from: f64| gcs_core::brep::build::ProfileEdge::Arc {frame:gcs_core::brep::geom::Frame::new([12.,y,0.],normal,[0.,1.,0.]),r:1.,span:Some([from,from+PI])};
+    let edges = vec![arc(1.5,-FRAC_PI_2),gcs_core::brep::build::ProfileEdge::Line {a:[12.,1.5,-1.],b:[12.,-1.5,-1.]},
+        arc(-1.5,FRAC_PI_2),gcs_core::brep::build::ProfileEdge::Line {a:[12.,-1.5,1.],b:[12.,1.5,1.]}];
+    let slot = gcs_core::brep::build::Profile {origin:[12.,0.,0.],normal,loops:vec![edges],names:Vec::new()};
+    let (path,roll) = rising_six();
+    Case {what:"the drafted slot",blank:Some(screwed_rod()),tool:gcs_core::brep::build::drafted(&slot,0.,8.,3f64.to_radians()).unwrap(),
+        path,roll,bar:0.002,volume:1401.313962654651,known:1e-9}
+}
+
+/// `spline-bar-screwed-through-rod`: the bar whose section in `y = 0` is the closed uniform cubic
+/// B-spline on (3.5, 0), (4.5, −1.5), (8, −1.5), (12, −1), (12, 1), (8, 1.5), (4.5, 1.5) in `(x, z)`,
+/// carried from `y = −8` to 8, screwed through the rod as the drum's end. Apart from the build as the
+/// drum's end: `ψ = acos(x/ρ)` falls with `x` and `−h/a` with `h`, so the most of `ψ − h/a` over the
+/// section at radius `ρ` stands on its lower left boundary, the most of `acos(x(s)/ρ) − z(s)/a` over
+/// the spline's points with `x(s) ≤ ρ`: the rod less `20 ∫ ρ W(ρ) dρ` from the least `x`, 23/6,
+/// 1335.319593047173 from 16 points to 64.
+fn spline_bar_case() -> Case {
+    const CONTROL: [[f64;2];7] = [[3.5,0.],[4.5,-1.5],[8.,-1.5],[12.,-1.],[12.,1.],[8.,1.5],[4.5,1.5]];
+    let poles: Vec<_> = (0..CONTROL.len()+3).map(|k| { let [x,z] = CONTROL[k%CONTROL.len()]; [x,0.,z] }).collect();
+    let knots = (0..poles.len()+4).map(|k| k as f64).collect();
+    let curve = gcs_core::brep::nurbs::BSpline::new(3,knots,poles).unwrap();
+    let section = gcs_core::brep::build::Profile {origin:[0.;3],normal:[0.,1.,0.],
+        loops:vec![vec![gcs_core::brep::build::ProfileEdge::Spline(std::sync::Arc::new(curve))]],names:Vec::new()};
+    let (path,roll) = rising_six();
+    Case {what:"the spline bar",blank:Some(screwed_rod()),tool:prism(&section,-8.,8.).unwrap(),path,roll,bar:0.01,
+        volume:1335.319593047173,known:1e-9}
+}
+
+/// **Free-form faces: a spheroid wheel, a drafted slot and a spline bar screwed through a rod and a coil
+/// spring pushed aslant through a plate** (#880 Q1b S6's gate, brep-bench's
+/// `swept/spheroid-wheel-screwed-through-rod`, `swept/drafted-slot-screwed-through-rod`,
+/// `swept/spline-bar-screwed-through-rod` and `swept/coil-spring-pushed-aslant-through-plate`), at the
+/// kernel's tolerance, each within its
+/// boundary's area times the tolerance of its volume made apart. The spheroid's face is a ball's affine
+/// image, its contact read numerically as any face's; the spring's tube is a blend (its disc screwed
+/// along the helix), its contact under the slide two curves along it passing smoothly into its ball
+/// ends, each piece ending on the face's boundary at `g`'s root along that edge (`face_contact`), so
+/// the tube's and the cap's sheets share their rail exactly.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about four minutes: S6's four cases at the kernel's tolerance")]
+fn s6s_free_form_faces_are_cut_through_the_front_door() {
+    for case in [spheroid_wheel_case(),coil_spring_case(),drafted_slot_case(),spline_bar_case()] {
+        cut_within_its_area(&case);
     }
 }

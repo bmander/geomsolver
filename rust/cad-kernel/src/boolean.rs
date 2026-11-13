@@ -2335,25 +2335,46 @@ impl<'s,'a> FaceCut<'s,'a> {
         let mid = (w.t[0]+w.t[1])/2.;
         let start = self.located.uv(self.fi,c.point(mid));
         let (tol,poleless) = (self.tol,poleless(&f.surface));
-        let walk = |to: f64| {
+        // (an end at a vertex the face's boundary already holds takes the parameters it has there, where
+        // those and the walk's are one point: at a sheet's corner where its two rates nearly agree the
+        // walk's inverse stood 0.017 along the rim from the corner's own, a node apart, and the meeting
+        // leaving the corner — a sheet's meeting with the posed tool, from where its contact's burial
+        // changes — hung there and parted nothing, #880 Q1b S6; only where it stands apart from every
+        // node of its vertex, which `pieces_of_face` would take it for: a node's width off one, it is
+        // that node already)
+        let held = |v: u32,uv: Uv| -> Uv {
+            let nodes: Vec<Uv> = self.halves.iter().flat_map(|h| {
+                let e = &out[h.edge as usize];
+                let (v0,v1) = if h.along { (e.v[0],e.v[1]) } else { (e.v[1],e.v[0]) };
+                [(v0,h.from),(v1,h.to)]
+            }).filter(|&(x,_)| x == v).map(|(_,q)| q).collect();
+            if nodes.is_empty() || nodes.iter().any(|q| (q[0]-uv[0]).abs() < NODE && (q[1]-uv[1]).abs() < NODE) { return uv }
+            let p = f.surface.point(uv);
+            nodes.into_iter().filter(|&q| distance(f.surface.point(q),p) <= 1e3*tol)
+                .min_by(|a,b| (a[0]-uv[0]).hypot(a[1]-uv[1]).total_cmp(&(b[0]-uv[0]).hypot(b[1]-uv[1]))).unwrap_or(uv)
+        };
+        let walk = |to: f64,v: u32| {
             let (mut uv,mut before) = (start,start);
             for j in 1..=n {
                 let t = mid+(to-mid)*j as f64/n as f64;
                 before = uv;
                 uv = unwrap(f.surface.inverse_near(c.point(t),uv),uv,f.surface.periods());
             }
-            if poleless { return uv }
+            if poleless { return held(v,uv) }
             let p = c.point(to);
+            // (at a pole of the surface its collapsed parameter is set as the edge arrives, and held
+            // there, not taken from a node)
             if let Some(along) = pole_at(&f.surface,uv,(1e-9*(1.+norm(p))).max(tol)) {
                 // the way from the pole into the edge: back along its curve, toward the middle
                 let into = scale(c.tangent(to),if to > mid { -1. } else { 1. });
                 if let Some(x) = leaving_pole(&f.surface,p,into,before,along) { uv[along] = x; }
+                return uv
             }
-            uv
+            held(v,uv)
         };
         let (pcurve,(ua,ub)) = match iso_pcurve(&f.surface,c,w.t) {
             Some((a,b)) => (Pcurve::Line {a,b},(a,b)),
-            None => { let (a,b) = (walk(w.t[0]),walk(w.t[1])); (Pcurve::Inverse {a,b},(a,b)) }
+            None => { let (a,b) = (walk(w.t[0],w.v[0]),walk(w.t[1],w.v[1])); (Pcurve::Inverse {a,b},(a,b)) }
         };
         self.halves.push(Half {edge:r,along:true,pcurve:pcurve.clone(),from:ua,to:ub,pole:false});
         self.halves.push(Half {edge:r,along:false,pcurve,from:ub,to:ua,pole:false});
