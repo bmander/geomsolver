@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.13.0] - 2026-11-13
+
 - **A drawing's sweep reaches the contact's road** (`swept::dispatch`, #880 Q1b): under a slide, a
   turn or a screw a tool the closed class reads no candidate for is admitted to it where the class
   asked first refused the sweep by a row the road answers (T1, T2, S1, E1), and its build takes the
