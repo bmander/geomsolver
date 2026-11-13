@@ -910,5 +910,51 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
             m.of.push(fi as u32);
         }
     }
+    split_shared_diagonals(&mut m,&mut alias);
     Ok((m,alias))
+}
+
+/// **No two faces draw one diagonal.**  Each face is triangulated alone, its boundary's samples
+/// shared by id with the faces across its edges, so two faces may each join the same two samples
+/// by an inner side — two samples of the edge they share, not neighbours along it, cutting off the
+/// sample between (a seat tube's bore and its top tube's wall beside the seat stays' ends, #904):
+/// a side of the written mesh four triangles meet at, which a strict reader of an STL refuses
+/// though the B-rep is sound.  The faces past the one that keeps it — every face drawing it inside
+/// where a face has it on its boundary, all but the first otherwise — have their two triangles
+/// split at its middle, a point of each face's own on the side it already spanned (so nothing
+/// sags further).  A mesh with no such side is left as it was.
+fn split_shared_diagonals(m: &mut Mesh,alias: &mut Vec<Option<u32>>) {
+    let mut sides: std::collections::BTreeMap<(u32,u32),Vec<usize>> = std::collections::BTreeMap::new();
+    for (ti,t) in m.tris.iter().enumerate() {
+        for k in 0..3 { let (a,z) = (t[k],t[(k+1)%3]); sides.entry((a.min(z),a.max(z))).or_default().push(ti); }
+    }
+    for ((a,z),tris) in sides {
+        if tris.len() <= 2 { continue }
+        // the faces using the side, each with its triangles on it
+        let mut faces: Vec<(u32,Vec<usize>)> = Vec::new();
+        for &ti in &tris {
+            match faces.iter_mut().find(|(f,_)| *f == m.of[ti]) {
+                Some((_,ts)) => ts.push(ti),
+                None => faces.push((m.of[ti],vec![ti])),
+            }
+        }
+        let bounded = faces.iter().any(|(_,ts)| ts.len() == 1);
+        let inside: Vec<&(u32,Vec<usize>)> = faces.iter().filter(|(_,ts)| ts.len() == 2).collect();
+        for (_,ts) in inside.into_iter().skip(usize::from(!bounded)) {
+            let mid = scale(add(m.pts[a as usize],m.pts[z as usize]),0.5);
+            m.pts.push(mid);
+            alias.push(None);
+            let v = (m.pts.len()-1) as u32;
+            for &ti in ts {
+                let t = m.tris[ti];
+                // the triangle's corners from the side's first end: (p, q, r) with (p, q) the side
+                let Some(k) = (0..3).find(|&k| { let (p,q) = (t[k],t[(k+1)%3]); (p.min(q),p.max(q)) == (a,z) }) else { continue };
+                let (p,q,r) = (t[k],t[(k+1)%3],t[(k+2)%3]);
+                m.tris[ti] = [p,v,r];
+                m.tris.push([v,q,r]);
+                let f = m.of[ti];
+                m.of.push(f);
+            }
+        }
+    }
 }
