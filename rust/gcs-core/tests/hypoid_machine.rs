@@ -178,19 +178,22 @@ fn the_gears_sheet_is_traced_alike_in_a_frame_turned_to_the_pair() {
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 35 s: the gear built twice")]
 fn the_gear_builds_alike_in_a_frame_turned_to_the_pair() {
-    use gcs_core::brep::{export,sweep::Say};
-    let built = |turned: bool| {
-        let e = fixtures::solved_in_examples(&scaled_pair(turned));
-        let say = Say {stage:&|_| {},mark:&|_| {}};
-        export::exact(&e.sketch,fixtures::solid(&e,"pair.gear.body"),None,None,&say)
-            .map(|x| (x.solid.faces.len(),gcs_core::brep::props::volume(&x.solid))).map_err(|r| r.message)
-    };
+    let built = |turned: bool| gear_built(&fixtures::solved_in_examples(&scaled_pair(turned)));
     let (own,turned) = (built(false),built(true));
     let (Ok((faces,volume)),Ok((turned_faces,turned_volume))) = (&own,&turned) else {
         panic!("in its own frame {own:?}, turned {turned:?}")
     };
     assert_eq!(faces,turned_faces);
     assert!((volume-turned_volume).abs() <= 1e-9*volume,"{volume} mm³ in its own frame, {turned_volume} mm³ turned");
+}
+
+/// The pair's gear, `pair.gear.body`, built by the kernel: its faces and its volume in mm³, or why
+/// it was refused.
+fn gear_built(e: &Elaborated) -> Result<(usize,f64),String> {
+    use gcs_core::brep::{export,sweep::Say};
+    let say = Say {stage:&|_| {},mark:&|_| {}};
+    export::exact(&e.sketch,fixtures::solid(e,"pair.gear.body"),None,None,&say)
+        .map(|x| (x.solid.faces.len(),gcs_core::brep::props::volume(&x.solid))).map_err(|r| r.message)
 }
 
 /// **The gear's sheet is traced at every phase of its cutter's stations** (#904 A4): the cut of
@@ -237,13 +240,7 @@ fn wide_faced_bevel(base: u32) -> String {
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 25 s: the pair solved and its gear built twice")]
 fn a_gear_whose_blanks_edge_crosses_the_stations_obliquely_is_built() {
-    use gcs_core::brep::{export,sweep::Say};
-    let built = |base: u32| {
-        let e = fixtures::gear::read(&wide_faced_bevel(base));
-        let say = Say {stage:&|_| {},mark:&|_| {}};
-        export::exact(&e.sketch,fixtures::solid(&e,"pair.gear.body"),None,None,&say)
-            .map(|x| (x.solid.faces.len(),gcs_core::brep::props::volume(&x.solid))).map_err(|r| r.message)
-    };
+    let built = |base: u32| gear_built(&fixtures::gear::read(&wide_faced_bevel(base)));
     let (two,three) = (built(2),built(3));
     let (Ok((faces,volume)),Ok((deeper_faces,deeper))) = (&two,&three) else {
         panic!("the floor 2 mn down {two:?}, 3 mn down {three:?}")
