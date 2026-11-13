@@ -210,6 +210,81 @@ pub fn charted(times: &[Vec<f64>],within: &[Vec<bool>],reached: &[bool]) -> Char
     Charted {rows:[first,last],columns:[first_column,last_column]}
 }
 
+/// How many times a sheet's rows are sheared, each from the leaps the rows before it met
+/// (`Tracer::columns`).
+const SHEARS: usize = 3;
+/// How many slopes each side of none a shear is chosen among (`sheared`).
+const SLOPES: usize = 200;
+
+/// **How a sheet's rows lean across its stations** (#904): the row coordinate `x` at station
+/// angle `a` is the unfolded walk length `x + slope·(a − at)`. `NONE` puts every station's rows at
+/// the same walk lengths.
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub struct Shear { pub at: f64,pub slope: f64 }
+
+impl Shear {
+    pub const NONE: Shear = Shear {at:0.,slope:0.};
+    /// The walk length a station's rows at `angle` are moved by.
+    pub fn of(&self,angle: f64) -> f64 { self.slope*(angle-self.at) }
+}
+
+/// Whether a sheet's kept rows (`charted`) stop in the blank where they were trimmed at a leap: a
+/// kept column's contact on the first kept row lies in the blank and rows before it were trimmed,
+/// or on the last and rows after it were. Rows ending in the blank untrimmed are the margins'
+/// to widen; rows trimmed there are a leap's, which no margin moves.
+pub fn pinned(within: &[Vec<bool>],charted: Charted) -> bool {
+    let rows = within.first().map_or(0,Vec::len);
+    let Charted {rows:[first,last],columns:[c0,c1]} = charted;
+    let holds = |r: usize| within[c0..=c1].iter().any(|c| c[r]);
+    rows > 0 && ((first > 0 && holds(first)) || (last+1 < rows && holds(last)))
+}
+
+/// **The slope that leans a sheet's rows clear of its leaps** (#904), given each column's station
+/// angle, the rows' walk lengths, and each column's contact times and whether each lies in the
+/// blank, and which columns' stations reached it, as `charted` takes them; none where no slope
+/// helps. A column holding the blank leaps (`STEP_TIME`) where its curve runs from one root to
+/// another outside it — a convex corner of the cutter, its fan — a fixed walk past where it leaves
+/// the blank; where the blank's edge crosses the stations obliquely, so does the corner, and a row
+/// common to every column cannot be past the blank in one column and before the corner in
+/// another: the rows trimmed at the first leap stop in the blank, however far the margins grow. The
+/// rows leaned so the walk length of row `x` at angle `a` is `x + slope·(a − at)`, `at` the middle
+/// of the angles, leave the blank and meet the corner each at one row. Of `SLOPES` each side of
+/// none, up to the span of walk over the span of angle, the slope is the one that keeps the
+/// nearest leap furthest outside the rows the blank holds once leaned (the least in size of
+/// equals), where that is further than none keeps it and at least a row and a half: far enough for
+/// a whole row past the blank before the leap. Leaps within the rows a column itself holds in the
+/// blank are no lean's to clear, and are left to the chart's contract.
+pub fn sheared(angles: &[f64],taus: &[f64],times: &[Vec<f64>],within: &[Vec<bool>],reached: &[bool]) -> Option<f64> {
+    let (columns,rows) = (angles.len(),taus.len());
+    if columns < 2 || rows < 2 { return None }
+    let at = 0.5*(angles[0]+angles[columns-1]);
+    let width = angles.iter().fold(f64::NEG_INFINITY,|m,&a| m.max(a))-angles.iter().fold(f64::INFINITY,|m,&a| m.min(a));
+    if !(width > 0.) { return None }
+    let mut held = Vec::new();
+    let mut leaps = Vec::new();
+    for c in 0..columns {
+        let ins: Vec<usize> = (0..rows).filter(|&r| within[c][r]).collect();
+        held.extend(ins.iter().map(|&r| (angles[c]-at,taus[r])));
+        if !(reached[c] || !ins.is_empty()) { continue }
+        let own = |r: usize| ins.first().is_some_and(|&lo| r > lo) && ins.last().is_some_and(|&hi| r <= hi);
+        leaps.extend((1..rows).filter(|&r| (times[c][r]-times[c][r-1]).abs() >= STEP_TIME && !own(r))
+            .map(|r| (angles[c]-at,0.5*(taus[r-1]+taus[r]))));
+    }
+    if held.is_empty() || leaps.is_empty() { return None }
+    let clearance = |slope: f64| -> f64 {
+        let x = |&(a,t): &(f64,f64)| t-slope*a;
+        let (lo,hi) = held.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),p| (l.min(x(p)),h.max(x(p))));
+        leaps.iter().map(|p| { let y = x(p); if y > hi { y-hi } else if y < lo { lo-y } else { -(y-lo).min(hi-y) } })
+            .fold(f64::INFINITY,f64::min)
+    };
+    let bound = (taus[rows-1]-taus[0])/width;
+    // none first, then outward, so a slope only displaces a smaller one by keeping the leaps further
+    let (slope,clear) = (0..=2*SLOPES).map(|k| { let m = k.div_ceil(2) as f64; if k % 2 == 1 { m } else { -m } })
+        .map(|k| bound*k/SLOPES as f64).map(|s| (s,clearance(s)))
+        .fold((0.,f64::NEG_INFINITY),|best,(s,g)| if g > best.1 { (s,g) } else { best });
+    (clear > clearance(0.) && clear >= 1.5*(taus[1]-taus[0])).then_some(slope)
+}
+
 /// A walk along a contact curve so far: its points, its length in the blank, how far it has run outside
 /// the blank since last inside, where it is, and its unfolded walk length.
 struct Walked { out: Vec<Point>,within: f64,outside: f64,last: V,last_s: f64,tau: f64,sense: f64 }
@@ -555,7 +630,9 @@ impl Tracer<'_> {
     /// contact is withheld at the centre of every cell (the mid-angle station's curve at each
     /// row's mid length). The band's ends first move outward until the station there has no
     /// contact in the blank within the declared roll anywhere on its loop, since the band was
-    /// sampled coarsely. `station_at` is the host's section of the cutter at a station angle.
+    /// sampled coarsely. Where the rows trimmed at a leap stop in the blank, they are leaned across
+    /// the stations clear of it (`pinned`, `sheared`, `Shear`) and the columns traced again.
+    /// `station_at` is the host's section of the cutter at a station angle.
     pub fn layout<'t,'s>(&'t self,station_at: &'t StationAt<'t,'s>,band: Band,margin: f64,
         station_margin: f64,placement: Rows) -> Result<Layout<'t,'s>,TraceError> {
         self.columns(station_at,band,margin,station_margin)?.layout(placement)
@@ -593,56 +670,86 @@ impl Tracer<'_> {
         }
         let reached: Vec<usize> = (0..columns).filter(|&c| first[c].is_some()).collect();
         if reached.is_empty() { return Err("no station of the sheet has a contact in the blank".into()); }
-        let (lo_tau,hi_tau) = reached.iter().map(|&c| { let t = first[c].as_ref().unwrap(); (t.curve[0].tau,t.curve.last().unwrap().tau) })
-            .fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),(a,b)| (l.min(a),h.max(b)));
-        // Pass 2: every station over the common span, those missing the blank anchored beside
-        // their nearest reaching neighbour.
+        let reaching: Vec<bool> = first.iter().map(Option::is_some).collect();
+        let angles: Vec<f64> = (0..columns).map(|c| angle_of(c as f64)).collect();
         let nearest = |c: usize| *reached.iter().min_by_key(|&&k| k.abs_diff(c)).unwrap();
         let beside = |c: usize| { let t = first[nearest(c)].as_ref().unwrap(); let p = t.curve[t.anchor]; (p.s,p.found.time) };
-        let traces: Vec<Traced> = crate::util::par::indices(columns,|c| {
-            let extent = Extent::Span {lo:lo_tau,hi:hi_tau,beside:if first[c].is_some() { None } else { Some(beside(c)) }};
-            self.trace(&stations[c],margin,extent)
-        }).into_iter().collect::<Result<_,_>>()?;
-        // The rows run over what every station's curve reached, which must still hold every
-        // contact in the blank: a curve that ends first ends the chart inside the blank.
-        let (lo_tau,hi_tau) = traces.iter().map(|t| (t.curve[0].tau,t.curve.last().unwrap().tau))
-            .fold((f64::NEG_INFINITY,f64::INFINITY),|(l,h),(a,b)| (l.max(a),h.min(b)));
-        let mut held = (f64::INFINITY,f64::NEG_INFINITY);
-        for t in first.iter().flatten() {
-            let within = inside(&t.curve.iter().map(|p| p.found.position).collect::<Vec<_>>())?;
-            for (p,w) in t.curve.iter().zip(within) { if w { held = (held.0.min(p.tau),held.1.max(p.tau)); } }
+        // The columns read with their rows leaned by `shear` (none, unless a leap pins them): every
+        // span below is in row coordinates, a station's walk lengths less what the shear moves it by.
+        struct Read { shear: Shear,traces: Vec<Traced>,span: [f64;2],taus: Vec<f64>,columns_data: Vec<Vec<Found>>,
+            within: Vec<Vec<bool>>,charted: Charted }
+        let read = |shear: Shear| -> Result<Read,TraceError> {
+            let moved = |c: usize| shear.of(angles[c]);
+            // The union of the reaching stations' spans of unfolded walk length is the sheet's row range.
+            let (lo_tau,hi_tau) = reached.iter().map(|&c| { let t = first[c].as_ref().unwrap();
+                (t.curve[0].tau-moved(c),t.curve.last().unwrap().tau-moved(c)) })
+                .fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),(a,b)| (l.min(a),h.max(b)));
+            // Pass 2: every station over the common span, those missing the blank anchored beside
+            // their nearest reaching neighbour.
+            let traces: Vec<Traced> = crate::util::par::indices(columns,|c| {
+                let extent = Extent::Span {lo:lo_tau+moved(c),hi:hi_tau+moved(c),
+                    beside:if first[c].is_some() { None } else { Some(beside(c)) }};
+                self.trace(&stations[c],margin,extent)
+            }).into_iter().collect::<Result<_,_>>()?;
+            // The rows run over what every station's curve reached, which must still hold every
+            // contact in the blank: a curve that ends first ends the chart inside the blank.
+            let (lo_tau,hi_tau) = traces.iter().enumerate().map(|(c,t)| (t.curve[0].tau-moved(c),t.curve.last().unwrap().tau-moved(c)))
+                .fold((f64::NEG_INFINITY,f64::INFINITY),|(l,h),(a,b)| (l.max(a),h.min(b)));
+            let mut held = (f64::INFINITY,f64::NEG_INFINITY);
+            for (c,t) in first.iter().enumerate().filter_map(|(c,t)| t.as_ref().map(|t| (c,t))) {
+                let within = inside(&t.curve.iter().map(|p| p.found.position).collect::<Vec<_>>())?;
+                for (p,w) in t.curve.iter().zip(within) {
+                    if w { held = (held.0.min(p.tau-moved(c)),held.1.max(p.tau-moved(c))); }
+                }
+            }
+            if !(lo_tau < held.0 && hi_tau > held.1) {
+                return Err(format!("a station's contact curve ends inside the blank: the stations reach walk lengths \
+                    {lo_tau:.3} to {hi_tau:.3} where the blank holds contacts from {:.3} to {:.3}",held.0,held.1).into());
+            }
+            // as many rows as keep them `ROW_SPACING` apart; the curves' ends lie on the trace's grid of
+            // walk lengths, four steps a spacing, so a span of whole spacings is one to rounding, and is
+            // counted so, not one more where the cut stands so that its rounding falls above (#904 A4)
+            let rows = (((hi_tau-lo_tau)/(ROW_SPACING*self.unit)*(1.-WHOLE)).ceil() as usize).clamp(24,240);
+            let taus: Vec<f64> = (0..rows).map(|r| lo_tau+(hi_tau-lo_tau)*r as f64/(rows-1) as f64).collect();
+            let columns_data: Vec<Vec<Found>> = crate::util::par::indices(columns,|c| {
+                let at: Vec<f64> = taus.iter().map(|x| x+moved(c)).collect();
+                self.along(&stations[c],&traces[c].curve,&at)
+            }).into_iter().collect::<Result<_,_>>()?;
+            // The rows run on outside the blank only while every column is still one chart: the fit's
+            // chord-length parameters are averaged over the columns, so one column's margin leaping to
+            // another root (a turn away, where a far corner's fan carries it) moves the parameters of
+            // every row, the ones in the blank included. Rows are trimmed back to before such a leap;
+            // a row holding a contact in the blank is never trimmed, the chart contract's to judge. A
+            // margin column leaping on the rows that hold the blank, or the row past them, goes instead.
+            let within: Vec<Vec<bool>> = inside(&columns_data.iter().flatten().map(|f| f.position).collect::<Vec<_>>())?
+                .chunks(rows).map(<[bool]>::to_vec).collect();
+            let times: Vec<Vec<f64>> = columns_data.iter().map(|c| c.iter().map(|f| f.time).collect()).collect();
+            let charted = charted(&times,&within,&reaching);
+            Ok(Read {shear,traces,span:[lo_tau,hi_tau],taus,columns_data,within,charted})
+        };
+        // Where a leap pins the trimmed rows in the blank (`pinned`), which no margin moves, the rows
+        // are leaned until they leave the blank and meet the leap each at one row (`sheared`); a lean
+        // that cannot be read, or finds nothing to lean by, leaves the rows as they stood.
+        let mut taken = read(Shear::NONE)?;
+        for _ in 0..SHEARS {
+            if !pinned(&taken.within,taken.charted) { break }
+            let times: Vec<Vec<f64>> = taken.columns_data.iter().map(|c| c.iter().map(|f| f.time).collect()).collect();
+            let Some(slope) = sheared(&angles,&taken.taus,&times,&taken.within,&reaching) else { break };
+            let shear = Shear {at:0.5*(angles[0]+angles[columns-1]),slope:taken.shear.slope+slope};
+            match read(shear) { Ok(again) => taken = again, Err(_) => break }
         }
-        if !(lo_tau < held.0 && hi_tau > held.1) {
-            return Err(format!("a station's contact curve ends inside the blank: the stations reach walk lengths \
-                {lo_tau:.3} to {hi_tau:.3} where the blank holds contacts from {:.3} to {:.3}",held.0,held.1).into());
-        }
-        // as many rows as keep them `ROW_SPACING` apart; the curves' ends lie on the trace's grid of
-        // walk lengths, four steps a spacing, so a span of whole spacings is one to rounding, and is
-        // counted so, not one more where the cut stands so that its rounding falls above (#904 A4)
-        let rows = (((hi_tau-lo_tau)/(ROW_SPACING*self.unit)*(1.-WHOLE)).ceil() as usize).clamp(24,240);
-        let taus: Vec<f64> = (0..rows).map(|r| lo_tau+(hi_tau-lo_tau)*r as f64/(rows-1) as f64).collect();
-        let columns_data: Vec<Vec<Found>> = crate::util::par::indices(columns,|c| self.along(&stations[c],&traces[c].curve,&taus))
-            .into_iter().collect::<Result<_,_>>()?;
-        // The rows run on outside the blank only while every column is still one chart: the fit's
-        // chord-length parameters are averaged over the columns, so one column's margin leaping to
-        // another root (a turn away, where a far corner's fan carries it) moves the parameters of
-        // every row, the ones in the blank included. Rows are trimmed back to before such a leap;
-        // a row holding a contact in the blank is never trimmed, the chart contract's to judge. A
-        // margin column leaping on the rows that hold the blank, or the row past them, goes instead.
-        let within = inside(&columns_data.iter().flatten().map(|f| f.position).collect::<Vec<_>>())?;
-        let reaching: Vec<bool> = first.iter().map(Option::is_some).collect();
-        let Charted {rows:[first_row,last],columns:[c0,c1]} = charted(&columns_data.iter().map(|c| c.iter().map(|f| f.time).collect())
-            .collect::<Vec<Vec<f64>>>(),&within.chunks(rows).map(<[bool]>::to_vec).collect::<Vec<_>>(),&reaching);
+        let Read {shear,traces,span:[lo_tau,hi_tau],taus,columns_data,charted:Charted {rows:[first_row,last],columns:[c0,c1]},..} = taken;
+        let rows = taus.len();
         let middles: Vec<f64> = (0..rows-1).map(|r| lo_tau+(hi_tau-lo_tau)*(r as f64+0.5)/(rows-1) as f64)
             .skip(first_row).take(last-first_row).collect();
         let (lo_tau,hi_tau) = (if first_row == 0 { lo_tau } else { taus[first_row] },if last+1 == rows { hi_tau } else { taus[last] });
         let kept = c0..=c1;
-        let beside = kept.clone().map(|c| (angle_of(c as f64),beside(c))).collect();
+        let beside = kept.clone().map(|c| (angles[c],beside(c))).collect();
         let stations = stations.into_iter().zip(traces).map(Arc::new).skip(c0).take(c1+1-c0).collect();
         let columns_data = columns_data.into_iter().skip(c0).take(c1+1-c0).collect();
-        Ok(Columns {tracer:self,station_at,margin,angles:kept.clone().map(|c| angle_of(c as f64)).collect(),
+        Ok(Columns {tracer:self,station_at,margin,angles:angles[kept.clone()].to_vec(),
             column_mids:(c0..c1).map(|c| angle_of(c as f64+0.5)).collect(),stations,beside,taus,columns_data,first_row,last,middles,
-            span:[lo_tau,hi_tau],reached:reaching[kept].to_vec()})
+            span:[lo_tau,hi_tau],reached:reaching[kept].to_vec(),shear})
     }
 }
 
@@ -664,6 +771,9 @@ pub struct Columns<'t,'s> {
     span: [f64;2],
     /// Which columns have a contact in the blank.
     reached: Vec<bool>,
+    /// How the rows lean across the stations: a row coordinate at a station is its walk length
+    /// less what this moves the station by.
+    shear: Shear,
 }
 
 impl<'t,'s> Columns<'t,'s> {
@@ -676,7 +786,8 @@ impl<'t,'s> Columns<'t,'s> {
         let (row_coordinates,row_mids) = match placement {
             Rows::Walk => (taus[first_row..=last].to_vec(),self.middles.clone()),
             Rows::Length => {
-                let longest = crate::util::par::indices(columns,|c| tracer.length(&self.stations[c].0,&self.stations[c].1.curve,lo_tau,hi_tau))
+                let longest = crate::util::par::indices(columns,|c| { let d = self.shear.of(self.angles[c]);
+                    tracer.length(&self.stations[c].0,&self.stations[c].1.curve,lo_tau+d,hi_tau+d) })
                     .into_iter().collect::<Result<Vec<f64>,_>>()?.into_iter().fold(0_f64,f64::max);
                 let rows = ((longest/(ROW_SPACING*tracer.unit)).ceil() as usize).clamp(24,240);
                 ((0..rows).map(|r| r as f64/(rows-1) as f64).collect(),(0..rows-1).map(|r| (r as f64+0.5)/(rows-1) as f64).collect())
@@ -697,7 +808,7 @@ impl<'t,'s> Columns<'t,'s> {
             }
         }
         let traced = self.stations.iter().enumerate().map(|(c,entry)| (grid.columns[c].to_bits(),Some(entry.clone()))).collect();
-        Ok(Layout {tracer,station_at:self.station_at,placement,margin:self.margin,span:[lo_tau,hi_tau],
+        Ok(Layout {tracer,station_at:self.station_at,placement,margin:self.margin,span:[lo_tau,hi_tau],shear:self.shear,
             beside:self.beside.clone(),stations:Mutex::new(traced),nodes:Mutex::new(nodes),grid,anchors,warps:Default::default()})
     }
 
@@ -709,16 +820,18 @@ impl<'t,'s> Columns<'t,'s> {
         // only the columns reaching the blank leave faces of the cut: one carrying the sheet's
         // edge out may cross the cutter's faces otherwise (a face run out to nothing), and keeps
         // its rows at the walk's own lengths (`Anchors::walk`)
-        let crossings: Vec<Vec<(f64,u32,u32)>> = self.stations.iter().zip(&self.reached).filter(|(_,r)| **r)
-            .map(|(entry,_)| entry.0.crossings_within(&entry.1.curve,self.span)).collect();
+        let crossings: Vec<Vec<(f64,u32,u32)>> = self.stations.iter().zip(&self.angles).zip(&self.reached).filter(|(_,r)| **r)
+            .map(|((entry,&angle),_)| crossed(&entry.0,&entry.1.curve,self.span,self.shear.of(angle))).collect();
         let first = crossings.first()?;
         let faces: Vec<u32> = match first.first() {
             Some(c) => std::iter::once(c.1).chain(first.iter().map(|c| c.2)).collect(),
             // one face over the whole span: the one the middle of the first reaching column was made by
             None => {
                 let [lo,hi] = self.span;
-                let (station,traced) = &*self.stations[self.reached.iter().position(|r| *r)?];
-                let mid = traced.curve.iter().min_by(|a,b| (a.tau-(lo+hi)/2.).abs().total_cmp(&(b.tau-(lo+hi)/2.).abs()))?;
+                let c = self.reached.iter().position(|r| *r)?;
+                let (station,traced) = &*self.stations[c];
+                let middle = (lo+hi)/2.+self.shear.of(self.angles[c]);
+                let mid = traced.curve.iter().min_by(|a,b| (a.tau-middle).abs().total_cmp(&(b.tau-middle).abs()))?;
                 vec![station.face_at(mid.s)?]
             }
         };
@@ -728,6 +841,12 @@ impl<'t,'s> Columns<'t,'s> {
         if at.windows(2).any(|w| !(w[1] > w[0])) { return None }
         Some(Anchors {at,..anchors})
     }
+}
+
+/// A station's crossings (`Station::crossings_within`) inside the rows' span `[lo, hi]` of row
+/// coordinates, its rows moved by `moved` along the walk (`Shear::of`), each at its row coordinate.
+fn crossed(station: &Station,curve: &[Point],[lo,hi]: [f64;2],moved: f64) -> Vec<(f64,u32,u32)> {
+    station.crossings_within(curve,[lo+moved,hi+moved]).into_iter().map(|(t,a,b)| (t-moved,a,b)).collect()
 }
 
 /// Where the cutter's faces meet down a sheet's rows (#212): each crossing's row coordinate (the
@@ -777,8 +896,11 @@ pub struct Layout<'t,'s> {
     station_at: &'t StationAt<'t,'s>,
     placement: Rows,
     margin: f64,
-    /// The rows' ends, in unfolded walk length.
+    /// The rows' ends, in row coordinates: a station's unfolded walk length less what `shear`
+    /// moves it by.
     span: [f64;2],
+    /// How the rows lean across the stations (`Shear`).
+    pub shear: Shear,
     /// The first grid's column angles, each with the anchor (walk length and time) of the
     /// station nearest it that reaches the blank: a station between two of them is traced from
     /// the anchor of the one before it.
@@ -803,7 +925,8 @@ impl<'s> Layout<'_,'s> {
         if let Some(entry) = self.stations.lock().unwrap_or_else(|e| e.into_inner()).get(&angle.to_bits()) { return Ok(entry.clone()); }
         let station = (self.station_at)(angle)?;
         let before = self.beside.partition_point(|b| b.0 <= angle).saturating_sub(1);
-        let extent = Extent::Span {lo:self.span[0],hi:self.span[1],beside:Some(self.beside[before].1)};
+        let moved = self.shear.of(angle);
+        let extent = Extent::Span {lo:self.span[0]+moved,hi:self.span[1]+moved,beside:Some(self.beside[before].1)};
         let entry = self.tracer.trace(&station,self.margin,extent).ok().map(|t| Arc::new((station,t)));
         // two threads tracing one angle trace it alike; the first kept
         let mut stations = self.stations.lock().unwrap_or_else(|e| e.into_inner());
@@ -817,21 +940,22 @@ impl<'s> Layout<'_,'s> {
             coordinates.iter().copied().filter(|x| !nodes.contains_key(&(key,x.to_bits()))).collect() };
         if !missing.is_empty() {
             let (station,traced) = entry;
+            let moved = self.shear.of(angle);
             let found = match self.placement {
                 Rows::Walk => match &self.anchors {
                     Some(a) => {
                         let known = self.warps.lock().unwrap_or_else(|e| e.into_inner()).get(&key).cloned();
                         let crossed = known.unwrap_or_else(|| {
-                            let c = station.crossings_within(&traced.curve,self.span);
+                            let c = crossed(station,&traced.curve,self.span,moved);
                             let crossed: Vec<f64> = if a.crosses(&c) { c.iter().map(|c| c.0).collect() } else { Vec::new() };
                             self.warps.lock().unwrap_or_else(|e| e.into_inner()).entry(key).or_insert(crossed).clone()
                         });
-                        let taus: Vec<f64> = missing.iter().map(|&x| a.walk(self.span[0],self.span[1],&crossed,x)).collect();
+                        let taus: Vec<f64> = missing.iter().map(|&x| a.walk(self.span[0],self.span[1],&crossed,x)+moved).collect();
                         self.tracer.along(station,&traced.curve,&taus)?
                     }
-                    None => self.tracer.along(station,&traced.curve,&missing)?,
+                    None => self.tracer.along(station,&traced.curve,&missing.iter().map(|&x| x+moved).collect::<Vec<_>>())?,
                 },
-                Rows::Length => self.tracer.at_lengths(station,&traced.curve,self.span[0],self.span[1],&missing)?,
+                Rows::Length => self.tracer.at_lengths(station,&traced.curve,self.span[0]+moved,self.span[1]+moved,&missing)?,
             };
             let mut nodes = self.nodes.lock().unwrap_or_else(|e| e.into_inner());
             for (x,f) in missing.iter().zip(found) { nodes.entry((key,x.to_bits())).or_insert(f); }
@@ -980,7 +1104,14 @@ pub fn traced_sheet(name: &str,scale: f64,cutter: &Cutter,chart: Chart,inside: I
                 margin *= 1.6; station_margin *= 1.6; continue
             }
             if let Some(fault) = sheet.chart_fault(inside)? { return Err(format!("`{name}`: the sheet is not one regular chart: {fault}")) }
-            (say.stage)(&format!("`{name}`: sheet {}x{}, one chart",sheet.rows,sheet.columns));
+            // a lean is said where a leap pinned the rows in the blank (`Tracer::columns`)
+            let leaned = match layout.shear.slope {
+                0. => String::new(),
+                s if cutter.revolved() => format!(", its rows leaned {:.4} of walk a degree of stations to leave the blank \
+                    before a leap",s.to_radians()),
+                s => format!(", its rows leaned {s:.4} of walk a unit of stations to leave the blank before a leap"),
+            };
+            (say.stage)(&format!("`{name}`: sheet {}x{}, one chart{leaned}",sheet.rows,sheet.columns));
             return Ok((layout,sheet))
         }
         Err(format!("`{name}`: the candidate sheet cannot be widened out of the blank"))
