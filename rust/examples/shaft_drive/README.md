@@ -86,7 +86,7 @@ by:
 | head tube | 72°, 160 mm, 50 × 3 |
 | top tube, down tube | 35 × 1.5, 44 × 1.5 |
 | chainstay, BB drop | 430 mm, 70 mm |
-| seat stays | 16 × 1.5, 14 mm either side of the seat tube at the cluster |
+| seat stays | 16 × 1.5, meeting the seat tube's flanks at the cluster, 8 mm either side of its axis |
 | non-drive chainstay | 22 × 1.5 |
 | rear axle | 142 mm over the dropouts, 12 mm thru-axle |
 
@@ -233,7 +233,7 @@ shaft_drive/dims.sv` judges the design table's 10 claims, all theorems.
 
 The findings this drawing first hit on v0.1.17 are filed as
 [#904](https://github.com/bmander/geomsolver/issues/904). Each was tried again on v0.1.18, and
-the frame, the splayed shaft and the hardware found more (17 to 21).
+the frame, the splayed shaft and the hardware found more (17 to 22).
 
 ### Fixed in v0.1.18, and used here
 
@@ -337,6 +337,17 @@ the frame, the splayed shaft and the hardware found more (17 to 21).
 21. **`level` cannot name a point.** It is a relation word, and `level := point` failed with "more
     on this line than the statement wanted" at the next line, then with a cascade of "no such
     entity" for everything after. The message could say the name is a word.
+
+22. **A union the kernel builds can be refused as an STL.**
+    - With the seat stays' ends 14 mm either side of the seat tube's axis, the seat, head, top
+      and down tubes and the left seat stay unioned into a solid of 120 faces. The claims were
+      judged on it, but its STL was refused: "invalid binary STL shell topology: EdgeUseCount
+      { edge: …, count: 3 }", an edge used by three faces.
+    - Each stay's flat end crossed the seat tube's surface just where the top tube meets it.
+    - Every pair of those tubes wrote, and so did seat, head, top and down, and seat, head, top
+      and the stay: only all five together failed. `--stl-backend mesh` wrote the frame.
+    - The stays now meet the seat tube 8 mm either side of its axis, as a frame's do, and the
+      frame writes exactly. The exact build could check its own shell before it is used.
 
 ### Not drawn
 
