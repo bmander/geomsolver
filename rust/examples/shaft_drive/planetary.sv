@@ -17,12 +17,13 @@
 unit mm
 use std
 use std.solids
-use std.solids (union)
+use std.sets
+use std.solids (cut, union)
 use std.place (seats)
 use gears
 use dims (Zs, Zp, Zr, planets, mn, alpha, beta, pw, ha, hf, backlash, edge, a, ring_od,
           sun_bore, planet_bore, sleeve_r, sleeve_to, spindle_d, pin_d, plate_t, plate_r, gap,
-          bridge_w, bridge_r)
+          bridge_w, bridge_r, sleeve_groove_z, r471_25)
 
 component Planetary() {
   // the sun, its sleeve running on toward the drive side to carry the hypoid gear
@@ -103,6 +104,18 @@ component Planetary() {
   repeat planets as k {
     bridge[k] union carrier
   }
+  // the groove in the sun's sleeve for the ring that holds its bearing
+  in std.front {
+    up := point
+    construction axis_line := line(std.origin, up)
+    std.origin distance(0mm, along: u) up
+    std.origin distance(10mm, along: v) up
+  }
+  construction sleeve_groove := solid({ q | q in std.sets.Cylinder(axis_line, r: sleeve_r + 1mm)
+      q not in std.sets.Cylinder(axis_line, r: r471_25.groove / 2)
+      std.origin distance(in: (sleeve_groove_z - r471_25.t / 2, sleeve_groove_z + r471_25.t / 2), along: axis_line) q })
+  sleeve_groove cut sun.body
+
   // what turns, for an assembly to read
   turns := {sun: sun.body, ring: ring.body}
 }
