@@ -143,7 +143,7 @@ shell_od := 82mm                       // the gearbox's case
 shell_id := 72mm                       // the ring gear is pressed into it
 case_left := 50mm                      // its faces, either side of the mid-plane: the left one open for
 case_right := -50mm                    // the bearing cup, the right one closed round the right bearing
-end_wall := 7mm                        // the right face's wall, a 6804's width
+end_wall := std.bearings.b6804.B       // the right face's wall, a 6804's width
 diaphragm := (-9.5mm, -2.5mm)          // the web in the shell that holds the 6805, between the
                                        // planetary and the bevel gear
 cup := (42mm, 52mm)                    // the left bearing cup, pressed into the shell's open end
@@ -164,7 +164,7 @@ spindle_d := std.bearings.b6804.d      // the crank spindle, hollow 20 × 14, 43
                                        // bore of the 6804s it runs in
 spindle_bore := 14mm
 sun_bore := 21mm                       // the sun runs on the spindle on a 0.5 mm-wall bronze bush
-sleeve_r := 12.5mm                     // the sun's sleeve, 25 across: it runs in a 6805 (25 × 37 × 7)
+sleeve_r := std.bearings.b6805.d / 2   // the sun's sleeve, 25 across: it runs in a 6805 (25 × 37 × 7)
 sleeve_to := 34mm                      // and reaches past the bevel gear it carries
 spindle_tau := crank_peak * (spindle_d / 2) / (pi * (spindle_d^4 - spindle_bore^4) / 32)  // 151 MPa
 planet_bore := 7mm                     // the planets run on 5 mm pins in 1 mm-wall bushes

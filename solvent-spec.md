@@ -3554,8 +3554,8 @@ by its dotted path, asked for by its own `use` and named by that path (`use std.
 | `std.stations` | stations of a face family and frames along a path: `OnLine`, `OnArc`, `OnSpline`, `On`, `Helix`, `OnHelix`, `Minimal`, `Frenet`, `Along`, `AlongFrenet`, `Across`, `Ruled`, `Apex`, `Affine`, `Similar`, `Twisted`, `scaled`, `scaled_radius` |
 | `std.motion` | a frame's joint and its twist (§6.14): `turns`, `screws`, `spins`, `slides`, `rolls`, `reciprocal`, `Screw` |
 | `std.ports` | **[0.217]** how parts are joined: the interfaces `Seat`, `Seated`, `Flat`, `RingSeat`, `Grooved`; the mates `seats_in`, `abuts`, `grooves`; `FrameOn`, `Station` |
-| `std.bearings` | **[0.217]** deep-groove ball bearings (ISO 15) with their ports: `BearingSize`, the rows `b6901`, `b6903`, `b6804`, `b6805`, `Bearing`; a bearing held by a ring, `OnShaft`, `InBore` |
-| `std.retaining` | **[0.217]** retaining rings (DIN 471, 472) with their ports: `RingSize`, the rows `din471_17`, `din471_20`, `din471_25`, `din472_24`, `Ring471`, `Ring472` |
+| `std.bearings` | **[0.217]** deep-groove ball bearings (ISO 15) with their ports: `BearingSize`, the rows `b6901`, `b6903`, `b6804`, `b6805`, `Bearing`; a bearing held by a ring, `Held` |
+| `std.retaining` | **[0.217]** retaining rings (DIN 471, 472) with their ports: `RingSize`, the rows `din471_17`, `din471_20`, `din471_25`, `din472_24`, `Ring` (a row's `band` signed: outward on a shaft, inward in a bore) |
 
 `use std.sets` is a `use` as any other: it brings in neither `std` nor its datums for the file to
 name — a file naming `std.front` says `use std` as well — and `use std` brings in none of the

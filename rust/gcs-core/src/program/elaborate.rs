@@ -798,13 +798,13 @@ fn place_planes(
             let found = settled.start..settled.start + again.len();
             cx.diags.splice(settled, again);
             settled = found;
-            // and the planes placed again over the points the seeds moved
-            placed = views::place(&mut cx.sk, cx.placing);
+            // and the planes placed again over the points the seeds moved, where they moved any
             let moved = cx.sk.params.iter().zip(&before)
                 .any(|(p, &b)| (p.value - b).abs() > 1e-12 * (1.0 + b.abs()));
             if !moved {
                 break;
             }
+            placed = views::place(&mut cx.sk, cx.placing);
         }
     }
     // a point drawn in planes that never meet is on none of them at once (§6.7): judged of the

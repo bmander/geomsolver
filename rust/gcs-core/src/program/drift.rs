@@ -272,11 +272,19 @@ fn deep(p: &Program, c: &Component, read: &[(Vec<(String, Span)>, &Piece)],
 fn formals(c: &Component, read: &[(Vec<(String, Span)>, &Piece)], out: &mut Vec<Diag>) {
     // where the body hands something on: an argument of a call it makes.  A group read whole
     // anywhere else — a solid made of it, `of m` (#510 P3) — is read here.
-    let mut handed = Vec::new();
+    // each argument, with the instance it is handed to
+    let mut handed: Vec<(Span, &str)> = Vec::new();
     each(&c.body, &mut |st| {
-        handed.extend(calls(st).into_iter().flat_map(|i| i.args.iter().map(|a| a.span)));
+        handed.extend(calls(st).into_iter()
+            .flat_map(|i| i.args.iter().map(move |a| (a.span, i.name.text.as_str()))));
     });
-    let handed_on = |at: Span| handed.iter().any(|a| a.lo <= at.lo && at.hi <= a.hi);
+    let handed_on = |at: Span| handed.iter().any(|(a, _)| a.lo <= at.lo && at.hi <= a.hi);
+    // an instance the body reads past, relating what it makes (`b.od seats_in seat`): a group
+    // handed whole to it is composed there, threaded through nothing ([0.217], `std.bearings`'
+    // `Held`)
+    let related = |inst: &str| read.iter().any(|(parts, _)| parts.len() > 1 && parts[0].0 == inst);
+    let composed = |at: Span| handed.iter()
+        .any(|(a, inst)| a.lo <= at.lo && at.hi <= a.hi && related(inst));
     for f in &c.formals {
         let uses: Vec<_> = read.iter().filter(|(parts, _)| parts[0].0 == f.name.text).collect();
         if uses.is_empty() {
@@ -291,9 +299,8 @@ fn formals(c: &Component, read: &[(Vec<(String, Span)>, &Piece)], out: &mut Vec<
             )));
         }
         let whole = uses.iter().all(|(parts, _)| parts.len() == 1 && handed_on(parts[0].1));
-        // a group typed by an interface is a part's specification — a catalogue row, a port —
-        // handed to the part that reads it: composition, not configuration threaded ([0.217])
-        if f.ty == Ty::Group && f.interface.is_none() && whole {
+        let into_joint = uses.iter().all(|(parts, _)| composed(parts[0].1));
+        if f.ty == Ty::Group && whole && !into_joint {
             out.push(Diag::new(Code::W206, f.name.span, None, format!(
                 "the group `{}` is handed on whole and never read here: configuration threaded \
                  through a level that reads none of it.  Let the component that reads it take it \

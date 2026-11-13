@@ -445,15 +445,14 @@ impl<'a> Walk<'a> {
                 }
             }
         }
-        // the numbers each typed operand's interface declares, read where the use is written and
-        // bound as the body's own under the operand's name (`s.d`), as a typed formal's are
-        for (k, (operand, given)) in def.operands.iter().zip(&used.ops).enumerate() {
-            let shape = def.types.get(k).and_then(|t| t.as_ref())
-                .and_then(|t| self.prog.resolve_interface(&t.text, def.module).ok())
-                .and_then(|i| self.shapes.get(i).cloned());
+        // each operand's interface, where the head types it ([0.217]); the numbers it declares,
+        // read where the use is written and bound as the body's own under the operand's name
+        // (`s.d`), as a typed formal's are
+        let shapes: Vec<_> = (0..def.operands.len()).map(|k| self.word_shape(def, k)).collect();
+        for ((operand, given), shape) in def.operands.iter().zip(&used.ops).zip(&shapes) {
             if let Some(shape) = shape {
                 let actual = crate::syntax::ref_text(given);
-                self.interface_numbers(&shape, &actual, &operand.text, &scope.vals, &mut vals,
+                self.interface_numbers(shape, &actual, &operand.text, &scope.vals, &mut vals,
                                        given.span);
             }
         }
@@ -466,26 +465,18 @@ impl<'a> Walk<'a> {
                               ..Scope::default() };
         let u = Use { st, rel, path, scope, at };
         let app = self.begin(&u, &closure);
-        for (k, (operand, given)) in def.operands.iter().zip(&used.ops).enumerate() {
-            // typed by an interface ([0.217]): held to it as a call is to a typed formal — the
-            // whole operand under a key no source writes, and a group of its own holding only
-            // what the interface declares, which is all the body reads
-            let shape = def.types.get(k).and_then(|t| t.as_ref())
-                .and_then(|t| self.prog.resolve_interface(&t.text, def.module).ok())
-                .and_then(|i| self.shapes.get(i).cloned());
+        for ((operand, given), shape) in def.operands.iter().zip(&used.ops).zip(shapes) {
+            // typed by an interface ([0.217]): held to it as a call is to a typed formal, and the
+            // body reads only what the interface declares
             let Some(shape) = shape else {
                 self.bind_to_use(&app, &operand.text, given.clone(), &u);
                 continue;
             };
             let key = format!("{}{}", app.prefix(), operand.text);
-            let whole = keys::given(&key);
             self.words.use_aliases.insert(key.clone());
             self.words.arguments.insert(key.clone());
-            self.aliases.push((whole.clone(), given.clone(), u.scope.clone()));
-            self.checks.groups.push((whole.clone(), given.span, crate::syntax::Ty::Group));
-            self.typed(&shape, &key, given, u.scope);
             let actual = crate::syntax::ref_text(given);
-            self.checks.interfaces.push((whole, given.span, shape, actual));
+            self.bind_typed(shape, &key, given, u.scope, given.span, crate::syntax::Ty::Group, actual);
         }
         for (name, given) in entities {
             self.bind_to_use(&app, name, given, &u);

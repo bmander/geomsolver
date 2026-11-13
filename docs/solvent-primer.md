@@ -1018,8 +1018,8 @@ use std.place (horizontal, vertical)   // and import those two words bare
 | `std.stations` | `OnLine`, `OnArc`, `OnSpline`, `On`, `Helix`, `OnHelix`, `Minimal`, `Frenet`, `Along`, `AlongFrenet`, `Across`, `Ruled`, `Apex`, `Affine`, `Similar`, `Twisted`; the words `scaled`, `scaled_radius` (1.14) |
 | `std.motion` | the words `turns`, `screws`, `spins`, `slides`, `rolls`, `reciprocal`; `Screw` (1.15) |
 | `std.ports` | how parts are joined (below): the interfaces `Seat`, `Seated`, `Flat`, `RingSeat`, `Grooved`; the words `seats_in`, `abuts`, `grooves`; `FrameOn`, `Station` |
-| `std.bearings` | ISO 15 bearings with their ports: the rows `b6901`, `b6903`, `b6804`, `b6805`, `Bearing`, `OnShaft`, `InBore` |
-| `std.retaining` | DIN 471/472 rings with their ports: the rows `din471_17`, `din471_20`, `din471_25`, `din472_24`, `Ring471`, `Ring472` |
+| `std.bearings` | ISO 15 bearings with their ports: the rows `b6901`, `b6903`, `b6804`, `b6805`, `Bearing`, `Held` |
+| `std.retaining` | DIN 471/472 rings with their ports: the rows `din471_17`, `din471_20`, `din471_25`, `din472_24`, `Ring` |
 
 **Ports: parts that say how they are joined** (0.217, `docs/ports-plan.md`). A word's operand
 may be typed by an interface, `s: Seated seats_in h: Seat := { … }`: a use handing it a group
@@ -1032,7 +1032,7 @@ through the port places. A joint is then a few words, and a joint of joints a co
 ```
 right_st := std.ports.Station(bb_line, std.origin, d: case_right + end_wall / 2,
   toward: drive_side, east: std.x, host: shell)          // where it sits, in what
-right_bb := std.bearings.OnShaft(std.bearings.b6804, ring: std.retaining.din471_20,
+right_bb := std.bearings.Held(std.bearings.b6804, ring: std.retaining.din471_20,
   seat: right_st.seat, on: spindle_j)                     // seated, its ring grooved in
 ```
 

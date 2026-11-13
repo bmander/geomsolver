@@ -4,8 +4,8 @@
 //! naming the member; inside the body an operand holds only what its interface declares (E101
 //! otherwise); and a word given what its types ask elaborates to the rows the same word written
 //! bare gives.
-use crate::common::{lenient, parsed::determined};
-use gcs_core::brep::{export, props, sweep::Say};
+use crate::common::{built, lenient, parsed::determined};
+use gcs_core::brep::props;
 
 /// A pin seated in a block: each part declares a port, a group of its own geometry, and the word
 /// relates the two ports — its frame's origin on the face's, and the pin's relief cut from the
@@ -54,10 +54,7 @@ fn seated(head: &str, tail: &str) -> String {
 
 /// The volume of `b.body` as the document builds it.
 fn block_volume(src: &str) -> f64 {
-    let e = determined(src);
-    let i = (0..e.sketch.solids.len()).find(|&i| e.sketch.solid_name(i) == "b.body").unwrap();
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    props::volume(&export::exact(&e.sketch, i, None, None, &say).unwrap().solid)
+    props::volume(&built(&determined(src), "b.body").0.solid)
 }
 
 #[test]
@@ -95,7 +92,7 @@ fn a_type_naming_no_interface_is_refused_where_it_is_written() {
 
 /// A housing and a shaft along one axis, a 6804 seated in the housing at a station and held by a
 /// DIN 471 ring grooved into the shaft — written with the mates (`seats_in`, `abuts`, `grooves`)
-/// or with the bundle `OnShaft`, which `JOINT` stands for.
+/// or with the bundle `Held`, which `JOINT` stands for.
 const FITTED: &str = "unit mm
 use std
 use std.sets
@@ -122,22 +119,17 @@ JOINT
 
 const MATES: &str = "b := std.bearings.Bearing(std.bearings.b6804)
 b.od seats_in st.seat
-clip := std.retaining.Ring471(std.retaining.din471_20)
+clip := std.retaining.Ring(std.retaining.din471_20)
 clip.face abuts b.left
 clip.seat grooves journal";
 
-const BUNDLE: &str = "j := std.bearings.OnShaft(std.bearings.b6804, ring: std.retaining.din471_20,
+const BUNDLE: &str = "j := std.bearings.Held(std.bearings.b6804, ring: std.retaining.din471_20,
   seat: st.seat, on: journal)";
 
 /// The volumes of `names` as `src` builds them.
 fn volumes(src: &str, names: &[&str]) -> Vec<f64> {
     let e = determined(src);
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    names.iter().map(|n| {
-        let i = (0..e.sketch.solids.len()).find(|&i| e.sketch.solid_name(i) == *n)
-            .unwrap_or_else(|| panic!("no solid `{n}`"));
-        props::volume(&export::exact(&e.sketch, i, None, None, &say).unwrap().solid)
-    }).collect()
+    names.iter().map(|n| props::volume(&built(&e, n).0.solid)).collect()
 }
 
 #[test]
@@ -170,6 +162,6 @@ fn a_part_handing_out_its_datum_in_a_port_stands_in_a_frame_its_mate_places() {
         let p = crate::common::ent(&e, name).i();
         e.sketch.world_point(p)
     };
-    let (b, ring) = (at("b.lf.at.origin"), at("clip.p.ff.at.origin"));
+    let (b, ring) = (at("b.lf.at.origin"), at("clip.ff.at.origin"));
     assert!((b[2] + 3.5).abs() < 1e-9 && (ring[2] + 3.5).abs() < 1e-9, "{b:?} {ring:?}");
 }

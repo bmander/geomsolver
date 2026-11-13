@@ -25,23 +25,16 @@ impl<'a> Walk<'a> {
             return;
         }
         let mut read = Vec::new();
-        // the members read past a name, every statement's (`b.od` of `b.od seats_in st.seat`):
-        // where `b` hands out a datum in `od`, a port, it is read as a frame ([0.217])
+        // and the members read past a name (`b.od` of `b.od seats_in st.seat`): where `b` hands
+        // out a datum in `od`, a port, it is read as a frame ([0.217])
         let mut ported = Vec::new();
         for st in body {
-            if let Some(text) = self.prog.span_text(st.span) {
-                for u in crate::syntax::name_uses(text) {
-                    if let [(a, _), (b, _), ..] = u.parts.as_slice() {
-                        ported.push(format!("{}{a}.{b}", scope.prefix()));
-                    }
-                }
-            }
-        }
-        self.standard.ported.extend(ported);
-        for st in body {
-            self.paths(st, &mut |parts| {
+            self.paths_all(st, &mut |parts| {
                 if let Some(of) = self.datum_of(parts) {
                     read.push(format!("{}{}", scope.prefix(), of.join(".")));
+                }
+                if let [a, b, ..] = parts {
+                    ported.push(format!("{}{a}.{b}", scope.prefix()));
                 }
             });
             // and a relation word's use reads what its body reads of what it is given (#595)
@@ -52,6 +45,7 @@ impl<'a> Walk<'a> {
             });
         }
         self.standard.outside.extend(read);
+        self.standard.ported.extend(ported);
     }
 
     /// Every relation statement `st` writes with a word a file defines, a block's included.
@@ -131,7 +125,17 @@ impl<'a> Walk<'a> {
     /// (`syntax::name_uses`), the frames it is drawn in — an `in` block's header is no part of
     /// the statements it holds — and a block's statements'.
     fn paths(&self, st: &Stmt, f: &mut dyn FnMut(&[String])) {
-        if let Some(text) = self.prog.span_text(st.span).filter(|t| t.contains("std")) {
+        self.paths_where(st, true, f)
+    }
+
+    /// `paths`, of every statement whether or not it names `std`: what the pre-pass reads, a
+    /// port's member as well as a datum ([0.217]).
+    fn paths_all(&self, st: &Stmt, f: &mut dyn FnMut(&[String])) {
+        self.paths_where(st, false, f)
+    }
+
+    fn paths_where(&self, st: &Stmt, std_only: bool, f: &mut dyn FnMut(&[String])) {
+        if let Some(text) = self.prog.span_text(st.span).filter(|t| !std_only || t.contains("std")) {
             for u in crate::syntax::name_uses(text) {
                 let parts: Vec<String> = u.parts.into_iter().map(|(p, _)| p).collect();
                 f(&parts);
@@ -142,7 +146,7 @@ impl<'a> Walk<'a> {
             StmtKind::Instance(i) => i.membership.path().collect(),
             StmtKind::Relation(r) => r.within.iter().collect(),
             StmtKind::Block(b) => {
-                b.stmts().for_each(|inner| self.paths(inner, f));
+                b.stmts().for_each(|inner| self.paths_where(inner, std_only, f));
                 return;
             }
             _ => return,
@@ -172,6 +176,19 @@ impl<'a> Walk<'a> {
         })
     }
 
+    /// **The groups a definition declares that hand out a datum of its own** — its ports
+    /// (`docs/ports-plan.md`, [0.217]), `od` of `od := {at: std.top, pocket: pocket}`: a mate
+    /// through one reads the part's frame, so an instance whose port something outside reads
+    /// stands in a frame of its own, as one whose `std` it reads does.
+    fn ports<'c>(&self, comp: &'c Component) -> impl Iterator<Item = &'c str> + use<'c, '_, 'a> {
+        comp.body.iter().filter_map(move |st| match &st.kind {
+            StmtKind::Group(g) if g.fields.iter().any(|f| matches!(&f.value,
+                crate::syntax::InstVal::Ref(r) if self.datum_at(&read_segments(r)) == Some(0))) =>
+                Some(g.name.text.as_str()),
+            _ => None,
+        })
+    }
+
     /// **An instance's own frame** (#548): where something outside reads instance `inst`'s
     /// datums, the frame it stands in — `{inst}#frame`, declared bare where the call is, in the
     /// `in`s around it, made with axes (`Expansion::charts`) — as the call's scope writes it.
@@ -187,7 +204,7 @@ impl<'a> Walk<'a> {
     ) -> Option<InPlane> {
         let prefix = scope.prefix().to_string();
         let abs = format!("{prefix}{}", inst.name.text);
-        let ported = exports_datum(comp).iter()
+        let ported = self.ports(comp)
             .any(|g| self.standard.ported.contains(&format!("{abs}.{g}")));
         if !self.standard.outside.contains(&abs) && !ported {
             return None;
@@ -207,19 +224,6 @@ impl<'a> Walk<'a> {
         self.charts.insert(keys::instance_frame(&abs));
         Some(InPlane::at(&Ref { root: name, path: Vec::new(), span: at }, scope))
     }
-}
-
-/// **The groups a definition declares that hand out a datum of its own** — its ports
-/// (`docs/ports-plan.md`, [0.217]), `od` of `od := {at: std.top, pocket: pocket}`: a mate through
-/// one reads the part's frame, so an instance whose port something outside reads stands in a
-/// frame of its own, as one whose `std` it reads does.
-fn exports_datum(comp: &Component) -> Vec<&str> {
-    comp.body.iter().filter_map(|st| match &st.kind {
-        StmtKind::Group(g) if g.fields.iter().any(|f| matches!(&f.value,
-            crate::syntax::InstVal::Ref(r) if r.root.text == "std" && !r.path.is_empty())) =>
-            Some(g.name.text.as_str()),
-        _ => None,
-    }).collect()
 }
 
 /// The definitions statements call, by the name each call writes, blocks' included.

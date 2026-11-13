@@ -6,7 +6,7 @@ use std
 use std.sets
 use std.solids
 use std.solids (cut, union)
-use std.place (vertical, right_of)
+use std.place (vertical, right_of, offset)
 use std.ports
 use std.ports (seats_in, abuts, grooves)
 use std.retaining
@@ -30,14 +30,10 @@ component Section(o: point, x0: Length, y0: Length, x1: Length, y1: Length) {
   d := point
   profile := (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) ->
              (da := line(d, a)) -> close
-  o distance(x0, along: u) a
-  o distance(y0, along: v) a
-  o distance(x1, along: u) b
-  o distance(y0, along: v) b
-  o distance(x1, along: u) c
-  o distance(y1, along: v) c
-  o distance(x0, along: u) d
-  o distance(y1, along: v) d
+  a offset(dx: x0, dy: y0) o
+  b offset(dx: x1, dy: y0) o
+  c offset(dx: x1, dy: y1) o
+  d offset(dx: x0, dy: y1) o
 }
 
 // A deep-groove ball bearing of size `s`, its balls on the pitch circle midway between bore and
@@ -105,24 +101,14 @@ component Bearing(s: BearingSize) {
 }
 
 // A bearing held in its seat by a ring: seated by its outside in `seat`, the seat's axis running
-// the way the bearing went in, and a ring abutting its trailing side, grooved into `on` — DIN 471
-// on a shaft (`OnShaft`), DIN 472 in a bore (`InBore`).  A joint of joints (docs/ports-plan.md,
-// P6): one statement where the joint was six.
-component OnShaft(size: BearingSize, ring: std.retaining.RingSize, seat: std.ports.Seat,
-                  on: std.ports.Grooved) {
+// the way the bearing went in, and a ring of size `ring` abutting its trailing side, grooved into
+// `on` — the shaft for a DIN 471 ring, the bore for a DIN 472.  A joint of joints
+// (docs/ports-plan.md, P6): one statement where the joint was six.
+component Held(size: BearingSize, ring: std.retaining.RingSize, seat: std.ports.Seat,
+               on: std.ports.Grooved) {
   b := Bearing(size)
   b.od seats_in seat
-  clip := std.retaining.Ring471(ring)
-  clip.face abuts b.left
-  clip.seat grooves on
-  // what a parent reads of the bearing it holds
-  bearing := {inner_ring: b.inner_ring, outer_ring: b.outer_ring, ball_set: b.ball_set}
-}
-component InBore(size: BearingSize, ring: std.retaining.RingSize, seat: std.ports.Seat,
-                 on: std.ports.Grooved) {
-  b := Bearing(size)
-  b.od seats_in seat
-  clip := std.retaining.Ring472(ring)
+  clip := std.retaining.Ring(ring)
   clip.face abuts b.left
   clip.seat grooves on
   // what a parent reads of the bearing it holds

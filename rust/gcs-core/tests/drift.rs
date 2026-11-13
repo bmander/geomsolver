@@ -203,18 +203,19 @@ component Plate(c: point, m: group) {
     assert!(of("W206", src).is_empty(), "{:?}", lint(src));
 }
 
-/// A group typed by an interface is a part's specification — a catalogue row, a port — and a
-/// bundle handing it whole to the part that reads it composes, threading nothing ([0.217],
-/// `std.bearings`' `OnShaft`): no W206, where the same group untyped is.
+/// A group handed whole to an instance the level then relates — a bundle building a part from a
+/// catalogue row and joining it (`std.bearings`' `Held`, [0.217]) — composes there and threads
+/// nothing: no W206, typed or not, where the same group handed to an instance nothing reads is.
 #[test]
-fn a_typed_group_handed_on_whole_is_composed() {
+fn a_group_handed_to_an_instance_the_level_relates_is_composed() {
     let src = "\
-interface Size { r: Length }
-component Inner(o: point, dims: Size) {
+component Inner(o: point, dims: group) {
   c := circle(center: o) hint(r: dims.r)
 }
-component Outer(o: point, dims: Size) {
+component Joined(o: point, dims: group) {
   i := Inner(o, dims)
+  p := point
+  p coincident i.c
 }
 ";
     assert!(of("W206", src).is_empty(), "{:?}", lint(src));

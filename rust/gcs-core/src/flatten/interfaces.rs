@@ -103,6 +103,27 @@ impl<'a> Walk<'a> {
         self.shapes.get(i).cloned()
     }
 
+    /// The interface operand `k` of the word `def` is typed by, where its head types it ([0.217]).
+    pub(super) fn word_shape(&self, def: &crate::syntax::WordDef, k: usize) -> Option<Rc<Shape>> {
+        let n = def.types.get(k)?.as_ref()?;
+        let i = self.prog.resolve_interface(&n.text, def.module).ok()?;
+        self.shapes.get(i).cloned()
+    }
+
+    /// **A group typed by an interface, bound** (§8.1 [0.84], [0.217]) — a component's typed
+    /// formal, or a relation word's typed operand: the whole argument `r` under a key no source
+    /// writes, for what the interface asks of it to be judged once every name is known
+    /// (`conform`), and `key` a group of its own holding only what the interface declares
+    /// (`typed`).  `actual` is the argument as it was written, for what is said of it.
+    pub(super) fn bind_typed(&mut self, shape: Rc<Shape>, key: &str, r: &Ref, scope: &super::Scope,
+                             span: Span, ty: Ty, actual: String) {
+        let given = super::keys::given(key);
+        self.aliases.push((given.clone(), r.clone(), scope.clone()));
+        self.checks.groups.push((given.clone(), span, ty));
+        self.typed(&shape, key, r, scope);
+        self.checks.interfaces.push((given, span, shape, actual));
+    }
+
     /// The formal's key (`bar.gear`) made a group of the interface's shape over `r`, the
     /// argument as the call wrote it in `scope`: each entity, set or untyped group member an
     /// alias of `r`'s, each nested interface a group of its own again.

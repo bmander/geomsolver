@@ -839,9 +839,9 @@ before ports 0.9 s to 0.4 s.
   the instances known by their statements, a block's next copy's too, `next.t.r.lo`; a path
   through an index or a formal is not followed);
   **W205** an `Int` formal read only by `when` conditions; **W206** a `group` formal handed on whole
-  and never read through — an untyped one: a group typed by an interface is a part's specification
-  (a catalogue row, a port) handed to the part that reads it, which composes (0.217,
-  `a_typed_group_handed_on_whole_is_composed`).  Asked of the **document's own text** (its components and root, not a
+  and never read through — save to an instance the level then relates (`b.od seats_in seat`): a
+  bundle building a part from a catalogue row and joining it composes there (0.217,
+  `a_group_handed_to_an_instance_the_level_relates_is_composed`).  Asked of the **document's own text** (its components and root, not a
   module it reads, which is linted as a document of its own), and never by `elaborate`: only
   `solventc --lint` adds the warnings, which fail nothing.  `tests/drift.rs` holds each pattern to
   one document that trips it and one that does not, and holds the corpus (`rust/examples`,

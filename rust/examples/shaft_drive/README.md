@@ -168,7 +168,7 @@ Not drawn: the cages and seals, the planets' and the spindle's bushes, the splin
   - Each bearing is seated in a `Station` of the body that carries it: the shell's end wall, the
     bearing cup, the diaphragm, a pinion's web, the hub. A station is where the bearing's mid-plane
     stands on its axis, pointing the way the bearing went in.
-  - `OnShaft` (DIN 471, on a shaft) or `InBore` (DIN 472, in a bore) seats the bearing there and
+  - `Held` seats the bearing there (its ring DIN 471 on a shaft or DIN 472 in a bore) and
     cuts the room it takes from the station's body. Its ring abuts the bearing's trailing side, and
     the ring's groove is cut in what it is fitted to (`spindle_j := {host: spindle}`).
   - The bearings and rings are the library's catalogue rows (`std.bearings.b6804`,

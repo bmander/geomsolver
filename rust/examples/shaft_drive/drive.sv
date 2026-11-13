@@ -16,7 +16,7 @@ use std.place (seats, right_of)
 use spiral_bevel.hypoid (HypoidPair)
 use planetary
 use frame
-use std.ports (seats_in, abuts, grooves)
+use std.ports
 use std.bearings
 use std.retaining
 use dims (cs_length, bb_drop, pinion_y, ring_y, pinion_teeth, gear_teeth, bevel_module,
@@ -293,8 +293,8 @@ axle_head union thru_axle
 
 // -- bearings and retaining rings ------------------------------------------------------------------
 // Each bearing is seated in a station of the body that carries it, the station's axis running the
-// way the bearing went in, and held by a ring against its trailing side (`std.bearings.OnShaft`,
-// `InBore`): the room it takes is cut from the body, the ring's groove from what it is fitted to.
+// way the bearing went in, and held by a ring against its trailing side (`std.bearings.Held`):
+// the room it takes is cut from the body, the ring's groove from what it is fitted to.
 // A station is where the bearing's mid-plane stands on its axis.
 spindle_j := {host: spindle}
 shaft_j := {host: shaft}
@@ -305,32 +305,32 @@ pair.pinion_member.foot coincident rear
 
 right_st := std.ports.Station(bb_line, std.origin, d: case_right + end_wall / 2, toward: drive_side,
   east: std.x, host: shell)
-right_bb := std.bearings.OnShaft(std.bearings.b6804, ring: std.retaining.din471_20,
+right_bb := std.bearings.Held(std.bearings.b6804, ring: std.retaining.din471_20,
   seat: right_st.seat, on: spindle_j)
 left_st := std.ports.Station(bb_line, std.origin, d: cup.x + 1mm + std.bearings.b6804.B / 2,
   toward: std.y, east: std.x, host: bearing_cup)
-left_bb := std.bearings.OnShaft(std.bearings.b6804, ring: std.retaining.din471_20,
+left_bb := std.bearings.Held(std.bearings.b6804, ring: std.retaining.din471_20,
   seat: left_st.seat, on: spindle_j)
 sleeve_st := std.ports.Station(bb_line, std.origin, d: (diaphragm.x + diaphragm.y) / 2,
   toward: drive_side, east: std.x, host: diaphragm_ring)
-sleeve_bb := std.bearings.OnShaft(std.bearings.b6805, ring: std.retaining.din471_25,
+sleeve_bb := std.bearings.Held(std.bearings.b6805, ring: std.retaining.din471_25,
   seat: sleeve_st.seat, on: box.sleeve)
 bb_pinion_st := std.ports.Station(pair.pinion_member.ax, pair.pinion_member.foot,
   d: (pinion_bearing.x + pinion_bearing.y) / 2, toward: rear, east: flip, host: pinion_seat)
-bb_pinion_bb := std.bearings.OnShaft(std.bearings.b6903, ring: std.retaining.din471_17,
+bb_pinion_bb := std.bearings.Held(std.bearings.b6903, ring: std.retaining.din471_17,
   seat: bb_pinion_st.seat, on: shaft_j)
 hub_pinion_st := std.ports.Station(pair.pinion_member.ax, hub_foot,
   d: -(pinion_bearing.x + pinion_bearing.y) / 2, toward: pair.pinion_member.ax, east: flip,
   host: hub_pinion_seat)
-hub_pinion_bb := std.bearings.OnShaft(std.bearings.b6903, ring: std.retaining.din471_17,
+hub_pinion_bb := std.bearings.Held(std.bearings.b6903, ring: std.retaining.din471_17,
   seat: hub_pinion_st.seat, on: shaft_j)
 right_hub_st := std.ports.Station(axle_line, axle_c, d: hub_bearings.x, toward: axle, east: std.x,
   host: hub)
-right_hub_bb := std.bearings.InBore(std.bearings.b6901, ring: std.retaining.din472_24,
+right_hub_bb := std.bearings.Held(std.bearings.b6901, ring: std.retaining.din472_24,
   seat: right_hub_st.seat, on: hub_j)
 left_hub_st := std.ports.Station(axle_line, axle_c, d: hub_bearings.y, toward: drive_side,
   east: std.x, host: hub)
-left_hub_bb := std.bearings.InBore(std.bearings.b6901, ring: std.retaining.din472_24,
+left_hub_bb := std.bearings.Held(std.bearings.b6901, ring: std.retaining.din472_24,
   seat: left_hub_st.seat, on: hub_j)
 
 // -- claims ----------------------------------------------------------------------------------------

@@ -13,8 +13,8 @@ them"). A component that hands out a datum of its own in a group (`od := {at: st
 pocket}`) now stands in a frame of its own, which a mate through the port places; through 0.216
 such an instance stood in the frame around its call, and the mate conflicted with it. Three
 modules arrive in the library: `std.ports` (the interfaces and the mates `seats_in`, `abuts`,
-`grooves`, and `Station`), `std.bearings` (ISO 15 rows, `Bearing`, `OnShaft`, `InBore`) and
-`std.retaining` (DIN 471/472 rows, `Ring471`, `Ring472`). Nothing a document wrote before reads
+`grooves`, and `Station`), `std.bearings` (ISO 15 rows, `Bearing`, `Held`) and
+`std.retaining` (DIN 471/472 rows, `Ring`). Nothing a document wrote before reads
 differently.
 
 **[0.216] A declared name ends its line, though a relation shares it** (#904). A line ending in a

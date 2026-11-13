@@ -28,16 +28,7 @@ impl<'a> P<'a> {
         if !self.eat_p(':') {
             return Some(None);
         }
-        let first = self.ident()?;
-        let mut text = first.text.clone();
-        let mut span = first.span;
-        while self.peek() == Some(&Tok::P('.')) {
-            self.i += 1;
-            let next = self.ident()?;
-            text = format!("{text}.{}", next.text);
-            span = Span::new(span.lo as usize, next.span.hi as usize);
-        }
-        Some(Some(Name { text, span }))
+        self.component_name().map(Some)
     }
 
     /// **`a word(params) b :=` or `word(params) l :=` at the head of a statement** — a relation

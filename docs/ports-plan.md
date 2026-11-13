@@ -23,7 +23,7 @@ still to decide.
   (faces against each other) and `grooves` (a ring's groove cut in what it is fitted to); and
   `FrameOn` and `Station`, a port's frame on an axis.
 - **`std.bearings` and `std.retaining`**: ISO 15 and DIN 471/472 rows for the sizes the drive
-  uses, `Bearing`, `Ring471`, `Ring472` with their ports, and P6's bundles `OnShaft` and `InBore`.
+  uses, `Bearing` and `Ring` with their ports, and P6's bundle `Held`.
 - **Not built.**
   - Stage 2, the host rule: a word or component may still cut what any group it is handed names.
   - P4's fits: `std.fits` and its intervals. The shaft's and spindle's diameters read their
@@ -36,7 +36,7 @@ still to decide.
 |---|---|---|---|---|
 | before | about 60: 14 stations, 6 grooves and 6 cuts, a seat's 3, the sleeve groove's 3, 14 parts and 14 `seats` | 12 (sizes, a restated bore ×2, a restated seat, a groove's place) | 6 (`0.8mm`) | 131 lines |
 | ports, the mates written out | 46: per joint a station, the bearing, `seats_in`, the ring, `abuts`, `grooves` | 0 | 0 | none |
-| ports, the bundles (P6) | 21: per joint a station and an `OnShaft` or `InBore`, and 4 journals and an axis | 0 | 0 | none |
+| ports, the bundles (P6) | 21: per joint a station and a `Held`, and 4 journals and an axis | 0 | 0 | none |
 
 - **The geometry is the same.** All ten clearance claims hold, at the same margins to a
   thousandth of a millimetre. Every body a mate cuts writes an exact STL: the shell, the bearing
@@ -289,7 +289,7 @@ ports:
 component LocatingBearing(size: BearingSize, ring: RingSize, shaft: Journal, housing: Bore,
                           wall: Face) {
   b := Bearing(size)
-  clip := Ring471(ring)
+  clip := Ring(ring)
   b.bore fitted(k6) shaft
   b.od fitted(H7) housing
   b.left abuts wall

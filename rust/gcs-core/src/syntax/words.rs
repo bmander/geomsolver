@@ -318,14 +318,10 @@ pub(super) fn word_definition_at(toks: &[(Tok, Span)], i: usize) -> Option<Fixit
     // past an operand's interface, where one is written: `: Journal`, `: std.ports.Bore`
     // ([0.217]) — the index after the operand's name and its type
     let typed = |j: usize| -> usize {
-        if toks.get(j).map(|(t, _)| t) != Some(&Tok::P(':')) || word_at(toks, j + 1).is_none() {
-            return j;
+        match toks.get(j).map(|(t, _)| t) {
+            Some(Tok::P(':')) => past_ref(toks, j + 1).unwrap_or(j),
+            _ => j,
         }
-        let mut k = j + 2;
-        while toks.get(k).map(|(t, _)| t) == Some(&Tok::P('.')) && word_at(toks, k + 1).is_some() {
-            k += 2;
-        }
-        k
     };
     // the word at `w`: its parameters, if any, then the last operand, its type and `:=`
     let tail = |w: usize| {

@@ -1,6 +1,8 @@
 // Retaining rings (DIN 471 on a shaft, DIN 472 in a bore), drawn about their own axis, `std.z`,
 // their mid-plane their frame's `std.top`, each with its ports: `face` (−z, its normal out of the
-// ring), which abuts what it holds, and `seat`, the groove it takes in what it is fitted to.
+// ring), which abuts what it holds, and `seat`, the groove it takes in what it is fitted to.  A
+// row's `band` runs from the groove outward on a shaft and inward (negative) in a bore, so one
+// `Ring` draws either.
 unit mm
 use std
 use std.sets
@@ -10,14 +12,15 @@ use std.place (left_of)
 use std.ports
 
 // A ring's size, as the table gives it: its groove's diameter, its thickness `t` and radial
-// `band`, and its eyes' circle `r_eye`, size and hole.
+// `band` from the groove (outward on a shaft, inward, negative, in a bore), and its eyes' circle
+// `r_eye`, size and hole.
 interface RingSize { groove: Length, t: Length, band: Length, r_eye: Length, eye: Length, hole: Length }
 
 // DIN 471, for shafts of 17, 20 and 25 mm; DIN 472, for a 24 mm bore.
 din471_17 := {groove: 16.2mm, t: 1mm, band: 2.3mm, r_eye: 11.6mm, eye: 3mm, hole: 1.2mm}
 din471_20 := {groove: 19mm, t: 1.2mm, band: 2.6mm, r_eye: 13.4mm, eye: 3.4mm, hole: 1.5mm}
 din471_25 := {groove: 23.9mm, t: 1.2mm, band: 3mm, r_eye: 16.4mm, eye: 3.6mm, hole: 1.5mm}
-din472_24 := {groove: 25.2mm, t: 1.2mm, band: 2.6mm, r_eye: 9.6mm, eye: 3.4mm, hole: 1.5mm}
+din472_24 := {groove: 25.2mm, t: 1.2mm, band: -2.6mm, r_eye: 9.6mm, eye: 3.4mm, hole: 1.5mm}
 
 // A retaining ring: a flat ring from `r_in` to `r_out`, `t` thick, open `gap` across its ends
 // toward −x, with an eye either side of the gap on the circle `r_eye`, each `eye` across with a
@@ -74,9 +77,13 @@ component RetainingRing(r_in: Length, r_out: Length, t: Length, gap: Angle, r_ey
   eyes_b union body
 }
 
-// The ring's ports, about the axis `ax` it is drawn about: its groove, a band `t` wide from `r_in`
-// out to `r_out`; its face, `t / 2` down the axis.
-component RingPorts(t: Length, r_in: Length, r_out: Length) {
+// A retaining ring of size `s` and its ports: its `seat`, the groove it takes in what it is
+// fitted to — its own band, `t` thick — and its `face`, `t / 2` down its axis.
+component Ring(s: RingSize) {
+  r_in := min(s.groove / 2, s.groove / 2 + s.band)
+  r_out := max(s.groove / 2, s.groove / 2 + s.band)
+  ring := RetainingRing(r_in: r_in, r_out: r_out, t: s.t, gap: 40deg, r_eye: s.r_eye, eye: s.eye,
+    hole: s.hole)
   in std.front {
     up := point
     construction ax := line(std.origin, up)
@@ -85,30 +92,11 @@ component RingPorts(t: Length, r_in: Length, r_out: Length) {
   }
   construction groove := solid({ q | q in std.sets.Cylinder(ax, r: r_out)
                                      q not in std.sets.Cylinder(ax, r: r_in)
-                                     std.origin distance(in: (-t / 2, t / 2), along: ax) q })
+                                     std.origin distance(in: (-s.t / 2, s.t / 2), along: ax) q })
   down := axis
   down parallel(sense: opposite) std.z
   std.origin coincident down
-  ff := std.ports.FrameOn(std.z, std.origin, d: -t / 2, toward: down, east: std.x)
+  ff := std.ports.FrameOn(std.z, std.origin, d: -s.t / 2, toward: down, east: std.x)
+  seat := {at: std.top, groove: groove}
   face := {at: ff.at}
-}
-
-// DIN 471, on a shaft: the ring from the groove outward, its groove cut from the groove's
-// diameter out past the shaft.
-component Ring471(s: RingSize) {
-  ring := RetainingRing(r_in: s.groove / 2, r_out: s.groove / 2 + s.band, t: s.t, gap: 40deg,
-    r_eye: s.r_eye, eye: s.eye, hole: s.hole)
-  p := RingPorts(t: s.t, r_in: s.groove / 2, r_out: s.groove / 2 + s.band)
-  seat := {at: std.top, groove: p.groove}
-  face := {at: p.face.at}
-}
-
-// DIN 472, in a bore: the ring from the groove inward, its groove cut from inside the bore out to
-// the groove's diameter.
-component Ring472(s: RingSize) {
-  ring := RetainingRing(r_in: s.groove / 2 - s.band, r_out: s.groove / 2, t: s.t, gap: 40deg,
-    r_eye: s.r_eye, eye: s.eye, hole: s.hole)
-  p := RingPorts(t: s.t, r_in: s.groove / 2 - s.band, r_out: s.groove / 2)
-  seat := {at: std.top, groove: p.groove}
-  face := {at: p.face.at}
 }

@@ -17,8 +17,7 @@
 unit mm
 use std
 use std.solids
-use std.sets
-use std.solids (cut, union)
+use std.solids (union)
 use std.place (seats)
 use gears
 use dims (Zs, Zp, Zr, planets, mn, alpha, beta, pw, ha, hf, backlash, edge, a, ring_od,
