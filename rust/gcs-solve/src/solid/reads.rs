@@ -125,7 +125,22 @@ pub(super) fn face_basis(sk: &Sketch, f: &crate::model::FaceE) -> Basis {
 fn reference(sk: &Sketch, si: usize) -> Basis {
     super::document::first_placed(sk, si, |f, by| {
         sk.faces.get(f as usize).map(|f| moved(&face_basis(sk, f), by))
-    }).unwrap_or_else(Basis::page)
+    }).unwrap_or_else(|| moved(&Basis::page(), placing(sk, si)))
+}
+
+/// Where the placements solid `si` is, one within another, put what they place: the page a solid
+/// of no face is read relative to is carried by them, so a region placed elsewhere — a bevel
+/// gear's member, cut by its crown's roll — is one shape moved, as a solid of faces is.
+fn placing(sk: &Sketch, si: usize) -> Motion {
+    let (mut by, mut i) = (Motion::identity(), si);
+    while let Some(SolidDef::Placed { source, motion, at }) = sk.solids.get(i).map(|s| &s.def) {
+        match super::document::placement(sk, *motion, at.value) {
+            Ok(pose) => by = pose.then(by),
+            Err(_) => break,
+        }
+        i = *source as usize;
+    }
+    by
 }
 
 /// Whether point `p` is drawn in `plane` (the page for none), its numbers that plane's own.
@@ -136,6 +151,12 @@ fn drawn_in(sk: &Sketch, p: usize, plane: Option<u32>) -> bool {
 /// `reads`, each plane's pose written as `poses` says.
 fn reads_with(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, poses: &mut Poses)
     -> Vec<f64> {
+    reads_from(sk, si, unit, skip, poses, Motion::identity())
+}
+
+/// `reads_with`, solid `si` read under the placement `by`.
+fn reads_from(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, poses: &mut Poses,
+              by: Motion) -> Vec<f64> {
     let mut v = vec![unit];
     // a flag per solid: a body rounded all over has a term per edge and corner
     let mut seen = vec![false; sk.solids.len()];
@@ -146,7 +167,7 @@ fn reads_with(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, p
         Poses::Relative { .. } => vec![None; sk.solids.len()],
     };
     // each solid with the placement it is read under
-    let mut stack = vec![(si as u32, Motion::identity())];
+    let mut stack = vec![(si as u32, by)];
     while let Some((s, by)) = stack.pop() {
         let Some(sol) = sk.solids.get(s as usize) else { continue };
         if let Some(was) = placed_by.get_mut(s as usize) {
@@ -191,6 +212,29 @@ fn reads_with(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, p
                     Ok(pose) => {
                         poses.placed(pose, &mut v);
                         under = pose.then(by);
+                        // its source read relative to the reference where the placement puts
+                        // it; and one that stands in the world of its own — a sweep reads its
+                        // motion there — keyed as it is stated, in the world, beside the pose
+                        // the placement puts it at relative to the reference: the same source
+                        // at the same relative pose is the solid moved, wherever the placement
+                        // has put it (a planetary's gears, cut by their hobs, rolled under a
+                        // claim were each built again at every sample, where they are moved)
+                        if let Poses::Relative { to, reach, .. } = poses {
+                            let mut own = Poses::Relative { to: *to, rigid: true, reach: *reach,
+                                                            by: under };
+                            let read = reads_from(sk, *source as usize, unit, skip, &mut own, under);
+                            let Poses::Relative { rigid, reach: far, .. } = own else {
+                                unreachable!()
+                            };
+                            match rigid {
+                                true => {
+                                    *reach = far;
+                                    v.extend(read);
+                                }
+                                false => v.extend(reads_where(sk, *source as usize, unit, skip)),
+                            }
+                            continue;
+                        }
                     }
                     Err(_) => {
                         poses.world();
@@ -433,9 +477,10 @@ const NEAR: f64 = crate::solve::XTOL;
 /// `reference`) — the *shape* — and that reference plane's world pose.  Two keys of one shape
 /// are one solid moved rigidly: what was evaluated for one is the other's too, moved by the motion
 /// that carries one reference onto the other (`Rigid::between`).  A solid that reads anything
-/// standing in the world itself — a region's points, a face family's stations, a body placed or
-/// swept under a motion, a curve that may be traced through anything — has its pose in its shape
-/// as well, so it is the same shape only where it stands where it stood.
+/// standing in the world itself — a region's points, a face family's stations, a body swept under
+/// a motion, a curve that may be traced through anything — has its pose in its shape as well, so
+/// it is the same shape only where it stands where it stood; but a placement's source that does is
+/// keyed as it is stated beside the placement's relative pose, so the placement moves it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShapeKey {
     shape: Vec<f64>,

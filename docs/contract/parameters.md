@@ -561,7 +561,9 @@ where a rule came from.
     it again**: its shape key (`solid::ShapeKey`) reads each plane under it where the placements
     above put it, relative to a reference they put there too, and the placement's pose relative to
     that reference — the same at every instant — so a scrub moves the evaluation built at home
-    (#412); a solid read under two placements is not one that moves with either.  The claim judge
+    (#412); a source that reads the world itself (a sweep, a region) is read as it is stated,
+    beside that pose, and one of no face relative to the page the placements carry, so it moves
+    too; a solid read under two placements is not one that moves with either.  The claim judge
     stands its copy of the drawing and reads it (`Poses::Stood`).
   - **An instant as written** (`follow::instant`): `90deg`, read in the drawing's units as the
     interval's ends are — the parameter's dimension, finite.  A drawing's `model m from "…" at t =
