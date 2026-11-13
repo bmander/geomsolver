@@ -225,11 +225,11 @@ pub(crate) fn plunged_away(big: f64,small: f64,beta: f64,depth: f64) -> f64 {
 /// **A ring slid leaning past its fold is swept by the contact's road** (#880 T1; #805's negative
 /// control before it): at 60° from the slide, past `tan² β = (R − r)/r` (54.7°), the inner contour
 /// cusps — the fold locus, where the sheet doubles back — which the closed class's admission still
-/// refuses by name as `Folded` at a point of the inner contact (`closed::reads`); its build asks the
-/// contact's road, whose trim keeps of the folded sheet what bounds the sweep. Held to the sweep's
-/// volume line by line (`torus_pushed_by_lines`, apart from the kernel, to 1e-9) within 1e-6 of it —
-/// 6.6e-8 today: near the cusps' paths the sheet's two leaves stand nearly tangent, and the trim
-/// reads them no closer (the fold cut, #880 T1).
+/// refuses by name as `Folded` at a point of the inner contact (`closed::reads`); its build asks
+/// the contact's road, whose trim keeps of the folded sheet what bounds the sweep. Held to the
+/// sweep's volume line by line (`torus_pushed_by_lines`, apart from the kernel, to 1e-9) within
+/// 1e-6 of it — 6.6e-8 today: near the cusps' paths the sheet's two leaves stand nearly tangent,
+/// and the trim reads them no closer (the fold cut, #880 T1).
 #[test]
 fn a_ring_slid_past_its_fold_is_swept_by_the_contacts_road() {
     use gcs_core::brep::swept::closed::reads;
@@ -589,8 +589,8 @@ fn the_slid_touches_build_through_their_given_touches() {
 }
 
 /// `∫ f` over `[lo, hi]` within `tol`, by Gauss–Kronrod's 7–15 rule halved where its two estimates
-/// part by more than their share of `tol` — never below the estimate's own rounding, nor past twenty
-/// halvings, so a share `f`'s noise cannot meet stops there.
+/// part by more than their share of `tol` — never below the estimate's own rounding, nor past
+/// twenty halvings, so a share `f`'s noise cannot meet stops there.
 pub(crate) fn kronrod(f: &dyn Fn(f64) -> f64,lo: f64,hi: f64,tol: f64) -> f64 {
     const XK: [f64;8] = [0.991455371120812639,0.949107912342758525,0.864864423359769073,0.741531185599394440,
         0.586087235467691130,0.405845151377397167,0.207784955007898468,0.];
@@ -613,16 +613,18 @@ pub(crate) fn kronrod(f: &dyn Fn(f64) -> f64,lo: f64,hi: f64,tol: f64) -> f64 {
 }
 
 /// **What a torus pushed along `z` sweeps, line by line** (#880 T1: past its fold too), apart from
-/// the kernel: the torus about `centre` along the unit `axis`, middle radius `big` and tube `small`,
-/// carried `push` along `z`. The vertical line through `(x, y)` meets it in the intervals between
-/// the real roots of a quartic in its height (`(s + w² + R² − r²)² = 4R² (s + w² − (b + n_z w)²)`,
-/// `w` the height over the centre, `s` and `b` the line's own: the companion matrix's eigenvalues,
-/// polished by Newton); the push lengthens each by `push` the way it goes, and the line keeps their
-/// union, clipped to `within` where given. Across `y` at each `x` that length is smooth but where
-/// the line's make-up changes — a root pair born at the outline, two intervals running together, an
-/// end crossing a clip — found where a scan of 400 lines sees it change and bisected to rounding, and
-/// each smooth piece is read by eight-point Gauss–Legendre on 16 pieces in `τ`, `y = m − h cos τ`, so
-/// its square-root ends are smooth; over `x`, by `kronrod` to `tol`.
+/// the kernel: the torus about `centre` along the unit `axis`, middle radius `big` and tube
+/// `small`, carried `push` along `z`. The vertical line through `(x, y)` meets it in the intervals
+/// between the real roots of a quartic in its height (`(s + w² + R² − r²)² = 4R² (s + w² − (b + n_z
+/// w)²)`, `w` the height over the centre, `s` and `b` the line's own), each isolated between the
+/// quartic's turning points and bisected; the push lengthens each by `push` the way it goes, and
+/// the line keeps their union, clipped to `within` where given. Across `y` at each `x` that length
+/// is smooth but where the line's make-up changes: where it crosses the outline seen down `z` (a
+/// root pair born or lost, at the outline's crossings, found in its own parameter so none is missed
+/// however narrow, as between a folded outline's cusps), and where two intervals run together or an
+/// end crosses a clip (a scan of 400 lines, bisected); each smooth piece is read by
+/// `swept_loci::integral`, its square-root ends tamed. Over `x`, by `kronrod` to `tol`, split where
+/// the outline turns back in `x`.
 pub(crate) fn torus_pushed_by_lines(centre: V,axis: V,big: f64,small: f64,push: f64,within: Option<[f64;2]>,tol: f64) -> f64 {
     let reach = big+small;
     // the swept length on the line, and its make-up: how many roots, intervals kept, ends clipped
@@ -634,7 +636,6 @@ pub(crate) fn torus_pushed_by_lines(centre: V,axis: V,big: f64,small: f64,push: 
         // w⁴ + c2 w² + c1 w + c0
         let (c2,c1,c0) = (2.*a-r4*(1.-axis[2]*axis[2]),2.*r4*b*axis[2],a*a-r4*(s-b*b));
         let f = |w: f64| ((w*w+c2)*w+c1)*w+c0;
-        let df = |w: f64| (4.*w*w+2.*c2)*w+c1;
         // the quartic's turning points, the real roots of its derivative `4w³ + 2 c2 w + c1` (a
         // depressed cubic, by its trigonometric or Cardano form), cut the line into stretches each
         // holding at most one root of its own, found by bisection to rounding
@@ -661,7 +662,6 @@ pub(crate) fn torus_pushed_by_lines(centre: V,axis: V,big: f64,small: f64,push: 
             for _ in 0..200 { let m = 0.5*(a+b); if m <= a || m >= b { break } if (f(m) < 0.) == (fa < 0.) { a = m } else { b = m } }
             Some(0.5*(a+b))
         }).collect();
-        let _ = df;
         roots.sort_by(f64::total_cmp);
         let mut swept: Vec<[f64;2]> = roots.windows(2).filter(|p| f(0.5*(p[0]+p[1])) < 0.)
             .map(|p| [centre[2]+p[0]+push.min(0.),centre[2]+p[1]+push.max(0.)]).collect();
@@ -697,8 +697,7 @@ pub(crate) fn torus_pushed_by_lines(centre: V,axis: V,big: f64,small: f64,push: 
             for _ in 0..80 { let m = 0.5*(a+b); if line(x,m).1 == kinds[k] { a = m } else { b = m } }
             cuts.push(0.5*(a+b));
         }
-        // and where the outline crosses the line `x`: each sample pair astride it, read between them
-        // (a straight chord a few thousandths long, within rounding of the outline at its curvature)
+        // and where the outline crosses the line `x`: each sample pair astride it, bisected in `u`
         for (shift,branch) in &outline {
             for (k,w) in branch.windows(2).enumerate() {
                 if (w[0][0] < x) == (w[1][0] < x) { continue }
@@ -711,7 +710,7 @@ pub(crate) fn torus_pushed_by_lines(centre: V,axis: V,big: f64,small: f64,push: 
         cuts.push(y1);
         cuts.sort_by(f64::total_cmp);
         cuts.dedup_by(|p,q| (*p-*q).abs() <= 1e-12);
-        cuts.windows(2).map(|w| crate::swept_loci::tamed(w[0],w[1],16,&|y| line(x,y).0)).sum()
+        cuts.windows(2).map(|w| crate::swept_loci::integral(w[0],w[1],16,&|y| line(x,y).0)).sum()
     };
     // over `x`, split where the outline turns back in `x` (its extremes and its cusps: where the
     // number of its crossings with a line changes), each turn bisected in `u`

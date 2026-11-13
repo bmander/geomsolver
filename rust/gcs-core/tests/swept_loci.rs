@@ -19,10 +19,7 @@ fn screw(theta: f64,k: f64) -> Trajectory {
 
 /// `∫ f` over `[a, b]` by Gauss–Legendre's eight points (`integral::GAUSS8`) on each of `n` pieces,
 /// each read at `a + (b − a)(1 − cos τ)/2` so that a square-root end is smooth in `τ`.
-pub(crate) fn tamed(a: f64,b: f64,n: usize,f: &dyn Fn(f64) -> f64) -> f64 { integral(a,b,n,f) }
-
-/// `∫ f` over `[a, b]` (see `tamed`).
-fn integral(a: f64,b: f64,n: usize,f: &dyn Fn(f64) -> f64) -> f64 {
+pub(crate) fn integral(a: f64,b: f64,n: usize,f: &dyn Fn(f64) -> f64) -> f64 {
     if !(b > a) { return 0. }
     let g = |t: f64| { let (s,c) = t.sin_cos(); f(0.5*(a+b)-0.5*(b-a)*c)*0.5*(b-a)*s };
     (0..n).map(|i| {
@@ -66,7 +63,7 @@ fn sign_changes(pieces: &[f64],n: usize,f: &dyn Fn(f64) -> f64) -> Vec<f64> {
 /// dρ`: in `z` cut where the strip's ends cross the slice's top and bottom, where each extreme's
 /// inner point enters and leaves the strip, and where `L` crosses `2π`; in `ρ` where the slice's
 /// height is the climb and where `L` first reaches `2π` up a slice; each piece read by `integral`.
-pub(crate) fn swept_volume(r: f64,d: f64,k: f64,theta: f64) -> f64 {
+fn swept_volume(r: f64,d: f64,k: f64,theta: f64) -> f64 {
     let rise = k*theta;
     // (the angles a circle's slice covers are at most its own and the roll's: short of a turn
     // together, they never cover it, and `L` has no `2π` to cross)
@@ -116,11 +113,12 @@ pub(crate) fn swept_volume(r: f64,d: f64,k: f64,theta: f64) -> f64 {
 /// `theta` radians, rising `k` a radian, by the circles about the axis** (#880 T1), apart from the
 /// kernel and from `swept_volume`, which takes the ball clear of the axis: this one any ball, the
 /// pipe folding or not. On the circle of radius `ρ` at height `z`, the ball screwed through `φ`
-/// covers the arc about `φ` where `cos(ψ − φ) ≥ c(φ) = (ρ² + d² + (z − kφ)² − r²)/2ρd`, of half-width
-/// `w = acos c`, every point where `c ≤ −1`, none where `c > 1`. Over the rolls with `c ≤ 1`, one
-/// stretch, the arcs run together into `[min (φ − w), max (φ + w)]` of the unwrapped angle, so the
-/// circle is covered `min(L, 2π)` of its `2π`: each extreme sampled at 256 rolls and polished by
-/// Brent's method (`most`). The volume is `∫ ρ ∫ min(L, 2π) dz dρ`, each by `swept_slid::kronrod`.
+/// covers the arc about `φ` where `cos(ψ − φ) ≥ c(φ) = (ρ² + d² + (z − kφ)² − r²)/2ρd`, of
+/// half-width `w = acos c`, every point where `c ≤ −1`, none where `c > 1`. Over the rolls with `c
+/// ≤ 1`, one stretch, the arcs run together into `[min (φ − w), max (φ + w)]` of the unwrapped
+/// angle, so the circle is covered `min(L, 2π)` of its `2π`: each extreme sampled at 256 rolls and
+/// polished by Brent's method (`most`). The volume is `∫ ρ ∫ min(L, 2π) dz dρ`, each by
+/// `swept_slid::kronrod`.
 pub(crate) fn swept_by_circles(r: f64,d: f64,k: f64,theta: f64,tol: f64) -> f64 {
     let covered = |rho: f64,z: f64| -> f64 {
         // the rolls with `c ≤ 1`: `(z − kφ)² ≤ r² − (ρ − d)²`
@@ -238,9 +236,10 @@ fn a_pipe_comes_back_onto_itself_along_helices() {
 /// `Folded` before it, #805): a ball reaching past its centre's helix's radius of curvature, `(ρ² +
 /// κ²)/ρ`, folds its pipe, which the closed class reads as `Folded` at the ball's centre; under a
 /// constant twist that refusal is asked of the contact's road, whose trim keeps of the folded pipe
-/// what bounds the sweep. Held to the sweep's volume circle by circle (`swept_by_circles`, apart from
-/// the kernel, to 1e-9) within 1e-6 of it — 2.3e-7 today: near the fold's cuspidal edge the pipe's
-/// two leaves stand nearly tangent, and the trim reads them no closer (the fold cut, #880 T1).
+/// what bounds the sweep. Held to the sweep's volume circle by circle (`swept_by_circles`, apart
+/// from the kernel, to 1e-9) within 1e-6 of it — 2.3e-7 today: near the fold's cuspidal edge the
+/// pipe's two leaves stand nearly tangent, and the trim reads them no closer (the fold cut, #880
+/// T1).
 #[test]
 fn a_ball_screwed_tighter_than_its_radius_is_swept_by_the_contacts_road() {
     let tool = gcs_core::brep::build::sphere([0.5,0.,0.],[0.,0.,1.],1.2).unwrap();

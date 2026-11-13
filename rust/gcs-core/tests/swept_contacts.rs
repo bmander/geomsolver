@@ -805,10 +805,10 @@ fn s6s_free_form_faces_are_cut_through_the_front_door() {
     }
 }
 
-/// `ring-pushed-in-past-its-fold`: the torus about `(0, 0, 4)` along `(sin 65°, 0, cos 65°)`, radii 3
-/// and 1, pushed straight down 8 into the block `(−8, −8, −8)`–`(8, 8, 0)`. Leaning past `tan² β =
-/// (R − r)/r` its inner outline seen down the push cusps, four times, and the sheet its inner contact
-/// sweeps folds there. Apart from the build: on each vertical line the torus's intervals (a
+/// `ring-pushed-in-past-its-fold`: the torus about `(0, 0, 4)` along `(sin 65°, 0, cos 65°)`, radii
+/// 3 and 1, pushed straight down 8 into the block `(−8, −8, −8)`–`(8, 8, 0)`. Leaning past `tan² β
+/// = (R − r)/r` its inner outline seen down the push cusps, four times, and the sheet its inner
+/// contact sweeps folds there. Apart from the build: on each vertical line the torus's intervals (a
 /// quartic's roots) pushed down 8, their union clipped to the block, integrated over the lines with
 /// the outline's crossings as breakpoints (`swept_slid::torus_pushed_by_lines`, 140.9979496033 away
 /// at 1e-9, unchanged at 1e-7 or with a breakpoint scan ten times finer;
@@ -822,11 +822,11 @@ fn ring_fold_case() -> Case {
 }
 
 /// `ball-screwed-round-a-tight-helix`: the ball of radius 2 about `(1.5, 0, 0)` screwed about z, a
-/// radian a radian, rising 3 a turn, two turns. The helix's radius of curvature, about 1.65, is less
-/// than the ball's, so the pipe about it folds, and the turns overlap. Apart from the build: each
-/// circle about the axis covered `min(L, 2π)`, `L` the unwrapped stretch the poses' arcs on it run
-/// together into, integrated over `ρ` and `z` (`swept_loci::swept_by_circles`: 253.4493761839 at
-/// 1e-8, 253.4493759525 at 1e-6). brep-bench's cadrs builds 282.091, 11% over.
+/// radian a radian, rising 3 a turn, two turns. The helix's radius of curvature, about 1.65, is
+/// less than the ball's, so the pipe about it folds, and the turns overlap. Apart from the build:
+/// each circle about the axis covered `min(L, 2π)`, `L` the unwrapped stretch the poses' arcs on it
+/// run together into, integrated over `ρ` and `z` (`swept_loci::swept_by_circles`: 253.4493761839
+/// at 1e-8, 253.4493759525 at 1e-6). brep-bench's cadrs builds 282.091, 11% over.
 fn ball_helix_case() -> Case {
     Case {what:"the ball round a tight helix",blank:None,tool:gcs_core::brep::build::sphere([1.5,0.,0.],[0.,0.,1.],2.).unwrap(),
         path:gcs_core::brep::trajectory::Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:3.}),
@@ -840,9 +840,10 @@ fn ball_helix_case() -> Case {
 /// asked of the road — each face's contact carried exactly over the roll, the end poses, every
 /// meeting given, trimmed by membership, which keeps of each folded sheet what bounds the sweep —
 /// and each builds to its volume made apart from the build, within ten tolerances at 1e-5, and to a
-/// STEP file that reads back as the solid. Not yet at the kernel's tolerance: near a cusp's path the
-/// folded sheet's two leaves stand nearly tangent and the trim reads them no closer, the ring 6.5e-5
-/// short there (3.4e-8 of the block) and the ball 2.5e-6 — what the fold cut proper owes (#880 T1).
+/// STEP file that reads back as the solid. Not yet at the kernel's tolerance: near a cusp's path
+/// the folded sheet's two leaves stand nearly tangent and the trim reads them no closer, the ring
+/// 6.5e-5 short there (3.4e-8 of the block) and the ball 2.5e-6 — what the fold cut proper owes
+/// (#880 T1).
 #[test]
 fn a_sheet_that_folds_is_cut_through_the_front_door() {
     for case in [ring_fold_case(),ball_helix_case()] { cut_through_the_front_door(&case,TOL) }
