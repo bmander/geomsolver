@@ -275,6 +275,7 @@ mod scenarios;
 mod screwed_copies;
 mod screwed_sets;
 mod seams;
+mod seated_ball;
 mod sections;
 mod sector;
 mod seeds;
