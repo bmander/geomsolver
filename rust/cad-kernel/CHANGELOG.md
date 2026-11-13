@@ -8,6 +8,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A drawing's sweep reaches the contact's road** (`swept::dispatch`, #880 Q1b): under a slide, a
+  turn or a screw a tool the closed class reads no candidate for is admitted to it where the class
+  asked first refused the sweep by a row the road answers (T1, T2, S1, E1), and its build takes the
+  road; `dispatch::Closed` gains `first`, that refusal, said where the road refuses too (**breaking**
+  for code building a `Closed` literally). A fold of a section's meridian image is read only from
+  steps past the tolerance (`swept::contacts`), where a contact meeting the turn's velocity at its end
+  was cut twice a hair from it.
 - **Free-form faces on the contact's road** (`swept::contacts`, #880 Q1b S6): a piece of contact
   ending on its face's boundary now ends at the root of `n·v` along that edge, so the pieces either
   side of an edge the faces are tangent across meet (the coil spring's tube and its ball ends,

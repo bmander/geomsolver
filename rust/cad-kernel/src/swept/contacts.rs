@@ -1442,7 +1442,11 @@ fn folds(at: &dyn Fn(f64) -> V,ts: &[f64],o: V,z: V,tol: f64) -> Vec<(f64,bool)>
         0.5*(lo+hi)
     };
     let mut out = Vec::new();
-    let tiny = 1e-9*scale_of;
+    // (a step of the image within the tolerance the points hold says no way: where a section runs
+    // in square to the turn's velocity at its end its image barely moves, 1e-10 a step, and its
+    // points' own error turned it back and forth there — the coin drawn standing on its rim, its
+    // side's line cut twice a hair from its end)
+    let tiny = (1e-9*scale_of).max(tol);
     for k in 1..ts.len().saturating_sub(1) {
         let (d1,d2) = (step(k-1,k),step(k,k+1));
         if d1[0].hypot(d1[1]) <= tiny || d2[0].hypot(d2[1]) <= tiny || d1[0]*d2[0]+d1[1]*d2[1] >= 0. { continue }

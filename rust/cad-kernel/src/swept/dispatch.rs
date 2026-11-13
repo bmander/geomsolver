@@ -125,9 +125,11 @@ pub trait Blank: Sync {
 pub struct Ask<'a> { pub poses: &'a [Motion],pub revolved: Option<(V,V)>,pub sampling: Sampling,pub margin: f64 }
 
 /// A sweep the closed class builds: its tool's B-rep, its trajectory unpaced (millimetres) and
-/// the roll it is carried over.
+/// the roll it is carried over; and, where it was admitted for the contact's road to build (a tool
+/// the class reads no candidate for, #880 Q1b), the refusal of the class asked first, which stands
+/// where the road refuses it too.
 #[derive(Clone,Debug)]
-pub struct Closed { pub tool: Brep,pub path: Trajectory,pub roll: [f64;2] }
+pub struct Closed { pub tool: Brep,pub path: Trajectory,pub roll: [f64;2],pub first: Option<Box<Refused>> }
 
 /// The class a sweep is admitted to, and what it found.
 #[derive(Clone,Debug)]
@@ -222,7 +224,7 @@ pub fn sweep(s: &Sweep,blank: &dyn Blank,ask: &Ask) -> Result<Admitted,Refused> 
         Ok(Admitted {samples:sampled.candidates,contacts:sampled.runs,spacing:(1./super::region::PER_DEGREE).to_radians(),
             basis:[sampled.candidates,sampled.steps],..Admitted::whole(Class::Subtraction(Box::new(found)),poses.len())})
     };
-    let closed = |refused: Refused| closed(s,b,poses.len()).ok_or(refused);
+    let closed = |refused: Refused| closed(s,b,poses.len(),&refused).ok_or(refused);
     if twist.is_some() { if let Some(class) = subtraction() { return subtract(class).or_else(closed) } }
     rowed(s,b,blank,ask,twist).or_else(|refused| match subtraction() {
         Some(class) => subtract(class).or_else(closed),
@@ -232,17 +234,33 @@ pub fn sweep(s: &Sweep,blank: &dyn Blank,ask: &Ask) -> Result<Admitted,Refused> 
 
 /// The closed class's admission of `s` (C1, C2): its trajectory unpaced, read in millimetres, a
 /// constant twist's or any other's, the tool's structure what the build asks; none where it
-/// refuses.
-fn closed(s: &Sweep,b: &Brep,poses: usize) -> Option<Admitted> {
+/// refuses. Under a constant twist a tool whose face or edge the class reads no candidate for
+/// (`Unbuilt::Curved`) is admitted too where `first`, the refusal of the class asked first, is one
+/// the contact's road answers (`road_answers`): its build takes the road (`closed::closed`, #880
+/// Q1b), and where the road refuses it as well, the class's refusal is said there.
+fn closed(s: &Sweep,b: &Brep,poses: usize,first: &Refused) -> Option<Admitted> {
     // a sweep is its path's, not its pace's (#684 L)
     let (path,roll) = s.path.unpaced(s.roll).ok()?;
     let path = path.scaled(s.mm);
-    match path.screw() {
-        Some(_) => super::closed::reads(b,&path).map(|_| ()),
-        None => super::closed::reads_general(b,&path,roll),
+    let road = match path.screw() {
+        Some(_) => match super::closed::reads(b,&path) {
+            Err(super::closed::Unbuilt::Curved {..}) if road_answers(first.row) => Ok(true),
+            read => read.map(|_| false),
+        },
+        None => super::closed::reads_general(b,&path,roll).map(|_| false),
     }.ok()?;
-    Some(Admitted::whole(Class::Closed(Box::new(Closed {tool:b.clone(),path,roll})),poses))
+    let first = road.then(|| Box::new(first.clone()));
+    Some(Admitted::whole(Class::Closed(Box::new(Closed {tool:b.clone(),path,roll,first})),poses))
 }
+
+/// **Whether the contact's road answers a refusal by `row`** (#880 Q1b): a tool the walk does not
+/// read (T1, T2), a contact that is no regular curve on it — a pole, a branch, a ring in contact all
+/// round (S1) — and an end of the roll in the blank (E1) are what the walk reads a contact by and
+/// the road reads the whole tool past. A fold (E3, S3), a stock reached twice on a ring (S2) and
+/// the sheet's own crossings (E4, S4) are no such limit: the road does not cut a fold (T1's), and
+/// their rows say what stops the sweep by name — a twist drill's flute wheel too steep for its
+/// helix, admitted past S3, was refused only by a cell its other sweep's sheets left unsplit.
+fn road_answers(row: Row) -> bool { matches!(row,Row::Tool | Row::Corner | Row::Regular | Row::Clearance) }
 
 /// The constant twist's rows (S1–S4) under `twist`, the constant twist the motion is, or the
 /// generating class's (M1–E4, T1–T3) where it is none: the tool read from its B-rep (T1), the

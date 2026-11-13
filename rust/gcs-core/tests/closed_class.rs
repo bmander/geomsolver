@@ -5,14 +5,15 @@
 //! reads them no member of the sweep (C3). Each is a case another class refuses by name, its STL
 //! held to the material field with no disagreement, and its volume to a figure made apart from the
 //! build (the closed class is asked only where the others refuse, so a sweep read as closed is one
-//! they refuse); and what the class's rows refuse stands as the first class's refusal. The bar
+//! they refuse); and what the class's rows refuse stands as the first class's refusal, which the
+//! contact's road stands behind too where the first refusal is one it answers (#880 Q1b). The bar
 //! pushed wholly through the plate also holds the dispatch to constant twist once G1b reads it.
 use gcs_core::solid::admission::{Class,Condition};
 use std::f64::consts::PI;
 
 use crate::closed_characteristics::square_bar;
 use crate::solid_sweeps_examples::class;
-use crate::turns_and_slides::{admit,exported,near,refused};
+use crate::turns_and_slides::{exported,near};
 
 /// The push up the plate leaning toward x, `(0.3, 0, √(1 − 0.3²))`: its rise.
 const RISE: f64 = 0.9539392014169457;
@@ -89,18 +90,60 @@ pub(crate) fn drum_turned_partway_away() -> f64 {
     crate::brep::simpson(-FRAC_PI_2,FRAC_PI_2,4000,|s: f64| { let r = 10.+s.sin(); r*(PI/6.+a(r))*s.cos() })
 }
 
-/// What the closed class's rows refuse stands as the class asked first refused it: a tapered mill, a
-/// cone about an axis leaning 10° to the screw's (C1: under a screw a cone about an axis along it
-/// only, #780 C2), screwed half a millimetre a turn to a stop inside the ring sector is the
-/// constant-twist class's refusal still.
+/// **What `turn.sv`'s ring sector keeps of a sweep, by a Monte Carlo of its definition** (#880 Q1b),
+/// apart from the build: a point of the sector (radii 8 to 12, heights ±1, 60° round from x) is
+/// removed where some pose of the roll carries the tool over it — `inside` the tool's own closed-form
+/// solid, read at the point carried back by each of the roll's poses a thousandth of a radian apart,
+/// the motion's own (`found.path`). `n` points in the sector's box, the estimate and its standard error.
+pub(crate) fn kept_by_its_definition(found: &gcs_core::solid::closed_class::Closed,inside: &dyn Fn([f64;3]) -> bool,n: usize)
+    -> (f64,f64) {
+    let steps = ((found.roll[1]-found.roll[0])/1e-3).ceil() as usize;
+    let back: Vec<gcs_core::brep::geom::Rigid> = (0..=steps).map(|i| {
+        let q = found.path.pose(found.roll[0]+(found.roll[1]-found.roll[0])*i as f64/steps as f64).unwrap();
+        gcs_core::brep::geom::Rigid {r:q.r,t:q.p}.inverse()
+    }).collect();
+    let in_sector = |p: [f64;3]| { let (rho,phi) = (p[0].hypot(p[1]),p[1].atan2(p[0])); (8.0..=12.).contains(&rho) && p[2].abs() <= 1.
+        && (0.0..=PI/3.).contains(&phi) };
+    crate::swept_closed::monte_carlo([0.,0.,-1.],[12.,12.*(PI/3.).sin(),1.],n,880,&|p| in_sector(p) && !back.iter().any(|b| inside(b.point(p))))
+}
+
+/// The torus about the line through `centre` along the unit `axis`, its tube of radius `tube`
+/// centred `ring` out from it: whether `p` is in it.
+pub(crate) fn in_torus(p: [f64;3],centre: [f64;3],axis: [f64;3],ring: f64,tube: f64) -> bool {
+    let q = [p[0]-centre[0],p[1]-centre[1],p[2]-centre[2]];
+    let along = q[0]*axis[0]+q[1]*axis[1]+q[2]*axis[2];
+    let out = (q[0]*q[0]+q[1]*q[1]+q[2]*q[2]-along*along).max(0.).sqrt();
+    (out-ring).powi(2)+along*along <= tube*tube
+}
+
+/// **A tapered mill leaning to a screw, stopped inside the ring sector, is built by the contact's
+/// road** (#880 Q1b; a negative control before it, its first refusal standing). A cone about an
+/// axis leaning 10° to the screw's (C1: under a screw the closed class reads a cone about an axis
+/// along it only, #780 C2) screwed half a millimetre a turn to a stop inside the sector: the
+/// constant-twist class refuses it by its end in the blank (E1), which the road answers, so the
+/// closed class takes it and its build goes the road — the cone's contact read on the whole mill and
+/// carried exactly along the helix, the mill at both ends. Held to the material field with no
+/// disagreement and to a Monte Carlo of the definition within four standard errors.
 #[test]
-fn a_sweep_the_closed_class_refuses_keeps_its_first_refusal() {
+fn a_tapered_mill_leaning_to_a_screw_stopped_inside_is_built_by_the_contacts_road() {
     let (s,c) = 10f64.to_radians().sin_cos();
-    let r = refused(admit(&crate::flat_faces::turned_mill(1.,2.,10.,0.).replace("use std.motion (turns)","use std.motion (screws)")
+    let e = fixtures::read(&crate::flat_faces::turned_mill(1.,2.,10.,0.).replace("use std.motion (turns)","use std.motion (screws)")
         .replace("swing turns(1) ax","swing screws(0.5mm) ax").replace("(-140deg, 140deg)","(-140deg, 30deg)")
-        .replace("fix(dir == (0, 0, 1)) up",&format!("fix(dir == (0, {s}, {c})) up"))));
-    assert_eq!(r.class(),"constant-twist class","{r}");
-    assert!(!matches!(r.condition,Condition::Faces | Condition::Constant | Condition::Settled),"{r}");
+        .replace("fix(dir == (0, 0, 1)) up",&format!("fix(dir == (0, {s}, {c})) up")));
+    let Class::Closed(found) = class(&e,"part") else { panic!("the closed class") };
+    assert!(found.first.as_ref().is_some_and(|r| r.condition == Condition::Clearance),"admitted for the road past E1");
+    // the mill: from (10, 0, 0) up its axis 4, its radius 1 at the bottom to 2 at the top
+    let axis = [0.,s,c];
+    let in_mill = |p: [f64;3]| {
+        let q = [p[0]-10.,p[1],p[2]];
+        let t = q[1]*axis[1]+q[2]*axis[2];
+        let r = (q[0]*q[0]+q[1]*q[1]+q[2]*q[2]-t*t).max(0.).sqrt();
+        (0.0..=4.).contains(&t) && r <= 1.+t/4.
+    };
+    let (kept,error) = kept_by_its_definition(&found,&in_mill,400_000);
+    let built = exported(&e,"part");
+    eprintln!("the sector keeps {built} built, {kept} ± {error} by its definition");
+    assert!((built-kept).abs() <= 4.*error,"{built} against {kept} ± {error}");
 }
 
 /// **A small bar turned wholly through a ring sector bores its solid of revolution's sixth**:
@@ -329,3 +372,4 @@ fn a_fitted_sheet_lying_in_a_candidates_plane_is_one_surface_with_it() {
         && o.iter().any(|x| x.operand == 1)).count();
     assert_eq!(named,1,"one face of the complex is the end wall and the block's face");
 }
+

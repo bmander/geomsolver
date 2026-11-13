@@ -744,8 +744,9 @@ turn's, a tunnel of its section by Pappus, `π/3 (11² − 9²)/2` (8.7e-7), and
 through the plate, the slot its shadow with the corners rounded to 0.5, within 2e-6 at 0.001 mm
 (the fit over the four rounds, 1.9e-5 at 0.01 mm as the bull-nose mill's slot reads there); each STL
 agrees with the field. `tests/brep.rs` cuts a cylinder's net closed along its rows into a tube of
-faces that splits a block into its core. `turns_and_slides::the_turn_and_slide_rows_refuse_by_name`'s
-torus slid through the rod's middle, refused before as a closed characteristic, is refused by
+faces that splits a block into its core. The torus slid through the rod's middle
+(`turns_and_slides::a_torus_slid_through_the_rods_middle_grooves_its_shadow`), refused before as a
+closed characteristic, is refused by
 this class where its rings at the tube's top and bottom are in contact all round, the
 characteristic branching (S1) — and built by the closed class
 (`turns_and_slides::a_torus_slid_through_the_rods_middle_grooves_its_shadow`, its shadow in closed
@@ -864,9 +865,11 @@ field. Refused there: the pin with its end domed, its characteristic over the do
 pin set wholly within the block, its loop through its base's centre (S1, pole); and the upright
 torus turned across a taller block, its tube's top ring, along both axes, in contact all round in a
 plane the turn keeps (S1, the third motion's); and a small leaning torus wholly within the block,
-its loop closing smoothly (S1, #684 W's row). `turns_and_slides::the_turn_and_slide_rows_refuse_by_name`'s
-torus slid square to its axis through the rod's middle is the third motion's too, and is still
-refused. `tests/object_builder.rs` builds `spoke.sv` at the page's samples.
+its loop closing smoothly (S1, #684 W's row) — the pin within the block and the small torus built
+since by the contact's road, and the domed pin refused by it too, its pole said (#880 Q1b, below).
+The torus slid square to its axis through the rod's middle is the third motion's too, and is still
+refused here (the closed class builds it). `tests/object_builder.rs` builds `spoke.sv` at the page's
+samples.
 
 Still refused, and why: the third motion's ring, kept in a plane the motion keeps, whose strip
 would be walked as a flat face's line is (#684 O) but is a curve, not a face; a characteristic
@@ -1338,7 +1341,67 @@ The solid is judged by membership before it is returned, as every closed build i
 surface besides to 1e-7 of its region's area and boundary read ray by ray from the axis (#880 E4:
 282.19271199, met to 2e-8, where cadrs's is 0.0705 larger with the same volume). A box along a spline
 frame (`path.sv`'s) is asked it and refused at R2 (`Folded`): its long sides' contacts stand at their
-corners at every instant, which the region does not yet read.
+corners at every instant, which the region does not yet read (the fold cut, #880 T1). No drawing
+asks it yet: a drawing's sweep is cut from its blank (`closed::cut_from`), and a motion keeping a
+plane is the planar classes' there; the drawing reaches it when its cut is the sweep and then the
+ordinary Boolean (#880 T6).
+
+### The contact's road: a slide, a turn or a screw over part of its orbit (issue #880 Q1b)
+
+Under a slide, a turn or a screw every point of the tool moves the same way relative to the tool at
+every instant, so the points in contact (`n · v = 0`) form a set fixed on the tool, and the swept
+boundary lies in that set carried over the roll and the tool at its two ends. Where the closed
+class reads no candidate for a face or an edge (`Unbuilt::Curved`), its build asks this road
+(`brep::swept::closed::closed`, `swept::contacts`, `swept::trim`; docs/swept-solid-design.md §13),
+which reads the whole tool and no blank:
+
+1. **The contact on every face, a graph**: each face's zero set of `n · v` traced on a grid in its
+   parameters and polished onto it (closed forms where a ring or ruling gives them), with its
+   double points, its poles where it reaches the axis, its ends on the face's edges, and each sharp
+   edge's stretch where its two faces meet the motion oppositely (the edge's fan).
+2. **Cut into pieces that sweep one sheet each**: where a piece's meridian image folds back under a
+   turn or crosses the axis (a pole, its sheets closing there); at its double points; where the path
+   of its points passes from dipping inside the tool to rising off it (its burial, which also leaves
+   out a part that sweeps only the inside); and in stretches short enough to carry.
+3. **Carried exactly over the roll**: each piece fitted through points of the contact and carried
+   by the motion (`contacts::carried`): under a turn onto the surface of revolution of its meridian
+   (a plane, a cylinder, a cone, a ball or a torus where the meridian is a line or a circle), else a
+   sheet whose every point is a contact point carried (`Blend`), inverted exactly at its own points.
+4. **Every meeting given**: two neighbouring stretches their shared rail; every two sheets the paths
+   they share, found in the motion's invariants; each sheet its meeting with the tool posed at each
+   end of the roll, read in the sheet's own parameters (`pose_meeting`).
+5. **Trimmed by membership** (`trim::trim`, #880 E1's method): the candidates zoned by the sweep's
+   depth, only near zones met, each piece kept where membership a hair to either side differs, and
+   the solid judged before it is returned; then cut from the blank by the ordinary Boolean.
+
+A drawing reaches it through the closed class's admission: under a slide, a turn or a screw a tool
+the class reads no candidate for is admitted where the class asked first refused it for what the
+road reads past — a tool the walk does not read (T1, T2), a contact that is no regular curve (S1: a
+pole, a branch, a ring in contact all round), an end of the roll in the blank (E1). A fold (E3, S3),
+a stock reached twice on a ring (S2) and a sheet's own crossing (E4, S4) keep their first refusal:
+the road cuts no fold. Where the road refuses at the build, the first class's refusal is said there,
+naming what stops it (`rings_all_round::what_a_turn_about_an_axis_the_tools_meets_still_refuses`,
+the domed pin's pole).
+
+| # | Condition | Why | Refusal names |
+| --- | --- | --- | --- |
+| Q1b-1 | No face is in contact all over (a face the motion keeps in its own surface is the closed class's). | Its sweep is the face's own surface, no sheet of a curve. | The face (`Curved`). |
+| Q1b-2 | Every piece is fitted and carried within the tolerance; its sheet's meeting with each end pose closes. | A sheet is held to the motion's own points; a meeting not closed is not guessed. | What was not fitted or closed (`Failed`). |
+| Q1b-3 | The pieces' sides settle by membership and the kept pieces close; the solid agrees with membership. | Never built wrong (#777). | The point, or the piece that does not close (`Failed`, `Wrong`). |
+
+Its gates are brep-bench's fourteen Q1b cases built through the front door, each held to a volume
+made apart from the build and to a STEP file that reads back (`tests/swept_contacts.rs`: S4's three,
+S5's seven, S6's four, the slow tier at the kernel's tolerance), and three drawings, one a motion
+(`rust/examples/solid_sweeps/`, `tests/solid_sweeps_examples.rs`): `arched_bar.sv` (a slide, a
+spline's extrusion, to its shadow in closed form), `coin.sv` (a turn, its contact reaching the axis,
+to half its sweep integrated apart) and `drum_end.sv` (a screw, its contact a graph through its end,
+to its section unrolled). Four drawings the walk refused by S1 or E1, negative controls before, are
+built by it and held to their definitions: the pin within the block and the small leaning torus
+(`rings_all_round::what_a_turn_about_an_axis_the_tools_meets_is_built_by_the_contacts_road`), the
+leaning torus turned to a stop inside the ring
+(`turns_and_slides::a_leaning_torus_turned_to_a_stop_inside_the_ring_is_built_by_the_contacts_road`)
+and the tapered mill leaning to a screw
+(`closed_class::a_tapered_mill_leaning_to_a_screw_stopped_inside_is_built_by_the_contacts_road`).
 
 ### Trimming by membership, face by face (issue #880 E1)
 

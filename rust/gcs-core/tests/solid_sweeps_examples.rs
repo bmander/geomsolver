@@ -838,3 +838,55 @@ fn every_example_is_held_and_named() {
 }
 
 
+
+
+/// `arched_bar.sv` (the contact's road under a slide, #880 Q1b): an extruded spline the constant-twist
+/// class does not read, admitted to the closed class and built by the road. The plate loses the bar's
+/// shadow along the push through its thickness, `h (L W + tan 30° A)`, read here from the arch's
+/// control points alone: `A` the area between the Bézier and its chord (Green's theorem, exact by
+/// Gauss–Legendre on the quintic `z y'`), `W` its width between the roots of `y'`, to 1e-9.
+#[test]
+fn the_arched_bar_pushed_aslant_leaves_its_shadow() {
+    let e = example("arched_bar.sv");
+    let Class::Closed(found) = class(&e,"plate") else { panic!("the closed class") };
+    assert_eq!(found.kind(),"a slide");
+    let (y,z) = ([-1.,-3.,3.,1.],[0.,2.,2.,0.]);
+    let bezier = |p: [f64;4],t: f64| { let s = 1.-t; s*s*s*p[0]+3.*t*s*s*p[1]+3.*t*t*s*p[2]+t*t*t*p[3] };
+    let rate = |p: [f64;4],t: f64| { let s = 1.-t; 3.*(s*s*(p[1]-p[0])+2.*t*s*(p[2]-p[1])+t*t*(p[3]-p[2])) };
+    let (g,w) = ((3f64/5.).sqrt(),[5./9.,8./9.,5./9.]);
+    let area = [-g,0.,g].iter().zip(w).map(|(x,w)| { let t = 0.5*(x+1.); 0.5*w*bezier(z,t)*rate(y,t) }).sum::<f64>().abs();
+    // y' = a t² + b t + c, its roots the arch's widest points
+    let (a,b,c) = (3.*(-y[0]+3.*y[1]-3.*y[2]+y[3]),6.*(y[0]-2.*y[1]+y[2]),3.*(y[1]-y[0]));
+    let roots = [1.,-1.].map(|k| (-b+k*(b*b-4.*a*c).sqrt())/(2.*a));
+    let ys: Vec<f64> = roots.iter().map(|&t| bezier(y,t)).chain([y[0],y[3]]).collect();
+    let width = ys.iter().fold(f64::NEG_INFINITY,|m,&v| m.max(v))-ys.iter().fold(f64::INFINITY,|m,&v| m.min(v));
+    let shadow = 10.*width+30f64.to_radians().tan()*area;
+    near(exported(&e,"plate"),40.*20.*4.-4.*shadow,1e-9);
+}
+
+/// `coin.sv` (the contact's road under a turn, #880 Q1b S5): the coin's contact meets the turn's axis,
+/// which the constant-twist class refuses and the closed class reads no candidate for; admitted to the
+/// closed class, built by the road. The slab's top is the coin's middle plane, which the turn keeps,
+/// so it loses half the sweep of brep-bench's `coin-turned-about-a-line-through-its-rim`, integrated
+/// apart from the build (`swept_contacts::coin_turned_case`: 46.547001074918), to 1e-9.
+#[test]
+fn the_coin_turned_about_its_rim_leaves_half_its_sweep() {
+    let e = example("coin.sv");
+    let Class::Closed(found) = class(&e,"slab") else { panic!("the closed class") };
+    assert_eq!(found.kind(),"a turn");
+    near(exported(&e,"slab"),300.-46.547001074918/2.,1e-9);
+}
+
+/// `drum_end.sv` (the contact's road under a screw, #880 Q1b S5): the drum's contact, its side's lines,
+/// its end's line and the rim's fans between them, is a graph through the end's point nearest the axis;
+/// admitted to the closed class, built by the road. Every height of the rod loses the same section, so
+/// the rod one lead tall keeps 6/20 of what brep-bench's `drum-end-screwed-through-rod` keeps of its
+/// 20, integrated apart from the build (`swept_contacts::drum_end_case`: 1339.548902340676), to 1e-8.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 15 s: a drum's end screwed a turn through a rod by the contact's road")]
+fn the_drum_end_screwed_chases_its_section_up_the_rod() {
+    let e = example("drum_end.sv");
+    let Class::Closed(found) = class(&e,"rod") else { panic!("the closed class") };
+    assert_eq!(found.kind(),"a screw");
+    near(exported(&e,"rod"),1339.548902340676*6./20.,1e-8);
+}

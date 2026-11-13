@@ -499,21 +499,27 @@ fn a_whole_turn_grooves_the_whole_ring() {
     near(exported(&fixtures::read(&turned_in(Lean::Across(25.),0.,360.,false)),"part"),TAU*(144.-64.)-away,2e-5);
 }
 
-/// Each row a turn or a slide meets refuses by name: a roll that leaves the torus in the ring is not clear at its ends (E1);
-/// (a torus leaning toward the turn's axis, so that its own meets it, has a ring in contact all
-/// round, every normal of it through where the axes meet, refused at S1 until #684 X walked onto it,
-/// `rings_all_round::a_torus_leaning_toward_the_turns_axis_grooves_its_shadow`); and a torus slid through the rod's middle touches it
-/// all round its tube, a characteristic that closes on itself (refused so until #684 W), but at the
-/// tube's top and bottom its rings are in contact all round, square to the slide, where the
-/// characteristic branches into the groove's flat sides (S1) — which the closed class builds (#721
-/// F2c5, a torus slid square to its axis, below). The torus turned to a stop inside the ring, its
-/// axis along the turn's, the constant-twist class refuses (E1), and the closed class builds
-/// (`a_torus_turned_to_a_stop_inside_the_ring_is_cut_on_one_arrangement`); turned about an axis
-/// leaning to its own it is no tool the closed class takes, so the first refusal stands.
+/// **A torus leaning toward the turn's axis, turned to a stop inside the ring, is built by the
+/// contact's road** (#880 Q1b; a negative control before it, its E1 refusal standing): a roll that
+/// leaves the torus in the ring is not clear at its ends, which the constant-twist class refuses
+/// (E1), and leaning to the turn's axis it is no torus the closed class reads a candidate for. (A
+/// torus leaning toward the axis has a ring in contact all round, every normal of it through where
+/// the axes meet, walked since #684 X: `rings_all_round::a_torus_leaning_toward_the_turns_axis_grooves_its_shadow`;
+/// one turned to a stop with its axis along the turn's the closed class builds itself,
+/// `a_torus_turned_to_a_stop_inside_the_ring_is_cut_on_one_arrangement`.) Admitted for the road past
+/// E1, its contact read on the whole torus and carried exactly round the turn, the torus at both
+/// ends; held to the material field with no disagreement and to a Monte Carlo of its definition
+/// (`closed_class::kept_by_its_definition`) within four standard errors.
 #[test]
-fn the_turn_and_slide_rows_refuse_by_name() {
-    let short = refused(admit(&turned(Lean::Toward(25.),-130.,30.)));
-    assert_eq!(short.condition,Condition::Clearance);
+fn a_leaning_torus_turned_to_a_stop_inside_the_ring_is_built_by_the_contacts_road() {
+    let e = fixtures::read(&turned(Lean::Toward(25.),-130.,30.));
+    let Class::Closed(found) = crate::solid_sweeps_examples::class(&e,"part") else { panic!("the closed class") };
+    assert!(found.first.as_ref().is_some_and(|r| r.condition == Condition::Clearance),"admitted for the road past E1");
+    let (a,_) = Lean::Toward(25.).axes();
+    let (kept,error) = crate::closed_class::kept_by_its_definition(&found,&|p| crate::closed_class::in_torus(p,[5.,0.,0.],a,2.5,2.),400_000);
+    let built = exported(&e,"part");
+    eprintln!("the sector keeps {built} built, {kept} ± {error} by its definition");
+    assert!((built-kept).abs() <= 4.*error,"{built} against {kept} ± {error}");
 }
 
 /// **A torus turned to a stop inside the ring is cut on one arrangement** (#721 F2c5, the closed

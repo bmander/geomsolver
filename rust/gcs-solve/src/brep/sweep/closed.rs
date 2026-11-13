@@ -51,6 +51,11 @@ pub fn cut_on(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,
                     MEMBERSHIP_BAR,ARRANGED).map(|b| b.moved(&place)),
             };
             solid = cut.map_err(|u| {
+                    // (a tool admitted for the contact's road, which refuses it too: the refusal of the
+                    // class asked first stands, which names what stops it)
+                    if let (crate::brep::swept::closed::Unbuilt::Curved {..},Some(first)) = (&u,&found.first) {
+                        return ExportRefusal::from(crate::solid::admission::Error::Refused(first.clone()))
+                    }
                     let (condition,message,at) = closed_class::said(u,&found.tool_name);
                     let at = at.map_or(String::new(),|p| format!(" at ({:.4}, {:.4}, {:.4}) mm",p[0],p[1],p[2]));
                     ExportRefusal::at(Stage::Split,format!("`{}`: less `{name}` ({}: {}): {message}{at}",sk.solids[body].name,

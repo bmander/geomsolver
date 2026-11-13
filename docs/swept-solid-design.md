@@ -1034,3 +1034,12 @@ the seven left above are refused as they were (the folds `Folded`; the ball-end 
 the two bull-noses with their meetings not closed; the frustum's subtraction `Wrong`). The road
 reaches past the table too: the screwed bull-nose of `swept_patches` and the screwed ball with a
 flat build through it to their volumes worked apart.
+
+**Drawings.** A drawing's sweep reaches the road through the closed class's admission: a tool the
+class reads no candidate for is admitted where the class asked first refused it by a row the road
+answers (the tool unread, a contact no regular curve, an end of the roll in the blank), its first
+refusal kept and said where the road refuses too (docs/generating-sweeps.md, "The contact's road").
+The solid sweeps series holds three drawings of it, one a motion — `arched_bar.sv`, `coin.sv`,
+`drum_end.sv` — and four negative controls the walk refused are built by it, held to their
+definitions. Q2's `planar_solid` is asked only without a blank, which a drawing's cut never is: its
+drawing waits on T6, where a drawing's cut becomes the sweep and the ordinary Boolean.

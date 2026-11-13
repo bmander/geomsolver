@@ -439,7 +439,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
         let poses = &by_sweep[&swept];
         let read = read.map_err(|m| Error::Refused(Refusal {condition:Condition::Tool,sweep:name.clone(),message:said(swept,m),
             witness:None,asked:Asked::Generating}))?;
-        let admitted = asked.expect("a read sweep is asked").map_err(|r| {
+        let refusal = |r: dispatch::Refused| {
             let message = match r.seen {
                 dispatch::Seen::Words(m) => m,
                 dispatch::Seen::Uncharted(_) => read.family.uncharted(),
@@ -449,8 +449,9 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
                     super::canal::Why::Failed(m) => m,
                 },
             };
-            Error::Refused(Refusal {condition:r.row,sweep:name.clone(),message:said(swept,message),witness:r.witness,asked:r.asked})
-        })?;
+            Refusal {condition:r.row,sweep:name.clone(),message:said(swept,message),witness:r.witness,asked:r.asked}
+        };
+        let admitted = asked.expect("a read sweep is asked").map_err(|r| Error::Refused(refusal(r)))?;
         let class = match admitted.class {
             dispatch::Class::Canal(_) => return Err(Error::Unreadable(match super::canal::built(sk,swept) {
                 Some(Err(m)) => m,
@@ -462,7 +463,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
             dispatch::Class::Generating(Some(capped)) => Class::Capped(capped),
             dispatch::Class::ConstantTwist(found) => Class::ConstantTwist(found),
             dispatch::Class::Closed(c) => Class::Closed(Box::new(super::closed_class::Closed {tool:c.tool,tool_name:read.names.tool.clone(),
-                path:c.path,roll:c.roll})),
+                path:c.path,roll:c.roll,first:c.first.map(|r| refusal(*r))})),
         };
         admission.sweeps.push(SweepEvidence {sweep:swept,name,
             placements:poses.iter().zip(&admitted.placements).map(|(&pose,&equivalent_to)| Placement {pose,equivalent_to}).collect(),

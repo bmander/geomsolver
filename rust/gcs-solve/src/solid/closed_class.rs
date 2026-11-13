@@ -29,6 +29,9 @@ pub struct Closed {
     pub tool_name: String,
     pub path: Trajectory,
     pub roll: [f64;2],
+    /// Where the sweep was admitted for the contact's road to build (#880 Q1b): the refusal of the
+    /// class asked first, said in its place where the road refuses it too.
+    pub first: Option<super::admission::Refusal>,
 }
 
 impl Closed {
