@@ -125,7 +125,11 @@ text).  The lexer reads a brace after `:=` as a group only before `}` or `name:`
 (the representative) about a point (in its view) or an axis held in its direction (in space).
 The flattener expands it as a `cycle` (`BlockKind::Ring`, `Block::about`, `InBlock::ring`) and marks
 every statement of copy k ≥ 1 `ir::Statement::turned` (`Site::turned`): its declarations are
-built, its relations, holds, claims and branches are not (`program.rs`'s `stating`).
+built, its relations, holds, claims and branches are not (`program.rs`'s `stating`) — **save a
+relation bounding the copy's own region solid's probe** (`{solid}#probe`, `flatten::is_probe`):
+never a row, it is the copy's solid's term, read over its turned points, and the probe itself is
+turned with nothing (`rings.rs` skips it), so a ball written as a set is one ball a copy (#904 /
+`shaft_drive` finding 20, `tests/ring_balls.rs`).
 `program/rings.rs` pairs each turned entity with the representative's by key
 (`prefix#id.k.rest` ↔ `prefix#id.0.rest`) into `Sketch::turns` (`model/turns.rs`): a point's,
 circle's or arc's numbers are then **derived** (`Sketch::derived`, linear in the
