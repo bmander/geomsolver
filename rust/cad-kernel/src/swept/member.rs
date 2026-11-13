@@ -18,7 +18,7 @@ use crate::topo::Brep;
 use crate::trajectory::Trajectory;
 use crate::util::bvh::{Bounds,Bvh};
 use crate::util::interval::Interval;
-use crate::util::space::{closest_on_triangle,cross,distance,dot,norm,sub};
+use crate::util::space::{closest_on_triangle,cross,distance,dot,lerp,norm,sub};
 
 type V = [f64;3];
 
@@ -57,10 +57,21 @@ impl Solid {
         }));
         // the sag measured on the mesh (none where every face is flat), and rounding's at its size
         let size = pts.iter().fold(0_f64,|r,p| r.max(norm(*p)));
-        let sag = m.sag/scale+1e-12*(1.+size);
-        let (vertex_normals,edge_normals) = pseudo_normals(&pts,&m.tris);
+        // (measured again over every side's middle and every middle, each against its face's surface:
+        // the mesher's own measure reads its inner sides alone, and a point of the drafted slot's cone,
+        // on the tool, stood 1.1e-3 off a mesh that measured 9.5e-4, which `beyond` then proved outside)
+        // (none where the tool is read exactly: its sag is rounding's alone)
         let exact = exactly(b,&m.pts).map(|faces| (faces,scale));
-        let sag = if exact.is_some() { 1e-12*(1.+size) } else { sag };
+        let sag = if exact.is_some() { 1e-12*(1.+size) } else {
+            let off = |f: usize,x: V| b.faces[f].surface.implicit(x).abs();
+            let measured = m.tris.iter().zip(&m.of).map(|(t,&f)| {
+                let [p,q,r] = t.map(|i| m.pts[i as usize]);
+                let centre = [(p[0]+q[0]+r[0])/3.,(p[1]+q[1]+r[1])/3.,(p[2]+q[2]+r[2])/3.];
+                [lerp(p,q,0.5),lerp(q,r,0.5),lerp(r,p,0.5),centre].into_iter().map(|x| off(f as usize,x)).fold(0_f64,f64::max)
+            }).fold(0_f64,f64::max);
+            m.sag.max(measured)/scale+1e-12*(1.+size)
+        };
+        let (vertex_normals,edge_normals) = pseudo_normals(&pts,&m.tris);
         Ok(Solid {pts,tris:m.tris,tree,sag,vertex_normals,edge_normals,exact})
     }
 

@@ -122,6 +122,28 @@ fn a_bar_under_a_screw_closes_into_its_helical_sweep() {
     }
 }
 
+/// **A box screwed inside a rod is a sealed tunnel of its volume** (brep-bench's
+/// `swept/box-screwed-inside-a-rod`): the box `2.5 ≤ x ≤ 3.5`, `|y| ≤ 1/2`, `2 ≤ z ≤ 3` screwed about z
+/// two turns rising 4 a turn, cut from the rod of radius 5 and length 20 on one arrangement, its level
+/// edges' sheets helicoids (`Surface::Blend`). Apart from the build: unrolled about the axis the screw
+/// moves each radius's section — one or two intervals of the angle by `[2, 3]` of height — along
+/// `(1, a)`, `a = 4/2π`, through `4π`; on each line of the invariant `w = h − aψ` the pieces' intervals
+/// swept overlap, covering their span and `4π` more, so the tunnel is `∫ ρ ∫ (span + 4π) dw dρ`, by
+/// Gauss–Legendre between the corners' `w` and the radii where the section changes: the rod less it,
+/// 1522.316218922409 at 16 points and 64. Held to it within ten tolerances: a blend's foot settled with
+/// `v` held at its edge at every step took the coupled step's feet from the inside onto the edge, and
+/// the tunnel came out 0.015 off (#880 Q1b S5).
+#[test]
+fn a_box_screwed_inside_a_rod_is_a_sealed_tunnel_of_its_volume() {
+    let rod = gcs_core::brep::build::prism(&gcs_core::brep::build::disc([0.;3],[0.,0.,1.],5.),0.,20.).unwrap();
+    let tool = block([2.5,-0.5,2.],[3.5,0.5,3.]);
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:4.});
+    let tol = gcs_core::brep::geom::tolerance(rod.size());
+    let cut = gcs_core::brep::swept::closed::cut_from(&rod,&tool,&path,[0.,2.*std::f64::consts::TAU],rod.size(),tol).unwrap();
+    let expected = 1522.316218922409;
+    assert!((volume(&cut)-expected).abs() <= 10.*tol,"{} against {expected}",volume(&cut));
+}
+
 /// **A block leaning to a screw's axis closes into its helical sweep** (#777 M5's gate: the leaning
 /// block under a screw, docs/swept-solid-design.md's "tried and set aside, for a leaning edge under
 /// a screw"): its leaning edges, and its leaning faces' contact lines (where a face's normal is
@@ -2224,33 +2246,32 @@ fn a_balls_pipe_is_inverted_off_its_spine() {
 
 /// A ball of radius 1 three out from the world's `z` with a flat: cut by the plane `m · (p − c) =
 /// 0.5`, `m` leaning to the axis, kept below it — its rim a sharp circle leaning to the axis (#780
-/// L2). With `m`.
-fn flattened_ball() -> (Brep,[f64;3]) {
+/// L2).
+fn flattened_ball() -> Brep {
     use gcs_core::space::{add,scale};
     let c = [3.,0.,0.];
     let m = unit([0.35,0.45,0.82]);
     let ball = gcs_core::brep::build::sphere(c,[0.,0.,1.],1.).unwrap();
-    (gcs_core::brep::build::kept(&ball,add(c,scale(m,0.5)),scale(m,-1.),0.).unwrap(),m)
+    gcs_core::brep::build::kept(&ball,add(c,scale(m,0.5)),scale(m,-1.),0.).unwrap()
 }
 
-/// **A ball with a flat screwed is refused by name** (#780 L2, left open): its flat's rim is a sharp
-/// circle leaning to the screw's axis, whose fan's sheet is its points screwed — a screwed circle's
-/// sheet. At an end pose the ball holds that circle, and meets the sheet in it and a curve read
-/// over the roll (`A(s) cos w + B(s) sin w = C(s)` at each `s`); the ball's pipe meets it in the
-/// helices of the points of one circle the screw carries onto the other: closed forms not given to
-/// the arrangement yet, and traced, those meetings did not close (`Unbuilt::Curved` at the rim,
-/// never built wrong).
+/// **A ball with a flat screwed is swept through the contact's road** (#780 L2; #880 Q1b S6): its
+/// flat's rim is a sharp circle leaning to the screw's axis, whose fan's sheet is its points screwed.
+/// The closed class still refuses it (`Unbuilt::Curved` at the rim: its meetings with the end poses,
+/// traced, did not close), and the front door builds it through the contact's road — the ball's and the
+/// flat's contacts and the rim's fan carried, the end poses met in their sheets' own parameters,
+/// trimmed by membership — to the volume worked apart (`swept_patches::advanced`: the ball's own and
+/// `∫ ∫ (n · v)⁺ dA dt` over the roll, a convex tool of revolution entering each point once) to a
+/// part in a million.
 #[test]
-fn a_ball_with_a_flat_screwed_is_refused_by_name() {
-    use gcs_core::brep::swept::closed::Unbuilt;
-    use gcs_core::space::{dot,sub};
+fn a_ball_with_a_flat_screwed_is_swept_through_the_contacts_road() {
     use std::f64::consts::TAU;
-    let (tool,m) = flattened_ball();
+    let tool = flattened_ball();
     let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.5,advance:TAU*0.5*1.5});
-    match closed(&tool,&path,[0.,1.],0.002,1e-6) {
-        Err(Unbuilt::Curved {at}) => assert!((dot(sub(at,[3.,0.,0.]),m)-0.5).abs() <= 1e-9 && (norm(sub(at,[3.,0.,0.]))-1.).abs() <= 1e-9,"refused at {at:?}, off the rim"),
-        other => panic!("{:?}",other.map(|b| volume(&b))),
-    }
+    let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap_or_else(|u| panic!("{u:?}"));
+    let revolved = gcs_core::brep::swept::patches::Revolved::read(&tool).unwrap();
+    let worked = crate::swept_patches::advanced(&revolved,&tool,&path,[0.,1.],false);
+    assert!((volume(&built)-worked).abs() <= 1e-6*worked,"{} against the volume worked apart {worked}",volume(&built));
 }
 
 /// The rise a turn of #886's screw.
