@@ -33,8 +33,9 @@ impl<'a> Walk<'a> {
                 if let Some(of) = self.datum_of(parts) {
                     read.push(format!("{}{}", scope.prefix(), of.join(".")));
                 }
-                if let [a, b, ..] = parts {
-                    ported.push(format!("{}{a}.{b}", scope.prefix()));
+                match parts {
+                    [a, b, ..] if a != "std" => ported.push(format!("{}{a}.{b}", scope.prefix())),
+                    _ => {}
                 }
             });
             // and a relation word's use reads what its body reads of what it is given (#595)
@@ -135,7 +136,14 @@ impl<'a> Walk<'a> {
     }
 
     fn paths_where(&self, st: &Stmt, std_only: bool, f: &mut dyn FnMut(&[String])) {
-        if let Some(text) = self.prog.span_text(st.span).filter(|t| !std_only || t.contains("std")) {
+        self.paths_in(st, std_only, true, f)
+    }
+
+    /// `paths_where`, reading `st`'s text only where `lex`: a block's span holds its statements',
+    /// read with it, so they are walked for their frames alone.
+    fn paths_in(&self, st: &Stmt, std_only: bool, lex: bool, f: &mut dyn FnMut(&[String])) {
+        let text = self.prog.span_text(st.span).filter(|t| lex && (!std_only || t.contains("std")));
+        if let Some(text) = text {
             for u in crate::syntax::name_uses(text) {
                 let parts: Vec<String> = u.parts.into_iter().map(|(p, _)| p).collect();
                 f(&parts);
@@ -146,7 +154,7 @@ impl<'a> Walk<'a> {
             StmtKind::Instance(i) => i.membership.path().collect(),
             StmtKind::Relation(r) => r.within.iter().collect(),
             StmtKind::Block(b) => {
-                b.stmts().for_each(|inner| self.paths_where(inner, std_only, f));
+                b.stmts().for_each(|inner| self.paths_in(inner, std_only, false, f));
                 return;
             }
             _ => return,
@@ -204,9 +212,9 @@ impl<'a> Walk<'a> {
     ) -> Option<InPlane> {
         let prefix = scope.prefix().to_string();
         let abs = format!("{prefix}{}", inst.name.text);
-        let ported = self.ports(comp)
+        let ported = || self.ports(comp)
             .any(|g| self.standard.ported.contains(&format!("{abs}.{g}")));
-        if !self.standard.outside.contains(&abs) && !ported {
+        if !self.standard.outside.contains(&abs) && !ported() {
             return None;
         }
         if !self.reads_datums(comp, &mut Vec::new()) {
