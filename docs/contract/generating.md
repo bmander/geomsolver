@@ -1130,6 +1130,26 @@ the section's lower left boundary) joins the other three, each cut at the kernel
 its boundary's area times it (`swept_contacts::s6s_free_form_faces_are_cut_through_the_front_door`,
 slow tier, S6's gate): all of Q1b's fourteen cases build (docs/swept-solid-design.md §13).
 
+**A drawing reaches the contact's road through the closed class's admission** (`swept::dispatch`,
+#880 Q1b): under a slide, a turn or a screw a tool the class reads no candidate for
+(`closed::reads` refusing it `Curved`) is admitted where the class asked first refused it by a row
+the road answers (`road_answers`: the tool unread, T1 and T2; a contact no regular curve, S1; an
+end of the roll in the blank, E1), and its build takes the road. A fold (E3, S3), a stock reached
+twice on a ring (S2) and a sheet's crossing (E4, S4) keep their first refusal: admitted past S3, a
+twist drill's flute wheel too steep for its helix was refused only by a cell its other sweep left
+unsplit, and the row that names the fold was lost (`twist_drill::the_constant_twist_rows_refuse_by_name`).
+The admission keeps that first refusal (`dispatch::Closed::first`, `closed_class::Closed::first`),
+and where the road refuses at the build the drawing is refused by it, not by the closed class's
+`Curved` (`rings_all_round::what_a_turn_about_an_axis_the_tools_meets_still_refuses`: the domed pin's
+pole, S1). The series' three drawings of the road, one a motion (`arched_bar.sv`, `coin.sv`,
+`drum_end.sv`), are held to volumes made apart from the build (`solid_sweeps_examples`), and four
+negative controls the walk refused by S1 or E1 are built and held to their definitions by a Monte
+Carlo (`closed_class::kept_by_its_definition`). **A fold is read from steps past the tolerance**
+(`contacts::folds`): a step of a section's meridian image within the tolerance its points hold says
+no way, and where a section runs in square to the turn's velocity at its end its image barely moved
+(1e-10 a step) and its points' own error turned it back and forth, the coin drawn on its rim cut
+twice a hair from its end and its plane's pieces left open.
+
 **A point's side off the nearest feature's pseudo-normal** (`member::Solid::signed_near`, #880
 Q1b): a point whose nearest point of the tool's mesh lies on a vertex or an edge is read by that
 feature's pseudo-normal — a vertex's, its triangles' unit normals weighted by their angles there; an
@@ -1207,9 +1227,10 @@ what they are, read before any build
 (`closed::reads`); under a turn a cylinder or a cone about a leaning axis whose contact is no curve
 over the face, or whose meridian folds back along the axis, at the build's first step. A sharp
 circle through the axis, or whose normal lies in the plane through the axis and its centre (a pin
-along a radius), turns into no ring (`Rim::simple`, #780 L2): refused as it is read, so the sweep is
-not admitted to the closed class and the class asked first keeps its refusal
-(`rings_all_round::what_a_turn_about_an_axis_the_tools_meets_still_refuses`).
+along a radius), turns into no ring (`Rim::simple`, #780 L2): refused as it is read (`Curved`), so
+the sweep is admitted to the closed class only for the contact's road, where the class asked first
+refused it by a row the road answers, and where the road refuses it too that first refusal stands
+(`rings_all_round::what_a_turn_about_an_axis_the_tools_meets_still_refuses`, #880 Q1b).
 
 **A round face about an axis leaning to a turn's (#780 C3, `brep::turned`).** On the ring at slant
 `v` of a cylinder or a cone about the axis `a` through `o`, its normal `cos α ρ̂ − sin α a` is
@@ -2296,9 +2317,10 @@ its rows cut four round and two along, its core π r² h); the refusals
 `closed_characteristics::a_square_bar_pushed_square_to_its_length_is_planar_subtractions` (the
 drum screwed, S2, is now the closed class's: `the_drum_screwed_bores_its_helical_groove`; a prism
 aslant wholly through, S1 over a cap, and a prism turned wholly within, S1 a rim's ruling, are the
-closed class's too, `closed_class`) and
-`turns_and_slides::the_turn_and_slide_rows_refuse_by_name`; what it refuses that the closed class
-builds, `turns_and_slides::a_torus_slid_through_the_rods_middle_grooves_its_shadow` (its rings at the
+closed class's too, `closed_class`); what it refuses that the contact's road builds, the leaning
+torus turned to a stop in the ring (E1,
+`turns_and_slides::a_leaning_torus_turned_to_a_stop_inside_the_ring_is_built_by_the_contacts_road`,
+#880 Q1b); what it refuses that the closed class builds, `turns_and_slides::a_torus_slid_through_the_rods_middle_grooves_its_shadow` (its rings at the
 tube's top and bottom in contact all round, S1); and
 `object_builder::a_closed_characteristic_builds_at_the_displays_samples`.
 
@@ -2346,9 +2368,11 @@ gate is `solid_sweeps_examples::the_spoke_swings_a_slot_ended_by_a_zone_of_a_sph
 (`solid_sweeps/spoke.sv`, `π/6 (57.25 − 1/12)` within 1e-5) and
 `rings_all_round::a_torus_leaning_toward_the_turns_axis_grooves_its_shadow` (Pappus over the shadow,
 2e-5, over a sector and a whole turn), each STL agreeing with the field; the refusals
-`rings_all_round::what_a_turn_about_an_axis_the_tools_meets_still_refuses` (a domed pin and a pin
-wholly within, S1 `POLE`; an upright torus across a taller block, S1, its ring kept in a plane; a
-small leaning torus wholly within, S1 `SMOOTH_LOOP`); and
+`rings_all_round::what_a_turn_about_an_axis_the_tools_meets_still_refuses` (a domed pin, S1 `POLE`,
+which the contact's road refuses too) and the pin wholly within (S1 `POLE`) and small leaning torus
+wholly within (S1 `SMOOTH_LOOP`) the road builds since
+(`rings_all_round::what_a_turn_about_an_axis_the_tools_meets_is_built_by_the_contacts_road`, #880
+Q1b); and
 `object_builder::a_ring_in_contact_all_round_turned_builds_at_the_displays_samples`. A slide square
 to the tool's axis, or a turn about an axis parallel to it, stays refused at S1.
 

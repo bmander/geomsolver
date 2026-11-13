@@ -15,16 +15,18 @@
 //! the torus leaning toward the turn's axis, the field gate's first find (refused before), its
 //! shadow. Each volume is figured apart, and each exact solid's STL agrees with the field. Refused
 //! by name: a torus slid along its axis, its shadow a ring (S2); a drill that does not pass wholly
-//! through the blank's heights (E1); a ball-ended pin swung, its characteristic running through the
-//! ball's pole on its axis, and a pin swung wholly within the block, through its base's centre (S1,
-//! a pole); an upright torus turned across a taller block, its tube's top ring, whose normals lie
-//! along its axis and the turn's, in contact all round in a plane the turn keeps (S1); and a small
-//! leaning torus wholly within the block, its loop closing with no crease (S1, #684 W's row).
+//! through the blank's heights (E1); and a ball-ended pin swung, its characteristic running through
+//! the ball's pole on its axis (S1, a pole), which the contact's road refuses too. The walk refuses,
+//! and the closed class or the contact's road builds: an upright torus turned across a taller block,
+//! its tube's top ring, whose normals lie along its axis and the turn's, in contact all round in a
+//! plane the turn keeps (S1, the closed class); a pin swung wholly within the block, through its
+//! base's centre (S1, a pole), and a small leaning torus wholly within the block, its loop closing
+//! with no crease (S1, #684 W's row), both the contact's road's (#880 Q1b).
 use gcs_core::solid::admission::{Class,Condition};
 use std::f64::consts::PI;
 
 use crate::solid_sweeps_examples::{class,text};
-use crate::turns_and_slides::{admit,exported,near,refused};
+use crate::turns_and_slides::{exported,near};
 
 /// `drill.sv` with its plate named `part`, as `admit` reads it.
 fn drill() -> String { text("drill.sv").replace("plate := solid","part := solid").replace("hole cut plate","hole cut part") }
@@ -128,7 +130,7 @@ post union part");
 // -- a turn about an axis the tool's own meets -------------------------------------------------
 
 /// `spoke.sv` with its block named `part`, its pin set from `start` to `reach` along its radius.
-fn spoke(start: f64,reach: f64) -> String {
+pub(crate) fn spoke(start: f64,reach: f64) -> String {
     text("spoke.sv").replace("block := solid","part := solid").replace("wedge common block","wedge common part")
         .replace("slot cut block","slot cut part").replace("start := 6mm",&format!("start := {start}mm"))
         .replace("reach := 11mm",&format!("reach := {reach}mm"))
@@ -183,29 +185,51 @@ fn the_upright_torus_turned_across_a_tall_block_grooves_it_by_its_shadow() {
 /// What a turn about an axis the tool's own meets still refuses: `spoke.sv`'s pin with its end
 /// domed, a cap of a ball of radius 1.3 about a point of its axis 1.2 short of its end, whose
 /// characteristic in the plane of the two axes runs over the dome's pole on the pin's axis, where
-/// the walk would cross to each ring's other root (S1, a pole); the pin set wholly within the
-/// block, from 9 to 11, its characteristic closing through its base's centre, a pole too (S1); and a torus
-/// leaning 25° toward the turn's axis small enough to lie wholly within the block, ring 0.8 and tube
-/// 0.3 about (10, 0, 0), whose loop — each tube circle's outer half joined to the far ring and the
-/// near — closes smoothly, with no crease, the first case to reach #684 W's row (S1).
+/// the walk would cross to each ring's other root (S1, a pole). The closed class reads no candidate
+/// for the dome, so the sweep is admitted for the contact's road (#880 Q1b), which refuses it too;
+/// at the build the first class's refusal stands, naming the pole.
 #[test]
 fn what_a_turn_about_an_axis_the_tools_meets_still_refuses() {
     let ball = spoke(6.,10.5).replace("  private e3 := point\n","  private e3 := point\n  private e4 := point\n")
         .replace("  e3 coords(du: reach, dv: 0mm) holder\n","  e3 coords(du: reach + 0.1mm, dv: 0mm) holder\n  e4 coords(du: reach - 1.2mm, dv: 0mm) holder\n")
         .replace("  private tip := line(e2, e3)\n","  private tip := arc(center: e4, start: e3, end: e2) hint(r: 1.3)\n  radius(1.3mm) tip\n");
-    let ball = refused(admit(&ball));
-    assert_eq!(ball.condition,Condition::Regular);
-    assert!(ball.message.contains("meets the tool's axis at a pole of its profile"),"{}",ball.message);
-    let within = refused(admit(&spoke(9.,11.)));
-    assert_eq!(within.condition,Condition::Regular);
-    assert!(within.message.contains("`pin.base` meets the tool's axis at a pole of its profile"),"{}",within.message);
-    let small = crate::turns_and_slides::turned(crate::turns_and_slides::Lean::Toward(25.),-140.,140.)
+    let e = fixtures::read(&ball);
+    let Class::Closed(found) = crate::solid_sweeps_examples::class(&e,"part") else { panic!("the closed class") };
+    assert!(found.first.as_ref().is_some_and(|r| r.condition == Condition::Regular),"admitted for the road past S1");
+    let (r,_) = crate::common::saying(|say| gcs_core::brep::export::exact(&e.sketch,fixtures::solid(&e,"part"),None,
+        Some(gcs_core::solid::export::Tolerance::new(0.01).unwrap()),say));
+    let Err(r) = r else { panic!("built") };
+    assert_eq!(r.condition,Some(Condition::Regular),"{r}");
+    assert!(r.message.contains("meets the tool's axis at a pole of its profile"),"{}",r.message);
+}
+
+/// **What the walk refused there, the contact's road builds** (#880 Q1b; negative controls before
+/// it): the pin set wholly within the block, from 9 to 11, its characteristic closing through its
+/// base's centre, a pole (S1); and a torus leaning 25° toward the turn's axis small enough to lie
+/// wholly within the block, ring 0.8 and tube 0.3 about (10, 0, 0), whose loop closes smoothly with
+/// no crease (S1, #684 W). Each is admitted to the closed class for the road and built by it, its
+/// STL held to the material field with no disagreement. Each passes wholly across the sector, so the
+/// sector loses a sixth of what it turns into: the pin's `(π/6)(121 − 81 + 1/6)` in closed form, as
+/// `spoke.sv`'s, to 1e-9; the torus held to a Monte Carlo of its definition
+/// (`closed_class::kept_by_its_definition`) within four standard errors.
+#[test]
+fn what_a_turn_about_an_axis_the_tools_meets_is_built_by_the_contacts_road() {
+    let within = fixtures::read(&spoke(9.,11.));
+    let Class::Closed(found) = crate::solid_sweeps_examples::class(&within,"part") else { panic!("the closed class") };
+    assert!(found.first.as_ref().is_some_and(|r| r.condition == Condition::Regular),"admitted for the road past S1");
+    crate::turns_and_slides::near(crate::turns_and_slides::exported(&within,"part"),80.*PI/3.-PI/6.*(40.+1./6.),1e-9);
+    let small = fixtures::read(&crate::turns_and_slides::turned(crate::turns_and_slides::Lean::Toward(25.),-140.,140.)
         .replace("fix(origin == (5, 0, 0)) lathe","fix(origin == (10, 0, 0)) lathe")
         .replace("tc coords(du: 2.5mm, dv: 0mm) lathe","tc coords(du: 0.8mm, dv: 0mm) lathe")
-        .replace("radius(2mm) tube","radius(0.3mm) tube").replace("hint(r: 2)","hint(r: 0.3)");
-    let small = refused(admit(&small));
-    assert_eq!(small.condition,Condition::Regular);
-    assert!(small.message.contains("closes on itself through `wheel.tube` with no crease"),"{}",small.message);
+        .replace("radius(2mm) tube","radius(0.3mm) tube").replace("hint(r: 2)","hint(r: 0.3)"));
+    let Class::Closed(found) = crate::solid_sweeps_examples::class(&small,"part") else { panic!("the closed class") };
+    assert!(found.first.as_ref().is_some_and(|r| r.condition == Condition::Regular),"admitted for the road past S1");
+    let (s,c) = 25f64.to_radians().sin_cos();
+    let (kept,error) = crate::closed_class::kept_by_its_definition(&found,&|p| crate::closed_class::in_torus(p,[10.,0.,0.],[s,0.,c],0.8,0.3),
+        400_000);
+    let built = crate::turns_and_slides::exported(&small,"part");
+    eprintln!("the sector keeps {built} built, {kept} ± {error} by its definition");
+    assert!((built-kept).abs() <= 4.*error,"{built} against {kept} ± {error}");
 }
 
 
