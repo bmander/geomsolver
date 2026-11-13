@@ -37,6 +37,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   coupled step throughout and, its foot settled with `v` at the edge, polishes `u` alone there:
   stepped alone throughout, feet the coupled step leaves for the inside were held, and
   brep-bench's box screwed inside a rod came out 0.015 off.
+- **No two faces draw one diagonal, and a triangle with no plane is refined** (`mesh`): once every
+  face is meshed, a side more than two triangles meet at is split at its middle on each face past
+  the one keeping it, so a short traced edge two faces cut off with the same diagonal no longer
+  leaves a side used three times (an STL refused as `EdgeUseCount`); a mesh with no such side is
+  left as it was. A degenerate triangle (a sphere's first strip across its seam, two corners one
+  point) stands off by its distance from its sides, where its sag read 0 and it was dropped, the
+  face with it.
 
 ## [0.11.0] - 2026-11-12
 
