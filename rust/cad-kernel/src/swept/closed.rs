@@ -166,14 +166,17 @@
 //! leaning edge under a screw; under any other motion a tool no convex solid of revolution, a
 //! contact whose pieces change over the roll, a sheet folding or coming back onto itself
 //! (`Folded`, `Returns`) — is refused by the closed class by what it is (`Unbuilt`), and under a
-//! constant twist a `Curved` refusal is asked of the contact's road below.
+//! constant twist a `Curved` or `Folded` refusal is asked of the contact's road below.
 //!
-//! **Under a constant twist, what the closed class refuses as `Curved` goes the contact's road**
-//! (#880 Q1b, `contacts_road`): each face's contact and each sharp edge's fan in stretches, carried
-//! over the roll, with the end poses and every meeting given, trimmed by membership and judged
-//! (`super::trim`) — a torus or a V wheel leaning to a screw, a drum leaning to it, a round meeting
-//! its neighbour in a sharp rim under a slide. Where that road refuses too, the closed class's
-//! refusal stands.
+//! **Under a constant twist, what the closed class refuses as `Curved` or `Folded` goes the
+//! contact's road** (#880 Q1b, `contacts_road`; T1 for the folds): each face's contact and each sharp
+//! edge's fan in stretches, carried over the roll, with the end poses and every meeting given,
+//! trimmed by membership and judged (`super::trim`) — a torus or a V wheel leaning to a screw, a drum
+//! leaning to it, a round meeting its neighbour in a sharp rim under a slide; a ring slid leaning past
+//! its fold, a ball screwed round a helix tighter than its radius, whose sheets fold, the trim keeping
+//! of each what bounds the sweep (to about 1e-7 of it: near a cusp's path the two leaves stand nearly
+//! tangent, the fold cut proper's to close). Where that road refuses too, the closed class's refusal
+//! stands.
 use crate::build::{Profile,ProfileEdge,disc,prism,square};
 use crate::geom::{Curve,Frame,Surface};
 use crate::turned::Exact;
@@ -660,13 +663,14 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
         }
     }
     match build_by(tool,path,roll,bar,tol,blank,None) {
-        // **a tool the closed class does not read, under a constant twist** (#880 Q1b): its faces'
-        // contact carried over the roll and the end poses, trimmed by membership (`contacts`, `trim`)
-        // and cut from the blank — or refused as the closed class refused it, where the contact's road
-        // refuses it too (a face in contact all over, a meeting it does not close)
+        // **a tool the closed class does not read, or whose sheet folds, under a constant twist**
+        // (#880 Q1b, T1): its faces' contact carried over the roll and the end poses, trimmed by
+        // membership (`contacts`, `trim`), which keeps of a folded sheet what bounds the sweep, and cut
+        // from the blank — or refused as the closed class refused it, where the contact's road refuses
+        // it too (a face in contact all over, a meeting it does not close)
         // (the road refusing too, the closed class's refusal stands: the first thing it does not
         // read, and where)
-        Err(curved @ Unbuilt::Curved {..}) if path.screw().is_some() => contacts_road(tool,path,roll,bar,tol,blank).or_else(|why| {
+        Err(curved @ (Unbuilt::Curved {..} | Unbuilt::Folded {..})) if path.screw().is_some() => contacts_road(tool,path,roll,bar,tol,blank).or_else(|why| {
             if crate::debug() { eprintln!("swept: the contact's road refused too: {why:?}") }
             Err(curved)
         }),
