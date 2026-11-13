@@ -716,8 +716,13 @@ as a typed formal is (`flatten::words::apply_word`): the whole operand under `ke
 of its own holding only the interface's members (`Walk::typed`), its numbers bound as the body's
 (`interface_numbers`), and the use held to it once every name is known (`checks.interfaces`,
 `conform`): E103 at the operand naming the missing member. **A definition that hands out a datum
-of its own in a group it declares stands in a frame of its own** (`framed::exports_datum`, read by
-`own_frame` beside `Datums::outside`): a mate through the port reads the part's frame. The ports,
+of its own in a group it declares stands in a frame of its own** (`framed::ports`, read by
+`own_frame` beside `Datums::outside`): a mate through the port reads the part's frame. A port hands
+out a datum itself (`od := {at: std.top, …}`) or a plane an instance of the body given one declares
+(`left := {at: lf.at}`, `lf := FrameOn(std.z, std.origin, …)` and its `at := plane`): a bearing
+joined only by its side, abutting a shoulder, is placed by its frame.  A plane only, as a port's
+frame is: the hypoid pair's `gear_member := {ax: gear_cone.ax, …}` hands out an axis and is no port
+(`a_part_joined_only_by_a_side_it_frames_from_its_datums_stands_in_a_frame_of_its_own`). The ports,
 mates and catalogues are Solvent (`std.ports`, `std.bearings`, `std.retaining`); `tests/ports.rs`
 is the gate, and `shaft_drive/drive.sv` the experiment the plan names.  **A port's frame is stated over
 its `u` and `v`, never its normal** (`std.ports`' `FrameOn`, `seats_in`, `abuts`): `views::place`
