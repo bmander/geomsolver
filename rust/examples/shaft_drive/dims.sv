@@ -65,6 +65,7 @@ hyp_offset := 25mm * scale
 hyp_backlash := 0.05mm * scale
 hyp_tip_relief := 0.2mm * scale
 hyp_end_relief := 0.2mm * scale
+hyp_cutter_radius := 75.6122mm * scale  // the face mill: hypoid.sv's, chosen, not found
 step_bevel := gear_teeth / pinion_teeth  // 2, up at the bottom bracket and down at the hub
 
 // -- what the train does ---------------------------------------------------------------------------

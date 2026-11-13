@@ -15,7 +15,7 @@ use std.place (seats, right_of)
 use spiral_bevel.hypoid (HypoidPair)
 use planetary
 use dims (cs_length, bb_drop, shaft_y, ring_y, scale, pinion_teeth, gear_teeth, hyp_module,
-          hyp_offset, hyp_backlash, hyp_tip_relief, hyp_end_relief, shell_od, shell_id,
+          hyp_offset, hyp_backlash, hyp_tip_relief, hyp_end_relief, hyp_cutter_radius, shell_od, shell_id,
           case_left, case_right, end_wall, bearing_od, sleeve_bearing_od, diaphragm, boss_r,
           boss_ahead, boss_behind, wall, web, sleeve_r, hub_r, hub_bore, hub_span, flange_r,
           flanges, spokes, rear_case_r, rear_case, shaft_od, shaft_id, tube_od, tube_id,
@@ -69,26 +69,22 @@ flip perpendicular std.y
 flip perpendicular centres
 flip_c coincident flip
 
-// The pair is laid out in its own pitch-plane frame, `place`, which stands where the four claims
-// below hold: its gear's axis the bracket's, its pinion's square to `flip`, in the shaft's plane.
-// Those are what should place it; stated as relations, they leave the pair's layout to converge
-// from an attitude it does not (README: what solventc lacks), so the frame is held at the
-// attitude they give, read from the pair's own solve — the pinion's axis runs (38.628, -18.108,
-// 19.314) from its apex in the pair's frame — and claimed.
-place := frame
-fix(dir == (-0.870151820509, 0.447213595500, -0.206968135870)) place.u
-fix(dir == (0.231397410491, 0, -0.972859310701)) place.v
-fix(origin == (0mm, -34.184481591980mm, 0mm)) place
-in place {
-  pair := HypoidPair(pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
-    mean_module: hyp_module, shaft_angle: 90deg, offset: hyp_offset, spiral_angle: 25deg,
-    backlash: hyp_backlash, tip_relief: hyp_tip_relief, end_relief: hyp_end_relief,
-    pressure_shift: hint(10deg), cutter_radius: hint(80mm * scale))
-}
-claim pair.gear_member.foot coincident std.y
-claim pair.gear_member.ax parallel(sense: same) std.y
-claim pair.pinion_member.ax perpendicular flip
-claim std.origin distance(shaft_y, along: std.y) pair.pinion_member.foot
+// The pair is placed by what it does: its frame's origin on the bracket's axis, its gear's axis
+// along it, its pinion's axis square to `flip` and running back along the line of centres, the
+// pinion's mean point in the shaft's plane.  It is laid out alone where its frame stands, placed
+// whole and carried (#904 A5).  Its face mill's pressure shift is found as `hypoid.sv` finds it:
+// where the two flanks nearest undercut are equally far from it, `pair.least`.
+pair := HypoidPair(pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
+  mean_module: hyp_module, shaft_angle: 90deg, offset: hyp_offset, spiral_angle: 25deg,
+  backlash: hyp_backlash, tip_relief: hyp_tip_relief, end_relief: hyp_end_relief,
+  pressure_shift: hint(10deg), cutter_radius: hyp_cutter_radius, least: hint(0.5))
+pair.margins.pinion_inner regular(pair.least, by: pair.margins.pinion_cut) within pair.margins.pinion
+pair.margins.gear_outer regular(pair.least, by: pair.margins.gear_outer_cut) within pair.margins.gear
+pair.std.origin coincident std.y
+pair.gear_member.ax parallel(sense: same) std.y
+pair.pinion_member.ax perpendicular flip
+pair.pinion_member.ax.p1 distance(<= 0mm, along: std.x) pair.pinion_member.ax.p2
+std.origin distance(shaft_y, along: std.y) pair.pinion_member.foot
 
 // The pinion's mean point at the hub.
 hub_foot := pair.pinion_member.foot at(under: flip) 180deg
@@ -210,8 +206,9 @@ diaphragm_ring_set := { q | q in std.sets.Cylinder(bb_line, r: shell_id / 2)
 construction diaphragm_ring := solid(diaphragm_ring_set)
 frame := solid(shell)
 diaphragm_ring union frame
-// Where the chainstay leaves each pinion's housing, the frame is rounded.  (Where the housing
-// leaves the bracket's case it is not: README, what solventc lacks.)
+// Where the pinion's housing leaves the bracket's case, two cylinders on skew axes, and where the
+// chainstay leaves each housing, the frame is rounded.
+frame.shell.boss round(r: 4mm) frame.shell.case_outer
 frame.shell.stay round(r: 3mm) frame.shell.boss
 frame.shell.stay round(r: 3mm) frame.shell.hub_boss
 

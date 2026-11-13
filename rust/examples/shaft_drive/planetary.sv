@@ -104,7 +104,7 @@ component Planetary() {
     bridge[k] union carrier
   }
   // what turns, for an assembly to read
-  turns := {sun: sun.body}
+  turns := {sun: sun.body, ring: ring.body}
 }
 
 preview {

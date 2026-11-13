@@ -80,7 +80,8 @@ component Helical(N: Int, mn: Length, alpha: Angle, beta: Angle, hand: Scalar, w
   normal := plane(u: std.x, v: lean)
 
   // The rack's tooth in the normal section: a trapezoid whose flanks lean `alpha` from the radius
-  // and cross the pitch line `2 hw` apart; its tip `hf` inside the pitch line, its back past the
+  // and cross the pitch line `2 hw` apart; its tip `hf` inside the pitch line, its corners rounded
+  // `0.25 mn` as a hob's are, so the root fillet is the trochoid of a round; its back past the
   // gear's tip.
   in normal {
     i1 := point
@@ -90,16 +91,17 @@ component Helical(N: Int, mn: Length, alpha: Angle, beta: Angle, hand: Scalar, w
     pl := point
     pr coords(du: rp, dv: hw) normal
     pl coords(du: rp, dv: -hw) normal
-    t0 := point
-    t1 := point
-    t2 := point
-    t3 := point
+    // seeded at the corners, as a rounded outline is
+    t0 := point hint((rp - hf, -(hw - hf * tan(alpha))))
+    t1 := point hint((rp - hf, hw - hf * tan(alpha)))
+    t2 := point hint((rp + 2 * mn, hw + 2 * mn * tan(alpha)))
+    t3 := point hint((rp + 2 * mn, -(hw + 2 * mn * tan(alpha))))
     normal.origin distance(rp - hf, along: u) t0
     normal.origin distance(rp - hf, along: u) t1
     normal.origin distance(rp + 2 * mn, along: u) t2
     normal.origin distance(rp + 2 * mn, along: u) t3
-    rack := (tip := line(t0, t1)) -> (right := line(t1, t2)) -> (back := line(t2, t3)) ->
-            (left := line(t3, t0)) -> close
+    rack := (tip := line(t0, t1)) -> round(r: 0.25 * mn) (right := line(t1, t2)) ->
+            (back := line(t2, t3)) -> (left := line(t3, t0)) -> round(r: 0.25 * mn) close
     pr coincident right
     pl coincident left
     radial angle(alpha) right
