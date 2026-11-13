@@ -340,12 +340,8 @@ impl<'a> Walk<'a> {
                     // interface declares, the whole argument under a key no source writes, for
                     // what it asks of it to be judged once every name is known
                     if let Some(shape) = self.formal_shape(comp, f) {
-                        let given = keys::given(&key);
-                        self.aliases.push((given.clone(), r.clone(), scope.clone()));
-                        self.checks.groups.push((given.clone(), a.span, *ty));
-                        self.typed(&shape, &key, r, scope);
                         self.interface_numbers(&shape, &actual, &f.name.text, vals, &mut sub, a.span);
-                        self.checks.interfaces.push((given, a.span, shape, actual));
+                        self.bind_typed(shape, &key, r, scope, a.span, *ty, actual);
                         continue;
                     }
                     self.aliases.push((key.clone(), r.clone(), scope.clone()));

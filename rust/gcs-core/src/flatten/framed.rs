@@ -25,10 +25,17 @@ impl<'a> Walk<'a> {
             return;
         }
         let mut read = Vec::new();
+        // and the members read past a name (`b.od` of `b.od seats_in st.seat`): where `b` hands
+        // out a datum in `od`, a port, it is read as a frame ([0.217])
+        let mut ported = Vec::new();
         for st in body {
-            self.paths(st, &mut |parts| {
+            self.paths_all(st, &mut |parts| {
                 if let Some(of) = self.datum_of(parts) {
                     read.push(format!("{}{}", scope.prefix(), of.join(".")));
+                }
+                match parts {
+                    [a, b, ..] if a != "std" => ported.push(format!("{}{a}.{b}", scope.prefix())),
+                    _ => {}
                 }
             });
             // and a relation word's use reads what its body reads of what it is given (#595)
@@ -39,6 +46,7 @@ impl<'a> Walk<'a> {
             });
         }
         self.standard.outside.extend(read);
+        self.standard.ported.extend(ported);
     }
 
     /// Every relation statement `st` writes with a word a file defines, a block's included.
@@ -118,7 +126,24 @@ impl<'a> Walk<'a> {
     /// (`syntax::name_uses`), the frames it is drawn in — an `in` block's header is no part of
     /// the statements it holds — and a block's statements'.
     fn paths(&self, st: &Stmt, f: &mut dyn FnMut(&[String])) {
-        if let Some(text) = self.prog.span_text(st.span).filter(|t| t.contains("std")) {
+        self.paths_where(st, true, f)
+    }
+
+    /// `paths`, of every statement whether or not it names `std`: what the pre-pass reads, a
+    /// port's member as well as a datum ([0.217]).
+    fn paths_all(&self, st: &Stmt, f: &mut dyn FnMut(&[String])) {
+        self.paths_where(st, false, f)
+    }
+
+    fn paths_where(&self, st: &Stmt, std_only: bool, f: &mut dyn FnMut(&[String])) {
+        self.paths_in(st, std_only, true, f)
+    }
+
+    /// `paths_where`, reading `st`'s text only where `lex`: a block's span holds its statements',
+    /// read with it, so they are walked for their frames alone.
+    fn paths_in(&self, st: &Stmt, std_only: bool, lex: bool, f: &mut dyn FnMut(&[String])) {
+        let text = self.prog.span_text(st.span).filter(|t| lex && (!std_only || t.contains("std")));
+        if let Some(text) = text {
             for u in crate::syntax::name_uses(text) {
                 let parts: Vec<String> = u.parts.into_iter().map(|(p, _)| p).collect();
                 f(&parts);
@@ -129,7 +154,7 @@ impl<'a> Walk<'a> {
             StmtKind::Instance(i) => i.membership.path().collect(),
             StmtKind::Relation(r) => r.within.iter().collect(),
             StmtKind::Block(b) => {
-                b.stmts().for_each(|inner| self.paths(inner, f));
+                b.stmts().for_each(|inner| self.paths_in(inner, std_only, false, f));
                 return;
             }
             _ => return,
@@ -159,6 +184,19 @@ impl<'a> Walk<'a> {
         })
     }
 
+    /// **The groups a definition declares that hand out a datum of its own** — its ports
+    /// (`docs/ports-plan.md`, [0.217]), `od` of `od := {at: std.top, pocket: pocket}`: a mate
+    /// through one reads the part's frame, so an instance whose port something outside reads
+    /// stands in a frame of its own, as one whose `std` it reads does.
+    fn ports<'c>(&self, comp: &'c Component) -> impl Iterator<Item = &'c str> + use<'c, '_, 'a> {
+        comp.body.iter().filter_map(move |st| match &st.kind {
+            StmtKind::Group(g) if g.fields.iter().any(|f| matches!(&f.value,
+                crate::syntax::InstVal::Ref(r) if self.datum_at(&read_segments(r)) == Some(0))) =>
+                Some(g.name.text.as_str()),
+            _ => None,
+        })
+    }
+
     /// **An instance's own frame** (#548): where something outside reads instance `inst`'s
     /// datums, the frame it stands in — `{inst}#frame`, declared bare where the call is, in the
     /// `in`s around it, made with axes (`Expansion::charts`) — as the call's scope writes it.
@@ -174,7 +212,9 @@ impl<'a> Walk<'a> {
     ) -> Option<InPlane> {
         let prefix = scope.prefix().to_string();
         let abs = format!("{prefix}{}", inst.name.text);
-        if !self.standard.outside.contains(&abs) {
+        let ported = || self.ports(comp)
+            .any(|g| self.standard.ported.contains(&format!("{abs}.{g}")));
+        if !self.standard.outside.contains(&abs) && !ported() {
             return None;
         }
         if !self.reads_datums(comp, &mut Vec::new()) {

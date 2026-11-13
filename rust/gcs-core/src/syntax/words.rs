@@ -315,12 +315,21 @@ pub(super) fn word_definition_at(toks: &[(Tok, Span)], i: usize) -> Option<Fixit
     if MODIFIERS.contains(&first) {
         return None;
     }
-    // the word at `w`: its parameters, if any, then the last operand and `:=`
+    // past an operand's interface, where one is written: `: Journal`, `: std.ports.Bore`
+    // ([0.217]) — the index after the operand's name and its type
+    let typed = |j: usize| -> usize {
+        match toks.get(j).map(|(t, _)| t) {
+            Some(Tok::P(':')) => past_ref(toks, j + 1).unwrap_or(j),
+            _ => j,
+        }
+    };
+    // the word at `w`: its parameters, if any, then the last operand, its type and `:=`
     let tail = |w: usize| {
         let j = past_args(toks, w);
-        word_at(toks, j).is_some() && toks.get(j + 1).map(|(t, _)| t) == Some(&Tok::Define)
+        word_at(toks, j).is_some() && toks.get(typed(j + 1)).map(|(t, _)| t) == Some(&Tok::Define)
     };
-    if word_at(toks, i + 1).is_some() && tail(i + 1) {
+    let after_first = typed(i + 1);
+    if word_at(toks, after_first).is_some() && tail(after_first) {
         return Some(Fixity::Infix);
     }
     tail(i).then_some(Fixity::Prefix)

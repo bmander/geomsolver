@@ -4,6 +4,19 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.217] Ports: a relation word's operands typed, and a part placed through its port**
+(`docs/ports-plan.md`, #904). A defined word's operand may be typed by an interface, `s: Seated
+seats_in h: Seat := { … }`: a use is held to it as a call is to a typed formal (E103 at the
+operand, naming the missing member), and the body reads only what the interface declares (E101
+otherwise). Through 0.216 the head was E001 ("a statement relates two things with a word between
+them"). A component that hands out a datum of its own in a group (`od := {at: std.top, pocket:
+pocket}`) now stands in a frame of its own, which a mate through the port places; through 0.216
+such an instance stood in the frame around its call, and the mate conflicted with it. Three
+modules arrive in the library: `std.ports` (the interfaces and the mates `seats_in`, `abuts`,
+`grooves`, and `Station`), `std.bearings` (ISO 15 rows, `Bearing`, `Held`) and
+`std.retaining` (DIN 471/472 rows, `Ring`). Nothing a document wrote before reads
+differently.
+
 **[0.216] A declared name ends its line, though a relation shares it** (#904). A line ending in a
 joint word continues its chain onto the next (§6.6), so a point a document named `level` closed a
 line as a second joint word — `std.origin distance(>= 0mm, along: u) level` took the next line's

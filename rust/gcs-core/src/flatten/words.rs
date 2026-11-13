@@ -445,6 +445,19 @@ impl<'a> Walk<'a> {
                 }
             }
         }
+        // each operand's interface, where the head types it ([0.217]); the numbers it declares,
+        // read where the use is written and bound as the body's own under the operand's name
+        // (`s.d`), as a typed formal's are
+        let shapes: Vec<_> = used.ops.iter().take(def.operands.len()).enumerate()
+            .map(|(k, given)| self.word_shape(def, k)
+                .map(|shape| (shape, crate::syntax::ref_text(given))))
+            .collect();
+        for ((operand, given), shape) in def.operands.iter().zip(&used.ops).zip(&shapes) {
+            if let Some((shape, actual)) = shape {
+                self.interface_numbers(shape, actual, &operand.text, &scope.vals, &mut vals,
+                                       given.span);
+            }
+        }
         let at = used.word.span;
         // its parameters over the constants of the file it is written in (#461)
         let (constants, unknowns) = self.file_numbers(def.module);
@@ -454,8 +467,17 @@ impl<'a> Walk<'a> {
                               ..Scope::default() };
         let u = Use { st, rel, path, scope, at };
         let app = self.begin(&u, &closure);
-        for (operand, given) in def.operands.iter().zip(&used.ops) {
-            self.bind_to_use(&app, &operand.text, given.clone(), &u);
+        for ((operand, given), shape) in def.operands.iter().zip(&used.ops).zip(shapes) {
+            // typed by an interface ([0.217]): held to it as a call is to a typed formal, and the
+            // body reads only what the interface declares
+            let Some((shape, actual)) = shape else {
+                self.bind_to_use(&app, &operand.text, given.clone(), &u);
+                continue;
+            };
+            let key = format!("{}{}", app.prefix(), operand.text);
+            self.words.use_aliases.insert(key.clone());
+            self.words.arguments.insert(key.clone());
+            self.bind_typed(shape, &key, given, u.scope, given.span, crate::syntax::Ty::Group, actual);
         }
         for (name, given) in entities {
             self.bind_to_use(&app, name, given, &u);

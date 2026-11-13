@@ -203,6 +203,24 @@ component Plate(c: point, m: group) {
     assert!(of("W206", src).is_empty(), "{:?}", lint(src));
 }
 
+/// A group handed whole to an instance the level then relates — a bundle building a part from a
+/// catalogue row and joining it (`std.bearings`' `Held`, [0.217]) — composes there and threads
+/// nothing: no W206, typed or not, where the same group handed to an instance nothing reads is.
+#[test]
+fn a_group_handed_to_an_instance_the_level_relates_is_composed() {
+    let src = "\
+component Inner(o: point, dims: group) {
+  c := circle(center: o) hint(r: dims.r)
+}
+component Joined(o: point, dims: group) {
+  i := Inner(o, dims)
+  p := point
+  p coincident i.c
+}
+";
+    assert!(of("W206", src).is_empty(), "{:?}", lint(src));
+}
+
 /// Advisory: elaboration never raises a pattern, so a document that trips every one elaborates as
 /// it would without the lint; and a module the document reads is not the document's text.
 #[test]

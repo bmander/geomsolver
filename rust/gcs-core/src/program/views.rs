@@ -282,11 +282,80 @@ fn points(sk: &Sketch, e: EntRef, out: &mut Vec<usize>, depth: u32) {
 ///
 /// Which planes stand turned as the statements say, and not merely as they were seeded: each
 /// plane both of whose axes are held or placed here.
-pub(crate) fn place(sk: &mut Sketch) -> Vec<bool> {
+pub(crate) fn place(sk: &mut Sketch, memo: &PlaceMemo) -> Vec<bool> {
+    // where every axis and plane is held already there is nothing to place, and nothing to
+    // remember: `held` reads what is fixed, which placing never changes
+    if Placed::held(sk).all() {
+        return place_planes(sk);
+    }
+    // what was placed from these very statements and seeds before — an earlier pass of
+    // `elaborate`, or this pass with nothing moved since — is placed as it was then
+    let key = fingerprint(sk);
+    if let Some(done) = memo.done.borrow().iter().find(|d| d.key == key) {
+        for &(q, v) in &done.moved {
+            sk.params[q].value = v;
+        }
+        return done.placed.clone();
+    }
+    let before: Vec<u64> = sk.params.iter().map(|p| p.value.to_bits()).collect();
     // a stage of its own (#851): a round's solve and its diagnosis are of everything it places
     let planes = sk.frames.len();
     let placing = || crate::progress::Work::place(planes);
-    crate::progress::during(placing, || place_planes(sk))
+    let placed = crate::progress::during(placing, || place_planes(sk));
+    let moved = sk.params.iter().enumerate()
+        .filter(|(q, p)| p.value.to_bits() != before[*q])
+        .map(|(q, p)| (q, p.value))
+        .collect();
+    memo.done.borrow_mut().push(Placing { key, moved, placed: placed.clone() });
+    placed
+}
+
+/// **The planes placed once for each input** — one `elaborate`'s passes, each a fresh drawing
+/// of the same document, place its planes again from the same statements and seeds, as do the
+/// rounds of one pass where a reading moved nothing; `place` reads only the sketch and writes
+/// only its numbers, so what it placed from one input is what it places from it again: each
+/// input's numbers moved and its planes placed, by the input's fingerprint.
+#[derive(Default)]
+pub(crate) struct PlaceMemo {
+    done: std::cell::RefCell<Vec<Placing>>,
+}
+
+struct Placing {
+    key: [u64; 2],
+    moved: Vec<(usize, f64)>,
+    placed: Vec<bool>,
+}
+
+/// What `place` reads of `sk`, hashed: every number (its value to the bit and whether it is
+/// held), every point, line, axis, plane, lift, turned, mirrored or carried copy and constraint,
+/// as their debug text writes them — two independent 64-bit hashes, so two inputs that differ
+/// share neither.
+fn fingerprint(sk: &Sketch) -> [u64; 2] {
+    struct Hash([u64; 2]);
+    impl Hash {
+        fn bytes(&mut self, bs: &[u8]) {
+            for &b in bs {
+                self.0[0] = (self.0[0] ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3);
+                self.0[1] = (self.0[1] ^ u64::from(b)).wrapping_mul(0x9e37_79b9_7f4a_7c15).rotate_left(29);
+            }
+        }
+    }
+    impl std::fmt::Write for Hash {
+        fn write_str(&mut self, s: &str) -> std::fmt::Result {
+            self.bytes(s.as_bytes());
+            Ok(())
+        }
+    }
+    let mut h = Hash([0xcbf2_9ce4_8422_2325, 0x84222325cbf29ce4]);
+    use std::fmt::Write;
+    // a parameter by what placing reads of it, its value and whether it is held, not its name
+    for p in &sk.params {
+        h.bytes(&p.value.to_bits().to_le_bytes());
+        h.bytes(&[u8::from(p.fixed)]);
+    }
+    let _ = write!(h, "{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}", sk.points, sk.lines, sk.axes,
+                   sk.frames, sk.lifts, sk.turns, sk.mirrors, sk.rigid, sk.constraints);
+    h.0
 }
 
 /// `place`, unsaid.
@@ -296,7 +365,7 @@ fn place_planes(sk: &mut Sketch) -> Vec<bool> {
     // to them once they are
     sk.seed_normals();
     let mut placed = Placed::held(sk);
-    if placed.axes.iter().all(|&b| b) && placed.planes.iter().all(|&b| b) {
+    if placed.all() {
         return placed.turned(sk);
     }
     let reads = statements(sk);
@@ -344,6 +413,11 @@ impl Placed {
         }
         let planes = (0..sk.frames.len()).map(|p| sk.plane_fixed(p)).collect();
         Placed { axes, planes }
+    }
+
+    /// Whether every axis and plane is placed.
+    fn all(&self) -> bool {
+        self.axes.iter().all(|&b| b) && self.planes.iter().all(|&b| b)
     }
 
     /// Which planes stand turned as the statements say: each plane both of whose axes are placed.

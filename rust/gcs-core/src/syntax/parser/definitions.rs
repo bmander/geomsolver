@@ -22,6 +22,15 @@ impl<'a> P<'a> {
         Some(out)
     }
 
+    /// An operand's interface after its name, `s: Journal` or `h: std.ports.Bore` ([0.217]):
+    /// `Some` with the type's path as written, `Some(None)` where none is written.
+    fn operand_type(&mut self) -> Option<Option<Name>> {
+        if !self.eat_p(':') {
+            return Some(None);
+        }
+        self.component_name().map(Some)
+    }
+
     /// **`a word(params) b :=` or `word(params) l :=` at the head of a statement** — a relation
     /// word being defined (§9.9): its fixity, or `None` and nothing eaten.
     pub(super) fn word_definition_ahead(&self) -> Option<Fixity> {
@@ -34,12 +43,15 @@ impl<'a> P<'a> {
     pub(super) fn word_definition(&mut self, fixity: Fixity, next_id: &mut u32) -> Option<WordDef> {
         let lo = self.here().lo as usize;
         let mut operands = Vec::new();
+        let mut types = Vec::new();
         if fixity == Fixity::Infix {
             operands.push(self.ident()?);
+            types.push(self.operand_type()?);
         }
         let word = self.ident()?;
         let params = if self.eat_p('(') { self.ident_list()? } else { Vec::new() };
         operands.push(self.ident()?);
+        types.push(self.operand_type()?);
         self.i += 1; // `:=`
         if matches!(self.peek(), Some(Tok::Nl) | None) {
             self.fail("a relation word says what it stands for: `a horizontal b := a level(up) b`");
@@ -87,6 +99,7 @@ impl<'a> P<'a> {
             word,
             fixity,
             operands,
+            types,
             params,
             body,
             span: Span::new(lo, self.prev_hi()),

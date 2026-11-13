@@ -710,6 +710,26 @@ motor's, read `components.dims` as constants of their definitions ([0.160], #501
 in the plane its operands are drawn in: `Frame(O, ref)`, `Bank(crank.pin, plate.pivots.r, z:
 components.dims.zB)`.
 
+**Ports** (0.217, `docs/ports-plan.md`): a relation word's operand typed by an interface
+(`WordDef::types`, parsed by `operand_type`, looked ahead by `words::word_definition_at`) is bound
+as a typed formal is (`flatten::words::apply_word`): the whole operand under `keys::given`, a group
+of its own holding only the interface's members (`Walk::typed`), its numbers bound as the body's
+(`interface_numbers`), and the use held to it once every name is known (`checks.interfaces`,
+`conform`): E103 at the operand naming the missing member. **A definition that hands out a datum
+of its own in a group it declares stands in a frame of its own** (`framed::exports_datum`, read by
+`own_frame` beside `Datums::outside`): a mate through the port reads the part's frame. The ports,
+mates and catalogues are Solvent (`std.ports`, `std.bearings`, `std.retaining`); `tests/ports.rs`
+is the gate, and `shaft_drive/drive.sv` the experiment the plan names.  **A port's frame is stated over
+its `u` and `v`, never its normal** (`std.ports`' `FrameOn`, `seats_in`, `abuts`): `views::place`
+reads a plane's normal off its axes and never solves for it, so a statement over a normal leaves
+every placing round unconverged — the drive's ports, written over normals, took 25 s to place,
+over `u` and `v` 6 s. **And the planes are placed once for each input** (`views::PlaceMemo`, held
+by `elaborate` across its passes): each pass places a fresh drawing of the same document, and
+`place` reads only the sketch and writes only its numbers, so a place from an input already
+placed (the same numbers to the bit, statements and entities, `views::fingerprint`) writes the
+numbers it moved then — the drive's forty placings were twenty inputs, 6 s to 2.8 s, the drive
+before ports 0.9 s to 0.4 s.
+
 - **A name is defined one way, `NAME := VALUE`** ([plan](../definitions-plan.md), Solvent §5,
   [0.29]).  `w := 100` is a value (`StmtKind::Param`), `c := circle(…)` a declaration, `t :=
   Tooth(…)` an instance, `dims := {…}` a group (a brace after `:=` is a list, lexed across lines),
@@ -819,7 +839,9 @@ components.dims.zB)`.
   the instances known by their statements, a block's next copy's too, `next.t.r.lo`; a path
   through an index or a formal is not followed);
   **W205** an `Int` formal read only by `when` conditions; **W206** a `group` formal handed on whole
-  and never read through.  Asked of the **document's own text** (its components and root, not a
+  and never read through — save to an instance the level then relates (`b.od seats_in seat`): a
+  bundle building a part from a catalogue row and joining it composes there (0.217,
+  `a_group_handed_to_an_instance_the_level_relates_is_composed`).  Asked of the **document's own text** (its components and root, not a
   module it reads, which is linted as a document of its own), and never by `elaborate`: only
   `solventc --lint` adds the warnings, which fail nothing.  `tests/drift.rs` holds each pattern to
   one document that trips it and one that does not, and holds the corpus (`rust/examples`,

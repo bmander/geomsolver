@@ -326,6 +326,10 @@ struct Datums {
     /// a frame of its own, `keys::instance_frame` — and of those, the ones refused it because
     /// their body reads no datum, to the name of their definition.
     outside: BTreeSet<String>,
+    /// **Every member of an instance a body reads past it** ([0.217]), `b.od` of `b.od.at`, by
+    /// absolute name: an instance handing out a datum of its own in that member — a port — is
+    /// read as a frame (`framed::exports_datum`).
+    ported: BTreeSet<String>,
     refused: BTreeMap<String, String>,
     /// **The mirrored instances** (#578), by prefix (`left.`): what a reference from outside
     /// reads under one is its image (`keys::image`), and its `b.std.D` its image's datums

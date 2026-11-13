@@ -1017,6 +1017,29 @@ use std.place (horizontal, vertical)   // and import those two words bare
 | `std.solids` | `Prism`, `Drafted`, `Revolution`, `Through`, `Countersink`: solids as sets (1.14) |
 | `std.stations` | `OnLine`, `OnArc`, `OnSpline`, `On`, `Helix`, `OnHelix`, `Minimal`, `Frenet`, `Along`, `AlongFrenet`, `Across`, `Ruled`, `Apex`, `Affine`, `Similar`, `Twisted`; the words `scaled`, `scaled_radius` (1.14) |
 | `std.motion` | the words `turns`, `screws`, `spins`, `slides`, `rolls`, `reciprocal`; `Screw` (1.15) |
+| `std.ports` | how parts are joined (below): the interfaces `Seat`, `Seated`, `Flat`, `RingSeat`, `Grooved`; the words `seats_in`, `abuts`, `grooves`; `FrameOn`, `Station` |
+| `std.bearings` | ISO 15 bearings with their ports: the rows `b6901`, `b6903`, `b6804`, `b6805`, `Bearing`, `Held` |
+| `std.retaining` | DIN 471/472 rings with their ports: the rows `din471_17`, `din471_20`, `din471_25`, `din472_24`, `Ring` |
+
+**Ports: parts that say how they are joined** (0.217, `docs/ports-plan.md`). A word's operand
+may be typed by an interface, `s: Seated seats_in h: Seat := { … }`: a use handing it a group
+without a member the interface asks is **E103** at the operand, naming the member, and the body
+reads only what the interface declares. A part declares its ports as groups of its own geometry —
+a bearing's `od := {at: std.top, pocket: pocket}`, the frame it is seated by and the room it takes
+— and a part that hands out a datum of its own so stands in a frame of its own, which a mate
+through the port places. A joint is then a few words, and a joint of joints a component:
+
+```
+right_st := std.ports.Station(bb_line, std.origin, d: case_right + end_wall / 2,
+  toward: drive_side, east: std.x, host: shell)          // where it sits, in what
+right_bb := std.bearings.Held(std.bearings.b6804, ring: std.retaining.din471_20,
+  seat: right_st.seat, on: spindle_j)                     // seated, its ring grooved in
+```
+
+`seats_in` puts the part's frame on the seat's and cuts the room it takes from the seat's
+`host`; `abuts` puts two faces against each other; `grooves` cuts a ring's groove in what it is
+fitted to (`spindle_j := {host: spindle}`). `shaft_drive/drive.sv` places its seven bearings and
+rings so.
 
 A component is called by its path, `std.sets.Sphere(c, r: 5)`; a word is only ever bare, `use
 std.motion (turns)`. Through spec 0.194 all of it was `std`'s (`std.Sphere`, `use std (round)`);
