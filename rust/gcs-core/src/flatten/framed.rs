@@ -187,12 +187,26 @@ impl<'a> Walk<'a> {
     /// **The groups a definition declares that hand out a datum of its own** — its ports
     /// (`docs/ports-plan.md`, [0.217]), `od` of `od := {at: std.top, pocket: pocket}`: a mate
     /// through one reads the part's frame, so an instance whose port something outside reads
-    /// stands in a frame of its own, as one whose `std` it reads does.
+    /// stands in a frame of its own, as one whose `std` it reads does.  And one handing out what
+    /// an instance of the body makes of its datums: `left` of `left := {at: lf.at}`, where
+    /// `lf := FrameOn(std.z, std.origin, …)` stands a frame on the part's own axis — a bearing
+    /// joined only by its side, against a shoulder, is placed by its frame all the same.
     fn ports<'c>(&self, comp: &'c Component) -> impl Iterator<Item = &'c str> + use<'c, '_, 'a> {
+        let datum = |r: &Ref| self.datum_at(&read_segments(r)) == Some(0);
+        // the instances of the body given one of its datums
+        let framed: Vec<&str> = comp.body.iter().filter_map(|st| match &st.kind {
+            StmtKind::Instance(i) if i.args.iter().any(|a| matches!(&a.value,
+                crate::syntax::InstVal::Ref(r) if datum(r))) => Some(i.name.text.as_str()),
+            _ => None,
+        }).collect();
         comp.body.iter().filter_map(move |st| match &st.kind {
-            StmtKind::Group(g) if g.fields.iter().any(|f| matches!(&f.value,
-                crate::syntax::InstVal::Ref(r) if self.datum_at(&read_segments(r)) == Some(0))) =>
-                Some(g.name.text.as_str()),
+            StmtKind::Group(g) if g.fields.iter().any(|f| match &f.value {
+                crate::syntax::InstVal::Ref(r) => datum(r) || {
+                    let parts = read_segments(r);
+                    parts.len() > 1 && framed.contains(&parts[0].as_str())
+                },
+                _ => false,
+            }) => Some(g.name.text.as_str()),
             _ => None,
         })
     }

@@ -165,3 +165,22 @@ fn a_part_handing_out_its_datum_in_a_port_stands_in_a_frame_its_mate_places() {
     let (b, ring) = (at("b.lf.at.origin"), at("clip.ff.at.origin"));
     assert!((b[2] + 3.5).abs() < 1e-9 && (ring[2] + 3.5).abs() < 1e-9, "{b:?} {ring:?}");
 }
+
+#[test]
+fn a_part_joined_only_by_a_side_it_frames_from_its_datums_stands_in_a_frame_of_its_own() {
+    // the bearing against a shoulder 20 mm up the axis, joined by its left side alone: `left` is
+    // `{at: lf.at}`, `lf` a frame the bearing stands on its own `std.z`, so the bearing has a
+    // frame of its own for the mate to place (where it stood in the world, and the mate
+    // conflicted with it)
+    let src = FITTED.replace("JOINT", "sf := std.ports.FrameOn(ax, std.origin, d: 20mm, toward: std.z, east: std.x)
+shoulder := {at: sf.at}
+b := std.bearings.Bearing(std.bearings.b6804)
+b.left abuts shoulder");
+    let e = determined(&src);
+    let at = |name: &str| {
+        let p = crate::common::ent(&e, name).i();
+        e.sketch.world_point(p)
+    };
+    let (left, right) = (at("b.lf.at.origin"), at("b.rf.at.origin"));
+    assert!((left[2] - 20.).abs() < 1e-9 && (right[2] - 27.).abs() < 1e-9, "{left:?} {right:?}");
+}
