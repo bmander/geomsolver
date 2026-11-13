@@ -95,6 +95,7 @@ mod drag;
 mod drawing;
 mod drawn_mesh;
 mod epicyclic;
+mod frame_cluster;
 mod part_colours;
 mod drift;
 mod driven;
