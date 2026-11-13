@@ -620,6 +620,11 @@ impl<'a> P<'a> {
             if !joint_word(w) || opens_link(w, link_word(&self.t, past_args(&self.t, self.i))) {
                 break;
             }
+            // a word the document names an element with, ending the line after another word, is
+            // that element: the joint's right operand, not a continuation onto the next line
+            if !words.is_empty() && words::named_at_line_end(&self.t, self.i) {
+                break;
+            }
             let w = w.clone();
             let lo = self.here().lo as usize;
             self.i += 1;

@@ -360,6 +360,7 @@ mod wankel;
 mod weighted_spline;
 mod when;
 mod witness;
+mod word_names;
 mod words_alone;
 mod workspace;
 
