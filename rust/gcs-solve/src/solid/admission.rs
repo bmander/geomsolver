@@ -270,7 +270,7 @@ fn revolution_turns(sk: &Sketch,id: usize,tolerance: f64) -> Option<Vec<Turns>> 
                     _ => { round = false; None }
                 };
                 if let Some((centre,radius)) = circle {
-                    let (c,r) = (lift(centre as usize),sk.params[radius as usize].value);
+                    let (c,r) = (lift(centre as usize),sk.params[radius as usize].value.abs());
                     round &= on_axis(c) && ball.is_none_or(|(k,q)| norm(sub(k,c)) <= tolerance && (q-r).abs() <= tolerance);
                     ball.get_or_insert((c,r));
                 }

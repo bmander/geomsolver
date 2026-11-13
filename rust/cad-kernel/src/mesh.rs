@@ -435,11 +435,18 @@ fn sliver(t2: &Tri2,t: [u32;3]) -> bool {
 /// The distance from the surface at `uv` to the plane of the triangle `a`, `b`, `c` (space).
 fn off(f: &Face,uv: Uv,a: V,b: V,c: V) -> f64 { off_at(f.surface.point(uv),a,b,c) }
 
-/// The distance from `p` to the plane of the triangle `a`, `b`, `c`.
+/// The distance from `p` to the plane of the triangle `a`, `b`, `c` — or, where the triangle has
+/// no plane (its corners in a line, or two of them one point: a triangle across a seam, its corners
+/// the seam's samples either side of it), to the nearest of its sides. Never 0 for a triangle that
+/// spans nothing, so the surface off it is refined, not left a strip of no area that is dropped.
 fn off_at(p: V,a: V,b: V,c: V) -> f64 {
     let n = cross(sub(b,a),sub(c,a));
     let l = norm(n);
-    if !(l > 0.) { return 0. }
+    let longest = distance(a,b).max(distance(b,c)).max(distance(c,a));
+    if !(l > 1e-12*longest*longest) {
+        use crate::util::space::segment_distance;
+        return segment_distance(p,a,b).min(segment_distance(p,b,c)).min(segment_distance(p,c,a))
+    }
     dot(sub(p,a),n).abs()/l
 }
 
