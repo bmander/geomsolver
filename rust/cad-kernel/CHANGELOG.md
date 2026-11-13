@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.12.0] - 2026-11-13
+
 - **Free-form faces on the contact's road** (`swept::contacts`, #880 Q1b S6): a piece of contact
   ending on its face's boundary now ends at the root of `n·v` along that edge, so the pieces either
   side of an edge the faces are tangent across meet (the coil spring's tube and its ball ends,
