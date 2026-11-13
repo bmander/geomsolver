@@ -4,8 +4,9 @@ use std::collections::BTreeSet;
 
 use super::lexer::{lex, Tok};
 use super::words::{
-    call_named, joint_word, link_word, opens_link, over_chain, over_walks, past_args, set_at,
-    trails_decl, word_at, word_definition_at, opens_block, BLOCKS, MODIFIERS, QUALIFIERS,
+    call_named, joint_word, link_word, named_at_line_end, opens_link, over_chain, over_walks,
+    past_args, set_at, trails_decl, word_at, word_definition_at, opens_block, BLOCKS, MODIFIERS,
+    QUALIFIERS,
 };
 use super::{Span, Ty, MAX_TEXT};
 use crate::constraints::{is_operator, Fixity};
@@ -525,6 +526,10 @@ fn tint_inner(
         };
     }
     let at_marker = matches!(toks.get(j).map(|(t, _)| t), Some(Tok::Arrow));
+    // `p distance(5) level`, `level` a name the file declares: the operand, as the parser reads it
+    if named_at_line_end(toks, i) {
+        return (None, Next::Word);
+    }
     if (next_word.is_some() || at_line_end || at_marker) && joint_word(w) {
         // `at_marker` is the far-side marker: `A -> equal -> B`
         return (Some(Tint::Relation), Next::Word);
