@@ -13,8 +13,8 @@ A chainless road bicycle's frame and drive, in Solvent.
 It is checked with the **released `solventc` v0.1.19**. It is also a benchmark: a hard target for
 the language and its kernel. Its findings on v0.1.17 were filed as
 [#904](https://github.com/bmander/geomsolver/issues/904), and
-[What solventc lacks](#what-solventc-lacks) says which v0.1.18 fixed, what is still open, and
-what this version found.
+[What solventc lacks](#what-solventc-lacks) says which v0.1.18 and v0.1.19 fixed, what is still open,
+and what the frame and hardware found.
 
 | file | what it is |
 |---|---|
