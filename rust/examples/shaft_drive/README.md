@@ -10,7 +10,7 @@ A chainless road bicycle's frame and drive, in Solvent.
     drive-side dropout.
   - Every shaft turns in ball bearings, each held by a retaining ring in its groove.
 
-It is checked with the **released `solventc` v0.1.18**. It is also a benchmark: a hard target for
+It is checked with the **released `solventc` v0.1.19**. It is also a benchmark: a hard target for
 the language and its kernel. Its findings on v0.1.17 were filed as
 [#904](https://github.com/bmander/geomsolver/issues/904), and
 [What solventc lacks](#what-solventc-lacks) says which v0.1.18 fixed, what is still open, and
@@ -84,9 +84,9 @@ by:
 | stack, reach | 575, 385 mm |
 | seat tube | 73.5°, 540 mm (centre to top), 34.9 × 1.65 |
 | head tube | 72°, 160 mm, 50 × 3 |
-| top tube, down tube | 35 × 1.5, 44 × 1.5 |
+| top tube, down tube | 31.8 × 1.5, 44 × 1.5 |
 | chainstay, BB drop | 430 mm, 70 mm |
-| seat stays | 16 × 1.5, meeting the seat tube's flanks at the cluster, 8 mm either side of its axis |
+| seat stays | 16 × 1.5, coped to the seat tube's flanks 9 mm either side of its axis, 28 mm under the top tube |
 | non-drive chainstay | 22 × 1.5 |
 | rear axle | 142 mm over the dropouts, 12 mm thru-axle |
 
@@ -153,14 +153,17 @@ Not drawn: the cages and seals, the planets' and the spindle's bushes, the splin
     bracket's axis to a line along the axle through its centre, and the shaft to itself. So the
     two pinions are coaxial by construction, whatever the splay, and the pair is laid out and
     cut once.
-- **The frame is tubes about lines.**
+- **The frame is tubes about lines, coped where they meet.**
   - `frame.Frame` places the frame's nodes from stack, reach and the tube angles and lengths, in
     the side view and either side of it.
   - Each tube is the region between two cylinders about the line between its nodes, cut off by
-    ordinates along it.
-  - The drive's housings are cylinders about the axes they house.
-  - The frame is the union of all of them less their bores, so every tube is mitred where it
-    meets another, and every bore opens into the next.
+    ordinates along it, and carries a `plug`: the same cylinder as a bar.
+  - A mitre is one statement, `head.plug cut top.body`: the joining tube cut to the receiving
+    tube's outside, a fish-mouth cope, its wall gone from the receiving tube's bore. The top tube
+    is coped to the seat and head tubes, the down tube to the head tube, the seat stays to the
+    seat tube. The tubes meeting the bottom bracket end inside its shell, whose bore cuts them.
+  - The drive's housings are cylinders about the axes they house, unioned with the tubes and
+    then bored.
 - **Hardware is placed on stations.** Each bearing and ring is a closed part drawn about its own
   axis, seated (`seats`) on a point at an ordinate along the bracket's axis, the axle or the
   shaft. The two 6804s, two 6903s, two 6901s and each pair of rings are one figure each, placed
@@ -173,12 +176,12 @@ Not drawn: the cages and seals, the planets' and the spindle's bushes, the splin
 
 ## What solventc says
 
-`solventc shaft_drive/drive.sv` (v0.1.18, four cores) solves the bicycle, the mated bevel pair
+`solventc shaft_drive/drive.sv` (v0.1.19, four cores) solves the bicycle, the mated bevel pair
 included, in about 15 seconds:
 
 ```
 shaft_drive/drive.sv: solved
-  2006 params, 2006 equations, structural rank 2006; DOF 0; 152 components: …
+  2008 params, 2008 equations, structural rank 2008; DOF 0; 152 components: …
   parts: 106 instances of 26 definitions
 ```
 
@@ -213,18 +216,18 @@ housing. Each fix is a number in `dims.sv`:
 
 The claim that the hub's pinion is on the shaft's axis is a theorem. The face mill's balance
 finds a pressure shift of −2.05° and a margin of 0.383 (`--where pair.pressure_shift`). The whole
-run, with five pictures, takes 3 min 12 s.
+run, with four pictures and two STLs, takes 3 min 24 s.
 
 Everything is built exactly by the kernel, as a B-rep:
 - the helical gears;
 - both spiral bevel gears and both pinions, in the bicycle's frame;
 - the carrier and the pins;
-- the frame with its two rounds, and the bearing cup;
+- the frame, coped at every joint, with its two rounds, and the bearing cup;
 - the hub, the thru-axle, the spindle, the shaft and the cranks;
-- every bearing's rings and every retaining ring.
+- every bearing's rings and balls, and every retaining ring.
 
-The exceptions are the planets where they are seated (12 below) and the balls of the three
-bearings near the hub (19 below). Those don't export as STL, though they draw.
+The exception is the planets where they are seated (12 below), which don't export as STL, though
+they draw.
 
 `solventc shaft_drive/mesh.sv` rolls the planetary's meshes (below), and `solventc
 shaft_drive/dims.sv` judges the design table's 10 claims, all theorems.
@@ -233,7 +236,8 @@ shaft_drive/dims.sv` judges the design table's 10 claims, all theorems.
 
 The findings this drawing first hit on v0.1.17 are filed as
 [#904](https://github.com/bmander/geomsolver/issues/904). Each was tried again on v0.1.18, and
-the frame, the splayed shaft and the hardware found more (17 to 22).
+the frame, the splayed shaft and the hardware found more, 17 to 22. Of those, v0.1.19 fixed
+the last four.
 
 ### Fixed in v0.1.18, and used here
 
@@ -304,7 +308,24 @@ the frame, the splayed shaft and the hardware found more (17 to 22).
     over the roll is undecided at every pose: "disjointness is within geometric uncertainty".
     It measured 0.0086 mm in an interval from −0.0056 to 0.0228 mm.
 
-### Found by the frame and the hardware (v0.1.18)
+### Fixed in v0.1.19, and used here
+
+These four were fixed from this drawing, each with a test that holds the case:
+
+19. **Small balls far from the origin meshed to nothing** ([#915](https://github.com/bmander/geomsolver/pull/915)).
+    The bearings near the hub wrote an STL of no triangles. A seated ball's arc had solved to a
+    negative radius, which the CAD recipe wrote signed, and the mesher dropped a sphere's first
+    strip across its seam as having no area. Every bearing's balls now write.
+20. **A ball in a `ring` was refused** ([#918](https://github.com/bmander/geomsolver/pull/918)), E023
+    for the region's hidden probe and E080 for every copy past the first. A ball written as a
+    set is now one ball a copy. (The bearings keep their single ball turned `at` each pitch,
+    which reads as well.)
+21. **`level` could not name a point** ([#916](https://github.com/bmander/geomsolver/pull/916)). A
+    name the document declares now ends its line, though a relation word shares it.
+22. **A union the kernel built was refused as an STL** ([#917](https://github.com/bmander/geomsolver/pull/917)):
+    two faces drew one diagonal, and the written mesh had an edge four triangles met at.
+
+### Found by the frame and the hardware (v0.1.18, and 23 on v0.1.19)
 
 17. **A round on skew axes is refused where the housing meets the shell's end.**
     - In the centred shell, the pinion's housing leaves the shell where the shell's end face
@@ -320,34 +341,22 @@ the frame, the splayed shaft and the hardware found more (17 to 22).
       claim found it.
     - There is no tube end cut to a face, or blended into a plate, short of drawing the end
       with an ordinate.
-19. **Small balls far from the origin mesh to nothing.**
-    - The balls of the three bearings near the hub (about 400 mm out: the 6901s and the hub's
-      6903) build exactly, but their STL is "binary STL has no triangles".
-    - The same bearing seated near the bracket exports.
-    - It happens with each ball written as `{ p | p distance(<= r) c }` and as a half-disc
-      turned about its diameter.
-    - With the first form the picture drew those ball sets "from its facet term … meshed to
-      nothing", for the bracket's 6804s too.
-20. **A ball in a `ring` is refused.**
-    - `ring balls about std.top.origin { … ball := solid({ p | p distance(<= r) c }) }` is E023,
-      "a point is not drawn in `std.top.origin`'s view": the set's own point is in space.
-    - `solid(std.sets.Ball(c, r: …))` was E080, "a solid is a region: a set whose body bounds a
-      number (`std.sets.Ball`, not the sphere it bounds)", though `Ball` is the region.
-    - The balls are one ball turned round the axis `at` each pitch.
-21. **`level` cannot name a point.** It is a relation word, and `level := point` failed with "more
-    on this line than the statement wanted" at the next line, then with a cascade of "no such
-    entity" for everything after. The message could say the name is a word.
-
-22. **A union the kernel builds can be refused as an STL.**
-    - With the seat stays' ends 14 mm either side of the seat tube's axis, the seat, head, top
-      and down tubes and the left seat stay unioned into a solid of 120 faces. The claims were
-      judged on it, but its STL was refused: "invalid binary STL shell topology: EdgeUseCount
-      { edge: …, count: 3 }", an edge used by three faces.
-    - Each stay's flat end crossed the seat tube's surface just where the top tube meets it.
-    - Every pair of those tubes wrote, and so did seat, head, top and down, and seat, head, top
-      and the stay: only all five together failed. `--stl-backend mesh` wrote the frame.
-    - The stays now meet the seat tube 8 mm either side of its axis, as a frame's do, and the
-      frame writes exactly. The exact build could check its own shell before it is used.
+23. **A weld's fillet is refused at most coped joints** (v0.1.19). The frame's tubes are coped
+    (`head.plug cut top.body`), and a 3 mm fillet at each joint, written over the paths in the
+    frame's union (`body.top.body round(r: 3mm) body.seat.body`):
+    - the top tube onto the seat tube builds, and writes, in 5 s;
+    - the top tube onto the head tube is E080, "a stretch of a circle its end does not cut off: no
+      exact construction is made of it yet";
+    - the down tube onto the head tube is E080, "a rolled round: the fillet of `f.head.body.wall`
+      with `f.down.body…Cylinder` runs on smoothly into `f.head.plug…`, but its contact crosses
+      their seam in another section than its edge does". The cope leaves the down tube's end on
+      the plug's cylinder, which is the head tube's own: one surface, two faces, a seam the round
+      cannot cross;
+    - all three, drawn, ran past 30 minutes and were stopped;
+    - written between the tubes' own solids (`top.body round(r: 3mm) seat.body`) it is a cascade
+      of E080 naming internal keys (`f.#1073741939.0…taken`: "the faces a set is on are one
+      body's").
+    The welds are left out.
 
 ### Not drawn
 

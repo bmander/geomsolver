@@ -9,11 +9,11 @@
 unit mm
 use std
 use std.sets
-use std.solids (union)
+use std.solids (cut, union)
 use std.place (horizontal)
 use dims (seat_angle, seat_length, stack, reach, head_angle, head_length, cluster, stay_spread,
           old, head_od, head_id, down_od, down_id, seat_od, seat_id, top_od, top_id, stay_od,
-          stay_id, ns_stay_od, ns_stay_id, ns_stay_y, dropout_t, dropout_r, stay_short)
+          stay_id, ns_stay_od, ns_stay_id, ns_stay_y, dropout_t, dropout_r, stay_short, stay_below)
 
 // A point `dy` along `std.y` from `q`, beside it.
 component Beside(q: point, dy: Length) {
@@ -24,7 +24,9 @@ component Beside(q: point, dy: Length) {
 }
 
 // A tube about the line from `a` to `b`, `od` across and `id` bored, running `past_a` beyond `a`
-// and `past_b` beyond `b`: so its end is mitred by whatever it is cut back to.
+// and `past_b` beyond `b`; `plug` is the tube as a bar, what a tube joining it is coped to: a
+// mitre is one statement, `receiving.plug cut joining.body`, the joining tube's end cut to the
+// receiving tube's outside, its wall gone from inside the receiving tube's bore.
 component Tube(a: point, b: point, od: Length, id: Length, past_a: Length, past_b: Length) {
   construction ax := line(a, b)
   wall := { q | q in std.sets.Cylinder(ax, r: od / 2)
@@ -32,6 +34,9 @@ component Tube(a: point, b: point, od: Length, id: Length, past_a: Length, past_
                 a distance(>= -past_a, along: ax) q
                 b distance(<= past_b, along: ax) q }
   body := solid(wall)
+  construction plug := solid({ q | q in std.sets.Cylinder(ax, r: od / 2)
+                                   a distance(>= -past_a, along: ax) q
+                                   b distance(<= past_b, along: ax) q })
 }
 
 // The frame about the bottom bracket's centre `bb` and the rear axle's centre `axle`, both drawn
@@ -71,11 +76,17 @@ component Frame(bb: point, axle: point) {
     bb distance(>= 0mm, along: seat_ax) cluster_c
     head_top distance(>= 0mm, along: head_ax) top_head
     head_bottom distance(<= 0mm, along: head_ax) down_head
+    // where the seat stays meet the seat tube, `stay_below` under the top tube
+    stay_c := point
+    stay_c coincident seat_ax
+    cluster_c distance(stay_below) stay_c
+    bb distance(>= 0mm, along: seat_ax) stay_c
+    cluster_c distance(<= 0mm, along: seat_ax) stay_c
   }
-  // the stays' ends: either side of the cluster, at each dropout's inner face, and the non-drive
-  // chainstay's foot on the shell
-  stay_l := Beside(cluster_c, dy: stay_spread)
-  stay_r := Beside(cluster_c, dy: -stay_spread)
+  // the stays' ends: either side of the seat tube under the cluster, at each dropout's inner face,
+  // and the non-drive chainstay's foot on the shell
+  stay_l := Beside(stay_c, dy: stay_spread)
+  stay_r := Beside(stay_c, dy: -stay_spread)
   drop_l := Beside(axle, dy: old / 2 - dropout_t)
   drop_r := Beside(axle, dy: -old / 2 + dropout_t)
   cs_foot := Beside(bb, dy: ns_stay_y)
@@ -96,6 +107,15 @@ component Frame(bb: point, axle: point) {
   dropout_l := solid({ q | q in std.sets.Cylinder(axle_ax, r: dropout_r)
                            q not in std.sets.Cylinder(axle_ax, r: 6mm)
                            axle distance(in: (old / 2 - dropout_t, old / 2), along: axle_ax) q })
+
+  // the mitres: the top tube coped to the seat and head tubes, the down tube to the head tube and
+  // the seat stays to the seat tube (the tubes meeting the bottom bracket are coped to its shell,
+  // in `drive.sv`)
+  seat.plug cut top.body
+  head.plug cut top.body
+  head.plug cut down.body
+  seat.plug cut seat_stay_l.body
+  seat.plug cut seat_stay_r.body
 
   body := solid(seat.body)
   head.body union body
