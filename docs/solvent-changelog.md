@@ -4,6 +4,14 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.216] A declared name ends its line, though a relation shares it** (#904). A line ending in a
+joint word continues its chain onto the next (§6.6), so a point a document named `level` closed a
+line as a second joint word — `std.origin distance(>= 0mm, along: u) level` took the next line's
+first name as its operand, and that line was "more on this line than the statement wanted",
+everything it declared "no such entity". A name the document declares, standing bare at the
+line's end after another joint's word, is now that joint's right operand, in the parser and the
+colouring alike. A word no declaration takes continues its chain as before.
+
 **[0.215] A flank's margin may read an unknown** (#904). `flank regular(m, by: tool) within
 blank` held a flank's least area factor to a number, and a number reading an unknown was E040
 ("a flank's least area factor is held to a number"). It is now an equation like any dimension

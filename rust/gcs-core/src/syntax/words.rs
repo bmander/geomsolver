@@ -99,6 +99,31 @@ pub(super) fn joint_word(w: &str) -> bool {
     is_operator(w) && !call_word(w)
 }
 
+/// **A relation word standing as a name at a line's end** (#904, finding 21).  A line ending in a
+/// joint word continues its chain onto the next (§6.6) — but a document may name an element with
+/// the word (`level := point`), and that name, bare and last on its line after another joint's
+/// word, is the joint's right operand: `std.origin distance(>= 0mm, along: u) level` relates the
+/// origin to the point `level` and ends there, where it once read `level` as a second word and took
+/// the next line's first name as its operand.  The parser's joint and the colouring both ask it.
+pub(super) fn named_at_line_end(toks: &[(Tok, Span)], i: usize) -> bool {
+    let Some((Tok::Ident(w), _)) = toks.get(i) else { return false };
+    let at = |k: usize| toks.get(k).map(|(t, _)| t);
+    let follows_word = i > 0 && match at(i - 1) {
+        Some(Tok::P(')')) => true,
+        Some(Tok::Ident(v)) => joint_word(v),
+        _ => false,
+    };
+    joint_word(w)
+        && matches!(at(i + 1), Some(Tok::Nl | Tok::P('}')) | None)
+        && follows_word
+        && (0..toks.len()).any(|k| {
+            matches!(&toks[k].0, Tok::Ident(n) if n == w)
+                && at(k + 1) == Some(&Tok::Define)
+                && (k == 0 || matches!(at(k - 1), Some(Tok::Nl | Tok::P('{') | Tok::P('}')))
+                    || matches!(at(k - 1), Some(Tok::Ident(m)) if MODIFIERS.contains(&m.as_str())))
+        })
+}
+
 /// The words that shape a statement without naming anything — a modifier the parser eats where it
 /// stands.  `as` binds a name after it, which is why `highlight` treats that one specially.
 pub(super) const MODIFIERS: [&str; 12] = [

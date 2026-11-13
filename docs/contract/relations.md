@@ -316,7 +316,11 @@ came from.
   `Stuck`, refused), a doomed prefix word goes where it stands, and a link has *no* splice, which
   is how deleting one is refused.  Which slots a chain threads is `EntKind::ends()` in `model.rs`,
   exhaustive, so a new kind with ends stops the build.  A line ending in a joint continues its
-  chain onto the next; `-> close` seals a loop, and a `close` with no marker is an error.
+  chain onto the next — **save a word the document declares as a name** (`level := point`),
+  bare and last on its line after another joint's word: it is that joint's right operand
+  (`words::named_at_line_end`, asked by the joint's words and by the colouring alike;
+  `tests/word_names.rs`, #904 / `shaft_drive` finding 21).  `-> close` seals a loop, and a
+  `close` with no marker is an error.
   The colouring asks `opens_link` — the *same* predicate `chain_starts` asks.  Both reach it
   through `past_args`, the lookahead **stepping over the operator's own parentheses**, returning
   an **index** (like `past_ref`) since callers ask both what word is there and whether the line

@@ -104,7 +104,16 @@ pub(super) fn elaborate_in(
     check_text(&mut cx);
     let expansion = expand(&mut cx, refused, named);
     let body: Vec<&Statement> = expansion.flat.iter().collect();
-    let stating: Vec<&Statement> = body.iter().copied().filter(|st| !st.turned).collect();
+    // a turned copy's relation stating a bound of its own region solid's probe states it: never a
+    // row, it is the copy's solid's term, read over the copy's turned points
+    let reads_probe = |st: &Statement| match &st.kind {
+        crate::ir::Operation::Relation(r) => r.form.written().is_some_and(|w| {
+            w.ops.iter().any(|o| crate::flatten::is_probe(&o.root.text))
+        }),
+        _ => false,
+    };
+    let stating: Vec<&Statement> =
+        body.iter().copied().filter(|st| !st.turned || reads_probe(st)).collect();
     style_sheet(&mut cx, &body);
     let skip = names(&mut cx, &body);
     let flat = Flat { expansion: &expansion, body, stating, skip };

@@ -541,10 +541,12 @@ pub(super) fn profile(sk: &Sketch,index: usize,w: &Writer) -> Result<Json,String
                     let a = &sk.arcs[e.i()];
                     (a.center,a.radius,Some(sk.arc_angles(e.i())))
                 };
+                // a radius solves to either sign (its rows read it squared or by a point's distance),
+                // and the angles are its ends' own, so the circle written is the one of its magnitude
                 let mut result = object([("kind","circle".into()),
                     ("center",vector(lift(sk.point_xy(center as usize)))),
                     ("normal",vector(p.basis.normal())),("x_dir",vector(x_dir)),
-                    ("radius",(sk.params[radius as usize].value*scale).into())]);
+                    ("radius",(sk.params[radius as usize].value.abs()*scale).into())]);
                 if let Some((start,end)) = angles {
                     result.set("angles",Json::Arr(vec![start.into(),end.into()]));
                 }

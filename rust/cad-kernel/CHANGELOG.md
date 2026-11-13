@@ -15,6 +15,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   for code building a `Closed` literally). A fold of a section's meridian image is read only from
   steps past the tolerance (`swept::contacts`), where a contact meeting the turn's velocity at its end
   was cut twice a hair from it.
+
+## [0.12.0] - 2026-11-13
+
 - **Free-form faces on the contact's road** (`swept::contacts`, #880 Q1b S6): a piece of contact
   ending on its face's boundary now ends at the root of `n·v` along that edge, so the pieces either
   side of an edge the faces are tangent across meet (the coil spring's tube and its ball ends,
@@ -44,6 +47,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   coupled step throughout and, its foot settled with `v` at the edge, polishes `u` alone there:
   stepped alone throughout, feet the coupled step leaves for the inside were held, and
   brep-bench's box screwed inside a rod came out 0.015 off.
+- **No two faces draw one diagonal, and a triangle with no plane is refined** (`mesh`): once every
+  face is meshed, a side more than two triangles meet at is split at its middle on each face past
+  the one keeping it, so a short traced edge two faces cut off with the same diagonal no longer
+  leaves a side used three times (an STL refused as `EdgeUseCount`); a mesh with no such side is
+  left as it was. A degenerate triangle (a sphere's first strip across its seam, two corners one
+  point) stands off by its distance from its sides, where its sag read 0 and it was dropped, the
+  face with it.
 
 ## [0.11.0] - 2026-11-12
 

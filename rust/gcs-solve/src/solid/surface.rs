@@ -84,7 +84,7 @@ impl ReadRevolved for RevolvedSurface {
                     let c = sk.circles.get(edge.i()).ok_or("no such profile circle")?;
                     (c.center,c.radius,0.,std::f64::consts::TAU)
                 };
-                let r = sk.params[radius as usize].value;
+                let r = sk.params[radius as usize].value.abs();
                 if !r.is_finite() || r <= 0. || !sweep.is_finite() || sweep <= 0. {
                     return Err("a round profile edge needs positive finite radius and sweep".into());
                 }

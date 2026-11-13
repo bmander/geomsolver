@@ -240,7 +240,16 @@ placement carries inside the blank; CLI test readers zero the offset.
   facet is never split by its own plane) keep the classifier out of the gap.
   **A face is a loop walked in order**: an arc entered by its `end` is walked backwards over the
   same stretch of circle, never forwards over the rest (*how far* is the arc's, *which way* the
-  walk's).
+  walk's).  **A radius is read by its magnitude**: an arc's and a circle's rows read their radius
+  squared or as a point's distance, so a solve may leave it negative, and every reader of a
+  solid — the CAD recipe's circle (`solid/cad.rs`), a revolved patch's meridian
+  (`solid/surface.rs`), admission's ball — takes its absolute value, the arc's angles being its
+  own ends'.  **A triangle with no plane stands off the surface by its distance from its sides**
+  (`brep::mesh::off_at`): a sphere's first triangles join its seam's samples either side of it,
+  two corners one point, and read by its plane's distance such a strip stood off by nothing, was
+  never refined and was dropped, the whole face with it.  `tests/seated_ball.rs` is the gate: a
+  solved radius flipped builds the solid of the positive radius, and a ball seated in another
+  frame (finding 19 of `shaft_drive`'s README, a bearing's balls) meshes whole.
   `tests/solid.rs` is the gate and checks against **arithmetic, not a second kernel**: a block is
   `w·h·d`, a bore takes exactly its faceted polygon, a flush bore and one drilled past are one
   solid, a boss's shared face counts once, a revolution is Pappus.  `tests/solid_lang.rs` holds
