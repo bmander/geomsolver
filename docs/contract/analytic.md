@@ -177,7 +177,10 @@ path over an eased generated and an eased formed flank, a curvature an unknown i
 blank` is `CKind::RegularWithin` (`KernelKey::Regular`, one row of degree 0): the least **area
 factor** `A = (g_t − α g_u − β g_v)/g_t` (`∂X/∂t = α ∂X/∂u + β ∂X/∂v`, least squares) of a held
 envelope over the tool points on `tool`'s face whose contact in the roll interval lies in `blank`,
-less `m`. `A` is what `solid::admission`'s E3 samples by central differences (`area_factor`, its
+less `m` — `m` a number, or `c + m·x` over an unknown `x` (`expr::Free`, #904: the row's last
+column, which no term reads, so `regular(least, …)` on two flanks ties them;
+`regular::two_flanks_held_to_one_unknown_margin_tie`,
+`jacobians::regularity_held_to_an_unknown_agrees_with_finite_differences`). `A` is what `solid::admission`'s E3 samples by central differences (`area_factor`, its
 `least_area_factor`): 1 rolling without sliding, nothing at a fold. `envelope::regular` is the
 evaluator. `Parts::of` reads a `Held::Set` cone or cylinder (others refused). `tool` and `blank`
 are `SolidDef::Region`s whose terms are read as `solid::field::region::Term` reads them, in
@@ -196,6 +199,9 @@ constants are `Problem::write`'s. **The worst point is searched for**: the face'
 meridian scanned (`face`), a grid of it × turns × rolls (`GRID`, the equation at each roll's pose
 read once, `held::posed`) whose sign changes give contacts, each kept where every condition holds;
 the best four followed by a shrinking 7 × 7 grid in `(u, v)`, the roll on the envelope at each;
+each place put on the envelope by Newton on its equation alone, read with its derivative in the
+roll by the place's own second-order frame (`Ask::on`, `held::local`: no place's gradient is read
+where the search only tries it, #904, `regular_cost::a_search_reads_gradients_only_where_it_polishes`);
 then Newton on the KKT conditions (`kkt`: the Lagrangian's gradient in the place by `Dual<3>`
 over `read`, the envelope's equation and up to two held conditions, the place's Jacobian by
 differences), a multiplier on the wrong side or a free condition broken trying fewer held
@@ -204,7 +210,10 @@ differences), a multiplier on the wrong side or a free condition broken trying f
 `worst` remembers each problem's last answers by its constants. The same columns give the answer
 again, nothing found included (a residual's Jacobian asks where the residual did, and a drawing not
 yet solved has none). Columns within `NEAR` start from the last place and its held conditions
-(`warm`), anything else searches again (`cold`, ~0.1 s). A least found, not a bound proved. A
+(`warm`), anything else searches again (`cold`, ~0.1 s). What the questions cost is counted per
+thread (`regular::tally`: searches from nothing, warm starts, answers remembered, gradients read)
+and never read by the search; `tests/regular_cost.rs` holds a solve to it. A least found, not a
+bound proved. A
 fold between grid points the shrink never reaches is missed, as a sampled check misses one.
 `tests/regular.rs` is the gate. On `spiral_bevel/formate.sv`'s conjugate pinion (the inner cone's
 envelope under the mesh, `pair.gear_tooth.crown` within `pair.pinion_blank.material`), the least
@@ -214,8 +223,8 @@ degree above it the pinion is admitted and the bound holds, a tenth below the ad
 for a fold and the solve reports the bound broken. A margin of 0.3 solves the pressure shift to
 8.7824°, read back and sampled there. `jacobians::regularity_agrees_with_finite_differences` holds
 the Jacobian, the cone's half a column, at the solution and knocked off it. `hypoid.sv`'s
-`Balanced` is unchanged: it balances two members' osculating radii at two sections, a choice of
-settings, not a feasibility bound.
+`Balanced` reads the four flanks its two blades cut by this, and its caller ties two of them
+(solids.md, #904).
 
 **The pair stated as its meshing problem (#345 S4):** `spiral_bevel/meshing_problem.sv` is
 `formate.sv`'s pair with the gear's concave flank eased: the meshing reads the face mill's inner

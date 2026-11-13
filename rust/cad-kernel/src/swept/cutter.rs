@@ -22,7 +22,9 @@ use std::f64::consts::TAU;
 type V = [f64;3];
 
 /// The augmented length of a corner: one radian of turning counts as this many millimetres of
-/// profile, so a fan receives rows like an arc of that radius.
+/// profile, so a fan receives rows like an arc of that radius. Like the trace's spacings, it is a
+/// cut's at unit one: a sheet's stations walk it `Tracer::unit` times over (`Loop::scaled`), so a
+/// cutter twice the size turns through a fan in the same rows.
 const TURN_SCALE: f64 = 0.05;
 /// The same for a cap's rim in a section across a prism (`Across`): a quarter turn there carries a
 /// contact from a cap's to a side's, which may be far apart in time, and the sheet's rows, laid at
@@ -36,11 +38,22 @@ const RIM_SCALE: f64 = 1.;
 /// as long in space as in stations; a fan laid longer leaves columns standing on one curve, a fold
 /// of the fitted sheet. How far the fan carries a contact is the motion's, which the cutter does not
 /// know: a fan laid as long as its contacts' path across it (admission reads that path) would hold
-/// for any motion, where this holds for a draft's few degrees.
+/// for any motion, where this holds for a draft's few degrees. It is laid when the cutter is read,
+/// before any cut's unit is known, so it stays a millimetre at every size.
 const CREASE_SCALE: f64 = 1.;
 /// How near an end of one piece is to the axis to be on it (mm).
 const ON_AXIS: f64 = 1e-5;
 const SAMPLES_PER_PIECE: usize = 64;
+/// How many places of every piece of a section loop the reach asks for contacts in the blank (and
+/// the middle of every convex corner's fan): a piece as short as a tip's round is asked as often
+/// as a flank, whatever the cutter's size, so the faces the walk runs over are the same for a
+/// cutter scaled (#904 A3).
+const REACH_SAMPLES: usize = 32;
+/// How many stations the reach reads (`Cutter::reach`): round the axis, a step of 3.75 degrees.
+const STATIONS: usize = 96;
+/// How near the reach bisects the station where a cutter of revolutions' contacts first reach
+/// the blank (radians): its band's start, which its stations are counted from (`Cutter::reach`).
+const START: f64 = 1e-12;
 /// Where a piece's face id keeps which meeting of its face it is, above the section's own tag.
 const OCCURRENCE: u32 = 26;
 /// A convex corner's fan as `Loop::starts` tags it: the face before it, with this bit.
@@ -112,6 +125,30 @@ impl Loop {
         Place::Piece {index:self.pieces.len()-1,s:self.pieces.last().unwrap().length()}
     }
     pub fn index_of(&self,face: u32) -> Option<usize> { self.pieces.iter().position(|p| p.face == face) }
+    /// The loop with each corner's fan walked `unit` times as long (`TURN_SCALE` is a cut's at
+    /// unit one).
+    pub fn scaled(mut self,unit: f64) -> Loop { self.turn *= unit; self }
+    /// The length of the pieces a reach's walk runs over, from its start face's to its end face's
+    /// in loop order, each whole and no fan counted: the cut's own length (`Tracer::unit`), which
+    /// a cutter scaled scales, and which moves with no fraction of a face a sampling reads.
+    pub fn walked(&self,reach: &Reach) -> Result<f64,String> {
+        let missing = "a profile face is missing at this station";
+        let (first,last) = (self.index_of(reach.start.face).ok_or(missing)?,self.index_of(reach.end.face).ok_or(missing)?);
+        let n = self.pieces.len();
+        Ok((0..=(last+n-first)%n).map(|k| self.pieces[(first+k)%n].length()).sum())
+    }
+    /// The walk lengths the reach asks at: `per_piece` places evenly within each piece, and the
+    /// middle of each convex corner's fan.
+    fn places(&self,per_piece: usize) -> Vec<f64> {
+        let mut out = Vec::new();
+        for (k,piece) in self.pieces.iter().enumerate() {
+            let start = self.start_of(k);
+            out.extend((0..per_piece).map(|j| start+piece.length()*(j as f64+0.5)/per_piece as f64));
+            let fan = self.corners[k].angle*self.turn;
+            if fan > 0. { out.push(start+piece.length()+0.5*fan); }
+        }
+        out
+    }
     /// Where along the walk each piece starts, and each convex corner's fan (`FAN` and the face
     /// before it), with its face: what a contact at a walk length was made by (#212).
     pub fn starts(&self) -> Vec<(f64,u32)> {
@@ -314,7 +351,9 @@ fn tangent(seg: &Seg,w: f64) -> V { let (_,d,_) = seg.curve.d2(w); scale(d,(seg.
 pub struct Spread { pub across: V,pub range: [f64;2],pub corners: Vec<(f64,V)> }
 
 /// What the stations section.
-enum Kind { Revolved { side: V,sec: Sectioned },Extruded(Extruded),Across(Across) }
+/// A cutter of revolutions' stations are angles from `side` about its axis, and the grid its band
+/// is read on starts `phase` past where its contacts first reach the blank (`Cutter::reach`).
+enum Kind { Revolved { side: V,sec: Sectioned,phase: f64 },Extruded(Extruded),Across(Across) }
 
 /// A cutter as its stations section it: about `axis` through `origin` (a prism's extrusion from a
 /// point of its profile's plane).
@@ -335,9 +374,19 @@ impl Cutter {
     pub fn of_boundary(b: &crate::topo::Brep) -> Result<Cutter,String> {
         let sec = Sectioned::of_boundary(b)?;
         let (origin,axis) = (sec.origin,unit(sec.axis)?);
+        // the half-plane its stations are counted from; the grid its band is read on is the reach's
+        // own, not this one's (`reach`)
         let seed = if axis[0].abs() < 0.9 { [1.,0.,0.] } else { [0.,1.,0.] };
         let side = unit(cross(cross(axis,seed),axis))?;
-        Ok(Cutter {origin,axis,kind:Kind::Revolved {side,sec},sections:Default::default()})
+        Ok(Cutter {origin,axis,kind:Kind::Revolved {side,sec,phase:0.},sections:Default::default()})
+    }
+    /// This cutter of revolutions with the grid its band is read on (`reach`) turned `angle` further
+    /// round its axis: the same cutter, its stations moved against it, which no sheet traced over
+    /// them may depend on (#904 A4). None for a prism.
+    pub fn turned(&self,angle: f64) -> Option<Cutter> {
+        let Kind::Revolved {side,sec,phase} = &self.kind else { return None };
+        Some(Cutter {origin:self.origin,axis:self.axis,kind:Kind::Revolved {side:*side,sec:sec.clone(),phase:phase+angle},
+            sections:Default::default()})
     }
     /// The prism of `profile` (millimetres) from `from` to `to` along its normal, drafted `draft`
     /// where it is, as its sections: what a tool's B-rep read as one prism standing alone is
@@ -504,7 +553,7 @@ impl Cutter {
     pub fn profile(&self,angle: f64) -> Result<Vec<Loop>,String> {
         if let Some(loops) = self.sections.lock().unwrap_or_else(|e| e.into_inner()).get(&angle.to_bits()) { return Ok(loops.clone()) }
         let loops = match &self.kind {
-            Kind::Revolved {side,sec} => self.loops(sec,Cutter::side_at(*side,self.axis,angle))?,
+            Kind::Revolved {side,sec,..} => self.loops(sec,Cutter::side_at(*side,self.axis,angle))?,
             Kind::Extruded(x) => self.extruded_loops(x,angle),
             Kind::Across(x) => self.across_loops(x,angle)?,
         };
@@ -674,24 +723,86 @@ impl Cutter {
             }
         }
     }
-    /// The stations and the profile walk whose declared-roll contacts lie inside the blank.
-    pub fn reach(&self,tracer: &Tracer) -> Result<Reach,String> {
+    /// The places of one section loop whose contacts within the declared roll lie inside the blank,
+    /// each its walk length and its sample, read at `REACH_SAMPLES` places a piece; what was spent
+    /// sampling and asking the blank, and how many points it was asked, added to `spent` and
+    /// `queried`.
+    fn reached(&self,tracer: &Tracer,profile: &Loop,spent: &mut [f64;3],queried: &mut usize) -> Result<Vec<(f64,Sample)>,String> {
         let (chart,mm,inside) = (tracer.chart,tracer.scale,tracer.inside);
         let declared = chart.domain();
-        let stations = 96;
+        let mut queries = Vec::new();
+        let clock = crate::util::clock::Instant::now();
+        for s in profile.places(REACH_SAMPLES) {
+            let sample = self.sample(profile,s)?;
+            match tracer.nearest(sample,declared,0.) {
+                Ok(Some((p,_))) => queries.push((s,sample,p)),
+                Ok(None) => {}
+                // a point whose contact equation is degenerate (a pole, in contact at every
+                // time) matters only if its path enters the blank
+                Err(error) => {
+                    let path: Vec<V> = (0..=64).map(|k| declared[0]+(declared[1]-declared[0])*k as f64/64.)
+                        .map(|t| chart.path.at(t).map(|m| scale(m.point(scale(sample.position,1./mm)),mm)).map_err(|e| e.msg))
+                        .collect::<Result<_,_>>()?;
+                    if inside(&path)?.iter().any(|b| *b) { return Err(error.into()) }
+                }
+            }
+        }
+        spent[1] += clock.elapsed().as_secs_f64();
+        if queries.is_empty() { return Ok(Vec::new()) }
+        let clock = crate::util::clock::Instant::now();
+        let states = inside(&queries.iter().map(|q| q.2).collect::<Vec<_>>())?;
+        spent[2] += clock.elapsed().as_secs_f64(); *queried += queries.len();
+        Ok(queries.into_iter().zip(states).filter(|(_,state)| *state).map(|((s,sample,_),_)| (s,sample)).collect())
+    }
+    /// Whether any section loop at the station `angle` reaches the blank (`reached`).
+    fn reaches_at(&self,tracer: &Tracer,angle: f64) -> Result<bool,String> {
+        let (mut spent,mut queried) = ([0.;3],0);
+        for profile in &self.profile(angle)? {
+            if !self.reached(tracer,profile,&mut spent,&mut queried)?.is_empty() { return Ok(true) }
+        }
+        Ok(false)
+    }
+    /// **The stations and the profile walk whose declared-roll contacts lie inside the blank**,
+    /// read at `STATIONS` stations. Along a prism they are spread over its extent, half a step in
+    /// from either end. Round a cutter of revolutions they are its band's own (#904 A4): read first
+    /// a step apart from the half-plane the cutter is counted from, which a world axis picks, and
+    /// again from where the contacts first reach the blank, the station before the band's first
+    /// and the first bisected to it (`START`) — so where the cutter and the blank stand, turned
+    /// together, the band and every station traced across it stand alike. Counted from that
+    /// half-plane, the stations the traced sheet's grid falls on moved against the cutter with a
+    /// turn of the pair, and the sheet was built at some of its phases and refused at others.
+    pub fn reach(&self,tracer: &Tracer) -> Result<Reach,String> {
+        let Kind::Revolved {phase,..} = self.kind else { return self.reach_on(tracer,None) };
+        let coarse = self.reach_on(tracer,None)?;
+        let (mut miss,mut hit) = (coarse.stations[0]-TAU/STATIONS as f64,coarse.stations[0]);
+        // every station reaches the blank: the band is the whole turn, its start nowhere
+        if self.reaches_at(tracer,miss)? { return Ok(coarse) }
+        while hit-miss > START {
+            let middle = 0.5*(miss+hit);
+            if self.reaches_at(tracer,middle)? { hit = middle } else { miss = middle }
+        }
+        self.reach_on(tracer,Some(hit+phase))
+    }
+    /// `reach` read at `STATIONS` stations: round the axis from `start` a step apart, or from half a
+    /// step off the cutter's own half-plane where none is given; along a prism, over its extent.
+    fn reach_on(&self,tracer: &Tracer,start: Option<f64>) -> Result<Reach,String> {
+        let stations = STATIONS;
         // half a step in from either end, round the axis or along the prism
         let (cyclic,station) = match &self.kind {
             Kind::Revolved {..} => (true,[0.,TAU]),
             Kind::Extruded(x) => (false,x.stations()),
             Kind::Across(x) => (false,x.range),
         };
-        let station = |c: f64| station[0]+(station[1]-station[0])*(c+0.5)/stations as f64;
+        let station = |c: f64| match start {
+            Some(start) => start+(station[1]-station[0])*c/stations as f64,
+            None => station[0]+(station[1]-station[0])*(c+0.5)/stations as f64,
+        };
         let mut inside_stations = Vec::new();
         let mut face_hits: BTreeMap<u32,(f64,f64)> = BTreeMap::new();
-        let mut order: Option<Vec<u32>> = None;
+        let mut order: Option<Vec<(u32,f64)>> = None;
         let (mut radius_sum,mut radius_count) = (0.,0);
         let (mut spent,mut queried) = ([0.;3],0);
-        // half a step off the side, every station's section first, on every core
+        // every station's section first, on every core
         let clock = crate::util::clock::Instant::now();
         let mut sections = crate::util::par::indices(stations,|c| self.profile(station(c as f64))).into_iter();
         spent[0] += clock.elapsed().as_secs_f64();
@@ -699,35 +810,8 @@ impl Cutter {
             let mut hit_here = false;
             let loops = sections.next().expect("a section a station")?;
             for profile in &loops {
-                let total = profile.augmented_length();
-                let count = ((total/0.3).ceil() as usize).max(8);
-                let mut queries = Vec::new();
-                let clock = crate::util::clock::Instant::now();
-                for i in 0..count {
-                    let s = total*i as f64/count as f64;
-                    let sample = self.sample(profile,s)?;
-                    match tracer.nearest(sample,declared,0.) {
-                        Ok(Some((p,_))) => queries.push((s,sample,p)),
-                        Ok(None) => {}
-                        // a point whose contact equation is degenerate (a pole, in contact at every
-                        // time) matters only if its path enters the blank
-                        Err(error) => {
-                            let path: Vec<V> = (0..=64).map(|k| declared[0]+(declared[1]-declared[0])*k as f64/64.)
-                                .map(|t| chart.path.at(t).map(|m| scale(m.point(scale(sample.position,1./mm)),mm)).map_err(|e| e.msg))
-                                .collect::<Result<_,_>>()?;
-                            if inside(&path)?.iter().any(|b| *b) { return Err(error.into()) }
-                        }
-                    }
-                }
-                spent[1] += clock.elapsed().as_secs_f64();
-                if queries.is_empty() { continue }
-                let clock = crate::util::clock::Instant::now();
-                let states = inside(&queries.iter().map(|q| q.2).collect::<Vec<_>>())?;
-                spent[2] += clock.elapsed().as_secs_f64(); queried += queries.len();
-                let mut any = false;
-                for ((s,sample,_),state) in queries.iter().zip(&states) {
-                    if !*state { continue }
-                    any = true;
+                let hits = self.reached(tracer,profile,&mut spent,&mut queried)?;
+                for (s,sample) in &hits {
                     let radial = sub(sample.position,self.origin);
                     radius_sum += norm(sub(radial,scale(self.axis,dot(radial,self.axis)))); radius_count += 1;
                     if let Place::Piece {index,s} = profile.locate(*s) {
@@ -737,10 +821,10 @@ impl Cutter {
                         entry.0 = entry.0.min(f); entry.1 = entry.1.max(f);
                     }
                 }
-                if any {
+                if !hits.is_empty() {
                     if hit_here { return Err("two section loops of the cutter reach the blank at one station".into()) }
                     hit_here = true;
-                    if order.is_none() { order = Some(profile.pieces.iter().map(|p| p.face).collect()); }
+                    if order.is_none() { order = Some(profile.pieces.iter().map(|p| (p.face,p.length())).collect()); }
                 }
             }
             if hit_here { inside_stations.push(c); }
@@ -763,16 +847,19 @@ impl Cutter {
         let (lo,hi) = (station(first as f64),station(first as f64+span));
         // a unit of station along a prism is a millimetre
         let radius = if cyclic { radius_sum/radius_count.max(1) as f64 } else { 1. };
-        // the walk: the contiguous run of hit faces in loop order, likewise
-        let hit: Vec<usize> = order.iter().enumerate().filter(|(_,f)| face_hits.contains_key(f)).map(|(i,_)| i).collect();
+        // the walk: the contiguous run of hit faces in loop order, the complement of the longest
+        // stretch of faces missed between two hit (by their length: a face missed, and where its
+        // stretch is no longer than another's, the walk turned the wrong way round the loop)
+        let hit: Vec<usize> = order.iter().enumerate().filter(|(_,f)| face_hits.contains_key(&f.0)).map(|(i,_)| i).collect();
         let n = order.len();
-        let mut biggest = (0,0);
+        let mut biggest = (-1.,0);
         for (i,&h) in hit.iter().enumerate() {
             let next = hit[(i+1)%hit.len()];
-            let width = (next as i64-h as i64).rem_euclid(n as i64);
-            if width > biggest.0 { biggest = (width,i); }
+            let width = (next as i64-h as i64).rem_euclid(n as i64) as usize;
+            let missed: f64 = (1..width).map(|k| order[(h+k)%n].1).sum();
+            if missed > biggest.0 { biggest = (missed,i); }
         }
-        let (start_face,end_face) = (order[hit[(biggest.1+1)%hit.len()]],order[hit[biggest.1]]);
+        let (start_face,end_face) = (order[hit[(biggest.1+1)%hit.len()]].0,order[hit[biggest.1]].0);
         Ok(Reach {stations:[lo,hi],start:Anchor {face:start_face,fraction:face_hits[&start_face].0},
             end:Anchor {face:end_face,fraction:face_hits[&end_face].1},faces:hit.len(),radius,spent,queried})
     }

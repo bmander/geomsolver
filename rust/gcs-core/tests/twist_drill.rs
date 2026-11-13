@@ -5,12 +5,13 @@
 //! closed forms, not by the code under test — in the field and in the exact solid; a fluted section
 //! holds the same material at every height and every length, in the field and exactly; and the
 //! reduced drill exports by this kernel, its file held to its field, and builds for the page.
-use gcs_core::brep::{export,props,sweep::Say};
+use crate::common::saying;
+use gcs_core::brep::{export,props};
 use gcs_core::model::Sketch;
 use gcs_core::program::Elaborated;
 use gcs_core::solid::{admission::{self,Class,Condition,Error,Options},MaterialField,cad,constant_twist,export::Tolerance};
 use std::f64::consts::{PI,TAU};
-use std::sync::{Mutex,OnceLock};
+use std::sync::OnceLock;
 
 type V = [f64;3];
 
@@ -26,14 +27,6 @@ const ROUND: f64 = 2.5;
 const FLANK: f64 = 35.;
 
 fn lead() -> f64 { PI*DIAMETER/HELIX.to_radians().tan() }
-
-/// What `f` returns, and the lines it said through the `Say` it is handed.
-fn saying<T>(f: impl FnOnce(&Say) -> T) -> (T,String) {
-    let lines = Mutex::new(Vec::<String>::new());
-    let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
-    let out = f(&say);
-    (out,lines.into_inner().unwrap().join("\n"))
-}
 
 /// Build `body` exactly within `tolerance`; what was said comes back with it.
 fn built(sk: &Sketch,body: usize,tolerance: Option<Tolerance>) -> (export::Exact,String) {

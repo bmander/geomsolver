@@ -4,6 +4,25 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.215] A flank's margin may read an unknown** (#904). `flank regular(m, by: tool) within
+blank` held a flank's least area factor to a number, and a number reading an unknown was E040
+("a flank's least area factor is held to a number"). It is now an equation like any dimension
+written over an unknown (§6.15.3): `regular(least, …)` on two flanks, `least` a formal left out,
+holds them to each other, so a setting both read — a face mill's pressure shift — is found where
+the two are equally far from their folds. `regular(>= least, …)` is a bound read at the unknown's
+value. Nothing a document wrote before reads differently.
+
+**[0.214] A claim over one frame says what it leaves standing** (#904 A11). A claim over a
+frame's roll turns the solids placed under that frame and no other (§9.8), so a solid placed at an
+instant of another frame's motion stands where it is read through the sweep — a planet's gear
+claimed over its sun's frame stood still while the sun turned half a pitch into it, and the claim
+was refuted where the train runs clear, saying nothing of why. Such a solid, named by the claim,
+is now **W117** at the claim's operand (a copy so placed inside a body the claim names is a
+pattern's, drawn still, and says nothing), naming the frame it was read at and how to run frames together: write each one's
+value over one declared parameter (`param t: Angle over (a, b)`, `fix(value == t) f` for each),
+draw each solid at its frame (`s := x at f`) and claim over `t`, which stands the drawing at every
+sample with each joint turned at its ratio. Nothing is judged differently.
+
 **[0.213] Sets written in place as arguments.** A `set` formal takes a set written in place: a
 set literal, or a call of a component standing whole as the argument, one inside another's alike —
 `Join(std.sets.Segment(a, b), std.sets.Segment(c, d))`, `Grow({ x | x distance(<= 2mm) c }, d:

@@ -122,9 +122,60 @@ impl Sketch {
         Some(changed)
     }
 
-    /// What the document calls a solid.
+    /// **What the document calls a solid** (#904): its name as the language reads it, a block's
+    /// copy by its index — the `pin` copy 1 of a `repeat` in an instance `box` makes is
+    /// `box.pin[1]`, and the `body` of an instance `planet` made there `box.planet[1].body`
+    /// (`vocab::public_path`) — never the key it is held by (`box.#9.1.pin`), whose statement id
+    /// changes whenever the file's statements do.  What a report, a timing, an exported file and
+    /// a refusal call it; `SolidE::name` stays the key everything inside routes by.
     pub fn solid_name(&self, i: usize) -> String {
-        self.solids.get(i).map(|s| s.name.clone()).unwrap_or_default()
+        self.solids.get(i).map(|s| crate::vocab::public_path(&s.name)).unwrap_or_default()
+    }
+
+    /// **The solid a name picks** (#904): the one the document calls `name` (`solid_name`), or
+    /// whose key it is.  A body and the stock split off it (`as_body`) are one name, the body
+    /// picked.  Refused, with the cause: a name two solids go by (a copy of a block within a
+    /// block's copy, whose index is written once), each said by its key; a name a block's copies
+    /// go by without their index (`box.pin`), each copy said; and a name nothing goes by, the
+    /// objects there are said, so the name a solid is picked by can be learnt from the refusal.
+    pub fn solid_called(&self, name: &str) -> Result<usize, String> {
+        let n = self.solids.len();
+        let called: Vec<String> = (0..n).map(|i| self.solid_name(i)).collect();
+        let said = |v: &mut dyn Iterator<Item = String>| {
+            v.map(|s| format!("`{s}`")).collect::<Vec<_>>().join(", ")
+        };
+        let mut picked: Vec<usize> = (0..n).filter(|&i| self.solids[i].name == name).collect();
+        if picked.is_empty() {
+            picked = (0..n).filter(|&i| called[i] == name).collect();
+        }
+        let keys: std::collections::BTreeSet<&str> =
+            picked.iter().map(|&i| self.solids[i].name.as_str()).collect();
+        match (picked.first(), keys.len()) {
+            (Some(&i), 1) => return Ok(i),
+            (Some(_), _) => return Err(format!("`{name}` names {} solids, each a copy of a block \
+                within a block's copy: say which by its key, {}", keys.len(),
+                said(&mut keys.iter().map(|k| k.to_string())))),
+            (None, _) => {}
+        }
+        // a path that leaves out a copy's index, as a face's route may (`solid::same_step`)
+        let segments = |s: &str| s.split('.').map(str::to_string).collect::<Vec<_>>();
+        let asked = segments(name);
+        let mut seen = std::collections::BTreeSet::new();
+        let copies: Vec<&String> = called.iter().filter(|c| {
+            let m = segments(c);
+            m.len() == asked.len() && asked.iter().zip(&m)
+                .all(|(a, m)| crate::solid::faces::same_step(a, m)) && seen.insert(c.as_str())
+        }).collect();
+        if !copies.is_empty() {
+            return Err(format!("`{name}` is a solid of each copy of a block: say which, {}",
+                said(&mut copies.into_iter().cloned())));
+        }
+        let objects = super::objects(self);
+        Err(match objects.is_empty() {
+            true => format!("no solid called `{name}`"),
+            false => format!("no solid called `{name}`: the objects are {}",
+                said(&mut objects.into_iter().map(|i| called[i].clone()))),
+        })
     }
 
     /// Validate and evaluate the current pose with an explicit approximation policy.

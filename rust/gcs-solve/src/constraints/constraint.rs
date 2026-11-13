@@ -498,10 +498,12 @@ impl Constraint {
             let (n_par, n_const) = self.interior_parts(sk).map_or((0, 0), |(r, _)| r.widths());
             return Key::Interior { n_par, n_const };
         }
-        // a flank's regularity within a blank, at its block's widths (#345)
+        // a flank's regularity within a blank, at its block's widths (#345) — a margin reading an
+        // unknown its last column (#904)
         if self.kind == CKind::RegularWithin {
             let parts = self.regular_parts(sk);
-            let (n_par, n_const) = parts.map_or((0, 0), |p| (p.width(), p.n_const()));
+            let free = usize::from(self.free.is_some());
+            let (n_par, n_const) = parts.map_or((0, 0), |p| (p.width() + free, p.n_const()));
             return Key::Regular { n_par, n_const };
         }
         // a motion's twist read, at its block's widths (#326) — a stated roll's free variable

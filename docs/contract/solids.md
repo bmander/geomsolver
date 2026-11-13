@@ -61,17 +61,31 @@ tooth over (its space cutter's `neighbor` is the inner crown a crown pitch round
 `param`s at its head (`shaft_angle`, `offset`, E = 0 is bevel; `fixtures::gear::configure` sets
 them where the parser says their values stand); the pinion's cone solves against the gear's;
 members roll at `N_c / N`, written as tooth counts (`crown_teeth / pinion_teeth`), not `1 / sin`.
-**The face mill is found, not stated** (#283): `pressure_shift` and `cutter_radius` are formals of
-`HypoidPair` the call leaves to the solve, seeded (`hint(10deg)`, `hint(80mm)`), and `Balanced`
-finds them as a designer would — the generated flanks' undercut margins (each flank's radius of
-curvature in a section square to the trace, a module inside and outside the pitch, `Margins`)
-equal at the mean point, which sets the shift, and at the toe, which sets the cutter; a cutter no
-smaller than R (`gear.M distance(>= R) trace.C`), the root nearest the seeds (11.2527°, 75.6122
-mm; seeds far off reach another, 260 mm from 14°, 60 mm).  Each blade (`Blade`) is
+**The face mill's shift is found, not stated** (#283, #904): `pressure_shift` is a formal of
+`HypoidPair` the call leaves to the solve, seeded (`hint(10deg)`); the cutter's radius is a stated
+input (`param cutter_radius := 75.6122mm`). `Balanced` reads the four flanks the two blades cut on
+the two members — each the envelope its blade generates, `pair.balance.pinion_inner`,
+`pinion_outer`, `gear_outer`, `gear_inner` — by their least area factors within their blanks
+(`regular`, what E3 judges), on the conjugate crowns ungrown and within the blanks before their
+end relief, each held from its fold (`regular(by: …) within …`, `>= 0`). It hands them out with
+their crowns and blanks as `pair.margins`, and the caller ties the two that bind by holding both
+to one unknown, the pair's formal `least` (`regular(pair.least, …)`, a margin reading an unknown,
+[0.215]): a hypoid's are the pinion's inner-cut flank and the gear's outer-cut (8.8549°, the least
+0.6767 at 24/48, 25 mm, the cutter as stated); with no offset it is the pinion's two flanks
+(−1.195°, 0.4231), and the hypoid's tie there leaves the pinion's outer-cut flank folded, a bound
+broken (`hypoid_machine::at_no_offset_the_pinions_two_flanks_tie`). Which two bind is the caller's
+to say: the maximin of four margins over the shift ties the least of each blade's two, which no
+statement can say yet. The cutter is not found: every margin grows with it from R to 4 R at every
+design measured, so a balance of them has no root in it. The 12/24, 13/27, 16/32 (1.5 mm) and
+10/48 pairs balance (`hypoid_machine::the_pair_retargeted_finds_its_shift`). Each blade (`Blade`) is
 `std.sets.ConeThrough` with the side its cone opens to said, so its half reads the unknown shift as
-a number times it plus a number.  At the found cutter the pinion's swept cut is built and agrees
-with its field, but its sheet is fitted as one face, not named by the cutter's (a follow-up);
-`brep_export.rs` holds the sectors at the recorded mill.  `fixtures::gear::configure`
+a number times it plus a number.  At the shift found the configured pinion is built by sectors,
+243 faces, its cut's sheet 69 × 39 (`hypoid_mill_sheet.rs`, the mill stated as
+`fixtures::gear::FOUND_MILL`; `brep_export::the_pinion_as_written_is_built_by_sectors`, solved as
+written), and its gear with 291 faces; at 12/24 the pinion builds (111 faces) and the gear's
+fitted sheet is refused (0.105 mm and 62.9° from its contacts); the zero-offset pinion of the
+pinion's own tie builds (243 faces); `brep_export.rs` holds the sectors at the recorded mill too.
+`fixtures::gear::configure`
 given a `pressure_shift` states it with the recorded cutter, 0.8 R, and drops the balance
 (`recorded_machine`): every recorded number was taken of a pair so cut.
 `tests/hypoid_machine.rs` is the gate. **No axial views** (#215): the
@@ -334,10 +348,15 @@ placement carries inside the blank; CLI test readers zero the offset.
   its points where the motion stands them (`GeometricEvidence::moved`).  The text says it under a
   claim refuted or undecided, the JSON (`nearest`) always.  `solid_claim.rs`'s
   `a_refuted_claim_names_the_faces_and_where`, `a_refuted_sweep_says_where_at_its_counterexample`.
-  **A swept operand is measured from its exact B-rep** where this kernel builds one and the
-  claim reads the drawing's pose (one pose, or a roll moving an operand rigidly): the judge
-  supplies it (`brep::export::supply_exact_of`) before reading, as a drawing reads an object's,
-  and meshes the field only for a build refused (#615).  A lone claim that cannot be measured
+  **A swept operand is measured from its exact B-rep** where this kernel builds one, at every
+  pose a claim reads (#615; #904 A11 for the last three): one pose, a roll moving an operand
+  rigidly, a copy re-placed along a roll, the drawing stood at an instant of a declared parameter
+  or solved at a sample of a free one.  The judge supplies it (`brep::export::supply_exact_of`,
+  `diagnose::solid_claims::geometry`) before reading, as a drawing reads an object's — a
+  placement's build its source's, built once and moved — and meshes the field only for a build
+  refused: a gear train stood at each sample meshed both gears' fields, minutes a pose.
+  `planar_subtraction.rs`'s
+  `a_claim_over_a_parameter_reads_the_cut_wheels_exact_build_at_every_sample`.  A lone claim that cannot be measured
   says why on its line (`— undecided: <reason>`, the solid named where its field would not
   mesh); "no solved valid poses" is a sweep's, whose poses are solved.  `planar_subtraction.rs`'s
   `a_claim_about_a_cut_wheel_reads_its_exact_build`, `solid_claim.rs`'s
@@ -359,6 +378,22 @@ placement carries inside the blank; CLI test readers zero the offset.
   and `a_claim_over_a_declared_parameter_is_refused_outside_it`.
   Claims are read **after phase 4** (a free variable is what `expr::evaluate`
   allocates), and the interval **in the unknown's own units**, never converted as an angle.
+  **A claim over a frame's roll turns only what is placed under that frame** (#904 A11,
+  [0.214]): a solid it names placed at an instant of another motion stands where it was read
+  through the sweep, whatever ratios tie the frames, and elaboration says so at the claim's
+  operand (W117, `program/solids/claims.rs`'s `solid_claim`), naming that frame and how to run
+  frames together: their values written over one declared parameter, each solid drawn at its
+  frame, the claim over the parameter.  Only a solid it names: a copy placed at an instant inside
+  a body it names is how a pattern is drawn (`hypoid_drive`'s spokes) and stands still because it
+  is drawn still.  `solid_claim.rs`'s `a_claim_over_one_frame_says_what_it_leaves_standing` (a
+  peg against a peg held still, against its closed form) and
+  `a_train_tied_to_one_parameter_is_judged_as_it_rolls` (the same pegs turned at their ratio).
+  **A refuted pose costs its depth's search, indexed** (#904 A11): where two solids share
+  material, `clear::overlap` searches the deepest ball in the common region at up to 8192
+  points, each the nearest piece of the common boundary (a BVH, `bvh::Bvh::query_nearest`) and
+  whether both solids hold it (`Csg::inside_indexed` over each primitive's `RayIndex`) — the
+  same answers as every piece and every facet read, in their logarithm: a refuted sweep of two
+  gears read every facet of both at every point of every pose, minutes a pose.
   **A swept claim's names resolve as a lone claim's do** (`flatten/resolve.rs`'s `rewrite`): the
   motion it runs along and the solids its body judges are found through instances
   (`frame.body`) and, inside a component, under the instance's prefix; a free variable is left as
@@ -525,6 +560,21 @@ placement carries inside the blank; CLI test readers zero the offset.
   A name whose face a boolean ate is a *fact the report carries*, never an error.
   E080 a face that is not a loop on one plane, E081 a revolution's axis, E082 a face a body no
   longer has, E084 a section cut across its own view.
+- **A solid is called by the name the language reads it by** (#904 A14, `Sketch::solid_name`):
+  a block's copy by its index on the declaration it holds (`vocab::public_path`) — the `pin` copy
+  1 of a `repeat` in an instance `box` makes is `box.pin[1]`, the `body` of an instance `planet`
+  made there `box.planet[1].body` — never the key it is held by (`box.#15.1.pin`), whose
+  statement id moves whenever the file's statements do.  The key stays `SolidE::name`, what
+  faces, layers, uses and a binding's renaming route by (statement identity under expansion,
+  [relations.md](relations.md)); what is *said* reads `solid_name`: the timings, the reports, a
+  refusal of export, glTF nodes, an STL's header and a STEP product, the objects the page is
+  handed — and a refusal is placed by the solid it so names (`program::refusal_site` reads the
+  name or the key).  **A name picks a solid by one rule** (`Sketch::solid_called`, `solventc --solid`):
+  the name a solid is called, or its key; a name a block's copies go by without their index
+  (`box.pin`) is refused saying each copy, one two solids go by (a copy of a block within a
+  block's copy, its index written once) saying their keys, and one nothing goes by saying the
+  objects there are, so the name to write is learnt from the refusal.
+  `a_solid_a_blocks_copy_makes_is_called_by_its_index` (`tests/face_names.rs`).
 - **One cause is said once** (#572, `program::refused`).  After the solve a solid is refused
   (E080) in its own words only where nothing it is built on is refused (`solid::built_on`: its
   operands, and the solids a region's terms read — the body whose faces a round reads; a body is
@@ -566,7 +616,15 @@ placement carries inside the blank; CLI test readers zero the offset.
   the exit unchanged, since what was asked is all there: a quick look is never read as "this
   builds" when the export would refuse it
   (`shell::a_shell_not_built_is_drawn_from_its_field_and_says_why`,
-  `cli::a_picture_of_a_solid_not_built_says_so`).
+  `cli::a_picture_of_a_solid_not_built_says_so`).  The other way round (#904 A15): an exact
+  export refused never writes the field in its place — its file is the build held to the
+  tolerance, and a field's mesh is neither — but where the solid's boundary is its field's
+  (`Sketch::is_swept`) an exact STL refused is followed by what writes that reading, in the core's
+  words with the host's name for its faceted output (`report::field_read_instead`: "`tumbled` is
+  read by its material field, and `--stl-backend mesh` writes that reading instead: …").  The
+  faceted STL is the evaluation's, asked of no class: admission gates the exact outputs only
+  (`kernel_blank::a_field_read_body_is_offered_its_fields_writing`,
+  `cli::a_body_refused_exactly_names_what_writes_its_field`).
 
 - **A face family is a face that runs** (§6.9 [0.97], `solid/family.rs`; #243 L1).
   `solid({ p | some s: p in I(…).f at s })` ([0.199], #737, [0.205]; through 0.198 `sweep(I(…).f

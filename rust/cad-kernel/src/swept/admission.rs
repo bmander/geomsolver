@@ -784,11 +784,14 @@ pub fn check(c: &Generating,inside: &(dyn Fn(V) -> bool+Sync),options: &Sampling
                     }
                     hits.push((hit,patch,t.root.branch));
                     // E3: the generated surface's oriented area factor on the same branch
-                    // (`area_factor`), against the tool surface's own.
+                    // (`area_factor`), against the tool surface's own. The face it is generated
+                    // by is named: which of a crown's flanks undercuts its member is what a
+                    // designer changes (#904 A2).
                     let Some(factor) = factor else { continue };
                     if factor.abs() < options.least_factor {
                         let said = undercut(c,patch,inside,options).map_or_else(
-                            || format!("the generated surface's area factor is {factor:.3e}"),|u| u.to_string());
+                            || format!("the surface `{}` generates has an area factor of {factor:.3e}, a fold",
+                                surface.name()),|u| u.to_string());
                         return Err((Row::Fold,said,Some(t.contact.position)));
                     }
                     least = least.min(factor.abs());

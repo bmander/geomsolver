@@ -55,7 +55,8 @@ diagnosed, and the report says where it stands.
                         --set travel=3mm); repeatable, one document, and said in the report
     --where NAME        where a name landed: its own numbers and everything under it, and a
                         value the document names, in its unit (repeatable; the whole table in
-                        --json when none is given)
+                        --json when none is given).  A solid's measures (volume, area, bounds,
+                        faces) and a panel's are read only under a name given: they build it
     --no-diagnose       solve only; skip the diagnosis
     --no-check          judge no claim about solids (clear, fits, inside), so no solid is built
                         for one: the report says how many were left unjudged.  The claims over
@@ -95,9 +96,12 @@ diagnosed, and the report says where it stands.
                         its topology, surfaces and their numbers; full: that, and read back by
                         the kernel, repaired as a reader would, checked and measured
     --stl-backend NAME  occt, mesh or refine; every solid defaults to the kernel's export (the
-                        core's, or occt as --kernel says), a body with swept cuts included (mesh is
-                        the faceted kernel; refine meshes the material field by the core's Delaunay
-                        refinement, checked by the field-agreement probe)
+                        core's, or occt as --kernel says, where the build has it), its exact build
+                        held to the tolerance, a body with swept cuts included, refused where it is
+                        not built; mesh writes the solid as the workspace draws it, a body read by
+                        its material field from the field, said so; refine meshes the material
+                        field by the core's Delaunay refinement, checked by the field-agreement
+                        probe
     --gltf PATH         write a solid as binary glTF: every face a named node
     --png PATH          draw what the workspace shows as a PNG (a part file: its preview), each
                         object shaded in its instance's colour, depth-buffered, with its creases
@@ -1091,14 +1095,19 @@ fn export(sk: &Sketch, e: &mut Elaborated, s: &Source, opts: &Opts, o: &Output, 
     // boundary construction needs; the core's field refinement (`--stl-backend refine`) needs
     // only the field, and is gated by the field-agreement probe instead.
     // A native export admits the body itself, beside the first of its construction.
-    let native = cfg!(feature="occt") && !cad::rust_kernel() && (step.is_some() || (stl.is_some() && native_stl && !opts.refine));
+    // The faceted STL (`--stl-backend mesh`) is the solid's evaluation, its field's mesh where the
+    // field is its boundary: no class is asked of it, and an exact output refused names it where
+    // it writes the solid (#904 A15).
+    let exact_stl = stl.is_some() && native_stl && !opts.refine;
+    let native = cfg!(feature="occt") && !cad::rust_kernel() && (step.is_some() || exact_stl);
     let mut body = None;
-    if (step.is_some() || (stl.is_some() && !opts.refine)) && solved {
+    if (step.is_some() || exact_stl) && solved {
         if let Ok(i) = pick_solid(sk,solid) {
             let mut b = cad::Body::read(sk,i);
             if b.swept() && !native {
                 if let Err(refusal) = b.admit(sk) {
                     refused(s,sk,e,i,refusal);
+                    if exact_stl { say_field_read(sk,i); }
                     ok = false;
                     stl = None;
                     step = None;
@@ -1108,15 +1117,13 @@ fn export(sk: &Sketch, e: &mut Elaborated, s: &Source, opts: &Opts, o: &Output, 
         }
     }
     if let Some(path) = stl.clone().filter(|_| opts.refine && solved) {
-        #[cfg(feature="occt")]
-        if let Ok(i) = pick_solid(sk,solid) {
-            if let Err(refusal) = cad::field_mesh::export_refine(sk,i,&path) {
+        match pick_solid(sk,solid) {
+            Ok(i) => if let Err(refusal) = cad::field_mesh::export_refine(sk,i,&path) {
                 refused(s,sk,e,i,refusal);
                 ok = false;
-            }
+            },
+            Err(m) => { eprintln!("solventc: {m}"); ok = false; }
         }
-        #[cfg(not(feature="occt"))]
-        { let _ = path; eprintln!("solventc: --stl-backend refine needs a build with the `occt` feature"); ok = false; }
         stl = None;
     }
     if step.is_some() || (stl.is_some() && native_stl) {
@@ -1142,6 +1149,7 @@ fn export(sk: &Sketch, e: &mut Elaborated, s: &Source, opts: &Opts, o: &Output, 
                         // refused admission, nothing is written (the mesh backend's STL included)
                         if refusal.stage == cad::Stage::Admission { stl = None; }
                         refused(s,sk,e,i,refusal);
+                        if exact_stl { say_field_read(sk,i); }
                         ok = false;
                     },
                 }
@@ -1231,15 +1239,18 @@ fn report_set(sk: &Sketch, map: &gcs_core::program::SourceMap, what: &str, ids: 
 /// The rows of `report::positions` a reader asked for: a name matches its own numbers
 /// (`o` gives `o.x`, `o.y`) and everything written under it (`cyl` gives the whole instance,
 /// `cyl.pivot.x` gives the one number).  Three questions, one rule, since a scalar, an
-/// entity and an instance are all just names with dots in them.  Empty asks for everything.
+/// entity and an instance are all just names with dots in them.  Empty asks for every number the
+/// drawing holds, and for no body's measures (#904 A12).
 fn wanted(
     sk: &Sketch,
     map: &gcs_core::program::SourceMap,
     names: &[String],
 ) -> Vec<(String, f64)> {
-    // a solid is read only where a name asked reaches it, or it reaches a name asked — a swept
-    // one from its exact surface where one builds, as a drawing reads it
-    let asked = |n: &str| names.is_empty() || names.iter().any(|q| under(n, q) || under(q, n));
+    // a body — a solid, a panel, a development — is built and measured only where a name asked
+    // reaches it, or it reaches a name asked: a swept solid from its exact surface where one
+    // builds, as a drawing reads it.  Never for the whole table `--json` gives unasked: the text
+    // report builds nothing unasked, so the JSON costs what it costs, and `--where` asks in both
+    let asked = |n: &str| names.iter().any(|q| under(n, q) || under(q, n));
     gcs_core::brep::export::supply_exact_where(sk, &|i| asked(&sk.solids[i].name));
     let all = report::positions_where(sk, map, &asked);
     if names.is_empty() {
@@ -1263,6 +1274,13 @@ fn under(name: &str, asked: &str) -> bool {
     name == asked || name.strip_prefix(asked).is_some_and(|r| r.starts_with('.'))
 }
 
+/// Whether solid `i` is `asked` or something under it (`under`), by its key or by the name the
+/// document calls it (`Sketch::solid_name`: a block's copy by its index).  `wanted` reads the key
+/// alone.
+fn solid_under(sk: &Sketch, i: usize, asked: &str) -> bool {
+    under(&sk.solids[i].name, asked) || under(&sk.solid_name(i), asked)
+}
+
 /// `file:line:col: error[Exxx]: message`.
 ///
 /// Offsets cross from the core in **UTF-8 bytes** and a column counts characters, which
@@ -1280,6 +1298,14 @@ fn say_unbuilt(sk: &Sketch, i: usize, path: &str) {
     let Ok(solid) = sk.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::Mesh) else { return };
     if let Some(u) = solid.unbuilt() {
         eprintln!("solventc: {path}: {}", gcs_core::report::unbuilt_text(sk, i, u));
+    }
+}
+
+/// Beside an exact STL refused, what writes solid `i` from its material field instead, where its
+/// boundary is the field's (#904 A15): the core's words, given this host's name for its faceted STL.
+fn say_field_read(sk: &Sketch, i: usize) {
+    if let Some(line) = gcs_core::report::field_read_instead(sk, i, "`--stl-backend mesh`") {
+        eprintln!("solventc: {line}");
     }
 }
 
@@ -1445,8 +1471,7 @@ fn assembly(sk: &Sketch, e: &mut Elaborated, s: &Source, opts: &Opts, path: &str
             (--step)".into());
     }
     let objects: Vec<usize> = gcs_core::overview::objects(sk).into_iter()
-        .filter(|&i| solid.is_none_or(|n| under(&sk.solids[i].name, n)
-            || under(&gcs_core::vocab::public_path(&sk.solids[i].name), n))).collect();
+        .filter(|&i| solid.is_none_or(|n| solid_under(sk, i, n))).collect();
     if objects.is_empty() {
         return fail(e, match solid {
             Some(n) => format!("no object called `{n}`, or under it, to write"),
@@ -1508,20 +1533,17 @@ fn canonical(p: &std::path::Path) -> Option<String> {
     p.canonicalize().ok().map(|c| c.to_string_lossy().into_owned())
 }
 
-/// Which solid `--stl` writes.  Named, or the only one there is — a document with one part in it
-/// should not have to say which part.
+/// Which solid `--stl` writes.  Named as the document calls it (`Sketch::solid_called`, a
+/// block's copy by its index), or the only one there is — a document with one part in it should
+/// not have to say which part.
 fn pick_solid(sk: &gcs_core::model::Sketch, name: Option<&str>) -> Result<usize, String> {
     match name {
-        Some(n) => sk
-            .solids
-            .iter()
-            .position(|s| s.name == n)
-            .ok_or_else(|| format!("no solid called `{n}`")),
+        Some(n) => sk.solid_called(n),
         None if sk.solids.is_empty() => Err("this document has no solid to write".into()),
         None => {
             let roots = gcs_core::overview::objects(sk);
             if roots.len() == 1 { return Ok(roots[0]); }
-            let names: Vec<&str> = roots.iter().map(|&i| sk.solids[i].name.as_str()).collect();
+            let names: Vec<String> = roots.iter().map(|&i| sk.solid_name(i)).collect();
             Err(format!("say which solid with --solid: {}", names.join(", ")))
         }
     }

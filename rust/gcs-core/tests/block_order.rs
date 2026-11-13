@@ -158,10 +158,11 @@ fn the_hypoid_layout_is_39_blocks_9_deep() {
 }
 
 /// The configured pair with its backlash and tip relief: the toppings' kinks and cones add blocks
-/// of their own, and the order is still square with nothing over or under-determined.
+/// of their own, and the order is still square with nothing over or under-determined.  The order
+/// is the words', so the pair is read as elaborated, not solved.
 #[test]
 fn the_tip_relief_orders_whole() {
-    let e = fixtures::gear::read_as_configured();
+    let e = fixtures::gear::unsolved(&fixtures::gear::source());
     let mut sys = System::new(&e.sketch);
     let order = sys.block_order();
     let mut sizes = std::collections::BTreeMap::new();
@@ -223,5 +224,6 @@ fn a_subset_is_the_whole_systems_rows_to_the_bit() {
     subsets_agree("gear_trace", &gear.sketch);
     // spatial kinds, and a scaled system (rows over their units, columns over theirs)
     subsets_agree("hypoid_pitch_cones", &build(include_str!("../../examples/hypoid_pitch_cones.sv")).sketch);
-    subsets_agree("hypoid layout", &fixtures::gear::read_as_configured().sketch);
+    // the configured pair as elaborated: its balance's rows read where its words put it
+    subsets_agree("hypoid layout", &fixtures::gear::unsolved(&fixtures::gear::source()).sketch);
 }

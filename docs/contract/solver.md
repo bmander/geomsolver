@@ -47,15 +47,22 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   point of a broken one on the seeds (the last of the three, in the key's order, with a coordinate
   the solve moves; its twins and lifts with it) to its mirror in the line through the other two,
   or half that line's length onto the stated side, and `program::elaborate` elaborates again from
-  there (`crossed_seeds`); `System::steer` steers a broken one after the bounds (a `Choice`, one
-  budget of `STEER_ROUNDS`), from the start and then the solution, kept only where it solves and
-  holds; still broken, `success` false, status **`ORIENTATION_BROKEN`** (7, "a stated orientation
+  there (`crossed_seeds`) — **but not across a line through a point nothing seeded** (#904 A13:
+  `SourceMap::unseeded`, a point the source wrote no seed for still where `scatter` minted it,
+  whose bearing is its creation order's, so a side read against it is noise that carried hinted
+  points wherever the count of points before it pointed); `System::steer` steers a broken one
+  after the bounds (a `Choice`, one budget of `STEER_ROUNDS`), from the start and then the
+  solution, kept only where it solves and holds, and where crossing one point at a time leaves
+  one broken — a figure turned over, its orientations broken together — the block search runs
+  as for a bound; still broken, `success` false, status **`ORIENTATION_BROKEN`** (7, "a stated orientation
   does not hold"; a broken bound is said first), `Diagnosis::orientations_violated` (keys; report
   `orientationsViolated`), the CLI's `orientation broken: ccw(a, b, x)`
   (`report::orientation_text`).  `PlanSolver::solve` replays a stated choice as stated over its
   cache, falls back to the numeric solve where its root breaks one, keeps no `ORIENTATION_BROKEN`
   result, and writes the stated sign back to `branches`.  The block pass's root search
-  (`blocks::Search`) reads bounds only.  A drag (`retry` off), a drawing stating none and one whose
+  (`blocks::Search`) reads the stated orientations beside the bounds, each deciding the block
+  that solves the last of its triangle's coordinates (a block holding a contact is started within
+  its bounds alone, `start_within`).  A drag (`retry` off), a drawing stating none and one whose
   seeds keep theirs solve to the same bits; a traced body's are the locus's at its anchor
   (`locus`), and its drawn instance stands where they hold.  The component classifier still
   applies them itself to the roots its probes find (`boundary::search`: a probe steers nothing).
@@ -445,16 +452,17 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   `acceptance_tol`. The spiral bevel relies on it (`hypoid_layout.rs` holds rough starts).
 - **Words choose roots; the block pass searches for them** (#217, F8): a block is accepted when
   its rows meet `acceptance_tol` **and every bound it decides holds** (`solve::blocks::Search`: a
-  bound whose columns are all solved so far, some the block's own); where not, it is started again —
+  bound whose columns are all solved so far, some the block's own — and so a stated orientation,
+  by its triangle's coordinates, #904 A13); where not, it is started again —
   each broken bound's point carried across it (`across`) and the block mirrored across the plane
   that point crossed (an offset's other hand), from its solution and its start, then `RESTARTS`
   starts with its points scattered about what the blocks before it placed, at their size, and its
   axes turned (a fixed `rng::Rng` stream per start) — each a DogLeg, else followed along the
   Newton homotopy `r(z) = (1 − t) r(start)` (`follow_block`, `HOMOTOPY_STEPS`); a drawing stating
-  no bound has no root to search for. Constants read off the pose (`CKind::reads_pose`) are
-  refreshed before each block (`refresh_consts`) and put back for the polish. A
-  steered solve whose crossings leave a bound broken runs the pass from its start (not under
-  `BlockMode::Off`). **A drawing is judged at its own size**: a failed document solve ending more
+  no bound and no orientation has no root to search for. Constants read off the pose
+  (`CKind::reads_pose`) are refreshed before each block (`refresh_consts`) and put back for the
+  polish. A steered solve whose crossings leave a bound or a stated orientation broken runs the
+  pass from its start (not under `BlockMode::Off`). **A drawing is judged at its own size**: a failed document solve ending more
   than `RESIZE` times the extent it was compiled at is compiled there and solved again from its
   start (`System::resized`), so an unseeded start about the origin at unit size reaches a drawing
   hundreds of millimetres across. **Constants are read again where a solve ends**
@@ -476,7 +484,11 @@ changelog](../solvent-changelog.md)) says where a rule came from.
 - **A drawing holding contacts on envelopes solves block by block** (#283, #304): a document
   solve whose sketch holds a `PointOnEnvelope` or `PointOnMeshing` (`blocks::holds_contacts`)
   runs the pass first (`First`, not `Rescue`), since a whole-system minimisation reaches a root
-  on another sheet of an envelope that every word allows.  Each block's contacts are seeded at
+  on another sheet of an envelope that every word allows.  So does one holding a row a search
+  reads (`blocks::holds_searches`: a `RegularWithin` stated as an equation, not a bound, #904):
+  from the seeds that search reads a flank its blank does not yet hold, and a whole-system
+  DogLeg steps on nothing, each trial a search afresh (at no offset the hypoid's took some
+  seventy searches, five seconds, before its pass began).  Each block's contacts are seeded at
   its start (`seed_contacts`: the place and the lift sought again with the flanks where the
   blocks before it left them, `seed_param`/`meshing_seed`), but only where the compiled rows are
   more than `SEEDED_OFF` off, so a converged place keeps its sheet; a bound the start alone
@@ -497,7 +509,13 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   swept until still (`TEAR_SWEEPS`), and the rows left over brought to zero by damped Newton
   over the numbers alone, by differences (`TEAR_DIFF`, `TEAR_STEPS`, `TEAR_HALVINGS`).  At most
   `TEAR_MAX` (2) numbers; tried first in such a block, after a failed whole solve elsewhere, and
-  `z` is left as it was where it fails.  The tearing is a fact of the compile's structure, worked
+  `z` is left as it was where it fails.  **A block finding such a number from a row a search
+  reads is torn first too** (#904, `finds_numbers`, `is_searched`: a flank's least area factor
+  within its blank, `envelope::regular`): whole, its row reads nothing until the rest of the block
+  is placed, so it comes to no root, and each start `Search` tries — its points scattered at the
+  drawing's size — asks the search afresh, far from any answer it remembers.  The hypoid's balance
+  so took a hundred searches and twelve seconds before its tearing found what it finds torn first
+  (8.854877°) in six; `regular_cost::the_balance_searches_each_flank_a_few_times` is the gate.  The tearing is a fact of the compile's structure, worked
   out once (`System::tearings`; a steered solve passes the blocks again): each choice is matched
   alone and compared by its widest part (`graph::widest_block`), only the one chosen ordered.
   **Where no statements can be left over for all of them, a block finding them from a contact
@@ -513,10 +531,11 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   is torn only at all its numbers, as before.
   A seed of a place (`seed_param`, `meshing_seed`) is a grid search, and its last `SEEDS_KEPT`
   answers are remembered against their whole question (`infer::Recent`): the elaborator's passes
-  and a steered solve ask the same ones again.  The spiral bevel's face mill is the case: its pressure
-  shift and cutter radius are found by balancing undercut margins (`hypoid_machine.rs`); at a
-  ten-tooth pinion that balance has no root, and the solve runs to its iteration limit
-  (`at_a_ten_tooth_pinion_no_face_mill_balances_the_undercut` holds why, the mill stated).
+  and a steered solve ask the same ones again.  The spiral bevel's face mill was the case: its
+  pressure shift and cutter radius were found by balancing the profile radii of its flanks, and at
+  a ten-tooth pinion, where that balance had no root, the solve ran to its iteration limit; since
+  #904 the shift is found by tying two flanks' least area factors, and is found there too
+  (`hypoid_machine::the_pair_retargeted_finds_its_shift`).
 - **A pass through every block is polished in its own frames** (`blocks_then_polish`, #283): the
   constants it read last stand for the whole-system DogLeg that follows, since a point it held on
   a line turned since compiling is off that line by the turn in the compiled ones; they are put

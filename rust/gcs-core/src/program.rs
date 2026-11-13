@@ -27,6 +27,7 @@ mod rounds;
 mod scenarios;
 mod measures;
 mod at_solve;
+mod mated;
 mod beams;
 mod bound;
 mod mirrors;
@@ -110,7 +111,7 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap, p: &Program
         }
     }
     diags.extend(views::degenerate(sk, map));
-    diags.extend(views::coplanar(sk, map));
+    diags.extend(views::coplanar(sk, map, &place));
     for i in 0..sk.envelopes.len() {
         // a set's envelope has no side to read after the solve: its contacts are its rows (#283)
         if sk.envelopes[i].surface.is_none() { continue; }
@@ -251,6 +252,11 @@ pub fn elaborate(p: &Program) -> Elaborated {
     loop {
         match elaborate_in(p, &refused, &crossed, &named, renamed >= FACE_PASSES, &pose) {
             Ok(mut e) => {
+                // a part mated by what it made starts solved alone and placed whole (#904 A5),
+                // before its seeds are read against its bounds or the drawing solved for its faces
+                if e.ok() {
+                    mated::seat(&mut e);
+                }
                 if crossed.is_empty() {
                     crossed = crossed_seeds(&e);
                     if !crossed.is_empty() {
@@ -301,6 +307,8 @@ enum Again {
 
 /// The points whose seeds break a bound, or an orientation the document states (#157), carried
 /// across (`solve::cross_bounds`): each by the key it is bound under, with the numbers it now has.
+/// An orientation is carried across a line its seeds draw — not one through a point nothing
+/// seeded (`SourceMap::unseeded`, #904 A13), whose bearing is its creation order's.
 fn crossed_seeds(e: &Elaborated) -> BTreeMap<String, Vec<f64>> {
     // read before anything is copied: most drawings' seeds break none
     let tol = crate::solve::bound_tol(&e.sketch);
@@ -311,7 +319,7 @@ fn crossed_seeds(e: &Elaborated) -> BTreeMap<String, Vec<f64>> {
         return BTreeMap::new();
     }
     let mut sk = e.sketch.clone();
-    let moved = crate::solve::cross_bounds(&mut sk);
+    let moved = crate::solve::cross_bounds(&mut sk, &e.map.unseeded);
     moved.into_iter().filter_map(|p| {
         let ent = EntRef::point(p);
         let key = e.map.keys().find(|&(_, x)| x == ent).map(|(k, _)| k.clone())?;

@@ -137,6 +137,8 @@ pub(super) fn elaborate_in(
     solids_and_surfaces(&mut cx, &flat, named, faces_settled, pose, &generated, &held_in_space)?;
     expressions(&mut cx, &flat, &on_followed);
     regions_read(&mut cx, &flat, &after_solids);
+    // what nothing seeded, once every seed is in: the seeds say no side of it (#904 A13)
+    cx.map.unseeded = entities::unseeded(&cx.sk, &deferred);
     Ok(finish(cx, &flat))
 }
 
@@ -722,12 +724,10 @@ fn regions_read(cx: &mut Elab<'_>, flat: &Flat<'_>, later: &[usize]) {
             if let Some(c) = cx.sk.constraint_mut(id) {
                 c.written = written;
             }
+            // a number reading an unknown is the row's last column (#904): two flanks held to
+            // one unknown are held to each other
             if let Err(m) | Ok(Some(m)) = said {
                 cx.diags.push(Diag::on(Code::E040, st, format!("`{text}`: {m}")));
-            } else if cx.sk.constraint(id).is_some_and(|c| c.free.is_some()) {
-                let m = format!("`{text}` reads an unknown: a flank's least area factor is held \
-                                 to a number, and the unknowns it finds are the drawing's");
-                cx.diags.push(Diag::on(Code::E040, st, m));
             }
         }
     }

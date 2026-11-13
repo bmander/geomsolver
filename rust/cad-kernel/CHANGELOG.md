@@ -32,6 +32,58 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   face's boundary holds take that node's (`boolean`), where at a sheet's nearly singular corner they
   stood 0.017 off. brep-bench's `swept/spline-bar-screwed-through-rod` builds, to its volume made
   apart from the build: all of Q1b's fourteen cases now do.
+- **A foot on a blend's edge is polished in `u` after the coupled step** (`geom::Blend`): where 0.10.0
+  stepped `u` alone at every step `v` was held at the patch's edge, Gauss–Newton now takes the
+  coupled step throughout and, its foot settled with `v` at the edge, polishes `u` alone there:
+  stepped alone throughout, feet the coupled step leaves for the inside were held, and
+  brep-bench's box screwed inside a rod came out 0.015 off.
+
+## [0.11.0] - 2026-11-12
+
+- **A facet the mesh would count as turned is refined past the turning budget** (`mesh`): a
+  facet facing against its surface at its middle, thicker than a tenth of the bar — what
+  `Mesh::turned` counts and an exporter refuses — is refined whatever the budget that bounds the
+  refinement for a turn short of that, as a sag past the bar is. A long face with a tight bend
+  (a helical gear's tooth space, its root where the rack's tip corners pass) spent the budget
+  on its bends first, and left a facet inside it turned over.
+- **A circle touching an algebraic surface reads alike at every attitude** (`query`): beside a
+  touch, the run a circle or an ellipse keeps within the tolerance of a plane, quadric or torus is
+  proved by the Taylor model of the polynomial the surface's form is along it, as against a
+  surface turned from a conic, besides the form over the curve's box. The box is the world's, and
+  read into the surface's frame it proved the run only a hair wide: a circle in the plane tangent
+  to a torus's tube, at one attitude in a dozen, read past any search's boxes and was refused.
+- **An ellipse cuts in closed form under a planar motion, and a helical rack with rounded tips
+  stays in the closed form** (#904 A6): `swept::planar_cut::Cutting::Ellipse` (**new**,
+  **breaking** for exhaustive matches) cuts as a circle cuts, by Newton from its support point
+  toward the instant centre. `swept::extruded::Screwed::read` sections an arc of the profile as
+  the ellipse it is square to the axis, so a hob's tip round is carried up the helix with the
+  flanks, where it sent the rack's space to the traced, fitted sheet (1.7e-2 mm and 4° off its
+  contacts): the space is the rounded tooth's arithmetic to 6e-4 mm³.
+- **A traced sheet is laid in its cut's own scale** (#904 A3): a cutter of revolutions' cut has a
+  unit, the length its walk runs over at the band's middle station against `trace::REFERENCE_WALK`
+  (**new**), so a pair with every length scaled is the same construction. `trace::Tracer` gains
+  `unit` (**breaking** for code building a `Tracer` literally) and `sheet::settle` takes it
+  (**breaking**: a new argument); `cutter::Loop::scaled` and `Loop::walked` (**new**). Every piece
+  of a section loop is asked at the same 32 places, and the missed run measured by its faces'
+  length, where a tip narrower than the reach's step was missed.
+- **A revolved cutter's band is read where its contacts first reach the blank, and a margin column
+  leaping beside the blank costs the sheet that column** (#904 A4): the band no longer moves with
+  the half-plane a world axis picks, so a gear builds alike in any frame (`cutter::Cutter::turned`,
+  **new**); outside the columns holding the blank, a column leaping a turn round is dropped with
+  those beyond it, where every column's rows were trimmed back before it (`trace::charted` takes
+  the columns `reached` and returns `Charted`, **breaking**).
+- **A fold's gap outside the blank is crossed, not turned at, and a cell thinner than its first
+  mesh's sag is sampled on a finer one** (#904 A1/A2): a station holding contacts in the blank on
+  both sides of its fold's gap walks across it, where it turned onto the other root and ran a turn
+  round the pinion; `query::interior` reads a cell its first mesh vouches no point of again on one
+  ten times finer, so a tip relief a hundredth of a millimetre thick is sampled. The configured
+  hypoid pinion at the mill its balance finds builds. A fold the admission refuses (E3) names the
+  tool face whose generated surface folds.
+- **A face's sampled loops are simple polygons** (`mesh`, #904 A9): two chords between the same two
+  corners, an arc sampled as the very chord a line is, are split as crossing, so a face whose loop
+  is a circle's segment triangulates, where its inside flooded past the loop.
+
+## [0.10.0] - 2026-11-12
 
 - **The contact's road takes a turn and a screw past the axis** (`swept::contacts`, `swept::trim`,
   `boolean`, #880 Q1b S5): brep-bench's seven S5 cases build through the front door, each to a
@@ -57,9 +109,14 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   the patch's edge but kept the coupled step in `u`, and a point of a sheet's end rim where its two
   rates nearly agree settled 3.8e-8 along the rim, which broke a loop in its parameters at the
   kernel's tolerance (the torus screwed through a rod, refused there since the turn's sheets came
-  in); a foot settled with `v` at the edge is now polished in `u` alone there. (Stepping `u` alone
-  at every step held there, feet the coupled step leaves for the inside: brep-bench's box screwed
-  inside a rod came out 0.015 off.)
+  in); `u` is now stepped alone while `v` is held.
+- **A round between two planes is a cylinder** (`fillet::roll`, `fillet::flat_along`): a run
+  between two planes that ends with no tangent run-on is the prism on the round's section (the
+  corner, its legs to the contacts and the ball's arc) carried past each end and cut off there,
+  with no Boolean where an end is one plane square to the run, where it was a fitted 65 × 129
+  bicubic canal cut by a Boolean. brep-bench's `fillet/box-one-edge` goes from about 120 ms and
+  835 KB of STEP to a few milliseconds and 15 KB, `fillet/notched-cube-inside-corner` from 1.8 s
+  to about 0.1 s, each to its closed forms. `topo::EdgeCurve::kind` (**new**).
 
 ## [0.9.0] - 2026-11-12
 

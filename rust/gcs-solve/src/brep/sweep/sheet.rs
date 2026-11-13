@@ -79,6 +79,17 @@ pub fn swept_sheet(cut: &SweptCut,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),
     traced_sheet(cut,&cutter,inside,near,tolerance,say)
 }
 
+/// `swept_sheet` with the grid the cutter's band is read on turned `phase` round its axis past
+/// where its contacts first reach the blank (`Cutter::turned`): the same cutter, its stations moved
+/// against it, which the sheet must not depend on (#904 A4). Refused for a cutter that is no cutter
+/// of revolutions.
+pub fn swept_sheet_turned(cut: &SweptCut,phase: f64,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),tolerance: Option<Tolerance>,
+    say: &Say) -> Result<Fitted,ExportRefusal> {
+    let cutter = cut.cutter().and_then(|c| c.turned(phase).ok_or_else(|| format!("`{}`'s tool is no cutter of revolutions",cut.name)))
+        .at(Stage::Reach)?;
+    traced_sheet(cut,&cutter,inside,near,tolerance,say)
+}
+
 /// The sheet of a prism whose cap reaches the blank (#684 F): `swept_sheet`'s, its stations the
 /// prism's sections through its extrusion at distances along the direction admission's row T3
 /// chose, each its chord carried along the extrusion, so the walk runs from a side over a cap's

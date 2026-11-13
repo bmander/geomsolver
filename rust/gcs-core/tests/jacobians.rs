@@ -1338,6 +1338,28 @@ fn regularity_agrees_with_finite_differences() {
     }
 }
 
+/// **A flank's regularity held to an unknown** (#904): the margin `least`, a formal the pair
+/// leaves out, is the row's last column, read by no term: the residual moves by its own number
+/// there, and the rest of the row as before.
+#[test]
+fn regularity_held_to_an_unknown_agrees_with_finite_differences() {
+    let text = crate::regular::with_least(12.5, &crate::regular::regular("2 * least - 0.4"), false);
+    let mut sk = fixtures::gear::read(&text).sketch;
+    let mut rng = Rng::new(904);
+    for round in 0..2 {
+        if round > 0 {
+            for p in sk.params.iter_mut().filter(|p| !p.fixed) {
+                p.value += rng.uniform(-1e-4, 1e-4) * (1.0 + p.value.abs().min(10.0));
+            }
+        }
+        let c = sk.constraints.iter().find(|c| c.kind == CKind::RegularWithin).unwrap();
+        assert!(c.free.is_some(), "the margin reads the unknown");
+        let err = check_constraint(&sk, c, 1e-5, 1e-6)
+            .unwrap_or_else(|e| panic!("round {round}: {e}"));
+        assert!(err.is_finite());
+    }
+}
+
 /// **A point carried by a chain** (#383 stage 1, `Sketch::chain`): the planet's turn about a
 /// skew line carried by the arm's screw about another, lowered to the relative over the arm's
 /// minted inverse.  Both axes' ends are free, so the carried point's Jacobian is checked over

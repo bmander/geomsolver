@@ -341,8 +341,12 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   drawn on any of them, so drawing on the front leaves no second frame behind
   (`planes_in_one_place_are_one_pane`); the pane that bolds is the current plane's place.
   **The box shows the objects, not the features they are made of** — a solid is the object exactly
-  when nothing else is made of it (`overview::objects`).  `box3d.ts` draws what `scene3d` says
-  stands in space — panes, axes, the axes and the curves traced in space (`IN_SPACE`: `axis`,
+  when nothing else is made of it (`overview::objects`).  **A copy is not made of its source**
+  (#904 A10): `b := a at(under: m) τ` stands another solid of `a`'s shape, and `a` stays where it
+  was drawn, an object still unless something else is made of it or it is `construction` — in the
+  box, the pictures, glTF and the STEP assembly alike; a sweep's stock, what a swept body is the
+  passage of, is a feature of it (`a_solid_read_at_a_value_is_still_an_object`).  `box3d.ts`
+  draws what `scene3d` says stands in space — panes, axes, the axes and the curves traced in space (`IN_SPACE`: `axis`,
   `traced`; a spline over points in space is one, #363 S3) — and every object in its own
   coordinates, placed by the matrix the core gives (`core/mesh.ts::drawn`, `placement`; #412),
   computing no coordinate.  **An object is drawn as a CAD viewer draws a part** (#674–#676):

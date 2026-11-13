@@ -10,7 +10,7 @@ use crate::space;
 use crate::sparse::Ata;
 use crate::system::{SolveBlock, Subset, System, Tearing, DENSE_MAX};
 
-use super::bounds::{across, bound_reading, bound_tol, movable};
+use super::bounds::{across, bound_reading, bound_tol, movable, Choice};
 use super::{reads_pose, SolveOpts, SolveResult};
 
 /// The step, relative to the block's own unknowns, below which a block's minimisation stops
@@ -102,8 +102,11 @@ impl System {
             };
             let mut pass = Pass {
                 framed,
-                bounded: sk.constraints.iter().any(|c| c.bound.is_some() && c.kind.steers()),
+                bounded: sk.constraints.iter().any(|c| c.bound.is_some() && c.kind.steers())
+                    || !sk.orientations.is_empty(),
                 contacts: holds_contacts(sk),
+                searched: sk.constraints.iter().filter(|c| is_searched(c)).map(|c| c.id)
+                    .collect(),
                 search: None,
                 solved: std::collections::BTreeSet::new(),
                 nfev: 0,
@@ -113,8 +116,14 @@ impl System {
             for b in &order.blocks {
                 // a block finding an unknown number from a contact on an envelope or a meshing is
                 // torn at it first: whole, it can come to a root on another sheet of the envelope
-                // that every word it states allows
-                let ok = if pass.contacts && self.finds_numbers(sk, b) {
+                // that every word it states allows.  So is one finding it from a row a search
+                // reads (a flank's least area factor, `envelope::regular`): that row reads
+                // nothing until the rest of its block is placed, so whole it comes to no root, and
+                // every start its root is searched from asks the search afresh, far from any
+                // answer it has (#904)
+                let ok = if (pass.contacts || !pass.searched.is_empty())
+                    && self.finds_numbers(sk, &pass.searched, b)
+                {
                     self.torn(sk, &mut pass, z, b, true, opts)
                         || self.pass_block(sk, &mut pass, z, b, opts)
                 } else {
@@ -412,14 +421,22 @@ impl System {
     }
 
     /// Whether block `b` holds both an unknown number the drawing declares and the place of a
-    /// contact on an envelope or a meshing.
-    fn finds_numbers(&self, sk: &Sketch, b: &SolveBlock) -> bool {
+    /// contact on an envelope or a meshing, or a row a search reads: one of the constraints
+    /// `searched` (`Pass::searched`).
+    fn finds_numbers(
+        &self,
+        sk: &Sketch,
+        searched: &std::collections::BTreeSet<u32>,
+        b: &SolveBlock,
+    ) -> bool {
         use crate::constraints::Arg;
         let col = |q: u32| col_among(&self.col_of, &b.cols, q).is_some();
-        sk.free_vars.values().any(|&q| col(q))
-            && sk.constraints.iter().any(|c| {
-                is_contact(c.kind) && c.args.iter().any(|a| matches!(a, Arg::Param(q) if col(*q)))
-            })
+        if !sk.free_vars.values().any(|&q| col(q)) {
+            return false;
+        }
+        sk.constraints.iter().any(|c| {
+            is_contact(c.kind) && c.args.iter().any(|a| matches!(a, Arg::Param(q) if col(*q)))
+        }) || b.instances.iter().any(|&(kb, i)| searched.contains(&self.blocks[kb].cids[i]))
     }
 
     /// Where block `b` is torn at its unknowns `held` (`torn`): the instances whose rows are left
@@ -736,6 +753,9 @@ struct Pass {
     framed: bool,
     bounded: bool,
     contacts: bool,
+    /// The ids of the constraints stating a row a search reads (`is_searched`): the drawing
+    /// holds one (`holds_searches`) where it is not empty.
+    searched: std::collections::BTreeSet<u32>,
     search: Option<Search>,
     solved: std::collections::BTreeSet<usize>,
     nfev: i32,
@@ -763,10 +783,22 @@ pub(super) fn holds_contacts(sk: &Sketch) -> bool {
     sk.constraints.iter().any(|c| is_contact(c.kind))
 }
 
+/// Whether a drawing holds a row a search reads (`is_searched`): solved, as one holding a
+/// contact is, a block at a time first (`System::solve_compiled`).
+pub(super) fn holds_searches(sk: &Sketch) -> bool {
+    sk.constraints.iter().any(is_searched)
+}
+
+/// Whether a constraint states a row whose value a search finds — a flank's least area factor
+/// within its blank (`envelope::regular`), the worst point over the flank's place — and so reads
+/// nothing where the drawing its search reads is not yet placed (#904).  A bound states no row.
+fn is_searched(c: &crate::constraints::Constraint) -> bool {
+    c.kind.searched() && c.states_rows()
+}
+
 /// Whether a constraint of kind `kind` holds a point to an envelope in space or to a meshing.
 fn is_contact(kind: crate::constraints::CKind) -> bool {
-    use crate::constraints::CKind;
-    matches!(kind, CKind::PointOnEnvelope | CKind::PointOnMeshing)
+    kind.envelope_contact().is_some() || kind.meshing_contact().is_some()
 }
 
 /// The column parameter `q` is solved in, where that is one of `cols` (sorted).
@@ -819,8 +851,9 @@ impl TrustRegion for Path<'_> {
 const RESTARTS: usize = 48;
 
 /// **A block's root, as the words say it** (§9.6, #217): what the block pass reads to choose among
-/// a block's roots.  Every bound, by the columns it reads, so a block is held to the bounds it
-/// decides — each column it reads among those solved so far, and some the block's own; and every
+/// a block's roots.  Every bound and every orientation the document states (#904 A13), by the
+/// columns it reads, so a block is held to the ones it decides — each column it reads among
+/// those solved so far, and some the block's own; and every
 /// point and axis the solve moves, by its columns, so a block whose own start comes to no root, or
 /// to one a bound refuses, starts again elsewhere: first carried across each bound it breaks as a
 /// steered solve is (`across`), then with its points scattered about what the blocks before it
@@ -830,8 +863,8 @@ const RESTARTS: usize = 48;
 struct Search {
     sk: Sketch,
     free: std::collections::BTreeSet<u32>,
-    /// Each bound: its constraint, and the columns its reading reads.
-    bounds: Vec<(usize, Vec<usize>)>,
+    /// Each bound and stated orientation: the choice, and the columns its reading reads.
+    bounds: Vec<(Choice, Vec<usize>)>,
     /// Each point the solve moves: the point, and its own columns with its lift's.
     points: Vec<(usize, Vec<usize>)>,
     /// Each axis the solve turns: its direction's columns.
@@ -847,9 +880,16 @@ impl Search {
             c.dedup();
             c
         };
+        // a stated orientation reads its triangle's three points where they stand in their plane
+        let turns = sk.orientations.keys().filter_map(|k| {
+            let t = super::orientation_triangle(sk, k)?;
+            let read = t.into_iter().flat_map(|p| [sk.points[p].x, sk.points[p].y]).collect();
+            Some((Choice::Orientation(k.clone()), cols(read)))
+        });
         let bounds = sk.constraints.iter().enumerate()
             .filter(|(_, c)| c.bound.is_some() && c.kind.steers())
-            .map(|(i, c)| (i, cols(c.params(sk))))
+            .map(|(i, c)| (Choice::Bound(i), cols(c.params(sk))))
+            .chain(turns)
             .filter(|(_, c)| !c.is_empty())
             .collect();
         let points = (0..sk.points.len()).filter_map(|p| {
@@ -867,14 +907,16 @@ impl Search {
         Search { sk: sk.clone(), free: movable(sk), bounds, points, axes }
     }
 
-    /// The bounds block `cols` decides, given the columns `solved` before it.
-    fn deciding(&self, cols: &[usize], solved: &std::collections::BTreeSet<usize>) -> Vec<usize> {
+    /// The bounds and stated orientations block `cols` decides, given the columns `solved`
+    /// before it.
+    fn deciding(&self, cols: &[usize], solved: &std::collections::BTreeSet<usize>)
+        -> Vec<Choice> {
         let own = |c: &usize| cols.binary_search(c).is_ok();
         self.bounds.iter()
             .filter(|(_, read)| {
                 read.iter().any(own) && read.iter().all(|c| own(c) || solved.contains(c))
             })
-            .map(|&(i, _)| i)
+            .map(|(choice, _)| choice.clone())
             .collect()
     }
 
@@ -886,7 +928,12 @@ impl Search {
     /// starts near its root.  `z` and the scratch sketch, at `z`'s pose, take the crossings.
     fn start_within(&mut self, sys: &System, z: &mut [f64], b: &SolveBlock,
         solved: &std::collections::BTreeSet<usize>) {
-        let decided = self.deciding(&b.cols, solved);
+        let decided: Vec<usize> = self.deciding(&b.cols, solved).into_iter()
+            .filter_map(|c| match c {
+                Choice::Bound(ci) => Some(ci),
+                Choice::Orientation(_) => None,
+            })
+            .collect();
         if decided.is_empty() {
             return;
         }
@@ -910,15 +957,20 @@ impl Search {
         }
     }
 
-    /// Whether each of the bounds `decided` holds at the pose `z`.
-    fn holds(&mut self, sys: &System, z: &[f64], decided: &[usize]) -> bool {
+    /// Whether each of the bounds and stated orientations `decided` holds at the pose `z`.
+    fn holds(&mut self, sys: &System, z: &[f64], decided: &[Choice]) -> bool {
         if decided.is_empty() {
             return true;
         }
         self.sk.set_x(&sys.full_x(z));
         let tol = bound_tol(&self.sk);
-        decided.iter().all(|&ci| {
-            bound_reading(&self.sk, &self.sk.constraints[ci], tol).is_none_or(|r| r.holds)
+        decided.iter().all(|c| match c {
+            Choice::Bound(ci) => {
+                bound_reading(&self.sk, &self.sk.constraints[*ci], tol).is_none_or(|r| r.holds)
+            }
+            Choice::Orientation(k) => {
+                super::orientations::holds(&self.sk, k, tol).unwrap_or(false)
+            }
         })
     }
 
@@ -960,7 +1012,7 @@ impl Search {
         z: &[f64],
         b: &'b SolveBlock,
         start: &[f64],
-        decided: &[usize],
+        decided: &[Choice],
     ) -> Attempts<'b> {
         let mut from_start = z.to_vec();
         for (k, &c) in b.cols.iter().enumerate() {
@@ -968,22 +1020,20 @@ impl Search {
         }
         let x_start = sys.full_x(&from_start);
         let x_solved = sys.full_x(z);
-        // across each bound the solution breaks
+        // across each bound and stated orientation the solution breaks
         self.sk.set_x(&x_solved);
-        let tol = bound_tol(&self.sk);
-        let breaks = |sk: &Sketch| -> Vec<(usize, f64)> {
-            decided.iter().filter_map(|&ci| {
-                let r = bound_reading(sk, &sk.constraints[ci], tol)?;
-                (!r.holds).then(|| (ci, r.aims[0]))
-            }).collect()
+        let free = &self.free;
+        let breaks = |sk: &Sketch| -> Vec<(Choice, f64)> {
+            let tol = bound_tol(sk);
+            decided.iter().filter_map(|c| Some((c.clone(), c.aim(sk, tol, free)?))).collect()
         };
         let broken = breaks(&self.sk);
         // and across each the start breaks that the solution does not: a block whose own start
         // came to no root at all leaves no broken bound at its solution to carry it across
         self.sk.set_x(&x_start);
-        let started: Vec<(usize, f64)> =
+        let started: Vec<(Choice, f64)> =
             breaks(&self.sk).into_iter()
-                .filter(|(ci, _)| !broken.iter().any(|(b, _)| b == ci)).collect();
+                .filter(|(c, _)| !broken.iter().any(|(b, _)| b == c)).collect();
         let own = |c: &usize| b.cols.binary_search(c).is_ok();
         let moving: Vec<usize> =
             self.points.iter().filter(|(_, c)| c.iter().any(own)).map(|&(p, _)| p).collect();
@@ -1014,10 +1064,10 @@ struct Attempts<'b> {
     b: &'b SolveBlock,
     x_start: Vec<f64>,
     x_solved: Vec<f64>,
-    /// Each bound the block's solution breaks, with where its point aims.
-    broken: Vec<(usize, f64)>,
-    /// Each bound the block's start breaks and its solution does not, with where it aims.
-    started: Vec<(usize, f64)>,
+    /// Each bound and stated orientation the block's solution breaks, with where its point aims.
+    broken: Vec<(Choice, f64)>,
+    /// Each the block's start breaks and its solution does not, with where it aims.
+    started: Vec<(Choice, f64)>,
     /// The points the block moves and the axes it turns.
     moving: Vec<usize>,
     turning: Vec<[usize; 3]>,
@@ -1049,16 +1099,16 @@ impl Attempts<'_> {
         let n = self.broken.len();
         while self.crossing < 2 * n + self.started.len() {
             let x = if self.crossing < n { &self.x_solved } else { &self.x_start };
-            let (ci, aim) = if self.crossing < 2 * n {
-                self.broken[self.crossing % n]
+            let (choice, aim) = if self.crossing < 2 * n {
+                self.broken[self.crossing % n].clone()
             } else {
-                self.started[self.crossing - 2 * n]
+                self.started[self.crossing - 2 * n].clone()
             };
             self.crossing += 1;
             s.sk.set_x(x);
             let before: Vec<[f64; 3]> =
                 self.moving.iter().map(|&p| s.sk.world_point(p)).collect();
-            let Some(q) = across(&mut s.sk, ci, aim, &s.free) else { continue };
+            let Some(q) = choice.across(&mut s.sk, aim, &s.free) else { continue };
             let crossed = s.block_of(sys, b);
             // and the block mirrored across the plane the point was carried through: the other
             // hand of what it is, where the point alone comes back to where it was

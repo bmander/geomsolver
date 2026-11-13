@@ -31,31 +31,76 @@ pub fn configure(text: &str,params: &[(&str,f64)]) -> String {
 
 /// `text`, the pair, with the face mill's settings stated as the suites recorded the pair at
 /// before `hypoid.sv` found them (#283): the pressure shift `shift` in degrees and the cutter's
-/// radius 0.8 R, R the mean cone distance — and the balance that finds them dropped, with the
-/// equal margins the pair states of it. Every number the suites recorded was taken of a pair so
-/// cut.
+/// radius 0.8 R, R the mean cone distance — and the balance that reads its margins dropped, with
+/// the margins the pair hands its caller and the equal margins the document states of them. Every
+/// number the suites recorded was taken of a pair so cut.
 pub fn recorded_machine(text: &str,shift: f64) -> String {
-    let seeds = "pressure_shift: hint(10deg), cutter_radius: hint(80mm))";
-    assert!(text.contains(seeds),"the pair leaves its face mill's settings to the solve, seeded");
-    let stated = format!("pressure_shift: {shift}deg, \
-        cutter_radius: 0.8 * mean_module * sqrt(pinion_teeth^2 + gear_teeth^2) / 2)");
+    stated_machine(text,shift,"0.8 * mean_module * sqrt(pinion_teeth^2 + gear_teeth^2) / 2")
+}
+
+/// `text`, the pair, with the face mill stated at a pressure shift `shift` in degrees and the
+/// cutter the document states (`param cutter_radius`, scaled with the pair by `scaled`) — the mill
+/// a balance found, say — and the balance dropped as `recorded_machine` drops it.
+pub fn machine(text: &str,shift: f64) -> String { stated_machine(text,shift,"cutter_radius") }
+
+fn stated_machine(text: &str,shift: f64,cutter: &str) -> String {
+    let seeds = "pressure_shift: hint(10deg), cutter_radius: cutter_radius, least: hint(0.5))";
+    assert!(text.contains(seeds),"the pair leaves its face mill's pressure shift to the solve, seeded");
+    let stated = format!("pressure_shift: {shift}deg, cutter_radius: {cutter})");
     let mut out = text.replacen(seeds,&stated,1);
     let call = "  balance := Balanced(";
-    let at = out.find(call).expect("the pair finds its face mill's settings by `Balanced`");
+    let at = out.find(call).expect("the pair reads its flanks' margins by `Balanced`");
     let mut depth = 0;
     let end = at+out[at..].char_indices().find_map(|(k,c)| {
         match c { '(' => depth += 1, ')' => { depth -= 1; if depth == 0 { return Some(k+1); } } _ => {} }
         None
     }).expect("the balance's call closes");
     let mut end = end+out[end..].find('\n').map_or(0,|k| k+1);
-    // and what the pair states of the margins it reads, the lines that follow it
-    while let Some(line) = out[end..].split_inclusive('\n').next()
-        .filter(|l| l.trim_start().starts_with("balance.") || l.trim_start().starts_with("// ...")) {
-        end += line.len();
-    }
+    // and the margins it hands the caller, the group that follows it
+    let margins = "  margins := {";
+    assert!(out[end..].starts_with(margins),"the pair hands its caller the balance's margins");
+    end += out[end..].find("}\n").expect("the margins' group closes")+2;
     out.replace_range(at..end,"");
-    out
+    // and the balance the document states over them, the lines that read them (the margin they
+    // hold, `least`, is left out of the call with them, and read by nothing)
+    let lines: Vec<&str> = out.split_inclusive('\n')
+        .filter(|l| !l.starts_with("pair.margins.")).collect();
+    lines.concat()
 }
+
+/// `text` with every length among its inputs (`param NAME := …mm` at the top level: the module,
+/// the offset and the allowances) `factor` times as long: the pair scaled whole.
+pub fn scaled(text: &str,factor: f64) -> String {
+    let (prog,_) = syntax::parse(text);
+    let lengths: Vec<(String,f64)> = prog.root().body.iter().filter_map(|st| match &st.kind {
+        syntax::StmtKind::Param(p) if p.input.is_some() && p.bound() => {
+            let written = &text[p.span.lo as usize..p.span.hi as usize];
+            let number = written.strip_suffix("mm")?;
+            Some((p.name.text.to_string(),number.trim().parse::<f64>().ok()?*factor))
+        }
+        _ => None,
+    }).collect();
+    assert!(lengths.iter().any(|(name,_)| name == "mean_module"),"the pair states its module in millimetres");
+    let lengths: Vec<(&str,f64)> = lengths.iter().map(|(name,v)| (name.as_str(),*v)).collect();
+    configure_inputs(text,&lengths)
+}
+
+/// The face mill of the pair as configured: the pressure shift in degrees its balance finds, where
+/// the pinion's flank the inner blade cuts ties the gear's the outer blade cuts, and the cutter's
+/// radius in millimetres the document states
+/// (`hypoid_machine::the_shift_ties_the_flanks_nearest_undercut`).
+pub const FOUND_MILL: [f64;2] = [8.8549,75.6122];
+
+/// The pair as configured, cut by the mill its balance finds there (`FOUND_MILL`), stated: what the
+/// document's solve makes of the pair, read without the balance's solve.
+pub fn as_found() -> String { machine(&source(),FOUND_MILL[0]) }
+
+/// `as_found`, elaborated and solved.
+pub fn read_as_found() -> program::Elaborated { read(&as_found()) }
+
+/// The pair with every length `factor` times as long (`scaled`), cut by the mill its balance finds
+/// there — the configured one scaled (`FOUND_MILL`) — stated.
+pub fn scaled_as_found(factor: f64) -> String { machine(&scaled(&source(),factor),FOUND_MILL[0]) }
 
 /// `configure` over the document's own inputs alone.
 fn configure_inputs(text: &str,params: &[(&str,f64)]) -> String {

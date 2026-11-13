@@ -158,6 +158,27 @@ fn solid_claim(
             return;
         }
     };
+    // **what a claim over the roll of motion `m` leaves standing** (#904 A11): a sweep advances
+    // only the placements under `m` (`diagnose::solid_claims`), so a solid the claim names that is
+    // read at an instant of another frame's motion — a planet in a train claimed over its sun's
+    // frame — is judged where it was read, however the two frames' ratios tie them.  Only the
+    // solids it names: a copy placed at an instant inside a body it names is how a pattern is
+    // drawn (a wheel's spokes, `hypoid_drive`), and stands still because it is drawn still
+    if let Some((sweep, m)) = over.and_then(|o| Some((o, o.motion()?))) {
+        for (o, &end) in w.ops.iter().zip(&ends) {
+            let s = &sk.solids[end as usize];
+            let SolidDef::Placed { motion, .. } = s.def else { continue };
+            if motion == m { continue; }
+            let frame = &sk.motions[motion as usize].name;
+            diags.push(Diag::within(Code::W117, o.span, st.id, format!(
+                "`{}` stands still through this claim: it is read at an instant of `{frame}`, and \
+                 a claim over `{f}` turns only what is placed under `{f}`.  To run frames \
+                 together, write each one's value over one declared parameter (`param t: Angle \
+                 over (a, b)`, then `fix(value == t) {frame}`), draw each solid at its frame \
+                 (`s := x at {frame}`) and claim over `t`",
+                s.name, f = sweep.name())));
+        }
+    }
     sk.solid_claims.push(crate::model::SolidClaim::new(requirement, ends[0], ends[1],
         over.cloned(), st.id.0));
     map.record(st, Made::Gauge);
