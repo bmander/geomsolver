@@ -16,15 +16,15 @@ use std.place (seats, right_of)
 use spiral_bevel.hypoid (HypoidPair)
 use planetary
 use frame
-use hardware
+use std.ports (seats_in, abuts, grooves)
+use std.bearings
+use std.retaining
 use dims (cs_length, bb_drop, pinion_y, ring_y, pinion_teeth, gear_teeth, bevel_module,
           bevel_angle, bevel_backlash, bevel_tip_relief, bevel_end_relief, bevel_cutter_radius,
-          shell_od, shell_id, case_left, case_right, end_wall, bearing_od, sleeve_bearing_od,
-          diaphragm, cup, boss_r, boss_ahead, boss_behind, wall, web, pinion_bearing, sleeve_r,
-          hub_r, hub_bore, hub_seat, hub_span, hub_bearings, flange_r, flanges, spokes,
-          rear_case_r, rear_case, axle_d, old, shaft_od, shaft_id, tube_od, tube_id, spindle_d,
-          spindle_bore, crank_throw, crank_face, b6804, b6805, b6903, b6901, r471_20, r471_25,
-          r471_17, r472_24)
+          shell_od, shell_id, case_left, case_right, end_wall, diaphragm, cup, boss_r, boss_ahead,
+          boss_behind, wall, web, pinion_bearing, sleeve_r, hub_r, hub_bore, hub_span, hub_bearings,
+          flange_r, flanges, spokes, rear_case_r, rear_case, axle_d, old, shaft_od, shaft_id,
+          tube_od, tube_id, spindle_d, spindle_bore, crank_throw, crank_face)
 
 // -- the frame's datums --------------------------------------------------------------------------
 // The bottom bracket's axis is the world's `std.y`.  The rear axle stands `cs_length` from it,
@@ -129,36 +129,11 @@ std.origin distance(ring_y, along: std.y) bb_mid
 box := planetary.Planetary()
 box seats(turn: 0deg, up: drive_side, east: std.x) bb_mid
 
-// -- stations, where the hardware is seated --------------------------------------------------------
-// Along the bracket's axis (from its centre, +y to the left), the axle's (from its centre) and the
-// shaft's (from the bracket's pinion's mean point, rearward, or from the hub's, forward).
+// A point `d` along the line `ax` from `from`: where a crank stands on the spindle.
 component At(ax: line, from: point, d: Length) {
   p := point
   p coincident ax
   from distance(d, along: ax) p
-}
-right_bb := At(bb_line, std.origin, d: case_right + end_wall / 2)
-left_bb := At(bb_line, std.origin, d: cup.x + 4.5mm)
-sleeve_bb := At(bb_line, std.origin, d: (diaphragm.x + diaphragm.y) / 2)
-right_clip := At(bb_line, std.origin, d: case_right + end_wall + 0.8mm)
-left_clip := At(bb_line, std.origin, d: cup.x + 0.2mm)
-sleeve_clip := At(bb_line, std.origin, d: diaphragm.y + 0.8mm)
-bb_pinion_bearing := At(pair.pinion_member.ax, pair.pinion_member.foot,
-  d: (pinion_bearing.x + pinion_bearing.y) / 2)
-hub_pinion_bearing := At(pair.pinion_member.ax, hub_foot, d: -(pinion_bearing.x + pinion_bearing.y) / 2)
-bb_shaft_clip := At(pair.pinion_member.ax, pair.pinion_member.foot, d: pinion_bearing.y + 0.8mm)
-hub_shaft_clip := At(pair.pinion_member.ax, hub_foot, d: -pinion_bearing.y - 0.8mm)
-right_hub := At(axle_line, axle_c, d: hub_bearings.x)
-left_hub := At(axle_line, axle_c, d: hub_bearings.y)
-right_hub_clip := At(axle_line, axle_c, d: hub_bearings.x - 3mm - 0.8mm)
-left_hub_clip := At(axle_line, axle_c, d: hub_bearings.y + 3mm + 0.8mm)
-
-// A ring's groove: a band `t` wide about `ax` at `at`, from radius `r` out to `r_out`.
-component Groove(ax: line, at: point, r: Length, r_out: Length, t: Length) {
-  band := { q | q in std.sets.Cylinder(ax, r: r_out)
-                q not in std.sets.Cylinder(ax, r: r)
-                at distance(in: (-t / 2, t / 2), along: ax) q }
-  body := solid(band)
 }
 
 // -- the shaft ---------------------------------------------------------------------------------
@@ -168,23 +143,11 @@ shaft := solid({ q | q in std.sets.Cylinder(pair.pinion_member.ax, r: shaft_od /
                      q not in std.sets.Cylinder(pair.pinion_member.ax, r: shaft_id / 2)
                      pair.pinion_member.foot distance(>= 0mm, along: pair.pinion_member.ax) q
                      hub_foot distance(<= 0mm, along: pair.pinion_member.ax) q })
-bb_shaft_groove := Groove(pair.pinion_member.ax, bb_shaft_clip.p, r: r471_17.groove / 2,
-  r_out: shaft_od / 2 + 1mm, t: r471_17.t)
-hub_shaft_groove := Groove(pair.pinion_member.ax, hub_shaft_clip.p, r: r471_17.groove / 2,
-  r_out: shaft_od / 2 + 1mm, t: r471_17.t)
-bb_shaft_groove.body cut shaft
-hub_shaft_groove.body cut shaft
 
 // -- the crank spindle and the cranks -------------------------------------------------------------
 spindle := solid({ q | q in std.sets.Cylinder(bb_line, r: spindle_d / 2)
                        q not in std.sets.Cylinder(bb_line, r: spindle_bore / 2)
                        std.origin distance(in: (-crank_face - 11mm, crank_face + 11mm), along: bb_line) q })
-right_spindle_groove := Groove(bb_line, right_clip.p, r: r471_20.groove / 2,
-  r_out: spindle_d / 2 + 1mm, t: r471_20.t)
-left_spindle_groove := Groove(bb_line, left_clip.p, r: r471_20.groove / 2,
-  r_out: spindle_d / 2 + 1mm, t: r471_20.t)
-right_spindle_groove.body cut spindle
-left_spindle_groove.body cut spindle
 // One crank, placed twice on the spindle's ends: the right one forward, the left turned half a turn
 // about the spindle, behind.  Each stands on the spindle's axis at its outer face.
 right_end := At(bb_line, std.origin, d: -crank_face - 11mm)
@@ -210,9 +173,6 @@ construction case_outer := solid(case_outer_set)
 case_bore_set := { q | q in std.sets.Cylinder(bb_line, r: shell_id / 2)
     std.origin distance(in: (case_right + end_wall, case_left + 1mm), along: bb_line) q }
 construction case_bore := solid(case_bore_set)
-right_seat_set := { q | q in std.sets.Cylinder(bb_line, r: bearing_od / 2)
-    std.origin distance(in: (case_right - 1mm, case_right + end_wall + 1mm), along: bb_line) q }
-construction right_seat := solid(right_seat_set)
 boss_set := { q | q in std.sets.Cylinder(pair.pinion_member.ax, r: boss_r)
     pair.pinion_member.foot distance(in: (-boss_ahead, boss_behind), along: pair.pinion_member.ax) q }
 construction boss := solid(boss_set)
@@ -250,7 +210,6 @@ stay union shell
 dropout union shell
 hub_boss union shell
 case_bore cut shell
-right_seat cut shell
 boss_bore cut shell
 stay_bore cut shell
 dropout_bore cut shell
@@ -261,11 +220,9 @@ hub_boss_bore cut shell
 // The webs that seat the bearings, added inside the bored shell: the 6805 round the sun's sleeve,
 // and each pinion's 6903, the hub's turned from the bracket's.
 diaphragm_set := { q | q in std.sets.Cylinder(bb_line, r: shell_id / 2)
-    q not in std.sets.Cylinder(bb_line, r: sleeve_bearing_od / 2)
     std.origin distance(in: (diaphragm.x, diaphragm.y), along: bb_line) q }
 construction diaphragm_ring := solid(diaphragm_set)
 pinion_seat_set := { q | q in std.sets.Cylinder(pair.pinion_member.ax, r: boss_r - wall + 0.5mm)
-    q not in std.sets.Cylinder(pair.pinion_member.ax, r: b6903.D / 2)
     pair.pinion_member.foot distance(in: (pinion_bearing.x, pinion_bearing.y), along: pair.pinion_member.ax) q }
 construction pinion_seat := solid(pinion_seat_set)
 construction hub_pinion_seat := pinion_seat at(under: flip) 180deg
@@ -281,10 +238,9 @@ frame.shell.stay round(r: 3mm) frame.shell.hub_boss
 // The left bearing cup, pressed into the shell's open end: a sleeve seating the left 6804, and a
 // flange against the shell's face.
 cup_set := { q | q in std.sets.Cylinder(bb_line, r: shell_id / 2)
-    q not in std.sets.Cylinder(bb_line, r: bearing_od / 2)
     std.origin distance(in: (cup.x, case_left), along: bb_line) q }
 cup_flange_set := { q | q in std.sets.Cylinder(bb_line, r: shell_od / 2)
-    q not in std.sets.Cylinder(bb_line, r: bearing_od / 2 - 1.5mm)
+    q not in std.sets.Cylinder(bb_line, r: std.bearings.b6804.D / 2 - 1.5mm)
     std.origin distance(in: (case_left, cup.y), along: bb_line) q }
 bearing_cup := solid(cup_set)
 construction cup_flange := solid(cup_flange_set)
@@ -306,20 +262,14 @@ flange_left_set := { q | q in std.sets.Cylinder(axle_line, r: flange_r)
 construction flange_left := solid(flange_left_set)
 flange_right union hub
 flange_left union hub
-right_hub_seat_set := { q | q in std.sets.Cylinder(axle_line, r: hub_seat)
-    axle_c distance(in: (hub_span.x - 1mm, hub_bearings.x + 3mm), along: axle_line) q }
+right_hub_seat_set := { q | q in std.sets.Cylinder(axle_line, r: std.bearings.b6901.D / 2)
+    axle_c distance(in: (hub_span.x - 1mm, hub_bearings.x), along: axle_line) q }
 construction right_hub_seat := solid(right_hub_seat_set)
-left_hub_seat_set := { q | q in std.sets.Cylinder(axle_line, r: hub_seat)
-    axle_c distance(in: (hub_bearings.y - 3mm, hub_span.y + 1mm), along: axle_line) q }
+left_hub_seat_set := { q | q in std.sets.Cylinder(axle_line, r: std.bearings.b6901.D / 2)
+    axle_c distance(in: (hub_bearings.y, hub_span.y + 1mm), along: axle_line) q }
 construction left_hub_seat := solid(left_hub_seat_set)
 right_hub_seat cut hub
 left_hub_seat cut hub
-right_hub_groove := Groove(axle_line, right_hub_clip.p, r: hub_seat - 0.5mm, r_out: r472_24.groove / 2,
-  t: r472_24.t)
-left_hub_groove := Groove(axle_line, left_hub_clip.p, r: hub_seat - 0.5mm, r_out: r472_24.groove / 2,
-  t: r472_24.t)
-right_hub_groove.body cut hub
-left_hub_groove.body cut hub
 in std.front {
   ring spokes about axle_c {
     sc := point
@@ -342,36 +292,46 @@ construction axle_head := solid(axle_head_set)
 axle_head union thru_axle
 
 // -- bearings and retaining rings ------------------------------------------------------------------
-// Each seated on its station, square to the axis it turns about.
-right_6804 := hardware.Bearing(b6804)
-right_6804 seats(turn: 0deg, up: drive_side, east: std.x) right_bb.p
-left_6804 := hardware.Bearing(b6804)
-left_6804 seats(turn: 0deg, up: drive_side, east: std.x) left_bb.p
-sleeve_6805 := hardware.Bearing(b6805)
-sleeve_6805 seats(turn: 0deg, up: drive_side, east: std.x) sleeve_bb.p
-bb_6903 := hardware.Bearing(b6903)
-bb_6903 seats(turn: 0deg, up: pair.pinion_member.ax, east: flip) bb_pinion_bearing.p
-hub_6903 := hardware.Bearing(b6903)
-hub_6903 seats(turn: 0deg, up: pair.pinion_member.ax, east: flip) hub_pinion_bearing.p
-right_6901 := hardware.Bearing(b6901)
-right_6901 seats(turn: 0deg, up: axle, east: std.x) right_hub.p
-left_6901 := hardware.Bearing(b6901)
-left_6901 seats(turn: 0deg, up: axle, east: std.x) left_hub.p
+// Each bearing is seated in a station of the body that carries it, the station's axis running the
+// way the bearing went in, and held by a ring against its trailing side (`std.bearings.OnShaft`,
+// `InBore`): the room it takes is cut from the body, the ring's groove from what it is fitted to.
+// A station is where the bearing's mid-plane stands on its axis.
+spindle_j := {host: spindle}
+shaft_j := {host: shaft}
+hub_j := {host: hub}
+rear := axis
+rear parallel(sense: opposite) pair.pinion_member.ax
+pair.pinion_member.foot coincident rear
 
-right_ring := hardware.Ring471(r471_20)
-right_ring seats(turn: 0deg, up: drive_side, east: std.x) right_clip.p
-left_ring := hardware.Ring471(r471_20)
-left_ring seats(turn: 0deg, up: drive_side, east: std.x) left_clip.p
-sleeve_ring := hardware.Ring471(r471_25)
-sleeve_ring seats(turn: 0deg, up: drive_side, east: std.x) sleeve_clip.p
-bb_shaft_ring := hardware.Ring471(r471_17)
-bb_shaft_ring seats(turn: 0deg, up: pair.pinion_member.ax, east: flip) bb_shaft_clip.p
-hub_shaft_ring := hardware.Ring471(r471_17)
-hub_shaft_ring seats(turn: 0deg, up: pair.pinion_member.ax, east: flip) hub_shaft_clip.p
-right_hub_ring := hardware.Ring472(r472_24)
-right_hub_ring seats(turn: 0deg, up: axle, east: std.x) right_hub_clip.p
-left_hub_ring := hardware.Ring472(r472_24)
-left_hub_ring seats(turn: 0deg, up: axle, east: std.x) left_hub_clip.p
+right_st := std.ports.Station(bb_line, std.origin, d: case_right + end_wall / 2, toward: drive_side,
+  east: std.x, host: shell)
+right_bb := std.bearings.OnShaft(std.bearings.b6804, ring: std.retaining.din471_20,
+  seat: right_st.seat, on: spindle_j)
+left_st := std.ports.Station(bb_line, std.origin, d: cup.x + 1mm + std.bearings.b6804.B / 2,
+  toward: std.y, east: std.x, host: bearing_cup)
+left_bb := std.bearings.OnShaft(std.bearings.b6804, ring: std.retaining.din471_20,
+  seat: left_st.seat, on: spindle_j)
+sleeve_st := std.ports.Station(bb_line, std.origin, d: (diaphragm.x + diaphragm.y) / 2,
+  toward: drive_side, east: std.x, host: diaphragm_ring)
+sleeve_bb := std.bearings.OnShaft(std.bearings.b6805, ring: std.retaining.din471_25,
+  seat: sleeve_st.seat, on: box.sleeve)
+bb_pinion_st := std.ports.Station(pair.pinion_member.ax, pair.pinion_member.foot,
+  d: (pinion_bearing.x + pinion_bearing.y) / 2, toward: rear, east: flip, host: pinion_seat)
+bb_pinion_bb := std.bearings.OnShaft(std.bearings.b6903, ring: std.retaining.din471_17,
+  seat: bb_pinion_st.seat, on: shaft_j)
+hub_pinion_st := std.ports.Station(pair.pinion_member.ax, hub_foot,
+  d: -(pinion_bearing.x + pinion_bearing.y) / 2, toward: pair.pinion_member.ax, east: flip,
+  host: hub_pinion_seat)
+hub_pinion_bb := std.bearings.OnShaft(std.bearings.b6903, ring: std.retaining.din471_17,
+  seat: hub_pinion_st.seat, on: shaft_j)
+right_hub_st := std.ports.Station(axle_line, axle_c, d: hub_bearings.x, toward: axle, east: std.x,
+  host: hub)
+right_hub_bb := std.bearings.InBore(std.bearings.b6901, ring: std.retaining.din472_24,
+  seat: right_hub_st.seat, on: hub_j)
+left_hub_st := std.ports.Station(axle_line, axle_c, d: hub_bearings.y, toward: drive_side,
+  east: std.x, host: hub)
+left_hub_bb := std.bearings.InBore(std.bearings.b6901, ring: std.retaining.din472_24,
+  seat: left_hub_st.seat, on: hub_j)
 
 // -- claims ----------------------------------------------------------------------------------------
 // The shaft runs clear inside the chainstay, and every turning part clear of the frame.
@@ -383,7 +343,7 @@ claim hub_gear clear(0.5mm) frame
 // The pinions clear what turns beside them: the sun's sleeve, the spindle's right bearing, and
 // the hub.
 claim box.turns.sun clear(0.5mm) bb_pinion
-claim right_6804.outer_ring clear(0.5mm) bb_pinion
+claim right_bb.bearing.outer_ring clear(0.5mm) bb_pinion
 claim hub clear(0.5mm) hub_pinion
 // The cranks clear the frame.
 claim right_crank.body clear(2mm) frame

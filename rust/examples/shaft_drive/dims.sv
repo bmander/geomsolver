@@ -22,6 +22,7 @@
 // Every figure that carries a unit says it, so the arithmetic is checked; claims over the figures
 // are judged before the solve.
 unit mm
+use std.bearings
 
 // -- the rider and the wheel --------------------------------------------------------------------
 cadence := 90rpm                       // a brisk cruising cadence
@@ -92,7 +93,8 @@ sigma_planet := mesh_force / (pw * mn * lewis_y)  // ≈ 290 MPa at the sprint p
 case_steel := 450MPa                   // allowable bending, case-hardened 18CrNiMo7-6, reversed
 
 // -- the shaft and its tube --------------------------------------------------------------------------
-shaft_od := 17mm                       // a cold-drawn 25CrMo4 tube, 17 × 1.5: it runs in a 6903 at each end
+shaft_od := std.bearings.b6903.d       // a cold-drawn 25CrMo4 tube, 17 × 1.5: the bore of the
+                                       // 6903 it runs in at each end
 shaft_id := 14mm
 shaft_G := 80000MPa                    // shear modulus of steel
 cs_length := 430mm                     // the chainstay: bottom-bracket centre to rear axle
@@ -142,8 +144,6 @@ shell_id := 72mm                       // the ring gear is pressed into it
 case_left := 50mm                      // its faces, either side of the mid-plane: the left one open for
 case_right := -50mm                    // the bearing cup, the right one closed round the right bearing
 end_wall := 7mm                        // the right face's wall, a 6804's width
-bearing_od := 32mm                     // the spindle's 6804s, 20 × 32 × 7
-sleeve_bearing_od := 37mm              // the sun's sleeve's 6805, 25 × 37 × 7
 diaphragm := (-9.5mm, -2.5mm)          // the web in the shell that holds the 6805, between the
                                        // planetary and the bevel gear
 cup := (42mm, 52mm)                    // the left bearing cup, pressed into the shell's open end
@@ -160,12 +160,12 @@ crank_throw := 170mm
 crank_face := 62mm                     // each crank's inner face, either side of the mid-plane:
                                        // clear of the pinion's housing
 ring_od := 72mm
-spindle_d := 20mm                      // the crank spindle, hollow 20 × 14, 4340 at 40 HRC
+spindle_d := std.bearings.b6804.d      // the crank spindle, hollow 20 × 14, 4340 at 40 HRC: the
+                                       // bore of the 6804s it runs in
 spindle_bore := 14mm
 sun_bore := 21mm                       // the sun runs on the spindle on a 0.5 mm-wall bronze bush
 sleeve_r := 12.5mm                     // the sun's sleeve, 25 across: it runs in a 6805 (25 × 37 × 7)
 sleeve_to := 34mm                      // and reaches past the bevel gear it carries
-sleeve_groove_z := ring_y - diaphragm.y - 0.8mm  // its 6805's ring's groove, along the planetary's axis
 spindle_tau := crank_peak * (spindle_d / 2) / (pi * (spindle_d^4 - spindle_bore^4) / 32)  // 151 MPa
 planet_bore := 7mm                     // the planets run on 5 mm pins in 1 mm-wall bushes
 pin_d := 5mm
@@ -179,7 +179,6 @@ bridge_r := 18.5mm                     // their inside, clear of the sun's tips
 // -- the hub ---------------------------------------------------------------------------------------
 hub_r := 15mm                          // the hub's shell, 30 across over a 6901 at each end
 hub_bore := 8mm                        // between the bearings
-hub_seat := 12mm                       // the 6901s' seats, 24 across
 hub_span := (-67mm, 63mm)
 hub_bearings := (-61mm, 58mm)          // each 6901's mid-plane
 flange_r := 28mm
@@ -190,16 +189,8 @@ rear_case_r := 40mm                    // the drive-side dropout's gear case abo
 rear_case := (-71mm, -20mm)            // round the hub's gear and pinion
 axle_d := 12mm                         // the thru-axle
 
-// -- the bearings and retaining rings (ISO 15, DIN 471 / 472) ----------------------------------------
-b6804 := {d: 20mm, D: 32mm, B: 7mm, balls: 14, dw: 3.5mm}
-b6805 := {d: 25mm, D: 37mm, B: 7mm, balls: 16, dw: 3.5mm}
-b6903 := {d: 17mm, D: 30mm, B: 7mm, balls: 12, dw: 3.97mm}
-b6901 := {d: 12mm, D: 24mm, B: 6mm, balls: 10, dw: 3.97mm}
-// a ring's groove's diameter, its thickness, its band, and its eyes' circle, size and hole
-r471_20 := {groove: 19mm, t: 1.2mm, band: 2.6mm, r_eye: 13.4mm, eye: 3.4mm, hole: 1.5mm}
-r471_25 := {groove: 23.9mm, t: 1.2mm, band: 3mm, r_eye: 16.4mm, eye: 3.6mm, hole: 1.5mm}
-r471_17 := {groove: 16.2mm, t: 1mm, band: 2.3mm, r_eye: 11.6mm, eye: 3mm, hole: 1.2mm}
-r472_24 := {groove: 25.2mm, t: 1.2mm, band: 2.6mm, r_eye: 9.6mm, eye: 3.4mm, hole: 1.5mm}
+// The bearings and their retaining rings are the library's (`std.bearings`, ISO 15;
+// `std.retaining`, DIN 471 / 472): named where they are fitted, in `drive.sv`.
 
 // -- claims over the design table --------------------------------------------------------------------
 claim Zr == Zs + 2 * Zp

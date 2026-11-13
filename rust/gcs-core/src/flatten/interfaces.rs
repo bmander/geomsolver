@@ -246,6 +246,10 @@ pub(crate) fn check(p: &Program, diags: &mut Vec<crate::program::Diag>) {
     for f in &p.interfaces {
         types.extend(f.members.iter().filter_map(|m| m.interface.as_ref()).map(|n| (n, f.module)));
     }
+    // and each typed operand of a relation word ([0.217])
+    for w in &p.words {
+        types.extend(w.types.iter().flatten().map(|n| (n, w.module)));
+    }
     for (n, from) in types {
         if let Err(why) = p.resolve_interface(&n.text, from) {
             say(Code::E101, n.span, why);

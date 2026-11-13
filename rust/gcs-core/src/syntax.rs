@@ -161,6 +161,10 @@ pub struct WordDef {
     pub fixity: Fixity,
     /// The operands' names, in written order — what the body's references may name.
     pub operands: Vec<Name>,
+    /// Each operand's interface, where the head types it (`s: Journal fitted(fit) h: Bore`,
+    /// [0.217]): the use is held to it as a call is to a typed formal, and the body reads only
+    /// what it declares.  `None` for an operand written bare.
+    pub types: Vec<Option<Name>>,
     /// The parameters in the word's parentheses: numbers or selector words, given by label
     /// where the word is written (§4.1).
     pub params: Vec<Name>,

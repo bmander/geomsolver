@@ -291,7 +291,9 @@ fn formals(c: &Component, read: &[(Vec<(String, Span)>, &Piece)], out: &mut Vec<
             )));
         }
         let whole = uses.iter().all(|(parts, _)| parts.len() == 1 && handed_on(parts[0].1));
-        if f.ty == Ty::Group && whole {
+        // a group typed by an interface is a part's specification — a catalogue row, a port —
+        // handed to the part that reads it: composition, not configuration threaded ([0.217])
+        if f.ty == Ty::Group && f.interface.is_none() && whole {
             out.push(Diag::new(Code::W206, f.name.span, None, format!(
                 "the group `{}` is handed on whole and never read here: configuration threaded \
                  through a level that reads none of it.  Let the component that reads it take it \

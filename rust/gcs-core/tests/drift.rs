@@ -203,6 +203,23 @@ component Plate(c: point, m: group) {
     assert!(of("W206", src).is_empty(), "{:?}", lint(src));
 }
 
+/// A group typed by an interface is a part's specification — a catalogue row, a port — and a
+/// bundle handing it whole to the part that reads it composes, threading nothing ([0.217],
+/// `std.bearings`' `OnShaft`): no W206, where the same group untyped is.
+#[test]
+fn a_typed_group_handed_on_whole_is_composed() {
+    let src = "\
+interface Size { r: Length }
+component Inner(o: point, dims: Size) {
+  c := circle(center: o) hint(r: dims.r)
+}
+component Outer(o: point, dims: Size) {
+  i := Inner(o, dims)
+}
+";
+    assert!(of("W206", src).is_empty(), "{:?}", lint(src));
+}
+
 /// Advisory: elaboration never raises a pattern, so a document that trips every one elaborates as
 /// it would without the lint; and a module the document reads is not the document's text.
 #[test]

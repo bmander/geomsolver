@@ -25,6 +25,19 @@ impl<'a> Walk<'a> {
             return;
         }
         let mut read = Vec::new();
+        // the members read past a name, every statement's (`b.od` of `b.od seats_in st.seat`):
+        // where `b` hands out a datum in `od`, a port, it is read as a frame ([0.217])
+        let mut ported = Vec::new();
+        for st in body {
+            if let Some(text) = self.prog.span_text(st.span) {
+                for u in crate::syntax::name_uses(text) {
+                    if let [(a, _), (b, _), ..] = u.parts.as_slice() {
+                        ported.push(format!("{}{a}.{b}", scope.prefix()));
+                    }
+                }
+            }
+        }
+        self.standard.ported.extend(ported);
         for st in body {
             self.paths(st, &mut |parts| {
                 if let Some(of) = self.datum_of(parts) {
@@ -174,7 +187,9 @@ impl<'a> Walk<'a> {
     ) -> Option<InPlane> {
         let prefix = scope.prefix().to_string();
         let abs = format!("{prefix}{}", inst.name.text);
-        if !self.standard.outside.contains(&abs) {
+        let ported = exports_datum(comp).iter()
+            .any(|g| self.standard.ported.contains(&format!("{abs}.{g}")));
+        if !self.standard.outside.contains(&abs) && !ported {
             return None;
         }
         if !self.reads_datums(comp, &mut Vec::new()) {
@@ -192,6 +207,19 @@ impl<'a> Walk<'a> {
         self.charts.insert(keys::instance_frame(&abs));
         Some(InPlane::at(&Ref { root: name, path: Vec::new(), span: at }, scope))
     }
+}
+
+/// **The groups a definition declares that hand out a datum of its own** — its ports
+/// (`docs/ports-plan.md`, [0.217]), `od` of `od := {at: std.top, pocket: pocket}`: a mate through
+/// one reads the part's frame, so an instance whose port something outside reads stands in a
+/// frame of its own, as one whose `std` it reads does.
+fn exports_datum(comp: &Component) -> Vec<&str> {
+    comp.body.iter().filter_map(|st| match &st.kind {
+        StmtKind::Group(g) if g.fields.iter().any(|f| matches!(&f.value,
+            crate::syntax::InstVal::Ref(r) if r.root.text == "std" && !r.path.is_empty())) =>
+            Some(g.name.text.as_str()),
+        _ => None,
+    }).collect()
 }
 
 /// The definitions statements call, by the name each call writes, blocks' included.
