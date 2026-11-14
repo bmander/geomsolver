@@ -222,26 +222,31 @@ pub(crate) fn plunged_away(big: f64,small: f64,beta: f64,depth: f64) -> f64 {
     depth*ring.annulus([0.,0.,1.])+ring.volume()/2.
 }
 
-/// **A ring slid leaning past its fold is refused by name** (#805's negative control): at 60° from
-/// the slide, past `tan² β = (R − r)/r` (54.7°), the inner contour cusps — the fold locus, where the
-/// sheet doubles back, which no patch is cut at yet — so the build is refused as `Folded` at a point
-/// of the inner contact, never built wrong; and the admission (`closed::reads`) refuses it alike.
+/// **A ring slid leaning past its fold is swept by the contact's road** (#880 T1; #805's negative
+/// control before it): at 60° from the slide, past `tan² β = (R − r)/r` (54.7°), the inner contour
+/// cusps — the fold locus, where the sheet doubles back — which the closed class's admission still
+/// refuses by name as `Folded` at a point of the inner contact (`closed::reads`); its build asks
+/// the contact's road, whose trim keeps of the folded sheet what bounds the sweep. Held to the
+/// sweep's volume line by line (`torus_pushed_by_lines`, apart from the kernel, to 1e-9) within
+/// 1e-6 of it — 6.6e-8 today: near the cusps' paths the sheet's two leaves stand nearly tangent,
+/// and the trim reads them no closer (the fold cut, #880 T1).
 #[test]
-fn a_ring_slid_past_its_fold_is_refused_by_name() {
+fn a_ring_slid_past_its_fold_is_swept_by_the_contacts_road() {
     use gcs_core::brep::swept::closed::reads;
     let ring = Ring::leaning(3.,1.,60f64.to_radians());
     let tool = torus([0.;3],ring.frame.z,3.,1.).unwrap();
     let path = slide([0.,0.,6.]);
-    for refused in [closed(&tool,&path,[0.,1.],0.002,1e-6).map(|_| ()),reads(&tool,&path).map(|_| ())] {
-        match refused {
-            Err(Unbuilt::Folded {at}) => {
-                assert!(ring.inside(at).abs() <= 1e-9,"a point of the ring: {at:?}");
-                let l = ring.frame.local(at);
-                assert!(l[0].hypot(l[1]) < 3.,"of its inner contact: {at:?}");
-            }
-            other => panic!("refused by name as folded, not {:?}",other.err()),
+    match reads(&tool,&path) {
+        Err(Unbuilt::Folded {at}) => {
+            assert!(ring.inside(at).abs() <= 1e-9,"a point of the ring: {at:?}");
+            let l = ring.frame.local(at);
+            assert!(l[0].hypot(l[1]) < 3.,"of its inner contact: {at:?}");
         }
+        other => panic!("read as folded, not {:?}",other.err()),
     }
+    let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap_or_else(|e| panic!("{e:?}"));
+    let expected = torus_pushed_by_lines([0.;3],ring.frame.z,3.,1.,6.,None,1e-9);
+    assert!((volume(&built)-expected).abs() <= 1e-6*expected,"{} against {expected}",volume(&built));
 }
 
 
@@ -581,4 +586,150 @@ fn the_slid_touches_build_through_their_given_touches() {
         slid_closes(35.,[0.,0.,6.]);
         mill_closes(&Mill {big:2.,c:0.5,top:0.,h:3.},scale(unit([0.5,0.2,-1.]),5.));
     });
+}
+
+/// `∫ f` over `[lo, hi]` within `tol`, by Gauss–Kronrod's 7–15 rule halved where its two estimates
+/// part by more than their share of `tol` — never below the estimate's own rounding, nor past
+/// twenty halvings, so a share `f`'s noise cannot meet stops there.
+pub(crate) fn kronrod(f: &dyn Fn(f64) -> f64,lo: f64,hi: f64,tol: f64) -> f64 {
+    const XK: [f64;8] = [0.991455371120812639,0.949107912342758525,0.864864423359769073,0.741531185599394440,
+        0.586087235467691130,0.405845151377397167,0.207784955007898468,0.];
+    const WK: [f64;8] = [0.022935322010529225,0.063092092629978553,0.104790010322250184,0.140653259715525919,
+        0.169004726639267903,0.190350578064785410,0.204432940075298892,0.209482141084727828];
+    const WG: [f64;4] = [0.129484966168869693,0.279705391489276668,0.381830050505118945,0.417959183673469388];
+    fn go(f: &dyn Fn(f64) -> f64,lo: f64,hi: f64,tol: f64,depth: u32) -> f64 {
+        let (m,h) = (0.5*(lo+hi),0.5*(hi-lo));
+        let (mut k,mut g) = (WK[7]*f(m),WG[3]*f(m));
+        for i in 0..7 {
+            let s = f(m-h*XK[i])+f(m+h*XK[i]);
+            k += WK[i]*s;
+            if i % 2 == 1 { g += WG[i/2]*s }
+        }
+        let (k,g) = (k*h,g*h);
+        if (k-g).abs() <= tol.max(1e-14*k.abs()) || depth >= 20 { return k }
+        go(f,lo,m,tol/2.,depth+1)+go(f,m,hi,tol/2.,depth+1)
+    }
+    go(f,lo,hi,tol,0)
+}
+
+/// **What a torus pushed along `z` sweeps, line by line** (#880 T1: past its fold too), apart from
+/// the kernel: the torus about `centre` along the unit `axis`, middle radius `big` and tube
+/// `small`, carried `push` along `z`. The vertical line through `(x, y)` meets it in the intervals
+/// between the real roots of a quartic in its height (`(s + w² + R² − r²)² = 4R² (s + w² − (b + n_z
+/// w)²)`, `w` the height over the centre, `s` and `b` the line's own), each isolated between the
+/// quartic's turning points and bisected; the push lengthens each by `push` the way it goes, and
+/// the line keeps their union, clipped to `within` where given. Across `y` at each `x` that length
+/// is smooth but where the line's make-up changes: where it crosses the outline seen down `z` (a
+/// root pair born or lost, at the outline's crossings, found in its own parameter so none is missed
+/// however narrow, as between a folded outline's cusps), and where two intervals run together or an
+/// end crosses a clip (a scan of 400 lines, bisected); each smooth piece is read by
+/// `swept_loci::integral`, its square-root ends tamed. Over `x`, by `kronrod` to `tol`, split where
+/// the outline turns back in `x`.
+pub(crate) fn torus_pushed_by_lines(centre: V,axis: V,big: f64,small: f64,push: f64,within: Option<[f64;2]>,tol: f64) -> f64 {
+    let reach = big+small;
+    // the swept length on the line, and its make-up: how many roots, intervals kept, ends clipped
+    let line = |x: f64,y: f64| -> (f64,[u32;4]) {
+        let (qx,qy) = (x-centre[0],y-centre[1]);
+        let (s,b) = (qx*qx+qy*qy,qx*axis[0]+qy*axis[1]);
+        let a = s+big*big-small*small;
+        let r4 = 4.*big*big;
+        // w⁴ + c2 w² + c1 w + c0
+        let (c2,c1,c0) = (2.*a-r4*(1.-axis[2]*axis[2]),2.*r4*b*axis[2],a*a-r4*(s-b*b));
+        let f = |w: f64| ((w*w+c2)*w+c1)*w+c0;
+        // the quartic's turning points, the real roots of its derivative `4w³ + 2 c2 w + c1` (a
+        // depressed cubic, by its trigonometric or Cardano form), cut the line into stretches each
+        // holding at most one root of its own, found by bisection to rounding
+        let (p,q) = (c2/2.,c1/4.);
+        let disc = q*q/4.+p*p*p/27.;
+        let mut turns: Vec<f64> = if disc > 0. {
+            let u = (-q/2.+disc.sqrt()).cbrt();
+            vec![u-if u != 0. { p/(3.*u) } else { 0. }]
+        } else {
+            let m = 2.*(-p/3.).sqrt();
+            let phi = if m > 0. { (3.*q/(p*m)).clamp(-1.,1.).acos()/3. } else { 0. };
+            (0..3).map(|k| m*(phi-2.*PI*k as f64/3.).cos()).collect()
+        };
+        turns.sort_by(f64::total_cmp);
+        let far = 2.*(1.+c2.abs()+c1.abs()+c0.abs()).sqrt().sqrt()+reach;
+        let mut ends = vec![-far];
+        ends.extend(turns);
+        ends.push(far);
+        let mut roots: Vec<f64> = ends.windows(2).filter_map(|w| {
+            let (mut a,mut b) = (w[0],w[1]);
+            let (fa,fb) = (f(a),f(b));
+            if fa == 0. { return Some(a) }
+            if (fa < 0.) == (fb < 0.) { return None }
+            for _ in 0..200 { let m = 0.5*(a+b); if m <= a || m >= b { break } if (f(m) < 0.) == (fa < 0.) { a = m } else { b = m } }
+            Some(0.5*(a+b))
+        }).collect();
+        roots.sort_by(f64::total_cmp);
+        let mut swept: Vec<[f64;2]> = roots.windows(2).filter(|p| f(0.5*(p[0]+p[1])) < 0.)
+            .map(|p| [centre[2]+p[0]+push.min(0.),centre[2]+p[1]+push.max(0.)]).collect();
+        swept.sort_by(|p,q| p[0].total_cmp(&q[0]));
+        let mut merged: Vec<[f64;2]> = Vec::new();
+        for iv in swept {
+            match merged.last_mut() { Some(m) if iv[0] <= m[1] => m[1] = m[1].max(iv[1]),_ => merged.push(iv) }
+        }
+        let [lo,hi] = within.unwrap_or([f64::NEG_INFINITY,f64::INFINITY]);
+        let clipped = |k: usize| merged.iter().map(|iv| iv[k]).filter(|&e| e < lo || e > hi).count() as u32;
+        (merged.iter().map(|iv| (iv[1].min(hi)-iv[0].max(lo)).max(0.)).sum(),[roots.len() as u32,merged.len() as u32,clipped(0),clipped(1)])
+    };
+    // the outline seen along `z`: where the torus's normal is level, `tan v = −(cos u e1_z + sin u
+    // e2_z)/n_z` and the half turn on, read at 20000 points of each branch
+    let (e1,e2) = gcs_core::space::across(axis);
+    let outline_at = |shift: f64,u: f64| -> [f64;2] {
+        let (su,cu) = u.sin_cos();
+        let v = (-(cu*e1[2]+su*e2[2])/axis[2]).atan()+shift;
+        let (sv,cv) = v.sin_cos();
+        let out = big+small*cv;
+        [centre[0]+out*(cu*e1[0]+su*e2[0])+small*sv*axis[0],centre[1]+out*(cu*e1[1]+su*e2[1])+small*sv*axis[1]]
+    };
+    let outline: Vec<(f64,Vec<[f64;2]>)> = [0.,PI].iter().map(|&shift| (shift,(0..=20000).map(|k| outline_at(shift,TAU*k as f64/20000.)).collect())).collect();
+    let across = |x: f64| -> f64 {
+        let (y0,y1) = (centre[1]-reach,centre[1]+reach);
+        let scan = 400;
+        let ys: Vec<f64> = (0..=scan).map(|k| y0+(y1-y0)*k as f64/scan as f64).collect();
+        let kinds: Vec<[u32;4]> = ys.iter().map(|&y| line(x,y).1).collect();
+        let mut cuts = vec![y0];
+        for k in 0..scan {
+            if kinds[k] == kinds[k+1] { continue }
+            let (mut a,mut b) = (ys[k],ys[k+1]);
+            for _ in 0..80 { let m = 0.5*(a+b); if line(x,m).1 == kinds[k] { a = m } else { b = m } }
+            cuts.push(0.5*(a+b));
+        }
+        // and where the outline crosses the line `x`: each sample pair astride it, bisected in `u`
+        for (shift,branch) in &outline {
+            for (k,w) in branch.windows(2).enumerate() {
+                if (w[0][0] < x) == (w[1][0] < x) { continue }
+                let (mut lo,mut hi) = (TAU*k as f64/20000.,TAU*(k+1) as f64/20000.);
+                let below = w[0][0] < x;
+                for _ in 0..60 { let m = 0.5*(lo+hi); if (outline_at(*shift,m)[0] < x) == below { lo = m } else { hi = m } }
+                cuts.push(outline_at(*shift,0.5*(lo+hi))[1]);
+            }
+        }
+        cuts.push(y1);
+        cuts.sort_by(f64::total_cmp);
+        cuts.dedup_by(|p,q| (*p-*q).abs() <= 1e-12);
+        cuts.windows(2).map(|w| crate::swept_loci::integral(w[0],w[1],16,&|y| line(x,y).0)).sum()
+    };
+    // over `x`, split where the outline turns back in `x` (its extremes and its cusps: where the
+    // number of its crossings with a line changes), each turn bisected in `u`
+    let mut xs = vec![centre[0]-reach,centre[0]+reach];
+    for (shift,branch) in &outline {
+        let dx: Vec<f64> = branch.windows(2).map(|w| w[1][0]-w[0][0]).collect();
+        for k in 0..dx.len()-1 {
+            if (dx[k] < 0.) == (dx[k+1] < 0.) { continue }
+            let rising = dx[k] > 0.;
+            let (mut lo,mut hi) = (TAU*k as f64/20000.,TAU*(k+2) as f64/20000.);
+            for _ in 0..60 {
+                let (m1,m2) = (lo+(hi-lo)/3.,hi-(hi-lo)/3.);
+                let (a,b) = (outline_at(*shift,m1)[0],outline_at(*shift,m2)[0]);
+                if (a < b) == rising { lo = m1 } else { hi = m2 }
+            }
+            xs.push(outline_at(*shift,0.5*(lo+hi))[0]);
+        }
+    }
+    xs.sort_by(f64::total_cmp);
+    xs.dedup_by(|p,q| (*p-*q).abs() <= 1e-12);
+    xs.windows(2).map(|w| kronrod(&across,w[0],w[1],tol*(w[1]-w[0])/(2.*reach))).sum()
 }

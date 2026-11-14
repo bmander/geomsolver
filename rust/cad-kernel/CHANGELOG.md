@@ -8,6 +8,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A sheet that folds under a slide, a turn or a screw goes the contact's road** (`swept::closed`,
+  #880 T1): what the closed class refuses as `Folded` under a constant twist is asked of the road,
+  as `Curved` is, whose trim keeps of each folded sheet what bounds the sweep. brep-bench's
+  `swept/ring-pushed-in-past-its-fold` and `swept/ball-screwed-round-a-tight-helix` build, each to a
+  volume made apart from the build within about 1e-7 of it (not yet at the kernel's tolerance: near
+  a cusp's path the two leaves stand nearly tangent); a ring slid past its fold and a ball screwed
+  tighter than its radius, refused by name before, build too.
 - **A ball rolls on a B-spline sheet** (`fillet::roll`): brep-bench's fillet/bezier-dome-one-edge
   builds, its volume within 1.2e-8 of one integrated from the patch alone. A sheet's offset is read
   by its signed distance, on the sheet carried on past its domain by its own polynomials:
@@ -19,8 +26,7 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   ("coincide or touch to higher order"); and an edge lying along a face is split where it crosses the
   face's edges though neither is a line or a conic (`query::enclosed_crossings`, where it was left
   whole), so a Boolean's root where an edge touches a round flatly is the round's contact crossing
-  it. `roll`'s refusal for a kind with no offset read
-  names the kinds it rounds.
+  it. `roll`'s refusal for a kind with no offset read names the kinds it rounds.
 
 ## [0.13.0] - 2026-11-13
 

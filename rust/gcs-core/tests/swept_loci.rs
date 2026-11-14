@@ -8,7 +8,7 @@
 //! sweep's definition, and to membership.
 use gcs_core::brep::geom::{Carry,Frame,Pipe};
 use gcs_core::brep::props::volume;
-use gcs_core::brep::swept::closed::{Unbuilt,closed};
+use gcs_core::brep::swept::closed::closed;
 use gcs_core::brep::trajectory::{Screw,Trajectory};
 use std::f64::consts::{PI,TAU};
 
@@ -19,7 +19,7 @@ fn screw(theta: f64,k: f64) -> Trajectory {
 
 /// `∫ f` over `[a, b]` by Gauss–Legendre's eight points (`integral::GAUSS8`) on each of `n` pieces,
 /// each read at `a + (b − a)(1 − cos τ)/2` so that a square-root end is smooth in `τ`.
-fn integral(a: f64,b: f64,n: usize,f: &dyn Fn(f64) -> f64) -> f64 {
+pub(crate) fn integral(a: f64,b: f64,n: usize,f: &dyn Fn(f64) -> f64) -> f64 {
     if !(b > a) { return 0. }
     let g = |t: f64| { let (s,c) = t.sin_cos(); f(0.5*(a+b)-0.5*(b-a)*c)*0.5*(b-a)*s };
     (0..n).map(|i| {
@@ -107,6 +107,40 @@ fn swept_volume(r: f64,d: f64,k: f64,theta: f64) -> f64 {
     }
     cuts.sort_by(f64::total_cmp);
     cuts.windows(2).map(|w| integral(w[0],w[1],32,&at_rho)).sum()
+}
+
+/// **The volume a ball of radius `r` about `(d, 0, 0)` sweeps screwed about the world's `z` through
+/// `theta` radians, rising `k` a radian, by the circles about the axis** (#880 T1), apart from the
+/// kernel and from `swept_volume`, which takes the ball clear of the axis: this one any ball, the
+/// pipe folding or not. On the circle of radius `ρ` at height `z`, the ball screwed through `φ`
+/// covers the arc about `φ` where `cos(ψ − φ) ≥ c(φ) = (ρ² + d² + (z − kφ)² − r²)/2ρd`, of
+/// half-width `w = acos c`, every point where `c ≤ −1`, none where `c > 1`. Over the rolls with `c
+/// ≤ 1`, one stretch, the arcs run together into `[min (φ − w), max (φ + w)]` of the unwrapped
+/// angle, so the circle is covered `min(L, 2π)` of its `2π`: each extreme sampled at 256 rolls and
+/// polished by Brent's method (`most`). The volume is `∫ ρ ∫ min(L, 2π) dz dρ`, each by
+/// `swept_slid::kronrod`.
+pub(crate) fn swept_by_circles(r: f64,d: f64,k: f64,theta: f64,tol: f64) -> f64 {
+    let covered = |rho: f64,z: f64| -> f64 {
+        // the rolls with `c ≤ 1`: `(z − kφ)² ≤ r² − (ρ − d)²`
+        let reach = r*r-(rho-d)*(rho-d);
+        if !(reach > 0.) || !(rho > 0.) { return 0. }
+        let s = reach.sqrt();
+        let (lo,hi) = (((z-s)/k).max(0.),((z+s)/k).min(theta));
+        if !(hi > lo) { return 0. }
+        // a roll with `c ≤ −1` covers the whole circle: `(z − kφ)² ≤ r² − (ρ + d)²`
+        let whole = r*r-(rho+d)*(rho+d);
+        if whole >= 0. { let s = whole.sqrt(); if ((z-s)/k).max(0.) <= ((z+s)/k).min(theta) { return TAU } }
+        let w = |phi: f64| { let zb = z-k*phi; ((rho*rho+d*d+zb*zb-r*r)/(2.*rho*d)).clamp(-1.,1.).acos() };
+        let extreme = |f: &dyn Fn(f64) -> f64| -> f64 {
+            let n = 256;
+            let i = (0..=n).max_by(|&i,&j| f(lo+(hi-lo)*i as f64/n as f64).total_cmp(&f(lo+(hi-lo)*j as f64/n as f64))).unwrap();
+            let at = |i: usize| lo+(hi-lo)*i.min(n) as f64/n as f64;
+            most(at(i.saturating_sub(1)),at(i+1),f).1
+        };
+        let l = extreme(&|phi| phi+w(phi))+extreme(&|phi| w(phi)-phi);
+        l.min(TAU)
+    };
+    crate::swept_slid::kronrod(&|rho| rho*crate::swept_slid::kronrod(&|z| covered(rho,z),-r,k*theta+r,tol/(d+r)),0.,d+r,tol)
 }
 
 /// **The sweep's definition sampled**: whether the ball of radius `r` about `(d, 0, 0)`, screwed
@@ -198,17 +232,20 @@ fn a_pipe_comes_back_onto_itself_along_helices() {
     assert!(pipe(0.4).returns([TAU-2.*w-1e-9,2.*TAU],1e-9).unwrap().is_empty());
 }
 
-/// **A ball's pipe that would fold is refused by name**: a ball reaching past its centre's helix's
-/// radius of curvature, `(ρ² + κ²)/ρ`, would fold its pipe (its fold locus, the design's step after)
-/// — refused as `Folded` at the ball's centre (#805: the fold's one name, a slid ring's too), not
-/// built and not returned wrong.
+/// **A ball's pipe that folds is swept by the contact's road** (#880 T1; refused by name as
+/// `Folded` before it, #805): a ball reaching past its centre's helix's radius of curvature, `(ρ² +
+/// κ²)/ρ`, folds its pipe, which the closed class reads as `Folded` at the ball's centre; under a
+/// constant twist that refusal is asked of the contact's road, whose trim keeps of the folded pipe
+/// what bounds the sweep. Held to the sweep's volume circle by circle (`swept_by_circles`, apart
+/// from the kernel, to 1e-9) within 1e-6 of it — 2.3e-7 today: near the fold's cuspidal edge the
+/// pipe's two leaves stand nearly tangent, and the trim reads them no closer (the fold cut, #880
+/// T1).
 #[test]
-fn a_ball_screwed_tighter_than_its_radius_is_refused_by_name() {
+fn a_ball_screwed_tighter_than_its_radius_is_swept_by_the_contacts_road() {
     let tool = gcs_core::brep::build::sphere([0.5,0.,0.],[0.,0.,1.],1.2).unwrap();
-    match closed(&tool,&screw(2.,0.1),[0.,1.],0.002,1e-6) {
-        Err(Unbuilt::Folded {at}) => assert!(gcs_core::space::distance(at,[0.5,0.,0.]) <= 1e-12),
-        other => panic!("{other:?}"),
-    }
+    let built = closed(&tool,&screw(2.,0.1),[0.,1.],0.002,1e-6).unwrap_or_else(|e| panic!("{e:?}"));
+    let expected = swept_by_circles(1.2,0.5,0.1,2.,1e-9);
+    assert!((volume(&built)-expected).abs() <= 1e-6*expected,"{} against {expected}",volume(&built));
 }
 
 

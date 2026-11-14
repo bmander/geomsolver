@@ -301,7 +301,8 @@ subtraction class builds a spur rack's, is left open: its tooth is no prism squa
 `gcs-cli/src/cad/native/sweep_boundary.rs`: cutters sectioned (`backend/sections.cpp`), contact
 times from `SweepContacts::at_point_normal_over` (`PointContactError`), sheets traced and
 resampled by the core (`solid::contact_trace`, fed section samples and nothing else; rows stop
-outside the blank before a time leaps: `charted`; fall by walk length, or by length in space where
+outside the blank before a time leaps: `charted`, leaned across the stations where a leap pins
+them in it: `sheared`; fall by walk length, or by length in space where
 that fit misses or folds: `Rows`), indexed by the declared motion, blank split (fuzzy 1e-5 mm),
 cells judged by `MaterialEvaluator::probe`. The construction is in mm, a field in the document's
 units: every field it asks is a `solid::Millimetres` (points, values, a probe's radius in mm; its
@@ -1150,6 +1151,27 @@ no way, and where a section runs in square to the turn's velocity at its end its
 (1e-10 a step) and its points' own error turned it back and forth, the coin drawn on its rim cut
 twice a hair from its end and its plane's pieces left open.
 
+**A sheet that folds goes the contact's road too** (`closed::closed`, #880 T1): under a constant
+twist the closed class's `Folded` — a ring slid leaning past `tan² β = (R − r)/r`, its inner contour
+cusping seen down the push; a ball screwed round a helix tighter than its radius, its pipe folding —
+is asked of the road as `Curved` is, and the trim keeps of each folded sheet what bounds the sweep.
+brep-bench's `ring-pushed-in-past-its-fold` and `ball-screwed-round-a-tight-helix` build through
+the front door to volumes made apart from the build — the ring line by line down the push, each
+line's intervals a quartic's roots with the outline's crossings as breakpoints
+(`swept_slid::torus_pushed_by_lines`), the ball circle by circle about the axis, each covered
+`min(L, 2π)` (`swept_loci::swept_by_circles`, any ball, its pipe folding or not) — within ten
+tolerances at 1e-5 and with STEP files that read back
+(`swept_contacts::a_sheet_that_folds_is_cut_through_the_front_door`), and #805's two negative
+controls, the ring slid at 60° and the ball screwed tighter than its radius, build within 1e-6
+(`swept_slid::a_ring_slid_past_its_fold_is_swept_by_the_contacts_road`,
+`swept_loci::a_ball_screwed_tighter_than_its_radius_is_swept_by_the_contacts_road`). **Not yet the
+fold cut proper**: each folded case stands 1e-7 to 2e-7 off, where the road's unfolded ones stand at
+1e-9 — every line down the ring's push agrees with its definition to 1e-8 on grids to 0.012, so what
+is off is thinner, near a cusp's path, where the two leaves are nearly tangent and the trim reads
+them no closer. A cut at the fold alone (each piece cut where its image in the motion's invariants
+turns back) moved neither, and was not kept. (brep-bench's cadrs builds the ball to 282.091, 11%
+over the sweep's 253.4494.)
+
 **A point's side off the nearest feature's pseudo-normal** (`member::Solid::signed_near`, #880
 Q1b): a point whose nearest point of the tool's mesh lies on a vertex or an edge is read by that
 feature's pseudo-normal — a vertex's, its triangles' unit normals weighted by their angles there; an
@@ -1841,6 +1863,30 @@ is left at that side; the rows are then trimmed at the kept columns' leaps as be
 past the band's start by `Cutter::turned`, `sweep::traced_turned`). So are the configured pair's
 gear cut with a 90.37 mm cutter and both members of the 25-tooth pair built, where that refusal
 was seen too.
+
+**A sheet's rows lean where a leap pins them in the blank (#904):** a column holding the blank
+leaps where its contact curve runs into a convex corner's fan of the cutter (the neighbour's flank
+meeting the crown's floor, `Space`), a fixed walk past where it leaves the blank. Where the blank's
+edge crosses the stations obliquely (a bevel gear's face 0.3 R wide, on a drive), the corner does
+too, and rows at one walk length in every column cannot be past the blank in one column and before
+the corner in another: trimmed at the first leap (`charted`) the kept rows stopped in the blank
+(`pinned`), and no margin moved the corner, "the candidate sheet cannot be widened out of the
+blank". The rows are then leaned (`Shear`: row `x` at station angle `a` is walk length
+`x + slope·(a − at)`, `at` the band's middle) by the slope among `SLOPES` each side of none that
+keeps the nearest leap furthest outside the rows the blank holds once leaned, where that is further
+than none keeps it and at least a row and a half (`sheared`), up to `SHEARS` times; the columns are
+traced again over the leaned span, and every station a finer grid or a withheld contact asks for
+is read leaned alike (`Layout::station`, `Layout::at`, `Anchors` in row coordinates). Rows never
+pinned are not leaned, and their sheet is traced as it was; rows a widened margin once carried past
+their pin (the drive's gear relief, at its fourth margin) are leaned at the first instead. A leaned
+sheet is said so (`its rows leaned … to leave the blank before a leap`). A leap within the rows a
+column itself holds in the blank is no lean's to clear, and stays the chart contract's
+(`contact_trace::rows_pinned_by_an_oblique_corner_are_leaned_clear_of_it`;
+`hypoid_machine::a_gear_whose_blanks_edge_crosses_the_stations_obliquely_is_built`, slow: the
+18/54 pair at no offset on 0.3 R faces, the same solid with the crown's floor 2 and 3 normal
+modules down, to the fit). Left open: the 24/48 hypoid of `hypoid_machine::scaled_pair` on 0.3 R
+faces is leaned out of the blank, but its fitted sheet then folds in the blank under either row
+placement (by walk length it folds there on its own 0.2 R faces too, and by length in space holds).
 
 **A fold's gap outside the blank is crossed, not turned at (#904 A1/A2):** where a station's root
 meets the other in a fold of the time chart outside the blank and comes back further along the walk
