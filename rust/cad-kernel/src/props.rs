@@ -44,6 +44,75 @@ fn gauss2(a: f64,b: f64,mut f: impl FnMut(f64) -> f64) -> f64 {
     h*(f(m-k)+f(m+k))
 }
 
+/// **A swept sheet's face across its fold, read by columns** (#880 T1b): where a carried section's
+/// sheet folds within the face (`Surface::Blend`, its two rates running together along the fold
+/// point's path, `|S_u × S_v|` falling to nothing beside a use of the face's loops), a point beside
+/// the fold stands in the parameters at the square root of its distance in space, so a use's curve
+/// inverted onto the sheet there is off along the fold's way by that much. Green's theorem
+/// (`integrated`) reads it through `G`, the integrand gathered from the face's middle, which is no
+/// smaller there, and on the ball screwed tighter than its radius two such faces read 1.65e-7 and
+/// 4e-8 off their own boundaries. Read instead as `∬ g du dv` column by column in `u` — each
+/// column's crossings with the loops bisected on the uses' own curves, `g` gathered between them —
+/// the error stands where `g` itself vanishes, at the fold. `None` for any other face.
+fn by_columns(b: &Brep,f: &Face,area: bool) -> Option<f64> {
+    let s = &f.surface;
+    if !matches!(s,Surface::Blend(..)) { return None }
+    let factor = |uv: Uv| { let (_,su,sv) = s.d1(uv); crate::util::space::norm(cross(su,sv))/(crate::util::space::norm(su)*crate::util::space::norm(sv)).max(1e-300) };
+    // each use's curve in the parameters, read at points along its edge (in the loop's order)
+    const N: usize = 256;
+    let uses: Vec<Vec<(f64,Uv)>> = f.loops.iter().flatten().map(|c| {
+        let e = &b.edges[c.edge as usize];
+        let mut pts: Vec<(f64,Uv)> = (0..=N).map(|k| { let t = e.t[0]+(e.t[1]-e.t[0])*k as f64/N as f64; (t,c.pcurve.at(t,e,s,&b.vertices)) }).collect();
+        if c.reversed { pts.reverse() }
+        pts
+    }).collect();
+    if !uses.iter().flatten().any(|&(_,uv)| factor(uv) < 1e-6) { return None }
+    let curves: Vec<(&Pcurve,&super::topo::Edge)> = f.loops.iter().flatten().map(|c| (&c.pcurve,&b.edges[c.edge as usize])).collect();
+    let g = |u: f64,v: f64| { let (x,su,sv) = s.d1([u,v]); let n = cross(su,sv); if area { crate::util::space::norm(n) } else { dot(x,n) } };
+    // the columns' crossings: each sampled stretch of a use astride `u`, bisected on its own curve
+    let column = |u: f64| -> f64 {
+        let mut vs: Vec<f64> = Vec::new();
+        for (k,pts) in uses.iter().enumerate() {
+            let (pc,e) = curves[k];
+            for w in pts.windows(2) {
+                let ((t0,p),(t1,q)) = (w[0],w[1]);
+                if (p[0] < u) == (q[0] < u) { continue }
+                let below = p[0] < u;
+                let (mut lo,mut hi) = (t0,t1);
+                let mut at = p;
+                for _ in 0..52 {
+                    let m = 0.5*(lo+hi);
+                    at = pc.at(m,e,s,&b.vertices);
+                    if (at[0] < u) == below { lo = m } else { hi = m }
+                }
+                vs.push(at[1]);
+            }
+        }
+        vs.sort_by(f64::total_cmp);
+        vs.chunks(2).filter(|c| c.len() == 2).map(|c| gauss(c[0],c[1],4,&mut |v| g(u,v))).sum()
+    };
+    // over `u`, cut where a column's crossings change: at the uses' ends and where a use turns in `u`
+    let mut cuts: Vec<f64> = Vec::new();
+    for pts in &uses {
+        cuts.push(pts[0].1[0]);
+        cuts.push(pts[pts.len()-1].1[0]);
+        for w in pts.windows(3) { if (w[1].1[0]-w[0].1[0])*(w[2].1[0]-w[1].1[0]) < 0. { cuts.push(w[1].1[0]) } }
+    }
+    cuts.sort_by(f64::total_cmp);
+    cuts.dedup_by(|x,y| (*x-*y).abs() <= 1e-14);
+    let mut column = column;
+    let total: f64 = cuts.windows(2).map(|w| settled(w[0],w[1],4,&mut column)).sum();
+    // the face's side, as Green's theorem takes it: the way its loops run round the parameters
+    let mut turned = 0.;
+    let mut k = 0;
+    for l in &f.loops {
+        let ring: Vec<Uv> = uses[k..k+l.len()].iter().flatten().map(|&(_,uv)| uv).collect();
+        k += l.len();
+        turned += (0..ring.len()).map(|i| { let (p,q) = (ring[i],ring[(i+1)%ring.len()]); p[0]*q[1]-q[0]*p[1] }).sum::<f64>();
+    }
+    Some(if area { total.abs() } else { total*turned.signum() })
+}
+
 /// `gauss` over `pieces`, then twice as many, keeping the coarser reading where they agree.
 /// Otherwise refine each piece locally: a circle passing close to a ball's pole can sweep half
 /// a turn of `u` in a tiny part of its span, which six doublings of the whole edge still miss.
@@ -480,6 +549,7 @@ pub fn area(b: &Brep,f: &Face) -> f64 {
 
 /// `terms`, of the flux or (`area`) of the area.
 fn integrated(b: &Brep,f: &Face,area: bool) -> Vec<Vec<(f64,f64)>> {
+    if let Some(v) = by_columns(b,f,area) { return vec![vec![(v,0.)]] }
     {
         let mut out: Vec<Vec<(f64,f64)>> = Vec::new();
         let s = &f.surface;

@@ -279,7 +279,7 @@ fn a_pipe_comes_back_onto_itself_along_helices() {
 /// `Folded` before it, #805): a ball reaching past its centre's helix's radius of curvature, `(ρ² +
 /// κ²)/ρ`, folds its pipe, which the closed class reads as `Folded` at the ball's centre; under a
 /// constant twist that refusal is asked of the contact's road, whose trim keeps of the folded pipe
-/// what bounds the sweep. Held within 1e-6 at 1e-6 (2.8e-7 of it; 3.3e-9 at the kernel's
+/// what bounds the sweep. Held within 1e-6 at 1e-6 (2.8e-7 of it; 2.4e-10 at the kernel's
 /// tolerance) to the sweep's volume circle by circle, 11.7537013464 (`swept_by_circles`, apart
 /// from the kernel, unchanged from 1e-8 to 1e-10; `the_tight_balls_reference_is_its_definition`).
 #[test]
@@ -289,17 +289,16 @@ fn a_ball_screwed_tighter_than_its_radius_is_swept_by_the_contacts_road() {
     assert!((volume(&built)-TIGHT).abs() <= 1e-6*TIGHT,"{} against {TIGHT}",volume(&built));
 }
 
-/// **The tight ball at the kernel's tolerance** (#880 T1b): within its boundary's area times the
-/// tolerance of its volume circle by circle — 3.9e-8 today, 3.3e-9 of it, its volume read no
-/// closer: its faces' vector areas close to 1.8e-7, and moved 50 along z it reads 3e-6 apart.
+/// **The tight ball at the kernel's tolerance** (#880 T1b): within 1e-9 of its volume circle by
+/// circle, 2.4e-10 today — its two faces across the pipe's fold read by columns (`props`), where
+/// Green's theorem read them 1.65e-7 and 4e-8 off their own boundaries and the ball 3.3e-9 off.
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about ten seconds: the ball at the kernel's tolerance")]
 fn the_tight_ball_holds_at_the_kernels_tolerance() {
     let tool = gcs_core::brep::build::sphere([0.5,0.,0.],[0.,0.,1.],1.2).unwrap();
     let tol = gcs_core::brep::geom::tolerance(tool.size());
     let built = closed(&tool,&screw(2.,0.1),[0.,1.],0.002,tol).unwrap_or_else(|e| panic!("{e:?}"));
-    let within = tol*crate::brep::total_area(&built);
-    assert!((volume(&built)-TIGHT).abs() <= within,"{} against {TIGHT}, within {within}",volume(&built));
+    assert!((volume(&built)-TIGHT).abs() <= 1e-9*TIGHT,"{} against {TIGHT}",volume(&built));
 }
 
 /// The volume the ball of radius 1.2 half out from the axis sweeps screwed 0.1 a radian through 2

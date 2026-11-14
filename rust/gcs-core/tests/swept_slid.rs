@@ -228,7 +228,7 @@ pub(crate) fn plunged_away(big: f64,small: f64,beta: f64,depth: f64) -> f64 {
 /// refuses by name as `Folded` at a point of the inner contact (`closed::reads`); its build asks
 /// the contact's road, whose trim keeps of the folded sheet what bounds the sweep. Held to the
 /// sweep's volume line by line (`torus_pushed_by_lines`, apart from the kernel, to 1e-9) within
-/// 1e-9 of it at the kernel's tolerance (3.7e-10 of it). Its stretches are cut clear of the cusps
+/// 1e-9 of it at the kernel's tolerance (3.4e-11 of it). Its stretches are cut clear of the cusps
 /// (`contacts::stretches`): cut at one, it was refused finer than 1e-6 (#880 T1b).
 #[test]
 fn a_ring_slid_past_its_fold_is_swept_by_the_contacts_road() {
