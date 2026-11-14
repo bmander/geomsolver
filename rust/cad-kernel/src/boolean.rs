@@ -2962,8 +2962,14 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool,tol: f64) -
         let (p,q) = (oriented(f,p),oriented(f,q));
         ((q[1]-p[1])*kv).datan2((q[0]-p[0])*ku)
     };
-    let leave: Vec<f64> = halves.iter().map(|h| dir_at(h,true,1e-4)).collect();
-    let arrive_back: Vec<f64> = halves.iter().map(|h| dir_at(h,false,1e-4)).collect();
+    // each read first a ten-thousandth along it — or a fiftieth beside a fold (`NEAR_FOLD`, a
+    // folded sheet's cuspidal edge, the fold point's path), where a point beside the node stands in
+    // the parameters at the square root of its distance in space, and a curve's point a
+    // ten-thousandth along it, inverted, read its way off by radians, 0.26 for −2.3 on the ring at
+    // 65°. (Ways tied at a node are read again at one length, `way_at`, wherever they stand.)
+    let first = |p: Uv| if f.surface.area_factor(p) < super::geom::NEAR_FOLD { 0.02 } else { 1e-4 };
+    let leave: Vec<f64> = halves.iter().map(|h| dir_at(h,true,first(h.from))).collect();
+    let arrive_back: Vec<f64> = halves.iter().map(|h| dir_at(h,false,first(h.to))).collect();
     // where two halves leave a node within rounding of one way (two curves tangent there), read
     // apart by how they turn: the chord's way at a step `δ` along a half is `θ₀ + κ δ/2`, so read at
     // `δ` and `2δ` of its own length it gives `κ`, and the two compared at one length (the shorter

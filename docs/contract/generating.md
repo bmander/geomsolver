@@ -1164,13 +1164,36 @@ tolerances at 1e-5 and with STEP files that read back
 (`swept_contacts::a_sheet_that_folds_is_cut_through_the_front_door`), and #805's two negative
 controls, the ring slid at 60° and the ball screwed tighter than its radius, build within 1e-6
 (`swept_slid::a_ring_slid_past_its_fold_is_swept_by_the_contacts_road`,
-`swept_loci::a_ball_screwed_tighter_than_its_radius_is_swept_by_the_contacts_road`). **Not yet the
-fold cut proper**: each folded case stands 1e-7 to 2e-7 off, where the road's unfolded ones stand at
-1e-9 — every line down the ring's push agrees with its definition to 1e-8 on grids to 0.012, so what
-is off is thinner, near a cusp's path, where the two leaves are nearly tangent and the trim reads
-them no closer. A cut at the fold alone (each piece cut where its image in the motion's invariants
-turns back) moved neither, and was not kept. (brep-bench's cadrs builds the ball to 282.091, 11%
-over the sweep's 253.4494.)
+`swept_loci::a_ball_screwed_tighter_than_its_radius_is_swept_by_the_contacts_road`). The ring
+stands 5e-10 off at the kernel's tolerance as at 1e-5: its reference reads each line's length
+across `y` adaptively, to its share of the tolerance, where a fixed rule of 128 points a piece read
+it 4.6e-7 of itself over and moved by 4e-7 when doubled — near the cusps a line's length runs
+nearly square-root-like inside a piece. The balls' reference cuts each of its integrals where the
+integrand's make-up changes — over `z` where the rolls reach a circle's height, the end poses stop
+clamping them and whole circles start and stop; over `ρ` where a stretch of circles covered all
+round is born or dies — where uncut it read the bench's ball 3.5e-6 low; and its halving is taken
+only past three halvings (`swept_slid::kronrod`), the two rules having agreed on a piece both
+misread by 1.65e-4. Read so, every folded case the road builds stands within its tolerance: at the
+kernel's, the bench's ring 5e-10 off and its ball 4e-10, the ball screwed tighter than its radius
+2.4e-10, its faces across the pipe's fold read by columns (`props`)
+(`swept_contacts::the_fold_cases_hold_at_the_kernels_tolerance`,
+`swept_loci::the_tight_ball_holds_at_the_kernels_tolerance`), and the ring slid at 60° within 1e-9
+(`swept_slid::a_ring_slid_past_its_fold_is_swept_by_the_contacts_road`). **A stretch is cut
+clear of the folds** (`contacts::stretches`, #880 T1b): not within half its reach of where its
+image in the motion's invariants turns back, or barely moves against the piece — where the contact
+runs within a tenth of a radian of the flow. Drawn to the clearest point, a cut found the cusp,
+the swallowtail's tip, and the stretch ended on the fold's path, where the sheet's two rates run
+together: its meeting with an end pose was traced near the cusp on either leaf, and the pieces did
+not close (the ring slid at 60°, refused finer than 1e-6; pushed in at 60°, at every tolerance).
+**At a node where a face's rates nearly run together** (`geom::NEAR_FOLD`) — a fold's path
+through the middle of a stretch — a half's way is first read a fiftieth along it, not a
+ten-thousandth (`boolean`'s `leave` and `arrive_back`; ways tied there are read again at one length):
+there a point beside the node stands in the parameters at the square root of its distance in
+space, and a curve leaving the cusp at an end pose read 0.26 radians for −2.3, its pieces open (the
+ring at 65°, its cut held clear, at 1e-5). **Not yet:** the ring pushed in at 56°, its
+swallowtail 0.02 across, narrower than the piece's points, which turn back between two of them —
+refused by the hole its end pose's meeting leaves near the cusp. (brep-bench's cadrs builds the ball
+to 282.091, 11% over the sweep's 253.4494.)
 
 **A point's side off the nearest feature's pseudo-normal** (`member::Solid::signed_near`, #880
 Q1b): a point whose nearest point of the tool's mesh lies on a vertex or an edge is read by that

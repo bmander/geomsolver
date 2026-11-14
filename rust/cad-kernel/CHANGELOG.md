@@ -11,10 +11,23 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 - **A sheet that folds under a slide, a turn or a screw goes the contact's road** (`swept::closed`,
   #880 T1): what the closed class refuses as `Folded` under a constant twist is asked of the road,
   as `Curved` is, whose trim keeps of each folded sheet what bounds the sweep. brep-bench's
-  `swept/ring-pushed-in-past-its-fold` and `swept/ball-screwed-round-a-tight-helix` build, each to a
-  volume made apart from the build within about 1e-7 of it (not yet at the kernel's tolerance: near
-  a cusp's path the two leaves stand nearly tangent); a ring slid past its fold and a ball screwed
-  tighter than its radius, refused by name before, build too.
+  `swept/ring-pushed-in-past-its-fold` and `swept/ball-screwed-round-a-tight-helix` build, each at
+  the kernel's tolerance within 5e-10 of a volume made apart from the build; a ring slid past its
+  fold and a ball screwed tighter than its radius, refused by name before, build too.
+- **A stretch of contact is cut clear of its folds** (`swept::contacts`, #880 T1b): not within half
+  its reach of where its image in the motion's invariants turns back, or where the contact runs
+  within a tenth of a radian of the flow. A cut drawn onto a cusp ended the stretch on the fold's
+  path, where its pieces did not close: a ring leaning just past its fold (60°) is built now, at
+  every tolerance. Still refused: a swallowtail narrower than the contact's points (56°).
+- **A swept sheet's face across its fold is measured by columns** (`props`, #880 T1b): where a
+  carried section's sheet folds within a face's box, its area and flux are read as `∬ g du dv`
+  column by column, not by Green's theorem, whose `G` carried the inverted uses' error beside the fold (the
+  ball screwed tighter than its radius, 3.3e-9 off; now 2.4e-10). Every other face reads as before.
+- **A half's way at a node where its face's rates nearly run together** (`boolean`, #880 T1b) is
+  first read a fiftieth along it rather than a ten-thousandth: beside a fold's path a point stands
+  in the parameters at the square root of its distance in space, and the way read off by radians.
+  `Surface::area_factor` and `geom::NEAR_FOLD` say where a sheet's rates run together, for this
+  and for `props`.
 - **A ball rolls on a B-spline sheet** (`fillet::roll`): brep-bench's fillet/bezier-dome-one-edge
   builds, its volume within 1.2e-8 of one integrated from the patch alone. A sheet's offset is read
   by its signed distance, on the sheet carried on past its domain by its own polynomials:

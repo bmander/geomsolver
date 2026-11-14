@@ -1376,10 +1376,13 @@ which reads the whole tool and no blank:
 
 A sheet that folds goes the road too (#880 T1): what the closed class reads as `Folded` under a
 constant twist — a ring slid leaning past its fold, a ball screwed round a helix tighter than its
-radius — the road builds, its trim keeping of the folded sheet what bounds the sweep, within about
-1e-7 of the volume made apart (the fold cut proper, closing the cusps' paths to the kernel's
-tolerance, is still owed; `swept_contacts::a_sheet_that_folds_is_cut_through_the_front_door`). The
-admission still refuses a fold by name (E3, S3), so a drawing's folded sheet is not yet the road's.
+radius — the road builds, its trim keeping of the folded sheet what bounds the sweep, at the
+kernel's tolerance within 1e-9 of the volume made apart
+(`swept_contacts::the_fold_cases_hold_at_the_kernels_tolerance`). Its stretches are cut clear of
+the folds, never on a cusp, where a stretch's end would run along the fold's path and the sheet's
+rates together (#880 T1b); a swallowtail narrower than the contact's points (a ring at 56°) is still
+refused. The admission still refuses a fold by name (E3, S3), so a drawing's folded sheet is not yet
+the road's (T1c).
 
 A drawing reaches it through the closed class's admission: under a slide, a turn or a screw a tool
 the class reads no candidate for is admitted where the class asked first refused it for what the
