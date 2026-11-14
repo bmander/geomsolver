@@ -8,6 +8,14 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A sheet that folds under a slide, a turn or a screw goes the contact's road** (`swept::closed`,
+  #880 T1): what the closed class refuses as `Folded` under a constant twist is asked of the road,
+  as `Curved` is, whose trim keeps of each folded sheet what bounds the sweep. brep-bench's
+  `swept/ring-pushed-in-past-its-fold` and `swept/ball-screwed-round-a-tight-helix` build, each to a
+  volume made apart from the build within about 1e-7 of it (not yet at the kernel's tolerance: near
+  a cusp's path the two leaves stand nearly tangent); a ring slid past its fold and a ball screwed
+  tighter than its radius, refused by name before, build too.
+
 ## [0.13.0] - 2026-11-13
 
 - **A drawing's sweep reaches the contact's road** (`swept::dispatch`, #880 Q1b): under a slide, a

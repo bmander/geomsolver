@@ -1151,6 +1151,27 @@ no way, and where a section runs in square to the turn's velocity at its end its
 (1e-10 a step) and its points' own error turned it back and forth, the coin drawn on its rim cut
 twice a hair from its end and its plane's pieces left open.
 
+**A sheet that folds goes the contact's road too** (`closed::closed`, #880 T1): under a constant
+twist the closed class's `Folded` — a ring slid leaning past `tan² β = (R − r)/r`, its inner contour
+cusping seen down the push; a ball screwed round a helix tighter than its radius, its pipe folding —
+is asked of the road as `Curved` is, and the trim keeps of each folded sheet what bounds the sweep.
+brep-bench's `ring-pushed-in-past-its-fold` and `ball-screwed-round-a-tight-helix` build through
+the front door to volumes made apart from the build — the ring line by line down the push, each
+line's intervals a quartic's roots with the outline's crossings as breakpoints
+(`swept_slid::torus_pushed_by_lines`), the ball circle by circle about the axis, each covered
+`min(L, 2π)` (`swept_loci::swept_by_circles`, any ball, its pipe folding or not) — within ten
+tolerances at 1e-5 and with STEP files that read back
+(`swept_contacts::a_sheet_that_folds_is_cut_through_the_front_door`), and #805's two negative
+controls, the ring slid at 60° and the ball screwed tighter than its radius, build within 1e-6
+(`swept_slid::a_ring_slid_past_its_fold_is_swept_by_the_contacts_road`,
+`swept_loci::a_ball_screwed_tighter_than_its_radius_is_swept_by_the_contacts_road`). **Not yet the
+fold cut proper**: each folded case stands 1e-7 to 2e-7 off, where the road's unfolded ones stand at
+1e-9 — every line down the ring's push agrees with its definition to 1e-8 on grids to 0.012, so what
+is off is thinner, near a cusp's path, where the two leaves are nearly tangent and the trim reads
+them no closer. A cut at the fold alone (each piece cut where its image in the motion's invariants
+turns back) moved neither, and was not kept. (brep-bench's cadrs builds the ball to 282.091, 11%
+over the sweep's 253.4494.)
+
 **A point's side off the nearest feature's pseudo-normal** (`member::Solid::signed_near`, #880
 Q1b): a point whose nearest point of the tool's mesh lies on a vertex or an edge is read by that
 feature's pseudo-normal — a vertex's, its triangles' unit normals weighted by their angles there; an
