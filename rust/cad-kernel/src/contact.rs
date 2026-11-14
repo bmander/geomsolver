@@ -109,7 +109,7 @@ impl Surface {
             Surface::Sphere(..) | Surface::Torus(..) => Form::Rings {rulings:false},
             Surface::Revolution(_,c) => Form::Rings {rulings:matches!(**c,Curve::Line {..})},
             Surface::Extrusion(..) => Form::Rulings,
-            Surface::Affine(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => Form::Numeric,
+            Surface::Affine(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) | Surface::Offset(..) => Form::Numeric,
         }
     }
 

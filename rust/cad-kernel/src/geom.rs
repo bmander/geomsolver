@@ -240,6 +240,14 @@ pub enum Surface {
     /// (`affine::Mapped`): an ellipsoid a sphere's, an elliptic cylinder a cylinder's, and any
     /// other kind's under a map that does not carry it to its own (`Surface::mapped`).
     Affine(Arc<super::affine::Mapped>),
+    /// The surface standing `d` off a B-spline sheet along its unit normal, `S(u, v) + d N(u, v)`
+    /// over the sheet's parameters: the level `d` of the sheet's signed distance (`implicit`), exact
+    /// wherever a point's foot on it is one, nearer than where its normals focus; its frame the
+    /// sheet's. What a ball's centre runs on, a sheet's offset having no closed form
+    /// (`Surface::parallel`): read, never a face's. It is read on the sheet's continuation past its
+    /// domain (its end spans carried on, `Net::d2_continued`), so the ball rolls on past a face's
+    /// edge as smoothly as it rolls within it.
+    Offset(Frame,Arc<super::nurbs::Net>,f64),
 }
 
 /// What carries a blended section as `v` runs from 0 to 1: a step along a line (a drafted prism's),
@@ -904,6 +912,83 @@ fn patch_side(p: V,uv: Uv,middle: Uv,d1: &dyn Fn(Uv) -> (V,V,V)) -> (f64,V) {
     (dot(d,n),n)
 }
 
+/// The squared distance from `p`'s model at a sheet's point `x` (`e = x − p`, the partials `d`):
+/// its Hessian where that is positive definite (a point well off a curved sheet, where
+/// Gauss–Newton's first-order model crawls), its Gauss–Newton part elsewhere, as `[a11, a12, a22]`,
+/// and its gradient `[b1, b2]`.
+fn foot_model(e: V,[xu,xv,xuu,xuv,xvv]: [V;5]) -> ([f64;3],[f64;2]) {
+    let (g11,g12,g22) = (dot(xu,xu),dot(xu,xv),dot(xv,xv));
+    let (h11,h12,h22) = (g11+dot(e,xuu),g12+dot(e,xuv),g22+dot(e,xvv));
+    let a = if h11 > 0. && h22 > 0. && h11*h22-h12*h12 > 0. { [h11,h12,h22] } else { [g11,g12,g22] };
+    (a,[dot(xu,e),dot(xv,e)])
+}
+
+/// **A point's foot on a sheet's continuation** (`Net::d2_continued`), by Newton's method on the
+/// squared distance from `uv` (`foot_model`) with no domain to hold it to: within the domain the
+/// foot `net_newton` finds, past it the foot on the end spans carried on, so the distance to the
+/// sheet runs on past its edge as smoothly as the sheet does, where the tangent extension `side`
+/// reads turns its curvature off at the edge. `None` where it does not settle, or settles farther
+/// past the domain than the domain is wide.
+fn continued_foot(n: &super::nurbs::Net,p: V,mut uv: Uv) -> Option<Uv> {
+    let [[u0,u1],[v0,v1]] = n.domain();
+    let size = (u1-u0).abs().max((v1-v0).abs());
+    let on = 1e-12*(1.+dot(p,p).sqrt());
+    for _ in 0..40 {
+        let [x,xu,xv,xuu,xuv,xvv] = n.d2_continued(uv[0],uv[1]);
+        let e = sub(x,p);
+        let gap = dot(e,e).sqrt();
+        let square = |d: V| dot(e,d).abs() <= 1e-12*gap*dot(d,d).sqrt();
+        if gap <= on || (square(xu) && square(xv)) { break }
+        let ([a11,a12,a22],[b1,b2]) = foot_model(e,[xu,xv,xuu,xuv,xvv]);
+        let det = a11*a22-a12*a12;
+        if !(det.abs() > 0.) { return None }
+        let step = [(a22*b1-a12*b2)/det,(a11*b2-a12*b1)/det];
+        uv = [uv[0]-step[0],uv[1]-step[1]];
+        if step[0].abs().max(step[1].abs()) <= 1e-15*(1.+size) { break }
+    }
+    let past = (u0-uv[0]).max(uv[0]-u1).max(v0-uv[1]).max(uv[1]-v1);
+    (uv[0].is_finite() && uv[1].is_finite() && past <= size).then_some(uv)
+}
+
+/// A point's foot on a sheet's continuation (`continued_foot`) where it stands `d` off it (an
+/// offset's points; 0 for the sheet's own): from the last foot this thread found on the sheet where
+/// that settles `d` off within a thousandth of the point's size — a point on an offset stands too far
+/// off for `net_inverse`'s warm start, which then searched the whole sheet at every reading — else
+/// from its foot on the sheet itself; that foot where the continuation's does not settle.
+fn offset_foot(n: &std::sync::Arc<super::nurbs::Net>,p: V,d: f64) -> Uv {
+    use crate::util::warm::{get,put,Kind};
+    let key = &**n as *const _ as usize;
+    let near = 1e-3*(1.+dot(p,p).sqrt());
+    let warm = get(Kind::Net,key).and_then(|s| continued_foot(n,p,s))
+        .filter(|&uv| (crate::util::space::distance(n.d2_continued(uv[0],uv[1])[0],p)-d.abs()).abs() <= near);
+    let uv = warm.unwrap_or_else(|| { let uv = net_inverse(n,p); continued_foot(n,p,uv).unwrap_or(uv) });
+    put(Kind::Net,key,uv);
+    uv
+}
+
+/// `S + d N`, and its partials by Weingarten's equations, `S_u + d N_u` and `S_v + d N_v`, `N_u` the
+/// part of `n_u / |n|` square to `N` (`n = S_u × S_v`, `n_u = S_uu × S_v + S_u × S_uv`), read on the
+/// sheet's continuation. Where the normal is not defined (a pole), the sheet's point and partials.
+fn offset_d1(n: &super::nurbs::Net,d: f64,[u,v]: Uv) -> (V,V,V) {
+    let [x,xu,xv,xuu,xuv,xvv] = n.d2_continued(u,v);
+    let raw = cross(xu,xv);
+    let len = norm(raw);
+    if len == 0. { return (x,xu,xv) }
+    let nn = scale(raw,1./len);
+    let turn = |nd: V| { let w = scale(nd,1./len); sub(w,scale(nn,dot(nn,w))) };
+    let nu = turn(add(cross(xuu,xv),cross(xu,xuv)));
+    let nv = turn(add(cross(xuv,xv),cross(xu,xvv)));
+    (add(x,scale(nn,d)),add(xu,scale(nu,d)),add(xv,scale(nv,d)))
+}
+
+/// A sheet's net carried by `m`, its poles moved.
+fn net_moved(n: &super::nurbs::Net,m: &Rigid) -> super::nurbs::Net {
+    super::nurbs::Net {poles:n.poles.iter().map(|row| row.iter().map(|&p| m.point(p)).collect()).collect(),..n.clone()}
+}
+
+/// The middle of a sheet's domain.
+fn net_middle(n: &super::nurbs::Net) -> Uv { let [[u0,u1],[v0,v1]] = n.domain(); [(u0+u1)/2.,(v0+v1)/2.] }
+
 /// Gauss–Newton for the parameters of a B-spline sheet's point nearest `p`, from `uv` and held to
 /// the domain: where it reaches a foot — on the sheet, off it along its normal (to a millionth of a
 /// radian), or held at the domain's edge with the point beyond it — or `None` where it does not
@@ -919,12 +1004,7 @@ fn net_newton(n: &super::nurbs::Net,p: V,mut uv: Uv) -> Option<Uv> {
         let gap = dot(e,e).sqrt();
         let square = |d: V| dot(e,d).abs() <= 1e-6*gap*dot(d,d).sqrt();
         if gap <= on || (square(xu) && square(xv)) { return Some(uv) }
-        // Newton on the squared distance where its Hessian is positive definite (a point well off a
-        // curved sheet, where Gauss–Newton's first-order model crawls), Gauss–Newton elsewhere
-        let (g11,g12,g22) = (dot(xu,xu),dot(xu,xv),dot(xv,xv));
-        let (h11,h12,h22) = (g11+dot(e,xuu),g12+dot(e,xuv),g22+dot(e,xvv));
-        let (a11,a12,a22) = if h11 > 0. && h22 > 0. && h11*h22-h12*h12 > 0. { (h11,h12,h22) } else { (g11,g12,g22) };
-        let (b1,b2) = (dot(xu,e),dot(xv,e));
+        let ([a11,a12,a22],[b1,b2]) = foot_model(e,[xu,xv,xuu,xuv,xvv]);
         // a parameter at the domain's edge with the descent pushing it out is held there, and the
         // other found alone (the joint step would keep moving it along the edge)
         let held_u = (uv[0] <= u0 && b1 > 0.) || (uv[0] >= u1 && b1 < 0.);
@@ -1094,13 +1174,14 @@ impl Surface {
     pub fn frame(&self) -> &Frame {
         match self { Surface::Plane(f) | Surface::Cylinder(f,_) | Surface::Cone(f,_,_) | Surface::Sphere(f,_)
             | Surface::Torus(f,_,_) | Surface::Extrusion(f,_) | Surface::Revolution(f,_) | Surface::Blend(f,_) | Surface::BSpline(f,_)
-            | Surface::Family(f,_) => f,
+            | Surface::Family(f,_) | Surface::Offset(f,..) => f,
             Surface::Affine(m) => &m.frame }
     }
     pub fn kind(&self) -> &'static str {
         match self { Surface::Plane(_) => "plane",Surface::Cylinder(..) => "cylinder",Surface::Cone(..) => "cone",
             Surface::Sphere(..) => "sphere",Surface::Affine(..) => "affine",Surface::Torus(..) => "torus",Surface::Extrusion(..) => "extrusion",
-            Surface::Revolution(..) => "revolution",Surface::Blend(..) => "blend",Surface::BSpline(..) => "bspline",Surface::Family(..) => "family" }
+            Surface::Revolution(..) => "revolution",Surface::Blend(..) => "blend",Surface::BSpline(..) => "bspline",Surface::Family(..) => "family",
+            Surface::Offset(..) => "offset" }
     }
     /// The periods in `u` and `v` (none where the parameter is not periodic).
     pub fn periods(&self) -> [Option<f64>;2] {
@@ -1110,7 +1191,7 @@ impl Surface {
             Surface::Revolution(_,c) => [Some(TAU),c.period()],
             Surface::Blend(_,b) => [b.closed.then_some(1.),None],
             Surface::Family(_,w) => [w.period(),None],
-            Surface::BSpline(..) => [None,None],
+            Surface::BSpline(..) | Surface::Offset(..) => [None,None],
             Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) => [Some(TAU),None],
             Surface::Affine(m) => m.of.periods(),
             Surface::Torus(..) => [Some(TAU),Some(TAU)],
@@ -1125,8 +1206,9 @@ impl Surface {
             Surface::Affine(m) => m.of.ruled(),
             Surface::Plane(_) | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Extrusion(..) => true,
             Surface::Blend(_,b) => matches!(b.carry,Carry::Line {..}),
+            // a ruled surface's offset is ruled only where it is developable
             Surface::Sphere(..) | Surface::Torus(..) | Surface::Revolution(..) | Surface::BSpline(..)
-                | Surface::Family(..) => false,
+                | Surface::Family(..) | Surface::Offset(..) => false,
         }
     }
     /// A box about where a face may reach beyond its boundary, never smaller; `range` the
@@ -1159,6 +1241,9 @@ impl Surface {
             // a family's wall by the ranges its numbers keep to over the stations it reaches
             Surface::Family(_,w) => w.bounds(v),
             Surface::BSpline(_,n) => hull(n.poles_over(u,v)),
+            // the other's points over the range, every one moved by `d` at most
+            // the sheet's poles reaching the range, every point moved by `d` at most
+            Surface::Offset(_,n,d) => { let (lo,hi) = hull(n.poles_over(u,v)); (lo.map(|x| x-d.abs()),hi.map(|x| x+d.abs())) }
             _ => self.turned_bounds(&super::affine::Affine::IDENTITY,[u,v]).expect("a surface turned about its axis"),
         }
     }
@@ -1216,6 +1301,7 @@ impl Surface {
             Surface::Family(_,w) => return w.d1([u,v]),
             Surface::BSpline(_,n) => return n.d1(u,v),
             Surface::Affine(m) => return m.d1([u,v]),
+            Surface::Offset(_,n,d) => return offset_d1(n,*d,[u,v]),
             _ => {}
         }
         match *self {
@@ -1236,7 +1322,7 @@ impl Surface {
                 (f.at([q*cu,q*su,r*sv]),f.dir([-q*su,q*cu,0.]),f.dir([-r*sv*cu,-r*sv*su,r*cv]))
             }
             Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)
-                | Surface::Affine(..) => unreachable!(),
+                | Surface::Affine(..) | Surface::Offset(..) => unreachable!(),
         }
     }
     pub fn point(&self,uv: Uv) -> V { self.d1(uv).0 }
@@ -1256,7 +1342,9 @@ impl Surface {
     /// nearest foot where the hint is nearest it), or none where it does not settle.
     pub fn foot_from(&self,p: V,hint: Uv) -> Option<Uv> {
         match self { Surface::BSpline(_,n) => net_newton(n,p,hint),Surface::Family(_,w) => Some(w.newton(p,hint)),
-            Surface::Affine(m) => Some(m.foot(p,|| hint)),_ => Some(self.inverse_near(p,hint)) }
+            Surface::Affine(m) => Some(m.foot(p,|| hint)),
+            Surface::Offset(_,n,_) => continued_foot(n,p,hint),
+            _ => Some(self.inverse_near(p,hint)) }
     }
     /// How far `p` stands from a patch's own points — a sheet's or a loft's, its foot held to its
     /// domain: past the domain's edge its signed distance, read along the normal at the edge, runs on
@@ -1276,6 +1364,8 @@ impl Surface {
     pub fn inverse_near(&self,p: V,hint: Uv) -> Uv {
         match self {
             Surface::Affine(m) => m.inverse_near(p,hint),
+            // a point's foot on the offset is its foot on the sheet, along the same normal
+            Surface::Offset(_,n,d) => continued_foot(n,p,hint).unwrap_or_else(|| offset_foot(n,p,*d)),
             Surface::BSpline(_,n) => net_newton(n,p,hint)
                 .filter(|&uv| crate::util::space::distance(n.point(uv[0],uv[1]),p) <= 1e-6*(1.+dot(p,p).sqrt()))
                 .unwrap_or_else(|| net_inverse(n,p)),
@@ -1374,6 +1464,7 @@ impl Surface {
             Surface::BSpline(_,n) => return net_inverse(n,p),
             Surface::Family(_,w) => return w.inverse(p),
             Surface::Affine(m) => return m.inverse(p),
+            Surface::Offset(_,n,d) => return offset_foot(n,p,*d),
             _ => {}
         }
         match *self {
@@ -1384,7 +1475,7 @@ impl Surface {
             Surface::Cone(..) | Surface::Torus(..) => self.meridian_foot(u,rho,z,self.across(rho,z)),
             Surface::Sphere(..) => [u,z.datan2(rho)],
             Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)
-                | Surface::Affine(..) => unreachable!(),
+                | Surface::Affine(..) | Surface::Offset(..) => unreachable!(),
         }
     }
     /// How hard a point is to invert onto the surface: 0 a plane's (exact), 1 an analytic one's
@@ -1396,13 +1487,15 @@ impl Surface {
             Surface::Plane(_) => 0,
             Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Torus(..) => 1,
             Surface::Affine(m) => if m.quadric.is_some() { 1 } else { 2 },
-            Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => 2,
+            Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)
+                | Surface::Offset(..) => 2,
         }
     }
     /// Whether the surface has an offset in closed form: the analytic kinds, not the swept and
     /// fitted ones nor an affine image (an ellipsoid's offset is no quadric).
     pub fn has_offset(&self) -> bool {
-        !matches!(self,Surface::Affine(..) | Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..))
+        !matches!(self,Surface::Affine(..) | Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..)
+            | Surface::Family(..) | Surface::Offset(..))
     }
     /// What stands `d` off this surface along its own normal (`S_u × S_v`), where its signed
     /// distance (`implicit`) is `d`, in closed form for the analytic kinds (`has_offset`): a
@@ -1432,7 +1525,27 @@ impl Surface {
             Surface::Sphere(f,r) => grown(r,&|r| Surface::Sphere(f,r),Offset::Point(f.o)),
             Surface::Torus(f,big,r) => grown(r,&|r| Surface::Torus(f,big,r),Offset::Curve(Curve::Circle(f,big))),
             Surface::Affine(..) | Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..)
-                | Surface::Family(..) => None,
+                | Surface::Family(..) | Surface::Offset(..) => None,
+        }
+    }
+    /// The parameters of `p`'s foot on a sheet carried on past its domain by its own polynomials
+    /// (`Net::d2_continued`), where `inverse` holds it at the domain's edge; `inverse` for any other
+    /// kind.
+    pub fn continued_inverse(&self,p: V) -> Uv {
+        match self { Surface::BSpline(_,n) => offset_foot(n,p,0.),Surface::Offset(_,n,d) => offset_foot(n,p,*d),s => s.inverse(p) }
+    }
+    /// Whether `parallel` reads the surface's offsets: in closed form, or by its signed distance.
+    pub fn has_parallel(&self) -> bool { matches!(self,Surface::BSpline(..) | Surface::Offset(..)) || self.has_offset() }
+    /// **What stands `d` off the surface, exactly, whatever its kind**: `offset`, in closed form,
+    /// else a sheet's offset read by its signed distance (`Surface::Offset`), its points and
+    /// partials from the sheet's own and its second partials (an offset's offset by the sum).
+    /// `None` where `offset` has none, and for a kind whose second partials are not read (a swept
+    /// curve's, a blend's, a family's wall, an image).
+    pub fn parallel(&self,d: f64,tol: f64) -> Option<Offset> {
+        match self {
+            Surface::BSpline(f,n) => Some(Offset::Surface(Surface::Offset(*f,n.clone(),d))),
+            Surface::Offset(f,n,e) => Some(Offset::Surface(Surface::Offset(*f,n.clone(),e+d))),
+            s => s.offset(d,tol),
         }
     }
     /// `offset` where only a surface will do (a leg's meeting, a ball's spine against a wall),
@@ -1468,7 +1581,7 @@ impl Surface {
             Surface::Sphere(_,r) => rho.dhypot(z)-r,
             Surface::Torus(_,big,r) => (rho-big).dhypot(z)-r,
             Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)
-                | Surface::Affine(..) => unreachable!(),
+                | Surface::Affine(..) | Surface::Offset(..) => unreachable!(),
         }
     }
     /// For a swept curve, the signed distance from `p` to the curve in the section through it —
@@ -1506,11 +1619,14 @@ impl Surface {
                 Some(patch_side(p,w.inverse(p),[0.5,(a+z)/2.],&|uv| w.d1(uv)))
             }
             // a B-spline sheet likewise, toward the middle of its domain
-            Surface::BSpline(_,n) => {
-                let [[u0,u1],[v0,v1]] = n.domain();
-                Some(patch_side(p,net_inverse(n,p),[(u0+u1)/2.,(v0+v1)/2.],&|[u,v]| n.d1(u,v)))
-            }
+            Surface::BSpline(_,n) => Some(patch_side(p,net_inverse(n,p),net_middle(n),&|[u,v]| n.d1(u,v))),
             Surface::Affine(m) => Some(m.side(p)),
+            // the sheet's distance on its continuation (`offset_foot`) less `d`, its gradient the
+            // sheet's normal there
+            Surface::Offset(_,n,d) => {
+                let (x,g) = patch_side(p,offset_foot(n,p,*d),net_middle(n),&|[u,v]| { let [x,xu,xv,..] = n.d2_continued(u,v); (x,xu,xv) });
+                Some((x-d,g))
+            }
             _ => None,
         }
     }
@@ -1530,7 +1646,7 @@ impl Surface {
     /// Whether no closed form says where a meeting with it may lie: a sheet, a family's wall, or an
     /// image of one.
     pub fn sheet(&self) -> bool {
-        match self { Surface::BSpline(..) | Surface::Family(..) => true,Surface::Affine(m) => m.of.sheet(),_ => false }
+        match self { Surface::BSpline(..) | Surface::Family(..) | Surface::Offset(..) => true,Surface::Affine(m) => m.of.sheet(),_ => false }
     }
     /// Whether `inverse` is the nearest point, not only a foot of the normal: the plane, the
     /// cylinder, the cone, the sphere and the torus, and a sphere's or a cylinder's image.
@@ -1559,7 +1675,7 @@ impl Surface {
                 if d > 0. { [radial[0]*dr/d,radial[1]*dr/d,dz/d] } else { [0.,0.,1.] }
             }
             Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)
-                | Surface::Affine(..) => unreachable!(),
+                | Surface::Affine(..) | Surface::Offset(..) => unreachable!(),
         };
         f.dir(l)
     }
@@ -1574,8 +1690,9 @@ impl Surface {
             Surface::Extrusion(_,ref c) | Surface::Revolution(_,ref c) => least_radius(c),
             Surface::Blend(_,ref b) => b.feature(),
             Surface::Family(_,ref w) => w.feature(),
-            // a length a sheet turns over: a sixteenth of its poles' spread
-            Surface::BSpline(_,ref n) => {
+            // a length a sheet turns over: a sixteenth of its poles' spread (an offset's the
+            // sheet's: the spread is no radius of curvature to take `d` from)
+            Surface::BSpline(_,ref n) | Surface::Offset(_,ref n,_) => {
                 let (lo,hi) = hull(n.poles.iter().flatten().copied());
                 (crate::util::space::distance(lo,hi)/16.).max(f64::MIN_POSITIVE)
             }
@@ -1598,13 +1715,13 @@ impl Surface {
             Surface::Sphere(f,r) => Surface::Sphere(f.moved(m),r),
             Surface::Affine(ref a) => Surface::Affine(Arc::new(super::affine::Mapped::new(
                 a.map.then(&super::affine::Affine::of_rigid(m)),a.of.clone()))),
+            Surface::Offset(f,ref n,d) => Surface::Offset(f.moved(m),Arc::new(net_moved(n,m)),d),
             Surface::Torus(f,big,r) => Surface::Torus(f.moved(m),big,r),
             Surface::Extrusion(f,ref c) => Surface::Extrusion(f.moved(m),Arc::new(c.moved(m))),
             Surface::Revolution(f,ref c) => Surface::Revolution(f.moved(m),Arc::new(c.moved(m))),
             Surface::Blend(f,ref b) => Surface::Blend(f.moved(m),Arc::new(b.moved(m))),
             Surface::Family(f,ref w) => Surface::Family(f.moved(m),Arc::new(w.moved(m))),
-            Surface::BSpline(f,ref n) => Surface::BSpline(f.moved(m),Arc::new(super::nurbs::Net {
-                poles:n.poles.iter().map(|row| row.iter().map(|&p| m.point(p)).collect()).collect(),..(**n).clone()})),
+            Surface::BSpline(f,ref n) => Surface::BSpline(f.moved(m),Arc::new(net_moved(n,m))),
         }
     }
     /// **The surface reflected by the improper motion `m`** (#578), placed right-handed again
@@ -1632,6 +1749,8 @@ impl Surface {
                 let Surface::BSpline(f,net) = self.moved(m) else { unreachable!() };
                 (Surface::BSpline(f.rehanded(false).0,net),false)
             }
+            // its sheet's, which a reflection turns `S_u × S_v` about: the offset on the other side
+            Surface::Offset(f,ref n,d) => (Surface::Offset(f.moved(m).rehanded(false).0,Arc::new(net_moved(n,m)),-d),false),
             Surface::Blend(..) | Surface::Family(..) => return Err(
                 "a swept section's face is not reflected yet: a mirrored body is drawn of planes, \
                  surfaces of revolution, extrusions and B-spline sheets".to_string()),
@@ -1643,7 +1762,7 @@ impl Surface {
         match (self,k) {
             (Surface::Extrusion(_,c),0) | (Surface::Revolution(_,c),1) => c.breaks(span),
             // a loft's edges break at their knots, each at its own fraction of `u`
-            (Surface::BSpline(_,n),k) => n.breaks(k,span),
+            (Surface::BSpline(_,n) | Surface::Offset(_,n,_),k) => n.breaks(k,span),
             // a family's wall at its edge's knots, and at the joints of its pieces
             (Surface::Family(_,w),k) => w.breaks(k,span),
             (Surface::Affine(m),k) => m.of.breaks(k,span),
@@ -1665,7 +1784,8 @@ impl Surface {
     /// curve's extrusion, a loft face, an affine image (an ellipsoid of revolution too) and the
     /// plane, which is one about its normal through any point.
     pub fn axis(&self) -> Option<(V,V)> {
-        match self { Surface::Plane(_) | Surface::Affine(..) | Surface::Extrusion(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => None,_ => { let f = self.frame(); Some((f.o,f.z)) } }
+        match self { Surface::Plane(_) | Surface::Affine(..) | Surface::Extrusion(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)
+            | Surface::Offset(..) => None,_ => { let f = self.frame(); Some((f.o,f.z)) } }
     }
 }
 

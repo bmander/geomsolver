@@ -262,7 +262,8 @@ pub(super) fn meridian(s: &Surface,o: V,z: V,tol: f64) -> Option<Meridian> {
             Curve::Turned(t) if !t.posed => Some(Meridian::Curve((**c).clone(),t.span,o,z)),
             _ => None,
         },
-        Surface::Affine(..) | Surface::Extrusion(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => None,
+        Surface::Affine(..) | Surface::Extrusion(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)
+            | Surface::Offset(..) => None,
     }
 }
 
@@ -324,8 +325,37 @@ pub fn same(a: &Surface,b: &Surface,tol: f64) -> bool {
             && same_curve(&c,&d,tol,&|p| { let q = sub(p,f.o); let h = dot(q,f.z); [norm(sub(q,scale(f.z,h))),h,0.] }),
         (Surface::Blend(_,x),Surface::Blend(_,y)) => one_screwed_circle(&x,&y,tol),
         (Surface::Plane(p),Surface::BSpline(_,n)) | (Surface::BSpline(_,n),Surface::Plane(p)) => net_in_plane(&n,&p,tol),
+        (Surface::BSpline(_,m),Surface::BSpline(_,n)) => one_net(&m,&n,tol),
         _ => false,
     }
+}
+
+/// **A sheet is the sheet of one net**: two nets of the same degrees, knots and weights whose poles
+/// stand within `tol` of each other are one surface, a point of either within `tol` of the other's
+/// at its parameters (a B-spline is an affine combination of its poles) — a face's sheet and the
+/// strip a round lays on it (`fillet::roll`), or a face copied. So are two whose domains overlap and
+/// whose nets over the part they share are one so (`Net::segment`, exact): a net and itself carried
+/// on past its domain by its own polynomials (`Net::extended`), as a round's strip running on past
+/// a face's edge lies on it. A net reparameterised is not recognised.
+fn one_net(m: &super::nurbs::Net,n: &super::nurbs::Net,tol: f64) -> bool {
+    if std::ptr::eq(m,n) { return true }
+    if m.du != n.du || m.dv != n.dv || m.weights.is_some() != n.weights.is_some() { return false }
+    let knots = |a: &[f64],b: &[f64]| a.len() == b.len() && a.iter().zip(b).all(|(x,y)| (x-y).abs() <= 1e-12*(1.+x.abs()));
+    let weights = |a: &Option<Vec<Vec<f64>>>,b: &Option<Vec<Vec<f64>>>| match (a,b) {
+        (Some(a),Some(b)) => a.len() == b.len() && a.iter().zip(b).all(|(x,y)| knots(x,y)),
+        _ => true,
+    };
+    let same = |m: &super::nurbs::Net,n: &super::nurbs::Net| knots(&m.uknots,&n.uknots) && knots(&m.vknots,&n.vknots)
+        && weights(&m.weights,&n.weights) && m.poles.len() == n.poles.len()
+        && m.poles.iter().zip(&n.poles).all(|(a,b)| a.len() == b.len() && a.iter().zip(b).all(|(p,q)| distance(*p,*q) <= tol));
+    if same(m,n) { return true }
+    // over the domain they share: first a few of its points, and only where those agree, the nets
+    let ([[a0,a1],[b0,b1]],[[c0,c1],[d0,d1]]) = (m.domain(),n.domain());
+    let (u,v) = ([a0.max(c0),a1.min(c1)],[b0.max(d0),b1.min(d1)]);
+    if !(u[0] < u[1] && v[0] < v[1]) { return false }
+    let at = |k: usize,s: [f64;2]| s[0]+(s[1]-s[0])*k as f64/2.;
+    if (0..3).any(|i| (0..3).any(|j| distance(m.point(at(i,u),at(j,v)),n.point(at(i,u),at(j,v))) > tol)) { return false }
+    same(&m.segment(u,v),&n.segment(u,v))
 }
 
 /// **A sheet lying in a plane is that plane** (#780 C4): a B-spline surface, rational or not, lies
@@ -2499,7 +2529,8 @@ fn derivative_bounds(s: &Surface,[v0,v1]: [f64;2]) -> Option<[f64;5]> {
         // each derivative the preimage's mapped, no longer than its greatest stretch makes it
         Surface::Affine(ref m) => derivative_bounds(&m.of,[v0,v1]).map(|b| b.map(|x| x*m.stretch[1])),
         Surface::Torus(_,big,r) => Some([big.abs()+r,r,big.abs()+r,r,r]),
-        Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => None,
+        Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)
+            | Surface::Offset(..) => None,
     }
 }
 
@@ -2522,7 +2553,8 @@ fn curvature_bound(s: &Surface,p: V,r: f64) -> Option<f64> {
         Surface::Cylinder(..) | Surface::Cone(..) => over(rho-r),
         // the distance to the core circle in the meridian half-plane, which turns with ρ
         Surface::Torus(_,big,_) => Some(over((rho-big).dhypot(z)-r)?+over(rho-r)?),
-        Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => None,
+        Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)
+            | Surface::Offset(..) => None,
     }
 }
 

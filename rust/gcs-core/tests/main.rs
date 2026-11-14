@@ -284,6 +284,7 @@ mod set_regions;
 mod sets;
 mod shared_contact;
 mod sheet;
+mod sheet_rounds;
 mod shell;
 mod shell_examples;
 mod shorthand;

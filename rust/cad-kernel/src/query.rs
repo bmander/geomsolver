@@ -10,7 +10,7 @@ use super::plane2::{chord,Chord,Touch};
 use crate::util::isolate::GaveUp;
 use crate::util::interval::{Iv,Num};
 use crate::enclose::{Enclosed,I3};
-use crate::util::space::{add,distance,dot,norm,scale};
+use crate::util::space::{add,distance,dot,norm,scale,sub};
 
 /// Where a point stands against a face or a solid.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
@@ -296,6 +296,73 @@ pub fn crossings_in(surface: &Surface,a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2
         }
         _ => Ok(None),
     }
+}
+
+/// **Where two curves cross, found by their enclosures** — what `crossings_in` leaves (`None`)
+/// where an edge lies along a face (`boolean`): pairs of their stretches whose boxes (each stretch's
+/// enclosure, `Enclosed`, a spline's its poles restricted to the stretch; the curve's `bounds`
+/// where that is unbounded) stand apart by more than `8 tol` hold no crossing and are dropped; the
+/// rest are halved, the longer stretch first, until each is a hundredth of its curve's box, and from
+/// each pair left Gauss–Newton on `a(s) − b(t)` settles on where they cross, kept where they meet
+/// within `8 tol` inside both stretches (`within_stretch`), once a place. Two splines lying in a
+/// face, as a round's contact and a face's own rail cross on the side they both lie in.
+/// `None` where the pairs do not thin out within the budget, or where they meet shallower than a
+/// trace follows (`ssi::SHALLOW`): one curve running along the other — a face's edge and the cut a
+/// round's piece makes of the same sheet at the same cap, which `meeting::crossings` reads as a
+/// crossing every few hundredths — or touching it, where Newton's method settles anywhere the two
+/// are within the rounding.
+pub fn enclosed_crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Option<Vec<(f64,V)>> {
+    let pad = 8.*tol;
+    let diag = |(lo,hi): (V,V)| distance(lo,hi);
+    let boxed = |c: &Curve,s: [f64;2]| -> (V,V) {
+        let p = c.enclose([s]);
+        let [x,y,z] = p.at.map(|x| x.bounds());
+        let (Some(x),Some(y),Some(z)) = (x,y,z) else { return c.bounds(s) };
+        ([x[0],y[0],z[0]],[x[1],y[1],z[1]])
+    };
+    let half = |s: [f64;2]| { let m = 0.5*(s[0]+s[1]); [[s[0],m],[m,s[1]]] };
+    let (box_a,box_b) = (boxed(a,ta),boxed(b,tb));
+    let (whole_a,whole_b) = (diag(box_a).max(1e-300),diag(box_b).max(1e-300));
+    // each pair carried with its boxes, so a halving reads only the half it made
+    let mut stack = vec![(ta,box_a,tb,box_b)];
+    let mut leaves: Vec<([f64;2],[f64;2])> = Vec::new();
+    for _ in 0..4096 {
+        let Some((sa,ba,sb,bb)) = stack.pop() else { break };
+        if !super::boolean::overlap(&ba,&bb,pad) { continue }
+        let (da,db) = (diag(ba)/whole_a,diag(bb)/whole_b);
+        if da <= 0.01 && db <= 0.01 {
+            leaves.push((sa,sb));
+            if leaves.len() > 256 { return None }
+        } else if da >= db { for h in half(sa) { stack.push((h,boxed(a,h),sb,bb)); } }
+        else { for h in half(sb) { stack.push((sa,ba,h,boxed(b,h))); } }
+    }
+    if !stack.is_empty() { return None }
+    let mut out: Vec<(f64,V)> = Vec::new();
+    for (sa,sb) in leaves {
+        let (mut s,mut t) = (0.5*(sa[0]+sa[1]),0.5*(sb[0]+sb[1]));
+        let mut settled = None;
+        for _ in 0..40 {
+            let ((p,dp),(q,dq)) = (a.d1(s),b.d1(t));
+            let r = sub(p,q);
+            // [dp, −dq] [ds, dt] = −r, by its normal equations
+            let (a11,a12,a22) = (dot(dp,dp),-dot(dp,dq),dot(dq,dq));
+            let (b1,b2) = (-dot(dp,r),dot(dq,r));
+            let det = a11*a22-a12*a12;
+            if !(det.abs() > 1e-300) { break }
+            let (ds,dt) = ((a22*b1-a12*b2)/det,(a11*b2-a12*b1)/det);
+            s += ds;
+            t += dt;
+            if ds.abs() <= 1e-15*(1.+s.abs()) && dt.abs() <= 1e-15*(1.+t.abs()) { settled = Some((dp,dq)); break }
+        }
+        let Some((dp,dq)) = settled else { continue };
+        let p = a.point(s);
+        if distance(p,b.point(t)) > pad { continue }
+        if norm(crate::util::space::cross(dp,dq)) < super::ssi::SHALLOW*norm(dp)*norm(dq) { return None }
+        if out.iter().any(|x| distance(x.1,p) <= tol) { continue }
+        let (Some(s),Some(_)) = (within_stretch(a,s,ta,tol),within_stretch(b,t,tb,tol)) else { continue };
+        out.push((s,p));
+    }
+    Some(out)
 }
 
 /// **A crossing where `other` arrives tangent to `carrier` is one crossing**: there `other` stays
@@ -1701,6 +1768,7 @@ pub fn domain(surface: &Surface) -> Option<[[f64;2];2]> {
         Surface::BSpline(_,n) => Some(n.domain()),
         Surface::Family(_,w) => Some([[0.,1.],w.span()]),
         Surface::Affine(m) => domain(&m.of),
+        Surface::Offset(_,n,_) => Some(n.domain()),
         Surface::Plane(_) | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Extrusion(..) => None,
     }
 }

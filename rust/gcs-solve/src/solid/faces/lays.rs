@@ -47,7 +47,7 @@ impl Lay {
             },
             Surface::Cone(..) | Surface::Sphere(..) | Surface::Torus(..) => Lay::Neither,
             Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)
-            | Surface::Affine(..) => Lay::Unread(s.kind()),
+            | Surface::Affine(..) | Surface::Offset(..) => Lay::Unread(s.kind()),
         }
     }
 

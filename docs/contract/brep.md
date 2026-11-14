@@ -82,8 +82,9 @@ ordinary intersection algorithm; uncertainty never means separation. The proof r
 alone, so it is made once for every two faces on them.
 The teapot's rim and lid stand apart despite their overlapping boxes: projecting a grid onto
 each other searched for meetings they cannot have. `brep::spline_columns_with_overlapping_boxes_keep_their_meetings`
-holds separated and crossing polynomial sheets to their columns' exact volumes, and keeps the
-existing refusal of coincident spline supports rather than dropping that meeting; the volumes
+holds separated and crossing polynomial sheets to their columns' exact volumes, and two columns
+sharing a sheet (coincident spline supports, one net: `ssi::same`) to the one column they make,
+that meeting read and not dropped; the volumes
 hold with or without the proof, so it reads `separated_nets` itself: true of the separated
 columns' sheets, false of coincident and of crossing ones and under a padding wider than the gap.
 **A clamped cubic with four poles is evaluated in its Bernstein basis** (`nurbs::with_basis`),
@@ -442,6 +443,58 @@ has an offset in closed form at all is its own question (`Surface::has_offset`).
 wants a surface says so (`Offset::surface`, or `Surface::offset_surface`, which refuses a closing
 offset as that), and none reads a collapse as no offset at all (a ball as wide as its cylinder,
 [rounds.md](rounds.md)).
+**A sheet's offset is read by its signed distance** (`Surface::parallel`, `Surface::Offset`): a
+B-spline sheet has no offset in closed form, and a fitted net would be an approximation, so the
+surface standing `d` off it is the level `d` of its signed distance, `S + d N` over the sheet's own
+parameters (`Surface::Offset` holds the sheet's frame and net, and `d`) — its point and partials
+from the sheet's second partials by Weingarten's equations, its distance the sheet's less `d`, its
+gradient the sheet's normal, a point's foot on it the foot on the sheet, warm from the last foot
+read where that settles `d` off (a point on an offset stands too far off the sheet for the sheet's
+own warm start, and every reading searched the whole sheet). It is read, never a face's: STEP and
+the sweep's dump refuse it. Past the sheet's
+domain it is read on the sheet **carried on by its own polynomials** (`Net::d2_continued`, the end
+spans' polynomials past the knot they end at, and `Surface::continued_inverse`, Newton's foot with
+no domain to hold it), where the sheet's own signed distance runs on along the tangent extension:
+there the curvature is switched off at the edge, and a ball's centre rolling on past a face's
+edge on it turned its curvature from 25 to 9 at once, which no cubic net fits (the canal missed
+its bar by 1.7e-4). `Surface::parallel` is `offset`, in closed form, else a sheet's offset (an
+offset's offset by the sum), and none for the kinds whose second partials are not read (a swept
+curve's, a blend's, a family's wall, an image).
+`sheet_rounds::a_sheets_offset_stands_its_distance_off_along_its_normal` is the gate.
+**A ball rolls on a sheet** (`fillet::roll`, brep-bench's fillet/bezier-dome-one-edge): its centre
+runs on the faces' offsets read so, traced only round the run — the run's box grown by `r + 2r /
+sin(θ/2)`, as far as a ball rolling on past an end needs, its section's corner within `r /
+sin(θ/2)` of its centre: the whole body grown by its size, a sheet's continuation wandered off
+under the solid and the trace took 23,000 points and four seconds to fit. Its contacts are read
+along the offsets' gradients (the faces' own where they have one in closed form, the continued
+sheet's past a sheet's edge), and a run that ends lays each sheet's strip on the sheet extended
+as far as the strip reaches (`Net::extended`, exactly the sheet over its domain), the faces' meeting
+past the ends read on those, not on a net held at its edge. **A sheet is the sheet of one net**
+(`ssi::same`): two nets of the same degrees, knots and weights whose poles stand within `tol` are
+one surface, and so are two whose nets over the domain they share are (`Net::segment`, after nine
+of its points agree) — a net and itself carried on, so the Boolean reads a strip and the face it
+lies on as coincident. A reparameterised net is not recognised. **An edge lying along a face
+crosses its edges where their enclosures say** (`query::enclosed_crossings`, which the Boolean
+reads where `query::crossings_in` has no closed form, its meetings' crossings still searched by
+`meeting::crossings` within their reach): where neither is a line or a conic, pairs of their
+stretches whose enclosures (`Enclosed`, a spline's poles
+restricted to the stretch; `Curve::bounds`, a span's whole hull, never shrank and the search gave
+up) stand apart by more than `8 tol` are dropped, the rest halved until each is a hundredth of its
+curve's box, and from each pair left Gauss–Newton on `a(s) − b(t)` settles the crossing; none
+where 4096 pairs read or 256 left, or where a root is shallower than `ssi::SHALLOW` — one curve
+running along the other (a face's edge and a round's cut of the same sheet at the same cap, where
+Newton's method settles anywhere, and `meeting::crossings`, which `boolean::along_one_another`
+guards only where they run along each other whole, read a crossing every few hundredths) or
+touching it — which leaves the edge unsplit as before. So a
+flat root finds its crossing (`Arrangement::flat_roots`): a fillet's canal cut off at a cap touches
+the side its contact lies along, and the solid's edge where that side meets the cap touches the
+canal at a root placed only by the fit's tangent, 1.8e-6 along the edge from where the contact,
+lying along the side, crosses that edge; read, that crossing is the root, and the arrangement's
+pieces close round it, where unread they did not ("a plane's pieces do not close"). The round of
+brep-bench's case is held to its volume integrated from the patch alone, section by section along
+x, the ball's arc in each from its centre 1 under the patch on the plane y = 1, to 1e-7 (it agrees
+to 1.2e-8), in 0.3 s: `sheet_rounds::the_bezier_dome_block_rounded_along_one_top_edge`, with
+`a_sheet_carried_on_is_the_same_sheet` and `splines_lying_in_a_face_cross_where_they_cross`.
 A minimum is a `util::roots::Least`, its place and its value named, never a pair.
 **A flat between two planes is a plane** (`fillet::flat_along`): the prism on its section's
 triangle, carried on past each end and cut off there, no net fitted. A fitted flat is a B-spline
