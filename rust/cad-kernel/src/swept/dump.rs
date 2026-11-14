@@ -160,6 +160,7 @@ fn surface(s: &Surface) -> Result<Json,String> {
         }
         Surface::Affine(m) => object([("kind","affine".into()),("map",affine(&m.map)),("of",surface(&m.of)?)]),
         Surface::Family(..) => return Err("sweep dump: a face family's wall is not written".into()),
+        Surface::Offset(..) => return Err("sweep dump: an offset read by its signed distance is no face's surface".into()),
     })
 }
 fn rsurface(j: &Json) -> Result<Surface,String> {

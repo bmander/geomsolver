@@ -259,7 +259,8 @@ impl Solid {
             let kind = match f.surface { Surface::Plane(_) => PLANE,Surface::Cylinder(..) => CYLINDER,
                 Surface::Cone(..) => CONE,Surface::Sphere(..) => SPHERE,Surface::Torus(..) => TORUS,
                 Surface::Revolution(..) => REVOLUTION,Surface::Extrusion(..) => EXTRUSION,
-                Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) | Surface::Affine(..) => BSPLINE };
+                Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) | Surface::Affine(..)
+                | Surface::Offset(..) => BSPLINE };
             let mut numbers: Vec<f64> = frame.o.iter().chain(&frame.z).chain(&frame.x).copied().collect();
             numbers.extend(scalars);
             Face {kind,reversed:f.reversed,indirect:false,numbers}

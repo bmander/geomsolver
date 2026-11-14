@@ -187,11 +187,34 @@ impl<'a> Walk<'a> {
     /// **The groups a definition declares that hand out a datum of its own** — its ports
     /// (`docs/ports-plan.md`, [0.217]), `od` of `od := {at: std.top, pocket: pocket}`: a mate
     /// through one reads the part's frame, so an instance whose port something outside reads
-    /// stands in a frame of its own, as one whose `std` it reads does.
+    /// stands in a frame of its own, as one whose `std` it reads does.  And one handing out a
+    /// plane an instance of the body stands on the part's datums: `left` of `left := {at: lf.at}`,
+    /// where `lf := FrameOn(std.z, std.origin, …)` declares `at := plane` on the part's own axis —
+    /// a bearing joined only by its side, against a shoulder, is placed by its frame all the same.
+    /// A plane, as a port's frame is: a group handing out such an instance's axis or body (the
+    /// hypoid pair's `gear_member := {ax: gear_cone.ax, …}`) is no port.
     fn ports<'c>(&self, comp: &'c Component) -> impl Iterator<Item = &'c str> + use<'c, '_, 'a> {
+        let datum = |r: &Ref| self.datum_at(&read_segments(r)) == Some(0);
+        // the instances of the body given one of its datums, with their definitions
+        let framed: Vec<(&str, &Component)> = comp.body.iter().filter_map(|st| match &st.kind {
+            StmtKind::Instance(i) if i.args.iter().any(|a| matches!(&a.value,
+                crate::syntax::InstVal::Ref(r) if datum(r))) => {
+                let k = self.prog.resolve_component(&i.component.text, comp.module).ok()?;
+                Some((i.name.text.as_str(), &self.prog.components[k]))
+            }
+            _ => None,
+        }).collect();
+        // whether `inst.member` is a plane such an instance declares
+        let plane = move |parts: &[String]| match parts {
+            [inst, member] => framed.iter().any(|(name, def)| name == inst
+                && def.body.iter().any(|st| matches!(&st.kind, StmtKind::Decl(d)
+                    if d.kind == crate::model::EntKind::Frame
+                        && d.name.written().is_some_and(|n| &n.text == member)))),
+            _ => false,
+        };
         comp.body.iter().filter_map(move |st| match &st.kind {
             StmtKind::Group(g) if g.fields.iter().any(|f| matches!(&f.value,
-                crate::syntax::InstVal::Ref(r) if self.datum_at(&read_segments(r)) == Some(0))) =>
+                crate::syntax::InstVal::Ref(r) if datum(r) || plane(&read_segments(r)))) =>
                 Some(g.name.text.as_str()),
             _ => None,
         })

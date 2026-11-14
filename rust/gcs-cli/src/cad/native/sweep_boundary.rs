@@ -200,7 +200,9 @@ fn swept_sheets(session: &Session,cut: &SweptCut,cutter: &Cutter,inside: Inside,
             if let Some(fault) = sheet.chart_fault(inside)? {
                 return Err(format!("`{name}`: the sheet is not one regular chart: {fault}"));
             }
-            stage(&format!("`{name}`: sheet {}x{}, one chart ({:?})",sheet.rows,sheet.columns,started.elapsed()));
+            // a turn's stations (`band`), its lean said in the core's words
+            stage(&format!("`{name}`: sheet {}x{}, one chart{} ({:?})",sheet.rows,sheet.columns,layout.shear.said(true),
+                started.elapsed()));
             return Ok((layout,sheet));
         }
         Err(format!("`{name}`: the candidate sheet cannot be widened out of the blank"))

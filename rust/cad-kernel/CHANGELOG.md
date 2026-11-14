@@ -28,6 +28,18 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   in the parameters at the square root of its distance in space, and the way read off by radians.
   `Surface::area_factor` and `geom::NEAR_FOLD` say where a sheet's rates run together, for this
   and for `props`.
+- **A ball rolls on a B-spline sheet** (`fillet::roll`): brep-bench's fillet/bezier-dome-one-edge
+  builds, its volume within 1.2e-8 of one integrated from the patch alone. A sheet's offset is read
+  by its signed distance, on the sheet carried on past its domain by its own polynomials:
+  `Surface::Offset` (a sheet's frame and net, and the distance) is a new kind (**breaking** for code
+  matching `Surface` exhaustively), made by `Surface::parallel` (`has_parallel`), which answers an
+  `Offset` as `Surface::offset` does, with `Net::d2_continued` and `Surface::continued_inverse`.
+  `ssi::same` takes two nets that agree over the domain they share for one surface (a net and itself
+  carried on by `Net::extended`), so two solids sharing a sheet now join where the Boolean refused
+  ("coincide or touch to higher order"); and an edge lying along a face is split where it crosses the
+  face's edges though neither is a line or a conic (`query::enclosed_crossings`, where it was left
+  whole), so a Boolean's root where an edge touches a round flatly is the round's contact crossing
+  it. `roll`'s refusal for a kind with no offset read names the kinds it rounds.
 
 ## [0.13.0] - 2026-11-13
 

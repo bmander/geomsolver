@@ -2,7 +2,8 @@
 //! about a skew axis through a post: the admitted small fixture, whose sections are circles a
 //! test can sample exactly, so the tracer is checked without a kernel and in seconds.
 use fixtures::{tools::{skew_post,torus},motions::{Observer,cradle_roll}};
-use gcs_core::brep::swept::trace::{Band,Charted,Extent,Grid,Rows,Sample,Station,Tracer,TraceError,Withheld,STEP_TIME,charted,marked};
+use gcs_core::brep::swept::trace::{Band,Charted,Extent,Grid,Rows,Sample,Station,Tracer,TraceError,Withheld,STEP_TIME,charted,marked,
+    pinned,sheared};
 use gcs_core::solid::SweepContacts;
 use std::f64::consts::{PI,TAU};
 
@@ -165,6 +166,48 @@ fn a_margin_column_leaping_beside_the_blank_is_dropped_rather_than_the_rows() {
     reached[3] = false; times[3][6] = 0.06;
     times[2][5] = 3.2;
     assert_eq!(charted(&times,&within,&reached),Charted {rows:[0,4],columns:[1,3]});
+}
+
+/// **Rows a leap pins in the blank are leaned clear of it** (#904): where the blank's edge crosses
+/// the stations obliquely and each column holding it leaps a fixed walk past its own edge (a convex
+/// corner of the cutter, its fan), the edge and the corner cross the stations alike, and rows at
+/// one walk length in every column are past the blank in one column and past the corner in
+/// another: trimmed at the first leap, they stop in the blank (`pinned`), however far the margins
+/// grow. Leaned by the slope of the edge (`sheared`), each column's rows leave the blank on one
+/// row and meet the corner on another, and the rows kept run from the one to before the other.
+#[test]
+fn rows_pinned_by_an_oblique_corner_are_leaned_clear_of_it() {
+    // forty stations over a fifth of a radian; the blank held from walk 1 to an edge falling from
+    // 8 to 5 across them, each column leaping 1.5 past its edge
+    let columns = 40;
+    let angles: Vec<f64> = (0..columns).map(|c| 1.+0.2*c as f64/(columns-1) as f64).collect();
+    let edge = |a: f64| 8.-15.*(a-1.);
+    let reached = vec![true;columns];
+    // the columns read at rows x = -3 … 12, a tenth apart, each at walk length x + slope (a − 1.1)
+    let read = |slope: f64| {
+        let taus: Vec<f64> = (0..=150).map(|r| -3.+0.1*r as f64).collect();
+        let walk = |x: f64,a: f64| x+slope*(a-1.1);
+        let times: Vec<Vec<f64>> = angles.iter().map(|&a| taus.iter().map(|&x| {
+            let t = walk(x,a); if t < edge(a)+1.5 { 0.01*t } else { 3. } }).collect()).collect();
+        let within: Vec<Vec<bool>> = angles.iter().map(|&a| taus.iter().map(|&x| {
+            let t = walk(x,a); t > 1. && t < edge(a) }).collect()).collect();
+        (taus,times,within)
+    };
+    let (taus,times,within) = read(0.);
+    let level = charted(&times,&within,&reached);
+    assert!(pinned(&within,level),"the rows kept at one walk length stop in the blank: {level:?}");
+    // the slope of the edge, to the scan's step (the span of walk over the span of angle, 75 a
+    // radian here, over 200)
+    let slope = sheared(&angles,&taus,&times,&within,&reached).expect("a lean clears the leaps");
+    assert!((slope+15.).abs() <= 75./200.,"leaned {slope} a radian against the edge's -15");
+    let (taus,times,within) = read(slope);
+    let leaned = charted(&times,&within,&reached);
+    assert!(!pinned(&within,leaned),"leaned, the rows kept leave the blank: {leaned:?}");
+    let held = (0..taus.len()).filter(|&r| within.iter().any(|c| c[r])).max().unwrap();
+    assert!(leaned.rows[1] > held,"a row past the blank's last is kept: {leaned:?}, the blank's last {held}");
+    // with no leap there is nothing to lean by
+    let steady: Vec<Vec<f64>> = times.iter().map(|c| c.iter().map(|_| 0.).collect()).collect();
+    assert_eq!(sheared(&angles,&taus,&steady,&within,&reached),None);
 }
 
 /// A sample with no direction has no contact time: a degenerate reading, which a scan passes

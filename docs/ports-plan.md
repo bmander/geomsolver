@@ -16,7 +16,7 @@ still to decide.
   own, or a mate through the port has nothing to move. An instance stood in a frame of its own
   only where something outside read its `std` by its written path (#548), and a mate through a
   port reads it through a group. So **a definition that hands out a datum of its own in a group
-  it declares now stands in a frame of its own** (`framed::exports_datum`). Without it, every
+  it declares now stands in a frame of its own** (`framed::ports`). Without it, every
   mate conflicted with the instance standing at the world's frame.
 - **`std.ports`**: the interfaces `Seat`, `Seated`, `Flat`, `RingSeat`, `Grooved`; the mates
   `seats_in` (frames made one, and the room the part takes cut from the seat's host), `abuts`

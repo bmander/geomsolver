@@ -178,19 +178,22 @@ fn the_gears_sheet_is_traced_alike_in_a_frame_turned_to_the_pair() {
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 35 s: the gear built twice")]
 fn the_gear_builds_alike_in_a_frame_turned_to_the_pair() {
-    use gcs_core::brep::{export,sweep::Say};
-    let built = |turned: bool| {
-        let e = fixtures::solved_in_examples(&scaled_pair(turned));
-        let say = Say {stage:&|_| {},mark:&|_| {}};
-        export::exact(&e.sketch,fixtures::solid(&e,"pair.gear.body"),None,None,&say)
-            .map(|x| (x.solid.faces.len(),gcs_core::brep::props::volume(&x.solid))).map_err(|r| r.message)
-    };
+    let built = |turned: bool| gear_built(&fixtures::solved_in_examples(&scaled_pair(turned)));
     let (own,turned) = (built(false),built(true));
     let (Ok((faces,volume)),Ok((turned_faces,turned_volume))) = (&own,&turned) else {
         panic!("in its own frame {own:?}, turned {turned:?}")
     };
     assert_eq!(faces,turned_faces);
     assert!((volume-turned_volume).abs() <= 1e-9*volume,"{volume} mm³ in its own frame, {turned_volume} mm³ turned");
+}
+
+/// The pair's gear, `pair.gear.body`, built by the kernel: its faces and its volume in mm³, or why
+/// it was refused.
+fn gear_built(e: &Elaborated) -> Result<(usize,f64),String> {
+    use gcs_core::brep::{export,sweep::Say};
+    let say = Say {stage:&|_| {},mark:&|_| {}};
+    export::exact(&e.sketch,fixtures::solid(e,"pair.gear.body"),None,None,&say)
+        .map(|x| (x.solid.faces.len(),gcs_core::brep::props::volume(&x.solid))).map_err(|r| r.message)
 }
 
 /// **The gear's sheet is traced at every phase of its cutter's stations** (#904 A4): the cut of
@@ -207,6 +210,45 @@ fn the_gears_sheet_is_traced_at_every_phase_of_its_stations() {
     let refused: Vec<String> = phases.iter().zip(gear_sheets(false,&phases.iter().map(|p| Some(p.to_radians())).collect::<Vec<_>>()))
         .filter_map(|(phase,sheet)| sheet.err().map(|r| format!("{phase:.3} degrees: {r}"))).collect();
     assert!(refused.is_empty(),"refused at {} of 11 phases: {refused:#?}",refused.len());
+}
+
+/// An 18-tooth pinion on a 54-tooth gear at no offset, 1.5 mm at the mean point, with the mill and
+/// allowances of a bevel drive drawn from this document (the pressure shift its balance finds
+/// there, the cutter stated), on blanks whose faces are 0.3 R wide rather than the document's 0.2 R;
+/// the crown's floor `base` normal modules below its pitch plane, the document's 2 or deeper.
+fn wide_faced_bevel(base: u32) -> String {
+    use fixtures::gear::{configure,machine,source};
+    let pair = configure(&source(),&[("pinion_teeth",18.),("gear_teeth",54.),("mean_module",1.5),("offset",0.),
+        ("spiral_angle",25.),("backlash",0.14),("tip_relief",0.15),("end_relief",0.15),("cutter_radius",56.70915)]);
+    let pair = machine(&pair,-1.16344);
+    let (face,floor) = ("width: 0.2 * R","  base := 2 * mn\n");
+    assert!(pair.contains(face) && pair.contains(floor),"the pair's blanks are 0.2 R wide and its crown's floor 2 mn down");
+    pair.replacen(face,"width: 0.3 * R",1).replacen(floor,&format!("  base := {base} * mn\n"),1)
+}
+
+/// **A gear whose blank's edge crosses its cutter's stations obliquely is built** (#904): the gear
+/// of `wide_faced_bevel`, built by the kernel, is the same solid with the crown's floor two normal
+/// modules down and three. The neighbour's flank meets the floor at a convex corner, whose fan each
+/// station's contact curve leaps into a fixed walk past where it leaves the blank; the wide face
+/// carries the blank's edge across the stations obliquely, and the corner with it, so rows at one
+/// walk length in every column that left the blank in one column had passed the corner in another,
+/// and trimmed at the first leap they stopped in the blank however far the margins grew: "the
+/// candidate sheet cannot be widened out of the blank" (seen first on a drive's bevel gear). The
+/// rows are now leaned across the stations until each column leaves the blank on one row and
+/// meets the corner on another (`brep::swept::trace::sheared`). The floor never meets the blank,
+/// so where it stands moves the corner and not the gear, to the fit of the sheets.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 25 s: the pair solved and its gear built twice")]
+fn a_gear_whose_blanks_edge_crosses_the_stations_obliquely_is_built() {
+    let built = |base: u32| gear_built(&fixtures::gear::read(&wide_faced_bevel(base)));
+    let (two,three) = (built(2),built(3));
+    let (Ok((faces,volume)),Ok((deeper_faces,deeper))) = (&two,&three) else {
+        panic!("the floor 2 mn down {two:?}, 3 mn down {three:?}")
+    };
+    assert_eq!(faces,deeper_faces);
+    // two sheets fitted apart, each within a few micrometres of its contacts, not one sheet carried:
+    // they agree to the fit (2e-6 of the volume when this was written), not to rounding
+    assert!((volume-deeper).abs() <= 1e-5*volume,"{volume} mm³ with the floor 2 mn down, {deeper} mm³ 3 mn down");
 }
 
 /// Each flank's margin against undercut as the pair reads it — its least area factor within its

@@ -598,6 +598,8 @@ impl Enclosed<2> for Surface {
             Surface::Blend(_,b) => b.enclose([u,v]),
             Surface::BSpline(_,n) => n.enclose([u,v]),
             Surface::Family(_,w) => w.enclose([u,v]),
+            // (its normal's enclosure not read: nothing known)
+            Surface::Offset(..) => Patch::ANY,
             Surface::Affine(m) => {
                 let e = m.of.enclose([u,v]);
                 Patch {at:affine_point(&m.map,e.at),d:e.d.map(|d| affine_vector(&m.map,d)),proved:e.proved}
