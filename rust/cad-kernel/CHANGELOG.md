@@ -20,8 +20,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   path, where its pieces did not close: a ring leaning just past its fold (60°) is built now, at
   every tolerance. Still refused: a swallowtail narrower than the contact's points (56°).
 - **A swept sheet's face across its fold is measured by columns** (`props`, #880 T1b): where a
-  carried section's sheet folds within a face's box, its area and flux are read as `∬ g du dv`
-  column by column, not by Green's theorem, whose `G` carried the inverted uses' error beside the fold (the
+  carried section's sheet folds at a face (its area factor nought at a point of a use), its area
+  and flux are read as `∬ g du dv` column by column, not by Green's theorem, whose `G` carried the inverted uses' error beside the fold (the
   ball screwed tighter than its radius, 3.3e-9 off; now 2.4e-10). Every other face reads as before.
 - **A half's way at a node where its face's rates nearly run together** (`boolean`, #880 T1b) is
   first read a fiftieth along it rather than a ten-thousandth: beside a fold's path a point stands

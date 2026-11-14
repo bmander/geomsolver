@@ -45,10 +45,12 @@ fn gauss2(a: f64,b: f64,mut f: impl FnMut(f64) -> f64) -> f64 {
 }
 
 /// **A swept sheet's face across its fold, read by columns** (#880 T1b): where a carried section's
-/// sheet folds within the face's box (`Surface::Blend`, its area factor below `NEAR_FOLD` at a node
-/// of a grid of seventeen a side across the box: it runs linearly to nought across the fold point's
-/// path), a point beside the fold stands in the parameters at the square root of its distance in
-/// space, so a use's curve inverted onto the sheet there is off along the fold's way by that much.
+/// sheet folds at the face (`Surface::Blend`, its area factor below `ON_FOLD` at a point of a use
+/// its box was read from — the fold point's path, where the sheet's two rates run together; a
+/// sheet whose rates merely lean together, below `NEAR_FOLD` across its box without folding, a
+/// spline bar screwed four turns, took the columns at every reading the trim made of it, eight
+/// times its build), a point beside the fold stands in the parameters at the square root of its
+/// distance in space, so a use's curve inverted onto the sheet there is off along the fold's way by that much.
 /// Green's theorem (`integrated`) reads it through `G`, the integrand gathered from the face's
 /// middle, which is no smaller there, and on the ball screwed tighter than its radius two such faces
 /// read 1.65e-7 and 4e-8 off their own boundaries. Read instead as `∬ g du dv` column by column in
@@ -57,10 +59,7 @@ fn gauss2(a: f64,b: f64,mut f: impl FnMut(f64) -> f64) -> f64 {
 /// face, and for a sheet running round (a period), whose columns would wrap.
 fn by_columns(b: &Brep,f: &Face,area: bool,lo: Uv,hi: Uv) -> Option<f64> {
     let s = &f.surface;
-    if !matches!(s,Surface::Blend(..)) || s.periods().iter().any(Option::is_some) || !(hi[0] > lo[0] && hi[1] > lo[1]) { return None }
-    const GRID: usize = 16;
-    let at = |i: usize,j: usize| [lo[0]+(hi[0]-lo[0])*i as f64/GRID as f64,lo[1]+(hi[1]-lo[1])*j as f64/GRID as f64];
-    if !(0..=GRID).any(|i| (0..=GRID).any(|j| s.area_factor(at(i,j)) < super::geom::NEAR_FOLD)) { return None }
+    if s.periods().iter().any(Option::is_some) || !(hi[0] > lo[0] && hi[1] > lo[1]) { return None }
     // each use, its curve in the parameters read at points along its edge (in the loop's order)
     const N: usize = 256;
     let uses: Vec<(&Pcurve,&super::topo::Edge,Vec<(f64,Uv)>)> = f.loops.iter().flatten().map(|c| {
@@ -98,6 +97,10 @@ fn by_columns(b: &Brep,f: &Face,area: bool,lo: Uv,hi: Uv) -> Option<f64> {
     // the face's side, as Green's theorem takes it: the way its loops run round the parameters
     Some(if area { total.abs() } else { total*f.loops.iter().map(|l| b.loop_area(f,l)).sum::<f64>().signum() })
 }
+
+/// The area factor (`Surface::area_factor`) a swept sheet's face is read by columns below, at a
+/// point of a use: on the fold point's path, to the rounding of the use's inversion there.
+const ON_FOLD: f64 = 1e-6;
 
 /// The integrand of a face's measure at `uv`: the area's `|S_u × S_v|` or the flux's `X · (S_u × S_v)`.
 fn integrand(s: &Surface,uv: Uv,area: bool) -> f64 {
@@ -553,15 +556,18 @@ fn integrated(b: &Brep,f: &Face,area: bool) -> Vec<Vec<(f64,f64)>> {
         // on a sphere ring turned 9 radians round, `G` is π R³ times the turn, and a pcurve 1e-8
         // off in v moved a gear's flux by 1e-5 of itself
         let (mut lo,mut hi) = ([f64::INFINITY;2],[f64::NEG_INFINITY;2]);
+        let sheet = matches!(s,Surface::Blend(..));
+        let mut folds = false;
         for c in f.loops.iter().flatten() {
             let e = &b.edges[c.edge as usize];
             for j in 0..=8 {
                 let q = c.pcurve.at(e.t[0]+(e.t[1]-e.t[0])*j as f64/8.,e,s,&b.vertices);
                 for k in 0..2 { lo[k] = lo[k].min(q[k]); hi[k] = hi[k].max(q[k]); }
+                folds |= sheet && s.area_factor(q) < ON_FOLD;
             }
         }
         // (a swept sheet's face across its fold read by columns instead)
-        if let Some(v) = by_columns(b,f,area,lo,hi) { return vec![vec![(v,0.)]] }
+        if folds { if let Some(v) = by_columns(b,f,area,lo,hi) { return vec![vec![(v,0.)]] } }
         // a polynomial net's `G` tabled from the face's middle `u` (`Prefix`); a rational net's `g`
         // is a quotient, which no Gauss rule integrates exactly: it takes the stretch-by-stretch
         // rule a swept face does
