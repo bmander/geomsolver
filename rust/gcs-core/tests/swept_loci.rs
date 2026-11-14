@@ -19,7 +19,7 @@ fn screw(theta: f64,k: f64) -> Trajectory {
 
 /// `∫ f` over `[a, b]` by Gauss–Legendre's eight points (`integral::GAUSS8`) on each of `n` pieces,
 /// each read at `a + (b − a)(1 − cos τ)/2` so that a square-root end is smooth in `τ`.
-pub(crate) fn integral(a: f64,b: f64,n: usize,f: &dyn Fn(f64) -> f64) -> f64 {
+fn integral(a: f64,b: f64,n: usize,f: &dyn Fn(f64) -> f64) -> f64 {
     if !(b > a) { return 0. }
     let g = |t: f64| { let (s,c) = t.sin_cos(); f(0.5*(a+b)-0.5*(b-a)*c)*0.5*(b-a)*s };
     (0..n).map(|i| {

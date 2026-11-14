@@ -612,6 +612,13 @@ pub(crate) fn kronrod(f: &dyn Fn(f64) -> f64,lo: f64,hi: f64,tol: f64) -> f64 {
     go(f,lo,hi,tol,0)
 }
 
+/// `∫ f` over `[a, b]` within `tol`, read at `a + (b − a)(1 − cos τ)/2` so that a square-root end
+/// is smooth in `τ`, by `kronrod` over `τ`.
+pub(crate) fn tamed(a: f64,b: f64,tol: f64,f: &dyn Fn(f64) -> f64) -> f64 {
+    if !(b > a) { return 0. }
+    kronrod(&|t: f64| { let (s,c) = t.sin_cos(); f(0.5*(a+b)-0.5*(b-a)*c)*0.5*(b-a)*s },0.,PI,tol)
+}
+
 /// **What a torus pushed along `z` sweeps, line by line** (#880 T1: past its fold too), apart from
 /// the kernel: the torus about `centre` along the unit `axis`, middle radius `big` and tube
 /// `small`, carried `push` along `z`. The vertical line through `(x, y)` meets it in the intervals
@@ -622,9 +629,12 @@ pub(crate) fn kronrod(f: &dyn Fn(f64) -> f64,lo: f64,hi: f64,tol: f64) -> f64 {
 /// is smooth but where the line's make-up changes: where it crosses the outline seen down `z` (a
 /// root pair born or lost, at the outline's crossings, found in its own parameter so none is missed
 /// however narrow, as between a folded outline's cusps), and where two intervals run together or an
-/// end crosses a clip (a scan of 400 lines, bisected); each smooth piece is read by
-/// `swept_loci::integral`, its square-root ends tamed. Over `x`, by `kronrod` to `tol`, split where
-/// the outline turns back in `x`.
+/// end crosses a clip (a scan of 400 lines, bisected); each smooth piece is read by `tamed`, its
+/// square-root ends tamed, to its share of `tol`. Over `x`, by `kronrod` to `tol`, split where the
+/// outline turns back in `x`. (Read across `y` by a fixed rule, a hundred and twenty-eight points a
+/// piece, the ring pushed past its fold came out 6.5e-5 over, and doubling the rule moved it by
+/// 5.6e-5: near its cusps a piece's length runs nearly square-root-like inside it, which no fixed
+/// rule settles.)
 pub(crate) fn torus_pushed_by_lines(centre: V,axis: V,big: f64,small: f64,push: f64,within: Option<[f64;2]>,tol: f64) -> f64 {
     let reach = big+small;
     // the swept length on the line, and its make-up: how many roots, intervals kept, ends clipped
@@ -710,7 +720,7 @@ pub(crate) fn torus_pushed_by_lines(centre: V,axis: V,big: f64,small: f64,push: 
         cuts.push(y1);
         cuts.sort_by(f64::total_cmp);
         cuts.dedup_by(|p,q| (*p-*q).abs() <= 1e-12);
-        cuts.windows(2).map(|w| crate::swept_loci::integral(w[0],w[1],16,&|y| line(x,y).0)).sum()
+        cuts.windows(2).map(|w| tamed(w[0],w[1],0.1*tol*(w[1]-w[0])/(4.*reach*reach),&|y| line(x,y).0)).sum()
     };
     // over `x`, split where the outline turns back in `x` (its extremes and its cusps: where the
     // number of its crossings with a line changes), each turn bisected in `u`

@@ -810,15 +810,15 @@ fn s6s_free_form_faces_are_cut_through_the_front_door() {
 /// = (R − r)/r` its inner outline seen down the push cusps, four times, and the sheet its inner
 /// contact sweeps folds there. Apart from the build: on each vertical line the torus's intervals (a
 /// quartic's roots) pushed down 8, their union clipped to the block, integrated over the lines with
-/// the outline's crossings as breakpoints (`swept_slid::torus_pushed_by_lines`, 140.9979496033 away
-/// at 1e-9, unchanged at 1e-7 or with a breakpoint scan ten times finer;
+/// the outline's crossings as breakpoints, each line's length read across `y` to its share of the
+/// tolerance (`swept_slid::torus_pushed_by_lines`, 140.9978845384 away at 1e-9, unchanged at 1e-6;
 /// `the_fold_cases_references_are_their_definitions`).
 fn ring_fold_case() -> Case {
     let lean = 65f64.to_radians();
     Case {what:"the ring past its fold",blank:Some(crate::brep::block([-8.,-8.,-8.],[8.,8.,0.])),
         tool:torus([0.,0.,4.],[lean.sin(),0.,lean.cos()],3.,1.).unwrap(),
         path:gcs_core::brep::trajectory::Trajectory::Twist(Screw {origin:[0.,0.,4.],axis:[0.,0.,-1.],ratio:0.,advance:8.}),
-        roll:[0.,std::f64::consts::TAU],bar:0.01,volume:2048.-140.9979496033,known:1e-9}
+        roll:[0.,std::f64::consts::TAU],bar:0.01,volume:2048.-140.9978845384,known:1e-9}
 }
 
 /// `ball-screwed-round-a-tight-helix`: the ball of radius 2 about `(1.5, 0, 0)` screwed about z, a
@@ -840,10 +840,9 @@ fn ball_helix_case() -> Case {
 /// asked of the road — each face's contact carried exactly over the roll, the end poses, every
 /// meeting given, trimmed by membership, which keeps of each folded sheet what bounds the sweep —
 /// and each builds to its volume made apart from the build, within ten tolerances at 1e-5, and to a
-/// STEP file that reads back as the solid. Not yet at the kernel's tolerance: near a cusp's path
-/// the folded sheet's two leaves stand nearly tangent and the trim reads them no closer, the ring
-/// 6.5e-5 short there (3.4e-8 of the block) and the ball 2.5e-6 — what the fold cut proper owes
-/// (#880 T1).
+/// STEP file that reads back as the solid. The ring stands 7.6e-8 off (5e-10 of what it takes
+/// away) at 1e-5 and at the kernel's tolerance alike; the ball 2.5e-6 at either, 1e-8 of itself,
+/// with every face's flux and boundary agreeing — what #880 T1b owes.
 #[test]
 fn a_sheet_that_folds_is_cut_through_the_front_door() {
     for case in [ring_fold_case(),ball_helix_case()] { cut_through_the_front_door(&case,TOL) }

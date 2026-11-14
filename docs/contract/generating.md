@@ -1163,13 +1163,16 @@ tolerances at 1e-5 and with STEP files that read back
 (`swept_contacts::a_sheet_that_folds_is_cut_through_the_front_door`), and #805's two negative
 controls, the ring slid at 60° and the ball screwed tighter than its radius, build within 1e-6
 (`swept_slid::a_ring_slid_past_its_fold_is_swept_by_the_contacts_road`,
-`swept_loci::a_ball_screwed_tighter_than_its_radius_is_swept_by_the_contacts_road`). **Not yet the
-fold cut proper**: each folded case stands 1e-7 to 2e-7 off, where the road's unfolded ones stand at
-1e-9 — every line down the ring's push agrees with its definition to 1e-8 on grids to 0.012, so what
-is off is thinner, near a cusp's path, where the two leaves are nearly tangent and the trim reads
-them no closer. A cut at the fold alone (each piece cut where its image in the motion's invariants
-turns back) moved neither, and was not kept. (brep-bench's cadrs builds the ball to 282.091, 11%
-over the sweep's 253.4494.)
+`swept_loci::a_ball_screwed_tighter_than_its_radius_is_swept_by_the_contacts_road`). The ring
+stands 5e-10 off at the kernel's tolerance as at 1e-5: its reference reads each line's length
+across `y` adaptively, to its share of the tolerance, where a fixed rule of 128 points a piece read
+it 4.6e-7 of itself over and moved by 4e-7 when doubled — near the cusps a line's length runs
+nearly square-root-like inside a piece. **Not yet** (#880 T1b): the ball stands 1e-8 off at every
+tolerance, every face's flux agreeing with its boundary; and a ring leaning just past the fold, at
+56° or 60°, is refused, its swallowtail a few hundredths across — at 60° a stretch is cut at a cusp,
+where the two leaves' rates run together and a point beside the fold stands at two places of the
+face, and its pieces do not close. (brep-bench's cadrs builds the ball to 282.091, 11% over the
+sweep's 253.4494.)
 
 **A point's side off the nearest feature's pseudo-normal** (`member::Solid::signed_near`, #880
 Q1b): a point whose nearest point of the tool's mesh lies on a vertex or an edge is read by that
