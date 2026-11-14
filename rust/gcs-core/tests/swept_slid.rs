@@ -611,10 +611,12 @@ pub(crate) fn kronrod(f: &dyn Fn(f64) -> f64,lo: f64,hi: f64,tol: f64) -> f64 {
             if i % 2 == 1 { g += WG[i/2]*s }
         }
         let (k,g) = (k*h,g*h);
-        if depth >= 3 && (k-g).abs() <= tol.max(1e-14*k.abs()) || depth >= 20 { return k }
+        if (k-g).abs() <= tol.max(1e-14*k.abs()) || depth >= 20 { return k }
         go(f,lo,m,tol/2.,depth+1)+go(f,m,hi,tol/2.,depth+1)
     }
-    go(f,lo,hi,tol,0)
+    // (begun on eight pieces, three halvings in)
+    let h = (hi-lo)/8.;
+    (0..8).map(|i| go(f,lo+h*i as f64,lo+h*(i+1) as f64,tol/8.,3)).sum()
 }
 
 /// `∫ f` over `[a, b]` within `tol`, read at `a + (b − a)(1 − cos τ)/2` so that a square-root end

@@ -126,17 +126,17 @@ fn swept_volume(r: f64,d: f64,k: f64,theta: f64) -> f64 {
 /// bench's ball read 1e-6 low, and the ball screwed tighter than its radius 4.2e-7 apart between
 /// 1e-9 and 1e-10.)
 pub(crate) fn swept_by_circles(r: f64,d: f64,k: f64,theta: f64,tol: f64) -> f64 {
-    // `L`, the arcs' run unwrapped (`2·2π` where a roll covers the circle whole)
+    // the half-height `s` of the rolls' reach of the circle of radius `ρ`, where they reach it:
+    // `(z − kφ)² ≤ s² = r² − (ρ − d)²`, the rolls with `c ≤ 1`
+    let span = |rho: f64| { let reach = r*r-(rho-d)*(rho-d); (reach > 0.).then(|| reach.sqrt()) };
+    // `L`, the arcs' run unwrapped (`2π` where a roll covers the circle whole)
     let run = |rho: f64,z: f64| -> f64 {
-        // the rolls with `c ≤ 1`: `(z − kφ)² ≤ r² − (ρ − d)²`
-        let reach = r*r-(rho-d)*(rho-d);
-        if !(reach > 0.) || !(rho > 0.) { return 0. }
-        let s = reach.sqrt();
+        let Some(s) = span(rho).filter(|_| rho > 0.) else { return 0. };
         let (lo,hi) = (((z-s)/k).max(0.),((z+s)/k).min(theta));
         if !(hi > lo) { return 0. }
         // a roll with `c ≤ −1` covers the whole circle: `(z − kφ)² ≤ r² − (ρ + d)²`
         let whole = r*r-(rho+d)*(rho+d);
-        if whole >= 0. { let s = whole.sqrt(); if ((z-s)/k).max(0.) <= ((z+s)/k).min(theta) { return 2.*TAU } }
+        if whole >= 0. { let s = whole.sqrt(); if ((z-s)/k).max(0.) <= ((z+s)/k).min(theta) { return TAU } }
         let w = |phi: f64| { let zb = z-k*phi; ((rho*rho+d*d+zb*zb-r*r)/(2.*rho*d)).clamp(-1.,1.).acos() };
         let extreme = |f: &dyn Fn(f64) -> f64| -> f64 {
             let n = 256;
@@ -150,16 +150,16 @@ pub(crate) fn swept_by_circles(r: f64,d: f64,k: f64,theta: f64,tol: f64) -> f64 
     // over `z`, cut where the circle's make-up changes: where the rolls first and last reach its
     // height (`±s` past the ends' heights), where the end poses stop clamping them, and where whole
     // circles start and stop — each piece's square-root ends tamed
-    let along = |rho: f64,tol: f64| -> f64 {
-        let reach = r*r-(rho-d)*(rho-d);
-        if !(reach > 0.) { return 0. }
-        let (s,top) = (reach.sqrt(),k*theta);
+    let share = 0.1*tol/(d+r);
+    let along = |rho: f64| -> f64 {
+        let Some(s) = span(rho) else { return 0. };
+        let top = k*theta;
         let mut cuts = vec![-s,s,top-s,top+s];
         let whole = r*r-(rho+d)*(rho+d);
         if whole > 0. { let w = whole.sqrt(); cuts.extend([-w,w,top-w,top+w]) }
         cuts.retain(|&z| z >= -s && z <= top+s);
         cuts.sort_by(f64::total_cmp);
-        cuts.windows(2).map(|w| crate::swept_slid::tamed(w[0],w[1],tol*(w[1]-w[0])/(top+2.*s),&|z| covered(rho,z))).sum()
+        cuts.windows(2).map(|w| crate::swept_slid::tamed(w[0],w[1],share*(w[1]-w[0])/(top+2.*s),&|z| covered(rho,z))).sum()
     };
     // over `ρ`, cut at `|r − d|` and where the stretches along `z` of circles covered all round by
     // the arcs' run (`L ≥ 2π`) change in number — where one is born its contribution grows as a
@@ -167,9 +167,8 @@ pub(crate) fn swept_by_circles(r: f64,d: f64,k: f64,theta: f64,tol: f64) -> f64 
     // radius at 0.8492, the bench's at 2.8651) — found among 400 radii, each counted at 400
     // heights, and bisected
     let stretches = |rho: f64| -> usize {
-        let reach = r*r-(rho-d)*(rho-d);
-        if !(reach > 0.) { return 0 }
-        let (a,b) = (-reach.sqrt(),k*theta+reach.sqrt());
+        let Some(s) = span(rho) else { return 0 };
+        let (a,b) = (-s,k*theta+s);
         let mut was = false;
         (0..=400).filter(|&i| { let on = run(rho,a+(b-a)*i as f64/400.) >= TAU; let born = on && !was; was = on; born }).count()
     };
@@ -178,12 +177,11 @@ pub(crate) fn swept_by_circles(r: f64,d: f64,k: f64,theta: f64,tol: f64) -> f64 
     let mut cuts = vec![0.,(r-d).abs(),d+r];
     for i in 1..400 {
         if counts[i] == counts[i+1] { continue }
-        let (mut a,mut b) = (rhos[i],rhos[i+1]);
-        for _ in 0..50 { let m = 0.5*(a+b); if stretches(m) == counts[i] { a = m } else { b = m } }
+        let (a,b) = gcs_core::roots::bisect(rhos[i],rhos[i+1],|a,b| 0.5*(a+b),|a,b| b-a > 1e-15*(d+r),|m| stretches(m) == counts[i]);
         cuts.push(0.5*(a+b));
     }
     cuts.sort_by(f64::total_cmp);
-    cuts.windows(2).map(|w| crate::swept_slid::tamed(w[0],w[1],0.5*tol,&|rho| rho*along(rho,0.1*tol/(d+r)))).sum()
+    cuts.windows(2).map(|w| crate::swept_slid::tamed(w[0],w[1],0.5*tol,&|rho| rho*along(rho))).sum()
 }
 
 /// **The sweep's definition sampled**: whether the ball of radius `r` about `(d, 0, 0)`, screwed

@@ -1184,8 +1184,9 @@ runs within a tenth of a radian of the flow. Drawn to the clearest point, a cut 
 the swallowtail's tip, and the stretch ended on the fold's path, where the sheet's two rates run
 together: its meeting with an end pose was traced near the cusp on either leaf, and the pieces did
 not close (the ring slid at 60°, refused finer than 1e-6; pushed in at 60°, at every tolerance).
-**At a node where a face's rates nearly run together** — a fold's path through the middle of a
-stretch — a half's way is read a fiftieth along it, not a ten-thousandth (`boolean`'s `dir_at`):
+**At a node where a face's rates nearly run together** (`geom::NEAR_FOLD`) — a fold's path
+through the middle of a stretch — a half's way is first read a fiftieth along it, not a
+ten-thousandth (`boolean`'s `leave` and `arrive_back`; ways tied there are read again at one length):
 there a point beside the node stands in the parameters at the square root of its distance in
 space, and a curve leaving the cusp at an end pose read 0.26 radians for −2.3, its pieces open (the
 ring at 65°, its cut held clear, at 1e-5). **Not yet:** the ring pushed in at 56°, its

@@ -23,6 +23,12 @@ pub fn tolerance_over(size: f64,floor: f64) -> f64 { tolerance(size).max(floor) 
 pub type Box3 = (V,V);
 /// The box holding nothing, which anything widens.
 pub const EMPTY: Box3 = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
+
+/// The area factor (`Surface::area_factor`) below which a sheet's two rates read as beside its
+/// fold, within three degrees of each other: there a point beside the fold stands in the
+/// parameters at about the square root of its distance in space, and what is read from inverted
+/// points — a way at a node (`boolean`), a face's flux by Green's theorem (`props`) — reads past it.
+pub const NEAR_FOLD: f64 = 0.05;
 /// `t` moved by whole periods into `[lo, lo + period)`.
 pub fn around(t: f64,lo: f64,period: f64) -> f64 { lo+(t-lo).rem_euclid(period) }
 /// `b` widened to hold `p`.
@@ -1244,6 +1250,10 @@ impl Surface {
     pub fn normal_raw(&self,uv: Uv) -> V { let (_,su,sv) = self.d1(uv); cross(su,sv) }
     /// The unit normal, where it is defined.
     pub fn normal(&self,uv: Uv) -> Option<V> { crate::util::space::normalised(self.normal_raw(uv)) }
+    /// How far its two rates stand from running together at `uv`: `|S_u × S_v|` over `|S_u| |S_v|`,
+    /// the sine of the angle between them. Nought along a swept sheet's fold, the fold point's path,
+    /// and below `NEAR_FOLD` beside it.
+    pub fn area_factor(&self,uv: Uv) -> f64 { let (_,su,sv) = self.d1(uv); norm(cross(su,sv))/(norm(su)*norm(sv)).max(1e-300) }
     /// The parameters of the surface point nearest `p`, `u` within its period where periodic
     /// (`[0, 2π)`, or `[0, 1)` for a loft face running round). For a
     /// point on the surface this is exact to rounding; off it, the foot of the normal through it

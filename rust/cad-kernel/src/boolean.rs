@@ -2953,22 +2953,21 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool,tol: f64) -
     }).collect();
     // each half's direction leaving its start and arriving at its end, as lengths, oriented, read a
     // part `s` of its way along it
-    // (at a node where the surface's two rates nearly run together — a folded sheet's cuspidal edge,
-    // the fold point's path — a point beside it stands in the parameters at the square root of its
-    // distance in space, so a curve's point a ten-thousandth along it, inverted, read its way off by
-    // radians, 0.26 for −2.3 on the ring at 65°: there the chord is read a fiftieth along it, past
-    // that band)
     let dir_at = |h: &Half,at_start: bool,s: f64| -> f64 {
-        let node = if at_start { h.from } else { h.to };
-        let (_,su,sv) = f.surface.d1(node);
-        let (ku,kv) = (norm(su).max(1e-12),norm(sv).max(1e-12));
-        let s = if norm(crate::util::space::cross(su,sv)) < 0.05*ku*kv { s.max(0.02) } else { s };
         let (p,q) = if at_start { (h.from,at(h,f,out,pool,s)) } else { (h.to,at(h,f,out,pool,1.-s)) };
+        let (_,su,sv) = f.surface.d1(p);
+        let (ku,kv) = (norm(su).max(1e-12),norm(sv).max(1e-12));
         let (p,q) = (oriented(f,p),oriented(f,q));
         ((q[1]-p[1])*kv).datan2((q[0]-p[0])*ku)
     };
-    let leave: Vec<f64> = halves.iter().map(|h| dir_at(h,true,1e-4)).collect();
-    let arrive_back: Vec<f64> = halves.iter().map(|h| dir_at(h,false,1e-4)).collect();
+    // each read first a ten-thousandth along it — or a fiftieth beside a fold (`NEAR_FOLD`, a
+    // folded sheet's cuspidal edge, the fold point's path), where a point beside the node stands in
+    // the parameters at the square root of its distance in space, and a curve's point a
+    // ten-thousandth along it, inverted, read its way off by radians, 0.26 for −2.3 on the ring at
+    // 65°. (Ways tied at a node are read again at one length, `way_at`, wherever they stand.)
+    let first = |p: Uv| if f.surface.area_factor(p) < super::geom::NEAR_FOLD { 0.02 } else { 1e-4 };
+    let leave: Vec<f64> = halves.iter().map(|h| dir_at(h,true,first(h.from))).collect();
+    let arrive_back: Vec<f64> = halves.iter().map(|h| dir_at(h,false,first(h.to))).collect();
     // where two halves leave a node within rounding of one way (two curves tangent there), read
     // apart by how they turn: the chord's way at a step `δ` along a half is `θ₀ + κ δ/2`, so read at
     // `δ` and `2δ` of its own length it gives `κ`, and the two compared at one length (the shorter

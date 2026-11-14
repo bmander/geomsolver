@@ -818,9 +818,10 @@ each node's foot from the previous node's, carried along by its rate, where that
 behind it, the branch still the one nearest the line between the ends — from that line, Newton
 took some ten steps a node on a fitted sheet's curved edge.
 **A swept sheet's face across its fold is read by columns** (`props`'s `by_columns`, #880 T1b):
-where a carried section's sheet (`Surface::Blend`) folds within a face — `|S_u × S_v|` falling
-below a millionth of `|S_u| |S_v|` beside a use of its loops, the fold point's path, where the
-sheet's two rates run together — a point beside the fold stands in the parameters at the square root
+where a carried section's sheet (`Surface::Blend`) folds within a face's box — its area factor
+(`Surface::area_factor`, `|S_u × S_v|` over `|S_u| |S_v|`) below `geom::NEAR_FOLD` at a node of a
+grid of seventeen a side across the box, no use inverted, the factor running linearly to nought
+across the fold point's path — a point beside the fold stands in the parameters at the square root
 of its distance in space, and a use inverted onto the sheet there is off along the fold's way by
 that much. Green's theorem reads it through `G`, gathered from the face's middle and no smaller
 there: the ball screwed tighter than its radius had two such faces read 1.65e-7 and 4e-8 off
@@ -829,7 +830,8 @@ column by column in `u` instead — each column's crossings with the loops bisec
 curves, `g` gathered between them, the columns cut at the uses' ends and turns — the error stands
 where `g` itself vanishes, and the ball reads 2.4e-10 off
 (`swept_loci::the_tight_ball_holds_at_the_kernels_tolerance`); its side is its loops' way round the
-parameters. Every other face keeps Green's reading, to the bit.
+parameters. A sheet running round (a period) keeps Green's reading, as every other face does, to the
+bit.
 **A traced edge inverted onto its face is measured across planes** (`props`'s `along_trace`,
 #798): Green's integral is the curve's, however parameterised, so it is read not by the trace's
 own parameter — which counts its points, its rate stepping at each, every stretch a rule of its own
