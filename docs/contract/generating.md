@@ -1174,7 +1174,7 @@ round is born or dies — where uncut it read the bench's ball 3.5e-6 low; and i
 only past three halvings (`swept_slid::kronrod`), the two rules having agreed on a piece both
 misread by 1.65e-4. Read so, every folded case the road builds stands within its tolerance: at the
 kernel's, the bench's ring 5e-10 off and its ball 4e-10, the ball screwed tighter than its radius
-within its area times the tolerance (1.7e-9 of it)
+within its area times the tolerance (3.3e-9 of it, its volume read no closer)
 (`swept_contacts::the_fold_cases_hold_at_the_kernels_tolerance`,
 `swept_loci::the_tight_ball_holds_at_the_kernels_tolerance`), and the ring slid at 60° within 1e-9
 (`swept_slid::a_ring_slid_past_its_fold_is_swept_by_the_contacts_road`). **A stretch is cut

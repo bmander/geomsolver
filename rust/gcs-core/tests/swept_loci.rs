@@ -279,7 +279,7 @@ fn a_pipe_comes_back_onto_itself_along_helices() {
 /// `Folded` before it, #805): a ball reaching past its centre's helix's radius of curvature, `(ρ² +
 /// κ²)/ρ`, folds its pipe, which the closed class reads as `Folded` at the ball's centre; under a
 /// constant twist that refusal is asked of the contact's road, whose trim keeps of the folded pipe
-/// what bounds the sweep. Held within 1e-6 at 1e-6 (2.3e-7 of it; 1.7e-9 at the kernel's
+/// what bounds the sweep. Held within 1e-6 at 1e-6 (2.8e-7 of it; 3.3e-9 at the kernel's
 /// tolerance) to the sweep's volume circle by circle, 11.7537013464 (`swept_by_circles`, apart
 /// from the kernel, unchanged from 1e-8 to 1e-10; `the_tight_balls_reference_is_its_definition`).
 #[test]
@@ -290,7 +290,8 @@ fn a_ball_screwed_tighter_than_its_radius_is_swept_by_the_contacts_road() {
 }
 
 /// **The tight ball at the kernel's tolerance** (#880 T1b): within its boundary's area times the
-/// tolerance of its volume circle by circle — 2e-8 today, 1.7e-9 of it.
+/// tolerance of its volume circle by circle — 3.9e-8 today, 3.3e-9 of it, its volume read no
+/// closer: its faces' vector areas close to 1.8e-7, and moved 50 along z it reads 3e-6 apart.
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about ten seconds: the ball at the kernel's tolerance")]
 fn the_tight_ball_holds_at_the_kernels_tolerance() {
