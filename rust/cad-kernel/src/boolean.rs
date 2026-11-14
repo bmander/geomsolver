@@ -2953,10 +2953,17 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool,tol: f64) -
     }).collect();
     // each half's direction leaving its start and arriving at its end, as lengths, oriented, read a
     // part `s` of its way along it
+    // (at a node where the surface's two rates nearly run together — a folded sheet's cuspidal edge,
+    // the fold point's path — a point beside it stands in the parameters at the square root of its
+    // distance in space, so a curve's point a ten-thousandth along it, inverted, read its way off by
+    // radians, 0.26 for −2.3 on the ring at 65°: there the chord is read a fiftieth along it, past
+    // that band)
     let dir_at = |h: &Half,at_start: bool,s: f64| -> f64 {
-        let (p,q) = if at_start { (h.from,at(h,f,out,pool,s)) } else { (h.to,at(h,f,out,pool,1.-s)) };
-        let (_,su,sv) = f.surface.d1(p);
+        let node = if at_start { h.from } else { h.to };
+        let (_,su,sv) = f.surface.d1(node);
         let (ku,kv) = (norm(su).max(1e-12),norm(sv).max(1e-12));
+        let s = if norm(crate::util::space::cross(su,sv)) < 0.05*ku*kv { s.max(0.02) } else { s };
+        let (p,q) = if at_start { (h.from,at(h,f,out,pool,s)) } else { (h.to,at(h,f,out,pool,1.-s)) };
         let (p,q) = (oriented(f,p),oriented(f,q));
         ((q[1]-p[1])*kv).datan2((q[0]-p[0])*ku)
     };

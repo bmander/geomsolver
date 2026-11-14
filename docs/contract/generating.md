@@ -1176,14 +1176,21 @@ misread by 1.65e-4. Read so, every folded case the road builds stands within its
 kernel's, the bench's ring 5e-10 off and its ball 4e-10, the ball screwed tighter than its radius
 within its area times the tolerance (1.7e-9 of it)
 (`swept_contacts::the_fold_cases_hold_at_the_kernels_tolerance`,
-`swept_loci::the_tight_ball_holds_at_the_kernels_tolerance`). **Not yet** (#880 T1b): a ring
-leaning just past the fold — slid at 60° finer than 1e-6, pushed in at 56° or 60° — is refused.
-Where a stretch is cut at a cusp, the cusp's leaves stand within the tolerance of each other over
-a band some `tol^⅔` wide, each one's meeting with an end pose is traced apart, and near the cusp
-the one meeting comes out on either leaf, a branch along a leaf's side beside the fold and the
-other short of the corner; its pieces do not close. Cut at every fold instead (a piece cut where
-its image in the motion's invariants turns back), 60° builds and 70° is refused the same way: the
-meeting by the cusp has to be given, not traced on each leaf. (brep-bench's cadrs builds the ball
+`swept_loci::the_tight_ball_holds_at_the_kernels_tolerance`), and the ring slid at 60° within 1e-9
+(`swept_slid::a_ring_slid_past_its_fold_is_swept_by_the_contacts_road`). **A stretch is cut
+clear of the folds** (`contacts::stretches`, #880 T1b): not within half its reach of where its
+image in the motion's invariants turns back, or barely moves against the piece — where the contact
+runs within a tenth of a radian of the flow. Drawn to the clearest point, a cut found the cusp,
+the swallowtail's tip, and the stretch ended on the fold's path, where the sheet's two rates run
+together: its meeting with an end pose was traced near the cusp on either leaf, and the pieces did
+not close (the ring slid at 60°, refused finer than 1e-6; pushed in at 60°, at every tolerance).
+**At a node where a face's rates nearly run together** — a fold's path through the middle of a
+stretch — a half's way is read a fiftieth along it, not a ten-thousandth (`boolean`'s `dir_at`):
+there a point beside the node stands in the parameters at the square root of its distance in
+space, and a curve leaving the cusp at an end pose read 0.26 radians for −2.3, its pieces open (the
+ring at 65°, its cut held clear, at 1e-5). **Not yet:** the ring pushed in at 56°, its
+swallowtail 0.02 across, narrower than the piece's points, which turn back between two of them —
+refused by the hole its end pose's meeting leaves near the cusp. (brep-bench's cadrs builds the ball
 to 282.091, 11% over the sweep's 253.4494.)
 
 **A point's side off the nearest feature's pseudo-normal** (`member::Solid::signed_near`, #880

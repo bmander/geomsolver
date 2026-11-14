@@ -1145,6 +1145,20 @@ fn stretches(piece: &Piece,size: f64,carry: &crate::trajectory::Screw) -> Vec<Pi
     let along = |x: usize,y: usize| { let d = (at[x]-at[y]).abs(); if piece.closed { d.min(length-d) } else { d } };
     let clear = |c: usize| (0..pts.len()).step_by(4).filter(|&j| along(j,c) > 0.05*length).map(|j| gap(inv[c],inv[j])).fold(f64::INFINITY,f64::min);
     let margin = 1e-3*size;
+    let reach = 0.25*length/n as f64;
+    // (no cut within half a reach of where the piece's image turns back, or barely moves against the
+    // piece itself — a fold: a stretch ending on the fold's path ends where its sheet's rates run
+    // together and the trim's pieces there do not close, the ring slid at 60°, its cut drawn onto
+    // the cusp, the clearest point of the swallowtail)
+    let tiny = 1e-9*size;
+    let step = |i: usize| { let mut d = [inv[i+1][0]-inv[i][0],inv[i+1][1]-inv[i][1]]; if let Some(p) = pitch { d[1] = (d[1]+0.5*p).rem_euclid(p)-0.5*p } d };
+    let speed: Vec<f64> = (0..pts.len()-1).map(|i| { let d = step(i); d[0].hypot(d[1])/distance(pts[i],pts[i+1]).max(tiny) }).collect();
+    let fastest = speed.iter().copied().fold(0f64,f64::max);
+    let folds: Vec<usize> = (1..pts.len()-1).filter(|&i| {
+        let (a,b) = (step(i-1),step(i));
+        a[0].hypot(a[1]) > tiny && b[0].hypot(b[1]) > tiny && a[0]*b[0]+a[1]*b[1] < 0. || speed[i].min(speed[i-1]) < 0.1*fastest
+    }).collect();
+    let off_folds = |j: usize| folds.iter().all(|&f| along(j,f) > 0.5*reach);
     let mut cuts: Vec<usize> = (0..=n).map(|k| at.partition_point(|&x| x < length*k as f64/n as f64).min(pts.len()-1)).collect();
     let (first,last) = (0,cuts.len()-1);
     for k in 0..cuts.len() {
@@ -1152,11 +1166,10 @@ fn stretches(piece: &Piece,size: f64,carry: &crate::trajectory::Screw) -> Vec<Pi
         if !piece.closed && (k == first || k == last) { continue }
         if piece.closed && k == last { cuts[k] = cuts[first]; continue }
         let c0 = cuts[k];
-        let reach = 0.25*length/n as f64;
-        let near: Vec<usize> = (0..pts.len()).filter(|&j| along(j,c0) <= reach && (piece.closed || j > 0 && j+1 < pts.len())).collect();
+        let near: Vec<usize> = (0..pts.len()).filter(|&j| along(j,c0) <= reach && (piece.closed || j > 0 && j+1 < pts.len()) && off_folds(j)).collect();
         let mut by: Vec<(f64,usize)> = near.iter().map(|&j| (along(j,c0),j)).collect();
         by.sort_by(|x,y| x.0.total_cmp(&y.0));
-        let mut best = (clear(c0),c0);
+        let mut best = (if off_folds(c0) { clear(c0) } else { f64::NEG_INFINITY },c0);
         if best.0 < margin {
             for &(_,j) in &by {
                 let g = clear(j);

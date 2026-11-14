@@ -228,9 +228,8 @@ pub(crate) fn plunged_away(big: f64,small: f64,beta: f64,depth: f64) -> f64 {
 /// refuses by name as `Folded` at a point of the inner contact (`closed::reads`); its build asks
 /// the contact's road, whose trim keeps of the folded sheet what bounds the sweep. Held to the
 /// sweep's volume line by line (`torus_pushed_by_lines`, apart from the kernel, to 1e-9) within
-/// 1e-6 of it at 1e-6 (1.1e-8 of it). Finer than 1e-6, refused (`Folded`): a stretch is cut at a
-/// cusp, where the two leaves stand within the tolerance of each other and the trim's pieces do
-/// not close (#880 T1b).
+/// 1e-9 of it at the kernel's tolerance (3.7e-10 of it). Its stretches are cut clear of the cusps
+/// (`contacts::stretches`): cut at one, it was refused finer than 1e-6 (#880 T1b).
 #[test]
 fn a_ring_slid_past_its_fold_is_swept_by_the_contacts_road() {
     use gcs_core::brep::swept::closed::reads;
@@ -245,9 +244,10 @@ fn a_ring_slid_past_its_fold_is_swept_by_the_contacts_road() {
         }
         other => panic!("read as folded, not {:?}",other.err()),
     }
-    let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap_or_else(|e| panic!("{e:?}"));
+    let tol = gcs_core::brep::geom::tolerance(tool.size());
+    let built = closed(&tool,&path,[0.,1.],0.002,tol).unwrap_or_else(|e| panic!("{e:?}"));
     let expected = torus_pushed_by_lines([0.;3],ring.frame.z,3.,1.,6.,None,1e-9);
-    assert!((volume(&built)-expected).abs() <= 1e-6*expected,"{} against {expected}",volume(&built));
+    assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
 }
 
 
