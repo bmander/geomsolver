@@ -301,7 +301,8 @@ subtraction class builds a spur rack's, is left open: its tooth is no prism squa
 `gcs-cli/src/cad/native/sweep_boundary.rs`: cutters sectioned (`backend/sections.cpp`), contact
 times from `SweepContacts::at_point_normal_over` (`PointContactError`), sheets traced and
 resampled by the core (`solid::contact_trace`, fed section samples and nothing else; rows stop
-outside the blank before a time leaps: `charted`; fall by walk length, or by length in space where
+outside the blank before a time leaps: `charted`, leaned across the stations where a leap pins
+them in it: `sheared`; fall by walk length, or by length in space where
 that fit misses or folds: `Rows`), indexed by the declared motion, blank split (fuzzy 1e-5 mm),
 cells judged by `MaterialEvaluator::probe`. The construction is in mm, a field in the document's
 units: every field it asks is a `solid::Millimetres` (points, values, a probe's radius in mm; its
@@ -1841,6 +1842,30 @@ is left at that side; the rows are then trimmed at the kept columns' leaps as be
 past the band's start by `Cutter::turned`, `sweep::traced_turned`). So are the configured pair's
 gear cut with a 90.37 mm cutter and both members of the 25-tooth pair built, where that refusal
 was seen too.
+
+**A sheet's rows lean where a leap pins them in the blank (#904):** a column holding the blank
+leaps where its contact curve runs into a convex corner's fan of the cutter (the neighbour's flank
+meeting the crown's floor, `Space`), a fixed walk past where it leaves the blank. Where the blank's
+edge crosses the stations obliquely (a bevel gear's face 0.3 R wide, on a drive), the corner does
+too, and rows at one walk length in every column cannot be past the blank in one column and before
+the corner in another: trimmed at the first leap (`charted`) the kept rows stopped in the blank
+(`pinned`), and no margin moved the corner, "the candidate sheet cannot be widened out of the
+blank". The rows are then leaned (`Shear`: row `x` at station angle `a` is walk length
+`x + slope·(a − at)`, `at` the band's middle) by the slope among `SLOPES` each side of none that
+keeps the nearest leap furthest outside the rows the blank holds once leaned, where that is further
+than none keeps it and at least a row and a half (`sheared`), up to `SHEARS` times; the columns are
+traced again over the leaned span, and every station a finer grid or a withheld contact asks for
+is read leaned alike (`Layout::station`, `Layout::at`, `Anchors` in row coordinates). Rows never
+pinned are not leaned, and their sheet is traced as it was; rows a widened margin once carried past
+their pin (the drive's gear relief, at its fourth margin) are leaned at the first instead. A leaned
+sheet is said so (`its rows leaned … to leave the blank before a leap`). A leap within the rows a
+column itself holds in the blank is no lean's to clear, and stays the chart contract's
+(`contact_trace::rows_pinned_by_an_oblique_corner_are_leaned_clear_of_it`;
+`hypoid_machine::a_gear_whose_blanks_edge_crosses_the_stations_obliquely_is_built`, slow: the
+18/54 pair at no offset on 0.3 R faces, the same solid with the crown's floor 2 and 3 normal
+modules down, to the fit). Left open: the 24/48 hypoid of `hypoid_machine::scaled_pair` on 0.3 R
+faces is leaned out of the blank, but its fitted sheet then folds in the blank under either row
+placement (by walk length it folds there on its own 0.2 R faces too, and by length in space holds).
 
 **A fold's gap outside the blank is crossed, not turned at (#904 A1/A2):** where a station's root
 meets the other in a fold of the time chart outside the blank and comes back further along the walk
