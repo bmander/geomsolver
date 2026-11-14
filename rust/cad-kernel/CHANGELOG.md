@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.14.0] - 2026-11-14
+
 - **A sheet that folds under a slide, a turn or a screw goes the contact's road** (`swept::closed`,
   #880 T1): what the closed class refuses as `Folded` under a constant twist is asked of the road,
   as `Curved` is, whose trim keeps of each folded sheet what bounds the sweep. brep-bench's
