@@ -1167,8 +1167,12 @@ controls, the ring slid at 60° and the ball screwed tighter than its radius, bu
 stands 5e-10 off at the kernel's tolerance as at 1e-5: its reference reads each line's length
 across `y` adaptively, to its share of the tolerance, where a fixed rule of 128 points a piece read
 it 4.6e-7 of itself over and moved by 4e-7 when doubled — near the cusps a line's length runs
-nearly square-root-like inside a piece. **Not yet** (#880 T1b): the ball stands 1e-8 off at every
-tolerance, every face's flux agreeing with its boundary; and a ring leaning just past the fold, at
+nearly square-root-like inside a piece. The balls' reference cuts each of its integrals where the
+integrand's make-up changes — over `z` where the rolls reach a circle's height, the end poses stop
+clamping them and whole circles start and stop; over `ρ` where a stretch of circles covered all
+round is born — where uncut it read the bench's ball 1e-6 low. **Not yet** (#880 T1b): the bench's
+ball stands 1.4e-8 off at every tolerance, every face's flux agreeing with its boundary (the ball
+screwed tighter than its radius 1.7e-9 at the kernel's tolerance); and a ring leaning just past the fold, at
 56° or 60°, is refused, its swallowtail a few hundredths across — at 60° a stretch is cut at a cusp,
 where the two leaves' rates run together and a point beside the fold stands at two places of the
 face, and its pieces do not close. (brep-bench's cadrs builds the ball to 282.091, 11% over the

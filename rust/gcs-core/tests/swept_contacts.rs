@@ -825,12 +825,12 @@ fn ring_fold_case() -> Case {
 /// radian a radian, rising 3 a turn, two turns. The helix's radius of curvature, about 1.65, is
 /// less than the ball's, so the pipe about it folds, and the turns overlap. Apart from the build:
 /// each circle about the axis covered `min(L, 2π)`, `L` the unwrapped stretch the poses' arcs on it
-/// run together into, integrated over `ρ` and `z` (`swept_loci::swept_by_circles`: 253.4493761839
-/// at 1e-8, 253.4493759525 at 1e-6). brep-bench's cadrs builds 282.091, 11% over.
+/// run together into, integrated over `ρ` and `z` (`swept_loci::swept_by_circles`: 253.4493771857
+/// at 1e-7, unchanged at 1e-9). brep-bench's cadrs builds 282.091, 11% over.
 fn ball_helix_case() -> Case {
     Case {what:"the ball round a tight helix",blank:None,tool:gcs_core::brep::build::sphere([1.5,0.,0.],[0.,0.,1.],2.).unwrap(),
         path:gcs_core::brep::trajectory::Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:3.}),
-        roll:[0.,2.*std::f64::consts::TAU],bar:0.002,volume:253.4493761839,known:1e-9}
+        roll:[0.,2.*std::f64::consts::TAU],bar:0.002,volume:253.4493771857,known:1e-9}
 }
 
 /// **A sheet that folds goes the contact's road** (#880 T1, brep-bench's
@@ -841,7 +841,7 @@ fn ball_helix_case() -> Case {
 /// meeting given, trimmed by membership, which keeps of each folded sheet what bounds the sweep —
 /// and each builds to its volume made apart from the build, within ten tolerances at 1e-5, and to a
 /// STEP file that reads back as the solid. The ring stands 7.6e-8 off (5e-10 of what it takes
-/// away) at 1e-5 and at the kernel's tolerance alike; the ball 2.5e-6 at either, 1e-8 of itself,
+/// away) at 1e-5 and at the kernel's tolerance alike; the ball 3.5e-6 at either, 1.4e-8 of itself,
 /// with every face's flux and boundary agreeing — what #880 T1b owes.
 #[test]
 fn a_sheet_that_folds_is_cut_through_the_front_door() {
@@ -849,14 +849,14 @@ fn a_sheet_that_folds_is_cut_through_the_front_door() {
 }
 
 /// **The fold cases' references are their definitions**, recomputed: the ring's pushed line by line
-/// to 1e-9 (`swept_slid::torus_pushed_by_lines`), the ball's circle by circle to 1e-6
+/// to 1e-9 (`swept_slid::torus_pushed_by_lines`), the ball's circle by circle to 1e-7
 /// (`swept_loci::swept_by_circles`), each the constant its case holds to within what it is read to.
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about two minutes: the ball's circles to 1e-6")]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about two minutes: the ball's circles to 1e-7")]
 fn the_fold_cases_references_are_their_definitions() {
     let lean = 65f64.to_radians();
     let away = crate::swept_slid::torus_pushed_by_lines([0.,0.,4.],[lean.sin(),0.,lean.cos()],3.,1.,-8.,Some([-8.,0.]),1e-9);
     assert!((2048.-away-ring_fold_case().volume).abs() <= 1e-9,"the ring: {away}");
-    let ball = crate::swept_loci::swept_by_circles(2.,1.5,3./std::f64::consts::TAU,2.*std::f64::consts::TAU,1e-6);
-    assert!((ball-ball_helix_case().volume).abs() <= 1e-6,"the ball: {ball}");
+    let ball = crate::swept_loci::swept_by_circles(2.,1.5,3./std::f64::consts::TAU,2.*std::f64::consts::TAU,1e-7);
+    assert!((ball-ball_helix_case().volume).abs() <= 1e-9,"the ball: {ball}");
 }

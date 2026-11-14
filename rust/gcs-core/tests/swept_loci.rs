@@ -117,10 +117,17 @@ fn swept_volume(r: f64,d: f64,k: f64,theta: f64) -> f64 {
 /// half-width `w = acos c`, every point where `c ≤ −1`, none where `c > 1`. Over the rolls with `c
 /// ≤ 1`, one stretch, the arcs run together into `[min (φ − w), max (φ + w)]` of the unwrapped
 /// angle, so the circle is covered `min(L, 2π)` of its `2π`: each extreme sampled at 256 rolls and
-/// polished by Brent's method (`most`). The volume is `∫ ρ ∫ min(L, 2π) dz dρ`, each by
-/// `swept_slid::kronrod`.
+/// polished by Brent's method (`most`). The volume is `∫ ρ ∫ min(L, 2π) dz dρ`, each integral cut
+/// where its integrand's make-up changes — over `z` where the rolls reach a circle's height, where
+/// the end poses stop clamping them and where whole circles start and stop; over `ρ` at `|r − d|`
+/// and where the stretches of circles covered all round change in number — and each piece's
+/// square-root ends tamed (`swept_slid::tamed`). (Uncut, the halving was fooled by where a circle's
+/// coverage begins, which moves with `ρ`, and by where a stretch covered all round is born: the
+/// bench's ball read 1e-6 low, and the ball screwed tighter than its radius 4.2e-7 apart between
+/// 1e-9 and 1e-10.)
 pub(crate) fn swept_by_circles(r: f64,d: f64,k: f64,theta: f64,tol: f64) -> f64 {
-    let covered = |rho: f64,z: f64| -> f64 {
+    // `L`, the arcs' run unwrapped (`2·2π` where a roll covers the circle whole)
+    let run = |rho: f64,z: f64| -> f64 {
         // the rolls with `c ≤ 1`: `(z − kφ)² ≤ r² − (ρ − d)²`
         let reach = r*r-(rho-d)*(rho-d);
         if !(reach > 0.) || !(rho > 0.) { return 0. }
@@ -129,7 +136,7 @@ pub(crate) fn swept_by_circles(r: f64,d: f64,k: f64,theta: f64,tol: f64) -> f64 
         if !(hi > lo) { return 0. }
         // a roll with `c ≤ −1` covers the whole circle: `(z − kφ)² ≤ r² − (ρ + d)²`
         let whole = r*r-(rho+d)*(rho+d);
-        if whole >= 0. { let s = whole.sqrt(); if ((z-s)/k).max(0.) <= ((z+s)/k).min(theta) { return TAU } }
+        if whole >= 0. { let s = whole.sqrt(); if ((z-s)/k).max(0.) <= ((z+s)/k).min(theta) { return 2.*TAU } }
         let w = |phi: f64| { let zb = z-k*phi; ((rho*rho+d*d+zb*zb-r*r)/(2.*rho*d)).clamp(-1.,1.).acos() };
         let extreme = |f: &dyn Fn(f64) -> f64| -> f64 {
             let n = 256;
@@ -137,10 +144,46 @@ pub(crate) fn swept_by_circles(r: f64,d: f64,k: f64,theta: f64,tol: f64) -> f64 
             let at = |i: usize| lo+(hi-lo)*i.min(n) as f64/n as f64;
             most(at(i.saturating_sub(1)),at(i+1),f).1
         };
-        let l = extreme(&|phi| phi+w(phi))+extreme(&|phi| w(phi)-phi);
-        l.min(TAU)
+        extreme(&|phi| phi+w(phi))+extreme(&|phi| w(phi)-phi)
     };
-    crate::swept_slid::kronrod(&|rho| rho*crate::swept_slid::kronrod(&|z| covered(rho,z),-r,k*theta+r,tol/(d+r)),0.,d+r,tol)
+    let covered = |rho: f64,z: f64| run(rho,z).min(TAU);
+    // over `z`, cut where the circle's make-up changes: where the rolls first and last reach its
+    // height (`±s` past the ends' heights), where the end poses stop clamping them, and where whole
+    // circles start and stop — each piece's square-root ends tamed
+    let along = |rho: f64,tol: f64| -> f64 {
+        let reach = r*r-(rho-d)*(rho-d);
+        if !(reach > 0.) { return 0. }
+        let (s,top) = (reach.sqrt(),k*theta);
+        let mut cuts = vec![-s,s,top-s,top+s];
+        let whole = r*r-(rho+d)*(rho+d);
+        if whole > 0. { let w = whole.sqrt(); cuts.extend([-w,w,top-w,top+w]) }
+        cuts.retain(|&z| z >= -s && z <= top+s);
+        cuts.sort_by(f64::total_cmp);
+        cuts.windows(2).map(|w| crate::swept_slid::tamed(w[0],w[1],tol*(w[1]-w[0])/(top+2.*s),&|z| covered(rho,z))).sum()
+    };
+    // over `ρ`, cut at `|r − d|` and where the stretches along `z` of circles covered all round by
+    // the arcs' run (`L ≥ 2π`) change in number — where one is born its contribution grows as a
+    // power three halves, which no rule across it settles (the ball screwed tighter than its
+    // radius at 0.8492, the bench's at 2.8651) — found among 400 radii, each counted at 400
+    // heights, and bisected
+    let stretches = |rho: f64| -> usize {
+        let reach = r*r-(rho-d)*(rho-d);
+        if !(reach > 0.) { return 0 }
+        let (a,b) = (-reach.sqrt(),k*theta+reach.sqrt());
+        let mut was = false;
+        (0..=400).filter(|&i| { let on = run(rho,a+(b-a)*i as f64/400.) >= TAU; let born = on && !was; was = on; born }).count()
+    };
+    let rhos: Vec<f64> = (0..=400).map(|i| (d+r)*i as f64/400.).collect();
+    let counts: Vec<usize> = rhos.iter().map(|&x| stretches(x)).collect();
+    let mut cuts = vec![0.,(r-d).abs(),d+r];
+    for i in 1..400 {
+        if counts[i] == counts[i+1] { continue }
+        let (mut a,mut b) = (rhos[i],rhos[i+1]);
+        for _ in 0..50 { let m = 0.5*(a+b); if stretches(m) == counts[i] { a = m } else { b = m } }
+        cuts.push(0.5*(a+b));
+    }
+    cuts.sort_by(f64::total_cmp);
+    cuts.windows(2).map(|w| crate::swept_slid::tamed(w[0],w[1],0.5*tol,&|rho| rho*along(rho,0.1*tol/(d+r)))).sum()
 }
 
 /// **The sweep's definition sampled**: whether the ball of radius `r` about `(d, 0, 0)`, screwed
@@ -236,16 +279,26 @@ fn a_pipe_comes_back_onto_itself_along_helices() {
 /// `Folded` before it, #805): a ball reaching past its centre's helix's radius of curvature, `(ρ² +
 /// κ²)/ρ`, folds its pipe, which the closed class reads as `Folded` at the ball's centre; under a
 /// constant twist that refusal is asked of the contact's road, whose trim keeps of the folded pipe
-/// what bounds the sweep. Held to the sweep's volume circle by circle (`swept_by_circles`, apart
-/// from the kernel, to 1e-9) within 1e-6 of it — 2.3e-7 today: near the fold's cuspidal edge the
-/// pipe's two leaves stand nearly tangent, and the trim reads them no closer (the fold cut, #880
-/// T1).
+/// what bounds the sweep. Held within 1e-6 at 1e-6 (2.3e-7 of it; 1.7e-9 at the kernel's
+/// tolerance) to the sweep's volume circle by circle, 11.7537013464 (`swept_by_circles`, apart
+/// from the kernel, unchanged from 1e-8 to 1e-10; `the_tight_balls_reference_is_its_definition`).
 #[test]
 fn a_ball_screwed_tighter_than_its_radius_is_swept_by_the_contacts_road() {
     let tool = gcs_core::brep::build::sphere([0.5,0.,0.],[0.,0.,1.],1.2).unwrap();
     let built = closed(&tool,&screw(2.,0.1),[0.,1.],0.002,1e-6).unwrap_or_else(|e| panic!("{e:?}"));
-    let expected = swept_by_circles(1.2,0.5,0.1,2.,1e-9);
-    assert!((volume(&built)-expected).abs() <= 1e-6*expected,"{} against {expected}",volume(&built));
+    assert!((volume(&built)-TIGHT).abs() <= 1e-6*TIGHT,"{} against {TIGHT}",volume(&built));
+}
+
+/// The volume the ball of radius 1.2 half out from the axis sweeps screwed 0.1 a radian through 2
+/// radians (`a_ball_screwed_tighter_than_its_radius_is_swept_by_the_contacts_road`).
+const TIGHT: f64 = 11.7537013464;
+
+/// **The tight ball's reference is its definition**, recomputed circle by circle to 1e-9.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about two minutes: the ball's circles to 1e-9")]
+fn the_tight_balls_reference_is_its_definition() {
+    let v = swept_by_circles(1.2,0.5,0.1,2.,1e-9);
+    assert!((v-TIGHT).abs() <= 1e-9,"{v}");
 }
 
 
