@@ -446,17 +446,20 @@ offset as that), and none reads a collapse as no offset at all (a ball as wide a
 **A sheet's offset is read by its signed distance** (`Surface::parallel`, `Surface::Offset`): a
 B-spline sheet has no offset in closed form, and a fitted net would be an approximation, so the
 surface standing `d` off it is the level `d` of its signed distance, `S + d N` over the sheet's own
-parameters — its point and partials from the sheet's second partials by Weingarten's equations,
-its distance the sheet's less `d`, its gradient the sheet's normal, a point's foot on it the foot
-on the sheet. It is read, never a face's: STEP and the sweep's dump refuse it. Past the sheet's
+parameters (`Surface::Offset` holds the sheet's frame and net, and `d`) — its point and partials
+from the sheet's second partials by Weingarten's equations, its distance the sheet's less `d`, its
+gradient the sheet's normal, a point's foot on it the foot on the sheet, warm from the last foot
+read where that settles `d` off (a point on an offset stands too far off the sheet for the sheet's
+own warm start, and every reading searched the whole sheet). It is read, never a face's: STEP and
+the sweep's dump refuse it. Past the sheet's
 domain it is read on the sheet **carried on by its own polynomials** (`Net::d2_continued`, the end
 spans' polynomials past the knot they end at, and `Surface::continued_inverse`, Newton's foot with
 no domain to hold it), where the sheet's own signed distance runs on along the tangent extension:
 there the curvature is switched off at the edge, and a ball's centre rolling on past a face's
 edge on it turned its curvature from 25 to 9 at once, which no cubic net fits (the canal missed
-its bar by 1.7e-4). `Surface::parallel` is `offset` where that is a surface in closed form, a
-sheet's offset otherwise (an offset's offset by the sum), and none for the kinds whose second
-partials are not read (a swept curve's, a blend's, a family's wall, an image).
+its bar by 1.7e-4). `Surface::parallel` is `offset`, in closed form, else a sheet's offset (an
+offset's offset by the sum), and none for the kinds whose second partials are not read (a swept
+curve's, a blend's, a family's wall, an image).
 `sheet_rounds::a_sheets_offset_stands_its_distance_off_along_its_normal` is the gate.
 **A ball rolls on a sheet** (`fillet::roll`, brep-bench's fillet/bezier-dome-one-edge): its centre
 runs on the faces' offsets read so, traced only round the run — the run's box grown by `r + 2r /
@@ -470,15 +473,19 @@ past the ends read on those, not on a net held at its edge. **A sheet is the she
 (`ssi::same`): two nets of the same degrees, knots and weights whose poles stand within `tol` are
 one surface, and so are two whose nets over the domain they share are (`Net::segment`, after nine
 of its points agree) — a net and itself carried on, so the Boolean reads a strip and the face it
-lies on as coincident. A reparameterised net is not recognised. **Two curves lying in a face
-cross where their enclosures say** (`query::crossings_in`, `enclosed_crossings`): where neither is
-a line or a conic, pairs of their stretches whose enclosures (`Enclosed`, a spline's poles
+lies on as coincident. A reparameterised net is not recognised. **An edge lying along a face
+crosses its edges where their enclosures say** (`query::enclosed_crossings`, which the Boolean
+reads where `query::crossings_in` has no closed form, its meetings' crossings still searched by
+`meeting::crossings` within their reach): where neither is a line or a conic, pairs of their
+stretches whose enclosures (`Enclosed`, a spline's poles
 restricted to the stretch; `Curve::bounds`, a span's whole hull, never shrank and the search gave
 up) stand apart by more than `8 tol` are dropped, the rest halved until each is a hundredth of its
 curve's box, and from each pair left Gauss–Newton on `a(s) − b(t)` settles the crossing; none
 where 4096 pairs read or 256 left, or where a root is shallower than `ssi::SHALLOW` — one curve
 running along the other (a face's edge and a round's cut of the same sheet at the same cap, where
-Newton's method settles anywhere) or touching it — which leaves the edge unsplit as before. So a
+Newton's method settles anywhere, and `meeting::crossings`, which `boolean::along_one_another`
+guards only where they run along each other whole, read a crossing every few hundredths) or
+touching it — which leaves the edge unsplit as before. So a
 flat root finds its crossing (`Arrangement::flat_roots`): a fillet's canal cut off at a cap touches
 the side its contact lies along, and the solid's edge where that side meets the cap touches the
 canal at a root placed only by the fit's tangent, 1.8e-6 along the edge from where the contact,

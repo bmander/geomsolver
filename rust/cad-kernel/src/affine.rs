@@ -427,7 +427,7 @@ impl Surface {
             }
             Surface::BSpline(f,ref n) => (Surface::BSpline(f,Arc::new(net_mapped(n,&|p| scale(p,s)))),UvMap::IDENTITY),
             Surface::Blend(f,ref b) => (Surface::Blend(at(&f),Arc::new(b.mapped(&sc)?)),UvMap::IDENTITY),
-            Surface::Offset(ref o,d) => { let (o,psi) = o.scaled(s)?; (Surface::Offset(Arc::new(o),s*d),psi) }
+            Surface::Offset(f,ref n,d) => (Surface::Offset(f,Arc::new(net_mapped(n,&|p| scale(p,s))),s*d),UvMap::IDENTITY),
             Surface::Family(..) | Surface::Affine(..) => return None,
         })
     }

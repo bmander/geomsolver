@@ -250,10 +250,9 @@ fn screwed_crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Op
 /// Where two curves lying in `surface` cross, to `tol`: `curve_curve`'s closed forms where they
 /// have one, else — one of them a line, a circle or an ellipse — the other's roots on a plane
 /// carrying it (a conic's own plane; a line's plane through it square to the surface there), kept
-/// where they lie on it within its stretch, else any two curves' crossings found by their
-/// enclosures (`enclosed_crossings`). Each crossing's parameter on `a` and its point; `None` where
-/// the other runs along the carrier, or the enclosures do not settle; the refusal where a reading
-/// of it was not proved (#814).
+/// where they lie on it within its stretch. Each crossing's parameter on `a` and its point; `None`
+/// where neither is a line or a conic, or the other runs along the carrier; the refusal where a
+/// reading of it was not proved (#814).
 pub fn crossings_in(surface: &Surface,a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Result<Option<Vec<(f64,V)>>,Refusal> {
     use crate::util::space::cross;
     if let Some(found) = curve_curve(a,ta,b,tb,tol) { return Ok(Some(found)) }
@@ -295,22 +294,24 @@ pub fn crossings_in(surface: &Surface,a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2
                 (t,q)
             }).collect()))
         }
-        _ => Ok(enclosed_crossings(a,ta,b,tb,tol)),
+        _ => Ok(None),
     }
 }
 
-/// **Where two curves cross, found by their enclosures**: pairs of their stretches whose boxes
-/// (each stretch's enclosure, `Enclosed`, a spline's its poles restricted to the stretch; the
-/// curve's `bounds` where that is unbounded) stand apart by more than `8 tol` hold no crossing and
-/// are dropped; the rest are halved, the longer stretch first, until each is a hundredth of its
-/// curve's box, and from each pair left Gauss–Newton on `a(s) − b(t)` settles on where they cross,
-/// kept where they meet within `8 tol` inside both stretches, once a place. Two splines lying in a
+/// **Where two curves cross, found by their enclosures** — what `crossings_in` leaves (`None`)
+/// where an edge lies along a face (`boolean`): pairs of their stretches whose boxes (each stretch's
+/// enclosure, `Enclosed`, a spline's its poles restricted to the stretch; the curve's `bounds`
+/// where that is unbounded) stand apart by more than `8 tol` hold no crossing and are dropped; the
+/// rest are halved, the longer stretch first, until each is a hundredth of its curve's box, and from
+/// each pair left Gauss–Newton on `a(s) − b(t)` settles on where they cross, kept where they meet
+/// within `8 tol` inside both stretches (`within_stretch`), once a place. Two splines lying in a
 /// face, as a round's contact and a face's own rail cross on the side they both lie in.
 /// `None` where the pairs do not thin out within the budget, or where they meet shallower than a
 /// trace follows (`ssi::SHALLOW`): one curve running along the other — a face's edge and the cut a
-/// round's piece makes of the same sheet at the same cap — or touching it, where Newton's method
-/// settles anywhere the two are within the rounding.
-fn enclosed_crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Option<Vec<(f64,V)>> {
+/// round's piece makes of the same sheet at the same cap, which `meeting::crossings` reads as a
+/// crossing every few hundredths — or touching it, where Newton's method settles anywhere the two
+/// are within the rounding.
+pub fn enclosed_crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Option<Vec<(f64,V)>> {
     let pad = 8.*tol;
     let diag = |(lo,hi): (V,V)| distance(lo,hi);
     let boxed = |c: &Curve,s: [f64;2]| -> (V,V) {
@@ -319,26 +320,27 @@ fn enclosed_crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> O
         let (Some(x),Some(y),Some(z)) = (x,y,z) else { return c.bounds(s) };
         ([x[0],y[0],z[0]],[x[1],y[1],z[1]])
     };
-    let (whole_a,whole_b) = (diag(boxed(a,ta)),diag(boxed(b,tb)));
-    let apart = |x: (V,V),y: (V,V)| (0..3).any(|k| x.0[k] > y.1[k]+pad || y.0[k] > x.1[k]+pad);
-    let mut stack = vec![(ta,tb)];
+    let half = |s: [f64;2]| { let m = 0.5*(s[0]+s[1]); [[s[0],m],[m,s[1]]] };
+    let (box_a,box_b) = (boxed(a,ta),boxed(b,tb));
+    let (whole_a,whole_b) = (diag(box_a).max(1e-300),diag(box_b).max(1e-300));
+    // each pair carried with its boxes, so a halving reads only the half it made
+    let mut stack = vec![(ta,box_a,tb,box_b)];
     let mut leaves: Vec<([f64;2],[f64;2])> = Vec::new();
-    let mut read = 0;
-    while let Some((sa,sb)) = stack.pop() {
-        read += 1;
-        if read > 4096 { return None }
-        let (ba,bb) = (boxed(a,sa),boxed(b,sb));
-        if apart(ba,bb) { continue }
-        let (da,db) = (diag(ba)/whole_a.max(1e-300),diag(bb)/whole_b.max(1e-300));
-        if da <= 0.01 && db <= 0.01 { leaves.push((sa,sb)); continue }
-        let half = |s: [f64;2]| { let m = 0.5*(s[0]+s[1]); [[s[0],m],[m,s[1]]] };
-        if da >= db { for h in half(sa) { stack.push((h,sb)); } } else { for h in half(sb) { stack.push((sa,h)); } }
+    for _ in 0..4096 {
+        let Some((sa,ba,sb,bb)) = stack.pop() else { break };
+        if !super::boolean::overlap(&ba,&bb,pad) { continue }
+        let (da,db) = (diag(ba)/whole_a,diag(bb)/whole_b);
+        if da <= 0.01 && db <= 0.01 {
+            leaves.push((sa,sb));
+            if leaves.len() > 256 { return None }
+        } else if da >= db { for h in half(sa) { stack.push((h,boxed(a,h),sb,bb)); } }
+        else { for h in half(sb) { stack.push((sa,ba,h,boxed(b,h))); } }
     }
-    if leaves.len() > 256 { return None }
+    if !stack.is_empty() { return None }
     let mut out: Vec<(f64,V)> = Vec::new();
     for (sa,sb) in leaves {
         let (mut s,mut t) = (0.5*(sa[0]+sa[1]),0.5*(sb[0]+sb[1]));
-        let mut settled = false;
+        let mut settled = None;
         for _ in 0..40 {
             let ((p,dp),(q,dq)) = (a.d1(s),b.d1(t));
             let r = sub(p,q);
@@ -350,17 +352,15 @@ fn enclosed_crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> O
             let (ds,dt) = ((a22*b1-a12*b2)/det,(a11*b2-a12*b1)/det);
             s += ds;
             t += dt;
-            if ds.abs() <= 1e-15*(1.+s.abs()) && dt.abs() <= 1e-15*(1.+t.abs()) { settled = true; break }
+            if ds.abs() <= 1e-15*(1.+s.abs()) && dt.abs() <= 1e-15*(1.+t.abs()) { settled = Some((dp,dq)); break }
         }
-        if !settled { continue }
-        let (p,q) = (a.point(s),b.point(t));
-        let slack = |span: [f64;2],c: &Curve| tol/c.speed().max(1e-300)+1e-12*(1.+span[0].abs().max(span[1].abs()));
-        let within = |x: f64,span: [f64;2],c: &Curve| x >= span[0]-slack(span,c) && x <= span[1]+slack(span,c);
-        if distance(p,q) > pad || !within(s,ta,a) || !within(t,tb,b) { continue }
-        let (da,db) = (a.d1(s).1,b.d1(t).1);
-        if norm(crate::util::space::cross(da,db)) < super::ssi::SHALLOW*norm(da)*norm(db) { return None }
+        let Some((dp,dq)) = settled else { continue };
+        let p = a.point(s);
+        if distance(p,b.point(t)) > pad { continue }
+        if norm(crate::util::space::cross(dp,dq)) < super::ssi::SHALLOW*norm(dp)*norm(dq) { return None }
         if out.iter().any(|x| distance(x.1,p) <= tol) { continue }
-        out.push((s.clamp(ta[0],ta[1]),p));
+        let (Some(s),Some(_)) = (within_stretch(a,s,ta,tol),within_stretch(b,t,tb,tol)) else { continue };
+        out.push((s,p));
     }
     Some(out)
 }
@@ -1768,7 +1768,7 @@ pub fn domain(surface: &Surface) -> Option<[[f64;2];2]> {
         Surface::BSpline(_,n) => Some(n.domain()),
         Surface::Family(_,w) => Some([[0.,1.],w.span()]),
         Surface::Affine(m) => domain(&m.of),
-        Surface::Offset(s,_) => domain(s),
+        Surface::Offset(_,n,_) => Some(n.domain()),
         Surface::Plane(_) | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Extrusion(..) => None,
     }
 }

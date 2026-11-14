@@ -171,9 +171,7 @@ pub fn roll_across(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)]) -> Result<Rol
     // the ball's centre is where the faces' offsets by its radius meet: along a curve, or — where
     // one closes onto what its surface is drawn about, a ball as wide as a cylinder — at a point
     // (a sheet's offset has no closed form: read by its signed distance, `Surface::parallel`)
-    let offset = |k: usize| { let (s,d) = (&m.surfaces[k],m.sides[k]*r);
-        if s.has_offset() { s.offset(d,tol) } else { s.parallel(d,tol).map(Offset::Surface) } };
-    let (oa,ob) = match [offset(0),offset(1)] {
+    let (oa,ob) = match [0,1].map(|k| m.surfaces[k].parallel(m.sides[k]*r,tol)) {
         [Some(Offset::Surface(oa)),Some(Offset::Surface(ob))] => (oa,ob),
         [Some(oa),Some(ob)] => return standing(b,&m,[oa,ob],r,tol,wedge),
         _ => return Err(format!("the ball between {} is larger than one of them can hold",m.names)),
@@ -196,18 +194,16 @@ pub fn roll_across(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)]) -> Result<Rol
     let spine = match super::ssi::intersect(oa,ob,tol) {
         super::ssi::Ssi::Curves(cs) => cs,
         super::ssi::Ssi::Same => return Err(format!("{} lie on one surface",names())),
-        // (a sheet's offset is read on its continuation, which runs on past the sheet as its
-        // polynomials do, nowhere near the solid: traced only round the run, as far as a ball
-        // rolling on past an end may need, its section's corner within `r / sin(θ/2)` of its centre)
-        super::ssi::Ssi::Traced if [oa,ob].iter().any(|s| matches!(s,Surface::Offset(..))) => {
-            let mut bx = super::geom::EMPTY;
-            for &e in &chain { if let EdgeCurve::Curve(c) = &b.edges[e].curve { super::geom::widen(&mut bx,c.bounds(b.edges[e].t)); } }
-            let grow = r+2.*r/(0.5*theta).dsin();
-            super::ssi::trace(oa,ob,&[seed],bx.0.map(|x| x-grow),bx.1.map(|x| x+grow),tol)?
-        }
         super::ssi::Ssi::Traced => {
-            let (lo,hi) = b.bounds();
-            let grow = 4.*r+norm(sub(hi,lo));
+            // (a sheet's offset is read on its continuation, which runs on past the sheet as its
+            // polynomials do, nowhere near the solid: traced only round the run, as far as a ball
+            // rolling on past an end may need, its section's corner within `r / sin(θ/2)` of its
+            // centre; any other round the whole body)
+            let ((lo,hi),grow) = if [oa,ob].iter().any(|s| matches!(s,Surface::Offset(..))) {
+                let mut bx = super::geom::EMPTY;
+                for &e in &chain { if let EdgeCurve::Curve(c) = &b.edges[e].curve { super::geom::widen(&mut bx,c.bounds(b.edges[e].t)); } }
+                (bx,r+2.*r/(0.5*theta).dsin())
+            } else { let (lo,hi) = b.bounds(); ((lo,hi),4.*r+norm(sub(hi,lo))) };
             super::ssi::trace(oa,ob,&[seed],lo.map(|x| x-grow),hi.map(|x| x+grow),tol)?
         }
     }.into_iter().min_by(|x,y| {
@@ -1560,22 +1556,22 @@ fn reframed(s: &Surface,pts: &[V]) -> Surface {
 
 /// A sheet carried on past its domain by its own polynomials (`Net::extended`, the same surface
 /// over its domain) as far as its continuation's feet of `pts` reach, and a twentieth of its
-/// domain more; any other surface as it is, and a rational sheet too, which is not carried on.
+/// domain more; any other surface as it is, and a sheet reaching no farther than its domain, or
+/// rational, which is not carried on.
 fn carried_on(s: &Surface,pts: &[V]) -> Surface {
     let Surface::BSpline(f,n) = s else { return s.clone() };
     let uvs: Vec<[f64;2]> = pts.iter().map(|&p| s.continued_inverse(p)).collect();
-    let mut net = (**n).clone();
+    let mut net: Option<Net> = None;
     for k in 0..2 {
         let [lo,hi] = n.domain()[k];
         let margin = 0.05*(hi-lo);
-        let least = uvs.iter().map(|uv| uv[k]).fold(lo,f64::min);
-        let most = uvs.iter().map(|uv| uv[k]).fold(hi,f64::max);
+        let (least,most) = uvs.iter().fold((lo,hi),|(a,z),uv| (a.min(uv[k]),z.max(uv[k])));
         for (high,by) in [(false,lo-least),(true,most-hi)] {
             if by <= 0. { continue }
-            match net.extended(k,high,by+margin) { Some(m) => net = m,None => return s.clone() }
+            match net.as_ref().unwrap_or(n).extended(k,high,by+margin) { Some(m) => net = Some(m),None => return s.clone() }
         }
     }
-    Surface::BSpline(*f,Arc::new(net))
+    net.map_or_else(|| s.clone(),|net| Surface::BSpline(*f,Arc::new(net)))
 }
 
 /// Whether a closed loop through `pts` (in order) winds round `s`'s first period.

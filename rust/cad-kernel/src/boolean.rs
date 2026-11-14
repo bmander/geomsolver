@@ -1358,10 +1358,12 @@ impl<'a> Arrangement<'a> {
                     for g in edges {
                         let ge = &theirs.edges[g as usize];
                         let EdgeCurve::Curve(gc) = &ge.curve else { continue };
-                        // (where neither is a line or a circle — a spline sweep's rail along a
-                        // side — it is left unsplit, as every edge along a face was before; that
-                        // crossing wants a general curve–curve root, not yet written)
-                        for (t,q) in crossings_in(&f.surface,c,e.t,gc,ge.t,tol).map_err(|r| r.to_string())?.unwrap_or_default() {
+                        // (where neither is a line or a conic — a round's contact along a sheet
+                        // crossing the sheet's rail — by their enclosures; left unsplit where those
+                        // say one runs along the other, as every edge along a face was before)
+                        let crossed = crossings_in(&f.surface,c,e.t,gc,ge.t,tol).map_err(|r| r.to_string())?
+                            .or_else(|| super::query::enclosed_crossings(c,e.t,gc,ge.t,tol)).unwrap_or_default();
+                        for (t,q) in crossed {
                             self.say.along_crosses(s,i,c,fi,g,q);
                             let v = self.pool.at(q);
                             self.cuts[we].push((t,v));

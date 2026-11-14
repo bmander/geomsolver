@@ -5,6 +5,7 @@
 //! Each property is held to what it says, and the round of brep-bench's
 //! fillet/bezier-dome-one-edge to its volume integrated here from the patch alone, section by
 //! section, sharing nothing with the kernel but the patch's heights.
+use crate::common::rounds::{add,cross,dot,gauss_legendre,norm,scale,sub,unit};
 use gcs_core::brep::boolean::{combined,Op};
 use gcs_core::brep::build::lofted;
 use gcs_core::brep::fillet::roll;
@@ -12,7 +13,6 @@ use gcs_core::brep::geom::{tolerance,Curve,Frame,Surface,V};
 use gcs_core::brep::nurbs::{BSpline,Net};
 use gcs_core::brep::props::volume;
 use gcs_core::brep::topo::Brep;
-use gcs_core::brep::util::quadrature::GAUSS8;
 use std::sync::Arc;
 
 /// Row i at x = 20i/3, column j at y = 20j/3: the heights of brep-bench's nurbs/bezier-dome.
@@ -46,13 +46,16 @@ fn domed_block() -> Brep {
     lofted([0.;3],[1.,0.,0.],[0.,SIDE],vec![nets]).unwrap()
 }
 
-fn sub(a: V,b: V) -> V { [a[0]-b[0],a[1]-b[1],a[2]-b[2]] }
-fn add(a: V,b: V) -> V { [a[0]+b[0],a[1]+b[1],a[2]+b[2]] }
-fn scale(a: V,s: f64) -> V { [a[0]*s,a[1]*s,a[2]*s] }
-fn dot(a: V,b: V) -> f64 { a[0]*b[0]+a[1]*b[1]+a[2]*b[2] }
-fn cross(a: V,b: V) -> V { [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]] }
-fn norm(a: V) -> f64 { dot(a,a).sqrt() }
-fn unit(a: V) -> V { scale(a,1./norm(a)) }
+/// The root of `f` by the secant method from `a` and `b`.
+fn secant(f: impl Fn(f64) -> f64,mut a: f64,mut b: f64) -> f64 {
+    for _ in 0..100 {
+        let (fa,fb) = (f(a),f(b));
+        if fb == fa { break }
+        (a,b) = (b,b-fb*(b-a)/(fb-fa));
+        if (b-a).abs() < 1e-15 { break }
+    }
+    b
+}
 
 /// **A sheet's offset stands its distance off the sheet along its normal, past its domain too**:
 /// its points are the sheet's continued points moved `d` along the unit normal there, its signed
@@ -64,10 +67,10 @@ fn a_sheets_offset_stands_its_distance_off_along_its_normal() {
     let sheet = Surface::BSpline(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),Arc::new(net.clone()));
     assert!(!sheet.has_offset() && sheet.has_parallel());
     let d = -1.;
-    let offset = sheet.parallel(d,1e-9).unwrap();
+    let offset = sheet.parallel(d,1e-9).and_then(|o| o.surface()).unwrap();
     assert_eq!(offset.kind(),"offset");
     // an offset's offset is the sheet's, by the sum
-    let twice = offset.parallel(-0.5,1e-9).unwrap();
+    let twice = offset.parallel(-0.5,1e-9).and_then(|o| o.surface()).unwrap();
     // inside the domain and past each of its edges, as far as a ball rolls on past a face
     for (u,v) in [(0.5,0.5),(0.1,0.9),(0.9,0.2),(-0.04,0.3),(1.03,0.7),(0.4,-0.05),(0.6,1.04)] {
         let [x,xu,xv,..] = net.d2_continued(u,v);
@@ -121,12 +124,14 @@ fn a_sheet_carried_on_is_the_same_sheet() {
     assert!(!same(&on(longer),&on(moved),1e-9));
 }
 
-/// **Two splines lying in a face cross where they cross** (`query::crossings_in`): neither a line
-/// nor a conic, their crossing found by their enclosures and settled by Gauss–Newton — a parabola
-/// `y = x²` and a cubic `y = 1 − x³` in the plane z = 2, which cross where `x² + x³ = 1`.
+/// **Two splines lying in a face cross where they cross** (`query::enclosed_crossings`, what the
+/// Boolean reads where `crossings_in` has no closed form): neither a line nor a conic, their crossing
+/// found by their enclosures and settled by Gauss–Newton — a parabola `y = x²` and a cubic
+/// `y = 1 − x³` in the plane z = 2, which cross where `x² + x³ = 1` — and none read where one runs
+/// along the other.
 #[test]
 fn splines_lying_in_a_face_cross_where_they_cross() {
-    use gcs_core::brep::query::crossings_in;
+    use gcs_core::brep::query::{crossings_in,enclosed_crossings};
     let plane = Surface::Plane(Frame::new([0.,0.,2.],[0.,0.,1.],[1.,0.,0.]));
     // y = x² over x in [−1, 2] as a quadratic Bézier; y = 1 − x³ over x in [0, 1.5] as a cubic one
     let parabola = Curve::BSpline(Arc::new(BSpline::new(2,clamped(2),vec![[-1.,1.,2.],[0.5,-2.,2.],[2.,4.,2.]]).unwrap()));
@@ -137,8 +142,9 @@ fn splines_lying_in_a_face_cross_where_they_cross() {
     let (mut lo,mut hi) = (0.,1.);
     for _ in 0..200 { let m = 0.5*(lo+hi); if m*m+m*m*m < 1. { lo = m } else { hi = m } }
     let x = 0.5*(lo+hi);
+    assert_eq!(crossings_in(&plane,&parabola,[0.,1.],&cubic,[0.,1.],1e-9).unwrap(),None);
     for (p,q) in [(&parabola,&cubic),(&cubic,&parabola)] {
-        let found = crossings_in(&plane,p,[0.,1.],q,[0.,1.],1e-9).unwrap().expect("the crossing is read");
+        let found = enclosed_crossings(p,[0.,1.],q,[0.,1.],1e-9).expect("the crossing is read");
         assert_eq!(found.len(),1,"{found:?}");
         let (t,at) = found[0];
         assert!(norm(sub(at,[x,x*x,2.])) <= 1e-9,"{at:?} against x = {x}");
@@ -147,7 +153,9 @@ fn splines_lying_in_a_face_cross_where_they_cross() {
     // apart, they do not cross
     let high = Curve::BSpline(Arc::new(BSpline::new(3,clamped(3),
         vec![[0.,9.,2.],[a/3.,9.,2.],[2.*a/3.,9.,2.],[a,9.5,2.]]).unwrap()));
-    assert_eq!(crossings_in(&plane,&parabola,[0.,1.],&high,[0.,1.],1e-9).unwrap(),Some(vec![]));
+    assert_eq!(enclosed_crossings(&parabola,[0.,1.],&high,[0.,1.],1e-9),Some(vec![]));
+    // along one another, the same parabola over a part of its stretch: nothing read
+    assert_eq!(enclosed_crossings(&parabola,[0.,1.],&parabola,[0.2,0.7],1e-9),None);
 }
 
 /// The volume the round takes off the block, integrated from the patch alone: the patch is the
@@ -168,12 +176,7 @@ fn removed_by_sections() -> f64 {
     let normal = |x: f64,y: f64| unit([-hx(x,y),-hy(x,y),1.]);
     let centre = |x: f64,y: f64| sub([x,y,h(x,y)],normal(x,y));
     // the foot's y whose centre stands on y = 1, by the secant method
-    let foot_y = |x: f64| {
-        let f = |y: f64| centre(x,y)[1]-1.;
-        let (mut a,mut b) = (0.2,0.4);
-        for _ in 0..100 { let (fa,fb) = (f(a),f(b)); if fb == fa { break } let c = b-fb*(b-a)/(fb-fa); a = b; b = c; if (b-a).abs() < 1e-15 { break } }
-        b
-    };
+    let foot_y = |x: f64| secant(|y| centre(x,y)[1]-1.,0.2,0.4);
     let arc = |xf: f64,s: f64| {
         let yf = foot_y(xf);
         let (c,es,ed) = (centre(xf,yf),[0.,-1.,0.],normal(xf,yf));
@@ -181,17 +184,13 @@ fn removed_by_sections() -> f64 {
         add(c,scale(add(scale(es,((1.-s)*phi).sin()),scale(ed,(s*phi).sin())),1./phi.sin()))
     };
     // the foot's x whose arc crosses x = c at `s`
-    let foot_x = |c: f64,s: f64,start: f64| {
-        let f = |x: f64| arc(x,s)[0]-c;
-        let (mut a,mut b) = (start,start+0.01);
-        for _ in 0..100 { let (fa,fb) = (f(a),f(b)); if fb == fa { break } let n = b-fb*(b-a)/(fb-fa); a = b; b = n; if (b-a).abs() < 1e-15 { break } }
-        b
-    };
+    let foot_x = |c: f64,s: f64,start: f64| secant(|x| arc(x,s)[0]-c,start,start+0.01);
     // Gauss–Legendre over [a, b] in `panels` panels of eight points
+    let rule = gauss_legendre(8);
     let gauss = |a: f64,b: f64,panels: usize,f: &mut dyn FnMut(f64) -> f64| -> f64 {
         let w = (b-a)/panels as f64;
         (0..panels).map(|k| { let m = a+w*(k as f64+0.5);
-            GAUSS8.iter().map(|&(t,g)| 0.5*w*g*f(m+0.5*w*t)).sum::<f64>() }).sum()
+            rule.iter().map(|&(t,g)| 0.5*w*g*f(m+0.5*w*t)).sum::<f64>() }).sum()
     };
     let area = |c: f64| {
         // the arc, from the side's touch to the dome's: ½ (y z' − z y') along s, x held at c
