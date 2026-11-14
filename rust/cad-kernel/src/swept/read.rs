@@ -167,7 +167,8 @@ impl Tool {
                     return Err(Unread::Meridian {face,kind:c.kind(),at}),
                 Surface::Revolution(..) | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Torus(..) =>
                     return Err(Unread::Unfit {face,kind,at}),
-                Surface::Extrusion(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) | Surface::Affine(..) =>
+                Surface::Extrusion(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) | Surface::Affine(..)
+                    | Surface::Offset(..) =>
                     return Err(Unread::FreeForm {face,kind,at}),
             });
         }

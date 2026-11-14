@@ -76,12 +76,13 @@ fn meeting<'b>(b: &'b Brep,at: V,tol: f64) -> Result<Meeting<'b>,String> {
     let [(fa,la,ca),(fb,_,_)] = [uses[nearest][0],uses[nearest][1]];
     let (face_a,face_b) = (&b.faces[fa],&b.faces[fb]);
     let names = || format!("`{}` with `{}`",face_a.name,face_b.name);
-    // a ball's centre stands off each face along its normal: a surface with no closed-form offset
-    // (a swept spline, a fitted sheet) is not rounded yet
+    // a ball's centre stands off each face along its normal: a sheet's offset is read by its signed
+    // distance (`Surface::parallel`), and a surface with no offset read (a swept spline, a blend, a
+    // family's wall, an image) is not rounded yet
     for f in [face_a,face_b] {
-        if !f.surface.has_offset() {
-            return Err(format!("`{}` ({}) has no offset in closed form, so no ball rolls on it yet: planes, \
-                cylinders, cones, spheres and tori are rounded (rung 2)",f.name,f.surface.kind()));
+        if !f.surface.has_parallel() {
+            return Err(format!("`{}` ({}) has no offset read yet, so no ball rolls on it: planes, cylinders, cones, \
+                spheres, tori and B-spline sheets are rounded",f.name,f.surface.kind()));
         }
     }
     // each side: every face on its surface, the same way out (a face split at its seam is one
@@ -169,7 +170,10 @@ pub fn roll_across(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)]) -> Result<Rol
     let m = meeting(b,at,tol)?;
     // the ball's centre is where the faces' offsets by its radius meet: along a curve, or — where
     // one closes onto what its surface is drawn about, a ball as wide as a cylinder — at a point
-    let (oa,ob) = match [0,1].map(|k| m.surfaces[k].offset(m.sides[k]*r,tol)) {
+    // (a sheet's offset has no closed form: read by its signed distance, `Surface::parallel`)
+    let offset = |k: usize| { let (s,d) = (&m.surfaces[k],m.sides[k]*r);
+        if s.has_offset() { s.offset(d,tol) } else { s.parallel(d,tol).map(Offset::Surface) } };
+    let (oa,ob) = match [offset(0),offset(1)] {
         [Some(Offset::Surface(oa)),Some(Offset::Surface(ob))] => (oa,ob),
         [Some(oa),Some(ob)] => return standing(b,&m,[oa,ob],r,tol,wedge),
         _ => return Err(format!("the ball between {} is larger than one of them can hold",m.names)),
@@ -192,6 +196,15 @@ pub fn roll_across(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)]) -> Result<Rol
     let spine = match super::ssi::intersect(oa,ob,tol) {
         super::ssi::Ssi::Curves(cs) => cs,
         super::ssi::Ssi::Same => return Err(format!("{} lie on one surface",names())),
+        // (a sheet's offset is read on its continuation, which runs on past the sheet as its
+        // polynomials do, nowhere near the solid: traced only round the run, as far as a ball
+        // rolling on past an end may need, its section's corner within `r / sin(θ/2)` of its centre)
+        super::ssi::Ssi::Traced if [oa,ob].iter().any(|s| matches!(s,Surface::Offset(..))) => {
+            let mut bx = super::geom::EMPTY;
+            for &e in &chain { if let EdgeCurve::Curve(c) = &b.edges[e].curve { super::geom::widen(&mut bx,c.bounds(b.edges[e].t)); } }
+            let grow = r+2.*r/(0.5*theta).dsin();
+            super::ssi::trace(oa,ob,&[seed],bx.0.map(|x| x-grow),bx.1.map(|x| x+grow),tol)?
+        }
         super::ssi::Ssi::Traced => {
             let (lo,hi) = b.bounds();
             let grow = 4.*r+norm(sub(hi,lo));
@@ -201,8 +214,10 @@ pub fn roll_across(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)]) -> Result<Rol
         let off = |c: &Curve| distance(c.point(c.inverse(seed)),seed);
         off(x).total_cmp(&off(y))
     }).ok_or_else(|| format!("the ball between {} rolls nowhere",names()))?;
-    // where the ball touches each face, and the direction from its centre to there
-    let toward = |k: usize,c: V| scale(unit(surfaces[k].gradient(c)),-sides[k]);
+    // where the ball touches each face, and the direction from its centre to there: the offset's
+    // gradient, the face's own where it has one in closed form, and where a sheet's is read past
+    // its domain, its continuation's (`Surface::Offset`), as the ball's centre runs on it
+    let toward = |k: usize,c: V| scale(unit([oa,ob][k].gradient(c)),-sides[k]);
     // **a run that ends**: at each end the faces there besides the two lie in one plane, which cuts
     // the fillet off; the ball rolls on past it and the piece is trimmed there
     let mut ends: Vec<Stop> = Vec::new();
@@ -344,7 +359,14 @@ pub fn roll_across(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)]) -> Result<Rol
             .filter(|&u| u > 1e-9 && u < 1.-1e-9)
     } else { None };
     let piece = if ends.is_empty() { build(b,&chain,&net,&strips,reversed,concave,tol,net_err,split)? } else {
-        let meeting = super::geom::Traced {a:surfaces[0].clone(),b:surfaces[1].clone(),pts:Vec::new(),closed:false};
+        // a sheet's strip runs on past its face's edge where the run does (a round cut off by a cap
+        // the sheet ends at): on the sheet carried on by its own polynomials, as the ball rolled
+        // there, and the faces met there likewise
+        let [[u0,u1],[v0,v1]] = net.domain();
+        let reached: Vec<V> = (0..=64).flat_map(|i| { let u = u0+(u1-u0)*i as f64/64.; [net.point(u,v0),net.point(u,v1)] })
+            .chain([0.,1.].map(|u| { let (c,e) = frame_at(u); across(c,e,r) })).collect();
+        let strips = strips.map(|s| carried_on(&s,&reached));
+        let meeting = super::geom::Traced {a:strips[0].clone(),b:strips[1].clone(),pts:Vec::new(),closed:false};
         // the section's plane at `u`: through the ball's centre, square to the spine (the plane of
         // its arc), its normal along `u`; where the faces meet in it, across the ball from its centre
         let section = |u: f64| -> (V,V) {
@@ -1534,6 +1556,26 @@ fn reframed(s: &Surface,pts: &[V]) -> Surface {
         }
         _ => s.clone(),
     }
+}
+
+/// A sheet carried on past its domain by its own polynomials (`Net::extended`, the same surface
+/// over its domain) as far as its continuation's feet of `pts` reach, and a twentieth of its
+/// domain more; any other surface as it is, and a rational sheet too, which is not carried on.
+fn carried_on(s: &Surface,pts: &[V]) -> Surface {
+    let Surface::BSpline(f,n) = s else { return s.clone() };
+    let uvs: Vec<[f64;2]> = pts.iter().map(|&p| s.continued_inverse(p)).collect();
+    let mut net = (**n).clone();
+    for k in 0..2 {
+        let [lo,hi] = n.domain()[k];
+        let margin = 0.05*(hi-lo);
+        let least = uvs.iter().map(|uv| uv[k]).fold(lo,f64::min);
+        let most = uvs.iter().map(|uv| uv[k]).fold(hi,f64::max);
+        for (high,by) in [(false,lo-least),(true,most-hi)] {
+            if by <= 0. { continue }
+            match net.extended(k,high,by+margin) { Some(m) => net = m,None => return s.clone() }
+        }
+    }
+    Surface::BSpline(*f,Arc::new(net))
 }
 
 /// Whether a closed loop through `pts` (in order) winds round `s`'s first period.

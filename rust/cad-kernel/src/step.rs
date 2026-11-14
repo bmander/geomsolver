@@ -71,6 +71,7 @@ impl Out {
             }
             Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)
                 | Surface::Affine(..) => unreachable!("written above, or as its face's net (`face_net`)"),
+            Surface::Offset(..) => return Err("an offset read by its signed distance is no face's surface".into()),
         })
     }
     /// A B-spline surface, rational where it has weights: the complex entity, its parts in the
@@ -241,6 +242,8 @@ pub fn written(s: &Surface) -> (Frame,Vec<f64>) {
         Surface::Torus(f,big,r) => (f,vec![big,r]),
         Surface::Extrusion(f,_) | Surface::Revolution(f,_) | Surface::Blend(f,_) | Surface::BSpline(f,_) | Surface::Family(f,_) => (f,vec![]),
         // its preimage's, and the map's numbers: one image is another only under one map
+        // its other's, and how far off it
+        Surface::Offset(o,d) => { let (g,mut numbers) = written(&o); numbers.push(d); (g,numbers) }
         Surface::Affine(m) => {
             let (g,mut numbers) = written(&m.of);
             numbers.extend(g.o.iter().chain(&g.z).chain(&g.x).chain(m.map.m.iter().flatten()).chain(&m.map.t));

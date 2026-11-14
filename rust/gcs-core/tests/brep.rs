@@ -3104,11 +3104,16 @@ fn spline_columns_with_overlapping_boxes_keep_their_meetings() {
             assert!((volume(&union)-expected).abs() < 1e-9);
         }
     }
-    // Coincident spline supports are currently refused. In particular, an unresolved
-    // enclosure must not silently discard that meeting and report two separate solids.
+    // Coincident spline supports are one sheet (`ssi::same`, one net): two columns sharing a sheet
+    // are one column, the sheet between them gone. An unresolved enclosure must not discard that
+    // meeting and report two separate solids.
     let touching = column(0.2,0.4);
-    let error = combined(&a,&touching,Op::Union,0.).unwrap_err();
-    assert!(error.to_string().contains("coincide or touch to higher order"),"{error}");
+    for (x,y) in [(&a,&touching),(&touching,&a)] {
+        let union = combined(x,y,Op::Union,0.).unwrap();
+        union.check(1e-7).unwrap();
+        assert!((volume(&union)-0.4).abs() < 1e-9,"{}",volume(&union));
+        assert_eq!(union.faces.len(),10);
+    }
     let b = column(0.1,0.3);
     for op in [Op::Common,Op::Cut] {
         let part = combined(&a,&b,op,0.).unwrap();

@@ -685,9 +685,15 @@ impl Net {
     /// `S`, `S_u`, `S_v`, `S_uu`, `S_uv`, `S_vv` at `(u, v)`, clamped into the domain.
     pub fn d2(&self,u: f64,v: f64) -> [V;6] {
         let [[u0,u1],[v0,v1]] = self.domain();
+        self.d2_continued(u.clamp(u0,u1),v.clamp(v0,v1))
+    }
+    /// `d2` read past the domain on the sheet's **continuation**: each end span's polynomial (its
+    /// rational function, weighted) carried on beyond the knot it ends at, smooth across the
+    /// domain's edge, where `d2` holds the point at the edge.
+    pub fn d2_continued(&self,u: f64,v: f64) -> [V;6] {
         let (nu,nv) = (self.poles.len(),self.poles[0].len());
-        with_basis(self.du,&self.uknots,nu,u.clamp(u0,u1),2,|su,bu|
-        with_basis(self.dv,&self.vknots,nv,v.clamp(v0,v1),2,|sv,bv| {
+        with_basis(self.du,&self.uknots,nu,u,2,|su,bu|
+        with_basis(self.dv,&self.vknots,nv,v,2,|sv,bv| {
             // (u order, v order) of each output
             const ORDERS: [(usize,usize);6] = [(0,0),(1,0),(0,1),(2,0),(1,1),(0,2)];
             if let Some(w) = &self.weights {
