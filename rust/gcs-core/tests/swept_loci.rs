@@ -289,13 +289,25 @@ fn a_ball_screwed_tighter_than_its_radius_is_swept_by_the_contacts_road() {
     assert!((volume(&built)-TIGHT).abs() <= 1e-6*TIGHT,"{} against {TIGHT}",volume(&built));
 }
 
+/// **The tight ball at the kernel's tolerance** (#880 T1b): within its boundary's area times the
+/// tolerance of its volume circle by circle — 2e-8 today, 1.7e-9 of it.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about ten seconds: the ball at the kernel's tolerance")]
+fn the_tight_ball_holds_at_the_kernels_tolerance() {
+    let tool = gcs_core::brep::build::sphere([0.5,0.,0.],[0.,0.,1.],1.2).unwrap();
+    let tol = gcs_core::brep::geom::tolerance(tool.size());
+    let built = closed(&tool,&screw(2.,0.1),[0.,1.],0.002,tol).unwrap_or_else(|e| panic!("{e:?}"));
+    let within = tol*crate::brep::total_area(&built);
+    assert!((volume(&built)-TIGHT).abs() <= within,"{} against {TIGHT}, within {within}",volume(&built));
+}
+
 /// The volume the ball of radius 1.2 half out from the axis sweeps screwed 0.1 a radian through 2
 /// radians (`a_ball_screwed_tighter_than_its_radius_is_swept_by_the_contacts_road`).
 const TIGHT: f64 = 11.7537013464;
 
 /// **The tight ball's reference is its definition**, recomputed circle by circle to 1e-9.
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about two minutes: the ball's circles to 1e-9")]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about six minutes: the ball's circles to 1e-9")]
 fn the_tight_balls_reference_is_its_definition() {
     let v = swept_by_circles(1.2,0.5,0.1,2.,1e-9);
     assert!((v-TIGHT).abs() <= 1e-9,"{v}");

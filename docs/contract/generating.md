@@ -1170,13 +1170,21 @@ it 4.6e-7 of itself over and moved by 4e-7 when doubled — near the cusps a lin
 nearly square-root-like inside a piece. The balls' reference cuts each of its integrals where the
 integrand's make-up changes — over `z` where the rolls reach a circle's height, the end poses stop
 clamping them and whole circles start and stop; over `ρ` where a stretch of circles covered all
-round is born — where uncut it read the bench's ball 1e-6 low. **Not yet** (#880 T1b): the bench's
-ball stands 1.4e-8 off at every tolerance, every face's flux agreeing with its boundary (the ball
-screwed tighter than its radius 1.7e-9 at the kernel's tolerance); and a ring leaning just past the fold, at
-56° or 60°, is refused, its swallowtail a few hundredths across — at 60° a stretch is cut at a cusp,
-where the two leaves' rates run together and a point beside the fold stands at two places of the
-face, and its pieces do not close. (brep-bench's cadrs builds the ball to 282.091, 11% over the
-sweep's 253.4494.)
+round is born or dies — where uncut it read the bench's ball 3.5e-6 low; and its halving is taken
+only past three halvings (`swept_slid::kronrod`), the two rules having agreed on a piece both
+misread by 1.65e-4. Read so, every folded case the road builds stands within its tolerance: at the
+kernel's, the bench's ring 5e-10 off and its ball 4e-10, the ball screwed tighter than its radius
+within its area times the tolerance (1.7e-9 of it)
+(`swept_contacts::the_fold_cases_hold_at_the_kernels_tolerance`,
+`swept_loci::the_tight_ball_holds_at_the_kernels_tolerance`). **Not yet** (#880 T1b): a ring
+leaning just past the fold — slid at 60° finer than 1e-6, pushed in at 56° or 60° — is refused.
+Where a stretch is cut at a cusp, the cusp's leaves stand within the tolerance of each other over
+a band some `tol^⅔` wide, each one's meeting with an end pose is traced apart, and near the cusp
+the one meeting comes out on either leaf, a branch along a leaf's side beside the fold and the
+other short of the corner; its pieces do not close. Cut at every fold instead (a piece cut where
+its image in the motion's invariants turns back), 60° builds and 70° is refused the same way: the
+meeting by the cusp has to be given, not traced on each leaf. (brep-bench's cadrs builds the ball
+to 282.091, 11% over the sweep's 253.4494.)
 
 **A point's side off the nearest feature's pseudo-normal** (`member::Solid::signed_near`, #880
 Q1b): a point whose nearest point of the tool's mesh lies on a vertex or an edge is read by that

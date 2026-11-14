@@ -228,8 +228,9 @@ pub(crate) fn plunged_away(big: f64,small: f64,beta: f64,depth: f64) -> f64 {
 /// refuses by name as `Folded` at a point of the inner contact (`closed::reads`); its build asks
 /// the contact's road, whose trim keeps of the folded sheet what bounds the sweep. Held to the
 /// sweep's volume line by line (`torus_pushed_by_lines`, apart from the kernel, to 1e-9) within
-/// 1e-6 of it — 6.6e-8 today: near the cusps' paths the sheet's two leaves stand nearly tangent,
-/// and the trim reads them no closer (the fold cut, #880 T1).
+/// 1e-6 of it at 1e-6 (1.1e-8 of it). Finer than 1e-6, refused (`Folded`): a stretch is cut at a
+/// cusp, where the two leaves stand within the tolerance of each other and the trim's pieces do
+/// not close (#880 T1b).
 #[test]
 fn a_ring_slid_past_its_fold_is_swept_by_the_contacts_road() {
     use gcs_core::brep::swept::closed::reads;
@@ -248,6 +249,7 @@ fn a_ring_slid_past_its_fold_is_swept_by_the_contacts_road() {
     let expected = torus_pushed_by_lines([0.;3],ring.frame.z,3.,1.,6.,None,1e-9);
     assert!((volume(&built)-expected).abs() <= 1e-6*expected,"{} against {expected}",volume(&built));
 }
+
 
 
 /// The cylinders a ring's contacts sweep along the slide `d` (unit): each half of each contour,
@@ -590,7 +592,10 @@ fn the_slid_touches_build_through_their_given_touches() {
 
 /// `∫ f` over `[lo, hi]` within `tol`, by Gauss–Kronrod's 7–15 rule halved where its two estimates
 /// part by more than their share of `tol` — never below the estimate's own rounding, nor past
-/// twenty halvings, so a share `f`'s noise cannot meet stops there.
+/// twenty halvings, so a share `f`'s noise cannot meet stops there; and halved three times before
+/// any estimate is taken, since the two rules can agree on a stretch both misread (a circle's
+/// coverage under the ball round a tight helix, 1.65e-4 off on the first reading of a piece whose
+/// halves each read to 1e-10).
 pub(crate) fn kronrod(f: &dyn Fn(f64) -> f64,lo: f64,hi: f64,tol: f64) -> f64 {
     const XK: [f64;8] = [0.991455371120812639,0.949107912342758525,0.864864423359769073,0.741531185599394440,
         0.586087235467691130,0.405845151377397167,0.207784955007898468,0.];
@@ -606,7 +611,7 @@ pub(crate) fn kronrod(f: &dyn Fn(f64) -> f64,lo: f64,hi: f64,tol: f64) -> f64 {
             if i % 2 == 1 { g += WG[i/2]*s }
         }
         let (k,g) = (k*h,g*h);
-        if (k-g).abs() <= tol.max(1e-14*k.abs()) || depth >= 20 { return k }
+        if depth >= 3 && (k-g).abs() <= tol.max(1e-14*k.abs()) || depth >= 20 { return k }
         go(f,lo,m,tol/2.,depth+1)+go(f,m,hi,tol/2.,depth+1)
     }
     go(f,lo,hi,tol,0)
