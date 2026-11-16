@@ -39,6 +39,36 @@ const TANGENT: f64 = 1e-4;
 /// apart, not beside a point where faces touch.
 const CROWDED: f64 = 1e-3;
 
+/// How far into its faces a run of tied ways in is read, at most, as a share of the least radius
+/// of curvature among their exact surfaces.
+const NEAR: f64 = 0.01;
+
+/// A surface's least radius of curvature where it is exact — a closed form whose normal is read to
+/// rounding: a plane's none (infinite), a cylinder's, a ball's, a torus's tube's, a cone's radius
+/// where it is widest across nothing but its own (its least is at its apex: none read here, its
+/// rulings straight) — or `None` for a surface read approximately (a fitted net, a blend).
+fn exact_radius(s: &Surface) -> Option<f64> {
+    match *s {
+        Surface::Plane(_) => Some(f64::INFINITY),
+        Surface::Cylinder(_,r) | Surface::Sphere(_,r) => Some(r.abs()),
+        Surface::Torus(_,_,r) => Some(r.abs()),
+        Surface::Cone(..) => Some(f64::INFINITY),
+        _ => None,
+    }
+}
+
+/// How close two ways in may stand and still be one way, to be ordered by a step in: `TANGENT`
+/// where either surface is read approximately (its normal off by as much as its fit), else twice
+/// what an edge's point read off its face within `8 tol` (`sew`'s, `tolerant`'s) turns an exact
+/// normal by at the smaller radius, `16 tol / ρ`, and no more than `TANGENT` — so two exact faces
+/// leaving an edge a millionth apart are ordered as they leave it, not by a step in.
+fn tie_between(a: Option<f64>,b: Option<f64>,tol: f64) -> f64 {
+    match (a,b) {
+        (Some(a),Some(b)) => (16.*tol/a.min(b)).clamp(1e-12,TANGENT),
+        _ => TANGENT,
+    }
+}
+
 /// Where a face of the complex came from: an operand of the arrangement, its face there, and
 /// whether the complex's face faces the way that one did.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
@@ -196,12 +226,12 @@ impl Complex {
             let step = *step.get_or_insert_with(|| (1e-3*b.size().max(tol)).max(64.*tol));
             // each use: its way in at the edge (first order) and a step in (second order), its
             // normal, read at the edge's point a fraction `at` along it
-            let read = |at: f64| -> Result<(V,V,Vec<(f64,f64,usize,V,V)>),String> {
+            let read = |at: f64| -> Result<(V,V,Vec<(f64,f64,usize,V,V,[f64;2])>),String> {
                 let tm = edge.t[0]+(edge.t[1]-edge.t[0])*at;
                 let t = normalised(curve.tangent(tm)).ok_or_else(|| format!("edge {e} has no direction"))?;
                 let m = curve.point(tm);
                 let (b1,b2) = crate::util::space::across(t);
-                let mut round: Vec<(f64,f64,usize,V,V)> = Vec::with_capacity(uses[e].len());
+                let mut round: Vec<(f64,f64,usize,V,V,[f64;2])> = Vec::with_capacity(uses[e].len());
                 for &(fi,li,ci) in &uses[e] {
                     let f = &b.faces[fi];
                     let co = &f.loops[li][ci];
@@ -220,14 +250,14 @@ impl Complex {
                         }
                         None => angle,
                     };
-                    round.push((angle,deep,round.len(),d,n));
+                    round.push((angle,deep,round.len(),d,n,uv));
                 }
                 Ok((t,m,round))
             };
             // the order round an edge is the same all along it, so it is read where the ways in
             // stand farthest apart — not beside a point where faces touch, near which they are
             // all but tangent (a plane holding a hyperboloid's ruling, its edge's middle at the throat)
-            let least_gap = |r: &[(f64,f64,usize,V,V)]| {
+            let least_gap = |r: &[(f64,f64,usize,V,V,[f64;2])]| {
                 let mut a: Vec<f64> = r.iter().map(|x| x.0).collect();
                 a.sort_by(f64::total_cmp);
                 (0..a.len()).map(|i| if i+1 == a.len() { a[0]+TAU-a[i] } else { a[i+1]-a[i] }).fold(f64::INFINITY,f64::min)
@@ -241,10 +271,13 @@ impl Complex {
             }
             let (t,m,mut round) = best;
             round.sort_by(|x,y| x.0.total_cmp(&y.0).then(x.2.cmp(&y.2)));
-            // runs of ways in closer than `TANGENT` (wrapping round): ordered by the way a step in
+            // runs of ways in closer than two uses can be told apart (wrapping round): ordered by the
+            // way a step in
             let k = round.len();
-            let gap = |r: &[(f64,f64,usize,V,V)],i: usize| { let g = r[(i+1)%k].0-r[i].0; if i+1 == k { g+TAU } else { g } };
-            let Some(s) = (0..k).find(|&i| gap(&round,i) > TANGENT) else {
+            let radii: Vec<Option<f64>> = uses[e].iter().map(|&(fi,..)| exact_radius(&b.faces[fi].surface)).collect();
+            let tie = |i: usize,j: usize| tie_between(radii[i],radii[j],tol);
+            let gap = |r: &[(f64,f64,usize,V,V,[f64;2])],i: usize| { let g = r[(i+1)%k].0-r[i].0; if i+1 == k { g+TAU } else { g } };
+            let Some(s) = (0..k).find(|&i| gap(&round,i) > tie(round[i].2,round[(i+1)%k].2)) else {
                 return Err(format!("edge {e} near {m:?}: every face round it is tangent to every other"))
             };
             // start after a gap wider than `TANGENT`, so no run is cut by the wrap
@@ -252,11 +285,33 @@ impl Complex {
             let mut i = 0;
             while i < k {
                 let mut j = i+1;
-                while j < k && wrapped(round[j].0-round[j-1].0).abs() <= TANGENT { j += 1; }
+                while j < k && wrapped(round[j].0-round[j-1].0).abs() <= tie(round[j-1].2,round[j].2) { j += 1; }
                 if j-i > 1 {
                     let base = round[i].0;
                     let run = &mut round[i..j];
+                    // a step in short beside the run's own curvatures (exact surfaces' radii), past
+                    // which an order read at the scale of the whole complex may turn on a third
+                    // order a near tangency leaves (a ball and a cylinder of its radius leaving an
+                    // edge 2e-6 apart, read a 45th of the ball's radius in, came out swapped)
+                    let least = run.iter().filter_map(|x| radii[x.2]).fold(f64::INFINITY,f64::min);
+                    let near = (NEAR*least).min(step).max(64.*tol);
+                    if near < step {
+                        let (b1,b2) = crate::util::space::across(t);
+                        for x in run.iter_mut() {
+                            let f = &b.faces[uses[e][x.2].0];
+                            if let Some(dx) = in_parameters(&f.surface,x.5,x.3) {
+                                let p = f.surface.point([x.5[0]+near*dx[0],x.5[1]+near*dx[1]]);
+                                let q = sub(p,m);
+                                let q = sub(q,scale(t,dot(q,t)));
+                                if norm(q) > 0. { x.1 = dot(q,b2).datan2(dot(q,b1)) }
+                            }
+                        }
+                    }
                     run.sort_by(|x,y| wrapped(x.1-base).total_cmp(&wrapped(y.1-base)).then(x.2.cmp(&y.2)));
+                    if super::debug() {
+                        eprintln!("complex: edge {e} near {m:?} ties {:?}",run.iter().map(|x| (b.faces[uses[e][x.2].0].surface.kind(),uses[e][x.2].0,
+                            wrapped(x.0-base),wrapped(x.1-base),radii[x.2])).collect::<Vec<_>>());
+                    }
                     for w in run.windows(2) {
                         if (wrapped(w[1].1-base)-wrapped(w[0].1-base)).abs() <= 1e-9 {
                             let (f,g) = (uses[e][w[0].2].0,uses[e][w[1].2].0);
@@ -271,8 +326,8 @@ impl Complex {
             }
             let mut sides = Vec::with_capacity(k);
             for i in 0..k {
-                let (_,_,ui,d,n) = round[i];
-                let (_,_,uj,dj,nj) = round[(i+1)%k];
+                let (_,_,ui,d,n,_) = round[i];
+                let (_,_,uj,dj,nj,_) = round[(i+1)%k];
                 // the wedge from i's way in to j's, turning about the edge: i bounds it by the side
                 // facing the turn, j by the side facing back against it
                 let r = cross(t,d);
@@ -284,7 +339,7 @@ impl Complex {
                 sides_joined.union(side_i,side_j);
                 sides.push(side_i);
             }
-            radial[e] = round.iter().map(|&(angle,_,u,_,_)| {
+            radial[e] = round.iter().map(|&(angle,_,u,_,_,_)| {
                 let (face,lp,at) = uses[e][u];
                 Use {face,lp,at,angle,ahead:0,behind:0}
             }).collect();

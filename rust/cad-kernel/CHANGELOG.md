@@ -8,6 +8,20 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Any tool of revolution's path of pieces is cut from a blank piece by piece** (`swept::pieces`,
+  the road `swept::closed::cut_from` takes after `raster`): each move's sweep in closed form where
+  it has one — slid along the tool's axis, slid square to it, turned about a line along it, a
+  ball-end mill at a slant — and the closed class's of that piece alone where not; each move after
+  the first shut where it starts by its section, the move before holding the tool there, so no two
+  moves' sweeps lie on one surface at their corner. brep-bench's `cnc/flat-end-mill-profile`,
+  refused after two minutes, is cut in under two seconds, to its closed form within 3e-15.
+- **Booleans at tangencies** (`complex`, `boolean`): two exact faces leaving an edge are tied only
+  within `16 tol / ρ` of one another (a fit's `TANGENT` else), and a tie is read a hundredth of their
+  least radius in, not a thousandth of the whole complex — a cylinder and a ball of its radius
+  leaving a short edge 2e-6 apart were read swapped 0.14 in, and two cells joined; no vertex is taken
+  onto a meeting found in closed form from farther than the tolerance, nor a root that lies flat
+  along a face moved off such a meeting; and an edge merged with another records how far apart they
+  stood (`Edge::tol`), as an operand's edge keeps its own through a Boolean.
 - **A ball-end mill's path of slides is cut from a blank run by run** (`swept::raster`, the road
   `swept::closed::cut_from` takes for it before the arrangement): the mill read off its B-rep
   (`raster::Mill::read`), its moves in runs — each a polyline of the ball's centre in one plane

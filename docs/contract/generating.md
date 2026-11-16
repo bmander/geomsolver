@@ -1293,6 +1293,23 @@ to 1e-9 (`swept_closed::a_ball_end_mill_run_along_a_line_takes_its_sections_pris
 lower envelope of a run over two valleys and a hill leaves, integrated slice by slice apart from the
 build, to 1e-6
 (`swept_closed::a_ball_end_mill_run_over_valleys_and_a_hill_takes_what_its_lower_envelope_leaves`).
+**Any other tool of revolution's path of pieces cut from a blank is cut piece by piece**
+(`swept::pieces`): the tool read as a convex solid of revolution (`patches::Revolved`), each piece
+reaching the blank's box swept alone — slid along its axis, its meridian drawn out where it reaches
+farthest and turned once; slid square to it, its half behind, its axial section carried and its half
+ahead, sewn; turned about a line along its axis that misses it, the section turned about that line
+between its halves (a whole turn the ring alone); a ball-end mill at a slant as `raster`'s run of one
+step; any other piece by the closed class alone — and cut in the path's order, then judged. Each
+piece after the first is shut where it starts by its section there, its half behind left out: the
+piece before holds the tool at that pose, so no two pieces' sweeps lie on one surface at their
+corner. A piece the road cannot sweep or cut leaves the whole path to the arrangement. Held to a
+flat end mill plunged, run round a square and lifted, `2 (76 + π)` to 1e-9
+(`swept_closed::a_flat_end_mill_run_round_a_square_takes_its_band`); brep-bench's
+`cnc/flat-end-mill-profile` to its closed form within 3e-15 in under two seconds. Consecutive moves
+still meet the Boolean at tangencies (a move's cylinder touching the ball the move before left, round
+a great circle) that it does not yet settle everywhere: the bull-nose and pocket cases and a raster
+cut move by move are refused there and left to the arrangement.
+
 The raster's 41 passes cut in about 7 s, judged, and agree with cadrs's solid to 1e-10. Membership
 along a path of pieces reads only the pieces near the point: a slide's by the tool's box carried to its
 two ends (`member::Swept`), so the judge reads a raster's 512 points against a few moves each, not

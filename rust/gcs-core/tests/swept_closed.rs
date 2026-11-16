@@ -2473,3 +2473,35 @@ fn a_ball_end_mill_run_over_valleys_and_a_hill_takes_what_its_lower_envelope_lea
     let expected = simpson(-std::f64::consts::FRAC_PI_2,std::f64::consts::FRAC_PI_2,64,|phi| r*phi.cos()*section(r*phi.cos()));
     assert!((removed-expected).abs() <= 1e-6*expected,"{removed} against {expected}");
 }
+
+/// A flat end mill of radius `r`, `len` long from the middle of its flat end at `tip` up its
+/// upright side: its meridian — out across its end, up its side, back across its top, down the
+/// axis — turned once.
+fn flat_end_mill(tip: [f64;3],r: f64,len: f64) -> Brep {
+    use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
+    let at = |x: f64,z: f64| [tip[0]+x,tip[1],tip[2]+z];
+    let corners = [at(0.,0.),at(r,0.),at(r,len),at(0.,len)];
+    let edges = (0..4).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%4]}).collect();
+    revolve(&Profile {origin:tip,normal:[0.,1.,0.],loops:vec![edges],names:Vec::new()},tip,[0.,0.,1.],std::f64::consts::TAU).unwrap()
+}
+
+/// **A path of pieces is cut from a blank piece by piece** (`swept::pieces`, the road `cut_from`
+/// takes for any tool of revolution's path of pieces): a flat end mill of radius 1 plunged 2 into a
+/// plate, run round the square of side 10 there and lifted out takes the band the disc sweeps round
+/// a square, `2 r L + (π − 4) r²` (the square's outer offset less its inner, `L` its perimeter), 2
+/// deep: `2 (76 + π)`. Each move's sweep is its closed form — the plunge and the lift the mill drawn
+/// out along its axis, each side its half behind, its section carried, its half ahead — and each
+/// after the first is shut where it starts, the move before holding the mill there.
+#[test]
+fn a_flat_end_mill_run_round_a_square_takes_its_band() {
+    use gcs_core::brep::swept::closed::cut_from;
+    let plate = block([0.,0.,-5.],[20.,20.,0.]);
+    let tip = [5.,5.,2.];
+    let tool = flat_end_mill(tip,1.,10.);
+    let (path,roll) = moves(&[tip,[5.,5.,-2.],[15.,5.,-2.],[15.,15.,-2.],[5.,15.,-2.],[5.,5.,-2.],[5.,5.,2.]]);
+    let cut = cut_from(&plate,&tool,&path,roll,0.01,1e-7).unwrap_or_else(|e| panic!("{e:?}"));
+    cut.check(1e-6).unwrap();
+    let expected = 2.*(76.+std::f64::consts::PI);
+    let removed = volume(&plate)-volume(&cut);
+    assert!((removed-expected).abs() <= 1e-9*expected,"{removed} against {expected}");
+}

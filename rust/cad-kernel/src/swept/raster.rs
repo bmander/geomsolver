@@ -32,8 +32,8 @@
 //! top stands past that plane at every pose of a run reaching the blank, each such run turning at
 //! its hills gently enough for its half cylinders' ends to stand apart (`laid`). Anything else is
 //! the closed class's (`None`), as is a path whose runs the road could not sweep or cut.
-use crate::boolean::{combined_known,overlap,Known,Op};
 use crate::build::{face,kept,prism,revolve,seam,sphere,Profile,ProfileEdge,SEAM};
+use crate::boolean::{combined_known,overlap,Known,Op};
 use crate::geom::{Frame,Surface};
 use crate::query::{Located,Place};
 use crate::topo::Brep;
@@ -175,7 +175,7 @@ fn lune(c: V,r: f64,cuts: &[V],[e1,e2,a]: [V;3]) -> Result<Brep,String> {
 
 /// **A run's sweep, cut off at `top`** (the module's account): the ball's centre at `cs` (two or
 /// more, along `across`, each step forward), the mill of radius `r` with its axis `a`.
-fn run_sweep(cs: &[V],across: V,a: V,r: f64,top: f64,tol: f64) -> Result<Brep,String> {
+fn run_sweep(cs: &[V],across: V,a: V,r: f64,top: f64,back: bool,tol: f64) -> Result<Brep,String> {
     let n = cs.len()-1;
     let e1 = across;
     let e2 = cross(a,e1);
@@ -190,7 +190,7 @@ fn run_sweep(cs: &[V],across: V,a: V,r: f64,top: f64,tol: f64) -> Result<Brep,St
     let mut faces: Vec<Brep> = Vec::new();
     let below = scale(a,-1.);
     // the ball's quarter behind the first step and ahead of the last, its lune at each valley
-    faces.push(lune(cs[0],r,&[below,scale(t[0],-1.)],frame)?);
+    if back { faces.push(lune(cs[0],r,&[below,scale(t[0],-1.)],frame)?); }
     faces.push(lune(cs[n],r,&[below,t[n-1]],frame)?);
     for k in (1..n).filter(|&k| valley[k]) {
         faces.push(lune(cs[k],r,&[t[k-1],scale(t[k],-1.)],frame)?);
@@ -220,14 +220,25 @@ fn run_sweep(cs: &[V],across: V,a: V,r: f64,top: f64,tol: f64) -> Result<Brep,St
         let p = polygon(&[c,add(c,scale(from,r)),up(add(c,scale(from,r))),up(c)],cross(from,a));
         cylinders(&revolve(&p,c,a,PI)?)
     };
-    faces.push(shank(cs[0],e2)?);
+    let up_ = |p: V| add(p,scale(a,top-dot(p,a)));
+    let (c0,side) = (cs[0],scale(e2,r));
+    if back { faces.push(shank(c0,e2)?) } else {
+        // shut where it starts, its half behind there left out (`back`): the half disc of the first
+        // step's half cylinder's end, and the shank's section above it
+        let low = unit(cross(e2,t[0]));
+        faces.push(face(&Profile {origin:c0,normal:t[0],names:Vec::new(),loops:vec![vec![
+            ProfileEdge::Arc {frame:Frame {o:c0,x:e2,y:low,z:cross(e2,low)},r,span:Some([0.,PI])},
+            ProfileEdge::Line {a:sub(c0,side),b:add(c0,side)}]]})?);
+        faces.push(face(&polygon(&[add(c0,side),up_(add(c0,side)),up_(sub(c0,side)),sub(c0,side)],e1))?);
+    }
     faces.push(shank(cs[n],scale(e2,-1.))?);
     // the top: the stadium the shank's section sweeps in the plane `top`
     // (the back half round the start, along one side, the front half round the end, back along the
     // other)
     let (t0,t1) = (up(cs[0]),up(cs[n]));
-    let stadium = [(t0,t1,e2),(t1,t0,scale(e2,-1.))].into_iter().flat_map(|(p,q,x)| [
-        ProfileEdge::Arc {frame:Frame::new(p,a,x),r,span:Some([0.,PI])},
+    let stadium = [(t0,t1,e2),(t1,t0,scale(e2,-1.))].into_iter().enumerate().flat_map(|(k,(p,q,x))| [
+        if k == 0 && !back { ProfileEdge::Line {a:add(p,scale(x,r)),b:add(p,scale(x,-r))} }
+        else { ProfileEdge::Arc {frame:Frame::new(p,a,x),r,span:Some([0.,PI])} },
         ProfileEdge::Line {a:add(p,scale(x,-r)),b:add(q,scale(x,-r))}]).collect();
     faces.push(face(&Profile {origin:t0,normal:a,names:Vec::new(),loops:vec![stadium]})?);
     crate::sew::sewn(&faces,tol).map_err(|e| e.msg)
@@ -258,6 +269,19 @@ fn least_bend(r: f64,tol: f64) -> f64 { (tol/r).sqrt() }
 /// Which corners of the run through `cs` are valleys: turning up past `least_bend`.
 fn valleys(cs: &[V],across: V,a: V,r: f64,tol: f64) -> Vec<bool> {
     bends(cs,across,a).into_iter().map(|b| b > least_bend(r,tol)).collect()
+}
+
+/// **A ball-end mill slid at a slant**, its ball's centre from `from` to `to`, its axis `axis`, as a
+/// run of one step: cut off past `blank` and both centres, a hundredth of the blank's size beyond the
+/// farthest of them along the axis — refused where the mill's top at either end stands short of that
+/// — and, where not `back`, shut where it starts by its section there, its half behind left out.
+pub(super) fn slanted(from: V,to: V,axis: V,m: &Mill,blank: &Brep,back: bool,tol: f64) -> Result<Brep,String> {
+    let along = |p: &V| dot(*p,axis);
+    let highest = super::closed::corners_of(blank.bounds()).iter().chain([&from,&to]).map(along).fold(f64::NEG_INFINITY,f64::max);
+    let top = highest+1e-2*blank.size();
+    if !(along(&from).min(along(&to))+m.h > top) { return Err("the mill's top dips under the plane its sweep is cut off at".into()) }
+    let d = sub(to,from);
+    run_sweep(&[from,to],unit(sub(d,scale(axis,dot(d,axis)))),axis,m.r,top,back,tol)
 }
 
 /// Whether `run_sweep` lays the run through `cs` as it is: at every hill the turn short of a right
@@ -314,7 +338,7 @@ fn cut_runs(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],r: f64,a: V
     -> Result<Brep,Unbuilt> {
     let clock = crate::util::clock::Instant::now();
     let sweeps = crate::util::par::map(runs,|(i,run)| match run.across {
-        Some(across) => run_sweep(&run.cs,across,a,r,top,tol),
+        Some(across) => run_sweep(&run.cs,across,a,r,top,true,tol),
         None => {
             let c = run.cs.iter().copied().min_by(|x,y| dot(*x,a).total_cmp(&dot(*y,a))).unwrap();
             plunge(c,a,r,top,tol)
