@@ -1265,6 +1265,35 @@ membership along the whole path
 `trajectories::a_twist_after_a_placement_is_the_placement_then_the_twist` holds `Placed`'s pose,
 rate and speed bound by differences). No drawing lowers to pieces yet (a toolpath written as one
 is the language's `path`), so the closed class's admission reads one constant twist.
+
+**A ball-end mill's path of slides cut from a blank is cut run by run** (`swept::raster`, the road
+`cut_from` takes before the arrangement; brep-bench's `cnc/ball-end-surface-raster`, 944 moves
+whose one arrangement ran past its membership budget after nine minutes). The mill is read off its
+B-rep (`raster::Mill::read`: a half ball, a cylinder of its radius about the axis through its
+centre, a flat top square to it, and the volume theirs to 1e-9). Its moves fall into runs, each a
+polyline of the ball's centre in one plane holding the axis, every step forward along one way across
+it (a step along the axis a run alone). A run's sweep is built from its surfaces: under the centre's
+path each step's half cylinder, at a corner turning up (a valley) the ball's lune between the two
+steps' great circles, at one turning down (a hill) the two half cylinders' meeting in the plane
+bisecting the turn — two cylinders of one radius whose axes meet are each other's mirror there, so
+each cuts the same ellipse — a corner turning by less than a tolerance's lune (`r δ²/8` under the
+tolerance) a hill's, and steps along one line one step; at its ends the ball's quarters; above it the
+two walls the shank's sides sweep, the shank's halves at its ends and the stadium its section sweeps
+in the plane the sweep is cut off at, a hundredth of the blank's size beyond the blank and every
+ball centre of a run reaching it along the axis — which takes nothing from the blank, every pose's
+top standing past it (a pose whose top does not is the arrangement's, as is a run turning at a hill
+so sharply that its half cylinders' ends would cross, `raster::laid`, and any tool or path the road
+does not read). So a corner is laid by
+construction, never found by a Boolean where two moves' balls coincide and the next step's cylinder
+touches the ball along a great circle (which ordered the faces round that edge wrongly and joined two
+cells). A sphere's poles stand off every plane a run's piece is cut at. The runs reaching the blank's
+box are swept across the cores and cut from it in the path's order, and the cut is judged as the
+closed class judges what it builds. Held to the prism a run along a line takes, `2000 − 20 (2π + 8)`
+to 1e-9 (`swept_closed::a_ball_end_mill_run_along_a_line_takes_its_sections_prism`), and to what the
+lower envelope of a run over two valleys and a hill leaves, integrated slice by slice apart from the
+build, to 1e-6
+(`swept_closed::a_ball_end_mill_run_over_valleys_and_a_hill_takes_what_its_lower_envelope_leaves`).
+The raster's 41 passes cut in about 13 s, judged, and agree with cadrs's solid to 1e-10.
 A curved tool past these (`Unbuilt::Curved`: under a screw a round face about an axis leaning to it, a torus, or a sharp
 circle leaning to it (#780 L2); under a turn a ball across its axis, a torus leaning to it or a free-form face; under a slide a
 torus's face leaning to it that is no whole ring, or a free-form face; an edge no line or circle) are refused by

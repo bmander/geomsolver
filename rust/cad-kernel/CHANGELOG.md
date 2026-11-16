@@ -8,6 +8,17 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A ball-end mill's path of slides is cut from a blank run by run** (`swept::raster`, the road
+  `swept::closed::cut_from` takes for it before the arrangement): the mill read off its B-rep
+  (`raster::Mill::read`), its moves in runs — each a polyline of the ball's centre in one plane
+  holding the axis, every step forward along one way across it — each run's sweep built from its
+  surfaces (half cylinders under the path, the ball's lune at each valley, the two cylinders'
+  ellipse at each hill, the shank's walls and halves, cut off by a plane past the blank), the runs
+  swept across the cores and cut in order, and the cut judged. brep-bench's
+  `cnc/ball-end-surface-raster` (41 passes, 944 moves), refused after nine minutes by the
+  arrangement's membership budget, is cut in about 13 seconds and agrees with cadrs's solid to
+  1e-10. Any other tool or path takes the arrangement as before.
+
 ## [0.14.0] - 2026-11-14
 
 - **A sheet that folds under a slide, a turn or a screw goes the contact's road** (`swept::closed`,

@@ -2382,3 +2382,100 @@ fn the_square_bar_screwed_four_turns_closes_into_its_helical_sweep() {
         agrees_over(&built,&tool,&path,roll);
     }
 }
+
+/// A ball-end mill of radius `r`, `len` long from its tip at `tip` up its upright shank, as
+/// brep-bench's `cnc/` cases draw one: its meridian — out from the tip round the quarter circle to
+/// the foot of its side, up the side, back across its top, down the axis — turned once.
+fn ball_end_mill(tip: [f64;3],r: f64,len: f64) -> Brep {
+    use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
+    use gcs_core::brep::geom::Frame;
+    let at = |x: f64,z: f64| [tip[0]+x,tip[1],tip[2]+z];
+    let line = |a,b| ProfileEdge::Line {a,b};
+    let edges = vec![ProfileEdge::Arc {frame:Frame::new(at(0.,r),[0.,-1.,0.],[1.,0.,0.]),r,span:Some([-std::f64::consts::FRAC_PI_2,0.])},
+        line(at(r,r),at(r,len)),line(at(r,len),at(0.,len)),line(at(0.,len),at(0.,0.))];
+    revolve(&Profile {origin:tip,normal:[0.,1.,0.],loops:vec![edges],names:Vec::new()},tip,[0.,0.,1.],std::f64::consts::TAU).unwrap()
+}
+
+/// The path of pieces that runs a tool drawn with its tip at `points[0]` straight through each of
+/// `points` in turn, each move a slide taken up where the one before left it (a G1 program), over
+/// the roll its tip travels.
+fn moves(points: &[[f64;3]]) -> (Trajectory,[f64;2]) {
+    use gcs_core::brep::trajectory::{Piece,Pose};
+    let mut pose = Pose {r:[[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]],p:[0.;3]};
+    let (mut pieces,mut roll) = (Vec::new(),0.);
+    for w in points.windows(2) {
+        let d: [f64;3] = std::array::from_fn(|k| w[1][k]-w[0][k]);
+        let length = norm(d);
+        let twist = Screw {origin:[0.;3],axis:unit(d),ratio:0.,advance:std::f64::consts::TAU};
+        pieces.push(Piece {over:[roll,roll+length],path:Trajectory::Placed {twist,at:pose.then(twist.pose(-roll))}});
+        roll += length;
+        pose = pose.then(twist.pose(length));
+    }
+    (Trajectory::pieces(pieces,1e-9,100.).unwrap(),[0.,roll])
+}
+
+/// **A ball-end mill run along a line takes its section's prism from a plate** (`swept::raster`,
+/// the road `cut_from` takes for a ball-end mill's path of slides): the mill of radius 2, its
+/// centre 2 under the plate's top, run in two moves along one line right across the plate (20
+/// long), takes its section there — the half disc under the centre and the band above it, `2π + 8`
+/// — the whole way: `2000 − 20 (2π + 8)`, the two moves one step.
+#[test]
+fn a_ball_end_mill_run_along_a_line_takes_its_sections_prism() {
+    use gcs_core::brep::swept::closed::cut_from;
+    let plate = block([0.,0.,-10.],[20.,10.,0.]);
+    let tip = [-3.,5.,-4.];
+    let tool = ball_end_mill(tip,2.,20.);
+    let (path,roll) = moves(&[tip,[5.,5.,-4.],[23.,5.,-4.]]);
+    let cut = cut_from(&plate,&tool,&path,roll,0.01,1e-7).unwrap_or_else(|e| panic!("{e:?}"));
+    cut.check(1e-6).unwrap();
+    let expected = 2000.-20.*(2.*std::f64::consts::PI+8.);
+    assert!((volume(&cut)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&cut));
+}
+
+/// **A ball-end mill's run over valleys and a hill takes what its lower envelope leaves** (`swept::
+/// raster`): the mill of radius 2 run through five points down, up, down and less down — valleys at
+/// the second and fourth, a hill at the third — in a plate it stays inside of but for its shank.
+/// Apart from the build: across the run at each offset `y` the mill's section is the ball-end of
+/// radius `ρ = √(4 − y²)`, its centre on the path; slid along it, it covers each `x` from the lowest
+/// its discs reach (the least of each step's: the line `ρ` under the step, and the discs at its
+/// ends) up past the plate's top, so the plate loses `∫∫ (0 − L(x)) dx dy` — the inner integral by
+/// Gauss's three points on a fine grid, the outer by Simpson's rule in `y = 2 sin φ`. Each corner
+/// is laid by the run's construction (a valley's lune, a hill's ellipse), and the cut is judged
+/// against membership as it is built.
+#[test]
+fn a_ball_end_mill_run_over_valleys_and_a_hill_takes_what_its_lower_envelope_leaves() {
+    use gcs_core::brep::swept::closed::cut_from;
+    let r = 2.;
+    let plate = block([-20.,-10.,-20.],[30.,10.,0.]);
+    let tips = [[-5.,0.,-10.],[0.,0.,-12.],[5.,0.,-9.],[10.,0.,-11.],[15.,0.,-11.5]];
+    let tool = ball_end_mill(tips[0],r,30.);
+    let (path,roll) = moves(&tips);
+    let cut = cut_from(&plate,&tool,&path,roll,0.01,1e-7).unwrap_or_else(|e| panic!("{e:?}"));
+    cut.check(1e-6).unwrap();
+    let removed = volume(&plate)-volume(&cut);
+    // the ball's centre's path in the plane y = 0, as (x, z)
+    let cs: Vec<[f64;2]> = tips.iter().map(|p| [p[0],p[2]+r]).collect();
+    let lowest = |x: f64,rho: f64| -> f64 {
+        let mut z = f64::INFINITY;
+        for w in cs.windows(2) {
+            let (p,q) = (w[0],w[1]);
+            let (dx,dz) = (q[0]-p[0],q[1]-p[1]);
+            let l = dx.hypot(dz);
+            // the step's line offset `rho` along its downward normal, and its two end discs
+            let n = [dz/l,-dx/l];
+            let t = (x-p[0]-rho*n[0])/dx;
+            if (0. ..=1.).contains(&t) { z = z.min(p[1]+t*dz+rho*n[1]) }
+            for c in [p,q] { let s = rho*rho-(x-c[0])*(x-c[0]); if s >= 0. { z = z.min(c[1]-s.sqrt()) } }
+        }
+        z
+    };
+    let gauss = [(-(0.6f64).sqrt(),5./9.),(0.,8./9.),((0.6f64).sqrt(),5./9.)];
+    let section = |rho: f64| -> f64 {
+        let (a,b) = (cs[0][0]-rho,cs[cs.len()-1][0]+rho);
+        let n = 20000;
+        let h = (b-a)/n as f64;
+        (0..n).map(|i| gauss.iter().map(|&(s,w)| w*0.5*h*-lowest(a+h*(i as f64+0.5+0.5*s),rho)).sum::<f64>()).sum()
+    };
+    let expected = simpson(-std::f64::consts::FRAC_PI_2,std::f64::consts::FRAC_PI_2,64,|phi| r*phi.cos()*section(r*phi.cos()));
+    assert!((removed-expected).abs() <= 1e-6*expected,"{removed} against {expected}");
+}
