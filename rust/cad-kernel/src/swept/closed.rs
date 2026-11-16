@@ -1783,10 +1783,10 @@ pub fn judge(built: &Brep,swept: &Swept,domain: &Brep,blank: Option<&Brep>,witne
     let readings = crate::util::par::map(&points,|&p| -> Option<(V,bool)> {
         if !meter::charge(Stage::Judge,1,|| (p,"the built solid".into())) { return None }
         let held = match solid.solid_place(p) { Place::In => true,Place::Out => false,Place::On => return None };
-        let member = swept.member(p).ok()?;
+        // (outside a blank, nothing is held whatever membership says: it is not read there)
         let should = match &blank {
-            None => member,
-            Some(b) => match b.solid_place(p) { Place::In => !member,Place::Out => false,Place::On => return None },
+            None => swept.member(p).ok()?,
+            Some(b) => match b.solid_place(p) { Place::In => !swept.member(p).ok()?,Place::Out => false,Place::On => return None },
         };
         (held != should).then_some((p,held))
     });

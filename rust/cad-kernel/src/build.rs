@@ -691,7 +691,7 @@ fn poles(t: V,x: V) -> V {
 
 /// How far round from the radial line a ball's tube's seams run (radians): the golden angle's
 /// fraction of a turn, which no symmetry of a design's makes.
-const SEAM: f64 = 0.6180339887498949;
+pub const SEAM: f64 = 0.6180339887498949;
 
 /// **The ball** of radius `r` about `c`: a half disc turned once about the diameter along `axis`,
 /// its poles where `axis` meets the sphere and its seam the half circle through them on the side

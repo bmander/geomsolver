@@ -16,8 +16,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   ellipse at each hill, the shank's walls and halves, cut off by a plane past the blank), the runs
   swept across the cores and cut in order, and the cut judged. brep-bench's
   `cnc/ball-end-surface-raster` (41 passes, 944 moves), refused after nine minutes by the
-  arrangement's membership budget, is cut in about 13 seconds and agrees with cadrs's solid to
-  1e-10. Any other tool or path takes the arrangement as before.
+  arrangement's membership budget, is cut in about 7 seconds and agrees with cadrs's solid to
+  1e-10. Any other tool or path takes the arrangement as before, as does a path whose runs the
+  road could not sweep or cut.
+- **Membership along a path of pieces skips the pieces far from the point** (`swept::member`): a
+  slide's sweep lies within the box of the tool's box at its two ends, so a point outside it is read
+  against no more of that piece. The judge reads a 944-move raster in 0.6 s rather than 6.5 s, and
+  `build::SEAM` is public.
 
 ## [0.14.0] - 2026-11-14
 

@@ -2439,7 +2439,7 @@ fn a_ball_end_mill_run_along_a_line_takes_its_sections_prism() {
 /// radius `ρ = √(4 − y²)`, its centre on the path; slid along it, it covers each `x` from the lowest
 /// its discs reach (the least of each step's: the line `ρ` under the step, and the discs at its
 /// ends) up past the plate's top, so the plate loses `∫∫ (0 − L(x)) dx dy` — the inner integral by
-/// Gauss's three points on a fine grid, the outer by Simpson's rule in `y = 2 sin φ`. Each corner
+/// Gauss's rule on a fine grid (`swept_slid::gauss`), the outer by Simpson's rule in `y = 2 sin φ`. Each corner
 /// is laid by the run's construction (a valley's lune, a hill's ellipse), and the cut is judged
 /// against membership as it is built.
 #[test]
@@ -2469,13 +2469,7 @@ fn a_ball_end_mill_run_over_valleys_and_a_hill_takes_what_its_lower_envelope_lea
         }
         z
     };
-    let gauss = [(-(0.6f64).sqrt(),5./9.),(0.,8./9.),((0.6f64).sqrt(),5./9.)];
-    let section = |rho: f64| -> f64 {
-        let (a,b) = (cs[0][0]-rho,cs[cs.len()-1][0]+rho);
-        let n = 20000;
-        let h = (b-a)/n as f64;
-        (0..n).map(|i| gauss.iter().map(|&(s,w)| w*0.5*h*-lowest(a+h*(i as f64+0.5+0.5*s),rho)).sum::<f64>()).sum()
-    };
+    let section = |rho: f64| crate::swept_slid::gauss(&|x| -lowest(x,rho),cs[0][0]-rho,cs[cs.len()-1][0]+rho,4000);
     let expected = simpson(-std::f64::consts::FRAC_PI_2,std::f64::consts::FRAC_PI_2,64,|phi| r*phi.cos()*section(r*phi.cos()));
     assert!((removed-expected).abs() <= 1e-6*expected,"{removed} against {expected}");
 }

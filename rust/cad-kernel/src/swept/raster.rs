@@ -31,9 +31,9 @@
 //! What the road takes (`cut`): a path of pieces, each a slide, of a tool `Mill::read` takes, whose
 //! top stands past that plane at every pose of a run reaching the blank, each such run turning at
 //! its hills gently enough for its half cylinders' ends to stand apart (`laid`). Anything else is
-//! the closed class's (`None`).
-use crate::boolean::{boolean,Op};
-use crate::build::{kept,prism,revolve,sphere,Profile,ProfileEdge};
+//! the closed class's (`None`), as is a path whose runs the road could not sweep or cut.
+use crate::boolean::{combined_known,overlap,Known,Op};
+use crate::build::{face,kept,prism,revolve,seam,sphere,Profile,ProfileEdge,SEAM};
 use crate::geom::{Frame,Surface};
 use crate::query::{Located,Place};
 use crate::topo::Brep;
@@ -56,13 +56,9 @@ impl Mill {
     /// volume the half ball's and the shank's, `2πr³/3 + πr²h`, to `1e-9` of it.
     pub fn read(tool: &Brep,tol: f64) -> Option<Mill> {
         if tool.faces.len() != 3 { return None }
-        let find = |p: &dyn Fn(&Surface) -> bool| tool.faces.iter().position(|f| p(&f.surface));
-        let ks = find(&|s| matches!(s,Surface::Sphere(..)))?;
-        let kc = find(&|s| matches!(s,Surface::Cylinder(..)))?;
-        let kp = find(&|s| matches!(s,Surface::Plane(..)))?;
-        let (Surface::Sphere(sf,r),Surface::Cylinder(cf,rc),Surface::Plane(pf)) =
-            (&tool.faces[ks].surface,&tool.faces[kc].surface,&tool.faces[kp].surface) else { return None };
-        let (c,r,rc) = (sf.o,r.abs(),rc.abs());
+        let (ks,c,r) = tool.faces.iter().enumerate().find_map(|(k,f)| match f.surface { Surface::Sphere(sf,r) => Some((k,sf.o,r.abs())),_ => None })?;
+        let (cf,rc) = tool.faces.iter().find_map(|f| match f.surface { Surface::Cylinder(cf,rc) => Some((cf,rc.abs())),_ => None })?;
+        let pf = tool.faces.iter().find_map(|f| match f.surface { Surface::Plane(pf) => Some(pf),_ => None })?;
         let eps = 1e-9*(1.+r);
         let along = unit(cf.z);
         let off = sub(c,cf.o);
@@ -72,12 +68,11 @@ impl Mill {
         if !(s.abs() > eps) { return None }
         let axis = scale(along,s.signum());
         let h = s.abs();
-        let located = Located::new(tool,tol);
-        if located.face_place(ks,sub(c,scale(axis,r))) == Place::Out || located.face_place(ks,add(c,scale(axis,r))) != Place::Out {
-            return None
-        }
         let volume = 2.*PI*r*r*r/3.+PI*r*r*h;
-        ((crate::props::volume(tool)-volume).abs() <= 1e-9*volume).then_some(Mill {c,axis,r,h})
+        if (crate::props::volume(tool)-volume).abs() > 1e-9*volume { return None }
+        let located = Located::new(tool,tol);
+        (located.face_place(ks,sub(c,scale(axis,r))) != Place::Out && located.face_place(ks,add(c,scale(axis,r))) == Place::Out)
+            .then_some(Mill {c,axis,r,h})
     }
 }
 
@@ -140,18 +135,16 @@ fn straightened(cs: &[V],eps: f64) -> Vec<V> {
     out
 }
 
-/// The faces of `b` whose surfaces `which` takes, alone with the edges and vertices they use.
+/// The faces of `b` whose surfaces `which` takes, alone with the edges and vertices they use
+/// (`offset::sheet_of`).
 fn faces_of(b: &Brep,which: impl Fn(&Surface) -> bool) -> Result<Brep,String> {
-    let faces: Vec<_> = b.faces.iter().filter(|f| which(&f.surface)).cloned().collect();
+    let faces: Vec<usize> = (0..b.faces.len()).filter(|&k| which(&b.faces[k].surface)).collect();
     if faces.is_empty() { return Err("a run's piece came out with no face on its surface".into()) }
-    Ok(Brep {vertices:b.vertices.clone(),edges:b.edges.clone(),faces}.compacted())
+    crate::offset::sheet_of(b,&faces)
 }
 
-/// The planar face `p` bounds: its prism's face in its own plane.
-fn planar(p: &Profile) -> Result<Brep,String> {
-    let n = unit(p.normal);
-    faces_of(&prism(p,0.,1.)?,|s| matches!(s,Surface::Plane(f) if dot(sub(f.o,p.origin),n).abs() <= 1e-12*(1.+norm(f.o)) && norm(cross(f.z,n)) <= 1e-9))
-}
+/// `b`'s cylinder faces alone.
+fn cylinders(b: &Brep) -> Result<Brep,String> { faces_of(b,|s| matches!(s,Surface::Cylinder(..))) }
 
 /// The polygon on `pts` (in a plane square to `normal`).
 fn polygon(pts: &[V],normal: V) -> Profile {
@@ -159,28 +152,21 @@ fn polygon(pts: &[V],normal: V) -> Profile {
     Profile {origin:pts[0],normal,names:Vec::new(),loops:vec![(0..n).map(|k| ProfileEdge::Line {a:pts[k],b:pts[(k+1)%n]}).collect()]}
 }
 
-/// The golden ratio's reciprocal, an angle in radians no plane of a design's makes: where a ball's
-/// poles and a cylinder's seam are laid off every plane a run's piece is cut at, as `build::canal`'s
-/// seams are laid.
-const GOLD: f64 = 0.6180339887498949;
-
 /// The disc of radius `r` about `c` square to `n`, its circle's seam where `x` turned about `n` by
-/// `GOLD` points.
+/// `build::SEAM` points (`build::seam`), off every plane a run's piece is cut at.
 fn disc(c: V,n: V,x: V,r: f64) -> Profile {
-    let f = Frame::new(c,n,x);
-    let (s,k) = GOLD.sin_cos();
-    let x = add(scale(f.x,k),scale(f.y,s));
+    let x = seam(unit(n),Frame::new(c,n,x).x);
     Profile {origin:c,normal:n,names:Vec::new(),loops:vec![vec![ProfileEdge::Arc {frame:Frame::new(c,n,x),r,span:None}]]}
 }
 
 /// The part of the sphere of radius `r` about `c` on the side of each plane through `c` its normal
-/// in `cuts` points to: a ball whose poles stand off every one of those planes (and off `others`,
-/// the run's other planes through the centre), cut down (`build::kept`) — a plane through a pole
-/// is a meeting the Booleans do not split.
-fn lune(c: V,r: f64,cuts: &[V],others: &[V],[e1,e2,a]: [V;3]) -> Result<Brep,String> {
-    let candidates = [[GOLD,0.5*GOLD,1.],[-0.5*GOLD,GOLD,1.],[0.5*GOLD,-GOLD,1.]]
+/// in `cuts` points to: a ball whose poles stand off every one of those planes (leaning by
+/// `build::SEAM` in three ways, the clearest taken), cut down (`build::kept`) — a plane through a
+/// pole is a meeting the Booleans do not split.
+fn lune(c: V,r: f64,cuts: &[V],[e1,e2,a]: [V;3]) -> Result<Brep,String> {
+    let candidates = [[SEAM,0.5*SEAM,1.],[-0.5*SEAM,SEAM,1.],[0.5*SEAM,-SEAM,1.]]
         .map(|w| unit(add(add(scale(e1,w[0]),scale(e2,w[1])),scale(a,w[2]))));
-    let clear = |w: V| cuts.iter().chain(others).map(|n| dot(w,unit(*n)).abs()).fold(f64::INFINITY,f64::min);
+    let clear = |w: V| cuts.iter().map(|n| dot(w,unit(*n)).abs()).fold(f64::INFINITY,f64::min);
     let w = candidates.into_iter().max_by(|x,y| clear(*x).total_cmp(&clear(*y))).unwrap();
     let mut b = sphere(c,w,r)?;
     for &n in cuts { b = kept(&b,c,unit(n),0.)?; }
@@ -199,26 +185,27 @@ fn run_sweep(cs: &[V],across: V,a: V,r: f64,top: f64,tol: f64) -> Result<Brep,St
     // each corner a valley (the path turning up past a tolerance's lune) or not; the plane each
     // half cylinder ends at there: square to its step at an end of the run and at a valley, else
     // the plane bisecting the turn
-    let valley: Vec<bool> = bends(cs,e1,a).into_iter().map(|b| b > least_bend(r,tol)).collect();
+    let valley = valleys(cs,e1,a,r,tol);
     let bisector = |k: usize| unit(add(t[k-1],t[k]));
     let mut faces: Vec<Brep> = Vec::new();
     let below = scale(a,-1.);
     // the ball's quarter behind the first step and ahead of the last, its lune at each valley
-    faces.push(lune(cs[0],r,&[below,scale(t[0],-1.)],&[],frame)?);
-    faces.push(lune(cs[n],r,&[below,t[n-1]],&[],frame)?);
+    faces.push(lune(cs[0],r,&[below,scale(t[0],-1.)],frame)?);
+    faces.push(lune(cs[n],r,&[below,t[n-1]],frame)?);
     for k in (1..n).filter(|&k| valley[k]) {
-        faces.push(lune(cs[k],r,&[t[k-1],scale(t[k],-1.)],&[a],frame)?);
+        faces.push(lune(cs[k],r,&[t[k-1],scale(t[k],-1.)],frame)?);
     }
     // each step's half cylinder below the plane of its axis and `e2`, between its two ends
     for k in 0..n {
-        let low = { let u = unit(cross(t[k],e2)); if dot(u,a) > 0. { scale(u,-1.) } else { u } };
+        // (square to the step and to `e2`, downward: each step runs forward along `e1`)
+        let low = unit(cross(e2,t[k]));
         let start = if k == 0 || valley[k] { t[k] } else { bisector(k) };
         let end = if k+1 == n || valley[k+1] { scale(t[k],-1.) } else { scale(bisector(k+1),-1.) };
         let cylinder = prism(&disc(sub(cs[k],scale(t[k],2.*r)),t[k],low,r),0.,norm(d[k])+4.*r)?;
         let mut b = kept(&cylinder,cs[k],low,0.)?;
         b = kept(&b,cs[k],start,0.)?;
         b = kept(&b,cs[k+1],end,0.)?;
-        faces.push(faces_of(&b,|s| matches!(s,Surface::Cylinder(..)))?);
+        faces.push(cylinders(&b)?);
     }
     // the walls standing on the half cylinders' sides, up to `top`
     let up = |p: V| add(p,scale(a,top-dot(p,a)));
@@ -226,34 +213,33 @@ fn run_sweep(cs: &[V],across: V,a: V,r: f64,top: f64,tol: f64) -> Result<Brep,St
         let mut pts: Vec<V> = cs.iter().map(|&c| add(c,scale(e2,s*r))).collect();
         let (first,last) = (pts[0],pts[n]);
         pts.extend([up(last),up(first)]);
-        faces.push(planar(&polygon(&pts,e2))?);
+        faces.push(face(&polygon(&pts,e2))?);
     }
     // the shank's back half at the start and its front half at the end, up to `top`
     let shank = |c: V,from: V| -> Result<Brep,String> {
         let p = polygon(&[c,add(c,scale(from,r)),up(add(c,scale(from,r))),up(c)],cross(from,a));
-        faces_of(&revolve(&p,c,a,PI)?,|s| matches!(s,Surface::Cylinder(..)))
+        cylinders(&revolve(&p,c,a,PI)?)
     };
     faces.push(shank(cs[0],e2)?);
     faces.push(shank(cs[n],scale(e2,-1.))?);
     // the top: the stadium the shank's section sweeps in the plane `top`
+    // (the back half round the start, along one side, the front half round the end, back along the
+    // other)
     let (t0,t1) = (up(cs[0]),up(cs[n]));
-    let stadium = Profile {origin:t0,normal:a,names:Vec::new(),loops:vec![vec![
-        ProfileEdge::Arc {frame:Frame {o:t0,x:e2,y:cross(a,e2),z:a},r,span:Some([0.,PI])},
-        ProfileEdge::Line {a:add(t0,scale(e2,-r)),b:add(t1,scale(e2,-r))},
-        ProfileEdge::Arc {frame:Frame {o:t1,x:scale(e2,-1.),y:e1,z:a},r,span:Some([0.,PI])},
-        ProfileEdge::Line {a:add(t1,scale(e2,r)),b:add(t0,scale(e2,r))}]]};
-    faces.push(planar(&stadium)?);
+    let stadium = [(t0,t1,e2),(t1,t0,scale(e2,-1.))].into_iter().flat_map(|(p,q,x)| [
+        ProfileEdge::Arc {frame:Frame::new(p,a,x),r,span:Some([0.,PI])},
+        ProfileEdge::Line {a:add(p,scale(x,-r)),b:add(q,scale(x,-r))}]).collect();
+    faces.push(face(&Profile {origin:t0,normal:a,names:Vec::new(),loops:vec![stadium]})?);
     crate::sew::sewn(&faces,tol).map_err(|e| e.msg)
 }
 
 /// **A step along the axis, cut off at `top`**: the mill where its centre is lowest, `c`, its shank
 /// run up to `top` — the ball's lower half, the cylinder and the disc at `top`.
 fn plunge(c: V,a: V,r: f64,top: f64,tol: f64) -> Result<Brep,String> {
-    let x = crate::geom::Frame::about(c,a).x;
-    let ball = lune(c,r,&[scale(a,-1.)],&[],[x,cross(a,x),a])?;
-    let shank = prism(&disc(c,a,x,r),0.,top-dot(c,a))?;
-    let side = faces_of(&shank,|s| matches!(s,Surface::Cylinder(..)))?;
-    let cap = faces_of(&shank,|s| matches!(s,Surface::Plane(f) if dot(sub(f.o,c),a) > 0.5*(top-dot(c,a))))?;
+    let f = Frame::about(c,a);
+    let ball = lune(c,r,&[scale(a,-1.)],[f.x,f.y,f.z])?;
+    let side = cylinders(&prism(&disc(c,a,f.x,r),0.,top-dot(c,a))?)?;
+    let cap = face(&disc(add(c,scale(a,top-dot(c,a))),a,f.x,r))?;
     crate::sew::sewn(&[ball,side,cap],tol).map_err(|e| e.msg)
 }
 
@@ -269,12 +255,17 @@ fn bends(cs: &[V],across: V,a: V) -> Vec<f64> {
 /// `r δ²/8`, short of the tolerance, and is a hill's.
 fn least_bend(r: f64,tol: f64) -> f64 { (tol/r).sqrt() }
 
+/// Which corners of the run through `cs` are valleys: turning up past `least_bend`.
+fn valleys(cs: &[V],across: V,a: V,r: f64,tol: f64) -> Vec<bool> {
+    bends(cs,across,a).into_iter().map(|b| b > least_bend(r,tol)).collect()
+}
+
 /// Whether `run_sweep` lays the run through `cs` as it is: at every hill the turn short of a right
 /// angle, and along every step the ellipses cutting its half cylinder at either end — each reaching
 /// `r tan(β/2)` along it from its corner, `β` the hill's bend — clear of each other.
 fn laid(cs: &[V],across: V,a: V,r: f64,tol: f64) -> bool {
-    let bend = bends(cs,across,a);
-    let reach = |k: usize| if bend[k] > least_bend(r,tol) { 0. } else { r*(0.5*bend[k].abs()).tan() };
+    let (bend,valley) = (bends(cs,across,a),valleys(cs,across,a,r,tol));
+    let reach = |k: usize| if valley[k] { 0. } else { r*(0.5*bend[k].abs()).tan() };
     bend.iter().all(|b| b.abs() < 0.5*PI) && (0..cs.len()-1).all(|k| reach(k)+reach(k+1) < norm(sub(cs[k+1],cs[k])))
 }
 
@@ -285,59 +276,65 @@ fn laid(cs: &[V],across: V,a: V,r: f64,tol: f64) -> bool {
 /// sharply to lay (`laid`), or a pose of one leaving the mill's top short of the plane the sweep is
 /// cut off at: a hundredth of the blank's size past the blank and every reaching run's ball centres.
 pub fn cut(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> Option<Result<Brep,Unbuilt>> {
+    if !matches!(path,Trajectory::Pieces(_)) { return None }
     let m = Mill::read(tool,tol)?;
     let (steps,a) = steps(path,roll,&m)?;
-    let (blo,bhi) = blank.bounds();
-    if !blo[0].is_finite() { return None }
+    let bounds = blank.bounds();
+    if !bounds.0[0].is_finite() { return None }
     let eps = 1e-9*(1.+tool.size());
     // the runs, steps along one line made one, and of them those whose mill's box at its every pose
     // reaches the blank's (one that misses it takes nothing from it)
-    let runs: Vec<(usize,Run)> = runs(&steps,a,eps).into_iter().map(|r| match r.across {
-        Some(_) => Run {cs:straightened(&r.cs,0.0625*tol),..r},
-        None => r,
-    }).enumerate().filter(|(_,run)| {
-        let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
-        for p in run.cs.iter().flat_map(|&c| [c,add(c,scale(a,m.h))]) {
-            for k in 0..3 { lo[k] = lo[k].min(p[k]-m.r); hi[k] = hi[k].max(p[k]+m.r); }
-        }
-        (0..3).all(|k| lo[k] <= bhi[k]+tol && hi[k] >= blo[k]-tol)
-    }).collect();
+    let runs: Vec<(usize,Run)> = runs(&steps,a,eps).into_iter().map(|r| Run {cs:straightened(&r.cs,0.0625*tol),..r})
+        .enumerate().filter(|(_,run)| {
+            let reach = crate::geom::hull(run.cs.iter().flat_map(|&c| [c,add(c,scale(a,m.h))]));
+            overlap(&reach,&bounds,m.r+tol)
+        }).collect();
     if runs.iter().any(|(_,run)| run.across.is_some_and(|across| !laid(&run.cs,across,a,m.r,tol))) { return None }
     let along = |p: &V| dot(*p,a);
-    let highest = super::closed::corners_of((blo,bhi)).iter().chain(runs.iter().flat_map(|(_,run)| &run.cs)).map(along)
+    let highest = super::closed::corners_of(bounds).iter().chain(runs.iter().flat_map(|(_,run)| &run.cs)).map(along)
         .fold(f64::NEG_INFINITY,f64::max);
     let top = highest+1e-2*blank.size();
     let lowest_top = runs.iter().flat_map(|(_,run)| &run.cs).map(|c| along(c)+m.h).fold(f64::INFINITY,f64::min);
     if !(lowest_top > top) { return None }
-    Some(cut_runs(blank,tool,path,roll,&m,a,&runs,top,bar,tol))
+    // (a run the road could not sweep or cut leaves the path to the arrangement)
+    match cut_runs(blank,tool,path,roll,m.r,a,&runs,top,bar,tol) {
+        Err(Unbuilt::Failed(why)) => {
+            if crate::debug() { eprintln!("raster: {why}; left to the arrangement") }
+            None
+        }
+        cut => Some(cut),
+    }
 }
 
 /// `cut`'s runs (each with its place in the path's) cut from the blank in turn, and judged: each
-/// swept across the cores, every sweep being its own, then each cut in the path's order.
+/// swept across the cores, every sweep being its own, then each cut in the path's order, what each
+/// Boolean knows of the faces it hands on handed to the next (`boolean::Known`).
 #[allow(clippy::too_many_arguments)]
-fn cut_runs(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],m: &Mill,a: V,runs: &[(usize,Run)],top: f64,bar: f64,tol: f64)
+fn cut_runs(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],r: f64,a: V,runs: &[(usize,Run)],top: f64,bar: f64,tol: f64)
     -> Result<Brep,Unbuilt> {
     let clock = crate::util::clock::Instant::now();
     let sweeps = crate::util::par::map(runs,|(i,run)| match run.across {
-        Some(across) => run_sweep(&run.cs,across,a,m.r,top,tol),
+        Some(across) => run_sweep(&run.cs,across,a,r,top,tol),
         None => {
             let c = run.cs.iter().copied().min_by(|x,y| dot(*x,a).total_cmp(&dot(*y,a))).unwrap();
-            plunge(c,a,m.r,top,tol)
+            plunge(c,a,r,top,tol)
         }
     }.map_err(|why| Unbuilt::Failed(format!("run {i} of the mill's path, from {:?}: its sweep not built: {why}",run.cs[0]))));
     let swept_at = clock.elapsed().as_secs_f64();
-    let mut out = blank.clone();
+    let (mut out,mut known): (Option<Brep>,Option<Known>) = (None,None);
     for ((i,run),sweep) in runs.iter().zip(sweeps) {
-        out = boolean(&out,&sweep?,Op::Cut,tol)
-            .map_err(|why| Unbuilt::Failed(format!("run {i} of the mill's path, from {:?}: not cut: {why}",run.cs[0])))?;
+        let (cut,next) = combined_known(out.as_ref().unwrap_or(blank),known.as_ref(),&sweep?,Op::Cut,tol)
+            .map_err(|why| Unbuilt::Failed(format!("run {i} of the mill's path, from {:?}: not cut: {}",run.cs[0],why.msg)))?;
+        (out,known) = (Some(cut),Some(next));
     }
-    if crate::timing() {
-        eprintln!("raster: {} runs reach the blank, swept in {swept_at:.2} s, cut in {:.2} s more: {} faces",
-            runs.len(),clock.elapsed().as_secs_f64()-swept_at,out.faces.len());
-    }
+    let out = out.unwrap_or_else(|| blank.clone());
+    let cut_at = clock.elapsed().as_secs_f64();
     let solid = super::member::Solid::new(tool,bar,1.).map_err(Unbuilt::Failed)?;
     let swept = super::member::Swept {tool:&solid,path,roll};
     super::closed::judge(&out,&swept,blank,Some(blank),&[],tol)?;
-    if crate::timing() { eprintln!("raster: judged, {:.2} s in all",clock.elapsed().as_secs_f64()); }
+    if crate::timing() {
+        eprintln!("raster: {} runs reach the blank, swept in {swept_at:.2} s, cut by {cut_at:.2} s, judged by {:.2} s: {} faces",
+            runs.len(),clock.elapsed().as_secs_f64(),out.faces.len());
+    }
     Ok(out)
 }

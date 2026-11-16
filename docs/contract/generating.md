@@ -1293,7 +1293,10 @@ to 1e-9 (`swept_closed::a_ball_end_mill_run_along_a_line_takes_its_sections_pris
 lower envelope of a run over two valleys and a hill leaves, integrated slice by slice apart from the
 build, to 1e-6
 (`swept_closed::a_ball_end_mill_run_over_valleys_and_a_hill_takes_what_its_lower_envelope_leaves`).
-The raster's 41 passes cut in about 13 s, judged, and agree with cadrs's solid to 1e-10.
+The raster's 41 passes cut in about 7 s, judged, and agree with cadrs's solid to 1e-10. Membership
+along a path of pieces reads only the pieces near the point: a slide's by the tool's box carried to its
+two ends (`member::Swept`), so the judge reads a raster's 512 points against a few moves each, not
+all 944.
 A curved tool past these (`Unbuilt::Curved`: under a screw a round face about an axis leaning to it, a torus, or a sharp
 circle leaning to it (#780 L2); under a turn a ball across its axis, a torus leaning to it or a free-form face; under a slide a
 torus's face leaning to it that is no whole ring, or a free-form face; an edge no line or circle) are refused by

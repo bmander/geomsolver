@@ -42,7 +42,10 @@ pub struct Solid { pts: Vec<V>,tris: Vec<[u32;3]>,tree: Bvh<3>,pub sag: f64,
     /// a tool that is where every one of its faces' surfaces has it inside, each surface's implicit
     /// its signed distance (a ball, a torus, a drum, a wheel turned from a triangle): the surfaces,
     /// each with the sign its face reads outward, and the scale they are read at
-    exact: Option<(Vec<(crate::geom::Surface,f64)>,f64)> }
+    exact: Option<(Vec<(crate::geom::Surface,f64)>,f64)>,
+    /// the mesh's box: what a slide of it can reach between two poses lies in the box of its
+    /// corners at both (`Swept::clear_of`)
+    bounds: (V,V) }
 
 impl Solid {
     /// The B-rep `b` (its units) meshed within `bar` and read in units `1/scale` of its own (a
@@ -72,7 +75,9 @@ impl Solid {
             m.sag.max(measured)/scale+1e-12*(1.+size)
         };
         let (vertex_normals,edge_normals) = pseudo_normals(&pts,&m.tris);
-        Ok(Solid {pts,tris:m.tris,tree,sag,vertex_normals,edge_normals,exact})
+        let bounds = pts.iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(l,h),p|
+            (std::array::from_fn(|k| l[k].min(p[k])),std::array::from_fn(|k| h[k].max(p[k]))));
+        Ok(Solid {pts,tris:m.tris,tree,sag,vertex_normals,edge_normals,exact,bounds})
     }
 
     /// The signed distance at `p` read exactly (`exactly`): the greatest of the faces' signed distances.
@@ -222,6 +227,24 @@ impl Ord for Stretch {
 pub struct Swept<'a> { pub tool: &'a Solid,pub path: &'a Trajectory,pub roll: [f64;2] }
 
 impl Swept<'_> {
+    /// Whether `x` stands more than `pad` past everything the tool reaches over `roll` along
+    /// `path` where that is told by boxes alone: under a slide (a constant twist or one placed
+    /// first) the tool's box carried to the roll's two ends and their hull, the sweep lying within it
+    /// — so a path of pieces reads only the pieces near the point. Any other motion tells nothing.
+    fn clear_of(&self,path: &Trajectory,[lo,hi]: [f64;2],x: V,pad: f64) -> bool {
+        let (Trajectory::Twist(s) | Trajectory::Placed {twist:s,..}) = path else { return false };
+        if !s.is_slide() { return false }
+        let (Ok(p),Ok(q)) = (path.pose(lo),path.pose(hi)) else { return false };
+        let (b0,b1) = self.tool.bounds;
+        let pad = pad+self.tool.sag;
+        let corners = (0..8).map(|k| std::array::from_fn(|i| if (k>>i)&1 == 0 { b0[i] } else { b1[i] }));
+        let (mut l,mut h) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
+        for c in corners.flat_map(|c: V| [p.point(c),q.point(c)]) {
+            for k in 0..3 { l[k] = l[k].min(c[k]); h[k] = h[k].max(c[k]); }
+        }
+        (0..3).any(|k| x[k] < l[k]-pad || x[k] > h[k]+pad)
+    }
+
     /// **Whether `x` is in the swept solid**, or why that is not settled (`Unsettled`). A path of
     /// pieces (K1) is read piece by piece over the stretch of the roll each holds, the sweep of a
     /// path its pieces' sweeps united: a member of any is one, and it is settled out only where every
@@ -232,7 +255,7 @@ impl Swept<'_> {
             let mut unsettled = None;
             for piece in pieces.pieces() {
                 let (lo,hi) = (piece.over[0].max(a),piece.over[1].min(b));
-                if !(hi > lo) { continue }
+                if !(hi > lo) || self.clear_of(&piece.path,[lo,hi],x,0.) { continue }
                 match (Swept {tool:self.tool,path:&piece.path,roll:[lo,hi]}).member(x) {
                     Ok(true) => return Ok(true),
                     Ok(false) => {}
@@ -291,7 +314,7 @@ impl Swept<'_> {
             let mut out = Some(false);
             for piece in pieces.pieces() {
                 let (lo,hi) = (piece.over[0].max(a),piece.over[1].min(b));
-                if !(hi > lo) { continue }
+                if !(hi > lo) || self.clear_of(&piece.path,[lo,hi],x,r) { continue }
                 match (Swept {tool:self.tool,path:&piece.path,roll:[lo,hi]}).beyond(x,r)? {
                     Some(true) => return Ok(Some(true)),
                     Some(false) => {}
