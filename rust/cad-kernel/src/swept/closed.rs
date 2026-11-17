@@ -639,11 +639,9 @@ fn whole_turn(screw: &crate::trajectory::Screw,roll: [f64;2]) -> bool {
 
 /// `closed` over a box holding the sweep, or `cut_from` over `blank`: the pipeline itself.
 fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
-    // a path of pieces cut from a blank, not every piece's candidates arranged at once: a ball-end
-    // mill's path of slides run by run (`raster`), each run's corners laid by construction; any
-    // other piece by piece, each piece's sweep by its own cheapest road (`pieces`)
+    // a path of pieces cut from a blank, not every piece's candidates arranged at once: piece by
+    // piece, each piece's sweep by its own cheapest road, smooth runs of them as one (`pieces`)
     if let Some(blank) = blank {
-        if let Some(cut) = super::raster::cut(blank,tool,path,roll,bar,tol) { return cut }
         if let Some(cut) = super::pieces::cut(blank,tool,path,roll,bar,tol) { return cut }
     }
     // a whole turn of any tool (#880 Q1): its shadow in a half-plane through the axis, arranged

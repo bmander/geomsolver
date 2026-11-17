@@ -15,6 +15,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   the first shut where it starts by its section, the move before holding the tool there, so no two
   moves' sweeps lie on one surface at their corner. brep-bench's `cnc/flat-end-mill-profile`,
   refused after two minutes, is cut in under two seconds, to its closed form within 3e-15.
+- **`swept::raster` is the pieces' road's sweep of a ball-end mill's run at a slant**: the
+  separate road `cut_from` took first is gone, and every path of pieces is cut by `swept::pieces`.
 - **A smooth run of moves is one sweep** (`swept::pieces`, #931): moves square to the tool's axis
   running on smoothly are a chain, their sides sewn along their sections (a closed one a ring); a
   plunge into a chain or a whole turn, or a lift out of one, the column over the tool's top alone;

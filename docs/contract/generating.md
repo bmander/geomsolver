@@ -1266,9 +1266,39 @@ membership along the whole path
 rate and speed bound by differences). No drawing lowers to pieces yet (a toolpath written as one
 is the language's `path`), so the closed class's admission reads one constant twist.
 
-**A ball-end mill's path of slides cut from a blank is cut run by run** (`swept::raster`, the road
-`cut_from` takes before the arrangement; brep-bench's `cnc/ball-end-surface-raster`, 944 moves
-whose one arrangement ran past its membership budget after nine minutes). The mill is read off its
+**A tool of revolution's path of pieces cut from a blank is cut piece by piece**
+(`swept::pieces`): the tool read as a convex solid of revolution (`patches::Revolved`, its cone's
+apex a point of its meridian), each piece reaching the blank's box swept alone — slid along its
+axis, its meridian drawn out where it reaches farthest and turned once; slid square to it, its half
+behind, its axial section carried and its half ahead, sewn; turned about a line along its axis that
+misses it, the section turned about that line between its halves (a whole turn the ring alone); a
+ball-end mill at a slant as a run (below); any other piece by the closed class alone —
+and cut in the path's order, then judged. **Its junctions are laid by construction where they are
+smooth** (#931): the next move's sides touch what the last left round the section they share, a
+touch the Boolean reads within the tolerance of three surfaces at once. So moves square to the axis,
+each starting where the last ends with the axis moving on the same way, are **one chain**, their
+sides sewn along their shared sections between the tool's half behind at the start and its half
+ahead at the end — a chain closing on itself its sides alone, a ring; a slide along the axis into a
+chain's start (a plunge) or out of its end (a lift), or into or out of a whole turn, is the column
+its flat top sweeps alone (`lift`), the chain or the ring holding the tool there, its start then
+taken with its half behind; and slides along one axis line one after another (a drill's pecks) are
+one slide over every place they stand; and a ball-end mill's slides at a slant, one after another
+in one plane holding its axis, are a run, its corners laid by construction. Elsewhere each piece after the first is shut where it starts
+by its section, the piece before holding the tool there. A piece the road cannot sweep or cut leaves
+the whole path to the arrangement. Held to a flat end mill plunged, run round a square and lifted,
+`2 (76 + π)` to 1e-9 (`swept_closed::a_flat_end_mill_run_round_a_square_takes_its_band`), a
+bull-nose run along two smooth arcs to Pappus's volume
+(`swept_closed::a_bull_nose_mill_run_along_two_smooth_arcs_takes_its_section_turned`), and a drill's
+pecks to one hole (`swept_closed::a_drill_pecking_a_hole_takes_one_hole`); brep-bench's
+`cnc/flat-end-mill-profile`, `cnc/bull-nose-profile` and `cnc/pocket-with-an-island` to their closed
+forms within 2e-15, each in about two seconds. Still met in the Boolean: a corner where the
+axis's way jumps between two moves square to it, or between two runs at a slant (a raster's passes
+are off the blank between); refused: a turn about a line square to the axis (a five-axis tilt:
+the top rim's sphere, which no section carries; the closed class refuses it as `Curved`).
+
+**A ball-end mill's run at a slant** (`swept::raster`, the pieces' road's sweep of slides at a slant
+one after another; brep-bench's `cnc/ball-end-surface-raster`, 944 moves whose one arrangement ran
+past its membership budget after nine minutes). The mill is read off its
 B-rep (`raster::Mill::read`: a half ball, a cylinder of its radius about the axis through its
 centre, a flat top square to it, and the volume theirs to 1e-9). Its moves fall into runs, each a
 polyline of the ball's centre in one plane holding the axis, every step forward along one way across
@@ -1281,47 +1311,17 @@ tolerance) a hill's, and steps along one line one step; at its ends the ball's q
 two walls the shank's sides sweep, the shank's halves at its ends and the stadium its section sweeps
 in the plane the sweep is cut off at, a hundredth of the blank's size beyond the blank and every
 ball centre of a run reaching it along the axis — which takes nothing from the blank, every pose's
-top standing past it (a pose whose top does not is the arrangement's, as is a run turning at a hill
-so sharply that its half cylinders' ends would cross, `raster::laid`, and any tool or path the road
-does not read). So a corner is laid by
+top standing past it (a run ends where it would turn at a hill so sharply that its half cylinders'
+ends would cross, `raster::laid`; a pose whose top does not stand past it leaves the path to the
+arrangement). So a corner is laid by
 construction, never found by a Boolean where two moves' balls coincide and the next step's cylinder
 touches the ball along a great circle (which ordered the faces round that edge wrongly and joined two
-cells). A sphere's poles stand off every plane a run's piece is cut at. The runs reaching the blank's
-box are swept across the cores and cut from it in the path's order, and the cut is judged as the
-closed class judges what it builds. Held to the prism a run along a line takes, `2000 − 20 (2π + 8)`
+cells). A sphere's poles stand off every plane a run's piece is cut at. The runs are cut with the path's other pieces, in its
+order. Held to the prism a run along a line takes, `2000 − 20 (2π + 8)`
 to 1e-9 (`swept_closed::a_ball_end_mill_run_along_a_line_takes_its_sections_prism`), and to what the
 lower envelope of a run over two valleys and a hill leaves, integrated slice by slice apart from the
 build, to 1e-6
 (`swept_closed::a_ball_end_mill_run_over_valleys_and_a_hill_takes_what_its_lower_envelope_leaves`).
-**Any other tool of revolution's path of pieces cut from a blank is cut piece by piece**
-(`swept::pieces`): the tool read as a convex solid of revolution (`patches::Revolved`, its cone's
-apex a point of its meridian), each piece reaching the blank's box swept alone — slid along its
-axis, its meridian drawn out where it reaches farthest and turned once; slid square to it, its half
-behind, its axial section carried and its half ahead, sewn; turned about a line along its axis that
-misses it, the section turned about that line between its halves (a whole turn the ring alone); a
-ball-end mill at a slant as `raster`'s run of one step; any other piece by the closed class alone —
-and cut in the path's order, then judged. **Its junctions are laid by construction where they are
-smooth** (#931): the next move's sides touch what the last left round the section they share, a
-touch the Boolean reads within the tolerance of three surfaces at once. So moves square to the axis,
-each starting where the last ends with the axis moving on the same way, are **one chain**, their
-sides sewn along their shared sections between the tool's half behind at the start and its half
-ahead at the end — a chain closing on itself its sides alone, a ring; a slide along the axis into a
-chain's start (a plunge) or out of its end (a lift), or into or out of a whole turn, is the column
-its flat top sweeps alone (`lift`), the chain or the ring holding the tool there, its start then
-taken with its half behind; and slides along one axis line one after another (a drill's pecks) are
-one slide over every place they stand. Elsewhere each piece after the first is shut where it starts
-by its section, the piece before holding the tool there. A piece the road cannot sweep or cut leaves
-the whole path to the arrangement. Held to a flat end mill plunged, run round a square and lifted,
-`2 (76 + π)` to 1e-9 (`swept_closed::a_flat_end_mill_run_round_a_square_takes_its_band`), a
-bull-nose run along two smooth arcs to Pappus's volume
-(`swept_closed::a_bull_nose_mill_run_along_two_smooth_arcs_takes_its_section_turned`), and a drill's
-pecks to one hole (`swept_closed::a_drill_pecking_a_hole_takes_one_hole`); brep-bench's
-`cnc/flat-end-mill-profile`, `cnc/bull-nose-profile` and `cnc/pocket-with-an-island` to their closed
-forms within 2e-15, each in about two seconds. Still refused: a corner where the axis's way jumps
-between two moves square to it with a round tool there (a ball-end raster cut move by move: its
-moves' corners met in the Boolean), and a turn about a line square to the axis (a five-axis tilt:
-the top rim's sphere, which no section carries; the closed class refuses it as `Curved`).
-
 The raster's 41 passes cut in about 7 s, judged, and agree with cadrs's solid to 1e-10. Membership
 along a path of pieces reads only the pieces near the point: a slide's by the tool's box carried to its
 two ends (`member::Swept`), so the judge reads a raster's 512 points against a few moves each, not

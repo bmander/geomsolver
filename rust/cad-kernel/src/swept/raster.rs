@@ -1,6 +1,6 @@
-//! **A ball-end mill's runs, in closed form** (brep-bench's `cnc/ball-end-surface-raster`): a
-//! three-axis program of straight moves cut from a blank, its sweep built run by run from the
-//! surfaces it is made of rather than from an arrangement of every piece's candidates at once.
+//! **A ball-end mill's runs, in closed form** (brep-bench's `cnc/ball-end-surface-raster`): what
+//! `swept::pieces` sweeps for a ball-end mill's slides at a slant one after another, its corners
+//! laid by construction rather than met in a Boolean.
 //!
 //! The mill is read off its B-rep (`Mill::read`): a half ball below its centre, a cylinder of the
 //! same radius about the axis through it from its equator up, and a flat top square to the axis.
@@ -14,32 +14,23 @@
 //!   the two steps' great circles square to them — where it turns down (a hill) the two half
 //!   cylinders meet in the plane bisecting the turn, along an ellipse each cuts there (two
 //!   cylinders of one radius whose axes meet are each other's mirror in it); at the run's start
-//!   the ball's quarter behind the first step, at its end the quarter ahead of the last;
+//!   the ball's quarter behind the first step (or, where the piece before holds the tool there,
+//!   the section it is shut by), at its end the quarter ahead of the last;
 //! - above it, the walls the shank's sides sweep — two planes, a radius either side of the path's
 //!   plane, standing on the half cylinders' sides — the shank's back half at the start and its
 //!   front half at the end, and its top.
 //!
 //! Every shank's top stands above the blank, so what the sweep holds past the plane `top` along the
-//! axis, a little above the blank and every ball centre of a run reaching it, takes nothing from
-//! the blank: the sweep is cut off there by that plane, its top the stadium the shank's section
-//! sweeps in it. Each run is cut from the blank in turn —
-//! the passes of a raster meet across their scallops only, each corner of a run being laid by
-//! construction, not found by a Boolean where two moves' balls coincide — and a run reaching no
-//! part of the blank's box is left out. A corner turning by less than a tolerance's lune
-//! (`r δ²/8` under `tol`) is a hill's, its lune too thin to lay; steps along one line are one step.
-//!
-//! What the road takes (`cut`): a path of pieces, each a slide, of a tool `Mill::read` takes, whose
-//! top stands past that plane at every pose of a run reaching the blank, each such run turning at
-//! its hills gently enough for its half cylinders' ends to stand apart (`laid`). Anything else is
-//! the closed class's (`None`), as is a path whose runs the road could not sweep or cut.
+//! axis, a little above the blank and every ball centre of the run, takes nothing from the blank:
+//! the sweep is cut off there by that plane, its top the stadium the shank's section sweeps in it.
+//! A corner turning by less than a tolerance's lune (`r δ²/8` under `tol`) is a hill's, its lune
+//! too thin to lay; steps along one line are one step; and a run ends where it would turn at a hill
+//! too sharply for its half cylinders' ends to stand apart (`laid`).
 use crate::build::{face,kept,prism,revolve,seam,sphere,Profile,ProfileEdge,SEAM};
-use crate::boolean::{combined_known,overlap,Known,Op};
 use crate::geom::{Frame,Surface};
 use crate::query::{Located,Place};
 use crate::topo::Brep;
-use crate::trajectory::Trajectory;
 use crate::util::space::{add,cross,dot,norm,scale,sub,unit};
-use super::closed::Unbuilt;
 use std::f64::consts::PI;
 
 type V = [f64;3];
@@ -74,49 +65,6 @@ impl Mill {
         (located.face_place(ks,sub(c,scale(axis,r))) != Place::Out && located.face_place(ks,add(c,scale(axis,r))) == Place::Out)
             .then_some(Mill {c,axis,r,h})
     }
-}
-
-/// A run: the ball's centre at each corner, in order (two or more), and the way across the axis
-/// its steps run (none for a step along the axis, which is a run of its own).
-struct Run { cs: Vec<V>,across: Option<V> }
-
-/// The steps the ball's centre takes over `roll` along `path`, each a slide — `None` where a piece
-/// is no slide, the path no path of pieces, or a pose turns the mill's axis off the first's.
-fn steps(path: &Trajectory,roll: [f64;2],m: &Mill) -> Option<(Vec<[V;2]>,V)> {
-    let Trajectory::Pieces(pieces) = path else { return None };
-    let [a,b] = [roll[0].min(roll[1]),roll[0].max(roll[1])];
-    let mut out = Vec::new();
-    let mut axis: Option<V> = None;
-    for piece in pieces.pieces() {
-        let (lo,hi) = (piece.over[0].max(a),piece.over[1].min(b));
-        if !(hi > lo) { continue }
-        let slide = match &piece.path { Trajectory::Twist(s) | Trajectory::Placed {twist:s,..} => s.is_slide(),_ => false };
-        if !slide { return None }
-        let (p,q) = (piece.path.pose(lo).ok()?,piece.path.pose(hi).ok()?);
-        let w = unit(p.vector(m.axis));
-        if axis.is_some_and(|x| norm(cross(x,w)) > 1e-12 || dot(x,w) < 0.) { return None }
-        axis.get_or_insert(w);
-        out.push([p.point(m.c),q.point(m.c)]);
-    }
-    Some((out,axis?))
-}
-
-/// The steps in runs (`Run`): a step whose way across the axis is the run's goes on with it, any
-/// other starts a run; a step along the axis is a run alone, and a step of no length none.
-fn runs(steps: &[[V;2]],axis: V,eps: f64) -> Vec<Run> {
-    let mut out: Vec<Run> = Vec::new();
-    for &[p,q] in steps {
-        let d = sub(q,p);
-        if !(norm(d) > eps) { continue }
-        let flat = sub(d,scale(axis,dot(d,axis)));
-        let across = (norm(flat) > 1e-9*norm(d)).then(|| unit(flat));
-        let goes_on = out.last().is_some_and(|r| match (r.across,across) {
-            (Some(x),Some(y)) => dot(x,y) >= 1.-1e-12 && norm(sub(*r.cs.last().unwrap(),p)) <= eps,
-            _ => false,
-        });
-        if goes_on { out.last_mut().unwrap().cs.push(q) } else { out.push(Run {cs:vec![p,q],across}) }
-    }
-    out
 }
 
 /// The corners of `cs` that lie on the line through their neighbours, to `eps`, left out: steps
@@ -244,16 +192,6 @@ fn run_sweep(cs: &[V],across: V,a: V,r: f64,top: f64,back: bool,tol: f64) -> Res
     crate::sew::sewn(&faces,tol).map_err(|e| e.msg)
 }
 
-/// **A step along the axis, cut off at `top`**: the mill where its centre is lowest, `c`, its shank
-/// run up to `top` — the ball's lower half, the cylinder and the disc at `top`.
-fn plunge(c: V,a: V,r: f64,top: f64,tol: f64) -> Result<Brep,String> {
-    let f = Frame::about(c,a);
-    let ball = lune(c,r,&[scale(a,-1.)],[f.x,f.y,f.z])?;
-    let side = cylinders(&prism(&disc(c,a,f.x,r),0.,top-dot(c,a))?)?;
-    let cap = face(&disc(add(c,scale(a,top-dot(c,a))),a,f.x,r))?;
-    crate::sew::sewn(&[ball,side,cap],tol).map_err(|e| e.msg)
-}
-
 /// The bend at each corner of the run through `cs` (two or more, each step forward along `across`,
 /// `a` the axis): how far the path turns up there (a valley past nought, a hill short of it),
 /// nought at its ends.
@@ -271,94 +209,29 @@ fn valleys(cs: &[V],across: V,a: V,r: f64,tol: f64) -> Vec<bool> {
     bends(cs,across,a).into_iter().map(|b| b > least_bend(r,tol)).collect()
 }
 
-/// **A ball-end mill slid at a slant**, its ball's centre from `from` to `to`, its axis `axis`, as a
-/// run of one step: cut off past `blank` and both centres, a hundredth of the blank's size beyond the
-/// farthest of them along the axis — refused where the mill's top at either end stands short of that
-/// — and, where not `back`, shut where it starts by its section there, its half behind left out.
-pub(super) fn slanted(from: V,to: V,axis: V,m: &Mill,blank: &Brep,back: bool,tol: f64) -> Result<Brep,String> {
+/// **A ball-end mill's run of slides at a slant**, its ball's centre through `cs` (two or more, in
+/// one plane holding the axis `axis`, each step forward along one way across it): straightened
+/// (steps along one line one step) and swept (`run_sweep`), cut off past `blank` and every centre, a
+/// hundredth of the blank's size beyond the farthest of them along the axis — refused where the
+/// mill's top at a corner stands short of that, or the run turns too sharply to lay (`laid`) — and,
+/// where not `back`, shut where it starts by its section there, its half behind left out.
+pub(super) fn run(cs: &[V],axis: V,m: &Mill,blank: &Brep,back: bool,tol: f64) -> Result<Brep,String> {
     let along = |p: &V| dot(*p,axis);
-    let highest = super::closed::corners_of(blank.bounds()).iter().chain([&from,&to]).map(along).fold(f64::NEG_INFINITY,f64::max);
+    let highest = super::closed::corners_of(blank.bounds()).iter().chain(cs).map(along).fold(f64::NEG_INFINITY,f64::max);
     let top = highest+1e-2*blank.size();
-    if !(along(&from).min(along(&to))+m.h > top) { return Err("the mill's top dips under the plane its sweep is cut off at".into()) }
-    let d = sub(to,from);
-    run_sweep(&[from,to],unit(sub(d,scale(axis,dot(d,axis)))),axis,m.r,top,back,tol)
+    if !(cs.iter().map(along).fold(f64::INFINITY,f64::min)+m.h > top) { return Err("the mill's top dips under the plane its sweep is cut off at".into()) }
+    let d = sub(cs[1],cs[0]);
+    let across = unit(sub(d,scale(axis,dot(d,axis))));
+    let cs = straightened(cs,0.0625*tol);
+    if !laid(&cs,across,axis,m.r,tol) { return Err("the run turns at a hill too sharply for its half cylinders' ends to stand apart".into()) }
+    run_sweep(&cs,across,axis,m.r,top,back,tol)
 }
 
 /// Whether `run_sweep` lays the run through `cs` as it is: at every hill the turn short of a right
 /// angle, and along every step the ellipses cutting its half cylinder at either end — each reaching
 /// `r tan(β/2)` along it from its corner, `β` the hill's bend — clear of each other.
-fn laid(cs: &[V],across: V,a: V,r: f64,tol: f64) -> bool {
+pub(super) fn laid(cs: &[V],across: V,a: V,r: f64,tol: f64) -> bool {
     let (bend,valley) = (bends(cs,across,a),valleys(cs,across,a,r,tol));
     let reach = |k: usize| if valley[k] { 0. } else { r*(0.5*bend[k].abs()).tan() };
     bend.iter().all(|b| b.abs() < 0.5*PI) && (0..cs.len()-1).all(|k| reach(k)+reach(k+1) < norm(sub(cs[k+1],cs[k])))
-}
-
-/// **`blank` less what `tool` sweeps along `path` over `roll`, run by run** (the module's account),
-/// judged as the closed class judges what it builds (`closed::judge`, its tool meshed to `bar`) —
-/// or `None` where the road does not take the sweep: the tool no mill `Mill::read` takes, the path
-/// no path of pieces each a slide keeping the mill's axis, a run reaching the blank turning too
-/// sharply to lay (`laid`), or a pose of one leaving the mill's top short of the plane the sweep is
-/// cut off at: a hundredth of the blank's size past the blank and every reaching run's ball centres.
-pub fn cut(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> Option<Result<Brep,Unbuilt>> {
-    if !matches!(path,Trajectory::Pieces(_)) { return None }
-    let m = Mill::read(tool,tol)?;
-    let (steps,a) = steps(path,roll,&m)?;
-    let bounds = blank.bounds();
-    if !bounds.0[0].is_finite() { return None }
-    let eps = 1e-9*(1.+tool.size());
-    // the runs, steps along one line made one, and of them those whose mill's box at its every pose
-    // reaches the blank's (one that misses it takes nothing from it)
-    let runs: Vec<(usize,Run)> = runs(&steps,a,eps).into_iter().map(|r| Run {cs:straightened(&r.cs,0.0625*tol),..r})
-        .enumerate().filter(|(_,run)| {
-            let reach = crate::geom::hull(run.cs.iter().flat_map(|&c| [c,add(c,scale(a,m.h))]));
-            overlap(&reach,&bounds,m.r+tol)
-        }).collect();
-    if runs.iter().any(|(_,run)| run.across.is_some_and(|across| !laid(&run.cs,across,a,m.r,tol))) { return None }
-    let along = |p: &V| dot(*p,a);
-    let highest = super::closed::corners_of(bounds).iter().chain(runs.iter().flat_map(|(_,run)| &run.cs)).map(along)
-        .fold(f64::NEG_INFINITY,f64::max);
-    let top = highest+1e-2*blank.size();
-    let lowest_top = runs.iter().flat_map(|(_,run)| &run.cs).map(|c| along(c)+m.h).fold(f64::INFINITY,f64::min);
-    if !(lowest_top > top) { return None }
-    // (a run the road could not sweep or cut leaves the path to the arrangement)
-    match cut_runs(blank,tool,path,roll,m.r,a,&runs,top,bar,tol) {
-        Err(Unbuilt::Failed(why)) => {
-            if crate::debug() { eprintln!("raster: {why}; left to the arrangement") }
-            None
-        }
-        cut => Some(cut),
-    }
-}
-
-/// `cut`'s runs (each with its place in the path's) cut from the blank in turn, and judged: each
-/// swept across the cores, every sweep being its own, then each cut in the path's order, what each
-/// Boolean knows of the faces it hands on handed to the next (`boolean::Known`).
-#[allow(clippy::too_many_arguments)]
-fn cut_runs(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],r: f64,a: V,runs: &[(usize,Run)],top: f64,bar: f64,tol: f64)
-    -> Result<Brep,Unbuilt> {
-    let clock = crate::util::clock::Instant::now();
-    let sweeps = crate::util::par::map(runs,|(i,run)| match run.across {
-        Some(across) => run_sweep(&run.cs,across,a,r,top,true,tol),
-        None => {
-            let c = run.cs.iter().copied().min_by(|x,y| dot(*x,a).total_cmp(&dot(*y,a))).unwrap();
-            plunge(c,a,r,top,tol)
-        }
-    }.map_err(|why| Unbuilt::Failed(format!("run {i} of the mill's path, from {:?}: its sweep not built: {why}",run.cs[0]))));
-    let swept_at = clock.elapsed().as_secs_f64();
-    let (mut out,mut known): (Option<Brep>,Option<Known>) = (None,None);
-    for ((i,run),sweep) in runs.iter().zip(sweeps) {
-        let (cut,next) = combined_known(out.as_ref().unwrap_or(blank),known.as_ref(),&sweep?,Op::Cut,tol)
-            .map_err(|why| Unbuilt::Failed(format!("run {i} of the mill's path, from {:?}: not cut: {}",run.cs[0],why.msg)))?;
-        (out,known) = (Some(cut),Some(next));
-    }
-    let out = out.unwrap_or_else(|| blank.clone());
-    let cut_at = clock.elapsed().as_secs_f64();
-    let solid = super::member::Solid::new(tool,bar,1.).map_err(Unbuilt::Failed)?;
-    let swept = super::member::Swept {tool:&solid,path,roll};
-    super::closed::judge(&out,&swept,blank,Some(blank),&[],tol)?;
-    if crate::timing() {
-        eprintln!("raster: {} runs reach the blank, swept in {swept_at:.2} s, cut by {cut_at:.2} s, judged by {:.2} s: {} faces",
-            runs.len(),clock.elapsed().as_secs_f64(),out.faces.len());
-    }
-    Ok(out)
 }

@@ -394,10 +394,26 @@ pub fn cut(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol
     // the moves in chains: one square to the axis goes on with the chain before it where it is the
     // next piece of the path and starts as that one ends, the axis moving on the same way
     let mut chains: Vec<Vec<(usize,&Trajectory,Move,bool)>> = Vec::new();
+    // (a ball-end mill's slides at a slant chain where each starts where the last ends, the axis
+    // the same, the way across it the same: a run in one plane holding the axis, its corners laid
+    // by `raster`'s construction while it can lay them)
+    let across = |from: V,to: V,a: V| { let d = sub(to,from); unit(sub(d,scale(a,dot(d,a)))) };
     for &(i,piece,mv,back) in &moves {
-        let goes_on = chains.last().and_then(|c| c.last()).is_some_and(|&(j,_,last,_)| j+1 == i && match (stands(&rev,last),stands(&rev,mv)) {
-            (Some([_,[o,a,m]]),Some([[p,b,n],_])) => norm(sub(o,p)) <= eps && dot(a,b) >= 1.-1e-12 && dot(m,n) >= 1.-1e-9,
-            _ => false,
+        let goes_on = chains.last().is_some_and(|c| {
+            let &(j,_,last,_) = c.last().unwrap();
+            j+1 == i && match (last,mv) {
+                (Move::Slanted {from:f0,to:t0,axis:a0},Move::Slanted {from,to,axis}) => {
+                    let mill = mill.as_ref().expect("a slanted move is read only of a mill");
+                    let mut cs: Vec<V> = c.iter().filter_map(|x| match x.2 { Move::Slanted {from,..} => Some(from),_ => None }).collect();
+                    cs.extend([t0,to]);
+                    norm(sub(t0,from)) <= eps && dot(a0,axis) >= 1.-1e-12 && dot(across(f0,t0,a0),across(from,to,axis)) >= 1.-1e-12
+                        && super::raster::laid(&cs,across(from,to,axis),axis,mill.r,tol)
+                }
+                _ => match (stands(&rev,last),stands(&rev,mv)) {
+                    (Some([_,[o,a,m]]),Some([[p,b,n],_])) => norm(sub(o,p)) <= eps && dot(a,b) >= 1.-1e-12 && dot(m,n) >= 1.-1e-9,
+                    _ => false,
+                },
+            }
         });
         if goes_on { chains.last_mut().unwrap().push((i,piece,mv,back)) } else { chains.push(vec![(i,piece,mv,back)]) }
     }
@@ -426,8 +442,13 @@ pub fn cut(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol
     }
     let sweeps = crate::util::par::map(&chains,|c| {
         let (i,piece,mv,back) = c[0];
-        match c.len() {
-            1 => sweep(&rev,mill.as_ref(),tool,piece,mv,back,blank,bar,tol),
+        match (c.len(),mv) {
+            (_,Move::Slanted {axis,..}) => {
+                let mut cs: Vec<V> = c.iter().filter_map(|x| match x.2 { Move::Slanted {from,..} => Some(from),_ => None }).collect();
+                if let Move::Slanted {to,..} = c[c.len()-1].2 { cs.push(to) }
+                super::raster::run(&cs,axis,mill.as_ref().expect("a slanted move is read only of a mill"),blank,back,tol)
+            }
+            (1,_) => sweep(&rev,mill.as_ref(),tool,piece,mv,back,blank,bar,tol),
             _ => chain(&rev,&c.iter().map(|x| x.2).collect::<Vec<_>>(),back,tol),
         }.map_err(|why| Unbuilt::Failed(format!("piece {i} of the path: its sweep not built: {why}")))
     });
@@ -487,7 +508,7 @@ fn sweep(rev: &Revolved,mill: Option<&super::raster::Mill>,tool: &Brep,piece: &T
         Move::Across {..} => chain(rev,&[mv],back,tol),
         Move::Turned {at,q,w,angle} if angle.abs() >= TAU*(1.-1e-12) => ring(rev,at,q,w,angle),
         Move::Turned {..} => chain(rev,&[mv],back,tol),
-        Move::Slanted {from,to,axis} => super::raster::slanted(from,to,axis,mill.expect("a slanted move is read only of a mill"),blank,back,tol),
+        Move::Slanted {from,to,axis} => super::raster::run(&[from,to],axis,mill.expect("a slanted move is read only of a mill"),blank,back,tol),
         Move::Closed {roll} => super::closed::closed(tool,piece,roll,bar,tol).map_err(|e| format!("{e:?}")),
     }
 }
