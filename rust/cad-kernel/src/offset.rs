@@ -80,20 +80,19 @@ pub fn shelled(b: &Brep,open: &[usize],t: f64,side: Side,join: Join) -> Result<B
     if let Some(&f) = open.iter().find(|&&f| f >= b.faces.len()) { return Err(format!("no face {f} to leave open")) }
     let walled: Vec<bool> = (0..b.faces.len()).map(|f| !open.contains(&f)).collect();
     if !walled.contains(&true) { return Err("a shell open at every face has no wall".into()) }
-    match side {
-        Side::In => {
-            let mut pieces = pieces(b,&walled,side,t,join)?.into_iter();
-            let (_,first) = pieces.next().ok_or("a shell with no wall")?;
-            let wall = folded(first,pieces.collect(),Op::Union)?;
-            combined(b,&wall,Op::Common,0.).map_err(|e| format!("the wall kept within the solid: {e}"))
-        }
+    let pieces = match side {
+        Side::In => pieces(b,&walled,side,t,join)?,
+        // outside, the wall ends where each opening is: the pieces that reach it cut off at its
+        // plane, and no other (a wall beyond the plane elsewhere is the solid's own)
         Side::Out => {
-            // outside, the wall ends where each opening is: the pieces that reach it cut off at its
-            // plane, and no other (a wall beyond the plane elsewhere is the solid's own)
             let openings = open.iter().map(|&o| Opening::of(b,o)).collect::<Result<Vec<_>,_>>()?;
-            let wall = ended(b,&openings,owned_pieces(b,&walled,side,t,join)?,join)?;
-            combined(&wall,b,Op::Cut,0.).map_err(|e| format!("the solid cut from its wall: {e}"))
+            ended(b,&openings,owned_pieces(b,&walled,side,t,join)?,join)?
         }
+    };
+    let wall = united(pieces,"a shell with no wall")?;
+    match side {
+        Side::In => combined(b,&wall,Op::Common,0.).map_err(|e| format!("the wall kept within the solid: {e}")),
+        Side::Out => combined(&wall,b,Op::Cut,0.).map_err(|e| format!("the solid cut from its wall: {e}")),
     }
 }
 
@@ -116,27 +115,17 @@ impl Opening {
     /// Which side of the plane the points `ps` lie: `Some(-1)` or `Some(1)` all on one side, `Some(0)`
     /// all on it (within `tol`), `None` on both.
     fn side(&self,ps: &[V],tol: f64) -> Option<i8> {
-        let hs: Vec<f64> = ps.iter().map(|&p| self.beyond(p)).collect();
-        if hs.iter().all(|h| h.abs() <= tol) { Some(0) }
-        else if hs.iter().all(|&h| h <= tol) { Some(-1) }
-        else if hs.iter().all(|&h| h >= -tol) { Some(1) }
-        else { None }
+        let (lo,hi) = ps.iter().map(|&p| self.beyond(p)).fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),x| (l.min(x),h.max(x)));
+        match (lo >= -tol,hi <= tol) { (true,true) => Some(0),(false,true) => Some(-1),(true,false) => Some(1),(false,false) => None }
     }
-}
-
-/// The points of edge `ei` at nine parameters along it (none for a degenerate edge).
-fn edge_points(b: &Brep,ei: usize) -> Vec<V> {
-    let e = &b.edges[ei];
-    let EdgeCurve::Curve(c) = &e.curve else { return Vec::new() };
-    (0..=8).map(|k| c.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/8.)).collect()
 }
 
 /// **Where a piece of an outward shell is ended at an opening** (`by` names what it is made from;
 /// `joined`, the edges and corners joins were built at): kept on one side of the opening's plane
 /// (`Some((side, must))`, `side` along its outward normal, `must` where the piece reaches past the
-/// plane, the cut otherwise only tidying the plane's faces into one), or left whole (`None`).  A
-/// wall lies wholly on one side of the plane, or meets it square, or it is refused, never cut where
-/// it should not be:
+/// plane; a cut not a must changes no point of the piece, and is made only beside one that is, to
+/// leave the plane one face where it ends them), or left whole (`None`).  A wall lies wholly on
+/// one side of the plane, or meets it square, or it is refused, never cut where it should not be:
 /// - a join along an opening's edge, or at a corner of it, is a round's (a sharp shell builds none
 ///   there): kept on the solid's side of its plane, the side its walls stand on, the crease convex;
 /// - a face meeting an opening (along an edge or at a corner), or a join along an edge ending at a
@@ -147,81 +136,71 @@ fn edge_points(b: &Brep,ei: usize) -> Vec<V> {
 ///   plane; where it falls short of the plane the opening's tube or corner ball, a round's, fills
 ///   the gap, and a sharp shell, whose moved walls would have to be carried on to the plane, and a
 ///   gap no such join fills, are refused, as is a wall aslant across the plane.
-fn ending(b: &Brep,o: &Opening,joined: &BTreeSet<By>,by: By,join: Join) -> Result<Option<(i8,bool)>,String> {
-    let tol = tolerance(b.size());
-    let name = face_name(b,o.face);
-    let aslant = |what: &str| -> String {
-        format!("{what} meets {name}, left open, aslant: {}",match join {
-            Join::Sharp => "a sharp wall carried on to an opening's plane is built only where it meets it square, yet",
-            Join::Round => "what its moved wall leaves short of the plane no round of the opening fills",
-        })
-    };
-    match by {
-        By::Corner(v) => Ok(o.vertices.contains(&v).then_some((-1,true))),
-        By::Edge(e) if o.edges.contains(&e) => Ok(Some((-1,true))),
+fn ending(b: &Brep,o: &Opening,joined: &BTreeSet<By>,by: By,join: Join,tol: f64) -> Result<Option<(i8,bool)>,String> {
+    // what meets the opening: its points, whether it meets the plane square, and, aslant, whether
+    // moved it runs past the plane, falls short of it, and what falls short is filled
+    let (what,points,square,rates,filled): (&str,Vec<V>,bool,Vec<f64>,bool) = match by {
+        By::Corner(v) => return Ok(o.vertices.contains(&v).then_some((-1,true))),
+        By::Edge(e) if o.edges.contains(&e) => return Ok(Some((-1,true))),
         By::Edge(e) => {
-            let ends: Vec<u32> = b.edges[e].v.iter().copied().filter(|v| o.vertices.contains(v)).collect();
-            let EdgeCurve::Curve(c) = &b.edges[e].curve else { return Ok(None) };
+            let edge = &b.edges[e];
+            let EdgeCurve::Curve(c) = &edge.curve else { return Ok(None) };
+            let ends: Vec<usize> = (0..2).filter(|&k| o.vertices.contains(&edge.v[k])).collect();
             if ends.is_empty() { return Ok(None) }
-            let square = ends.iter().all(|&v| {
-                let t = if b.edges[e].v[0] == v { b.edges[e].t[0] } else { b.edges[e].t[1] };
-                dot(unit(c.tangent(t)),o.n).abs() >= 1.-1e-9
-            });
-            match o.side(&edge_points(b,e),tol) {
-                Some(0) => Ok(None),
-                None if square => Ok(None),
-                None => Err(format!("its edge runs across the plane of {name}, left open, aslant")),
-                Some(s) if square => Ok(Some((s,false))),
-                // the tube's flat end reaches past the plane on one side, and falls short of it on
-                // the other, where the corner's ball fills it
-                Some(s) if join == Join::Round && ends.iter().all(|&v| joined.contains(&By::Corner(v))) => Ok(Some((s,true))),
-                Some(_) => Err(aslant("its edge")),
-            }
+            let points = (0..=8).map(|k| edge.point(edge.t[0]+(edge.t[1]-edge.t[0])*k as f64/8.,&b.vertices)).collect();
+            let square = ends.iter().all(|&k| dot(unit(c.tangent(edge.t[k])),o.n).abs() >= 1.-1e-9);
+            // aslant, the tube's flat end runs past the plane on one side and falls short of it on
+            // the other, where the corner's ball fills it
+            ("its edge",points,square,vec![-1.,1.],ends.iter().all(|&k| joined.contains(&By::Corner(edge.v[k]))))
         }
         By::Face(fi) => {
             let f = &b.faces[fi];
-            let shared: Vec<usize> = f.loops.iter().flatten().map(|c| c.edge as usize).filter(|e| o.edges.contains(e)).collect();
-            let corners: BTreeSet<u32> = f.loops.iter().flatten().flat_map(|c| b.edges[c.edge as usize].v)
-                .filter(|v| o.vertices.contains(v)).collect();
-            let mut contact: Vec<V> = shared.iter().flat_map(|&e| edge_points(b,e)).collect();
-            contact.extend(corners.iter().map(|&v| b.vertices[v as usize].p));
-            if contact.is_empty() { return Ok(None) }
             let (runs,_) = samples(b,f);
-            let points: Vec<V> = runs.iter().flat_map(|(_,run)| run.iter().map(|&uv| f.surface.point(uv))).collect();
+            let shared: Vec<u32> = runs.iter().map(|r| r.0).filter(|&e| o.edges.contains(&(e as usize))).collect();
+            let corners: BTreeSet<u32> = runs.iter().flat_map(|r| b.edges[r.0 as usize].v).filter(|v| o.vertices.contains(v)).collect();
+            if corners.is_empty() { return Ok(None) }
+            let mut contact: Vec<V> = runs.iter().filter(|r| shared.contains(&r.0)).flat_map(|r| r.1.iter().map(|&uv| f.surface.point(uv))).collect();
+            contact.extend(corners.iter().map(|&v| b.vertices[v as usize].p));
+            let points = runs.iter().flat_map(|(_,run)| run.iter().map(|&uv| f.surface.point(uv))).collect();
             // how fast each point of contact runs past the plane as the face moves out
             let rates = contact.iter().map(|&p| outward(b,fi,p).map(|n| dot(n,o.n))).collect::<Result<Vec<f64>,String>>()?;
             let square = rates.iter().all(|m| m.abs() <= 1e-9);
-            match o.side(&points,tol) {
-                Some(0) => Ok(None),
-                None if square => Ok(None),
-                None => Err(format!("its face runs across the plane of {name}, left open, aslant")),
-                Some(s) if square => Ok(Some((s,false))),
-                Some(_) if join == Join::Sharp => Err(aslant("its face")),
-                Some(s) => {
-                    // short of the plane: filled where the opening's own tube and corner balls are
-                    let k = s as f64;
-                    let filled = shared.iter().all(|&e| joined.contains(&By::Edge(e))) && corners.iter().all(|&v| joined.contains(&By::Corner(v)));
-                    if rates.iter().any(|&m| k*m > 1e-9) && !filled { return Err(aslant("its face")) }
-                    Ok(Some((s,rates.iter().any(|&m| k*m < -1e-9))))
-                }
+            // short of the plane: filled where the opening's own tube and corner balls are
+            let filled = shared.iter().all(|&e| joined.contains(&By::Edge(e as usize))) && corners.iter().all(|&v| joined.contains(&By::Corner(v)));
+            ("its face",points,square,rates,filled)
+        }
+    };
+    match o.side(&points,tol) {
+        Some(0) => Ok(None),
+        None if square => Ok(None),
+        None => Err(format!("{what} runs across the plane of {}, left open, aslant",face_name(b,o.face))),
+        Some(s) if square => Ok(Some((s,false))),
+        Some(s) => {
+            // a rate along the side `s` falls short of the plane, against it runs past
+            let k = s as f64;
+            if join == Join::Sharp || rates.iter().any(|&m| k*m > 1e-9) && !filled {
+                return Err(format!("{what} meets {}, left open, aslant: {}",face_name(b,o.face),match join {
+                    Join::Sharp => "a sharp wall carried on to an opening's plane is built only where it meets it square, yet",
+                    Join::Round => "what its moved wall leaves short of the plane no round of the opening fills",
+                }))
             }
+            Ok(Some((s,rates.iter().any(|&m| k*m < -1e-9))))
         }
     }
 }
 
-/// **An outward shell's pieces ended at its openings** (`ending`), and united: the pieces ended
-/// alike united first and cut once, so each opening's plane holds one face where it ends them all
-/// (a box's rim one ring, not a face for each piece that reaches it), and a piece no opening ends
-/// joins them whole.
-fn ended(b: &Brep,openings: &[Opening],made: Vec<(By,Piece)>,join: Join) -> Result<Brep,String> {
+/// **An outward shell's pieces ended at its openings** (`ending`): the pieces ended alike united
+/// first and cut once, so each opening's plane holds one face where it ends them all (a box's rim
+/// one ring, not a face for each piece that reaches it), and a piece no opening ends left whole.
+fn ended(b: &Brep,openings: &[Opening],made: Vec<(By,Piece)>,join: Join) -> Result<Vec<Piece>,String> {
+    let tol = tolerance(b.size());
     let joined: BTreeSet<By> = made.iter().map(|m| m.0).filter(|by| !matches!(by,By::Face(_))).collect();
-    // the pieces by the cuts that end them: (opening, side) each, and whether any piece must take it
+    // the pieces by the cuts that end them, (opening, side) each, and the cuts any of them must take
     let mut groups: BTreeMap<Vec<(usize,i8)>,(Vec<Piece>,BTreeSet<(usize,i8)>)> = BTreeMap::new();
     for (by,(what,p)) in made {
-        let mut cuts = Vec::new();
-        let mut musts = Vec::new();
+        let (mut cuts,mut musts) = (Vec::new(),Vec::new());
         for (k,o) in openings.iter().enumerate() {
-            if let Some((s,must)) = ending(b,o,&joined,by,join).map_err(|e| format!("{what}: {e}"))? {
+            if let Some((s,must)) = ending(b,o,&joined,by,join,tol).map_err(|e| format!("{what}: {e}"))? {
                 cuts.push((k,s));
                 if must { musts.push((k,s)); }
             }
@@ -230,21 +209,18 @@ fn ended(b: &Brep,openings: &[Opening],made: Vec<(By,Piece)>,join: Join) -> Resu
         g.0.push((what,p));
         g.1.extend(musts);
     }
-    let mut united = Vec::new();
-    for (_,(pieces,musts)) in groups {
-        let mut pieces = pieces.into_iter();
-        let Some((what,first)) = pieces.next() else { continue };
-        let mut group = folded(first,pieces.collect(),Op::Union)?;
+    let mut out = Vec::new();
+    for (pieces,musts) in groups.into_values() {
+        let what = match &pieces[..] { [(w,_)] => w.clone(),_ => format!("{} pieces ended alike",pieces.len()) };
+        let mut group = united(pieces,"no piece")?;
         for (k,s) in musts {
             let o = &openings[k];
-            group = kept(&group,o.o,scale(o.n,s as f64),0.).map_err(|e| format!("cut off at the plane of {}: {e}",face_name(b,o.face)))?;
+            group = kept(&group,o.o,scale(o.n,s as f64),0.).map_err(|e| format!("{what} cut off at the plane of {}: {e}",face_name(b,o.face)))?;
             if group.faces.is_empty() { break }
         }
-        if !group.faces.is_empty() { united.push((what,group)); }
+        if !group.faces.is_empty() { out.push((what,group)); }
     }
-    let mut united = united.into_iter();
-    let (_,first) = united.next().ok_or("a shell with no wall")?;
-    folded(first,united.collect(),Op::Union)
+    Ok(out)
 }
 
 /// A sheet `sheet` (faces bounding no solid, each oriented, neighbours turning one way) thickened
@@ -260,14 +236,19 @@ pub fn thickened(sheet: &Brep,s: [f64;2],join: Join) -> Result<Brep,String> {
     for (side,depth) in [(Side::Out,s[1]),(Side::In,-s[0])] {
         if depth > 0. { pieces.extend(joins(sheet,&uses,&all,side,depth,join,Of::Sheet)?.into_iter().map(|(_,p)| p)); }
     }
-    let mut pieces = pieces.into_iter();
-    let (_,first) = pieces.next().ok_or("a sheet with no face")?;
-    folded(first,pieces.collect(),Op::Union)
+    united(pieces,"a sheet with no face")
 }
 
 /// Refused unless `d` is a positive length.
 fn positive(d: f64,what: &str) -> Result<(),String> {
     if d > 0. && d.is_finite() { Ok(()) } else { Err(format!("{what} by {d}: the distance must be positive")) }
+}
+
+/// The pieces united, or refused as `none` where there are none.
+fn united(pieces: Vec<Piece>,none: &str) -> Result<Brep,String> {
+    let mut pieces = pieces.into_iter();
+    let (_,first) = pieces.next().ok_or(none)?;
+    folded(first,pieces.collect(),Op::Union)
 }
 
 /// `start` combined with each piece in turn by `op`, what each step knows of its faces handed to
