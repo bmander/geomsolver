@@ -1168,14 +1168,22 @@ closed sweeps first instead loses them: the sheets' road rebuilds its blank from
 box holding the blank, grown by 0.0937 of its diagonal so its planes stand clear of the blank's;
 the candidates' pieces outside it are dropped, they are paired only near it, and the box's own
 faces are kept where the sweep holds them. The judge reads membership inside the box, and the cut
-is the same. The flute's whole trim does not close at the roll's ends. There the wheel's folded
-flank's cusp meets the wheel posed far outside the stock, and the branch of what passes back into
-the tool (`contacts::pose_meeting`) is laid a millimetre's thousandth beside the rim, a fold's
-precision (#880 T1e). Within the reach it closes. So does the domed pin's
+is the same. The domed pin's whole trim does not close at its pole; within the reach it does
 (`rings_all_round::a_turn_about_an_axis_the_tools_meets_builds_within_the_blanks_reach`, to its
 closed form within 1e-9). The whole sweep is asked first: a torus screwed through a rod, its
 stretches' rails crossing the box, is split there unlike its neighbours. The narrow wheel stays
-S2's.
+S2's. **A tool of revolution has its seams turned off its contact's folds** (`contacts::seated`,
+#880 T1e): turned about its own axis, the same solid, every face's seam turned with it. Where its
+contact folds (its image in the motion's invariants turning back) and a seam stands within a tenth
+of a radian of a fold, the tool is turned to put the seams in the middle of the widest gap between
+the folds' angles about the axis. A seam beside a fold put an edge of the tool's own through the
+cusp's meetings on the tool posed at an end of the roll, every corner of the pieces there a
+tangency: the twist drill's steep flute wheel, drawn in the plane where it grinds, its seams 0.056
+rad from its fold, which the whole sweep's trim did not close. Seated, the flute's whole trim closes
+cut from the stock (`twist_drill::the_steep_wheel_cuts_its_folded_flute_by_the_contacts_road`) and
+alone, with no blank, as drawn and turned a quarter turn first within its area times the tolerance
+of each other (`twist_drill::the_steep_wheels_flute_builds_alone`, 8e-6 of 0.028). The leaning rings'
+seams stand a third of a radian off their folds and are left: turned, they were refused.
 The admission keeps that first refusal (`dispatch::Closed::first`, `closed_class::Closed::first`),
 and where the road refuses at the build the drawing is refused by it, not by the closed class's
 `Curved` (the domed pin's pole, S1, refused so until the road trimmed within the blank's reach,

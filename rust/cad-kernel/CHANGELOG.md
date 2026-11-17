@@ -17,6 +17,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   builds cut and alone within ten tolerances; at 60° it stood 1.6e-4 off and holds to 2e-6. Every
   whole lean from 55° to 85° builds. Under a screw only crossings within one turn are double points;
   two whose spans nest are not cut.
+- **A tool of revolution has its seams turned off its contact's folds** (`swept::contacts`): turned
+  about its own axis, the same solid, where a seam stands within a tenth of a radian of a fold of its
+  contact, so no seam runs through the cusp's meetings on the tool posed at an end of the roll. The
+  twist drill's flute wheel too steep for its helix builds alone, with no blank, and cut from the
+  stock by its whole sweep, no longer within the stock's reach.
 - **A crossing of a swept sheet, a fitted net or a family's wall is placed on it** (`boolean`): an
   edge crossing such a surface at a shallow angle had its root off the surface by what the angle
   makes of the tolerance, read outside the face and dropped. Newton's method on the curve less the

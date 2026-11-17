@@ -922,8 +922,3 @@ fn swallowtails_cut_at_their_double_points_hold_past_the_fold() {
         assert!((w-whole).abs() <= 1e-9 && (a-away).abs() <= 1e-9,"at {lean}°: {w} and {a}");
     }
 }
-
-
-
-
-
