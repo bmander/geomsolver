@@ -478,22 +478,8 @@ impl Path {
                 let w = std::f64::consts::TAU;
                 Some([r * w, r * w * w])
             }
-            Path::Spline { ctrl, knots, weights: None } => {
-                let mut pts = ctrl.clone();
-                let mut out = [0.0; 2];
-                let p = crate::curve::DEGREE;
-                for (order, slot) in out.iter_mut().enumerate() {
-                    let deg = p - order;
-                    let next: Vec<V> = (0..pts.len().saturating_sub(1)).map(|i| {
-                        let dt = knots[i + order + deg + 1] - knots[i + order + 1];
-                        if dt > 0.0 { scale(sub(pts[i + 1], pts[i]), deg as f64 / dt) }
-                        else { [0.0; 3] }
-                    }).collect();
-                    *slot = next.iter().map(|&q| norm(q)).fold(0.0, f64::max);
-                    pts = next;
-                }
-                Some(out)
-            }
+            Path::Spline { ctrl, knots, weights: None } =>
+                Some(crate::brep::nurbs::derivative_bounds(crate::curve::DEGREE, knots, ctrl)),
             _ => None,
         }
     }

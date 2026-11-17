@@ -8,6 +8,29 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A frame carried along a curve** (`trajectory::Along`, K2): the rotation-minimising frame along a
+  B-spline from its start (double reflection on a 4096-step grid; along a curve in a plane the
+  turn about its normal by the tangent's angle, exactly but for rounding), with its pose, rate and
+  stretches enclosed by the curve's hodographs, so a sweep's speed bound reads it — a rational
+  curve's stretch fails closed. A caller sweeping along a curve writes no `Path` of its own.
+- **`Along` is generic over its curve** (`trajectory::Guide`: a domain, a jet, derivative
+  bounds), from a home anywhere on it (`Along::from`), the rotation-minimising frame or the curve's
+  own (Frenet) one; geomsolver's frames along a path are this type over its own paths. The
+  sampled enclosure a stretch is read from is `trajectory::Extremes`; `BSpline::hodograph` is the
+  curve's derivative as a B-spline.
+- **Bounds on a polynomial B-spline's first two derivatives** (`nurbs::derivative_bounds`,
+  `BSpline::derivative_bounds`): its hodographs' longest poles, what `Along` encloses by.
+- **A prism under a motion that keeps a plane is cut from a blank** (`swept::closed::cut_from`):
+  the planar road `closed` takes before K2's (#880 Q2, `swept::planar_solid`) is asked with a
+  blank too, its swept solid cut from it by the Boolean. brep-bench's
+  `swept/key-carried-along-a-spline`, refused at the key's corner (`Curved`), is cut in about a
+  second, to the volume and area OCCT and cadrs agree on within 3e-12.
+- **The swept region's keeping test halves to a length, not a roll** (`swept::region`): a stretch
+  of the roll is read at both ends alone once a point moves no farther over it than over
+  `KEEP_STEP` of a roll turning the tool at its reach; a roll that is no angle — a curve's
+  parameter, the tool running 30 along it a unit — let a corner's sliver covered for 5e-4 of the
+  roll stand as boundary, and the region did not close.
+
 ## [0.15.0] - 2026-11-17
 
 - **Any tool of revolution's path of pieces is cut from a blank piece by piece** (`swept::pieces`,

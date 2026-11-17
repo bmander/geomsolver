@@ -349,7 +349,14 @@ line contact through the mean section.
 `observer⁻¹ · source`), a path taken at a pace (`Paced`, whose sweep is its path's over the pace's
 range, `Trajectory::unpaced`, #684 L), a path of pieces each over its stretch of the parameter
 (`Pieces`, refused by `Trajectory::pieces` where two do not meet, K1), and any other rigid motion
-evaluated as a pose and its rate (`General`, K2).  `Family::trajectory` lowers a family step by
+evaluated as a pose and its rate (`General`, K2) — among them a frame carried along a B-spline
+from its start (`trajectory::Along`: the rotation-minimising frame by double reflection on a grid,
+from a home anywhere on it, or the curve's own (Frenet) frame, over any curve that reads its jet
+(`trajectory::Guide`: the kernel's B-spline, the drawing's path — `motion::guide` holds no copy),
+its stretches enclosed by the curve's hodographs, a rational curve's and the Frenet frame's failing
+closed;
+`a_frame_along_a_curve_turns_only_as_its_tangent_does`), so a caller of the kernel sweeping along
+a curve writes no path of its own.  `Family::trajectory` lowers a family step by
 step: a turn, a screw or a slide to its constant twist, a driven joint to that twist taken at its
 law (`Pace`), a relative to its two, a frame along a path or one the drawing moves to what it
 evaluates to; its pose and rate are `Family::at`'s at every time, and its constant twist is
@@ -1921,9 +1928,17 @@ height, both read ray by ray from the axis (`ring_by_rays`: on each ray the pose
 together into one, each extreme refined at every local extreme of a grid; #880 E4, where cadrs's
 surface is 0.0705 larger with the same volume) — and
 **the rack's tooth space**, its swept solid cut from the blank by the ordinary Boolean, to 1e-6 of
-the volume next.BREP and cadrs agree on, at a billionth (4e-11 off); each written as a closed STEP B-rep. The
-drawing's sweeps still reach these cases by the blank-scoped planar classes (`cut_from` and
-`reads_general` do not ask this, #699). **Left open**: a drafted tool (its stations lofted, as the
+the volume next.BREP and cadrs agree on, at a billionth (4e-11 off); each written as a closed STEP B-rep.
+**Cut from a blank too** (`cut_from`): the same road, its solid cut from the blank by the Boolean —
+**the key carried along a spline** (`swept/key-carried-along-a-spline`, a frame along a cubic
+Bézier, `trajectory::Along`), once K2's `Curved` at the key's corner, its swept solid held to the
+definition's area in the plane and the grooved block to the volume OCCT and cadrs agree on and
+their area, at a billionth (2e-12 off; `a_key_carried_along_a_spline_grooves_a_block`).  The
+keeping test reads a stretch of the roll at its ends alone below `KEEP_STEP` of the roll, or, for a
+point moving faster than the tool's reach a unit (a roll that is no angle: a curve's parameter),
+below as far as `KEEP_STEP` of a turn at that reach moves it — at a roll's floor the key's corner
+sliver, covered for 5e-4 of it, was kept and the region left open.  The drawing's sweeps still
+reach these cases by the blank-scoped planar classes (`reads_general` does not ask this, #699). **Left open**: a drafted tool (its stations lofted, as the
 subtraction class lofts them); a tool standing along the plane's normal under a constant twist,
 which the arrangement builds exactly; and a side whose contact stands at its corner at every
 instant, which `path.sv`'s frame makes of a box's long sides (its instant centre on the line through

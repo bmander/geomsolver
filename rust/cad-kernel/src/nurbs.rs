@@ -68,6 +68,22 @@ impl BSpline {
         Ok(BSpline {weights:Some(weights),..s})
     }
     pub fn is_rational(&self) -> bool { self.weights.is_some() }
+    /// Bounds on `|C′|` and `|C″|` over the whole domain (`derivative_bounds`); none for a rational
+    /// curve.
+    pub fn derivative_bounds(&self) -> Option<[f64;2]> {
+        (!self.is_rational()).then(|| derivative_bounds(self.degree,&self.knots,&self.poles))
+    }
+    /// **The curve's derivative as a B-spline** (its hodograph): a degree lower, on the knots less
+    /// their ends, its poles the poles' differences. None for a rational or a constant curve.
+    pub fn hodograph(&self) -> Option<BSpline> {
+        let p = self.degree;
+        if self.is_rational() || p == 0 { return None }
+        let poles = (0..self.poles.len()-1).map(|i| {
+            let dt = self.knots[i+p+1]-self.knots[i+1];
+            if dt > 0. { crate::util::space::scale(crate::util::space::sub(self.poles[i+1],self.poles[i]),p as f64/dt) } else { [0.;3] }
+        }).collect();
+        BSpline::new(p-1,self.knots[1..self.knots.len()-1].to_vec(),poles).ok()
+    }
     /// Where the curve is defined.
     pub fn domain(&self) -> [f64;2] { [self.knots[self.degree],self.knots[self.poles.len()]] }
     /// The distinct knots strictly inside `[a, b]`, where the curve's third derivative may jump.
@@ -378,6 +394,22 @@ fn averaged(t: &[f64],degree: usize) -> Vec<f64> {
 
 /// The B-spline of `degree` (lowered to fit the count) through `pts` at the increasing parameters
 /// `t` (global interpolation, one collocation solve per coordinate).
+/// **Bounds on `|C′|` and `|C″|` of the polynomial B-spline of `degree` on `knots` and `poles`, over
+/// its whole domain**: each derivative lies in its hodograph's hull, so within its longest pole.
+pub fn derivative_bounds(degree: usize,knots: &[f64],poles: &[V]) -> [f64;2] {
+    let mut poles = poles.to_vec();
+    let mut out = [0.;2];
+    for order in 0..2 {
+        let d = degree.saturating_sub(order);
+        poles = (0..poles.len().saturating_sub(1)).map(|i| {
+            let dt = knots[i+degree+1]-knots[i+order+1];
+            if dt > 0. { crate::util::space::scale(crate::util::space::sub(poles[i+1],poles[i]),d as f64/dt) } else { [0.;3] }
+        }).collect();
+        out[order] = poles.iter().map(|&q| crate::util::space::norm(q)).fold(0.,f64::max);
+    }
+    out
+}
+
 pub fn interpolate(pts: &[V],t: &[f64],degree: usize) -> Option<BSpline> {
     let m = pts.len();
     let degree = degree.min(m.checked_sub(1)?);
