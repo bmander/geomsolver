@@ -8,6 +8,14 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **An outward shell ends where its opening is** (`offset::shelled`, `Side::Out`): each piece that
+  reaches an opening is ended at its plane, and no other, where the whole wall was cut off at the
+  plane. brep-bench's `shell/l-block-open-at-its-step-outward-sharp`, an L open at its step, kept
+  none of its tall leg's walls past the step's plane and was wrong (904 for 1868); it is now its
+  closed form, sharp and rounded. A wall meeting its opening aslant is cut off at the plane where
+  it runs past it, rounded, and refused where nothing fills what it falls short of — sharp, always
+  — where it was built short of the plane before.
+
 ## [0.14.0] - 2026-11-14
 
 - **A sheet that folds under a slide, a turn or a screw goes the contact's road** (`swept::closed`,

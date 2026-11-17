@@ -128,6 +128,58 @@ fn a_box_shelled_open_at_its_top_inward_outward_and_sharp() {
     close("outward",volume(&shelled(&b,&top,1.,Side::Out,Join::Round).unwrap()),296.+47.*PI/3.);
 }
 
+/// The L of brep-bench's shell cases: (0, 0), (20, 0), (20, 20), (15, 20), (15, 5), (0, 5), 20 deep;
+/// and its step, the face y = 5.
+fn stepped_l() -> (Brep,Vec<usize>) {
+    let section = Profile {names:vec![],origin:[0.;3],normal:[0.,0.,1.],
+        loops:vec![poly(&[[0.,0.,0.],[20.,0.,0.],[20.,20.,0.],[15.,20.,0.],[15.,5.,0.],[0.,5.,0.]])]};
+    let l = prism(&section,0.,20.).unwrap();
+    let step = faces_through(&l,&[[7.5,5.,10.]]);
+    (l,step)
+}
+
+/// An outward shell ends where its opening is, not across the opening's whole plane (brep-bench's
+/// shell/l-block-open-at-its-step-outward-sharp): an L open at its step keeps the tall leg's walls
+/// past the step's plane, and the riser's wall stands on the opening's edge.  Cut off at the whole
+/// plane, the leg's walls went with it (904 for 1868).
+#[test]
+fn an_l_shelled_outward_open_at_its_step_keeps_the_walls_past_its_plane() {
+    let (l,step) = stepped_l();
+    // sharp: the moved faces' outline (−1, −1), (21, −1), (21, 21), (14, 21), (14, 5), (−1, 5),
+    // 244 in area, from z = −1 to 21, less the L
+    let sharp = shelled(&l,&step,1.,Side::Out,Join::Sharp).unwrap();
+    close("sharp",volume(&sharp),22.*244.-3500.);
+    close("sharp's area",total_area(&sharp),1670.+2094.+50.);
+    // rounded: its walls' slabs (65 round the sides, 20 deep; the L's 175 above and below), the
+    // quarter cylinders along the 65 of convex edges round the top and the bottom, the four convex
+    // corners' quarter cylinders up the sides and eighths of a ball top and bottom; what the
+    // step's own rounds keep on the L's side of its plane lies within these
+    let round = shelled(&l,&step,1.,Side::Out,Join::Round).unwrap();
+    close("round",volume(&round),1650.+323.*PI/6.);
+}
+
+/// A block whose top slopes, open at it: its walls meet the opening aslant.  Rounded, the wall that
+/// runs past the plane is cut off at it and the one that falls short of it is met by the top's own
+/// round: the block grown by 1 kept behind the top's plane, less the block.  Sharp, each moved wall
+/// would have to be carried on to the plane, and is refused.
+#[test]
+fn a_shell_meeting_its_opening_aslant_is_cut_off_rounded_and_refused_sharp() {
+    // the section in x and z: (0, 0), (10, 0), (10, 6), (0, 4), 8 deep along y
+    let section = Profile {names:vec![],origin:[0.;3],normal:[0.,1.,0.],
+        loops:vec![poly(&[[0.,0.,0.],[0.,0.,4.],[10.,0.,6.],[10.,0.,0.]])]};
+    let b = prism(&section,0.,8.).unwrap();
+    let top = faces_through(&b,&[[5.,4.,5.]]);
+    // the section's area kept behind the top's line, grown by r: the section, the slabs of its
+    // other three sides (the left one less what runs past the line), the bottom corners' quarter
+    // discs and the right top corner's sector up to the line, atan 0.2 wide: 50 + 20r + c r²;
+    // along y the slices, 8 of them at r = 1 and the ends' at r = √(1 − y²)
+    let c = PI/2.+0.2f64.atan()/2.-0.1;
+    let want = 8.*(70.+c)+2.*(50.+20.*PI/4.+c*2./3.)-8.*50.;
+    close("round",volume(&shelled(&b,&top,1.,Side::Out,Join::Round).unwrap()),want);
+    let refused = shelled(&b,&top,1.,Side::Out,Join::Sharp).unwrap_err();
+    assert!(refused.contains("aslant"),"{refused}");
+}
+
 /// A rounded plate's corners swept in past their axis: what lies past it is its neighbours'.
 #[test]
 fn a_rounded_tray_shelled_past_its_rounds() {
