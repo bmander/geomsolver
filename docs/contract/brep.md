@@ -253,7 +253,9 @@ a swap made without its callers knowing:
   Gauss–Newton, `C(t) − S(path(t))` enclosed so the tangents cancel (`System::run`) — its ends read
   as touches and nothing inside it searched again
   (`enclosures::a_curve_lying_along_a_surface_for_a_while_is_one_run_proved`; a tee's crotch, a
-  canal touching its operands, a conrod's pocket rims). A curve all but tangent to a sheet is told
+  canal touching its operands, a conrod's pocket rims). What the box a run was found from holds
+  past the run's ends is read on: dropped whole, a crossing beside the run in that box was lost
+  (`roots::a_crossing_beside_a_run_in_the_box_it_was_found_from_is_found`). A curve all but tangent to a sheet is told
   off it along the sheet's normal (`System::frame`), where the world axes' components are not. **A box is read grown past its sides**
   (`isolate::GROW`), so a root on the face two halves share is inside both and the two that find it
   are one (`roots::a_crossing_on_the_face_two_halves_share_is_found_once`,
@@ -270,7 +272,12 @@ a swap made without its callers knowing:
   ball, a polish that does not settle, or a box too narrow to part whose enclosure proved nothing
   gives up as `GaveUp::Unsettled`, with the box: never the last iterate labelled certified
   (`enclosures::a_root_that_cannot_be_settled_is_refused_never_returned`,
-  `roots::a_root_certified_over_a_flat_system_is_where_it_is`). A reading that gives up is
+  `roots::a_root_certified_over_a_flat_system_is_where_it_is`). In one unknown as in several: a
+  stretch too narrow to halve that its test left unsure and the tolerance does not accept gives
+  up as `Unsettled`, never read as rootless — a crossing whose rate no enclosure held was lost
+  that way — so `near` is the caller's tolerance, and a caller that wants no touches drops them
+  itself (a level line against a revolution's meridian, `query::line_revolution`, `line_turned`;
+  `roots::a_stretch_nothing_proved_is_refused_in_one_unknown`). A reading that gives up is
   `Meets::Refused`, its witness (`query::Refusal`) the curve's and the surface's kinds, the stretch
   and the box: a ray locating a point abandons its direction (`Located::solid_place`: a point off
   the box its faces' boxes fill is out, past which no face stands, and a ray need reach only out of

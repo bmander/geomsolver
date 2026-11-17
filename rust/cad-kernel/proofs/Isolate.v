@@ -9,11 +9,13 @@
     - what a whole search proves ([solve_empty_means_none], [solve_crossings_are_roots],
       [solve_misses_none], [roots_empty_means_none]).
 
-    Two of the last are **not what the Rust does today**, each shown by a run of [gaps/]; they
-    are stated as the module's documentation gives them, so the difference is on the page:
-    [solve_misses_none] (a box is dropped whole for a run that covers part of it) and
-    [roots_empty_means_none] (in one unknown a stretch nothing proved is dropped, where in
-    several the search refuses).
+    Two of the last were not what the Rust did when they were written: [solve_misses_none] (a
+    box was dropped whole for a run that covered part of it) and [roots_empty_means_none] (in
+    one unknown a stretch nothing proved was dropped, where in several the search refuses).
+    Both runs are mended and are tests of the core's suite now, in [tests/roots.rs]
+    ([a_crossing_beside_a_run_in_the_box_it_was_found_from_is_found],
+    [a_stretch_nothing_proved_is_refused_in_one_unknown]).  Each statement says what still
+    stands between the code and it.
 
     A function's slope is asked for in the mean-value form, between any two points of a
     stretch, and not as a derivative: it is what the tests use, and it holds across a kink.
@@ -90,9 +92,13 @@ Arguments GaveUp {A}.
 (** [isolate::roots]: the function, the stretch's ends, the width, [near]. *)
 Definition roots_fn : Type := function1 -> f64 -> f64 -> f64 -> (f64 -> bool) -> outcome root1.
 
-(** **Not what the Rust does today.**  A search that answers no root has proved there is none.
-    [roots_at] drops a stretch too narrow to halve that its test left unsure and [near] does not
-    accept, and answers [Ok] (a crossing whose rate is enclosed by [Iv::ANY] is lost: [gaps/]). *)
+(** A search that answers no root has proved there is none.  **Not yet all the Rust does.**
+    A stretch too narrow to halve that its test left unsure and [near] does not accept is
+    refused now, where it was dropped.  Three readings of a monotone stretch still rest on
+    something no enclosure proved, none shown to lose a root: which way it runs is read from the
+    rate in floats ([dg(m) > 0]); one whose far end's sign is unproved leaves the root to the
+    stretch after it, which may have been proved off; and one whose near end's sign is unproved,
+    the function proved on the same side a width back, is a touch or nothing by [near] alone. *)
 Definition roots_empty_means_none (roots : roots_fn) : Prop :=
   forall g G t0 t1 width near,
     finite t0 = true -> finite t1 = true ->
@@ -226,12 +232,12 @@ Definition resolved (width : f64) (p : found) (x : rvec) : Prop :=
 Definition on_a_run (s : system) (x : rvec) : Prop :=
   exists m a b, sys_run s m = Some (a, b) /\ real a <= x 0%nat <= real b.
 
-(** **Not what the Rust does today.**  No root is missed: each is certified, resolved, or on a
-    run.  [solve_by] drops the box it is reading when a run is proved through its middle, though
-    the box may reach past the run, and a crossing in the rest of it is lost ([gaps/]).  Two
-    more things stand between the code and this statement, neither shown to lose a root: a box
-    200 halvings deep is read as narrow whatever its width, and two crossings are merged into
-    one where the floats they were polished to stand within two widths. *)
+(** No root is missed: each is certified, resolved, or on a run.  The box a run is found from
+    is read on past the run's ends now, where it was dropped whole.  Two things still stand
+    between the code and this statement, neither shown to lose a root: a box 200 halvings deep
+    is read as narrow whatever its width (out of reach unless [width] is far below the domain's
+    2^-66), and two crossings are merged into one where the floats they were polished to stand
+    within two widths. *)
 Definition solve_misses_none (solve : solve_fn) : Prop :=
   forall s F dom width near ps,
     encloses_system s F dom -> box_ok dom -> finite width = true ->

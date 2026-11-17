@@ -1,5 +1,5 @@
 # Checks every statement and proof here: `make` (Rocq 8.18 or later, with Flocq 4).
-# `make gaps` runs the kernel on the inputs that depart from the statements marked so.
+# `make gaps` runs the predicates outside the range they are stated over.
 FILES = Float.v Interval.v Predicates.v Isolate.v
 
 check: $(FILES)

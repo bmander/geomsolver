@@ -1,5 +1,5 @@
-# Runs of the kernel that depart from the statements beside it (`../README.md`): a program of its
-# own, outside the workspace, so nothing in the kernel or its suite builds it.
+# The kernel run outside the range the statements beside it are made over (`../README.md`): a
+# program of its own, outside the workspace, so nothing in the kernel or its suite builds it.
 [package]
 name = "gaps"
 version = "0.0.0"

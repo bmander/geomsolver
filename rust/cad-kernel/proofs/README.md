@@ -15,7 +15,7 @@ make        # check every statement and proof (Rocq 8.18+, Flocq 4: apt install 
 ```
 
 ```bash
-make gaps   # run the kernel where it departs from a statement
+make gaps   # run the kernel outside the range the predicates are stated over
 ```
 
 Nothing here is linked into the kernel, built by its suite or shipped in the crate.
@@ -31,7 +31,7 @@ Nothing here is linked into the kernel, built by its suite or shipped in the cra
 | `Isolate.v` | a stretch `Slope` reads off holds no root; one read monotone runs one way | `Slope::read`, transcribed |
 | | a box `Krawczyk` reads off holds no root; one read as one holds exactly one | a property |
 | | `solve` answering no root means there is none; each crossing it returns lies in a box holding exactly one root | properties |
-| | `solve` misses no root; `roots` answering no root means there is none | properties **the code does not meet** |
+| | `solve` misses no root; `roots` answering no root means there is none | properties the code did not meet, and is not yet shown to |
 
 Three kinds of statement, told apart in the files:
 
@@ -46,28 +46,26 @@ Three kinds of statement, told apart in the files:
 
 ## What writing them down found
 
-Each is reproduced by `make gaps` against the crate as it stands.
-
 1. **The predicates are exact only in range.** `predicates::orient` answers 0 (coplanar) for a
    positively oriented tetrahedron of side 1e-108, and of side 1e103: the determinant underflows,
-   or overflows, in the filter and in the expansions alike. `expansion.rs` says it assumes neither
-   happens; nothing checks. No drawing is near either scale, so the statements carry a range
-   (`tame`: whole multiples of 2⁻¹⁵⁰ up to 2¹⁵⁰) and nothing else changes.
-2. **`isolate::solve` drops a box whole for a run that covers part of it.** When a run is proved
-   through the middle of the box being read, the box is not read again, though it may reach past
-   the run's ends. A function nought over `[0.4, 0.6]` with a crossing at 0.9 is answered, over
-   `[0, 1]`, by the run's two ends and no crossing. `solve_misses_none` is the statement this
-   breaks. Whether a curve and a surface of the kernel's own reach it is not known.
-3. **`isolate::roots` drops a stretch nothing proved, and answers `Ok`.** In several unknowns a
-   box too narrow to halve that the test left unsure and `near` does not accept is refused
-   (`GaveUp::Unsettled`: "not proved means refused"). In one unknown it is dropped. A crossing
-   whose rate is enclosed by `Iv::ANY`, which `Function::slope` may answer, is lost and the search
-   answers no root. `roots_empty_means_none` is the statement this breaks.
+   or overflows, in the filter and in the expansions alike (`make gaps`). `expansion.rs` says it
+   assumes neither happens; nothing checks. No drawing is near either scale, so the statements
+   carry a range (`tame`: whole multiples of 2⁻¹⁵⁰ up to 2¹⁵⁰) and nothing else changes.
+2. **`isolate::solve` dropped a box whole for a run that covered part of it.** A function nought
+   over `[0.4, 0.6]` with a crossing at 0.9 was answered, over `[0, 1]`, by the run's two ends and
+   no crossing. **Mended**: the box is read on past the run's ends
+   (`roots::a_crossing_beside_a_run_in_the_box_it_was_found_from_is_found`).
+3. **`isolate::roots` dropped a stretch nothing proved, and answered `Ok`.** A crossing whose rate
+   was enclosed by `Iv::ANY`, or only bounded in magnitude, was lost and the search answered no
+   root. **Mended**: such a stretch gives up as `GaveUp::Unsettled`, as a box does in several
+   unknowns (`roots::a_stretch_nothing_proved_is_refused_in_one_unknown`). Two callers that asked
+   for no touches by passing a `near` accepting nothing now pass their tolerance and drop the
+   touches themselves.
 
-Two more places where the documentation says more than a proof could, neither shown to lose a
-root, are noted at `solve_misses_none`: a box 200 halvings deep is read as narrow whatever its
-width, and two crossings are merged where the floats they were polished to stand within two
-widths of one another.
+What still stands between the code and the two search statements, none of it shown to lose a
+root, is said at each in `Isolate.v`: in one unknown, three readings of a monotone stretch that
+rest on a sign no enclosure proved; in several, a box 200 halvings deep read as narrow, and two
+crossings merged where their polished floats stand within two widths.
 
 ## What is trusted, and what is not stated yet
 

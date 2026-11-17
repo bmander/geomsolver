@@ -52,7 +52,8 @@
 //! settled within the box it was certified in and `near` accepts it there; a Newton iterate that
 //! leaves that box, a polish that does not settle, or a box that cannot be parted where no touch is
 //! (its enclosure left its domain) gives up as `GaveUp::Unsettled`, with the box — never the last
-//! iterate presented as a root.
+//! iterate presented as a root. In one unknown as in several: a stretch too narrow to halve that
+//! its test left unsure and `near` does not accept is refused, never read as rootless.
 //!
 //! Each stretch or box read is counted against the build's budget (`util::meter`, the ray stage, or
 //! the stage the caller names): past it, or past `MOST` boxes, the search gives up and says which
@@ -224,8 +225,10 @@ impl Test1 for Bounded<'_> {
 
 /// **The roots of `g` over `[t0, t1]`**, each proved by the interval slope (`Slope`). A stretch
 /// narrower than `width` that cannot be parted holds a touch where `near(t)` says `g` is nought
-/// there. Each root once, in order; an end of the stretch where `g` is nought a root there.
-/// `GaveUp` where the search read more than `MOST` stretches or the build stopped.
+/// there, so `near` is the caller's tolerance, never a way to ask for no touches (a caller that
+/// wants none drops them). Each root once, in order; an end of the stretch where `g` is nought a
+/// root there. `GaveUp` where the search read more than `MOST` stretches, the build stopped, or a
+/// stretch too narrow to halve was neither proved nor accepted by `near` (`Unsettled`).
 pub fn roots(g: &dyn Function,[t0,t1]: [f64;2],width: f64,near: &dyn Fn(f64) -> bool) -> Result<Vec<Root>,GaveUp> {
     roots_by(&Slope,super::meter::Stage::Ray,g,[t0,t1],width,near)
 }
@@ -296,7 +299,13 @@ pub fn roots_at(test: &dyn Test1,stage: super::meter::Stage,at: &dyn Fn() -> ([f
                 if sa == 0 && sb == hi {
                     let back = if a <= t0 { lo } else { sign(g.value((a-(b-a)).max(t0))) };
                     if back == lo || a <= t0 { out.push(Root {at:a,touch:false}) }
-                    else if (back == hi || !halve(&mut stack)) && near(a) { out.push(Root {at:a,touch:true}) }
+                    else if back == hi { if near(a) { out.push(Root {at:a,touch:true}) } }
+                    else if !halve(&mut stack) {
+                        // (too narrow to halve, the side it leaves nought on unproved: a touch
+                        // where the tolerance accepts it, and no answer where not)
+                        if !near(a) { return Err(GaveUp::Unsettled {at:vec![[a,b]]}) }
+                        out.push(Root {at:a,touch:true})
+                    }
                 }
                 else if sa == lo && sb == hi {
                     let (ga,gb) = (gv(a),gv(b));
@@ -310,8 +319,13 @@ pub fn roots_at(test: &dyn Test1,stage: super::meter::Stage,at: &dyn Fn() -> ([f
                 }
                 else if sa == lo && sb == 0 && b == t1 { out.push(Root {at:b,touch:false}) }
             }
-            // unsure, or too narrow to part: a double root where the function is nought there
-            _ => if !halve(&mut stack) && near(m) { out.push(Root {at:m,touch:true}) },
+            // unsure, or too narrow to part: a double root where the function is nought there, and
+            // where it is not, a stretch nothing proved — no root there is no answer (as `solve_by`
+            // refuses a box: read as rootless, a crossing whose rate no enclosure held was lost)
+            _ => if !halve(&mut stack) {
+                if !near(m) { return Err(GaveUp::Unsettled {at:vec![[a,b]]}) }
+                out.push(Root {at:m,touch:true})
+            },
         }
     }
     // an end where the function is nought is a root there
@@ -376,7 +390,8 @@ pub trait System<const N: usize> {
     /// unknown over which the system is proved to stay within that tolerance of nought (a curve
     /// lying along a surface for a while, which no box can part and none exclude), or `None`. The
     /// search reads its ends as touches — the caller settles the run as one meeting — and reads no
-    /// box within it again. By default none is proved.
+    /// box within it again; what the box it was found from holds past its ends is read on. By
+    /// default none is proved.
     fn run(&self,_x: [f64;N]) -> Option<[f64;2]> { None }
 }
 
@@ -612,6 +627,11 @@ pub fn solve_by<const N: usize>(test: &dyn Test<N>,sys: &dyn System<N>,domain: [
             if let Some(r) = sys.run(m).filter(|r| r[1]-r[0] > width) {
                 for end in r { let mut at = m; at[0] = end; out.push((Point {at,touch:true},None)) }
                 runs.push(r);
+                // the box past the run's ends is still to read: dropped whole, a crossing beside
+                // the run in the box the run was found from was lost
+                for past in [[bx[0][0],r[0].min(bx[0][1])],[r[1].max(bx[0][0]),bx[0][1]]] {
+                    if past[1] > past[0] { let mut b = bx; b[0] = past; stack.push((b,depth+1)) }
+                }
                 continue
             }
         }

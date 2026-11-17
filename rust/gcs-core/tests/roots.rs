@@ -297,7 +297,7 @@ fn a_search_says_why_it_gave_up() {
     use gcs_core::isolate::{roots,solve,Closures,GaveUp,Poly};
     use gcs_core::interval::Iv;
     use gcs_core::meter::{self as meter,Budget,Meter,Stage};
-    let flat = roots(&Poly(&[0.]),[0.,1.],1e-15,&|_| false);
+    let flat = roots(&Poly(&[0.]),[0.,1.],1e-15,&|_| true);
     assert!(matches!(flat,Err(GaveUp::Most)),"{flat:?}");
     let g = Poly(&[-0.5,1.]);
     let at = |x: [f64;1]| ([x[0]-0.5],[[1.]]);
@@ -311,4 +311,65 @@ fn a_search_says_why_it_gave_up() {
     let stopped = meter::within(&m,|| solve::<1>(&line,[[0.,1.]],1e-12,&|_| false));
     assert!(matches!(stopped,Err(GaveUp::Stopped)),"{stopped:?}");
     assert_eq!(m.count(Stage::Ray),2,"one stretch and one box read");
+}
+
+/// **A stretch nothing proved is refused, in one unknown as in several** (#814 P0,
+/// `isolate::roots`): `g = 10⁶ (t − 0.3)` crosses nought at `0.3`. Its rate enclosed by nothing
+/// (`Iv::ANY`, which a `Function` may answer), or only by a bound on its magnitude, no stretch is
+/// proved off nought or monotone, and one too narrow to halve stands farther off nought than the
+/// tolerance accepts: read as rootless, the crossing was lost and the search answered `Ok`. It
+/// gives up as `Unsettled`, with the stretch; its rate enclosed, it finds the crossing. A function
+/// nought all along is no such stretch where the tolerance accepts it: that search runs out of
+/// stretches (`Most`), and one whose tolerance accepts nothing is refused at the first.
+#[test]
+fn a_stretch_nothing_proved_is_refused_in_one_unknown() {
+    use gcs_core::isolate::{roots,GaveUp,Parts,Poly};
+    use gcs_core::interval::Iv;
+    let g = |t: f64| 1e6*(t-0.3);
+    let at = |t: f64| (g(t),1e6);
+    let value = |t: f64| (Iv::point(t)-Iv::point(0.3))*Iv::point(1e6);
+    let near = |t: f64| g(t).abs() <= 1e-9;
+    let (unknown,bounded,enclosed) = (|_: f64,_: f64| Iv::ANY,|_: f64,_: f64| Iv::new(-1e6,1e6),|_: f64,_: f64| Iv::point(1e6));
+    for slope in [&unknown as &dyn Fn(f64,f64) -> Iv,&bounded] {
+        let found = roots(&Parts {at:&at,value:&value,slope},[0.29,0.3137],1e-6,&near);
+        let Err(GaveUp::Unsettled {at:stretch}) = &found else { panic!("{found:?}") };
+        assert!(stretch.len() == 1 && stretch[0][1]-stretch[0][0] <= 1e-6,"{stretch:?}");
+    }
+    let found = roots(&Parts {at:&at,value:&value,slope:&enclosed},[0.29,0.3137],1e-6,&near).expect("a search that stops");
+    assert!(found.len() == 1 && !found[0].touch && (found[0].at-0.3).abs() <= 1e-12,"{found:?}");
+    let flat = roots(&Poly(&[0.]),[0.,1.],1e-15,&|_| false);
+    assert!(matches!(flat,Err(GaveUp::Unsettled {..})),"{flat:?}");
+}
+
+/// **A crossing beside a run, in the box the run was found from, is found** (#814,
+/// `isolate::solve`): `F = (x − 0.9) max(0, |x − 0.5| − 0.1)` is nought over all of `[0.4, 0.6]`,
+/// a run, and crosses nought at `0.9`. Over `[0, 1]` the first box's middle is on the run; the
+/// box was dropped whole for it, and the search answered the run's two ends and no crossing. What
+/// the box holds past the run's ends is read on: the ends, and the root at `0.9`.
+#[test]
+fn a_crossing_beside_a_run_in_the_box_it_was_found_from_is_found() {
+    use gcs_core::isolate::{solve,System};
+    use gcs_core::interval::Iv;
+    struct Flat;
+    fn flat(x: f64) -> f64 { (x-0.9)*((x-0.5).abs()-0.1).max(0.) }
+    impl System<1> for Flat {
+        fn at(&self,x: [f64;1]) -> ([f64;1],[[f64;1];1]) { ([flat(x[0])],[[(flat(x[0]+1e-7)-flat(x[0]-1e-7))/2e-7]]) }
+        fn value(&self,x: [f64;1]) -> [Iv;1] { self.over(&[[x[0],x[0]]]).0 }
+        fn over(&self,bx: &[[f64;2];1]) -> ([Iv;1],[[Iv;1];1]) {
+            let x = Iv::new(bx[0][0],bx[0][1]);
+            let d = x-Iv::point(0.5);
+            let least = if d.has_zero() { 0. } else { d.lo().abs().min(d.hi().abs()) };
+            let g = Iv::new(least,d.mag())-Iv::point(0.1);
+            // (its slope between any two points of [0, 1] is within 0.9 + 0.4 of nought)
+            ([(x-Iv::point(0.9))*Iv::new(g.lo().max(0.),g.hi().max(0.))],[[Iv::new(-1.3,1.3)]])
+        }
+        fn run(&self,x: [f64;1]) -> Option<[f64;2]> { (x[0] >= 0.4 && x[0] <= 0.6).then_some([0.4,0.6]) }
+    }
+    let near = |x: [f64;1]| flat(x[0]).abs() <= 1e-9;
+    for domain in [[0.,1.],[0.3,1.],[0.,0.95],[0.45,1.]] {
+        let found = solve(&Flat,[domain],1e-9,&near).expect("a search that stops");
+        let at = |x: f64| found.iter().filter(|p| (p.at[0]-x).abs() <= 1e-8).count();
+        assert!(at(0.4) >= 1 && at(0.6) >= 1 && at(0.9) == 1,"{domain:?}: {found:?}");
+        assert!(found.iter().all(|p| [0.4,0.6,0.9].iter().any(|x| (p.at[0]-x).abs() <= 1e-8)),"{domain:?}: {found:?}");
+    }
 }
