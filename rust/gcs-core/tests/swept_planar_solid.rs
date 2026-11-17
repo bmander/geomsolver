@@ -278,7 +278,7 @@ fn a_key_carried_along_a_spline_grooves_a_block() {
     let stock = block([-6.,-6.,-8.],[36.,26.,0.]).unwrap();
     let key = block([-1.5,-0.8,-1.5],[1.5,0.8,2.5]).unwrap();
     let curve = BSpline::new(3,vec![0.,0.,0.,0.,1.,1.,1.,1.],control.to_vec()).unwrap();
-    let path = Trajectory::General(std::sync::Arc::new(Along::new(curve).unwrap()));
+    let path = Trajectory::General(std::sync::Arc::new(Along::new(curve.clone()).unwrap()));
     let tol = tolerance(stock.size().max(key.size()));
     let clock = std::time::Instant::now();
     let swept = closed(&key,&path,[0.,1.],key.size(),tol).unwrap();
@@ -287,12 +287,9 @@ fn a_key_carried_along_a_spline_grooves_a_block() {
     // in the plane: the rectangle turned by the tangent's angle and carried to the curve's point
     let rectangle = [[-1.5,-0.8],[1.5,-0.8],[1.5,0.8],[-1.5,0.8]];
     let pose = |t: f64| {
-        let (s,u) = (1.-t,t);
-        let at = |k: usize| s*s*s*control[0][k]+3.*s*s*u*control[1][k]+3.*s*u*u*control[2][k]+u*u*u*control[3][k];
-        let d = |k: usize| 3.*(s*s*(control[1][k]-control[0][k])+2.*s*u*(control[2][k]-control[1][k])+u*u*(control[3][k]-control[2][k]));
-        let l = d(0).hypot(d(1));
-        let (c,sn) = (d(0)/l,d(1)/l);
-        ([[c,-sn],[sn,c]],[at(0),at(1)])
+        let (x,d) = curve.d1(t);
+        let (c,sn) = (d[0]/d[0].hypot(d[1]),d[1]/d[0].hypot(d[1]));
+        ([[c,-sn],[sn,c]],[x[0],x[1]])
     };
     // (the key's long sides lie along the lines at its end poses, y = ±0.8 and 20 ± 0.8, where the
     // length across a line jumps: lines 0.002 apart put each jump between two of them)

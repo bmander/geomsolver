@@ -216,29 +216,23 @@ fn bezier(poles: &[V;4]) -> gcs_core::brep::nurbs::BSpline {
 fn a_frame_along_a_curve_turns_only_as_its_tangent_does() {
     use gcs_core::brep::trajectory::Along;
     use gcs_core::interval::Interval;
+    use gcs_core::space::{dot,norm,normalised};
     // a cubic in the plane z = 2, starting off the origin
     let poles = [[1.,-2.,2.],[11.,-2.,2.],[21.,18.,2.],[31.,18.,2.]];
-    let along = Along::new(bezier(&poles)).unwrap();
-    let c = |t: f64| -> (V,V) {
-        let (s,u) = (1.-t,t);
-        let point = std::array::from_fn(|k| s*s*s*poles[0][k]+3.*s*s*u*poles[1][k]+3.*s*u*u*poles[2][k]+u*u*u*poles[3][k]);
-        let d = std::array::from_fn(|k| 3.*(s*s*(poles[1][k]-poles[0][k])+2.*s*u*(poles[2][k]-poles[1][k])+u*u*(poles[3][k]-poles[2][k])));
-        (point,d)
-    };
+    let along = Arc::new(Along::new(bezier(&poles)).unwrap());
     for k in 0..=40 {
         let t = k as f64/40.;
         let m = along.at(t).unwrap();
-        let (x,d) = c(t);
-        let (sn,cs) = { let l = d[0].hypot(d[1]); (d[1]/l,d[0]/l) };
+        let (x,d) = along.curve().d1(t);
+        let (sn,cs) = (d[1]/d[0].hypot(d[1]),d[0]/d[0].hypot(d[1]));
         // the turn about z by the tangent's angle, the start carried to the curve's point
         let exact = |p: V| { let q = [p[0]-poles[0][0],p[1]-poles[0][1],p[2]-poles[0][2]]; [cs*q[0]-sn*q[1]+x[0],sn*q[0]+cs*q[1]+x[1],q[2]+x[2]] };
         for p in PROBES { agree(m.point(p),exact(p),&format!("the frame at {t}")) }
         // its rate, by a central difference of the pose
-        let h = 1e-6;
-        let (a,b) = (along.pose((t-h).max(0.)).unwrap(),along.pose((t+h).min(1.)).unwrap());
-        let span = (t+h).min(1.)-(t-h).max(0.);
+        let (a,b) = ((t-1e-6).max(0.),(t+1e-6).min(1.));
+        let (pa,pb) = (along.pose(a).unwrap(),along.pose(b).unwrap());
         for p in PROBES {
-            let fd: V = std::array::from_fn(|i| (b.point(p)[i]-a.point(p)[i])/span);
+            let fd: V = std::array::from_fn(|i| (pb.point(p)[i]-pa.point(p)[i])/(b-a));
             let v = m.velocity(p);
             let size = 1.+v.iter().map(|x| x.abs()).fold(0.,f64::max);
             for i in 0..3 { assert!((fd[i]-v[i]).abs() <= 1e-5*size,"the rate at {t}: {v:?} against {fd:?}") }
@@ -253,17 +247,14 @@ fn a_frame_along_a_curve_turns_only_as_its_tangent_does() {
         // W = (R(t+h) − R(t−h)) Rᵀ / 2h, skew: ω = (W₂₁, W₀₂, W₁₀)
         let w = |i: usize,j: usize| (0..3).map(|q| (b.r[i][q]-a.r[i][q])*m.r[j][q]).sum::<f64>()/(2.*h);
         let omega = [w(2,1),w(0,2),w(1,0)];
-        let d = spatial.curve().d1(t).1;
-        let tangent = { let l = (d[0]*d[0]+d[1]*d[1]+d[2]*d[2]).sqrt(); d.map(|x| x/l) };
-        let twist: f64 = (0..3).map(|i| omega[i]*tangent[i]).sum();
-        let spin = omega.iter().map(|x| x*x).sum::<f64>().sqrt();
-        assert!(twist.abs() <= 1e-6*(1.+spin),"the frame at {t} turns about its tangent at {twist} (of {spin})");
+        let twist = dot(omega,normalised(spatial.curve().d1(t).1).unwrap());
+        assert!(twist.abs() <= 1e-6*(1.+norm(omega)),"the frame at {t} turns about its tangent at {twist} (of {})",norm(omega));
     }
     // every stretch encloses its poses, and a point carried back moves within the speed bound
-    let path = Trajectory::General(Arc::new(along.clone()));
+    let path = Trajectory::General(along.clone());
     for [lo,hi] in [[0.,1.],[0.,0.1],[0.43,0.57],[0.9,1.]] {
         let g = along.stretch(lo,hi).expect("a polynomial curve's stretch");
-        let bound = |p: V| path.inverse_point_speed_bound(p,Interval::new(lo,hi).unwrap()).unwrap();
+        let bounds = PROBES.map(|p| path.inverse_point_speed_bound(p,Interval::new(lo,hi).unwrap()).unwrap());
         for j in 0..=200 {
             let t = lo+(hi-lo)*j as f64/200.;
             let pose = along.pose(t).unwrap();
@@ -273,10 +264,9 @@ fn a_frame_along_a_curve_turns_only_as_its_tangent_does() {
                 for q in 0..3 { assert!(g.turn[k][q].contains(pose.r[k][q]),"the stretch [{lo}, {hi}] holds the turn at {t}") }
             }
             let back = along.at(t).unwrap().inverse();
-            for p in PROBES {
-                let v = back.velocity(p);
-                let speed = (v[0]*v[0]+v[1]*v[1]+v[2]*v[2]).sqrt();
-                assert!(speed <= bound(p),"{p:?} carried back at {t} moves at {speed}, past the bound {}",bound(p));
+            for (p,bound) in PROBES.iter().zip(bounds) {
+                let speed = norm(back.velocity(*p));
+                assert!(speed <= bound,"{p:?} carried back at {t} moves at {speed}, past the bound {bound}");
             }
         }
     }

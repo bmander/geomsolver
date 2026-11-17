@@ -13,6 +13,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   turn about its normal by the tangent's angle, exactly but for rounding), with its pose, rate and
   stretches enclosed by the curve's hodographs, so a sweep's speed bound reads it — a rational
   curve's stretch fails closed. A caller sweeping along a curve writes no `Path` of its own.
+- **Bounds on a polynomial B-spline's first two derivatives** (`nurbs::derivative_bounds`,
+  `BSpline::derivative_bounds`): its hodographs' longest poles, what `Along` encloses by.
 - **A prism under a motion that keeps a plane is cut from a blank** (`swept::closed::cut_from`):
   the planar road `closed` takes before K2's (#880 Q2, `swept::planar_solid`) is asked with a
   blank too, its swept solid cut from it by the Boolean. brep-bench's
