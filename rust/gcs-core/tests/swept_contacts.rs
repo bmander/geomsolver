@@ -900,13 +900,19 @@ fn a_narrow_swallowtail_is_cut_at_its_double_point() {
     cut_through_the_front_door(&alone,TOL);
 }
 
-/// The ring pushed in at 58° and 60°, cut and alone, within ten tolerances of their volumes (the
-/// 60° ring stood 1.6e-4 and 4.7e-4 off before its swallowtail was cut at its double point), and
-/// those volumes recomputed from the ring's definition.
+/// The ring pushed in at 58°, 60°, 70° and 80°, cut and alone, within ten tolerances of their
+/// volumes, and those volumes recomputed from the ring's definition. The 60° ring stood 1.6e-4 and
+/// 4.7e-4 off before its swallowtail was cut at its double point. At 70°, half a degree before its
+/// two double points meet and vanish, their spans nest and neither is cut. At 80° a branch crossing
+/// the torus's seam shallowly read a hole in no piece until the crossing was placed on the sheet
+/// (`boolean::on_surface`). (Every whole lean from 55° to 85° builds so; at exactly 57° the line
+/// integral reads its own volume 4.7e-4 low, the build smooth through it to 4e-8 and the reference
+/// not, its second differences jumping there.)
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about twenty seconds: two leans built twice, their references recomputed")]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about a minute: four leans built twice, their references recomputed")]
 fn swallowtails_cut_at_their_double_points_hold_past_the_fold() {
-    for (lean,whole,away) in [(58.,295.3915511799,147.6957755902),(60.,291.6826672865,145.8413336430)] {
+    for (lean,whole,away) in [(58.,295.3915511799,147.6957755902),(60.,291.6826672865,145.8413336430),(70.,270.5138966616,135.2569483304),
+        (80.,238.2579813606,119.1289906801)] {
         let (cut,alone) = ring_pushed_at(lean,whole,away);
         cut_through_the_front_door(&cut,TOL);
         cut_through_the_front_door(&alone,TOL);
@@ -916,4 +922,8 @@ fn swallowtails_cut_at_their_double_points_hold_past_the_fold() {
         assert!((w-whole).abs() <= 1e-9 && (a-away).abs() <= 1e-9,"at {lean}°: {w} and {a}");
     }
 }
+
+
+
+
 

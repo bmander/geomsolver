@@ -1206,6 +1206,7 @@ fn stretches(piece: &Piece,size: f64,carry: &crate::trajectory::Screw,surface: O
         cuts[k] = best.1;
     }
     // (before the last cut, which a closed piece's reading takes for its first again)
+    let forced: Vec<usize> = forced.iter().copied().flatten().collect();
     let closing = cuts.pop();
     cuts.extend(forced);
     cuts.extend(closing);
@@ -1235,17 +1236,26 @@ fn stretches(piece: &Piece,size: f64,carry: &crate::trajectory::Screw,surface: O
 /// the tool (a double point is two points of the curve, not one), and once. A thin swallowtail's
 /// chords cross more than once beside its tail, its leaves running nearly along one another there,
 /// and those seeds settle on the one double point or on none.
-fn double_points(piece: &Piece,surface: &Surface,carry: &crate::trajectory::Screw,size: f64) -> (Piece,Vec<usize>) {
+fn double_points(piece: &Piece,surface: &Surface,carry: &crate::trajectory::Screw,size: f64) -> (Piece,Vec<[usize;2]>) {
     let (pts,uv) = (&piece.points,&piece.uv);
     if pts.len() < 4 || carry.is_turn() { return (piece.clone(),Vec::new()) }
     let twist = carry.twist();
-    let inv: Vec<[f64;2]> = pts.iter().map(|&p| invariants(carry,p)).collect();
     let pitch = (!carry.is_slide()).then(|| (carry.advance/carry.ratio).abs());
-    let diff = |x: [f64;2],y: [f64;2]| {
+    let wrapped = |x: [f64;2],y: [f64;2]| {
         let mut d = [x[0]-y[0],x[1]-y[1]];
         if let Some(p) = pitch { d[1] = (d[1]+0.5*p).rem_euclid(p)-0.5*p }
         d
     };
+    // (the image's height unwrapped along the piece: under a screw the invariants read it modulo a
+    // turn's rise, and a sheet carried more than a turn meets its next turn there, a crossing between
+    // turns the trim meets as any two sheets', not a swallowtail's — the ball screwed round a helix
+    // tighter than itself, two turns, its image crossing itself at nine places so)
+    let mut inv: Vec<[f64;2]> = Vec::with_capacity(pts.len());
+    for (k,&p) in pts.iter().enumerate() {
+        let x = invariants(carry,p);
+        inv.push(if k == 0 { x } else { let d = wrapped(x,inv[k-1]); [inv[k-1][0]+d[0],inv[k-1][1]+d[1]] });
+    }
+    let diff = |x: [f64;2],y: [f64;2]| [x[0]-y[0],x[1]-y[1]];
     // the folds: where the image turns back
     let tiny = 1e-9*size;
     let folds: Vec<usize> = (1..pts.len()-1).filter(|&i| {
@@ -1256,7 +1266,7 @@ fn double_points(piece: &Piece,surface: &Surface,carry: &crate::trajectory::Scre
     // the four equations at (u₁, v₁, u₂, v₂)
     let eqs = |x: [f64;4]| -> Option<[f64;4]> {
         let (a,b) = ([x[0],x[1]],[x[2],x[3]]);
-        let d = diff(invariants(carry,surface.point(a)),invariants(carry,surface.point(b)));
+        let d = wrapped(invariants(carry,surface.point(a)),invariants(carry,surface.point(b)));
         Some([surface.normal_velocity(a,&twist)?,surface.normal_velocity(b,&twist)?,d[0],d[1]])
     };
     let scale = [1./size.max(1e-300),1./size.max(1e-300),1.,1.];
@@ -1288,11 +1298,13 @@ fn double_points(piece: &Piece,surface: &Surface,carry: &crate::trajectory::Scre
         let f = eqs(x)?;
         f.iter().zip(scale).all(|(v,s)| (v*s).abs() <= 1e-11).then_some(x)
     };
-    // the seeds: two chords crossing in the image with a fold between them, within half the piece
-    let window = pts.len()/2;
+    // the seeds: two chords crossing in the image with a fold between them — along the piece, or for
+    // a closed piece round either way (a double point whose two points straddle where the piece is
+    // read from, the ring at 70°, its double points at y = ±0.63 and one of them so)
+    let between = |i: usize,j: usize| folds.iter().any(|&f| f > i && f <= j) || piece.closed && folds.iter().any(|&f| f <= i || f > j);
     let mut found: Vec<(usize,usize,Uv,Uv)> = Vec::new();
-    for i in 0..pts.len()-1 { for j in i+2..(i+window+1).min(pts.len()-1) {
-        if !folds.iter().any(|&f| f > i && f <= j) { continue }
+    for i in 0..pts.len()-1 { for j in i+2..pts.len()-1 {
+        if !between(i,j) { continue }
         let (r,s) = (diff(inv[i+1],inv[i]),diff(inv[j+1],inv[j]));
         let q = diff(inv[j],inv[i]);
         let rxs = r[0]*s[1]-r[1]*s[0];
@@ -1311,10 +1323,15 @@ fn double_points(piece: &Piece,surface: &Surface,carry: &crate::trajectory::Scre
         }).unwrap();
         let (ka,kb) = (nearest(pa),nearest(pb));
         let (ka,kb,a,b) = if ka <= kb { (ka,kb,a,b) } else { (kb,ka,b,a) };
-        if ka == kb || !folds.iter().any(|&f| f > ka && f <= kb) { continue }
+        if ka == kb || !between(ka,kb) { continue }
         if found.iter().any(|&(_,_,x,y)| distance(surface.point(x),surface.point(a)) <= 1e-6*size && distance(surface.point(y),surface.point(b)) <= 1e-6*size) { continue }
         found.push((ka,kb,a,b));
     } }
+    // (two double points whose spans nest or interleave hold one another's points in their tails —
+    // the ring at 70°, half a degree before its two double points meet and vanish — and are no
+    // swallowtail's tail each: neither is cut, and the stretches meet as they would)
+    let crossing = |x: &(usize,usize,Uv,Uv),y: &(usize,usize,Uv,Uv)| x.0 < y.1 && y.0 < x.1;
+    let found: Vec<(usize,usize,Uv,Uv)> = found.iter().enumerate().filter(|&(i,x)| !found.iter().enumerate().any(|(j,y)| i != j && crossing(x,y))).map(|(_,x)| *x).collect();
     if crate::debug() { for &(ka,kb,a,b) in &found { eprintln!("contacts: a swallowtail's double point at {:?} and {:?} (chords {ka} and {kb})",surface.point(a),surface.point(b)) } }
     if found.is_empty() { return (piece.clone(),Vec::new()) }
     // the points put in, after the chords they fall on, from the last back so the indices hold
@@ -1322,11 +1339,13 @@ fn double_points(piece: &Piece,surface: &Surface,carry: &crate::trajectory::Scre
     inserts.sort_by(|x,y| y.0.cmp(&x.0));
     let mut out = piece.clone();
     for &(k,x) in &inserts { out.uv.insert(k+1,x); out.points.insert(k+1,surface.point(x)); }
-    // their indices in the piece as it now stands
+    // each double point's two indices in the piece as it now stands: a point put in after chord `k`
+    // stands one further on for each put in before it
     let mut asc: Vec<usize> = inserts.iter().map(|&(k,_)| k).collect();
     asc.reverse();
-    let forced = asc.iter().enumerate().map(|(n,&k)| k+1+n).collect();
-    (out,forced)
+    let at = |k: usize| k+1+asc.iter().filter(|&&j| j < k).count();
+    let pairs = found.iter().map(|&(ka,kb,_,_)| [at(ka),at(kb)]).collect();
+    (out,pairs)
 }
 
 /// A point's invariants under `carry`: a slide's shadow on the plane square to it, a turn's radius

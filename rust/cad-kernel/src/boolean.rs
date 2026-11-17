@@ -1404,7 +1404,7 @@ impl<'a> Arrangement<'a> {
                     // tolerance: where a face of the edge's own touches the surface along a
                     // curve, it is the edge's crossing with that curve, placed exactly
                     let own: Vec<&Surface> = bounded[s][i].iter().map(|&g| &self.solids[s].faces[g].surface).collect();
-                    let t = if touch { touch_root(c,e.t,&own,&f.surface,t,tol).unwrap_or(t) } else { t };
+                    let t = if touch { touch_root(c,e.t,&own,&f.surface,t,tol).unwrap_or(t) } else { on_surface(c,e.t,&f.surface,t,tol).unwrap_or(t) };
                     let q = c.point(t);
                     let place = self.located[other].face_place(fi,q);
                     self.say.meets(s,i,c,fi,f,q,touch,place);
@@ -2585,6 +2585,38 @@ fn touch_point(surfaces: [&Surface;3],q: V,tol: f64) -> Option<V> {
 /// curves' parameters from `t` and the curve's foot of the edge's point. The edge's parameter
 /// there; `None` where no face of its touches `other`, or the crossing does not settle within
 /// `1e4 tol` of the root.
+/// **A crossing placed on a surface read by inversion** (#880 T1e): where a curve crosses a swept
+/// sheet, a fitted net or a family's wall at a shallow angle, the reading's root stands off the
+/// surface by what the shallow angle makes of its own tolerance (a torus's seam circle crossing a
+/// slid contact's sheet, the root 4e-5 off it at 1e-5, read outside the sheet's face and dropped,
+/// and the branch the sheet meets the torus in left crossing the seam with no vertex). Newton's
+/// method on `c(t) − S(u, v)`, three equations in three unknowns, from the root and its foot,
+/// settles on the crossing itself where the two cross at all. Taken where it settles to a
+/// thousandth of the tolerance within the curve's span and no more than ten thousand tolerances
+/// from the root; `None` on any other surface, or where it does not.
+fn on_surface(c: &Curve,span: [f64;2],surface: &Surface,t: f64,tol: f64) -> Option<f64> {
+    if !matches!(surface,Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)) { return None }
+    let q = c.point(t);
+    let (mut x,mut uv) = (t,surface.inverse(q));
+    for _ in 0..30 {
+        let (p,dp) = c.d1(x);
+        let (s,su,sv) = surface.d1(uv);
+        let res = crate::util::space::sub(p,s);
+        if norm(res) <= 1e-3*tol {
+            return (distance(p,q) <= 1e4*tol && x >= span[0]-1e-12 && x <= span[1]+1e-12).then_some(x)
+        }
+        // [dp, −su, −sv] [dx, du, dv] = −res, by Cramer's rule
+        let (a,b,cc) = (dp,crate::util::space::scale(su,-1.),crate::util::space::scale(sv,-1.));
+        let r = crate::util::space::scale(res,-1.);
+        let det3 = |x: V,y: V,z: V| crate::util::space::dot(x,crate::util::space::cross(y,z));
+        let det = det3(a,b,cc);
+        if !(det.abs() > 1e-300) { return None }
+        x += det3(r,b,cc)/det;
+        uv = [uv[0]+det3(a,r,cc)/det,uv[1]+det3(a,b,r)/det];
+    }
+    None
+}
+
 fn touch_root(c: &Curve,span: [f64;2],own: &[&Surface],other: &Surface,t: f64,tol: f64) -> Option<f64> {
     let q = c.point(t);
     let unit = |s: &Surface| crate::util::space::normalised(s.gradient(q)).unwrap_or([0.;3]);

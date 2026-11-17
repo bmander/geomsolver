@@ -14,7 +14,14 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   itself the trim never parts. Each double point is found exactly, by Newton's method on its four
   equations, and the piece is cut at both its points: the outer leaves meet as stretches, the tail
   between is buried. A ring pushed in at 56°, just past its fold, refused with a hole in no piece,
-  builds cut and alone within ten tolerances; at 60° it stood 1.6e-4 off and holds to 2e-6.
+  builds cut and alone within ten tolerances; at 60° it stood 1.6e-4 off and holds to 2e-6. Every
+  whole lean from 55° to 85° builds. Under a screw only crossings within one turn are double points;
+  two whose spans nest are not cut.
+- **A crossing of a swept sheet, a fitted net or a family's wall is placed on it** (`boolean`): an
+  edge crossing such a surface at a shallow angle had its root off the surface by what the angle
+  makes of the tolerance, read outside the face and dropped. Newton's method on the curve less the
+  surface settles it onto the crossing. The ring pushed in at 80° builds; a branch crossing the
+  torus's seam had left a hole in no piece.
 - **Two splines of one meeting are crossed** (`boolean`, `query::enclosed_crossings`): where two
   curves given or found for one pair of surfaces have no closed form between them, their crossings
   are sought by their enclosures, each held back from an end lying on the other, and kept only where

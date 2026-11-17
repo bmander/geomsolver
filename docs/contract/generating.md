@@ -1233,7 +1233,13 @@ twice, its outer leaves cross over one path, and a stretch holding both folds he
 that crossing — one sheet crossing itself, which the trim, meeting each candidate only with others,
 never parts. Each double point is found exactly: seeded where two chords of the image cross with a
 fold between, and settled by Newton's method on its four equations (two points of the face on the
-contact, their images one) to the rounding, its two points apart. The piece is cut at both of its
+contact, their images one) to the rounding, its two points apart; round a closed piece either way,
+so a double point whose two points straddle where the piece is read from is found too. Under a screw
+the image's height is read unwrapped along the piece, so only crossings within one turn are double
+points: a sheet carried past a turn meets its next turn as any two sheets meet (the ball screwed round
+a helix tighter than itself, whose image crosses itself at nine places modulo the rise). Two double
+points whose spans nest or interleave are not cut (the ring at 70°, half a degree before its two
+double points meet and vanish). The piece is cut at both of its
 points, so its outer leaves are stretches of their own meeting along the path, and the tail between
 (both folds and the middle leaf) is a stretch the trim reads buried. No cut is drawn onto a fold.
 **Two splines of one meeting are crossed by their enclosures** (`boolean::crossings_among`,
@@ -1251,10 +1257,17 @@ pieces read a hole in no piece. The ring pushed in at 56°, its swallowtail 0.02
 and alone within ten tolerances (`swept_contacts::a_narrow_swallowtail_is_cut_at_its_double_point`,
 1.5e-6 and 1.2e-6 as built), as do 58° and 60°
 (`swept_contacts::swallowtails_cut_at_their_double_points_hold_past_the_fold`; 60° stood 1.6e-4 and
-4.7e-4 off before). **Not yet:** a lean where a branch crosses the torus's seam twice, its piece's
-parameters running past the period (the ring at 80°, and at 56.9° and 57.2°, a loop turned the wrong
-way), refused; and between those, leans that build off their volume (57°, 4.7e-4) or are refused at
-an open edge (56.5°). (brep-bench's cadrs builds the ball to 282.091, 11% over the sweep's 253.4494.)
+4.7e-4 off before). **A crossing of a surface read by inversion is placed on it**
+(`boolean::on_surface`): where an edge crosses a swept sheet, a fitted net or a family's wall at a
+shallow angle, the reading's root stands off the surface by what that angle makes of its own
+tolerance, and is settled onto the crossing by Newton's method on `c(t) − S(u, v)` from the root and
+its foot, taken where it settles to a thousandth of the tolerance within ten thousand of the root —
+at 80° the torus's seam circle crossed a slid contact's sheet with its root 4e-5 off it, read
+outside the sheet's face and dropped, and the branch the sheet meets the torus in crossed the seam
+with no vertex: a hole in no piece. Every whole lean from 55° to 85° builds cut and alone within ten
+tolerances of its volume (`swallowtails_cut_at_their_double_points_hold_past_the_fold` holds 58°,
+60°, 70° and 80°); at exactly 57° the line integral reads 4.7e-4 low, the build smooth through it to
+4e-8 at 1e-6 and the reference not, its second differences jumping there. (brep-bench's cadrs builds the ball to 282.091, 11% over the sweep's 253.4494.)
 
 **A point's side off the nearest feature's pseudo-normal** (`member::Solid::signed_near`, #880
 Q1b): a point whose nearest point of the tool's mesh lies on a vertex or an edge is read by that
