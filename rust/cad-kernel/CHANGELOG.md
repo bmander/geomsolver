@@ -24,9 +24,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   (timed out and refused before) build in about two seconds each, to their closed forms within
   2e-15; `cnc/flat-end-mill-profile` in 0.2 s. `patches::Revolved::read` takes a cone's apex as a
   point of its meridian (a drill).
-- **Sharp corners of a path of slides** (`swept::pieces`, #931): a section's arc mirrored across
-  the tool's axis is drawn in a frame facing the way its plane does (a bull-nose's slide stood its
-  corner cylinder 80 off an edge it bounds); a chain ending where an earlier sweep holds the whole
+- **`build::prism` takes an arc facing against its profile's normal** (`Seg::facing`): it wrote
+  such an arc's cylinder's parameters along the normal and turned the face the wrong way, so a
+  bull-nose's section, its corner mirrored across the axis, stood its cylinder 80 off an edge it
+  bounds.
+- **Sharp corners of a path of slides** (`swept::pieces`, #931): a chain ending where an earlier sweep holds the whole
   tool (a closed path come back to its start) is shut there by its section; and a ball's quarter in
   a half is built with its poles off the section and the equator (`raster::lune`), not on the
   axis, where the next move's side touches it along a great circle through the pole ("a sphere has
@@ -44,7 +46,7 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   circles at its height, and at the top or bottom of the tube, where they are one circle, only
   touches — where the quartic is `(ρ² − R²)²` and a line tangent to that circle its quadruple root,
   which no isolation proves (a slide's bottom edge ending on the torus a sweep before it turned
-  at).
+  at). A line all but level is the general reading's, as against a turned meridian.
 - **Booleans at tangencies** (`complex`, `boolean`): two exact faces leaving an edge are tied only
   within `16 tol / ρ` of one another (a fit's `TANGENT` else), and a tie is read a hundredth of their
   least radius in, not a thousandth of the whole complex — a cylinder and a ball of its radius

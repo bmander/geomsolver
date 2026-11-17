@@ -1738,7 +1738,7 @@ fn a_build_past_its_budget_stops_by_one_typed_check() {
     use gcs_core::meter::{self as meter,Budget,Meter,Stage,Stopped};
     assert_eq!(meter::go_on(),Ok(()));
     let ring = Surface::Torus(Frame::about([0.;3],[0.,0.,1.]),2.,0.5);
-    let line = Curve::Line {p:[-4.,0.,0.1],d:[1.,0.,0.01]};
+    let line = Curve::Line {p:[-4.,0.,0.1],d:[1./1.0001f64.sqrt(),0.,0.01/1.0001f64.sqrt()]};
     let m = Meter::new(Budget::UNLIMITED);
     let (found,on) = meter::within(&m,|| (curve_surface(&line,[0.,8.],&ring,1e-7),meter::go_on()));
     let Meets::At(found) = found else { panic!("along") };

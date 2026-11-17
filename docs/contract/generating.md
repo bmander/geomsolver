@@ -1286,10 +1286,11 @@ one slide over every place they stand; and a ball-end mill's slides at a slant, 
 in one plane holding its axis, are a run, its corners laid by construction. Elsewhere each piece after the first is shut where it starts
 by its section, the piece before holding the tool there; and a chain ending where a sweep cut before
 it holds the whole tool (a closed path come back to where it began) is shut there by its section
-too. A section's arcs, either side of the axis, are each drawn in a frame turning the way the
-section's plane faces, their circle's seam opposite the arc's middle, so the cylinder or torus a
-section's arc is carried or turned into reads its parameters as its edges do (a bull-nose's corner
-mirrored across the axis stood 80 off an edge it bounds). A ball's quarter in a half (its meridian's
+too. A section's arcs are drawn with their circle's seam opposite the arc's middle, so no
+cylinder or torus a section's arc is carried or turned into has its seam along an edge; and
+`build::prism` reads an arc facing against the profile's normal as the same arc facing it
+(`Seg::facing`) — it wrote a mirrored arc's cylinder's parameters along the normal, and a
+bull-nose's corner mirrored across the axis stood 80 off an edge it bounds. A ball's quarter in a half (its meridian's
 arc from the axis to the equator) is the ball's part on that side of the section and of the equator,
 its poles off both planes (`raster::lune`): turned about the axis, its pole stands on the section,
 and at a corner the next move's side touches the half along a great circle through that pole — a
