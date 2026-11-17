@@ -871,10 +871,10 @@ each node's foot from the previous node's, carried along by its rate, where that
 behind it, the branch still the one nearest the line between the ends — from that line, Newton
 took some ten steps a node on a fitted sheet's curved edge.
 **A swept sheet's face across its fold is read by columns** (`props`'s `by_columns`, #880 T1b):
-where a carried section's sheet (`Surface::Blend`) folds within a face's box — its area factor
-(`Surface::area_factor`, `|S_u × S_v|` over `|S_u| |S_v|`) below `geom::NEAR_FOLD` at a node of a
-grid of seventeen a side across the box, no use inverted, the factor running linearly to nought
-across the fold point's path — a point beside the fold stands in the parameters at the square root
+where a carried section's sheet (`Surface::Blend`) folds at a face — its area factor
+(`Surface::area_factor`, `|S_u × S_v|` over `|S_u| |S_v|`) below a millionth at a point of a use the
+face's box is read from, no point inverted but those, the fold point's path — a point beside the
+fold stands in the parameters at the square root
 of its distance in space, and a use inverted onto the sheet there is off along the fold's way by
 that much. Green's theorem reads it through `G`, gathered from the face's middle and no smaller
 there: the ball screwed tighter than its radius had two such faces read 1.65e-7 and 4e-8 off
@@ -884,7 +884,9 @@ curves, `g` gathered between them, the columns cut at the uses' ends and turns �
 where `g` itself vanishes, and the ball reads 2.4e-10 off
 (`swept_loci::the_tight_ball_holds_at_the_kernels_tolerance`); its side is its loops' way round the
 parameters. A sheet running round (a period) keeps Green's reading, as every other face does, to the
-bit.
+bit. (Gated on the area factor below `geom::NEAR_FOLD` anywhere across the box instead, a spline bar
+screwed four turns, its sheets leaning so without folding, was read by columns at every reading its
+trim made, its build eight times as long.)
 **A traced edge inverted onto its face is measured across planes** (`props`'s `along_trace`,
 #798): Green's integral is the curve's, however parameterised, so it is read not by the trace's
 own parameter — which counts its points, its rate stepping at each, every stretch a rule of its own
@@ -1229,7 +1231,18 @@ meet: along a line between two planes the prism of the kite between the edge, it
 the line the moved planes meet in; at a corner of three planes the parallelepiped the moved planes
 and the faces' own bound; anything else refused by name.  **A shell** (`offset::shelled`) is the
 wall within `t` of the faces not left open — inside, the solid in common with the pieces of those
-faces; outside, the pieces less the solid, cut off at each opening's plane.  Inside, a moved wall
+faces; outside, the pieces less the solid, **each piece that reaches an opening ended at its plane,
+and no other** (`offset::ending`, `offset::ended`: the pieces ended alike united and cut once, so
+the plane holds one face where it ends them, a box's rim one ring; brep-bench's shell/l-block-open-at-its-step-outward-sharp, whose
+tall leg's walls, past the step's plane, the whole plane once cut away: 904 for 1868).  A round's
+joins along an opening's edges and at its corners are kept on the solid's side of its plane; a wall
+or a join meeting it square ends in it and is left whole, so the riser of an L open at its step
+stands on the opening's edge and its floor runs on past the plane; one lying in the plane is the
+opening's neighbour's, and left whole too.  A rounded wall meeting the plane aslant is kept on the
+side it stands on, and what it falls short of the plane is the opening's own round's to fill (its
+tube along the shared edge, its ball at the shared corner), or it is refused; a sharp wall aslant,
+whose moved face would have to be carried on to the plane, is refused, as is a wall aslant across
+it, never cut where it should not be.  Inside, a moved wall
 runs on across a face left open until it meets it (a curved face's sweep carried across that side
 of its box of parameters to the end of its surface's range, `Reach::across`), which the solid then
 trims: in a ball's cap the cavity is the inner ball whether the opening reaches it or not.  **A
@@ -1250,7 +1263,9 @@ clear of it (a pole near a corner ball's kept boundary put a grown tetrahedron 9
 corner's ball is built with its poles along the corner's mean normal, clear of the circles the
 tubes end on; the deeper fix splits a meeting at a chart's degenerate point.  `tests/brep_offset.rs` is the gate: a box, an L, a tetrahedron, a cone, tori past their
 hole and shrunk, a groove filled and a flange taken away, boxes and caps shelled, an open box and a
-bend thickened, each to its closed form to 1e-9; a spline sheet refused.
+bend thickened, an L shelled outward open at its step, sharp and round, and a block open at its
+sloping top, rounded, each to its closed form to 1e-9; a spline sheet and that block shelled sharp
+refused.
 
 **A closed spline meeting is one edge round** (brep-bench's geometry/elliptic-hole): a plane square
 to a spline's sweep meets it in the spline carried along the sweep, its weights and knots kept

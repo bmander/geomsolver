@@ -69,6 +69,20 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   slide's sweep lies within the box of the tool's box at its two ends, so a point outside it is read
   against no more of that piece. The judge reads a 944-move raster in 0.6 s rather than 6.5 s, and
   `build::SEAM` is public.
+- **An outward shell ends where its opening is** (`offset::shelled`, `Side::Out`): each piece that
+  reaches an opening is ended at its plane, and no other, where the whole wall was cut off at the
+  plane. brep-bench's `shell/l-block-open-at-its-step-outward-sharp`, an L open at its step, kept
+  none of its tall leg's walls past the step's plane and was wrong (904 for 1868); it is now its
+  closed form, sharp and rounded. A wall meeting its opening aslant is cut off at the plane where
+  it runs past it, rounded, and refused where nothing fills what it falls short of — sharp, always
+  — where it was built short of the plane before.
+- **A sheet's face is read by columns only at its fold** (`props`, #880 T1b): 0.14.0 read a carried
+  section's sheet by columns wherever its area factor fell below `geom::NEAR_FOLD` across a face's
+  box, which caught sheets whose rates merely lean together without folding. brep-bench's
+  `swept/spline-bar-screwed-through-rod`, read so at every reading its trim made, took 606 s where
+  0.13.0 took 73 and timed out on the board. A face is now read by columns where its sheet's area
+  factor falls below a millionth at a point of a use, those its box is read from: the bar builds in
+  58 s again, to the same volume, and every fold case reads as it did.
 
 ## [0.14.0] - 2026-11-14
 
