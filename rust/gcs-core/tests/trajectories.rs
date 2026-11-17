@@ -200,3 +200,96 @@ fn a_twist_after_a_placement_is_the_placement_then_the_twist() {
         }
     }
 }
+
+/// The cubic Bézier `poles` as the kernel holds it: a B-spline on clamped knots over [0, 1].
+fn bezier(poles: &[V;4]) -> gcs_core::brep::nurbs::BSpline {
+    gcs_core::brep::nurbs::BSpline::new(3,vec![0.,0.,0.,0.,1.,1.,1.,1.],poles.to_vec()).unwrap()
+}
+
+/// **A frame carried along a curve** (`trajectory::Along`, #721 K2): along a curve in a plane it is
+/// the turn about the plane's normal by the tangent's angle and the curve's point, exactly, what is
+/// drawn at the start carried rigidly; along a curve in space it turns about no tangent
+/// (rotation-minimising); its rate is its pose's, read by differences; and every stretch of it
+/// encloses its poses, so its speed bound holds a point carried back no slower than it moves. From a
+/// home partway along it stands at the identity there; the curve's own frame's rate (its torsion
+/// besides) is its pose's too. A rational curve has no bound on its derivatives here, and its
+/// stretches fail closed, as the curve's own frame's do.
+#[test]
+fn a_frame_along_a_curve_turns_only_as_its_tangent_does() {
+    use gcs_core::brep::trajectory::Along;
+    use gcs_core::interval::Interval;
+    use gcs_core::space::{dot,norm,normalised};
+    // a cubic in the plane z = 2, starting off the origin
+    let poles = [[1.,-2.,2.],[11.,-2.,2.],[21.,18.,2.],[31.,18.,2.]];
+    let along = Arc::new(Along::new(bezier(&poles)).unwrap());
+    for k in 0..=40 {
+        let t = k as f64/40.;
+        let m = along.at(t).unwrap();
+        let (x,d) = along.guide().d1(t);
+        let (sn,cs) = (d[1]/d[0].hypot(d[1]),d[0]/d[0].hypot(d[1]));
+        // the turn about z by the tangent's angle, the start carried to the curve's point
+        let exact = |p: V| { let q = [p[0]-poles[0][0],p[1]-poles[0][1],p[2]-poles[0][2]]; [cs*q[0]-sn*q[1]+x[0],sn*q[0]+cs*q[1]+x[1],q[2]+x[2]] };
+        for p in PROBES { agree(m.point(p),exact(p),&format!("the frame at {t}")) }
+        // its rate, by a central difference of the pose
+        let (a,b) = ((t-1e-6).max(0.),(t+1e-6).min(1.));
+        let (pa,pb) = (along.pose(a).unwrap(),along.pose(b).unwrap());
+        for p in PROBES {
+            let fd: V = std::array::from_fn(|i| (pb.point(p)[i]-pa.point(p)[i])/(b-a));
+            let v = m.velocity(p);
+            let size = 1.+v.iter().map(|x| x.abs()).fold(0.,f64::max);
+            for i in 0..3 { assert!((fd[i]-v[i]).abs() <= 1e-5*size,"the rate at {t}: {v:?} against {fd:?}") }
+        }
+    }
+    // a curve in space: the frame turns about no tangent, ω·T = 0, ω read from R′Rᵀ by differences
+    let spatial = Along::new(bezier(&[[0.,0.,0.],[10.,0.,5.],[20.,20.,-5.],[30.,20.,10.]])).unwrap();
+    for k in 1..40 {
+        let t = k as f64/40.;
+        let h = 1e-5;
+        let (a,b,m) = (spatial.pose(t-h).unwrap(),spatial.pose(t+h).unwrap(),spatial.pose(t).unwrap());
+        // W = (R(t+h) − R(t−h)) Rᵀ / 2h, skew: ω = (W₂₁, W₀₂, W₁₀)
+        let w = |i: usize,j: usize| (0..3).map(|q| (b.r[i][q]-a.r[i][q])*m.r[j][q]).sum::<f64>()/(2.*h);
+        let omega = [w(2,1),w(0,2),w(1,0)];
+        let twist = dot(omega,normalised(spatial.guide().d1(t).1).unwrap());
+        assert!(twist.abs() <= 1e-6*(1.+norm(omega)),"the frame at {t} turns about its tangent at {twist} (of {})",norm(omega));
+    }
+    // every stretch encloses its poses, and a point carried back moves within the speed bound
+    let path = Trajectory::General(along.clone());
+    for [lo,hi] in [[0.,1.],[0.,0.1],[0.43,0.57],[0.9,1.]] {
+        let g = along.stretch(lo,hi).expect("a polynomial curve's stretch");
+        let bounds = PROBES.map(|p| path.inverse_point_speed_bound(p,Interval::new(lo,hi).unwrap()).unwrap());
+        for j in 0..=200 {
+            let t = lo+(hi-lo)*j as f64/200.;
+            let pose = along.pose(t).unwrap();
+            let at = along.guide().point(t);
+            for k in 0..3 {
+                assert!(g.point[k].contains(at[k]),"the stretch [{lo}, {hi}] holds the curve's point at {t}");
+                for q in 0..3 { assert!(g.turn[k][q].contains(pose.r[k][q]),"the stretch [{lo}, {hi}] holds the turn at {t}") }
+            }
+            let back = along.at(t).unwrap().inverse();
+            for (p,bound) in PROBES.iter().zip(bounds) {
+                let speed = norm(back.velocity(*p));
+                assert!(speed <= bound,"{p:?} carried back at {t} moves at {speed}, past the bound {bound}");
+            }
+        }
+    }
+    // from a home partway along: the identity there; the curve's own frame turns with the
+    // torsion besides, its spin about the tangent `τ |C′|`, read by differences as above
+    let mid = Along::from(bezier(&[[0.,0.,0.],[10.,0.,5.],[20.,20.,-5.],[30.,20.,10.]]),0.4,false,"the frame").unwrap();
+    for p in PROBES { agree(mid.pose(0.4).unwrap().point(p),p,"at its home") }
+    let own = Along::from(bezier(&[[0.,0.,0.],[10.,0.,5.],[20.,20.,-5.],[30.,20.,10.]]),0.,true,"the frame").unwrap();
+    for k in 1..40 {
+        let t = k as f64/40.;
+        let m = own.at(t).unwrap();
+        let (a,b) = (own.pose(t-1e-6).unwrap(),own.pose(t+1e-6).unwrap());
+        for p in PROBES {
+            let fd: V = std::array::from_fn(|i| (b.point(p)[i]-a.point(p)[i])/2e-6);
+            let v = m.velocity(p);
+            let size = 1.+v.iter().map(|x| x.abs()).fold(0.,f64::max);
+            for i in 0..3 { assert!((fd[i]-v[i]).abs() <= 1e-5*size,"the curve's own frame's rate at {t}: {v:?} against {fd:?}") }
+        }
+    }
+    assert!(own.stretch(0.,1.).is_none(),"the curve's own frame encloses no stretch");
+    let rational = gcs_core::brep::nurbs::BSpline::rational(2,vec![0.,0.,0.,1.,1.,1.],vec![[1.,0.,0.],[1.,1.,0.],[0.,1.,0.]],
+        vec![1.,std::f64::consts::FRAC_1_SQRT_2,1.]).unwrap();
+    assert!(Along::new(rational).unwrap().stretch(0.,1.).is_none(),"a rational curve's stretch has no bound here");
+}

@@ -497,7 +497,9 @@ where a rule came from.
     (`Resolver::guides`, skipped by `elaborate::constraints`) and the joint's axis is held where it
     stands.  `std.stations.Along(g, up: u, home: h)` (ρ 0) and `std.stations.AlongFrenet(g, home:
     h)` (ρ 1) make the frame `f`, draw it at its home square to the path and state the joint.
-  - **Read after the solve** (`motion::Guide`, `Step::Guided`): the path read four ways (`Path`: a
+  - **Read after the solve** (`motion::guide::read`, `Step::Guided`), the motion the kernel's frame
+    carried along a curve (`brep::trajectory::Along` over the path as its `trajectory::Guide`, one
+    type for the kernel's callers and the drawing's): the path read four ways (`Path`: a
     line's and an arc's fraction of the run exactly; a spline, in a plane lifted or over points in
     space through `Sketch::spline_traced`, by its basis with three derivatives; a traced curve by
     `traced::at`, its third derivative a difference of its exact second — what a Frenet frame's
@@ -505,10 +507,10 @@ where a rule came from.
     it: drawn off its path); `M(u) x = R(u)(x − c(h)) + c(u)`, `R(u) = F(u) F(h)ᵀ`.  ρ 0: the
     rotation-minimising frame integrated by double reflection over `GRID` steps laid from the
     home, any `u` one step from its nearest node, `ω = T × T′`; ρ 1: the Frenet frame read
-    directly, `ω = T × T′ + τ T`.  `at` carries the rate (`envelope::Motion::of_parts`), `pose_at`
+    directly, `ω = T × T′ + τ |C′| T`.  `at` carries the rate (`envelope::Motion::of_parts`), `pose_at`
     the pose; an inverse is the step undone (`back`).  No constant twist: `screw`, `turning`,
     `sliding`, `in_plane`, `in_frame`, `instantaneous` and `NormalVelocity` refuse it.
-  - **Enclosed over a stretch** (`Guide::stretch`): samples a step `w` apart, every point within
+  - **Enclosed over a stretch** (`Along::stretch`): samples a step `w` apart, every point within
     `|C′|·w/2` of one and every turn within `|ω|·w/2`, `|C′|` and `|C″|` bounded over the whole
     path for certain — a line's and an arc's exactly, a polynomial spline's off its hodographs'
     control points — and `|ω| ≤ |C″| / min|C′|`; `MotionBounds` (`bounds`) and the speed bound
@@ -669,8 +671,8 @@ where a rule came from.
     span by the fit's Bernstein hulls (`Hull`: the origin's control points, the derivative's,
     and the least the quaternion's length falls to), each whole span's worked out once when the
     track is made (`Track::spans`) and only a stretch's partial end spans per query
-    (`Track::hulls`): `Ride::stretch` is a `guide::Stretch` for `MotionBounds`, built from its
-    samples' extremes as a frame along a path's is (`guide::Extremes`), one sample at an
+    (`Track::hulls`): `Ride::stretch` is a `trajectory::Stretch` for `MotionBounds`, built from its
+    samples' extremes as a frame along a path's is (`trajectory::Extremes`), one sample at an
     instant, and the speed bound reads `Ride::speed_over`, each span's origin speed plus
     its angular speed times the farthest the box stands from its origin there or now — over a
     whole turn twice the true speed where one box over the turn was twelve times, which is what

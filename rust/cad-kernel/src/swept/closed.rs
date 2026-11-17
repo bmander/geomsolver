@@ -311,7 +311,8 @@ pub fn closed(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> 
 /// closed solid is built and then subtracted: the blank and the sweep's candidates are one
 /// arrangement, classified once — the closed solid is the same arrangement over a box, its cells
 /// kept where they are members. A sweep missing the blank leaves it whole. (The contact's road,
-/// `contacts_road`, is the exception: its closed solid is trimmed alone and then cut from the blank.)
+/// `contacts_road`, and a prism under a motion keeping a plane, `planar_solid`, are the exceptions:
+/// each closed solid is built alone and then cut from the blank.)
 pub fn cut_from(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> Result<Brep,Unbuilt> {
     built(tool,path,roll,bar,tol,Some(blank))
 }
@@ -720,6 +721,11 @@ fn contacts_road(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,b
         }
         Err(whole) => return Err(whole),
     };
+    cut_blank(swept,blank,tol)
+}
+
+/// A closed swept solid as the build returns it: alone, or cut from `blank` by the Boolean.
+fn cut_blank(swept: Brep,blank: Option<&Brep>,tol: f64) -> Result<Brep,Unbuilt> {
     match blank {
         None => Ok(swept),
         Some(b) => crate::boolean::combined(b,&swept,crate::boolean::Op::Cut,tol).map_err(|e| Unbuilt::Failed(format!("the sweep cut from the blank: {e}"))),
@@ -760,11 +766,11 @@ fn build_by(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank:
     let legs = match legs(tool,path,roll) {
         Err(Unbuilt::Motion) if path.screw().is_none() && trim.is_none() => {
             // a prism under a motion keeping the plane square to it: its section's planar sweep,
-            // extruded (#880 Q2), before K2's road — which is still asked where it refuses, its
-            // refusal standing unless K2 cannot read the tool at all
-            let planar = if blank.is_none() { super::planar_solid::swept(tool,path,roll,bar,tol) } else { Ok(None) };
-            return match planar {
-                Ok(Some(b)) => Ok(b),
+            // extruded (#880 Q2), and cut from the blank where there is one, before K2's road —
+            // which is still asked where it refuses, its refusal standing unless K2 cannot read the
+            // tool at all
+            return match super::planar_solid::swept(tool,path,roll,bar,tol) {
+                Ok(Some(swept)) => cut_blank(swept,blank,tol),
                 Ok(None) => k2(tool,path,roll,bar,tol,blank),
                 Err(why) => k2(tool,path,roll,bar,tol,blank).map_err(|k| if matches!(k,Unbuilt::Curved {..}) { why } else { k }),
             }

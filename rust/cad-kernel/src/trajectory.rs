@@ -5,7 +5,8 @@
 //! path and the pace (`Paced`: a sweep is its path's, not its pace's, #684 L), a path made of
 //! pieces as its pieces (`Pieces`, K1), a constant twist taking up what it carries where a
 //! placement put it (`Placed`, a piece after another: a turn where a slide left the tool), and any
-//! other rigid motion as a pose and its rate at each time (`General`, K2).
+//! other rigid motion as a pose and its rate at each time (`General`, K2) — a frame carried along a
+//! curve among them (`Along`).
 //!
 //! Every reading of a trajectory is a `Motion`, a pose and its derivative by the trajectory's
 //! parameter, and at each time any rigid motion is a screw (Mozzi–Chasles): its **twist**, the
@@ -20,6 +21,9 @@ use crate::util::space::{add,cross,dot,length,scale,sub};
 use crate::{Kind,KernelError};
 use crate::util::interval::{Error as IntervalError,Interval};
 use std::sync::Arc;
+
+mod along;
+pub use along::{Along,Guide};
 
 type V3 = [f64;3];
 type M3 = [[f64;3];3];
@@ -396,6 +400,45 @@ impl Stretch {
     /// about it at the frame's angular speed, the same forward and inverse.
     pub fn speed_of(&self, b: [Interval; 3]) -> Result<Interval, IntervalError> {
         Interval::point(self.spin)?.mul(self.far(b)?)?.add(Interval::point(self.speed)?)
+    }
+}
+
+/// **What a stretch's samples reach**: the box of the points carried and every entry of the turn,
+/// enclosed (`enclosed`) by how far the motion can run and turn between two samples — a frame
+/// along a curve (`Along`) and a frame a drawing moves are each enclosed so.
+#[derive(Clone, Copy, Debug)]
+pub struct Extremes { lo: V3, hi: V3, rlo: M3, rhi: M3 }
+
+impl Default for Extremes { fn default() -> Extremes { Extremes::new() } }
+
+impl Extremes {
+    pub fn new() -> Extremes {
+        Extremes { lo: [f64::INFINITY; 3], hi: [f64::NEG_INFINITY; 3], rlo: [[f64::INFINITY; 3]; 3], rhi: [[f64::NEG_INFINITY; 3]; 3] }
+    }
+
+    /// A point carried, taken in.
+    pub fn point(&mut self, p: V3) {
+        for k in 0..3 { (self.lo[k], self.hi[k]) = (self.lo[k].min(p[k]), self.hi[k].max(p[k])) }
+    }
+
+    /// A turn, taken in.
+    pub fn turn(&mut self, r: &M3) {
+        for k in 0..3 { for m in 0..3 { (self.rlo[k][m], self.rhi[k][m]) = (self.rlo[k][m].min(r[k][m]), self.rhi[k][m].max(r[k][m])) } }
+    }
+
+    /// The stretch: every point within `reach` of the box, every turn's entry within `turnable` of
+    /// what the samples reached (and within ±1), outward by a sample's rounding; its speed, its
+    /// angular speed and the origin the turn is about as given.
+    pub fn enclosed(&self, reach: f64, turnable: f64, speed: f64, spin: f64, origin: V3) -> Option<Stretch> {
+        let pad = |x: f64| x.abs()*1e-12+1e-15;
+        let around = |lo: f64, hi: f64, by: f64, clamp: f64| Interval::new((lo-by-pad(lo)).max(-clamp), (hi+by+pad(hi)).min(clamp)).ok();
+        let mut point = [Interval::ZERO; 3];
+        let mut turn = [[Interval::ZERO; 3]; 3];
+        for k in 0..3 {
+            point[k] = around(self.lo[k], self.hi[k], reach, f64::INFINITY)?;
+            for m in 0..3 { turn[k][m] = around(self.rlo[k][m], self.rhi[k][m], turnable, 1.)? }
+        }
+        Some(Stretch { point, turn, speed, spin, origin })
     }
 }
 
