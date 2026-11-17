@@ -6,7 +6,9 @@
 # to the gear example or the native export lands.
 #
 # As test.yml does with the fast tier: the core's suite is built once, with the slow feature, and
-# handed to the shards, and the CLI's suite then runs on the libraries that build compiled.  The
+# handed to the shards.  The CLI's suite is a job of its own beside that build, compiling the
+# libraries again, so that a failure in it never skips the shards (it did, every night from
+# November 7 to 17, while one CLI test failed and the core's slow tier went unrun).  The
 # core's fast tests run again here beside the slow ones, since the slow build is a different
 # build (`examples.rs` itself reads the feature).  Most slow tests are not in rust/test-times.tsv
 # until someone times them (`scripts/test-times.sh -p gcs-core --test core --features
@@ -48,7 +50,14 @@ jobs:
           name: core-suite-slow
           path: suite/core
           retention-days: 1
-      # the CLI's `slow` turns on the core's, so this is the build above with the CLI's tests on it
+
+  # its own job, so the shards wait on the core's build alone
+  cli:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      # the CLI's `slow` turns on the core's
       - name: The CLI's suite with the slow tier
         run: cargo test --manifest-path rust/Cargo.toml -p gcs-cli --features gcs-cli/slow
 
