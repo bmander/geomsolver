@@ -989,6 +989,18 @@ impl Shared {
     /// Whether surfaces `i` and `j`'s meeting was given (`give`): its curves lie on both, known as
     /// a closed form's are and not as a trace's.
     pub fn given(&self,i: usize,j: usize) -> bool { self.was_given.contains(&(i.min(j),i.max(j))) }
+    /// Whether surfaces `i` and `j`'s meeting was found in closed form (`meeting`), in either order:
+    /// its curves lie on both to rounding, as a given meeting's do — not a trace's, known only to the
+    /// tolerance over the sine of the surfaces' angle.
+    pub fn closed_form(&self,i: usize,j: usize) -> bool {
+        [(i,j),(j,i)].iter().any(|k| matches!(self.meetings.get(k),Some(Ssi::Curves(c)) if !c.is_empty()))
+    }
+    /// The curves of surfaces `i` and `j`'s meeting known to rounding: given (`given_curves`), or
+    /// found in closed form (`closed_form`); none else.
+    pub fn exact_curves(&self,i: usize,j: usize) -> Vec<Curve> {
+        if self.given(i,j) { return self.given_curves(i,j) }
+        [(i,j),(j,i)].iter().find_map(|k| match self.meetings.get(k) { Some(Ssi::Curves(c)) => Some(c.clone()),_ => None }).unwrap_or_default()
+    }
     /// The curves given for surfaces `i` and `j`'s meeting (`give`), asked for or not.
     pub fn given_curves(&self,i: usize,j: usize) -> Vec<Curve> {
         let key = (i.min(j),i.max(j));

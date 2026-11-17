@@ -639,6 +639,11 @@ fn whole_turn(screw: &crate::trajectory::Screw,roll: [f64;2]) -> bool {
 
 /// `closed` over a box holding the sweep, or `cut_from` over `blank`: the pipeline itself.
 fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
+    // a path of pieces cut from a blank, not every piece's candidates arranged at once: piece by
+    // piece, each piece's sweep by its own cheapest road, smooth runs of them as one (`pieces`)
+    if let Some(blank) = blank {
+        if let Some(cut) = super::pieces::cut(blank,tool,path,roll,bar,tol) { return cut }
+    }
     // a whole turn of any tool (#880 Q1): its shadow in a half-plane through the axis, arranged
     // there and revolved, with no surface met in space (`shadow`) — where it is refused by what the
     // tool is or a reading it cannot settle, the arrangement below is asked; a build judged wrong,
@@ -1803,10 +1808,10 @@ pub fn judge(built: &Brep,swept: &Swept,domain: &Brep,blank: Option<&Brep>,witne
     let readings = crate::util::par::map(&points,|&p| -> Option<(V,bool)> {
         if !meter::charge(Stage::Judge,1,|| (p,"the built solid".into())) { return None }
         let held = match solid.solid_place(p) { Place::In => true,Place::Out => false,Place::On => return None };
-        let member = swept.member(p).ok()?;
+        // (outside a blank, nothing is held whatever membership says: it is not read there)
         let should = match &blank {
-            None => member,
-            Some(b) => match b.solid_place(p) { Place::In => !member,Place::Out => false,Place::On => return None },
+            None => swept.member(p).ok()?,
+            Some(b) => match b.solid_place(p) { Place::In => !swept.member(p).ok()?,Place::Out => false,Place::On => return None },
         };
         (held != should).then_some((p,held))
     });

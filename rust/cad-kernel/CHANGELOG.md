@@ -8,6 +8,67 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Any tool of revolution's path of pieces is cut from a blank piece by piece** (`swept::pieces`,
+  the road `swept::closed::cut_from` takes after `raster`): each move's sweep in closed form where
+  it has one — slid along the tool's axis, slid square to it, turned about a line along it, a
+  ball-end mill at a slant — and the closed class's of that piece alone where not; each move after
+  the first shut where it starts by its section, the move before holding the tool there, so no two
+  moves' sweeps lie on one surface at their corner. brep-bench's `cnc/flat-end-mill-profile`,
+  refused after two minutes, is cut in under two seconds, to its closed form within 3e-15.
+- **`swept::raster` is the pieces' road's sweep of a ball-end mill's run at a slant**: the
+  separate road `cut_from` took first is gone, and every path of pieces is cut by `swept::pieces`.
+- **A smooth run of moves is one sweep** (`swept::pieces`, #931): moves square to the tool's axis
+  running on smoothly are a chain, their sides sewn along their sections (a closed one a ring); a
+  plunge into a chain or a whole turn, or a lift out of one, the column over the tool's top alone;
+  a drill's pecks one slide. brep-bench's `cnc/bull-nose-profile` and `cnc/pocket-with-an-island`
+  (timed out and refused before) build in about two seconds each, to their closed forms within
+  2e-15; `cnc/flat-end-mill-profile` in 0.2 s. `patches::Revolved::read` takes a cone's apex as a
+  point of its meridian (a drill).
+- **`build::prism` takes an arc facing against its profile's normal** (`Seg::facing`): it wrote
+  such an arc's cylinder's parameters along the normal and turned the face the wrong way, so a
+  bull-nose's section, its corner mirrored across the axis, stood its cylinder 80 off an edge it
+  bounds.
+- **Sharp corners of a path of slides** (`swept::pieces`, #931): a chain ending where an earlier sweep holds the whole
+  tool (a closed path come back to its start) is shut there by its section; and a ball's quarter in
+  a half is built with its poles off the section and the equator (`raster::lune`), not on the
+  axis, where the next move's side touches it along a great circle through the pole ("a sphere has
+  a hole in no piece"). A bull-nose run round a triangle and back, and a ball-end mill round a slot
+  narrower than itself and back, are cut to their closed forms; of 25 random polylines cut by a
+  ball-end mill, 1 is refused (13 before).
+- **A run of slides turning at sharp corners is one sweep** (`swept::pieces::mitred`, #931): each
+  slide's halves carried and cut, on the side a corner turns toward, at the plane bisecting it
+  (a mitre: a line on a plane, an ellipse on a cylinder), and the tool's wedge turned through the
+  corner on the side it turns from, sewn — taken while each slide outlasts its mitres and the run
+  turns through a right angle at most. A curve written as a fine polyline is one sweep a quarter
+  turn: a bull-nose along 135 sides of a 180-gon in 1.4 s (15 s a side at a time), to the same
+  volume. A half of the tool at a run's end is that wedge turned a half turn.
+- **A line square to a torus's axis meets it in closed form** (`query`): as the chords of the
+  circles at its height, and at the top or bottom of the tube, where they are one circle, only
+  touches — where the quartic is `(ρ² − R²)²` and a line tangent to that circle its quadruple root,
+  which no isolation proves (a slide's bottom edge ending on the torus a sweep before it turned
+  at). A line all but level is the general reading's, as against a turned meridian.
+- **Booleans at tangencies** (`complex`, `boolean`): two exact faces leaving an edge are tied only
+  within `16 tol / ρ` of one another (a fit's `TANGENT` else), and a tie is read a hundredth of their
+  least radius in, not a thousandth of the whole complex — a cylinder and a ball of its radius
+  leaving a short edge 2e-6 apart were read swapped 0.14 in, and two cells joined; no vertex is taken
+  onto a meeting found in closed form from farther than the tolerance, nor a root that lies flat
+  along a face moved off such a meeting; and an edge merged with another records how far apart they
+  stood (`Edge::tol`), as an operand's edge keeps its own through a Boolean.
+- **A ball-end mill's path of slides is cut from a blank run by run** (`swept::raster`, the road
+  `swept::closed::cut_from` takes for it before the arrangement): the mill read off its B-rep
+  (`raster::Mill::read`), its moves in runs — each a polyline of the ball's centre in one plane
+  holding the axis, every step forward along one way across it — each run's sweep built from its
+  surfaces (half cylinders under the path, the ball's lune at each valley, the two cylinders'
+  ellipse at each hill, the shank's walls and halves, cut off by a plane past the blank), the runs
+  swept across the cores and cut in order, and the cut judged. brep-bench's
+  `cnc/ball-end-surface-raster` (41 passes, 944 moves), refused after nine minutes by the
+  arrangement's membership budget, is cut in about 7 seconds and agrees with cadrs's solid to
+  1e-10. Any other tool or path takes the arrangement as before, as does a path whose runs the
+  road could not sweep or cut.
+- **Membership along a path of pieces skips the pieces far from the point** (`swept::member`): a
+  slide's sweep lies within the box of the tool's box at its two ends, so a point outside it is read
+  against no more of that piece. The judge reads a 944-move raster in 0.6 s rather than 6.5 s, and
+  `build::SEAM` is public.
 - **An outward shell ends where its opening is** (`offset::shelled`, `Side::Out`): each piece that
   reaches an opening is ended at its plane, and no other, where the whole wall was cut off at the
   plane. brep-bench's `shell/l-block-open-at-its-step-outward-sharp`, an L open at its step, kept

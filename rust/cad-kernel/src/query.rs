@@ -1000,10 +1000,30 @@ fn line_cone(p: V,d: V,t: [f64;2],f: &super::geom::Frame,r: f64,a: f64,surface: 
 }
 
 /// A line against a torus about `f`'s axis, its tube's middle radius `big` and the tube's `r`:
-/// `(|w|² + R² − r²)² − 4R² (x² + y²)` along it, a quartic.
+/// `(|w|² + R² − r²)² − 4R² (x² + y²)` along it, a quartic. A line square to the axis meets the
+/// circles the torus has at its height, `ρ = R ± √(r² − z²)`, each as a chord — and at the top or
+/// the bottom of the tube, where they are one circle and the torus lies on one side of the line's
+/// plane, only touches it. There the quartic is `(ρ² − R²)²`, its roots double, and a line tangent
+/// to that circle (a slide's bottom edge ending on the half a sweep before it turned at the same
+/// place) a quadruple root no isolation proves.
 fn line_torus(p: V,d: V,t: [f64;2],f: &super::geom::Frame,big: f64,r: f64,surface: &Surface,tol: f64) -> Certified {
     use crate::util::isolate::{poly_mul,poly_sum};
     let (q,e) = (f.local(p),f.dir_local(d));
+    let speed = norm(d);
+    // a line all but level is read neither way well: the general reading's
+    if e[2].abs() > 1e-12*speed && e[2].abs() < 1e-7*speed { return Err(Uncertified::NoForm) }
+    if e[2].abs() <= 1e-12*speed {
+        // (chords read in the axis's own frame: a chord's place along the line is the same there)
+        let off = q[2].abs()-r;
+        if off > tol { return Ok(Meets::At(Vec::new())) }
+        let band = off >= -tol;
+        let h = if band { 0. } else { (r*r-q[2]*q[2]).sqrt() };
+        let mut out = Vec::new();
+        for rho in if band { vec![big] } else { vec![big+h,(big-h).abs()] } {
+            if let Meets::At(found) = line_chord([q[0],q[1],0.],[e[0],e[1],0.],rho,tol) { out.extend(found.into_iter().map(|(t,touch)| (t,band || touch))) }
+        }
+        return Ok(Meets::At(out))
+    }
     let sq = |i: usize| [q[i]*q[i],2.*q[i]*e[i],e[i]*e[i]];
     let (x,y,z) = (sq(0),sq(1),sq(2));
     let flat = poly_sum(&[(1.,&x),(1.,&y)]);

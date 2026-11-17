@@ -1727,8 +1727,9 @@ fn a_build_past_its_budget_refuses_by_name_within_it() {
 /// meter a build always goes on; past its budget `go_on` answers `Stopped`, naming the stage that
 /// ran away, which a closed build turns into its refusal by budget (`Unbuilt::Budget`) and a
 /// Boolean's phases into their message. And a certified reading stopped there reads nothing more: a
-/// line through a torus (a quartic, its roots isolated) within a budget of one step of the ray stage
-/// is read once, its isolation stopped at its first stretch, and nothing sampled in its place.
+/// line climbing through a torus (a quartic, its roots isolated — a level line is read as the
+/// chords of the circles at its height) within a budget of one step of the ray stage is read once,
+/// its isolation stopped at its first stretch, and nothing sampled in its place.
 #[test]
 fn a_build_past_its_budget_stops_by_one_typed_check() {
     use gcs_core::brep::geom::{Curve,Frame,Surface};
@@ -1737,7 +1738,7 @@ fn a_build_past_its_budget_stops_by_one_typed_check() {
     use gcs_core::meter::{self as meter,Budget,Meter,Stage,Stopped};
     assert_eq!(meter::go_on(),Ok(()));
     let ring = Surface::Torus(Frame::about([0.;3],[0.,0.,1.]),2.,0.5);
-    let line = Curve::Line {p:[-4.,0.,0.1],d:[1.,0.,0.]};
+    let line = Curve::Line {p:[-4.,0.,0.1],d:[1./1.0001f64.sqrt(),0.,0.01/1.0001f64.sqrt()]};
     let m = Meter::new(Budget::UNLIMITED);
     let (found,on) = meter::within(&m,|| (curve_surface(&line,[0.,8.],&ring,1e-7),meter::go_on()));
     let Meets::At(found) = found else { panic!("along") };
@@ -2381,4 +2382,327 @@ fn the_square_bar_screwed_four_turns_closes_into_its_helical_sweep() {
         assert!((volume(&built)-expected).abs() <= 1e-10*expected,"over {turns} turns: {} against {expected}",volume(&built));
         agrees_over(&built,&tool,&path,roll);
     }
+}
+
+/// A ball-end mill of radius `r`, `len` long from its tip at `tip` up its upright shank, as
+/// brep-bench's `cnc/` cases draw one: its meridian — out from the tip round the quarter circle to
+/// the foot of its side, up the side, back across its top, down the axis — turned once.
+fn ball_end_mill(tip: [f64;3],r: f64,len: f64) -> Brep {
+    use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
+    use gcs_core::brep::geom::Frame;
+    let at = |x: f64,z: f64| [tip[0]+x,tip[1],tip[2]+z];
+    let line = |a,b| ProfileEdge::Line {a,b};
+    let edges = vec![ProfileEdge::Arc {frame:Frame::new(at(0.,r),[0.,-1.,0.],[1.,0.,0.]),r,span:Some([-std::f64::consts::FRAC_PI_2,0.])},
+        line(at(r,r),at(r,len)),line(at(r,len),at(0.,len)),line(at(0.,len),at(0.,0.))];
+    revolve(&Profile {origin:tip,normal:[0.,1.,0.],loops:vec![edges],names:Vec::new()},tip,[0.,0.,1.],std::f64::consts::TAU).unwrap()
+}
+
+/// The path of pieces that runs a tool drawn with its tip at `points[0]` straight through each of
+/// `points` in turn, each move a slide taken up where the one before left it (a G1 program), over
+/// the roll its tip travels.
+fn moves(points: &[[f64;3]]) -> (Trajectory,[f64;2]) {
+    use gcs_core::brep::trajectory::{Piece,Pose};
+    let mut pose = Pose {r:[[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]],p:[0.;3]};
+    let (mut pieces,mut roll) = (Vec::new(),0.);
+    for w in points.windows(2) {
+        let d: [f64;3] = std::array::from_fn(|k| w[1][k]-w[0][k]);
+        let length = norm(d);
+        let twist = Screw {origin:[0.;3],axis:unit(d),ratio:0.,advance:std::f64::consts::TAU};
+        pieces.push(Piece {over:[roll,roll+length],path:Trajectory::Placed {twist,at:pose.then(twist.pose(-roll))}});
+        roll += length;
+        pose = pose.then(twist.pose(length));
+    }
+    (Trajectory::pieces(pieces,1e-9,100.).unwrap(),[0.,roll])
+}
+
+/// **A ball-end mill run along a line takes its section's prism from a plate** (`swept::raster`,
+/// the road `cut_from` takes for a ball-end mill's path of slides): the mill of radius 2, its
+/// centre 2 under the plate's top, run in two moves along one line right across the plate (20
+/// long), takes its section there — the half disc under the centre and the band above it, `2π + 8`
+/// — the whole way: `2000 − 20 (2π + 8)`, the two moves one step.
+#[test]
+fn a_ball_end_mill_run_along_a_line_takes_its_sections_prism() {
+    use gcs_core::brep::swept::closed::cut_from;
+    let plate = block([0.,0.,-10.],[20.,10.,0.]);
+    let tip = [-3.,5.,-4.];
+    let tool = ball_end_mill(tip,2.,20.);
+    let (path,roll) = moves(&[tip,[5.,5.,-4.],[23.,5.,-4.]]);
+    let cut = cut_from(&plate,&tool,&path,roll,0.01,1e-7).unwrap_or_else(|e| panic!("{e:?}"));
+    cut.check(1e-6).unwrap();
+    let expected = 2000.-20.*(2.*std::f64::consts::PI+8.);
+    assert!((volume(&cut)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&cut));
+}
+
+/// **A ball-end mill's run over valleys and a hill takes what its lower envelope leaves** (`swept::
+/// raster`): the mill of radius 2 run through five points down, up, down and less down — valleys at
+/// the second and fourth, a hill at the third — in a plate it stays inside of but for its shank.
+/// Apart from the build: across the run at each offset `y` the mill's section is the ball-end of
+/// radius `ρ = √(4 − y²)`, its centre on the path; slid along it, it covers each `x` from the lowest
+/// its discs reach (the least of each step's: the line `ρ` under the step, and the discs at its
+/// ends) up past the plate's top, so the plate loses `∫∫ (0 − L(x)) dx dy` — the inner integral by
+/// Gauss's rule on a fine grid (`swept_slid::gauss`), the outer by Simpson's rule in `y = 2 sin φ`. Each corner
+/// is laid by the run's construction (a valley's lune, a hill's ellipse), and the cut is judged
+/// against membership as it is built.
+#[test]
+fn a_ball_end_mill_run_over_valleys_and_a_hill_takes_what_its_lower_envelope_leaves() {
+    use gcs_core::brep::swept::closed::cut_from;
+    let r = 2.;
+    let plate = block([-20.,-10.,-20.],[30.,10.,0.]);
+    let tips = [[-5.,0.,-10.],[0.,0.,-12.],[5.,0.,-9.],[10.,0.,-11.],[15.,0.,-11.5]];
+    let tool = ball_end_mill(tips[0],r,30.);
+    let (path,roll) = moves(&tips);
+    let cut = cut_from(&plate,&tool,&path,roll,0.01,1e-7).unwrap_or_else(|e| panic!("{e:?}"));
+    cut.check(1e-6).unwrap();
+    let removed = volume(&plate)-volume(&cut);
+    // the ball's centre's path in the plane y = 0, as (x, z)
+    let cs: Vec<[f64;2]> = tips.iter().map(|p| [p[0],p[2]+r]).collect();
+    let lowest = |x: f64,rho: f64| -> f64 {
+        let mut z = f64::INFINITY;
+        for w in cs.windows(2) {
+            let (p,q) = (w[0],w[1]);
+            let (dx,dz) = (q[0]-p[0],q[1]-p[1]);
+            let l = dx.hypot(dz);
+            // the step's line offset `rho` along its downward normal, and its two end discs
+            let n = [dz/l,-dx/l];
+            let t = (x-p[0]-rho*n[0])/dx;
+            if (0. ..=1.).contains(&t) { z = z.min(p[1]+t*dz+rho*n[1]) }
+            for c in [p,q] { let s = rho*rho-(x-c[0])*(x-c[0]); if s >= 0. { z = z.min(c[1]-s.sqrt()) } }
+        }
+        z
+    };
+    let section = |rho: f64| crate::swept_slid::gauss(&|x| -lowest(x,rho),cs[0][0]-rho,cs[cs.len()-1][0]+rho,4000);
+    let expected = simpson(-std::f64::consts::FRAC_PI_2,std::f64::consts::FRAC_PI_2,64,|phi| r*phi.cos()*section(r*phi.cos()));
+    assert!((removed-expected).abs() <= 1e-6*expected,"{removed} against {expected}");
+}
+
+/// A flat end mill of radius `r`, `len` long from the middle of its flat end at `tip` up its
+/// upright side: its meridian — out across its end, up its side, back across its top, down the
+/// axis — turned once.
+fn flat_end_mill(tip: [f64;3],r: f64,len: f64) -> Brep {
+    use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
+    let at = |x: f64,z: f64| [tip[0]+x,tip[1],tip[2]+z];
+    let corners = [at(0.,0.),at(r,0.),at(r,len),at(0.,len)];
+    let edges = (0..4).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%4]}).collect();
+    revolve(&Profile {origin:tip,normal:[0.,1.,0.],loops:vec![edges],names:Vec::new()},tip,[0.,0.,1.],std::f64::consts::TAU).unwrap()
+}
+
+/// **A path of pieces is cut from a blank piece by piece** (`swept::pieces`, the road `cut_from`
+/// takes for any tool of revolution's path of pieces): a flat end mill of radius 1 plunged 2 into a
+/// plate, run round the square of side 10 there and lifted out takes the band the disc sweeps round
+/// a square, `2 r L + (π − 4) r²` (the square's outer offset less its inner, `L` its perimeter), 2
+/// deep: `2 (76 + π)`. Each move's sweep is its closed form — the plunge and the lift the mill drawn
+/// out along its axis, each side its half behind, its section carried, its half ahead — and each
+/// after the first is shut where it starts, the move before holding the mill there.
+#[test]
+fn a_flat_end_mill_run_round_a_square_takes_its_band() {
+    use gcs_core::brep::swept::closed::cut_from;
+    let plate = block([0.,0.,-5.],[20.,20.,0.]);
+    let tip = [5.,5.,2.];
+    let tool = flat_end_mill(tip,1.,10.);
+    let (path,roll) = moves(&[tip,[5.,5.,-2.],[15.,5.,-2.],[15.,15.,-2.],[5.,15.,-2.],[5.,5.,-2.],[5.,5.,2.]]);
+    let cut = cut_from(&plate,&tool,&path,roll,0.01,1e-7).unwrap_or_else(|e| panic!("{e:?}"));
+    cut.check(1e-6).unwrap();
+    let expected = 2.*(76.+std::f64::consts::PI);
+    let removed = volume(&plate)-volume(&cut);
+    assert!((removed-expected).abs() <= 1e-9*expected,"{removed} against {expected}");
+}
+
+/// A toolpath as a G-code program writes one: the tool drawn with its tip at `drawn`, then moved
+/// straight (`line`) or round an upright line (`arc`, its tip turning about it by an angle, the
+/// tool turned with it), each move a constant twist taken up where the one before left the tool,
+/// over the roll its tip travels (its angle times its radius on an arc).
+struct Program { drawn: [f64;3],pose: gcs_core::brep::trajectory::Pose,roll: f64,pieces: Vec<gcs_core::brep::trajectory::Piece> }
+
+impl Program {
+    fn from(drawn: [f64;3]) -> Program {
+        Program {drawn,pose:gcs_core::brep::trajectory::Pose {r:[[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]],p:[0.;3]},roll:0.,pieces:Vec::new()}
+    }
+    fn tip(&self) -> [f64;3] { self.pose.point(self.drawn) }
+    fn take(&mut self,twist: Screw,length: f64) {
+        use gcs_core::brep::trajectory::Piece;
+        let start = self.roll;
+        self.pieces.push(Piece {over:[start,start+length],path:Trajectory::Placed {twist,at:self.pose.then(twist.pose(-start))}});
+        self.roll += length;
+        self.pose = self.pose.then(twist.pose(length));
+    }
+    fn line(&mut self,to: [f64;3]) -> &mut Self {
+        let tip = self.tip();
+        let d: [f64;3] = std::array::from_fn(|k| to[k]-tip[k]);
+        self.take(Screw {origin:[0.;3],axis:unit(d),ratio:0.,advance:std::f64::consts::TAU},norm(d));
+        self
+    }
+    fn arc(&mut self,centre: [f64;2],angle: f64) -> &mut Self {
+        let tip = self.tip();
+        let length = (tip[0]-centre[0]).hypot(tip[1]-centre[1])*angle.abs();
+        self.take(Screw {origin:[centre[0],centre[1],0.],axis:[0.,0.,1.],ratio:angle/length,advance:0.},length);
+        self
+    }
+    fn path(&self) -> (Trajectory,[f64;2]) { (Trajectory::pieces(self.pieces.clone(),1e-9,100.).unwrap(),[0.,self.roll]) }
+}
+
+/// A bull-nose mill of radius `r`, its corner rounded to `c`, `len` long from the middle of its
+/// flat end at `tip` up its upright side: its meridian — out across its flat, round the corner, up
+/// its side, back across its top, down the axis — turned once.
+fn bull_nose_mill(tip: [f64;3],r: f64,c: f64,len: f64) -> Brep {
+    use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
+    use gcs_core::brep::geom::Frame;
+    let at = |x: f64,z: f64| [tip[0]+x,tip[1],tip[2]+z];
+    let line = |a,b| ProfileEdge::Line {a,b};
+    let edges = vec![line(at(0.,0.),at(r-c,0.)),
+        ProfileEdge::Arc {frame:Frame::new(at(r-c,c),[0.,-1.,0.],[1.,0.,0.]),r:c,span:Some([-std::f64::consts::FRAC_PI_2,0.])},
+        line(at(r,c),at(r,len)),line(at(r,len),at(0.,len)),line(at(0.,len),at(0.,0.))];
+    revolve(&Profile {origin:tip,normal:[0.,1.,0.],loops:vec![edges],names:Vec::new()},tip,[0.,0.,1.],std::f64::consts::TAU).unwrap()
+}
+
+/// **A bull-nose mill run along two arcs that meet smoothly takes its section turned along each**
+/// (`swept::pieces`'s chains): the mill of radius 4, its corner 1.5, plunged 3 into a plate, run a
+/// half turn about one upright line 12 off and a quarter turn back about another 12 off the other
+/// way, the two arcs meeting tangent, and lifted out. The arcs are one chain — their sides sewn along
+/// the section they share, never met in a Boolean, where each touches the other round that section
+/// — and the plunge and the lift are the column over the tool's top alone, the chain holding the tool
+/// at both ends. Apart from the build, by Pappus: each arc takes its turn times its radius times the
+/// section's area under the plate's top (the section even about the tool's axis), and its two ends
+/// together the tool's volume there — the flat's cylinder and the corner's turned quarter disc.
+#[test]
+fn a_bull_nose_mill_run_along_two_smooth_arcs_takes_its_section_turned() {
+    use gcs_core::brep::swept::closed::cut_from;
+    use std::f64::consts::PI;
+    let (r,c,depth) = (4.,1.5,3.);
+    let plate = block([-30.,-40.,-10.],[30.,40.,0.]);
+    let tool = bull_nose_mill([12.,0.,5.],r,c,25.);
+    let mut program = Program::from([12.,0.,5.]);
+    program.line([12.,0.,-depth]).arc([0.,0.],PI).arc([-24.,0.],-PI/2.);
+    let end = program.tip();
+    program.line([end[0],end[1],5.]);
+    let (path,roll) = program.path();
+    let cut = cut_from(&plate,&tool,&path,roll,0.01,1e-7).unwrap_or_else(|e| panic!("{e:?}"));
+    cut.check(1e-6).unwrap();
+    // the half section under the top: the side over the corner's height, the flat and the corner below
+    let a = r-c;
+    let half = r*(depth-c)+a*c+PI*c*c/4.;
+    let tool_under = PI*r*r*(depth-c)+PI*(a*a*c+a*PI*c*c/2.+2.*c*c*c/3.);
+    let expected = 12.*PI*2.*half+12.*PI/2.*2.*half+tool_under;
+    let removed = volume(&plate)-volume(&cut);
+    assert!((removed-expected).abs() <= 1e-9*expected,"{removed} against {expected}");
+}
+
+/// **A bull-nose mill run round a triangle and back takes its band** (`swept::pieces`): the mill of
+/// radius 4, its corner 1.5, plunged 2 into a plate, run round a triangle — three slides, each its
+/// own sweep, met at sharp corners — and lifted where it began. The section's arc mirrored across the
+/// axis is turned to face the way its plane does, as the arc it mirrors is (a corner cylinder stood
+/// 80 off an edge it bounds); the last slide ends where the first stands whole, so is shut there by
+/// its section; and its bottom edge, level and tangent to the circle the first sweep's corner torus
+/// bottoms out on, meets that torus at a touch read in closed form (a quadruple root of its quartic).
+/// Each height of the plate takes the band between the triangle's outer and inner offsets by the
+/// mill's radius `ρ` there, `(P + 2A/ρᵢ) ρ + (π − A/ρᵢ²) ρ²` (`P` the perimeter, `A` the area, `ρᵢ`
+/// the inradius), integrated over the corner's quarter circle and the side above it.
+#[test]
+fn a_bull_nose_mill_run_round_a_triangle_and_back_takes_its_band() {
+    use gcs_core::brep::swept::closed::cut_from;
+    use std::f64::consts::PI;
+    let (r,c,depth) = (4.,1.5,2.);
+    let plate = block([0.,0.,-20.],[100.,80.,0.]);
+    let tip = [30.,20.,5.];
+    let tool = bull_nose_mill(tip,r,c,25.);
+    let (path,roll) = moves(&[tip,[30.,20.,-depth],[70.,35.,-depth],[40.,60.,-depth],[30.,20.,-depth],[30.,20.,5.]]);
+    let cut = cut_from(&plate,&tool,&path,roll,0.01,1e-7).unwrap_or_else(|e| panic!("{e:?}"));
+    cut.check(1e-6).unwrap();
+    let (area,perimeter) = (0.5*((40.*40.)-(10.*15.)),(40f64.hypot(15.))+(30f64.hypot(25.))+(10f64.hypot(40.)));
+    let inradius = 2.*area/perimeter;
+    // ∫ρ and ∫ρ² over the depth: the corner's quarter circle about (r − c, c), then the side
+    let a = r-c;
+    let i1 = a*c+PI*c*c/4.+r*(depth-c);
+    let i2 = a*a*c+a*PI*c*c/2.+2.*c*c*c/3.+r*r*(depth-c);
+    let expected = (perimeter+2.*area/inradius)*i1+(PI-area/(inradius*inradius))*i2;
+    let removed = volume(&plate)-volume(&cut);
+    assert!((removed-expected).abs() <= 1e-9*expected,"{removed} against {expected}");
+}
+
+/// **A ball-end mill run round a slot narrower than itself takes the slot and its band**
+/// (`swept::pieces`): the mill of radius 3 plunged 4 into a plate (its ball and 1 of its shank) and
+/// run round a rectangle 40 by 2 and back, each slide its own sweep, met at sharp corners. At each
+/// corner the next slide's cylinder touches the ball the last left there along the great circle
+/// square to it, through the bottom of the ball — so the ball's quarters in a slide's halves are
+/// built with their poles off the section and the equator (`raster::lune`): turned about the axis,
+/// the pole stood on that circle, and the Boolean left a hole of the ball in no piece. Each height
+/// takes the band about the rectangle, its inner offset gone once the radius `ρ` there passes 1:
+/// `168 ρ + (π − 4) ρ²` below that and `80 + 84 ρ + π ρ²` above.
+#[test]
+fn a_ball_end_mill_run_round_a_slot_narrower_than_itself_takes_the_slot_and_its_band() {
+    use gcs_core::brep::swept::closed::cut_from;
+    use std::f64::consts::PI;
+    let plate = block([0.,0.,-20.],[100.,80.,0.]);
+    let tip = [20.,20.,5.];
+    let tool = ball_end_mill(tip,3.,30.);
+    let (path,roll) = moves(&[tip,[20.,20.,-4.],[60.,20.,-4.],[60.,22.,-4.],[20.,22.,-4.],[20.,20.,-4.],[20.,20.,5.]]);
+    let cut = cut_from(&plate,&tool,&path,roll,0.01,1e-7).unwrap_or_else(|e| panic!("{e:?}"));
+    cut.check(1e-6).unwrap();
+    // ∫ρ and ∫ρ² over heights h of the ball, ρ² = 9 − (3 − h)²
+    let g = |u: f64| 0.5*u*(9.-u*u).sqrt()+4.5*(u/3.).asin();
+    let k = |u: f64| 9.*u-u*u*u/3.;
+    let (i1,i2) = (|a: f64,b: f64| g(3.-a)-g(3.-b),|a: f64,b: f64| k(3.-a)-k(3.-b));
+    let h1 = 3.-2.*2f64.sqrt();
+    let expected = 168.*i1(0.,h1)+(PI-4.)*i2(0.,h1)+80.*(3.-h1)+84.*i1(h1,3.)+PI*i2(h1,3.)+(80.+84.*3.+PI*9.);
+    let removed = volume(&plate)-volume(&cut);
+    assert!((removed-expected).abs() <= 1e-9*expected,"{removed} against {expected}");
+}
+
+/// **A bull-nose mill run along a polygon's sides, turning a little at each corner, takes its band
+/// with its corners mitred** (`swept::pieces`'s mitred runs): the mill of radius 4, its corner 1.5,
+/// plunged 2 into a plate and run along 27 sides of a 36-gon of radius 20 (a curve as a CAM program
+/// writes it, 10° at each corner) — each quarter turn one sweep, its slides' halves carried and
+/// mitred where each corner turns toward them, the tool's wedge turned where it turns from, never
+/// met in a Boolean. Each height takes the band about the polyline: `2 L ρ + π ρ²` (`L` its length)
+/// and, at each corner turning by `φ`, the wedge outside it less the kite the two slides share
+/// inside it, `(φ/2 − tan φ/2) ρ²`.
+#[test]
+fn a_bull_nose_mill_run_along_a_polygons_sides_takes_its_band_with_its_corners_mitred() {
+    use gcs_core::brep::swept::closed::cut_from;
+    use std::f64::consts::PI;
+    let (r,c,depth) = (4.,1.5,2.);
+    let plate = block([0.,0.,-20.],[100.,80.,0.]);
+    let corners: Vec<[f64;3]> = (0..=27).map(|k| { let t = 2.*PI*k as f64/36.; [50.+20.*t.cos(),40.+20.*t.sin(),-depth] }).collect();
+    let tip = [corners[0][0],corners[0][1],5.];
+    let tool = bull_nose_mill(tip,r,c,25.);
+    let last = corners[27];
+    let mut points = vec![tip];
+    points.extend(&corners);
+    points.push([last[0],last[1],5.]);
+    let (path,roll) = moves(&points);
+    let cut = cut_from(&plate,&tool,&path,roll,0.01,1e-7).unwrap_or_else(|e| panic!("{e:?}"));
+    cut.check(1e-6).unwrap();
+    let legs: Vec<[f64;2]> = corners.windows(2).map(|w| [w[1][0]-w[0][0],w[1][1]-w[0][1]]).collect();
+    let length: f64 = legs.iter().map(|l| l[0].hypot(l[1])).sum();
+    let turns: f64 = legs.windows(2).map(|w| {
+        let phi = (w[0][0]*w[1][1]-w[0][1]*w[1][0]).atan2(w[0][0]*w[1][0]+w[0][1]*w[1][1]).abs();
+        phi/2.-(phi/2.).tan()
+    }).sum();
+    let a = r-c;
+    let i1 = a*c+PI*c*c/4.+r*(depth-c);
+    let i2 = a*a*c+a*PI*c*c/2.+2.*c*c*c/3.+r*r*(depth-c);
+    let expected = 2.*length*i1+(PI+turns)*i2;
+    let removed = volume(&plate)-volume(&cut);
+    assert!((removed-expected).abs() <= 1e-9*expected,"{removed} against {expected}");
+}
+
+/// **A drill pecking a hole takes one hole** (`swept::pieces`): a drill of radius 4 with a 90° point
+/// plunged to 5, back up, to 10, back up and to 14 below a plate's top, its pecks one slide along its
+/// axis over every place they stand — its cylinder 10 deep and its point's cone 4.
+#[test]
+fn a_drill_pecking_a_hole_takes_one_hole() {
+    use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
+    use gcs_core::brep::swept::closed::cut_from;
+    use std::f64::consts::PI;
+    let plate = block([0.,0.,-20.],[20.,20.,0.]);
+    let tip = [10.,10.,5.];
+    let at = |x: f64,z: f64| [tip[0]+x,tip[1],tip[2]+z];
+    let corners = [at(0.,0.),at(4.,4.),at(4.,30.),at(0.,30.)];
+    let edges = (0..4).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%4]}).collect();
+    let drill = revolve(&Profile {origin:tip,normal:[0.,1.,0.],loops:vec![edges],names:Vec::new()},tip,[0.,0.,1.],2.*PI).unwrap();
+    let (path,roll) = moves(&[tip,[10.,10.,-5.],[10.,10.,2.],[10.,10.,-10.],[10.,10.,2.],[10.,10.,-14.],[10.,10.,5.]]);
+    let cut = cut_from(&plate,&drill,&path,roll,0.01,1e-7).unwrap_or_else(|e| panic!("{e:?}"));
+    cut.check(1e-6).unwrap();
+    let expected = PI*16.*10.+PI*16.*4./3.;
+    let removed = volume(&plate)-volume(&cut);
+    assert!((removed-expected).abs() <= 1e-9*expected,"{removed} against {expected}");
 }

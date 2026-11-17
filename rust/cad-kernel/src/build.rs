@@ -18,7 +18,8 @@ pub use hull::hull;
 const TAU: f64 = std::f64::consts::TAU;
 
 /// One edge of a profile: a line, an arc (a whole circle where `span` is none) turning
-/// counter-clockwise about its frame's `z`, which is the profile's normal, or a B-spline whose
+/// counter-clockwise about its frame's `z` (the profile's normal or against it: a builder reads
+/// it facing the normal, `Seg::facing`), or a B-spline whose
 /// ends are its first and last poles.
 #[derive(Clone,Debug)]
 pub enum ProfileEdge { Line { a: V,b: V },Arc { frame: Frame,r: f64,span: Option<[f64;2]> },Spline(Arc<BSpline>),
@@ -177,6 +178,17 @@ impl Seg {
     fn reversed(&self) -> Seg { Seg {curve:self.curve.clone(),t:[self.t[1],self.t[0]],source:self.source} }
     /// The edge's parameters, increasing.
     pub fn span(&self) -> [f64;2] { if self.forward() { self.t } else { [self.t[1],self.t[0]] } }
+    /// The step with its circle's frame facing `n` (its `y` and `z` turned over and its angles
+    /// negated where `z` faces away), the same points the same way: what a side carried along `n`
+    /// reads its cylinder's parameters and its side off (an arc a caller drew facing the other way,
+    /// a section's arc mirrored across an axis, stood its corner cylinder 80 off its edges).
+    pub fn facing(self,n: V) -> Seg {
+        match self.curve {
+            Curve::Circle(f,r) if dot(f.z,n) < 0. => Seg {curve:Curve::Circle(Frame {o:f.o,x:f.x,y:scale(f.y,-1.),z:scale(f.z,-1.)},r),
+                t:[-self.t[0],-self.t[1]],source:self.source},
+            _ => self,
+        }
+    }
     pub(crate) fn samples(&self,n: usize) -> impl Iterator<Item = V> + '_ {
         (0..n).map(move |j| self.curve.point(self.t[0]+(self.t[1]-self.t[0])*j as f64/n as f64))
     }
@@ -235,7 +247,8 @@ pub fn prism(p: &Profile,from: f64,to: f64) -> Result<Brep,String> {
     if !(h1 > h0) { return Err("a prism of no depth".into()) }
     let n = unit(p.normal);
     let plane = Frame::about(p.origin,n);
-    let walks = walks(p,&|q| { let l = plane.local(q); [l[0],l[1]] })?;
+    let walks: Vec<Vec<Seg>> = walks(p,&|q| { let l = plane.local(q); [l[0],l[1]] })?
+        .into_iter().map(|w| w.into_iter().map(|s| s.facing(n)).collect()).collect();
     let named = |li: usize,s: &Seg| p.name(li,s.source);
     let mut b = Brep::default();
     let lift = |q: V,h: f64| add(q,scale(n,h));
@@ -691,7 +704,7 @@ fn poles(t: V,x: V) -> V {
 
 /// How far round from the radial line a ball's tube's seams run (radians): the golden angle's
 /// fraction of a turn, which no symmetry of a design's makes.
-const SEAM: f64 = 0.6180339887498949;
+pub const SEAM: f64 = 0.6180339887498949;
 
 /// **The ball** of radius `r` about `c`: a half disc turned once about the diameter along `axis`,
 /// its poles where `axis` meets the sphere and its seam the half circle through them on the side

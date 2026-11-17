@@ -70,9 +70,11 @@ use super::tolerant::{on_meeting,Pool,FLAT,ON_CURVE};
 /// and the operand and face met.
 struct Loose { edge: usize,vertex: u32,t: f64,side: Side,index: usize,against: Side,face: usize }
 
-/// An edge of the working set: a stretch of a curve (or a pole) between two pooled vertices.
+/// An edge of the working set: a stretch of a curve (or a pole) between two pooled vertices, and
+/// the gap it is known to stand off what it bounds (`gap`): an operand's edge's own tolerance, or
+/// how far a curve merged into it stood (`merged`).
 #[derive(Clone,Debug)]
-struct WEdge { curve: EdgeCurve,t: [f64;2],v: [u32;2] }
+struct WEdge { curve: EdgeCurve,t: [f64;2],v: [u32;2],gap: f64 }
 
 impl WEdge {
     fn point(&self,t: f64,pool: &Pool) -> V {
@@ -642,7 +644,7 @@ fn boolean_known(a: &Brep,known: Option<&Known>,b: &Brep,op: Op,tol: f64) -> Res
     let twins: Vec<Option<u32>> = parts.twin_of.iter().map(|&e| laid[e]).collect();
     laid.extend(twins);
     let mut edges = out;
-    edges.extend(parts.twins.into_iter().map(|e| WEdge {curve:e.curve,t:e.t,v:e.v}));
+    edges.extend(parts.twins.into_iter().map(|e| WEdge {curve:e.curve,t:e.t,v:e.v,gap:e.tol}));
     // a face given an edge of its own where the result touches itself is not the face it was: its
     // box is read again
     for (f,face,touched) in parts.faces {
@@ -762,10 +764,11 @@ fn working_brep(out: &[WEdge],pool: &Pool,faces: Vec<Face>) -> Brep {
 }
 
 /// **The tolerance a working edge was built to** (#735 A3): how far its curve's ends stand from the
-/// vertices a merge onto a meeting put there, where that is past the pool's own reach (0 within it).
+/// vertices a merge onto a meeting put there, or its curve from what it bounds (`WEdge::gap`),
+/// where that is past the pool's own reach (0 within it).
 fn built_tol(w: &WEdge,pool: &Pool) -> f64 {
     let EdgeCurve::Curve(c) = &w.curve else { return 0. };
-    let gap = (0..2).map(|k| distance(c.point(w.t[k]),pool.pts[w.v[k] as usize])).fold(0.,f64::max);
+    let gap = (0..2).map(|k| distance(c.point(w.t[k]),pool.pts[w.v[k] as usize])).fold(w.gap,f64::max);
     if gap > pool.tol { gap } else { 0. }
 }
 
@@ -1109,6 +1112,19 @@ fn arrange_phases<'a>(solids: &[&'a Brep],known: Option<&Known>,given: &[Given],
     let gone = collapsed(&mut out,&mut arr.pool,tol);
     // 4. pieces that are one edge merged: the same ends and the same curve between
     let rep = merged(&out,tol);
+    // (a piece merged into another lies on its faces as far off them as it stood from it: the
+    // representative bounds both pieces' faces, a sphere's meeting with a ball laid on a cylinder
+    // touching the ball, the two curves parting by a tolerance's breadth)
+    for i in 0..out.len() {
+        let (j,_) = rep[i];
+        if j as usize == i || gone[i] { continue }
+        let (EdgeCurve::Curve(ci),EdgeCurve::Curve(cj)) = (&out[i].curve,&out[j as usize].curve) else { continue };
+        let t = out[i].t;
+        let apart = (0..=8).map(|k| { let p = ci.point(t[0]+(t[1]-t[0])*k as f64/8.); distance(cj.point(cj.inverse(p)),p) })
+            .fold(0.,f64::max);
+        // (an inverse read onto another branch says nothing of the gap: `same_edge` held it within 8 tol)
+        if apart <= 64.*tol { out[j as usize].gap = out[j as usize].gap.max(apart) }
+    }
     let split = Split {pieces_of,out,rep,gone};
     crate::util::meter::go_on()?;
     // 5. each face split by what lies on it, traced in its parameters
@@ -1212,7 +1228,7 @@ impl<'a> Arrangement<'a> {
                 pool.tols[i as usize] = pool.tols[i as usize].max(v.tol);
                 i
             }).collect();
-            for e in &solids[s].edges { edges.push(WEdge {curve:e.curve.clone(),t:e.t,v:[ids[e.v[0] as usize],ids[e.v[1] as usize]]}); }
+            for e in &solids[s].edges { edges.push(WEdge {curve:e.curve.clone(),t:e.t,v:[ids[e.v[0] as usize],ids[e.v[1] as usize]],gap:e.tol}); }
         }
         let cuts = vec![Vec::new();edges.len()];
         let boxes = Sides::new(n,|s| (0..solids[s].faces.len()).map(|i| located[s].face_box(i)).collect::<Vec<_>>());
@@ -1233,7 +1249,7 @@ impl<'a> Arrangement<'a> {
 
     /// A working edge added, cut nowhere yet: its index.
     fn add_edge(&mut self,curve: EdgeCurve,t: [f64;2],v: [u32;2]) -> usize {
-        self.edges.push(WEdge {curve,t,v});
+        self.edges.push(WEdge {curve,t,v,gap:0.});
         self.cuts.push(Vec::new());
         self.edges.len()-1
     }
@@ -1449,15 +1465,18 @@ impl<'a> Arrangement<'a> {
                 .filter(|&(t,w)| w != l.vertex && !rooted.contains(&(l.edge,w)) && t >= lo && t <= hi)
                 .min_by(|x,y| (x.0-l.t).abs().total_cmp(&(y.0-l.t).abs()));
             let Some((at,w)) = exact else { continue };
-            // (a crossing on a meeting given between a face the edge bounds and that surface is
-            // where the edge crosses the given curves, exactly, however shallowly the edge meets the
-            // surface: two sheets of a sweep crossing along a path at a degree, the rim of one
-            // crossing the other was moved onto another cut of the rim 1.6e-4 along it, off the path)
+            // (a crossing on a meeting given — or found in closed form — between a face the edge
+            // bounds and that surface is where the edge crosses those curves, exactly, however
+            // shallowly the edge meets the surface: two sheets of a sweep crossing along a path at
+            // a degree, the rim of one crossing the other was moved onto another cut of the rim
+            // 1.6e-4 along it, off the path; a ball's short edge lying flat against a cylinder that
+            // touches the ball round a great circle, its crossing of that circle moved to its far
+            // end, a millimetre off)
             let q = self.pool.pts[l.vertex as usize];
             let j = self.shared.index(s,tol);
             let on_given = (0..self.solids[l.side].faces.len()).filter(|&h| self.solids[l.side].faces[h].loops.iter().flatten().any(|u| u.edge as usize == l.index))
                 .any(|h| { let k = self.shared.index(&self.solids[l.side].faces[h].surface,tol);
-                    self.shared.given(k,j) && self.shared.given_curves(k,j).iter().any(|g| distance(g.point(g.inverse(q)),q) <= super::tolerant::ON_CURVE*tol) });
+                    self.shared.exact_curves(k,j).iter().any(|g| distance(g.point(g.inverse(q)),q) <= super::tolerant::ON_CURVE*tol) });
             if on_given { continue }
             self.say.flat_root(self.pool.pts[l.vertex as usize],self.pool.pts[w as usize]);
             self.cuts[l.edge].retain(|&(_,u)| u != l.vertex);
@@ -1758,8 +1777,10 @@ impl<'a> Arrangement<'a> {
         let (sa,sb) = (surfaces[0],surfaces[1]);
         // (a given meeting's curve lies on both surfaces, known to the tolerance: no vertex is taken
         // onto it from farther — two neighbouring sheets of a sweep meet smoothly along the rail they
-        // share, the sine of their angle nought, and a vertex 3e-3 off the rail was cut into it)
-        let given = { let (i,j) = (self.shared.index(sa,self.tol),self.shared.index(sb,self.tol)); self.shared.given(i,j) };
+        // share, the sine of their angle nought, and a vertex 3e-3 off the rail was cut into it — nor
+        // onto one found in closed form, as exact: a cylinder touching a ball round a great circle,
+        // a vertex of the ball's a millimetre off the circle stood within the tolerance of both)
+        let given = { let (i,j) = (self.shared.index(sa,self.tol),self.shared.index(sb,self.tol)); self.shared.given(i,j) || self.shared.closed_form(i,j) };
         let mut ts: Vec<(f64,u32)> = Vec::new();
         for &v in on_b.iter().chain(on_a) {
             let p = self.pool.pts[v as usize];
@@ -1951,7 +1972,10 @@ impl<'a> Arrangement<'a> {
                 // an edge of the other a traced meeting lay along
                 for &(we,_,_) in meetings.along_edges.iter().filter(|&&(_,o,face)| o == s && face == fi) { inside(we,&mut cut); }
                 if s != Side::A { self.say.cut_network(s,fi,f,meetings,split,&self.pool); }
-                for piece in pieces_of_face(f,&cut.halves,&split.out,&self.pool,self.tol)? { pieces.push((s,fi,piece)); }
+                let cut_pieces = pieces_of_face(f,&cut.halves,&split.out,&self.pool,self.tol).inspect_err(|_| {
+                    if super::debug() { eprintln!("pieces: of operand {} face {fi}, {:?}",s.0,f.surface) }
+                })?;
+                for piece in cut_pieces { pieces.push((s,fi,piece)); }
             }
         }
         Ok(pieces)
@@ -2630,7 +2654,7 @@ fn split_edges(edges: &[WEdge],cuts: &[Vec<(f64,u32)>]) -> (Vec<Vec<(u32,[f64;2]
         let mut ps = Vec::new();
         for w in run.windows(2) {
             if w[0].1 == w[1].1 && w.len() == 2 && run.len() > 2 { continue }
-            out.push(WEdge {curve:e.curve.clone(),t:[w[0].0,w[1].0],v:[w[0].1,w[1].1]});
+            out.push(WEdge {curve:e.curve.clone(),t:[w[0].0,w[1].0],v:[w[0].1,w[1].1],gap:e.gap});
             ps.push(((out.len()-1) as u32,[w[0].0,w[1].0]));
         }
         pieces_of.push(ps);
@@ -3020,9 +3044,10 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool,tol: f64) -
                 if super::debug() {
                     for (k,x) in halves.iter().enumerate() {
                         let e = &out[x.edge as usize];
-                        eprintln!("pieces: half {k} edge {} ({}, vertices {:?} at {:?}) along {} nodes {:?} from {:?} to {:?} leave {:.4} back {:.4}, middle {:?}{}",
+                        eprintln!("pieces: half {k} edge {} ({}, vertices {:?} at {:?}) along {} nodes {:?} from {:?} to {:?} leave {:.4} back {:.4}, middle {:?}{} over {:?} on {}",
                             x.edge,e.curve.kind(),e.v,e.v.map(|v| pool.pts[v as usize]),
-                            x.along,ends[k],x.from,x.to,leave[k],arrive_back[k],e.point(0.5*(e.t[0]+e.t[1]),pool),if cycle.contains(&k) { " (this cycle)" } else { "" });
+                            x.along,ends[k],x.from,x.to,leave[k],arrive_back[k],e.point(0.5*(e.t[0]+e.t[1]),pool),if cycle.contains(&k) { " (this cycle)" } else { "" },
+                            e.t,match &e.curve { EdgeCurve::Curve(c) => format!("{c:?}").chars().take(260).collect::<String>(),_ => String::new() });
                     }
                 }
                 return Err(format!("a {}'s pieces do not close",f.surface.kind()))

@@ -194,7 +194,12 @@ pub(super) fn meridian(tool: &Brep) -> Result<Meridian,Unbuilt> {
         let mut pts: Vec<P2> = Vec::new();
         for c in f.loops.iter().flatten() {
             let e = &tool.edges[c.edge as usize];
-            if matches!(e.curve,EdgeCurve::Degenerate) { continue }
+            // (a cone's apex, its degenerate edge's one point: a drill's point, on the axis — a
+            // ball's poles are read as its arc's ends are, below)
+            if matches!(e.curve,EdgeCurve::Degenerate) {
+                if matches!(f.surface,Surface::Cone(..)) { pts.push(rz(tool.vertices[e.v[0] as usize].p)) }
+                continue
+            }
             if uses[c.edge as usize].iter().all(|u| u.0 == k) { continue }
             for i in 0..=4 { pts.push(rz(e.point(e.t[0]+(e.t[1]-e.t[0])*i as f64/4.,&tool.vertices))) }
         }
