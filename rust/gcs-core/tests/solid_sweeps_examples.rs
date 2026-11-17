@@ -790,21 +790,24 @@ fn the_ball_screwed_round_a_tight_helix_hollows_the_block() {
     near(exported(&e,"block"),10.*10.*14.-253.4493738313,1e-8);
 }
 
-/// `tangent_rod.sv` (a fold under a turn, #880 T1c, refused): a rod lying level along the way it
-/// turns, its top and bottom lines' images about the axis turning back where the rod lies square to
-/// the radius. The closed class takes a rod under a turn; its build reads the rod's side curved past
-/// its candidates at the fold, and the contact's road, asked in turn, leaves an edge three of its
-/// pieces use: under a turn a sheet lies on its meridian's surface of revolution, so a fold's two
-/// leaves lie on the one surface, here the plane each line turns in, and the trim does not yet
-/// close leaves that coincide (#880 T1e). The closed class's refusal stands, at the fold.
+/// `tangent_rod.sv` (a fold under a turn, #880 T1c): a rod lying level along the way it turns, its
+/// top and bottom lines' images about the axis turning back where the rod lies square to the radius.
+/// The closed class takes a rod under a turn, its build reading the rod's side curved past its
+/// candidates at the fold, and the contact's road, asked in turn, builds it: the fold's two leaves on the one plane each
+/// line turns in kept once, and the two end rims' sheets, whose meridian images are one curve, swept
+/// on one surface of revolution (`contacts::meridian_surface`, the match measured on the fitted
+/// meridian rather than its polyline, whose sag stood above the tolerance) and kept once. The block
+/// loses, on each circle about the axis at height z, the rod's arcs carried round a quarter turn:
+/// the rod (6π), the quarter turn of its meridian image (π/2 of its first moment, 5π + 9) and the
+/// arcs' far ends', ∫ (c² + 9)·atan(3/c) − 3c dz with c = 5 + √(1 − z²) (5.9287855427, by
+/// Simpson's rule in z = sin θ). The export stands 2e-7 from it, within the rule's 1e-6.
 #[test]
-fn the_rod_turned_along_itself_is_refused_at_its_fold() {
+fn the_rod_turned_along_itself_hollows_the_block_past_its_fold() {
     let e = example("tangent_rod.sv");
     let Class::Closed(found) = class(&e,"block") else { panic!("the closed class") };
     assert_eq!(found.kind(),"a turn");
-    let (exact,_) = crate::common::saying(|say| gcs_core::brep::export::exact(&e.sketch,fixtures::solid(&e,"block"),None,None,say));
-    let r = exact.err().expect("refused").to_string();
-    assert!(r.contains("curved past what the motion's candidates hold at (5.2"),"{r}");
+    let removed = 6.*PI+2.5*PI*PI+4.5*PI+5.9287855427;
+    near(exported(&e,"block"),16.*16.*4.-removed,1e-6);
 }
 
 /// `leaning_bullnose.sv` (the closed class, a torus's band slid at a lean, #810): a bull-nose mill of
@@ -938,6 +941,7 @@ fn the_drum_end_screwed_chases_its_section_up_the_rod() {
     assert_eq!(found.kind(),"a screw");
     near(exported(&e,"rod"),1339.548902340676*6./20.,1e-8);
 }
+
 
 
 

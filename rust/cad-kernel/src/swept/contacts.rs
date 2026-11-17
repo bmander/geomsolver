@@ -1085,14 +1085,27 @@ fn meridian_surface(section: &crate::geom::Curve,o: V,z: V,tol: f64,made: &mut V
         // across the axis, whose great circle's two arcs sweep one spindle torus)
         return Some(Surface::Torus(Frame::about(at(c[1]),z),c[0].abs(),radius))
     }
-    // a surface of revolution of the image, one already made for it if one holds it
-    let off = |q: [f64;2],line: &[[f64;2]]| line.windows(2).map(|w| {
-        let (d,e) = ([w[1][0]-w[0][0],w[1][1]-w[0][1]],[q[0]-w[0][0],q[1]-w[0][1]]);
-        let dd = d[0]*d[0]+d[1]*d[1];
-        let t = if dd > 0. { ((e[0]*d[0]+e[1]*d[1])/dd).clamp(0.,1.) } else { 0. };
-        (e[0]-t*d[0]).hypot(e[1]-t*d[1])
-    }).fold(f64::INFINITY,f64::min);
-    if let Some((s,_)) = made.iter().find(|(_,line)| pts.iter().all(|&p| off(p,line) <= 2.*tol)) { return Some(s.clone()) }
+    // a surface of revolution of the image, one already made for it if one holds it: each point of
+    // this image within the tolerance of that meridian, measured on the meridian itself (its dense
+    // polyline finds the stretch, which a golden section over the curve's parameter settles: the
+    // chords' sag, ~1e-5 at 256 on a unit arc, is not the tolerance's to absorb)
+    let near = |q: [f64;2],s: &Surface,line: &[[f64;2]]| -> f64 {
+        let n = line.len()-1;
+        let (k,d) = line.windows(2).enumerate().map(|(k,w)| {
+            let (d,e) = ([w[1][0]-w[0][0],w[1][1]-w[0][1]],[q[0]-w[0][0],q[1]-w[0][1]]);
+            let dd = d[0]*d[0]+d[1]*d[1];
+            let t = if dd > 0. { ((e[0]*d[0]+e[1]*d[1])/dd).clamp(0.,1.) } else { 0. };
+            (k,(e[0]-t*d[0]).hypot(e[1]-t*d[1]))
+        }).fold((0,f64::INFINITY),|a,b| if b.1 < a.1 { b } else { a });
+        let Surface::Revolution(_,c) = s else { return d };
+        if d > 1e-3*(1.+q[0].abs()+q[1].abs()) { return d }
+        let at = |t: f64| { let p = image(c.point(t)); (p[0]-q[0]).hypot(p[1]-q[1]) };
+        let (mut a,mut b) = (k.saturating_sub(1) as f64/n as f64,((k+2).min(n)) as f64/n as f64);
+        const G: f64 = 0.618_033_988_749_894_8;
+        for _ in 0..48 { let (x,y) = (b-G*(b-a),a+G*(b-a)); if at(x) < at(y) { b = y } else { a = x } }
+        at(0.5*(a+b)).min(d)
+    };
+    if let Some((s,_)) = made.iter().find(|(s,line)| pts.iter().all(|&p| near(p,s,line) <= 2.*tol)) { return Some(s.clone()) }
     let frame = Frame::about(o,z);
     let place = |p: [f64;2]| add(o,add(scale(frame.x,p[0]),scale(z,p[1])));
     let nodes: Vec<(Uv,V)> = (0..=16).map(|k| { let t = k as f64/16.; ([t,0.],place(image(section.point(t)))) }).collect();

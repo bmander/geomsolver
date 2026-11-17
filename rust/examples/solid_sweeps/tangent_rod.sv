@@ -5,12 +5,13 @@
 // turn's velocity runs along its axis. Seen in the half-plane about the axis, each line runs in to
 // its middle and back out again — its distance from the axis least where it lies square to the
 // radius — so its image there turns back, and the sheet it sweeps folds along that point's path, a
-// circle of radius 5 mm. Under a turn a sheet lies on its meridian's surface of revolution, so a
-// fold's two leaves lie on one surface — here the plane each line turns in — and overlap there. Not
-// yet built: the closed class reads the rod's side curved past its candidates at the fold, and the
-// contact's road, asked in turn, does not close leaves that coincide (#880 T1e); the export is
-// refused, saying where. Built, the block would lose, on each circle about the axis, the arcs the
-// rod lies across at the start carried round a quarter turn.
+// circle of radius 5 mm. The closed class reads the rod's side curved past its candidates at the
+// fold, and the contact's road builds it (#880 T1c): under a turn each sheet lies on its meridian's
+// surface of revolution, so the fold's two leaves lie on one surface — here the plane each line turns
+// in — and the trim keeps them once, as it keeps once the sheets the rod's two end rims sweep, whose
+// images about the axis are one curve. The block loses, on each circle about the axis, the arcs the
+// rod lies across at the start carried round a quarter turn: 6π + 5π²/2 + 9π/2 mm³ and the arcs'
+// far ends' share, ∫ (c² + 9)·atan(3/c) − 3c dz with c = 5 + √(1 − z²) over z in (−1, 1).
 unit mm
 use std
 use std.solids (cut)

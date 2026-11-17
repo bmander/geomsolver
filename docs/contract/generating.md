@@ -1145,10 +1145,15 @@ brep-bench's ball round a tight helix inside a block, which the class takes as a
 and whose build sends the fold to the road, to its ball within 1e-8
 (`solid_sweeps_examples::the_ball_screwed_round_a_tight_helix_hollows_the_block`). Under a turn a
 sheet lies on its meridian's surface of revolution, so a fold's two leaves lie on one surface and
-overlap: `tangent_rod.sv`, a rod lying level along the way it turns, is refused at its build, the
-closed class reading its side curved past its candidates at the fold, the road leaving an edge three
-pieces use where its lines' leaves coincide on the plane they turn in
-(`solid_sweeps_examples::the_rod_turned_along_itself_is_refused_at_its_fold`, #880 T1e). The twist drill's
+overlap, and the trim keeps them once: `tangent_rod.sv`, a rod lying level along the way it turns,
+the closed class reading its side curved past its candidates at the fold, is built by the road to
+its arcs' closed form within 1e-6
+(`solid_sweeps_examples::the_rod_turned_along_itself_hollows_the_block_past_its_fold`). **Two
+sections whose images about a turn's axis are one curve sweep one surface** (`contacts::meridian_surface`):
+the rod's two end rims, a tool's mirror pieces; the second is matched to the first's meridian
+within twice the tolerance, measured on the fitted meridian itself (its polyline finds the stretch,
+a golden section settles it), so their coincident pieces are one surface to `ssi::same` and the
+trim keeps the lower operand's. The twist drill's
 flute wheel too steep for its helix is admitted past S3 for the road, and refused where its body is
 built by S3's refusal, said by name (`twist_drill::the_constant_twist_rows_refuse_by_name`,
 `twist_drill::the_steep_wheel_asked_of_the_road_is_refused_by_s3`): **a body mixing a closed sweep

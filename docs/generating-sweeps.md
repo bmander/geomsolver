@@ -1396,8 +1396,11 @@ the twist drill's flute wheel too steep for its helix, S3, refused where its bod
 with the clearance's sheet, and whose folded flank's cusp the road's trim does not close at an end
 pose, #880 T1e). Two drawings fold (#880 T1c): `folded_ring.sv`, a ring
 pushed in past its fold, and `tight_ball.sv`, a ball screwed round a helix tighter than itself. A
-fold under a turn is not yet built: its two leaves lie on one surface of revolution and overlap,
-which the road's trim does not close (`tangent_rod.sv`, refused at its build, #880 T1e).
+fold under a turn builds too: its two leaves lie on one surface of revolution and overlap, and the
+trim keeps them once (`tangent_rod.sv`, a rod turned along itself), as it keeps once two sections
+whose images about the axis are one curve — the rod's two end rims — swept on the one surface their
+first section made, matched on that meridian itself rather than its polyline, whose chords' sag
+stood above the tolerance and fitted the second a surface of its own.
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |

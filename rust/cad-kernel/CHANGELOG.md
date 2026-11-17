@@ -27,8 +27,14 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   twist the closed class's admission takes a tool whose sheet folds — the class's own `Folded`, and
   the walk's fold rows E3 and S3 — for the road, as it takes T1, T2, S1 and E1, keeping the first
   refusal where the road refuses too. A ring pushed into a block past its fold builds from a
-  drawing. Not yet under a turn: a turned fold's two leaves lie on one surface of revolution and
-  overlap, which the road's trim does not close (a rod turned along itself, refused at its build).
+  drawing, and so do a ball screwed round a helix tighter than itself and a rod turned along itself,
+  whose fold's two leaves lie on one surface of revolution and are kept once.
+- **Two sections with one meridian image under a turn sweep one surface** (`swept::contacts`): a
+  section's image about the axis was matched to a surface already made against that meridian's
+  256-chord polyline, whose sag (~2e-5 on a unit arc) stood above the tolerance, so the second of
+  two identical images — a rod's two end rims — was fitted a surface of its own, which `ssi::same`
+  did not read as the first, and the trim kept both copies of where they overlap, leaving an edge
+  three faces used. The match is measured on the meridian itself.
 
 ## [0.14.0] - 2026-11-14
 
