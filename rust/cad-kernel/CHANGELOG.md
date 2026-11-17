@@ -15,6 +15,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   the first shut where it starts by its section, the move before holding the tool there, so no two
   moves' sweeps lie on one surface at their corner. brep-bench's `cnc/flat-end-mill-profile`,
   refused after two minutes, is cut in under two seconds, to its closed form within 3e-15.
+- **A smooth run of moves is one sweep** (`swept::pieces`, #931): moves square to the tool's axis
+  running on smoothly are a chain, their sides sewn along their sections (a closed one a ring); a
+  plunge into a chain or a whole turn, or a lift out of one, the column over the tool's top alone;
+  a drill's pecks one slide. brep-bench's `cnc/bull-nose-profile` and `cnc/pocket-with-an-island`
+  (timed out and refused before) build in about two seconds each, to their closed forms within
+  2e-15; `cnc/flat-end-mill-profile` in 0.2 s. `patches::Revolved::read` takes a cone's apex as a
+  point of its meridian (a drill).
 - **Booleans at tangencies** (`complex`, `boolean`): two exact faces leaving an edge are tied only
   within `16 tol / ρ` of one another (a fit's `TANGENT` else), and a tie is read a hundredth of their
   least radius in, not a thousandth of the whole complex — a cylinder and a ball of its radius

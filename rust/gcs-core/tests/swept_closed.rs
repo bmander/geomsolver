@@ -2505,3 +2505,104 @@ fn a_flat_end_mill_run_round_a_square_takes_its_band() {
     let removed = volume(&plate)-volume(&cut);
     assert!((removed-expected).abs() <= 1e-9*expected,"{removed} against {expected}");
 }
+
+/// A toolpath as a G-code program writes one: the tool drawn with its tip at `drawn`, then moved
+/// straight (`line`) or round an upright line (`arc`, its tip turning about it by an angle, the
+/// tool turned with it), each move a constant twist taken up where the one before left the tool,
+/// over the roll its tip travels (its angle times its radius on an arc).
+struct Program { drawn: [f64;3],pose: gcs_core::brep::trajectory::Pose,roll: f64,pieces: Vec<gcs_core::brep::trajectory::Piece> }
+
+impl Program {
+    fn from(drawn: [f64;3]) -> Program {
+        Program {drawn,pose:gcs_core::brep::trajectory::Pose {r:[[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]],p:[0.;3]},roll:0.,pieces:Vec::new()}
+    }
+    fn tip(&self) -> [f64;3] { self.pose.point(self.drawn) }
+    fn take(&mut self,twist: Screw,length: f64) {
+        use gcs_core::brep::trajectory::Piece;
+        let start = self.roll;
+        self.pieces.push(Piece {over:[start,start+length],path:Trajectory::Placed {twist,at:self.pose.then(twist.pose(-start))}});
+        self.roll += length;
+        self.pose = self.pose.then(twist.pose(length));
+    }
+    fn line(&mut self,to: [f64;3]) -> &mut Self {
+        let tip = self.tip();
+        let d: [f64;3] = std::array::from_fn(|k| to[k]-tip[k]);
+        self.take(Screw {origin:[0.;3],axis:unit(d),ratio:0.,advance:std::f64::consts::TAU},norm(d));
+        self
+    }
+    fn arc(&mut self,centre: [f64;2],angle: f64) -> &mut Self {
+        let tip = self.tip();
+        let length = (tip[0]-centre[0]).hypot(tip[1]-centre[1])*angle.abs();
+        self.take(Screw {origin:[centre[0],centre[1],0.],axis:[0.,0.,1.],ratio:angle/length,advance:0.},length);
+        self
+    }
+    fn path(&self) -> (Trajectory,[f64;2]) { (Trajectory::pieces(self.pieces.clone(),1e-9,100.).unwrap(),[0.,self.roll]) }
+}
+
+/// A bull-nose mill of radius `r`, its corner rounded to `c`, `len` long from the middle of its
+/// flat end at `tip` up its upright side: its meridian — out across its flat, round the corner, up
+/// its side, back across its top, down the axis — turned once.
+fn bull_nose_mill(tip: [f64;3],r: f64,c: f64,len: f64) -> Brep {
+    use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
+    use gcs_core::brep::geom::Frame;
+    let at = |x: f64,z: f64| [tip[0]+x,tip[1],tip[2]+z];
+    let line = |a,b| ProfileEdge::Line {a,b};
+    let edges = vec![line(at(0.,0.),at(r-c,0.)),
+        ProfileEdge::Arc {frame:Frame::new(at(r-c,c),[0.,-1.,0.],[1.,0.,0.]),r:c,span:Some([-std::f64::consts::FRAC_PI_2,0.])},
+        line(at(r,c),at(r,len)),line(at(r,len),at(0.,len)),line(at(0.,len),at(0.,0.))];
+    revolve(&Profile {origin:tip,normal:[0.,1.,0.],loops:vec![edges],names:Vec::new()},tip,[0.,0.,1.],std::f64::consts::TAU).unwrap()
+}
+
+/// **A bull-nose mill run along two arcs that meet smoothly takes its section turned along each**
+/// (`swept::pieces`'s chains): the mill of radius 4, its corner 1.5, plunged 3 into a plate, run a
+/// half turn about one upright line 12 off and a quarter turn back about another 12 off the other
+/// way, the two arcs meeting tangent, and lifted out. The arcs are one chain — their sides sewn along
+/// the section they share, never met in a Boolean, where each touches the other round that section
+/// — and the plunge and the lift are the column over the tool's top alone, the chain holding the tool
+/// at both ends. Apart from the build, by Pappus: each arc takes its turn times its radius times the
+/// section's area under the plate's top (the section even about the tool's axis), and its two ends
+/// together the tool's volume there — the flat's cylinder and the corner's turned quarter disc.
+#[test]
+fn a_bull_nose_mill_run_along_two_smooth_arcs_takes_its_section_turned() {
+    use gcs_core::brep::swept::closed::cut_from;
+    use std::f64::consts::PI;
+    let (r,c,depth) = (4.,1.5,3.);
+    let plate = block([-30.,-40.,-10.],[30.,40.,0.]);
+    let tool = bull_nose_mill([12.,0.,5.],r,c,25.);
+    let mut program = Program::from([12.,0.,5.]);
+    program.line([12.,0.,-depth]).arc([0.,0.],PI).arc([-24.,0.],-PI/2.);
+    let end = program.tip();
+    program.line([end[0],end[1],5.]);
+    let (path,roll) = program.path();
+    let cut = cut_from(&plate,&tool,&path,roll,0.01,1e-7).unwrap_or_else(|e| panic!("{e:?}"));
+    cut.check(1e-6).unwrap();
+    // the half section under the top: the side over the corner's height, the flat and the corner below
+    let a = r-c;
+    let half = r*(depth-c)+a*c+PI*c*c/4.;
+    let tool_under = PI*r*r*(depth-c)+PI*(a*a*c+a*PI*c*c/2.+2.*c*c*c/3.);
+    let expected = 12.*PI*2.*half+12.*PI/2.*2.*half+tool_under;
+    let removed = volume(&plate)-volume(&cut);
+    assert!((removed-expected).abs() <= 1e-9*expected,"{removed} against {expected}");
+}
+
+/// **A drill pecking a hole takes one hole** (`swept::pieces`): a drill of radius 4 with a 90° point
+/// plunged to 5, back up, to 10, back up and to 14 below a plate's top, its pecks one slide along its
+/// axis over every place they stand — its cylinder 10 deep and its point's cone 4.
+#[test]
+fn a_drill_pecking_a_hole_takes_one_hole() {
+    use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
+    use gcs_core::brep::swept::closed::cut_from;
+    use std::f64::consts::PI;
+    let plate = block([0.,0.,-20.],[20.,20.,0.]);
+    let tip = [10.,10.,5.];
+    let at = |x: f64,z: f64| [tip[0]+x,tip[1],tip[2]+z];
+    let corners = [at(0.,0.),at(4.,4.),at(4.,30.),at(0.,30.)];
+    let edges = (0..4).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%4]}).collect();
+    let drill = revolve(&Profile {origin:tip,normal:[0.,1.,0.],loops:vec![edges],names:Vec::new()},tip,[0.,0.,1.],2.*PI).unwrap();
+    let (path,roll) = moves(&[tip,[10.,10.,-5.],[10.,10.,2.],[10.,10.,-10.],[10.,10.,2.],[10.,10.,-14.],[10.,10.,5.]]);
+    let cut = cut_from(&plate,&drill,&path,roll,0.01,1e-7).unwrap_or_else(|e| panic!("{e:?}"));
+    cut.check(1e-6).unwrap();
+    let expected = PI*16.*10.+PI*16.*4./3.;
+    let removed = volume(&plate)-volume(&cut);
+    assert!((removed-expected).abs() <= 1e-9*expected,"{removed} against {expected}");
+}

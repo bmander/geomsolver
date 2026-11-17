@@ -40,6 +40,9 @@ type P2 = [f64;2];
 enum Move {
     /// Slid along the axis by `s` (from the pose `at`).
     Along { at: Pose,s: f64 },
+    /// Slid along the axis by `s` from the pose `at`, but for the tool where it stands lowest,
+    /// which a chain beside it holds (`lift`).
+    Lifted { at: Pose,s: f64 },
     /// Slid by `d`, square to the axis.
     Across { at: Pose,d: V },
     /// Turned by `angle` about the line through `q` along the unit `w`, which runs along the
@@ -179,46 +182,106 @@ fn along(rev: &Revolved,at_: Pose,s: f64,eps: f64) -> Result<Brep,String> {
     revolve(&Profile {origin:o,normal:cross(u,a),loops:vec![edges],names:Vec::new()},o,a,TAU)
 }
 
-/// **The tool slid square to its axis by `d`** from the pose `at_`: its half behind, its section
-/// through the axis square to `d` carried along it, and its half ahead where it ends — sewn.
-fn across(rev: &Revolved,at_: Pose,d: V,back: bool,tol: f64) -> Result<Brep,String> {
+/// The foot of the axis where a slide along it leaves the tool lowest, and the axis.
+fn lowest(rev: &Revolved,at_: Pose,s: f64) -> [V;2] {
     let (o,a) = (at_.point(rev.frame.o),at_.vector(rev.frame.z));
-    let m = unit(d);
-    let u = cross(a,m);
-    let section = section(rev,o,u,a,1e-9*(1.+rev.size));
-    let carried = prism(&section,0.,norm(d))?;
-    let start = if back { half(rev,o,a,scale(m,-1.))? } else { crate::build::face(&section)? };
-    let faces = [start,without_planes(&carried,m)?,half(rev,add(o,d),a,m)?];
-    if crate::debug() {
-        for (k,b) in faces.iter().enumerate() {
-            for f in &b.faces {
-                let es: Vec<String> = f.loops.iter().flatten().map(|c| { let e = &b.edges[c.edge as usize];
-                    format!("{}{:?}->{:?}",e.curve.kind(),b.vertices[e.v[0] as usize].p.map(|x| (x*1e3).round()/1e3),b.vertices[e.v[1] as usize].p.map(|x| (x*1e3).round()/1e3)) }).collect();
-                eprintln!("across piece {k}: {} {:?}",f.surface.kind(),es);
-            }
-        }
+    [if s < 0. { add(o,scale(a,s)) } else { o },a]
+}
+
+/// The height of the tool's top above the foot of its axis and its reach there, where the tool
+/// ends in a flat top as wide as it reaches anywhere, its side running straight up to it — the
+/// shank of every end mill and drill: what a slide along the axis covers past the tool where it
+/// stands lowest is then the column of that width over its top (`lift`). None for any other top.
+fn flat_top(rev: &Revolved) -> Option<(f64,f64)> {
+    let n = rev.elements.len();
+    let reach = rev.elements.iter().flat_map(|e| e.ends()).map(|p| p[0]).fold(0.,f64::max);
+    let eps = 1e-9*(1.+rev.size);
+    if rev.elements.iter().any(|e| matches!(*e,Element::Arc {c,r,..} if c[0]+r > reach+eps)) { return None }
+    match (n >= 2).then(|| (rev.elements[n-2],rev.elements[n-1]))? {
+        (Element::Line {a:p,b:q},Element::Line {a:r,b:t}) if (p[0]-reach).abs() <= eps && (q[0]-reach).abs() <= eps
+            && (r[1]-t[1]).abs() <= eps && t[0].abs() <= eps => Some((q[1],reach)),
+        _ => None,
     }
+}
+
+/// **A slide along the axis less the tool where it stands lowest**: the column the tool's flat top
+/// (`flat_top`) sweeps over the height `s`, standing on that top.
+fn lift(rev: &Revolved,at_: Pose,s: f64) -> Result<Brep,String> {
+    let (top,reach) = flat_top(rev).ok_or("a tool with no flat top as wide as it reaches")?;
+    let [o,a] = lowest(rev,at_,s);
+    let x = at_.vector(rev.frame.x);
+    let c = add(o,scale(a,top));
+    let base = Profile {origin:c,normal:a,names:Vec::new(),loops:vec![vec![ProfileEdge::Arc {frame:Frame::new(c,a,x),r:reach,span:None}]]};
+    prism(&base,0.,s.abs())
+}
+
+/// Where a move square to the tool's axis starts or ends: the foot of the axis there (the
+/// meridian's origin), the axis, and the unit way the axis moves.
+type Stand = [V;3];
+
+/// **A move square to the tool's axis, as a chain takes it** (`Move::Across`, or `Move::Turned`
+/// short of a whole turn): where it starts and where it ends (`Stand`) — or none for any other move.
+fn stands(rev: &Revolved,mv: Move) -> Option<[Stand;2]> {
+    match mv {
+        Move::Across {at,d} => {
+            let (o,a,m) = (at.point(rev.frame.o),at.vector(rev.frame.z),unit(d));
+            Some([[o,a,m],[add(o,d),a,m]])
+        }
+        Move::Turned {at,q,w,angle} if angle.abs() < TAU*(1.-1e-12) => {
+            let (o,a) = (at.point(rev.frame.o),at.vector(rev.frame.z));
+            let off = sub(o,q);
+            let u = unit(sub(off,scale(w,dot(off,w))));
+            let m = scale(cross(w,u),angle.signum());
+            let end = crate::geom::Rigid::turn(q,w,angle);
+            Some([[o,a,m],[end.point(o),end.vector(a),end.vector(m)]])
+        }
+        _ => None,
+    }
+}
+
+/// **A move's side**: its section through the axis square to the way it moves, carried along a
+/// slide or turned about a turn's line, without the section at either end.
+fn side(rev: &Revolved,mv: Move,eps: f64) -> Result<Brep,String> {
+    match mv {
+        Move::Across {at,d} => {
+            let (o,a,m) = (at.point(rev.frame.o),at.vector(rev.frame.z),unit(d));
+            without_planes(&prism(&section(rev,o,cross(a,m),a,eps),0.,norm(d))?,m)
+        }
+        Move::Turned {at,q,w,angle} => {
+            let o = at.point(rev.frame.o);
+            let off = sub(o,q);
+            let u = unit(sub(off,scale(w,dot(off,w))));
+            without_planes_holding(&revolve(&section(rev,o,u,at.vector(rev.frame.z),eps),q,w,angle)?,w)
+        }
+        _ => Err("a move along the axis or at a slant has no side of this kind".into()),
+    }
+}
+
+/// **A chain's sweep** (`moves`, each square to the axis, each starting as the one before ends,
+/// the way the axis moves running on smoothly): its moves' sides sewn along the sections they
+/// share, between the tool's half behind where the chain starts — or, not `back`, its section
+/// there — and its half ahead where it ends. A smooth path's moves are swept as one: no two of
+/// their sweeps meet in a Boolean, where each would touch the other along that section.
+fn chain(rev: &Revolved,moves: &[Move],back: bool,tol: f64) -> Result<Brep,String> {
+    let eps = 1e-9*(1.+rev.size);
+    let ([o,a,m],_) = stands(rev,moves[0]).map(|[s,e]| (s,e)).ok_or("a chain of no move square to the axis")?;
+    let [_,[o1,a1,m1]] = stands(rev,moves[moves.len()-1]).ok_or("a chain of no move square to the axis")?;
+    // (a chain closing on itself, ending where it starts the same way, is its sides alone: a ring)
+    let closed = moves.len() > 1 && norm(sub(o1,o)) <= eps && dot(a,a1) >= 1.-1e-12 && dot(m,m1) >= 1.-1e-9;
+    let mut faces = Vec::with_capacity(moves.len()+2);
+    if !closed { faces.push(if back { half(rev,o,a,scale(m,-1.))? } else { crate::build::face(&section(rev,o,cross(a,m),a,eps))? }); }
+    for &mv in moves { faces.push(side(rev,mv,eps)?); }
+    if !closed { faces.push(half(rev,o1,a1,m1)?); }
     crate::sew::sewn(&faces,tol).map_err(|e| e.msg)
 }
 
-/// **The tool turned by `angle` about the line through `q` along `w`** (along its axis, missing
-/// it) from the pose `at_`: its section through both axes turned about the line, between its half
-/// behind where it starts and its half ahead where it ends — or, a whole turn or more, that
-/// section's solid of revolution alone.
-fn turned(rev: &Revolved,at_: Pose,q: V,w: V,angle: f64,back: bool,tol: f64) -> Result<Brep,String> {
-    let (o,a) = (at_.point(rev.frame.o),at_.vector(rev.frame.z));
+/// **The tool turned a whole turn or more about a line along its axis**: its section through both
+/// axes' solid of revolution.
+fn ring(rev: &Revolved,at_: Pose,q: V,w: V,angle: f64) -> Result<Brep,String> {
+    let o = at_.point(rev.frame.o);
     let off = sub(o,q);
     let u = unit(sub(off,scale(w,dot(off,w))));
-    let section = section(rev,o,u,a,1e-9*(1.+rev.size));
-    let ring = revolve(&section,q,w,angle)?;
-    if angle.abs() >= TAU*(1.-1e-12) { return Ok(ring) }
-    // the axis's way at the start, and where the turn leaves it
-    let m = scale(cross(w,u),angle.signum());
-    let end = crate::geom::Rigid::turn(q,w,angle);
-    let (o1,m1) = (end.point(o),end.vector(m));
-    let start = if back { half(rev,o,a,scale(m,-1.))? } else { crate::build::face(&section)? };
-    let faces = [start,without_planes_holding(&ring,w)?,half(rev,o1,end.vector(a),m1)?];
-    crate::sew::sewn(&faces,tol).map_err(|e| e.msg)
+    revolve(&section(rev,o,u,at_.vector(rev.frame.z),1e-9*(1.+rev.size)),q,w,angle)
 }
 
 /// What `piece` over `[lo, hi]` sweeps, read: its move (`Move`), or none where it moves nothing.
@@ -282,7 +345,11 @@ fn reach(tool: &Brep,path: &Trajectory,[lo,hi]: [f64;2]) -> Option<crate::geom::
 /// or a piece it could not sweep or cut.
 pub fn cut(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> Option<Result<Brep,Unbuilt>> {
     let Trajectory::Pieces(pieces) = path else { return None };
-    let rev = Revolved::read(tool).ok()?;
+    let rev = match Revolved::read(tool) {
+        Ok(rev) => rev,
+        Err(why) => { if crate::debug() { eprintln!("pieces: the tool read as no convex solid of revolution: {why:?}") } return None }
+    };
+    let clock = crate::util::clock::Instant::now();
     let mill = super::raster::Mill::read(tool,tol);
     let bounds = blank.bounds();
     if !bounds.0[0].is_finite() { return None }
@@ -298,10 +365,75 @@ pub fn cut(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol
         if !overlap(&box_,&bounds,tol) { return None }
         Some((i,&piece.path,read(&rev,mill.as_ref(),&piece.path,[lo,hi])?,Some(i) == first))
     }).collect();
-    let sweeps = crate::util::par::map(&moves,|&(i,piece,mv,back)| sweep(&rev,mill.as_ref(),tool,piece,mv,back,blank,bar,tol)
-        .map_err(|why| Unbuilt::Failed(format!("piece {i} of the path: its sweep not built: {why}"))));
+    let eps = 1e-9*(1.+rev.size);
+    // slides along one axis line, one after another (a drill's pecks), are one slide over every
+    // place they stand: the tool drawn out from the lowest to the highest
+    let mut moves = moves;
+    {
+        let mut merged: Vec<(usize,&Trajectory,Move,bool)> = Vec::with_capacity(moves.len());
+        for m in moves {
+            if let (Some(last),(i,_,Move::Along {at,s},_)) = (merged.last_mut(),m) {
+                if let (j,_,Move::Along {at:at0,s:s0},_) = *last {
+                    let ([o0,a0],[o1,a1]) = ([at0.point(rev.frame.o),at0.vector(rev.frame.z)],[at.point(rev.frame.o),at.vector(rev.frame.z)]);
+                    let off = sub(o1,o0);
+                    if j+1 == i && dot(a0,a1) >= 1.-1e-12 && norm(sub(off,scale(a0,dot(off,a0)))) <= eps {
+                        // each slide's span along the axis from `o0`, and their union
+                        let (h1,h2) = (dot(off,a0),dot(off,a0)+s);
+                        let (lo,hi) = (0f64.min(s0).min(h1).min(h2),0f64.max(s0).max(h1).max(h2));
+                        let at_lo = Pose {r:at0.r,p:add(at0.p,scale(a0,lo))};
+                        // (known by the last piece's place in the path, which a chain after it follows)
+                        *last = (i,last.1,Move::Along {at:at_lo,s:hi-lo},last.3);
+                        continue
+                    }
+                }
+            }
+            merged.push(m);
+        }
+        moves = merged;
+    }
+    // the moves in chains: one square to the axis goes on with the chain before it where it is the
+    // next piece of the path and starts as that one ends, the axis moving on the same way
+    let mut chains: Vec<Vec<(usize,&Trajectory,Move,bool)>> = Vec::new();
+    for &(i,piece,mv,back) in &moves {
+        let goes_on = chains.last().and_then(|c| c.last()).is_some_and(|&(j,_,last,_)| j+1 == i && match (stands(&rev,last),stands(&rev,mv)) {
+            (Some([_,[o,a,m]]),Some([[p,b,n],_])) => norm(sub(o,p)) <= eps && dot(a,b) >= 1.-1e-12 && dot(m,n) >= 1.-1e-9,
+            _ => false,
+        });
+        if goes_on { chains.last_mut().unwrap().push((i,piece,mv,back)) } else { chains.push(vec![(i,piece,mv,back)]) }
+    }
+    // a slide along the axis ending where a chain starts (a plunge) or starting where one ends (a
+    // lift out), the tool standing lowest there: that chain holds the tool there — its half behind
+    // where it starts, `back` — so the slide is the column over the tool's top alone (`lift`), its
+    // tool never met with the chain's sides, which touch it round their section
+    if flat_top(&rev).is_some() {
+        for k in 0..chains.len() {
+            let [(i,piece,Move::Along {at,s},back)] = chains[k][..] else { continue };
+            let [low,_] = lowest(&rev,at,s);
+            // (where a chain starts or ends, or a whole turn about a line along the axis, whose ring
+            // holds the tool where it starts and ends)
+            let foot = |c: &[(usize,&Trajectory,Move,bool)],end: usize| -> Option<(usize,V)> {
+                let (j,_,mv,_) = if end == 0 { c[0] } else { c[c.len()-1] };
+                match mv {
+                    Move::Turned {at,..} if c.len() == 1 && stands(&rev,mv).is_none() => Some((j,at.point(rev.frame.o))),
+                    _ => stands(&rev,mv).map(|st| (j,st[end][0])),
+                }
+            };
+            let plunged = s < 0. && chains.get(k+1).and_then(|c| foot(c,0)).is_some_and(|(j,o)| j == i+1 && norm(sub(o,low)) <= eps);
+            let lifted = s > 0. && k > 0 && foot(&chains[k-1],1).is_some_and(|(j,o)| j+1 == i && norm(sub(o,low)) <= eps);
+            if plunged { chains[k+1][0].3 = true }
+            if plunged || lifted { chains[k] = vec![(i,piece,Move::Lifted {at,s},back)] }
+        }
+    }
+    let sweeps = crate::util::par::map(&chains,|c| {
+        let (i,piece,mv,back) = c[0];
+        match c.len() {
+            1 => sweep(&rev,mill.as_ref(),tool,piece,mv,back,blank,bar,tol),
+            _ => chain(&rev,&c.iter().map(|x| x.2).collect::<Vec<_>>(),back,tol),
+        }.map_err(|why| Unbuilt::Failed(format!("piece {i} of the path: its sweep not built: {why}")))
+    });
+    let swept_at = clock.elapsed().as_secs_f64();
     let (mut out,mut known): (Option<Brep>,Option<Known>) = (None,None);
-    for ((i,..),sweep) in moves.iter().zip(sweeps) {
+    for ((i,..),sweep) in chains.iter().map(|c| c[0]).zip(sweeps) {
         let sweep = match sweep { Ok(s) => s,Err(e) => return fallen(e) };
         match combined_known(out.as_ref().unwrap_or(blank),known.as_ref(),&sweep,Op::Cut,tol) {
             Ok((cut,next)) => (out,known) = (Some(cut),Some(next)),
@@ -321,7 +453,13 @@ pub fn cut(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol
         }
     }
     let out = out.unwrap_or_else(|| blank.clone());
-    Some(judged(out,blank,tool,path,roll,bar,tol))
+    let cut_at = clock.elapsed().as_secs_f64();
+    let judged = judged(out,blank,tool,path,roll,bar,tol);
+    if crate::timing() {
+        eprintln!("pieces: {} of {} pieces reach the blank, in {} sweeps: swept by {swept_at:.2} s, cut by {cut_at:.2} s, judged by {:.2} s",
+            moves.len(),pieces.pieces().len(),chains.len(),clock.elapsed().as_secs_f64());
+    }
+    Some(judged)
 }
 
 /// The road's failure, said where the kernel narrates, the path left to the closed class.
@@ -345,8 +483,10 @@ fn sweep(rev: &Revolved,mill: Option<&super::raster::Mill>,tool: &Brep,piece: &T
     let eps = 1e-9*(1.+rev.size);
     match mv {
         Move::Along {at,s} => along(rev,at,s,eps),
-        Move::Across {at,d} => across(rev,at,d,back,tol),
-        Move::Turned {at,q,w,angle} => turned(rev,at,q,w,angle,back,tol),
+        Move::Lifted {at,s} => lift(rev,at,s),
+        Move::Across {..} => chain(rev,&[mv],back,tol),
+        Move::Turned {at,q,w,angle} if angle.abs() >= TAU*(1.-1e-12) => ring(rev,at,q,w,angle),
+        Move::Turned {..} => chain(rev,&[mv],back,tol),
         Move::Slanted {from,to,axis} => super::raster::slanted(from,to,axis,mill.expect("a slanted move is read only of a mill"),blank,back,tol),
         Move::Closed {roll} => super::closed::closed(tool,piece,roll,bar,tol).map_err(|e| format!("{e:?}")),
     }
