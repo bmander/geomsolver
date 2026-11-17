@@ -23,6 +23,12 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   factor falls below a millionth at a point of a use, those its box is read from: the bar builds in
   58 s again, to the same volume, and every fold case reads as it did.
 
+- **A fold reaches the contact's road from a drawing** (`swept::dispatch`, #880 T1c): under a constant
+  twist the closed class's admission takes a tool whose sheet folds — the class's own `Folded`, and
+  the walk's fold rows E3 and S3 — for the road, as it takes T1, T2, S1 and E1, keeping the first
+  refusal where the road refuses too. A ring pushed into a block past its fold builds from a
+  drawing.
+
 ## [0.14.0] - 2026-11-14
 
 - **A sheet that folds under a slide, a turn or a screw goes the contact's road** (`swept::closed`,

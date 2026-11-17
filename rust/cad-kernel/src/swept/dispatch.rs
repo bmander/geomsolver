@@ -235,16 +235,17 @@ pub fn sweep(s: &Sweep,blank: &dyn Blank,ask: &Ask) -> Result<Admitted,Refused> 
 /// The closed class's admission of `s` (C1, C2): its trajectory unpaced, read in millimetres, a
 /// constant twist's or any other's, the tool's structure what the build asks; none where it
 /// refuses. Under a constant twist a tool whose face or edge the class reads no candidate for
-/// (`Unbuilt::Curved`) is admitted too where `first`, the refusal of the class asked first, is one
-/// the contact's road answers (`road_answers`): its build takes the road (`closed::closed`, #880
-/// Q1b), and where the road refuses it as well, the class's refusal is said there.
+/// (`Unbuilt::Curved`), or whose sheet folds (`Unbuilt::Folded`), is admitted too where `first`,
+/// the refusal of the class asked first, is one the contact's road answers (`road_answers`): its
+/// build takes the road (`closed::closed`, #880 Q1b, T1), and where the road refuses it as well, the
+/// class's refusal is said there.
 fn closed(s: &Sweep,b: &Brep,poses: usize,first: &Refused) -> Option<Admitted> {
     // a sweep is its path's, not its pace's (#684 L)
     let (path,roll) = s.path.unpaced(s.roll).ok()?;
     let path = path.scaled(s.mm);
     let road = match path.screw() {
         Some(_) => match super::closed::reads(b,&path) {
-            Err(super::closed::Unbuilt::Curved {..}) if road_answers(first.row) => Ok(true),
+            Err(super::closed::Unbuilt::Curved {..} | super::closed::Unbuilt::Folded {..}) if road_answers(first.row) => Ok(true),
             read => read.map(|_| false),
         },
         None => super::closed::reads_general(b,&path,roll).map(|_| false),
@@ -253,14 +254,15 @@ fn closed(s: &Sweep,b: &Brep,poses: usize,first: &Refused) -> Option<Admitted> {
     Some(Admitted::whole(Class::Closed(Box::new(Closed {tool:b.clone(),path,roll,first})),poses))
 }
 
-/// **Whether the contact's road answers a refusal by `row`** (#880 Q1b): a tool the walk does not
-/// read (T1, T2), a contact that is no regular curve on it — a pole, a branch, a ring in contact all
-/// round (S1) — and an end of the roll in the blank (E1) are what the walk reads a contact by and
-/// the road reads the whole tool past. A fold (E3, S3), a stock reached twice on a ring (S2) and
-/// the sheet's own crossings (E4, S4) are no such limit: the road does not cut a fold (T1's), and
-/// their rows say what stops the sweep by name — a twist drill's flute wheel too steep for its
-/// helix, admitted past S3, was refused only by a cell its other sweep's sheets left unsplit.
-fn road_answers(row: Row) -> bool { matches!(row,Row::Tool | Row::Corner | Row::Regular | Row::Clearance) }
+/// **Whether the contact's road answers a refusal by `row`** (#880 Q1b, T1c): a tool the walk does
+/// not read (T1, T2), a contact that is no regular curve on it — a pole, a branch, a ring in contact
+/// all round (S1) — an end of the roll in the blank (E1), and a fold (E3, S3), which the road keeps
+/// of what bounds the sweep since #880 T1b, are what the walk reads a contact by and the road reads
+/// the whole tool past. A stock reached twice on a ring (S2) and the sheet's own crossings (E4, S4)
+/// are no such limit: their rows say what stops the sweep by name. (A twist drill's flute wheel too
+/// steep for its helix, admitted past S3, is refused where its body is built, S3's refusal said;
+/// the road, asked alone, does not close its folded flank's cusp at an end pose, #880 T1e.)
+fn road_answers(row: Row) -> bool { matches!(row,Row::Tool | Row::Corner | Row::Regular | Row::Clearance | Row::Fold | Row::Edgewise) }
 
 /// The constant twist's rows (S1–S4) under `twist`, the constant twist the motion is, or the
 /// generating class's (M1–E4, T1–T3) where it is none: the tool read from its B-rep (T1), the

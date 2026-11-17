@@ -1133,12 +1133,27 @@ slow tier, S6's gate): all of Q1b's fourteen cases build (docs/swept-solid-desig
 
 **A drawing reaches the contact's road through the closed class's admission** (`swept::dispatch`,
 #880 Q1b): under a slide, a turn or a screw a tool the class reads no candidate for
-(`closed::reads` refusing it `Curved`) is admitted where the class asked first refused it by a row
-the road answers (`road_answers`: the tool unread, T1 and T2; a contact no regular curve, S1; an
-end of the roll in the blank, E1), and its build takes the road. A fold (E3, S3), a stock reached
-twice on a ring (S2) and a sheet's crossing (E4, S4) keep their first refusal: admitted past S3, a
-twist drill's flute wheel too steep for its helix was refused only by a cell its other sweep left
-unsplit, and the row that names the fold was lost (`twist_drill::the_constant_twist_rows_refuse_by_name`).
+(`closed::reads` refusing it `Curved`), or whose sheet folds (`Folded`), is admitted where the
+class asked first refused it by a row the road answers (`road_answers`: the tool unread, T1 and T2;
+a contact no regular curve, S1; an end of the roll in the blank, E1; a fold, E3 and S3, since #880
+T1c), and its build takes the road. A stock reached twice on a ring (S2) and a sheet's crossing (E4,
+S4) keep their first refusal. **Folds in drawings** (#880 T1c): `folded_ring.sv`, `leaning_ring.sv`'s
+ring leaning past its fold, refused at E1 by the walk and read `Folded` by the class, is admitted
+past both and built by the road to brep-bench's `ring-pushed-in-past-its-fold` within 1e-9
+(`solid_sweeps_examples::the_ring_pushed_past_its_fold_bores_round_its_cusped_core`); `tight_ball.sv`,
+brep-bench's ball round a tight helix inside a block, which the class takes as a ball under a screw
+and whose build sends the fold to the road, to its ball within 1e-8
+(`solid_sweeps_examples::the_ball_screwed_round_a_tight_helix_hollows_the_block`). The twist drill's
+flute wheel too steep for its helix is admitted past S3 for the road, and refused where its body is
+built by S3's refusal, said by name (`twist_drill::the_constant_twist_rows_refuse_by_name`,
+`twist_drill::the_steep_wheel_asked_of_the_road_is_refused_by_s3`): **a body mixing a closed sweep
+with sheets** cuts the sheets' sweeps first (`brep::sweep::mixed_cut`), their cells judged by the
+body's field, which has the closed sweep's cut already, so a cell the flute would split reads both
+material and removed — and there the refusal of the class asked first is said, as where the road
+refuses. (Asked alone, the road refuses the flute too: its trim does not close where the folded
+flank's cusp meets an end pose, the leaves' meetings with it traced apart, #880 T1e. Cutting the
+closed sweeps first instead loses them: the sheets' road rebuilds its blank from the recipe.) The
+narrow wheel stays S2's.
 The admission keeps that first refusal (`dispatch::Closed::first`, `closed_class::Closed::first`),
 and where the road refuses at the build the drawing is refused by it, not by the closed class's
 `Curved` (`rings_all_round::what_a_turn_about_an_axis_the_tools_meets_still_refuses`: the domed pin's

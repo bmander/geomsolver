@@ -1387,11 +1387,15 @@ the road's (T1c).
 A drawing reaches it through the closed class's admission: under a slide, a turn or a screw a tool
 the class reads no candidate for is admitted where the class asked first refused it for what the
 road reads past — a tool the walk does not read (T1, T2), a contact that is no regular curve (S1: a
-pole, a branch, a ring in contact all round), an end of the roll in the blank (E1). A fold (E3, S3),
-a stock reached twice on a ring (S2) and a sheet's own crossing (E4, S4) keep their first refusal:
-the road cuts no fold. Where the road refuses at the build, the first class's refusal is said there,
-naming what stops it (`rings_all_round::what_a_turn_about_an_axis_the_tools_meets_still_refuses`,
-the domed pin's pole).
+pole, a branch, a ring in contact all round), an end of the roll in the blank (E1), and a fold (E3,
+S3; the class's own `Folded` too), which the road keeps of what bounds the sweep since #880 T1b. A
+stock reached twice on a ring (S2) and a sheet's own crossing (E4, S4) keep their first refusal.
+Where the road refuses at the build, the first class's refusal is said there, naming what stops it
+(`rings_all_round::what_a_turn_about_an_axis_the_tools_meets_still_refuses`, the domed pin's pole;
+the twist drill's flute wheel too steep for its helix, S3, refused where its body mixes the flute
+with the clearance's sheet, and whose folded flank's cusp the road's trim does not close at an end
+pose, #880 T1e). Two drawings fold (#880 T1c): `folded_ring.sv`, a ring
+pushed in past its fold, and `tight_ball.sv`, a ball screwed round a helix tighter than itself.
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |

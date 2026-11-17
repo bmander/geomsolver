@@ -106,14 +106,24 @@ fn the_drills_field_has_its_flutes_margins_point_and_shank() {
     assert!((0..36).all(|k| at(4.95,k as f64*10.,-10.)));
 }
 
+/// The flute wheel too steep for its helix: its flanks fold the flute's wall (S3).
+fn steep() -> Elaborated {
+    let wheel = "{rim: 25mm, nearest: web / 2, round: 2.5mm, flank: 20deg, depth: 7mm}";
+    fixtures::drill::read(&[("flutes","1"),("point","0"),("fluted_length","6mm"),("flute_wheel",wheel)])
+}
+
 /// Each row of the constant-twist class refuses a wheel that fails it, by name: flanks too steep
-/// for the helix fold the flute's wall (S3), a narrow wheel with shallow flanks reaches the stock
-/// twice on a ring (S2). A crossing within a lead (S4) is asked of the section's polyline.
+/// for the helix fold the flute's wall (S3) — a fold, which the contact's road takes (#880 T1c), so
+/// the flute is admitted to the closed class for it, S3's refusal kept as the first class's word —
+/// and a narrow wheel with shallow flanks reaches the stock twice on a ring (S2), refused. A crossing
+/// within a lead (S4) is asked of the section's polyline.
 #[test]
 fn the_constant_twist_rows_refuse_by_name() {
     let wheel = |round: &str,flank: &str| format!("{{rim: 25mm, nearest: web / 2, round: {round}, flank: {flank}, depth: 7mm}}");
-    let steep = wheel("2.5mm","20deg");
-    let r = refused(admit(&fixtures::drill::read(&[("flutes","1"),("point","0"),("fluted_length","6mm"),("flute_wheel",&steep)]),"fluted"));
+    let a = admit(&steep(),"fluted").unwrap();
+    let flute = a.sweeps().iter().find(|s| s.name == "flute").unwrap();
+    let Class::Closed(found) = &flute.class else { panic!("the flute admitted to the closed class") };
+    let r = found.first.as_ref().expect("the constant-twist class's refusal kept");
     assert_eq!(r.condition,Condition::Edgewise);
     assert!(r.to_string().contains("outside the constant-twist class (S3"),"{r}");
     assert!(r.message.contains("left_flank") && r.message.contains("turned its sign"),"{}",r.message);
@@ -127,6 +137,19 @@ fn the_constant_twist_rows_refuse_by_name() {
     assert!(constant_twist::crossing(&figure).is_some());
     let arc: Vec<[f64;2]> = (0..=64).map(|k| { let t = PI*k as f64/64.; [t.cos(),t.sin()] }).collect();
     assert_eq!(constant_twist::crossing(&arc),None);
+}
+
+/// **The steep wheel, admitted for the contact's road, is refused by S3 where the body is built**
+/// (#880 T1c): the body clearance's sheet is cut first, its cells judged by the body's field, which
+/// the flute's cut, not yet made, splits; there the constant-twist class's refusal is said, by
+/// name. (Asked alone, the road refuses the flute too: its trim does not close where the wheel's
+/// folded flank's cusp meets an end pose, the leaves' meetings with it traced apart — T1e's.)
+#[test]
+fn the_steep_wheel_asked_of_the_road_is_refused_by_s3() {
+    let e = steep();
+    let (exact,_) = saying(|say| export::exact(&e.sketch,fixtures::solid(&e,"fluted"),None,Some(Tolerance::new(0.01).unwrap()),say));
+    let r = exact.err().expect("refused").to_string();
+    assert!(r.contains("outside the constant-twist class (S3"),"{r}");
 }
 
 /// The flute wheel's characteristic under the screw, computed from closed forms: for each point of
@@ -371,3 +394,4 @@ fn the_page_builds_the_whole_drills_exact_surface() {
     let volume = builder.display().unwrap().faces.volume;
     assert!((volume-3606.54).abs() < 0.5,"{volume}");
 }
+

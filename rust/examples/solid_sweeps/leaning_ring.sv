@@ -8,7 +8,8 @@
 // leaves standing. No contact walk builds it (the push ends in the block); the kernel splits the
 // block at once by the ring where it stops and those two cylinders, met in closed form, and keeps
 // each cell the ring, carried back along the push, misses (the closed class, #805). Leaning further
-// than `tan² β = (R − r)/r` (here 54.7°) the inner outline would cusp, and that is refused by name.
+// than `tan² β = (R − r)/r` (here 54.7°) the inner outline cusps, and the contact's road builds it
+// (`folded_ring.sv`).
 // Every line down the push meets the ring once or not at all, so the block loses, over the
 // annulus between the two outlines, each line's depth to the ring's far side: by the ring's
 // symmetry about its centre that is the centre's depth, 4 mm, times the annulus's area, and half
