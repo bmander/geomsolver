@@ -1380,8 +1380,9 @@ radius — the road builds, its trim keeping of the folded sheet what bounds the
 kernel's tolerance within 1e-9 of the volume made apart
 (`swept_contacts::the_fold_cases_hold_at_the_kernels_tolerance`). Its stretches are cut clear of
 the folds, never on a cusp, where a stretch's end would run along the fold's path and the sheet's
-rates together (#880 T1b); a swallowtail narrower than the contact's points (a ring at 56°) is still
-refused. The admission still refuses a fold by name (E3, S3), so a drawing's folded sheet is not yet
+rates together (#880 T1b); a swallowtail narrower than a stretch (a ring at 56°) is cut at its
+double point instead, where its outer leaves cross, and the rim of one leaf crossing the other's
+branch on the tool posed at an end of the roll is laid as a crossing of the two splines (#880 T1e). The admission still refuses a fold by name (E3, S3), so a drawing's folded sheet is not yet
 the road's (T1c).
 
 A drawing reaches it through the closed class's admission: under a slide, a turn or a screw a tool

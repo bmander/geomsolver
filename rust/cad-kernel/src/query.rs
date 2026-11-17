@@ -357,9 +357,11 @@ pub fn enclosed_crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) 
         let Some((dp,dq)) = settled else { continue };
         let p = a.point(s);
         if distance(p,b.point(t)) > pad { continue }
+        // (a meeting outside the stretches asked about is not theirs, however shallow: two curves of
+        // one meeting touching at an end they share, which their ends lay, beside the stretch read)
+        let (Some(s),Some(_)) = (within_stretch(a,s,ta,tol),within_stretch(b,t,tb,tol)) else { continue };
         if norm(crate::util::space::cross(dp,dq)) < super::ssi::SHALLOW*norm(dp)*norm(dq) { return None }
         if out.iter().any(|x| distance(x.1,p) <= tol) { continue }
-        let (Some(s),Some(_)) = (within_stretch(a,s,ta,tol),within_stretch(b,t,tb,tol)) else { continue };
         out.push((s,p));
     }
     Some(out)

@@ -8,6 +8,20 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A swallowtail narrower than a stretch is cut at its double point** (`swept::contacts`, #880
+  T1e): where a contact's image in the motion's invariants turns back twice, its outer leaves cross
+  over one path, and a stretch holding both folds held both leaves of the crossing, a sheet crossing
+  itself the trim never parts. Each double point is found exactly, by Newton's method on its four
+  equations, and the piece is cut at both its points: the outer leaves meet as stretches, the tail
+  between is buried. A ring pushed in at 56°, just past its fold, refused with a hole in no piece,
+  builds cut and alone within ten tolerances; at 60° it stood 1.6e-4 off and holds to 2e-6.
+- **Two splines of one meeting are crossed** (`boolean`, `query::enclosed_crossings`): where two
+  curves given or found for one pair of surfaces have no closed form between them, their crossings
+  are sought by their enclosures, each held back from an end lying on the other, and kept only where
+  they part (a thousand tolerances along either way, more than eight apart). A meeting
+  `enclosed_crossings` settles outside the stretches asked about no longer refuses the pair as
+  shallow.
+
 ## [0.15.0] - 2026-11-17
 
 - **Any tool of revolution's path of pieces is cut from a blank piece by piece** (`swept::pieces`,

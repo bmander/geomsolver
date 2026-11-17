@@ -2728,14 +2728,42 @@ fn merged(out: &[WEdge],tol: f64) -> Vec<(u32,bool)> {
 /// two curves of one meeting cross only where the surfaces touch — a singular point of the meeting
 /// (#735 A2): two cylinders of one radius whose axes cross meet in two ellipses crossing where both
 /// touch, a plane tangent to a hyperboloid in the two rulings through the point it touches at — and
-/// there each is split as at an edge.
+/// there each is split as at an edge. Two curves with no closed form between them (a sweep's rim and
+/// a branch of what passes back into the tool, both splines, #880 T1e) are read by their enclosures
+/// (`query::enclosed_crossings`), each held back from an end lying on the other, which
+/// `ends_on_one_another` lays and where the two may leave one another tangent: a swallowtail's
+/// leaves cross over its double point, and on the tool posed at an end of the roll the rim of one
+/// crosses the other's branch there, the two touching where each leaves a fold.
 fn crossings_among(surface: &super::geom::Surface,curves: &[super::geom::Curve],bx: Box3,pad: f64,tol: f64) -> Result<Vec<Vec<V>>,String> {
     let mut crossed = vec![Vec::new();curves.len()];
     let stretches: Vec<Option<[f64;2]>> = curves.iter().map(|c| stretch_in(c,bx,pad)).collect();
+    // (a crossing parts the two: a thousand tolerances along `c` either way from it, `c` stands more
+    // than eight off `other` — two fits of one touch, a turned coin's sheets on the torus its rim
+    // turns into at the kernel's tolerance, wander about one another within it and read crossings
+    // where they run together)
+    let parts = |c: &super::geom::Curve,other: &super::geom::Curve,q: V| -> bool {
+        let t = c.inverse(q);
+        let dt = 1e3*tol/c.speed().max(1e-300);
+        let Some([lo,hi]) = super::query::curve_domain(c) else { return true };
+        [t-dt,t+dt].into_iter().filter(|&x| x >= lo && x <= hi).all(|x| { let p = c.point(x); distance(other.point(other.inverse(p)),p) > 8.*tol })
+    };
+    // a stretch held back a hundredth of itself from each of its ends lying on `other`
+    let held = |c: &super::geom::Curve,s: [f64;2],other: &super::geom::Curve| -> [f64;2] {
+        let on = |t: f64| { let p = c.point(t); distance(other.point(other.inverse(p)),p) <= 8.*tol };
+        let w = 0.01*(s[1]-s[0]);
+        [if on(s[0]) { s[0]+w } else { s[0] },if on(s[1]) { s[1]-w } else { s[1] }]
+    };
     for i in 0..curves.len() {
         for j in i+1..curves.len() {
             let (Some(ti),Some(tj)) = (stretches[i],stretches[j]) else { continue };
-            for (_,q) in crossings_in(surface,&curves[i],ti,&curves[j],tj,tol).map_err(|r| r.to_string())?.unwrap_or_default() {
+            let found = match crossings_in(surface,&curves[i],ti,&curves[j],tj,tol).map_err(|r| r.to_string())? {
+                Some(found) => found,
+                None if curves[i].period().is_none() && curves[j].period().is_none() =>
+                    super::query::enclosed_crossings(&curves[i],held(&curves[i],ti,&curves[j]),&curves[j],held(&curves[j],tj,&curves[i]),tol)
+                        .unwrap_or_default().into_iter().filter(|&(_,q)| parts(&curves[i],&curves[j],q) && parts(&curves[j],&curves[i],q)).collect(),
+                None => Vec::new(),
+            };
+            for (_,q) in found {
                 crossed[i].push(q);
                 crossed[j].push(q);
             }

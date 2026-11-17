@@ -1227,10 +1227,34 @@ through the middle of a stretch — a half's way is first read a fiftieth along 
 ten-thousandth (`boolean`'s `leave` and `arrive_back`; ways tied there are read again at one length):
 there a point beside the node stands in the parameters at the square root of its distance in
 space, and a curve leaving the cusp at an end pose read 0.26 radians for −2.3, its pieces open (the
-ring at 65°, its cut held clear, at 1e-5). **Not yet:** the ring pushed in at 56°, its
-swallowtail 0.02 across, narrower than the piece's points, which turn back between two of them —
-refused by the hole its end pose's meeting leaves near the cusp. (brep-bench's cadrs builds the ball
-to 282.091, 11% over the sweep's 253.4494.)
+ring at 65°, its cut held clear, at 1e-5). **A swallowtail is cut at its double point**
+(`contacts::double_points`, `contacts::stretches`, #880 T1e): where a piece's image turns back
+twice, its outer leaves cross over one path, and a stretch holding both folds held both leaves of
+that crossing — one sheet crossing itself, which the trim, meeting each candidate only with others,
+never parts. Each double point is found exactly: seeded where two chords of the image cross with a
+fold between, and settled by Newton's method on its four equations (two points of the face on the
+contact, their images one) to the rounding, its two points apart. The piece is cut at both of its
+points, so its outer leaves are stretches of their own meeting along the path, and the tail between
+(both folds and the middle leaf) is a stretch the trim reads buried. No cut is drawn onto a fold.
+**Two splines of one meeting are crossed by their enclosures** (`boolean::crossings_among`,
+`query::enclosed_crossings`): where `crossings_in` has no closed form for two curves given or found
+for one pair of surfaces, their crossings are sought by their stretches' enclosures, each held back
+a hundredth of itself from an end lying on the other (which `ends_on_one_another` lays, and where the
+two may leave one another tangent); a meeting `enclosed_crossings` settles outside the stretches
+asked about is not theirs, however shallow; and a crossing is kept only where it parts the two, each
+standing more than eight tolerances off the other a thousand tolerances along it either way — two
+fits of one touch wander about one another within the tolerance where they run together (a turned
+coin's sheets on the torus its rim turns into, at the kernel's tolerance, read several crossings
+there, `swept_contacts::the_turned_cases_are_cut_at_the_kernels_own_tolerance`). On the tool posed at the roll's start the rim of one
+leaf crosses the other's branch over the double point, which no vertex parted, and the face's
+pieces read a hole in no piece. The ring pushed in at 56°, its swallowtail 0.02 across, builds cut
+and alone within ten tolerances (`swept_contacts::a_narrow_swallowtail_is_cut_at_its_double_point`,
+1.5e-6 and 1.2e-6 as built), as do 58° and 60°
+(`swept_contacts::swallowtails_cut_at_their_double_points_hold_past_the_fold`; 60° stood 1.6e-4 and
+4.7e-4 off before). **Not yet:** a lean where a branch crosses the torus's seam twice, its piece's
+parameters running past the period (the ring at 80°, and at 56.9° and 57.2°, a loop turned the wrong
+way), refused; and between those, leans that build off their volume (57°, 4.7e-4) or are refused at
+an open edge (56.5°). (brep-bench's cadrs builds the ball to 282.091, 11% over the sweep's 253.4494.)
 
 **A point's side off the nearest feature's pseudo-normal** (`member::Solid::signed_near`, #880
 Q1b): a point whose nearest point of the tool's mesh lies on a vertex or an edge is read by that
