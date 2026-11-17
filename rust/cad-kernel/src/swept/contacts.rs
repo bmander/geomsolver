@@ -581,7 +581,7 @@ fn norm_of(v: V) -> f64 { crate::util::space::norm(v) }
 /// fell a hair beside it (7e-7 of the section on the leaning torus), beside the rim and the rail that
 /// end there.
 fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,within: ([f64;3],[f64;3]),touch: Option<(f64,u32)>,turn: Option<f64>,corners: &[Uv],
-    face: Option<&(dyn Fn(V) -> crate::query::Place+Sync)>,tol: f64) -> Vec<crate::geom::Curve> {
+    face: &(dyn Fn(V) -> crate::query::Place+Sync),tol: f64) -> Vec<crate::geom::Curve> {
     let a = &blend.a;
     let at = |u: f64,v: f64| blend.carry.at(a.point(u),v);
     let f = |u: f64,v: f64| surface.implicit(at(u,v));
@@ -782,6 +782,10 @@ fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,within: ([f64;3],[f
     // the sheet's sides that are one point: a section's end on the turn's axis, which the carry holds
     let poles: Vec<(f64,V)> = [0.,1.].into_iter().map(|u| (u,a.point(u))).filter(|&(_,q)| distance(blend.carry.at(q,1.),q) <= 1e-9*(1.+norm_of(q))).collect();
     let on_pole = |p: Uv| poles.iter().any(|&(u,q)| (p[0]-u).abs() <= 1e-9 || distance(at(p[0],p[1]),q) <= tol);
+    // (the face where the section does not lie on it, read where it holds the sheet's corners)
+    use crate::query::Place;
+    let read = |p: Uv| face(at(p[0],p[1]));
+    let own: Vec<Uv> = if touch.is_some() { Vec::new() } else { [[0.,0.],[1.,0.],[0.,1.],[1.,1.]].into_iter().filter(|&c| read(c) == Place::On).collect() };
     lines.into_iter().filter(|l| l.len() >= 2).flat_map(|l| {
         // each root off the rim settled onto `F` itself (the march's roots are `h`'s)
         let settle = |p: Uv| -> Uv {
@@ -807,8 +811,8 @@ fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,within: ([f64;3],[f
         if next[l[0]].len() == 1 { uv[0] = snapped(uv[0]) }
         if next[l[last]].len() == 1 { uv[last] = snapped(uv[last]) }
         uv.dedup();
-        // **the meeting with the face, not its surface** (#880 T1e): where `face` is given (a face the
-        // section does not lie on), the branch is kept only where it lies in the face, each end where
+        // **the meeting with the face, not its surface** (#880 T1e): where the section does not lie on
+        // the face (`touch` none), the branch is kept only where it lies in the face, each end where
         // it leaves found on the face's boundary — the middle of where the face reads it on its edge,
         // between the last point it holds and the first past it — and taken onto a corner of the sheet
         // the face reads on its edge within the square root of the tolerance, where the face's edge
@@ -818,19 +822,15 @@ fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,within: ([f64;3],[f
         // end along a branch running out over the cone's extension beyond the round it is tangent to,
         // entering the flank where the round's edge circle touches the sheet at the end of the leaf's
         // rim — the part inside the flank never laid, the flank left whole
-        let runs: Vec<Vec<Uv>> = match face {
-            None => vec![uv],
-            Some(place) => {
-                use crate::query::Place;
-                let read = |p: Uv| place(at(p[0],p[1]));
+        let runs: Vec<Vec<Uv>> = match touch {
+            Some(_) => vec![uv],
+            None => {
                 let along = |a: Uv,b: Uv,x: f64| onto([a[0]+(b[0]-a[0])*x,a[1]+(b[1]-a[1])*x]);
                 // the first point from `a` (`inside` there) toward `b` that `inside` does not hold
                 let edge = |a: Uv,b: Uv,inside: &dyn Fn(Place) -> bool| -> f64 {
-                    let (mut lo,mut hi) = (0.,1.);
-                    for _ in 0..60 { let m = 0.5*(lo+hi); if inside(read(along(a,b,m))) { lo = m } else { hi = m } }
+                    let (lo,hi) = crate::util::roots::bisect(0.,1.,|lo,hi| 0.5*(lo+hi),|lo,hi| hi-lo > 1e-15,|m| inside(read(along(a,b,m))));
                     0.5*(lo+hi)
                 };
-                let own = [[0.,0.],[1.,0.],[0.,1.],[1.,1.]].into_iter().filter(|c: &Uv| read(*c) == Place::On).collect::<Vec<Uv>>();
                 // where the branch leaves the face between `a` (in) and `b` (out): the middle of its edge
                 let leaving = |a: Uv,b: Uv| -> Uv {
                     let (held,reached) = (edge(a,b,&|q| q == Place::In),edge(a,b,&|q| q != Place::Out));
@@ -1205,13 +1205,8 @@ fn stretches(piece: &Piece,size: f64,carry: &crate::trajectory::Screw,surface: O
     let n = ((length/(0.25*size)).ceil() as usize).max(if piece.closed { 4 } else { 1 }).min(pts.len()-1);
     if n <= 1 && forced.is_empty() { return vec![piece.clone()] }
     let inv: Vec<[f64;2]> = pts.iter().map(|&p| invariants(carry,p)).collect();
-    let pitch = (!carry.is_slide() && !carry.is_turn()).then(|| (carry.advance/carry.ratio).abs());
-    // the step from `y` to `x` in the invariants (a screw's height along the helix within half a rise)
-    let diff = |x: [f64;2],y: [f64;2]| {
-        let mut d = [x[0]-y[0],x[1]-y[1]];
-        if let Some(p) = pitch { d[1] = (d[1]+0.5*p).rem_euclid(p)-0.5*p }
-        d
-    };
+    let pitch = rise(carry);
+    let diff = |x: [f64;2],y: [f64;2]| step(pitch,x,y);
     let gap = |x: [f64;2],y: [f64;2]| { let d = diff(x,y); d[0].hypot(d[1]) };
     // how clear point `c`'s path stands of the piece's points not within a twentieth of it along it
     let along = |x: usize,y: usize| { let d = (at[x]-at[y]).abs(); if piece.closed { d.min(length-d) } else { d } };
@@ -1228,10 +1223,8 @@ fn stretches(piece: &Piece,size: f64,carry: &crate::trajectory::Screw,surface: O
         let (t,v) = (crate::util::space::sub(pts[i+1],pts[i]),twist.velocity(pts[i]));
         norm_of(crate::util::space::cross(t,v)) < 0.1*norm_of(t)*norm_of(v)
     };
-    let folds: Vec<usize> = (1..pts.len()-1).filter(|&i| {
-        let (a,b) = (diff(inv[i],inv[i-1]),diff(inv[i+1],inv[i]));
-        a[0].hypot(a[1]) > tiny && b[0].hypot(b[1]) > tiny && a[0]*b[0]+a[1]*b[1] < 0. || with_flow(i-1) || with_flow(i)
-    }).collect();
+    let folds: Vec<usize> = (1..pts.len()-1)
+        .filter(|&i| turns_back(diff(inv[i],inv[i-1]),diff(inv[i+1],inv[i]),tiny) || with_flow(i-1) || with_flow(i)).collect();
     let off_folds: Vec<bool> = (0..pts.len()).map(|j| folds.iter().all(|&f| along(j,f) > 0.5*reach)).collect();
     let mut cuts: Vec<usize> = (0..=n).map(|k| at.partition_point(|&x| x < length*k as f64/n as f64).min(pts.len()-1)).collect();
     let (first,last) = (0,cuts.len()-1);
@@ -1254,7 +1247,6 @@ fn stretches(piece: &Piece,size: f64,carry: &crate::trajectory::Screw,surface: O
         cuts[k] = best.1;
     }
     // (before the last cut, which a closed piece's reading takes for its first again)
-    let forced: Vec<usize> = forced.iter().copied().flatten().collect();
     let closing = cuts.pop();
     cuts.extend(forced);
     cuts.extend(closing);
@@ -1288,9 +1280,10 @@ fn stretches(piece: &Piece,size: f64,carry: &crate::trajectory::Screw,surface: O
 /// no gap clear of it, and need not: a seam across a sheet clear of its folds is an edge like any
 /// other (the flute wheel's seam set anywhere clear of its folds builds it to the same volume within
 /// its area times the tolerance). `None` where the tool is no solid of revolution, its contact does not
-/// fold, or its seam stands clear.
-fn seated(tool: &Brep,screw: &crate::trajectory::Screw,tol: f64) -> Option<Brep> {
-    use crate::util::space::{cross,dot,sub,unit};
+/// fold, or its seam stands clear. `contacts` are the tool's, face by face, as drawn.
+fn seated(tool: &Brep,screw: &crate::trajectory::Screw,contacts: &[Contact],tol: f64) -> Option<Brep> {
+    use crate::util::space::{cross,dot,sub};
+    let tau = std::f64::consts::TAU;
     // the axis: each face's of revolution one line, its seam the first's
     let mut axis: Option<crate::geom::Frame> = None;
     for f in &tool.faces {
@@ -1308,45 +1301,32 @@ fn seated(tool: &Brep,screw: &crate::trajectory::Screw,tol: f64) -> Option<Brep>
     if tool.faces.iter().any(|f| matches!(&f.surface,Surface::Plane(fr) if norm_of(cross(fr.z,a.z)) > 1e-9)) { return None }
     if matches!(&tool.faces[..],[f] if matches!(f.surface,Surface::Sphere(..))) { return None }
     let (x,y) = (a.x,cross(a.z,a.x));
-    let located = Located::new(tool,tol);
-    let twist = screw.twist();
-    let pitch = (!screw.is_slide() && !screw.is_turn()).then(|| (screw.advance/screw.ratio).abs());
-    let size = tool.size();
+    let (pitch,tiny) = (rise(screw),1e-9*tool.size());
     // the folds: where a piece's image in the invariants turns back
     let mut angles: Vec<f64> = Vec::new();
-    for fi in 0..tool.faces.len() {
+    for (fi,contact) in contacts.iter().enumerate() {
         if matches!(tool.faces[fi].surface,Surface::Plane(_)) { continue }
-        let Contact::Pieces(pieces) = face_contact(tool,&located,fi,&twist,tol,CELLS) else { continue };
-        for q in &pieces {
+        let Contact::Pieces(pieces) = contact else { continue };
+        for q in pieces {
             let inv: Vec<[f64;2]> = q.points.iter().map(|&p| invariants(screw,p)).collect();
-            let diff = |u: [f64;2],w: [f64;2]| { let mut d = [u[0]-w[0],u[1]-w[1]]; if let Some(p) = pitch { d[1] = (d[1]+0.5*p).rem_euclid(p)-0.5*p } d };
             for i in 1..inv.len().saturating_sub(1) {
-                let (b,c) = (diff(inv[i],inv[i-1]),diff(inv[i+1],inv[i]));
-                if b[0].hypot(b[1]) > 1e-9*size && c[0].hypot(c[1]) > 1e-9*size && b[0]*c[0]+b[1]*c[1] < 0. {
+                if turns_back(step(pitch,inv[i],inv[i-1]),step(pitch,inv[i+1],inv[i]),tiny) {
                     let d = sub(q.points[i],a.o);
-                    angles.push(dot(d,y).atan2(dot(d,x)).rem_euclid(std::f64::consts::TAU));
+                    angles.push(dot(d,y).atan2(dot(d,x)).rem_euclid(tau));
                 }
             }
         }
     }
     if angles.is_empty() { return None }
-    angles.sort_by(|p,q| p.total_cmp(q));
-    let tau = std::f64::consts::TAU;
     // the widest gap, round the turn
-    let (mut lo,mut gap) = (angles[angles.len()-1],angles[0]+tau-angles[angles.len()-1]);
-    for w in angles.windows(2) { if w[1]-w[0] > gap { gap = w[1]-w[0]; lo = w[0] } }
+    let (lo,gap) = super::sector::widest(angles.iter().copied(),tau);
     let clear = angles.iter().map(|&t| t.min(tau-t)).fold(f64::INFINITY,f64::min);
     // (a seam a tenth of a radian from every fold is clear of its cusp: the leaning rings' stand a third
     // of one off theirs, and turned they were refused at 67° and 70°; the flute wheel's stands 0.056)
     if clear >= 0.25*gap || clear >= 0.1 { return None }
     let turn = lo+0.5*gap;
-    let (c,s) = (turn.cos(),turn.sin());
-    let z = unit(a.z);
-    let k = [[0.,-z[2],z[1]],[z[2],0.,-z[0]],[-z[1],z[0],0.]];
-    let r: [[f64;3];3] = std::array::from_fn(|i| std::array::from_fn(|j| c*if i == j { 1. } else { 0. }+(1.-c)*z[i]*z[j]+s*k[i][j]));
-    let ro: V = std::array::from_fn(|i| (0..3).map(|j| r[i][j]*a.o[j]).sum());
     if crate::debug() { eprintln!("contacts: the tool turned {turn:.4} about its axis, its seam {clear:.4} from its contact's folds, in the middle of a gap of {gap:.4}") }
-    Some(tool.moved(&crate::geom::Rigid {r,t:std::array::from_fn(|i| a.o[i]-ro[i])}))
+    Some(tool.moved(&crate::geom::Rigid::turn(a.o,a.z,turn)))
 }
 
 /// **A piece's swallowtails' double points** (`stretches`, #880 T1e): the piece with each double
@@ -1358,16 +1338,12 @@ fn seated(tool: &Brep,screw: &crate::trajectory::Screw,tol: f64) -> Option<Brep>
 /// the tool (a double point is two points of the curve, not one), and once. A thin swallowtail's
 /// chords cross more than once beside its tail, its leaves running nearly along one another there,
 /// and those seeds settle on the one double point or on none.
-fn double_points(piece: &Piece,surface: &Surface,carry: &crate::trajectory::Screw,size: f64) -> (Piece,Vec<[usize;2]>) {
+fn double_points(piece: &Piece,surface: &Surface,carry: &crate::trajectory::Screw,size: f64) -> (Piece,Vec<usize>) {
     let (pts,uv) = (&piece.points,&piece.uv);
     if pts.len() < 4 || carry.is_turn() { return (piece.clone(),Vec::new()) }
     let twist = carry.twist();
-    let pitch = (!carry.is_slide()).then(|| (carry.advance/carry.ratio).abs());
-    let wrapped = |x: [f64;2],y: [f64;2]| {
-        let mut d = [x[0]-y[0],x[1]-y[1]];
-        if let Some(p) = pitch { d[1] = (d[1]+0.5*p).rem_euclid(p)-0.5*p }
-        d
-    };
+    let pitch = rise(carry);
+    let wrapped = |x: [f64;2],y: [f64;2]| step(pitch,x,y);
     // (the image's height unwrapped along the piece: under a screw the invariants read it modulo a
     // turn's rise, and a sheet carried more than a turn meets its next turn there, a crossing between
     // turns the trim meets as any two sheets', not a swallowtail's — the ball screwed round a helix
@@ -1380,10 +1356,7 @@ fn double_points(piece: &Piece,surface: &Surface,carry: &crate::trajectory::Scre
     let diff = |x: [f64;2],y: [f64;2]| [x[0]-y[0],x[1]-y[1]];
     // the folds: where the image turns back
     let tiny = 1e-9*size;
-    let folds: Vec<usize> = (1..pts.len()-1).filter(|&i| {
-        let (a,b) = (diff(inv[i],inv[i-1]),diff(inv[i+1],inv[i]));
-        a[0].hypot(a[1]) > tiny && b[0].hypot(b[1]) > tiny && a[0]*b[0]+a[1]*b[1] < 0.
-    }).collect();
+    let folds: Vec<usize> = (1..pts.len()-1).filter(|&i| turns_back(diff(inv[i],inv[i-1]),diff(inv[i+1],inv[i]),tiny)).collect();
     if folds.len() < 2 { return (piece.clone(),Vec::new()) }
     // the four equations at (u₁, v₁, u₂, v₂)
     let eqs = |x: [f64;4]| -> Option<[f64;4]> {
@@ -1397,24 +1370,16 @@ fn double_points(piece: &Piece,surface: &Surface,carry: &crate::trajectory::Scre
             let f = eqs(x)?;
             if f.iter().zip(scale).all(|(v,s)| (v*s).abs() <= 1e-13) { return Some(x) }
             let h = 1e-7;
-            let mut jac = [[0.;4];4];
+            // the Jacobian by central differences, row by row
+            let mut jac = [0.;16];
             for k in 0..4 {
                 let (mut lo,mut hi) = (x,x);
                 lo[k] -= h; hi[k] += h;
                 let (fl,fh) = (eqs(lo)?,eqs(hi)?);
-                for r in 0..4 { jac[r][k] = (fh[r]-fl[r])/(2.*h) }
+                for r in 0..4 { jac[4*r+k] = (fh[r]-fl[r])/(2.*h) }
             }
-            // Gaussian elimination with partial pivoting
-            let mut m = jac;
-            let mut rhs = f.map(|v| -v);
-            for c in 0..4 {
-                let p = (c..4).max_by(|&i,&j| m[i][c].abs().total_cmp(&m[j][c].abs()))?;
-                if !(m[p][c].abs() > 1e-300) { return None }
-                m.swap(c,p); rhs.swap(c,p);
-                for r in c+1..4 { let k = m[r][c]/m[c][c]; for cc in c..4 { m[r][cc] -= k*m[c][cc] } rhs[r] -= k*rhs[c] }
-            }
-            let mut dx = [0.;4];
-            for c in (0..4).rev() { dx[c] = (rhs[c]-(c+1..4).map(|cc| m[c][cc]*dx[cc]).sum::<f64>())/m[c][c] }
+            let mut dx = f.map(|v| -v);
+            if !crate::util::linalg::lu_solve(4,&mut jac,&mut dx) { return None }
             for k in 0..4 { x[k] += dx[k] }
         }
         let f = eqs(x)?;
@@ -1424,7 +1389,15 @@ fn double_points(piece: &Piece,surface: &Surface,carry: &crate::trajectory::Scre
     // a closed piece round either way (a double point whose two points straddle where the piece is
     // read from, the ring at 70°, its double points at y = ±0.63 and one of them so)
     let between = |i: usize,j: usize| folds.iter().any(|&f| f > i && f <= j) || piece.closed && folds.iter().any(|&f| f <= i || f > j);
-    let mut found: Vec<(usize,usize,Uv,Uv)> = Vec::new();
+    let lerp = |a: Uv,b: Uv,w: f64| [a[0]+(b[0]-a[0])*w,a[1]+(b[1]-a[1])*w];
+    // where along the piece a point falls: the chord nearest it
+    let nearest = |p: V| (0..pts.len()-1).min_by(|&x,&y| {
+        let d = |k: usize| distance(pts[k],p)+distance(pts[k+1],p)-distance(pts[k],pts[k+1]);
+        d(x).total_cmp(&d(y))
+    }).unwrap();
+    // each double point's two chords, its two points' parameters and the points
+    type Double = (usize,usize,Uv,Uv,V,V);
+    let mut found: Vec<Double> = Vec::new();
     for i in 0..pts.len()-1 { for j in i+2..pts.len()-1 {
         if !between(i,j) { continue }
         let (r,s) = (diff(inv[i+1],inv[i]),diff(inv[j+1],inv[j]));
@@ -1433,41 +1406,32 @@ fn double_points(piece: &Piece,surface: &Surface,carry: &crate::trajectory::Scre
         if !(rxs.abs() > 1e-300) { continue }
         let (t,u) = ((q[0]*s[1]-q[1]*s[0])/rxs,(q[0]*r[1]-q[1]*r[0])/rxs);
         if !(t >= 0. && t < 1. && u >= 0. && u < 1.) { continue }
-        let lerp = |a: Uv,b: Uv,w: f64| [a[0]+(b[0]-a[0])*w,a[1]+(b[1]-a[1])*w];
-        let Some(x) = solve([lerp(uv[i],uv[i+1],t)[0],lerp(uv[i],uv[i+1],t)[1],lerp(uv[j],uv[j+1],u)[0],lerp(uv[j],uv[j+1],u)[1]]) else { continue };
+        let (p,q) = (lerp(uv[i],uv[i+1],t),lerp(uv[j],uv[j+1],u));
+        let Some(x) = solve([p[0],p[1],q[0],q[1]]) else { continue };
         let (a,b) = ([x[0],x[1]],[x[2],x[3]]);
         let (pa,pb) = (surface.point(a),surface.point(b));
         if distance(pa,pb) <= 1e-6*size { continue }
-        // where along the piece each point falls: the chord nearest it, which must hold a fold between
-        let nearest = |p: V| (0..pts.len()-1).min_by(|&x,&y| {
-            let d = |k: usize| distance(pts[k],p)+distance(pts[k+1],p)-distance(pts[k],pts[k+1]);
-            d(x).total_cmp(&d(y))
-        }).unwrap();
+        // (the chords the two points fall on must hold a fold between)
         let (ka,kb) = (nearest(pa),nearest(pb));
-        let (ka,kb,a,b) = if ka <= kb { (ka,kb,a,b) } else { (kb,ka,b,a) };
+        let (ka,kb,a,b,pa,pb) = if ka <= kb { (ka,kb,a,b,pa,pb) } else { (kb,ka,b,a,pb,pa) };
         if ka == kb || !between(ka,kb) { continue }
-        if found.iter().any(|&(_,_,x,y)| distance(surface.point(x),surface.point(a)) <= 1e-6*size && distance(surface.point(y),surface.point(b)) <= 1e-6*size) { continue }
-        found.push((ka,kb,a,b));
+        if found.iter().any(|x| distance(x.4,pa) <= 1e-6*size && distance(x.5,pb) <= 1e-6*size) { continue }
+        found.push((ka,kb,a,b,pa,pb));
     } }
     // (two double points whose spans nest or interleave hold one another's points in their tails —
     // the ring at 70°, half a degree before its two double points meet and vanish — and are no
     // swallowtail's tail each: neither is cut, and the stretches meet as they would)
-    let crossing = |x: &(usize,usize,Uv,Uv),y: &(usize,usize,Uv,Uv)| x.0 < y.1 && y.0 < x.1;
-    let found: Vec<(usize,usize,Uv,Uv)> = found.iter().enumerate().filter(|&(i,x)| !found.iter().enumerate().any(|(j,y)| i != j && crossing(x,y))).map(|(_,x)| *x).collect();
-    if crate::debug() { for &(ka,kb,a,b) in &found { eprintln!("contacts: a swallowtail's double point at {:?} and {:?} (chords {ka} and {kb})",surface.point(a),surface.point(b)) } }
+    let crossing = |x: &Double,y: &Double| x.0 < y.1 && y.0 < x.1;
+    let found: Vec<Double> = found.iter().enumerate().filter(|&(i,x)| !found.iter().enumerate().any(|(j,y)| i != j && crossing(x,y))).map(|(_,x)| *x).collect();
+    if crate::debug() { for &(ka,kb,_,_,pa,pb) in &found { eprintln!("contacts: a swallowtail's double point at {pa:?} and {pb:?} (chords {ka} and {kb})") } }
     if found.is_empty() { return (piece.clone(),Vec::new()) }
-    // the points put in, after the chords they fall on, from the last back so the indices hold
-    let mut inserts: Vec<(usize,Uv)> = found.iter().flat_map(|&(ka,kb,a,b)| [(ka,a),(kb,b)]).collect();
-    inserts.sort_by(|x,y| y.0.cmp(&x.0));
+    // the points put in after the chords they fall on, in order along the piece: one put in after chord
+    // `k` stands at `k + 1`, and one further on for each put in before it
+    let mut inserts: Vec<(usize,Uv,V)> = found.iter().flat_map(|&(ka,kb,a,b,pa,pb)| [(ka,a,pa),(kb,b,pb)]).collect();
+    inserts.sort_by_key(|x| x.0);
     let mut out = piece.clone();
-    for &(k,x) in &inserts { out.uv.insert(k+1,x); out.points.insert(k+1,surface.point(x)); }
-    // each double point's two indices in the piece as it now stands: a point put in after chord `k`
-    // stands one further on for each put in before it
-    let mut asc: Vec<usize> = inserts.iter().map(|&(k,_)| k).collect();
-    asc.reverse();
-    let at = |k: usize| k+1+asc.iter().filter(|&&j| j < k).count();
-    let pairs = found.iter().map(|&(ka,kb,_,_)| [at(ka),at(kb)]).collect();
-    (out,pairs)
+    let cuts = inserts.iter().enumerate().map(|(n,&(k,x,p))| { out.uv.insert(k+1+n,x); out.points.insert(k+1+n,p); k+1+n }).collect();
+    (out,cuts)
 }
 
 /// A point's invariants under `carry`: a slide's shadow on the plane square to it, a turn's radius
@@ -1482,6 +1446,23 @@ fn invariants(carry: &crate::trajectory::Screw,p: V) -> [f64;2] {
     if carry.is_turn() { return [rho,l[2]] }
     let lead = carry.advance/(std::f64::consts::TAU*carry.ratio);
     [rho,l[2]-lead*l[1].atan2(l[0])]
+}
+
+/// A screw's rise in a turn, which its invariants' height is read modulo; `None` for a slide or a turn.
+fn rise(carry: &crate::trajectory::Screw) -> Option<f64> {
+    (!carry.is_slide() && !carry.is_turn()).then(|| (carry.advance/carry.ratio).abs())
+}
+
+/// The step from `y` to `x` in a carry's invariants, a screw's height taken within half its `rise`.
+fn step(rise: Option<f64>,x: [f64;2],y: [f64;2]) -> [f64;2] {
+    let mut d = [x[0]-y[0],x[1]-y[1]];
+    if let Some(p) = rise { d[1] = (d[1]+0.5*p).rem_euclid(p)-0.5*p }
+    d
+}
+
+/// Whether an image turns back at a point, the step into it `a` and out of it `b`, each past `tiny`.
+fn turns_back(a: [f64;2],b: [f64;2],tiny: f64) -> bool {
+    a[0].hypot(a[1]) > tiny && b[0].hypot(b[1]) > tiny && a[0]*b[0]+a[1]*b[1] < 0.
 }
 
 /// **Where two sections of one carry share a path** (#880 Q1b): the sheets two curves sweep under
@@ -1958,13 +1939,22 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
         _ => tool,
     };
     // **a tool of revolution given its seam off its contact** (#880 T1e, `seated`): turned about its
-    // own axis, the same solid, so no face's seam runs through where it touches the sweep
+    // own axis, the same solid, so no face's seam runs through where it touches the sweep; its contact
+    // read again only where it is turned
+    let twist = screw.twist();
+    let read = |tool| -> (Located,Vec<Contact>) {
+        let located = Located::new(tool,tol);
+        let contacts = (0..tool.faces.len()).map(|fi| face_contact(tool,&located,fi,&twist,tol,CELLS)).collect();
+        (located,contacts)
+    };
     let seated_tool;
-    let tool = match seated(tool,&screw,tol) { Some(b) => { seated_tool = b; &seated_tool } None => tool };
+    let (drawn,drawn_contacts) = read(tool);
+    let (tool,located,contacts) = match seated(tool,&screw,&drawn_contacts,tol) {
+        Some(b) => { seated_tool = b; let (l,c) = read(&seated_tool); (&seated_tool,l,c) }
+        None => (tool,drawn,drawn_contacts),
+    };
     let sharp = sharp_edges(tool).map_err(|at| Unbuilt::Curved {at})?;
     let size = tool.size();
-    let twist = screw.twist();
-    let located = Located::new(tool,tol);
     let mut out = Vec::new();
     let mut given = Vec::new();
     // **under a turn, each sheet on the surface it sweeps** (#880 Q1b S5, `meridian_surface`): a
@@ -1986,8 +1976,8 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
     let mut junctions: Vec<V> = Vec::new();
     let posed = |t: f64| -> Result<crate::geom::Rigid,Unbuilt> { let q = path.pose(t)?; Ok(crate::geom::Rigid {r:q.r,t:q.p}) };
     let ends = [posed(roll[0])?,posed(roll[1])?];
-    for fi in 0..tool.faces.len() {
-        match face_contact(tool,&located,fi,&twist,tol,CELLS) {
+    for (fi,contact) in contacts.into_iter().enumerate() {
+        match contact {
             Contact::Whole => {
                 let at = tool.faces[fi].loops.iter().flatten().next().map_or([0.;3],|c| tool.vertices[tool.ends(c)[0] as usize].p);
                 return Err(Unbuilt::Curved {at})
@@ -2166,8 +2156,7 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
             // is placed of its own)
             let back = ends[e].inverse();
             let place = |p: V| located.face_place(fi,back.point(p));
-            let face: Option<&(dyn Fn(V) -> crate::query::Place+Sync)> = if touch.is_none() { Some(&place) } else { None };
-            curves.extend(pose_meeting(&c.blend,&f.surface,faces[e][fi],touch,whole,&corners,face,tol));
+            curves.extend(pose_meeting(&c.blend,&f.surface,faces[e][fi],touch,whole,&corners,&place,tol));
         }
         // (a branch along a side of the sheet's parameters that is one point in space — a pole's,
         // where the section meets the turn's axis — meets nothing: laid, a loop of no size round the pole)

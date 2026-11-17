@@ -434,10 +434,7 @@ fn the_steep_wheels_flute_builds_alone() {
     let flute = a.sweeps().iter().find(|s| s.name == "flute").unwrap();
     let Class::Closed(found) = &flute.class else { panic!("the flute admitted to the closed class") };
     let axis = found.tool.faces.iter().find_map(|f| match &f.surface { gcs_core::brep::geom::Surface::Cone(fr,..) => Some(fr.clone()),_ => None }).unwrap();
-    let quarter = { let (o,z) = (axis.o,axis.z);
-        let r: [[f64;3];3] = std::array::from_fn(|i| std::array::from_fn(|j| z[i]*z[j]+[[0.,-z[2],z[1]],[z[2],0.,-z[0]],[-z[1],z[0],0.]][i][j]));
-        let ro: [f64;3] = std::array::from_fn(|i| (0..3).map(|j| r[i][j]*o[j]).sum());
-        gcs_core::brep::geom::Rigid {r,t:std::array::from_fn(|i| o[i]-ro[i])} };
+    let quarter = gcs_core::brep::geom::Rigid::turn(axis.o,axis.z,std::f64::consts::FRAC_PI_2);
     let tol = 1e-6;
     let built = |tool: &gcs_core::brep::topo::Brep| gcs_core::brep::swept::closed::closed(tool,&found.path,found.roll,2e-3,tol).unwrap();
     let (drawn,turned) = (built(&found.tool),built(&found.tool.moved(&quarter)));

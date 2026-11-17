@@ -2578,13 +2578,6 @@ fn touch_point(surfaces: [&Surface;3],q: V,tol: f64) -> Option<V> {
     })
 }
 
-/// **Where an edge touching a surface touches it** (a root of its distance that is also a root of
-/// its rate): where one of the surfaces of the edge's own faces (`own`) touches `other` there,
-/// along a curve their closed form gives, the edge's crossing with that curve — a crossing on
-/// the edge's face, steep where the edge leaves the touch, found by Gauss–Newton on the two
-/// curves' parameters from `t` and the curve's foot of the edge's point. The edge's parameter
-/// there; `None` where no face of its touches `other`, or the crossing does not settle within
-/// `1e4 tol` of the root.
 /// **A crossing placed on a surface read by inversion** (#880 T1e): where a curve crosses a swept
 /// sheet, a fitted net or a family's wall at a shallow angle, the reading's root stands off the
 /// surface by what the shallow angle makes of its own tolerance (a torus's seam circle crossing a
@@ -2605,18 +2598,22 @@ fn on_surface(c: &Curve,span: [f64;2],surface: &Surface,t: f64,tol: f64) -> Opti
         if norm(res) <= 1e-3*tol {
             return (distance(p,q) <= 1e4*tol && x >= span[0]-1e-12 && x <= span[1]+1e-12).then_some(x)
         }
-        // [dp, −su, −sv] [dx, du, dv] = −res, by Cramer's rule
-        let (a,b,cc) = (dp,crate::util::space::scale(su,-1.),crate::util::space::scale(sv,-1.));
-        let r = crate::util::space::scale(res,-1.);
-        let det3 = |x: V,y: V,z: V| crate::util::space::dot(x,crate::util::space::cross(y,z));
-        let det = det3(a,b,cc);
-        if !(det.abs() > 1e-300) { return None }
-        x += det3(r,b,cc)/det;
-        uv = [uv[0]+det3(a,r,cc)/det,uv[1]+det3(a,b,r)/det];
+        // [dp, −su, −sv] [dx, du, dv] = −res
+        let d = super::ssi::solve3(std::array::from_fn(|i| [dp[i],-su[i],-sv[i]]),crate::util::space::scale(res,-1.));
+        if !d.iter().all(|v| v.is_finite()) { return None }
+        x += d[0];
+        uv = [uv[0]+d[1],uv[1]+d[2]];
     }
     None
 }
 
+/// **Where an edge touching a surface touches it** (a root of its distance that is also a root of
+/// its rate): where one of the surfaces of the edge's own faces (`own`) touches `other` there,
+/// along a curve their closed form gives, the edge's crossing with that curve — a crossing on
+/// the edge's face, steep where the edge leaves the touch, found by Gauss–Newton on the two
+/// curves' parameters from `t` and the curve's foot of the edge's point. The edge's parameter
+/// there; `None` where no face of its touches `other`, or the crossing does not settle within
+/// `1e4 tol` of the root.
 fn touch_root(c: &Curve,span: [f64;2],own: &[&Surface],other: &Surface,t: f64,tol: f64) -> Option<f64> {
     let q = c.point(t);
     let unit = |s: &Surface| crate::util::space::normalised(s.gradient(q)).unwrap_or([0.;3]);
@@ -2773,15 +2770,17 @@ fn crossings_among(surface: &super::geom::Surface,curves: &[super::geom::Curve],
     // than eight off `other` — two fits of one touch, a turned coin's sheets on the torus its rim
     // turns into at the kernel's tolerance, wander about one another within it and read crossings
     // where they run together)
+    // whether `c` at `t` stands more than eight tolerances off `other`
+    let off = |c: &super::geom::Curve,t: f64,other: &super::geom::Curve| { let p = c.point(t); distance(other.point(other.inverse(p)),p) > 8.*tol };
     let parts = |c: &super::geom::Curve,other: &super::geom::Curve,q: V| -> bool {
         let t = c.inverse(q);
         let dt = 1e3*tol/c.speed().max(1e-300);
         let Some([lo,hi]) = super::query::curve_domain(c) else { return true };
-        [t-dt,t+dt].into_iter().filter(|&x| x >= lo && x <= hi).all(|x| { let p = c.point(x); distance(other.point(other.inverse(p)),p) > 8.*tol })
+        [t-dt,t+dt].into_iter().filter(|&x| x >= lo && x <= hi).all(|x| off(c,x,other))
     };
     // a stretch held back a hundredth of itself from each of its ends lying on `other`
     let held = |c: &super::geom::Curve,s: [f64;2],other: &super::geom::Curve| -> [f64;2] {
-        let on = |t: f64| { let p = c.point(t); distance(other.point(other.inverse(p)),p) <= 8.*tol };
+        let on = |t: f64| !off(c,t,other);
         let w = 0.01*(s[1]-s[0]);
         [if on(s[0]) { s[0]+w } else { s[0] },if on(s[1]) { s[1]-w } else { s[1] }]
     };

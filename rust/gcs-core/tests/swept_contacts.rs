@@ -872,16 +872,16 @@ fn the_fold_cases_references_are_their_definitions() {
 
 
 /// The ring of `ring_fold_case` leaning `lean` degrees, pushed straight down 8 into the block
-/// `(−8, −8, −8)`–`(8, 8, 0)`, and its volume pushed whole and what the block loses, apart from the
-/// build (`swept_slid::torus_pushed_by_lines` at 1e-9; the block takes the lower half of the sweep,
-/// which is symmetric about the plane `z = 0` it ends on, so `away` is half `whole` to the rounding).
-fn ring_pushed_at(lean: f64,whole: f64,away: f64) -> (Case,Case) {
+/// `(−8, −8, −8)`–`(8, 8, 0)`, given its volume pushed whole apart from the build
+/// (`swept_slid::torus_pushed_by_lines` at 1e-9): the block loses half of it, the lower half of a
+/// sweep symmetric about the plane `z = 0` it ends on.
+fn ring_pushed_at(lean: f64,whole: f64) -> (Case,Case) {
     let lean = lean.to_radians();
     let tool = torus([0.,0.,4.],[lean.sin(),0.,lean.cos()],3.,1.).unwrap();
     let path = gcs_core::brep::trajectory::Trajectory::Twist(Screw {origin:[0.,0.,4.],axis:[0.,0.,-1.],ratio:0.,advance:8.});
     let roll = [0.,std::f64::consts::TAU];
     (Case {what:"the ring cut",blank:Some(crate::brep::block([-8.,-8.,-8.],[8.,8.,0.])),tool:tool.clone(),path:path.clone(),roll,bar:0.01,
-        volume:2048.-away,known:1e-9},
+        volume:2048.-0.5*whole,known:1e-9},
      Case {what:"the ring alone",blank:None,tool,path,roll,bar:0.01,volume:whole,known:1e-9})
 }
 
@@ -895,13 +895,13 @@ fn ring_pushed_at(lean: f64,whole: f64,away: f64) -> (Case,Case) {
 /// alone, each within ten tolerances of its volume apart from the build (1.5e-6 and 1.2e-6 as built).
 #[test]
 fn a_narrow_swallowtail_is_cut_at_its_double_point() {
-    let (cut,alone) = ring_pushed_at(56.,299.0601238921,149.5300619460);
+    let (cut,alone) = ring_pushed_at(56.,299.0601238921);
     cut_through_the_front_door(&cut,TOL);
     cut_through_the_front_door(&alone,TOL);
 }
 
 /// The ring pushed in at 58°, 60°, 70° and 80°, cut and alone, within ten tolerances of their
-/// volumes, and those volumes recomputed from the ring's definition. The 60° ring stood 1.6e-4 and
+/// volumes, and those volumes recomputed from the ring's definition, the block's loss half of each. The 60° ring stood 1.6e-4 and
 /// 4.7e-4 off before its swallowtail was cut at its double point. At 70°, half a degree before its
 /// two double points meet and vanish, their spans nest and neither is cut. At 80° a branch crossing
 /// the torus's seam shallowly read a hole in no piece until the crossing was placed on the sheet
@@ -911,14 +911,13 @@ fn a_narrow_swallowtail_is_cut_at_its_double_point() {
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about a minute: four leans built twice, their references recomputed")]
 fn swallowtails_cut_at_their_double_points_hold_past_the_fold() {
-    for (lean,whole,away) in [(58.,295.3915511799,147.6957755902),(60.,291.6826672865,145.8413336430),(70.,270.5138966616,135.2569483304),
-        (80.,238.2579813606,119.1289906801)] {
-        let (cut,alone) = ring_pushed_at(lean,whole,away);
+    for (lean,whole) in [(58.,295.3915511799),(60.,291.6826672865),(70.,270.5138966616),(80.,238.2579813606)] {
+        let (cut,alone) = ring_pushed_at(lean,whole);
         cut_through_the_front_door(&cut,TOL);
         cut_through_the_front_door(&alone,TOL);
         let axis = [lean.to_radians().sin(),0.,lean.to_radians().cos()];
         let (w,a) = (crate::swept_slid::torus_pushed_by_lines([0.,0.,4.],axis,3.,1.,-8.,None,1e-9),
             crate::swept_slid::torus_pushed_by_lines([0.,0.,4.],axis,3.,1.,-8.,Some([-8.,0.]),1e-9));
-        assert!((w-whole).abs() <= 1e-9 && (a-away).abs() <= 1e-9,"at {lean}°: {w} and {a}");
+        assert!((w-whole).abs() <= 1e-9 && (a-0.5*whole).abs() <= 1e-9,"at {lean}°: {w} and {a}");
     }
 }
