@@ -8,6 +8,8 @@ repository = "https://github.com/bmander/geomsolver"
 readme = "README.md"
 keywords = ["brep", "cad", "nurbs", "step", "solid-modeling"]
 categories = ["graphics", "mathematics", "science"]
+# The statements of what its certified layers guarantee, and their proofs: not the crate's.
+exclude = ["proofs/"]
 
 # No dependencies, as the rest of the core.  Its tests are the core's suite (`gcs-core/tests`),
 # which reaches it through `gcs_solve::brep` and the utilities the solver re-exports; `tests/` here

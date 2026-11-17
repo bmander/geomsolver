@@ -1,0 +1,12 @@
+# Runs of the kernel that depart from the statements beside it (`../README.md`): a program of its
+# own, outside the workspace, so nothing in the kernel or its suite builds it.
+[package]
+name = "gaps"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+cad-kernel = { path = "../.." }
+
+[workspace]
