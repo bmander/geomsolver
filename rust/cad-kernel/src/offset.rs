@@ -48,6 +48,11 @@ impl Side {
 /// A piece of an offset, and what it is called where a Boolean refuses it.
 type Piece = (String,Brep);
 
+/// What a piece of an offset is made from: a face's sweep, the join along an edge (its index), or
+/// the corner at a vertex (its index).
+#[derive(Clone,Copy,Debug,PartialEq,Eq,PartialOrd,Ord)]
+enum By { Face(usize),Edge(usize),Corner(u32) }
+
 /// The solid `b` grown by `d` (> 0): every point within `d` of it (`Join::Round`), or with its
 /// faces moved out by `d` and extended until they meet (`Join::Sharp`).
 pub fn grown(b: &Brep,d: f64,join: Join) -> Result<Brep,String> {
@@ -75,24 +80,147 @@ pub fn shelled(b: &Brep,open: &[usize],t: f64,side: Side,join: Join) -> Result<B
     if let Some(&f) = open.iter().find(|&&f| f >= b.faces.len()) { return Err(format!("no face {f} to leave open")) }
     let walled: Vec<bool> = (0..b.faces.len()).map(|f| !open.contains(&f)).collect();
     if !walled.contains(&true) { return Err("a shell open at every face has no wall".into()) }
-    let mut pieces = pieces(b,&walled,side,t,join)?.into_iter();
-    let (_,first) = pieces.next().ok_or("a shell with no wall")?;
-    let wall = folded(first,pieces.collect(),Op::Union)?;
+    let pieces = match side {
+        Side::In => pieces(b,&walled,side,t,join)?,
+        // outside, the wall ends where each opening is: the pieces that reach it cut off at its
+        // plane, and no other (a wall beyond the plane elsewhere is the solid's own)
+        Side::Out => {
+            let openings = open.iter().map(|&o| Opening::of(b,o)).collect::<Result<Vec<_>,_>>()?;
+            ended(b,&openings,owned_pieces(b,&walled,side,t,join)?,join)?
+        }
+    };
+    let wall = united(pieces,"a shell with no wall")?;
     match side {
         Side::In => combined(b,&wall,Op::Common,0.).map_err(|e| format!("the wall kept within the solid: {e}")),
-        Side::Out => {
-            // outside, the wall ends at each opening's plane: what lies beyond it is cut off
-            let mut wall = combined(&wall,b,Op::Cut,0.).map_err(|e| format!("the solid cut from its wall: {e}"))?;
-            for &o in open {
-                let Surface::Plane(fr) = b.faces[o].surface else {
-                    return Err(format!("{} is left open on a wall outside the solid: only a plane cuts one off yet",face_name(b,o)))
-                };
-                let n = if b.faces[o].reversed { fr.z } else { scale(fr.z,-1.) };
-                wall = kept(&wall,fr.o,n,0.).map_err(|e| format!("the wall cut off at {}: {e}",face_name(b,o)))?;
+        Side::Out => combined(&wall,b,Op::Cut,0.).map_err(|e| format!("the solid cut from its wall: {e}")),
+    }
+}
+
+/// A face left open on a wall outside a solid: its plane, by a point of it and its outward normal,
+/// and the edges and vertices it is bounded by.
+struct Opening { face: usize,o: V,n: V,edges: BTreeSet<usize>,vertices: BTreeSet<u32> }
+
+impl Opening {
+    fn of(b: &Brep,o: usize) -> Result<Opening,String> {
+        let f = &b.faces[o];
+        let Surface::Plane(fr) = f.surface else {
+            return Err(format!("{} is left open on a wall outside the solid: only a plane cuts one off yet",face_name(b,o)))
+        };
+        let edges: BTreeSet<usize> = f.loops.iter().flatten().map(|c| c.edge as usize).collect();
+        let vertices = edges.iter().flat_map(|&e| b.edges[e].v).collect();
+        Ok(Opening {face:o,o:fr.o,n:if f.reversed { scale(fr.z,-1.) } else { fr.z },edges,vertices})
+    }
+    /// How far `p` stands beyond the opening's plane (outward positive).
+    fn beyond(&self,p: V) -> f64 { dot(sub(p,self.o),self.n) }
+    /// Which side of the plane the points `ps` lie: `Some(-1)` or `Some(1)` all on one side, `Some(0)`
+    /// all on it (within `tol`), `None` on both.
+    fn side(&self,ps: &[V],tol: f64) -> Option<i8> {
+        let (lo,hi) = ps.iter().map(|&p| self.beyond(p)).fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),x| (l.min(x),h.max(x)));
+        match (lo >= -tol,hi <= tol) { (true,true) => Some(0),(false,true) => Some(-1),(true,false) => Some(1),(false,false) => None }
+    }
+}
+
+/// **Where a piece of an outward shell is ended at an opening** (`by` names what it is made from;
+/// `joined`, the edges and corners joins were built at): kept on one side of the opening's plane
+/// (`Some((side, must))`, `side` along its outward normal, `must` where the piece reaches past the
+/// plane; a cut not a must changes no point of the piece, and is made only beside one that is, to
+/// leave the plane one face where it ends them), or left whole (`None`).  A wall lies wholly on
+/// one side of the plane, or meets it square, or it is refused, never cut where it should not be:
+/// - a join along an opening's edge, or at a corner of it, is a round's (a sharp shell builds none
+///   there): kept on the solid's side of its plane, the side its walls stand on, the crease convex;
+/// - a face meeting an opening (along an edge or at a corner), or a join along an edge ending at a
+///   corner of it, that meets it square ends in its plane: one lying across the plane is left whole
+///   (so a face reaching past the plane elsewhere, the floor of an L open at its step, keeps all of
+///   itself), as is one lying in it, its wall the opening's neighbour's;
+/// - one meeting it aslant is kept on the side it stands on, cut where moved it runs past the
+///   plane; where it falls short of the plane the opening's tube or corner ball, a round's, fills
+///   the gap, and a sharp shell, whose moved walls would have to be carried on to the plane, and a
+///   gap no such join fills, are refused, as is a wall aslant across the plane.
+fn ending(b: &Brep,o: &Opening,joined: &BTreeSet<By>,by: By,join: Join,tol: f64) -> Result<Option<(i8,bool)>,String> {
+    // what meets the opening: its points, whether it meets the plane square, and, aslant, whether
+    // moved it runs past the plane, falls short of it, and what falls short is filled
+    let (what,points,square,rates,filled): (&str,Vec<V>,bool,Vec<f64>,bool) = match by {
+        By::Corner(v) => return Ok(o.vertices.contains(&v).then_some((-1,true))),
+        By::Edge(e) if o.edges.contains(&e) => return Ok(Some((-1,true))),
+        By::Edge(e) => {
+            let edge = &b.edges[e];
+            let EdgeCurve::Curve(c) = &edge.curve else { return Ok(None) };
+            let ends: Vec<usize> = (0..2).filter(|&k| o.vertices.contains(&edge.v[k])).collect();
+            if ends.is_empty() { return Ok(None) }
+            let points = (0..=8).map(|k| edge.point(edge.t[0]+(edge.t[1]-edge.t[0])*k as f64/8.,&b.vertices)).collect();
+            let square = ends.iter().all(|&k| dot(unit(c.tangent(edge.t[k])),o.n).abs() >= 1.-1e-9);
+            // aslant, the tube's flat end runs past the plane on one side and falls short of it on
+            // the other, where the corner's ball fills it
+            ("its edge",points,square,vec![-1.,1.],ends.iter().all(|&k| joined.contains(&By::Corner(edge.v[k]))))
+        }
+        By::Face(fi) => {
+            let f = &b.faces[fi];
+            let (runs,_) = samples(b,f);
+            let shared: Vec<u32> = runs.iter().map(|r| r.0).filter(|&e| o.edges.contains(&(e as usize))).collect();
+            let corners: BTreeSet<u32> = runs.iter().flat_map(|r| b.edges[r.0 as usize].v).filter(|v| o.vertices.contains(v)).collect();
+            if corners.is_empty() { return Ok(None) }
+            let mut contact: Vec<V> = runs.iter().filter(|r| shared.contains(&r.0)).flat_map(|r| r.1.iter().map(|&uv| f.surface.point(uv))).collect();
+            contact.extend(corners.iter().map(|&v| b.vertices[v as usize].p));
+            let points = runs.iter().flat_map(|(_,run)| run.iter().map(|&uv| f.surface.point(uv))).collect();
+            // how fast each point of contact runs past the plane as the face moves out
+            let rates = contact.iter().map(|&p| outward(b,fi,p).map(|n| dot(n,o.n))).collect::<Result<Vec<f64>,String>>()?;
+            let square = rates.iter().all(|m| m.abs() <= 1e-9);
+            // short of the plane: filled where the opening's own tube and corner balls are
+            let filled = shared.iter().all(|&e| joined.contains(&By::Edge(e as usize))) && corners.iter().all(|&v| joined.contains(&By::Corner(v)));
+            ("its face",points,square,rates,filled)
+        }
+    };
+    match o.side(&points,tol) {
+        Some(0) => Ok(None),
+        None if square => Ok(None),
+        None => Err(format!("{what} runs across the plane of {}, left open, aslant",face_name(b,o.face))),
+        Some(s) if square => Ok(Some((s,false))),
+        Some(s) => {
+            // a rate along the side `s` falls short of the plane, against it runs past
+            let k = s as f64;
+            if join == Join::Sharp || rates.iter().any(|&m| k*m > 1e-9) && !filled {
+                return Err(format!("{what} meets {}, left open, aslant: {}",face_name(b,o.face),match join {
+                    Join::Sharp => "a sharp wall carried on to an opening's plane is built only where it meets it square, yet",
+                    Join::Round => "what its moved wall leaves short of the plane no round of the opening fills",
+                }))
             }
-            Ok(wall)
+            Ok(Some((s,rates.iter().any(|&m| k*m < -1e-9))))
         }
     }
+}
+
+/// **An outward shell's pieces ended at its openings** (`ending`): the pieces ended alike united
+/// first and cut once, so each opening's plane holds one face where it ends them all (a box's rim
+/// one ring, not a face for each piece that reaches it), and a piece no opening ends left whole.
+fn ended(b: &Brep,openings: &[Opening],made: Vec<(By,Piece)>,join: Join) -> Result<Vec<Piece>,String> {
+    let tol = tolerance(b.size());
+    let joined: BTreeSet<By> = made.iter().map(|m| m.0).filter(|by| !matches!(by,By::Face(_))).collect();
+    // the pieces by the cuts that end them, (opening, side) each, and the cuts any of them must take
+    let mut groups: BTreeMap<Vec<(usize,i8)>,(Vec<Piece>,BTreeSet<(usize,i8)>)> = BTreeMap::new();
+    for (by,(what,p)) in made {
+        let (mut cuts,mut musts) = (Vec::new(),Vec::new());
+        for (k,o) in openings.iter().enumerate() {
+            if let Some((s,must)) = ending(b,o,&joined,by,join,tol).map_err(|e| format!("{what}: {e}"))? {
+                cuts.push((k,s));
+                if must { musts.push((k,s)); }
+            }
+        }
+        let g = groups.entry(cuts).or_default();
+        g.0.push((what,p));
+        g.1.extend(musts);
+    }
+    let mut out = Vec::new();
+    for (pieces,musts) in groups.into_values() {
+        let what = match &pieces[..] { [(w,_)] => w.clone(),_ => format!("{} pieces ended alike",pieces.len()) };
+        let mut group = united(pieces,"no piece")?;
+        for (k,s) in musts {
+            let o = &openings[k];
+            group = kept(&group,o.o,scale(o.n,s as f64),0.).map_err(|e| format!("{what} cut off at the plane of {}: {e}",face_name(b,o.face)))?;
+            if group.faces.is_empty() { break }
+        }
+        if !group.faces.is_empty() { out.push((what,group)); }
+    }
+    Ok(out)
 }
 
 /// A sheet `sheet` (faces bounding no solid, each oriented, neighbours turning one way) thickened
@@ -106,16 +234,21 @@ pub fn thickened(sheet: &Brep,s: [f64;2],join: Join) -> Result<Brep,String> {
     let mut pieces = (0..sheet.faces.len()).map(|fi| normal_sweep(sheet,fi,s).map(|p| (face_name(sheet,fi),p)))
         .collect::<Result<Vec<Piece>,String>>()?;
     for (side,depth) in [(Side::Out,s[1]),(Side::In,-s[0])] {
-        if depth > 0. { pieces.extend(joins(sheet,&uses,&all,side,depth,join,Of::Sheet)?); }
+        if depth > 0. { pieces.extend(joins(sheet,&uses,&all,side,depth,join,Of::Sheet)?.into_iter().map(|(_,p)| p)); }
     }
-    let mut pieces = pieces.into_iter();
-    let (_,first) = pieces.next().ok_or("a sheet with no face")?;
-    folded(first,pieces.collect(),Op::Union)
+    united(pieces,"a sheet with no face")
 }
 
 /// Refused unless `d` is a positive length.
 fn positive(d: f64,what: &str) -> Result<(),String> {
     if d > 0. && d.is_finite() { Ok(()) } else { Err(format!("{what} by {d}: the distance must be positive")) }
+}
+
+/// The pieces united, or refused as `none` where there are none.
+fn united(pieces: Vec<Piece>,none: &str) -> Result<Brep,String> {
+    let mut pieces = pieces.into_iter();
+    let (_,first) = pieces.next().ok_or(none)?;
+    folded(first,pieces.collect(),Op::Union)
 }
 
 /// `start` combined with each piece in turn by `op`, what each step knows of its faces handed to
@@ -139,13 +272,18 @@ fn face_name(b: &Brep,fi: usize) -> String {
 /// The pieces of the faces `faces` marks of `b` moved `d` to `side`: each face's normal sweep, and
 /// the joins where they part.
 fn pieces(b: &Brep,faces: &[bool],side: Side,d: f64,join: Join) -> Result<Vec<Piece>,String> {
+    Ok(owned_pieces(b,faces,side,d,join)?.into_iter().map(|(_,p)| p).collect())
+}
+
+/// `pieces`, each with what it is made from.
+fn owned_pieces(b: &Brep,faces: &[bool],side: Side,d: f64,join: Join) -> Result<Vec<(By,Piece)>,String> {
     let s = match side { Side::Out => [0.,d],Side::In => [-d,0.] };
     let uses = uses(b);
     let mut out = Vec::new();
     for fi in (0..b.faces.len()).filter(|&f| faces[f]) {
         // inside, a wall's moved face runs on across a face left open until it meets it
         let across = match side { Side::In => open_sides(b,&uses,fi,faces),Side::Out => [false;4] };
-        if let Some(p) = sweep(b,fi,s,Reach {across,cut_at_axis:true})? { out.push((format!("the sweep of {}",face_name(b,fi)),p)); }
+        if let Some(p) = sweep(b,fi,s,Reach {across,cut_at_axis:true})? { out.push((By::Face(fi),(format!("the sweep of {}",face_name(b,fi)),p))); }
     }
     out.extend(joins(b,&uses,faces,side,d,join,Of::Solid)?);
     Ok(out)
@@ -196,7 +334,7 @@ enum Of { Solid,Sheet }
 /// The joins of the faces `faces` marks of `b` moved `d` to `side`, where they part: along each
 /// crease that turns away to that side, a tube (`Join::Round`) or a kite's prism (`Join::Sharp`);
 /// at each corner the points nearest which are nearest it, a ball or the corner's parallelepiped.
-fn joins(b: &Brep,uses: &[Vec<(usize,bool)>],faces: &[bool],side: Side,d: f64,join: Join,of: Of) -> Result<Vec<Piece>,String> {
+fn joins(b: &Brep,uses: &[Vec<(usize,bool)>],faces: &[bool],side: Side,d: f64,join: Join,of: Of) -> Result<Vec<(By,Piece)>,String> {
     let mut out = Vec::new();
     // each vertex's creases: the tangent each leaves it by, whether it is joined, its faces
     let mut at: BTreeMap<u32,Vec<(V,bool,[usize;2])>> = BTreeMap::new();
@@ -227,7 +365,7 @@ fn joins(b: &Brep,uses: &[Vec<(usize,bool)>],faces: &[bool],side: Side,d: f64,jo
             Join::Sharp if !both => continue,
             Join::Sharp => kite(b,&crease,c,e.t,side,d),
         }.map_err(|m| format!("{what}: {m}"))?;
-        out.push((what,piece));
+        out.push((By::Edge(ei),(what,piece)));
     }
     // the corners
     let mut face_at: BTreeMap<u32,BTreeSet<usize>> = BTreeMap::new();
@@ -263,7 +401,7 @@ fn joins(b: &Brep,uses: &[Vec<(usize,bool)>],faces: &[bool],side: Side,d: f64,jo
             Join::Sharp if !joined.iter().all(|&f| faces[f]) => continue,
             Join::Sharp => corner(b,&joined,p,side,d),
         }.map_err(|m| format!("{what}: {m}"))?;
-        out.push((what,piece));
+        out.push((By::Corner(v),(what,piece)));
     }
     Ok(out)
 }

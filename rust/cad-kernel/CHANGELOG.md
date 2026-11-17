@@ -8,6 +8,23 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **An outward shell ends where its opening is** (`offset::shelled`, `Side::Out`): each piece that
+  reaches an opening is ended at its plane, and no other, where the whole wall was cut off at the
+  plane. brep-bench's `shell/l-block-open-at-its-step-outward-sharp`, an L open at its step, kept
+  none of its tall leg's walls past the step's plane and was wrong (904 for 1868); it is now its
+  closed form, sharp and rounded. A wall meeting its opening aslant is cut off at the plane where
+  it runs past it, rounded, and refused where nothing fills what it falls short of — sharp, always
+  — where it was built short of the plane before.
+- **A sheet's face is read by columns only at its fold** (`props`, #880 T1b): 0.14.0 read a carried
+  section's sheet by columns wherever its area factor fell below `geom::NEAR_FOLD` across a face's
+  box, which caught sheets whose rates merely lean together without folding. brep-bench's
+  `swept/spline-bar-screwed-through-rod`, read so at every reading its trim made, took 606 s where
+  0.13.0 took 73 and timed out on the board. A face is now read by columns where its sheet's area
+  factor falls below a millionth at a point of a use, those its box is read from: the bar builds in
+  58 s again, to the same volume, and every fold case reads as it did.
+
+## [0.14.0] - 2026-11-14
+
 - **A sheet that folds under a slide, a turn or a screw goes the contact's road** (`swept::closed`,
   #880 T1): what the closed class refuses as `Folded` under a constant twist is asked of the road,
   as `Curved` is, whose trim keeps of each folded sheet what bounds the sweep. brep-bench's
@@ -20,8 +37,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   path, where its pieces did not close: a ring leaning just past its fold (60°) is built now, at
   every tolerance. Still refused: a swallowtail narrower than the contact's points (56°).
 - **A swept sheet's face across its fold is measured by columns** (`props`, #880 T1b): where a
-  carried section's sheet folds at a face (its area factor nought at a point of a use), its area
-  and flux are read as `∬ g du dv` column by column, not by Green's theorem, whose `G` carried the inverted uses' error beside the fold (the
+  carried section's sheet folds within a face's box, its area and flux are read as `∬ g du dv`
+  column by column, not by Green's theorem, whose `G` carried the inverted uses' error beside the fold (the
   ball screwed tighter than its radius, 3.3e-9 off; now 2.4e-10). Every other face reads as before.
 - **A half's way at a node where its face's rates nearly run together** (`boolean`, #880 T1b) is
   first read a fiftieth along it rather than a ten-thousandth: beside a fold's path a point stands
