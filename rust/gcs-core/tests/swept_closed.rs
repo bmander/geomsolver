@@ -1727,8 +1727,9 @@ fn a_build_past_its_budget_refuses_by_name_within_it() {
 /// meter a build always goes on; past its budget `go_on` answers `Stopped`, naming the stage that
 /// ran away, which a closed build turns into its refusal by budget (`Unbuilt::Budget`) and a
 /// Boolean's phases into their message. And a certified reading stopped there reads nothing more: a
-/// line through a torus (a quartic, its roots isolated) within a budget of one step of the ray stage
-/// is read once, its isolation stopped at its first stretch, and nothing sampled in its place.
+/// line climbing through a torus (a quartic, its roots isolated — a level line is read as the
+/// chords of the circles at its height) within a budget of one step of the ray stage is read once,
+/// its isolation stopped at its first stretch, and nothing sampled in its place.
 #[test]
 fn a_build_past_its_budget_stops_by_one_typed_check() {
     use gcs_core::brep::geom::{Curve,Frame,Surface};
@@ -1737,7 +1738,7 @@ fn a_build_past_its_budget_stops_by_one_typed_check() {
     use gcs_core::meter::{self as meter,Budget,Meter,Stage,Stopped};
     assert_eq!(meter::go_on(),Ok(()));
     let ring = Surface::Torus(Frame::about([0.;3],[0.,0.,1.]),2.,0.5);
-    let line = Curve::Line {p:[-4.,0.,0.1],d:[1.,0.,0.]};
+    let line = Curve::Line {p:[-4.,0.,0.1],d:[1.,0.,0.01]};
     let m = Meter::new(Budget::UNLIMITED);
     let (found,on) = meter::within(&m,|| (curve_surface(&line,[0.,8.],&ring,1e-7),meter::go_on()));
     let Meets::At(found) = found else { panic!("along") };
@@ -2581,6 +2582,105 @@ fn a_bull_nose_mill_run_along_two_smooth_arcs_takes_its_section_turned() {
     let half = r*(depth-c)+a*c+PI*c*c/4.;
     let tool_under = PI*r*r*(depth-c)+PI*(a*a*c+a*PI*c*c/2.+2.*c*c*c/3.);
     let expected = 12.*PI*2.*half+12.*PI/2.*2.*half+tool_under;
+    let removed = volume(&plate)-volume(&cut);
+    assert!((removed-expected).abs() <= 1e-9*expected,"{removed} against {expected}");
+}
+
+/// **A bull-nose mill run round a triangle and back takes its band** (`swept::pieces`): the mill of
+/// radius 4, its corner 1.5, plunged 2 into a plate, run round a triangle — three slides, each its
+/// own sweep, met at sharp corners — and lifted where it began. The section's arc mirrored across the
+/// axis is turned to face the way its plane does, as the arc it mirrors is (a corner cylinder stood
+/// 80 off an edge it bounds); the last slide ends where the first stands whole, so is shut there by
+/// its section; and its bottom edge, level and tangent to the circle the first sweep's corner torus
+/// bottoms out on, meets that torus at a touch read in closed form (a quadruple root of its quartic).
+/// Each height of the plate takes the band between the triangle's outer and inner offsets by the
+/// mill's radius `ρ` there, `(P + 2A/ρᵢ) ρ + (π − A/ρᵢ²) ρ²` (`P` the perimeter, `A` the area, `ρᵢ`
+/// the inradius), integrated over the corner's quarter circle and the side above it.
+#[test]
+fn a_bull_nose_mill_run_round_a_triangle_and_back_takes_its_band() {
+    use gcs_core::brep::swept::closed::cut_from;
+    use std::f64::consts::PI;
+    let (r,c,depth) = (4.,1.5,2.);
+    let plate = block([0.,0.,-20.],[100.,80.,0.]);
+    let tip = [30.,20.,5.];
+    let tool = bull_nose_mill(tip,r,c,25.);
+    let (path,roll) = moves(&[tip,[30.,20.,-depth],[70.,35.,-depth],[40.,60.,-depth],[30.,20.,-depth],[30.,20.,5.]]);
+    let cut = cut_from(&plate,&tool,&path,roll,0.01,1e-7).unwrap_or_else(|e| panic!("{e:?}"));
+    cut.check(1e-6).unwrap();
+    let (area,perimeter) = (0.5*((40.*40.)-(10.*15.)),(40f64.hypot(15.))+(30f64.hypot(25.))+(10f64.hypot(40.)));
+    let inradius = 2.*area/perimeter;
+    // ∫ρ and ∫ρ² over the depth: the corner's quarter circle about (r − c, c), then the side
+    let a = r-c;
+    let i1 = a*c+PI*c*c/4.+r*(depth-c);
+    let i2 = a*a*c+a*PI*c*c/2.+2.*c*c*c/3.+r*r*(depth-c);
+    let expected = (perimeter+2.*area/inradius)*i1+(PI-area/(inradius*inradius))*i2;
+    let removed = volume(&plate)-volume(&cut);
+    assert!((removed-expected).abs() <= 1e-9*expected,"{removed} against {expected}");
+}
+
+/// **A ball-end mill run round a slot narrower than itself takes the slot and its band**
+/// (`swept::pieces`): the mill of radius 3 plunged 4 into a plate (its ball and 1 of its shank) and
+/// run round a rectangle 40 by 2 and back, each slide its own sweep, met at sharp corners. At each
+/// corner the next slide's cylinder touches the ball the last left there along the great circle
+/// square to it, through the bottom of the ball — so the ball's quarters in a slide's halves are
+/// built with their poles off the section and the equator (`raster::lune`): turned about the axis,
+/// the pole stood on that circle, and the Boolean left a hole of the ball in no piece. Each height
+/// takes the band about the rectangle, its inner offset gone once the radius `ρ` there passes 1:
+/// `168 ρ + (π − 4) ρ²` below that and `80 + 84 ρ + π ρ²` above.
+#[test]
+fn a_ball_end_mill_run_round_a_slot_narrower_than_itself_takes_the_slot_and_its_band() {
+    use gcs_core::brep::swept::closed::cut_from;
+    use std::f64::consts::PI;
+    let plate = block([0.,0.,-20.],[100.,80.,0.]);
+    let tip = [20.,20.,5.];
+    let tool = ball_end_mill(tip,3.,30.);
+    let (path,roll) = moves(&[tip,[20.,20.,-4.],[60.,20.,-4.],[60.,22.,-4.],[20.,22.,-4.],[20.,20.,-4.],[20.,20.,5.]]);
+    let cut = cut_from(&plate,&tool,&path,roll,0.01,1e-7).unwrap_or_else(|e| panic!("{e:?}"));
+    cut.check(1e-6).unwrap();
+    // ∫ρ and ∫ρ² over heights h of the ball, ρ² = 9 − (3 − h)²
+    let g = |u: f64| 0.5*u*(9.-u*u).sqrt()+4.5*(u/3.).asin();
+    let k = |u: f64| 9.*u-u*u*u/3.;
+    let (i1,i2) = (|a: f64,b: f64| g(3.-a)-g(3.-b),|a: f64,b: f64| k(3.-a)-k(3.-b));
+    let h1 = 3.-2.*2f64.sqrt();
+    let expected = 168.*i1(0.,h1)+(PI-4.)*i2(0.,h1)+80.*(3.-h1)+84.*i1(h1,3.)+PI*i2(h1,3.)+(80.+84.*3.+PI*9.);
+    let removed = volume(&plate)-volume(&cut);
+    assert!((removed-expected).abs() <= 1e-9*expected,"{removed} against {expected}");
+}
+
+/// **A bull-nose mill run along a polygon's sides, turning a little at each corner, takes its band
+/// with its corners mitred** (`swept::pieces`'s mitred runs): the mill of radius 4, its corner 1.5,
+/// plunged 2 into a plate and run along 27 sides of a 36-gon of radius 20 (a curve as a CAM program
+/// writes it, 10° at each corner) — each quarter turn one sweep, its slides' halves carried and
+/// mitred where each corner turns toward them, the tool's wedge turned where it turns from, never
+/// met in a Boolean. Each height takes the band about the polyline: `2 L ρ + π ρ²` (`L` its length)
+/// and, at each corner turning by `φ`, the wedge outside it less the kite the two slides share
+/// inside it, `(φ/2 − tan φ/2) ρ²`.
+#[test]
+fn a_bull_nose_mill_run_along_a_polygons_sides_takes_its_band_with_its_corners_mitred() {
+    use gcs_core::brep::swept::closed::cut_from;
+    use std::f64::consts::PI;
+    let (r,c,depth) = (4.,1.5,2.);
+    let plate = block([0.,0.,-20.],[100.,80.,0.]);
+    let corners: Vec<[f64;3]> = (0..=27).map(|k| { let t = 2.*PI*k as f64/36.; [50.+20.*t.cos(),40.+20.*t.sin(),-depth] }).collect();
+    let tip = [corners[0][0],corners[0][1],5.];
+    let tool = bull_nose_mill(tip,r,c,25.);
+    let last = corners[27];
+    let mut points = vec![tip];
+    points.extend(&corners);
+    points.push([last[0],last[1],5.]);
+    let (path,roll) = moves(&points);
+    let cut = cut_from(&plate,&tool,&path,roll,0.01,1e-7).unwrap_or_else(|e| panic!("{e:?}"));
+    cut.check(1e-6).unwrap();
+    let legs: Vec<[f64;2]> = corners.windows(2).map(|w| [w[1][0]-w[0][0],w[1][1]-w[0][1]]).collect();
+    let length: f64 = legs.iter().map(|l| l[0].hypot(l[1])).sum();
+    let turns: f64 = legs.windows(2).map(|w| {
+        let phi = (w[0][0]*w[1][1]-w[0][1]*w[1][0]).atan2(w[0][0]*w[1][0]+w[0][1]*w[1][1]).abs();
+        phi/2.-(phi/2.).tan()
+    }).sum();
+    let a = r-c;
+    let i1 = a*c+PI*c*c/4.+r*(depth-c);
+    let i2 = a*a*c+a*PI*c*c/2.+2.*c*c*c/3.+r*r*(depth-c);
+    let expected = 2.*length*i1+(PI+turns)*i2;
     let removed = volume(&plate)-volume(&cut);
     assert!((removed-expected).abs() <= 1e-9*expected,"{removed} against {expected}");
 }

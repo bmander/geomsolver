@@ -1000,10 +1000,30 @@ fn line_cone(p: V,d: V,t: [f64;2],f: &super::geom::Frame,r: f64,a: f64,surface: 
 }
 
 /// A line against a torus about `f`'s axis, its tube's middle radius `big` and the tube's `r`:
-/// `(|w|² + R² − r²)² − 4R² (x² + y²)` along it, a quartic.
+/// `(|w|² + R² − r²)² − 4R² (x² + y²)` along it, a quartic. A line square to the axis meets the
+/// circles the torus has at its height, `ρ = R ± √(r² − z²)`, each as a chord — and at the top or
+/// the bottom of the tube, where they are one circle and the torus lies on one side of the line's
+/// plane, only touches it. There the quartic is `(ρ² − R²)²`, its roots double, and a line tangent
+/// to that circle (a slide's bottom edge ending on the half a sweep before it turned at the same
+/// place) a quadruple root no isolation proves.
 fn line_torus(p: V,d: V,t: [f64;2],f: &super::geom::Frame,big: f64,r: f64,surface: &Surface,tol: f64) -> Certified {
     use crate::util::isolate::{poly_mul,poly_sum};
     let (q,e) = (f.local(p),f.dir_local(d));
+    if e[2].abs() <= 1e-12*norm(d) {
+        let (flat,from) = (f.dir([e[0],e[1],0.]),f.dir([q[0],q[1],0.]));
+        let off = q[2].abs()-r;
+        if off > tol { return Ok(Meets::At(Vec::new())) }
+        if off >= -tol {
+            let Meets::At(found) = line_chord(from,flat,big,tol) else { unreachable!() };
+            return Ok(Meets::At(found.into_iter().map(|(t,_)| (t,true)).collect()))
+        }
+        let h = (r*r-q[2]*q[2]).sqrt();
+        let mut out = Vec::new();
+        for rho in [big+h,big-h] {
+            if let Meets::At(found) = line_chord(from,flat,rho.abs(),tol) { out.extend(found) }
+        }
+        return Ok(Meets::At(out))
+    }
     let sq = |i: usize| [q[i]*q[i],2.*q[i]*e[i],e[i]*e[i]];
     let (x,y,z) = (sq(0),sq(1),sq(2));
     let flat = poly_sum(&[(1.,&x),(1.,&y)]);

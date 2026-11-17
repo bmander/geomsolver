@@ -840,6 +840,35 @@ fn a_line_meets_a_sphere_in_closed_form() {
     assert!(matches!(curve_surface(&Curve::Line {p:[1.,4.1,3.],d:[1.,0.,0.]},[-9.,9.],&ball,1e-9),Meets::At(r) if r.is_empty()));
 }
 
+/// **A line square to a torus's axis meets the circles at its height** in closed form: at the
+/// bottom of the tube the torus is the one circle there, every meeting a touch — and a line tangent
+/// to that circle (a slide's bottom edge ending on the corner a sweep before it turned at, a bull-nose
+/// run round a triangle and back) its quartic's quadruple root, which no isolation proves; at the
+/// middle of the tube, the two circles' chords, four crossings.
+#[test]
+fn a_level_line_meets_a_torus_at_the_circles_of_its_height() {
+    use gcs_core::brep::geom::{Curve,Surface};
+    use gcs_core::brep::query::{curve_surface,Meets};
+    let ring = Surface::Torus(Frame::new([1.,2.,3.],[0.,0.,1.],[1.,0.,0.]),2.5,1.5);
+    // tangent to the bottom circle at (1, 4.5, 1.5), and that stretch ending there
+    let touch = Curve::Line {p:[-4.,4.5,1.5],d:[1.,0.,0.]};
+    let Meets::At(roots) = curve_surface(&touch,[0.,10.],&ring,1e-9) else { panic!("along") };
+    assert_eq!(roots,vec![(5.,true)]);
+    let Meets::At(roots) = curve_surface(&touch,[0.,5.],&ring,1e-9) else { panic!("along") };
+    assert_eq!(roots.len(),1,"{roots:?}");
+    assert!((roots[0].0-5.).abs() <= 1e-12,"{roots:?}");
+    // a chord of the bottom circle 2 off its centre: touches 1.5 either side
+    let chord = Curve::Line {p:[-4.,4.,1.5],d:[1.,0.,0.]};
+    assert_eq!(curve_surface(&chord,[0.,10.],&ring,1e-9),Meets::At(vec![(3.5,true),(6.5,true)]));
+    // through the axis at the tube's middle: the circles of radius 1 and 4
+    let across = Curve::Line {p:[-4.,2.,3.],d:[1.,0.,0.]};
+    let Meets::At(roots) = curve_surface(&across,[0.,10.],&ring,1e-9) else { panic!("along") };
+    let at: Vec<f64> = roots.iter().map(|r| r.0).collect();
+    assert!(roots.iter().all(|r| !r.1) && at.len() == 4 && [1.,4.,6.,9.].iter().zip(&at).all(|(w,t)| (w-t).abs() <= 1e-12),"{roots:?}");
+    // just under the bottom by more than the tolerance: nothing
+    assert!(matches!(curve_surface(&Curve::Line {p:[-4.,2.,1.4],d:[1.,0.,0.]},[0.,10.],&ring,1e-9),Meets::At(r) if r.is_empty()));
+}
+
 /// **A cube trimmed by its midsphere** (brep-bench's tangent/midsphere-common): the ball about a
 /// cube's centre through the middles of its edges touches each of the twelve there, and each touch
 /// is a vertex of the common — six discs, each inscribed in a face, and eight three-sided patches

@@ -24,6 +24,27 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   (timed out and refused before) build in about two seconds each, to their closed forms within
   2e-15; `cnc/flat-end-mill-profile` in 0.2 s. `patches::Revolved::read` takes a cone's apex as a
   point of its meridian (a drill).
+- **Sharp corners of a path of slides** (`swept::pieces`, #931): a section's arc mirrored across
+  the tool's axis is drawn in a frame facing the way its plane does (a bull-nose's slide stood its
+  corner cylinder 80 off an edge it bounds); a chain ending where an earlier sweep holds the whole
+  tool (a closed path come back to its start) is shut there by its section; and a ball's quarter in
+  a half is built with its poles off the section and the equator (`raster::lune`), not on the
+  axis, where the next move's side touches it along a great circle through the pole ("a sphere has
+  a hole in no piece"). A bull-nose run round a triangle and back, and a ball-end mill round a slot
+  narrower than itself and back, are cut to their closed forms; of 25 random polylines cut by a
+  ball-end mill, 1 is refused (13 before).
+- **A run of slides turning at sharp corners is one sweep** (`swept::pieces::mitred`, #931): each
+  slide's halves carried and cut, on the side a corner turns toward, at the plane bisecting it
+  (a mitre: a line on a plane, an ellipse on a cylinder), and the tool's wedge turned through the
+  corner on the side it turns from, sewn — taken while each slide outlasts its mitres and the run
+  turns through a right angle at most. A curve written as a fine polyline is one sweep a quarter
+  turn: a bull-nose along 135 sides of a 180-gon in 1.4 s (15 s a side at a time), to the same
+  volume. A half of the tool at a run's end is that wedge turned a half turn.
+- **A line square to a torus's axis meets it in closed form** (`query`): as the chords of the
+  circles at its height, and at the top or bottom of the tube, where they are one circle, only
+  touches — where the quartic is `(ρ² − R²)²` and a line tangent to that circle its quadruple root,
+  which no isolation proves (a slide's bottom edge ending on the torus a sweep before it turned
+  at).
 - **Booleans at tangencies** (`complex`, `boolean`): two exact faces leaving an edge are tied only
   within `16 tol / ρ` of one another (a fit's `TANGENT` else), and a tie is read a hundredth of their
   least radius in, not a thousandth of the whole complex — a cylinder and a ball of its radius

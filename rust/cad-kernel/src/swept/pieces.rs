@@ -19,6 +19,10 @@
 //! - **a ball-end mill slid at a slant** (`raster`): its half cylinder, its ball's quarters and its
 //!   shank's walls, cut off past the blank.
 //!
+//! Moves that join — a smooth chain (`chain`), slides square to the axis turning at corners the
+//! run can mitre (`mitred`) — are one sweep, so no two of their sweeps touch in a Boolean round
+//! the section where they join.
+//!
 //! Each is its faces sewn (`sew::sewn`), nothing intersected. Any other move is the closed class's
 //! own build of that piece alone (`closed::closed`). A path whose tool the road does not read, or
 //! that it could not sweep or cut, is the closed class's whole (`None`).
@@ -65,8 +69,22 @@ fn edge(e: &Element,o: V,u: V,a: V,mirror: bool) -> ProfileEdge {
     let u = if mirror { scale(u,-1.) } else { u };
     match *e {
         Element::Line {a:p,b:q} => ProfileEdge::Line {a:at(o,u,a,p),b:at(o,u,a,q)},
-        Element::Arc {c,r,from,sweep} => ProfileEdge::Arc {frame:Frame {o:at(o,u,a,c),x:u,y:a,z:cross(u,a)},r,span:Some([from,from+sweep])},
+        // (mirrored, its angles from `-u` toward `a` read from `-u` toward `-a`: a frame turning the
+        // way the section's plane faces, as the unmirrored arc's does)
+        Element::Arc {c,r,from,sweep} if mirror => arc(at(o,u,a,c),u,scale(a,-1.),r,[-(from+sweep),-from]),
+        Element::Arc {c,r,from,sweep} => arc(at(o,u,a,c),u,a,r,[from,from+sweep]),
     }
+}
+
+/// An arc of radius `r` about `o`, in the plane of the unit `x` and `y` (square to one another),
+/// over the angles `span` from `x` toward `y` — its frame turned so its circle's seam stands
+/// opposite the arc's middle: no surface a section's arc is carried or turned into has its seam
+/// along an edge, which two faces would read on either side of the seam.
+fn arc(o: V,x: V,y: V,r: f64,[s0,s1]: [f64;2]) -> ProfileEdge {
+    let turn = 0.5*(s0+s1)+PI;
+    let (sn,cs) = turn.sin_cos();
+    let (x2,y2) = (add(scale(x,cs),scale(y,sn)),add(scale(x,-sn),scale(y,cs)));
+    ProfileEdge::Arc {frame:Frame {o,x:x2,y:y2,z:cross(x2,y2)},r,span:Some([s0-turn,s1-turn])}
 }
 
 /// Whether an element is a segment across the axis at one height (a flat end's disc).
@@ -88,7 +106,7 @@ fn section(rev: &Revolved,o: V,u: V,a: V,eps: f64) -> Profile {
             if c[0].abs() > eps { edges.push(edge(e,o,u,a,false)); edges.push(edge(e,o,u,a,true)); continue }
             // a ball's arc from the axis (or to it, at the top), both sides one arc through the axis
             let span = if k == 0 { [from-sweep,from+sweep] } else { [from,from+2.*sweep] };
-            edges.push(ProfileEdge::Arc {frame:Frame {o:at(o,u,a,c),x:u,y:a,z:cross(u,a)},r,span:Some(span)});
+            edges.push(arc(at(o,u,a,c),u,a,r,span));
         } else {
             edges.push(edge(e,o,u,a,false));
             edges.push(edge(e,o,u,a,true));
@@ -98,18 +116,204 @@ fn section(rev: &Revolved,o: V,u: V,a: V,eps: f64) -> Profile {
 }
 
 /// **The tool's half on the side `m` points to**: its meridian in the plane through `o` holding the
-/// axis `a` square to `m`, turned half a turn about the axis toward `m` — its faces, without the
-/// two half sections it is shut by.
-fn half(rev: &Revolved,o: V,a: V,m: V) -> Result<Brep,String> {
-    let u = cross(m,a);
-    let n = rev.elements.len();
-    let top = rev.elements[n-1].ends()[1];
-    let bottom = rev.elements[0].ends()[0];
-    let mut edges: Vec<ProfileEdge> = rev.elements.iter().map(|e| edge(e,o,u,a,false)).collect();
+/// axis `a` square to `m`, turned half a turn about the axis toward `m` (`wedge`).
+fn half(rev: &Revolved,o: V,a: V,m: V) -> Result<Vec<Brep>,String> { wedge(rev,o,cross(m,a),a,PI) }
+
+/// **The tool's wedge turned from `u` by `phi` about its axis `a`** (right-handed, through `o`):
+/// its meridian on the side of `u` turned so — its faces, without the half sections it is shut by
+/// at either end. A ball's quarter in it (its meridian's arc from the axis to the equator) is the
+/// ball's part on the wedge's side of both sections and of the equator, its poles off all three
+/// planes (`raster::lune`): turned about the axis, its pole would stand on both sections, where a
+/// move after a corner touches the wedge along a great circle through it — a meeting through a
+/// pole, which the Booleans do not split.
+fn wedge(rev: &Revolved,o: V,u: V,a: V,phi: f64) -> Result<Vec<Brep>,String> {
+    let p = half_section(rev,o,u,a,cross(u,a));
+    let turned = without_planes_holding(&revolve(&p,o,a,phi)?,a)?;
+    let quarters: Vec<(V,f64,V)> = rev.elements.iter().filter_map(|e| match *e {
+        Element::Arc {c,r,from,sweep} if c[0].abs() <= 1e-9*(1.+rev.size) => {
+            let [s0,s1] = [from.min(from+sweep),from.max(from+sweep)];
+            let quarter = |x: f64,y: f64| (x-PI/2.).abs() <= 1e-9 && y.abs() <= 1e-9;
+            // (below the equator for the bottom's quarter, above it for the top's)
+            if quarter(-s0,s1) { Some((at(o,u,a,c),r,scale(a,-1.))) } else if quarter(s1,s0) { Some((at(o,u,a,c),r,a)) } else { None }
+        }
+        _ => None,
+    }).collect();
+    if quarters.is_empty() { return Ok(vec![turned]) }
+    // the sections' sides the wedge lies on: from `u`'s plane toward where it turns, and back from
+    // the plane it ends in (one plane, a half turn on)
+    let ahead = scale(cross(a,u),phi.signum());
+    let end = crate::geom::Rigid::turn(o,a,phi).vector(u);
+    let behind = scale(cross(a,end),-phi.signum());
+    let mut cuts = vec![ahead];
+    if norm(sub(behind,ahead)) > 1e-9 { cuts.push(behind) }
+    let mut out = vec![faces_but_spheres(&turned)?];
+    for (c,r,w) in quarters {
+        let mut planes = vec![w];
+        planes.extend(&cuts);
+        out.push(super::raster::lune(c,r,&planes,[ahead,u,a])?);
+    }
+    Ok(out)
+}
+
+/// **The tool's meridian on the side `u` of its axis**, in the plane through `o` holding the axis
+/// `a`, shut along the axis: a half section, its plane facing `n` (`u × a` or against it), each arc
+/// drawn in a frame turning the way `n` faces (`edge`).
+fn half_section(rev: &Revolved,o: V,u: V,a: V,n: V) -> Profile {
+    let k = rev.elements.len();
+    let (bottom,top) = (rev.elements[0].ends()[0],rev.elements[k-1].ends()[1]);
+    let flip = dot(cross(u,a),n) < 0.;
+    let mut edges: Vec<ProfileEdge> = rev.elements.iter().map(|e| if flip { edge(e,o,scale(u,-1.),a,true) } else { edge(e,o,u,a,false) }).collect();
     edges.push(ProfileEdge::Line {a:at(o,u,a,top),b:at(o,u,a,bottom)});
-    let p = Profile {origin:o,normal:cross(u,a),loops:vec![edges],names:Vec::new()};
-    // (turned right-handed about `a`, `u` goes to `a × u = m`)
-    without_planes(&revolve(&p,o,a,PI)?,m)
+    Profile {origin:o,normal:n,loops:vec![edges],names:Vec::new()}
+}
+
+/// **A half section carried along its plane's normal between two planes through the axis**
+/// (`ends`, each a point and a unit normal): the sheet its meridian's edges sweep, from where each
+/// meets the plane it starts at to where it meets the one it ends at — a side cut square at a
+/// section, or slanted at a mitre — its edge along the axis (through `o` along `a`) sweeping
+/// nothing (the plane two halves share). A segment's side is a plane strip, an arc's a cylinder's,
+/// each cut at a slanted end along a line or an ellipse.
+fn strip(p: &Profile,o: V,a: V,ends: [[V;2];2],eps: f64) -> Result<Brep,String> {
+    use crate::geom::Curve;
+    use crate::topo::{Coedge,EdgeCurve,Face,Pcurve};
+    let n = unit(p.normal);
+    let plane = Frame::about(p.origin,n);
+    let walks = crate::build::walks(p,&|q| { let l = plane.local(q); [l[0],l[1]] })?;
+    let walk = &walks[0];
+    let m = walk.len();
+    // how far along `n` a point of the section's plane is carried to meet an end
+    let height = |q: V,[c,k]: [V;2]| dot(sub(c,q),k)/dot(n,k);
+    let hs: Vec<[f64;2]> = walk.iter().map(|s| ends.map(|e| height(s.start(),e))).collect();
+    if hs.iter().any(|h| !(h[1]-h[0] > eps)) { return Err("a strip's ends cross".into()) }
+    let lift = |q: V,h: f64| add(q,scale(n,h));
+    let on_axis = |q: V| norm(cross(sub(q,o),a)) <= eps;
+    let mut b = Brep::default();
+    let bv: Vec<u32> = (0..m).map(|k| b.vertex(lift(walk[k].start(),hs[k][0]))).collect();
+    let tv: Vec<u32> = (0..m).map(|k| b.vertex(lift(walk[k].start(),hs[k][1]))).collect();
+    let up: Vec<u32> = (0..m).map(|k| b.edge(EdgeCurve::Curve(Curve::Line {p:walk[k].start(),d:n}),hs[k],[bv[k],tv[k]])).collect();
+    let plain = || Pcurve::Inverse {a:[0.;2],b:[0.;2]};
+    for k in 0..m {
+        let s = &walk[k];
+        let k1 = (k+1)%m;
+        if on_axis(s.start()) && on_axis(s.end()) { continue }
+        // a step's edge at end `e`, from vertex `v0` to `v1`, along the walk: its curve, its span
+        // and its ends as stored, and whether it runs the walk's way, with the cylinder's
+        // parameters (its angle, its height) at its first and last
+        let rim = |e: usize,[v0,v1]: [u32;2],b: &mut Brep| -> Result<(u32,bool,[[f64;2];2]),String> {
+            let [ha,hb] = [hs[k][e],hs[k1][e]];
+            match s.curve {
+                Curve::Line {..} => {
+                    let (p0,p1) = (lift(s.start(),ha),lift(s.end(),hb));
+                    let len = norm(sub(p1,p0));
+                    Ok((b.edge(EdgeCurve::Curve(Curve::Line {p:p0,d:unit(sub(p1,p0))}),[0.,len],[v0,v1]),true,[[0.;2];2]))
+                }
+                Curve::Circle(f,r) => {
+                    // the circle carried onto the end's plane: `c + cos t X + sin t Y`, read in its
+                    // principal axes
+                    let k_ = ends[e][1];
+                    let g = scale(k_,-1./dot(n,k_));
+                    let c = lift(f.o,height(f.o,ends[e]));
+                    let (x,y) = (scale(add(f.x,scale(n,dot(f.x,g))),r),scale(add(f.y,scale(n,dot(f.y,g))),r));
+                    let t0 = 0.5*(2.*dot(x,y)).atan2(dot(x,x)-dot(y,y));
+                    let (sn,cs) = t0.sin_cos();
+                    let (xp,yp) = (add(scale(x,cs),scale(y,sn)),add(scale(x,-sn),scale(y,cs)));
+                    let curve = Curve::Ellipse(Frame {o:c,x:unit(xp),y:unit(yp),z:unit(cross(xp,yp))},norm(xp),norm(yp));
+                    let (ta,tb) = (s.t[0],s.t[1]);
+                    let uv = [[ta,ha],[tb,hb]];
+                    Ok(if s.forward() { (b.edge(EdgeCurve::Curve(curve),[ta-t0,tb-t0],[v0,v1]),true,uv) }
+                        else { (b.edge(EdgeCurve::Curve(curve),[tb-t0,ta-t0],[v1,v0]),false,[uv[1],uv[0]]) })
+                }
+                _ => Err(format!("a {} in a tool's section is not carried",s.curve.kind())),
+            }
+        };
+        let (bottom,b_along,b_uv) = rim(0,[bv[k],bv[k1]],&mut b)?;
+        let (top,t_along,t_uv) = rim(1,[tv[k],tv[k1]],&mut b)?;
+        let (surface,reversed,curved) = match s.curve {
+            Curve::Line {..} => {
+                let d = unit(sub(s.end(),s.start()));
+                (Surface::Plane(Frame::new(s.start(),cross(d,n),d)),false,false)
+            }
+            Curve::Circle(f,r) => (Surface::Cylinder(f,r),!s.forward(),true),
+            _ => unreachable!("refused above"),
+        };
+        let pc = |uv: [[f64;2];2]| if curved { Pcurve::Inverse {a:uv[0],b:uv[1]} } else { plain() };
+        let t_at = |j: usize| if j == k { s.t[0] } else { s.t[1] };
+        let ups = |j: usize| pc([[t_at(j),hs[j][0]],[t_at(j),hs[j][1]]]);
+        let side = vec![
+            Coedge {edge:bottom,reversed:!b_along,pcurve:pc(b_uv)},
+            Coedge {edge:up[k1],reversed:false,pcurve:ups(k1)},
+            Coedge {edge:top,reversed:t_along,pcurve:pc(t_uv)},
+            Coedge {edge:up[k],reversed:true,pcurve:ups(k)},
+        ];
+        b.faces.push(Face {surface,reversed,loops:vec![side],name:String::new()});
+    }
+    Ok(b)
+}
+
+/// The turn about `a` (right-handed) from the way `d0` to the way `d1`, both square to it.
+fn turn(a: V,d0: V,d1: V) -> f64 { dot(cross(d0,d1),a).atan2(dot(d0,d1)) }
+
+/// The farthest the tool reaches from its axis.
+fn reach_of(rev: &Revolved) -> f64 {
+    rev.elements.iter().map(|e| match *e {
+        Element::Arc {c,r,..} => c[0].abs()+r,
+        _ => { let [p,q] = e.ends(); p[0].abs().max(q[0].abs()) }
+    }).fold(0.,f64::max)
+}
+
+/// **A run of slides square to the axis turning at sharp corners** (`moves`, each starting where the
+/// last ends, the axis the same): each slide's two halves carried along it, each cut where it
+/// starts and ends square at the section — or, on the side a corner turns toward, slanted at the
+/// plane through the axis bisecting the corner (a mitre), where the slide's half before it and
+/// after it meet in one curve; at each corner the tool's wedge on the side it turns away from,
+/// turned through the corner about the axis; between the tool's half behind where the run starts
+/// (or, not `back`, its section) and its half ahead where it ends (or, not `front`, its section),
+/// sewn. A run's sweeps are never met in a Boolean, where each would touch the next round the
+/// section they share at the corner. (`cut` runs slides on only while the run is laid so: each
+/// slide longer than its mitres take back on either side, and the run turning through no more than
+/// a right angle, so no two of its slides meet but where they join.)
+fn mitred(rev: &Revolved,moves: &[Move],back: bool,front: bool,tol: f64) -> Result<Brep,String> {
+    let eps = 1e-9*(1.+rev.size);
+    let legs: Vec<(V,V,f64,V)> = moves.iter().map(|&mv| match mv {
+        Move::Across {at,d} => Ok((at.point(rev.frame.o),unit(d),norm(d),at.vector(rev.frame.z))),
+        _ => Err("a mitred run of a move not square to the axis".to_string()),
+    }).collect::<Result<_,_>>()?;
+    let n = legs.len();
+    let a = legs[0].3;
+    // the turn where each slide starts (none at the first)
+    let turns: Vec<f64> = (0..n).map(|i| if i == 0 { 0. } else { turn(a,legs[i-1].1,legs[i].1) }).collect();
+    let mut faces: Vec<Brep> = Vec::with_capacity(3*n+2);
+    for i in 0..n {
+        let (o,d,len,_) = legs[i];
+        let e = add(o,scale(d,len));
+        let left = cross(a,d);
+        let next = (i+1 < n).then(|| (turns[i+1],legs[i+1].1));
+        for u in [left,scale(left,-1.)] {
+            // (a corner turning toward this side takes it back to the mitre)
+            let toward = |phi: f64| phi.abs() > 1e-12 && (phi > 0.) == (dot(u,left) > 0.);
+            let start = if i > 0 && toward(turns[i]) { [o,unit(add(legs[i-1].1,d))] } else { [o,d] };
+            let end = match next { Some((phi,dn)) if toward(phi) => [e,unit(add(d,dn))],_ => [e,d] };
+            faces.push(strip(&half_section(rev,o,u,a,d),o,a,[start,end],eps)?);
+        }
+        if i > 0 && turns[i].abs() > 1e-12 {
+            // the wedge on the side turned from: right of the slide before for a turn left
+            let dp = legs[i-1].1;
+            let u0 = if turns[i] > 0. { cross(dp,a) } else { cross(a,dp) };
+            faces.extend(wedge(rev,o,u0,a,turns[i])?);
+        }
+    }
+    let ((o0,d0,..),(on,dn,ln,an)) = (legs[0],legs[n-1]);
+    let shut = |o: V,m: V| crate::build::face(&section(rev,o,cross(a,m),a,eps));
+    if back { faces.extend(half(rev,o0,a,scale(d0,-1.))?) } else { faces.push(shut(o0,d0)?) }
+    let e = add(on,scale(dn,ln));
+    if front { faces.extend(half(rev,e,an,dn)?) } else { faces.push(shut(e,dn)?) }
+    crate::sew::sewn(&faces,tol).map_err(|e| e.msg)
+}
+
+/// `b`'s faces but those on a sphere.
+fn faces_but_spheres(b: &Brep) -> Result<Brep,String> {
+    let keep: Vec<usize> = (0..b.faces.len()).filter(|&k| !matches!(b.faces[k].surface,Surface::Sphere(..))).collect();
+    crate::offset::sheet_of(b,&keep)
 }
 
 /// `b`'s faces but those on a plane square to `m`: what is left of a section carried along `m`
@@ -260,18 +464,19 @@ fn side(rev: &Revolved,mv: Move,eps: f64) -> Result<Brep,String> {
 /// **A chain's sweep** (`moves`, each square to the axis, each starting as the one before ends,
 /// the way the axis moves running on smoothly): its moves' sides sewn along the sections they
 /// share, between the tool's half behind where the chain starts — or, not `back`, its section
-/// there — and its half ahead where it ends. A smooth path's moves are swept as one: no two of
-/// their sweeps meet in a Boolean, where each would touch the other along that section.
-fn chain(rev: &Revolved,moves: &[Move],back: bool,tol: f64) -> Result<Brep,String> {
+/// there — and its half ahead where it ends — or, not `front`, its section there. A smooth path's
+/// moves are swept as one: no two of their sweeps meet in a Boolean, where each would touch the
+/// other along that section.
+fn chain(rev: &Revolved,moves: &[Move],back: bool,front: bool,tol: f64) -> Result<Brep,String> {
     let eps = 1e-9*(1.+rev.size);
     let ([o,a,m],_) = stands(rev,moves[0]).map(|[s,e]| (s,e)).ok_or("a chain of no move square to the axis")?;
     let [_,[o1,a1,m1]] = stands(rev,moves[moves.len()-1]).ok_or("a chain of no move square to the axis")?;
     // (a chain closing on itself, ending where it starts the same way, is its sides alone: a ring)
     let closed = moves.len() > 1 && norm(sub(o1,o)) <= eps && dot(a,a1) >= 1.-1e-12 && dot(m,m1) >= 1.-1e-9;
     let mut faces = Vec::with_capacity(moves.len()+2);
-    if !closed { faces.push(if back { half(rev,o,a,scale(m,-1.))? } else { crate::build::face(&section(rev,o,cross(a,m),a,eps))? }); }
+    if !closed { if back { faces.extend(half(rev,o,a,scale(m,-1.))?) } else { faces.push(crate::build::face(&section(rev,o,cross(a,m),a,eps))?) } }
     for &mv in moves { faces.push(side(rev,mv,eps)?); }
-    if !closed { faces.push(half(rev,o1,a1,m1)?); }
+    if !closed { if front { faces.extend(half(rev,o1,a1,m1)?) } else { faces.push(crate::build::face(&section(rev,o1,cross(a1,m1),a1,eps))?) } }
     crate::sew::sewn(&faces,tol).map_err(|e| e.msg)
 }
 
@@ -398,6 +603,25 @@ pub fn cut(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol
     // the same, the way across it the same: a run in one plane holding the axis, its corners laid
     // by `raster`'s construction while it can lay them)
     let across = |from: V,to: V,a: V| { let d = sub(to,from); unit(sub(d,scale(a,dot(d,a)))) };
+    // a slide square to the axis turning at a sharp corner from a run of such slides goes on with it
+    // (`mitred`) where the run stays laid: each slide longer than the mitres either side of it take
+    // back on the side each corner turns toward (the tool's reach times the tangent of half the
+    // turn), and the run turning through a right angle at most — so it runs on along one way, and
+    // no two of its slides but those that join come within reach of one another
+    let reach = reach_of(&rev);
+    let laid = |c: &[(usize,&Trajectory,Move,bool)],mv: Move| -> bool {
+        let leg = |mv: Move| match mv { Move::Across {at,d} => Some((unit(d),norm(d),at.vector(rev.frame.z))),_ => None };
+        let (Some(legs),Some((dn,ln,a))) = (c.iter().map(|x| leg(x.2)).collect::<Option<Vec<_>>>(),leg(mv)) else { return false };
+        let (dl,ll,_) = legs[legs.len()-1];
+        let phi = turn(a,dl,dn);
+        let (mut at,mut lo,mut hi) = (0f64,0f64,0f64);
+        for w in legs.windows(2).map(|w| turn(a,w[0].0,w[1].0)).chain([phi]) { at += w; (lo,hi) = (lo.min(at),hi.max(at)); }
+        let back = |phi: f64| reach*(0.5*phi.abs()).tan();
+        let before = if legs.len() > 1 { turn(a,legs[legs.len()-2].0,dl) } else { 0. };
+        let taken = back(phi)+if before*phi > 0. { back(before) } else { 0. };
+        let spare = 1e-3*reach;
+        hi-lo <= 0.5*PI && taken < ll-spare && back(phi) < ln-spare
+    };
     for &(i,piece,mv,back) in &moves {
         let goes_on = chains.last().is_some_and(|c| {
             let &(j,_,last,_) = c.last().unwrap();
@@ -410,7 +634,8 @@ pub fn cut(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol
                         && super::raster::laid(&cs,across(from,to,axis),axis,mill.r,tol)
                 }
                 _ => match (stands(&rev,last),stands(&rev,mv)) {
-                    (Some([_,[o,a,m]]),Some([[p,b,n],_])) => norm(sub(o,p)) <= eps && dot(a,b) >= 1.-1e-12 && dot(m,n) >= 1.-1e-9,
+                    (Some([_,[o,a,m]]),Some([[p,b,n],_])) => norm(sub(o,p)) <= eps && dot(a,b) >= 1.-1e-12
+                        && (dot(m,n) >= 1.-1e-9 || laid(c,mv)),
                     _ => false,
                 },
             }
@@ -440,7 +665,43 @@ pub fn cut(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol
             if plunged || lifted { chains[k] = vec![(i,piece,Move::Lifted {at,s},back)] }
         }
     }
-    let sweeps = crate::util::par::map(&chains,|c| {
+    // a chain ending where a sweep cut before it holds the whole tool (a closed path come back to
+    // where it began) needs no half ahead there (`front`): that sweep's holds it, and the half's
+    // surface met with that sweep's own — the same tool where both stand — would touch it there
+    let holds = |c: &[(usize,&Trajectory,Move,bool)]| -> Vec<[V;2]> {
+        let (_,_,first,back) = c[0];
+        let (_,_,last,_) = c[c.len()-1];
+        let mut at: Vec<[V;2]> = Vec::new();
+        match (first,last) {
+            (Move::Along {at:p,s},_) => {
+                let (o,a) = (p.point(rev.frame.o),p.vector(rev.frame.z));
+                at.extend([[o,a],[add(o,scale(a,s)),a]]);
+            }
+            (Move::Turned {at:p,..},_) if c.len() == 1 && stands(&rev,first).is_none() => at.push([p.point(rev.frame.o),p.vector(rev.frame.z)]),
+            (Move::Slanted {from,axis,..},Move::Slanted {to,..}) => {
+                if back { at.push([from,axis]) }
+                at.push([to,axis]);
+            }
+            // (a chain closing on itself is its sides alone: it holds the tool nowhere whole)
+            _ => if let (Some([s,_]),Some([_,e])) = (stands(&rev,first),stands(&rev,last)) {
+                if c.len() > 1 && norm(sub(e[0],s[0])) <= eps && dot(s[2],e[2]) >= 1.-1e-9 { return at }
+                if back { at.push([s[0],s[1]]) }
+                at.push([e[0],e[1]]);
+            },
+        }
+        at
+    };
+    let fronts: Vec<bool> = (0..chains.len()).map(|k| {
+        let Some([_,[o,a,_]]) = stands(&rev,chains[k][chains[k].len()-1].2) else { return true };
+        !chains[..k].iter().flat_map(|c| holds(c)).any(|[p,b]| norm(sub(p,o)) <= eps && dot(a,b) >= 1.-1e-12)
+    }).collect();
+    // a run with a sharp corner, its slides mitred
+    let cornered = |c: &[(usize,&Trajectory,Move,bool)]| c.windows(2).any(|w| match (stands(&rev,w[0].2),stands(&rev,w[1].2)) {
+        (Some([_,[_,_,m]]),Some([[_,_,n],_])) => dot(m,n) < 1.-1e-9,
+        _ => false,
+    });
+    let sweeps = crate::util::par::map(&(0..chains.len()).collect::<Vec<_>>(),|&k| {
+        let (c,front) = (&chains[k],fronts[k]);
         let (i,piece,mv,back) = c[0];
         match (c.len(),mv) {
             (_,Move::Slanted {axis,..}) => {
@@ -448,8 +709,9 @@ pub fn cut(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol
                 if let Move::Slanted {to,..} = c[c.len()-1].2 { cs.push(to) }
                 super::raster::run(&cs,axis,mill.as_ref().expect("a slanted move is read only of a mill"),blank,back,tol)
             }
-            (1,_) => sweep(&rev,mill.as_ref(),tool,piece,mv,back,blank,bar,tol),
-            _ => chain(&rev,&c.iter().map(|x| x.2).collect::<Vec<_>>(),back,tol),
+            (1,_) => sweep(&rev,mill.as_ref(),tool,piece,mv,[back,front],blank,bar,tol),
+            _ if cornered(c) => mitred(&rev,&c.iter().map(|x| x.2).collect::<Vec<_>>(),back,front,tol),
+            _ => chain(&rev,&c.iter().map(|x| x.2).collect::<Vec<_>>(),back,front,tol),
         }.map_err(|why| Unbuilt::Failed(format!("piece {i} of the path: its sweep not built: {why}")))
     });
     let swept_at = clock.elapsed().as_secs_f64();
@@ -499,15 +761,16 @@ fn judged(out: Brep,blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar
 
 /// What one piece sweeps, built by its move's road.
 #[allow(clippy::too_many_arguments)]
-fn sweep(rev: &Revolved,mill: Option<&super::raster::Mill>,tool: &Brep,piece: &Trajectory,mv: Move,back: bool,blank: &Brep,bar: f64,tol: f64)
+fn sweep(rev: &Revolved,mill: Option<&super::raster::Mill>,tool: &Brep,piece: &Trajectory,mv: Move,[back,front]: [bool;2],blank: &Brep,
+    bar: f64,tol: f64)
     -> Result<Brep,String> {
     let eps = 1e-9*(1.+rev.size);
     match mv {
         Move::Along {at,s} => along(rev,at,s,eps),
         Move::Lifted {at,s} => lift(rev,at,s),
-        Move::Across {..} => chain(rev,&[mv],back,tol),
+        Move::Across {..} => chain(rev,&[mv],back,front,tol),
         Move::Turned {at,q,w,angle} if angle.abs() >= TAU*(1.-1e-12) => ring(rev,at,q,w,angle),
-        Move::Turned {..} => chain(rev,&[mv],back,tol),
+        Move::Turned {..} => chain(rev,&[mv],back,front,tol),
         Move::Slanted {from,to,axis} => super::raster::run(&[from,to],axis,mill.expect("a slanted move is read only of a mill"),blank,back,tol),
         Move::Closed {roll} => super::closed::closed(tool,piece,roll,bar,tol).map_err(|e| format!("{e:?}")),
     }

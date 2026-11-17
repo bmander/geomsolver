@@ -1284,16 +1284,45 @@ its flat top sweeps alone (`lift`), the chain or the ring holding the tool there
 taken with its half behind; and slides along one axis line one after another (a drill's pecks) are
 one slide over every place they stand; and a ball-end mill's slides at a slant, one after another
 in one plane holding its axis, are a run, its corners laid by construction. Elsewhere each piece after the first is shut where it starts
-by its section, the piece before holding the tool there. A piece the road cannot sweep or cut leaves
+by its section, the piece before holding the tool there; and a chain ending where a sweep cut before
+it holds the whole tool (a closed path come back to where it began) is shut there by its section
+too. A section's arcs, either side of the axis, are each drawn in a frame turning the way the
+section's plane faces, their circle's seam opposite the arc's middle, so the cylinder or torus a
+section's arc is carried or turned into reads its parameters as its edges do (a bull-nose's corner
+mirrored across the axis stood 80 off an edge it bounds). A ball's quarter in a half (its meridian's
+arc from the axis to the equator) is the ball's part on that side of the section and of the equator,
+its poles off both planes (`raster::lune`): turned about the axis, its pole stands on the section,
+and at a corner the next move's side touches the half along a great circle through that pole — a
+meeting through a pole, which the Booleans do not split ("a sphere has a hole in no piece"). A piece
+the road cannot sweep or cut leaves
 the whole path to the arrangement. Held to a flat end mill plunged, run round a square and lifted,
 `2 (76 + π)` to 1e-9 (`swept_closed::a_flat_end_mill_run_round_a_square_takes_its_band`), a
+bull-nose run round a triangle and back to its band at every height
+(`swept_closed::a_bull_nose_mill_run_round_a_triangle_and_back_takes_its_band`), a ball-end mill
+round a slot narrower than itself and back to the slot and its band
+(`swept_closed::a_ball_end_mill_run_round_a_slot_narrower_than_itself_takes_the_slot_and_its_band`), a
 bull-nose run along two smooth arcs to Pappus's volume
 (`swept_closed::a_bull_nose_mill_run_along_two_smooth_arcs_takes_its_section_turned`), and a drill's
 pecks to one hole (`swept_closed::a_drill_pecking_a_hole_takes_one_hole`); brep-bench's
 `cnc/flat-end-mill-profile`, `cnc/bull-nose-profile` and `cnc/pocket-with-an-island` to their closed
-forms within 2e-15, each in about two seconds. Still met in the Boolean: a corner where the
-axis's way jumps between two moves square to it, or between two runs at a slant (a raster's passes
-are off the blank between); refused: a turn about a line square to the axis (a five-axis tilt:
+forms within 2e-15, each in about two seconds. **A run of slides square to the axis turning at
+sharp corners is one sweep too where it is laid** (`mitred`): each slide's two halves carried along
+it, each cut square at the section where it starts and ends — or, on the side a corner turns
+toward, slanted at the plane through the axis bisecting the corner, where the halves before and
+after meet in one curve (a line on a plane, an ellipse on a cylinder) — and at each corner the
+tool's wedge on the side it turns from, turned through the corner about the axis. A slide goes on
+with the run before it only while each slide is longer than the mitres either side take back on
+the side each turns toward (the tool's reach times the tangent of half the turn, past a thousandth
+of the reach spare), and the run turns through a right angle at most: it then runs on along one
+way, and no two of its slides but those that join come within reach of one another (a polygon's
+inward offset whose every side keeps a length is simple). A curve a CAM program writes as a fine
+polyline is a sweep a quarter turn, not one a side (a 36-gon's 27 sides: five sweeps; 135 sides of
+a 180-gon in 1.4 s, not 15,
+`swept_closed::a_bull_nose_mill_run_along_a_polygons_sides_takes_its_band_with_its_corners_mitred`).
+Still met in the Boolean: a corner no run takes (a zigzag's turn back, its stepover shorter than
+the mitres), or between two runs at a slant (a raster's passes are off the blank between) — whose
+sweeps touch round the section at the corner, read there within the tolerance; a slide turning
+back along the last within a tenth of a degree is refused there. Refused: a turn about a line square to the axis (a five-axis tilt:
 the top rim's sphere, which no section carries; the closed class refuses it as `Curved`).
 
 **A ball-end mill's run at a slant** (`swept::raster`, the pieces' road's sweep of slides at a slant

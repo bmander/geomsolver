@@ -111,7 +111,7 @@ fn disc(c: V,n: V,x: V,r: f64) -> Profile {
 /// in `cuts` points to: a ball whose poles stand off every one of those planes (leaning by
 /// `build::SEAM` in three ways, the clearest taken), cut down (`build::kept`) — a plane through a
 /// pole is a meeting the Booleans do not split.
-fn lune(c: V,r: f64,cuts: &[V],[e1,e2,a]: [V;3]) -> Result<Brep,String> {
+pub(super) fn lune(c: V,r: f64,cuts: &[V],[e1,e2,a]: [V;3]) -> Result<Brep,String> {
     let candidates = [[SEAM,0.5*SEAM,1.],[-0.5*SEAM,SEAM,1.],[0.5*SEAM,-SEAM,1.]]
         .map(|w| unit(add(add(scale(e1,w[0]),scale(e2,w[1])),scale(a,w[2]))));
     let clear = |w: V| cuts.iter().map(|n| dot(w,unit(*n)).abs()).fold(f64::INFINITY,f64::min);
