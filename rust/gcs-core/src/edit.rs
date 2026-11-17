@@ -41,7 +41,7 @@ pub use dimension::*;
 pub use reconcile::*;
 pub use component::make_component;
 pub use requests::*;
-pub use rebind::{binds_no_value, rebind, Rebound};
+pub use rebind::{binds, rebind, Rebound};
 
 /// What an edit did to the document, and what it costs to take up.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

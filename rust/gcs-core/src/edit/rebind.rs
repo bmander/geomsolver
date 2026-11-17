@@ -54,9 +54,9 @@ pub fn rebind(src: &str, values: &[(String, String)]) -> Result<(String, Vec<Reb
         let written = src[at.lo as usize..at.hi as usize].to_string();
         // a bare number is read in the unit of the value it replaces (#940): `--set g=-6` over
         // `g := 1"` is `-6"`, a length still, and not a plain number a `max` with a length refuses
-        let value = match unit_of(&prog, name, &written) {
-            Some(unit) if bare(value) => format!("{value}{unit}"),
-            _ => value.to_string(),
+        let value = match bare(value).then(|| unit_of(&prog, name, &written)).flatten() {
+            Some(unit) => format!("{value}{unit}"),
+            None => value.to_string(),
         };
         splices.push(super::Splice { at, with: value.clone() });
         rebound.push(Rebound { name: name.to_string(), written, value });
@@ -64,11 +64,10 @@ pub fn rebind(src: &str, values: &[(String, String)]) -> Result<(String, Vec<Reb
     Ok((super::splice(src, splices), rebound))
 }
 
-/// Whether `rebind`'s refusal `why` is that the document binds no value of the name at its top
-/// level at all — what a drawing's run-wide `--set` skips a model for (#940), as against a value
-/// that cannot be given where it is bound.
-pub fn binds_no_value(why: &str) -> bool {
-    why.starts_with("the document binds no value")
+/// Whether the document `prog` binds a value `name` at its top level, which `rebind` can give
+/// another: what a drawing's run-wide `--set` gives a model it imports for (#940).
+pub fn binds(prog: &syntax::Program, name: &str) -> bool {
+    top_level(prog, name).is_ok()
 }
 
 /// Whether a value given is a number that names no unit: `-6`, `2.5`, `3 1/8`.

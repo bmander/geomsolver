@@ -257,12 +257,11 @@ fn holds(
 /// dimensions compared or a text that is no comparison E103, a measurement E107.
 fn claimed(
     text: &str,
+    c: &Cond,
     env: &Vals,
     scope: &Scope,
-    units: Units,
 ) -> Result<(bool, Vec<(String, super::Valued)>), (Code, String)> {
     let said = |code, e: String| (code, format!("`{text}`: {e}"));
-    let c = expr::parse_condition_in(text, units).map_err(|e| said(Code::E103, e))?;
     if c.names_geometry() {
         return Err(said(Code::E103, "a claim over values compares numbers; `in`, `meets`, \
             `parallel` and `perpendicular` ask of faces, and are a `when`'s".into()));
@@ -286,30 +285,22 @@ fn claimed(
             Some(a) => reads.push((name, super::Valued { value: a.c, dim: a.dim })),
         }
     }
-    let holds = expr::judge_in(&c, env).map_err(|e| {
+    let holds = expr::judge_in(c, env).map_err(|e| {
         let code = if e.fault == expr::Fault::Measure { Code::E107 } else { Code::E103 };
         said(code, e.message)
     })?;
     Ok((holds, reads))
 }
 
-/// A claim over measurements as `measured` reads it: its condition, the numbers it reads, and
-/// each of those as a reader is told it.
-type Measuring = (expr::Cond, BTreeMap<String, Aff>, Vec<(String, super::Valued)>);
-
-/// **A claim over measurements, read where it stands** (#940): `None` where the condition
-/// measures nothing (a claim over values, `claimed`'s); else the condition, the numbers it reads
-/// and each of those as a reader is told it — or why it cannot be judged, as `claimed` says of a
-/// claim over values: a name that is no number here, or one reading an unknown.
-fn measured(text: &str, env: &Vals, scope: &Scope, units: Units)
-    -> Result<Option<Measuring>, (Code, String)>
+/// **A claim over measurements, read where it stands** (#940): the numbers its condition `c`
+/// reads beside what it measures — or why it cannot be judged, as `claimed` says of a claim over
+/// values: a name that is no number here, one reading an unknown, or a side of one dimension
+/// compared with a side of another, which is known before the solve (a measurement is a length
+/// or an angle, so `length(post) <= 96` is said here).
+fn measured(text: &str, c: &Cond, env: &Vals, scope: &Scope)
+    -> Result<BTreeMap<String, Aff>, (Code, String)>
 {
     let said = |code, e: String| (code, format!("`{text}`: {e}"));
-    let Ok(c) = expr::parse_condition_in(text, units) else { return Ok(None) };
-    if c.measures().is_empty() || c.names_geometry() {
-        return Ok(None);
-    }
-    let mut reads = Vec::new();
     let mut numbers = BTreeMap::new();
     for name in c.deps() {
         match env.get(&name) {
@@ -326,24 +317,15 @@ fn measured(text: &str, env: &Vals, scope: &Scope, units: Units)
                     expr::reads_unknown(&name, u)
                 )));
             }
-            Some(a) => {
-                reads.push((name.clone(), super::Valued { value: a.c, dim: a.dim }));
-                numbers.insert(name, a.clone());
-            }
+            Some(a) => { numbers.insert(name, a.clone()); }
         }
     }
-    // what each side is is known before the solve: a measurement is a length or an angle, so
-    // `length(post) <= 96` compares a length with a plain number, and is said here
-    let dim = |m: expr::Measure| match m {
-        expr::Measure::Angle => crate::units::Dim::ANGLE,
-        _ => crate::units::Dim::LENGTH,
-    };
-    if let Err(e) = expr::judge_measured(&c, &numbers, &|m, _| Ok(Aff::of_dim(1.0, dim(m)))) {
+    if let Err(e) = expr::judge_measured(c, &numbers, &|m, _| Ok(Aff::of_dim(1.0, m.dim()))) {
         if e.fault == expr::Fault::Dimension {
             return Err(said(Code::E103, e.message));
         }
     }
-    Ok(Some((c, numbers, reads)))
+    Ok(numbers)
 }
 
 /// A number worked out while elaborating.
@@ -1696,28 +1678,27 @@ impl<'a> Walk<'a> {
         if self.sym.is_some() || !self.claims_judged.insert((c.span, prefix.to_string())) {
             return;
         }
+        let said = |e: String| format!("`{}`: {e}", c.text);
+        let cond = match expr::parse_condition_in(&c.text, self.units) {
+            Ok(cond) => cond,
+            Err(e) => return self.err(Code::E103, c.span, said(e)),
+        };
         // a claim over measurements is judged after the solve (#940): its numbers worked out
         // here, its measurements read where the solve puts the geometry
-        match measured(&c.text, vals, scope, self.units) {
-            Ok(Some((cond, env, reads))) => {
-                let reads = reads.into_iter().map(|(name, v)| (format!("{prefix}{name}"), v));
-                self.measured_claims.push(super::MeasuredClaim {
+        if !cond.measures().is_empty() && !cond.names_geometry() {
+            match measured(&c.text, &cond, vals, scope) {
+                Ok(env) => self.measured_claims.push(super::MeasuredClaim {
                     text: c.text.clone(),
                     span: c.span,
                     prefix: prefix.to_string(),
                     cond,
                     env,
-                    reads: reads.collect(),
-                });
-                return;
+                }),
+                Err((code, m)) => self.err(code, c.span, m),
             }
-            Ok(None) => {}
-            Err((code, m)) => {
-                self.err(code, c.span, m);
-                return;
-            }
+            return;
         }
-        match claimed(&c.text, vals, scope, self.units) {
+        match claimed(&c.text, &cond, vals, scope) {
             Ok((holds, reads)) => {
                 let reads = reads.into_iter().map(|(name, v)| (format!("{prefix}{name}"), v));
                 self.value_claims.push(super::ValueClaimed {

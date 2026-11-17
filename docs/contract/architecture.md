@@ -149,7 +149,7 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   worked out over the values bound above it (`a_bare_number_given_keeps_the_unit_it_replaces`).
   **A drawing hands its values on** (#940): `drawing::compile_with` gives each model the drawing
   imports its import's `with` values and each of the run's it binds at its top level
-  (`edit::binds_no_value` skips the others; a name none binds is refused), the import's own over
+  (`edit::binds` says which; a name none binds is refused), the import's own over
   the run's, a model given values being a snapshot of its own; `Compiled::rebound` is said under
   `drawing compiled` per alias and published as `set` (`a_drawing_gives_its_models_values`).
   **A report names a copy as a reference writes it** (#940): `report::positions` publishes a

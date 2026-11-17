@@ -103,7 +103,8 @@ impl<'a> Renderer<'a> {
     }
 }
 
-fn bounds_of(points: impl Iterator<Item = (f64, f64)>) -> Option<[f64; 4]> {
+/// The box round some page points, `None` for none.
+pub(crate) fn bounds_of(points: impl Iterator<Item = (f64, f64)>) -> Option<[f64; 4]> {
     points.fold(None, |bounds, (x, y)| Some(match bounds {
         None => [x, y, x, y],
         Some([a, b, c, d]) => [a.min(x), b.min(y), c.max(x), d.max(y)],

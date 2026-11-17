@@ -139,18 +139,16 @@ fn point(model: Model<'_>, path: &str, span: Span) -> Result<((f64, f64), [f64; 
 /// How far off an assembly's outline its overall extents stand, in paper millimetres.
 const GEN_OFFSET_MM: f64 = 8.0;
 
-/// Whether `path` names one solid itself, rather than a scope holding objects.
-fn named_solid(model: Model<'_>, path: &str) -> bool {
-    model.names.entity_path(model.sketch, path).is_some_and(|e| e.kind == EntKind::Solid)
-}
-
 /// **The solids a solid view projects** (#940): the solid its target names, or every object
 /// under the scope it names — a component's instance, a member, the whole model by its alias —
-/// seen together as an assembly is, each part hiding what it stands in front of.
-fn solids_of(model: Model<'_>, path: &str, target: &str, span: Span) -> Result<Vec<usize>, Error> {
+/// seen together as an assembly is, each part hiding what it stands in front of — and whether
+/// it names one solid itself, rather than a scope holding objects.
+fn solids_of(model: Model<'_>, path: &str, target: &str, span: Span)
+    -> Result<(Vec<usize>, bool), Error>
+{
     let named = model.names.entity_path(model.sketch, path);
     if let Some(e) = named.filter(|e| e.kind == EntKind::Solid) {
-        return Ok(vec![e.i()]);
+        return Ok((vec![e.i()], true));
     }
     let objects: BTreeSet<usize> = crate::overview::objects(model.sketch).into_iter().collect();
     let held: BTreeSet<usize> = entities(model, path).into_iter()
@@ -161,7 +159,7 @@ fn solids_of(model: Model<'_>, path: &str, target: &str, span: Span) -> Result<V
             model or a component holding objects, which `{target}` does not; use `sketch` for 2D \
             geometry")));
     }
-    Ok(held.into_iter().collect())
+    Ok((held.into_iter().collect(), false))
 }
 
 /// The box round what a sketch view draws of `selected` — what its styles show, a point by its
@@ -169,23 +167,32 @@ fn solids_of(model: Model<'_>, path: &str, target: &str, span: Span) -> Result<V
 fn sketch_bounds(sk: &Sketch, points: &BTreeMap<EntRef, Style>, selected: &[EntRef],
                  lying: &BTreeMap<usize, (Basis, Basis)>) -> Option<[f64; 4]>
 {
-    let mut b: Option<[f64; 4]> = None;
     let drawn: BTreeSet<EntRef> = sk.drawn().into_iter().collect();
-    for &e in selected {
-        let style = points.get(&e).cloned().unwrap_or_else(|| sk.style_of(e));
-        if !drawn.contains(&e) || !style.shown() { continue }
+    let corners = selected.iter().copied().filter(|e| drawn.contains(e)).filter(|&e| {
+        points.get(&e).cloned().unwrap_or_else(|| sk.style_of(e)).shown()
+    }).flat_map(|e| {
         let (x0, y0, x1, y1) = sk.bounds(e);
-        if !(x0.is_finite() && y0.is_finite() && x1.is_finite() && y1.is_finite()) { continue }
         let map = crate::program::drawn_plane(sk, e).and_then(|q| lying.get(&q));
-        for p in [(x0, y0), (x1, y0), (x0, y1), (x1, y1)] {
-            let (x, y) = map.map_or(p, |(from, to)| to.view_coords(from.lift(p.0, p.1)));
-            b = Some(match b {
-                None => [x, y, x, y],
-                Some([a, c, d, f]) => [a.min(x), c.min(y), d.max(x), f.max(y)],
-            });
-        }
-    }
-    b
+        [(x0, y0), (x1, y0), (x0, y1), (x1, y1)].into_iter()
+            .filter(|p| p.0.is_finite() && p.1.is_finite())
+            .map(move |p| map.map_or(p, |(from, to)| to.view_coords(from.lift(p.0, p.1))))
+    });
+    crate::renderer::bounds_of(corners)
+}
+
+/// The box round what a solid view of `parts` draws, from `frame`, in its coordinates — each
+/// part's boundary as the report evaluates it, which a drawing at any scale stands within: what
+/// `scale fit` sizes a view by before it is drawn at the scale it finds.
+fn solid_bounds(sk: &Sketch, parts: &[usize], frame: Basis, span: Span)
+    -> Result<Option<[f64; 4]>, Error>
+{
+    let solids = parts.iter().map(|&i| sk.evaluated_solid(i, ApproximationPolicy::Report)
+        .map_err(|m| error(span, m))).collect::<Result<Vec<_>, _>>()?;
+    let page = PageFrame::new(frame);
+    Ok(crate::renderer::bounds_of(solids.iter().flat_map(|s| {
+        s.boundary().iter().flat_map(|p| p.pts.iter())
+            .map(|&p| s.to_page(crate::solid::LocalPoint(p), page).0)
+    })))
 }
 
 /// Compile one sheet to SVG. This reads model snapshots, including names and measurements;
@@ -278,7 +285,10 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
         let mut paper = v.scale.unwrap_or(s.scale);
         // the solids a solid view projects: the one it names, or every object under the scope it
         // names, an assembly's parts seen together (#940)
-        let parts = if v.sketch { Vec::new() } else { solids_of(model, path, &v.target, v.span)? };
+        let (parts, one) = match v.sketch {
+            true => (Vec::new(), false),
+            false => solids_of(model, path, &v.target, v.span)?,
+        };
         let frame = if v.sketch { None } else { Some(basis(&v.direction, models, v.span)?) };
         let cut = v.cut.as_ref().map(|p| basis(p, models, v.span)).transpose()?;
         if let (Some(frame), Some(c)) = (frame, cut) {
@@ -299,13 +309,15 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
             }))
         };
         // the box round what the view draws, in the model's units, y up
-        let sketch_box = match v.sketch {
+        let sketch_box = match v.sketch && (v.fit.is_some() || v.anchor.is_some()) {
             true => sketch_bounds(&sk, &point_styles, &selected, &lying),
             false => None,
         };
         if let Some((w, h)) = v.fit {
-            let b = if v.sketch { sketch_box } else { project(paper)?.bounds }
-                .ok_or_else(|| error(v.span, "a view drawing nothing has no size to fit"))?;
+            let b = match frame {
+                None => sketch_box,
+                Some(frame) => solid_bounds(model.sketch, &parts, frame, v.span)?,
+            }.ok_or_else(|| error(v.span, "a view drawing nothing has no size to fit"))?;
             let (bw, bh) = ((b[2] - b[0]) * mm_per, (b[3] - b[1]) * mm_per);
             let fits = [(w, bw), (h, bh)].into_iter().filter(|&(_, d)| d > 0.0)
                 .map(|(room, d)| room / d).fold(f64::INFINITY, f64::min);
@@ -369,7 +381,7 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
                 let frame = frame.expect("a solid view has a direction");
                 match parts.as_slice() {
                     // one solid: its extents and its round features, by the callout engine
-                    [i] if named_solid(model, path) => {
+                    [i] if one => {
                         let plane = sk.fixed_plane(frame, "_drawing");
                         sk.derived.push(crate::model::DerivedE { solid: *i as u32, plane: Some(plane as u32),
                             at: None, dims: true, name: v.name.clone(), class: Classes::default() });
@@ -381,7 +393,7 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
                             let value = (b.0 - a.0).dhypot(b.1 - a.1);
                             if value <= 0.0 { continue }
                             let text = figure(value);
-                            let c = crate::callout::measurement_text(&sk, unit, a, b, &text, off);
+                            let c = crate::callout::measurement(&sk, unit, a, b, &text, off);
                             if let Some(c) = c.filter(|c| crate::callout::ink(&sk, c).0.dimensioned()) {
                                 crate::svg::dimension(&mut out, &sk, &c, unit, &at);
                             }
@@ -417,10 +429,6 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
             let under: BTreeSet<EntRef> = entities(model, path).into_iter().collect();
             if under.is_empty() { return Err(error(v.span, format!("no geometry named `{f}`"))) }
             scopes.push(under);
-        }
-        if !v.dimensions_of.is_empty() && !v.sketch {
-            return Err(error(v.span, "`dimensions SEL in VIEW` narrows a sketch's dimensions; a \
-                solid view's are its extents"));
         }
         let narrowed = |c: &crate::constraints::Constraint| v.dimensions_of.is_empty()
             || classes.iter().any(|k| c.class.0.iter().any(|x| x == k))
@@ -459,7 +467,7 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
                 return Err(error(m.span, "this view foreshortens the measured distance; choose a view showing its true length"));
             }
             let off = m.offset * PX_MM * unit;
-            let c = crate::callout::measurement_text(&sk, unit, a, b, &figure(value), off)
+            let c = crate::callout::measurement(&sk, unit, a, b, &figure(value), off)
                 .ok_or_else(|| error(m.span, "a distance annotation needs two distinct projected points"))?;
             if crate::callout::ink(&sk, &c).0.dimensioned() {
                 crate::svg::dimension(&mut out, &sk, &c, unit, &at);

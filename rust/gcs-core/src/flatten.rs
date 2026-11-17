@@ -578,8 +578,6 @@ pub struct MeasuredClaim {
     pub cond: crate::expr::Cond,
     /// The numbers it reads by the names it reads them by, worked out where it stands.
     pub env: BTreeMap<String, crate::expr::Aff>,
-    /// Each of those by absolute name, as a reader is told it.
-    pub reads: Vec<(String, Valued)>,
 }
 
 /// **A face family's running number** (#243 L1), as the walk carries it: a free value named

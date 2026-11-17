@@ -48,24 +48,30 @@ pub fn compile_with(
             span: m.span, message: format!("cannot load model `{}` from `{source}`", m.path),
         })?;
         // the values it is given: its own `with`, then each of the run's it binds and its `with`
-        // does not give
+        // does not give — the text read for what it binds only where the run gives a value
         let mut given: Vec<(String, String)> =
             m.with.iter().map(|g| (g.name.clone(), g.text.clone())).collect();
-        for g in &m.with {
-            crate::edit::rebind(&text, &[(g.name.clone(), g.text.clone())])
-                .map_err(|why| Error { span: g.span, message: format!("model `{path}`: {why}") })?;
-        }
+        let bound = (!set.is_empty()).then(|| crate::syntax::parse(&text).0);
         for (k, (name, value)) in set.iter().enumerate() {
-            if m.with.iter().any(|g| g.name == name.trim()) { taken[k] = true; continue }
-            match crate::edit::rebind(&text, &[(name.clone(), value.clone())]) {
-                Ok(_) => { taken[k] = true; given.push((name.clone(), value.clone())); }
-                Err(why) if crate::edit::binds_no_value(&why) => {}
-                Err(why) => return Err(Error { span: m.span,
-                    message: format!("--set: model `{path}`: {why}") }),
+            let name = name.trim();
+            if m.with.iter().any(|g| g.name == name) {
+                taken[k] = true;
+            } else if bound.as_ref().is_some_and(|p| crate::edit::binds(p, name)) {
+                taken[k] = true;
+                given.push((name.to_string(), value.clone()));
             }
         }
-        let (text, rebound) = crate::edit::rebind(&text, &given)
-            .map_err(|why| Error { span: m.span, message: format!("model `{path}`: {why}") })?;
+        let (text, rebound) = match given.is_empty() {
+            true => (text, Vec::new()),
+            // a refusal is said at the `with` naming the value it is about, else the run's
+            false => crate::edit::rebind(&text, &given).map_err(|why| {
+                let about = |name: &str| why.starts_with(&format!("`{name}`"));
+                match m.with.iter().find(|g| about(&g.name)) {
+                    Some(g) => Error { span: g.span, message: format!("model `{path}`: {why}") },
+                    None => Error { span: m.span, message: format!("--set: model `{path}`: {why}") },
+                }
+            })?,
+        };
         // a model shown at an instant is a snapshot of its own, the same file's drawn at home and
         // stood there (#398 L); one given values, the same file's with them (#940)
         let mut key = match &m.at {

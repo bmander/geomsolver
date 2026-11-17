@@ -114,6 +114,19 @@ impl Measure {
         MEASURES.iter().find(|m| m.1 == self).map_or("?", |m| m.0)
     }
 
+    /// What it comes to: an angle's angle, every other's a length.
+    pub fn dim(self) -> crate::units::Dim {
+        match self {
+            Measure::Angle => crate::units::Dim::ANGLE,
+            _ => crate::units::Dim::LENGTH,
+        }
+    }
+
+    /// How many names it measures (`MEASURES`' arity).
+    pub fn arity(self) -> usize {
+        MEASURES.iter().find(|m| m.1 == self).map_or(0, |m| m.2)
+    }
+
     /// `length(gen_g)`, as the call is written.
     pub fn text(self, args: &[String]) -> String {
         format!("{}({})", self.name(), args.join(", "))

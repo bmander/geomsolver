@@ -104,72 +104,54 @@ impl P<'_> {
     /// `t = 90deg`: a parameter's name and its value's text, which the model's own units read
     /// (`follow::instant`) once it is loaded.  Written `t=90deg` it is one word.
     fn instant(&mut self) -> Result<Instant> {
+        let (name, glued, span) = self.named("expected `=` and the instant: `at t = 90deg`")?;
+        let text = match glued {
+            Some(lo) => self.text[lo..self.tokens[self.i - 1].span.hi as usize].to_string(),
+            None => self.word()?,
+        };
+        let hi = self.tokens[self.i - 1].span.hi as usize;
+        Ok(Instant { name, text, span: Span::new(span.lo as usize, hi) })
+    }
+    /// `NAME =` of an instant or a model's value: the name, where its value starts in the source
+    /// when it is glued to its `=` (`t=90deg`, one word), and where the name stands.
+    fn named(&mut self, expected: &str) -> Result<(String, Option<usize>, Span)> {
         let span = self.span();
         let word = self.word()?;
-        let (name, text) = match word.split_once('=') {
-            Some((n, v)) if !v.is_empty() => (n.to_string(), v.to_string()),
-            Some((n, _)) => (n.to_string(), self.word()?),
-            None if self.eat("=") => (word, self.word()?),
-            None => return self.fail("expected `=` and the instant: `at t = 90deg`"),
+        let (name, glued) = match word.split_once('=') {
+            Some((n, v)) => (n.to_string(), (!v.is_empty()).then(|| span.lo as usize + n.len() + 1)),
+            None if self.eat("=") => (word, None),
+            None => return self.fail(expected),
         };
         if !crate::syntax::is_name(&name) {
             return Err(Error { span, message: format!("`{name}` is not a name") });
         }
-        let hi = self.tokens[self.i - 1].span.hi as usize;
-        Ok(Instant { name, text, span: Span::new(span.lo as usize, hi) })
+        Ok((name, glued, span))
     }
     /// `g_wf = 2in` of a model's `with` (#940): a name the model binds and the value's text, as
     /// far as a `,` or `;` outside parentheses, or the next statement; written `g_wf=2in` it is one
     /// word, and a quoted value (`"1' 6\""`) is the text inside the quotes.
     fn given(&mut self) -> Result<Given> {
-        let span = self.span();
-        let word = self.word()?;
-        // where the value starts in the source when it is glued to its `=` (`g=2in`)
-        let mut glued = None;
-        let (name, first) = match word.split_once('=') {
-            Some((n, v)) => {
-                if !v.is_empty() { glued = Some(span.lo as usize + n.len() + 1); }
-                (n.to_string(), (!v.is_empty()).then(|| v.to_string()))
-            }
-            None if self.eat("=") => (word, None),
-            None => return self.fail("expected `=` and a value: `with g_wf = 2in`"),
-        };
-        if !crate::syntax::is_name(&name) {
-            return Err(Error { span, message: format!("`{name}` is not a name") });
-        }
-        let mut parts: Vec<String> = first.into_iter().collect();
-        let from = self.i;
-        if parts.is_empty() && self.tokens.get(self.i).is_some_and(|t| t.quoted) {
-            parts.push(self.string()?);
+        let (name, glued, span) = self.named("expected `=` and a value: `with g_wf = 2in`")?;
+        let text = if glued.is_none() && self.tokens.get(self.i).is_some_and(|t| t.quoted) {
+            self.string()?
         } else {
+            let from = self.i;
             let mut depth = 0usize;
-            while let Some(t) = self.tokens.get(self.i) {
-                let stop = !t.quoted && match t.text.as_str() {
-                    "," | ";" => depth == 0,
-                    "model" | "use" | "style" | "sheet" => depth == 0,
-                    "{" | "}" => true,
-                    _ => false,
-                };
-                if stop || t.quoted { break }
+            while let Some(t) = self.tokens.get(self.i).filter(|t| !t.quoted) {
                 match t.text.as_str() {
+                    "," | ";" | "model" | "use" | "style" | "sheet" if depth == 0 => break,
+                    "{" | "}" => break,
                     "(" => depth += 1,
                     ")" if depth == 0 => break,
                     ")" => depth -= 1,
                     _ => {}
                 }
-                parts.push(t.text.clone());
                 self.i += 1;
             }
-        }
-        // the value as written, from after its `=` to its last token
-        let quoted = self.tokens.get(from).is_some_and(|t| t.quoted) && self.i == from + 1;
-        let text = if quoted { parts.join(" ") } else {
-            let lo = match glued {
-                Some(lo) => lo,
-                None => self.tokens.get(from).map_or(0, |t| t.span.lo as usize),
-            };
-            let hi = self.tokens[self.i - 1].span.hi as usize;
-            if hi > lo { self.text[lo..hi].to_string() } else { String::new() }
+            match glued.or_else(|| (self.i > from).then(|| self.tokens[from].span.lo as usize)) {
+                Some(lo) => self.text[lo..self.tokens[self.i - 1].span.hi as usize].to_string(),
+                None => String::new(),
+            }
         };
         if text.trim().is_empty() {
             return self.fail(&format!("`{name}` is given no value"));
@@ -333,16 +315,15 @@ impl P<'_> {
             if let Some(a) = a { v.annotations.push(a); } else { v.dimensions = true; }
         }
         // a bare `dimensions in VIEW` asks for all of them, whatever else narrows it
-        for (name, of) in filters {
-            if let Some(v) = s.views.iter_mut().find(|v| v.name == name) {
-                if of.is_empty() { v.dimensions_of.clear(); v.dimensions_of.push(String::new()); }
-                else if v.dimensions_of.first().is_none_or(|f| !f.is_empty()) {
-                    v.dimensions_of.extend(of);
-                }
+        let bare: BTreeSet<&String> =
+            filters.iter().filter(|(_, of)| of.is_empty()).map(|(v, _)| v).collect();
+        for (name, of) in &filters {
+            let Some(v) = s.views.iter_mut().find(|v| v.name == *name) else { continue };
+            if !of.is_empty() && !v.sketch {
+                return Err(Error { span: v.span, message: "`dimensions SEL in VIEW` narrows a \
+                    sketch's dimensions; a solid view's are its extents".into() });
             }
-        }
-        for v in &mut s.views {
-            if v.dimensions_of.first().is_some_and(String::is_empty) { v.dimensions_of.clear(); }
+            if !bare.contains(&v.name) { v.dimensions_of.extend(of.iter().cloned()); }
         }
         for (name, m) in measurements {
             let Some(v) = s.views.iter_mut().find(|v| v.name == name) else {

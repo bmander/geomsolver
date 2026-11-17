@@ -345,21 +345,7 @@ impl<'a> P<'a> {
             // operand
             Some(Tok::Ident(w)) if matches!(self.t.get(j + 1), Some((Tok::P('('), _)))
                 && crate::expr::MEASURES.iter().any(|m| m.0 == w) => {
-                let mut depth = 0usize;
-                let mut k = j + 1;
-                while let Some((t, _)) = self.t.get(k) {
-                    match t {
-                        Tok::P('(') => depth += 1,
-                        Tok::P(')') => {
-                            depth -= 1;
-                            if depth == 0 { break }
-                        }
-                        Tok::Nl | Tok::P('{' | '}') => return false,
-                        _ => {}
-                    }
-                    k += 1;
-                }
-                numeric(k + 1)
+                numeric(words::past_bracket(&self.t, j + 1, Brackets::Round))
             }
             Some(Tok::Ident(w)) if matches!(self.t.get(j + 1), Some((Tok::P('('), _))) => {
                 crate::expr::FUNCTIONS.iter().any(|f| f.0 == w)

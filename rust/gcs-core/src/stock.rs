@@ -10,7 +10,8 @@
 
 use crate::model::Sketch;
 use crate::solid::ApproximationPolicy;
-use crate::space::{cross, dot, norm};
+use crate::plane::Basis;
+use crate::space::dot;
 use crate::json::{object, Json};
 
 /// One part, and the objects that are it.
@@ -28,32 +29,38 @@ pub struct Stock {
 /// **The document's parts and what each is cut from**, longest first, or the first object that
 /// would not evaluate, said why.
 pub fn cut_list(sk: &Sketch) -> Result<Vec<Stock>, String> {
-    // by binding first, each part with its volume
-    let mut parts: Vec<(String, Stock, f64)> = Vec::new();
+    // by binding first, each part with its volume; a binding's object evaluated once
+    let mut parts: Vec<(Stock, f64)> = Vec::new();
+    let mut by_key: std::collections::BTreeMap<String, usize> = Default::default();
     for i in crate::overview::objects(sk) {
         let key = crate::colours::part(sk, i);
         let called = sk.solid_name(i);
-        if let Some((_, s, _)) = parts.iter_mut().find(|(k, _, _)| *k == key) {
-            s.objects.push(called);
+        if let Some(&k) = by_key.get(&key) {
+            parts[k].0.objects.push(called);
             continue;
         }
         let solid = sk.evaluated_solid(i, ApproximationPolicy::Report)
             .map_err(|why| format!("`{called}`: {why}"))?;
-        let points: Vec<[f64; 3]> =
+        let mut points: Vec<[f64; 3]> =
             solid.boundary().iter().flat_map(|p| p.pts.iter().copied()).collect();
-        let normals = solid.boundary().iter().map(|p| (p.n, area(&p.pts)));
+        points.sort_by(|a, b| a.iter().zip(b).map(|(x, y)| x.total_cmp(y))
+            .find(|o| o.is_ne()).unwrap_or(std::cmp::Ordering::Equal));
+        points.dedup();
+        // a flat face says which way the box may stand; a curved one's facets do not
+        let normals = solid.boundary().iter().filter(|p| !p.smooth).map(|p| (p.n, p.area()));
         let name = match &sk.solids[i].binding {
             Some(b) => crate::vocab::public_path(
                 sk.solids[i].name.strip_prefix(b.at.as_str()).unwrap_or(&sk.solids[i].name)),
             None => called.clone(),
         };
         let size = oriented(&points, normals);
-        parts.push((key, Stock { name, size, objects: vec![called] }, solid.volume()));
+        by_key.insert(key, parts.len());
+        parts.push((Stock { name, size, objects: vec![called] }, solid.volume()));
     }
     // then the parts no binding made one that are one all the same: called alike in their
     // components (`one.body`, `two.body`), and of one box and one volume — two boards of one cut
     let mut out: Vec<(Stock, f64)> = Vec::new();
-    for (_, s, volume) in parts {
+    for (s, volume) in parts {
         let tol = 1e-6 * s.size[0].max(1e-300);
         let alike = |o: &(Stock, f64)| leaf(&o.0.name) == leaf(&s.name)
             && (0..3).all(|k| (o.0.size[k] - s.size[k]).abs() <= tol)
@@ -77,25 +84,6 @@ fn leaf(name: &str) -> &str {
     name.rsplit('.').next().unwrap_or(name)
 }
 
-/// A planar polygon's area.
-fn area(pts: &[[f64; 3]]) -> f64 {
-    let mut s = [0.0; 3];
-    for k in 1..pts.len().saturating_sub(1) {
-        let c = cross(sub(pts[k], pts[0]), sub(pts[k + 1], pts[0]));
-        s = [s[0] + c[0], s[1] + c[1], s[2] + c[2]];
-    }
-    0.5 * norm(s)
-}
-
-fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-
-fn unit(a: [f64; 3]) -> Option<[f64; 3]> {
-    let n = norm(a);
-    (n > 1e-12).then(|| [a[0] / n, a[1] / n, a[2] / n])
-}
-
 /// How many of the largest face directions the box is tried square to.
 const DIRECTIONS: usize = 24;
 
@@ -106,7 +94,7 @@ pub fn oriented(points: &[[f64; 3]], faces: impl Iterator<Item = ([f64; 3], f64)
     // each direction, either way, with the area facing it
     let mut dirs: Vec<([f64; 3], f64)> = Vec::new();
     for (n, a) in faces {
-        let Some(n) = unit(n) else { continue };
+        let Some(n) = crate::plane::unit(n) else { continue };
         match dirs.iter_mut().find(|(d, _)| dot(*d, n).abs() > 1.0 - 1e-9) {
             Some((_, total)) => *total += a,
             None => dirs.push((n, a)),
@@ -117,11 +105,8 @@ pub fn oriented(points: &[[f64; 3]], faces: impl Iterator<Item = ([f64; 3], f64)
     let mut frames: Vec<[[f64; 3]; 3]> = vec![[[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]]];
     for (i, &(a, _)) in dirs.iter().enumerate() {
         for &(b, _) in &dirs[i + 1..] {
-            let along = dot(a, b);
-            if along.abs() > 1.0 - 1e-6 { continue }
-            let Some(v) = unit([b[0] - along * a[0], b[1] - along * a[1], b[2] - along * a[2]])
-            else { continue };
-            frames.push([a, v, cross(a, v)]);
+            if dot(a, b).abs() > 1.0 - 1e-6 { continue }
+            if let Some(f) = Basis::explicit(a, b) { frames.push([f.u, f.v, f.normal()]); }
         }
     }
     let mut best: Option<(f64, [f64; 3])> = None;
@@ -152,9 +137,8 @@ pub fn oriented(points: &[[f64; 3]], faces: impl Iterator<Item = ([f64; 3], f64)
 pub fn text(sk: &Sketch, parts: &[Stock]) -> Vec<String> {
     let count: usize = parts.iter().map(|p| p.objects.len()).sum();
     let unit = sk.units.name();
-    let mut out = vec![format!("cut list: {} part{}, {count} object{} (length × width × thickness, \
-        {unit})", parts.len(), if parts.len() == 1 { "" } else { "s" },
-        if count == 1 { "" } else { "s" })];
+    let mut out = vec![format!("cut list: {}, {} (length × width × thickness, {unit})",
+        crate::boundary::count(parts.len(), "part"), crate::boundary::count(count, "object"))];
     let fig = |v: f64| crate::expr::reading(crate::constraints::SpecKind::Length, v);
     for p in parts {
         out.push(format!("  {} × {}: {} × {} × {} — {}", p.objects.len(), p.name, fig(p.size[0]),

@@ -41,16 +41,18 @@ struct Drawn {
 
 fn view_clipped(renderers: &[Renderer<'_>], page: PageFrame, cut: Option<Basis>,
                 section_edges: &[Vec<crate::csg::Edge>]) -> Vec<Stroke> {
+    // each part's view in its own coordinates, worked once: the page's plane, the eye, the cut
+    let views: Vec<(Basis, [f64; 3], Option<Basis>)> = renderers.iter().map(|r| {
+        let basis = r.solid.local_basis(page.basis());
+        (basis, basis.normal(), cut.map(|c| r.solid.local_basis(c)))
+    }).collect();
     // **which edges this view draws at all**: each solid's rule (`EvaluatedSolid::drawn_edges`)
     let mut drawn: Vec<Drawn> = Vec::new();
     for (part, renderer) in renderers.iter().enumerate() {
         let solid = renderer.solid;
-        let basis = solid.local_basis(page.basis());
-        let cut = cut.map(|c| solid.local_basis(c));
-        let eye = basis.normal();
+        let (basis, eye, cut) = views[part];
         let eps = solid.epsilon();
-        let none = Vec::new();
-        for e in solid.drawn_edges(eye, section_edges.get(part).unwrap_or(&none)) {
+        for e in solid.drawn_edges(eye, &section_edges[part]) {
             let sil = e.smooth;
             let (mut a, mut b) = (e.a, e.b);
             if let Some(cut) = cut {
@@ -69,7 +71,7 @@ fn view_clipped(renderers: &[Renderer<'_>], page: PageFrame, cut: Option<Basis>,
                     }
                 }
             }
-            let flat = |p: [f64; 3]| solid.to_page(LocalPoint(p), page).0;
+            let flat = |p: [f64; 3]| basis.view_coords(p);
             drawn.push(Drawn { part, a, b, sil, path: e.path, pa: flat(a), pb: flat(b) });
         }
     }
@@ -87,15 +89,21 @@ fn view_clipped(renderers: &[Renderer<'_>], page: PageFrame, cut: Option<Basis>,
         Bounds { lo: std::array::from_fn(|k| lo[k] - pad[k]), hi: std::array::from_fn(|k| hi[k] + pad[k]) }
     }).collect();
     let index = Bvh::new(boxes.iter().copied());
-    // each part's place on the page, so a point is asked of only the parts it could be behind
+    // each part's place on the page, so an edge is asked of only the parts it could be behind
     let reach: Vec<Option<[f64; 4]>> = renderers.iter().map(|r| r.bounds(page)).collect();
     let mut candidates = 0;
     let mut out = Vec::new();
     for (i, d) in drawn.iter().enumerate() {
         let solid = renderers[d.part].solid;
-        let basis = solid.local_basis(page.basis());
-        let eye = basis.normal();
-        let local_cut = cut.map(|c| solid.local_basis(c));
+        let (_, eye, local_cut) = views[d.part];
+        // the other parts whose place on the page this edge's box meets
+        let others: Vec<usize> = (0..renderers.len()).filter(|&k| k != d.part).filter(|&k| {
+            reach[k].is_some_and(|[x0, y0, x1, y1]| {
+                let pad = renderers[k].solid.epsilon();
+                boxes[i].lo[0] <= x1 + pad && boxes[i].hi[0] >= x0 - pad
+                    && boxes[i].lo[1] <= y1 + pad && boxes[i].hi[1] >= y0 - pad
+            })
+        }).collect();
         let (a, b) = (d.a, d.b);
         let d3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
         let mut cuts = vec![0.0f64, 1.0];
@@ -113,17 +121,11 @@ fn view_clipped(renderers: &[Renderer<'_>], page: PageFrame, cut: Option<Basis>,
             let m = at((w[0] + w[1]) / 2.0);
             let limit = local_cut.map(|c| plane::dot(eye, std::array::from_fn(|k| c.o[k] - m[k])));
             let mut hidden = renderers[d.part].occludes(LocalPoint(m), eye, limit);
-            if !hidden && renderers.len() > 1 {
+            if !hidden && !others.is_empty() {
                 let world = solid.to_world(LocalPoint(m));
-                let seen = solid.to_page(LocalPoint(m), page).0;
-                hidden = renderers.iter().enumerate().any(|(k, other)| {
-                    let within = reach[k].is_some_and(|[x0, y0, x1, y1]| {
-                        let pad = other.solid.epsilon();
-                        seen.0 >= x0 - pad && seen.0 <= x1 + pad
-                            && seen.1 >= y0 - pad && seen.1 <= y1 + pad
-                    });
-                    k != d.part && within && other.occludes(other.solid.to_local(world),
-                        other.solid.vector_to_local(page.basis().normal()), limit)
+                hidden = others.iter().any(|&k| {
+                    let other = renderers[k].solid;
+                    renderers[k].occludes(other.to_local(world), views[k].1, limit)
                 });
             }
             let (p, q) = (at(w[0]), at(w[1]));
@@ -136,11 +138,10 @@ fn view_clipped(renderers: &[Renderer<'_>], page: PageFrame, cut: Option<Basis>,
             });
         }
     }
-    let total: usize = drawn.len();
     let first = &renderers[0];
     let mut stats = first.stats.get();
     stats.crossing_candidates += candidates;
-    stats.crossing_exhaustive += total * total.saturating_sub(1);
+    stats.crossing_exhaustive += drawn.len() * drawn.len().saturating_sub(1);
     first.stats.set(stats);
     join(out)
 }

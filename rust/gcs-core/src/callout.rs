@@ -419,14 +419,9 @@ pub fn layout_figured(sk: &Sketch, unit: f64, ids: Option<&[u32]>, figure: &dyn 
 /// generated dimension is a *reading* of the drawing and not a statement in it.
 pub const GENERATED: u32 = 1 << 30;
 
-/// A drawing-owned distance reading. No constraint or model parameter is created.
-pub fn measurement(sk: &Sketch, u: f64, a: P, b: P, value: f64, offset: f64) -> Option<Callout> {
-    let text = crate::expr::reading(crate::constraints::SpecKind::Length, value);
-    measurement_text(sk, u, a, b, &text, offset)
-}
-
-/// `measurement`, its figure written as the drawing asks (#940).
-pub fn measurement_text(sk: &Sketch, u: f64, a: P, b: P, text: &str, offset: f64)
+/// A drawing-owned distance reading, its figure `text` as the drawing writes it (#940). No
+/// constraint or model parameter is created.
+pub fn measurement(sk: &Sketch, u: f64, a: P, b: P, text: &str, offset: f64)
     -> Option<Callout>
 {
     let d = unit(sub(b, a))?;
