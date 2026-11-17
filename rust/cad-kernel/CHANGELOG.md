@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.15.0] - 2026-11-17
+
 - **Any tool of revolution's path of pieces is cut from a blank piece by piece** (`swept::pieces`,
   the road `swept::closed::cut_from` takes after `raster`): each move's sweep in closed form where
   it has one — slid along the tool's axis, slid square to it, turned about a line along it, a
