@@ -18,7 +18,7 @@
 //! asked again.  So the fit is as near the drawing as the drawing is to itself, and a reading
 //! between stations is a few multiplications.
 //!
-//! **Enclosed over a stretch** (`Ride::stretch`) as a frame along a path is (`guide::Stretch`):
+//! **Enclosed over a stretch** (`Ride::stretch`) as a frame along a path is (`brep::trajectory::Along`):
 //! the origin within each span's Bernstein hull (`Hull`, worked out once a span when the track is
 //! made), and every turn's entry within `|ω| w / 2` of samples a step `w` apart, `|ω|` bounded
 //! over each span by the hulls — a bound on the fitted motion, which is the motion every reader
@@ -26,7 +26,7 @@
 use std::rc::Rc;
 use std::sync::Arc;
 
-use super::guide::{mv, spun, Extremes, Stretch};
+use crate::brep::trajectory::{Extremes, Stretch};
 use crate::follow::Followed;
 use crate::interval::Interval as I;
 use crate::model::{Running, Sketch};
@@ -35,6 +35,16 @@ use crate::space::{cross, dot, norm, sub};
 type V = [f64; 3];
 type M = [[f64; 3]; 3];
 type Q = [f64; 4];
+
+fn mv(m: &M, v: V) -> V {
+    std::array::from_fn(|i| dot(m[i], v))
+}
+
+/// `[ω]× m`, the rate of a turn `m` turning at `ω`.
+fn spun(w: V, m: &M) -> M {
+    let k = [[0.0, -w[2], w[1]], [w[2], 0.0, -w[0]], [-w[1], w[0], 0.0]];
+    std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|q| k[i][q] * m[q][j]).sum()))
+}
 
 /// How far the fit may stray from the drawing stood at the middle of a span, as a part of the
 /// drawing's reach about the frame.
@@ -441,7 +451,7 @@ impl Ride {
     }
 
     /// **What the motion does over the stretch `[a, b]` of the roll, enclosed** (as a frame along
-    /// a path's, `guide::Stretch`), or `None` past what the march reached.
+    /// a path's, `brep::trajectory::Along`), or `None` past what the march reached.
     pub(crate) fn stretch(&self, a: f64, b: f64) -> Option<Stretch> {
         let tr = &self.track;
         if !(a <= b) {

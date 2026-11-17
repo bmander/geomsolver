@@ -210,8 +210,10 @@ fn bezier(poles: &[V;4]) -> gcs_core::brep::nurbs::BSpline {
 /// the turn about the plane's normal by the tangent's angle and the curve's point, exactly, what is
 /// drawn at the start carried rigidly; along a curve in space it turns about no tangent
 /// (rotation-minimising); its rate is its pose's, read by differences; and every stretch of it
-/// encloses its poses, so its speed bound holds a point carried back no slower than it moves. A
-/// rational curve has no bound on its derivatives here, and its stretches fail closed.
+/// encloses its poses, so its speed bound holds a point carried back no slower than it moves. From a
+/// home partway along it stands at the identity there; the curve's own frame's rate (its torsion
+/// besides) is its pose's too. A rational curve has no bound on its derivatives here, and its
+/// stretches fail closed, as the curve's own frame's do.
 #[test]
 fn a_frame_along_a_curve_turns_only_as_its_tangent_does() {
     use gcs_core::brep::trajectory::Along;
@@ -223,7 +225,7 @@ fn a_frame_along_a_curve_turns_only_as_its_tangent_does() {
     for k in 0..=40 {
         let t = k as f64/40.;
         let m = along.at(t).unwrap();
-        let (x,d) = along.curve().d1(t);
+        let (x,d) = along.guide().d1(t);
         let (sn,cs) = (d[1]/d[0].hypot(d[1]),d[0]/d[0].hypot(d[1]));
         // the turn about z by the tangent's angle, the start carried to the curve's point
         let exact = |p: V| { let q = [p[0]-poles[0][0],p[1]-poles[0][1],p[2]-poles[0][2]]; [cs*q[0]-sn*q[1]+x[0],sn*q[0]+cs*q[1]+x[1],q[2]+x[2]] };
@@ -247,7 +249,7 @@ fn a_frame_along_a_curve_turns_only_as_its_tangent_does() {
         // W = (R(t+h) − R(t−h)) Rᵀ / 2h, skew: ω = (W₂₁, W₀₂, W₁₀)
         let w = |i: usize,j: usize| (0..3).map(|q| (b.r[i][q]-a.r[i][q])*m.r[j][q]).sum::<f64>()/(2.*h);
         let omega = [w(2,1),w(0,2),w(1,0)];
-        let twist = dot(omega,normalised(spatial.curve().d1(t).1).unwrap());
+        let twist = dot(omega,normalised(spatial.guide().d1(t).1).unwrap());
         assert!(twist.abs() <= 1e-6*(1.+norm(omega)),"the frame at {t} turns about its tangent at {twist} (of {})",norm(omega));
     }
     // every stretch encloses its poses, and a point carried back moves within the speed bound
@@ -258,7 +260,7 @@ fn a_frame_along_a_curve_turns_only_as_its_tangent_does() {
         for j in 0..=200 {
             let t = lo+(hi-lo)*j as f64/200.;
             let pose = along.pose(t).unwrap();
-            let at = along.curve().point(t);
+            let at = along.guide().point(t);
             for k in 0..3 {
                 assert!(g.point[k].contains(at[k]),"the stretch [{lo}, {hi}] holds the curve's point at {t}");
                 for q in 0..3 { assert!(g.turn[k][q].contains(pose.r[k][q]),"the stretch [{lo}, {hi}] holds the turn at {t}") }
@@ -270,6 +272,23 @@ fn a_frame_along_a_curve_turns_only_as_its_tangent_does() {
             }
         }
     }
+    // from a home partway along: the identity there; the curve's own frame turns with the
+    // torsion besides, its spin about the tangent `τ |C′|`, read by differences as above
+    let mid = Along::from(bezier(&[[0.,0.,0.],[10.,0.,5.],[20.,20.,-5.],[30.,20.,10.]]),0.4,false,"the frame").unwrap();
+    for p in PROBES { agree(mid.pose(0.4).unwrap().point(p),p,"at its home") }
+    let own = Along::from(bezier(&[[0.,0.,0.],[10.,0.,5.],[20.,20.,-5.],[30.,20.,10.]]),0.,true,"the frame").unwrap();
+    for k in 1..40 {
+        let t = k as f64/40.;
+        let m = own.at(t).unwrap();
+        let (a,b) = (own.pose(t-1e-6).unwrap(),own.pose(t+1e-6).unwrap());
+        for p in PROBES {
+            let fd: V = std::array::from_fn(|i| (b.point(p)[i]-a.point(p)[i])/2e-6);
+            let v = m.velocity(p);
+            let size = 1.+v.iter().map(|x| x.abs()).fold(0.,f64::max);
+            for i in 0..3 { assert!((fd[i]-v[i]).abs() <= 1e-5*size,"the curve's own frame's rate at {t}: {v:?} against {fd:?}") }
+        }
+    }
+    assert!(own.stretch(0.,1.).is_none(),"the curve's own frame encloses no stretch");
     let rational = gcs_core::brep::nurbs::BSpline::rational(2,vec![0.,0.,0.,1.,1.,1.],vec![[1.,0.,0.],[1.,1.,0.],[0.,1.,0.]],
         vec![1.,std::f64::consts::FRAC_1_SQRT_2,1.]).unwrap();
     assert!(Along::new(rational).unwrap().stretch(0.,1.).is_none(),"a rational curve's stretch has no bound here");

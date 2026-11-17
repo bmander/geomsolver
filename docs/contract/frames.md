@@ -184,7 +184,7 @@ the planet valued too, in twins of those, `(P in carrier) in planet` (`tests/epi
 
 **A frame along a path** (#398 C, [0.145]): a joint held along a path, `g coincident f.axis`
 (`std.stations.Along`, `std.stations.AlongFrenet`, each making the frame `f` it holds), is no turn
-about a line but `MotionDef::Guided`, its pose read off the path after the solve (`motion::Guide`) —
+about a line but `MotionDef::Guided`, its pose read off the path after the solve (`motion::guide::read`, the kernel's `trajectory::Along`) —
 the rotation-minimising frame for ratio 0, the path's own for ratio 1, from where the frame is
 drawn. What is drawn in it rides on it, and a face so drawn is swept as a declared parameter runs; a
 row reads no such motion.  The rules are [parameters.md](parameters.md)'s.

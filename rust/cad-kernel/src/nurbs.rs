@@ -73,6 +73,17 @@ impl BSpline {
     pub fn derivative_bounds(&self) -> Option<[f64;2]> {
         (!self.is_rational()).then(|| derivative_bounds(self.degree,&self.knots,&self.poles))
     }
+    /// **The curve's derivative as a B-spline** (its hodograph): a degree lower, on the knots less
+    /// their ends, its poles the poles' differences. None for a rational or a constant curve.
+    pub fn hodograph(&self) -> Option<BSpline> {
+        let p = self.degree;
+        if self.is_rational() || p == 0 { return None }
+        let poles = (0..self.poles.len()-1).map(|i| {
+            let dt = self.knots[i+p+1]-self.knots[i+1];
+            if dt > 0. { crate::util::space::scale(crate::util::space::sub(self.poles[i+1],self.poles[i]),p as f64/dt) } else { [0.;3] }
+        }).collect();
+        BSpline::new(p-1,self.knots[1..self.knots.len()-1].to_vec(),poles).ok()
+    }
     /// Where the curve is defined.
     pub fn domain(&self) -> [f64;2] { [self.knots[self.degree],self.knots[self.poles.len()]] }
     /// The distinct knots strictly inside `[a, b]`, where the curve's third derivative may jump.

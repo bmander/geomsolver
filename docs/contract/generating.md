@@ -351,7 +351,10 @@ range, `Trajectory::unpaced`, #684 L), a path of pieces each over its stretch of
 (`Pieces`, refused by `Trajectory::pieces` where two do not meet, K1), and any other rigid motion
 evaluated as a pose and its rate (`General`, K2) — among them a frame carried along a B-spline
 from its start (`trajectory::Along`: the rotation-minimising frame by double reflection on a grid,
-its stretches enclosed by the curve's hodographs, a rational curve's failing closed;
+from a home anywhere on it, or the curve's own (Frenet) frame, over any curve that reads its jet
+(`trajectory::Guide`: the kernel's B-spline, the drawing's path — `motion::guide` holds no copy),
+its stretches enclosed by the curve's hodographs, a rational curve's and the Frenet frame's failing
+closed;
 `a_frame_along_a_curve_turns_only_as_its_tangent_does`), so a caller of the kernel sweeping along
 a curve writes no path of its own.  `Family::trajectory` lowers a family step by
 step: a turn, a screw or a slide to its constant twist, a driven joint to that twist taken at its

@@ -13,6 +13,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   turn about its normal by the tangent's angle, exactly but for rounding), with its pose, rate and
   stretches enclosed by the curve's hodographs, so a sweep's speed bound reads it — a rational
   curve's stretch fails closed. A caller sweeping along a curve writes no `Path` of its own.
+- **`Along` is generic over its curve** (`trajectory::Guide`: a domain, a jet, derivative
+  bounds), from a home anywhere on it (`Along::from`), the rotation-minimising frame or the curve's
+  own (Frenet) one; geomsolver's frames along a path are this type over its own paths. The
+  sampled enclosure a stretch is read from is `trajectory::Extremes`; `BSpline::hodograph` is the
+  curve's derivative as a B-spline.
 - **Bounds on a polynomial B-spline's first two derivatives** (`nurbs::derivative_bounds`,
   `BSpline::derivative_bounds`): its hodographs' longest poles, what `Along` encloses by.
 - **A prism under a motion that keeps a plane is cut from a blank** (`swept::closed::cut_from`):

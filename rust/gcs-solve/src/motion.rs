@@ -8,7 +8,8 @@ pub use contact::NormalVelocity;
 mod law;
 pub use law::{Law, unread_drive};
 mod guide;
-use guide::{Guide, Stretch};
+use crate::brep::trajectory::{Along, Path as _, Stretch};
+type Guide = Along<crate::path::Path>;
 mod track;
 pub use track::Track;
 pub(crate) use track::{window, Ride};
@@ -99,7 +100,7 @@ enum Carrier { Guide(std::sync::Arc<Guide>),Ride(std::sync::Arc<Ride>) }
 
 impl crate::brep::trajectory::Path for Evaluated {
     fn at(&self,t: f64) -> Result<Motion,crate::brep::KernelError> {
-        let m = match &self.carrier { Carrier::Guide(g) => g.motion(t)?, Carrier::Ride(r) => r.motion(t)? };
+        let m = match &self.carrier { Carrier::Guide(g) => g.at(t)?, Carrier::Ride(r) => r.motion(t)? };
         Ok(if self.back { m.inverse() } else { m })
     }
     fn pose(&self,t: f64) -> Result<Pose,crate::brep::KernelError> {
@@ -467,7 +468,7 @@ impl Family {
                 }
                 // a frame along a path, read off the path as the solve left it (#398 C)
                 MotionDef::Guided {guide,frame,frenet} => {
-                    let read = Guide::read(sk,&node.name,guide,frame,frenet)?;
+                    let read = guide::read(sk,&node.name,guide,frame,frenet)?;
                     Step::Guided {guide:std::sync::Arc::new(read),back:false}
                 }
                 // a frame the drawing moves, read off its march as the solve left it (#398 F)
