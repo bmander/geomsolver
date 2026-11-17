@@ -205,12 +205,10 @@ fn built(sk: &Sketch,i: usize) -> Option<BuiltField> {
 
 // Preserve static subgraphs as SpatialFields and promote only where a sweep
 // appears. Both public readers share dependency ordering, naming and refusals.
-fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String> { read_less(sk,solid,axis_tolerance,&Default::default()) }
-
-/// `read`, the swept solids `left_out` (and their placed copies) no term of a body: the field of
-/// what the other cuts leave, as a body mixing a closed sweep with sheets judges its sheets' cells
-/// by before the closed sweep is cut (`brep::sweep::mixed_cut`).
-fn read_less(sk: &Sketch,solid: usize,axis_tolerance: f64,left_out: &std::collections::BTreeSet<usize>) -> Result<Snapshot,String> {
+// The swept solids `left_out` (and their placed copies) are no term of a body: the field of what
+// the other cuts leave, as a body mixing a closed sweep with sheets judges its sheets' cells by
+// before the closed sweep is cut (`brep::sweep::mixed_cut`).
+fn read(sk: &Sketch,solid: usize,axis_tolerance: f64,left_out: &std::collections::BTreeSet<usize>) -> Result<Snapshot,String> {
     crate::solid::validate(sk,solid)?;
     let mut done: BTreeMap<usize,Snapshot> = BTreeMap::new();
     // the regions that hold nowhere (#183: a round over faces that never meet), no term of a body
@@ -315,7 +313,7 @@ impl SpatialField {
     /// compositions and fixed motion instances. Unsupported sources fail rather
     /// than substituting a faceted shape. Values use the model's length units.
     pub fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Self,String> {
-        read(sk,solid,axis_tolerance)?.static_field()
+        read(sk,solid,axis_tolerance,&Default::default())?.static_field()
     }
 }
 
@@ -324,11 +322,11 @@ impl MaterialField {
     /// Boolean combinations. Swept sources must themselves be static. This owns
     /// one solved snapshot; no query rereads source parameters or samples a mesh.
     pub fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Self,String> {
-        Ok(read(sk,solid,axis_tolerance)?.material())
+        Ok(read(sk,solid,axis_tolerance,&Default::default())?.material())
     }
     /// `read`, the swept solids `left_out` and their placed copies taken out of every body's terms.
     pub fn read_less(sk: &Sketch,solid: usize,axis_tolerance: f64,left_out: &std::collections::BTreeSet<usize>) -> Result<Self,String> {
-        Ok(read_less(sk,solid,axis_tolerance,left_out)?.material())
+        Ok(read(sk,solid,axis_tolerance,left_out)?.material())
     }
 }
 

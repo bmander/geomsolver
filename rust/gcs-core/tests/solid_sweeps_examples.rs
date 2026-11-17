@@ -941,7 +941,3 @@ fn the_drum_end_screwed_chases_its_section_up_the_rod() {
     assert_eq!(found.kind(),"a screw");
     near(exported(&e,"rod"),1339.548902340676*6./20.,1e-8);
 }
-
-
-
-

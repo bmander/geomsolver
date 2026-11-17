@@ -14,10 +14,10 @@
 //! pin swung along a radius cuts a slot whose end wall is that zone (`solid_sweeps/spoke.sv`), and
 //! the torus leaning toward the turn's axis, the field gate's first find (refused before), its
 //! shadow. Each volume is figured apart, and each exact solid's STL agrees with the field. Refused
-//! by name: a torus slid along its axis, its shadow a ring (S2); a drill that does not pass wholly
-//! through the blank's heights (E1); and a ball-ended pin swung, its characteristic running through
-//! the ball's pole on its axis (S1, a pole), which the contact's road refuses too. The walk refuses,
-//! and the closed class or the contact's road builds: an upright torus turned across a taller block,
+//! by name: a torus slid along its axis, its shadow a ring (S2); and a drill that does not pass
+//! wholly through the blank's heights (E1). The walk refuses, and the closed class or the contact's
+//! road builds: a ball-ended pin swung, its characteristic running through the ball's pole on its
+//! axis (S1, a pole), within the blank's reach (#880 T1c); an upright torus turned across a taller block,
 //! its tube's top ring, whose normals lie along its axis and the turn's, in contact all round in a
 //! plane the turn keeps (S1, the closed class); a pin swung wholly within the block, through its
 //! base's centre (S1, a pole), and a small leaning torus wholly within the block, its loop closing
@@ -194,7 +194,6 @@ fn the_upright_torus_turned_across_a_tall_block_grooves_it_by_its_shadow() {
 /// `(π/6)(35.34 − 1/12 + 31.434 asin(5/13))` of its `80π/3`, to 1e-9.
 #[test]
 fn a_turn_about_an_axis_the_tools_meets_builds_within_the_blanks_reach() {
-    use std::f64::consts::PI;
     let ball = spoke(6.,10.5).replace("  private e3 := point\n","  private e3 := point\n  private e4 := point\n")
         .replace("  e3 coords(du: reach, dv: 0mm) holder\n","  e3 coords(du: reach + 0.1mm, dv: 0mm) holder\n  e4 coords(du: reach - 1.2mm, dv: 0mm) holder\n")
         .replace("  private tip := line(e2, e3)\n","  private tip := arc(center: e4, start: e3, end: e2) hint(r: 1.3)\n  radius(1.3mm) tip\n");
@@ -202,7 +201,7 @@ fn a_turn_about_an_axis_the_tools_meets_builds_within_the_blanks_reach() {
     let Class::Closed(found) = crate::solid_sweeps_examples::class(&e,"part") else { panic!("the closed class") };
     assert!(found.first.as_ref().is_some_and(|r| r.condition == Condition::Regular),"admitted for the road past S1");
     let removed = PI/6.*(35.34-1./12.+31.434*(5f64/13.).asin());
-    crate::turns_and_slides::near(crate::turns_and_slides::exported(&e,"part"),80.*PI/3.-removed,1e-9);
+    near(exported(&e,"part"),80.*PI/3.-removed,1e-9);
 }
 
 /// **What the walk refused there, the contact's road builds** (#880 Q1b; negative controls before

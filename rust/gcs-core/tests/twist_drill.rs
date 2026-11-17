@@ -106,10 +106,7 @@ fn the_drills_field_has_its_flutes_margins_point_and_shank() {
     assert!((0..36).all(|k| at(4.95,k as f64*10.,-10.)));
 }
 
-/// The flute wheel too steep for its helix: its flanks fold the flute's wall (S3).
-fn steep() -> Elaborated { steep_of("6mm") }
-
-/// The drill of `steep` fluted over `length`.
+/// The flute wheel too steep for its helix, fluted over `length`: its flanks fold the flute's wall (S3).
 fn steep_of(length: &str) -> Elaborated {
     let wheel = "{rim: 25mm, nearest: web / 2, round: 2.5mm, flank: 20deg, depth: 7mm}";
     fixtures::drill::read(&[("flutes","1"),("point","0"),("fluted_length",length),("flute_wheel",wheel)])
@@ -124,7 +121,7 @@ fn steep_of(length: &str) -> Elaborated {
 #[test]
 fn the_constant_twist_rows_refuse_by_name() {
     let wheel = |round: &str,flank: &str| format!("{{rim: 25mm, nearest: web / 2, round: {round}, flank: {flank}, depth: 7mm}}");
-    let a = admit(&steep(),"fluted").unwrap();
+    let a = admit(&steep_of("6mm"),"fluted").unwrap();
     let flute = a.sweeps().iter().find(|s| s.name == "flute").unwrap();
     let Class::Closed(found) = &flute.class else { panic!("the flute admitted to the closed class") };
     let r = found.first.as_ref().expect("the constant-twist class's refusal kept");
@@ -420,5 +417,3 @@ fn the_page_builds_the_whole_drills_exact_surface() {
     let volume = builder.display().unwrap().faces.volume;
     assert!((volume-3606.54).abs() < 0.5,"{volume}");
 }
-
-

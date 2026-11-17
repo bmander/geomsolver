@@ -1150,6 +1150,14 @@ pub fn face(p: &Profile) -> Result<Brep,String> {
     Ok(b)
 }
 
+/// The box from `lo` to `hi`, its faces square to the world's axes.
+pub fn block(lo: V,hi: V) -> Result<Brep,String> {
+    let at = |x: f64,y: f64| [x,y,lo[2]];
+    let corners = [at(lo[0],lo[1]),at(hi[0],lo[1]),at(hi[0],hi[1]),at(lo[0],hi[1])];
+    let edges = (0..4).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%4]}).collect();
+    prism(&Profile {origin:lo,normal:[0.,0.,1.],loops:vec![edges],names:Vec::new()},0.,hi[2]-lo[2])
+}
+
 /// The square on the plane through `o` square to the unit `n`, `half` from `o` along each of its
 /// frame's axes (`Frame::about`): a block's section.
 pub fn square(o: V,n: V,half: f64) -> Profile {
