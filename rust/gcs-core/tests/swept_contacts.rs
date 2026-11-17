@@ -381,7 +381,7 @@ fn a_rod_grooved_by_a_leaning_torus_screwed_along_it_is_its_volume() {
     let size = tool.size();
     for tol in [TOL,0.1*TOL] {
         let (cands,given) = candidates(&tool,&path,roll,tol).unwrap();
-        let (swept,_) = trimmed(&tool,&path,roll,&cands,&given,bar,tol,Trim {resolution:size/32.,hair:4.*tol})
+        let (swept,_) = trimmed(&tool,&path,roll,&cands,&given,bar,tol,Trim {resolution:size/32.,hair:4.*tol,reach:None})
             .unwrap_or_else(|e| panic!("the sweep trimmed to {tol:e}: {e:?}"));
         let grooved = combined(&rod,&swept,Op::Cut,tol).unwrap();
         let volume = gcs_core::brep::props::volume(&grooved);

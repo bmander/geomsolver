@@ -66,6 +66,13 @@ pub struct Trim {
     /// How far to either side of a piece its membership is read, in the model's units: at least four
     /// times the membership mesh's sag, within which a side does not settle.
     pub hair: f64,
+    /// **The box the sweep is wanted within** (#880 T1c), where it is cut from a blank the box holds:
+    /// the trim builds the sweep's part inside it — the candidates' pieces outside it dropped, and
+    /// met only where they come near it, the box's own faces kept where the sweep holds them — the
+    /// same cut from the blank, since a blank inside the box loses only what of the sweep lies in
+    /// it. What the sweep does beyond — a fold's cusp where the tool stands at an end of a roll run
+    /// past the blank (the twist drill's steep flute wheel) — is not asked.
+    pub reach: Option<(V,V)>,
 }
 
 /// **The closed swept solid of `tool` under `path` over `roll`, trimmed from `candidates`** (E1):
@@ -101,10 +108,29 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
     let swept = Swept {tool:&solid,path,roll};
     if crate::timing() { eprintln!("trim: the tool meshed for membership: {} triangles, sag {:.2e}",solid.triangles(),solid.sag) }
     let mut report = Report {faces:candidates.iter().map(|c| c.faces.len()).sum(),..Report::default()};
+    // (the reach: a ball reaches it where it comes within its radius of the box; a point is past it
+    // farther than the tolerance outside)
+    let reaches = |c: V,r: f64| trim.reach.is_none_or(|(lo,hi)| (0..3).all(|a| c[a] >= lo[a]-r && c[a] <= hi[a]+r));
+    let past = |p: V| trim.reach.is_some_and(|(lo,hi)| (0..3).any(|a| p[a] < lo[a]-tol || p[a] > hi[a]+tol));
+    let held_box = match trim.reach {
+        Some((lo,hi)) => {
+            let foot = [0.5*(lo[0]+hi[0]),0.5*(lo[1]+hi[1]),lo[2]];
+            let at = |x: f64,y: f64| [x,y,lo[2]];
+            let corners = [at(lo[0],lo[1]),at(hi[0],lo[1]),at(hi[0],hi[1]),at(lo[0],hi[1])];
+            let edges = (0..4).map(|k| crate::build::ProfileEdge::Line {a:corners[k],b:corners[(k+1)%4]}).collect();
+            let profile = crate::build::Profile {origin:foot,normal:[0.,0.,1.],loops:vec![edges],names:Vec::new()};
+            Some(crate::build::prism(&profile,0.,hi[2]-lo[2]).map_err(Unbuilt::Failed)?)
+        }
+        None => None,
+    };
+    let candidates: Vec<Brep> = candidates.iter().cloned().chain(held_box.clone()).collect();
+    let candidates = &candidates[..];
+    let boxed = held_box.as_ref().map(|_| candidates.len()-1);
     // 1. each candidate's faces zoned: the balls near the boundary, by (candidate, face)
     let clock = crate::util::clock::Instant::now();
     let mut near: Vec<(usize,usize,Ball)> = Vec::new();
     for (k,cand) in candidates.iter().enumerate() {
+        if Some(k) == boxed { continue }
         let coarse = (cand.size()/8.).max(4.*trim.resolution);
         // meshed until its sag is under a quarter of the resolution, so a ball can shrink to it
         // (the triangles are halved flat, so their sag is the mesh's)
@@ -124,7 +150,7 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
         for ((f,_),r) in tris.iter().zip(read) {
             let (balls,z) = r?;
             for k2 in 0..3 { report.zones[k2] += z[k2]; here[k2] += z[k2] }
-            near.extend(balls.into_iter().map(|b| (k,*f,b)));
+            near.extend(balls.into_iter().filter(|b| reaches(b.c,b.r)).map(|b| (k,*f,b)));
         }
         if crate::timing() {
             let reads = crate::util::meter::current().map_or(0,|m| m.count(crate::util::meter::Stage::Membership));
@@ -151,6 +177,15 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
             if a.0 == b.0 || pairs.contains(&([a.0,a.1],[b.0,b.1])) { continue }
             if ba.iter().any(|p| bb.iter().any(|q| distance(p.c,q.c) <= p.r+q.r+pad)) { pairs.insert(([a.0,a.1],[b.0,b.1])); }
         } }
+    }
+    if let Some(b) = boxed {
+        let located: Vec<crate::query::Located> = candidates.iter().map(|c| crate::query::Located::new(c,tol)).collect();
+        for g in 0..candidates[b].faces.len() {
+            let gb = located[b].face_box(g);
+            for (k,c) in candidates.iter().enumerate().filter(|&(k,_)| k != b) { for f in 0..c.faces.len() {
+                if crate::boolean::overlap(&located[k].face_box(f),&gb,pad) { pairs.insert(([k,f],[b,g])); }
+            } }
+        }
     }
     report.paired = pairs.len();
     if debug() {
@@ -184,8 +219,15 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
     let side = |f: &crate::topo::Face,points: &mut dyn Iterator<Item=V>| -> Result<Option<bool>,String> {
         read.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
         let mut first = None;
+        let own = boxed.is_some_and(|b| candidates[b].faces.iter().any(|g| std::ptr::eq(g,f)));
         for p in points.take(8) {
             first.get_or_insert(p);
+            if own {
+                // (a piece of the box: kept, facing out, where the sweep holds it)
+                match swept.member(p) { Ok(true) => { kept.fetch_add(1,std::sync::atomic::Ordering::Relaxed); return Ok(Some(false)) },
+                    Ok(false) => return Ok(None),Err(_) => continue }
+            }
+            if past(p) { return Ok(None) }
             let Some(n) = f.outward(p) else { continue };
             // **a piece proved inside or outside the sweep at a point of it bounds nothing** (#880
             // Q1b): the sweep's depth there more than a few tolerances from nought, a piece of the
@@ -285,11 +327,17 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
             }
         }
     }
-    let (lo,hi) = out.bounds();
-    let grow = 0.1*distance(lo,hi);
-    let foot = [0.5*(lo[0]+hi[0]),0.5*(lo[1]+hi[1]),lo[2]-grow];
-    let half = 0.5*(hi[0]-lo[0]).max(hi[1]-lo[1])+grow;
-    let domain = crate::build::prism(&crate::build::square(foot,[0.,0.,1.],half),0.,hi[2]-lo[2]+2.*grow)?;
+    let domain = match held_box {
+        // (within the reach the solid is the sweep)
+        Some(b) => b,
+        None => {
+            let (lo,hi) = out.bounds();
+            let grow = 0.1*distance(lo,hi);
+            let foot = [0.5*(lo[0]+hi[0]),0.5*(lo[1]+hi[1]),lo[2]-grow];
+            let half = 0.5*(hi[0]-lo[0]).max(hi[1]-lo[1])+grow;
+            crate::build::prism(&crate::build::square(foot,[0.,0.,1.],half),0.,hi[2]-lo[2]+2.*grow)?
+        }
+    };
     let clock = crate::util::clock::Instant::now();
     super::closed::judge(&out,&swept,&domain,None,&[],tol)?;
     if crate::timing() { eprintln!("trim: judged in {:?}",clock.elapsed()) }

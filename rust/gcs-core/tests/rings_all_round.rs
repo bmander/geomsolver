@@ -182,25 +182,27 @@ fn the_upright_torus_turned_across_a_tall_block_grooves_it_by_its_shadow() {
     crate::turns_and_slides::near(crate::turns_and_slides::exported(&e,"part"),80.*PI-PI/6.*(105.+32./3.+38.*PI),1e-8);
 }
 
-/// What a turn about an axis the tool's own meets still refuses: `spoke.sv`'s pin with its end
-/// domed, a cap of a ball of radius 1.3 about a point of its axis 1.2 short of its end, whose
-/// characteristic in the plane of the two axes runs over the dome's pole on the pin's axis, where
-/// the walk would cross to each ring's other root (S1, a pole). The closed class reads no candidate
-/// for the dome, so the sweep is admitted for the contact's road (#880 Q1b), which refuses it too;
-/// at the build the first class's refusal stands, naming the pole.
+/// **What a turn about an axis the tool's own meets builds within the blank's reach** (#880 T1c):
+/// `spoke.sv`'s pin with its end domed, a cap of a ball of radius 1.3 about a point of its axis 1.2
+/// short of its end, whose characteristic in the plane of the two axes runs over the dome's pole on
+/// the pin's axis, where the walk would cross to each ring's other root (S1, a pole). The closed
+/// class reads no candidate for the dome, so the sweep is admitted for the contact's road (#880
+/// Q1b), whose trim of the whole sweep does not close; within a box about the block it does
+/// (`trim::Trim::reach`), the dome turned wholly across the sector. The sector loses a sixth of the
+/// turn of the pin's meridian image past radius 8: the cap's reach `9.3 + √(1.69 − z²)` for
+/// `|z| ≤ 1/2`, so `(π/6) ∫ (88.18 − z² + 18.6 √(1.69 − z²) − 64) dz` =
+/// `(π/6)(35.34 − 1/12 + 31.434 asin(5/13))` of its `80π/3`, to 1e-9.
 #[test]
-fn what_a_turn_about_an_axis_the_tools_meets_still_refuses() {
+fn a_turn_about_an_axis_the_tools_meets_builds_within_the_blanks_reach() {
+    use std::f64::consts::PI;
     let ball = spoke(6.,10.5).replace("  private e3 := point\n","  private e3 := point\n  private e4 := point\n")
         .replace("  e3 coords(du: reach, dv: 0mm) holder\n","  e3 coords(du: reach + 0.1mm, dv: 0mm) holder\n  e4 coords(du: reach - 1.2mm, dv: 0mm) holder\n")
         .replace("  private tip := line(e2, e3)\n","  private tip := arc(center: e4, start: e3, end: e2) hint(r: 1.3)\n  radius(1.3mm) tip\n");
     let e = fixtures::read(&ball);
     let Class::Closed(found) = crate::solid_sweeps_examples::class(&e,"part") else { panic!("the closed class") };
     assert!(found.first.as_ref().is_some_and(|r| r.condition == Condition::Regular),"admitted for the road past S1");
-    let (r,_) = crate::common::saying(|say| gcs_core::brep::export::exact(&e.sketch,fixtures::solid(&e,"part"),None,
-        Some(gcs_core::solid::export::Tolerance::new(0.01).unwrap()),say));
-    let Err(r) = r else { panic!("built") };
-    assert_eq!(r.condition,Some(Condition::Regular),"{r}");
-    assert!(r.message.contains("meets the tool's axis at a pole of its profile"),"{}",r.message);
+    let removed = PI/6.*(35.34-1./12.+31.434*(5f64/13.).asin());
+    crate::turns_and_slides::near(crate::turns_and_slides::exported(&e,"part"),80.*PI/3.-removed,1e-9);
 }
 
 /// **What the walk refused there, the contact's road builds** (#880 Q1b; negative controls before
