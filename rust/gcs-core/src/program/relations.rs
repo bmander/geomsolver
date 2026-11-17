@@ -1625,7 +1625,8 @@ fn bound_of(
     }
     if r.claim {
         let m = "a bound chooses which solution is meant, and a claim asks about the one there \
-                 is: write one or the other";
+                 is: write one or the other — a claim over what the solve gives compares its \
+                 measurement, `claim distance(a, b) <= 96in` (#940)";
         return Err((at, m.to_string()));
     }
     let hi = match hi {

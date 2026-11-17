@@ -293,6 +293,59 @@ fn claimed(
     Ok((holds, reads))
 }
 
+/// A claim over measurements as `measured` reads it: its condition, the numbers it reads, and
+/// each of those as a reader is told it.
+type Measuring = (expr::Cond, BTreeMap<String, Aff>, Vec<(String, super::Valued)>);
+
+/// **A claim over measurements, read where it stands** (#940): `None` where the condition
+/// measures nothing (a claim over values, `claimed`'s); else the condition, the numbers it reads
+/// and each of those as a reader is told it — or why it cannot be judged, as `claimed` says of a
+/// claim over values: a name that is no number here, or one reading an unknown.
+fn measured(text: &str, env: &Vals, scope: &Scope, units: Units)
+    -> Result<Option<Measuring>, (Code, String)>
+{
+    let said = |code, e: String| (code, format!("`{text}`: {e}"));
+    let Ok(c) = expr::parse_condition_in(text, units) else { return Ok(None) };
+    if c.measures().is_empty() || c.names_geometry() {
+        return Ok(None);
+    }
+    let mut reads = Vec::new();
+    let mut numbers = BTreeMap::new();
+    for name in c.deps() {
+        match env.get(&name) {
+            None => {
+                let (code, e) = out_of_reach(&name, env, scope).unwrap_or_else(|| (Code::E101,
+                    format!("`{name}` is not a number here: a claim compares the numbers the \
+                             document names and what it measures of the solved drawing")));
+                return Err(said(code, e));
+            }
+            Some(Aff { free: Some(u), .. }) => {
+                return Err(said(Code::E040, format!(
+                    "{} an unknown of the drawing: a claim over measurements compares them with \
+                     the document's own numbers, and a relation claims what the solve gives",
+                    expr::reads_unknown(&name, u)
+                )));
+            }
+            Some(a) => {
+                reads.push((name.clone(), super::Valued { value: a.c, dim: a.dim }));
+                numbers.insert(name, a.clone());
+            }
+        }
+    }
+    // what each side is is known before the solve: a measurement is a length or an angle, so
+    // `length(post) <= 96` compares a length with a plain number, and is said here
+    let dim = |m: expr::Measure| match m {
+        expr::Measure::Angle => crate::units::Dim::ANGLE,
+        _ => crate::units::Dim::LENGTH,
+    };
+    if let Err(e) = expr::judge_measured(&c, &numbers, &|m, _| Ok(Aff::of_dim(1.0, dim(m)))) {
+        if e.fault == expr::Fault::Dimension {
+            return Err(said(Code::E103, e.message));
+        }
+    }
+    Ok(Some((c, numbers, reads)))
+}
+
 /// A number worked out while elaborating.
 ///
 /// The language's angle is the degree — `sin(90)` is 1, and every dimension a person reads is in
@@ -1642,6 +1695,27 @@ impl<'a> Walk<'a> {
     ) {
         if self.sym.is_some() || !self.claims_judged.insert((c.span, prefix.to_string())) {
             return;
+        }
+        // a claim over measurements is judged after the solve (#940): its numbers worked out
+        // here, its measurements read where the solve puts the geometry
+        match measured(&c.text, vals, scope, self.units) {
+            Ok(Some((cond, env, reads))) => {
+                let reads = reads.into_iter().map(|(name, v)| (format!("{prefix}{name}"), v));
+                self.measured_claims.push(super::MeasuredClaim {
+                    text: c.text.clone(),
+                    span: c.span,
+                    prefix: prefix.to_string(),
+                    cond,
+                    env,
+                    reads: reads.collect(),
+                });
+                return;
+            }
+            Ok(None) => {}
+            Err((code, m)) => {
+                self.err(code, c.span, m);
+                return;
+            }
         }
         match claimed(&c.text, vals, scope, self.units) {
             Ok((holds, reads)) => {

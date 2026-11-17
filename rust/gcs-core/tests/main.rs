@@ -310,6 +310,7 @@ mod spatial_surfaces;
 mod spline_length;
 mod step;
 mod step_assembly;
+mod stock;
 mod style;
 mod sundial;
 mod surface_contact;

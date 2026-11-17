@@ -634,6 +634,47 @@ fn the_units_are_coherent() {
     }
 }
 
+/// **The engineering units a build in feet and inches is checked in** (#940), each its exact SI
+/// definition, so a wind load in `psf` and an anchor's pull in `lbf` compare as figures do.
+#[test]
+fn the_imperial_units_are_their_si_definitions() {
+    let lbf = 0.45359237 * 9.80665;
+    for unit in ["", "unit in\n", "unit ft\n", "unit m\n"] {
+        for (expr, want) in [
+            ("1lbf / 1N", lbf),
+            ("1kip / 1lbf", 1e3),
+            ("1lb / 1kg", 0.45359237),
+            ("1lbf / (1lb * 9.80665m / (1s)^2)", 1.0),
+            ("1psi / 1Pa", lbf / 0.0254f64.powi(2)),
+            ("1psf * (1ft)^2 / 1lbf", 1.0),
+            ("1ksi / 1psi", 1e3),
+            ("1ftlbf / (1lbf * 1ft)", 1.0),
+            ("1inlbf / (1lbf * 1in)", 1.0),
+            ("12inlbf / 1ftlbf", 1.0),
+            ("1mph * 1s / 1m", 0.44704),
+            ("1mph * 3600s / 5280ft", 1.0),
+            ("1kph * 3600s / 1km", 1.0),
+        ] {
+            let got = figure(unit, "", expr);
+            assert!((got - want).abs() < 1e-12 * want, "{unit:?} {expr}: {got}, want {want}");
+        }
+    }
+    // a wind and anchor check judged on every build (#940): a claim over figures in pounds
+    let check = |anchors: &str| format!("unit in\nanchor_pull := 400lbf\nwind := 30psf\n\
+        area := 40in * 66in\nrear_uplift := 1.3 * wind * area\nclaim {anchors} * anchor_pull \
+        >= rear_uplift\n");
+    let held = |anchors: &str| {
+        let (p, errs) = parse(&check(anchors));
+        assert!(errs.is_empty(), "{errs:?}");
+        let e = elaborate(&p);
+        assert!(e.ok(), "{:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+        e.value_claims[0].holds
+    };
+    // 1.3 × 30 psf over 40″ × 66″ is 715 lbf: one 400 lbf anchor does not hold it, two do
+    assert!(!held("1"));
+    assert!(held("2"));
+}
+
 /// `+` and `-` demand agreement for the new bases as for length and angle, and a diagnostic
 /// names the SI unit a dimension is: `Length^2·Mass·Time^-3` is a watt.
 #[test]

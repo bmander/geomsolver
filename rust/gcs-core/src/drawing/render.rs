@@ -136,6 +136,58 @@ fn point(model: Model<'_>, path: &str, span: Span) -> Result<((f64, f64), [f64; 
     Ok((sk.point_xy(e.i()), sk.world_point(e.i())))
 }
 
+/// How far off an assembly's outline its overall extents stand, in paper millimetres.
+const GEN_OFFSET_MM: f64 = 8.0;
+
+/// Whether `path` names one solid itself, rather than a scope holding objects.
+fn named_solid(model: Model<'_>, path: &str) -> bool {
+    model.names.entity_path(model.sketch, path).is_some_and(|e| e.kind == EntKind::Solid)
+}
+
+/// **The solids a solid view projects** (#940): the solid its target names, or every object
+/// under the scope it names — a component's instance, a member, the whole model by its alias —
+/// seen together as an assembly is, each part hiding what it stands in front of.
+fn solids_of(model: Model<'_>, path: &str, target: &str, span: Span) -> Result<Vec<usize>, Error> {
+    let named = model.names.entity_path(model.sketch, path);
+    if let Some(e) = named.filter(|e| e.kind == EntKind::Solid) {
+        return Ok(vec![e.i()]);
+    }
+    let objects: BTreeSet<usize> = crate::overview::objects(model.sketch).into_iter().collect();
+    let held: BTreeSet<usize> = entities(model, path).into_iter()
+        .filter(|e| e.kind == EntKind::Solid && objects.contains(&e.i()))
+        .map(|e| e.i()).collect();
+    if held.is_empty() {
+        return Err(error(span, format!("a solid view names a solid, such as `m.pis.body`, or a \
+            model or a component holding objects, which `{target}` does not; use `sketch` for 2D \
+            geometry")));
+    }
+    Ok(held.into_iter().collect())
+}
+
+/// The box round what a sketch view draws of `selected` — what its styles show, a point by its
+/// own — in the plane's coordinates, y up; a plane lying in it mapped there.
+fn sketch_bounds(sk: &Sketch, points: &BTreeMap<EntRef, Style>, selected: &[EntRef],
+                 lying: &BTreeMap<usize, (Basis, Basis)>) -> Option<[f64; 4]>
+{
+    let mut b: Option<[f64; 4]> = None;
+    let drawn: BTreeSet<EntRef> = sk.drawn().into_iter().collect();
+    for &e in selected {
+        let style = points.get(&e).cloned().unwrap_or_else(|| sk.style_of(e));
+        if !drawn.contains(&e) || !style.shown() { continue }
+        let (x0, y0, x1, y1) = sk.bounds(e);
+        if !(x0.is_finite() && y0.is_finite() && x1.is_finite() && y1.is_finite()) { continue }
+        let map = crate::program::drawn_plane(sk, e).and_then(|q| lying.get(&q));
+        for p in [(x0, y0), (x1, y0), (x0, y1), (x1, y1)] {
+            let (x, y) = map.map_or(p, |(from, to)| to.view_coords(from.lift(p.0, p.1)));
+            b = Some(match b {
+                None => [x, y, x, y],
+                Some([a, c, d, f]) => [a.min(x), c.min(y), d.max(x), f.max(y)],
+            });
+        }
+    }
+    b
+}
+
 /// Compile one sheet to SVG. This reads model snapshots, including names and measurements;
 /// it never reparses, elaborates, or solves geometry. Paper coordinates are independent of
 /// every plane/point in the model. SVG dimensions are physical mm, styles are CSS pixels.
@@ -185,10 +237,6 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
                 .is_some_and(|q| q == p || lying.contains_key(&q)));
         }
         if selected.is_empty() { return Err(error(v.span, format!("no geometry named `{}`", v.target))) }
-        let scale = v.scale.unwrap_or(s.scale) * model.sketch.units.mm_per() * PX_MM;
-        if !scale.is_finite() || scale <= 0.0 { return Err(error(v.span, "view scale is out of range")) }
-        let unit = 1.0 / scale;
-        let at = |p: (f64, f64)| (v.at.0 * PX_MM + p.0 * scale, v.at.1 * PX_MM - p.1 * scale);
         // The existing sketch/callout painters take presentation on a Sketch. Adapt a private
         // snapshot; the model passed to us stays immutable, even when two drawings disagree.
         let mut sk = model.sketch.clone();
@@ -225,6 +273,64 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
                 } else { sk.set_class(e, &class, true); }
             }
         }
+        let mm_per = model.sketch.units.mm_per();
+        let px = |paper: f64| paper * mm_per * PX_MM;
+        let mut paper = v.scale.unwrap_or(s.scale);
+        // the solids a solid view projects: the one it names, or every object under the scope it
+        // names, an assembly's parts seen together (#940)
+        let parts = if v.sketch { Vec::new() } else { solids_of(model, path, &v.target, v.span)? };
+        let frame = if v.sketch { None } else { Some(basis(&v.direction, models, v.span)?) };
+        let cut = v.cut.as_ref().map(|p| basis(p, models, v.span)).transpose()?;
+        if let (Some(frame), Some(c)) = (frame, cut) {
+            if crate::plane::dot(c.normal(), frame.normal()).abs() < 1.0 - 1e-9 {
+                return Err(error(v.span, "a section must be viewed parallel to its cutting plane"));
+            }
+        }
+        let project = |paper: f64| -> Result<crate::renderer::Drawing, Error> {
+            let unit = 1.0 / px(paper);
+            let solids = parts.iter().map(|&i| {
+                model.sketch.evaluated_solid(i, ApproximationPolicy::from_unit(unit))
+                    .map_err(|m| error(v.span, m))
+            }).collect::<Result<Vec<_>, _>>()?;
+            let renderers: Vec<Renderer> = solids.iter().map(|s| Renderer::prepare(s)).collect();
+            let frame = frame.expect("a solid view has a direction");
+            Ok(Renderer::project_together(&renderers, crate::renderer::View {
+                frame: PageFrame::new(frame), section: cut,
+            }))
+        };
+        // the box round what the view draws, in the model's units, y up
+        let sketch_box = match v.sketch {
+            true => sketch_bounds(&sk, &point_styles, &selected, &lying),
+            false => None,
+        };
+        if let Some((w, h)) = v.fit {
+            let b = if v.sketch { sketch_box } else { project(paper)?.bounds }
+                .ok_or_else(|| error(v.span, "a view drawing nothing has no size to fit"))?;
+            let (bw, bh) = ((b[2] - b[0]) * mm_per, (b[3] - b[1]) * mm_per);
+            let fits = [(w, bw), (h, bh)].into_iter().filter(|&(_, d)| d > 0.0)
+                .map(|(room, d)| room / d).fold(f64::INFINITY, f64::min);
+            if !fits.is_finite() {
+                return Err(error(v.span, "a view drawing a point has no size to fit"));
+            }
+            paper = fits;
+        }
+        let picture = if v.sketch { None } else { Some(project(paper)?) };
+        let bbox = if v.sketch { sketch_box } else { picture.as_ref().and_then(|p| p.bounds) };
+        let scale = px(paper);
+        if !scale.is_finite() || scale <= 0.0 { return Err(error(v.span, "view scale is out of range")) }
+        let unit = 1.0 / scale;
+        // `at` places the origin, or the point of the view's own box its anchor names (#940)
+        let origin = match v.anchor {
+            None => (v.at.0 * PX_MM, v.at.1 * PX_MM),
+            Some((fx, fy)) => {
+                let b = bbox
+                    .ok_or_else(|| error(v.span, "a view drawing nothing has no box to place"))?;
+                let (x, y) = (b[0] + fx * (b[2] - b[0]), b[3] - fy * (b[3] - b[1]));
+                (v.at.0 * PX_MM - x * scale, v.at.1 * PX_MM + y * scale)
+            }
+        };
+        let at = |p: (f64, f64)| (origin.0 + p.0 * scale, origin.1 - p.1 * scale);
+        let figure = |value: f64| s.figures.text(value, model.sketch.units);
         out.push_str(&format!("<g id=\"{}\" fill=\"none\" stroke-linecap=\"round\">\n", esc(&v.name)));
         if v.sketch {
             let polys: Vec<_> = (0..sk.curves.len()).map(|i| sk.curve_polyline(i)).collect();
@@ -243,37 +349,44 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
                 } else { crate::svg::entity(&mut out, &sk, e, unit, &at, &polys); }
             }
         } else {
-            let frame = basis(&v.direction, models, v.span)?;
-            let cut = v.cut.as_ref().map(|p| basis(p, models, v.span)).transpose()?;
-            if cut.is_some_and(|c| crate::plane::dot(c.normal(), frame.normal()).abs() < 1.0 - 1e-9) {
-                return Err(error(v.span, "a section must be viewed parallel to its cutting plane"));
-            }
-            let e = model.names.entity_path(model.sketch, path).filter(|e| e.kind == EntKind::Solid)
-                .ok_or_else(|| error(v.span, "a solid view names a solid explicitly, such as `m.pis.body`; use `sketch` for 2D geometry"))?;
-            {
-                let solid = sk.evaluated_solid(e.i(), ApproximationPolicy::from_unit(unit))
-                    .map_err(|m| error(v.span, m))?;
-                let picture = Renderer::prepare(&solid).project(crate::renderer::View {
-                    frame: PageFrame::new(frame), section: cut,
-                });
-                for stroke in picture.strokes {
-                    let mut classes = Classes::one(if stroke.hidden { "hidden" } else { "visible" });
-                    if cut.is_some() && !stroke.hidden { classes.0.push("section".into()); }
-                    classes.0.extend(sk.class_of(e).0);
-                    let style = crate::style::resolve(sk.sheet(), &classes);
-                    if !style.shown() { continue }
-                    let pts: Vec<_> = stroke.pts.into_iter().map(|p| { let p = at(p); format!("{},{}", n(p.0), n(p.1)) }).collect();
-                    out.push_str(&format!("<polyline data-path=\"{}\" points=\"{}\" stroke=\"{}\" stroke-width=\"{}\"",
-                        esc(&stroke.path), pts.join(" "), esc(style.color.as_deref().unwrap_or("#000000")), n(style.width.unwrap_or(1.8))));
-                    if let Some(dash) = &style.dash {
-                        out.push_str(&format!(" stroke-dasharray=\"{}\"", dash.iter().map(|v| n(*v)).collect::<Vec<_>>().join(" ")));
-                    }
-                    out.push_str("/>\n");
+            let picture = picture.expect("a solid view is projected");
+            for stroke in picture.strokes {
+                let e = EntRef::solid(parts[stroke.part]);
+                let mut classes = Classes::one(if stroke.hidden { "hidden" } else { "visible" });
+                if cut.is_some() && !stroke.hidden { classes.0.push("section".into()); }
+                classes.0.extend(sk.class_of(e).0);
+                let style = crate::style::resolve(sk.sheet(), &classes);
+                if !style.shown() { continue }
+                let pts: Vec<_> = stroke.pts.into_iter().map(|p| { let p = at(p); format!("{},{}", n(p.0), n(p.1)) }).collect();
+                out.push_str(&format!("<polyline data-path=\"{}\" points=\"{}\" stroke=\"{}\" stroke-width=\"{}\"",
+                    esc(&stroke.path), pts.join(" "), esc(style.color.as_deref().unwrap_or("#000000")), n(style.width.unwrap_or(1.8))));
+                if let Some(dash) = &style.dash {
+                    out.push_str(&format!(" stroke-dasharray=\"{}\"", dash.iter().map(|v| n(*v)).collect::<Vec<_>>().join(" ")));
                 }
-                if v.dimensions {
-                    let plane = sk.fixed_plane(frame, "_drawing");
-                    sk.derived.push(crate::model::DerivedE { solid: e.idx, plane: Some(plane as u32),
-                        at: None, dims: true, name: v.name.clone(), class: Classes::default() });
+                out.push_str("/>\n");
+            }
+            if v.dimensions {
+                let frame = frame.expect("a solid view has a direction");
+                match parts.as_slice() {
+                    // one solid: its extents and its round features, by the callout engine
+                    [i] if named_solid(model, path) => {
+                        let plane = sk.fixed_plane(frame, "_drawing");
+                        sk.derived.push(crate::model::DerivedE { solid: *i as u32, plane: Some(plane as u32),
+                            at: None, dims: true, name: v.name.clone(), class: Classes::default() });
+                    }
+                    // an assembly: its overall width and height, stood off below and to the right
+                    _ => if let Some([x0, y0, x1, y1]) = bbox {
+                        let off = -GEN_OFFSET_MM * PX_MM * unit;
+                        for (a, b) in [((x0, y0), (x1, y0)), ((x1, y0), (x1, y1))] {
+                            let value = (b.0 - a.0).dhypot(b.1 - a.1);
+                            if value <= 0.0 { continue }
+                            let text = figure(value);
+                            let c = crate::callout::measurement_text(&sk, unit, a, b, &text, off);
+                            if let Some(c) = c.filter(|c| crate::callout::ink(&sk, c).0.dimensioned()) {
+                                crate::svg::dimension(&mut out, &sk, &c, unit, &at);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -290,16 +403,41 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
             chosen.insert(id);
             if let Some(p) = a.at { sk.placements.insert(id, p); }
         }
+        // what `dimensions SEL in VIEW` narrows the view's dimensions to (#940): a constraint
+        // whose geometry is all under one of the paths, or of one of the classes
+        let mut scopes: Vec<BTreeSet<EntRef>> = Vec::new();
+        let mut classes: Vec<&str> = Vec::new();
+        for f in &v.dimensions_of {
+            if let Some(class) = f.strip_prefix('.') { classes.push(class); continue }
+            let (owner, path, _) = split(f, models, v.span)?;
+            if owner != alias {
+                return Err(error(v.span,
+                    format!("`dimensions {f}` names another model than the view's")));
+            }
+            let under: BTreeSet<EntRef> = entities(model, path).into_iter().collect();
+            if under.is_empty() { return Err(error(v.span, format!("no geometry named `{f}`"))) }
+            scopes.push(under);
+        }
+        if !v.dimensions_of.is_empty() && !v.sketch {
+            return Err(error(v.span, "`dimensions SEL in VIEW` narrows a sketch's dimensions; a \
+                solid view's are its extents"));
+        }
+        let narrowed = |c: &crate::constraints::Constraint| v.dimensions_of.is_empty()
+            || classes.iter().any(|k| c.class.0.iter().any(|x| x == k))
+            || scopes.iter().any(|under| {
+                let ents = c.entities();
+                !ents.is_empty() && ents.iter().all(|e| under.contains(e))
+            });
         for c in &mut sk.constraints {
             if chosen.contains(&c.id) || (v.sketch && v.dimensions
-                && c.entities().iter().any(|e| selected.contains(e))) {
+                && c.entities().iter().any(|e| selected.contains(e)) && narrowed(c)) {
                 // what the sheet asks for is drawn, a module's dimension too
                 c.elsewhere = false;
             } else {
                 c.class.0.push("_svd_unselected".into());
             }
         }
-        for c in crate::callout::layout(&sk, unit) {
+        for c in crate::callout::layout_figured(&sk, unit, None, &figure) {
             if crate::callout::ink(&sk, &c).0.dimensioned() {
                 crate::svg::dimension(&mut out, &sk, &c, unit, &at);
             }
@@ -313,14 +451,15 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
             let ((ax, ay), aw) = point(model, a, m.span)?;
             let ((bx, by), bw) = point(model, b, m.span)?;
             let value = (aw[0] - bw[0]).dhypot(aw[1] - bw[1]).dhypot(aw[2] - bw[2]);
-            let (a, b) = if v.sketch { ((ax, ay), (bx, by)) } else {
-                let frame = basis(&v.direction, models, v.span)?;
-                (frame.view_coords(aw), frame.view_coords(bw))
+            let (a, b) = match frame {
+                None => ((ax, ay), (bx, by)),
+                Some(frame) => (frame.view_coords(aw), frame.view_coords(bw)),
             };
             if ((b.0 - a.0).dhypot(b.1 - a.1) - value).abs() > 1e-8 * value.max(1.0) {
                 return Err(error(m.span, "this view foreshortens the measured distance; choose a view showing its true length"));
             }
-            let c = crate::callout::measurement(&sk, unit, a, b, value, m.offset * PX_MM * unit)
+            let off = m.offset * PX_MM * unit;
+            let c = crate::callout::measurement_text(&sk, unit, a, b, &figure(value), off)
                 .ok_or_else(|| error(m.span, "a distance annotation needs two distinct projected points"))?;
             if crate::callout::ink(&sk, &c).0.dimensioned() {
                 crate::svg::dimension(&mut out, &sk, &c, unit, &at);

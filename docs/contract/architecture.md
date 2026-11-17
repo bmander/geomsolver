@@ -141,8 +141,25 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   resolves its modules beside it and places a diagnostic on the author's line — and refuses, in
   its words and exit 64, a name inside a component, one that is no value, an input nothing
   binds, or a value that is no expression; the report says `report::rebound_text` first under
-  the outcome, published as `set` (`report::rebound_json`), and `--set` takes one model
+  the outcome, published as `set` (`report::rebound_json`), and `--set` takes one document
   (`a_value_is_set_for_a_run`, `a_top_level_value_is_given_for_a_run_and_nothing_else_is`).
+  **A bare number keeps the unit it replaces** (#940): `edit::rebind` appends the unit of the
+  value it is spliced over where that is one literal (`-6` over `1"` is `-6"`), else the
+  document's unit or `deg` where the value is a length or an angle by its declared type or
+  worked out over the values bound above it (`a_bare_number_given_keeps_the_unit_it_replaces`).
+  **A drawing hands its values on** (#940): `drawing::compile_with` gives each model the drawing
+  imports its import's `with` values and each of the run's it binds at its top level
+  (`edit::binds_no_value` skips the others; a name none binds is refused), the import's own over
+  the run's, a model given values being a snapshot of its own; `Compiled::rebound` is said under
+  `drawing compiled` per alias and published as `set` (`a_drawing_gives_its_models_values`).
+  **A report names a copy as a reference writes it** (#940): `report::positions` publishes a
+  repeated block's key (`#53.0.c0.x`) by `public_path` (`c0[0].x`), keeping the key only where two
+  copies come to one path, and a line or an arc adds its `length` in space; `--where c0` reaches
+  `c0[0]` (`a_report_names_copies_by_their_index_and_lines_by_their_length`).
+  **A cut list is the core's** (#940): `--parts` prints `stock::text` of `stock::cut_list`, each
+  part by binding (then alike by name, box and volume), its box `stock::oriented`'s — the
+  smallest square to pairs of its largest flat faces' normals or its own axes — published as
+  `cutList` (`tests/stock.rs`).
   Exit codes 0/1/2 are
   `Diag::severity` and `SolveResult::success`; 64 is the command line itself (`misuse`: the one
   line saying what was wrong, the synopsis and a pointer to `--help`, never the whole of it), and

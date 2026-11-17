@@ -138,6 +138,7 @@ WORD[(ARGS)] REF | REF WORD[(ARGS)] REF [hint(SLOT: E, ...)]   a constraint     
 claim CONSTRAINT                        judged, never solved for                     (1.11)
 claim { DECL* CONSTRAINT* }             a claim with witnesses of its own              (1.11)
 claim CONDITION                         a comparison of the document's values, judged  (1.11)
+claim length(l) <= 96"                  a measurement of the solved drawing compared   (1.11)
 fix((E, E[, E])) REF | fix(MEMBER == E, ...) REF   hold an entity's own numbers      (1.4)
 ccw(a, b, c) | cw(a, b, c)              choose a root; adds no equation              (1.5)
 K minimizes E | K maximizes E           a free curve's energy                        (1.10)
@@ -449,7 +450,8 @@ c distance(1' 6 3/16") d            // one literal: spaces separate the parts, a
 - `pi` is dimensionless; `tau` and `turn` are one full turn; radians are written `* 1rad`.
 - **A design table's figures carry units too**: mass, time and current are bases beside length
   and angle, and derive the rest — `kg g s ms A mA Hz kHz rpm N kN Nm J W kW V mV kV ohm Pa kPa
-  MPa GPa Wb mWb T mT`. They are for values: no slot takes one, so a figure reaches a constraint
+  MPa GPa Wb mWb T mT`, and a build in feet and inches has its own: `lb lbf kip ftlbf inlbf psi ksi
+  psf mph kph` (#940; a foot-pound is one word, `ftlbf`). They are for values: no slot takes one, so a figure reaches a constraint
   divided by its unit (`torque / 1Nm`). There is no `h` or `min`. `rpm` is an angle over a time:
 
   ```
@@ -1328,6 +1330,21 @@ it is judged there, a **theorem** or **refuted**, never consuming, within roundi
 == 0.0864Nm` holds of `0.006Nm * 16 * 0.9`); in a component's body, once per instance. The CLI
 says each with what it reads: `claim torque >= 2Nm — refuted: torque = 0.0864 N·m`. It may not
 read an unknown, nor a value written over one (E040: a relation claims what the solve gives).
+
+**A claim over measurements** (#940). A comparison may measure the solved drawing —
+`length(l)` (a line's, an arc's, a circle's or a curve's), `radius(c)`, `distance(a, b)` (two
+points, or a point from a line produced) and `angle(l1, l2)` (two lines' directions, 0° to 180°),
+in space — beside the document's numbers: `claim length(post_line) <= 96"` (a post cut from an 8'
+board), `claim distance(a, b) <= 8ft and angle(rafter, joist) >= 20deg`. What it measures is where
+the solve put the geometry, so it is judged after the solve, at the pose the drawing solved to:
+**holds** or **refuted** (within rounding), never a theorem. The drawing is identical with it
+deleted, as with any claim. The CLI says each with what it measured: `claim length(post) <= 96" —
+holds: length(post) = 90 in`; `--json` has them as `measuredClaims`. A measurement is a length or
+an angle, so `length(post) <= 96` is E103 (`96in`); a name that is no geometry, or geometry without
+the measure (a point's length), is E101; an unknown read beside it is E040, as in a claim over
+values. In a component's body it is judged once per instance, by the instance's names
+(`length(short.post)`). A bound on a relation stays the solve's (`claim a distance(<= 96) b` is
+E040): a claim compares the measurement.
 
 **A claim with witnesses of its own.** Some claims need geometry to be stated at all: "the two
 runs of a belt meet on the line of centres" needs a point on both runs. Declared as ordinary
@@ -3267,7 +3284,9 @@ A redundancy among pure relations (a fourth `perpendicular` round a rectangle) i
 
 **`--where NAME`** prints the numbers under a name: a point's (`hinge.x`), an instance's
 (`--where t0`), a plane's (`--where std.side`), a solid's measurements (`--where body`), or one
-number (`--where body.volume`). Under `--json` they are a `positions` table; with no `--where` it
+number (`--where body.volume`); a line or an arc says its length in space too (`--where post`
+gives `post.length`, #940), and a copy of a repeated block is named as a reference writes it,
+`c0[1].x`, never by the statement it was made by. Under `--json` they are a `positions` table; with no `--where` it
 holds every number of the drawing but no solid's measurements, which build the solid and are read
 only under a name given. It is quicker than a
 `claim` for testing a position. A value the document names is read the same way, in its unit:

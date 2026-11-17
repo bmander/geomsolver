@@ -92,6 +92,27 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   comparison by `Cmp::keeps` (10⁻⁹ of the larger side) rather than `Cmp::holds`.  The verdict is
   a `flatten::ValueClaimed` in `Elaborated::value_claims`, theorem or refuted, never consuming;
   a refused one is a diagnostic and no verdict.  `tests/values.rs` is the gate.
+- **A claim over measurements is judged after the solve** (#940, [0.218]).  `claim length(post)
+  <= 96"` is a value claim to the parser where it opens with a measurement (`expr::MEASURES`)
+  whose call's `)` is followed by arithmetic or a comparison (`value_claim_ahead`; `claim
+  radius(10) rim` stays a relation, and a `claim` is never a bound on measurements), and the walk
+  sends a condition that measures (`Cond::measures`) to `flatten::values::measured` instead of
+  `claimed`: the numbers it reads worked out where it stands by the same rules (E101, E040), its
+  sides' dimensions checked with each measurement standing in as a length or an angle (E103
+  before the solve), and a `flatten::MeasuredClaim` (condition, numbers, prefix) in
+  `Elaborated::measured_claims`.  `program::claimed::checked` refuses, at the end of elaboration,
+  a measurement of a name that is no geometry or of geometry without the measure (E101).  After
+  the solve `program::judge_measured` reads each measurement on the solved sketch
+  (`program::measure_of`: a line's length, an arc's, a circle's and a curve's polyline's; a
+  radius; a point–point or point–line distance; the angle of two lines' directions, all in
+  space) and `expr::judge_measured` decides it by `Cmp::keeps`: **holds** or **refuted**, never
+  a theorem — `report::measured_claim_text` and `measured_claims_json` (`measuredClaims`).  The
+  drawing is the same with one deleted.  `tests/claim.rs`'s
+  `a_claim_over_measurements_is_judged_where_the_drawing_solved` is the gate.
+- **The customary units are SI's definitions** (#940, [0.218]): `lb`, `lbf`, `kip`, `ftlbf`,
+  `inlbf`, `psi`, `ksi`, `psf`, `mph` and `kph` are rows of `units::UNITS` like any other, the
+  pound 0.45359237 kg and a pound-force that under 9.80665 m/s², read back in SI
+  (`the_imperial_units_are_their_si_definitions`).
 - **A number is named one way, and an unknown is declared** (issue #77; Solvent §3.4, §5, §6.3,
   [0.41]).  `w := 60` is a value; `param w := 60` (`ParamDecl::input`, a modifier the parser reads
   in `statements.rs::input`) marks one of the document's **inputs**, the only lines

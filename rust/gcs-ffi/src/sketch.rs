@@ -65,7 +65,9 @@ pub unsafe extern "C" fn gcs_sketch_preview(h: *mut Sketch, plane: i32) {
 }
 
 /// Render a .svd document from a host-supplied text bundle. JSON input:
-/// {source, text, sheet?, files: {path: text}}. Result: {svg} or {error, offset}.
+/// {source, text, sheet?, set?: {name: value}, files: {path: text}}. Result: {svg} or {error,
+/// offset}.  `set` gives the models the drawing imports values for the render, as `solventc
+/// drawing.svd --set` does (#940).
 #[no_mangle]
 pub unsafe extern "C" fn gcs_drawing_svg(ptr: *const u8, len: usize) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
@@ -73,9 +75,15 @@ pub unsafe extern "C" fn gcs_drawing_svg(ptr: *const u8, len: usize) -> *mut u8 
         let text = request.get("text").map(Json::as_str).unwrap_or("");
         let source = request.get("source").map(Json::as_str).unwrap_or("drawing.svd");
         let sheet = request.get("sheet").filter(|s| matches!(s, Json::Str(_))).map(Json::as_str);
-        let result = gcs_core::drawing::compile(text, source, sheet, &mut bundled(&request));
+        let set: Vec<(String, String)> = match request.get("set") {
+            Some(Json::Obj(kv)) => kv.iter().filter(|(_, v)| matches!(v, Json::Str(_)))
+                .map(|(k, v)| (k.clone(), v.as_str().to_string())).collect(),
+            _ => Vec::new(),
+        };
+        let result = gcs_core::drawing::compile_with(text, source, sheet, &set,
+                                                     &mut bundled(&request));
         let result = match result {
-            Ok(svg) => json::object([("svg", Json::Str(svg))]),
+            Ok(c) => json::object([("svg", Json::Str(c.svg))]),
             Err(e) => json::object([("error", Json::Str(e.message)), ("offset", Json::Int(e.span.lo as i64))]),
         };
         out_str(result.dump(None))

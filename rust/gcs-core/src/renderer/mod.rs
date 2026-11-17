@@ -36,6 +36,9 @@ pub struct Stroke {
     pub silhouette: bool,
     /// `body.bore.wall` — which face of which solid it bounds.
     pub path: String,
+    /// Which of the solids projected together it is an edge of (`Renderer::project_together`,
+    /// #940): 0 for a solid projected alone.
+    pub part: usize,
 }
 
 /// A vector drawing with tight bounds, or no bounds when it contains no strokes.
@@ -78,6 +81,14 @@ impl<'a> Renderer<'a> {
 
     pub fn project(&self, view: View) -> Drawing {
         projection::project(self, view)
+    }
+
+    /// **Several prepared solids as one picture** (#940): an assembly's view, each part's edges
+    /// hidden where it or any other part stands between them and the eye, each stroke saying
+    /// which part (`Stroke::part`, an index into `renderers`) it is an edge of.
+    pub fn project_together(renderers: &[Renderer<'a>], view: View) -> Drawing {
+        if renderers.is_empty() { return Drawing::new(Vec::new()) }
+        projection::project_together(renderers, view)
     }
 
     /// Conservative bounds without visibility or edge-crossing work. A section can only

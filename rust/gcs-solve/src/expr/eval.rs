@@ -165,6 +165,12 @@ pub fn judge_in(c: &Cond, env: &dyn Env) -> Result<bool, ExprError> {
     decide_by(c, env, Cmp::keeps)
 }
 
+/// `judge_in` **after the solve** (#940): a claim over measurements of the solved drawing,
+/// `claim length(post) <= 96"`, each measurement what `measure` says it comes to.
+pub fn judge_measured(c: &Cond, env: &dyn Env, measure: Measurer) -> Result<bool, ExprError> {
+    decide_with(c, env, Some(measure), Cmp::keeps)
+}
+
 /// `decide_in`, each comparison of two numbers decided by `holds`.
 fn decide_by(c: &Cond, env: &dyn Env, holds: fn(Cmp, f64, f64) -> bool)
     -> Result<bool, ExprError>

@@ -372,6 +372,9 @@ pub struct Expansion {
     pub values: BTreeMap<String, Valued>,
     /// Every claim over values, judged, in the order walked (#596) — see `ValueClaimed`.
     pub value_claims: Vec<ValueClaimed>,
+    /// Every claim over measurements of the solved drawing, to be judged after the solve (#940)
+    /// — see `MeasuredClaim`.
+    pub measured_claims: Vec<MeasuredClaim>,
     /// Every `ring` expanded, its centre resolved — what the elaborator turns copies about.
     pub rings: Vec<RingInfo>,
     /// Every set drawn as an element, for the elaborator to judge (`lowering`, #105).
@@ -558,6 +561,24 @@ pub struct ValueClaimed {
     pub text: String,
     pub span: Span,
     pub holds: bool,
+    pub reads: Vec<(String, Valued)>,
+}
+
+/// **A claim over measurements of the solved drawing** (#940): `claim length(post) <= 96"`,
+/// `claim distance(a, b) <= 8ft`, `claim angle(rafter, joist) >= 20deg`.  Its numbers are worked
+/// out where it stands, as a claim over values' are; its measurements are of where the solve puts
+/// the geometry, so it is judged after it (`program::judge_measured`): holds or refuted, at the
+/// pose the drawing solved to.  `prefix` is the scope it was walked under, which its measurements'
+/// names are read in.
+#[derive(Clone, Debug)]
+pub struct MeasuredClaim {
+    pub text: String,
+    pub span: Span,
+    pub prefix: String,
+    pub cond: crate::expr::Cond,
+    /// The numbers it reads by the names it reads them by, worked out where it stands.
+    pub env: BTreeMap<String, crate::expr::Aff>,
+    /// Each of those by absolute name, as a reader is told it.
     pub reads: Vec<(String, Valued)>,
 }
 
@@ -763,6 +784,7 @@ struct Walk<'a> {
     /// walked under, so a body walked again (§6.21) judges nothing twice.
     values: BTreeMap<String, Valued>,
     value_claims: Vec<ValueClaimed>,
+    measured_claims: Vec<MeasuredClaim>,
     claims_judged: BTreeSet<(Span, String)>,
     /// Every reading at an instant walked and not yet settled (#391 S2): what it reads, and the
     /// scope that names it in — see `carried`.
@@ -1087,6 +1109,7 @@ impl<'a> Walk<'a> {
             materials: BTreeMap::new(),
             values: BTreeMap::new(),
             value_claims: Vec::new(),
+            measured_claims: Vec::new(),
             claims_judged: BTreeSet::new(),
             readings: Vec::new(),
             instantiating: Vec::new(),
@@ -1227,6 +1250,7 @@ impl<'a> Walk<'a> {
             materials: self.materials.into_iter().filter_map(|(k, m)| Some((k, m?))).collect(),
             values: self.values,
             value_claims: self.value_claims,
+            measured_claims: self.measured_claims,
             rings: self.rings.infos,
             lowered,
             twins: self.twins,

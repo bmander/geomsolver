@@ -324,3 +324,25 @@ use std
     );
     assert_eq!(dims(&e.sketch), ["15", "r", "15", "60"]);
 }
+
+/// **A report names a copy as a reference writes it, and a line by its length** (#940): a
+/// repeated block's copy is `c0[1].x`, not the statement number the elaborator keys it by, which
+/// a line moved above it would change; and a line answers how long it is, in space.
+#[test]
+fn a_report_names_copies_by_their_index_and_lines_by_their_length() {
+    let src = |above: &str| format!("unit mm\nuse std\n{above}in std.front {{\n  o := point\n  \
+        fix((0, 0)) o\n  repeat 2 as i {{\n    c0 := point hint((10 * i + 3, 4))\n    \
+        fix((10 * i + 3, 4)) c0\n  }}\n  post := line(o, hint((3, 4)))\n  fix((3, 4)) post.p2\n}}\n");
+    let report = |above: &str| {
+        let e = read(&src(above));
+        let mut sk = e.sketch;
+        assert!(gcs_core::solve::solve(&mut sk, Default::default()).success);
+        gcs_core::report::positions(&sk, &e.map)
+    };
+    let p: std::collections::BTreeMap<String, f64> = report("").into_iter().collect();
+    assert!((p["c0[1].x"] - 13.0).abs() < 1e-9, "{:?}", p.keys());
+    assert!(p.keys().all(|k| !k.contains('#')), "{:?}", p.keys());
+    assert!((p["post.length"] - 5.0).abs() < 1e-9);
+    // a line written above it moves the block's statement, and not its copies' names
+    assert_eq!(report(""), report("w := 3\nh := 4\n"));
+}

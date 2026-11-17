@@ -334,6 +334,16 @@ pub fn layout(sk: &Sketch, unit: f64) -> Vec<Callout> {
 /// inspection overlay — none of it while the workspace's dimensions are turned off (#678); an
 /// empty selection draws nothing, including generated dimensions.
 pub fn layout_selected(sk: &Sketch, unit: f64, ids: Option<&[u32]>) -> Vec<Callout> {
+    let reading = |v| crate::expr::reading(crate::constraints::SpecKind::Length, v);
+    layout_figured(sk, unit, ids, &reading)
+}
+
+/// `layout_selected`, a generated dimension's figure written by `figure` from its length in the
+/// model's units — what a drawing's `format` line asks (`fraction 1/8`, `decimal 2`, #940).  A
+/// stated dimension is drawn as written, whatever the format.
+pub fn layout_figured(sk: &Sketch, unit: f64, ids: Option<&[u32]>, figure: &dyn Fn(f64) -> String)
+    -> Vec<Callout>
+{
     if ids.is_none() && !sk.kinds.contains(crate::model::Kinds::DIMENSIONS) {
         return Vec::new();
     }
@@ -390,11 +400,7 @@ pub fn layout_selected(sk: &Sketch, unit: f64, ids: Option<&[u32]>) -> Vec<Callo
     // a generated dimension is not a statement and has no placement, no drag and no edit.
     for (k, d) in crate::renderer::generated(sk, u) {
         let id = GENERATED + k as u32;
-        let text = if d.round {
-            format!("⌀{}", crate::expr::reading(crate::constraints::SpecKind::Length, d.value))
-        } else {
-            crate::expr::reading(crate::constraints::SpecKind::Length, d.value)
-        };
+        let text = if d.round { format!("⌀{}", figure(d.value)) } else { figure(d.value) };
         let dir = crate::callout::unit(d.dir).unwrap_or((1.0, 0.0));
         // an extent is measured between the corners it bounds and stood *off* the part; a
         // diameter is taken across its own circle and stays there.  Which side is the side the
@@ -415,11 +421,18 @@ pub const GENERATED: u32 = 1 << 30;
 
 /// A drawing-owned distance reading. No constraint or model parameter is created.
 pub fn measurement(sk: &Sketch, u: f64, a: P, b: P, value: f64, offset: f64) -> Option<Callout> {
+    let text = crate::expr::reading(crate::constraints::SpecKind::Length, value);
+    measurement_text(sk, u, a, b, &text, offset)
+}
+
+/// `measurement`, its figure written as the drawing asks (#940).
+pub fn measurement_text(sk: &Sketch, u: f64, a: P, b: P, text: &str, offset: f64)
+    -> Option<Callout>
+{
     let d = unit(sub(b, a))?;
     let pen = Pen { sk, u, hub: ((a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0),
         lanes: BTreeMap::new(), spins: BTreeMap::new() };
-    let text = crate::expr::reading(crate::constraints::SpecKind::Length, value);
-    Some(pen.linear(GENERATED, a, b, d, (0.0, offset), &text))
+    Some(pen.linear(GENERATED, a, b, d, (0.0, offset), text))
 }
 
 /// How far off the part a generated extent stands, in screen pixels — enough for the outline's

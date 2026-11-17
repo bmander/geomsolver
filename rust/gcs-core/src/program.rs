@@ -26,6 +26,7 @@ mod rings;
 mod rounds;
 mod scenarios;
 mod measures;
+mod claimed;
 mod at_solve;
 mod mated;
 mod beams;
@@ -43,6 +44,7 @@ pub use refused::refusal_site;
 pub use drift::{drift, DRIFT};
 pub use scenarios::{Line, Stated};
 pub use measures::MeasureStated;
+pub use claimed::{judge_measured, measure_of, MeasuredJudged};
 
 /// The line a front end says `solid_diagnostics` under when the solve did not settle (#571).  A
 /// failed solve stops anywhere, and a profile straddling its axis there blames a statement

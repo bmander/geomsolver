@@ -1014,6 +1014,49 @@ fn appending_to_a_document_that_uses_a_module_keeps_the_module_in_the_map() {
     assert!(!text.contains("fix("), "the library's datums are not the document's: {text}");
 }
 
+/// **A bare number given for a value keeps the value's unit** (#940): over `g := 1"` it is
+/// inches, over a length worked out from others the document's unit, over a declared angle
+/// degrees; a plain number stays one, and a number that names its unit is read as written.
+#[test]
+fn a_bare_number_given_keeps_the_unit_it_replaces() {
+    let src = "\
+unit in
+g_er := 1\"
+board := 8'
+post := board - g_er
+tilt := 25deg
+param lean: Angle := 2
+checks := 0
+force := 400lbf
+";
+    let set = |name: &str, value: &str| {
+        let (text, rebound) = edit::rebind(src, &[(name.to_string(), value.to_string())]).unwrap();
+        (text, rebound[0].value.clone())
+    };
+    for (name, given, read) in [
+        ("g_er", "-6", "-6\""),
+        ("g_er", " 2.5 ", "2.5\""),
+        ("g_er", "3 1/8", "3 1/8\""),
+        ("g_er", "2mm", "2mm"),
+        ("board", "10", "10'"),
+        ("post", "90", "90in"),
+        ("tilt", "30", "30deg"),
+        ("lean", "3", "3deg"),
+        ("checks", "1", "1"),
+        ("force", "300", "300lbf"),
+        ("g_er", "board / 10", "board / 10"),
+    ] {
+        let (text, value) = set(name, given);
+        assert_eq!(value, read, "{name}={given}");
+        let e = elaborate(&prog_of(&text));
+        assert!(e.ok(), "{name}={given}: {:?}", e.diags);
+    }
+    let (text, _) = set("g_er", "-6");
+    let e = elaborate(&prog_of(&text));
+    assert_eq!(e.values["g_er"].dim, gcs_core::units::Dim::LENGTH);
+    assert!((e.values["g_er"].value + 6.0).abs() < 1e-12);
+}
+
 /// **A top-level value given for one run** (#656): the text comes back with only the values
 /// spliced — every other byte and every line where it was — and elaborates to what was given, a
 /// value in another unit read in the document's; what was given over what is said in the order

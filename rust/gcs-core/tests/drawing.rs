@@ -369,3 +369,187 @@ fn a_view_named_by_a_word_is_the_eye_square_on_to_it() {
     }
     assert!(drawing::named_view("std.front").is_none(), "a model's plane is the model's to say");
 }
+
+/// **A drawing gives its models values** (#940): `model m from "…" with g = 3` draws the file with
+/// the value given, a bare number in the unit of the one it replaces; a run's values (`solventc
+/// drawing.svd --set w=2`) go to every model binding the name, but where an import's own `with`
+/// gives it; and a name no model binds, or a `with` naming no value of its model, is refused.
+#[test]
+fn a_drawing_gives_its_models_values() {
+    let model = "unit in\nuse std\ng := 1\"\nw := 10\nin std.front {\n  a := point\n  \
+                 b := point hint((5, 0))\n  fix((0, 0)) a\n  a level(v) b\n}\n\
+                 a distance(max(g, 2in) * w) b\n";
+    let compile = |text: &str, set: &[(&str, &str)]| {
+        let set: Vec<(String, String)> =
+            set.iter().map(|(n, v)| (n.to_string(), v.to_string())).collect();
+        drawing::compile_with(text, "drawing.svd", None, &set,
+            &mut |path, _| (path == "part.sv").then(|| ("part.sv".into(), model.into())))
+    };
+    let sheet = "sheet s {\n  sketch a(m) at (0mm, 0mm)\n  measure distance(m.a, m.b) in a\n  \
+                 sketch b(n) at (0mm, 100mm)\n  measure distance(n.a, n.b) in b\n}\n";
+    let text = format!("model m from \"part.sv\" with g = 3, w=4\nmodel n from \"part.sv\"\n{sheet}");
+    let c = compile(&text, &[]).unwrap();
+    // g is 3 inches, so the distance is 3 × 4; the other import is the file's, 2 × 10
+    assert!(c.svg.contains(">12</text>") && c.svg.contains(">20</text>"), "{}", c.svg);
+    let said = |c: &drawing::Compiled| c.rebound.iter().map(|(alias, r)| (alias.clone(),
+        r.iter().map(gcs_core::report::rebound_text).collect::<Vec<_>>())).collect::<Vec<_>>();
+    assert_eq!(said(&c), [
+        ("m".to_string(), vec!["set g := 3\" (the document writes 1\")".to_string(),
+                               "set w := 4 (the document writes 10)".to_string()]),
+        ("n".to_string(), vec![]),
+    ]);
+    // the run's value goes to both, the import's own over it
+    let c = compile(&text, &[("w", "1"), ("g", "5")]).unwrap();
+    assert!(c.svg.contains(">12</text>") && c.svg.contains(">5</text>"), "{}", c.svg);
+    assert_eq!(compile(&text, &[("q", "1")]).unwrap_err().message,
+        "--set: no model this drawing imports binds a value `q` at its top level");
+    let refused = compile(&format!("model m from \"part.sv\" with q = 1\nmodel n from \
+        \"part.sv\"\n{sheet}"), &[]).unwrap_err().message;
+    assert!(refused.contains("the document binds no value `q`"), "{refused}");
+    let twice = drawing::parse("model m from \"part.sv\" with g = 1, g = 2").unwrap_err();
+    assert_eq!(twice.message, "`g` is given a value twice");
+    // an expression is its words, as far as the next statement
+    let doc = drawing::parse("model m from \"part.sv\" with g = max(1, 2) * 3in model n from \
+        \"part.sv\"").unwrap();
+    assert_eq!(doc.models[0].with[0].text, "max(1, 2) * 3in");
+    assert_eq!(doc.models.len(), 2);
+}
+
+/// Two discs on one axis, the small one nearer the front view's eye and over the large one's rim.
+const PAIR: &str = "\
+unit mm
+use std
+use std.solids
+in std.front {
+  o := point
+  fix((0, 0)) o
+  rim := circle(center: o) hint(r: 10)
+  radius(10) rim
+  p := point
+  fix((8, 0)) p
+  cap := circle(center: p) hint(r: 4)
+  radius(4) cap
+}
+back := solid(std.solids.Prism(face(rim), from: -20mm, to: -10mm))
+front := solid(std.solids.Prism(face(cap), from: -4mm, to: 0mm))
+";
+
+fn pair(sheet: &str) -> Result<String, drawing::Error> {
+    drawing::compile(&format!("model m from \"pair.sv\"\nstyle .hidden {{ dash: 4 3 }}\n\
+        sheet s {{\n{sheet}\n}}\n"), "drawing.svd", None,
+        &mut |path, _| (path == "pair.sv").then(|| ("pair.sv".into(), PAIR.into())))
+}
+
+/// Every polyline's points in paper pixels, with its path and whether it is dashed.
+fn polylines(svg: &str) -> Vec<(String, bool, Vec<(f64, f64)>)> {
+    svg.lines().filter(|l| l.starts_with("<polyline")).map(|l| {
+        let attr = |k: &str| l.split(&format!("{k}=\"")).nth(1).map(|r| r.split('"').next().unwrap());
+        let pts = attr("points").unwrap().split_whitespace().map(|p| {
+            let (x, y) = p.split_once(',').unwrap();
+            (x.parse().unwrap(), y.parse().unwrap())
+        }).collect();
+        (attr("data-path").unwrap().to_string(), attr("stroke-dasharray").is_some(), pts)
+    }).collect()
+}
+
+/// **An assembly is viewed whole** (#940): a view of the model, or of a scope holding objects,
+/// projects every object under it in one picture, the part behind another dashed where the
+/// nearer one stands in front of it — which a view of the part alone, drawing nothing else, never
+/// is.
+#[test]
+fn an_assembly_view_hides_one_part_behind_another() {
+    let whole = polylines(&pair("view f(m) from front at (100mm, 100mm)").unwrap());
+    let back = |ls: &[(String, bool, Vec<(f64, f64)>)], dashed: bool| {
+        ls.iter().any(|(path, d, _)| path.starts_with("back") && *d == dashed)
+    };
+    assert!(back(&whole, true) && back(&whole, false), "{whole:?}");
+    // the small disc in front is never behind anything
+    assert!(whole.iter().filter(|(p, _, _)| p.starts_with("front")).all(|(_, d, _)| !d));
+    let alone = polylines(&pair("view f(m.back) from front at (100mm, 100mm)").unwrap());
+    assert!(back(&alone, false) && !back(&alone, true), "{alone:?}");
+    assert!(alone.iter().all(|(p, _, _)| p.starts_with("back")));
+    // a scope holding no object is refused, saying what a solid view takes
+    let refused = pair("view f(m.o) from front at (100mm, 100mm)").unwrap_err().message;
+    assert!(refused.contains("a solid view names a solid"), "{refused}");
+    // seen from the side the two stand apart, and neither hides the other's outline
+    let side = polylines(&pair("view r(m) from right at (100mm, 100mm)").unwrap());
+    assert!(side.iter().all(|(_, d, _)| !d), "{side:?}");
+}
+
+/// **A view is placed by its own box, and fitted to one** (#940): `at topleft (x, y)` puts the box
+/// round what the view draws there, whatever its origin; `scale fit (W, H)` is the largest scale
+/// that fits it in W by H; an assembly's `dimensions` are its overall extents, written as the
+/// sheet's `format` asks.
+#[test]
+fn a_view_is_placed_and_fitted_by_its_box() {
+    let px = 96.0 / 25.4;
+    let extent = |svg: &str| {
+        let pts: Vec<(f64, f64)> = polylines(svg).into_iter().flat_map(|(_, _, p)| p).collect();
+        let lo = pts.iter().fold((f64::INFINITY, f64::INFINITY), |m, p| (m.0.min(p.0), m.1.min(p.1)));
+        let hi = pts.iter().fold((f64::NEG_INFINITY, f64::NEG_INFINITY), |m, p| (m.0.max(p.0), m.1.max(p.1)));
+        (lo, hi)
+    };
+    // the box runs from x = -10 to 12 and z = -10 to 10
+    let (lo, hi) = extent(&pair("view f(m) from front at topleft (10mm, 20mm)").unwrap());
+    assert!((lo.0 - 10.0 * px).abs() < 1e-3 && (lo.1 - 20.0 * px).abs() < 1e-3, "{lo:?}");
+    assert!((hi.0 - 32.0 * px).abs() < 1e-3 && (hi.1 - 40.0 * px).abs() < 1e-3, "{hi:?}");
+    let (lo, hi) = extent(&pair("view f(m) from front at bottomright (100mm, 100mm)").unwrap());
+    assert!((hi.0 - 100.0 * px).abs() < 1e-3 && (hi.1 - 100.0 * px).abs() < 1e-3, "{hi:?}");
+    assert!((lo.0 - 78.0 * px).abs() < 1e-3, "{lo:?}");
+    let (lo, hi) = extent(&pair("view f(m) from front at center (50mm, 50mm) scale fit (44mm, 80mm)")
+        .unwrap());
+    // twice: 44 across for 22, the height 40 then within 80
+    assert!(((hi.0 - lo.0) - 44.0 * px).abs() < 1e-3 && ((hi.1 - lo.1) - 40.0 * px).abs() < 1e-3);
+    assert!((0.5 * (lo.0 + hi.0) - 50.0 * px).abs() < 1e-3);
+    let svg = pair("format decimal 2\nview f(m) from front at (100mm, 100mm)\ndimensions in f").unwrap();
+    assert!(svg.contains(">22.00</text>") && svg.contains(">20.00</text>"), "{svg}");
+    let svg = pair("view f(m) from front at (100mm, 100mm)\nmeasure distance(m.o, m.p) in f")
+        .unwrap();
+    assert!(svg.contains(">8</text>"), "{svg}");
+    for bad in ["format decimal 2.5", "format fraction 3/8", "format lots",
+                "view f(m) from front at (0, 0) scale fit (0mm, 10mm)"] {
+        assert!(pair(bad).is_err(), "{bad}");
+    }
+}
+
+/// **A figure is written as the drawing asks** (#940): to six figures, to so many places, or to the
+/// nearest fraction — an inch's, marked, in an inch or a foot model.
+#[test]
+fn a_figure_is_written_as_the_drawing_asks() {
+    use drawing::Figures;
+    let inch = gcs_core::units::Units::with_length("in").unwrap();
+    let foot = gcs_core::units::Units::with_length("ft").unwrap();
+    let mm = gcs_core::units::Units::default();
+    assert_eq!(Figures::Reading.text(87.98953, inch), "87.9895");
+    assert_eq!(Figures::Decimal(2).text(87.98953, inch), "87.99");
+    assert_eq!(Figures::Decimal(0).text(87.5, mm), "88");
+    assert_eq!(Figures::Decimal(2).text(-0.001, mm), "0.00");
+    assert_eq!(Figures::Fraction(8).text(87.98953, inch), "88\"", "to the nearest eighth");
+    assert_eq!(Figures::Fraction(8).text(87.87, inch), "87 7/8\"");
+    assert_eq!(Figures::Fraction(16).text(87.5, inch), "87 1/2\"");
+    assert_eq!(Figures::Fraction(8).text(0.375, inch), "3/8\"");
+    assert_eq!(Figures::Fraction(8).text(-2.0, inch), "-2\"");
+    assert_eq!(Figures::Fraction(8).text(87.87 / 12.0, foot), "7' 3 7/8\"");
+    assert_eq!(Figures::Fraction(8).text(0.5, foot), "6\"");
+    assert_eq!(Figures::Fraction(2).text(12.25, mm), "12 1/2");
+}
+
+/// **A sketch's dimensions narrowed** (#940): `dimensions m.one in v` calls out the dimensions
+/// whose geometry is all under `one`, and not its twin's; a bare `dimensions in v` all of them.
+#[test]
+fn a_sketchs_dimensions_are_narrowed_to_a_scope() {
+    let model = "unit mm\nuse std\ncomponent Bar(f: group, y: Length) {\n  in f.front {\n    \
+                 a := point hint((0, y))\n    b := point hint((10, y))\n    fix((0, y)) a\n    \
+                 a level(v) b\n  }\n  a distance(13) b\n}\nframe := { front: std.front }\n\
+                 one := Bar(frame, y: 0mm)\ntwo := Bar(frame, y: 20mm)\n";
+    let compile = |dims: &str| drawing::compile(&format!("model m from \"bars.sv\"\nsheet s {{\n  \
+        sketch v(m) at (50mm, 50mm)\n  {dims}\n}}\n"), "drawing.svd", None,
+        &mut |path, _| (path == "bars.sv").then(|| ("bars.sv".into(), model.into())));
+    let count = |svg: &str| svg.matches(">13</text>").count();
+    assert_eq!(count(&compile("dimensions in v").unwrap()), 2);
+    assert_eq!(count(&compile("dimensions m.one in v").unwrap()), 1);
+    assert_eq!(count(&compile("dimensions m.one, m.two in v").unwrap()), 2);
+    assert_eq!(count(&compile("dimensions m.one in v\ndimensions in v").unwrap()), 2);
+    assert_eq!(count(&compile("").unwrap()), 0);
+    assert!(compile("dimensions m.nope in v").is_err());
+}

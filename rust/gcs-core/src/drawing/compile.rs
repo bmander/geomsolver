@@ -11,22 +11,71 @@ pub fn compile(
     sheet: Option<&str>,
     load: &mut dyn FnMut(&str, &str) -> Option<(String, String)>,
 ) -> Result<String, Error> {
+    compile_with(text, source, sheet, &[], load).map(|c| c.svg)
+}
+
+/// A drawing compiled: the sheet's SVG, and for each model import (by its alias, in the order
+/// written) the values it was given over the ones its file writes, by the drawing's `with` and by
+/// the run's (#940).
+#[derive(Debug)]
+pub struct Compiled {
+    pub svg: String,
+    pub rebound: Vec<(String, Vec<crate::edit::Rebound>)>,
+}
+
+/// **`compile`, with values given for the run** (`solventc drawing.svd --set g_wf=2in`, #940):
+/// each `(name, value)` is given to every model the drawing imports that binds `name` at its top
+/// level, read there as `--set` reads one for a model (`edit::rebind`) — except an import whose
+/// own `with` gives that name, the drawing's word for that one model being the narrower.  A name
+/// no imported model binds is refused.
+pub fn compile_with(
+    text: &str,
+    source: &str,
+    sheet: Option<&str>,
+    set: &[(String, String)],
+    load: &mut dyn FnMut(&str, &str) -> Option<(String, String)>,
+) -> Result<Compiled, Error> {
     let mut doc = parse(text)?;
     let mut active = BTreeSet::new();
     let mut count = 0;
     styles(&mut doc, source, load, &mut active, &mut count)?;
     let mut solved = BTreeMap::new();
     let mut aliases = Vec::new();
+    let mut rebounds = Vec::new();
+    let mut taken = vec![false; set.len()];
     for m in &doc.models {
         let (path, text) = load(&m.path, source).ok_or_else(|| Error {
             span: m.span, message: format!("cannot load model `{}` from `{source}`", m.path),
         })?;
+        // the values it is given: its own `with`, then each of the run's it binds and its `with`
+        // does not give
+        let mut given: Vec<(String, String)> =
+            m.with.iter().map(|g| (g.name.clone(), g.text.clone())).collect();
+        for g in &m.with {
+            crate::edit::rebind(&text, &[(g.name.clone(), g.text.clone())])
+                .map_err(|why| Error { span: g.span, message: format!("model `{path}`: {why}") })?;
+        }
+        for (k, (name, value)) in set.iter().enumerate() {
+            if m.with.iter().any(|g| g.name == name.trim()) { taken[k] = true; continue }
+            match crate::edit::rebind(&text, &[(name.clone(), value.clone())]) {
+                Ok(_) => { taken[k] = true; given.push((name.clone(), value.clone())); }
+                Err(why) if crate::edit::binds_no_value(&why) => {}
+                Err(why) => return Err(Error { span: m.span,
+                    message: format!("--set: model `{path}`: {why}") }),
+            }
+        }
+        let (text, rebound) = crate::edit::rebind(&text, &given)
+            .map_err(|why| Error { span: m.span, message: format!("model `{path}`: {why}") })?;
         // a model shown at an instant is a snapshot of its own, the same file's drawn at home and
-        // stood there (#398 L)
-        let key = match &m.at {
+        // stood there (#398 L); one given values, the same file's with them (#940)
+        let mut key = match &m.at {
             Some(at) => format!("{path}\u{0}{}={}", at.name, at.text.trim()),
             None => path.clone(),
         };
+        for r in &rebound {
+            key.push_str(&format!("\u{0}{}:={}", r.name, r.value));
+        }
+        rebounds.push((m.name.clone(), rebound));
         if !solved.contains_key(&key) {
             let fail = |message: String| Error { span: m.span, message: format!("model `{path}`: {message}") };
             let (mut p, errs) = crate::syntax::parse(&text);
@@ -61,11 +110,16 @@ pub fn compile(
         }
         aliases.push((m.name.clone(), key));
     }
+    if let Some(k) = taken.iter().position(|t| !t) {
+        return Err(Error { span: Span::default(), message: format!(
+            "--set: no model this drawing imports binds a value `{}` at its top level",
+            set[k].0.trim()) });
+    }
     let models = aliases.iter().map(|(name, key)| {
         let e = &solved[key];
         (name.clone(), Model { sketch: &e.sketch, names: &e.map })
     }).collect();
-    render(&doc, &models, sheet)
+    Ok(Compiled { svg: render(&doc, &models, sheet)?, rebound: rebounds })
 }
 
 fn styles(doc: &mut Document, source: &str,
