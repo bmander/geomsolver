@@ -6,9 +6,10 @@ The kernel's robustness rests on three small layers of `src/util/`: intervals th
 exactly, in [Rocq](https://rocq-prover.org) over [Flocq](https://flocq.gitlabpages.inria.fr)'s
 IEEE-754, so that each guarantee is a statement a proof assistant can check a proof of.
 
-**This is the first step: the statements, and four small proofs.** Everything else is stated and
-unproved (`Admitted`), or stated as a property awaiting the function it is about. A statement not
-yet proved may still be wrong in a detail; proving it is what finds out.
+**The interval arithmetic is proved; the rest is stated.** Every theorem of `Interval.v` is
+checked, on the transcription of the Rust. The other layers are stated and unproved
+(`Admitted`), or stated as a property awaiting the function it is about. A statement not yet
+proved may still be wrong in a detail; proving it is what finds out.
 
 ```bash
 make        # check every statement and proof (Rocq 8.18+, Flocq 4: apt install coq libcoq-flocq)
@@ -25,7 +26,8 @@ Nothing here is linked into the kernel, built by its suite or shipped in the cra
 | file | what it states | of |
 |---|---|---|
 | `Float.v` | the model of `f64`: binary64, round to nearest even | — |
-| `Interval.v` | every operation that answers `Ok` holds the real result for every real its operands hold | the arithmetic, transcribed |
+| `Rounding.v` | a rounded operation is its exact result rounded, or the infinity of its sign; one float outward brackets it | the floats (**proved**) |
+| `Interval.v` | every operation that answers `Ok` holds the real result for every real its operands hold | the arithmetic, transcribed (**proved**) |
 | `Predicates.v` | each error-free transformation's pair sums to the exact result | `two_sum` … `two_product`, transcribed |
 | | `orient`, `power`, `orient2`, `in_circle` each return the sign of their determinant, over a stated range | a property |
 | `Isolate.v` | a stretch `Slope` reads off holds no root; one read monotone runs one way | `Slope::read`, transcribed |
@@ -35,11 +37,15 @@ Nothing here is linked into the kernel, built by its suite or shipped in the cra
 
 Three kinds of statement, told apart in the files:
 
-- **Proved** (`Qed`): `rounded_is_bracketed` (a real lies between the floats either side of the
-  float it rounds to, which is why `Interval::outward` is sound), `new_valid`, `ineg_encloses`, and
-  a helper. They depend on nothing but the axioms of Coq's real numbers.
-- **Stated of a transcription** (`Admitted`, 22): the Rust function is written out in Gallina by
-  hand and the theorem is about that. The transcription is trusted until a translator replaces it.
+- **Proved** (`Qed`): all of `Rounding.v` and `Interval.v`. `add`, `sub`, `mul`, `div`,
+  `square`, `sqrt` and `neg` each hold the real result, a result that overflows to an infinity
+  included (the operation then answers `Err`, or an end no real it must hold is past); `Iv`'s
+  `new`, `point`, `hull`, `meet`, `has_zero` and `mag` say what the tests read them for. They
+  depend on nothing but the axioms of Coq's real numbers (`Print Assumptions`).
+- **Stated of a transcription** (`Admitted`, 5): the error-free transformations of
+  `Predicates.v` and `Slope::read` of `Isolate.v`. The Rust function is written out in Gallina
+  by hand and the theorem is about that; the transcription is trusted until a translator
+  replaces it.
 - **A property** (`Definition … : Prop`, 10): what any function standing for the Rust one must
   satisfy. The filter and expansions of the predicates, `sin_cos`, the Krawczyk test and the two
   searches are too long to transcribe by hand with confidence.
@@ -87,6 +93,7 @@ which no reading uses; and the enclosures each kind of curve and surface gives o
 
 ## Next
 
-Prove the `Admitted` statements of `Interval.v`, the layer the others stand on; then decide what
-turns the Rust into Gallina, so the properties become theorems about the code and not about a
-copy of it.
+`slope_read_sound` now stands on proved ground and is the next to prove; then the error-free
+transformations, which Flocq has the theory for. After that, decide what turns the Rust into
+Gallina, so the properties (the trigonometry among them) become theorems about the code and not
+about a copy of it.

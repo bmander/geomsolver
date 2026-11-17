@@ -15,7 +15,7 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 - **A crossing beside a run is found** (`util::isolate::solve`): the box a run was found from is
   read on past the run's ends, where it was dropped whole.
 - **`proofs/`**: what the intervals, the exact predicates and the certified searches guarantee,
-  stated in Rocq over Flocq's IEEE-754, the first of them proved. Not part of the crate.
+  stated in Rocq over Flocq's IEEE-754, the interval arithmetic's proved. Not part of the crate.
 
 ## [0.15.0] - 2026-11-17
 

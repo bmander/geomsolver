@@ -5,3 +5,5 @@
 .*.aux
 gaps/target/
 gaps/Cargo.lock
+.nra.cache
+.lia.cache
