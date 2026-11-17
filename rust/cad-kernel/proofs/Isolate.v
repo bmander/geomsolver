@@ -9,13 +9,15 @@
     - what a whole search proves ([solve_empty_means_none], [solve_crossings_are_roots],
       [solve_misses_none], [roots_empty_means_none]).
 
-    Two of the last were not what the Rust did when they were written: [solve_misses_none] (a
-    box was dropped whole for a run that covered part of it) and [roots_empty_means_none] (in
-    one unknown a stretch nothing proved was dropped, where in several the search refuses).
-    Both runs are mended and are tests of the core's suite now, in [tests/roots.rs]
-    ([a_crossing_beside_a_run_in_the_box_it_was_found_from_is_found],
-    [a_stretch_nothing_proved_is_refused_in_one_unknown]).  Each statement says what still
-    stands between the code and it.
+    Two of the last were not true of the Rust when they were first written.
+    [solve_misses_none]: a box was dropped whole for a run that covered part of it; the code is
+    mended.  [roots_empty_means_none]: in one unknown a stretch nothing proved is read by the
+    tolerance, which is sound only under a hypothesis the statement lacked and the
+    documentation did not say ([near_resolves]); the statement is mended, and the code where an
+    enclosure proves a crossing.  Both runs are tests of the core's suite now, in
+    [tests/roots.rs] ([a_crossing_beside_a_run_in_the_box_it_was_found_from_is_found],
+    [a_crossing_proved_across_a_stretch_too_narrow_to_halve_is_found]).  Each statement says
+    what still stands between the code and it.
 
     A function's slope is asked for in the mean-value form, between any two points of a
     stretch, and not as a derivative: it is what the tests use, and it holds across a kink.
@@ -92,17 +94,28 @@ Arguments GaveUp {A}.
 (** [isolate::roots]: the function, the stretch's ends, the width, [near]. *)
 Definition roots_fn : Type := function1 -> f64 -> f64 -> f64 -> (f64 -> bool) -> outcome root1.
 
-(** A search that answers no root has proved there is none.  **Not yet all the Rust does.**
-    A stretch too narrow to halve that its test left unsure and [near] does not accept is
-    refused now, where it was dropped.  Three readings of a monotone stretch still rest on
-    something no enclosure proved, none shown to lose a root: which way it runs is read from the
-    rate in floats ([dg(m) > 0]); one whose far end's sign is unproved leaves the root to the
-    stretch after it, which may have been proved off; and one whose near end's sign is unproved,
-    the function proved on the same side a width back, is a touch or nothing by [near] alone. *)
+(** What [near] and [width] owe a search in one unknown: [near], refusing a point, rules out a
+    root within [width] of it.  A stretch too narrow to halve that the test left unsure is
+    read by [near] alone (a function that is a distance squared is nought to rounding beside a
+    near miss, and no enclosure tells the two apart), so without this the search may answer no
+    root where there is one.  It holds where [near] is a distance within the caller's tolerance
+    and [width] a small part of what the curve moves in that tolerance. *)
+Definition near_resolves (G : R -> R) (width : f64) (near : f64 -> bool) : Prop :=
+  forall m x, finite m = true -> G x = 0 -> Rabs (real m - x) <= real width -> near m = true.
+
+(** A search that answers no root has proved there is none, where [near] resolves.  **Not yet
+    all the Rust does**, none of what follows shown to lose a root.  The width a search halves
+    to is no less than [1e-15] of its ends' magnitudes, and it halves no more than 96 times, so
+    a stretch may be left wider than [width].  And three readings of a monotone stretch rest on
+    something no enclosure proved: which way it runs is read from the rate in floats
+    ([dg(m) > 0]); one whose far end's sign is unproved leaves the root to the stretch after it,
+    which may have been proved off; and one whose near end's sign is unproved, the function
+    proved on the same side a width back, is a touch or nothing by [near] alone. *)
 Definition roots_empty_means_none (roots : roots_fn) : Prop :=
   forall g G t0 t1 width near,
-    finite t0 = true -> finite t1 = true ->
+    finite t0 = true -> finite t1 = true -> finite width = true ->
     encloses_function g G (real t0) (real t1) ->
+    near_resolves G width near ->
     roots g t0 t1 width near = Found nil ->
     forall x, real t0 <= x <= real t1 -> G x <> 0.
 

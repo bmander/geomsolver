@@ -31,7 +31,7 @@ Nothing here is linked into the kernel, built by its suite or shipped in the cra
 | `Isolate.v` | a stretch `Slope` reads off holds no root; one read monotone runs one way | `Slope::read`, transcribed |
 | | a box `Krawczyk` reads off holds no root; one read as one holds exactly one | a property |
 | | `solve` answering no root means there is none; each crossing it returns lies in a box holding exactly one root | properties |
-| | `solve` misses no root; `roots` answering no root means there is none | properties the code did not meet, and is not yet shown to |
+| | `solve` misses no root; `roots` answering no root means there is none, where the tolerance resolves | properties not true when first written, and not yet shown to hold |
 
 Three kinds of statement, told apart in the files:
 
@@ -55,12 +55,18 @@ Three kinds of statement, told apart in the files:
    over `[0.4, 0.6]` with a crossing at 0.9 was answered, over `[0, 1]`, by the run's two ends and
    no crossing. **Mended**: the box is read on past the run's ends
    (`roots::a_crossing_beside_a_run_in_the_box_it_was_found_from_is_found`).
-3. **`isolate::roots` dropped a stretch nothing proved, and answered `Ok`.** A crossing whose rate
-   was enclosed by `Iv::ANY`, or only bounded in magnitude, was lost and the search answered no
-   root. **Mended**: such a stretch gives up as `GaveUp::Unsettled`, as a box does in several
-   unknowns (`roots::a_stretch_nothing_proved_is_refused_in_one_unknown`). Two callers that asked
-   for no touches by passing a `near` accepting nothing now pass their tolerance and drop the
-   touches themselves.
+3. **`isolate::roots` reads a stretch nothing proved by the tolerance alone, and nothing said
+   what the tolerance must then guarantee.** A stretch too narrow to halve that the test left
+   unsure is a touch where `near` accepts its middle and rootless where not. That is right for
+   the kernel's own readings, where `near` is a distance within the tolerance and the width a
+   thousandth of it, and it is needed: a line passing a cone's apex is nought to rounding there
+   and no enclosure tells it from a meeting. It is wrong for a tolerance tighter than the width
+   resolves: a crossing whose rate was enclosed by `Iv::ANY`, or only bounded in magnitude, was
+   lost and the search answered no root. **Mended** two ways: the statement and the
+   documentation carry the hypothesis (`near_resolves`), and a stretch whose ends are proved
+   either side of nought answers its crossing whatever the tolerance says
+   (`roots::a_crossing_proved_across_a_stretch_too_narrow_to_halve_is_found`). Refusing such a
+   stretch outright, as several unknowns do, was tried first and refused that line and cone.
 
 What still stands between the code and the two search statements, none of it shown to lose a
 root, is said at each in `Isolate.v`: in one unknown, three readings of a monotone stretch that

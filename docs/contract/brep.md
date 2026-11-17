@@ -272,12 +272,17 @@ a swap made without its callers knowing:
   ball, a polish that does not settle, or a box too narrow to part whose enclosure proved nothing
   gives up as `GaveUp::Unsettled`, with the box: never the last iterate labelled certified
   (`enclosures::a_root_that_cannot_be_settled_is_refused_never_returned`,
-  `roots::a_root_certified_over_a_flat_system_is_where_it_is`). In one unknown as in several: a
-  stretch too narrow to halve that its test left unsure and the tolerance does not accept gives
-  up as `Unsettled`, never read as rootless — a crossing whose rate no enclosure held was lost
-  that way — so `near` is the caller's tolerance, and a caller that wants no touches drops them
-  itself (a level line against a revolution's meridian, `query::line_revolution`, `line_turned`;
-  `roots::a_stretch_nothing_proved_is_refused_in_one_unknown`). A reading that gives up is
+  `roots::a_root_certified_over_a_flat_system_is_where_it_is`). That is the search in several
+  unknowns, whose equations are distances an enclosure tells from nought. In one unknown a
+  function is often a distance squared, nought to rounding beside a near miss (a line passing a
+  cone's apex), so a stretch too narrow to halve that its test left unsure is the tolerance's to
+  read: a touch where `near` accepts its middle, and where it does not, no root, but for a
+  crossing its ends' enclosures prove
+  (`roots::a_crossing_proved_across_a_stretch_too_narrow_to_halve_is_found`). **`near` and `width`
+  owe the search that**: `near`, refusing a point, rules out a root within `width` of it — a
+  distance within the tolerance, `width` a small part of what the curve moves in that tolerance
+  (a thousandth, in every reading of `query`). A `near` accepting nothing asks for no touches
+  (a level line against a revolution's meridian). A reading that gives up is
   `Meets::Refused`, its witness (`query::Refusal`) the curve's and the surface's kinds, the stretch
   and the box: a ray locating a point abandons its direction (`Located::solid_place`: a point off
   the box its faces' boxes fill is out, past which no face stands, and a ray need reach only out of

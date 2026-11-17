@@ -52,8 +52,10 @@
 //! settled within the box it was certified in and `near` accepts it there; a Newton iterate that
 //! leaves that box, a polish that does not settle, or a box that cannot be parted where no touch is
 //! (its enclosure left its domain) gives up as `GaveUp::Unsettled`, with the box — never the last
-//! iterate presented as a root. In one unknown as in several: a stretch too narrow to halve that
-//! its test left unsure and `near` does not accept is refused, never read as rootless.
+//! iterate presented as a root. That is the search in several unknowns, whose equations are
+//! distances an enclosure tells from nought. In one unknown a function is often a distance
+//! squared, nought to rounding beside a near miss, and a stretch too narrow to halve that the test
+//! left unsure is the tolerance's to read, by what `near` and `width` owe (`roots`).
 //!
 //! Each stretch or box read is counted against the build's budget (`util::meter`, the ray stage, or
 //! the stage the caller names): past it, or past `MOST` boxes, the search gives up and says which
@@ -225,10 +227,17 @@ impl Test1 for Bounded<'_> {
 
 /// **The roots of `g` over `[t0, t1]`**, each proved by the interval slope (`Slope`). A stretch
 /// narrower than `width` that cannot be parted holds a touch where `near(t)` says `g` is nought
-/// there, so `near` is the caller's tolerance, never a way to ask for no touches (a caller that
-/// wants none drops them). Each root once, in order; an end of the stretch where `g` is nought a
-/// root there. `GaveUp` where the search read more than `MOST` stretches, the build stopped, or a
-/// stretch too narrow to halve was neither proved nor accepted by `near` (`Unsettled`).
+/// there. Each root once, in order; an end of the stretch where `g` is nought a root there.
+/// `GaveUp` where the search read more than `MOST` stretches or the build stopped.
+///
+/// **What `near` and `width` owe.** A stretch too narrow to halve that the test left unsure — a
+/// double root to rounding, which no enclosure of a squared distance can tell from a near miss —
+/// is the tolerance's to read: a touch where `near` accepts its middle, and where it does not,
+/// no root, but for a crossing its ends' enclosures prove. That is sound only where `near`,
+/// refusing a point, rules out a root within `width` of it: `near` a distance within the
+/// tolerance and `width` a small part of what the curve moves in that tolerance (a thousandth,
+/// in every reading of `query`). A tolerance tighter than `width` resolves loses a root so read;
+/// a `near` accepting nothing asks for no touches, and is given none.
 pub fn roots(g: &dyn Function,[t0,t1]: [f64;2],width: f64,near: &dyn Fn(f64) -> bool) -> Result<Vec<Root>,GaveUp> {
     roots_by(&Slope,super::meter::Stage::Ray,g,[t0,t1],width,near)
 }
@@ -299,13 +308,7 @@ pub fn roots_at(test: &dyn Test1,stage: super::meter::Stage,at: &dyn Fn() -> ([f
                 if sa == 0 && sb == hi {
                     let back = if a <= t0 { lo } else { sign(g.value((a-(b-a)).max(t0))) };
                     if back == lo || a <= t0 { out.push(Root {at:a,touch:false}) }
-                    else if back == hi { if near(a) { out.push(Root {at:a,touch:true}) } }
-                    else if !halve(&mut stack) {
-                        // (too narrow to halve, the side it leaves nought on unproved: a touch
-                        // where the tolerance accepts it, and no answer where not)
-                        if !near(a) { return Err(GaveUp::Unsettled {at:vec![[a,b]]}) }
-                        out.push(Root {at:a,touch:true})
-                    }
+                    else if (back == hi || !halve(&mut stack)) && near(a) { out.push(Root {at:a,touch:true}) }
                 }
                 else if sa == lo && sb == hi {
                     let (ga,gb) = (gv(a),gv(b));
@@ -319,12 +322,25 @@ pub fn roots_at(test: &dyn Test1,stage: super::meter::Stage,at: &dyn Fn() -> ([f
                 }
                 else if sa == lo && sb == 0 && b == t1 { out.push(Root {at:b,touch:false}) }
             }
-            // unsure, or too narrow to part: a double root where the function is nought there, and
-            // where it is not, a stretch nothing proved — no root there is no answer (as `solve_by`
-            // refuses a box: read as rootless, a crossing whose rate no enclosure held was lost)
+            // unsure, or too narrow to part: a double root where the function is nought there. Where
+            // it is not, the tolerance has ruled a root out across the stretch (what `near` and
+            // `width` owe, `roots`) — but for one the enclosures prove: its ends either side of
+            // nought, a crossing whatever the tolerance says of its middle (one whose rate no
+            // enclosure held was lost, read by a tolerance tighter than the width resolves)
             _ => if !halve(&mut stack) {
-                if !near(m) { return Err(GaveUp::Unsettled {at:vec![[a,b]]}) }
-                out.push(Root {at:m,touch:true})
+                if near(m) { out.push(Root {at:m,touch:true}) }
+                else {
+                    let (sa,sb) = (sign(g.value(a)),sign(g.value(b)));
+                    if sa*sb < 0 {
+                        let (ga,gb) = (gv(a),gv(b));
+                        let at = if ga*gb < 0. { super::roots::bracketed_root(|t| Some(gv(t)),a,ga,b,gb,4e-16*a.abs().max(b.abs())) } else {
+                            let (mut x,mut y) = (a,b);
+                            for _ in 0..80 { let c = 0.5*(x+y); if sign(g.value(c)) == sa { x = c } else { y = c } }
+                            0.5*(x+y)
+                        };
+                        out.push(Root {at,touch:false});
+                    }
+                }
             },
         }
     }

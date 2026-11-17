@@ -297,7 +297,7 @@ fn a_search_says_why_it_gave_up() {
     use gcs_core::isolate::{roots,solve,Closures,GaveUp,Poly};
     use gcs_core::interval::Iv;
     use gcs_core::meter::{self as meter,Budget,Meter,Stage};
-    let flat = roots(&Poly(&[0.]),[0.,1.],1e-15,&|_| true);
+    let flat = roots(&Poly(&[0.]),[0.,1.],1e-15,&|_| false);
     assert!(matches!(flat,Err(GaveUp::Most)),"{flat:?}");
     let g = Poly(&[-0.5,1.]);
     let at = |x: [f64;1]| ([x[0]-0.5],[[1.]]);
@@ -313,32 +313,30 @@ fn a_search_says_why_it_gave_up() {
     assert_eq!(m.count(Stage::Ray),2,"one stretch and one box read");
 }
 
-/// **A stretch nothing proved is refused, in one unknown as in several** (#814 P0,
-/// `isolate::roots`): `g = 10⁶ (t − 0.3)` crosses nought at `0.3`. Its rate enclosed by nothing
+/// **A crossing the enclosures prove is found, whatever the tolerance says of its stretch**
+/// (`isolate::roots`): `g = 10⁶ (t − 0.3)` crosses nought at `0.3`. Its rate enclosed by nothing
 /// (`Iv::ANY`, which a `Function` may answer), or only by a bound on its magnitude, no stretch is
-/// proved off nought or monotone, and one too narrow to halve stands farther off nought than the
-/// tolerance accepts: read as rootless, the crossing was lost and the search answered `Ok`. It
-/// gives up as `Unsettled`, with the stretch; its rate enclosed, it finds the crossing. A function
-/// nought all along is no such stretch where the tolerance accepts it: that search runs out of
-/// stretches (`Most`), and one whose tolerance accepts nothing is refused at the first.
+/// proved monotone, and the one about the crossing, too narrow to halve, stands farther off nought
+/// at its middle than a tolerance this tight accepts: read as rootless on the tolerance's say, the
+/// crossing was lost and the search answered no root. Its ends' enclosures stand either side of
+/// nought, so it holds a crossing. (A stretch whose ends prove nothing is still the tolerance's:
+/// what `near` and `width` owe, `roots`.)
 #[test]
-fn a_stretch_nothing_proved_is_refused_in_one_unknown() {
-    use gcs_core::isolate::{roots,GaveUp,Parts,Poly};
+fn a_crossing_proved_across_a_stretch_too_narrow_to_halve_is_found() {
+    use gcs_core::isolate::{roots,Parts};
     use gcs_core::interval::Iv;
     let g = |t: f64| 1e6*(t-0.3);
     let at = |t: f64| (g(t),1e6);
     let value = |t: f64| (Iv::point(t)-Iv::point(0.3))*Iv::point(1e6);
     let near = |t: f64| g(t).abs() <= 1e-9;
     let (unknown,bounded,enclosed) = (|_: f64,_: f64| Iv::ANY,|_: f64,_: f64| Iv::new(-1e6,1e6),|_: f64,_: f64| Iv::point(1e6));
-    for slope in [&unknown as &dyn Fn(f64,f64) -> Iv,&bounded] {
-        let found = roots(&Parts {at:&at,value:&value,slope},[0.29,0.3137],1e-6,&near);
-        let Err(GaveUp::Unsettled {at:stretch}) = &found else { panic!("{found:?}") };
-        assert!(stretch.len() == 1 && stretch[0][1]-stretch[0][0] <= 1e-6,"{stretch:?}");
+    for (name,slope) in [("unknown",&unknown as &dyn Fn(f64,f64) -> Iv),("bounded",&bounded),("enclosed",&enclosed)] {
+        // (each span short enough that a search halving every stretch stops short of `MOST`)
+        for span in [[0.29,0.3137],[0.285,0.31],[0.2999,0.32]] {
+            let found = roots(&Parts {at:&at,value:&value,slope},span,1e-6,&near).expect("a search that stops");
+            assert!(found.len() == 1 && !found[0].touch && (found[0].at-0.3).abs() <= 1e-12,"{name}, {span:?}: {found:?}");
+        }
     }
-    let found = roots(&Parts {at:&at,value:&value,slope:&enclosed},[0.29,0.3137],1e-6,&near).expect("a search that stops");
-    assert!(found.len() == 1 && !found[0].touch && (found[0].at-0.3).abs() <= 1e-12,"{found:?}");
-    let flat = roots(&Poly(&[0.]),[0.,1.],1e-15,&|_| false);
-    assert!(matches!(flat,Err(GaveUp::Unsettled {..})),"{flat:?}");
 }
 
 /// **A crossing beside a run, in the box the run was found from, is found** (#814,

@@ -1073,10 +1073,8 @@ fn line_revolution(p: V,d: V,f: &super::geom::Frame,c: &Curve,surface: &Surface,
                 out.push((t_of(r.at),r.touch));
             }
         } else {
-            // a level line: the circles at its height, each met as a chord (where the meridian
-            // only touches that height the line lies in the tangent plane there: no chord)
-            for r in crate::util::isolate::roots(&crate::util::isolate::Poly(&n),[0.,1.],width,&|s| (poly(&n,s)/poly(&ww,s)).abs() <= tol)? {
-                if r.touch { continue }
+            // a level line: the circles at its height, each met as a chord
+            for r in crate::util::isolate::roots(&crate::util::isolate::Poly(&n),[0.,1.],width,&|_| false)? {
                 let rho = poly(&xx,r.at)/poly(&ww,r.at);
                 if let Meets::At(found) = line_chord(from,flat,rho.abs(),tol) { out.extend(found) }
             }
@@ -1134,10 +1132,7 @@ fn line_turned(p: V,d: V,f: &super::geom::Frame,m: &crate::turned::Turned,surfac
         let (jv,value) = (|s: f64| { let j = jet(s); (j.v,j.d) },|s: f64| m.source.meridian2(Jet::at(Iv::point(s)))[1].v-Iv::point(q[2]));
         let slope = |x: f64,y: f64| m.source.meridian2(Jet::at(Iv::new(x,y)))[1].d;
         let g = crate::util::isolate::Parts {at:&jv,value:&value,slope:&slope};
-        for r in crate::util::isolate::roots(&g,[s0,s1],width,&|s| jet(s).v.abs() <= tol)? {
-            // (where the meridian only touches that height the line lies in the tangent plane
-            // there: no chord)
-            if r.touch { continue }
+        for r in crate::util::isolate::roots(&g,[s0,s1],width,&|_| false)? {
             let rho = m.source.meridian(Jet::at(r.at))[0].v;
             if let Meets::At(found) = line_chord(from,flat,rho.abs(),tol) { out.extend(found) }
         }
