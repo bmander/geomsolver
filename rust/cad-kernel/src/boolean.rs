@@ -1404,7 +1404,7 @@ impl<'a> Arrangement<'a> {
                     // tolerance: where a face of the edge's own touches the surface along a
                     // curve, it is the edge's crossing with that curve, placed exactly
                     let own: Vec<&Surface> = bounded[s][i].iter().map(|&g| &self.solids[s].faces[g].surface).collect();
-                    let t = if touch { touch_root(c,e.t,&own,&f.surface,t,tol).unwrap_or(t) } else { t };
+                    let t = if touch { touch_root(c,e.t,&own,&f.surface,t,tol).unwrap_or(t) } else { on_surface(c,e.t,&f.surface,t,tol).unwrap_or(t) };
                     let q = c.point(t);
                     let place = self.located[other].face_place(fi,q);
                     self.say.meets(s,i,c,fi,f,q,touch,place);
@@ -2578,6 +2578,35 @@ fn touch_point(surfaces: [&Surface;3],q: V,tol: f64) -> Option<V> {
     })
 }
 
+/// **A crossing placed on a surface read by inversion** (#880 T1e): where a curve crosses a swept
+/// sheet, a fitted net or a family's wall at a shallow angle, the reading's root stands off the
+/// surface by what the shallow angle makes of its own tolerance (a torus's seam circle crossing a
+/// slid contact's sheet, the root 4e-5 off it at 1e-5, read outside the sheet's face and dropped,
+/// and the branch the sheet meets the torus in left crossing the seam with no vertex). Newton's
+/// method on `c(t) − S(u, v)`, three equations in three unknowns, from the root and its foot,
+/// settles on the crossing itself where the two cross at all. Taken where it settles to a
+/// thousandth of the tolerance within the curve's span and no more than ten thousand tolerances
+/// from the root; `None` on any other surface, or where it does not.
+fn on_surface(c: &Curve,span: [f64;2],surface: &Surface,t: f64,tol: f64) -> Option<f64> {
+    if !matches!(surface,Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)) { return None }
+    let q = c.point(t);
+    let (mut x,mut uv) = (t,surface.inverse(q));
+    for _ in 0..30 {
+        let (p,dp) = c.d1(x);
+        let (s,su,sv) = surface.d1(uv);
+        let res = crate::util::space::sub(p,s);
+        if norm(res) <= 1e-3*tol {
+            return (distance(p,q) <= 1e4*tol && x >= span[0]-1e-12 && x <= span[1]+1e-12).then_some(x)
+        }
+        // [dp, −su, −sv] [dx, du, dv] = −res
+        let d = super::ssi::solve3(std::array::from_fn(|i| [dp[i],-su[i],-sv[i]]),crate::util::space::scale(res,-1.));
+        if !d.iter().all(|v| v.is_finite()) { return None }
+        x += d[0];
+        uv = [uv[0]+d[1],uv[1]+d[2]];
+    }
+    None
+}
+
 /// **Where an edge touching a surface touches it** (a root of its distance that is also a root of
 /// its rate): where one of the surfaces of the edge's own faces (`own`) touches `other` there,
 /// along a curve their closed form gives, the edge's crossing with that curve — a crossing on
@@ -2728,14 +2757,44 @@ fn merged(out: &[WEdge],tol: f64) -> Vec<(u32,bool)> {
 /// two curves of one meeting cross only where the surfaces touch — a singular point of the meeting
 /// (#735 A2): two cylinders of one radius whose axes cross meet in two ellipses crossing where both
 /// touch, a plane tangent to a hyperboloid in the two rulings through the point it touches at — and
-/// there each is split as at an edge.
+/// there each is split as at an edge. Two curves with no closed form between them (a sweep's rim and
+/// a branch of what passes back into the tool, both splines, #880 T1e) are read by their enclosures
+/// (`query::enclosed_crossings`), each held back from an end lying on the other, which
+/// `ends_on_one_another` lays and where the two may leave one another tangent: a swallowtail's
+/// leaves cross over its double point, and on the tool posed at an end of the roll the rim of one
+/// crosses the other's branch there, the two touching where each leaves a fold.
 fn crossings_among(surface: &super::geom::Surface,curves: &[super::geom::Curve],bx: Box3,pad: f64,tol: f64) -> Result<Vec<Vec<V>>,String> {
     let mut crossed = vec![Vec::new();curves.len()];
     let stretches: Vec<Option<[f64;2]>> = curves.iter().map(|c| stretch_in(c,bx,pad)).collect();
+    // (a crossing parts the two: a thousand tolerances along `c` either way from it, `c` stands more
+    // than eight off `other` — two fits of one touch, a turned coin's sheets on the torus its rim
+    // turns into at the kernel's tolerance, wander about one another within it and read crossings
+    // where they run together)
+    // whether `c` at `t` stands more than eight tolerances off `other`
+    let off = |c: &super::geom::Curve,t: f64,other: &super::geom::Curve| { let p = c.point(t); distance(other.point(other.inverse(p)),p) > 8.*tol };
+    let parts = |c: &super::geom::Curve,other: &super::geom::Curve,q: V| -> bool {
+        let t = c.inverse(q);
+        let dt = 1e3*tol/c.speed().max(1e-300);
+        let Some([lo,hi]) = super::query::curve_domain(c) else { return true };
+        [t-dt,t+dt].into_iter().filter(|&x| x >= lo && x <= hi).all(|x| off(c,x,other))
+    };
+    // a stretch held back a hundredth of itself from each of its ends lying on `other`
+    let held = |c: &super::geom::Curve,s: [f64;2],other: &super::geom::Curve| -> [f64;2] {
+        let on = |t: f64| !off(c,t,other);
+        let w = 0.01*(s[1]-s[0]);
+        [if on(s[0]) { s[0]+w } else { s[0] },if on(s[1]) { s[1]-w } else { s[1] }]
+    };
     for i in 0..curves.len() {
         for j in i+1..curves.len() {
             let (Some(ti),Some(tj)) = (stretches[i],stretches[j]) else { continue };
-            for (_,q) in crossings_in(surface,&curves[i],ti,&curves[j],tj,tol).map_err(|r| r.to_string())?.unwrap_or_default() {
+            let found = match crossings_in(surface,&curves[i],ti,&curves[j],tj,tol).map_err(|r| r.to_string())? {
+                Some(found) => found,
+                None if curves[i].period().is_none() && curves[j].period().is_none() =>
+                    super::query::enclosed_crossings(&curves[i],held(&curves[i],ti,&curves[j]),&curves[j],held(&curves[j],tj,&curves[i]),tol)
+                        .unwrap_or_default().into_iter().filter(|&(_,q)| parts(&curves[i],&curves[j],q) && parts(&curves[j],&curves[i],q)).collect(),
+                None => Vec::new(),
+            };
+            for (_,q) in found {
                 crossed[i].push(q);
                 crossed[j].push(q);
             }

@@ -8,6 +8,34 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A swallowtail narrower than a stretch is cut at its double point** (`swept::contacts`, #880
+  T1e): where a contact's image in the motion's invariants turns back twice, its outer leaves cross
+  over one path, and a stretch holding both folds held both leaves of the crossing, a sheet crossing
+  itself the trim never parts. Each double point is found exactly, by Newton's method on its four
+  equations, and the piece is cut at both its points: the outer leaves meet as stretches, the tail
+  between is buried. A ring pushed in at 56°, just past its fold, refused with a hole in no piece,
+  builds cut and alone within ten tolerances; at 60° it stood 1.6e-4 off and holds to 2e-6. Every
+  whole lean from 55° to 85° builds. Under a screw only crossings within one turn are double points;
+  two whose spans nest are not cut.
+- **A tool of revolution has its seams turned off its contact's folds** (`swept::contacts`): turned
+  about its own axis, the same solid, where a seam stands within a tenth of a radian of a fold of its
+  contact, so no seam runs through the cusp's meetings on the tool posed at an end of the roll. The
+  twist drill's flute wheel too steep for its helix builds alone, with no blank, and cut from the
+  stock by its whole sweep, no longer within the stock's reach.
+- **A branch of a sheet's meeting with a posed face ends where the face does** (`swept::contacts`):
+  a branch meeting a face the section does not lie on is clipped to that face, its ends put on a
+  corner of the sheet within the root of the tolerance; read whole it ran on past the face's rim.
+- **A crossing of a swept sheet, a fitted net or a family's wall is placed on it** (`boolean`): an
+  edge crossing such a surface at a shallow angle had its root off the surface by what the angle
+  makes of the tolerance, read outside the face and dropped. Newton's method on the curve less the
+  surface settles it onto the crossing. The ring pushed in at 80° builds; a branch crossing the
+  torus's seam had left a hole in no piece.
+- **Two splines of one meeting are crossed** (`boolean`, `query::enclosed_crossings`): where two
+  curves given or found for one pair of surfaces have no closed form between them, their crossings
+  are sought by their enclosures, each held back from an end lying on the other, and kept only where
+  they part (a thousand tolerances along either way, more than eight apart). A meeting
+  `enclosed_crossings` settles outside the stretches asked about no longer refuses the pair as
+  shallow.
 - **A frame carried along a curve** (`trajectory::Along`, K2): the rotation-minimising frame along a
   B-spline from its start (double reflection on a 4096-step grid; along a curve in a plane the
   turn about its normal by the tangent's angle, exactly but for rounding), with its pose, rate and

@@ -142,15 +142,14 @@ fn the_constant_twist_rows_refuse_by_name() {
 
 /// **The steep wheel cuts its folded flute by the contact's road** (#880 T1c): admitted past S3
 /// for the road, its body clearance cut first, its cells read by the field less the flute
-/// (`MaterialField::read_less`), and the flute then trimmed within a box about the stock
-/// (`trim::Trim::reach`) — the roll runs the wheel from below the stock to past its top, so the
-/// flank's fold meets the wheel posed at the roll's ends far outside it, where the sweep is not
-/// asked. Held three ways: per millimetre, the 3 mm and 6 mm drills' volumes agree within a
+/// (`MaterialField::read_less`), and the flute then trimmed whole, its wheel's seams turned off
+/// its contact's folds (`contacts::seated`, #880 T1e; before, it was trimmed within a box about the
+/// stock, `trim::Trim::reach`, its end poses' cusps far outside it). Held three ways: per millimetre, the 3 mm and 6 mm drills' volumes agree within a
 /// millionth (5e-8 as built), so nothing past the stock's ends reaches in; that volume is the
 /// field's section area, read at three heights, within its rays' 2e-3 (4.5e-4 as built); and each
 /// STL is held to the field with no disagreement.
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about a minute: the steep wheel's drill exported twice")]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about thirty seconds: the steep wheel's drill exported twice")]
 fn the_steep_wheel_cuts_its_folded_flute_by_the_contacts_road() {
     let tolerance = Some(Tolerance::new(0.01).unwrap());
     let per = |length: &str,l: f64| -> f64 {
@@ -416,4 +415,32 @@ fn the_page_builds_the_whole_drills_exact_surface() {
     while !builder.step().unwrap_or_else(|r| panic!("{r}")) {}
     let volume = builder.display().unwrap().faces.volume;
     assert!((volume-3606.54).abs() < 0.5,"{volume}");
+}
+
+
+/// **The steep wheel's flute builds alone, with no blank** (#880 T1e): the flute's sweep, the wheel
+/// carried up its helix over the whole roll, its flank folding (S3), built by the contact's road
+/// with nothing cut from. Drawn in the plane where it grinds, the wheel's seams pass 0.056 rad from
+/// its contact's fold, and the cone posed at the roll's end read a seam through the cusp's meetings;
+/// the tool is turned about its own axis to put them off the folds (`contacts::seated`). Held two
+/// ways: as drawn, and the wheel turned a quarter turn first (its seams already clear), the two
+/// within the sweep's area times the tolerance of each other — two builds whose every face of the
+/// tool is parameterised otherwise. (Cut from the stock the same flute holds to the field,
+/// `the_steep_wheel_cuts_its_folded_flute_by_the_contacts_road`.)
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about thirty seconds: the steep wheel's flute built alone twice")]
+fn the_steep_wheels_flute_builds_alone() {
+    let a = admit(&steep_of("3mm"),"fluted").unwrap();
+    let flute = a.sweeps().iter().find(|s| s.name == "flute").unwrap();
+    let Class::Closed(found) = &flute.class else { panic!("the flute admitted to the closed class") };
+    let axis = found.tool.faces.iter().find_map(|f| match &f.surface { gcs_core::brep::geom::Surface::Cone(fr,..) => Some(fr.clone()),_ => None }).unwrap();
+    let quarter = gcs_core::brep::geom::Rigid::turn(axis.o,axis.z,std::f64::consts::FRAC_PI_2);
+    let tol = 1e-6;
+    let built = |tool: &gcs_core::brep::topo::Brep| gcs_core::brep::swept::closed::closed(tool,&found.path,found.roll,2e-3,tol).unwrap();
+    let (drawn,turned) = (built(&found.tool),built(&found.tool.moved(&quarter)));
+    drawn.check(1e-6).unwrap();
+    let (a,b) = (props::volume(&drawn),props::volume(&turned));
+    let area = crate::brep::total_area(&drawn);
+    eprintln!("the flute alone {a:.6} and {b:.6} mm³, area {area:.1} mm²");
+    assert!((a-b).abs() <= tol*area,"{a} and {b}, against {}",tol*area);
 }

@@ -1098,7 +1098,11 @@ face at an end of the roll** cannot settle near that end (the start cone along i
 narrower than the hair), behind it is the tool and ahead of it is swept where the face leads the
 motion there (`trim`). A cycle of a face's pieces no outer cycle holds and smaller than a millionth
 of the face's parameters — three faces of other operands all but tangent at its corner — bounds
-nothing and is left out (`boolean`'s `pieces_of_face`). With these the contact's road also builds
+nothing and is left out (`boolean`'s `pieces_of_face`). **A branch of a sheet's meeting with a posed
+face the section does not lie on is clipped to that face** (`pose_meeting`, #880 T1e): where the
+branch leaves the face (`query::Located::face_place` read along it, the crossing bisected) it ends,
+and an end within the root of the tolerance of a corner of the sheet is put on the corner. Read
+whole, a branch ran on over the face's surface past its rim, where nothing of the tool stands. With these the contact's road also builds
 the screwed bull-nose (`swept_patches`) to the volume worked apart.
 
 **Free-form faces (#880 Q1b S6).** A face's contact is read numerically on any surface, so S6 is
@@ -1175,14 +1179,22 @@ closed sweeps first instead loses them: the sheets' road rebuilds its blank from
 box holding the blank, grown by 0.0937 of its diagonal so its planes stand clear of the blank's;
 the candidates' pieces outside it are dropped, they are paired only near it, and the box's own
 faces are kept where the sweep holds them. The judge reads membership inside the box, and the cut
-is the same. The flute's whole trim does not close at the roll's ends. There the wheel's folded
-flank's cusp meets the wheel posed far outside the stock, and the branch of what passes back into
-the tool (`contacts::pose_meeting`) is laid a millimetre's thousandth beside the rim, a fold's
-precision (#880 T1e). Within the reach it closes. So does the domed pin's
+is the same. The domed pin's whole trim does not close at its pole; within the reach it does
 (`rings_all_round::a_turn_about_an_axis_the_tools_meets_builds_within_the_blanks_reach`, to its
 closed form within 1e-9). The whole sweep is asked first: a torus screwed through a rod, its
 stretches' rails crossing the box, is split there unlike its neighbours. The narrow wheel stays
-S2's.
+S2's. **A tool of revolution has its seams turned off its contact's folds** (`contacts::seated`,
+#880 T1e): turned about its own axis, the same solid, every face's seam turned with it. Where its
+contact folds (its image in the motion's invariants turning back) and a seam stands within a tenth
+of a radian of a fold, the tool is turned to put the seams in the middle of the widest gap between
+the folds' angles about the axis. A seam beside a fold put an edge of the tool's own through the
+cusp's meetings on the tool posed at an end of the roll, every corner of the pieces there a
+tangency: the twist drill's steep flute wheel, drawn in the plane where it grinds, its seams 0.056
+rad from its fold, which the whole sweep's trim did not close. Seated, the flute's whole trim closes
+cut from the stock (`twist_drill::the_steep_wheel_cuts_its_folded_flute_by_the_contacts_road`) and
+alone, with no blank, as drawn and turned a quarter turn first within its area times the tolerance
+of each other (`twist_drill::the_steep_wheels_flute_builds_alone`, 8e-6 of 0.028). The leaning rings'
+seams stand a third of a radian off their folds and are left: turned, they were refused.
 The admission keeps that first refusal (`dispatch::Closed::first`, `closed_class::Closed::first`),
 and where the road refuses at the build the drawing is refused by it, not by the closed class's
 `Curved` (the domed pin's pole, S1, refused so until the road trimmed within the blank's reach,
@@ -1234,10 +1246,51 @@ through the middle of a stretch — a half's way is first read a fiftieth along 
 ten-thousandth (`boolean`'s `leave` and `arrive_back`; ways tied there are read again at one length):
 there a point beside the node stands in the parameters at the square root of its distance in
 space, and a curve leaving the cusp at an end pose read 0.26 radians for −2.3, its pieces open (the
-ring at 65°, its cut held clear, at 1e-5). **Not yet:** the ring pushed in at 56°, its
-swallowtail 0.02 across, narrower than the piece's points, which turn back between two of them —
-refused by the hole its end pose's meeting leaves near the cusp. (brep-bench's cadrs builds the ball
-to 282.091, 11% over the sweep's 253.4494.)
+ring at 65°, its cut held clear, at 1e-5). **A swallowtail is cut at its double point**
+(`contacts::double_points`, `contacts::stretches`, #880 T1e): where a piece's image turns back
+twice, its outer leaves cross over one path, and a stretch holding both folds held both leaves of
+that crossing — one sheet crossing itself, which the trim, meeting each candidate only with others,
+never parts. Each double point is found exactly: seeded where two chords of the image cross with a
+fold between, and settled by Newton's method on its four equations (two points of the face on the
+contact, their images one) to the rounding, its two points apart; round a closed piece either way,
+so a double point whose two points straddle where the piece is read from is found too. Under a screw
+the image's height is read unwrapped along the piece, so only crossings within one turn are double
+points: a sheet carried past a turn meets its next turn as any two sheets meet (the ball screwed round
+a helix tighter than itself, whose image crosses itself at nine places modulo the rise). Two double
+points whose spans nest or interleave are not cut (the ring at 70°, half a degree before its two
+double points meet and vanish). The piece is cut at both of its
+points, so its outer leaves are stretches of their own meeting along the path, and the tail between
+(both folds and the middle leaf) is a stretch the trim reads buried. No cut is drawn onto a fold.
+**Two splines of one meeting are crossed by their enclosures** (`boolean::crossings_among`,
+`query::enclosed_crossings`): where `crossings_in` has no closed form for two curves given or found
+for one pair of surfaces, their crossings are sought by their stretches' enclosures, each held back
+a hundredth of itself from an end lying on the other (which `ends_on_one_another` lays, and where the
+two may leave one another tangent); a meeting `enclosed_crossings` settles outside the stretches
+asked about is not theirs, however shallow; and a crossing is kept only where it parts the two, each
+standing more than eight tolerances off the other a thousand tolerances along it either way — two
+fits of one touch wander about one another within the tolerance where they run together (a turned
+coin's sheets on the torus its rim turns into, at the kernel's tolerance, read several crossings
+there, `swept_contacts::the_turned_cases_are_cut_at_the_kernels_own_tolerance`). On the tool posed at the roll's start the rim of one
+leaf crosses the other's branch over the double point, which no vertex parted, and the face's
+pieces read a hole in no piece. The ring pushed in at 56°, its swallowtail 0.02 across, builds cut
+and alone within ten tolerances (`swept_contacts::a_narrow_swallowtail_is_cut_at_its_double_point`,
+1.5e-6 and 1.2e-6 as built), as do 58° and 60°
+(`swept_contacts::swallowtails_cut_at_their_double_points_hold_past_the_fold`; 60° stood 1.6e-4 and
+4.7e-4 off before). **A crossing of a surface read by inversion is placed on it**
+(`boolean::on_surface`): where an edge crosses a swept sheet, a fitted net or a family's wall at a
+shallow angle, the reading's root stands off the surface by what that angle makes of its own
+tolerance, and is settled onto the crossing by Newton's method on `c(t) − S(u, v)` from the root and
+its foot, taken where it settles to a thousandth of the tolerance within ten thousand of the root —
+at 80° the torus's seam circle crossed a slid contact's sheet with its root 4e-5 off it, read
+outside the sheet's face and dropped, and the branch the sheet meets the torus in crossed the seam
+with no vertex: a hole in no piece. Every whole lean from 55° to 85° builds cut and alone within ten
+tolerances of its volume (`swallowtails_cut_at_their_double_points_hold_past_the_fold` holds 58°,
+60°, 70° and 80°); at exactly 57° the line integral reads 4.7e-4 low, the build smooth through it to
+4e-8 at 1e-6 and the reference not, its second differences jumping there. **Not yet:** a swallowtail
+being born, within a third of a degree of the fold (the ring at 54.75°, 54.8° and 54.9°, its tail
+1e-7 to 5e-4 across), refused: its double point is found and cut, but its leaves cross there at a
+vanishing angle, the two rails of the double point's path overlap most of their length, and pieces
+of a thousandth of the ring stand beside them. (brep-bench's cadrs builds the ball to 282.091, 11% over the sweep's 253.4494.)
 
 **A point's side off the nearest feature's pseudo-normal** (`member::Solid::signed_near`, #880
 Q1b): a point whose nearest point of the tool's mesh lies on a vertex or an edge is read by that
