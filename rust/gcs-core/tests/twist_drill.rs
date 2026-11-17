@@ -140,16 +140,19 @@ fn the_constant_twist_rows_refuse_by_name() {
 }
 
 /// **The steep wheel, admitted for the contact's road, is refused by S3 where the body is built**
-/// (#880 T1c): the body clearance's sheet is cut first, its cells judged by the body's field, which
-/// the flute's cut, not yet made, splits; there the constant-twist class's refusal is said, by
-/// name. (Asked alone, the road refuses the flute too: its trim does not close where the wheel's
-/// folded flank's cusp meets an end pose, the leaves' meetings with it traced apart — T1e's.)
+/// (#880 T1c): the body clearance's sheet is cut first, its cells judged by the field less the
+/// flute (`MaterialField::read_less`), and the flute then asked of the road, which refuses it: at
+/// an end pose, near where the wheel's folded flank's cusp meets the rim, what passes back into the
+/// tool is laid a thousandth of a millimetre beside the rim and the trim does not close the sliver
+/// between them (#880 T1e). The constant-twist class's refusal is said, by name.
 #[test]
 fn the_steep_wheel_asked_of_the_road_is_refused_by_s3() {
     let e = steep();
-    let (exact,_) = saying(|say| export::exact(&e.sketch,fixtures::solid(&e,"fluted"),None,Some(Tolerance::new(0.01).unwrap()),say));
+    let (exact,said) = saying(|say| export::exact(&e.sketch,fixtures::solid(&e,"fluted"),None,Some(Tolerance::new(0.01).unwrap()),say));
     let r = exact.err().expect("refused").to_string();
     assert!(r.contains("outside the constant-twist class (S3"),"{r}");
+    // (the clearance cut first, its two cells read by the field without the flute)
+    assert!(said.contains("classified 1 material and 1 removed cells"),"{said}");
 }
 
 /// The flute wheel's characteristic under the screw, computed from closed forms: for each point of
@@ -394,4 +397,5 @@ fn the_page_builds_the_whole_drills_exact_surface() {
     let volume = builder.display().unwrap().faces.volume;
     assert!((volume-3606.54).abs() < 0.5,"{volume}");
 }
+
 

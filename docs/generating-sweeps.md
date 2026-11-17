@@ -1392,8 +1392,8 @@ S3; the class's own `Folded` too), which the road keeps of what bounds the sweep
 stock reached twice on a ring (S2) and a sheet's own crossing (E4, S4) keep their first refusal.
 Where the road refuses at the build, the first class's refusal is said there, naming what stops it
 (`rings_all_round::what_a_turn_about_an_axis_the_tools_meets_still_refuses`, the domed pin's pole;
-the twist drill's flute wheel too steep for its helix, S3, refused where its body mixes the flute
-with the clearance's sheet, and whose folded flank's cusp the road's trim does not close at an end
+the twist drill's flute wheel too steep for its helix, S3, its body clearance built first by a
+field without the flute, and whose folded flank's cusp the road's trim does not close at an end
 pose, #880 T1e). Two drawings fold (#880 T1c): `folded_ring.sv`, a ring
 pushed in past its fold, and `tight_ball.sv`, a ball screwed round a helix tighter than itself. A
 fold under a turn builds too: its two leaves lie on one surface of revolution and overlap, and the

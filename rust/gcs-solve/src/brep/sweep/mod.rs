@@ -130,28 +130,23 @@ fn mixed(prepared: &Prepared) -> bool {
 /// — the body as `prepared` less its closed sweeps, whole or by sector and pattern — and then each
 /// closed sweep cut from that on one arrangement (`closed::cut_on`), as from a blank: a sweep's
 /// cut is the same set whatever was cut before it. The others' cells are judged by the body's
-/// field, which has the closed sweeps' cut already, so where a closed sweep would split a cell of
-/// theirs it reads both material and removed; where that refuses and a closed sweep was admitted
-/// for the contact's road past the class asked first, that class's refusal is said, as where the
-/// road refuses (the twist drill's flute wheel too steep for its helix: S3, #880 T1c).
+/// field less the closed sweeps (`MaterialField::read_less`, `sector::left_out`): read with them, a
+/// cell a closed sweep would split read both material and removed (the twist drill's flute wheel
+/// too steep for its helix beside the body clearance's sheet, #880 T1c).
 fn mixed_cut(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,tolerance: Option<Tolerance>,say: &Say)
     -> Result<crate::brep::topo::Brep,ExportRefusal> {
     let keep: Vec<usize> = (0..prepared.distinct.len()).filter(|&k| !matches!(prepared.classes[k],crate::solid::admission::Class::Closed(_))).collect();
     let rest = Prepared {field:prepared.field.clone(),bounds:prepared.bounds,distinct:keep.iter().map(|&k| prepared.distinct[k]).collect(),
         cuts:keep.iter().map(|&k| sheet::SweptCut::read(sk,prepared.distinct[k])).collect::<Result<Vec<_>,_>>()?,
         classes:keep.iter().map(|&k| prepared.classes[k].clone()).collect(),blank:prepared.blank.clone()};
-    let built = match whole(sk,body,recipe,&rest,tolerance,say) {
-        Some(solid) => solid,
-        None => (|| {
+    let first = match whole(sk,body,recipe,&rest,tolerance,say) {
+        Some(solid) => solid?,
+        None => {
             let sheets = crate::par::indices(rest.sweeps(),|k| sheet(&rest,k,tolerance,say)).into_iter().collect::<Result<Vec<_>,_>>()?;
             let plan = plan(sk,body,recipe,&rest,&sheets,say);
-            Ok(finish(cut(sk,body,recipe,&rest,&sheets,plan,say)?,say)?.into_solid())
-        })(),
+            finish(cut(sk,body,recipe,&rest,&sheets,plan,say)?,say)?.into_solid()
+        }
     };
-    let first = built.map_err(|refused| {
-        let road = prepared.classes.iter().find_map(|c| match c { crate::solid::admission::Class::Closed(found) => found.first.clone(),_ => None });
-        road.map_or(refused,|first| ExportRefusal::from(crate::solid::admission::Error::Refused(first)))
-    })?;
     closed::cut_on(sk,body,recipe,prepared,first,say)
 }
 

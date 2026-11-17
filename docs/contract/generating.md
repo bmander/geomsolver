@@ -1154,16 +1154,17 @@ the rod's two end rims, a tool's mirror pieces; the second is matched to the fir
 within twice the tolerance, measured on the fitted meridian itself (its polyline finds the stretch,
 a golden section settles it), so their coincident pieces are one surface to `ssi::same` and the
 trim keeps the lower operand's. The twist drill's
-flute wheel too steep for its helix is admitted past S3 for the road, and refused where its body is
-built by S3's refusal, said by name (`twist_drill::the_constant_twist_rows_refuse_by_name`,
-`twist_drill::the_steep_wheel_asked_of_the_road_is_refused_by_s3`): **a body mixing a closed sweep
+flute wheel too steep for its helix is admitted past S3 for the road, and refused by the road at
+the build, S3's refusal said by name (`twist_drill::the_constant_twist_rows_refuse_by_name`,
+`twist_drill::the_steep_wheel_asked_of_the_road_is_refused_by_s3`). **A body mixing a closed sweep
 with sheets** cuts the sheets' sweeps first (`brep::sweep::mixed_cut`), their cells judged by the
-body's field, which has the closed sweep's cut already, so a cell the flute would split reads both
-material and removed — and there the refusal of the class asked first is said, as where the road
-refuses. (Asked alone, the road refuses the flute too: its trim does not close where the folded
-flank's cusp meets an end pose, the leaves' meetings with it traced apart, #880 T1e. Cutting the
+body's field less the closed sweeps (`MaterialField::read_less`, `sector::left_out`): with them, a
+cell of the body clearance's the flute would split read both material and removed. (Cutting the
 closed sweeps first instead loses them: the sheets' road rebuilds its blank from the recipe.) The
-narrow wheel stays S2's.
+clearance built, the road refuses the flute: at an end pose, near where the wheel's folded flank's
+cusp meets the rim, the branch of what passes back into the tool (`contacts::pose_meeting`) is laid
+a millimetre's thousandth beside the rim, a fold's precision, and the trim does not close the
+sliver between them (#880 T1e). The narrow wheel stays S2's.
 The admission keeps that first refusal (`dispatch::Closed::first`, `closed_class::Closed::first`),
 and where the road refuses at the build the drawing is refused by it, not by the closed class's
 `Curved` (`rings_all_round::what_a_turn_about_an_axis_the_tools_meets_still_refuses`: the domed pin's
