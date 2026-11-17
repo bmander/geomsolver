@@ -1395,7 +1395,9 @@ Where the road refuses at the build, the first class's refusal is said there, na
 the twist drill's flute wheel too steep for its helix, S3, refused where its body mixes the flute
 with the clearance's sheet, and whose folded flank's cusp the road's trim does not close at an end
 pose, #880 T1e). Two drawings fold (#880 T1c): `folded_ring.sv`, a ring
-pushed in past its fold, and `tight_ball.sv`, a ball screwed round a helix tighter than itself.
+pushed in past its fold, and `tight_ball.sv`, a ball screwed round a helix tighter than itself. A
+fold under a turn is not yet built: its two leaves lie on one surface of revolution and overlap,
+which the road's trim does not close (`tangent_rod.sv`, refused at its build, #880 T1e).
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |

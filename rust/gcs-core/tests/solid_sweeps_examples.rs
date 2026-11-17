@@ -790,6 +790,23 @@ fn the_ball_screwed_round_a_tight_helix_hollows_the_block() {
     near(exported(&e,"block"),10.*10.*14.-253.4493738313,1e-8);
 }
 
+/// `tangent_rod.sv` (a fold under a turn, #880 T1c, refused): a rod lying level along the way it
+/// turns, its top and bottom lines' images about the axis turning back where the rod lies square to
+/// the radius. The closed class takes a rod under a turn; its build reads the rod's side curved past
+/// its candidates at the fold, and the contact's road, asked in turn, leaves an edge three of its
+/// pieces use: under a turn a sheet lies on its meridian's surface of revolution, so a fold's two
+/// leaves lie on the one surface, here the plane each line turns in, and the trim does not yet
+/// close leaves that coincide (#880 T1e). The closed class's refusal stands, at the fold.
+#[test]
+fn the_rod_turned_along_itself_is_refused_at_its_fold() {
+    let e = example("tangent_rod.sv");
+    let Class::Closed(found) = class(&e,"block") else { panic!("the closed class") };
+    assert_eq!(found.kind(),"a turn");
+    let (exact,_) = crate::common::saying(|say| gcs_core::brep::export::exact(&e.sketch,fixtures::solid(&e,"block"),None,None,say));
+    let r = exact.err().expect("refused").to_string();
+    assert!(r.contains("curved past what the motion's candidates hold at (5.2"),"{r}");
+}
+
 /// `leaning_bullnose.sv` (the closed class, a torus's band slid at a lean, #810): a bull-nose mill of
 /// radius 2, its corner rounded 0.5 and 3 tall, its axis leaning 30° from upright, pushed 8 straight
 /// down into a block until wholly in it. The constant-twist class refuses it (it ends in the blank);
@@ -921,3 +938,6 @@ fn the_drum_end_screwed_chases_its_section_up_the_rod() {
     assert_eq!(found.kind(),"a screw");
     near(exported(&e,"rod"),1339.548902340676*6./20.,1e-8);
 }
+
+
+

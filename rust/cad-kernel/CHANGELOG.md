@@ -27,7 +27,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   twist the closed class's admission takes a tool whose sheet folds — the class's own `Folded`, and
   the walk's fold rows E3 and S3 — for the road, as it takes T1, T2, S1 and E1, keeping the first
   refusal where the road refuses too. A ring pushed into a block past its fold builds from a
-  drawing.
+  drawing. Not yet under a turn: a turned fold's two leaves lie on one surface of revolution and
+  overlap, which the road's trim does not close (a rod turned along itself, refused at its build).
 
 ## [0.14.0] - 2026-11-14
 
