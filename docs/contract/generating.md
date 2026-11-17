@@ -1133,16 +1133,53 @@ slow tier, S6's gate): all of Q1b's fourteen cases build (docs/swept-solid-desig
 
 **A drawing reaches the contact's road through the closed class's admission** (`swept::dispatch`,
 #880 Q1b): under a slide, a turn or a screw a tool the class reads no candidate for
-(`closed::reads` refusing it `Curved`) is admitted where the class asked first refused it by a row
-the road answers (`road_answers`: the tool unread, T1 and T2; a contact no regular curve, S1; an
-end of the roll in the blank, E1), and its build takes the road. A fold (E3, S3), a stock reached
-twice on a ring (S2) and a sheet's crossing (E4, S4) keep their first refusal: admitted past S3, a
-twist drill's flute wheel too steep for its helix was refused only by a cell its other sweep left
-unsplit, and the row that names the fold was lost (`twist_drill::the_constant_twist_rows_refuse_by_name`).
+(`closed::reads` refusing it `Curved`), or whose sheet folds (`Folded`), is admitted where the
+class asked first refused it by a row the road answers (`road_answers`: the tool unread, T1 and T2;
+a contact no regular curve, S1; an end of the roll in the blank, E1; a fold, E3 and S3, since #880
+T1c), and its build takes the road. A stock reached twice on a ring (S2) and a sheet's crossing (E4,
+S4) keep their first refusal. **Folds in drawings** (#880 T1c): `folded_ring.sv`, `leaning_ring.sv`'s
+ring leaning past its fold, refused at E1 by the walk and read `Folded` by the class, is admitted
+past both and built by the road to brep-bench's `ring-pushed-in-past-its-fold` within 1e-9
+(`solid_sweeps_examples::the_ring_pushed_past_its_fold_bores_round_its_cusped_core`); `tight_ball.sv`,
+brep-bench's ball round a tight helix inside a block, which the class takes as a ball under a screw
+and whose build sends the fold to the road, to its ball within 1e-8
+(`solid_sweeps_examples::the_ball_screwed_round_a_tight_helix_hollows_the_block`). Under a turn a
+sheet lies on its meridian's surface of revolution, so a fold's two leaves lie on one surface and
+overlap, and the trim keeps them once: `tangent_rod.sv`, a rod lying level along the way it turns,
+the closed class reading its side curved past its candidates at the fold, is built by the road to
+its arcs' closed form within 1e-6
+(`solid_sweeps_examples::the_rod_turned_along_itself_hollows_the_block_past_its_fold`). **Two
+sections whose images about a turn's axis are one curve sweep one surface** (`contacts::meridian_surface`):
+the rod's two end rims, a tool's mirror pieces; the second is matched to the first's meridian
+within twice the tolerance, measured on the fitted meridian itself (its polyline finds the stretch,
+a golden section settles it), so their coincident pieces are one surface to `ssi::same` and the
+trim keeps the lower operand's. The twist drill's
+flute wheel too steep for its helix is admitted past S3 for the road
+(`twist_drill::the_constant_twist_rows_refuse_by_name`) and built by it
+(`twist_drill::the_steep_wheel_cuts_its_folded_flute_by_the_contacts_road`, slow tier: per
+millimetre its 3 mm and 6 mm drills within 1e-6 of each other, the field's section area within
+2e-3, each STL agreeing with the field). **A body mixing a closed sweep
+with sheets** cuts the sheets' sweeps first (`brep::sweep::mixed_cut`), their cells judged by the
+body's field less the closed sweeps (`MaterialField::read_less`, `sector::left_out`): with them, a
+cell of the body clearance's the flute would split read both material and removed. (Cutting the
+closed sweeps first instead loses them: the sheets' road rebuilds its blank from the recipe.)
+**Where the whole sweep's trim does not close, the road trims it within the blank's reach**
+(`closed::contacts_road`, `trim::Trim::reach`): cut from a blank, the sweep is wanted only inside a
+box holding the blank, grown by 0.0937 of its diagonal so its planes stand clear of the blank's;
+the candidates' pieces outside it are dropped, they are paired only near it, and the box's own
+faces are kept where the sweep holds them. The judge reads membership inside the box, and the cut
+is the same. The flute's whole trim does not close at the roll's ends. There the wheel's folded
+flank's cusp meets the wheel posed far outside the stock, and the branch of what passes back into
+the tool (`contacts::pose_meeting`) is laid a millimetre's thousandth beside the rim, a fold's
+precision (#880 T1e). Within the reach it closes. So does the domed pin's
+(`rings_all_round::a_turn_about_an_axis_the_tools_meets_builds_within_the_blanks_reach`, to its
+closed form within 1e-9). The whole sweep is asked first: a torus screwed through a rod, its
+stretches' rails crossing the box, is split there unlike its neighbours. The narrow wheel stays
+S2's.
 The admission keeps that first refusal (`dispatch::Closed::first`, `closed_class::Closed::first`),
 and where the road refuses at the build the drawing is refused by it, not by the closed class's
-`Curved` (`rings_all_round::what_a_turn_about_an_axis_the_tools_meets_still_refuses`: the domed pin's
-pole, S1). The series' three drawings of the road, one a motion (`arched_bar.sv`, `coin.sv`,
+`Curved` (the domed pin's pole, S1, refused so until the road trimmed within the blank's reach,
+#880 T1c). The series' three drawings of the road, one a motion (`arched_bar.sv`, `coin.sv`,
 `drum_end.sv`), are held to volumes made apart from the build (`solid_sweeps_examples`), and four
 negative controls the walk refused by S1 or E1 are built and held to their definitions by a Monte
 Carlo (`closed_class::kept_by_its_definition`). **A fold is read from steps past the tolerance**
@@ -1275,7 +1312,8 @@ circle through the axis, or whose normal lies in the plane through the axis and 
 along a radius), turns into no ring (`Rim::simple`, #780 L2): refused as it is read (`Curved`), so
 the sweep is admitted to the closed class only for the contact's road, where the class asked first
 refused it by a row the road answers, and where the road refuses it too that first refusal stands
-(`rings_all_round::what_a_turn_about_an_axis_the_tools_meets_still_refuses`, #880 Q1b).
+(#880 Q1b; the domed pin, refused so until #880 T1c, is built within the blank's reach,
+`rings_all_round::a_turn_about_an_axis_the_tools_meets_builds_within_the_blanks_reach`).
 
 **A round face about an axis leaning to a turn's (#780 C3, `brep::turned`).** On the ring at slant
 `v` of a cylinder or a cone about the axis `a` through `o`, its normal `cos α ρ̂ − sin α a` is
@@ -2436,9 +2474,9 @@ section. S3 is not read at a ring's ends. A ring of no radius is a pole (`POLE`)
 gate is `solid_sweeps_examples::the_spoke_swings_a_slot_ended_by_a_zone_of_a_sphere`
 (`solid_sweeps/spoke.sv`, `π/6 (57.25 − 1/12)` within 1e-5) and
 `rings_all_round::a_torus_leaning_toward_the_turns_axis_grooves_its_shadow` (Pappus over the shadow,
-2e-5, over a sector and a whole turn), each STL agreeing with the field; the refusals
-`rings_all_round::what_a_turn_about_an_axis_the_tools_meets_still_refuses` (a domed pin, S1 `POLE`,
-which the contact's road refuses too) and the pin wholly within (S1 `POLE`) and small leaning torus
+2e-5, over a sector and a whole turn), each STL agreeing with the field; the refusals of a domed
+pin (S1 `POLE`, which the contact's road builds within the blank's reach since #880 T1c,
+`rings_all_round::a_turn_about_an_axis_the_tools_meets_builds_within_the_blanks_reach`) and the pin wholly within (S1 `POLE`) and small leaning torus
 wholly within (S1 `SMOOTH_LOOP`) the road builds since
 (`rings_all_round::what_a_turn_about_an_axis_the_tools_meets_is_built_by_the_contacts_road`, #880
 Q1b); and

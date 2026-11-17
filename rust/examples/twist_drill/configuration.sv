@@ -15,8 +15,8 @@ lead := pi * diameter / tan(helix)
 // -- the flute wheel ---------------------------------------------------------------------------
 // A wheel whose rim is a round between two flanks leaning `flank` from its radius, its axis
 // square to the helix where it grinds, sunk to half the web from the drill's axis. Steeper flanks
-// (below about 30°) fold the flute's wall, and a shallower setting reaches the blank twice: the
-// export refuses both, by the row they fail.
+// (below about 30°) fold the flute's wall, which the export builds by the contact's road (#880 T1c);
+// a shallower setting reaches the blank twice, which it refuses, by the row it fails.
 flute_wheel := {rim: 25mm, nearest: web / 2, round: 2.5mm, flank: 35deg, depth: 7mm}
 
 // -- the margin and the body clearance --------------------------------------------------------

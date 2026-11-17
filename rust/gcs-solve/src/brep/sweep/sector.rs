@@ -40,6 +40,13 @@ pub struct Sector { pub piece: Brep,pub origin: V,pub axis: V,pub count: usize,p
 /// A placement's rigid motion in millimetres.
 pub(crate) fn placed(pose: Motion,scale: f64) -> Rigid { Rigid::from_rows(&cad::placement_matrix(pose,scale)) }
 
+/// The sweeps of the body's recipe that are not among `distinct`: a body mixing a closed sweep with
+/// sheets builds the sheets' cut first (`mixed_cut`), and its cells are judged by the field of what
+/// those sweeps leave, the closed sweeps' cut not yet made.
+fn left_out(recipe: &StaticRecipe,distinct: &[usize]) -> std::collections::BTreeSet<usize> {
+    recipe.sweeps.iter().map(|c| c.swept).filter(|s| !distinct.contains(s)).collect()
+}
+
 /// One cell judged: its volume, its deepest interior sample, its index.
 struct Cell { index: usize,point: V,volume: f64 }
 
@@ -152,7 +159,7 @@ pub fn premises(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,field
     let read: Vec<V> = surface_grid(&side,READ_BACK*rows,READ_BACK*COLUMNS).into_iter().map(|(p,_)| p).filter(|&p| inside(p)).collect();
     let clear = chosen.clearance_of(&read)?;
     if clear < margin { return Err(format!("the side as built passes {clear:.4} mm from a cut, under {margin:.4} mm")) }
-    let body_field = Millimetres::<MaterialField>::read(sk,body,cad::AXIS_TOLERANCE)?;
+    let body_field = Millimetres::<MaterialField>::read_less(sk,body,cad::AXIS_TOLERANCE,&left_out(recipe,distinct))?;
     let radius = margin/2.;
     let deep: Vec<V> = read.iter().copied().filter(|&p| field.value(p) < -radius).collect();
     let step = deep.len().div_ceil(PROBES).max(1);
@@ -257,7 +264,7 @@ pub fn whole(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,distinct
         tools.len(),widest,cells.len(),clock.elapsed()));
     (say.mark)(crate::solid::export::Stage::Split);
     let clock = crate::clock::Instant::now();
-    let body_field = Millimetres::<MaterialField>::read(sk,body,cad::AXIS_TOLERANCE)?;
+    let body_field = Millimetres::<MaterialField>::read_less(sk,body,cad::AXIS_TOLERANCE,&left_out(recipe,distinct))?;
     let sampled = crate::par::map(&cells,|c| interior(c,4)).into_iter().collect::<Result<Vec<_>,_>>()?;
     let (kept,removed) = judge(&volumes,sampled,&body_field)?;
     (say.stage)(&format!("classified {} material and {} removed cells ({:?})",kept.len(),removed.len(),clock.elapsed()));

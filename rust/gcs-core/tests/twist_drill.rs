@@ -106,14 +106,25 @@ fn the_drills_field_has_its_flutes_margins_point_and_shank() {
     assert!((0..36).all(|k| at(4.95,k as f64*10.,-10.)));
 }
 
+/// The flute wheel too steep for its helix, fluted over `length`: its flanks fold the flute's wall (S3).
+fn steep_of(length: &str) -> Elaborated {
+    let wheel = "{rim: 25mm, nearest: web / 2, round: 2.5mm, flank: 20deg, depth: 7mm}";
+    fixtures::drill::read(&[("flutes","1"),("point","0"),("fluted_length",length),("flute_wheel",wheel)])
+}
+
 /// Each row of the constant-twist class refuses a wheel that fails it, by name: flanks too steep
-/// for the helix fold the flute's wall (S3), a narrow wheel with shallow flanks reaches the stock
-/// twice on a ring (S2). A crossing within a lead (S4) is asked of the section's polyline.
+/// for the helix fold the flute's wall (S3) — a fold, which the contact's road takes (#880 T1c), so
+/// the flute is admitted to the closed class for it, S3's refusal kept as the first class's word
+/// (`the_steep_wheel_cuts_its_folded_flute_by_the_contacts_road`) —
+/// and a narrow wheel with shallow flanks reaches the stock twice on a ring (S2), refused. A crossing
+/// within a lead (S4) is asked of the section's polyline.
 #[test]
 fn the_constant_twist_rows_refuse_by_name() {
     let wheel = |round: &str,flank: &str| format!("{{rim: 25mm, nearest: web / 2, round: {round}, flank: {flank}, depth: 7mm}}");
-    let steep = wheel("2.5mm","20deg");
-    let r = refused(admit(&fixtures::drill::read(&[("flutes","1"),("point","0"),("fluted_length","6mm"),("flute_wheel",&steep)]),"fluted"));
+    let a = admit(&steep_of("6mm"),"fluted").unwrap();
+    let flute = a.sweeps().iter().find(|s| s.name == "flute").unwrap();
+    let Class::Closed(found) = &flute.class else { panic!("the flute admitted to the closed class") };
+    let r = found.first.as_ref().expect("the constant-twist class's refusal kept");
     assert_eq!(r.condition,Condition::Edgewise);
     assert!(r.to_string().contains("outside the constant-twist class (S3"),"{r}");
     assert!(r.message.contains("left_flank") && r.message.contains("turned its sign"),"{}",r.message);
@@ -127,6 +138,41 @@ fn the_constant_twist_rows_refuse_by_name() {
     assert!(constant_twist::crossing(&figure).is_some());
     let arc: Vec<[f64;2]> = (0..=64).map(|k| { let t = PI*k as f64/64.; [t.cos(),t.sin()] }).collect();
     assert_eq!(constant_twist::crossing(&arc),None);
+}
+
+/// **The steep wheel cuts its folded flute by the contact's road** (#880 T1c): admitted past S3
+/// for the road, its body clearance cut first, its cells read by the field less the flute
+/// (`MaterialField::read_less`), and the flute then trimmed within a box about the stock
+/// (`trim::Trim::reach`) — the roll runs the wheel from below the stock to past its top, so the
+/// flank's fold meets the wheel posed at the roll's ends far outside it, where the sweep is not
+/// asked. Held three ways: per millimetre, the 3 mm and 6 mm drills' volumes agree within a
+/// millionth (5e-8 as built), so nothing past the stock's ends reaches in; that volume is the
+/// field's section area, read at three heights, within its rays' 2e-3 (4.5e-4 as built); and each
+/// STL is held to the field with no disagreement.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about a minute: the steep wheel's drill exported twice")]
+fn the_steep_wheel_cuts_its_folded_flute_by_the_contacts_road() {
+    let tolerance = Some(Tolerance::new(0.01).unwrap());
+    let per = |length: &str,l: f64| -> f64 {
+        let e = steep_of(length);
+        let body = fixtures::solid(&e,"fluted");
+        let (exact,said) = built(&e.sketch,body,tolerance);
+        exact.solid.check(1e-6).unwrap();
+        // (the clearance cut first, its two cells read by the field without the flute)
+        assert!(said.contains("classified 1 material and 1 removed cells"),"{said}");
+        let (stl,said) = saying(|say| export::stl(&e.sketch,body,&exact,tolerance,say).unwrap());
+        gcs_core::mesh::stl_shells(&stl).unwrap();
+        assert!(said.contains(", 0 disagree"),"{said}");
+        props::volume(&exact.solid)/l
+    };
+    let (three,six) = (per("3mm",3.),per("6mm",6.));
+    assert!((three-six).abs() <= 1e-6*six,"{three} and {six} mm³ a millimetre");
+    let e = steep_of("3mm");
+    let field = MaterialField::read(&e.sketch,fixtures::solid(&e,"fluted"),cad::AXIS_TOLERANCE).unwrap();
+    let areas: Vec<f64> = [0.75,1.5,2.25].iter().map(|&z| section_area(&field,z)).collect();
+    for a in &areas { assert!((a-areas[0]).abs() <= 1e-6*areas[0],"the field's sections {areas:?}"); }
+    eprintln!("field section {:.6} mm², exact {three:.6} and {six:.6} mm³ a millimetre",areas[0]);
+    assert!((areas[0]-six).abs() <= 2e-3*six,"the field's {} mm² against the exact solid's {six}",areas[0]);
 }
 
 /// The flute wheel's characteristic under the screw, computed from closed forms: for each point of

@@ -53,7 +53,7 @@ pub fn cut_on(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,
             solid = cut.map_err(|u| {
                     // (a tool admitted for the contact's road, which refuses it too: the refusal of the
                     // class asked first stands, which names what stops it)
-                    if let (crate::brep::swept::closed::Unbuilt::Curved {..},Some(first)) = (&u,&found.first) {
+                    if let (crate::brep::swept::closed::Unbuilt::Curved {..} | crate::brep::swept::closed::Unbuilt::Folded {..},Some(first)) = (&u,&found.first) {
                         return ExportRefusal::from(crate::solid::admission::Error::Refused(first.clone()))
                     }
                     let (condition,message,at) = closed_class::said(u,&found.tool_name);

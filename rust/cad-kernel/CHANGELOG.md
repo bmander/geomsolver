@@ -23,6 +23,28 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   factor falls below a millionth at a point of a use, those its box is read from: the bar builds in
   58 s again, to the same volume, and every fold case reads as it did.
 
+- **A fold reaches the contact's road from a drawing** (`swept::dispatch`, #880 T1c): under a constant
+  twist the closed class's admission takes a tool whose sheet folds — the class's own `Folded`, and
+  the walk's fold rows E3 and S3 — for the road, as it takes T1, T2, S1 and E1, keeping the first
+  refusal where the road refuses too. A ring pushed into a block past its fold builds from a
+  drawing, and so do a ball screwed round a helix tighter than itself and a rod turned along itself,
+  whose fold's two leaves lie on one surface of revolution and are kept once.
+- **The contact's road trims a sweep within the blank's reach where the whole does not close**
+  (`swept::closed`, `swept::trim`, #880 T1c): cut from a blank, the sweep is wanted only inside a
+  box holding the blank. Where the whole sweep's trim does not close, it is trimmed there: the
+  candidates' pieces outside the box are dropped and paired only near it, and the box's faces are
+  kept where the sweep holds them. The judge reads membership inside the box. `trim::Trim` gains
+  `reach` (**breaking** for a struct literal). The twist drill's flute wheel too steep for its helix
+  builds so: its flank's fold meets the wheel posed at the roll's ends far outside the stock. So
+  does a pin domed over its axis's pole, turned about an axis its own meets, to its closed form.
+  The whole sweep is still asked first, so every sweep the road built before builds as it did.
+- **Two sections with one meridian image under a turn sweep one surface** (`swept::contacts`): a
+  section's image about the axis was matched to a surface already made against that meridian's
+  256-chord polyline, whose sag (~2e-5 on a unit arc) stood above the tolerance, so the second of
+  two identical images — a rod's two end rims — was fitted a surface of its own, which `ssi::same`
+  did not read as the first, and the trim kept both copies of where they overlap, leaving an edge
+  three faces used. The match is measured on the meridian itself.
+
 ## [0.14.0] - 2026-11-14
 
 - **A sheet that folds under a slide, a turn or a screw goes the contact's road** (`swept::closed`,

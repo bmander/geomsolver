@@ -759,6 +759,57 @@ fn the_ring_plunged_at_a_lean_bores_round_its_core() {
     near(exported(&e,"block"),16.*16.*8.-crate::swept_slid::plunged_away(3.,1.,35f64.to_radians(),4.),1e-9);
 }
 
+/// `folded_ring.sv` (the contact's road past a fold, #880 T1c): `leaning_ring.sv`'s ring leaning 65°,
+/// past `tan² β = (R − r)/r` (54.7°), so its inner outline seen down the push cusps and the sheet its
+/// inner contact sweeps folds. The walk refuses it and the closed class reads the fold as `Folded`;
+/// admitted to the closed class past both, it is built by the contact's road, which keeps of the
+/// folded sheet what bounds the sweep. The block loses brep-bench's `ring-pushed-in-past-its-fold`,
+/// line by line down the push (`swept_slid::torus_pushed_by_lines`: 140.9978845384 away), to 1e-9.
+#[test]
+fn the_ring_pushed_past_its_fold_bores_round_its_cusped_core() {
+    let e = example("folded_ring.sv");
+    let Class::Closed(found) = class(&e,"block") else { panic!("the closed class") };
+    assert!(found.screw().unwrap().is_slide(),"a slide");
+    assert!(found.first.is_some(),"admitted for the contact's road, past the walk's refusal");
+    near(exported(&e,"block"),16.*16.*8.-140.9978845384,1e-9);
+}
+
+/// `tight_ball.sv` (the contact's road past a fold, under a screw, #880 T1c): brep-bench's
+/// `ball-screwed-round-a-tight-helix`, a ball of radius 2 its centre 1.5 from the axis, screwed two
+/// turns rising 3 a turn, its helix bending tighter than the ball so the tube folds. Its tube meets
+/// itself, so no canal takes it; the closed class takes a ball under a screw, and its build, finding
+/// the fold (`Folded`), goes the contact's road. The block holds the whole sweep, so it loses
+/// brep-bench's ball, circle by circle about the axis (`swept_loci::swept_by_circles`:
+/// 253.4493738313) — 2.3e-6 today, cut at the export's arrangement tolerance (1e-6 mm, within its
+/// 220 mm² of boundary times that), held to 1e-8 of the block.
+#[test]
+fn the_ball_screwed_round_a_tight_helix_hollows_the_block() {
+    let e = example("tight_ball.sv");
+    let Class::Closed(found) = class(&e,"block") else { panic!("the closed class") };
+    assert_eq!(found.kind(),"a screw");
+    near(exported(&e,"block"),10.*10.*14.-253.4493738313,1e-8);
+}
+
+/// `tangent_rod.sv` (a fold under a turn, #880 T1c): a rod lying level along the way it turns, its
+/// top and bottom lines' images about the axis turning back where the rod lies square to the radius.
+/// The closed class takes a rod under a turn, its build reading the rod's side curved past its
+/// candidates at the fold, and the contact's road, asked in turn, builds it: the fold's two leaves on the one plane each
+/// line turns in kept once, and the two end rims' sheets, whose meridian images are one curve, swept
+/// on one surface of revolution (`contacts::meridian_surface`, the match measured on the fitted
+/// meridian rather than its polyline, whose sag stood above the tolerance) and kept once. The block
+/// loses, on each circle about the axis at height z, the rod's arcs carried round a quarter turn:
+/// the rod (6π), the quarter turn of its meridian image (π/2 of its first moment, 5π + 9) and the
+/// arcs' far ends', ∫ (c² + 9)·atan(3/c) − 3c dz with c = 5 + √(1 − z²) (5.9287855427, by
+/// Simpson's rule in z = sin θ). The export stands 2e-7 from it, within the rule's 1e-6.
+#[test]
+fn the_rod_turned_along_itself_hollows_the_block_past_its_fold() {
+    let e = example("tangent_rod.sv");
+    let Class::Closed(found) = class(&e,"block") else { panic!("the closed class") };
+    assert_eq!(found.kind(),"a turn");
+    let removed = 6.*PI+2.5*PI*PI+4.5*PI+5.9287855427;
+    near(exported(&e,"block"),16.*16.*4.-removed,1e-6);
+}
+
 /// `leaning_bullnose.sv` (the closed class, a torus's band slid at a lean, #810): a bull-nose mill of
 /// radius 2, its corner rounded 0.5 and 3 tall, its axis leaning 30° from upright, pushed 8 straight
 /// down into a block until wholly in it. The constant-twist class refuses it (it ends in the blank);

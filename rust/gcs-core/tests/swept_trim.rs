@@ -59,7 +59,7 @@ fn bar_candidates(roll: [f64;2]) -> Vec<Brep> {
 /// The bar screwed over `roll`, trimmed from its hand-entered candidates at `resolution`.
 fn bar_trimmed(roll: [f64;2],resolution: f64) -> (Brep,Report) {
     let tool = bar();
-    trim::trimmed(&tool,&Trajectory::Twist(SCREW),roll,&bar_candidates(roll),&[],tool.size(),1e-7,Trim {resolution,hair:1e-3})
+    trim::trimmed(&tool,&Trajectory::Twist(SCREW),roll,&bar_candidates(roll),&[],tool.size(),1e-7,Trim {resolution,hair:1e-3,reach:None})
         .unwrap_or_else(|e| panic!("the bar's sweep not trimmed: {e:?}"))
 }
 
@@ -182,7 +182,7 @@ fn closeds_candidates_trimmed_are_their_arrangements_solid() {
         ("a block turned a quarter",block([2.,0.,0.],[3.,1.,1.]),&turn,[0.,PI/2.],158),
     ] {
         let arranged = closed(&tool,path,roll,1.,1e-7).unwrap();
-        let (trimmed,report) = gcs_core::brep::swept::closed::trimmed(&tool,path,roll,1.,1e-7,Trim {resolution:tool.size()/32.,hair:1e-3})
+        let (trimmed,report) = gcs_core::brep::swept::closed::trimmed(&tool,path,roll,1.,1e-7,Trim {resolution:tool.size()/32.,hair:1e-3,reach:None})
             .unwrap_or_else(|e| panic!("{what}: {e:?}"));
         near(volume(&trimmed),volume(&arranged),1e-9,what);
         assert!(report.paired < report.boxed,"{what}: {report:?}");
@@ -243,7 +243,7 @@ fn a_ring_past_its_fold_is_trimmed_up_to_its_cusps() {
             candidates.push(sheet);
         }
     }
-    let out = trim::trimmed(&tool,&path,[0.,TAU],&candidates,&given,0.01,1e-5,Trim {resolution:0.5,hair:1e-3});
+    let out = trim::trimmed(&tool,&path,[0.,TAU],&candidates,&given,0.01,1e-5,Trim {resolution:0.5,hair:1e-3,reach:None});
     // refused, or built and judged by its definition (`trimmed` returns nothing it has not
     // judged), never built wrong; built, its cusps are laid and this becomes a gate held to a
     // volume made apart (#880 T1)

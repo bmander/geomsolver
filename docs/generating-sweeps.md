@@ -866,7 +866,7 @@ pin set wholly within the block, its loop through its base's centre (S1, pole); 
 torus turned across a taller block, its tube's top ring, along both axes, in contact all round in a
 plane the turn keeps (S1, the third motion's); and a small leaning torus wholly within the block,
 its loop closing smoothly (S1, #684 W's row) — the pin within the block and the small torus built
-since by the contact's road, and the domed pin refused by it too, its pole said (#880 Q1b, below).
+since by the contact's road, and the domed pin built by it within the blank's reach (#880 T1c, below).
 The torus slid square to its axis through the rod's middle is the third motion's too, and is still
 refused here (the closed class builds it). `tests/object_builder.rs` builds `spoke.sv` at the page's
 samples.
@@ -1387,11 +1387,22 @@ the road's (T1c).
 A drawing reaches it through the closed class's admission: under a slide, a turn or a screw a tool
 the class reads no candidate for is admitted where the class asked first refused it for what the
 road reads past — a tool the walk does not read (T1, T2), a contact that is no regular curve (S1: a
-pole, a branch, a ring in contact all round), an end of the roll in the blank (E1). A fold (E3, S3),
-a stock reached twice on a ring (S2) and a sheet's own crossing (E4, S4) keep their first refusal:
-the road cuts no fold. Where the road refuses at the build, the first class's refusal is said there,
-naming what stops it (`rings_all_round::what_a_turn_about_an_axis_the_tools_meets_still_refuses`,
-the domed pin's pole).
+pole, a branch, a ring in contact all round), an end of the roll in the blank (E1), and a fold (E3,
+S3; the class's own `Folded` too), which the road keeps of what bounds the sweep since #880 T1b. A
+stock reached twice on a ring (S2) and a sheet's own crossing (E4, S4) keep their first refusal.
+Where the road refuses at the build, the first class's refusal is said there, naming what stops it.
+Where the whole sweep's trim does not close and the sweep is cut from a blank, the road trims it
+within a box about the blank, which is all the cut asks (#880 T1c). Two cases build so. The domed
+pin, its pole on the turn's axis, builds to its closed form. So does the twist drill's flute wheel
+too steep for its helix, S3. Its body clearance is built first, by a field without the flute. Its
+folded flank's cusp meets the wheel posed at the roll's ends far outside the stock, where the trim
+does not close the meetings beside the cusp (#880 T1e). Two drawings fold (#880 T1c): `folded_ring.sv`, a ring
+pushed in past its fold, and `tight_ball.sv`, a ball screwed round a helix tighter than itself. A
+fold under a turn builds too: its two leaves lie on one surface of revolution and overlap, and the
+trim keeps them once (`tangent_rod.sv`, a rod turned along itself), as it keeps once two sections
+whose images about the axis are one curve — the rod's two end rims — swept on the one surface their
+first section made, matched on that meridian itself rather than its polyline, whose chords' sag
+stood above the tolerance and fitted the second a surface of its own.
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |

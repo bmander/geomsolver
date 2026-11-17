@@ -678,6 +678,10 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
     }
 }
 
+/// How far the box the road trims a sweep within is grown past the blank's, as a share of its
+/// diagonal: no round number, so the box's planes stand clear of the blank's and the tool's.
+const REACH: f64 = 0.0937;
+
 /// **The contact's road** (#880 Q1b): `contacts::candidates` — each face's contact in stretches carried
 /// over the roll, the end poses, every two given their whole meeting — trimmed by membership into the
 /// closed sweep (`trim::trim`, judged there), and cut from `blank` where there is one. The hair a
@@ -688,8 +692,29 @@ fn build(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Op
 fn contacts_road(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
     let (candidates,given) = super::contacts::candidates(tool,path,roll,tol)?;
     let size = tool.size();
-    let trim = super::trim::Trim {resolution:size/32.,hair:(4.*tol).max(1e-6*size)};
-    let (swept,_) = super::trim::trim(tool,path,roll,&candidates,&given,bar,tol,trim)?;
+    let trim = super::trim::Trim {resolution:size/32.,hair:(4.*tol).max(1e-6*size),reach:None};
+    // **the sweep within the blank's reach, where the whole does not close** (#880 T1c): cut from a
+    // blank, the sweep is wanted only inside a box holding the blank — grown by `REACH` of its size
+    // — and trimmed
+    // there, its pieces outside dropped and the box's faces kept where the sweep holds them, judged
+    // against membership inside the box; the cut is the same. Asked where the whole sweep's trim
+    // refuses: the twist drill's steep flute wheel, run from below the stock to past its top, whose
+    // flank's fold meets the wheel posed at the roll's ends far outside the stock (where the trim
+    // does not close the meetings beside the cusp, #880 T1e). Not asked first: a torus screwed
+    // through a rod, its stretches' rails crossing the box, is split there unlike its neighbours
+    let swept = match super::trim::trim(tool,path,roll,&candidates,&given,bar,tol,trim) {
+        Ok((swept,_)) => swept,
+        // (a build stopped by its budget is not asked again)
+        Err(whole) if !matches!(whole,Unbuilt::Budget {..}) => {
+            let Some(b) = blank else { return Err(whole) };
+            let (lo,hi) = b.bounds();
+            let g = REACH*b.size();
+            let reach = Some((lo.map(|x| x-g),hi.map(|x| x+g)));
+            if crate::debug() { eprintln!("swept: the whole sweep's trim refused ({whole:?}): trimmed within the blank's reach") }
+            super::trim::trim(tool,path,roll,&candidates,&given,bar,tol,super::trim::Trim {reach,..trim}).map_err(|_| whole)?.0
+        }
+        Err(whole) => return Err(whole),
+    };
     match blank {
         None => Ok(swept),
         Some(b) => crate::boolean::combined(b,&swept,crate::boolean::Op::Cut,tol).map_err(|e| Unbuilt::Failed(format!("the sweep cut from the blank: {e}"))),

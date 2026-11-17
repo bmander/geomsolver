@@ -129,7 +129,10 @@ fn mixed(prepared: &Prepared) -> bool {
 /// **A body whose sweeps fall to the closed class and to others**: built by the others' road first
 /// — the body as `prepared` less its closed sweeps, whole or by sector and pattern — and then each
 /// closed sweep cut from that on one arrangement (`closed::cut_on`), as from a blank: a sweep's
-/// cut is the same set whatever was cut before it.
+/// cut is the same set whatever was cut before it. The others' cells are judged by the body's
+/// field less the closed sweeps (`MaterialField::read_less`, `sector::left_out`): read with them, a
+/// cell a closed sweep would split read both material and removed (the twist drill's flute wheel
+/// too steep for its helix beside the body clearance's sheet, #880 T1c).
 fn mixed_cut(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,tolerance: Option<Tolerance>,say: &Say)
     -> Result<crate::brep::topo::Brep,ExportRefusal> {
     let keep: Vec<usize> = (0..prepared.distinct.len()).filter(|&k| !matches!(prepared.classes[k],crate::solid::admission::Class::Closed(_))).collect();

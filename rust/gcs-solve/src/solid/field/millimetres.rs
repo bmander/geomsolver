@@ -44,6 +44,10 @@ impl Millimetres<MaterialField> {
     pub fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Self,String> {
         Millimetres::over(sk,MaterialField::read(sk,solid,axis_tolerance)?)
     }
+    /// `solid`'s material field less the swept solids `left_out` (`MaterialField::read_less`).
+    pub fn read_less(sk: &Sketch,solid: usize,axis_tolerance: f64,left_out: &std::collections::BTreeSet<usize>) -> Result<Self,String> {
+        Millimetres::over(sk,MaterialField::read_less(sk,solid,axis_tolerance,left_out)?)
+    }
     /// An evaluator asked in millimetres (`MaterialField::evaluator`).
     pub fn evaluator(&self,max_cached_poses_per_sweep: usize) -> MillimetreEvaluator {
         MillimetreEvaluator {inner:self.field.evaluator(max_cached_poses_per_sweep),scale:self.scale}
