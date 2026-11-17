@@ -22,6 +22,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   contact, so no seam runs through the cusp's meetings on the tool posed at an end of the roll. The
   twist drill's flute wheel too steep for its helix builds alone, with no blank, and cut from the
   stock by its whole sweep, no longer within the stock's reach.
+- **A branch of a sheet's meeting with a posed face ends where the face does** (`swept::contacts`):
+  a branch meeting a face the section does not lie on is clipped to that face, its ends put on a
+  corner of the sheet within the root of the tolerance; read whole it ran on past the face's rim.
 - **A crossing of a swept sheet, a fitted net or a family's wall is placed on it** (`boolean`): an
   edge crossing such a surface at a shallow angle had its root off the surface by what the angle
   makes of the tolerance, read outside the face and dropped. Newton's method on the curve less the

@@ -1091,7 +1091,11 @@ face at an end of the roll** cannot settle near that end (the start cone along i
 narrower than the hair), behind it is the tool and ahead of it is swept where the face leads the
 motion there (`trim`). A cycle of a face's pieces no outer cycle holds and smaller than a millionth
 of the face's parameters — three faces of other operands all but tangent at its corner — bounds
-nothing and is left out (`boolean`'s `pieces_of_face`). With these the contact's road also builds
+nothing and is left out (`boolean`'s `pieces_of_face`). **A branch of a sheet's meeting with a posed
+face the section does not lie on is clipped to that face** (`pose_meeting`, #880 T1e): where the
+branch leaves the face (`query::Located::face_place` read along it, the crossing bisected) it ends,
+and an end within the root of the tolerance of a corner of the sheet is put on the corner. Read
+whole, a branch ran on over the face's surface past its rim, where nothing of the tool stands. With these the contact's road also builds
 the screwed bull-nose (`swept_patches`) to the volume worked apart.
 
 **Free-form faces (#880 Q1b S6).** A face's contact is read numerically on any surface, so S6 is
@@ -1275,7 +1279,11 @@ outside the sheet's face and dropped, and the branch the sheet meets the torus i
 with no vertex: a hole in no piece. Every whole lean from 55° to 85° builds cut and alone within ten
 tolerances of its volume (`swallowtails_cut_at_their_double_points_hold_past_the_fold` holds 58°,
 60°, 70° and 80°); at exactly 57° the line integral reads 4.7e-4 low, the build smooth through it to
-4e-8 at 1e-6 and the reference not, its second differences jumping there. (brep-bench's cadrs builds the ball to 282.091, 11% over the sweep's 253.4494.)
+4e-8 at 1e-6 and the reference not, its second differences jumping there. **Not yet:** a swallowtail
+being born, within a third of a degree of the fold (the ring at 54.75°, 54.8° and 54.9°, its tail
+1e-7 to 5e-4 across), refused: its double point is found and cut, but its leaves cross there at a
+vanishing angle, the two rails of the double point's path overlap most of their length, and pieces
+of a thousandth of the ring stand beside them. (brep-bench's cadrs builds the ball to 282.091, 11% over the sweep's 253.4494.)
 
 **A point's side off the nearest feature's pseudo-normal** (`member::Solid::signed_near`, #880
 Q1b): a point whose nearest point of the tool's mesh lies on a vertex or an edge is read by that
