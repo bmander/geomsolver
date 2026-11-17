@@ -257,3 +257,54 @@ fn the_plus_cut_wheel_is_swept_closed() {
     assert!((v/10./area-1.).abs() <= 1e-6,"the build's area {} against the definition's {area}",v/10.);
 }
 
+
+/// **A square key carried along a spline grooves a block** (brep-bench
+/// `swept/key-carried-along-a-spline`, #721 K2): the key, the box (−1.5, −0.8, −1.5)–(1.5, 0.8,
+/// 2.5), carried by a frame riding the cubic Bézier (0, 0, 0), (10, 0, 0), (20, 20, 0), (30, 20,
+/// 0) — its x axis the tangent, its z axis up (`trajectory::Along`) — over the whole curve, and cut
+/// from the box (−6, −6, −8)–(36, 26, 0). No constant twist and no path of slides and turns, so it
+/// took K2's road and was refused at the key's corner (`Curved`); the motion keeps the plane z = 0
+/// and the key stands along its normal, so it is the rectangle's planar sweep extruded, cut from
+/// the block. The swept solid is held to the definition's area in the plane, read line by line;
+/// the block less it to the volume OCCT and cadrs agree on to twelve figures and the area they
+/// agree on to 2e-11 — and to them at a billionth (2e-12 off).
+#[test]
+fn a_key_carried_along_a_spline_grooves_a_block() {
+    use gcs_core::brep::build::block;
+    use gcs_core::brep::nurbs::BSpline;
+    use gcs_core::brep::swept::closed::cut_from;
+    use gcs_core::brep::trajectory::Along;
+    let control = [[0.,0.,0.],[10.,0.,0.],[20.,20.,0.],[30.,20.,0.]];
+    let stock = block([-6.,-6.,-8.],[36.,26.,0.]).unwrap();
+    let key = block([-1.5,-0.8,-1.5],[1.5,0.8,2.5]).unwrap();
+    let curve = BSpline::new(3,vec![0.,0.,0.,0.,1.,1.,1.,1.],control.to_vec()).unwrap();
+    let path = Trajectory::General(std::sync::Arc::new(Along::new(curve).unwrap()));
+    let tol = tolerance(stock.size().max(key.size()));
+    let clock = std::time::Instant::now();
+    let swept = closed(&key,&path,[0.,1.],key.size(),tol).unwrap();
+    eprintln!("key: built in {:?}, {} faces, volume {:.9}",clock.elapsed(),swept.faces.len(),volume(&swept));
+    holds_as_a_solid(&swept,"key");
+    // in the plane: the rectangle turned by the tangent's angle and carried to the curve's point
+    let rectangle = [[-1.5,-0.8],[1.5,-0.8],[1.5,0.8],[-1.5,0.8]];
+    let pose = |t: f64| {
+        let (s,u) = (1.-t,t);
+        let at = |k: usize| s*s*s*control[0][k]+3.*s*s*u*control[1][k]+3.*s*u*u*control[2][k]+u*u*u*control[3][k];
+        let d = |k: usize| 3.*(s*s*(control[1][k]-control[0][k])+2.*s*u*(control[2][k]-control[1][k])+u*u*(control[3][k]-control[2][k]));
+        let l = d(0).hypot(d(1));
+        let (c,sn) = (d(0)/l,d(1)/l);
+        ([[c,-sn],[sn,c]],[at(0),at(1)])
+    };
+    // (the key's long sides lie along the lines at its end poses, y = ±0.8 and 20 ± 0.8, where the
+    // length across a line jumps: lines 0.002 apart put each jump between two of them)
+    let area = area_by_lines(&rectangle,&pose,[0.,1.],9000,[-3.,23.],13000);
+    let v = volume(&swept);
+    eprintln!("key: the area read line by line {area:.6}, the build's {:.6}",v/4.);
+    assert!((v/4./area-1.).abs() <= 1e-6,"the build's area {} against the definition's {area}",v/4.);
+    // cut from the block, as the case asks
+    let cut = cut_from(&stock,&key,&path,[0.,1.],key.size(),tol).unwrap();
+    holds_as_a_solid(&cut,"grooved");
+    let (v,s) = (volume(&cut),cut.faces.iter().map(|f| gcs_core::brep::props::area(&cut,f)).sum::<f64>());
+    eprintln!("key: the grooved block {v:.9}, its surface {s:.9} ({:?})",clock.elapsed());
+    assert!((v/10652.8799891-1.).abs() <= 1e-9,"the grooved block's volume {v} against 10652.8799891");
+    assert!((s/3996.725031465-1.).abs() <= 1e-9,"the grooved block's surface {s} against 3996.725031465");
+}

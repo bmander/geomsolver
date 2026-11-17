@@ -760,11 +760,16 @@ fn build_by(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank:
     let legs = match legs(tool,path,roll) {
         Err(Unbuilt::Motion) if path.screw().is_none() && trim.is_none() => {
             // a prism under a motion keeping the plane square to it: its section's planar sweep,
-            // extruded (#880 Q2), before K2's road — which is still asked where it refuses, its
-            // refusal standing unless K2 cannot read the tool at all
-            let planar = if blank.is_none() { super::planar_solid::swept(tool,path,roll,bar,tol) } else { Ok(None) };
+            // extruded (#880 Q2), and cut from the blank where there is one, before K2's road —
+            // which is still asked where it refuses, its refusal standing unless K2 cannot read the
+            // tool at all
+            let planar = super::planar_solid::swept(tool,path,roll,bar,tol);
             return match planar {
-                Ok(Some(b)) => Ok(b),
+                Ok(Some(swept)) => match blank {
+                    None => Ok(swept),
+                    Some(b) => crate::boolean::combined(b,&swept,crate::boolean::Op::Cut,tol)
+                        .map_err(|e| Unbuilt::Failed(format!("the sweep cut from the blank: {e}"))),
+                },
                 Ok(None) => k2(tool,path,roll,bar,tol,blank),
                 Err(why) => k2(tool,path,roll,bar,tol,blank).map_err(|k| if matches!(k,Unbuilt::Curved {..}) { why } else { k }),
             }

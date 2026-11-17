@@ -5,7 +5,8 @@
 //! path and the pace (`Paced`: a sweep is its path's, not its pace's, #684 L), a path made of
 //! pieces as its pieces (`Pieces`, K1), a constant twist taking up what it carries where a
 //! placement put it (`Placed`, a piece after another: a turn where a slide left the tool), and any
-//! other rigid motion as a pose and its rate at each time (`General`, K2).
+//! other rigid motion as a pose and its rate at each time (`General`, K2) — a frame carried along a
+//! curve among them (`Along`).
 //!
 //! Every reading of a trajectory is a `Motion`, a pose and its derivative by the trajectory's
 //! parameter, and at each time any rigid motion is a screw (Mozzi–Chasles): its **twist**, the
@@ -20,6 +21,9 @@ use crate::util::space::{add,cross,dot,length,scale,sub};
 use crate::{Kind,KernelError};
 use crate::util::interval::{Error as IntervalError,Interval};
 use std::sync::Arc;
+
+mod along;
+pub use along::Along;
 
 type V3 = [f64;3];
 type M3 = [[f64;3];3];

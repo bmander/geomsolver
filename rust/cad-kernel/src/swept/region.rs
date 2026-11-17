@@ -922,9 +922,11 @@ impl Keep<'_> {
     /// at `y` carried back, read on the grid's marks and between two readings bounded below by the
     /// lesser less the point's speed times half the stretch (the distance is one-Lipschitz), the
     /// stretch halved where that bound is not yet above `-tol` — on the grid's own poses while it
-    /// has them, then off it, down to `KEEP_STEP` of the roll, where both readings within it are
-    /// taken for the stretch: at a contact the distance is zero and flat, and a Lipschitz bound
-    /// would halve to the roundoff to clear it.
+    /// has them, then off it, down to `KEEP_STEP` of the roll — or, where the point moves faster
+    /// than the tool's reach a unit of the roll (a roll that is no angle: a curve's parameter, the
+    /// tool carried along it, #721 K2), as far as it moves over `KEEP_STEP` of a roll that turns
+    /// it at its reach — where both readings within it are taken for the stretch: at a contact the
+    /// distance is zero and flat, and a Lipschitz bound would halve to the roundoff to clear it.
     fn outside(&self,y: P) -> bool {
         let s = self.setting;
         let read = |b: &Back| s.section.value(b.point(y));
@@ -935,12 +937,13 @@ impl Keep<'_> {
             values.push(v);
         }
         let Ok(speed) = s.path.inverse_point_speed_bound(s.plane.world(y,0.),self.domain) else { return false };
+        let floor = if speed > 1.+s.scale { KEEP_STEP*(1.+s.scale)/speed } else { KEEP_STEP };
         // a stretch by its ends' rolls and readings, and their grid indices while it is on the grid
         let mut stack: Vec<(f64,f64,f64,f64,Option<[usize;2]>)> = self.marks.windows(2).zip(values.windows(2))
             .map(|(m,v)| (self.times[m[0]],self.times[m[1]],v[0],v[1],Some([m[0],m[1]]))).collect();
         while let Some((a,b,va,vb,on)) = stack.pop() {
             if va.min(vb)-speed*(b-a)/2. >= -self.tol { continue }
-            if b-a <= KEEP_STEP { continue }
+            if b-a <= floor { continue }
             let (m,vm,halves) = match on {
                 Some([i,j]) if j-i >= 2 => { let k = (i+j)/2; (self.times[k],read(&self.backs[k]),[Some([i,k]),Some([k,j])]) }
                 _ => {
