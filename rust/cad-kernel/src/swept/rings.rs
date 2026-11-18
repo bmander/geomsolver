@@ -1866,14 +1866,32 @@ fn trimmed(net: &Net,roll: [f64;2],mut faces: Vec<Trimmed>,tol: f64) -> Result<(
                                     Some(r) => chord_curve(r,pts,tol)?,
                                     // (the double curve: through the net's points along it)
                                     None => {
-                                        let (curve,xs) = curve_through(pts.iter().map(|&[x,y]| net.point(k as f64+x,a+(b-a)*y)).collect(),tol)?;
+                                        // (refined until the surface between each two points stands within a
+                                        // tenth of the tolerance of the chord between them: beside a fold the
+                                        // sheet bends sharply, and points 2e-4 radians apart sagged 3.6e-6)
+                                        let at = |p: P2| net.point(k as f64+p[0],a+(b-a)*p[1]);
+                                        let mut fine: Vec<P2> = vec![pts[0]];
+                                        for w in pts.windows(2) {
+                                            let mut todo = vec![(w[0],w[1],0)];
+                                            while let Some((p,q,depth)) = todo.pop() {
+                                                let m = [0.5*(p[0]+q[0]),0.5*(p[1]+q[1])];
+                                                let sag = norm(crate::util::space::sub(at(m),scale(add(at(p),at(q)),0.5)));
+                                                if sag > 0.1*tol && depth < 20 { todo.push((m,q,depth+1)); todo.push((p,m,depth+1)) } else { fine.push(q) }
+                                            }
+                                        }
+                                        let pts = &fine;
+                                        let xs: Vec<V> = pts.iter().map(|&p| at(p)).collect();
                                         let mut params = vec![0.];
                                         for w in xs.windows(2) { params.push(params.last().unwrap()+norm(crate::util::space::sub(w[1],w[0])).max(1e-300)) }
                                         let length = *params.last().unwrap();
                                         let params: Vec<f64> = params.iter().map(|p| p/length.max(1e-300)).collect();
                                         let uvs: Vec<V> = pts.iter().map(|&[x,y]| [u0+x,t_of(y),0.]).collect();
-                                        if let Some(pc) = crate::nurbs::interpolate(&uvs,&params,3) { chord_pcurves[i] = Some(Pcurve::Curve(Arc::new(Curve::BSpline(Arc::new(pc))))) }
-                                        (curve,xs)
+                                        // (both through every point at one parameter, a polyline each: they agree at
+                                        // every point and part only by a chord's sag)
+                                        let (Some(pc),Some(c3)) = (crate::nurbs::interpolate(&uvs,&params,1),crate::nurbs::interpolate(&xs,&params,1))
+                                            else { return Err(Unbuilt::Failed("a ring's sheet's double curve could not be drawn".into())) };
+                                        chord_pcurves[i] = Some(Pcurve::Curve(Arc::new(Curve::BSpline(Arc::new(pc)))));
+                                        (Curve::BSpline(Arc::new(c3)),xs)
                                     }
                                 };
                                 let (v0,v1) = (vertex(&mut out,k,pts[0])?,vertex(&mut out,k,pts[pts.len()-1])?);

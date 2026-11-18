@@ -69,16 +69,20 @@ pub fn sewn(pieces: &[Brep],tol: f64) -> Result<Brep,KernelError> {
 
 /// **Open sheets sewn where their boundaries are one curve** (`sewn`'s rules but the last): the
 /// pieces' vertices merged, boundary edges cut at one another's vertices and paired where they lie
-/// along one another, an edge bounding one face left a boundary; nothing turned, nothing asked to
-/// close, and nothing measured (a ring's tube fitted stretch by stretch of the roll, sewn across the
-/// cuts for a trim that reads its candidates as they are, #880 T1d). Each piece's surfaces are kept.
+/// along one another, an edge bounding one face left a boundary, each edge's gap measured; nothing
+/// turned, nothing asked to close, and nothing refused for its gap (a ring's tube fitted stretch by
+/// stretch of the roll, sewn across the cuts, #880 T1d). Each piece's surfaces are kept.
 pub fn sewn_open(pieces: &[Brep],tol: f64) -> Result<Brep,KernelError> {
     let mut b = Brep::default();
     for p in pieces { b.join(p); }
     merge_vertices(&mut b,tol);
     split_at_vertices(&mut b,tol);
     pair_edges(&mut b,tol,true)?;
-    Ok(b.compacted())
+    // (each edge's gap measured, as `sewn` measures it: one fitted on a stretch's net, used by the
+    // next stretch's face, stands off that face by what the two fits part by)
+    let mut b = b.compacted();
+    b.measure_tolerances();
+    Ok(b)
 }
 
 /// **A sheet parted into its connected pieces**: faces sharing an edge in one, each piece with its
