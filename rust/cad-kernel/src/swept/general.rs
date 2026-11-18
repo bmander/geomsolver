@@ -68,8 +68,9 @@ type V = [f64;3];
 
 /// **Where two walls sharing a rail cross elsewhere** (`candidates`): seeded where an edge of either
 /// wall crosses the other's surface farther than a millionth of their size from every rail, traced
-/// through both within their shared box (`ssi::trace`), and kept where some point of the curve
-/// stands that far off the rails. None where nothing seeds, or the trace is refused.
+/// through both within their shared box (`ssi::trace`), each seed on its own, and kept where some
+/// point of the curve stands that far off the rails. None where nothing seeds, or every trace is
+/// refused.
 fn beside_rails(a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,rails: &[Curve],tol: f64) -> Vec<Curve> {
     let (la,ha) = a.bounds();
     let (lb,hb) = b.bounds();
@@ -86,8 +87,20 @@ fn beside_rails(a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,rails: &[Curve],tol:
             }
         }
     }
+    if crate::debug() { eprintln!("general: beside rails from {:?}: {} seeds {:?}",rails.first().and_then(|r| crate::query::curve_domain(r).map(|d| r.point(d[0]))),seeds.len(),seeds) }
     if seeds.is_empty() { return Vec::new() }
-    let Ok(traced) = crate::ssi::trace(sa,sb,&seeds,lo,hi,tol) else { return Vec::new() };
+    // (each seed traced on its own, one already on a branch traced skipped: a seed where the two
+    // all but touch — the cube tumbling 75°, two fans meeting at 0.02° where the branch reaches a
+    // rail of a third — is refused, and the rest of the branch is still traced from the others)
+    let mut traced: Vec<Curve> = Vec::new();
+    for &p in &seeds {
+        let on = traced.iter().any(|c| distance(c.point(c.inverse(p)),p) <= 1e-6*size);
+        if on { continue }
+        match crate::ssi::trace(sa,sb,&[p],lo,hi,tol) {
+            Ok(t) => traced.extend(t),
+            Err(e) => if crate::debug() { eprintln!("general: beside rails, the trace from {p:?} refused: {e}") },
+        }
+    }
     let kept: Vec<Curve> = traced.into_iter().filter(|c| {
         let Some([t0,t1]) = crate::query::curve_domain(c) else { return false };
         (0..=16).any(|k| off_rails(c.point(t0+(t1-t0)*k as f64/16.)))
