@@ -218,7 +218,34 @@ impl Ring {
             On::Face(k) => match self.elements[k] {
                 Element::Arc {c,r,from,sweep} => {
                     let u = w.velocity(self.lift(theta,c));
-                    let (a,b) = (dot(er,u),dot(ez,u));
+                    let (mut a,mut b) = (dot(er,u),dot(ez,u));
+                    // (a meridian the whole of whose circle the instant touches — the ring's top and
+                    // bottom carried along a path in the plane square to them, its velocity along
+                    // the path there, #880 T1d M2 — has `A` and `B` nought, and beside it both are
+                    // all but nought, read off a velocity whole by its rounding: there they are read
+                    // in closed form. With `e_r(θ) = cos θ e₁ + sin θ e₂`, `A = P · e_r(θ)` and
+                    // `B = q + Q · e_r(θ)` (the arc's centre's velocity `U` less its turn about the
+                    // axis: `P = U` across, `q = e_z · U`, `Q = ρ_c (e_z × ω)`); where both vanish at
+                    // `θ*` each is `2 sin((θ − θ*)/2)` times `(−P₁ sin m + P₂ cos m)`, `m` the half sum,
+                    // and the branch roots turn on that, smooth through `θ*`)
+                    let (e1,e2) = (self.axes(0.).0,self.axes(std::f64::consts::FRAC_PI_2).0);
+                    let uc = w.velocity(self.lift(theta,[0.,c[1]]));
+                    let cross_z = cross(ez,w.omega);
+                    let (pp,q,qq) = ([dot(uc,e1),dot(uc,e2)],dot(ez,uc),[c[0]*dot(cross_z,e1),c[0]*dot(cross_z,e2)]);
+                    let size = pp[0].dhypot(pp[1])+q.abs()+qq[0].dhypot(qq[1]);
+                    if a.dhypot(b) <= 1e-6*size {
+                        let base = (-pp[0]).datan2(pp[1]);
+                        let whole = [base,base+std::f64::consts::PI].into_iter().find(|&st| {
+                            let (ss,cs) = st.dsin_cos();
+                            (q+qq[0]*cs+qq[1]*ss).abs() <= 1e-9*size && ((theta-st+std::f64::consts::PI).rem_euclid(TAU)-std::f64::consts::PI).abs() < 1e-2
+                        });
+                        if let Some(st) = whole {
+                            let d = (theta-st+std::f64::consts::PI).rem_euclid(TAU)-std::f64::consts::PI;
+                            let (sm,cm) = (theta-0.5*d).dsin_cos();
+                            let half = if d < 0. { -1. } else { 1. };
+                            (a,b) = (half*(-pp[0]*sm+pp[1]*cm),half*(-qq[0]*sm+qq[1]*cm));
+                        }
+                    }
                     if !(a.dhypot(b) > 0.) { return None }
                     let s = if l.branch { 1. } else { -1. };
                     let psi = (-a*s).datan2(b*s);
@@ -735,8 +762,17 @@ impl<'a> Reader<'a> {
         let p = r.curves[run.curve][run.pieces[piece]];
         let at = |th: f64| self.ring.root(&r.instant.w,th.rem_euclid(TAU),p.label,false)
             .ok_or_else(|| Unbuilt::Curved {at:r.pose.point(self.ring.centre)});
+        // (a piece ending on a meridian the instant touches whole, where `A` and `B` pass through
+        // nought and each branch's root turns half about, is read there on its own side: its root a
+        // hair inside it where that stands apart from the end's, #880 T1d M2 — elsewhere the end's
+        // own, the one the face beside reads its seam at)
         let th = p.from+(p.to-p.from)*f;
-        let root = at(th)?;
+        let mut root = at(th)?;
+        if f <= 0. || f >= 1. {
+            let hair = (1e-10f64).min(0.25*(p.to-p.from).abs());
+            let inner = at(th+if f <= 0. { hair } else { -hair }*(p.to-p.from).signum())?;
+            if crate::util::space::distance(inner.x,root.x) > 1e-6*self.ring.thickness { root = inner }
+        }
         // (a narrow pair's bridge, between two touching pieces, is the sheet itself: the double curve
         // its outer leaves cross along passes through it, and its tail is cut off there, #880 T1d)
         let c = &r.curves[run.curve];
@@ -2014,6 +2050,23 @@ impl Ring {
 /// **The ring's contact at the roll `t` of `[a, b]`, as the road reads it**: each contact curve's
 /// pieces, matched to those at `a`, sampled at `n` points each (at the middles of `n` equal shares
 /// of its stretch), each point where the pose at `t` puts it with how the sheet stands there.
+/// At roll `t`, the root of the arc's branch `branch` (face 0) at each of `thetas` and its `s''`,
+/// and the point in space (a probe of the contact beside a whole-touched meridian).
+pub fn branch_at(ring: &Ring,path: &Trajectory,roll: [f64;2],t: f64,branch: bool,thetas: &[f64]) -> Result<Vec<(f64,V,f64)>,Unbuilt> {
+    let (w,dw) = rates(path,t,roll)?;
+    let pose = path.pose(t)?;
+    let l = Label {on:On::Face(0),branch};
+    Ok(thetas.iter().filter_map(|&th| ring.root(&w,th,l,false).map(|r| (th,pose.point(r.x),ring.bend(&w,&dw,th,&r)))).collect())
+}
+
+/// Each contact curve's pieces at roll `t` under `path` over `roll`: each piece's angles round the
+/// axis and its kind (a probe of the reader).
+pub fn pieces_at(ring: &Ring,path: &Trajectory,roll: [f64;2],t: f64) -> Result<Vec<Vec<(f64,f64,Label,Side)>>,Unbuilt> {
+    let reader = Reader::new(ring,path,roll)?;
+    let r = reader.read(t)?;
+    Ok(r.curves.iter().map(|c| c.iter().map(|p| (p.from,p.to,p.label,p.side)).collect()).collect())
+}
+
 pub fn contacts(ring: &Ring,path: &Trajectory,roll: [f64;2],t: f64,n: usize) -> Result<Vec<Vec<(V,Side)>>,Unbuilt> {
     let reader = Reader::new(ring,path,roll)?;
     let r = reader.read(t)?;

@@ -18,6 +18,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   `s''` sought along the band on the curve's own branch, where samples alone read the whole curve as
   touching (the tumbling torus turned whole, and thin). A sheet is refused as folding where it turns
   over, not where it is merely thin.
+- **A ring's meridian the instant touches whole is read through** (`swept::rings`, #880 T1d M2): on
+  an arc of the meridian `n · v = A cos ψ + B sin ψ`, and where `A` and `B` both vanish — the ring's
+  top and bottom carried along a path in the plane square to them, their velocity along the path —
+  the arc's root was refused (no root there, so the contact's count changed round the axis:
+  `Curved`). Beside such a meridian `A` and `B` are read in closed form, each `2 sin((θ − θ*)/2)`
+  times a vector that is not small, so the two curves pass through it smoothly; and a piece ending
+  on it is read a hair inside, on its own side, where the end's root stands apart from it. brep-bench's ring carried along a spline is admitted,
+  its contact one shape over the roll, and its tubes fit; it is refused further on, `Folded` beside
+  the whole meridian, whose own swept circle is not yet a candidate.
 - **A rod threaded at a lead that grows is built** (`swept::contacts::pose_meeting`, #880 T1d): a
   branch of a sheet's meeting with the tool at an end pose has each end put at its own nearest corner
   that `h`'s rounding reaches, and only one within two cells of it — a strip's corner at a vertex,
