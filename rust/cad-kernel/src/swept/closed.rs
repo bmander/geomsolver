@@ -1685,8 +1685,24 @@ fn general_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,b
     crate::util::meter::go_on()?;
     let size = tool.size();
     let trim = super::trim::Trim {resolution:size/32.,hair:(4.*tol).max(1e-6*size),reach:None};
-    let (swept,_) = super::trim::trim(tool,path,roll,&candidates,&given,bar,tol,trim)?;
+    let swept = trimmed_or_dumped(tool,path,roll,&candidates,&given,bar,tol,trim)?;
     cut_blank(swept,blank,tol)
+}
+
+/// The candidates trimmed by membership (`trim::trim`), and where that is refused and
+/// `SOLVENT_SWEEP_DUMP` names a directory, what the trim was given written there (`dump_trim`,
+/// #942 F5), so it is run again apart from what made its candidates.
+#[allow(clippy::too_many_arguments)]
+fn trimmed_or_dumped(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Brep],given: &[crate::boolean::Given],bar: f64,tol: f64,
+    trim: super::trim::Trim) -> Result<Brep,Unbuilt> {
+    let out = super::trim::trim(tool,path,roll,candidates,given,bar,tol,trim);
+    if let (Err(why),Some(dir)) = (&out,super::dump::dump_dir()) {
+        match super::dump::dump_trim(&dir,tool,path,roll,candidates,given,bar,tol,trim,&format!("{why:?}")) {
+            Ok(()) => eprintln!("sweep: the refused trim written to {}",dir.display()),
+            Err(e) => eprintln!("sweep: the refused trim not written: {e}"),
+        }
+    }
+    Ok(out?.0)
 }
 
 /// **A ring under a motion no constant twist takes, built closed** (`swept::rings`, steps 6 and 7
@@ -1783,7 +1799,7 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
         let size = tool.size();
         let trim = super::trim::Trim {resolution:size/32.,hair:(4.*tol).max(1e-6*size),reach:None};
         let candidates: Vec<Brep> = [start,end].into_iter().chain(sheets).collect();
-        let (swept,_) = super::trim::trim(tool,path,[a,b],&candidates,&given,bar,tol,trim)?;
+        let swept = trimmed_or_dumped(tool,path,[a,b],&candidates,&given,bar,tol,trim)?;
         return cut_blank(swept,blank,tol)
     }
     candidates(tool,path,[a,b],bar,tol,blank,[start,end],sheets,&given)

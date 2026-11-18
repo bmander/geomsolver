@@ -8,6 +8,16 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- A sweep refused in its trim is written whole where `SOLVENT_SWEEP_DUMP` names a directory
+  (`swept::dump::dump_trim`, #942 F5): the tool, the trajectory by its structure (a twist, one seen
+  from another, a twist placed at a pose), the roll, the bar, the trim's reading, the candidates and
+  the meetings given them. A face family's wall (`Surface::Family`) and the rails and rims along it
+  are now written and read back bit for bit. `load_trim` gives a `Trimming` whose `replay()` runs the
+  trim alone, so the general road's and a ring's refusals are questioned without remaking their
+  candidates: where the sweep's boundary crosses a line and on which candidate's face
+  (`Trimming::boundary_along`), and what passes near a point (`Trimming::through`), put from the
+  command line by the `sweep_probe` example.
+
 - **The contact's road under any motion, begun** (`swept::general`, #880 T1d): a polyhedral tool's
   candidates under a motion no constant twist takes — its contact read per tool at each instant,
   chords of its faces' characteristic lines and stretches of its sharp edges, cut where its shape

@@ -840,7 +840,13 @@ pair of surface kinds and the slowest, its curve–surface searches certified ag
 its deepest outline: a performance change cites it before and after. `SOLVENT_SWEEP_DUMP=<dir>`
 writes a failed build's domain and candidates whole (`swept::dump`), replayed alone and reduced
 to the fewest candidates that still fail (`swept_closed::a_failed_builds_arrangement_is_dumped_replayed_and_reduced`;
-the loop is docs/testing.md's).
+the loop is docs/testing.md's). A build refused in its trim writes what the trim was given
+(`dump::dump_trim`, #942 F5): the tool, the trajectory by its structure, the roll, the bar, the trim's
+reading, the candidates with their face families' walls, rails and rims, and the given meetings;
+`load_trim` reads them back, every candidate and meeting bit for bit
+(`swept_general::the_general_roads_candidates_are_written_and_read_back_whole`), and its replay
+refuses as the build did (`swept_general::a_refused_trim_replays_from_its_dump_to_the_same_refusal`,
+and in the slow tier the bench's tumbling cube).
 
 **Trimming by certified membership, face by face (#880 E1, `swept::trim`; docs/swept-solid-design.md
 §12).** A closed swept solid is built from candidates given to it — the tool's faces at the end
