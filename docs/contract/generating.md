@@ -1940,8 +1940,12 @@ stretches' vertices on its own row, a row's rim cut only at that row's vertices 
 swallowtail's point a stretch two-hundredths of a radian wide has its two rows within the tolerance
 of one another. **Not yet built**: the tumbling torus turned whole fits, is cut and sewn, and is
 refused in the trim, an edge of one sheet lying within a few tolerances of another over a long
-stretch, where no search proves their meeting (its fit alone takes 100 s); the thin one takes over
-forty minutes. **A ring along a spline** (the whole meridian touched at every instant, `rings::root`
+stretch, where no search proves their meeting; the thin one is refused there too. A double curve's
+points are placed on a stretch by the seams' angles of the stretch's own net (`rings::cut_along`),
+not by an instant read for each (#942 F4: the turned torus refused in 32 s where it took 106, 74 of
+them reading instants; the thin one in 58 s where it took over forty minutes); what is left is the
+shape changes found (6.6 s) and, in the trim's Boolean, its fitted tubes' edges read against their
+faces (693 searches, 81 s of the cores' time). **A ring along a spline** (the whole meridian touched at every instant, `rings::root`
 in closed form there) now closes its sheets — a bridge holding the join its label turns over at, a
 trace leaving beside a corner ending at a nearer crossing, a cap both faces of a seam trace into one
 corner dropped, a chord refined by the meeting's own points where its cubic strays — and is refused

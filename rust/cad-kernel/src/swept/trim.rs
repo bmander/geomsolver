@@ -203,7 +203,7 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
     let located: Vec<crate::query::Located> = posed.iter().map(|b| crate::query::Located::new(b,tol)).collect();
     let read = std::sync::atomic::AtomicUsize::new(0);
     let kept = std::sync::atomic::AtomicUsize::new(0);
-    let side = |f: &crate::topo::Face,points: &mut dyn Iterator<Item=V>| -> Result<Option<bool>,String> {
+    let sided = |f: &crate::topo::Face,points: &mut dyn Iterator<Item=V>| -> Result<Option<bool>,String> {
         read.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
         let mut first = None;
         let own = boxed.is_some_and(|b| candidates[b].faces.iter().any(|g| std::ptr::eq(g,f)));
@@ -267,7 +267,22 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
         }
         Err(format!("a piece of a {} whose sides membership does not settle, at {first:?}",f.surface.kind()))
     };
-    let out = crate::boolean::trimmed(&refs,given,&meet,&side,tol)?;
+    // (each piece's reading timed, where `SOLVENT_BREP_TIME` is set: what membership costs beside the
+    // Boolean's own meetings, #942 F4)
+    let reading = std::sync::atomic::AtomicU64::new(0);
+    let side = |f: &crate::topo::Face,points: &mut dyn Iterator<Item=V>| -> Result<Option<bool>,String> {
+        let at = crate::util::clock::Instant::now();
+        let out = sided(f,points);
+        reading.fetch_add(at.elapsed().as_nanos() as u64,std::sync::atomic::Ordering::Relaxed);
+        out
+    };
+    let boolean = crate::util::clock::Instant::now();
+    let out = crate::boolean::trimmed(&refs,given,&meet,&side,tol);
+    if crate::timing() {
+        eprintln!("trim: the Boolean in {:?}, its pieces read by membership in {:.2} s of the cores' time",boolean.elapsed(),
+            reading.load(std::sync::atomic::Ordering::Relaxed) as f64*1e-9)
+    }
+    let out = out?;
     report.pieces = [kept.into_inner(),read.into_inner()];
     if crate::timing() { eprintln!("trim: {} of {} pieces kept, {} faces, in {:?}",report.pieces[0],report.pieces[1],out.faces.len(),clock.elapsed()) }
     // 4. checked and judged

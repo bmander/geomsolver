@@ -1726,6 +1726,12 @@ pub fn ring_cut_from(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],ba
 fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
     let [a,b] = [roll[0].min(roll[1]),roll[0].max(roll[1])];
     let clock = crate::util::clock::Instant::now();
+    // (each step's time and what it read, where `SOLVENT_BREP_TIME` is set: #942 F4)
+    let mut mark = (crate::util::clock::Instant::now(),super::rings::spent::now());
+    let mut phase = |what: &str| if crate::timing() {
+        eprintln!("ring: {what} in {:?}; {}",mark.0.elapsed(),super::rings::spent::since(mark.1));
+        mark = (crate::util::clock::Instant::now(),super::rings::spent::now());
+    };
     let ring = super::rings::Ring::read(tool)?;
     // **the roll cut where the contact changes shape** (#880 T1d, `rings::changes`): a fold pair born
     // or vanishing partway — the tumbling torus turned whole, and thin — each stretch fitted on its
@@ -1738,8 +1744,10 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
         [if k == 0 { w[0] } else { w[0]+eps },if k+2 == bounds.len() { w[1] } else { w[1]-eps }]
     }).collect();
     if crate::debug() && !cuts.is_empty() { eprintln!("ring: the contact changes shape at {cuts:?}") }
+    phase(&format!("the roll cut where the contact changes shape, {} cuts,",cuts.len()));
     let mut fits: Vec<super::rings::Fitted> = stretches.iter().map(|&sp| super::rings::fitted_over(&ring,path,[a,b],sp,scale,K2_FIT*tol))
         .collect::<Result<_,_>>()?;
+    phase(&format!("{} stretches fitted",fits.len()));
     // **each fold pair's double curve** (#880 T1d, `rings::double_curve`): traced over the whole roll
     // from where a stretch first finds the outer leaves crossing, once a pair, and cut into every
     // stretch it passes (`rings::cut_along`), its tail dropped there
@@ -1749,6 +1757,7 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
         if curves.iter().any(|c| c.iter().any(|&(x,y,_)| (x-th).abs() <= 1e-3 && (y-t).abs() <= 1e-3*(b-a))) { continue }
         curves.push(super::rings::double_curve(&ring,path,[a,b],seed,tol)?);
     }
+    phase(&format!("{} double curves traced",curves.len()));
     // (and the roll cut again at each swallowtail point, the contact's shape the same either side:
     // there the double curve's two halves meet, one in space, and a face holding both would be glued
     // to itself along the crease — each stretch about it refitted in two)
@@ -1761,7 +1770,9 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
         let [p0,p1] = parts;
         fits.splice(k..=k,[p0?,p1?]);
     }
+    phase(&format!("{} stretches refitted about swallowtail points",2*apexes.len()));
     if !curves.is_empty() { for fit in &mut fits { super::rings::cut_along(&ring,path,[a,b],fit,scale,&curves)? } }
+    phase("the double curves cut into the stretches");
     if crate::timing() { eprintln!("ring: fitted in {:?}",clock.elapsed()) }
     crate::util::meter::go_on()?;
     let [start,end] = [super::rings::posed(tool,&ring,path,&fits[0],a)?,super::rings::posed(tool,&ring,path,&fits[fits.len()-1],b)?];
@@ -1774,6 +1785,7 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
         let at = [Some((&start,poses[0])),Some((&end,poses[1]))];
         let (s,g) = super::rings::entered_at(fit,&ring,at,[k == 0,k == last],tol)?;
         if crate::debug() { eprintln!("ring: stretch {k} over {:?}: pieces {}..{}, faces {:?}",fit.roll,pieces.len(),pieces.len()+s.len(),s.iter().map(|b: &Brep| b.faces.len()).collect::<Vec<_>>()) }
+        phase(&format!("stretch {k} entered at the end poses"));
         pieces.extend(s);
         given.extend(g);
     }
@@ -1790,6 +1802,7 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
         }
         parts
     };
+    phase("the stretches sewn");
     if crate::timing() { eprintln!("ring: entered in {:?}",clock.elapsed()) }
     // **trimmed by membership where the roll is cut** (#880 T1d): its tubes met only where both come
     // near the sweep's boundary (`trim`), as the contact's road meets its sheets — a turned whole

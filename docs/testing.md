@@ -102,6 +102,11 @@ sweep's boundary crosses a line, by membership, and the candidates' faces it lie
 `Trimming::boundary_along`) and `through x,y,z [within]` (the faces, edges and given meetings near a
 point: `Trimming::through`).
 
+A ring's build says where its time goes under `SOLVENT_BREP_TIME=1` (#942 F4): each step with
+the instants it read and their time, the trim's Boolean beside its membership, and the edges read
+against faces by kinds; `cargo run --release -p cad-kernel --example ring_profile -- full-turn|thin`
+builds brep-bench's two tumbling tori so.
+
 `SOLVENT_SWEEP_PROFILE=1` prints what a closed build spent per stage and which pairs of surface
 kinds were traced rather than met in closed form, and what the meetings' analysis did (critical
 sets, branch tests, a level curve's readings): start a performance change from it, and cite it
