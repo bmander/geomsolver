@@ -3279,6 +3279,14 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool,tol: f64) -
         if area.abs() > 4.*sag_uv*uv_len { area } else { fine_area(c,f,out,pool) }
     }).collect();
     let mut pieces: Vec<(usize,Vec<usize>)> = (0..cycles.len()).filter(|&i| areas[i] > 0.).map(|i| (i,vec![i])).collect();
+    // (a face walked into one cycle is that cycle's piece, whatever its area reads: no face is a hole
+    // alone, and one all but folded flat — a tube's corner beside a swallowtail's point, a thousandth
+    // of its parameters, its inversions settling nowhere — reads its one cycle's area off by its
+    // sign, #880 T1d)
+    if pieces.is_empty() && cycles.len() == 1 {
+        if super::debug() { eprintln!("pieces: a {}'s one cycle, its area read {:e}, taken whole",f.surface.kind(),areas[0]) }
+        return Ok(vec![std::mem::take(&mut cycles)])
+    }
     let face_area: f64 = areas.iter().filter(|&&a| a > 0.).sum();
     for i in (0..cycles.len()).filter(|&i| areas[i] <= 0.) {
         // a hole goes in the smallest outer cycle holding a point of it, read against that cycle

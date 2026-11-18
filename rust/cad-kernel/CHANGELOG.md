@@ -24,7 +24,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   nowhere, was halved twenty times over, a million points (#880 T1d, the tumbling torus turned
   whole). Each point of a run is inverted beside the middle of the chord it cuts, so it stays on its
   own leaf of a surface that folds, and the Boolean keeps the points it inverted onto a face within
-  one arrangement.
+  one arrangement. A face walked into one cycle is that cycle's piece whatever its area reads (no
+  face is a hole alone): a tube's corner beside a swallowtail's point read its one cycle's area off
+  by its sign, `a bspline has a hole in no piece`. The tumbling torus turned to 2.0 rad now reaches
+  its trim's check in 25 s, where it ran past half an hour.
 - **`closed` asks the general road where K2 cannot read the tool** (`swept::closed`,
   `general_built`, #880 T1d): a polyhedral tool under a motion no constant twist takes and keeping
   no plane, refused by K2 as `Curved` (no convex solid of revolution), has its candidates made by
