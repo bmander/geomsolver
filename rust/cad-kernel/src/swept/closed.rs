@@ -1713,7 +1713,8 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
     // (and the roll cut again at each swallowtail point, the contact's shape the same either side:
     // there the double curve's two halves meet, one in space, and a face holding both would be glued
     // to itself along the crease — each stretch about it refitted in two)
-    let apexes: Vec<f64> = curves.iter().filter_map(|c| c.last().map(|p| p.1)).filter(|t| t.is_finite() && *t > a && *t < b).collect();
+    let apexes: Vec<f64> = curves.iter().flat_map(|c| c.iter().skip_while(|p| !p.0.is_nan()).skip(1).map(|p| p.1))
+        .filter(|t| t.is_finite() && *t > a && *t < b).collect();
     for &t in &apexes {
         let Some(k) = fits.iter().position(|f| f.roll[0] < t && f.roll[1] > t) else { continue };
         let [lo,hi] = fits[k].roll;
@@ -1730,8 +1731,9 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
     let mut pieces = Vec::new();
     let mut given = Vec::new();
     for (k,fit) in fits.iter().enumerate() {
-        let at = [(k == 0).then_some((&start,poses[0])),(k == last).then_some((&end,poses[1]))];
-        let (s,g) = super::rings::entered_at(fit,&ring,at,tol)?;
+        // (both end poses read on every stretch: a tube carried on can cross either far from it)
+        let at = [Some((&start,poses[0])),Some((&end,poses[1]))];
+        let (s,g) = super::rings::entered_at(fit,&ring,at,[k == 0,k == last],tol)?;
         if crate::debug() { eprintln!("ring: stretch {k} over {:?}: pieces {}..{}, faces {:?}",fit.roll,pieces.len(),pieces.len()+s.len(),s.iter().map(|b: &Brep| b.faces.len()).collect::<Vec<_>>()) }
         pieces.extend(s);
         given.extend(g);

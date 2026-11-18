@@ -31,7 +31,12 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   never returned. The roll is cut again at each swallowtail point, where the double curve's two
   halves meet; the tubes are sewn only along the rows at the cuts (`sewn_open`'s `across`), the
   nearest two edges paired first where an instant's contact doubles back on itself; and a fit's fold
-  check reads the loop's last join as the first piece's.
+  check reads the loop's last join as the first piece's. A double curve's seed is read with its
+  first preimage wrapped round the loop (before the first face it is on the last, not the bridge),
+  sought within two of the bridge's half-widths past each end; and a pair born and later vanishing
+  has its double curve closed through its second swallowtail point, the roll cut at both. Every
+  stretch is cut where its tube crosses the tool at either end pose (`entered_at`'s `rimmed`: a
+  stretch whose rim is no end of the roll read plainly), where a double curve can end partway along.
 - **`swept::contacts`'s meeting of a sheet with the tool at an end of the roll reads any sheet**
   (`Rolled`): a constant twist's blend as before, or a moving wall.
 - **A contact's fit given up on keeps to its nodes** (`swept::contacts`): a branch whose fit stops at
