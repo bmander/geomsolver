@@ -280,6 +280,14 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
             let kind = match &edge.curve { crate::topo::EdgeCurve::Curve(c) => c.kind(),_ => "degenerate" };
             eprintln!("trim: edge {e} ({kind}) from {:.4?} to {:.4?} through {:.6?} used by {:?}",ends[0],ends[1],edge.point(0.5*(edge.t[0]+edge.t[1]),&out.vertices),
                 u.iter().map(|&(f,_,_)| (f,out.faces[f].surface.kind())).collect::<Vec<_>>());
+            // (and any other edge running along it: a meeting laid twice, each copy used once)
+            let mid = edge.point(0.5*(edge.t[0]+edge.t[1]),&out.vertices);
+            for (g,other) in out.edges.iter().enumerate() {
+                if g == e { continue }
+                let crate::topo::EdgeCurve::Curve(c) = &other.curve else { continue };
+                let near = (0..=64).map(|k| crate::util::space::distance(other.point(other.t[0]+(other.t[1]-other.t[0])*k as f64/64.,&out.vertices),mid)).fold(f64::INFINITY,f64::min);
+                if near <= 1e-3 { eprintln!("trim:   beside it, edge {g} ({}) {near:.2e} off, used by {:?}",c.kind(),uses[g].iter().map(|&(f,_,_)| f).collect::<Vec<_>>()) }
+            }
         }
     }
     if let Err(why) = out.check(tol) {
