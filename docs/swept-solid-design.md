@@ -626,7 +626,7 @@ it. It stays as the fast path where #699 D says so.
 
    *X5 built* (`tests/swept_loci.rs`): a ball screwed through more than a turn at a lead short of
    its diameter, whose pipe, entered whole, crossed itself and was refused by the judge. Its pipe is
-   entered in stretches of at most half a turn (`closed::pipe_stretches`); two stretches of one pipe
+   entered in stretches of at most half a turn (`closed::twist::pipe_stretches`); two stretches of one pipe
    meet round the circle they share and along the returns' helices (`ssi`'s `pipes_meeting`), and a
    plane holding a circle of the pipe — a joint's — meets it in that circle and its level-by-level
    cut (`pipe_plane`, as a level circle's sheet meets any plane). A turn and a half at 0.2 a radian

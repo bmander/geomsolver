@@ -1222,7 +1222,18 @@ of radius `d` about each crease the faces part at, and the ball about each corne
 some point is — a corner where two or more such creases meet and none turns the other way, or a
 corner of no crease whose faces' normals differ there (a cone's apex; `smooth_at` reads each face
 just inside it, so a sphere's pole is smooth) — every piece within `d` of the solid and every such
-point in a piece, united by the Booleans.  Shrunk (`offset::shrunk`) is the dual, the solid less
+point in a piece, united by the Booleans.  **A face no prism or band of revolution takes is carried
+between its moved copies** (`offset::carried_sweep`): on a plane, a cylinder or a sphere the move
+`q ↦ q + h n(q)` is one affine map of space, linear in `h` (a step, a stretch square to the axis, a
+scaling about the centre), so the face moved to `h` is its image — its edges' images on the offset
+surface, its pcurves its own — and the wall an edge sweeps is exactly the `Blend` of its two images
+(a plane where they lie in one); a cone's or a torus's move is no affine map, and such a face its own
+parameter lines do not bound is refused.  **A crease along a curve no closed form carries a tube
+along is the ball carried along it** (`offset::swept_tube`, `swept::canal::tube`), its ends flat; a
+closed one's is a ring with no end (`swept::canal::ring`, `family::ring`), so each face's moved copy
+of it lies along the ring's wall whole; refused by the tube's rows where the curve turns tighter
+than the distance, or where it closes at a corner (`brep_offset::a_cylinder_cut_aslant_grown_is_steiners`,
+`a_ball_cut_aslant_grown_is_steiners`).  Shrunk (`offset::shrunk`) is the dual, the solid less
 the inward sweeps and the tubes and balls of its concave creases and corners.  Nothing is
 classified by shape: where moved faces meet (a groove grown shut, a flange shrunk away, a torus
 grown past its hole into an apple) the union decides, as the definition does.  **Sharp joins**
@@ -1256,8 +1267,9 @@ far radius less the near one's, each cut at the axis).  Past a surface's axis th
 the far side of it: for a sweep in its own right that part mirrored and turned half a turn on is
 added (a bend thickened past its radius); for an offset's piece it is cut away
 (`Reach::cut_at_axis`), since a point there is nearer the surface on the axis's far side and not
-this face's.  A surface with no offset in closed form, or a curved face not bounded by its own
-parameter lines, is refused naming the face and a point on it — never approximated.  A known limit of
+this face's.  Any other plane's, cylinder's or sphere's face is carried between its moved copies
+(above); a surface with no offset in closed form, or a cone's or a torus's face not bounded by its
+own parameter lines, is refused naming the face and a point on it — never approximated.  A known limit of
 the Booleans, not a rule of offsets: a meeting through a sphere's pole is read less exactly than one
 clear of it (a pole near a corner ball's kept boundary put a grown tetrahedron 9e-7 off), so a
 corner's ball is built with its poles along the corner's mean normal, clear of the circles the

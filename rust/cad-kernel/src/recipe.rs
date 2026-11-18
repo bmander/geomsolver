@@ -90,13 +90,26 @@ impl Node {
 }
 
 /// A `family` node: each wall's sheet over the pieces of its interval, the solid they bound.
-fn family_node(f: &Family) -> Built {
+fn family_node(f: &Family) -> Built { Ok(super::family::family(&walls(f)?,f.vanish,f.carry)?) }
+
+/// A family's walls, each loop's, every sheet over the family's one set of stations.
+fn walls(f: &Family) -> Result<Vec<Vec<super::family::Wall>>,String> {
     use super::family::{Sheet,Stations,Wall};
     let stations = std::sync::Arc::new(Stations::new(f.spans.clone(),f.at.clone())?);
-    let loops = f.loops.iter().map(|l| l.iter().map(|w| Ok(Wall {
+    f.loops.iter().map(|l| l.iter().map(|w| Ok(Wall {
         sheet:std::sync::Arc::new(Sheet::new(w.run.clone(),stations.clone(),w.nodes.clone(),w.closed)?),name:w.name.clone()}))
-        .collect::<Result<Vec<_>,String>>()).collect::<Result<Vec<_>,String>>()?;
-    Ok(super::family::family(&loops,f.vanish,f.carry)?)
+        .collect()).collect()
+}
+
+/// The solid a family's walls bound, with its end caps (`family::family`), or, where its section
+/// comes back to itself, closed on itself with none (`family::ring`, a ball's tube along a closed
+/// path).
+pub(crate) fn family_solid(f: &Family,ring: bool) -> Result<Brep,String> {
+    let walls = walls(f)?;
+    if !ring { return super::family::family(&walls,f.vanish,f.carry) }
+    let [w] = &walls[..] else { return Err("a ring of a face family is one loop".into()) };
+    let [w] = &w[..] else { return Err("a ring of a face family is one round wall".into()) };
+    super::family::ring(w)
 }
 
 /// A `through` node: a prism spanning its sources' material along the profile's normal (their

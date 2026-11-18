@@ -205,7 +205,13 @@ numbers do (`brep::family`'s `analytic`); built as the family and the end half b
 (`dispatch::Asked::Canal`, asked first by the kernel's dispatch, `brep::swept::dispatch::sweep`):
 **B1** the path never stops and turns nowhere tighter than the radius; **B2** it comes back within
 the diameter (and the points' spacing) of itself nowhere half a turn of a circle of the radius
-along it from (`canal::refusal`).  The kernel refuses by `Row` (B1 `Curvature`, B2 `Return`) and
+along it from (`canal::refusal`).  **A path that closes on itself** (`brep::swept::canal::ring`,
+an offset's tube about a closed edge) is a ring with no end: the frame carried round comes back
+turned about the tangent by the path's holonomy (none on a plane), unwound evenly along the roll —
+the disc is round, so the same tube — its last station its first to the bit, B2 read the shorter
+way round; built by `brep::family::ring`, two faces on one sheet whose `s` runs round its interval
+(`Sheet::ring_period`, so a foot past the seam is read across it, never held at the end).  The
+kernel refuses by `Row` (B1 `Curvature`, B2 `Return`) and
 what it saw (`Seen`: where the path stops, the radius it turns on, how near it comes back), with a
 point of the path and how many points it read; `solid::canal` says that as the rows always said it
 and reads the tool's recipe as a ball, lowers the motion and gates what the kernel builds. The recipe's `"canal"` node (`centre`, `radius`, the ball's
@@ -1796,7 +1802,7 @@ where the circle holds two points at one distance from the axis whose `z − κ�
 number of turns' rise, each such pair a helix (`geom::Pipe::returns`, isolated by the Krawczyk operator, #814;
 `swept_loci::a_pipe_comes_back_onto_itself_along_helices`). Such a pipe is entered in stretches of
 the roll of at most half a turn, each meeting itself nowhere, no two joints, nor a joint and an
-end, a return's turn apart (`closed::pipe_stretches`); one that does not come back is
+end, a return's turn apart (`closed::twist::pipe_stretches`); one that does not come back is
 entered whole, as before. Two stretches of one pipe meet in closed form, round the circle where
 they abut and along those helices, and a plane holding a circle of the pipe meets it in that circle
 and its level-by-level cut (`ssi`'s `pipes_meeting`, `pipe_plane`;
