@@ -1908,18 +1908,39 @@ it), so two such are one surface to the trim. **`closed` asks it where K2 cannot
 either keeps K2's `Curved`). **Built**: brep-bench's rod threaded at a growing lead, cut from the rod
 to the volume and area OCCT and cadrs agree on at 7.5e-11
 (`a_rod_threaded_at_a_growing_lead_is_its_bench_volume`, slow tier), and a cube tumbling two degrees
-(`a_cube_tumbling_two_degrees_is_built_by_the_general_road`), each held to membership; a branch of a
+(`a_cube_tumbling_two_degrees_is_built_by_the_general_road`), and five
+(`a_cube_tumbling_five_degrees_is_built_by_the_general_road`), each held to membership; a branch of a
 sheet's meeting with the tool at an end pose takes each end to its own nearest corner within two
-cells (`pose_meeting`), where both ends of the bottom edge's strip's branch had gone to one. **Not yet
-built**: the cube tumbled 15° and more — its fan born at a pinch point of its edge's carried line now
-closes (the Boolean's walk read again without the spur its sides' merge leaves), but on the start
-pose's face two cuts meet where three sheets do, one ending 1.5e-4 short of the other. **A ring's fold pair born partway**
+cells (`pose_meeting`), where both ends of the bottom edge's strip's branch had gone to one. **A given
+meeting is the whole of it**: the arrangement seeks nothing more of a pair it is given, so two edges'
+fans sharing a vertex are given, beside its path, every other branch of their meeting
+(`beside_rails`, seeded where an edge of either crosses the other, each seed traced alone); where
+the march in space refuses a branch (the two under a degree apart) it is marched in the two sheets'
+own parameters (`marched`: the 3 × 4 Jacobian's null vector, minimum-norm Newton, landed on the
+patch's edge, a cubic or, where it turns within a few points, a polyline within the tolerance).
+**Not yet built**: the cube tumbled 15° — the cylinder the top face's chord sweeps touches the top
+face posed at either end along its rim, so on the end pose's side face its meeting leaves tangent
+to that face's rim and to the line the two posed faces meet in, and the face's walk turns the wrong
+way there (one piece of it also missing, a thin stretch's face never paired with the plane); and
+the bench's 75° — its edge 1 and edge 9 fans' second branch now reaches the pinch exactly, but two
+regions stay open (28 boundary edges): about the corner of edges 2, 5 and 6, where edge 2's fan
+crosses face 4's strip with no edge seeding it (a branch from a rail back to a rail), and along
+the side face's fans at x ≈ 2.35, whose rails stand inside the sweep. **A ring's fold pair born partway**
 (`brep::swept::rings`): a pair narrower than its band read by its least `s''` along the band, on the
 curve's own branch; the roll cut where the contact changes shape (`rings::changes`), each stretch
 fitted alone, its tubes sewn across the cuts and trimmed; a sheet refused as folding only where it
-turns over. The tumbling torus turned whole now fits and is cut at its births; past its first cut it
-is not built (judged wrong by the arrangement, not closed by the trim), the newborn pair's outer
-leaves crossing inside the band its bridge dips under.
+turns over. The stretches are sewn row by row (`sew::sewn_open`): a vertex merged only with other
+stretches' vertices on its own row, a row's rim cut only at that row's vertices — beside a
+swallowtail's point a stretch two-hundredths of a radian wide has its two rows within the tolerance
+of one another. **Not yet built**: the tumbling torus turned whole fits, is cut and sewn, and is
+refused in the trim, an edge of one sheet lying within a few tolerances of another over a long
+stretch, where no search proves their meeting (its fit alone takes 100 s); the thin one takes over
+forty minutes. **A ring along a spline** (the whole meridian touched at every instant, `rings::root`
+in closed form there) now closes its sheets — a bridge holding the join its label turns over at, a
+trace leaving beside a corner ending at a nearer crossing, a cap both faces of a seam trace into one
+corner dropped, a chord refined by the meeting's own points where its cubic strays — and is refused
+in the arrangement: the side circle's band is swept almost twice over, its two halves crossing at
+grazing angles, and two of its faces coincide along an edge.
 
 **K2's patches: the closed class under any rigid motion (#780 L3, `brep::swept::patches`):** a
 sweep under a motion no constant twist takes, nor a path of pieces (`Trajectory::General`, a frame
