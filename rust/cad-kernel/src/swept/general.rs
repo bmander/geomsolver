@@ -126,7 +126,7 @@ fn beside_rails(a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,rails: &[Curve],tol:
 /// cubic through them by chord length, the meeting's own point between two settled in where it
 /// strays from them by more than a quarter of `tol`. None where the seed does not settle, or the
 /// march goes nowhere.
-fn marched(a: &Surface,b: &Surface,seed: V,lo: V,hi: V,tol: f64) -> Option<Curve> {
+pub(super) fn marched(a: &Surface,b: &Surface,seed: V,lo: V,hi: V,tol: f64) -> Option<Curve> {
     type X = [f64;4];
     let parts = |x: X| { let (pa,au,av) = a.d1([x[0],x[1]]); let (pb,bu,bv) = b.d1([x[2],x[3]]); (sub(pa,pb),[au,av,scale(bu,-1.),scale(bv,-1.)],pa) };
     // minimum-norm Newton onto the meeting

@@ -55,6 +55,9 @@ pub struct Report {
     pub membership: u64,
     /// Pieces kept, of the pieces read.
     pub pieces: [usize;2],
+    /// The curves of meetings the trim was not given that it completed from their witnesses
+    /// (#942 F2).
+    pub completed: usize,
 }
 
 /// How a trim reads its candidates.
@@ -101,16 +104,21 @@ pub fn trimmed(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Brep],g
 /// point `ACROSS` hairs from it either way, on that face.  Where the face kept beside the edge
 /// holds that point and membership proves it clear of the boundary, the piece kept is mixed; where
 /// a face not kept there holds it and membership reads it as the boundary, its piece was left out.
-/// Either way a meeting the trim was not given parts what was read from what was not.  Said with
-/// the edge and the point; none where neither is found (the boundary open for some other reason).
-/// `read` is the trim's own reading of a point of a face: `Some` only where it settles, and a point
-/// off the boundary only where it is proved clear.
+/// Either way a meeting the trim was not given parts that point from where its piece was read
+/// (`readings`: each piece's face, the point it was settled at and what it read there), which is
+/// the witness's other point.  None where neither is found (the boundary open for some other
+/// reason).  `read` is the trim's own reading of a point of a face: `Some` only where it settles,
+/// and a point off the boundary only where it is proved clear.
+#[allow(clippy::too_many_arguments,clippy::type_complexity)]
 fn missing_across(out: &Brep,candidates: &[&Brep],read: &dyn Fn(&crate::topo::Face,V) -> Option<Option<bool>>,
-    hair: f64,tol: f64) -> Option<String> {
+    readings: &[((usize,usize),V,Option<bool>)],hair: f64,tol: f64) -> Option<Witness> {
     use crate::util::space::{cross,normalised};
     let uses = out.uses();
     let located: Vec<crate::query::Located> = candidates.iter().map(|c| crate::query::Located::new(c,tol)).collect();
     let kept = crate::query::Located::new(out,tol);
+    // (where the piece of face `face` holding `q` was read as `kept` or not: the nearest such reading)
+    let read_at = |face: (usize,usize),q: V,kept: bool| readings.iter().filter(|r| r.0 == face && r.2.is_some() == kept)
+        .map(|r| r.1).min_by(|x,y| distance(*x,q).total_cmp(&distance(*y,q))).unwrap_or(q);
     for (e,u) in uses.iter().enumerate().filter(|(_,u)| u.len() == 1) {
         let edge = &out.edges[e];
         let crate::topo::EdgeCurve::Curve(c) = &edge.curve else { continue };
@@ -125,14 +133,14 @@ fn missing_across(out: &Brep,candidates: &[&Brep],read: &dyn Fn(&crate::topo::Fa
                     if !located[k].face_holds(i,q) { continue }
                     let on_kept = kept.face_holds(u[0].0,q);
                     match read(f,q) {
-                        Some(None) if on_kept =>
-                            return Some(format!("the boundary is open along a {} edge through {m:?}: the {} piece kept beside it \
-                                (candidate and face ({k}, {i})) is not the boundary at {q:?}, a meeting the trim was not given \
-                                parting it from where it was read",c.kind(),f.surface.kind())),
-                        Some(Some(_)) if !on_kept =>
-                            return Some(format!("the boundary is open along a {} edge through {m:?}: a piece of a {} (candidate and \
-                                face ({k}, {i})) is the boundary beside it at {q:?} and was not kept, a meeting the trim was not \
-                                given parting it from where its piece was read",c.kind(),f.surface.kind())),
+                        Some(None) if on_kept => return Some(Witness {face:(k,i),at:[read_at((k,i),q,true),q],
+                            said:format!("the boundary is open along a {} edge through {m:?}: the {} piece kept beside it (candidate and \
+                                face ({k}, {i})) is not the boundary at {q:?}, a meeting the trim was not given parting it from where \
+                                it was read",c.kind(),f.surface.kind())}),
+                        Some(Some(_)) if !on_kept => return Some(Witness {face:(k,i),at:[read_at((k,i),q,false),q],
+                            said:format!("the boundary is open along a {} edge through {m:?}: a piece of a {} (candidate and face \
+                                ({k}, {i})) is the boundary beside it at {q:?} and was not kept, a meeting the trim was not given \
+                                parting it from where its piece was read",c.kind(),f.surface.kind())}),
                         _ => {}
                     }
                 }
@@ -141,6 +149,142 @@ fn missing_across(out: &Brep,candidates: &[&Brep],read: &dyn Fn(&crate::topo::Fa
     }
     None
 }
+
+/// **What a trim refused shows** (#942 F2): a face of a candidate (its candidate and face) and two
+/// points of it membership read apart — one as the boundary, the other not (or facing the other
+/// way) — so a meeting the trim was not given crosses the face between them; and the refusal said.
+#[derive(Clone,Debug)]
+struct Witness { face: (usize,usize),at: [V;2],said: String }
+
+/// **A meeting completed from its witness** (#942 F2): the face's surface walked between the
+/// witness's two points in its own parameters, and wherever another candidate's face crosses it
+/// there — its surface's signed distance changing sign, the root on that face — that the trim did
+/// not meet (no given curve through it, nor the pair met by search), the two surfaces' meeting is
+/// traced from the root (`ssi::trace`, else marched in their parameters as the general road's
+/// branches beside its rails are) and given: added to the pair's given curves where it has some, a
+/// new given meeting where it has none, and every two faces bearing the two surfaces met
+/// (`pair_given`).  How many curves it gave; none, and the trim is refused with the witness — or,
+/// where another face of the same surface crosses the walk (a wall at other instants passing back
+/// through itself), with that: a surface's meeting with itself is no meeting two surfaces are given.
+#[allow(clippy::too_many_arguments)]
+fn completed(w: &Witness,candidates: &[&Brep],located: &[crate::query::Located],boxes: &[Vec<(V,V)>],given: &mut Vec<Given>,
+    pairs: &mut BTreeSet<([usize;2],[usize;2])>,hair: f64,tol: f64) -> Result<usize,String> {
+    const WALK: usize = 64;
+    let (k,i) = w.face;
+    let s = &candidates[k].faces[i].surface;
+    let [a,b] = w.at;
+    if distance(a,b) <= hair { return Ok(0) }
+    // (the two points' parameters on the face's own branch of its surface: read from its parameters,
+    // a folded wall's nearest foot anywhere may be on another of its sheets)
+    let ua = located[k].uv(i,a);
+    let ub = s.inverse_near(b,ua);
+    let at = |t: f64| s.point([ua[0]+(ub[0]-ua[0])*t,ua[1]+(ub[1]-ua[1])*t]);
+    let walk: Vec<V> = (0..=WALK).map(|j| at(j as f64/WALK as f64)).collect();
+    let lo: V = std::array::from_fn(|d| walk.iter().map(|p| p[d]).fold(f64::INFINITY,f64::min)-hair);
+    let hi: V = std::array::from_fn(|d| walk.iter().map(|p| p[d]).fold(f64::NEG_INFINITY,f64::max)+hair);
+    let same_pair = |g: &Given,x: &crate::geom::Surface,y: &crate::geom::Surface| {
+        alike(&g.surfaces[0],x,tol) && alike(&g.surfaces[1],y,tol)
+            || alike(&g.surfaces[0],y,tol) && alike(&g.surfaces[1],x,tol)
+    };
+    let mut gave = 0;
+    let mut missed = None;
+    for (k2,c) in candidates.iter().enumerate() {
+        for (g,face) in c.faces.iter().enumerate() {
+            if (k2,g) == (k,i) || !crate::boolean::overlap(&boxes[k2][g],&(lo,hi),4.*tol) { continue }
+            let sg = &face.surface;
+            if alike(sg,s,tol) {
+                if let Some(x) = crossed_by_itself(&walk,sg,&located[k2],g) {
+                    return Err(format!("{}; there face ({k2}, {g}) of the same {} crosses it at {x:?}, the surface passing back through \
+                        itself: a meeting of a surface with itself, which the trim is not given",w.said,s.kind()))
+                }
+                continue
+            }
+            let h: Vec<f64> = walk.iter().map(|&x| sg.implicit(x)).collect();
+            for j in 0..WALK {
+                if !(h[j]*h[j+1] <= 0.) || h[j] == h[j+1] { continue }
+                let (mut t0,mut t1,mut h0) = (j as f64/WALK as f64,(j+1) as f64/WALK as f64,h[j]);
+                for _ in 0..60 {
+                    let tm = 0.5*(t0+t1);
+                    let hm = sg.implicit(at(tm));
+                    if hm*h0 > 0. { (t0,h0) = (tm,hm) } else { t1 = tm }
+                }
+                let x = at(0.5*(t0+t1));
+                if !located[k2].face_holds(g,x) { continue }
+                let key = if [k,i] <= [k2,g] { ([k,i],[k2,g]) } else { ([k2,g],[k,i]) };
+                let had = given.iter().position(|gv| same_pair(gv,s,sg));
+                let through = had.is_some_and(|n| given[n].curves.iter().any(|cv| distance(cv.point(cv.inverse(x)),x) <= hair));
+                // (met there already; or met by search, which missed it: not the trim's to give — a pair
+                // given what one trace finds loses what its search found — but named)
+                if through { continue }
+                if had.is_none() && pairs.contains(&key) { missed.get_or_insert((k2,g,x)); continue }
+                let (la,ha) = candidates[k].bounds();
+                let (lb,hb) = c.bounds();
+                let l: V = std::array::from_fn(|d| la[d].max(lb[d])-tol);
+                let u: V = std::array::from_fn(|d| ha[d].min(hb[d])+tol);
+                let traced = match crate::ssi::trace(s,sg,&[x],l,u,tol) {
+                    Ok(t) => t,
+                    Err(_) => super::general::marched(s,sg,x,l,u,tol).into_iter().collect(),
+                };
+                let traced: Vec<crate::geom::Curve> = traced.into_iter()
+                    .filter(|cv| distance(cv.point(cv.inverse(x)),x) <= hair).collect();
+                if debug() {
+                    eprintln!("trim: completed from {:?} at {x:?}, a {} and a {} met in {} curves",w.at,s.kind(),sg.kind(),traced.len())
+                }
+                if traced.is_empty() { continue }
+                gave += traced.len();
+                let n = match had {
+                    Some(n) => { given[n].curves.extend(traced); n }
+                    None => { given.push(Given {surfaces:[s.clone(),sg.clone()],curves:traced}); given.len()-1 }
+                };
+                pair_given(&given[n],candidates,boxes,pairs,4.*tol,tol);
+            }
+        }
+    }
+    match missed {
+        Some((k2,g,x)) if gave == 0 => Err(format!("{}; there face ({k2}, {g}), a {}, crosses it at {x:?}: the two were met by search, \
+            which missed that",w.said,candidates[k2].faces[g].surface.kind())),
+        _ => Ok(gave),
+    }
+}
+
+/// **Where a face of a surface crosses a walk over the same surface elsewhere** (#942 F2): each
+/// point of the walk's foot on face `g` read by continuation from the face's own parameters
+/// (`Located::uv`), so on its branch of the surface and not the walk's own, and where the walk
+/// passes from one side of it to the other within the face, near it, the point between. None where
+/// it does not.
+fn crossed_by_itself(walk: &[V],s: &crate::geom::Surface,located: &crate::query::Located,g: usize) -> Option<V> {
+    let step = walk.windows(2).map(|w| distance(w[0],w[1])).fold(0.,f64::max);
+    let mut uv = located.uv(g,walk[0]);
+    let mut last: Option<(V,f64)> = None;
+    for &x in walk {
+        uv = s.inverse_near(x,uv);
+        let foot = s.point(uv);
+        let here = s.normal(uv).filter(|_| located.holds_parameters(g,uv) && distance(foot,x) <= 2.*step)
+            .map(|n| crate::util::space::dot(sub(x,foot),n));
+        if let (Some((y,before)),Some(d)) = (last,here) { if before*d < 0. { return Some(scale(add(x,y),0.5)) } }
+        last = here.map(|d| (x,d));
+    }
+    None
+}
+
+/// Every two faces of two candidates bearing the two surfaces `g` gives a meeting of, met where
+/// their boxes come within `pad` (#942 F2).
+fn pair_given(g: &Given,candidates: &[&Brep],boxes: &[Vec<(V,V)>],pairs: &mut BTreeSet<([usize;2],[usize;2])>,pad: f64,tol: f64) {
+    let bearing = |s: &crate::geom::Surface| -> Vec<(usize,usize)> { candidates.iter().enumerate().flat_map(|(k,c)| c.faces.iter().enumerate()
+        .filter(|(_,f)| alike(&f.surface,s,tol)).map(move |(f,_)| (k,f))).collect() };
+    let (x,y) = (bearing(&g.surfaces[0]),bearing(&g.surfaces[1]));
+    for &(k,f) in &x { for &(b,h) in &y {
+        if k == b || !crate::boolean::overlap(&boxes[k][f],&boxes[b][h],pad) { continue }
+        pairs.insert(if [k,f] <= [b,h] { ([k,f],[b,h]) } else { ([b,h],[k,f]) });
+    } }
+}
+
+/// Whether two surfaces are one: equal, as the arrangement's index of surfaces first reads them
+/// (a face family's wall copied), or the same by `ssi::same`.
+fn alike(a: &crate::geom::Surface,b: &crate::geom::Surface,tol: f64) -> bool { a == b || crate::ssi::same(a,b,tol) }
+
+/// How many rounds a trim completes meetings from its witnesses before it refuses (#942 F2).
+const ROUNDS: usize = 8;
 
 /// How many hairs across an edge the boundary leaves open a face beside it is read (#942 F2).
 const ACROSS: f64 = 8.;
@@ -237,19 +381,7 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
     // **faces whose surfaces were given a meeting are always met** (#942 F2): the given curves are the
     // meeting, laid with no search, and a pair the balls did not bring together leaves them unlaid
     // (a thin stretch's face and the plane it crosses, its balls a resolution apart)
-    let bearing: Vec<Vec<(usize,usize)>> = given.iter().map(|g| {
-        candidates.iter().enumerate().flat_map(|(k,c)| c.faces.iter().enumerate()
-            .filter(|(_,f)| g.surfaces.iter().any(|s| crate::ssi::same(&f.surface,s,tol))).map(move |(f,_)| (k,f)))
-            .collect()
-    }).collect();
-    for (g,on) in given.iter().zip(&bearing) {
-        for &(k,f) in on { for &(b,h) in on {
-            let face = |k: usize,f: usize| &candidates[k].faces[f].surface;
-            if k >= b || !(crate::ssi::same(face(k,f),&g.surfaces[0],tol) && crate::ssi::same(face(b,h),&g.surfaces[1],tol)
-                || crate::ssi::same(face(k,f),&g.surfaces[1],tol) && crate::ssi::same(face(b,h),&g.surfaces[0],tol)) { continue }
-            if crate::boolean::overlap(&boxes[k][f],&boxes[b][h],pad) { pairs.insert(([k,f],[b,h])); }
-        } }
-    }
+    for g in given { pair_given(g,&candidates,&boxes,&mut pairs,pad,tol) }
     report.paired = pairs.len();
     if debug() {
         for (a,b) in &pairs {
@@ -264,7 +396,6 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
     // 3. the trim: each piece kept where membership differs a hair to either side of it
     let refs = &candidates;
     let every = std::env::var_os("SOLVENT_TRIM_EVERY").is_some();
-    let meet = |a: [usize;2],b: [usize;2]| { let (x,y) = if a <= b { (a,b) } else { (b,a) }; every || pairs.contains(&(x,y)) };
     // (a hair past the membership mesh's sag, within which a side does not settle)
     let hair = trim.hair.max(4.*solid.sag);
     // (the tool posed at the roll's ends, read exactly: a piece inside either is inside the sweep)
@@ -275,6 +406,14 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
     let located: Vec<crate::query::Located> = posed.iter().map(|b| crate::query::Located::new(b,tol)).collect();
     let read = std::sync::atomic::AtomicUsize::new(0);
     let kept = std::sync::atomic::AtomicUsize::new(0);
+    // (each candidate's faces by where they stand, to name the face a piece is of; what a refusal
+    // of a piece saw, and each piece's face, the point it settled at and its verdict there: what
+    // the trim completes a missing meeting from, #942 F2)
+    let index: BTreeMap<usize,(usize,usize)> = candidates.iter().enumerate()
+        .flat_map(|(k,c)| c.faces.iter().enumerate().map(move |(i,f)| (f as *const crate::topo::Face as usize,(k,i)))).collect();
+    let of = |f: &crate::topo::Face| index.get(&(f as *const crate::topo::Face as usize)).copied();
+    let witnesses: std::sync::Mutex<Vec<Witness>> = std::sync::Mutex::new(Vec::new());
+    let readings: std::sync::Mutex<Vec<((usize,usize),V,Option<bool>)>> = std::sync::Mutex::new(Vec::new());
     // what one point of a piece says of it: dropped (`None`, and why), kept facing out ahead or
     // behind, or nothing settled there (`Err`)
     let verdict = |f: &crate::topo::Face,p: V| -> Result<Option<bool>,&'static str> {
@@ -356,16 +495,21 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
                 None => settled = Some((p,here)),
                 Some((q,there)) if there != here && !clear(if here.is_none() { p } else { q }) => continue,
                 Some((q,there)) if there != here => {
-                    let of = candidates.iter().enumerate().find_map(|(k,c)| c.faces.iter().position(|g| std::ptr::eq(g,f)).map(|i| (k,i)));
                     let say = |v: Option<bool>| match v { None => "off the boundary",Some(true) => "the boundary, facing ahead",Some(false) => "the boundary, facing behind" };
-                    return Err(format!("a piece of a {} (candidate and face {of:?}) is {} at {q:?} and {} at {p:?}: a meeting the trim was \
-                        not given parts them",f.surface.kind(),say(there),say(here)))
+                    let said = format!("a piece of a {} (candidate and face {:?}) is {} at {q:?} and {} at {p:?}: a meeting the trim was \
+                        not given parts them",f.surface.kind(),of(f),say(there),say(here));
+                    if let Some(face) = of(f) { witnesses.lock().unwrap().push(Witness {face,at:[q,p],said:said.clone()}); }
+                    return Err(said)
                 }
                 Some(_) => { confirmed += 1; if confirmed >= CONFIRMED { break } }
             }
         }
         match settled {
-            Some((_,v)) => { if v.is_some() { kept.fetch_add(1,std::sync::atomic::Ordering::Relaxed); } Ok(v) }
+            Some((p,v)) => {
+                if v.is_some() { kept.fetch_add(1,std::sync::atomic::Ordering::Relaxed); }
+                if let Some(face) = of(f) { readings.lock().unwrap().push((face,p,v)); }
+                Ok(v)
+            }
             None => Err(format!("a piece of a {} whose sides membership does not settle, at {first:?}",f.surface.kind())),
         }
     };
@@ -378,60 +522,53 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
         reading.fetch_add(at.elapsed().as_nanos() as u64,std::sync::atomic::Ordering::Relaxed);
         out
     };
-    let boolean = crate::util::clock::Instant::now();
-    let out = crate::boolean::trimmed(&refs,given,&meet,&side,tol);
-    if crate::timing() {
-        eprintln!("trim: the Boolean in {:?}, its pieces read by membership in {:.2} s of the cores' time",boolean.elapsed(),
-            reading.load(std::sync::atomic::Ordering::Relaxed) as f64*1e-9)
-    }
-    let out = out?;
+    // **a meeting the trim was not given, completed from its witness** (#942 F2): a piece read apart
+    // or the boundary left open beside a piece read so, its missing meeting traced from where it
+    // crosses between the two points and given, and the trim run again — up to `ROUNDS` times; a
+    // witness nothing missing crosses is the refusal
+    let completing: Vec<crate::query::Located> = candidates.iter().map(|c| crate::query::Located::new(c,tol)).collect();
+    let mut given: Vec<Given> = given.to_vec();
+    let mut round = 0;
+    let out = loop {
+        witnesses.lock().unwrap().clear();
+        readings.lock().unwrap().clear();
+        let meet = |a: [usize;2],b: [usize;2]| { let (x,y) = if a <= b { (a,b) } else { (b,a) }; every || pairs.contains(&(x,y)) };
+        let boolean = crate::util::clock::Instant::now();
+        let out = crate::boolean::trimmed(&refs,&given,&meet,&side,tol);
+        if crate::timing() {
+            eprintln!("trim: the Boolean in {:?}, its pieces read by membership in {:.2} s of the cores' time",boolean.elapsed(),
+                reading.load(std::sync::atomic::Ordering::Relaxed) as f64*1e-9)
+        }
+        let seen = match out {
+            // (the witness the refusal said: the pieces are read across the cores, and the Boolean
+            // says the first refusal in its own order)
+            Err(why) => match witnesses.lock().unwrap().iter().find(|w| w.said == why) { Some(w) => w.clone(),None => return Err(why.into()) },
+            Ok(out) => match out.check(tol) {
+                Ok(()) => break out,
+                Err(why) => {
+                    let readings = readings.lock().unwrap().clone();
+                    let across = missing_across(&out,&candidates,&|f,p| match verdict(f,p) {
+                        Ok(None) if !matches!(swept.beyond(p,CLEAR*hair),Ok(Some(_))) => None,
+                        Ok(v) => Some(v),
+                        Err(_) => None,
+                    },&readings,hair,tol);
+                    match across {
+                        Some(w) => w,
+                        None => { if debug() { narrate_open(&out,tol) } return Err(why.into()) }
+                    }
+                }
+            },
+        };
+        round += 1;
+        let gave = if round > ROUNDS { 0 } else {
+            completed(&seen,&candidates,&completing,&boxes,&mut given,&mut pairs,hair,tol).map_err(Unbuilt::Failed)?
+        };
+        if debug() || crate::timing() { eprintln!("trim: round {round}: {} curves completed from {:?}",gave,seen.at) }
+        if gave == 0 { return Err(Unbuilt::Failed(seen.said)) }
+        report.completed += gave;
+    };
     report.pieces = [kept.into_inner(),read.into_inner()];
     if crate::timing() { eprintln!("trim: {} of {} pieces kept, {} faces, in {:?}",report.pieces[0],report.pieces[1],out.faces.len(),clock.elapsed()) }
-    // 4. checked and judged
-    if debug() {
-        let uses = out.uses();
-        for (e,u) in uses.iter().enumerate() {
-            if u.len() == 2 { continue }
-            let edge = &out.edges[e];
-            let ends = edge.v.map(|v| out.vertices[v as usize].p);
-            let kind = match &edge.curve { crate::topo::EdgeCurve::Curve(c) => c.kind(),_ => "degenerate" };
-            eprintln!("trim: edge {e} ({kind}) from {:.4?} to {:.4?} through {:.6?} used by {:?}",ends[0],ends[1],edge.point(0.5*(edge.t[0]+edge.t[1]),&out.vertices),
-                u.iter().map(|&(f,_,_)| (f,out.faces[f].surface.kind())).collect::<Vec<_>>());
-            // (and any other edge running along it: a meeting laid twice, each copy used once)
-            let mid = edge.point(0.5*(edge.t[0]+edge.t[1]),&out.vertices);
-            for (g,other) in out.edges.iter().enumerate() {
-                if g == e { continue }
-                let crate::topo::EdgeCurve::Curve(c) = &other.curve else { continue };
-                let near = (0..=64).map(|k| crate::util::space::distance(other.point(other.t[0]+(other.t[1]-other.t[0])*k as f64/64.,&out.vertices),mid)).fold(f64::INFINITY,f64::min);
-                if near <= 1e-3 { eprintln!("trim:   beside it, edge {g} ({}) {near:.2e} off, used by {:?}",c.kind(),uses[g].iter().map(|&(f,_,_)| f).collect::<Vec<_>>()) }
-            }
-        }
-    }
-    if let Err(why) = out.check(tol) {
-        if let Some(witness) = missing_across(&out,&candidates,&|f,p| match verdict(f,p) {
-            Ok(None) if !matches!(swept.beyond(p,CLEAR*hair),Ok(Some(_))) => None,
-            Ok(v) => Some(v),
-            Err(_) => None,
-        },hair,tol) { return Err(Unbuilt::Failed(witness)) }
-        if debug() {
-            for (fi,f) in out.faces.iter().enumerate().filter(|(_,f)| f.loops.len() > 1) {
-                for (li,l) in f.loops.iter().enumerate() {
-                    let ends: Vec<_> = l.iter().map(|c| { let e = &out.edges[c.edge as usize]; let kind = e.curve.kind();
-                        (c.edge,kind,c.pcurve.at(e.t[0],e,&f.surface,&out.vertices),c.pcurve.at(e.t[1],e,&f.surface,&out.vertices),c.reversed) }).collect();
-                    eprintln!("trim: face {fi} ({}) loop {li}: {ends:?}",f.surface.kind());
-                }
-            }
-            for (fi,f) in out.faces.iter().enumerate() {
-                for c in f.loops.iter().flatten() {
-                    let e = &out.edges[c.edge as usize];
-                    let crate::topo::EdgeCurve::Curve(cv) = &e.curve else { continue };
-                    let off = (0..=64).map(|k| { let p = e.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/64.,&out.vertices); (f.surface.implicit(p).abs(),k) }).max_by(|x,y| x.0.total_cmp(&y.0)).unwrap();
-                    if off.0 > 0.5*tol { eprintln!("trim: face {fi} ({}) edge {} ({}) over {:?} from {:?} to {:?}: {:.2e} off the face at {}/64",f.surface.kind(),c.edge,cv.kind(),e.t,out.vertices[e.v[0] as usize].p,out.vertices[e.v[1] as usize].p,off.0,off.1) }
-                }
-            }
-        }
-        return Err(why.into())
-    }
     if debug() {
         let flux = crate::props::fluxes(&out);
         eprintln!("trim: built {} faces, volume {:.6}",out.faces.len(),flux.iter().sum::<f64>()/3.);
@@ -464,6 +601,47 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
     super::closed::judge(&out,&swept,&domain,None,&[],tol)?;
     if crate::timing() { eprintln!("trim: judged in {:?}",clock.elapsed()) }
     Ok((out,report))
+}
+
+/// The trim's open edges narrated, where `SOLVENT_TRIM_DEBUG` is set: each edge not used twice, any
+/// other running along it, each face's loops and each edge standing off its face.
+fn narrate_open(out: &Brep,tol: f64) {
+    {
+        let uses = out.uses();
+        for (e,u) in uses.iter().enumerate() {
+            if u.len() == 2 { continue }
+            let edge = &out.edges[e];
+            let ends = edge.v.map(|v| out.vertices[v as usize].p);
+            let kind = match &edge.curve { crate::topo::EdgeCurve::Curve(c) => c.kind(),_ => "degenerate" };
+            eprintln!("trim: edge {e} ({kind}) from {:.4?} to {:.4?} through {:.6?} used by {:?}",ends[0],ends[1],edge.point(0.5*(edge.t[0]+edge.t[1]),&out.vertices),
+                u.iter().map(|&(f,_,_)| (f,out.faces[f].surface.kind())).collect::<Vec<_>>());
+            // (and any other edge running along it: a meeting laid twice, each copy used once)
+            let mid = edge.point(0.5*(edge.t[0]+edge.t[1]),&out.vertices);
+            for (g,other) in out.edges.iter().enumerate() {
+                if g == e { continue }
+                let crate::topo::EdgeCurve::Curve(c) = &other.curve else { continue };
+                let near = (0..=64).map(|k| crate::util::space::distance(other.point(other.t[0]+(other.t[1]-other.t[0])*k as f64/64.,&out.vertices),mid)).fold(f64::INFINITY,f64::min);
+                if near <= 1e-3 { eprintln!("trim:   beside it, edge {g} ({}) {near:.2e} off, used by {:?}",c.kind(),uses[g].iter().map(|&(f,_,_)| f).collect::<Vec<_>>()) }
+            }
+        }
+        }
+    {
+            for (fi,f) in out.faces.iter().enumerate().filter(|(_,f)| f.loops.len() > 1) {
+                for (li,l) in f.loops.iter().enumerate() {
+                    let ends: Vec<_> = l.iter().map(|c| { let e = &out.edges[c.edge as usize]; let kind = e.curve.kind();
+                        (c.edge,kind,c.pcurve.at(e.t[0],e,&f.surface,&out.vertices),c.pcurve.at(e.t[1],e,&f.surface,&out.vertices),c.reversed) }).collect();
+                    eprintln!("trim: face {fi} ({}) loop {li}: {ends:?}",f.surface.kind());
+                }
+            }
+            for (fi,f) in out.faces.iter().enumerate() {
+                for c in f.loops.iter().flatten() {
+                    let e = &out.edges[c.edge as usize];
+                    let crate::topo::EdgeCurve::Curve(cv) = &e.curve else { continue };
+                    let off = (0..=64).map(|k| { let p = e.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/64.,&out.vertices); (f.surface.implicit(p).abs(),k) }).max_by(|x,y| x.0.total_cmp(&y.0)).unwrap();
+                    if off.0 > 0.5*tol { eprintln!("trim: face {fi} ({}) edge {} ({}) over {:?} from {:?} to {:?}: {:.2e} off the face at {}/64",f.surface.kind(),c.edge,cv.kind(),e.t,out.vertices[e.v[0] as usize].p,out.vertices[e.v[1] as usize].p,off.0,off.1) }
+                }
+            }
+            }
 }
 
 /// A triangle `t` of a candidate's mesh (its sag `sag`) zoned against the sweep's depth: the balls
