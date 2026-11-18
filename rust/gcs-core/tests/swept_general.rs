@@ -146,12 +146,35 @@ fn a_refused_trim_replays_from_its_dump_to_the_same_refusal() {
 
 /// **The bench's tumbling cube's refused trim replays from its dump alike** (#942 F5's gate): the
 /// cube tumbling 75° either way, its candidates taken 17 s to make, refused in its trim, gives the
-/// same refusal run again from the files in a fraction of that.
+/// same refusal run again from the files in a fraction of that. Refused by name since #942 F2: a
+/// piece of its edge 5's fan read off the boundary at one point and the boundary at another 0.015
+/// away, a meeting it was not given parting them (where it left 28 boundary edges open).
 #[test]
-#[cfg_attr(not(feature = "slow"),ignore = "slow tier, 30 s: the bench's tumbling cube's candidates made, then its trim twice")]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, 40 s: the bench's tumbling cube's candidates made, then its trim twice")]
 fn the_bench_tumbling_cubes_refused_trim_replays_from_its_dump_alike() {
     let why = replayed_alike(&cube_trimming(75.),"cube-75-dump");
-    assert!(why.contains("not closed"),"{why}");
+    assert!(why.contains("a meeting the trim was not given parts them"),"{why}");
+}
+
+/// **A meeting left out of what the trim is given is named where it parts a piece** (#942 F2's
+/// gate): the cube tumbling 5° either way, which builds, its fans' second branches beside their
+/// rails taken out of the meetings given (`general::beside_rails`'s, the hole the 5° cube once had),
+/// is refused with the two points of one piece the missing meeting parts — the boundary at one, off
+/// it at the other — not built with its boundary open where no one says.
+#[test]
+fn a_meeting_left_out_of_the_trim_is_named_where_it_parts_a_piece() {
+    let mut t = cube_trimming(5.);
+    let mut taken = 0;
+    for g in &mut t.given {
+        if g.curves.iter().any(|c| c.kind() == "rail") {
+            let before = g.curves.len();
+            g.curves.retain(|c| c.kind() == "rail");
+            taken += before-g.curves.len();
+        }
+    }
+    assert!(taken > 0,"a branch beside a rail to take out");
+    let why = format!("{:?}",t.replay().expect_err("the trim refuses a piece the missing branch parts"));
+    assert!(why.contains("a meeting the trim was not given"),"{why}");
 }
 
 /// A rise of `6s + 0.3s²` after `s` turns (brep-bench's `swept/square-thread-at-a-growing-lead`):

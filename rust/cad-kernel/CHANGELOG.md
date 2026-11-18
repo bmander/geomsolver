@@ -8,6 +8,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A trim missing a meeting is refused where it parts a piece** (#942 F2): a piece the trim reads
+  is held to one verdict at up to eight of its points, and two that differ, the one off the boundary
+  proved clear of it, refuse it with both points, where a piece was kept or dropped whole by its first
+  point. Where the result does not close, the faces either side of each open edge are read the same
+  way, and a face kept off the boundary or one left out on it is the same refusal. The bench's
+  tumbling cube at 75° is refused so, at a fan of its fifth edge. Faces whose surfaces were given a meeting are now
+  always met in the trim where their boxes meet, not only where its balls brought them together.
 - **A ring's double curves are cut into its stretches by the fit itself** (#942 F4): each double
   curve point's place round the loop is read from the seams' angles of the stretch's own net at its
   row, where it read a whole instant's contact (a root on every meridian and its joins settled) to

@@ -96,6 +96,62 @@ pub fn trimmed(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Brep],g
     Ok((b,report))
 }
 
+/// **A piece missing beside the boundary left open** (#942 F2): where the trimmed solid does not
+/// close, each edge it uses once is read across on every candidate face through its middle — a
+/// point `ACROSS` hairs from it either way, on that face.  Where the face kept beside the edge
+/// holds that point and membership proves it clear of the boundary, the piece kept is mixed; where
+/// a face not kept there holds it and membership reads it as the boundary, its piece was left out.
+/// Either way a meeting the trim was not given parts what was read from what was not.  Said with
+/// the edge and the point; none where neither is found (the boundary open for some other reason).
+/// `read` is the trim's own reading of a point of a face: `Some` only where it settles, and a point
+/// off the boundary only where it is proved clear.
+fn missing_across(out: &Brep,candidates: &[&Brep],read: &dyn Fn(&crate::topo::Face,V) -> Option<Option<bool>>,
+    hair: f64,tol: f64) -> Option<String> {
+    use crate::util::space::{cross,normalised};
+    let uses = out.uses();
+    let located: Vec<crate::query::Located> = candidates.iter().map(|c| crate::query::Located::new(c,tol)).collect();
+    let kept = crate::query::Located::new(out,tol);
+    for (e,u) in uses.iter().enumerate().filter(|(_,u)| u.len() == 1) {
+        let edge = &out.edges[e];
+        let crate::topo::EdgeCurve::Curve(c) = &edge.curve else { continue };
+        let t = 0.5*(edge.t[0]+edge.t[1]);
+        let (m,along) = (c.point(t),c.tangent(t));
+        for (k,cand) in candidates.iter().enumerate() {
+            for (i,f) in cand.faces.iter().enumerate() {
+                if f.surface.implicit(m).abs() > ON_CURVE*tol.max(edge.tol) { continue }
+                let Some(across) = normalised(cross(f.surface.gradient(m),along)) else { continue };
+                for side in [-1.,1.] {
+                    let q = f.surface.point(f.surface.inverse(add(m,scale(across,side*ACROSS*hair))));
+                    if !located[k].face_holds(i,q) { continue }
+                    let on_kept = kept.face_holds(u[0].0,q);
+                    match read(f,q) {
+                        Some(None) if on_kept =>
+                            return Some(format!("the boundary is open along a {} edge through {m:?}: the {} piece kept beside it \
+                                (candidate and face ({k}, {i})) is not the boundary at {q:?}, a meeting the trim was not given \
+                                parting it from where it was read",c.kind(),f.surface.kind())),
+                        Some(Some(_)) if !on_kept =>
+                            return Some(format!("the boundary is open along a {} edge through {m:?}: a piece of a {} (candidate and \
+                                face ({k}, {i})) is the boundary beside it at {q:?} and was not kept, a meeting the trim was not \
+                                given parting it from where its piece was read",c.kind(),f.surface.kind())),
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// How many hairs across an edge the boundary leaves open a face beside it is read (#942 F2).
+const ACROSS: f64 = 8.;
+
+/// How many more of a piece's points that settle hold it to what its first said (#942 F2).
+const CONFIRMED: usize = 7;
+
+/// How many hairs clear of the boundary, proved, a point read off it stands to witness a piece mixed
+/// (#942 F2).
+const CLEAR: f64 = 4.;
+
 /// A ball holding part of a candidate's face: its middle and radius.
 #[derive(Clone,Copy)]
 struct Ball { c: V,r: f64 }
@@ -178,6 +234,22 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
             } }
         }
     }
+    // **faces whose surfaces were given a meeting are always met** (#942 F2): the given curves are the
+    // meeting, laid with no search, and a pair the balls did not bring together leaves them unlaid
+    // (a thin stretch's face and the plane it crosses, its balls a resolution apart)
+    let bearing: Vec<Vec<(usize,usize)>> = given.iter().map(|g| {
+        candidates.iter().enumerate().flat_map(|(k,c)| c.faces.iter().enumerate()
+            .filter(|(_,f)| g.surfaces.iter().any(|s| crate::ssi::same(&f.surface,s,tol))).map(move |(f,_)| (k,f)))
+            .collect()
+    }).collect();
+    for (g,on) in given.iter().zip(&bearing) {
+        for &(k,f) in on { for &(b,h) in on {
+            let face = |k: usize,f: usize| &candidates[k].faces[f].surface;
+            if k >= b || !(crate::ssi::same(face(k,f),&g.surfaces[0],tol) && crate::ssi::same(face(b,h),&g.surfaces[1],tol)
+                || crate::ssi::same(face(k,f),&g.surfaces[1],tol) && crate::ssi::same(face(b,h),&g.surfaces[0],tol)) { continue }
+            if crate::boolean::overlap(&boxes[k][f],&boxes[b][h],pad) { pairs.insert(([k,f],[b,h])); }
+        } }
+    }
     report.paired = pairs.len();
     if debug() {
         for (a,b) in &pairs {
@@ -203,10 +275,70 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
     let located: Vec<crate::query::Located> = posed.iter().map(|b| crate::query::Located::new(b,tol)).collect();
     let read = std::sync::atomic::AtomicUsize::new(0);
     let kept = std::sync::atomic::AtomicUsize::new(0);
+    // what one point of a piece says of it: dropped (`None`, and why), kept facing out ahead or
+    // behind, or nothing settled there (`Err`)
+    let verdict = |f: &crate::topo::Face,p: V| -> Result<Option<bool>,&'static str> {
+        if !reaches((p,p),tol) { return Ok(None) }
+        let Some(n) = f.outward(p) else { return Err("no normal") };
+        // **a piece proved inside or outside the sweep at a point of it bounds nothing** (#880
+        // Q1b): the sweep's depth there more than a few tolerances from nought, a piece of the
+        // boundary standing on it to its fit — read before its sides, which a hair either side
+        // of a piece shallower than the hair misread (a stretch's sheet dipping into the tool
+        // posed at its end by less than the hair, near where it touches it along its rim, read
+        // as a boundary and kept)
+        if let Ok(Some(_)) = swept.beyond(p,ON_CURVE*tol) {
+            if debug() {
+                let of = candidates.iter().enumerate().find_map(|(k,c)| c.faces.iter().position(|g| std::ptr::eq(g,f)).map(|i| (k,i)));
+                eprintln!("trim: a piece of a {} ({of:?}) at {p:?}: proved off the boundary",f.surface.kind())
+            }
+            return Ok(None)
+        }
+        // **nor one inside the tool where it stands at an end of the roll** (#880 Q1b S5): read
+        // exactly, where membership's mesh is within its sag of the tool — a sheet near where its
+        // contact's branches cross, covered by both end poses less deeply than that sag, read
+        // as a boundary and kept along with its rail there (the cone spun about a line through it)
+        if located.iter().any(|l| l.solid_place(p) == crate::query::Place::In) {
+            if debug() { eprintln!("trim: a piece of a {} at {p:?}: inside an end pose",f.surface.kind()) }
+            return Ok(None)
+        }
+        let (mut ahead,mut behind) = (swept.member(add(p,scale(n,hair))),swept.member(sub(p,scale(n,hair))));
+        // **a piece of the tool's own face at an end of the roll, read near that end** (#880 Q1b
+        // S5): behind it is the tool; ahead of it the sweep reaches just past that end where the
+        // face leads the motion there, and not where it trails — read so where membership, a
+        // hair off a piece narrower than the hair, stands within its sag of the tool posed a
+        // little way on, and behind read a hair through the tool's base past it (the start cone
+        // of a cone screwed through a rod, along its base rim)
+        if let Err(super::member::Unsettled::Near {at}) = ahead {
+            let span = roll[1]-roll[0];
+            let end = (0..2).find(|&e| (at-roll[e]).abs() <= 1e-2*span.abs() && posed[e].faces.iter().any(|g| crate::ssi::same(&f.surface,&g.surface,tol)));
+            if let Some(e) = end {
+                let h = 1e-6*span*if e == 0 { 1. } else { -1. };
+                if let (Ok(q0),Ok(q1)) = (path.pose(roll[e]),path.pose(roll[e]+h)) {
+                    let on = q0.inverse().then(q1).point(p);
+                    let lead = crate::util::space::dot(sub(on,p),n);
+                    if lead.abs() > 1e-9*distance(on,p).max(1e-300) { ahead = Ok(lead > 0.); behind = Ok(true) }
+                }
+            }
+        }
+        if debug() {
+            let of = candidates.iter().enumerate().find_map(|(k,c)| c.faces.iter().position(|g| std::ptr::eq(g,f)).map(|i| (k,i)));
+            eprintln!("trim: a piece of a {} ({of:?}) at {p:?}, normal {n:?}: ahead {ahead:?}, behind {behind:?}",f.surface.kind())
+        }
+        let (Ok(ahead),Ok(behind)) = (ahead,behind) else { return Err("its sides unsettled") };
+        Ok((ahead != behind).then_some(ahead))
+    };
+    // **a piece is one thing all over** (#942 F2): read at its first point that settles, and held to
+    // it at as many as `CONFIRMED` more — a piece the trim reads as the boundary at one point and not
+    // at another (or facing the other way) spans a meeting the trim was not given, and is refused
+    // with the two points, the witness where that meeting crosses between them; kept or dropped
+    // whole, it left the boundary open there without saying where (the cube tumbling 75°: 28 open
+    // edges)
     let sided = |f: &crate::topo::Face,points: &mut dyn Iterator<Item=V>| -> Result<Option<bool>,String> {
         read.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
         let mut first = None;
         let own = boxed.is_some_and(|b| candidates[b].faces.iter().any(|g| std::ptr::eq(g,f)));
+        let mut settled: Option<(V,Option<bool>)> = None;
+        let mut confirmed = 0;
         for p in points.take(8) {
             first.get_or_insert(p);
             if own {
@@ -214,58 +346,28 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
                 match swept.member(p) { Ok(true) => { kept.fetch_add(1,std::sync::atomic::Ordering::Relaxed); return Ok(Some(false)) },
                     Ok(false) => return Ok(None),Err(_) => continue }
             }
-            if !reaches((p,p),tol) { return Ok(None) }
-            let Some(n) = f.outward(p) else { continue };
-            // **a piece proved inside or outside the sweep at a point of it bounds nothing** (#880
-            // Q1b): the sweep's depth there more than a few tolerances from nought, a piece of the
-            // boundary standing on it to its fit — read before its sides, which a hair either side
-            // of a piece shallower than the hair misread (a stretch's sheet dipping into the tool
-            // posed at its end by less than the hair, near where it touches it along its rim, read
-            // as a boundary and kept)
-            if let Ok(Some(_)) = swept.beyond(p,ON_CURVE*tol) {
-                if debug() {
+            let Ok(here) = verdict(f,p) else { continue };
+            // (a point read off the boundary witnesses a piece mixed only where it stands clear of
+            // the boundary by `CLEAR` hairs, proved: a point a hair from it beside the piece's edge
+            // reads the sweep on both its sides, and is no witness — the rod grooved by a leaning
+            // torus, its posed tool's piece read inside at a point 0.09 from its boundary)
+            let clear = |x: V| matches!(swept.beyond(x,CLEAR*hair),Ok(Some(_)));
+            match settled {
+                None => settled = Some((p,here)),
+                Some((q,there)) if there != here && !clear(if here.is_none() { p } else { q }) => continue,
+                Some((q,there)) if there != here => {
                     let of = candidates.iter().enumerate().find_map(|(k,c)| c.faces.iter().position(|g| std::ptr::eq(g,f)).map(|i| (k,i)));
-                    eprintln!("trim: a piece of a {} ({of:?}) at {p:?}: proved off the boundary",f.surface.kind())
+                    let say = |v: Option<bool>| match v { None => "off the boundary",Some(true) => "the boundary, facing ahead",Some(false) => "the boundary, facing behind" };
+                    return Err(format!("a piece of a {} (candidate and face {of:?}) is {} at {q:?} and {} at {p:?}: a meeting the trim was \
+                        not given parts them",f.surface.kind(),say(there),say(here)))
                 }
-                return Ok(None)
+                Some(_) => { confirmed += 1; if confirmed >= CONFIRMED { break } }
             }
-            // **nor one inside the tool where it stands at an end of the roll** (#880 Q1b S5): read
-            // exactly, where membership's mesh is within its sag of the tool — a sheet near where its
-            // contact's branches cross, covered by both end poses less deeply than that sag, read
-            // as a boundary and kept along with its rail there (the cone spun about a line through it)
-            if located.iter().any(|l| l.solid_place(p) == crate::query::Place::In) {
-                if debug() { eprintln!("trim: a piece of a {} at {p:?}: inside an end pose",f.surface.kind()) }
-                return Ok(None)
-            }
-            let (mut ahead,mut behind) = (swept.member(add(p,scale(n,hair))),swept.member(sub(p,scale(n,hair))));
-            // **a piece of the tool's own face at an end of the roll, read near that end** (#880 Q1b
-            // S5): behind it is the tool; ahead of it the sweep reaches just past that end where the
-            // face leads the motion there, and not where it trails — read so where membership, a
-            // hair off a piece narrower than the hair, stands within its sag of the tool posed a
-            // little way on, and behind read a hair through the tool's base past it (the start cone
-            // of a cone screwed through a rod, along its base rim)
-            if let Err(super::member::Unsettled::Near {at}) = ahead {
-                let span = roll[1]-roll[0];
-                let end = (0..2).find(|&e| (at-roll[e]).abs() <= 1e-2*span.abs() && posed[e].faces.iter().any(|g| crate::ssi::same(&f.surface,&g.surface,tol)));
-                if let Some(e) = end {
-                    let h = 1e-6*span*if e == 0 { 1. } else { -1. };
-                    if let (Ok(q0),Ok(q1)) = (path.pose(roll[e]),path.pose(roll[e]+h)) {
-                        let on = q0.inverse().then(q1).point(p);
-                        let lead = crate::util::space::dot(sub(on,p),n);
-                        if lead.abs() > 1e-9*distance(on,p).max(1e-300) { ahead = Ok(lead > 0.); behind = Ok(true) }
-                    }
-                }
-            }
-            if debug() {
-                let of = candidates.iter().enumerate().find_map(|(k,c)| c.faces.iter().position(|g| std::ptr::eq(g,f)).map(|i| (k,i)));
-                eprintln!("trim: a piece of a {} ({of:?}) at {p:?}, normal {n:?}: ahead {ahead:?}, behind {behind:?}",f.surface.kind())
-            }
-            let (Ok(ahead),Ok(behind)) = (ahead,behind) else { continue };
-            if ahead == behind { return Ok(None) }
-            kept.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
-            return Ok(Some(ahead))
         }
-        Err(format!("a piece of a {} whose sides membership does not settle, at {first:?}",f.surface.kind()))
+        match settled {
+            Some((_,v)) => { if v.is_some() { kept.fetch_add(1,std::sync::atomic::Ordering::Relaxed); } Ok(v) }
+            None => Err(format!("a piece of a {} whose sides membership does not settle, at {first:?}",f.surface.kind())),
+        }
     };
     // (each piece's reading timed, where `SOLVENT_BREP_TIME` is set: what membership costs beside the
     // Boolean's own meetings, #942 F4)
@@ -306,6 +408,11 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
         }
     }
     if let Err(why) = out.check(tol) {
+        if let Some(witness) = missing_across(&out,&candidates,&|f,p| match verdict(f,p) {
+            Ok(None) if !matches!(swept.beyond(p,CLEAR*hair),Ok(Some(_))) => None,
+            Ok(v) => Some(v),
+            Err(_) => None,
+        },hair,tol) { return Err(Unbuilt::Failed(witness)) }
         if debug() {
             for (fi,f) in out.faces.iter().enumerate().filter(|(_,f)| f.loops.len() > 1) {
                 for (li,l) in f.loops.iter().enumerate() {

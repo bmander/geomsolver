@@ -854,6 +854,20 @@ reading, the candidates with their face families' walls, rails and rims, and the
 refuses as the build did (`swept_general::a_refused_trim_replays_from_its_dump_to_the_same_refusal`,
 and in the slow tier the bench's tumbling cube).
 
+**A piece is one verdict all over, or a meeting is missing** (#942 F2, `trim`'s `sided`): each
+piece is read at up to eight of its inner points, the first that settles its verdict and as many
+as seven more that hold it there. Two that differ, the one read off the boundary proved clear of it
+by `CLEAR` hairs (`Swept::beyond`), refuse the trim with both points: a meeting it was not given
+parts them. Where the result does not close, each edge it uses once is read across, `ACROSS` hairs
+either way on every candidate face through its middle (`missing_across`): the face kept there read
+clear of the boundary, or a face not kept read as the boundary, is the same refusal at that point
+(`swept_general::a_meeting_left_out_of_the_trim_is_named_where_it_parts_a_piece`, a cube's trim with
+a branch beside its rails taken out; in the slow tier the tumbling cube at 75°, whose own trim is so
+refused). A mixed piece is never kept whole or dropped whole, and a refusal names where to look.
+Faces whose surfaces a `Given` names are always met, where their boxes do (`trim`'s pairing): the
+given curves are the meeting laid with no search, and near balls alone left a thin stretch's face
+and the plane it crosses unpaired.
+
 **Trimming by certified membership, face by face (#880 E1, `swept::trim`; docs/swept-solid-design.md
 §12).** A closed swept solid is built from candidates given to it — the tool's faces at the end
 poses, the sheets its contacts and edges sweep — and the meetings known by construction, with no
