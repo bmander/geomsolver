@@ -40,7 +40,11 @@
 //!   `n · v` vanish, so the edge's velocity runs along the edge, and the edge's carried line has a
 //!   pinch point (a Whitney umbrella). The strip's two sides — the paths where the two faces' chords
 //!   reach the edge — leave it tangent to one another, within the kernel's tolerance (2e-9) for
-//!   1.4e-4, and the Boolean merges points of the two;
+//!   1.4e-4, and the Boolean merges points of the two — the start of one onto the other a little
+//!   way along it, its first stretch a spur the face's pieces now drop (`boolean`'s walk). What
+//!   stays open: edge 1's strip and edge 5's, both swept by edges of the cube's face x = 3.6, all but
+//!   coplanar under so small a tumble, and the trim keeps edge 5's piece short of the rail they share,
+//!   so that rail bounds one face;
 //! - **two bearers on one surface** (`square-thread-at-a-growing-lead`): a bar's vertical edges at one
 //!   radius, turned about `z` and risen along it, each sweep the one cylinder. A bearer whose every
 //!   line stands on one cylinder is now that cylinder (`on_a_cylinder`, its faces' parameters its

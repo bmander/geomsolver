@@ -18,6 +18,14 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   `s''` sought along the band on the curve's own branch, where samples alone read the whole curve as
   touching (the tumbling torus turned whole, and thin). A sheet is refused as folding where it turns
   over, not where it is merely thin.
+- **A face's spurs that keep its walk from closing bound nothing** (`boolean`'s pieces of a face):
+  where the walk into pieces does not close, it is read again with each edge walked both ways
+  between the same two nodes, to a node nothing else reaches, dropped (and the edge it hung from
+  reread, until none is left) — a strip's two sides leaving its point of birth tangent within the
+  tolerance, the start of one merged onto the other a little way along it (#880 T1d, the tumbling
+  cube's fan at a pinch point of its edge's carried line), where it refused (`a family's pieces do
+  not close`). A walk that closes keeps its spurs: a slit, a line two faces touch along. `Brep::check` narrates, under `SOLVENT_BREP_DEBUG`, the faces using an edge
+  it finds open and the edges passing near it.
 - **A bearer of the general road standing on one cylinder is that cylinder** (`swept::general`,
   #880 T1d): its lines all parallel and their feet on one circle, within a few times what the sheet is
   fitted to, its faces put on `Surface::Cylinder` with their edges inverted onto it. A bar's two

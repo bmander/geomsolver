@@ -18,9 +18,11 @@ fn cube() -> gcs_core::brep::topo::Brep { crate::brep::block([2.4,-0.6,1.4],[3.6
 
 /// **A cube tumbling a short way is built closed** by the general road and judged. Not yet: a fan's
 /// stretch is born at a point of its edge at 0.2003 of the roll, where the edge's carried line has a
-/// pinch point, and the trim's pieces there do not close (`general`'s module).
+/// pinch point — its pieces now close, the spur its sides' merge leaves dropped — and edge 1's strip
+/// and edge 5's, both swept by edges of the cube's face x = 3.6, stand all but coplanar, and the trim
+/// keeps edge 5's piece short of the rail they share (`general`'s module).
 #[test]
-#[ignore = "T1d: a fan's stretch born at a point of its edge pinches the edge's carried line"]
+#[ignore = "T1d: two all but coplanar strips meeting along a shared rail, one kept short of it"]
 fn a_cube_tumbling_a_little_is_built_by_the_general_road() {
     let cube = cube();
     let roll = [-15f64.to_radians(),15f64.to_radians()];
