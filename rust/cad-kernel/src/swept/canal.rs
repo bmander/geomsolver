@@ -118,7 +118,7 @@ pub fn ball(b: &crate::topo::Brep, mm: f64) -> Option<(V, f64, String)> {
 pub fn tube(path: &Trajectory, ball: V, r: f64, face: &str, [from, to]: [f64; 2]) -> Result<Option<Tube>, Why> {
     let centre = pose(path, from)?.point(ball);
     let Some(turn) = twist_of(path) else {
-        let spine = along(&Centre { path, ball }, r, face, [from, to])?.map_or(STILL, Spine::Tube);
+        let spine = along(&Centre { path, ball }, r, face, [from, to], false)?.map_or(STILL, Spine::Tube);
         return Ok(Some(Tube { centre, radius: r, spine }));
     };
     let tau = to - from;
@@ -133,6 +133,15 @@ pub fn tube(path: &Trajectory, ball: V, r: f64, face: &str, [from, to]: [f64; 2]
         return Ok(None);
     }
     Ok(Some(Tube { centre, radius: r, spine: Spine::Screw { origin: turn.origin, axis: a, angle, advance } }))
+}
+
+/// **The tube the ball of radius `r` about `ball` sweeps under `path` over `[from, to]`, where the
+/// path closes on itself** — its centre back where it set out, heading as it set out — its wall
+/// named `face`: the face family of its disc square to the path (`along`), its last station its
+/// first, so the wall closes on itself with no end; `None` where the centre never moves. Refused
+/// by the rows as `tube` is, a return read the shorter way round the loop.
+pub fn ring(path: &Trajectory, ball: V, r: f64, face: &str, [from, to]: [f64; 2]) -> Result<Option<Walls>, Why> {
+    along(&Centre { path, ball }, r, face, [from, to], true)
 }
 
 /// The trajectory's pose at the roll `s`.
@@ -224,17 +233,23 @@ const CHECKED_AT: [f64; 2] = [0.06, 0.94];
 /// path's own normal as `build::canal`'s is (`build::seam`) — in pieces whose degree-five
 /// polynomials hold to the disc read between their nodes within a face family's `EXACT` of its
 /// diameter; `None` where the centre never moves. Refused where it would meet itself, read at
-/// points of the path (`rows`).
-fn along(path: &Centre, r: f64, face: &str, [from, to]: [f64; 2]) -> Result<Option<Walls>, Why> {
+/// points of the path (`rows`). Along a path that closes on itself (`closed`), the frame carried
+/// round comes back turned about the tangent by the path's holonomy (none, on a plane): that turn
+/// is unwound evenly along the roll — the disc is round, so its radius vectors turned about the
+/// tangent sweep the same tube — and the last station is the first.
+fn along(path: &Centre, r: f64, face: &str, [from, to]: [f64; 2], closed: bool) -> Result<Option<Walls>, Why> {
     let span = to - from;
-    let Some(start) = rows(path, r, [from, to])? else { return Ok(None) };
+    let Some(start) = rows(path, r, [from, to], closed)? else { return Ok(None) };
     let carried = Carried::new(path, [from, to], start)?;
+    let holonomy = if closed { let x = carried.at(to)?.1[1]; dot(x, start[2]).datan2(dot(x, start[1])) } else { 0.0 };
     // the disc's numbers at the roll `s` (`family::Run::Round`), and its points a quarter turn apart
     let disc = |s: f64| -> Result<Vec<f64>, Why> {
         let (p, f) = carried.at(s)?;
+        let (sn, cs) = (-holonomy * (s - from) / span).dsin_cos();
+        let (x, y) = (add(scale(f[1], cs), scale(f[2], sn)), sub(scale(f[2], cs), scale(f[1], sn)));
         let mut n = p.to_vec();
-        n.extend(scale(f[1], r));
-        n.extend(scale(f[2], r));
+        n.extend(scale(x, r));
+        n.extend(scale(y, r));
         n.push(TAU);
         Ok(n)
     };
@@ -280,6 +295,11 @@ fn along(path: &Centre, r: f64, face: &str, [from, to]: [f64; 2]) -> Result<Opti
         (s, here) = (end, piece[5].clone());
         nodes.extend(piece);
     }
+    // closed, the last station is the first, to the bit
+    if closed {
+        let first = nodes[0].clone();
+        if let Some(last) = nodes.last_mut() { *last = first; }
+    }
     let wall = FamilyWall { name: face.to_string(), run: Run::Round, closed: true, nodes };
     Ok(Some(Walls { spans, at, vanish: 1e-6 * r, loops: vec![vec![wall]], carry: None }))
 }
@@ -289,11 +309,12 @@ fn along(path: &Centre, r: f64, face: &str, [from, to]: [f64; 2]) -> Result<Opti
 /// `MOST_SAMPLES` points come: **B1**, the path turns nowhere tighter than the radius `r` (the tube
 /// would fold) and never stops; **B2** (`returns`), the path comes back within the ball's diameter
 /// of itself nowhere it has run half a turn of a circle of the radius from (the tube would cross
-/// itself). Sampled, so a turn or a return between the points is not seen: the caller holds what is
+/// itself; along a path that closes on itself, `closed`, read the shorter way round). Sampled, so a
+/// turn or a return between the points is not seen: the caller holds what is
 /// built to the sweep's own reading. The frame square to the path where it starts, its seam off the
 /// path's own normal at the first point it turns at (any square to it where it never does), or
 /// `None` where the centre never moves.
-fn rows(path: &Centre, r: f64, [from, to]: [f64; 2]) -> Result<Option<Frame>, Why> {
+fn rows(path: &Centre, r: f64, [from, to]: [f64; 2], closed: bool) -> Result<Option<Frame>, Why> {
     let span = to - from;
     let read = |n: usize| -> Result<Vec<(f64, V, V)>, Why> {
         (0..=n).map(|i| {
@@ -335,7 +356,7 @@ fn rows(path: &Centre, r: f64, [from, to]: [f64; 2]) -> Result<Option<Frame>, Wh
             normal = normalised(sub(rate, scale(t, dot(rate, t)))).and_then(|n| normalised(sub(n, scale(t0, dot(n, t0)))));
         }
     }
-    if let Some(why) = returns(&pts, &along, r) {
+    if let Some(why) = returns(&pts, &along, r, closed) {
         return Err(why);
     }
     let x = crate::build::seam(t0, normal.unwrap_or_else(|| across(t0).0));
@@ -345,9 +366,9 @@ fn rows(path: &Centre, r: f64, [from, to]: [f64; 2]) -> Result<Option<Frame>, Wh
 /// **B2**: two of the points `pts` of the path (`along` its length at each) within the diameter
 /// `2 r` of each other, with the points' spacing to spare, half a turn on a circle of the radius or
 /// more apart along it.
-fn returns(pts: &[(f64, V, V)], along: &[f64], r: f64) -> Option<Why> {
+fn returns(pts: &[(f64, V, V)], along: &[f64], r: f64, closed: bool) -> Option<Why> {
     let points: Vec<V> = pts.iter().map(|p| p.1).collect();
-    let (i, j, spacing) = first_return(&points, along, r)?;
+    let (i, j, spacing) = returning(&points, along, r, closed.then(|| along[along.len() - 1]))?;
     let ((s, p, _), (sj, q, _)) = (pts[i], pts[j]);
     Some(Why::Refused(Refusal { row: Row::Return, seen: Seen::Returns { distance: norm(sub(p, q)), from: s, to: sj, spacing },
         samples: pts.len(), witness: scale(add(p, q), 0.5) }))
@@ -358,6 +379,12 @@ fn returns(pts: &[(f64, V, V)], along: &[f64], r: f64) -> Option<Why> {
 /// along it from where it was: the two points' places and that spacing (B2, read for a ball's tube
 /// here and for any convex tool's centre under K2, `swept::patches`).
 pub fn first_return(points: &[V], along: &[f64], r: f64) -> Option<(usize, usize, f64)> {
+    returning(points, along, r, None)
+}
+
+/// `first_return`, along a path that closes on itself after `round` of its length where there is
+/// one: two points apart by less than half a turn of the radius the other way round are no return.
+fn returning(points: &[V], along: &[f64], r: f64, round: Option<f64>) -> Option<(usize, usize, f64)> {
     let spacing = along.windows(2).map(|w| w[1] - w[0]).fold(0.0, f64::max);
     let reach = 2.0 * r + spacing;
     let mut grid = Grid::new(reach);
@@ -368,7 +395,8 @@ pub fn first_return(points: &[V], along: &[f64], r: f64) -> Option<(usize, usize
         let mut near = None;
         grid.around(p, |j| {
             let j = j as usize;
-            if near.is_none() && j > i && along[j] - along[i] >= PI * r && norm(sub(p, points[j])) < reach {
+            let apart = along[j] - along[i];
+            if near.is_none() && j > i && apart >= PI * r && round.is_none_or(|l| l - apart >= PI * r) && norm(sub(p, points[j])) < reach {
                 near = Some(j);
             }
         });
