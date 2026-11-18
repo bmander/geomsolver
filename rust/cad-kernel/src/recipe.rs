@@ -90,7 +90,7 @@ impl Node {
 }
 
 /// A `family` node: each wall's sheet over the pieces of its interval, the solid they bound.
-fn family_node(f: &Family) -> Built {
+pub(crate) fn family_node(f: &Family) -> Built {
     use super::family::{Sheet,Stations,Wall};
     let stations = std::sync::Arc::new(Stations::new(f.spans.clone(),f.at.clone())?);
     let loops = f.loops.iter().map(|l| l.iter().map(|w| Ok(Wall {

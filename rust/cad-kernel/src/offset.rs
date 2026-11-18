@@ -19,15 +19,24 @@
 //! own bound.  Sharp joins of curved faces are refused, naming the edge.
 //!
 //! Every piece is built exactly by the kernel's own sweeps (`build::prism`, `build::revolve`,
-//! `build::sphere`), and combined by its Booleans.  A face whose normal sweep has no exact
-//! construction here yet — a curved face not bounded by its own parameter lines, a surface with no
-//! offset in closed form — is refused, naming it and a point on it.
+//! `build::sphere`), and combined by its Booleans.  A face no profile's prism or band of
+//! revolution takes — a plane's loop of ellipses, a cylinder's face an ellipse bounds — is carried
+//! between its moved copies where its move along its normal is an affine map (`carried_sweep`: a
+//! plane's, a cylinder's, a sphere's), and a crease along a curve no closed form carries a tube
+//! along is the ball carried along it (`swept_tube`).  A face whose normal sweep has no exact
+//! construction here yet — a cone's or a torus's face not bounded by its own parameter lines, a
+//! surface with no offset in closed form — is refused, naming it and a point on it.
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use super::boolean::{combined,combined_known,Known,Op};
 use super::build::{kept,prism,revolve,sphere,square,disc,Profile,ProfileEdge};
-use super::geom::{tolerance,Curve,Frame,Rigid,Surface,Uv,V};
-use super::topo::{Brep,EdgeCurve,Face};
+use super::affine::Affine;
+use super::geom::{tolerance,Blend,Carry,Curve,Frame,Offset,Rigid,Surface,Uv,V};
+use super::topo::{reverse_loop,Brep,Coedge,EdgeCurve,Face,Pcurve};
+use std::sync::Arc;
+use super::recipe::Spine;
+use super::swept::canal;
+use super::trajectory::{Motion,Path,Trajectory};
 use crate::util::space::{add,cross,distance,dot,lerp,norm,scale,sub,unit};
 use std::collections::{BTreeMap,BTreeSet};
 use std::f64::consts::{FRAC_PI_2,PI,TAU};
@@ -57,6 +66,7 @@ enum By { Face(usize),Edge(usize),Corner(u32) }
 /// faces moved out by `d` and extended until they meet (`Join::Sharp`).
 pub fn grown(b: &Brep,d: f64,join: Join) -> Result<Brep,String> {
     positive(d,"a growth")?;
+    let b = &halved(b);
     let all = vec![true;b.faces.len()];
     folded(b.clone(),pieces(b,&all,Side::Out,d,join)?,Op::Union)
 }
@@ -65,6 +75,7 @@ pub fn grown(b: &Brep,d: f64,join: Join) -> Result<Brep,String> {
 /// or with its faces moved in by `d` and extended until they meet (`Join::Sharp`).
 pub fn shrunk(b: &Brep,d: f64,join: Join) -> Result<Brep,String> {
     positive(d,"a shrinking")?;
+    let b = &halved(b);
     let all = vec![true;b.faces.len()];
     let out = folded(b.clone(),pieces(b,&all,Side::In,d,join)?,Op::Cut)?;
     if out.faces.is_empty() { return Err(format!("the solid shrunk by {d} is nothing: no point of it is that far inside")) }
@@ -78,6 +89,7 @@ pub fn shrunk(b: &Brep,d: f64,join: Join) -> Result<Brep,String> {
 pub fn shelled(b: &Brep,open: &[usize],t: f64,side: Side,join: Join) -> Result<Brep,String> {
     positive(t,"a wall")?;
     if let Some(&f) = open.iter().find(|&&f| f >= b.faces.len()) { return Err(format!("no face {f} to leave open")) }
+    let b = &halved(b);
     let walled: Vec<bool> = (0..b.faces.len()).map(|f| !open.contains(&f)).collect();
     if !walled.contains(&true) { return Err("a shell open at every face has no wall".into()) }
     let pieces = match side {
@@ -229,6 +241,7 @@ fn ended(b: &Brep,openings: &[Opening],made: Vec<(By,Piece)>,join: Join) -> Resu
 /// part, and its rims the walls its boundary sweeps.
 pub fn thickened(sheet: &Brep,s: [f64;2],join: Join) -> Result<Brep,String> {
     if !(s[0] < s[1] && s.iter().all(|x| x.is_finite())) { return Err(format!("a sheet thickened over {s:?}, no depth")) }
+    let sheet = &halved(sheet);
     let all = vec![true;sheet.faces.len()];
     let uses = uses(sheet);
     let mut pieces = (0..sheet.faces.len()).map(|fi| normal_sweep(sheet,fi,s).map(|p| (face_name(sheet,fi),p)))
@@ -283,7 +296,8 @@ fn owned_pieces(b: &Brep,faces: &[bool],side: Side,d: f64,join: Join) -> Result<
     for fi in (0..b.faces.len()).filter(|&f| faces[f]) {
         // inside, a wall's moved face runs on across a face left open until it meets it
         let across = match side { Side::In => open_sides(b,&uses,fi,faces),Side::Out => [false;4] };
-        if let Some(p) = sweep(b,fi,s,Reach {across,cut_at_axis:true})? { out.push((By::Face(fi),(format!("the sweep of {}",face_name(b,fi)),p))); }
+        let opening = side == Side::In && b.faces[fi].loops.iter().flatten().any(|c| uses[c.edge as usize].iter().any(|&(g,_)| !faces[g]));
+        if let Some(p) = sweep(b,fi,s,Reach {across,cut_at_axis:true,opening})? { out.push((By::Face(fi),(format!("the sweep of {}",face_name(b,fi)),p))); }
     }
     out.extend(joins(b,&uses,faces,side,d,join,Of::Solid)?);
     Ok(out)
@@ -476,8 +490,64 @@ fn tube(c: &Curve,t: [f64;2],d: f64) -> Result<Brep,String> {
             };
             revolve(&profile(centre,n,loops),f.o,f.z,(t[1]-t[0]).min(TAU))
         }
-        _ => Err(format!("no tube is built about a {} yet: lines and circles are",c.kind())),
+        _ => swept_tube(c,t,d),
     }
+}
+
+/// A path that steps along the curve `curve`: at `t` the translation from its point at `from` to
+/// its point at `t`, at its speed there. What carries a ball's centre along an edge.
+#[derive(Debug)]
+struct Along { curve: Curve,from: f64 }
+
+impl Path for Along {
+    fn at(&self,t: f64) -> Result<Motion,crate::KernelError> {
+        let (p,d,_) = self.curve.d2(t);
+        Motion::translation(sub(p,self.curve.point(self.from)),d)
+            .map_err(|e| crate::KernelError::new(crate::Kind::Failed,format!("the curve at {t}: {e:?}")))
+    }
+}
+
+/// **The tube of radius `d` about the stretch `t` of a curve no closed form carries a tube along**,
+/// its ends flat: the ball of radius `d` carried along it (`swept::canal::tube`, the one tube a
+/// ball sweeps along any path), its wall the face family of its disc square to the curve, held
+/// within the family's `EXACT` of its diameter; a closed curve's along each half (`halved`).
+/// Refused, by the tube's rows, where the curve turns tighter than `d` or comes back within `2 d`
+/// of itself: the tube would fold or cross itself.
+fn swept_tube(c: &Curve,t: [f64;2],d: f64) -> Result<Brep,String> {
+    let path = Trajectory::General(Arc::new(Along {curve:c.clone(),from:t[0]}));
+    let (k,why) = (c.kind(),match canal::tube(&path,c.point(t[0]),d,"",t) {
+        Ok(Some(canal::Tube {spine:Spine::Tube(f),..})) => return crate::recipe::family_node(&f).map_err(|e| e.msg),
+        Ok(_) => return Err(format!("the ball's centre does not move along the {}",c.kind())),
+        Err(why) => why,
+    });
+    Err(match why {
+        canal::Why::Refused(r) => match r.seen {
+            canal::Seen::Turns {radius,..} =>
+                format!("the {k} turns on a radius of {radius} at {:?}, tighter than the tube's {d}: the tube would fold",r.witness),
+            canal::Seen::Stops {..} => format!("the {k} stops at {:?}, where it has no tangent",r.witness),
+            canal::Seen::Returns {distance,..} => format!("the {k} comes back within {distance} of itself near {:?}, closer than \
+                the tube's diameter {}: the tube would cross itself",r.witness,2.*d),
+        },
+        other => format!("the ball's tube along the {k} is not built: {other:?}"),
+    })
+}
+
+/// **`b` with each closed edge a ball's tube is swept along cut in two at its middle**
+/// (`swept_tube`): the same solid, a vertex more on each such edge. A ball's path never comes back
+/// to where it started, so a closed edge's tube is two, each along a half; cut first, every piece
+/// built from the edge — each face's moved copy of it, its wall's rails, its tube — ends where the
+/// halves do, and each moved copy lies along one half's wall. A circle's tube is a torus's whole.
+fn halved(b: &Brep) -> Brep {
+    let mut out = b.clone();
+    let mut cuts = BTreeMap::new();
+    for (ei,e) in b.edges.iter().enumerate() {
+        let EdgeCurve::Curve(c) = &e.curve else { continue };
+        if e.v[0] != e.v[1] || matches!(c,Curve::Circle(..) | Curve::Line {..}) { continue }
+        let m = 0.5*(e.t[0]+e.t[1]);
+        cuts.insert(ei as u32,vec![(m,out.vertex(c.point(m)))]);
+    }
+    if !cuts.is_empty() { super::boolean::cut_with(&mut out,&cuts); }
+    out
 }
 
 /// The wedge of the tube of radius `d` about the stretch `t` of the curve `c` between the
@@ -557,8 +627,9 @@ fn corner(b: &Brep,faces: &[usize],p: V,side: Side,d: f64) -> Result<Brep,String
 /// outward normal, `s` over `[s[0], s[1]]` — the solid between the face moved to `s[0]` and to
 /// `s[1]` and the walls its boundary sweeps.  A plane's is the prism of its loops; a cylinder's,
 /// a cone's, a sphere's or a torus's, bounded by its own parameter lines, the section between the
-/// face's meridian and its moved copies turned through the face's span.  Refused where the sweep
-/// passes the surface's centre.
+/// face's meridian and its moved copies turned through the face's span; any other plane's,
+/// cylinder's or sphere's the face carried between its moved copies (`carried_sweep`).  Refused
+/// where the sweep passes the surface's centre.
 pub fn normal_sweep(b: &Brep,fi: usize,s: [f64;2]) -> Result<Brep,String> {
     sweep(b,fi,s,Reach::default())?.ok_or_else(|| format!("{} is swept wholly past its axis",face_name(b,fi)))
 }
@@ -567,9 +638,13 @@ pub fn normal_sweep(b: &Brep,fi: usize,s: [f64;2]) -> Result<Brep,String> {
 /// parameters (`[u0, u1, v0, v1]`) that borders a face left open, on to the end of its surface's
 /// own range (a moved wall runs on until it meets the opening, which the solid then trims); and
 /// whether the part past the surface's axis is cut away, as a distance set's piece may be (a point
-/// past the axis is nearer the surface on the axis's far side, and not this face's).
+/// past the axis is nearer the surface on the axis's far side, and not this face's); and whether
+/// the face borders an opening.
 #[derive(Clone,Copy,Debug,Default)]
-struct Reach { across: [bool;4],cut_at_axis: bool }
+struct Reach { across: [bool;4],cut_at_axis: bool,
+    /// Whether the face borders a face left open, across which a wall it is carried between does
+    /// not run on yet.
+    opening: bool }
 
 /// The sweep `normal_sweep` builds, reaching as `reach` says; none where it is cut away wholly at
 /// the axis.
@@ -579,11 +654,144 @@ fn sweep(b: &Brep,fi: usize,s: [f64;2],reach: Reach) -> Result<Option<Brep>,Stri
         let witness = f.loops.iter().flatten().next().map(|c| b.vertices[b.edges[c.edge as usize].v[0] as usize].p);
         format!("{} is not swept along its normal: {why} (at {witness:?})",face_name(b,fi))
     };
+    // where the face's loops are no profile's or its boundary not its own parameter lines, the face
+    // carried between its moved copies, where its move is an affine map
+    let carried = |why: String| if reach.opening || !moves_affinely(&f.surface) { Err(why) } else {
+        carried_sweep(b,fi,s).map(Some).map_err(|m| format!("{why}, and carried between its moved copies, {m}"))
+    };
     match f.surface {
-        Surface::Plane(fr) => plane_sweep(b,f,fr,s).map(Some).map_err(refuse),
-        Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Torus(..) => revolved_sweep(b,f,s,reach).map_err(refuse),
+        Surface::Plane(fr) => plane_sweep(b,f,fr,s).map(Some).or_else(carried).map_err(refuse),
+        Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Torus(..) =>
+            revolved_sweep(b,f,s,reach).or_else(|why| if iso_box(b,f).is_some() { Err(why) } else { carried(why) }).map_err(refuse),
         _ => Err(refuse(format!("a {} has no offset in closed form",f.surface.kind()))),
     }
+}
+
+/// Whether moving a point of the surface `s` along its normal is one affine map of space for the
+/// whole surface: a plane's a step along it, a cylinder's a stretch square to its axis, a sphere's
+/// a scaling about its centre. A cone's and a torus's move each point by its own map.
+fn moves_affinely(s: &Surface) -> bool { matches!(s,Surface::Plane(_) | Surface::Cylinder(..) | Surface::Sphere(..)) }
+
+/// **A face swept along its normal by carrying it between its moved copies** (`normal_sweep`, any
+/// boundary): on a plane, a cylinder or a sphere the move `q ↦ q + h n(q)` of the face's points is
+/// an affine map `A_h` of space (`moves_affinely`), linear in `h`, carrying the surface onto its
+/// offset (`Surface::offset`) with its parameters kept. So the face moved to `h` is the face's
+/// image under `A_h` — its edges' images (`Curve::mapped`: an ellipse's an ellipse) on the offset
+/// surface, its pcurves its own — and the wall an edge sweeps is the ruled surface joining each of
+/// its points' images at `s[0]` and `s[1]`, `(1 − v) A₀(q) + v A₁(q) = A_{s₀ + v (s₁ − s₀)}(q)`:
+/// exactly a `Blend` of the edge's two images (a plane where they lie in one). The rails between
+/// them are the normals at the face's vertices. Refused where the move takes the surface past its
+/// centre or axis.
+fn carried_sweep(b: &Brep,fi: usize,s: [f64;2]) -> Result<Brep,String> {
+    let f = &b.faces[fi];
+    let out = if f.reversed { -1. } else { 1. };
+    let tol = tolerance(b.size()+s[1]-s[0]);
+    // the face moved to `h`: the map, and the face's image under it on the surface's offset
+    let moved = |h: f64| -> Result<Brep,String> {
+        let d = out*h;
+        let map = match f.surface {
+            Surface::Plane(fr) => Affine::new(Affine::IDENTITY.m,scale(fr.z,d)),
+            Surface::Cylinder(fr,r) => Affine::stretch(&fr,[(r+d)/r,(r+d)/r,1.]),
+            Surface::Sphere(fr,r) => Affine::stretch(&fr,[(r+d)/r;3]),
+            _ => return Err(format!("a {}'s move along its normal is no affine map",f.surface.kind())),
+        };
+        let surface = match f.surface.offset(d,tol) {
+            Some(Offset::Surface(o)) if map.is_ok() => o,
+            _ => return Err(format!("swept past the centre of its {}: no point stands that far off it",f.surface.kind())),
+        };
+        let mut c = sheet_of(b,&[fi])?.mapped(&map?);
+        // the offset's parameters are the face's own (an affine image's, wrapped, are too)
+        c.faces[0].surface = surface;
+        Ok(c)
+    };
+    let (near,far) = (moved(s[0])?,moved(s[1])?);
+    let (nv,ne) = (near.vertices.len() as u32,near.edges.len() as u32);
+    let mut solid = near.clone();
+    solid.join(&far);
+    // the face moved to `s[0]` bounds the sweep from the other side
+    let cap = &mut solid.faces[0];
+    cap.reversed = !cap.reversed;
+    cap.loops = std::mem::take(&mut cap.loops).into_iter().map(reverse_loop).collect();
+    // the normal at each vertex of the face, between its two copies, made where a wall uses it
+    let mut rails: BTreeMap<u32,u32> = BTreeMap::new();
+    let mut rail = |solid: &mut Brep,v: u32| -> u32 {
+        *rails.entry(v).or_insert_with(|| {
+            let (p,q) = (solid.vertices[v as usize].p,solid.vertices[(v+nv) as usize].p);
+            solid.edge(EdgeCurve::Curve(Curve::Line {p,d:unit(sub(q,p))}),[0.,distance(p,q)],[v,v+nv])
+        })
+    };
+    let face = &near.faces[0];
+    let seams = face.seams();
+    for c in face.loops.iter().flatten() {
+        let (lo,hi) = (c.edge,c.edge+ne);
+        let e = &near.edges[lo as usize];
+        let EdgeCurve::Curve(a) = &e.curve else { continue };
+        if seams.contains(&lo) { continue }
+        let EdgeCurve::Curve(z) = &far.edges[lo as usize].curve else { unreachable!("an edge's image is a curve") };
+        let tb = far.edges[lo as usize].t;
+        let closed = e.v[0] == e.v[1];
+        // out of the face across the edge where its walk is the face's: the walk's tangent across
+        // the face's outward normal
+        let mid = 0.5*(e.t[0]+e.t[1]);
+        let p = a.point(mid);
+        let walk = scale(a.tangent(mid),if c.reversed { -1. } else { 1. });
+        let n = face.outward(p).ok_or_else(|| format!("no normal at {p:?} of its edge"))?;
+        let away = cross(walk,n);
+        let pts: Vec<V> = (0..=16).flat_map(|k| { let u = k as f64/16.; [a.point(e.t[0]+u*(e.t[1]-e.t[0])),z.point(tb[0]+u*(tb[1]-tb[0]))] }).collect();
+        let (surface,mut loops) = match flat(&pts,tol) {
+            Some(plane) => {
+                let at = |q: V| { let l = plane.local(q); [l[0],l[1]] };
+                let pc = |x: V,y: V| Pcurve::Inverse {a:at(x),b:at(y)};
+                let (va,vz) = (solid.vertices[e.v[0] as usize].p,solid.vertices[e.v[1] as usize].p);
+                let (wa,wz) = (solid.vertices[(e.v[0]+nv) as usize].p,solid.vertices[(e.v[1]+nv) as usize].p);
+                if closed {
+                    // an annulus: the edge and its image, each a loop of its own
+                    (Surface::Plane(plane),vec![vec![Coedge {edge:lo,reversed:false,pcurve:pc(va,vz)}],vec![Coedge {edge:hi,reversed:true,pcurve:pc(wa,wz)}]])
+                } else {
+                    let (r0,r1) = (rail(&mut solid,e.v[0]),rail(&mut solid,e.v[1]));
+                    (Surface::Plane(plane),vec![vec![Coedge {edge:lo,reversed:false,pcurve:pc(va,vz)},Coedge {edge:r1,reversed:false,pcurve:pc(vz,wz)},
+                        Coedge {edge:hi,reversed:true,pcurve:pc(wa,wz)},Coedge {edge:r0,reversed:true,pcurve:pc(va,wa)}]])
+                }
+            }
+            None => {
+                let (r0,r1) = (rail(&mut solid,e.v[0]),rail(&mut solid,e.v[1]));
+                let line = |a: Uv,b: Uv| Pcurve::Line {a,b};
+                let blend = Blend {a:a.clone(),ta:e.t,b:z.clone(),tb,carry:Carry::Line {delta:[0.;3]},closed};
+                (Surface::Blend(Frame::about(p,away),Arc::new(blend)),vec![vec![
+                    Coedge {edge:lo,reversed:false,pcurve:line([0.,0.],[1.,0.])},Coedge {edge:r1,reversed:false,pcurve:line([1.,0.],[1.,1.])},
+                    Coedge {edge:hi,reversed:true,pcurve:line([0.,1.],[1.,1.])},Coedge {edge:r0,reversed:true,pcurve:line([0.,0.],[0.,1.])}]])
+            }
+        };
+        let reversed = dot(surface.normal_raw(surface.inverse(p)),away) < 0.;
+        let wall = Face {surface,reversed,loops:vec![],name:String::new()};
+        // the outer loop counter-clockwise about the material's side, a hole's the other way
+        let areas: Vec<f64> = loops.iter().map(|l| solid.loop_area(&wall,l)).collect();
+        let outer = (0..loops.len()).max_by(|&i,&j| areas[i].abs().total_cmp(&areas[j].abs())).unwrap_or(0);
+        for (k,l) in loops.iter_mut().enumerate() {
+            if (areas[k] > 0.) == (reversed == (k == outer)) { *l = reverse_loop(std::mem::take(l)); }
+        }
+        loops.swap(0,outer);
+        solid.faces.push(Face {loops,..wall});
+    }
+    // every rail between two walls, or the face's boundary is not one the walls close
+    let uses = solid.uses();
+    if let Some((_,&r)) = rails.iter().find(|&(_,&r)| uses[r as usize].len() != 2) {
+        return Err(format!("its walls do not close at the normal through {:?}",solid.vertices[solid.edges[r as usize].v[0] as usize].p))
+    }
+    Ok(solid)
+}
+
+/// The plane the points `pts` lie in within `tol`, or none: through the first, across the farthest
+/// from it and the point farthest off that line.
+fn flat(pts: &[V],tol: f64) -> Option<Frame> {
+    let o = pts[0];
+    let far = *pts.iter().max_by(|a,b| distance(**a,o).total_cmp(&distance(**b,o)))?;
+    let x = unit(sub(far,o));
+    let off = *pts.iter().max_by(|a,b| norm(cross(x,sub(**a,o))).total_cmp(&norm(cross(x,sub(**b,o)))))?;
+    let n = cross(x,sub(off,o));
+    if !(norm(n) > tol) { return None }
+    let n = unit(n);
+    pts.iter().all(|&q| dot(sub(q,o),n).abs() <= tol).then(|| Frame::new(o,n,x))
 }
 
 /// A plane face's loop `l` as a profile's edges about `normal`: its lines, its arcs (each frame

@@ -8,6 +8,19 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A face swept along its normal whatever bounds it, and a tube about any smooth edge** (`offset`):
+  an offset refused a curved face its own parameter lines do not bound, and a crease along any
+  curve but a line or a circle. A plane's, a cylinder's or a sphere's move along its normal is one
+  affine map of space, linear in the distance (a step, a stretch square to the axis, a scaling about
+  the centre), so the face's sweep is the face carried between its two moved copies on the offset
+  surface, its pcurves its own, walled by the ruled sheet each edge sweeps between its two images
+  (`Blend`, or a plane where they lie in one) — exactly, where a profile's prism or a band of
+  revolution does not take the face. A crease along any other curve is the ball carried along it
+  (`swept::canal`, the one tube a ball sweeps along a path), flat-ended, a closed edge cut in two at
+  its middle first so each face's moved copy lies along one half's wall; refused, with the radius
+  and a point, where the curve turns tighter than the distance. brep-bench's
+  offset/cylinder-cut-at-thirty-degrees-grown and the slant-cut cylinder grown by ½, 1, 1½ and 2
+  build to Steiner's formula within 1e-11; grown past the ellipse's curvature they are refused.
 - **A swallowtail narrower than a stretch is cut at its double point** (`swept::contacts`, #880
   T1e): where a contact's image in the motion's invariants turns back twice, its outer leaves cross
   over one path, and a stretch holding both folds held both leaves of the crossing, a sheet crossing

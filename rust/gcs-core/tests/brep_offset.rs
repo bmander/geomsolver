@@ -8,7 +8,7 @@ use gcs_core::brep::boolean::{combined,Op};
 use gcs_core::brep::build::{cone,disc,hull,kept,prism,sphere,torus,Profile,ProfileEdge};
 use gcs_core::brep::geom::{Frame,V};
 use gcs_core::brep::nurbs::BSpline;
-use gcs_core::brep::offset::{grown,sheet_of,shelled,shrunk,thickened,Join,Side};
+use gcs_core::brep::offset::{grown,normal_sweep,sheet_of,shelled,shrunk,thickened,Join,Side};
 use gcs_core::brep::props::volume;
 use gcs_core::brep::query::{Located,Place};
 use gcs_core::brep::topo::Brep;
@@ -114,6 +114,69 @@ fn a_cone_grown_caps_its_apex_with_a_ball() {
     let beta = (4f64/3.).atan();
     let want = PI*r*r*h/3.+PI*(r*r+r*l)*d+PI*(h+r*(PI-beta))*d*d+4.*PI*d*d*d/3.;
     close("grown",volume(&grown(&cone([0.,0.,0.],[0.,0.,1.],r,0.,h).unwrap(),d,Join::Round).unwrap()),want);
+}
+
+/// The cylinder of radius `r` from `z = −h` up to the plane `z = x tan α` (brep-bench's
+/// offset/cylinder-cut-at-thirty-degrees-grown and slant-cut-cylinder-grown).
+fn cut_cylinder(r: f64,h: f64,alpha: f64) -> Brep {
+    let cylinder = prism(&disc([0.,0.,-h],[0.,0.,1.],r),0.,2.*h).unwrap();
+    kept(&cylinder,[0.,0.,0.],[alpha.sin(),0.,-alpha.cos()],0.).unwrap()
+}
+
+/// Steiner's formula for that convex body grown by `d`: its volume and area.  Its integrated mean
+/// curvature is the side's `π h`, the bottom circle's right angle along it, `π² r / 2`, and half
+/// the ellipse's turning angle along it, `J / 2`, with
+/// `J = ∫ acos(−sin α cos φ) r √(1 + tan² α sin² φ) dφ` over a turn, which has no elementary form:
+/// the trapezoid rule, exact to rounding for a smooth periodic integrand at this many points.
+fn steiner_cut_cylinder(r: f64,h: f64,alpha: f64,d: f64) -> (f64,f64) {
+    let n = 4096;
+    let j = (0..n).map(|k| {
+        let phi = 2.*PI*k as f64/n as f64;
+        (-alpha.sin()*phi.cos()).acos()*r*(1.+(alpha.tan()*phi.sin()).powi(2)).sqrt()
+    }).sum::<f64>()*2.*PI/n as f64;
+    let (v0,s0) = (PI*r*r*h,2.*PI*r*h+PI*r*r+PI*r*r/alpha.cos());
+    let m = PI*h+PI*PI*r/2.+j/2.;
+    (v0+s0*d+m*d*d+4.*PI*d*d*d/3.,s0+2.*m*d+4.*PI*d*d)
+}
+
+/// A cylinder cut aslant has a face no parameter lines bound: its side meets the slanted top in an
+/// ellipse.  The side's move along its normal is a stretch square to the axis, so its sweep is the
+/// face carried between its moved copies, walled by the ruled sheet the ellipse sweeps along the
+/// normals (exactly `60π (1 + d / 2r)` at d = 1); the top's is its face carried along its normal;
+/// and the ellipse's own tube is the ball carried along it.  Grown, each is Steiner's formula.
+/// Grown past the ellipse's least radius of curvature (`b² / a`) its tube would fold, and it is
+/// refused.
+#[test]
+fn a_cylinder_cut_aslant_grown_is_steiners() {
+    let thirty = cut_cylinder(3.,10.,PI/6.);
+    let side = faces_through(&thirty,&[[-3.,0.,-5.]])[0];
+    close("the side swept",volume(&normal_sweep(&thirty,side,[0.,1.]).unwrap()),70.*PI);
+    for (alpha,d) in [(PI/6.,1.),(PI/4.,2.)] {
+        let g = grown(&cut_cylinder(3.,10.,alpha),d,Join::Round).unwrap();
+        g.check(1e-7).unwrap();
+        let (v,a) = steiner_cut_cylinder(3.,10.,alpha,d);
+        close(&format!("grown by {d} at {alpha}: its volume"),volume(&g),v);
+        close(&format!("grown by {d} at {alpha}: its area"),total_area(&g),a);
+    }
+    let e = grown(&cut_cylinder(3.,10.,PI/4.),2.5,Join::Round).unwrap_err();
+    assert!(e.contains("tighter than the tube's 2.5"),"{e}");
+}
+
+/// A ball cut by a plane leaning off its axis: the circle the plane cuts is no parallel of the
+/// sphere's, and its face's sweep is the face scaled about the centre, walled by a cone's stretch.
+#[test]
+fn a_ball_cut_aslant_grown_is_steiners() {
+    let (r,h,d) = (5f64,2f64,1f64);
+    let n = { let n = [0.6f64.sin(),0.3,0.6f64.cos()]; let l = (n[0]*n[0]+n[1]*n[1]+n[2]*n[2]).sqrt(); n.map(|x| x/l) };
+    let cut = kept(&sphere([0.;3],[0.,0.,1.],r).unwrap(),n.map(|x| x*h),n.map(|x| -x),0.).unwrap();
+    let g = grown(&cut,d,Join::Round).unwrap();
+    g.check(1e-7).unwrap();
+    // the ball less its cap past the plane, the circle of radius ρ turning by acos(h / r)
+    let (c,rho) = (r-h,(r*r-h*h).sqrt());
+    let (v0,s0) = (4.*PI*r*r*r/3.-PI*c*c*(3.*r-c)/3.,4.*PI*r*r-2.*PI*r*c+PI*rho*rho);
+    let m = 4.*PI*r-2.*PI*c+(h/r).acos()*PI*rho;
+    close("grown",volume(&g),v0+s0*d+m*d*d+4.*PI*d*d*d/3.);
+    close("its area",total_area(&g),s0+2.*m*d+4.*PI*d*d);
 }
 
 #[test]
