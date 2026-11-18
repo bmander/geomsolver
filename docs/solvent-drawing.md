@@ -72,6 +72,19 @@ model home from "four_bar.sv"
 model quarter from "four_bar.sv" at t = 90deg
 ```
 
+`model m from "mount.sv" with g_wf = 2in, g_er = -6` (#940) draws the file with those of its
+top-level values given other values, as `solventc --set` gives them: each the text of a Solvent
+expression, read where the model binds it, a bare number in the unit of the value it replaces
+(`-6` over `g_er := 1"` is `-6"`), as far as the next `,`, `;` or statement. A value with an inch
+mark is written quoted (`with g = "1' 6\""`), since `"` opens a string here. The same file with
+other values is another snapshot, so one sheet can draw a part in two sizes. A name the model
+does not bind at its top level is refused on the import.
+
+`solventc mount.svd --set g_wf=2in` gives every model the drawing imports that binds `g_wf` the
+value for the run, but where the import's own `with` gives that name one (the drawing's word for
+that one model is the narrower); a name no imported model binds is refused. The report says what
+each model was drawn with, `m: set g_wf := 2in (the document writes 1.5in)`.
+
 An instant past where the march stopped (a singular instant: `400 is not reached`), a parameter
 the model does not declare, or a value of another dimension is an error on the import. The
 instant is presentation: it is never written into the model. The browser's timeline shows the
@@ -98,6 +111,17 @@ and WebAssembly ABI accept a bundle of source texts and use the same compiler an
 * Page coordinates start at the upper left; x grows right and y grows down.
 * `at (X, Y)` places the projected coordinate origin. It does not automatically center or fit
   the geometry. This makes aligned projections predictable.
+* `at ANCHOR (X, Y)` (#940) places a point of the box round what the view draws instead —
+  `topleft`, `top`, `topright`, `left`, `center`, `right`, `bottomleft`, `bottom` or
+  `bottomright` — so a design change that moves the geometry against its origin (a tilt) does not
+  slide one view into another. The box is the geometry's, not its annotations'.
+* `scale fit (W, H)` (#940), in place of a number, is the largest scale at which what the view
+  draws fits a W by H box on the paper, so a view stays on its sheet whatever the model's size.
+* `format decimal N` writes a length the drawing works out — an extent, a `measure` — to N
+  places (`87.99`); `format fraction 1/8` to the nearest eighth, `87 7/8"` in an inch model and
+  `7' 3 7/8"` in a foot one (the fraction is an inch's there, and a metric figure carries no
+  mark); `format reading`, the default, to six figures (`87.9895`). It is the sheet's, for every
+  view on it. A dimension the model states is drawn as it is written (#940).
 * A model's units are converted to paper millimetres; a model with no `unit` line is in
   millimetres.
 * Stroke widths, dash lengths, and lettering use CSS pixels (96 per inch), independently of
@@ -118,7 +142,13 @@ sketch top(m) from m.std.top at (80mm, 90mm)
 ```
 
 A solid view names an explicit solid, including an intermediate or cutter when desired.
-It does not turn a component into a body. `from` accepts `front`, `back`, `right`, `left`,
+It does not turn a component into a body. **A view of a scope holding objects** — the model by its
+alias (`view side(m) from right`), a component's instance (`view bent(m.bent_c) from right`), a
+member — projects every object under it in one picture (#940): an assembly's elevation, each part
+dashed where another stands between it and the eye, a line two parts share drawn once. Each part
+keeps its own classes and `data-path`, so a style for one part still finds it, and the parts stay
+separate objects in `--step-assembly`. Its `dimensions` are the assembly's overall width and
+height. A scope holding no object is refused. `from` accepts `front`, `back`, `right`, `left`,
 `top`, `bottom`, `isometric`, or a model plane path; omitted, it means `front`. Projection uses Solvent's
 world axes: the front plane has horizontal X and vertical Z. A section additionally names
 a cutting plane and must be viewed parallel to it. Views retain source face paths, distinguish
@@ -151,6 +181,12 @@ dimension m.width in construction at (0, 12)
 measure distance(m.a, m.b) in front offset 6mm
 label "Section A–A" at (20mm, 270mm)
 ```
+
+`dimensions m.frame, m.post in VIEW` (#940) narrows a sketch's to the dimensions whose geometry
+is all under one of the paths (a component's instance, a member, an entity), or that carry one
+of the classes named (`.structural`), so a model with `coords` rows in every component can still
+have one part's dimensions called out; a bare `dimensions in VIEW` beside it asks for all of
+them again. A solid view's dimensions are its extents and take no such list.
 
 `dimensions in VIEW` selects automatic annotations: overall projected extents and surviving
 round-feature diameters for a solid, or constraint dimensions for a sketch. An extent reaches a

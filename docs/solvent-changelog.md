@@ -4,6 +4,17 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.218] A claim over measurements, and the customary engineering units** (#940). A `claim`
+may compare measurements of the solved drawing — `length`, `radius`, `distance`, `angle` — with
+the document's numbers, `claim length(post) <= 96"`: it is judged after the solve, at the pose the
+drawing solved to, and holds or is refuted there (§9.7). Through 0.217 such a statement was E040
+(`unexpected `length``); a measurement compared with a plain number is E103, of geometry without
+the measure E101. `claim radius(10) rim` is still a relation, and a bound on a claimed relation
+still E040. The units `lb`, `lbf`, `kip`, `ftlbf`, `inlbf`, `psi`, `ksi`, `psf`, `mph` and `kph`
+join the table (§3.3), each its exact SI definition; before, each was a name multiplied by the
+number in front of it (`400lbf` was 400 times `lbf`, E101 where nothing named it). Nothing else a
+document wrote reads differently.
+
 **[0.217] Ports: a relation word's operands typed, and a part placed through its port**
 (`docs/ports-plan.md`, #904). A defined word's operand may be typed by an interface, `s: Seated
 seats_in h: Seat := { … }`: a use is held to it as a call is to a typed formal (E103 at the

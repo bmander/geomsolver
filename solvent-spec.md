@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.217 — November 2026**
+**Specification, Draft 0.218 — November 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -186,6 +186,12 @@ A number MAY carry a unit. The length units are `mm`, `cm`, `m`, `km`, `in`, `ft
 | pressure, stress | `Pa`, `kPa`, `MPa`, `GPa` |
 | magnetic flux | `Wb`, `mWb` |
 | flux density | `T`, `mT` |
+| velocity (Length·Time⁻¹) **[0.218]** | `mph`, `kph` |
+
+**[0.218]** The customary engineering units, each its exact SI definition (the international pound
+is 0.45359237 kg, a pound-force that pound under 9.80665 m/s²): mass `lb`; force `lbf`, `kip`;
+torque `ftlbf`, `inlbf` (one word each, as a suffix is letters only); pressure `psi`, `ksi`,
+`psf`. A value in them reads back in SI (`400lbf` is `1779.29 N`), as every figure does.
 
 A unit is a suffix only, so `48V` is a voltage and `V` alone is still a name. There is no `h` and no `min`, which are a height and a function long before they are an hour and a minute. `rpm` is an angle over a time, so `255rpm / 1rad` is the angular speed in rad/s and `255rpm / turn` the revolutions a second, `1Hz` beside it.
 
@@ -2983,9 +2989,25 @@ collapses: a claim over values is a **theorem** where it holds and **violated** 
 never *consuming*. It holds within rounding: each comparison is kept to 10⁻⁹ of the larger side,
 so `claim torque == 0.0864Nm` is a theorem of `torque := 0.006Nm * 16 * 0.9`. It MUST NOT read an
 unknown of the drawing, nor a value written over one (**E040**): what the solve gives is claimed
-by a relation. A name that is no number in scope is **E101**, two dimensions compared **E103**,
-and a measurement of the drawing **E107**, as in a `when`. It compiles nothing, so it acts no
-more than any claim does; it is not made inside a swept claim (`claim over`), which judges poses.
+by a relation. A name that is no number in scope is **E101** and two dimensions compared
+**E103**, as in a `when`. It compiles nothing, so it acts no more than any claim does; it is not
+made inside a swept claim (`claim over`), which judges poses.
+
+**[0.218]** **A claim over measurements.** A condition after `claim` may measure the solved
+drawing (the measurements of §6.14: `length(l)`, `radius(c)`, `distance(a, b)`, `angle(l1, l2)`, in
+space), as no `when` may: `claim length(post) <= 96"`. A statement after `claim` is such a
+condition where it opens with a measurement whose call is followed by arithmetic or a comparison
+(`claim radius(10) rim` keeps its operand, and is a relation). What it measures is where the solve
+put the geometry, so it is judged **after** the solve, at the pose the drawing solved to: it
+**holds** or is **refuted** there, within rounding, and is neither a theorem nor consuming — the
+document's other claims say what follows from the drawing; this one what the drawing came to. A
+measurement is a length or an angle, so it compares with a number of that dimension (**E103**
+otherwise, said before the solve); a name that is no geometry, or geometry that has no such
+measure (a point's length, an angle between a point and a line), is **E101**; the numbers beside
+it are worked out where it stands and MUST NOT read an unknown (**E040**). In a component's body it
+is judged once per instance, its names read in that instance. Through 0.217 such a claim was
+E040 (`unexpected `length``), and a bound on a claimed relation (`claim a distance(<= 96) b`)
+still is: the bound is the solve's, the comparison the claim's.
 
 *Non-normative:* the reference implementation says each claim over values with the values it reads
 in their units (`claim torque >= 2Nm — refuted: torque = 0.0864 N·m`), and `solventc --where NAME`

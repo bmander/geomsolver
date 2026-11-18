@@ -8,8 +8,8 @@ mod parser;
 pub use document::{evaluate, has_expr, set_dimension, sync_free, ExprError, ExprItem, Fault};
 pub use document::{bind_free, declared_reads, eval_declared, placement_value};
 pub use eval::{
-    decide, decide_in, eval, eval_in, eval_measured, judge_in, reading, to_arg_units,
-    to_user_units, Aff, Env, Measurer, READING_SIG,
+    decide, decide_in, eval, eval_in, eval_measured, judge_in, judge_measured, reading,
+    to_arg_units, to_user_units, Aff, Env, Measurer, READING_SIG,
 };
 pub use names::{measure_call, name_at, NameScan, LEXER};
 pub use parser::{is_literal, literal, names_unit, notation, parse, parse_condition_in, parse_in};
@@ -112,6 +112,19 @@ pub const MEASURES: &[(&str, Measure, usize)] = &[
 impl Measure {
     pub fn name(self) -> &'static str {
         MEASURES.iter().find(|m| m.1 == self).map_or("?", |m| m.0)
+    }
+
+    /// What it comes to: an angle's angle, every other's a length.
+    pub fn dim(self) -> crate::units::Dim {
+        match self {
+            Measure::Angle => crate::units::Dim::ANGLE,
+            _ => crate::units::Dim::LENGTH,
+        }
+    }
+
+    /// How many names it measures (`MEASURES`' arity).
+    pub fn arity(self) -> usize {
+        MEASURES.iter().find(|m| m.1 == self).map_or(0, |m| m.2)
     }
 
     /// `length(gen_g)`, as the call is written.
@@ -309,6 +322,14 @@ impl Cond {
             Cond::Not(a) => Cond::Not(Box::new(a.map_vars(f))),
             Cond::In(..) | Cond::Meets(..) | Cond::Along(..) => self.clone(),
         }
+    }
+
+    /// Every measurement of the solved drawing the condition makes, in the order written: what
+    /// makes a claim one judged after the solve (#940).
+    pub fn measures(&self) -> Vec<(Measure, Vec<String>)> {
+        let mut out = Vec::new();
+        self.collect_measures(&mut out);
+        out
     }
 
     fn collect_measures(&self, out: &mut Vec<(Measure, Vec<String>)>) {

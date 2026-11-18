@@ -725,6 +725,40 @@ pub fn values_json<'v>(
     }).collect())
 }
 
+/// **A claim over measurements, judged after the solve** (#940): `claim length(post) <= 96" —
+/// holds: length(post) = 90 in`, what it says, whether it holds where the drawing solved to, and
+/// each measurement and value it reads; or why it has no answer there.
+pub fn measured_claim_text(units: crate::units::Units, c: &crate::program::MeasuredJudged)
+    -> String
+{
+    let reads: Vec<String> = c.reads.iter().map(|(n, v)| value_text(units, n, v)).collect();
+    match &c.holds {
+        Ok(holds) => {
+            let verdict = if *holds { "holds" } else { "refuted" };
+            format!("claim {} — {verdict}: {}", c.text, reads.join(", "))
+        }
+        Err(why) => format!("claim {} — no answer: {why}", c.text),
+    }
+}
+
+/// **`measured_claim_text` as JSON** (#940): per claim over measurements, in the order walked,
+/// its `claim` as written, `holds` (`null` where it has no answer, said in `why`), what it
+/// `reads` (`values_json`'s fields) and its `text`.
+pub fn measured_claims_json(units: crate::units::Units, claims: &[crate::program::MeasuredJudged])
+    -> Json
+{
+    Json::Arr(claims.iter().map(|c| {
+        let mut o = object([
+            ("claim", c.text.as_str().into()),
+            ("holds", c.holds.as_ref().map_or(Json::Null, |h| Json::Bool(*h))),
+            ("reads", values_json(units, c.reads.iter().map(|(n, v)| (n, v)))),
+            ("text", measured_claim_text(units, c).into()),
+        ]);
+        if let Err(why) = &c.holds { o.set("why", why.as_str().into()); }
+        o
+    }).collect())
+}
+
 /// **`value_claim_text` as JSON** (#596): per claim over values, in the order walked, its
 /// `claim` as written, `holds`, the `values` it reads (`values_json`) and its `text`.
 pub fn value_claims_json(units: crate::units::Units, claims: &[crate::flatten::ValueClaimed])
@@ -834,6 +868,12 @@ pub fn positions_where(sk: &Sketch, map: &crate::program::SourceMap, asked: &dyn
             for (name, &p) in scalars.iter().zip(params.iter()) {
                 out.insert(name.clone(), sk.params[p as usize].value);
             }
+            // **and how long a line or an arc is** (#940), in space, as `length(l)` measures it
+            if matches!(e.kind, crate::model::EntKind::Line | crate::model::EntKind::Arc) {
+                if let Some(l) = crate::program::length(sk, e) {
+                    out.insert(format!("{n}.length"), l);
+                }
+            }
             // **and how a plane turns in space**: its axes and its normal, as the solve left them
             // (where it stands is its own `x`, `y`, `z`, above)
             if e.kind == crate::model::EntKind::Frame {
@@ -940,7 +980,28 @@ pub fn positions_where(sk: &Sketch, map: &crate::program::SourceMap, asked: &dyn
             }
         }
     }
-    out.into_iter().collect()
+    published(out)
+}
+
+/// **The names a reader is told, as a reader writes them** (#940): a copy of a repeated block,
+/// which the elaborator keys by its statement (`#53.0.c0.x`), by the path a reference writes
+/// (`c0[0].x`, `public_path`), so a report survives a line moved above it.  Where two copies come
+/// to one path (a copy holding a copy is named by the inner index alone), both keep their keys.
+fn published(out: std::collections::BTreeMap<String, f64>) -> Vec<(String, f64)> {
+    use crate::program::public_path;
+    if !out.keys().any(|n| n.contains('#')) {
+        return out.into_iter().collect();
+    }
+    let mut taken: std::collections::BTreeMap<String, usize> = Default::default();
+    let named: Vec<(String, String, f64)> = out.into_iter().map(|(n, v)| {
+        let p = public_path(&n);
+        *taken.entry(p.clone()).or_default() += 1;
+        (n, p, v)
+    }).collect();
+    let mut kept: Vec<(String, f64)> = named.into_iter()
+        .map(|(n, p, v)| (if taken[&p] == 1 { p } else { n }, v)).collect();
+    kept.sort_by(|a, b| a.0.cmp(&b.0));
+    kept
 }
 
 pub fn positions_json(sk: &Sketch, map: &crate::program::SourceMap) -> Json {

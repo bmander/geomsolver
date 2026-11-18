@@ -36,6 +36,9 @@ pub struct Stroke {
     pub silhouette: bool,
     /// `body.bore.wall` — which face of which solid it bounds.
     pub path: String,
+    /// Which of the solids projected together it is an edge of (`Renderer::project_together`,
+    /// #940): 0 for a solid projected alone.
+    pub part: usize,
 }
 
 /// A vector drawing with tight bounds, or no bounds when it contains no strokes.
@@ -80,6 +83,14 @@ impl<'a> Renderer<'a> {
         projection::project(self, view)
     }
 
+    /// **Several prepared solids as one picture** (#940): an assembly's view, each part's edges
+    /// hidden where it or any other part stands between them and the eye, each stroke saying
+    /// which part (`Stroke::part`, an index into `renderers`) it is an edge of.
+    pub fn project_together(renderers: &[Renderer<'a>], view: View) -> Drawing {
+        if renderers.is_empty() { return Drawing::new(Vec::new()) }
+        projection::project_together(renderers, view)
+    }
+
     /// Conservative bounds without visibility or edge-crossing work. A section can only
     /// shrink these bounds; callers needing tight bounds use the completed Drawing instead.
     pub fn bounds(&self, frame: PageFrame) -> Option<[f64; 4]> {
@@ -92,7 +103,8 @@ impl<'a> Renderer<'a> {
     }
 }
 
-fn bounds_of(points: impl Iterator<Item = (f64, f64)>) -> Option<[f64; 4]> {
+/// The box round some page points, `None` for none.
+pub(crate) fn bounds_of(points: impl Iterator<Item = (f64, f64)>) -> Option<[f64; 4]> {
     points.fold(None, |bounds, (x, y)| Some(match bounds {
         None => [x, y, x, y],
         Some([a, b, c, d]) => [a.min(x), b.min(y), c.max(x), d.max(y)],
