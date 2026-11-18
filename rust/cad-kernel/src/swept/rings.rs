@@ -47,6 +47,22 @@
 //! where they miss: each interval along the roll and round each face halved where the net misses at
 //! its middle (`halved`), not every one at once.
 //!
+//! **A fold pair born or vanishing partway** (#880 T1d): a stretch read in the band about a fold
+//! between two stretches alike is a fold pair only where `s''` takes the other sign within it — its
+//! least sought along the band, each angle's root on the branch its nearest sample is on, and
+//! clearly below nought, by a ten-millionth of the scale — else a dip toward nought that folds
+//! nowhere. Where a pair is born or vanishes the curve's kinds change, and the roll is cut there
+//! (`changes`: read at `SHAPE_LOOKS` rolls and halved to the rounding); each stretch is fitted on its
+//! own at the whole roll's scale (`fitted_over`), its rows a billionth of the roll clear of the cuts,
+//! entered against the tool only at the roll's own ends (`entered_at`), and the tubes of every
+//! stretch sewn across the cuts (`sew::sewn_open`) into one candidate a tube (`sew::parts`), trimmed
+//! by membership (`trim`). A sheet is refused as folding where its area factor turns over between
+//! two neighbouring points, or vanishes, not where it is thin: just before a pair is born it is
+//! squeezed toward nought where `s''` dips, and regular. **Not yet:** a newborn pair lies wholly in
+//! its band, its outer leaves crossing there, and the band is bridged into the tool, so the touching
+//! sheets stop short of the crossing (the tumbling torus turned whole: judged wrong past its first
+//! cut, by the arrangement, and not closed by the trim).
+//!
 //! **Its meetings with the tool where it starts and stops are read in its own domain** (`traces`):
 //! at an end pose every piece's rim lies on the tool, touching it, and a tube that folds runs on
 //! from its rim into the tool beside it (near each fold, and wherever the sweep comes back on the
@@ -246,6 +262,14 @@ impl Ring {
     }
 
     /// The greatest `|s''|` of the contacts on the faces `read` at the angles `thetas`.
+    /// The scale `s''` is read against over `roll`: its greatest at the instant `t`.
+    fn scale_at(&self,path: &Trajectory,t: f64,roll: [f64;2]) -> Result<f64,Unbuilt> {
+        let (w,dw) = rates(path,t,roll)?;
+        let thetas: Vec<f64> = (0..AROUND).map(|i| TAU*i as f64/AROUND as f64).collect();
+        let read: Vec<Vec<(Label,Root)>> = thetas.iter().map(|&th| self.roots(&w,th)).collect();
+        Ok(self.scale(&w,&dw,&thetas,&read))
+    }
+
     fn scale(&self,w: &Twist,dw: &Twist,thetas: &[f64],read: &[Vec<(Label,Root)>]) -> f64 {
         let mut most = 0f64;
         for (i,r) in read.iter().enumerate() {
@@ -416,7 +440,43 @@ impl Ring {
                             let mut j = k;
                             while raw[(j+1)%s].1 == Side::Fold { j = (j+1)%s }
                             let (before,after) = (raw[i].1,raw[(j+1)%s].1);
-                            if before == after {
+                            // (unless `s''` takes the other sign within it: two folds and a sliver
+                            // of the other side between them, narrower than the band a fold is read
+                            // in — the tumbling torus, its sheet folding over a twentieth of a face its
+                            // kinds read as touching all round, #880 T1d. Its least (greatest) is
+                            // sought along the stretch, each step between samples read 64 times and
+                            // the least of those settled by golden sections: a pair newly born is
+                            // narrower than the samples)
+                            let other = (before == after) && {
+                                let sign = if before == Side::Touching { 1. } else { -1. };
+                                let first = samples[(k+s-1)%s].0;
+                                let mut last = samples[(j+1)%s].0;
+                                if last <= first { last += span }
+                                // (each angle's root the one nearest the branch its nearest sample is
+                                // on: the curve followed, not the other root at a far angle)
+                                let near: Vec<(f64,f64)> = (0..(j+s-k)%s+3).map(|x| {
+                                    let (th,ia,ja) = samples[(k+s-1+x)%s];
+                                    (if th < first { th+span } else { th },read[ia][ja].1.sigma)
+                                }).collect();
+                                let value = |th: f64| {
+                                    let sigma = near.iter().min_by(|p,q| (p.0-th).abs().total_cmp(&(q.0-th).abs())).map_or(0.,|p| p.1);
+                                    at(th,sigma).map_or(f64::INFINITY,|r| sign*self.bend(&w,&dw,th.rem_euclid(TAU),&r.1))
+                                };
+                                let looks = 64*((j+s-k)%s+3);
+                                let step = (last-first)/looks as f64;
+                                let (mut best,mut at_best) = (f64::INFINITY,first);
+                                for x in 0..=looks { let th = first+step*x as f64; let v = value(th); if v < best { best = v; at_best = th } }
+                                let (mut lo,mut hi) = ((at_best-step).max(first),(at_best+step).min(last));
+                                let g = 0.5*(5f64.sqrt()-1.);
+                                for _ in 0..60 {
+                                    let (x1,x2) = (hi-g*(hi-lo),lo+g*(hi-lo));
+                                    if value(x1) < value(x2) { hi = x2 } else { lo = x1 }
+                                }
+                                // (clearly below nought, by a ten-millionth of the scale: so the
+                                // instants a hair either side of where a pair is born read alike)
+                                best.min(value(0.5*(lo+hi))) < -1e-7*scale_bend
+                            };
+                            if before == after && !other {
                                 let mut x = k;
                                 loop { kinds[x].1 = before; if x == j { break } x = (x+1)%s }
                             }
@@ -548,12 +608,13 @@ const FIRST_POINTS: usize = 8;
 const MOST_ROWS: usize = 1024;
 const MOST_POINTS: usize = 1024;
 
-/// How small a part of its two rates' lengths a sheet's area factor may fall to (K2's `FOLD`).
-const FOLD: f64 = 1e-3;
 
 /// The reader of a ring's instants over a roll, each roll read once.
 struct Reader<'a> {
     ring: &'a Ring,path: &'a Trajectory,roll: [f64;2],first: Vec<Vec<Piece>>,
+    /// The roll the twist's rate is read by differences within: the whole roll's, as its cuts are
+    /// found (`changes`), whatever stretch of it the reader fits.
+    whole: [f64;2],
     /// The scale `s''` is read against at every instant: its greatest at the first.
     scale: f64,
     cache: std::sync::Mutex<std::collections::BTreeMap<u64,Read>>,
@@ -561,14 +622,16 @@ struct Reader<'a> {
 
 impl<'a> Reader<'a> {
     fn new(ring: &'a Ring,path: &'a Trajectory,roll: [f64;2]) -> Result<Reader<'a>,Unbuilt> {
-        let [a,_] = roll;
-        let (w,dw) = rates(path,a,roll)?;
-        let pose = path.pose(a)?;
-        let thetas: Vec<f64> = (0..AROUND).map(|i| TAU*i as f64/AROUND as f64).collect();
-        let read: Vec<Vec<(Label,Root)>> = thetas.iter().map(|&th| ring.roots(&w,th)).collect();
-        let scale = ring.scale(&w,&dw,&thetas,&read);
+        let scale = ring.scale_at(path,roll[0],roll)?;
+        Reader::within(ring,path,roll,roll,roll[0],scale)
+    }
+
+    /// The reader over `roll`, `s''` read against `scale`, its curves matched to those at `first`.
+    fn within(ring: &'a Ring,path: &'a Trajectory,whole: [f64;2],roll: [f64;2],first: f64,scale: f64) -> Result<Reader<'a>,Unbuilt> {
+        let (w,dw) = rates(path,first,whole)?;
+        let pose = path.pose(first)?;
         let i = ring.instant(w,dw,Some(scale)).map_err(|at| Unbuilt::Curved {at:pose.point(at)})?;
-        Ok(Reader {ring,path,roll,first:i.curves,scale,cache:Default::default()})
+        Ok(Reader {ring,path,roll,first:i.curves,whole,scale,cache:Default::default()})
     }
 
     /// The instant at `t`, its curves matched to the first instant's: each first curve by the one
@@ -576,11 +639,15 @@ impl<'a> Reader<'a> {
     /// where none does.
     fn read(&self,t: f64) -> Result<Read,Unbuilt> {
         if let Some(r) = self.cache.lock().unwrap().get(&t.to_bits()) { return Ok(r.clone()) }
-        let (w,dw) = rates(self.path,t,self.roll)?;
+        let (w,dw) = rates(self.path,t,self.whole)?;
         let pose = self.path.pose(t)?;
         let i = self.ring.instant(w,dw,Some(self.scale)).map_err(|at| Unbuilt::Curved {at:pose.point(at)})?;
         let refused = |c: &[Piece]| Unbuilt::Curved {at:pose.point(self.ring.root(&w,c[0].from.rem_euclid(TAU),c[0].label,false)
             .map_or(self.ring.centre,|r| r.x))};
+        if std::env::var_os("SOLVENT_RING_DEBUG").is_some() && !same_shape(&self.first,&i.curves) {
+            let show = |cs: &[Vec<Piece>]| cs.iter().map(|c| c.iter().map(|p| match p.side { Side::Touching => 'T',Side::Fold => 'F',Side::Buried => 'B' }).collect::<String>()).collect::<Vec<_>>().join("|");
+            eprintln!("ring: at {t} over {:?} the shape {} against {}",self.roll,show(&i.curves),show(&self.first));
+        }
         if i.curves.len() != self.first.len() { return Err(refused(&i.curves[0])) }
         let wrap = |x: f64| (x+std::f64::consts::PI).rem_euclid(TAU)-std::f64::consts::PI;
         let mut taken = vec![false;i.curves.len()];
@@ -641,13 +708,28 @@ impl<'a> Reader<'a> {
     }
 
     /// Whether the run's sheet stays regular, read at its fitted points off the bridges (each
-    /// regular by construction but at one point of each rim, `dip`): its area factor `|Σ_u × Σ_t|`
-    /// above `FOLD` of its rates' (a fold the pieces were not cut at, `Folded`).
+    /// regular by construction but at one point of each rim, `dip`): its area factor `Σ_u × Σ_t`
+    /// keeping one sense between each two neighbours round the loop and along the roll, and nowhere
+    /// below a billionth of its rates' (a fold the pieces were not cut at, `Folded`). A sheet squeezed
+    /// thin where `s''` dips toward nought and rises again is regular, and kept (#880 T1d: the tumbling
+    /// torus, 1.8e-4 of its rates just before a fold pair is born there).
     fn folds(&self,net: &Net,us: &[f64],ts: &[f64],bridged: &dyn Fn(f64) -> bool) -> Result<(),Unbuilt> {
-        for &t in ts {
-            for &u in us.iter().filter(|&&u| !bridged(u)) {
-                let (x,du,dt) = net.d1(u,t);
-                if norm(cross(du,dt)) <= FOLD*norm(du)*norm(dt) { return Err(Unbuilt::Folded {at:x}) }
+        let read: Vec<Vec<Option<(V,V,f64)>>> = ts.iter().map(|&t| us.iter().map(|&u| (!bridged(u)).then(|| {
+            let (x,du,dt) = net.d1(u,t);
+            (x,cross(du,dt),norm(du)*norm(dt))
+        })).collect()).collect();
+        let flips = |p: &Option<(V,V,f64)>,q: &Option<(V,V,f64)>| match (p,q) {
+            (Some((_,c,_)),Some((_,d,_))) => crate::util::space::dot(*c,*d) < 0.,
+            _ => false,
+        }.then(|| p.unwrap().0);
+        for (j,row) in read.iter().enumerate() {
+            for (i,p) in row.iter().enumerate() {
+                if let Some((x,c,rates)) = p { if norm(*c) <= 1e-9*rates { return Err(Unbuilt::Folded {at:*x}) } }
+                let beside = [row.get(i+1),read.get(j+1).map(|r| &r[i])];
+                if let Some(at) = beside.into_iter().flatten().find_map(|q| flips(p,q)) {
+                    if std::env::var_os("SOLVENT_RING_DEBUG").is_some() { eprintln!("ring: folds at u {:.6} t {:.6}",us[i],ts[j]) }
+                    return Err(Unbuilt::Folded {at})
+                }
             }
         }
         Ok(())
@@ -684,7 +766,15 @@ fn halved(x: &[f64],missed: &[bool]) -> Vec<f64> {
 /// number round the axis or in kind over the roll (`Curved`), where a tube folds off its bridges
 /// (`Folded`), or where a fit will not close.
 pub fn fitted(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Result<Fitted,Unbuilt> {
-    let reader = Reader::new(ring,path,[a,b])?;
+    let scale = ring.scale_at(path,a,[a,b])?;
+    fitted_over(ring,path,[a,b],[a,b],scale,tol)
+}
+
+/// `fitted` over the stretch `[a, b]` of the roll `whole`, `s''` read against `scale` (the whole
+/// roll's, so a fold's band is the same in every stretch), the curves matched to those at the
+/// stretch's middle.
+pub fn fitted_over(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],scale: f64,tol: f64) -> Result<Fitted,Unbuilt> {
+    let reader = Reader::within(ring,path,whole,[a,b],0.5*(a+b),scale)?;
     let runs = runs(&reader.first);
     if runs.is_empty() { return Err(Unbuilt::Failed("no contact of the ring touches its sweep's boundary".into())) }
     let mut nets = Vec::new();
@@ -767,6 +857,58 @@ pub fn fitted(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Result<F
     Ok(Fitted {nets,on,sides,roll:[a,b]})
 }
 
+/// Whether two instants' contacts are of one shape: as many curves, each of `b`'s turning onto one
+/// of `a`'s kinds, each once.
+fn same_shape(a: &[Vec<Piece>],b: &[Vec<Piece>]) -> bool {
+    if a.len() != b.len() { return false }
+    let mut taken = vec![false;a.len()];
+    for c in b {
+        let Some(i) = (0..a.len()).find(|&i| !taken[i] && !turns_onto(c,&kinds(&a[i])).is_empty()) else { return false };
+        taken[i] = true;
+    }
+    true
+}
+
+/// How many rolls the instants a ring's contact changes shape at are sought between.
+const SHAPE_LOOKS: usize = 4096;
+
+/// **The scale and the instants over `[a, b]` where a ring's contact changes shape under `path`**
+/// (#880 T1d): a fold pair born or vanishing at a point of a curve — where its least `s''` reaches
+/// nought — the curve's kinds changing there. Read at `SHAPE_LOOKS` rolls, and between two that
+/// differ halved to the rounding of the roll, as often as it changes there. `Curved` where an
+/// instant's contacts change in number round the axis.
+pub fn changes(ring: &Ring,path: &Trajectory,[a,b]: [f64;2]) -> Result<(f64,Vec<f64>),Unbuilt> {
+    let scale = ring.scale_at(path,a,[a,b])?;
+    let shape = |t: f64| -> Result<Vec<Vec<Piece>>,Unbuilt> {
+        let (w,dw) = rates(path,t,[a,b])?;
+        let pose = path.pose(t)?;
+        Ok(ring.instant(w,dw,Some(scale)).map_err(|at| Unbuilt::Curved {at:pose.point(at)})?.curves)
+    };
+    let at = |k: usize| if k == SHAPE_LOOKS { b } else { a+(b-a)*k as f64/SHAPE_LOOKS as f64 };
+    let mut cuts = Vec::new();
+    let mut here = shape(a)?;
+    let mut lo = a;
+    for k in 1..=SHAPE_LOOKS {
+        let hi = at(k);
+        let there = shape(hi)?;
+        let mut from = lo;
+        while !same_shape(&here,&there) {
+            let (mut x,mut y) = (from,hi);
+            while y-x > 1e-12*(b-a) {
+                let m = 0.5*(x+y);
+                if same_shape(&here,&shape(m)?) { x = m } else { y = m }
+            }
+            cuts.push(0.5*(x+y));
+            here = shape(y)?;
+            from = y;
+            if y >= hi { break }
+        }
+        here = there;
+        lo = hi;
+    }
+    Ok((scale,cuts))
+}
+
 /// How many rolls a ring's admission reads the instant's contact at.
 const ADMITTED_AT: usize = 65;
 
@@ -810,11 +952,18 @@ pub fn posed(tool: &Brep,ring: &Ring,path: &Trajectory,fit: &Fitted,t: f64) -> R
 /// on the tool's faces holding it — and the curves a face is cut along — each on the face it lies on
 /// — all lie on the tool, and are each face's whole meeting with it, given.
 pub fn entered(fit: &Fitted,ring: &Ring,ends: [&Brep;2],poses: [Pose;2],tol: f64) -> Result<(Vec<Brep>,Vec<Given>),Unbuilt> {
+    entered_at(fit,ring,[Some((ends[0],poses[0])),Some((ends[1],poses[1]))],tol)
+}
+
+/// `entered`, where an end of the fit's stretch of the roll may be no end of the roll (`None`): a
+/// cut where the contact changes shape (`changes`, #880 T1d), the tube there running on into the next
+/// stretch's along its rim — met with no tool, and trimmed by none.
+pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],tol: f64) -> Result<(Vec<Brep>,Vec<Given>),Unbuilt> {
     let mut sheets = Vec::new();
     let mut given = Vec::new();
     let n = ring.elements.len();
     // each end pose carrying a point in space back into the tool where it stands there
-    let backs = poses.map(Pose::inverse);
+    let backs = at.map(|x| x.map(|(_,p)| p.inverse()));
     for ((net,on),sides) in fit.nets.iter().zip(&fit.on).zip(&fit.sides) {
         let pieces = on.len();
         let holding: Vec<Vec<usize>> = on.iter().map(|&o| match o {
@@ -824,19 +973,20 @@ pub fn entered(fit: &Fitted,ring: &Ring,ends: [&Brep;2],poses: [Pose;2],tol: f64
         let faces: Vec<Trimmed> = crate::util::par::indices(pieces,|k| {
             // a touching piece's rim touches the tool, a dipped stretch's crosses it
             let order = if sides[k] == Side::Touching { 2 } else { 1 };
-            let readings: [Reading;2] = std::array::from_fn(|e| Reading {net,ring,back:backs[e],u:[k as f64,k as f64+1.],roll:fit.roll,
-                end:e as f64,order});
-            let chords = (0..2).flat_map(|e| traces(&readings[e]).into_iter().map(move |c| (e,c))).collect();
+            let readings: [Option<Reading>;2] = std::array::from_fn(|e| backs[e].map(|back| Reading {net,ring,back,u:[k as f64,k as f64+1.],
+                roll:fit.roll,end:e as f64,order}));
+            let chords = (0..2).flat_map(|e| readings[e].as_ref().map_or(Vec::new(),traces).into_iter().map(move |c| (e,c))).collect();
             Trimmed {readings,chords}
         });
         let (sheet,cut) = trimmed(net,fit.roll,faces,tol)?;
         for (k,(surface,(rims,chords))) in cut.surfaces.iter().zip(cut.rims.iter().zip(&cut.chords)).enumerate() {
-            for (e,pose) in ends.iter().enumerate() {
+            for (e,(pose,_)) in at.iter().enumerate().filter_map(|(e,x)| x.map(|x| (e,x))) {
+                let back = backs[e].unwrap();
                 // the tool's face each curve it is cut along here lies on (a crossing passing from
                 // one of the tool's faces to the next is not yet cut where it does: refused, not
                 // given to one of them alone)
                 let on: Vec<usize> = chords[e].iter().map(|(_,xs)| {
-                    let mut on = xs.iter().map(|&x| ring.faces[ring.signed(backs[e].point(x)).1]);
+                    let mut on = xs.iter().map(|&x| ring.faces[ring.signed(back.point(x)).1]);
                     let first = on.next().unwrap_or(usize::MAX);
                     if on.all(|g| g == first) { Ok(first) } else { Err(Unbuilt::Failed("a ring's sheet crosses the tool where it starts or \
                         stops across two of its faces: not yet cut there".into())) }
@@ -1042,7 +1192,7 @@ fn chord_curve(r: &Reading,pts: &[P2],tol: f64) -> Result<(Curve,Vec<V>),Unbuilt
 
 /// A tube's face read at both end poses (`Reading`) and the curves it crosses the tool along at
 /// each (`traces`), each with the end pose it is read at.
-struct Trimmed<'a> { readings: [Reading<'a>;2],chords: Vec<(usize,Vec<P2>)> }
+struct Trimmed<'a> { readings: [Option<Reading<'a>>;2],chords: Vec<(usize,Vec<P2>)> }
 
 /// What a trimmed tube was cut along: each face's surface; its rim at each end where it is kept
 /// (the touch there); and the curves it is cut along at each end, each with the points it was
@@ -1191,7 +1341,7 @@ fn trimmed(net: &Net,roll: [f64;2],mut faces: Vec<Trimmed>,tol: f64) -> Result<(
             let clear = face.chords.iter().flat_map(|(_,c)| c).map(|p| (p[0]-m[0]).hypot(p[1]-m[1])).fold(f64::INFINITY,f64::min);
             let depth = (0.5*clear).min(1e-3).min(0.25*(s1-s0));
             let probe = [m[0]+into[0]*depth,m[1]+into[1]*depth];
-            if !(face.readings[0].outside(probe) && face.readings[1].outside(probe)) { continue }
+            if !face.readings.iter().flatten().all(|r| r.outside(probe)) { continue }
             let mut lp: Vec<Coedge> = Vec::new();
             for w in walk {
                 match w {
@@ -1226,7 +1376,7 @@ fn trimmed(net: &Net,roll: [f64;2],mut faces: Vec<Trimmed>,tol: f64) -> Result<(
                         let edge = match chord_edges[i] {
                             Some(edge) => edge,
                             None => {
-                                let (curve,xs) = chord_curve(&face.readings[*e],pts,tol)?;
+                                let (curve,xs) = chord_curve(face.readings[*e].as_ref().unwrap(),pts,tol)?;
                                 let (v0,v1) = (vertex(&mut out,k,pts[0])?,vertex(&mut out,k,pts[pts.len()-1])?);
                                 let edge = out.edge(EdgeCurve::Curve(curve.clone()),[0.,1.],[v0,v1]);
                                 kept_chords[*e].push((curve,xs));

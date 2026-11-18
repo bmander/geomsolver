@@ -55,7 +55,7 @@ pub fn sewn(pieces: &[Brep],tol: f64) -> Result<Brep,KernelError> {
     poles(&mut b,tol);
     merge_vertices(&mut b,tol);
     split_at_vertices(&mut b,tol);
-    pair_edges(&mut b,tol)?;
+    pair_edges(&mut b,tol,false)?;
     let mut b = b.compacted();
     b.measure_tolerances();
     if let Some((i,e)) = b.edges.iter().enumerate().find(|(_,e)| e.tol > ON_CURVE*tol) {
@@ -65,6 +65,39 @@ pub fn sewn(pieces: &[Brep],tol: f64) -> Result<Brep,KernelError> {
     orient(&mut b,tol)?;
     b.check(tol)?;
     Ok(b)
+}
+
+/// **Open sheets sewn where their boundaries are one curve** (`sewn`'s rules but the last): the
+/// pieces' vertices merged, boundary edges cut at one another's vertices and paired where they lie
+/// along one another, an edge bounding one face left a boundary; nothing turned, nothing asked to
+/// close, and nothing measured (a ring's tube fitted stretch by stretch of the roll, sewn across the
+/// cuts for a trim that reads its candidates as they are, #880 T1d). Each piece's surfaces are kept.
+pub fn sewn_open(pieces: &[Brep],tol: f64) -> Result<Brep,KernelError> {
+    let mut b = Brep::default();
+    for p in pieces { b.join(p); }
+    merge_vertices(&mut b,tol);
+    split_at_vertices(&mut b,tol);
+    pair_edges(&mut b,tol,true)?;
+    Ok(b.compacted())
+}
+
+/// **A sheet parted into its connected pieces**: faces sharing an edge in one, each piece with its
+/// own vertices and edges.
+pub fn parts(b: &Brep) -> Vec<Brep> {
+    let uses = b.uses();
+    let n = b.faces.len();
+    let mut root: Vec<usize> = (0..n).collect();
+    fn find(r: &mut Vec<usize>,x: usize) -> usize { let mut x = x; while r[x] != x { r[x] = r[r[x]]; x = r[x] } x }
+    for u in &uses {
+        for w in u.windows(2) { let (x,y) = (find(&mut root,w[0].0),find(&mut root,w[1].0)); if x != y { root[x] = y } }
+    }
+    let mut groups: BTreeMap<usize,Vec<usize>> = BTreeMap::new();
+    for f in 0..n { let r = find(&mut root,f); groups.entry(r).or_default().push(f) }
+    groups.into_values().map(|faces| {
+        let mut part = b.clone();
+        part.faces = faces.iter().map(|&f| b.faces[f].clone()).collect();
+        part.compacted()
+    }).collect()
 }
 
 /// Every boundary edge whose curve lies within `tol` of its start made degenerate: a pole.
@@ -129,7 +162,7 @@ fn split_at_vertices(b: &mut Brep,tol: f64) {
 }
 
 /// Each two boundary edges lying along one another made one (the module's rules).
-fn pair_edges(b: &mut Brep,tol: f64) -> Result<(),KernelError> {
+fn pair_edges(b: &mut Brep,tol: f64,open: bool) -> Result<(),KernelError> {
     let uses = b.uses();
     let free = free(b,&uses);
     // the boundary edges by the vertices they join
@@ -154,6 +187,7 @@ fn pair_edges(b: &mut Brep,tol: f64) -> Result<(),KernelError> {
             let mates: Vec<(usize,bool)> = (x+1..group.len()).filter(|&y| !taken[y])
                 .filter_map(|y| along(b,group[x],group[y]).map(|same| (y,same))).take(2).collect();
             let &[(y,same)] = &mates[..] else {
+                if mates.is_empty() && open { continue }
                 return Err(if mates.is_empty() {
                     KernelError::new(Kind::Open,format!("the faces do not close: an edge near {:?} bounds one face",middle(b,group[x])))
                 } else {

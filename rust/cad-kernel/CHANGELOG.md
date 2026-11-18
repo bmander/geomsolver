@@ -14,6 +14,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   changes; each piece on a moving wall (`family::Sheet`) per edge or face, its strips the faces of
   one candidate; and the meetings known by construction given. No build takes it yet: a stretch born
   at a point of its edge pinches the edge's carried line, and two edges may sweep one surface.
+- **A ring's fold pair narrower than the band it is read in is seen** (`swept::rings`): its least
+  `s''` sought along the band on the curve's own branch, where samples alone read the whole curve as
+  touching (the tumbling torus turned whole, and thin). A sheet is refused as folding where it turns
+  over, not where it is merely thin.
+- **A ring's roll is cut where its contact changes shape** (`swept::rings::changes`,
+  `fitted_over`, `entered_at`): each stretch fitted on its own, the tubes sewn across the cuts
+  (`sew::sewn_open`, `sew::parts`) and trimmed by membership. A newborn pair's outer leaves, crossing
+  inside its band, are not yet cut where they cross: such a build is refused or judged wrong, never
+  returned.
 - **`swept::contacts`'s meeting of a sheet with the tool at an end of the roll reads any sheet**
   (`Rolled`): a constant twist's blend as before, or a moving wall.
 - **A contact's fit given up on keeps to its nodes** (`swept::contacts`): a branch whose fit stops at

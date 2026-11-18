@@ -1688,13 +1688,53 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
     let [a,b] = [roll[0].min(roll[1]),roll[0].max(roll[1])];
     let clock = crate::util::clock::Instant::now();
     let ring = super::rings::Ring::read(tool)?;
-    let fit = super::rings::fitted(&ring,path,[a,b],K2_FIT*tol)?;
+    // **the roll cut where the contact changes shape** (#880 T1d, `rings::changes`): a fold pair born
+    // or vanishing partway — the tumbling torus turned whole, and thin — each stretch fitted on its
+    // own, its rows a billionth of the roll clear of the cuts (where the pair has no width), and the
+    // tubes of every stretch sewn across them into one candidate per tube
+    let (scale,cuts) = super::rings::changes(&ring,path,[a,b])?;
+    let eps = 1e-9*(b-a);
+    let bounds: Vec<f64> = std::iter::once(a).chain(cuts.iter().copied()).chain(std::iter::once(b)).collect();
+    let stretches: Vec<[f64;2]> = bounds.windows(2).enumerate().map(|(k,w)| {
+        [if k == 0 { w[0] } else { w[0]+eps },if k+2 == bounds.len() { w[1] } else { w[1]-eps }]
+    }).collect();
+    if crate::debug() && !cuts.is_empty() { eprintln!("ring: the contact changes shape at {cuts:?}") }
+    let fits: Vec<super::rings::Fitted> = stretches.iter().map(|&sp| super::rings::fitted_over(&ring,path,[a,b],sp,scale,K2_FIT*tol))
+        .collect::<Result<_,_>>()?;
     if crate::timing() { eprintln!("ring: fitted in {:?}",clock.elapsed()) }
     crate::util::meter::go_on()?;
-    let [start,end] = [super::rings::posed(tool,&ring,path,&fit,a)?,super::rings::posed(tool,&ring,path,&fit,b)?];
+    let [start,end] = [super::rings::posed(tool,&ring,path,&fits[0],a)?,super::rings::posed(tool,&ring,path,&fits[fits.len()-1],b)?];
     let poses = [path.pose(a)?,path.pose(b)?];
-    let (sheets,given) = super::rings::entered(&fit,&ring,[&start,&end],poses,tol)?;
+    let last = fits.len()-1;
+    let mut pieces = Vec::new();
+    let mut given = Vec::new();
+    for (k,fit) in fits.iter().enumerate() {
+        let at = [(k == 0).then_some((&start,poses[0])),(k == last).then_some((&end,poses[1]))];
+        let (s,g) = super::rings::entered_at(fit,&ring,at,tol)?;
+        pieces.extend(s);
+        given.extend(g);
+    }
+    let sheets = if fits.len() == 1 { pieces } else {
+        let sewn = crate::sew::sewn_open(&pieces,tol).map_err(|e| Unbuilt::Failed(format!("a ring's tubes not sewn across the cuts: {}",e.msg)))?;
+        let parts = crate::sew::parts(&sewn);
+        if crate::debug() {
+            let free = |b: &Brep| { let u = b.uses(); u.iter().filter(|x| x.len() == 1).count() };
+            eprintln!("ring: {} pieces over {} stretches sewn into {} candidates, {} boundary edges",pieces.len(),fits.len(),parts.len(),free(&sewn));
+        }
+        parts
+    };
     if crate::timing() { eprintln!("ring: entered in {:?}",clock.elapsed()) }
+    // **trimmed by membership where the roll is cut** (#880 T1d): its tubes met only where both come
+    // near the sweep's boundary (`trim`), as the contact's road meets its sheets — a turned whole
+    // ring's two tubes cross at under a degree inside the sweep, which the arrangement meets and
+    // cannot, and a thin one's run a hair apart all round, each pair searched for nothing
+    if !cuts.is_empty() {
+        let size = tool.size();
+        let trim = super::trim::Trim {resolution:size/32.,hair:(4.*tol).max(1e-6*size),reach:None};
+        let candidates: Vec<Brep> = [start,end].into_iter().chain(sheets).collect();
+        let (swept,_) = super::trim::trim(tool,path,[a,b],&candidates,&given,bar,tol,trim)?;
+        return cut_blank(swept,blank,tol)
+    }
     candidates(tool,path,[a,b],bar,tol,blank,[start,end],sheets,&given)
 }
 

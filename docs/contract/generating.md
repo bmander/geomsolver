@@ -1905,7 +1905,13 @@ branches ending on the strips' corners there). Held: every given rail lies on bo
 where the edge's velocity runs along it and its carried line has a pinch point, its strip's two sides
 leaving it tangent and the Boolean merging them (the tumbling cube); two bearers on one surface (a
 bar's vertical edges at one radius under a turn and a rise, one cylinder); and a bearer's meeting
-with the tool at an end near a corner, not settled on the bearer.
+with the tool at an end near a corner, not settled on the bearer. **A ring's fold pair born partway**
+(`brep::swept::rings`): a pair narrower than its band read by its least `s''` along the band, on the
+curve's own branch; the roll cut where the contact changes shape (`rings::changes`), each stretch
+fitted alone, its tubes sewn across the cuts and trimmed; a sheet refused as folding only where it
+turns over. The tumbling torus turned whole now fits and is cut at its births; past its first cut it
+is not built (judged wrong by the arrangement, not closed by the trim), the newborn pair's outer
+leaves crossing inside the band its bridge dips under.
 
 **K2's patches: the closed class under any rigid motion (#780 L3, `brep::swept::patches`):** a
 sweep under a motion no constant twist takes, nor a path of pieces (`Trajectory::General`, a frame
