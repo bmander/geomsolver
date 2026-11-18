@@ -89,16 +89,22 @@ fn beside_rails(a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,rails: &[Curve],tol:
     }
     if crate::debug() { eprintln!("general: beside rails from {:?}: {} seeds {:?}",rails.first().and_then(|r| crate::query::curve_domain(r).map(|d| r.point(d[0]))),seeds.len(),seeds) }
     if seeds.is_empty() { return Vec::new() }
-    // (each seed traced on its own, one already on a branch traced skipped: a seed where the two
-    // all but touch — the cube tumbling 75°, two fans meeting at 0.02° where the branch reaches a
-    // rail of a third — is refused, and the rest of the branch is still traced from the others)
+    // (each seed traced on its own, one already on a branch traced skipped; and where the march
+    // in space is refused — two fans all but tangent, the cube tumbling 75°, meeting at 0.02° where
+    // the branch reaches the pinch a third's rail starts at — marched in the two sheets' own
+    // parameters instead, `marched`)
     let mut traced: Vec<Curve> = Vec::new();
     for &p in &seeds {
-        let on = traced.iter().any(|c| distance(c.point(c.inverse(p)),p) <= 1e-6*size);
+        let on = traced.iter().any(|c| distance(c.point(c.inverse(p)),p) <= 2e-3*size);
         if on { continue }
         match crate::ssi::trace(sa,sb,&[p],lo,hi,tol) {
             Ok(t) => traced.extend(t),
-            Err(e) => if crate::debug() { eprintln!("general: beside rails, the trace from {p:?} refused: {e}") },
+            Err(e) => {
+                let m = marched(sa,sb,p,lo,hi,tol);
+                if crate::debug() { eprintln!("general: beside rails, the trace from {p:?} refused ({e}): marched in parameters, {}",
+                    m.as_ref().map_or("refused".to_string(),|c| { let d = crate::query::curve_domain(c).unwrap_or([0.,1.]); format!("{:?} to {:?}",c.point(d[0]),c.point(d[1])) })) }
+                traced.extend(m);
+            }
         }
     }
     let kept: Vec<Curve> = traced.into_iter().filter(|c| {
@@ -107,6 +113,160 @@ fn beside_rails(a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,rails: &[Curve],tol:
     }).collect();
     if crate::debug() { for c in &kept { let d = crate::query::curve_domain(c).unwrap_or([0.,1.]); eprintln!("general: beside a rail, a {} from {:?} to {:?}",c.kind(),c.point(d[0]),c.point(d[1])) } }
     kept
+}
+
+/// **Where two surfaces meet, marched in their own parameters** (`beside_rails`): from `seed` (on
+/// both), the solutions `x = (u_a, v_a, u_b, v_b)` of `A(u_a, v_a) = B(u_b, v_b)` followed both ways
+/// — each step along the null vector of the 3 × 4 Jacobian `[A_u A_v −B_u −B_v]` (its signed 3 × 3
+/// minors), scaled to a length in space, and brought back by minimum-norm Newton steps until the two
+/// points stand within a thousandth of `tol` — until a point leaves the box `[lo, hi]` or either
+/// surface's patch. Where the two all but touch the march in space (`ssi::trace`, along
+/// `∇A × ∇B`) is refused, but the meeting itself is no worse read here than the Jacobian's least
+/// singular value says: two fans at 0.02° lose a few thousand roundings. The points are fitted by a
+/// cubic through them by chord length, the meeting's own point between two settled in where it
+/// strays from them by more than a quarter of `tol`. None where the seed does not settle, or the
+/// march goes nowhere.
+fn marched(a: &Surface,b: &Surface,seed: V,lo: V,hi: V,tol: f64) -> Option<Curve> {
+    type X = [f64;4];
+    let parts = |x: X| { let (pa,au,av) = a.d1([x[0],x[1]]); let (pb,bu,bv) = b.d1([x[2],x[3]]); (sub(pa,pb),[au,av,scale(bu,-1.),scale(bv,-1.)],pa) };
+    // minimum-norm Newton onto the meeting
+    let settle = |mut x: X| -> Option<(X,V)> {
+        for _ in 0..60 {
+            let (f,j,p) = parts(x);
+            // (to a millionth of `tol`: where the two all but touch, a residual moves the point along
+            // their common normal by itself over the sine of their angle, 3e3 times at 0.02°)
+            if crate::util::space::norm(f) <= 1e-6*tol { return Some((x,p)) }
+            let m: [V;3] = std::array::from_fn(|r| std::array::from_fn(|c| (0..4).map(|k| j[k][r]*j[k][c]).sum()));
+            let y = crate::ssi::solve3(m,f);
+            if !y.iter().all(|v| v.is_finite()) { return None }
+            let d: X = std::array::from_fn(|k| -dot(j[k],y));
+            x = std::array::from_fn(|k| x[k]+d[k]);
+        }
+        let (f,_,p) = parts(x);
+        (crate::util::space::norm(f) <= tol).then_some((x,p))
+    };
+    // the null vector of the Jacobian: each component its signed minor
+    let null = |j: &[V;4]| -> X {
+        let det = |c: [usize;3]| dot(j[c[0]],cross(j[c[1]],j[c[2]]));
+        [det([1,2,3]),-det([0,2,3]),det([0,1,3]),-det([0,1,2])]
+    };
+    let ua = a.inverse(seed);
+    let ub = b.inverse(seed);
+    let Some((x0,p0)) = settle([ua[0],ua[1],ub[0],ub[1]]) else { if crate::debug() { eprintln!("general: a march's seed settles nowhere") } return None };
+    let inside = |p: V| (0..3).all(|k| p[k] >= lo[k]-tol && p[k] <= hi[k]+tol);
+    let on_patches = |p: V| a.off_patch(p).unwrap_or(0.) <= 16.*tol && b.off_patch(p).unwrap_or(0.) <= 16.*tol;
+    let size = distance(lo,hi);
+    let h0 = 1e-3*size;
+    let mut halves: Vec<Vec<(X,V)>> = Vec::new();
+    for sense in [1.,-1.] {
+        let mut pts = vec![(x0,p0)];
+        let (mut x,mut p) = (x0,p0);
+        let mut last: Option<X> = None;
+        let mut h = h0;
+        for _ in 0..20_000 {
+            let (_,j,_) = parts(x);
+            let mut t = null(&j);
+            // (scaled to a unit step in space, and held to the way the march has gone)
+            let speed = crate::util::space::norm(add(scale(j[0],t[0]),scale(j[1],t[1])));
+            if !(speed > 0.) { break }
+            t = t.map(|v| v/speed);
+            let way = match last { Some(l) => if (0..4).map(|k| l[k]*t[k]).sum::<f64>() < 0. { -1. } else { 1. },None => sense };
+            t = t.map(|v| v*way);
+            let next = settle(std::array::from_fn(|k| x[k]+h*t[k]));
+            let Some((y,q)) = next else { if h > 1e-6*h0 { h *= 0.5; continue } else { break } };
+            // (a step that went far off its length, or turned sharply, shortened)
+            let moved = distance(p,q);
+            if moved > 1.5*h || moved < 0.5*h { if h > 1e-6*h0 { h *= 0.5; continue } else { break } }
+            if !inside(q) || !on_patches(q) {
+                // (the last step halved onto where it leaves: the branch ends on the patch's edge, or
+                // the box's, not up to a step short of it)
+                let (mut a0,mut a1) = (0.,h);
+                let mut end = None;
+                for _ in 0..60 {
+                    let m = 0.5*(a0+a1);
+                    match settle(std::array::from_fn(|k| x[k]+m*t[k])) {
+                        Some((y,q)) if inside(q) && on_patches(q) => { a0 = m; end = Some((y,q)) }
+                        _ => a1 = m,
+                    }
+                    if a1-a0 <= 1e-3*tol { break }
+                }
+                // (one landing within a quarter step of the last point stands for it: two points a
+                // hair apart set the cubic through them ringing)
+                if let Some(e) = end {
+                    if distance(e.1,p) < 0.25*h && pts.len() > 1 { pts.pop(); }
+                    if distance(e.1,pts.last().unwrap().1) > tol { pts.push(e) }
+                }
+                break
+            }
+            last = Some(t);
+            pts.push((y,q));
+            (x,p) = (y,q);
+            if pts.len() > 8 && distance(q,p0) < 0.5*h { break }
+            h = (h*1.5).min(h0);
+        }
+        halves.push(pts);
+    }
+    let mut chain: Vec<(X,V)> = halves[1].iter().rev().cloned().collect();
+    chain.extend(halves[0].iter().skip(1).cloned());
+    if chain.len() < 2 { return None }
+    // the cubic, refined where it strays from the meeting halfway between two of its points (and
+    // taken at the last within `tol`)
+    for round in 0..8 {
+        let xs: Vec<V> = chain.iter().map(|c| c.1).collect();
+        let mut params = vec![0.];
+        for w in xs.windows(2) { params.push(params.last().unwrap()+distance(w[0],w[1]).max(1e-300)) }
+        let length = *params.last().unwrap();
+        let params: Vec<f64> = params.iter().map(|t| t/length).collect();
+        let Some(curve) = crate::nurbs::interpolate(&xs,&params,3.min(xs.len()-1)) else {
+            if crate::debug() { eprintln!("general: marched {} points, not interpolated",xs.len()) }
+            return None
+        };
+        let mut more: Vec<(usize,(X,V))> = Vec::new();
+        let mut worst = 0f64;
+        for i in 0..chain.len()-1 {
+            let mid: X = std::array::from_fn(|k| 0.5*(chain[i].0[k]+chain[i+1].0[k]));
+            let Some((y,q)) = settle(mid) else { continue };
+            // (its distance to the cubic's nearest point between the two, by golden sections)
+            let gap = |t: f64| distance(curve.point(t),q);
+            let (mut l,mut r) = (params[i],params[i+1]);
+            for _ in 0..80 {
+                let (m1,m2) = (r-(r-l)*0.618_033_988_749_895,l+(r-l)*0.618_033_988_749_895);
+                if gap(m1) <= gap(m2) { r = m2 } else { l = m1 }
+            }
+            let off = gap(0.5*(l+r));
+            worst = worst.max(off);
+            if off > 0.25*tol { more.push((i+1,(y,q))) }
+        }
+        if more.is_empty() { return Some(Curve::BSpline(Arc::new(curve))) }
+        if crate::debug() { eprintln!("general: marched {} points, {} more, the worst {worst:e} off",chain.len(),more.len()) }
+        if round == 2 { break }
+        for (i,m) in more.into_iter().rev() { chain.insert(i,m) }
+    }
+    // (where no cubic follows it — about a pinch the meeting turns within a few points — a
+    // polyline through the meeting's points, each chord halved until its middle stands within a
+    // quarter of `tol` of the meeting's own point there)
+    let mut fine: Vec<(X,V)> = vec![chain[0]];
+    for w in chain.windows(2) {
+        let mut todo = vec![(w[0],w[1],0)];
+        while let Some((p,q,depth)) = todo.pop() {
+            let mid: X = std::array::from_fn(|k| 0.5*(p.0[k]+q.0[k]));
+            match settle(mid) {
+                Some(m) if depth < 24 && {
+                    let c = scale(add(p.1,q.1),0.5);
+                    distance(c,m.1) > 0.25*tol
+                } => { todo.push((m,q,depth+1)); todo.push((p,m,depth+1)) }
+                _ => fine.push(q),
+            }
+        }
+        if fine.len() > 200_000 { return None }
+    }
+    let xs: Vec<V> = fine.iter().map(|c| c.1).collect();
+    let mut params = vec![0.];
+    for w in xs.windows(2) { params.push(params.last().unwrap()+distance(w[0],w[1]).max(1e-300)) }
+    let length = *params.last().unwrap();
+    let params: Vec<f64> = params.iter().map(|t| t/length).collect();
+    if crate::debug() { eprintln!("general: marched as a polyline of {} points",xs.len()) }
+    crate::nurbs::interpolate(&xs,&params,1).map(|c| Curve::BSpline(Arc::new(c)))
 }
 
 /// How many pieces a stretch of the roll is cut into at the least, before any is halved.

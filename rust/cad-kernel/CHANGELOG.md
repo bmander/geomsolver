@@ -41,6 +41,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   beside its path, traced from where an edge of either crosses the other (`general::beside_rails`):
   given the path alone, the arrangement searched the pair for nothing more, and the cube tumbling
   five degrees was left a hole between its top front edge's fan and its top side edge's. It builds.
+  Where the march in space is refused — two fans meeting at 0.02° where the branch reaches the pinch
+  a third's rail starts at, the cube at 75° — the branch is marched in the two sheets' own
+  parameters (`general::marched`: the 3 × 4 Jacobian's null vector, minimum-norm Newton), landed on
+  the patch's edge, and drawn as a cubic, or as a polyline where it turns within a few points. At
+  75° the cube is still refused, a second branch between two other fans left in pieces.
 - A ring's tubes sewn across the cuts of their roll (`sew::sewn_open`) merge a vertex only with
   vertices of other stretches on its own row, and cut a row's rim only at that row's vertices:
   beside a swallowtail's point, where a stretch a two-hundredth of a radian wide is cut, the two
