@@ -22,6 +22,114 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   and a point, where the curve turns tighter than the distance. brep-bench's
   offset/cylinder-cut-at-thirty-degrees-grown and the slant-cut cylinder grown by ½, 1, 1½ and 2
   build to Steiner's formula within 1e-11; grown past the ellipse's curvature they are refused.
+
+## [0.16.0] - 2026-11-18
+
+- **The contact's road under any motion, begun** (`swept::general`, #880 T1d): a polyhedral tool's
+  candidates under a motion no constant twist takes — its contact read per tool at each instant,
+  chords of its faces' characteristic lines and stretches of its sharp edges, cut where its shape
+  changes; each piece on a moving wall (`family::Sheet`) per edge or face, its strips the faces of
+  one candidate; and the meetings known by construction given. No build takes it yet: a stretch born
+  at a point of its edge pinches the edge's carried line, and two edges may sweep one surface.
+- **A ring's fold pair narrower than the band it is read in is seen** (`swept::rings`): its least
+  `s''` sought along the band on the curve's own branch, where samples alone read the whole curve as
+  touching (the tumbling torus turned whole, and thin). A sheet is refused as folding where it turns
+  over, not where it is merely thin.
+- **A ring's meridian the instant touches whole is read through** (`swept::rings`, #880 T1d M2): on
+  an arc of the meridian `n · v = A cos ψ + B sin ψ`, and where `A` and `B` both vanish — the ring's
+  top and bottom carried along a path in the plane square to them, their velocity along the path —
+  the arc's root was refused (no root there, so the contact's count changed round the axis:
+  `Curved`). Beside such a meridian `A` and `B` are read in closed form, each `2 sin((θ − θ*)/2)`
+  times a vector that is not small, so the two curves pass through it smoothly; and a piece ending
+  on it is read a hair inside, on its own side, where the end's root stands apart from it. brep-bench's ring carried along a spline is admitted,
+  its contact one shape over the roll, and its tubes fit. Beside the whole meridian each curve has a
+  narrow fold pair, one fold on the meridian itself, where its branch's label turns over: a join
+  inside a bridge is the bridge's (a fold piece on its own label), so the bridge holds the pair whole;
+  and a trace of a face's crossing of the tool walked from both its ends is one chord. A trace
+  leaving a face beside its corner ends at a crossing of the rim nearer than the corner; a crossing
+  both faces beside its seam trace straight back into one corner is a cap about the vertex and
+  dropped; a seam's place is matched within the snap its two faces' readings were merged at; and a
+  meeting's chord takes the
+  meeting's own point halfway between two of its points wherever its cubic strays from it, settled
+  on the tool itself within `G`'s carried reach of the rim. Its sheets now close and are arranged;
+  it is refused further on, the circle's band swept twice over beside its whole meridians, two faces
+  coinciding along an edge by the start pose.
+- The general road gives two edges' fans sharing a vertex the second branch of their meeting
+  beside its path, traced from where an edge of either crosses the other (`general::beside_rails`):
+  given the path alone, the arrangement searched the pair for nothing more, and the cube tumbling
+  five degrees was left a hole between its top front edge's fan and its top side edge's. It builds.
+  Where the march in space is refused — two fans meeting at 0.02° where the branch reaches the pinch
+  a third's rail starts at, the cube at 75° — the branch is marched in the two sheets' own
+  parameters (`general::marched`: the 3 × 4 Jacobian's null vector, minimum-norm Newton), landed on
+  the patch's edge, and drawn as a cubic, or as a polyline where it turns within a few points. At
+  75° the cube is still refused, a second branch between two other fans left in pieces.
+- A ring's tubes sewn across the cuts of their roll (`sew::sewn_open`) merge a vertex only with
+  vertices of other stretches on its own row, and cut a row's rim only at that row's vertices:
+  beside a swallowtail's point, where a stretch a two-hundredth of a radian wide is cut, the two
+  rows stand within the tolerance of one another, and the tumbling torus turned whole had a face's
+  rim sewn to its own other row, the face left a loop walking one edge both ways. It is refused
+  further on, an edge of one sheet lying within a few tolerances of another over a long stretch.
+- **A rod threaded at a lead that grows is built** (`swept::contacts::pose_meeting`, #880 T1d): a
+  branch of a sheet's meeting with the tool at an end pose has each end put at its own nearest corner
+  that `h`'s rounding reaches, and only one within two cells of it — a strip's corner at a vertex,
+  `h` whole there, extrapolated to a root half the square away and took the branch's other end, so
+  both ends were one point and the branch, fitted to nothing, was dropped (the bottom edge's strip of
+  the bar, where it leaves the bar posed at the start). brep-bench's
+  `swept/square-thread-at-a-growing-lead` builds by the general road, to the volume and area OCCT
+  and cadrs agree on at 7.5e-11; a cube tumbling two degrees builds.
+- **An outline stops halving where halving no longer helps** (`query::Outline::of`): past eight
+  halvings a chord is halved again only while a halving at least halves what it misses its run by —
+  a run read off a sheet all but folded flat beside a swallowtail's point, its inversion settling
+  nowhere, was halved twenty times over, a million points (#880 T1d, the tumbling torus turned
+  whole). Each point of a run is inverted beside the middle of the chord it cuts, so it stays on its
+  own leaf of a surface that folds, and the Boolean keeps the points it inverted onto a face within
+  one arrangement. A face walked into one cycle is that cycle's piece whatever its area reads (no
+  face is a hole alone): a tube's corner beside a swallowtail's point read its one cycle's area off
+  by its sign, `a bspline has a hole in no piece`. The tumbling torus turned to 2.0 rad now reaches
+  its trim's check in 25 s, where it ran past half an hour.
+- **`closed` asks the general road where K2 cannot read the tool** (`swept::closed`,
+  `general_built`, #880 T1d): a polyhedral tool under a motion no constant twist takes and keeping
+  no plane, refused by K2 as `Curved` (no convex solid of revolution), has its candidates made by
+  `swept::general` and trimmed by membership and judged; a tool the general road cannot read either
+  keeps K2's refusal.
+- **A face's spurs that keep its walk from closing bound nothing** (`boolean`'s pieces of a face):
+  where the walk into pieces does not close, it is read again with each edge walked both ways
+  between the same two nodes, to a node nothing else reaches, dropped (and the edge it hung from
+  reread, until none is left) — a strip's two sides leaving its point of birth tangent within the
+  tolerance, the start of one merged onto the other a little way along it (#880 T1d, the tumbling
+  cube's fan at a pinch point of its edge's carried line), where it refused (`a family's pieces do
+  not close`). A walk that closes keeps its spurs: a slit, a line two faces touch along. `Brep::check` narrates, under `SOLVENT_BREP_DEBUG`, the faces using an edge
+  it finds open and the edges passing near it.
+- **A bearer of the general road standing on one cylinder is that cylinder** (`swept::general`,
+  #880 T1d): its lines all parallel and their feet on one circle, within a few times what the sheet is
+  fitted to, its faces put on `Surface::Cylinder` with their edges inverted onto it. A bar's two
+  edges at one radius under a screw whose lead grows are one surface to the trim. The thread is
+  still refused, now where a bottom edge's strip is not cut beside its vertex.
+- **A box along a spline frame is swept closed** (`swept::region`, #880 T1d): a side's contact a
+  hair from its end is its corner's; a corner moving along one of its sides reads that side by its
+  rate along it, its normals the sides' own; and every edge is held where the turn changes sense
+  within the roll (`turning_back`), as at an end pose. `path.sv`'s box, once `Folded`, builds.
+- **A ring's roll is cut where its contact changes shape** (`swept::rings::changes`,
+  `fitted_over`, `entered_at`): each stretch fitted on its own, the tubes sewn across the cuts
+  (`sew::sewn_open`, `sew::parts`) and trimmed by membership. A newborn pair's bridge is the sheet
+  itself, and its double curve — where its outer leaves cross — is traced over the whole roll
+  (`rings::double_curve`) and cut into each stretch, its tail dropped (`rings::cut_along`). Where the
+  double curve ends on the tube's meeting with the tool at an end pose such a build is still refused:
+  never returned. The roll is cut again at each swallowtail point, where the double curve's two
+  halves meet; the tubes are sewn only along the rows at the cuts (`sewn_open`'s `across`), the
+  nearest two edges paired first where an instant's contact doubles back on itself; and a fit's fold
+  check reads the loop's last join as the first piece's. A double curve's seed is read with its
+  first preimage wrapped round the loop (before the first face it is on the last, not the bridge),
+  sought within two of the bridge's half-widths past each end; and a pair born and later vanishing
+  has its double curve closed through its second swallowtail point, the roll cut at both. Every
+  stretch is cut where its tube crosses the tool at either end pose (`entered_at`'s `rimmed`: a
+  stretch whose rim is no end of the roll read plainly), where a double curve can end partway along.
+- **`swept::contacts`'s meeting of a sheet with the tool at an end of the roll reads any sheet**
+  (`Rolled`): a constant twist's blend as before, or a moving wall.
+- **A contact's fit given up on keeps to its nodes** (`swept::contacts`): a branch whose fit stops at
+  its most nodes with spans still wide is kept only where its poles stand within its nodes' box grown
+  by its size; past it, it swung hundreds of kilometres out between nodes crowding at one spot.
+
 - **A swallowtail narrower than a stretch is cut at its double point** (`swept::contacts`, #880
   T1e): where a contact's image in the motion's invariants turns back twice, its outer leaves cross
   over one path, and a stretch holding both folds held both leaves of the crossing, a sheet crossing

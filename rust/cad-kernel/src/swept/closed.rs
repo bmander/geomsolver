@@ -1657,13 +1657,36 @@ const K2_POSES: usize = 128;
 /// classified by membership, as every other build is.
 fn k2(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
     let [a,b] = [roll[0].min(roll[1]),roll[0].max(roll[1])];
-    let revolved = super::patches::Revolved::read(tool)?;
+    // (a tool no convex solid of revolution, every face a plane and every edge a line, is the
+    // general road's (#880 T1d): its contact read face by face and edge by edge at every instant;
+    // a tool it cannot read either keeps K2's refusal)
+    let revolved = match super::patches::Revolved::read(tool) {
+        Ok(r) => r,
+        Err(why @ Unbuilt::Curved {..}) => return match general_built(tool,path,[a,b],bar,tol,blank) {
+            Err(Unbuilt::Curved {..}) => Err(why),
+            built => built,
+        },
+        Err(why) => return Err(why),
+    };
     let fit = super::patches::fitted(&revolved,path,[a,b],K2_FIT*tol)?;
     crate::util::meter::go_on()?;
     let ends = [a,b].map(|t| super::patches::posed(tool,&revolved,path,&fit,t));
     let [start,end] = [ends[0].clone()?,ends[1].clone()?];
     let (sheet,given) = super::patches::entered(&fit,&revolved,[&start,&end])?;
     candidates(tool,path,[a,b],bar,tol,blank,[start,end],vec![sheet],&given)
+}
+
+/// **A polyhedral tool under a motion no constant twist takes, built closed** (`swept::general`,
+/// #880 T1d): its candidates — each piece of the contact's wall over each stretch of the roll, and the
+/// tool at either end — trimmed by membership and judged (`trim::trim`), and cut from `blank` where
+/// there is one.
+fn general_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
+    let (candidates,given) = super::general::candidates(tool,path,roll,tol)?;
+    crate::util::meter::go_on()?;
+    let size = tool.size();
+    let trim = super::trim::Trim {resolution:size/32.,hair:(4.*tol).max(1e-6*size),reach:None};
+    let (swept,_) = super::trim::trim(tool,path,roll,&candidates,&given,bar,tol,trim)?;
+    cut_blank(swept,blank,tol)
 }
 
 /// **A ring under a motion no constant twist takes, built closed** (`swept::rings`, steps 6 and 7
@@ -1688,13 +1711,81 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
     let [a,b] = [roll[0].min(roll[1]),roll[0].max(roll[1])];
     let clock = crate::util::clock::Instant::now();
     let ring = super::rings::Ring::read(tool)?;
-    let fit = super::rings::fitted(&ring,path,[a,b],K2_FIT*tol)?;
+    // **the roll cut where the contact changes shape** (#880 T1d, `rings::changes`): a fold pair born
+    // or vanishing partway — the tumbling torus turned whole, and thin — each stretch fitted on its
+    // own, its rows a billionth of the roll clear of the cuts (where the pair has no width), and the
+    // tubes of every stretch sewn across them into one candidate per tube
+    let (scale,cuts) = super::rings::changes(&ring,path,[a,b])?;
+    let eps = 1e-9*(b-a);
+    let bounds: Vec<f64> = std::iter::once(a).chain(cuts.iter().copied()).chain(std::iter::once(b)).collect();
+    let stretches: Vec<[f64;2]> = bounds.windows(2).enumerate().map(|(k,w)| {
+        [if k == 0 { w[0] } else { w[0]+eps },if k+2 == bounds.len() { w[1] } else { w[1]-eps }]
+    }).collect();
+    if crate::debug() && !cuts.is_empty() { eprintln!("ring: the contact changes shape at {cuts:?}") }
+    let mut fits: Vec<super::rings::Fitted> = stretches.iter().map(|&sp| super::rings::fitted_over(&ring,path,[a,b],sp,scale,K2_FIT*tol))
+        .collect::<Result<_,_>>()?;
+    // **each fold pair's double curve** (#880 T1d, `rings::double_curve`): traced over the whole roll
+    // from where a stretch first finds the outer leaves crossing, once a pair, and cut into every
+    // stretch it passes (`rings::cut_along`), its tail dropped there
+    let mut curves: Vec<Vec<(f64,f64,f64)>> = Vec::new();
+    for seed in fits.iter().flat_map(|f| f.seeds.clone()) {
+        let (th,t,_) = seed[0];
+        if curves.iter().any(|c| c.iter().any(|&(x,y,_)| (x-th).abs() <= 1e-3 && (y-t).abs() <= 1e-3*(b-a))) { continue }
+        curves.push(super::rings::double_curve(&ring,path,[a,b],seed,tol)?);
+    }
+    // (and the roll cut again at each swallowtail point, the contact's shape the same either side:
+    // there the double curve's two halves meet, one in space, and a face holding both would be glued
+    // to itself along the crease — each stretch about it refitted in two)
+    let apexes: Vec<f64> = curves.iter().flat_map(|c| c.iter().skip_while(|p| !p.0.is_nan()).skip(1).map(|p| p.1))
+        .filter(|t| t.is_finite() && *t > a && *t < b).collect();
+    for &t in &apexes {
+        let Some(k) = fits.iter().position(|f| f.roll[0] < t && f.roll[1] > t) else { continue };
+        let [lo,hi] = fits[k].roll;
+        let parts = [[lo,t],[t,hi]].map(|sp| super::rings::fitted_over(&ring,path,[a,b],sp,scale,K2_FIT*tol));
+        let [p0,p1] = parts;
+        fits.splice(k..=k,[p0?,p1?]);
+    }
+    if !curves.is_empty() { for fit in &mut fits { super::rings::cut_along(&ring,path,[a,b],fit,scale,&curves)? } }
     if crate::timing() { eprintln!("ring: fitted in {:?}",clock.elapsed()) }
     crate::util::meter::go_on()?;
-    let [start,end] = [super::rings::posed(tool,&ring,path,&fit,a)?,super::rings::posed(tool,&ring,path,&fit,b)?];
+    let [start,end] = [super::rings::posed(tool,&ring,path,&fits[0],a)?,super::rings::posed(tool,&ring,path,&fits[fits.len()-1],b)?];
     let poses = [path.pose(a)?,path.pose(b)?];
-    let (sheets,given) = super::rings::entered(&fit,&ring,[&start,&end],poses,tol)?;
+    let last = fits.len()-1;
+    let mut pieces = Vec::new();
+    let mut given = Vec::new();
+    for (k,fit) in fits.iter().enumerate() {
+        // (both end poses read on every stretch: a tube carried on can cross either far from it)
+        let at = [Some((&start,poses[0])),Some((&end,poses[1]))];
+        let (s,g) = super::rings::entered_at(fit,&ring,at,[k == 0,k == last],tol)?;
+        if crate::debug() { eprintln!("ring: stretch {k} over {:?}: pieces {}..{}, faces {:?}",fit.roll,pieces.len(),pieces.len()+s.len(),s.iter().map(|b: &Brep| b.faces.len()).collect::<Vec<_>>()) }
+        pieces.extend(s);
+        given.extend(g);
+    }
+    let sheets = if fits.len() == 1 { pieces } else {
+        // (sewn only along the rows at the cuts: the double curve's chords on its two leaves are
+        // one curve in space, and left to the trim)
+        let rows: Vec<f64> = fits.windows(2).map(|w| 0.5*(w[0].roll[1]+w[1].roll[0])).collect();
+        let across = |uv: crate::geom::Uv| rows.iter().any(|&r| (uv[1]-r).abs() <= 1e-6*(b-a));
+        let sewn = crate::sew::sewn_open(&pieces,tol,&across).map_err(|e| Unbuilt::Failed(format!("a ring's tubes not sewn across the cuts: {}",e.msg)))?;
+        let parts = crate::sew::parts(&sewn);
+        if crate::debug() {
+            let free = |b: &Brep| { let u = b.uses(); u.iter().filter(|x| x.len() == 1).count() };
+            eprintln!("ring: {} pieces over {} stretches sewn into {} candidates, {} boundary edges",pieces.len(),fits.len(),parts.len(),free(&sewn));
+        }
+        parts
+    };
     if crate::timing() { eprintln!("ring: entered in {:?}",clock.elapsed()) }
+    // **trimmed by membership where the roll is cut** (#880 T1d): its tubes met only where both come
+    // near the sweep's boundary (`trim`), as the contact's road meets its sheets — a turned whole
+    // ring's two tubes cross at under a degree inside the sweep, which the arrangement meets and
+    // cannot, and a thin one's run a hair apart all round, each pair searched for nothing
+    if !cuts.is_empty() {
+        let size = tool.size();
+        let trim = super::trim::Trim {resolution:size/32.,hair:(4.*tol).max(1e-6*size),reach:None};
+        let candidates: Vec<Brep> = [start,end].into_iter().chain(sheets).collect();
+        let (swept,_) = super::trim::trim(tool,path,[a,b],&candidates,&given,bar,tol,trim)?;
+        return cut_blank(swept,blank,tol)
+    }
     candidates(tool,path,[a,b],bar,tol,blank,[start,end],sheets,&given)
 }
 

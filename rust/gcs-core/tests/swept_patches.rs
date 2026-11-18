@@ -266,22 +266,46 @@ fn a_bull_nose_along_a_spline_frame_closes_into_the_volume_its_faces_advance_thr
 
 /// **What K2's reading refuses, by name**: a tool no convex solid of revolution (a ring) under a
 /// frame along a spline is `Curved` at a point of the face it cannot read, before anything is
-/// built. A box under that frame was refused so too until #880 Q2: the frame turns about the
-/// spline's plane's normal, so it keeps that plane, and the box standing along it is asked its
-/// section's planar sweep (`swept::planar_solid`) — which refuses it, never building it wrong: the
-/// frame's instant centre stands on the line through the box's corner square to its long sides, so
-/// each side's contact is that corner at every instant (read with the rounding of the side's
-/// parameter, a walk turning about: `Folded`), and through the spline's inflection the side is in
-/// contact all along for an instant. Left open (#880).
+/// built.
 #[test]
 fn a_tool_no_convex_revolution_under_any_motion_is_refused_by_name() {
     let e = example("path.sv");
     let (_,path,roll) = sweep(&e,"groove");
-    let tool = crate::brep::block([0.;3],[1.,2.,3.]);
-    let boxed = closed(&tool,&path,roll,0.002,1e-6);
-    assert!(matches!(boxed,Err(Unbuilt::Folded {..})),"{boxed:?}");
     let ring = gcs_core::brep::build::torus([0.;3],[0.,0.,1.],2.,0.5).unwrap();
     assert!(matches!(closed(&ring,&path,roll,0.002,1e-6),Err(Unbuilt::Curved {..})),"a ring is no convex solid");
+}
+
+/// **A box along a spline frame is its section's planar sweep, extruded** (#880 Q2, T1d): the box
+/// (0, 0, 0)–(1, 2, 3) under `path.sv`'s frame, which turns about the spline's plane's normal and
+/// so keeps that plane. Its instant centre stands on the line of the box's side through the
+/// frame's origin, a corner, so each short side's contact is a corner at every instant (the
+/// corner's, not the side's), the corner moves along the other side through it (that side's
+/// `n · v` nought, read by its rate along it), and through the spline's inflection the turn stops
+/// and turns back, its far side in contact all along for an instant (held there, as at an end
+/// pose). It was refused (`Folded`, the side's contact read either side of its end by the
+/// rounding); it is built, held to membership and to the area the definition sweeps in the plane,
+/// read line by line, to a part in ten million (they agree to 1.3e-9).
+#[test]
+fn a_box_along_a_spline_frame_is_its_sections_planar_sweep() {
+    let e = example("path.sv");
+    let (_,path,roll) = sweep(&e,"groove");
+    let tool = crate::brep::block([0.;3],[1.,2.,3.]);
+    let built = closed(&tool,&path,roll,0.002,1e-6).unwrap_or_else(|u| panic!("{u:?}"));
+    built.check(gcs_core::brep::geom::tolerance(built.size())).unwrap();
+    agrees_over(&built,&tool,&path,roll);
+    // the plane turned by 0.3 rad first, so that no side of an end pose lies along the lines the
+    // area is read on (the length across a line jumping there); the area is the turned region's
+    let (sn,cs) = 0.3f64.sin_cos();
+    let pose = |t: f64| {
+        let q = path.pose(t).unwrap();
+        let r = [[q.r[0][0],q.r[0][1]],[q.r[1][0],q.r[1][1]]];
+        ([[cs*r[0][0]-sn*r[1][0],cs*r[0][1]-sn*r[1][1]],[sn*r[0][0]+cs*r[1][0],sn*r[0][1]+cs*r[1][1]]],
+            [cs*q.p[0]-sn*q.p[1],sn*q.p[0]+cs*q.p[1]])
+    };
+    let area = crate::swept_planar_solid::area_by_lines(&[[0.,0.],[1.,0.],[1.,2.],[0.,2.]],&pose,roll,18000,[-12.,32.],26000);
+    let v = volume(&built);
+    eprintln!("box: built {} faces, volume {v:.9}; the area read line by line {area:.6}, the build's {:.6}",built.faces.len(),v/3.);
+    assert!((v/3./area-1.).abs() <= 1e-7,"the build's area {} against the definition's {area}",v/3.);
 }
 
 /// **A sheet that folds or comes back onto itself under any motion is refused by name**, never left
@@ -298,3 +322,4 @@ fn a_sheet_folding_or_coming_back_under_any_motion_is_refused_by_name() {
     let Err(Unbuilt::Returns {at}) = back else { panic!("{back:?}") };
     assert!((at[0].hypot(at[1])-2.).abs() <= 0.1,"between the centre's passes: {at:?}");
 }
+
