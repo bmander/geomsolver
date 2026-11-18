@@ -18,6 +18,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   `s''` sought along the band on the curve's own branch, where samples alone read the whole curve as
   touching (the tumbling torus turned whole, and thin). A sheet is refused as folding where it turns
   over, not where it is merely thin.
+- **A box along a spline frame is swept closed** (`swept::region`, #880 T1d): a side's contact a
+  hair from its end is its corner's; a corner moving along one of its sides reads that side by its
+  rate along it, its normals the sides' own; and every edge is held where the turn changes sense
+  within the roll (`turning_back`), as at an end pose. `path.sv`'s box, once `Folded`, builds.
 - **A ring's roll is cut where its contact changes shape** (`swept::rings::changes`,
   `fitted_over`, `entered_at`): each stretch fitted on its own, the tubes sewn across the cuts
   (`sew::sewn_open`, `sew::parts`) and trimmed by membership. A newborn pair's bridge is the sheet

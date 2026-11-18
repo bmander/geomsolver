@@ -38,7 +38,7 @@ fn seen(source: Trajectory,observer: Trajectory) -> Trajectory {
 /// square of the step — the placings alone would leave each corner's trace notched to the step
 /// itself; on each of `lines` lines across `[y0, y1]` (at their middles) the union of the intervals
 /// these cover, by crossing parity, its length integrated by the midpoint rule.
-fn area_by_lines(corners: &[[f64;2]],pose: &(dyn Fn(f64) -> ([[f64;2];2],[f64;2])+Sync),roll: [f64;2],poses: usize,
+pub(crate) fn area_by_lines(corners: &[[f64;2]],pose: &(dyn Fn(f64) -> ([[f64;2];2],[f64;2])+Sync),roll: [f64;2],poses: usize,
     [y0,y1]: [f64;2],lines: usize) -> f64 {
     let placed: Vec<Vec<[f64;2]>> = (0..=poses).map(|k| {
         let (r,c) = pose(roll[0]+(roll[1]-roll[0])*k as f64/poses as f64);

@@ -317,7 +317,12 @@ impl Kind {
                         let nu = right(*d);
                         // ν·(ω J x + b) = 0 along x = a + s d, ν·J d being −1
                         let sv = dot(nu,add(scale(left(*a),w),b))/w;
-                        if !(0. ..=*length).contains(&sv) { return None }
+                        // (a contact a hair from an end is the corner's, which carries it: a frame
+                        // whose instant centre stays on the line through a corner square to the side
+                        // puts the side's contact at that corner at every instant, its foot read either
+                        // side of the end by the rounding, #880 T1d)
+                        let hair = 1e-9*(1.+length);
+                        if !(sv > hair && sv < length-hair) { return None }
                         (add(*a,scale(*d,sv)),nu,r)
                     }
                     Kind::Arc {edge,side} => {
@@ -332,7 +337,18 @@ impl Kind {
                     }
                     Kind::Corner {x,inward,normals} => {
                         let v = add(scale(left(*x),w),b);
-                        if !(dot(v,normals[0])*dot(v,normals[1]) < 0.) { return None }
+                        // (a side its corner moves along — the frame's origin on its path, the side
+                        // along the path's tangent — has `n · v` nought there: read instead by its
+                        // rate along the side away from the corner, which says which way the side
+                        // turns off the corner's path, #880 T1d)
+                        let tiny = 1e-12*(length(v)+w.abs()*(1.+length(*x)));
+                        let sense = |n: P| {
+                            let a = dot(v,n);
+                            if a.abs() > tiny { return a }
+                            let e = if dot(left(n),*inward) > 0. { left(n) } else { right(n) };
+                            w*dot(n,left(e))
+                        };
+                        if !(sense(normals[0])*sense(normals[1]) < 0.) { return None }
                         (*x,scale(*inward,-1.),r)
                     }
                     Kind::Fixed {..} => unreachable!("read above"),
@@ -451,7 +467,10 @@ impl SweptRegion {
         for r in &mut runs {
             let mid = 0.5*(r.ends[0]+r.ends[1]);
             let h = 1e-6*(r.ends[1]-r.ends[0]).abs().max(1e-12);
-            let (Some(m),Some(x),Some(y)) = (point(r.candidate,mid),point(r.candidate,mid-h),point(r.candidate,mid+h)) else { continue };
+            let (Some(m),Some(x),Some(y)) = (point(r.candidate,mid),point(r.candidate,mid-h),point(r.candidate,mid+h)) else {
+                if debug() { eprintln!("region: a run of {:?} over {:?} unread at its middle",candidates[r.candidate],r.ends) }
+                continue
+            };
             if dot(sub(y.at,x.at),left(m.outward)) < 0. { r.ends.swap(0,1); r.why.swap(0,1); }
         }
         // two stretches one curve walked alike — two corners at one distance from a turn's centre
@@ -479,6 +498,10 @@ impl SweptRegion {
             let at: Vec<Hit> = (0..=n).filter_map(|j| point(r.candidate,r.ends[0]+(r.ends[1]-r.ends[0])*j as f64/n as f64)).collect();
             for w in at.windows(2) {
                 if dot(sub(w[1].at,w[0].at),left(w[0].outward)) < -s.on() {
+                    if debug() {
+                        eprintln!("region: folds on a run of {:?} over {:?} ({:?})",candidates[r.candidate],r.ends,r.why);
+                        for h in &at { eprintln!("region:   {:?} out {:?}",h.at,h.outward) }
+                    }
                     return Err(refuse(Seen::Folds,Some(w[0].at)))
                 }
             }
@@ -772,9 +795,38 @@ fn joined(point: &dyn Fn(usize,f64) -> Option<Hit>,i: usize,ui: f64,j: usize,uj:
     (dist(p,q) <= 1e-9*(1.+length(p))).then(|| (x,y,scale(add(p,q),0.5)))
 }
 
+/// How many readings of the turn over the roll the instants it changes sense are sought between.
+const TURN_LOOKS: usize = 1024;
+
+/// **The instants within the roll where the turn changes sense** (#880 T1d): its rate read at
+/// `TURN_LOOKS` places, and between two of opposite sign halved to the rounding of the roll.
+fn turning_back(s: &Setting) -> Vec<f64> {
+    let [a,b] = s.roll;
+    let omega = |t: f64| s.rigid(t).map_or(f64::NAN,|r| r.omega);
+    let mut out = Vec::new();
+    let mut last = (a,omega(a));
+    for k in 1..=TURN_LOOKS {
+        let t = a+(b-a)*k as f64/TURN_LOOKS as f64;
+        let w = omega(t);
+        if last.1*w < 0. {
+            let (mut x,mut y) = (last.0,t);
+            let sx = last.1.signum();
+            for _ in 0..200 {
+                let m = 0.5*(x+y);
+                if m <= x || m >= y { break }
+                if omega(m)*sx > 0. { x = m } else { y = m }
+            }
+            out.push(0.5*(x+y));
+        }
+        if w != 0. && w.is_finite() { last = (t,w) }
+    }
+    out
+}
+
 /// Every curve the section's boundary may sweep: each member's edges (an arc's two sides), each
 /// corner — a member's, or where two members' edges cross on the section's boundary — and, where
-/// the roll is no whole period, every edge held at each end pose.
+/// the roll is no whole period, every edge held at each end pose, and at every instant the turn
+/// changes sense (`turning_back`).
 fn candidates(s: &Setting,whole: bool) -> Vec<Kind> {
     let section = &s.section;
     let on = s.on();
@@ -808,16 +860,30 @@ fn candidates(s: &Setting,whole: bool) -> Vec<Kind> {
         }
     }
     let mut seen: Vec<P> = Vec::new();
-    for (x,_) in corners {
+    for (x,exact) in corners {
         if seen.iter().any(|&y| dist(x,y) <= on) { continue }
         seen.push(x);
-        if let Some((inward,normals)) = fan(section,x,1e-6*(1.+s.scale)) { out.push(Kind::Corner {x,inward,normals}) }
+        // (each normal the fan reads the side's own where it is one of the two meeting there: read
+        // a step off the corner it is off by a part in 1e11, which a frame's speed reads as a side
+        // its corner moves along not moving so, #880 T1d)
+        if let Some((inward,normals)) = fan(section,x,1e-6*(1.+s.scale)) {
+            let normals = normals.map(|n| exact.into_iter().find(|&m| dist(unit(m),n) <= 1e-6).map_or(n,unit));
+            out.push(Kind::Corner {x,inward,normals})
+        }
     }
     if !whole {
         for at in s.roll {
             let Ok(pose) = s.rigid(at) else { continue };
             for (_,e) in &edges { out.push(Kind::Fixed {edge:(*e).clone(),at,pose}) }
         }
+    }
+    // and every edge held where the turn stops and turns back within the roll (a frame along a
+    // spline at its inflection): there the motion is a slide for an instant, a side along it in
+    // contact all along, and the corners carrying the boundary before and after stand that side
+    // apart (#880 T1d)
+    for at in turning_back(s) {
+        let Ok(pose) = s.rigid(at) else { continue };
+        for (_,e) in &edges { out.push(Kind::Fixed {edge:(*e).clone(),at,pose}) }
     }
     // one candidate of each curve: members of a union that share an edge sweep it once
     let key = |k: &Kind| -> Vec<f64> {

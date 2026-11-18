@@ -2022,12 +2022,21 @@ below as far as `KEEP_STEP` of a turn at that reach moves it — at a roll's flo
 sliver, covered for 5e-4 of it, was kept and the region left open.  The drawing's sweeps still
 reach these cases by the blank-scoped planar classes (`reads_general` does not ask this, #699). **Left open**: a drafted tool (its stations lofted, as the
 subtraction class lofts them); a tool standing along the plane's normal under a constant twist,
-which the arrangement builds exactly; and a side whose contact stands at its corner at every
-instant, which `path.sv`'s frame makes of a box's long sides (its instant centre on the line through
-the corner square to them) — read with the rounding of the side's parameter its walk turns about,
-refused `Folded`, and through the spline's inflection the side is in contact all along for an
-instant (`swept_patches::a_tool_no_convex_revolution_under_any_motion_is_refused_by_name`, once K2's
-`Curved`).
+which the arrangement builds exactly. **A box along a spline frame** (#880 T1d, once `Folded`):
+`path.sv`'s frame keeps the box's instant centre on the line of its side through the frame's
+origin, a corner, so three rules hold of the region's candidates. A side's contact within a
+billionth of its length of an end is no point of the side's (`Kind::Line`) but the corner's, which
+carries it — read with the rounding of the side's parameter, it stood either side of the end and its
+walk turned about. A corner's side whose `n · v` is nought there — the corner moving along it — is
+read by its rate along the side away from the corner, which says which way the side turns off the
+corner's path (`Kind::Corner`), its normals the sides' own where the fan reads one of them (a part in
+1e11 off, a speed of 40 reads as motion across it). And where the turn changes sense within the roll
+(`region::turning_back`, the spline's inflection) every edge is held at that pose as at an end pose:
+there the motion is a slide for an instant, a side along it in contact all along, and the corners
+carrying the boundary before and after stand that side apart. Held
+(`swept_patches::a_box_along_a_spline_frame_is_its_sections_planar_sweep`) to membership and to
+1e-7 of the area the definition sweeps in the plane, read on lines turned 0.3 rad off every end
+pose's side (1.3e-9 off).
 
 **The generating class's reading is the kernel's (#721 F2c):** a tool point's contact chart under
 the trajectory, its form read once of the trajectory's structure (`brep::swept::generating::Form`:
