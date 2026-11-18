@@ -1089,6 +1089,7 @@ pub type Meet<'m> = &'m (dyn Fn([usize;2],[usize;2]) -> bool+Sync);
 
 /// `arrange`'s phases, the meetings `given` known before any is sought (#810).
 fn arrange_phases<'a>(solids: &[&'a Brep],known: Option<&Known>,given: &[Given],meet: Option<Meet<'a>>,tol: f64) -> Result<Arranged<'a>,String> {
+    ARRANGEMENT.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
     let mut arr = Arrangement::new(solids,known,tol);
     arr.meet = meet;
     for g in given { arr.shared.give(&g.surfaces[0],&g.surfaces[1],&g.curves,tol); }
@@ -2971,24 +2972,59 @@ fn at(h: &Half,f: &Face,out: &[WEdge],pool: &Pool,s: f64) -> Uv {
 }
 
 /// The parameters a fraction `s` of the way along a half, and its point in space.
-fn at_point(h: &Half,f: &Face,out: &[WEdge],pool: &Pool,s: f64) -> (Uv,V) {
+fn at_point(h: &Half,f: &Face,out: &[WEdge],pool: &Pool,s: f64) -> (Uv,V) { at_point_near(h,f,out,pool,s,[f64::NAN;2]) }
+
+/// `at_point`, the inversion read beside `seed` where it is no NaN (`Outline::of`'s chord middle).
+fn at_point_near(h: &Half,f: &Face,out: &[WEdge],pool: &Pool,s: f64,seed: Uv) -> (Uv,V) {
     let (e,t) = (&out[h.edge as usize],param(h,out,s));
     let p = e.point(t,pool);
-    (uv_at(h,f,e,t,|| p),p)
+    (uv_seeded(h,f,e,t,|| p,seed),p)
 }
 
 /// The parameters of a half at its edge's parameter `t`, whose point in space is `p()` (asked
 /// only where the half's curve in the parameters is the surface's inverse of it).
-fn uv_at(h: &Half,f: &Face,e: &WEdge,t: f64,p: impl FnOnce() -> V) -> Uv {
+fn uv_at(h: &Half,f: &Face,e: &WEdge,t: f64,p: impl FnOnce() -> V) -> Uv { uv_seeded(h,f,e,t,p,[f64::NAN;2]) }
+
+/// `uv_at`, an inversion read beside `seed` where it is no NaN, else beside the line between the
+/// half's ends' parameters.
+fn uv_seeded(h: &Half,f: &Face,e: &WEdge,t: f64,p: impl FnOnce() -> V,seed: Uv) -> Uv {
     let a = if h.along { h.from } else { h.to };
     let b = if h.along { h.to } else { h.from };
     let frac = (t-e.t[0])/(e.t[1]-e.t[0]);
-    let near = [a[0]+frac*(b[0]-a[0]),a[1]+frac*(b[1]-a[1])];
+    let near = if seed[0].is_finite() && seed[1].is_finite() { seed } else { [a[0]+frac*(b[0]-a[0]),a[1]+frac*(b[1]-a[1])] };
     match h.pcurve {
         Pcurve::Line {..} => near,
         Pcurve::Curve(ref c) => { let p = c.point(t); [p[0],p[1]] }
-        Pcurve::Inverse {..} => unwrap(f.surface.inverse_near(p(),near),near,f.surface.periods()),
+        Pcurve::Inverse {..} => {
+            // (read once a point: an outline drawn finer halves the same fractions again, and a
+            // piece's outline is drawn for each of its readings — the tumbling torus's tubes, each
+            // point inverted onto a quintic net by Newton's method, #880 T1d)
+            let p = p();
+            let key = [ARRANGEMENT.load(std::sync::atomic::Ordering::Relaxed),f as *const Face as u64,
+                p[0].to_bits(),p[1].to_bits(),p[2].to_bits(),near[0].to_bits(),near[1].to_bits()];
+            if let Some(uv) = INVERTED.with(|m| m.borrow().get(&key).copied()) { return uv }
+            let uv = unwrap(f.surface.inverse_near(p,near),near,f.surface.periods());
+            INVERTED.with(|m| {
+                let mut m = m.borrow_mut();
+                if m.len() >= INVERTED_MOST { m.clear() }
+                m.insert(key,uv);
+            });
+            uv
+        }
     }
+}
+
+/// Which arrangement is being made: each takes the next, so a point inverted in one is never read
+/// back in another whose face stands where its face stood.
+static ARRANGEMENT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// How many inverted points a thread keeps (`uv_at`) before it forgets them all.
+const INVERTED_MOST: usize = 1 << 21;
+
+thread_local! {
+    /// Each point of a half inverted onto its face (`uv_at`), by the arrangement, the face, the
+    /// point and the seed: the inversion itself, which those decide.
+    static INVERTED: std::cell::RefCell<BTreeMap<[u64;7],Uv>> = const { std::cell::RefCell::new(BTreeMap::new()) };
 }
 
 /// The face's parameters mirrored where it is reversed, so the material is always on the left.
@@ -3293,7 +3329,7 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool,tol: f64) -
 /// twice its sag; nearer, the side of the nearest half's edge says, and nearer a vertex than that
 /// nothing does. `Inner`, a point read inside a piece, is made nowhere else.
 mod reading {
-    use super::{at,at_point,param,Half,Pool,WEdge};
+    use super::{at,at_point_near,param,Half,Pool,WEdge};
     use super::super::geom::{hull,Uv,V};
     use super::super::query::{beside,nearest_on,Outline};
     use super::super::topo::Face;
@@ -3325,7 +3361,7 @@ mod reading {
 
     /// The outline of cycles of halves on `f`, drawn to `bar` (`Outline::of`).
     pub(super) fn outline(cycles: &[Vec<Half>],f: &Face,out: &[WEdge],pool: &Pool,bar: f64) -> Outline {
-        Outline::of(&f.surface,bar,cycles.iter().map(|c| c.iter().map(|h| move |s: f64| at_point(h,f,out,pool,s))))
+        Outline::of(&f.surface,bar,cycles.iter().map(|c| c.iter().map(|h| move |s: f64,seed: Uv| at_point_near(h,f,out,pool,s,seed))))
     }
 
     /// Where `p`, at `uv` on `f`, stands against cycles of halves drawn as `outline`: `Some(true)`

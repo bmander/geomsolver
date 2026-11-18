@@ -18,6 +18,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   `s''` sought along the band on the curve's own branch, where samples alone read the whole curve as
   touching (the tumbling torus turned whole, and thin). A sheet is refused as folding where it turns
   over, not where it is merely thin.
+- **An outline stops halving where halving no longer helps** (`query::Outline::of`): past eight
+  halvings a chord is halved again only while a halving at least halves what it misses its run by —
+  a run read off a sheet all but folded flat beside a swallowtail's point, its inversion settling
+  nowhere, was halved twenty times over, a million points (#880 T1d, the tumbling torus turned
+  whole). Each point of a run is inverted beside the middle of the chord it cuts, so it stays on its
+  own leaf of a surface that folds, and the Boolean keeps the points it inverted onto a face within
+  one arrangement.
 - **`closed` asks the general road where K2 cannot read the tool** (`swept::closed`,
   `general_built`, #880 T1d): a polyhedral tool under a motion no constant twist takes and keeping
   no plane, refused by K2 as `Curved` (no convex solid of revolution), has its candidates made by
