@@ -31,7 +31,7 @@
 //! passes `Brep::check` at `tol`.
 use super::boolean::cut_with;
 use super::complex::faced;
-use super::geom::{Curve,V};
+use super::geom::{Curve,Uv,V};
 use super::query::{Located,Place};
 use super::topo::{Brep,Coedge,EdgeCurve,Pcurve};
 use super::tolerant::{on_stretch,same_edge,Pool,ON_CURVE};
@@ -54,8 +54,8 @@ pub fn sewn(pieces: &[Brep],tol: f64) -> Result<Brep,KernelError> {
     if b.faces.is_empty() { return Err(KernelError::new(Kind::Open,"no faces to sew")) }
     poles(&mut b,tol);
     merge_vertices(&mut b,tol);
-    split_at_vertices(&mut b,tol);
-    pair_edges(&mut b,tol,false)?;
+    split_at_vertices(&mut b,tol,None);
+    pair_edges(&mut b,tol,false,None)?;
     let mut b = b.compacted();
     b.measure_tolerances();
     if let Some((i,e)) = b.edges.iter().enumerate().find(|(_,e)| e.tol > ON_CURVE*tol) {
@@ -71,13 +71,15 @@ pub fn sewn(pieces: &[Brep],tol: f64) -> Result<Brep,KernelError> {
 /// pieces' vertices merged, boundary edges cut at one another's vertices and paired where they lie
 /// along one another, an edge bounding one face left a boundary, each edge's gap measured; nothing
 /// turned, nothing asked to close, and nothing refused for its gap (a ring's tube fitted stretch by
-/// stretch of the roll, sewn across the cuts, #880 T1d). Each piece's surfaces are kept.
-pub fn sewn_open(pieces: &[Brep],tol: f64) -> Result<Brep,KernelError> {
+/// stretch of the roll, sewn across the cuts, #880 T1d). Each piece's surfaces are kept. Only the boundary
+/// edges whose middle lies where `across` holds of its face's parameters are cut and paired: a
+/// tube's rows at the cuts, not its double curve's chords, two leaves' edges one curve in space.
+pub fn sewn_open(pieces: &[Brep],tol: f64,across: &dyn Fn(Uv) -> bool) -> Result<Brep,KernelError> {
     let mut b = Brep::default();
     for p in pieces { b.join(p); }
     merge_vertices(&mut b,tol);
-    split_at_vertices(&mut b,tol);
-    pair_edges(&mut b,tol,true)?;
+    split_at_vertices(&mut b,tol,Some(across));
+    pair_edges(&mut b,tol,true,Some(across))?;
     // (each edge's gap measured, as `sewn` measures it: one fitted on a stretch's net, used by the
     // next stretch's face, stands off that face by what the two fits part by)
     let mut b = b.compacted();
@@ -106,7 +108,7 @@ pub fn parts(b: &Brep) -> Vec<Brep> {
 
 /// Every boundary edge whose curve lies within `tol` of its start made degenerate: a pole.
 fn poles(b: &mut Brep,tol: f64) {
-    let free = free(b,&b.uses());
+    let free = free(b,&b.uses(),None);
     for (e,_) in b.edges.iter_mut().zip(free).filter(|(_,f)| *f) {
         let EdgeCurve::Curve(c) = &e.curve else { continue };
         let at = c.point(e.t[0]);
@@ -131,16 +133,21 @@ fn merge_vertices(b: &mut Brep,tol: f64) {
     b.vertices = vertices;
 }
 
-/// The boundary edges, by the uses `Brep::uses` counts: each on a curve and used once.
-fn free(b: &Brep,uses: &[Vec<At>]) -> Vec<bool> {
-    b.edges.iter().zip(uses).map(|(e,u)| matches!(e.curve,EdgeCurve::Curve(_)) && u.len() == 1).collect()
+/// The boundary edges, by the uses `Brep::uses` counts: each on a curve and used once (and where
+/// `across` is given, its middle where it holds of the face's parameters).
+fn free(b: &Brep,uses: &[Vec<At>],across: Option<&dyn Fn(Uv) -> bool>) -> Vec<bool> {
+    b.edges.iter().zip(uses).map(|(e,u)| matches!(e.curve,EdgeCurve::Curve(_)) && u.len() == 1 && across.is_none_or(|f| {
+        let (fi,li,ci) = u[0];
+        let face = &b.faces[fi];
+        f(face.loops[li][ci].pcurve.at(0.5*(e.t[0]+e.t[1]),e,&face.surface,&b.vertices))
+    })).collect()
 }
 
 /// Each boundary edge cut at every boundary vertex standing on it (`on_stretch`), the edges near a
 /// vertex found by their boxes.
-fn split_at_vertices(b: &mut Brep,tol: f64) {
+fn split_at_vertices(b: &mut Brep,tol: f64,across: Option<&dyn Fn(Uv) -> bool>) {
     let reach = ON_CURVE*tol;
-    let free = free(b,&b.uses());
+    let free = free(b,&b.uses(),across);
     let edges: Vec<usize> = (0..b.edges.len()).filter(|&i| free[i]).collect();
     let mut ends: Vec<u32> = edges.iter().flat_map(|&i| b.edges[i].v).collect();
     ends.sort();
@@ -166,9 +173,9 @@ fn split_at_vertices(b: &mut Brep,tol: f64) {
 }
 
 /// Each two boundary edges lying along one another made one (the module's rules).
-fn pair_edges(b: &mut Brep,tol: f64,open: bool) -> Result<(),KernelError> {
+fn pair_edges(b: &mut Brep,tol: f64,open: bool,across: Option<&dyn Fn(Uv) -> bool>) -> Result<(),KernelError> {
     let uses = b.uses();
-    let free = free(b,&uses);
+    let free = free(b,&uses,across);
     // the boundary edges by the vertices they join
     let mut by_ends: BTreeMap<[u32;2],Vec<usize>> = BTreeMap::new();
     for (i,e) in b.edges.iter().enumerate().filter(|&(i,_)| free[i]) {
@@ -184,6 +191,26 @@ fn pair_edges(b: &mut Brep,tol: f64,open: bool) -> Result<(),KernelError> {
     // the edge kept: the one bounding the face hardest to invert onto, else the face given first
     let rank = |b: &Brep,e: usize| (std::cmp::Reverse(b.faces[face_of(e)].surface.inversion()),face_of(e));
     for group in by_ends.into_values() {
+        // (open sheets: the nearest two paired first, where more than two lie along one another —
+        // a ring's contact at a swallowtail's instant doubling back on itself within the tolerance,
+        // its next stretch's row along one of them only, #880 T1d)
+        if open && group.len() > 2 {
+            let mut pairs: Vec<(f64,usize,usize,bool)> = Vec::new();
+            for x in 0..group.len() { for y in x+1..group.len() {
+                if let Some(same) = along(b,group[x],group[y]) { pairs.push((distance(middle(b,group[x]),middle(b,group[y])),x,y,same)) }
+            } }
+            pairs.sort_by(|p,q| p.0.total_cmp(&q.0));
+            let mut taken = vec![false;group.len()];
+            for (_,x,y,same) in pairs {
+                if taken[x] || taken[y] { continue }
+                taken[x] = true;
+                taken[y] = true;
+                let (i,j) = (group[x],group[y]);
+                let (keep,drop) = if rank(b,j) < rank(b,i) { (j,i) } else { (i,j) };
+                joined(b,keep,drop,same,uses[drop][0],tol);
+            }
+            continue
+        }
         let mut taken = vec![false;group.len()];
         for x in 0..group.len() {
             if taken[x] { continue }
@@ -192,6 +219,13 @@ fn pair_edges(b: &mut Brep,tol: f64,open: bool) -> Result<(),KernelError> {
                 .filter_map(|y| along(b,group[x],group[y]).map(|same| (y,same))).take(2).collect();
             let &[(y,same)] = &mates[..] else {
                 if mates.is_empty() && open { continue }
+                if crate::debug() {
+                    for &g in &group {
+                        let e = &b.edges[g];
+                        eprintln!("sew:   edge {g} ({}) over {:?} of face {} from {:?} to {:?}, middle {:?}",match &e.curve { EdgeCurve::Curve(c) => c.kind(),_ => "degenerate" },e.t,
+                            face_of(g),b.vertices[e.v[0] as usize].p,b.vertices[e.v[1] as usize].p,middle(b,g));
+                    }
+                }
                 return Err(if mates.is_empty() {
                     KernelError::new(Kind::Open,format!("the faces do not close: an edge near {:?} bounds one face",middle(b,group[x])))
                 } else {

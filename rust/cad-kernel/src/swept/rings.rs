@@ -774,10 +774,13 @@ impl<'a> Reader<'a> {
         }.then(|| p.unwrap().0);
         for (j,row) in read.iter().enumerate() {
             for (i,p) in row.iter().enumerate() {
-                if let Some((x,c,rates)) = p { if norm(*c) <= 1e-9*rates { return Err(Unbuilt::Folded {at:*x}) } }
+                if let Some((x,c,rates)) = p { if norm(*c) <= 1e-9*rates {
+                    if std::env::var_os("SOLVENT_RING_DEBUG").is_some() { eprintln!("ring: no area at u {:.6} t {:.6} over {:?}: {:e} of {:e}",us[i],ts[j],self.roll,norm(*c),rates) }
+                    return Err(Unbuilt::Folded {at:*x})
+                } }
                 let beside = [row.get(i+1),read.get(j+1).map(|r| &r[i])];
                 if let Some(at) = beside.into_iter().flatten().find_map(|q| flips(p,q)) {
-                    if std::env::var_os("SOLVENT_RING_DEBUG").is_some() { eprintln!("ring: folds at u {:.6} t {:.6}",us[i],ts[j]) }
+                    if std::env::var_os("SOLVENT_RING_DEBUG").is_some() { eprintln!("ring: folds at u {:.6} t {:.6} over {:?}",us[i],ts[j],self.roll) }
                     return Err(Unbuilt::Folded {at})
                 }
             }
@@ -882,7 +885,7 @@ pub fn fitted_over(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],s
             }
             let err_t: Vec<f64> = half_ts.iter().zip(halfway).map(|(&t,r)| missed(&net,us.iter().zip(r).map(|(&u,&x)| (t,u,x)))).collect();
             if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
-                eprintln!("fit: {pieces} faces, {counts:?} points, {} rows: {:?} round, {:e} along",ts.len()-1,
+                eprintln!("fit: curve {} over {:?}: {pieces} faces, {counts:?} points, {} rows: {:?} round, {:e} along",run.curve,reader.roll,ts.len()-1,
                     err_u.iter().map(|e| format!("{:.1e}",e.iter().fold(0f64,|m,&x| m.max(x)))).collect::<Vec<_>>(),err_t.iter().fold(0f64,|m,&x| m.max(x)));
             }
             let missed_u: Vec<Vec<bool>> = err_u.iter().map(|e| e.iter().map(|&x| x > tol).collect()).collect();
@@ -890,7 +893,8 @@ pub fn fitted_over(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],s
             // a bridge's points, or on the join of one
             let bridge = |k: usize| reader.first[run.curve][run.pieces[faces[k%pieces].piece]].side == Side::Fold;
             let bridged = |u: f64| {
-                let k = (u.floor().max(0.) as usize).min(pieces-1);
+                // (the loop closing at `pieces`: the piece after its last join the first)
+                let k = (u.floor().max(0.) as usize)%pieces;
                 bridge(k) || (u-u.round()).abs() <= 1e-9 && bridge((u.round() as usize+pieces-1)%pieces)
             };
             if !missed_u.iter().flatten().any(|&m| m) && !missed_t.contains(&true) { reader.folds(&net,&us,&ts,&bridged)?; break net }
@@ -1118,8 +1122,13 @@ pub fn double_curve(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],seed: [(f64,f64
     // preimages met stood a hair past the swallowtail point)
     let last = first.last().map_or(f64::NAN,|p| p.0);
     let second: Vec<(f64,f64,f64)> = second.into_iter().skip_while(|p| (p.0-last)*toward <= 0.).collect();
+    let apex = first.len();
     let mut out: Vec<(f64,f64,f64)> = first.into_iter().chain(second).collect();
+    // (the swallowtail point: between the two leaves' preimages, put at the end of the list)
+    let ap = if apex > 0 && apex < out.len() { let (p,q) = (out[apex-1],out[apex]); (0.5*(p.0+q.0),0.5*(p.1+q.1),p.2) } else { out[apex.min(out.len()-1)] };
     if toward < 0. { out.reverse() }
+    out.push((f64::NAN,f64::NAN,f64::NAN));
+    out.push(ap);
     if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
         eprintln!("ring: a double curve of {} points from {:?} to {:?}",out.len(),out.first(),out.last());
     }
@@ -1159,7 +1168,10 @@ pub fn cut_along(ring: &Ring,path: &Trajectory,whole: [f64;2],fit: &mut Fitted,s
             Ok(None)
         };
         let mut out = Vec::new();
-        for curve in curves {
+        for full in curves {
+            // (the curve, and its swallowtail point after the marker)
+            let mark = full.iter().position(|p| p.0.is_nan()).unwrap_or(full.len());
+            let curve = &full[..mark];
             let mut line: Vec<[f64;2]> = Vec::new();
             for w in 0..curve.len() {
                 let (th,t,sg) = curve[w];

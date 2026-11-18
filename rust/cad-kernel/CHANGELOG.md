@@ -24,7 +24,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   itself, and its double curve — where its outer leaves cross — is traced over the whole roll
   (`rings::double_curve`) and cut into each stretch, its tail dropped (`rings::cut_along`). Where the
   double curve ends on the tube's meeting with the tool at an end pose such a build is still refused:
-  never returned.
+  never returned. The roll is cut again at each swallowtail point, where the double curve's two
+  halves meet; the tubes are sewn only along the rows at the cuts (`sewn_open`'s `across`), the
+  nearest two edges paired first where an instant's contact doubles back on itself; and a fit's fold
+  check reads the loop's last join as the first piece's.
 - **`swept::contacts`'s meeting of a sheet with the tool at an end of the roll reads any sheet**
   (`Rolled`): a constant twist's blend as before, or a moving wall.
 - **A contact's fit given up on keeps to its nodes** (`swept::contacts`): a branch whose fit stops at

@@ -1710,6 +1710,17 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
         if curves.iter().any(|c| c.iter().any(|&(x,y,_)| (x-th).abs() <= 1e-3 && (y-t).abs() <= 1e-3*(b-a))) { continue }
         curves.push(super::rings::double_curve(&ring,path,[a,b],seed,tol)?);
     }
+    // (and the roll cut again at each swallowtail point, the contact's shape the same either side:
+    // there the double curve's two halves meet, one in space, and a face holding both would be glued
+    // to itself along the crease — each stretch about it refitted in two)
+    let apexes: Vec<f64> = curves.iter().filter_map(|c| c.last().map(|p| p.1)).filter(|t| t.is_finite() && *t > a && *t < b).collect();
+    for &t in &apexes {
+        let Some(k) = fits.iter().position(|f| f.roll[0] < t && f.roll[1] > t) else { continue };
+        let [lo,hi] = fits[k].roll;
+        let parts = [[lo,t],[t,hi]].map(|sp| super::rings::fitted_over(&ring,path,[a,b],sp,scale,K2_FIT*tol));
+        let [p0,p1] = parts;
+        fits.splice(k..=k,[p0?,p1?]);
+    }
     if !curves.is_empty() { for fit in &mut fits { super::rings::cut_along(&ring,path,[a,b],fit,scale,&curves)? } }
     if crate::timing() { eprintln!("ring: fitted in {:?}",clock.elapsed()) }
     crate::util::meter::go_on()?;
@@ -1721,11 +1732,16 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
     for (k,fit) in fits.iter().enumerate() {
         let at = [(k == 0).then_some((&start,poses[0])),(k == last).then_some((&end,poses[1]))];
         let (s,g) = super::rings::entered_at(fit,&ring,at,tol)?;
+        if crate::debug() { eprintln!("ring: stretch {k} over {:?}: pieces {}..{}, faces {:?}",fit.roll,pieces.len(),pieces.len()+s.len(),s.iter().map(|b: &Brep| b.faces.len()).collect::<Vec<_>>()) }
         pieces.extend(s);
         given.extend(g);
     }
     let sheets = if fits.len() == 1 { pieces } else {
-        let sewn = crate::sew::sewn_open(&pieces,tol).map_err(|e| Unbuilt::Failed(format!("a ring's tubes not sewn across the cuts: {}",e.msg)))?;
+        // (sewn only along the rows at the cuts: the double curve's chords on its two leaves are
+        // one curve in space, and left to the trim)
+        let rows: Vec<f64> = fits.windows(2).map(|w| 0.5*(w[0].roll[1]+w[1].roll[0])).collect();
+        let across = |uv: crate::geom::Uv| rows.iter().any(|&r| (uv[1]-r).abs() <= 1e-6*(b-a));
+        let sewn = crate::sew::sewn_open(&pieces,tol,&across).map_err(|e| Unbuilt::Failed(format!("a ring's tubes not sewn across the cuts: {}",e.msg)))?;
         let parts = crate::sew::parts(&sewn);
         if crate::debug() {
             let free = |b: &Brep| { let u = b.uses(); u.iter().filter(|x| x.len() == 1).count() };
