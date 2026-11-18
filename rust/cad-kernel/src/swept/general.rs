@@ -40,7 +40,10 @@
 //! taken as that cylinder (`on_a_cylinder`, its faces' parameters its edges inverted onto it), so the
 //! trim knows them as one surface; and its bottom edge's strip is cut where it leaves the bar posed at
 //! the start (the branch from the rim's corner in `contacts::pose_meeting`, each end at its own
-//! nearest corner). A cube tumbling two degrees builds too. What the trim still refuses:
+//! nearest corner). A cube tumbling two degrees builds too, and five: two edges' fans sharing a
+//! vertex are given its path, and where they cross a second time beside it, that branch too
+//! (`beside_rails`, traced from where an edge of either crosses the other). What the trim still
+//! refuses:
 //!
 //! - **the cube turned farther** (brep-bench's `tumbling-cube`, 75°): a fan's stretch born at a
 //!   point of its edge, where both faces' `n · v` vanish, the edge's velocity runs along it, and its
@@ -62,6 +65,36 @@ use super::closed::Unbuilt;
 use std::sync::Arc;
 
 type V = [f64;3];
+
+/// **Where two walls sharing a rail cross elsewhere** (`candidates`): seeded where an edge of either
+/// wall crosses the other's surface farther than a millionth of their size from every rail, traced
+/// through both within their shared box (`ssi::trace`), and kept where some point of the curve
+/// stands that far off the rails. None where nothing seeds, or the trace is refused.
+fn beside_rails(a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,rails: &[Curve],tol: f64) -> Vec<Curve> {
+    let (la,ha) = a.bounds();
+    let (lb,hb) = b.bounds();
+    let (lo,hi): (V,V) = (std::array::from_fn(|k| la[k].max(lb[k])-tol),std::array::from_fn(|k| ha[k].min(hb[k])+tol));
+    if (0..3).any(|k| lo[k] > hi[k]) { return Vec::new() }
+    let size = distance(la,ha).max(distance(lb,hb));
+    let off_rails = |p: V| rails.iter().all(|r| distance(r.point(r.inverse(p)),p) > 1e-6*size);
+    let mut seeds: Vec<V> = Vec::new();
+    for (from,onto) in [(a,sb),(b,sa)] {
+        for e in &from.edges {
+            let EdgeCurve::Curve(c) = &e.curve else { continue };
+            if let crate::query::Meets::At(roots) = crate::query::curve_surface(c,e.t,onto,tol) {
+                seeds.extend(roots.iter().map(|&(t,_)| c.point(t)).filter(|&p| off_rails(p)));
+            }
+        }
+    }
+    if seeds.is_empty() { return Vec::new() }
+    let Ok(traced) = crate::ssi::trace(sa,sb,&seeds,lo,hi,tol) else { return Vec::new() };
+    let kept: Vec<Curve> = traced.into_iter().filter(|c| {
+        let Some([t0,t1]) = crate::query::curve_domain(c) else { return false };
+        (0..=16).any(|k| off_rails(c.point(t0+(t1-t0)*k as f64/16.)))
+    }).collect();
+    if crate::debug() { for c in &kept { let d = crate::query::curve_domain(c).unwrap_or([0.,1.]); eprintln!("general: beside a rail, a {} from {:?} to {:?}",c.kind(),c.point(d[0]),c.point(d[1])) } }
+    kept
+}
 
 /// How many pieces a stretch of the roll is cut into at the least, before any is halved.
 const FIRST_PIECES: usize = 4;
@@ -429,6 +462,11 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
             (Bears::Edge(e),Bears::Edge(e2)) => {
                 let (v,v2) = (tool.edges[e].v,tool.edges[e2].v);
                 for i in 0..2 { if v2.contains(&v[i]) { curves.push(Curve::Rail(bearers[bi].sheet.clone(),i as f64)) } }
+                // (and where the two fans cross away from it: a given meeting is the whole of it,
+                // and two edges' fans from one corner cross a second time beside its path — the
+                // cube tumbling 5°, its top front edge's fan and its top side edge's, the hole
+                // between them left open — traced from where an edge of either crosses the other)
+                if !curves.is_empty() { curves.extend(beside_rails(&breps[x],&surfaces[x],&breps[y],&surfaces[y],&curves,tol)) }
             }
             // **a face and an edge of it**: the path of where the face's chord reaches the edge, where
             // the two touch — over each stretch whose shape holds that end, so each piece ends where

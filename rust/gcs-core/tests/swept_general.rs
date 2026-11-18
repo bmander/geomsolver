@@ -52,6 +52,21 @@ fn a_cube_tumbling_two_degrees_is_built_by_the_general_road() {
     crate::swept_closed::agrees_over(&built,&cube,&path,roll);
 }
 
+/// **A cube tumbling five degrees either way is built** (#880 T1d): its top front edge's fan and its
+/// top side edge's, sharing the path of the corner between them, cross a second time beside that
+/// path, which the road traces (`general::beside_rails`) — given the path alone, the arrangement
+/// sought nothing more of the pair and left a hole between the two fans.
+#[test]
+fn a_cube_tumbling_five_degrees_is_built_by_the_general_road() {
+    let cube = cube();
+    let roll = [-5f64.to_radians(),5f64.to_radians()];
+    let tol = gcs_core::brep::geom::tolerance(cube.size());
+    let path = tumble();
+    let built = gcs_core::brep::swept::closed::closed(&cube,&path,roll,cube.size(),tol).unwrap_or_else(|u| panic!("{u:?}"));
+    built.check(tol).unwrap();
+    crate::swept_closed::agrees_over(&built,&cube,&path,roll);
+}
+
 /// A rise of `6s + 0.3s²` after `s` turns (brep-bench's `swept/square-thread-at-a-growing-lead`):
 /// a lead growing from 6 by 0.6 a turn.
 #[derive(Debug)]

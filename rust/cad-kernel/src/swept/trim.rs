@@ -223,7 +223,10 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
             // posed at its end by less than the hair, near where it touches it along its rim, read
             // as a boundary and kept)
             if let Ok(Some(_)) = swept.beyond(p,ON_CURVE*tol) {
-                if debug() { eprintln!("trim: a piece of a {} at {p:?}: proved off the boundary",f.surface.kind()) }
+                if debug() {
+                    let of = candidates.iter().enumerate().find_map(|(k,c)| c.faces.iter().position(|g| std::ptr::eq(g,f)).map(|i| (k,i)));
+                    eprintln!("trim: a piece of a {} ({of:?}) at {p:?}: proved off the boundary",f.surface.kind())
+                }
                 return Ok(None)
             }
             // **nor one inside the tool where it stands at an end of the roll** (#880 Q1b S5): read
