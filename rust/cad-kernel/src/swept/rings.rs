@@ -63,10 +63,12 @@
 //! outer leaves cross (`double_curve`), is traced from where a stretch first finds them crossing
 //! over the whole roll, on the contact itself: in the tube's `(u, t)` one curve over `u` through the
 //! swallowtail point, lowest before the pair is seen at an instant, the swallowtail's tail above it.
-//! Each stretch is cut along it (`cut_along`) and its tail dropped. **Not yet:** where one preimage
-//! leaves the roll before the other, the double curve ends on the end pose's meeting with the tube,
-//! a chord ending on a chord, which a face's pieces are not yet walked about (the tumbling torus
-//! turned whole, stopped at 2.0).
+//! Each stretch is cut along it (`cut_along`), a curve leaving the stretch and coming back two chords,
+//! its chords carrying their own curves in the face's parameters (the face's surface folds just past
+//! them), and its tail dropped. Where one preimage leaves the roll before the other the double curve
+//! ends on the tube's meeting with the tool at the end pose: a face's chords may cross or end on one
+//! another (`split_chords`), its pieces the faces of their planar graph (`pieces_among`). **Not
+//! yet:** the tumbling torus turned whole, stopped at 2.0, leaves a tube face a hole in no piece.
 //!
 //! **Its meetings with the tool where it starts and stops are read in its own domain** (`traces`):
 //! at an end pose every piece's rim lies on the tool, touching it, and a tube that folds runs on
@@ -1085,7 +1087,23 @@ pub fn double_curve(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],seed: [(f64,f64
         for _ in 0..200_000 {
             let next = th+dir*DOUBLE_STEP;
             let Some((y,a1,a2)) = settle(next,z,sg1,sg2) else { break };
-            if y[0] < a || y[0] > b || y[2] < a || y[2] > b { break }
+            let out_of = |y: [f64;3]| y[0] < a || y[0] > b || y[2] < a || y[2] > b;
+            if out_of(y) {
+                // (the step that leaves the roll halved to where a preimage reaches its end, and that
+                // place kept: the curve ends on the stretch's rim, not short of it)
+                let (mut lo,mut hi) = (th,next);
+                let mut last = None;
+                for _ in 0..60 {
+                    let m = 0.5*(lo+hi);
+                    match settle(m,z,sg1,sg2) { Some(r) if !out_of(r.0) => { last = Some((m,r)); lo = m } _ => hi = m }
+                }
+                if let Some((m,(y,a1,a2))) = last {
+                    let edge = |x: f64| if (x-a).abs() < (x-b).abs() { a } else { b };
+                    let y = if (y[0]-edge(y[0])).abs() < (y[2]-edge(y[2])).abs() { [edge(y[0]),y[1],y[2]] } else { [y[0],y[1],edge(y[2])] };
+                    out.push([(m,y[0],a1),(y[1],y[2],a2)]);
+                }
+                break
+            }
             // (the preimages met: the swallowtail point)
             if dir == toward && (y[1]-next)*toward <= 0. { break }
             (th,z,sg1,sg2) = (next,y,a1,a2);
@@ -1096,6 +1114,10 @@ pub fn double_curve(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],seed: [(f64,f64
     // in order of angle: the first preimage from far to near, then the second from near to far
     let first: Vec<(f64,f64,f64)> = far.iter().rev().map(|p| p[0]).chain(std::iter::once((th1,t1,s1))).chain(near.iter().map(|p| p[0])).collect();
     let second: Vec<(f64,f64,f64)> = near.iter().rev().map(|p| p[1]).chain(std::iter::once((th2,t2,s2))).chain(far.iter().map(|p| p[1])).collect();
+    // (the second taken from where it passes the first's last angle: the step that found the
+    // preimages met stood a hair past the swallowtail point)
+    let last = first.last().map_or(f64::NAN,|p| p.0);
+    let second: Vec<(f64,f64,f64)> = second.into_iter().skip_while(|p| (p.0-last)*toward <= 0.).collect();
     let mut out: Vec<(f64,f64,f64)> = first.into_iter().chain(second).collect();
     if toward < 0. { out.reverse() }
     if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
@@ -1130,7 +1152,8 @@ pub fn cut_along(ring: &Ring,path: &Trajectory,whole: [f64;2],fit: &mut Fitted,s
                 if !(f >= lo && f <= hi) { continue }
                 let Some(root) = self_root(ring,&r.instant.w,th,p.label) else { continue };
                 let d = (root.sigma-sg).rem_euclid(nf);
-                if d.min(nf-d) > 1e-6 { return Ok(None) }
+                // (the tube's own branch: another stands some half a piece of the meridian away)
+                if d.min(nf-d) > 1e-2 { return Ok(None) }
                 return Ok(Some(fk as f64+(f-lo)*g.of as f64))
             }
             Ok(None)
@@ -1141,13 +1164,15 @@ pub fn cut_along(ring: &Ring,path: &Trajectory,whole: [f64;2],fit: &mut Fitted,s
             for w in 0..curve.len() {
                 let (th,t,sg) = curve[w];
                 let inside = t >= a && t <= b;
-                // (where it crosses an end of the stretch: between this point and the one before)
+                // (where it crosses an end of the stretch: between this point and the one before; going
+                // out, the line ends there, and coming back in a new one begins)
                 if w > 0 {
                     let (th0,t0,sg0) = curve[w-1];
                     for edge in [a,b] {
                         if (t0-edge)*(t-edge) < 0. {
                             let f = (edge-t0)/(t-t0);
                             if let Some(u) = u_of((th0+(th-th0)*f,edge,if f < 0.5 { sg0 } else { sg }))? { line.push([u,edge]) }
+                            if !inside && line.len() >= 2 { out.push(std::mem::take(&mut line)) } else if !inside { line.clear() }
                         }
                     }
                 }
@@ -1222,24 +1247,32 @@ pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],tol: f64
         // each double curve's preimages cut at the seams between faces: per face its chords
         let mut cuts_of: Vec<Vec<Vec<P2>>> = vec![Vec::new();pieces];
         for side in doubles {
-            let mut run: Vec<P2> = Vec::new();
-            let mut face = usize::MAX;
-            for w in 0..side.len() {
-                let [u,t] = side[w];
-                let k = (u.rem_euclid(pieces as f64).floor() as usize).min(pieces-1);
-                if k != face && !run.is_empty() {
-                    // where it crosses the seam between the two faces
-                    let [u0,t0] = side[w-1];
-                    let seam = if (k+pieces-face)%pieces == 1 { u.floor() } else { u0.floor() };
-                    let f = ((seam-u0)/(u-u0)).clamp(0.,1.);
-                    let ts = t0+(t-t0)*f;
-                    let x_end = if (k+pieces-face)%pieces == 1 { 1. } else { 0. };
-                    run.push([x_end,y_of(ts)]);
-                    cuts_of[face].push(std::mem::take(&mut run));
-                    run.push([1.-x_end,y_of(ts)]);
+            // (its `u` unwrapped along it, and each step cut at every seam it crosses)
+            let np = pieces as f64;
+            let mut un: Vec<[f64;2]> = Vec::new();
+            for &[u,t] in side {
+                let u = match un.last() { Some(&[v,_]) => v+(u-v+0.5*np).rem_euclid(np)-0.5*np,None => u };
+                un.push([u,t]);
+            }
+            let face_of = |u: f64| (u.rem_euclid(np).floor() as usize).min(pieces-1);
+            let mut run: Vec<P2> = vec![[un[0][0]-face_of(un[0][0]+1e-12) as f64-(un[0][0]/np).floor()*np,y_of(un[0][1])]];
+            let mut face = face_of(un[0][0]+1e-12);
+            for w in un.windows(2) {
+                let ([u0,t0],[u1,t1]) = (w[0],w[1]);
+                let (lo,hi) = (u0.min(u1),u0.max(u1));
+                let mut seams: Vec<f64> = ((lo.floor() as i64+1)..=(hi.ceil() as i64-1)).map(|m| m as f64).filter(|&m| m > lo && m < hi).collect();
+                if u1 < u0 { seams.reverse() }
+                for m in seams {
+                    let f = (m-u0)/(u1-u0);
+                    let y = y_of(t0+(t1-t0)*f);
+                    let up = u1 > u0;
+                    run.push([if up { 1. } else { 0. },y]);
+                    if run.len() >= 2 { cuts_of[face].push(std::mem::take(&mut run)) } else { run.clear() }
+                    face = if up { (face+1)%pieces } else { (face+pieces-1)%pieces };
+                    run.push([if up { 0. } else { 1. },y]);
                 }
-                face = k;
-                run.push([u.rem_euclid(pieces as f64)-k as f64,y_of(t)]);
+                let x = u1-(u1/np).floor()*np-face as f64;
+                run.push([x.clamp(0.,1.),y_of(t1)]);
             }
             if run.len() >= 2 { cuts_of[face].push(run) }
         }
@@ -1558,6 +1591,138 @@ fn pieces_of_square(chords: &[(usize,Vec<P2>)]) -> Result<Vec<Vec<Walk>>,Unbuilt
     Ok(out)
 }
 
+/// **A square's chords split where they cross or one ends on another** (#880 T1d: a double curve
+/// ending on a tube's meeting with the tool at an end pose): each chord cut at every place another
+/// crosses it, and at every end of another standing within `SNAP_ON` of it (that end put there),
+/// each piece keeping its chord's kind.
+fn split_chords(chords: &[(usize,Vec<P2>)]) -> Vec<(usize,Vec<P2>)> {
+    const SNAP_ON: f64 = 1e-3;
+    let on_rim = |p: P2| p[0] <= ON_SIDE || p[0] >= 1.-ON_SIDE || p[1] <= ON_SIDE || p[1] >= 1.-ON_SIDE;
+    let mut lines: Vec<(usize,Vec<P2>)> = chords.to_vec();
+    // each chord's cuts: (segment, fraction along it, place)
+    let mut cuts: Vec<Vec<(usize,f64,P2)>> = vec![Vec::new();lines.len()];
+    for i in 0..lines.len() {
+        // an end of `i` inside the square standing on another chord: put there, and that chord cut
+        let ends: Vec<usize> = [0,lines[i].1.len()-1].into_iter().filter(|&e| !on_rim(lines[i].1[e])).collect();
+        for e in ends {
+            let p = lines[i].1[e];
+            let best = (0..lines.len()).filter(|&j| j != i).flat_map(|j| (0..lines[j].1.len()-1).map(move |k| (j,k))).map(|(j,k)| {
+                let (a,b) = (lines[j].1[k],lines[j].1[k+1]);
+                let d = [b[0]-a[0],b[1]-a[1]];
+                let f = (((p[0]-a[0])*d[0]+(p[1]-a[1])*d[1])/(d[0]*d[0]+d[1]*d[1]).max(1e-300)).clamp(0.,1.);
+                let q = [a[0]+d[0]*f,a[1]+d[1]*f];
+                ((q[0]-p[0]).hypot(q[1]-p[1]),j,k,f,q)
+            }).min_by(|x,y| x.0.total_cmp(&y.0));
+            if let Some((dist,j,k,f,q)) = best { if dist <= SNAP_ON { lines[i].1[e] = q; cuts[j].push((k,f,q)) } }
+        }
+    }
+    for i in 0..lines.len() { for j in i+1..lines.len() {
+        for k in 0..lines[i].1.len()-1 { for l in 0..lines[j].1.len()-1 {
+            let (a,b,c,d) = (lines[i].1[k],lines[i].1[k+1],lines[j].1[l],lines[j].1[l+1]);
+            let (r,s2) = ([b[0]-a[0],b[1]-a[1]],[d[0]-c[0],d[1]-c[1]]);
+            let rxs = r[0]*s2[1]-r[1]*s2[0];
+            if !(rxs.abs() > 1e-300) { continue }
+            let q = [c[0]-a[0],c[1]-a[1]];
+            let (t,u) = ((q[0]*s2[1]-q[1]*s2[0])/rxs,(q[0]*r[1]-q[1]*r[0])/rxs);
+            // (strictly inside both: an end on the other is cut above)
+            if t > 1e-9 && t < 1.-1e-9 && u > 1e-9 && u < 1.-1e-9 {
+                let x = [a[0]+r[0]*t,a[1]+r[1]*t];
+                cuts[i].push((k,t,x));
+                cuts[j].push((l,u,x));
+            }
+        } }
+    } }
+    let mut out = Vec::new();
+    for (i,(e,pts)) in lines.into_iter().enumerate() {
+        let mut c = cuts[i].clone();
+        c.sort_by(|x,y| (x.0,x.1).partial_cmp(&(y.0,y.1)).unwrap());
+        let mut piece = vec![pts[0]];
+        let mut at = 0;
+        for k in 0..pts.len()-1 {
+            while at < c.len() && c[at].0 == k {
+                let q = c[at].2;
+                if (q[0]-piece[piece.len()-1][0]).hypot(q[1]-piece[piece.len()-1][1]) > 1e-12 { piece.push(q) }
+                if piece.len() >= 2 { out.push((e,std::mem::take(&mut piece))) }
+                piece = vec![q];
+                at += 1;
+            }
+            piece.push(pts[k+1]);
+        }
+        if piece.len() >= 2 { out.push((e,piece)) }
+    }
+    out
+}
+
+/// **A square's pieces among chords that may cross or end on one another** (`split_chords` first):
+/// the planar graph of the chords' pieces and the square's sides between their places, each piece
+/// walked with it on the left — along a side counter-clockwise, along a chord either way — turning at
+/// each place to the first way out clockwise from the way back.
+fn pieces_among(chords: &[(usize,Vec<P2>)]) -> Result<Vec<Vec<Walk>>,Unbuilt> {
+    let on_rim = |p: P2| p[0] <= ON_SIDE || p[0] >= 1.-ON_SIDE || p[1] <= ON_SIDE || p[1] >= 1.-ON_SIDE;
+    // the places: each a point
+    let mut nodes: Vec<P2> = Vec::new();
+    let mut node = |p: P2| -> usize {
+        if let Some(i) = nodes.iter().position(|q| (q[0]-p[0]).hypot(q[1]-p[1]) <= ON_SIDE) { return i }
+        nodes.push(p);
+        nodes.len()-1
+    };
+    // the ways out of each place: (angle, what, to): a chord's `Walk::Chord(i, forward)`, a side's
+    let mut ends: Vec<[usize;2]> = Vec::new();
+    for (_,c) in chords { ends.push([node(c[0]),node(c[c.len()-1])]) }
+    for corner in [[0.,0.],[1.,0.],[1.,1.],[0.,1.]] { node(corner); }
+    let rim: Vec<usize> = { let mut r: Vec<usize> = (0..nodes.len()).filter(|&i| on_rim(nodes[i])).collect();
+        r.sort_by(|&x,&y| perimeter(nodes[x]).total_cmp(&perimeter(nodes[y]))); r };
+    let mut out: Vec<Vec<(f64,Walk,usize)>> = vec![Vec::new();nodes.len()];
+    let angle = |a: P2,b: P2| (b[1]-a[1]).atan2(b[0]-a[0]);
+    for (i,(_,c)) in chords.iter().enumerate() {
+        let [p,q] = ends[i];
+        out[p].push((angle(c[0],c[1]),Walk::Chord(i,true),q));
+        out[q].push((angle(c[c.len()-1],c[c.len()-2]),Walk::Chord(i,false),p));
+    }
+    for w in 0..rim.len() {
+        let (p,q) = (rim[w],rim[(w+1)%rim.len()]);
+        let (s0,s1) = (perimeter(nodes[p]),if w+1 == rim.len() { 4. } else { perimeter(nodes[q]) });
+        // (the way out along the side, read a hair along it)
+        let ahead = round_square(s0+1e-6);
+        out[p].push((angle(nodes[p],ahead),Walk::Side(s0,s1),q));
+    }
+    // the way back into each place along each way, to turn from
+    let back = |w: &Walk| -> Option<f64> {
+        match *w {
+            Walk::Side(_,s1) => { let at = round_square(s1); Some(angle(at,round_square(s1-1e-6))) }
+            Walk::Chord(i,f) => { let c = &chords[i].1; Some(if f { angle(c[c.len()-1],c[c.len()-2]) } else { angle(c[0],c[1]) }) }
+        }
+    };
+    let key = |w: &Walk| -> (u8,u64,u64) { match *w { Walk::Side(a,_) => (0,a.to_bits(),0),Walk::Chord(i,f) => (1,i as u64,f as u64) } };
+    let mut walked: std::collections::BTreeSet<(u8,u64,u64)> = std::collections::BTreeSet::new();
+    let mut pieces = Vec::new();
+    for start in 0..nodes.len() {
+        for &(_,first,to) in &out[start].clone() {
+            if walked.contains(&key(&first)) { continue }
+            let mut walk = Vec::new();
+            let (mut w,mut at) = (first,to);
+            loop {
+                if !walked.insert(key(&w)) {
+                    if key(&w) == key(&first) { break }
+                    return Err(Unbuilt::Failed("a ring's sheet's face's pieces among its chords do not close".into()))
+                }
+                walk.push(w);
+                if walk.len() > 4*(chords.len()+nodes.len())+8 { return Err(Unbuilt::Failed("a ring's sheet's face's piece runs on".into())) }
+                // the first way out clockwise from the way back
+                let into = back(&w).unwrap();
+                let turn = |a: f64| (into-a).rem_euclid(std::f64::consts::TAU);
+                let Some(&(_,next,to)) = out[at].iter().filter(|o| key(&o.1) != key(&match w { Walk::Chord(i,f) => Walk::Chord(i,!f),x => x }))
+                    .min_by(|x,y| { let (a,b) = (turn(x.0),turn(y.0)); (if a <= 1e-12 { std::f64::consts::TAU } else { a }).total_cmp(&(if b <= 1e-12 { std::f64::consts::TAU } else { b })) })
+                    else { return Err(Unbuilt::Failed("a ring's sheet's face's piece ends at a place with no way on".into())) };
+                if key(&next) == key(&first) { break }
+                (w,at) = (next,to);
+            }
+            pieces.push(walk);
+        }
+    }
+    Ok(pieces)
+}
+
 /// **A tube's net cut to where its faces stand outside the tool at both end poses**: each face's
 /// square cut by the curves it crosses the tool along at either end (`pieces_of_square`), and the
 /// pieces kept that stand outside at both (`Reading::outside`, read just inside a side of each), as
@@ -1577,15 +1742,23 @@ fn trimmed(net: &Net,roll: [f64;2],mut faces: Vec<Trimmed>,tol: f64) -> Result<(
     let seam_of = |k: usize,x: f64| if x <= ON_SIDE { Some(k) } else if x >= 1.-ON_SIDE { Some((k+1)%pieces) } else { None };
     // the seams' places, both faces' ends merged, and each crossing's end on a seam put there
     let mut seams: Vec<Vec<f64>> = vec![vec![0.,1.];pieces];
+    // (the chords as each face's pieces are walked about: split where they cross or one ends on
+    // another, #880 T1d)
+    let splits: Vec<Vec<(usize,Vec<P2>)>> = faces.iter().map(|f| split_chords(&f.chords)).collect();
     for (k,face) in faces.iter().enumerate() {
-        for (_,c) in &face.chords { for p in [c[0],c[c.len()-1]] { if let Some(s) = seam_of(k,p[0]) { seams[s].push(p[1]) } } }
+        for (_,c) in face.chords.iter().chain(&splits[k]) { for p in [c[0],c[c.len()-1]] { if let Some(s) = seam_of(k,p[0]) { seams[s].push(p[1]) } } }
     }
     for s in &mut seams {
         s.sort_by(f64::total_cmp);
         s.dedup_by(|x,y| (*x-*y).abs() <= SNAP);
     }
-    let place = |s: usize,y: f64| -> Result<usize,Unbuilt> { seams[s].iter().position(|&q| (q-y).abs() <= SNAP)
-        .ok_or_else(|| Unbuilt::Failed("a ring's sheet's crossing of the tool ends on a seam where the face beside finds none".into())) };
+    // (the nearest place within a side's reach: an end a hair from a corner is the corner's)
+    let place = |s: usize,y: f64| -> Result<usize,Unbuilt> { seams[s].iter().enumerate().filter(|(_,&q)| (q-y).abs() <= ON_SIDE)
+        .min_by(|x,z| (x.1-y).abs().total_cmp(&(z.1-y).abs())).map(|(i,_)| i)
+        .ok_or_else(|| {
+            if std::env::var_os("SOLVENT_RING_DEBUG").is_some() { eprintln!("ring: seam {s} has no place at {y}: {:?}",seams[s]) }
+            Unbuilt::Failed("a ring's sheet's crossing of the tool ends on a seam where the face beside finds none".into())
+        }) };
     for (k,face) in faces.iter_mut().enumerate() {
         for (_,c) in &mut face.chords {
             let last = c.len()-1;
@@ -1597,11 +1770,19 @@ fn trimmed(net: &Net,roll: [f64;2],mut faces: Vec<Trimmed>,tol: f64) -> Result<(
     // the vertices: a seam's at its places, a rim's at a chord's end on it
     let mut at_seam: std::collections::BTreeMap<(usize,usize),u32> = std::collections::BTreeMap::new();
     let mut at_rim: Vec<(usize,usize,f64,u32)> = Vec::new();
+    let mut inside: Vec<(usize,P2,u32)> = Vec::new();
     let mut vertex = |out: &mut Brep,k: usize,[x,y]: P2| -> Result<u32,Unbuilt> {
         Ok(match seam_of(k,x) {
             Some(s) => {
                 let i = place(s,y)?;
                 *at_seam.entry((s,i)).or_insert_with(|| out.vertex(net.point(s as f64,t_of(seams[s][i]))))
+            }
+            None if y > ON_SIDE && y < 1.-ON_SIDE => {
+                // (a place inside the square, where chords meet)
+                if let Some(&(_,_,v)) = inside.iter().find(|q: &&(usize,P2,u32)| q.0 == k && (q.1[0]-x).hypot(q.1[1]-y) <= ON_SIDE) { return Ok(v) }
+                let v = out.vertex(net.point(k as f64+x,t_of(y)));
+                inside.push((k,[x,y],v));
+                v
             }
             None => {
                 let end = usize::from(y > 0.5);
@@ -1622,9 +1803,18 @@ fn trimmed(net: &Net,roll: [f64;2],mut faces: Vec<Trimmed>,tol: f64) -> Result<(
         let rim: [Curve;2] = [Curve::BSpline(Arc::new(piece.column(0))),Curve::BSpline(Arc::new(piece.column(piece.poles[0].len()-1)))];
         let surface = crate::geom::Surface::BSpline(frame,Arc::new(piece));
         let (u0,u1) = (k as f64,k as f64+1.);
-        let walks = pieces_of_square(&face.chords)?;
+        // (its chords split where they cross or one ends on another: a double curve ending on the
+        // tube's meeting with the tool at an end pose, #880 T1d)
+        let split = split_chords(&face.chords);
+        let simple = split.len() == face.chords.len() && split.iter().zip(&face.chords).all(|(x,y)| x.1.len() == y.1.len());
+        let walks = if simple { pieces_of_square(&face.chords)? } else { pieces_among(&split)? };
+        let chords: &[(usize,Vec<P2>)] = if simple { &face.chords } else { &split };
         // the chords' edges, made once, each walked by the two pieces either side
-        let mut chord_edges: Vec<Option<u32>> = vec![None;face.chords.len()];
+        let mut chord_edges: Vec<Option<u32>> = vec![None;chords.len()];
+        // (a double curve's chord carries its own curve in the face's parameters, on its curve's
+        // chord-length parameter: the face's surface still holds the fold just past it, where an
+        // inversion onto it may land on the leaf beyond, #880 T1d)
+        let mut chord_pcurves: Vec<Option<Pcurve>> = vec![None;chords.len()];
         let mut rim_kept = [false;2];
         let mut kept_chords: [Vec<(Curve,Vec<V>)>;2] = [Vec::new(),Vec::new()];
         for walk in walks {
@@ -1634,7 +1824,7 @@ fn trimmed(net: &Net,roll: [f64;2],mut faces: Vec<Trimmed>,tol: f64) -> Result<(
             let m = round_square(0.5*(s0+s1));
             let into = INWARD[(s0.floor() as usize).min(3)];
             // no farther in than half the way to the nearest chord
-            let clear = face.chords.iter().flat_map(|(_,c)| c).map(|p| (p[0]-m[0]).hypot(p[1]-m[1])).fold(f64::INFINITY,f64::min);
+            let clear = chords.iter().flat_map(|(_,c)| c).map(|p| (p[0]-m[0]).hypot(p[1]-m[1])).fold(f64::INFINITY,f64::min);
             let depth = (0.5*clear).min(1e-3).min(0.25*(s1-s0));
             let probe = [m[0]+into[0]*depth,m[1]+into[1]*depth];
             if !face.readings.iter().flatten().all(|r| r.outside(probe)) || (face.tail)(probe) { continue }
@@ -1668,14 +1858,23 @@ fn trimmed(net: &Net,roll: [f64;2],mut faces: Vec<Trimmed>,tol: f64) -> Result<(
                         }
                     }
                     Walk::Chord(i,forward) => {
-                        let (e,pts) = &face.chords[i];
+                        let (e,pts) = &chords[i];
                         let edge = match chord_edges[i] {
                             Some(edge) => edge,
                             None => {
                                 let (curve,xs) = match face.readings.get(*e).and_then(|r| r.as_ref()) {
                                     Some(r) => chord_curve(r,pts,tol)?,
                                     // (the double curve: through the net's points along it)
-                                    None => curve_through(pts.iter().map(|&[x,y]| net.point(k as f64+x,a+(b-a)*y)).collect(),tol)?,
+                                    None => {
+                                        let (curve,xs) = curve_through(pts.iter().map(|&[x,y]| net.point(k as f64+x,a+(b-a)*y)).collect(),tol)?;
+                                        let mut params = vec![0.];
+                                        for w in xs.windows(2) { params.push(params.last().unwrap()+norm(crate::util::space::sub(w[1],w[0])).max(1e-300)) }
+                                        let length = *params.last().unwrap();
+                                        let params: Vec<f64> = params.iter().map(|p| p/length.max(1e-300)).collect();
+                                        let uvs: Vec<V> = pts.iter().map(|&[x,y]| [u0+x,t_of(y),0.]).collect();
+                                        if let Some(pc) = crate::nurbs::interpolate(&uvs,&params,3) { chord_pcurves[i] = Some(Pcurve::Curve(Arc::new(Curve::BSpline(Arc::new(pc))))) }
+                                        (curve,xs)
+                                    }
                                 };
                                 let (v0,v1) = (vertex(&mut out,k,pts[0])?,vertex(&mut out,k,pts[pts.len()-1])?);
                                 let edge = out.edge(EdgeCurve::Curve(curve.clone()),[0.,1.],[v0,v1]);
@@ -1685,7 +1884,8 @@ fn trimmed(net: &Net,roll: [f64;2],mut faces: Vec<Trimmed>,tol: f64) -> Result<(
                             }
                         };
                         let uv = |p: P2| [u0+p[0],t_of(p[1])];
-                        lp.push(Coedge {edge,reversed:!forward,pcurve:Pcurve::Inverse {a:uv(pts[0]),b:uv(pts[pts.len()-1])}});
+                        let pcurve = chord_pcurves[i].clone().unwrap_or(Pcurve::Inverse {a:uv(pts[0]),b:uv(pts[pts.len()-1])});
+                        lp.push(Coedge {edge,reversed:!forward,pcurve});
                     }
                 }
             }

@@ -218,7 +218,9 @@ fn joined(b: &mut Brep,keep: usize,drop: usize,same: bool,(fi,li,ci): At,tol: f6
     let [a,z] = [d0,d1].map(|t| c.pcurve.at(t,d,&face.surface,&b.vertices));
     let pcurve = match &c.pcurve {
         Pcurve::Line {..} if one => Pcurve::Line {a,b:z},
-        Pcurve::Curve(pc) if one && same && k.t == d.t => Pcurve::Curve(pc.clone()),
+        // (or two fits of one curve over one parameter, each a face's own pcurve along it: a ring's
+        // tube's two sides of a double curve, sewn, each over a sheet that folds beyond it, #880 T1d)
+        Pcurve::Curve(pc) if same && k.t == d.t && (one || matches!(k.curve,EdgeCurve::Curve(Curve::BSpline(_)))) => Pcurve::Curve(pc.clone()),
         _ => Pcurve::Inverse {a,b:z},
     };
     let reversed = c.reversed == same;
