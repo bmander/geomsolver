@@ -561,6 +561,7 @@ impl Ring {
             // below nought — about both folds, and short of where its outer leaves cross, at twice
             // that depth (the swallowtail's normal form: folds at `w` either side of its middle, the
             // leaves crossing at `√3 w`, `s''` there `2 |least|`)
+            let mut bridges: Vec<[f64;2]> = Vec::new();
             for ([first,last],near,sign,mid,least) in &narrow {
                 let value = |th: f64| {
                     let sigma = near.iter().min_by(|p,q| (p.0-th).abs().total_cmp(&(q.0-th).abs())).map_or(0.,|p| p.1);
@@ -580,8 +581,16 @@ impl Ring {
                 let wrap = |x: f64| x.rem_euclid(span);
                 joins.push((wrap(l),(ll,Side::Fold)));
                 joins.push((wrap(r),(lr,side)));
+                bridges.push([wrap(l),wrap(r)]);
             }
             joins.sort_by(|x,y| x.0.total_cmp(&y.0));
+            // (a join inside a bridge — the branch's label turning over on a meridian the instant
+            // touches whole, where one of the pair's folds stands, #880 T1d M2 — is the bridge's: its
+            // piece a fold, on its own label)
+            for j in &mut joins {
+                let inside = bridges.iter().any(|&[l,r]| if l <= r { j.0 > l && j.0 < r } else { j.0 > l || j.0 < r });
+                if inside { j.1.1 = Side::Fold }
+            }
             let pieces = if joins.is_empty() {
                 vec![Piece {from:0.,to:span,label:kinds[0].0,side:kinds[0].1}]
             } else {
@@ -1375,7 +1384,17 @@ pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],rimmed: 
             let order = if sides[k] == Side::Touching { 2 } else { 1 };
             let readings: [Option<Reading>;2] = std::array::from_fn(|e| backs[e].map(|back| Reading {net,ring,back,u:[k as f64,k as f64+1.],
                 roll:fit.roll,end:if rimmed[e] { e as f64 } else { f64::NAN },order:if rimmed[e] { order } else { 0 }}));
-            let mut chords: Vec<(usize,Vec<P2>)> = (0..2).flat_map(|e| readings[e].as_ref().map_or(Vec::new(),traces).into_iter().map(move |c| (e,c))).collect();
+            let mut chords: Vec<(usize,Vec<P2>)> = Vec::new();
+            // (a trace walked from both its ends — its far end matched to no rim crossing, the other
+            // traced back along it — is one chord: two along one another split each other into a
+            // thousand pieces, #880 T1d M2's ring beside its whole-touched meridian)
+            for (e,c) in (0..2).flat_map(|e| readings[e].as_ref().map_or(Vec::new(),traces).into_iter().map(move |c| (e,c))) {
+                let near = |p: P2,q: P2| (p[0]-q[0]).hypot(p[1]-q[1]) <= 1e-6;
+                let mid = c[c.len()/2];
+                let again = chords.iter().any(|(f,d)| *f == e && (near(d[0],c[0]) && near(d[d.len()-1],c[c.len()-1]) || near(d[0],c[c.len()-1]) && near(d[d.len()-1],c[0]))
+                    && d.iter().any(|&p| (p[0]-mid[0]).hypot(p[1]-mid[1]) <= 4.*MET_STEP));
+                if !again { chords.push((e,c)) }
+            }
             chords.extend(cuts_of[k].iter().map(|c| (2,c.clone())));
             let tail: Box<dyn Fn(P2) -> bool+Sync+Send+'_> = Box::new(move |[x,y]: P2| tail(k as f64+x,a+(b-a)*y));
             Trimmed {readings,chords,tail}
@@ -1890,7 +1909,11 @@ fn trimmed(net: &Net,roll: [f64;2],mut faces: Vec<Trimmed>,tol: f64) -> Result<(
         // tube's meeting with the tool at an end pose, #880 T1d)
         let split = split_chords(&face.chords);
         let simple = split.len() == face.chords.len() && split.iter().zip(&face.chords).all(|(x,y)| x.1.len() == y.1.len());
-        let walks = if simple { pieces_of_square(&face.chords)? } else { pieces_among(&split)? };
+        let walks = if simple { pieces_of_square(&face.chords)? } else { pieces_among(&split).inspect_err(|_| {
+            if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
+                for (e,c) in &face.chords { eprintln!("ring: face {k} unsplit chord of kind {e} from {:?} to {:?}, {} points",c[0],c[c.len()-1],c.len()) }
+            }
+        })? };
         let chords: &[(usize,Vec<P2>)] = if simple { &face.chords } else { &split };
         // the chords' edges, made once, each walked by the two pieces either side
         let mut chord_edges: Vec<Option<u32>> = vec![None;chords.len()];

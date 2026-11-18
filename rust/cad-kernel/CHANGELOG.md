@@ -25,8 +25,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   `Curved`). Beside such a meridian `A` and `B` are read in closed form, each `2 sin((θ − θ*)/2)`
   times a vector that is not small, so the two curves pass through it smoothly; and a piece ending
   on it is read a hair inside, on its own side, where the end's root stands apart from it. brep-bench's ring carried along a spline is admitted,
-  its contact one shape over the roll, and its tubes fit; it is refused further on, `Folded` beside
-  the whole meridian, whose own swept circle is not yet a candidate.
+  its contact one shape over the roll, and its tubes fit. Beside the whole meridian each curve has a
+  narrow fold pair, one fold on the meridian itself, where its branch's label turns over: a join
+  inside a bridge is the bridge's (a fold piece on its own label), so the bridge holds the pair whole;
+  and a trace of a face's crossing of the tool walked from both its ends is one chord. It is refused
+  further on: at the start pose, beside that pair, two of a face's crossings run along each other.
 - **A rod threaded at a lead that grows is built** (`swept::contacts::pose_meeting`, #880 T1d): a
   branch of a sheet's meeting with the tool at an end pose has each end put at its own nearest corner
   that `h`'s rounding reaches, and only one within two cells of it — a strip's corner at a vertex,
