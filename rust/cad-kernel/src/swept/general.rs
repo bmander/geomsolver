@@ -173,11 +173,13 @@ fn marched(a: &Surface,b: &Surface,seed: V,lo: V,hi: V,tol: f64) -> Option<Curve
             let way = match last { Some(l) => if (0..4).map(|k| l[k]*t[k]).sum::<f64>() < 0. { -1. } else { 1. },None => sense };
             t = t.map(|v| v*way);
             let next = settle(std::array::from_fn(|k| x[k]+h*t[k]));
-            let Some((y,q)) = next else { if h > 1e-6*h0 { h *= 0.5; continue } else { break } };
+            let why = |w: &str| if crate::debug() { eprintln!("general: a march stops at {p:?} after {} points: {w}",pts.len()) };
+            let Some((y,q)) = next else { if h > 1e-6*h0 { h *= 0.5; continue } else { why("no settling"); break } };
             // (a step that went far off its length, or turned sharply, shortened)
             let moved = distance(p,q);
-            if moved > 1.5*h || moved < 0.5*h { if h > 1e-6*h0 { h *= 0.5; continue } else { break } }
+            if moved > 1.5*h || moved < 0.5*h { if h > 1e-6*h0 { h *= 0.5; continue } else { why("no step its length"); break } }
             if !inside(q) || !on_patches(q) {
+                why(if inside(q) { "off a patch" } else { "out of the box" });
                 // (the last step halved onto where it leaves: the branch ends on the patch's edge, or
                 // the box's, not up to a step short of it)
                 let (mut a0,mut a1) = (0.,h);
