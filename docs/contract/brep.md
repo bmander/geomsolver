@@ -1230,9 +1230,9 @@ surface, its pcurves its own — and the wall an edge sweeps is exactly the `Ble
 (a plane where they lie in one); a cone's or a torus's move is no affine map, and such a face its own
 parameter lines do not bound is refused.  **A crease along a curve no closed form carries a tube
 along is the ball carried along it** (`offset::swept_tube`, `swept::canal::tube`), its ends flat; a
-closed one is cut at its middle before any piece is built (`offset::halved`), so each face's moved
-copy of it lies along one half's wall; refused by the tube's rows where the curve turns tighter
-than the distance (`brep_offset::a_cylinder_cut_aslant_grown_is_steiners`,
+closed one's is a ring with no end (`swept::canal::ring`, `family::ring`), so each face's moved copy
+of it lies along the ring's wall whole; refused by the tube's rows where the curve turns tighter
+than the distance, or where it closes at a corner (`brep_offset::a_cylinder_cut_aslant_grown_is_steiners`,
 `a_ball_cut_aslant_grown_is_steiners`).  Shrunk (`offset::shrunk`) is the dual, the solid less
 the inward sweeps and the tubes and balls of its concave creases and corners.  Nothing is
 classified by shape: where moved faces meet (a groove grown shut, a flange shrunk away, a torus

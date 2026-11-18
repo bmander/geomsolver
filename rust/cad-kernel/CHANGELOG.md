@@ -16,8 +16,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   surface, its pcurves its own, walled by the ruled sheet each edge sweeps between its two images
   (`Blend`, or a plane where they lie in one) — exactly, where a profile's prism or a band of
   revolution does not take the face. A crease along any other curve is the ball carried along it
-  (`swept::canal`, the one tube a ball sweeps along a path), flat-ended, a closed edge cut in two at
-  its middle first so each face's moved copy lies along one half's wall; refused, with the radius
+  (`swept::canal`, the one tube a ball sweeps along a path), flat-ended; along a closed edge a ring
+  with no end (`swept::canal::ring`, `family::ring`: the frame's holonomy unwound along the roll,
+  the wall's `s` periodic), so each face's moved copy lies along it whole; refused, with the radius
   and a point, where the curve turns tighter than the distance. brep-bench's
   offset/cylinder-cut-at-thirty-degrees-grown and the slant-cut cylinder grown by ½, 1, 1½ and 2
   build to Steiner's formula within 1e-11; grown past the ellipse's curvature they are refused.

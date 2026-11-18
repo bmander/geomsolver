@@ -66,8 +66,6 @@ enum By { Face(usize),Edge(usize),Corner(u32) }
 /// faces moved out by `d` and extended until they meet (`Join::Sharp`).
 pub fn grown(b: &Brep,d: f64,join: Join) -> Result<Brep,String> {
     positive(d,"a growth")?;
-    let h = halved(b,join);
-    let b = h.as_ref().unwrap_or(b);
     let all = vec![true;b.faces.len()];
     folded(b.clone(),pieces(b,&all,Side::Out,d,join)?,Op::Union)
 }
@@ -76,8 +74,6 @@ pub fn grown(b: &Brep,d: f64,join: Join) -> Result<Brep,String> {
 /// or with its faces moved in by `d` and extended until they meet (`Join::Sharp`).
 pub fn shrunk(b: &Brep,d: f64,join: Join) -> Result<Brep,String> {
     positive(d,"a shrinking")?;
-    let h = halved(b,join);
-    let b = h.as_ref().unwrap_or(b);
     let all = vec![true;b.faces.len()];
     let out = folded(b.clone(),pieces(b,&all,Side::In,d,join)?,Op::Cut)?;
     if out.faces.is_empty() { return Err(format!("the solid shrunk by {d} is nothing: no point of it is that far inside")) }
@@ -91,8 +87,6 @@ pub fn shrunk(b: &Brep,d: f64,join: Join) -> Result<Brep,String> {
 pub fn shelled(b: &Brep,open: &[usize],t: f64,side: Side,join: Join) -> Result<Brep,String> {
     positive(t,"a wall")?;
     if let Some(&f) = open.iter().find(|&&f| f >= b.faces.len()) { return Err(format!("no face {f} to leave open")) }
-    let h = halved(b,join);
-    let b = h.as_ref().unwrap_or(b);
     let walled: Vec<bool> = (0..b.faces.len()).map(|f| !open.contains(&f)).collect();
     if !walled.contains(&true) { return Err("a shell open at every face has no wall".into()) }
     let pieces = match side {
@@ -514,16 +508,24 @@ impl Path for Stepped {
 /// **The tube of radius `d` about the stretch `t` of a curve no closed form carries a tube along**,
 /// its ends flat: the ball of radius `d` carried along it (`swept::canal::tube`, the one tube a
 /// ball sweeps along any path), its wall the face family of its disc square to the curve, held
-/// within the family's `EXACT` of its diameter; a closed curve's along each half (`halved`).
-/// Refused, by the tube's rows, where the curve turns tighter than `d` or comes back within `2 d`
-/// of itself: the tube would fold or cross itself.
+/// within the family's `EXACT` of its diameter. A closed curve's closes on itself with no end
+/// (`canal::ring`, `family::ring`), so each face's moved copy of the curve lies along its wall
+/// whole. Refused, by the tube's rows, where the curve turns tighter than `d` or comes back within
+/// `2 d` of itself (the tube would fold or cross itself), and where it closes at a corner.
 fn swept_tube(c: &Curve,t: [f64;2],d: f64) -> Result<Brep,String> {
     let (k,start) = (c.kind(),c.point(t[0]));
+    let closed = distance(start,c.point(t[1])) <= tolerance(norm(start)+d);
+    if closed && dot(unit(c.tangent(t[0])),unit(c.tangent(t[1]))) < 1.-1e-9 {
+        return Err(format!("the {k} closes on itself at a corner at {start:?}: no ball's tube runs round it smoothly"))
+    }
     let path = Trajectory::General(Arc::new(Stepped {curve:c.clone(),start}));
-    let why = match canal::tube(&path,start,d,"",t) {
-        Ok(Some(canal::Tube {spine:Spine::Tube(f),..})) => return crate::recipe::family_node(&f).map_err(|e| e.msg),
+    let walls = if closed { canal::ring(&path,start,d,"",t) } else {
+        canal::tube(&path,start,d,"",t).map(|tube| tube.and_then(|tube| match tube.spine { Spine::Tube(f) => Some(f),_ => None }))
+    };
+    let why = match walls {
+        Ok(Some(f)) => return crate::recipe::family_solid(&f,closed),
         // the ball's own, where the centre never moves: an edge of no length
-        Ok(_) => return Err(format!("the {k} has no length to carry the ball along")),
+        Ok(None) => return Err(format!("the {k} has no length to carry the ball along")),
         Err(why) => why,
     };
     Err(match why {
@@ -536,31 +538,6 @@ fn swept_tube(c: &Curve,t: [f64;2],d: f64) -> Result<Brep,String> {
         },
         other => format!("the ball's tube along the {k} is not built: {other:?}"),
     })
-}
-
-/// **`b` with each closed crease a ball's tube may be swept along cut in two at its middle**
-/// (`swept_tube`), or none where it has no such crease or `join` builds no tube: the same solid, a
-/// vertex more on each such edge. A ball's path never comes back to where it started, so a closed
-/// edge's tube is two, each along a half; cut first, every piece built from the edge — each face's
-/// moved copy of it, its wall's rails, its tube — ends where the halves do, and each moved copy
-/// lies along one half's wall. A circle's tube is a torus's whole.
-fn halved(b: &Brep,join: Join) -> Option<Brep> {
-    if join != Join::Round { return None }
-    let uses = uses(b);
-    let closed: Vec<usize> = (0..b.edges.len()).filter(|&ei| {
-        let e = &b.edges[ei];
-        e.v[0] == e.v[1] && matches!(&e.curve,EdgeCurve::Curve(c) if !matches!(c,Curve::Circle(..)))
-            && matches!(uses[ei][..],[(fa,_),(fb,_)] if fa != fb)
-    }).collect();
-    if closed.is_empty() { return None }
-    let mut out = b.clone();
-    let cuts = closed.into_iter().map(|ei| {
-        let e = &b.edges[ei];
-        let m = 0.5*(e.t[0]+e.t[1]);
-        (ei as u32,vec![(m,out.vertex(e.point(m,&b.vertices)))])
-    }).collect();
-    super::boolean::cut_with(&mut out,&cuts);
-    Some(out)
 }
 
 /// The wedge of the tube of radius `d` about the stretch `t` of the curve `c` between the
