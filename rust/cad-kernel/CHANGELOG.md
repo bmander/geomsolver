@@ -28,8 +28,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   its contact one shape over the roll, and its tubes fit. Beside the whole meridian each curve has a
   narrow fold pair, one fold on the meridian itself, where its branch's label turns over: a join
   inside a bridge is the bridge's (a fold piece on its own label), so the bridge holds the pair whole;
-  and a trace of a face's crossing of the tool walked from both its ends is one chord. It is refused
-  further on: at the start pose, beside that pair, two of a face's crossings run along each other.
+  and a trace of a face's crossing of the tool walked from both its ends is one chord. A trace
+  leaving a face beside its corner ends at a crossing of the rim nearer than the corner; a crossing
+  both faces beside its seam trace straight back into one corner is a cap about the vertex and
+  dropped; a seam's place is matched within the snap its two faces' readings were merged at; a bridge
+  of two fold pieces is searched for its leaves' crossing as one; and a meeting's chord takes the
+  meeting's own point halfway between two of its points wherever its cubic strays from it, settled
+  on the tool itself within `G`'s carried reach of the rim. Its sheets now close and are arranged;
+  it is refused further on, the circle's band swept twice over beside its whole meridians, two faces
+  coinciding along an edge by the start pose.
 - **A rod threaded at a lead that grows is built** (`swept::contacts::pose_meeting`, #880 T1d): a
   branch of a sheet's meeting with the tool at an end pose has each end put at its own nearest corner
   that `h`'s rounding reaches, and only one within two cells of it — a strip's corner at a vertex,
