@@ -960,26 +960,18 @@ pub fn fitted_over(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],s
         let n = run.pieces.len();
         let mut found = Vec::new();
         for (fk,f) in faces.iter().enumerate() {
-            // (a bridge is a fold piece between touching ones, or two: beside a meridian an instant
-            // touches whole the branch's label turns over inside it, #880 T1d M2 — its pieces' faces
-            // taken as one, the first face of its first)
-            let m = if kinds_of((f.piece+1)%n) == Side::Fold { 2 } else { 1 };
-            let last_piece = (f.piece+m-1)%n;
-            if kinds_of(f.piece) != Side::Fold || kinds_of((f.piece+n-1)%n) != Side::Touching || kinds_of((last_piece+1)%n) != Side::Touching
-                || m == 2 && (fk > 0 && faces[fk-1].piece == f.piece || n < 4) { continue }
-            let span = if m == 1 { 1 } else { faces.iter().filter(|g| g.piece == f.piece || g.piece == last_piece).count() };
-            let (k0,k1) = (fk as f64,(fk+span) as f64);
+            if kinds_of(f.piece) != Side::Fold || kinds_of((f.piece+n-1)%n) != Side::Touching || kinds_of((f.piece+1)%n) != Side::Touching { continue }
+            let (k0,k1) = (fk as f64,fk as f64+1.);
             let mut last: Option<[f64;3]> = None;
             let mut seed: Option<[(f64,f64,f64);2]> = None;
             for &t in &ts {
                 let r = reader.read(t)?;
                 let c = &r.curves[run.curve];
-                let (pl,pf,pr) = (&c[run.pieces[(f.piece+n-1)%n]],&c[run.pieces[f.piece]],&c[run.pieces[(last_piece+1)%n]]);
-                let pe = &c[run.pieces[last_piece]];
-                let half = 0.5*((pf.to-pf.from)+if m == 2 { pe.to-pe.from } else { 0. });
+                let (pl,pf,pr) = (&c[run.pieces[(f.piece+n-1)%n]],&c[run.pieces[f.piece]],&c[run.pieces[(f.piece+1)%n]]);
+                let half = 0.5*(pf.to-pf.from);
                 // (each neighbour's angle a unit of `u` spans: its stretch over its faces)
                 let per = |i: usize| faces.iter().filter(|g| g.piece == i).count().max(1) as f64;
-                let (dl,dr) = (0.22*half/((pl.to-pl.from)/per((f.piece+n-1)%n)).max(1e-300),0.22*half/((pr.to-pr.from)/per((last_piece+1)%n)).max(1e-300));
+                let (dl,dr) = (0.22*half/((pl.to-pl.from)/per((f.piece+n-1)%n)).max(1e-300),0.22*half/((pr.to-pr.from)/per((f.piece+1)%n)).max(1e-300));
                 let mut x = last.unwrap_or([k0-dl,k1+dr,t]);
                 let mut settled = false;
                 // (damped least squares, Levenberg–Marquardt, each unknown scaled by its column: near
@@ -989,7 +981,7 @@ pub fn fitted_over(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],s
                 // normal form puts it at √3 − 1 of one: past that a leaf meets another stretch of
                 // the tube, which is the trim's to meet, not the pair's double curve)
                 let lo = [(k0-per((f.piece+n-1)%n)).max(k0-dl*2./0.22),k1,a];
-                let hi = [k0,(k1+per((last_piece+1)%n)).min(k1+dr*2./0.22),b];
+                let hi = [k0,(k1+per((f.piece+1)%n)).min(k1+dr*2./0.22),b];
                 let residual = |x: [f64;3]| -> (V,[V;3]) {
                     let ((p1,du1,_),(p2,du2,dt2)) = (net.d1(x[0].rem_euclid(pieces as f64),t),net.d1(x[1].rem_euclid(pieces as f64),x[2]));
                     (crate::util::space::sub(p1,p2),[du1,du2.map(|v| -v),dt2.map(|v| -v)])
@@ -2027,7 +2019,7 @@ fn trimmed(net: &Net,roll: [f64;2],mut faces: Vec<Trimmed>,tol: f64) -> Result<(
         let walks = if simple { pieces_of_square(&face.chords).inspect_err(told)? } else { pieces_among(&split).inspect_err(told)? };
         let chords: &[(usize,Vec<P2>)] = if simple { &face.chords } else { &split };
         if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
-            eprintln!("trim: face {k} chords {:?}",chords.iter().map(|(e,c)| (*e,c[0],c[c.len()-1])).collect::<Vec<_>>());
+            eprintln!("trim: face {k} over {roll:?} chords {:?}",chords.iter().map(|(e,c)| (*e,c[0],c[c.len()-1])).collect::<Vec<_>>());
             for w in &walks { eprintln!("trim:   walk {w:?}") }
         }
         // the chords' edges, made once, each walked by the two pieces either side

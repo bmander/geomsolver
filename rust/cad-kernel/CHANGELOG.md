@@ -31,12 +31,18 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   and a trace of a face's crossing of the tool walked from both its ends is one chord. A trace
   leaving a face beside its corner ends at a crossing of the rim nearer than the corner; a crossing
   both faces beside its seam trace straight back into one corner is a cap about the vertex and
-  dropped; a seam's place is matched within the snap its two faces' readings were merged at; a bridge
-  of two fold pieces is searched for its leaves' crossing as one; and a meeting's chord takes the
+  dropped; a seam's place is matched within the snap its two faces' readings were merged at; and a
+  meeting's chord takes the
   meeting's own point halfway between two of its points wherever its cubic strays from it, settled
   on the tool itself within `G`'s carried reach of the rim. Its sheets now close and are arranged;
   it is refused further on, the circle's band swept twice over beside its whole meridians, two faces
   coinciding along an edge by the start pose.
+- A ring's tubes sewn across the cuts of their roll (`sew::sewn_open`) merge a vertex only with
+  vertices of other stretches on its own row, and cut a row's rim only at that row's vertices:
+  beside a swallowtail's point, where a stretch a two-hundredth of a radian wide is cut, the two
+  rows stand within the tolerance of one another, and the tumbling torus turned whole had a face's
+  rim sewn to its own other row, the face left a loop walking one edge both ways. It is refused
+  further on, an edge of one sheet lying within a few tolerances of another over a long stretch.
 - **A rod threaded at a lead that grows is built** (`swept::contacts::pose_meeting`, #880 T1d): a
   branch of a sheet's meeting with the tool at an end pose has each end put at its own nearest corner
   that `h`'s rounding reaches, and only one within two cells of it — a strip's corner at a vertex,

@@ -33,7 +33,7 @@ use super::boolean::cut_with;
 use super::complex::faced;
 use super::geom::{Curve,Uv,V};
 use super::query::{Located,Place};
-use super::topo::{Brep,Coedge,EdgeCurve,Pcurve};
+use super::topo::{Brep,Coedge,EdgeCurve,Pcurve,Vertex};
 use super::tolerant::{on_stretch,same_edge,Pool,ON_CURVE};
 use super::{KernelError,Kind};
 use crate::util::bvh::{Bounds,Bvh};
@@ -54,7 +54,7 @@ pub fn sewn(pieces: &[Brep],tol: f64) -> Result<Brep,KernelError> {
     if b.faces.is_empty() { return Err(KernelError::new(Kind::Open,"no faces to sew")) }
     poles(&mut b,tol);
     merge_vertices(&mut b,tol);
-    split_at_vertices(&mut b,tol,None);
+    split_at_vertices(&mut b,tol,None,None);
     pair_edges(&mut b,tol,false,None)?;
     let mut b = b.compacted();
     b.measure_tolerances();
@@ -76,9 +76,13 @@ pub fn sewn(pieces: &[Brep],tol: f64) -> Result<Brep,KernelError> {
 /// tube's rows at the cuts, not its double curve's chords, two leaves' edges one curve in space.
 pub fn sewn_open(pieces: &[Brep],tol: f64,across: &dyn Fn(Uv) -> bool) -> Result<Brep,KernelError> {
     let mut b = Brep::default();
-    for p in pieces { b.join(p); }
-    merge_vertices(&mut b,tol);
-    split_at_vertices(&mut b,tol,Some(across));
+    let mut piece_of: Vec<usize> = Vec::new();
+    for (k,p) in pieces.iter().enumerate() {
+        b.join(p);
+        piece_of.resize(b.vertices.len(),k);
+    }
+    let rows = merge_vertices_on_rows(&mut b,tol,across,&piece_of);
+    split_at_vertices(&mut b,tol,Some(across),Some(&rows));
     pair_edges(&mut b,tol,true,Some(across))?;
     // (each edge's gap measured, as `sewn` measures it: one fitted on a stretch's net, used by the
     // next stretch's face, stands off that face by what the two fits part by)
@@ -123,6 +127,44 @@ fn poles(b: &mut Brep,tol: f64) {
 /// The point halfway along edge `e`'s stretch: where an error says it is.
 fn middle(b: &Brep,e: usize) -> V { let e = &b.edges[e]; e.point(0.5*(e.t[0]+e.t[1]),&b.vertices) }
 
+/// **`merge_vertices` row by row** (`sewn_open`): a vertex where `across` holds of its parameters
+/// on a face — on a row a sheet is sewn along — merged only with vertices on the same row, and one
+/// on none only with others on none: beside a swallowtail's point, where a stretch of the roll a
+/// two-hundredth of a radian wide is cut, the sheet's two rows stand within `tol` of one another
+/// and a corner of one was merged with a vertex of the other (#880 T1d, the tumbling torus turned
+/// whole). Nor is a vertex merged with another of its own piece (`piece_of`, each vertex's): a
+/// piece's vertices are its own already, and two a hair apart there are two.
+fn merge_vertices_on_rows(b: &mut Brep,tol: f64,across: &dyn Fn(Uv) -> bool,piece_of: &[usize]) -> Vec<Option<f64>> {
+    let mut row: Vec<Option<f64>> = vec![None;b.vertices.len()];
+    for f in &b.faces {
+        for c in f.loops.iter().flatten() {
+            for (v,uv) in b.ends(c).into_iter().zip(b.uv_ends(f,c)) {
+                if row[v as usize].is_none() && across(uv) { row[v as usize] = Some(uv[1]) }
+            }
+        }
+    }
+    let mut merged: Vec<(Vertex,Option<f64>,Vec<usize>)> = Vec::new();
+    let mut at: Vec<u32> = Vec::with_capacity(b.vertices.len());
+    for (i,(v,&r)) in b.vertices.iter().zip(&row).enumerate() {
+        let k = piece_of[i];
+        let near = merged.iter().enumerate().filter(|(_,(m,mr,ks))| same_row(*mr,r) && !ks.contains(&k) && distance(m.p,v.p) <= tol)
+            .min_by(|x,y| distance(x.1.0.p,v.p).total_cmp(&distance(y.1.0.p,v.p))).map(|(i,_)| i);
+        match near {
+            Some(j) => { merged[j].0.tol = merged[j].0.tol.max(v.tol); merged[j].2.push(k); at.push(j as u32) }
+            None => { merged.push((v.clone(),r,vec![k])); at.push(merged.len() as u32-1) }
+        }
+    }
+    for e in &mut b.edges { e.v = e.v.map(|v| at[v as usize]); }
+    let rows = merged.iter().map(|m| m.1).collect();
+    b.vertices = merged.into_iter().map(|(v,..)| v).collect();
+    rows
+}
+
+/// Whether two rows (`merge_vertices_on_rows`) are one.
+fn same_row(x: Option<f64>,y: Option<f64>) -> bool {
+    match (x,y) { (None,None) => true,(Some(x),Some(y)) => (x-y).abs() <= 1e-9*(1.+x.abs()),_ => false }
+}
+
 /// The pieces' vertices merged where they come within `tol` (`Pool`), each keeping its tolerance.
 fn merge_vertices(b: &mut Brep,tol: f64) {
     let mut pool = Pool::new(tol);
@@ -145,9 +187,19 @@ fn free(b: &Brep,uses: &[Vec<At>],across: Option<&dyn Fn(Uv) -> bool>) -> Vec<bo
 
 /// Each boundary edge cut at every boundary vertex standing on it (`on_stretch`), the edges near a
 /// vertex found by their boxes.
-fn split_at_vertices(b: &mut Brep,tol: f64,across: Option<&dyn Fn(Uv) -> bool>) {
+/// Where `rows` is given (each vertex's, `merge_vertices_on_rows`), an edge on a row is cut only
+/// at that row's vertices: beside a swallowtail's point a row's rim runs within `tol` of the next.
+fn split_at_vertices(b: &mut Brep,tol: f64,across: Option<&dyn Fn(Uv) -> bool>,rows: Option<&[Option<f64>]>) {
     let reach = ON_CURVE*tol;
-    let free = free(b,&b.uses(),across);
+    let uses = b.uses();
+    let free = free(b,&uses,across);
+    // each free edge's row: its middle's, where `across` holds there
+    let edge_row = |i: usize| -> Option<f64> {
+        let (fi,li,ci) = uses[i][0];
+        let (face,e) = (&b.faces[fi],&b.edges[i]);
+        let uv = face.loops[li][ci].pcurve.at(0.5*(e.t[0]+e.t[1]),e,&face.surface,&b.vertices);
+        across.is_some_and(|f| f(uv)).then_some(uv[1])
+    };
     let edges: Vec<usize> = (0..b.edges.len()).filter(|&i| free[i]).collect();
     let mut ends: Vec<u32> = edges.iter().flat_map(|&i| b.edges[i].v).collect();
     ends.sort();
@@ -165,6 +217,7 @@ fn split_at_vertices(b: &mut Brep,tol: f64,across: Option<&dyn Fn(Uv) -> bool>) 
             let e = &b.edges[edges[k]];
             let EdgeCurve::Curve(c) = &e.curve else { return };
             if e.v.contains(&v) { return }
+            if rows.is_some_and(|r| !same_row(r[v as usize],edge_row(edges[k]))) { return }
             if let Some(t) = on_stretch(c,e.t,p,tol) { cuts.entry(edges[k] as u32).or_default().push((t,v)); }
         });
     }
