@@ -42,8 +42,13 @@
 //!   reach the edge — leave it tangent to one another, within the kernel's tolerance (2e-9) for
 //!   1.4e-4, and the Boolean merges points of the two;
 //! - **two bearers on one surface** (`square-thread-at-a-growing-lead`): a bar's vertical edges at one
-//!   radius, turned about `z` and risen along it, each sweep the one cylinder, and a search for where
-//!   one's rail meets the other's face reads more boxes than any may.
+//!   radius, turned about `z` and risen along it, each sweep the one cylinder. A bearer whose every
+//!   line stands on one cylinder is now that cylinder (`on_a_cylinder`, its faces' parameters its
+//!   edges inverted onto it), so two of them are one surface the trim knows as one — where before a
+//!   search for where one's rail met the other's face read more boxes than any may. The trim then
+//!   leaves the cylinder's rail along the bottom vertex's path bounding one face: the strip the
+//!   bottom edge sweeps beside it is proved inside the sweep where it is read, and no meeting cuts
+//!   off the piece of it beside the vertex that bounds it.
 //!
 //! And a face that is no plane (its contact a curve that moves over it and changes as it goes), an
 //! edge that is no line, and a contact running along an edge (a face's `n · v` nought along one of
@@ -413,7 +418,7 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
     }
     // the candidates: each bearer holding strips, its strips its faces
     let held: Vec<usize> = (0..bearers.len()).filter(|&bi| !strips[bi].is_empty()).collect();
-    let breps: Vec<Brep> = held.iter().map(|&bi| faces_of(&bearers[bi],&strips[bi])).collect::<Result<_,_>>()?;
+    let breps: Vec<Brep> = held.iter().map(|&bi| faces_of(&bearers[bi],&strips[bi],exact)).collect::<Result<_,_>>()?;
     let surfaces: Vec<Surface> = held.iter().map(|&bi| breps[held.iter().position(|&x| x == bi).unwrap()].faces[0].surface.clone()).collect();
     let mut given: Vec<Given> = Vec::new();
     for x in 0..held.len() { for y in x+1..held.len() {
@@ -484,17 +489,54 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
     Ok((out,given))
 }
 
+/// How many stations a bearer is read at for whether its lines stand on one cylinder.
+const CYLINDER_LOOKS: usize = 64;
+
+/// **The cylinder a bearer's every line stands on**, if one does (#880 T1d): its lines all parallel
+/// and their feet in the plane square to them on one circle, each within `slack` (a few times what
+/// the sheet is fitted to: it stands so near the cylinder that the kernel's tolerance holds both) — a
+/// bar's edge parallel to the axis of a screw whose lead grows, carried round at one radius, as its
+/// opposite edge is. `None` where the lines stand still or sweep a plane.
+fn on_a_cylinder(sheet: &Sheet,slack: f64) -> Option<Surface> {
+    let [a,b] = sheet.span();
+    let lines: Vec<(V,V)> = (0..=CYLINDER_LOOKS).map(|k| {
+        let s = a+(b-a)*k as f64/CYLINDER_LOOKS as f64;
+        (sheet.rim(0.,s).0,sheet.rim(1.,s).0)
+    }).collect();
+    let d = crate::util::space::normalised(sub(lines[0].1,lines[0].0))?;
+    if lines.iter().any(|(p,q)| crate::util::space::norm(cross(sub(*q,*p),d)) > 2.*slack) { return None }
+    // each line's foot in the plane through the origin square to `d`
+    let feet: Vec<V> = lines.iter().map(|(p,_)| sub(*p,scale(d,dot(*p,d)))).collect();
+    let (p0,p1,p2) = (feet[0],feet[CYLINDER_LOOKS/2],feet[CYLINDER_LOOKS]);
+    let (e1,e2) = (sub(p1,p0),sub(p2,p0));
+    let n = cross(e1,e2);
+    let nn = dot(n,n);
+    let reach = feet.iter().map(|&f| distance(f,p0)).fold(0.,f64::max);
+    if !(nn.sqrt() > 1e-6*reach*reach) { return None }
+    // the circle through three feet: its centre
+    let c = add(p0,scale(add(scale(cross(n,e1),dot(e2,e2)),scale(cross(e2,n),dot(e1,e1))),0.5/nn));
+    let r = distance(p0,c);
+    if feet.iter().any(|&f| (distance(f,c)-r).abs() > slack) { return None }
+    Some(Surface::Cylinder(Frame::new(c,d,sub(p0,c)),r))
+}
+
 /// **A bearer's strips as the faces of one candidate**: each strip a face on the bearer, bounded by
 /// its two sides and its rims at either end of its stretch; two strips meeting at an instant share
 /// the rim edges between them, cut at every strip's corner there, and a strip born or vanishing at
 /// an instant (its rim one point) has none there.
-fn faces_of(bearer: &Bearer,strips: &[Strip]) -> Result<Brep,Unbuilt> {
+fn faces_of(bearer: &Bearer,strips: &[Strip],exact: f64) -> Result<Brep,Unbuilt> {
     let sheet = &bearer.sheet;
-    let surface = {
-        let [a,b] = sheet.span();
-        let (p,du,ds) = sheet.d1([0.5,0.5*(a+b)]);
-        let normal = crate::util::space::normalised(cross(du,ds)).unwrap_or([0.,0.,1.]);
-        Surface::Family(Frame::about(p,normal),sheet.clone())
+    // (a bearer whose every line stands on one cylinder is that cylinder: two of them alike are one
+    // surface the Boolean knows as one, each face's parameters its edges inverted onto it)
+    let cylinder = on_a_cylinder(sheet,4.*exact);
+    let surface = match &cylinder {
+        Some(c) => c.clone(),
+        None => {
+            let [a,b] = sheet.span();
+            let (p,du,ds) = sheet.d1([0.5,0.5*(a+b)]);
+            let normal = crate::util::space::normalised(cross(du,ds)).unwrap_or([0.,0.,1.]);
+            Surface::Family(Frame::about(p,normal),sheet.clone())
+        }
     };
     let mut out = Brep::default();
     let same = 1e-9;
@@ -543,7 +585,44 @@ fn faces_of(bearer: &Bearer,strips: &[Strip]) -> Result<Brep,Unbuilt> {
         faces.push(Face {surface:surface.clone(),reversed:false,loops:vec![l],name});
     }
     out.faces = faces;
+    if let Some(Surface::Cylinder(frame,_)) = &cylinder { on_cylinder(&mut out,sheet,frame) }
     Ok(out)
+}
+
+/// **A bearer's faces put on the cylinder its lines stand on** (`on_a_cylinder`): each coedge's
+/// parameters its edge inverted onto the cylinder, its angle unwrapped round the loop — at the
+/// coedge's start beside the last one's end, its middle beside its start, its end beside its middle
+/// (no strip turns half a turn: a stretch is at most a quarter) — and each face turned over where the
+/// bearer's own normal there, `Σ_u × Σ_s`, stands against the cylinder's outward one.
+fn on_cylinder(b: &mut Brep,sheet: &Sheet,frame: &Frame) {
+    let angle = |p: V| { let q = sub(p,frame.o); dot(q,frame.y).atan2(dot(q,frame.x)) };
+    let height = |p: V| dot(sub(p,frame.o),frame.z);
+    let near = |x: f64,to: f64| to+(x-to+std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)-std::f64::consts::PI;
+    let [lo,hi] = sheet.span();
+    for f in 0..b.faces.len() {
+        let mut last: Option<f64> = None;
+        let mut loops = b.faces[f].loops.clone();
+        for l in &mut loops {
+            for c in l.iter_mut() {
+                let e = &b.edges[c.edge as usize];
+                let [p0,p1] = e.v.map(|v| b.vertices[v as usize].p);
+                let pm = e.point(0.5*(e.t[0]+e.t[1]),&b.vertices);
+                let (first,second) = if c.reversed { (p1,p0) } else { (p0,p1) };
+                let t0 = { let t = angle(first); last.map_or(t,|w| near(t,w)) };
+                let tm = near(angle(pm),t0);
+                let t1 = near(angle(second),tm);
+                last = Some(t1);
+                let (ua,ub) = ([t0,height(first)],[t1,height(second)]);
+                c.pcurve = if c.reversed { Pcurve::Inverse {a:ub,b:ua} } else { Pcurve::Inverse {a:ua,b:ub} };
+            }
+        }
+        // (the face's middle: its first corner, read where the bearer is)
+        let (s,u) = (0.5*(lo+hi),0.5);
+        let (p,du,ds) = sheet.d1([u,s]);
+        let out = sub(sub(p,frame.o),scale(frame.z,dot(sub(p,frame.o),frame.z)));
+        b.faces[f].loops = loops;
+        b.faces[f].reversed = dot(cross(du,ds),out) < 0.;
+    }
 }
 
 /// **`count` walls, each a line whose ends at `s` are `numbers(s)[k]`, over `[a, b]`**

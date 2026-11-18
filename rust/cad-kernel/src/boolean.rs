@@ -895,10 +895,16 @@ pub fn trimmed(operands: &[&Brep],given: &[Given],meet: Meet<'_>,side: &(dyn Fn(
     let read = crate::util::par::map(&pieces,|&(s,fi,ref piece)| -> Result<Option<bool>,String> {
         let f = &solids[s].faces[fi];
         let mut inner = reading::inside(piece,f,&out,&pool).map(|q| q.point()).peekable();
-        let Some(&p) = inner.peek() else { return Ok(None) };
+        let Some(&p) = inner.peek() else {
+            if crate::debug() { eprintln!("trimmed: a piece of operand {} face {fi} ({}) has no point inside: dropped",s.0,f.surface.kind()) }
+            return Ok(None)
+        };
         let stood_for = solids.all().filter(|&o| o < s).any(|o| solids[o].faces.iter().enumerate().any(|(g,h)|
             super::ssi::same(&f.surface,&h.surface,tol) && located[o].face_holds(g,p)));
-        if stood_for { return Ok(None) }
+        if stood_for {
+            if crate::debug() { eprintln!("trimmed: a piece of operand {} face {fi} ({}) at {p:?} stood for by a lower operand's",s.0,f.surface.kind()) }
+            return Ok(None)
+        }
         side(f,&mut inner)
     });
     let mut kept: Vec<Face> = Vec::new();

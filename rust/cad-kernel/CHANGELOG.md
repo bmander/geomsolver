@@ -18,6 +18,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   `s''` sought along the band on the curve's own branch, where samples alone read the whole curve as
   touching (the tumbling torus turned whole, and thin). A sheet is refused as folding where it turns
   over, not where it is merely thin.
+- **A bearer of the general road standing on one cylinder is that cylinder** (`swept::general`,
+  #880 T1d): its lines all parallel and their feet on one circle, within a few times what the sheet is
+  fitted to, its faces put on `Surface::Cylinder` with their edges inverted onto it. A bar's two
+  edges at one radius under a screw whose lead grows are one surface to the trim. The thread is
+  still refused, now where a bottom edge's strip is not cut beside its vertex.
 - **A box along a spline frame is swept closed** (`swept::region`, #880 T1d): a side's contact a
   hair from its end is its corner's; a corner moving along one of its sides reads that side by its
   rate along it, its normals the sides' own; and every edge is held where the turn changes sense
