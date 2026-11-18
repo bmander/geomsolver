@@ -1884,7 +1884,7 @@ tool; the roots meet on the locus; and a ball's contacts under a tumble (a turn 
 across it) bound what it sweeps, a hair inside a member and a hair outside not, by the kernel's
 membership (`a_balls_contacts_bound_what_it_sweeps`).  Sampled where it samples.
 
-**The contact's road under any motion, begun (#880 T1d, `brep::swept::general`):** the candidates
+**The contact's road under any motion (#880 T1d, `brep::swept::general`):** the candidates
 of a polyhedral tool under a motion no constant twist takes, read per tool at each instant against
 its twist read on the tool (`Twist::body`). Each face's `n · v` is affine over its plane, so its
 contact is a chord of its characteristic line from edge to edge; each sharp edge's contact is where
@@ -1901,11 +1901,16 @@ bearers with a vertex in common its path; an edge's and a face's of it the path 
 chord reaches the edge, over each stretch holding that end, where the two touch; each bearer's whole
 meeting with the tool at either end (`contacts::pose_meeting`, read on any `Rolled` sheet, its
 branches ending on the strips' corners there). Held: every given rail lies on both its surfaces
-(`swept_general`). **Not yet a road a build takes**: a fan's stretch born at a point of its edge,
-where the edge's velocity runs along it and its carried line has a pinch point, its strip's two sides
-leaving it tangent and the Boolean merging them (the tumbling cube); two bearers on one surface (a
-bar's vertical edges at one radius under a turn and a rise, one cylinder); and a bearer's meeting
-with the tool at an end near a corner, not settled on the bearer. **A ring's fold pair born partway**
+(`swept_general`). A bearer whose every line stands on one cylinder is that cylinder
+(`on_a_cylinder`, within a few times its sheet's fit; its faces' parameters its edges inverted onto
+it), so two such are one surface to the trim. **`closed` asks it where K2 cannot read the tool**
+(`closed::general_built`, its candidates trimmed by membership and judged; a tool it cannot read
+either keeps K2's `Curved`; `closed_asks_the_general_road_for_a_tool_no_convex_revolution`). **Not
+yet built**: the tumbling cube — its fan's stretch born at a pinch point of its edge's carried line
+now closes (the Boolean's walk read again without the spur its sides' merge leaves), but its face
+x = 3.6 moves all but in its own plane, its edges' strips and its characteristic line's wall all but
+coplanar, and the trim keeps one short of the rail two share; and the bar under a growing lead,
+its bottom edge's strip proved inside where it is read and cut by nothing beside its vertex. **A ring's fold pair born partway**
 (`brep::swept::rings`): a pair narrower than its band read by its least `s''` along the band, on the
 curve's own branch; the roll cut where the contact changes shape (`rings::changes`), each stretch
 fitted alone, its tubes sewn across the cuts and trimmed; a sheet refused as folding only where it

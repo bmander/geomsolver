@@ -1657,13 +1657,36 @@ const K2_POSES: usize = 128;
 /// classified by membership, as every other build is.
 fn k2(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
     let [a,b] = [roll[0].min(roll[1]),roll[0].max(roll[1])];
-    let revolved = super::patches::Revolved::read(tool)?;
+    // (a tool no convex solid of revolution, every face a plane and every edge a line, is the
+    // general road's (#880 T1d): its contact read face by face and edge by edge at every instant;
+    // a tool it cannot read either keeps K2's refusal)
+    let revolved = match super::patches::Revolved::read(tool) {
+        Ok(r) => r,
+        Err(why @ Unbuilt::Curved {..}) => return match general_built(tool,path,[a,b],bar,tol,blank) {
+            Err(Unbuilt::Curved {..}) => Err(why),
+            built => built,
+        },
+        Err(why) => return Err(why),
+    };
     let fit = super::patches::fitted(&revolved,path,[a,b],K2_FIT*tol)?;
     crate::util::meter::go_on()?;
     let ends = [a,b].map(|t| super::patches::posed(tool,&revolved,path,&fit,t));
     let [start,end] = [ends[0].clone()?,ends[1].clone()?];
     let (sheet,given) = super::patches::entered(&fit,&revolved,[&start,&end])?;
     candidates(tool,path,[a,b],bar,tol,blank,[start,end],vec![sheet],&given)
+}
+
+/// **A polyhedral tool under a motion no constant twist takes, built closed** (`swept::general`,
+/// #880 T1d): its candidates — each piece of the contact's wall over each stretch of the roll, and the
+/// tool at either end — trimmed by membership and judged (`trim::trim`), and cut from `blank` where
+/// there is one.
+fn general_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
+    let (candidates,given) = super::general::candidates(tool,path,roll,tol)?;
+    crate::util::meter::go_on()?;
+    let size = tool.size();
+    let trim = super::trim::Trim {resolution:size/32.,hair:(4.*tol).max(1e-6*size),reach:None};
+    let (swept,_) = super::trim::trim(tool,path,roll,&candidates,&given,bar,tol,trim)?;
+    cut_blank(swept,blank,tol)
 }
 
 /// **A ring under a motion no constant twist takes, built closed** (`swept::rings`, steps 6 and 7

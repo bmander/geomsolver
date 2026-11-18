@@ -18,6 +18,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   `s''` sought along the band on the curve's own branch, where samples alone read the whole curve as
   touching (the tumbling torus turned whole, and thin). A sheet is refused as folding where it turns
   over, not where it is merely thin.
+- **`closed` asks the general road where K2 cannot read the tool** (`swept::closed`,
+  `general_built`, #880 T1d): a polyhedral tool under a motion no constant twist takes and keeping
+  no plane, refused by K2 as `Curved` (no convex solid of revolution), has its candidates made by
+  `swept::general` and trimmed by membership and judged; a tool the general road cannot read either
+  keeps K2's refusal.
 - **A face's spurs that keep its walk from closing bound nothing** (`boolean`'s pieces of a face):
   where the walk into pieces does not close, it is read again with each edge walked both ways
   between the same two nodes, to a node nothing else reaches, dropped (and the edge it hung from

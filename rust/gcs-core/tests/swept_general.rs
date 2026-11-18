@@ -37,6 +37,22 @@ fn a_cube_tumbling_a_little_is_built_by_the_general_road() {
     eprintln!("{} faces, volume {}",swept.faces.len(),gcs_core::brep::props::volume(&swept));
 }
 
+/// **`closed` asks the general road where K2 cannot read the tool** (#880 T1d): a cube tumbling is
+/// no convex solid of revolution, so K2 refused it (`Curved` at its corner) before reading anything;
+/// it now reaches the general road, its candidates made and trimmed, and what comes back is the
+/// trim's (built and judged, or refused saying where — not yet built: the cube's face x = 3.6 moves
+/// all but in its own plane, its edges' strips and its characteristic line's wall all but coplanar,
+/// and the trim keeps one of them short of the rail two share).
+#[test]
+fn closed_asks_the_general_road_for_a_tool_no_convex_revolution() {
+    let cube = cube();
+    let roll = [-2f64.to_radians(),2f64.to_radians()];
+    let tol = gcs_core::brep::geom::tolerance(cube.size());
+    let r = gcs_core::brep::swept::closed::closed(&cube,&tumble(),roll,cube.size(),tol);
+    assert!(!matches!(r,Err(gcs_core::brep::swept::closed::Unbuilt::Curved {..})),"still refused as K2's: {r:?}");
+    if let Ok(b) = &r { b.check(tol).unwrap() }
+}
+
 /// **The paths the general road gives lie on both their walls**: each given rail — a vertex's path
 /// two fans share, the path where a face's chord reaches an edge of it, over each stretch holding
 /// that end — within a millionth of the cube of both surfaces it is given for, read at seventeen

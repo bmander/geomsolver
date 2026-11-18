@@ -33,8 +33,10 @@
 //! its rim there where it touches the face its section lies on: a chord touching its face, a stretch
 //! crossing its two). A vertex enters nothing, and the trim keeps of each wall what bounds the sweep.
 //!
-//! **Not yet a road any build takes** (`closed` does not ask it): the candidates are made and given,
-//! and the trim refuses them on the two cases tried —
+//! **The road `closed` asks where K2 cannot read a tool** (`closed::general_built`): a tool no
+//! convex solid of revolution, every face a plane and every edge a line, under a motion no constant
+//! twist takes and keeping no plane. The candidates are made and given, and the trim still refuses
+//! them on the two cases tried —
 //!
 //! - **a stretch born at a point of its edge** (brep-bench's `tumbling-cube`): there both faces'
 //!   `n · v` vanish, so the edge's velocity runs along the edge, and the edge's carried line has a
