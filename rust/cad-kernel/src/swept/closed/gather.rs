@@ -3,11 +3,13 @@
 //! (`Candidates`), each with the sites it is read at and the touches known by construction between
 //! them — under a slide (`super::slide`), or under a turn or a screw (`super::twist`).
 use crate::geom::{Curve,Surface};
-use crate::query::Located;
+use crate::query::{Located,Place};
 use crate::topo::{Brep,EdgeCurve};
 use crate::trajectory::{Pose,Screw,Trajectory};
-use crate::util::space::{cross,dot,norm,sub};
-use super::{Cutter,Read,Touch,Unbuilt,V,SITES,corners_of,meridian,outward,read,round_points,rulings_span,within};
+use crate::util::space::{add,cross,dot,norm,scale,sub};
+#[allow(unused_imports)]
+use crate::util::fmath::Det;
+use super::{Cutter,Legs,Read,Touch,Unbuilt,V,SITES,corners_of,meridian,outward,read,rulings_span,within};
 
 /// **The candidates gathered**, over every leg: the surfaces the box is split by, the touches known
 /// between them, and what the box must hold.
@@ -29,8 +31,7 @@ pub(super) struct Candidates {
 
 impl Candidates {
     /// Every candidate the legs' tools sweep, each leg read in turn.
-    pub(super) fn gathered(tool: &Brep,legs: &[(Screw,[f64;2],Option<Pose>)],tol: f64,eps: f64,size: f64)
-        -> Result<Candidates,Unbuilt> {
+    pub(super) fn gathered(tool: &Brep,legs: &Legs,tol: f64,eps: f64,size: f64) -> Result<Candidates,Unbuilt> {
         let mut out = Candidates {cutters:Vec::new(),touches:Vec::new(),seams:Vec::new(),held:Vec::new(),eps};
         for &(screw,roll,place) in legs {
             // the tool where the leg takes it up, read under the leg's twist
@@ -96,11 +97,11 @@ fn same(k: &Cutter,c: Cutter,eps: f64) -> bool {
 pub(super) struct Leg<'a> {
     /// The tool, placed where the leg takes it up.
     pub(super) tool: &'a Brep,
+    /// Where a point stands on the tool's faces, at `tol`.
+    pub(super) located: Located<'a>,
     pub(super) screw: Screw,
     /// The leg's stretch of the roll, `[a, b]`.
     pub(super) roll: [f64;2],
-    /// The leg's twist as a path.
-    path: Trajectory,
     pub(super) read: Read,
     /// Each face's corners in walk order, what its own sites are read over.
     pub(super) corners: Vec<Vec<V>>,
@@ -138,11 +139,16 @@ impl<'a> Leg<'a> {
         let [a,b] = roll;
         let (start,end) = (path.pose(a)?,path.pose(b)?);
         let poses = (0..=SITES).map(|k| path.pose(a+(b-a)*within(k))).collect::<Result<_,_>>()?;
-        Ok(Leg {tool,screw,roll,path,read,corners,outlines,start,end,poses,tol,eps,size})
+        Ok(Leg {tool,located:Located::new(tool,tol),screw,roll,read,corners,outlines,start,end,poses,tol,eps,size})
     }
 
     /// The pose at `t` of the roll.
-    pub(super) fn pose_at(&self,t: f64) -> Result<Pose,Unbuilt> { Ok(self.path.pose(t)?) }
+    pub(super) fn pose_at(&self,t: f64) -> Result<Pose,Unbuilt> { Ok(Trajectory::Twist(self.screw).pose(t)?) }
+
+    /// The point `x` and the vector `n` carried by each of the leg's poses.
+    pub(super) fn carry(&self,x: V,n: V) -> impl Iterator<Item=(V,V)> + '_ {
+        self.poses.iter().map(move |m| (m.point(x),m.vector(n)))
+    }
 
     /// The points the box must hold for this leg: the tool's box at its end poses and, about a
     /// turn's axis, its reach.
@@ -153,7 +159,7 @@ impl<'a> Leg<'a> {
         if screw.is_turn() {
             let reach = corners.iter().map(|&p| norm(sub(p,screw.origin))).fold(0.,f64::max);
             out.extend([1.,-1.].iter().flat_map(|&s| (0..3).map(move |k| { let mut v = [0.;3]; v[k] = s*reach; v }))
-                .map(|v| crate::util::space::add(screw.origin,v)));
+                .map(|v| add(screw.origin,v)));
         }
         out
     }
@@ -175,6 +181,17 @@ impl<'a> Leg<'a> {
         }
         out
     }
+
+    /// The points of the circle about `centre` of radius `r` in the plane of the unit `u` and `v`
+    /// that are on the tool's face `k`, each with its way out from the centre.
+    pub(super) fn ring(&self,k: usize,centre: V,u: V,v: V,r: f64) -> Vec<(V,V)> {
+        (0..4*SITES).filter_map(|i| {
+            let (sp,cp) = ((i as f64+0.5)*std::f64::consts::TAU/(4*SITES) as f64).dsin_cos();
+            let w = add(scale(u,cp),scale(v,sp));
+            let x = add(centre,scale(w,r));
+            (self.located.face_place(k,x) != Place::Out).then_some((x,w))
+        }).collect()
+    }
 }
 
 /// **A round face of a leg's tool, read**: its index, the span its own points are read over (a
@@ -188,7 +205,7 @@ pub(super) struct Round<'a> {
 }
 
 impl<'a> Round<'a> {
-    pub(super) fn new(leg: &Leg<'a>,located: &Located,k: usize) -> Round<'a> {
+    pub(super) fn new(leg: &Leg<'a>,k: usize) -> Round<'a> {
         let tool: &'a Brep = leg.tool;
         let face = &tool.faces[k];
         let (lo,hi) = match face.surface {
@@ -196,11 +213,27 @@ impl<'a> Round<'a> {
             Surface::Torus(..) => (0.,std::f64::consts::TAU),
             _ => rulings_span(tool,k),
         };
-        Round {k,face,span:[lo,hi],points:round_points(located,tool,k,[lo,hi])}
+        Round {k,face,span:[lo,hi],points:round_points(&leg.located,tool,k,[lo,hi])}
     }
 
     /// Its own points at the pose `m`, each with its outward normal there.
     pub(super) fn sites_at(&self,m: &Pose) -> Vec<(V,V)> {
         self.points.iter().map(|&x| (m.point(x),m.vector(outward(self.face,x)))).collect()
     }
+
+    /// Its own points at each of `poses` in turn, as `sites_at`.
+    pub(super) fn sites_over(&self,poses: &[Pose]) -> Vec<(V,V)> { poses.iter().flat_map(|m| self.sites_at(m)).collect() }
+}
+
+/// A round face's own points: its surface over a grid of its parameters round the axis and along
+/// its rulings over `span`, those in the face.
+fn round_points(located: &Located,tool: &Brep,k: usize,[lo,hi]: [f64;2]) -> Vec<V> {
+    let surface = &tool.faces[k].surface;
+    let mut out = Vec::new();
+    for i in 0..2*SITES { for j in 0..SITES {
+        let (u,v) = ((i as f64+0.5)*std::f64::consts::TAU/(2*SITES) as f64,lo+(hi-lo)*(j as f64+0.5)/SITES as f64);
+        let p = surface.point([u,v]);
+        if located.face_place(k,p) == Place::In { out.push(p) }
+    } }
+    out
 }

@@ -4,8 +4,9 @@
 //! and each edge turned or screwed.
 use std::collections::BTreeMap;
 use crate::geom::{Curve,Frame,Surface};
-use crate::query::{Located,Place};
+use crate::query::Place;
 use crate::trajectory::{Pose,Screw};
+use crate::turned::Turned;
 use crate::util::space::{add,cross,dot,norm,scale,sub,unit};
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
@@ -26,15 +27,14 @@ pub(super) fn gather(leg: &Leg,cand: &mut Candidates) -> Result<(),Unbuilt> {
     // where it lies in the plane through the axis and the face's own axis, or its centre: a
     // cylinder's or a cone's two generators there, each turned (a cylinder or a cone about the axis,
     // `turned`), or a ball's great circle there, turned into a torus
-    let located = Located::new(leg.tool,leg.tol);
     for &k in &leg.read.round {
-        let round = Round::new(leg,&located,k);
+        let round = Round::new(leg,k);
         match round.face.surface {
-            Surface::Cylinder(f,r) => cylinder(&tw,cand,&located,&round,&mut at_ends,(f,r.abs()))?,
-            Surface::Cone(f,r,half) => cone(&tw,cand,&located,&round,&mut at_ends,(f,r,half))?,
-            Surface::Sphere(f,r) if !tw.screw.is_turn() => ball_screwed(&tw,cand,&located,&round,(f,r.abs()))?,
-            Surface::Sphere(f,r) => ball_turned(&tw,cand,&located,&round,(f,r.abs()))?,
-            Surface::Torus(f,big,small) => torus(&tw,cand,&located,&round,(f,big.abs(),small.abs()))?,
+            Surface::Cylinder(f,r) => cylinder(&tw,cand,&round,&mut at_ends,(f,r.abs()))?,
+            Surface::Cone(f,r,half) => cone(&tw,cand,&round,&mut at_ends,(f,r,half))?,
+            Surface::Sphere(f,r) if !tw.screw.is_turn() => ball_screwed(&tw,cand,&round,(f,r.abs()))?,
+            Surface::Sphere(f,r) => ball_turned(&tw,cand,&round,(f,r.abs()))?,
+            Surface::Torus(f,big,small) => torus(&tw,cand,&round,(f,big.abs(),small.abs()))?,
             _ => unreachable!("`read` takes only cylinders, cones, balls and tori round"),
         }
     }
@@ -89,10 +89,10 @@ impl<'a> Twist<'a> {
     fn turned(&self,p: V,e: V,q: V) -> Option<Cutter> {
         let (c,axis) = (self.c,self.axis);
         let e = unit(e);
-        let (h0,h1) = (dot(sub(p,c),axis),dot(sub(q,c),axis));
+        let (h0,h1) = (self.screw.height(p),self.screw.height(q));
         let span = [h0.min(h1)+self.lift[0],h0.max(h1)+self.lift[1]];
         if norm(cross(e,axis)) <= 1e-9 {
-            let r = { let r = sub(p,c); norm(sub(r,scale(axis,dot(r,axis)))) };
+            let r = self.screw.radius(p);
             return (r > self.leg.eps).then_some(Cutter::Cylinder {o:c,axis,r,span})
         }
         if dot(e,axis).abs() <= 1e-9 { return Some(Cutter::Plane((p,axis))) }
@@ -133,18 +133,22 @@ impl<'a> Twist<'a> {
                 Cutter::Oblique {..} | Cutter::Ball {..} | Cutter::Torus {..} | Cutter::ScrewedDisc {..} | Cutter::Pipe {..}
                     | Cutter::Turned(_) | Cutter::Contour {..} | Cutter::Sheet {..} => unreachable!("a line turns into none of these"),
             };
-            self.leg.poses.iter().map(move |m| (m.point(x),m.vector(normal)))
+            self.leg.carry(x,normal)
         }).collect()
     }
 
-    /// A round face's ruling at `u` round its axis, where it is on the face, under the twist: its
-    /// candidate and sites.
-    fn ruling(&self,located: &Located,round: &Round,u: f64) -> Option<(Cutter,Vec<(V,V)>)> {
+    /// A round face's ruling at `u` round its axis under the twist, entered where it is on the face.
+    fn ruling(&self,cand: &mut Candidates,round: &Round,u: f64) {
         let ([lo,hi],surface) = (round.span,&round.face.surface);
         let (p,q) = (surface.point([u,lo]),surface.point([u,hi]));
-        if located.face_place(round.k,surface.point([u,0.5*(lo+hi)])) == Place::Out { return None }
-        let cutter = self.line_cutter(p,q)?;
-        Some((cutter,self.line_sites(p,q,cutter)))
+        if self.leg.located.face_place(round.k,surface.point([u,0.5*(lo+hi)])) == Place::Out { return }
+        if let Some(cutter) = self.line_cutter(p,q) { cand.add(cutter,self.line_sites(p,q,cutter)); }
+    }
+
+    /// The round face's rulings facing `w` and away from it round its axis (the frame `f`'s), each
+    /// entered as `ruling`.
+    fn rulings_toward(&self,cand: &mut Candidates,round: &Round,f: &Frame,w: V) {
+        for w in [w,scale(w,-1.)] { self.ruling(cand,round,dot(w,f.y).datan2(dot(w,f.x))) }
     }
 
     /// The way from the axis to `o` (a round face's own axis or centre), square to the axis.
@@ -231,8 +235,7 @@ fn contact_stretch(leg: &Leg,k: usize,n: V,x0: V,e: V) -> Option<(f64,f64)> {
 /// A cylinder's face of radius `r`: its own surface at the end poses, and its contact — about an
 /// axis leaning to the turn's turned (`turned_contacts`), coaxial the face itself, else its two
 /// generators in the plane through both axes turned.
-fn cylinder(tw: &Twist,cand: &mut Candidates,located: &Located,round: &Round,at_ends: &mut Ends,(f,r): (Frame,f64))
-    -> Result<(),Unbuilt> {
+fn cylinder(tw: &Twist,cand: &mut Candidates,round: &Round,at_ends: &mut Ends,(f,r): (Frame,f64)) -> Result<(),Unbuilt> {
     let (leg,k,[lo,hi]) = (tw.leg,round.k,round.span);
     // past each sharp circle it holds that turns into a ring (#780 L2), beyond the loop along which
     // its surface at an end pose crosses that ring (`turned::Crossing`, its heights from the circle
@@ -251,17 +254,13 @@ fn cylinder(tw: &Twist,cand: &mut Candidates,located: &Located,round: &Round,at_
     for (j,pose) in tw.ends.iter().enumerate() {
         at_ends.insert((k,j),cand.add(Cutter::Cylinder {o:pose.point(f.o),axis:pose.vector(unit(f.z)),r,span},round.sites_at(pose)));
     }
-    if tw.leaning(&f) {
-        let turned = turned_contacts(tw,cand,located,round,(f,r,0.,1.))?;
-        cand.touches.extend(own_contacts(&round.face.surface,k,&turned,&tw.ends,at_ends,leg.tol));
+    if tw.leaning(&f) { return turned_contacts(tw,cand,round,at_ends,(f,r,0.,1.)) }
+    let Some(w) = tw.away(f.o) else {
+        // coaxial, the face turns into itself
+        cand.add(Cutter::Cylinder {o:f.o,axis:unit(f.z),r,span:[lo,hi]},round.sites_over(&leg.poses));
         return Ok(())
-    }
-    let ways = match tw.away(f.o) { Some(w) => vec![w,scale(w,-1.)],None => vec![] };
-    // coaxial, the face turns into itself
-    if ways.is_empty() { cand.add(Cutter::Cylinder {o:f.o,axis:unit(f.z),r,span:[lo,hi]},leg.poses.iter().flat_map(|m| round.sites_at(m)).collect()); }
-    for w in ways {
-        if let Some((cutter,sites)) = tw.ruling(located,round,dot(w,f.y).datan2(dot(w,f.x))) { cand.add(cutter,sites); }
-    }
+    };
+    tw.rulings_toward(cand,round,&f,w);
     Ok(())
 }
 
@@ -269,8 +268,7 @@ fn cylinder(tw: &Twist,cand: &mut Candidates,located: &Located,round: &Round,at_
 /// axis leaning to the turn's turned (`turned_contacts`), under a screw its two rulings square to
 /// the velocity screwed, coaxial the face itself, else its two generators in the plane through both
 /// axes turned.
-fn cone(tw: &Twist,cand: &mut Candidates,located: &Located,round: &Round,at_ends: &mut Ends,(f,r,half): (Frame,f64,f64))
-    -> Result<(),Unbuilt> {
+fn cone(tw: &Twist,cand: &mut Candidates,round: &Round,at_ends: &mut Ends,(f,r,half): (Frame,f64,f64)) -> Result<(),Unbuilt> {
     let (leg,k,[lo,hi],screw) = (tw.leg,round.k,round.span,&tw.screw);
     let (sa,ca) = half.dsin_cos();
     let p0 = round.face.surface.point([0.,0.]);
@@ -280,11 +278,7 @@ fn cone(tw: &Twist,cand: &mut Candidates,located: &Located,round: &Round,at_ends
         at_ends.insert((k,j),cand.add(Cutter::Revolved {o:pose.point(f.o),axis:pose.vector(f.z),p:pose.point(p0),
             e:pose.vector(e),span:[l0*ca,h0*ca]},round.sites_at(pose)));
     }
-    if tw.leaning(&f) {
-        let turned = turned_contacts(tw,cand,located,round,(f,r,sa,ca))?;
-        cand.touches.extend(own_contacts(&round.face.surface,k,&turned,&tw.ends,at_ends,leg.tol));
-        return Ok(())
-    }
+    if tw.leaning(&f) { return turned_contacts(tw,cand,round,at_ends,(f,r,sa,ca)) }
     if !screw.is_turn() {
         // under a screw its normal `cos α ρ̂(u) − sin α z` is square to the velocity
         // `ω axis × (x − c) + κ axis` where `A cos u + B sin u = C`, whatever the height along the
@@ -299,38 +293,30 @@ fn cone(tw: &Twist,cand: &mut Candidates,located: &Located,round: &Round,at_ends
         let rr = aa.dhypot(bb);
         if !(rr > 1e-12*(screw.ratio.abs()*leg.size+kappa.abs())) || cc.abs() >= rr { return Ok(()) }
         let (phi,delta) = (bb.datan2(aa),(cc/rr).clamp(-1.,1.).dacos());
-        for u in [phi+delta,phi-delta] {
-            if let Some((cutter,sites)) = tw.ruling(located,round,u) { cand.add(cutter,sites); }
-        }
+        for u in [phi+delta,phi-delta] { tw.ruling(cand,round,u) }
         return Ok(())
     }
-    let ways = match tw.away(f.o) { Some(w) => vec![w,scale(w,-1.)],None => vec![] };
-    if ways.is_empty() {
-        cand.add(Cutter::Revolved {o:f.o,axis:f.z,p:p0,e,span:[lo*ca,hi*ca]},leg.poses.iter().flat_map(|m| round.sites_at(m)).collect());
-    }
-    for w in ways {
-        if let Some((cutter,sites)) = tw.ruling(located,round,dot(w,f.y).datan2(dot(w,f.x))) { cand.add(cutter,sites); }
-    }
+    let Some(w) = tw.away(f.o) else {
+        // coaxial, the face turns into itself
+        cand.add(Cutter::Revolved {o:f.o,axis:f.z,p:p0,e,span:[lo*ca,hi*ca]},round.sites_over(&leg.poses));
+        return Ok(())
+    };
+    tw.rulings_toward(cand,round,&f,w);
     Ok(())
 }
 
 /// A ball's face of radius `r` under a screw: its ball at the end poses, and its great circle square
 /// to its centre's velocity, screwed: the pipe — entered in stretches of the roll each meeting itself
 /// nowhere where it comes back onto itself (#780 L1, X5).
-fn ball_screwed(tw: &Twist,cand: &mut Candidates,located: &Located,round: &Round,(f,r): (Frame,f64)) -> Result<(),Unbuilt> {
-    let (leg,k) = (tw.leg,round.k);
+fn ball_screwed(tw: &Twist,cand: &mut Candidates,round: &Round,(f,r): (Frame,f64)) -> Result<(),Unbuilt> {
+    let leg = tw.leg;
     for pose in &tw.ends {
         cand.add(Cutter::Ball {c:pose.point(f.o),axis:pose.vector(f.z),r},round.sites_at(pose));
     }
     let n = unit(tw.screw.velocity(f.o));
     let g = Frame::about(f.o,n);
     // the circle's points on the face and their normals, carried over each stretch's own roll
-    let ring: Vec<(V,V)> = (0..4*SITES).filter_map(|i| {
-        let (sp,cp) = ((i as f64+0.5)*std::f64::consts::TAU/(4*SITES) as f64).dsin_cos();
-        let w = add(scale(g.x,cp),scale(g.y,sp));
-        let x = add(f.o,scale(w,r));
-        (located.face_place(k,x) != Place::Out).then_some((x,w))
-    }).collect();
+    let ring = leg.ring(round.k,f.o,g.x,g.y,r);
     for span in pipe_stretches(&tw.screw,f.o,n,r,leg.roll,leg.eps)? {
         let poses: Vec<Pose> = (0..=SITES).map(|i| leg.pose_at(span[0]+(span[1]-span[0])*within(i))).collect::<Result<_,_>>()?;
         let sites = ring.iter().flat_map(|&(x,w)| poses.iter().map(move |m| (m.point(x),m.vector(w)))).collect();
@@ -341,28 +327,21 @@ fn ball_screwed(tw: &Twist,cand: &mut Candidates,located: &Located,round: &Round
 
 /// A ball's face of radius `r` under a turn: its ball at the end poses, and its great circle in the
 /// plane through the axis turned into a torus (a ball about a point of the axis turns into itself).
-fn ball_turned(tw: &Twist,cand: &mut Candidates,located: &Located,round: &Round,(f,r): (Frame,f64)) -> Result<(),Unbuilt> {
-    let (leg,k,c,axis) = (tw.leg,round.k,tw.c,tw.axis);
+fn ball_turned(tw: &Twist,cand: &mut Candidates,round: &Round,(f,r): (Frame,f64)) -> Result<(),Unbuilt> {
+    let (leg,c,axis) = (tw.leg,tw.c,tw.axis);
     for pose in &tw.ends {
         cand.add(Cutter::Ball {c:pose.point(f.o),axis:pose.vector(f.z),r},round.sites_at(pose));
     }
-    let height = dot(sub(f.o,c),axis);
     let Some(w) = tw.away(f.o) else {
         // a ball about a point of the axis turns into itself
-        cand.add(Cutter::Ball {c:f.o,axis:f.z,r},leg.poses.iter().flat_map(|m| round.sites_at(m)).collect());
+        cand.add(Cutter::Ball {c:f.o,axis:f.z,r},round.sites_over(&leg.poses));
         return Ok(())
     };
-    let major = norm(sub(sub(f.o,c),scale(axis,height)));
+    let major = tw.screw.radius(f.o);
     // a ball reaching across the axis turns into no ring torus: not held yet
     if !(major > r+leg.eps) { return Err(Unbuilt::Curved {at:f.o}) }
-    let sites: Vec<(V,V)> = (0..4*SITES).flat_map(|i| {
-        let (sp,cp) = ((i as f64+0.5)*std::f64::consts::TAU/(4*SITES) as f64).dsin_cos();
-        let n = add(scale(w,cp),scale(axis,sp));
-        let x = add(f.o,scale(n,r));
-        let on = located.face_place(k,x) != Place::Out;
-        leg.poses.iter().filter(move |_| on).map(move |m| (m.point(x),m.vector(n)))
-    }).collect();
-    cand.add(Cutter::Torus {c:add(c,scale(axis,height)),axis,major,minor:r},sites);
+    let sites: Vec<(V,V)> = leg.ring(round.k,f.o,w,axis,r).into_iter().flat_map(|(x,n)| leg.carry(x,n)).collect();
+    cand.add(Cutter::Torus {c:add(c,scale(axis,tw.screw.height(f.o))),axis,major,minor:r},sites);
     Ok(())
 }
 
@@ -370,7 +349,7 @@ fn ball_turned(tw: &Twist,cand: &mut Candidates,located: &Located,round: &Round,
 /// the end poses, its top and bottom rings each in its own plane, and its meridians in the plane
 /// through both axes each turned into a torus about the axis (a torus about the axis turns into
 /// itself).
-fn torus(tw: &Twist,cand: &mut Candidates,located: &Located,round: &Round,(f,big,r): (Frame,f64,f64)) -> Result<(),Unbuilt> {
+fn torus(tw: &Twist,cand: &mut Candidates,round: &Round,(f,big,r): (Frame,f64,f64)) -> Result<(),Unbuilt> {
     let (leg,k,c,axis) = (tw.leg,round.k,tw.c,tw.axis);
     let z = unit(f.z);
     for pose in &tw.ends {
@@ -379,32 +358,29 @@ fn torus(tw: &Twist,cand: &mut Candidates,located: &Located,round: &Round,(f,big
     // the face's points of a circle on the torus about `o` in the plane of `p` and `q`, each with
     // its normal, carried over the roll
     let circle_sites = |o: V,p: V,q: V,rad: f64| -> Vec<(V,V)> {
-        (0..4*SITES).flat_map(|i| {
+        (0..4*SITES).filter_map(|i| {
             let (sp,cp) = ((i as f64+0.5)*std::f64::consts::TAU/(4*SITES) as f64).dsin_cos();
             let x = add(o,add(scale(p,rad*cp),scale(q,rad*sp)));
-            let n = outward(round.face,x);
-            let on = located.face_place(k,x) != Place::Out;
-            leg.poses.iter().filter(move |_| on).map(move |m| (m.point(x),m.vector(n)))
-        }).collect()
+            (leg.located.face_place(k,x) != Place::Out).then(|| (x,outward(round.face,x)))
+        }).flat_map(|(x,n)| leg.carry(x,n)).collect()
     };
     // its top and bottom rings, their normals along the axis: each in its own plane
     for side in [1.,-1.] {
         let o = add(f.o,scale(z,side*r));
         cand.add(Cutter::Plane((o,scale(z,side))),circle_sites(o,f.x,cross(z,f.x),big));
     }
-    let height = dot(sub(f.o,c),axis);
     let Some(w) = tw.away(f.o) else {
         // a torus about the axis turns into itself
-        cand.add(Cutter::Torus {c:f.o,axis:z,major:big,minor:r},leg.poses.iter().flat_map(|m| round.sites_at(m)).collect());
+        cand.add(Cutter::Torus {c:f.o,axis:z,major:big,minor:r},round.sites_over(&leg.poses));
         return Ok(())
     };
     // its meridians in the plane through both axes, each turned into a torus about the axis (one
     // reaching across the axis turns into no ring torus: not held yet)
     for side in [1.,-1.] {
         let m = add(f.o,scale(w,side*big));
-        let major = norm(sub(sub(m,c),scale(axis,dot(sub(m,c),axis))));
+        let major = tw.screw.radius(m);
         if !(major > r+leg.eps) { return Err(Unbuilt::Curved {at:m}) }
-        cand.add(Cutter::Torus {c:add(c,scale(axis,height)),axis,major,minor:r},circle_sites(m,w,axis,r));
+        cand.add(Cutter::Torus {c:add(c,scale(axis,tw.screw.height(f.o))),axis,major,minor:r},circle_sites(m,w,axis,r));
     }
     Ok(())
 }
@@ -431,10 +407,9 @@ fn turned_rims(tw: &Twist,cand: &mut Candidates,at_ends: &Ends) -> Result<(),Unb
         let sites: Vec<(V,V)> = (0..=4*SITES).flat_map(|i| {
             let (sp,cp) = (w0+(w1-w0)*(i as f64+0.5)/(4*SITES+1) as f64).dsin_cos();
             let x = f.at([r*cp,r*sp,0.]);
-            let n = unit(cross(add(scale(f.x,-sp),scale(f.y,cp)),tw.screw.velocity(x)));
-            leg.poses.iter().map(move |m| (m.point(x),m.vector(n)))
+            leg.carry(x,unit(cross(add(scale(f.x,-sp),scale(f.y,cp)),tw.screw.velocity(x))))
         }).collect();
-        let ring = crate::turned::Turned::rim(tw.g,source,[rim.span[0],rim.span[0]+std::f64::consts::TAU]);
+        let ring = Turned::rim(tw.g,source,[rim.span[0],rim.span[0]+std::f64::consts::TAU]);
         let ring_at = cand.add(Cutter::Turned(ring),sites);
         // each face holding it at each end pose meets its ring in closed form, given (#810: a plane
         // in two circles, `ssi::plane_holding_rim`; a cylinder in the circle and the loop crossing
@@ -465,8 +440,7 @@ fn screwed_rims(tw: &Twist,cand: &mut Candidates) {
         let sites: Vec<(V,V)> = (0..=SITES).flat_map(|i| {
             let (sp,cp) = (rim.span[0]+(rim.span[1]-rim.span[0])*within(i)).dsin_cos();
             let x = f.at([r*cp,r*sp,0.]);
-            let n = normal_at(x);
-            tw.leg.poses.iter().map(move |m| (m.point(x),m.vector(n)))
+            tw.leg.carry(x,normal_at(x))
         }).collect();
         cand.add(Cutter::ScrewedDisc {c:f.o,r:r.abs()},sites);
     }
@@ -504,22 +478,22 @@ fn leaning_contact(screw: &Screw,o: V,n: V,corners: &[V],eps: f64) -> Option<(V,
 /// (`turned::Contact`), two curves along the face, each turned into a surface of revolution about
 /// the turn's axis whose meridian is read exactly (`Cutter::Turned`), its sites the curve's points
 /// on the face carried over the roll with the face's normal there (the turned surface's: it touches
-/// the face there). An axis in one plane with the turn's touches along its two generators in that
-/// plane, lines, each turned as any ruling is (`Twist::ruling`, a hyperboloid) — refused where it
-/// crosses the turn's axis within the face, whose ring there touches all round. Refused by what it
-/// is (`Unbuilt::Curved`) where a contact is no curve over the span (the two roots on a ring
-/// meeting, or the curve reaching the axis) or its meridian folds back along the axis, which its
-/// solid, closed down to the axis at both ends, cannot hold.
-fn turned_contacts(tw: &Twist,cand: &mut Candidates,located: &Located,round: &Round,(f,r,sa,ca): (Frame,f64,f64,f64))
-    -> Result<Vec<(usize,crate::turned::Turned)>,Unbuilt> {
-    use crate::turned::{Contact,Jet,Turned};
+/// the face there), and the face at each end pose given its touch with each (`own_contacts`). An
+/// axis in one plane with the turn's touches along its two generators in that plane, lines, each
+/// turned as any ruling is (`Twist::ruling`, a hyperboloid) — refused where it crosses the turn's
+/// axis within the face, whose ring there touches all round. Refused by what it is
+/// (`Unbuilt::Curved`) where a contact is no curve over the span (the two roots on a ring meeting,
+/// or the curve reaching the axis) or its meridian folds back along the axis, which its solid,
+/// closed down to the axis at both ends, cannot hold.
+fn turned_contacts(tw: &Twist,cand: &mut Candidates,round: &Round,at_ends: &Ends,(f,r,sa,ca): (Frame,f64,f64,f64))
+    -> Result<(),Unbuilt> {
+    use crate::turned::{Contact,Jet};
     let (face,k,[lo,hi]) = (round.face,round.k,round.span);
-    let (c,axis,eps) = (tw.c,tw.axis,tw.leg.eps);
+    let (c,axis,eps,g) = (tw.c,tw.axis,tw.leg.eps,tw.g);
     let a = unit(f.z);
     let carried = |x: V| -> Vec<(V,V)> {
-        if located.face_place(k,x) == Place::Out { return vec![] }
-        let n = outward(face,x);
-        tw.leg.poses.iter().map(|m| (m.point(x),m.vector(n))).collect()
+        if tw.leg.located.face_place(k,x) == Place::Out { return vec![] }
+        tw.leg.carry(x,outward(face,x)).collect()
     };
     // an axis in one plane with the turn's: its generators in that plane, turned (`ruling`)
     let np = cross(a,axis);
@@ -529,13 +503,9 @@ fn turned_contacts(tw: &Twist,cand: &mut Candidates,located: &Located,round: &Ro
         if foot_on(f.o,a,c,axis).is_some_and(|v| v >= lo*ca-eps && v <= hi*ca+eps) {
             return Err(Unbuilt::Curved {at:f.o})
         }
-        let w = unit(cross(np,a));
-        for w in [w,scale(w,-1.)] {
-            if let Some((cutter,sites)) = tw.ruling(located,round,dot(w,f.y).datan2(dot(w,f.x))) { cand.add(cutter,sites); }
-        }
-        return Ok(Vec::new())
+        tw.rulings_toward(cand,round,&f,unit(cross(np,a)));
+        return Ok(())
     }
-    let g = Frame::about(c,axis);
     // the meridian `PAST` past the face's span each way, so its ends stand clear of the face's own
     // at the end poses (where the face's rim, the meridian's end and the touch along the contact
     // would meet at one point), as a patch's under a screw do (#777 M5)
@@ -553,23 +523,23 @@ fn turned_contacts(tw: &Twist,cand: &mut Candidates,located: &Located,round: &Ro
         }).collect();
         if !sites.is_empty() { entered.push((cand.add(Cutter::Turned(turned),sites),turned)) }
     }
-    Ok(entered)
+    cand.touches.extend(own_contacts(tw,round,at_ends,&entered));
+    Ok(())
 }
 
 /// **A leaning round face's touches with its own contact turned** (#780 C3, given by construction
-/// since #810): the face (`surface`, the tool's face `k`) at each end pose `ends[j]`
-/// (its candidate `at_ends[(k, j)]`) touches each surface of revolution its contact turns into
-/// (`turned`: the candidates and their meridians) along that contact turned to the pose — the
-/// curve `ssi`'s `own_contact` writes, given where it holds it whole, the face standing on one side
-/// of the surface wherever both reach; where it does not, nothing is given and the two are traced.
-fn own_contacts(surface: &Surface,k: usize,turned: &[(usize,crate::turned::Turned)],ends: &[&crate::trajectory::Pose],
-    at_ends: &std::collections::BTreeMap<(usize,usize),usize>,tol: f64) -> Vec<Touch> {
+/// since #810): the face (`round`) at each end pose `tw.ends[j]` (its candidate `at_ends[(k, j)]`)
+/// touches each surface of revolution its contact turns into (`turned`: the candidates and their
+/// meridians) along that contact turned to the pose — the curve `ssi`'s `own_contact` writes, given
+/// where it holds it whole, the face standing on one side of the surface wherever both reach; where
+/// it does not, nothing is given and the two are traced.
+fn own_contacts(tw: &Twist,round: &Round,at_ends: &Ends,turned: &[(usize,Turned)]) -> Vec<Touch> {
     let mut out = Vec::new();
-    for (j,pose) in ends.iter().enumerate() {
-        let Some(&at) = at_ends.get(&(k,j)) else { continue };
-        let posed = surface.moved(&crate::geom::Rigid {r:pose.r,t:pose.p});
+    for (j,pose) in tw.ends.iter().enumerate() {
+        let Some(&at) = at_ends.get(&(round.k,j)) else { continue };
+        let posed = round.face.surface.moved(&crate::geom::Rigid {r:pose.r,t:pose.p});
         for &(i,t) in turned {
-            if let Some(curves) = crate::ssi::own_contact(&posed,&Curve::Turned(std::sync::Arc::new(t)),tol) {
+            if let Some(curves) = crate::ssi::own_contact(&posed,&Curve::Turned(std::sync::Arc::new(t)),tw.leg.tol) {
                 out.push(Touch {cutters:[at,i],curves})
             }
         }
@@ -592,7 +562,7 @@ fn own_contacts(surface: &Surface,k: usize,turned: &[(usize,crate::turned::Turne
 /// one helix may meet) or where two of its points stand on one helix less than a turn apart; and by
 /// name (`Unbuilt::Folded`) where the ball's radius reaches the helix's radius of curvature and the
 /// pipe folds (its fold locus, `(ρ² + κ²)/ρ`, the design's step after).
-fn pipe_stretches(screw: &crate::trajectory::Screw,c: V,n: V,r: f64,[a,b]: [f64;2],eps: f64) -> Result<Vec<[f64;2]>,Unbuilt> {
+fn pipe_stretches(screw: &Screw,c: V,n: V,r: f64,[a,b]: [f64;2],eps: f64) -> Result<Vec<[f64;2]>,Unbuilt> {
     use std::f64::consts::{PI,TAU};
     let pipe = crate::geom::Pipe {carry:crate::geom::Carry::Screw {center:screw.origin,axis:unit(screw.axis),angle:screw.ratio,
         advance:screw.advance/TAU},frame:Frame::about(c,n),r};

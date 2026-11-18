@@ -181,7 +181,7 @@ use crate::build::{Profile,ProfileEdge,disc,prism,square};
 use crate::geom::{Curve,Frame,Surface};
 use crate::turned::Exact;
 use crate::topo::{Brep,EdgeCurve};
-use crate::trajectory::Trajectory;
+use crate::trajectory::{Pose,Screw,Trajectory};
 use crate::util::space::{add,cross,dot,norm,scale,sub,unit};
 use super::member::{Solid,Swept};
 #[allow(unused_imports)]
@@ -192,6 +192,10 @@ mod slide;
 mod twist;
 
 type V = [f64;3];
+
+/// The legs a path is taken in (`legs`): each one's constant twist, its stretch of the roll, and
+/// where it places the tool.
+type Legs = Vec<(Screw,[f64;2],Option<Pose>)>;
 
 /// Why the closed swept solid is not built.
 #[derive(Clone,Debug,PartialEq)]
@@ -545,7 +549,7 @@ fn read(tool: &Brep,path: &Trajectory) -> Result<Read,Unbuilt> {
 /// turn after a slide); or each piece of a path of pieces (K1, a sweep its pieces' sweeps united)
 /// over the stretch of the roll it holds, each a slide or a turn, placed or not (a screw is taken
 /// only alone) — each leg's reading of the tool (`read`) taken.
-fn legs(tool: &Brep,path: &Trajectory,roll: [f64;2]) -> Result<Vec<(crate::trajectory::Screw,[f64;2],Option<crate::trajectory::Pose>)>,Unbuilt> {
+fn legs(tool: &Brep,path: &Trajectory,roll: [f64;2]) -> Result<Legs,Unbuilt> {
     let [a,b] = [roll[0].min(roll[1]),roll[0].max(roll[1])];
     // a piece's twist and placement, read on the tool where it stands
     let leg = |path: &Trajectory| -> Result<(crate::trajectory::Screw,Option<crate::trajectory::Pose>),Unbuilt> {
@@ -807,7 +811,7 @@ fn build_by(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank:
     let mut entered: Vec<Option<std::ops::Range<usize>>> = vec![None;cutters.len()];
     for &(i,c) in &carrying {
         let first = solids.len();
-        solids.extend(solids_of(c,(legs[0].0,legs[0].1),&domain,&seams,eps,size)?);
+        solids.extend(solids_of(c,legs[0].0,legs[0].1,&domain,&seams,eps,size)?);
         entered[i] = Some(first..solids.len());
     }
     // (a candidate whose solid stands clear of the box parts none of it: left out, so its meetings
@@ -834,8 +838,7 @@ struct Domain { solid: Brep,centre: V,half: f64,tall: Option<(f64,f64,f64)> }
 /// turn where the sweep climbs less than a turn's step. Cut from a blank, the box is the sweep's
 /// reach (#847): every candidate reaches across it, and the blank is split by them within it alone
 /// (`boolean::arrangement_reached`).
-fn domain(tool: &Brep,legs: &[(crate::trajectory::Screw,[f64;2],Option<crate::trajectory::Pose>)],held: &[V],tol: f64)
-    -> Result<Domain,Unbuilt> {
+fn domain(tool: &Brep,legs: &Legs,held: &[V],tol: f64) -> Result<Domain,Unbuilt> {
     if legs.iter().all(|l| l.0.is_slide() || l.0.is_turn()) {
         let (solid,centre,half) = cube_holding(held,tol)?;
         return Ok(Domain {solid,centre,half,tall:None})
@@ -847,16 +850,17 @@ fn domain(tool: &Brep,legs: &[(crate::trajectory::Screw,[f64;2],Option<crate::tr
     // between them stand within the sagitta added
     let f = Frame::about(screw.origin,screw.axis);
     const STEPS: usize = 64;
-    let (mut l,mut h) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
+    let mut bx = crate::geom::EMPTY;
     let mut reach = 0f64;
     for k in 0..=STEPS {
         let m = path.pose(a+(b-a)*k as f64/STEPS as f64).map_err(Unbuilt::from)?;
         for &p in &corners {
             let x = f.local(m.point(p));
             reach = reach.max(x[0].dhypot(x[1]));
-            for i in 0..3 { l[i] = l[i].min(x[i]); h[i] = h[i].max(x[i]) }
+            crate::geom::include(&mut bx,x);
         }
     }
+    let (mut l,mut h) = bx;
     let sag = reach*(1.-(0.5*(screw.ratio*(b-a)).abs()/STEPS as f64).dcos());
     let margin = 0.05*(0..3).map(|i| h[i]-l[i]).fold(0.,f64::max)+tol;
     let pad = [sag+margin,sag+margin,margin];
@@ -875,10 +879,14 @@ fn domain(tool: &Brep,legs: &[(crate::trajectory::Screw,[f64;2],Option<crate::tr
 /// heights its source spans (a hyperboloid may enter two); a screwed line's sheet itself, reaching
 /// past the box — each a solid one of whose faces lies on the candidate across the box, its seam
 /// laid away from `seams`.
-fn solids_of(c: Cutter,(screw,[a,b]): (crate::trajectory::Screw,[f64;2]),domain: &Domain,seams: &[V],eps: f64,size: f64)
-    -> Result<Vec<Brep>,Unbuilt> {
+fn solids_of(c: Cutter,screw: Screw,[a,b]: [f64;2],domain: &Domain,seams: &[V],eps: f64,size: f64) -> Result<Vec<Brep>,Unbuilt> {
     let path = Trajectory::Twist(screw);
     let pose_at = |t: f64| path.pose(t).map_err(Unbuilt::from);
+    // the disc `disc` screwed over the stretch `[s0, s1]` of the roll
+    let screwed = |disc: &Profile,[s0,s1]: [f64;2]| {
+        let rate = screw.advance/std::f64::consts::TAU;
+        crate::build::screwed(disc,screw.origin,screw.axis,screw.ratio*(s1-s0),rate*(s1-s0))
+    };
     let (centre,half) = (domain.centre,domain.half);
     let reach = 4.*half;
     Ok(vec![match c {
@@ -896,16 +904,8 @@ fn solids_of(c: Cutter,(screw,[a,b]): (crate::trajectory::Screw,[f64;2]),domain:
             contour_sheet(&arc,[mid-2.*half,mid+2.*half])?
         }
         Cutter::Ball {c,axis,r} => crate::build::sphere(c,axis,r)?,
-        Cutter::ScrewedDisc {c,r} => {
-            let first = pose_at(a)?;
-            let rate = screw.advance/std::f64::consts::TAU;
-            crate::build::screwed(&disc(first.point(c),screw.axis,r),screw.origin,screw.axis,screw.ratio*(b-a),rate*(b-a))?
-        }
-        Cutter::Pipe {c,n,r,span:[s0,s1]} => {
-            let first = pose_at(s0)?;
-            let rate = screw.advance/std::f64::consts::TAU;
-            crate::build::screwed(&disc(first.point(c),first.vector(n),r),screw.origin,screw.axis,screw.ratio*(s1-s0),rate*(s1-s0))?
-        }
+        Cutter::ScrewedDisc {c,r} => { let first = pose_at(a)?; screwed(&disc(first.point(c),screw.axis,r),[a,b])? }
+        Cutter::Pipe {c,n,r,span} => { let first = pose_at(span[0])?; screwed(&disc(first.point(c),first.vector(n),r),span)? }
         Cutter::Torus {c,axis,major,minor} => seam_away(crate::build::torus(c,axis,major,minor)?,c,axis,seams),
         Cutter::Oblique {c,a,r,d} => {
             // the disc's cylinder along `a` as high as the slide climbs it, sheared
@@ -1194,19 +1194,6 @@ pub(super) fn rulings_span(tool: &Brep,k: usize) -> (f64,f64) {
         let e = &tool.edges[c.edge as usize];
         (0..=8).map(move |i| e.point(e.t[0]+(e.t[1]-e.t[0])*i as f64/8.,&tool.vertices))
     }).fold((f64::INFINITY,f64::NEG_INFINITY),|(lo,hi),p| { let v = face.surface.inverse(p)[1]; (lo.min(v),hi.max(v)) })
-}
-
-/// A round face's own points: its surface over a grid of its parameters round the axis and along
-/// its rulings over `span`, those in the face.
-fn round_points(located: &crate::query::Located,tool: &Brep,k: usize,[lo,hi]: [f64;2]) -> Vec<V> {
-    let surface = &tool.faces[k].surface;
-    let mut out = Vec::new();
-    for i in 0..2*SITES { for j in 0..SITES {
-        let (u,v) = ((i as f64+0.5)*std::f64::consts::TAU/(2*SITES) as f64,lo+(hi-lo)*(j as f64+0.5)/SITES as f64);
-        let p = surface.point([u,v]);
-        if located.face_place(k,p) == crate::query::Place::In { out.push(p) }
-    } }
-    out
 }
 
 /// How many steps a candidate's source is read at each way (along it, and across the roll) for
