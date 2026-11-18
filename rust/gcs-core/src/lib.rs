@@ -48,6 +48,7 @@ pub mod renderer;
 pub mod report;
 pub mod seam;
 pub mod spatial_face;
+pub mod stock;
 pub mod style;
 pub mod svg;
 pub mod syntax;

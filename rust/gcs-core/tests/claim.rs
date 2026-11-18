@@ -428,3 +428,66 @@ fn the_rail_is_refuted_when_it_is_not_where_the_pen_goes() {
     assert_eq!(d.claims_violated, vec![claim.id], "a rail in the wrong place is a counterexample");
     assert!(d.claims_theorem.is_empty());
 }
+
+/// **A claim over measurements is judged after the solve** (#940): `claim length(post) <= board`
+/// compares where the solve put the post with the document's number, holds or refuted, saying
+/// what it measured — a line's length, a distance from a point to a line, the angle of two lines,
+/// a member's in each instance of a component.  A measurement compared with a plain number, or
+/// of geometry that has no such measure, is refused before the solve; and the drawing is the same
+/// with the claims deleted.
+#[test]
+fn a_claim_over_measurements_is_judged_where_the_drawing_solved() {
+    let src = |claims: &str| format!("unit in\nuse std\nboard := 8'\n\
+        component Post(f: group, run: Length) {{\n  in f.front {{\n    a := point\n    \
+        b := point hint((run, 1))\n    c := point hint((1, 30))\n    fix((0, 0)) a\n    \
+        a level(v) b\n    a level(u) c\n    post := line(a, b)\n    rise := line(a, c)\n  }}\n  \
+        a distance(run) b\n  a distance(30) c\n  claim length(post) <= 90in\n}}\n\
+        frame := {{ front: std.front }}\nshort := Post(frame, run: 80in)\nlong := Post(frame, \
+        run: 100in)\n{claims}\n");
+    let judged = |claims: &str| {
+        let (prog, errs) = crate::common::parse(&src(claims));
+        assert!(errs.is_empty(), "{errs:?}");
+        let mut e = gcs_core::program::elaborate(&prog);
+        assert!(e.ok(), "{:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+        assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
+        e.measured_claims.iter().map(|c| {
+            let j = gcs_core::program::judge_measured(&e.sketch, &e.map, c);
+            gcs_core::report::measured_claim_text(e.sketch.units, &j)
+        }).collect::<Vec<_>>()
+    };
+    assert_eq!(judged("claim length(short.post) <= board\n\
+                       claim distance(long.c, long.post) == 30in and angle(long.post, long.rise) \
+                       == 90deg\nclaim 2 * length(short.post) - length(long.post) > 6ft"), [
+        "claim length(post) <= 90in — holds: length(short.post) = 80 in",
+        "claim length(post) <= 90in — refuted: length(long.post) = 100 in",
+        "claim length(short.post) <= board — holds: length(short.post) = 80 in, board = 96 in",
+        "claim distance(long.c, long.post) == 30in and angle(long.post, long.rise) == 90deg — \
+         holds: distance(long.c, long.post) = 30 in, angle(long.post, long.rise) = 90 deg",
+        "claim 2 * length(short.post) - length(long.post) > 6ft — refuted: length(short.post) = \
+         80 in, length(long.post) = 100 in",
+    ]);
+    // the drawing is what it was without them
+    let bare = drawn(&src(""));
+    let claimed = drawn(&src("claim length(short.post) <= board"));
+    assert_eq!(bare.params.iter().map(|p| p.value).collect::<Vec<_>>(),
+               claimed.params.iter().map(|p| p.value).collect::<Vec<_>>());
+    let refused = |claims: &str| {
+        let (prog, _) = crate::common::parse(&src(claims));
+        let e = gcs_core::program::elaborate(&prog);
+        e.errors().map(|d| format!("{}: {}", d.code.as_str(), d.message)).collect::<Vec<_>>()
+    };
+    assert_eq!(refused("claim length(short.post) <= 96"), ["E103: `length(short.post) <= 96`: \
+        Length cannot be compared with Scalar: `<=` needs one dimension, not two"]);
+    assert_eq!(refused("claim length(short.a) <= 96in"), ["E101: `length(short.a) <= 96in`: \
+        `short.a` is a point, and a length is a line's, an arc's, a circle's or a curve's"]);
+    assert_eq!(refused("claim angle(short.a, short.post) <= 9deg"), ["E101: `angle(short.a, \
+        short.post) <= 9deg`: `short.a` is a point, and an angle is between two lines"]);
+    assert_eq!(refused("claim length(nope) <= 96in"), ["E101: `length(nope) <= 96in`: `nope` \
+        names no geometry here"]);
+    // a radius stays a relation: `radius(10) rim` names its operand after the call
+    let (prog, errs) = crate::common::parse("use std\nin std.front {\n  o := point\n  \
+        rim := circle(center: o) hint(r: 10)\n  fix((0, 0)) o\n}\nradius(10) rim\nclaim radius(10) rim\n");
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(e.ok() && e.measured_claims.is_empty(), "{:?}", e.diags);
+}

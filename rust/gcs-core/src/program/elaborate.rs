@@ -1021,11 +1021,15 @@ fn finish(mut cx: Elab<'_>, flat: &Flat<'_>) -> Elaborated {
     super::beams::sized(&cx.sk, &flat.body, &mut cx.diags);
     // each solid a closed instance made, stamped with its binding (#566)
     super::bound::stamp(&mut cx.sk, &cx.res, &flat.expansion.instances, &flat.expansion.rings);
+    // a claim over measurements names geometry that has the measure it asks (#940)
+    let claimed = super::claimed::checked(&cx.sk, &cx.map, &flat.expansion.measured_claims);
+    cx.diags.extend(claimed);
     crate::modules::localize(p, &mut cx.diags);
     Elaborated {
         sketch: cx.sk, map: cx.map, diags: cx.diags, scenarios, measures,
         values: flat.expansion.values.clone(),
         value_claims: flat.expansion.value_claims.clone(),
+        measured_claims: flat.expansion.measured_claims.clone(),
         program: p.clone(), taken: false,
     }
 }

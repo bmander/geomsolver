@@ -332,6 +332,7 @@ const SI: &[(&str, Dim)] = &[
     ("A", Dim::CURRENT),
     ("Hz", Dim::of(0, 0, 0, -1, 0)),
     ("deg/s", Dim::of(0, 1, 0, -1, 0)),
+    ("m/s", Dim::of(1, 0, 0, -1, 0)),
     ("N", Dim::of(1, 0, 1, -2, 0)),
     ("N·m", Dim::of(2, 0, 1, -2, 0)),
     ("W", Dim::of(2, 0, 1, -3, 0)),
@@ -404,7 +405,26 @@ pub const UNITS: &[(&str, Unit)] = &[
     ("mWb", Unit { dim: Dim::of(2, 0, 1, -2, -1), per: 1e-3 * M * M }),
     ("T", Unit { dim: Dim::of(0, 0, 1, -2, -1), per: 1.0 }),
     ("mT", Unit { dim: Dim::of(0, 0, 1, -2, -1), per: 1e-3 }),
+    // #940: the engineering units a build in feet and inches is checked in — a wind load in
+    // `psf`, an anchor's pull in `lbf`, a design wind speed in `mph`.  Each is its exact SI
+    // definition (the international pound, 0.45359237 kg, and standard gravity, 9.80665 m/s²).
+    // A torque in foot-pounds is one word, `ftlbf` (and `inlbf`): a suffix is letters only.
+    ("lb", Unit { dim: Dim::MASS, per: LB }),
+    ("lbf", Unit { dim: Dim::of(1, 0, 1, -2, 0), per: LBF * M }),
+    ("kip", Unit { dim: Dim::of(1, 0, 1, -2, 0), per: 1e3 * LBF * M }),
+    ("ftlbf", Unit { dim: Dim::of(2, 0, 1, -2, 0), per: LBF * 0.3048 * M * M }),
+    ("inlbf", Unit { dim: Dim::of(2, 0, 1, -2, 0), per: LBF * 0.0254 * M * M }),
+    ("psi", Unit { dim: Dim::PRESSURE, per: LBF / (0.0254 * 0.0254) / M }),
+    ("ksi", Unit { dim: Dim::PRESSURE, per: 1e3 * LBF / (0.0254 * 0.0254) / M }),
+    ("psf", Unit { dim: Dim::PRESSURE, per: LBF / (0.3048 * 0.3048) / M }),
+    ("mph", Unit { dim: Dim::of(1, 0, 0, -1, 0), per: 0.44704 * M }),
+    ("kph", Unit { dim: Dim::of(1, 0, 0, -1, 0), per: 1e3 * M / 3600.0 }),
 ];
+
+/// The international avoirdupois pound, in kilograms.
+const LB: f64 = 0.453_592_37;
+/// A pound-force, in newtons: a pound under standard gravity (9.80665 m/s²).
+const LBF: f64 = LB * 9.806_65;
 
 pub fn unit(name: &str) -> Option<Unit> {
     UNITS.iter().find(|&&(n, _)| n == name).map(|&(_, u)| u)

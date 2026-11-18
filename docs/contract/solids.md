@@ -1009,6 +1009,17 @@ placement carries inside the blank; CLI test readers zero the offset.
   the section puts what it makes *on* that plane (the disc's and plate's sections are mid-planes).
   A **hex pocket about a radial line** (`parts.Grub`) is neither sweep nor turn, so it stays four
   hidden lines; a feature drawn as a *centreline* (the exhaust vents) is told its width, `wch`.
+- **An assembly is seen as one picture** (#940, `Renderer::project_together`).  A `.svd` view
+  of a scope holding objects (`view side(m) from right`, `view bent(m.bent_c)`) projects every
+  object under it together: each part's edges drawn by its own rule, split wherever *any* part's
+  edge crosses it in the picture, and a piece hidden where its own solid **or another part**
+  stands between it and the eye (another part asked only where the point is within its page
+  bounds, the point carried through the world into its coordinates); the overlay draws a line
+  two parts share once, the nearer part's ink over the hidden one's, and each `Stroke` says its
+  `part`, so the sheet styles it by that object's classes.  A solid projected alone is the same
+  function over one renderer, so nothing a single view drew changes.  The parts stay objects:
+  `--step-assembly` writes them as before.  `drawing.rs`'s
+  `an_assembly_view_hides_one_part_behind_another` is the gate.
 
 **A sheet's band is a solid of its own route** (#645, [developables.md](developables.md)).
 `region::form` reads a band term first (`Form::Sheet`), before a meridian or general position, and

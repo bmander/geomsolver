@@ -160,7 +160,9 @@ impl<'a> P<'a> {
         // measurements (#183 F3), told from a relation by a comparison outside every bracket —
         // and from a block's header, `when length(l) > 0mm { … }` (#210)
         let block = words::opens_block(&self.t, self.i);
-        if !block && self.compared_ahead() && self.measures_ahead() {
+        // a claim comparing measurements is judged after the solve (#940), and bounds nothing
+        let claim = self.peek_word("claim");
+        if !block && !claim && self.compared_ahead() && self.measures_ahead() {
             return self.measured().map(StmtKind::Measured);
         }
         let Some(Tok::Ident(w)) = self.peek().cloned() else {
@@ -338,6 +340,13 @@ impl<'a> P<'a> {
             Some(Tok::EqEq | Tok::P('<' | '>' | '!' | '+' | '-' | '*' | '/' | '^')));
         match self.t.get(j).map(|(t, _)| t) {
             Some(Tok::Num(_) | Tok::P('(' | '-')) => true,
+            // a measurement of the solved drawing compared (#940), `claim length(post) <= 96"`:
+            // after its call's `)`, arithmetic or a comparison, where `radius(10) rim` has its
+            // operand
+            Some(Tok::Ident(w)) if matches!(self.t.get(j + 1), Some((Tok::P('('), _)))
+                && crate::expr::MEASURES.iter().any(|m| m.0 == w) => {
+                numeric(words::past_bracket(&self.t, j + 1, Brackets::Round))
+            }
             Some(Tok::Ident(w)) if matches!(self.t.get(j + 1), Some((Tok::P('('), _))) => {
                 crate::expr::FUNCTIONS.iter().any(|f| f.0 == w)
                     && !crate::constraints::is_operator(w)

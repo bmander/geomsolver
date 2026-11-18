@@ -10,50 +10,77 @@ use crate::bvh::{Bounds, Bvh};
 const SAME: f64 = 1e-7;
 
 pub(super) fn project(renderer: &Renderer<'_>, view: View) -> Drawing {
-    let strokes = match view.section {
-        Some(cut) => section(renderer, view.frame, cut),
-        None => view_clipped(renderer, view.frame, None, &[]),
-    };
-    Drawing::new(strokes)
+    project_together(std::slice::from_ref(renderer), view)
 }
 
-fn view_clipped(renderer: &Renderer<'_>, page: PageFrame, cut: Option<Basis>, section_edges: &[crate::csg::Edge]) -> Vec<Stroke> {
-    let solid = renderer.solid;
-    let basis = solid.local_basis(page.basis());
-    let cut = cut.map(|c| solid.local_basis(c));
-    let eye = basis.normal();
-    let eps = solid.epsilon();
+/// **Several solids in one picture** (#940): each part's edges are drawn by its own rule, split
+/// wherever any edge of any part crosses it in the picture, and a piece is hidden where its own
+/// solid or any other stands between it and the eye — an assembly's elevation, each part behind
+/// another dashed.  Lines the parts share are drawn once (`overlay`), the nearer part's ink over
+/// the hidden one's.  Each part's geometry is worked in its own coordinates, and only a point
+/// asked about another part is carried through the world to it.
+pub(super) fn project_together(renderers: &[Renderer<'_>], view: View) -> Drawing {
+    let edges: Vec<Vec<crate::csg::Edge>> = renderers.iter().map(|r| match view.section {
+        Some(cut) => section_edges(r, view.frame, cut),
+        None => Vec::new(),
+    }).collect();
+    Drawing::new(view_clipped(renderers, view.frame, view.section, &edges))
+}
 
-    // **which edges this view draws at all**: the solid's rule (`EvaluatedSolid::drawn_edges`)
-    let mut drawn: Vec<(([f64; 3], [f64; 3]), bool, String)> = Vec::new();
-    for e in solid.drawn_edges(eye, section_edges) {
-        let sil = e.smooth;
-        let (mut a, mut b) = (e.a, e.b);
-        if let Some(cut) = cut {
-            let height = |p: [f64; 3]| plane::dot(eye, std::array::from_fn(|k| p[k] - cut.o[k]));
-            let (ha, hb) = (height(a), height(b));
-            if ha > eps && hb > eps {
-                continue;
-            }
-            if (ha > eps) != (hb > eps) {
-                let t = (ha / (ha - hb)).clamp(0.0, 1.0);
-                let at = std::array::from_fn(|k| a[k] + t * (b[k] - a[k]));
-                if ha > eps {
-                    a = at;
-                } else {
-                    b = at;
+/// One edge of one part as this view draws it: its two ends in its part's coordinates, whether it
+/// is a silhouette, its path, and its two ends on the page.
+struct Drawn {
+    part: usize,
+    a: [f64; 3],
+    b: [f64; 3],
+    sil: bool,
+    path: String,
+    pa: (f64, f64),
+    pb: (f64, f64),
+}
+
+fn view_clipped(renderers: &[Renderer<'_>], page: PageFrame, cut: Option<Basis>,
+                section_edges: &[Vec<crate::csg::Edge>]) -> Vec<Stroke> {
+    // each part's view in its own coordinates, worked once: the page's plane, the eye, the cut
+    let views: Vec<(Basis, [f64; 3], Option<Basis>)> = renderers.iter().map(|r| {
+        let basis = r.solid.local_basis(page.basis());
+        (basis, basis.normal(), cut.map(|c| r.solid.local_basis(c)))
+    }).collect();
+    // **which edges this view draws at all**: each solid's rule (`EvaluatedSolid::drawn_edges`)
+    let mut drawn: Vec<Drawn> = Vec::new();
+    for (part, renderer) in renderers.iter().enumerate() {
+        let solid = renderer.solid;
+        let (basis, eye, cut) = views[part];
+        let eps = solid.epsilon();
+        for e in solid.drawn_edges(eye, &section_edges[part]) {
+            let sil = e.smooth;
+            let (mut a, mut b) = (e.a, e.b);
+            if let Some(cut) = cut {
+                let height = |p: [f64; 3]| plane::dot(eye, std::array::from_fn(|k| p[k] - cut.o[k]));
+                let (ha, hb) = (height(a), height(b));
+                if ha > eps && hb > eps {
+                    continue;
+                }
+                if (ha > eps) != (hb > eps) {
+                    let t = (ha / (ha - hb)).clamp(0.0, 1.0);
+                    let at = std::array::from_fn(|k| a[k] + t * (b[k] - a[k]));
+                    if ha > eps {
+                        a = at;
+                    } else {
+                        b = at;
+                    }
                 }
             }
+            let flat = |p: [f64; 3]| basis.view_coords(p);
+            drawn.push(Drawn { part, a, b, sil, path: e.path, pa: flat(a), pb: flat(b) });
         }
-        drawn.push(((a, b), sil, e.path));
     }
 
     // **split where one edge crosses another in the picture** (Appel): visibility can only
     // change at an apparent crossing or at an end, so between two of them a whole piece is seen
     // or a whole piece is not
-    let flat = |p: [f64; 3]| basis.view_coords(p);
-    let projected: Vec<_> = drawn.iter().map(|((a, b), _, _)| (flat(*a), flat(*b))).collect();
-    let boxes: Vec<Bounds<2>> = projected.iter().map(|&(a, b)| {
+    let boxes: Vec<Bounds<2>> = drawn.iter().map(|d| {
+        let (a, b) = (d.pa, d.pb);
         let lo = [a.0.min(b.0), a.1.min(b.1)];
         let hi = [a.0.max(b.0), a.1.max(b.1)];
         let pad: [f64; 2] = std::array::from_fn(|k| {
@@ -62,17 +89,28 @@ fn view_clipped(renderer: &Renderer<'_>, page: PageFrame, cut: Option<Basis>, se
         Bounds { lo: std::array::from_fn(|k| lo[k] - pad[k]), hi: std::array::from_fn(|k| hi[k] + pad[k]) }
     }).collect();
     let index = Bvh::new(boxes.iter().copied());
+    // each part's place on the page, so an edge is asked of only the parts it could be behind
+    let reach: Vec<Option<[f64; 4]>> = renderers.iter().map(|r| r.bounds(page)).collect();
     let mut candidates = 0;
     let mut out = Vec::new();
-    for (i, ((a, b), sil, path)) in drawn.iter().enumerate() {
-        let (pa, pb) = projected[i];
+    for (i, d) in drawn.iter().enumerate() {
+        let solid = renderers[d.part].solid;
+        let (_, eye, local_cut) = views[d.part];
+        // the other parts whose place on the page this edge's box meets
+        let others: Vec<usize> = (0..renderers.len()).filter(|&k| k != d.part).filter(|&k| {
+            reach[k].is_some_and(|[x0, y0, x1, y1]| {
+                let pad = renderers[k].solid.epsilon();
+                boxes[i].lo[0] <= x1 + pad && boxes[i].hi[0] >= x0 - pad
+                    && boxes[i].lo[1] <= y1 + pad && boxes[i].hi[1] >= y0 - pad
+            })
+        }).collect();
+        let (a, b) = (d.a, d.b);
         let d3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
         let mut cuts = vec![0.0f64, 1.0];
         index.query_box(boxes[i], |j| {
             if i == j { return; }
             candidates += 1;
-            let (c, d) = projected[j];
-            if let Some(t) = cross(pa, pb, c, d) { cuts.push(t); }
+            if let Some(t) = cross(d.pa, d.pb, drawn[j].pa, drawn[j].pb) { cuts.push(t); }
         });
         cuts.sort_by(|x, y| x.partial_cmp(y).expect("no NaN from a finite drawing"));
         for w in cuts.windows(2) {
@@ -81,25 +119,35 @@ fn view_clipped(renderer: &Renderer<'_>, page: PageFrame, cut: Option<Basis>, se
             }
             let at = |t: f64| [a[0] + t * d3[0], a[1] + t * d3[1], a[2] + t * d3[2]];
             let m = at((w[0] + w[1]) / 2.0);
-            let limit = cut.map(|c| plane::dot(eye, std::array::from_fn(|k| c.o[k] - m[k])));
-            let hidden = renderer.occludes(LocalPoint(m), eye, limit);
+            let limit = local_cut.map(|c| plane::dot(eye, std::array::from_fn(|k| c.o[k] - m[k])));
+            let mut hidden = renderers[d.part].occludes(LocalPoint(m), eye, limit);
+            if !hidden && !others.is_empty() {
+                let world = solid.to_world(LocalPoint(m));
+                hidden = others.iter().any(|&k| {
+                    let other = renderers[k].solid;
+                    renderers[k].occludes(other.to_local(world), views[k].1, limit)
+                });
+            }
             let (p, q) = (at(w[0]), at(w[1]));
             out.push(Stroke {
                 pts: vec![solid.to_page(LocalPoint(p), page).0, solid.to_page(LocalPoint(q), page).0],
                 hidden,
-                silhouette: *sil,
-                path: path.clone(),
+                silhouette: d.sil,
+                path: d.path.clone(),
+                part: d.part,
             });
         }
     }
-    let mut stats = renderer.stats.get();
+    let first = &renderers[0];
+    let mut stats = first.stats.get();
     stats.crossing_candidates += candidates;
     stats.crossing_exhaustive += drawn.len() * drawn.len().saturating_sub(1);
-    renderer.stats.set(stats);
+    first.stats.set(stats);
     join(out)
 }
 
-fn section(renderer: &Renderer<'_>, page: PageFrame, cut: Basis) -> Vec<Stroke> {
+/// The edges of the face a cutting plane leaves on one solid.
+fn section_edges(renderer: &Renderer<'_>, page: PageFrame, cut: Basis) -> Vec<crate::csg::Edge> {
     let solid = renderer.solid;
     let basis = solid.local_basis(page.basis());
     let eps = solid.epsilon();
@@ -124,7 +172,7 @@ fn section(renderer: &Renderer<'_>, page: PageFrame, cut: Basis) -> Vec<Stroke> 
         }
         section_edges.push(crate::csg::Edge { a, b, na: n, nb: across, smooth: false, path: p.path.clone() });
     }
-    view_clipped(renderer, page, Some(cut), &section_edges)
+    section_edges
 }
 
 fn step(p: [f64; 3], d: [f64; 3], k: f64) -> [f64; 3] {
@@ -214,7 +262,7 @@ fn overlay(v: Vec<Stroke>, tol: f64) -> Vec<Stroke> {
             .entry(k)
             .or_insert_with(|| (d, base, Vec::new()))
             .2
-            .push(Span { t0, t1, hidden: s.hidden, sil: s.silhouette, path: s.path });
+            .push(Span { t0, t1, hidden: s.hidden, sil: s.silhouette, path: s.path, part: s.part });
     }
     let mut out = Vec::new();
     for (_, (d, base, spans)) in lines {
@@ -231,17 +279,18 @@ fn overlay(v: Vec<Stroke>, tol: f64) -> Vec<Stroke> {
                 let over: Vec<&Span> =
                     spans.iter().filter(|s| s.t0 < t1 - tol && s.t1 > t0 + tol).collect();
                 let sil = !over.is_empty() && over.iter().all(|s| s.sil);
-                let path = over
-                    .iter()
-                    .map(|s| &s.path)
-                    .min()
-                    .cloned()
+                // and whose: the first part's of those drawing it, a seen line the part seen's
+                let named = over.iter().filter(|s| s.hidden == hidden)
+                    .map(|s| (s.part, &s.path)).min();
+                let (part, path) = named.or_else(|| over.iter().map(|s| (s.part, &s.path)).min())
+                    .map(|(k, p)| (k, p.clone()))
                     .unwrap_or_default();
                 out.push(Stroke {
                     pts: vec![at_t(base, d, t0), at_t(base, d, t1)],
                     hidden,
                     silhouette: sil,
                     path,
+                    part,
                 });
             }
         }
@@ -256,6 +305,7 @@ struct Span {
     hidden: bool,
     sil: bool,
     path: String,
+    part: usize,
 }
 
 fn at_t(base: (f64, f64), d: (f64, f64), t: f64) -> (f64, f64) {
@@ -323,6 +373,7 @@ fn join(mut v: Vec<Stroke>) -> Vec<Stroke> {
             t.hidden == s.hidden
                 && t.silhouette == s.silhouette
                 && t.path == s.path
+                && t.part == s.part
                 && collinear(t, &s, tol)
         });
         match joined {

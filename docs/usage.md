@@ -63,7 +63,11 @@ its own, for that run only: a switch flipped (`--set checks=1`, `--set shaped=0`
 of the file beside it. VALUE is an expression in the document's units (`--set travel=3mm`), the
 report keeps the file's name and says each value given first (`set checks := 1 (the document
 writes 0)`; `set` in `--json`), and it works with every output. A name inside a component, in a
-`use`d module, or that is no value is refused with exit 64.
+`use`d module, or that is no value is refused with exit 64. A bare number is read in the unit of
+the value it replaces (#940): `--set g_er=-6` over `g_er := 1"` is `-6"`, a length still, and over
+a length worked out from others it is in the document's unit. Given a drawing, `--set` goes to every
+model the drawing imports that binds the name, but where the drawing's own `with` gives that model
+one ([Solvent drawings](solvent-drawing.md)).
 
 A wrong command line says what was wrong and the synopsis, and points at `--help`; `--help` has
 every option, examples and where the primer is. A diagnostic carries its span, for example
@@ -128,6 +132,18 @@ build/solventc rust/examples/solid_flange.sv --solid flange --step flange.step -
 build/solventc part.sv --step part.step --tolerance 0.01mm   # within a stated fabrication bar
 build/solventc part.sv --gltf part.glb                       # every face a named node
 build/solventc bot.sv --step-assembly bot.step               # every part, as one STEP assembly
+```
+
+`--parts` (#940) prints a cut list: each part — the objects of one binding one part, and objects
+called alike in their components with one box and one volume one part too — how many there are,
+the box it is cut from (its length, width and thickness in the document's unit, square to its own
+faces however it stands, so a rafter pitched at 25° is its board's length) and the objects that
+are it; `cutList` in `--json`:
+
+```
+  cut list: 2 parts, 3 objects (length × width × thickness, in)
+    2 × body: 96 × 3.5 × 1.5 — one.body, two.body
+    1 × rafter.body: 72 × 3.5 × 1.5 — rafter.body
 ```
 
 `--step-assembly` writes every object of the document as one STEP file with a product structure,

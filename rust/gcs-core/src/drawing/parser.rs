@@ -4,14 +4,22 @@ use std::collections::BTreeSet;
 
 #[derive(Clone)]
 pub(super) struct Token { pub(super) text: String, pub(super) quoted: bool, pub(super) span: Span }
-struct P { tokens: Vec<Token>, i: usize }
+struct P<'t> { tokens: Vec<Token>, i: usize, text: &'t str }
 type Result<T> = std::result::Result<T, Error>;
+
+/// The points of a view's box `at` may place (#940), as fractions across it from its left and
+/// down it from its top.
+const ANCHORS: [(&str, (f64, f64)); 9] = [
+    ("topleft", (0.0, 0.0)), ("top", (0.5, 0.0)), ("topright", (1.0, 0.0)),
+    ("left", (0.0, 0.5)), ("center", (0.5, 0.5)), ("right", (1.0, 0.5)),
+    ("bottomleft", (0.0, 1.0)), ("bottom", (0.5, 1.0)), ("bottomright", (1.0, 1.0)),
+];
 
 pub fn parse(text: &str) -> Result<Document> {
     if text.len() > crate::syntax::MAX_TEXT {
         return Err(Error { span: Span::default(), message: "drawing is too large".into() });
     }
-    let mut p = P { tokens: lex(text)?, i: 0 };
+    let mut p = P { tokens: lex(text)?, i: 0, text };
     let mut doc = Document::default();
     let mut names = BTreeSet::new();
     while !p.done() {
@@ -23,7 +31,19 @@ pub fn parse(text: &str) -> Result<Document> {
                 p.want("from")?;
                 let path = p.string()?;
                 let at = if p.eat("at") { Some(p.instant()?) } else { None };
-                doc.models.push(ModelImport { name, path, at, span });
+                let mut with = Vec::new();
+                if p.eat("with") {
+                    loop {
+                        let given = p.given()?;
+                        if with.iter().any(|g: &Given| g.name == given.name) {
+                            return Err(Error { span: given.span,
+                                message: format!("`{}` is given a value twice", given.name) });
+                        }
+                        with.push(given);
+                        if !p.eat(",") { break }
+                    }
+                }
+                doc.models.push(ModelImport { name, path, at, with, span });
             }
             "use" => doc.imports.push(p.string()?),
             "style" => {
@@ -48,7 +68,7 @@ pub fn parse(text: &str) -> Result<Document> {
     Ok(doc)
 }
 
-impl P {
+impl P<'_> {
     fn done(&self) -> bool { self.i == self.tokens.len() }
     fn span(&self) -> Span { self.tokens.get(self.i).map(|t| t.span).unwrap_or_default() }
     fn peek(&self, s: &str) -> bool {
@@ -84,19 +104,60 @@ impl P {
     /// `t = 90deg`: a parameter's name and its value's text, which the model's own units read
     /// (`follow::instant`) once it is loaded.  Written `t=90deg` it is one word.
     fn instant(&mut self) -> Result<Instant> {
+        let (name, glued, span) = self.named("expected `=` and the instant: `at t = 90deg`")?;
+        let text = match glued {
+            Some(lo) => self.text[lo..self.tokens[self.i - 1].span.hi as usize].to_string(),
+            None => self.word()?,
+        };
+        let hi = self.tokens[self.i - 1].span.hi as usize;
+        Ok(Instant { name, text, span: Span::new(span.lo as usize, hi) })
+    }
+    /// `NAME =` of an instant or a model's value: the name, where its value starts in the source
+    /// when it is glued to its `=` (`t=90deg`, one word), and where the name stands.
+    fn named(&mut self, expected: &str) -> Result<(String, Option<usize>, Span)> {
         let span = self.span();
         let word = self.word()?;
-        let (name, text) = match word.split_once('=') {
-            Some((n, v)) if !v.is_empty() => (n.to_string(), v.to_string()),
-            Some((n, _)) => (n.to_string(), self.word()?),
-            None if self.eat("=") => (word, self.word()?),
-            None => return self.fail("expected `=` and the instant: `at t = 90deg`"),
+        let (name, glued) = match word.split_once('=') {
+            Some((n, v)) => (n.to_string(), (!v.is_empty()).then(|| span.lo as usize + n.len() + 1)),
+            None if self.eat("=") => (word, None),
+            None => return self.fail(expected),
         };
         if !crate::syntax::is_name(&name) {
             return Err(Error { span, message: format!("`{name}` is not a name") });
         }
+        Ok((name, glued, span))
+    }
+    /// `g_wf = 2in` of a model's `with` (#940): a name the model binds and the value's text, as
+    /// far as a `,` or `;` outside parentheses, or the next statement; written `g_wf=2in` it is one
+    /// word, and a quoted value (`"1' 6\""`) is the text inside the quotes.
+    fn given(&mut self) -> Result<Given> {
+        let (name, glued, span) = self.named("expected `=` and a value: `with g_wf = 2in`")?;
+        let text = if glued.is_none() && self.tokens.get(self.i).is_some_and(|t| t.quoted) {
+            self.string()?
+        } else {
+            let from = self.i;
+            let mut depth = 0usize;
+            while let Some(t) = self.tokens.get(self.i).filter(|t| !t.quoted) {
+                match t.text.as_str() {
+                    "," | ";" | "model" | "use" | "style" | "sheet" if depth == 0 => break,
+                    "{" | "}" => break,
+                    "(" => depth += 1,
+                    ")" if depth == 0 => break,
+                    ")" => depth -= 1,
+                    _ => {}
+                }
+                self.i += 1;
+            }
+            match glued.or_else(|| (self.i > from).then(|| self.tokens[from].span.lo as usize)) {
+                Some(lo) => self.text[lo..self.tokens[self.i - 1].span.hi as usize].to_string(),
+                None => String::new(),
+            }
+        };
+        if text.trim().is_empty() {
+            return self.fail(&format!("`{name}` is given no value"));
+        }
         let hi = self.tokens[self.i - 1].span.hi as usize;
-        Ok(Instant { name, text, span: Span::new(span.lo as usize, hi) })
+        Ok(Given { name, text, span: Span::new(span.lo as usize, hi) })
     }
     fn number(&mut self, length: bool) -> Result<f64> {
         let span = self.span();
@@ -126,9 +187,10 @@ impl P {
         let name = self.name()?;
         self.want("{")?;
         let mut s = Sheet { name, size: (210.0, 297.0), scale: 1.0, views: Vec::new(),
-            styles: Vec::new(), labels: Vec::new(), span };
+            styles: Vec::new(), labels: Vec::new(), figures: Figures::Reading, span };
         let mut annotations = Vec::new();
         let mut measurements = Vec::new();
+        let mut filters: Vec<(String, Vec<String>)> = Vec::new();
         while !self.eat("}") {
             let span = self.span();
             match self.word()?.as_str() {
@@ -141,22 +203,80 @@ impl P {
                     if s.size.0 <= 0.0 || s.size.1 <= 0.0 { return self.fail("paper size must be positive") }
                 }
                 "scale" => { self.eat(":"); s.scale = self.positive(false)?; }
+                // how a figure the drawing works out is written (#940)
+                "format" => {
+                    self.eat(":");
+                    let span = self.span();
+                    s.figures = match self.word()?.as_str() {
+                        "reading" => Figures::Reading,
+                        "decimal" => {
+                            let n = self.number(false)?;
+                            if n.fract() != 0.0 || !(0.0..=10.0).contains(&n) {
+                                return Err(Error { span, message: "`format decimal N` takes a \
+                                    whole number of places, 0 to 10".into() });
+                            }
+                            Figures::Decimal(n as usize)
+                        }
+                        "fraction" => {
+                            let word = self.word()?;
+                            let d = word.strip_prefix("1/").and_then(|d| d.parse::<u32>().ok())
+                                .filter(|d| (1..=1024).contains(d));
+                            match d {
+                                Some(d) => Figures::Fraction(d),
+                                None => return Err(Error { span, message: "`format fraction` \
+                                    takes the finest fraction, `1/8`, `1/16` (to 1/1024)".into() }),
+                            }
+                        }
+                        _ => return Err(Error { span, message: "expected `format reading`, \
+                            `format decimal N` or `format fraction 1/N`".into() }),
+                    };
+                }
                 kind @ ("view" | "section" | "sketch") => {
                     let name = self.name()?;
                     if s.views.iter().any(|v| v.name == name) { return self.fail("view name declared twice") }
                     self.want("(")?; let target = self.word()?; self.want(")")?;
                     let mut v = View { name, target, direction: "front".into(), cut: None,
-                        sketch: kind == "sketch", at: (0.0, 0.0), scale: None,
-                        dimensions: false, annotations: Vec::new(), measurements: Vec::new(), span };
+                        sketch: kind == "sketch", at: (0.0, 0.0), anchor: None, scale: None,
+                        fit: None, dimensions: false, dimensions_of: Vec::new(),
+                        annotations: Vec::new(),
+                        measurements: Vec::new(), span };
                     if self.eat("from") { v.direction = self.word()?; }
                     if kind == "section" { self.want("cut")?; v.cut = Some(self.word()?); }
-                    self.want("at")?; v.at = self.pair(true)?;
-                    if self.eat("scale") { v.scale = Some(self.positive(false)?); }
+                    self.want("at")?;
+                    // `at topleft (x, y)`: a point of the view's own box, not the origin (#940)
+                    v.anchor = ANCHORS.iter().find(|(w, _)| self.peek(w)).map(|&(_, a)| a);
+                    if v.anchor.is_some() { self.i += 1; }
+                    v.at = self.pair(true)?;
+                    if self.eat("scale") {
+                        if self.eat("fit") {
+                            let (w, h) = self.pair(true)?;
+                            if w <= 0.0 || h <= 0.0 {
+                                return self.fail("a fit's box must be positive");
+                            }
+                            v.fit = Some((w, h));
+                        } else {
+                            v.scale = Some(self.positive(false)?);
+                        }
+                    }
                     s.views.push(v);
                 }
+                // `dimensions m.frame, .structural in VIEW`: those alone (#940)
                 "dimensions" => {
+                    let mut of = Vec::new();
+                    while !self.peek("in") {
+                        let span = self.span();
+                        let w = self.word()?;
+                        if w == "," || w == ";" || w == "}" {
+                            return Err(Error { span, message: "expected a model path or a \
+                                class, then `in VIEW`".into() });
+                        }
+                        of.push(w);
+                        self.eat(",");
+                    }
                     self.want("in")?;
-                    annotations.push((self.name()?, None));
+                    let view = self.name()?;
+                    filters.push((view.clone(), of));
+                    annotations.push((view, None));
                 }
                 "dimension" => {
                     let target = self.word()?;
@@ -184,7 +304,7 @@ impl P {
                     }
                     s.styles.push(rule)
                 }
-                _ => return self.fail("expected size, scale, view, section, sketch, dimensions, dimension, measure, label, or style"),
+                _ => return self.fail("expected size, scale, format, view, section, sketch, dimensions, dimension, measure, label, or style"),
             }
             self.eat(";");
         }
@@ -193,6 +313,17 @@ impl P {
                 return self.fail(&format!("no view named `{name}`"));
             };
             if let Some(a) = a { v.annotations.push(a); } else { v.dimensions = true; }
+        }
+        // a bare `dimensions in VIEW` asks for all of them, whatever else narrows it
+        let bare: BTreeSet<&String> =
+            filters.iter().filter(|(_, of)| of.is_empty()).map(|(v, _)| v).collect();
+        for (name, of) in &filters {
+            let Some(v) = s.views.iter_mut().find(|v| v.name == *name) else { continue };
+            if !of.is_empty() && !v.sketch {
+                return Err(Error { span: v.span, message: "`dimensions SEL in VIEW` narrows a \
+                    sketch's dimensions; a solid view's are its extents".into() });
+            }
+            if !bare.contains(&v.name) { v.dimensions_of.extend(of.iter().cloned()); }
         }
         for (name, m) in measurements {
             let Some(v) = s.views.iter_mut().find(|v| v.name == name) else {

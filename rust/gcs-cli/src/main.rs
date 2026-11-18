@@ -52,7 +52,10 @@ diagnosed, and the report says where it stands.
     --json              structured output instead of the text report
     --set NAME=VALUE    read VALUE for the document's top-level `NAME := …` this run, the file
                         left as it is: an expression in the document's units (--set checks=1,
-                        --set travel=3mm); repeatable, one document, and said in the report
+                        --set travel=3mm), a bare number in the unit of the value it replaces
+                        (-6 over 1in is -6in); repeatable, one document, and said in the report.
+                        Given a drawing, each model it imports that binds NAME is given VALUE,
+                        but where the drawing's own `with` gives it one
     --where NAME        where a name landed: its own numbers and everything under it, and a
                         value the document names, in its unit (repeatable; the whole table in
                         --json when none is given).  A solid's measures (volume, area, bounds,
@@ -75,6 +78,10 @@ diagnosed, and the report says where it stands.
     --no-progress       say nothing on stderr as the run goes, even on a terminal
     --timings           at the end, every stage in the order run, then the slowest solids,
                         claims and parts' rows, each with its statement
+    --parts             a cut list: each part (the objects of one binding one part, as
+                        --step-assembly writes them), how many, and the box it is cut from —
+                        its length, width and thickness in the document's unit, square to its
+                        own faces however it stands — with the objects that are it (#940)
     --components        what each component is against the contract for a reusable solve
                         boundary (#452), read through its first instance: asserts only, leaves
                         freedoms, locally determined, branch chosen, and whether it reads the
@@ -244,6 +251,8 @@ struct Opts {
     timings: bool,
     /// `--components`: each component classified against the boundary contract (#452).
     components: bool,
+    /// `--parts`: each part, how many, and the box it is cut from (#940).
+    parts: bool,
 }
 
 impl Default for Opts {
@@ -270,6 +279,7 @@ impl Default for Opts {
             say: watch::Say::Nothing,
             timings: false,
             components: false,
+            parts: false,
         }
     }
 }
@@ -516,6 +526,7 @@ fn main() -> ExitCode {
             "--no-progress" => said = Some(watch::Say::Nothing),
             "--timings" => opts.timings = true,
             "--components" => opts.components = true,
+            "--parts" => opts.parts = true,
             "--allow-unsolved" => opts.allow_unsolved = true,
             "-h" | "--help" => {
                 print!("{USAGE}");
@@ -554,9 +565,6 @@ fn main() -> ExitCode {
     if !opts.set.is_empty() && paths.len() != 1 {
         return misuse("--set gives a value of one document, so it takes one");
     }
-    if let Some(p) = paths.iter().find(|p| !opts.set.is_empty() && drawing(p)) {
-        return misuse(format!("--set gives a model's value, and `{p}` is a drawing"));
-    }
     if opts.output.is_some() && paths.len() != 1 {
         return misuse("--output writes one file, so it takes one document");
     }
@@ -588,6 +596,10 @@ fn main() -> ExitCode {
     let mut sources: Vec<Source> = Vec::new();
     for p in &paths {
         match std::fs::read_to_string(p) {
+            // a drawing hands its values on to the models it imports (#940)
+            Ok(text) if drawing(p) => {
+                sources.push(Source { name: p.clone(), text, rebound: Vec::new() })
+            }
             Ok(text) => match gcs_core::edit::rebind(&text, &opts.set) {
                 Ok((text, rebound)) => sources.push(Source { name: p.clone(), text, rebound }),
                 Err(m) => return misuse(format!("--set: {p}: {m}")),
@@ -819,6 +831,11 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             for a in gcs_core::report::measure_answers(&sk, &e.measures) {
                 println!("  {}", a.text);
             }
+            // each claim over what the solve gives, judged where it landed (#940)
+            for c in &e.measured_claims {
+                let judged = gcs_core::program::judge_measured(&sk, &e.map, c);
+                println!("  {}", gcs_core::report::measured_claim_text(sk.units, &judged));
+            }
         }
         if let Some(d) = &d {
             println!("  {}", gcs_core::diagnose::summary(d));
@@ -926,7 +943,21 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             println!("  {line}");
         }
     }
+    // the cut list (#940), read where the solve landed
     let mut code = if solved || opts.allow_unsolved { 0 } else { 2 };
+    let cut = opts.parts.then(|| gcs_core::stock::cut_list(&sk));
+    match &cut {
+        Some(Ok(parts)) if !opts.json => {
+            for line in gcs_core::stock::text(&sk, parts) {
+                println!("  {line}");
+            }
+        }
+        Some(Err(why)) => {
+            eprintln!("solventc: --parts: {why}");
+            code = 1;
+        }
+        _ => {}
+    }
     // each export in its turn, then the pictures, of one solved sketch and its memo, so a solid
     // two of them read is built once (#592).  The pictures read a copy of it given what each
     // export built: an export's own build is the same solid as the memo's, its faces named by its
@@ -1067,6 +1098,9 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             let mut doc = doc_json(s, &[], Some(&r), d.as_ref().map(|d| (&sk, d)), &e, &unbuilt,
                                    positions.unwrap_or(Json::Null),
                                    components.unwrap_or(Json::Null), &opts.wanted);
+            if let Some(Ok(parts)) = &cut {
+                doc.set("cutList", gcs_core::stock::json(&sk, parts));
+            }
             // the claims `solidClaims` leaves out, so an empty list is not read as none stated
             if opts.no_check && d.is_some() && !sk.solid_claims.is_empty() {
                 doc.set("solidClaimsUnjudged", Json::Int(sk.solid_claims.len() as i64));
@@ -1197,18 +1231,32 @@ fn check_drawing(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
         Err(gcs_core::drawing::Error { span: Default::default(),
             message: "STL/STEP/glTF/PNG export selects geometry from a .sv model, not a .svd drawing".into() })
     } else {
-        gcs_core::drawing::compile(&s.text, &s.name, opts.sheet.as_deref(), &mut load_beside)
+        gcs_core::drawing::compile_with(&s.text, &s.name, opts.sheet.as_deref(), &opts.set,
+                                        &mut load_beside)
     };
     match result {
-        Ok(svg) => {
+        Ok(compiled) => {
             if let Some(path) = &opts.output {
-                if let Err(e) = std::fs::write(path, svg) {
+                if let Err(e) = std::fs::write(path, compiled.svg) {
                     eprintln!("solventc: {path}: {e}"); return (1, None);
                 }
             }
-            if !opts.json { println!("{}: drawing compiled", s.name); }
-            (0, opts.json.then(|| json::object([("file", Json::Str(s.name.clone())),
-                ("drawing", Json::Bool(true)), ("ok", Json::Bool(true))])))
+            if !opts.json {
+                println!("{}: drawing compiled", s.name);
+                // each value a model was drawn with over the one its file writes (#940)
+                for (alias, rebound) in &compiled.rebound {
+                    for b in rebound {
+                        println!("  {alias}: {}", report::rebound_text(b));
+                    }
+                }
+            }
+            (0, opts.json.then(|| {
+                let set = compiled.rebound.iter().filter(|(_, r)| !r.is_empty())
+                    .map(|(alias, r)| (alias.clone(), report::rebound_json(r)));
+                json::object([("file", Json::Str(s.name.clone())),
+                    ("drawing", Json::Bool(true)), ("ok", Json::Bool(true)),
+                    ("set", Json::Obj(set.collect()))])
+            }))
         }
         Err(e) => {
             if !opts.json { say(s, e.span.lo, "error", "D001", &e.message); }
@@ -1271,7 +1319,7 @@ fn values_wanted<'e>(e: &'e Elaborated, names: &[String])
 /// Whether `name` is `asked` or something under it: `cyl` reaches `cyl.pivot.x`, and `head`
 /// reaches `head.casting`.
 fn under(name: &str, asked: &str) -> bool {
-    name == asked || name.strip_prefix(asked).is_some_and(|r| r.starts_with('.'))
+    name == asked || name.strip_prefix(asked).is_some_and(|r| r.starts_with(['.', '[']))
 }
 
 /// Whether solid `i` is `asked` or something under it (`under`), by its key or by the name the
@@ -1627,6 +1675,12 @@ fn doc_json(
     // and the masses and volumes the drawing states (#510), at the solved pose
     if let Some((sk, _)) = d.filter(|_| settled && !e.measures.is_empty()) {
         doc.set("measures", report::measures_json(sk, &e.measures));
+    }
+    // and each claim over measurements of the drawing, where it solved to (#940)
+    if let Some((sk, _)) = d.filter(|_| settled && !e.measured_claims.is_empty()) {
+        let judged: Vec<_> = e.measured_claims.iter()
+            .map(|c| gcs_core::program::judge_measured(sk, &e.map, c)).collect();
+        doc.set("measuredClaims", report::measured_claims_json(sk.units, &judged));
     }
     // the document's parts, read through the diagnosis (#461), where it has any
     if let Some((sk, d)) = d {
