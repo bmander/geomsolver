@@ -1396,7 +1396,13 @@ impl<'a> Arrangement<'a> {
                 }
                 // a reading not proved refuses the Boolean, with its witness (#814 P3)
                 Meets::Refused(r) => {
-                    if self.say.debug { eprintln!("brep: edge {i} of {} ({}) against face {fi} of {} ({}) refused: {r}",s.name(),c.kind(),other.name(),f.surface.kind()); }
+                    if self.say.debug {
+                        eprintln!("brep: edge {i} of {} ({}) against face {fi} of {} ({}) refused: {r}",s.name(),c.kind(),other.name(),f.surface.kind());
+                        let off: Vec<String> = (0..=8).map(|k| { let x = c.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/8.); format!("{:.2e}",f.surface.implicit(x)) }).collect();
+                        eprintln!("brep:   the edge from {:?} to {:?}, off the surface {}",c.point(e.t[0]),c.point(e.t[1]),off.join(" "));
+                        let of: Vec<&str> = bounded[s][i].iter().map(|&h| self.solids[s].faces[h].name.as_str()).collect();
+                        eprintln!("brep:   the edge bounding {of:?}, the face named {:?}",f.name);
+                    }
                     return Err(format!("an edge met with a face: {r}"))
                 }
                 Meets::At(roots) => for (t,touch) in roots {

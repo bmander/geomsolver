@@ -543,9 +543,12 @@ fn fitted(mut nodes: Vec<(Uv,V)>,between: &(dyn Fn(Uv,Uv) -> (Uv,V)+Sync),tol: f
             let along = crate::util::space::dot(d,chord)/crate::util::space::dot(chord,chord);
             norm_of(crate::util::space::sub(d,scale(chord,along))) > 0.1*tol
         }).collect();
-        if wide.is_empty() || nodes.len()+wide.len() > MOST {
-            return Some(crate::geom::Curve::BSpline(std::sync::Arc::new(spline)))
-        }
+        if wide.is_empty() { return Some(crate::geom::Curve::BSpline(std::sync::Arc::new(spline))) }
+        // (a fit given up on with its spans still wide is kept where it keeps to its nodes' box grown
+        // by that box's size: past it, nodes crowding where the march's points between would not
+        // settle left spans elsewhere free, and a loop of a general road's wall's meeting with the
+        // cube at an end of the roll swung 6e5 out between them, #880 T1d)
+        if nodes.len()+wide.len() > MOST { return kept(spline,&nodes) }
         let mut grew = false;
         for &k in wide.iter().rev() {
             let m = mids[k].unwrap();
@@ -555,14 +558,43 @@ fn fitted(mut nodes: Vec<(Uv,V)>,between: &(dyn Fn(Uv,Uv) -> (Uv,V)+Sync),tol: f
             mids.splice(k..=k,[None,None]);
             grew = true;
         }
-        if !grew { return Some(crate::geom::Curve::BSpline(std::sync::Arc::new(spline))) }
+        if !grew { return kept(spline,&nodes) }
     }
+}
+
+/// A fit given up on (`fitted`), kept where its poles keep within its nodes' box grown by that box's
+/// diagonal.
+fn kept(spline: crate::nurbs::BSpline,nodes: &[(Uv,V)]) -> Option<crate::geom::Curve> {
+    let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
+    for (_,p) in nodes { for k in 0..3 { lo[k] = lo[k].min(p[k]); hi[k] = hi[k].max(p[k]) } }
+    let grow = distance(lo,hi);
+    let within = |p: &V| (0..3).all(|k| p[k] >= lo[k]-grow && p[k] <= hi[k]+grow);
+    spline.poles.iter().all(within).then(|| crate::geom::Curve::BSpline(std::sync::Arc::new(spline)))
 }
 
 fn norm_of(v: V) -> f64 { crate::util::space::norm(v) }
 
+/// **A sheet read over `[0, 1]²`** (`pose_meeting`): its section's `u` and the roll's `v` — a
+/// section carried by a constant twist (`Blend`), or an edge whose numbers move with the roll under
+/// any other motion (`general`, #880 T1d).
+pub(super) trait Rolled: Sync {
+    /// Its point at `(u, v)`.
+    fn at(&self,u: f64,v: f64) -> V;
+    /// Its rate along the roll there, `∂/∂v`.
+    fn rate(&self,u: f64,v: f64) -> V;
+    /// Whether the section's end at `u` (0 or 1) stands still over the roll: a pole, its side of the
+    /// parameters one point.
+    fn still(&self,u: f64) -> bool;
+}
+
+impl Rolled for crate::geom::Blend {
+    fn at(&self,u: f64,v: f64) -> V { self.carry.at(self.a.point(u),v) }
+    fn rate(&self,u: f64,v: f64) -> V { self.carry.rate(self.at(u,v)) }
+    fn still(&self,u: f64) -> bool { let q = self.a.point(u); distance(self.carry.at(q,1.),q) <= 1e-9*(1.+norm_of(q)) }
+}
+
 /// **A sheet's whole meeting with a face of the tool posed at an end of the roll** (#880 Q1b): the
-/// sheet `S(u, v) = carry_v(a(u))`, the face's surface `surface`, and their meeting the zero set of
+/// sheet `S(u, v)` (`Rolled`: under a constant twist `carry_v(a(u))`), the face's surface `surface`, and their meeting the zero set of
 /// `F(u, v)`, the surface's signed distance at `S(u, v)`, read in the sheet's own parameters. Where
 /// the face is the one the section lies on and the pose the sheet's end at `v = e` (`touch`), the
 /// sheet touches it along that end's rim: `F` vanishes there twice over, `F = (v − e)² h`, and the
@@ -580,10 +612,9 @@ fn norm_of(v: V) -> f64 { crate::util::space::norm(v) }
 /// that rounding puts it off (`h` there over its slope toward the end) ends there exactly: its root
 /// fell a hair beside it (7e-7 of the section on the leaning torus), beside the rim and the rail that
 /// end there.
-fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,within: ([f64;3],[f64;3]),touch: Option<(f64,u32)>,turn: Option<f64>,corners: &[Uv],
+pub(super) fn pose_meeting(sheet: &dyn Rolled,surface: &Surface,within: ([f64;3],[f64;3]),touch: Option<(f64,u32)>,turn: Option<f64>,corners: &[Uv],
     face: &(dyn Fn(V) -> crate::query::Place+Sync),tol: f64) -> Vec<crate::geom::Curve> {
-    let a = &blend.a;
-    let at = |u: f64,v: f64| blend.carry.at(a.point(u),v);
+    let at = |u: f64,v: f64| sheet.at(u,v);
     let f = |u: f64,v: f64| surface.implicit(at(u,v));
     // **a corner of the sheet on the face** (#880 Q1b S5): where an end of the section, at either end
     // of the roll, lies on the face — the section ending on an edge of the tool the face bounds — the
@@ -615,12 +646,12 @@ fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,within: ([f64;3],[f
     const SERIES: f64 = 1e-5;
     // all of a share within `lo` of the rim, none past `hi`, a smoothstep between
     let fall = |w: f64,lo: f64,hi: f64| { let x = ((w.abs()-lo)/(hi-lo)).clamp(0.,1.); 1.-x*x*(3.-2.*x) };
-    let rate = |u: f64,v: f64| { let q = at(u,v); crate::util::space::dot(surface.gradient(q),blend.carry.rate(q)) };
+    let rate = |u: f64,v: f64| crate::util::space::dot(surface.gradient(at(u,v)),sheet.rate(u,v));
     let rim = |u: f64| touch.map_or([0.;2],|(e,_)| [f(u,e),rate(u,e)]);
     // at `u` (the section's point there, `p`) and `v`, `F` less `share` of the rim's value and rate `c`
     // over `w`'s power, the series within its step
-    let over = |u: f64,p: V,v: f64,[c0,c1]: [f64;2],share: f64| -> f64 {
-        let f = surface.implicit(blend.carry.at(p,v));
+    let over = |u: f64,v: f64,[c0,c1]: [f64;2],share: f64| -> f64 {
+        let f = surface.implicit(at(u,v));
         let Some((e,order)) = touch else { return f };
         let w = v-e;
         let own = || (f-share*(c0+if order == 1 { 0. } else { c1*w }))/w.powi(order as i32);
@@ -631,10 +662,10 @@ fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,within: ([f64;3],[f
         if mu == 1. { return series }
         mu*series+(1.-mu)*own()
     };
-    let h = |u: f64,v: f64| over(u,a.point(u),v,rim(u),1.);
+    let h = |u: f64,v: f64| over(u,v,rim(u),1.);
     let k = |u: f64,v: f64| {
         let share = touch.map_or(0.,|(e,_)| fall(v-e,STEP,4.*STEP));
-        over(u,a.point(u),v,if share > 0. { rim(u) } else { [0.;2] },share)
+        over(u,v,if share > 0. { rim(u) } else { [0.;2] },share)
     };
     // the grid: as many cells each way as its sides' lengths in space ask, 64 at least
     let length = |p: &dyn Fn(f64) -> V| (0..32).map(|k| distance(p(k as f64/32.),p((k+1) as f64/32.))).sum::<f64>();
@@ -659,11 +690,11 @@ fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,within: ([f64;3],[f
     };
     let band = 2./n[1] as f64;
     let far = |q: V,v: f64| far(q) || lifted.iter().any(|&x| (v-x).abs() <= band);
-    // (the section's point and the rim's value and rate read once a column)
+    // (the rim's value and rate read once a column)
     let values: Vec<Vec<f64>> = crate::util::par::indices(n[0]+1,|i| {
         let u = node(i,0)[0];
-        let (p,c) = (a.point(u),rim(u));
-        (0..=n[1]).map(|j| { let v = node(i,j)[1]; if far(blend.carry.at(p,v),v) { f64::NAN } else { over(u,p,v,c,1.) } }).collect()
+        let c = rim(u);
+        (0..=n[1]).map(|j| { let v = node(i,j)[1]; if far(at(u,v),v) { f64::NAN } else { over(u,v,c,1.) } }).collect()
     });
     let mut roots: Vec<Uv> = Vec::new();
     let mut root_on = |p: Uv,q: Uv,fp: f64,fq: f64| -> Option<usize> {
@@ -780,7 +811,7 @@ fn pose_meeting(blend: &crate::geom::Blend,surface: &Surface,within: ([f64;3],[f
     // the end, four times over
     let snapped = |p: Uv| corners.iter().copied().find(|&c| rounding(c,p)).unwrap_or(p);
     // the sheet's sides that are one point: a section's end on the turn's axis, which the carry holds
-    let poles: Vec<(f64,V)> = [0.,1.].into_iter().map(|u| (u,a.point(u))).filter(|&(_,q)| distance(blend.carry.at(q,1.),q) <= 1e-9*(1.+norm_of(q))).collect();
+    let poles: Vec<(f64,V)> = [0.,1.].into_iter().filter(|&u| sheet.still(u)).map(|u| (u,at(u,0.))).collect();
     let on_pole = |p: Uv| poles.iter().any(|&(u,q)| (p[0]-u).abs() <= 1e-9 || distance(at(p[0],p[1]),q) <= tol);
     // (the face where the section does not lie on it, read where it holds the sheet's corners)
     use crate::query::Place;
@@ -2156,7 +2187,7 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
             // is placed of its own)
             let back = ends[e].inverse();
             let place = |p: V| located.face_place(fi,back.point(p));
-            curves.extend(pose_meeting(&c.blend,&f.surface,faces[e][fi],touch,whole,&corners,&place,tol));
+            curves.extend(pose_meeting(&*c.blend,&f.surface,faces[e][fi],touch,whole,&corners,&place,tol));
         }
         // (a branch along a side of the sheet's parameters that is one point in space — a pole's,
         // where the section meets the turn's axis — meets nothing: laid, a loop of no size round the pole)

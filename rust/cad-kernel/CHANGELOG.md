@@ -8,6 +8,18 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The contact's road under any motion, begun** (`swept::general`, #880 T1d): a polyhedral tool's
+  candidates under a motion no constant twist takes — its contact read per tool at each instant,
+  chords of its faces' characteristic lines and stretches of its sharp edges, cut where its shape
+  changes; each piece on a moving wall (`family::Sheet`) per edge or face, its strips the faces of
+  one candidate; and the meetings known by construction given. No build takes it yet: a stretch born
+  at a point of its edge pinches the edge's carried line, and two edges may sweep one surface.
+- **`swept::contacts`'s meeting of a sheet with the tool at an end of the roll reads any sheet**
+  (`Rolled`): a constant twist's blend as before, or a moving wall.
+- **A contact's fit given up on keeps to its nodes** (`swept::contacts`): a branch whose fit stops at
+  its most nodes with spans still wide is kept only where its poles stand within its nodes' box grown
+  by its size; past it, it swung hundreds of kilometres out between nodes crowding at one spot.
+
 - **A swallowtail narrower than a stretch is cut at its double point** (`swept::contacts`, #880
   T1e): where a contact's image in the motion's invariants turns back twice, its outer leaves cross
   over one path, and a stretch holding both folds held both leaves of the crossing, a sheet crossing

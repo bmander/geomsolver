@@ -1884,6 +1884,29 @@ tool; the roots meet on the locus; and a ball's contacts under a tumble (a turn 
 across it) bound what it sweeps, a hair inside a member and a hair outside not, by the kernel's
 membership (`a_balls_contacts_bound_what_it_sweeps`).  Sampled where it samples.
 
+**The contact's road under any motion, begun (#880 T1d, `brep::swept::general`):** the candidates
+of a polyhedral tool under a motion no constant twist takes, read per tool at each instant against
+its twist read on the tool (`Twist::body`). Each face's `n · v` is affine over its plane, so its
+contact is a chord of its characteristic line from edge to edge; each sharp edge's contact is where
+its two faces' `n · v` differ in sign, between their roots along it or a vertex. So an instant's
+contact is closed polygons, and its shape changes only at instants where a root passes a vertex or
+two meet, found by halving the roll between readings that differ (a shape over less than a
+billionth of the roll dropped as the passing state between its neighbours), and each stretch cut
+again to a quarter turn and the tool's size of travel. Each piece lies on a **bearer**, a face
+family's wall (`family::Sheet`) moving with the roll: an edge's line carried over the whole roll, or
+a face's characteristic line over each stretch it comes near the face; the pieces of one bearer are
+the faces of one candidate, strip by strip, sharing the rims between them, their moving sides exact
+walls in space and in the bearer's parameters (`Pcurve::Curve`). What is known is given: two edges'
+bearers with a vertex in common its path; an edge's and a face's of it the path where the face's
+chord reaches the edge, over each stretch holding that end, where the two touch; each bearer's whole
+meeting with the tool at either end (`contacts::pose_meeting`, read on any `Rolled` sheet, its
+branches ending on the strips' corners there). Held: every given rail lies on both its surfaces
+(`swept_general`). **Not yet a road a build takes**: a fan's stretch born at a point of its edge,
+where the edge's velocity runs along it and its carried line has a pinch point, its strip's two sides
+leaving it tangent and the Boolean merging them (the tumbling cube); two bearers on one surface (a
+bar's vertical edges at one radius under a turn and a rise, one cylinder); and a bearer's meeting
+with the tool at an end near a corner, not settled on the bearer.
+
 **K2's patches: the closed class under any rigid motion (#780 L3, `brep::swept::patches`):** a
 sweep under a motion no constant twist takes, nor a path of pieces (`Trajectory::General`, a frame
 along a path #398; a `Relative`), is built on the closed class's one arrangement
