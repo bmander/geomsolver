@@ -210,3 +210,102 @@ fn a_draft_taken_to_nothing_says_where_from() {
         assert!(why.contains(said), "{said}: {why}");
     }
 }
+
+/// A countersink drawn on a plane of the drawing's own, after more faces than there are planes
+/// (#948): its set's first term measures from the rim's *face* (`p distance(<= 0mm, along: n)
+/// rim`), which the key read as though the face's number named a plane — out of bounds, a panic
+/// in the solid's check, where faces outnumber planes, and another plane's pose read in its key
+/// where they do not.  Now the face is read as a face: the solid is checked and built, its key
+/// moves with the plane its rim is drawn on and stands still when an unrelated plane moves.
+#[test]
+fn a_countersink_on_a_plane_of_its_own_reads_its_rim_as_a_face() {
+    let mut circles = String::new();
+    for k in 1..=6 {
+        circles += &format!("  c{k} := circle(center: a) hint(r: {k})\n  radius({k}mm) c{k}\n");
+        circles += &format!("  f{k} := face(c{k})\n");
+    }
+    let mut e = solved(&format!("unit mm
+use std
+use std.solids (cut)
+in std.top {{
+  a := point
+  fix((0, 0)) a
+{circles}}}
+other := plane
+fix(origin == (0mm, 0mm, -20mm)) other
+fix(dir == (1, 0, 0)) other.u
+fix(dir == (0, 1, 0)) other.v
+deck := plane
+fix(origin == (0mm, 0mm, 10mm)) deck
+fix(dir == (1, 0, 0)) deck.u
+fix(dir == (0, 1, 0)) deck.v
+in deck {{
+  pc := point
+  fix((0, 0)) pc
+  rim := circle(center: pc) hint(r: 3)
+  radius(3mm) rim
+}}
+sink := solid(std.solids.Countersink(face(rim), angle: 90deg))
+"));
+    let refused = gcs_core::program::solid_diagnostics(&e.sketch, &e.map, &e.program);
+    assert!(refused.is_empty(), "{:?}", refused.iter().map(|d| &d.message).collect::<Vec<_>>());
+    let b = exact(&e, "sink").unwrap();
+    close("the sink on its own plane, exactly", props::volume(&b), cone(3.0, 90.0), 1e-9);
+    let sink = ent(&e, "sink").i();
+    let key = gcs_core::solid::reads(&e.sketch, sink, 0.0);
+    let origin = |e: &Elaborated, name: &str| {
+        e.sketch.frames[ent(e, name).i()].chart.as_ref().unwrap().o
+    };
+    for q in origin(&e, "other") { e.sketch.params[q as usize].value += 7.0; }
+    assert_eq!(gcs_core::solid::reads(&e.sketch, sink, 0.0), key, "an unrelated plane moved");
+    let z = origin(&e, "deck")[2] as usize;
+    e.sketch.params[z].value += 1.0;
+    assert_ne!(gcs_core::solid::reads(&e.sketch, sink, 0.0), key, "the rim's plane moved");
+}
+
+/// Countersinks in a `ring` (#948): the set's distances from `beyond` and `within` each read the
+/// set at a hidden point of their own, held in space, which the ring took for a point of the copy
+/// drawn out of its view (E023) — a prism in the same ring passed, having none.  Those points are
+/// the set's, turned with nothing; the sinks are turned with their rims, each the cone to its
+/// point, opening where its rim is.
+#[test]
+fn countersinks_in_a_ring_are_turned_with_their_rims() {
+    let e = solved("unit mm
+use std
+use std.solids (cut)
+use std.place (vertical)
+deck := plane
+fix(origin == (0mm, 0mm, 22.5mm)) deck
+fix(dir == (1, 0, 0)) deck.u
+fix(dir == (0, 1, 0)) deck.v
+in deck {
+  pc := point
+  fix((40, 0)) pc
+  ring 3 about pc {
+    hc := point hint((40, 10))
+    pc distance(10mm) hc
+    rim := circle(center: hc) hint(r: 3)
+    radius(3mm) rim
+    sink := solid(std.solids.Countersink(face(rim), angle: 90deg))
+  }
+  pc vertical hc[0]
+}
+");
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    for k in 0..3 {
+        let sink = format!("sink[{k}]");
+        let i = (0..e.sketch.solids.len()).find(|&i| e.sketch.solid_name(i) == sink)
+            .unwrap_or_else(|| panic!("no {sink}"));
+        let b = export::exact(&e.sketch, i, None, None, &say).map_err(|r| r.message).unwrap().solid;
+        close(&sink, props::volume(&b), cone(3.0, 90.0), 1e-9);
+        // under its rim's centre, a turn of 120° about (40, 0) from (40, 10): its point 3 below
+        let a = (90.0 + 120.0 * k as f64).to_radians();
+        let (x, y) = (40.0 + 10.0 * a.cos(), 10.0 * a.sin());
+        let apex = [x, y, 22.5 - 3.0];
+        assert!(b.vertices.iter().any(|v| (0..3).all(|j| (v.p[j] - apex[j]).abs() < 1e-9)),
+                "{sink}'s point at {apex:?}: {:?}", b.vertices.iter().map(|v| v.p).collect::<Vec<_>>());
+        let facets = gcs_core::solid::resolve(&e.sketch, i, gcs_core::solid::REPORT_UNIT);
+        assert!(facets.inside([x, y, 21.5]), "{sink} under its rim at ({x:.3}, {y:.3})");
+        assert!(!facets.inside([x + 2.5, y, 21.5]), "{sink} narrows below its rim");
+    }
+}

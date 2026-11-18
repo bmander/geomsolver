@@ -109,11 +109,19 @@ pub(super) fn elaborate_in(
     let expansion = expand(&mut cx, refused, named);
     let body: Vec<&Statement> = expansion.flat.iter().collect();
     // a turned copy's relation stating a bound of its own region solid's probe states it: never a
-    // row, it is the copy's solid's term, read over the copy's turned points
+    // row, it is the copy's solid's term, read over the copy's turned points — and so does one of
+    // any other point its set is read at, whatever its key, and a bound on its distances from
+    // sets (a countersink's, #948)
+    let probes: BTreeSet<&str> = expansion.probes.iter().map(String::as_str).collect();
     let reads_probe = |st: &Statement| match &st.kind {
         crate::ir::Operation::Relation(r) => r.form.written().is_some_and(|w| {
-            w.ops.iter().any(|o| crate::flatten::is_probe(&o.root.text))
+            w.ops.iter().any(|o| {
+                crate::flatten::is_probe(&o.root.text) || probes.contains(o.root.text.as_str())
+            })
         }),
+        // a bound on measurements is a term of the region solid whose point it reads, never a
+        // row: the copy's own solid's, over its turned sets
+        crate::ir::Operation::Measured(_) => true,
         _ => false,
     };
     let stating: Vec<&Statement> =
@@ -249,6 +257,7 @@ fn expand(
     cx.map.private_names = expansion.private_names.clone();
     cx.map.apart = std::mem::take(&mut expansion.apart);
     cx.map.along = std::mem::take(&mut expansion.along);
+    cx.map.unread = std::mem::take(&mut expansion.unread);
     // an instance drawn has its path; one cut short (a recursion refused) has none and is not one
     cx.map.instances = expansion.instances.iter().filter(|i| !i.drawn || !i.path.is_empty())
         .map(|i| super::Instanced { path: super::InstPath(i.path.clone()), prefix: i.prefix.clone(),
@@ -562,7 +571,7 @@ fn holds(
     // each normal read turned along its plane as the holds and the lines have stood it
     cx.sk.seed_normals();
     // a ring's copies, turns of its representative: after the holds, which a copy may not have
-    rings::rings(&mut cx.sk, &cx.res, &cx.map, &flat.expansion.rings, &mut cx.diags);
+    rings::rings(&mut cx.sk, &cx.res, &cx.map, &flat.expansion.rings, &cx.probes, &mut cx.diags);
     // a mirrored instance's images, over its preimage and the rings' copies in it (#578)
     super::mirrors::mirrors(&mut cx.sk, &mut cx.res, &mut cx.map, &flat.expansion.instances,
                             &mut cx.diags);
