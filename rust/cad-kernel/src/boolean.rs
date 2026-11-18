@@ -1366,6 +1366,20 @@ impl<'a> Arrangement<'a> {
             let meets = at_its_ends(meets,c,e.t,surface,tol.max(e.tol));
             (meets,started.elapsed().as_secs_f64())
         });
+        // (how many were read and what they cost all told, said before any is acted on: a refusal
+        // among them ends the arrangement before its phases are said, #942 F4)
+        if self.say.timing {
+            let all: f64 = read.iter().map(|r| r.1).sum();
+            eprintln!("time: arrange: {} edges read against faces in {:.2} s of the cores' time, the slowest {:.2} s",read.len(),all,
+                read.iter().map(|r| r.1).fold(0.,f64::max));
+            let mut by: BTreeMap<(&str,&str),(usize,f64)> = BTreeMap::new();
+            for (&(_,other,_,fi,_,c),r) in asked.iter().zip(&read) {
+                let k = by.entry((c.kind(),self.solids[other].faces[fi].surface.kind())).or_default();
+                k.0 += 1;
+                k.1 += r.1;
+            }
+            for ((ck,sk),(n,t)) in by { eprintln!("time: arrange:   {ck} against {sk}: {n} in {t:.2} s") }
+        }
         for (&(s,other,i,fi,e,c),(meets,took)) in asked.iter().zip(read) {
             let theirs = self.solids[other];
             let f = &theirs.faces[fi];

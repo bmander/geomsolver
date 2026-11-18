@@ -211,6 +211,7 @@ impl Ring {
     /// on a join is counted once); otherwise wherever its closed form puts it, as a piece's end
     /// reads it.
     fn root(&self,w: &Twist,theta: f64,l: Label,strict: bool) -> Option<Root> {
+        spent::ROOTS.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
         let (er,_,ez) = self.axes(theta);
         let n = self.elements.len();
         let lift3 = |m: P2| add(scale(er,m[0]),scale(ez,m[1]));
@@ -407,11 +408,38 @@ fn rates(path: &Trajectory,t: f64,[a,b]: [f64;2]) -> Result<(Twist,Twist),Unbuil
     Ok((w0,dw))
 }
 
+/// **What the ring road spends its time on** (#942 F4): every instant's contact read
+/// (`Ring::instant`, a root on each of `AROUND` meridians and the joins between them settled), the
+/// time those reads took, and every root read alone (`Ring::root`) — counted for the whole process,
+/// read before and after a step and printed where `SOLVENT_BREP_TIME` is set (`crate::timing`).
+pub(crate) mod spent {
+    use std::sync::atomic::{AtomicU64,Ordering::Relaxed};
+    pub(crate) static INSTANTS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static INSTANT_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static ROOTS: AtomicU64 = AtomicU64::new(0);
+    /// The counts so far: instants read, their nanoseconds, roots read.
+    pub(crate) fn now() -> [u64;3] { [INSTANTS.load(Relaxed),INSTANT_NANOS.load(Relaxed),ROOTS.load(Relaxed)] }
+    /// What was spent since `before`, said in words.
+    pub(crate) fn since(before: [u64;3]) -> String {
+        let n = now();
+        format!("{} instants in {:.2} s (of the cores' time), {} roots alone",n[0]-before[0],(n[1]-before[1]) as f64*1e-9,n[2]-before[2])
+    }
+}
+
 impl Ring {
     /// **The contact at the instant `w` (its rate `dw`)**: each closed curve's pieces, in order
     /// along it, each join settled in `θ` to rounding. `Err` with a point of the tool where the
     /// number of contacts changes round the axis.
     fn instant(&self,w: Twist,dw: Twist,scale: Option<f64>) -> Result<Instant,V> {
+        let clock = crate::util::clock::Instant::now();
+        let out = self.instant_read(w,dw,scale);
+        spent::INSTANTS.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
+        spent::INSTANT_NANOS.fetch_add(clock.elapsed().as_nanos() as u64,std::sync::atomic::Ordering::Relaxed);
+        out
+    }
+
+    /// `instant`, uncounted.
+    fn instant_read(&self,w: Twist,dw: Twist,scale: Option<f64>) -> Result<Instant,V> {
         let thetas: Vec<f64> = (0..AROUND).map(|i| TAU*i as f64/AROUND as f64).collect();
         let read: Vec<Vec<(Label,Root)>> = thetas.iter().map(|&th| self.roots(&w,th)).collect();
         let m = read[0].len();
@@ -895,8 +923,11 @@ pub fn fitted_over(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],s
         // missed), its neighbours kept within twice its length
         let mut ts: Vec<f64> = (0..=FIRST_ROWS).map(|j| a+(b-a)*j as f64/FIRST_ROWS as f64).collect();
         let mut fractions: Vec<Vec<f64>> = vec![(0..=FIRST_POINTS).map(|i| i as f64/FIRST_POINTS as f64).collect();pieces];
+        let (fit_clock,fit_before) = (crate::util::clock::Instant::now(),spent::now());
+        let mut rounds = 0;
         let net = loop {
             crate::util::meter::go_on()?;
+            rounds += 1;
             let mid = |x: &[f64],i: usize| 0.5*(x[i]+x[i+1]);
             let half_ts: Vec<f64> = (0..ts.len()-1).map(|j| mid(&ts,j)).collect();
             // round the loop: each face's fitted fractions, and the middle of each interval between
@@ -956,6 +987,11 @@ pub fn fitted_over(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],s
         // Newton's method on the net from beside the bridge's ends (the normal form puts it a fifth of
         // the bridge's half-width past them); a row where it settles on none is where the pair is
         // born, its bridge no wider than the rounding, both preimages the bridge's middle
+        if crate::timing() {
+            eprintln!("ring: curve {} over {:?} fitted in {:?}: {rounds} rounds, {} faces, {} rows; {}",run.curve,[a,b],fit_clock.elapsed(),pieces,ts.len()-1,
+                spent::since(fit_before))
+        }
+        let (seed_clock,seed_before) = (crate::util::clock::Instant::now(),spent::now());
         let kinds_of = |i: usize| reader.first[run.curve][run.pieces[i]].side;
         let n = run.pieces.len();
         let mut found = Vec::new();
@@ -1025,6 +1061,7 @@ pub fn fitted_over(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],s
             if std::env::var_os("SOLVENT_RING_DEBUG").is_some() { eprintln!("ring: a narrow pair's leaves first cross at {seed:?}") }
             found.extend(seed);
         }
+        if crate::timing() { eprintln!("ring: curve {} over {:?}: its narrow pairs' crossings sought in {:?}; {}",run.curve,[a,b],seed_clock.elapsed(),spent::since(seed_before)) }
         seeds.extend(found);
         doubles.push(Vec::new());
         nets.push(net);
@@ -1212,30 +1249,40 @@ pub fn cut_along(ring: &Ring,path: &Trajectory,whole: [f64;2],fit: &mut Fitted,s
     let [a,b] = fit.roll;
     let reader = Reader::within(ring,path,whole,[a,b],0.5*(a+b),scale)?;
     let runs = runs(&reader.first);
-    let nf = ring.elements.len() as f64;
     for (ri,run) in runs.iter().enumerate() {
         let per = LEAST_CLOSED.div_ceil(run.pieces.len()).max(PER);
         let faces: Vec<Face> = run.pieces.iter().enumerate().flat_map(|(i,&k)| {
             let of = if reader.first[run.curve][k].side == Side::Fold { 1 } else { per };
             (0..of).map(move |share| Face {piece:i,share,of})
         }).collect();
-        // `(θ, t, σ)`'s `u` on this tube, where its root there is the tube's
+        // `(θ, t, σ)`'s `u` on this tube, where its root there is the tube's: the face whose seams'
+        // angles at `t` hold `θ` — each seam's point of the fitted net read round the ring's axis in
+        // the tool (every point the fit is made of stands in its meridian's half-plane, a dipped
+        // one moved along the tool's normal, which lies in it), the face's share of its piece linear
+        // in `θ` as the fit placed it. One instant read per point of a double curve, to find the
+        // joins of the piece holding it, was 70% of the turned torus's build (#942 F4: 19 314
+        // instants, 74 s of 106)
+        let net = &fit.nets[ri];
+        let n = faces.len();
+        let angle = |u: f64,t: f64| -> Result<f64,Unbuilt> {
+            let q = path.pose(t)?.inverse().point(net.point(u,t));
+            let l = ring.frame.local(q);
+            Ok(l[1].atan2(l[0]))
+        };
         let u_of = |(th,t,sg): (f64,f64,f64)| -> Result<Option<f64>,Unbuilt> {
-            let r = reader.read(t)?;
-            let c = &r.curves[run.curve];
-            for (fk,g) in faces.iter().enumerate() {
-                let p = c[run.pieces[g.piece]];
-                let f = ((th-p.from).rem_euclid(TAU))/(p.to-p.from);
-                let lo = g.share as f64/g.of as f64;
-                let hi = (g.share+1) as f64/g.of as f64;
-                if !(f >= lo && f <= hi) { continue }
-                let Some(root) = self_root(ring,&r.instant.w,th,p.label) else { continue };
-                let d = (root.sigma-sg).rem_euclid(nf);
-                // (the tube's own branch: another stands some half a piece of the meridian away)
-                if d.min(nf-d) > 1e-2 { return Ok(None) }
-                return Ok(Some(fk as f64+(f-lo)*g.of as f64))
+            // the seams' angles at `t`, each run on from the one before round the loop
+            let mut seams = Vec::with_capacity(n+1);
+            for k in 0..=n {
+                let mut x = angle(k as f64,t)?;
+                if let Some(&last) = seams.last() { while x < last { x += TAU } }
+                seams.push(x);
             }
-            Ok(None)
+            let th = seams[0]+(th-seams[0]).rem_euclid(TAU);
+            let Some(k) = (0..n).find(|&k| th >= seams[k] && th <= seams[k+1]) else { return Ok(None) };
+            let u = k as f64+(th-seams[k])/(seams[k+1]-seams[k]).max(1e-300);
+            // (the tube's own branch: another stands some half a piece of the meridian away)
+            let Some((x,_)) = sheet_at(ring,path,th,t,sg) else { return Ok(None) };
+            Ok((crate::util::space::distance(x,net.point(u,t)) <= 1e-2*ring.thickness).then_some(u))
         };
         let mut out = Vec::new();
         for full in curves {

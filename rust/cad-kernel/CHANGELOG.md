@@ -8,6 +8,29 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A ring's double curves are cut into its stretches by the fit itself** (#942 F4): each double
+  curve point's place round the loop is read from the seams' angles of the stretch's own net at its
+  row, where it read a whole instant's contact (a root on every meridian and its joins settled) to
+  find the two joins of its piece. That was 70% of the tumbling torus turned whole: 19 314 instants,
+  74 s of 106, now 0.14 s. The turned torus reaches its refusal in 32 s, and the thin one in 58 s,
+  where it took over forty minutes. Both are still refused, in the trim's Boolean.
+- The ring road says where its time goes where `SOLVENT_BREP_TIME` is set: each step of a ring's
+  build (the shape changes found, each stretch fitted and its narrow pairs' crossings sought, the
+  double curves traced and cut, the stretches entered and sewn) with how many instants it read, their
+  time on the cores and the roots read alone; the trim's Boolean beside its pieces' membership; and
+  the arrangement's edges read against faces, all told and by kinds of curve and surface. The
+  `ring_profile` example builds brep-bench's two tumbling tori so.
+
+- A sweep refused in its trim is written whole where `SOLVENT_SWEEP_DUMP` names a directory
+  (`swept::dump::dump_trim`, #942 F5): the tool, the trajectory by its structure (a twist, one seen
+  from another, a twist placed at a pose), the roll, the bar, the trim's reading, the candidates and
+  the meetings given them. A face family's wall (`Surface::Family`) and the rails and rims along it
+  are now written and read back bit for bit. `load_trim` gives a `Trimming` whose `replay()` runs the
+  trim alone, so the general road's and a ring's refusals are questioned without remaking their
+  candidates: where the sweep's boundary crosses a line and on which candidate's face
+  (`Trimming::boundary_along`), and what passes near a point (`Trimming::through`), put from the
+  command line by the `sweep_probe` example.
+
 - **A face swept along its normal whatever bounds it, and a tube about any smooth edge** (`offset`):
   an offset refused a curved face its own parameter lines do not bound, and a crease along any
   curve but a line or a circle. A plane's, a cylinder's or a sphere's move along its normal is one

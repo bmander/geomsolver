@@ -89,6 +89,24 @@ reduced to the smallest Boolean of its candidates and kept as a fast test before
    a test of `boolean::arrangement_within` or `boolean::selected`, and see it fail.
 3. Fix the kernel against that test; then run the sweep's gate.
 
+A sweep refused in its **trim** (the general road, a ring cut at its births: `swept::trim`) is
+written the same way, with what membership reads it by — the tool, the trajectory, the roll, the
+bar and how the trim reads — and its candidates' face families, rails and rims (#942 F5):
+`dump::load_trim(dir)` gives a `Trimming` whose `replay()` runs the trim alone, apart from what made
+its candidates (a fit of a minute and more). A trajectory is written by its structure (a twist, one
+seen from another, a twist placed at a pose); a paced path, a path of pieces and one read only by
+evaluating it are refused by name. Questions are put to it apart from the build, built once and run
+against the files: `cargo run --release -p cad-kernel --example sweep_probe -- <dir> replay` (with
+`SOLVENT_TRIM_DEBUG=1` its open edges narrated), `boundary x,y,z dx,dy,dz [reach] [steps]` (where the
+sweep's boundary crosses a line, by membership, and the candidates' faces it lies on:
+`Trimming::boundary_along`) and `through x,y,z [within]` (the faces, edges and given meetings near a
+point: `Trimming::through`).
+
+A ring's build says where its time goes under `SOLVENT_BREP_TIME=1` (#942 F4): each step with
+the instants it read and their time, the trim's Boolean beside its membership, and the edges read
+against faces by kinds; `cargo run --release -p cad-kernel --example ring_profile -- full-turn|thin`
+builds brep-bench's two tumbling tori so.
+
 `SOLVENT_SWEEP_PROFILE=1` prints what a closed build spent per stage and which pairs of surface
 kinds were traced rather than met in closed form, and what the meetings' analysis did (critical
 sets, branch tests, a level curve's readings): start a performance change from it, and cite it

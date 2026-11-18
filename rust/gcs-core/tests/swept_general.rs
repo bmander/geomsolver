@@ -67,6 +67,93 @@ fn a_cube_tumbling_five_degrees_is_built_by_the_general_road() {
     crate::swept_closed::agrees_over(&built,&cube,&path,roll);
 }
 
+/// What the general road gives the trim for the cube tumbling `deg` either way, as `closed` gives
+/// it: the tool, the motion, the roll, the candidates, their given meetings, and how the trim reads.
+fn cube_trimming(deg: f64) -> gcs_core::brep::swept::dump::Trimming {
+    let tool = cube();
+    let roll = [-deg.to_radians(),deg.to_radians()];
+    let tol = gcs_core::brep::geom::tolerance(tool.size());
+    let path = tumble();
+    let (candidates,given) = gcs_core::brep::swept::general::candidates(&tool,&path,roll,tol).unwrap();
+    let size = tool.size();
+    let trim = gcs_core::brep::swept::trim::Trim {resolution:size/32.,hair:(4.*tol).max(1e-6*size),reach:None};
+    gcs_core::brep::swept::dump::Trimming {bar:tool.size(),tool,path,roll,candidates,given,tol,trim}
+}
+
+/// The refusal a trim replayed from its dump gives (#942 F5): what `trim.replay()` refused, then the
+/// same trim written (`dump_trim`), read back (`load_trim`) and replayed refusing alike.
+fn replayed_alike(trimming: &gcs_core::brep::swept::dump::Trimming,name: &str) -> String {
+    use gcs_core::brep::swept::dump::{dump_trim,load_trim};
+    let direct = format!("{:?}",trimming.replay().expect_err("the trim refuses"));
+    let dir = std::env::temp_dir().join(format!("{name}-{}",std::process::id()));
+    let t = trimming;
+    dump_trim(&dir,&t.tool,&t.path,t.roll,&t.candidates,&t.given,t.bar,t.tol,t.trim,&direct).unwrap();
+    let loaded = load_trim(&dir).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    let again = format!("{:?}",loaded.replay().expect_err("the replayed trim refuses"));
+    assert_eq!(again,direct,"replayed from its dump, the trim refuses otherwise");
+    direct
+}
+
+/// **The general road's candidates are written whole** (#942 F5): its walls (`Surface::Family`),
+/// the rails and rims along them, and the meetings it gives — each written, read back and written
+/// again to the same text, so a trim of them is run again bit for bit apart from the road.
+#[test]
+fn the_general_roads_candidates_are_written_and_read_back_whole() {
+    use gcs_core::brep::swept::dump::{dump_trim,load_trim,read,write};
+    let t = cube_trimming(2.);
+    let kinds: std::collections::BTreeSet<&str> = t.candidates.iter().flat_map(|c| c.faces.iter().map(|f| f.surface.kind())).collect();
+    assert!(kinds.contains("family"),"the road's walls are face families: {kinds:?}");
+    for c in &t.candidates {
+        let text = write(c).unwrap();
+        let back = read(&text).unwrap();
+        assert_eq!(write(&back).unwrap(),text);
+    }
+    let dir = std::env::temp_dir().join(format!("general-dump-{}",std::process::id()));
+    dump_trim(&dir,&t.tool,&t.path,t.roll,&t.candidates,&t.given,t.bar,t.tol,t.trim,"a test").unwrap();
+    let loaded = load_trim(&dir).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(loaded.given.len(),t.given.len());
+    for (g,h) in loaded.given.iter().zip(&t.given) { assert_eq!(g.curves,h.curves); assert_eq!(g.surfaces,h.surfaces) }
+    for (k,c) in loaded.candidates.iter().enumerate() { assert_eq!(write(c).unwrap(),write(&t.candidates[k]).unwrap()) }
+    assert_eq!(loaded.roll,t.roll);
+    assert_eq!(format!("{:?}",loaded.path.pose(0.3).unwrap()),format!("{:?}",t.path.pose(0.3).unwrap()));
+    // (and the trim replayed builds what the road built)
+    let (built,_) = loaded.replay().unwrap();
+    let (direct,_) = t.replay().unwrap();
+    assert_eq!(gcs_core::brep::props::volume(&built),gcs_core::brep::props::volume(&direct));
+    // (and its questions answer from the files: the boundary up through the top lies on a candidate
+    // within the tolerance, and a given rail's own point is found on that rail)
+    let crossings = loaded.boundary_along([3.,0.,2.6],[0.,0.,1.],0.3,200).unwrap();
+    assert_eq!(crossings.len(),1,"{crossings:?}");
+    assert_eq!((crossings[0].from,crossings[0].to),(Some(true),Some(false)));
+    assert!(crossings[0].on.first().is_some_and(|n| n.off.abs() <= loaded.tol),"{crossings:?}");
+    let rail = loaded.given.iter().flat_map(|g| &g.curves).find(|c| c.kind() == "rail").expect("a rail given");
+    let d = gcs_core::brep::query::curve_domain(rail).unwrap();
+    let at = rail.point(0.5*(d[0]+d[1]));
+    let near = loaded.through(at,1e-9);
+    assert!(near.given.iter().any(|g| g.2 == "rail" && g.3 <= 1e-9),"{:?}",near.given);
+    assert!(near.faces.len() >= 2,"a rail stands on both its walls: {:?}",near.faces);
+}
+
+/// **A refused trim replays from its dump to the same refusal** (#942 F5's gate, fast): the cube
+/// tumbling 15° either way, refused in its trim, gives the same refusal run again from the files.
+#[test]
+fn a_refused_trim_replays_from_its_dump_to_the_same_refusal() {
+    let why = replayed_alike(&cube_trimming(15.),"cube-15-dump");
+    assert!(why.contains("do not close"),"{why}");
+}
+
+/// **The bench's tumbling cube's refused trim replays from its dump alike** (#942 F5's gate): the
+/// cube tumbling 75° either way, its candidates taken 17 s to make, refused in its trim, gives the
+/// same refusal run again from the files in a fraction of that.
+#[test]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, 30 s: the bench's tumbling cube's candidates made, then its trim twice")]
+fn the_bench_tumbling_cubes_refused_trim_replays_from_its_dump_alike() {
+    let why = replayed_alike(&cube_trimming(75.),"cube-75-dump");
+    assert!(why.contains("not closed"),"{why}");
+}
+
 /// A rise of `6s + 0.3s²` after `s` turns (brep-bench's `swept/square-thread-at-a-growing-lead`):
 /// a lead growing from 6 by 0.6 a turn.
 #[derive(Debug)]
