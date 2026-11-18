@@ -31,6 +31,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   (`Trimming::boundary_along`), and what passes near a point (`Trimming::through`), put from the
   command line by the `sweep_probe` example.
 
+## [0.16.0] - 2026-11-18
+
 - **The contact's road under any motion, begun** (`swept::general`, #880 T1d): a polyhedral tool's
   candidates under a motion no constant twist takes — its contact read per tool at each instant,
   chords of its faces' characteristic lines and stretches of its sharp edges, cut where its shape
