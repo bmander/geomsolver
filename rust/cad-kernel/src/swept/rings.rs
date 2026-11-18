@@ -47,6 +47,29 @@
 //! where they miss: each interval along the roll and round each face halved where the net misses at
 //! its middle (`halved`), not every one at once.
 //!
+//! **A fold pair born or vanishing partway** (#880 T1d): a stretch read in the band about a fold
+//! between two stretches alike is a fold pair only where `s''` takes the other sign within it — its
+//! least sought along the band, each angle's root on the branch its nearest sample is on, and
+//! clearly below nought, by a ten-millionth of the scale — else a dip toward nought that folds
+//! nowhere. Where a pair is born or vanishes the curve's kinds change, and the roll is cut there
+//! (`changes`: read at `SHAPE_LOOKS` rolls and halved to the rounding); each stretch is fitted on its
+//! own at the whole roll's scale (`fitted_over`), its rows a billionth of the roll clear of the cuts,
+//! entered against the tool only at the roll's own ends (`entered_at`), and the tubes of every
+//! stretch sewn across the cuts (`sew::sewn_open`) into one candidate a tube (`sew::parts`), trimmed
+//! by membership (`trim`). A sheet is refused as folding where its area factor turns over between
+//! two neighbouring points, or vanishes, not where it is thin: just before a pair is born it is
+//! squeezed toward nought where `s''` dips, and regular. A narrow pair's bridge — where `s''` stands
+//! below the depth of its least — is the sheet itself, undipped, and its **double curve**, where its
+//! outer leaves cross (`double_curve`), is traced from where a stretch first finds them crossing
+//! over the whole roll, on the contact itself: in the tube's `(u, t)` one curve over `u` through the
+//! swallowtail point, lowest before the pair is seen at an instant, the swallowtail's tail above it.
+//! Each stretch is cut along it (`cut_along`), a curve leaving the stretch and coming back two chords,
+//! its chords carrying their own curves in the face's parameters (the face's surface folds just past
+//! them), and its tail dropped. Where one preimage leaves the roll before the other the double curve
+//! ends on the tube's meeting with the tool at the end pose: a face's chords may cross or end on one
+//! another (`split_chords`), its pieces the faces of their planar graph (`pieces_among`). **Not
+//! yet:** the tumbling torus turned whole, stopped at 2.0, leaves a tube face a hole in no piece.
+//!
 //! **Its meetings with the tool where it starts and stops are read in its own domain** (`traces`):
 //! at an end pose every piece's rim lies on the tool, touching it, and a tube that folds runs on
 //! from its rim into the tool beside it (near each fold, and wherever the sweep comes back on the
@@ -195,7 +218,34 @@ impl Ring {
             On::Face(k) => match self.elements[k] {
                 Element::Arc {c,r,from,sweep} => {
                     let u = w.velocity(self.lift(theta,c));
-                    let (a,b) = (dot(er,u),dot(ez,u));
+                    let (mut a,mut b) = (dot(er,u),dot(ez,u));
+                    // (a meridian the whole of whose circle the instant touches — the ring's top and
+                    // bottom carried along a path in the plane square to them, its velocity along
+                    // the path there, #880 T1d M2 — has `A` and `B` nought, and beside it both are
+                    // all but nought, read off a velocity whole by its rounding: there they are read
+                    // in closed form. With `e_r(θ) = cos θ e₁ + sin θ e₂`, `A = P · e_r(θ)` and
+                    // `B = q + Q · e_r(θ)` (the arc's centre's velocity `U` less its turn about the
+                    // axis: `P = U` across, `q = e_z · U`, `Q = ρ_c (e_z × ω)`); where both vanish at
+                    // `θ*` each is `2 sin((θ − θ*)/2)` times `(−P₁ sin m + P₂ cos m)`, `m` the half sum,
+                    // and the branch roots turn on that, smooth through `θ*`)
+                    let (e1,e2) = (self.axes(0.).0,self.axes(std::f64::consts::FRAC_PI_2).0);
+                    let uc = w.velocity(self.lift(theta,[0.,c[1]]));
+                    let cross_z = cross(ez,w.omega);
+                    let (pp,q,qq) = ([dot(uc,e1),dot(uc,e2)],dot(ez,uc),[c[0]*dot(cross_z,e1),c[0]*dot(cross_z,e2)]);
+                    let size = pp[0].dhypot(pp[1])+q.abs()+qq[0].dhypot(qq[1]);
+                    if a.dhypot(b) <= 1e-6*size {
+                        let base = (-pp[0]).datan2(pp[1]);
+                        let whole = [base,base+std::f64::consts::PI].into_iter().find(|&st| {
+                            let (ss,cs) = st.dsin_cos();
+                            (q+qq[0]*cs+qq[1]*ss).abs() <= 1e-9*size && ((theta-st+std::f64::consts::PI).rem_euclid(TAU)-std::f64::consts::PI).abs() < 1e-2
+                        });
+                        if let Some(st) = whole {
+                            let d = (theta-st+std::f64::consts::PI).rem_euclid(TAU)-std::f64::consts::PI;
+                            let (sm,cm) = (theta-0.5*d).dsin_cos();
+                            let half = if d < 0. { -1. } else { 1. };
+                            (a,b) = (half*(-pp[0]*sm+pp[1]*cm),half*(-qq[0]*sm+qq[1]*cm));
+                        }
+                    }
                     if !(a.dhypot(b) > 0.) { return None }
                     let s = if l.branch { 1. } else { -1. };
                     let psi = (-a*s).datan2(b*s);
@@ -246,6 +296,14 @@ impl Ring {
     }
 
     /// The greatest `|s''|` of the contacts on the faces `read` at the angles `thetas`.
+    /// The scale `s''` is read against over `roll`: its greatest at the instant `t`.
+    fn scale_at(&self,path: &Trajectory,t: f64,roll: [f64;2]) -> Result<f64,Unbuilt> {
+        let (w,dw) = rates(path,t,roll)?;
+        let thetas: Vec<f64> = (0..AROUND).map(|i| TAU*i as f64/AROUND as f64).collect();
+        let read: Vec<Vec<(Label,Root)>> = thetas.iter().map(|&th| self.roots(&w,th)).collect();
+        Ok(self.scale(&w,&dw,&thetas,&read))
+    }
+
     fn scale(&self,w: &Twist,dw: &Twist,thetas: &[f64],read: &[Vec<(Label,Root)>]) -> f64 {
         let mut most = 0f64;
         for (i,r) in read.iter().enumerate() {
@@ -403,6 +461,9 @@ impl Ring {
             // buried: one between two stretches alike is theirs (a contact whose `s''` dips toward
             // nothing and rises again folds nowhere)
             let mut kinds = raw.clone();
+            // the narrow pairs found (see below): each its stretch of angles, the branch of the samples
+            // across it, the side about it, and its least and where
+            let mut narrow: Vec<([f64;2],Vec<(f64,f64)>,f64,f64,f64)> = Vec::new();
             match (0..s).find(|&i| raw[i].1 != Side::Fold) {
                 None => {
                     let side = if self.bend(&w,&dw,thetas[samples[0].1],&read[samples[0].1][samples[0].2].1) > 0. { Side::Touching } else { Side::Buried };
@@ -416,10 +477,52 @@ impl Ring {
                             let mut j = k;
                             while raw[(j+1)%s].1 == Side::Fold { j = (j+1)%s }
                             let (before,after) = (raw[i].1,raw[(j+1)%s].1);
+                            // (unless `s''` takes the other sign within it: two folds and a sliver
+                            // of the other side between them, narrower than the band a fold is read
+                            // in — the tumbling torus, its sheet folding over a twentieth of a face its
+                            // kinds read as touching all round, #880 T1d. Its least (greatest) is
+                            // sought along the stretch, each step between samples read 64 times and
+                            // the least of those settled by golden sections: a pair newly born is
+                            // narrower than the samples)
+                            let other = (before == after) && {
+                                let sign = if before == Side::Touching { 1. } else { -1. };
+                                let first = samples[(k+s-1)%s].0;
+                                let mut last = samples[(j+1)%s].0;
+                                if last <= first { last += span }
+                                // (each angle's root the one nearest the branch its nearest sample is
+                                // on: the curve followed, not the other root at a far angle)
+                                let near: Vec<(f64,f64)> = (0..(j+s-k)%s+3).map(|x| {
+                                    let (th,ia,ja) = samples[(k+s-1+x)%s];
+                                    (if th < first { th+span } else { th },read[ia][ja].1.sigma)
+                                }).collect();
+                                let value = |th: f64| {
+                                    let sigma = near.iter().min_by(|p,q| (p.0-th).abs().total_cmp(&(q.0-th).abs())).map_or(0.,|p| p.1);
+                                    at(th,sigma).map_or(f64::INFINITY,|r| sign*self.bend(&w,&dw,th.rem_euclid(TAU),&r.1))
+                                };
+                                let looks = 64*((j+s-k)%s+3);
+                                let step = (last-first)/looks as f64;
+                                let (mut best,mut at_best) = (f64::INFINITY,first);
+                                for x in 0..=looks { let th = first+step*x as f64; let v = value(th); if v < best { best = v; at_best = th } }
+                                let (mut lo,mut hi) = ((at_best-step).max(first),(at_best+step).min(last));
+                                let g = 0.5*(5f64.sqrt()-1.);
+                                for _ in 0..60 {
+                                    let (x1,x2) = (hi-g*(hi-lo),lo+g*(hi-lo));
+                                    if value(x1) < value(x2) { hi = x2 } else { lo = x1 }
+                                }
+                                // (clearly below nought, by a ten-millionth of the scale: so the
+                                // instants a hair either side of where a pair is born read alike)
+                                let mid = 0.5*(lo+hi);
+                                let least = best.min(value(mid));
+                                if least < -1e-7*scale_bend { narrow.push(([first,last],near.clone(),sign,mid,least)) }
+                                least < -1e-7*scale_bend
+                            };
+                            // (a dip that folds nowhere is the stretches' about it; and a pair narrower
+                            // than the band is read as touching here, its bridge put in below)
                             if before == after {
                                 let mut x = k;
                                 loop { kinds[x].1 = before; if x == j { break } x = (x+1)%s }
                             }
+                            let _ = other;
                             i = (j+1)%s;
                         } else { i = k }
                         if i == first { break }
@@ -453,6 +556,40 @@ impl Ring {
                     joins.push((0.5*(l+h),next));
                     (a,lo) = (next,h);
                 }
+            }
+            // **a narrow pair's bridge** (#880 T1d): where `s''` stands below the depth of its least
+            // below nought — about both folds, and short of where its outer leaves cross, at twice
+            // that depth (the swallowtail's normal form: folds at `w` either side of its middle, the
+            // leaves crossing at `√3 w`, `s''` there `2 |least|`)
+            let mut bridges: Vec<[f64;2]> = Vec::new();
+            for ([first,last],near,sign,mid,least) in &narrow {
+                let value = |th: f64| {
+                    let sigma = near.iter().min_by(|p,q| (p.0-th).abs().total_cmp(&(q.0-th).abs())).map_or(0.,|p| p.1);
+                    at(th,sigma).map(|r| (r.0,sign*self.bend(&w,&dw,th.rem_euclid(TAU),&r.1)))
+                };
+                let depth = least.abs();
+                let edge = |from: f64,to: f64| -> Option<f64> {
+                    let (fa,fb) = (value(from)?.1-depth,value(to)?.1-depth);
+                    if (fa < 0.) == (fb < 0.) { return None }
+                    let (x,y) = crate::util::roots::bisect(from,to,|x,y| 0.5*(x+y),|x,y| { let m = 0.5*(x+y); m > x && m < y },
+                        |m| value(m).is_some_and(|v| (v.1-depth < 0.) == (fa < 0.)));
+                    Some(0.5*(x+y))
+                };
+                let (Some(l),Some(r)) = (edge(*first,*mid),edge(*mid,*last)) else { return Err(read[0][0].1.x) };
+                let side = if *sign > 0. { Side::Touching } else { Side::Buried };
+                let (Some((ll,_)),Some((lr,_))) = (value(l),value(r)) else { return Err(read[0][0].1.x) };
+                let wrap = |x: f64| x.rem_euclid(span);
+                joins.push((wrap(l),(ll,Side::Fold)));
+                joins.push((wrap(r),(lr,side)));
+                bridges.push([wrap(l),wrap(r)]);
+            }
+            joins.sort_by(|x,y| x.0.total_cmp(&y.0));
+            // (a join inside a bridge — the branch's label turning over on a meridian the instant
+            // touches whole, where one of the pair's folds stands, #880 T1d M2 — is the bridge's: its
+            // piece a fold, on its own label)
+            for j in &mut joins {
+                let inside = bridges.iter().any(|&[l,r]| if l <= r { j.0 > l && j.0 < r } else { j.0 > l || j.0 < r });
+                if inside { j.1.1 = Side::Fold }
             }
             let pieces = if joins.is_empty() {
                 vec![Piece {from:0.,to:span,label:kinds[0].0,side:kinds[0].1}]
@@ -531,7 +668,13 @@ struct Read { instant: Instant,pose: Pose,curves: Vec<Vec<Piece>> }
 /// **A ring's sheets fitted**: each contact curve's net over (the fraction round it, a piece a unit,
 /// the roll), closed round, and what each of its faces lies on and how the sheet stands there.
 #[derive(Clone,Debug)]
-pub struct Fitted { pub nets: Vec<Net>,pub on: Vec<Vec<On>>,pub sides: Vec<Vec<Side>>,pub roll: [f64;2] }
+pub struct Fitted { pub nets: Vec<Net>,pub on: Vec<Vec<On>>,pub sides: Vec<Vec<Side>>,pub roll: [f64;2],
+    /// Per net, where its outer leaves cross about each narrow pair's bridge (#880 T1d): the double
+    /// curve's preimage on the leaf before the bridge and on the one after, each a row's `(u, t)`.
+    pub doubles: Vec<Vec<Vec<[f64;2]>>>,
+    /// Where each narrow pair's outer leaves are first found crossing in this stretch: the two
+    /// preimages as angles round the axis, rolls and places round the meridian (`double_curve`).
+    pub seeds: Vec<[(f64,f64,f64);2]> }
 
 /// A face of a tube: the piece of its curve it lies on (by its index among the run's), and which of
 /// the `of` equal shares of the piece's stretch it is.
@@ -548,12 +691,13 @@ const FIRST_POINTS: usize = 8;
 const MOST_ROWS: usize = 1024;
 const MOST_POINTS: usize = 1024;
 
-/// How small a part of its two rates' lengths a sheet's area factor may fall to (K2's `FOLD`).
-const FOLD: f64 = 1e-3;
 
 /// The reader of a ring's instants over a roll, each roll read once.
 struct Reader<'a> {
     ring: &'a Ring,path: &'a Trajectory,roll: [f64;2],first: Vec<Vec<Piece>>,
+    /// The roll the twist's rate is read by differences within: the whole roll's, as its cuts are
+    /// found (`changes`), whatever stretch of it the reader fits.
+    whole: [f64;2],
     /// The scale `s''` is read against at every instant: its greatest at the first.
     scale: f64,
     cache: std::sync::Mutex<std::collections::BTreeMap<u64,Read>>,
@@ -561,14 +705,16 @@ struct Reader<'a> {
 
 impl<'a> Reader<'a> {
     fn new(ring: &'a Ring,path: &'a Trajectory,roll: [f64;2]) -> Result<Reader<'a>,Unbuilt> {
-        let [a,_] = roll;
-        let (w,dw) = rates(path,a,roll)?;
-        let pose = path.pose(a)?;
-        let thetas: Vec<f64> = (0..AROUND).map(|i| TAU*i as f64/AROUND as f64).collect();
-        let read: Vec<Vec<(Label,Root)>> = thetas.iter().map(|&th| ring.roots(&w,th)).collect();
-        let scale = ring.scale(&w,&dw,&thetas,&read);
+        let scale = ring.scale_at(path,roll[0],roll)?;
+        Reader::within(ring,path,roll,roll,roll[0],scale)
+    }
+
+    /// The reader over `roll`, `s''` read against `scale`, its curves matched to those at `first`.
+    fn within(ring: &'a Ring,path: &'a Trajectory,whole: [f64;2],roll: [f64;2],first: f64,scale: f64) -> Result<Reader<'a>,Unbuilt> {
+        let (w,dw) = rates(path,first,whole)?;
+        let pose = path.pose(first)?;
         let i = ring.instant(w,dw,Some(scale)).map_err(|at| Unbuilt::Curved {at:pose.point(at)})?;
-        Ok(Reader {ring,path,roll,first:i.curves,scale,cache:Default::default()})
+        Ok(Reader {ring,path,roll,first:i.curves,whole,scale,cache:Default::default()})
     }
 
     /// The instant at `t`, its curves matched to the first instant's: each first curve by the one
@@ -576,11 +722,15 @@ impl<'a> Reader<'a> {
     /// where none does.
     fn read(&self,t: f64) -> Result<Read,Unbuilt> {
         if let Some(r) = self.cache.lock().unwrap().get(&t.to_bits()) { return Ok(r.clone()) }
-        let (w,dw) = rates(self.path,t,self.roll)?;
+        let (w,dw) = rates(self.path,t,self.whole)?;
         let pose = self.path.pose(t)?;
         let i = self.ring.instant(w,dw,Some(self.scale)).map_err(|at| Unbuilt::Curved {at:pose.point(at)})?;
         let refused = |c: &[Piece]| Unbuilt::Curved {at:pose.point(self.ring.root(&w,c[0].from.rem_euclid(TAU),c[0].label,false)
             .map_or(self.ring.centre,|r| r.x))};
+        if std::env::var_os("SOLVENT_RING_DEBUG").is_some() && !same_shape(&self.first,&i.curves) {
+            let show = |cs: &[Vec<Piece>]| cs.iter().map(|c| c.iter().map(|p| match p.side { Side::Touching => 'T',Side::Fold => 'F',Side::Buried => 'B' }).collect::<String>()).collect::<Vec<_>>().join("|");
+            eprintln!("ring: at {t} over {:?} the shape {} against {}",self.roll,show(&i.curves),show(&self.first));
+        }
         if i.curves.len() != self.first.len() { return Err(refused(&i.curves[0])) }
         let wrap = |x: f64| (x+std::f64::consts::PI).rem_euclid(TAU)-std::f64::consts::PI;
         let mut taken = vec![false;i.curves.len()];
@@ -621,14 +771,26 @@ impl<'a> Reader<'a> {
         let p = r.curves[run.curve][run.pieces[piece]];
         let at = |th: f64| self.ring.root(&r.instant.w,th.rem_euclid(TAU),p.label,false)
             .ok_or_else(|| Unbuilt::Curved {at:r.pose.point(self.ring.centre)});
+        // (a piece ending on a meridian the instant touches whole, where `A` and `B` pass through
+        // nought and each branch's root turns half about, is read there on its own side: its root a
+        // hair inside it where that stands apart from the end's, #880 T1d M2 — elsewhere the end's
+        // own, the one the face beside reads its seam at)
         let th = p.from+(p.to-p.from)*f;
-        let root = at(th)?;
-        if p.side == Side::Touching { return Ok(r.pose.point(root.x)) }
+        let mut root = at(th)?;
+        if f <= 0. || f >= 1. {
+            let hair = (1e-10f64).min(0.25*(p.to-p.from).abs());
+            let inner = at(th+if f <= 0. { hair } else { -hair }*(p.to-p.from).signum())?;
+            if crate::util::space::distance(inner.x,root.x) > 1e-6*self.ring.thickness { root = inner }
+        }
+        // (a narrow pair's bridge, between two touching pieces, is the sheet itself: the double curve
+        // its outer leaves cross along passes through it, and its tail is cut off there, #880 T1d)
+        let c = &r.curves[run.curve];
+        let (n,i) = (c.len(),run.pieces[piece]);
+        let narrow = p.side == Side::Fold && c[(i+n-1)%n].side == Side::Touching && c[(i+1)%n].side == Side::Touching;
+        if p.side == Side::Touching || narrow { return Ok(r.pose.point(root.x)) }
         // the stretch between two touching pieces dipped into the tool along its normal (`dip`):
         // its ends where the touching piece before it ends and the one after it begins, round the
         // curve
-        let c = &r.curves[run.curve];
-        let (n,i) = (c.len(),run.pieces[piece]);
         let mut j = i;
         while c[j].side != Side::Touching { j = (j+n-1)%n }
         let mut k = i;
@@ -641,13 +803,31 @@ impl<'a> Reader<'a> {
     }
 
     /// Whether the run's sheet stays regular, read at its fitted points off the bridges (each
-    /// regular by construction but at one point of each rim, `dip`): its area factor `|Σ_u × Σ_t|`
-    /// above `FOLD` of its rates' (a fold the pieces were not cut at, `Folded`).
+    /// regular by construction but at one point of each rim, `dip`): its area factor `Σ_u × Σ_t`
+    /// keeping one sense between each two neighbours round the loop and along the roll, and nowhere
+    /// below a billionth of its rates' (a fold the pieces were not cut at, `Folded`). A sheet squeezed
+    /// thin where `s''` dips toward nought and rises again is regular, and kept (#880 T1d: the tumbling
+    /// torus, 1.8e-4 of its rates just before a fold pair is born there).
     fn folds(&self,net: &Net,us: &[f64],ts: &[f64],bridged: &dyn Fn(f64) -> bool) -> Result<(),Unbuilt> {
-        for &t in ts {
-            for &u in us.iter().filter(|&&u| !bridged(u)) {
-                let (x,du,dt) = net.d1(u,t);
-                if norm(cross(du,dt)) <= FOLD*norm(du)*norm(dt) { return Err(Unbuilt::Folded {at:x}) }
+        let read: Vec<Vec<Option<(V,V,f64)>>> = ts.iter().map(|&t| us.iter().map(|&u| (!bridged(u)).then(|| {
+            let (x,du,dt) = net.d1(u,t);
+            (x,cross(du,dt),norm(du)*norm(dt))
+        })).collect()).collect();
+        let flips = |p: &Option<(V,V,f64)>,q: &Option<(V,V,f64)>| match (p,q) {
+            (Some((_,c,_)),Some((_,d,_))) => crate::util::space::dot(*c,*d) < 0.,
+            _ => false,
+        }.then(|| p.unwrap().0);
+        for (j,row) in read.iter().enumerate() {
+            for (i,p) in row.iter().enumerate() {
+                if let Some((x,c,rates)) = p { if norm(*c) <= 1e-9*rates {
+                    if std::env::var_os("SOLVENT_RING_DEBUG").is_some() { eprintln!("ring: no area at u {:.6} t {:.6} over {:?}: {:e} of {:e}",us[i],ts[j],self.roll,norm(*c),rates) }
+                    return Err(Unbuilt::Folded {at:*x})
+                } }
+                let beside = [row.get(i+1),read.get(j+1).map(|r| &r[i])];
+                if let Some(at) = beside.into_iter().flatten().find_map(|q| flips(p,q)) {
+                    if std::env::var_os("SOLVENT_RING_DEBUG").is_some() { eprintln!("ring: folds at u {:.6} t {:.6} over {:?}",us[i],ts[j],self.roll) }
+                    return Err(Unbuilt::Folded {at})
+                }
             }
         }
         Ok(())
@@ -684,12 +864,22 @@ fn halved(x: &[f64],missed: &[bool]) -> Vec<f64> {
 /// number round the axis or in kind over the roll (`Curved`), where a tube folds off its bridges
 /// (`Folded`), or where a fit will not close.
 pub fn fitted(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Result<Fitted,Unbuilt> {
-    let reader = Reader::new(ring,path,[a,b])?;
+    let scale = ring.scale_at(path,a,[a,b])?;
+    fitted_over(ring,path,[a,b],[a,b],scale,tol)
+}
+
+/// `fitted` over the stretch `[a, b]` of the roll `whole`, `s''` read against `scale` (the whole
+/// roll's, so a fold's band is the same in every stretch), the curves matched to those at the
+/// stretch's middle.
+pub fn fitted_over(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],scale: f64,tol: f64) -> Result<Fitted,Unbuilt> {
+    let reader = Reader::within(ring,path,whole,[a,b],0.5*(a+b),scale)?;
     let runs = runs(&reader.first);
     if runs.is_empty() { return Err(Unbuilt::Failed("no contact of the ring touches its sweep's boundary".into())) }
     let mut nets = Vec::new();
     let mut on = Vec::new();
     let mut sides = Vec::new();
+    let mut doubles = Vec::new();
+    let mut seeds = Vec::new();
     for run in &runs {
         let per = LEAST_CLOSED.div_ceil(run.pieces.len()).max(PER);
         // each piece cut into `per` faces, but a bridge entered as one: no edge of the sheet runs
@@ -740,7 +930,7 @@ pub fn fitted(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Result<F
             }
             let err_t: Vec<f64> = half_ts.iter().zip(halfway).map(|(&t,r)| missed(&net,us.iter().zip(r).map(|(&u,&x)| (t,u,x)))).collect();
             if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
-                eprintln!("fit: {pieces} faces, {counts:?} points, {} rows: {:?} round, {:e} along",ts.len()-1,
+                eprintln!("fit: curve {} over {:?}: {pieces} faces, {counts:?} points, {} rows: {:?} round, {:e} along",run.curve,reader.roll,ts.len()-1,
                     err_u.iter().map(|e| format!("{:.1e}",e.iter().fold(0f64,|m,&x| m.max(x)))).collect::<Vec<_>>(),err_t.iter().fold(0f64,|m,&x| m.max(x)));
             }
             let missed_u: Vec<Vec<bool>> = err_u.iter().map(|e| e.iter().map(|&x| x > tol).collect()).collect();
@@ -748,7 +938,8 @@ pub fn fitted(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Result<F
             // a bridge's points, or on the join of one
             let bridge = |k: usize| reader.first[run.curve][run.pieces[faces[k%pieces].piece]].side == Side::Fold;
             let bridged = |u: f64| {
-                let k = (u.floor().max(0.) as usize).min(pieces-1);
+                // (the loop closing at `pieces`: the piece after its last join the first)
+                let k = (u.floor().max(0.) as usize)%pieces;
                 bridge(k) || (u-u.round()).abs() <= 1e-9 && bridge((u.round() as usize+pieces-1)%pieces)
             };
             if !missed_u.iter().flatten().any(|&m| m) && !missed_t.contains(&true) { reader.folds(&net,&us,&ts,&bridged)?; break net }
@@ -760,11 +951,323 @@ pub fn fitted(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Result<F
             }
             (fractions,ts) = (refined_u,refined_t);
         };
+        // **where the outer leaves cross about each narrow pair's bridge** (#880 T1d): a bridge between
+        // two touching pieces, at each fitted row the leaves' meeting `Σ(u₁, t) = Σ(u₂, t₂)` settled by
+        // Newton's method on the net from beside the bridge's ends (the normal form puts it a fifth of
+        // the bridge's half-width past them); a row where it settles on none is where the pair is
+        // born, its bridge no wider than the rounding, both preimages the bridge's middle
+        let kinds_of = |i: usize| reader.first[run.curve][run.pieces[i]].side;
+        let n = run.pieces.len();
+        let mut found = Vec::new();
+        for (fk,f) in faces.iter().enumerate() {
+            if kinds_of(f.piece) != Side::Fold || kinds_of((f.piece+n-1)%n) != Side::Touching || kinds_of((f.piece+1)%n) != Side::Touching { continue }
+            let (k0,k1) = (fk as f64,fk as f64+1.);
+            let mut last: Option<[f64;3]> = None;
+            let mut seed: Option<[(f64,f64,f64);2]> = None;
+            for &t in &ts {
+                let r = reader.read(t)?;
+                let c = &r.curves[run.curve];
+                let (pl,pf,pr) = (&c[run.pieces[(f.piece+n-1)%n]],&c[run.pieces[f.piece]],&c[run.pieces[(f.piece+1)%n]]);
+                let half = 0.5*(pf.to-pf.from);
+                // (each neighbour's angle a unit of `u` spans: its stretch over its faces)
+                let per = |i: usize| faces.iter().filter(|g| g.piece == i).count().max(1) as f64;
+                let (dl,dr) = (0.22*half/((pl.to-pl.from)/per((f.piece+n-1)%n)).max(1e-300),0.22*half/((pr.to-pr.from)/per((f.piece+1)%n)).max(1e-300));
+                let mut x = last.unwrap_or([k0-dl,k1+dr,t]);
+                let mut settled = false;
+                // (damped least squares, Levenberg–Marquardt, each unknown scaled by its column: near
+                // where the pair is born the two leaves are all but tangent and the sheet's rates all
+                // but parallel, and Newton's own steps flew off)
+                // (each preimage within two of the bridge's half-widths past its end, where the
+                // normal form puts it at √3 − 1 of one: past that a leaf meets another stretch of
+                // the tube, which is the trim's to meet, not the pair's double curve)
+                let lo = [(k0-per((f.piece+n-1)%n)).max(k0-dl*2./0.22),k1,a];
+                let hi = [k0,(k1+per((f.piece+1)%n)).min(k1+dr*2./0.22),b];
+                let residual = |x: [f64;3]| -> (V,[V;3]) {
+                    let ((p1,du1,_),(p2,du2,dt2)) = (net.d1(x[0].rem_euclid(pieces as f64),t),net.d1(x[1].rem_euclid(pieces as f64),x[2]));
+                    (crate::util::space::sub(p1,p2),[du1,du2.map(|v| -v),dt2.map(|v| -v)])
+                };
+                let mut lambda = 1e-3;
+                let (mut f3,mut cols) = residual(x);
+                for _ in 0..400 {
+                    if norm(f3) <= 1e-3*tol { settled = true; break }
+                    let w: [f64;3] = std::array::from_fn(|i| norm(cols[i]).max(1e-300));
+                    let jtj: [[f64;3];3] = std::array::from_fn(|i| std::array::from_fn(|j| crate::util::space::dot(cols[i],cols[j])/(w[i]*w[j])));
+                    let jtf: V = std::array::from_fn(|i| -crate::util::space::dot(cols[i],f3)/w[i]);
+                    let mut stepped = false;
+                    for _ in 0..30 {
+                        let m: [V;3] = std::array::from_fn(|i| std::array::from_fn(|j| jtj[i][j]+if i == j { lambda } else { 0. }));
+                        let d = crate::ssi::solve3(m,jtf);
+                        if !d.iter().all(|v| v.is_finite()) { lambda *= 10.; continue }
+                        let y: [f64;3] = std::array::from_fn(|i| (x[i]+d[i]/w[i]).clamp(lo[i],hi[i]));
+                        let (g3,gcols) = residual(y);
+                        if norm(g3) < norm(f3) { (x,f3,cols) = (y,g3,gcols); lambda = (lambda*0.3).max(1e-12); stepped = true; break }
+                        lambda *= 10.;
+                    }
+                    if !stepped { break }
+                }
+                let apart = x[0] < k0 && x[1] > k1;
+                if settled && apart {
+                    // the two preimages as angles round the axis and the roots' places there
+                    let angle = |u: f64,p: &Piece,face: usize| { let g = faces[face]; p.from+(p.to-p.from)*(g.share as f64+(u-face as f64))/g.of as f64 };
+                    // (each wrapped round the loop first: the first preimage before the first face is
+                    // on the last, not the bridge)
+                    let (u0,u1) = (x[0].rem_euclid(pieces as f64),x[1].rem_euclid(pieces as f64));
+                    let (fl,fr) = ((u0.floor() as usize).min(pieces-1),(u1.floor() as usize).min(pieces-1));
+                    let r2 = reader.read(x[2])?;
+                    let p2 = r2.curves[run.curve][run.pieces[faces[fr].piece]];
+                    let (th1,th2) = (angle(u0,pl,fl),angle(u1,&p2,fr));
+                    let s1 = self_root(ring,&r.instant.w,th1,pl.label).map(|q| q.sigma);
+                    let s2 = self_root(ring,&r2.instant.w,th2,p2.label).map(|q| q.sigma);
+                    if let (Some(s1),Some(s2)) = (s1,s2) { seed = Some([(th1,t,s1),(th2,x[2],s2)]); break }
+                }
+                if settled && apart { last = Some(x) }
+            }
+            if std::env::var_os("SOLVENT_RING_DEBUG").is_some() { eprintln!("ring: a narrow pair's leaves first cross at {seed:?}") }
+            found.extend(seed);
+        }
+        seeds.extend(found);
+        doubles.push(Vec::new());
         nets.push(net);
         on.push(faces.iter().map(|f| reader.first[run.curve][run.pieces[f.piece]].label.on).collect());
         sides.push(faces.iter().map(|f| reader.first[run.curve][run.pieces[f.piece]].side).collect());
     }
-    Ok(Fitted {nets,on,sides,roll:[a,b]})
+    Ok(Fitted {nets,on,sides,roll:[a,b],doubles,seeds})
+}
+
+/// Whether two instants' contacts are of one shape: as many curves, each of `b`'s turning onto one
+/// of `a`'s kinds, each once.
+fn same_shape(a: &[Vec<Piece>],b: &[Vec<Piece>]) -> bool {
+    if a.len() != b.len() { return false }
+    let mut taken = vec![false;a.len()];
+    for c in b {
+        let Some(i) = (0..a.len()).find(|&i| !taken[i] && !turns_onto(c,&kinds(&a[i])).is_empty()) else { return false };
+        taken[i] = true;
+    }
+    true
+}
+
+/// How many rolls the instants a ring's contact changes shape at are sought between.
+const SHAPE_LOOKS: usize = 4096;
+
+/// **The scale and the instants over `[a, b]` where a ring's contact changes shape under `path`**
+/// (#880 T1d): a fold pair born or vanishing at a point of a curve — where its least `s''` reaches
+/// nought — the curve's kinds changing there. Read at `SHAPE_LOOKS` rolls, and between two that
+/// differ halved to the rounding of the roll, as often as it changes there. `Curved` where an
+/// instant's contacts change in number round the axis.
+pub fn changes(ring: &Ring,path: &Trajectory,[a,b]: [f64;2]) -> Result<(f64,Vec<f64>),Unbuilt> {
+    let scale = ring.scale_at(path,a,[a,b])?;
+    let shape = |t: f64| -> Result<Vec<Vec<Piece>>,Unbuilt> {
+        let (w,dw) = rates(path,t,[a,b])?;
+        let pose = path.pose(t)?;
+        Ok(ring.instant(w,dw,Some(scale)).map_err(|at| Unbuilt::Curved {at:pose.point(at)})?.curves)
+    };
+    let at = |k: usize| if k == SHAPE_LOOKS { b } else { a+(b-a)*k as f64/SHAPE_LOOKS as f64 };
+    let mut cuts = Vec::new();
+    let mut here = shape(a)?;
+    let mut lo = a;
+    for k in 1..=SHAPE_LOOKS {
+        let hi = at(k);
+        let there = shape(hi)?;
+        let mut from = lo;
+        while !same_shape(&here,&there) {
+            let (mut x,mut y) = (from,hi);
+            while y-x > 1e-12*(b-a) {
+                let m = 0.5*(x+y);
+                if same_shape(&here,&shape(m)?) { x = m } else { y = m }
+            }
+            cuts.push(0.5*(x+y));
+            here = shape(y)?;
+            from = y;
+            if y >= hi { break }
+        }
+        here = there;
+        lo = hi;
+    }
+    Ok((scale,cuts))
+}
+
+/// The ring's root at the angle `θ` with label `l` under twist `w` (`Ring::root`).
+fn self_root(ring: &Ring,w: &Twist,theta: f64,l: Label) -> Option<Root> { ring.root(w,theta.rem_euclid(TAU),l,false) }
+
+/// The sheet's point at the angle `θ` and roll `t`, the contact's root there nearest the place `σ`
+/// round the meridian, and that root's place.
+fn sheet_at(ring: &Ring,path: &Trajectory,theta: f64,t: f64,sigma: f64) -> Option<(V,f64)> {
+    let w = Twist::body(path.at(t).ok()?);
+    let nf = ring.elements.len() as f64;
+    let apart = |x: f64| { let d = (x-sigma).rem_euclid(nf); d.min(nf-d) };
+    let (_,r) = ring.roots(&w,theta.rem_euclid(TAU)).into_iter().min_by(|a,b| apart(a.1.sigma).total_cmp(&apart(b.1.sigma)))?;
+    Some((path.pose(t).ok()?.point(r.x),r.sigma))
+}
+
+/// How far round the axis a double curve is stepped at once, as the angle its first preimage moves.
+const DOUBLE_STEP: f64 = 2e-4;
+
+/// **A ring's sheet's double curve about a fold pair, over `[a, b]`** (#880 T1d): where its outer
+/// leaves cross, `Σ(θ₁, t₁) = Σ(θ₂, t₂)`, from `seed` — the first preimage's angle stepped, the other
+/// three settled by Newton's method on the contact itself — toward the fold pair, until the two
+/// preimages meet (the swallowtail point), and away, until either leaves the roll. The preimage in
+/// order of angle: one leaf's points to the swallowtail point, the other's from it; each its angle,
+/// roll and place round the meridian. In the tube's `(u, t)` it is one curve over `u` (the
+/// swallowtail's normal form: a parabola through the swallowtail point, the folds' inside it), and
+/// what lies above it is the swallowtail's tail, inside the sweep. After a NaN marker, its
+/// swallowtail points: the pair's birth, and where the way away stops short of the roll with its
+/// preimages all but met, the pair's end too — the curve then a loop, closed through it.
+pub fn double_curve(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],seed: [(f64,f64,f64);2],tol: f64) -> Result<Vec<(f64,f64,f64)>,Unbuilt> {
+    let failed = || Unbuilt::Failed("a ring's sheet's double curve about a fold pair not traced".into());
+    // the three unknowns `t₁, θ₂, t₂` settled at `θ₁`, from `z`
+    let settle = |th1: f64,z: [f64;3],s1: f64,s2: f64| -> Option<([f64;3],f64,f64)> {
+        let g = |z: [f64;3]| -> Option<(V,f64,f64)> {
+            let ((p,a1),(q,a2)) = (sheet_at(ring,path,th1,z[0],s1)?,sheet_at(ring,path,z[1],z[2],s2)?);
+            Some((crate::util::space::sub(p,q),a1,a2))
+        };
+        let mut z = z;
+        for _ in 0..40 {
+            let (f,a1,a2) = g(z)?;
+            if norm(f) <= 1e-3*tol { return Some((z,a1,a2)) }
+            let h = [1e-7*(b-a),1e-7,1e-7*(b-a)];
+            let cols: [V;3] = std::array::from_fn(|k| { let mut y = z; y[k] += h[k]; g(y).map_or([f64::NAN;3],|(fy,..)| scale(crate::util::space::sub(fy,f),1./h[k])) });
+            let d = crate::ssi::solve3(std::array::from_fn(|i| [cols[0][i],cols[1][i],cols[2][i]]),scale(f,-1.));
+            if !d.iter().all(|v| v.is_finite()) { return None }
+            z = [z[0]+d[0],z[1]+d[1],z[2]+d[2]];
+        }
+        None
+    };
+    let [(th1,t1,s1),(th2,t2,s2)] = seed;
+    // (the second angle beside the first, not across the wrap)
+    let th2 = th1+(th2-th1+std::f64::consts::PI).rem_euclid(TAU)-std::f64::consts::PI;
+    let toward = (th2-th1).signum();
+    // from the seed toward the pair, then away; each step's points
+    let mut near: Vec<[(f64,f64,f64);2]> = Vec::new();
+    let mut far: Vec<[(f64,f64,f64);2]> = Vec::new();
+    // (whether the way away from the pair stopped short of the roll's ends: settling on no
+    // meeting, where the preimages meet again — a pair born and later vanishing, its double curve
+    // a loop through two swallowtail points, #880 T1d's thin torus)
+    let mut short = false;
+    for (dir,out) in [(toward,&mut near),(-toward,&mut far)] {
+        let (mut th,mut z,mut sg1,mut sg2) = (th1,[t1,th2,t2],s1,s2);
+        for _ in 0..200_000 {
+            let next = th+dir*DOUBLE_STEP;
+            let Some((y,a1,a2)) = settle(next,z,sg1,sg2) else {
+                if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
+                    eprintln!("ring: a double curve's way {} stops at θ₁ {th:.6} with (t₁, θ₂, t₂) {z:?}, σ {sg1:.4} {sg2:.4}",if dir == toward { "toward" } else { "away" });
+                }
+                short = dir != toward;
+                break
+            };
+            let out_of = |y: [f64;3]| y[0] < a || y[0] > b || y[2] < a || y[2] > b;
+            if out_of(y) {
+                // (the step that leaves the roll halved to where a preimage reaches its end, and that
+                // place kept: the curve ends on the stretch's rim, not short of it)
+                let (mut lo,mut hi) = (th,next);
+                let mut last = None;
+                for _ in 0..60 {
+                    let m = 0.5*(lo+hi);
+                    match settle(m,z,sg1,sg2) { Some(r) if !out_of(r.0) => { last = Some((m,r)); lo = m } _ => hi = m }
+                }
+                if let Some((m,(y,a1,a2))) = last {
+                    let edge = |x: f64| if (x-a).abs() < (x-b).abs() { a } else { b };
+                    let y = if (y[0]-edge(y[0])).abs() < (y[2]-edge(y[2])).abs() { [edge(y[0]),y[1],y[2]] } else { [y[0],y[1],edge(y[2])] };
+                    out.push([(m,y[0],a1),(y[1],y[2],a2)]);
+                }
+                break
+            }
+            // (the preimages met: the swallowtail point)
+            if dir == toward && (y[1]-next)*toward <= 0. { break }
+            (th,z,sg1,sg2) = (next,y,a1,a2);
+            out.push([(th,y[0],a1),(y[1],y[2],a2)]);
+        }
+    }
+    if near.is_empty() && far.is_empty() { return Err(failed()) }
+    // in order of angle: the first preimage from far to near, then the second from near to far
+    let first: Vec<(f64,f64,f64)> = far.iter().rev().map(|p| p[0]).chain(std::iter::once((th1,t1,s1))).chain(near.iter().map(|p| p[0])).collect();
+    let second: Vec<(f64,f64,f64)> = near.iter().rev().map(|p| p[1]).chain(std::iter::once((th2,t2,s2))).chain(far.iter().map(|p| p[1])).collect();
+    // (the second taken from where it passes the first's last angle: the step that found the
+    // preimages met stood a hair past the swallowtail point)
+    let last = first.last().map_or(f64::NAN,|p| p.0);
+    let second: Vec<(f64,f64,f64)> = second.into_iter().skip_while(|p| (p.0-last)*toward <= 0.).collect();
+    let apex = first.len();
+    let mut out: Vec<(f64,f64,f64)> = first.into_iter().chain(second).collect();
+    // (the swallowtail point: between the two leaves' preimages, put at the end of the list)
+    let ap = if apex > 0 && apex < out.len() { let (p,q) = (out[apex-1],out[apex]); (0.5*(p.0+q.0),0.5*(p.1+q.1),p.2) } else { out[apex.min(out.len()-1)] };
+    // (and where the way away stopped short with its preimages within a twentieth of a radian, the
+    // second: the curve closed through it, from the second preimage's far end to the first's)
+    let far_apex = far.last().filter(|l| short && (l[1].0-l[0].0).abs() <= 0.05)
+        .map(|l| (0.5*(l[0].0+l[1].0),0.5*(l[0].1+l[1].1),l[0].2));
+    if let Some(q) = far_apex { let first = out[0]; out.push(q); out.push(first) }
+    if toward < 0. { out.reverse() }
+    // the swallowtail points after a marker
+    out.push((f64::NAN,f64::NAN,f64::NAN));
+    out.push(ap);
+    out.extend(far_apex);
+    if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
+        eprintln!("ring: a double curve of {} points from {:?} to {:?}",out.len(),out.first(),out.last());
+    }
+    Ok(out)
+}
+
+/// **The double curves cut into a stretch's fit** (`Fitted::doubles`): each curve's points within the
+/// stretch on each tube, in that tube's `(u, t)` — those whose root is the tube's curve's at their
+/// angle — with where it crosses the stretch's ends.
+pub fn cut_along(ring: &Ring,path: &Trajectory,whole: [f64;2],fit: &mut Fitted,scale: f64,curves: &[Vec<(f64,f64,f64)>]) -> Result<(),Unbuilt> {
+    let [a,b] = fit.roll;
+    let reader = Reader::within(ring,path,whole,[a,b],0.5*(a+b),scale)?;
+    let runs = runs(&reader.first);
+    let nf = ring.elements.len() as f64;
+    for (ri,run) in runs.iter().enumerate() {
+        let per = LEAST_CLOSED.div_ceil(run.pieces.len()).max(PER);
+        let faces: Vec<Face> = run.pieces.iter().enumerate().flat_map(|(i,&k)| {
+            let of = if reader.first[run.curve][k].side == Side::Fold { 1 } else { per };
+            (0..of).map(move |share| Face {piece:i,share,of})
+        }).collect();
+        // `(θ, t, σ)`'s `u` on this tube, where its root there is the tube's
+        let u_of = |(th,t,sg): (f64,f64,f64)| -> Result<Option<f64>,Unbuilt> {
+            let r = reader.read(t)?;
+            let c = &r.curves[run.curve];
+            for (fk,g) in faces.iter().enumerate() {
+                let p = c[run.pieces[g.piece]];
+                let f = ((th-p.from).rem_euclid(TAU))/(p.to-p.from);
+                let lo = g.share as f64/g.of as f64;
+                let hi = (g.share+1) as f64/g.of as f64;
+                if !(f >= lo && f <= hi) { continue }
+                let Some(root) = self_root(ring,&r.instant.w,th,p.label) else { continue };
+                let d = (root.sigma-sg).rem_euclid(nf);
+                // (the tube's own branch: another stands some half a piece of the meridian away)
+                if d.min(nf-d) > 1e-2 { return Ok(None) }
+                return Ok(Some(fk as f64+(f-lo)*g.of as f64))
+            }
+            Ok(None)
+        };
+        let mut out = Vec::new();
+        for full in curves {
+            // (the curve, and its swallowtail points after the marker)
+            let mark = full.iter().position(|p| p.0.is_nan()).unwrap_or(full.len());
+            let curve = &full[..mark];
+            let mut line: Vec<[f64;2]> = Vec::new();
+            for w in 0..curve.len() {
+                let (th,t,sg) = curve[w];
+                let inside = t >= a && t <= b;
+                // (where it crosses an end of the stretch: between this point and the one before; going
+                // out, the line ends there, and coming back in a new one begins)
+                if w > 0 {
+                    let (th0,t0,sg0) = curve[w-1];
+                    for edge in [a,b] {
+                        if (t0-edge)*(t-edge) < 0. {
+                            let f = (edge-t0)/(t-t0);
+                            if let Some(u) = u_of((th0+(th-th0)*f,edge,if f < 0.5 { sg0 } else { sg }))? { line.push([u,edge]) }
+                            if !inside && line.len() >= 2 { out.push(std::mem::take(&mut line)) } else if !inside { line.clear() }
+                        }
+                    }
+                }
+                if inside { if let Some(u) = u_of((th,t,sg))? { line.push([u,t]) } }
+            }
+            if line.len() >= 2 { out.push(line) }
+        }
+        if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
+            for l in &out { eprintln!("ring: cut over {:?}, tube {ri}: a line of {} from {:?} to {:?}",[a,b],l.len(),l[0],l[l.len()-1]) }
+        }
+        fit.doubles[ri] = out;
+    }
+    Ok(())
 }
 
 /// How many rolls a ring's admission reads the instant's contact at.
@@ -810,13 +1313,68 @@ pub fn posed(tool: &Brep,ring: &Ring,path: &Trajectory,fit: &Fitted,t: f64) -> R
 /// on the tool's faces holding it — and the curves a face is cut along — each on the face it lies on
 /// — all lie on the tool, and are each face's whole meeting with it, given.
 pub fn entered(fit: &Fitted,ring: &Ring,ends: [&Brep;2],poses: [Pose;2],tol: f64) -> Result<(Vec<Brep>,Vec<Given>),Unbuilt> {
+    entered_at(fit,ring,[Some((ends[0],poses[0])),Some((ends[1],poses[1]))],[true,true],tol)
+}
+
+/// `entered`, where an end of the fit's stretch of the roll may be no end of the roll (`rimmed`
+/// false): a cut where the contact changes shape (`changes`, #880 T1d), the tube there running on into
+/// the next stretch's along its rim, which lies on no tool. Such a stretch is still cut where it
+/// crosses the tool at either end pose given (`at`), read plainly (no rim of it touches that tool): a
+/// tube carried on past where the roll's end pose stands — the thin torus, its double curve ending
+/// where one leaf's partner reaches the end of the roll, on that pose's tool, partway along another
+/// stretch.
+pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],rimmed: [bool;2],tol: f64) -> Result<(Vec<Brep>,Vec<Given>),Unbuilt> {
     let mut sheets = Vec::new();
     let mut given = Vec::new();
     let n = ring.elements.len();
     // each end pose carrying a point in space back into the tool where it stands there
-    let backs = poses.map(Pose::inverse);
-    for ((net,on),sides) in fit.nets.iter().zip(&fit.on).zip(&fit.sides) {
+    let backs = at.map(|x| x.map(|(_,p)| p.inverse()));
+    for (((net,on),sides),doubles) in fit.nets.iter().zip(&fit.on).zip(&fit.sides).zip(&fit.doubles) {
         let pieces = on.len();
+        let [a,b] = fit.roll;
+        let y_of = |t: f64| (t-a)/(b-a);
+        // each double curve's preimages cut at the seams between faces: per face its chords
+        let mut cuts_of: Vec<Vec<Vec<P2>>> = vec![Vec::new();pieces];
+        for side in doubles {
+            // (its `u` unwrapped along it, and each step cut at every seam it crosses)
+            let np = pieces as f64;
+            let mut un: Vec<[f64;2]> = Vec::new();
+            for &[u,t] in side {
+                let u = match un.last() { Some(&[v,_]) => v+(u-v+0.5*np).rem_euclid(np)-0.5*np,None => u };
+                un.push([u,t]);
+            }
+            let face_of = |u: f64| (u.rem_euclid(np).floor() as usize).min(pieces-1);
+            let mut run: Vec<P2> = vec![[un[0][0]-face_of(un[0][0]+1e-12) as f64-(un[0][0]/np).floor()*np,y_of(un[0][1])]];
+            let mut face = face_of(un[0][0]+1e-12);
+            for w in un.windows(2) {
+                let ([u0,t0],[u1,t1]) = (w[0],w[1]);
+                let (lo,hi) = (u0.min(u1),u0.max(u1));
+                let mut seams: Vec<f64> = ((lo.floor() as i64+1)..=(hi.ceil() as i64-1)).map(|m| m as f64).filter(|&m| m > lo && m < hi).collect();
+                if u1 < u0 { seams.reverse() }
+                for m in seams {
+                    let f = (m-u0)/(u1-u0);
+                    let y = y_of(t0+(t1-t0)*f);
+                    let up = u1 > u0;
+                    run.push([if up { 1. } else { 0. },y]);
+                    if run.len() >= 2 { cuts_of[face].push(std::mem::take(&mut run)) } else { run.clear() }
+                    face = if up { (face+1)%pieces } else { (face+pieces-1)%pieces };
+                    run.push([if up { 0. } else { 1. },y]);
+                }
+                let x = u1-(u1/np).floor()*np-face as f64;
+                run.push([x.clamp(0.,1.),y_of(t1)]);
+            }
+            if run.len() >= 2 { cuts_of[face].push(run) }
+        }
+        // whether `(u, t)` is in a narrow pair's tail: above its double curve, a curve over `u`
+        let tail = |u: f64,t: f64| doubles.iter().any(|line| {
+            let mid = 0.5*(line[0][0]+line[line.len()-1][0]);
+            let u = mid+(u-mid+0.5*pieces as f64).rem_euclid(pieces as f64)-0.5*pieces as f64;
+            let i = line.partition_point(|p| p[0] < u);
+            if i == 0 || i == line.len() { return false }
+            let ([u0,t0],[u1,t1]) = (line[i-1],line[i]);
+            let at = if u1 == u0 { t0 } else { t0+(t1-t0)*(u-u0)/(u1-u0) };
+            t > at
+        });
         let holding: Vec<Vec<usize>> = on.iter().map(|&o| match o {
             On::Face(e) => vec![ring.faces[e]],
             On::Edge(e) => vec![ring.faces[e],ring.faces[(e+1)%n]],
@@ -824,26 +1382,39 @@ pub fn entered(fit: &Fitted,ring: &Ring,ends: [&Brep;2],poses: [Pose;2],tol: f64
         let faces: Vec<Trimmed> = crate::util::par::indices(pieces,|k| {
             // a touching piece's rim touches the tool, a dipped stretch's crosses it
             let order = if sides[k] == Side::Touching { 2 } else { 1 };
-            let readings: [Reading;2] = std::array::from_fn(|e| Reading {net,ring,back:backs[e],u:[k as f64,k as f64+1.],roll:fit.roll,
-                end:e as f64,order});
-            let chords = (0..2).flat_map(|e| traces(&readings[e]).into_iter().map(move |c| (e,c))).collect();
-            Trimmed {readings,chords}
+            let readings: [Option<Reading>;2] = std::array::from_fn(|e| backs[e].map(|back| Reading {net,ring,back,u:[k as f64,k as f64+1.],
+                roll:fit.roll,end:if rimmed[e] { e as f64 } else { f64::NAN },order:if rimmed[e] { order } else { 0 }}));
+            let mut chords: Vec<(usize,Vec<P2>)> = Vec::new();
+            // (a trace walked from both its ends — its far end matched to no rim crossing, the other
+            // traced back along it — is one chord: two along one another split each other into a
+            // thousand pieces, #880 T1d M2's ring beside its whole-touched meridian)
+            for (e,c) in (0..2).flat_map(|e| readings[e].as_ref().map_or(Vec::new(),traces).into_iter().map(move |c| (e,c))) {
+                let near = |p: P2,q: P2| (p[0]-q[0]).hypot(p[1]-q[1]) <= 1e-6;
+                let mid = c[c.len()/2];
+                let again = chords.iter().any(|(f,d)| *f == e && (near(d[0],c[0]) && near(d[d.len()-1],c[c.len()-1]) || near(d[0],c[c.len()-1]) && near(d[d.len()-1],c[0]))
+                    && d.iter().any(|&p| (p[0]-mid[0]).hypot(p[1]-mid[1]) <= 4.*MET_STEP));
+                if !again { chords.push((e,c)) }
+            }
+            chords.extend(cuts_of[k].iter().map(|c| (2,c.clone())));
+            let tail: Box<dyn Fn(P2) -> bool+Sync+Send+'_> = Box::new(move |[x,y]: P2| tail(k as f64+x,a+(b-a)*y));
+            Trimmed {readings,chords,tail}
         });
         let (sheet,cut) = trimmed(net,fit.roll,faces,tol)?;
         for (k,(surface,(rims,chords))) in cut.surfaces.iter().zip(cut.rims.iter().zip(&cut.chords)).enumerate() {
-            for (e,pose) in ends.iter().enumerate() {
+            for (e,(pose,_)) in at.iter().enumerate().filter_map(|(e,x)| x.map(|x| (e,x))) {
+                let back = backs[e].unwrap();
                 // the tool's face each curve it is cut along here lies on (a crossing passing from
                 // one of the tool's faces to the next is not yet cut where it does: refused, not
                 // given to one of them alone)
                 let on: Vec<usize> = chords[e].iter().map(|(_,xs)| {
-                    let mut on = xs.iter().map(|&x| ring.faces[ring.signed(backs[e].point(x)).1]);
+                    let mut on = xs.iter().map(|&x| ring.faces[ring.signed(back.point(x)).1]);
                     let first = on.next().unwrap_or(usize::MAX);
                     if on.all(|g| g == first) { Ok(first) } else { Err(Unbuilt::Failed("a ring's sheet crosses the tool where it starts or \
                         stops across two of its faces: not yet cut there".into())) }
                 }).collect::<Result<_,_>>()?;
                 for (f,face) in pose.faces.iter().enumerate() {
                     let mut curves: Vec<Curve> = Vec::new();
-                    if holding[k].contains(&f) { curves.extend(rims[e].iter().cloned()) }
+                    if rimmed[e] && holding[k].contains(&f) { curves.extend(rims[e].iter().cloned()) }
                     curves.extend(chords[e].iter().zip(&on).filter(|&(_,&g)| g == f).map(|((c,_),_)| c.clone()));
                     given.push(Given {surfaces:[face.surface.clone(),surface.clone()],curves});
                 }
@@ -859,6 +1430,8 @@ pub fn entered(fit: &Fitted,ring: &Ring,ends: [&Brep;2],poses: [Pose;2],tol: f64
 /// a part of the face's domain each way; and the most steps it takes.
 const MET_RIM: usize = 512;
 const MET_STEP: f64 = 2e-3;
+/// How near the rim at its end `G` is not divided but carried on from just off it.
+const G_CARRIED: f64 = 1e-4;
 const MET_MOST: usize = 20_000;
 
 /// **A tube's face read against the tool at one end pose, in its own domain**: the face of `net`
@@ -868,7 +1441,8 @@ const MET_MOST: usize = 20_000;
 /// touching piece's, the rim the contact where the tool stands, or crossing it, `order` 1, where it
 /// is a dipped stretch's — so that zero is divided out: `G = (F(x, y) − F(x, end)) / (y −
 /// end)^order` (the rim's own fitting error taken off), whose sign is the sheet's side of the tool
-/// beside its rim, carried onto the rim itself from just off it.
+/// beside its rim, carried onto the rim itself from just off it. A face none of whose rims lies on
+/// the tool (a stretch of the roll ending at no end pose) is read with `order` 0: `G = F`.
 struct Reading<'a> { net: &'a Net,ring: &'a Ring,back: Pose,u: [f64;2],roll: [f64;2],end: f64,order: i32 }
 
 impl Reading<'_> {
@@ -879,8 +1453,10 @@ impl Reading<'_> {
     }
     fn f(&self,x: f64,y: f64) -> f64 { self.ring.signed(self.back.point(self.at(x,y).0)).0 }
     fn g(&self,x: f64,y: f64) -> f64 {
+        // (no rim of the face on this tool: read plainly)
+        if self.order == 0 { return self.f(x,y) }
         // how near the touching rim the division is not made but carried from just off it
-        let near = 1e-4;
+        let near = G_CARRIED;
         let (e,order) = (self.end,self.order);
         let rim = self.f(x,e);
         let raw = |y: f64| (self.f(x,y)-rim)/(y-e).powi(order);
@@ -986,12 +1562,16 @@ fn traces(r: &Reading) -> Vec<Vec<P2>> {
                 // the tool, meets a touching piece's, touching it, the zero set runs into the
                 // tube's own vertex
                 let corner = [c[0].round(),c[1].round()];
-                if apart(corner,c) <= 4.*MET_STEP && (corner[1]-ye).abs() < 0.5 {
+                if debug { eprintln!("met:   leaves at {c:?}, last {p:?}") }
+                let near = (0..ends.len()).filter(|&k| !used[k] && apart(ends[k].0,c) <= 4.*MET_STEP)
+                    .min_by(|&i,&j| apart(ends[i].0,c).total_cmp(&apart(ends[j].0,c)));
+                // (unless a crossing of the rim is nearer: beside a meridian an instant touches whole
+                // two crossings stand a step from the vertex, #880 T1d M2)
+                if apart(corner,c) <= 4.*MET_STEP && (corner[1]-ye).abs() < 0.5
+                    && near.is_none_or(|k| apart(corner,c) < apart(ends[k].0,c)) {
                     pts.push(corner);
                     break
                 }
-                let near = (0..ends.len()).filter(|&k| !used[k] && apart(ends[k].0,c) <= 4.*MET_STEP)
-                    .min_by(|&i,&j| apart(ends[i].0,c).total_cmp(&apart(ends[j].0,c)));
                 match near {
                     Some(k) => { used[k] = true; pts.push(ends[k].0) }
                     None => {
@@ -1014,6 +1594,9 @@ fn traces(r: &Reading) -> Vec<Vec<P2>> {
         }
         if debug { eprintln!("met:   traced {} points from {:?} to {:?}",pts.len(),pts[0],pts[pts.len()-1]) }
         if closed_at.is_some() || pts.len() < 2 { continue }
+        // (a point within `G`'s carried reach of the rim settled again on the tool itself, across
+        // the face at its own roll: `G` there is drawn on from just off the rim)
+        for p in pts.iter_mut() { *p = polished(r,*p) }
         out.push(pts);
     }
     out
@@ -1023,7 +1606,90 @@ fn traces(r: &Reading) -> Vec<Vec<P2>> {
 /// on the face exactly and on the tool to rounding), interpolated — a cubic through every so many of
 /// them, the coarsest within a quarter of `tol` of all — and those points in space.
 fn chord_curve(r: &Reading,pts: &[P2],tol: f64) -> Result<(Curve,Vec<V>),Unbuilt> {
-    let xs: Vec<V> = pts.iter().map(|&[x,y]| r.at(x,y).0).collect();
+    // (and between each two of them, where the cubic strays from the meeting's own point halfway
+    // — settled on the tool across the face — by more than a quarter of `tol`, that point too: a
+    // trace of three points into a vertex beside a meridian the end pose touches whole bowed 6e-8
+    // off the tool between them, #880 T1d M2)
+    let mut pts = pts.to_vec();
+    for _ in 0..8 {
+        let xs: Vec<V> = pts.iter().map(|&[x,y]| r.at(x,y).0).collect();
+        let (curve,xs) = curve_through(xs,tol)?;
+        let mut params = vec![0.];
+        for w in xs.windows(2) { params.push(params.last().unwrap()+norm(crate::util::space::sub(w[1],w[0])).max(1e-300)) }
+        let length = *params.last().unwrap();
+        let mut more: Vec<(usize,P2)> = Vec::new();
+        for i in 0..pts.len()-1 {
+            let half = [0.5*(pts[i][0]+pts[i+1][0]),0.5*(pts[i][1]+pts[i+1][1])];
+            // (a settling that ran a quarter of the way between the two off the middle met another
+            // branch of the zero set, not this one)
+            let Some(m) = settled(r,half).filter(|m| (m[0]-half[0]).hypot(m[1]-half[1])
+                <= 0.25*(pts[i][0]-pts[i+1][0]).hypot(pts[i][1]-pts[i+1][1])) else { continue };
+            let x = r.at(m[0],m[1]).0;
+            // (the cubic's nearest point to it between the two, by golden sections)
+            let off = |t: f64| norm(crate::util::space::sub(curve.point(t),x));
+            let (mut lo,mut hi) = (params[i]/length,params[i+1]/length);
+            for _ in 0..60 {
+                let (m1,m2) = (hi-(hi-lo)*0.618_033_988_749_895,lo+(hi-lo)*0.618_033_988_749_895);
+                if off(m1) <= off(m2) { hi = m2 } else { lo = m1 }
+            }
+            if off(0.5*(lo+hi)) > 0.25*tol { more.push((i+1,m)) }
+        }
+        if more.is_empty() { return Ok((curve,xs)) }
+        for (i,m) in more.into_iter().rev() { pts.insert(i,m) }
+    }
+    curve_through(pts.iter().map(|&[x,y]| r.at(x,y).0).collect(),tol)
+}
+
+/// A place on a face's normalised square moved onto `G`'s zero set by Newton's steps along its
+/// gradient (`traces`' own), and `polished`; none where it leaves the square.
+fn settled(r: &Reading,p: P2) -> Option<P2> {
+    let g = |x: f64,y: f64| r.g(x,y);
+    let mut q = p;
+    for _ in 0..8 {
+        let v = g(q[0],q[1]);
+        if v.abs() <= 1e-13 { break }
+        let h = 1e-6;
+        let d = [(g((q[0]+h).min(1.),q[1])-g((q[0]-h).max(0.),q[1]))/((q[0]+h).min(1.)-(q[0]-h).max(0.)),
+            (g(q[0],(q[1]+h).min(1.))-g(q[0],(q[1]-h).max(0.)))/((q[1]+h).min(1.)-(q[1]-h).max(0.))];
+        let n2 = d[0]*d[0]+d[1]*d[1];
+        if !(n2 > 0.) { break }
+        let step = [v*d[0]/n2,v*d[1]/n2];
+        q = [q[0]-step[0],q[1]-step[1]];
+        if step[0].hypot(step[1]) <= 1e-14 { break }
+    }
+    (q[0] >= 0. && q[0] <= 1. && q[1] >= 0. && q[1] <= 1.).then(|| polished(r,q))
+}
+
+/// A place within `G`'s carried reach of the rim at its end (`G_CARRIED`) settled again on the tool
+/// itself, across the face at its own roll — `G` there is drawn on from just off the rim, and a
+/// meeting ending at a vertex beside a meridian the end pose touches whole stood off the tool, #880
+/// T1d M2 — where the tool's side changes within four steps; any other place as it is.
+fn polished(r: &Reading,p: P2) -> P2 {
+    let (x0,y) = (p[0],p[1]);
+    if r.order == 0 || !(x0 > 0. && x0 < 1.) || !((y-r.end).abs() > 0. && (y-r.end).abs() < G_CARRIED) { return p }
+    let f = |x: f64| r.f(x,y);
+    let f0 = f(x0);
+    let mut h = 1e-12;
+    while h <= 4.*MET_STEP {
+        for side in [-1.,1.] {
+            let x1 = (x0+side*h).clamp(0.,1.);
+            if (f(x1) > 0.) != (f0 > 0.) {
+                let (mut lo,mut hi) = (x0,x1);
+                for _ in 0..100 {
+                    let m = 0.5*(lo+hi);
+                    if m == lo || m == hi { break }
+                    if (f(m) > 0.) == (f0 > 0.) { lo = m } else { hi = m }
+                }
+                return [0.5*(lo+hi),y]
+            }
+        }
+        h *= 4.;
+    }
+    p
+}
+
+/// The cubic through points `xs` by chord length (`chord_curve`'s), and the points.
+fn curve_through(xs: Vec<V>,tol: f64) -> Result<(Curve,Vec<V>),Unbuilt> {
     let mut params = vec![0.];
     for w in xs.windows(2) { params.push(params.last().unwrap()+norm(crate::util::space::sub(w[1],w[0])).max(1e-300)) }
     let length = *params.last().unwrap();
@@ -1042,7 +1708,10 @@ fn chord_curve(r: &Reading,pts: &[P2],tol: f64) -> Result<(Curve,Vec<V>),Unbuilt
 
 /// A tube's face read at both end poses (`Reading`) and the curves it crosses the tool along at
 /// each (`traces`), each with the end pose it is read at.
-struct Trimmed<'a> { readings: [Reading<'a>;2],chords: Vec<(usize,Vec<P2>)> }
+struct Trimmed<'a> { readings: [Option<Reading<'a>>;2],chords: Vec<(usize,Vec<P2>)>,
+    /// Whether a place of the face's square is in a narrow pair's tail (#880 T1d): inside the sweep,
+    /// and dropped. A chord read at `2` is where the tail is cut off, along its double curve.
+    tail: Box<dyn Fn(P2) -> bool+Sync+Send+'a> }
 
 /// What a trimmed tube was cut along: each face's surface; its rim at each end where it is kept
 /// (the touch there); and the curves it is cut along at each end, each with the points it was
@@ -1112,6 +1781,138 @@ fn pieces_of_square(chords: &[(usize,Vec<P2>)]) -> Result<Vec<Vec<Walk>>,Unbuilt
     Ok(out)
 }
 
+/// **A square's chords split where they cross or one ends on another** (#880 T1d: a double curve
+/// ending on a tube's meeting with the tool at an end pose): each chord cut at every place another
+/// crosses it, and at every end of another standing within `SNAP_ON` of it (that end put there),
+/// each piece keeping its chord's kind.
+fn split_chords(chords: &[(usize,Vec<P2>)]) -> Vec<(usize,Vec<P2>)> {
+    const SNAP_ON: f64 = 1e-3;
+    let on_rim = |p: P2| p[0] <= ON_SIDE || p[0] >= 1.-ON_SIDE || p[1] <= ON_SIDE || p[1] >= 1.-ON_SIDE;
+    let mut lines: Vec<(usize,Vec<P2>)> = chords.to_vec();
+    // each chord's cuts: (segment, fraction along it, place)
+    let mut cuts: Vec<Vec<(usize,f64,P2)>> = vec![Vec::new();lines.len()];
+    for i in 0..lines.len() {
+        // an end of `i` inside the square standing on another chord: put there, and that chord cut
+        let ends: Vec<usize> = [0,lines[i].1.len()-1].into_iter().filter(|&e| !on_rim(lines[i].1[e])).collect();
+        for e in ends {
+            let p = lines[i].1[e];
+            let best = (0..lines.len()).filter(|&j| j != i).flat_map(|j| (0..lines[j].1.len()-1).map(move |k| (j,k))).map(|(j,k)| {
+                let (a,b) = (lines[j].1[k],lines[j].1[k+1]);
+                let d = [b[0]-a[0],b[1]-a[1]];
+                let f = (((p[0]-a[0])*d[0]+(p[1]-a[1])*d[1])/(d[0]*d[0]+d[1]*d[1]).max(1e-300)).clamp(0.,1.);
+                let q = [a[0]+d[0]*f,a[1]+d[1]*f];
+                ((q[0]-p[0]).hypot(q[1]-p[1]),j,k,f,q)
+            }).min_by(|x,y| x.0.total_cmp(&y.0));
+            if let Some((dist,j,k,f,q)) = best { if dist <= SNAP_ON { lines[i].1[e] = q; cuts[j].push((k,f,q)) } }
+        }
+    }
+    for i in 0..lines.len() { for j in i+1..lines.len() {
+        for k in 0..lines[i].1.len()-1 { for l in 0..lines[j].1.len()-1 {
+            let (a,b,c,d) = (lines[i].1[k],lines[i].1[k+1],lines[j].1[l],lines[j].1[l+1]);
+            let (r,s2) = ([b[0]-a[0],b[1]-a[1]],[d[0]-c[0],d[1]-c[1]]);
+            let rxs = r[0]*s2[1]-r[1]*s2[0];
+            if !(rxs.abs() > 1e-300) { continue }
+            let q = [c[0]-a[0],c[1]-a[1]];
+            let (t,u) = ((q[0]*s2[1]-q[1]*s2[0])/rxs,(q[0]*r[1]-q[1]*r[0])/rxs);
+            // (strictly inside both: an end on the other is cut above)
+            if t > 1e-9 && t < 1.-1e-9 && u > 1e-9 && u < 1.-1e-9 {
+                let x = [a[0]+r[0]*t,a[1]+r[1]*t];
+                cuts[i].push((k,t,x));
+                cuts[j].push((l,u,x));
+            }
+        } }
+    } }
+    let mut out = Vec::new();
+    for (i,(e,pts)) in lines.into_iter().enumerate() {
+        let mut c = cuts[i].clone();
+        c.sort_by(|x,y| (x.0,x.1).partial_cmp(&(y.0,y.1)).unwrap());
+        let mut piece = vec![pts[0]];
+        let mut at = 0;
+        for k in 0..pts.len()-1 {
+            while at < c.len() && c[at].0 == k {
+                let q = c[at].2;
+                if (q[0]-piece[piece.len()-1][0]).hypot(q[1]-piece[piece.len()-1][1]) > 1e-12 { piece.push(q) }
+                if piece.len() >= 2 { out.push((e,std::mem::take(&mut piece))) }
+                piece = vec![q];
+                at += 1;
+            }
+            piece.push(pts[k+1]);
+        }
+        if piece.len() >= 2 { out.push((e,piece)) }
+    }
+    out
+}
+
+/// **A square's pieces among chords that may cross or end on one another** (`split_chords` first):
+/// the planar graph of the chords' pieces and the square's sides between their places, each piece
+/// walked with it on the left — along a side counter-clockwise, along a chord either way — turning at
+/// each place to the first way out clockwise from the way back.
+fn pieces_among(chords: &[(usize,Vec<P2>)]) -> Result<Vec<Vec<Walk>>,Unbuilt> {
+    let on_rim = |p: P2| p[0] <= ON_SIDE || p[0] >= 1.-ON_SIDE || p[1] <= ON_SIDE || p[1] >= 1.-ON_SIDE;
+    // the places: each a point
+    let mut nodes: Vec<P2> = Vec::new();
+    let mut node = |p: P2| -> usize {
+        if let Some(i) = nodes.iter().position(|q| (q[0]-p[0]).hypot(q[1]-p[1]) <= ON_SIDE) { return i }
+        nodes.push(p);
+        nodes.len()-1
+    };
+    // the ways out of each place: (angle, what, to): a chord's `Walk::Chord(i, forward)`, a side's
+    let mut ends: Vec<[usize;2]> = Vec::new();
+    for (_,c) in chords { ends.push([node(c[0]),node(c[c.len()-1])]) }
+    for corner in [[0.,0.],[1.,0.],[1.,1.],[0.,1.]] { node(corner); }
+    let rim: Vec<usize> = { let mut r: Vec<usize> = (0..nodes.len()).filter(|&i| on_rim(nodes[i])).collect();
+        r.sort_by(|&x,&y| perimeter(nodes[x]).total_cmp(&perimeter(nodes[y]))); r };
+    let mut out: Vec<Vec<(f64,Walk,usize)>> = vec![Vec::new();nodes.len()];
+    let angle = |a: P2,b: P2| (b[1]-a[1]).atan2(b[0]-a[0]);
+    for (i,(_,c)) in chords.iter().enumerate() {
+        let [p,q] = ends[i];
+        out[p].push((angle(c[0],c[1]),Walk::Chord(i,true),q));
+        out[q].push((angle(c[c.len()-1],c[c.len()-2]),Walk::Chord(i,false),p));
+    }
+    for w in 0..rim.len() {
+        let (p,q) = (rim[w],rim[(w+1)%rim.len()]);
+        let (s0,s1) = (perimeter(nodes[p]),if w+1 == rim.len() { 4. } else { perimeter(nodes[q]) });
+        // (the way out along the side, read a hair along it)
+        let ahead = round_square(s0+1e-6);
+        out[p].push((angle(nodes[p],ahead),Walk::Side(s0,s1),q));
+    }
+    // the way back into each place along each way, to turn from
+    let back = |w: &Walk| -> Option<f64> {
+        match *w {
+            Walk::Side(_,s1) => { let at = round_square(s1); Some(angle(at,round_square(s1-1e-6))) }
+            Walk::Chord(i,f) => { let c = &chords[i].1; Some(if f { angle(c[c.len()-1],c[c.len()-2]) } else { angle(c[0],c[1]) }) }
+        }
+    };
+    let key = |w: &Walk| -> (u8,u64,u64) { match *w { Walk::Side(a,_) => (0,a.to_bits(),0),Walk::Chord(i,f) => (1,i as u64,f as u64) } };
+    let mut walked: std::collections::BTreeSet<(u8,u64,u64)> = std::collections::BTreeSet::new();
+    let mut pieces = Vec::new();
+    for start in 0..nodes.len() {
+        for &(_,first,to) in &out[start].clone() {
+            if walked.contains(&key(&first)) { continue }
+            let mut walk = Vec::new();
+            let (mut w,mut at) = (first,to);
+            loop {
+                if !walked.insert(key(&w)) {
+                    if key(&w) == key(&first) { break }
+                    return Err(Unbuilt::Failed("a ring's sheet's face's pieces among its chords do not close".into()))
+                }
+                walk.push(w);
+                if walk.len() > 4*(chords.len()+nodes.len())+8 { return Err(Unbuilt::Failed("a ring's sheet's face's piece runs on".into())) }
+                // the first way out clockwise from the way back
+                let into = back(&w).unwrap();
+                let turn = |a: f64| (into-a).rem_euclid(std::f64::consts::TAU);
+                let Some(&(_,next,to)) = out[at].iter().filter(|o| key(&o.1) != key(&match w { Walk::Chord(i,f) => Walk::Chord(i,!f),x => x }))
+                    .min_by(|x,y| { let (a,b) = (turn(x.0),turn(y.0)); (if a <= 1e-12 { std::f64::consts::TAU } else { a }).total_cmp(&(if b <= 1e-12 { std::f64::consts::TAU } else { b })) })
+                    else { return Err(Unbuilt::Failed("a ring's sheet's face's piece ends at a place with no way on".into())) };
+                if key(&next) == key(&first) { break }
+                (w,at) = (next,to);
+            }
+            pieces.push(walk);
+        }
+    }
+    Ok(pieces)
+}
+
 /// **A tube's net cut to where its faces stand outside the tool at both end poses**: each face's
 /// square cut by the curves it crosses the tool along at either end (`pieces_of_square`), and the
 /// pieces kept that stand outside at both (`Reading::outside`, read just inside a side of each), as
@@ -1131,15 +1932,39 @@ fn trimmed(net: &Net,roll: [f64;2],mut faces: Vec<Trimmed>,tol: f64) -> Result<(
     let seam_of = |k: usize,x: f64| if x <= ON_SIDE { Some(k) } else if x >= 1.-ON_SIDE { Some((k+1)%pieces) } else { None };
     // the seams' places, both faces' ends merged, and each crossing's end on a seam put there
     let mut seams: Vec<Vec<f64>> = vec![vec![0.,1.];pieces];
+    // (a crossing of a seam both faces beside it trace straight back to the seam's end at the one
+    // corner is a cap about the tube's vertex, no meeting: beside a meridian an instant touches whole
+    // the end pose touches the sheet along its rim, and the rounding there draws loops a hair across,
+    // #880 T1d M2 — each such chord dropped)
+    let corner = |p: P2| [p[0],p[1]].iter().all(|&x| x <= ON_SIDE || x >= 1.-ON_SIDE);
+    let cap = |k: usize,c: &[P2]| -> Option<(usize,f64,f64)> {
+        let (p,q) = (c[0],c[c.len()-1]);
+        [(p,q),(q,p)].into_iter().find_map(|(x,y)| (corner(y) && !corner(x) && seam_of(k,x[0]).is_some() && seam_of(k,x[0]) == seam_of(k,y[0]))
+            .then(|| (seam_of(k,x[0]).unwrap(),x[1],y[1].round())))
+    };
+    let caps: Vec<Vec<(usize,f64,f64)>> = faces.iter().enumerate().map(|(k,f)| f.chords.iter().filter(|c| c.0 < 2).filter_map(|c| cap(k,&c.1)).collect()).collect();
+    for k in 0..pieces {
+        let others: Vec<(usize,f64,f64)> = [(k+pieces-1)%pieces,(k+1)%pieces].into_iter().filter(|&j| j != k).flat_map(|j| caps[j].clone()).collect();
+        faces[k].chords.retain(|c| c.0 >= 2 || !cap(k,&c.1).is_some_and(|(s,y,e)| others.iter().any(|&(s2,y2,e2)| s2 == s && e2 == e && (y2-y).abs() <= SNAP)));
+    }
+    // (the chords as each face's pieces are walked about: split where they cross or one ends on
+    // another, #880 T1d)
+    let splits: Vec<Vec<(usize,Vec<P2>)>> = faces.iter().map(|f| split_chords(&f.chords)).collect();
     for (k,face) in faces.iter().enumerate() {
-        for (_,c) in &face.chords { for p in [c[0],c[c.len()-1]] { if let Some(s) = seam_of(k,p[0]) { seams[s].push(p[1]) } } }
+        for (_,c) in face.chords.iter().chain(&splits[k]) { for p in [c[0],c[c.len()-1]] { if let Some(s) = seam_of(k,p[0]) { seams[s].push(p[1]) } } }
     }
     for s in &mut seams {
         s.sort_by(f64::total_cmp);
         s.dedup_by(|x,y| (*x-*y).abs() <= SNAP);
     }
-    let place = |s: usize,y: f64| -> Result<usize,Unbuilt> { seams[s].iter().position(|&q| (q-y).abs() <= SNAP)
-        .ok_or_else(|| Unbuilt::Failed("a ring's sheet's crossing of the tool ends on a seam where the face beside finds none".into())) };
+    // (the nearest place within a side's reach: an end a hair from a corner is the corner's, and
+    // one the face beside read within `SNAP` its place)
+    let place = |s: usize,y: f64| -> Result<usize,Unbuilt> { seams[s].iter().enumerate().filter(|(_,&q)| (q-y).abs() <= SNAP)
+        .min_by(|x,z| (x.1-y).abs().total_cmp(&(z.1-y).abs())).map(|(i,_)| i)
+        .ok_or_else(|| {
+            if std::env::var_os("SOLVENT_RING_DEBUG").is_some() { eprintln!("ring: seam {s} has no place at {y}: {:?}",seams[s]) }
+            Unbuilt::Failed("a ring's sheet's crossing of the tool ends on a seam where the face beside finds none".into())
+        }) };
     for (k,face) in faces.iter_mut().enumerate() {
         for (_,c) in &mut face.chords {
             let last = c.len()-1;
@@ -1151,11 +1976,19 @@ fn trimmed(net: &Net,roll: [f64;2],mut faces: Vec<Trimmed>,tol: f64) -> Result<(
     // the vertices: a seam's at its places, a rim's at a chord's end on it
     let mut at_seam: std::collections::BTreeMap<(usize,usize),u32> = std::collections::BTreeMap::new();
     let mut at_rim: Vec<(usize,usize,f64,u32)> = Vec::new();
+    let mut inside: Vec<(usize,P2,u32)> = Vec::new();
     let mut vertex = |out: &mut Brep,k: usize,[x,y]: P2| -> Result<u32,Unbuilt> {
         Ok(match seam_of(k,x) {
             Some(s) => {
                 let i = place(s,y)?;
                 *at_seam.entry((s,i)).or_insert_with(|| out.vertex(net.point(s as f64,t_of(seams[s][i]))))
+            }
+            None if y > ON_SIDE && y < 1.-ON_SIDE => {
+                // (a place inside the square, where chords meet)
+                if let Some(&(_,_,v)) = inside.iter().find(|q: &&(usize,P2,u32)| q.0 == k && (q.1[0]-x).hypot(q.1[1]-y) <= ON_SIDE) { return Ok(v) }
+                let v = out.vertex(net.point(k as f64+x,t_of(y)));
+                inside.push((k,[x,y],v));
+                v
             }
             None => {
                 let end = usize::from(y > 0.5);
@@ -1176,9 +2009,25 @@ fn trimmed(net: &Net,roll: [f64;2],mut faces: Vec<Trimmed>,tol: f64) -> Result<(
         let rim: [Curve;2] = [Curve::BSpline(Arc::new(piece.column(0))),Curve::BSpline(Arc::new(piece.column(piece.poles[0].len()-1)))];
         let surface = crate::geom::Surface::BSpline(frame,Arc::new(piece));
         let (u0,u1) = (k as f64,k as f64+1.);
-        let walks = pieces_of_square(&face.chords)?;
+        // (its chords split where they cross or one ends on another: a double curve ending on the
+        // tube's meeting with the tool at an end pose, #880 T1d)
+        let split = split_chords(&face.chords);
+        let simple = split.len() == face.chords.len() && split.iter().zip(&face.chords).all(|(x,y)| x.1.len() == y.1.len());
+        let told = |_: &Unbuilt| if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
+            for (e,c) in &face.chords { eprintln!("ring: face {k} unsplit chord of kind {e} from {:?} to {:?}, {} points",c[0],c[c.len()-1],c.len()) }
+        };
+        let walks = if simple { pieces_of_square(&face.chords).inspect_err(told)? } else { pieces_among(&split).inspect_err(told)? };
+        let chords: &[(usize,Vec<P2>)] = if simple { &face.chords } else { &split };
+        if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
+            eprintln!("trim: face {k} over {roll:?} chords {:?}",chords.iter().map(|(e,c)| (*e,c[0],c[c.len()-1])).collect::<Vec<_>>());
+            for w in &walks { eprintln!("trim:   walk {w:?}") }
+        }
         // the chords' edges, made once, each walked by the two pieces either side
-        let mut chord_edges: Vec<Option<u32>> = vec![None;face.chords.len()];
+        let mut chord_edges: Vec<Option<u32>> = vec![None;chords.len()];
+        // (a double curve's chord carries its own curve in the face's parameters, on its curve's
+        // chord-length parameter: the face's surface still holds the fold just past it, where an
+        // inversion onto it may land on the leaf beyond, #880 T1d)
+        let mut chord_pcurves: Vec<Option<Pcurve>> = vec![None;chords.len()];
         let mut rim_kept = [false;2];
         let mut kept_chords: [Vec<(Curve,Vec<V>)>;2] = [Vec::new(),Vec::new()];
         for walk in walks {
@@ -1188,10 +2037,10 @@ fn trimmed(net: &Net,roll: [f64;2],mut faces: Vec<Trimmed>,tol: f64) -> Result<(
             let m = round_square(0.5*(s0+s1));
             let into = INWARD[(s0.floor() as usize).min(3)];
             // no farther in than half the way to the nearest chord
-            let clear = face.chords.iter().flat_map(|(_,c)| c).map(|p| (p[0]-m[0]).hypot(p[1]-m[1])).fold(f64::INFINITY,f64::min);
+            let clear = chords.iter().flat_map(|(_,c)| c).map(|p| (p[0]-m[0]).hypot(p[1]-m[1])).fold(f64::INFINITY,f64::min);
             let depth = (0.5*clear).min(1e-3).min(0.25*(s1-s0));
             let probe = [m[0]+into[0]*depth,m[1]+into[1]*depth];
-            if !(face.readings[0].outside(probe) && face.readings[1].outside(probe)) { continue }
+            if !face.readings.iter().flatten().all(|r| r.outside(probe)) || (face.tail)(probe) { continue }
             let mut lp: Vec<Coedge> = Vec::new();
             for w in walk {
                 match w {
@@ -1222,20 +2071,52 @@ fn trimmed(net: &Net,roll: [f64;2],mut faces: Vec<Trimmed>,tol: f64) -> Result<(
                         }
                     }
                     Walk::Chord(i,forward) => {
-                        let (e,pts) = &face.chords[i];
+                        let (e,pts) = &chords[i];
                         let edge = match chord_edges[i] {
                             Some(edge) => edge,
                             None => {
-                                let (curve,xs) = chord_curve(&face.readings[*e],pts,tol)?;
+                                let (curve,xs) = match face.readings.get(*e).and_then(|r| r.as_ref()) {
+                                    Some(r) => chord_curve(r,pts,tol)?,
+                                    // (the double curve: through the net's points along it)
+                                    None => {
+                                        // (refined until the surface between each two points stands within a
+                                        // tenth of the tolerance of the chord between them: beside a fold the
+                                        // sheet bends sharply, and points 2e-4 radians apart sagged 3.6e-6)
+                                        let at = |p: P2| net.point(k as f64+p[0],a+(b-a)*p[1]);
+                                        let mut fine: Vec<P2> = vec![pts[0]];
+                                        for w in pts.windows(2) {
+                                            let mut todo = vec![(w[0],w[1],0)];
+                                            while let Some((p,q,depth)) = todo.pop() {
+                                                let m = [0.5*(p[0]+q[0]),0.5*(p[1]+q[1])];
+                                                let sag = norm(crate::util::space::sub(at(m),scale(add(at(p),at(q)),0.5)));
+                                                if sag > 0.1*tol && depth < 20 { todo.push((m,q,depth+1)); todo.push((p,m,depth+1)) } else { fine.push(q) }
+                                            }
+                                        }
+                                        let pts = &fine;
+                                        let xs: Vec<V> = pts.iter().map(|&p| at(p)).collect();
+                                        let mut params = vec![0.];
+                                        for w in xs.windows(2) { params.push(params.last().unwrap()+norm(crate::util::space::sub(w[1],w[0])).max(1e-300)) }
+                                        let length = *params.last().unwrap();
+                                        let params: Vec<f64> = params.iter().map(|p| p/length.max(1e-300)).collect();
+                                        let uvs: Vec<V> = pts.iter().map(|&[x,y]| [u0+x,t_of(y),0.]).collect();
+                                        // (both through every point at one parameter, a polyline each: they agree at
+                                        // every point and part only by a chord's sag)
+                                        let (Some(pc),Some(c3)) = (crate::nurbs::interpolate(&uvs,&params,1),crate::nurbs::interpolate(&xs,&params,1))
+                                            else { return Err(Unbuilt::Failed("a ring's sheet's double curve could not be drawn".into())) };
+                                        chord_pcurves[i] = Some(Pcurve::Curve(Arc::new(Curve::BSpline(Arc::new(pc)))));
+                                        (Curve::BSpline(Arc::new(c3)),xs)
+                                    }
+                                };
                                 let (v0,v1) = (vertex(&mut out,k,pts[0])?,vertex(&mut out,k,pts[pts.len()-1])?);
                                 let edge = out.edge(EdgeCurve::Curve(curve.clone()),[0.,1.],[v0,v1]);
-                                kept_chords[*e].push((curve,xs));
+                                if *e < 2 { kept_chords[*e].push((curve,xs)) }
                                 chord_edges[i] = Some(edge);
                                 edge
                             }
                         };
                         let uv = |p: P2| [u0+p[0],t_of(p[1])];
-                        lp.push(Coedge {edge,reversed:!forward,pcurve:Pcurve::Inverse {a:uv(pts[0]),b:uv(pts[pts.len()-1])}});
+                        let pcurve = chord_pcurves[i].clone().unwrap_or(Pcurve::Inverse {a:uv(pts[0]),b:uv(pts[pts.len()-1])});
+                        lp.push(Coedge {edge,reversed:!forward,pcurve});
                     }
                 }
             }
@@ -1299,6 +2180,23 @@ impl Ring {
 /// **The ring's contact at the roll `t` of `[a, b]`, as the road reads it**: each contact curve's
 /// pieces, matched to those at `a`, sampled at `n` points each (at the middles of `n` equal shares
 /// of its stretch), each point where the pose at `t` puts it with how the sheet stands there.
+/// At roll `t`, the root of the arc's branch `branch` (face 0) at each of `thetas` and its `s''`,
+/// and the point in space (a probe of the contact beside a whole-touched meridian).
+pub fn branch_at(ring: &Ring,path: &Trajectory,roll: [f64;2],t: f64,branch: bool,thetas: &[f64]) -> Result<Vec<(f64,V,f64)>,Unbuilt> {
+    let (w,dw) = rates(path,t,roll)?;
+    let pose = path.pose(t)?;
+    let l = Label {on:On::Face(0),branch};
+    Ok(thetas.iter().filter_map(|&th| ring.root(&w,th,l,false).map(|r| (th,pose.point(r.x),ring.bend(&w,&dw,th,&r)))).collect())
+}
+
+/// Each contact curve's pieces at roll `t` under `path` over `roll`: each piece's angles round the
+/// axis and its kind (a probe of the reader).
+pub fn pieces_at(ring: &Ring,path: &Trajectory,roll: [f64;2],t: f64) -> Result<Vec<Vec<(f64,f64,Label,Side)>>,Unbuilt> {
+    let reader = Reader::new(ring,path,roll)?;
+    let r = reader.read(t)?;
+    Ok(r.curves.iter().map(|c| c.iter().map(|p| (p.from,p.to,p.label,p.side)).collect()).collect())
+}
+
 pub fn contacts(ring: &Ring,path: &Trajectory,roll: [f64;2],t: f64,n: usize) -> Result<Vec<Vec<(V,Side)>>,Unbuilt> {
     let reader = Reader::new(ring,path,roll)?;
     let r = reader.read(t)?;

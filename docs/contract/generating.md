@@ -1884,6 +1884,64 @@ tool; the roots meet on the locus; and a ball's contacts under a tumble (a turn 
 across it) bound what it sweeps, a hair inside a member and a hair outside not, by the kernel's
 membership (`a_balls_contacts_bound_what_it_sweeps`).  Sampled where it samples.
 
+**The contact's road under any motion (#880 T1d, `brep::swept::general`):** the candidates
+of a polyhedral tool under a motion no constant twist takes, read per tool at each instant against
+its twist read on the tool (`Twist::body`). Each face's `n · v` is affine over its plane, so its
+contact is a chord of its characteristic line from edge to edge; each sharp edge's contact is where
+its two faces' `n · v` differ in sign, between their roots along it or a vertex. So an instant's
+contact is closed polygons, and its shape changes only at instants where a root passes a vertex or
+two meet, found by halving the roll between readings that differ (a shape over less than a
+billionth of the roll dropped as the passing state between its neighbours), and each stretch cut
+again to a quarter turn and the tool's size of travel. Each piece lies on a **bearer**, a face
+family's wall (`family::Sheet`) moving with the roll: an edge's line carried over the whole roll, or
+a face's characteristic line over each stretch it comes near the face; the pieces of one bearer are
+the faces of one candidate, strip by strip, sharing the rims between them, their moving sides exact
+walls in space and in the bearer's parameters (`Pcurve::Curve`). What is known is given: two edges'
+bearers with a vertex in common its path; an edge's and a face's of it the path where the face's
+chord reaches the edge, over each stretch holding that end, where the two touch; each bearer's whole
+meeting with the tool at either end (`contacts::pose_meeting`, read on any `Rolled` sheet, its
+branches ending on the strips' corners there). Held: every given rail lies on both its surfaces
+(`swept_general`). A bearer whose every line stands on one cylinder is that cylinder
+(`on_a_cylinder`, within a few times its sheet's fit; its faces' parameters its edges inverted onto
+it), so two such are one surface to the trim. **`closed` asks it where K2 cannot read the tool**
+(`closed::general_built`, its candidates trimmed by membership and judged; a tool it cannot read
+either keeps K2's `Curved`). **Built**: brep-bench's rod threaded at a growing lead, cut from the rod
+to the volume and area OCCT and cadrs agree on at 7.5e-11
+(`a_rod_threaded_at_a_growing_lead_is_its_bench_volume`, slow tier), and a cube tumbling two degrees
+(`a_cube_tumbling_two_degrees_is_built_by_the_general_road`), and five
+(`a_cube_tumbling_five_degrees_is_built_by_the_general_road`), each held to membership; a branch of a
+sheet's meeting with the tool at an end pose takes each end to its own nearest corner within two
+cells (`pose_meeting`), where both ends of the bottom edge's strip's branch had gone to one. **A given
+meeting is the whole of it**: the arrangement seeks nothing more of a pair it is given, so two edges'
+fans sharing a vertex are given, beside its path, every other branch of their meeting
+(`beside_rails`, seeded where an edge of either crosses the other, each seed traced alone); where
+the march in space refuses a branch (the two under a degree apart) it is marched in the two sheets'
+own parameters (`marched`: the 3 × 4 Jacobian's null vector, minimum-norm Newton, landed on the
+patch's edge, a cubic or, where it turns within a few points, a polyline within the tolerance).
+**Not yet built**: the cube tumbled 15° — the cylinder the top face's chord sweeps touches the top
+face posed at either end along its rim, so on the end pose's side face its meeting leaves tangent
+to that face's rim and to the line the two posed faces meet in, and the face's walk turns the wrong
+way there (one piece of it also missing, a thin stretch's face never paired with the plane); and
+the bench's 75° — its edge 1 and edge 9 fans' second branch now reaches the pinch exactly, but two
+regions stay open (28 boundary edges): about the corner of edges 2, 5 and 6, where edge 2's fan
+crosses face 4's strip with no edge seeding it (a branch from a rail back to a rail), and along
+the side face's fans at x ≈ 2.35, whose rails stand inside the sweep. **A ring's fold pair born partway**
+(`brep::swept::rings`): a pair narrower than its band read by its least `s''` along the band, on the
+curve's own branch; the roll cut where the contact changes shape (`rings::changes`), each stretch
+fitted alone, its tubes sewn across the cuts and trimmed; a sheet refused as folding only where it
+turns over. The stretches are sewn row by row (`sew::sewn_open`): a vertex merged only with other
+stretches' vertices on its own row, a row's rim cut only at that row's vertices — beside a
+swallowtail's point a stretch two-hundredths of a radian wide has its two rows within the tolerance
+of one another. **Not yet built**: the tumbling torus turned whole fits, is cut and sewn, and is
+refused in the trim, an edge of one sheet lying within a few tolerances of another over a long
+stretch, where no search proves their meeting (its fit alone takes 100 s); the thin one takes over
+forty minutes. **A ring along a spline** (the whole meridian touched at every instant, `rings::root`
+in closed form there) now closes its sheets — a bridge holding the join its label turns over at, a
+trace leaving beside a corner ending at a nearer crossing, a cap both faces of a seam trace into one
+corner dropped, a chord refined by the meeting's own points where its cubic strays — and is refused
+in the arrangement: the side circle's band is swept almost twice over, its two halves crossing at
+grazing angles, and two of its faces coincide along an edge.
+
 **K2's patches: the closed class under any rigid motion (#780 L3, `brep::swept::patches`):** a
 sweep under a motion no constant twist takes, nor a path of pieces (`Trajectory::General`, a frame
 along a path #398; a `Relative`), is built on the closed class's one arrangement
@@ -1993,12 +2051,21 @@ below as far as `KEEP_STEP` of a turn at that reach moves it — at a roll's flo
 sliver, covered for 5e-4 of it, was kept and the region left open.  The drawing's sweeps still
 reach these cases by the blank-scoped planar classes (`reads_general` does not ask this, #699). **Left open**: a drafted tool (its stations lofted, as the
 subtraction class lofts them); a tool standing along the plane's normal under a constant twist,
-which the arrangement builds exactly; and a side whose contact stands at its corner at every
-instant, which `path.sv`'s frame makes of a box's long sides (its instant centre on the line through
-the corner square to them) — read with the rounding of the side's parameter its walk turns about,
-refused `Folded`, and through the spline's inflection the side is in contact all along for an
-instant (`swept_patches::a_tool_no_convex_revolution_under_any_motion_is_refused_by_name`, once K2's
-`Curved`).
+which the arrangement builds exactly. **A box along a spline frame** (#880 T1d, once `Folded`):
+`path.sv`'s frame keeps the box's instant centre on the line of its side through the frame's
+origin, a corner, so three rules hold of the region's candidates. A side's contact within a
+billionth of its length of an end is no point of the side's (`Kind::Line`) but the corner's, which
+carries it — read with the rounding of the side's parameter, it stood either side of the end and its
+walk turned about. A corner's side whose `n · v` is nought there — the corner moving along it — is
+read by its rate along the side away from the corner, which says which way the side turns off the
+corner's path (`Kind::Corner`), its normals the sides' own where the fan reads one of them (a part in
+1e11 off, a speed of 40 reads as motion across it). And where the turn changes sense within the roll
+(`region::turning_back`, the spline's inflection) every edge is held at that pose as at an end pose:
+there the motion is a slide for an instant, a side along it in contact all along, and the corners
+carrying the boundary before and after stand that side apart. Held
+(`swept_patches::a_box_along_a_spline_frame_is_its_sections_planar_sweep`) to membership and to
+1e-7 of the area the definition sweeps in the plane, read on lines turned 0.3 rad off every end
+pose's side (1.3e-9 off).
 
 **The generating class's reading is the kernel's (#721 F2c):** a tool point's contact chart under
 the trajectory, its form read once of the trajectory's structure (`brep::swept::generating::Form`:

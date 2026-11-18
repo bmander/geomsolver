@@ -23,6 +23,7 @@ pub mod member;
 pub mod closed;
 pub mod trim;
 pub mod contacts;
+pub mod general;
 pub mod shadow;
 pub mod planar_solid;
 pub mod instant;

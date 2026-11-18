@@ -720,7 +720,33 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
             loops.push(l);
         }
         let n = pts.len();
-        let (mut t2,mut inside) = cdt(&pts,&loops).map_err(|e| format!("face {fi} ({}): {e}",f.surface.kind()))?;
+        let (mut t2,mut inside) = cdt(&pts,&loops).map_err(|e| {
+            if std::env::var_os("SOLVENT_MESH_DEBUG").is_some() {
+                for (li,l) in loops.iter().enumerate() {
+                    let area: f64 = (0..l.len()).map(|k| { let (p,q) = (pts[l[k]],pts[l[(k+1)%l.len()]]); p[0]*q[1]-q[0]*p[1] }).sum::<f64>()*0.5;
+                    eprintln!("mesh: face {fi} loop {li}: {} points, area {area:e}",l.len());
+                    if l.len() <= 40 { for &k in l { eprintln!("mesh:   {k} {:?} uv {:?} vertex {}",pts[k],uvs[k],ids[k]) } }
+                }
+                let segs: Vec<(usize,usize,usize)> = loops.iter().enumerate().flat_map(|(li,l)| (0..l.len()).map(move |k| (li,l[k],l[(k+1)%l.len()]))).collect();
+                let cross = |a: [f64;2],b: [f64;2],c: [f64;2]| (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
+                let mut found = 0;
+                for i in 0..segs.len() { for j in i+1..segs.len() {
+                    let ((_,a,b),(_,c,d)) = (segs[i],segs[j]);
+                    if a == c || a == d || b == c || b == d { continue }
+                    let (pa,pb,pc,pd) = (pts[a],pts[b],pts[c],pts[d]);
+                    if cross(pa,pb,pc)*cross(pa,pb,pd) < 0. && cross(pc,pd,pa)*cross(pc,pd,pb) < 0. && found < 10 {
+                        found += 1;
+                        eprintln!("mesh: face {fi}: loop {} side {:?}-{:?} crosses loop {} side {:?}-{:?} (uv {:?} {:?})",segs[i].0,pa,pb,segs[j].0,pc,pd,uvs[a],uvs[c]);
+                    }
+                } }
+                if found == 0 { eprintln!("mesh: face {fi}: no two sides cross") }
+                for l in &f.loops { for c in l {
+                    let e = &b.edges[c.edge as usize];
+                    eprintln!("mesh:   edge {} ({}) reversed {} vertices {:?} over {:?}",c.edge,match &e.curve { super::topo::EdgeCurve::Curve(c) => c.kind(),_ => "degenerate" },c.reversed,e.v,e.t);
+                } }
+            }
+            format!("face {fi} ({}): {e}",f.surface.kind())
+        })?;
         // refine where the surface stands off a triangle by more than the bar: its middle put in and
         // the triangulation made Delaunay about it again, looking only at triangles since written
         let unplace = |p: [f64;2]| [if f.reversed { -p[0]/ku } else { p[0]/ku },p[1]/kv];

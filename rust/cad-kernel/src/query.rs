@@ -2309,8 +2309,11 @@ impl Bins {
 impl Outline {
     /// The loops of `surface`'s face drawn to `bar`: each loop its runs in turn, each run its
     /// parameters and its point in space at a fraction of the way along it, from where the last
-    /// run ended to where the next begins.
-    pub fn of<F: Fn(f64) -> (Uv,V)>(surface: &Surface,bar: f64,loops: impl IntoIterator<Item=impl IntoIterator<Item=F>>) -> Outline {
+    /// run ended to where the next begins — read beside the second argument where it is no NaN: the
+    /// middle of the chord the point cuts, so a run inverted onto a surface that folds over itself
+    /// stays on its own leaf from point to point (#880 T1d: a tumbling torus's tube, its halves read
+    /// from their ends' parameters landing on the leaf past the fold, every chord halved twenty times).
+    pub fn of<F: Fn(f64,Uv) -> (Uv,V)>(surface: &Surface,bar: f64,loops: impl IntoIterator<Item=impl IntoIterator<Item=F>>) -> Outline {
         let mut sag = 0f64;
         let mut stack = Vec::new();
         let loops = loops.into_iter().map(|l| {
@@ -2318,21 +2321,31 @@ impl Outline {
             for run in l {
                 // each chord its ends' fractions and parameters, so a point is read once: the
                 // middle a chord is cut at is the end of both halves
-                let (u0,u1) = (run(0.).0,run(1.).0);
+                let (u0,u1) = (run(0.,[f64::NAN;2]).0,run(1.,[f64::NAN;2]).0);
                 pts.push(u0);
-                stack.push((0.,u0,1.,u1,0));
+                stack.push((0.,u0,1.,u1,0,f64::INFINITY));
                 // bisected the first way round first, so the chords come in order
                 let mut deepest = 0;
-                while let Some((a,ua,z,uz,depth)) = stack.pop() {
+                while let Some((a,ua,z,uz,depth,before)) = stack.pop() {
                     let m = (a+z)/2.;
-                    let (um,pm) = run(m);
+                    let (um,pm) = run(m,[(ua[0]+uz[0])/2.,(ua[1]+uz[1])/2.]);
                     let off = distance(surface.point([(ua[0]+uz[0])/2.,(ua[1]+uz[1])/2.]),pm);
                     // each chord cut counted (#777 V3): a stopped build draws no finer
                     let going = crate::util::meter::charge(crate::util::meter::Stage::Outline,1,|| (pm,surface.kind().to_string()));
-                    if depth < 2 || (off > bar && depth < 20 && going) { stack.push((m,um,z,uz,depth+1)); stack.push((a,ua,m,um,depth+1)); }
+                    // (and past eight halvings, only while a halving at least halves what its chord
+                    // misses by — a curve's chord misses a quarter as much a halving: one that does
+                    // not is read off a surface whose inversion does not settle there, a sheet all
+                    // but folded flat beside a swallowtail's point, and halving it twenty times
+                    // over reads a million points to no end, #880 T1d's tumbling torus)
+                    let settling = depth < 8 || off <= 0.5*before;
+                    if depth < 2 || (off > bar && depth < 20 && going && settling) { stack.push((m,um,z,uz,depth+1,off)); stack.push((a,ua,m,um,depth+1,off)); }
                     else { sag = sag.max(off); deepest = deepest.max(depth); if z < 1. { pts.push(uz); } }
                 }
                 crate::util::meter::outline_depth(deepest);
+                if deepest >= 14 && crate::debug() {
+                    let (p0,p1) = (run(0.,[f64::NAN;2]),run(1.,[f64::NAN;2]));
+                    eprintln!("outline: a run of a {} halved {deepest} deep to {bar:e}: from {:?} {:?} to {:?} {:?}, sag {sag:e}",surface.kind(),p0.0,p0.1,p1.0,p1.1);
+                }
             }
             pts
         }).collect();
@@ -2473,7 +2486,7 @@ impl<'a> Located<'a> {
             let (b,f) = (&*self.b,&self.b.faces[fi]);
             let outline = Outline::of(&f.surface,self.coarse/8.,f.loops.iter().map(|l| l.iter().map(|c| {
                 let e = &b.edges[c.edge as usize];
-                move |s: f64| {
+                move |s: f64,_: Uv| {
                     let t = if c.reversed { e.t[1]-(e.t[1]-e.t[0])*s } else { e.t[0]+(e.t[1]-e.t[0])*s };
                     (c.pcurve.at(t,e,&f.surface,&b.vertices),e.point(t,&b.vertices))
                 }

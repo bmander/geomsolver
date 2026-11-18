@@ -576,6 +576,23 @@ impl Brep {
                 EdgeCurve::Degenerate => if u.0+u.1 != 1 { return Err(format!("degenerate edge {i} used {} times",u.0+u.1).into()) },
                 EdgeCurve::Curve(_) => if *u != (1,1) {
                     let (kind,says) = if u.0 == u.1 && u.0 > 1 { (super::Kind::NotManifold,NOT_MANIFOLD) } else { (super::Kind::Open,OPEN) };
+                    if super::debug() {
+                        for (fi,f) in self.faces.iter().enumerate().filter(|(_,f)| f.loops.iter().flatten().any(|c| c.edge as usize == i)) {
+                            eprintln!("check: edge {i} used by face {fi} ({}, {}), its edges {:?}",f.name,f.surface.kind(),f.loops.iter().flatten().map(|c| c.edge).collect::<Vec<_>>());
+                        }
+                        let m = e.point(0.5*(e.t[0]+e.t[1]),&self.vertices);
+                        let ends = e.v.map(|v| self.vertices[v as usize].p);
+                        eprintln!("check: edge {i} from {:?} to {:?}",ends[0],ends[1]);
+                        for (j,g) in self.edges.iter().enumerate().filter(|&(j,_)| j != i) {
+                            let EdgeCurve::Curve(c) = &g.curve else { continue };
+                            let (_,d) = crate::query::nearest_on(&g.curve,g.t,self.vertices[g.v[0] as usize].p,m);
+                            if d > 1e-4 { continue }
+                            let users: Vec<String> = self.faces.iter().enumerate().filter(|(_,f)| f.loops.iter().flatten().any(|c| c.edge as usize == j))
+                                .map(|(fi,f)| format!("{fi} ({})",f.name)).collect();
+                            eprintln!("check:   edge {j} ({}) passes {d:e} from its middle, from {:?} to {:?}, used by {users:?}",c.kind(),
+                                self.vertices[g.v[0] as usize].p,self.vertices[g.v[1] as usize].p);
+                        }
+                    }
                     return Err(super::KernelError::new(kind,
                         format!("{says}edge {i} ({}) near {:?} used {} times along and {} against",
                         if let EdgeCurve::Curve(c) = &e.curve { c.kind() } else { "" },
