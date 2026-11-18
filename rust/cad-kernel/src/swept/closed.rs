@@ -1699,8 +1699,18 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
         [if k == 0 { w[0] } else { w[0]+eps },if k+2 == bounds.len() { w[1] } else { w[1]-eps }]
     }).collect();
     if crate::debug() && !cuts.is_empty() { eprintln!("ring: the contact changes shape at {cuts:?}") }
-    let fits: Vec<super::rings::Fitted> = stretches.iter().map(|&sp| super::rings::fitted_over(&ring,path,[a,b],sp,scale,K2_FIT*tol))
+    let mut fits: Vec<super::rings::Fitted> = stretches.iter().map(|&sp| super::rings::fitted_over(&ring,path,[a,b],sp,scale,K2_FIT*tol))
         .collect::<Result<_,_>>()?;
+    // **each fold pair's double curve** (#880 T1d, `rings::double_curve`): traced over the whole roll
+    // from where a stretch first finds the outer leaves crossing, once a pair, and cut into every
+    // stretch it passes (`rings::cut_along`), its tail dropped there
+    let mut curves: Vec<Vec<(f64,f64,f64)>> = Vec::new();
+    for seed in fits.iter().flat_map(|f| f.seeds.clone()) {
+        let (th,t,_) = seed[0];
+        if curves.iter().any(|c| c.iter().any(|&(x,y,_)| (x-th).abs() <= 1e-3 && (y-t).abs() <= 1e-3*(b-a))) { continue }
+        curves.push(super::rings::double_curve(&ring,path,[a,b],seed,tol)?);
+    }
+    if !curves.is_empty() { for fit in &mut fits { super::rings::cut_along(&ring,path,[a,b],fit,scale,&curves)? } }
     if crate::timing() { eprintln!("ring: fitted in {:?}",clock.elapsed()) }
     crate::util::meter::go_on()?;
     let [start,end] = [super::rings::posed(tool,&ring,path,&fits[0],a)?,super::rings::posed(tool,&ring,path,&fits[fits.len()-1],b)?];

@@ -20,9 +20,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   over, not where it is merely thin.
 - **A ring's roll is cut where its contact changes shape** (`swept::rings::changes`,
   `fitted_over`, `entered_at`): each stretch fitted on its own, the tubes sewn across the cuts
-  (`sew::sewn_open`, `sew::parts`) and trimmed by membership. A newborn pair's outer leaves, crossing
-  inside its band, are not yet cut where they cross: such a build is refused or judged wrong, never
-  returned.
+  (`sew::sewn_open`, `sew::parts`) and trimmed by membership. A newborn pair's bridge is the sheet
+  itself, and its double curve — where its outer leaves cross — is traced over the whole roll
+  (`rings::double_curve`) and cut into each stretch, its tail dropped (`rings::cut_along`). Where the
+  double curve ends on the tube's meeting with the tool at an end pose such a build is still refused:
+  never returned.
 - **`swept::contacts`'s meeting of a sheet with the tool at an end of the roll reads any sheet**
   (`Rolled`): a constant twist's blend as before, or a moving wall.
 - **A contact's fit given up on keeps to its nodes** (`swept::contacts`): a branch whose fit stops at
