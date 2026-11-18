@@ -18,6 +18,14 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   `s''` sought along the band on the curve's own branch, where samples alone read the whole curve as
   touching (the tumbling torus turned whole, and thin). A sheet is refused as folding where it turns
   over, not where it is merely thin.
+- **A rod threaded at a lead that grows is built** (`swept::contacts::pose_meeting`, #880 T1d): a
+  branch of a sheet's meeting with the tool at an end pose has each end put at its own nearest corner
+  that `h`'s rounding reaches, and only one within two cells of it — a strip's corner at a vertex,
+  `h` whole there, extrapolated to a root half the square away and took the branch's other end, so
+  both ends were one point and the branch, fitted to nothing, was dropped (the bottom edge's strip of
+  the bar, where it leaves the bar posed at the start). brep-bench's
+  `swept/square-thread-at-a-growing-lead` builds by the general road, to the volume and area OCCT
+  and cadrs agree on at 7.5e-11; a cube tumbling two degrees builds.
 - **An outline stops halving where halving no longer helps** (`query::Outline::of`): past eight
   halvings a chord is halved again only while a halving at least halves what it misses its run by —
   a run read off a sheet all but folded flat beside a swallowtail's point, its inversion settling

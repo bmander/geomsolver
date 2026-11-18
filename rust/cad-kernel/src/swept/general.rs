@@ -35,26 +35,20 @@
 //!
 //! **The road `closed` asks where K2 cannot read a tool** (`closed::general_built`): a tool no
 //! convex solid of revolution, every face a plane and every edge a line, under a motion no constant
-//! twist takes and keeping no plane. The candidates are made and given, and the trim still refuses
-//! them on the two cases tried —
+//! twist takes and keeping no plane. A bar under a screw whose lead grows builds, cut from its rod to
+//! the bench's volume at 7.5e-11: its two vertical edges at one radius each sweep the one cylinder,
+//! taken as that cylinder (`on_a_cylinder`, its faces' parameters its edges inverted onto it), so the
+//! trim knows them as one surface; and its bottom edge's strip is cut where it leaves the bar posed at
+//! the start (the branch from the rim's corner in `contacts::pose_meeting`, each end at its own
+//! nearest corner). A cube tumbling two degrees builds too. What the trim still refuses:
 //!
-//! - **a stretch born at a point of its edge** (brep-bench's `tumbling-cube`): there both faces'
-//!   `n · v` vanish, so the edge's velocity runs along the edge, and the edge's carried line has a
-//!   pinch point (a Whitney umbrella). The strip's two sides — the paths where the two faces' chords
-//!   reach the edge — leave it tangent to one another, within the kernel's tolerance (2e-9) for
-//!   1.4e-4, and the Boolean merges points of the two — the start of one onto the other a little
-//!   way along it, its first stretch a spur the face's pieces now drop (`boolean`'s walk). What
-//!   stays open: edge 1's strip and edge 5's, both swept by edges of the cube's face x = 3.6, all but
-//!   coplanar under so small a tumble, and the trim keeps edge 5's piece short of the rail they share,
-//!   so that rail bounds one face;
-//! - **two bearers on one surface** (`square-thread-at-a-growing-lead`): a bar's vertical edges at one
-//!   radius, turned about `z` and risen along it, each sweep the one cylinder. A bearer whose every
-//!   line stands on one cylinder is now that cylinder (`on_a_cylinder`, its faces' parameters its
-//!   edges inverted onto it), so two of them are one surface the trim knows as one — where before a
-//!   search for where one's rail met the other's face read more boxes than any may. The trim then
-//!   leaves the cylinder's rail along the bottom vertex's path bounding one face: the strip the
-//!   bottom edge sweeps beside it is proved inside the sweep where it is read, and no meeting cuts
-//!   off the piece of it beside the vertex that bounds it.
+//! - **the cube turned farther** (brep-bench's `tumbling-cube`, 75°): a fan's stretch born at a
+//!   point of its edge, where both faces' `n · v` vanish, the edge's velocity runs along it, and its
+//!   carried line has a pinch point (a Whitney umbrella). The strip's two sides leave it tangent within
+//!   the kernel's tolerance for 1.4e-4, and the Boolean merges the start of one onto the other a little
+//!   way along it, its first stretch a spur the face's pieces now drop (`boolean`'s walk). Past 15° on
+//!   the start pose's face two cuts meet where three sheets do, one ending 1.5e-4 short of the other,
+//!   and the face's pieces do not close.
 //!
 //! And a face that is no plane (its contact a curve that moves over it and changes as it goes), an
 //! edge that is no line, and a contact running along an edge (a face's `n · v` nought along one of
@@ -486,6 +480,11 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
                 strips[held[k]].iter().flat_map(|st| (0..2).filter(move |&i| st.span[i] == at).flat_map(move |i| st.sides.iter().map(move |sd| [sd.u[i],e as f64]))).collect()
             };
             curves.extend(super::contacts::pose_meeting(&Rolled(&br.sheet),&f.surface,boxes[e][fi],touch,None,&corners,&place,tol));
+        }
+        if crate::debug() && !curves.is_empty() {
+            let what = match br.of { Bears::Edge(x) => format!("edge {x}"),Bears::Face {face,..} => format!("face {face}") };
+            eprintln!("general: bearer {} ({what}) meets the tool's face {fi} at end {e}{}: {:?}",held[k],if touch.is_some() { ", touching" } else { "" },
+                curves.iter().map(|c| { let d = crate::query::curve_domain(c).unwrap_or([0.,0.]); (c.kind(),c.point(d[0]),c.point(d[1])) }).collect::<Vec<_>>());
         }
         Given {surfaces:[surfaces[k].clone(),f.surface.clone()],curves}
     });

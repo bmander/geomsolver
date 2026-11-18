@@ -16,13 +16,11 @@ fn tumble() -> Trajectory {
 /// The cube of edge 1.2 about `(3, 0, 2)`.
 fn cube() -> gcs_core::brep::topo::Brep { crate::brep::block([2.4,-0.6,1.4],[3.6,0.6,2.6]) }
 
-/// **A cube tumbling a short way is built closed** by the general road and judged. Not yet: a fan's
-/// stretch is born at a point of its edge at 0.2003 of the roll, where the edge's carried line has a
-/// pinch point — its pieces now close, the spur its sides' merge leaves dropped — and edge 1's strip
-/// and edge 5's, both swept by edges of the cube's face x = 3.6, stand all but coplanar, and the trim
-/// keeps edge 5's piece short of the rail they share (`general`'s module).
+/// **A cube tumbling a short way is built closed** by the general road and judged. Not yet at 15°:
+/// on its start pose's face x = 2.4 two cuts the trim lays meet where three of its sheets do, and one
+/// ends 1.5e-4 short of the other there, so the face's pieces do not close (`general`'s module).
 #[test]
-#[ignore = "T1d: two all but coplanar strips meeting along a shared rail, one kept short of it"]
+#[ignore = "T1d: a cut ending 1.5e-4 short of another where three sheets meet"]
 fn a_cube_tumbling_a_little_is_built_by_the_general_road() {
     let cube = cube();
     let roll = [-15f64.to_radians(),15f64.to_radians()];
@@ -37,21 +35,99 @@ fn a_cube_tumbling_a_little_is_built_by_the_general_road() {
     eprintln!("{} faces, volume {}",swept.faces.len(),gcs_core::brep::props::volume(&swept));
 }
 
-/// **`closed` asks the general road where K2 cannot read the tool** (#880 T1d): a cube tumbling is
-/// no convex solid of revolution, so K2 refused it (`Curved` at its corner) before reading anything;
-/// it now reaches the general road, its candidates made and trimmed, and what comes back is the
-/// trim's (built and judged, or refused saying where — not yet built: the cube's face x = 3.6 moves
-/// all but in its own plane, its edges' strips and its characteristic line's wall all but coplanar,
-/// and the trim keeps one of them short of the rail two share).
+/// **A cube tumbling two degrees either way is built by the general road through `closed`** (#880
+/// T1d): no convex solid of revolution, so K2 refused it (`Curved` at its corner) before reading
+/// anything; `closed` now asks the general road, its candidates trimmed by membership and judged, and
+/// the solid is held to membership at points through its box. (Turned farther, the bench's 75°, its
+/// face x = 3.6 moving all but in its own plane, the trim's meetings near where three of its sheets
+/// meet do not yet join.)
 #[test]
-fn closed_asks_the_general_road_for_a_tool_no_convex_revolution() {
+fn a_cube_tumbling_two_degrees_is_built_by_the_general_road() {
     let cube = cube();
     let roll = [-2f64.to_radians(),2f64.to_radians()];
     let tol = gcs_core::brep::geom::tolerance(cube.size());
-    let r = gcs_core::brep::swept::closed::closed(&cube,&tumble(),roll,cube.size(),tol);
-    assert!(!matches!(r,Err(gcs_core::brep::swept::closed::Unbuilt::Curved {..})),"still refused as K2's: {r:?}");
-    if let Ok(b) = &r { b.check(tol).unwrap() }
+    let path = tumble();
+    let built = gcs_core::brep::swept::closed::closed(&cube,&path,roll,cube.size(),tol).unwrap_or_else(|u| panic!("{u:?}"));
+    built.check(tol).unwrap();
+    crate::swept_closed::agrees_over(&built,&cube,&path,roll);
 }
+
+/// A rise of `6s + 0.3s²` after `s` turns (brep-bench's `swept/square-thread-at-a-growing-lead`):
+/// a lead growing from 6 by 0.6 a turn.
+#[derive(Debug)]
+struct Rise;
+
+impl Rise { fn of(s: f64) -> f64 { 6.*s+0.3*s*s } }
+
+impl gcs_core::brep::trajectory::Pace for Rise {
+    fn jet(&self,theta: f64) -> Result<[f64;2],gcs_core::brep::KernelError> {
+        let s = theta/std::f64::consts::TAU;
+        Ok([Rise::of(s),(6.+0.6*s)/std::f64::consts::TAU])
+    }
+    fn range(&self,[a,b]: [f64;2]) -> Result<[f64;2],gcs_core::brep::KernelError> {
+        let (s0,s1) = (a.min(b)/std::f64::consts::TAU,a.max(b)/std::f64::consts::TAU);
+        let mut vs = vec![Rise::of(s0),Rise::of(s1)];
+        if s0 < -10. && -10. < s1 { vs.push(Rise::of(-10.)) }
+        Ok([vs.iter().cloned().fold(f64::INFINITY,f64::min),vs.iter().cloned().fold(f64::NEG_INFINITY,f64::max)])
+    }
+    fn enclose(&self,roll: gcs_core::brep::util::interval::Interval)
+        -> Result<[gcs_core::brep::util::interval::Interval;2],gcs_core::brep::util::interval::Error> {
+        use gcs_core::brep::util::interval::{Error,Interval};
+        let [a,b] = roll.bounds();
+        let [lo,hi] = self.range([a,b]).map_err(|_| Error::InvalidBounds)?;
+        let rate = |t: f64| (6.+0.6*t/std::f64::consts::TAU)/std::f64::consts::TAU;
+        let wide = |lo: f64,hi: f64| Interval::new(lo-lo.abs()*1e-15-1e-300,hi+hi.abs()*1e-15+1e-300);
+        Ok([wide(lo,hi)?,wide(rate(a).min(rate(b)),rate(a).max(rate(b)))?])
+    }
+}
+
+/// The bar `4 ≤ x ≤ 12, −8 ≤ y ≤ 8, −1 ≤ z ≤ 1` turned about `z` and risen at `Rise`'s pace, seen from
+/// a spindle turning back under it (brep-bench's thread at a growing lead).
+fn growing_lead() -> (gcs_core::brep::topo::Brep,Trajectory) {
+    let up = [0.,0.,1.];
+    let rise = Trajectory::Twist(Screw {origin:[0.;3],axis:up,ratio:0.,advance:std::f64::consts::TAU});
+    let tool = Trajectory::Paced {path:Box::new(rise),pace:std::sync::Arc::new(Rise)};
+    let spindle = Trajectory::Twist(Screw {origin:[0.;3],axis:up,ratio:-1.,advance:0.});
+    (crate::brep::block([4.,-8.,-1.],[12.,8.,1.]),Trajectory::Relative {source:Box::new(tool),observer:Box::new(spindle)})
+}
+
+/// **A bar under a screw whose lead grows, a third of a turn, is built by the general road** (#880
+/// T1d): its two vertical edges at one radius each sweep the one cylinder, taken as that cylinder
+/// (`on_a_cylinder`), and its bottom edge's strip is cut beside the vertex where it leaves the bar
+/// posed at the start (`pose_meeting`'s branch from the rim's corner, each end at its own nearest
+/// corner). Held to membership.
+#[test]
+fn a_bar_under_a_growing_lead_a_third_of_a_turn_is_built_by_the_general_road() {
+    let (bar,path) = growing_lead();
+    let roll = [-90f64.to_radians(),0.5];
+    let tol = gcs_core::brep::geom::tolerance(bar.size());
+    let built = gcs_core::brep::swept::closed::closed(&bar,&path,roll,bar.size(),tol).unwrap_or_else(|u| panic!("{u:?}"));
+    built.check(tol).unwrap();
+    crate::swept_closed::agrees_over(&built,&bar,&path,roll);
+}
+
+/// **A rod threaded at a lead that grows along it** (brep-bench `swept/square-thread-at-a-growing-lead`,
+/// #880 T1d): the bar carried three and three-quarter turns up the rod at the growing lead, its sweep
+/// built by the general road and cut from the rod (`cut_from`), held to the volume and area OCCT and
+/// cadrs agree on (to 8e-10 and 2e-10), at a billionth (7.5e-11 off). Once K2's `Curved` at the bar's
+/// corner.
+#[test]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, 24 s: the growing-lead thread cut from its rod")]
+fn a_rod_threaded_at_a_growing_lead_is_its_bench_volume() {
+    let (bar,path) = growing_lead();
+    let up = [0.,0.,1.];
+    let rod = gcs_core::brep::build::prism(&gcs_core::brep::build::disc([0.;3],up,5.),0.,20.).unwrap();
+    let roll = [-90f64.to_radians(),1260f64.to_radians()];
+    let tol = gcs_core::brep::geom::tolerance(rod.size().max(bar.size()));
+    let cut = gcs_core::brep::swept::closed::cut_from(&rod,&bar,&path,roll,bar.size(),tol).unwrap_or_else(|u| panic!("{u:?}"));
+    cut.check(tolerance_of(&cut)).unwrap();
+    let v = gcs_core::brep::props::volume(&cut);
+    let a: f64 = cut.faces.iter().map(|f| gcs_core::brep::props::area(&cut,f)).sum();
+    assert!((v/1324.478271075-1.).abs() <= 1e-9,"the threaded rod's volume {v} against 1324.478271075");
+    assert!((a/808.437626175-1.).abs() <= 1e-9,"its surface {a} against 808.437626175");
+}
+
+fn tolerance_of(b: &gcs_core::brep::topo::Brep) -> f64 { gcs_core::brep::geom::tolerance(b.size()) }
 
 /// **The paths the general road gives lie on both their walls**: each given rail — a vertex's path
 /// two fans share, the path where a face's chord reaches an edge of it, over each stretch holding

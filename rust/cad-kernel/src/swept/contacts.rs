@@ -714,7 +714,10 @@ pub(super) fn pose_meeting(sheet: &dyn Rolled,surface: &Surface,within: ([f64;3]
         let d = 1e-6;
         let hc = h(c[0],c[1]);
         let slope = (h(c[0]+du/apart*d,c[1]+dv/apart*d)-hc)/d;
-        apart <= 4.*(hc/slope).abs()
+        // (and within two cells of it: a corner where `h` is no rounding — a strip's corner at a
+        // vertex, its rate there whole — extrapolates to a root as far off as `h` is from nought, and
+        // took a branch's other end, half the square away, #880 T1d)
+        apart <= 4.*(hc/slope).abs() && apart <= 2.*(1./n[0] as f64).max(1./n[1] as f64)
     };
     let mut links: Vec<[usize;2]> = Vec::new();
     for i in 0..n[0] { for j in 0..n[1] {
@@ -773,6 +776,9 @@ pub(super) fn pose_meeting(sheet: &dyn Rolled,surface: &Surface,within: ([f64;3]
         if let Some(&k) = next[r].iter().find(|&&k| !used[k]) { lines.push(walk(r,k,&mut used)) }
     }
     for k in 0..links.len() { if !used[k] { lines.push(walk(links[k][0],k,&mut used)) } }
+    if std::env::var_os("SOLVENT_POSE_DEBUG").is_some() && touch.is_some() && corners.len() >= 2 {
+        eprintln!("pose: n {n:?}, corners {corners:?}: {} roots, lines {:?}",roots.len(),lines.iter().map(|l| (l.len(),roots[l[0]],roots[l[l.len()-1]])).collect::<Vec<_>>());
+    }
     // each fitted: a point between two of its own settled across it, by Newton on `h`'s gradient —
     // or `F`'s away from the rim, the same zero set and sign at a sixth of the cost
     let d = 1e-7;
@@ -809,7 +815,12 @@ pub(super) fn pose_meeting(sheet: &dyn Rolled,surface: &Surface,within: ([f64;3]
     let between = |x: Uv,y: Uv| { let p = onto([0.5*(x[0]+y[0]),0.5*(x[1]+y[1])]); (p,at(p[0],p[1])) };
     // an end beside a corner by what `h`'s rounding there puts it off: its value over its slope toward
     // the end, four times over
-    let snapped = |p: Uv| corners.iter().copied().find(|&c| rounding(c,p)).unwrap_or(p);
+    // (the nearest such corner: a branch from one corner of a strip's rim to its side, its ends
+    // each beside a corner `h`'s rounding reaches loosely near the rim, was put at the first corner
+    // listed at both ends, one point, and fitted to nothing — the bottom edge's strip of a bar under
+    // a screw whose lead grows, its meeting with the bar's side at the start pose, #880 T1d)
+    let snapped = |p: Uv| corners.iter().copied().filter(|&c| rounding(c,p))
+        .min_by(|a,b| (a[0]-p[0]).hypot(a[1]-p[1]).total_cmp(&(b[0]-p[0]).hypot(b[1]-p[1]))).unwrap_or(p);
     // the sheet's sides that are one point: a section's end on the turn's axis, which the carry holds
     let poles: Vec<(f64,V)> = [0.,1.].into_iter().filter(|&u| sheet.still(u)).map(|u| (u,at(u,0.))).collect();
     let on_pole = |p: Uv| poles.iter().any(|&(u,q)| (p[0]-u).abs() <= 1e-9 || distance(at(p[0],p[1]),q) <= tol);
@@ -910,7 +921,11 @@ pub(super) fn pose_meeting(sheet: &dyn Rolled,surface: &Surface,within: ([f64;3]
             idx[0] = 0;
             idx[16] = pts.len()-1;
             idx.dedup();
-            fitted(idx.iter().map(|&i| (uv[i],pts[i])).collect(),&between,tol)
+            let c = fitted(idx.iter().map(|&i| (uv[i],pts[i])).collect(),&between,tol);
+            if c.is_none() && std::env::var_os("SOLVENT_POSE_DEBUG").is_some() {
+                eprintln!("pose: a branch of {} points from {:?} to {:?} not fitted",uv.len(),uv[0],uv[uv.len()-1]);
+            }
+            c
         }).collect::<Vec<_>>()
         }).collect::<Vec<_>>()
     }).collect()

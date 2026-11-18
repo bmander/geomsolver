@@ -1905,12 +1905,15 @@ branches ending on the strips' corners there). Held: every given rail lies on bo
 (`on_a_cylinder`, within a few times its sheet's fit; its faces' parameters its edges inverted onto
 it), so two such are one surface to the trim. **`closed` asks it where K2 cannot read the tool**
 (`closed::general_built`, its candidates trimmed by membership and judged; a tool it cannot read
-either keeps K2's `Curved`; `closed_asks_the_general_road_for_a_tool_no_convex_revolution`). **Not
-yet built**: the tumbling cube — its fan's stretch born at a pinch point of its edge's carried line
-now closes (the Boolean's walk read again without the spur its sides' merge leaves), but its face
-x = 3.6 moves all but in its own plane, its edges' strips and its characteristic line's wall all but
-coplanar, and the trim keeps one short of the rail two share; and the bar under a growing lead,
-its bottom edge's strip proved inside where it is read and cut by nothing beside its vertex. **A ring's fold pair born partway**
+either keeps K2's `Curved`). **Built**: brep-bench's rod threaded at a growing lead, cut from the rod
+to the volume and area OCCT and cadrs agree on at 7.5e-11
+(`a_rod_threaded_at_a_growing_lead_is_its_bench_volume`, slow tier), and a cube tumbling two degrees
+(`a_cube_tumbling_two_degrees_is_built_by_the_general_road`), each held to membership; a branch of a
+sheet's meeting with the tool at an end pose takes each end to its own nearest corner within two
+cells (`pose_meeting`), where both ends of the bottom edge's strip's branch had gone to one. **Not yet
+built**: the cube tumbled 15° and more — its fan born at a pinch point of its edge's carried line now
+closes (the Boolean's walk read again without the spur its sides' merge leaves), but on the start
+pose's face two cuts meet where three sheets do, one ending 1.5e-4 short of the other. **A ring's fold pair born partway**
 (`brep::swept::rings`): a pair narrower than its band read by its least `s''` along the band, on the
 curve's own branch; the roll cut where the contact changes shape (`rings::changes`), each stretch
 fitted alone, its tubes sewn across the cuts and trimmed; a sheet refused as folding only where it
