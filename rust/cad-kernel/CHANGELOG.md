@@ -8,6 +8,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A meeting given by construction holds its points of touching** (#942 F3): `boolean::Given` gains
+  `touches`, points where its two surfaces touch beside its curves. An edge of either through one is
+  read as touching the other there, with no search: a touch is a double root, which no search proves
+  by a change of sign. The slide road gives them where a band's contact crosses a seam: the
+  neighbour's face at each end pose, and every face of its candidate's solid, touches the band's
+  sheet only at the seam points. Brep-bench's bull-nose pushed in at a lean, its side's rim touching
+  its round's sheet mid-span, was refused ("a circle … meets a extrusion was not proved") and is now
+  cut to its closed form. `Given` literals need the new field (`touches: Vec::new()` for none).
+
 - **One fallback for shallow meetings, marched in both surfaces' parameters** (#942 F1): where the
   trace is refused as shallow, `meeting::marched` marches each seed no branch holds along the
   solutions of `A(u_a, v_a) = B(u_b, v_b)` — the general road's four-parameter march, moved into the

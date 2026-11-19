@@ -1646,7 +1646,21 @@ that hold its curves, where both are carried (`closed`'s `Touch`). The closed cl
 - **a leaning round face at each end pose of a turn against its contact turned** (C3, the curve
   `ssi`'s `own_contact` writes, given where it certifies the face on one side of the surface);
 - **a face holding a sharp circle at each end pose against the ring the circle turns into** (L2,
-  `plane_holding_rim`, `side_holding_rim`).
+  `plane_holding_rim`, `side_holding_rim`);
+- **the neighbour across a band's seam at each end pose against the band's sheet, at the seam
+  points alone** (#942 F3, `slide`'s `touched_at_seams`; `Touch`'s points, `Given::touches`).
+  - The neighbour's face posed is the tool's boundary there and the sheet is the sweep's, so the
+    two meet only where the face's contact lies on the sheet: where the band's contact crosses the
+    seam into it. So does every face of the solid the face's candidate bounds, which lies within
+    the tool posed.
+  - Each such face is given those points against the sheet, and nothing else.
+  - The circle where the neighbour meets the band touches the sheet there: a double root, which no
+    search proves by a change of sign. It is read off the given points as a touch, with no search
+    (`boolean`'s `on_given`).
+  - Gate: brep-bench's bull-nose pushed in at a lean, its mill turned from a meridian that puts
+    the touches mid-span on its side's rim. It was refused ("a circle … meets a extrusion was not
+    proved"), and is now cut from the block to `swept_slid::Mill::plunged_away`'s closed form to
+    1e-9 (`swept_slid::a_bull_nose_whose_rim_touches_its_contacts_sheet_mid_span_is_cut_from_the_block`).
 
 Each pair-by-pair recognition in `ssi::intersect` can be bypassed (`ssi::bypassing`,
 `Recognised::{OwnContact, SlidTouch, RimHeld}`, carried to `util::par`'s workers by `util::bypass`), and each gate

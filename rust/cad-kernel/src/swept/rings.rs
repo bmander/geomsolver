@@ -1463,7 +1463,7 @@ pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],rimmed: 
                     let mut curves: Vec<Curve> = Vec::new();
                     if rimmed[e] && holding[k].contains(&f) { curves.extend(rims[e].iter().cloned()) }
                     curves.extend(chords[e].iter().zip(&on).filter(|&(_,&g)| g == f).map(|((c,_),_)| c.clone()));
-                    given.push(Given {surfaces:[face.surface.clone(),surface.clone()],curves});
+                    given.push(Given {surfaces:[face.surface.clone(),surface.clone()],curves,touches:Vec::new()});
                 }
             }
         }

@@ -651,7 +651,9 @@ each operand; a traced meeting along an edge one face already has is that edge, 
 and laid across the other face too wherever it lies inside it (`Meetings::along_edges`: a torus's
 seam in the plane through its axis that holds it, `brep::a_torus_cut_along_its_seam_is_half_of_it`); a meeting
 known before any is sought given it (`Given`, `arrangement_given`, #810): curves on two operands'
-surfaces that are their whole meeting, laid as an edge of both with no search for that pair —
+surfaces that are their whole meeting, laid as an edge of both with no search for that pair, and
+the points where the two touch besides (`Given::touches`, #942 F3), an edge of either through one
+read as touching the other there with no search, a touch being a double root no search proves —
 what a sweep knows of its candidates' touches by construction
 (generating.md, #810); each cell's membership in each operand read off a face of it bounding the cell, else at
 a point deep inside. **A trim is the same phases with no cell** (#880 E1, `boolean::trimmed`): only the pairs of faces a `Meet` names met (an edge with a face only where a face it bounds is), each piece kept, turned or dropped by a side test its caller gives, coincident pieces stood for by the lowest operand's, and the kept pieces assembled and healed as a selection's are; with no `Meet` the arrangement is as it was (generating.md's trimming by membership). **A Boolean is a selection over it**: each piece's two sides' membership read
