@@ -1069,9 +1069,8 @@ pub fn keeps(r: &Requirement, v: f64) -> bool {
     compares(r.compare, r.value, v)
 }
 
-/// Whether value `v` is on `compare`'s side of `stated`, within 1e-9 of it (`keeps`'s rule, a
-/// claimed mass's too).
-pub(crate) fn compares(compare: crate::expr::Cmp, stated: f64, v: f64) -> bool {
+/// Whether value `v` is on `compare`'s side of `stated`, within 1e-9 of it (`keeps`'s rule).
+fn compares(compare: crate::expr::Cmp, stated: f64, v: f64) -> bool {
     let slack = 1e-9 * stated.abs().max(v.abs());
     match compare {
         crate::expr::Cmp::Eq => (v - stated).abs() <= slack,

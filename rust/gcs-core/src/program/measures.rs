@@ -61,7 +61,10 @@ pub(super) fn measures(
                 continue;
             }
         };
-        let (index, claim, head) = (sk.measured.len(), measured.claim, measured.head.clone());
+        let head = m.head.clone().unwrap_or_else(|| {
+            format!("{} {} {}", m.lhs.text(), m.cmp_text(), m.rhs.text())
+        });
+        let (index, claim) = (sk.measured.len(), measured.claim);
         sk.measured.push(measured);
         let driven = match claim {
             true => None,
@@ -95,14 +98,10 @@ pub(super) fn measures(
 /// declared unknowns, the two of one dimension; a bound only where it is claimed — a bound on an
 /// integral chooses no root.
 fn read(sk: &Sketch, res: &Resolver, m: &crate::syntax::Measured) -> Result<Measured, Refused> {
-    let head = m.head.clone().unwrap_or_else(|| {
-        format!("{} {} {}", m.lhs.text(), m.cmp_text(), m.rhs.text())
-    });
     let compare = match m.cmp {
         None => crate::expr::Cmp::Eq,
-        Some(_) if !m.claim => return Err((None, format!(
-            "a bound on an integral chooses no root: claim it, `claim {head}`, or state it \
-             equal"))),
+        Some(_) if !m.claim => return Err((None, "a bound on an integral chooses no root: claim \
+            it, or state it equal".into())),
         Some(crate::syntax::Cmp::Le) => crate::expr::Cmp::Le,
         Some(crate::syntax::Cmp::Ge) => crate::expr::Cmp::Ge,
         Some(crate::syntax::Cmp::In) => return Err((None, "an integral is compared one-sided, \
@@ -120,7 +119,7 @@ fn read(sk: &Sketch, res: &Resolver, m: &crate::syntax::Measured) -> Result<Meas
                                            most {}", integrals.len() + unknowns.len(),
                                           crate::tape::MAX_VARS)));
     }
-    Ok(Measured { integrals, lhs, rhs, unknowns, compare, claim: m.claim, dim, head })
+    Ok(Measured { integrals, lhs, rhs, unknowns, compare, claim: m.claim, dim })
 }
 
 /// Two dimensions that may be compared or added: equal, or one a bare number, which stands
@@ -223,8 +222,7 @@ impl Reader<'_> {
             }
             Measuring::Integral(i) => {
                 let j = self.integrals.len();
-                let integral = self.integral(i)?;
-                let d = integral.dim;
+                let (integral, d) = self.integral(i)?;
                 self.integrals.push(integral);
                 Ok((Ast::Var(integral_var(j)), d))
             }
@@ -264,9 +262,9 @@ impl Reader<'_> {
             .map_err(|e| (Some(span), format!("`{text}`: {e}")))
     }
 
-    /// **One integral read**: what it is over, its body over its point, what the body reads,
-    /// and its dimension.
-    fn integral(&mut self, i: &crate::syntax::Integration) -> Result<Integral, Refused> {
+    /// **One integral read**: what it is over, its body over its point and what the body reads —
+    /// and its dimension, the body's times its set's measure's.
+    fn integral(&mut self, i: &crate::syntax::Integration) -> Result<(Integral, Dim), Refused> {
         let over = self.domain(&i.over)?;
         let measure = match over.face() {
             Some(_) => Dim::LENGTH.mul(Dim::LENGTH),
@@ -274,7 +272,7 @@ impl Reader<'_> {
         };
         let mut reads = Vec::new();
         let (integrand, d) = self.body(&i.body, &i.var.text, &mut reads)?;
-        Ok(Integral { over, integrand, reads, dim: d.mul(measure) })
+        Ok((Integral { over, integrand, reads }, d.mul(measure)))
     }
 
     /// **What an integral is over**: a face of a solid, a beam, a solid or a line a beam is drawn
@@ -291,7 +289,7 @@ impl Reader<'_> {
             Ok(Operand::Beam(b)) => Ok(Domain::Of(Applied::Beam(b))),
             Ok(Operand::Ent(e) | Operand::Body(e)) if e.kind == EntKind::Solid
                 || (e.kind == EntKind::Line
-                    && self.sk.beams.iter().any(|b| b.lines.contains(&e.i()))) =>
+                    && !crate::beams::members(self.sk, &Applied::Ent(e)).is_empty()) =>
             {
                 Ok(Domain::Of(Applied::Ent(e)))
             }
@@ -386,7 +384,7 @@ impl Reader<'_> {
                 return refuse(format!("`along: {}` is no direction: an axis, a line or a plane's \
                                        normal", crate::syntax::ref_text(d)));
             }
-            let dir = slot(reads, Reading::Direction(e));
+            let dir = Reading::slot(reads, Reading::Direction(e));
             let pa = self.place(a, var, reads)?;
             let pb = self.place(b, var, reads)?;
             if !(is(a, var) || is(b, var)) {
@@ -406,12 +404,12 @@ impl Reader<'_> {
         let e = self.entity(other)?;
         let (sq, plane) = match e.kind {
             EntKind::Point => {
-                let g = slot(reads, Reading::Point(e.i()));
+                let g = Reading::slot(reads, Reading::Point(e.i()));
                 (sum((0..3).map(|c| square(sub(p[c].clone(), read_var(g + c))))), None)
             }
             EntKind::Line | EntKind::Axis | EntKind::Frame => {
                 // the line's or the plane's point, and its direction or normal, made unit
-                let at = slot(reads, Reading::Line(e));
+                let at = Reading::slot(reads, Reading::Line(e));
                 let q: Vec<Ast> = (0..3).map(|c| sub(p[c].clone(), read_var(at + c))).collect();
                 let along = sum((0..3).map(|c| mul(q[c].clone(), read_var(at + 3 + c))));
                 match e.kind {
@@ -441,7 +439,7 @@ impl Reader<'_> {
             return Err((Some(r.span), format!("`{}` is no point: an ordinate is of a point from \
                                                a point", crate::syntax::ref_text(r))));
         }
-        let g = slot(reads, Reading::Point(e.i()));
+        let g = Reading::slot(reads, Reading::Point(e.i()));
         Ok([read_var(g), read_var(g + 1), read_var(g + 2)])
     }
 
@@ -458,15 +456,6 @@ impl Reader<'_> {
 /// Whether reference `r` names the integral's point `var`.
 fn is(r: &Ref, var: &str) -> bool {
     r.path.is_empty() && r.root.text == var
-}
-
-/// Where reading `x`'s numbers start among the body's readings, read once.
-fn slot(reads: &mut Vec<Reading>, x: Reading) -> usize {
-    let k = reads.iter().position(|q| *q == x).unwrap_or_else(|| {
-        reads.push(x);
-        reads.len() - 1
-    });
-    reads[..k].iter().map(|q| q.width()).sum()
 }
 
 /// The integral's point's three numbers.

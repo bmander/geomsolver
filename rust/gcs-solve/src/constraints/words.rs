@@ -623,7 +623,7 @@ pub fn retired_prefix(word: &str, on: EntKind) -> Option<&'static str> {
 /// table (`gauge_op`), so a class, a placement and the chain's lookahead treat them as any
 /// other word.  None of the three is a prefix word a chain can open a link with: `prefix_op`
 /// declines them, so `fix(x == 0) point p -> …` is no chain.
-pub const OPERATORS: [&str; 32] = [
+pub const OPERATORS: [&str; 26] = [
     "distance", "tangent", "equal", "curvature", "horizontal", "vertical", "level", "angle",
     "radius", "length", "coincident", "midpoint", "parallel", "perpendicular", "symmetry", "project",
     "touches", "fix", "ccw", "cw",
@@ -631,13 +631,6 @@ pub const OPERATORS: [&str; 32] = [
     "mapped",
     // a flank regular within its blank (#345), written `regular(…) within`
     "regular",
-    // what a body is made of (#510), `mass(10kg) arm`: settled by no table but read once the
-    // beams and solids are built (`program::measures`)
-    "mass", "volume",
-    // and where (#953): a face's area and second moment, `area(A) hull.water`, and the point a
-    // body's volume, a face's area or a body's mass is centred on, `g centroid hull` — read as
-    // `mass` is
-    "area", "moment", "centroid", "centerofmass",
     // **the words that relate two solids** (§9.8).  They are operators so that a statement
     // reads the way every other statement does; they settle to no `CKind` and compile no row,
     // because a solid is evaluated after the drawing is solved and a claim about one is judged

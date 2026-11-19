@@ -293,13 +293,11 @@ pub struct Sketch {
     pub beams: Vec<Beam>,
     /// **The load scenarios a driving row reads** (#510 S1): a scenario's supports and loads,
     /// which a frame's deflection driven under it (`CKind::Deflection`) is solved under, by index
-    /// — and what a mass or a volume driven (`CKind::Mass`, `CKind::Volume`) names.
     /// Only a scenario that drives is here: one of claims adds nothing to the drawing.  Set by
     /// elaboration and carried by the Solvent source alone, as a beam is: never written to JSON.
     pub scenarios: Vec<Scenario>,
-    /// **The masses and volumes the drawing states** (`model::Measured`), which a mass or a volume
-    /// driven (`CKind::Mass`, `CKind::Volume`) reads by index, and the claims judged after the
-    /// solve.  Set by elaboration and carried by the Solvent source alone: never written to JSON.
+    /// **The equations of integrals the drawing states** (§6.25, `model::Measured`), which a
+    /// row driven (`CKind::Integral`) reads by index, and the claims judged after the solve.  Set by elaboration and carried by the Solvent source alone: never written to JSON.
     pub measured: Vec<Measured>,
     /// **The developable panels the document names** (#645): each set recognised as a panel a
     /// plane touches along each ruling, by its name and its rails, which the report reads

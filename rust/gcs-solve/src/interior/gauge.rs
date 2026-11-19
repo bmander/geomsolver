@@ -8,14 +8,16 @@
 //! Each part is taken by the structure's own quadrature: a quadratic tetrahedron's degree-five
 //! rule, a facet's collapsed Gauss rule of eight points a side (exact to degree fourteen in its
 //! parameters).  A body polynomial in the point of degree two or less — a volume, a first moment,
-//! a second — is so read exactly on a conforming mesh of curved elements, as the moments were; any
-//! other body is read to the rule's order, and the error a claim is told is the change from the
+//! a second — is so read exactly on a conforming mesh of curved elements, through the ten moments
+//! of where it is taken (`Moments`, in each run's own frame); any other body is read to the rule's
+//! order, and the error a claim is told is the change from the
 //! mesh twice as coarse.  A body's nodes inside stand where they were meshed
 //! (`Moved::boundary`'s rule): an integral of a body reads its boundary.
 
 use super::solid::P;
 use super::Structure;
 use crate::kernels::{Dual, Num};
+use crate::model::POINT_VARS as POINT;
 use crate::tape::{eval_flat, Scratch, Value};
 
 /// **Where an integral is taken**: over solid elements, each run `(first, count)` of the
@@ -30,7 +32,7 @@ pub enum Domain {
 /// **One integral of a row**: where, its body as a tape's flat instructions over `[x, y, z, ρ,
 /// r…]` (`model::integrand_var`), and whether that body is a polynomial of degree two or less in
 /// its point (`quadratic`) — read then through the ten moments of where it is taken, exactly
-/// (`moments`), its coefficients its tape's at ten points.
+/// (`Moments`), its coefficients its tape's at ten points (`coefficients`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Part {
     pub domain: Domain,
@@ -141,8 +143,6 @@ pub struct Gauge {
     pub reads: usize,
 }
 
-/// The integrand's variables before what it reads of the drawing.
-pub const POINT: usize = crate::model::POINT_VARS;
 
 impl Gauge {
     /// How many integrals its sides read: its parts', or the whole's one.
@@ -162,11 +162,20 @@ impl Gauge {
 
     /// **Its two sides at integrals `ints` and unknowns `u`**, each with its rate in them.
     pub fn sides(&self, ints: &[f64], u: &[f64]) -> (Value, Value) {
-        let vars: Vec<f64> = ints.iter().chain(u).copied().collect();
-        let n = vars.len();
-        let mut s = Scratch::new();
-        (eval_flat(&self.lhs, n, &vars, &mut s), eval_flat(&self.rhs, n, &vars, &mut s))
+        eval_sides(&self.lhs, &self.rhs, ints, u)
     }
+}
+
+/// **Two sides' tapes at integrals `ints` and unknowns `u`**, each with its rate in them: what a
+/// row reads, and a claim as its row would.
+pub fn eval_sides(lhs: &[f64], rhs: &[f64], ints: &[f64], u: &[f64]) -> (Value, Value) {
+    let mut vars = [0.0; crate::tape::MAX_VARS];
+    let n = (ints.len() + u.len()).min(vars.len());
+    for (v, x) in vars.iter_mut().zip(ints.iter().chain(u)) {
+        *v = *x;
+    }
+    let mut s = Scratch::new();
+    (eval_flat(lhs, n, &vars[..n], &mut s), eval_flat(rhs, n, &vars[..n], &mut s))
 }
 
 /// The body of `flat` over `n` variables at a point `p` of density `rho`, reading `r`.
@@ -220,7 +229,7 @@ fn triangle_rule() -> &'static [(f64, f64, f64)] {
 
 /// **A run's moments**: its density, the frame they are taken in, and the ten.
 #[derive(Clone, Copy, Debug)]
-struct Moments {
+pub(super) struct Moments {
     rho: f64,
     frame: Frame,
     m: [f64; MOMENTS],
@@ -228,29 +237,47 @@ struct Moments {
 
 /// **Where a quadratic part's moments are taken, one density at a time**: a run of solid
 /// elements of one body, or facets (which weigh nothing).
-enum Run {
+enum Run<'a> {
     Tets(usize, usize),
-    Facets(Vec<[usize; 6]>),
+    Facets(&'a [[usize; 6]]),
+}
+
+/// **The moments of each domain a quadratic part is over**, each domain once: the first part over
+/// it, and its runs' moments — taken once where a row stands, read by its value and its rate.
+pub(super) type Taken = Vec<(usize, Vec<Moments>)>;
+
+/// A facet's rate widened to an element's thirty places, its six nodes the first eighteen.
+fn wide(d: Dual<18>) -> Dual<30> {
+    let mut g = [0.0; 30];
+    g[..18].copy_from_slice(&d.g);
+    Dual { v: d.v, g }
 }
 
 impl Structure {
     /// A domain's runs, each of one density.
-    fn domain_runs(&self, d: &Domain) -> std::vec::IntoIter<Run> {
+    fn domain_runs<'a>(&self, d: &'a Domain) -> Vec<Run<'a>> {
         match d {
-            Domain::Tets(runs) => runs.iter().map(|&(a, k)| Run::Tets(a, k)).collect::<Vec<_>>(),
-            Domain::Facets(f) => vec![Run::Facets(f.clone())],
-        }.into_iter()
+            Domain::Tets(runs) => runs.iter().map(|&(a, k)| Run::Tets(a, k)).collect(),
+            Domain::Facets(f) => vec![Run::Facets(f)],
+        }
     }
 
     /// **The moments of each domain a quadratic part is over**, each domain once, at `x`.
-    fn quadratic_moments(&self, x: &[f64]) -> Vec<(&Domain, Vec<Moments>)> {
-        let mut out: Vec<(&Domain, Vec<Moments>)> = Vec::new();
-        for part in self.gauge.parts.iter().filter(|p| p.quadratic) {
-            if !out.iter().any(|(d, _)| *d == &part.domain) {
-                out.push((&part.domain, self.domain_moments(&part.domain, x)));
+    fn quadratic_moments(&self, x: &[f64]) -> Taken {
+        let parts = &self.gauge.parts;
+        let mut out: Taken = Vec::new();
+        for (j, part) in parts.iter().enumerate().filter(|(_, p)| p.quadratic) {
+            if !out.iter().any(|(k, _)| parts[*k].domain == part.domain) {
+                out.push((j, self.domain_moments(&part.domain, x)));
             }
         }
         out
+    }
+
+    /// The moments `taken` holds of part `part`'s domain.
+    fn moments_of<'t>(&self, taken: &'t Taken, part: &Part) -> &'t [Moments] {
+        let parts = &self.gauge.parts;
+        &taken.iter().find(|(k, _)| parts[*k].domain == part.domain).expect("its moments").1
     }
 
     /// A run's frame at `x` (`Frame::of`): over its elements' or its facets' corners.
@@ -268,7 +295,7 @@ impl Structure {
     /// second within the rule's order; a face's facets' by the collapsed Gauss rule, exact for a
     /// plane facet's second.
     fn domain_moments(&self, d: &Domain, x: &[f64]) -> Vec<Moments> {
-        self.domain_runs(d).map(|run| {
+        self.domain_runs(d).into_iter().map(|run| {
             let frame = self.frame(&run, x);
             let mut m = [Dual::<0>::cst(0.0); MOMENTS];
             let rho = match &run {
@@ -282,7 +309,7 @@ impl Structure {
                     self.tets.get(*a).map_or(0.0, |t| t.rho)
                 }
                 Run::Facets(f) => {
-                    for f in f {
+                    for f in *f {
                         each_facet_point(&self.facet_places::<0>(f, x),
                                          |p, da| moments_at(frame.local(p), da, &mut m));
                     }
@@ -323,13 +350,11 @@ impl Structure {
                 }
             }
             Run::Facets(f) => {
-                for f in f {
+                for f in *f {
                     let mut m = Dual::<18>::cst(0.0);
                     each_facet_point(&self.facet_places::<18>(f, x),
                                      |p, da| m = m + weighed(frame.local(p), da, w));
-                    let mut wide = [0.0; 30];
-                    wide[..18].copy_from_slice(&m.g);
-                    add(&Dual::<30> { v: m.v, g: wide }, f, g);
+                    add(&wide(m), f, g);
                 }
             }
         }
@@ -346,19 +371,24 @@ impl Structure {
     /// **Each part's integral at `x`**, its body reading `r`: a quadratic body's through its
     /// domain's moments, any other's point by point.
     pub fn integrals(&self, x: &[f64], r: &[f64]) -> Vec<f64> {
+        self.integrals_taken(x, r).0
+    }
+
+    /// `integrals`, and the moments taken for them, which the rate reads again (`Taken`).
+    pub(super) fn integrals_taken(&self, x: &[f64], r: &[f64]) -> (Vec<f64>, Taken) {
         let n = self.gauge.integrand_vars();
         let mut s = Scratch::new();
-        let moments = self.quadratic_moments(x);
-        self.gauge.parts.iter().map(|part| {
+        let taken = self.quadratic_moments(x);
+        let ints = self.gauge.parts.iter().map(|part| {
             if !part.quadratic {
                 return self.pointwise(part, x, r, |f| f);
             }
-            let runs = &moments.iter().find(|(d, _)| *d == &part.domain).expect("its moments").1;
-            runs.iter().map(|run| {
+            self.moments_of(&taken, part).iter().map(|run| {
                 let a = coefficients(&part.integrand, n, run.rho, r, &run.frame, &mut s);
                 a.iter().zip(&run.m).map(|(a, m)| a.v * m).sum::<f64>()
             }).sum()
-        }).collect()
+        }).collect();
+        (ints, taken)
     }
 
     /// **Each part's body's size integrated**, `∫ |f|`, at `x` reading `r`, point by point —
@@ -393,20 +423,21 @@ impl Structure {
         v
     }
 
-    /// **`Σ_j w_j ∂I_j` at `x`, reading `r`**: its rate in the nodes' places added into `g`, and
-    /// in what the bodies read into `gr` — each element's or facet's points in `Dual` over its
-    /// nodes' places, each body's rate in its point and its readings off its tape.
-    pub fn integrals_gradient(&self, x: &[f64], r: &[f64], w: &[f64], g: &mut [f64],
-                              gr: &mut [f64]) {
+    /// **`Σ_j w_j ∂I_j` at `x`, reading `r`**, the quadratic parts' moments `taken` there: its
+    /// rate in the nodes' places added into `g`, and in what the bodies read into `gr` — each
+    /// element's or facet's points in `Dual` over its nodes' places, each body's rate in its point
+    /// and its readings off its tape.
+    pub(super) fn integrals_gradient(&self, x: &[f64], r: &[f64], w: &[f64], taken: &Taken,
+                                     g: &mut [f64], gr: &mut [f64]) {
         let n = self.gauge.integrand_vars();
         let mut s = Scratch::new();
         // the quadratic parts over one domain weigh its moments' rates once: each run's weights
         // summed over the parts, then one pass over its elements
-        let moments = self.quadratic_moments(x);
-        for (domain, runs) in &moments {
+        for (first, runs) in taken {
+            let domain = &self.gauge.parts[*first].domain;
             let mut weights = vec![[0.0; MOMENTS]; runs.len()];
             for (part, &wj) in self.gauge.parts.iter().zip(w) {
-                if !part.quadratic || part.domain != **domain || wj == 0.0 {
+                if !part.quadratic || part.domain != *domain || wj == 0.0 {
                     continue;
                 }
                 for (k, run) in runs.iter().enumerate() {
@@ -420,7 +451,9 @@ impl Structure {
                     }
                 }
             }
-            for ((run, moments), weights) in self.domain_runs(domain).zip(runs).zip(&weights) {
+            for ((run, moments), weights) in self.domain_runs(domain).into_iter().zip(runs)
+                .zip(&weights)
+            {
                 if weights.iter().any(|&w| w != 0.0) {
                     self.moments_gradient(&run, &moments.frame, x, weights, g);
                 }
@@ -458,11 +491,6 @@ impl Structure {
                     for f in facets {
                         let places = self.facet_places::<18>(f, x);
                         each_facet_point(&places, |p, da| {
-                            let wide = |d: Dual<18>| {
-                                let mut g = [0.0; 30];
-                                g[..18].copy_from_slice(&d.g);
-                                Dual::<30> { v: d.v, g }
-                            };
                             point(&p.map(wide), 0.0, &wide(da), f, g, gr)
                         });
                     }

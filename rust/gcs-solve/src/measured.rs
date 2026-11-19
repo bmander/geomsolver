@@ -10,7 +10,7 @@
 //! that reads its point or the drawing, a face's integral, an instance's, an equation of several
 //! — every body its integrals are over filled once, as one structure, and each integral taken by
 //! its elements' or its facets' quadrature (`interior::Gauge`), its nodes moved by its sheets and
-//! what its bodies read read off the same columns (`hulls::hull_of_bodies`).
+//! what its bodies read read off the same columns (`hulls::bodies_hull`).
 //!
 //! Beside a claim's value, the error estimated in it, the change from the same reading twice as
 //! coarse, as every output of a scenario has (`beams::Read::estimated`).
@@ -24,22 +24,39 @@ use crate::model::{integral_var, integrand_var, Applied, Domain, EntKind, Integr
                    Reading, Sketch, POINT_VARS};
 use crate::tape::{Scratch, Tape};
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
 /// **How an equation is read**: whole, its one integral a number (`scale`) times its set's volume
 /// or mass (`reads`); or gauged, every integral over its bodies' filled meshes.
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum Path {
-    Whole { reads: Reads, scale: f64 },
+enum Path<'m> {
+    Whole { reads: Reads, scale: f64, of: Whole<'m> },
     Gauged,
+}
+
+/// **What a whole is read over**: a frame's members (a beam, or a line one is drawn on), or a
+/// solid.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Whole<'m> {
+    Members(&'m Applied),
+    Solid(usize),
 }
 
 /// How equation `m` is read, or why it cannot be: an integral over a beam or a line one is drawn
 /// on reads its density alone, and nothing else is over anything but solids and faces of them.
-fn path(m: &Measured) -> Result<Path, String> {
+fn path<'m>(sk: &Sketch, m: &'m Measured) -> Result<Path<'m>, String> {
     if let [i] = &m.integrals[..] {
-        if !i.local() && matches!(i.over, Domain::Of(Applied::Beam(_) | Applied::Ent(_))) {
+        let over = (i.local(), &i.over);
+        if let (false, Domain::Of(of @ (Applied::Beam(_) | Applied::Ent(_)))) = over {
             if let Some((reads, scale)) = weighed(i) {
-                return Ok(Path::Whole { reads, scale });
+                let of = match (crate::beams::members(sk, of).is_empty(), of.solid()) {
+                    (false, _) => Whole::Members(of),
+                    (true, Some(solid)) => Whole::Solid(solid),
+                    (true, None) => {
+                        return Err("it is over no beam, no member of one and no solid".into());
+                    }
+                };
+                return Ok(Path::Whole { reads, scale, of });
             }
         }
     }
@@ -59,21 +76,21 @@ fn path(m: &Measured) -> Result<Path, String> {
     Ok(Path::Gauged)
 }
 
-/// **A body that reads its point's density alone**, in proportion or not at all: the measure it
-/// scales — a mass, or a volume — and by how much; `None` for any other body.
+/// **A body that reads its point's density alone**, in proportion or not at all — affine in it
+/// as written (`Ast::affine_in`, never by sampling): the measure it scales, a mass or a volume, and
+/// by how much; `None` for any other body.
 fn weighed(i: &Integral) -> Option<(Reads, f64)> {
-    let tape = Tape::compile(&i.integrand, &i.vars()).ok()?;
-    let mut s = Scratch::new();
-    let mut f = |rho: f64| tape.eval(&[0.0, 0.0, 0.0, rho], &mut s).v;
-    let (a, b, c) = (f(0.0), f(1.0), f(2.0));
-    let slope = b - a;
-    let affine = (c - a - 2.0 * slope).abs() <= 1e-12 * (1.0 + a.abs() + slope.abs());
-    if !(a.is_finite() && b.is_finite() && c.is_finite() && affine) {
+    if !i.integrand.affine_in(&integrand_var(3)) {
         return None;
     }
-    match (a == 0.0, slope == 0.0) {
-        (_, true) => Some((Reads::Volume, a)),
-        (true, false) => Some((Reads::Mass, slope)),
+    let tape = Tape::compile(&i.integrand, &i.vars()).ok()?;
+    let mut s = Scratch::new();
+    let (a, b) = (tape.eval(&[0.0; 4], &mut s).v, tape.eval(&[0.0, 0.0, 0.0, 1.0], &mut s).v);
+    let slope = b - a;
+    match (a.is_finite() && b.is_finite(), a == 0.0, slope == 0.0) {
+        (false, ..) => None,
+        (_, _, true) => Some((Reads::Volume, a)),
+        (_, true, false) => Some((Reads::Mass, slope)),
         _ => None,
     }
 }
@@ -82,17 +99,9 @@ fn weighed(i: &Integral) -> Option<(Reads, f64)> {
 /// named, and for each integral where each of its own readings' numbers start among them all.
 fn readings(m: &Measured) -> (Vec<Reading>, Vec<Vec<usize>>) {
     let mut all: Vec<Reading> = Vec::new();
-    let mut at = Vec::with_capacity(m.integrals.len());
-    for i in &m.integrals {
-        let starts = i.reads.iter().map(|r| {
-            let k = all.iter().position(|q| q == r).unwrap_or_else(|| {
-                all.push(*r);
-                all.len() - 1
-            });
-            all[..k].iter().map(|q| q.width()).sum()
-        }).collect();
-        at.push(starts);
-    }
+    let at = m.integrals.iter()
+        .map(|i| i.reads.iter().map(|&r| Reading::slot(&mut all, r)).collect())
+        .collect();
     (all, at)
 }
 
@@ -113,19 +122,15 @@ fn integrand(i: &Integral, starts: &[usize], width: usize) -> Result<Vec<f64>, S
     Ok(Tape::compile(&body, &vars)?.flat)
 }
 
-/// **The equation's two sides as a row reads them** (§6.25): tapes over its integrals and then
-/// the unknowns the solve moves — the whole's integral times its `scale`, an unknown held at its
-/// value written in — and those unknowns' columns.  An unknown bound to no column is refused.
-pub fn sides(sk: &Sketch, m: &Measured, scale: f64)
-    -> Result<(Vec<f64>, Vec<f64>, Vec<u32>), String>
+/// **The unknowns equation `m`'s sides read, as a row reads them**: the columns of those the solve
+/// moves and their names, and each held one's value — or why one is bound to no column.
+fn unknowns(sk: &Sketch, m: &Measured)
+    -> Result<(Vec<u32>, Vec<String>, BTreeMap<String, Ast>), String>
 {
-    let mut cols = Vec::new();
-    let mut names = Vec::new();
-    let mut held = BTreeMap::new();
+    let (mut cols, mut names, mut held) = (Vec::new(), Vec::new(), BTreeMap::new());
     for u in &m.unknowns {
-        let Some(&q) = sk.free_vars.get(u) else {
-            return Err(format!("it reads `{u}`, which the solve has not bound"));
-        };
+        let &q = sk.free_vars.get(u)
+            .ok_or_else(|| format!("it reads `{u}`, which the solve has not bound"))?;
         let p = &sk.params[q as usize];
         if p.fixed {
             held.insert(u.clone(), Ast::Num(p.value, crate::units::Dim::SCALAR));
@@ -134,6 +139,16 @@ pub fn sides(sk: &Sketch, m: &Measured, scale: f64)
             names.push(u.clone());
         }
     }
+    Ok((cols, names, held))
+}
+
+/// **The equation's two sides as a row reads them** (§6.25): tapes over its integrals and then
+/// the unknowns the solve moves — the whole's integral times its `scale`, an unknown held at its
+/// value written in — and those unknowns' columns.  An unknown bound to no column is refused.
+pub fn sides(sk: &Sketch, m: &Measured, scale: f64)
+    -> Result<(Vec<f64>, Vec<f64>, Vec<u32>), String>
+{
+    let (cols, names, held) = unknowns(sk, m)?;
     let first = integral_var(0);
     let map = |a: &Ast| a.map_vars(&|v| match v {
         _ if v == first && scale != 1.0 => Some(Ast::Bin(crate::expr::Op::Mul,
@@ -150,8 +165,7 @@ pub fn sides(sk: &Sketch, m: &Measured, scale: f64)
 
 /// The unknowns' columns a row of `m` reads, as `sides` reads them; none where it reads none.
 pub fn unknown_columns(sk: &Sketch, m: &Measured) -> Vec<u32> {
-    m.unknowns.iter().filter_map(|u| sk.free_vars.get(u).copied())
-        .filter(|&q| !sk.params[q as usize].fixed).collect()
+    unknowns(sk, m).map(|u| u.0).unwrap_or_default()
 }
 
 /// **The bodies filled and the hulls built for a run of equations** (§6.25): every equation over
@@ -160,7 +174,7 @@ pub fn unknown_columns(sk: &Sketch, m: &Measured) -> Vec<u32> {
 /// drawing stands, so a binding between two equations fills again.
 #[derive(Default)]
 pub struct Fills {
-    meshes: BTreeMap<(usize, u64, u64), Mesh>,
+    meshes: BTreeMap<(usize, u64, u64), Rc<Mesh>>,
     hulls: BTreeMap<(Vec<usize>, u64), crate::hulls::Bodies>,
 }
 
@@ -173,12 +187,12 @@ fn standing(sk: &Sketch) -> u64 {
 
 impl Fills {
     /// Solid `solid` filled `coarser` times a reading's size, once where the drawing stands.
-    fn mesh(&mut self, sk: &Sketch, solid: usize, coarser: f64) -> Result<Mesh, String> {
+    fn mesh(&mut self, sk: &Sketch, solid: usize, coarser: f64) -> Result<Rc<Mesh>, String> {
         let key = (solid, coarser.to_bits(), standing(sk));
         if let Some(m) = self.meshes.get(&key) {
             return Ok(m.clone());
         }
-        let m = Mesh::filled(sk, solid, coarser)?;
+        let m = Rc::new(Mesh::filled(sk, solid, coarser)?);
         self.meshes.insert(key, m.clone());
         Ok(m)
     }
@@ -201,7 +215,7 @@ impl Fills {
 /// density where an integral over it reads one, each integral a part over its runs or its face's
 /// facets, the bodies' meshes and where their nodes stand, and the readings its parts' bodies read.
 fn gauging(sk: &Sketch, m: &Measured, coarser: f64, fills: &mut Fills)
-    -> Result<(Vec<(usize, Mesh)>, Structure, Vec<f64>, Vec<Reading>), String>
+    -> Result<(Vec<(usize, Rc<Mesh>)>, Structure, Vec<f64>, Vec<Reading>), String>
 {
     use crate::model::Property;
     use crate::prisms::property;
@@ -267,7 +281,7 @@ pub fn row(sk: &Sketch, index: usize) -> Result<InteriorRow, String> {
 /// `row`, its bodies filled and its hull built once among `fills`.
 pub fn row_in(sk: &Sketch, index: usize, fills: &mut Fills) -> Result<InteriorRow, String> {
     let m = sk.measured.get(index).ok_or("it names no equation the drawing states")?;
-    let p = path(m)?;
+    let p = path(sk, m)?;
     let scale = match p {
         Path::Whole { scale, .. } => scale,
         Path::Gauged => 1.0,
@@ -279,14 +293,12 @@ pub fn row_in(sk: &Sketch, index: usize, fills: &mut Fills) -> Result<InteriorRo
         s.gauge.unknowns = unknowns.len();
     };
     match p {
-        Path::Whole { reads, .. } => {
-            let Domain::Of(of) = &m.integrals[0].over else { unreachable!("a whole is of one") };
-            if !crate::beams::members(sk, of).is_empty() {
-                let mut r = crate::beams::Row::measured(sk, of, reads)?;
-                sided(&mut r.structure);
-                return Ok(InteriorRow::Frame(r));
-            }
-            let solid = of.solid().ok_or("it is over no beam, no member of one and no solid")?;
+        Path::Whole { reads, of: Whole::Members(of), .. } => {
+            let mut r = crate::beams::Row::measured(sk, of, reads)?;
+            sided(&mut r.structure);
+            Ok(InteriorRow::Frame(r))
+        }
+        Path::Whole { reads, of: Whole::Solid(solid), .. } => {
             let mut r = crate::prisms::Row::measured(sk, solid, reads)?;
             sided(&mut r.structure);
             Ok(InteriorRow::Meshed(r.into()))
@@ -294,8 +306,8 @@ pub fn row_in(sk: &Sketch, index: usize, fills: &mut Fills) -> Result<InteriorRo
         Path::Gauged => {
             let (bodies, mut s, x, readings) = gauging(sk, m, 1.0, fills)?;
             sided(&mut s);
-            let parts: Vec<(usize, &Mesh)> = bodies.iter().map(|(b, mesh)| (*b, mesh)).collect();
-            let (hull, columns) = fills.hull(sk, &parts)?.reading(sk, &readings)?;
+            let parts: Vec<(usize, &Mesh)> = bodies.iter().map(|(b, mesh)| (*b, &**mesh)).collect();
+            let (hull, columns) = fills.hull(sk, &parts)?.clone().reading(sk, &readings)?;
             Ok(InteriorRow::Meshed(crate::prisms::Row { structure: s,
                 drive: Drive::Moved(Mover::Hull(hull)), columns, x, coarser: 1.0 }.into()))
         }
@@ -336,21 +348,19 @@ fn reading_at(sk: &Sketch, r: Reading) -> Result<Vec<f64>, String> {
 }
 
 /// **Equation `m`'s integrals read on the drawing as it stands**, `coarser` times a reading's
-/// size, each beside the integral of its body's size (`∫ |f|`) — or why it has none: a member of
-/// no length, a material of no density, a thing that is no beam, member or solid.
-pub fn integrals_at(sk: &Sketch, m: &Measured, coarser: f64, fills: &mut Fills)
+/// size, each beside the integral of its body's size (`∫ |f|`) where `sized` asks for it — or why
+/// it has none: a member of no length, a material of no density, a thing that is no beam, member
+/// or solid.
+pub fn integrals_at(sk: &Sketch, m: &Measured, coarser: f64, sized: bool, fills: &mut Fills)
     -> Result<(Vec<f64>, Vec<f64>), String>
 {
-    match path(m)? {
-        Path::Whole { reads, scale } => {
-            let Domain::Of(of) = &m.integrals[0].over else { unreachable!("a whole is of one") };
-            let v = if !crate::beams::members(sk, of).is_empty() {
-                crate::beams::measure(sk, of, reads)?
-            } else {
-                let solid = of.solid().ok_or("it is over no beam, no member of one and no solid")?;
-                crate::bodies::measure(sk, solid, reads, coarser)?
+    match path(sk, m)? {
+        Path::Whole { reads, scale, of } => {
+            let v = scale * match of {
+                Whole::Members(of) => crate::beams::measure(sk, of, reads)?,
+                Whole::Solid(solid) => crate::bodies::measure(sk, solid, reads, coarser)?,
             };
-            Ok((vec![scale * v], vec![(scale * v).abs()]))
+            Ok((vec![v], vec![v.abs()]))
         }
         Path::Gauged => {
             let (_, s, x, readings) = gauging(sk, m, coarser, fills)?;
@@ -358,7 +368,8 @@ pub fn integrals_at(sk: &Sketch, m: &Measured, coarser: f64, fills: &mut Fills)
             for q in readings {
                 r.extend(reading_at(sk, q)?);
             }
-            Ok((s.integrals(&x, &r), s.integral_sizes(&x, &r)))
+            let sizes = if sized { s.integral_sizes(&x, &r) } else { Vec::new() };
+            Ok((s.integrals(&x, &r), sizes))
         }
     }
 }
@@ -374,20 +385,13 @@ pub struct Answer {
 }
 
 /// Its sides at integrals `ints`, the unknowns where the drawing stands, with their rates in the
-/// integrals.
+/// integrals — as its row reads them (`sides`).
 fn sides_at(sk: &Sketch, m: &Measured, ints: &[f64])
     -> Result<(crate::tape::Value, crate::tape::Value), String>
 {
-    let mut vars = ints.to_vec();
-    for u in &m.unknowns {
-        let q = sk.free_vars.get(u).ok_or_else(|| format!("it reads `{u}`, bound to nothing"))?;
-        vars.push(sk.params[*q as usize].value);
-    }
-    let names = m.vars();
-    let mut s = Scratch::new();
-    let l = Tape::compile_wide(&m.lhs, &names)?;
-    let r = Tape::compile_wide(&m.rhs, &names)?;
-    Ok((l.eval(&vars, &mut s), r.eval(&vars, &mut s)))
+    let (lhs, rhs, cols) = sides(sk, m, 1.0)?;
+    let u: Vec<f64> = cols.iter().map(|&q| sk.params[q as usize].value).collect();
+    Ok(crate::interior::eval_sides(&lhs, &rhs, ints, &u))
 }
 
 /// **Equation `m` read where the drawing stands**: its sides, and the error estimated in its
@@ -399,11 +403,12 @@ pub fn read(sk: &Sketch, m: &Measured) -> Result<Answer, String> {
 
 /// `read`, its bodies filled once among `fills`.
 pub fn read_in(sk: &Sketch, m: &Measured, fills: &mut Fills) -> Result<Answer, String> {
-    let (ints, sizes) = integrals_at(sk, m, 1.0, fills)?;
+    let (ints, sizes) = integrals_at(sk, m, 1.0, true, fills)?;
     let (lhs, rhs) = sides_at(sk, m, &ints)?;
     let size = lhs.v.abs() + rhs.v.abs()
         + sizes.iter().enumerate().map(|(j, s)| (lhs.d[j] - rhs.d[j]).abs() * s).sum::<f64>();
-    let error = integrals_at(sk, m, 2.0, fills).ok().and_then(|(c, _)| sides_at(sk, m, &c).ok())
+    let error = integrals_at(sk, m, 2.0, false, fills).ok()
+        .and_then(|(c, _)| sides_at(sk, m, &c).ok())
         .map(|(l, _)| {
             let e = (lhs.v - l.v).abs();
             if e <= ROUNDING * lhs.v.abs().max(l.v.abs()) { 0.0 } else { e }

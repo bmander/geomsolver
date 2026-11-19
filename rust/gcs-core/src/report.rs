@@ -548,8 +548,8 @@ pub struct ScenarioAnswer {
 /// with the drawing (#510 S2), which a fresh mesh of the solved drawing reads to its
 /// discretisation, not to rounding; any other driving row or bound is said to hold or not, and
 /// that nothing drives it yet (S3–S4).  A driven requirement is said whenever its row has a value,
-/// whatever its reading answers.  What a body is made of is no scenario's: the drawing's masses and
-/// volumes are said by `measure_answers`.
+/// whatever its reading answers.  What a body is made of is no scenario's: the drawing's equations
+/// of integrals are said by `measure_answers`.
 pub fn scenario_answers(sk: &Sketch, s: &crate::program::Stated, read: &crate::beams::Read)
     -> Vec<ScenarioAnswer>
 {
@@ -611,11 +611,12 @@ fn natively(sk: &Sketch, sc: &crate::model::Scenario, r: &crate::model::Requirem
         && r.along.is_some() && crate::bodies::of_filled(sk, sc, &r.of)
 }
 
-/// **What a mass or a volume the drawing states comes to** (#510, `program::MeasureStated`),
-/// read on the solved drawing (`measured::read`) — its value, the error beside it, whether it holds
-/// and the sentence: `` mass(arm) is 10kg: driven == 10kg, held ``, `` mass(plank) is 0.85kg ±
-/// 0.0001kg: claimed <= 1kg, kept ``.  A stated one's value is its row's (its residual plus what it
-/// states), what the solve held; a claim's is the reading's.  No scenario's: what a body is made of
+/// **What an equation of integrals the drawing states comes to** (§6.25,
+/// `program::MeasureStated`), read on the solved drawing (`measured::read`) — its left, the error
+/// beside it, whether it holds and the sentence, called by the word's use that stated it: ``
+/// mass(10kg) arm: 10 kg ± 0 kg == 10 kg: driven, held ``, `` mass(<= 1kg) plank: 0.85 kg ±
+/// 0.0001 kg <= 1 kg: claimed, kept ``.  A stated one's left is its row's (its residual plus its
+/// right), what the solve held; a claim's is the reading's.  No scenario's: what a body is made of
 /// answers no load.
 pub fn measure_answers(sk: &Sketch, measures: &[crate::program::MeasureStated])
     -> Vec<ScenarioAnswer>
@@ -657,9 +658,9 @@ pub fn measure_answers(sk: &Sketch, measures: &[crate::program::MeasureStated])
     }).collect()
 }
 
-/// **`measure_answers` as JSON**: per mass or volume stated, in the order written, its
-/// `requirement` (what it is of), `grade` (`driving` or `claim`), `value`, `error`, `holds` and
-/// `text`.
+/// **`measure_answers` as JSON**: per equation of integrals stated, in the order written, its
+/// `requirement` (what a report calls it), `grade` (`driving` or `claim`), `value`, `error`,
+/// `holds` and `text`.
 pub fn measures_json(sk: &Sketch, measures: &[crate::program::MeasureStated]) -> Json {
     Json::Arr(measure_answers(sk, measures).into_iter().map(|a| object([
         ("index", Json::Int(a.index as i64)),

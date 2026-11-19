@@ -218,7 +218,7 @@ pub enum CKind {
     /// number or the density, a beam's or a member's `ρ A L`, a prism's face's area through its
     /// depth, its columns a deflection's over the same structure — or gauged, every body its
     /// integrals are over filled, its nodes moved by its sheets and what its bodies read read off
-    /// the same columns (`hulls::hull_of_bodies`); then the unknowns its sides read.  Degree 1, as
+    /// the same columns (`hulls::bodies_hull`); then the unknowns its sides read.  Degree 1, as
     /// a deflection's.  Made by the elaborator, carried by the source alone; the words a document
     /// writes it in are `std.measures`'s.
     Integral,

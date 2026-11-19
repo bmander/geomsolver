@@ -31,6 +31,10 @@ struct Row {
     /// The numbers an integral's bodies read where the columns stand (§6.25), read off the
     /// hull's columns; none for a whole.
     reads: Vec<f64>,
+    /// An integral row's integrals where it stands, and the moments taken for them: read once
+    /// with the row, so its value and its rate read them again from here (`LAST`).
+    ints: Vec<f64>,
+    taken: super::gauge::Taken,
 }
 
 /// **A row's drive read where its columns stand** (`Drive`): its sections each with its value and
@@ -84,7 +88,12 @@ impl Row {
             }
             _ => return None,
         };
-        Some(Row { s, x, stated, cols, driven, reads })
+        let (ints, taken) = match (s.reads.measure(), s.gauge.whole()) {
+            (false, _) => Default::default(),
+            (true, true) => (vec![s.measure(&x)], Vec::new()),
+            (true, false) => s.integrals_taken(&x, &reads),
+        };
+        Some(Row { s, x, stated, cols, driven, reads, ints, taken })
     }
 
     /// Whether its nodes move with the drawing: a region's, a prism's, a filled body's.
@@ -92,18 +101,10 @@ impl Row {
         matches!(self.driven, Driven::Plane(..) | Driven::Hull(..))
     }
 
-    /// **Its integrals where it stands** (§6.25): its parts', or the structure's whole.
-    fn integrals(&self) -> Vec<f64> {
-        match self.s.gauge.whole() {
-            true => vec![self.s.measure(&self.x)],
-            false => self.s.integrals(&self.x, &self.reads),
-        }
-    }
-
     /// **An integral row's two sides** at the unknowns `v` reads, each with its rate in the
     /// integrals and the unknowns.
     fn sides(&self, v: &[f64]) -> (crate::tape::Value, crate::tape::Value) {
-        self.s.gauge.sides(&self.integrals(), &v[self.cols..])
+        self.s.gauge.sides(&self.ints, &v[self.cols..])
     }
 }
 
@@ -164,7 +165,7 @@ impl Row {
                     s.measure_gradient(&self.x, &mut g);
                     g.iter_mut().for_each(|x| *x *= w[0]);
                 } else {
-                    s.integrals_gradient(&self.x, &self.reads, &w, &mut g, &mut gr);
+                    s.integrals_gradient(&self.x, &self.reads, &w, &self.taken, &mut g, &mut gr);
                 }
             }
         }

@@ -55,13 +55,16 @@ impl<'a> P<'a> {
                         through: Vec::new() })
     }
 
-    /// Whether the statement from token `j` on is an equation of integrals: it integrates,
-    /// outside or inside its brackets, and states no energy (`k minimizes integral(…)`, §9.10).
+    /// Whether the statement from token `j` on is an equation of integrals: it compares two
+    /// sides outside every bracket (`==`, `<=`, `>=`), and integrates — which an energy, `k
+    /// minimizes integral(…)`, compares nothing to do (§9.10).
     pub(super) fn integral_ahead(&self, j: usize) -> bool {
+        let at = words::level_end(&self.t, j, self.t.len(), Brackets::All,
+                                  |t| matches!(t, Tok::P('<' | '>') | Tok::EqEq));
+        let compared = matches!(self.t.get(at), Some((Tok::P('<' | '>') | Tok::EqEq, _)));
         let end = words::level_end(&self.t, j, self.t.len(), Brackets::All, |_| false);
-        let word = |k: usize, w: &str| matches!(&self.t[k].0, Tok::Ident(x) if x == w);
-        (j..end).any(|k| word(k, "integral") && matches!(self.t.get(k + 1), Some((Tok::P('('), _))))
-            && !(j..end).any(|k| word(k, "minimizes") || word(k, "maximizes"))
+        compared && (j..end).any(|k| matches!(&self.t[k].0, Tok::Ident(w) if w == "integral")
+            && matches!(self.t.get(k + 1), Some((Tok::P('('), _))))
     }
 
     /// One side, every token up to `end`.
@@ -239,17 +242,10 @@ impl<'a> P<'a> {
         self.i += 1;
         let close = self.m_close(end);
         self.i += 1;
-        let mut depth = 0i32;
-        let over = (self.i..close).find(|&j| {
-            match &self.t[j].0 {
-                Tok::P('(' | '[') => depth += 1,
-                Tok::P(')' | ']') => depth -= 1,
-                Tok::Ident(w) if w == "over" && depth == 0 => return true,
-                _ => {}
-            }
-            false
-        });
-        let Some(over) = over else {
+        let over = level_end(&self.t, self.i, close, Brackets::Expr,
+                             |t| matches!(t, Tok::Ident(w) if w == "over"));
+        let Some(over) = Some(over).filter(|&k| k < close
+            && matches!(&self.t[k].0, Tok::Ident(w) if w == "over")) else {
             self.fail("an integral is over a set: `integral(… over p in S)`");
             return None;
         };

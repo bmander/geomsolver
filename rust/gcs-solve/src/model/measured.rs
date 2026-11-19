@@ -56,6 +56,17 @@ impl Reading {
             _ => 3,
         }
     }
+
+    /// **Where reading `x`'s numbers start among `reads`'**, each reading read once: its place,
+    /// pushed where it is new — how the elaborator numbers a body's `#r` variables and the
+    /// evaluator an equation's.
+    pub fn slot(reads: &mut Vec<Reading>, x: Reading) -> usize {
+        let k = reads.iter().position(|q| *q == x).unwrap_or_else(|| {
+            reads.push(x);
+            reads.len() - 1
+        });
+        reads[..k].iter().map(|q| q.width()).sum()
+    }
 }
 
 /// The integrand's variables before its readings': the point's three numbers and the density
@@ -80,15 +91,13 @@ pub fn integral_var(j: usize) -> String {
     format!("#{j}")
 }
 
-/// **One integral**: over what (`over`), its body (`integrand`, over `integrand_var`s), what the
-/// body reads (`reads`, in the order its variables run), and what it comes to: the body's
-/// dimension times its set's measure's.
+/// **One integral**: over what (`over`), its body (`integrand`, over `integrand_var`s), and what
+/// the body reads (`reads`, in the order its variables run).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Integral {
     pub over: Domain,
     pub integrand: Ast,
     pub reads: Vec<Reading>,
-    pub dim: Dim,
 }
 
 impl Integral {
@@ -105,9 +114,7 @@ impl Integral {
         let names = self.integrand.deps();
         !self.reads.is_empty() || ["#x", "#y", "#z"].iter().any(|v| names.contains(*v))
     }
-}
 
-impl Integral {
     /// **Whether its body is a polynomial of degree two or less in its point** — a volume, a
     /// first moment, a second — read then through the ten moments of where it is taken, exactly.
     pub fn quadratic(&self) -> bool {
@@ -144,8 +151,8 @@ fn degree(a: &Ast) -> Option<u32> {
 
 /// **An equation the drawing states** (§6.25): its integrals, its two sides over them (`lhs`,
 /// `rhs`, each over `integral_var`s and then the `unknowns` by name), how they compare (`==`
-/// stated or claimed; `<=` and `>=` claimed alone), whether it is claimed, what its sides are,
-/// and what a report calls it — the statement as written, a word's use where a word wrote it.
+/// stated or claimed; `<=` and `>=` claimed alone), whether it is claimed, and what its sides
+/// are.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Measured {
     pub integrals: Vec<Integral>,
@@ -155,7 +162,6 @@ pub struct Measured {
     pub compare: Cmp,
     pub claim: bool,
     pub dim: Dim,
-    pub head: String,
 }
 
 impl Measured {

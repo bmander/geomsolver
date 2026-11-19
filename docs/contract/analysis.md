@@ -1075,7 +1075,7 @@ unless a rule names another.
       each filled once as one structure (`measured::gauging`, each element weighed by its body's
       density where an integral over it reads one; a face weighs nothing), its boundary's nodes
       moved by its sheets and what the bodies read read off the same columns
-      (`hulls::hull_of_bodies`, `Hull::reads`, `interior::Read`: a point held where nothing the
+      (`hulls::bodies_hull`, `Hull::reads`, `interior::Read`: a point held where nothing the
       solve moves reads it, else its own columns; a line whose ends the solve moves read toward
       its second point). An integral over a beam or a line is of the whole alone. A half-space's
       plane is a sheet (`Sheet::Ordinate`), so a volume finds a waterline.

@@ -361,18 +361,7 @@ fn meet(normals: &[[f64; 3]]) -> bool {
 /// node of a facet tagged with the sheets it lies on, the places and the feet at the drawing as it
 /// stands — and the columns the sheets read.  Or why a driving row cannot move it.
 pub fn hull_of(sk: &Sketch, solid: usize, mesh: &Mesh) -> Result<(Hull, Vec<u32>), String> {
-    hull_of_bodies(sk, &[(solid, mesh)], &[])
-}
-
-/// **`hull_of` over several bodies, and what an integral's bodies read off its columns**
-/// (§6.25): each body's mesh after the one before, its nodes numbered on from theirs, every body's
-/// sheets read over one set of columns — what an integral over an instance's bodies is read over —
-/// and each reading (`model::Reading`) held where nothing the solve moves reads it, else read as a
-/// sheet's point is.
-pub fn hull_of_bodies(sk: &Sketch, parts: &[(usize, &Mesh)], readings: &[Reading])
-    -> Result<(Hull, Vec<u32>), String>
-{
-    bodies_hull(sk, parts)?.reading(sk, readings)
+    bodies_hull(sk, &[(solid, mesh)])?.reading(sk, &[])
 }
 
 /// **A hull over several bodies before what is read off it** (§6.25): its sheets and its
@@ -386,19 +375,18 @@ pub struct Bodies {
 
 impl Bodies {
     /// **The hull with `readings` read off it**, and the columns it reads — the sheets' first.
-    pub fn reading(&self, sk: &Sketch, readings: &[Reading]) -> Result<(Hull, Vec<u32>), String> {
-        let mut b = self.b.clone();
-        let reads = readings.iter().map(|&r| b.reading(sk, r)).collect::<Result<Vec<_>, _>>()?;
-        let mut hull = self.hull.clone();
-        hull.reads = reads;
+    pub fn reading(self, sk: &Sketch, readings: &[Reading]) -> Result<(Hull, Vec<u32>), String> {
+        let Bodies { mut b, mut hull } = self;
+        hull.reads = readings.iter().map(|&r| b.reading(sk, r)).collect::<Result<_, _>>()?;
         hull.columns = b.columns.len();
         hull.frames = b.frames;
         Ok((hull, b.columns))
     }
 }
 
-/// **The sheets of `parts`' bodies and their tagged nodes** (`hull_of_bodies`), nothing read off
-/// them yet.
+/// **The sheets of `parts`' bodies and their tagged nodes**, nothing read off them yet: each
+/// body's mesh after the one before, its nodes numbered on from theirs, every body's sheets read
+/// over one set of columns — what an integral over an instance's bodies is read over.
 pub fn bodies_hull(sk: &Sketch, parts: &[(usize, &Mesh)]) -> Result<Bodies, String> {
     let mut b = Builder::default();
     // each body's faces' sheets, and where its nodes start among all of them

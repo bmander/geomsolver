@@ -50,7 +50,7 @@ mod row;
 mod solid;
 pub use beam::{fixed_end, into_axes, out_of_axes, Axes};
 pub use consts::{Drive, Mover, Sizing, HEAD};
-pub use gauge::{Domain, Gauge, Part};
+pub use gauge::{eval_sides, Domain, Gauge, Part};
 pub use hull::{Axis, Direction, Frame, Hull, Place, Profile, Read, Sheet};
 pub use moved::{Edge, Moved, Node, Stack};
 pub use plane::{Laid, Tri6};

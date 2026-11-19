@@ -101,6 +101,12 @@ impl Measurement {
     }
 }
 
+/// Whether reference `r` reads something of the drawing rather than a point an enclosing
+/// integral binds (`bound`, innermost last): the one rule both reference walkers keep.
+fn free(r: &Ref, bound: &[String]) -> bool {
+    !(r.path.is_empty() && bound.iter().any(|b| *b == r.root.text))
+}
+
 impl Measured {
     /// Whether either side integrates (§6.25): an equation of the drawing or a claim of it, never
     /// a set's bound.
@@ -125,6 +131,13 @@ impl Measured {
     pub fn refs(&self) -> Vec<&Ref> {
         let mut out = self.lhs.refs();
         out.extend(self.rhs.refs());
+        out
+    }
+
+    /// Every number's text, either side, inside its integrals too, read only.
+    pub fn numbers(&self) -> Vec<&str> {
+        let mut out = self.lhs.numbers();
+        out.extend(self.rhs.numbers());
         out
     }
 
@@ -186,9 +199,6 @@ impl Measuring {
     /// `refs_mut`, read only.
     pub fn refs(&self) -> Vec<&Ref> {
         fn go<'a>(m: &'a Measuring, bound: &mut Vec<String>, out: &mut Vec<&'a Ref>) {
-            let free = |r: &Ref, bound: &[String]| {
-                !(r.path.is_empty() && bound.iter().any(|b| *b == r.root.text))
-            };
             match m {
                 Measuring::Number { .. } => {}
                 Measuring::Measure(x) => out.extend(x.refs().filter(|r| free(r, bound))),
@@ -219,9 +229,6 @@ impl Measuring {
     }
 
     fn refs_bound_mut<'a>(&'a mut self, bound: &mut Vec<String>, out: &mut Vec<&'a mut Ref>) {
-        let free = |r: &Ref, bound: &[String]| {
-            !(r.path.is_empty() && bound.iter().any(|b| *b == r.root.text))
-        };
         match self {
             Measuring::Number { .. } => {}
             Measuring::Measure(m) => {
@@ -274,6 +281,17 @@ impl Measuring {
         self.collect_mut(&mut |m| {
             if let Measuring::Measure(x) = m {
                 out.push(x);
+            }
+        });
+        out
+    }
+
+    /// Every number's text, in the order written, inside its integrals too.
+    pub fn numbers(&self) -> Vec<&str> {
+        let mut out = Vec::new();
+        self.walk(&mut |m| {
+            if let Measuring::Number { text, .. } = m {
+                out.push(text.as_str());
             }
         });
         out

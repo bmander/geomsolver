@@ -156,8 +156,7 @@ fn param_kinds(def: &WordDef) -> Result<BTreeMap<String, Param>, (Span, String)>
                 for r in m.refs() {
                     said(&r.root.text, Param::Entity, r.span)?
                 }
-                let mut m = m.clone();
-                for text in m.numbers_mut() {
+                for text in m.numbers() {
                     for name in reads(text) {
                         said(&name, Param::Number, def.word.span)?;
                     }
@@ -309,8 +308,7 @@ pub(crate) fn faults(def: &WordDef, numbers: &BTreeSet<String>) -> Vec<(Code, Sp
                         out.push((Code::E101, r.span, reach(&crate::syntax::ref_text(r))));
                     }
                 }
-                let mut m = m.clone();
-                for text in m.numbers_mut() {
+                for text in m.numbers() {
                     for name in reads(text) {
                         if !def.params.iter().any(|p| p.text == name) && !among(numbers, &name) {
                             out.push((Code::E101, def.word.span, reach(&name)));
@@ -345,11 +343,8 @@ pub(crate) fn faults(def: &WordDef, numbers: &BTreeSet<String>) -> Vec<(Code, Sp
 /// **A number given as a bound** (§6.25): `<= 2kg` read as the comparison and its number.
 fn bound_of(text: &str) -> Option<(crate::syntax::Cmp, String)> {
     let t = text.trim();
-    let c = match t.get(..2)? {
-        "<=" => crate::syntax::Cmp::Le,
-        ">=" => crate::syntax::Cmp::Ge,
-        _ => return None,
-    };
+    // `<=` or `>=` alone: `in` begins names (`inner`), and an interval is no bound here
+    let c = crate::syntax::Cmp::of(t.get(..2)?).filter(|c| *c != crate::syntax::Cmp::In)?;
     Some((c, t[2..].trim().to_string()))
 }
 
@@ -446,16 +441,9 @@ impl<'a> Walk<'a> {
         }
         let Some(kinds) = self.word_kinds(k) else { return true };
         let def = &self.prog.words[k];
-        let Some(mut values) = self.word_args(def, &kinds, used) else { return true };
         // a number given as a bound (`claim mass(<= 2kg) arm`, §6.25): its number bound as the
         // parameter, and the body's comparisons with it turned into that bound
-        let mut bounds: BTreeMap<String, crate::syntax::Cmp> = BTreeMap::new();
-        for (name, (text, _)) in values.iter_mut() {
-            if let Some((c, rest)) = bound_of(text) {
-                bounds.insert(name.clone(), c);
-                *text = rest;
-            }
-        }
+        let Some((values, bounds)) = self.word_args(def, &kinds, used) else { return true };
         // the numbers, bound as the body's own, worked out where the statement is written; the
         // entities, each the reference given or a direction word put where it stands (#250)
         let mut vals: BTreeMap<String, Aff> = BTreeMap::new();
@@ -617,9 +605,10 @@ impl<'a> Walk<'a> {
         def: &WordDef,
         kinds: &BTreeMap<String, Param>,
         given: &Written,
-    ) -> Option<BTreeMap<String, (String, Span)>> {
+    ) -> Option<(BTreeMap<String, (String, Span)>, BTreeMap<String, crate::syntax::Cmp>)> {
         let word = &def.word.text;
         let mut values: BTreeMap<String, (String, Span)> = BTreeMap::new();
+        let mut bounds: BTreeMap<String, crate::syntax::Cmp> = BTreeMap::new();
         // a bound given bare (`mass(<= 2kg) arm`) is the number after it, bounded (§6.25)
         let bare = given.args.iter().filter(|a| !matches!(a, OpArg::Bound { .. })).count();
         let mut bounded: Option<crate::syntax::Cmp> = None;
@@ -629,10 +618,6 @@ impl<'a> Walk<'a> {
                 continue;
             }
             let cmp = bounded.take();
-            let with = |text: &String| match cmp {
-                Some(c) => format!("{} {text}", c.text()),
-                None => text.clone(),
-            };
             match a {
                 OpArg::Named(n, Arg::Dim { text, span }) => {
                     if !def.params.iter().any(|p| p.text == n.text) {
@@ -640,7 +625,15 @@ impl<'a> Walk<'a> {
                         self.once(Code::E040, n.span, m);
                         return None;
                     }
-                    if values.insert(n.text.clone(), (text.clone(), *span)).is_some() {
+                    // a labelled bound is its text's (`moment(i: <= I, …)`)
+                    let text = match bound_of(text) {
+                        Some((c, rest)) => {
+                            bounds.insert(n.text.clone(), c);
+                            rest
+                        }
+                        None => text.clone(),
+                    };
+                    if values.insert(n.text.clone(), (text, *span)).is_some() {
                         self.once(Code::E040, n.span, format!("`{}` is given twice", n.text));
                         return None;
                     }
@@ -650,7 +643,15 @@ impl<'a> Walk<'a> {
                 OpArg::Dim(text, span) => {
                     let (code, m) = match (def.params.as_slice(), bare) {
                         ([p], 1) => {
-                            values.insert(p.text.clone(), (with(text), *span));
+                            // bounded by the `Bound` before it, or by its own text's
+                            let (c, text) = match (cmp, bound_of(text)) {
+                                (_, Some((c, rest))) => (Some(c), rest),
+                                (c, None) => (c, text.clone()),
+                            };
+                            values.insert(p.text.clone(), (text, *span));
+                            if let Some(c) = c {
+                                bounds.insert(p.text.clone(), c);
+                            }
                             continue;
                         }
                         ([], _) => (Code::E040, format!("`{word}` has no parameters")),
@@ -684,7 +685,7 @@ impl<'a> Walk<'a> {
                 return None;
             }
         }
-        Some(values)
+        Some((values, bounds))
     }
 
     /// Whether `name` is something declared or bound where `scope` reads it — a formal called
