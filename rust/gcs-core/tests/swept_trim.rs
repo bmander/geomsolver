@@ -167,6 +167,36 @@ fn the_bar_screwed_through_the_rod_is_trimmed_over_its_whole_roll() {
     near(cut.faces.iter().map(|f| area(&cut,f)).sum(),821.16715556389149,1e-10,"its area");
 }
 
+/// **A meeting given with a branch left out is completed from its witness** (#942 F2's gate, no
+/// sweep's road in it): the bar screwed a half turn, its candidates entered by hand, and every end
+/// pose's face given its closed-form meeting with each helicoid patch its edges screw into — less
+/// the branch across the patch (`sheet cut`), the line along the face kept. A given meeting is the
+/// whole of it, so the pair is not searched and the branch is missing where it bounds the sweep: the
+/// trim reads a piece of the face the missing branch parts, traces the meeting from where it crosses
+/// between the two points read, and builds the sweep to the helical integral apart from the build.
+#[test]
+fn a_meeting_given_with_a_branch_left_out_is_completed_from_its_witness() {
+    use gcs_core::brep::ssi::{intersect,Ssi};
+    let roll = [-90f64.to_radians(),90f64.to_radians()];
+    let tool = bar();
+    let candidates = bar_candidates(roll);
+    let surfaces: Vec<_> = candidates.iter().map(|c| c.faces[0].surface.clone()).collect();
+    let mut given = Vec::new();
+    for a in surfaces.iter().filter(|s| s.kind() == "plane") {
+        for b in surfaces.iter().filter(|s| s.kind() == "blend") {
+            let Ssi::Curves(curves) = intersect(a,b,1e-7) else { continue };
+            if !curves.iter().any(|c| c.kind() == "sheet cut") { continue }
+            let curves: Vec<_> = curves.into_iter().filter(|c| c.kind() != "sheet cut").collect();
+            given.push(gcs_core::brep::boolean::Given {surfaces:[a.clone(),b.clone()],curves});
+        }
+    }
+    assert!(!given.is_empty(),"a face's meeting with a helicoid patch to leave a branch out of");
+    let (b,report) = trim::trimmed(&tool,&Trajectory::Twist(SCREW),roll,&candidates,&given,tool.size(),1e-7,
+        Trim {resolution:1.,hair:1e-3,reach:None}).unwrap_or_else(|e| panic!("the trim not completed: {e:?}"));
+    assert!(report.completed > 0,"a branch completed: {report:?}");
+    near(volume(&b),bar_volume(roll),1e-9,"the bar's sweep, completed");
+}
+
 /// **`closed`'s own candidates, trimmed, are the solid their arrangement is** (E1's comparison): a
 /// box slid on a slant and a block turned a quarter turn about a line beside it, each built both
 /// ways — the same volume — the trim meeting fewer pairs of faces than the candidates' boxes

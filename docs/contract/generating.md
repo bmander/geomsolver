@@ -865,10 +865,14 @@ with the point its piece was read at. From a witness the face is walked between 
 its own parameters (`Located::uv`, the branch of a folded wall the face is on), and wherever another
 candidate's face crosses the walk where no given curve passes, the two surfaces' meeting is traced
 from the crossing (`ssi::trace`, else marched in their parameters), added to their given meeting or
-given as a new one, and the trim run again, up to `ROUNDS` times
-(`swept_general::a_meeting_left_out_of_the_trim_is_completed_from_its_witness`: the cube tumbling
+given as a new one, and the trim run again, up to `ROUNDS` times. The gate has no sweep's road in
+it (`swept_trim::a_meeting_given_with_a_branch_left_out_is_completed_from_its_witness`): the bar
+screwed a half turn, its candidates entered by hand, each end pose's face given its closed-form
+meeting with a helicoid patch less the branch across the patch, completed to the helical integral
+apart from the build. On the general road's own candidates
+(`swept_general::a_meeting_left_out_of_the_trim_is_completed_from_its_witness`): the cube tumbling
 5°, its fans' branches beside their rails taken out of what it is given, completed to the volume the
-whole given builds). A witness nothing missing crosses is the refusal, naming what parts it where it
+whole given builds. A witness nothing missing crosses is the refusal, naming what parts it where it
 can: a pair met by search that missed the crossing, or another face of the same surface crossing the
 walk — the surface passing back through itself, which no given meeting of two surfaces lays (in the
 slow tier the tumbling cube at 75°, its edge 5's fan crossing itself). A mixed piece is never kept
