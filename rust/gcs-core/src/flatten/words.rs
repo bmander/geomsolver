@@ -150,6 +150,19 @@ fn param_kinds(def: &WordDef) -> Result<BTreeMap<String, Param>, (Span, String)>
                 }
             }
             StmtKind::Minimize(m) => said(&m.curve.root.text, Param::Entity, m.curve.span)?,
+            // an equation of integrals (§6.25): what it measures and is over, entities; what its
+            // numbers read, numbers
+            StmtKind::Measured(m) => {
+                for r in m.refs() {
+                    said(&r.root.text, Param::Entity, r.span)?
+                }
+                let mut m = m.clone();
+                for text in m.numbers_mut() {
+                    for name in reads(text) {
+                        said(&name, Param::Number, def.word.span)?;
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -254,6 +267,8 @@ pub(crate) fn faults(def: &WordDef, numbers: &BTreeSet<String>) -> Vec<(Code, Sp
                 _ => false,
             }
             || r.direction_word().is_some()
+            // the library's own world, its origin, axes and planes (`std.x`)
+            || (r.root.text == "std" && !r.path.is_empty())
     };
     for st in &def.body {
         match &st.kind {
@@ -288,6 +303,23 @@ pub(crate) fn faults(def: &WordDef, numbers: &BTreeSet<String>) -> Vec<(Code, Sp
                     }
                 }
             }
+            // an equation of integrals reads what it is given and the points its integrals bind
+            // (§6.25), and its numbers the word's
+            StmtKind::Measured(m) => {
+                for r in m.refs() {
+                    if !known(r) {
+                        out.push((Code::E101, r.span, reach(&crate::syntax::ref_text(r))));
+                    }
+                }
+                let mut m = m.clone();
+                for text in m.numbers_mut() {
+                    for name in reads(text) {
+                        if !def.params.iter().any(|p| p.text == name) && !among(numbers, &name) {
+                            out.push((Code::E101, def.word.span, reach(&name)));
+                        }
+                    }
+                }
+            }
             // an energy is over an operand, and its integrand reads the point it runs along, its
             // tangent and the word's numbers (#121)
             StmtKind::Minimize(m) => {
@@ -310,6 +342,68 @@ pub(crate) fn faults(def: &WordDef, numbers: &BTreeSet<String>) -> Vec<(Code, Sp
         }
     }
     out
+}
+
+/// **A number given as a bound** (§6.25): `<= 2kg` read as the comparison and its number.
+fn bound_of(text: &str) -> Option<(crate::syntax::Cmp, String)> {
+    let t = text.trim();
+    let c = match t.get(..2)? {
+        "<=" => crate::syntax::Cmp::Le,
+        ">=" => crate::syntax::Cmp::Ge,
+        _ => return None,
+    };
+    Some((c, t[2..].trim().to_string()))
+}
+
+/// **A word's body with each parameter given as a bound compared by it** (§6.25): an equation
+/// whose side is the parameter alone (`integral(…) == m`) turned into the bound, `<=` or `>=` as
+/// the parameter stands; a relation stating the parameter as its number (`a distance(d) b`)
+/// bounded by it.  A parameter bounded that no comparison of the body states is refused: the
+/// bound would bound nothing.
+fn bound_through(body: &mut [Stmt], bounds: &BTreeMap<String, crate::syntax::Cmp>, word: &str)
+    -> Result<(), String>
+{
+    use crate::syntax::Measuring;
+    let mut used: BTreeSet<&str> = BTreeSet::new();
+    let alone = |m: &Measuring| match m {
+        Measuring::Number { text, .. } => bounds.get_key_value(text.trim()),
+        _ => None,
+    };
+    for st in body.iter_mut() {
+        match &mut st.kind {
+            StmtKind::Measured(m) if m.cmp.is_none() => {
+                if let Some((name, &c)) = alone(&m.rhs) {
+                    m.cmp = Some(c);
+                    used.insert(name.as_str());
+                } else if let Some((name, &c)) = alone(&m.lhs) {
+                    m.cmp = Some(c.turned().expect("a bound is one-sided"));
+                    used.insert(name.as_str());
+                }
+            }
+            StmtKind::Relation(r) => {
+                let Some(w) = r.form.written_mut() else { continue };
+                if w.args.iter().any(|a| matches!(a, OpArg::Bound { .. })) {
+                    continue;
+                }
+                let at = w.args.iter().position(|a| {
+                    matches!(a, OpArg::Dim(t, _) if bounds.contains_key(t.trim()))
+                });
+                if let Some(k) = at {
+                    let OpArg::Dim(t, span) = &w.args[k] else { unreachable!("a number") };
+                    let (name, &c) = bounds.get_key_value(t.trim()).expect("a bound");
+                    used.insert(name.as_str());
+                    let span = *span;
+                    w.args.insert(k, OpArg::Bound { cmp: c, span, hi: None, grow: None });
+                }
+            }
+            _ => {}
+        }
+    }
+    match bounds.keys().find(|n| !used.contains(n.as_str())) {
+        Some(n) => Err(format!("`{n}` is given as a bound, and `{word}` compares nothing with it: \
+                                a bound is given to a number the word states")),
+        None => Ok(()),
+    }
 }
 
 /// A defined word's argument in a body, as the use puts it in: a word or a direction word
@@ -354,7 +448,16 @@ impl<'a> Walk<'a> {
         }
         let Some(kinds) = self.word_kinds(k) else { return true };
         let def = &self.prog.words[k];
-        let Some(values) = self.word_args(def, &kinds, used) else { return true };
+        let Some(mut values) = self.word_args(def, &kinds, used) else { return true };
+        // a number given as a bound (`claim mass(<= 2kg) arm`, §6.25): its number bound as the
+        // parameter, and the body's comparisons with it turned into that bound
+        let mut bounds: BTreeMap<String, crate::syntax::Cmp> = BTreeMap::new();
+        for (name, (text, _)) in values.iter_mut() {
+            if let Some((c, rest)) = bound_of(text) {
+                bounds.insert(name.clone(), c);
+                *text = rest;
+            }
+        }
         // the numbers, bound as the body's own, worked out where the statement is written; the
         // entities, each the reference given or a direction word put where it stands (#250)
         let mut vals: BTreeMap<String, Aff> = BTreeMap::new();
@@ -409,7 +512,15 @@ impl<'a> Walk<'a> {
         }
         // a declared parameter a text written in reads (`b offset(dx: 2mm, dy: lift) a`, `lift`
         // a part's formal over `t`) is the document's, carried in by the use: the body reads it
-        // by name as the use's statement would (#391 S4)
+        // by name as the use's statement would (#391 S4) — and one a number given reads, so the
+        // number written into the body says the name's dimension (`moment(i: bm * …)`, §6.25)
+        let frees: Vec<String> = vals.values().filter_map(|a| a.free.clone()).collect();
+        for n in frees {
+            let found = crate::expr::Env::value(&*scope.vals, &n);
+            if let Some(a) = found.filter(|a| a.free.as_ref() == Some(&n)) {
+                vals.entry(n).or_insert(a);
+            }
+        }
         for n in texts.values().flat_map(|t| reads(t)) {
             if let Some(p) = self.parameters.get(&n) {
                 let a = Aff::free(n.clone(), p.dim);
@@ -444,6 +555,10 @@ impl<'a> Walk<'a> {
                     r.root.text = given.to_string();
                 }
             }
+        }
+        if let Err(m) = bound_through(&mut body, &bounds, &def.word.text) {
+            self.once(Code::E040, used.word.span, m);
+            return true;
         }
         // each operand's interface, where the head types it ([0.217]); the numbers it declares,
         // read where the use is written and bound as the body's own under the operand's name
@@ -507,7 +622,19 @@ impl<'a> Walk<'a> {
     ) -> Option<BTreeMap<String, (String, Span)>> {
         let word = &def.word.text;
         let mut values: BTreeMap<String, (String, Span)> = BTreeMap::new();
+        // a bound given bare (`mass(<= 2kg) arm`) is the number after it, bounded (§6.25)
+        let bare = given.args.iter().filter(|a| !matches!(a, OpArg::Bound { .. })).count();
+        let mut bounded: Option<crate::syntax::Cmp> = None;
         for a in &given.args {
+            if let OpArg::Bound { cmp, hi: None, grow: None, .. } = a {
+                bounded = Some(*cmp);
+                continue;
+            }
+            let cmp = bounded.take();
+            let with = |text: &String| match cmp {
+                Some(c) => format!("{} {text}", c.text()),
+                None => text.clone(),
+            };
             match a {
                 OpArg::Named(n, Arg::Dim { text, span }) => {
                     if !def.params.iter().any(|p| p.text == n.text) {
@@ -523,9 +650,9 @@ impl<'a> Walk<'a> {
                 // a word of one parameter takes it bare, as a built-in takes its one number
                 // (#463); of more, which is which is said by label
                 OpArg::Dim(text, span) => {
-                    let (code, m) = match (def.params.as_slice(), given.args.as_slice()) {
-                        ([p], [_]) => {
-                            values.insert(p.text.clone(), (text.clone(), *span));
+                    let (code, m) = match (def.params.as_slice(), bare) {
+                        ([p], 1) => {
+                            values.insert(p.text.clone(), (with(text), *span));
                             continue;
                         }
                         ([], _) => (Code::E040, format!("`{word}` has no parameters")),

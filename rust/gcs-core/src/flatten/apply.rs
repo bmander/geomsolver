@@ -225,8 +225,16 @@ impl<'a> Walk<'a> {
             // so is more of a body's set (#783 P3, `bore cut body` applied), so a body it refuses
             // or a cycle it closes is said where the word is written
             let whole = match &mut st.kind {
+                // and an equation of integrals is claimed where its word's use is (§6.25)
                 StmtKind::Measured(m) => {
                     m.through = through_all(std::mem::take(&mut m.through));
+                    m.claim |= u.rel.claim;
+                    // a report calls it by the use that stated it, the outermost's stamped last
+                    let mut text = String::new();
+                    let rel = StmtKind::Relation(Relation { claim: false, ..u.rel.clone() });
+                    if crate::syntax::write_stmt_to(&mut text, &rel).is_ok() {
+                        m.head = Some(text);
+                    }
                     true
                 }
                 StmtKind::Minimize(_) => true,

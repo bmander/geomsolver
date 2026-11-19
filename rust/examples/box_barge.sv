@@ -1,7 +1,8 @@
 // A box barge floating (#953): a hull 200 long, 60 in beam and 100 deep, kept within the water
 // below its waterline — `immersed := solid({ p | p in hull; p in water })`, the hull in common
 // with the half-space up to `T` above its keel — and `T` an unknown its displacement finds:
-// `volume(L · B · 40mm) immersed` holds the immersed volume, so `T` is 40mm.  The centre of
+// `volume(L · B · 40mm) immersed` (`std.measures`, `∫ 1 dV`) holds the immersed volume, so `T`
+// is 40mm.  The centre of
 // buoyancy is a point the immersed body's volume is centred on, `b centroid immersed`, at
 // `(L/2, 0, T/2)`; the waterplane is the immersed body's face `immersed.water`, its area `L B`
 // and its second moment about the centreline drawn in it `L B³ / 12` — so its metacentric radius
@@ -10,6 +11,7 @@ unit mm
 use std
 use std.solids
 use std.sets
+use std.measures (volume, area, moment, centroid)
 
 L := 200mm
 B := 60mm
@@ -50,5 +52,5 @@ centreline := line(fore, aft)
 
 buoyancy := point hint((100, 0, 20))
 buoyancy centroid immersed
-moment(bm * L * B * 40mm, about: centreline) immersed.water
+moment(i: bm * L * B * 40mm, about: centreline) immersed.water
 claim area(L * B) immersed.water

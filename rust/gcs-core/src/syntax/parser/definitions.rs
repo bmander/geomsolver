@@ -75,8 +75,10 @@ impl<'a> P<'a> {
                     "a relation word's body states the relation alone: a placement or a class \
                      is written where the word is used",
                 ),
-                // and an energy over an operand, which is a statement of the drawing's (#121)
+                // and an energy over an operand, which is a statement of the drawing's (#121),
+                // and an equation of integrals (§6.25)
                 StmtKind::Relation(_) | StmtKind::Decl(_) | StmtKind::Minimize(_) => None,
+                StmtKind::Measured(m) if m.integrates() => None,
                 // and what a word makes of solids (#183 F5): repetitions, the sets and solids it
                 // makes and what they do to a body
                 StmtKind::Block(_) | StmtKind::Instance(_) | StmtKind::Set(_)

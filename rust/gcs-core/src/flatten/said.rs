@@ -203,7 +203,7 @@ fn lean_of(m: &crate::syntax::Measured, sets: &[(String, &SetLit)], p: &str, on:
         _ => return None,
     };
     let Measuring::Bin(Op::Sub, beyond, within) = &m.lhs else { return None };
-    if m.cmp != Cmp::Ge || distance(beyond, p)?.root.text != *out
+    if m.cmp != Some(Cmp::Ge) || distance(beyond, p)?.root.text != *out
         || distance(within, p)?.root.text != *into {
         return None;
     }

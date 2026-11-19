@@ -113,13 +113,26 @@ bound variable an alias of the use's operand; one naming nothing is E101 once at
 the application made stamped with the use's id/span/path, claim, placement when it makes one
 relation, word spans at the use, and `Worded`, the outermost use's).  `syntax::Relation::of`
 builds a relation with nothing but its form.  Words: `WordDef::body` is `Vec<Stmt>` (one relation, or `{ … }` of relations and
-declarations), applied synchronously in the walk's Relation arm (`Walk::apply_word`; numbers
+declarations, and [0.220] equations of integrals, §9.12 — what an equation measures and is over
+read as entities and what its numbers read as numbers, `param_kinds`; a claimed use claims them
+and each carries the use's text as its `head`), applied synchronously in the walk's Relation arm (`Walk::apply_word`; numbers
 bound in the closure's `vals`, selector words substituted; `applying_words` for E003); sets:
 `expand_use`.  A set may be written in place on the right of `coincident`/`tangent`
 (`P::inline_set_use`, hoisted by `P::hoist_in_place` as a statement under a key the source
 cannot write, `Chained::InPlace` naming the relation that holds it (#745), described by its
 text).  The lexer reads a brace after `:=` as a group only before `}` or `name:` (`group_ahead`).
 `tests/applied.rs` is the gate.
+
+**A bound through a word ([0.220], §9.12, `flatten::words::bound_through`):** a word's number
+parameter given as a bound — bare, `claim mass(<= 2kg) arm` (`[Bound, Dim]`, one parameter), or
+labelled, `moment(i: <= I, about: l)` (the text `<= I`, `bound_of`) — is bound as its number, and
+each comparison its body states with the parameter alone on one side becomes that bound: an
+equation's `==` turned `<=` or `>=` as the parameter stands (`m == X` turned round), a relation
+stating the parameter as its number given an `OpArg::Bound` before it. A parameter so given that
+nothing in the body compares is E040 at the word. An unknown a given number reads is carried into
+the closure's table as itself (`Aff::free`), so the number written into the body says its
+coefficient's dimension (`values::of_vals_in`: `(480000 * (1mm)^(3) * bm)`, never a bare
+`(480000 * bm)`). `tests/hydrostatics.rs` and `tests/measured.rs` are the gate.
 
 **`ring N about C { … }`, solved over one copy (0.47, #96):** copies that are turns of the first
 (the representative) about a point (in its view) or an axis held in its direction (in space).
@@ -500,7 +513,9 @@ callable. **A definition's standard datums are those of the frame it stands in**
 the one name a body reads unhanded. `walk_instance` gives the body's scope `Scope::stands`, every
 `in` around the call and around each call enclosing it (`Stamps::{rides, plane}`, each an
 `InPlane` carrying the file and the place it was written in), outermost first and empty at the
-root; a relation word's closure, a traced body and the document's own scope have none. Where
+root; a relation word's closure, a traced body and the document's own scope have none — and a
+relation word's closure, standing in no frame, reads the world's (`std.x`, [0.220], what
+`std.measures`'s centroid is read along; `faults` lets a word's body name `std.…`). Where
 nothing else names it, `Lookup::raw` reads `std.front` in such a body through `Lookup::datum`: a
 standard datum's name (`Datums`), where the body's file says `use std` (`Datums::files`, the
 document's `None` or a module's index), and the drawing has them — made whenever any file read

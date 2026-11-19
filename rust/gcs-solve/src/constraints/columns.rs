@@ -81,10 +81,10 @@ impl Constraint {
         // a deflection driven: its structure, a frame's sections read over its unknowns (#510 S1)
         // or a region's nodes over the drawing (S2) — and a mass or a volume, each its number last
         if self.kind.interior() {
-            // a measure's number reading an unknown states `[m, c]` (#953)
-            let stated = match self.measure_unknown(sk) {
-                Some((_, m, c)) => vec![m, c],
-                None => vec![self.args.last().map_or(0.0, Arg::num)],
+            // a deflection's number; an equation's sides say all it compares (§6.25)
+            let stated = match self.kind {
+                CKind::Deflection => vec![self.args.last().map_or(0.0, Arg::num)],
+                _ => Vec::new(),
             };
             return self.interior_parts(sk).map(|(r, _)| r.consts(&stated))
                 .unwrap_or_default();
@@ -559,12 +559,7 @@ impl Constraint {
             | CKind::CarriedPointIn
             | CKind::RegularWithin
             | CKind::Deflection
-            | CKind::Mass
-            | CKind::Volume
-            | CKind::Area
-            | CKind::Moment
-            | CKind::Centroid
-            | CKind::CenterOfMass
+            | CKind::Integral
             | CKind::PointOnTraced
             // a development's length, a plane touching a path and a line's fraction (#645): a
             // segment's own `b − a`, or a corner's links read through their ends
@@ -991,11 +986,10 @@ impl Constraint {
             }
             // a deflection driven: a frame's every joint's lift, then its sections' unknowns (#510
             // S1); a region's points' numbers and radii (S2) — a mass's or a volume's alike
-            CKind::Deflection | CKind::Mass | CKind::Volume | CKind::Area | CKind::Moment
-            | CKind::Centroid | CKind::CenterOfMass => {
+            CKind::Deflection | CKind::Integral => {
                 let mut cols = self.interior_parts(sk).map(|(_, c)| c).unwrap_or_default();
-                // and the unknown a measure's number reads, last (#953)
-                cols.extend(self.measure_unknown(sk).map(|(q, _, _)| q));
+                // and the unknowns an equation's sides read, last (§6.25)
+                cols.extend(self.integral_unknowns(sk));
                 cols
             }
             // a point a motion carries to a stated roll (#366): both points' lifts, the axes of
@@ -1232,8 +1226,7 @@ impl Constraint {
             // every point the envelope and the regions' terms read (#345)
             CKind::RegularWithin => self.regular_parts(sk).map(|p| p.lifted()).unwrap_or_default(),
             // every joint of the frame (#510 S1); a region's points are read in their plane (S2)
-            CKind::Deflection | CKind::Mass | CKind::Volume | CKind::Area | CKind::Moment
-            | CKind::Centroid | CKind::CenterOfMass => {
+            CKind::Deflection | CKind::Integral => {
                 self.interior_row(sk).map(|r| r.lifted()).unwrap_or_default()
             }
             // both points, then every point the motion's axes read (#326, #366)

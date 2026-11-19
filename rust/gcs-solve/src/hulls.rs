@@ -16,8 +16,8 @@
 //! a curve.
 
 use crate::bodies::{Mesh, Wall};
-use crate::interior::{Axis, Direction, Frame, Hull, Place, Profile, Sheet};
-use crate::model::{EntKind, EntRef, Sketch, SolidDef};
+use crate::interior::{Axis, Direction, Frame, Hull, Place, Profile, Read, Sheet};
+use crate::model::{EntKind, EntRef, Reading, Sketch, SolidDef};
 use crate::solid::faces::BodyFaces;
 use std::collections::BTreeMap;
 
@@ -31,7 +31,7 @@ const NEAR: f64 = 0.25;
 
 /// What the sheets are made of: the columns read so far, each point's (its x, its y the next),
 /// each plane's and each sheet's.
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Builder {
     columns: Vec<u32>,
     points: BTreeMap<usize, usize>,
@@ -104,6 +104,49 @@ impl Builder {
                 Direction::Held(d)
             }
             kind => return Err(format!("a half-space along {}", kind.a())),
+        })
+    }
+
+    /// **What an integral's body reads, off the columns** (§6.25): a point where it stands, a
+    /// direction (an axis's, a plane's normal, a held line's), or a line whole — its first point,
+    /// and its direction held or read toward its second.
+    fn reading(&mut self, sk: &Sketch, r: Reading) -> Result<Read, String> {
+        Ok(match r {
+            Reading::Point(q) => Read { at: Some(self.place(sk, q)), along: None },
+            Reading::Direction(e) => Read { at: None, along: Some(self.direction(sk, e)?) },
+            Reading::Line(e) if e.kind == EntKind::Line => {
+                let l = &sk.lines[e.i()];
+                let a = self.place(sk, l.p1 as usize);
+                let d = match self.direction(sk, e) {
+                    Ok(d) => d,
+                    Err(_) => Direction::Toward(self.place(sk, l.p2 as usize)),
+                };
+                Read { at: Some(a), along: Some(d) }
+            }
+            Reading::Line(e) if e.kind == EntKind::Axis => {
+                let x = &sk.axes[e.i()];
+                let held = x.a.iter().all(|&q| sk.params[q as usize].fixed);
+                let a = if held {
+                    Place::Held(x.a.map(|q| sk.params[q as usize].value))
+                } else {
+                    let c = self.columns.len();
+                    self.columns.extend(x.a);
+                    Place::Space(c)
+                };
+                Read { at: Some(a), along: Some(self.direction(sk, e)?) }
+            }
+            Reading::Line(e) if e.kind == EntKind::Frame => {
+                let f = self.frame(sk, Some(e.idx));
+                let o = match &self.frames[f] {
+                    Frame::Held(k) => Place::Held([k[0], k[1], k[2]]),
+                    Frame::Read(c) => Place::Space(*c),
+                };
+                Read { at: Some(o), along: Some(Direction::Normal(f)) }
+            }
+            Reading::Line(e) => {
+                return Err(format!("an integral reads a line, an axis or a plane, not {}",
+                                   e.kind.a()));
+            }
         })
     }
 
@@ -318,46 +361,46 @@ fn meet(normals: &[[f64; 3]]) -> bool {
 /// node of a facet tagged with the sheets it lies on, the places and the feet at the drawing as it
 /// stands — and the columns the sheets read.  Or why a driving row cannot move it.
 pub fn hull_of(sk: &Sketch, solid: usize, mesh: &Mesh) -> Result<(Hull, Vec<u32>), String> {
-    hull_of_bodies(sk, &[(solid, mesh)], None, None)
+    hull_of_bodies(sk, &[(solid, mesh)], &[])
 }
 
-/// **`hull_of` over several bodies, and what a measure besides the whole reads off its columns**
-/// (#953): each body's mesh after the one before, its nodes numbered on from theirs, every body's
-/// sheets read over one set of columns — what a centre of mass of an instance's bodies is read
-/// over — and the point `at` a centroid is compared with and the line or axis `about` a second
-/// moment is taken about, each held where nothing the solve moves reads it, else read as a
+/// **`hull_of` over several bodies, and what an integral's bodies read off its columns**
+/// (§6.25): each body's mesh after the one before, its nodes numbered on from theirs, every body's
+/// sheets read over one set of columns — what an integral over an instance's bodies is read over —
+/// and each reading (`model::Reading`) held where nothing the solve moves reads it, else read as a
 /// sheet's point is.
-pub fn hull_of_bodies(sk: &Sketch, parts: &[(usize, &Mesh)], at: Option<usize>,
-                      about: Option<EntRef>) -> Result<(Hull, Vec<u32>), String> {
+pub fn hull_of_bodies(sk: &Sketch, parts: &[(usize, &Mesh)], readings: &[Reading])
+    -> Result<(Hull, Vec<u32>), String>
+{
+    bodies_hull(sk, parts)?.reading(sk, readings)
+}
+
+/// **A hull over several bodies before what is read off it** (§6.25): its sheets and its
+/// tagged nodes, and what built them, so the equations over the same bodies each add their own
+/// readings to one hull (`Bodies::reading`).
+#[derive(Clone)]
+pub struct Bodies {
+    b: Builder,
+    hull: Hull,
+}
+
+impl Bodies {
+    /// **The hull with `readings` read off it**, and the columns it reads — the sheets' first.
+    pub fn reading(&self, sk: &Sketch, readings: &[Reading]) -> Result<(Hull, Vec<u32>), String> {
+        let mut b = self.b.clone();
+        let reads = readings.iter().map(|&r| b.reading(sk, r)).collect::<Result<Vec<_>, _>>()?;
+        let mut hull = self.hull.clone();
+        hull.reads = reads;
+        hull.columns = b.columns.len();
+        hull.frames = b.frames;
+        Ok((hull, b.columns))
+    }
+}
+
+/// **The sheets of `parts`' bodies and their tagged nodes** (`hull_of_bodies`), nothing read off
+/// them yet.
+pub fn bodies_hull(sk: &Sketch, parts: &[(usize, &Mesh)]) -> Result<Bodies, String> {
     let mut b = Builder::default();
-    let target = at.map(|q| b.place(sk, q));
-    let axis = match about {
-        None => None,
-        // a line: its first point, and its direction held, or read toward its second point
-        Some(e) if e.kind == EntKind::Line => {
-            let l = &sk.lines[e.i()];
-            let a = b.place(sk, l.p1 as usize);
-            let d = match b.direction(sk, e) {
-                Ok(d) => d,
-                Err(_) => Direction::Toward(b.place(sk, l.p2 as usize)),
-            };
-            Some((a, d))
-        }
-        Some(e) if e.kind == EntKind::Axis => {
-            let x = &sk.axes[e.i()];
-            let held = x.a.iter().all(|&q| sk.params[q as usize].fixed);
-            let a = if held {
-                Place::Held(x.a.map(|q| sk.params[q as usize].value))
-            } else {
-                let c = b.columns.len();
-                b.columns.extend(x.a);
-                Place::Space(c)
-            };
-            Some((a, b.direction(sk, e)?))
-        }
-        Some(e) => return Err(format!("a second moment is about a line or an axis, and this is {}",
-                                      e.kind.a())),
-    };
     // each body's faces' sheets, and where its nodes start among all of them
     let mut sheets_of = Vec::new();
     let mut first = Vec::new();
@@ -374,17 +417,17 @@ pub fn hull_of_bodies(sk: &Sketch, parts: &[(usize, &Mesh)], at: Option<usize>,
         n += mesh.nodes.len();
     }
     let extent = parts.iter().map(|(_, m)| m.extent()).fold(0.0, f64::max);
-    let mut hull = Hull { columns: b.columns.len(), frames: b.frames, sheets: b.sheets,
-                          nodes: vec![Vec::new(); n],
+    let mut hull = Hull { columns: b.columns.len(), frames: b.frames.clone(),
+                          sheets: b.sheets.clone(), nodes: vec![Vec::new(); n],
                           x0: parts.iter().flat_map(|(_, m)| m.nodes.iter().flatten().copied())
                               .collect(),
-                          feet0: vec![0.0; 3 * n], extent, target, axis,
+                          feet0: vec![0.0; 3 * n], extent, reads: Vec::new(),
                           facets: std::mem::take(&mut b.facets) };
     let v0: Vec<f64> = b.columns.iter().map(|&c| sk.params[c as usize].value).collect();
     for (k, &(_, mesh)) in parts.iter().enumerate() {
         tag(&mut hull, mesh, &sheets_of[k], first[k], &v0);
     }
-    Ok((hull, b.columns))
+    Ok(Bodies { b, hull })
 }
 
 /// **Each node of body `mesh`'s boundary tagged with the sheets it lies on** (`hull_of`), its

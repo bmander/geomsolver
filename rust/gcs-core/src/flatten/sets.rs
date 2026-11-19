@@ -1619,7 +1619,7 @@ fn region_body(
     };
     if let StmtKind::Measured(m) = &mut body[i].kind {
         if side != Cmp::Le {
-            m.cmp = m.cmp.turned().expect("a bound on measurements is one-sided");
+            m.cmp = m.cmp.map(|c| c.turned().expect("a bound on measurements is one-sided"));
         }
         return Ok(());
     }

@@ -98,6 +98,22 @@ pub enum Direction {
     Toward(Place),
 }
 
+/// **What an integral's body reads off a hull's columns** (§6.25): a point (`at`), a direction
+/// made unit (`along`), or a line, both — its direction read from its point where it runs toward
+/// a second one (`Direction::Toward`).  Three numbers each, the point's first.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Read {
+    pub at: Option<Place>,
+    pub along: Option<Direction>,
+}
+
+impl Read {
+    /// How many numbers it reads.
+    pub fn width(&self) -> usize {
+        3 * (self.at.is_some() as usize + self.along.is_some() as usize)
+    }
+}
+
 /// **A sheet a face of the body is a piece of**: a prism's cap at ordinate `h` along its plane's
 /// normal, a prism's side (a profile's line or circle swept along the normal), a turn's face (a
 /// profile's line or circle turned about an axis), or a half-space's plane (#953): the points
@@ -128,10 +144,9 @@ pub struct Hull {
     pub x0: Vec<f64>,
     pub feet0: Vec<f64>,
     pub extent: f64,
-    /// What a measure besides the whole reads off the same columns (#953): the point a centroid
-    /// is compared with, and the line a second moment is taken about (its point and direction).
-    pub target: Option<Place>,
-    pub axis: Option<(Place, Direction)>,
+    /// What an integral's bodies read off the same columns (§6.25): points, directions and
+    /// lines, in the order their numbers run in the bodies' variables.
+    pub reads: Vec<Read>,
     /// The triangles held panels are drawn with (#953, `Sheet::Facets`), each its three corners
     /// turned out of the material.
     pub facets: Vec<[f64; 9]>,
@@ -483,27 +498,36 @@ impl Hull {
         }
     }
 
-    /// **The point and the line a measure reads** (#953, `target`, `axis`) where the columns
-    /// `col` reads stand.
-    pub(crate) fn extras_at<T: Num>(&self, col: &dyn Fn(usize) -> T)
-        -> (Option<V<T>>, Option<(V<T>, V<T>)>)
-    {
-        let axis = self.axis.map(|(p, d)| {
-            let a = self.place_at(p, col);
-            let d = match d {
-                Direction::Toward(b) => vsub(self.place_at(b, col), a),
-                d => self.direction_at(d, col),
-            };
-            (a, d)
-        });
-        (self.target.map(|p| self.place_at(p, col)), axis)
+    /// **The numbers an integral's bodies read** (§6.25, `reads`) where the columns `col` reads
+    /// stand: each reading's point, then its direction made unit.
+    pub(crate) fn readings_at<T: Num>(&self, col: &dyn Fn(usize) -> T) -> Vec<T> {
+        let mut out = Vec::new();
+        for r in &self.reads {
+            let a = r.at.map(|p| self.place_at(p, col));
+            out.extend(a.into_iter().flatten());
+            if let Some(d) = r.along {
+                let d = match (d, a) {
+                    (Direction::Toward(b), Some(a)) => unit(vsub(self.place_at(b, col), a)),
+                    (Direction::Toward(_), None) => [T::cst(f64::NAN); 3],
+                    (d, _) => self.direction_at(d, col),
+                };
+                out.extend(d);
+            }
+        }
+        out
     }
 
-    /// The columns the point and the line a measure reads read, each once.
+    /// How many numbers the bodies read (`readings_at`).
+    pub fn read_width(&self) -> usize {
+        self.reads.iter().map(Read::width).sum()
+    }
+
+    /// The columns the readings read, each once.
     pub(crate) fn extra_columns(&self) -> Vec<usize> {
         let mut out = Vec::new();
-        let reads = self.target.iter().map(Place::reads)
-            .chain(self.axis.iter().flat_map(|(p, d)| [p.reads(), d.reads()]));
+        let reads = self.reads.iter()
+            .flat_map(|r| [r.at.map(|p| p.reads()), r.along.map(|d| d.reads())])
+            .flatten();
         for (f, own) in reads {
             out.extend(self.frame_columns(f));
             out.extend(own);
@@ -996,10 +1020,12 @@ impl Hull {
             }
             k.extend(w);
         }
-        // the point and the line a measure reads (#953)
-        k.extend(place_code(self.target));
-        k.extend(place_code(self.axis.map(|(p, _)| p)));
-        k.extend(direction_code(self.axis.map(|(_, d)| d)));
+        // what an integral's bodies read (§6.25): how many, then each one's point and direction
+        k.push(self.reads.len() as f64);
+        for r in &self.reads {
+            k.extend(place_code(r.at));
+            k.extend(direction_code(r.along));
+        }
         // the triangles held panels are drawn with (#953): how many, then each one's nine
         k.push(self.facets.len() as f64);
         k.extend(self.facets.iter().flatten());
@@ -1018,8 +1044,8 @@ impl Hull {
 
     /// How many constants it is.
     pub fn width(&self) -> usize {
-        5 + 10 * self.frames.len() + SHEET * self.sheets.len() + EXTRAS + 1 + 9 * self.facets.len()
-            + 10 * self.nodes.len()
+        5 + 10 * self.frames.len() + SHEET * self.sheets.len() + 1 + READ * self.reads.len() + 1
+            + 9 * self.facets.len() + 10 * self.nodes.len()
     }
 
     /// What `consts` wrote, from `k`, and how many it read — `None` for constants that are not
@@ -1103,15 +1129,13 @@ impl Hull {
                 _ => return None,
             })
         }).collect::<Option<_>>()?;
-        let e = take(EXTRAS)?;
-        let target = place(&e[..4])?;
-        let axis_at = place(&e[4..8])?;
-        let along = direction(&e[8..13])?;
-        let axis = match (axis_at, along) {
-            (Some(p), Some(d)) => Some((p, d)),
-            (None, None) => None,
-            _ => return None,
-        };
+        let n_reads = count(*take(1)?.first()?)?;
+        let reads: Vec<Read> = take(n_reads.checked_mul(READ)?)?.as_chunks::<READ>().0.iter()
+            .map(|e| {
+                let r = Read { at: place(&e[..4])?, along: direction(&e[4..9])? };
+                (r.at.is_some() || r.along.is_some()).then_some(r)
+            })
+            .collect::<Option<_>>()?;
         let n_facets = count(*take(1)?.first()?)?;
         let facets: Vec<[f64; 9]> = take(n_facets.checked_mul(9)?)?.as_chunks::<9>().0.to_vec();
         let nodes: Vec<Vec<usize>> = take(4 * n_nodes)?.as_chunks::<4>().0.iter().map(|w| {
@@ -1124,7 +1148,7 @@ impl Hull {
             if first.checked_add(count).is_none_or(|e| e > facets.len()))) {
             return None;
         }
-        Some((Hull { columns, frames, sheets, nodes, x0, feet0, extent, target, axis, facets }, at))
+        Some((Hull { columns, frames, sheets, nodes, x0, feet0, extent, reads, facets }, at))
     }
 }
 
@@ -1132,9 +1156,9 @@ impl Hull {
 /// half-space's kind, its point's four, its direction's five and its ordinate's three.
 const SHEET: usize = 13;
 
-/// The constants of the point and the line a measure reads (#953): four each for the point and
-/// the line's point, five for the line's direction.
-const EXTRAS: usize = 13;
+/// The constants of what an integral's body reads (§6.25): four for its point, five for its
+/// direction.
+const READ: usize = 9;
 
 /// **A place's constants** (#953): its kind past one (none: nothing), then three — held, its
 /// numbers; else its plane's index and its first column, or its first column alone.

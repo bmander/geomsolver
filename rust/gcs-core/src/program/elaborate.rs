@@ -683,17 +683,16 @@ fn constraints(
             continue;
         }
         // a bound on measurements is a term of the region solid whose point it reads (#183 F3)
+        // — and an equation of integrals is stated once the beams are read (§6.25, `measures`)
         if let StmtKind::Measured(m) = &st.kind {
-            regions::measured_term(&cx.sk, &cx.res, m, st, &mut cx.probes, &mut cx.diags);
+            if !m.integrates() {
+                regions::measured_term(&cx.sk, &cx.res, m, st, &mut cx.probes, &mut cx.diags);
+            }
             continue;
         }
         let StmtKind::Relation(r) = &st.kind else { continue };
         if gauges::is_fix(r) || drawn.contains(&i) || kept_off.contains(&i)
             || cx.res.guides.contains(&st.id) {
-            continue;
-        }
-        // a mass or a volume is stated once the beams are read (#510, `measures`)
-        if super::measures::quantity(r).is_some() {
             continue;
         }
         // a relation reading a region's terms is stated once the solids hold them (#345)

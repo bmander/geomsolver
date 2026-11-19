@@ -620,33 +620,22 @@ fn natively(sk: &Sketch, sc: &crate::model::Scenario, r: &crate::model::Requirem
 pub fn measure_answers(sk: &Sketch, measures: &[crate::program::MeasureStated])
     -> Vec<ScenarioAnswer>
 {
+    // equations over the same bodies read one filling of them
+    let mut fills = crate::measured::Fills::default();
     measures.iter().enumerate().filter_map(|(k, ms)| {
         let m = sk.measured.get(ms.index)?;
-        let q = m.quantity;
         let head = ms.head.clone();
         let grade = if m.claim { "claim" } else { "driving" };
-        // a point a measure puts (#953): where the measure puts it, read once, and the point's
-        // distance off it; any other, its value — a stated one's its row's — and what it states,
-        // its number or what the unknown it reads came to
-        let (got, stated) = if q.point() {
-            let got = crate::measured::read(sk, m)
-                .and_then(|(d, e)| Ok((d, e, Some(crate::measured::centre(sk, m)?))));
-            (got, String::new())
-        } else {
-            let target = m.stated(sk).unwrap_or(m.value);
-            let row = ms.driven.and_then(|id| sk.constraint(id))
-                .map(|c| c.residual(sk, &c.local_values(sk))[0] + target)
-                .filter(|v| v.is_finite());
-            let read = crate::measured::read(sk, m);
-            let got = match row {
-                Some(v) => Ok((v, read.ok().and_then(|r| r.1), None)),
-                None => read.map(|(v, e)| (v, e, None)),
-            };
-            (got, format!(" {} {}", m.compare.text(), crate::measured::value_text(sk, q, target)))
-        };
-        let (value, error, holds, text) = match got {
-            Ok((v, error, at)) => {
-                let keeps = crate::measured::keeps(sk, m, v, error);
+        let (value, error, holds, text) = match crate::measured::read_in(sk, m, &mut fills) {
+            Ok(mut a) => {
+                // a driven equation's left as its row reads it, where it has one there
+                let row = ms.driven.and_then(|id| sk.constraint(id))
+                    .map(|c| c.residual(sk, &c.local_values(sk))[0] + a.rhs)
+                    .filter(|v| v.is_finite());
+                if let Some(v) = row {
+                    a.lhs = v;
+                }
+                let keeps = crate::measured::keeps(m, &a);
                 let how = if m.claim { "claimed" } else { "driven" };
                 let verdict = match (m.claim, keeps) {
                     (true, true) => "kept",
@@ -654,23 +643,13 @@ pub fn measure_answers(sk: &Sketch, measures: &[crate::program::MeasureStated])
                     (false, true) => "held",
                     (false, false) => "not reached",
                 };
-                let mut said = match at {
-                    Some(c) => {
-                        let at: Vec<String> = c.iter().map(|&x| crate::json::fmt_g(x, 6)).collect();
-                        format!("({}){}", at.join(", "), sk.units.name())
-                    }
-                    None => crate::measured::value_text(sk, q, v),
-                };
-                if let Some(e) = error {
-                    said = format!("{said} {}", crate::measured::error_text(sk, q, e));
+                let mut said = crate::measured::value_text(sk, m, a.lhs);
+                if let Some(e) = a.error {
+                    said = format!("{said} {}", crate::measured::error_text(sk, m, e));
                 }
-                let text = match at {
-                    Some(_) if keeps => format!("{head}: at {said}: {how}, {verdict}"),
-                    Some(_) => format!("{head}: at {said}, {} off it: {how}, {verdict}",
-                                       crate::measured::value_text(sk, q, v)),
-                    None => format!("{head} is {said}: {how}{stated}, {verdict}"),
-                };
-                (Some(v), error, Some(keeps), text)
+                let text = format!("{head}: {said} {} {}: {how}, {verdict}", m.compare.text(),
+                                   crate::measured::value_text(sk, m, a.rhs));
+                (Some(a.lhs), a.error, Some(keeps), text)
             }
             Err(why) => (None, None, None, format!("{head} has no answer: {why}")),
         };

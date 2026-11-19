@@ -10,6 +10,7 @@ unit mm
 use std
 use std.solids
 use std.sets
+use std.measures (volume, centroid)
 
 L := 200mm
 R := 50mm

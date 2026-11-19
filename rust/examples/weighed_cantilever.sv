@@ -7,6 +7,7 @@
 // judged at the section found.
 unit mm
 use std
+use std.measures (mass)
 
 L := 1000mm
 P := 1kN

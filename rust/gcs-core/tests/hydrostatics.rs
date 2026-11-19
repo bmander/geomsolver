@@ -1,11 +1,13 @@
-//! **Where a body is made, and a face's measures** (#953): a solid kept within a half-space is
-//! the body in common with it, built exactly (`solid::defined::trimmed`, the kernel's `half`
-//! node); its plane's height may be an unknown a measure drives (`interior::Sheet::Ordinate`); and
-//! the drawing states where a body's volume or mass is centred, `g centroid B`, `g centerofmass
-//! B`, a face's area, `area(A) F`, and its second moment about a line, `moment(I, about: l) F` —
-//! each a row of the drawing over the body's filled mesh moved by its sheets, or a claim judged on
-//! the solved drawing.  Each is held to its closed form: a box barge, a cylinder floating at a
-//! draft, a wedge heeled about its apex.  The rules are `docs/contract/analysis.md`'s.
+//! **Where a body is made, and a face's measures** (#953, §6.25): a solid kept within a
+//! half-space is the body in common with it, built exactly (`solid::defined::trimmed`, the
+//! kernel's `half` node); its plane's height may be an unknown a measure drives
+//! (`interior::Sheet::Ordinate`); and the drawing states, in `std.measures`'s words, where a
+//! body's volume or mass is centred, `g centroid B`, `g centerofmass B`, a face's area, `area(A)
+//! F`, and its second moment about a line, `moment(i: I, about: l) F` — each an equation of
+//! integrals, a row of the drawing over the body's filled mesh moved by its sheets, or a claim
+//! judged on the solved drawing.  Each is held to its closed form: a box barge, a cylinder
+//! floating at a draft, a wedge heeled about its apex.  The rules are
+//! `docs/contract/analysis.md`'s.
 use gcs_core::constraints::CKind;
 use gcs_core::model::Sketch;
 use gcs_core::program::Elaborated;
@@ -19,6 +21,7 @@ unit mm
 use std
 use std.solids
 use std.sets
+use std.measures (mass, volume, area, moment, centroid, centerofmass)
 param T: Length hint(30mm)
 L := 200mm
 B := 60mm
@@ -115,8 +118,8 @@ fn the_hull_in_water_is_built_exactly() {
     assert!(faces.contains(&"water".to_string()) && faces.contains(&"hull.side".to_string()),
             "{faces:?}");
     let said = said(&e, &sk);
-    assert!(said[0].ends_with("claimed == 360000mm³, kept"), "{}", said[0]);
-    assert!(said[1].ends_with("claimed == 12000mm², kept"), "{}", said[1]);
+    assert!(said[0].ends_with("== 360000 mm^3: claimed, kept"), "{}", said[0]);
+    assert!(said[1].ends_with("== 12000 mm^2: claimed, kept"), "{}", said[1]);
 }
 
 /// **A box barge, its waterline found** (#953, the issue's acceptance): `volume(L · B · T₀)
@@ -134,11 +137,11 @@ g centroid immersed
 f := point hint((100, 0, 40))
 claim f centroid immersed.water
 claim area(L * B) immersed.water
-claim moment(L * B^3 / 12, about: centreline) immersed.water
+claim moment(i: L * B^3 / 12, about: centreline) immersed.water
 param w: Length hint(50mm)
 area(L * w) immersed.water
 param k: Length hint(10mm)
-moment(k * L * B * 1mm, about: centreline) immersed.water
+moment(i: k * L * B * 1mm, about: centreline) immersed.water
 ";
     let src = floating(lines);
     let (e, mut sk) = sized(&src);
@@ -150,16 +153,21 @@ moment(k * L * B * 1mm, about: centreline) immersed.water
     close(unknown(&sk, "w"), 60.0, 1e-9, "the waterplane's breadth");
     close(unknown(&sk, "k"), 200.0 * 60f64.powi(3) / 12.0 / (200.0 * 60.0), 1e-9, "I / (L B)");
     assert_eq!(crate::common::dof(&mut sk), 3, "the claimed point `f` alone is free");
-    let rows = |k: CKind| sk.constraints.iter().filter(|c| c.kind == k).count();
-    assert_eq!((rows(CKind::Volume), rows(CKind::Centroid), rows(CKind::Area),
-                rows(CKind::Moment)), (1, 3, 1, 1));
+    // a volume, a centroid's three, an area and a second moment: six rows of one kind
+    let rows = sk.constraints.iter().filter(|c| c.kind == CKind::Integral).count();
+    assert_eq!(rows, 6);
     let said = said(&e, &sk);
-    assert!(said[0].ends_with("driven == 480000mm³, held"), "{}", said[0]);
-    assert!(said[1].starts_with("g centroid immersed: at (100, ") && said[1].ends_with("held"),
-            "{}", said[1]);
-    assert!(said[2].ends_with("claimed, kept"), "{}", said[2]);
-    assert!(said[3].ends_with("claimed == 12000mm², kept"), "{}", said[3]);
-    assert!(said[4].ends_with("claimed == 3.6e+06mm⁴, kept"), "{}", said[4]);
+    assert!(said[0].ends_with("== 480000 mm^3: driven, held"), "{}", said[0]);
+    for s in &said[1..4] {
+        assert!(s.starts_with("g centroid immersed: ") && s.ends_with("== 0 mm: driven, held"),
+                "{s}");
+    }
+    for s in &said[4..7] {
+        assert!(s.starts_with("f centroid immersed.water: ") && s.ends_with("claimed, kept"),
+                "{s}");
+    }
+    assert!(said[7].ends_with("== 12000 mm^2: claimed, kept"), "{}", said[7]);
+    assert!(said[8].ends_with("== 3.6e+06 mm^4: claimed, kept"), "{}", said[8]);
 }
 
 /// The cylinder's section: a rectangle `L` along x and `R` up from the axis in the front plane,
@@ -171,6 +179,7 @@ unit mm
 use std
 use std.solids
 use std.sets
+use std.measures (mass, volume, area, moment, centroid, centerofmass)
 param T: Length hint(20mm)
 L := 200mm
 R := 50mm
@@ -232,8 +241,8 @@ fix((L, 0mm, {z})) aft
 centreline := line(fore, aft)
 claim area(<= {a_hi} * 1mm^2) immersed.water
 claim area(>= {a_lo} * 1mm^2) immersed.water
-claim moment(<= {i_hi} * 1mm^4, about: centreline) immersed.water
-claim moment(>= {i_lo} * 1mm^4, about: centreline) immersed.water
+claim moment(i: <= {i_hi} * 1mm^4, about: centreline) immersed.water
+claim moment(i: >= {i_lo} * 1mm^4, about: centreline) immersed.water
 ", z = draft - r, a_hi = l * width * (1.0 + 1e-4), a_lo = l * width * (1.0 - 1e-4),
        i_hi = l * width.powi(3) / 12.0 * (1.0 + 1e-4), i_lo = l * width.powi(3) / 12.0 * (1.0 - 1e-4)))
         .replace("param T: Length hint(20mm)", &format!("T := {draft}mm"));
@@ -253,6 +262,7 @@ unit mm
 use std
 use std.solids
 use std.sets
+use std.measures (mass, volume, area, moment, centroid, centerofmass)
 param T: Length hint(35mm)
 L := 100mm
 in std.front {{
@@ -312,7 +322,7 @@ fix(({x}mm, 0mm, {z}mm)) fore
 fix(({x}mm, -L, {z}mm)) aft
 centreline := line(fore, aft)
 claim area({a} * 1mm^2) immersed.water
-claim moment({i} * 1mm^4, about: centreline) immersed.water
+claim moment(i: {i} * 1mm^4, about: centreline) immersed.water
 ", x = mid[0], z = mid[1], a = l * width))
         .replace("param T: Length hint(35mm)", &format!("T := {t}mm"));
     let (said, _) = read(&stated);
@@ -347,6 +357,7 @@ component {name}(m: group) {{
 unit mm
 use std
 use std.solids
+use std.measures (mass, volume, area, moment, centroid, centerofmass)
 steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3)
 alu := material(E: 70GPa, nu: 0.33, rho: 2700kg / 1m^3)
 {}{}
@@ -416,15 +427,57 @@ fn a_centre_of_mass_does_not_depend_on_grouping() {
     }
 }
 
-/// **What cannot be measured says why** (#953), each where it is written: an area of a solid
-/// (a face's), a second moment with no line, a centre of mass of a face (it weighs nothing), a
-/// claim reading an unknown (a claim binds none), a centre of mass of a body of no density.
+/// **A body floats where it weighs the water it displaces** (§6.25): one equation of two
+/// integrals, the hull's mass against the water's density times the immersed volume —
+/// `integral(density(p) over p in hull) == ρ_w * integral(1 over p in immersed)` — finds the
+/// waterline with no intermediate unknown: a box 200 by 60 by 100 of 300 kg/m³ in water of 1000
+/// floats at `0.3 · 100 = 30mm`, to 1e-9, leaving no freedom.
+#[test]
+fn a_body_floats_where_it_weighs_its_displacement() {
+    let src = barge("integral(density(p) over p in hull) == 1000kg / 1m^3 * integral(1 over p in \
+                     immersed)")
+        .replace("hull := solid(std.solids.Prism(plan, from: 0mm, to: 100mm))",
+                 "wood := material(E: 10GPa, nu: 0.3, rho: 300kg / 1m^3)\n\
+                  hull := solid(std.solids.Prism(plan, from: 0mm, to: 100mm)) of wood")
+        .replace("param T: Length hint(30mm)", "param T: Length hint(20mm)");
+    assert!(src.contains("of wood"), "{src}");
+    let (e, mut sk) = sized(&src);
+    close(unknown(&sk, "T"), 30.0, 1e-9, "the waterline");
+    assert_eq!(crate::common::dof(&mut sk), 0);
+    let said = said(&e, &sk);
+    assert!(said[0].ends_with("driven, held"), "{said:?}");
+}
+
+/// **A body not polynomial in its point is read by quadrature** (§6.25): `∫ r dV` of a cylinder
+/// about its own axis, `r` the distance from it, is `2π L R³ / 3`; read over the cylinder's
+/// filled mesh to its quadrature's order, within 1e-3, and claimed, kept within the error
+/// estimated beside it.
+#[test]
+fn an_integral_not_polynomial_is_read_by_quadrature() {
+    let (l, r) = (200.0f64, 50.0f64);
+    let want = 2.0 * std::f64::consts::PI * l * r.powi(3) / 3.0;
+    let src = cylinder(&format!("claim integral(distance(p, std.x) over p in hull) == {want} * \
+                                 1mm^4\n"))
+        .replace("param T: Length hint(20mm)", "T := 20mm");
+    let (e, sk) = sized(&src);
+    let m = &sk.measured[e.measures[0].index];
+    assert!(!m.integrals[0].quadratic(), "a distance is no polynomial in the point");
+    let a = gcs_core::measured::read(&sk, m).unwrap();
+    close(a.lhs, want, 1e-3, "∫ r dV");
+    let said = said(&e, &sk);
+    assert!(said[0].ends_with("claimed, kept"), "{said:?}");
+}
+
+/// **What cannot be measured says why** (#953, §6.25), each where it is written: an area of a
+/// solid (its integral a volume, against an area), a second moment with no line, a centre of mass
+/// of a face (it weighs nothing), a claim reading an unknown nothing determines (a claim binds
+/// none), a centre of mass of a body of no density, a word written without `std.measures`.
 #[test]
 fn what_cannot_be_measured_says_why() {
     let cases = [
-        ("area(L * B) immersed", "an area is of a face of a solid"),
-        ("moment(1 * 1mm^4) immersed.water", "a second moment is about a line"),
-        ("g := point\ng centerofmass immersed.water", "a centerofmass is a solid's"),
+        ("area(L * B) immersed", "its sides are of two dimensions"),
+        ("moment(i: 1 * 1mm^4) immersed.water", "`moment` needs `about`"),
+        ("g := point\ng centerofmass immersed.water", "a face weighs nothing"),
         ("param w: Length hint(5mm)\nclaim area(L * w) immersed.water", "a claim binds none"),
         ("g := point\ng centerofmass immersed", "made of no material"),
     ];
@@ -432,7 +485,13 @@ fn what_cannot_be_measured_says_why() {
         let errs = errors(&barge(line));
         assert!(errs.iter().any(|(_, m)| m.contains(want)), "{line}: {errs:?}");
     }
+    let errs = errors(&barge("volume(L * B * 40mm) immersed").replace(WORDS, ""));
+    assert!(errs.iter().any(|(c, m)| c == "E102"
+                            && m.contains("`std.measures` defines `volume`")), "{errs:?}");
 }
+
+/// The words of `std.measures` the fixtures import.
+const WORDS: &str = "use std.measures (mass, volume, area, moment, centroid, centerofmass)\n";
 
 /// A punt 1000 long and 300 deep: a flat bottom between two spline chines in the top plane, a
 /// flat deck between the sheers in the plane 300 up, each sheer its chine moved 40 out and 300 up,
@@ -477,6 +536,7 @@ unit mm
 use std
 use std.panels
 use std.sets
+use std.measures (mass, volume, area, moment, centroid, centerofmass)
 deck_plane := plane
 fix(origin == (0mm, 0mm, 300mm)) deck_plane
 fix(dir == (1, 0, 0)) deck_plane.u
@@ -569,7 +629,8 @@ fn example(name: &str) -> String {
 
 /// **The hydrostatics examples hold what they say** (#953): the log floats at 25mm, its centre of
 /// buoyancy 35.25mm below its axis; the heeled wedge's waterline is 40mm along the heeled
-/// vertical, its centre of buoyancy the immersed triangle's; the two blocks' centre of mass is
+/// vertical, its centre of buoyancy the immersed triangle's; the pine box floats at 45mm where it
+/// weighs what it displaces, one equation of two integrals; the two blocks' centre of mass is
 /// 37.02mm along whether grouped as two components or as one — each with no freedom left, its
 /// rows held.
 #[test]
@@ -588,6 +649,14 @@ fn the_hydrostatics_examples_hold_what_they_say() {
     close(b[0], (t1 * beta.sin() - t2 * beta.sin()) / 3.0, 1e-4, "across");
     close(b[2], (t1 + t2) * beta.cos() / 3.0, 1e-4, "up");
     assert_eq!(crate::common::dof(&mut sk), 0);
+    let (e, mut sk) = sized(&example("equilibrium.sv"));
+    close(unknown(&sk, "T"), 45.0, 1e-9, "the pine box's waterline");
+    let b = at(&e, &sk, "buoyancy");
+    close(b[0], 100.0, 1e-9, "its centre of buoyancy along");
+    close(b[2], 22.5, 1e-9, "its centre of buoyancy up");
+    assert_eq!(crate::common::dof(&mut sk), 0);
+    assert!(said(&e, &sk)[0].starts_with("integral(density(p) over p in box) == rho_w * "),
+            "{:?}", said(&e, &sk));
     let (e, mut sk) = sized(&example("centre_of_mass.sv"));
     let (ms, ma) = (7850.0 * 8000.0, 2700.0 * 12000.0);
     let x = (ms * 20.0 + ma * 70.0) / (ms + ma);

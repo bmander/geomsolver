@@ -618,7 +618,7 @@ fn a_sized_frames_interior_agrees_with_finite_differences() {
                  tape("w^3 / 4 + u"), tape(&format!("{k} + 0 * u"))]
             }).collect();
             let drive = Drive::Sized(Sizing { unknowns: 2, sections });
-            let (n_par, n_const) = s.widths(false, &drive);
+            let (n_par, n_const) = s.widths(&drive);
             let k = s.consts(&[0.3], &drive);
             assert_eq!(n_const, k.len());
             let kn = gcs_core::system::build_kernel(
@@ -792,19 +792,21 @@ fn a_cut_and_a_turned_bodys_deflection_agree_with_finite_differences() {
     solid_row_agrees(&crate::hulls::shaft("0.0375mm"), 0..2, &mut rng);
 }
 
-/// **A mass and a volume, as the drawing states them** (`CKind::Mass`, `CKind::Volume`, and #953's
-/// `CKind::Area`, `Moment` and `Centroid` over a barge's moved mesh): a
-/// frame's row over its points' lifts and the unknowns its areas read — a section's breadth,
-/// its area not affine in it, and an L's reach — a prism's over its face's points' numbers and
-/// its radii, its face's nodes moved with them (a round corner, a hole), and a turned shaft's, its
-/// boundary's nodes moved by its sheets (#567: planes, cylinders and a round's torus) — each
-/// stated of the drawing — against finite differences, at the solution and knocked off it.
+/// **An equation of integrals, as the drawing states it** (`CKind::Integral`, §6.25, in
+/// `std.measures`'s words and bare): a frame's mass and volume, its row over its points' lifts
+/// and the unknowns its areas read — a section's breadth, its area not affine in it, and an L's
+/// reach — a prism's over its face's points' numbers and its radii, its face's nodes moved with
+/// them (a round corner, a hole), and a turned shaft's, its boundary's nodes moved by its sheets
+/// (#567: planes, cylinders and a round's torus); over a barge's moved mesh a centroid's three
+/// rows, an area's, a second moment's, and a body not polynomial in its point, read by quadrature
+/// — each stated of the drawing — against finite differences, at the solution and knocked off it.
 #[test]
 fn a_measure_agrees_with_finite_differences_as_the_drawing_states_it() {
     let frame = "\
 unit mm
 use std
 use std.place (horizontal)
+use std.measures (mass, volume)
 steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3)
 param d: Length hint(30mm)
 param reach: Length hint(400mm)
@@ -828,6 +830,7 @@ unit mm
 use std
 use std.solids
 use std.place (horizontal, vertical)
+use std.measures (mass)
 steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3)
 param r: Length hint(9mm)
 in std.front {
@@ -869,7 +872,9 @@ g centroid immersed
 param w: Length hint(50mm)
 area(L * w) immersed.water
 param k: Length hint(10mm)
-moment(k * L * B * 1mm, about: centreline) immersed.water
+moment(i: k * L * B * 1mm, about: centreline) immersed.water
+param q: Length hint(30mm)
+integral(distance(p, g) over p in immersed) == q * L * B * 40mm
 ");
     let mut rng = Rng::new(522);
     for src in [frame, plate, &turned, &barge] {
@@ -890,7 +895,8 @@ moment(k * L * B * 1mm, about: centreline) immersed.water
                 assert!(scale.is_finite() && scale > 0.0, "round {round}");
                 for (col, (a, n)) in ja.iter().zip(&jn.data).enumerate() {
                     assert!((a - n).abs() <= 1e-6 * scale,
-                            "{:?}, round {round}: column {col}: {a} against {n}", c.kind);
+                            "{:?} {:?}, round {round}: column {col}: {a} against {n}", c.kind,
+                            c.args);
                 }
             }
         }
@@ -905,9 +911,22 @@ fn kernel_agrees(s: &gcs_core::interior::Structure, x: &[f64], step: f64, rng: &
     use gcs_core::fdcheck::fd_jacobian;
     use gcs_core::interior::Drive;
     use gcs_core::kernels::KernelKey;
-    for stated in [&[0.3][..], &[1.7, -0.2]] {
-        let free = stated.len() == 2;
-        let (n_par, n_const) = s.widths(free, &Drive::Stated);
+    // a displacement's row states its number; an integral row's sides read the measure, against a
+    // number or against an unknown, its last column (§6.25)
+    let rows: Vec<_> = match s.reads.measure() {
+        false => {
+            // the draw a displacement's row with an unknown made through 0.219, so each seed's
+            // later structures are those it has always drawn
+            rng.uniform(-1.0, 1.0);
+            vec![s.clone()]
+        }
+        true => vec![crate::interior::sided(s, 1.7, -0.2, false),
+                     crate::interior::sided(s, 1.7, -0.2, true)],
+    };
+    for s in &rows {
+        let free = s.gauge.unknowns > 0;
+        let stated = crate::interior::stated(s, 0.3);
+        let (n_par, n_const) = s.widths(&Drive::Stated);
         let kn = gcs_core::system::build_kernel(
             &Sketch::new(), KernelKey::Interior { n_par, n_const });
         let mut one = x.to_vec();
@@ -916,7 +935,7 @@ fn kernel_agrees(s: &gcs_core::interior::Structure, x: &[f64], step: f64, rng: &
         }
         let two: Vec<f64> = one.iter().map(|v| v * 1.1 + 0.05).collect();
         let v = [one, two].concat();
-        let k = [s.consts(stated, &Drive::Stated), s.consts(stated, &Drive::Stated)].concat();
+        let k = [s.consts(&stated, &Drive::Stated), s.consts(&stated, &Drive::Stated)].concat();
         let res = |w: &[f64]| {
             let mut r = vec![0.0; 2];
             (kn.res)(2, w, &k, &mut r);

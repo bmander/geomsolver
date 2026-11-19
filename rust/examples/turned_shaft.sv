@@ -9,6 +9,7 @@
 unit mm
 use std
 use std.solids
+use std.measures (mass)
 
 R := 20mm
 r := 12mm

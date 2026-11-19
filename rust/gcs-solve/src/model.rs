@@ -73,7 +73,7 @@ pub use scenario::{
     Applied, Grade, Hold, InPlane, Load, LoadKind, LoadValue, Output, PlaneReading, Requirement,
     Scenario, Support,
 };
-pub use measured::{Measured, Quantity};
+pub use measured::{integral_var, integrand_var, Domain, Integral, Measured, Reading, POINT_VARS};
 pub use geometry::{Box2, grow};
 pub use topology::{edge_ends, expand};
 pub use measure::polyline_distance;

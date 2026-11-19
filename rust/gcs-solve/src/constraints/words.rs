@@ -548,14 +548,12 @@ pub fn builtin_word(word: &str, fixity: Fixity) -> bool {
             Fixity::Call => call_word(w),
             Fixity::Prefix => {
                 matches!(gauge_op(w).map(CKind::operator), Some(Some((_, Fixity::Prefix))))
-                    || crate::model::Quantity::parse(w).is_some_and(|q| !q.point())
                     || EntKind::ALL
                         .iter()
                         .any(|&k| prefix_op(w, k).is_some() || retired_prefix(w, k).is_some())
             }
             Fixity::Infix => {
-                crate::model::Quantity::parse(w).is_some_and(|q| q.point())
-                    || solid_word(w).is_some()
+                solid_word(w).is_some()
                     || plane_side_word(w).is_some()
                     || EntKind::ALL.iter().any(|&a| {
                         EntKind::ALL.iter().any(|&b| infix_op(w, a, b, &|_| None).is_some())

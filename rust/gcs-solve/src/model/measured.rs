@@ -1,128 +1,177 @@
-//! **What a body is made of, stated of the drawing** (#510): `mass(10kg) arm`,
-//! `volume(42 * 1cm^3) web` — a measure of a beam, a member's line or a solid, which answers to no
-//! load and so is no scenario's.  Stated, it is a row of the drawing (`CKind::Mass`,
-//! `CKind::Volume`) the solve holds; claimed (`claim mass(<= 1kg) plank`), it is judged on the
-//! solved drawing.  **Where it is made, too** (#953): a face's `area(A) F`, its second moment
-//! about a line `moment(I, about: l) F`, and the point a body's volume or a face's area is
-//! centred on, `g centroid B`, or a body's mass, `g centerofmass B`.  Pure data, set by
+//! **An equation of integrals the drawing states** (§6.25, #953): `integral(density(p) over p in
+//! boat) == M`, `claim integral(1 over p in web) <= 42cm^3` — each side arithmetic over integrals,
+//! numbers and the unknowns the drawing declares, each integral a body over a point `p` of a set
+//! (a solid, a face of one, a beam or a line one is drawn on, an instance's bodies) by the set's
+//! own measure.  Stated, it is a row of the drawing (`CKind::Integral`) the solve holds; claimed,
+//! it is judged on the solved drawing.  The words a document writes it in — `mass`, `volume`,
+//! `area`, `moment`, `centroid`, `centerofmass` — are `std.measures`'s.  Pure data, set by
 //! elaboration and carried by the Solvent source alone.
 
 use super::scenario::Applied;
-use crate::expr::Cmp;
+use super::EntRef;
+use crate::expr::{Ast, Cmp};
 use crate::units::Dim;
 
-/// **Which measure**: a mass, its density over its volume, or the volume itself; a face's area or
-/// its second moment about a line (#953); the centroid of a body's volume or a face's area, or a
-/// body's centre of mass (#953), each a point.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Quantity {
-    Mass,
-    Volume,
-    Area,
-    Moment,
-    Centroid,
-    CenterOfMass,
+/// **What an integral is over**: a beam, a line a beam is drawn on, a solid or a face of one —
+/// or every body under an instance, each once.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Domain {
+    Of(Applied),
+    Bodies(Vec<usize>),
 }
 
-impl Quantity {
-    /// Every measure, in the order the words are listed.
-    pub const ALL: [Quantity; 6] = [Quantity::Mass, Quantity::Volume, Quantity::Area,
-                                     Quantity::Moment, Quantity::Centroid, Quantity::CenterOfMass];
-
-    pub fn word(self) -> &'static str {
+impl Domain {
+    /// The solids it is over: its bodies, or the solid it is or is a face of.
+    pub fn solids(&self) -> Vec<usize> {
         match self {
-            Quantity::Mass => "mass",
-            Quantity::Volume => "volume",
-            Quantity::Area => "area",
-            Quantity::Moment => "moment",
-            Quantity::Centroid => "centroid",
-            Quantity::CenterOfMass => "centerofmass",
+            Domain::Of(a) => a.solid().into_iter().collect(),
+            Domain::Bodies(b) => b.clone(),
         }
     }
 
-    /// The word with its article, as a sentence says it: `a mass`, `an area`.
-    pub fn a(self) -> String {
-        super::article(self.word())
-    }
-
-    /// The word's quantity, or `None` for any other word.
-    pub fn parse(w: &str) -> Option<Quantity> {
-        Quantity::ALL.into_iter().find(|q| q.word() == w)
-    }
-
-    /// Whether it is a point a declared point is put at (`g centroid B`), written between them,
-    /// rather than a number written in its parentheses (`area(A) F`).
-    pub fn point(self) -> bool {
-        matches!(self, Quantity::Centroid | Quantity::CenterOfMass)
-    }
-
-    /// Whether it weighs by density: a mass and a centre of mass.
-    pub fn weighed(self) -> bool {
-        matches!(self, Quantity::Mass | Quantity::CenterOfMass)
-    }
-
-    /// Whether it is a face's (an area, a second moment of one) rather than a body's.
-    pub fn of_face(self) -> bool {
-        matches!(self, Quantity::Area | Quantity::Moment)
-    }
-
-    /// What its number is: a mass in kilograms, a volume in the drawing's length cubed, an area
-    /// in its square and a second moment in its fourth power; a point's, how far it stands from
-    /// where the measure puts it, a length.
-    pub fn dim(self) -> Dim {
-        let l = Dim::LENGTH;
+    /// The face it is over, where it is one.
+    pub fn face(&self) -> Option<&super::FaceRef> {
         match self {
-            Quantity::Mass => Dim::MASS,
-            Quantity::Volume => l.mul(l).mul(l),
-            Quantity::Area => l.mul(l),
-            Quantity::Moment => l.mul(l).mul(l).mul(l),
-            Quantity::Centroid | Quantity::CenterOfMass => l,
+            Domain::Of(Applied::Face(f)) => Some(f),
+            _ => None,
         }
     }
 }
 
-/// **A measure the drawing states**: of what (a beam, a member's line, a solid, a face of one),
-/// how it compares with the number (`==` stated or claimed, `<=` and `>=` claimed alone), and
-/// whether it is a claim, judged after the solve, rather than a row the solve holds.  A point's
-/// (`g centroid B`) names the point (`at`) and, stated, is three rows, one an ordinate of the
-/// world (`k`); its number is how far the point stands from where the measure puts it, nothing.
-/// A second moment names the line it is about (`about`).  A stated number may be affine in one
-/// unknown the drawing declares (#953, `free`: its name and coefficient, `value` the constant), so
-/// the row determines it — `mass(M) boat` sizes nothing and says what the boat weighs.
+/// **What an integrand reads besides its point**, as numbers of the drawing the solve may move:
+/// a point (three), a direction made unit (three: a line's, an axis's, a plane's normal), or a
+/// line whole (six: its first point, then its direction).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Reading {
+    Point(usize),
+    Direction(EntRef),
+    Line(EntRef),
+}
+
+impl Reading {
+    /// How many of the integrand's variables it is.
+    pub fn width(self) -> usize {
+        match self {
+            Reading::Line(_) => 6,
+            _ => 3,
+        }
+    }
+}
+
+/// The integrand's variables before its readings': the point's three numbers and the density
+/// there.
+pub const POINT_VARS: usize = 4;
+
+/// **The name of the integrand's variable `k`**: `#x`, `#y`, `#z`, `#rho`, then each reading's
+/// numbers `#r0`, `#r1`, … — names no document can spell.
+pub fn integrand_var(k: usize) -> String {
+    match k {
+        0 => "#x".into(),
+        1 => "#y".into(),
+        2 => "#z".into(),
+        3 => "#rho".into(),
+        k => format!("#r{}", k - POINT_VARS),
+    }
+}
+
+/// **The name of a side's variable for integral `j`**: `#0`, `#1`, … — before the unknowns, each
+/// by its own name.
+pub fn integral_var(j: usize) -> String {
+    format!("#{j}")
+}
+
+/// **One integral**: over what (`over`), its body (`integrand`, over `integrand_var`s), what the
+/// body reads (`reads`, in the order its variables run), and what it comes to: the body's
+/// dimension times its set's measure's.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Integral {
+    pub over: Domain,
+    pub integrand: Ast,
+    pub reads: Vec<Reading>,
+    pub dim: Dim,
+}
+
+impl Integral {
+    /// The integrand's variables, its point's and its readings'.
+    pub fn vars(&self) -> Vec<String> {
+        let n = POINT_VARS + self.reads.iter().map(|r| r.width()).sum::<usize>();
+        (0..n).map(integrand_var).collect()
+    }
+
+    /// Whether its body reads its point or anything of the drawing: an integral that does not
+    /// is a number times its set's volume or mass, read as a whole over any set (a beam's, a
+    /// prism's).
+    pub fn local(&self) -> bool {
+        let names = self.integrand.deps();
+        !self.reads.is_empty() || ["#x", "#y", "#z"].iter().any(|v| names.contains(*v))
+    }
+}
+
+impl Integral {
+    /// **Whether its body is a polynomial of degree two or less in its point** — a volume, a
+    /// first moment, a second — read then through the ten moments of where it is taken, exactly.
+    pub fn quadratic(&self) -> bool {
+        degree(&self.integrand).is_some_and(|d| d <= 2)
+    }
+}
+
+/// An expression's degree in the integral's point (`#x`, `#y`, `#z`): `None` where it is no
+/// polynomial in it — a root, a quotient by it, a function of it, a power it varies.
+fn degree(a: &Ast) -> Option<u32> {
+    let point = |v: &str| ["#x", "#y", "#z"].contains(&v);
+    match a {
+        Ast::Num(..) => Some(0),
+        Ast::Var(v) => Some(u32::from(point(v))),
+        Ast::Neg(x) => degree(x),
+        Ast::Bin(op, x, y) => {
+            let (dx, dy) = (degree(x)?, degree(y)?);
+            match op {
+                crate::expr::Op::Add | crate::expr::Op::Sub => Some(dx.max(dy)),
+                crate::expr::Op::Mul => Some(dx + dy),
+                crate::expr::Op::Div => (dy == 0).then_some(dx),
+                crate::expr::Op::Pow => match &**y {
+                    Ast::Num(k, _) if *k >= 0.0 && k.fract() == 0.0 && *k <= 8.0 => {
+                        Some(dx * *k as u32)
+                    }
+                    _ => (dx == 0 && dy == 0).then_some(0),
+                },
+            }
+        }
+        Ast::Call(_, args) => args.iter().all(|x| degree(x) == Some(0)).then_some(0),
+        Ast::Measure(..) | Ast::If(..) => None,
+    }
+}
+
+/// **An equation the drawing states** (§6.25): its integrals, its two sides over them (`lhs`,
+/// `rhs`, each over `integral_var`s and then the `unknowns` by name), how they compare (`==`
+/// stated or claimed; `<=` and `>=` claimed alone), whether it is claimed, what its sides are,
+/// and what a report calls it — the statement as written, a word's use where a word wrote it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Measured {
-    pub quantity: Quantity,
-    pub of: Applied,
+    pub integrals: Vec<Integral>,
+    pub lhs: Ast,
+    pub rhs: Ast,
+    pub unknowns: Vec<String>,
     pub compare: Cmp,
-    pub value: f64,
     pub claim: bool,
-    pub at: Option<usize>,
-    pub about: Option<super::EntRef>,
-    pub k: usize,
-    pub free: Option<(String, f64)>,
-    /// The bodies a point's measure is of where it names an instance (#953): every solid under it
-    /// that is no operand of another, each once — `of` the first.  Empty: `of` alone.
-    pub bodies: Vec<usize>,
+    pub dim: Dim,
+    pub head: String,
 }
 
 impl Measured {
-    /// The solids it is of: its bodies, or the solid `of` is or a face of.
-    pub fn solids(&self) -> Vec<usize> {
-        match self.bodies.is_empty() {
-            true => self.of.solid().into_iter().collect(),
-            false => self.bodies.clone(),
-        }
+    /// The sides' variables: each integral's, then each unknown's.
+    pub fn vars(&self) -> Vec<String> {
+        (0..self.integrals.len()).map(integral_var).chain(self.unknowns.iter().cloned()).collect()
     }
 
-    /// What it states the measure is where the drawing stands: its number, and where it reads an
-    /// unknown that unknown's part — `None` where the unknown is bound to no column.
-    pub fn stated(&self, sk: &super::Sketch) -> Option<f64> {
-        match &self.free {
-            None => Some(self.value),
-            Some((name, m)) => {
-                let q = *sk.free_vars.get(name)?;
-                Some(self.value + m * sk.params[q as usize].value)
+    /// Every solid any of its integrals is over, each once, in the order first named.
+    pub fn solids(&self) -> Vec<usize> {
+        let mut out: Vec<usize> = Vec::new();
+        for s in self.integrals.iter().flat_map(|i| i.over.solids()) {
+            if !out.contains(&s) {
+                out.push(s);
             }
         }
+        out
     }
 }

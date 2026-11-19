@@ -20,7 +20,7 @@ mod written;
 pub use beam::BeamDecl;
 pub use highlight::{highlight, Tint};
 pub use ligatures::{ligatures, Ligature};
-pub use measured::{Measured, Measurement, Measuring};
+pub use measured::{Integration, Measured, Measurement, Measuring};
 pub(crate) use highlight::with_comments;
 pub use names::{entity_name, hidden, name_uses, NameUse};
 pub use crate::model::kind_initial;

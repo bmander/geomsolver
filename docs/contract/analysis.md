@@ -19,9 +19,10 @@ material's JSON (`io::material_json`) or report (`report::materials_json`); or `
 `interior::Borne`, `interior::Stack` (`interior/solid.rs`), `bodies.rs`, `beams::Read::errors`,
 `cholesky::Cholesky::factor_ldl` or `eigen::UNBUCKLED`; or `deformed.rs`, `overview/scenario.rs`,
 a reader's `read_pictured` or `report::scenarios_pictured_json` (a scenario drawn); or
-`interior::Reads`, `Structure::measure`, `CKind::Mass`, `CKind::Volume`, `model::Measured`,
-`measured.rs`, `program/measures.rs`, a reader's `measure` or `report::measure_answers` (what a body
-is made of, stated of the drawing); or `pcg.rs`, `Structure::solve_by` or
+`interior::Reads`, `interior::Gauge`, `Structure::measure`, `Structure::integrals`,
+`CKind::Integral`, `model::Measured`, `measured.rs`, `program/measures.rs`, `lib/std/measures.sv`,
+a reader's `measure` or `report::measure_answers` (an equation of integrals, what a body is made
+of and where, stated of the drawing); or `pcg.rs`, `Structure::solve_by` or
 `BodyFaces::reading`/`distance_slack` (a solid read faster).
 The epic these rules serve is #510 (design intent as structural performance), whose
 prerequisites and stages (P1–P8, S0–S4) are named there; this file holds the rules landed so
@@ -36,8 +37,9 @@ frame's driving row (S1), `rust/gcs-core/tests/prisms.rs` for solids read in the
 a region's driving row (S2, its mesher `rust/gcs-core/tests/plane_mesh.rs`), and
 `rust/gcs-core/tests/bodies.rs` for solids read in three dimensions, a solid's driving row and the
 errors estimated beside every answer (S3), `rust/gcs-core/tests/scenario_view.rs` for a
-scenario drawn, and `rust/gcs-core/tests/measured.rs` for a mass or a volume stated, unless a rule
-names another.
+scenario drawn, and `rust/gcs-core/tests/measured.rs` for a mass or a volume stated and
+`rust/gcs-core/tests/hydrostatics.rs` for where a body is made and an equation of integrals,
+unless a rule names another.
 
 - **An analysis output is a row, and its interior is a kernel** (#510 P5). A requirement whose
   value comes from `K(x)u = f`, `x` the drawing's numbers and `u` the displacements, is a kernel
@@ -1000,153 +1002,138 @@ names another.
     Cholesky's update is formed four columns at a time (`cholesky::BLOCK`) and its dense panels a
     column at a time, and each read meshes afresh, twice (P5's two caches are still not kept).
 
-- **What a body is made of is the drawing's, never a scenario's** (#510; `model::Measured`,
-  `program::measures`, `CKind::Mass`, `CKind::Volume`, `interior::Reads`, §9.11 [0.175]). A mass
-  and a volume answer no load, so `mass(m) B` and `volume(v) B` are relations of the drawing —
-  operator words (`OPERATORS`, `builtin_word`'s prefix words) settled by no table, since `B` may
-  be a beam, which is no entity, and beams are read last: a relation in either word is skipped
-  where relations are stated (`elaborate::constraints`) and read once the beams are
-  (`program::measures`, in `finish`, before the scenarios), onto `Sketch::measured` (its
-  quantity, what it is of, how it compares, its number, whether it is claimed) and
-  `Elaborated::measures` (where it was written, what a report says it of, its row). Refused where
-  written (**E040**): an operand that is no beam, no line a beam is drawn on and no solid; a
-  number of the wrong dimension (**E103**) or reading an unknown, or none more than nothing; a
-  bound not claimed (a bound on a mass chooses no root), or an interval; any key. `mass(…)` or
-  `volume(…)` in a scenario is no output now (`model::Output` lost `Mass`): the parser refuses it,
-  naming the drawing's statement. **The row is the source's alone** (`CKind::of_source`,
-  `a_measures_row_is_the_sources_alone`).
-- **Stated, it is a row of what the body is made of**: `[of: Int, m: Float]`, `of` its index on
-  `Sketch::measured`. It is the interior's kernel as a deflection is, at its structure's widths,
-  but its structure reads what it is made of (`Structure::reads`, the head's thirteenth constant):
-  `Structure::measure`, each bar's and beam's `A L`, each plane element's `t ∫ det J`, each solid
-  one's `∫ det J`, weighed by its density for a mass (`Reads::density`; a bar, of none, weighing
-  nothing), and its gradient its own (`Structure::measure_gradient`: a member's `w A ĝ` at its
-  ends and `w L` in its area, an element's `∂(∫ det J)` in `Dual` over its nodes' places) carried
-  through the sections' tapes or the nodes' motion as a deflection's adjoint is. No support, no
-  load and no factor is read, so no material's moduli, and a structure nothing holds has a row: a
-  drawing with no scenario is sized by its mass. Degree 1, a stated number as a deflection's is;
-  no free twin; in `undrawn!`, no view drawing a mass.
-  - **A frame's** (`beams::Row::measured`): the members `B` names (`beams::members`: a beam's
-    every line, or a line of the first beam drawn on it), each one element between its line's
-    ends, every node a point whose lift is its three columns, the sections tapes over the
-    unknowns **its area** reads (`beams::measured_unknowns`, `sizing(…, area: true)`: the area's
-    tape, every other number a constant) — a measure reads only the area, so it binds no unknown
-    it cannot determine. Refused (**E040**): a member of no length, a mass of a material stating
-    no `rho` (`Structure::measured`: nothing to size).
-  - **A prism's** (`prisms::Row::measured`): its face meshed once where the drawing stands, at a
-    reading's size with no point named a node, each element its face's through the prism's depth
-    — a prism's volume is its face's area through its depth, whatever a scenario reads of it —
-    its nodes moved with the drawing (`moved_with`, no points named) and the row held on
-    `Sketch::meshed` by `MeshedKey::Measure`. A measure reads only the boundary (a conforming
-    mesh's `Σ ∫ det J` is the area its boundary encloses wherever its inner nodes stand), so its
-    nodes inside stay where they were meshed (`Moved::boundary`): no Laplacian is factored and
-    none carried by the gradient. Refused where a region's deflection is (**E040**): a side that
-    is a spline or a curve, a plane the solve turns.
-  - **A filled body's** (#567, `bodies::measured_row`): its exact boundary refined and filled once
-    where the drawing stands, at a reading's size, its boundary's nodes moved by its sheets
-    (`hulls::hull_of`, above) and its inner nodes left where they were meshed — a volume of a
-    conforming mesh is its boundary's, wherever its inner nodes stand — so no volume Laplacian is
-    factored. Refused where a filled body's deflection is for its sheets (**E040**). **Held to**
-    (`tests/measured.rs`, `a_volume_sizes_a_turned_shafts_radius`): a stepped shaft turned about
-    its axis, its shoulder rounded and its barrel's radius an unknown, sized by `volume(V) shaft`
-    to `√((V − π r² (L − s) − V_round) / (π s))` (the round's corner by Pappus) within 1e-4, for two
-    volumes, leaving no freedom, its mass claimed beside it kept and refuted on its sides.
+- **An integral is a value of the drawing, and an equation of integrals a statement of it**
+  (§6.25 [0.220]; `syntax::Measured`, `program::measures`, `model::Measured`, `CKind::Integral`).
+  `integral(EXPR over p in S)` integrates `EXPR`, an expression over the point `p` it binds, over
+  `S` — a solid, a face of one (`immersed.water`), a beam or a line a beam is drawn on, or an
+  instance (every solid under it that no other is built of, `Resolver::bodies_under`) — by `S`'s
+  own measure: a volume, an area, a member's section along its length. Its body reads the point
+  only through a **distance** from it — to a point, a line or an axis (from the line produced),
+  or a plane (unsigned) — or **along** a direction, `distance(g, p, along: d)`, the signed
+  ordinate of the second point from the first along an axis, a line or a plane's normal made
+  unit; and **`density(p)`**, the density of what the point is in (a material's `rho`, read where
+  an integral over a body reads it). A distance squared is its square, never a root squared
+  (`distance(p, l)^2`, smooth where it is nothing). Numbers in a body are the drawing's constants:
+  an unknown is refused (put it outside the integral). **The words are `std.measures`'s**
+  (`lib/std/measures.sv`): `volume(v) B`, `mass(m) B`, `area(a) F`, `moment(i, about) F` (`∫ r²
+  dA`, `r` how far each point stands off `about`), `g centroid B` and `g centerofmass B` (three
+  equations each, the first moment along each axis of the world over the measure — a quotient of
+  integrals, so each reads how far `g` stands off the centroid along its axis, a length, and is
+  linear in `g` as the old centroid's ordinate was). The language has no measure word of its own:
+  `mass(…)` with no `use std.measures (mass)` is **E102**, naming the module (`library::home`).
+  - **Written as a statement**: `LHS == RHS`, either side arithmetic over integrals, numbers and
+    the unknowns the drawing declares, told from a relation by `integral(` anywhere in it
+    (`P::integral_ahead`); claimed, `claim LHS <= RHS` and `>=` too. A word's body may state one
+    (`definitions.rs`), its parameters' kinds read off it (`param_kinds`: what it measures and is
+    over, entities; what its numbers read, numbers), and reads the world's standard datums
+    (`std.x`; a word stands in no frame, `Walk::datum`). A claimed use claims its body's equations,
+    and a report calls each by the use (`syntax::Measured::head`, the outermost use's text).
+  - **A bound through a word** (`flatten::words::bound_through`): a number parameter given as a
+    bound, `claim mass(<= 2kg) arm` (bare, `[Bound, Dim]`, or labelled, `moment(i: <= I, about:
+    l)`), is bound as its number, and each comparison the body states with the parameter alone on
+    one side becomes that bound — an equation's `==` turned `<=` or `>=` as the parameter stands,
+    a relation stating it as its number bounded by it. A parameter so given that the body compares
+    nothing with is refused (**E040**). A bound on an equation not claimed chooses no root
+    (**E040**).
+  - **Read into the model** (`program::measures::read`, once the beams are read, in `finish`):
+    each integral's set (`model::Domain`), its body an expression over the point's three numbers,
+    the density and the numbers of what it reads (`model::Reading`: a point's three, a direction's
+    three made unit, a line's or a plane's six — its point and its direction or normal), each
+    reading once (`integrand_var`); each side over the integrals (`integral_var`) and the
+    unknowns by name. **Dimensions are checked** (**E040**): a body's from its numbers (a bare
+    number stands anywhere), its distances' (a length) and its density's; an integral's the body's
+    times its measure's (a length cubed, or squared for a face); the two sides of one. Refused too
+    (**E040**): a set that is none of those, a distance not from the integral's point, an
+    integral inside a body, a measurement outside an integral, more than sixteen integrals and
+    unknowns or twelve numbers read, and a claim reading an unknown nothing determines (a claim
+    binds none).
+  - **Stated, it is one row** (`CKind::Integral`, `[of: Int]`): the interior's kernel as a
+    deflection is (`KernelKey::Interior`), its residual its two sides' difference, its constants
+    the structure and `interior::Gauge` — each integral a **part** (where: a run of solid elements
+    per body or the facets of a face, `bodies::face_facets`; its body a tape over `[x, y, z, ρ,
+    r…]`), the sides tapes over `[I…, u…]`, and how many unknowns, its last columns
+    (`measured::sides`: an unknown the solve holds written in as its value). Degree 1; no
+    view draws it (`undrawn!`); the source's alone (`a_measures_row_is_the_sources_alone`).
+    An equation is read one of two ways (`measured::path`):
+    - **Whole**: one integral whose body reads nothing of its point but the density, in
+      proportion or not at all (`measured::weighed`) — a number times the set's volume or mass,
+      read over any set as before (`interior::Reads`, `Structure::measure` and
+      `measure_gradient`): **a frame's** (`beams::Row::measured`: the members `B` names, each one
+      element between its line's ends, its sections tapes over the unknowns its area reads — so it
+      binds no unknown it cannot determine; refused for a member of no length or a material of no
+      `rho`), **a prism's** (`prisms::Row::measured`: its face meshed once at a reading's size,
+      each element through the prism's depth, its nodes moved with the drawing and those inside
+      left where they were meshed, `Moved::boundary` — a conforming mesh's measure is its
+      boundary's), or **a filled body's** (#567, `bodies::measured_row`: its exact boundary refined
+      and filled, its boundary's nodes moved by its sheets, `hulls::hull_of`). No support, load or
+      factor is read, so a drawing with no scenario is sized by its mass.
+    - **Gauged**: anything else — a body reading its point or the drawing, a face's integral, an
+      instance's, several integrals in one equation (equilibrium, `integral(density(p) over p in
+      boat) == ρ_w * integral(1 over p in immersed)`) — over every body its integrals are over,
+      each filled once as one structure (`measured::gauging`, each element weighed by its body's
+      density where an integral over it reads one; a face weighs nothing), its boundary's nodes
+      moved by its sheets and what the bodies read read off the same columns
+      (`hulls::hull_of_bodies`, `Hull::reads`, `interior::Read`: a point held where nothing the
+      solve moves reads it, else its own columns; a line whose ends the solve moves read toward
+      its second point). An integral over a beam or a line is of the whole alone. A half-space's
+      plane is a sheet (`Sheet::Ordinate`), so a volume finds a waterline.
+  - **Each part is taken by its domain's quadrature** (`Structure::integrals`,
+    `integrals_gradient`): a quadratic tetrahedron's degree-five rule, a facet's collapsed Gauss
+    rule of eight points a side. **A body of degree two or less in its point**
+    (`Integral::quadratic`, by its expression) is read through the ten moments `∫ 1`, `∫ x`, `∫ x
+    xᵀ` of its domain, its coefficients its tape's at ten points (`gauge::coefficients`, exact
+    for a quadratic): exact on a conforming mesh where the moments are, as the moments' rows were,
+    and the parts over one domain share one pass over its elements (`quadratic_moments`); any
+    other body is its tape at every point. The rate: each part's `∂I/∂x` weighed by its side's
+    rate in it, carried through the hull, and what the bodies read read forward
+    (`Hull::readings_at`); the unknowns' the sides' own.
+  - **Equations over the same bodies fill them once** where the drawing stands
+    (`measured::Fills`, keyed by the parameters' values): a centroid's three rows read one mesh
+    and one hull's sheets (`hulls::Bodies`), each adding its own readings; so does a report's every
+    reading.
 - **Claimed, it is judged on the solved drawing** (`measured::read`, `report::measure_answers`):
-  `claim mass(m) B` within 1e-9 of `m`, `claim mass(<= m) B` and `claim mass(>= m) B` on their
-  side (`beams::compares`, a requirement's rule) — read as a row reads it, with no moduli,
-  support or load: a frame's members exactly (`beams::measure`), a prism through its face
-  (`prisms::measure`), and only a solid that is no prism over its own tetrahedra
-  (`bodies::measure`), beside each value the change from the reading twice as coarse. **What the
-  report says**, stated and claimed alike, in the order written and after the scenarios'
-  answers: `` mass(arm) is 10kg ± 0kg: driven == 10kg, held `` (a stated one's value its row's),
-  `` mass(web) is 0.1134kg ± 1.8e-10kg: claimed >= 1kg, refuted ``, a volume in the document's
-  length cubed (`42000mm³`; `measured::value_text`). `solventc` prints them and `--json` gives
-  them as `measures` (`report::measures_json`); in the page they are read in the mesh worker with
-  the scenarios (`report::scenarios_pictured_json`'s `measures`, FFI
-  `gcs_elab_measures_stated` gating the job) and counted in the footer's line beside the
-  scenarios' answers (`view.measures`).
+  its integrals read as its row reads them, whole or gauged, and its sides worked out; beside its
+  left the error estimated, the change from the reading twice as coarse (nothing where the two
+  agree to rounding); kept where its sides are equal, or on their side, within that error or a
+  billionth of its size (`measured::keeps`, `Answer::size`: its sides' and each integral's
+  `∫ |f|` weighed by its side's rate in it). **What the report says**, stated and claimed alike,
+  in the order written and after the scenarios' answers, each equation its line, called by the
+  word's use that stated it: `` mass(10kg) arm: 10 kg ± 0 kg == 10 kg: driven, held `` (a stated
+  one's left its row's), `` mass(<= 1kg) web: 0.1134 kg ± 1.8e-10 kg <= 1 kg: claimed, kept ``, ``
+  buoyancy centroid immersed: 1.2e-12 mm ± 2.4e-11 mm == 0 mm: driven, held `` — each value in
+  its dimension's unit (`Dim::reading`: a volume `42000 mm^3`, a mass in kilograms). `solventc`
+  prints them and `--json` gives them as `measures` (`report::measures_json`); in the page they
+  are read in the mesh worker with the scenarios (`report::scenarios_pictured_json`'s
+  `measures`, FFI `gcs_elab_measures_stated` gating the job) and counted in the footer's line
+  beside the scenarios' answers (`view.measures`).
 - **Held to closed forms** (`tests/measured.rs`): a depth sized by a mass, `m / (ρ b L)`, for
   three masses with no scenario, a volume claimed beside it (`a_mass_sizes_a_section`); a length
   placed by a volume, `V / A` (`a_volume_places_a_node`); a width and a depth sized together by a
-  mass and a tip's sag driven in a scenario, `b h = m / (ρ L)` and `b h³ = 4 P L³ / (E δ)`
-  (`a_mass_and_a_sag_size_a_section_together`) — each to 1e-9, leaving no freedom; a hole's
-  radius sized by a plate's volume, `√((L h − V/t) / π)` within 1e-5, whatever a scenario reads of
-  it, and its mass claimed kept and refuted (`a_volume_sizes_a_hole`); the corpus's cantilevers
-  claiming `ρ L b h` of the drawing, to 1e-9 (`the_corpus_cantilevers_claim_their_mass`); what
-  cannot be measured said (`what_cannot_be_measured_says_why`). **The library's case** is
-  `weighed_cantilever.sv`: the sized cantilever with its width an unknown beside its depth, its
-  sag driven and its mass stated of the drawing — 20.33mm by 62.65mm, each its closed form, no
-  freedom left, its claim kept (`the_librarys_weighed_cantilever_holds_what_it_drives`) — and
-  three more demonstrate each side of it (`the_librarys_measures_hold_their_closed_forms`):
-  `lightened_web.sv` (a hole sized by a mass over a prism's face, 21.50mm, beside a scenario that
-  reads the plate in its plane), `mass_budget_frame.sv` (a tube's side sized by a mass alone, no
-  support read, 25.88mm, its sag claimed in a scenario) and `sized_gusset.sv` (a point placed by
-  a volume, 120mm, its mass claimed with a bound). The
-  library's and the corpus's mass claims (`rounded_bracket`, `pressed_panel`, `turned_shaft`,
-  `gravity_wall`, `sized_plank`, `analysis/cantilever*`) are the drawing's. The kernel's gradient
-  against central differences over bars, beams and curved triangles and tetrahedra held by
-  nothing (`jacobians.rs`, `a_measure_agrees_with_finite_differences`), and each row as the
-  drawing states it — a frame's area not affine in its unknown and an L's reach, a prism with a
-  round corner and a hole — at the solution and knocked off it
+  mass and a tip's sag driven in a scenario (`a_mass_and_a_sag_size_a_section_together`) — each
+  to 1e-9, leaving no freedom; a hole's radius sized by a plate's volume within 1e-5, its mass
+  claimed kept and refuted (`a_volume_sizes_a_hole`); a turned shaft's radius sized by its volume
+  within 1e-4 (`a_volume_sizes_a_turned_shafts_radius`); the corpus's cantilevers claiming `ρ L b
+  h` (`the_corpus_cantilevers_claim_their_mass`); what cannot be measured said
+  (`what_cannot_be_measured_says_why`). **The library's cases**: `weighed_cantilever.sv`
+  (`the_librarys_weighed_cantilever_holds_what_it_drives`), `lightened_web.sv`,
+  `mass_budget_frame.sv` and `sized_gusset.sv` (`the_librarys_measures_hold_their_closed_forms`);
+  the library's and the corpus's mass claims (`rounded_bracket`, `pressed_panel`, `sized_plank`,
+  `analysis/cantilever*`) are the drawing's. **Where a body is made** (`tests/hydrostatics.rs`):
+  a box barge — its waterline driven by its volume to 1e-9, its immersed centroid driven to `(L/2,
+  0, T/2)`, its waterplane's area, centroid and second moment `L B³ / 12` claimed, its breadth
+  and `I / (L B)` sized as unknowns (`a_box_barge_floats_at_its_draft`); a cylinder floating at a
+  draft (1e-4: its curved faces); a wedge heeled about its apex (1e-9); two blocks of steel and
+  aluminium as two components and as one, one centre of mass
+  (`a_centre_of_mass_does_not_depend_on_grouping`); a body floating where it weighs the water it
+  displaces, one equation of two integrals (`a_body_floats_where_it_weighs_its_displacement`); a
+  body not polynomial in its point by quadrature, `∫ r dV` of a cylinder about its axis `2π L R³
+  / 3` (`an_integral_not_polynomial_is_read_by_quadrature`); the refusals, and a word written
+  without its module (`what_cannot_be_measured_says_why`). The kernel's gradient against central
+  differences (`jacobians.rs`, `a_measure_agrees_with_finite_differences`), and each row as the
+  drawing states it — a frame's area not affine in its unknown, a prism with a round corner and a
+  hole, a turned shaft, a barge's centroid, area and second moment and a body read by quadrature —
+  at the solution and knocked off it
   (`a_measure_agrees_with_finite_differences_as_the_drawing_states_it`).
-- **Where a body is made, and a face's measures** (#953, [0.219]; `interior::Gauge`,
-  `bodies::gauging`, `hulls::hull_aimed`, `program::measures`).  Four words beside `mass` and
-  `volume`, read as they are (`OPERATORS`, `model::Quantity`): a face's **area**, `area(A) F`, and
-  its **second moment** about a line or an axis, `moment(I, about: l) F` (prefix words, `F` a
-  face of a solid, `immersed.water`); the point a body's volume or a face's area is centred on,
-  `g centroid B`, and a body's mass, `g centerofmass B` (infix words, `g` a declared point).
-  Refused where written (**E040**): an area or a moment of no face, a moment about no line, a
-  centre of mass of a face (it weighs nothing), a point's measure of no solid, anything in a
-  point's parentheses.
-  - **Each is a number of the ten moments** `∫ w`, `∫ w x`, `∫ w x xᵀ` of what is measured
-    (`gauge::MOMENTS`, `w` one, or the element's density for a centre of mass): over the body's
-    filled mesh's quadratic tetrahedra by the degree-five rule (exact for `∫ x det J`, of degree
-    five), or over the facets of the face's mesh that lie on it (`bodies::face_facets`) by the
-    collapsed Gauss rule of five points a side (exact to degree eight, so a plane facet's second
-    moments).  The number (`gauge::What`): the whole; a centroid's ordinate `k` less the point's,
-    `∫ w x_k / ∫ w − g_k`; the second moment `∫ w |(x − a) × d̂|²` about the line through `a`
-    along `d` — about a line in the face's plane, the second moment of area, so a waterplane's
-    about its centreline gives BM's `I`.  A moment of a conforming mesh is its boundary's, as a
-    volume is, so the nodes inside stand where they were meshed.
-  - **Stated, each is a row of the drawing** (`CKind::Area`, `Moment`, `Centroid`,
-    `CenterOfMass`): the interior's kernel over the body's filled mesh as a filled body's
-    volume's is (`bodies::gauged_row`, always filled, a prism too), its boundary's nodes moved by
-    its sheets, the structure's gauge written after its degrees of freedom (`consts`) — and the
-    point and the line read off the same columns as the sheets (`Hull::target`, `Hull::axis`:
-    held where nothing the solve moves reads them, else a point's own columns; a line whose ends
-    the solve moves read toward its second point, `Direction::Toward`).  A point's measure is
-    three rows, one an ordinate of the world (`Measured::k`), each stating nothing off it — an
-    interior row's number is its last argument, so a centroid's is `[of, k, 0]`.  A half-space's
-    plane is a sheet (`Sheet::Ordinate`: its point, its unit direction and its height `c + m t`,
-    `t` the unknown its number reads), so a volume finds a waterline.  The rate: the moments'
-    `Σ (∂f/∂m_j) ∂m_j/∂x` (`gauge::compose_rate`, `Structure::moments_gradient`), carried through
-    the hull, and the point's and the line's own columns read forward.
-  - **A measure's number may read an unknown** (`Measured::free`): `area(L * w) hull.water`, its
-    number `c + m w`, `w` a declared unknown bound from its seed before the row is made and kept
-    bound by `evaluate` (`Constraint::frame_unknowns`) — the row's last column, `[m, c]` its
-    stated pair (`Constraint::measure_unknown`).  A claim's never: a claim binds none (**E040**).
-  - **Of an instance's bodies** (`Resolver::bodies_under`, `Measured::bodies`): a point's measure
-    of an instance (`g centerofmass boat`) is of every solid under it that no other solid is
-    built of, each filled and all read over one hull of one set of columns
-    (`hulls::hull_of_bodies`), each element weighed by its body's density — so a centre of mass
-    does not depend on how bodies are grouped into components.
-  - **Claimed, each is judged on the solved drawing** (`measured::read`, `bodies::gauged`), over
-    the body's own mesh with the error estimated beside it; a point's how far it stands from where
-    its measure puts it, kept within that error (`measured::keeps`).  **What the report says**:
-    `` area(immersed.water) is 12000mm² ± 0mm²: claimed == 12000mm², kept ``, `` moment(…) is
-    3.6e+06mm⁴ … ``, `` g centroid immersed: at (100, 0, 20)mm ± 2.9e-12mm: driven, held `` (and
-    how far off it where it is not).  The moments are read off the mesh to its estimated error,
-    not off the exact solid as a volume's report is (`props.rs` has no moments yet).
-  - **Held to closed forms** (`tests/hydrostatics.rs`): a box barge — its waterline driven by
-    its volume to 1e-9, its immersed centroid driven to `(L/2, 0, T/2)`, its waterplane's area
-    `L B`, centroid on the centreline and second moment `L B³ / 12` claimed, its breadth and
-    `I / (L B)` sized as unknowns (`a_box_barge_floats_at_its_draft`); a cylinder floating at a
-    draft, the circular segment's (`a_cylinder_floats_at_its_draft`, 1e-4: its curved faces); a
-    wedge heeled about its apex, an inclined waterline (`a_wedge_heeled_about_its_apex`, 1e-9);
-    two blocks of steel and aluminium as two components and as one, one centre of mass
-    (`a_centre_of_mass_does_not_depend_on_grouping`); the refusals
-    (`what_cannot_be_measured_says_why`); every row against finite differences
-    (`the_rows_agree_with_finite_differences`).
 
 - **A driven requirement is said whenever its row has a value** (`report::scenario_answers`),
   whatever its reading answers: a scenario's deflection whose frame the reading cannot read is

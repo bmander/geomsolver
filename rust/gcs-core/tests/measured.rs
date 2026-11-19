@@ -1,12 +1,13 @@
-//! **What a body is made of, stated of the drawing** (#510): `mass(m) arm`, `volume(v) web` —
-//! no scenario's, since what a body is made of answers no load — is a row of the drawing
-//! (`CKind::Mass`, `CKind::Volume`): the interior's kernel reading the structure's measure
-//! (`interior::Reads`) rather than its moves, so it solves nothing, over a beam's or a member's
-//! lines (`beams::Row::measured`) or a prism's face meshed once and moved with the drawing
-//! (`prisms::Row::measured`).  Claimed (`claim mass(<= 1kg) plank`), it is judged on the solved
-//! drawing (`measured::read`, `report::measure_answers`).  Each is held to its closed form; what
-//! cannot be read says why.  The rules are `docs/contract/analysis.md`'s; the rows'
-//! finite-difference checks are `jacobians.rs`'s (`a_measure_agrees_with_finite_differences`,
+//! **What a body is made of, stated of the drawing** (#510, §6.25): `mass(m) arm`, `volume(v)
+//! web` — `std.measures`'s words, each an equation of integrals, no scenario's, since what a body
+//! is made of answers no load — is a row of the drawing (`CKind::Integral`): the interior's kernel
+//! reading the structure's measure (`interior::Reads`) rather than its moves, so it solves
+//! nothing, over a beam's or a member's lines (`beams::Row::measured`) or a prism's face meshed
+//! once and moved with the drawing (`prisms::Row::measured`).  Claimed (`claim mass(<= 1kg)
+//! plank`), it is judged on the solved drawing (`measured::read`, `report::measure_answers`).
+//! Each is held to its closed form; what cannot be read says why.  The rules are
+//! `docs/contract/analysis.md`'s; the rows' finite-difference checks are `jacobians.rs`'s
+//! (`a_measure_agrees_with_finite_differences`,
 //! `a_measure_agrees_with_finite_differences_as_the_drawing_states_it`).
 use gcs_core::constraints::CKind;
 use gcs_core::model::Sketch;
@@ -21,6 +22,7 @@ fn beam(extra: &str, end: &str, section: &str, lines: &str) -> String {
 unit mm
 use std
 use std.place (horizontal)
+use std.measures (mass, volume)
 steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3, yield: 250MPa)
 {extra}
 in std.front {{
@@ -49,6 +51,7 @@ fn holed(lines: &str) -> String {
 unit mm
 use std
 use std.solids
+use std.measures (mass, volume)
 alloy := material(E: 70GPa, nu: 0.33, rho: 2700kg / 1m^3)
 param r: Length hint(18mm)
 in std.front {{
@@ -109,7 +112,7 @@ fn a_mass_sizes_a_section() {
                        &rectangle("25mm", "h"),
                        &format!("mass({m}kg) arm\nclaim volume(>= 1 * 1cm^3) arm"));
         let (e, mut sk) = sized(&src);
-        let rows: Vec<_> = sk.constraints.iter().filter(|c| c.kind == CKind::Mass).collect();
+        let rows: Vec<_> = sk.constraints.iter().filter(|c| c.kind == CKind::Integral).collect();
         assert_eq!(rows.len(), 1);
         let want = m / (RHO * 0.025 * 1.0) * 1e3;
         let h = unknown(&sk, "h");
@@ -117,11 +120,11 @@ fn a_mass_sizes_a_section() {
         assert_eq!(crate::common::dof(&mut sk), 0);
         let said = said(&e, &sk);
         assert_eq!(said.len(), 2, "{said:?}");
-        assert!(said[0].starts_with("mass(arm) is ") && said[0].contains("driven == ")
-                && said[0].ends_with("held"), "{}", said[0]);
+        assert!(said[0].starts_with(&format!("mass({m}kg) arm: "))
+                && said[0].ends_with(&format!("== {m} kg: driven, held")), "{}", said[0]);
         let volume = 25.0 * want * 1000.0;
-        assert!(said[1].contains(&format!("is {}mm³", gcs_core::json::fmt_g(volume, 6)))
-                && said[1].ends_with("claimed >= 1000mm³, kept"), "{}", said[1]);
+        assert!(said[1].contains(&format!(": {} mm^3", gcs_core::json::fmt_g(volume, 6)))
+                && said[1].ends_with(">= 1000 mm^3: claimed, kept"), "{}", said[1]);
     }
 }
 
@@ -180,7 +183,7 @@ fn the_librarys_weighed_cantilever_holds_what_it_drives() {
     let answers = gcs_core::report::scenario_answers(&sk, s, &read);
     assert!(answers[0].text.ends_with("held") && answers[1].text.ends_with("kept"));
     let said = said(&e, &sk);
-    assert!(said[0].ends_with("driven == 10kg, held"), "{said:?}");
+    assert!(said[0].ends_with("== 10 kg: driven, held"), "{said:?}");
 }
 
 /// **The library's demonstrations of a mass and a volume stated hold their closed forms**: the
@@ -228,15 +231,15 @@ fn a_volume_sizes_a_hole() {
     for reading in ["scenario s {\n  plane stress web\n  fixed web.root\n}", "", "scenario s {\n  \
                      fixed web.root\n  claim deflection(b, along: std.x) >= 0mm\n}"] {
         let (e, mut sk) = sized(&holed(&format!("{claims}{reading}")));
-        let rows: Vec<_> = sk.constraints.iter().filter(|c| c.kind == CKind::Volume).collect();
+        let rows: Vec<_> = sk.constraints.iter().filter(|c| c.kind == CKind::Integral).collect();
         assert_eq!(rows.len(), 1);
         let r = unknown(&sk, "r");
         assert!((r - want).abs() <= 1e-5 * want, "{reading:?}: {r} against {want}");
         assert_eq!(crate::common::dof(&mut sk), 0);
         let said = said(&e, &sk);
-        assert!(said[0].contains("is 42000mm³") && said[0].ends_with("held"), "{}", said[0]);
-        assert!(said[1].ends_with("claimed <= 1kg, kept"), "{}", said[1]);
-        assert!(said[2].ends_with("claimed >= 1kg, refuted"), "{}", said[2]);
+        assert!(said[0].contains(": 42000 mm^3") && said[0].ends_with("held"), "{}", said[0]);
+        assert!(said[1].ends_with("<= 1 kg: claimed, kept"), "{}", said[1]);
+        assert!(said[2].ends_with(">= 1 kg: claimed, refuted"), "{}", said[2]);
     }
 }
 
@@ -246,6 +249,7 @@ pub const TURNED: &str = "unit mm
 use std
 use std.solids
 use std.place (horizontal, vertical)
+use std.measures (mass, volume)
 r := 12mm
 rho := 4mm
 shoulder := 60mm
@@ -299,7 +303,7 @@ fn a_volume_sizes_a_turned_shafts_radius() {
         let lines = format!("volume({} * 1cm^3) shaft\nclaim mass(<= 1.1kg) shaft\n\
                              claim mass(>= 1.1kg) shaft\n", v / 1000.0);
         let (e, mut sk) = sized(&format!("{TURNED}{lines}"));
-        let rows: Vec<_> = sk.constraints.iter().filter(|c| c.kind == CKind::Volume).collect();
+        let rows: Vec<_> = sk.constraints.iter().filter(|c| c.kind == CKind::Integral).collect();
         assert_eq!(rows.len(), 1);
         let want = ((v - PI * 144.0 * 100.0 - round) / (PI * 60.0)).sqrt();
         let got = unknown(&sk, "R");
@@ -307,8 +311,8 @@ fn a_volume_sizes_a_turned_shafts_radius() {
         assert_eq!(crate::common::dof(&mut sk), 0);
         let said = said(&e, &sk);
         assert!(said[0].ends_with("held"), "{}", said[0]);
-        assert!(said[1].ends_with("claimed <= 1.1kg, kept"), "{}", said[1]);
-        assert!(said[2].ends_with("claimed >= 1.1kg, refuted"), "{}", said[2]);
+        assert!(said[1].ends_with("<= 1.1 kg: claimed, kept"), "{}", said[1]);
+        assert!(said[2].ends_with(">= 1.1 kg: claimed, refuted"), "{}", said[2]);
     }
 }
 
@@ -324,7 +328,8 @@ fn the_corpus_cantilevers_claim_their_mass() {
         let [a] = &answers[..] else { panic!("one mass: {answers:?}") };
         let m = &sk.measured[e.measures[0].index];
         let v = a.value.expect(&a.text);
-        assert!(a.holds == Some(true) && (v - m.value).abs() <= 1e-9 * m.value, "{}", a.text);
+        let want = gcs_core::measured::read(&sk, m).unwrap().rhs;
+        assert!(a.holds == Some(true) && (v - want).abs() <= 1e-9 * want, "{}", a.text);
         assert_eq!(a.error, Some(0.0), "{}", a.text);
     }
 }
@@ -338,7 +343,7 @@ fn what_cannot_be_measured_says_why() {
                       &rectangle("25mm", "h"), "mass(10kg) arm")
         .replace(", rho: 7850kg / 1m^3", "");
     let got = errors(&no_rho);
-    assert!(got.iter().any(|(c, m)| c == "E040" && m.contains("`mass(arm)` cannot drive")
+    assert!(got.iter().any(|(c, m)| c == "E040" && m.contains("`mass(10kg) arm` cannot drive")
                                    && m.contains("states no `rho`")), "{got:?}");
     let (_, sk) = sized(&no_rho.replace("mass(10kg) arm", "volume(1000 * 1cm^3) arm"));
     assert!((unknown(&sk, "h") - 40.0).abs() <= 1e-9 * 40.0);
@@ -356,13 +361,14 @@ fn what_cannot_be_measured_says_why() {
     assert!(errs.iter().any(|e| e.message.contains("no scenario's")), "{errs:?}");
 }
 
-/// **The row is the source's alone**: the document's JSON and its flat program hold no `Mass`.
+/// **The row is the source's alone**: the document's JSON and its flat program hold no
+/// `Integral`.
 #[test]
 fn a_measures_row_is_the_sources_alone() {
     let src = beam("param h: Length hint(40mm)", "fix((1000mm, 0mm)) end",
                    &rectangle("25mm", "h"), "mass(10kg) arm");
     let e = crate::common::read(&src);
-    assert!(e.sketch.constraints.iter().any(|c| c.kind == CKind::Mass));
+    assert!(e.sketch.constraints.iter().any(|c| c.kind == CKind::Integral));
     let json = gcs_core::io::dumps(&e.sketch, None);
     assert!(!json.contains("\"Mass\"") && !json.contains("\"Volume\""));
     let lifted = gcs_core::program::to_program(&e.sketch);

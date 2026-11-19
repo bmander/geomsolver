@@ -7,6 +7,7 @@
 unit mm
 use std
 use std.solids
+use std.measures (mass)
 
 L := 1000mm
 h := 50mm

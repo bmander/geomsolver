@@ -192,7 +192,8 @@ const projects: Example[] = [{
     + 'exactly, its waterplane a face of it: a log floating at a draft its displacement finds, '
     + 'its centre of buoyancy driven onto the circular segment\'s centroid; a V-wedge heeled about '
     + 'its apex, an inclined waterline; a steel and an aluminium block whose centre of mass is the '
-    + 'same grouped as two components or as one; and a punt\'s hull of panels, the solid a closed '
+    + 'same grouped as two components or as one; a pine box floating where it weighs the water it '
+    + 'displaces, one equation of two integrals; and a punt\'s hull of panels, the solid a closed '
     + 'shell of developable sides and drawn faces encloses. The box barge in the library states BM '
     + 'from its waterplane\'s second moment. The README says what each shows.',
   target: { kind: 'directory', path: 'hydrostatics', entry: 'cylinder.sv' },

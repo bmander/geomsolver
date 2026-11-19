@@ -50,9 +50,8 @@ mod row;
 mod solid;
 pub use beam::{fixed_end, into_axes, out_of_axes, Axes};
 pub use consts::{Drive, Mover, Sizing, HEAD};
-pub(crate) use gauge::compose_at;
-pub use gauge::{Gauge, What, MOMENTS};
-pub use hull::{Axis, Direction, Frame, Hull, Place, Profile, Sheet};
+pub use gauge::{Domain, Gauge, Part};
+pub use hull::{Axis, Direction, Frame, Hull, Place, Profile, Read, Sheet};
 pub use moved::{Edge, Moved, Node, Stack};
 pub use plane::{Laid, Tri6};
 pub use solid::{Borne, Tet10};
@@ -123,8 +122,8 @@ pub struct Structure {
     pub tets: Vec<Tet10>,
     pub borne: Vec<Borne>,
     pub reads: Reads,
-    /// What a measure reads besides its whole over the elements (#953): a face's facets, a
-    /// centroid, a second moment.
+    /// What an integral row reads (§6.25): its integrals and its equation's sides — of a
+    /// measure's row alone.
     pub gauge: Gauge,
 }
 
@@ -146,14 +145,6 @@ impl Reads {
     /// Whether it is a measure of the structure rather than a displacement of it.
     pub fn measure(self) -> bool {
         self != Reads::Displacement
-    }
-
-    /// What a row of the drawing's `quantity` reads.
-    pub fn of(quantity: crate::model::Quantity) -> Reads {
-        match quantity {
-            q if q.weighed() => Reads::Mass,
-            _ => Reads::Volume,
-        }
     }
 
     /// What weighs a member or an element of density `rho`: its density for a mass, one for a
@@ -875,61 +866,6 @@ impl Structure {
         }
         let what = if self.reads == Reads::Mass { "mass" } else { "volume" };
         Err(format!("it has no {what} where the drawing stands, so nothing it could be sized by"))
-    }
-
-    /// **The ten moments of what the structure is made of, at `x`** (#953, `gauge`): over the
-    /// gauge's facets where it names some (a face's, weighing nothing), else over its solid
-    /// elements, each weighed by its density for a mass.
-    pub fn moments(&self, x: &[f64]) -> [f64; MOMENTS] {
-        let mut m = [0.0; MOMENTS];
-        let mut add = |part: [Dual<0>; MOMENTS], w: f64| {
-            for (o, p) in m.iter_mut().zip(part) {
-                *o += w * p.v;
-            }
-        };
-        if !self.gauge.facets.is_empty() {
-            for f in &self.gauge.facets {
-                let p: [solid::P<Dual<0>>; 6] =
-                    f.map(|n| [x[3 * n], x[3 * n + 1], x[3 * n + 2]].map(Dual::cst));
-                add(gauge::facet(&p), 1.0);
-            }
-            return m;
-        }
-        for (i, t) in self.tets.iter().enumerate() {
-            add(gauge::tet(&self.tet_places_d::<0>(i, x)), self.reads.density(t.rho));
-        }
-        m
-    }
-
-    /// **`Σ w_j ∂m_j/∂x` of the moments at `x`, added into `g`** (#953): each facet's or
-    /// element's moments in `Dual` over its nodes' places, weighed by `w` — a row's rate in its
-    /// moments (`gauge::compose_rate`).
-    pub fn moments_gradient(&self, x: &[f64], w: &[f64; MOMENTS], g: &mut [f64]) {
-        if !self.gauge.facets.is_empty() {
-            for f in &self.gauge.facets {
-                let p: [solid::P<Dual<18>>; 6] = std::array::from_fn(|k| {
-                    let n = f[k];
-                    solid::var([x[3 * n], x[3 * n + 1], x[3 * n + 2]], 3 * k)
-                });
-                let m = gauge::facet(&p);
-                for (k, &n) in f.iter().enumerate() {
-                    for c in 0..3 {
-                        g[3 * n + c] += (0..MOMENTS).map(|j| w[j] * m[j].g[3 * k + c]).sum::<f64>();
-                    }
-                }
-            }
-            return;
-        }
-        for (i, t) in self.tets.iter().enumerate() {
-            let m = gauge::tet(&self.tet_places_d::<30>(i, x));
-            let rho = self.reads.density(t.rho);
-            for (k, &n) in t.n.iter().enumerate() {
-                for c in 0..3 {
-                    g[3 * n + c] +=
-                        rho * (0..MOMENTS).map(|j| w[j] * m[j].g[3 * k + c]).sum::<f64>();
-                }
-            }
-        }
     }
 
     /// **The measure's gradient in the columns at `x`, added into `g`**: its own `∂J/∂x`, with no

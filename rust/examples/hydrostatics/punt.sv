@@ -16,6 +16,7 @@ unit mm
 use std
 use std.panels
 use std.sets
+use std.measures (volume)
 
 deck_plane := plane
 fix(origin == (0mm, 0mm, 300mm)) deck_plane

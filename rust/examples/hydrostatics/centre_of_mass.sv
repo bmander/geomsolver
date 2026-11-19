@@ -7,6 +7,7 @@
 unit mm
 use std
 use std.solids
+use std.measures (centroid, centerofmass)
 
 steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3)
 alu := material(E: 70GPa, nu: 0.33, rho: 2700kg / 1m^3)

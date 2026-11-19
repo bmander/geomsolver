@@ -9,6 +9,7 @@ unit mm
 use std
 use std.solids
 use std.sets
+use std.measures (volume, centroid)
 
 L := 100mm
 param T: Length hint(35mm)

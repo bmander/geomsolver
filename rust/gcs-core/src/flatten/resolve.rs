@@ -377,11 +377,11 @@ impl Lookup<'_> {
     /// says `use std` — the root's, the world's, where the instance stands in no frame, and the
     /// frame's own where it does: `std.x`, `std.y` and `std.z` are its `u`, `v` and `normal`,
     /// and the rest its `FrameDatums`, made under `keys::frame_datums` once a body reads one
-    /// (`Datums::read`).  `None` for anything else, and outside a definition's body — a relation
-    /// word reads only its operands.
+    /// (`Datums::read`).  A relation word's body, which stands in no frame, reads the world's
+    /// (§6.25: `std.measures`'s centroid along `std.x`).  `None` for anything else, and outside a
+    /// definition's or a word's body.
     fn datum(&self, segs: &[String], sc: &Scope) -> Option<(String, Vec<String>)> {
-        let stands = sc.stands.as_ref().filter(|_| sc.closed)?;
-        if segs.first().map(String::as_str) != Some("std")
+        if !sc.closed || segs.first().map(String::as_str) != Some("std")
             || !self.standard.files.contains(&sc.module) {
             return None;
         }
@@ -389,6 +389,7 @@ impl Lookup<'_> {
             let cand = segs[..take].join(".");
             self.names.contains(&cand).then(|| (cand, segs[take..].to_vec()))
         })?;
+        let Some(stands) = sc.stands.as_ref() else { return Some((world, rest)) };
         let Some(frame) = self.stood_in(stands, sc) else { return Some((world, rest)) };
         let datum = world.strip_prefix("std.").unwrap_or(&world);
         Some(self.frame_datum(frame, datum, rest))
@@ -773,11 +774,8 @@ fn rewrite(
         // an energy names the curve it is over (#121)
         StmtKind::Minimize(m) => fix(&mut m.curve, bad),
         // a bound on measurements names what it measures, as a motion's numbers do (#183 F3)
-        StmtKind::Measured(m) => {
-            for x in m.lhs.measures_mut().into_iter().chain(m.rhs.measures_mut()) {
-                x.refs_mut().for_each(|r| fix(r, bad));
-            }
-        }
+        // and an integral what it is over, never the point it binds (§6.25)
+        StmtKind::Measured(m) => m.refs_mut().into_iter().for_each(|r| fix(r, bad)),
         // a load case names what it holds, loads and requires of (#510 P4)
         StmtKind::Scenario(sc) => sc.refs_mut().into_iter().for_each(|r| fix(r, bad)),
         // a frame's members name their lines, and the material they are made of (#510 S0)

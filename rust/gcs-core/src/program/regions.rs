@@ -375,6 +375,11 @@ pub(super) fn measured_term(
     let mut refuse = |message: String| {
         diags.push(Diag::on(Code::E040, st, message))
     };
+    // an integral is a statement of the drawing, never a set's bound (§6.25)
+    let Some(cmp) = m.cmp.filter(|_| !m.integrates()) else {
+        return refuse("a set's body bounds measurements at its point, `<=` or `>=`; an integral \
+                       is a statement of the drawing".into());
+    };
     let (lhs, rhs) = match (linear(&m.lhs, sk), linear(&m.rhs, sk)) {
         (Ok(l), Ok(r)) => (l, r),
         (Err(e), _) | (_, Err(e)) => return refuse(e),
@@ -416,7 +421,7 @@ pub(super) fn measured_term(
             if free.is_some() {
                 return refuse("a region's angle is bounded by a number stated".to_string());
             }
-            let cmp = if *c > 0.0 { m.cmp } else { m.cmp.turned().expect("one-sided") };
+            let cmp = if *c > 0.0 { cmp } else { cmp.turned().expect("one-sided") };
             let lo = expr::to_arg_units(SpecKind::Angle, k / c);
             let term = crate::model::RegionTerm::new(
                 crate::model::RegionShape::Angle { a: fa, b: fb },
@@ -491,7 +496,7 @@ pub(super) fn measured_term(
             return refuse("a bound on measurements weighing nothing is bounded by a number stated"
                 .to_string());
         }
-        let holds = match m.cmp { Cmp::Ge => 0.0 >= k, Cmp::Le => 0.0 <= k, Cmp::In => false };
+        let holds = match cmp { Cmp::Ge => 0.0 >= k, Cmp::Le => 0.0 <= k, Cmp::In => false };
         if !holds {
             refuse("a bound on measurements weighed nothing that holds nowhere".to_string());
         }
@@ -500,7 +505,8 @@ pub(super) fn measured_term(
     let shape = crate::model::RegionShape::Measured { of };
     let number = term_of(bound, SpecKind::Length);
     let name = term_name(&m.through);
-    let term = crate::model::RegionTerm { name, ..crate::model::RegionTerm::new(shape, m.cmp, number) };
+    let term =
+        crate::model::RegionTerm { name, ..crate::model::RegionTerm::new(shape, cmp, number) };
     probes.terms.get_mut(&p).expect("a probe's terms").push(term);
 }
 

@@ -564,13 +564,21 @@ fn of_vals_in<'a, T: Table + ?Sized>(
             });
         }
         // the constant is of the whole's dimension, so it says so as a number does above, or
-        // `(-0.25 * m + 0)` adds a plain number to a length once `m: Length` is written in
+        // `(-0.25 * m + 0)` adds a plain number to a length once `m: Length` is written in; and
+        // the coefficient of what the whole and the name differ by, where the table knows the
+        // name's (`bm * L * B * 40mm`, a fourth power of length over a length)
+        let named = vals.value(n).filter(|f| f.free.as_ref() == Some(n) && f.m == 1.0
+                                            && f.c == 0.0).map(|f| a.dim.div(f.dim));
+        let m = match named {
+            Some(k) if !k.is_scalar() => k.number_text(a.m, units),
+            _ => crate::syntax::num(a.m),
+        };
         Some(if a.m == 1.0 && a.c == 0.0 {
             n.clone()
         } else if a.c == 0.0 {
-            format!("({} * {n})", crate::syntax::num(a.m))
+            format!("({m} * {n})")
         } else {
-            format!("({} * {n} + {})", crate::syntax::num(a.m), a.dim.number_text(a.c, units))
+            format!("({m} * {n} + {})", a.dim.number_text(a.c, units))
         })
     }
 }
