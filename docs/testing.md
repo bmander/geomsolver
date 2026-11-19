@@ -109,7 +109,7 @@ builds brep-bench's two tumbling tori so.
 
 `SOLVENT_SWEEP_PROFILE=1` prints what a closed build spent per stage and which pairs of surface
 kinds were traced rather than met in closed form, and what the meetings' analysis did (critical
-sets, branch tests, a level curve's readings): start a performance change from it, and cite it
+sets, branch tests): start a performance change from it, and cite it
 before and after. `touch_curves::` prints the same profile for each of its tests under it. A
 build past `closed::BUDGET` is refused by the stage that ran away (`Unbuilt::Budget`), in seconds
 rather than hours.

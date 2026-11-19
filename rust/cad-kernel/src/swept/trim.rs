@@ -222,10 +222,10 @@ fn completed(w: &Witness,candidates: &[&Brep],located: &[crate::query::Located],
                 let (lb,hb) = c.bounds();
                 let l: V = std::array::from_fn(|d| la[d].max(lb[d])-tol);
                 let u: V = std::array::from_fn(|d| ha[d].min(hb[d])+tol);
-                let traced = match crate::ssi::trace(s,sg,&[x],l,u,tol) {
-                    Ok(t) => t,
-                    Err(_) => super::general::marched(s,sg,x,l,u,tol).into_iter().collect(),
-                };
+                // (by the kernel's one fallback: traced in space, and where that is refused as shallow
+                // marched in both surfaces' parameters, over the two candidates' own)
+                let (dk,dg) = (super::general::parameters(candidates[k],tol),super::general::parameters(c,tol));
+                let traced = crate::meeting::through(s,dk,sg,dg,&[x],l,u,tol).unwrap_or_default();
                 let traced: Vec<crate::geom::Curve> = traced.into_iter()
                     .filter(|cv| distance(cv.point(cv.inverse(x)),x) <= hair).collect();
                 if debug() {

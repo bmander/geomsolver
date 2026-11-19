@@ -1914,7 +1914,7 @@ impl<'a> Arrangement<'a> {
             .filter(|&p| !touches.touching(p) && !on_known(p)));
         self.say.tracing(faces,surfaces,&seeds);
         let started = crate::util::clock::Instant::now();
-        // beside a ridge's or a level curve's branch is beside a known meeting
+        // beside a ridge's branch, or one marched in both surfaces' parameters, is beside a known meeting
         // a march stopped beside a touch along an edge carried on to where it joins that edge
         let (surfaces,stretches,spread) = (touches.surfaces,touches.stretches,touches.spread.max(8.*tol));
         let beside = &mut |p: V| touches.beside(p) || super::meeting::on_a_branch(sa,sb,ridged,p,tol);
@@ -1922,7 +1922,8 @@ impl<'a> Arrangement<'a> {
         let mut traced = known.to_vec();
         traced.extend(ridged.branches().iter().map(|br| br.curve.clone()));
         if past {
-            // read from its ridges and level curves (#778): each seed left traced alone
+            // read from its ridges and marched in both surfaces' parameters (#778, #942 F1): each seed
+            // left traced alone
             super::meeting::traced_alone(&seeds,&mut traced,&mut |p| super::ssi::trace_landing(sa,sb,&[p],beside,land,lo,hi,tol),tol);
         } else {
             traced.extend(super::ssi::trace_landing(sa,sb,&seeds,beside,land,lo,hi,tol)?);

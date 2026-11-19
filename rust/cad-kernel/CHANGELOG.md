@@ -8,6 +8,19 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **One fallback for shallow meetings, marched in both surfaces' parameters** (#942 F1): where the
+  trace is refused as shallow, `meeting::marched` marches each seed no branch holds along the
+  solutions of `A(u_a, v_a) = B(u_b, v_b)` — the general road's four-parameter march, moved into the
+  kernel as `meeting::parametric`, bounded by both surfaces' boxes of parameters and closed where it
+  returns to its start — where it followed level curves `f = 0` in one surface's parameters. Those
+  strayed 1e-4 from the 75° tumbling cube's fans at their 0.02° pinch, followed a wall's extension
+  past its patch, and closed on themselves about each seed near a ball's pole; across the suite they
+  read no branch the march does not, and are gone (`meeting::level_curves`). A plane crossing a
+  cylinder and a ball of radius 100 at 0.02°, the closed forms bypassed, is met in the closed form's
+  two lines and its circle to 1e-9, where the general method gave three lines and eight pieces of the
+  circle 4.5e-4 off. The general road's branches beside its rails and the trim's completion now go
+  through it too (`meeting::through`), where they called the trace and a march of their own.
+
 - **A trim missing a meeting completes it from where it parts a piece** (#942 F2): a piece the trim
   reads is held to one verdict at up to eight of its points, and two that differ, the one off the
   boundary proved clear of it, are a witness, where a piece was kept or dropped whole by its first
