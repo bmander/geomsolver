@@ -8,9 +8,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
-- **A trace lying along a face's rim is no chord** (#942 F6): a ring's tube entered at an end pose
-  leaves out a trace of its face's meeting with the tool lying wholly along one side of the face's
-  square — the tool touching the rim, not crossing it. The near-orthogonal tumbling tori each had one,
+- **A trace of no length is no chord** (#942 F6): a ring's tube entered at an end pose leaves out
+  a trace of its face's meeting with the tool whose points all stand at one place on the face's
+  square — the tool touching the face there, not crossing it; a trace along a side, a rim lying on
+  the tool, is kept. The near-orthogonal tumbling tori each had one,
   two points 2.4e-13 apart where a crossing of the face ends on the rim, and were refused ("two of a
   ring's sheet's crossings of the tool end at one place on a face's rim"); their tubes are now
   entered, and they are refused later, where the end pose's torus face is assembled.

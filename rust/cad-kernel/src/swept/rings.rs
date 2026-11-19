@@ -1436,11 +1436,11 @@ pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],rimmed: 
             // traced back along it — is one chord: two along one another split each other into a
             // thousand pieces, #880 T1d M2's ring beside its whole-touched meridian)
             for (e,c) in (0..2).flat_map(|e| readings[e].as_ref().map_or(Vec::new(),traces).into_iter().map(move |c| (e,c))) {
-                // (a trace lying wholly along one side of the face's square bounds nothing: the tool
-                // touching the rim there, not crossing it — the near-orthogonal tori's, two points
-                // 2.4e-13 apart on the rim where a crossing of the face ends, #942 F6)
-                let along = |side: fn(P2) -> bool| c.iter().all(|&p| side(p));
-                if along(|p| p[1] <= ON_SIDE) || along(|p| p[1] >= 1.-ON_SIDE) || along(|p| p[0] <= ON_SIDE) || along(|p| p[0] >= 1.-ON_SIDE) { continue }
+                // (a trace of no length — all its points within `ON_SIDE` of its first, one place on
+                // the face's square — bounds nothing: the tool touching the face there, not crossing
+                // it; the near-orthogonal tori's, two points 2.4e-13 apart on the rim where a crossing
+                // of the face ends, #942 F6. A trace along a side is kept: a rim lying on the tool)
+                if c.iter().all(|&p| (p[0]-c[0][0]).hypot(p[1]-c[0][1]) <= ON_SIDE) { continue }
                 let near = |p: P2,q: P2| (p[0]-q[0]).hypot(p[1]-q[1]) <= 1e-6;
                 let mid = c[c.len()/2];
                 let again = chords.iter().any(|(f,d)| *f == e && (near(d[0],c[0]) && near(d[d.len()-1],c[c.len()-1]) || near(d[0],c[c.len()-1]) && near(d[d.len()-1],c[0]))

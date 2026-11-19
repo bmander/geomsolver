@@ -389,16 +389,16 @@ fn the_half_turns_stretches_are_sewn_across_its_cut_into_one_tube_a_contact_curv
     }
 }
 
-/// **A trace lying along a face's rim bounds nothing** (#942 F6): brep-bench's
+/// **A trace of no length bounds nothing** (#942 F6): brep-bench's
 /// `tumbling-torus-near-orthogonal`, a torus of tube 0.08 tumbled a whole turn about two lines a
-/// degree from square, its tube entered where it crosses the torus at each end pose. One trace of
-/// a face's meeting with the tool there is two points on the face's rim 2.4e-13 apart, where a
-/// crossing of the face ends: the tool touching the rim, not crossing it. Taken for a chord, its two
-/// ends and the crossing's stood at one place on the rim and the face was refused ("two of a ring's
-/// sheet's crossings of the tool end at one place on a face's rim"); a trace lying wholly along one
-/// side of the face's square is left out, and the tubes are entered.
+/// degree from square, its tube entered where it crosses the torus at each end pose. One trace of a
+/// face's meeting with the tool there is two points on the face's rim 2.4e-13 apart, where a
+/// crossing of the face ends: the tool touching the face at a point, not crossing it. Taken for a
+/// chord, its two ends and the crossing's stood at one place on the rim and the face was refused
+/// ("two of a ring's sheet's crossings of the tool end at one place on a face's rim"); a trace all of
+/// whose points stand at one place is left out, and the tubes are entered.
 #[test]
-fn a_trace_lying_along_a_faces_rim_bounds_nothing() {
+fn a_trace_of_no_length_bounds_nothing() {
     use gcs_core::brep::swept::rings::{entered,fitted,posed};
     use gcs_core::brep::trajectory::Screw;
     let tool = gcs_core::brep::build::torus([2.02,0.,1.],[0.,0.,1.],1.,0.08).unwrap();
