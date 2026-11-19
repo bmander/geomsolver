@@ -88,12 +88,14 @@ pub enum Place {
 }
 
 /// **A half-space's direction** (#953): held, a plane's normal, or an axis's direction read off
-/// three columns — made unit wherever it is read.
+/// three columns — made unit wherever it is read.  A line a second moment is about may run to a
+/// second point the solve moves (`Toward`), its direction read from the line's first.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Direction {
     Held([f64; 3]),
     Normal(usize),
     Read(usize),
+    Toward(Place),
 }
 
 /// **A sheet a face of the body is a piece of**: a prism's cap at ordinate `h` along its plane's
@@ -122,6 +124,10 @@ pub struct Hull {
     pub x0: Vec<f64>,
     pub feet0: Vec<f64>,
     pub extent: f64,
+    /// What a measure besides the whole reads off the same columns (#953): the point a centroid
+    /// is compared with, and the line a second moment is taken about (its point and direction).
+    pub target: Option<Place>,
+    pub axis: Option<(Place, Direction)>,
 }
 
 /// **Which stage a node is placed in**: a vertex at its foot; an edge's node, a face's and one
@@ -382,6 +388,7 @@ impl Direction {
             Direction::Held(_) => (None, Vec::new()),
             Direction::Normal(f) => (Some(f), Vec::new()),
             Direction::Read(c) => (None, vec![c, c + 1, c + 2]),
+            Direction::Toward(p) => p.reads(),
         }
     }
 }
@@ -433,6 +440,66 @@ impl Hull {
         [o, u, v, n]
     }
 
+    /// **Where `at` stands** over the columns `col` reads (#953).
+    pub(crate) fn place_at<T: Num>(&self, at: Place, col: &dyn Fn(usize) -> T) -> V<T> {
+        match at {
+            Place::Held(q) => q.map(T::cst),
+            Place::Space(c) => [col(c), col(c + 1), col(c + 2)],
+            Place::Plane { frame, c } => {
+                let [o, u, v, _] = self.basis(frame, col);
+                vadd(o, vadd(vscale(u, col(c)), vscale(v, col(c + 1))))
+            }
+            Place::Chart { frame, c } => {
+                let [o, u, v, n] = self.basis(frame, col);
+                vadd(vadd(o, vadd(vscale(u, col(c)), vscale(v, col(c + 1)))), vscale(n, col(c + 2)))
+            }
+        }
+    }
+
+    /// **`along` made unit** over the columns `col` reads (#953).
+    pub(crate) fn direction_at<T: Num>(&self, along: Direction, col: &dyn Fn(usize) -> T) -> V<T> {
+        match along {
+            Direction::Held(d) => unit(d.map(T::cst)),
+            Direction::Normal(f) => self.basis(f, col)[3],
+            Direction::Read(c) => unit([col(c), col(c + 1), col(c + 2)]),
+            Direction::Toward(_) => unreachable!("a line's direction is read from its first point"),
+        }
+    }
+
+    /// **The point and the line a measure reads** (#953, `target`, `axis`) where the columns
+    /// `col` reads stand.
+    pub(crate) fn extras_at<T: Num>(&self, col: &dyn Fn(usize) -> T)
+        -> (Option<V<T>>, Option<(V<T>, V<T>)>)
+    {
+        let axis = self.axis.map(|(p, d)| {
+            let a = self.place_at(p, col);
+            let d = match d {
+                Direction::Toward(b) => vsub(self.place_at(b, col), a),
+                d => self.direction_at(d, col),
+            };
+            (a, d)
+        });
+        (self.target.map(|p| self.place_at(p, col)), axis)
+    }
+
+    /// The columns the point and the line a measure reads read, each once.
+    pub(crate) fn extra_columns(&self) -> Vec<usize> {
+        let frame_columns = |f: Option<usize>| match f.map(|f| &self.frames[f]) {
+            Some(Frame::Read(c)) => (*c..*c + 9).collect(),
+            _ => Vec::new(),
+        };
+        let mut out = Vec::new();
+        let reads = self.target.iter().map(Place::reads)
+            .chain(self.axis.iter().flat_map(|(p, d)| [p.reads(), d.reads()]));
+        for (f, own) in reads {
+            out.extend(frame_columns(f));
+            out.extend(own);
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
     /// **Sheet `s`'s level at `p`**: its signed distance (on a turn's face, the distance in the
     /// meridian half-plane, the same thing) and that distance's gradient in space, over the
     /// columns `col` reads — NaN where the sheet is degenerate (a line of no length, a node on a
@@ -441,24 +508,8 @@ impl Hull {
         // a half-space's plane (#953): its point, its unit direction, its ordinate
         if let Sheet::Ordinate { at, along, c, m, t } = self.sheets[s] {
             let k = T::cst;
-            let o = match at {
-                Place::Held(q) => q.map(k),
-                Place::Space(c) => [col(c), col(c + 1), col(c + 2)],
-                Place::Plane { frame, c } => {
-                    let [o, u, v, _] = self.basis(frame, col);
-                    vadd(o, vadd(vscale(u, col(c)), vscale(v, col(c + 1))))
-                }
-                Place::Chart { frame, c } => {
-                    let [o, u, v, n] = self.basis(frame, col);
-                    vadd(vadd(o, vadd(vscale(u, col(c)), vscale(v, col(c + 1)))),
-                         vscale(n, col(c + 2)))
-                }
-            };
-            let n = match along {
-                Direction::Held(d) => unit(d.map(k)),
-                Direction::Normal(f) => self.basis(f, col)[3],
-                Direction::Read(c) => unit([col(c), col(c + 1), col(c + 2)]),
-            };
+            let o = self.place_at(at, col);
+            let n = self.direction_at(along, col);
             let h = match t {
                 Some(t) => k(c) + k(m) * col(t),
                 None => k(c),
@@ -910,6 +961,7 @@ impl Hull {
                         Direction::Held(d) => (0.0, d),
                         Direction::Normal(f) => (1.0, [f as f64, 0.0, 0.0]),
                         Direction::Read(c) => (2.0, [c as f64, 0.0, 0.0]),
+                        Direction::Toward(_) => unreachable!("a half-space's direction is its own"),
                     };
                     w[1] = pk;
                     w[2..5].copy_from_slice(&pw);
@@ -922,6 +974,30 @@ impl Hull {
             }
             k.extend(w);
         }
+        // the point and the line a measure reads (#953): each kind past one (none: nothing), then
+        // three numbers — the point's, the line's point's, the line's direction's
+        let place = |p: &Option<Place>| match *p {
+            None => [0.0; 4],
+            Some(Place::Held(q)) => [1.0, q[0], q[1], q[2]],
+            Some(Place::Space(c)) => [2.0, c as f64, 0.0, 0.0],
+            Some(Place::Plane { frame, c }) => [3.0, frame as f64, c as f64, 0.0],
+            Some(Place::Chart { frame, c }) => [4.0, frame as f64, c as f64, 0.0],
+        };
+        k.extend(place(&self.target));
+        k.extend(place(&self.axis.map(|(p, _)| p)));
+        // the direction's kind past one, then four: its own three, or a second point's four
+        let mut w = [0.0; 5];
+        match self.axis.map(|(_, d)| d) {
+            None => {}
+            Some(Direction::Held(d)) => w = [1.0, d[0], d[1], d[2], 0.0],
+            Some(Direction::Normal(f)) => w[..2].copy_from_slice(&[2.0, f as f64]),
+            Some(Direction::Read(c)) => w[..2].copy_from_slice(&[3.0, c as f64]),
+            Some(Direction::Toward(b)) => {
+                w[0] = 4.0;
+                w[1..].copy_from_slice(&place(&Some(b)));
+            }
+        }
+        k.extend(w);
         for s in &self.nodes {
             let mut w = [0.0; 4];
             w[0] = s.len() as f64;
@@ -937,7 +1013,7 @@ impl Hull {
 
     /// How many constants it is.
     pub fn width(&self) -> usize {
-        5 + 10 * self.frames.len() + SHEET * self.sheets.len() + 10 * self.nodes.len()
+        5 + 10 * self.frames.len() + SHEET * self.sheets.len() + EXTRAS + 10 * self.nodes.len()
     }
 
     /// What `consts` wrote, from `k`, and how many it read — `None` for constants that are not
@@ -1009,18 +1085,48 @@ impl Hull {
                 _ => return None,
             })
         }).collect::<Option<_>>()?;
+        let e = take(EXTRAS)?;
+        let place = |w: &[f64]| -> Option<Option<Place>> {
+            Some(Some(match count(w[0])? {
+                0 => return Some(None),
+                1 => Place::Held([w[1], w[2], w[3]]),
+                2 => Place::Space(col(w[1], 3)?),
+                3 => Place::Plane { frame: frame(w[1])?, c: col(w[2], 2)? },
+                4 => Place::Chart { frame: frame(w[1])?, c: col(w[2], 3)? },
+                _ => return None,
+            }))
+        };
+        let target = place(&e[..4])?;
+        let axis_at = place(&e[4..8])?;
+        let along = match count(e[8])? {
+            0 => None,
+            1 => Some(Direction::Held([e[9], e[10], e[11]])),
+            2 => Some(Direction::Normal(frame(e[9])?)),
+            3 => Some(Direction::Read(col(e[9], 3)?)),
+            4 => Some(Direction::Toward(place(&e[9..13])??)),
+            _ => return None,
+        };
+        let axis = match (axis_at, along) {
+            (Some(p), Some(d)) => Some((p, d)),
+            (None, None) => None,
+            _ => return None,
+        };
         let nodes: Vec<Vec<usize>> = take(4 * n_nodes)?.as_chunks::<4>().0.iter().map(|w| {
             let n = count(w[0]).filter(|&n| n <= 3)?;
             w[1..1 + n].iter().map(|&s| count(s).filter(|&s| s < n_sheets)).collect()
         }).collect::<Option<_>>()?;
         let x0 = take(3 * n_nodes)?.to_vec();
         let feet0 = take(3 * n_nodes)?.to_vec();
-        Some((Hull { columns, frames, sheets, nodes, x0, feet0, extent }, at))
+        Some((Hull { columns, frames, sheets, nodes, x0, feet0, extent, target, axis }, at))
     }
 }
 
 /// A sheet's constants: its kind, its plane, its profile's three, its axis's kind and six.
 const SHEET: usize = 12;
+
+/// The constants of the point and the line a measure reads (#953): four each for the point and
+/// the line's point, five for the line's direction.
+const EXTRAS: usize = 13;
 
 /// `(JJᵀ)⁻¹ φ` over a node's levels and their gradients (one, two or three): `None` where the
 /// sheets are not independent there.

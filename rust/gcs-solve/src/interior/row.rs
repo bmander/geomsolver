@@ -2,6 +2,7 @@
 //! (`Row`), its structure solved there, its output less what it states and its adjoint rate —
 //! the last meshed row kept, since a step's accepted trial is where the next rate is taken.
 
+use crate::kernels::Num;
 use super::consts::{self, Drive, Mover};
 use super::{hull, moved, Hull, Moved, State, Structure, SECTION};
 use crate::diagnose::analysis::{self, Reach};
@@ -28,7 +29,13 @@ struct Row {
     cols: usize,
     free: bool,
     driven: Driven,
+    /// Where a measure besides the whole stands (#953): the point a centroid is compared with and
+    /// the line a second moment is about, read off the hull's columns; `None` for a whole.
+    aim: Option<Aim>,
 }
+
+/// The point and the line a gauged measure reads, where the columns stand.
+type Aim = (Option<[f64; 3]>, Option<([f64; 3], [f64; 3])>);
 
 /// **A row's drive read where its columns stand** (`Drive`): its sections each with its value and
 /// rate in the unknowns, or its nodes placed with what their rate is carried by.
@@ -75,7 +82,27 @@ impl Row {
                 (std::mem::take(&mut placed.x), Driven::Hull(h, placed))
             }
         };
-        Some(Row { s, x, stated, cols, free, driven })
+        // a measure besides the whole reads a filled body's nodes and its hull's point and line
+        let aim = match &driven {
+            _ if s.gauge.whole() => None,
+            Driven::Hull(h, _) => {
+                let col = |c: usize| crate::kernels::Dual::<0>::cst(v[c]);
+                let (t, a) = h.extras_at(&col);
+                let val = |p: [crate::kernels::Dual<0>; 3]| p.map(|q| q.v);
+                Some((t.map(val), a.map(|(p, d)| (val(p), val(d)))))
+            }
+            _ => return None,
+        };
+        Some(Row { s, x, stated, cols, free, driven, aim })
+    }
+
+    /// **A gauged measure where the row stands** (#953): its moments composed with its point
+    /// and its line.
+    fn gauged(&self, aim: &Aim) -> f64 {
+        let m = self.s.moments(&self.x).map(crate::kernels::Dual::<0>::cst);
+        let c = |p: [f64; 3]| p.map(crate::kernels::Dual::<0>::cst);
+        super::gauge::compose(self.s.gauge.what, &m, aim.0.map(c), aim.1.map(|(a, d)| (c(a), c(d))))
+            .v
     }
 
     /// Whether its nodes move with the drawing: a region's, a prism's, a filled body's.
@@ -118,9 +145,10 @@ impl Row {
     /// What the row reads where it stands, solved at `st`: the displacement `Σ weight · u`, or
     /// what the structure is made of (`Reads::Volume`, `Reads::Mass`), which no solve reads.
     fn output(&self, st: &Option<State>) -> f64 {
-        match st {
-            Some(st) => self.s.output(st),
-            None => self.s.measure(&self.x),
+        match (st, &self.aim) {
+            (Some(st), _) => self.s.output(st),
+            (None, Some(aim)) => self.gauged(aim),
+            (None, None) => self.s.measure(&self.x),
         }
     }
 
@@ -130,9 +158,15 @@ impl Row {
     fn rate(&self, st: &Option<State>, v: &[f64], row: &mut [f64]) {
         let s = &self.s;
         let cols = self.cols;
-        let gradient = |g: &mut [f64]| match st {
-            Some(st) => s.gradient(st, &self.x, g),
-            None => s.measure_gradient(&self.x, g),
+        // a gauged measure's rate in its moments (#953), carried to its nodes as a whole's is
+        let moments = self.aim.map(|aim| (s.moments(&self.x), aim));
+        let gradient = |g: &mut [f64]| match (st, moments) {
+            (Some(st), _) => s.gradient(st, &self.x, g),
+            (None, Some((m, (t, a)))) => {
+                let w = super::gauge::compose_rate(s.gauge.what, &m, t, a);
+                s.moments_gradient(&self.x, &w, g)
+            }
+            (None, None) => s.measure_gradient(&self.x, g),
         };
         match &self.driven {
             // the nodes' rates carried through how they move with the drawing (#510 S2)
@@ -148,6 +182,17 @@ impl Row {
                 if h.chain(&v[..cols], placed, &g, &mut row[..cols]).is_none() {
                     row.fill(f64::NAN);
                     return;
+                }
+                // and the point's and the line's own columns, each read forward (#953)
+                if let Some((m, _)) = moments {
+                    use crate::kernels::Dual;
+                    let md = m.map(Dual::<1>::cst);
+                    for c in h.extra_columns() {
+                        let col = |j: usize| if j == c { Dual::<1>::var(v[j], 0) }
+                                             else { Dual::<1>::cst(v[j]) };
+                        let (t, a) = h.extras_at(&col);
+                        row[c] += super::gauge::compose(s.gauge.what, &md, t, a).g[0];
+                    }
                 }
             }
             Driven::Stated => gradient(&mut row[..cols]),

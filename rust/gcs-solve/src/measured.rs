@@ -14,6 +14,10 @@ use crate::model::{Applied, Measured, Quantity, Sketch};
 /// none: a member of no length, a material of no density, a thing that is no beam, member or
 /// solid.
 pub fn read_at(sk: &Sketch, m: &Measured, coarser: f64) -> Result<f64, String> {
+    // where a body is made, and a face's measures (#953): over the body's own tetrahedra
+    if !matches!(m.quantity, Quantity::Mass | Quantity::Volume) {
+        return crate::bodies::gauged(sk, m, coarser);
+    }
     let reads = Reads::of(m.quantity);
     if !crate::beams::members(sk, &m.of).is_empty() {
         return crate::beams::measure(sk, &m.of, reads);
@@ -38,9 +42,19 @@ pub fn read(sk: &Sketch, m: &Measured) -> Result<(f64, Option<f64>), String> {
 }
 
 /// Whether value `v` keeps `m`: within 1e-9 of what it states for `==`, on its side for `<=` and
-/// `>=` (`beams::keeps`'s rule).
-pub fn keeps(m: &Measured, v: f64) -> bool {
+/// `>=` (`beams::keeps`'s rule).  A point stands where its measure puts it within `error`, the
+/// error estimated in where it is put, or within 1e-9 of the body's measure where none is.
+pub fn keeps(m: &Measured, v: f64, error: Option<f64>) -> bool {
+    if m.quantity.point() {
+        return v <= error.unwrap_or(0.0).max(1e-9);
+    }
     crate::beams::compares(m.compare, m.value, v)
+}
+
+/// **Where a point's measure puts it**, on the drawing as it stands (#953): `g centroid B`'s
+/// centroid, read over the body's own mesh.
+pub fn centre(sk: &Sketch, m: &Measured) -> Result<[f64; 3], String> {
+    crate::bodies::centre(sk, m, 1.0).map(|(c, _)| c)
 }
 
 /// **A measure as a reader reads it**, six figures in its unit: a mass in kilograms, a volume in
@@ -60,6 +74,9 @@ fn figures_text(sk: &Sketch, q: Quantity, v: f64, figures: usize) -> String {
     match q {
         Quantity::Mass => format!("{fig}kg"),
         Quantity::Volume => format!("{fig}{}³", sk.units.name()),
+        Quantity::Area => format!("{fig}{}²", sk.units.name()),
+        Quantity::Moment => format!("{fig}{}⁴", sk.units.name()),
+        Quantity::Centroid | Quantity::CenterOfMass => format!("{fig}{}", sk.units.name()),
     }
 }
 

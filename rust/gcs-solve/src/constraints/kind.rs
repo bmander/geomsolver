@@ -223,6 +223,21 @@ pub enum CKind {
     /// **A volume, driven**: `volume(72 * 1cm^3) arm`, `Mass` with no density read
     /// (`interior::Reads::Volume`): a member's `A L`, a prism's face's area through its depth.
     Volume,
+    /// **A face's area, driven** (#953): `area(A) hull.water`, the measure of the facets of the
+    /// face's body's filled mesh that lie on it (`interior::Gauge`), moved with the drawing as a
+    /// filled body's volume is.
+    Area,
+    /// **A face's second moment about a line, driven** (#953): `moment(I, about: l) hull.water`,
+    /// `∫ |(x − a) × d̂|² dA` over the face's facets, the line's point and direction read off the
+    /// same columns.
+    Moment,
+    /// **A point at the centroid of a body's volume or a face's area, driven** (#953): `g
+    /// centroid hull`, three rows, one an ordinate `k` of the world, `∫ x_k / ∫ 1 − g_k`, the
+    /// point's place read off the same columns as the body's sheets.
+    Centroid,
+    /// **A point at a body's centre of mass, driven** (#953): `g centerofmass hull`, `Centroid`
+    /// weighed by each element's density.
+    CenterOfMass,
     /// **A point on a body traced in space** (#326, `traced`): `p coincident k`, three rows `p −
     /// X(u, s)` against the place `[u, s]` it owns (a curve's `s` held at none), so a point on a
     /// curve in space nets two and one on a surface one.  The body's geometry is columns.
@@ -495,7 +510,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 95] = [
+pub const ALL_KINDS: [CKind; 99] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -534,6 +549,10 @@ pub const ALL_KINDS: [CKind; 95] = [
     CKind::Deflection,
     CKind::Mass,
     CKind::Volume,
+    CKind::Area,
+    CKind::Moment,
+    CKind::Centroid,
+    CKind::CenterOfMass,
     CKind::PointOnTraced,
     CKind::Project,
     CKind::Lift,
@@ -833,6 +852,10 @@ impl CKind {
             CKind::Deflection => "Deflection",
             CKind::Mass => "Mass",
             CKind::Volume => "Volume",
+            CKind::Area => "Area",
+            CKind::Moment => "Moment",
+            CKind::Centroid => "Centroid",
+            CKind::CenterOfMass => "CenterOfMass",
             CKind::PointOnTraced => "PointOnTraced",
             CKind::Project => "Project",
             CKind::AxisOnPlane => "AxisOnPlane",
@@ -1079,6 +1102,14 @@ impl CKind {
             // a mass in kilograms, a volume in the drawing's length cubed — no dimension drawn
             CKind::Mass => &[("of", S::Int), ("m", S::Float)],
             CKind::Volume => &[("of", S::Int), ("v", S::Float)],
+            // a face's area and its second moment (#953): in the drawing's length squared and
+            // to the fourth; a centroid's ordinate `k` of the world, its point the statement's,
+            // and how far off it the row holds it — nothing (an interior row's number is last)
+            CKind::Area => &[("of", S::Int), ("a", S::Float)],
+            CKind::Moment => &[("of", S::Int), ("i", S::Float)],
+            CKind::Centroid | CKind::CenterOfMass => {
+                &[("of", S::Int), ("k", S::Int), ("off", S::Float)]
+            }
             // the place on a traced body: its formals', a curve's second held at none (#326)
             CKind::PointOnTraced => &[("p", S::Point), ("traced", S::Traced), ("u", S::Param), ("s", S::Param)],
             CKind::SplineTangentLine => {
@@ -1301,6 +1332,11 @@ impl CKind {
             // a mass or a volume driven: a scenario's output, `mass(arm)`, `volume(arm)`
             CKind::Mass => ("mass", Prefix),
             CKind::Volume => ("volume", Prefix),
+            // where a body is made, and a face's measures (#953)
+            CKind::Area => ("area", Prefix),
+            CKind::Moment => ("moment", Prefix),
+            CKind::Centroid => ("centroid", Infix),
+            CKind::CenterOfMass => ("centerofmass", Infix),
             // a body traced in space (#326): a point on it, and at a point already on it a line
             // or a plane touching it, a line along a surface's normal and a circle osculating it
             CKind::PointOnTraced => ("coincident", Infix),
@@ -1695,7 +1731,10 @@ impl CKind {
     pub fn reads(self) -> Option<crate::interior::Reads> {
         match self {
             CKind::Mass => Some(crate::interior::Reads::Mass),
-            CKind::Volume => Some(crate::interior::Reads::Volume),
+            CKind::Volume | CKind::Area | CKind::Moment | CKind::Centroid => {
+                Some(crate::interior::Reads::Volume)
+            }
+            CKind::CenterOfMass => Some(crate::interior::Reads::Mass),
             _ => None,
         }
     }
@@ -1845,6 +1884,10 @@ impl CKind {
             | CKind::Deflection
             | CKind::Mass
             | CKind::Volume
+            | CKind::Area
+            | CKind::Moment
+            | CKind::Centroid
+            | CKind::CenterOfMass
             // a point on a traced body is a contact, as one on a curve is
             | CKind::PointOnTraced
             | CKind::PointAlongLine
@@ -1953,7 +1996,8 @@ impl CKind {
             CKind::RegularWithin => {
                 panic!("a flank's regularity is read by a kernel built at its operands' widths")
             }
-            CKind::Deflection | CKind::Mass | CKind::Volume => {
+            CKind::Deflection | CKind::Mass | CKind::Volume | CKind::Area | CKind::Moment
+            | CKind::Centroid | CKind::CenterOfMass => {
                 panic!("a scenario's output is read by a kernel built at its structure's widths")
             }
             CKind::CarriedPoint | CKind::CarriedPointIn => {
@@ -2148,6 +2192,10 @@ impl CKind {
             | CKind::Deflection
             | CKind::Mass
             | CKind::Volume
+            | CKind::Area
+            | CKind::Moment
+            | CKind::Centroid
+            | CKind::CenterOfMass
             // nor a contact with a traced body
             | CKind::PointOnTraced
             | CKind::PointAlongLine
@@ -2227,6 +2275,10 @@ impl CKind {
                 | CKind::Deflection
                 | CKind::Mass
                 | CKind::Volume
+                | CKind::Area
+                | CKind::Moment
+                | CKind::Centroid
+                | CKind::CenterOfMass
                 | CKind::PointOnTraced
                 | CKind::PlaneTangentLine
                 | CKind::PlaneTangentRound

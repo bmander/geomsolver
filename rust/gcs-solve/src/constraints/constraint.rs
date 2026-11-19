@@ -696,7 +696,8 @@ impl Constraint {
     pub fn made_row_at(&self, sk: &Sketch, coarser: f64) -> Result<InteriorRow, String> {
         match self.kind {
             CKind::Deflection => self.deflection_made(sk, coarser),
-            CKind::Mass | CKind::Volume => self.measure_made(sk),
+            CKind::Mass | CKind::Volume | CKind::Area | CKind::Moment | CKind::Centroid
+            | CKind::CenterOfMass => self.measure_made(sk),
             _ => Err("it reads no structure".into()),
         }
     }
@@ -732,6 +733,10 @@ impl Constraint {
             return crate::beams::Row::measured(sk, &m.of, reads).map(InteriorRow::Frame);
         }
         let solid = m.of.solid().ok_or("it is of no beam, no member of one and no solid")?;
+        // where a body is made, and a face's measures (#953): over its filled mesh
+        if !matches!(m.quantity, crate::model::Quantity::Mass | crate::model::Quantity::Volume) {
+            return crate::bodies::gauged_row(sk, m).map(|r| InteriorRow::Meshed(r.into()));
+        }
         crate::prisms::Row::measured(sk, solid, reads).map(|r| InteriorRow::Meshed(r.into()))
     }
 
@@ -765,7 +770,8 @@ impl Constraint {
                 let Some(Arg::Int(k)) = self.args.get(2) else { return None };
                 Some(MeshedKey::Deflection { scenario: usize::try_from(*k).ok()?, at, along })
             }
-            CKind::Mass | CKind::Volume => Some(MeshedKey::Measure(self.measured(sk).ok()?.0)),
+            CKind::Mass | CKind::Volume | CKind::Area | CKind::Moment | CKind::Centroid
+            | CKind::CenterOfMass => Some(MeshedKey::Measure(self.measured(sk).ok()?.0)),
             _ => None,
         }
     }

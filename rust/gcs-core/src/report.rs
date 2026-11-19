@@ -635,9 +635,37 @@ pub fn measure_answers(sk: &Sketch, measures: &[crate::program::MeasureStated])
         };
         let head = ms.head.clone();
         let grade = if m.claim { "claim" } else { "driving" };
+        // a point a measure puts (#953): where the measure puts it, the point the distance off it
+        if q.point() {
+            let got = crate::measured::read(sk, m)
+                .and_then(|(d, e)| Ok((d, e, crate::measured::centre(sk, m)?)));
+            let (value, error, holds, text) = match got {
+                Ok((d, error, c)) => {
+                    let keeps = crate::measured::keeps(m, d, error);
+                    let verdict = match (m.claim, keeps) {
+                        (true, true) => "claimed, kept",
+                        (true, false) => "claimed, refuted",
+                        (false, true) => "driven, held",
+                        (false, false) => "driven, not reached",
+                    };
+                    let at: Vec<String> = c.iter().map(|&x| crate::json::fmt_g(x, 6)).collect();
+                    let mut said = format!("({}){}", at.join(", "), sk.units.name());
+                    if let Some(e) = error {
+                        said = format!("{said} {}", crate::measured::error_text(sk, q, e));
+                    }
+                    if !keeps {
+                        said = format!("{said}, {} off it",
+                                       crate::measured::value_text(sk, q, d));
+                    }
+                    (Some(d), error, Some(keeps), format!("{head}: at {said}: {verdict}"))
+                }
+                Err(why) => (None, None, None, format!("{head} has no answer: {why}")),
+            };
+            return Some(ScenarioAnswer { index: k, head, grade, value, error, holds, text });
+        }
         let (value, error, holds, text) = match got {
             Ok((v, error)) => {
-                let keeps = crate::measured::keeps(m, v);
+                let keeps = crate::measured::keeps(m, v, error);
                 let verdict = match (m.claim, keeps) {
                     (true, true) => format!("claimed {stated}, kept"),
                     (true, false) => format!("claimed {stated}, refuted"),

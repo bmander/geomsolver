@@ -556,6 +556,10 @@ impl Constraint {
             | CKind::Deflection
             | CKind::Mass
             | CKind::Volume
+            | CKind::Area
+            | CKind::Moment
+            | CKind::Centroid
+            | CKind::CenterOfMass
             | CKind::PointOnTraced
             // a development's length, a plane touching a path and a line's fraction (#645): a
             // segment's own `b − a`, or a corner's links read through their ends
@@ -982,7 +986,8 @@ impl Constraint {
             }
             // a deflection driven: a frame's every joint's lift, then its sections' unknowns (#510
             // S1); a region's points' numbers and radii (S2) — a mass's or a volume's alike
-            CKind::Deflection | CKind::Mass | CKind::Volume => {
+            CKind::Deflection | CKind::Mass | CKind::Volume | CKind::Area | CKind::Moment
+            | CKind::Centroid | CKind::CenterOfMass => {
                 self.interior_parts(sk).map(|(_, c)| c).unwrap_or_default()
             }
             // a point a motion carries to a stated roll (#366): both points' lifts, the axes of
@@ -1219,7 +1224,8 @@ impl Constraint {
             // every point the envelope and the regions' terms read (#345)
             CKind::RegularWithin => self.regular_parts(sk).map(|p| p.lifted()).unwrap_or_default(),
             // every joint of the frame (#510 S1); a region's points are read in their plane (S2)
-            CKind::Deflection | CKind::Mass | CKind::Volume => {
+            CKind::Deflection | CKind::Mass | CKind::Volume | CKind::Area | CKind::Moment
+            | CKind::Centroid | CKind::CenterOfMass => {
                 self.interior_row(sk).map(|r| r.lifted()).unwrap_or_default()
             }
             // both points, then every point the motion's axes read (#326, #366)

@@ -157,6 +157,10 @@ macro_rules! undrawn {
             | CKind::Deflection
             | CKind::Mass
             | CKind::Volume
+            | CKind::Area
+            | CKind::Moment
+            | CKind::Centroid
+            | CKind::CenterOfMass
             // nor a point carried by a motion, at a roll it owns or one stated: a turn about
             // whatever the motion turns about, which no view of the drawing shows (#366)
             | CKind::CarriedPoint

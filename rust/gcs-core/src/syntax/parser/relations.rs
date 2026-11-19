@@ -359,7 +359,8 @@ impl<'a> P<'a> {
                     let motion = word == "coincident"
                         && (name.text == "under" || name.text == "seen_from");
                     // and `angle(θ, about: a)` the axis its turn is read about (#558)
-                    let axis = matches!(word, "angle" | "perpendicular") && name.text == "about";
+                    let axis = matches!(word, "angle" | "perpendicular" | "moment")
+                        && name.text == "about";
                     let v = if self.path_ahead() || along || point || motion || axis {
                         Arg::Ref(self.refr()?)
                     } else {

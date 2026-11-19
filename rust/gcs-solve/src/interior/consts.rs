@@ -447,6 +447,11 @@ impl Structure {
         for i in 0..self.fixed.len() {
             k.put([self.fixed[i] as u8 as f64, self.load[i], self.weight[i]]);
         }
+        // what a measure reads besides its whole (#953): its number's tag and ordinate, how many
+        // facets, then each facet's six nodes
+        k.put(self.gauge.what.code());
+        k.put([self.gauge.facets.len() as f64]);
+        k.put(self.gauge.facets.iter().flatten().map(|&n| n as f64));
         match drive {
             Drive::Stated => {}
             Drive::Sized(z) => {
@@ -497,7 +502,7 @@ impl Structure {
             .collect::<Option<_>>()?;
         let mut s = Structure { dim: h.dim, nodes: h.nodes, bars, beams, fixed: Vec::new(),
                                 load: Vec::new(), weight: Vec::new(), spread, tris, laid, tets,
-                                borne, reads: h.reads };
+                                borne, reads: h.reads, gauge: Default::default() };
         // a plane element is of the plane, a solid one of space, each moves without turning, and
         // neither is a member's nor the other's
         let mixed = !s.beams.is_empty() || !s.bars.is_empty();
@@ -510,6 +515,17 @@ impl Structure {
         s.fixed = per.iter().map(|c| c[0] != 0.0).collect();
         s.load = per.iter().map(|c| c[1]).collect();
         s.weight = per.iter().map(|c| c[2]).collect();
+        let what = r.take(2)?;
+        s.gauge.what = super::What::read(count(what[0])?, count(what[1])?)?;
+        let facets = r.count()?;
+        s.gauge.facets = r.records::<6>(facets)?.iter().map(|f| {
+            let f = f.map(node);
+            Some([f[0]?, f[1]?, f[2]?, f[3]?, f[4]?, f[5]?])
+        }).collect::<Option<_>>()?;
+        // a measure besides the whole is of a solid's nodes (#953)
+        if !s.gauge.whole() && (s.dim != 3 || !s.reads.measure()) {
+            return None;
+        }
         let drive = match h.drive {
             Tag::Stated => (h.over == 0).then_some(Drive::Stated)?,
             Tag::Sized => {

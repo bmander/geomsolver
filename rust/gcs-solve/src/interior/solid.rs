@@ -113,6 +113,22 @@ pub(crate) fn volume_of<T: Num>(x: &[P<T>; 10]) -> T {
     rule5().iter().fold(T::cst(0.0), |a, &(p, w)| a + T::cst(w) * jacobian(x, &shape_d(p)).1)
 }
 
+/// **Each point of the degree-five rule in the element** (#953): where it stands at its nodes'
+/// places `x`, its weight, and `det J` there — what a moment of the element is summed over
+/// (`gauge::tet`).
+pub(crate) fn points_and_measure<T: Num>(x: &[P<T>; 10]) -> Vec<(P<T>, f64, T)> {
+    rule5().into_iter().map(|(p, w)| {
+        let n = shape(p);
+        let mut at = [T::cst(0.0); 3];
+        for k in 0..10 {
+            for c in 0..3 {
+                at[c] = at[c] + T::cst(n[k]) * x[k][c];
+            }
+        }
+        (at, w, jacobian(x, &shape_d(p)).1)
+    }).collect()
+}
+
 /// The element's Jacobian at a point of it, `J[r][c] = ∂x_c/∂ξ_r`, and its determinant.
 fn jacobian<T: Num>(x: &[P<T>; 10], d: &[[f64; 10]; 3]) -> ([[T; 3]; 3], T) {
     let mut j = [[T::cst(0.0); 3]; 3];

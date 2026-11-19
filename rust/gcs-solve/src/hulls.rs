@@ -295,8 +295,55 @@ fn meet(normals: &[[f64; 3]]) -> bool {
 /// node of a facet tagged with the sheets it lies on, the places and the feet at the drawing as it
 /// stands — and the columns the sheets read.  Or why a driving row cannot move it.
 pub fn hull_of(sk: &Sketch, solid: usize, mesh: &Mesh) -> Result<(Hull, Vec<u32>), String> {
-    let body = BodyFaces::whole(sk, solid)?;
+    hull_aimed(sk, solid, mesh, None, None)
+}
+
+/// **`hull_of`, and what a measure besides the whole reads off its columns** (#953): the point
+/// `at` a centroid is compared with, and the line or axis `about` a second moment is taken about
+/// — each held where nothing the solve moves reads it, else read as a sheet's point is.  Refused
+/// for a line whose ends the solve moves, whose direction a row does not read yet.
+pub fn hull_aimed(sk: &Sketch, solid: usize, mesh: &Mesh, at: Option<usize>,
+                  about: Option<EntRef>) -> Result<(Hull, Vec<u32>), String> {
     let mut b = Builder::default();
+    let target = at.map(|q| b.place(sk, q));
+    let axis = match about {
+        None => None,
+        // a line: its first point, and its direction held, or read toward its second point
+        Some(e) if e.kind == EntKind::Line => {
+            let l = &sk.lines[e.i()];
+            let a = b.place(sk, l.p1 as usize);
+            let d = match b.direction(sk, e) {
+                Ok(d) => d,
+                Err(_) => Direction::Toward(b.place(sk, l.p2 as usize)),
+            };
+            Some((a, d))
+        }
+        Some(e) if e.kind == EntKind::Axis => {
+            let x = &sk.axes[e.i()];
+            let held = x.a.iter().all(|&q| sk.params[q as usize].fixed);
+            let a = if held {
+                Place::Held(x.a.map(|q| sk.params[q as usize].value))
+            } else {
+                let c = b.columns.len();
+                b.columns.extend(x.a);
+                Place::Space(c)
+            };
+            Some((a, b.direction(sk, e)?))
+        }
+        Some(e) => return Err(format!("a second moment is about a line or an axis, and this is {}",
+                                      e.kind.a())),
+    };
+    let (mut hull, columns) = hull_with(sk, solid, mesh, b)?;
+    hull.target = target;
+    hull.axis = axis;
+    Ok((hull, columns))
+}
+
+/// `hull_of` over the columns `b` has read already.
+fn hull_with(sk: &Sketch, solid: usize, mesh: &Mesh, mut b: Builder)
+    -> Result<(Hull, Vec<u32>), String>
+{
+    let body = BodyFaces::whole(sk, solid)?;
     let paths = body.paths();
     let face_sheet: Vec<usize> = paths.iter().map(|path| {
         crate::solid::faces::face_primitive(sk, solid, &path.route)
@@ -307,7 +354,8 @@ pub fn hull_of(sk: &Sketch, solid: usize, mesh: &Mesh) -> Result<(Hull, Vec<u32>
     let mut hull = Hull { columns: b.columns.len(), frames: b.frames, sheets: b.sheets,
                           nodes: vec![Vec::new(); n],
                           x0: mesh.nodes.iter().flatten().copied().collect(),
-                          feet0: vec![0.0; 3 * n], extent: mesh.extent() };
+                          feet0: vec![0.0; 3 * n], extent: mesh.extent(), target: None,
+                          axis: None };
     // each node of a facet, the sheets of the facets it is a node of and how many
     let mut candidates: BTreeMap<usize, BTreeMap<usize, usize>> = BTreeMap::new();
     for (f, wall) in &mesh.facets {

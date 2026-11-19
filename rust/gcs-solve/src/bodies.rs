@@ -30,7 +30,7 @@ use crate::diagnose::analysis::{self, direction, Held};
 use crate::eigen::{self, Pairs};
 use crate::interior::{Borne, Drive, Failure, Mover, Reads, State, Structure, Tet10};
 use crate::model::{
-    Applied, EntKind, LoadKind, LoadValue, Output, Property, Requirement, Scenario, Sketch,
+    Applied, EntKind, EntRef, LoadKind, LoadValue, Output, Property, Requirement, Scenario, Sketch,
 };
 use crate::prisms::{self, property, Region, Unread, ON};
 use crate::solid::faces::BodyFaces;
@@ -1006,6 +1006,141 @@ fn filled_row(sk: &Sketch, sc: &Scenario, solid: usize, at: usize, along: crate:
 /// boundary's nodes moved by its sheets (`hulls::hull_of`) and its inner nodes left where they
 /// were meshed — a measure reads the boundary alone.  It reads no support and no load, and of a
 /// material only a mass's density.
+/* -- what a body is made of, and where (#953) ------------------------------------------------- */
+
+/// **The facets of face `f` of solid `solid`'s mesh**: those lying on the faces it names —
+/// refused where it names none of the body's, or none any facet lies on.
+fn face_facets(sk: &Sketch, solid: usize, f: &crate::model::FaceRef, mesh: &Mesh)
+    -> Result<Vec<[usize; 6]>, String>
+{
+    let body = BodyFaces::whole(sk, solid)?;
+    let named = body.faces(f);
+    let said = || format!("`{}.{}`", sk.solids[solid].name, f.path.join("."));
+    if named.is_empty() {
+        return Err(format!("{} names no face of the body", said()));
+    }
+    let facets: Vec<[usize; 6]> = mesh.facets.iter()
+        .filter(|(_, w)| matches!(w, Wall::Face(fi) if named.contains(fi)))
+        .map(|(f, _)| *f).collect();
+    if facets.is_empty() {
+        return Err(format!("{} has no area on the body", said()));
+    }
+    Ok(facets)
+}
+
+/// **Solid `m` names, filled for a measure besides the whole** (#953), at `coarser` times a
+/// reading's size: its mesh, its structure — each element weighed by its density for a centre
+/// of mass, its gauge the facets of the face it names and the number it reads — and where its
+/// nodes stand.  A face's measure is of a face (`B.face`), and a body's of a body.
+fn gauging(sk: &Sketch, m: &crate::model::Measured, coarser: f64)
+    -> Result<(Mesh, Structure, Vec<f64>), String>
+{
+    use crate::interior::{Gauge, What};
+    use crate::model::Quantity;
+    let solid = m.of.solid().ok_or("it is of no solid")?;
+    let face = match &m.of {
+        Applied::Face(f) => Some(f),
+        _ => None,
+    };
+    let word = m.quantity.word();
+    match (m.quantity.of_face(), face) {
+        (true, None) => return Err(format!("an {word} is a face's: name one, `{}.face`",
+                                           sk.solids[solid].name)),
+        (false, Some(_)) if m.quantity == Quantity::CenterOfMass => {
+            return Err("a centre of mass is a body's, and a face weighs nothing".into());
+        }
+        _ => {}
+    }
+    let rho = if m.quantity.weighed() { property(sk, solid, Property::Rho)? } else { 0.0 };
+    let mesh = Mesh::filled(sk, solid, coarser)?;
+    let facets = match face {
+        Some(f) => face_facets(sk, solid, f, &mesh)?,
+        None => Vec::new(),
+    };
+    let what = match m.quantity {
+        Quantity::Centroid | Quantity::CenterOfMass => What::Centroid { k: m.k },
+        Quantity::Moment => What::Second,
+        _ => What::Total,
+    };
+    let tets = mesh.tets.iter().map(|&n| Tet10 { n, e: 0.0, nu: 0.0, rho }).collect();
+    let n = mesh.nodes.len();
+    let reads = if m.quantity.weighed() { Reads::Mass } else { Reads::Volume };
+    let s = Structure { dim: 3, nodes: n, fixed: vec![false; 3 * n], load: vec![0.0; 3 * n],
+                        weight: vec![0.0; 3 * n], tets, reads, gauge: Gauge { facets, what },
+                        ..Structure::default() };
+    let x: Vec<f64> = mesh.nodes.iter().flatten().copied().collect();
+    Ok((mesh, s, x))
+}
+
+/// **Where measure `m` puts its point, and its moments**, on the drawing as it stands (#953): the
+/// centroid of the body's volume or mass or the face's area, read over its own mesh `coarser`
+/// times a reading's size.
+pub(crate) fn centre(sk: &Sketch, m: &crate::model::Measured, coarser: f64)
+    -> Result<([f64; 3], [f64; crate::interior::MOMENTS]), String>
+{
+    let (_, s, x) = gauging(sk, m, coarser)?;
+    let mo = s.moments(&x);
+    if !(mo[0].is_finite() && mo[0] > 0.0) {
+        return Err(format!("it has no {} where the drawing stands",
+                           if s.reads == Reads::Mass { "mass" } else { "measure" }));
+    }
+    Ok(([mo[1] / mo[0], mo[2] / mo[0], mo[3] / mo[0]], mo))
+}
+
+/// **Measure `m` read on the drawing as it stands** (#953), `coarser` times a reading's size: a
+/// face's area, its second moment about the line `m` names, or how far `m`'s point stands from
+/// the centroid it names.
+pub(crate) fn gauged(sk: &Sketch, m: &crate::model::Measured, coarser: f64)
+    -> Result<f64, String>
+{
+    use crate::model::Quantity;
+    let (c, mo) = centre(sk, m, coarser)?;
+    match m.quantity {
+        Quantity::Area => Ok(mo[0]),
+        Quantity::Moment => {
+            let (a, d) = axis_at(sk, m.about.ok_or("a second moment is about a line")?)?;
+            use crate::kernels::Num;
+            let k = |p: [f64; 3]| p.map(crate::kernels::Dual::<0>::cst);
+            let md = mo.map(crate::kernels::Dual::<0>::cst);
+            Ok(crate::interior::compose_value(crate::interior::What::Second, &md, None,
+                                              Some((k(a), k(d)))))
+        }
+        Quantity::Centroid | Quantity::CenterOfMass => {
+            let g = sk.world_point(m.at.ok_or("a centroid puts a point")?);
+            Ok(crate::space::distance(c, g))
+        }
+        Quantity::Mass | Quantity::Volume => Ok(mo[0]),
+    }
+}
+
+/// A line's or an axis's point and direction where the drawing stands.
+fn axis_at(sk: &Sketch, about: EntRef) -> Result<([f64; 3], [f64; 3]), String> {
+    match about.kind {
+        crate::model::EntKind::Line => {
+            let l = &sk.lines[about.i()];
+            let (a, b) = (sk.world_point(l.p1 as usize), sk.world_point(l.p2 as usize));
+            Ok((a, sub(b, a)))
+        }
+        crate::model::EntKind::Axis => {
+            let x = &sk.axes[about.i()];
+            let v = |q: [u32; 3]| q.map(|q| sk.params[q as usize].value);
+            Ok((v(x.a), v(x.d)))
+        }
+        k => Err(format!("a second moment is about a line or an axis, and this is {}", k.a())),
+    }
+}
+
+/// **A driving row of measure `m` besides the whole** (#953): its body filled once where the
+/// drawing stands, at a reading's size, its boundary's nodes moved by its sheets and its point
+/// and line read off the same columns (`hulls::hull_aimed`).
+pub(crate) fn gauged_row(sk: &Sketch, m: &crate::model::Measured) -> Result<prisms::Row, String> {
+    let solid = m.of.solid().ok_or("it is of no solid")?;
+    let (mesh, s, x) = gauging(sk, m, 1.0)?;
+    let (hull, columns) = crate::hulls::hull_aimed(sk, solid, &mesh, m.at, m.about)?;
+    Ok(prisms::Row { structure: s, drive: Drive::Moved(Mover::Hull(hull)), columns, x,
+                     coarser: 1.0 })
+}
+
 pub(crate) fn measured_row(sk: &Sketch, solid: usize, reads: Reads) -> Result<prisms::Row, String> {
     let (mesh, s, x) = measuring(sk, solid, reads, 1.0)?;
     let (hull, columns) = crate::hulls::hull_of(sk, solid, &mesh)?;
