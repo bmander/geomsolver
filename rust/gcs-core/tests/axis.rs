@@ -9,7 +9,7 @@ use gcs_core::io;
 use gcs_core::model::{EntKind, EntRef, Sketch};
 use gcs_core::space::{cross, dot, norm, sub};
 
-use crate::common::{dof, ent, read, refused, solved, unit};
+use crate::common::{dof, ent, read, refused, said, solved, unit};
 
 /// An axis's direction and the point on it nearest the origin, as solved.
 fn axis(sk: &Sketch, e: EntRef) -> ([f64; 3], [f64; 3]) {
@@ -225,4 +225,52 @@ fn a_line_in_space_on_an_axis_gives_it_direction_and_place() {
     assert!(norm(cross(unit(d), [0.6, 0.8, 0.0])) < 1e-9, "the axis runs {d:?}");
     assert!(norm(cross(sub([1.0, 2.0, 3.0], a), unit(d))) < 1e-9, "and passes through p");
     assert_eq!(dof(&mut sk), 0);
+}
+
+/// A point's mirror in an axis is its half turn about the axis's line (`SymmetricAxis`), as the
+/// mirror in a drawn line is in space: one corner of a regular tetrahedron and its half turns
+/// about the world's three axes, made regular by three edges, are the tetrahedron on the cube's
+/// alternate corners — and a point drawn in a plane is mirrored where it stands in space.
+#[test]
+fn a_point_mirrored_in_an_axis_is_its_half_turn_about_it() {
+    let src = "unit mm\nuse std\nedge := 6mm * sqrt(2)\na := point hint((1, 1, 1))\nb := point\n\
+               c := point\nd := point\na symmetry(std.x) b\na symmetry(std.y) c\n\
+               a symmetry(std.z) d\na distance(edge) b\na distance(edge) c\na distance(edge) d\n\
+               in std.front {\n  p := point hint((4, 2))\n  fix((4, 2)) p\n}\nq := point\n\
+               p symmetry(std.z) q\n";
+    let e = read(src);
+    let kinds: Vec<CKind> = e.sketch.user_constraints().iter().map(|c| c.kind).collect();
+    let mirrors = kinds.iter().filter(|&&k| k == CKind::SymmetricAxis).count();
+    assert_eq!(mirrors, 4, "{kinds:?}");
+    let mut sk = solved(&e);
+    for (n, want) in [("a", [3.0, 3.0, 3.0]), ("b", [3.0, -3.0, -3.0]), ("c", [-3.0, 3.0, -3.0]),
+                      ("d", [-3.0, -3.0, 3.0]), ("q", [-4.0, 0.0, 2.0])] {
+        let x = sk.world_point(ent(&e, n).i());
+        assert!(norm(sub(x, want)) < 1e-9, "{n} at {x:?}, not {want:?}");
+    }
+    assert_eq!(dof(&mut sk), 0, "one corner's three numbers, and three edges to hold them");
+}
+
+/// The mirror in an axis reads where the axis is, so it places it: two points held apart leave
+/// an axis free in direction and place passing through their midpoint square to the line between
+/// them, turned about that line by the one freedom left.
+#[test]
+fn a_mirror_in_an_axis_places_it() {
+    let e = read("use std\nt := axis hint(dir: (0.1, -0.2, 1))\np := point hint((1, 2, 3))\n\
+                  q := point hint((3, 4, 3))\nfix((1, 2, 3)) p\nfix((3, 4, 3)) q\n\
+                  p symmetry(t) q\n");
+    let t = ent(&e, "t");
+    assert!(e.sketch.axes[t.i()].placed, "a mirror in the axis says where it is");
+    let mut sk = solved(&e);
+    let (d, a) = axis(&sk, t);
+    let (m, pq) = ([2.0, 3.0, 3.0], [2.0, 2.0, 0.0]);
+    assert!(norm(cross(sub(m, a), unit(d))) < 1e-9, "the axis misses the midpoint: {a:?} {d:?}");
+    assert!(dot(unit(d), pq).abs() < 1e-9, "the axis is not square to pq: {d:?}");
+    assert_eq!(dof(&mut sk), 1, "the axis turns about the line between the points");
+    assert_eq!(said(&e), ["p symmetry(t) q"], "it reads back as written");
+    for back in [io::from_json(&io::to_json(&sk)).expect("reads back"), graft::copy(&sk, &sk.primitives())] {
+        let kinds: Vec<CKind> = back.user_constraints().iter().map(|c| c.kind).collect();
+        assert_eq!(kinds, [CKind::SymmetricAxis]);
+        assert!(back.axes[t.i()].placed, "and still places the axis");
+    }
 }

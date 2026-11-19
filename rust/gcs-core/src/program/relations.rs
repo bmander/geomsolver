@@ -153,6 +153,17 @@ pub(crate) fn settle(
     } else {
         kind
     };
+    // **the mirror in an axis** (`a symmetry(std.x) b`): the half turn about its line, in space
+    // whatever the points are drawn in — an axis is a place, and has no page to mirror in
+    let kind = if kind == CKind::Symmetric
+        && w.args.iter().any(|a| {
+            matches!(a, crate::syntax::OpArg::Ent(r) if kind_of(r) == Some(EntKind::Axis))
+        })
+    {
+        CKind::SymmetricAxis
+    } else {
+        kind
+    };
     // the tangent at a point of a line is the line's direction (#251): `parallel`, the point
     // saying nothing a line does not
     if kind == CKind::Parallel && word == "tangent" {

@@ -593,6 +593,7 @@ impl Constraint {
             | CKind::PlaneAxis
             | CKind::PointOnAxis
             | CKind::LineOnAxis
+            | CKind::SymmetricAxis
             | CKind::Mapped
             | CKind::MappedSimilar
             | CKind::MappedCircle
@@ -1066,6 +1067,11 @@ impl Constraint {
                 let r = &sk.axes[e(1).i()];
                 [self.lifted_columns(sk), r.a.to_vec(), r.d.to_vec()].concat()
             }
+            // both points lifted, then the axis's place and direction
+            CKind::SymmetricAxis => {
+                let r = &sk.axes[e(2).i()];
+                [self.lifted_columns(sk), r.a.to_vec(), r.d.to_vec()].concat()
+            }
             // the line's ends lifted, then the axis's place and direction
             CKind::LineOnAxis => {
                 let r = &sk.axes[e(1).i()];
@@ -1228,6 +1234,7 @@ impl Constraint {
                 [vec![e(0).i(), e(1).i()], parts].concat()
             }
             CKind::Symmetric3 => [vec![e(0).i(), e(1).i()], ends(2).to_vec()].concat(),
+            CKind::SymmetricAxis => vec![e(0).i(), e(1).i()],
             // a direction's operands, and the axis a turn is read about (#558): a line's ends are
             // lifted, and an axis is in space already
             CKind::Angle3

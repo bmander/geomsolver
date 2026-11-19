@@ -4,6 +4,14 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.219] The mirror in an axis.** `symmetry` takes an axis in its parentheses as well as a
+line: `a symmetry(std.x) b` is the half turn about the axis's line, in space wherever the points
+are drawn — what the mirror in a line drawn in space already was (§9.2) — and, reading where the
+axis is, it places one that nothing else does, as `coincident` does. Through 0.218 it was E040
+("`std.x` is an axis, and a line is wanted here"), so a figure symmetric about a world axis drew
+a line on the axis to mirror in. A regular tetrahedron is one corner and its half turns about the
+three axes, made regular by three edges. Nothing a document wrote before reads differently.
+
 **[0.218] A claim over measurements, and the customary engineering units** (#940). A `claim`
 may compare measurements of the solved drawing — `length`, `radius`, `distance`, `angle` — with
 the document's numbers, `claim length(post) <= 96"`: it is judged after the solve, at the pose the

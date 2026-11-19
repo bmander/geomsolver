@@ -239,7 +239,13 @@ holds all three) and the point nearest the origin, fixed — no freedom — unti
 frees it and mints `axis_foot` (`a·d = 0`); `remove` holds it again once nothing reads it. `fix(origin
 == (x, y, z)) t` holds a place (placed first, so nothing later frees it); std's axes are held
 so. `t coincident s` between axes is `AxisCoincident` (4 rows, either sense); `l coincident t`, a
-line on an axis, is `LineOnAxis` (both ends, 4 rows, places the axis). JSON writes a placed
+line on an axis, is `LineOnAxis` (both ends, 4 rows, places the axis); `p symmetry(t) q`, the
+mirror in an axis (Solvent [0.219]), is `SymmetricAxis` — `program::relations::settle` takes
+`Symmetric` there when the parenthesised entity is an axis — the half turn about its line,
+`symmetric3`'s three rows over the axis's place and direction rather than a line's ends
+(`kernels::symmetric_axis_rows`), in space whatever the points are drawn in, and it places the
+axis (`place_slots`); `axis::a_point_mirrored_in_an_axis_is_its_half_turn_about_it` and
+`a_mirror_in_an_axis_places_it` are the gate. JSON writes a placed
 axis's held place as `a_fixed`; a load or `graft` puts places back after the planes
 (`Sketch::place_restored`), elaboration's order. `parallel`/`perpendicular`/`angle` over an axis
 are `Parallel3`/`Perpendicular3`/`Angle3` (slots `SpecKind::Direction`, a line or an axis): an

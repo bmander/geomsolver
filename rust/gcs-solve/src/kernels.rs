@@ -155,9 +155,11 @@ pub enum K {
     // and free
     LineFraction,
     LineFractionFree,
+    // the mirror in an axis, in space: the half turn about its line
+    SymmetricAxis,
 }
 
-pub const N_KERNELS: usize = 105;
+pub const N_KERNELS: usize = 106;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -3606,6 +3608,21 @@ fn symmetric3_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 3] {
     [0, 1, 2].map(|t| q[t] + p[t] - two * a[t] - two * s * eh[t])
 }
 
+/// Columns of `symmetric_axis`: (P, Q, a, d) — `symmetric3` over an axis, whose line is its place
+/// `a` and direction `d` rather than a drawn line's ends: `Q + P − 2F`, `F` the foot of `P` on the
+/// line through `a` along `d`.  Three rows, degree 1.
+fn symmetric_axis_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 3] {
+    let (p, q, a, e) = (vec3(v, 0), vec3(v, 3), vec3(v, 6), vec3(v, 9));
+    let le = vdot(e, e).sqrt();
+    if le.val() == 0.0 {
+        return [T::cst(f64::NAN); 3];
+    }
+    let eh = e.map(|t| t / le);
+    let s = vdot(vsub(p, a), eh);
+    let two = T::cst(2.0);
+    [0, 1, 2].map(|t| q[t] + p[t] - two * a[t] - two * s * eh[t])
+}
+
 /* -- a point carried by a map (#357) --------------------------------------------------------
  *
  * `q mapped(from -> a, to -> b, third -> c) p`: `q = a + i·(b − a) + j·(c − a)`, with `(i, j)`
@@ -3924,6 +3941,7 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     num_kernel!("plane_supports_corner", plane_supports_corner_rows, n_res: 2, n_par: 19, degree: 1, n_const: 0),
     num_kernel!("line_fraction", line_fraction_rows, n_res: 1, n_par: 9, degree: 0, n_const: 1),
     num_kernel!("line_fraction_free", line_fraction_free_rows, n_res: 1, n_par: 10, degree: 0, n_const: 2),
+    num_kernel!("symmetric_axis", symmetric_axis_rows, n_res: 3, n_par: 12, degree: 1, n_const: 0),
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The
