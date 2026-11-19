@@ -173,6 +173,41 @@ pub(crate) fn walk_loop(sk: &Sketch, edges: &[EntRef]) -> Option<Vec<(EntRef, u3
     Some(out)
 }
 
+/// **The arcs a face turns into** (#952): each arc of face `fi`'s outer loop that the walk runs
+/// against the loop's own winding — clockwise where the loop runs counter-clockwise — so the face
+/// is notched there rather than bulging out, each with how far it turns.  The winding is the
+/// loop's exact signed area, its chords and each arc's segment, read at the pose the sketch stands
+/// in; a loop that does not walk end to end has none.
+pub fn arcs_turned_in(sk: &Sketch, fi: usize) -> Vec<(EntRef, f64)> {
+    let Some(f) = sk.faces.get(fi).filter(|f| f.edges.iter().any(|e| e.kind == EntKind::Arc))
+    else {
+        return Vec::new();
+    };
+    let Some(walk) = walk_loop(sk, &f.edges) else { return Vec::new() };
+    // each edge's chord, and each arc's sweep as walked — counter-clockwise from its start, so
+    // negative entered at its end — with its segment
+    let mut area = 0.0;
+    let mut arcs = Vec::new();
+    for &(e, from, to) in &walk {
+        let (p, q) = (sk.point_xy(from as usize), sk.point_xy(to as usize));
+        area += 0.5 * (p.0 * q.1 - q.0 * p.1);
+        if e.kind == EntKind::Arc {
+            let (arc, (a0, a1)) = (&sk.arcs[e.i()], sk.arc_angles(e.i()));
+            let phi = if from == arc.start { a1 - a0 } else { a0 - a1 };
+            let r = sk.params[arc.radius as usize].value;
+            area += 0.5 * r * r * (phi - phi.dsin());
+            arcs.push((e, phi));
+        }
+    }
+    if area == 0.0 || !area.is_finite() {
+        return Vec::new();
+    }
+    arcs.into_iter()
+        .filter(|&(_, phi)| (phi > 0.0) != (area > 0.0))
+        .map(|(e, phi)| (e, phi.abs()))
+        .collect()
+}
+
 /// A spline's or a curve's parameter where a walk entering it at `from` enters and leaves it.
 pub(crate) fn curved_span(sk: &Sketch, e: EntRef, from: u32) -> Option<(EntRef, [f64; 2])> {
     let (a, b) = match e.kind {

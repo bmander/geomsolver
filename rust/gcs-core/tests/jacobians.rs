@@ -361,6 +361,9 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::new(CKind::AxisCoincident, vec![e(axis_a), e(axis_b)]),
         // a line lying on an axis
         Constraint::new(CKind::LineOnAxis, vec![e(me1), e(axis_a)]),
+        // the mirror in an axis, the half turn about its line
+        Constraint::new(CKind::SymmetricAxis, vec![e(pe), e(qe), e(axis_a)]),
+        Constraint::new(CKind::SymmetricAxis, vec![e(EntRef::point(lc)), e(s3), e(axis_b)]),
         // and each the way it says, the turn onto the second its only root (#535)
         Constraint::new(CKind::Parallel3, vec![e(me1), e(me2), Arg::Str("same".into())]),
         Constraint::new(CKind::Parallel3, vec![e(axis_b), e(me2), Arg::Str("opposite".into())]),
@@ -915,7 +918,7 @@ fn kernel_agrees(s: &gcs_core::interior::Structure, x: &[f64], step: f64, rng: &
     // number or against an unknown, its last column (§6.25)
     let rows: Vec<_> = match s.reads.measure() {
         false => {
-            // the draw a displacement's row with an unknown made through 0.219, so each seed's
+            // the draw a displacement's row with an unknown made through 0.221, so each seed's
             // later structures are those it has always drawn
             rng.uniform(-1.0, 1.0);
             vec![s.clone()]

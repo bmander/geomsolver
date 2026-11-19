@@ -356,6 +356,9 @@ impl Lowering<'_> {
             }
             // a condition is the expression reader's (`expr::parse_cond`): `when w not in A`
             "when" | "repeat" | "cycle" | "claim_over" => None,
+            // a joining word defined as a name is the parser's to refuse (#952)
+            w if super::words::JOINERS.contains(&w)
+                && t.get(i + 1).is_some_and(|x| x.0 == Tok::Define) => None,
             // more of a body's set, `B or { p | p in x }` (#783 P3): the set's own statements
             // are lowered where they stand, past its `|`
             _ if super::words::joined_at(t, i) => None,

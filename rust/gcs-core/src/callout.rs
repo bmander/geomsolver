@@ -121,6 +121,7 @@ macro_rules! undrawn {
             | CKind::EqualLength3
             | CKind::Midpoint3
             | CKind::Symmetric3
+            | CKind::SymmetricAxis
             | CKind::LineOnPlane
             | CKind::AxisUnit
             | CKind::AxisFoot

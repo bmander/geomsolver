@@ -597,6 +597,7 @@ impl Constraint {
             | CKind::PlaneAxis
             | CKind::PointOnAxis
             | CKind::LineOnAxis
+            | CKind::SymmetricAxis
             | CKind::Mapped
             | CKind::MappedSimilar
             | CKind::MappedCircle
@@ -1068,14 +1069,10 @@ impl Constraint {
                 let r = &sk.axes[e(0).i()];
                 [r.a, r.d].concat()
             }
-            // the point's lift, then the axis's place and direction
-            CKind::PointOnAxis => {
-                let r = &sk.axes[e(1).i()];
-                [self.lifted_columns(sk), r.a.to_vec(), r.d.to_vec()].concat()
-            }
-            // the line's ends lifted, then the axis's place and direction
-            CKind::LineOnAxis => {
-                let r = &sk.axes[e(1).i()];
+            // the point, both points or the line's ends lifted, then the place and direction of
+            // the axis in the one slot whose place it reads
+            CKind::PointOnAxis | CKind::SymmetricAxis | CKind::LineOnAxis => {
+                let r = &sk.axes[e(self.kind.place_slots()[0]).i()];
                 [self.lifted_columns(sk), r.a.to_vec(), r.d.to_vec()].concat()
             }
             // where the plane stands, in the point's place, and the axis's place and direction
@@ -1138,7 +1135,7 @@ impl Constraint {
             [l.p1 as usize, l.p2 as usize]
         };
         match self.kind {
-            CKind::Coincident3 | CKind::Distance3 | CKind::ProjectSolved => {
+            CKind::Coincident3 | CKind::Distance3 | CKind::ProjectSolved | CKind::SymmetricAxis => {
                 vec![e(0).i(), e(1).i()]
             }
             CKind::PointLine3 | CKind::PointOnLine3 | CKind::Midpoint3 | CKind::PointAlongLine3 => {

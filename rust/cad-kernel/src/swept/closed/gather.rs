@@ -23,6 +23,13 @@ pub(super) struct Candidates {
     /// The points where a contact crosses a seam, which no candidate's seam is laid at
     /// (`seam_away`).
     pub(super) seams: Vec<V>,
+    /// Each round face's candidates at the end poses (#942 F3): the face, the pose (`0` the start,
+    /// `1` the end) and the candidate.
+    pub(super) posed: Vec<(usize,usize,usize)>,
+    /// Where a band's contact crosses a seam into its neighbour, at each end pose (#942 F3): the
+    /// sheet the contact sweeps, the neighbour's face, the pose and the point — where the neighbour
+    /// there touches the sheet, and nowhere else (`touched_at_seams`).
+    pub(super) crossings: Vec<(usize,usize,usize,V)>,
     /// The points the box must hold: the tool's box at each leg's end poses and, about a turn's
     /// axis, its reach.
     pub(super) held: Vec<V>,
@@ -32,7 +39,7 @@ pub(super) struct Candidates {
 impl Candidates {
     /// Every candidate the legs' tools sweep, each leg read in turn.
     pub(super) fn gathered(tool: &Brep,legs: &Legs,tol: f64,eps: f64,size: f64) -> Result<Candidates,Unbuilt> {
-        let mut out = Candidates {cutters:Vec::new(),touches:Vec::new(),seams:Vec::new(),held:Vec::new(),eps};
+        let mut out = Candidates {cutters:Vec::new(),touches:Vec::new(),seams:Vec::new(),posed:Vec::new(),crossings:Vec::new(),held:Vec::new(),eps};
         for &(screw,roll,place) in legs {
             // the tool where the leg takes it up, read under the leg's twist
             let placed = place.map(|q| tool.moved(&crate::geom::Rigid {r:q.r,t:q.p}));

@@ -105,6 +105,33 @@ fn field_of(sk: &Sketch, name: &str, terms: &[RegionTerm], bounded: bool,
                 let r = crate::solid::faces::reading(sk, face, read).map_err(named)?;
                 if let Some((n, d)) = r.half_space() {
                     slab(&mut planes, t, n, d, if t.cmp == Cmp::In { lo } else { lo + grow });
+                } else if within {
+                    // kept within a face's ball, torus or cylinder, or its convex planes: within
+                    // the planes about those
+                    use crate::solid::faces::{Bound, Level};
+                    for level in r.levels(reach + grow, true).unwrap_or_default() {
+                        match level {
+                            Level::Bound(Bound::Half { n, d }, true) => planes.push((n, d)),
+                            Level::Bound(Bound::Ball { c, r }, true) => cube(&mut planes, c, r),
+                            Level::Bound(Bound::Torus { c, big, r, .. }, true) => cube(&mut planes, c, big + r),
+                            Level::Bound(Bound::Cylinder { a, d, r }, true) => {
+                                let (e1, e2) = across(d);
+                                for e in [e1, e2, scale(e1, -1.0), scale(e2, -1.0)] {
+                                    planes.push((e, dot(e, a) + r));
+                                }
+                            }
+                            Level::Bound(Bound::Cone { a, d, half }, true) if half + 1e-12 < FRAC_PI_2 => {
+                                // the four planes through the apex leaning `half` off the axis
+                                let (e1, e2) = across(d);
+                                let tan = half.dtan();
+                                for e in [e1, e2, scale(e1, -1.0), scale(e2, -1.0)] {
+                                    let n = sub(e, scale(d, tan));
+                                    planes.push((n, dot(n, a)));
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
                 }
                 reads_faces = true;
                 Measure::Signed(Signed(std::sync::Arc::new(move |p| r.side(p))))

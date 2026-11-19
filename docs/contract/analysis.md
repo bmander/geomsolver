@@ -1003,7 +1003,7 @@ unless a rule names another.
     column at a time, and each read meshes afresh, twice (P5's two caches are still not kept).
 
 - **An integral is a value of the drawing, and an equation of integrals a statement of it**
-  (§6.25 [0.220]; `syntax::Measured`, `program::measures`, `model::Measured`, `CKind::Integral`).
+  (§6.25 [0.222]; `syntax::Measured`, `program::measures`, `model::Measured`, `CKind::Integral`).
   `integral(EXPR over p in S)` integrates `EXPR`, an expression over the point `p` it binds, over
   `S` — a solid, a face of one (`immersed.water`), a beam or a line a beam is drawn on, or an
   instance (every solid under it that no other is built of, `Resolver::bodies_under`) — by `S`'s

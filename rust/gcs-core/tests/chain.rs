@@ -1615,3 +1615,27 @@ fn one_table_names_the_regular_tangency() {
         }
     }
 }
+
+/// **A link in parentheses may name nothing** (#952, [0.219]): `(line(a, b))` is the bare link, as
+/// `(ab := line(a, b))` is the named one — between plain corners and between corner rounds alike —
+/// where it was read as a number, "unknown function `line`".
+#[test]
+fn a_link_in_parentheses_may_name_nothing() {
+    let corners = "use std\nin std.front {\n\
+        c0 := point\nc1 := point\nc2 := point\nc3 := point\n\
+        fix((0, 0)) c0\nfix((10, 0)) c1\nfix((10, 10)) c2\nfix((0, 10)) c3\n";
+    for (chain, bare) in [
+        ("pk := (line(c0, c1)) -> (line(c1, c2)) -> (line(c2, c3)) -> (line(c3, c0)) -> close",
+         "pk := line(c0, c1) -> line(c1, c2) -> line(c2, c3) -> line(c3, c0) -> close"),
+        ("pk := (line(c0, c1)) -> round(r: 4mm) (line(c1, c2)) -> round(r: 4mm) \
+          (line(c2, c3)) -> (line(c3, c0)) -> close",
+         "pk := line(c0, c1) -> round(r: 4mm) line(c1, c2) -> round(r: 4mm) line(c2, c3) -> \
+          line(c3, c0) -> close"),
+    ] {
+        let a = read_as(&format!("unit mm\n{corners}{chain}\n}}\n"));
+        let b = read_as(&format!("unit mm\n{corners}{bare}\n}}\n"));
+        assert_eq!(said(&a.sketch), said(&b.sketch), "{chain}");
+        assert_eq!((a.sketch.lines.len(), a.sketch.arcs.len(), a.sketch.faces.len()),
+                   (b.sketch.lines.len(), b.sketch.arcs.len(), b.sketch.faces.len()), "{chain}");
+    }
+}

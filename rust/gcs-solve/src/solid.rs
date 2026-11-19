@@ -64,7 +64,7 @@ pub(crate) mod profile;
 mod primitive;
 pub(crate) mod document;
 mod reads;
-pub use profile::{FacePoly,face_poly};
+pub use profile::{FacePoly,face_poly,arcs_turned_in};
 pub use profile::{ring_area, ring_centroid};
 pub use section::inside_ring;
 use profile::loop_poly;

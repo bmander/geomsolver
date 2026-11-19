@@ -1066,6 +1066,8 @@ pub struct Shared {
     /// each pair's meeting given before any is sought (#810, `Shared::give`), in either order, not
     /// yet asked for: no search is made for it
     given: std::collections::BTreeMap<(usize,usize),Vec<Curve>>,
+    /// each pair's points of touching given beside its curves (#942 F3, `Shared::give`), in either order
+    touches: std::collections::BTreeMap<(usize,usize),Vec<V>>,
     /// the pairs given, kept once asked for
     was_given: std::collections::BTreeSet<(usize,usize)>,
 }
@@ -1108,13 +1110,18 @@ impl Shared {
     }
     /// **A meeting given before any is sought** (#810, #780 R5: a touch known by construction):
     /// `curves` lying on both `a` and `b` — whole curves, as a closed form's are — that are the two
-    /// surfaces' meeting, laid with no search for it, as a closed form is, in either order. Two
-    /// touches given for one pair are its meeting together.
-    pub fn give(&mut self,a: &Surface,b: &Surface,curves: &[Curve],tol: f64) {
+    /// surfaces' meeting, laid with no search for it, as a closed form is, in either order; and
+    /// `touches`, the points where the two touch besides (#942 F3, `given_touches`). Two touches
+    /// given for one pair are its meeting together.
+    pub fn give(&mut self,a: &Surface,b: &Surface,curves: &[Curve],touches: &[V],tol: f64) {
         let (i,j) = (self.index(a,tol),self.index(b,tol));
         self.was_given.insert((i.min(j),i.max(j)));
-        self.given.entry((i.min(j),i.max(j))).or_default().extend(curves.iter().cloned())
+        self.given.entry((i.min(j),i.max(j))).or_default().extend(curves.iter().cloned());
+        self.touches.entry((i.min(j),i.max(j))).or_default().extend(touches.iter().copied())
     }
+    /// The points surfaces `i` and `j` are given to touch at beside their curves (#942 F3), in
+    /// either order: none where none were given.
+    pub fn given_touches(&self,i: usize,j: usize) -> Vec<V> { self.touches.get(&(i.min(j),i.max(j))).cloned().unwrap_or_default() }
     /// Whether surfaces `i` and `j`'s meeting was given (`give`): its curves lie on both, known as
     /// a closed form's are and not as a trace's.
     pub fn given(&self,i: usize,j: usize) -> bool { self.was_given.contains(&(i.min(j),i.max(j))) }

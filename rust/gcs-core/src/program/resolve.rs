@@ -109,7 +109,34 @@ impl Operand {
     }
 }
 
+/// What forgetting `gone` makes of an entity's place: one of its kind past it one down, it itself
+/// none, any other as it was (`Resolver::forget`, and what was read before by where it would be).
+pub(super) fn past(gone: EntRef) -> impl Fn(EntRef) -> Option<EntRef> {
+    move |e| match e {
+        e if e.kind != gone.kind || e.idx < gone.idx => Some(e),
+        e if e.idx == gone.idx => None,
+        e => Some(EntRef::new(e.kind, e.i() - 1)),
+    }
+}
+
 impl Resolver {
+    /// **Unbind a declaration that made nothing**, and what it was: every later entity of its
+    /// kind sits one index below where phase 1 put it, so the resolver is shifted with them (a
+    /// plane's origin among the points too), or a reference to a later one would read the one
+    /// after it, or past the end of the list — and every other name for it is unbound with it.
+    pub(super) fn forget(&mut self, name: &str) -> Option<EntRef> {
+        let gone = self.of.remove(name)?;
+        let shift = past(gone);
+        self.of = std::mem::take(&mut self.of).into_iter()
+            .filter_map(|(n, e)| Some((n, shift(e)?))).collect();
+        if gone.kind == crate::model::EntKind::Point {
+            for o in self.origins.values_mut().filter(|o| **o > gone.i()) {
+                *o -= 1;
+            }
+        }
+        Some(gone)
+    }
+
     pub(super) fn lookup(&self, r: &Ref) -> Option<EntRef> {
         self.of.get(&r.root.text).copied()
     }

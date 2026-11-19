@@ -155,7 +155,7 @@ march carries (`a_rate_equal_to_a_rate_keeps_pace`); a rate of another formal is
 in space is read where the core recognises it (`std.panels.Development`), not yet by the generic
 march.
 
-**A closed shell's solid** (#953, [0.219], `solid::enclosed`, [sets.md](sets.md)). The inside of
+**A closed shell's solid** (#953, [0.221], `solid::enclosed`, [sets.md](sets.md)). The inside of
 a shell of panels and faces of the drawing is read by no field: each face is its planar face
 (`build::face` of its profile) and each panel the sheet of degree one each way through its
 rulings' ends at the stations that draw it to the flatness of a report (`Developable::stations`,

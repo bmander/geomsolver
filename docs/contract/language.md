@@ -113,7 +113,7 @@ bound variable an alias of the use's operand; one naming nothing is E101 once at
 the application made stamped with the use's id/span/path, claim, placement when it makes one
 relation, word spans at the use, and `Worded`, the outermost use's).  `syntax::Relation::of`
 builds a relation with nothing but its form.  Words: `WordDef::body` is `Vec<Stmt>` (one relation, or `{ … }` of relations and
-declarations, and [0.220] equations of integrals, §9.12 — what an equation measures and is over
+declarations, and [0.222] equations of integrals, §9.12 — what an equation measures and is over
 read as entities and what its numbers read as numbers, `param_kinds`; a claimed use claims them
 and each carries the use's text as its `head`), applied synchronously in the walk's Relation arm (`Walk::apply_word`; numbers
 bound in the closure's `vals`, selector words substituted; `applying_words` for E003); sets:
@@ -123,7 +123,7 @@ cannot write, `Chained::InPlace` naming the relation that holds it (#745), descr
 text).  The lexer reads a brace after `:=` as a group only before `}` or `name:` (`group_ahead`).
 `tests/applied.rs` is the gate.
 
-**A bound through a word ([0.220], §9.12, `flatten::words::bound_through`):** a word's number
+**A bound through a word ([0.222], §9.12, `flatten::words::bound_through`):** a word's number
 parameter given as a bound — bare, `claim mass(<= 2kg) arm` (`[Bound, Dim]`, one parameter), or
 labelled, `moment(i: <= I, about: l)` (the text `<= I`, `bound_of`) — is bound as its number, and
 each comparison its body states with the parameter alone on one side becomes that bound: an
@@ -269,7 +269,13 @@ with its own copy of `vals` — no `PathStep`, no prefix, so names are the scope
 `expr::Cond` (`Cmp` `<`…`!=`, `and`/`or`/`not`) is made only by `expr::parse_condition_in` and
 read by `expr::decide`; no `Ast` holds one, and its sides agree as `+`'s (`> 0mm`, never `> 0`).
 The parser refuses `as` and a trailing joint; the measured-bound sniff skips a statement an
-opener word starts. `commit_seeds` writes into a root `when`'s body. The hypoid's tip relief is
+opener word starts.  **The condition runs on past a line's end** ([0.219], #952) inside a
+parenthesis, as anything does, and where its line ends in `and`, `or` or `not` or the next opens
+with `and` or `or` — the lexer's rule (`syntax::lexer::lex`, no `Tok::Nl` there, so the parser, the
+notation's lowering and the colouring read one line).  So `and`, `or` and `not` are no name
+(`syntax::words::JOINERS`, out of `is_name` and in `reserved_word`): a line defining one stands on
+its own and is refused saying why (`P::statement`); `count` is its text read as one line, every run of
+white space one space, so what `flatten::values` parses and quotes is the one line it is. `commit_seeds` writes into a root `when`'s body. The hypoid's tip relief is
 one (`hypoid.sv`). `tests/when.rs` is the gate.
 
 **`scenario NAME { … }`, a load case (§9.11 [0.164], #510 P4):** a block like `when` — no prefix,
@@ -385,7 +391,7 @@ a point, or against anything but an axis, a line or a plane) and states no const
 in it, through a `when`, marked `Relation::initially` (anything else in it a syntax error); a
 defined word's body takes the flag as it takes `claim` — but a claimed word's `coincident`
 placing a point its body declares is stated, never claimed, and so is its `fix` holding what it
-declares ([0.220], `std.measures`'s held axes), so a claim judges what it says of geometry it
+declares ([0.222], `std.measures`'s held axes), so a claim judges what it says of geometry it
 still makes (#365, `flatten::apply`) — and it reaches `ir::Relation::initially`
 and `Constraint::initially`: on the sheet a row of the drawn home, in a trace the home's alone.
 `tests/rates.rs` (a face family's) and `tests/traced_rates.rs` (a traced body's) are the gates.
@@ -771,7 +777,11 @@ before ports 0.9 s to 0.4 s.
   the one declaration (`l := horizontal line(a, b)`: a prefix word's value is its operand).
   `P::definition` lowers to the existing `StmtKind`s (`Param`, `Group`, `Instance`, `Decl`,
   `Chain`), so nothing below the parser knows; `syntax::words::named_link_at` tells `(l := line)`
-  from an operator's own parentheses.  `label:` never defines: it fills a slot.  A name in a child
+  from an operator's own parentheses, and `anonymous_link_at` a link in them that names nothing,
+  `(line(a, b))` — an element keyword then its own `(` — which is the bare link ([0.219], #952;
+  `paren_link_at` asks both wherever a link may stand, so a chain of them is no number refused as
+  "unknown function `line`").  A face's list declares nothing: `face(line(a, b), …)` is E001
+  saying so, and naming the chain that draws a loop in place (`P::list_kid`).  `label:` never defines: it fills a slot.  A name in a child
   slot (`line(a, q := hint(…))`) is not implemented yet.
 - **Every seed is written in one `hint(…)` clause, and nothing else is** (Solvent §4.3, §6.4): `p :=
   point hint((0, 0))`, `c := circle(center: o) hint(r: 25)`, `point_on_spline(p, s) hint(t:

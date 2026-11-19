@@ -177,6 +177,28 @@ instance `l`.
 | `axis` | — | `dir`, `origin` | |
 | `plane` | `u`, `v` (axes or lines); member `origin` | `origin` | |
 
+**An arc runs counter-clockwise from `start:` to `end:`** (in its plane, seen from in front), so
+its two ends written the other way round are the rest of the circle: a slot's end written so
+turns into the face rather than bulging out of it, and the drawing solves either way. A face
+turned into by a half turn or more of an arc written so is said (W118); where the notch is meant,
+say so: `arc(center: c, start: a, end: b, sense: cw)` runs clockwise from `a`.
+
+**An arc placed outright.** An arc is its centre and two ends, one radius between them: five
+numbers, two short of its three points' six. So fixing all three points says the radius twice
+(*said twice*); fix the centre and the start, and hold the end by **one** coordinate:
+
+```
+fix((0, 0)) c
+fix((10, 0)) s
+fix(x == 0mm) e                       e at (0, 10): DOF 0, well
+k := arc(center: c, start: s, end: e)
+```
+
+or fix the centre, state `radius(10mm) k`, and hold each end by one coordinate. Hold an end by the
+coordinate the circle *crosses* there, never by one it runs square to: at `(10, 0)` the circle runs
+along y, so `fix(x == 10mm)` holds nothing to first order (numeric rank short of structural) and
+`fix(y == 0mm)` places it.
+
 **Members and vectors.** An entity's numbers are its members. A vector is `(a, b)` or `(a, b, c)`.
 A point *is* its place, so it is seeded and held whole by a vector — `hint((3, 4))`,
 `fix((0, 0)) p` — or by one of `x`, `y`, `z`; an axis has the vectors `dir` and `origin`, a plane
@@ -253,7 +275,7 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | `area`, `moment` | prefix | **`std.measures`'s**: a face of a solid — its area, `area(A) hull.water`, and its second moment about a line or axis, `moment(i: I, about: centreline) hull.water` (see *Where a body is made* below) |
 | `centroid`, `centerofmass` | infix | **`std.measures`'s**: a declared point and a solid (or a face of one, or an instance's bodies): `g centroid hull`, `g centerofmass boat` |
 | `length` | prefix | any path: a line (the distance between its ends); an arc (radius × counter-clockwise sweep); a spline or free curve (its whole length). `distance` relates two things and `length` measures one, so `distance(d) l` on a line is refused, naming `length(d) l` |
-| `symmetry(line)` | infix | two points |
+| `symmetry(line)` | infix | two points; the line may be an axis, `a symmetry(std.x) b`: the half turn about it, in space (0.220) |
 | `midpoint` | infix | a point and a line |
 | `parallel`, `perpendicular` | infix | two lines; an axis and a line or axis; an axis and a plane; `perpendicular` a line and a plane (the line along its normal, in space); `parallel` two planes. `l1 perpendicular(sense: ccw) l2`: `l2` a quarter turn anticlockwise of `l1` (`cw` the other way), in a plane; in space only about an axis, `perpendicular(sense: ccw, about: a)`. `a parallel(sense: same) b`: the two run alike (`opposite`: apart), lines or axes, in a plane or in space; alone, either way, the seed's. `coincident` between a line and an axis or two axes takes the same `sense:` |
 | `project` | infix | two points in two planes: two images of one point in space (1.12) |
@@ -332,7 +354,7 @@ their places in space; no selector is needed:
 | `a coincident l`, `a coincident c` | on the line's extension; on the circle in its own view |
 | `l1 angle(90deg) l2` | the **unsigned** angle, strictly between 0° and 180° (say `parallel` for 0°); `angle(90deg, about: a)` the turn about `a` |
 | `parallel`, `perpendicular`, `equal` | directions, and true lengths |
-| `a midpoint l`, `a symmetry(l) b` | the midpoint in space; a half turn about the line |
+| `a midpoint l`, `a symmetry(l) b` | the midpoint in space; a half turn about the line — or about an axis, `a symmetry(std.z) b`, wherever the points are drawn |
 | `a distance(20, along: std.z) b` | how far apart along the axis, in space |
 
 A word with no meaning in space — `horizontal`, a view's own `along: u` between two points (name
@@ -504,7 +526,9 @@ right (`p1 -> p2` on a line, `start -> end` counter-clockwise on an arc).
 - At a corner with an element declared elsewhere, the declared side names the shared point:
   `(t := line(p3, k.start)) -> tangent k`.
 - `-> close` seals the loop back to the first link. Links may be anonymous:
-  `line -> tangent arc -> tangent line` is a whole contour with no names.
+  `line -> tangent arc -> tangent line` is a whole contour with no names, and an anonymous link
+  may stand in parentheses as a named one does, `(line(a, b)) -> round(r: 4mm) (line(b, c))`
+  (0.219).
 - `equal` is polymorphic (length or radius); `a equal b equal c` is two statements.
 - `profile := … -> close` names the traversal, which a solid can sweep (1.14); its edges keep
   their own names. Every joint in a named chain carries `->`.
@@ -598,7 +622,10 @@ mate rounds as it would seeded where it stands; `f parallel l` where face `f` ru
 `l` at every point (a plane holding it, a cylinder about it, a prism's side swept along it) and
 `f perpendicular l` where it is a plane square to it — `l` an axis (`std.z`, a frame's own in a
 component), a line or a frame's axis — read where the drawing solves too (a fitted face, which its
-kind does not say of, is E103) (0.204). There is no copy: what the body declares keeps
+kind does not say of, is E103) (0.204). A long condition runs onto the next line inside a
+parenthesis, or where a line ends in `and`, `or` or `not` or the next opens with `and` or `or`
+(0.219): `when f parallel std.z` then, indented below, `and g parallel std.z and f != g { … }`.
+There is no copy: what the body declares keeps
 its own name (`q`, `t.tip`, never `q[0]`), and is undefined where the block is not made. Refused:
 an unknown of the drawing in the condition (E040), a number against something drawn (E103), an
 index, a trailing joint. `when` is the one conditional of statements: write a switch as `when
@@ -1869,7 +1896,12 @@ The face and solid added nothing to the rectangle's six unknowns and six equatio
 - **A face closes itself.** A *point* in the list is a corner walked straight through, and
   `-> close` seals the walk back to its first item: `face(a, bc, cd, -> close)` mints the two
   missing runs, which name faces of the solid (`block.close0`, `block.close1`). A gap between two
-  *edges* is E080 (edges out of order), and so is an edge between two gaps.
+  *edges* is E080 (edges out of order), and so is an edge between two gaps — but one between two
+  gaps to the *same* point is walked the same either way: `face(rim, o, -> close)`, an arc and
+  its centre, is the pie slice (0.219).
+- **A face lists; it declares nothing.** Its items are edges and points declared by name:
+  `face(line(a, b), …)` is E001. A loop drawn in place is a chain, `f := line(a, b) -> line(b, c)
+  -> line(c, a) -> close`, or the points themselves, `face(a, b, c, -> close)`.
 - **A curve stands in a face as a stretch**, `k from a to b`, between two points held on it by
   contacts; one stretch closed by `-> close` is a loop with its chord. A clamped spline ends at its
   end control points, so it is an ordinary edge, and so is a free curve (`rope := curve(a, b)`) at
@@ -2284,6 +2316,8 @@ body's are (`body.bore.hole`).
 **A region is a solid**: `solid(R)`, `R` a set, is the points inside it.
 
 ```sv
+use std.sets                        // std.sets.Ball, std.sets.Cylinder
+
 big := std.sets.Ball(c, r: 5)
 small := std.sets.Ball(c, r: 3)
 skin := { p | p in big; p not in small }        // a shell
@@ -2704,7 +2738,7 @@ scenario tip_load {
   stern }`, `hull := solid({ p | p in shell.side })`, its faces `hull.port` and so on. A shell
   that does not close says the edge it is open at. Its waterline is driven as a box's is, its
   panels held; a panel whose rails the solve moves is E040.
-- **An integral, written bare** (0.220): every word above is `std.measures`'s, an equation of
+- **An integral, written bare** (0.222): every word above is `std.measures`'s, an equation of
   integrals, and a document may write its own. `integral(EXPR over p in S)` integrates over a
   solid, a face of one, a beam or an instance's bodies, its body reading the point only through
   `distance(p, X)` (to a point, a line, an axis or a plane), `distance(g, p, along: std.x)` (the

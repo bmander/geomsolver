@@ -300,7 +300,7 @@ pub(super) fn past_args(toks: &[(Tok, Span)], i: usize) -> usize {
     let j = i + 1;
     // `horizontal (l := line)` — the parentheses are the named link the word stands before,
     // not the word's own arguments
-    if toks.get(j).map(|(t, _)| t) != Some(&Tok::P('(')) || named_link_at(toks, j) {
+    if toks.get(j).map(|(t, _)| t) != Some(&Tok::P('(')) || paren_link_at(toks, j) {
         return j;
     }
     past_bracket(toks, j, Brackets::Round)
@@ -345,6 +345,22 @@ pub(super) fn named_link_at(toks: &[(Tok, Span)], j: usize) -> bool {
     )
 }
 
+/// `(line(a, b))` — a chain link in parentheses that names nothing (#952): the parentheses a
+/// named link stands in, around the bare link's own text.  An element keyword then its own `(`
+/// is what tells it from an operator's parentheses, which open on a name or a number.
+pub(super) fn anonymous_link_at(toks: &[(Tok, Span)], j: usize) -> bool {
+    matches!(
+        (toks.get(j), word_at(toks, j + 1), toks.get(j + 2)),
+        (Some((Tok::P('('), _)), Some(w), Some((Tok::P('('), _))) if EntKind::parse(w).is_some()
+    )
+}
+
+/// A chain link standing in parentheses at `j`, named or not (`named_link_at`,
+/// `anonymous_link_at`).
+pub(super) fn paren_link_at(toks: &[(Tok, Span)], j: usize) -> bool {
+    named_link_at(toks, j) || anonymous_link_at(toks, j)
+}
+
 /// `frame` at `j` as a whole value (#383): the last word of its statement, or before its class
 /// or the bracket that refuses it.  Read so only there, so `frame` stays a name a document may
 /// give anything else.
@@ -371,6 +387,8 @@ pub(super) fn named_frame_at(toks: &[(Tok, Span)], j: usize) -> bool {
 pub(super) fn link_word(toks: &[(Tok, Span)], j: usize) -> Option<&str> {
     if named_link_at(toks, j) {
         word_at(toks, j + 3)
+    } else if anonymous_link_at(toks, j) {
+        word_at(toks, j + 1)
     } else {
         word_at(toks, j)
     }
@@ -397,9 +415,14 @@ pub fn is_name(s: &str) -> bool {
         && EntKind::parse(s).is_none()
         && !trails_decl(s)
         && !ENERGY_WORDS.contains(&s)
+        && !JOINERS.contains(&s)
         && !MODIFIERS.contains(&s)
         && !OPENERS.contains(&s)
 }
+
+/// The words that join conditions (#952), `when a > 0mm and b > 0mm`: no name, so a line ending
+/// in one, or the next opening with `and` or `or`, goes on with it (`lexer::lex`).
+pub(crate) const JOINERS: [&str; 3] = ["and", "or", "not"];
 
 /// What a curve is stationary for (#121), `rope minimizes …`; no name either.
 pub(super) const ENERGY_WORDS: [&str; 2] = ["minimizes", "maximizes"];
@@ -412,6 +435,7 @@ pub fn reserved_word(s: &str) -> bool {
     EntKind::parse(s).is_some()
         || TRAILERS.contains(&s)
         || ENERGY_WORDS.contains(&s)
+        || JOINERS.contains(&s)
         || ["through", "bound", "next", "prev"].contains(&s)
         || MODIFIERS.contains(&s)
         || OPENERS.contains(&s)

@@ -514,7 +514,7 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
             _ => {}
         }
         if crate::debug() { for c in &curves { eprintln!("general: given between bearers {bi} and {bj}: {} from {:?} to {:?}",c.kind(),crate::query::curve_domain(c).map(|d| c.point(d[0])),crate::query::curve_domain(c).map(|d| c.point(d[1]))) } }
-        if !curves.is_empty() { given.push(Given {surfaces:[surfaces[x].clone(),surfaces[y].clone()],curves}) }
+        if !curves.is_empty() { given.push(Given {surfaces:[surfaces[x].clone(),surfaces[y].clone()],curves,touches:Vec::new()}) }
     } }
     // **each bearer's whole meeting with each face of the tool at either end**
     let ends = [posed(a)?,posed(b)?];
@@ -552,7 +552,7 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
             eprintln!("general: bearer {} ({what}) meets the tool's face {fi} at end {e}{}: {:?}",held[k],if touch.is_some() { ", touching" } else { "" },
                 curves.iter().map(|c| { let d = crate::query::curve_domain(c).unwrap_or([0.,0.]); (c.kind(),c.point(d[0]),c.point(d[1])) }).collect::<Vec<_>>());
         }
-        Given {surfaces:[surfaces[k].clone(),f.surface.clone()],curves}
+        Given {surfaces:[surfaces[k].clone(),f.surface.clone()],curves,touches:Vec::new()}
     });
     given.extend(met);
     let mut out = breps;

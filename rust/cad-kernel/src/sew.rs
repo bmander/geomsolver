@@ -72,9 +72,12 @@ pub fn sewn(pieces: &[Brep],tol: f64) -> Result<Brep,KernelError> {
 /// along one another, an edge bounding one face left a boundary, each edge's gap measured; nothing
 /// turned, nothing asked to close, and nothing refused for its gap (a ring's tube fitted stretch by
 /// stretch of the roll, sewn across the cuts, #880 T1d). Each piece's surfaces are kept. Only the boundary
-/// edges whose middle lies where `across` holds of its face's parameters are cut and paired: a
-/// tube's rows at the cuts, not its double curve's chords, two leaves' edges one curve in space.
-pub fn sewn_open(pieces: &[Brep],tol: f64,across: &dyn Fn(Uv) -> bool) -> Result<Brep,KernelError> {
+/// edges whose middle lies on a row — `across` of its face's parameters names which — are cut and
+/// paired: a tube's rows at the cuts, not its double curve's chords, two leaves' edges one curve in
+/// space. A row is the cut it sews, by construction (#942 F3): the stretches either side of a cut
+/// are fitted a hair clear of it, their rows apart in the roll by that hair and one row, which no
+/// reading of their parameters' values tells from two rows near one another beside a swallowtail.
+pub fn sewn_open(pieces: &[Brep],tol: f64,across: &dyn Fn(Uv) -> Option<usize>) -> Result<Brep,KernelError> {
     let mut b = Brep::default();
     let mut piece_of: Vec<usize> = Vec::new();
     for (k,p) in pieces.iter().enumerate() {
@@ -134,16 +137,16 @@ fn middle(b: &Brep,e: usize) -> V { let e = &b.edges[e]; e.point(0.5*(e.t[0]+e.t
 /// and a corner of one was merged with a vertex of the other (#880 T1d, the tumbling torus turned
 /// whole). Nor is a vertex merged with another of its own piece (`piece_of`, each vertex's): a
 /// piece's vertices are its own already, and two a hair apart there are two.
-fn merge_vertices_on_rows(b: &mut Brep,tol: f64,across: &dyn Fn(Uv) -> bool,piece_of: &[usize]) -> Vec<Option<f64>> {
-    let mut row: Vec<Option<f64>> = vec![None;b.vertices.len()];
+fn merge_vertices_on_rows(b: &mut Brep,tol: f64,across: &dyn Fn(Uv) -> Option<usize>,piece_of: &[usize]) -> Vec<Option<usize>> {
+    let mut row: Vec<Option<usize>> = vec![None;b.vertices.len()];
     for f in &b.faces {
         for c in f.loops.iter().flatten() {
             for (v,uv) in b.ends(c).into_iter().zip(b.uv_ends(f,c)) {
-                if row[v as usize].is_none() && across(uv) { row[v as usize] = Some(uv[1]) }
+                if row[v as usize].is_none() { row[v as usize] = across(uv) }
             }
         }
     }
-    let mut merged: Vec<(Vertex,Option<f64>,Vec<usize>)> = Vec::new();
+    let mut merged: Vec<(Vertex,Option<usize>,Vec<usize>)> = Vec::new();
     let mut at: Vec<u32> = Vec::with_capacity(b.vertices.len());
     for (i,(v,&r)) in b.vertices.iter().zip(&row).enumerate() {
         let k = piece_of[i];
@@ -160,10 +163,8 @@ fn merge_vertices_on_rows(b: &mut Brep,tol: f64,across: &dyn Fn(Uv) -> bool,piec
     rows
 }
 
-/// Whether two rows (`merge_vertices_on_rows`) are one.
-fn same_row(x: Option<f64>,y: Option<f64>) -> bool {
-    match (x,y) { (None,None) => true,(Some(x),Some(y)) => (x-y).abs() <= 1e-9*(1.+x.abs()),_ => false }
-}
+/// Whether two rows (`merge_vertices_on_rows`) are one: the same cut's, or neither on any.
+fn same_row(x: Option<usize>,y: Option<usize>) -> bool { x == y }
 
 /// The pieces' vertices merged where they come within `tol` (`Pool`), each keeping its tolerance.
 fn merge_vertices(b: &mut Brep,tol: f64) {
@@ -177,11 +178,11 @@ fn merge_vertices(b: &mut Brep,tol: f64) {
 
 /// The boundary edges, by the uses `Brep::uses` counts: each on a curve and used once (and where
 /// `across` is given, its middle where it holds of the face's parameters).
-fn free(b: &Brep,uses: &[Vec<At>],across: Option<&dyn Fn(Uv) -> bool>) -> Vec<bool> {
+fn free(b: &Brep,uses: &[Vec<At>],across: Option<&dyn Fn(Uv) -> Option<usize>>) -> Vec<bool> {
     b.edges.iter().zip(uses).map(|(e,u)| matches!(e.curve,EdgeCurve::Curve(_)) && u.len() == 1 && across.is_none_or(|f| {
         let (fi,li,ci) = u[0];
         let face = &b.faces[fi];
-        f(face.loops[li][ci].pcurve.at(0.5*(e.t[0]+e.t[1]),e,&face.surface,&b.vertices))
+        f(face.loops[li][ci].pcurve.at(0.5*(e.t[0]+e.t[1]),e,&face.surface,&b.vertices)).is_some()
     })).collect()
 }
 
@@ -189,16 +190,16 @@ fn free(b: &Brep,uses: &[Vec<At>],across: Option<&dyn Fn(Uv) -> bool>) -> Vec<bo
 /// vertex found by their boxes.
 /// Where `rows` is given (each vertex's, `merge_vertices_on_rows`), an edge on a row is cut only
 /// at that row's vertices: beside a swallowtail's point a row's rim runs within `tol` of the next.
-fn split_at_vertices(b: &mut Brep,tol: f64,across: Option<&dyn Fn(Uv) -> bool>,rows: Option<&[Option<f64>]>) {
+fn split_at_vertices(b: &mut Brep,tol: f64,across: Option<&dyn Fn(Uv) -> Option<usize>>,rows: Option<&[Option<usize>]>) {
     let reach = ON_CURVE*tol;
     let uses = b.uses();
     let free = free(b,&uses,across);
     // each free edge's row: its middle's, where `across` holds there
-    let edge_row = |i: usize| -> Option<f64> {
+    let edge_row = |i: usize| -> Option<usize> {
         let (fi,li,ci) = uses[i][0];
         let (face,e) = (&b.faces[fi],&b.edges[i]);
         let uv = face.loops[li][ci].pcurve.at(0.5*(e.t[0]+e.t[1]),e,&face.surface,&b.vertices);
-        across.is_some_and(|f| f(uv)).then_some(uv[1])
+        across.and_then(|f| f(uv))
     };
     let edges: Vec<usize> = (0..b.edges.len()).filter(|&i| free[i]).collect();
     let mut ends: Vec<u32> = edges.iter().flat_map(|&i| b.edges[i].v).collect();
@@ -226,7 +227,7 @@ fn split_at_vertices(b: &mut Brep,tol: f64,across: Option<&dyn Fn(Uv) -> bool>,r
 }
 
 /// Each two boundary edges lying along one another made one (the module's rules).
-fn pair_edges(b: &mut Brep,tol: f64,open: bool,across: Option<&dyn Fn(Uv) -> bool>) -> Result<(),KernelError> {
+fn pair_edges(b: &mut Brep,tol: f64,open: bool,across: Option<&dyn Fn(Uv) -> Option<usize>>) -> Result<(),KernelError> {
     let uses = b.uses();
     let free = free(b,&uses,across);
     // the boundary edges by the vertices they join

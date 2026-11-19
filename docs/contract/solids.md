@@ -345,14 +345,14 @@ placement carries inside the blank; CLI test readers zero the offset.
   on, a revolution by hand's named side, a draft read off its tree, a through prism bounded by
   what it cuts — two bodies at different heights, a copy through its own — the retired labels naming the set), and `tests/extrude.rs`'s
   `a_family_saying_a_prism_is_resized_by_its_set` the gestures'.
-- **A body kept within half-spaces is the body in common with them** (#953, [0.219],
+- **A body kept within half-spaces is the body in common with them** (#953, [0.221],
   `solid::defined::trimmed`, called from `program/solids/build.rs` once the solid is made).  A
   region whose terms keep it within one solid named whole or more (`p in hull`), outside any
   others named whole, and within terms that read no face — `p in water`, `water :=
   std.sets.HalfSpace(keel, std.z, d: T)` — is the body over those solids, kept in common with a
   region of the other terms pushed as a solid **of the same name** (as `Sketch::as_body` pushes a
   sweep's own stock), so its faces are named from it with no step of their own: the hull's
-  `immersed.hull.side`, the waterplane's `immersed.water`.  Through 0.218 such a region was read
+  `immersed.hull.side`, the waterplane's `immersed.water`.  Through 0.220 such a region was read
   by the field alone and no exact construction made of it, so nothing could measure it.  A region
   of half-spaces alone kept with a body (`defined::kept_half`) has no end of its own: it is read
   with none (`region::general`, never folded about an axis, where it would be refused for having
@@ -633,6 +633,13 @@ placement carries inside the blank; CLI test readers zero the offset.
   the document holds it (`refused::Placing`): a site in a module at the deepest instance on its
   path the document holds (the round that used `std.rounds.round`), else at the `use`
   (`modules::localize`).  `tests/refused_once.rs` is the gate.
+  **A declaration refused while elaborating shifts nothing onto another** (#952,
+  `program::solids::res_forget`): what is declared is numbered where it is to be made, and the
+  sets a region reads (`Probes::terms`) are gathered before the solids are built, so forgetting a
+  refused solid or face renumbers them with the resolver — a set over the refused one itself
+  refused with it, said once at the cause.  A round over a body declared past a refused solid had
+  its region read itself until the stack ran out
+  (`solid_lang::a_refused_solid_shifts_no_set_onto_another`).
   A solid refused in words that lead through another (`` `x`: `part`'s faces: `filled[3]`: … ``,
   a round's piece reading the faces of a body another round left unbuilt) is built on that one
   (#948, `refused::chained_cause`), so the round the kernel refused is the root, said in its own
@@ -834,14 +841,20 @@ placement carries inside the blank; CLI test readers zero the offset.
   start|end` (`Constraint::contact_point`), a fraction's `t` (`point_along_arc`'s constant, its
   seed in `infer`), a frame along it (`guide::Path::read`), a seed's step along it; `graft`, the
   JSON (`"reversed"`) and the lifted text (`sense: cw`, ends as written) keep it.  A clockwise
-  half turn is E060 still.  `tests/clockwise_arc.rs`: the issue's arc and its ring at 9 unknowns
+  half turn was E060 through [0.218]; it is the half clockwise from its start now, as a
+  counter-clockwise half turn is the half counter-clockwise (#952), and only an arc a chain walks
+  from its end, drawn turned back, refuses one.  `tests/clockwise_arc.rs`: the issue's arc and its ring at 9 unknowns
   and no plane more, a free radius named as the arc's, the names, a tangency at `start` and
   `t == 0.25` against the counter-clockwise arc's `end` and `0.75`, a copy, the JSON and the
-  lifted text read back.  One a chain enters at its start is drawn by `arcs_in_space` in its
-  plane turned over (normal reversed), counter-clockwise there from its start, so a chain still
-  enters every link at its start and its legs run forward — no leg is walked end to start — and
-  the S-bend in `std.top` is one chain
-  (`a_chain_in_a_plane_turns_right_at_an_arc_said_to_turn_clockwise`).  **A chain walks an arc it
+  lifted text read back.  **One a chain enters at its start is so too** (#952): it was drawn in
+  its plane turned over, on ends of its own standing for the drawing's, and a closed chain through
+  it walked those ends and met neither neighbour (E080) — now it is the counter-clockwise arc from
+  its end like any other, and what walks a chain reads its ends as written
+  (`solids::faces::validate_chain` asks `arc_reversed`), so the S-bend in `std.top` is one chain
+  still (`a_chain_in_a_plane_turns_right_at_an_arc_said_to_turn_clockwise`), the arc costs the
+  unknowns it costs alone (`a_clockwise_arc_a_chain_enters_at_its_start_is_drawn_from_there`), and
+  the issue's lens — a clockwise arc between two counter-clockwise ones, closed as a named chain —
+  is the face `face(a, k, b, l)` is (`a_closed_chain_through_a_clockwise_arc_is_a_face`).  **A chain walks an arc it
   enters at its end from there** ([0.129]): `program::entities::walked_back` reads each named
   chain before the arcs are drawn — an arc whose end the link before leaves at, or, first, whose
   start the link after enters at — and `arcs_in_space` draws it from its end: start and end
@@ -1017,9 +1030,25 @@ placement carries inside the blank; CLI test readers zero the offset.
   **The shorthand may not swallow a mistake**: an interior gap between two *edges* is still E080
   (`face(ab, cd, bc, da)` must not become a bowtie); **an edge takes its direction from a
   neighbour it actually meets**, so one between two gaps is refused (`bad := face(a, bc, d, ->
-  close)`; name the corner: `bore_f := face(m0.p, b_br.p, bore_r, hx.p, -> close)`); and the wrap
-  is minted only under `-> close`, so "the loop closes" stays something the source states (on a
-  loop that already meets it mints nothing).  `tests/solid_lang.rs` is the gate.
+  close)`; name the corner: `bore_f := face(m0.p, b_br.p, bore_r, hx.p, -> close)`) — save one
+  whose gaps either side lead to the one point (`walk_items`' `one_corner`, [0.219], #952), whose
+  two readings are one loop walked either way: `face(rim, o, -> close)`, an arc and its centre, is
+  the pie slice; and the wrap is minted only under `-> close`, so "the loop closes" stays
+  something the source states (on a loop that already meets it mints nothing).
+  `tests/solid_lang.rs` is the gate (`a_pie_slice_is_an_arc_and_its_centre`).
+- **A half turn a face turns into is said, where it was written the default way** (W118, #952).
+  An arc runs counter-clockwise from its `start:`, so a slot's end written with its ends swapped
+  is the semicircle turned in — a notch where it was meant to bulge — and the drawing solves either
+  way.  `solid::arcs_turned_in` reads, at the pose the sketch stands in, each arc of a face's outer
+  loop the walk runs against the loop's winding (the loop's exact signed area: its chords and each
+  arc's segment, `½r²(φ − sin φ)`), with how far it turns; `program::solids::arcs_turned_in` says
+  W118 after the solve (`solid_diagnostics`) at each arc of a half turn or more so turned that the
+  source wrote turning the default way — never one said `sense: cw` (`Sketch::arc_reversed`) or a
+  chain's corner round, each of which says its turn, and never a lesser arc, the inside fillet and
+  the quarter bore the library draws by the hundred.  The library said none, save `std.retaining`'s
+  band, now `sense: cw`.  `tests/clockwise_arc.rs`' `a_half_turn_a_face_turns_into_is_said` is the
+  gate: the swapped slot end said, the slot as meant, the notch said clockwise and a hand-drawn
+  inside fillet not.
 
 - **A part carries no views; a sheet asks for them** (§6.11, `hidden.rs`).  `view(body) in
   views.right` and `section(body, at: swing) in views.front` are *outputs*: no `Int` draw flag, no

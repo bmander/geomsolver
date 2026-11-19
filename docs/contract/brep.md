@@ -33,6 +33,14 @@ staying a set over `distance`; `tests/brep.rs`'s `the_sphere_the_cone_and_the_to
 `props` (volume by Green's theorem), `query`, `ssi` (closed forms, else traced), `boolean` (split, arrange, classify,
 assemble), `mesh` (constrained Delaunay refined to a measured sag), `step` (AP214 with pcurves and
 seam curves), `recipe`.
+**A traced intersection is written as a cubic** (`step::bezier_curve`): no entity of the standard
+writes a `Traced` curve, so the file carries the piecewise Hermite cubic through its points and
+tangents, halved until each piece's quarter points lie within a tenth of `step::FIT` of the curve
+— as its pcurves are (`bezier_pcurve`) — and only where that does not close in, in at most 4096
+pieces, the polyline through it within the writer's tolerance.  A polyline at the default 1e-4 mm
+trims its faces that far off, and a reader measures the faces it trims: brep-bench's half torus,
+a ball bored off its centre and the saddle drums read 1e-6 to 1e-5 off their closed forms, the
+cubic 1e-9.  `tests/face_edits.rs::a_traced_curve_is_written_as_a_cubic`.
 **An affine map carries a solid onto its image exactly** (`Brep::mapped`, `affine::Affine`, any
 invertible `p ↦ M p + t`): its topology and pcurves are the solid's own, because every surface's
 and curve's image keeps their parameters. A kind whose image is a kind of its own is written so
@@ -487,7 +495,14 @@ one surface, and so are two whose nets over the domain they share are (`Net::seg
 of its points agree) — a net and itself carried on, so the Boolean reads a strip and the face it
 lies on as coincident. A reparameterised net is not recognised. **An edge lying along a face
 crosses its edges where their enclosures say** (`query::enclosed_crossings`, which the Boolean
-reads where `query::crossings_in` has no closed form, its meetings' crossings still searched by
+reads where `query::crossings_in` has no closed form — `crossings_in` reads one curve against a
+surface carrying the other: a line's plane square to the face, an ellipse's plane, and a circle's
+plane — or its cylinder where the plane's reading is refused (#942 F3: a bull-nose's round touches
+its flat end's plane all along the circle they share, so a curve on the round reaching that circle
+touches the plane, a double root no search proves, and crosses the cylinder square; the plane first,
+since a helix about the circle's axis lies on its cylinder and crosses its plane;
+`solid_sweeps_examples::the_bull_nose_swung_partway_its_meridian_beside_its_foot_stops_inside_the_ring`)
+— its meetings' crossings still searched by
 `meeting::crossings` within their reach): where neither is a line or a conic, pairs of their
 stretches whose enclosures (`Enclosed`, a spline's poles
 restricted to the stretch; `Curve::bounds`, a span's whole hull, never shrank and the search gave
@@ -651,7 +666,21 @@ each operand; a traced meeting along an edge one face already has is that edge, 
 and laid across the other face too wherever it lies inside it (`Meetings::along_edges`: a torus's
 seam in the plane through its axis that holds it, `brep::a_torus_cut_along_its_seam_is_half_of_it`); a meeting
 known before any is sought given it (`Given`, `arrangement_given`, #810): curves on two operands'
-surfaces that are their whole meeting, laid as an edge of both with no search for that pair —
+surfaces that are their whole meeting, laid as an edge of both with no search for that pair, and
+the points where the two touch besides (`Given::touches`, #942 F3), an edge of either through one
+read as touching the other there with no search, a touch being a double root no search proves
+(gated with no sweep by `arrangement::a_rim_touching_a_wall_at_points_given_is_read_there_with_no_search`:
+a drum's rim touching a parabolic channel's two extruded walls at a point each, refused with
+nothing given, read there given the walls' meetings and the points, its volumes to the rounding);
+a given curve that is an edge either face already has (equal to its curve, no tolerance read) is
+that edge, laid once, its crossings with the meeting's other curves read first and kept on them
+(#942 F3: a ring's tube cut along its crossing of the tool where it starts, given that chord as
+their meeting — the ring along a spline, its tube face's "pieces do not close" with the chord laid
+twice, now arranged; gated by
+`a_tubes_chord_given_as_its_meeting_with_the_tool_is_its_own_edge_laid_once`, each of its tubes,
+its chord a later span of a curve of several, arranged with the torus where it ends and no curve
+laid twice over one stretch; the ring's two tubes come no nearer than 0.9, so its
+near-coincidence was that chord and not one surface crossing itself) —
 what a sweep knows of its candidates' touches by construction
 (generating.md, #810); each cell's membership in each operand read off a face of it bounding the cell, else at
 a point deep inside. **A trim is the same phases with no cell** (#880 E1, `boolean::trimmed`): only the pairs of faces a `Meet` names met (an edge with a face only where a face it bounds is), each piece kept, turned or dropped by a side test its caller gives, coincident pieces stood for by the lowest operand's, and the kept pieces assembled and healed as a selection's are; with no `Meet` the arrangement is as it was (generating.md's trimming by membership). **A Boolean is a selection over it**: each piece's two sides' membership read

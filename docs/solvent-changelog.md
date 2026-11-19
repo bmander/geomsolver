@@ -4,7 +4,7 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.220] An integral, and the measure words moved to `std.measures`** (#953). `integral(EXPR
+**[0.222] An integral, and the measure words moved to `std.measures`** (#953). `integral(EXPR
 over p in S)` integrates an expression over the point it binds, `S` a solid, a face of one, a beam
 or a line one is drawn on, or an instance's bodies, by `S`'s own measure; its body reads the
 point through `distance(p, X)` (to a point, a line, an axis or a plane), the signed ordinate
@@ -19,13 +19,13 @@ integrals, imported by name (`use std.measures (mass)`); `moment` takes its numb
 `moment(i: I, about: l) F`. A report calls each equation by the word's use that stated it and says
 its two sides, `mass(10kg) arm: 10 kg ± 0 kg == 10 kg: driven, held`; a centroid is three lines,
 each how far the point stands off the centroid along an axis of the world.
-Through 0.219 `integral(…)` and `density(…)` outside an energy were E001, a bound given to a
+Through 0.221 `integral(…)` and `density(…)` outside an energy were E001, a bound given to a
 word's parameter was E103, and a word's body stating anything but relations, declarations, sets
 and energies was E100; the six measure words were the
 language's own, so a document writing one with no `use` now reads E102, naming the module, and
 `moment(I, about: l)` reads E004 (its number is given by label).
 
-**[0.219] Where a body is made, and a face's measures** (#953). `g centroid B` and `g
+**[0.221] Where a body is made, and a face's measures** (#953). `g centroid B` and `g
 centerofmass B` put a declared point where a solid's volume (or a face's area) or its mass is
 centred, `B` a solid, a face of one (a centroid), or an instance — every body under it that no
 other solid is built of, each weighed by its density, so a centre of mass does not depend on how
@@ -39,9 +39,42 @@ A set whose body is a disjunction of memberships of panels and faces of the draw
 | q in bottom or q in port or q in deck }`, is a closed shell, and `solid({ p | p in shell.side
 })` the solid it encloses, its faces its members (`hull.port`); a face in such a disjunction was
 E001.
-Through 0.218 the four words were E040 (`no such entity`, or a relation of no table), such a
+Through 0.220 the four words were E040 (`no such entity`, or a relation of no table), such a
 region was read by its field alone and nothing measured it, and a measure's number reading an
 unknown was E040. Nothing else a document wrote reads differently.
+
+**[0.220] The mirror in an axis.** `symmetry` takes an axis in its parentheses as well as a
+line: `a symmetry(std.x) b` is the half turn about the axis's line, in space wherever the points
+are drawn — what the mirror in a line drawn in space already was (§9.2) — and, reading where the
+axis is, it places one that nothing else does, as `coincident` does. Through 0.219 it was E040
+("`std.x` is an axis, and a line is wanted here"), so a figure symmetric about a world axis drew
+a line on the axis to mirror in. A regular tetrahedron is one corner and its half turns about the
+three axes, made regular by three edges. Nothing a document wrote before reads differently.
+
+**[0.219] A chain link in parentheses that names nothing, a pie slice, a condition over two lines**
+(#952). A chain's link may stand in parentheses without a name, `pk := (line(c0, c1)) -> round(r:
+4mm) (line(c1, c2)) -> … close`, the bare link as before; through 0.218 the line was read as a number
+and refused as "unknown function `line`" (E103), or "unexpected `:`" past a round. A face whose edge
+meets neither neighbour stays E080, but where both neighbours are the one point the two readings are
+one loop: `face(rim, o, -> close)`, an arc and its centre, is the pie slice (E080 through 0.218). A
+`when`'s condition runs on past a line's end inside a parenthesis, and where a line ends in `and`, `or`
+or `not` or the next opens with `and` or `or`; through 0.218 the condition ended at the line, E001
+"expected `{`". So `and`, `or` and `not` are no name: `and := 2mm` is E001, saying they join
+conditions (a statement opening with a name spelled `or` was refused already). Beside the language, without changing what any document reads: a closed named chain
+through an arc said to turn clockwise is the face it lists (it was E080, "meets neither of its
+neighbours"); `face(line(a, b), …)` says that a face lists edges declared by name and that a loop drawn
+in place is a chain, where it said "expected `,` or `)`"; and **W118** names an arc of a half turn or
+more that a face turns into while written counter-clockwise from its start, the end of a slot written
+with its ends swapped — `sense: cw` with its ends swapped says the notch is meant. An arc said
+`sense: cw` whose ends are a half turn apart is the half clockwise from its start (E060 through
+0.218), so a notch of a half turn can be said so. A set's `ends` (§6.21) — where a run of
+`std.rounds` and every set over a carried edge stops — no longer takes a face whose surface goes
+back across the edge, nor a plane at a reflex corner of less than a right angle turning back over
+the run: there the run ends square, as at a seam (a round there was refused or left a sliver
+through 0.218, and a round notched back by `s / tan θ` at such a corner now stops square at it). A
+run carried past its end along the next side goes no further than that side's edge, and two runs
+mirroring one another at a convex corner meet in the plane halving it. A seam between two pieces of
+one surface — the coplanar tops of solids unioned — is no seam a round's section spills over.
 
 **[0.218] A claim over measurements, and the customary engineering units** (#940). A `claim`
 may compare measurements of the solved drawing — `length`, `radius`, `distance`, `angle` — with

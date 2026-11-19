@@ -30,6 +30,22 @@ pub(super) fn gather(leg: &Leg,cand: &mut Candidates) {
         }
     }
     rims(leg,cand,d);
+    touched_at_seams(cand);
+}
+
+/// **Where a band's contact crosses a seam, its neighbour touches the sheet it sweeps there, and
+/// nowhere else** (#942 F3): the neighbour's face at each end pose is the tool's boundary there, and
+/// the sheet is the sweep's — the tool posed lies within its sweep — so the two meet only where the
+/// face's contact lies on the sheet, at the seam: so is every face of the solid the face's candidate
+/// bounds, which lies within the tool posed. Given each, those points alone (`Touch`'s points): the
+/// circle where the neighbour meets the band touches the sheet there, a double root no search proves
+/// by a change of sign (brep-bench's bull-nose pushed in at a lean, its side's rim touching its
+/// round's sheet mid-span).
+fn touched_at_seams(cand: &mut Candidates) {
+    let found: Vec<Touch> = cand.crossings.iter().flat_map(|&(sheet,k,pose,p)| cand.posed.iter()
+        .filter(move |&&(face,at,_)| face == k && at == pose).map(move |&(_,_,c)| Touch {cutters:[c,sheet],curves:Vec::new(),touches:vec![p]}))
+        .collect();
+    cand.touches.extend(found);
 }
 
 /// Each plane face at the end pose it leaves the slide by (at the start where it enters it, either
@@ -63,8 +79,9 @@ fn cylinder(leg: &Leg,cand: &mut Candidates,round: &Round,(f,r): (Frame,f64),d: 
     let [lo,hi] = round.span;
     let a = unit(f.z);
     let across = sub(d,scale(a,dot(d,a)));
-    for pose in [&leg.start,&leg.end] {
-        cand.add(Cutter::Cylinder {o:pose.point(f.o),axis:a,r,span:[lo,hi]},round.sites_at(pose));
+    for (at,pose) in [&leg.start,&leg.end].into_iter().enumerate() {
+        let c = cand.add(Cutter::Cylinder {o:pose.point(f.o),axis:a,r,span:[lo,hi]},round.sites_at(pose));
+        cand.posed.push((round.k,at,c));
     }
     if norm(across) <= 1e-9*norm(d) {
         let s = dot(d,a);
@@ -86,8 +103,9 @@ fn cone(leg: &Leg,cand: &mut Candidates,round: &Round,(f,half): (Frame,f64),d: V
     // the generator through the cone's point at `u = 0`, turned about its axis
     let p0 = round.face.surface.point([0.,0.]);
     let e = unit(add(scale(f.x,sa),scale(f.z,ca)));
-    for pose in [&leg.start,&leg.end] {
-        cand.add(Cutter::Revolved {o:pose.point(f.o),axis:f.z,p:pose.point(p0),e,span:[lo*ca,hi*ca]},round.sites_at(pose));
+    for (at,pose) in [&leg.start,&leg.end].into_iter().enumerate() {
+        let c = cand.add(Cutter::Revolved {o:pose.point(f.o),axis:f.z,p:pose.point(p0),e,span:[lo*ca,hi*ca]},round.sites_at(pose));
+        cand.posed.push((round.k,at,c));
     }
     // the normal `cos α ρ̂(u) − sin α z` square to the slide:
     // `A cos u + B sin u = C`
@@ -163,7 +181,7 @@ fn torus_leaning(leg: &Leg,cand: &mut Candidates,round: &Round,(f,big,small): (F
     // on its own face
     let contacts = |sheet: usize,on: &[crate::slid::Slid]| -> Vec<Touch> {
         tori.iter().flat_map(|&(torus,pose)| on.iter().map(move |h| Touch {cutters:[torus,sheet],
-            curves:vec![Curve::Slid(std::sync::Arc::new(h.at(pose.point(f.o),false)))]})).collect()
+            curves:vec![Curve::Slid(std::sync::Arc::new(h.at(pose.point(f.o),false)))],touches:Vec::new()})).collect()
     };
     let band = leg.read.bands.iter().find(|b| b.0 == k).map(|&(_,band,contact)| (band,contact));
     let carried = |h: &crate::slid::Slid| -> Vec<(V,V)> {
@@ -190,8 +208,14 @@ fn torus_leaning(leg: &Leg,cand: &mut Candidates,round: &Round,(f,big,small): (F
         for u in [centre-half,centre+half] {
             let (x,n) = band.at(u,band.v[seam]);
             let plane = cand.add(Cutter::Plane((leg.start.point(x),n)),Vec::new());
-            cand.touches.push(Touch {cutters:[plane,sheet],curves:vec![Curve::Line {p:leg.start.point(x),d:dd}]});
+            cand.touches.push(Touch {cutters:[plane,sheet],curves:vec![Curve::Line {p:leg.start.point(x),d:dd}],touches:Vec::new()});
             cand.seams.extend([leg.start.point(x),leg.end.point(x)]);
+            // (and the neighbour across the seam, at each end pose, touches the sheet there alone:
+            // the round face other than the band holding the seam's point, `touched_at_seams`)
+            let neighbour = leg.read.round.iter().copied().find(|&j| j != k && leg.located.face_place(j,x) != Place::Out);
+            if let Some(j) = neighbour {
+                for (at,pose) in [&leg.start,&leg.end].into_iter().enumerate() { cand.crossings.push((sheet,j,at,pose.point(x))) }
+            }
         }
     }
 }

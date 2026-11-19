@@ -1351,6 +1351,16 @@ impl<'a> P<'a> {
             out.push(Stmt { id, kind, span, chained: Chained::No });
             return Some(());
         }
+        // `and`, `or` and `not` join conditions (#952), and are no name
+        let define = self.t.get(self.i + 1).map(|t| &t.0) == Some(&Tok::Define);
+        if let Some(w) = self.word_at(self.i).filter(|_| define) {
+            if crate::syntax::words::JOINERS.contains(&w) {
+                let w = w.to_string();
+                self.fail(&format!("`{w}` joins conditions (`when a > 0mm {w} …`), and nothing \
+                                    may be called it"));
+                return None;
+            }
+        }
         if let Some(name) = self.defines() {
             return self.definition(name, next_id, out);
         }
@@ -2559,7 +2569,9 @@ impl<'a> P<'a> {
             }
             self.i += 1;
         }
-        let count = self.text_from(from).trim().to_string();
+        // its text read as one line, however many it ran over (the lexer joins a condition's
+        // lines, `lexer::lex`)
+        let count = self.text_from(from).split_whitespace().collect::<Vec<_>>().join(" ");
         let head = Span::new(from, self.prev_hi().max(from));
         if kind == BlockKind::When && count.is_empty() {
             self.fail(WHEN);
