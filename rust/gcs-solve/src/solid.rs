@@ -91,6 +91,7 @@ mod raycast;
 mod section;
 pub(crate) mod family;
 pub mod sheet;
+pub mod enclosed;
 pub mod rated;
 pub(crate) mod surface;
 mod sweep_contacts;

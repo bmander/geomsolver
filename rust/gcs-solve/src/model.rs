@@ -56,7 +56,7 @@ pub use solids::{
     Ease, Flank, Held, MeshingE, SetKind, SetShape, SurfaceE, TracedE,
     MotionDef, MotionE, station_prefix, FamilyLeg, Leg, objects,
 };
-pub use region::{RegionShape, RegionTerm, TermNumber, FaceRef, Target};
+pub use region::{Member, RegionShape, RegionTerm, TermNumber, FaceRef, Target};
 pub use solid_eval::{Way, turn_between, turn_of};
 pub use construction::{ThreePointArc, three_point_arc};
 pub use turns::{Turn, Mirror, Images, Derivation};

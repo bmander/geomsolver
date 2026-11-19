@@ -246,6 +246,13 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64,left_out: &std::collections
                     crate::solid::region::Form::Sheet(_) => return Err(format!("`{}`: a developable \
                         panel's band is built from its rulings, not read as a material field",
                         sk.solid_name(i))),
+                    // the inside of a closed shell (#953): its own exact boundary, read whole
+                    crate::solid::region::Form::Enclosed(_) => {
+                        let e = sk.exact_preimage(i)?;
+                        let f = BuiltField::new(&e).ok_or_else(|| format!("`{}`: its sewn \
+                            boundary is read as no material field", sk.solid_name(i)))?;
+                        Snapshot::Static(f.into())
+                    }
                 },
                 SolidDef::Revolve {..} =>
                     Snapshot::Static(RevolvedRegion::read(sk,i,axis_tolerance)?.spatial()?),

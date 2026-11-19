@@ -391,6 +391,8 @@ impl<'a> Walk<'a> {
                 // and corner, glued to it
                 super::region::Route::Grown(g) => g.map_err(|e| said(sk,i,e))?.node(w)?,
                 super::region::Route::Field(why) => return Err(said(sk,i,why)),
+                // the inside of a closed shell (#953): its faces and panels sewn
+                super::region::Route::Enclosed(s) => s.map_err(|e| said(sk,i,e))?.node(sk,w)?,
                 // a face carried over an interval of a constant twist (#846): its profile where the
                 // interval begins, carried to where it ends
                 super::region::Route::Carried(c) => c.map_err(|e| said(sk,i,e))?.node(sk,w)?,

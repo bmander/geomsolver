@@ -39,6 +39,7 @@ struct Builder {
     frame_of: BTreeMap<Option<u32>, usize>,
     sheets: Vec<Sheet>,
     sheet_of: BTreeMap<(usize, String), usize>,
+    facets: Vec<[f64; 9]>,
 }
 
 impl Builder {
@@ -250,6 +251,32 @@ impl Builder {
                 };
                 Sheet::Ordinate { at, along, c, m: sign * m, t }
             }
+            // a closed shell's member (#953): a face's plane, or a held panel's triangles
+            SolidDef::Region { .. } if let Some(members) = crate::solid::enclosed::members(sk, p) => {
+                use crate::model::Member;
+                let member = members.iter().find(|m| match m {
+                    Member::Face { name, .. } | Member::Sheet { name, .. } => name == face,
+                }).ok_or_else(|| format!("`{}` has no face `{face}`", solid.name))?;
+                match member {
+                    Member::Face { face: f, .. } => {
+                        Sheet::Cap { frame: self.frame(sk, sk.faces[*f as usize].plane), h: 0.0 }
+                    }
+                    Member::Sheet { rails, name } => {
+                        let moves = rails.iter().flat_map(|r| r.links.iter())
+                            .flat_map(|&e| sk.entity_params(e))
+                            .any(|q| !sk.params[q as usize].fixed);
+                        if moves {
+                            return Err(format!("its panel `{name}`'s rails are moved by the solve, \
+                                which a driving row does not move a panel by yet"));
+                        }
+                        let shell = crate::solid::enclosed::built(sk, p, crate::solid::REPORT_UNIT)
+                            .ok_or("no shell")??;
+                        let first = self.facets.len();
+                        self.facets.extend(shell.triangles(name));
+                        Sheet::Facets { first, count: self.facets.len() - first }
+                    }
+                }
+            }
             SolidDef::Prism { .. } => {
                 return Err(format!("`{}` is drafted, which a driving row does not move yet",
                                    solid.name));
@@ -371,7 +398,8 @@ fn hull_with(sk: &Sketch, parts: &[(usize, &Mesh)], mut b: Builder)
                           nodes: vec![Vec::new(); n],
                           x0: parts.iter().flat_map(|(_, m)| m.nodes.iter().flatten().copied())
                               .collect(),
-                          feet0: vec![0.0; 3 * n], extent, target: None, axis: None };
+                          feet0: vec![0.0; 3 * n], extent, target: None, axis: None,
+                          facets: std::mem::take(&mut b.facets) };
     let v0: Vec<f64> = b.columns.iter().map(|&c| sk.params[c as usize].value).collect();
     for (k, &(_, mesh)) in parts.iter().enumerate() {
         tag(&mut hull, mesh, &sheets_of[k], first[k], &v0);

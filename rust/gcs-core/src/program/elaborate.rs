@@ -145,6 +145,8 @@ pub(super) fn elaborate_in(
     let (drawn, kept_off) = memberships(&mut cx, &flat, &deferred)?;
     // and each band's term at its probe (#645)
     super::developed::sheets(&mut cx, &expansion.sheets);
+    // and each closed shell's inside at its probe (#953)
+    super::developed::enclosed(&mut cx, &expansion.shells);
     let held = holds(&mut cx, &flat, &deferred, crossed);
     let planar = motions(&mut cx, &flat);
     let settled = seeds(&mut cx, &deferred, &held);

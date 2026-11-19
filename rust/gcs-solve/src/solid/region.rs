@@ -85,12 +85,17 @@ pub enum Form {
     General(crate::solid::field::RegionField),
     /// A developable panel's band (#645), built from the panel's rulings (`solid::sheet`).
     Sheet(Rc<super::sheet::Band>),
+    /// The inside of a closed shell (#953), its panels and faces sewn (`solid::enclosed`).
+    Enclosed(Rc<super::enclosed::Shell>),
 }
 
 /// Region solid `solid`'s `Form`.
 pub fn form(sk: &Sketch, solid: usize) -> Result<Form, String> {
     if let Some(band) = super::sheet::band(sk, solid, super::REPORT_UNIT) {
         return band.map(Form::Sheet);
+    }
+    if let Some(shell) = super::enclosed::built(sk, solid, super::REPORT_UNIT) {
+        return shell.map(Form::Enclosed);
     }
     match in_general_position(sk, solid) {
         Some(g) => g.map(Form::General),
@@ -127,6 +132,8 @@ pub enum Route {
     /// A face carried over an interval of a constant twist (#846): the kernel's carried profile,
     /// or why it is refused.
     Carried(Result<Rc<super::carried::Carried>, String>),
+    /// The inside of a closed shell (#953): its panels and faces sewn, or why it is not read.
+    Enclosed(Result<Rc<super::enclosed::Shell>, String>),
 }
 
 impl Route {
@@ -170,9 +177,14 @@ pub fn route(sk: &Sketch, solid: usize) -> Result<Route, String> {
     let SolidDef::Region { terms, .. } = &s.def else {
         return Err(format!("`{}` is not a region", s.name));
     };
+    // the inside of a closed shell (#953): sewn, never read point by point
+    if let Some(shell) = super::enclosed::built(sk, solid, super::REPORT_UNIT) {
+        return Ok(Route::Enclosed(shell));
+    }
     match form(sk, solid)? {
         Form::Meridian(m) => Ok(Route::Meridian(m)),
         Form::Sheet(b) => Ok(Route::Sheet(b)),
+        Form::Enclosed(s) => Ok(Route::Enclosed(Ok(s))),
         Form::General(_) => {
             if let Some(c) = super::carried::built(sk, solid) {
                 return Ok(Route::Carried(c));

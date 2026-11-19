@@ -265,6 +265,27 @@ fn reads_from(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, p
                         }
                         continue;
                     }
+                    // a closed shell's inside (#953): each panel's rails as paths, each face's
+                    // loops, as a band's and a section's are read
+                    if let crate::model::RegionShape::Enclosed { members } = &t.shape {
+                        v.push(15.0);
+                        for m in members {
+                            match m {
+                                crate::model::Member::Sheet { rails, .. } => {
+                                    for r in rails.iter() {
+                                        match r.path(sk) {
+                                            Ok(p) => p.encode(&mut v),
+                                            Err(_) => v.push(UNREAD),
+                                        }
+                                    }
+                                }
+                                crate::model::Member::Face { face, .. } => {
+                                    face_reads(sk, *face, &mut v, poses);
+                                }
+                            }
+                        }
+                        continue;
+                    }
                     // a drawn face read as a set (#737): its loops, as a prism reads them
                     if let crate::model::RegionShape::Section { face } = t.shape {
                         v.push(11.0);

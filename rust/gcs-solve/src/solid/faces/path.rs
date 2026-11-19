@@ -80,6 +80,19 @@ pub fn face_paths(sk: &Sketch, i: usize) -> Vec<FacePath> {
             SolidDef::Region { .. } if let Some(v) = crate::solid::carried::face_names(sk, p) => {
                 return v;
             }
+            // the inside of a closed shell (#953): each member by the set it is
+            SolidDef::Region { .. } if let Some(m) = crate::solid::enclosed::members(sk, p) => {
+                let mut v: Vec<String> = Vec::new();
+                for n in m.iter().map(|m| match m {
+                    crate::model::Member::Sheet { name, .. }
+                    | crate::model::Member::Face { name, .. } => name,
+                }) {
+                    if !v.contains(n) {
+                        v.push(n.clone());
+                    }
+                }
+                return v;
+            }
             SolidDef::Region { terms, .. } => {
                 // a round's own bounds that no set names (`p inside a`) lie on the faces it
                 // rounds: no face of its own a path could write ([0.149])

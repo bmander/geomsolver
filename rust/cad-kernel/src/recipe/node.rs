@@ -131,6 +131,18 @@ pub enum Node {
     /// all of it, so nothing but the plane reaches what it is kept in common with.  Its every face
     /// called `face`.
     Half { origin: V,keep: V,sources: Vec<i64>,face: String },
+    /// **Sheets and faces sewn into the solid they enclose** (#953): each piece a planar face of
+    /// a profile or a B-spline net, named, joined where their boundaries are one curve to `tol`
+    /// (`sew::sewn`) — a closed shell of panels and the faces that close it.
+    Sewn { pieces: Vec<SewnPiece>,tol: f64 },
+}
+
+/// One piece of a `Sewn` node: a planar face of a profile, or a sheet of a B-spline net — each
+/// named, every face it makes called so.
+#[derive(Clone,Debug)]
+pub enum SewnPiece {
+    Face { profile: Section,face: String },
+    Net { net: crate::nurbs::Net,face: String },
 }
 
 /// The path a ball's centre runs (`Node::Canal`): carried by a screw about the line through
@@ -262,6 +274,23 @@ impl Node {
                 carry:carry(field(n,"carry")?)?},
             "hull" => Node::Hull {points:each(field(n,"points")?.arr(),|p| Ok(crate::vec3(p)))?,
                 face:n.get("face").map_or("",Json::as_str).to_string()},
+            "sewn" => Node::Sewn {tol:number(n,"tol")?,pieces:each(field(n,"pieces")?.arr(),|p| {
+                let face = p.get("face").map_or("",Json::as_str).to_string();
+                Ok(match field(p,"kind")?.as_str() {
+                    "face" => SewnPiece::Face {profile:Section::read(field(p,"profile")?)?,face},
+                    "net" => {
+                        let knots = |k: &str| Ok::<_,super::super::KernelError>(
+                            field(p,k)?.arr().iter().map(Json::as_f64).collect::<Vec<f64>>());
+                        let poles = each(field(p,"poles")?.arr(),|row| Ok(row.arr().iter()
+                            .map(crate::vec3).collect::<Vec<V>>()))?;
+                        let net = crate::nurbs::Net {du:number(p,"du")? as usize,dv:number(p,"dv")? as usize,
+                            uknots:knots("uknots")?,vknots:knots("vknots")?,poles,weights:None};
+                        net.check().map_err(unread)?;
+                        SewnPiece::Net {net,face}
+                    }
+                    k => return Err(unread(format!("recipe: a sewn piece of kind `{k}`"))),
+                })
+            })?},
             "half" => Node::Half {origin:point(n,"origin")?,keep:point(n,"into")?,
                 sources:each(field(n,"sources")?.arr(),|s| Ok(s.as_i64()))?,
                 face:n.get("face").map_or("",Json::as_str).to_string()},
@@ -277,7 +306,7 @@ impl Node {
             Node::Canal {..} => "canal",Node::Region(_) => "region",Node::Grown {..} => "grown",Node::Glued(_) => "glued",
             Node::Lowered(_) => "lowered",
             Node::Family(_) => "family",Node::Carried {..} => "carried",Node::Hull {..} => "hull",
-            Node::Half {..} => "half",
+            Node::Half {..} => "half",Node::Sewn {..} => "sewn",
         }
     }
 }

@@ -469,3 +469,129 @@ moment(k * L * B * 1mm, about: centreline) immersed.water
         }
     }
 }
+
+/// A punt 1000 long and 300 deep: a flat bottom between two spline chines in the top plane, a
+/// flat deck between the sheers in the plane 300 up, each sheer its chine moved 40 out and 300 up,
+/// so each side is the developable panel between them — its rulings all along `(0, ±40, 300)`, a
+/// cylinder over its chine — and flat ends; its shell `{ q | q in bottom or q in port or … }`, the
+/// hull what it encloses, `solid({ p | p in shell.side })`; and after it `lines`.  `free` leaves a
+/// chine's middle point to the solve.
+pub fn punt(lines: &str, free: bool) -> String {
+    let (xs, ys) = ([0.0, 250.0, 500.0, 750.0, 1000.0], [150.0, 260.0, 300.0, 260.0, 150.0]);
+    let points = |prefix: &str, sign: f64, dy: f64| -> String {
+        (0..5).map(|i| {
+            let n = format!("{prefix}{i}");
+            let fixed = !(free && prefix == "pc" && i == 2);
+            let (x, y) = (xs[i], sign * (ys[i] + dy));
+            if fixed { format!("  {n} := point\n  fix(({x}mm, {y}mm)) {n}\n") }
+            else { format!("  {n} := point hint(({x}, {y}))\n") }
+        }).collect()
+    };
+    let end = |name: &str, x: f64| format!("\
+{name}_plane := plane
+fix(origin == ({x}mm, 0mm, 0mm)) {name}_plane
+fix(dir == (0, 1, 0)) {name}_plane.u
+fix(dir == (0, 0, 1)) {name}_plane.v
+in {name}_plane {{
+  {name}1 := point
+  {name}2 := point
+  {name}3 := point
+  {name}4 := point
+  fix((-150mm, 0mm)) {name}1
+  fix((150mm, 0mm)) {name}2
+  fix((190mm, 300mm)) {name}3
+  fix((-190mm, 300mm)) {name}4
+  {name}_a := line({name}1, {name}2)
+  {name}_b := line({name}2, {name}3)
+  {name}_c := line({name}3, {name}4)
+  {name}_d := line({name}4, {name}1)
+  {name} := face({name}_a, {name}_b, {name}_c, {name}_d)
+}}
+");
+    format!("\
+unit mm
+use std
+use std.panels
+use std.sets
+deck_plane := plane
+fix(origin == (0mm, 0mm, 300mm)) deck_plane
+fix(dir == (1, 0, 0)) deck_plane.u
+fix(dir == (0, 1, 0)) deck_plane.v
+in std.top {{
+{}{}  port_chine := spline(pc0, pc1, pc2, pc3, pc4)
+  starboard_chine := spline(sc0, sc1, sc2, sc3, sc4)
+  bow_foot := line(sc0, pc0)
+  stern_foot := line(pc4, sc4)
+  bottom := face(port_chine, stern_foot, starboard_chine, bow_foot)
+}}
+in deck_plane {{
+{}{}  port_sheer := spline(ps0, ps1, ps2, ps3, ps4)
+  starboard_sheer := spline(ss0, ss1, ss2, ss3, ss4)
+  bow_head := line(ss0, ps0)
+  stern_head := line(ps4, ss4)
+  deck := face(port_sheer, stern_head, starboard_sheer, bow_head)
+}}
+{}{}port := std.panels.Developable(port_chine, port_sheer)
+starboard := std.panels.Developable(starboard_sheer, starboard_chine)
+shell := {{ q | q in bottom or q in port or q in starboard or q in deck or q in bow or q in stern }}
+hull := solid({{ p | p in shell.side }})
+keel := point
+fix((0mm, 0mm, 0mm)) keel
+{lines}
+", points("pc", -1.0, 0.0), points("sc", 1.0, 0.0), points("ps", -1.0, 40.0),
+       points("ss", 1.0, 40.0), end("bow", 0.0), end("stern", 1000.0))
+}
+
+/// **A hull of panels encloses a solid, and floats** (#953): the punt's shell — two developable
+/// sides and four faces of the drawing — sewn into the solid it encloses, each face named by the
+/// set it is in (`hull.port`, `hull.deck`), its volume `300 A + 300 · 40 · 1000`, `A` the bottom's
+/// area; kept within the water, `volume(V) immersed` finds the waterline at the root of
+/// `(40 / 300) · 1000 · T² + A T = V` — each side's section a trapezoid widening `40 / 300` a unit
+/// up — and the waterplane's area is `A + 1000 · 80 T / 300`, to the tolerance its sides are
+/// drawn to: through their rulings, each chord inside its rail (2e-4 of it here).
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, a minute: a hull of panels filled and \
+                                             driven, then read again")]
+fn a_hull_of_panels_floats() {
+    let lines = "param T: Length hint(100mm)
+water := std.sets.HalfSpace(keel, std.z, d: T)
+immersed := solid({ p | p in hull; p in water })
+volume(30000 * 1cm^3) immersed
+";
+    let (e, sk) = sized(&punt(lines, false));
+    let hull = crate::common::ent(&e, "hull").i();
+    let faces: Vec<String> = gcs_core::solid::faces::face_paths(&sk, hull).iter()
+        .map(|f| f.text()).collect();
+    assert_eq!(faces, ["bottom", "port", "starboard", "deck", "bow", "stern"]);
+    let x = sk.exact_preimage(hull).expect("the hull is built exactly");
+    let b = &x.brep;
+    let bottom = b.faces.iter().filter(|f| f.name.ends_with("bottom"))
+        .map(|f| gcs_core::brep::props::area(b, f)).sum::<f64>() / (x.mm * x.mm);
+    let volume = gcs_core::brep::props::volume(b) / x.mm.powi(3);
+    close(volume, 300.0 * bottom + 300.0 * 40.0 * 1000.0, 1e-6, "the hull's volume");
+    let k = 40.0 / 300.0 * 1000.0;
+    let t = (-bottom + (bottom * bottom + 4.0 * k * 3e7).sqrt()) / (2.0 * k);
+    close(unknown(&sk, "T"), t, 1e-5, "the waterline");
+    let (said, _) = read(&punt(&format!("T := {t}mm
+water := std.sets.HalfSpace(keel, std.z, d: T)
+immersed := solid({{ p | p in hull; p in water }})
+claim area(<= {hi} * 1mm^2) immersed.water
+claim area(>= {lo} * 1mm^2) immersed.water
+", hi = (bottom + 1000.0 * 80.0 * t / 300.0) * (1.0 + 2e-4),
+   lo = (bottom + 1000.0 * 80.0 * t / 300.0) * (1.0 - 2e-4)), false));
+    assert!(said.iter().all(|s| s.ends_with("kept")), "{said:#?}");
+}
+
+/// **A panel the solve moves is said** (#953): a row over a hull whose chine a point the solve
+/// moves shapes is refused where it is stated, naming the panel — a driving row moves a held
+/// panel's nodes over its rulings' triangles, and does not move a panel by its rails yet.
+#[test]
+fn a_panel_the_solve_moves_is_said() {
+    let lines = "pc2 coincident(t == 0.5) bottom_line
+volume(30000 * 1cm^3) hull
+";
+    let errs = errors(&punt(lines, true).replace("  port_chine := spline", "  bottom_line := \
+        line(pc1, pc3)\n  port_chine := spline"));
+    assert!(errs.iter().any(|(c, m)| c == "E040" && m.contains("its panel `port`'s rails are \
+        moved by the solve")), "{errs:?}");
+}

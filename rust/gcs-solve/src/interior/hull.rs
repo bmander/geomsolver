@@ -109,6 +109,10 @@ pub enum Sheet {
     Extruded { frame: usize, curve: Profile },
     Turned { frame: usize, axis: Axis, curve: Profile },
     Ordinate { at: Place, along: Direction, c: f64, m: f64, t: Option<usize> },
+    /// A panel of a closed shell whose rails nothing the solve moves reads (#953): held, the
+    /// triangles `first..first + count` of the hull's `facets` it is drawn with, a node's level
+    /// the signed distance from the plane of the one nearest it.
+    Facets { first: usize, count: usize },
 }
 
 /// **A filled body's nodes as functions of the drawing's columns**: how many columns, the planes
@@ -128,6 +132,9 @@ pub struct Hull {
     /// is compared with, and the line a second moment is taken about (its point and direction).
     pub target: Option<Place>,
     pub axis: Option<(Place, Direction)>,
+    /// The triangles held panels are drawn with (#953, `Sheet::Facets`), each its three corners
+    /// turned out of the material.
+    pub facets: Vec<[f64; 9]>,
 }
 
 /// **Which stage a node is placed in**: a vertex at its foot; an edge's node, a face's and one
@@ -331,6 +338,12 @@ fn unit<T: Num>(a: V<T>) -> V<T> {
     vscale(a, T::cst(1.0) / vdot(a, a).sqrt())
 }
 
+/// How far `p` stands from the triangle of corners `t` (nine numbers).
+fn triangle_distance(t: &[f64; 9], p: [f64; 3]) -> f64 {
+    let c = |k: usize| [t[3 * k], t[3 * k + 1], t[3 * k + 2]];
+    crate::space::distance(p, crate::space::closest_on_triangle(p, c(0), c(1), c(2)).0)
+}
+
 /// Node `i`'s three numbers of `x`.
 fn at(x: &[f64], i: usize) -> [f64; 3] {
     [x[3 * i], x[3 * i + 1], x[3 * i + 2]]
@@ -364,7 +377,7 @@ impl Sheet {
             Sheet::Cap { frame, .. } | Sheet::Extruded { frame, .. } | Sheet::Turned { frame, .. } => {
                 Some(frame)
             }
-            Sheet::Ordinate { .. } => None,
+            Sheet::Ordinate { .. } | Sheet::Facets { .. } => None,
         }
     }
 }
@@ -410,7 +423,7 @@ impl Hull {
                 }
                 out.extend(t.iter().copied());
             }
-            Sheet::Cap { .. } => {}
+            Sheet::Cap { .. } | Sheet::Facets { .. } => {}
             Sheet::Extruded { curve, .. } => out.extend(curve.columns()),
             Sheet::Turned { axis, curve, .. } => {
                 out.extend(curve.columns());
@@ -505,6 +518,23 @@ impl Hull {
     /// columns `col` reads — NaN where the sheet is degenerate (a line of no length, a node on a
     /// turn's axis off a face square to it).
     fn level<T: Num>(&self, s: usize, col: &dyn Fn(usize) -> T, p: V<T>) -> (T, V<T>) {
+        // a held panel (#953): the plane of the triangle nearest the node where it stands
+        if let Sheet::Facets { first, count } = self.sheets[s] {
+            let at = p.map(|q| q.val());
+            let near = (first..first + count).min_by(|&a, &b| {
+                triangle_distance(&self.facets[a], at).total_cmp(&triangle_distance(&self.facets[b], at))
+            });
+            let Some(f) = near else {
+                let nan = T::cst(f64::NAN);
+                return (nan, [nan; 3]);
+            };
+            let t = &self.facets[f];
+            let (a, b, c) = ([t[0], t[1], t[2]], [t[3], t[4], t[5]], [t[6], t[7], t[8]]);
+            let n = crate::space::unit(crate::space::cross(crate::space::sub(b, a),
+                                                           crate::space::sub(c, a)));
+            let nd = n.map(T::cst);
+            return (vdot(vsub(p, a.map(T::cst)), nd), nd);
+        }
         // a half-space's plane (#953): its point, its unit direction, its ordinate
         if let Sheet::Ordinate { at, along, c, m, t } = self.sheets[s] {
             let k = T::cst;
@@ -532,7 +562,9 @@ impl Hull {
                 let rho = vdot(w, w).sqrt();
                 (rho - col(r), vscale(w, k(1.0) / rho))
             }
-            Sheet::Ordinate { .. } => unreachable!("a half-space's level is read above"),
+            Sheet::Ordinate { .. } | Sheet::Facets { .. } => {
+                unreachable!("a half-space's and a panel's levels are read above")
+            }
             Sheet::Turned { axis, curve, .. } => {
                 let (a, d) = match axis {
                     Axis::Held { a, d } => (a.map(k), d.map(k)),
@@ -949,6 +981,9 @@ impl Hull {
                 }
                 // its kind, its point's kind and three, its direction's kind and three, then its
                 // ordinate's number, coefficient and unknown's column past one (none: nothing)
+                Sheet::Facets { first, count } => {
+                    w[..3].copy_from_slice(&[4.0, *first as f64, *count as f64]);
+                }
                 Sheet::Ordinate { at, along, c, m, t } => {
                     w[0] = 3.0;
                     let (pk, pw) = match *at {
@@ -998,6 +1033,9 @@ impl Hull {
             }
         }
         k.extend(w);
+        // the triangles held panels are drawn with (#953): how many, then each one's nine
+        k.push(self.facets.len() as f64);
+        k.extend(self.facets.iter().flatten());
         for s in &self.nodes {
             let mut w = [0.0; 4];
             w[0] = s.len() as f64;
@@ -1013,7 +1051,8 @@ impl Hull {
 
     /// How many constants it is.
     pub fn width(&self) -> usize {
-        5 + 10 * self.frames.len() + SHEET * self.sheets.len() + EXTRAS + 10 * self.nodes.len()
+        5 + 10 * self.frames.len() + SHEET * self.sheets.len() + EXTRAS + 1 + 9 * self.facets.len()
+            + 10 * self.nodes.len()
     }
 
     /// What `consts` wrote, from `k`, and how many it read — `None` for constants that are not
@@ -1062,6 +1101,7 @@ impl Hull {
                     };
                     Sheet::Turned { frame: frame(s[1])?, axis, curve: curve(&s[2..5])? }
                 }
+                z if z == 4.0 => Sheet::Facets { first: count(s[1])?, count: count(s[2])? },
                 z if z == 3.0 => {
                     let at = match s[1] {
                         z if z == 0.0 => Place::Held([s[2], s[3], s[4]]),
@@ -1111,13 +1151,19 @@ impl Hull {
             (None, None) => None,
             _ => return None,
         };
+        let n_facets = count(*take(1)?.first()?)?;
+        let facets: Vec<[f64; 9]> = take(n_facets.checked_mul(9)?)?.as_chunks::<9>().0.to_vec();
         let nodes: Vec<Vec<usize>> = take(4 * n_nodes)?.as_chunks::<4>().0.iter().map(|w| {
             let n = count(w[0]).filter(|&n| n <= 3)?;
             w[1..1 + n].iter().map(|&s| count(s).filter(|&s| s < n_sheets)).collect()
         }).collect::<Option<_>>()?;
         let x0 = take(3 * n_nodes)?.to_vec();
         let feet0 = take(3 * n_nodes)?.to_vec();
-        Some((Hull { columns, frames, sheets, nodes, x0, feet0, extent, target, axis }, at))
+        if sheets.iter().any(|s| matches!(*s, Sheet::Facets { first, count }
+            if first.checked_add(count).is_none_or(|e| e > facets.len()))) {
+            return None;
+        }
+        Some((Hull { columns, frames, sheets, nodes, x0, feet0, extent, target, axis, facets }, at))
     }
 }
 

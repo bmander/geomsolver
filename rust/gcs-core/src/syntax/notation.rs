@@ -11,6 +11,7 @@
 //! | `p in boundary(S)` | `p coincident S.surface` (of `a.side`, `a.surface`) |
 //! | `boundary(S)` elsewhere | `S.surface`, as above (`a.smooth`'s itself) |
 //! | `p in A or p not in B` | `p outside { p \| p outside A; p inside B }`, in a body |
+//! | `q in A or q in F`, `F` a drawn face | `… q coincident F …`: a closed shell's member (#953) |
 //!
 //! A sweep's operand that is a face (drawn, a `face` formal, a family's member read at a declared
 //! parameter) is lowered with `coincident` where a body's is with `inside`, and `over t` stands in
@@ -651,12 +652,20 @@ impl Lowering<'_> {
             out.extend(t[i..point].iter().cloned());
             let mut x = Vec::new();
             let reads = self.operand(x0, x1, &mut x);
-            if !matches!(reads, Reads::Set | Reads::Side) {
-                self.fail(at, "`or` joins memberships of sets with an inside: a region, a \
-                    solid or a face's side");
+            // a drawn face beside the panels of a closed shell (#953): the face itself, which
+            // the shell's inside reads (`p in shell.side`); anywhere else a face has no inside
+            let face = reads == Reads::Face && !not;
+            if !matches!(reads, Reads::Set | Reads::Side) && !face {
+                self.fail(at, "`or` joins memberships of sets with an inside — a region, a \
+                    solid or a face's side — or, of a closed shell, its panels and faces");
             }
             self.mark(at, reads);
-            out.push(ident(if not { "inside" } else { "outside" }, at));
+            let word = match (face, not) {
+                (true, _) => "coincident",
+                (false, true) => "inside",
+                (false, false) => "outside",
+            };
+            out.push(ident(word, at));
             out.extend(x);
         }
         out.push(p('}', at_end(last)));

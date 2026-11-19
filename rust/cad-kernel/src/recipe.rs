@@ -15,7 +15,7 @@ type Built = Result<Brep,KernelError>;
 
 mod node;
 mod writer;
-pub use node::{Body,Corner,Edge,Family,FamilyWall,Kept,Lowered,Named,Node,Recipe,Rolled,Run,Section,Spine,Stroke,Use};
+pub use node::{Body,Corner,Edge,Family,FamilyWall,Kept,Lowered,Named,Node,Recipe,Rolled,Run,Section,SewnPiece,Spine,Stroke,Use};
 pub use writer::Writer;
 
 /// Between a face's solid and its own name while a recipe is built (`build`, `meridian`,
@@ -65,6 +65,7 @@ impl Node {
                 Ok(b)
             }
             Node::Half {origin,keep,sources,face} => half_node(*origin,*keep,sources,face,built),
+            Node::Sewn {pieces,tol} => sewn_node(pieces,*tol),
             Node::Placed {source,matrix} => {
                 let source = built.get(source).ok_or("recipe: `source` not built before its user")?;
                 Ok(source.moved(&Rigid::from_rows(matrix)))
@@ -116,6 +117,22 @@ fn half_node(origin: V,keep: V,sources: &[i64],face: &str,built: &BTreeMap<i64,B
     let mut b = prism(&Profile {names,..p},0.,reach)?;
     for f in &mut b.faces { f.name = face.to_string(); }
     Ok(b)
+}
+
+/// A `sewn` node (#953): each piece made — a profile's planar face, a net's sheet — its faces
+/// named, and all sewn into the solid they enclose to `tol` (`sew::sewn`): refused where they do
+/// not close (`Kind::Open`, the edge bounding one face said by the kernel).
+fn sewn_node(pieces: &[SewnPiece],tol: f64) -> Built {
+    let mut made = Vec::with_capacity(pieces.len());
+    for p in pieces {
+        let (mut b,face) = match p {
+            SewnPiece::Face {profile,face} => (super::build::face(&Profile::of(profile)?)?,face),
+            SewnPiece::Net {net,face} => (super::build::sheet(net.clone())?,face),
+        };
+        for f in &mut b.faces { f.name = face.clone(); }
+        made.push(b);
+    }
+    super::sew::sewn(&made,tol)
 }
 
 /// A `family` node: each wall's sheet over the pieces of its interval, the solid they bound.

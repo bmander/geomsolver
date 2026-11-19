@@ -382,6 +382,9 @@ pub struct Expansion {
     /// Every band of a recognised sheet at a region solid's probe (#645): its term is the band,
     /// built exactly (`model::RegionShape::Sheet`).
     pub sheets: Vec<developable::SheetInfo>,
+    /// Each closed shell's inside at a region solid's probe (#953), the shell's members recorded
+    /// and its body never applied: what `program::developed` makes the probe's term.
+    pub shells: Vec<developable::EnclosedInfo>,
     /// Every recognised development (#645): its laid rails made by the elaborator
     /// (`model::Developed`).
     pub developed: Vec<developable::DevelopedInfo>,
@@ -916,6 +919,7 @@ struct SetState<'a> {
     binders: BTreeMap<String, (String, String)>,
     /// Each band of a recognised sheet at a probe (#645) — see `Expansion::sheets`.
     sheets: Vec<developable::SheetInfo>,
+    shells: Vec<developable::EnclosedInfo>,
 }
 
 /// **A solid's faces as the elaborator names them** (#183 F4): each by the path it is named by
@@ -1128,6 +1132,7 @@ impl<'a> Walk<'a> {
                 probes: Vec::new(),
                 binders: BTreeMap::new(),
                 sheets: Vec::new(),
+                shells: Vec::new(),
             },
             developing: Vec::new(),
             developed: Vec::new(),
@@ -1267,6 +1272,7 @@ impl<'a> Walk<'a> {
             probes: self.sets.probes,
             binders: self.sets.binders,
             sheets: self.sets.sheets,
+            shells: self.sets.shells,
             developed: self.developed,
             panels: self.panels,
             face_repeats: self.faces.repeats,
