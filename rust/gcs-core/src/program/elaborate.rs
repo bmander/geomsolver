@@ -128,6 +128,8 @@ pub(super) fn elaborate_in(
         body.iter().copied().filter(|st| !st.turned || reads_probe(st)).collect();
     style_sheet(&mut cx, &body);
     let skip = names(&mut cx, &body);
+    // and nothing stated of what `names` left unmade (a round it refused, #948)
+    let stating = stating.into_iter().filter(|st| !skip.contains(&st.id)).collect();
     let flat = Flat { expansion: &expansion, body, stating, skip };
     let deferred = geometry(&mut cx, &flat);
     // a plane a valued frame's block draws in is shown as the source reads it (#823)
@@ -315,6 +317,7 @@ fn names(cx: &mut Elab<'_>, body: &[&Statement]) -> BTreeSet<StmtId> {
     let (p, res) = (cx.doc, &mut cx.res);
     let mut count: BTreeMap<EntKind, u32> = BTreeMap::new();
     let mut skip: BTreeSet<StmtId> = BTreeSet::new();
+    let mut unmade: BTreeSet<&str> = BTreeSet::new();
     for st in body {
         let (name, kind) = match &st.kind {
             StmtKind::Decl(d) => (&d.name, d.kind),
@@ -324,6 +327,27 @@ fn names(cx: &mut Elab<'_>, body: &[&Statement]) -> BTreeSet<StmtId> {
         // the *key*, which is resolution's question: an anonymous key is its own offset and a
         // copy's carries its prefix, so only a name the source wrote twice can actually collide
         let key = &name.key().text;
+        // a corner round between a curve and the next where either, declared before it, is no
+        // line (#948): said once, at the round, and nothing of it made — its arc's ends would be
+        // that curve's `p2` and `p1`, which an arc has none of, and each row of it one over an
+        // arc never built
+        if let StmtKind::Decl(d) = &st.kind {
+            let line = |r: &crate::syntax::Ref| match r.path.is_empty() {
+                true => res.lookup(r).map(|e| e.kind).filter(|&k| k != EntKind::Line),
+                false => None,
+            };
+            let curve = d.round.as_deref()
+                .and_then(|k| [&k.from, &k.to].into_iter().find_map(|r| Some((r, line(r)?))));
+            if let Some((r, other)) = curve {
+                cx.diags.push(Diag::within(Code::E040, st.span, st.id, format!(
+                    "a round rounds the corner where two lines meet, and `{}` is {}: round a \
+                     curve's edge by a round of the solid it bounds",
+                    crate::syntax::ref_text(r), other.a())));
+                skip.insert(st.id);
+                unmade.insert(key.as_str());
+                continue;
+            }
+        }
         if let Some(&was) = res.declared_at.get(key) {
             // …but the message shows what the source calls it, and spells the kind where it
             // calls it nothing, so a key cannot leak here even if that argument ever breaks
@@ -369,6 +393,16 @@ fn names(cx: &mut Elab<'_>, body: &[&Statement]) -> BTreeSet<StmtId> {
             let n = count.entry(EntKind::Point).or_insert(0);
             res.origins.insert(key.clone(), *n as usize);
             *n += 1;
+        }
+    }
+    // and what states a row of a round left unmade
+    for other in body {
+        let StmtKind::Relation(rel) = &other.kind else { continue };
+        let reads = rel.form.written().is_some_and(|w| {
+            w.ops.iter().any(|o| unmade.contains(o.root.text.as_str()))
+        });
+        if reads {
+            skip.insert(other.id);
         }
     }
     skip
