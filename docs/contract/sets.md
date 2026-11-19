@@ -437,7 +437,11 @@ centres on a sphere's centre or a torus's middle circle). `d(p, E) <= d(p, M)` w
 patches of the faces `M` is on the surfaces of is read as `d(p, E) − d(p, rest)` (`Rest`: `M`'s
 nearest point when off `E`, and where `E`'s run ends), the same points with a negative inside.
 `ends` is `max σ·side` over the faces at each end of the run (σ the side it runs on), a face
-carrying one of the run's on across a tangent seam none (`BodyFaces::continues`); a closed run
+carrying one of the run's on across a tangent seam none (`BodyFaces::continues`), nor one whose
+surface the run itself goes across (`BodyFaces::goes_across`: no side of it holds the run), nor a
+plane turning back over it at a reflex corner of less than a right angle — the run ends there
+square — and with them where an edge a run-out at that end runs along ends, a face or the plane
+square to it (`BodyFaces::end_faces`, `faces::EndBy`, #952, [rounds.md](rounds.md)); a closed run
 ends nowhere. Where `S`'s edges are in several runs (`BodyFaces::runs`; a crease a slot cuts
 across, #881, [0.209]), a point is held to the ends of the run nearest it (`EndRuns`: the run of
 the edge `nearest_edge` names), the run `lowering`'s piece beside it is built along: within every

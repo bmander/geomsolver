@@ -5,9 +5,13 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::chain::Next;
+use crate::solid::faces::EndBy;
 use super::recognise::Faces;
 use super::{Across, Beyond, Corner, Kept, Piece, Ring, Rolled, Run, Seam, Section, Spill, Stroke, Surf, V};
 use crate::space::{add, cross, distance, dot, norm, normalised, scale, sub};
+
+/// What a run ends on, as `BodyFaces::end_faces` reads it.
+type Ends = [(EndBy, f64, Option<V>)];
 
 
 /// Why an entry that recognised a region does not build it.
@@ -77,7 +81,7 @@ pub(super) fn build(body: &crate::solid::faces::BodyFaces, f: &Faces, section: S
         let mut bounds = Vec::new();
         for &[i, j] in f.pairs() {
             let es = body.edges_between(&[ids[i]], &[ids[j]]);
-            bounds.extend(ends_at_all(body, &body.end_sides(&es, &[ids[i], ids[j]])));
+            bounds.extend(ends_at_all(body, &body.end_faces(&es, &[ids[i], ids[j]])));
         }
         let runs: Vec<&Run> = pieces.iter().filter_map(|p| match p { Piece::Run(r) => Some(r), _ => None }).collect();
         let size = runs.iter().map(|r| r.span[1] - r.span[0]).fold(r, f64::max);
@@ -143,18 +147,8 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
     // an edge no line or circle about the faces' common axis carries: the ball rolled along the
     // whole run of them, traced
     // (a straight edge carried only between planes and cylinders along it: a cone's generator is
-    // rolled along, its section square to it no circle)
-    let carried = |e: u32| match body.segment(e) {
-        Some([p0, p1]) => {
-            let d = normalised(sub(p1, p0)).unwrap_or([0.0; 3]);
-            body.faces_of(e).iter().all(|&f| body.plane(f).is_some()
-                || body.cylinder(f).is_some_and(|(_, axis, _)| norm(cross(axis, d)) <= 1e-9))
-        }
-        None => body.circle(e).is_some_and(|(centre, axis, ..)| {
-            body.faces_of(e).iter().all(|&f| body.coaxial(f, centre, axis))
-        }),
-    };
-    if edges.iter().any(|&e| !carried(e)) {
+    // rolled along, its section square to it no circle: `BodyFaces::carried`)
+    if edges.iter().any(|&e| !body.carried(e)) {
         let spilt = [ga, gb].map(|g| g.iter().find_map(|f| spill.get(f).map(|seams| (*f, seams))));
         let traced = body.runs(&edges).into_iter().filter(|run| body.convex(run[0]) == Some(within));
         // a flat whose face goes on across a seam (#422): cut along the run short of the seam's
@@ -185,7 +179,7 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
         }).collect();
     }
     let all: Vec<usize> = ga.iter().chain(gb).copied().collect();
-    let ends = body.end_sides(&edges, &all);
+    let ends = body.end_faces(&edges, &all);
     let mut built = Vec::new();
     for &edge in &edges {
         let Some((fa, fb)) = ordered(edge) else {
@@ -255,7 +249,7 @@ fn in_body_order(fa: usize, fb: usize, section: Section) -> (usize, usize, Secti
 /// `edges` (several where faces cut a line in more than two), its span along the line and the faces
 /// it is kept outside of; none where every piece was built (`built`, `piece`'s for each edge).
 fn across_cuts(body: &crate::solid::faces::BodyFaces, edges: &[u32],
-    built: &[Result<Vec<Piece>, Refused>], ends: &[(usize, f64)]) -> Vec<(Vec<u32>, [V; 2], Vec<Kept>)> {
+    built: &[Result<Vec<Piece>, Refused>], ends: &Ends) -> Vec<(Vec<u32>, [V; 2], Vec<Kept>)> {
     let passed = |k: usize| matches!(&built[k], Err(Refused::PassedBy));
     if !(0..edges.len()).any(passed) {
         return Vec::new();
@@ -339,7 +333,7 @@ fn sorted(faces: &[usize]) -> Vec<usize> {
 /// other way from the side the region asks (`within`, convex).
 #[allow(clippy::too_many_arguments)]
 fn piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within: bool, section: Section,
-    ends: &[(usize, f64)], spill: &Spill) -> Result<Vec<Piece>, Refused> {
+    ends: &Ends, spill: &Spill) -> Result<Vec<Piece>, Refused> {
     // the faces in the body's order, so two regions over one edge build one run
     let (fa, fb, section) = in_body_order(fa, fb, section);
     // the gate: an edge turning the other way, or none (faces meeting tangent), holds nowhere
@@ -360,7 +354,7 @@ fn piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: usize,
 /// whose own run goes on from the same section.
 #[allow(clippy::too_many_arguments)]
 fn ring_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within: bool,
-    section: Section, ends: &[(usize, f64)], spill: &Spill) -> Result<Vec<Piece>, String> {
+    section: Section, ends: &Ends, spill: &Spill) -> Result<Vec<Piece>, String> {
     let (centre, axis, radius, x) = body.circle(edge).expect("a circle's edge");
     let closed = body.closed(edge);
     let [t0, t1] = if closed { [0.0, std::f64::consts::TAU] } else { body.span(edge) };
@@ -459,6 +453,13 @@ fn ring_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: u
             if k == 0 { from -= reach } else { to += reach }
             halves.extend(planes);
             kepts.extend(bent);
+            // and no further than the edge the face it ends on makes with its own goes (a curved
+            // face only where it reaches the ring: every point of the ring as far from its centre
+            // as the section's are)
+            let (planes, bent) = ends_beyond(body, ends, p)?;
+            let reach = hull.iter().map(|&q| distance(q, centre)).fold(0.0, f64::max);
+            halves.extend(planes.into_iter().filter(|&(n, d)| dot(n, centre) - d >= -reach));
+            kepts.extend(bent.into_iter().filter(|kept| kept.away(centre) >= -reach));
         }
         if to - from >= std::f64::consts::TAU {
             return Err(unbuilt("a stretch of a circle carried on round its whole turn"));
@@ -710,7 +711,7 @@ fn beyond_of(body: &crate::solid::faces::BodyFaces, chained: &Chained, w: usize,
 /// section beside it swept along it, carried on past each end until every face there cuts it off.
 #[allow(clippy::too_many_arguments)]
 fn run_piece(body: &crate::solid::faces::BodyFaces, [p0, p1]: [V; 2], fa: usize, fb: usize, within: bool,
-    section: Section, ends: &[(usize, f64)], inner: &[Kept], spill: &Spill) -> Result<Piece, Refused> {
+    section: Section, ends: &Ends, inner: &[Kept], spill: &Spill) -> Result<Piece, Refused> {
     let length = norm(sub(p1, p0));
     let along = scale(sub(p1, p0), 1.0 / length);
     // each face as the section sees it: a plane its line, a cylinder about a line along the edge
@@ -751,6 +752,7 @@ fn run_piece(body: &crate::solid::faces::BodyFaces, [p0, p1]: [V; 2], fa: usize,
     };
     let outline = run.section_hull();
     run.span = [0.0, length];
+    run.edge = length;
     let mut halves = planes0;
     for h in planes1 {
         if !halves.contains(&h) {
@@ -800,6 +802,23 @@ fn run_piece(body: &crate::solid::faces::BodyFaces, [p0, p1]: [V; 2], fa: usize,
     for kept in inner {
         if !run.kept.contains(kept) {
             run.kept.push(kept.clone());
+        }
+    }
+    // a run-out carried along the face it ends on no further than that face's edge goes: kept
+    // within where that edge ends too, however far the faces at the end carried it (a curved one
+    // only where it reaches the prism)
+    let reach = bounding(&run.hull());
+    for p in [p0, p1] {
+        let (planes, bent) = ends_beyond(body, ends, p)?;
+        for h in planes {
+            if !halves.contains(&h) {
+                halves.push(h);
+            }
+        }
+        for kept in bent {
+            if !run.kept.contains(&kept) && kept.away(reach.0) >= -reach.1 {
+                run.kept.push(kept);
+            }
         }
     }
     // only those reaching into the prism: a square end is the prism's own
@@ -954,12 +973,49 @@ fn next_face(body: &crate::solid::faces::BodyFaces, seams: &[(u32, usize)])
     Ok(g)
 }
 
-/// The faces of a run's `ends` (`end_sides`' faces and the sides it runs on) standing at `p`, one
+/// The faces of a run's `ends` (`end_faces`' faces and the sides it runs on) standing at `p`, one
 /// end of an edge of it: each plane's half-space `n·x <= d` it is kept within, and each cylinder,
 /// cone or ball it is kept within (where that side holds its axis, its centre) or outside of.
-fn ends_at(body: &crate::solid::faces::BodyFaces, ends: &[(usize, f64)], p: V) -> Result<(Vec<(V, f64)>, Vec<Kept>), String> {
+fn ends_at(body: &crate::solid::faces::BodyFaces, ends: &Ends, p: V) -> Result<(Vec<(V, f64)>, Vec<Kept>), String> {
+    let at = |&&(c, _, far): &&(EndBy, f64, Option<V>)| {
+        far.is_none() && body.end_side(&c, p).0.abs() <= 1e-7 * (1.0 + norm(p))
+    };
+    kept_by(body, ends.iter().filter(at))
+}
+
+/// The faces of a run's `ends` where the edge a run-out at its end `p` runs along ends
+/// (`end_faces`), as `ends_at` reads them: the run carried past `p` is kept within them too,
+/// however far it is carried past the faces at `p`.
+fn ends_beyond(body: &crate::solid::faces::BodyFaces, ends: &Ends, p: V) -> Result<(Vec<(V, f64)>, Vec<Kept>), String> {
+    let beyond = |&&(_, _, far): &&(EndBy, f64, Option<V>)| {
+        far.is_some_and(|v| distance(v, p) <= 1e-9 * (1.0 + norm(p)))
+    };
+    kept_by(body, ends.iter().filter(beyond))
+}
+
+/// A ball holding `points`: its centre (their box's) and radius.
+fn bounding(points: &[V]) -> (V, f64) {
+    let (lo, hi) = points.iter().fold(([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]), |(lo, hi), p| {
+        (std::array::from_fn(|i| lo[i].min(p[i])), std::array::from_fn(|i| hi[i].max(p[i])))
+    });
+    let centre = scale(add(lo, hi), 0.5);
+    (centre, points.iter().map(|&p| distance(p, centre)).fold(0.0, f64::max))
+}
+
+/// Faces of a run's ends, each with the side it runs on: each plane's half-space `n·x <= d`, and
+/// each cylinder, cone or ball kept within or outside of.
+fn kept_by<'a>(body: &crate::solid::faces::BodyFaces, ends: impl Iterator<Item = &'a (EndBy, f64, Option<V>)>)
+    -> Result<(Vec<(V, f64)>, Vec<Kept>), String> {
     let (mut planes, mut bent) = (Vec::new(), Vec::new());
-    for &(c, sign) in ends.iter().filter(|&&(c, _)| body.side(c, p).abs() <= 1e-7 * (1.0 + norm(p))) {
+    for &(by, sign, _) in ends {
+        let c = match by {
+            EndBy::Face(c) => c,
+            // square to the run where an edge a run-out goes along ends
+            EndBy::Square { at, out } => {
+                planes.push((scale(out, sign), sign * dot(out, at)));
+                continue;
+            }
+        };
         match Surf::of(body, c) {
             Some(Surf::Plane { origin, normal }) => planes.push((scale(normal, sign), sign * dot(normal, origin))),
             Some(face) => bent.push(Kept { face, inside: sign * body.side(c, face.within()) < 0.0 }),
@@ -1009,8 +1065,11 @@ fn first_over(a: f64, b: f64, c: f64) -> Option<f64> {
 
 /// The half-spaces `n·x <= d` of the planes among a run's `ends` (`end_sides`' faces and the
 /// sides it runs on).
-fn ends_at_all(body: &crate::solid::faces::BodyFaces, ends: &[(usize, f64)]) -> Vec<(V, f64)> {
-    ends.iter().filter_map(|&(c, sign)| body.plane(c).map(|(n, o)| (scale(n, sign), sign * dot(n, o)))).collect()
+fn ends_at_all(body: &crate::solid::faces::BodyFaces, ends: &Ends) -> Vec<(V, f64)> {
+    ends.iter().filter_map(|&(by, sign, _)| match by {
+        EndBy::Face(c) => body.plane(c).map(|(n, o)| (scale(n, sign), sign * dot(n, o))),
+        EndBy::Square { at, out } => Some((scale(out, sign), sign * dot(out, at))),
+    }).collect()
 }
 
 /// A face as a section square to the edge sees it at the edge's point: a line, its unit normal

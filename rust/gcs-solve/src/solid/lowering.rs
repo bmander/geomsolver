@@ -79,11 +79,13 @@ pub enum Stroke {
 /// the face it sweeps), carried over the stretch `span` of the edge (`0` its origin; the edge, or
 /// past its ends), and kept within each half-space `n·x <= d` of `within` (`(n, d)`, `n` a unit
 /// normal): the faces an end stands at a slant to cut it off; and on its side of each curved face
-/// of `kept` it ends on (#218's 2).
+/// of `kept` it ends on (#218's 2).  Its edge is the stretch `[0, edge]` (none for a ring's
+/// section).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Run {
     pub origin: V,
     pub along: V,
+    pub edge: f64,
     pub span: [f64; 2],
     pub strokes: Vec<(Stroke, &'static str)>,
     pub within: Vec<(V, f64)>,
