@@ -8,6 +8,17 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The roads under any motion read no threshold of their own** (#942 F6): every local number the
+  T1d work added to the ring road, the general road, the trim, `closed`, `contacts` and the Boolean
+  is now the tolerance's, a feature size's, the rounding's (`rings::HALF_READ = √ε`, `G` carried
+  within `ε^(1/(order+2))` of a rim), the normal form's (a narrow pair's crossing within `√3 − 1` of
+  its bridge's half-width), the trace's step, or the structure's (a side of a face's square read by
+  its own way, a halving to the roll's rounding), or is gone. New shared rules: `closed::grain` (the
+  roll over which no corner of the tool moves the tolerance), `closed::room` (how far a box holding
+  a sweep stands clear of it), `closed::hair` (the hair a trim reads at), and
+  `rings::on_double_curve`. `rings::cut_along` takes the tolerance. A chord whose ends are snapped
+  to one place has no length and is dropped.
+
 - **A trace of no length is no chord** (#942 F6): a ring's tube entered at an end pose leaves out
   a trace of its face's meeting with the tool whose points all stand at one place on the face's
   square — the tool touching the face there, not crossing it; a trace along a side, a rim lying on

@@ -781,8 +781,10 @@ its centre — where they were traced and refused as nearly touching
 pieces are ordered by their curvature where they leave a point tangent** (`boolean::pieces_of_face`):
 each half's way out of a node is read a ten-thousandth along its own length, and where two of the
 ways there agree within `TANGENT_TIE` (a thousandth of a radian, what a step along an arc turns its
-chord) they are read again at one length along each — a ten-thousandth of the shortest of those
-tied, each half's chord to its point that far from the node, the part of its way there found by
+chord) they are read again at one length along each — first where a tolerance's lean (`4 tol / δ`)
+turns a way by the tie itself, `δ = 4 tol / TANGENT_TIE`, no more than a quarter of the shortest of
+those tied (#942 F6; nearer the node no reading parts two ways the tie holds as one), and ten times
+on while they still agree — each half's chord to its point that far from the node, the part of its way there found by
 halving (a curve's parameter runs at no one speed: a trace's counts its points, which crowd where it
 sets out, and two probes of its parameter there, extrapolated to that length, once read a way 80
 radians off, #791) — so two arcs touching there part by their

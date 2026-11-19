@@ -455,12 +455,9 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
         // of a cone screwed through a rod, along its base rim)
         if let Err(super::member::Unsettled::Near {at}) = ahead {
             let span = roll[1]-roll[0];
-            // (an instant the end pose holds: the tool posed there and at the end within membership's
-            // bar of one another at the point, #942 F6)
-            let held = |e: usize| match (path.pose(at),path.pose(roll[e])) {
-                (Ok(qa),Ok(qe)) => distance(qa.inverse().point(p),qe.inverse().point(p)) <= bar,
-                _ => false,
-            };
+            // (the end the instant membership was stuck at is nearer, the piece lying on the tool's
+            // surface posed there: the end that holds it, #942 F6)
+            let held = |e: usize| (at-roll[e]).abs() <= (at-roll[1-e]).abs();
             let end = (0..2).find(|&e| held(e) && posed[e].faces.iter().any(|g| crate::ssi::same(&f.surface,&g.surface,tol)));
             if let Some(e) = end {
                 let h = 1e-6*span*if e == 0 { 1. } else { -1. };

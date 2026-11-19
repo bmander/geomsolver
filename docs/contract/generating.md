@@ -2005,7 +2005,34 @@ landed on the other fold; gated in
 A trace of a face's meeting with the tool of no length — its points all at one place on the
 face's square, within `ON_SIDE` — bounds nothing and is no chord; one along a side is kept, a rim
 lying on the tool (#942 F6: the near-orthogonal tori's, two points 2.4e-13 apart on the rim where a
-crossing ends, put two chords' ends at one place; `swept_rings::a_trace_of_no_length_bounds_nothing`).
+crossing ends, put two chords' ends at one place; `swept_rings::a_trace_of_no_length_bounds_nothing`),
+nor is one its ends' places put at one place when they are snapped to the seams.
+**Every threshold the roads under any motion read is the tolerance's, a feature size's, or the
+rounding's** (#942 F6), none a number of its own:
+- *the rounding* — a value read by cancellation is nought where half its digits are its rounding's,
+  `HALF_READ = √ε` of its scale: a meridian's normal velocity (a meridian touched whole, read in
+  closed form), a narrow pair's least `s''`, a root's jump at a piece's end, a fit row's area
+  element; `G` is carried, not divided, within `ε^(1/(order+2))` of a rim it touches to `order`,
+  where what its division leaves to the rounding is what carrying it on straight leaves of its
+  curvature;
+- *the tolerance* — the roll's grain, over which no corner of the tool moves it (`closed::grain`):
+  two shape changes nearer than it are one instant, and a ring's stretches are fitted half of it
+  clear of a cut, their rows so within the tolerance and sewn as one, a row read within twice that; a
+  double curve stepped by the angle over which the meridian's chord sags it, `√(8 tol / r)`, a far
+  apex within a step either side, a seed on a traced curve where its point stands within twice it of
+  the curve's polyline; a tube's own branch within it of its net; seeds off a rail and on a traced
+  branch, within twice it; two corners at an instant one within the fit's exactness;
+- *the normal form and the trace's step* — a narrow pair's crossing sought from the bridge's ends,
+  its preimages within `√3 − 1` of the bridge's half-width past them (`θ³ − 3h²θ` crosses at
+  `±√3 h`); a chord's end within a trace's step (`MET_STEP`) of another chord ends on it, and two
+  traces whose ends stand that near are one chord;
+- *the structure* — a side of a face's square is straight, its way its own; a halving stops where
+  its middle stands between its ends; a face's characteristic line read as far as the face's reach;
+  feet within the slack of a line make no circle; the end pose a stuck instant is nearer is the one
+  that holds it; every box a road holds its sweep in stands a twentieth of its extent and the
+  tolerance clear (`closed::room`; at a tenth the drum screwed a short lead through most of a turn
+  was built wrong — the box's size should not decide the solid, a defect beside F6); every trim's
+  hair is one rule (`closed::hair`, #880 Q1b's).
 **Not yet built**: the tumbling tori fit, are cut and sewn into one tube a contact curve, and are
 refused past the meetings their sewing settles — the torus turned whole where a piece of the torus
 at an end pose reads as the boundary facing behind; the thin one where its two tubes meet at under

@@ -706,7 +706,7 @@ const REACH: f64 = 0.0937;
 fn contacts_road(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
     let (candidates,given) = super::contacts::candidates(tool,path,roll,tol)?;
     let size = tool.size();
-    let trim = super::trim::Trim {resolution:size/32.,hair:(4.*tol).max(1e-6*size),reach:None};
+    let trim = super::trim::Trim {resolution:size/32.,hair:hair(tol,size),reach:None};
     // **the sweep within the blank's reach, where the whole does not close** (#880 T1c): cut from a
     // blank, the sweep is wanted only inside a box holding the blank — grown by `REACH` of its size
     // — and trimmed
@@ -968,9 +968,17 @@ pub(crate) fn grain(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Re
     Ok(if fastest > 0. { tol/fastest } else { b-a })
 }
 
-/// **How far a box holding a sweep stands clear of it**: a tenth of the box's largest extent and the
-/// tolerance (`cube_holding`'s, and every box a road holds its sweep in, #942 F6).
-pub(super) fn room(extent: f64,tol: f64) -> f64 { 0.1*extent+tol }
+/// **The hair a trim reads a piece's sides at** (#880 Q1b, every road's since #942 F6): the larger of
+/// four tolerances, above the sections' fit, and a millionth of the tool — a hair of a few
+/// tolerances at a fine one leaves a point within it of the sweep within it of the tool over a
+/// spread of poses its square root wide, more stretches than membership reads.
+fn hair(tol: f64,size: f64) -> f64 { (4.*tol).max(1e-6*size) }
+
+/// **How far a box holding a sweep stands clear of it**: a twentieth of the box's largest extent and
+/// the tolerance, every box a road holds its sweep in (#942 F6: the screw's box had a twentieth and
+/// `cube_holding`'s a tenth; at a tenth the drum screwed a short lead through most of a turn was
+/// built wrong, `swept_closed::a_drum_screwed_a_short_lead_through_most_of_a_turn_closes`).
+pub(super) fn room(extent: f64,tol: f64) -> f64 { 0.05*extent+tol }
 
 pub(super) fn cube_holding<'a>(points: impl IntoIterator<Item=&'a V>,tol: f64) -> Result<(Brep,V,f64),Unbuilt> {
     let (blo,bhi) = points.into_iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(l,h),p|
@@ -1052,7 +1060,7 @@ fn general_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,b
     let (candidates,given) = super::general::candidates(tool,path,roll,tol)?;
     crate::util::meter::go_on()?;
     let size = tool.size();
-    let trim = super::trim::Trim {resolution:size/32.,hair:(4.*tol).max(1e-6*size),reach:None};
+    let trim = super::trim::Trim {resolution:size/32.,hair:hair(tol,size),reach:None};
     let swept = trimmed_or_dumped(tool,path,roll,&candidates,&given,bar,tol,trim)?;
     cut_blank(swept,blank,tol)
 }
@@ -1122,8 +1130,8 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
     // stretch it passes (`rings::cut_along`), its tail dropped there
     let mut curves: Vec<Vec<(f64,f64,f64)>> = Vec::new();
     for seed in fits.iter().flat_map(|f| f.seeds.clone()) {
-        let (th,t,_) = seed[0];
-        if curves.iter().any(|c| c.iter().any(|&(x,y,_)| (x-th).abs() <= 1e-3 && (y-t).abs() <= 1e-3*(b-a))) { continue }
+        // (a seed on a curve traced already: its point within the tolerance of it, #942 F6)
+        if curves.iter().any(|c| super::rings::on_double_curve(&ring,path,c,seed[0],tol)) { continue }
         curves.push(super::rings::double_curve(&ring,path,[a,b],seed,tol)?);
     }
     phase(&format!("{} double curves traced",curves.len()));
@@ -1140,7 +1148,7 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
         fits.splice(k..=k,[p0?,p1?]);
     }
     phase(&format!("{} stretches refitted about swallowtail points",2*apexes.len()));
-    if !curves.is_empty() { for fit in &mut fits { super::rings::cut_along(&ring,path,[a,b],fit,scale,&curves)? } }
+    if !curves.is_empty() { for fit in &mut fits { super::rings::cut_along(&ring,path,[a,b],fit,scale,&curves,tol)? } }
     phase("the double curves cut into the stretches");
     if crate::timing() { eprintln!("ring: fitted in {:?}",clock.elapsed()) }
     crate::util::meter::go_on()?;
@@ -1180,7 +1188,7 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
     // cannot, and a thin one's run a hair apart all round, each pair searched for nothing
     if !cuts.is_empty() {
         let size = tool.size();
-        let trim = super::trim::Trim {resolution:size/32.,hair:(4.*tol).max(1e-6*size),reach:None};
+        let trim = super::trim::Trim {resolution:size/32.,hair:hair(tol,size),reach:None};
         let candidates: Vec<Brep> = [start,end].into_iter().chain(sheets).collect();
         let swept = trimmed_or_dumped(tool,path,[a,b],&candidates,&given,bar,tol,trim)?;
         return cut_blank(swept,blank,tol)
