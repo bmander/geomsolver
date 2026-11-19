@@ -102,12 +102,13 @@ fn read(
     q: Quantity,
 ) -> Result<Measured, (Option<Span>, String)> {
     let word = q.word();
+    let a = q.a();
     // a point a centroid puts (#953): `g centroid B`, the point first
     if q.point() {
         return point_read(sk, res, r, w, q);
     }
     let [op] = &w.ops[..] else {
-        return Err((None, format!("a {word} measures one thing: `{word}(…) arm`")));
+        return Err((None, format!("{a} measures one thing: `{word}(…) arm`")));
     };
     let of = match res.operand(sk, op).map_err(|m| (Some(op.span), m))? {
         // a face's measure is of a face of a solid (#953)
@@ -123,16 +124,16 @@ fn read(
             };
             let of = if q.of_face() { "a face of a solid (`hull.water`)" }
                      else { "a beam, a line a beam is drawn on, or a solid" };
-            return Err((Some(op.span), format!("a {word} is of {of}, and `{named}` is {what}")));
+            return Err((Some(op.span), format!("{a} is of {of}, and `{named}` is {what}")));
         }
     };
     let mut about = None;
-    for a in &w.args {
-        match a {
+    for arg in &w.args {
+        match arg {
             OpArg::Dim(..) => {}
             OpArg::Bound { hi: None, .. } => {}
             OpArg::Bound { span, .. } => {
-                return Err((Some(*span), format!("a {word} is claimed at most or at least a \
+                return Err((Some(*span), format!("{a} is claimed at most or at least a \
                                                   number, never within two")));
             }
             // a second moment's line (#953)
@@ -142,7 +143,7 @@ fn read(
             }
             _ if q == Quantity::Moment => return Err((None, "a second moment takes its number \
                 and the line it is about: `moment(I, about: centreline) hull.water`".into())),
-            _ => return Err((None, format!("a {word} takes its number alone: `{word}(10kg) arm`, \
+            _ => return Err((None, format!("{a} takes its number alone: `{word}(10kg) arm`, \
                                             `claim {word}(<= 10kg) arm`"))),
         }
     }
@@ -151,7 +152,7 @@ fn read(
                            hull.water`".into()));
     }
     let Some((text, span)) = w.dim() else {
-        return Err((None, format!("a {word} states its number: `{word}(…) arm`")));
+        return Err((None, format!("{a} states its number: `{word}(…) arm`")));
     };
     // a stated measure's number may read one unknown the drawing declares (#953), which the
     // row then determines: `mass(M) boat`
@@ -169,14 +170,14 @@ fn read(
         _ => return Err((Some(span), format!("`{text}` comes to no number the {word} can state"))),
     };
     if free.is_none() && !(value > 0.0) {
-        return Err((Some(span), format!("a {word} is more than nothing, and `{text}` is not")));
+        return Err((Some(span), format!("{a} is more than nothing, and `{text}` is not")));
     }
     let compare = match w.bound() {
         None => crate::expr::Cmp::Eq,
         Some((crate::syntax::Cmp::Le, _)) if r.claim => crate::expr::Cmp::Le,
         Some((_, _)) if r.claim => crate::expr::Cmp::Ge,
         Some(_) => return Err((None, format!(
-            "a bound on a {word} chooses no root: claim it, `claim {word}(<= …) {}`, or state it",
+            "a bound on {a} chooses no root: claim it, `claim {word}(<= …) {}`, or state it",
             crate::syntax::ref_text(op)))),
     };
     Ok(Measured { quantity: q, of, compare, value, claim: r.claim, at: None, about, k: 0, free,
@@ -193,12 +194,13 @@ fn point_read(
     q: Quantity,
 ) -> Result<Measured, (Option<Span>, String)> {
     let word = q.word();
+    let a = q.a();
     let [g, op] = &w.ops[..] else {
-        return Err((None, format!("a point is put at a {word} of one body: `g {word} hull`")));
+        return Err((None, format!("a point is put at {a} of one body: `g {word} hull`")));
     };
     let at = match res.operand(sk, g).map_err(|m| (Some(g.span), m))? {
         Operand::Ent(e) if e.kind == EntKind::Point => e.i(),
-        _ => return Err((Some(g.span), format!("`{}` is no point: a {word} puts a point, `g \
+        _ => return Err((Some(g.span), format!("`{}` is no point: {a} puts a point, `g \
             {word} hull`", crate::syntax::ref_text(g)))),
     };
     // of a solid, a face of one, or every body of an instance (#953): what a body is made of
@@ -213,14 +215,13 @@ fn point_read(
         None => match res.operand(sk, op).map_err(|m| (Some(op.span), m))? {
             Operand::Ent(e) | Operand::Body(e) if e.kind == EntKind::Solid => Applied::Ent(e),
             Operand::Face(f) if q == Quantity::Centroid => Applied::Face(f),
-            _ => return Err((Some(op.span), format!("a {word} is a solid's{}, or an instance's \
+            _ => return Err((Some(op.span), format!("{a} is a solid's{}, or an instance's \
                 bodies', and `{named}` is none", if q == Quantity::Centroid { ", a face's" }
                                                   else { "" }))),
         },
     };
-    if let Some(a) = w.args.first() {
-        let _ = a;
-        return Err((None, format!("a {word} takes nothing in parentheses: `g {word} hull`")));
+    if !w.args.is_empty() {
+        return Err((None, format!("{a} takes nothing in parentheses: `g {word} hull`")));
     }
     Ok(Measured { quantity: q, of, compare: crate::expr::Cmp::Eq, value: 0.0, claim: r.claim,
                   at: Some(at), about: None, k: 0, free: None, bodies })
