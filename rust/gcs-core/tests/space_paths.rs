@@ -965,7 +965,8 @@ in std.top {{
 /// sense: cw)` drawn in `std.top` runs clockwise from its start — drawn counter-clockwise in the
 /// plane turned over — so the S-bend drawn in the plane's block is one chain too, a family entering
 /// every link at its start: its tube is Pappus's.  `sense:` of an arc over points in space, which
-/// turns as its points stand, is refused, and so is a clockwise half turn.
+/// turns as its points stand, is refused; a clockwise half turn in a plane is the half clockwise
+/// from its start (#952).
 #[test]
 fn a_chain_in_a_plane_turns_right_at_an_arc_said_to_turn_clockwise() {
     let e = with(&s_bend_in_top("", "(k3 := arc(center: c2, sense: cw))"));
@@ -988,7 +989,7 @@ in std.top {{
   k := arc(center: q1, start: q0, end: q2, sense: cw)
 }}
 "));
-    assert!(said.iter().any(|m| m.starts_with("E060") && m.contains("a half turn")), "{said:?}");
+    assert!(said.is_empty(), "{said:?}");
 }
 
 /// **The new words print as they were written**: a circle's `normal:` and an arc's `sense:`.

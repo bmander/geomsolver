@@ -139,11 +139,25 @@ on the face lands past (a flat's leg, where a ball touches it: `lowering::footpr
 steps in the plane square to the edge at points along it). A seam beyond the footprint is none of
 it (`rounds/spill.sv` with a boss of 19.5, its leg short of the seam: built as the ring alone), nor
 is one the edge runs into at its end (a slot's side into its half circle: the table's own going on
-into the next piece). The section against a chain is the one against whichever face of it is
-nearest: a round's ball touches the face its offset meets the other face's in, and changes face
-where it touches the seam; a flat is each face's own sum of distances with the other face, and
-changes face where it crosses the seam's normal surface — there a point's distance from either face
-is its distance from the seam, so the two are one set:
+into the next piece). **Nor is a seam between two pieces of one surface** (#952,
+`lowering::pieces`: faces going on across seams on the same surface, `Surf::same` — a plane's
+normal one and its origins in it, a cylinder's, a cone's or a torus's axis one line, a ball's
+centre one point, to a billionth): a plate's top in the pieces a union of its operands leaves it,
+each named by its own operand, is one plane to the section, which stands against the surface and
+not the names of its faces. Its footprint is read off the pieces together (`lowering::off_pieces`),
+the seams it reaches are those where they go on into another surface, and a chain's next face,
+where it lands and what lies past it are read the same way (`piece::onto`, `piece::next_face`).
+A lobed flange drawn as a disc, a sector and lobes unioned, its upright edges rounded and its top
+rim rounded over them, had each lobe's ring refused as reaching a seam that runs only part of
+its edge — the arc where the disc's piece of the top begins — and a rib's straight run as
+reaching one not along it; both are the rim over one top (`tests/rim_rounds.rs`:
+`a_round_over_a_top_in_pieces_stands_against_one_plane`, to the closed form, and
+`a_rim_over_a_plate_of_pieces_is_the_rim_over_one_top`, to the union taken the other way round,
+whose piece of the top is reached nowhere past, to 1e-9). The section against a chain is the one
+against whichever face of it is nearest: a round's ball touches the face its offset meets the
+other face's in, and changes face where it touches the seam; a flat is each face's own sum of
+distances with the other face, and changes face where it crosses the seam's normal surface —
+there a point's distance from either face is its distance from the seam, so the two are one set:
 - **along a straight edge beside a seam along it, or round a circle beside a seam about its axis**
   (`lowering::chain`, `piece::seam_along`, `seam_round`): in the section the corner of the other
   face's trace and a chain of the face's own trace to the seam and each next face's from its seam
@@ -327,7 +341,8 @@ without `symmetric`, a round over faces drawn `in` a plane or riding a frame —
 each order of the faces it names, and `Corner(a, b, c)` and `Corner(b, a, c)` lower to one
 construction, built and meshed once and held to each region's own field. `cad.rs` builds a body's lowered regions in one set as one recipe node, `"lowered"`
 (`assemble`: each distinct piece once, a run cut short at a corner's section and **glued** there,
-`boolean::glued`; the rest unioned — two runs crossing are a mitre), the first region standing for
+`boolean::glued`; two runs mirrored at a convex corner cut in the plane halving it and glued
+there, below; the rest unioned — two runs crossing are a mitre), the first region standing for
 the rest; a region lowered to nothing is no operand, nor material a `Through` cutter reads
 (a convex edge's fill, `edit_rounds.rs`); a body's face readers go in `"on_late"` /
 `"cut_late"`, applied after `bound` (`faces::stratum`, the one split the field and the recipe
@@ -356,6 +371,56 @@ periodic surface's seam (`rail`, `post`, `frustum`): asked of the same solid wit
 1e-9, a rolled one #85's quadrature's to 1e-6: `slot.sv`, `pad.sv`, `rail.sv`, `knob.sv`,
 `tee.sv`, `bore.sv`, `runout.sv`, `twin.sv`, `post.sv`, `dshaft.sv`, `groove.sv`, `bores.sv`,
 `frustum.sv`, `crotch.sv`, `bullnose.sv`, `dome.sv`, `point.sv`).
+
+**Where a run ends on a face all but along it** (#952, a cast bracket's side plate, its lug's
+rim and its outline rounded). A face a run ends on is a half-space, read wherever the run's
+region is, so four rules keep it to the end it stands at, each in `BodyFaces::end_faces`, which
+the field (`conditions::ends`, through `end_sides`) and the lowering (`piece::ends_at`) both read
+— and only where every edge of the set is one the lowering carries a section along
+(`BodyFaces::carried`): a ball rolled along a traced run is cut by `fillet::end_at`'s own reading.
+What a run ends on is a face, or a plane square to an edge where its run ends on none
+(`faces::EndBy`).
+- **A face whose surface the run itself goes across is no face it ends on** (`ends_at`,
+  `goes_across`: some point of the run's edges past the surface on the side that would keep it,
+  by more than the boundary's tolerance — exactly for a plane against a line or an arc, at 64
+  points otherwise). No side of it holds the run, and kept within the side the run sets out on
+  the ring was cut to a lens it could not be glued to its other quarter by ("two pieces joined at a
+  section share no face there"): a plate's side meeting a lug's rim at 1.77°, the arc dipping under
+  the side's plane for 3.5° and coming back across it, or crossing the rim, its plane cutting the
+  arc a second time across the disc. The run ends there square, as at a seam: the field's meeting
+  goes on past that end, and the ring stops at its end's meridian.
+- **Nor is a plane turning back over the run at a reflex corner of less than a right angle**
+  (`ends_at`: the run outside it, and its outward normal along one of the run's faces'): kept off
+  it, the run lost what of its section the plane reaches back over, `s / tan θ` from the corner at
+  depth `s` in from its side — at 7.6° the round cut back along 15 of a side's 15.5, its cap meeting
+  the next corner's round at its touch in a sliver 6 µm wide. What an end cuts is what lies past
+  it, and past such a corner the plane cuts all of the run: it ends square there. At a right angle
+  the plane is the square end; past one it cuts nothing alongside, and stays.
+- **A run-out goes no further than the edge it runs out along** (`end_faces`'s ends read
+  `Some(v)`): where the plane a run ends on at `v` makes a straight edge with one of the run's faces
+  going on from `v` the way the run is carried, the faces that edge's run ends on at its far end, on
+  the side it runs on — or the plane square to it there where it ends on none — are the run's too,
+  but one the run goes across. Carried past a convex turn of 1.13° until its whole section had
+  crossed the next side, a run went a hundred millimetres on along it and, past the corner where
+  that side turns back in, cut a groove along its plane through the plate's top. The lowering
+  carries a run no further for them (`piece::ends_beyond`): each is a cut it is kept within (a
+  curved one where it reaches the prism or the ring at all).
+- **Two runs mirrored at a convex corner meet in the plane halving it** (`assemble::mitred`):
+  where two runs' edges, and no third's, end at one vertex no corner's ball stands at, each
+  section reaching over the other's edge, and each run is the other's image in the plane halving
+  the turn, each is cut in that plane and **glued** to the other there, not carried on and unioned —
+  so long as what else each is kept within, its prism's other end included, is the other's too, or
+  holds the section in that plane and every corner of what the other was carried over
+  (`carried_over`: its prism past the plane within all it is kept in), so the union is the regions'
+  as before. Unioned, a run carried a hundred millimetres along the other lay inside the other's
+  piece, its round all but on the other's, and where the other was cut the two caps lay in one
+  plane: the union left a tongue of a face 5 µm wide between the rounds.
+`tests/shallow_ends.rs` is the gate (the half disc's rim and the rim from a crossing, by Pappus;
+a plate's rim round a polygon two of whose sides turn 1.13° beside a reflex corner, and one whose
+side turns 7.6° back in, by the stack's mitre with each run square at a reflex corner; each to
+1e-9 and exported with no sliver). Square at a reflex corner leaves the wedge between the two ends
+unrounded; the ball turned about the corner's edge — a ring about that edge through the turn,
+glued to both — is what fills it, and waits on a set that says it.
 
 **A ball as wide as its cylinder** (brep-bench's fillet/cylinder-rim-to-dome): an offset by a
 radius that takes a surface's radius to nothing is what the surface is drawn about, never nothing

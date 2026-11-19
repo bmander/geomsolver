@@ -13,6 +13,7 @@ mod faces;
 mod build;
 pub(super) use claims::solid_claims;
 use faces::{chain_face,validate_chain,build_face};
+pub(super) use faces::arcs_turned_in;
 use build::build_solid;
 pub(super) use build::carry_legs;
 
@@ -33,7 +34,7 @@ pub(super) fn solids(
     if !has {
         return;
     }
-    faces(sk, res, map, body, skip, diags);
+    faces(sk, res, map, body, skip, probes, diags);
     build_solids(sk, res, map, body, skip, probes, diags);
     body_rule(sk, res, map, body, skip, diags);
     layers(sk, map, diags);
@@ -49,6 +50,7 @@ fn faces(
     map: &mut SourceMap,
     body: &[&Stmt],
     skip: &BTreeSet<StmtId>,
+    probes: &mut super::regions::Probes,
     diags: &mut Vec<Diag>,
 ) {
     for st in body {
@@ -58,7 +60,7 @@ fn faces(
             StmtKind::Chain(c) if !skip.contains(&st.id) => {
                 if !validate_chain(sk, res, c, st, diags) {
                     if c.closed {
-                        res_forget(res, &c.name.key().text);
+                        res_forget(res, probes, &c.name.key().text);
                     }
                     continue;
                 }
@@ -90,7 +92,7 @@ fn faces(
             None => {
                 // A refused loop must not leave unowned closing lines in the sketch.
                 sk.lines.truncate(first_line);
-                res_forget(res, &name);
+                res_forget(res, probes, &name);
             }
         }
     }
@@ -132,7 +134,7 @@ fn build_solids(
             None => {
                 sk.faces.truncate(first_face);
                 sk.lines.truncate(first_line);
-                res_forget(res, &name);
+                res_forget(res, probes, &name);
             }
         }
     }
@@ -384,11 +386,22 @@ fn made_of_itself(sk: &mut Sketch, body: &[&Stmt], diags: &mut Vec<Diag>) {
 
 /// Unbind a failed declaration and names that resolve to the same entity, so later
 /// references cannot address another entity that inherited its index.
-fn res_forget(res: &mut Resolver, name: &str) {
-    if let Some(gone) = res.of.remove(name) {
-        for e in res.of.values_mut() {
-            if e.kind == gone.kind && e.idx > gone.idx {
-                e.idx -= 1;
+fn res_forget(res: &mut Resolver, probes: &mut super::regions::Probes, name: &str) {
+    let Some(gone) = res.forget(name) else { return };
+    // the sets already read name what they are over by where it was to be made, so they are
+    // renumbered too — or a round's region over a body declared past a refused solid named the
+    // region itself, and read itself without end (#952).  A set over what was refused is
+    // refused with it, said once at the cause
+    let renumber = super::resolve::past(gone);
+    for (&p, terms) in probes.terms.iter_mut() {
+        let renumbered: Option<Vec<_>> = terms.iter().map(|t| {
+            t.shape.remapped(&renumber).map(|shape| crate::model::RegionTerm { shape, ..t.clone() })
+        }).collect();
+        match renumbered {
+            Some(r) => *terms = r,
+            None => {
+                terms.clear();
+                probes.refused.insert(p);
             }
         }
     }

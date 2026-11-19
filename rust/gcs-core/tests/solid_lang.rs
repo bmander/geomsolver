@@ -1501,3 +1501,85 @@ fn a_curve_in_a_face_is_a_stretch_between_points_held_on_it() {
     let (prog, _) = parse(&format!("{PARABOLA}f := face(k from a to b, k from b to a)\n"));
     assert_eq!(elaborate(&prog).sketch.curves.len(), 1);
 }
+
+/// **An arc and its centre are a pie slice** (#952, [0.219]): `face(rim, o, -> close)` — the arc
+/// meets neither neighbour, but both are the one corner, so its two readings are one loop walked
+/// either way, a run minted from each of its ends to the centre.  Listed either way round it is
+/// the quarter disc; an arc between two *different* corners keeps its refusal.
+#[test]
+fn a_pie_slice_is_an_arc_and_its_centre() {
+    let src = "\
+unit mm
+use std
+use std.solids (cut, union, common)
+in std.front {
+o := point
+fix((0, 0)) o
+sa := point
+fix((50, 0)) sa
+sb := point hint((0, 50))
+fix(x == 0mm) sb
+rim := arc(center: o, start: sa, end: sb) hint(r: 50)
+}
+";
+    for walk in ["rim, o, -> close", "o, rim, -> close"] {
+        let mut e = read(&format!("{src}sector := face({walk})\n\
+            wedge := solid(std.solids.Prism(sector, from: -2mm, to: 0))\n"));
+        assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success, "{walk}");
+        let v = volume(&e, "wedge");
+        let want = 2.0 * std::f64::consts::PI * 50.0 * 50.0 / 4.0;
+        assert!((v - want).abs() <= 1e-3 * want, "{walk}: {v} against {want}");
+    }
+    refused(&format!("{src}q := point hint((60, 60))\nbad := face(o, rim, q, -> close)\n"),
+            Code::E080, "meets neither");
+}
+
+/// **A face lists what is declared** (#952): an edge written in place in a face's brackets is
+/// refused saying so, and naming the chain that draws a loop in place — not a bare "expected `,`".
+#[test]
+fn a_face_declares_no_edge_of_its_own() {
+    refused(&format!("{RECT}bad := face(line(a, b), bc, cd, da)\n"), Code::E100,
+            "a loop drawn in place is a chain");
+}
+
+/// **A solid refused before a body that is rounded leaves the round over the body** (#952): the
+/// sets a round's region reads were gathered before the solids were built, naming each by where it
+/// was to be made, and a solid refused before them shifted every later one — so the round's region
+/// named itself, and read itself until the stack ran out.  Now the refusal is said once and the
+/// rest elaborates.
+#[test]
+fn a_refused_solid_shifts_no_set_onto_another() {
+    let src = "\
+unit mm
+use std
+use std.solids
+use std.rounds (round)
+in std.top {
+  a := point
+  b := point
+  c := point
+  fix((0, 0)) a
+  fix((100, 0)) b
+  fix((0, 20)) c
+  long := face(a, b, c, -> close)
+}
+bar := solid(std.solids.Prism(long, from: 0mm, to: 10mm))
+rib := solid(std.solids.Prism(nothing, from: 0mm, to: 10mm))
+plate := solid(bar)
+plate.bar.near round(r: 2mm) plate.bar.close0
+";
+    let (p, errs) = parse(src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = elaborate(&p);
+    let said: Vec<String> = e.errors().map(|d| format!("{}: {}", d.code.as_str(), d.message))
+        .collect();
+    assert!(said.iter().all(|m| m.starts_with("E101") && m.contains("nothing")), "{said:?}");
+    // the round's regions read the plate, never themselves
+    for (i, s) in e.sketch.solids.iter().enumerate() {
+        if let gcs_core::model::SolidDef::Region { terms, .. } = &s.def {
+            assert!(terms.iter().flat_map(|t| t.shape.entities())
+                .all(|x| x.kind != gcs_core::model::EntKind::Solid || x.i() != i),
+                "{} reads itself", e.sketch.solid_name(i));
+        }
+    }
+}

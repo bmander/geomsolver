@@ -48,7 +48,7 @@ pub(super) fn turned(r: &Run, m: &crate::brep::geom::Rigid) -> Run {
         Stroke::Conic { a, m: mid, b, w } => Stroke::Conic { a: m.point(a), m: m.point(mid), b: m.point(b), w },
     };
     Run {
-        origin: m.point(r.origin), along: m.vector(r.along), span: r.span,
+        origin: m.point(r.origin), along: m.vector(r.along), edge: r.edge, span: r.span,
         strokes: r.strokes.iter().map(|(s, name)| (stroke(s), *name)).collect(),
         within: r.within.clone(),
         kept: r.kept.clone(),
@@ -194,6 +194,7 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
             out.joins.push([i, n + k]);
         }
     }
+    mitred(&mut out.runs, &out.corners, size, &mut out.joins);
     // a ring's stretch, at an end where a corner stands whose ball its own rolls round into, turns
     // only as far as the corner's section: the meridian through its centre (#218's 4)
     let (n, rings) = (out.runs.len(), out.rings.len());
@@ -293,6 +294,171 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
         }
     }
     out
+}
+
+/// **Two runs mitred at a corner of their edges** (#952): where two runs' edges end at one vertex
+/// no corner's ball stands at, each section reaching over the other's edge (a convex corner: a rim
+/// along two sides of a plate), and each run is the other's image in the plane halving the turn
+/// between them (a round of one radius, or a flat of the same legs, between faces alike), the two
+/// meet in that plane — their rounds' cylinders cross in it — so each is cut there and glued to
+/// the other (`joins`), not carried past the corner onto the other's face and unioned.  Carried,
+/// a run goes on along the other's face until its whole section has crossed it: past a turn of a
+/// degree, a hundred times its width, its round all but on the other's all the way and inside the
+/// other's piece, the two caps where that one ends one plane, a tongue of a face between them.
+fn mitred(runs: &mut [Run], corners: &[Corner], size: f64, joins: &mut Vec<[usize; 2]>) {
+    let near = |p: V, q: V| distance(p, q) <= 1e-9 * size;
+    let end = |r: &Run, k: usize| add(r.origin, scale(r.along, if k == 0 { 0.0 } else { r.edge }));
+    // the way from an end into the run, and from the edge into its section (toward what it takes)
+    let into = |r: &Run, k: usize| if k == 0 { r.along } else { scale(r.along, -1.0) };
+    let inward = |r: &Run| {
+        let hull = r.section_hull();
+        let middle = scale(hull.iter().fold([0.0; 3], |s, &p| add(s, p)), 1.0 / hull.len().max(1) as f64);
+        let w = sub(middle, r.origin);
+        sub(w, scale(r.along, dot(w, r.along)))
+    };
+    // each run's end cut by the half-space `m·x <= m·v` it is kept in
+    let mut cuts: Vec<(usize, usize, V, V)> = Vec::new();
+    for i in 0..runs.len() {
+        for j in i + 1..runs.len() {
+            let (a, b) = (&runs[i], &runs[j]);
+            if a.edge <= 0.0 || b.edge <= 0.0 {
+                continue;
+            }
+            for (ka, kb) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
+                let v = end(a, ka);
+                if !near(v, end(b, kb)) || corners.iter().any(|c| near(c.vertex, v)) {
+                    continue;
+                }
+                // (two runs alone ending there: three, at a block's corner, meet in no one plane)
+                let ending = |r: &&Run| r.edge > 0.0 && (near(end(r, 0), v) || near(end(r, 1), v));
+                if runs.iter().filter(ending).count() != 2 {
+                    continue;
+                }
+                let (ua, ub) = (into(a, ka), into(b, kb));
+                let Some(n) = normalised(sub(ua, ub)) else { continue };
+                if dot(inward(a), ub) <= 0.0 || dot(inward(b), ua) <= 0.0 {
+                    continue;
+                }
+                // `a`'s section in the plane halving the turn, carried along `b` onto `b`'s
+                let mirror = |p: V| sub(p, scale(n, 2.0 * dot(n, sub(p, v))));
+                let onto = |p: V| sub(p, scale(b.along, dot(sub(p, b.origin), b.along)));
+                if norm(cross(sub(a.along, scale(n, 2.0 * dot(n, a.along))), b.along)) > 1e-9 {
+                    continue;
+                }
+                let (ha, hb) = (a.section_hull(), b.section_hull());
+                let image = |h: &[V], g: &[V]| h.iter().all(|&p| g.iter().any(|&q| near(onto(mirror(p)), q)));
+                if ha.len() != hb.len() || !image(&ha, &hb) {
+                    continue;
+                }
+                // and what else each is kept within leaves the two the same where they meet and
+                // takes nothing of either's that the other's carried past the corner took: each
+                // half-space the other's too, or holding the section in that plane and all the
+                // other was carried over (a face a run's other end stands on, at a slant, reaching
+                // back across its section there leaves the two unalike, and they stay unioned)
+                let ((mut wa, ca), (mut wb, cb)) = (kept_but(a, v, size), kept_but(b, v, size));
+                // (and each prism's own end at its other end)
+                wa.push(other_end(a, ka));
+                wb.push(other_end(b, kb));
+                // (a curved face's solid only where both are kept by it)
+                if ca.iter().any(|k| !cb.contains(k)) || cb.iter().any(|k| !ca.contains(k)) {
+                    continue;
+                }
+                let (ma, mb) = (scale(n, -1.0), n);
+                let (cap, over_a, over_b) =
+                    (carried(a, ma, v), carried_over(a, ka, ma, v, size), carried_over(b, kb, mb, v, size));
+                let alike = |w: &(V, f64), x: &[(V, f64)]| {
+                    x.iter().any(|y| near(w.0, y.0) && (w.1 - y.1).abs() <= 1e-9 * size)
+                };
+                let holds = |w: &(V, f64), pts: &[V]| pts.iter().all(|&p| dot(w.0, p) <= w.1 + 1e-9 * size);
+                let fits = |own: &[(V, f64)], other: &[(V, f64)], over: &[V]| own.iter()
+                    .all(|w| alike(w, other) || (holds(w, &cap) && holds(w, over)));
+                if !fits(&wa, &wb, &over_b) || !fits(&wb, &wa, &over_a) {
+                    continue;
+                }
+                // `a` on the side `ua` is, `b` on the other
+                cuts.push((i, ka, ma, v));
+                cuts.push((j, kb, mb, v));
+                joins.push([i, j]);
+            }
+        }
+    }
+    for (i, k, m, v) in cuts {
+        let r = &mut runs[i];
+        r.release(v, size);
+        // carried as far as the plane, its whole section past it there
+        let slope = dot(m, r.along);
+        let reach = r.section_hull().into_iter().map(|q| dot(m, sub(v, q)) / slope);
+        r.span[k] = if k == 0 { reach.fold(f64::INFINITY, f64::min) }
+            else { reach.fold(f64::NEG_INFINITY, f64::max) };
+        // (a face it was carried on past no longer reaching it)
+        let hull = r.hull();
+        r.within.retain(|&(n, d)| hull.iter().any(|&p| dot(n, p) > d + 1e-9 * size));
+        r.within.push((m, dot(m, v)));
+    }
+}
+
+/// What run `r` is kept within but the faces standing at `v`: the half-spaces, and the curved
+/// faces' solids.
+fn kept_but(r: &Run, v: V, size: f64) -> (Vec<(V, f64)>, Vec<super::Kept>) {
+    let mut s = r.clone();
+    s.release(v, size);
+    (s.within, s.kept)
+}
+
+/// Where run `r`'s prism ends at the end other than `k`, as the half-space it holds.
+fn other_end(r: &Run, k: usize) -> (V, f64) {
+    let at = add(r.origin, scale(r.along, r.span[1 - k]));
+    if k == 0 { (r.along, dot(r.along, at)) } else { (scale(r.along, -1.0), -dot(r.along, at)) }
+}
+
+/// Run `r`'s section's hull carried to the plane `m·x = m·v`.
+fn carried(r: &Run, m: V, v: V) -> Vec<V> {
+    let slope = dot(m, r.along);
+    r.section_hull().into_iter().map(|q| add(q, scale(r.along, dot(m, sub(v, q)) / slope))).collect()
+}
+
+/// The corners of what run `r` takes past the plane `m·x = m·v`, on the side `m` points to: its
+/// prism from there to where it was carried past its end `k`, within every half-space it is kept
+/// in — each point three of those faces meet in that stands within all the rest.
+fn carried_over(r: &Run, k: usize, m: V, v: V, size: f64) -> Vec<V> {
+    let tol = 1e-9 * size;
+    // the prism's sides: the lines through two points of the section's hull with all the rest on
+    // one side, each the half-space along the run on that side
+    let hull = r.section_hull();
+    let mut faces: Vec<(V, f64)> = Vec::new();
+    for (i, &p) in hull.iter().enumerate() {
+        for &q in &hull[i + 1..] {
+            let Some(n) = normalised(cross(r.along, sub(q, p))) else { continue };
+            let sides: Vec<f64> = hull.iter().map(|&x| dot(n, sub(x, p))).collect();
+            let face = if sides.iter().all(|&s| s <= tol) { (n, dot(n, p)) }
+                else if sides.iter().all(|&s| s >= -tol) { (scale(n, -1.0), -dot(n, p)) } else { continue };
+            if !faces.iter().any(|f| distance(f.0, face.0) <= 1e-9 && (f.1 - face.1).abs() <= tol) {
+                faces.push(face);
+            }
+        }
+    }
+    // its ends: the plane, and the section where it was carried to
+    let far = dot(r.along, add(r.origin, scale(r.along, r.span[k])));
+    faces.push((scale(m, -1.0), -dot(m, v)));
+    faces.push(if k == 1 { (r.along, far) } else { (scale(r.along, -1.0), -far) });
+    faces.extend(r.within.iter().copied());
+    let inside = |x: V| faces.iter().all(|&(n, d)| dot(n, x) <= d + tol);
+    let mut corners = Vec::new();
+    for i in 0..faces.len() {
+        for j in i + 1..faces.len() {
+            for l in j + 1..faces.len() {
+                let rows = [faces[i].0, faces[j].0, faces[l].0];
+                if dot(rows[0], cross(rows[1], rows[2])).abs() <= 1e-12 {
+                    continue;
+                }
+                let x = crate::brep::ssi::solve3(rows, [faces[i].1, faces[j].1, faces[l].1]);
+                if inside(x) {
+                    corners.push(x);
+                }
+            }
+        }
+    }
+    corners
 }
 
 /// Whether two stretches of rings, each by its section's hull where its turn starts and where it

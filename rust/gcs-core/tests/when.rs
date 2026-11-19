@@ -346,3 +346,30 @@ fn in_is_a_name_among_another() {
     // and `decide`, which knows only numbers, refuses it
     assert!(expr::decide(&c, &BTreeMap::new()).is_err());
 }
+
+/// **A condition runs onto the next line** (#952, [0.219]): where a line ends in `and`, `or` or
+/// `not`, where the next opens with `and` or `or`, and inside a parenthesis — read as the one line
+/// it is, so the block is made as it is written on one.
+#[test]
+fn a_condition_runs_onto_the_next_line() {
+    let made = |cond: &str| {
+        let src = format!("unit mm\nuse std\nw := 3mm\nh := 5mm\nin std.front {{\n\
+            a := point\nfix((0, 0)) a\nwhen {cond} {{\n  q := point hint((8, 3))\n}}\n}}\n");
+        let (e, errs) = read(&src);
+        assert!(errs.is_empty() && e.ok(), "{cond}: {errs:?} {:?}", e.diags);
+        point(&e, "q").is_some()
+    };
+    assert!(made("w > 0mm and h > 0mm"));
+    assert!(made("w > 0mm\n    and h > 0mm"));
+    assert!(made("w > 0mm and\n    h > 0mm"));
+    assert!(made("(w > 0mm\n    and h > 0mm)"));
+    assert!(!made("w > 0mm\n    and h < 0mm"));
+    assert!(made("w < 0mm\n    or h > 0mm"));
+    assert!(made("w > 0mm and not\n    h < 0mm"));
+    // `and`, `or` and `not` join conditions, and are no name: refused where one is defined, on
+    // its own line, the line before it standing
+    for w in ["and", "or", "not"] {
+        let (_, errs) = read(&format!("unit mm\nuse std\nw := 3mm\n{w} := 2mm\nh := w\n"));
+        assert!(matches!(errs.as_slice(), [m] if m.contains("joins conditions")), "{w}: {errs:?}");
+    }
+}

@@ -18,6 +18,14 @@ const TANGENT: f64 = 1e-6;
 /// the end).
 pub(crate) fn along_run(v: V, d: V, by: f64) -> V { add(v, scale(d, by * 1e-6 * (1.0 + norm(v)))) }
 
+/// What a run of edges ends on (`BodyFaces::end_faces`): a face of the boundary, or a plane
+/// square to an edge where its run ends on none, its unit normal `out` pointing past that end.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum EndBy {
+    Face(usize),
+    Square { at: V, out: V },
+}
+
 /// A body's exact boundary, located, in millimetres (`mm` of them a model unit).
 #[derive(Debug)]
 pub struct BodyFaces {
@@ -670,27 +678,174 @@ impl BodyFaces {
     /// material side, `side <= 0`), `-1` outside — so the run is where `σ·side <= 0` for all.
     /// A face going on from one of `faces` tangent at the end (a seam, no corner: an obround's
     /// half circle after its flat side) ends nothing: the round goes on round it, along the edge
-    /// that face meets the other in.
-    pub fn end_sides(&self, es: &[u32], faces: &[usize]) -> Vec<(usize, f64)> {
-        let mut sides = Vec::new();
+    /// that face meets the other in.  Nor does a face whose surface the run itself goes across, nor
+    /// a plane turning back over its section at a reflex corner (`ends_at`).  And a run carried
+    /// past an end along the edge the face it ends on makes with one of `faces` (a run-out) goes no
+    /// further than that edge: where that edge's run ends further on, on the side it runs on, so
+    /// does the run.  Each with the end it was read at where it stands elsewhere: none for a face
+    /// at an end of the run, that end's point (model units) for where the edge a run-out there
+    /// runs along ends.
+    pub fn end_faces(&self, es: &[u32], faces: &[usize]) -> Vec<(EndBy, f64, Option<V>)> {
+        self.end_faces_as(es, faces, es.iter().all(|&e| self.carried(e)))
+    }
+
+    /// `end_faces`, the rules of a run's own ends (`goes_across`, a reflex corner's plane, where a
+    /// run-out ends) read only where the lowering builds its runs and rings by them, every edge of
+    /// the set `plain` (`carried`): a ball rolled along a traced run is cut where it ends by the
+    /// kernel's own reading of the faces there (`fillet::end_at`).
+    fn end_faces_as(&self, es: &[u32], faces: &[usize], plain: bool)
+        -> Vec<(EndBy, f64, Option<V>)> {
+        let mut sides: Vec<(EndBy, f64, Option<V>)> = Vec::new();
+        let runs = self.runs(es);
+        let touches = |run: &[u32], vid: u32| {
+            run.iter().any(|&e| self.loc.b.edges[e as usize].v.contains(&vid))
+        };
         for (v, d, vid) in self.run_ends(es) {
-            // a face carrying one of the run's on across a seam is no face the run ends on: a seam
-            // is no edge, and the run beyond it is the next one's
-            let on = along_run(v, d, 1.0);
-            for c in self.faces_at(vid, faces).into_iter().filter(|&c| !self.continues(c, faces, v)) {
-                let s = self.side(c, on);
-                sides.push((c, if s <= 0.0 { 1.0 } else { -1.0 }));
+            let Some(run) = runs.iter().find(|run| touches(run, vid)) else { continue };
+            for (c, sign) in self.ends_at(run, faces, v, d, vid, plain) {
+                sides.push((EndBy::Face(c), sign, None));
+                // (a plane: one curved is carried into only as far as its section takes)
+                if !plain || self.plane(c).is_none() {
+                    continue;
+                }
+                // the straight edges `c` makes with the run's faces going on from this end the way
+                // the run is carried past it: where each one's run ends further on, so does the run
+                // carried along it — within the faces it ends on there, or square to it where it
+                // ends on none (a plate's side all but in line with the next, and the side past it
+                // turning back in: carried no further than the plate's corner there)
+                for &f in faces {
+                    for other in self.runs(&self.edges_between(&[c], &[f])) {
+                        if other.iter().any(|&e| self.segment(e).is_none()) {
+                            continue;
+                        }
+                        let ends = self.run_ends(&other);
+                        if !ends.iter().any(|&(_, way, w)| w == vid && dot(way, d) < -1e-6) {
+                            continue;
+                        }
+                        for &(u, way, wid) in ends.iter().filter(|&&(_, _, w)| w != vid) {
+                            let at = self.ends_at(&other, &[c, f], u, way, wid, true);
+                            let by: Vec<(EndBy, f64)> = if at.is_empty() {
+                                vec![(EndBy::Square { at: u, out: scale(way, -1.0) }, 1.0)]
+                            } else {
+                                at.into_iter().filter(|&(x, _)| !faces.contains(&x) && x != c)
+                                    .map(|(x, sx)| (EndBy::Face(x), sx)).collect()
+                            };
+                            for (x, sx) in by {
+                                let had = sides.iter().any(|&(y, sy, _)| y == x && sy == sx);
+                                if had || self.end_across(&x, sx, run) {
+                                    continue;
+                                }
+                                sides.push((x, sx, Some(v)));
+                            }
+                        }
+                    }
+                }
             }
         }
         sides
     }
 
-    /// Edges `es` (between `faces`) in runs (`runs`), each with where it ends (`end_sides`): a
+    /// The signed distance from what a run ends on, positive away from the material (a square
+    /// end: past it), and its gradient (model units).
+    pub fn end_side(&self, by: &EndBy, p: V) -> (f64, V) {
+        match *by {
+            EndBy::Face(c) => self.side_grad(c, p),
+            EndBy::Square { at, out } => (dot(out, sub(p, at)), out),
+        }
+    }
+
+    /// Whether some point of edges `es` stands past what a run ends on, on the side `sign` keeps
+    /// (`goes_across`; a square end's plane at the edges' ends).
+    fn end_across(&self, by: &EndBy, sign: f64, es: &[u32]) -> bool {
+        match *by {
+            EndBy::Face(c) => self.goes_across(c, sign, es),
+            EndBy::Square { .. } => {
+                es.iter().flat_map(|&e| [self.along(e, 0.0), self.along(e, 1.0)])
+                    .any(|p| sign * self.end_side(by, p).0 > self.past(p))
+            }
+        }
+    }
+
+    /// The faces run `run` (between `faces`) ends on at its end `v` (vertex `vid`, `d` the way it
+    /// runs from there), each with the side of it the run runs on: every other face there, but
+    /// one going on from one of `faces` tangent across a seam (a seam is no edge, and the run
+    /// beyond it is the next one's), and one whose surface the run itself goes across away from
+    /// this end — no side of it holds the run (a plane all but along a lug's rim where a plate's
+    /// side runs into it, the arc dipping under the plane and back) — nor a plane the run stands
+    /// outside of turning back over the run's faces (a reflex corner of less than a right angle),
+    /// whose half-space reaches back over the section from the end, the more the shallower the
+    /// turn (a whole side's length at a few degrees): past the end it cuts all of the run, and
+    /// alongside nothing is past the end.  The run ends there square, as at a seam (each where
+    /// `plain`, `end_faces_as`).
+    fn ends_at(&self, run: &[u32], faces: &[usize], v: V, d: V, vid: u32, plain: bool)
+        -> Vec<(usize, f64)> {
+        let on = along_run(v, d, 1.0);
+        let back = |c: usize| self.plane(c)
+            .is_some_and(|(n, _)| faces.iter().any(|&f| dot(n, self.normal(f, v)) > 1e-9));
+        let ends = self.faces_at(vid, faces).into_iter().filter(|&c| !self.continues(c, faces, v));
+        ends.filter_map(|c| {
+            let sign = if self.side(c, on) <= 0.0 { 1.0 } else { -1.0 };
+            let across = plain && (self.goes_across(c, sign, run) || sign < 0.0 && back(c));
+            (!across).then_some((c, sign))
+        }).collect()
+    }
+
+    /// Whether edge `e` is one the lowering carries a section along (`lowering::piece::run`): a
+    /// straight edge between planes and cylinders along it, or a circle every face of which is
+    /// turned about its axis; any other a ball is rolled along, traced.
+    pub fn carried(&self, e: u32) -> bool {
+        match self.segment(e) {
+            Some([p0, p1]) => {
+                let d = crate::space::normalised(sub(p1, p0)).unwrap_or([0.0; 3]);
+                let along = |axis: V| norm(crate::space::cross(axis, d)) <= 1e-9;
+                self.faces_of(e).iter().all(|&f| self.plane(f).is_some()
+                    || self.cylinder(f).is_some_and(|(_, axis, _)| along(axis)))
+            }
+            None => self.circle(e).is_some_and(|(centre, axis, ..)| {
+                self.faces_of(e).iter().all(|&f| self.coaxial(f, centre, axis))
+            }),
+        }
+    }
+
+    /// How far past a face a point at `p` stands before it is past it: ten times the boundary's
+    /// tolerance, or a billionth of its distance from the origin where that is more.
+    fn past(&self, p: V) -> f64 {
+        (10.0 * self.tolerance()).max(1e-9 * (1.0 + norm(p)))
+    }
+
+    /// Whether some point of edges `es` stands outside face `c`'s surface on the side `sign`
+    /// keeps (`sign · side > 0`), by more than the boundary's tolerance: exactly for a plane
+    /// against a line or a circle, at 64 points of an edge otherwise.
+    fn goes_across(&self, c: usize, sign: f64, es: &[u32]) -> bool {
+        let out = |p: V| sign * self.side(c, p) > self.past(p);
+        es.iter().any(|&e| {
+            let edge = &self.loc.b.edges[e as usize];
+            match (self.plane(c), &edge.curve) {
+                (Some(_), EdgeCurve::Curve(crate::brep::geom::Curve::Line { .. })) => {
+                    out(self.along(e, 0.0)) || out(self.along(e, 1.0))
+                }
+                (Some((n, _)), EdgeCurve::Curve(crate::brep::geom::Curve::Circle(f, _))) => {
+                    // `side` along a circle is `side(centre) + r (a cos t + b sin t)`: at its
+                    // ends, and where it is greatest the way `sign` reads it, if within them
+                    let (t0, t1) = (edge.t[0].min(edge.t[1]), edge.t[0].max(edge.t[1]));
+                    let peak = (sign * dot(n, f.y)).datan2(sign * dot(n, f.x));
+                    let turn = (peak - t0).rem_euclid(2.0 * PI);
+                    let at = |t: f64| self.back(edge.point(t, &self.loc.b.vertices));
+                    out(at(t0)) || out(at(t1)) || (t0 + turn <= t1 && out(at(t0 + turn)))
+                }
+                _ => (0..=64).any(|k| out(self.along(e, k as f64 / 64.0))),
+            }
+        })
+    }
+
+    /// Edges `es` (between `faces`) in runs (`runs`), each with where it ends (`end_faces`): a
     /// crease a slot cuts across ends on the slot's sides once for each run (#881), and the ends
     /// of runs read as one run's are within none of them.
-    pub fn end_runs(&self, es: &[u32], faces: &[usize]) -> Vec<(Vec<u32>, Vec<(usize, f64)>)> {
+    pub fn end_runs(&self, es: &[u32], faces: &[usize]) -> Vec<(Vec<u32>, Vec<(EndBy, f64)>)> {
+        let plain = es.iter().all(|&e| self.carried(e));
         self.runs(es).into_iter().map(|run| {
-            let sides = self.end_sides(&run, faces);
+            let sides = self.end_faces_as(&run, faces, plain).into_iter()
+                .map(|(c, sign, _)| (c, sign)).collect();
             (run, sides)
         }).collect()
     }
