@@ -281,7 +281,15 @@ fn drive(
             crate::expr::bind_free(sk, &name, seed);
         }
     }
-    if let Ok(crate::constraints::InteriorRow::Meshed(row)) =
+    // a point's later ordinates read the first's mesh and hull, filled once (#953): only the
+    // ordinate its row compares differs
+    let first = (m.quantity.point() && m.k > 0)
+        .then(|| sk.meshed.get(&MeshedKey::Measure(index - m.k)).cloned()).flatten();
+    if let Some(row) = first {
+        let mut row = (*row).clone();
+        row.structure.gauge.what = crate::interior::What::Centroid { k: m.k };
+        sk.meshed.insert(key, std::sync::Arc::new(row));
+    } else if let Ok(crate::constraints::InteriorRow::Meshed(row)) =
         Constraint::new(kind, args.clone()).made_row(sk)
     {
         sk.meshed.insert(key, row);

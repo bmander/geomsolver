@@ -559,3 +559,52 @@ volume(30000 * 1cm^3) hull
     assert!(errs.iter().any(|(c, m)| c == "E040" && m.contains("its panel `port`'s rails are \
         moved by the solve")), "{errs:?}");
 }
+
+/// One of the hydrostatics examples (`rust/examples/hydrostatics/`), as its text stands.
+fn example(name: &str) -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../examples/hydrostatics").join(name);
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+/// **The hydrostatics examples hold what they say** (#953): the log floats at 25mm, its centre of
+/// buoyancy 35.25mm below its axis; the heeled wedge's waterline is 40mm along the heeled
+/// vertical, its centre of buoyancy the immersed triangle's; the two blocks' centre of mass is
+/// 37.02mm along whether grouped as two components or as one — each with no freedom left, its
+/// rows held.
+#[test]
+fn the_hydrostatics_examples_hold_what_they_say() {
+    let (r, alpha) = (50.0f64, std::f64::consts::FRAC_PI_3);
+    let (e, mut sk) = sized(&example("cylinder.sv"));
+    close(unknown(&sk, "T"), r * (1.0 - alpha.cos()), 1e-4, "the log's draft");
+    let below = 4.0 * r * alpha.sin().powi(3) / (3.0 * (2.0 * alpha - (2.0 * alpha).sin()));
+    close(at(&e, &sk, "buoyancy")[2], -below, 1e-4, "the log's centre of buoyancy");
+    assert_eq!(crate::common::dof(&mut sk), 0);
+    let (e, mut sk) = sized(&example("heeled_wedge.sv"));
+    close(unknown(&sk, "T"), 40.0, 1e-5, "the wedge's waterline");
+    let b = at(&e, &sk, "buoyancy");
+    let (beta, phi) = (30f64.to_radians(), 10f64.to_radians());
+    let (t1, t2) = (40.0 / (beta - phi).cos(), 40.0 / (beta + phi).cos());
+    close(b[0], (t1 * beta.sin() - t2 * beta.sin()) / 3.0, 1e-4, "across");
+    close(b[2], (t1 + t2) * beta.cos() / 3.0, 1e-4, "up");
+    assert_eq!(crate::common::dof(&mut sk), 0);
+    let (e, mut sk) = sized(&example("centre_of_mass.sv"));
+    let (ms, ma) = (7850.0 * 8000.0, 2700.0 * 12000.0);
+    let x = (ms * 20.0 + ma * 70.0) / (ms + ma);
+    close(at(&e, &sk, "g")[0], x, 1e-9, "the pair's centre of mass");
+    close(at(&e, &sk, "h")[0], x, 1e-9, "both bodies' centre of mass");
+    close(at(&e, &sk, "c")[0], 50.0, 1e-9, "the pair's centroid");
+    assert_eq!(crate::common::dof(&mut sk), 0);
+    assert!(said(&e, &sk).iter().all(|s| s.ends_with("held")), "{:#?}", said(&e, &sk));
+}
+
+/// **The punt's example holds what it says** (#953): its hull of panels built, its displacement at
+/// the stated waterline claimed and kept.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, half a minute: a hull of panels filled \
+                                             twice for its claim")]
+fn the_punt_example_floats() {
+    let (said, _) = read(&example("punt.sv"));
+    assert_eq!(said.len(), 1);
+    assert!(said[0].ends_with("kept"), "{said:#?}");
+}
