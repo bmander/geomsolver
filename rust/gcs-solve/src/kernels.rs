@@ -3595,9 +3595,9 @@ fn equal_length3_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 1] {
     [vdot(a, a) - vdot(b, b)]
 }
 
-fn symmetric3_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 3] {
-    let (p, q, a, b) = (vec3(v, 0), vec3(v, 3), vec3(v, 6), vec3(v, 9));
-    let e = vsub(b, a);
+/// `Q + P − 2F`, `F` the foot of `P` on the line through `a` along `e`: `Q` is `P` turned half
+/// way round the line.  No line where `e` is zero.
+fn half_turn<T: Num>(p: V3<T>, q: V3<T>, a: V3<T>, e: V3<T>) -> [T; 3] {
     let le = vdot(e, e).sqrt();
     if le.val() == 0.0 {
         return [T::cst(f64::NAN); 3];
@@ -3608,19 +3608,15 @@ fn symmetric3_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 3] {
     [0, 1, 2].map(|t| q[t] + p[t] - two * a[t] - two * s * eh[t])
 }
 
+fn symmetric3_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 3] {
+    let a = vec3(v, 6);
+    half_turn(vec3(v, 0), vec3(v, 3), a, vsub(vec3(v, 9), a))
+}
+
 /// Columns of `symmetric_axis`: (P, Q, a, d) — `symmetric3` over an axis, whose line is its place
-/// `a` and direction `d` rather than a drawn line's ends: `Q + P − 2F`, `F` the foot of `P` on the
-/// line through `a` along `d`.  Three rows, degree 1.
+/// `a` and direction `d` rather than a drawn line's ends.  Three rows, degree 1.
 fn symmetric_axis_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 3] {
-    let (p, q, a, e) = (vec3(v, 0), vec3(v, 3), vec3(v, 6), vec3(v, 9));
-    let le = vdot(e, e).sqrt();
-    if le.val() == 0.0 {
-        return [T::cst(f64::NAN); 3];
-    }
-    let eh = e.map(|t| t / le);
-    let s = vdot(vsub(p, a), eh);
-    let two = T::cst(2.0);
-    [0, 1, 2].map(|t| q[t] + p[t] - two * a[t] - two * s * eh[t])
+    half_turn(vec3(v, 0), vec3(v, 3), vec3(v, 6), vec3(v, 9))
 }
 
 /* -- a point carried by a map (#357) --------------------------------------------------------

@@ -9,7 +9,7 @@ use gcs_core::io;
 use gcs_core::model::{EntKind, EntRef, Sketch};
 use gcs_core::space::{cross, dot, norm, sub};
 
-use crate::common::{dof, ent, read, refused, said, solved, unit};
+use crate::common::{dof, ent, kinds, off_line, read, refused, said, solved, unit};
 
 /// An axis's direction and the point on it nearest the origin, as solved.
 fn axis(sk: &Sketch, e: EntRef) -> ([f64; 3], [f64; 3]) {
@@ -239,9 +239,8 @@ fn a_point_mirrored_in_an_axis_is_its_half_turn_about_it() {
                in std.front {\n  p := point hint((4, 2))\n  fix((4, 2)) p\n}\nq := point\n\
                p symmetry(std.z) q\n";
     let e = read(src);
-    let kinds: Vec<CKind> = e.sketch.user_constraints().iter().map(|c| c.kind).collect();
-    let mirrors = kinds.iter().filter(|&&k| k == CKind::SymmetricAxis).count();
-    assert_eq!(mirrors, 4, "{kinds:?}");
+    let mirrors = kinds(&e).into_iter().filter(|&k| k == CKind::SymmetricAxis).count();
+    assert_eq!(mirrors, 4, "{:?}", kinds(&e));
     let mut sk = solved(&e);
     for (n, want) in [("a", [3.0, 3.0, 3.0]), ("b", [3.0, -3.0, -3.0]), ("c", [-3.0, 3.0, -3.0]),
                       ("d", [-3.0, -3.0, 3.0]), ("q", [-4.0, 0.0, 2.0])] {
@@ -264,11 +263,12 @@ fn a_mirror_in_an_axis_places_it() {
     let mut sk = solved(&e);
     let (d, a) = axis(&sk, t);
     let (m, pq) = ([2.0, 3.0, 3.0], [2.0, 2.0, 0.0]);
-    assert!(norm(cross(sub(m, a), unit(d))) < 1e-9, "the axis misses the midpoint: {a:?} {d:?}");
+    assert!(off_line(m, a, d) < 1e-9, "the axis misses the midpoint: {a:?} {d:?}");
     assert!(dot(unit(d), pq).abs() < 1e-9, "the axis is not square to pq: {d:?}");
     assert_eq!(dof(&mut sk), 1, "the axis turns about the line between the points");
     assert_eq!(said(&e), ["p symmetry(t) q"], "it reads back as written");
-    for back in [io::from_json(&io::to_json(&sk)).expect("reads back"), graft::copy(&sk, &sk.primitives())] {
+    let json = io::from_json(&io::to_json(&sk)).expect("reads back");
+    for back in [json, graft::copy(&sk, &sk.primitives())] {
         let kinds: Vec<CKind> = back.user_constraints().iter().map(|c| c.kind).collect();
         assert_eq!(kinds, [CKind::SymmetricAxis]);
         assert!(back.axes[t.i()].placed, "and still places the axis");

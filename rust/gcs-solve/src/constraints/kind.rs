@@ -1251,11 +1251,11 @@ impl CKind {
     ///
     /// Every user-facing constraint has one or two entity slots, always first in spec order —
     /// 1 for `Horizontal`, `Vertical` and `Radius`, 2 for twenty-eight others, and 3 for
-    /// `Symmetric` alone.  So "two operands, everything else in the parentheses" is not a rule
-    /// imposed on the library; it is a description of it, with one exception the parentheses
-    /// absorb.  `None` is a constraint nobody writes: `DragTarget` is internal and `soft`,
-    /// `Lift`, `AxisUnit` and `AxisFoot` are intrinsic (`Sketch::lift_point`, `Sketch::axis`,
-    /// `Sketch::place_axis`).
+    /// `symmetry` alone (`Symmetric`, `Symmetric3`, `SymmetricAxis`).  So "two operands,
+    /// everything else in the parentheses" is not a rule imposed on the library; it is a
+    /// description of it, with one exception the parentheses absorb.  `None` is a constraint
+    /// nobody writes: `DragTarget` is internal and `soft`, `Lift`, `AxisUnit` and `AxisFoot` are
+    /// intrinsic (`Sketch::lift_point`, `Sketch::axis`, `Sketch::place_axis`).
     ///
     /// Several kinds share a word, and that is where the saving is: **`coincident` is nineteen
     /// kinds, `distance` nine, `tangent` thirteen**, and `horizontal`/`vertical` are a line's
