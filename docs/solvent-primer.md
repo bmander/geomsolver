@@ -250,6 +250,8 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | `angle` | infix | two lines, directed (below); in space, an axis and a line or axis, unsigned — or, with `about: a`, directed about axis `a` (below). `l1 angle(l3, l4) l2` equates two angles |
 | `radius` | prefix | a circle or arc |
 | `mass`, `volume` | prefix | a beam, a line a beam is drawn on, or a solid: what it is made of (`mass(10kg) arm`, `volume(42 * 1cm^3) web`, `claim mass(<= 1kg) plank`) — the drawing's, never a scenario's (see *Frames* below) |
+| `area`, `moment` | prefix | a face of a solid: its area, `area(A) hull.water`, and its second moment about a line or axis, `moment(I, about: centreline) hull.water` (see *Where a body is made* below) |
+| `centroid`, `centerofmass` | infix | a declared point and a solid (or a face of one, or an instance's bodies): `g centroid hull`, `g centerofmass boat` |
 | `length` | prefix | any path: a line (the distance between its ends); an arc (radius × counter-clockwise sweep); a spline or free curve (its whole length). `distance` relates two things and `length` measures one, so `distance(d) l` on a line is refused, naming `length(d) l` |
 | `symmetry(line)` | infix | two points |
 | `midpoint` | infix | a point and a line |
@@ -2677,6 +2679,30 @@ scenario tip_load {
   shows each: `sized_cantilever.sv` (a depth),
   `reach_cantilever.sv` (a length), `shelf_bracket.sv` (two members, a load spread along the arm)
   and `portal_frame.sv` (a tube's diameter, a point on a member, the frame's weight).
+- **Where a body is made** (#953): `g centroid hull` puts a declared point at the centroid of a
+  solid's volume (or of a face's area), `g centerofmass boat` at a body's centre of mass — of an
+  instance, every body under it, each by its density — and `area(A) hull.water` and `moment(I,
+  about: centreline) hull.water` measure a face. Each is a row stated and judged claimed, as
+  `volume` is; a stated number may read an unknown (`area(L * w) hull.water` finds `w`). A hull in
+  water is the hull kept within a half-space, built exactly:
+
+  ```
+  param T: Length hint(30mm)
+  water := std.sets.HalfSpace(keel, std.z, d: T)
+  immersed := solid({ p | p in hull; p in water })
+  volume(L * B * 40mm) immersed      // finds the waterline T
+  g := point hint((100, 0, 20))
+  g centroid immersed                // the centre of buoyancy
+  claim moment(L * B^3 / 12, about: centreline) immersed.water
+  ```
+
+  The waterplane is `immersed.water`; a second moment is about a line, so for BM name the
+  centreline in the waterplane (its points `T` above the keel). A hull of panels is the solid its
+  closed shell encloses — the developable sides and the faces that close them, each drawn:
+  `shell := { q | q in bottom or q in port or q in starboard or q in deck or q in bow or q in
+  stern }`, `hull := solid({ p | p in shell.side })`, its faces `hull.port` and so on. A shell
+  that does not close says the edge it is open at. Its waterline is driven as a box's is, its
+  panels held; a panel whose rails the solve moves is E040.
 - `pinned` holds a joint's moves, `fixed` its turns too, so a beam pinned at both ends is free to
   twist about its own line — and `solventc` says so (`leaves `arm` free to turn about x …`).
 

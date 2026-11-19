@@ -1089,6 +1089,65 @@ names another.
   drawing states it — a frame's area not affine in its unknown and an L's reach, a prism with a
   round corner and a hole — at the solution and knocked off it
   (`a_measure_agrees_with_finite_differences_as_the_drawing_states_it`).
+- **Where a body is made, and a face's measures** (#953, [0.219]; `interior::Gauge`,
+  `bodies::gauging`, `hulls::hull_aimed`, `program::measures`).  Four words beside `mass` and
+  `volume`, read as they are (`OPERATORS`, `model::Quantity`): a face's **area**, `area(A) F`, and
+  its **second moment** about a line or an axis, `moment(I, about: l) F` (prefix words, `F` a
+  face of a solid, `immersed.water`); the point a body's volume or a face's area is centred on,
+  `g centroid B`, and a body's mass, `g centerofmass B` (infix words, `g` a declared point).
+  Refused where written (**E040**): an area or a moment of no face, a moment about no line, a
+  centre of mass of a face (it weighs nothing), a point's measure of no solid, anything in a
+  point's parentheses.
+  - **Each is a number of the ten moments** `∫ w`, `∫ w x`, `∫ w x xᵀ` of what is measured
+    (`gauge::MOMENTS`, `w` one, or the element's density for a centre of mass): over the body's
+    filled mesh's quadratic tetrahedra by the degree-five rule (exact for `∫ x det J`, of degree
+    five), or over the facets of the face's mesh that lie on it (`bodies::face_facets`) by the
+    collapsed Gauss rule of five points a side (exact to degree eight, so a plane facet's second
+    moments).  The number (`gauge::What`): the whole; a centroid's ordinate `k` less the point's,
+    `∫ w x_k / ∫ w − g_k`; the second moment `∫ w |(x − a) × d̂|²` about the line through `a`
+    along `d` — about a line in the face's plane, the second moment of area, so a waterplane's
+    about its centreline gives BM's `I`.  A moment of a conforming mesh is its boundary's, as a
+    volume is, so the nodes inside stand where they were meshed.
+  - **Stated, each is a row of the drawing** (`CKind::Area`, `Moment`, `Centroid`,
+    `CenterOfMass`): the interior's kernel over the body's filled mesh as a filled body's
+    volume's is (`bodies::gauged_row`, always filled, a prism too), its boundary's nodes moved by
+    its sheets, the structure's gauge written after its degrees of freedom (`consts`) — and the
+    point and the line read off the same columns as the sheets (`Hull::target`, `Hull::axis`:
+    held where nothing the solve moves reads them, else a point's own columns; a line whose ends
+    the solve moves read toward its second point, `Direction::Toward`).  A point's measure is
+    three rows, one an ordinate of the world (`Measured::k`), each stating nothing off it — an
+    interior row's number is its last argument, so a centroid's is `[of, k, 0]`.  A half-space's
+    plane is a sheet (`Sheet::Ordinate`: its point, its unit direction and its height `c + m t`,
+    `t` the unknown its number reads), so a volume finds a waterline.  The rate: the moments'
+    `Σ (∂f/∂m_j) ∂m_j/∂x` (`gauge::compose_rate`, `Structure::moments_gradient`), carried through
+    the hull, and the point's and the line's own columns read forward.
+  - **A measure's number may read an unknown** (`Measured::free`): `area(L * w) hull.water`, its
+    number `c + m w`, `w` a declared unknown bound from its seed before the row is made and kept
+    bound by `evaluate` (`Constraint::frame_unknowns`) — the row's last column, `[m, c]` its
+    stated pair (`Constraint::measure_unknown`).  A claim's never: a claim binds none (**E040**).
+  - **Of an instance's bodies** (`Resolver::bodies_under`, `Measured::bodies`): a point's measure
+    of an instance (`g centerofmass boat`) is of every solid under it that no other solid is
+    built of, each filled and all read over one hull of one set of columns
+    (`hulls::hull_of_bodies`), each element weighed by its body's density — so a centre of mass
+    does not depend on how bodies are grouped into components.
+  - **Claimed, each is judged on the solved drawing** (`measured::read`, `bodies::gauged`), over
+    the body's own mesh with the error estimated beside it; a point's how far it stands from where
+    its measure puts it, kept within that error (`measured::keeps`).  **What the report says**:
+    `` area(immersed.water) is 12000mm² ± 0mm²: claimed == 12000mm², kept ``, `` moment(…) is
+    3.6e+06mm⁴ … ``, `` g centroid immersed: at (100, 0, 20)mm ± 2.9e-12mm: driven, held `` (and
+    how far off it where it is not).  The moments are read off the mesh to its estimated error,
+    not off the exact solid as a volume's report is (`props.rs` has no moments yet).
+  - **Held to closed forms** (`tests/hydrostatics.rs`): a box barge — its waterline driven by
+    its volume to 1e-9, its immersed centroid driven to `(L/2, 0, T/2)`, its waterplane's area
+    `L B`, centroid on the centreline and second moment `L B³ / 12` claimed, its breadth and
+    `I / (L B)` sized as unknowns (`a_box_barge_floats_at_its_draft`); a cylinder floating at a
+    draft, the circular segment's (`a_cylinder_floats_at_its_draft`, 1e-4: its curved faces); a
+    wedge heeled about its apex, an inclined waterline (`a_wedge_heeled_about_its_apex`, 1e-9);
+    two blocks of steel and aluminium as two components and as one, one centre of mass
+    (`a_centre_of_mass_does_not_depend_on_grouping`); the refusals
+    (`what_cannot_be_measured_says_why`); every row against finite differences
+    (`the_rows_agree_with_finite_differences`).
+
 - **A driven requirement is said whenever its row has a value** (`report::scenario_answers`),
   whatever its reading answers: a scenario's deflection whose frame the reading cannot read is
   reported as its row reads it.

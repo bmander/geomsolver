@@ -4,6 +4,24 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.219] Where a body is made, and a face's measures** (#953). `g centroid B` and `g
+centerofmass B` put a declared point where a solid's volume (or a face's area) or its mass is
+centred, `B` a solid, a face of one (a centroid), or an instance — every body under it that no
+other solid is built of, each weighed by its density, so a centre of mass does not depend on how
+bodies are grouped; `area(A) F` and `moment(I, about: l) F` measure a face of a solid, its area
+and its second moment about a line or an axis. Each is a row of the drawing stated, as `volume`
+is, and judged claimed; a stated measure's number may read one declared unknown, which the row
+determines. A region keeping solids named whole within a half-space, `solid({ p | p in hull; p
+in water })`, is the body in common with it, built exactly, its faces the hull's and the
+waterplane's (`immersed.water`), and the half-space's height may be an unknown a measure drives.
+A set whose body is a disjunction of memberships of panels and faces of the drawing, `shell := { q
+| q in bottom or q in port or q in deck }`, is a closed shell, and `solid({ p | p in shell.side
+})` the solid it encloses, its faces its members (`hull.port`); a face in such a disjunction was
+E001.
+Through 0.218 the four words were E040 (`no such entity`, or a relation of no table), such a
+region was read by its field alone and nothing measured it, and a measure's number reading an
+unknown was E040. Nothing else a document wrote reads differently.
+
 **[0.218] A claim over measurements, and the customary engineering units** (#940). A `claim`
 may compare measurements of the solved drawing — `length`, `radius`, `distance`, `angle` — with
 the document's numbers, `claim length(post) <= 96"`: it is judged after the solve, at the pose the
