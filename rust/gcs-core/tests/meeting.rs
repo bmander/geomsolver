@@ -363,3 +363,48 @@ fn every_kind_touching_along_a_curve_and_crossing_shallowly_is_met_completely() 
         }
     }
 }
+
+/// **Two surfaces crossing at a fiftieth of a degree are met in their closed form** (#942 F1's
+/// gate): a plane crossing a cylinder of radius 100 at 0.02° (`x = r cos θ`, its two lines `y =
+/// ± r sin θ`) and a ball of radius 100 (`z = r cos θ`, its circle of radius `r sin θ`), met by
+/// `meeting::meet_with` with the closed forms bypassed. Nearly flat beside each other, the two stand
+/// sixty tolerances apart between their crossings: a crossing, not a touch. The trace refuses the
+/// meeting as shallow, and it is marched in both surfaces' parameters (`parametric`): the two lines,
+/// whole along the cylinder's box, and the circle, closed, each within 1e-9 of the closed form —
+/// where the level curves in one surface's parameters, the fallback before, closed on themselves
+/// about each seed a hair from the ball's pole (eight pieces 4.5e-4 off, none whole).
+#[test]
+fn two_surfaces_crossing_at_a_fiftieth_of_a_degree_are_met_in_their_closed_form() {
+    use gcs_core::brep::meeting::meet_with;
+    use gcs_core::brep::query::curve_domain;
+    let (r,th,tol) = (100f64,0.02f64.to_radians(),1e-7);
+    let along = |c: &Curve,n: usize| -> Vec<V> { let [t0,t1] = curve_domain(c).unwrap(); (0..=n).map(|k| c.point(t0+(t1-t0)*k as f64/n as f64)).collect() };
+    // the plane and the cylinder: two lines, each the cylinder's height long
+    let cylinder = Surface::Cylinder(Frame::about([0.;3],[0.,0.,1.]),r);
+    let plane = Surface::Plane(Frame::about([r*th.cos(),0.,0.],[1.,0.,0.]));
+    let m = meet_with(&cylinder,[[-3.*th,3.*th],[-2.,2.]],&plane,[[-3.,3.],[-3.,3.]],tol,false).unwrap();
+    assert_eq!(m.branches.len(),2,"two lines: {:?}",m.branches.iter().map(|b| b.curve.kind()).collect::<Vec<_>>());
+    let mut sides = Vec::new();
+    for br in &m.branches {
+        assert_eq!(br.contact,Contact::Crossing);
+        let pts = along(&br.curve,400);
+        for p in &pts { assert!((p[0]-r*th.cos()).abs() <= 1e-9 && (p[1].abs()-r*th.sin()).abs() <= 1e-9,"{p:?} off the lines") }
+        let (z0,z1) = pts.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(a,b),p| (a.min(p[2]),b.max(p[2])));
+        assert!(z0 <= -2.+1e-9 && z1 >= 2.-1e-9,"a line over [{z0}, {z1}], not the cylinder's height");
+        sides.push(pts[0][1].signum());
+    }
+    assert!(sides[0] != sides[1],"both branches on one line");
+    // the plane and the ball: a circle, closed
+    let ball = Surface::Sphere(Frame::about([0.;3],[0.,0.,1.]),r);
+    let lid = Surface::Plane(Frame::about([0.,0.,r*th.cos()],[0.,0.,1.]));
+    let w = 3.*r*th;
+    let m = meet_with(&ball,[[0.,TAU],[PI/2.-3.*th,PI/2.]],&lid,[[-w,w],[-w,w]],tol,false).unwrap();
+    assert_eq!(m.branches.len(),1,"one circle");
+    let pts = along(&m.branches[0].curve,800);
+    for p in &pts { assert!((p[2]-r*th.cos()).abs() <= 1e-9 && (p[0].hypot(p[1])-r*th.sin()).abs() <= 1e-9,"{p:?} off the circle") }
+    assert!(distance(pts[0],pts[pts.len()-1]) <= 1e-9,"the circle not closed");
+    let mut angles: Vec<f64> = pts.iter().map(|p| p[1].atan2(p[0])).collect();
+    angles.sort_by(f64::total_cmp);
+    let gap = angles.windows(2).map(|w| w[1]-w[0]).fold(TAU-(angles[angles.len()-1]-angles[0]),f64::max);
+    assert!(gap <= 0.05,"the circle not whole: a gap of {gap} rad");
+}

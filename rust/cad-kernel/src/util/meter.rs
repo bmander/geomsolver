@@ -95,8 +95,7 @@ struct Profile {
     /// The deepest an outline's chords were halved.
     outline_depth: usize,
     /// A meeting's analysis, by what was done (`analysis`, #780 R4): critical sets found, the jets
-    /// their searches read, branch tests asked and the curve points and feet they read, readings
-    /// of `f` a level curve's march took.
+    /// their searches read, branch tests asked and the curve points and feet they read.
     analysis: BTreeMap<&'static str,u64>,
 }
 
@@ -300,7 +299,7 @@ pub fn crossing(curve: &'static str,surface: &'static str,certified: bool) {
 }
 
 /// `n` more of `what` done by a meeting's analysis (`meeting`: a critical set found, a branch
-/// test asked, a level curve's readings of `f`), for the profile alone: never charged or limited,
+/// test asked), for the profile alone: never charged or limited,
 /// and counted only where the profile is printed (a branch test is asked per cell of a search).
 pub fn analysis(what: &'static str,n: u64) {
     if n == 0 || !profiling() { return }

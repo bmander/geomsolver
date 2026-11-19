@@ -400,23 +400,35 @@ where the fold has the sign opposite `f`'s curvature across it the two crossings
 roots of `f` along `n` at each of its points, isolated from bounds measured off `f`'s own samples
 (`ridge_branches`, #777 M1, read by `isolate::Bounded`: a surface's signed distance through a
 numerical foot is no curve's reading and no interval encloses it) —
-however shallow, the fold solved in its two-root form. A crossing with no ridge, too shallow for
-the march along `∇a × ∇b`, is traced as `f = 0` in either surface's own parameters
-(`level_curves`: one scalar equation, its tangent square to `∇f`, its step halved where it turns
-sharply, as at a parabola's vertex where a plane leans a hair to a vault's crown). A point is on
-such a branch within `8 tol / sin θ` (`on_a_branch`, A3's reach). **A meeting's analysis is done
+however shallow, the fold solved in its two-root form. **A crossing with no ridge, too shallow for
+the march along `∇a × ∇b`, is marched in both surfaces' parameters at once** (`parametric`, #942
+F1): the solutions of `A(u_a, v_a) = B(u_b, v_b)` followed along the null vector of their 3 × 4
+Jacobian, each point settled by minimum-norm Newton — no foot read on either surface, so it holds
+at a pinch of two fitted sheets and where one surface's parameters degenerate, held to within a
+quarter of `tol` by the cubic through its points (a polyline where none follows), bounded by both
+surfaces' boxes of parameters and closed where it comes back to its start. It replaced the level
+curves `f = 0` in one surface's parameters, which strayed from the meeting by 1e-4 at the 75°
+cube's 0.02° pinch, read a curve of the other wall's extension past its patch, and closed on
+themselves round each seed near a ball's pole; across the suite they read no branch the march
+does not. Gate: a plane crossing a cylinder and a ball, each of radius 100, at 0.02°, the closed
+forms bypassed, met in the closed form's two lines and its circle to 1e-9
+(`meeting::two_surfaces_crossing_at_a_fiftieth_of_a_degree_are_met_in_their_closed_form`). A
+point is on such a branch within `8 tol / sin θ` (`on_a_branch`, A3's reach). **A meeting's analysis is done
 once** (#780 R4): `meet_with` finds each side's critical set once and reads it for the singular
 points, the ridges (`ridges_from`) and the seeds alike; the branches a point is asked about are
 sampled once into chords filed by their boxes (`meeting::Sampled`), a point held only to the
-chords within reach of it and no foot sought beyond reach of a branch's poles; and a level curve's
-step goes to the point its look-ahead projected, the next station's gradient the one read there.
-Where the profile is printed it counts each (`util::meter::analysis`: critical sets and their jets,
-branch tests, samples and feet, a level curve's readings of `f`). `meeting::meet` reads the ridges
+chords within reach of it and no foot sought beyond reach of a branch's poles. Where the profile is
+printed it counts each (`util::meter::analysis`: critical sets and their jets, branch tests, samples
+and feet). `meeting::meet` reads the ridges
 on its traced road before it marches; an arrangement reads them where its march is refused as nearly
 touching (`Arrangement::traced_meeting`). Both go through **one fallback** (`meeting::marched`, #780
-R3): the march, and where it is refused as shallow the ridges (where not read yet) and then the
-level curves through the seeds no branch holds, each touch a stretch the march ends at, each seed
-then traced alone and one refused again passed by (`traced_alone`). **The trace's refusal below
+R3): the march, and where it is refused as shallow the ridges (where not read yet) and then each
+seed no branch holds marched in both surfaces' parameters, each touch a stretch the march ends at,
+each seed then traced alone and one refused again passed by (`traced_alone`); refused still where a
+seed the march does not settle stands on the meeting, held by no branch. **The general road and
+the trim go through it too** (`meeting::through`, the meeting through given seeds, no ridges read:
+`swept::general::beside_rails`, and the trim's completion from a witness), where they called the
+trace and a march of their own beside it. **The trace's refusal below
 `SHALLOW` is no longer the kernel's answer**: it is where the meeting is read another way, known by
 its type (`ssi::Shallow`: the kinds, the angle, the point), never by its words
 (`touch_curves::a_march_refused_as_shallow_says_so_by_its_type`). The closed forms that know a touch

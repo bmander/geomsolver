@@ -24,7 +24,7 @@
 use crate::util::fmath::Det;
 use super::geom::{Curve,Surface,Uv,V};
 use super::ssi::{intersect,Ssi};
-use crate::util::space::{cross,distance,norm,scale,sub};
+use crate::util::space::{add,cross,distance,dot,norm,scale,sub};
 
 /// How two surfaces stand along a branch of their meeting.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
@@ -146,15 +146,6 @@ fn metric_jet(a: &Surface,b: &Surface,uv: Uv,h: [f64;2]) -> (f64,[f64;2],[[f64;2
     let (v,g,m) = jet(a,b,uv,h);
     let k = speeds(a,uv);
     (v,[g[0]/k[0],g[1]/k[1]],[[m[0][0]/(k[0]*k[0]),m[0][1]/(k[0]*k[1])],[m[1][0]/(k[1]*k[0]),m[1][1]/(k[1]*k[1])]],k)
-}
-
-/// `metric_jet` without the Hessian (five readings of `f`, not nine): its value, gradient and the
-/// speeds, what a march along `f = 0` or onto it takes.
-fn metric_grad(a: &Surface,b: &Surface,uv: Uv,h: [f64;2]) -> (f64,[f64;2],[f64;2]) {
-    let g = |du: f64,dv: f64| f(a,b,[uv[0]+du,uv[1]+dv]);
-    let grad = [(g(h[0],0.)-g(-h[0],0.))/(2.*h[0]),(g(0.,h[1])-g(0.,-h[1]))/(2.*h[1])];
-    let k = speeds(a,uv);
-    (g(0.,0.),[grad[0]/k[0],grad[1]/k[1]],k)
 }
 
 /// `a`'s speeds along its two parameters at `uv`: the metric `D` the jets are read in.
@@ -367,114 +358,6 @@ pub fn ridges_from(a: &Surface,d: [[f64;2];2],b: &Surface,set: &[Critical],tol: 
             across:pts.iter().map(|x| x.2).collect(),curvature:pts.iter().map(|x| x.3).collect()});
     }
     Ok(out)
-}
-
-/// **The meeting traced as `f = 0` in `a`'s own parameters** (#778 T3): from each seed, a march
-/// along the level curve of `f = b ∘ a` — its tangent square to `∇f` in `a`'s metric, each step
-/// predicted along it and pulled back by Newton along `∇f` — to the box's edge or back to its start.
-/// One scalar equation in two unknowns: no cross product of the two normals, so it holds however
-/// shallow the two cross, down to `f`'s gradient at its rounding. Each curve through the points it
-/// reached (`nurbs::interpolate`, cubic by chord length), a crossing. Seeds already on a curve found
-/// are passed by.
-pub fn level_curves(a: &Surface,d: [[f64;2];2],b: &Surface,seeds: &[V],tol: f64) -> Vec<Branch> {
-    let w = [d[0][1]-d[0][0],d[1][1]-d[1][0]];
-    let h = [w[0]*1e-6,w[1]*1e-6];
-    let size = { let (lo,hi) = reach(a,d); norm(sub(hi,lo)).max(1e-300) };
-    // (fine enough that the cubic through its points stands within 1e-9 of the size off the curve)
-    let step = (a.feature().min(b.feature()).min(size)/192.).max(size*1e-5);
-    let inside = |uv: Uv| uv[0] >= d[0][0]-1e-12*w[0] && uv[0] <= d[0][1]+1e-12*w[0] && uv[1] >= d[1][0]-1e-12*w[1] && uv[1] <= d[1][1]+1e-12*w[1];
-    // the readings of `f` the march takes, for the profile (#780 R4)
-    let reads = std::cell::Cell::new(0u64);
-    let metric_grad = |a: &Surface,b: &Surface,uv: Uv,h: [f64;2]| { reads.set(reads.get()+5); metric_grad(a,b,uv,h) };
-    let f = |a: &Surface,b: &Surface,uv: Uv| { reads.set(reads.get()+1); f(a,b,uv) };
-    // pulled onto `f = 0` along its gradient in the metric
-    let onto = |uv: Uv| -> Option<Uv> {
-        let mut uv = uv;
-        for _ in 0..40 {
-            let (v,g,k) = metric_grad(a,b,uv,h);
-            let gg = g[0]*g[0]+g[1]*g[1];
-            if !(gg > 0.) { return None }
-            let t = v/gg;
-            uv = [uv[0]-t*g[0]/k[0],uv[1]-t*g[1]/k[1]];
-            if v.abs() <= 1e-3*tol { break }
-        }
-        (f(a,b,uv).abs() <= tol).then_some(uv)
-    };
-    let mut found: Vec<Vec<V>> = Vec::new();
-    let near_found = |found: &Vec<Vec<V>>,p: V| found.iter().any(|c| c.windows(2).any(|s| crate::util::space::segment_distance(p,s[0],s[1]) <= 0.25*step));
-    for &seed in seeds {
-        let uv0 = a.inverse(seed);
-        let Some(uv0) = onto(uv0) else { continue };
-        if !inside(uv0) || near_found(&found,a.point(uv0)) { continue }
-        let mut halves: Vec<Vec<V>> = Vec::new();
-        let mut closed = false;
-        for sense in [1.,-1.] {
-            let mut pts = vec![a.point(uv0)];
-            let mut uv = uv0;
-            // the step shortened where the level curve turns sharply in the parameters (a parabola's
-            // vertex where a plane leans a hair to a vault's crown) and let out again after
-            let mut hstep = step;
-            // the station's gradient where the step before read it, at the point it was taken to
-            // (#780 R4)
-            let mut held: Option<(f64,[f64;2],[f64;2])> = None;
-            for _ in 0..100_000 {
-                if !crate::util::meter::charge(crate::util::meter::Stage::Trace,1,|| (a.point(uv),format!("{} × {} (a level curve)",a.kind(),b.kind()))) { break }
-                let (_,g,k) = held.take().unwrap_or_else(|| metric_grad(a,b,uv,h));
-                let gn = g[0].dhypot(g[1]);
-                if !(gn > 0.) { break }
-                let t = [-g[1]*sense/gn,g[0]*sense/gn];
-                // the step looked ahead before it is taken, its point pulled onto the curve and the
-                // tangent read there: more than a tenth of a radian off this one (or none), the
-                // step halved; the first not turned is the step's own point and gradient
-                let look = |hs: f64| -> Option<(Uv,(f64,[f64;2],[f64;2]))> {
-                    let q = onto([uv[0]+hs*t[0]/k[0],uv[1]+hs*t[1]/k[1]])?;
-                    let jet = metric_grad(a,b,q,h);
-                    let n2 = jet.1[0].dhypot(jet.1[1]);
-                    (n2 > 0. && !((g[0]*jet.1[0]+g[1]*jet.1[1])/(gn*n2) < 0.995)).then_some((q,jet))
-                };
-                let mut ahead = None;
-                while hstep > 1e-7*size {
-                    ahead = look(hstep);
-                    if ahead.is_some() { break }
-                    hstep *= 0.5;
-                }
-                let here = hstep;
-                hstep = (hstep*1.5).min(step);
-                let delta = [here*t[0]/k[0],here*t[1]/k[1]];
-                let mut guess = [uv[0]+delta[0],uv[1]+delta[1]];
-                let mut last = false;
-                if !inside(guess) {
-                    let mut s = 1f64;
-                    for q in 0..2 {
-                        if delta[q] > 0. && guess[q] > d[q][1] { s = s.min((d[q][1]-uv[q])/delta[q]) }
-                        if delta[q] < 0. && guess[q] < d[q][0] { s = s.min((d[q][0]-uv[q])/delta[q]) }
-                    }
-                    guess = [uv[0]+s*delta[0],uv[1]+s*delta[1]];
-                    last = true;
-                }
-                // (a step taken whole is the look-ahead's: its point, and the gradient there where
-                // the box's edge leaves it as it is)
-                let projected = match ahead { Some((q,_)) if !last => Some(q),_ => onto(guess) };
-                let Some(next) = projected else { break };
-                let next = [next[0].clamp(d[0][0],d[0][1]),next[1].clamp(d[1][0],d[1][1])];
-                held = ahead.filter(|&(q,_)| !last && q == next).map(|(_,jet)| jet);
-                let p = a.point(next);
-                if pts.len() > 3 && distance(p,a.point(uv0)) <= 0.75*step { closed = true; break }
-                pts.push(p);
-                uv = next;
-                if last { break }
-            }
-            halves.push(pts);
-            if closed { break }
-        }
-        let mut pts: Vec<V> = halves.get(1).map_or(Vec::new(),|b| b.iter().rev().copied().collect());
-        if !pts.is_empty() { pts.pop(); }
-        pts.extend(halves[0].iter().copied());
-        if closed { pts.push(pts[0]) }
-        if pts.len() >= 2 { found.push(pts) }
-    }
-    crate::util::meter::analysis("level-curve readings of f",reads.get());
-    found.into_iter().filter_map(|pts| fitted(&pts).map(|curve| Branch {curve,contact:Contact::Crossing})).collect()
 }
 
 /// The cubic (or lower, for fewer points) through `pts` at their chord lengths: a traced branch's
@@ -734,8 +617,8 @@ impl From<Unmarched> for String {
 }
 
 /// **A meeting marched, and read past a march refused as shallow** (#778 T3, T4): the one fallback
-/// for every meeting with no closed form (#780 R3) — ridges, then the trace, then level curves for
-/// what it refuses. `march(known, past)` traces the meeting of `a` over `da` and `b` over `db`
+/// for every meeting with no closed form (#780 R3) — ridges, then the trace, then a march in both
+/// surfaces' parameters for what it refuses (#942 F1). `march(known, past)` traces the meeting of `a` over `da` and `b` over `db`
 /// (`sides`) through its seeds, the branches `known` already held (a march ends where it comes to
 /// one); `past` once a refusal has been read past, where a seed whose march is refused again stands
 /// where the branches read the meeting and is passed by (`traced_alone`).
@@ -744,10 +627,11 @@ impl From<Unmarched> for String {
 /// else with none. Refused as shallow, the meeting is read from its critical set over the `sides`
 /// and `seeds` the caller then gives (`past_inputs`, asked only here: the seeds clear of `ridged`
 /// already): its ridges, where the caller had not read them — over the parameters of the side
-/// `ridge_order` puts first, the other's where those hold none — and the level curves `f = 0`
-/// through the seeds no new branch holds, in either's parameters; then it is marched again with
-/// them known. Refused as before where that reads no branch the march did not know. The march's
-/// curves, and every branch known.
+/// `ridge_order` puts first, the other's where those hold none — and each seed no new branch holds
+/// marched in both surfaces' parameters at once (`parametric`), one it settles onto a branch known
+/// already giving none; then it is marched again with them known. Refused as before where a seed
+/// the march does not settle stands on the meeting, held by no branch, or where there was no seed to
+/// read past. The march's curves, and every branch known.
 pub(crate) fn marched<'s>(ridged: Option<Sampled>,tol: f64,past_inputs: impl FnOnce() -> ([(&'s Surface,[[f64;2];2]);2],Vec<V>),
     march: &mut dyn FnMut(&Sampled,bool) -> Result<Vec<Curve>,Unmarched>) -> Result<(Vec<Curve>,Vec<Branch>),String> {
     let read = ridged.is_some();
@@ -770,19 +654,264 @@ pub(crate) fn marched<'s>(ridged: Option<Sampled>,tol: f64,past_inputs: impl FnO
     }
     // (the seeds are clear of the branches known before: whichever they are on is a new one)
     let free: Vec<V> = seeds.into_iter().filter(|&p| !on_a_branch(a,b,&branches,p,tol)).collect();
-    for (s,d,o) in [(a,da,b),(b,db,a)] {
-        let level = level_curves(s,d,o,&free,tol);
-        if !level.is_empty() { branches.extend(level); break }
+    // each marched in both surfaces' parameters at once (#942 F1, `parametric`): the meeting's own
+    // point settled at every step, no foot read on either surface — so it holds at a pinch, and
+    // where one surface's parameters degenerate (a circle a hair from a ball's pole), where a level
+    // curve read through one surface's parameters strays from the meeting or closes on itself
+    let (lo,hi) = shared(reach(a,da),reach(b,db));
+    let mut crossing: Vec<Branch> = Vec::new();
+    let mut left: Vec<V> = Vec::new();
+    for &p in &free {
+        // (a seed is near the meeting, not on it: one the march settles onto a branch found already
+        // gives that branch again, known by its middle)
+        let on = |q: V,crossing: &[Branch]| branches.branches().iter().chain(crossing)
+            .any(|br| distance(br.curve.point(br.curve.inverse(q)),q) <= 8.*tol);
+        if on(p,&crossing) { continue }
+        match parametric(a,b,p,lo,hi,Some([da,db]),tol) {
+            Some(curve) => {
+                let Some([t0,t1]) = crate::query::curve_domain(&curve) else { left.push(p); continue };
+                let mid = curve.point(0.5*(t0+t1));
+                if !on(mid,&crossing) { crossing.push(Branch {curve,contact:Contact::Crossing}) }
+            }
+            None => left.push(p),
+        }
     }
-    if branches.branches().len() == known { return Err(refused.into()) }
+    branches.extend(crossing);
+    // (refused as before where a seed the march does not settle stands on the meeting itself — on
+    // both surfaces, held by no branch: a branch is there that nothing read — or where there was
+    // nothing to read past; a seed off either patch, or beside the meeting, holds none)
+    let on_both = |p: V| [a,b].iter().all(|s| distance(s.point(s.inverse(p)),p) <= 8.*tol);
+    let stuck: Vec<V> = left.into_iter().filter(|&p| on_both(p) && !on_a_branch(a,b,&branches,p,tol)).collect();
+    if super::debug() { eprintln!("brep: past a shallow refusal of a {} and a {}: {known} known, {} branches now, {} seeds free, {} stuck on the meeting",
+        a.kind(),b.kind(),branches.branches().len(),free.len(),stuck.len()) }
+    if !stuck.is_empty() || branches.branches().len() == known && free.is_empty() { return Err(refused.into()) }
     if super::debug() {
-        eprintln!("brep: a meeting read from its ridges and level curves: {} branches",branches.branches().len());
+        eprintln!("brep: a meeting read from its ridges and marched in both surfaces' parameters: {} branches",branches.branches().len());
         for br in branches.branches() { if let Curve::BSpline(s) = &br.curve { let [t0,t1] = s.domain();
             eprintln!("brep:   {:?} from {:?} to {:?}",br.contact,br.curve.point(t0),br.curve.point(t1)) } }
         for s in &free { eprintln!("brep:   seed {s:?}") }
     }
     let t = march(&branches,true)?;
     Ok((t,branches.into_branches()))
+}
+
+/// **Where two surfaces meet, marched in both their parameters at once** (#942 F1, `marched`'s
+/// fallback; first the general road's, `swept::general::beside_rails`): from `seed` (on
+/// both), the solutions `x = (u_a, v_a, u_b, v_b)` of `A(u_a, v_a) = B(u_b, v_b)` followed both ways
+/// — each step along the null vector of the 3 × 4 Jacobian `[A_u A_v −B_u −B_v]` (its signed 3 × 3
+/// minors), scaled to a length in space, and brought back by minimum-norm Newton steps until the two
+/// points stand within a thousandth of `tol` — until a point leaves the box `[lo, hi]` or either
+/// surface's patch. Where the two all but touch the march in space (`ssi::trace`, along
+/// `∇A × ∇B`) is refused, but the meeting itself is no worse read here than the Jacobian's least
+/// singular value says: two fans at 0.02° lose a few thousand roundings. The points are fitted by a
+/// cubic through them by chord length, the meeting's own point between two settled in where it
+/// strays from them by more than a quarter of `tol`. None where the seed does not settle, or the
+/// march goes nowhere.
+pub(crate) fn parametric(a: &Surface,b: &Surface,seed: V,lo: V,hi: V,boxes: Option<[[[f64;2];2];2]>,tol: f64) -> Option<Curve> {
+    type X = [f64;4];
+    let parts = |x: X| { let (pa,au,av) = a.d1([x[0],x[1]]); let (pb,bu,bv) = b.d1([x[2],x[3]]); (sub(pa,pb),[au,av,scale(bu,-1.),scale(bv,-1.)],pa) };
+    // minimum-norm Newton onto the meeting
+    let settle = |mut x: X| -> Option<(X,V)> {
+        for _ in 0..60 {
+            let (f,j,p) = parts(x);
+            // (to a millionth of `tol`: where the two all but touch, a residual moves the point along
+            // their common normal by itself over the sine of their angle, 3e3 times at 0.02°)
+            if crate::util::space::norm(f) <= 1e-6*tol { return Some((x,p)) }
+            let m: [V;3] = std::array::from_fn(|r| std::array::from_fn(|c| (0..4).map(|k| j[k][r]*j[k][c]).sum()));
+            let y = crate::ssi::solve3(m,f);
+            if !y.iter().all(|v| v.is_finite()) { return None }
+            let d: X = std::array::from_fn(|k| -dot(j[k],y));
+            x = std::array::from_fn(|k| x[k]+d[k]);
+        }
+        let (f,_,p) = parts(x);
+        (crate::util::space::norm(f) <= tol).then_some((x,p))
+    };
+    // the null vector of the Jacobian: each component its signed minor
+    let null = |j: &[V;4]| -> X {
+        let det = |c: [usize;3]| dot(j[c[0]],cross(j[c[1]],j[c[2]]));
+        [det([1,2,3]),-det([0,2,3]),det([0,1,3]),-det([0,1,2])]
+    };
+    let ua = a.inverse(seed);
+    let ub = b.inverse(seed);
+    let Some((x0,p0)) = settle([ua[0],ua[1],ub[0],ub[1]]) else {
+        if crate::debug() {
+            let mut x = [ua[0],ua[1],ub[0],ub[1]];
+            let mut said = Vec::new();
+            for _ in 0..12 {
+                let (f,j,_) = parts(x);
+                said.push(format!("{:.1e}",crate::util::space::norm(f)));
+                let m: [V;3] = std::array::from_fn(|r| std::array::from_fn(|c| (0..4).map(|k| j[k][r]*j[k][c]).sum()));
+                let y = crate::ssi::solve3(m,f);
+                if !y.iter().all(|v| v.is_finite()) { said.push("singular".into()); break }
+                let d: X = std::array::from_fn(|k| -dot(j[k],y));
+                x = std::array::from_fn(|k| x[k]+d[k]);
+            }
+            eprintln!("brep: a march's seed {seed:?} ({} at {ua:?}, {} at {ub:?}) settles nowhere: {}",a.kind(),b.kind(),said.join(" "))
+        }
+        return None
+    };
+    let inside = |p: V| (0..3).all(|k| p[k] >= lo[k]-tol && p[k] <= hi[k]+tol);
+    let on_patches = |p: V| a.off_patch(p).unwrap_or(0.) <= 16.*tol && b.off_patch(p).unwrap_or(0.) <= 16.*tol;
+    // (and within each surface's box of parameters, where it is given: a periodic one read round its
+    // period, a hair past its edges counted in)
+    let in_boxes = |x: &X| boxes.is_none_or(|bx| [(a,0),(b,1)].iter().all(|&(s,i)| {
+        let periods = s.periods();
+        (0..2).all(|k| {
+            let (d,w) = (bx[i][k],bx[i][k][1]-bx[i][k][0]);
+            let v = periods[k].map_or(x[2*i+k],|per| super::geom::around(x[2*i+k],d[0],per));
+            v >= d[0]-1e-9*w && v <= d[1]+1e-9*w
+        })
+    }));
+    let size = distance(lo,hi);
+    let h0 = 1e-3*size;
+    let mut halves: Vec<Vec<(X,V)>> = Vec::new();
+    let mut closed = false;
+    for sense in [1.,-1.] {
+        if closed { break }
+        let mut pts = vec![(x0,p0)];
+        let (mut x,mut p) = (x0,p0);
+        let mut last: Option<X> = None;
+        let mut h = h0;
+        for _ in 0..20_000 {
+            let (_,j,_) = parts(x);
+            let mut t = null(&j);
+            // (scaled to a unit step in space, and held to the way the march has gone)
+            let speed = crate::util::space::norm(add(scale(j[0],t[0]),scale(j[1],t[1])));
+            if !(speed > 0.) { break }
+            t = t.map(|v| v/speed);
+            let way = match last { Some(l) => if (0..4).map(|k| l[k]*t[k]).sum::<f64>() < 0. { -1. } else { 1. },None => sense };
+            t = t.map(|v| v*way);
+            let next = settle(std::array::from_fn(|k| x[k]+h*t[k]));
+            let why = |w: &str| if crate::debug() { eprintln!("brep: a march stops at {p:?} after {} points: {w}",pts.len()) };
+            let Some((y,q)) = next else { if h > 1e-6*h0 { h *= 0.5; continue } else { why("no settling"); break } };
+            // (a step that went far off its length, or turned sharply, shortened)
+            let moved = distance(p,q);
+            if moved > 1.5*h || moved < 0.5*h { if h > 1e-6*h0 { h *= 0.5; continue } else { why("no step its length"); break } }
+            if !inside(q) || !on_patches(q) || !in_boxes(&y) {
+                why(if !inside(q) { "out of the box" } else if !in_boxes(&y) { "out of its parameters" } else { "off a patch" });
+                // (the last step halved onto where it leaves: the branch ends on the patch's edge, or
+                // the box's, not up to a step short of it)
+                let (mut a0,mut a1) = (0.,h);
+                let mut end = None;
+                for _ in 0..60 {
+                    let m = 0.5*(a0+a1);
+                    match settle(std::array::from_fn(|k| x[k]+m*t[k])) {
+                        Some((y,q)) if inside(q) && on_patches(q) && in_boxes(&y) => { a0 = m; end = Some((y,q)) }
+                        _ => a1 = m,
+                    }
+                    if a1-a0 <= 1e-3*tol { break }
+                }
+                // (one landing within a quarter step of the last point stands for it: two points a
+                // hair apart set the cubic through them ringing)
+                if let Some(e) = end {
+                    if distance(e.1,p) < 0.25*h && pts.len() > 1 { pts.pop(); }
+                    if distance(e.1,pts.last().unwrap().1) > tol { pts.push(e) }
+                }
+                break
+            }
+            // (back where it started — the step passing by its first point — the branch is closed, its
+            // last point its first, and not marched again the other way)
+            if pts.len() > 8 && crate::util::space::segment_distance(p0,p,q) < 0.25*h {
+                if distance(p,p0) < 0.25*h { pts.pop(); }
+                // (its parameters the first point's carried round each period the march went round,
+                // so the point between it and the last is read on the branch, not across the period)
+                let periods = [a.periods(),b.periods()];
+                let round: X = std::array::from_fn(|k| periods[k/2][k%2].map_or(x0[k],|per| x0[k]+per*((x[k]-x0[k])/per).round()));
+                pts.push((round,p0));
+                closed = true;
+                if crate::debug() { eprintln!("brep: a march closes on itself after {} points",pts.len()) }
+                break
+            }
+            last = Some(t);
+            pts.push((y,q));
+            (x,p) = (y,q);
+            h = (h*1.5).min(h0);
+        }
+        if crate::debug() { eprintln!("brep: a march's half of {} points, from {p0:?} to {:?}",pts.len(),pts.last().map(|e| e.1)) }
+        halves.push(pts);
+    }
+    let mut chain: Vec<(X,V)> = halves.get(1).map_or(Vec::new(),|h| h.iter().rev().cloned().collect());
+    chain.extend(halves[0].iter().skip(if halves.len() > 1 { 1 } else { 0 }).cloned());
+    if chain.len() < 2 { return None }
+    // the cubic, refined where it strays from the meeting halfway between two of its points (and
+    // taken at the last within `tol`)
+    for round in 0..8 {
+        let xs: Vec<V> = chain.iter().map(|c| c.1).collect();
+        let mut params = vec![0.];
+        for w in xs.windows(2) { params.push(params.last().unwrap()+distance(w[0],w[1]).max(1e-300)) }
+        let length = *params.last().unwrap();
+        let params: Vec<f64> = params.iter().map(|t| t/length).collect();
+        let Some(curve) = crate::nurbs::interpolate(&xs,&params,3.min(xs.len()-1)) else {
+            if crate::debug() { eprintln!("brep: marched {} points, not interpolated",xs.len()) }
+            return None
+        };
+        let mut more: Vec<(usize,(X,V))> = Vec::new();
+        let mut worst = 0f64;
+        for i in 0..chain.len()-1 {
+            let mid: X = std::array::from_fn(|k| 0.5*(chain[i].0[k]+chain[i+1].0[k]));
+            let Some((y,q)) = settle(mid) else { continue };
+            // (its distance to the cubic's nearest point between the two, by golden sections)
+            let gap = |t: f64| distance(curve.point(t),q);
+            let (mut l,mut r) = (params[i],params[i+1]);
+            for _ in 0..80 {
+                let (m1,m2) = (r-(r-l)*0.618_033_988_749_895,l+(r-l)*0.618_033_988_749_895);
+                if gap(m1) <= gap(m2) { r = m2 } else { l = m1 }
+            }
+            let off = gap(0.5*(l+r));
+            worst = worst.max(off);
+            if off > 0.25*tol { more.push((i+1,(y,q))) }
+        }
+        if more.is_empty() { return Some(Curve::BSpline(std::sync::Arc::new(curve))) }
+        if crate::debug() { eprintln!("brep: marched {} points, {} more, the worst {worst:e} off",chain.len(),more.len()) }
+        if round == 2 { break }
+        for (i,m) in more.into_iter().rev() { chain.insert(i,m) }
+    }
+    // (where no cubic follows it — about a pinch the meeting turns within a few points — a
+    // polyline through the meeting's points, each chord halved until its middle stands within a
+    // quarter of `tol` of the meeting's own point there)
+    let mut fine: Vec<(X,V)> = vec![chain[0]];
+    for w in chain.windows(2) {
+        let mut todo = vec![(w[0],w[1],0)];
+        while let Some((p,q,depth)) = todo.pop() {
+            let mid: X = std::array::from_fn(|k| 0.5*(p.0[k]+q.0[k]));
+            match settle(mid) {
+                Some(m) if depth < 24 && {
+                    let c = scale(add(p.1,q.1),0.5);
+                    distance(c,m.1) > 0.25*tol
+                } => { todo.push((m,q,depth+1)); todo.push((p,m,depth+1)) }
+                _ => fine.push(q),
+            }
+        }
+        if fine.len() > 200_000 { return None }
+    }
+    let xs: Vec<V> = fine.iter().map(|c| c.1).collect();
+    let mut params = vec![0.];
+    for w in xs.windows(2) { params.push(params.last().unwrap()+distance(w[0],w[1]).max(1e-300)) }
+    let length = *params.last().unwrap();
+    let params: Vec<f64> = params.iter().map(|t| t/length).collect();
+    if crate::debug() { eprintln!("brep: marched as a polyline of {} points",xs.len()) }
+    crate::nurbs::interpolate(&xs,&params,1).map(|c| Curve::BSpline(std::sync::Arc::new(c)))
+}
+
+/// **The meeting of `a` and `b` through `seeds`, by the one fallback** (#942 F1): traced through
+/// them in space (`ssi::trace`), and read past a refusal as shallow as every meeting with no closed
+/// form is (`marched`), each seed then marched in both surfaces' parameters (`parametric`). No
+/// ridges are read: the branches asked for are those through the seeds (the general road's beside
+/// its rails, the trim's completed from a witness). `da` and `db` are the two surfaces' boxes of
+/// parameters, `[lo, hi]` the box in space the meeting is wanted within. The curves of every branch
+/// read; refused where a seed stands on the meeting and nothing reads its branch.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn through(a: &Surface,da: [[f64;2];2],b: &Surface,db: [[f64;2];2],seeds: &[V],lo: V,hi: V,tol: f64)
+    -> Result<Vec<Curve>,String> {
+    let (traced,branches) = marched(Some(Sampled::new(Vec::new())),tol,|| ([(a,da),(b,db)],seeds.to_vec()),&mut |known,past| {
+        if !past { return Ok(super::ssi::trace(a,b,seeds,lo,hi,tol)?) }
+        // (past a refusal, each seed no branch holds traced alone, one refused again passed by)
+        let seeds: Vec<V> = seeds.iter().copied().filter(|&p| !on_a_branch(a,b,known,p,tol)).collect();
+        let mut found = Vec::new();
+        traced_alone(&seeds,&mut found,&mut |p| super::ssi::trace(a,b,&[p],lo,hi,tol),tol);
+        Ok(found)
+    })?;
+    Ok(traced.into_iter().chain(branches.into_iter().map(|br| br.curve)).collect())
 }
 
 /// The sides a meeting's ridges are read over, in the order they are tried: first the one whose
@@ -872,7 +1001,7 @@ pub fn meet_with(a: &Surface,da: [[f64;2];2],b: &Surface,db: [[f64;2];2],tol: f6
             // marched through the seeds, and read past a march refused as shallow (`marched`)
             let (traced,branches) = marched(Some(from_ridges),tol,|| ([(a,da),(b,db)],seeds.clone()),&mut |known,past| {
                 let mut traced = if past {
-                    // (the seeds are clear of the ridges' branches: of the level curves' too)
+                    // (the seeds are clear of the ridges' branches: of those marched past too)
                     let seeds: Vec<V> = seeds.iter().copied().filter(|&p| !on_a_branch(a,b,known,p,tol)).collect();
                     let mut found = Vec::new();
                     traced_alone(&seeds,&mut found,&mut |p| super::ssi::trace(a,b,&[p],lo,hi,tol),tol);

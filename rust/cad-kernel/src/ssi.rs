@@ -2158,8 +2158,9 @@ pub(crate) fn touch_near(a: &Surface,b: &Surface,p: V,tol: f64) -> Option<V> {
 
 /// **A trace refused for two surfaces nearly touching where it marched** (`trace_beside`'s refusal
 /// below `SHALLOW`): the surfaces' kinds, the angle they meet at there in degrees, and the point.
-/// What a caller reads the meeting's ridges and level curves for (#778 T4, `meeting::marched`),
-/// known by its type and never by its words (#780 R3); said as before where it stands.
+/// What a caller reads the meeting's ridges and its march in both surfaces' parameters for (#778 T4,
+/// #942 F1, `meeting::marched`), known by its type and never by its words (#780 R3); said as before
+/// where it stands.
 #[derive(Clone,Debug,PartialEq)]
 pub struct Shallow { pub a: &'static str,pub b: &'static str,pub degrees: f64,pub at: V }
 
