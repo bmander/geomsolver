@@ -366,4 +366,7 @@ fn a_condition_runs_onto_the_next_line() {
     assert!(!made("w > 0mm\n    and h < 0mm"));
     assert!(made("w < 0mm\n    or h > 0mm"));
     assert!(made("w > 0mm and not\n    h < 0mm"));
+    // the lexer's rule, so a line defining a name spelled `and` is its own still
+    let (e, errs) = read("unit mm\nuse std\nw := 3mm\nand := 2mm\nh := and + w\n");
+    assert!(errs.is_empty() && e.ok(), "{errs:?} {:?}", e.diags);
 }
