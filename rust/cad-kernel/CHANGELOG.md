@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.18.0] - 2026-11-19
+
 - **A ring's tube cut at an end pose carries the places it was traced through as the cut's pcurve**
   (#942 F3): `rings::chord_curve` returns, beside the curve, the places on the face it passes — the
   traced points and the meeting's own point settled between each two — at the curve's own
