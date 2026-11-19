@@ -40,7 +40,7 @@ mod words;
 mod traced;
 
 pub use diagnostics::{Code, Diag, Severity};
-pub use refused::refusal_site;
+pub use refused::{refusal_cause, refusal_site};
 pub use drift::{drift, DRIFT};
 pub use scenarios::{Line, Stated};
 pub use measures::MeasureStated;

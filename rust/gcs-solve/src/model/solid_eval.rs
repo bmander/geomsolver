@@ -132,6 +132,20 @@ impl Sketch {
         self.solids.get(i).map(|s| crate::vocab::public_path(&s.name)).unwrap_or_default()
     }
 
+    /// **What a refusal calls solid `i`** (#948): the name the document calls it by
+    /// (`solid_name`), where no other solid goes by that name — else its key, which one solid
+    /// alone has, so the statement that made it is found from the words (`program::refusal_site`)
+    /// and said by its public path where they are shown (`vocab::public_words`).  Two rounds over
+    /// one body each make a `filled[3]`.
+    pub fn solid_said(&self, i: usize) -> String {
+        let name = self.solid_name(i);
+        let shared = (0..self.solids.len()).any(|j| j != i && self.solid_name(j) == name);
+        match (shared, self.solids.get(i)) {
+            (true, Some(s)) => s.name.clone(),
+            _ => name,
+        }
+    }
+
     /// **The solid a name picks** (#904): the one the document calls `name` (`solid_name`), or
     /// whose key it is.  A body and the stock split off it (`as_body`) are one name, the body
     /// picked.  Refused, with the cause: a name two solids go by (a copy of a block within a
