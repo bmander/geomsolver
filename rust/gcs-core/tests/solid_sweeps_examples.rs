@@ -675,6 +675,47 @@ fn the_bull_nose_turned_partway_stops_inside_the_ring() {
     crate::object_builder::builds_as_exported("stopped_bullnose.sv",&e.sketch,fixtures::solid(&e,"block"),&exact);
 }
 
+/// **The bull-nose mill swung partway into the ring, its meridian turned from beside its foot**
+/// (#942 F3's gate; brep-bench's `swept/bull-nose-swung-partway-into-ring-sector`):
+/// `stopped_bullnose.sv`'s mill and turn, built as the bench builds it — its meridian in the
+/// half-plane `y = 0` turned once about its own axis.
+/// - The round meets the flat bottom tangentially, so the round touches the bottom's plane all along
+///   the circle they share, and every curve on the round reaching that circle touches the plane
+///   there.
+/// - The round's meeting with itself at the other pose is such a curve, ending on that circle where
+///   the sector's three surfaces meet. Read against the circle's plane, it is a double root no
+///   search proves ("where a traced … meets a plane was not proved").
+/// - It is read against the circle's cylinder instead, which crosses the round square
+///   (`query::crossings_in`).
+///
+/// The ring loses the closed form of `the_bull_nose_turned_partway_stops_inside_the_ring`, to 1e-9.
+#[test]
+fn the_bull_nose_swung_partway_its_meridian_beside_its_foot_stops_inside_the_ring() {
+    use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
+    use gcs_core::brep::geom::Frame;
+    use gcs_core::brep::trajectory::{Screw,Trajectory};
+    let up = [0.,0.,1.];
+    let section = Profile {origin:[8.,0.,-1.],normal:[0.,1.,0.],names:Vec::new(),loops:vec![vec![
+        ProfileEdge::Line {a:[8.,0.,-1.],b:[12.,0.,-1.]},ProfileEdge::Line {a:[12.,0.,-1.],b:[12.,0.,1.]},
+        ProfileEdge::Line {a:[12.,0.,1.],b:[8.,0.,1.]},ProfileEdge::Line {a:[8.,0.,1.],b:[8.,0.,-1.]}]]};
+    let ring = revolve(&section,[0.;3],up,PI/3.).unwrap();
+    let foot = [10.,0.,-0.5];
+    let at = |x: f64,z: f64| [foot[0]+x,0.,foot[2]+z];
+    let corner = Frame::new(at(0.7,0.3),[0.,-1.,0.],[1.,0.,0.]);
+    let meridian = Profile {origin:foot,normal:[0.,1.,0.],names:Vec::new(),loops:vec![vec![
+        ProfileEdge::Line {a:at(0.,0.),b:at(0.7,0.)},ProfileEdge::Arc {frame:corner,r:0.3,span:Some([-PI/2.,0.])},
+        ProfileEdge::Line {a:at(1.,0.3),b:at(1.,1.)},ProfileEdge::Line {a:at(1.,1.),b:at(0.,1.)},ProfileEdge::Line {a:at(0.,1.),b:at(0.,0.)}]]};
+    let mill = revolve(&meridian,foot,up,TAU).unwrap();
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:up,ratio:1.,advance:0.});
+    let tol = gcs_core::brep::geom::tolerance(ring.size().max(mill.size()));
+    let cut = gcs_core::brep::swept::closed::cut_from(&ring,&mill,&path,[-140f64.to_radians(),30f64.to_radians()],0.002,tol)
+        .unwrap_or_else(|why| panic!("the mill's sweep not built: {why:?}"));
+    let (d,big,c,h) = (10.,1.,0.3,1.);
+    let rz = (big-c)*c+PI*c*c/4.+big*(h-c);
+    let r2z = (big-c)*(big-c)*c+(big-c)*PI*c*c/2.+2.*c*c*c/3.+big*big*(h-c);
+    near(gcs_core::brep::props::volume(&cut),PI/3.*80.-(PI*d/3.*rz+PI/2.*r2z),1e-9);
+}
+
 /// `leaning_mill.sv` (the closed class, #780 L2: sharp circles leaning to a turn's axis): a
 /// flat-end mill, a drum of radius 1 and 3 long with its ends square to its axis, leaning 25° from
 /// upright 5 out from the turn's axis and 1.2 beside the plane through it, swung 100° wholly inside

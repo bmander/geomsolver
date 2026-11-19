@@ -283,6 +283,7 @@ mod sector;
 mod seeds;
 mod set_regions;
 mod sets;
+mod shallow_ends;
 mod shared_contact;
 mod sheet;
 mod sheet_rounds;

@@ -8,6 +8,55 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A ring's tube cut at an end pose carries the places it was traced through as the cut's pcurve**
+  (#942 F3): `rings::chord_curve` returns, beside the curve, the places on the face it passes — the
+  traced points and the meeting's own point settled between each two — at the curve's own
+  parameters, and the cut's pcurve is the coarsest cubic through every so many of them whose image
+  holds the curve's bar (a quarter of the tolerance) at each and at 64 places along it, where it was
+  the curve inverted onto the face from the line between its ends. Beside a fold pair's birth the
+  leaf folds back on itself within 2e-4, and the half turn's cut, so inverted, landed on the other
+  fold ("edge 28's pcurve is 2.15e-4 off it"); its build now reaches the pair's untraced double curve.
+
+- **A ring's stretches are sewn along a cut as one row, the cut's** (#942 F3): `sew::sewn_open`'s
+  `across` now names which row a face's parameters lie on (`Option<usize>`, the cut's index) where
+  it said only whether they lay on one, and two rows are one where they are the same cut's. The
+  stretches either side of a cut are fitted a billionth of the roll clear of it; read by their
+  parameters' values (equal within 1e-9 of the value) the half turn's two rows, 6.3e-9 apart, were
+  two, nothing was sewn across its cut, and a stretch's row lying along the next stretch's sheet was
+  searched for where it met it and not proved. Gated with no sweep by
+  `brep::two_stretches_of_a_sheet_fitted_either_side_of_a_cut_are_sewn_along_it_as_one_row`.
+
+- **A given meeting's curve that is an edge a face already has is that edge, laid once** (#942 F3):
+  a ring's tube, cut along its crossing of the tool where it starts and given that chord as their
+  meeting, had it laid a second time on itself, and the ring along a spline's tube face was refused
+  ("a bspline's pieces do not close"). A given curve equal to either face's edge curve is now that
+  edge, as a traced meeting along an edge already was, its crossings with the meeting's other curves
+  read first and kept on them. The ring along a spline's arrangement now assembles; the build is
+  refused later, where its cells' membership does not settle. Gated by each of its tubes arranged
+  with the torus where it ends, its chord a later span of a curve of several
+  (`swept_rings::a_tubes_chord_given_as_its_meeting_with_the_tool_is_its_own_edge_laid_once`,
+  refused without the rule).
+
+- **Two curves on a face crossing where one ends on a circle the face touches a plane along**
+  (#942 F3): `query::crossings_in` reads one curve against a surface carrying the other. Where a
+  circle's plane is refused, the circle's cylinder is read instead. A bull-nose's round touches its
+  flat end's plane all along the circle they share, so a curve on the round reaching that circle
+  touches the plane there: a double root no search proves, where it crosses the circle's cylinder
+  square. The plane stays first, since a helix about the circle's axis lies on its cylinder. Brep-bench's bull-nose swung partway into the ring sector was
+  refused ("where a traced … meets a plane was not proved") and is now cut to its settled volume.
+
+- **A meeting given by construction holds its points of touching** (#942 F3): `boolean::Given` gains
+  `touches`, points where its two surfaces touch beside its curves. An edge of either through one is
+  read as touching the other there, with no search: a touch is a double root, which no search proves
+  by a change of sign. The slide road gives them where a band's contact crosses a seam: the
+  neighbour's face at each end pose, and every face of its candidate's solid, touches the band's
+  sheet only at the seam points. Brep-bench's bull-nose pushed in at a lean, its side's rim touching
+  its round's sheet mid-span, was refused ("a circle … meets a extrusion was not proved") and is now
+  cut to its closed form. `Given` literals need the new field (`touches: Vec::new()` for none).
+  Gated with no sweep (`arrangement::a_rim_touching_a_wall_at_points_given_is_read_there_with_no_search`):
+  a drum's rim touching a parabolic channel's two extruded walls at a point each is refused with
+  nothing given, and read there, its volumes to the rounding, given the walls' meetings and the points.
+
 ## [0.17.0] - 2026-11-19
 
 - **One fallback for shallow meetings, marched in both surfaces' parameters** (#942 F1): where the

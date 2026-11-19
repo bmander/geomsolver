@@ -2153,7 +2153,7 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
                 on(&ei) && on(&ej)
             };
             let curves: Vec<crate::geom::Curve> = cs.into_iter().filter(|c| !shared(c)).collect();
-            given.push(crate::boolean::Given {surfaces:[si.clone(),sj.clone()],curves});
+            given.push(crate::boolean::Given {surfaces:[si.clone(),sj.clone()],curves,touches:Vec::new()});
         } }
     } else {
         for i in 0..carried_all.len() { for j in i+1..carried_all.len() {
@@ -2172,7 +2172,7 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
                 if (*ni == Some(j) && near(u,1.) && near(s,0.)) || (*nj == Some(i) && near(u,0.) && near(s,1.)) { continue }
                 curves.push(crate::geom::Curve::Iso(bi.clone(),u));
             }
-            given.push(crate::boolean::Given {surfaces:[ci.sheet.faces[0].surface.clone(),cj.sheet.faces[0].surface.clone()],curves});
+            given.push(crate::boolean::Given {surfaces:[ci.sheet.faces[0].surface.clone(),cj.sheet.faces[0].surface.clone()],curves,touches:Vec::new()});
         } }
     }
     // **every sheet given its whole meeting with the tool at each end** (`pose_meeting`): the rim it
@@ -2207,7 +2207,7 @@ pub fn candidates(tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2]
         // (a branch along a side of the sheet's parameters that is one point in space — a pole's,
         // where the section meets the turn's axis — meets nothing: laid, a loop of no size round the pole)
         curves.retain(|c| { let p = c.point(0.); (1..=16).any(|k| distance(c.point(k as f64/16.),p) > tol) });
-        crate::boolean::Given {surfaces:[sheet.clone(),f.surface.clone()],curves}
+        crate::boolean::Given {surfaces:[sheet.clone(),f.surface.clone()],curves,touches:Vec::new()}
     });
     given.extend(met);
     out.extend(carried_all.into_iter().map(|(c,..)| c.sheet));

@@ -753,7 +753,7 @@ pub fn entered(fit: &Fitted,tool: &Revolved,ends: [&Brep;2]) -> Result<(Brep,Vec
             let iso = Curve::BSpline(Arc::new(piece.column(j)));
             for (f,face) in pose.faces.iter().enumerate() {
                 let curves = if holding.contains(&f) { vec![iso.clone()] } else { Vec::new() };
-                given.push(Given {surfaces:[face.surface.clone(),sheet.faces[k].surface.clone()],curves});
+                given.push(Given {surfaces:[face.surface.clone(),sheet.faces[k].surface.clone()],curves,touches:Vec::new()});
             }
         }
     }

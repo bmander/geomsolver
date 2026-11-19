@@ -556,6 +556,19 @@ impl<'a> P<'a> {
                 let decl = self.decl(EntKind::Face, None)?;
                 Kid::Face { span: decl.list_span, decl: Box::new(decl) }
             }
+            // `face(line(a, b), …)` (#952): a face lists what is declared, and a loop drawn in
+            // place is a chain
+            None if kind == EntKind::Face
+                && self.word_at(self.i).is_some_and(|w| EntKind::parse(w).is_some())
+                && self.t.get(self.i + 1).map(|t| &t.0) == Some(&Tok::P('(')) =>
+            {
+                let w = self.word_at(self.i).unwrap_or_default().to_string();
+                self.fail(&format!("a face lists edges declared by name, `face(ab, bc, ca)`, or \
+                    its corners, `face(a, b, c, -> close)`, and declares no `{w}` of its own: a \
+                    loop drawn in place is a chain, `f := line(a, b) -> line(b, c) -> line(c, a) \
+                    -> close`"));
+                return None;
+            }
             None => {
                 let r = self.refr()?;
                 // `flank from p to q`: the stretch of a curve a face runs along

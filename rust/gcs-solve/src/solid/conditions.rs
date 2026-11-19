@@ -286,7 +286,7 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, within: &[crate::mod
                 let runs = runs.clone();
                 Cond { f: Arc::new(move |x| match runs.nearest(x).get(k) {
                     Some(&(c, sign)) => {
-                        let (v, g) = runs.body.side_grad(c, x);
+                        let (v, g) = runs.body.end_side(&c, x);
                         (sign * v, scale(g, sign))
                     }
                     None => (-1.0, [0.0; 3]),
@@ -527,7 +527,7 @@ impl Rest {
         let fe = e.iter().map(|t| on_face(t, sk).filter(|(_, s)| !s).map(|(f, _)| patch(&f)))
             .collect::<Option<Vec<_>>>()?;
         // `m` on surfaces, and cut only where an edge ends: a cut each run lies within by how its
-        // sides are chosen (`end_sides`), so `E` stays within `M`
+        // sides are chosen (`end_faces`), so `E` stays within `M`
         let (mut fm, mut within) = (Vec::new(), Vec::new());
         for t in m {
             match on_face(t, sk) {
@@ -575,7 +575,7 @@ impl Rest {
 pub fn ends(set: &SetDistance) -> Result<impl Fn(V) -> f64 + Send + Sync, String> {
     let runs = EndRuns::of(set)?;
     Ok(move |p: V| {
-        runs.nearest(p).iter().map(|&(c, sign)| sign * runs.body.side(c, p))
+        runs.nearest(p).iter().map(|&(c, sign)| sign * runs.body.end_side(&c, p).0)
             .fold(f64::NEG_INFINITY, f64::max)
     })
 }
@@ -591,7 +591,7 @@ pub fn ends(set: &SetDistance) -> Result<impl Fn(V) -> f64 + Send + Sync, String
 struct EndRuns {
     body: Arc<BodyFaces>,
     /// Each run's edges and the faces it ends on (`BodyFaces::end_runs`).
-    runs: Vec<(Vec<u32>, Vec<(usize, f64)>)>,
+    runs: Vec<(Vec<u32>, Vec<(super::faces::EndBy, f64)>)>,
 }
 
 impl EndRuns {
@@ -604,7 +604,7 @@ impl EndRuns {
 
     /// The faces the run nearest `p` ends on, and the side it runs on of each (none where the set
     /// has no edge; the first of runs equally near).
-    fn nearest(&self, p: V) -> &[(usize, f64)] {
+    fn nearest(&self, p: V) -> &[(super::faces::EndBy, f64)] {
         match &self.runs[..] {
             [] => &[],
             [(_, one)] => one,

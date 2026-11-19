@@ -240,7 +240,7 @@ frees it and mints `axis_foot` (`a·d = 0`); `remove` holds it again once nothin
 == (x, y, z)) t` holds a place (placed first, so nothing later frees it); std's axes are held
 so. `t coincident s` between axes is `AxisCoincident` (4 rows, either sense); `l coincident t`, a
 line on an axis, is `LineOnAxis` (both ends, 4 rows, places the axis); `p symmetry(t) q`, the
-mirror in an axis (Solvent [0.219]), is `SymmetricAxis` — `program::relations::settle` takes
+mirror in an axis (Solvent [0.220]), is `SymmetricAxis` — `program::relations::settle` takes
 `Symmetric` there when the parenthesised entity is an axis — the half turn about its line,
 `symmetric3`'s three rows over the axis's place and direction rather than a line's ends
 (`kernels::symmetric_axis_rows`), in space whatever the points are drawn in, and it places the

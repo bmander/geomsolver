@@ -4,13 +4,38 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.219] The mirror in an axis.** `symmetry` takes an axis in its parentheses as well as a
+**[0.220] The mirror in an axis.** `symmetry` takes an axis in its parentheses as well as a
 line: `a symmetry(std.x) b` is the half turn about the axis's line, in space wherever the points
 are drawn — what the mirror in a line drawn in space already was (§9.2) — and, reading where the
-axis is, it places one that nothing else does, as `coincident` does. Through 0.218 it was E040
+axis is, it places one that nothing else does, as `coincident` does. Through 0.219 it was E040
 ("`std.x` is an axis, and a line is wanted here"), so a figure symmetric about a world axis drew
 a line on the axis to mirror in. A regular tetrahedron is one corner and its half turns about the
 three axes, made regular by three edges. Nothing a document wrote before reads differently.
+
+**[0.219] A chain link in parentheses that names nothing, a pie slice, a condition over two lines**
+(#952). A chain's link may stand in parentheses without a name, `pk := (line(c0, c1)) -> round(r:
+4mm) (line(c1, c2)) -> … close`, the bare link as before; through 0.218 the line was read as a number
+and refused as "unknown function `line`" (E103), or "unexpected `:`" past a round. A face whose edge
+meets neither neighbour stays E080, but where both neighbours are the one point the two readings are
+one loop: `face(rim, o, -> close)`, an arc and its centre, is the pie slice (E080 through 0.218). A
+`when`'s condition runs on past a line's end inside a parenthesis, and where a line ends in `and`, `or`
+or `not` or the next opens with `and` or `or`; through 0.218 the condition ended at the line, E001
+"expected `{`". So `and`, `or` and `not` are no name: `and := 2mm` is E001, saying they join
+conditions (a statement opening with a name spelled `or` was refused already). Beside the language, without changing what any document reads: a closed named chain
+through an arc said to turn clockwise is the face it lists (it was E080, "meets neither of its
+neighbours"); `face(line(a, b), …)` says that a face lists edges declared by name and that a loop drawn
+in place is a chain, where it said "expected `,` or `)`"; and **W118** names an arc of a half turn or
+more that a face turns into while written counter-clockwise from its start, the end of a slot written
+with its ends swapped — `sense: cw` with its ends swapped says the notch is meant. An arc said
+`sense: cw` whose ends are a half turn apart is the half clockwise from its start (E060 through
+0.218), so a notch of a half turn can be said so. A set's `ends` (§6.21) — where a run of
+`std.rounds` and every set over a carried edge stops — no longer takes a face whose surface goes
+back across the edge, nor a plane at a reflex corner of less than a right angle turning back over
+the run: there the run ends square, as at a seam (a round there was refused or left a sliver
+through 0.218, and a round notched back by `s / tan θ` at such a corner now stops square at it). A
+run carried past its end along the next side goes no further than that side's edge, and two runs
+mirroring one another at a convex corner meet in the plane halving it. A seam between two pieces of
+one surface — the coplanar tops of solids unioned — is no seam a round's section spills over.
 
 **[0.218] A claim over measurements, and the customary engineering units** (#940). A `claim`
 may compare measurements of the solved drawing — `length`, `radius`, `distance`, `angle` — with

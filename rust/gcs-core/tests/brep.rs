@@ -302,6 +302,62 @@ fn rational_tube(r: [f64;2],[z0,z1]: [f64;2],start: f64,c: f64) -> gcs_core::bre
         poles:low.poles.iter().zip(&high.poles).map(|(&a,&b)| vec![a,b]).collect(),weights:Some(weights)}
 }
 
+/// **Two stretches of a sheet fitted either side of a cut are sewn along it as one row** (#942 F3,
+/// `sew::sewn_open`, no sweep in it): a wavy bicubic net cut at the middle of its `v` as a ring's
+/// tube is cut where its contact changes shape, each stretch a billionth of the net's `v` clear of
+/// the cut (as the ring road fits them, its rows nowhere on the cut), the one split in two along
+/// `u` and the other in three at other places. Each stretch's row is the other's edge lying along
+/// it — by construction one row, the cut's, whatever the two rows' parameters read. Sewn, it is
+/// one sheet: every edge on the row cut at the other's corners and paired, nothing on it left
+/// free, and no edge farther off its faces than the two rows stand apart. (Rows told apart by
+/// their parameters' values — the half turn's two stretches, rows 6.3e-9 of the roll apart —
+/// sewed nothing, and each stretch's row, lying along the next stretch's sheet, was searched for
+/// where it met it, and not proved.)
+#[test]
+fn two_stretches_of_a_sheet_fitted_either_side_of_a_cut_are_sewn_along_it_as_one_row() {
+    use gcs_core::brep::build::grid_sheet;
+    use gcs_core::brep::nurbs::{interpolate_net,Parametrization};
+    use gcs_core::brep::sew::{parts,sewn_open};
+    let (rows,cols) = (7,9);
+    let pts: Vec<V> = (0..rows).flat_map(|i| (0..cols).map(move |j| {
+        let (x,y) = (-4.+8.*i as f64/(rows-1) as f64,-4.+8.*j as f64/(cols-1) as f64);
+        [x,y,0.5*(0.6*x).sin()*(0.4*y+0.2).cos()]
+    })).collect();
+    let net = interpolate_net(&pts,rows,cols,Parametrization::ChordLength).unwrap();
+    let [[a,z],[c,d]] = net.domain();
+    let m = 0.5*(c+d);
+    let eps = 1e-9*(d-c);
+    let at = |f: f64| a+(z-a)*f;
+    let below = grid_sheet(&net.segment([a,z],[c,m-eps]),&[a,at(0.4),z],&[c,m-eps],&["l".into(),"r".into()],
+        [false,false]).unwrap();
+    let above = grid_sheet(&net.segment([a,z],[m+eps,d]),&[a,at(0.3),at(0.7),z],&[m+eps,d],
+        &["l".into(),"m".into(),"r".into()],[false,false]).unwrap();
+    let tol = 1e-7;
+    // the cut's row: the one row there is
+    let across = |uv: [f64;2]| ((uv[1]-m).abs() <= 1e-6*(d-c)).then_some(0);
+    let sewn = sewn_open(&[below,above],tol,&across).unwrap();
+    assert_eq!(sewn.faces.len(),5);
+    assert_eq!(parts(&sewn).len(),1,"one sheet");
+    let uses = sewn.uses();
+    let on_row = |i: usize| {
+        let (fi,li,ci) = uses[i][0];
+        let (f,e) = (&sewn.faces[fi],&sewn.edges[i]);
+        across(f.loops[li][ci].pcurve.at(0.5*(e.t[0]+e.t[1]),e,&f.surface,&sewn.vertices)).is_some()
+    };
+    let row: Vec<usize> = (0..sewn.edges.len()).filter(|&i| on_row(i)).collect();
+    // the row cut at both stretches' corners (at 0.3, 0.4 and 0.7): four edges, each bounding two
+    assert_eq!(row.len(),4,"the row in four");
+    // and each no farther off its faces than the two rows stand apart (twice, for the curve's fit)
+    let apart = (0..=64).map(|k| at(k as f64/64.))
+        .map(|u| gcs_core::space::distance(net.point(u,m-eps),net.point(u,m+eps))).fold(0.,f64::max);
+    assert!(apart > 0. && apart < tol);
+    for &i in &row {
+        assert_eq!(uses[i].len(),2,"row edge {i} bounds {} faces",uses[i].len());
+        assert!(sewn.edges[i].tol <= 2.*apart,"row edge {i} stands {:e} off a face it bounds, the rows {apart:e} apart",
+            sewn.edges[i].tol);
+    }
+}
+
 /// **Curved faces sewn across curves parametrised apart** (`sew::sewn`): a column of three tubes
 /// end to end — a rational net whose circle begins at 0, one begun a quarter turn on and run at
 /// another pace, the analytic cylinder a prism's side begun at 2 rad — capped by discs whose

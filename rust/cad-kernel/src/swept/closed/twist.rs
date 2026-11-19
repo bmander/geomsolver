@@ -423,7 +423,7 @@ fn turned_rims(tw: &Twist,cand: &mut Candidates,at_ends: &Ends) -> Result<(),Unb
                     Surface::Cylinder(cy,r) => crate::ssi::side_holding_rim(&cy,r.abs(),&curve,tol),
                     _ => None,
                 };
-                if let Some(curves) = met { cand.touches.push(Touch {cutters:[at,ring_at],curves}) }
+                if let Some(curves) = met { cand.touches.push(Touch {cutters:[at,ring_at],curves,touches:Vec::new()}) }
             }
         }
     }
@@ -540,7 +540,7 @@ fn own_contacts(tw: &Twist,round: &Round,at_ends: &Ends,turned: &[(usize,Turned)
         let posed = round.face.surface.moved(&crate::geom::Rigid {r:pose.r,t:pose.p});
         for &(i,t) in turned {
             if let Some(curves) = crate::ssi::own_contact(&posed,&Curve::Turned(std::sync::Arc::new(t)),tw.leg.tol) {
-                out.push(Touch {cutters:[at,i],curves})
+                out.push(Touch {cutters:[at,i],curves,touches:Vec::new()})
             }
         }
     }

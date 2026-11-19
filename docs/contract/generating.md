@@ -1646,7 +1646,21 @@ that hold its curves, where both are carried (`closed`'s `Touch`). The closed cl
 - **a leaning round face at each end pose of a turn against its contact turned** (C3, the curve
   `ssi`'s `own_contact` writes, given where it certifies the face on one side of the surface);
 - **a face holding a sharp circle at each end pose against the ring the circle turns into** (L2,
-  `plane_holding_rim`, `side_holding_rim`).
+  `plane_holding_rim`, `side_holding_rim`);
+- **the neighbour across a band's seam at each end pose against the band's sheet, at the seam
+  points alone** (#942 F3, `slide`'s `touched_at_seams`; `Touch`'s points, `Given::touches`).
+  - The neighbour's face posed is the tool's boundary there and the sheet is the sweep's, so the
+    two meet only where the face's contact lies on the sheet: where the band's contact crosses the
+    seam into it. So does every face of the solid the face's candidate bounds, which lies within
+    the tool posed.
+  - Each such face is given those points against the sheet, and nothing else.
+  - The circle where the neighbour meets the band touches the sheet there: a double root, which no
+    search proves by a change of sign. It is read off the given points as a touch, with no search
+    (`boolean`'s `on_given`).
+  - Gate: brep-bench's bull-nose pushed in at a lean, its mill turned from a meridian that puts
+    the touches mid-span on its side's rim. It was refused ("a circle … meets a extrusion was not
+    proved"), and is now cut from the block to `swept_slid::Mill::plunged_away`'s closed form to
+    1e-9 (`swept_slid::a_bull_nose_whose_rim_touches_its_contacts_sheet_mid_span_is_cut_from_the_block`).
 
 Each pair-by-pair recognition in `ssi::intersect` can be bypassed (`ssi::bypassing`,
 `Recognised::{OwnContact, SlidTouch, RimHeld}`, carried to `util::par`'s workers by `util::bypass`), and each gate
@@ -1971,9 +1985,29 @@ fitted alone, its tubes sewn across the cuts and trimmed; a sheet refused as fol
 turns over. The stretches are sewn row by row (`sew::sewn_open`): a vertex merged only with other
 stretches' vertices on its own row, a row's rim cut only at that row's vertices — beside a
 swallowtail's point a stretch two-hundredths of a radian wide has its two rows within the tolerance
-of one another. **Not yet built**: the tumbling torus turned whole fits, is cut and sewn, and is
-refused in the trim, an edge of one sheet lying within a few tolerances of another over a long
-stretch, where no search proves their meeting; the thin one is refused there too. A double curve's
+of one another. A row is the cut it sews (#942 F3, by construction): `across` names which cut's row
+a face's parameters lie on, and the two stretches either side of a cut, fitted a billionth of the
+roll clear of it, have one row there — told apart by their parameters' values, 6.3e-9 of the roll
+apart beside the half turn's cut, no vertex of one was merged with the other's, nothing was sewn,
+and each stretch's row, lying along the next stretch's sheet, was searched for where it met it
+and not proved (gated with no sweep by
+`brep::two_stretches_of_a_sheet_fitted_either_side_of_a_cut_are_sewn_along_it_as_one_row`, and on
+the half turn's own sheets by
+`swept_rings::the_half_turns_stretches_are_sewn_across_its_cut_into_one_tube_a_contact_curve`).
+A curve a tube is cut along where it crosses the tool at an end pose carries, as its pcurve, the
+places on the face it was traced through and the meeting's own point settled between each two, each
+at the curve's own parameter there — the coarsest cubic through every so many whose image holds the
+curve's bar, a quarter of the tolerance, at each and at 64 places along it — and is inverted onto
+the face only where none holds (#942 F3, by construction: beside a fold pair's birth the leaf folds
+back on itself within 2e-4, and the half turn's cut, inverted from the line between its ends,
+landed on the other fold; gated in
+`swept_rings::the_half_turns_stretches_are_sewn_across_its_cut_into_one_tube_a_contact_curve`).
+**Not yet built**: the tumbling tori fit, are cut and sewn into one tube a contact curve, and are
+refused past the meetings their sewing settles — the torus turned whole where a piece of the torus
+at an end pose reads as the boundary facing behind; the thin one where its two tubes meet at under
+a hundredth of a degree, which the march cannot step along; the half turn where a piece of the leaf
+beside the fold pair's birth is the boundary at one point and not at another, parted by the pair's
+own double curve, which is not traced there. A double curve's
 points are placed on a stretch by the seams' angles of the stretch's own net (`rings::cut_along`),
 not by an instant read for each (#942 F4: the turned torus refused in 32 s where it took 106, 74 of
 them reading instants; the thin one in 58 s where it took over forty minutes); what is left is the

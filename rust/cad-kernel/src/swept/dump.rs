@@ -300,17 +300,21 @@ impl Arrangement {
     pub fn all(&self) -> Vec<usize> { (0..self.candidates.len()).collect() }
 }
 
-/// The meetings given an arrangement (#810), each by its two surfaces and its curves exactly.
+/// The meetings given an arrangement (#810), each by its two surfaces, its curves exactly, and the
+/// points where the two touch beside them (#942 F3; none written where there are none).
 fn givens(given: &[Given]) -> Result<Json,String> {
     Ok(Json::Arr(given.iter().map(|g| -> Result<Json,String> {
-        Ok(object([("surfaces",Json::Arr(vec![surface(&g.surfaces[0])?,surface(&g.surfaces[1])?])),
-            ("curves",Json::Arr(g.curves.iter().map(curve).collect::<Result<Vec<_>,_>>()?))]))
+        let mut fields = vec![("surfaces",Json::Arr(vec![surface(&g.surfaces[0])?,surface(&g.surfaces[1])?])),
+            ("curves",Json::Arr(g.curves.iter().map(curve).collect::<Result<Vec<_>,_>>()?))];
+        if !g.touches.is_empty() { fields.push(("touches",Json::Arr(g.touches.iter().map(|&p| v3(p)).collect()))) }
+        Ok(Json::Obj(fields.into_iter().map(|(k,v)| (k.to_string(),v)).collect()))
     }).collect::<Result<Vec<_>,_>>()?))
 }
 fn rgivens(j: &Json) -> Result<Vec<Given>,String> {
     j.arr().iter().map(|g| -> Result<Given,String> {
         let s = field(g,"surfaces")?.arr();
-        Ok(Given {surfaces:[rsurface(&s[0])?,rsurface(&s[1])?],curves:field(g,"curves")?.arr().iter().map(rcurve).collect::<Result<_,_>>()?})
+        let touches = g.get("touches").map_or(Vec::new(),|t| t.arr().iter().map(rv3).collect());
+        Ok(Given {surfaces:[rsurface(&s[0])?,rsurface(&s[1])?],curves:field(g,"curves")?.arr().iter().map(rcurve).collect::<Result<_,_>>()?,touches})
     }).collect()
 }
 

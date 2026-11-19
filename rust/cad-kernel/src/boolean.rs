@@ -808,8 +808,14 @@ pub fn arrangement_within(domain: &Brep,operands: &[&Brep],tol: f64) -> Result<C
 /// touch as a crossing or miss it. Its curves may end on one another (a ring's sheet touching the
 /// ring where it starts along its rim and crossing into it beside, read in its own domain,
 /// `swept::rings::traces`).
+///
+/// **And the points where the two touch** (#942 F3, `touches`): known by construction (a tool's
+/// face at an end pose meeting the sheet its neighbour's contact sweeps only where that contact
+/// crosses into it), the rest of their meeting, with the curves. An edge of either read against the
+/// other is read off both — where it crosses the curves, and where it passes through a touch point,
+/// touching — with no search: a touch is a double root, which no search proves by a change of sign.
 #[derive(Clone,Debug)]
-pub struct Given { pub surfaces: [Surface;2],pub curves: Vec<Curve> }
+pub struct Given { pub surfaces: [Surface;2],pub curves: Vec<Curve>,pub touches: Vec<V> }
 
 /// **`arrangement_within`, with meetings given** (#810): the domain split by the operands at once,
 /// each pair of surfaces a `Given` names met in the curves it gives, with no search.
@@ -1092,7 +1098,7 @@ fn arrange_phases<'a>(solids: &[&'a Brep],known: Option<&Known>,given: &[Given],
     ARRANGEMENT.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
     let mut arr = Arrangement::new(solids,known,tol);
     arr.meet = meet;
-    for g in given { arr.shared.give(&g.surfaces[0],&g.surfaces[1],&g.curves,tol); }
+    for g in given { arr.shared.give(&g.surfaces[0],&g.surfaces[1],&g.curves,&g.touches,tol); }
     // 1. every edge against every face of the other solid: where it crosses, a vertex on both
     let mut crossings = arr.crossings()?;
     // a root met flatly that is a crossing found besides is that crossing (`flat_roots`)
@@ -1326,16 +1332,19 @@ impl<'a> Arrangement<'a> {
         // search may). The search is read first: a crossing of two curves all but tangent — a rim
         // crossing a path near a fold of its contact — it settles where the curves' own polish
         // misses it
-        let mut by_given: Vec<Option<Vec<Curve>>> = Vec::with_capacity(asked.len());
+        let mut by_given: Vec<Option<(Vec<Curve>,Vec<V>)>> = Vec::with_capacity(asked.len());
         for &(s,other,i,fi,_,_) in &asked {
             let j = self.shared.index(&self.solids[other].faces[fi].surface,tol);
-            let mut curves = Vec::new();
+            let (mut curves,mut touches) = (Vec::new(),Vec::new());
             let mut all = !bounded[s][i].is_empty();
             for &h in &bounded[s][i] {
                 let k = self.shared.index(&self.solids[s].faces[h].surface,tol);
-                if self.shared.given(k,j) { curves.extend(self.shared.given_curves(k,j)) } else { all = false }
+                if self.shared.given(k,j) {
+                    curves.extend(self.shared.given_curves(k,j));
+                    touches.extend(self.shared.given_touches(k,j));
+                } else { all = false }
             }
-            by_given.push(all.then_some(curves));
+            by_given.push(all.then_some((curves,touches)));
         }
         let (solids,boxes) = (&self.solids,&self.boxes);
         let read = crate::util::par::map_in_order(&asked.iter().zip(&by_given).collect::<Vec<_>>(),|&(&(_,other,_,fi,e,c),given)| {
@@ -1345,14 +1354,14 @@ impl<'a> Arrangement<'a> {
             // that near
             let surface = &solids[other].faces[fi].surface;
             let meets = match (curve_surface_within(c,e.t,surface,tol.max(e.tol),boxes[other][fi],pad),given) {
-                (Meets::Refused(_),Some(curves)) => on_given(c,e.t,curves,surface,tol.max(e.tol)),
+                (Meets::Refused(_),Some((curves,touches))) => on_given(c,e.t,curves,touches,surface,tol.max(e.tol)),
                 // (a crossing the search found, where the meeting is given, is where the edge crosses
                 // the given curves: two sheets of a sweep crossing along a path at a degree, an edge
                 // crossing one where it crosses the other is read by the search that tolerance over
                 // the sine off the path, which a given meeting takes no vertex from — the drum's
                 // end rim's two fans, screwed through whole turns, sharing the path of the rim's
                 // points a turn's tenth apart)
-                (Meets::At(roots),Some(curves)) if !roots.is_empty() => match on_given(c,e.t,curves,surface,tol.max(e.tol)) {
+                (Meets::At(roots),Some((curves,touches))) if !roots.is_empty() => match on_given(c,e.t,curves,touches,surface,tol.max(e.tol)) {
                     Meets::At(exact) => {
                         let speed = c.speed().max(1e-300);
                         Meets::At(roots.into_iter().map(|(s,touch)| exact.iter().map(|&(x,_)| x)
@@ -1568,6 +1577,21 @@ impl<'a> Arrangement<'a> {
                 Ssi::Curves(cs) => {
                     let mut x = crossings_among(surfaces[0],&cs,self.shared(faces),self.pad,self.tol)?;
                     ends_on_one_another(&cs,&mut x,self.tol);
+                    // **a given meeting's curve that is an edge either face already has is that edge**
+                    // (#942 F3, identity by construction): a ring's tube cut along its crossing of the
+                    // tool where it starts, given that chord as their meeting, has it as an edge
+                    // already — laid once, not twice on itself. Its crossings with the meeting's other
+                    // curves are read first, and stay on them
+                    let (cs,x) = if self.shared.given(ids[0],ids[1]) {
+                        let mut kept = (Vec::new(),Vec::new());
+                        for (c,xc) in cs.into_iter().zip(x) {
+                            match self.edge_that_is(&c,faces) {
+                                Some((k,e)) => found.along_edges.push((self.working(faces.s[k],e),faces.s[1-k],faces.f[1-k])),
+                                None => { kept.0.push(c); kept.1.push(xc) }
+                            }
+                        }
+                        kept
+                    } else { (cs,x) };
                     (cs,x)
                 }
                 Ssi::Same => { found.same_pairs.push(faces); continue }
@@ -1614,6 +1638,17 @@ impl<'a> Arrangement<'a> {
             }
         }
         Ok(found)
+    }
+
+    /// **The edge of either of the two faces whose curve is `c` itself** (#942 F3: identity by
+    /// construction, no tolerance read) — which face's (0 or 1) and the edge, its own solid's.
+    fn edge_that_is(&self,c: &Curve,faces: Two) -> Option<(usize,usize)> {
+        (0..2).find_map(|k| {
+            let sol = self.solids[faces.s[k]];
+            sol.faces[faces.f[k]].loops.iter().flatten()
+                .find(|co| matches!(&sol.edges[co.edge as usize].curve,EdgeCurve::Curve(ec) if ec == c))
+                .map(|co| (k,co.edge as usize))
+        })
     }
 
     /// The edge of either of the two faces the traced curve `c` lies along, over all of it — which
@@ -2263,7 +2298,7 @@ fn at_its_ends(meets: Meets,c: &Curve,t: [f64;2],surface: &Surface,tol: f64) -> 
 /// along it where it lies within `ON_CURVE` tolerances of one of `curves` all its stretch `t`; else
 /// at each of its crossings with them, a touch where the surface's signed distance keeps its sign
 /// a step either side along the edge.
-fn on_given(c: &Curve,t: [f64;2],curves: &[Curve],surface: &Surface,tol: f64) -> Meets {
+fn on_given(c: &Curve,t: [f64;2],curves: &[Curve],touches: &[V],surface: &Surface,tol: f64) -> Meets {
     let reach = ON_CURVE*tol;
     let domain = |g: &Curve| super::query::curve_domain(g).unwrap_or([0.,1.]);
     let lies_along = |g: &Curve| {
@@ -2285,6 +2320,15 @@ fn on_given(c: &Curve,t: [f64;2],curves: &[Curve],surface: &Surface,tol: f64) ->
             };
             roots.push((s,touch));
         }
+    }
+    // (and where it passes through a point the two are given to touch at, #942 F3: a touch)
+    for &p in touches {
+        let s = c.inverse(p);
+        let s = match c.period() { Some(period) => super::geom::around(s,t[0],period),None => s };
+        let slack = reach/c.speed().max(1e-300);
+        if s < t[0]-slack || s > t[1]+slack || distance(c.point(s),p) > reach { continue }
+        if roots.iter().any(|r| (r.0-s).abs() <= 1e-9*(1.+s.abs())) { continue }
+        roots.push((s.clamp(t[0],t[1]),true));
     }
     roots.sort_by(|x,y| x.0.total_cmp(&y.0));
     Meets::At(roots)
