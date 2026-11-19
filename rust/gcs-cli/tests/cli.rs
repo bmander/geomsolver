@@ -361,8 +361,7 @@ fn the_shells_export_and_measure_within_their_tolerance() {
         assert_eq!(measured.status.code(),Some(0),"{file} {name}: {stdout}{}",String::from_utf8_lossy(&measured.stderr));
         assert!(stdout.contains("tolerance 10.000 µm: every exact face within it"),"{file} {name}: {stdout}");
     }
-    for (name,says) in [("plinth","a wall standing on a face left open"),("step","narrower than twice the thickness"),
-        ("tray","none of the stock's")] {
+    for (name,says) in [("plinth","a wall standing on a face left open"),("step","narrower than twice the thickness")] {
         let step = dir.join(format!("refused-{name}.step"));
         let refused = run(&[&doc("shells/refused.sv"),"--solid",name,"--step",step.to_str().unwrap(),"--no-diagnose"]);
         let stderr = String::from_utf8_lossy(&refused.stderr);

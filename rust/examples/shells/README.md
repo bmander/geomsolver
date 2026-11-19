@@ -39,7 +39,7 @@ Read them in this order:
 | `chimney.sv` | **A boss open at its top.** `plinth.boss.near` left open: the opening is carried out by a prism of itself before the walls are built, so they run up through it. Built exactly. |
 | `bosses.sv` | **Square and round.** A plate with a square boss and a round post, sealed: a quarter round along each edge of the square foot, one turned round the post's circle. Built exactly. |
 | `can.sv` | **A turned body.** A rectangle turned about its own edge, sealed: no prism, so built by its walls, the band moved in and the caps mitred to it. Built exactly: 3576π mm³. |
-| `refused.sv` | **What is not built**, read by the field and refused by an exact export, saying why: a boss standing on an opening (its wall's quarter round hangs below the opening), an L shelled thicker than half its arms (its walls meet), a pocket's faces left open (an opening is one of the stock's faces). |
+| `refused.sv` | **What is not built**, read by the field and refused by an exact export, saying why: a boss standing on an opening (its wall's quarter round hangs below the opening), and an L shelled thicker than half its arms (its walls meet). |
 
 `rust/gcs-core/tests/shell_examples.rs` holds each file to what its comments say: each exact
 body's volume to its closed form to 1e-9, each refusal's words. `rust/gcs-cli/tests/cli.rs`

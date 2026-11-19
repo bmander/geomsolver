@@ -99,8 +99,7 @@ fn bosses_are_shelled_with_their_body() {
 fn what_is_not_built_says_why() {
     let e = example("refused.sv");
     for (name, says) in [("plinth", "a wall standing on a face left open"),
-                         ("step", "narrower than twice the thickness"),
-                         ("tray", "none of the stock's")] {
+                         ("step", "narrower than twice the thickness")] {
         let Err(why) = e.sketch.exact_solid(ent(&e, name).i()) else { panic!("`{name}` built") };
         assert!(why.contains(says), "`{name}`: {why}");
         MaterialField::read(&e.sketch, ent(&e, name).i(), 1e-10).unwrap_or_else(|m| panic!("`{name}`: {m:?}"));

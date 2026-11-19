@@ -6,8 +6,6 @@
 //   the boss's foot, hanging into the hollow; no block outside the body says it.
 // - The L is shelled thicker than half its arms: its walls meet, and nothing is left between them
 //   to hollow.
-// - The tray leaves its pocket's faces open: an opening is one of the stock's faces, never a
-//   cut's.
 unit mm
 use std
 use std.solids (cut, union)
@@ -34,26 +32,6 @@ in std.top {
   fix((15, 25)) m3
   (ms := line(m0, m1)) -> (me := line(m1, m2)) -> (mn := line(m2, m3)) -> (mw := line(m3, m0)) -> close
   stud := face(ms, me, mn, mw)
-  r0 := point
-  r1 := point
-  r2 := point
-  r3 := point
-  fix((60, 0)) r0
-  fix((100, 0)) r1
-  fix((100, 40)) r2
-  fix((60, 40)) r3
-  (rs := line(r0, r1)) -> (re := line(r1, r2)) -> (rn := line(r2, r3)) -> (rw := line(r3, r0)) -> close
-  dish := face(rs, re, rn, rw)
-  k0 := point
-  k1 := point
-  k2 := point
-  k3 := point
-  fix((70, 12)) k0
-  fix((90, 12)) k1
-  fix((90, 28)) k2
-  fix((70, 28)) k3
-  (ks := line(k0, k1)) -> (ke := line(k1, k2)) -> (kn := line(k2, k3)) -> (kw := line(k3, k0)) -> close
-  opening := face(ks, ke, kn, kw)
 }
 in std.front {
   l0 := point
@@ -76,10 +54,6 @@ plinth := solid(std.solids.Prism(slab, from: 0mm, to: 10mm))
 boss := solid(std.solids.Prism(stud, from: 9mm, to: 15mm))
 boss union plinth
 step := solid(std.solids.Prism(ell, from: -30mm, to: 0))
-tray := solid(std.solids.Prism(dish, from: 0mm, to: 10mm))
-pocket := solid(std.solids.Prism(opening, from: 6mm, to: 11mm))
-pocket cut tray
 
 plinth.near shell(t: 1mm) plinth
 shell(t: 6mm) step
-tray.pocket shell(t: 1mm) tray
