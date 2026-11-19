@@ -750,3 +750,34 @@ pub(crate) fn torus_pushed_by_lines(centre: V,axis: V,big: f64,small: f64,push: 
     xs.dedup_by(|p,q| (*p-*q).abs() <= 1e-12);
     xs.windows(2).map(|w| kronrod(&across,w[0],w[1],tol*(w[1]-w[0])/(2.*reach))).sum()
 }
+
+/// **A bull-nose mill whose rim touches its contact's sheet mid-span is cut from the block** (#942
+/// F3's gate; brep-bench's `swept/bull-nose-pushed-in-at-a-lean`): `leaning_bullnose.sv`'s mill —
+/// radius 2, its corner rounded 0.5, 3 long, its axis leaning 30° toward `x`, pushed 8 straight down
+/// into the block until wholly in it — but turned from the meridian toward `(cos 30°, 0, −sin 30°)`,
+/// so the circle where its side meets its round, at each end pose, touches the sheet the round's
+/// contact sweeps at two points mid-span (`y = ±2`): where the contact crosses the seam into the
+/// side's rulings, on both by construction. A touch is a double root, which no search proves by a
+/// change of sign; given by the road where the side touches the sheet (`boolean::Given::touches`),
+/// it is read with no search. The block loses `Mill::plunged_away`, to 1e-9.
+#[test]
+fn a_bull_nose_whose_rim_touches_its_contacts_sheet_mid_span_is_cut_from_the_block() {
+    use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
+    use gcs_core::brep::trajectory::{Screw,Trajectory};
+    let (s,c) = 30f64.to_radians().sin_cos();
+    let (end,a,e) = ([0.,0.,4.],[s,0.,c],[c,0.,-s]);
+    let at = |r: f64,h: f64| add(add(end,scale(e,r)),scale(a,h));
+    let corner = Frame::new(at(1.5,0.5),cross(e,a),e);
+    let edges = vec![ProfileEdge::Line {a:at(0.,0.),b:at(1.5,0.)},ProfileEdge::Arc {frame:corner,r:0.5,span:Some([-PI/2.,0.])},
+        ProfileEdge::Line {a:at(2.,0.5),b:at(2.,3.)},ProfileEdge::Line {a:at(2.,3.),b:at(0.,3.)},ProfileEdge::Line {a:at(0.,3.),b:at(0.,0.)}];
+    let tool = revolve(&Profile {origin:end,normal:cross(a,e),loops:vec![edges],names:Vec::new()},end,a,TAU).unwrap();
+    let stock = gcs_core::brep::build::block([-8.,-8.,-8.],[8.,8.,0.]).unwrap();
+    let path = Trajectory::Twist(Screw {origin:end,axis:[0.,0.,-1.],ratio:0.,advance:8.});
+    let tol = gcs_core::brep::geom::tolerance(stock.size().max(tool.size()));
+    let cut = gcs_core::brep::swept::closed::cut_from(&stock,&tool,&path,[0.,TAU],0.002,tol)
+        .unwrap_or_else(|why| panic!("the mill's sweep not built: {why:?}"));
+    let mill = Mill {big:2.,c:0.5,top:0.,h:3.};
+    let want = 16.*16.*8.-mill.plunged_away(30f64.to_radians(),[0.,0.,-4.]);
+    let got = gcs_core::brep::props::volume(&cut);
+    assert!((got-want).abs() <= 1e-9*want,"the block cut: {got} against {want}");
+}

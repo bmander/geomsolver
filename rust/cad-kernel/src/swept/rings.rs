@@ -1463,7 +1463,7 @@ pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],rimmed: 
                     let mut curves: Vec<Curve> = Vec::new();
                     if rimmed[e] && holding[k].contains(&f) { curves.extend(rims[e].iter().cloned()) }
                     curves.extend(chords[e].iter().zip(&on).filter(|&(_,&g)| g == f).map(|((c,_),_)| c.clone()));
-                    given.push(Given {surfaces:[face.surface.clone(),surface.clone()],curves});
+                    given.push(Given {surfaces:[face.surface.clone(),surface.clone()],curves,touches:Vec::new()});
                 }
             }
         }
@@ -1651,8 +1651,11 @@ fn traces(r: &Reading) -> Vec<Vec<P2>> {
 
 /// **A trace of a meeting in space**: the face's points along it (`pts`, in its normalised domain;
 /// on the face exactly and on the tool to rounding), interpolated — a cubic through every so many of
-/// them, the coarsest within a quarter of `tol` of all — and those points in space.
-fn chord_curve(r: &Reading,pts: &[P2],tol: f64) -> Result<(Curve,Vec<V>),Unbuilt> {
+/// them, the coarsest within a quarter of `tol` of all — and those points in space; and the places
+/// on the face the curve passes, each at its own parameter of the curve (#942 F3): the traced
+/// points, and the meeting's own point settled halfway between each two, where the curve passes it
+/// nearest — its pcurve, by construction.
+fn chord_curve(r: &Reading,pts: &[P2],tol: f64) -> Result<(Curve,Vec<V>,Vec<(f64,P2)>),Unbuilt> {
     // (and between each two of them, where the cubic strays from the meeting's own point halfway
     // — settled on the tool across the face — by more than a quarter of `tol`, that point too: a
     // trace of three points into a vertex beside a meridian the end pose touches whole bowed 6e-8
@@ -1665,12 +1668,13 @@ fn chord_curve(r: &Reading,pts: &[P2],tol: f64) -> Result<(Curve,Vec<V>),Unbuilt
         for w in xs.windows(2) { params.push(params.last().unwrap()+norm(crate::util::space::sub(w[1],w[0])).max(1e-300)) }
         let length = *params.last().unwrap();
         let mut more: Vec<(usize,P2)> = Vec::new();
+        let mut on: Vec<(f64,P2)> = vec![(0.,pts[0])];
         for i in 0..pts.len()-1 {
             let half = [0.5*(pts[i][0]+pts[i+1][0]),0.5*(pts[i][1]+pts[i+1][1])];
             // (a settling that ran a quarter of the way between the two off the middle met another
             // branch of the zero set, not this one)
             let Some(m) = settled(r,half).filter(|m| (m[0]-half[0]).hypot(m[1]-half[1])
-                <= 0.25*(pts[i][0]-pts[i+1][0]).hypot(pts[i][1]-pts[i+1][1])) else { continue };
+                <= 0.25*(pts[i][0]-pts[i+1][0]).hypot(pts[i][1]-pts[i+1][1])) else { on.push((params[i+1]/length,pts[i+1])); continue };
             let x = r.at(m[0],m[1]).0;
             // (the cubic's nearest point to it between the two, by golden sections)
             let off = |t: f64| norm(crate::util::space::sub(curve.point(t),x));
@@ -1680,11 +1684,17 @@ fn chord_curve(r: &Reading,pts: &[P2],tol: f64) -> Result<(Curve,Vec<V>),Unbuilt
                 if off(m1) <= off(m2) { hi = m2 } else { lo = m1 }
             }
             if off(0.5*(lo+hi)) > 0.25*tol { more.push((i+1,m)) }
+            on.push((0.5*(lo+hi),m));
+            on.push((params[i+1]/length,pts[i+1]));
         }
-        if more.is_empty() { return Ok((curve,xs)) }
+        if more.is_empty() { return Ok((curve,xs,on)) }
         for (i,m) in more.into_iter().rev() { pts.insert(i,m) }
     }
-    curve_through(pts.iter().map(|&[x,y]| r.at(x,y).0).collect(),tol)
+    let (curve,xs) = curve_through(pts.iter().map(|&[x,y]| r.at(x,y).0).collect(),tol)?;
+    let mut params = vec![0.];
+    for w in xs.windows(2) { params.push(params.last().unwrap()+norm(crate::util::space::sub(w[1],w[0])).max(1e-300)) }
+    let length = *params.last().unwrap();
+    Ok((curve,xs,params.iter().map(|p| p/length.max(1e-300)).zip(pts).collect()))
 }
 
 /// A place on a face's normalised square moved onto `G`'s zero set by Newton's steps along its
@@ -1741,12 +1751,17 @@ fn curve_through(xs: Vec<V>,tol: f64) -> Result<(Curve,Vec<V>),Unbuilt> {
     for w in xs.windows(2) { params.push(params.last().unwrap()+norm(crate::util::space::sub(w[1],w[0])).max(1e-300)) }
     let length = *params.last().unwrap();
     let params: Vec<f64> = params.iter().map(|p| p/length.max(1e-300)).collect();
+    curve_through_at(xs,&params,tol)
+}
+
+/// `curve_through` at the parameters `params` given each point (increasing, from 0 to 1).
+fn curve_through_at(xs: Vec<V>,params: &[f64],tol: f64) -> Result<(Curve,Vec<V>),Unbuilt> {
     let thinned = |stride: usize| -> Option<crate::nurbs::BSpline> {
         let mut keep: Vec<usize> = (0..xs.len()).step_by(stride).collect();
         if *keep.last().unwrap() != xs.len()-1 { keep.push(xs.len()-1) }
         if keep.len() < 2 { return None }
         let c = crate::nurbs::interpolate(&keep.iter().map(|&i| xs[i]).collect::<Vec<_>>(),&keep.iter().map(|&i| params[i]).collect::<Vec<_>>(),3)?;
-        xs.iter().zip(&params).all(|(&x,&t)| norm(crate::util::space::sub(c.point(t),x)) <= 0.25*tol).then_some(c)
+        xs.iter().zip(params).all(|(&x,&t)| norm(crate::util::space::sub(c.point(t),x)) <= 0.25*tol).then_some(c)
     };
     let curve = [64,32,16,8,4,2,1].into_iter().find_map(thinned).ok_or_else(|| Unbuilt::Failed("a ring's sheet's meeting with the \
         tool could not be interpolated".into()))?;
@@ -2123,7 +2138,35 @@ fn trimmed(net: &Net,roll: [f64;2],mut faces: Vec<Trimmed>,tol: f64) -> Result<(
                             Some(edge) => edge,
                             None => {
                                 let (curve,xs) = match face.readings.get(*e).and_then(|r| r.as_ref()) {
-                                    Some(r) => chord_curve(r,pts,tol)?,
+                                    Some(r) => {
+                                        let (curve,xs,on) = chord_curve(r,pts,tol)?;
+                                        // **its pcurve the places on the face it passes** (#942 F3, by
+                                        // construction): each at the curve's own parameter there, not the curve
+                                        // inverted onto the face from the line between its ends — beside a fold
+                                        // pair's birth the face's sheet folds back on itself within 2e-4, and the
+                                        // inverse landed on the other fold (the tumbling torus's half turn)
+                                        let uvs: Vec<V> = on.iter().map(|&(_,[x,y])| [u0+x,t_of(y),0.]).collect();
+                                        let ts: Vec<f64> = on.iter().map(|&(t,_)| t).collect();
+                                        // (the coarsest cubic through every so many of them — as the curve is
+                                        // drawn — whose image holds the curve's own bar, a quarter of `tol`, at
+                                        // each of them and at 64 places along it: beside the birth itself, where
+                                        // the leaf has no width, the places the trace passes are no guide, none
+                                        // holds, and the curve is inverted as before)
+                                        let holds = |pc: &crate::nurbs::BSpline| {
+                                            let at = |t: f64| { let q = pc.point(t); norm(crate::util::space::sub(surface.point([q[0],q[1]]),curve.point(t))) };
+                                            ts.iter().all(|&t| at(t) <= 0.25*tol) && (0..=64).all(|j| at(j as f64/64.) <= 0.25*tol)
+                                        };
+                                        let pc = ts.windows(2).all(|w| w[1] > w[0]).then(|| [64,32,16,8,4,2,1].into_iter().find_map(|stride: usize| {
+                                            let mut keep: Vec<usize> = (0..uvs.len()).step_by(stride).collect();
+                                            if *keep.last().unwrap() != uvs.len()-1 { keep.push(uvs.len()-1) }
+                                            if keep.len() < 2 { return None }
+                                            let pc = crate::nurbs::interpolate(&keep.iter().map(|&k| uvs[k]).collect::<Vec<_>>(),
+                                                &keep.iter().map(|&k| ts[k]).collect::<Vec<_>>(),3.min(keep.len()-1))?;
+                                            holds(&pc).then_some(pc)
+                                        })).flatten();
+                                        if let Some(pc) = pc { chord_pcurves[i] = Some(Pcurve::Curve(Arc::new(Curve::BSpline(Arc::new(pc))))) }
+                                        (curve,xs)
+                                    }
                                     // (the double curve: through the net's points along it)
                                     None => {
                                         // (refined until the surface between each two points stands within a

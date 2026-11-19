@@ -246,3 +246,145 @@ fn a_torus_turned_across_a_block_is_cut_from_it() {
     let v = gcs_core::brep::props::volume(&built);
     assert!((v-57.566).abs() < 0.1,"{v}");
 }
+
+/// **A tube's chord given as its meeting with the tool is its own edge, laid once** (#942 F3's
+/// class B gate, `boolean`'s given meetings): the ring of brep-bench's `ring-along-a-spline`, a
+/// torus carried along a cubic in the plane, its two tubes entered where they cross the torus at
+/// each end pose (`rings::entered`), each cut along that crossing and given it — a span of a
+/// curve of several spans — as its meeting with the torus there. The tube has that chord as an
+/// edge already, the very curve: arranged in the stock with the torus at the pose it ends on, each
+/// tube is split into cells, where laying the chord a second time on itself left the tube's face
+/// open ("a bspline's pieces do not close", "a bspline has a hole in no piece").
+#[test]
+fn a_tubes_chord_given_as_its_meeting_with_the_tool_is_its_own_edge_laid_once() {
+    use gcs_core::brep::boolean::arrangement_given;
+    use gcs_core::brep::swept::rings::{entered,fitted,posed};
+    use gcs_core::brep::topo::EdgeCurve;
+    use gcs_core::brep::trajectory::{Motion,Path};
+    /// The frame along a curve in the plane `z = 0`: its `x` along the curve's tangent, its `z` up.
+    #[derive(Debug)]
+    struct Along(gcs_core::brep::nurbs::BSpline);
+    impl Path for Along {
+        fn at(&self,t: f64) -> Result<Motion,gcs_core::brep::KernelError> {
+            let (point,d,dd) = self.0.d2(t);
+            let speed2 = d[0]*d[0]+d[1]*d[1];
+            let (c,s) = (d[0]/speed2.sqrt(),d[1]/speed2.sqrt());
+            let turning = (d[0]*dd[1]-d[1]*dd[0])/speed2;
+            let r = [[c,-s,0.],[s,c,0.],[0.,0.,1.]];
+            let dr = [[-s*turning,-c*turning,0.],[c*turning,-s*turning,0.],[0.;3]];
+            Ok(Motion::of_parts(r,dr,point,d))
+        }
+    }
+    let stock = crate::brep::block([-6.,-6.,-8.],[36.,26.,0.]);
+    let tool = gcs_core::brep::build::torus([0.,0.,0.5],[0.,1.,0.],1.5,0.5).unwrap();
+    let curve = gcs_core::brep::nurbs::BSpline::new(3,vec![0.,0.,0.,0.,1.,1.,1.,1.],
+        vec![[0.,0.,0.],[10.,0.,0.],[20.,20.,0.],[30.,20.,0.]]).unwrap();
+    let path = Trajectory::General(std::sync::Arc::new(Along(curve)));
+    let tol = gcs_core::brep::geom::tolerance(stock.size().max(tool.size()));
+    let ring = Ring::read(&tool).unwrap();
+    // (the build's fit, a tenth of its tolerance: the contact keeps its shape over the roll, and
+    // its tubes cross themselves nowhere)
+    let fit = fitted(&ring,&path,[0.,1.],0.1*tol).unwrap();
+    assert!(fit.seeds.is_empty(),"no narrow pair's leaves cross");
+    let ends = [0.,1.].map(|t| posed(&tool,&ring,&path,&fit,t).unwrap());
+    let poses = [0.,1.].map(|t| path.pose(t).unwrap());
+    let (tubes,given) = entered(&fit,&ring,[&ends[0],&ends[1]],poses,tol).unwrap();
+    assert_eq!(tubes.len(),2,"a tube for each contact curve");
+    for (k,tube) in tubes.iter().enumerate() {
+        // a curve given is a span of several of a curve that is one of the tube's edges
+        let own = |e: &gcs_core::brep::topo::Edge| given.iter().flat_map(|g| &g.curves)
+            .any(|c| matches!(&e.curve,EdgeCurve::Curve(ec) if ec == c));
+        assert!(tube.edges.iter().any(|e| own(e) && e.t[0] > 0.5),
+            "tube {k}: no chord given that is a later span of its own edge");
+        let complex = arrangement_given(&stock,&[&ends[k],tube],&given,tol)
+            .unwrap_or_else(|e| panic!("tube {k} with the torus where it ends: {e}"));
+        let cells = complex.cells().unwrap().len();
+        assert!(cells >= 2,"tube {k}: {cells} cells");
+        // and each chord laid once: no two of the complex's edges on one curve over one stretch
+        let es = &complex.b.edges;
+        for (i,e) in es.iter().enumerate() {
+            let EdgeCurve::Curve(c) = &e.curve else { continue };
+            let [a0,a1] = [e.t[0].min(e.t[1]),e.t[0].max(e.t[1])];
+            assert!(!es[i+1..].iter().any(|f| matches!(&f.curve,EdgeCurve::Curve(d) if d == c)
+                && f.t[0].min(f.t[1]) < a1 && f.t[0].max(f.t[1]) > a0),
+                "tube {k}: edge {i}'s curve laid twice over one stretch");
+        }
+    }
+}
+
+/// **The half turn's stretches are sewn across its cut into one tube a contact curve** (#942 F3,
+/// class B on the sheets a sweep makes): brep-bench's `tumbling-torus-half-turn`, a
+/// torus of tube 0.16 turned 0.375 a radian about one line and back a radian about another over
+/// half a turn, its contact changing shape where a fold pair is born, at 1.4766, and its roll cut
+/// there. Each stretch is fitted a billionth of the roll clear of the cut, and its row there lies
+/// along the next stretch's sheet: one row, by construction, the cut's. Sewn so, its four pieces
+/// are two tubes, each row edge bounding a face of either stretch — where, the two rows told apart
+/// by their parameters' values (6.3e-9 of the roll apart), nothing was sewn, and the row lying
+/// along the next sheet was searched for where it met it and not proved.
+#[test]
+fn the_half_turns_stretches_are_sewn_across_its_cut_into_one_tube_a_contact_curve() {
+    use gcs_core::brep::swept::rings::{changes,entered_at,fitted_over,posed};
+    use gcs_core::brep::trajectory::Screw;
+    let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.16).unwrap();
+    let (sl,cl) = 30f64.to_radians().sin_cos();
+    let (sa,ca) = 20f64.to_radians().sin_cos();
+    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.375,advance:0.});
+    let frame = Trajectory::Twist(Screw {origin:[0.,0.7071*cl,0.7071*sl],axis:[ca,sa*cl,sa*sl],ratio:1.,
+        advance:0.});
+    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
+    let [a,b] = [-90f64.to_radians(),90f64.to_radians()];
+    let tol = 0.16/50_000.;
+    let ring = Ring::read(&tool).unwrap();
+    let (scale,cuts) = changes(&ring,&path,[a,b]).unwrap();
+    assert_eq!(cuts.len(),1,"the contact changes shape once: {cuts:?}");
+    assert!((cuts[0]-1.4766).abs() < 1e-4,"{cuts:?}");
+    // the stretches as the road fits them, a billionth of the roll clear of the cut
+    let eps = 1e-9*(b-a);
+    let stretches = [[a,cuts[0]-eps],[cuts[0]+eps,b]];
+    let fits: Vec<_> = stretches.iter().map(|&sp| fitted_over(&ring,&path,[a,b],sp,scale,0.1*tol).unwrap())
+        .collect();
+    assert!(fits.iter().all(|f| f.seeds.is_empty()),"no narrow pair's leaves cross");
+    let start = posed(&tool,&ring,&path,&fits[0],a).unwrap();
+    let end = posed(&tool,&ring,&path,&fits[1],b).unwrap();
+    let poses = [path.pose(a).unwrap(),path.pose(b).unwrap()];
+    let mut pieces = Vec::new();
+    for (k,fit) in fits.iter().enumerate() {
+        let at = [Some((&start,poses[0])),Some((&end,poses[1]))];
+        pieces.extend(entered_at(fit,&ring,at,[k == 0,k == 1],tol).unwrap().0);
+    }
+    assert_eq!(pieces.len(),4,"two tubes a stretch");
+    // and each curve a tube is cut along at an end pose carries, as its pcurve, the places on the
+    // face it passes, each at the curve's own parameter there, where that holds the curve's bar (a
+    // quarter of the tolerance): the end pose's cut beside the fold pair's birth among them, which
+    // inverted onto the leaf landed on the other fold, 2.2e-4 off
+    let (mut chords,mut worst) = (0,0f64);
+    for piece in &pieces {
+        for f in &piece.faces {
+            for c in f.loops.iter().flatten() {
+                let e = &piece.edges[c.edge as usize];
+                let gcs_core::brep::topo::Pcurve::Curve(_) = &c.pcurve else { continue };
+                chords += 1;
+                for j in 0..=64 {
+                    let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/64.;
+                    let on = f.surface.point(c.pcurve.at(t,e,&f.surface,&piece.vertices));
+                    worst = worst.max(gcs_core::space::distance(on,e.point(t,&piece.vertices)));
+                }
+            }
+        }
+    }
+    assert!(chords >= 3,"{chords} chords given the places they pass as their pcurves");
+    assert!(worst <= 0.25*tol,"a chord's pcurve stands {worst:e} off it, its bar {:e}",0.25*tol);
+    // sewn along the cut's row, the one there is
+    let row = 0.5*(fits[0].roll[1]+fits[1].roll[0]);
+    let across = |uv: [f64;2]| ((uv[1]-row).abs() <= 1e-6*(b-a)).then_some(0);
+    let sewn = gcs_core::brep::sew::sewn_open(&pieces,tol,&across).unwrap();
+    assert_eq!(gcs_core::brep::sew::parts(&sewn).len(),2,"one tube a contact curve");
+    let uses = sewn.uses();
+    for (i,e) in sewn.edges.iter().enumerate() {
+        let (fi,li,ci) = uses[i][0];
+        let f = &sewn.faces[fi];
+        let uv = f.loops[li][ci].pcurve.at(0.5*(e.t[0]+e.t[1]),e,&f.surface,&sewn.vertices);
+        if across(uv).is_none() { continue }
+        assert_eq!(uses[i].len(),2,"row edge {i} bounds {} faces",uses[i].len());
+    }
+}

@@ -932,8 +932,16 @@ fn touches_given(touches: &[Touch],entered: &[Option<std::ops::Range<usize>>],so
         let points = t.samples();
         let holds = |s: &&Surface| points.iter().all(|&x| s.implicit(x).abs() <= 64.*tol);
         let surface = |r: std::ops::Range<usize>| solids[r].iter().flat_map(|b| &b.faces).map(|f| &f.surface).find(holds).cloned();
-        Some(crate::boolean::Given {surfaces:[surface(r0)?,surface(r1)?],curves:t.curves.clone()})
-    }).collect()
+        // (points of touching alone: every face of the first's solids holding them, each against the
+        // second's surface holding them — the rim the points lie on bounds two faces of it, and an
+        // edge is read off given meetings only where every face it bounds has one)
+        if t.curves.is_empty() {
+            let other = surface(r1)?;
+            let faces: Vec<Surface> = solids[r0].iter().flat_map(|b| &b.faces).map(|f| &f.surface).filter(holds).cloned().collect();
+            return Some(faces.into_iter().map(|s| crate::boolean::Given {surfaces:[s,other.clone()],curves:Vec::new(),touches:t.touches.clone()}).collect())
+        }
+        Some(vec![crate::boolean::Given {surfaces:[surface(r0)?,surface(r1)?],curves:t.curves.clone(),touches:Vec::new()}])
+    }).flatten().collect()
 }
 
 /// A box's eight corners.
@@ -1131,7 +1139,7 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
         // (sewn only along the rows at the cuts: the double curve's chords on its two leaves are
         // one curve in space, and left to the trim)
         let rows: Vec<f64> = fits.windows(2).map(|w| 0.5*(w[0].roll[1]+w[1].roll[0])).collect();
-        let across = |uv: crate::geom::Uv| rows.iter().any(|&r| (uv[1]-r).abs() <= 1e-6*(b-a));
+        let across = |uv: crate::geom::Uv| rows.iter().position(|&r| (uv[1]-r).abs() <= 1e-6*(b-a));
         let sewn = crate::sew::sewn_open(&pieces,tol,&across).map_err(|e| Unbuilt::Failed(format!("a ring's tubes not sewn across the cuts: {}",e.msg)))?;
         let parts = crate::sew::parts(&sewn);
         if crate::debug() {
@@ -1519,13 +1527,17 @@ pub(crate) fn contour_sheet(arc: &crate::slid::Slid,[h0,h1]: [f64;2]) -> Result<
 
 /// **A touch known by construction** (#810, #780 R5): two candidates, by their index among the
 /// build's (`cutters`), and the curves that are the whole meeting of the faces of their solids that
-/// hold them (`boolean::Given`).
+/// hold them (`boolean::Given`) — or, with none, the points they touch at and nowhere else (#942
+/// F3: a tool's face at an end pose meeting the sheet its neighbour's contact sweeps where that
+/// contact crosses into it, every face of its solid then given those points).
 #[derive(Clone,Debug)]
-struct Touch { cutters: [usize;2],curves: Vec<Curve> }
+struct Touch { cutters: [usize;2],curves: Vec<Curve>,touches: Vec<V> }
 
 impl Touch {
-    /// Points along its curves, over each one's own span (a line about its point).
+    /// Points along its curves, over each one's own span (a line about its point), or its points of
+    /// touching where it has no curves.
     fn samples(&self) -> Vec<V> {
+        if self.curves.is_empty() { return self.touches.clone() }
         self.curves.iter().flat_map(|c| {
             let [a,b] = match c {
                 Curve::Line {..} => [-1.,1.],

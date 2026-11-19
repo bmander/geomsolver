@@ -235,7 +235,7 @@ fn completed(w: &Witness,candidates: &[&Brep],located: &[crate::query::Located],
                 gave += traced.len();
                 let n = match had {
                     Some(n) => { given[n].curves.extend(traced); n }
-                    None => { given.push(Given {surfaces:[s.clone(),sg.clone()],curves:traced}); given.len()-1 }
+                    None => { given.push(Given {surfaces:[s.clone(),sg.clone()],curves:traced,touches:Vec::new()}); given.len()-1 }
                 };
                 pairs.insert(key);
                 pair_given(&given[n],candidates,bounding,boxes,pairs,4.*tol,tol);

@@ -460,3 +460,70 @@ fn a_meeting_crossing_an_edge_lying_in_the_other_surface_cuts_it_there() {
         assert!(!b.edges.iter().any(|e| cut(e) && joins(e,side,left)),"at {tol:e}: a cut laid to the face's corner");
     }
 }
+
+/// **A rim touching a wall at points given is read there, with no search** (#942 F3's class A
+/// gate, no sweep in it): a drum of radius 2 standing in a channel whose two walls are a parabola
+/// `y = ±(2 + (z − 1)²/4)` carried along `x` (a quadratic spline's extrusion), so its top rim
+/// touches each wall at one point, `(0, ±2, 1)`, without crossing it — a double root no search
+/// proves by a change of sign, and the search for where the circle meets the extrusion halves its
+/// boxes until it runs out of them (as the bull nose's rim at a lean did against the sheet its
+/// contact sweeps). Given the walls' meetings with the drum's top and side — the top's the ruling
+/// through the point, the side's nothing but the point — and the two points where they touch, the
+/// arrangement reads the rim there with no search: the drum `4π` and the channel `6 · 56/3` to the
+/// rounding, each point a vertex (given the meetings without the points, the rim is not parted
+/// there: the ruling it touches is no crossing).
+#[test]
+fn a_rim_touching_a_wall_at_points_given_is_read_there_with_no_search() {
+    use gcs_core::brep::boolean::{arrangement_given,Given};
+    use gcs_core::brep::build::{Profile,ProfileEdge};
+    use gcs_core::brep::ssi::{intersect,Ssi};
+    use gcs_core::space::distance;
+    let quad = |p: [[f64;3];3]| ProfileEdge::Spline(std::sync::Arc::new(
+        gcs_core::brep::geom::BSpline::new(2,vec![0.,0.,0.,1.,1.,1.],p.to_vec()).unwrap()));
+    // the channel's section in the plane x = −3, carried to x = 3: each wall's spline from
+    // (±3, −1) to (±3, 3), its middle pole (±1, 1), so y − 2 = (2s − 1)² and z = 4s − 1
+    let at = |y: f64,z: f64| [-3.,y,z];
+    let section = Profile {names:vec![],origin:at(0.,0.),normal:[1.,0.,0.],loops:vec![vec![
+        quad([at(3.,-1.),at(1.,1.),at(3.,3.)]),ProfileEdge::Line {a:at(3.,3.),b:at(-3.,3.)},
+        quad([at(-3.,3.),at(-1.,1.),at(-3.,-1.)]),ProfileEdge::Line {a:at(-3.,-1.),b:at(3.,-1.)}]]};
+    let channel = prism(&section,0.,6.).unwrap();
+    let drum = prism(&disc([0.;3],[0.,0.,1.],2.),0.,1.).unwrap();
+    let domain = block([-5.;3],[5.;3]);
+    let touches = vec![[0.,2.,1.],[0.,-2.,1.]];
+    // each wall's meeting with the drum's top (the ruling through its point, in closed form) and
+    // with its side (nothing but the point), and the point where the rim touches it
+    let walls: Vec<_> = channel.faces.iter().filter(|f| f.surface.kind() == "extrusion").collect();
+    assert_eq!(walls.len(),2,"two walls, each an extrusion");
+    let side = drum.faces.iter().find(|f| f.surface.kind() == "cylinder").unwrap();
+    let top = drum.faces.iter()
+        .find(|f| f.surface.kind() == "plane" && f.surface.point([0.,0.])[2] > 0.5).unwrap();
+    let mut given = Vec::new();
+    for w in &walls {
+        let on = |p: [f64;3]| distance(w.surface.point(w.surface.inverse(p)),p) <= 1e-12;
+        let touch: Vec<_> = touches.iter().copied().filter(|&p| on(p)).collect();
+        assert_eq!(touch.len(),1,"each wall touched at one point");
+        let Ssi::Curves(ruling) = intersect(&top.surface,&w.surface,1e-9) else { panic!("its meeting") };
+        let (t,c) = (top.surface.clone(),side.surface.clone());
+        given.push(Given {surfaces:[t,w.surface.clone()],curves:ruling,touches:touch.clone()});
+        given.push(Given {surfaces:[c,w.surface.clone()],curves:Vec::new(),touches:touch});
+    }
+    let c = arrangement_given(&domain,&[&drum,&channel],&given,1e-9)
+        .unwrap_or_else(|e| panic!("the rim not read: {e}"));
+    let all = [&domain,&drum,&channel];
+    let inside = members(&c,&all,1e-9).unwrap();
+    let cells = c.cells().unwrap();
+    let held = |k: usize| -> f64 {
+        (1..cells.len()).filter(|&i| inside[i][k]).map(|i| cells[i].volume).sum()
+    };
+    close(held(1),4.*std::f64::consts::PI,1e-12);
+    close(held(2),112.,1e-12);
+    for p in &touches {
+        let off = c.b.vertices.iter().map(|v| distance(v.p,*p)).fold(f64::INFINITY,f64::min);
+        assert!(off <= 1e-12,"the touch at {p:?} a vertex: {off:e} off");
+    }
+    // (with nothing given the search for where the rim meets a wall is refused: until a touch
+    // nothing constructed is proved, F3's second word, the road is to give what it knows)
+    let e = arrangement_given(&domain,&[&drum,&channel],&[],1e-9).err()
+        .expect("refused with nothing given");
+    assert!(e.contains("was not proved"),"{e}");
+}

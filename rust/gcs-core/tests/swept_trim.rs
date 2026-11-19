@@ -187,7 +187,7 @@ fn a_meeting_given_with_a_branch_left_out_is_completed_from_its_witness() {
             let Ssi::Curves(curves) = intersect(a,b,1e-7) else { continue };
             if !curves.iter().any(|c| c.kind() == "sheet cut") { continue }
             let curves: Vec<_> = curves.into_iter().filter(|c| c.kind() != "sheet cut").collect();
-            given.push(gcs_core::brep::boolean::Given {surfaces:[a.clone(),b.clone()],curves});
+            given.push(gcs_core::brep::boolean::Given {surfaces:[a.clone(),b.clone()],curves,touches:Vec::new()});
         }
     }
     assert!(!given.is_empty(),"a face's meeting with a helicoid patch to leave a branch out of");
@@ -254,7 +254,7 @@ fn a_ring_past_its_fold_is_trimmed_up_to_its_cusps() {
     let cylinder = trim::contour_cylinder(&outer.map(|h| h.at(centre,true)),span).unwrap();
     for (k,c) in ends.iter().enumerate() {
         given.push(gcs_core::brep::boolean::Given {surfaces:[surface(&tori[k]),surface(&cylinder)],
-            curves:outer.iter().map(|h| Curve::Slid(std::sync::Arc::new(h.at(*c,false)))).collect()});
+            curves:outer.iter().map(|h| Curve::Slid(std::sync::Arc::new(h.at(*c,false)))).collect(),touches:Vec::new()});
     }
     candidates.push(cylinder);
     for h in gcs_core::brep::slid::halves(f,big,small,d,-1.,false) {
@@ -268,7 +268,7 @@ fn a_ring_past_its_fold_is_trimmed_up_to_its_cusps() {
                 let contact = arc.at(*c,false);
                 let mut curves = vec![Curve::Slid(std::sync::Arc::new(contact))];
                 curves.extend(again(&contact,*c,axis,big,small));
-                given.push(gcs_core::brep::boolean::Given {surfaces:[surface(&tori[k]),surface(&sheet)],curves});
+                given.push(gcs_core::brep::boolean::Given {surfaces:[surface(&tori[k]),surface(&sheet)],curves,touches:Vec::new()});
             }
             candidates.push(sheet);
         }

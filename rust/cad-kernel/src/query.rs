@@ -257,21 +257,32 @@ pub fn crossings_in(surface: &Surface,a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2
     use crate::util::space::cross;
     if let Some(found) = curve_curve(a,ta,b,tb,tol) { return Ok(Some(found)) }
     if let Some(found) = screwed_crossings(a,ta,b,tb,tol) { return Ok(Some(found)) }
-    // the roots of `other` on the plane carrying `line` (a line or a circle), on it
+    // the roots of `other` on a surface carrying `line` (a line or a circle), on it
     let carried = |carrier: &Curve,span: [f64;2],other: &Curve,over: [f64;2]| -> Result<Option<Vec<(f64,V)>>,Refusal> {
-        let plane = match *carrier {
+        let held = match *carrier {
             Curve::Line {p,d} => {
                 let mid = add(p,scale(d,0.5*(span[0]+span[1])));
                 let Some(n) = crate::util::space::normalised(cross(d,surface.gradient(mid))) else { return Ok(None) };
-                super::geom::Frame::about(p,n)
+                Surface::Plane(super::geom::Frame::about(p,n))
             }
-            Curve::Circle(f,_) | Curve::Ellipse(f,..) => super::geom::Frame::about(f.o,f.z),
+            Curve::Circle(f,_) | Curve::Ellipse(f,..) => Surface::Plane(super::geom::Frame::about(f.o,f.z)),
             _ => return Ok(None),
         };
-        let roots = match curve_surface(other,over,&Surface::Plane(plane),tol) {
+        let roots = match curve_surface(other,over,&held,tol) {
             Meets::At(roots) => roots,
             Meets::Along => return Ok(None),
-            Meets::Refused(r) => return Err(r),
+            // (a circle's plane refused, its cylinder, #942 F3: a bull-nose's round touches its flat
+            // end's plane all along the circle they share, so a curve on the round reaching that
+            // circle touches the plane there — a double root no search proves — and crosses the
+            // circle's cylinder square; the plane first, a helix lying on the cylinder about a
+            // circle's axis crossing its plane)
+            Meets::Refused(r) => match *carrier {
+                Curve::Circle(f,radius) => match curve_surface(other,over,&Surface::Cylinder(f,radius.abs()),tol) {
+                    Meets::At(roots) => roots,
+                    _ => return Err(r),
+                },
+                _ => return Err(r),
+            },
         };
         let on = |q: V| -> Option<f64> {
             let mut t = carrier.inverse(q);
