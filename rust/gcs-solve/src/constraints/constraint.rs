@@ -497,7 +497,7 @@ impl Constraint {
         if self.kind.interior() {
             let free = self.measure_unknown(sk).is_some();
             let (n_par, n_const) =
-                self.interior_parts(sk).map_or((0, 0), |(r, _)| r.widths_free(free));
+                self.interior_parts(sk).map_or((0, 0), |(r, _)| r.widths(free));
             return Key::Interior { n_par, n_const };
         }
         // a flank's regularity within a blank, at its block's widths (#345) — a margin reading an
@@ -698,8 +698,7 @@ impl Constraint {
     pub fn made_row_at(&self, sk: &Sketch, coarser: f64) -> Result<InteriorRow, String> {
         match self.kind {
             CKind::Deflection => self.deflection_made(sk, coarser),
-            CKind::Mass | CKind::Volume | CKind::Area | CKind::Moment | CKind::Centroid
-            | CKind::CenterOfMass => self.measure_made(sk),
+            k if k.reads().is_some() => self.measure_made(sk),
             _ => Err("it reads no structure".into()),
         }
     }
@@ -745,9 +744,7 @@ impl Constraint {
     /// **The unknown a measure's number reads** (#953), bound to a column: its parameter, and the
     /// number's coefficient and constant — the row's last column, `m · u + c` what it states.
     pub fn measure_unknown(&self, sk: &Sketch) -> Option<(u32, f64, f64)> {
-        if !self.kind.interior() || self.kind == CKind::Deflection {
-            return None;
-        }
+        self.kind.reads()?;
         let (_, m) = self.measured(sk).ok()?;
         let (name, k) = m.free.as_ref()?;
         let q = *sk.free_vars.get(name)?;
@@ -790,8 +787,7 @@ impl Constraint {
                 let Some(Arg::Int(k)) = self.args.get(2) else { return None };
                 Some(MeshedKey::Deflection { scenario: usize::try_from(*k).ok()?, at, along })
             }
-            CKind::Mass | CKind::Volume | CKind::Area | CKind::Moment | CKind::Centroid
-            | CKind::CenterOfMass => Some(MeshedKey::Measure(self.measured(sk).ok()?.0)),
+            k if k.reads().is_some() => Some(MeshedKey::Measure(self.measured(sk).ok()?.0)),
             _ => None,
         }
     }
@@ -1241,32 +1237,19 @@ pub enum InteriorRow {
 }
 
 impl InteriorRow {
-    /// Its constants, stating the deflection `d`.
-    pub fn consts(&self, d: f64) -> Vec<f64> {
-        match self {
-            InteriorRow::Frame(r) => r.consts(d),
-            InteriorRow::Meshed(r) => r.consts(d),
-        }
-    }
-
-    /// Its widths, `(n_par, n_const)`.
-    pub fn widths(&self) -> (usize, usize) {
-        self.widths_free(false)
-    }
-
-    /// Its widths where an unknown sets what it states (#953): one column more, `[m, c]` stated.
-    pub fn widths_free(&self, free: bool) -> (usize, usize) {
-        match self {
-            InteriorRow::Frame(r) => r.structure.widths(free, &r.drive),
-            InteriorRow::Meshed(r) => r.structure.widths(free, &r.drive),
-        }
-    }
-
     /// Its constants, stating `stated`: `[J₀]`, or `[m, c]` where an unknown sets it (#953).
-    pub fn consts_stated(&self, stated: &[f64]) -> Vec<f64> {
+    pub fn consts(&self, stated: &[f64]) -> Vec<f64> {
         match self {
             InteriorRow::Frame(r) => r.structure.consts(stated, &r.drive),
             InteriorRow::Meshed(r) => r.structure.consts(stated, &r.drive),
+        }
+    }
+
+    /// Its widths, `(n_par, n_const)` — one column more where an unknown sets what it states.
+    pub fn widths(&self, free: bool) -> (usize, usize) {
+        match self {
+            InteriorRow::Frame(r) => r.structure.widths(free, &r.drive),
+            InteriorRow::Meshed(r) => r.structure.widths(free, &r.drive),
         }
     }
 

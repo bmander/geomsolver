@@ -410,15 +410,11 @@ impl Hull {
     /// The columns sheet `s` reads, its plane's among them, in order and once each.
     fn sheet_columns(&self, s: usize) -> Vec<usize> {
         let sheet = &self.sheets[s];
-        let frame_columns = |f: Option<usize>| match f.map(|f| &self.frames[f]) {
-            Some(Frame::Read(c)) => (*c..*c + 9).collect(),
-            _ => Vec::new(),
-        };
-        let mut out: Vec<usize> = frame_columns(sheet.frame());
+        let mut out: Vec<usize> = self.frame_columns(sheet.frame());
         match sheet {
             Sheet::Ordinate { at, along, t, .. } => {
                 for (f, own) in [at.reads(), along.reads()] {
-                    out.extend(frame_columns(f));
+                    out.extend(self.frame_columns(f));
                     out.extend(own);
                 }
                 out.extend(t.iter().copied());
@@ -479,6 +475,14 @@ impl Hull {
         }
     }
 
+    /// The nine columns plane `f` is read off, where it is read rather than held.
+    fn frame_columns(&self, f: Option<usize>) -> Vec<usize> {
+        match f.map(|f| &self.frames[f]) {
+            Some(Frame::Read(c)) => (*c..*c + 9).collect(),
+            _ => Vec::new(),
+        }
+    }
+
     /// **The point and the line a measure reads** (#953, `target`, `axis`) where the columns
     /// `col` reads stand.
     pub(crate) fn extras_at<T: Num>(&self, col: &dyn Fn(usize) -> T)
@@ -497,15 +501,11 @@ impl Hull {
 
     /// The columns the point and the line a measure reads read, each once.
     pub(crate) fn extra_columns(&self) -> Vec<usize> {
-        let frame_columns = |f: Option<usize>| match f.map(|f| &self.frames[f]) {
-            Some(Frame::Read(c)) => (*c..*c + 9).collect(),
-            _ => Vec::new(),
-        };
         let mut out = Vec::new();
         let reads = self.target.iter().map(Place::reads)
             .chain(self.axis.iter().flat_map(|(p, d)| [p.reads(), d.reads()]));
         for (f, own) in reads {
-            out.extend(frame_columns(f));
+            out.extend(self.frame_columns(f));
             out.extend(own);
         }
         out.sort_unstable();
@@ -521,9 +521,9 @@ impl Hull {
         // a held panel (#953): the plane of the triangle nearest the node where it stands
         if let Sheet::Facets { first, count } = self.sheets[s] {
             let at = p.map(|q| q.val());
-            let near = (first..first + count).min_by(|&a, &b| {
-                triangle_distance(&self.facets[a], at).total_cmp(&triangle_distance(&self.facets[b], at))
-            });
+            let near = (first..first + count)
+                .map(|f| (triangle_distance(&self.facets[f], at), f))
+                .min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, f)| f);
             let Some(f) = near else {
                 let nan = T::cst(f64::NAN);
                 return (nan, [nan; 3]);
@@ -977,62 +977,29 @@ impl Hull {
                         Axis::Read { a, d } => (2.0, [a as f64, d as f64, 0.0, 0.0, 0.0, 0.0]),
                     };
                     w[5] = kind;
-                    w[6..].copy_from_slice(&rest);
+                    w[6..12].copy_from_slice(&rest);
                 }
-                // its kind, its point's kind and three, its direction's kind and three, then its
-                // ordinate's number, coefficient and unknown's column past one (none: nothing)
                 Sheet::Facets { first, count } => {
                     w[..3].copy_from_slice(&[4.0, *first as f64, *count as f64]);
                 }
+                // its kind, its point's four and its direction's five (`place_code`,
+                // `direction_code`), then its ordinate's number, coefficient and unknown's
+                // column past one (none: nothing)
                 Sheet::Ordinate { at, along, c, m, t } => {
                     w[0] = 3.0;
-                    let (pk, pw) = match *at {
-                        Place::Held(q) => (0.0, q),
-                        Place::Space(c) => (1.0, [c as f64, 0.0, 0.0]),
-                        Place::Plane { frame, c } => (2.0, [frame as f64, c as f64, 0.0]),
-                        Place::Chart { frame, c } => (3.0, [frame as f64, c as f64, 0.0]),
-                    };
-                    let (dk, dw) = match *along {
-                        Direction::Held(d) => (0.0, d),
-                        Direction::Normal(f) => (1.0, [f as f64, 0.0, 0.0]),
-                        Direction::Read(c) => (2.0, [c as f64, 0.0, 0.0]),
-                        Direction::Toward(_) => unreachable!("a half-space's direction is its own"),
-                    };
-                    w[1] = pk;
-                    w[2..5].copy_from_slice(&pw);
-                    w[5] = dk;
-                    w[6..9].copy_from_slice(&dw);
-                    w[9] = *c;
-                    w[10] = *m;
-                    w[11] = t.map_or(0.0, |t| t as f64 + 1.0);
+                    w[1..5].copy_from_slice(&place_code(Some(*at)));
+                    w[5..10].copy_from_slice(&direction_code(Some(*along)));
+                    w[10] = *c;
+                    w[11] = *m;
+                    w[12] = t.map_or(0.0, |t| t as f64 + 1.0);
                 }
             }
             k.extend(w);
         }
-        // the point and the line a measure reads (#953): each kind past one (none: nothing), then
-        // three numbers — the point's, the line's point's, the line's direction's
-        let place = |p: &Option<Place>| match *p {
-            None => [0.0; 4],
-            Some(Place::Held(q)) => [1.0, q[0], q[1], q[2]],
-            Some(Place::Space(c)) => [2.0, c as f64, 0.0, 0.0],
-            Some(Place::Plane { frame, c }) => [3.0, frame as f64, c as f64, 0.0],
-            Some(Place::Chart { frame, c }) => [4.0, frame as f64, c as f64, 0.0],
-        };
-        k.extend(place(&self.target));
-        k.extend(place(&self.axis.map(|(p, _)| p)));
-        // the direction's kind past one, then four: its own three, or a second point's four
-        let mut w = [0.0; 5];
-        match self.axis.map(|(_, d)| d) {
-            None => {}
-            Some(Direction::Held(d)) => w = [1.0, d[0], d[1], d[2], 0.0],
-            Some(Direction::Normal(f)) => w[..2].copy_from_slice(&[2.0, f as f64]),
-            Some(Direction::Read(c)) => w[..2].copy_from_slice(&[3.0, c as f64]),
-            Some(Direction::Toward(b)) => {
-                w[0] = 4.0;
-                w[1..].copy_from_slice(&place(&Some(b)));
-            }
-        }
-        k.extend(w);
+        // the point and the line a measure reads (#953)
+        k.extend(place_code(self.target));
+        k.extend(place_code(self.axis.map(|(p, _)| p)));
+        k.extend(direction_code(self.axis.map(|(_, d)| d)));
         // the triangles held panels are drawn with (#953): how many, then each one's nine
         k.push(self.facets.len() as f64);
         k.extend(self.facets.iter().flatten());
@@ -1082,6 +1049,28 @@ impl Hull {
             })
         }).collect::<Option<_>>()?;
         let frame = |v: f64| count(v).filter(|&f| f < n_frames);
+        // what `place_code` and `direction_code` wrote: `None` for constants that are not whole,
+        // `Some(None)` for nothing
+        let place = |w: &[f64]| -> Option<Option<Place>> {
+            Some(Some(match count(w[0])? {
+                0 => return Some(None),
+                1 => Place::Held([w[1], w[2], w[3]]),
+                2 => Place::Space(col(w[1], 3)?),
+                3 => Place::Plane { frame: frame(w[1])?, c: col(w[2], 2)? },
+                4 => Place::Chart { frame: frame(w[1])?, c: col(w[2], 3)? },
+                _ => return None,
+            }))
+        };
+        let direction = |w: &[f64]| -> Option<Option<Direction>> {
+            Some(Some(match count(w[0])? {
+                0 => return Some(None),
+                1 => Direction::Held([w[1], w[2], w[3]]),
+                2 => Direction::Normal(frame(w[1])?),
+                3 => Direction::Read(col(w[1], 3)?),
+                4 => Direction::Toward(place(&w[1..5])??),
+                _ => return None,
+            }))
+        };
         let curve = |c: &[f64]| Some(match c[0] {
             z if z == 0.0 => Profile::Line { a: col(c[1], 2)?, b: col(c[2], 2)? },
             z if z == 1.0 => Profile::Circle { c: col(c[1], 2)?, r: col(c[2], 1)? },
@@ -1103,49 +1092,21 @@ impl Hull {
                 }
                 z if z == 4.0 => Sheet::Facets { first: count(s[1])?, count: count(s[2])? },
                 z if z == 3.0 => {
-                    let at = match s[1] {
-                        z if z == 0.0 => Place::Held([s[2], s[3], s[4]]),
-                        z if z == 1.0 => Place::Space(col(s[2], 3)?),
-                        z if z == 2.0 => Place::Plane { frame: frame(s[2])?, c: col(s[3], 2)? },
-                        z if z == 3.0 => Place::Chart { frame: frame(s[2])?, c: col(s[3], 3)? },
-                        _ => return None,
-                    };
-                    let along = match s[5] {
-                        z if z == 0.0 => Direction::Held([s[6], s[7], s[8]]),
-                        z if z == 1.0 => Direction::Normal(frame(s[6])?),
-                        z if z == 2.0 => Direction::Read(col(s[6], 3)?),
-                        _ => return None,
-                    };
-                    let t = match count(s[11])? {
+                    let at = place(&s[1..5])??;
+                    let along = direction(&s[5..10])??;
+                    let t = match count(s[12])? {
                         0 => None,
                         t => Some(col((t - 1) as f64, 1)?),
                     };
-                    Sheet::Ordinate { at, along, c: s[9], m: s[10], t }
+                    Sheet::Ordinate { at, along, c: s[10], m: s[11], t }
                 }
                 _ => return None,
             })
         }).collect::<Option<_>>()?;
         let e = take(EXTRAS)?;
-        let place = |w: &[f64]| -> Option<Option<Place>> {
-            Some(Some(match count(w[0])? {
-                0 => return Some(None),
-                1 => Place::Held([w[1], w[2], w[3]]),
-                2 => Place::Space(col(w[1], 3)?),
-                3 => Place::Plane { frame: frame(w[1])?, c: col(w[2], 2)? },
-                4 => Place::Chart { frame: frame(w[1])?, c: col(w[2], 3)? },
-                _ => return None,
-            }))
-        };
         let target = place(&e[..4])?;
         let axis_at = place(&e[4..8])?;
-        let along = match count(e[8])? {
-            0 => None,
-            1 => Some(Direction::Held([e[9], e[10], e[11]])),
-            2 => Some(Direction::Normal(frame(e[9])?)),
-            3 => Some(Direction::Read(col(e[9], 3)?)),
-            4 => Some(Direction::Toward(place(&e[9..13])??)),
-            _ => return None,
-        };
+        let along = direction(&e[8..13])?;
         let axis = match (axis_at, along) {
             (Some(p), Some(d)) => Some((p, d)),
             (None, None) => None,
@@ -1167,12 +1128,40 @@ impl Hull {
     }
 }
 
-/// A sheet's constants: its kind, its plane, its profile's three, its axis's kind and six.
-const SHEET: usize = 12;
+/// A sheet's constants: its kind, its plane, its profile's three, its axis's kind and six; a
+/// half-space's kind, its point's four, its direction's five and its ordinate's three.
+const SHEET: usize = 13;
 
 /// The constants of the point and the line a measure reads (#953): four each for the point and
 /// the line's point, five for the line's direction.
 const EXTRAS: usize = 13;
+
+/// **A place's constants** (#953): its kind past one (none: nothing), then three — held, its
+/// numbers; else its plane's index and its first column, or its first column alone.
+fn place_code(p: Option<Place>) -> [f64; 4] {
+    match p {
+        None => [0.0; 4],
+        Some(Place::Held(q)) => [1.0, q[0], q[1], q[2]],
+        Some(Place::Space(c)) => [2.0, c as f64, 0.0, 0.0],
+        Some(Place::Plane { frame, c }) => [3.0, frame as f64, c as f64, 0.0],
+        Some(Place::Chart { frame, c }) => [4.0, frame as f64, c as f64, 0.0],
+    }
+}
+
+/// **A direction's constants** (#953): its kind past one (none: nothing), then four — held, its
+/// three; a plane's index or a first column; or the second point's four (`place_code`).
+fn direction_code(d: Option<Direction>) -> [f64; 5] {
+    match d {
+        None => [0.0; 5],
+        Some(Direction::Held(v)) => [1.0, v[0], v[1], v[2], 0.0],
+        Some(Direction::Normal(f)) => [2.0, f as f64, 0.0, 0.0, 0.0],
+        Some(Direction::Read(c)) => [3.0, c as f64, 0.0, 0.0, 0.0],
+        Some(Direction::Toward(b)) => {
+            let p = place_code(Some(b));
+            [4.0, p[0], p[1], p[2], p[3]]
+        }
+    }
+}
 
 /// `(JJᵀ)⁻¹ φ` over a node's levels and their gradients (one, two or three): `None` where the
 /// sheets are not independent there.

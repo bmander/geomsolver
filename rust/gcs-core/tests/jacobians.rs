@@ -792,7 +792,8 @@ fn a_cut_and_a_turned_bodys_deflection_agree_with_finite_differences() {
     solid_row_agrees(&crate::hulls::shaft("0.0375mm"), 0..2, &mut rng);
 }
 
-/// **A mass and a volume, as the drawing states them** (`CKind::Mass`, `CKind::Volume`): a
+/// **A mass and a volume, as the drawing states them** (`CKind::Mass`, `CKind::Volume`, and #953's
+/// `CKind::Area`, `Moment` and `Centroid` over a barge's moved mesh): a
 /// frame's row over its points' lifts and the unknowns its areas read — a section's breadth,
 /// its area not affine in it, and an L's reach — a prism's over its face's points' numbers and
 /// its radii, its face's nodes moved with them (a round corner, a hole), and a turned shaft's, its
@@ -858,8 +859,20 @@ mass(0.17584kg) plate
 ";
     // a solid that is no prism, filled, its boundary moved by its sheets (#567)
     let turned = format!("{}volume(115 * 1cm^3) shaft\n", crate::measured::TURNED);
+    // where a body is made, and a face's measures (#953): a centroid's three rows, an area's and
+    // a second moment's, over a barge whose waterline is an unknown and whose centreline is drawn
+    // in its waterplane
+    let barge = crate::hydrostatics::floating("\
+volume(L * B * 40mm) immersed
+g := point hint((100, 0, 20))
+g centroid immersed
+param w: Length hint(50mm)
+area(L * w) immersed.water
+param k: Length hint(10mm)
+moment(k * L * B * 1mm, about: centreline) immersed.water
+");
     let mut rng = Rng::new(522);
-    for src in [frame, plate, &turned] {
+    for src in [frame, plate, &turned, &barge] {
         let mut sk = crate::common::solved(&crate::common::read(src));
         for round in 0..3 {
             if round > 0 {

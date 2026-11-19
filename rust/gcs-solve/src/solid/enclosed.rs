@@ -46,11 +46,6 @@ pub fn members(sk: &Sketch, si: usize) -> Option<&[Member]> {
     }
 }
 
-/// Whether region solid `si` is the inside of a closed shell.
-pub fn is_enclosed(sk: &Sketch, si: usize) -> bool {
-    members(sk, si).is_some()
-}
-
 /// **Region solid `si`'s shell read to `unit`**, where it is the inside of one — remembered
 /// against what it reads (`Caches::shell`) — or why it cannot be: a panel that cannot be read; a
 /// term beside it (the inside of a shell is a solid alone, kept or cut with others by the body
@@ -67,16 +62,8 @@ pub fn built(sk: &Sketch, si: usize, unit: f64) -> Option<Result<Rc<Shell>, Stri
                 Member::Sheet { rails, name } => {
                     let panel = crate::model::developed::built(sk, rails)
                         .map_err(|e| format!("its panel `{name}`: {e}"))?;
-                    let mut stations = panel.stations(tol);
-                    if stations.len() < 2 {
-                        return Err(format!("its panel `{name}` has too few rulings to draw"));
-                    }
-                    if stations.len() > MAX_STATIONS {
-                        let step = stations.len().div_ceil(MAX_STATIONS);
-                        let last = stations[stations.len() - 1];
-                        stations = stations.into_iter().step_by(step).collect();
-                        stations.push(last);
-                    }
+                    let stations = super::sheet::stations(&panel, tol, MAX_STATIONS)
+                        .ok_or_else(|| format!("its panel `{name}` has too few rulings to draw"))?;
                     Piece::Panel { stations, name: name.clone() }
                 }
             });
@@ -131,20 +118,6 @@ impl Shell {
                     out.push([t[0][0], t[0][1], t[0][2], t[1][0], t[1][1], t[1][2], t[2][0],
                               t[2][1], t[2][2]]);
                 }
-            }
-        }
-        out
-    }
-
-    /// The names of its faces, each once in the order its set names them.
-    pub fn face_names(&self) -> Vec<String> {
-        let mut out: Vec<String> = Vec::new();
-        for p in &self.pieces {
-            let n = match p {
-                Piece::Face { name, .. } | Piece::Panel { name, .. } => name,
-            };
-            if !out.contains(n) {
-                out.push(n.clone());
             }
         }
         out

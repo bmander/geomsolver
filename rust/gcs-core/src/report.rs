@@ -623,63 +623,54 @@ pub fn measure_answers(sk: &Sketch, measures: &[crate::program::MeasureStated])
     measures.iter().enumerate().filter_map(|(k, ms)| {
         let m = sk.measured.get(ms.index)?;
         let q = m.quantity;
-        // what it states where the drawing stands: its number, or what the unknown it reads came
-        // to (#953)
-        let target = m.stated(sk).unwrap_or(m.value);
-        let stated =
-            format!("{} {}", m.compare.text(), crate::measured::value_text(sk, q, target));
-        let read = crate::measured::read(sk, m);
-        let row = ms.driven.and_then(|id| sk.constraint(id))
-            .map(|c| c.residual(sk, &c.local_values(sk))[0] + target)
-            .filter(|v| v.is_finite());
-        let got = match (row, read) {
-            (Some(v), read) => Ok((v, read.ok().and_then(|r| r.1))),
-            (None, read) => read,
-        };
         let head = ms.head.clone();
         let grade = if m.claim { "claim" } else { "driving" };
-        // a point a measure puts (#953): where the measure puts it, the point the distance off it
-        if q.point() {
+        // a point a measure puts (#953): where the measure puts it, read once, and the point's
+        // distance off it; any other, its value — a stated one's its row's — and what it states,
+        // its number or what the unknown it reads came to
+        let (got, stated) = if q.point() {
             let got = crate::measured::read(sk, m)
-                .and_then(|(d, e)| Ok((d, e, crate::measured::centre(sk, m)?)));
-            let (value, error, holds, text) = match got {
-                Ok((d, error, c)) => {
-                    let keeps = crate::measured::keeps(m, d, error);
-                    let verdict = match (m.claim, keeps) {
-                        (true, true) => "claimed, kept",
-                        (true, false) => "claimed, refuted",
-                        (false, true) => "driven, held",
-                        (false, false) => "driven, not reached",
-                    };
-                    let at: Vec<String> = c.iter().map(|&x| crate::json::fmt_g(x, 6)).collect();
-                    let mut said = format!("({}){}", at.join(", "), sk.units.name());
-                    if let Some(e) = error {
-                        said = format!("{said} {}", crate::measured::error_text(sk, q, e));
-                    }
-                    if !keeps {
-                        said = format!("{said}, {} off it",
-                                       crate::measured::value_text(sk, q, d));
-                    }
-                    (Some(d), error, Some(keeps), format!("{head}: at {said}: {verdict}"))
-                }
-                Err(why) => (None, None, None, format!("{head} has no answer: {why}")),
+                .and_then(|(d, e)| Ok((d, e, Some(crate::measured::centre(sk, m)?))));
+            (got, String::new())
+        } else {
+            let target = m.stated(sk).unwrap_or(m.value);
+            let row = ms.driven.and_then(|id| sk.constraint(id))
+                .map(|c| c.residual(sk, &c.local_values(sk))[0] + target)
+                .filter(|v| v.is_finite());
+            let read = crate::measured::read(sk, m);
+            let got = match row {
+                Some(v) => Ok((v, read.ok().and_then(|r| r.1), None)),
+                None => read.map(|(v, e)| (v, e, None)),
             };
-            return Some(ScenarioAnswer { index: k, head, grade, value, error, holds, text });
-        }
+            (got, format!(" {} {}", m.compare.text(), crate::measured::value_text(sk, q, target)))
+        };
         let (value, error, holds, text) = match got {
-            Ok((v, error)) => {
-                let keeps = crate::measured::keeps_on(sk, m, v, error);
+            Ok((v, error, at)) => {
+                let keeps = crate::measured::keeps(sk, m, v, error);
+                let how = if m.claim { "claimed" } else { "driven" };
                 let verdict = match (m.claim, keeps) {
-                    (true, true) => format!("claimed {stated}, kept"),
-                    (true, false) => format!("claimed {stated}, refuted"),
-                    (false, true) => format!("driven {stated}, held"),
-                    (false, false) => format!("driven {stated}, not reached"),
+                    (true, true) => "kept",
+                    (true, false) => "refuted",
+                    (false, true) => "held",
+                    (false, false) => "not reached",
                 };
-                let mut said = crate::measured::value_text(sk, q, v);
+                let mut said = match at {
+                    Some(c) => {
+                        let at: Vec<String> = c.iter().map(|&x| crate::json::fmt_g(x, 6)).collect();
+                        format!("({}){}", at.join(", "), sk.units.name())
+                    }
+                    None => crate::measured::value_text(sk, q, v),
+                };
                 if let Some(e) = error {
                     said = format!("{said} {}", crate::measured::error_text(sk, q, e));
                 }
-                (Some(v), error, Some(keeps), format!("{head} is {said}: {verdict}"))
+                let text = match at {
+                    Some(_) if keeps => format!("{head}: at {said}: {how}, {verdict}"),
+                    Some(_) => format!("{head}: at {said}, {} off it: {how}, {verdict}",
+                                       crate::measured::value_text(sk, q, v)),
+                    None => format!("{head} is {said}: {how}{stated}, {verdict}"),
+                };
+                (Some(v), error, Some(keeps), text)
             }
             Err(why) => (None, None, None, format!("{head} has no answer: {why}")),
         };

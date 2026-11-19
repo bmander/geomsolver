@@ -42,8 +42,7 @@ impl Quantity {
 
     /// The word with its article, as a sentence says it: `a mass`, `an area`.
     pub fn a(self) -> String {
-        let w = self.word();
-        if w.starts_with(['a', 'e', 'i', 'o', 'u']) { format!("an {w}") } else { format!("a {w}") }
+        super::article(self.word())
     }
 
     /// The word's quantity, or `None` for any other word.

@@ -1001,11 +1001,6 @@ fn filled_row(sk: &Sketch, sc: &Scenario, solid: usize, at: usize, along: crate:
     Ok(prisms::Row { structure: s, drive: Drive::Moved(Mover::Hull(hull)), columns, x, coarser })
 }
 
-/// **The row of `mass(m) solid` or `volume(v) solid`** (`reads`), `solid` a filled body (#567):
-/// its exact boundary refined and filled once where the drawing stands, at a reading's size, its
-/// boundary's nodes moved by its sheets (`hulls::hull_of`) and its inner nodes left where they
-/// were meshed — a measure reads the boundary alone.  It reads no support and no load, and of a
-/// material only a mass's density.
 /* -- what a body is made of, and where (#953) ------------------------------------------------- */
 
 /// **The facets of face `f` of solid `solid`'s mesh**: those lying on the faces it names —
@@ -1106,20 +1101,15 @@ pub(crate) fn gauged(sk: &Sketch, m: &crate::model::Measured, coarser: f64)
     use crate::model::Quantity;
     let (c, mo) = centre(sk, m, coarser)?;
     match m.quantity {
-        Quantity::Area => Ok(mo[0]),
         Quantity::Moment => {
-            let (a, d) = axis_at(sk, m.about.ok_or("a second moment is about a line")?)?;
-            use crate::kernels::Num;
-            let k = |p: [f64; 3]| p.map(crate::kernels::Dual::<0>::cst);
-            let md = mo.map(crate::kernels::Dual::<0>::cst);
-            Ok(crate::interior::compose_value(crate::interior::What::Second, &md, None,
-                                              Some((k(a), k(d)))))
+            let axis = axis_at(sk, m.about.ok_or("a second moment is about a line")?)?;
+            Ok(crate::interior::compose_at(crate::interior::What::Second, &mo, None, Some(axis)))
         }
         Quantity::Centroid | Quantity::CenterOfMass => {
             let g = sk.world_point(m.at.ok_or("a centroid puts a point")?);
             Ok(crate::space::distance(c, g))
         }
-        Quantity::Mass | Quantity::Volume => Ok(mo[0]),
+        Quantity::Area | Quantity::Mass | Quantity::Volume => Ok(mo[0]),
     }
 }
 
@@ -1142,7 +1132,7 @@ fn axis_at(sk: &Sketch, about: EntRef) -> Result<([f64; 3], [f64; 3]), String> {
 
 /// **A driving row of measure `m` besides the whole** (#953): its body filled once where the
 /// drawing stands, at a reading's size, its boundary's nodes moved by its sheets and its point
-/// and line read off the same columns (`hulls::hull_aimed`).
+/// and line read off the same columns (`hulls::hull_of_bodies`).
 pub(crate) fn gauged_row(sk: &Sketch, m: &crate::model::Measured) -> Result<prisms::Row, String> {
     let (parts, s, x) = gauging(sk, m, 1.0)?;
     let parts: Vec<(usize, &Mesh)> = parts.iter().map(|(b, mesh)| (*b, mesh)).collect();
@@ -1151,6 +1141,11 @@ pub(crate) fn gauged_row(sk: &Sketch, m: &crate::model::Measured) -> Result<pris
                      coarser: 1.0 })
 }
 
+/// **The row of `mass(m) solid` or `volume(v) solid`** (`reads`), `solid` a filled body (#567):
+/// its exact boundary refined and filled once where the drawing stands, at a reading's size, its
+/// boundary's nodes moved by its sheets (`hulls::hull_of`) and its inner nodes left where they
+/// were meshed — a measure reads the boundary alone.  It reads no support and no load, and of a
+/// material only a mass's density.
 pub(crate) fn measured_row(sk: &Sketch, solid: usize, reads: Reads) -> Result<prisms::Row, String> {
     let (mesh, s, x) = measuring(sk, solid, reads, 1.0)?;
     let (hull, columns) = crate::hulls::hull_of(sk, solid, &mesh)?;

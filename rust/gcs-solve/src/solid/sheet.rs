@@ -69,18 +69,26 @@ fn built(sk: &Sketch, si: usize, unit: f64) -> Result<Band, String> {
     // the band from the panel to `d` the way the bound reads it
     let (lo, hi) = if *side >= 0.0 { (0.0, d) } else { (-d, 0.0) };
     let panel = crate::model::developed::built(sk, rails)?;
-    let tol = crate::curve::flatness(unit);
+    let stations = stations(&panel, crate::curve::flatness(unit), MAX_STATIONS)
+        .ok_or("the panel has too few rulings to make a band")?;
+    Ok(Band { panel, lo, hi, stations })
+}
+
+/// **The rulings `panel` is drawn at**, to `tol` (`Developable::stations`), every few of them where
+/// there are more than `most` — its last kept; `None` for fewer than two.  A band's and a closed
+/// shell's panels alike (`solid::enclosed`).
+pub(crate) fn stations(panel: &Developable, tol: f64, most: usize) -> Option<Vec<Ruling>> {
     let mut stations = panel.stations(tol);
     if stations.len() < 2 {
-        return Err("the panel has too few rulings to make a band".into());
+        return None;
     }
-    if stations.len() > MAX_STATIONS {
-        let step = stations.len().div_ceil(MAX_STATIONS);
+    if stations.len() > most {
+        let step = stations.len().div_ceil(most);
         let last = stations[stations.len() - 1];
         stations = stations.into_iter().step_by(step).collect();
         stations.push(last);
     }
-    Ok(Band { panel, lo, hi, stations })
+    Some(stations)
 }
 
 impl Band {

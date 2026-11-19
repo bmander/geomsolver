@@ -76,8 +76,8 @@ fn at<T: Num>(x: P<T>, dv: T, out: &mut [T; MOMENTS]) {
 }
 
 /// **A facet's ten moments** at its six nodes' places (`[a, b, c, ab, bc, ca]`, a quadratic
-/// triangle), `∫ f |x_u × x_v|` by the collapsed Gauss rule of five points a side — exact to
-/// degree eight in the facet's parameters, so a plane facet's second moments exactly.
+/// triangle), `∫ f |x_u × x_v|` by the collapsed Gauss rule of eight points a side — exact to
+/// degree fourteen in the facet's parameters, so a plane facet's second moments exactly.
 pub(crate) fn facet<T: Num>(x: &[P<T>; 6]) -> [T; MOMENTS] {
     let mut out = [T::cst(0.0); MOMENTS];
     for &(s, t, w) in triangle_rule() {
@@ -105,24 +105,19 @@ pub(crate) fn facet<T: Num>(x: &[P<T>; 6]) -> [T; MOMENTS] {
 /// exact for its volume and its first moments, and for its second within the rule's order.
 pub(crate) fn tet<T: Num>(x: &[P<T>; 10]) -> [T; MOMENTS] {
     let mut out = [T::cst(0.0); MOMENTS];
-    for (p, w, det) in super::solid::points_and_measure(x) {
-        at(p, det * T::cst(w), &mut out);
-    }
+    super::solid::each_point(x, |p, w, det| at(p, det * T::cst(w), &mut out));
     out
 }
 
-/// The collapsed (Duffy) product of Gauss–Legendre's five points on `[0, 1]` a side over the
-/// triangle `(0,0), (1,0), (0,1)`: `s = u`, `t = v (1 − u)`, weighed by `1 − u`; its weights sum
-/// to the triangle's area, ½.
+/// The collapsed (Duffy) product of Gauss–Legendre's eight points on `[0, 1]` a side
+/// (`integral::GAUSS8`) over the triangle `(0,0), (1,0), (0,1)`: `s = u`, `t = v (1 − u)`, weighed
+/// by `1 − u` — exact to degree fourteen; its weights sum to the triangle's area, ½.
 fn triangle_rule() -> &'static [(f64, f64, f64)] {
     static RULE: std::sync::OnceLock<Vec<(f64, f64, f64)>> = std::sync::OnceLock::new();
     RULE.get_or_init(|| {
-        let gl = [(0.0, 0.568_888_888_888_888_9), (-0.538_469_310_105_683_1, 0.478_628_670_499_366_5),
-                  (0.538_469_310_105_683_1, 0.478_628_670_499_366_5),
-                  (-0.906_179_845_938_664, 0.236_926_885_056_189_1),
-                  (0.906_179_845_938_664, 0.236_926_885_056_189_1)];
-        let unit: Vec<(f64, f64)> = gl.iter().map(|&(x, w)| ((1.0 + x) / 2.0, w / 2.0)).collect();
-        let mut out = Vec::with_capacity(25);
+        let unit: Vec<(f64, f64)> =
+            crate::integral::GAUSS8.iter().map(|&(x, w)| ((1.0 + x) / 2.0, w / 2.0)).collect();
+        let mut out = Vec::with_capacity(unit.len() * unit.len());
         for &(u, wu) in &unit {
             for &(v, wv) in &unit {
                 out.push((u, v * (1.0 - u), wu * wv * (1.0 - u)));
@@ -171,8 +166,10 @@ pub(crate) fn compose_rate(what: What, m: &[f64; MOMENTS], target: Option<P<f64>
     compose(what, &md, target.map(c), axis.map(|(a, d)| (c(a), c(d)))).g
 }
 
-/// `compose`'s value alone, over numbers with no rate: what a claim reads of the moments.
-pub(crate) fn compose_value(what: What, m: &[Dual<0>; MOMENTS], target: Option<P<Dual<0>>>,
-                     axis: Option<(P<Dual<0>>, P<Dual<0>>)>) -> f64 {
-    compose(what, m, target, axis).v
+/// `compose` over numbers with no rate: what a claim reads of the moments, and a row where it
+/// stands.
+pub(crate) fn compose_at(what: What, m: &[f64; MOMENTS], target: Option<P<f64>>,
+                         axis: Option<(P<f64>, P<f64>)>) -> f64 {
+    let c = |p: P<f64>| p.map(Dual::<0>::cst);
+    compose(what, &m.map(Dual::<0>::cst), target.map(c), axis.map(|(a, d)| (c(a), c(d)))).v
 }

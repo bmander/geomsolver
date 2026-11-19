@@ -50,7 +50,7 @@ mod row;
 mod solid;
 pub use beam::{fixed_end, into_axes, out_of_axes, Axes};
 pub use consts::{Drive, Mover, Sizing, HEAD};
-pub(crate) use gauge::compose_value;
+pub(crate) use gauge::compose_at;
 pub use gauge::{Gauge, What, MOMENTS};
 pub use hull::{Axis, Direction, Frame, Hull, Place, Profile, Sheet};
 pub use moved::{Edge, Moved, Node, Stack};

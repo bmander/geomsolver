@@ -41,23 +41,15 @@ pub fn read(sk: &Sketch, m: &Measured) -> Result<(f64, Option<f64>), String> {
     Ok((v, error))
 }
 
-/// Whether value `v` keeps `m`: within 1e-9 of what it states for `==`, on its side for `<=` and
-/// `>=` (`beams::keeps`'s rule).  A point stands where its measure puts it within `error`, the
-/// error estimated in where it is put, or within 1e-9 of the body's measure where none is.
-pub fn keeps(m: &Measured, v: f64, error: Option<f64>) -> bool {
+/// Whether value `v` keeps `m` where the drawing `sk` stands: within 1e-9 of what it states for
+/// `==`, on its side for `<=` and `>=` (`beams::keeps`'s rule) — its number, or what the unknown it
+/// reads came to (#953).  A point stands where its measure puts it within `error`, the error
+/// estimated in where it is put, or within 1e-9 of the body's measure where none is.
+pub fn keeps(sk: &Sketch, m: &Measured, v: f64, error: Option<f64>) -> bool {
     if m.quantity.point() {
         return v <= error.unwrap_or(0.0).max(1e-9);
     }
-    crate::beams::compares(m.compare, m.value, v)
-}
-
-/// `keeps`, against what `m` states where the drawing `sk` stands (#953): its number, or what
-/// the unknown it reads came to.
-pub fn keeps_on(sk: &Sketch, m: &Measured, v: f64, error: Option<f64>) -> bool {
-    match (m.quantity.point(), m.stated(sk)) {
-        (false, Some(t)) => crate::beams::compares(m.compare, t, v),
-        _ => keeps(m, v, error),
-    }
+    crate::beams::compares(m.compare, m.stated(sk).unwrap_or(m.value), v)
 }
 
 /// **Where a point's measure puts it**, on the drawing as it stands (#953): `g centroid B`'s

@@ -83,12 +83,9 @@ pub fn face_paths(sk: &Sketch, i: usize) -> Vec<FacePath> {
             // the inside of a closed shell (#953): each member by the set it is
             SolidDef::Region { .. } if let Some(m) = crate::solid::enclosed::members(sk, p) => {
                 let mut v: Vec<String> = Vec::new();
-                for n in m.iter().map(|m| match m {
-                    crate::model::Member::Sheet { name, .. }
-                    | crate::model::Member::Face { name, .. } => name,
-                }) {
-                    if !v.contains(n) {
-                        v.push(n.clone());
+                for n in m.iter().map(crate::model::Member::name) {
+                    if !v.iter().any(|w| w == n) {
+                        v.push(n.to_string());
                     }
                 }
                 return v;

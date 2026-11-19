@@ -99,10 +99,7 @@ impl Row {
     /// **A gauged measure where the row stands** (#953): its moments composed with its point
     /// and its line.
     fn gauged(&self, aim: &Aim) -> f64 {
-        let m = self.s.moments(&self.x).map(crate::kernels::Dual::<0>::cst);
-        let c = |p: [f64; 3]| p.map(crate::kernels::Dual::<0>::cst);
-        super::gauge::compose(self.s.gauge.what, &m, aim.0.map(c), aim.1.map(|(a, d)| (c(a), c(d))))
-            .v
+        super::gauge::compose_at(self.s.gauge.what, &self.s.moments(&self.x), aim.0, aim.1)
     }
 
     /// Whether its nodes move with the drawing: a region's, a prism's, a filled body's.

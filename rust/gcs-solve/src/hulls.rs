@@ -57,10 +57,7 @@ impl Builder {
     /// columns lifted by that plane.
     fn place(&mut self, sk: &Sketch, q: usize) -> Place {
         let pt = &sk.points[q];
-        let own: Vec<u32> = [Some(pt.x), Some(pt.y), pt.z].into_iter().flatten().collect();
-        let held = |sk: &Sketch| own.iter().all(|&c| sk.params[c as usize].fixed)
-            && pt.chart.or(pt.plane).is_none_or(|f| sk.plane_fixed(f as usize));
-        if held(sk) {
+        if held_point(sk, q) {
             return Place::Held(sk.world_point(q));
         }
         match (pt.z, pt.chart) {
@@ -99,13 +96,7 @@ impl Builder {
             }
             EntKind::Line => {
                 let l = &sk.lines[along.i()];
-                let held = |q: u32| {
-                    let pt = &sk.points[q as usize];
-                    [Some(pt.x), Some(pt.y), pt.z].into_iter().flatten()
-                        .all(|c| sk.params[c as usize].fixed)
-                        && pt.chart.or(pt.plane).is_none_or(|f| sk.plane_fixed(f as usize))
-                };
-                if !(held(l.p1) && held(l.p2)) {
+                if !(held_point(sk, l.p1 as usize) && held_point(sk, l.p2 as usize)) {
                     return Err("a half-space along a line the solve moves, which a driving row \
                                 does not move yet".into());
                 }
@@ -254,9 +245,7 @@ impl Builder {
             // a closed shell's member (#953): a face's plane, or a held panel's triangles
             SolidDef::Region { .. } if let Some(members) = crate::solid::enclosed::members(sk, p) => {
                 use crate::model::Member;
-                let member = members.iter().find(|m| match m {
-                    Member::Face { name, .. } | Member::Sheet { name, .. } => name == face,
-                }).ok_or_else(|| format!("`{}` has no face `{face}`", solid.name))?;
+                let member = members.iter().find(|m| m.name() == face).ok_or_else(|| format!("`{}` has no face `{face}`", solid.name))?;
                 match member {
                     Member::Face { face: f, .. } => {
                         Sheet::Cap { frame: self.frame(sk, sk.faces[*f as usize].plane), h: 0.0 }
@@ -296,6 +285,13 @@ impl Builder {
     }
 }
 
+/// Whether point `q` is held where it stands: its own numbers fixed, and the plane or the spatial
+/// frame it is read in held.
+fn held_point(sk: &Sketch, q: usize) -> bool {
+    let pt = &sk.points[q];
+    sk.point_held(q) && pt.chart.or(pt.plane).is_none_or(|f| sk.plane_fixed(f as usize))
+}
+
 /// Sheet `s`'s normal at `p` where the columns stand at `v`, made unit.
 fn unit_level(hull: &Hull, s: usize, v: &[f64], p: [f64; 3]) -> [f64; 3] {
     crate::space::unit(hull.level_at(s, v, p).1)
@@ -322,21 +318,15 @@ fn meet(normals: &[[f64; 3]]) -> bool {
 /// node of a facet tagged with the sheets it lies on, the places and the feet at the drawing as it
 /// stands — and the columns the sheets read.  Or why a driving row cannot move it.
 pub fn hull_of(sk: &Sketch, solid: usize, mesh: &Mesh) -> Result<(Hull, Vec<u32>), String> {
-    hull_aimed(sk, solid, mesh, None, None)
+    hull_of_bodies(sk, &[(solid, mesh)], None, None)
 }
 
-/// **`hull_of`, and what a measure besides the whole reads off its columns** (#953): the point
-/// `at` a centroid is compared with, and the line or axis `about` a second moment is taken about
-/// — each held where nothing the solve moves reads it, else read as a sheet's point is.  Refused
-/// for a line whose ends the solve moves, whose direction a row does not read yet.
-pub fn hull_aimed(sk: &Sketch, solid: usize, mesh: &Mesh, at: Option<usize>,
-                  about: Option<EntRef>) -> Result<(Hull, Vec<u32>), String> {
-    hull_of_bodies(sk, &[(solid, mesh)], at, about)
-}
-
-/// **`hull_aimed` over several bodies** (#953): each body's mesh after the one before, its nodes
-/// numbered on from theirs, every body's sheets read over one set of columns — what a centre of
-/// mass of an instance's bodies is read over.
+/// **`hull_of` over several bodies, and what a measure besides the whole reads off its columns**
+/// (#953): each body's mesh after the one before, its nodes numbered on from theirs, every body's
+/// sheets read over one set of columns — what a centre of mass of an instance's bodies is read
+/// over — and the point `at` a centroid is compared with and the line or axis `about` a second
+/// moment is taken about, each held where nothing the solve moves reads it, else read as a
+/// sheet's point is.
 pub fn hull_of_bodies(sk: &Sketch, parts: &[(usize, &Mesh)], at: Option<usize>,
                       about: Option<EntRef>) -> Result<(Hull, Vec<u32>), String> {
     let mut b = Builder::default();
@@ -368,16 +358,6 @@ pub fn hull_of_bodies(sk: &Sketch, parts: &[(usize, &Mesh)], at: Option<usize>,
         Some(e) => return Err(format!("a second moment is about a line or an axis, and this is {}",
                                       e.kind.a())),
     };
-    let (mut hull, columns) = hull_with(sk, parts, b)?;
-    hull.target = target;
-    hull.axis = axis;
-    Ok((hull, columns))
-}
-
-/// `hull_of` of the bodies `parts`, each its mesh, over the columns `b` has read already.
-fn hull_with(sk: &Sketch, parts: &[(usize, &Mesh)], mut b: Builder)
-    -> Result<(Hull, Vec<u32>), String>
-{
     // each body's faces' sheets, and where its nodes start among all of them
     let mut sheets_of = Vec::new();
     let mut first = Vec::new();
@@ -398,7 +378,7 @@ fn hull_with(sk: &Sketch, parts: &[(usize, &Mesh)], mut b: Builder)
                           nodes: vec![Vec::new(); n],
                           x0: parts.iter().flat_map(|(_, m)| m.nodes.iter().flatten().copied())
                               .collect(),
-                          feet0: vec![0.0; 3 * n], extent, target: None, axis: None,
+                          feet0: vec![0.0; 3 * n], extent, target, axis,
                           facets: std::mem::take(&mut b.facets) };
     let v0: Vec<f64> = b.columns.iter().map(|&c| sk.params[c as usize].value).collect();
     for (k, &(_, mesh)) in parts.iter().enumerate() {

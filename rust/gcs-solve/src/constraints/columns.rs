@@ -86,7 +86,7 @@ impl Constraint {
                 Some((_, m, c)) => vec![m, c],
                 None => vec![self.args.last().map_or(0.0, Arg::num)],
             };
-            return self.interior_parts(sk).map(|(r, _)| r.consts_stated(&stated))
+            return self.interior_parts(sk).map(|(r, _)| r.consts(&stated))
                 .unwrap_or_default();
         }
         // a margin reading an unknown (#904) is that unknown's map, the row's last column

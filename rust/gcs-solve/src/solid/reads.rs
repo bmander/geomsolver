@@ -257,12 +257,7 @@ fn reads_from(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, p
                     // a panel's band (#645): its rails as paths, read whole
                     if let crate::model::RegionShape::Sheet { rails, side } = &t.shape {
                         v.push(*side);
-                        for r in rails.iter() {
-                            match r.path(sk) {
-                                Ok(p) => p.encode(&mut v),
-                                Err(_) => v.push(UNREAD),
-                            }
-                        }
+                        rails_reads(sk, rails, &mut v);
                         continue;
                     }
                     // a closed shell's inside (#953): each panel's rails as paths, each face's
@@ -272,12 +267,7 @@ fn reads_from(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, p
                         for m in members {
                             match m {
                                 crate::model::Member::Sheet { rails, .. } => {
-                                    for r in rails.iter() {
-                                        match r.path(sk) {
-                                            Ok(p) => p.encode(&mut v),
-                                            Err(_) => v.push(UNREAD),
-                                        }
-                                    }
+                                    rails_reads(sk, rails, &mut v);
                                 }
                                 crate::model::Member::Face { face, .. } => {
                                     face_reads(sk, *face, &mut v, poses);
@@ -590,6 +580,17 @@ fn name_read(name: &str, v: &mut Vec<f64>) {
 /// plane (`p distance(<= 0mm, along: n) rim`, a countersink's rim), and anything else drawn by
 /// its numbers, each of its points where it stands and the plane that point is drawn in — a
 /// circle turned with its plane about a centre that stays moves no number of its own.  A body is
+/// A panel's rails as paths read whole into `v`, each one that does not read as a number no
+/// other key holds (#645, #953).
+fn rails_reads(sk: &Sketch, rails: &[crate::model::Rail; 2], v: &mut Vec<f64>) {
+    for r in rails {
+        match r.path(sk) {
+            Ok(p) => p.encode(v),
+            Err(_) => v.push(UNREAD),
+        }
+    }
+}
+
 /// read as the body is: it is returned, for the walk to read.
 fn entity_reads(sk: &Sketch, e: EntRef, v: &mut Vec<f64>, poses: &mut Poses) -> Option<u32> {
     v.push(e.kind as u32 as f64);

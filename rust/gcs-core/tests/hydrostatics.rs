@@ -51,11 +51,18 @@ centreline := line(fore, aft)
 ")
 }
 
+/// `barge`, its centreline drawn in the waterplane: its points `T` above the keel, so a second
+/// moment about it is the waterplane's own.
+pub fn floating(lines: &str) -> String {
+    barge(lines).replace("fore := point\naft := point\nfix((0mm, 0mm, 0mm)) fore\n\
+        fix((L, 0mm, 0mm)) aft", "fore := point hint((0, 0, 30))\naft := point hint((200, 0, \
+        30))\nfix(x == 0mm, y == 0mm) fore\nfix(x == L, y == 0mm) aft\nkeel distance(T, along: \
+        std.z) fore\nkeel distance(T, along: std.z) aft")
+}
+
 /// `src` elaborated with no error and solved.
 fn sized(src: &str) -> (Elaborated, Sketch) {
-    let e = crate::common::read(src);
-    let sk = crate::common::solved(&e);
-    (e, sk)
+    crate::common::read_solved(src)
 }
 
 /// What the unknown `name` came to.
@@ -133,10 +140,7 @@ area(L * w) immersed.water
 param k: Length hint(10mm)
 moment(k * L * B * 1mm, about: centreline) immersed.water
 ";
-    let src = barge(lines).replace("fore := point\naft := point\nfix((0mm, 0mm, 0mm)) fore\n\
-        fix((L, 0mm, 0mm)) aft", "fore := point hint((0, 0, 30))\naft := point hint((200, 0, \
-        30))\nfix(x == 0mm, y == 0mm) fore\nfix(x == L, y == 0mm) aft\nkeel distance(T, along: \
-        std.z) fore\nkeel distance(T, along: std.z) aft");
+    let src = floating(lines);
     let (e, mut sk) = sized(&src);
     close(unknown(&sk, "T"), 40.0, 1e-9, "T");
     let g = at(&e, &sk, "g");
@@ -427,46 +431,6 @@ fn what_cannot_be_measured_says_why() {
     for (line, want) in cases {
         let errs = errors(&barge(line));
         assert!(errs.iter().any(|(_, m)| m.contains(want)), "{line}: {errs:?}");
-    }
-}
-
-/// **The rows agree with their differences** (#953): a centroid's three, an area's and a second
-/// moment's over the barge's moved mesh, its waterline an unknown and the moment's centreline in
-/// the waterplane, at the solution and knocked off it.
-#[test]
-fn the_rows_agree_with_finite_differences() {
-    let lines = "\
-volume(L * B * 40mm) immersed
-g := point hint((100, 0, 20))
-g centroid immersed
-param w: Length hint(50mm)
-area(L * w) immersed.water
-param k: Length hint(10mm)
-moment(k * L * B * 1mm, about: centreline) immersed.water
-";
-    let src = barge(lines).replace("fore := point\naft := point\nfix((0mm, 0mm, 0mm)) fore\n\
-        fix((L, 0mm, 0mm)) aft", "fore := point hint((0, 0, 30))\naft := point hint((200, 0, \
-        30))\nfix(x == 0mm, y == 0mm) fore\nfix(x == L, y == 0mm) aft\nkeel distance(T, along: \
-        std.z) fore\nkeel distance(T, along: std.z) aft");
-    let mut sk = crate::common::solved(&crate::common::read(&src));
-    let mut rng = gcs_core::rng::Rng::new(953);
-    for round in 0..2 {
-        if round > 0 {
-            for p in sk.params.iter_mut().filter(|p| !p.fixed) {
-                p.value += rng.uniform(-0.01, 0.01) * (1.0 + p.value.abs().min(10.0));
-            }
-        }
-        for c in sk.constraints.iter().filter(|c| c.kind.interior()) {
-            let v = c.local_values(&sk);
-            let ja = c.jacobian(&sk, &v);
-            let jn = gcs_core::fdcheck::fd_jacobian(|w| c.residual(&sk, w), &v, 1e-4);
-            let scale = gcs_core::linalg::absmax(&jn.data);
-            assert!(scale.is_finite() && scale > 0.0, "{:?}, round {round}", c.kind);
-            for (col, (a, n)) in ja.iter().zip(&jn.data).enumerate() {
-                assert!((a - n).abs() <= 1e-6 * scale,
-                        "{:?}, round {round}: column {col}: {a} against {n}", c.kind);
-            }
-        }
     }
 }
 

@@ -2187,8 +2187,8 @@ impl CKind {
             | CKind::PlaneTangentLine
             | CKind::PlaneTangentRound
             | CKind::PlaneSupportsCorner
-            // nor a frame's deflection (#510 S1), mass or volume: a scenario's number, stated,
-            // never an unknown
+            // nor a frame's deflection (#510 S1), nor a measure: a number no free twin reads (a
+            // measure's own unknown is its row's last column, #953)
             | CKind::Deflection
             | CKind::Mass
             | CKind::Volume

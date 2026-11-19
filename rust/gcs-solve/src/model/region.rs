@@ -76,6 +76,15 @@ pub enum Member {
     Face { face: u32, name: String },
 }
 
+impl Member {
+    /// The name its faces take.
+    pub fn name(&self) -> &str {
+        match self {
+            Member::Sheet { name, .. } | Member::Face { name, .. } => name,
+        }
+    }
+}
+
 impl RegionShape {
     /// A half-space's unit normal as the drawing stands: its plane's `n`, its line's or its
     /// axis's direction — `None` for another shape, or a line of no length.

@@ -50,15 +50,15 @@ pub(crate) fn in_general_position(sk: &Sketch, solid: usize)
     let Some(SolidDef::Region { terms, .. }) = sk.solids.get(solid).map(|s| &s.def) else {
         return None;
     };
-    let key = match super::faces::strata(sk, terms) {
-        Ok(strata) => super::MemoKey::own(sk, solid, strata),
-        Err(_) => super::MemoKey::of(sk, solid),
-    };
     // a half-space kept with a body is read point by point, its end the body's (#953): never
     // folded about an axis, where it would be refused for having none
     if super::defined::kept_half(sk, solid) {
         return Some(general(sk, solid));
     }
+    let key = match super::faces::strata(sk, terms) {
+        Ok(strata) => super::MemoKey::own(sk, solid, strata),
+        Err(_) => super::MemoKey::of(sk, solid),
+    };
     sk.caches.general.get_or(solid, key, || match folded(sk, solid) {
         Ok(_) => None,
         Err(r) if r.outright => None,
@@ -132,8 +132,8 @@ pub enum Route {
     /// A face carried over an interval of a constant twist (#846): the kernel's carried profile,
     /// or why it is refused.
     Carried(Result<Rc<super::carried::Carried>, String>),
-    /// The inside of a closed shell (#953): its panels and faces sewn, or why it is not read.
-    Enclosed(Result<Rc<super::enclosed::Shell>, String>),
+    /// The inside of a closed shell (#953): its panels and faces sewn.
+    Enclosed(Rc<super::enclosed::Shell>),
 }
 
 impl Route {
@@ -177,14 +177,11 @@ pub fn route(sk: &Sketch, solid: usize) -> Result<Route, String> {
     let SolidDef::Region { terms, .. } = &s.def else {
         return Err(format!("`{}` is not a region", s.name));
     };
-    // the inside of a closed shell (#953): sewn, never read point by point
-    if let Some(shell) = super::enclosed::built(sk, solid, super::REPORT_UNIT) {
-        return Ok(Route::Enclosed(shell));
-    }
     match form(sk, solid)? {
         Form::Meridian(m) => Ok(Route::Meridian(m)),
         Form::Sheet(b) => Ok(Route::Sheet(b)),
-        Form::Enclosed(s) => Ok(Route::Enclosed(Ok(s))),
+        // the inside of a closed shell (#953): sewn, never read point by point
+        Form::Enclosed(s) => Ok(Route::Enclosed(s)),
         Form::General(_) => {
             if let Some(c) = super::carried::built(sk, solid) {
                 return Ok(Route::Carried(c));

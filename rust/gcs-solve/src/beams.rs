@@ -705,15 +705,7 @@ impl Row {
             .map_err(|why| unsolved(&self.structure, &self.x, "the frame", why).text())
     }
 
-    /// Its constants, stating the deflection `d`.
-    pub fn consts(&self, d: f64) -> Vec<f64> {
-        self.structure.consts(&[d], &self.drive)
-    }
 
-    /// Its widths, `(n_par, n_const)`.
-    pub fn widths(&self) -> (usize, usize) {
-        self.structure.widths(false, &self.drive)
-    }
 }
 
 /// **The members a mass or a volume of `of` is over**, each `(beam, line)`: a beam's every line,

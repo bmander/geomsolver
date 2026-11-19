@@ -51,13 +51,12 @@ pub(super) fn measures(
                 continue;
             }
         };
-        let of = w.ops.last().expect("a measure's operand");
         // a point's is its statement (`b centroid immersed`), any other its word over what it is
         // of (`mass(arm)`)
+        let of = crate::syntax::ref_text(w.ops.last().expect("a measure's operand"));
         let head = match &w.ops[..] {
-            [g, of] if q.point() => format!("{} {} {}", crate::syntax::ref_text(g), q.word(),
-                                            crate::syntax::ref_text(of)),
-            _ => format!("{}({})", q.word(), crate::syntax::ref_text(of)),
+            [g, _] if q.point() => format!("{} {} {of}", crate::syntax::ref_text(g), q.word()),
+            _ => format!("{}({of})", q.word()),
         };
         let index = sk.measured.len();
         let claim = measured.claim;
