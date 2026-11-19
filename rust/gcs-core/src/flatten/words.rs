@@ -267,8 +267,6 @@ pub(crate) fn faults(def: &WordDef, numbers: &BTreeSet<String>) -> Vec<(Code, Sp
                 _ => false,
             }
             || r.direction_word().is_some()
-            // the library's own world, its origin, axes and planes (`std.x`)
-            || (r.root.text == "std" && !r.path.is_empty())
     };
     for st in &def.body {
         match &st.kind {

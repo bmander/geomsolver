@@ -384,8 +384,9 @@ a point, or against anything but an axis, a line or a plane) and states no const
 `initially { … }` is hoisted as an `in` body is (`parser::statements::initially`), each relation
 in it, through a `when`, marked `Relation::initially` (anything else in it a syntax error); a
 defined word's body takes the flag as it takes `claim` — but a claimed word's `coincident`
-placing a point its body declares is stated, never claimed, so a claim judges what it says of
-geometry it still makes (#365, `flatten::apply`) — and it reaches `ir::Relation::initially`
+placing a point its body declares is stated, never claimed, and so is its `fix` holding what it
+declares ([0.220], `std.measures`'s held axes), so a claim judges what it says of geometry it
+still makes (#365, `flatten::apply`) — and it reaches `ir::Relation::initially`
 and `Constraint::initially`: on the sheet a row of the drawn home, in a trace the home's alone.
 `tests/rates.rs` (a face family's) and `tests/traced_rates.rs` (a traced body's) are the gates.
 **Over two formals** (§6.5 [0.121], #339 D4) a rate may be along either, at most one along the
@@ -513,9 +514,8 @@ callable. **A definition's standard datums are those of the frame it stands in**
 the one name a body reads unhanded. `walk_instance` gives the body's scope `Scope::stands`, every
 `in` around the call and around each call enclosing it (`Stamps::{rides, plane}`, each an
 `InPlane` carrying the file and the place it was written in), outermost first and empty at the
-root; a relation word's closure, a traced body and the document's own scope have none — and a
-relation word's closure, standing in no frame, reads the world's (`std.x`, [0.220], what
-`std.measures`'s centroid is read along; `faults` lets a word's body name `std.…`). Where
+root; a relation word's closure, a traced body and the document's own scope have none (a word
+reads only its operands: `std.measures`'s centroid declares and holds its own three axes). Where
 nothing else names it, `Lookup::raw` reads `std.front` in such a body through `Lookup::datum`: a
 standard datum's name (`Datums`), where the body's file says `use std` (`Datums::files`, the
 document's `None` or a module's index), and the drawing has them — made whenever any file read

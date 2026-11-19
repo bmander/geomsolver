@@ -120,8 +120,9 @@ pub(super) fn elaborate_in(
             })
         }),
         // a bound on measurements is a term of the region solid whose point it reads, never a
-        // row: the copy's own solid's, over its turned sets
-        crate::ir::Operation::Measured(_) => true,
+        // row: the copy's own solid's, over its turned sets — an equation of integrals is the
+        // drawing's (§6.25)
+        crate::ir::Operation::Measured(m) => !m.integrates(),
         _ => false,
     };
     style_sheet(&mut cx, &body);

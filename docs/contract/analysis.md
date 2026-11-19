@@ -1017,7 +1017,8 @@ unless a rule names another.
   an unknown is refused (put it outside the integral). **The words are `std.measures`'s**
   (`lib/std/measures.sv`): `volume(v) B`, `mass(m) B`, `area(a) F`, `moment(i, about) F` (`∫ r²
   dA`, `r` how far each point stands off `about`), `g centroid B` and `g centerofmass B` (three
-  equations each, the first moment along each axis of the world over the measure — a quotient of
+  equations each, the first moment along each of three axes the word holds along the world's,
+  over the measure — a quotient of
   integrals, so each reads how far `g` stands off the centroid along its axis, a length, and is
   linear in `g` as the old centroid's ordinate was). The language has no measure word of its own:
   `mass(…)` with no `use std.measures (mass)` is **E102**, naming the module (`library::home`).
@@ -1025,8 +1026,9 @@ unless a rule names another.
     the unknowns the drawing declares, told from a relation by `integral(` anywhere in it
     (`P::integral_ahead`); claimed, `claim LHS <= RHS` and `>=` too. A word's body may state one
     (`definitions.rs`), its parameters' kinds read off it (`param_kinds`: what it measures and is
-    over, entities; what its numbers read, numbers), and reads the world's standard datums
-    (`std.x`; a word stands in no frame, `Walk::datum`). A claimed use claims its body's equations,
+    over, entities; what its numbers read, numbers); it reads only its operands, so the centroid
+    words declare their own three axes, held along the world's. A claimed use claims its body's
+    equations,
     and a report calls each by the use (`syntax::Measured::head`, the outermost use's text).
   - **A bound through a word** (`flatten::words::bound_through`): a number parameter given as a
     bound, `claim mass(<= 2kg) arm` (bare, `[Bound, Dim]`, or labelled, `moment(i: <= I, about:

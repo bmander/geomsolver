@@ -11,7 +11,7 @@ point through `distance(p, X)` (to a point, a line, an axis or a plane), the sig
 `distance(g, p, along: d)`, and `density(p)`, the density of what the point is in. An equation of
 integrals is a statement of the drawing, `LHS == RHS`, either side arithmetic over integrals,
 numbers and declared unknowns, its dimensions agreeing; claimed, it may be a bound. A word's body
-may state one and read the world's standard datums (`std.x`). A word's number parameter may be
+may state one. A word's number parameter may be
 given as a bound, `claim mass(<= 2kg) arm`: each comparison its body states with the parameter
 alone on one side becomes that bound. `mass`, `volume`, `area`, `moment`, `centroid` and
 `centerofmass` are no longer the language's: they are `std.measures`'s words, each an equation of
@@ -20,8 +20,8 @@ integrals, imported by name (`use std.measures (mass)`); `moment` takes its numb
 its two sides, `mass(10kg) arm: 10 kg ± 0 kg == 10 kg: driven, held`; a centroid is three lines,
 each how far the point stands off the centroid along an axis of the world.
 Through 0.219 `integral(…)` and `density(…)` outside an energy were E001, a bound given to a
-word's parameter was E103, a word's body stating anything but relations, declarations, sets and
-energies was E100, and a word's body naming `std.x` was E101; the six measure words were the
+word's parameter was E103, and a word's body stating anything but relations, declarations, sets
+and energies was E100; the six measure words were the
 language's own, so a document writing one with no `use` now reads E102, naming the module, and
 `moment(I, about: l)` reads E004 (its number is given by label).
 

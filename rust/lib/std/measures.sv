@@ -4,7 +4,6 @@
 // its equation; claimed, it is judged on the solved drawing; given a bound (`claim mass(<= 2kg)
 // arm`), its equation is that bound.  A number a word states may read an unknown the drawing
 // declares, which its row then determines: `mass(M) boat` sizes nothing and says what it weighs.
-use std
 
 // The volume of a body or a frame's members: `volume(42cm^3) web`.
 volume(v) B := {
@@ -29,21 +28,34 @@ moment(i, about) F := {
 }
 
 // A point at the centroid of a body's volume or a face's area: `g centroid hull` — the point
-// the body's first moment about is nothing along each axis of the world, each over the body's
-// measure, so each says how far the point stands off the centroid along its axis.
+// the body's first moment about is nothing along each of three held axes, each over the body's
+// measure, so each says how far the point stands off the centroid along its axis.  A word reads
+// only what it is given, so it holds its own three axes, the world's directions.
 g centroid B := {
-  integral(distance(g, p, along: std.x) over p in B) / integral(1 over p in B) == 0
-  integral(distance(g, p, along: std.y) over p in B) / integral(1 over p in B) == 0
-  integral(distance(g, p, along: std.z) over p in B) / integral(1 over p in B) == 0
+  private ex := axis
+  private ey := axis
+  private ez := axis
+  fix(dir == (1, 0, 0), origin == (0, 0, 0)) ex
+  fix(dir == (0, 1, 0), origin == (0, 0, 0)) ey
+  fix(dir == (0, 0, 1), origin == (0, 0, 0)) ez
+  integral(distance(g, p, along: ex) over p in B) / integral(1 over p in B) == 0
+  integral(distance(g, p, along: ey) over p in B) / integral(1 over p in B) == 0
+  integral(distance(g, p, along: ez) over p in B) / integral(1 over p in B) == 0
 }
 
 // A point at a body's centre of mass, each point weighed by its density: `g centerofmass hull`.
 // Of an instance, of every body under it, however its bodies are grouped into components.
 g centerofmass B := {
-  (integral(distance(g, p, along: std.x) * density(p) over p in B)
+  private ex := axis
+  private ey := axis
+  private ez := axis
+  fix(dir == (1, 0, 0), origin == (0, 0, 0)) ex
+  fix(dir == (0, 1, 0), origin == (0, 0, 0)) ey
+  fix(dir == (0, 0, 1), origin == (0, 0, 0)) ez
+  (integral(distance(g, p, along: ex) * density(p) over p in B)
     / integral(density(p) over p in B)) == 0
-  (integral(distance(g, p, along: std.y) * density(p) over p in B)
+  (integral(distance(g, p, along: ey) * density(p) over p in B)
     / integral(density(p) over p in B)) == 0
-  (integral(distance(g, p, along: std.z) * density(p) over p in B)
+  (integral(distance(g, p, along: ez) * density(p) over p in B)
     / integral(density(p) over p in B)) == 0
 }

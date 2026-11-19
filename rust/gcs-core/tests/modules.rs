@@ -395,7 +395,7 @@ fn the_standard_library_is_modules_under_std() {
         .filter(|n| n.starts_with("std.")).collect();
     assert_eq!(under, ["std.place", "std.shapes", "std.sets", "std.solids", "std.rounds",
                        "std.panels", "std.stations", "std.motion", "std.ports", "std.bearings",
-                       "std.retaining"]);
+                       "std.retaining", "std.measures"]);
     let mut named: BTreeMap<String, &str> = BTreeMap::new();
     for m in &under {
         let (prog, errs, linked) = gcs_core::library::parse_linked(&format!("use {m}\n"));

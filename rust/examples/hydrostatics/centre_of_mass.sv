@@ -31,10 +31,11 @@ component Block(m: group, x0: Length, x1: Length) {
   body := solid(std.solids.Prism(sec, from: 0mm, to: 10mm)) of m
 }
 
-// two components of one instance
+// two components of one instance, the aluminium block's near corner on the steel one's far
 component Pair(ms: group, ma: group) {
   s := Block(m: ms, x0: 0mm, x1: 40mm)
   a := Block(m: ma, x0: 40mm, x1: 100mm)
+  claim a.a coincident s.b
 }
 
 // one component of both bodies

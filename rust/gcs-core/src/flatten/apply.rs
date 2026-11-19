@@ -212,8 +212,9 @@ impl<'a> Walk<'a> {
         if !made.is_empty() {
             self.words.declaring.insert(prefix);
         }
+        // — and a `fix` holding what it declares (§6.25, `std.measures`'s held axes)
         let places = |r: &Relation| r.form.written().is_some_and(|w| {
-            w.word.text == "coincident" && w.rates.is_empty()
+            (w.word.text == "coincident" && w.rates.is_empty() || w.word.text == "fix")
                 && w.ops.first().is_some_and(|o| o.path.is_empty() && made.iter().any(|m| {
                     m.rsplit('.').next() == Some(o.root.text.as_str())
                 }))

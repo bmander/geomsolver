@@ -377,11 +377,11 @@ impl Lookup<'_> {
     /// says `use std` — the root's, the world's, where the instance stands in no frame, and the
     /// frame's own where it does: `std.x`, `std.y` and `std.z` are its `u`, `v` and `normal`,
     /// and the rest its `FrameDatums`, made under `keys::frame_datums` once a body reads one
-    /// (`Datums::read`).  A relation word's body, which stands in no frame, reads the world's
-    /// (§6.25: `std.measures`'s centroid along `std.x`).  `None` for anything else, and outside a
-    /// definition's or a word's body.
+    /// (`Datums::read`).  `None` for anything else, and outside a definition's body — a relation
+    /// word reads only its operands.
     fn datum(&self, segs: &[String], sc: &Scope) -> Option<(String, Vec<String>)> {
-        if !sc.closed || segs.first().map(String::as_str) != Some("std")
+        let stands = sc.stands.as_ref().filter(|_| sc.closed)?;
+        if segs.first().map(String::as_str) != Some("std")
             || !self.standard.files.contains(&sc.module) {
             return None;
         }
@@ -389,7 +389,6 @@ impl Lookup<'_> {
             let cand = segs[..take].join(".");
             self.names.contains(&cand).then(|| (cand, segs[take..].to_vec()))
         })?;
-        let Some(stands) = sc.stands.as_ref() else { return Some((world, rest)) };
         let Some(frame) = self.stood_in(stands, sc) else { return Some((world, rest)) };
         let datum = world.strip_prefix("std.").unwrap_or(&world);
         Some(self.frame_datum(frame, datum, rest))
