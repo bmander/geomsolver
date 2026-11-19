@@ -8,6 +8,14 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Two curves on a face crossing where one ends on a circle the face touches a plane along**
+  (#942 F3): `query::crossings_in` reads one curve against a surface carrying the other. Where a
+  circle's plane is refused, the circle's cylinder is read instead. A bull-nose's round touches its
+  flat end's plane all along the circle they share, so a curve on the round reaching that circle
+  touches the plane there: a double root no search proves, where it crosses the circle's cylinder
+  square. The plane stays first, since a helix about the circle's axis lies on its cylinder. Brep-bench's bull-nose swung partway into the ring sector was
+  refused ("where a traced … meets a plane was not proved") and is now cut to its settled volume.
+
 - **A meeting given by construction holds its points of touching** (#942 F3): `boolean::Given` gains
   `touches`, points where its two surfaces touch beside its curves. An edge of either through one is
   read as touching the other there, with no search: a touch is a double root, which no search proves

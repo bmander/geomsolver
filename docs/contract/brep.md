@@ -487,7 +487,14 @@ one surface, and so are two whose nets over the domain they share are (`Net::seg
 of its points agree) — a net and itself carried on, so the Boolean reads a strip and the face it
 lies on as coincident. A reparameterised net is not recognised. **An edge lying along a face
 crosses its edges where their enclosures say** (`query::enclosed_crossings`, which the Boolean
-reads where `query::crossings_in` has no closed form, its meetings' crossings still searched by
+reads where `query::crossings_in` has no closed form — `crossings_in` reads one curve against a
+surface carrying the other: a line's plane square to the face, an ellipse's plane, and a circle's
+plane — or its cylinder where the plane's reading is refused (#942 F3: a bull-nose's round touches
+its flat end's plane all along the circle they share, so a curve on the round reaching that circle
+touches the plane, a double root no search proves, and crosses the cylinder square; the plane first,
+since a helix about the circle's axis lies on its cylinder and crosses its plane;
+`solid_sweeps_examples::the_bull_nose_swung_partway_its_meridian_beside_its_foot_stops_inside_the_ring`)
+— its meetings' crossings still searched by
 `meeting::crossings` within their reach): where neither is a line or a conic, pairs of their
 stretches whose enclosures (`Enclosed`, a spline's poles
 restricted to the stretch; `Curve::bounds`, a span's whole hull, never shrank and the search gave
