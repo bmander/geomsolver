@@ -356,6 +356,10 @@ pub enum CKind {
     /// line in space (`kernels::line_on_axis_rows`), so it runs along it too.  Reads where the
     /// axis is, so it places it.
     LineOnAxis,
+    /// `p symmetry(t) q`: two points each the other's image in an axis, in space — the half turn
+    /// about the axis's line, `Symmetric3` over the axis's place and direction rather than a drawn
+    /// line's ends (`kernels::symmetric_axis_rows`).  Reads where the axis is, so it places it.
+    SymmetricAxis,
     /// **A point carried by an affine map** (#357): `q mapped(from -> a, to -> b, third -> c)
     /// p`, `q = a + i·(b − a) + j·(c − a)` with `(i, j)` the place of `p` in the frame `from`,
     /// `to`, `third`.  Each side is read in its own plane, the targets in theirs and the source
@@ -495,7 +499,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 95] = [
+pub const ALL_KINDS: [CKind; 96] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -591,6 +595,7 @@ pub const ALL_KINDS: [CKind; 95] = [
     CKind::PlaneTangentRound,
     CKind::PlaneSupportsCorner,
     CKind::LineFraction,
+    CKind::SymmetricAxis,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -866,6 +871,7 @@ impl CKind {
             CKind::PlaneAxis => "PlaneAxis",
             CKind::PointOnAxis => "PointOnAxis",
             CKind::LineOnAxis => "LineOnAxis",
+            CKind::SymmetricAxis => "SymmetricAxis",
             CKind::Mapped => "Mapped",
             CKind::MappedSimilar => "MappedSimilar",
             CKind::MappedCircle => "MappedCircle",
@@ -1142,6 +1148,7 @@ impl CKind {
             CKind::PlaneAxis => &[("plane", S::Plane), ("axis", S::Axis)],
             CKind::PointOnAxis => &[("p", S::Point), ("axis", S::Axis)],
             CKind::LineOnAxis => &[("line", S::Line), ("axis", S::Axis), ("sense", S::Str)],
+            CKind::SymmetricAxis => &[("p", S::Point), ("q", S::Point), ("axis", S::Axis)],
             CKind::AxisOnPlane | CKind::AxisParallelPlane | CKind::AxisPerpendicularPlane => {
                 &[("axis", S::Axis), ("plane", S::Plane)]
             }
@@ -1244,11 +1251,11 @@ impl CKind {
     ///
     /// Every user-facing constraint has one or two entity slots, always first in spec order —
     /// 1 for `Horizontal`, `Vertical` and `Radius`, 2 for twenty-eight others, and 3 for
-    /// `Symmetric` alone.  So "two operands, everything else in the parentheses" is not a rule
-    /// imposed on the library; it is a description of it, with one exception the parentheses
-    /// absorb.  `None` is a constraint nobody writes: `DragTarget` is internal and `soft`,
-    /// `Lift`, `AxisUnit` and `AxisFoot` are intrinsic (`Sketch::lift_point`, `Sketch::axis`,
-    /// `Sketch::place_axis`).
+    /// `symmetry` alone (`Symmetric`, `Symmetric3`, `SymmetricAxis`).  So "two operands,
+    /// everything else in the parentheses" is not a rule imposed on the library; it is a
+    /// description of it, with one exception the parentheses absorb.  `None` is a constraint
+    /// nobody writes: `DragTarget` is internal and `soft`, `Lift`, `AxisUnit` and `AxisFoot` are
+    /// intrinsic (`Sketch::lift_point`, `Sketch::axis`, `Sketch::place_axis`).
     ///
     /// Several kinds share a word, and that is where the saving is: **`coincident` is nineteen
     /// kinds, `distance` nine, `tangent` thirteen**, and `horizontal`/`vertical` are a line's
@@ -1367,7 +1374,7 @@ impl CKind {
             CKind::TangentCircleAt3 => ("tangent", Infix),
             CKind::PointOnLine3 => ("coincident", Infix),
             CKind::Midpoint3 => ("midpoint", Infix),
-            CKind::Symmetric3 => ("symmetry", Infix),
+            CKind::Symmetric3 | CKind::SymmetricAxis => ("symmetry", Infix),
             CKind::LineOnPlane => ("coincident", Infix),
             CKind::DragTarget
             | CKind::DragSeen
@@ -1463,6 +1470,7 @@ impl CKind {
     pub fn place_slots(self) -> &'static [usize] {
         match self {
             CKind::PointOnAxis | CKind::LineOnAxis | CKind::PlaneAxis => &[1],
+            CKind::SymmetricAxis => &[2],
             CKind::AxisOnPlane => &[0],
             CKind::AxisCoincident => &[0, 1],
             _ => &[],
@@ -1883,6 +1891,7 @@ impl CKind {
             | CKind::PlaneAxis
             | CKind::PointOnAxis
             | CKind::LineOnAxis
+            | CKind::SymmetricAxis
             | CKind::AxisOnPlane
             | CKind::AxisCoincident
             | CKind::AxisParallelPlane
@@ -2037,6 +2046,7 @@ impl CKind {
             CKind::PlaneAxis => K::PointOnAxis,
             CKind::PointOnAxis => K::PointOnAxis,
             CKind::LineOnAxis => K::LineOnAxis,
+            CKind::SymmetricAxis => K::SymmetricAxis,
             CKind::AxisOnPlane => K::AxisOnPlane,
             CKind::AxisCoincident => K::AxisCoincident,
             CKind::AxisParallelPlane => K::AxisParallelPlane,
@@ -2176,6 +2186,7 @@ impl CKind {
             | CKind::PlaneAxis
             | CKind::PointOnAxis
             | CKind::LineOnAxis
+            | CKind::SymmetricAxis
             | CKind::AxisOnPlane
             | CKind::AxisCoincident
             | CKind::AxisParallelPlane
@@ -2234,6 +2245,7 @@ impl CKind {
                 | CKind::LineFraction
                 | CKind::PointOnAxis
                 | CKind::LineOnAxis
+                | CKind::SymmetricAxis
                 | CKind::AxisOnPlane
                 | CKind::AxisCoincident
                 | CKind::AxisParallelPlane

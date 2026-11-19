@@ -273,7 +273,7 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | `radius` | prefix | a circle or arc |
 | `mass`, `volume` | prefix | a beam, a line a beam is drawn on, or a solid: what it is made of (`mass(10kg) arm`, `volume(42 * 1cm^3) web`, `claim mass(<= 1kg) plank`) — the drawing's, never a scenario's (see *Frames* below) |
 | `length` | prefix | any path: a line (the distance between its ends); an arc (radius × counter-clockwise sweep); a spline or free curve (its whole length). `distance` relates two things and `length` measures one, so `distance(d) l` on a line is refused, naming `length(d) l` |
-| `symmetry(line)` | infix | two points |
+| `symmetry(line)` | infix | two points; the line may be an axis, `a symmetry(std.x) b`: the half turn about it, in space (0.220) |
 | `midpoint` | infix | a point and a line |
 | `parallel`, `perpendicular` | infix | two lines; an axis and a line or axis; an axis and a plane; `perpendicular` a line and a plane (the line along its normal, in space); `parallel` two planes. `l1 perpendicular(sense: ccw) l2`: `l2` a quarter turn anticlockwise of `l1` (`cw` the other way), in a plane; in space only about an axis, `perpendicular(sense: ccw, about: a)`. `a parallel(sense: same) b`: the two run alike (`opposite`: apart), lines or axes, in a plane or in space; alone, either way, the seed's. `coincident` between a line and an axis or two axes takes the same `sense:` |
 | `project` | infix | two points in two planes: two images of one point in space (1.12) |
@@ -352,7 +352,7 @@ their places in space; no selector is needed:
 | `a coincident l`, `a coincident c` | on the line's extension; on the circle in its own view |
 | `l1 angle(90deg) l2` | the **unsigned** angle, strictly between 0° and 180° (say `parallel` for 0°); `angle(90deg, about: a)` the turn about `a` |
 | `parallel`, `perpendicular`, `equal` | directions, and true lengths |
-| `a midpoint l`, `a symmetry(l) b` | the midpoint in space; a half turn about the line |
+| `a midpoint l`, `a symmetry(l) b` | the midpoint in space; a half turn about the line — or about an axis, `a symmetry(std.z) b`, wherever the points are drawn |
 | `a distance(20, along: std.z) b` | how far apart along the axis, in space |
 
 A word with no meaning in space — `horizontal`, a view's own `along: u` between two points (name
