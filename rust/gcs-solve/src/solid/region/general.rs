@@ -20,7 +20,9 @@ pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionF
     let SolidDef::Region { terms, .. } = &s.def else {
         return Err(format!("`{}` is not a region", s.name));
     };
-    field_of(sk, &s.name, terms, true, &mut Vec::new())
+    // a half-space kept in common with a body has the body's end, not one of its own (#953)
+    let bounded = !crate::solid::defined::kept_half(sk, solid);
+    field_of(sk, &s.name, terms, bounded, &mut Vec::new())
 }
 
 /// The field of `terms` taken together, the region of solid `name`'s; `bounded` where it must

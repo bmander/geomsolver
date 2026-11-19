@@ -49,7 +49,7 @@ mod row;
 mod solid;
 pub use beam::{fixed_end, into_axes, out_of_axes, Axes};
 pub use consts::{Drive, Mover, Sizing, HEAD};
-pub use hull::{Axis, Frame, Hull, Profile, Sheet};
+pub use hull::{Axis, Direction, Frame, Hull, Place, Profile, Sheet};
 pub use moved::{Edge, Moved, Node, Stack};
 pub use plane::{Laid, Tri6};
 pub use solid::{Borne, Tet10};

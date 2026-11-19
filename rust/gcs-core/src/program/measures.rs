@@ -148,13 +148,21 @@ fn drive(
     head: &str,
     diags: &mut Vec<Diag>,
 ) -> Option<u32> {
-    let m = &sk.measured[index];
+    let m = sk.measured[index].clone();
     let kind = match m.quantity {
         Quantity::Mass => CKind::Mass,
         Quantity::Volume => CKind::Volume,
     };
     let args = vec![Arg::Int(index as i64), Arg::Num(m.value)];
     let key = MeshedKey::Measure(index);
+    // the unknowns the row reads are its columns, bound from their seeds before it is made — a
+    // waterline's height a volume sizes (#953); `evaluate` keeps them bound once the row reads them
+    let unknowns = crate::beams::measured_unknowns(sk, &m.of).unwrap_or_default();
+    for name in unknowns {
+        if let Some(seed) = sk.declared.get(&name).and_then(|d| d.seed) {
+            crate::expr::bind_free(sk, &name, seed);
+        }
+    }
     if let Ok(crate::constraints::InteriorRow::Meshed(row)) =
         Constraint::new(kind, args.clone()).made_row(sk)
     {

@@ -732,6 +732,12 @@ pub fn members(sk: &Sketch, of: &Applied) -> Vec<(usize, usize)> {
 /// **The unknowns a mass's or a volume's row over `of` reads**: those its members' areas are read
 /// over — the one number of a section a measure reads — each once, at most a tape's variables.
 pub fn measured_unknowns(sk: &Sketch, of: &Applied) -> Result<Vec<String>, String> {
+    // a solid's: the unknowns its regions' numbers read (#953), a waterline's height
+    if members(sk, of).is_empty() {
+        if let Some(solid) = of.solid() {
+            return Ok(crate::solid::region_unknowns(sk, solid));
+        }
+    }
     distinct(members(sk, of).iter()
         .flat_map(|&(b, _)| sk.beams[b].section.over.get(&SectionProp::A))
         .flat_map(|o| o.unknowns.iter().cloned()))

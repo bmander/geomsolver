@@ -64,6 +64,7 @@ impl Node {
                 for f in &mut b.faces { f.name = face.clone(); }
                 Ok(b)
             }
+            Node::Half {origin,keep,sources,face} => half_node(*origin,*keep,sources,face,built),
             Node::Placed {source,matrix} => {
                 let source = built.get(source).ok_or("recipe: `source` not built before its user")?;
                 Ok(source.moved(&Rigid::from_rows(matrix)))
@@ -87,6 +88,34 @@ impl Node {
                 Ok(super::build::carried(&Profile::of(profile)?.moved(&Rigid::from_rows(start)),*carry)?),
         }
     }
+}
+
+/// A `half` node (#953): the block behind the plane through `origin` (`keep` its unit normal
+/// into the half-space) standing on it over the box of `sources` — reaching past that box's
+/// farthest corner across the plane and along `keep`, so its only face the box's material can
+/// meet is the plane's.  Every face called `face`.
+fn half_node(origin: V,keep: V,sources: &[i64],face: &str,built: &BTreeMap<i64,Brep>) -> Built {
+    use crate::util::space::{add,dot,norm,scale,sub};
+    let mut bounds = EMPTY;
+    for s in sources {
+        widen(&mut bounds,built.get(s).ok_or("recipe: a half-space's material not built before it")?.bounds());
+    }
+    if sources.is_empty() || (0..3).any(|k| !(bounds.0[k] <= bounds.1[k])) {
+        return Err("recipe: a half-space kept with no material".to_string().into());
+    }
+    let len = norm(keep);
+    if !(len > 0.) { return Err("recipe: a half-space of no direction".to_string().into()) }
+    let keep = scale(keep,1./len);
+    let middle: V = std::array::from_fn(|k| (bounds.0[k]+bounds.1[k])/2.);
+    let h = 0.5*norm(sub(bounds.1,bounds.0)).max(f64::MIN_POSITIVE);
+    // the middle's foot on the plane, and a reach past every corner of the box from it
+    let foot = add(middle,scale(keep,-dot(sub(middle,origin),keep)));
+    let reach = 2.*(h+norm(sub(middle,foot)));
+    let p = super::build::square(foot,keep,reach);
+    let names = vec![vec![face.to_string();p.loops[0].len()]];
+    let mut b = prism(&Profile {names,..p},0.,reach)?;
+    for f in &mut b.faces { f.name = face.to_string(); }
+    Ok(b)
 }
 
 /// A `family` node: each wall's sheet over the pieces of its interval, the solid they bound.

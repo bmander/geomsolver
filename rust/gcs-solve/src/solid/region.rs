@@ -54,6 +54,11 @@ pub(crate) fn in_general_position(sk: &Sketch, solid: usize)
         Ok(strata) => super::MemoKey::own(sk, solid, strata),
         Err(_) => super::MemoKey::of(sk, solid),
     };
+    // a half-space kept with a body is read point by point, its end the body's (#953): never
+    // folded about an axis, where it would be refused for having none
+    if super::defined::kept_half(sk, solid) {
+        return Some(general(sk, solid));
+    }
     sk.caches.general.get_or(solid, key, || match folded(sk, solid) {
         Ok(_) => None,
         Err(r) if r.outright => None,

@@ -75,14 +75,38 @@ pub enum Axis {
     Read { a: usize, d: usize },
 }
 
+/// **A point in space as a sheet reads it** (#953): held where it stands, a point in space by
+/// the column of its x (its y and z the next), a point drawn in a plane by the column of its x
+/// there (its y the next) lifted by that plane, or a point of a spatial frame by its three
+/// columns read along the frame's axes and normal.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Place {
+    Held([f64; 3]),
+    Space(usize),
+    Plane { frame: usize, c: usize },
+    Chart { frame: usize, c: usize },
+}
+
+/// **A half-space's direction** (#953): held, a plane's normal, or an axis's direction read off
+/// three columns — made unit wherever it is read.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Direction {
+    Held([f64; 3]),
+    Normal(usize),
+    Read(usize),
+}
+
 /// **A sheet a face of the body is a piece of**: a prism's cap at ordinate `h` along its plane's
-/// normal, a prism's side (a profile's line or circle swept along the normal), or a turn's face
-/// (a profile's line or circle turned about an axis).
+/// normal, a prism's side (a profile's line or circle swept along the normal), a turn's face (a
+/// profile's line or circle turned about an axis), or a half-space's plane (#953): the points
+/// `n · (x − o)` along its unit direction from its point at the ordinate `c + m · t`, `t` the
+/// column of the unknown it reads where it reads one — the waterline a volume sizes.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Sheet {
     Cap { frame: usize, h: f64 },
     Extruded { frame: usize, curve: Profile },
     Turned { frame: usize, axis: Axis, curve: Profile },
+    Ordinate { at: Place, along: Direction, c: f64, m: f64, t: Option<usize> },
 }
 
 /// **A filled body's nodes as functions of the drawing's columns**: how many columns, the planes
@@ -328,11 +352,36 @@ impl Axis {
 }
 
 impl Sheet {
-    fn frame(&self) -> usize {
+    /// The plane its profile is drawn in; a half-space's has none of its own.
+    fn frame(&self) -> Option<usize> {
         match *self {
             Sheet::Cap { frame, .. } | Sheet::Extruded { frame, .. } | Sheet::Turned { frame, .. } => {
-                frame
+                Some(frame)
             }
+            Sheet::Ordinate { .. } => None,
+        }
+    }
+}
+
+impl Place {
+    /// The plane it is lifted by, and the columns it reads of its own.
+    fn reads(&self) -> (Option<usize>, Vec<usize>) {
+        match *self {
+            Place::Held(_) => (None, Vec::new()),
+            Place::Space(c) => (None, vec![c, c + 1, c + 2]),
+            Place::Plane { frame, c } => (Some(frame), vec![c, c + 1]),
+            Place::Chart { frame, c } => (Some(frame), vec![c, c + 1, c + 2]),
+        }
+    }
+}
+
+impl Direction {
+    /// The plane it is the normal of, and the columns it reads of its own.
+    fn reads(&self) -> (Option<usize>, Vec<usize>) {
+        match *self {
+            Direction::Held(_) => (None, Vec::new()),
+            Direction::Normal(f) => (Some(f), Vec::new()),
+            Direction::Read(c) => (None, vec![c, c + 1, c + 2]),
         }
     }
 }
@@ -341,11 +390,19 @@ impl Hull {
     /// The columns sheet `s` reads, its plane's among them, in order and once each.
     fn sheet_columns(&self, s: usize) -> Vec<usize> {
         let sheet = &self.sheets[s];
-        let mut out = match self.frames[sheet.frame()] {
-            Frame::Read(c) => (c..c + 9).collect(),
-            Frame::Held(_) => Vec::new(),
+        let frame_columns = |f: Option<usize>| match f.map(|f| &self.frames[f]) {
+            Some(Frame::Read(c)) => (*c..*c + 9).collect(),
+            _ => Vec::new(),
         };
+        let mut out: Vec<usize> = frame_columns(sheet.frame());
         match sheet {
+            Sheet::Ordinate { at, along, t, .. } => {
+                for (f, own) in [at.reads(), along.reads()] {
+                    out.extend(frame_columns(f));
+                    out.extend(own);
+                }
+                out.extend(t.iter().copied());
+            }
             Sheet::Cap { .. } => {}
             Sheet::Extruded { curve, .. } => out.extend(curve.columns()),
             Sheet::Turned { axis, curve, .. } => {
@@ -381,7 +438,34 @@ impl Hull {
     /// columns `col` reads — NaN where the sheet is degenerate (a line of no length, a node on a
     /// turn's axis off a face square to it).
     fn level<T: Num>(&self, s: usize, col: &dyn Fn(usize) -> T, p: V<T>) -> (T, V<T>) {
-        let [o, u, v, n] = self.basis(self.sheets[s].frame(), col);
+        // a half-space's plane (#953): its point, its unit direction, its ordinate
+        if let Sheet::Ordinate { at, along, c, m, t } = self.sheets[s] {
+            let k = T::cst;
+            let o = match at {
+                Place::Held(q) => q.map(k),
+                Place::Space(c) => [col(c), col(c + 1), col(c + 2)],
+                Place::Plane { frame, c } => {
+                    let [o, u, v, _] = self.basis(frame, col);
+                    vadd(o, vadd(vscale(u, col(c)), vscale(v, col(c + 1))))
+                }
+                Place::Chart { frame, c } => {
+                    let [o, u, v, n] = self.basis(frame, col);
+                    vadd(vadd(o, vadd(vscale(u, col(c)), vscale(v, col(c + 1)))),
+                         vscale(n, col(c + 2)))
+                }
+            };
+            let n = match along {
+                Direction::Held(d) => unit(d.map(k)),
+                Direction::Normal(f) => self.basis(f, col)[3],
+                Direction::Read(c) => unit([col(c), col(c + 1), col(c + 2)]),
+            };
+            let h = match t {
+                Some(t) => k(c) + k(m) * col(t),
+                None => k(c),
+            };
+            return (vdot(vsub(p, o), n) - h, n);
+        }
+        let [o, u, v, n] = self.basis(self.sheets[s].frame().expect("a sheet's plane"), col);
         let lift = |c: usize| vadd(o, vadd(vscale(u, col(c)), vscale(v, col(c + 1))));
         let k = T::cst;
         match self.sheets[s] {
@@ -397,6 +481,7 @@ impl Hull {
                 let rho = vdot(w, w).sqrt();
                 (rho - col(r), vscale(w, k(1.0) / rho))
             }
+            Sheet::Ordinate { .. } => unreachable!("a half-space's level is read above"),
             Sheet::Turned { axis, curve, .. } => {
                 let (a, d) = match axis {
                     Axis::Held { a, d } => (a.map(k), d.map(k)),
@@ -811,6 +896,29 @@ impl Hull {
                     w[5] = kind;
                     w[6..].copy_from_slice(&rest);
                 }
+                // its kind, its point's kind and three, its direction's kind and three, then its
+                // ordinate's number, coefficient and unknown's column past one (none: nothing)
+                Sheet::Ordinate { at, along, c, m, t } => {
+                    w[0] = 3.0;
+                    let (pk, pw) = match *at {
+                        Place::Held(q) => (0.0, q),
+                        Place::Space(c) => (1.0, [c as f64, 0.0, 0.0]),
+                        Place::Plane { frame, c } => (2.0, [frame as f64, c as f64, 0.0]),
+                        Place::Chart { frame, c } => (3.0, [frame as f64, c as f64, 0.0]),
+                    };
+                    let (dk, dw) = match *along {
+                        Direction::Held(d) => (0.0, d),
+                        Direction::Normal(f) => (1.0, [f as f64, 0.0, 0.0]),
+                        Direction::Read(c) => (2.0, [c as f64, 0.0, 0.0]),
+                    };
+                    w[1] = pk;
+                    w[2..5].copy_from_slice(&pw);
+                    w[5] = dk;
+                    w[6..9].copy_from_slice(&dw);
+                    w[9] = *c;
+                    w[10] = *m;
+                    w[11] = t.map_or(0.0, |t| t as f64 + 1.0);
+                }
             }
             k.extend(w);
         }
@@ -877,6 +985,26 @@ impl Hull {
                         _ => return None,
                     };
                     Sheet::Turned { frame: frame(s[1])?, axis, curve: curve(&s[2..5])? }
+                }
+                z if z == 3.0 => {
+                    let at = match s[1] {
+                        z if z == 0.0 => Place::Held([s[2], s[3], s[4]]),
+                        z if z == 1.0 => Place::Space(col(s[2], 3)?),
+                        z if z == 2.0 => Place::Plane { frame: frame(s[2])?, c: col(s[3], 2)? },
+                        z if z == 3.0 => Place::Chart { frame: frame(s[2])?, c: col(s[3], 3)? },
+                        _ => return None,
+                    };
+                    let along = match s[5] {
+                        z if z == 0.0 => Direction::Held([s[6], s[7], s[8]]),
+                        z if z == 1.0 => Direction::Normal(frame(s[6])?),
+                        z if z == 2.0 => Direction::Read(col(s[6], 3)?),
+                        _ => return None,
+                    };
+                    let t = match count(s[11])? {
+                        0 => None,
+                        t => Some(col((t - 1) as f64, 1)?),
+                    };
+                    Sheet::Ordinate { at, along, c: s[9], m: s[10], t }
                 }
                 _ => return None,
             })

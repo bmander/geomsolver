@@ -16,7 +16,7 @@
 //! a curve.
 
 use crate::bodies::{Mesh, Wall};
-use crate::interior::{Axis, Frame, Hull, Profile, Sheet};
+use crate::interior::{Axis, Direction, Frame, Hull, Place, Profile, Sheet};
 use crate::model::{EntKind, EntRef, Sketch, SolidDef};
 use crate::solid::faces::BodyFaces;
 use std::collections::BTreeMap;
@@ -48,6 +48,70 @@ impl Builder {
             let pt = &sk.points[q];
             self.columns.extend([pt.x, pt.y]);
             self.columns.len() - 2
+        })
+    }
+
+    /// **Point `q` as a sheet reads it** (#953): held where nothing the solve moves reads it, a
+    /// point in space by its three columns, a point of a plane or a spatial frame by its own
+    /// columns lifted by that plane.
+    fn place(&mut self, sk: &Sketch, q: usize) -> Place {
+        let pt = &sk.points[q];
+        let own: Vec<u32> = [Some(pt.x), Some(pt.y), pt.z].into_iter().flatten().collect();
+        let held = |sk: &Sketch| own.iter().all(|&c| sk.params[c as usize].fixed)
+            && pt.chart.or(pt.plane).is_none_or(|f| sk.plane_fixed(f as usize));
+        if held(sk) {
+            return Place::Held(sk.world_point(q));
+        }
+        match (pt.z, pt.chart) {
+            (Some(z), Some(f)) => {
+                let frame = self.frame(sk, Some(f));
+                let c = self.columns.len();
+                self.columns.extend([pt.x, pt.y, z]);
+                Place::Chart { frame, c }
+            }
+            (Some(z), None) => {
+                let c = self.columns.len();
+                self.columns.extend([pt.x, pt.y, z]);
+                Place::Space(c)
+            }
+            (None, _) => {
+                let frame = self.frame(sk, sk.plane_of(q).map(|p| p as u32));
+                Place::Plane { frame, c: self.point(sk, q) }
+            }
+        }
+    }
+
+    /// **A half-space's direction as a sheet reads it** (#953): a plane's normal, an axis's
+    /// direction (held where the solve moves no number of it) — or why it is not moved yet.
+    fn direction(&mut self, sk: &Sketch, along: EntRef) -> Result<Direction, String> {
+        Ok(match along.kind {
+            EntKind::Frame => Direction::Normal(self.frame(sk, Some(along.idx))),
+            EntKind::Axis => {
+                let d = sk.axes[along.i()].d;
+                if d.iter().all(|&q| sk.params[q as usize].fixed) {
+                    Direction::Held(d.map(|q| sk.params[q as usize].value))
+                } else {
+                    let c = self.columns.len();
+                    self.columns.extend(d);
+                    Direction::Read(c)
+                }
+            }
+            EntKind::Line => {
+                let l = &sk.lines[along.i()];
+                let held = |q: u32| {
+                    let pt = &sk.points[q as usize];
+                    [Some(pt.x), Some(pt.y), pt.z].into_iter().flatten()
+                        .all(|c| sk.params[c as usize].fixed)
+                        && pt.chart.or(pt.plane).is_none_or(|f| sk.plane_fixed(f as usize))
+                };
+                if !(held(l.p1) && held(l.p2)) {
+                    return Err("a half-space along a line the solve moves, which a driving row \
+                                does not move yet".into());
+                }
+                let d = crate::space::sub(sk.world_point(l.p2 as usize), sk.world_point(l.p1 as usize));
+                Direction::Held(d)
+            }
+            kind => return Err(format!("a half-space along {}", kind.a())),
         })
     }
 
@@ -157,6 +221,34 @@ impl Builder {
                     _ => return Err(format!("`{}` is turned about no line and no axis", solid.name)),
                 };
                 Sheet::Turned { frame, axis, curve }
+            }
+            // a half-space kept with a body (#953): the plane of the term its face is named by
+            SolidDef::Region { terms, .. } if crate::solid::defined::kept_half(sk, p) => {
+                let mut named = terms.iter().filter(|t| t.name == face);
+                let (Some(t), None) = (named.next(), named.next()) else {
+                    return Err(format!("`{}` names no one half-space `{face}`", solid.name));
+                };
+                let crate::model::RegionShape::Plane { along, from, sign } = t.shape else {
+                    unreachable!("a kept half-space's every term is one")
+                };
+                if t.cmp == crate::vocab::Cmp::In {
+                    return Err(format!("`{face}` is an interval of a half-space's ordinate, whose \
+                                        two planes a driving row does not move yet"));
+                }
+                let at = self.place(sk, from as usize);
+                let along = self.direction(sk, along)?;
+                // `sign · n · (x − o) = c + m · t`: the plane where the ordinate along `sign · n`
+                // is the term's number, held to `n` by turning the number's sign
+                let c = sign * t.lo.c;
+                let (m, t) = match &t.lo.free {
+                    Some((name, m)) => {
+                        let q = sk.free_vars.get(name).copied().filter(|&q| !sk.params[q as usize].fixed)
+                            .ok_or_else(|| format!("`{name}` is an unknown nothing determines"))?;
+                        (*m, Some(self.param(q)))
+                    }
+                    None => (0.0, None),
+                };
+                Sheet::Ordinate { at, along, c, m: sign * m, t }
             }
             SolidDef::Prism { .. } => {
                 return Err(format!("`{}` is drafted, which a driving row does not move yet",
