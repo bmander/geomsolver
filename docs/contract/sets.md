@@ -212,6 +212,23 @@ offset — each a primitive bounded past the support, kept within in common, kep
 away; the recipe's `"region"` node, `"pieces"` each with `"keep"`; gated by agreement with the
 field, `Caches::bounded`); else no exact construction (`cad.rs` says so, naming the region).
 
+**A face deleted, said as a set** (`p in B.near.side; p in B.rim.side; …`, the faces round a
+deleted face run on along their own surfaces until they meet): where the lowering table builds
+none of it, the common of its terms builds it too (`solid::bounded`, after the table and a body
+grown in `region::route`).  A face's side at a number is the solid its surface bounds grown by it
+(`faces::BodyFaces::level`, a `faces::Level`): a plane's half-space, a cylinder, a ball, a cone
+(its apex where the radius is nothing) or a torus (its tube short of its axis), kept within where
+the material is within the surface, taken away where it is outside (a hole's wall, a
+countersink); several faces on one surface as that surface, on several whose creases are all
+convex as each (`Reading::levels`, at the surfaces only).  A term outside a set — a union, `p in a
+or p in b`, the set of each turned — takes away that set's own region built the same way
+(`bounded::gather`, a `"region"` node as a piece), from a block holding the support where it keeps
+within nothing; a region of nothing but such terms is that block less them.  Its support is the
+field's, which a face kept within a ball, a torus, a cylinder, a cone or its convex planes closes
+as the shapes' own do (`region::general`), else the box of the bodies it reads grown by its own
+diagonal — so a region reaching past that is cut off there and the gate refuses it.
+`tests/face_edits.rs` (brep-bench's `edit/` cases, to closed forms) is the gate.
+
 **A sum of distances the meridian folds** (#238, `region::meridian::foci`): from one point, or two alike in
 weight, on its axis (the line through them chooses it when nothing else does) — a ball, an
 ellipsoid's half ellipse (two `Seg::Conic` quarters), the plane midway, or a hyperboloid's lobe

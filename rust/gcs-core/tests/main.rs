@@ -117,6 +117,7 @@ mod export_contracts;
 mod expr;
 mod extremal;
 mod extrude;
+mod face_edits;
 mod face_family;
 mod far_seed;
 mod extruded_envelope;
