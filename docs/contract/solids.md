@@ -125,7 +125,11 @@ placement carries inside the blank; CLI test readers zero the offset.
   `clear()`); a clone keeps every entry, sharing the `Rc`/`Arc` results, and then remembers apart
   — what a copy read slightly changed (`preview_body`, a body's stratum) reuses for its operands.
   **An evaluated solid is keyed on its shape, and a solid that only moved is moved** (#412):
-  `Caches::solid` keeps each evaluation against a `solid::ShapeKey` — what `reads` reads, but
+  `Caches::solid` keeps each evaluation against a `solid::ShapeKey` — what `reads` reads (a
+  region's term reading each entity it measures by its kind, `reads::entity_reads`: a face by its
+  loops and its plane, a plane by its attitude, a curve by its numbers, its points where they
+  stand and their planes — never a face's number taken for a plane's, which read another plane's
+  pose into a countersink's key and panicked where faces outnumber planes, #948), but
   every plane's pose rewritten relative to a reference plane (the first face's, found as
   `frame_origin` finds the origin), and that plane's world pose apart.  Two keys of one shape
   (`same_shape`: every number within the solve's step tolerance, `solve::XTOL`, of the larger or

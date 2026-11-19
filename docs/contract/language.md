@@ -129,7 +129,11 @@ built, its relations, holds, claims and branches are not (`program.rs`'s `statin
 relation bounding the copy's own region solid's probe** (`{solid}#probe`, `flatten::is_probe`):
 never a row, it is the copy's solid's term, read over its turned points, and the probe itself is
 turned with nothing (`rings.rs` skips it), so a ball written as a set is one ball a copy (#904 /
-`shaft_drive` finding 20, `tests/ring_balls.rs`).
+`shaft_drive` finding 20, `tests/ring_balls.rs`).  So too every other point a copy's sets are
+read at, whatever its key — a distance's from a set (`#7.m0`), a set's point outside (`#7.c`), a
+point a `some` binds (`Probes::terms`, `Probes::binders`, `Expansion::probes`) — and every bound
+on measurements (`Operation::Measured`): a countersink in a ring is one cone a copy, under its
+rim (#948, `countersink::countersinks_in_a_ring_are_turned_with_their_rims`).
 `program/rings.rs` pairs each turned entity with the representative's by key
 (`prefix#id.k.rest` ↔ `prefix#id.0.rest`) into `Sketch::turns` (`model/turns.rs`): a point's,
 circle's or arc's numbers are then **derived** (`Sketch::derived`, linear in the
@@ -290,7 +294,11 @@ document's statement (`FaceState::at`, carried in `Pending::at`), kept in `Sourc
 form `crossed` is kept in too), and `elaborate` names every solid's faces again — once (its
 `pose`): `solids_and_surfaces` stands the sketch there by key (`program::stand`, the writer
 `holds` uses for `crossed`) while it reads each `Meets`, and puts the seeds back. A document with
-no `Apart` is solved by its caller alone.
+no `Apart` is solved by its caller alone.  So too a solid whose faces a `when` held against a
+direction but whose boundary the seeds do not build (an arc's ends seeded off its circle by
+thousandths, #948): its E103 is said only where it is not built where the drawing solves either
+(`Expansion::unread`, `SourceMap::unread`, read again by `at_solve` where E103s are all the pass
+refused; `faces_along::a_body_the_seeds_do_not_build_is_read_where_the_drawing_solves`).
 `program::at_solve::read_again` reads it again in `solid_diagnostics` where the drawing is solved: a pair
 that meets there is E080, once per statement and solid. `std.rounds`' `round` and `chamfer` pair
 only faces that meet and round only threes that meet pairwise; `tests/meets.rs` is the gate (the
