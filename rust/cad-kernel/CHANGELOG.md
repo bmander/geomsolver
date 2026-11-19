@@ -8,6 +8,18 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A trim missing a meeting completes it from where it parts a piece** (#942 F2): a piece the trim
+  reads is held to one verdict at up to eight of its points, and two that differ, the one off the
+  boundary proved clear of it, are a witness, where a piece was kept or dropped whole by its first
+  point. Where the result does not close, the faces either side of each open edge are read the same
+  way. From a witness the trim walks the face between its two points, traces the meeting of each
+  surface crossing it there that it was not given, adds it to what it was given and trims again (the
+  tumbling cube at 5°, its branches beside its rails taken out, builds the same solid). What it cannot
+  complete is refused by name: a pair met by search that missed the crossing, or a surface crossing
+  itself (the bench's tumbling cube at 75°, its edge 5's fan passing back through itself). Faces
+  whose surfaces were given a meeting are now always met in the trim where their boxes meet, and
+  `trim::Report::completed` counts the curves completed.
+
 - **A ring's double curves are cut into its stretches by the fit itself** (#942 F4): each double
   curve point's place round the loop is read from the seams' angles of the stretch's own net at its
   row, where it read a whole instant's contact (a root on every meridian and its joins settled) to

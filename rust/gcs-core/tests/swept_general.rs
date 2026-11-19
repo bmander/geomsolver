@@ -146,12 +146,45 @@ fn a_refused_trim_replays_from_its_dump_to_the_same_refusal() {
 
 /// **The bench's tumbling cube's refused trim replays from its dump alike** (#942 F5's gate): the
 /// cube tumbling 75° either way, its candidates taken 17 s to make, refused in its trim, gives the
-/// same refusal run again from the files in a fraction of that.
+/// same refusal run again from the files in a fraction of that. Refused by name since #942 F2: a
+/// piece of its edge 5's fan read off the boundary at one point and the boundary at another 0.015
+/// away, a meeting it was not given parting them (where it left 28 boundary edges open) — the fan
+/// at later instants passing back through that piece between the two, a meeting of the fan with
+/// itself, which no given meeting of two surfaces lays.
 #[test]
-#[cfg_attr(not(feature = "slow"),ignore = "slow tier, 30 s: the bench's tumbling cube's candidates made, then its trim twice")]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, 40 s: the bench's tumbling cube's candidates made, then its trim twice")]
 fn the_bench_tumbling_cubes_refused_trim_replays_from_its_dump_alike() {
     let why = replayed_alike(&cube_trimming(75.),"cube-75-dump");
-    assert!(why.contains("not closed"),"{why}");
+    // (a piece of one edge's fan read apart, and the fan at later instants passing back through it
+    // between the two points: the meeting missing is the fan's with itself, #942 F2)
+    assert!(why.contains("a meeting the trim was not given parts them") && why.contains("passing back through itself"),"{why}");
+}
+
+/// **A meeting left out of what the trim is given is completed from its witness** (#942 F2's gate):
+/// the cube tumbling 5° either way, which builds, its fans' second branches beside their rails taken
+/// out of the meetings given (`general::beside_rails`'s, the hole the 5° cube once had). The trim
+/// reads a piece the missing branch parts — the boundary at one point, off it at another — traces
+/// the meeting from where it crosses between them, and builds the solid the whole given builds, to
+/// its volume, where it once left the boundary open where no one said.
+#[test]
+fn a_meeting_left_out_of_the_trim_is_completed_from_its_witness() {
+    let whole = cube_trimming(5.);
+    let (built,report) = whole.replay().expect("the cube tumbling 5° trims");
+    assert_eq!(report.completed,0,"the whole given needs nothing completed");
+    let mut t = whole.clone();
+    let mut taken = 0;
+    for g in &mut t.given {
+        if g.curves.iter().any(|c| c.kind() == "rail") {
+            let before = g.curves.len();
+            g.curves.retain(|c| c.kind() == "rail");
+            taken += before-g.curves.len();
+        }
+    }
+    assert!(taken > 0,"a branch beside a rail to take out");
+    let (completed,report) = t.replay().expect("the trim completes the branch left out from its witness");
+    assert!(report.completed > 0,"a meeting completed");
+    let (v,w) = (gcs_core::brep::props::volume(&built),gcs_core::brep::props::volume(&completed));
+    assert!((v-w).abs() <= 1e-9*v.abs(),"completed, the trim builds {w}, the whole given {v}");
 }
 
 /// A rise of `6s + 0.3s²` after `s` turns (brep-bench's `swept/square-thread-at-a-growing-lead`):

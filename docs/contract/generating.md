@@ -854,6 +854,33 @@ reading, the candidates with their face families' walls, rails and rims, and the
 refuses as the build did (`swept_general::a_refused_trim_replays_from_its_dump_to_the_same_refusal`,
 and in the slow tier the bench's tumbling cube).
 
+**A piece is one verdict all over, or a meeting is missing, and the trim completes it** (#942 F2,
+`trim`'s `sided`, `missing_across` and `completed`): each piece is read at up to eight of its inner
+points, the first that settles its verdict and as many as seven more that hold it there. Two that
+differ, the one read off the boundary proved clear of it by `CLEAR` hairs (`Swept::beyond`), are a
+witness: a meeting the trim was not given parts them. Where the result does not close, each edge it
+uses once is read across, `ACROSS` hairs either way on every candidate face through its middle: the
+face kept there read clear of the boundary, or a face not kept read as the boundary, is a witness
+with the point its piece was read at. From a witness the face is walked between its two points in
+its own parameters (`Located::uv`, the branch of a folded wall the face is on), and wherever another
+candidate's face crosses the walk where no given curve passes, the two surfaces' meeting is traced
+from the crossing (`ssi::trace`, else marched in their parameters), added to their given meeting or
+given as a new one, and the trim run again, up to `ROUNDS` times. The gate has no sweep's road in
+it (`swept_trim::a_meeting_given_with_a_branch_left_out_is_completed_from_its_witness`): the bar
+screwed a half turn, its candidates entered by hand, each end pose's face given its closed-form
+meeting with a helicoid patch less the branch across the patch, completed to the helical integral
+apart from the build. On the general road's own candidates
+(`swept_general::a_meeting_left_out_of_the_trim_is_completed_from_its_witness`): the cube tumbling
+5°, its fans' branches beside their rails taken out of what it is given, completed to the volume the
+whole given builds. A witness nothing missing crosses is the refusal, naming what parts it where it
+can: a pair met by search that missed the crossing, or another face of the same surface crossing the
+walk — the surface passing back through itself, which no given meeting of two surfaces lays (in the
+slow tier the tumbling cube at 75°, its edge 5's fan crossing itself). A mixed piece is never kept
+whole or dropped whole.
+Faces whose surfaces a `Given` names are always met, where their boxes do (`trim`'s pairing): the
+given curves are the meeting laid with no search, and near balls alone left a thin stretch's face
+and the plane it crosses unpaired.
+
 **Trimming by certified membership, face by face (#880 E1, `swept::trim`; docs/swept-solid-design.md
 §12).** A closed swept solid is built from candidates given to it — the tool's faces at the end
 poses, the sheets its contacts and edges sweep — and the meetings known by construction, with no
