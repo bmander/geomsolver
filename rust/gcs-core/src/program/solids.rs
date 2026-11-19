@@ -392,11 +392,7 @@ fn res_forget(res: &mut Resolver, probes: &mut super::regions::Probes, name: &st
     // renumbered too — or a round's region over a body declared past a refused solid named the
     // region itself, and read itself without end (#952).  A set over what was refused is
     // refused with it, said once at the cause
-    let renumber = |e: EntRef| match e {
-        e if e.kind != gone.kind || e.idx < gone.idx => Some(e),
-        e if e.idx == gone.idx => None,
-        e => Some(EntRef::new(e.kind, e.i() - 1)),
-    };
+    let renumber = super::resolve::past(gone);
     for (&p, terms) in probes.terms.iter_mut() {
         let renumbered: Option<Vec<_>> = terms.iter().map(|t| {
             t.shape.remapped(&renumber).map(|shape| crate::model::RegionTerm { shape, ..t.clone() })

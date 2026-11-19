@@ -55,7 +55,7 @@ pub(super) fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
                 // nor after a line ending in `and`, `or` or `not`, which want what follows them
                 // (#952): a condition runs on onto the next line
                 let joins = matches!(toks.last(), Some((Tok::Ident(w), _))
-                    if matches!(w.as_str(), "and" | "or" | "not"));
+                    if super::words::JOINERS.contains(&w.as_str()));
                 if depth == 0 && !joins {
                     toks.push((Tok::Nl, Span::new(lo, i)));
                 }
@@ -166,11 +166,10 @@ pub(super) fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
                     i += ch.len_utf8();
                 }
                 // a line opening with `and` or `or` goes on with the one before (#952), as one
-                // ending in either does — save where the word is a name the line defines or
-                // reads into (`or := 3`, `or.x`), which no condition opens with
+                // ending in either does — save one defining it as a name, its own line to be
+                // refused (`P::defines`)
                 if matches!(&src[lo..i], "and" | "or")
-                    && !matches!(src[i..].trim_start_matches([' ', '\t']).as_bytes(),
-                                 [b':', b'=', ..] | [b'.', ..])
+                    && !src[i..].trim_start_matches([' ', '\t']).starts_with(":=")
                 {
                     while matches!(toks.last(), Some((Tok::Nl, sp)) if b[sp.lo as usize] == b'\n') {
                         toks.pop();

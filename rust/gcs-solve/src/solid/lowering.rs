@@ -499,9 +499,9 @@ fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> 
     let mut out = Spill::new();
     for (k, _) in f.faces.iter().enumerate().filter(|(_, r)| r.smooth) {
         let chain = body.smooth(&groups[k]);
-        let own: std::collections::BTreeSet<usize> =
-            groups[k].iter().flat_map(|&fi| pieces(body, fi)).collect();
-        let own: Vec<usize> = own.into_iter().collect();
+        let mut own: Vec<usize> = groups[k].iter().flat_map(|&fi| pieces(body, fi)).collect();
+        own.sort_unstable();
+        own.dedup();
         let beyond: Vec<usize> = chain.into_iter().filter(|fi| !own.contains(fi)).collect();
         if beyond.is_empty() {
             continue;

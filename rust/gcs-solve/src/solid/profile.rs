@@ -192,10 +192,10 @@ pub fn arcs_turned_in(sk: &Sketch, fi: usize) -> Vec<(EntRef, f64)> {
         let (p, q) = (sk.point_xy(from as usize), sk.point_xy(to as usize));
         area += 0.5 * (p.0 * q.1 - q.0 * p.1);
         if e.kind == EntKind::Arc {
-            let (a0, a1) = sk.arc_angles(e.i());
-            let phi = if from == sk.arcs[e.i()].start { a1 - a0 } else { a0 - a1 };
-            let r = sk.params[sk.arcs[e.i()].radius as usize].value;
-            area += 0.5 * r * r * (phi - phi.sin());
+            let (arc, (a0, a1)) = (&sk.arcs[e.i()], sk.arc_angles(e.i()));
+            let phi = if from == arc.start { a1 - a0 } else { a0 - a1 };
+            let r = sk.params[arc.radius as usize].value;
+            area += 0.5 * r * r * (phi - phi.dsin());
             arcs.push((e, phi));
         }
     }

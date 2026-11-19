@@ -752,13 +752,12 @@ impl<'a> P<'a> {
             if named || anonymous_link_at(&self.t, self.i) {
                 let lo = self.here().lo as usize;
                 self.i += 1; // `(`
-                let n = match named {
-                    true => {
-                        let n = self.ident()?;
-                        self.i += 1; // `:=`
-                        Some(n)
-                    }
-                    false => name.clone(),
+                let n = if named {
+                    let n = self.ident()?;
+                    self.i += 1; // `:=`
+                    Some(n)
+                } else {
+                    name.clone()
                 };
                 let kind = EntKind::parse(self.word_at(self.i)?).expect("paren_link_at");
                 self.i += 1;

@@ -12,7 +12,8 @@ meets neither neighbour stays E080, but where both neighbours are the one point 
 one loop: `face(rim, o, -> close)`, an arc and its centre, is the pie slice (E080 through 0.218). A
 `when`'s condition runs on past a line's end inside a parenthesis, and where a line ends in `and`, `or`
 or `not` or the next opens with `and` or `or`; through 0.218 the condition ended at the line, E001
-"expected `{`". Beside the language, without changing what any document reads: a closed named chain
+"expected `{`". So `and`, `or` and `not` are no name: `and := 2mm` is E001, saying they join
+conditions (a statement opening with a name spelled `or` was refused already). Beside the language, without changing what any document reads: a closed named chain
 through an arc said to turn clockwise is the face it lists (it was E080, "meets neither of its
 neighbours"); `face(line(a, b), …)` says that a face lists edges declared by name and that a loop drawn
 in place is a chain, where it said "expected `,` or `)`"; and **W118** names an arc of a half turn or

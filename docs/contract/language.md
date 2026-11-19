@@ -259,8 +259,9 @@ The parser refuses `as` and a trailing joint; the measured-bound sniff skips a s
 opener word starts.  **The condition runs on past a line's end** ([0.219], #952) inside a
 parenthesis, as anything does, and where its line ends in `and`, `or` or `not` or the next opens
 with `and` or `or` — the lexer's rule (`syntax::lexer::lex`, no `Tok::Nl` there, so the parser, the
-notation's lowering and the colouring read one line), save where the word opens a line defining or
-reading into a name it is (`or := 3`, `or.x`); `count` is its text read as one line, every run of
+notation's lowering and the colouring read one line).  So `and`, `or` and `not` are no name
+(`syntax::words::JOINERS`, out of `is_name` and in `reserved_word`): a line defining one stands on
+its own and is refused saying why (`P::statement`); `count` is its text read as one line, every run of
 white space one space, so what `flatten::values` parses and quotes is the one line it is. `commit_seeds` writes into a root `when`'s body. The hypoid's tip relief is
 one (`hypoid.sv`). `tests/when.rs` is the gate.
 

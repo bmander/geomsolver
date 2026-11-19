@@ -892,8 +892,8 @@ fn half_turn(sk: &Sketch, pts: [usize; 3]) -> bool {
 /// before it leaves, and an arc it enters at its end — its end shared with the link before, or,
 /// first, its start with the link after — it walks from there to its start.  Each such arc, for
 /// `arcs_in_space` to draw from its end, held against each arc a chain enters at its start.  An
-/// arc two chains walk opposite ways is refused (E080): it is drawn one way, from its start.  A chain whose links do not meet is left to
-/// `solids::faces::validate_chain`, which says so.
+/// arc two chains walk opposite ways is refused (E080): it is drawn one way, from its start.  A
+/// chain whose links do not meet is left to `solids::faces::validate_chain`, which says so.
 pub(super) fn walked_back(sk: &Sketch, res: &Resolver, diags: &mut Vec<Diag>) -> BTreeSet<usize> {
     let (mut back, mut forward) = (BTreeSet::new(), BTreeSet::new());
     for c in res.chains.values() {

@@ -482,10 +482,7 @@ fn geometry(cx: &mut Elab<'_>, flat: &Flat<'_>) -> Vec<Deferred> {
                 }
                 None => {
                     // a declaration that could not be built leaves its name unbound, so every
-                    // reference to it is reported where the reference is — and made nothing,
-                    // so every later entity of its kind sits one index below where phase 1
-                    // put it: the resolver is shifted with them, or a reference to a later arc
-                    // would read the one after it (or past the end of the list)
+                    // reference to it is reported where the reference is (`Resolver::forget`)
                     res.forget(&d.name.key().text);
                 }
             }

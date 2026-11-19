@@ -415,9 +415,14 @@ pub fn is_name(s: &str) -> bool {
         && EntKind::parse(s).is_none()
         && !trails_decl(s)
         && !ENERGY_WORDS.contains(&s)
+        && !JOINERS.contains(&s)
         && !MODIFIERS.contains(&s)
         && !OPENERS.contains(&s)
 }
+
+/// The words that join conditions (#952), `when a > 0mm and b > 0mm`: no name, so a line ending
+/// in one, or the next opening with `and` or `or`, goes on with it (`lexer::lex`).
+pub(crate) const JOINERS: [&str; 3] = ["and", "or", "not"];
 
 /// What a curve is stationary for (#121), `rope minimizes …`; no name either.
 pub(super) const ENERGY_WORDS: [&str; 2] = ["minimizes", "maximizes"];
@@ -430,6 +435,7 @@ pub fn reserved_word(s: &str) -> bool {
     EntKind::parse(s).is_some()
         || TRAILERS.contains(&s)
         || ENERGY_WORDS.contains(&s)
+        || JOINERS.contains(&s)
         || ["through", "bound", "next", "prev"].contains(&s)
         || MODIFIERS.contains(&s)
         || OPENERS.contains(&s)
