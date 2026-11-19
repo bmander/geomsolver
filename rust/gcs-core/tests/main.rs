@@ -204,6 +204,7 @@ mod numeric_parts;
 mod object_builder;
 mod ode;
 mod offset_corners;
+mod offset_whole;
 mod offsets;
 mod open_joint;
 mod order;

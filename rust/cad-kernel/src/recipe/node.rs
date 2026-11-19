@@ -110,6 +110,11 @@ pub enum Node {
     /// A region within reach of a body (`solid::grown`): the node `body`, and each piece glued to
     /// it where they share a face.
     Grown { body: i64,pieces: Vec<Node> },
+    /// The solid `of` builds grown by `by` (`offset::grown`), or shrunk by `−by` where it is below
+    /// nothing (`offset::shrunk`): every point within that reach of it, or at least that far
+    /// inside it.  Shrunk with faces left `open` (a point on each), the cavity of the solid
+    /// hollowed to that wall (`offset::shelled`): the solid less its wall.
+    Offset { of: Box<Node>,by: f64,open: Vec<V> },
     /// Pieces glued to one another where they share a face, the first to the next, and the faces
     /// they leave on one plane meeting edge to edge made one (`solid::grown`: a face's pieces
     /// around a boss's foot, glued to the body as one).
@@ -250,6 +255,8 @@ impl Node {
             "lowered" => Node::Lowered(Lowered::read(n)?),
             "grown" => Node::Grown {body:field(n,"body")?.as_i64(),pieces:each(field(n,"pieces")?.arr(),Node::read)?},
             "glued" => Node::Glued(each(field(n,"pieces")?.arr(),Node::read)?),
+            "offset" => Node::Offset {of:Box::new(Node::read(field(n,"of")?)?),by:number(n,"by")?,
+                open:listed(n,"open").iter().map(crate::vec3).collect()},
             "family" => Node::Family(Family::read(n)?),
             "carried" => Node::Carried {profile:profile()?,
                 start:rows(n,"start","a carried profile")?.ok_or_else(|| unread("recipe: no `start`".into()))?,
@@ -266,6 +273,7 @@ impl Node {
             Node::Prism {..} => "prism",Node::Revolve {..} => "revolve",
             Node::Placed {..} => "placed",Node::Through {..} => "through",Node::Body(_) => "body",
             Node::Canal {..} => "canal",Node::Region(_) => "region",Node::Grown {..} => "grown",Node::Glued(_) => "glued",
+            Node::Offset {..} => "offset",
             Node::Lowered(_) => "lowered",
             Node::Family(_) => "family",Node::Carried {..} => "carried",Node::Hull {..} => "hull",
         }

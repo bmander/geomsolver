@@ -183,7 +183,7 @@ impl BodyFaces {
     }
 
     /// **Whether `signed_distance` reads the distance itself, and how far off it may be near
-    /// which edges**: every face a plane, a cylinder, a sphere or a torus, whose foot is the
+    /// which edges**: every face a plane, a cylinder, a cone, a sphere or a torus, whose foot is the
     /// nearest point (`Surface::inverse`), and every edge a line, a circle or a pole, whose nearest
     /// point is exact, or a traced intersection, found by its nearest chord and then Newton — off
     /// the curve's nearest by twice its chords' sag at most, taken twice over with its tolerance
@@ -192,8 +192,10 @@ impl BodyFaces {
     pub fn distance_slack(&self) -> Option<Vec<(u32, f64)>> {
         use crate::brep::geom::{Curve, Surface};
         let b = &self.loc.b;
+        // (a cone's foot is its meridian's, as a torus's is: past its apex, off the face, its
+        // pole measures the distance)
         let faces = b.faces.iter().all(|f| matches!(f.surface,
-            Surface::Plane(..) | Surface::Cylinder(..) | Surface::Sphere(..) | Surface::Torus(..)));
+            Surface::Plane(..) | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Torus(..)));
         if !faces {
             return None;
         }
@@ -255,16 +257,19 @@ impl BodyFaces {
         }
         // how far each face's box is: no point of the face or its edges is nearer
         let reach: Vec<f64> = (0..n).map(|fi| self.loc.face_gap(fi, q) - self.loc.tol).collect();
+        // (a foot not read — a point on a cone's axis past its apex, where every generator is
+        // as near — is none: the face's edges, its apex's pole among them, measure it)
         let foot = |fi: usize| {
             let f = &b.faces[fi];
             let at = f.surface.point(f.surface.inverse(q));
-            (distance(q, at), at)
+            let d = distance(q, at);
+            if d.is_finite() { (d, at) } else { (f64::INFINITY, q) }
         };
         // a distance reached: the nearest box's face, or where its foot is off it, its edges'
         // nearest points, kept for the edges' turn below
         let first = (0..n).min_by(|&a, &c| reach[a].total_cmp(&reach[c])).unwrap_or(0);
         let (d0, at0) = foot(first);
-        let place0 = self.loc.face_place(first, at0);
+        let place0 = if d0.is_finite() { self.loc.face_place(first, at0) } else { Place::Out };
         let read: Vec<(u32, (f64, f64))> = if place0 != Place::Out {
             Vec::new()
         } else {
@@ -284,8 +289,8 @@ impl BodyFaces {
             (d, fi, at)
         }).collect();
         feet.sort_by(|a, c| a.0.total_cmp(&c.0).then(a.1.cmp(&c.1)));
-        let face = feet.iter().take_while(|f| f.0 <= reached).find(|&&(_, fi, at)| {
-            if fi == first { place0 != Place::Out } else { self.loc.face_place(fi, at) != Place::Out }
+        let face = feet.iter().take_while(|f| f.0 <= reached).find(|&&(d, fi, at)| {
+            d.is_finite() && if fi == first { place0 != Place::Out } else { self.loc.face_place(fi, at) != Place::Out }
         }).copied();
         // an edge lies on the surfaces of the faces it bounds, so is no nearer than their feet
         // (but for a cone's, whose foot is on one generator), nor than their boxes

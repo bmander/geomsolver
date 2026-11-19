@@ -636,6 +636,23 @@ leaning in and out, 120° and acute corners; `gcs-cli`'s
 `the_shells_export_and_measure_within_their_tolerance`: each written as STEP and STL within
 10 µm).
 
+**Grown, shrunk or shelled whole by the kernel's offset** (`brep::offset`): where the body grown's
+pieces or the cavity's constructions above refuse — a face on a cone, a sphere or a torus, a body
+rounded as well, a face left open that is no plane, walls that meet — the body is moved whole by
+the kernel, each face's normal sweep with a tube about each crease and a ball at each corner: a
+body grown is the body as the drawing finishes it grown by `d` (`grown::whole`, `offset::grown`),
+and a cavity the body less its wall `t` thick that leaves its open faces open (`shelled::shrunk`,
+`offset::cavity`; every face kept, `offset::shrunk`) — of the body as the drawing finishes it where
+the cavity is no term of it (`Grown` by a reach below nothing), else of its stratum where nothing
+but the shell reads its faces.  The recipe's `offset` node (`of` the body's node, `by` the reach,
+below nothing to shrink, `open` a point inside each face left open, read back by the face through
+it); held to the region's field (`grown::offset_gate`, the cavity's own field).  The refusal of
+both is said, the construction's and the kernel's.  `tests/offset_whole.rs` is the gate:
+brep-bench's cone grown, torus and L shrunk, ball shelled shut and half ball shelled open, to
+their closed forms.  A cone's foot is its meridian's, as a torus's is, so a body of cones reads its
+signed distance exactly (`BodyFaces::distance_slack`): past the apex, off the face, its pole
+measures it — where the set within a body read its conditions, which failed there.
+
 **`P tangent(at: m) S`, a plane tangent to a set (#145, #148, 0.56):** `sets::expand_touch`
 applies the body at `m` and walks it `Pass::Made` then `Pass::Along` toward `P.u` and `P.v`
 (`model::Toward::Axis`: the axis's `d` columns fed where a line's ends go, `dual_kernel`

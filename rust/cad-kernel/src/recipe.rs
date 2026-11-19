@@ -80,6 +80,24 @@ impl Node {
             Node::Region(pieces) => region_node(pieces,built,built_names,floor),
             Node::Grown {body,pieces} => grown_node(*body,pieces,built,built_names,floor),
             Node::Glued(pieces) => glued_node(pieces,built,built_names,floor),
+            // a solid grown or shrunk whole (`offset`): what lies within the reach of it, or that
+            // far inside it, each face's normal sweep with a tube about each crease and a ball at
+            // each corner
+            Node::Offset {of,by,open} => {
+                let b = of.built(built,built_names,floor)?;
+                use super::offset::{grown,shrunk,Join};
+                if *by > 0. { return Ok(grown(&b,*by,Join::Round)?) }
+                if open.is_empty() { return Ok(shrunk(&b,-*by,Join::Round)?) }
+                // the faces through the points, and the solid less the wall that leaves them open
+                let located = super::query::Located::new(&b,1e-9*b.size().max(1.));
+                let tol = 1e-6*b.size().max(1.);
+                let faces = open.iter().map(|&p| (0..b.faces.len()).find(|&fi| {
+                    let q = b.faces[fi].surface.point(located.uv(fi,p));
+                    crate::util::space::distance(p,q) <= tol && located.face_place(fi,p) != super::query::Place::Out
+                }).ok_or_else(|| format!("recipe: no face of the solid offset through {p:?}")))
+                    .collect::<Result<Vec<_>,_>>()?;
+                Ok(super::offset::cavity(&b,&faces,-*by)?)
+            }
             Node::Lowered(l) => lowered_node(l,built,built_names,floor),
             Node::Family(f) => family_node(f),
             // a profile carried over an interval of a constant twist (#846), from where it begins

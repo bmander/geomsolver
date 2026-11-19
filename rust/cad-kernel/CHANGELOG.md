@@ -8,6 +8,12 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A recipe's `offset` node, and a solid's cavity** (`offset::cavity`): the solid a node builds
+  grown by `by` (`offset::grown`), or shrunk where `by` is below nothing (`offset::shrunk`) — with
+  `open` points, the cavity of the solid hollowed to that wall, the faces through the points left
+  open: the solid less its wall (`offset::shelled`).  geomsolver builds `std.rounds.Grown` and a
+  shell's cavity so where its own constructions refuse.
+
 ## [0.17.0] - 2026-11-19
 
 - **One fallback for shallow meetings, marched in both surfaces' parameters** (#942 F1): where the

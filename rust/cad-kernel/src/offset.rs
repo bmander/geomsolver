@@ -105,6 +105,15 @@ pub fn shelled(b: &Brep,open: &[usize],t: f64,side: Side,join: Join) -> Result<B
     }
 }
 
+/// The cavity of the solid `b` hollowed to a wall `t` (> 0) thick within it, open at the faces
+/// `open`: the solid less its wall (`shelled`), what a shell takes from it — with every face kept,
+/// the solid shrunk by `t` (`shrunk`).
+pub fn cavity(b: &Brep,open: &[usize],t: f64) -> Result<Brep,String> {
+    if open.is_empty() { return shrunk(b,t,Join::Round) }
+    let wall = shelled(b,open,t,Side::In,Join::Round)?;
+    combined(b,&wall,Op::Cut,0.).map_err(|e| format!("the solid less its wall: {e}"))
+}
+
 /// A face left open on a wall outside a solid: its plane, by a point of it and its outward normal,
 /// and the edges and vertices it is bounded by.
 struct Opening { face: usize,o: V,n: V,edges: BTreeSet<usize>,vertices: BTreeSet<u32> }

@@ -66,6 +66,8 @@ pub struct Grown {
     /// How far the block a piece is cut back by reaches past its plane, and either way along it:
     /// past every piece.
     reach: f64,
+    /// Where it is built whole by the kernel's offset instead (`offset`): the reach, and no pieces.
+    whole: Option<f64>,
 }
 
 /// One piece: a section, how it is swept, and the planes it is cut back to where it meets a
@@ -112,6 +114,11 @@ impl Grown {
     /// a face's pieces about a foot `glued` to one another.
     pub fn node(&self, w: &Writer) -> Result<Json, String> {
         let body = self.body.ok_or("a body grown's pieces with no body to glue them to")?;
+        if let Some(d) = self.whole {
+            let mut of = super::cad::body_terms(body, &[], &[], &[]);
+            of.set("kind", "body".into());
+            return Ok(offset_node(of, d * w.scale));
+        }
         Ok(object([("kind", "grown".into()), ("body", (body as usize).into()),
                    ("pieces", Json::Arr(self.pieces_json(w)?))]))
     }
@@ -119,6 +126,9 @@ impl Grown {
     /// Its pieces' nodes, written by `w`: each a `prism` or a `revolve`, or one cut back a
     /// `region`, or a face's pieces about a foot `glued` to one another.
     pub(crate) fn pieces_json(&self, w: &Writer) -> Result<Vec<Json>, String> {
+        if self.whole.is_some() {
+            return Err("a body grown whole by the kernel's offset has no pieces".to_string());
+        }
         self.pieces.iter().map(|group| match &group[..] {
             [piece] => self.piece(piece, w),
             group => {
@@ -185,8 +195,47 @@ pub fn built(sk: &Sketch, solid: usize) -> Option<Result<Rc<Grown>, String>> {
         Some(construction(sk, face, t).and_then(|(g, body)| {
             gate(sk, solid, &g, &body)?;
             Ok(Rc::new(g))
+        }).or_else(|why| match whole(sk, solid, face, t) {
+            Ok(g) => Ok(Rc::new(g)),
+            Err(kernel) => Err(format!("{why}; nor is it the kernel's offset: {kernel}")),
         }))
     })
+}
+
+/// **A body grown whole** (`brep::offset`): where its pieces are not built here (a face on a
+/// sphere, a cone or a torus, a body rounded as well), the body as the drawing finishes it grown
+/// by the kernel's offset — each face's normal sweep, a tube about each convex crease and a ball
+/// at each corner, united — held to the region's field as every construction is.
+fn whole(sk: &Sketch, solid: usize, face: &FaceRef, t: &RegionTerm) -> Result<Grown, String> {
+    let d = t.lo.read(sk).ok_or("its reach reads an unknown nothing determines")?;
+    if !(d > 0.0) {
+        return Err("a body grown by nothing is the body itself".to_string());
+    }
+    if !face.path.is_empty() {
+        return Err("within reach of only some of a body's faces".to_string());
+    }
+    let body = face.solid as usize;
+    let g = Grown { body: Some(body as u32), pieces: Vec::new(), name: t.name.clone(), reach: 0.0, whole: Some(d) };
+    let faces = BodyFaces::whole(sk, body)?;
+    offset_gate(sk, solid, &faces, d)?;
+    Ok(g)
+}
+
+/// The recipe's `offset` node: the solid the node `of` builds grown by `by` (millimetres), or
+/// shrunk where it is below nothing.
+pub(crate) fn offset_node(of: Json, by: f64) -> Json {
+    object([("kind", "offset".into()), ("of", of), ("by", by.into())])
+}
+
+/// The gate of a body grown (`d` > 0) or shrunk (`d` < 0) whole by the kernel's offset: the
+/// boundary `faces` reads moved by `d` (model units) held to solid `solid`'s field.
+pub(crate) fn offset_gate(sk: &Sketch, solid: usize, faces: &BodyFaces, d: f64) -> Result<(), String> {
+    use crate::brep::offset::{grown, shrunk, Join};
+    let (b, mm, _) = faces.brep();
+    let moved = if d > 0.0 { grown(b, d * mm, Join::Round)? } else { shrunk(b, -d * mm, Join::Round)? };
+    let field = super::MaterialField::read(sk, solid, super::cad::AXIS_TOLERANCE)?;
+    let back = |p: V| faces.back(p);
+    super::agreement::gate(&field, &moved, Some((&back, mm)), "the kernel's offset disagrees with the field")
 }
 
 /// The pieces of the region within `t`'s reach of the body `face` names, and the faces of the body
@@ -423,7 +472,7 @@ pub(crate) fn pieces(body: &BodyFaces, d: f64, name: &str) -> Result<Grown, Stri
     pieces.extend(sectors.into_iter().map(|s| vec![s]));
     let (lo, hi) = body.bounds();
     let reach = 2.0 * (norm(sub(hi, lo)) + 4.0 * d);
-    Ok(Grown { body: None, pieces, name: name.to_string(), reach })
+    Ok(Grown { body: None, pieces, name: name.to_string(), reach, whole: None })
 }
 
 /// Plane face `fi` (its outward normal `n`) beside a concave edge, where it is a convex polygon:

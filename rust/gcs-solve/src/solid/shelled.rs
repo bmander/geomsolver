@@ -48,6 +48,7 @@ use crate::space::{dot, norm, scale, sub};
 use crate::vocab::Cmp;
 use super::faces::BodyFaces;
 use std::f64::consts::{FRAC_PI_2, PI, TAU};
+use std::collections::BTreeSet;
 use std::rc::Rc;
 
 #[allow(unused_imports)]
@@ -70,6 +71,19 @@ enum Built {
     Prism { section: Profile, length: f64, cuts: Vec<super::grown::Grown> },
     /// Within any other body: its walls, what lies within the thickness of what is outside it.
     Walls(Walls),
+    /// By the kernel's offset (`brep::offset::cavity`), where neither construction above builds
+    /// it: the body less its wall `t` thick that leaves open the faces through the points `open`
+    /// (model units) — with every face kept, the body shrunk whole by the thickness.
+    Shrunk { of: Shrunk, t: f64, open: Vec<V> },
+}
+
+/// What a cavity shrunk whole is the body of: a solid as the drawing finishes it (a body shrunk,
+/// `std.rounds.Grown` by a reach below nothing), or a body's terms but the cavity cut from it (a
+/// body shelled shut).
+#[derive(Clone, Debug)]
+enum Shrunk {
+    Solid(u32),
+    Terms(Terms),
 }
 
 /// The walls of a body, glued to the outside of it (`walls`): the body as its other terms make it
@@ -100,6 +114,9 @@ impl Shelled {
     pub fn node(&self, w: &Writer) -> Result<Json, String> {
         let stratum = match &self.built {
             Built::Prism { .. } => Json::Null,
+            Built::Shrunk { of: Shrunk::Solid(s), .. } => terms_node(&Terms { stock: *s, on: Vec::new(),
+                cut: Vec::new(), bound: Vec::new() }),
+            Built::Shrunk { of: Shrunk::Terms(t), .. } => terms_node(t),
             Built::Walls(Walls { terms: t, .. }) => {
                 let mut node = super::cad::body_terms(t.stock, &t.on, &t.cut, &t.bound);
                 node.set("kind", "body".into());
@@ -117,6 +134,13 @@ impl Shelled {
         let kept = |mut n: Json, keep: bool| { n.set("keep", Json::Bool(keep)); n };
         let region = |pieces: Vec<Json>| object([("kind", "region".into()), ("pieces", Json::Arr(pieces))]);
         match &self.built {
+            Built::Shrunk { t, open, .. } => {
+                let mut node = super::grown::offset_node(stratum, -t * w.scale);
+                if !open.is_empty() {
+                    node.set("open", Json::Arr(open.iter().map(|&p| w.point(p)).collect()));
+                }
+                Ok(node)
+            }
             Built::Prism { section, length, cuts } => {
                 let prism = swept(section, *length, w)?;
                 if cuts.is_empty() {
@@ -143,8 +167,10 @@ impl Shelled {
     pub fn reads(&self) -> Vec<u32> {
         match &self.built {
             Built::Prism { cuts, .. } => cuts.iter().filter_map(|g| g.body()).collect(),
-            Built::Walls(Walls { terms: t, .. }) => std::iter::once(t.stock).chain(t.on.iter().copied())
+            Built::Walls(Walls { terms: t, .. }) | Built::Shrunk { of: Shrunk::Terms(t), .. } =>
+                std::iter::once(t.stock).chain(t.on.iter().copied())
                 .chain(t.cut.iter().copied()).chain(t.bound.iter().copied()).collect(),
+            Built::Shrunk { of: Shrunk::Solid(s), .. } => vec![*s],
         }
     }
 }
@@ -253,11 +279,24 @@ pub fn built(sk: &Sketch, solid: usize) -> Option<Result<Rc<Shelled>, String>> {
         |k, &u| k.and(super::MemoKey::own(sk, u as usize, Vec::new())));
     sk.caches.shelled.get_or(solid, key, || {
         Some(faces.clone().and_then(|faces| {
-            let s = construction(sk, solid, &r, &faces)?;
-            gate(sk, solid, r.body as usize, &s, &faces)?;
-            Ok(Rc::new(s))
+            let s = construction(sk, solid, &r, &faces).and_then(|s| {
+                gate(sk, solid, r.body as usize, &s, &faces)?;
+                Ok(s)
+            });
+            match s {
+                Ok(s) => Ok(Rc::new(s)),
+                Err(why) => shrunk(sk, solid, &r, &faces).map(Rc::new)
+                    .map_err(|kernel| format!("{why}; nor is it the kernel's offset: {kernel}")),
+            }
         }))
     })
+}
+
+/// A body's terms as the recipe's `body` node.
+fn terms_node(t: &Terms) -> Json {
+    let mut node = super::cad::body_terms(t.stock, &t.on, &t.cut, &t.bound);
+    node.set("kind", "body".into());
+    node
 }
 
 /// One piece of a section's loop in its plane, named for the face it is moved in from (`round`
@@ -375,6 +414,72 @@ fn construction(sk: &Sketch, solid: usize, r: &Recognised, faces: &BodyFaces) ->
     let terms = Terms { stock: *stock, on: on.clone(), cut: cut.clone(), bound: bound.clone() };
     walls(faces, &shut, t, terms).map(|w| Shelled { built: Built::Walls(w) })
         .map_err(|why| match refused { Some(prism) => format!("{prism}; {why}"), None => why })
+}
+
+/// **A cavity by the kernel's offset** (`brep::offset::cavity`): the body less its wall the
+/// thickness deep, open at the faces left open — every face kept, the body shrunk by the thickness.
+/// The body as the drawing finishes it where the cavity is no term of it (a body shrunk, `Grown`
+/// by a reach below nothing), else its stratum, where nothing but the shell reads its faces (a
+/// body shelled: the cavity, its stock and its walls).  Held to the cavity's field as the other
+/// constructions are.
+fn shrunk(sk: &Sketch, solid: usize, r: &Recognised, stratum: &std::sync::Arc<BodyFaces>) -> Result<Shelled, String> {
+    let mut thickness = r.thickness.iter().map(|n| n.read(sk).ok_or("its thickness reads an unknown nothing determines"));
+    let t = thickness.next().ok_or("a shell of no thickness")??;
+    for other in thickness {
+        if (other? - t).abs() > 1e-12 * t.abs() {
+            return Err("walls of several thicknesses".to_string());
+        }
+    }
+    if !(t > 0.0) {
+        return Err("a shell no thicker than nothing".to_string());
+    }
+    let body = r.body as usize;
+    let cut_from = match &sk.solids[body].def {
+        SolidDef::Body { through, .. } => through.contains(&(solid as u32)),
+        _ => false,
+    };
+    let (of, faces) = if !cut_from {
+        (Shrunk::Solid(r.body), BodyFaces::whole(sk, body)?)
+    } else {
+        let shell: BTreeSet<usize> = std::iter::once(solid).chain(r.under.iter().map(|&u| u as usize)).collect();
+        if super::faces::readers_of(sk, body).iter().any(|x| !shell.contains(x)) {
+            return Err("a body shelled whose faces another term reads (a round)".to_string());
+        }
+        let SolidDef::Body { stock, on, through, bound } = &sk.solids[body].def else { unreachable!("cut from it") };
+        let cut = through.iter().copied().filter(|&o| o as usize != solid).collect();
+        (Shrunk::Terms(Terms { stock: *stock, on: on.clone(), cut, bound: bound.clone() }), stratum.clone())
+    };
+    // the faces left open, by a point inside each
+    let shut = shut(&faces, r.kept.as_deref());
+    let open: Vec<usize> = (0..shut.len()).filter(|&f| !shut[f]).collect();
+    let points = inside_faces(&faces, &open)?;
+    let (b, mm, _) = faces.brep();
+    let cavity = crate::brep::offset::cavity(b, &open, t * mm)?;
+    let field = super::MaterialField::read(sk, solid, super::cad::AXIS_TOLERANCE)?;
+    let back = |p: V| faces.back(p);
+    super::agreement::gate(&field, &cavity, Some((&back, mm)), "the kernel's offset disagrees with the field")?;
+    Ok(Shelled { built: Built::Shrunk { of, t, open: points } })
+}
+
+/// A point inside each of the faces `open` of `faces` (model units): the middle of its largest
+/// triangle meshed, carried onto its surface.
+fn inside_faces(faces: &BodyFaces, open: &[usize]) -> Result<Vec<V>, String> {
+    if open.is_empty() {
+        return Ok(Vec::new());
+    }
+    let (b, _, _) = faces.brep();
+    let m = super::agreement::gate_mesh(b)?;
+    open.iter().map(|&fi| {
+        let area = |t: &[u32; 3]| {
+            let [p, q, r] = t.map(|i| m.pts[i as usize]);
+            norm(crate::space::cross(sub(q, p), sub(r, p)))
+        };
+        let t = m.tris.iter().zip(&m.of).filter(|(_, &of)| of as usize == fi).map(|(t, _)| t)
+            .max_by(|a, c| area(a).total_cmp(&area(c))).ok_or("a face left open has no triangle")?;
+        let c: V = std::array::from_fn(|k| t.iter().map(|&i| m.pts[i as usize][k]).sum::<f64>() / 3.0);
+        let s = &b.faces[fi].surface;
+        Ok(faces.back(s.point(s.inverse(c))))
+    }).collect()
 }
 
 /// The id the body's own boundary is read under where a shell's construction builds from it.
@@ -658,7 +763,7 @@ fn gate(sk: &Sketch, solid: usize, body: usize, s: &Shelled, faces: &BodyFaces) 
     let mut built = std::collections::BTreeMap::from([(STRATUM, stratum.clone())]);
     let cuts: Vec<u32> = match &s.built {
         Built::Prism { cuts, .. } => cuts.iter().filter_map(|g| g.body()).collect(),
-        Built::Walls(_) => Vec::new(),
+        Built::Walls(_) | Built::Shrunk { .. } => Vec::new(),
     };
     for c in cuts {
         // each cut's boundary moved from its own origin to the body's
