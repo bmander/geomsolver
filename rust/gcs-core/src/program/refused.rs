@@ -138,10 +138,12 @@ impl<'a> Causes<'a> {
         // and on the solid its own words lead to (#948): a round's piece reading the faces of a
         // body another round left unbuilt says `` `x`: `part`'s faces: `filled[3]`: … ``, built
         // on that one though no operand of it is — refused in those words, where the kernel met
-        // it only building the body's faces
+        // it only building the body's faces, and only where it is not built alone either (a
+        // swept body's operand whose field is unread is built, and the sweep is the fault)
         let led: Vec<(usize, usize, String)> = refused.iter().filter_map(|(&i, message)| {
             let (j, from) = chained_cause(sk, message).filter(|&(j, _)| j != i)?;
-            Some((i, j, message[from..].to_string()))
+            let unbuilt = refused.contains_key(&j) || sk.exact_preimage(j).is_err();
+            unbuilt.then(|| (i, j, message[from..].to_string()))
         }).collect();
         for (i, j, words) in led {
             refused.entry(j).or_insert(words);
