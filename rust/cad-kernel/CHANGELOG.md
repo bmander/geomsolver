@@ -8,6 +8,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A trace lying along a face's rim is no chord** (#942 F6): a ring's tube entered at an end pose
+  leaves out a trace of its face's meeting with the tool lying wholly along one side of the face's
+  square — the tool touching the rim, not crossing it. The near-orthogonal tumbling tori each had one,
+  two points 2.4e-13 apart where a crossing of the face ends on the rim, and were refused ("two of a
+  ring's sheet's crossings of the tool end at one place on a face's rim"); their tubes are now
+  entered, and they are refused later, where the end pose's torus face is assembled.
+
 - **A ring's tube cut at an end pose carries the places it was traced through as the cut's pcurve**
   (#942 F3): `rings::chord_curve` returns, beside the curve, the places on the face it passes — the
   traced points and the meeting's own point settled between each two — at the curve's own

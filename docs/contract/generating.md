@@ -2002,6 +2002,10 @@ the face only where none holds (#942 F3, by construction: beside a fold pair's b
 back on itself within 2e-4, and the half turn's cut, inverted from the line between its ends,
 landed on the other fold; gated in
 `swept_rings::the_half_turns_stretches_are_sewn_across_its_cut_into_one_tube_a_contact_curve`).
+A trace of a face's meeting with the tool lying wholly along one side of the face's square bounds
+nothing — the tool touching the rim there — and is no chord (#942 F6: the near-orthogonal tori's,
+two points 2.4e-13 apart on the rim where a crossing ends, put two chords' ends at one place;
+`swept_rings::a_trace_lying_along_a_faces_rim_bounds_nothing`).
 **Not yet built**: the tumbling tori fit, are cut and sewn into one tube a contact curve, and are
 refused past the meetings their sewing settles — the torus turned whole where a piece of the torus
 at an end pose reads as the boundary facing behind; the thin one where its two tubes meet at under
