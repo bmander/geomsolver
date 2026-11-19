@@ -395,9 +395,9 @@ impl<'a> Walk<'a> {
                 // interval begins, carried to where it ends
                 super::region::Route::Carried(c) => c.map_err(|e| said(sk,i,e))?.node(sk,w)?,
                 // a panel's band (#645): its ruled walls are not yet written exactly
-                super::region::Route::Sheet(_) => return Err(format!("`{}`: a developable panel's \
-                    band is faceted from its rulings; its exact ruled walls are not yet written to \
-                    STEP",sk.solid_name(i))),
+                super::region::Route::Sheet(_) => return Err(said(sk,i,"a developable panel's \
+                    band is faceted from its rulings; its exact ruled walls are not yet written \
+                    to STEP")),
                 // on one axis: its meridian turned once about it (§6.21)
                 super::region::Route::Meridian(m) => {
                     let name = |t: u32| m.name(t);

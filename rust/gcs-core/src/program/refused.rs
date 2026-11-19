@@ -103,16 +103,11 @@ fn backticked(message: &str) -> Vec<(usize, &str, bool)> {
     names
 }
 
-/// The innermost solid a refusal's chain names (`refusal_cause`), by its key or a name one solid
-/// alone goes by, and where its words begin.
+/// The innermost solid a refusal's chain names (`refusal_cause`), as a name picks one
+/// (`Sketch::solid_called`), and where its words begin.
 fn chained_cause(sk: &Sketch, message: &str) -> Option<(usize, usize)> {
-    backticked(message).into_iter().rev().filter(|n| n.2).find_map(|(open, name, _)| {
-        if let Some(i) = sk.solids.iter().position(|s| s.name == name) {
-            return Some((i, open));
-        }
-        let mut called = (0..sk.solids.len()).filter(|&i| sk.solid_name(i) == name);
-        called.next().filter(|_| called.next().is_none()).map(|i| (i, open))
-    })
+    backticked(message).into_iter().rev().filter(|n| n.2)
+        .find_map(|(open, name, _)| Some((sk.solid_called(name).ok()?, open)))
 }
 
 /// What each solid is built on, which of them are refused (in their own words), and which of

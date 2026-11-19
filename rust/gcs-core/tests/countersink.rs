@@ -34,10 +34,12 @@ sink := solid({sink})
 ")
 }
 
-/// The exact kernel's solid `name`, or why it is not built.
+/// The exact kernel's solid `name` (as a name picks one, `Sketch::solid_called`: `sink[1]` too),
+/// or why it is not built.
 fn exact(e: &Elaborated, name: &str) -> Result<gcs_core::brep::topo::Brep, String> {
     let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    export::exact(&e.sketch, ent(e, name).i(), None, None, &say).map(|x| x.solid).map_err(|r| r.message)
+    let i = e.sketch.solid_called(name)?;
+    export::exact(&e.sketch, i, None, None, &say).map(|x| x.solid).map_err(|r| r.message)
 }
 
 /// The exact solid's faces by their last names, in order.
@@ -291,12 +293,9 @@ in deck {
   pc vertical hc[0]
 }
 ");
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
     for k in 0..3 {
         let sink = format!("sink[{k}]");
-        let i = (0..e.sketch.solids.len()).find(|&i| e.sketch.solid_name(i) == sink)
-            .unwrap_or_else(|| panic!("no {sink}"));
-        let b = export::exact(&e.sketch, i, None, None, &say).map_err(|r| r.message).unwrap().solid;
+        let (i, b) = (e.sketch.solid_called(&sink).unwrap(), exact(&e, &sink).unwrap());
         close(&sink, props::volume(&b), cone(3.0, 90.0), 1e-9);
         // under its rim's centre, a turn of 120° about (40, 0) from (40, 10): its point 3 below
         let a = (90.0 + 120.0 * k as f64).to_radians();

@@ -32,6 +32,13 @@ pub(super) struct Probes {
     pub refused: std::collections::BTreeSet<usize>,
 }
 
+impl Probes {
+    /// Whether point `p` is one a set is read at: a probe, or a point a `some` binds.
+    pub(super) fn holds(&self, p: usize) -> bool {
+        self.terms.contains_key(&p) || self.binders.contains_key(&p)
+    }
+}
+
 /// One quantifier's relation, as it was stated ([0.212]): the set's point it is read at, each
 /// bound its relation put on that point with the points the quantifier binds — a term of the
 /// set's point once it is read (`settle_bound`), never a row — and the statement it was written

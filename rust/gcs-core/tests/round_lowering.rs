@@ -1528,8 +1528,7 @@ fn arcs_between_flats(one_arc: bool, rounded: &str) -> String {
 /// spandrel's depth), and the whole rim, over one arc or two about one centre, is built.
 #[test]
 fn a_stretch_of_a_circle_ending_on_planes_off_its_axis_is_carried_to_them() {
-    let (r, h) = (100.0f64, 60.0f64);
-    let plate = 2.0 * (h * (r * r - h * h).sqrt() + r * r * (h / r).asin()) * 30.0;
+    let plate = crate::common::rounds::disc_band(100.0, 60.0) * 30.0;
     // the spandrel 10 deep at radius ρ = 90 + 10 sin t: 10 − 10 cos t, so dρ = 10 cos t dt
     let n = 20000;
     let spandrel: f64 = (0..n).map(|i| {

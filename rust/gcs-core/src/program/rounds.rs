@@ -25,6 +25,17 @@ use crate::ir::{Operation, Statement};
 use crate::model::{rounded, EntKind, EntRef, Round, Sketch};
 use std::collections::BTreeSet;
 
+/// Why a round is refused where `what`, one of its two sides, is `is` — no line (#948 says it
+/// where the declaration names a curve, `names`; here, where a side names nothing drawn).
+pub(super) fn not_lines(what: &str, is: &str) -> String {
+    format!("a round rounds the corner where two lines meet, and `{what}` is {is}")
+}
+
+/// Whether `st` declares a corner round's arc (#576).
+pub(super) fn is_round(st: &Statement) -> bool {
+    matches!(&st.kind, Operation::Decl(d) if d.round.is_some())
+}
+
 /// One round as the drawing has it, resolved: its statement, arc, lines and corner.
 struct Found<'a> {
     st: &'a Statement,
@@ -53,9 +64,8 @@ pub(super) fn rounds(
         };
         let (Some(from), Some(to)) = (line(&k.from), line(&k.to)) else {
             let what = if line(&k.from).is_none() { &k.from } else { &k.to };
-            cx.diags.push(Diag::within(Code::E040, st.span, st.id, format!(
-                "a round rounds the corner where two lines meet, and `{}` is none",
-                crate::syntax::ref_text(what))));
+            let what = crate::syntax::ref_text(what);
+            cx.diags.push(Diag::within(Code::E040, st.span, st.id, not_lines(&what, "none")));
             continue;
         };
         // a corner that is no point is said by the `coincident`s holding it to the lines

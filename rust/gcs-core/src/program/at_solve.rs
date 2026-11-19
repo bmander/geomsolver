@@ -29,8 +29,9 @@ pub(super) fn at_solve(e: &Elaborated) -> Stood {
     // a solid a `when` could not read where the drawing is seeded is read again where it solves,
     // though that pass refused the block (#948), where such refusals are all it refused
     let unread = !e.map.unread.is_empty()
-        && e.errors().all(|d| d.code == Code::E103);
-    if (e.map.apart.is_empty() && e.map.along.is_empty() || !e.ok()) && !unread {
+        && e.errors().all(|d| d.code == Code::E103 && e.map.unread.contains(&d.span));
+    let read = !(e.map.apart.is_empty() && e.map.along.is_empty());
+    if !unread && (!read || !e.ok()) {
         return Stood::new();
     }
     let mut sk = e.sketch.clone();

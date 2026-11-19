@@ -57,9 +57,9 @@ pub struct SourceMap {
     /// Every `when` that read faces along a direction where the drawing is seeded (#763), to be
     /// decided again where it is solved (`program::meets`).
     pub(crate) along: Vec<crate::flatten::WhenRead>,
-    /// Every solid a `when` could not read the faces of where the drawing is seeded (#948), to be
-    /// read again where it is solved (`program::at_solve`).
-    pub(crate) unread: std::collections::BTreeSet<String>,
+    /// Every `when` that could not read a solid's faces where the drawing is seeded (#948), by
+    /// where its E103 is said, to be read again where it is solved (`program::at_solve`).
+    pub(crate) unread: std::collections::BTreeSet<crate::syntax::Span>,
     /// Each number a `fix` held, with the path of the statement holding it: whose `fix` it was.
     /// A gauge makes no constraint, so no `of_constraint` site says so.
     pub holds: Vec<(u32, InstPath)>,

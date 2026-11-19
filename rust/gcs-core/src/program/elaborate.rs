@@ -124,12 +124,12 @@ pub(super) fn elaborate_in(
         crate::ir::Operation::Measured(_) => true,
         _ => false,
     };
-    let stating: Vec<&Statement> =
-        body.iter().copied().filter(|st| !st.turned || reads_probe(st)).collect();
     style_sheet(&mut cx, &body);
     let skip = names(&mut cx, &body);
-    // and nothing stated of what `names` left unmade (a round it refused, #948)
-    let stating = stating.into_iter().filter(|st| !skip.contains(&st.id)).collect();
+    // nothing stated of what `names` left unmade either (a round it refused, #948)
+    let stating: Vec<&Statement> = body.iter().copied()
+        .filter(|st| !skip.contains(&st.id) && (!st.turned || reads_probe(st)))
+        .collect();
     let flat = Flat { expansion: &expansion, body, stating, skip };
     let deferred = geometry(&mut cx, &flat);
     // a plane a valued frame's block draws in is shown as the source reads it (#823)
@@ -318,35 +318,42 @@ fn names(cx: &mut Elab<'_>, body: &[&Statement]) -> BTreeSet<StmtId> {
     let mut count: BTreeMap<EntKind, u32> = BTreeMap::new();
     let mut skip: BTreeSet<StmtId> = BTreeSet::new();
     let mut unmade: BTreeSet<&str> = BTreeSet::new();
+    // what each name is declared as, where a corner round asks of its curves (#948): before
+    // any is counted, so one declared after the round is known too
+    let rounded = body.iter().any(|st| super::rounds::is_round(st));
+    let declared: BTreeMap<&str, EntKind> = match rounded {
+        true => body.iter().rev().filter_map(|st| match &st.kind {
+            StmtKind::Decl(d) => Some((d.name.key().text.as_str(), d.kind)),
+            _ => None,
+        }).collect(),
+        false => BTreeMap::new(),
+    };
     for st in body {
-        let (name, kind) = match &st.kind {
-            StmtKind::Decl(d) => (&d.name, d.kind),
-            StmtKind::Chain(c) => (&c.name, EntKind::Face),
+        let (name, kind, round) = match &st.kind {
+            StmtKind::Decl(d) => (&d.name, d.kind, d.round.as_deref()),
+            StmtKind::Chain(c) => (&c.name, EntKind::Face, None),
             _ => continue,
         };
         // the *key*, which is resolution's question: an anonymous key is its own offset and a
         // copy's carries its prefix, so only a name the source wrote twice can actually collide
         let key = &name.key().text;
-        // a corner round between a curve and the next where either, declared before it, is no
-        // line (#948): said once, at the round, and nothing of it made — its arc's ends would be
-        // that curve's `p2` and `p1`, which an arc has none of, and each row of it one over an
-        // arc never built
-        if let StmtKind::Decl(d) = &st.kind {
-            let line = |r: &crate::syntax::Ref| match r.path.is_empty() {
-                true => res.lookup(r).map(|e| e.kind).filter(|&k| k != EntKind::Line),
-                false => None,
-            };
-            let curve = d.round.as_deref()
-                .and_then(|k| [&k.from, &k.to].into_iter().find_map(|r| Some((r, line(r)?))));
-            if let Some((r, other)) = curve {
-                cx.diags.push(Diag::within(Code::E040, st.span, st.id, format!(
-                    "a round rounds the corner where two lines meet, and `{}` is {}: round a \
-                     curve's edge by a round of the solid it bounds",
-                    crate::syntax::ref_text(r), other.a())));
-                skip.insert(st.id);
-                unmade.insert(key.as_str());
-                continue;
-            }
+        // a corner round between a curve and the next where either is declared no line (#948):
+        // said once, at the round, and nothing of it made — its arc's ends would be that curve's
+        // `p2` and `p1`, which an arc has none of, and each row of it one over an arc never built
+        let no_line = |r: &crate::syntax::Ref| {
+            let kind = declared.get(r.root.text.as_str()).filter(|_| r.path.is_empty())?;
+            (*kind != EntKind::Line).then_some(*kind)
+        };
+        let curve = round
+            .and_then(|k| [&k.from, &k.to].into_iter().find_map(|r| Some((r, no_line(r)?))));
+        if let Some((r, other)) = curve {
+            let what = crate::syntax::ref_text(r);
+            cx.diags.push(Diag::within(Code::E040, st.span, st.id, format!(
+                "{}: round a curve's edge by a round of the solid it bounds",
+                super::rounds::not_lines(&what, &other.a()))));
+            skip.insert(st.id);
+            unmade.insert(key.as_str());
+            continue;
         }
         if let Some(&was) = res.declared_at.get(key) {
             // …but the message shows what the source calls it, and spells the kind where it
@@ -396,7 +403,7 @@ fn names(cx: &mut Elab<'_>, body: &[&Statement]) -> BTreeSet<StmtId> {
         }
     }
     // and what states a row of a round left unmade
-    for other in body {
+    for other in body.iter().filter(|_| !unmade.is_empty()) {
         let StmtKind::Relation(rel) = &other.kind else { continue };
         let reads = rel.form.written().is_some_and(|w| {
             w.ops.iter().any(|o| unmade.contains(o.root.text.as_str()))

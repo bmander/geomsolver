@@ -231,8 +231,7 @@ fn a_body_the_seeds_do_not_build_is_read_where_the_drawing_solves() {
     };
     let exact = volume(&5920f64.sqrt().to_string());
     // the section unrounded: the disc's band |y| < 54, 24 deep
-    let (r, h): (f64, f64) = (94.0, 54.0);
-    let band = 2.0 * (h * (r * r - h * h).sqrt() + r * r * (h / r).asin());
+    let band = crate::common::rounds::disc_band(94.0, 54.0);
     assert!(exact < band * 24.0 - 1.0, "its corners are rounded: {exact} against {}", band * 24.0);
     for x in ["76.94", "77", "70"] {
         close(volume(x), exact);

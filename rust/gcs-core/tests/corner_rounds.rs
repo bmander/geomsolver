@@ -439,8 +439,7 @@ fn a_round_from_an_arc_declared_elsewhere_is_said_once_at_the_round() {
     let (prog, errs) = crate::common::parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let e = gcs_core::program::elaborate(&prog);
-    let said: Vec<_> = e.diags.iter().filter(|d| d.severity() == gcs_core::program::Severity::Error)
-        .map(|d| (d.at(e.text()).0, d.message.as_str())).collect();
+    let said: Vec<_> = e.errors().map(|d| (d.at(e.text()).0, d.message.as_str())).collect();
     assert_eq!(said, [(15, "a round rounds the corner where two lines meet, and `re` is an arc: \
         round a curve's edge by a round of the solid it bounds")]);
 }
