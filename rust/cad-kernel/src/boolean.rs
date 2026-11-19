@@ -1577,6 +1577,21 @@ impl<'a> Arrangement<'a> {
                 Ssi::Curves(cs) => {
                     let mut x = crossings_among(surfaces[0],&cs,self.shared(faces),self.pad,self.tol)?;
                     ends_on_one_another(&cs,&mut x,self.tol);
+                    // **a given meeting's curve that is an edge either face already has is that edge**
+                    // (#942 F3, identity by construction): a ring's tube cut along its crossing of the
+                    // tool where it starts, given that chord as their meeting, has it as an edge
+                    // already — laid once, not twice on itself. Its crossings with the meeting's other
+                    // curves are read first, and stay on them
+                    let (cs,x) = if self.shared.given(ids[0],ids[1]) {
+                        let mut kept = (Vec::new(),Vec::new());
+                        for (c,xc) in cs.into_iter().zip(x) {
+                            match self.edge_that_is(&c,faces) {
+                                Some((k,e)) => found.along_edges.push((self.working(faces.s[k],e),faces.s[1-k],faces.f[1-k])),
+                                None => { kept.0.push(c); kept.1.push(xc) }
+                            }
+                        }
+                        kept
+                    } else { (cs,x) };
                     (cs,x)
                 }
                 Ssi::Same => { found.same_pairs.push(faces); continue }
@@ -1623,6 +1638,17 @@ impl<'a> Arrangement<'a> {
             }
         }
         Ok(found)
+    }
+
+    /// **The edge of either of the two faces whose curve is `c` itself** (#942 F3: identity by
+    /// construction, no tolerance read) — which face's (0 or 1) and the edge, its own solid's.
+    fn edge_that_is(&self,c: &Curve,faces: Two) -> Option<(usize,usize)> {
+        (0..2).find_map(|k| {
+            let sol = self.solids[faces.s[k]];
+            sol.faces[faces.f[k]].loops.iter().flatten()
+                .find(|co| matches!(&sol.edges[co.edge as usize].curve,EdgeCurve::Curve(ec) if ec == c))
+                .map(|co| (k,co.edge as usize))
+        })
     }
 
     /// The edge of either of the two faces the traced curve `c` lies along, over all of it — which

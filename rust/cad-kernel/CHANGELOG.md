@@ -8,6 +8,14 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A given meeting's curve that is an edge a face already has is that edge, laid once** (#942 F3):
+  a ring's tube, cut along its crossing of the tool where it starts and given that chord as their
+  meeting, had it laid a second time on itself, and the ring along a spline's tube face was refused
+  ("a bspline's pieces do not close"). A given curve equal to either face's edge curve is now that
+  edge, as a traced meeting along an edge already was, its crossings with the meeting's other curves
+  read first and kept on them. The ring along a spline's arrangement now assembles; the build is
+  refused later, where its cells' membership does not settle.
+
 - **Two curves on a face crossing where one ends on a circle the face touches a plane along**
   (#942 F3): `query::crossings_in` reads one curve against a surface carrying the other. Where a
   circle's plane is refused, the circle's cylinder is read instead. A bull-nose's round touches its
