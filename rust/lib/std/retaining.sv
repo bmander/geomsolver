@@ -46,7 +46,8 @@ component RetainingRing(r_in: Length, r_out: Length, t: Length, gap: Angle, r_ey
     back angle(-gap / 2) end_a
     back angle(gap / 2) end_b
     outer := arc(center: o, start: b_out, end: a_out)
-    inner := arc(center: o, start: b_in, end: a_in)
+    // the band's inside, turned clockwise: the ring is notched there by most of a turn
+    inner := arc(center: o, start: a_in, end: b_in, sense: cw)
     radius(r_out) outer
     radius(r_in) inner
     o distance(>= 0mm, along: end_a) a_in

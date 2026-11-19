@@ -7,7 +7,8 @@ use crate::style::Classes;
 use crate::syntax::lexer::Tok;
 use crate::syntax::names::refs_eq;
 use crate::syntax::words::{
-    self, joint_word, link_word, named_link_at, opens_link, past_args, prefix_word,
+    self, anonymous_link_at, joint_word, link_word, named_link_at, opens_link, paren_link_at,
+    past_args, prefix_word,
     word_at, BLOCKS, OPENERS,
 };
 use crate::syntax::{
@@ -292,8 +293,9 @@ fn end_ref(link: &Link, slot: usize) -> Ref {
 impl<'a> P<'a> {
     /// Whether what stands here opens a declaration — possibly a chain of them.
     pub(super) fn chain_starts(&self) -> bool {
-        // `(ab := line(a, b)) -> …` — a link named where it stands
-        if named_link_at(&self.t, self.i) {
+        // `(ab := line(a, b)) -> …` — a link named where it stands, or one in parentheses
+        // naming nothing, `(line(a, b)) -> …` (#952)
+        if paren_link_at(&self.t, self.i) {
             return true;
         }
         let Some(Tok::Ident(w)) = self.peek() else { return false };
@@ -503,7 +505,7 @@ impl<'a> P<'a> {
             // the retired 0.8 list, caught so a document written against it says what to write
             if (thread || !words.is_empty())
                 && self.peek() == Some(&Tok::P('('))
-                && !named_link_at(&self.t, self.i)
+                && !paren_link_at(&self.t, self.i)
             {
                 self.fail("a joint states its relations as bare words: `-> equal angle(30deg)` (spec §6.6)");
             }
@@ -753,6 +755,20 @@ impl<'a> P<'a> {
                 let kind = EntKind::parse(self.word_at(self.i)?).expect("named_link_at");
                 self.i += 1;
                 let decl = self.decl(kind, Some(n))?;
+                if !self.want_p(')') {
+                    return None;
+                }
+                let body = LinkBody::Decl(Box::new(decl));
+                return Some(Link { prefixes, body, span: Span::new(lo, self.prev_hi()) });
+            }
+            // `(line(a, b))` — the parentheses of a named link around a link naming nothing
+            // (#952): the bare link, `line(a, b)`
+            if anonymous_link_at(&self.t, self.i) {
+                let lo = self.here().lo as usize;
+                self.i += 1; // `(`
+                let kind = EntKind::parse(self.word_at(self.i)?).expect("anonymous_link_at");
+                self.i += 1;
+                let decl = self.decl(kind, name.clone())?;
                 if !self.want_p(')') {
                     return None;
                 }

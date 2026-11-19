@@ -13,6 +13,7 @@ mod faces;
 mod build;
 pub(super) use claims::solid_claims;
 use faces::{chain_face,validate_chain,build_face};
+pub(super) use faces::arcs_turned_in;
 use build::build_solid;
 pub(super) use build::carry_legs;
 

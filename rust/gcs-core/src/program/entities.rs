@@ -779,19 +779,20 @@ pub(super) fn splines_in_space(sk: &mut Sketch, res: &mut Resolver, map: &mut su
 /// cw)` (#363 S4), is the counter-clockwise arc from `b` to `a` (#573): drawn in its own plane
 /// from its end, its start and end swapped (`Sketch::reversed`), so it owns what the arc it
 /// describes owns and nothing more — a ring's copy of it is a copy like any other — and a name,
-/// an end and a fraction of its turn read it as written.  One a chain enters at its start is
-/// drawn from there instead, the same way in its plane turned over — its normal the plane's
-/// reversed — so it runs counter-clockwise there from its start: a chain in a plane enters every
-/// link at its start, and turns right at such an arc.  Its ends a half turn apart are refused
-/// (E060), either way it is drawn; one over points in space turns as its points stand, and
-/// `sense:` there is refused (E040).
+/// an end and a fraction of its turn read it as written.  One a chain enters at its start is so
+/// too (#952): the chain's walk reads its ends as written, a path along it runs it from its
+/// start (`path::Path::read`), and a closed chain through it bounds a face — drawn in its plane
+/// turned over, on ends of its own, it met neither neighbour of a face's walk.  Its ends a half
+/// turn apart are the half turn clockwise from its start, as a counter-clockwise half turn is the
+/// one counter-clockwise; one over points in space turns as its points stand, and `sense:` there
+/// is refused (E040).
 ///
 /// **An arc a chain walks from its end** (`back`, `walked_back`) is drawn from there: its start
 /// and end swapped and its turn reversed — in a plane, counter-clockwise becomes clockwise and
 /// the other way; in space the plane through its points faces the other way — the same arc, so
-/// the chain enters it at its start.
+/// the chain enters it at its start.  Its ends a half turn apart in a plane are refused (E060).
 pub(super) fn arcs_in_space(sk: &mut Sketch, map: &super::SourceMap, deferred: &[Deferred],
-                            (back, forward): &Walks, diags: &mut Vec<Diag>) {
+                            (back, _): &Walks, diags: &mut Vec<Diag>) {
     use crate::model::{Owner, RoundIn};
     use crate::space::{cross, dot, norm, sub};
     let clockwise: BTreeMap<usize, (Span, StmtId)> = deferred.iter().filter_map(|d| match d {
@@ -804,9 +805,10 @@ pub(super) fn arcs_in_space(sk: &mut Sketch, map: &super::SourceMap, deferred: &
         let planar = pts.iter().all(|&p| sk.plane_of(p).is_some());
         let cw = clockwise.get(&i);
         let walked = back.contains(&i);
-        // clockwise in a plane, and no chain entering it at its start: the counter-clockwise arc
-        // from its end, drawn where it is
-        let reversed = planar && cw.is_some() && !walked && !forward.contains(&i);
+        // clockwise in a plane, and no chain entering it at its end: the counter-clockwise arc
+        // from its end, drawn where it is (#573) — a chain entering it at its start included
+        // (#952), whose walk then reads its ends as written
+        let reversed = planar && cw.is_some() && !walked;
         let from_end = walked || reversed;
         if from_end {
             let a = &mut sk.arcs[i];
@@ -821,12 +823,11 @@ pub(super) fn arcs_in_space(sk: &mut Sketch, map: &super::SourceMap, deferred: &
                 drawn in a plane turns".to_string()));
             continue;
         }
-        // walked from its end, an arc in a plane turns the other way from there
+        // walked from its end, an arc in a plane turns the other way from there.  One said to
+        // turn clockwise is the counter-clockwise arc from its end, drawn where it is, and a half
+        // turn so is as plain as a counter-clockwise half turn (#952): which half is the one
+        // clockwise from its start
         if planar && cw.is_some() == from_end {
-            if reversed && half_turn(sk, pts) {
-                let Some(site) = map.site_of(EntRef::arc(i)) else { continue };
-                diags.push(Diag::within(Code::E060, site.span, site.stmt, HALF_TURN.to_string()));
-            }
             continue;
         }
         let arc = EntRef::arc(i);
@@ -872,10 +873,11 @@ pub(super) fn arcs_in_space(sk: &mut Sketch, map: &super::SourceMap, deferred: &
     }
 }
 
-/// What a clockwise arc whose centre and ends stand in a line is told: a half turn either way.
-const HALF_TURN: &str = "an arc turning clockwise — said to, or walked by a chain from its \
-    end — is drawn through its centre and its ends, and these stand in a line — a half turn, \
-    either way round: draw two arcs";
+/// What an arc a chain walks from its end, drawn turning back from there, is told where its
+/// centre and ends stand in a line: a half turn either way.
+const HALF_TURN: &str = "an arc a chain walks from its end is drawn turning back from there, \
+    through its centre and its ends, and these stand in a line — a half turn, either way round: \
+    draw two arcs";
 
 /// Whether an arc's centre and ends, `pts`, stand in a line: no one plane through them, and no
 /// one way round from the start to the end.
@@ -894,7 +896,7 @@ pub(super) type Walks = (BTreeSet<usize>, BTreeSet<usize>);
 /// before it leaves, and an arc it enters at its end — its end shared with the link before, or,
 /// first, its start with the link after — it walks from there to its start.  Each such arc, for
 /// `arcs_in_space` to draw from its end, and beside them each arc a chain enters at its start,
-/// which a clockwise one is drawn from (#573).  An arc two chains walk opposite ways is refused
+/// against which the first are held.  An arc two chains walk opposite ways is refused
 /// (E080): it is drawn one way, from its start.  A chain whose links do not meet is left to
 /// `solids::faces::validate_chain`, which says so.
 pub(super) fn walked_back(sk: &Sketch, res: &Resolver, diags: &mut Vec<Diag>) -> Walks {

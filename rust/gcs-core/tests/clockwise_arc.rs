@@ -194,28 +194,173 @@ fn a_clockwise_arc_is_kept_as_written() {
     }
 }
 
-/// **A chain entering it at its start still turns right there** (#363 S4): such an arc is drawn
-/// from its start in its plane turned over, not from its end — and a clockwise half turn is
-/// refused either way it is drawn.
+/// **A chain entering it at its start still turns right there** (#363 S4), and it is the
+/// counter-clockwise arc from its end all the same (#952): its points are the drawing's, no plane
+/// minted, at the unknowns the arc alone is — so a closed chain through it bounds a face, which
+/// walks its points.  A clockwise half turn is the half clockwise from its start, either way it is
+/// drawn (#952), as a counter-clockwise half turn is the half counter-clockwise: refused through
+/// 0.218.
 #[test]
 fn a_clockwise_arc_a_chain_enters_at_its_start_is_drawn_from_there() {
-    let (e, _) = solved(&doc(ONE, CW, "radius(5mm) bow
+    let route = "radius(5mm) bow
   p := point hint((10, -10))
-  route := (l := line(p, a)) -> bow"));
-    assert!(e.sketch.reversed.is_empty());
+  route := (l := line(p, a)) -> bow";
+    let (e, d) = solved(&doc(ONE, CW, route));
+    let (bare, db) = solved(&doc(ONE, CW, "radius(5mm) bow\n  p := point hint((10, -10))\n  \
+                                          l := line(p, a)"));
+    assert_eq!(e.sketch.reversed.len(), 1);
+    assert_eq!(counts(&e, &d), counts(&bare, &db));
+    // the chain enters it at `a`, its start as written, and leaves at `b`
+    near(at(&e, "bow.start"), at(&e, "a"), "bow.start");
+    near(at(&e, "bow.end"), at(&e, "b"), "bow.end");
     for more in ["", "route := (l := line(p, q0)) -> k"] {
-        let said: Vec<String> = crate::common::parsed::build(&format!("unit mm
+        let e = crate::common::parsed::determined(&format!("unit mm
 use std
 in std.top {{
   p := point hint((-5, -5))
-  q0 := point hint((0, 0))
-  q1 := point hint((5, 0))
+  fix((-5, -5)) p
+  q0 := point
+  q1 := point
   q2 := point hint((10, 0))
+  fix((0, 0)) q0
+  fix((5, 0)) q1
+  fix(y == 0mm) q2
   k := arc(center: q1, start: q0, end: q2, sense: cw)
+  m := point hint((5, 4))
+  m coincident(t == 0.5) k
   {more}
 }}
-")).errors().map(|d| format!("{}: {}", d.code.as_str(), d.message)).collect();
-        assert!(said.iter().any(|m| m.starts_with("E060") && m.contains("a half turn")),
-                "{more}: {said:?}");
+"));
+        // clockwise from (0, 0) about (5, 0): over the top
+        near(at(&e, "m"), [5.0, 5.0, 0.0], more);
+        near(at(&e, "q2"), [10.0, 0.0, 0.0], more);
     }
+}
+
+/// **A closed chain through an arc said to turn clockwise is a face** (#952): the issue's lens,
+/// two counter-clockwise arcs and a clockwise one between them over a line — the chain's walk
+/// reads the clockwise arc's ends as written, so it meets both neighbours, and the face is the
+/// one `face(a, k, b, l)` lists.
+#[test]
+fn a_closed_chain_through_a_clockwise_arc_is_a_face() {
+    const LENS: &str = "unit mm
+use std
+use std.solids
+in std.top {
+  c1 := point
+  c2 := point
+  c3 := point
+  fix((-10, 0)) c1
+  fix((10, 0)) c2
+  fix((0, 12)) c3
+  p := point hint((3, 8))
+  r := point hint((-3, 8))
+  s := point hint((-10, -10))
+  t := point hint((10, -10))
+  LOOP
+  radius(10mm) a
+  radius(10mm) b
+  construction j1 := line(c2, c3)
+  construction j2 := line(c1, c3)
+  p coincident j1
+  r coincident j2
+}
+lens := solid(std.solids.Prism(loop, from: 0mm, to: 5mm))
+";
+    let chain = "loop := (a := arc(center: c2, start: t, end: p)) ->
+    (k := arc(center: c3, start: p, end: r, sense: cw)) ->
+    (b := arc(center: c1, start: r, end: s)) -> tangent
+    (l := line(s, t)) -> tangent close";
+    let listed = "a := arc(center: c2, start: t, end: p)
+  k := arc(center: c3, start: p, end: r, sense: cw)
+  b := arc(center: c1, start: r, end: s)
+  l := line(s, t)
+  b tangent(at: end) l
+  a tangent(at: start) l
+  loop := face(a, k, b, l)";
+    let volume = |e: &Elaborated| {
+        let x = e.sketch.exact_solid(ent(e, "lens").i()).expect("the lens");
+        gcs_core::brep::props::volume(&x.brep)
+    };
+    let (walked, _) = solved(&LENS.replace("LOOP", chain));
+    let (named, _) = solved(&LENS.replace("LOOP", listed));
+    let (v, w) = (volume(&walked), volume(&named));
+    assert!(v > 0.0 && (v - w).abs() <= 1e-9 * w, "{v} against {w}");
+    assert!(walked.sketch.frames.len() == named.sketch.frames.len());
+}
+
+/// **A face turned into by a half turn written the default way is said** (#952, W118): a slot's
+/// end written with its ends swapped is the semicircle turned in, a notch where it was meant to
+/// bulge out, and the drawing solves either way — so where it is solved, the arc is named.  The
+/// slot as meant says nothing, nor does the notch said clockwise, nor a lesser arc turned in (an
+/// inside fillet, as the library draws hundreds of).
+#[test]
+fn a_half_turn_a_face_turns_into_is_said() {
+    let slot = |far: &str| format!("unit mm
+use std
+use std.solids
+in std.top {{
+  c1 := point
+  c2 := point
+  fix((0, 0)) c1
+  fix((20, 0)) c2
+  a := point
+  b := point
+  c := point
+  d := point
+  fix((0, -3)) a
+  fix((20, -3)) b
+  fix((20, 3)) c
+  fix((0, 3)) d
+  low := line(a, b)
+  near := arc(center: c2, start: b, end: c)
+  high := line(c, d)
+  far := {far}
+  slot := face(low, near, high, far)
+}}
+bar := solid(std.solids.Prism(slot, from: 0mm, to: 2mm))
+");
+    let said = |far: &str| {
+        let e = crate::common::parsed::solved(&slot(far));
+        gcs_core::program::solid_diagnostics(&e.sketch, &e.map, &e.program).into_iter()
+            .filter(|d| d.code == gcs_core::program::Code::W118)
+            .map(|d| d.message).collect::<Vec<_>>()
+    };
+    let swapped = said("arc(center: c1, start: a, end: d)");
+    assert!(matches!(swapped.as_slice(), [m] if m.contains("`slot` turns into `far`")
+        && m.contains("`sense: cw`")), "{swapped:?}");
+    for quiet in ["arc(center: c1, start: d, end: a)",
+                  "arc(center: c1, start: d, end: a, sense: cw)"] {
+        assert_eq!(said(quiet), Vec::<String>::new(), "{quiet}");
+    }
+    // a quarter turned in: an inside corner rounded by hand
+    let e = crate::common::parsed::solved("unit mm
+use std
+use std.solids
+in std.top {
+  o := point
+  k := point
+  fix((0, 0)) o
+  fix((10, 10)) k
+  p := point
+  q := point
+  r := point
+  s := point
+  fix((10, 0)) p
+  fix((20, 0)) q
+  fix((20, 20)) r
+  fix((0, 20)) s
+  t := point
+  fix((0, 10)) t
+  bottom := line(p, q)
+  right := line(q, r)
+  top := line(r, s)
+  left := line(s, t)
+  fillet := arc(center: o, start: p, end: t)
+  ell := face(bottom, right, top, left, fillet)
+}
+block := solid(std.solids.Prism(ell, from: 0mm, to: 2mm))
+");
+    let d = gcs_core::program::solid_diagnostics(&e.sketch, &e.map, &e.program);
+    assert!(d.iter().all(|d| d.code != gcs_core::program::Code::W118), "{d:?}");
 }

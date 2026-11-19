@@ -4,6 +4,23 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.219] A chain link in parentheses that names nothing, a pie slice, a condition over two lines**
+(#952). A chain's link may stand in parentheses without a name, `pk := (line(c0, c1)) -> round(r:
+4mm) (line(c1, c2)) -> … close`, the bare link as before; through 0.218 the line was read as a number
+and refused as "unknown function `line`" (E103), or "unexpected `:`" past a round. A face whose edge
+meets neither neighbour stays E080, but where both neighbours are the one point the two readings are
+one loop: `face(rim, o, -> close)`, an arc and its centre, is the pie slice (E080 through 0.218). A
+`when`'s condition runs on past a line's end inside a parenthesis, and where a line ends in `and`, `or`
+or `not` or the next opens with `and` or `or`; through 0.218 the condition ended at the line, E001
+"expected `{`". Beside the language, without changing what any document reads: a closed named chain
+through an arc said to turn clockwise is the face it lists (it was E080, "meets neither of its
+neighbours"); `face(line(a, b), …)` says that a face lists edges declared by name and that a loop drawn
+in place is a chain, where it said "expected `,` or `)`"; and **W118** names an arc of a half turn or
+more that a face turns into while written counter-clockwise from its start, the end of a slot written
+with its ends swapped — `sense: cw` with its ends swapped says the notch is meant. An arc said
+`sense: cw` whose ends are a half turn apart is the half clockwise from its start (E060 through
+0.218), so a notch of a half turn can be said so.
+
 **[0.218] A claim over measurements, and the customary engineering units** (#940). A `claim`
 may compare measurements of the solved drawing — `length`, `radius`, `distance`, `angle` — with
 the document's numbers, `claim length(post) <= 96"`: it is judged after the solve, at the pose the

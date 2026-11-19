@@ -244,7 +244,7 @@ impl<'a> P<'a> {
         // whether the parentheses read a motion or a running number, asked before they open
         let over = self.over_ahead();
         // `horizontal (l := line)` — a named link after the word, not the word's own arguments
-        if crate::syntax::words::named_link_at(&self.t, self.i) || !self.eat_p('(') {
+        if crate::syntax::words::paren_link_at(&self.t, self.i) || !self.eat_p('(') {
             return Some(Vec::new());
         }
         // a side takes nothing in its parentheses: one grown by a distance is that distance from

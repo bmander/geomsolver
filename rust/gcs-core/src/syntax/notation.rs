@@ -353,8 +353,10 @@ impl Lowering<'_> {
                 out.extend(held);
                 Some(next)
             }
-            // a condition is the expression reader's (`expr::parse_cond`): `when w not in A`
-            "when" | "repeat" | "cycle" | "claim_over" => None,
+            // a condition is the expression reader's (`expr::parse_cond`): `when w not in A`,
+            // and so is the rest of one run onto a line of its own, which no statement opens
+            // with (#952): `when a parallel std.z⏎ or b parallel std.z { … }`
+            "when" | "repeat" | "cycle" | "claim_over" | "and" | "or" => None,
             // more of a body's set, `B or { p | p in x }` (#783 P3): the set's own statements
             // are lowered where they stand, past its `|`
             _ if super::words::joined_at(t, i) => None,

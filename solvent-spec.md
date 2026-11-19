@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.218 — November 2026**
+**Specification, Draft 0.219 — November 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -524,7 +524,7 @@ vertical (right := line(r1, r2)) -> tangent close
 
 ```
 CHAIN  ::= [NAME ":="] LINK (JOINT LINK)* ["->" INFIX* "close"]
-LINK   ::= PREFIX* (DECL | "(" NAME ":=" DECL ")") | REF
+LINK   ::= PREFIX* (DECL | "(" [NAME ":="] DECL ")") | REF       // [0.219] "(" DECL ")" 
 PREFIX ::= a constraint name whose spec is one entity slot     // horizontal, vertical
          | "step" "(" STEPARG ("," STEPARG)* ")"                // [0.101] step(u: s, dv: b)
 STEPARG ::= ("u" | "v" | "du" | "dv") ":" EXPR | "from" ":" REF
@@ -848,7 +848,7 @@ quad := face(x0.p, x1.p, x2.p, x3.p, -> close)      // four corners, no line dra
 
 A minted run is an ordinary line of the drawing carrying the class **`.closure`**, whose shipped rule is `display: none` (§13.2): it bears no design, nothing drew it, and it exists so that a region has a boundary. It names a face of whatever is swept from the loop, as `close0`, `close1`, … in traversal order, skipping names already used by existing edges in the loop.
 
-Three restrictions keep the shorthand from swallowing a mistake. An interior gap between two **edges** is still E080: a point in a list can mean nothing else, while two edges that do not meet are edges listed out of order. And **an edge MUST meet at least one of its neighbours**, since that is what says which way it is walked — `bad := face(a, bc, d, -> close)` has two readings and states neither, and is E080 naming the edge. A straight loop with fewer than three corners is E080 for the same reason a prism swept nowhere is. A single item is a loop only as a circle, or as an edge with two ends closed by `-> close`, which mints its chord **[0.28]**.
+Three restrictions keep the shorthand from swallowing a mistake. An interior gap between two **edges** is still E080: a point in a list can mean nothing else, while two edges that do not meet are edges listed out of order. And **an edge MUST meet at least one of its neighbours**, since that is what says which way it is walked — `bad := face(a, bc, d, -> close)` has two readings and states neither, and is E080 naming the edge — **[0.219]** unless both its neighbours are the one point, where the two readings are one loop walked either way: `sector := face(rim, o, -> close)`, an arc and its centre, is the pie slice, a run minted from each of the arc's ends to the corner. A straight loop with fewer than three corners is E080 for the same reason a prism swept nowhere is. A single item is a loop only as a circle, or as an edge with two ends closed by `-> close`, which mints its chord **[0.28]**.
 
 **A face of a block's copies [0.113].** An item of a face's walk that names a declaration of a `repeat` or a `cycle` beside it, read bare (`face(side)`, `side` declared in the block), stands for its copies in order, `side[0]`, `side[1]`, …, as many as the block made: a loop drawn by a block is a face without its count written twice, and a block whose count is a walk's (§12.8) makes a face of that many edges. Each such edge names the face swept from it by its copy, `side[2]`. A name the face's scope finds as it stands is itself.
 
@@ -1137,7 +1137,8 @@ block := solid(std.solids.Prism(face(mouth, side_r, lid, side_l), from: face, to
   an arc. **[0.128]** In a plane an arc runs counter-clockwise from its start unless it says
   otherwise, `arc(center: c, sense: cw)`: it then runs clockwise — drawn counter-clockwise in its
   plane turned over — so a chain in a plane turns right at it, entering it at its start as every
-  link. Its ends a half turn apart are **E060**; `sense:` of an arc over points in space, which
+  link. Its ends a half turn apart are **E060** — **[0.219]** no longer: they are the half turn
+  clockwise from its start, as a counter-clockwise arc's are the half counter-clockwise; `sense:` of an arc over points in space, which
   turns as its points stand, is **E040**. **[0.129]** A chain MAY enter an arc at its end — its
   end the point the link before leaves at, or, first, its start the point the link after enters
   at — and walks it from there to its start: the same arc, drawn from its end and turning the
@@ -3328,7 +3329,7 @@ when COND { ... }
 
 The body is made **once** where `COND` holds and **not at all** where it does not. The condition is decided at elaboration, over the numbers in scope where the block stands — the document's values and inputs with a value, a module's numbers by their paths, a component's formals bound by its call, an enclosing block's index — so it is a choice of what the program *is*, never of where the solve goes. It stands where `repeat` does: at the top level of a document, in a component body, and inside another block.
 
-`COND` is comparisons of two numbers, `<`, `<=`, `>`, `>=`, `==` and `!=`, joined by `and`, `or` and `not` (`or` binds loosest, then `and`, then `not`); a parenthesis holds a number or a condition. A number alone is no condition, and a comparison is no number. Each comparison is between two numbers of one dimension, as `+` is (§3.3): `relief > 0mm`, not `relief > 0`; two dimensions are **E103**. The comparison is exact, with no tolerance, so `<` and `==` are never both true. Every comparison is worked out, so a mistake on a side `and` or `or` could skip is still said.
+`COND` is comparisons of two numbers, `<`, `<=`, `>`, `>=`, `==` and `!=`, joined by `and`, `or` and `not` (`or` binds loosest, then `and`, then `not`); a parenthesis holds a number or a condition. **[0.219]** A condition runs on past a line's end inside a parenthesis, and where its line ends in `and`, `or` or `not` or the next opens with `and` or `or`, as a chain runs on past a line ending in a joint (§6.6): `when f parallel std.z⏎ and g parallel std.z { … }`. A number alone is no condition, and a comparison is no number. Each comparison is between two numbers of one dimension, as `+` is (§3.3): `relief > 0mm`, not `relief > 0`; two dimensions are **E103**. The comparison is exact, with no tolerance, so `<` and `==` are never both true. Every comparison is worked out, so a mistake on a side `and` or `or` could skip is still said.
 
 **[0.91] Identity.** Two names of which one is no number compare by what they stand for: `a == b` holds where both name the same thing — an entity, or a face (§6.21) — reached through every formal and binder (a formal is what its call gave it, a face repeat's binder its face), and `a != b` where they do not. `c in B` holds where what `c` names is one of the faces the face path `B` names (§6.9). These join numbers' comparisons under `and`, `or` and `not` alike, and are decided where the block is elaborated — inside a block over a solid's faces, once the faces are named (§12.8). A number on one side and something drawn on the other is **E103**, as is something drawn under `<`, `<=`, `>` or `>=`, and `in` over what names no faces; a name that stands for nothing is **E101**. `when` is thereby the language's one conditional of statements: a switch is `when flag == 1 { … }`, never a `repeat` over a count of zero or one, which named what it made as copies. **[0.191]** A number that differs by case is one statement, `if(flag == 1, 3mm, 5mm)` (§3.3).
 

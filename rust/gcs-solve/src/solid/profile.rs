@@ -173,6 +173,48 @@ pub(crate) fn walk_loop(sk: &Sketch, edges: &[EntRef]) -> Option<Vec<(EntRef, u3
     Some(out)
 }
 
+/// **The arcs a face turns into** (#952): each arc of face `fi`'s outer loop that the walk runs
+/// against the loop's own winding — clockwise where the loop runs counter-clockwise — so the face
+/// is notched there rather than bulging out, each with how far it turns.  The winding is the
+/// loop's exact signed area, its chords and each arc's segment, read at the pose the sketch stands
+/// in; a loop that does not walk end to end has none.
+pub fn arcs_turned_in(sk: &Sketch, fi: usize) -> Vec<(EntRef, f64)> {
+    let Some(walk) = sk.faces.get(fi).and_then(|f| walk_loop(sk, &f.edges)) else {
+        return Vec::new();
+    };
+    // each arc's sweep as walked: counter-clockwise from its start, so negative entered at its end
+    let swept = |e: EntRef, from: u32| {
+        let a = &sk.arcs[e.i()];
+        let c = sk.point_xy(a.center as usize);
+        let ang = |p: u32| {
+            let q = sk.point_xy(p as usize);
+            (q.1 - c.1).datan2(q.0 - c.0)
+        };
+        let mut extent = ang(a.end) - ang(a.start);
+        while extent <= 0.0 {
+            extent += std::f64::consts::TAU;
+        }
+        let r = sk.params[a.radius as usize].value;
+        (if from == a.start { extent } else { -extent }, r * r)
+    };
+    let mut area = 0.0;
+    for &(e, from, to) in &walk {
+        let (p, q) = (sk.point_xy(from as usize), sk.point_xy(to as usize));
+        area += 0.5 * (p.0 * q.1 - q.0 * p.1);
+        if e.kind == EntKind::Arc {
+            let (phi, r2) = swept(e, from);
+            area += 0.5 * r2 * (phi - phi.sin());
+        }
+    }
+    if area == 0.0 || !area.is_finite() {
+        return Vec::new();
+    }
+    walk.iter()
+        .filter(|&&(e, from, _)| e.kind == EntKind::Arc && (swept(e, from).0 > 0.0) != (area > 0.0))
+        .map(|&(e, from, _)| (e, swept(e, from).0.abs()))
+        .collect()
+}
+
 /// A spline's or a curve's parameter where a walk entering it at `from` enters and leaves it.
 pub(crate) fn curved_span(sk: &Sketch, e: EntRef, from: u32) -> Option<(EntRef, [f64; 2])> {
     let (a, b) = match e.kind {

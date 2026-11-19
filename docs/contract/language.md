@@ -256,7 +256,10 @@ with its own copy of `vals` — no `PathStep`, no prefix, so names are the scope
 `expr::Cond` (`Cmp` `<`…`!=`, `and`/`or`/`not`) is made only by `expr::parse_condition_in` and
 read by `expr::decide`; no `Ast` holds one, and its sides agree as `+`'s (`> 0mm`, never `> 0`).
 The parser refuses `as` and a trailing joint; the measured-bound sniff skips a statement an
-opener word starts. `commit_seeds` writes into a root `when`'s body. The hypoid's tip relief is
+opener word starts.  **The condition runs on past a line's end** ([0.219], #952) inside a
+parenthesis, and where its line ends in `and`, `or` or `not` or the next opens with `and` or `or`
+(`P::block`); `count` is its text read as one line, every run of white space one space, so what
+`flatten::values` parses and quotes is the one line it is. `commit_seeds` writes into a root `when`'s body. The hypoid's tip relief is
 one (`hypoid.sv`). `tests/when.rs` is the gate.
 
 **`scenario NAME { … }`, a load case (§9.11 [0.164], #510 P4):** a block like `when` — no prefix,
@@ -756,7 +759,11 @@ before ports 0.9 s to 0.4 s.
   the one declaration (`l := horizontal line(a, b)`: a prefix word's value is its operand).
   `P::definition` lowers to the existing `StmtKind`s (`Param`, `Group`, `Instance`, `Decl`,
   `Chain`), so nothing below the parser knows; `syntax::words::named_link_at` tells `(l := line)`
-  from an operator's own parentheses.  `label:` never defines: it fills a slot.  A name in a child
+  from an operator's own parentheses, and `anonymous_link_at` a link in them that names nothing,
+  `(line(a, b))` — an element keyword then its own `(` — which is the bare link ([0.219], #952;
+  `paren_link_at` asks both wherever a link may stand, so a chain of them is no number refused as
+  "unknown function `line`").  A face's list declares nothing: `face(line(a, b), …)` is E001
+  saying so, and naming the chain that draws a loop in place (`P::list_kid`).  `label:` never defines: it fills a slot.  A name in a child
   slot (`line(a, q := hint(…))`) is not implemented yet.
 - **Every seed is written in one `hint(…)` clause, and nothing else is** (Solvent §4.3, §6.4): `p :=
   point hint((0, 0))`, `c := circle(center: o) hint(r: 25)`, `point_on_spline(p, s) hint(t:

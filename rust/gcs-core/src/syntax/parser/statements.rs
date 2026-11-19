@@ -2543,6 +2543,7 @@ impl<'a> P<'a> {
         }
         // the count runs to `as` or `{`, and is an expression over what is in scope
         let from = self.here().lo as usize;
+        let from_tok = self.i;
         let mut depth = 0i32;
         while !self.done() {
             match self.peek() {
@@ -2550,12 +2551,26 @@ impl<'a> P<'a> {
                 Some(Tok::P(')')) => depth -= 1,
                 Some(Tok::P('{')) if depth == 0 => break,
                 Some(Tok::Ident(w)) if depth == 0 && (w == "as" || w == "about") => break,
+                // a `when`'s condition runs on past a line's end inside its parentheses, and
+                // where one line ends in `and`, `or` or `not` or the next opens with `and` or
+                // `or` (#952), as a chain runs on past a line ending in `->`
+                Some(Tok::Nl) if kind == BlockKind::When && {
+                    let after = (self.i..self.t.len()).find(|&j| self.t[j].0 != Tok::Nl);
+                    depth > 0
+                        || self.i > from_tok
+                            && matches!(self.word_at(self.i - 1), Some("and" | "or" | "not"))
+                        || after.is_some_and(|j| matches!(self.word_at(j), Some("and" | "or")))
+                } => {
+                    self.skip_ends();
+                    continue;
+                }
                 Some(Tok::Nl) => break,
                 _ => {}
             }
             self.i += 1;
         }
-        let count = self.text_from(from).trim().to_string();
+        // its text read as one line, however many it ran over
+        let count = self.text_from(from).split_whitespace().collect::<Vec<_>>().join(" ");
         let head = Span::new(from, self.prev_hi().max(from));
         if kind == BlockKind::When && count.is_empty() {
             self.fail(WHEN);
