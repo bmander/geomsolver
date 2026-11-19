@@ -279,17 +279,15 @@ fn feet_grown_are_built_exactly() {
     }
 }
 
-/// A body grown past what it is built for leaves it to the field, said by name: a pocket narrower
-/// than twice the reach, a post no taller than it over its foot, and a body shrunk.  At nothing it
-/// is the body.
+/// A body grown past what its pieces are built for — a pocket narrower than twice the reach, a post
+/// no taller than it over its foot — is the body grown whole by the kernel's offset, held to the
+/// field (`tests/offset_whole.rs`).  At nothing it is the body.
 #[test]
 fn what_is_not_built_is_said() {
     let e = solved(&format!("{STANDING}gn := std.rounds.Grown(tray, d: 9mm)\ngs := std.rounds.Grown(base, d: 6mm)\n"));
-    for (name, says) in [("gn.body", "a face narrower than the reach beside a concave edge"),
-                         ("gs.body", "a band shorter than it between its feet")] {
+    for name in ["gn.body", "gs.body"] {
         let r = route(&e.sketch, ent(&e, name).i()).unwrap();
-        let Route::Grown(Err(why)) = r else { panic!("`{name}` is built") };
-        assert!(why.contains(says), "`{name}`: {why}");
+        let Route::Grown(Ok(_)) = r else { panic!("`{name}`: {:?}", r.refusal()) };
     }
     let e = solved(&format!("{BLOCKS}z := std.rounds.Grown(block, d: 0mm)\n"));
     let z = e.sketch.exact_solid(ent(&e, "z.body").i()).unwrap();

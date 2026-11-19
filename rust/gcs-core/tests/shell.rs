@@ -241,7 +241,9 @@ fn a_body_with_a_boss_is_shelled_exactly() {
 
 /// What is not built is read by the field, and an exact export says why by name: a wall standing
 /// on a face left open (the plinth's boss on its open top: its foot's quarter round hangs below),
-/// a cut's faces left open, a section whose walls meet, a prism no longer than twice the thickness.
+/// a section whose walls meet, a prism no longer than twice the thickness.  A cut's faces left
+/// open, which the constructions here refuse, is the kernel's offset's cavity
+/// (`tests/offset_whole.rs`).
 #[test]
 fn what_is_not_built_is_read_by_the_field_and_said() {
     let refused = |doc: &str, src: &str, name: &str, says: &str| {
@@ -251,7 +253,8 @@ fn what_is_not_built_is_read_by_the_field_and_said() {
         field(&e, name);
     };
     refused(PLINTH, "plinth.near shell(t: 1mm) plinth", "plinth", "a wall standing on a face left open");
-    refused(STANDING, "tray.cavity shell(t: 1mm) tray", "tray", "none of the stock's");
+    let e = solved(&format!("{STANDING}tray.cavity shell(t: 1mm) tray\n"));
+    assert!(e.sketch.exact_solid(ent(&e, "tray").i()).is_ok(), "the tray open at its cut");
     refused(BLOCKS, "shell(t: 6mm) step", "step", "narrower than twice the thickness");
     refused(BLOCKS, "shell(t: 7mm) block", "block", "no longer than twice the thickness");
 }
