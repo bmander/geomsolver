@@ -455,7 +455,13 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
         // of a cone screwed through a rod, along its base rim)
         if let Err(super::member::Unsettled::Near {at}) = ahead {
             let span = roll[1]-roll[0];
-            let end = (0..2).find(|&e| (at-roll[e]).abs() <= 1e-2*span.abs() && posed[e].faces.iter().any(|g| crate::ssi::same(&f.surface,&g.surface,tol)));
+            // (an instant the end pose holds: the tool posed there and at the end within membership's
+            // bar of one another at the point, #942 F6)
+            let held = |e: usize| match (path.pose(at),path.pose(roll[e])) {
+                (Ok(qa),Ok(qe)) => distance(qa.inverse().point(p),qe.inverse().point(p)) <= bar,
+                _ => false,
+            };
+            let end = (0..2).find(|&e| held(e) && posed[e].faces.iter().any(|g| crate::ssi::same(&f.surface,&g.surface,tol)));
             if let Some(e) = end {
                 let h = 1e-6*span*if e == 0 { 1. } else { -1. };
                 if let (Ok(q0),Ok(q1)) = (path.pose(roll[e]),path.pose(roll[e]+h)) {
@@ -596,7 +602,7 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
         Some(b) => b,
         None => {
             let (lo,hi) = out.bounds();
-            let grow = 0.1*distance(lo,hi);
+            let grow = super::closed::room((0..3).map(|i| hi[i]-lo[i]).fold(0.,f64::max),tol);
             let foot = [0.5*(lo[0]+hi[0]),0.5*(lo[1]+hi[1]),lo[2]-grow];
             let half = 0.5*(hi[0]-lo[0]).max(hi[1]-lo[1])+grow;
             grown = crate::build::prism(&crate::build::square(foot,[0.,0.,1.],half),0.,hi[2]-lo[2]+2.*grow)?;

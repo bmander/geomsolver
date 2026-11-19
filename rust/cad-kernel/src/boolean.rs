@@ -2313,7 +2313,8 @@ fn on_given(c: &Curve,t: [f64;2],curves: &[Curve],touches: &[V],surface: &Surfac
     let mut roots: Vec<(f64,bool)> = Vec::new();
     for g in curves {
         for (s,_,_) in super::meeting::crossings(c,t,g,domain(g),reach) {
-            if roots.iter().any(|r| (r.0-s).abs() <= 1e-9*(1.+s.abs())) { continue }
+            // (a crossing read already: the two points within `reach` of one another, #942 F6)
+            if roots.iter().any(|r| distance(c.point(r.0),c.point(s)) <= reach) { continue }
             let touch = s-step > t[0] && s+step < t[1] && {
                 let (a,b) = (surface.implicit(c.point(s-step)),surface.implicit(c.point(s+step)));
                 (a < 0.) == (b < 0.)
@@ -2327,7 +2328,7 @@ fn on_given(c: &Curve,t: [f64;2],curves: &[Curve],touches: &[V],surface: &Surfac
         let s = match c.period() { Some(period) => super::geom::around(s,t[0],period),None => s };
         let slack = reach/c.speed().max(1e-300);
         if s < t[0]-slack || s > t[1]+slack || distance(c.point(s),p) > reach { continue }
-        if roots.iter().any(|r| (r.0-s).abs() <= 1e-9*(1.+s.abs())) { continue }
+        if roots.iter().any(|r| distance(c.point(r.0),c.point(s)) <= reach) { continue }
         roots.push((s.clamp(t[0],t[1]),true));
     }
     roots.sort_by(|x,y| x.0.total_cmp(&y.0));
@@ -3270,11 +3271,13 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool,tol: f64) -
                 // than the parameters are read to, and a fit within the tolerance leans it either way)
                 let (back,leaving): (f64,Vec<(usize,f64)>) = if tangent {
                     let shortest = tied.iter().chain(back_tied.then_some(&h)).map(|&g| length(&halves[g])).fold(f64::INFINITY,f64::min);
-                    let mut delta = 1e-4*shortest;
+                    // (first at the length a tolerance's lean turns a way by the tie itself: nearer the
+                    // node no reading can part two ways the tie holds as one, #942 F6)
+                    let mut delta = (4.*tol/TANGENT_TIE).min(0.25*shortest);
                     loop {
                         let back = way_at(h,false,delta);
                         let leaving: Vec<(usize,f64)> = candidates.iter().map(|&g| (g,way_at(g,true,delta))).collect();
-                        let lean = (4.*tol/delta).max(1e-9);
+                        let lean = 4.*tol/delta;
                         let same = |x: f64,y: f64| { let d = (x-y).rem_euclid(TAU); d <= lean || TAU-d <= lean };
                         let apart = leaving.iter().all(|&(g,w)| !same(w,back) && leaving.iter().all(|&(g2,w2)| g2 == g || !same(w,w2)));
                         if apart || 10.*delta > 0.25*shortest { break (back,leaving) }

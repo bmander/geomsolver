@@ -862,7 +862,7 @@ fn domain(tool: &Brep,legs: &Legs,held: &[V],tol: f64) -> Result<Domain,Unbuilt>
     }
     let (mut l,mut h) = bx;
     let sag = reach*(1.-(0.5*(screw.ratio*(b-a)).abs()/STEPS as f64).dcos());
-    let margin = 0.05*(0..3).map(|i| h[i]-l[i]).fold(0.,f64::max)+tol;
+    let margin = room((0..3).map(|i| h[i]-l[i]).fold(0.,f64::max),tol);
     let pad = [sag+margin,sag+margin,margin];
     for i in 0..3 { l[i] -= pad[i]; h[i] += pad[i] }
     let at = |x: f64,y: f64| f.at([x,y,l[2]]);
@@ -951,11 +951,33 @@ pub(super) fn corners_of((lo,hi): (V,V)) -> Vec<V> {
 
 /// A cube holding `points` with a fifth of its size to spare each way: the box, its centre and half
 /// its side.
+/// **The roll's grain at the tolerance**: the stretch of `[a, b]` over which no corner of the tool's
+/// box moves `tol`, read at 4096 poses (#942 F6) — two instants nearer than this are one as the
+/// tolerance reads the sweep. The whole roll where nothing moves.
+pub(crate) fn grain(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Result<f64,Unbuilt> {
+    const LOOKS: usize = 4096;
+    let corners = { let (lo,hi) = tool.bounds(); (0..8).map(|k| std::array::from_fn(|i| if k>>i & 1 == 0 { lo[i] } else { hi[i] })).collect::<Vec<V>>() };
+    let step = (b-a)/LOOKS as f64;
+    let mut fastest = 0f64;
+    let mut last = path.pose(a)?;
+    for k in 1..=LOOKS {
+        let now = path.pose(if k == LOOKS { b } else { a+step*k as f64 })?;
+        for &c in &corners { fastest = fastest.max(crate::util::space::distance(now.point(c),last.point(c))/step) }
+        last = now;
+    }
+    Ok(if fastest > 0. { tol/fastest } else { b-a })
+}
+
+/// **How far a box holding a sweep stands clear of it**: a tenth of the box's largest extent and the
+/// tolerance (`cube_holding`'s, and every box a road holds its sweep in, #942 F6).
+pub(super) fn room(extent: f64,tol: f64) -> f64 { 0.1*extent+tol }
+
 pub(super) fn cube_holding<'a>(points: impl IntoIterator<Item=&'a V>,tol: f64) -> Result<(Brep,V,f64),Unbuilt> {
     let (blo,bhi) = points.into_iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(l,h),p|
         (std::array::from_fn(|k| l[k].min(p[k])),std::array::from_fn(|k| h[k].max(p[k]))));
     let centre: V = std::array::from_fn(|k| 0.5*(blo[k]+bhi[k]));
-    let half = (0..3).map(|k| bhi[k]-blo[k]).fold(0.,f64::max)*0.6+tol;
+    let extent = (0..3).map(|k| bhi[k]-blo[k]).fold(0.,f64::max);
+    let half = 0.5*extent+room(extent,tol);
     Ok((prism(&square(add(centre,[0.,0.,-half]),[0.,0.,1.],half),0.,2.*half)?,centre,half))
 }
 
@@ -1081,10 +1103,11 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
     let ring = super::rings::Ring::read(tool)?;
     // **the roll cut where the contact changes shape** (#880 T1d, `rings::changes`): a fold pair born
     // or vanishing partway — the tumbling torus turned whole, and thin — each stretch fitted on its
-    // own, its rows a billionth of the roll clear of the cuts (where the pair has no width), and the
-    // tubes of every stretch sewn across them into one candidate per tube
+    // own, its rows half the roll's grain clear of the cuts (where the pair has no width; the two rows
+    // either side of a cut so within the tolerance of one another, #942 F6), and the tubes of every
+    // stretch sewn across them into one candidate per tube
     let (scale,cuts) = super::rings::changes(&ring,path,[a,b])?;
-    let eps = 1e-9*(b-a);
+    let eps = 0.5*grain(tool,path,[a,b],tol)?;
     let bounds: Vec<f64> = std::iter::once(a).chain(cuts.iter().copied()).chain(std::iter::once(b)).collect();
     let stretches: Vec<[f64;2]> = bounds.windows(2).enumerate().map(|(k,w)| {
         [if k == 0 { w[0] } else { w[0]+eps },if k+2 == bounds.len() { w[1] } else { w[1]-eps }]
@@ -1139,7 +1162,8 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
         // (sewn only along the rows at the cuts: the double curve's chords on its two leaves are
         // one curve in space, and left to the trim)
         let rows: Vec<f64> = fits.windows(2).map(|w| 0.5*(w[0].roll[1]+w[1].roll[0])).collect();
-        let across = |uv: crate::geom::Uv| rows.iter().position(|&r| (uv[1]-r).abs() <= 1e-6*(b-a));
+        // (a parameter on a cut's row: within its stretches' clearance of the cut, twice over)
+        let across = |uv: crate::geom::Uv| rows.iter().position(|&r| (uv[1]-r).abs() <= 2.*eps);
         let sewn = crate::sew::sewn_open(&pieces,tol,&across).map_err(|e| Unbuilt::Failed(format!("a ring's tubes not sewn across the cuts: {}",e.msg)))?;
         let parts = crate::sew::parts(&sewn);
         if crate::debug() {
