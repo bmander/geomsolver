@@ -8,6 +8,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A ring's tube cut at an end pose carries the places it was traced through as the cut's pcurve**
+  (#942 F3): `rings::chord_curve` returns, beside the curve, the places on the face it passes — the
+  traced points and the meeting's own point settled between each two — at the curve's own
+  parameters, and the cut's pcurve is the coarsest cubic through every so many of them whose image
+  holds the curve's bar (a quarter of the tolerance) at each and at 64 places along it, where it was
+  the curve inverted onto the face from the line between its ends. Beside a fold pair's birth the
+  leaf folds back on itself within 2e-4, and the half turn's cut, so inverted, landed on the other
+  fold ("edge 28's pcurve is 2.15e-4 off it"); its build now reaches the pair's untraced double curve.
+
 - **A ring's stretches are sewn along a cut as one row, the cut's** (#942 F3): `sew::sewn_open`'s
   `across` now names which row a face's parameters lie on (`Option<usize>`, the cut's index) where
   it said only whether they lay on one, and two rows are one where they are the same cut's. The

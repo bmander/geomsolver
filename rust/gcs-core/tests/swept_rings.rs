@@ -353,6 +353,27 @@ fn the_half_turns_stretches_are_sewn_across_its_cut_into_one_tube_a_contact_curv
         pieces.extend(entered_at(fit,&ring,at,[k == 0,k == 1],tol).unwrap().0);
     }
     assert_eq!(pieces.len(),4,"two tubes a stretch");
+    // and each curve a tube is cut along at an end pose carries, as its pcurve, the places on the
+    // face it passes, each at the curve's own parameter there, where that holds the curve's bar (a
+    // quarter of the tolerance): the end pose's cut beside the fold pair's birth among them, which
+    // inverted onto the leaf landed on the other fold, 2.2e-4 off
+    let (mut chords,mut worst) = (0,0f64);
+    for piece in &pieces {
+        for f in &piece.faces {
+            for c in f.loops.iter().flatten() {
+                let e = &piece.edges[c.edge as usize];
+                let gcs_core::brep::topo::Pcurve::Curve(_) = &c.pcurve else { continue };
+                chords += 1;
+                for j in 0..=64 {
+                    let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/64.;
+                    let on = f.surface.point(c.pcurve.at(t,e,&f.surface,&piece.vertices));
+                    worst = worst.max(gcs_core::space::distance(on,e.point(t,&piece.vertices)));
+                }
+            }
+        }
+    }
+    assert!(chords >= 3,"{chords} chords given the places they pass as their pcurves");
+    assert!(worst <= 0.25*tol,"a chord's pcurve stands {worst:e} off it, its bar {:e}",0.25*tol);
     // sewn along the cut's row, the one there is
     let row = 0.5*(fits[0].roll[1]+fits[1].roll[0]);
     let across = |uv: [f64;2]| ((uv[1]-row).abs() <= 1e-6*(b-a)).then_some(0);

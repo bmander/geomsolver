@@ -1994,11 +1994,20 @@ and not proved (gated with no sweep by
 `brep::two_stretches_of_a_sheet_fitted_either_side_of_a_cut_are_sewn_along_it_as_one_row`, and on
 the half turn's own sheets by
 `swept_rings::the_half_turns_stretches_are_sewn_across_its_cut_into_one_tube_a_contact_curve`).
+A curve a tube is cut along where it crosses the tool at an end pose carries, as its pcurve, the
+places on the face it was traced through and the meeting's own point settled between each two, each
+at the curve's own parameter there — the coarsest cubic through every so many whose image holds the
+curve's bar, a quarter of the tolerance, at each and at 64 places along it — and is inverted onto
+the face only where none holds (#942 F3, by construction: beside a fold pair's birth the leaf folds
+back on itself within 2e-4, and the half turn's cut, inverted from the line between its ends,
+landed on the other fold; gated in
+`swept_rings::the_half_turns_stretches_are_sewn_across_its_cut_into_one_tube_a_contact_curve`).
 **Not yet built**: the tumbling tori fit, are cut and sewn into one tube a contact curve, and are
 refused past the meetings their sewing settles — the torus turned whole where a piece of the torus
 at an end pose reads as the boundary facing behind; the thin one where its two tubes meet at under
-a hundredth of a degree, which the march cannot step along; the half turn where the end pose's cut
-of the leaf beside the fold pair's birth stands 2e-4 off the fitted leaf. A double curve's
+a hundredth of a degree, which the march cannot step along; the half turn where a piece of the leaf
+beside the fold pair's birth is the boundary at one point and not at another, parted by the pair's
+own double curve, which is not traced there. A double curve's
 points are placed on a stretch by the seams' angles of the stretch's own net (`rings::cut_along`),
 not by an instant read for each (#942 F4: the turned torus refused in 32 s where it took 106, 74 of
 them reading instants; the thin one in 58 s where it took over forty minutes); what is left is the
