@@ -17,7 +17,7 @@ mod lays;
 mod meets;
 mod path;
 pub(crate) use body::along_run;
-pub use body::{reading, BodyFaces, Read, Reading};
+pub use body::{reading, BodyFaces, Bound, Level, Read, Reading};
 pub use layers::layer;
 pub use lays::Lays;
 pub use meets::Meets;

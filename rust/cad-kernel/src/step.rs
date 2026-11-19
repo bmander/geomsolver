@@ -9,7 +9,7 @@ use crate::util::fmath::Det;
 use super::geom::{Curve,Frame,Surface,V};
 use std::sync::Arc;
 use super::topo::{Brep,EdgeCurve};
-use crate::util::space::{add,distance,scale};
+use crate::util::space::{add,distance,norm,scale,sub};
 use std::fmt::Write;
 
 /// A real as STEP writes one: shortest round-trip digits, a decimal point, `E` for the exponent.
@@ -398,6 +398,57 @@ fn bezier_pcurve(uv: &dyn Fn(f64) -> super::geom::Uv,duv: &dyn Fn(f64) -> super:
     Some((poles,knots))
 }
 
+/// **A curve in space as a cubic** over `[t0, t1]`: piecewise Hermite through its points and
+/// tangents (each piece a Bézier, so the knots inside are triple), split at `breaks` and halved
+/// until each piece's quarter points lie within a tenth of `FIT` of the curve's — a traced
+/// intersection written as a polyline within the file's tolerance trims its faces that far off,
+/// and a reader measures the faces it trims.  `None` where it does not close in (a curve that
+/// stands still, a tangent not defined) in at most 4096 pieces.
+fn bezier_curve(c: &Curve,[t0,t1]: [f64;2],breaks: &[f64]) -> Option<(Vec<V>,Vec<f64>)> {
+    let rate = |x: f64,y: f64| -> Option<V> {
+        let d = c.d1(x).1;
+        if d.iter().all(|v| v.is_finite()) && norm(d) > 0. { return Some(d) }
+        // where the rate is not defined, the chord to a point a millionth of the span along
+        let (p,q) = (c.point(x),c.point(x+1e-6*(y-x)));
+        let d = scale(sub(q,p),1./(1e-6*(y-x)));
+        (d.iter().all(|v| v.is_finite()) && norm(d) > 0.).then_some(d)
+    };
+    let hermite = |a: f64,b: f64| -> Option<[V;4]> {
+        let (p,q) = (c.point(a),c.point(b));
+        let (dp,dq) = (rate(a,b)?,rate(b,a)?);
+        let h = (b-a)/3.;
+        Some([p,add(p,scale(dp,h)),sub(q,scale(dq,h)),q])
+    };
+    let at = |k: &[V;4],s: f64| -> V {
+        let w = [(1.-s).dpowi(3),3.*s*(1.-s)*(1.-s),3.*s*s*(1.-s),s.dpowi(3)];
+        std::array::from_fn(|i| (0..4).map(|j| w[j]*k[j][i]).sum())
+    };
+    let mut cuts = vec![t0];
+    cuts.extend(breaks.iter().copied().filter(|&k| k > t0 && k < t1));
+    cuts.push(t1);
+    let mut pieces: Vec<(f64,f64,[V;4])> = Vec::new();
+    for w in cuts.windows(2) {
+        let mut stack = vec![(w[0],w[1],0)];
+        while let Some((a,b,depth)) = stack.pop() {
+            let k = hermite(a,b)?;
+            let off = [0.25,0.5,0.75].iter().map(|&f| distance(at(&k,f),c.point(a+(b-a)*f))).fold(0.,f64::max);
+            if !(off <= FIT/10.) {
+                if depth >= 30 || pieces.len()+stack.len() > 4096 { return None }
+                let m = (a+b)/2.;
+                stack.push((m,b,depth+1));
+                stack.push((a,m,depth+1));
+            } else { pieces.push((a,b,k)); }
+        }
+    }
+    let mut poles = vec![pieces.first()?.2[0]];
+    let mut knots = vec![t0;4];
+    for (i,(_,b,k)) in pieces.iter().enumerate() {
+        poles.extend_from_slice(&k[1..]);
+        knots.extend(std::iter::repeat_n(*b,if i+1 == pieces.len() { 4 } else { 3 }));
+    }
+    Some((poles,knots))
+}
+
 /// A use's pcurve, as a STEP `PCURVE` on the face's surface: a line where it is one, a circle
 /// where a plane's edge is one turning the plane's way, otherwise the degree-one B-spline through
 /// its parameters at points chosen so each chord's middle maps within `tol` of the edge.
@@ -711,11 +762,20 @@ fn solid(o: &mut Out,b: &Brep,tol: f64) -> Result<usize,String> {
             | Curve::Trochoid(..) => {
                 fitted(o,c,e.t,whose(c))?
             }
-            Curve::Traced(_) => {
-                let ts = samples(c,e.t,tol,&|a,z| distance(c.point((a+z)/2.),crate::util::space::lerp(c.point(a),c.point(z),0.5)));
-                let ids: Vec<String> = ts.iter().map(|&t| format!("#{}",o.point(c.point(t)))).collect();
-                bspline(o,&ids,&ts)
-            }
+            // a traced curve: the cubic through its points and tangents, within a tenth of `FIT`,
+            // as its pcurves are (`bezier_pcurve`); where that does not close in, the polyline
+            // through it within `tol`
+            Curve::Traced(_) => match bezier_curve(c,e.t,&c.breaks(e.t)) {
+                Some((poles,knots)) => {
+                    let ids: Vec<String> = poles.iter().map(|&p| format!("#{}",o.point(p))).collect();
+                    spline(o,3,&ids,&knots,None)
+                }
+                None => {
+                    let ts = samples(c,e.t,tol,&|a,z| distance(c.point((a+z)/2.),crate::util::space::lerp(c.point(a),c.point(z),0.5)));
+                    let ids: Vec<String> = ts.iter().map(|&t| format!("#{}",o.point(c.point(t)))).collect();
+                    bspline(o,&ids,&ts)
+                }
+            },
         };
         // the edge's curve in each face that uses it: a seam's two in one face, or one in each
         let uses: Vec<(usize,&super::topo::Coedge)> = b.faces.iter().enumerate()

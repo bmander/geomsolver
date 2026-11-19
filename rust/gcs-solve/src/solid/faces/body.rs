@@ -578,6 +578,51 @@ impl BodyFaces {
         Some((self.back(f.o), f.z, big / self.mm, r / self.mm))
     }
 
+    /// Where face `fi`'s side reaches `v` (model units), its surface's level set read whole: the
+    /// points whose side is at most `v` are within the solid `Bound` names, or outside it — the
+    /// material's side of a plane, a cylinder, a sphere, a cone or a torus, grown or shrunk by `v`
+    /// along its normal.  `None` for any other surface, or a level no such solid is (a cone at its
+    /// apex, a torus's tube reaching its axis).
+    pub fn level(&self, fi: usize, v: f64) -> Option<Level> {
+        let reversed = self.loc.b.faces[fi].reversed;
+        // the material within the surface where it is not reversed: its side is the surface's
+        // own signed distance, positive outside; so the level is the surface grown by `v`, or the
+        // surface reversed shrunk by it
+        let grown = |r: f64| if reversed { r - v } else { r + v };
+        let made = |b: Bound, r: f64| -> Level {
+            if r > 0.0 { Level::Bound(b, !reversed) }
+            else if reversed { Level::Everywhere } else { Level::Nowhere }
+        };
+        if let Some((n, o)) = self.plane(fi) {
+            return Some(Level::Bound(Bound::Half { n, d: dot(n, o) + v }, true));
+        }
+        if let Some((a, d, r)) = self.cylinder(fi) {
+            let r = grown(r);
+            return Some(made(Bound::Cylinder { a, d, r }, r));
+        }
+        if let Some((c, r)) = self.sphere(fi) {
+            let r = grown(r);
+            return Some(made(Bound::Ball { c, r }, r));
+        }
+        if let Some((c, d, big, r)) = self.torus(fi) {
+            let r = grown(r);
+            return (r < big).then(|| made(Bound::Torus { c, d, big, r }, r));
+        }
+        if let Some((o, d, r, a)) = self.cone(fi) {
+            // the radius at `o` grows along `d` by tan a; at the level, by `v / cos a` more
+            let (sa, ca) = a.dsin_cos();
+            if !(ca > 1e-9 && sa.abs() > 1e-9) {
+                return None;
+            }
+            let r = if reversed { r - v / ca } else { r + v / ca };
+            // the apex, where the radius is nothing, and the way the cone opens from it
+            let apex = add(o, scale(d, -r * ca / sa));
+            let (d, half) = if a > 0.0 { (d, a) } else { (scale(d, -1.0), -a) };
+            return Some(Level::Bound(Bound::Cone { a: apex, d, half }, !reversed));
+        }
+        None
+    }
+
     /// Edge `e`'s ends, first to last, where it is a straight line (model units).
     pub fn segment(&self, e: u32) -> Option<[V; 2]> {
         let edge = &self.loc.b.edges[e as usize];
@@ -687,6 +732,34 @@ impl BodyFaces {
     }
 }
 
+/// What a level of a face's side bounds (`BodyFaces::level`): the solid the points at most that
+/// far from its surface are within, or outside.
+#[derive(Clone, Copy, Debug)]
+pub enum Level {
+    /// Within the solid (`true`) or outside it (`false`).
+    Bound(Bound, bool),
+    /// Every point: a reversed surface shrunk to nothing.
+    Everywhere,
+    /// No point: a surface shrunk to nothing.
+    Nowhere,
+}
+
+/// A solid a face's surface bounds, read whole (model units).
+#[derive(Clone, Copy, Debug)]
+pub enum Bound {
+    /// The half-space `n · x ≤ d`, `n` a unit normal.
+    Half { n: V, d: f64 },
+    /// The ball of radius `r` about `c`.
+    Ball { c: V, r: f64 },
+    /// The solid cylinder of radius `r` about the line through `a` along the unit `d`.
+    Cylinder { a: V, d: V, r: f64 },
+    /// The solid cone with its apex at `a`, opening along the unit `d`, `half` off it.
+    Cone { a: V, d: V, half: f64 },
+    /// The solid torus about the line through `c` along the unit `d`: its tube of radius `r` about
+    /// the circle of radius `big` about that line through `c`.
+    Torus { c: V, d: V, big: f64, r: f64 },
+}
+
 /// The bodies a reading has read, each once.
 pub type Read = Vec<(u32, std::sync::Arc<BodyFaces>)>;
 
@@ -738,6 +811,22 @@ impl Reading {
         self.faces.iter().map(|&fi| {
             if surface { self.body.side(fi, p).abs() } else { self.body.patch_distance(fi, p) }
         }).fold(f64::INFINITY, f64::min)
+    }
+
+    /// Where the faces' side reaches `v`, read surface by surface (`BodyFaces::level`): the one
+    /// surface they lie on, or, at the surfaces themselves, each of several their convex creases
+    /// join (`convex_pieces`: the points within all of them are the faces' own; `within_only`
+    /// says the level is wanted only as a bound kept within, as only then does that hold).
+    /// `None` where a surface is none `level` reads.
+    pub fn levels(&self, v: f64, within_only: bool) -> Option<Vec<Level>> {
+        let (pieces, _) = self.surfaces();
+        let pieces = match pieces.len() {
+            0 => return None,
+            1 => pieces,
+            _ if within_only && v == 0.0 => self.convex_pieces()?,
+            _ => return None,
+        };
+        pieces.iter().map(|&fi| self.body.level(fi, v)).collect()
     }
 
     /// Where the faces are one plane: its outward normal `n` and `d`, the side `n · x - d`

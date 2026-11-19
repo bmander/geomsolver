@@ -7,7 +7,14 @@
 //! the region lies in (`RegionField::support`), so nothing but its terms' own surfaces reaches the
 //! material: Steinmetz's bicylinder, two cylinders crossing.  The recipe's `region` node; held to
 //! the region read point by point before it stands (`gate`), as the lowering table's pieces are.
-//! Any other term (a sum of measurements, a face's, an offset) leaves the region the field's.
+//!
+//! **A body's faces' sides** (an edit said as a set, `p in block.near.side`): a term of a face is
+//! the solid its surface bounds read whole (`faces::BodyFaces::level`) — a plane's half-space, a
+//! cylinder, a ball, a cone or a torus, grown or shrunk by the term's number — kept within where
+//! the material is within the surface, taken away where it is outside: what deleting a face
+//! leaves, the faces round it run on along their own surfaces until they meet.  Only where the
+//! lowering table builds none of it, after it (`region::route`).
+//! Any other term (a sum of measurements, an offset) leaves the region the field's.
 use crate::brep::build::{ball_section, disc, square, Profile, ProfileEdge};
 use crate::brep::geom::Frame;
 use crate::brep::recipe::Writer;
@@ -53,15 +60,28 @@ enum Shape {
     Half { o: V, n: V, reach: f64 },
     /// The hull of `corners` ([0.212]): a join of sets, read as the hull of finitely many points.
     Hull { corners: Vec<V> },
+    /// The solid torus about the line through `c` along `d` (unit): the tube of radius `r` about
+    /// the circle of radius `big` about that line.
+    Torus { c: V, d: V, big: f64, r: f64 },
+    /// A region of its own, its pieces kept within or taken away: a set a term is outside of.
+    Region(Vec<Piece>),
 }
 
 impl Bounded {
     /// The recipe's node, written by `w`: `region`, its `pieces` each a `revolve` or a `prism` with
     /// `keep` beside it.
     pub fn node(&self, w: &Writer) -> Result<Json, String> {
+        region_node(&self.pieces, w)
+    }
+}
+
+/// The recipe's `region` node of `pieces`, written by `w`: each a `revolve`, a `prism`, a `hull`
+/// or a `region` of its own, with `keep` beside it.
+fn region_node(pieces: &[Piece], w: &Writer) -> Result<Json, String> {
+    {
         let scale_by = w.scale;
         let mm = |p: V| p.map(|x| x * scale_by);
-        let pieces = self.pieces.iter().map(|piece| {
+        let pieces = pieces.iter().map(|piece| {
             // each edge named by the term's set
             let profile = |p: Profile| {
                 let names = vec![vec![piece.name.clone(); p.loops[0].len()]];
@@ -93,6 +113,14 @@ impl Bounded {
                         ("origin", w.line_origin(mm(a), d)), ("axis", Writer::triple(d)), ("angle", TAU.into())])
                 }
                 Shape::Half { o, n, reach } => half_space(w, o, scale(n, -1.0), reach, &piece.name)?,
+                Shape::Region(ref inner) => region_node(inner, w)?,
+                Shape::Torus { c, d, big, r } => {
+                    // the tube's circle, in a plane through the line, turned once about it
+                    let f = Frame::about(c, d);
+                    let section = disc(add(c, scale(f.x, big)), f.y, r);
+                    object([("kind", "revolve".into()), ("profile", profile(section)?),
+                        ("origin", w.line_origin(mm(c), d)), ("axis", Writer::triple(d)), ("angle", TAU.into())])
+                }
             };
             node.set("keep", Json::Bool(piece.keep));
             Ok(node)
@@ -116,11 +144,7 @@ pub(super) fn half_space(w: &Writer, o: V, keep: V, reach: f64, name: &str) -> R
 /// stands not — its gate refused it, or it holds nowhere.  Remembered against `solid::reads`
 /// (`Caches::bounded`).
 pub fn built(sk: &Sketch, solid: usize) -> Option<Result<Rc<Bounded>, String>> {
-    let SolidDef::Region { terms, .. } = &sk.solids.get(solid)?.def else { return None };
-    // a region over a body's faces is the lowering table's
-    if super::faces::terms_read_faces(terms) {
-        return None;
-    }
+    let SolidDef::Region { .. } = &sk.solids.get(solid)?.def else { return None };
     sk.caches.bounded.get_or(solid, super::MemoKey::of(sk, solid), || {
         construction(sk, solid).map(|b| b.and_then(|b| {
             gate(sk, solid, &b)?;
@@ -135,7 +159,8 @@ fn construction(sk: &Sketch, solid: usize) -> Option<Result<Bounded, String>> {
     let SolidDef::Region { terms, .. } = &sk.solids[solid].def else { return None };
     // only a term of these shapes, at a stated number with no offset
     let made = |shape: &RegionShape| matches!(shape, RegionShape::Ball { .. } | RegionShape::Cylinder { .. }
-        | RegionShape::Cone { .. } | RegionShape::Plane { .. } | RegionShape::Join { .. });
+        | RegionShape::Cone { .. } | RegionShape::Plane { .. } | RegionShape::Join { .. }
+        | RegionShape::FaceSide { .. } | RegionShape::Outside { .. });
     if !terms.iter().all(|t| made(&t.shape) && t.grow.is_none()) {
         return None;
     }
@@ -144,17 +169,177 @@ fn construction(sk: &Sketch, solid: usize) -> Option<Result<Bounded, String>> {
         Err(e) => return Some(Err(e)),
     };
     let name = &sk.solids[solid].name;
-    let support = field.support()?;
+    let mut read = Vec::new();
+    // where no planes close a region over a body's faces, the box of the bodies it reads grown by
+    // its own size: a region reaching past it is cut off there, so the gate refuses it
+    let support = match field.support() {
+        Some(b) => b,
+        None => match bodies_box(sk, terms, &mut read)? {
+            Ok(b) => b,
+            Err(e) => return Some(Err(format!("`{name}`: {e}"))),
+        },
+    };
     // the box's middle and how far its corners stand from it
     let middle: V = std::array::from_fn(|k| (support[k][0] + support[k][1]) / 2.0);
     let h = 0.5 * norm(std::array::from_fn(|k| support[k][1] - support[k][0])).max(f64::MIN_POSITIVE);
+    let (mut keeps, cuts) = match gather(sk, name, terms, middle, h, &mut read)? {
+        Ok(k) => k,
+        Err(e) => return Some(Err(e)),
+    };
+    if keeps.is_empty() {
+        // only taken away (a union, `p in a or p in b`): from a block holding the box
+        if cuts.is_empty() {
+            return Some(Err(format!("`{name}` keeps within no term, which this construction needs")));
+        }
+        keeps.push(Piece { keep: true, shape: holding(middle, h), name: name.to_string() });
+    }
+    keeps.extend(cuts);
+    Some(Ok(Bounded { pieces: keeps }))
+}
+
+/// A block holding the box about `middle` whose corners stand `h` from it, and more: the
+/// half-space under the plane `2h` over the middle, bounded as every half-space is.
+fn holding(middle: V, h: f64) -> Shape {
+    let up = [0.0, 0.0, 1.0];
+    let foot = add(middle, scale(up, 2.0 * h));
+    Shape::Half { o: foot, n: up, reach: 6.0 * h }
+}
+
+/// The box of the bodies whose faces `terms` read (through the sets a term is outside of too),
+/// grown on every side by its own diagonal: `None` where they read none.  Each body read is kept
+/// in `read`.
+fn bodies_box(sk: &Sketch, terms: &[crate::model::RegionTerm], read: &mut super::faces::Read)
+    -> Option<Result<[[f64; 2]; 3], String>> {
+    fn walk(sk: &Sketch, terms: &[crate::model::RegionTerm], read: &mut super::faces::Read)
+        -> Result<(), String> {
+        for t in terms {
+            match &t.shape {
+                RegionShape::FaceSide { face } => { super::faces::reading(sk, face, read)?; }
+                RegionShape::Outside { set } => {
+                    if let crate::model::Target::Set { terms: inner, .. } = set.as_ref() {
+                        walk(sk, inner, read)?;
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+    if let Err(e) = walk(sk, terms, read) {
+        return Some(Err(e));
+    }
+    if read.is_empty() {
+        return None;
+    }
+    let mut b = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
+    for (_, body) in read.iter() {
+        let (lo, hi) = body.bounds();
+        for k in 0..3 {
+            b[k] = [b[k][0].min(lo[k]), b[k][1].max(hi[k])];
+        }
+    }
+    let size = norm(std::array::from_fn(|k| b[k][1] - b[k][0]));
+    if !(size.is_finite() && size > 0.0) {
+        return None;
+    }
+    Some(Ok(b.map(|[lo, hi]| [lo - size, hi + size])))
+}
+
+/// The pieces `terms` bound, kept within and taken away, each bounded past the box about `middle`
+/// whose corners stand `h` from it (`construction`'s): `None` where a term is none this
+/// construction makes.  A term outside a set (`p in a or p in b`, the set of each turned) takes
+/// away the region of that set, built the same way.
+fn gather(sk: &Sketch, name: &str, terms: &[crate::model::RegionTerm], middle: V, h: f64,
+          read: &mut super::faces::Read) -> Option<Result<(Vec<Piece>, Vec<Piece>), String>> {
     let mut keeps = Vec::new();
     let mut cuts = Vec::new();
+    // a half-space kept: the block on its plane under the box's middle, reaching past the box
+    let half = |n: V, e: f64| {
+        let foot = sub(middle, scale(n, dot(n, middle) - e));
+        Shape::Half { o: foot, n, reach: 2.0 * (h + norm(sub(middle, foot))) }
+    };
     for t in terms {
+        if t.grow.is_some() {
+            return None;
+        }
+        // outside a set: the set's own region, within a block holding the box where it keeps
+        // within nothing, taken away
+        if let RegionShape::Outside { set } = &t.shape {
+            let crate::model::Target::Set { terms: inner, .. } = set.as_ref() else { return None };
+            if t.cmp != Cmp::Le || inner.is_empty() {
+                return None;
+            }
+            let (mut within, out) = match gather(sk, name, inner, middle, h, read)? {
+                Ok(k) => k,
+                Err(e) => return Some(Err(e)),
+            };
+            if within.is_empty() {
+                within.push(Piece { keep: true, shape: holding(middle, h), name: t.name.clone() });
+            }
+            within.extend(out);
+            cuts.push(Piece { keep: false, shape: Shape::Region(within), name: t.name.clone() });
+            continue;
+        }
         let Some(lo) = t.lo.read(sk) else {
             return Some(Err(format!("`{name}`: a term reads an unknown nothing determines")));
         };
         let piece = |keep: bool, shape: Shape| Piece { keep, shape, name: t.name.clone() };
+        // a face's side: the solid its surface bounds at each of the term's numbers
+        if let RegionShape::FaceSide { face } = &t.shape {
+            use super::faces::{Bound, Level};
+            let r = match super::faces::reading(sk, face, read) {
+                Ok(r) => r,
+                Err(e) => return Some(Err(format!("`{name}`: {e}"))),
+            };
+            if r.faces.is_empty() {
+                return None;
+            }
+            // each `(at_most, number)`: the points whose side is at most the number, or more
+            let sides: Vec<(bool, f64)> = match t.cmp {
+                Cmp::Le => vec![(true, lo)],
+                Cmp::Ge => vec![(false, lo)],
+                Cmp::In => vec![(true, t.hi.unwrap_or(lo)), (false, lo)],
+            };
+            for (at_most, v) in sides {
+                for level in r.levels(v, at_most)? {
+                    let (bound, within) = match level {
+                        Level::Bound(b, within) => (b, within == at_most),
+                        // all of space, or none of it, and its complement
+                        Level::Everywhere if at_most => continue,
+                        Level::Nowhere if !at_most => continue,
+                        Level::Everywhere | Level::Nowhere => {
+                            return Some(Err(format!("`{name}` holds nowhere")));
+                        }
+                    };
+                    let shape = match bound {
+                        Bound::Half { n, d } => {
+                            let (n, e) = if within { (n, d) } else { (scale(n, -1.0), -d) };
+                            keeps.push(piece(true, half(n, e)));
+                            continue;
+                        }
+                        Bound::Ball { c, r } => Shape::Ball { c, r },
+                        Bound::Cylinder { a, d, r } => {
+                            let a = add(a, scale(d, dot(sub(middle, a), d)));
+                            Shape::Cylinder { a, d, r, reach: 2.0 * h }
+                        }
+                        Bound::Cone { a, d, half } => {
+                            if !(half < FRAC_PI_2 - 1e-9) {
+                                return None;
+                            }
+                            let far = dot(sub(middle, a), d) + h;
+                            if far <= 0.0 {
+                                if within { return Some(Err(format!("`{name}` holds nowhere"))) }
+                                continue;
+                            }
+                            Shape::Cone { a, d, half, reach: far + h }
+                        }
+                        Bound::Torus { c, d, big, r } => Shape::Torus { c, d, big, r },
+                    };
+                    if within { keeps.push(piece(true, shape)) } else { cuts.push(piece(false, shape)) }
+                }
+            }
+            continue;
+        }
         // a join of sets ([0.212]): the hull itself, kept within or taken away — within it at
         // nothing, or outside it at nothing; grown or shrunk by a number, the field's
         if let RegionShape::Join { of } = &t.shape {
@@ -211,9 +396,7 @@ fn construction(sk: &Sketch, solid: usize) -> Option<Result<Bounded, String>> {
                     if !(len > 0.0) { return None }
                     let (n, e) = (scale(n, 1.0 / len), (dot(n, o) + v) / len);
                     let (n, e) = if within { (n, e) } else { (scale(n, -1.0), -e) };
-                    let foot = sub(middle, scale(n, dot(n, middle) - e));
-                    let reach = 2.0 * (h + norm(sub(middle, foot)));
-                    keeps.push(piece(true, Shape::Half { o: foot, n, reach }));
+                    keeps.push(piece(true, half(n, e)));
                     continue;
                 }
                 Measure::Signed(_) => return None,
@@ -221,11 +404,7 @@ fn construction(sk: &Sketch, solid: usize) -> Option<Result<Bounded, String>> {
             if within { keeps.push(piece(true, shape)) } else { cuts.push(piece(false, shape)) }
         }
     }
-    if keeps.is_empty() {
-        return Some(Err(format!("`{name}` keeps within no term, which this construction needs")));
-    }
-    keeps.extend(cuts);
-    Some(Ok(Bounded { pieces: keeps }))
+    Some(Ok((keeps, cuts)))
 }
 
 /// **The gate**, as the lowering table's (`lowering::gate`): the construction stands only where

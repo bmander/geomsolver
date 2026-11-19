@@ -33,6 +33,14 @@ staying a set over `distance`; `tests/brep.rs`'s `the_sphere_the_cone_and_the_to
 `props` (volume by Green's theorem), `query`, `ssi` (closed forms, else traced), `boolean` (split, arrange, classify,
 assemble), `mesh` (constrained Delaunay refined to a measured sag), `step` (AP214 with pcurves and
 seam curves), `recipe`.
+**A traced intersection is written as a cubic** (`step::bezier_curve`): no entity of the standard
+writes a `Traced` curve, so the file carries the piecewise Hermite cubic through its points and
+tangents, halved until each piece's quarter points lie within a tenth of `step::FIT` of the curve
+— as its pcurves are (`bezier_pcurve`) — and only where that does not close in, in at most 4096
+pieces, the polyline through it within the writer's tolerance.  A polyline at the default 1e-4 mm
+trims its faces that far off, and a reader measures the faces it trims: brep-bench's half torus,
+a ball bored off its centre and the saddle drums read 1e-6 to 1e-5 off their closed forms, the
+cubic 1e-9.  `tests/face_edits.rs::a_traced_curve_is_written_as_a_cubic`.
 **An affine map carries a solid onto its image exactly** (`Brep::mapped`, `affine::Affine`, any
 invertible `p ↦ M p + t`): its topology and pcurves are the solid's own, because every surface's
 and curve's image keeps their parameters. A kind whose image is a kind of its own is written so
