@@ -623,11 +623,14 @@ pub fn measure_answers(sk: &Sketch, measures: &[crate::program::MeasureStated])
     measures.iter().enumerate().filter_map(|(k, ms)| {
         let m = sk.measured.get(ms.index)?;
         let q = m.quantity;
+        // what it states where the drawing stands: its number, or what the unknown it reads came
+        // to (#953)
+        let target = m.stated(sk).unwrap_or(m.value);
         let stated =
-            format!("{} {}", m.compare.text(), crate::measured::value_text(sk, q, m.value));
+            format!("{} {}", m.compare.text(), crate::measured::value_text(sk, q, target));
         let read = crate::measured::read(sk, m);
         let row = ms.driven.and_then(|id| sk.constraint(id))
-            .map(|c| c.residual(sk, &c.local_values(sk))[0] + m.value)
+            .map(|c| c.residual(sk, &c.local_values(sk))[0] + target)
             .filter(|v| v.is_finite());
         let got = match (row, read) {
             (Some(v), read) => Ok((v, read.ok().and_then(|r| r.1))),
@@ -665,7 +668,7 @@ pub fn measure_answers(sk: &Sketch, measures: &[crate::program::MeasureStated])
         }
         let (value, error, holds, text) = match got {
             Ok((v, error)) => {
-                let keeps = crate::measured::keeps(m, v, error);
+                let keeps = crate::measured::keeps_on(sk, m, v, error);
                 let verdict = match (m.claim, keeps) {
                     (true, true) => format!("claimed {stated}, kept"),
                     (true, false) => format!("claimed {stated}, refuted"),

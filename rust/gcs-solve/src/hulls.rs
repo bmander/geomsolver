@@ -304,6 +304,14 @@ pub fn hull_of(sk: &Sketch, solid: usize, mesh: &Mesh) -> Result<(Hull, Vec<u32>
 /// for a line whose ends the solve moves, whose direction a row does not read yet.
 pub fn hull_aimed(sk: &Sketch, solid: usize, mesh: &Mesh, at: Option<usize>,
                   about: Option<EntRef>) -> Result<(Hull, Vec<u32>), String> {
+    hull_of_bodies(sk, &[(solid, mesh)], at, about)
+}
+
+/// **`hull_aimed` over several bodies** (#953): each body's mesh after the one before, its nodes
+/// numbered on from theirs, every body's sheets read over one set of columns — what a centre of
+/// mass of an instance's bodies is read over.
+pub fn hull_of_bodies(sk: &Sketch, parts: &[(usize, &Mesh)], at: Option<usize>,
+                      about: Option<EntRef>) -> Result<(Hull, Vec<u32>), String> {
     let mut b = Builder::default();
     let target = at.map(|q| b.place(sk, q));
     let axis = match about {
@@ -333,29 +341,47 @@ pub fn hull_aimed(sk: &Sketch, solid: usize, mesh: &Mesh, at: Option<usize>,
         Some(e) => return Err(format!("a second moment is about a line or an axis, and this is {}",
                                       e.kind.a())),
     };
-    let (mut hull, columns) = hull_with(sk, solid, mesh, b)?;
+    let (mut hull, columns) = hull_with(sk, parts, b)?;
     hull.target = target;
     hull.axis = axis;
     Ok((hull, columns))
 }
 
-/// `hull_of` over the columns `b` has read already.
-fn hull_with(sk: &Sketch, solid: usize, mesh: &Mesh, mut b: Builder)
+/// `hull_of` of the bodies `parts`, each its mesh, over the columns `b` has read already.
+fn hull_with(sk: &Sketch, parts: &[(usize, &Mesh)], mut b: Builder)
     -> Result<(Hull, Vec<u32>), String>
 {
-    let body = BodyFaces::whole(sk, solid)?;
-    let paths = body.paths();
-    let face_sheet: Vec<usize> = paths.iter().map(|path| {
-        crate::solid::faces::face_primitive(sk, solid, &path.route)
-            .and_then(|p| b.sheet(sk, p, &path.face))
-            .map_err(|why| format!("its face `{}` is not moved: {why}", path.text()))
-    }).collect::<Result<_, _>>()?;
-    let n = mesh.nodes.len();
+    // each body's faces' sheets, and where its nodes start among all of them
+    let mut sheets_of = Vec::new();
+    let mut first = Vec::new();
+    let mut n = 0;
+    for &(solid, mesh) in parts {
+        let body = BodyFaces::whole(sk, solid)?;
+        let face_sheet: Vec<usize> = body.paths().iter().map(|path| {
+            crate::solid::faces::face_primitive(sk, solid, &path.route)
+                .and_then(|p| b.sheet(sk, p, &path.face))
+                .map_err(|why| format!("its face `{}` is not moved: {why}", path.text()))
+        }).collect::<Result<_, _>>()?;
+        sheets_of.push(face_sheet);
+        first.push(n);
+        n += mesh.nodes.len();
+    }
+    let extent = parts.iter().map(|(_, m)| m.extent()).fold(0.0, f64::max);
     let mut hull = Hull { columns: b.columns.len(), frames: b.frames, sheets: b.sheets,
                           nodes: vec![Vec::new(); n],
-                          x0: mesh.nodes.iter().flatten().copied().collect(),
-                          feet0: vec![0.0; 3 * n], extent: mesh.extent(), target: None,
-                          axis: None };
+                          x0: parts.iter().flat_map(|(_, m)| m.nodes.iter().flatten().copied())
+                              .collect(),
+                          feet0: vec![0.0; 3 * n], extent, target: None, axis: None };
+    let v0: Vec<f64> = b.columns.iter().map(|&c| sk.params[c as usize].value).collect();
+    for (k, &(_, mesh)) in parts.iter().enumerate() {
+        tag(&mut hull, mesh, &sheets_of[k], first[k], &v0);
+    }
+    Ok((hull, b.columns))
+}
+
+/// **Each node of body `mesh`'s boundary tagged with the sheets it lies on** (`hull_of`), its
+/// faces' sheets `face_sheet`, its nodes `first` on among the hull's, the columns at `v0`.
+fn tag(hull: &mut Hull, mesh: &Mesh, face_sheet: &[usize], first: usize, v0: &[f64]) {
     // each node of a facet, the sheets of the facets it is a node of and how many
     let mut candidates: BTreeMap<usize, BTreeMap<usize, usize>> = BTreeMap::new();
     for (f, wall) in &mesh.facets {
@@ -365,10 +391,9 @@ fn hull_with(sk: &Sketch, solid: usize, mesh: &Mesh, mut b: Builder)
             *candidates.entry(node).or_default().entry(s).or_default() += 1;
         }
     }
-    let v0: Vec<f64> = b.columns.iter().map(|&c| sk.params[c as usize].value).collect();
     let near = NEAR * mesh.near;
-    for (node, sheets) in candidates {
-        let p = mesh.nodes[node];
+    for (local, sheets) in candidates {
+        let (node, p) = (first + local, mesh.nodes[local]);
         // nearest first, the sheet more of its facets lie on first among equals
         let mut on: Vec<(f64, usize, usize, [f64; 3])> = sheets.into_iter().filter_map(|(s, count)| {
             let (phi, g) = hull.level_at(s, &v0, p);
@@ -406,5 +431,4 @@ fn hull_with(sk: &Sketch, solid: usize, mesh: &Mesh, mut b: Builder)
             chosen.pop();
         }
     }
-    Ok((hull, b.columns))
 }

@@ -81,8 +81,13 @@ impl Constraint {
         // a deflection driven: its structure, a frame's sections read over its unknowns (#510 S1)
         // or a region's nodes over the drawing (S2) — and a mass or a volume, each its number last
         if self.kind.interior() {
-            let d = self.args.last().map_or(0.0, Arg::num);
-            return self.interior_parts(sk).map(|(r, _)| r.consts(d)).unwrap_or_default();
+            // a measure's number reading an unknown states `[m, c]` (#953)
+            let stated = match self.measure_unknown(sk) {
+                Some((_, m, c)) => vec![m, c],
+                None => vec![self.args.last().map_or(0.0, Arg::num)],
+            };
+            return self.interior_parts(sk).map(|(r, _)| r.consts_stated(&stated))
+                .unwrap_or_default();
         }
         // a margin reading an unknown (#904) is that unknown's map, the row's last column
         if self.kind == CKind::RegularWithin {
@@ -988,7 +993,10 @@ impl Constraint {
             // S1); a region's points' numbers and radii (S2) — a mass's or a volume's alike
             CKind::Deflection | CKind::Mass | CKind::Volume | CKind::Area | CKind::Moment
             | CKind::Centroid | CKind::CenterOfMass => {
-                self.interior_parts(sk).map(|(_, c)| c).unwrap_or_default()
+                let mut cols = self.interior_parts(sk).map(|(_, c)| c).unwrap_or_default();
+                // and the unknown a measure's number reads, last (#953)
+                cols.extend(self.measure_unknown(sk).map(|(q, _, _)| q));
+                cols
             }
             // a point a motion carries to a stated roll (#366): both points' lifts, the axes of
             // the plane the first is drawn in where it is read there, then the motion's axes

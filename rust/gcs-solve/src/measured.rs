@@ -51,6 +51,15 @@ pub fn keeps(m: &Measured, v: f64, error: Option<f64>) -> bool {
     crate::beams::compares(m.compare, m.value, v)
 }
 
+/// `keeps`, against what `m` states where the drawing `sk` stands (#953): its number, or what
+/// the unknown it reads came to.
+pub fn keeps_on(sk: &Sketch, m: &Measured, v: f64, error: Option<f64>) -> bool {
+    match (m.quantity.point(), m.stated(sk)) {
+        (false, Some(t)) => crate::beams::compares(m.compare, t, v),
+        _ => keeps(m, v, error),
+    }
+}
+
 /// **Where a point's measure puts it**, on the drawing as it stands (#953): `g centroid B`'s
 /// centroid, read over the body's own mesh.
 pub fn centre(sk: &Sketch, m: &Measured) -> Result<[f64; 3], String> {

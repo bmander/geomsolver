@@ -1028,16 +1028,18 @@ fn face_facets(sk: &Sketch, solid: usize, f: &crate::model::FaceRef, mesh: &Mesh
     Ok(facets)
 }
 
-/// **Solid `m` names, filled for a measure besides the whole** (#953), at `coarser` times a
-/// reading's size: its mesh, its structure — each element weighed by its density for a centre
-/// of mass, its gauge the facets of the face it names and the number it reads — and where its
-/// nodes stand.  A face's measure is of a face (`B.face`), and a body's of a body.
+/// **The bodies `m` names, filled for a measure besides the whole** (#953), at `coarser` times a
+/// reading's size: each body's mesh, their structure — each body's nodes on from the one's
+/// before, each element weighed by its body's density for a centre of mass, its gauge the facets
+/// of the face it names and the number it reads — and where its nodes stand.  A face's measure is
+/// of a face (`B.face`), and a body's of a body.
 fn gauging(sk: &Sketch, m: &crate::model::Measured, coarser: f64)
-    -> Result<(Mesh, Structure, Vec<f64>), String>
+    -> Result<(Vec<(usize, Mesh)>, Structure, Vec<f64>), String>
 {
     use crate::interior::{Gauge, What};
     use crate::model::Quantity;
-    let solid = m.of.solid().ok_or("it is of no solid")?;
+    let solids = m.solids();
+    let Some(&solid) = solids.first() else { return Err("it is of no solid".into()) };
     let face = match &m.of {
         Applied::Face(f) => Some(f),
         _ => None,
@@ -1051,25 +1053,33 @@ fn gauging(sk: &Sketch, m: &crate::model::Measured, coarser: f64)
         }
         _ => {}
     }
-    let rho = if m.quantity.weighed() { property(sk, solid, Property::Rho)? } else { 0.0 };
-    let mesh = Mesh::filled(sk, solid, coarser)?;
-    let facets = match face {
-        Some(f) => face_facets(sk, solid, f, &mesh)?,
-        None => Vec::new(),
-    };
+    let mut parts = Vec::new();
+    let mut tets = Vec::new();
+    let mut facets = Vec::new();
+    let mut x: Vec<f64> = Vec::new();
+    for &b in &solids {
+        let rho = if m.quantity.weighed() { property(sk, b, Property::Rho)? } else { 0.0 };
+        let mesh = Mesh::filled(sk, b, coarser)?;
+        let first = x.len() / 3;
+        let on = |n: usize| n + first;
+        tets.extend(mesh.tets.iter().map(|&n| Tet10 { n: n.map(on), e: 0.0, nu: 0.0, rho }));
+        if let Some(f) = face {
+            facets.extend(face_facets(sk, b, f, &mesh)?.into_iter().map(|f| f.map(on)));
+        }
+        x.extend(mesh.nodes.iter().flatten());
+        parts.push((b, mesh));
+    }
     let what = match m.quantity {
         Quantity::Centroid | Quantity::CenterOfMass => What::Centroid { k: m.k },
         Quantity::Moment => What::Second,
         _ => What::Total,
     };
-    let tets = mesh.tets.iter().map(|&n| Tet10 { n, e: 0.0, nu: 0.0, rho }).collect();
-    let n = mesh.nodes.len();
+    let n = x.len() / 3;
     let reads = if m.quantity.weighed() { Reads::Mass } else { Reads::Volume };
     let s = Structure { dim: 3, nodes: n, fixed: vec![false; 3 * n], load: vec![0.0; 3 * n],
                         weight: vec![0.0; 3 * n], tets, reads, gauge: Gauge { facets, what },
                         ..Structure::default() };
-    let x: Vec<f64> = mesh.nodes.iter().flatten().copied().collect();
-    Ok((mesh, s, x))
+    Ok((parts, s, x))
 }
 
 /// **Where measure `m` puts its point, and its moments**, on the drawing as it stands (#953): the
@@ -1134,9 +1144,9 @@ fn axis_at(sk: &Sketch, about: EntRef) -> Result<([f64; 3], [f64; 3]), String> {
 /// drawing stands, at a reading's size, its boundary's nodes moved by its sheets and its point
 /// and line read off the same columns (`hulls::hull_aimed`).
 pub(crate) fn gauged_row(sk: &Sketch, m: &crate::model::Measured) -> Result<prisms::Row, String> {
-    let solid = m.of.solid().ok_or("it is of no solid")?;
-    let (mesh, s, x) = gauging(sk, m, 1.0)?;
-    let (hull, columns) = crate::hulls::hull_aimed(sk, solid, &mesh, m.at, m.about)?;
+    let (parts, s, x) = gauging(sk, m, 1.0)?;
+    let parts: Vec<(usize, &Mesh)> = parts.iter().map(|(b, mesh)| (*b, mesh)).collect();
+    let (hull, columns) = crate::hulls::hull_of_bodies(sk, &parts, m.at, m.about)?;
     Ok(prisms::Row { structure: s, drive: Drive::Moved(Mover::Hull(hull)), columns, x,
                      coarser: 1.0 })
 }

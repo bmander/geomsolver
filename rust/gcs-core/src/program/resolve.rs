@@ -126,6 +126,21 @@ impl Resolver {
         operand_at(sk, e, &r.path)
     }
 
+    /// **The bodies under instance `name`** (#953): every solid named `name.…` that no other
+    /// solid is built of — a cutter, a body's own stock, a half-space it is kept within are its
+    /// operands — each once, in index order.  Empty where `name` is no instance with a body.
+    pub(super) fn bodies_under(&self, sk: &Sketch, name: &str) -> Vec<usize> {
+        let operands: std::collections::BTreeSet<u32> =
+            sk.solids.iter().flat_map(|s| s.operands()).collect();
+        let prefix = format!("{name}.");
+        let mut out: Vec<usize> = self.of.iter()
+            .filter(|(k, e)| k.starts_with(&prefix) && e.kind == EntKind::Solid)
+            .map(|(_, e)| e.i()).filter(|&i| !operands.contains(&(i as u32))).collect();
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
     /// The entity `r` names, its fields followed — `None` for anything else.
     pub(super) fn entity(&self, sk: &Sketch, r: &Ref) -> Option<EntRef> {
         self.operand(sk, r).ok()?.ent()

@@ -81,7 +81,9 @@ impl Quantity {
 /// whether it is a claim, judged after the solve, rather than a row the solve holds.  A point's
 /// (`g centroid B`) names the point (`at`) and, stated, is three rows, one an ordinate of the
 /// world (`k`); its number is how far the point stands from where the measure puts it, nothing.
-/// A second moment names the line it is about (`about`).
+/// A second moment names the line it is about (`about`).  A stated number may be affine in one
+/// unknown the drawing declares (#953, `free`: its name and coefficient, `value` the constant), so
+/// the row determines it — `mass(M) boat` sizes nothing and says what the boat weighs.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Measured {
     pub quantity: Quantity,
@@ -92,4 +94,30 @@ pub struct Measured {
     pub at: Option<usize>,
     pub about: Option<super::EntRef>,
     pub k: usize,
+    pub free: Option<(String, f64)>,
+    /// The bodies a point's measure is of where it names an instance (#953): every solid under it
+    /// that is no operand of another, each once — `of` the first.  Empty: `of` alone.
+    pub bodies: Vec<usize>,
+}
+
+impl Measured {
+    /// The solids it is of: its bodies, or the solid `of` is or a face of.
+    pub fn solids(&self) -> Vec<usize> {
+        match self.bodies.is_empty() {
+            true => self.of.solid().into_iter().collect(),
+            false => self.bodies.clone(),
+        }
+    }
+
+    /// What it states the measure is where the drawing stands: its number, and where it reads an
+    /// unknown that unknown's part — `None` where the unknown is bound to no column.
+    pub fn stated(&self, sk: &super::Sketch) -> Option<f64> {
+        match &self.free {
+            None => Some(self.value),
+            Some((name, m)) => {
+                let q = *sk.free_vars.get(name)?;
+                Some(self.value + m * sk.params[q as usize].value)
+            }
+        }
+    }
 }

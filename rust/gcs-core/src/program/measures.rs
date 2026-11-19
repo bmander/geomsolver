@@ -153,10 +153,22 @@ fn read(
     let Some((text, span)) = w.dim() else {
         return Err((None, format!("a {word} states its number: `{word}(…) arm`")));
     };
-    let value = super::scenarios::stated(sk, text, q.dim(), word,
-                                         "a measure's number is one the drawing states")
-        .map_err(|(_, m)| (Some(span), m))?;
-    if !(value > 0.0) {
+    // a stated measure's number may read one unknown the drawing declares (#953), which the
+    // row then determines: `mass(M) boat`
+    let v = crate::flatten::value_read(text, &std::collections::BTreeMap::new(), &sk.declared,
+                                       sk.units)
+        .map_err(|m| (Some(span), format!("`{text}`: {m}")))?;
+    v.dim.require(q.dim(), word).map_err(|m| (Some(span), format!("`{text}`: {m}")))?;
+    let (value, free) = match (v.number(), v.free.clone()) {
+        (Some(x), _) if x.is_finite() => (x, None),
+        (None, Some(name)) if !r.claim && w.bound().is_none() && v.m.is_finite()
+            && v.c.is_finite() && v.m != 0.0 => (v.c, Some((name, v.m))),
+        (None, Some(_)) if r.claim => return Err((Some(span), format!(
+            "`{text}` reads an unknown of the drawing, and a claim binds none: state the {word}, \
+             `{word}(…) {}`, or claim a number", crate::syntax::ref_text(op)))),
+        _ => return Err((Some(span), format!("`{text}` comes to no number the {word} can state"))),
+    };
+    if free.is_none() && !(value > 0.0) {
         return Err((Some(span), format!("a {word} is more than nothing, and `{text}` is not")));
     }
     let compare = match w.bound() {
@@ -167,7 +179,8 @@ fn read(
             "a bound on a {word} chooses no root: claim it, `claim {word}(<= …) {}`, or state it",
             crate::syntax::ref_text(op)))),
     };
-    Ok(Measured { quantity: q, of, compare, value, claim: r.claim, at: None, about, k: 0 })
+    Ok(Measured { quantity: q, of, compare, value, claim: r.claim, at: None, about, k: 0, free,
+                  bodies: Vec::new() })
 }
 
 /// **A point a measure puts** (#953): `g centroid B`, `g centerofmass B` — a declared point and a
@@ -188,19 +201,29 @@ fn point_read(
         _ => return Err((Some(g.span), format!("`{}` is no point: a {word} puts a point, `g \
             {word} hull`", crate::syntax::ref_text(g)))),
     };
-    let of = match res.operand(sk, op).map_err(|m| (Some(op.span), m))? {
-        Operand::Ent(e) | Operand::Body(e) if e.kind == EntKind::Solid => Applied::Ent(e),
-        Operand::Face(f) if q == Quantity::Centroid => Applied::Face(f),
-        _ => return Err((Some(op.span), format!("a {word} is a solid's{}, and `{}` is none",
-            if q == Quantity::Centroid { " or a face's" } else { "" },
-            crate::syntax::ref_text(op)))),
+    // of a solid, a face of one, or every body of an instance (#953): what a body is made of
+    // does not depend on how bodies are grouped into components
+    let named = crate::syntax::ref_text(op);
+    let bodies = match res.operand(sk, op) {
+        Err(_) if op.path.is_empty() => res.bodies_under(sk, &op.root.text),
+        _ => Vec::new(),
+    };
+    let of = match bodies.first() {
+        Some(&b) => Applied::Ent(EntRef::solid(b)),
+        None => match res.operand(sk, op).map_err(|m| (Some(op.span), m))? {
+            Operand::Ent(e) | Operand::Body(e) if e.kind == EntKind::Solid => Applied::Ent(e),
+            Operand::Face(f) if q == Quantity::Centroid => Applied::Face(f),
+            _ => return Err((Some(op.span), format!("a {word} is a solid's{}, or an instance's \
+                bodies', and `{named}` is none", if q == Quantity::Centroid { ", a face's" }
+                                                  else { "" }))),
+        },
     };
     if let Some(a) = w.args.first() {
         let _ = a;
         return Err((None, format!("a {word} takes nothing in parentheses: `g {word} hull`")));
     }
     Ok(Measured { quantity: q, of, compare: crate::expr::Cmp::Eq, value: 0.0, claim: r.claim,
-                  at: Some(at), about: None, k: 0 })
+                  at: Some(at), about: None, k: 0, free: None, bodies })
 }
 
 /// The line or axis a second moment is about (#953), or why it names none.
@@ -251,7 +274,8 @@ fn drive(
     let key = MeshedKey::Measure(index);
     // the unknowns the row reads are its columns, bound from their seeds before it is made — a
     // waterline's height a volume sizes (#953); `evaluate` keeps them bound once the row reads them
-    let unknowns = crate::beams::measured_unknowns(sk, &m.of).unwrap_or_default();
+    let mut unknowns = crate::beams::measured_unknowns(sk, &m.of).unwrap_or_default();
+    unknowns.extend(m.free.iter().map(|(n, _)| n.clone()));
     for name in unknowns {
         if let Some(seed) = sk.declared.get(&name).and_then(|d| d.seed) {
             crate::expr::bind_free(sk, &name, seed);
