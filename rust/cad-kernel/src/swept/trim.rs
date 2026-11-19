@@ -167,8 +167,9 @@ struct Witness { face: (usize,usize),at: [V;2],said: String }
 /// where another face of the same surface crosses the walk (a wall at other instants passing back
 /// through itself), with that: a surface's meeting with itself is no meeting two surfaces are given.
 #[allow(clippy::too_many_arguments)]
-fn completed(w: &Witness,candidates: &[&Brep],located: &[crate::query::Located],boxes: &[Vec<(V,V)>],given: &mut Vec<Given>,
-    pairs: &mut BTreeSet<([usize;2],[usize;2])>,hair: f64,tol: f64) -> Result<usize,String> {
+fn completed(w: &Witness,candidates: &[&Brep],located: &[crate::query::Located],bounding: &BTreeSet<(usize,usize)>,
+    boxes: &[Vec<(V,V)>],given: &mut Vec<Given>,pairs: &mut BTreeSet<([usize;2],[usize;2])>,hair: f64,tol: f64)
+    -> Result<usize,String> {
     const WALK: usize = 64;
     let (k,i) = w.face;
     let s = &candidates[k].faces[i].surface;
@@ -236,7 +237,8 @@ fn completed(w: &Witness,candidates: &[&Brep],located: &[crate::query::Located],
                     Some(n) => { given[n].curves.extend(traced); n }
                     None => { given.push(Given {surfaces:[s.clone(),sg.clone()],curves:traced}); given.len()-1 }
                 };
-                pair_given(&given[n],candidates,boxes,pairs,4.*tol,tol);
+                pairs.insert(key);
+                pair_given(&given[n],candidates,bounding,boxes,pairs,4.*tol,tol);
             }
         }
     }
@@ -267,14 +269,15 @@ fn crossed_by_itself(walk: &[V],s: &crate::geom::Surface,located: &crate::query:
     None
 }
 
-/// Every two faces of two candidates bearing the two surfaces `g` gives a meeting of, met where
-/// their boxes come within `pad` (#942 F2).
-fn pair_given(g: &Given,candidates: &[&Brep],boxes: &[Vec<(V,V)>],pairs: &mut BTreeSet<([usize;2],[usize;2])>,pad: f64,tol: f64) {
+/// Every two faces of two candidates bearing the two surfaces `g` gives a meeting of, each near the
+/// boundary somewhere (`bounding`), met where their boxes come within `pad` (#942 F2).
+fn pair_given(g: &Given,candidates: &[&Brep],bounding: &BTreeSet<(usize,usize)>,boxes: &[Vec<(V,V)>],
+    pairs: &mut BTreeSet<([usize;2],[usize;2])>,pad: f64,tol: f64) {
     let bearing = |s: &crate::geom::Surface| -> Vec<(usize,usize)> { candidates.iter().enumerate().flat_map(|(k,c)| c.faces.iter().enumerate()
         .filter(|(_,f)| alike(&f.surface,s,tol)).map(move |(f,_)| (k,f))).collect() };
     let (x,y) = (bearing(&g.surfaces[0]),bearing(&g.surfaces[1]));
     for &(k,f) in &x { for &(b,h) in &y {
-        if k == b || !crate::boolean::overlap(&boxes[k][f],&boxes[b][h],pad) { continue }
+        if k == b || !bounding.contains(&(k,f)) || !bounding.contains(&(b,h)) || !crate::boolean::overlap(&boxes[k][f],&boxes[b][h],pad) { continue }
         pairs.insert(if [k,f] <= [b,h] { ([k,f],[b,h]) } else { ([b,h],[k,f]) });
     } }
 }
@@ -378,10 +381,13 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
             } }
         }
     }
-    // **faces whose surfaces were given a meeting are always met** (#942 F2): the given curves are the
-    // meeting, laid with no search, and a pair the balls did not bring together leaves them unlaid
-    // (a thin stretch's face and the plane it crosses, its balls a resolution apart)
-    for g in given { pair_given(g,&candidates,&boxes,&mut pairs,pad,tol) }
+    // **faces near the boundary whose surfaces were given a meeting are always met** (#942 F2): the
+    // given curves are the meeting, laid with no search, and a pair the balls did not bring together
+    // leaves them unlaid (a thin stretch's face and the plane it crosses, its balls a resolution
+    // apart); a face with no ball near the boundary bounds nothing, and its meeting is buried (#880
+    // P4: met, a sphere's piece inside the sweep left with a hole in no piece)
+    let bounding: BTreeSet<(usize,usize)> = near.iter().map(|&(k,f,_)| (k,f)).collect();
+    for g in given { pair_given(g,&candidates,&bounding,&boxes,&mut pairs,pad,tol) }
     report.paired = pairs.len();
     if debug() {
         for (a,b) in &pairs {
@@ -561,7 +567,7 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
         };
         round += 1;
         let gave = if round > ROUNDS { 0 } else {
-            completed(&seen,&candidates,&completing,&boxes,&mut given,&mut pairs,hair,tol).map_err(Unbuilt::Failed)?
+            completed(&seen,&candidates,&completing,&bounding,&boxes,&mut given,&mut pairs,hair,tol).map_err(Unbuilt::Failed)?
         };
         if debug() || crate::timing() { eprintln!("trim: round {round}: {} curves completed from {:?}",gave,seen.at) }
         if gave == 0 { return Err(Unbuilt::Failed(seen.said)) }
