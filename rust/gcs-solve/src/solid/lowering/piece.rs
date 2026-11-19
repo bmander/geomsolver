@@ -1004,7 +1004,8 @@ fn bounding(points: &[V]) -> (V, f64) {
 
 /// Faces of a run's ends, each with the side it runs on: each plane's half-space `n·x <= d`, and
 /// each cylinder, cone or ball kept within or outside of.
-fn kept_by<'a>(body: &crate::solid::faces::BodyFaces, ends: impl Iterator<Item = &'a (EndBy, f64, Option<V>)>)
+fn kept_by<'a>(body: &crate::solid::faces::BodyFaces,
+               ends: impl Iterator<Item = &'a (EndBy, f64, Option<V>)>)
     -> Result<(Vec<(V, f64)>, Vec<Kept>), String> {
     let (mut planes, mut bent) = (Vec::new(), Vec::new());
     for &(by, sign, _) in ends {
@@ -1012,12 +1013,12 @@ fn kept_by<'a>(body: &crate::solid::faces::BodyFaces, ends: impl Iterator<Item =
             EndBy::Face(c) => c,
             // square to the run where an edge a run-out goes along ends
             EndBy::Square { at, out } => {
-                planes.push((scale(out, sign), sign * dot(out, at)));
+                planes.push(half(out, at, sign));
                 continue;
             }
         };
         match Surf::of(body, c) {
-            Some(Surf::Plane { origin, normal }) => planes.push((scale(normal, sign), sign * dot(normal, origin))),
+            Some(Surf::Plane { origin, normal }) => planes.push(half(normal, origin, sign)),
             Some(face) => bent.push(Kept { face, inside: sign * body.side(c, face.within()) < 0.0 }),
             None => {
                 return Err(unbuilt("an edge cut off by a face neither a plane, a cylinder, a cone nor a sphere"))
@@ -1063,13 +1064,18 @@ fn first_over(a: f64, b: f64, c: f64) -> Option<f64> {
     Some(if rise > TAU - 1e-9 { 0.0 } else { rise })
 }
 
-/// The half-spaces `n·x <= d` of the planes among a run's `ends` (`end_sides`' faces and the
+/// The half-spaces `n·x <= d` of the planes among a run's `ends` (`end_faces`' faces and the
 /// sides it runs on).
 fn ends_at_all(body: &crate::solid::faces::BodyFaces, ends: &Ends) -> Vec<(V, f64)> {
     ends.iter().filter_map(|&(by, sign, _)| match by {
-        EndBy::Face(c) => body.plane(c).map(|(n, o)| (scale(n, sign), sign * dot(n, o))),
-        EndBy::Square { at, out } => Some((scale(out, sign), sign * dot(out, at))),
+        EndBy::Face(c) => body.plane(c).map(|(n, o)| half(n, o, sign)),
+        EndBy::Square { at, out } => Some(half(out, at, sign)),
     }).collect()
+}
+
+/// The half-space `n·x <= d` of the plane through `at` square to `n`, on the side `sign` keeps.
+fn half(n: V, at: V, sign: f64) -> (V, f64) {
+    (scale(n, sign), sign * dot(n, at))
 }
 
 /// A face as a section square to the edge sees it at the edge's point: a line, its unit normal

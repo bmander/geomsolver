@@ -257,9 +257,11 @@ with its own copy of `vals` — no `PathStep`, no prefix, so names are the scope
 read by `expr::decide`; no `Ast` holds one, and its sides agree as `+`'s (`> 0mm`, never `> 0`).
 The parser refuses `as` and a trailing joint; the measured-bound sniff skips a statement an
 opener word starts.  **The condition runs on past a line's end** ([0.219], #952) inside a
-parenthesis, and where its line ends in `and`, `or` or `not` or the next opens with `and` or `or`
-(`P::block`); `count` is its text read as one line, every run of white space one space, so what
-`flatten::values` parses and quotes is the one line it is. `commit_seeds` writes into a root `when`'s body. The hypoid's tip relief is
+parenthesis, as anything does, and where its line ends in `and`, `or` or `not` or the next opens
+with `and` or `or` — the lexer's rule (`syntax::lexer::lex`, no `Tok::Nl` there, so the parser, the
+notation's lowering and the colouring read one line), save where the word opens a line defining or
+reading into a name it is (`or := 3`, `or.x`); `count` is its text read as one line, every run of
+white space one space, so what `flatten::values` parses and quotes is the one line it is. `commit_seeds` writes into a root `when`'s body. The hypoid's tip relief is
 one (`hypoid.sv`). `tests/when.rs` is the gate.
 
 **`scenario NAME { … }`, a load case (§9.11 [0.164], #510 P4):** a block like `when` — no prefix,

@@ -387,12 +387,7 @@ fn made_of_itself(sk: &mut Sketch, body: &[&Stmt], diags: &mut Vec<Diag>) {
 /// Unbind a failed declaration and names that resolve to the same entity, so later
 /// references cannot address another entity that inherited its index.
 fn res_forget(res: &mut Resolver, probes: &mut super::regions::Probes, name: &str) {
-    let Some(gone) = res.of.remove(name) else { return };
-    for e in res.of.values_mut() {
-        if e.kind == gone.kind && e.idx > gone.idx {
-            e.idx -= 1;
-        }
-    }
+    let Some(gone) = res.forget(name) else { return };
     // the sets already read name what they are over by where it was to be made, so they are
     // renumbered too — or a round's region over a body declared past a refused solid named the
     // region itself, and read itself without end (#952).  A set over what was refused is
@@ -403,7 +398,7 @@ fn res_forget(res: &mut Resolver, probes: &mut super::regions::Probes, name: &st
         e => Some(EntRef::new(e.kind, e.i() - 1)),
     };
     for (&p, terms) in probes.terms.iter_mut() {
-        let renumbered: Option<Vec<crate::model::RegionTerm>> = terms.iter().map(|t| {
+        let renumbered: Option<Vec<_>> = terms.iter().map(|t| {
             t.shape.remapped(&renumber).map(|shape| crate::model::RegionTerm { shape, ..t.clone() })
         }).collect();
         match renumbered {

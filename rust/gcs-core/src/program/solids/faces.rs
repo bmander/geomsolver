@@ -673,19 +673,18 @@ pub(in crate::program) fn arcs_turned_in(sk: &Sketch, map: &SourceMap,
     for fi in 0..sk.faces.len() {
         for (arc, turn) in crate::solid::arcs_turned_in(sk, fi) {
             let i = arc.i();
-            if turn < std::f64::consts::PI * (1.0 - 1e-6) || sk.arc_reversed(i) || sk.rounds.iter().any(|k| k.arc as usize == i)
-                || !said.insert(i) {
+            let turns = sk.arc_reversed(i) || sk.rounds.iter().any(|k| k.arc as usize == i);
+            if turn < std::f64::consts::PI * (1.0 - 1e-6) || turns || !said.insert(i) {
                 continue;
             }
             let (span, stmt) = place.site(map.site_of(arc));
             if stmt.is_none() {
                 continue;
             }
-            let name = map.name_of(arc).map(|n| super::super::public_path(n))
-                .unwrap_or_else(|| "the arc".to_string());
+            let name = super::super::rings::called(map, arc);
             let face = &sk.faces[fi].name;
             out.push(Diag::new(Code::W118, span, stmt, format!(
-                "`{face}` turns into `{name}`, a half turn or more: its loop runs one way round and \
+                "`{face}` turns into {name}, a half turn or more: its loop runs one way round and \
                  the arc the other, so the face is notched there.  An arc runs counter-clockwise \
                  from its `start:`, and written with `start:` and `end:` the other way round it \
                  bulges out — where the notch is meant, say so: `sense: cw`, its ends swapped")));

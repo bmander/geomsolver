@@ -499,12 +499,9 @@ fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> 
     let mut out = Spill::new();
     for (k, _) in f.faces.iter().enumerate().filter(|(_, r)| r.smooth) {
         let chain = body.smooth(&groups[k]);
-        let mut own: Vec<usize> = Vec::new();
-        for fi in groups[k].iter().flat_map(|&fi| pieces(body, fi)) {
-            if !own.contains(&fi) {
-                own.push(fi);
-            }
-        }
+        let own: std::collections::BTreeSet<usize> =
+            groups[k].iter().flat_map(|&fi| pieces(body, fi)).collect();
+        let own: Vec<usize> = own.into_iter().collect();
         let beyond: Vec<usize> = chain.into_iter().filter(|fi| !own.contains(fi)).collect();
         if beyond.is_empty() {
             continue;
@@ -518,6 +515,8 @@ fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> 
             continue;
         }
         let mut reached: Vec<(usize, u32)> = Vec::new();
+        // each face's pieces of its surface, walked once
+        let mut surfaces: std::collections::BTreeMap<usize, Vec<usize>> = Default::default();
         for &e in &creases {
             let &[x, y] = body.faces_of(e) else { continue };
             // (an edge turning the other way holds nowhere: nothing of it reaches anywhere)
@@ -525,11 +524,11 @@ fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> 
                 continue;
             }
             let (fk, fo) = if groups[k].contains(&x) { (x, y) } else { (y, x) };
-            let surface = pieces(body, fk);
+            let surface = surfaces.entry(fk).or_insert_with(|| pieces(body, fk));
             for s in 0..=SEAM_SAMPLES {
                 let p = body.along(e, s as f64 / SEAM_SAMPLES as f64);
                 let Some(q) = footprint(body, fk, fo, p, f.within, section, k) else { continue };
-                if let Some(seam) = off_pieces(body, &surface, q).filter(|s| seams.contains(s)) {
+                if let Some(seam) = off_pieces(body, surface, q).filter(|s| seams.contains(s)) {
                     if !reached.contains(&(fk, seam)) {
                         reached.push((fk, seam));
                     }
@@ -549,7 +548,7 @@ fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> 
             _ => a == b,
         };
         for &(fk, r) in &reached {
-            let surface = pieces(body, fk);
+            let surface = &surfaces[&fk];
             let on = |s: u32| body.faces_of(s).iter().any(|g| surface.contains(g));
             for &s in seams.iter().filter(|&&s| one(s, r) && on(s)) {
                 let next = body.faces_of(s).iter().copied().find(|g| !own.contains(g));

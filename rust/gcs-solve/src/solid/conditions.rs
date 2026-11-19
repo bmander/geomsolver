@@ -527,7 +527,7 @@ impl Rest {
         let fe = e.iter().map(|t| on_face(t, sk).filter(|(_, s)| !s).map(|(f, _)| patch(&f)))
             .collect::<Option<Vec<_>>>()?;
         // `m` on surfaces, and cut only where an edge ends: a cut each run lies within by how its
-        // sides are chosen (`end_sides`), so `E` stays within `M`
+        // sides are chosen (`end_faces`), so `E` stays within `M`
         let (mut fm, mut within) = (Vec::new(), Vec::new());
         for t in m {
             match on_face(t, sk) {

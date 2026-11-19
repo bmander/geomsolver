@@ -792,7 +792,7 @@ pub(super) fn splines_in_space(sk: &mut Sketch, res: &mut Resolver, map: &mut su
 /// the other way; in space the plane through its points faces the other way — the same arc, so
 /// the chain enters it at its start.  Its ends a half turn apart in a plane are refused (E060).
 pub(super) fn arcs_in_space(sk: &mut Sketch, map: &super::SourceMap, deferred: &[Deferred],
-                            (back, _): &Walks, diags: &mut Vec<Diag>) {
+                            back: &BTreeSet<usize>, diags: &mut Vec<Diag>) {
     use crate::model::{Owner, RoundIn};
     use crate::space::{cross, dot, norm, sub};
     let clockwise: BTreeMap<usize, (Span, StmtId)> = deferred.iter().filter_map(|d| match d {
@@ -888,18 +888,13 @@ fn half_turn(sk: &Sketch, pts: [usize; 3]) -> bool {
     !(norm(cross(to_s, to_e)) > 1e-9 * norm(to_s) * norm(to_e))
 }
 
-/// The arcs the named chains walk from their end, and those they walk from their start
-/// (`walked_back`).
-pub(super) type Walks = (BTreeSet<usize>, BTreeSet<usize>);
-
 /// **The arcs a chain walks from their end** (#363 S4): a chain enters each link where the one
 /// before it leaves, and an arc it enters at its end — its end shared with the link before, or,
 /// first, its start with the link after — it walks from there to its start.  Each such arc, for
-/// `arcs_in_space` to draw from its end, and beside them each arc a chain enters at its start,
-/// against which the first are held.  An arc two chains walk opposite ways is refused
-/// (E080): it is drawn one way, from its start.  A chain whose links do not meet is left to
+/// `arcs_in_space` to draw from its end, held against each arc a chain enters at its start.  An
+/// arc two chains walk opposite ways is refused (E080): it is drawn one way, from its start.  A chain whose links do not meet is left to
 /// `solids::faces::validate_chain`, which says so.
-pub(super) fn walked_back(sk: &Sketch, res: &Resolver, diags: &mut Vec<Diag>) -> Walks {
+pub(super) fn walked_back(sk: &Sketch, res: &Resolver, diags: &mut Vec<Diag>) -> BTreeSet<usize> {
     let (mut back, mut forward) = (BTreeSet::new(), BTreeSet::new());
     for c in res.chains.values() {
         let links: Option<Vec<(EntRef, [u32; 2])>> = c.links.iter().map(|r| {
@@ -929,7 +924,7 @@ pub(super) fn walked_back(sk: &Sketch, res: &Resolver, diags: &mut Vec<Diag>) ->
             entry = Some(if reversed { s } else { t });
         }
     }
-    (back.difference(&forward).copied().collect(), forward)
+    back.difference(&forward).copied().collect()
 }
 
 /// **A circle about a point in space stands square to its `normal:`** (#363 S6): `k := circle(
