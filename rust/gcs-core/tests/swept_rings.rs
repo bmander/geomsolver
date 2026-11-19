@@ -311,3 +311,59 @@ fn a_tubes_chord_given_as_its_meeting_with_the_tool_is_its_own_edge_laid_once() 
         }
     }
 }
+
+/// **The half turn's stretches are sewn across its cut into one tube a contact curve** (#942 F3,
+/// class B on the sheets a sweep makes): brep-bench's `tumbling-torus-half-turn`, a
+/// torus of tube 0.16 turned 0.375 a radian about one line and back a radian about another over
+/// half a turn, its contact changing shape where a fold pair is born, at 1.4766, and its roll cut
+/// there. Each stretch is fitted a billionth of the roll clear of the cut, and its row there lies
+/// along the next stretch's sheet: one row, by construction, the cut's. Sewn so, its four pieces
+/// are two tubes, each row edge bounding a face of either stretch — where, the two rows told apart
+/// by their parameters' values (6.3e-9 of the roll apart), nothing was sewn, and the row lying
+/// along the next sheet was searched for where it met it and not proved.
+#[test]
+fn the_half_turns_stretches_are_sewn_across_its_cut_into_one_tube_a_contact_curve() {
+    use gcs_core::brep::swept::rings::{changes,entered_at,fitted_over,posed};
+    use gcs_core::brep::trajectory::Screw;
+    let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.16).unwrap();
+    let (sl,cl) = 30f64.to_radians().sin_cos();
+    let (sa,ca) = 20f64.to_radians().sin_cos();
+    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.375,advance:0.});
+    let frame = Trajectory::Twist(Screw {origin:[0.,0.7071*cl,0.7071*sl],axis:[ca,sa*cl,sa*sl],ratio:1.,
+        advance:0.});
+    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
+    let [a,b] = [-90f64.to_radians(),90f64.to_radians()];
+    let tol = 0.16/50_000.;
+    let ring = Ring::read(&tool).unwrap();
+    let (scale,cuts) = changes(&ring,&path,[a,b]).unwrap();
+    assert_eq!(cuts.len(),1,"the contact changes shape once: {cuts:?}");
+    assert!((cuts[0]-1.4766).abs() < 1e-4,"{cuts:?}");
+    // the stretches as the road fits them, a billionth of the roll clear of the cut
+    let eps = 1e-9*(b-a);
+    let stretches = [[a,cuts[0]-eps],[cuts[0]+eps,b]];
+    let fits: Vec<_> = stretches.iter().map(|&sp| fitted_over(&ring,&path,[a,b],sp,scale,0.1*tol).unwrap())
+        .collect();
+    assert!(fits.iter().all(|f| f.seeds.is_empty()),"no narrow pair's leaves cross");
+    let start = posed(&tool,&ring,&path,&fits[0],a).unwrap();
+    let end = posed(&tool,&ring,&path,&fits[1],b).unwrap();
+    let poses = [path.pose(a).unwrap(),path.pose(b).unwrap()];
+    let mut pieces = Vec::new();
+    for (k,fit) in fits.iter().enumerate() {
+        let at = [Some((&start,poses[0])),Some((&end,poses[1]))];
+        pieces.extend(entered_at(fit,&ring,at,[k == 0,k == 1],tol).unwrap().0);
+    }
+    assert_eq!(pieces.len(),4,"two tubes a stretch");
+    // sewn along the cut's row, the one there is
+    let row = 0.5*(fits[0].roll[1]+fits[1].roll[0]);
+    let across = |uv: [f64;2]| ((uv[1]-row).abs() <= 1e-6*(b-a)).then_some(0);
+    let sewn = gcs_core::brep::sew::sewn_open(&pieces,tol,&across).unwrap();
+    assert_eq!(gcs_core::brep::sew::parts(&sewn).len(),2,"one tube a contact curve");
+    let uses = sewn.uses();
+    for (i,e) in sewn.edges.iter().enumerate() {
+        let (fi,li,ci) = uses[i][0];
+        let f = &sewn.faces[fi];
+        let uv = f.loops[li][ci].pcurve.at(0.5*(e.t[0]+e.t[1]),e,&f.surface,&sewn.vertices);
+        if across(uv).is_none() { continue }
+        assert_eq!(uses[i].len(),2,"row edge {i} bounds {} faces",uses[i].len());
+    }
+}

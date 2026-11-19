@@ -1991,10 +1991,14 @@ roll clear of it, have one row there — told apart by their parameters' values,
 apart beside the half turn's cut, no vertex of one was merged with the other's, nothing was sewn,
 and each stretch's row, lying along the next stretch's sheet, was searched for where it met it
 and not proved (gated with no sweep by
-`brep::two_stretches_of_a_sheet_fitted_either_side_of_a_cut_are_sewn_along_it_as_one_row`).
-**Not yet built**: the tumbling torus turned whole fits, is cut and sewn, and is
-refused in the trim, an edge of one sheet lying within a few tolerances of another over a long
-stretch, where no search proves their meeting; the thin one is refused there too. A double curve's
+`brep::two_stretches_of_a_sheet_fitted_either_side_of_a_cut_are_sewn_along_it_as_one_row`, and on
+the half turn's own sheets by
+`swept_rings::the_half_turns_stretches_are_sewn_across_its_cut_into_one_tube_a_contact_curve`).
+**Not yet built**: the tumbling tori fit, are cut and sewn into one tube a contact curve, and are
+refused past the meetings their sewing settles — the torus turned whole where a piece of the torus
+at an end pose reads as the boundary facing behind; the thin one where its two tubes meet at under
+a hundredth of a degree, which the march cannot step along; the half turn where the end pose's cut
+of the leaf beside the fold pair's birth stands 2e-4 off the fitted leaf. A double curve's
 points are placed on a stretch by the seams' angles of the stretch's own net (`rings::cut_along`),
 not by an instant read for each (#942 F4: the turned torus refused in 32 s where it took 106, 74 of
 them reading instants; the thin one in 58 s where it took over forty minutes); what is left is the

@@ -328,7 +328,8 @@ fn two_stretches_of_a_sheet_fitted_either_side_of_a_cut_are_sewn_along_it_as_one
     let m = 0.5*(c+d);
     let eps = 1e-9*(d-c);
     let at = |f: f64| a+(z-a)*f;
-    let below = grid_sheet(&net.segment([a,z],[c,m-eps]),&[a,at(0.4),z],&[c,m-eps],&["l".into(),"r".into()],[false,false]).unwrap();
+    let below = grid_sheet(&net.segment([a,z],[c,m-eps]),&[a,at(0.4),z],&[c,m-eps],&["l".into(),"r".into()],
+        [false,false]).unwrap();
     let above = grid_sheet(&net.segment([a,z],[m+eps,d]),&[a,at(0.3),at(0.7),z],&[m+eps,d],
         &["l".into(),"m".into(),"r".into()],[false,false]).unwrap();
     let tol = 1e-7;
@@ -344,7 +345,7 @@ fn two_stretches_of_a_sheet_fitted_either_side_of_a_cut_are_sewn_along_it_as_one
         across(f.loops[li][ci].pcurve.at(0.5*(e.t[0]+e.t[1]),e,&f.surface,&sewn.vertices)).is_some()
     };
     let row: Vec<usize> = (0..sewn.edges.len()).filter(|&i| on_row(i)).collect();
-    // the row cut at both stretches' corners, a, 0.3, 0.4, 0.7 and z: four edges, each bounding two faces
+    // the row cut at both stretches' corners (at 0.3, 0.4 and 0.7): four edges, each bounding two
     assert_eq!(row.len(),4,"the row in four");
     // and each no farther off its faces than the two rows stand apart (twice, for the curve's fit)
     let apart = (0..=64).map(|k| at(k as f64/64.))
@@ -352,7 +353,8 @@ fn two_stretches_of_a_sheet_fitted_either_side_of_a_cut_are_sewn_along_it_as_one
     assert!(apart > 0. && apart < tol);
     for &i in &row {
         assert_eq!(uses[i].len(),2,"row edge {i} bounds {} faces",uses[i].len());
-        assert!(sewn.edges[i].tol <= 2.*apart,"row edge {i} stands {:e} off a face it bounds, the rows {apart:e} apart",sewn.edges[i].tol);
+        assert!(sewn.edges[i].tol <= 2.*apart,"row edge {i} stands {:e} off a face it bounds, the rows {apart:e} apart",
+            sewn.edges[i].tol);
     }
 }
 
