@@ -88,6 +88,12 @@ fn a_ring_ends_square_where_the_face_it_ends_on_goes_back_across_it() {
     let segment = LUG * LUG * (h / LUG).acos() - h * w;
     let whole = (area(&crossed).abs() + 0.5 * PI * LUG * LUG + 0.5 * segment) * THICK;
     close(exported(&plate(&crossed, LUGGED), "part"), whole - ring(h.atan2(-w) + 0.5 * PI));
+    // and its bottom crossing the rim too, 6.5 below the lug's centre: the plate's near face and
+    // the lug's are pieces of one plane, the seam between them no seam a round spills over (bug
+    // 3's), and the ring turns from one crossing round to the other
+    let both = [[33.05, 14.75], [44.05, 8.05], [50.75, 8.05], [50.75, -4.95], [41.05, -4.95], [35.05, -11.25]];
+    let whole = (area(&both).abs() + 0.5 * PI * LUG * LUG + segment) * THICK;
+    close(exported(&plate(&both, LUGGED), "part"), whole - ring(2.0 * h.atan2(-w)));
 }
 
 /// The rim of a plate drawn through `outline` rounded all round: a run along each side less the

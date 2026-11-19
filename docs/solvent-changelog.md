@@ -19,7 +19,14 @@ in place is a chain, where it said "expected `,` or `)`"; and **W118** names an 
 more that a face turns into while written counter-clockwise from its start, the end of a slot written
 with its ends swapped — `sense: cw` with its ends swapped says the notch is meant. An arc said
 `sense: cw` whose ends are a half turn apart is the half clockwise from its start (E060 through
-0.218), so a notch of a half turn can be said so.
+0.218), so a notch of a half turn can be said so. A set's `ends` (§6.21) — where a run of
+`std.rounds` and every set over a carried edge stops — no longer takes a face whose surface goes
+back across the edge, nor a plane at a reflex corner of less than a right angle turning back over
+the run: there the run ends square, as at a seam (a round there was refused or left a sliver
+through 0.218, and a round notched back by `s / tan θ` at such a corner now stops square at it). A
+run carried past its end along the next side goes no further than that side's edge, and two runs
+mirroring one another at a convex corner meet in the plane halving it. A seam between two pieces of
+one surface — the coplanar tops of solids unioned — is no seam a round's section spills over.
 
 **[0.218] A claim over measurements, and the customary engineering units** (#940). A `claim`
 may compare measurements of the solved drawing — `length`, `radius`, `distance`, `angle` — with
