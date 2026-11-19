@@ -1541,3 +1541,45 @@ fn a_face_declares_no_edge_of_its_own() {
     refused(&format!("{RECT}bad := face(line(a, b), bc, cd, da)\n"), Code::E100,
             "a loop drawn in place is a chain");
 }
+
+/// **A solid refused before a body that is rounded leaves the round over the body** (#952): the
+/// sets a round's region reads were gathered before the solids were built, naming each by where it
+/// was to be made, and a solid refused before them shifted every later one — so the round's region
+/// named itself, and read itself until the stack ran out.  Now the refusal is said once and the
+/// rest elaborates.
+#[test]
+fn a_refused_solid_shifts_no_set_onto_another() {
+    let src = "\
+unit mm
+use std
+use std.solids
+use std.rounds (round)
+in std.top {
+  a := point
+  b := point
+  c := point
+  fix((0, 0)) a
+  fix((100, 0)) b
+  fix((0, 20)) c
+  long := face(a, b, c, -> close)
+}
+bar := solid(std.solids.Prism(long, from: 0mm, to: 10mm))
+rib := solid(std.solids.Prism(nothing, from: 0mm, to: 10mm))
+plate := solid(bar)
+plate.bar.near round(r: 2mm) plate.bar.close0
+";
+    let (p, errs) = parse(src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = elaborate(&p);
+    let said: Vec<String> = e.errors().map(|d| format!("{}: {}", d.code.as_str(), d.message))
+        .collect();
+    assert!(said.iter().all(|m| m.starts_with("E101") && m.contains("nothing")), "{said:?}");
+    // the round's regions read the plate, never themselves
+    for (i, s) in e.sketch.solids.iter().enumerate() {
+        if let gcs_core::model::SolidDef::Region { terms, .. } = &s.def {
+            assert!(terms.iter().flat_map(|t| t.shape.entities())
+                .all(|x| x.kind != gcs_core::model::EntKind::Solid || x.i() != i),
+                "{} reads itself", e.sketch.solid_name(i));
+        }
+    }
+}

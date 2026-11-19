@@ -614,6 +614,13 @@ placement carries inside the blank; CLI test readers zero the offset.
   the document holds it (`refused::Placing`): a site in a module at the deepest instance on its
   path the document holds (the round that used `std.rounds.round`), else at the `use`
   (`modules::localize`).  `tests/refused_once.rs` is the gate.
+  **A declaration refused while elaborating shifts nothing onto another** (#952,
+  `program::solids::res_forget`): what is declared is numbered where it is to be made, and the
+  sets a region reads (`Probes::terms`) are gathered before the solids are built, so forgetting a
+  refused solid or face renumbers them with the resolver — a set over the refused one itself
+  refused with it, said once at the cause.  A round over a body declared past a refused solid had
+  its region read itself until the stack ran out
+  (`solid_lang::a_refused_solid_shifts_no_set_onto_another`).
   A solid refused in words that lead through another (`` `x`: `part`'s faces: `filled[3]`: … ``,
   a round's piece reading the faces of a body another round left unbuilt) is built on that one
   (#948, `refused::chained_cause`), so the round the kernel refused is the root, said in its own
