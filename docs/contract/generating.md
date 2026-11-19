@@ -1985,7 +1985,14 @@ fitted alone, its tubes sewn across the cuts and trimmed; a sheet refused as fol
 turns over. The stretches are sewn row by row (`sew::sewn_open`): a vertex merged only with other
 stretches' vertices on its own row, a row's rim cut only at that row's vertices — beside a
 swallowtail's point a stretch two-hundredths of a radian wide has its two rows within the tolerance
-of one another. **Not yet built**: the tumbling torus turned whole fits, is cut and sewn, and is
+of one another. A row is the cut it sews (#942 F3, by construction): `across` names which cut's row
+a face's parameters lie on, and the two stretches either side of a cut, fitted a billionth of the
+roll clear of it, have one row there — told apart by their parameters' values, 6.3e-9 of the roll
+apart beside the half turn's cut, no vertex of one was merged with the other's, nothing was sewn,
+and each stretch's row, lying along the next stretch's sheet, was searched for where it met it
+and not proved (gated with no sweep by
+`brep::two_stretches_of_a_sheet_fitted_either_side_of_a_cut_are_sewn_along_it_as_one_row`).
+**Not yet built**: the tumbling torus turned whole fits, is cut and sewn, and is
 refused in the trim, an edge of one sheet lying within a few tolerances of another over a long
 stretch, where no search proves their meeting; the thin one is refused there too. A double curve's
 points are placed on a stretch by the seams' angles of the stretch's own net (`rings::cut_along`),

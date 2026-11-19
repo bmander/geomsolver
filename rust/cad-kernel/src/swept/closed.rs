@@ -1139,7 +1139,7 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
         // (sewn only along the rows at the cuts: the double curve's chords on its two leaves are
         // one curve in space, and left to the trim)
         let rows: Vec<f64> = fits.windows(2).map(|w| 0.5*(w[0].roll[1]+w[1].roll[0])).collect();
-        let across = |uv: crate::geom::Uv| rows.iter().any(|&r| (uv[1]-r).abs() <= 1e-6*(b-a));
+        let across = |uv: crate::geom::Uv| rows.iter().position(|&r| (uv[1]-r).abs() <= 1e-6*(b-a));
         let sewn = crate::sew::sewn_open(&pieces,tol,&across).map_err(|e| Unbuilt::Failed(format!("a ring's tubes not sewn across the cuts: {}",e.msg)))?;
         let parts = crate::sew::parts(&sewn);
         if crate::debug() {

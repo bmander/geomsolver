@@ -8,6 +8,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A ring's stretches are sewn along a cut as one row, the cut's** (#942 F3): `sew::sewn_open`'s
+  `across` now names which row a face's parameters lie on (`Option<usize>`, the cut's index) where
+  it said only whether they lay on one, and two rows are one where they are the same cut's. The
+  stretches either side of a cut are fitted a billionth of the roll clear of it; read by their
+  parameters' values (equal within 1e-9 of the value) the half turn's two rows, 6.3e-9 apart, were
+  two, nothing was sewn across its cut, and a stretch's row lying along the next stretch's sheet was
+  searched for where it met it and not proved. Gated with no sweep by
+  `brep::two_stretches_of_a_sheet_fitted_either_side_of_a_cut_are_sewn_along_it_as_one_row`.
+
 - **A given meeting's curve that is an edge a face already has is that edge, laid once** (#942 F3):
   a ring's tube, cut along its crossing of the tool where it starts and given that chord as their
   meeting, had it laid a second time on itself, and the ring along a spline's tube face was refused
