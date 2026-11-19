@@ -14,7 +14,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   ("a bspline's pieces do not close"). A given curve equal to either face's edge curve is now that
   edge, as a traced meeting along an edge already was, its crossings with the meeting's other curves
   read first and kept on them. The ring along a spline's arrangement now assembles; the build is
-  refused later, where its cells' membership does not settle.
+  refused later, where its cells' membership does not settle. Gated by each of its tubes arranged
+  with the torus where it ends, its chord a later span of a curve of several
+  (`swept_rings::a_tubes_chord_given_as_its_meeting_with_the_tool_is_its_own_edge_laid_once`,
+  refused without the rule).
 
 - **Two curves on a face crossing where one ends on a circle the face touches a plane along**
   (#942 F3): `query::crossings_in` reads one curve against a surface carrying the other. Where a
@@ -32,6 +35,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   sheet only at the seam points. Brep-bench's bull-nose pushed in at a lean, its side's rim touching
   its round's sheet mid-span, was refused ("a circle … meets a extrusion was not proved") and is now
   cut to its closed form. `Given` literals need the new field (`touches: Vec::new()` for none).
+  Gated with no sweep (`arrangement::a_rim_touching_a_wall_at_points_given_is_read_there_with_no_search`):
+  a drum's rim touching a parabolic channel's two extruded walls at a point each is refused with
+  nothing given, and read there, its volumes to the rounding, given the walls' meetings and the points.
 
 - **One fallback for shallow meetings, marched in both surfaces' parameters** (#942 F1): where the
   trace is refused as shallow, `meeting::marched` marches each seed no branch holds along the

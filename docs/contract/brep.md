@@ -660,12 +660,19 @@ seam in the plane through its axis that holds it, `brep::a_torus_cut_along_its_s
 known before any is sought given it (`Given`, `arrangement_given`, #810): curves on two operands'
 surfaces that are their whole meeting, laid as an edge of both with no search for that pair, and
 the points where the two touch besides (`Given::touches`, #942 F3), an edge of either through one
-read as touching the other there with no search, a touch being a double root no search proves; a
-given curve that is an edge either face already has (equal to its curve, no tolerance read) is
+read as touching the other there with no search, a touch being a double root no search proves
+(gated with no sweep by `arrangement::a_rim_touching_a_wall_at_points_given_is_read_there_with_no_search`:
+a drum's rim touching a parabolic channel's two extruded walls at a point each, refused with
+nothing given, read there given the walls' meetings and the points, its volumes to the rounding);
+a given curve that is an edge either face already has (equal to its curve, no tolerance read) is
 that edge, laid once, its crossings with the meeting's other curves read first and kept on them
 (#942 F3: a ring's tube cut along its crossing of the tool where it starts, given that chord as
 their meeting — the ring along a spline, its tube face's "pieces do not close" with the chord laid
-twice, now arranged) —
+twice, now arranged; gated by
+`a_tubes_chord_given_as_its_meeting_with_the_tool_is_its_own_edge_laid_once`, each of its tubes,
+its chord a later span of a curve of several, arranged with the torus where it ends and no curve
+laid twice over one stretch; the ring's two tubes come no nearer than 0.9, so its
+near-coincidence was that chord and not one surface crossing itself) —
 what a sweep knows of its candidates' touches by construction
 (generating.md, #810); each cell's membership in each operand read off a face of it bounding the cell, else at
 a point deep inside. **A trim is the same phases with no cell** (#880 E1, `boolean::trimmed`): only the pairs of faces a `Meet` names met (an edge with a face only where a face it bounds is), each piece kept, turned or dropped by a side test its caller gives, coincident pieces stood for by the lowest operand's, and the kept pieces assembled and healed as a selection's are; with no `Meet` the arrangement is as it was (generating.md's trimming by membership). **A Boolean is a selection over it**: each piece's two sides' membership read

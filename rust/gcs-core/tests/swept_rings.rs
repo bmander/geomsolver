@@ -246,3 +246,68 @@ fn a_torus_turned_across_a_block_is_cut_from_it() {
     let v = gcs_core::brep::props::volume(&built);
     assert!((v-57.566).abs() < 0.1,"{v}");
 }
+
+/// **A tube's chord given as its meeting with the tool is its own edge, laid once** (#942 F3's
+/// class B gate, `boolean`'s given meetings): the ring of brep-bench's `ring-along-a-spline`, a
+/// torus carried along a cubic in the plane, its two tubes entered where they cross the torus at
+/// each end pose (`rings::entered`), each cut along that crossing and given it — a span of a
+/// curve of several spans — as its meeting with the torus there. The tube has that chord as an
+/// edge already, the very curve: arranged in the stock with the torus at the pose it ends on, each
+/// tube is split into cells, where laying the chord a second time on itself left the tube's face
+/// open ("a bspline's pieces do not close", "a bspline has a hole in no piece").
+#[test]
+fn a_tubes_chord_given_as_its_meeting_with_the_tool_is_its_own_edge_laid_once() {
+    use gcs_core::brep::boolean::arrangement_given;
+    use gcs_core::brep::swept::rings::{entered,fitted,posed};
+    use gcs_core::brep::topo::EdgeCurve;
+    use gcs_core::brep::trajectory::{Motion,Path};
+    /// The frame along a curve in the plane `z = 0`: its `x` along the curve's tangent, its `z` up.
+    #[derive(Debug)]
+    struct Along(gcs_core::brep::nurbs::BSpline);
+    impl Path for Along {
+        fn at(&self,t: f64) -> Result<Motion,gcs_core::brep::KernelError> {
+            let (point,d,dd) = self.0.d2(t);
+            let speed2 = d[0]*d[0]+d[1]*d[1];
+            let (c,s) = (d[0]/speed2.sqrt(),d[1]/speed2.sqrt());
+            let turning = (d[0]*dd[1]-d[1]*dd[0])/speed2;
+            let r = [[c,-s,0.],[s,c,0.],[0.,0.,1.]];
+            let dr = [[-s*turning,-c*turning,0.],[c*turning,-s*turning,0.],[0.;3]];
+            Ok(Motion::of_parts(r,dr,point,d))
+        }
+    }
+    let stock = crate::brep::block([-6.,-6.,-8.],[36.,26.,0.]);
+    let tool = gcs_core::brep::build::torus([0.,0.,0.5],[0.,1.,0.],1.5,0.5).unwrap();
+    let curve = gcs_core::brep::nurbs::BSpline::new(3,vec![0.,0.,0.,0.,1.,1.,1.,1.],
+        vec![[0.,0.,0.],[10.,0.,0.],[20.,20.,0.],[30.,20.,0.]]).unwrap();
+    let path = Trajectory::General(std::sync::Arc::new(Along(curve)));
+    let tol = gcs_core::brep::geom::tolerance(stock.size().max(tool.size()));
+    let ring = Ring::read(&tool).unwrap();
+    // (the build's fit, a tenth of its tolerance: the contact keeps its shape over the roll, and
+    // its tubes cross themselves nowhere)
+    let fit = fitted(&ring,&path,[0.,1.],0.1*tol).unwrap();
+    assert!(fit.seeds.is_empty(),"no narrow pair's leaves cross");
+    let ends = [0.,1.].map(|t| posed(&tool,&ring,&path,&fit,t).unwrap());
+    let poses = [0.,1.].map(|t| path.pose(t).unwrap());
+    let (tubes,given) = entered(&fit,&ring,[&ends[0],&ends[1]],poses,tol).unwrap();
+    assert_eq!(tubes.len(),2,"a tube for each contact curve");
+    for (k,tube) in tubes.iter().enumerate() {
+        // a curve given is a span of several of a curve that is one of the tube's edges
+        let own = |e: &gcs_core::brep::topo::Edge| given.iter().flat_map(|g| &g.curves)
+            .any(|c| matches!(&e.curve,EdgeCurve::Curve(ec) if ec == c));
+        assert!(tube.edges.iter().any(|e| own(e) && e.t[0] > 0.5),
+            "tube {k}: no chord given that is a later span of its own edge");
+        let complex = arrangement_given(&stock,&[&ends[k],tube],&given,tol)
+            .unwrap_or_else(|e| panic!("tube {k} with the torus where it ends: {e}"));
+        let cells = complex.cells().unwrap().len();
+        assert!(cells >= 2,"tube {k}: {cells} cells");
+        // and each chord laid once: no two of the complex's edges on one curve over one stretch
+        let es = &complex.b.edges;
+        for (i,e) in es.iter().enumerate() {
+            let EdgeCurve::Curve(c) = &e.curve else { continue };
+            let [a0,a1] = [e.t[0].min(e.t[1]),e.t[0].max(e.t[1])];
+            assert!(!es[i+1..].iter().any(|f| matches!(&f.curve,EdgeCurve::Curve(d) if d == c)
+                && f.t[0].min(f.t[1]) < a1 && f.t[0].max(f.t[1]) > a0),
+                "tube {k}: edge {i}'s curve laid twice over one stretch");
+        }
+    }
+}
