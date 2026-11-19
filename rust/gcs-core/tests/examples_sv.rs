@@ -63,7 +63,7 @@ const DOCS: &[(&str, Shape, i64, State)] = &[
     ("shelf_bracket", (8, 2, 0, 0), 0, State::Well),
     ("portal_frame", (10, 3, 0, 0), 0, State::Well),
     ("weighed_cantilever", (7, 1, 0, 0), 0, State::Well),
-    ("box_barge", (8, 5, 0, 0), 0, State::Well),
+    ("box_barge", (14, 5, 0, 0), 0, State::Well),
     ("lightened_web", (10, 4, 1, 0), 0, State::Well),
     ("mass_budget_frame", (8, 2, 0, 0), 0, State::Well),
     ("sized_gusset", (8, 3, 0, 0), 0, State::Well),
