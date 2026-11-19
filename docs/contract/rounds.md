@@ -139,11 +139,25 @@ on the face lands past (a flat's leg, where a ball touches it: `lowering::footpr
 steps in the plane square to the edge at points along it). A seam beyond the footprint is none of
 it (`rounds/spill.sv` with a boss of 19.5, its leg short of the seam: built as the ring alone), nor
 is one the edge runs into at its end (a slot's side into its half circle: the table's own going on
-into the next piece). The section against a chain is the one against whichever face of it is
-nearest: a round's ball touches the face its offset meets the other face's in, and changes face
-where it touches the seam; a flat is each face's own sum of distances with the other face, and
-changes face where it crosses the seam's normal surface — there a point's distance from either face
-is its distance from the seam, so the two are one set:
+into the next piece). **Nor is a seam between two pieces of one surface** (#952,
+`lowering::pieces`: faces going on across seams on the same surface, `Surf::same` — a plane's
+normal one and its origins in it, a cylinder's, a cone's or a torus's axis one line, a ball's
+centre one point, to a billionth): a plate's top in the pieces a union of its operands leaves it,
+each named by its own operand, is one plane to the section, which stands against the surface and
+not the names of its faces. Its footprint is read off the pieces together (`lowering::off_pieces`),
+the seams it reaches are those where they go on into another surface, and a chain's next face,
+where it lands and what lies past it are read the same way (`piece::onto`, `piece::next_face`).
+A lobed flange drawn as a disc, a sector and lobes unioned, its upright edges rounded and its top
+rim rounded over them, had each lobe's ring refused as reaching a seam that runs only part of
+its edge — the arc where the disc's piece of the top begins — and a rib's straight run as
+reaching one not along it; both are the rim over one top (`tests/rim_rounds.rs`:
+`a_round_over_a_top_in_pieces_stands_against_one_plane`, to the closed form, and
+`a_rim_over_a_plate_of_pieces_is_the_rim_over_one_top`, to the union taken the other way round,
+whose piece of the top is reached nowhere past, to 1e-9). The section against a chain is the one
+against whichever face of it is nearest: a round's ball touches the face its offset meets the
+other face's in, and changes face where it touches the seam; a flat is each face's own sum of
+distances with the other face, and changes face where it crosses the seam's normal surface —
+there a point's distance from either face is its distance from the seam, so the two are one set:
 - **along a straight edge beside a seam along it, or round a circle beside a seam about its axis**
   (`lowering::chain`, `piece::seam_along`, `seam_round`): in the section the corner of the other
   face's trace and a chain of the face's own trace to the seam and each next face's from its seam

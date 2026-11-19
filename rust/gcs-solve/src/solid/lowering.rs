@@ -122,19 +122,38 @@ impl Surf {
     }
 
     /// Whether `other` is the same surface, however its faces place it (two halves of a pin's
-    /// wall each about its own point of the axis): a cylinder's or a cone's axis one line, a
-    /// sphere's centre one point, the same size, to a billionth of the surface's place.
+    /// wall each about its own point of the axis, two pieces of a plate's top each about its own
+    /// operand's origin): a plane's normal one and its origins in it, a cylinder's, a cone's or a
+    /// torus's axis one line, a sphere's or a torus's centre one point, the same size and slope, to
+    /// a billionth of the surface's place.
     fn same(&self, other: &Surf) -> bool {
         let size = |o: V, r: f64| 1e-9 * (1.0 + norm(o) + r);
         let on = |p: V, o: V, axis: V| norm(cross(sub(p, o), axis));
         match (*self, *other) {
+            (Surf::Plane { origin: o, normal: n }, Surf::Plane { origin: p, normal: m }) =>
+                norm(sub(n, m)) <= 1e-9 && dot(sub(p, o), n).abs() <= size(o, norm(p)),
             (Surf::Cylinder { origin: o, axis: a, radius: r }, Surf::Cylinder { origin: p, axis: b, radius: s }) => {
                 let tol = size(o, r);
                 (r - s).abs() <= tol && norm(cross(a, b)) <= 1e-9 && on(p, o, a) <= tol
             }
+            (Surf::Cone { origin: o, axis: a, radius: r, half: h },
+             Surf::Cone { origin: p, axis: b, radius: s, half: k }) => {
+                // the first's radius where the second's origin stands on the axis, and its slope
+                // along the second's axis
+                let (tol, along) = (size(o, r), dot(a, b).signum());
+                let there = r + dot(sub(p, o), a) * h.dtan();
+                norm(cross(a, b)) <= 1e-9 && on(p, o, a) <= tol && (there - s).abs() <= tol
+                    && (along * h.dtan() - k.dtan()).abs() <= 1e-9
+            }
             (Surf::Sphere { centre: c, radius: r }, Surf::Sphere { centre: d, radius: s }) =>
                 (r - s).abs() <= size(c, r) && distance(c, d) <= size(c, r),
-            (x, y) => x == y,
+            (Surf::Torus { origin: o, axis: a, big: r, tube: t },
+             Surf::Torus { origin: p, axis: b, big: s, tube: u }) => {
+                let tol = size(o, r + t);
+                distance(o, p) <= tol && norm(cross(a, b)) <= 1e-9
+                    && (r - s).abs() <= tol && (t - u).abs() <= tol
+            }
+            _ => false,
         }
     }
 
@@ -468,20 +487,30 @@ pub(crate) type Spill = std::collections::BTreeMap<usize, Vec<(u32, usize)>>;
 /// (`piece::spilled`).  A seam beyond the section's reach is none of it: the region's points are
 /// over the face between its edge and its footprint, nearest the face's own surface.  A seam the
 /// edge runs into at its end (a slot's side going on into its end's half circle) is the table's
-/// own rule, a run going on into the next piece, and is none of it either.
+/// own rule, a run going on into the next piece, and is none of it either.  Nor is a seam between
+/// two pieces of one surface (`pieces`: a plate's top in the pieces the union of its operands left
+/// it, #952): the section stands against the surface, not the faces it is named by, so its
+/// footprint lands past such a seam onto the same surface, and the seam it reaches is the one
+/// where that surface's pieces go on into another.
 fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Spill {
     let groups: Vec<Vec<usize>> = f.faces.iter().map(|r| body.faces(r)).collect();
     let mut out = Spill::new();
     for (k, _) in f.faces.iter().enumerate().filter(|(_, r)| r.smooth) {
         let chain = body.smooth(&groups[k]);
-        if chain.len() == groups[k].len() {
+        let mut own: Vec<usize> = Vec::new();
+        for fi in groups[k].iter().flat_map(|&fi| pieces(body, fi)) {
+            if !own.contains(&fi) {
+                own.push(fi);
+            }
+        }
+        let beyond: Vec<usize> = chain.into_iter().filter(|fi| !own.contains(fi)).collect();
+        if beyond.is_empty() {
             continue;
         }
-        let beyond: Vec<usize> = chain.into_iter().filter(|fi| !groups[k].contains(fi)).collect();
         let creases: Vec<u32> = f.pairs().iter().filter(|p| p.contains(&k))
             .flat_map(|&[i, j]| body.edges_between(&groups[i], &groups[j])).collect();
         let at: Vec<u32> = creases.iter().flat_map(|&e| body.ends(e)).collect();
-        let seams: Vec<u32> = body.edges_between(&groups[k], &beyond).into_iter()
+        let seams: Vec<u32> = body.edges_between(&own, &beyond).into_iter()
             .filter(|&s| !body.ends(s).iter().any(|v| at.contains(v))).collect();
         if seams.is_empty() {
             continue;
@@ -494,10 +523,11 @@ fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> 
                 continue;
             }
             let (fk, fo) = if groups[k].contains(&x) { (x, y) } else { (y, x) };
+            let surface = pieces(body, fk);
             for s in 0..=SEAM_SAMPLES {
                 let p = body.along(e, s as f64 / SEAM_SAMPLES as f64);
                 let Some(q) = footprint(body, fk, fo, p, f.within, section, k) else { continue };
-                if let Some(seam) = body.off_face(fk, q).filter(|s| seams.contains(s)) {
+                if let Some(seam) = off_pieces(body, &surface, q).filter(|s| seams.contains(s)) {
                     if !reached.contains(&(fk, seam)) {
                         reached.push((fk, seam));
                     }
@@ -517,8 +547,10 @@ fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> 
             _ => a == b,
         };
         for &(fk, r) in &reached {
-            for &s in seams.iter().filter(|&&s| one(s, r) && body.faces_of(s).contains(&fk)) {
-                let next = body.faces_of(s).iter().copied().find(|g| !groups[k].contains(g));
+            let surface = pieces(body, fk);
+            let on = |s: u32| body.faces_of(s).iter().any(|g| surface.contains(g));
+            for &s in seams.iter().filter(|&&s| one(s, r) && on(s)) {
+                let next = body.faces_of(s).iter().copied().find(|g| !own.contains(g));
                 let entry = out.entry(fk).or_default();
                 if let Some(g) = next.filter(|_| !entry.iter().any(|&(t, _)| t == s)) {
                     entry.push((s, g));
@@ -527,6 +559,44 @@ fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> 
         }
     }
     out
+}
+
+/// **The pieces of one surface** (#952): face `fi` and every face going on from it across a seam
+/// on the same surface (`Surf::same`), and from those on — a plate's top in the pieces the union
+/// of its operands left it, each named by its own operand's.  A section stands against a surface,
+/// not the names of its faces: to it they are one face, and a seam between two of them is none it
+/// reaches across.  `fi` first; it alone where its surface is none `Surf` reads.
+pub(crate) fn pieces(body: &super::faces::BodyFaces, fi: usize) -> Vec<usize> {
+    let Some(own) = Surf::of(body, fi) else { return vec![fi] };
+    let mut out = vec![fi];
+    let mut k = 0;
+    while k < out.len() {
+        for &e in body.edges_of(out[k]) {
+            for &g in body.faces_of(e) {
+                let same = || Surf::of(body, g).is_some_and(|s| s.same(&own));
+                if !out.contains(&g) && body.seam(e) && same() {
+                    out.push(g);
+                }
+            }
+        }
+        k += 1;
+    }
+    out
+}
+
+/// Where `q` (on the surface of `faces`, the pieces of one: `pieces`) lies off them all: the edge
+/// of theirs nearest it that is no edge between two of them (`None` where it lies on one) — one
+/// face's own `off_face`.
+pub(crate) fn off_pieces(body: &super::faces::BodyFaces, faces: &[usize], q: V) -> Option<u32> {
+    if let [fi] = faces {
+        return body.off_face(*fi, q);
+    }
+    if faces.iter().any(|&fi| body.off_face(fi, q).is_none()) {
+        return None;
+    }
+    let rim: Vec<u32> = faces.iter().flat_map(|&fi| body.edges_of(fi).iter().copied())
+        .filter(|&e| !body.faces_of(e).iter().all(|g| faces.contains(g))).collect();
+    body.nearest_edge(&rim, q).map(|(e, ..)| e)
 }
 
 /// Where the section beside the edge of faces `fk` and `fo` at its point `p` reaches furthest

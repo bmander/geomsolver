@@ -156,3 +156,74 @@ fn a_rounds_node_says_its_body_and_its_label() {
         .filter(|n| n.said.is_some()).map(|n| n.called()).collect();
     assert_eq!(said, ["`box`'s round or chamfer `vert.taken`", "`box`'s round or chamfer `taken`"]);
 }
+
+/// A bar 40 × 20 and a rib across its far side (30 to 60, 17 to 23, its far side `e2`), each 10
+/// tall on the top plane, `second` unioned into a solid of `first`, and the rib's far top edge
+/// rounded 5 over the solid they leave.
+fn bar_and_rib(first: &str, second: &str) -> String {
+    format!("unit mm\nuse std\nuse std.solids\nuse std.solids (union)\nuse std.rounds (round)\n\
+             in std.top {{\n  long := step(u: 40mm, v: 0mm) (ab := line) -> \
+             step(v: 20mm) (bc := line) -> step(u: 0mm) (cd := line) -> \
+             step(v: 0mm) (da := line) -> close\n  t0 := point\n  fix((30, 17)) t0\n  \
+             t1 := point\n  fix((60, 17)) t1\n  t2 := point\n  fix((60, 23)) t2\n  \
+             t3 := point\n  fix((30, 23)) t3\n  \
+             (e0 := line(t0, t1)) -> (e1 := line(t1, t2)) -> (e2 := line(t2, t3)) -> \
+             (e3 := line(t3, t0)) -> close\n  tab := face(e0, e1, e2, e3)\n}}\n\
+             bar := solid(std.solids.Prism(long, from: 0mm, to: 10mm))\n\
+             rib := solid(std.solids.Prism(tab, from: 0mm, to: 10mm))\n\
+             plate := solid({first})\n{second} union plate\n\
+             part := solid(plate)\npart.plate.rib.near round(r: 5mm) part.plate.rib.e2\n")
+}
+
+/// **A section stands against a surface, not the faces it is named by** (#952): a plate's top in
+/// the pieces the union of its operands leaves it, each named by its own, is one plane to a round,
+/// so a ball whose touch lands past the edge between two pieces stands against the same plane
+/// there.  The rib unioned into the bar: of the top, the bar's piece holds where both are, and the
+/// rib's is three wide beside its far side over the bar, so the round along that side touches the
+/// top past the edge between them over a third of its length — refused as a seam into the next
+/// face of a chain, one not along the edge, where nothing goes on but the plane itself.  The plate
+/// less the run's square section over the rib's 30, either way round the union.
+#[test]
+fn a_round_over_a_top_in_pieces_stands_against_one_plane() {
+    let want = (40.0 * 20.0 + 10.0 * 3.0 + 20.0 * 6.0) * 10.0 - 30.0 * square_run(5.0);
+    for (first, second) in [("bar", "rib"), ("rib", "bar")] {
+        let e = solved(&bar_and_rib(first, second));
+        assert!(e.diags.is_empty(), "{first} first: {:?}", e.diags);
+        close(props::volume(&exported(&e, "part")), want);
+    }
+}
+
+/// A disc of 50 and a lobe of 20 whose centre stands 40 out (`core` and `ear`), each 10 tall on
+/// the top plane, `second` unioned into a solid of `first`; their upright edges rounded 10 where
+/// they meet, and the lobe's top rim rounded 5 over the solid they leave.
+fn disc_and_lobe(first: &str, second: &str) -> String {
+    format!("unit mm\nuse std\nuse std.solids\nuse std.solids (union)\nuse std.rounds (round)\n\
+             in std.top {{\n  o := point\n  fix((0, 0)) o\n  \
+             big := circle(center: o) hint(r: 50)\n  radius(50mm) big\n  h := point\n  \
+             fix((40, 0)) h\n  lobe := circle(center: h) hint(r: 20)\n  \
+             radius(20mm) lobe\n}}\n\
+             core := solid(std.solids.Prism(face(big), from: 0mm, to: 10mm))\n\
+             ear := solid(std.solids.Prism(face(lobe), from: 0mm, to: 10mm))\n\
+             plate := solid({first})\n{second} union plate\n\
+             repeat f in plate {{ repeat g in plate {{ when f parallel std.z and g parallel std.z \
+             and f != g {{ f round(r: 10mm) g }} }} }}\n\
+             part := solid(plate)\npart.plate.ear.near round(r: 5mm) part.plate.ear\n")
+}
+
+/// **A rim over a plate of pieces** (#952, a lobed flange's): the lobe unioned into the disc
+/// leaves its piece of the top a crescent, narrower than the ball's reach where the rounds of 10
+/// run into the rim, so the rim's ring touches the top past the arc where the disc's piece begins
+/// — refused as a seam running only part of the ring, though both pieces are one plane.  The same
+/// solid as the disc unioned into the lobe, whose piece of the top is its whole disc, reached
+/// nowhere past: one volume, and faces of the same kinds.
+#[test]
+fn a_rim_over_a_plate_of_pieces_is_the_rim_over_one_top() {
+    let built = |first: &str, second: &str| {
+        let e = solved(&disc_and_lobe(first, second));
+        assert!(e.diags.is_empty(), "{first} first: {:?}", e.diags);
+        exported(&e, "part")
+    };
+    let (crescent, whole) = (built("core", "ear"), built("ear", "core"));
+    close(props::volume(&crescent), props::volume(&whole));
+    assert_eq!(kinds(&crescent), kinds(&whole));
+}

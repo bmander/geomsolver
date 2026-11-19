@@ -648,7 +648,7 @@ struct Chained {
 fn chain_seam(body: &crate::solid::faces::BodyFaces, p: usize, seams: &[(u32, usize)], at: V)
     -> Result<Chained, String> {
     let Some((n, _)) = body.plane(p) else { return Err(spilled("from a face no plane")) };
-    let next = next_face(seams)?;
+    let next = next_face(body, seams)?;
     let chain = Surf::of(body, next);
     let size = 1.0 + norm(at);
     // every piece of the seam on its first's line or circle
@@ -846,7 +846,12 @@ fn chain_from<S>(body: &crate::solid::faces::BodyFaces, own: usize, first: (S, u
         if seams.len() >= CHAIN {
             return Err(spilled("past the faces it goes on into (a chain of more than four)"));
         }
-        let across: Vec<(u32, usize)> = body.edges_between(&[g], &[h]).into_iter().map(|e| (e, h)).collect();
+        // (each surface's pieces one face: `pieces`)
+        let beyond = super::pieces(body, h);
+        let across: Vec<(u32, usize)> = body.edges_between(&super::pieces(body, g), &beyond)
+            .into_iter().filter_map(|e| {
+                body.faces_of(e).iter().copied().find(|f| beyond.contains(f)).map(|f| (e, f))
+            }).collect();
         seams.push(seam(&across)?);
         prev = g;
     }
@@ -854,11 +859,14 @@ fn chain_from<S>(body: &crate::solid::faces::BodyFaces, own: usize, first: (S, u
 
 /// Where the section's footprint on the last face of a chain (`foot`, where its leg or its ball's
 /// touch is) lands, face `g` going on from `prev`: on it (none), or past a seam where it goes on
-/// tangent into another (that face), the chain going on; refused past any other edge of it.
+/// tangent into another (that face), the chain going on; refused past any other edge of it.  The
+/// pieces of one surface are one face (`pieces`): of `g`'s, the footprint on any is on it, and
+/// one of `prev`'s is no face it goes on into.
 fn onto(body: &crate::solid::faces::BodyFaces, prev: usize, g: usize, foot: V) -> Result<Option<usize>, String> {
-    let Some(e) = body.off_face(g, foot) else { return Ok(None) };
-    match body.faces_of(e).iter().copied().find(|&h| h != g) {
-        Some(h) if h != prev && body.seam(e) => Ok(Some(h)),
+    let surface = super::pieces(body, g);
+    let Some(e) = super::off_pieces(body, &surface, foot) else { return Ok(None) };
+    match body.faces_of(e).iter().copied().find(|h| !surface.contains(h)) {
+        Some(h) if !super::pieces(body, prev).contains(&h) && body.seam(e) => Ok(Some(h)),
         _ => Err(spilled("past the face it goes on into, across an edge no seam")),
     }
 }
@@ -869,7 +877,7 @@ fn onto(body: &crate::solid::faces::BodyFaces, prev: usize, g: usize, foot: V) -
 /// whole edge — and that face.
 fn seam_along(body: &crate::solid::faces::BodyFaces, seams: &[(u32, usize)], p0: V, along: V, length: f64)
     -> Result<(V, usize), String> {
-    let g = next_face(seams)?;
+    let g = next_face(body, seams)?;
     let size = length + norm(p0);
     let (mut at, mut cover): (Option<V>, Vec<[f64; 2]>) = (None, Vec::new());
     for &(s, _) in seams {
@@ -904,7 +912,7 @@ fn seam_along(body: &crate::solid::faces::BodyFaces, seams: &[(u32, usize)], p0:
 /// axis, the face beyond turned about it too, or not — and that face.
 fn seam_round(body: &crate::solid::faces::BodyFaces, seams: &[(u32, usize)], centre: V, axis: V)
     -> Result<Round, String> {
-    let g = next_face(seams)?;
+    let g = next_face(body, seams)?;
     let mut turn = 0.0;
     let mut circle = None;
     let mut about = true;
@@ -934,10 +942,13 @@ enum Round {
     Askew,
 }
 
-/// The one face a seam's pieces (`seams`, each with the face going on across it) go on into.
-fn next_face(seams: &[(u32, usize)]) -> Result<usize, String> {
+/// The one face a seam's pieces (`seams`, each with the face going on across it) go on into: the
+/// first's, the others pieces of its surface (`pieces`).
+fn next_face(body: &crate::solid::faces::BodyFaces, seams: &[(u32, usize)])
+    -> Result<usize, String> {
     let g = seams.first().ok_or_else(|| spilled("into a face it meets in no edge"))?.1;
-    if seams.iter().any(|&(_, h)| h != g) {
+    let surface = super::pieces(body, g);
+    if seams.iter().any(|&(_, h)| !surface.contains(&h)) {
         return Err(spilled("into more than one face"));
     }
     Ok(g)
