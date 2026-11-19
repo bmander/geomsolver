@@ -1130,6 +1130,7 @@ impl<'a> Walk<'a> {
                     Ok(true))
             };
             let wanted = names.wanted.take();
+            let unread = names.unread.get();
             drop(names);
             if alone {
                 let at = self.faces.at;
@@ -1138,6 +1139,9 @@ impl<'a> Walk<'a> {
             }
             self.faces.along.extend(along);
             self.faces.wanted.extend(wanted);
+            if unread {
+                self.faces.unread.insert(b.head);
+            }
             match decided {
                 Ok(true) => {
                     // a frame of its own over the numbers around it, which it shares (#405)
@@ -2138,6 +2142,9 @@ struct Asked<'w, 'a> {
     reads: std::cell::RefCell<Vec<super::FaceRead>>,
     /// Every direction asked of that the walk was not given.
     wanted: std::cell::RefCell<Vec<String>>,
+    /// Whether a `when` held a face against a direction of a solid whose boundary was not built
+    /// where the drawing stood (#948): its E103 deferred, read again where it solves.
+    unread: std::cell::Cell<bool>,
 }
 
 /// The most aliases a walk may have made for `Asked` to hold each answer to the walk's whole table
@@ -2155,6 +2162,7 @@ impl<'w, 'a> Asked<'w, 'a> {
             every: Default::default(),
             reads: Default::default(),
             wanted: Default::default(),
+            unread: Default::default(),
         }
     }
 
@@ -2225,9 +2233,13 @@ impl super::values::Names for Asked<'_, '_> {
             )));
         };
         let Some(layered) = &listed.read else {
+            // a boundary the seeds do not build may be built where the drawing solves: read
+            // again there, and said only if it is not built there either (#948)
+            self.unread.set(true);
             return Some(Err(format!(
-                "`{}`'s faces are not read where they are named (a body cut by a sweep is its \
-                 field's)", crate::program::public_path(solid)
+                "`{}`'s faces are not read where they are named: its boundary is not built where \
+                 the drawing stands, seeded or solved (a body cut by a sweep is its field's)",
+                crate::program::public_path(solid)
             )));
         };
         let layer = listed.layers.layer(self.scope.prefix(), &[path]);

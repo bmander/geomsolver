@@ -201,3 +201,39 @@ fn a_when_over_faces_met_and_faces_along_is_decided_where_the_drawing_solves() {
     assert_eq!(made("10, 10"), 5);
     assert_eq!(made("60, 60"), 5);
 }
+
+/// **A body the seeds do not build is read where the drawing solves** (#948): a hollow of two
+/// arcs of radius 94 about one centre between flats at `y = ±54`, its corners held by the radii
+/// and the flats, so at `x = ±√5920`.  Seeded there to two places (`76.94`), each arc's ends lie
+/// off its circle by thousandths: no face is built where the drawing is seeded, and the `when`
+/// over its faces read none of them — E103, saying a sweep cut it, where nothing is swept.  It is
+/// read again where the drawing solves, as a body read the other way there is (#761), and rounds
+/// its four corners as it does seeded to every place a double holds.
+#[test]
+fn a_body_the_seeds_do_not_build_is_read_where_the_drawing_solves() {
+    let hollow = |x: &str| format!("unit mm\nuse std\nuse std.solids\nuse std.rounds (round)\n\
+        in std.top {{\n  o := point\n  fix((0, 0)) o\n\
+        q1 := point hint(({x}, -54))\n  q2 := point hint(({x}, 54))\n\
+        q3 := point hint((-{x}, 54))\n  q4 := point hint((-{x}, -54))\n\
+        fix(y == -54mm) q1\n  fix(y == 54mm) q2\n  fix(y == 54mm) q3\n  fix(y == -54mm) q4\n\
+        ire := arc(center: o, start: q1, end: q2) hint(r: 94)\n  radius(94mm) ire\n\
+        itl := line(q2, q3)\n\
+        ile := arc(center: o, start: q3, end: q4) hint(r: 94)\n  radius(94mm) ile\n\
+        ibl := line(q4, q1)\n  inside := face(ire, itl, ile, ibl)\n}}\n\
+        hollow := solid(std.solids.Prism(inside, from: 0mm, to: 24mm))\n\
+        repeat f in hollow {{ repeat g in hollow {{\n\
+        when f parallel std.z and g parallel std.z and f != g {{ f round(r: 12mm) g }} }} }}\n");
+    let volume = |x: &str| {
+        let e = solved(&hollow(x));
+        let d = gcs_core::program::solid_diagnostics(&e.sketch, &e.map, &e.program);
+        assert!(d.is_empty(), "{x}: {d:?}");
+        props::volume(&exported(&e, "hollow"))
+    };
+    let exact = volume(&5920f64.sqrt().to_string());
+    // the section unrounded: the disc's band |y| < 54, 24 deep
+    let band = crate::common::rounds::disc_band(94.0, 54.0);
+    assert!(exact < band * 24.0 - 1.0, "its corners are rounded: {exact} against {}", band * 24.0);
+    for x in ["76.94", "77", "70"] {
+        close(volume(x), exact);
+    }
+}

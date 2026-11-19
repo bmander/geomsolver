@@ -277,7 +277,7 @@ fn reads_from(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, p
                     if let crate::model::RegionShape::Join { of } = &t.shape {
                         v.push(14.0);
                         let mut bodies = Vec::new();
-                        join_reads(sk, of, &mut v, &mut bodies);
+                        join_reads(sk, of, &mut v, &mut bodies, poses);
                         stack.extend(bodies.into_iter().map(|b| (b, by)));
                         continue;
                     }
@@ -290,11 +290,8 @@ fn reads_from(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, p
                             }
                         }
                         for e in set.entities() {
-                            match e.kind {
-                                crate::model::EntKind::Point => v.extend(sk.world_point(e.i())),
-                                crate::model::EntKind::Solid => stack.push((e.i() as u32, by)),
-                                crate::model::EntKind::Face => face_reads(sk, e.i() as u32, &mut v, poses),
-                                _ => v.extend(sk.entity_params(e).iter().map(|&p| sk.params[p as usize].value)),
+                            if let Some(b) = entity_reads(sk, e, &mut v, poses) {
+                                stack.push((b, by));
                             }
                         }
                         continue;
@@ -307,26 +304,8 @@ fn reads_from(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, p
                         continue;
                     }
                     for e in t.shape.entities() {
-                        match e.kind {
-                            crate::model::EntKind::Point => v.extend(sk.world_point(e.i())),
-                            crate::model::EntKind::Line => {
-                                let l = &sk.lines[e.i()];
-                                v.extend(sk.world_point(l.p1 as usize));
-                                v.extend(sk.world_point(l.p2 as usize));
-                            }
-                            crate::model::EntKind::Axis => {
-                                let x = &sk.axes[e.i()];
-                                v.extend(x.a.iter().chain(&x.d).map(|&p| sk.params[p as usize].value));
-                            }
-                            // a body whose faces it reads (#183 F1): read as the body is
-                            crate::model::EntKind::Solid => stack.push((e.i() as u32, by)),
-                            _ => {
-                                let b = sk.basis(e.i());
-                                v.extend(b.o);
-                                v.extend(b.u);
-                                v.extend(b.v);
-                            }
-                        }
+                        // a body whose faces it reads (#183 F1): read as the body is
+                        if let Some(b) = entity_reads(sk, e, &mut v, poses) { stack.push((b, by)); }
                     }
                 }
             }
@@ -585,6 +564,46 @@ fn name_read(name: &str, v: &mut Vec<f64>) {
     v.extend(name.bytes().map(f64::from));
 }
 
+/// What a region's term reads of entity `e`, by its kind (#948): a point where it stands, a line
+/// by its ends there, an axis by its numbers, a plane by its attitude, a face by its loops and its
+/// plane (`p distance(<= 0mm, along: n) rim`, a countersink's rim), and anything else drawn by
+/// its numbers, each of its points where it stands and the plane that point is drawn in — a
+/// circle turned with its plane about a centre that stays moves no number of its own.  A body is
+/// read as the body is: it is returned, for the walk to read.
+fn entity_reads(sk: &Sketch, e: EntRef, v: &mut Vec<f64>, poses: &mut Poses) -> Option<u32> {
+    v.push(e.kind as u32 as f64);
+    match e.kind {
+        EntKind::Point => v.extend(sk.world_point(e.i())),
+        EntKind::Line => {
+            let l = &sk.lines[e.i()];
+            v.extend(sk.world_point(l.p1 as usize));
+            v.extend(sk.world_point(l.p2 as usize));
+        }
+        EntKind::Axis => {
+            let x = &sk.axes[e.i()];
+            v.extend(x.a.iter().chain(&x.d).map(|&p| sk.params[p as usize].value));
+        }
+        EntKind::Frame => {
+            let b = sk.basis(e.i());
+            v.extend(b.o.into_iter().chain(b.u).chain(b.v));
+        }
+        EntKind::Face => face_reads(sk, e.i() as u32, v, poses),
+        EntKind::Solid => return Some(e.i() as u32),
+        _ => {
+            v.extend(sk.entity_params(e).iter().map(|&p| sk.params[p as usize].value));
+            let mut planes = std::collections::BTreeSet::new();
+            for c in sk.children(e).into_iter().filter(|c| c.kind == EntKind::Point) {
+                v.extend(sk.world_point(c.i()));
+                planes.extend(sk.plane_of(c.i()).filter(|&p| p < sk.frames.len()));
+            }
+            for b in planes.into_iter().map(|p| sk.basis(p)) {
+                v.extend(b.o.into_iter().chain(b.u).chain(b.v));
+            }
+        }
+    }
+    None
+}
+
 fn face_reads(sk: &Sketch, fi: u32, v: &mut Vec<f64>, poses: &mut Poses) {
     v.push(fi as f64);
     let Some(f) = sk.faces.get(fi as usize) else { return };
@@ -714,7 +733,8 @@ fn motion_reads(sk: &Sketch,motion: u32,values: &mut Vec<f64>) {
 /// What a join's operands read (`reads_with`'s `Join`): each a point where it stands, or a set's
 /// terms with their numbers and where what each measures stands, a nested join's in turn; each
 /// body a term reads the faces of added to `bodies`, to be keyed as the body is.
-fn join_reads(sk: &Sketch, of: &[crate::model::Target], v: &mut Vec<f64>, bodies: &mut Vec<u32>) {
+fn join_reads(sk: &Sketch, of: &[crate::model::Target], v: &mut Vec<f64>, bodies: &mut Vec<u32>,
+              poses: &mut Poses) {
     use crate::model::{EntKind, RegionShape, Target};
     for t in of {
         let Target::Set { terms, .. } = t else {
@@ -728,20 +748,11 @@ fn join_reads(sk: &Sketch, of: &[crate::model::Target], v: &mut Vec<f64>, bodies
         for u in terms {
             v.extend([u.cmp as u8 as f64, u.lo.read(sk).unwrap_or(UNREAD), u.hi.unwrap_or(0.0)]);
             if let RegionShape::Join { of } = &u.shape {
-                join_reads(sk, of, v, bodies);
+                join_reads(sk, of, v, bodies, poses);
                 continue;
             }
             for e in u.shape.entities() {
-                match e.kind {
-                    EntKind::Point => v.extend(sk.world_point(e.i())),
-                    EntKind::Line => {
-                        let l = &sk.lines[e.i()];
-                        v.extend(sk.world_point(l.p1 as usize));
-                        v.extend(sk.world_point(l.p2 as usize));
-                    }
-                    EntKind::Solid => bodies.push(e.i() as u32),
-                    _ => v.extend(sk.entity_params(e).iter().map(|&p| sk.params[p as usize].value)),
-                }
+                bodies.extend(entity_reads(sk, e, v, poses));
             }
         }
     }

@@ -445,6 +445,11 @@ pub struct Expansion {
     /// Every direction a `when` held a face against that it was not given (#763): for the
     /// elaborator to read off the drawing, and walk again (`Directions`).
     pub directions_wanted: BTreeSet<String>,
+    /// Every `when` that held a face against a direction of a solid whose boundary was not built
+    /// where the drawing is seeded (#948), by where its E103 is said: for the elaborator to read
+    /// again where it solves (`program::at_solve`) — a seed off its arc's circle builds no face,
+    /// where the solve does.
+    pub unread: BTreeSet<Span>,
     /// Whether the walk stopped at `MAX_FLAT`, its statements cut short: no drawing.
     pub overflowed: bool,
 }
@@ -970,6 +975,8 @@ struct FaceState {
     directions: Directions,
     /// See `Expansion::directions_wanted`.
     wanted: BTreeSet<String>,
+    /// See `Expansion::unread`.
+    unread: BTreeSet<Span>,
     /// The document's own statement being walked — its root body's — where a block set aside
     /// was met: what a fault deep in what it expands to is said at (#625).
     at: Span,
@@ -1271,6 +1278,7 @@ impl<'a> Walk<'a> {
             apart: self.faces.apart.into_iter().collect(),
             along: self.faces.along,
             directions_wanted: self.faces.wanted,
+            unread: self.faces.unread,
             overflowed: self.overflowed,
         }
     }

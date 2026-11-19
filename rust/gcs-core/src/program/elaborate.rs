@@ -109,17 +109,27 @@ pub(super) fn elaborate_in(
     let expansion = expand(&mut cx, refused, named);
     let body: Vec<&Statement> = expansion.flat.iter().collect();
     // a turned copy's relation stating a bound of its own region solid's probe states it: never a
-    // row, it is the copy's solid's term, read over the copy's turned points
+    // row, it is the copy's solid's term, read over the copy's turned points — and so does one of
+    // any other point its set is read at, whatever its key, and a bound on its distances from
+    // sets (a countersink's, #948)
+    let probes: BTreeSet<&str> = expansion.probes.iter().map(String::as_str).collect();
     let reads_probe = |st: &Statement| match &st.kind {
         crate::ir::Operation::Relation(r) => r.form.written().is_some_and(|w| {
-            w.ops.iter().any(|o| crate::flatten::is_probe(&o.root.text))
+            w.ops.iter().any(|o| {
+                crate::flatten::is_probe(&o.root.text) || probes.contains(o.root.text.as_str())
+            })
         }),
+        // a bound on measurements is a term of the region solid whose point it reads, never a
+        // row: the copy's own solid's, over its turned sets
+        crate::ir::Operation::Measured(_) => true,
         _ => false,
     };
-    let stating: Vec<&Statement> =
-        body.iter().copied().filter(|st| !st.turned || reads_probe(st)).collect();
     style_sheet(&mut cx, &body);
     let skip = names(&mut cx, &body);
+    // nothing stated of what `names` left unmade either (a round it refused, #948)
+    let stating: Vec<&Statement> = body.iter().copied()
+        .filter(|st| !skip.contains(&st.id) && (!st.turned || reads_probe(st)))
+        .collect();
     let flat = Flat { expansion: &expansion, body, stating, skip };
     let deferred = geometry(&mut cx, &flat);
     // a plane a valued frame's block draws in is shown as the source reads it (#823)
@@ -249,6 +259,7 @@ fn expand(
     cx.map.private_names = expansion.private_names.clone();
     cx.map.apart = std::mem::take(&mut expansion.apart);
     cx.map.along = std::mem::take(&mut expansion.along);
+    cx.map.unread = std::mem::take(&mut expansion.unread);
     // an instance drawn has its path; one cut short (a recursion refused) has none and is not one
     cx.map.instances = expansion.instances.iter().filter(|i| !i.drawn || !i.path.is_empty())
         .map(|i| super::Instanced { path: super::InstPath(i.path.clone()), prefix: i.prefix.clone(),
@@ -306,15 +317,44 @@ fn names(cx: &mut Elab<'_>, body: &[&Statement]) -> BTreeSet<StmtId> {
     let (p, res) = (cx.doc, &mut cx.res);
     let mut count: BTreeMap<EntKind, u32> = BTreeMap::new();
     let mut skip: BTreeSet<StmtId> = BTreeSet::new();
+    let mut unmade: BTreeSet<&str> = BTreeSet::new();
+    // what each name is declared as, where a corner round asks of its curves (#948): before
+    // any is counted, so one declared after the round is known too
+    let rounded = body.iter().any(|st| super::rounds::is_round(st));
+    let declared: BTreeMap<&str, EntKind> = match rounded {
+        true => body.iter().rev().filter_map(|st| match &st.kind {
+            StmtKind::Decl(d) => Some((d.name.key().text.as_str(), d.kind)),
+            _ => None,
+        }).collect(),
+        false => BTreeMap::new(),
+    };
     for st in body {
-        let (name, kind) = match &st.kind {
-            StmtKind::Decl(d) => (&d.name, d.kind),
-            StmtKind::Chain(c) => (&c.name, EntKind::Face),
+        let (name, kind, round) = match &st.kind {
+            StmtKind::Decl(d) => (&d.name, d.kind, d.round.as_deref()),
+            StmtKind::Chain(c) => (&c.name, EntKind::Face, None),
             _ => continue,
         };
         // the *key*, which is resolution's question: an anonymous key is its own offset and a
         // copy's carries its prefix, so only a name the source wrote twice can actually collide
         let key = &name.key().text;
+        // a corner round between a curve and the next where either is declared no line (#948):
+        // said once, at the round, and nothing of it made — its arc's ends would be that curve's
+        // `p2` and `p1`, which an arc has none of, and each row of it one over an arc never built
+        let no_line = |r: &crate::syntax::Ref| {
+            let kind = declared.get(r.root.text.as_str()).filter(|_| r.path.is_empty())?;
+            (*kind != EntKind::Line).then_some(*kind)
+        };
+        let curve = round
+            .and_then(|k| [&k.from, &k.to].into_iter().find_map(|r| Some((r, no_line(r)?))));
+        if let Some((r, other)) = curve {
+            let what = crate::syntax::ref_text(r);
+            cx.diags.push(Diag::within(Code::E040, st.span, st.id, format!(
+                "{}: round a curve's edge by a round of the solid it bounds",
+                super::rounds::not_lines(&what, &other.a()))));
+            skip.insert(st.id);
+            unmade.insert(key.as_str());
+            continue;
+        }
         if let Some(&was) = res.declared_at.get(key) {
             // …but the message shows what the source calls it, and spells the kind where it
             // calls it nothing, so a key cannot leak here even if that argument ever breaks
@@ -360,6 +400,16 @@ fn names(cx: &mut Elab<'_>, body: &[&Statement]) -> BTreeSet<StmtId> {
             let n = count.entry(EntKind::Point).or_insert(0);
             res.origins.insert(key.clone(), *n as usize);
             *n += 1;
+        }
+    }
+    // and what states a row of a round left unmade
+    for other in body.iter().filter(|_| !unmade.is_empty()) {
+        let StmtKind::Relation(rel) = &other.kind else { continue };
+        let reads = rel.form.written().is_some_and(|w| {
+            w.ops.iter().any(|o| unmade.contains(o.root.text.as_str()))
+        });
+        if reads {
+            skip.insert(other.id);
         }
     }
     skip
@@ -562,7 +612,7 @@ fn holds(
     // each normal read turned along its plane as the holds and the lines have stood it
     cx.sk.seed_normals();
     // a ring's copies, turns of its representative: after the holds, which a copy may not have
-    rings::rings(&mut cx.sk, &cx.res, &cx.map, &flat.expansion.rings, &mut cx.diags);
+    rings::rings(&mut cx.sk, &cx.res, &cx.map, &flat.expansion.rings, &cx.probes, &mut cx.diags);
     // a mirrored instance's images, over its preimage and the rings' copies in it (#578)
     super::mirrors::mirrors(&mut cx.sk, &mut cx.res, &mut cx.map, &flat.expansion.instances,
                             &mut cx.diags);

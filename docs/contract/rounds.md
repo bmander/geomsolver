@@ -281,8 +281,9 @@ plane meets a coaxial cylinder or cone: the section in the meridian at its start
 angle, `Ring::angle`; a sphere centred on the axis is a circle in the meridian (`Trace::Circle`,
 `knob.sv`'s neck); a stretch ends at seams, at planes through the axis at its ends' meridians,
 or at a plane not through it — carried on round until its whole section has crossed it (each
-point's first crossing a sinusoid's root, `first_over`), and kept within it, #218: a D's rim at
-its flat — or at a cylinder or a sphere it runs into, carried a
+point's first crossing a sinusoid's rising root, `first_over` — a point on the plane at the
+stretch's end rising there at once, never a turn on, #948), and kept within it, #218: a D's rim
+at its flat — or at a cylinder or a sphere it runs into, carried a
 quarter of the way through what its section's points spend in that solid and kept on its side,
 `Kept`: the twin bar's rim), a run and a stretch going on from one
 another **glued** at their shared section (a face going on tangent across a seam is no end,

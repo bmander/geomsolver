@@ -360,7 +360,10 @@ came from.
   copy's, its representative's); and, on a stated statement, three orientations through
   `Gauges::orient` — the centre on the turn's side of `A`, of `B` and of its chord — so the one
   root is the round inside the corner.  A corner straight through or folded back as seeded is
-  E040.  `Sketch::rounds` (`model::Round`) carries each, and `model::overruns` says after a solve,
+  E040.  A side the parser could not know the kind of (a reference) that names a curve declared
+  before the round is E040 once, at the round, naming it (`program::names`, #948), and nothing
+  of the round made or stated — its `re.p2` named nothing an arc has, said at 1:1, and each row
+  over an arc never built followed.  `Sketch::rounds` (`model::Round`) carries each, and `model::overruns` says after a solve,
   in `Diagnosis::warnings`, a round past its line's end (with the radius that fits) and two
   overlapping on one line.  `render_flat` refuses it.  `tests/corner_rounds.rs` is the gate: the
   slot's pocket to `rounds/slot.sv`'s longhand to 1e-9 in volume, drafted and with its solid

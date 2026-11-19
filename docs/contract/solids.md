@@ -125,7 +125,11 @@ placement carries inside the blank; CLI test readers zero the offset.
   `clear()`); a clone keeps every entry, sharing the `Rc`/`Arc` results, and then remembers apart
   — what a copy read slightly changed (`preview_body`, a body's stratum) reuses for its operands.
   **An evaluated solid is keyed on its shape, and a solid that only moved is moved** (#412):
-  `Caches::solid` keeps each evaluation against a `solid::ShapeKey` — what `reads` reads, but
+  `Caches::solid` keeps each evaluation against a `solid::ShapeKey` — what `reads` reads (a
+  region's term reading each entity it measures by its kind, `reads::entity_reads`: a face by its
+  loops and its plane, a plane by its attitude, a curve by its numbers, its points where they
+  stand and their planes — never a face's number taken for a plane's, which read another plane's
+  pose into a countersink's key and panicked where faces outnumber planes, #948), but
   every plane's pose rewritten relative to a reference plane (the first face's, found as
   `frame_origin` finds the origin), and that plane's world pose apart.  Two keys of one shape
   (`same_shape`: every number within the solve's step tolerance, `solve::XTOL`, of the larger or
@@ -610,12 +614,22 @@ placement carries inside the blank; CLI test readers zero the offset.
   the document holds it (`refused::Placing`): a site in a module at the deepest instance on its
   path the document holds (the round that used `std.rounds.round`), else at the `use`
   (`modules::localize`).  `tests/refused_once.rs` is the gate.
+  A solid refused in words that lead through another (`` `x`: `part`'s faces: `filled[3]`: … ``,
+  a round's piece reading the faces of a body another round left unbuilt) is built on that one
+  (#948, `refused::chained_cause`), so the round the kernel refused is the root, said in its own
+  words from its name on, and each statement reading its body a note.
   An export refused in a solid's words (`` `b.#31.0.#…filled`: its exact construction disagrees
   with the field ``) is said the same way (#881, `program::refusal_site`): at the document's
-  statement that made the first solid it names, placed by `Placing` — a round's piece at its round
-  — `solventc` printing it `file:line:col: error[E080]` as every diagnostic; at the exported
-  solid's statement where it names none.
-  `round_lowering::a_refused_rounds_piece_is_said_at_its_round` is the gate.
+  statement that made the innermost solid its chain names (`` `c`: `` or `` `c`'s ``, else the
+  first solid it names), placed by `Placing` — a round's piece at its round — `solventc` printing
+  it `file:line:col: error[E080]` as every diagnostic, from that solid's name on and once a
+  statement however many exports reach it; at the exported solid's statement where it names none.
+  A refusal calls a solid by `Sketch::solid_said`: the name it is called, or its key where solids
+  made apart go by that name (two rounds over one body each make a `filled[3]`), which places
+  none (#948); where it is said, every key in it (a kernel's face, `#71.0.#7.1.taken.round`)
+  reads as its path (`vocab::public_words`, `taken[1].round`).
+  `round_lowering::a_refused_rounds_piece_is_said_at_its_round` and
+  `refused_once::a_refusal_is_said_at_its_round_by_the_names_the_document_reads` are the gates.
   A continuous sweep is drawn by its material field alone, so one whose field cannot be read is
   refused too (`solid::refusal`, what `refused` asks of every solid), at its statement and in a solved document as in any other (#588: "`space` sweeps
   `pyramid`, whose material the field does not read: …"), and what is built on it follows as

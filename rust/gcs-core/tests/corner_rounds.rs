@@ -423,3 +423,23 @@ fn the_shipped_handle_is_dimensioned_over_its_rounds() {
     let g = gestures::build(&src);
     assert!(gestures::volume(&g, "handle") > 0.0);
 }
+
+/// **A round between curves declared elsewhere** (#948): `re -> round(r: 18mm) -> tl`, `re` an
+/// arc declared before it.  The parser cannot know `re`'s kind, so it writes the round's arc from
+/// `re.p2`, which an arc has none of: said at line 1, column 1, then each row of the round over
+/// an arc never built, by its key.  Now said once, at the round, by the name written there, and
+/// nothing of the round stated.
+#[test]
+fn a_round_from_an_arc_declared_elsewhere_is_said_once_at_the_round() {
+    let src = "unit mm\nuse std\nin std.top {\n  o := point\n  fix((0, 0)) o\n\
+        p1 := point hint((80, -60))\n  p2 := point hint((80, 60))\n  fix(y == -60mm) p1\n\
+        fix(y == 60mm) p2\n  p3 := point\n  fix((-80, 60)) p3\n\
+        re := arc(center: o, start: p1, end: p2) hint(r: 100)\n  radius(100mm) re\n\
+        tl := line(p2, p3)\n  re -> round(r: 18mm) -> tl\n}\n";
+    let (prog, errs) = crate::common::parse(src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = gcs_core::program::elaborate(&prog);
+    let said: Vec<_> = e.errors().map(|d| (d.at(e.text()).0, d.message.as_str())).collect();
+    assert_eq!(said, [(15, "a round rounds the corner where two lines meet, and `re` is an arc: \
+        round a curve's edge by a round of the solid it bounds")]);
+}

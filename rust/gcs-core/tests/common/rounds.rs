@@ -38,6 +38,12 @@ pub fn solve3(rows: [V; 3], rhs: V) -> Option<V> {
 // -- closed forms ------------------------------------------------------------------------------
 
 
+/// The area of a disc of radius `r` between flats at `y = ±h`:
+/// `2(h√(r² − h²) + r² asin(h/r))`.
+pub fn disc_band(r: f64, h: f64) -> f64 {
+    2.0 * (h * (r * r - h * h).sqrt() + r * r * (h / r).asin())
+}
+
 /// The stack's Steiner volume of a box `l × w × h` rounded all over: the inset box grown by a
 /// ball.
 pub fn rounded_box([l, w, h]: [f64; 3], r: f64) -> f64 {

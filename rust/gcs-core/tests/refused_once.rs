@@ -75,3 +75,54 @@ fn no_piece_of_a_region_is_a_diagnostic() {
             && !d.message.contains("filled"), "{d:?}");
     }
 }
+
+/// **A refusal names what the document reads, where the document made it** (#948): a key a
+/// block made is said by its path (`#71.0.#7.1.taken.round` is `taken[1].round`), an issue's
+/// number is left alone; a name two rounds' pieces both go by places neither, so a refusal of one
+/// of them names it by its key (`Sketch::solid_said`), which places it; and the bullnose's root
+/// round, crossing the seam off its section, refused in an export after another round over the
+/// slab, is said at the root round in its own words, no key left in them.
+#[test]
+fn a_refusal_is_said_at_its_round_by_the_names_the_document_reads() {
+    use gcs_core::vocab::public_words;
+    assert_eq!(public_words("`#71.0.#7.1.taken.round` with `b1.post.rim` (#218): #3.0.cut"),
+               "`taken[1].round` with `b1.post.rim` (#218): cut[0]");
+    let no_key = "a key `#12` is none, nor is #4's";
+    assert_eq!(public_words(no_key), no_key);
+    let src = include_str!("../../examples/rounds/bullnose.sv")
+        .replace("fix((0, 0)) q", "fix((0, -1)) q")
+        .replace("part.boss round(r: 1mm) part.slab",
+                 "part.slab.cd round(r: 1mm) part.slab\npart.boss round(r: 1mm) part.slab");
+    let mut e = crate::common::build(&src);
+    solve(&mut e.sketch, SolveOpts::default());
+    let sk = &e.sketch;
+    let line = |span: gcs_core::syntax::Span| {
+        let (l, _) = gcs_core::syntax::line_col(e.program.text(), span.lo);
+        src.lines().nth(l as usize - 1).map(str::trim).unwrap_or_default().to_string()
+    };
+    // a name both rounds' pieces go by: placed by neither, each placed by its key at its round
+    let at = |i: usize| {
+        let by_key = format!("`{}`: refused", sk.solids[i].name);
+        program::refusal_site(sk, &e.map, &e.program, &by_key).map(|(span, _)| line(span))
+    };
+    let names: Vec<String> = (0..sk.solids.len()).map(|i| sk.solid_name(i)).collect();
+    let shared = (0..names.len()).find(|&i| names[i].contains('[')
+        && (0..names.len()).any(|j| j != i && names[j] == names[i] && at(j) != at(i)))
+        .unwrap_or_else(|| panic!("a piece's name both rounds make: {names:?}"));
+    assert_eq!(sk.solid_said(shared), sk.solids[shared].name);
+    assert_eq!(sk.solid_said(0), "slab", "a name one solid goes by is said");
+    let by_name = format!("`{}`: refused", names[shared]);
+    assert!(program::refusal_site(sk, &e.map, &e.program, &by_name).is_none(), "{by_name}");
+    let by_key = format!("`{}`: refused", sk.solid_said(shared));
+    let (span, _) = program::refusal_site(sk, &e.map, &e.program, &by_key).expect("placed");
+    assert!(line(span).contains(" round(r: 1mm) "), "{}", line(span));
+    // the export's refusal, at the root round, in its own words
+    use gcs_core::brep::{export, sweep::Say};
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    let part = e.map.ent_named("part").unwrap().i();
+    let why = export::exact(sk, part, None, None, &say).err().expect("refused").message;
+    let (span, _, from) = program::refusal_cause(sk, &e.map, &e.program, &why).expect("placed");
+    assert_eq!(line(span), "part.boss round(r: 1mm) part.slab", "{why}");
+    let words = public_words(&why[from..]);
+    assert!(!words.contains('#') && words.contains("crosses their seam"), "{words}");
+}

@@ -1499,3 +1499,48 @@ fn a_lug_rounded_all_over_is_refused_by_the_kernel() {
     let why = refused(&solved(&src), "lug");
     assert!(why.contains("nearly touching") && why.contains("ill-conditioned") || why.contains("pieces do not close"), "{why}");
 }
+
+/// A plate 30 deep whose outline is the disc of radius 100 between flats at `y = ±60`: two arcs
+/// about one centre, each ending on a flat that does not pass through the axis, or — with
+/// `one_arc` — its left arc a line.  `rounded` is the round statement, over `base`'s faces.
+fn arcs_between_flats(one_arc: bool, rounded: &str) -> String {
+    let left = match one_arc {
+        true => "le := line(p3, p4)",
+        false => "le := arc(center: o, start: p3, end: p4) hint(r: 100)",
+    };
+    format!("unit mm\nuse std\nuse std.solids\nuse std.rounds (round)\nin std.top {{\n\
+        o := point\n  fix((0, 0)) o\n  p1 := point\n  p2 := point\n  p3 := point\n  p4 := point\n\
+        fix((80, -60)) p1\n  fix((80, 60)) p2\n  fix((-80, 60)) p3\n  fix((-80, -60)) p4\n\
+        re := arc(center: o, start: p1, end: p2) hint(r: 100)\n  tl := line(p2, p3)\n\
+        {left}\n  bl := line(p4, p1)\n}}\n\
+        base := solid(std.solids.Prism(face(re, tl, le, bl), from: 0mm, to: 30mm))\n\
+        {rounded}\n")
+}
+
+/// **A stretch of a circle carried past an end on a plane** (#948): its section's point on the
+/// edge itself starts on the end's plane, where its sinusoid rises from nothing at once — its
+/// root read a rounding below the start, a whole turn on, and the falling root taken for where it
+/// goes over (`piece::first_over`).  The arc's round was carried 106° past each end and kept
+/// between the flats, its ring reaching the far corners of the plate, where the field reads none
+/// of it: refused, whatever stood there — a corner of two lines on the plate's other side.  Now
+/// carried to where its section has crossed the flat: the arc's rim alone is the plate less its
+/// R10 spandrel turned about the axis between the flats (`∫ h(ρ) ρ 2 asin(60/ρ) dρ` over the
+/// spandrel's depth), and the whole rim, over one arc or two about one centre, is built.
+#[test]
+fn a_stretch_of_a_circle_ending_on_planes_off_its_axis_is_carried_to_them() {
+    let plate = crate::common::rounds::disc_band(100.0, 60.0) * 30.0;
+    // the spandrel 10 deep at radius ρ = 90 + 10 sin t: 10 − 10 cos t, so dρ = 10 cos t dt
+    let n = 20000;
+    let spandrel: f64 = (0..n).map(|i| {
+        let t = (i as f64 + 0.5) * (PI / 2.0) / n as f64;
+        let rho = 90.0 + 10.0 * t.sin();
+        (10.0 - 10.0 * t.cos()) * rho * 2.0 * (60.0 / rho).asin() * 10.0 * t.cos()
+    }).sum::<f64>() * (PI / 2.0) / n as f64;
+    let e = solved(&arcs_between_flats(false, "base.near round(r: 10mm) base.re"));
+    close(props::volume(&exported(&e, "base")), plate - spandrel);
+    for one_arc in [true, false] {
+        let e = solved(&arcs_between_flats(one_arc, "base.near round(r: 10mm) base"));
+        let v = props::volume(&exported(&e, "base"));
+        assert!(v < plate - spandrel, "one arc {one_arc}: the whole rim takes more: {v}");
+    }
+}

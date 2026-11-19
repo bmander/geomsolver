@@ -977,8 +977,13 @@ fn dwell(over: impl Fn(f64) -> f64) -> Option<[f64; 2]> {
 }
 
 /// Of `a cos φ + b sin φ + c` over `φ >= 0`, where it first goes over nothing (at once where it
-/// starts over); none where it never does.
+/// starts over); none where it never does.  `a cos φ + b sin φ` is `A cos(φ − phase)`, rising
+/// through `−c` at `phase − spread` and falling at `phase + spread`: from nothing or less it first
+/// goes over where it rises, never where it falls (#948).  A section's point on the end's plane
+/// (the edge's own end, `a + c` nothing) rises at the start itself, its root read a rounding below
+/// it — a whole turn on, which the falling root came before: the start.
 fn first_over(a: f64, b: f64, c: f64) -> Option<f64> {
+    use std::f64::consts::TAU;
     if a + c > 0.0 {
         return Some(0.0);
     }
@@ -987,7 +992,8 @@ fn first_over(a: f64, b: f64, c: f64) -> Option<f64> {
         return None;
     }
     let (phase, spread) = (b.datan2(a), (-c / amplitude).dacos());
-    Some([phase - spread, phase + spread].map(|x| x.rem_euclid(std::f64::consts::TAU)).into_iter().fold(f64::INFINITY, f64::min))
+    let rise = (phase - spread).rem_euclid(TAU);
+    Some(if rise > TAU - 1e-9 { 0.0 } else { rise })
 }
 
 /// The half-spaces `n·x <= d` of the planes among a run's `ends` (`end_sides`' faces and the

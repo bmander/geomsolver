@@ -266,3 +266,33 @@ pub fn public_path(name: &str) -> String {
     }
     path.join(".")
 }
+
+/// **A message with every key in it said by its public path** (#948): each word that is a key
+/// a block made (`#71.0.#7.1.taken.round`, a statement's id and a copy's, then the name) said as
+/// `public_path` says it (`taken[1].round`) — what a kernel names a face by, or a refusal a solid
+/// its name is shared by (`Sketch::solid_said`), shown where the document is read.  A key is `#`,
+/// digits and a dot, then more of a name; an issue's number (`#218`) is none and stays.
+pub fn public_words(message: &str) -> String {
+    let word = |c: char| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '#' | '[' | ']');
+    let mut out = String::with_capacity(message.len());
+    let mut rest = message;
+    while let Some(at) = rest.find('#') {
+        let starts = rest[..at].chars().next_back().is_none_or(|c| !word(c));
+        let len = rest[at..].find(|c: char| !word(c)).unwrap_or(rest.len() - at);
+        let token = rest[at..at + len].trim_end_matches('.');
+        let digits = token[1..].bytes().take_while(u8::is_ascii_digit).count();
+        let keyed = starts && digits > 0 && token[1 + digits..].starts_with('.')
+            && token.len() > 2 + digits;
+        let public = if keyed { public_path(token) } else { String::new() };
+        out.push_str(&rest[..at]);
+        if public.is_empty() {
+            out.push('#');
+            rest = &rest[at + 1..];
+        } else {
+            out.push_str(&public);
+            rest = &rest[at + token.len()..];
+        }
+    }
+    out.push_str(rest);
+    out
+}

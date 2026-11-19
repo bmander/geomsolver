@@ -50,23 +50,64 @@ impl<'a> Placing<'a> {
     }
 }
 
-/// **Where a refusal is said** (#881): the document's statement that made the solid a message
-/// names — the first name in backticks that is a solid's, as the document calls it
-/// (`Sketch::solid_name`, #904) or by its key — placed as `solid_diagnostics` places it
-/// (`Placing`: what a word of a module made, at the document's statement that used it), so a
-/// round's piece refused deep in an export (`` `b.#…filled`: its exact construction disagrees
-/// with the field ``) is said at its round.  Copies a name goes by alike (a block's within a
-/// block's copy) are made by one statement, so the first is placed.  `None` where the message
-/// names no solid, or none the document holds.
+/// **Where a refusal is said** (#881): the document's statement that made the solid at the root
+/// of its words — a refusal of what is built on another reads as a chain, `` `a`: `b`'s faces:
+/// `c`: why ``, and the innermost solid it names so (`` `c`: `` or `` `c`'s ``) is the cause —
+/// placed as `solid_diagnostics` places it (`Placing`: what a word of a module made, at the
+/// document's statement that used it), so a round's piece refused deep in an export (`` `b.#…
+/// filled`: its exact construction disagrees with the field ``) is said at its round, and a
+/// chamfer read over a body that round left unbuilt is said there too (#948).  A solid is named
+/// by its key or as the document calls it (`Sketch::solid_name`): copies a name goes by alike (a
+/// block's within a block's copy) are made by one statement, so placed there; a name solids made
+/// apart go by (two rounds over one body each make a `filled[3]`) places none, so a refusal calls
+/// such a solid by its key (`Sketch::solid_said`).  `None` where the message names no solid, or
+/// none the document holds.
 pub fn refusal_site(sk: &Sketch, map: &SourceMap, p: &Program, message: &str)
     -> Option<(Span, Option<StmtId>)> {
-    let solid = message.split('`').skip(1).step_by(2).find_map(|name| {
-        sk.solids.iter().position(|s| s.name == name)
-            .or_else(|| (0..sk.solids.len()).find(|&i| sk.solid_name(i) == name))
-    })?;
+    refusal_cause(sk, map, p, message).map(|(span, stmt, _)| (span, stmt))
+}
+
+/// `refusal_site`, with where in `message` its cause's words begin: the backtick opening the
+/// innermost solid's name, from which on the message says the cause alone.
+pub fn refusal_cause(sk: &Sketch, map: &SourceMap, p: &Program, message: &str)
+    -> Option<(Span, Option<StmtId>, usize)> {
     let place = Placing::new(p);
-    let (span, stmt) = place.site(Some(map.site_of(EntRef::solid(solid))?));
-    place.in_document(span).then_some((span, stmt))
+    let site = |i: usize| map.site_of(EntRef::solid(i)).map(|s| place.site(Some(s)));
+    let solid = |name: &str| {
+        if let Some(i) = sk.solids.iter().position(|s| s.name == name) {
+            return site(i);
+        }
+        let mut sites = (0..sk.solids.len()).filter(|&i| sk.solid_name(i) == name).map(site);
+        let first = sites.next()??;
+        sites.all(|s| s == Some(first)).then_some(first)
+    };
+    let names = backticked(message);
+    let chained = names.iter().rev().filter(|n| n.2);
+    let (span, stmt, from) = chained.chain(names.iter().filter(|n| !n.2))
+        .find_map(|&(open, name, _)| solid(name).map(|(span, stmt)| (span, stmt, open)))?;
+    place.in_document(span).then_some((span, stmt, from))
+}
+
+/// Each name between backticks in `message`, where its opening backtick stands, and whether a
+/// chain of refusals goes on through it (`` `x`: `` or `` `x`'s ``).
+fn backticked(message: &str) -> Vec<(usize, &str, bool)> {
+    let mut names = Vec::new();
+    let mut at = 0;
+    while let Some(open) = message[at..].find('`').map(|k| at + k) {
+        let Some(close) = message[open + 1..].find('`').map(|k| open + 1 + k) else { break };
+        let after = &message[close + 1..];
+        let chained = after.starts_with(": ") || after.starts_with("'s ");
+        names.push((open, &message[open + 1..close], chained));
+        at = close + 1;
+    }
+    names
+}
+
+/// The innermost solid a refusal's chain names (`refusal_cause`), as a name picks one
+/// (`Sketch::solid_called`), and where its words begin.
+fn chained_cause(sk: &Sketch, message: &str) -> Option<(usize, usize)> {
+    backticked(message).into_iter().rev().filter(|n| n.2)
+        .find_map(|(open, name, _)| Some((sk.solid_called(name).ok()?, open)))
 }
 
 /// What each solid is built on, which of them are refused (in their own words), and which of
@@ -83,11 +124,26 @@ impl<'a> Causes<'a> {
     fn new(sk: &'a Sketch) -> Causes<'a> {
         // every solid but a body, refused where it is not built (`solid::refusal`: a sweep whose
         // field cannot be read too, #588): a body's refusal is its operands'
-        let refused = sk.solids.iter().enumerate()
+        let mut refused: BTreeMap<usize, String> = sk.solids.iter().enumerate()
             .filter(|(_, s)| !matches!(s.def, SolidDef::Body { .. }))
             .filter_map(|(i, _)| Some((i, crate::solid::refusal(sk, i).err()?)))
             .collect();
-        let on = (0..sk.solids.len()).map(|i| crate::solid::built_on(sk, i)).collect();
+        let mut on: Vec<Vec<usize>> =
+            (0..sk.solids.len()).map(|i| crate::solid::built_on(sk, i)).collect();
+        // and on the solid its own words lead to (#948): a round's piece reading the faces of a
+        // body another round left unbuilt says `` `x`: `part`'s faces: `filled[3]`: … ``, built
+        // on that one though no operand of it is — refused in those words, where the kernel met
+        // it only building the body's faces, and only where it is not built alone either (a
+        // swept body's operand whose field is unread is built, and the sweep is the fault)
+        let led: Vec<(usize, usize, String)> = refused.iter().filter_map(|(&i, message)| {
+            let (j, from) = chained_cause(sk, message).filter(|&(j, _)| j != i)?;
+            let unbuilt = refused.contains_key(&j) || sk.exact_preimage(j).is_err();
+            unbuilt.then(|| (i, j, message[from..].to_string()))
+        }).collect();
+        for (i, j, words) in led {
+            refused.entry(j).or_insert(words);
+            on[i].push(j);
+        }
         let mut causes = Causes { sk, refused, on, root: BTreeSet::new() };
         causes.root = causes.refused.keys().copied()
             .filter(|&i| causes.below(&causes.on[i]).iter().all(|&j| j == i))
@@ -162,7 +218,8 @@ pub(super) fn solids(sk: &Sketch, map: &SourceMap, place: &Placing) -> Vec<Diag>
         // a solid with no root below it (refused solids built on one another all round) is said
         // in its own words as well
         if under.is_empty() {
-            roots.insert(i, Diag::new(Code::E080, at.0, at.1, message.clone()));
+            // said as the document reads it: a key a kernel or a shared name put in it, its path
+            roots.insert(i, Diag::new(Code::E080, at.0, at.1, crate::vocab::public_words(message)));
         } else {
             note(at, &causes.on[i], under);
         }
@@ -185,7 +242,8 @@ pub(super) fn solids(sk: &Sketch, map: &SourceMap, place: &Placing) -> Vec<Diag>
     for (span, u) in unbuilt {
         let named: Vec<String> = u.roots.iter().map(|r| {
             let (line, col) = crate::syntax::line_col(place.p.text(), said[r].lo);
-            format!("`{}` ({line}:{col})", sk.solids[*r].name)
+            // its path, as the document reads it: where it is said tells it from a namesake
+            format!("`{}` ({line}:{col})", crate::vocab::public_path(&sk.solids[*r].name))
         }).collect();
         let named = match named.split_last() {
             Some((last, [])) => last.clone(),

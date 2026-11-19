@@ -1366,16 +1366,27 @@ fn severity(s: Severity) -> &'static str {
 }
 
 /// An export refused: said on stderr in the core's words, recorded at the stage it was met at
-/// for a harness, and reported as a diagnostic at the statement that made the solid it names (a
-/// round's piece at its round, #881: `file:line:col`, as every diagnostic), else at the solid's
-/// own statement.
+/// for a harness, and reported as a diagnostic at the statement that made the solid at its root
+/// (a round's piece at its round, #881: `file:line:col`, as every diagnostic), else at the
+/// solid's own statement.  Placed, it says its cause's words alone, once: every solid built on a
+/// round the kernel refused reaches it, and each would say it again (#948).
 fn refused(s: &Source,sk: &Sketch,e: &mut gcs_core::program::Elaborated,solid: usize,refusal: gcs_core::solid::export::ExportRefusal) {
     cad::progress::refused(refusal.stage);
-    let named = gcs_core::program::refusal_site(sk,&e.map,&e.program,&refusal.message);
-    let (span,stmt) = named.or_else(|| e.map.site_of(gcs_core::model::EntRef::solid(solid))
-        .map(|s| (s.span,Some(s.stmt)))).unwrap_or_default();
-    let d = gcs_core::program::Diag::new(gcs_core::program::Code::E080,span,stmt,refusal.message);
-    match named {
+    let cause = gcs_core::program::refusal_cause(sk,&e.map,&e.program,&refusal.message);
+    let (span,stmt) = cause.map(|(span,stmt,_)| (span,stmt))
+        .or_else(|| e.map.site_of(gcs_core::model::EntRef::solid(solid))
+            .map(|s| (s.span,Some(s.stmt))))
+        .unwrap_or_default();
+    // placed by the words as the core wrote them, then said as the document reads them
+    let words = cause.map_or(refusal.message.as_str(),|(_,_,from)| &refusal.message[from..]);
+    let message = gcs_core::vocab::public_words(words);
+    let d = gcs_core::program::Diag::new(gcs_core::program::Code::E080,span,stmt,message);
+    let again = |said: &gcs_core::program::Diag| said.code == d.code && said.span == d.span
+        && said.message == d.message;
+    if e.diags.iter().any(again) {
+        return;
+    }
+    match cause {
         Some(_) => say(s,d.span.lo,severity(d.severity()),d.code.as_str(),&d.message),
         None => eprintln!("solventc: {}",d.message),
     }

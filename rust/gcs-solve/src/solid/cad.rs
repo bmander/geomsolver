@@ -187,7 +187,7 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool,about: Option<[f64;3]>)
         let shell = match shells.get(&i) {
             Some(s) => s.clone(),
             None => {
-                let s = super::shelled::built(sk,i).transpose().map_err(|why| format!("`{}`: {why}",sk.solid_name(i)))?;
+                let s = super::shelled::built(sk,i).transpose().map_err(|why| said(sk,i,why))?;
                 shells.insert(i,s.clone());
                 s
             }
@@ -355,8 +355,8 @@ impl<'a> Walk<'a> {
                 // over a body's faces, an entry of the lowering table (#194): its pieces, with those
                 // of the regions it stands for in its body's set
                 super::region::Route::Lowered(l) => {
-                    if l.map_err(|e| format!("`{}`: {e}",sk.solid_name(i)))?.is_empty() {
-                        return Err(format!("`{}` holds nowhere",sk.solid_name(i)))
+                    if l.map_err(|e| said(sk,i,e))?.is_empty() {
+                        return Err(format!("`{}` holds nowhere",sk.solid_said(i)))
                     }
                     let members = self.groups.get(&i).cloned().unwrap_or_else(|| vec![i as u32]);
                     let pieces: Vec<_> = members.into_iter().map(|o| self.pieces_of(o)).collect();
@@ -377,7 +377,7 @@ impl<'a> Walk<'a> {
                     // late ones make it, all built before this (they come first in its dependencies)
                     if !assembly.rolled.is_empty() {
                         let Some((&b,(sets,_))) = body else {
-                            return Err(format!("`{}`: a rolled round is built against the body it rounds",sk.solid_name(i)));
+                            return Err(format!("`{}`: a rolled round is built against the body it rounds",sk.solid_said(i)));
                         };
                         let SolidDef::Body {stock,bound,..} = &sk.solids[b].def else { unreachable!("a body's sets") };
                         node.set("stratum",body_terms(*stock,&sets[0],&sets[1],bound));
@@ -386,18 +386,18 @@ impl<'a> Walk<'a> {
                 }
                 // in general position: the common of its terms' primitives, where they are ones that
                 // construction makes (#238)
-                super::region::Route::Bounded(b) => b.map_err(|e| format!("`{}`: {e}",sk.solid_name(i)))?.node(w)?,
+                super::region::Route::Bounded(b) => b.map_err(|e| said(sk,i,e))?.node(w)?,
                 // within reach of a body: the body and what lies within reach of each face, edge
                 // and corner, glued to it
-                super::region::Route::Grown(g) => g.map_err(|e| format!("`{}`: {e}",sk.solid_name(i)))?.node(w)?,
-                super::region::Route::Field(why) => return Err(format!("`{}`: {why}",sk.solid_name(i))),
+                super::region::Route::Grown(g) => g.map_err(|e| said(sk,i,e))?.node(w)?,
+                super::region::Route::Field(why) => return Err(said(sk,i,why)),
                 // a face carried over an interval of a constant twist (#846): its profile where the
                 // interval begins, carried to where it ends
-                super::region::Route::Carried(c) => c.map_err(|e| format!("`{}`: {e}",sk.solid_name(i)))?.node(sk,w)?,
+                super::region::Route::Carried(c) => c.map_err(|e| said(sk,i,e))?.node(sk,w)?,
                 // a panel's band (#645): its ruled walls are not yet written exactly
-                super::region::Route::Sheet(_) => return Err(format!("`{}`: a developable panel's \
-                    band is faceted from its rulings; its exact ruled walls are not yet written to \
-                    STEP",sk.solid_name(i))),
+                super::region::Route::Sheet(_) => return Err(said(sk,i,"a developable panel's \
+                    band is faceted from its rulings; its exact ruled walls are not yet written \
+                    to STEP")),
                 // on one axis: its meridian turned once about it (§6.21)
                 super::region::Route::Meridian(m) => {
                     let name = |t: u32| m.name(t);
@@ -597,4 +597,13 @@ pub(super) fn profile(sk: &Sketch,index: usize,w: &Writer) -> Result<Json,String
         .collect::<Result<Vec<_>,_>>()?;
     Ok(object([("loops",Json::Arr(loops)),("origin",w.plane_origin(p.basis.o.map(|v| v*scale),p.basis.normal())),
         ("normal",vector(p.basis.normal()))]))
+}
+
+/// A refusal of solid `i` in its words: `` `name`: why `` (`Sketch::solid_said`), its name not
+/// said again where `why` begins with the solid's key already — a region's refusal names its
+/// solid, and a chain reads `` `x`: x: `` (#948).
+fn said(sk: &Sketch,i: usize,why: impl std::fmt::Display) -> String {
+    let why = why.to_string();
+    let key = format!("{}: ",sk.solids[i].name);
+    format!("`{}`: {}",sk.solid_said(i),why.strip_prefix(&key).unwrap_or(&why))
 }
