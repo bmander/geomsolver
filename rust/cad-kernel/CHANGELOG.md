@@ -57,6 +57,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   a drum's rim touching a parabolic channel's two extruded walls at a point each is refused with
   nothing given, and read there, its volumes to the rounding, given the walls' meetings and the points.
 
+## [0.17.0] - 2026-11-19
+
 - **One fallback for shallow meetings, marched in both surfaces' parameters** (#942 F1): where the
   trace is refused as shallow, `meeting::marched` marches each seed no branch holds along the
   solutions of `A(u_a, v_a) = B(u_b, v_b)` — the general road's four-parameter march, moved into the

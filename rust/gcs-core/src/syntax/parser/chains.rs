@@ -7,7 +7,8 @@ use crate::style::Classes;
 use crate::syntax::lexer::Tok;
 use crate::syntax::names::refs_eq;
 use crate::syntax::words::{
-    self, joint_word, link_word, named_link_at, opens_link, past_args, prefix_word,
+    self, anonymous_link_at, joint_word, link_word, named_link_at, opens_link, paren_link_at,
+    past_args, prefix_word,
     word_at, BLOCKS, OPENERS,
 };
 use crate::syntax::{
@@ -292,8 +293,9 @@ fn end_ref(link: &Link, slot: usize) -> Ref {
 impl<'a> P<'a> {
     /// Whether what stands here opens a declaration — possibly a chain of them.
     pub(super) fn chain_starts(&self) -> bool {
-        // `(ab := line(a, b)) -> …` — a link named where it stands
-        if named_link_at(&self.t, self.i) {
+        // `(ab := line(a, b)) -> …` — a link named where it stands, or one in parentheses
+        // naming nothing, `(line(a, b)) -> …` (#952)
+        if paren_link_at(&self.t, self.i) {
             return true;
         }
         let Some(Tok::Ident(w)) = self.peek() else { return false };
@@ -503,7 +505,7 @@ impl<'a> P<'a> {
             // the retired 0.8 list, caught so a document written against it says what to write
             if (thread || !words.is_empty())
                 && self.peek() == Some(&Tok::P('('))
-                && !named_link_at(&self.t, self.i)
+                && !paren_link_at(&self.t, self.i)
             {
                 self.fail("a joint states its relations as bare words: `-> equal angle(30deg)` (spec §6.6)");
             }
@@ -744,15 +746,22 @@ impl<'a> P<'a> {
     fn link(&mut self, name: Option<Name>) -> Option<Link> {
         let mut prefixes: Vec<(Name, Vec<OpArg>)> = Vec::new();
         let kind = loop {
-            // `(ab := line(a, b))` — the link named where it stands
-            if name.is_none() && named_link_at(&self.t, self.i) {
+            // `(ab := line(a, b))` — the link named where it stands — or `(line(a, b))`, its
+            // parentheses around a link naming nothing (#952): the bare link, `line(a, b)`
+            let named = name.is_none() && named_link_at(&self.t, self.i);
+            if named || anonymous_link_at(&self.t, self.i) {
                 let lo = self.here().lo as usize;
+                self.i += 1; // `(`
+                let n = if named {
+                    let n = self.ident()?;
+                    self.i += 1; // `:=`
+                    Some(n)
+                } else {
+                    name.clone()
+                };
+                let kind = EntKind::parse(self.word_at(self.i)?).expect("paren_link_at");
                 self.i += 1;
-                let n = self.ident()?;
-                self.i += 1; // `:=`
-                let kind = EntKind::parse(self.word_at(self.i)?).expect("named_link_at");
-                self.i += 1;
-                let decl = self.decl(kind, Some(n))?;
+                let decl = self.decl(kind, n)?;
                 if !self.want_p(')') {
                     return None;
                 }

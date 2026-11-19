@@ -28,9 +28,9 @@ pub(super) fn validate_chain(
     for r in &c.links {
         let e = res.entity(sk, r).filter(|e| e.i() < sk.count(e.kind));
         // a round at a right turn is drawn from its end, and walked from its start as written
-        // (#576)
-        let back = |e: EntRef| e.kind == EntKind::Arc
-            && sk.rounds.iter().any(|k| k.arc as usize == e.i() && k.turn < 0);
+        // (#576), as is an arc said to turn clockwise (#573, #952)
+        let back = |e: EntRef| e.kind == EntKind::Arc && (sk.arc_reversed(e.i())
+            || sk.rounds.iter().any(|k| k.arc as usize == e.i() && k.turn < 0));
         let pair = e.filter(|e| matches!(e.kind, EntKind::Line | EntKind::Arc))
             .and_then(|e| crate::model::edge_ends(sk, e).map(|(s, t)| match back(e) {
                 true => (t, s),
@@ -366,10 +366,18 @@ fn walk_items(
         .map(|i| !chord && (contains((i + 1) % n, ends[i].0) || contains((i + 1) % n, ends[i].1)))
         .collect();
     // An edge with no meeting neighbour has two unstated readings.  Refuse it before
-    // choosing directions, so inserting closing lines cannot choose a shape by accident.
+    // choosing directions, so inserting closing lines cannot choose a shape by accident —
+    // unless its neighbours either side are one corner (#952): an arc and its centre,
+    // `face(rim, o, -> close)`, walked either way is one pie slice, runs minted to the corner
+    // from both of the arc's ends.
     let walked = ends.len();
+    let one_corner = |i: usize| {
+        let (prev, next) = ((i + n - 1) % n, (i + 1) % n);
+        prev == next && items[prev].entity.kind == EntKind::Point
+    };
     for i in 0..walked {
-        if !chord && items[i].entity.kind != EntKind::Point && !meets[(i + n - 1) % n] && !meets[i] {
+        if !chord && items[i].entity.kind != EntKind::Point && !meets[(i + n - 1) % n] && !meets[i]
+            && !one_corner(i) {
             report(Code::E080,
                 span,
                 format!(
@@ -649,4 +657,38 @@ fn build_face_whole(
     sk.faces[i].plane = plane;
     sk.faces[i].class = d.class.clone();
     Some(i)
+}
+
+/// **A half turn a face turns into, written turning the default way** (#952, W118): read at the
+/// solved pose (`solid::arcs_turned_in`), each arc of a half turn or more that a face's loop walks
+/// against its own winding — the end of a slot written with its ends swapped is a notch where it
+/// was meant to bulge out, and the drawing solves either way.  A lesser arc turned in is the
+/// ordinary inside fillet or quarter bore, and is not asked; nor is an arc said to turn clockwise,
+/// or a chain's corner round, each of which says which way it turns (`Sketch::arc_reversed`,
+/// `Sketch::rounds`).  Each arc is said once, at its own statement, however many faces walk it.
+pub(in crate::program) fn arcs_turned_in(sk: &Sketch, map: &SourceMap,
+                                         place: &super::super::refused::Placing) -> Vec<Diag> {
+    let mut said: BTreeSet<usize> = BTreeSet::new();
+    let mut out = Vec::new();
+    for fi in 0..sk.faces.len() {
+        for (arc, turn) in crate::solid::arcs_turned_in(sk, fi) {
+            let i = arc.i();
+            let turns = sk.arc_reversed(i) || sk.rounds.iter().any(|k| k.arc as usize == i);
+            if turn < std::f64::consts::PI * (1.0 - 1e-6) || turns || !said.insert(i) {
+                continue;
+            }
+            let (span, stmt) = place.site(map.site_of(arc));
+            if stmt.is_none() {
+                continue;
+            }
+            let name = super::super::rings::called(map, arc);
+            let face = &sk.faces[fi].name;
+            out.push(Diag::new(Code::W118, span, stmt, format!(
+                "`{face}` turns into {name}, a half turn or more: its loop runs one way round and \
+                 the arc the other, so the face is notched there.  An arc runs counter-clockwise \
+                 from its `start:`, and written with `start:` and `end:` the other way round it \
+                 bulges out — where the notch is meant, say so: `sense: cw`, its ends swapped")));
+        }
+    }
+    out
 }
