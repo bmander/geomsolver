@@ -2032,10 +2032,11 @@ rounding's** (#942 F6), none a number of its own:
 - *the structure* — a side of a face's square is straight, its way its own; a halving stops where
   its middle stands between its ends; a face's characteristic line read as far as the face's reach;
   feet within the slack of a line make no circle; the end pose a stuck instant is nearer is the one
-  that holds it; every box a road holds its sweep in stands a twentieth of its extent and the
-  tolerance clear (`closed::room`; at a tenth the drum screwed a short lead through most of a turn
-  was built wrong — the box's size should not decide the solid, a defect beside F6); every trim's
-  hair is one rule (`closed::hair`, #880 Q1b's).
+  that holds it, and the way the tool's point moves there is the motion's own velocity (no step);
+  the screw's domain and the trim's grown box stand clear of what they hold by the Boolean's reach
+  twice over (`closed::room`: at a tenth of its extent the drum screwed a short lead through most
+  of a turn was built wrong); every trim's hair is #880 Q1b's one rule (`closed::hair`), which the
+  roads under any motion had copied.
 **Not yet built**: the tumbling tori fit, are cut and sewn into one tube a contact curve, and are
 refused past the meetings their sewing settles — the torus turned whole where a piece of the torus
 at an end pose reads as the boundary facing behind; the thin one where its two tubes meet at under

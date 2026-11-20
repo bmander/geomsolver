@@ -454,17 +454,18 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
         // little way on, and behind read a hair through the tool's base past it (the start cone
         // of a cone screwed through a rod, along its base rim)
         if let Err(super::member::Unsettled::Near {at}) = ahead {
-            let span = roll[1]-roll[0];
             // (the end the instant membership was stuck at is nearer, the piece lying on the tool's
             // surface posed there: the end that holds it, #942 F6)
             let held = |e: usize| (at-roll[e]).abs() <= (at-roll[1-e]).abs();
             let end = (0..2).find(|&e| held(e) && posed[e].faces.iter().any(|g| crate::ssi::same(&f.surface,&g.surface,tol)));
             if let Some(e) = end {
-                let h = 1e-6*span*if e == 0 { 1. } else { -1. };
-                if let (Ok(q0),Ok(q1)) = (path.pose(roll[e]),path.pose(roll[e]+h)) {
-                    let on = q0.inverse().then(q1).point(p);
-                    let lead = crate::util::space::dot(sub(on,p),n);
-                    if lead.abs() > 1e-9*distance(on,p).max(1e-300) { ahead = Ok(lead > 0.); behind = Ok(true) }
+                // (the way the tool's point at `p` moves as the roll runs on into it, read off the
+                // motion's own velocity there, #942 F6: its part along the normal is nought where
+                // its rounding leaves it unread)
+                if let (Ok(q0),Ok(m)) = (path.pose(roll[e]),path.at(roll[e])) {
+                    let v = m.velocity(q0.inverse().point(p));
+                    let lead = crate::util::space::dot(v,n)*if e == 0 { 1. } else { -1. };
+                    if lead.abs() > super::rings::HALF_READ*crate::util::space::norm(v) { ahead = Ok(lead > 0.); behind = Ok(true) }
                 }
             }
         }
@@ -599,7 +600,7 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
         Some(b) => b,
         None => {
             let (lo,hi) = out.bounds();
-            let grow = super::closed::room((0..3).map(|i| hi[i]-lo[i]).fold(0.,f64::max),tol);
+            let grow = super::closed::room(tol);
             let foot = [0.5*(lo[0]+hi[0]),0.5*(lo[1]+hi[1]),lo[2]-grow];
             let half = 0.5*(hi[0]-lo[0]).max(hi[1]-lo[1])+grow;
             grown = crate::build::prism(&crate::build::square(foot,[0.,0.,1.],half),0.,hi[2]-lo[2]+2.*grow)?;

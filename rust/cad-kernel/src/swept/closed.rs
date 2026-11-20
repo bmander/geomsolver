@@ -862,7 +862,7 @@ fn domain(tool: &Brep,legs: &Legs,held: &[V],tol: f64) -> Result<Domain,Unbuilt>
     }
     let (mut l,mut h) = bx;
     let sag = reach*(1.-(0.5*(screw.ratio*(b-a)).abs()/STEPS as f64).dcos());
-    let margin = room((0..3).map(|i| h[i]-l[i]).fold(0.,f64::max),tol);
+    let margin = room(tol);
     let pad = [sag+margin,sag+margin,margin];
     for i in 0..3 { l[i] -= pad[i]; h[i] += pad[i] }
     let at = |x: f64,y: f64| f.at([x,y,l[2]]);
@@ -974,18 +974,18 @@ pub(crate) fn grain(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Re
 /// spread of poses its square root wide, more stretches than membership reads.
 fn hair(tol: f64,size: f64) -> f64 { (4.*tol).max(1e-6*size) }
 
-/// **How far a box holding a sweep stands clear of it**: a twentieth of the box's largest extent and
-/// the tolerance, every box a road holds its sweep in (#942 F6: the screw's box had a twentieth and
-/// `cube_holding`'s a tenth; at a tenth the drum screwed a short lead through most of a turn was
-/// built wrong, `swept_closed::a_drum_screwed_a_short_lead_through_most_of_a_turn_closes`).
-pub(super) fn room(extent: f64,tol: f64) -> f64 { 0.05*extent+tol }
+/// **How far a box holding a sweep stands clear of it, beyond what it holds** (the sweep's own
+/// extent and sag, each box's to add): clear of the Boolean's reach twice over (`ON_CURVE`
+/// tolerances), so no face of the box meets the sweep (#942 F6: the screw's domain and the trim's
+/// box had a twentieth and a tenth of their extent; at a tenth the drum screwed a short lead through
+/// most of a turn was built wrong, `swept_closed::a_drum_screwed_a_short_lead_through_most_of_a_turn_closes`).
+pub(super) fn room(tol: f64) -> f64 { 2.*crate::tolerant::ON_CURVE*tol }
 
 pub(super) fn cube_holding<'a>(points: impl IntoIterator<Item=&'a V>,tol: f64) -> Result<(Brep,V,f64),Unbuilt> {
     let (blo,bhi) = points.into_iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(l,h),p|
         (std::array::from_fn(|k| l[k].min(p[k])),std::array::from_fn(|k| h[k].max(p[k]))));
     let centre: V = std::array::from_fn(|k| 0.5*(blo[k]+bhi[k]));
-    let extent = (0..3).map(|k| bhi[k]-blo[k]).fold(0.,f64::max);
-    let half = 0.5*extent+room(extent,tol);
+    let half = (0..3).map(|k| bhi[k]-blo[k]).fold(0.,f64::max)*0.6+tol;
     Ok((prism(&square(add(centre,[0.,0.,-half]),[0.,0.,1.],half),0.,2.*half)?,centre,half))
 }
 
