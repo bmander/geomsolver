@@ -408,6 +408,15 @@ pub struct Rolled {
     /// run, and how far the corner's cell reaches from it: what lies on the corner's side within
     /// that reach is cut from the piece, the cell taking it (#218's 7).
     pub cuts: Vec<(V, V, f64)>,
+    /// Where the ball stands still past the run along another face's end at this vertex — the run
+    /// stopped short of its crease's end, its ball standing within its faces no further — the part
+    /// of the standing ball's piece past that end, which the run's region holds (#962,
+    /// `brep::fillet::roll_beside`): `at` a point of the stretch the ball stands over.
+    pub beside: Option<V>,
+    /// Whether its ball may stand still (a face of its two is a cylinder or a torus as tight as it,
+    /// `brep::fillet::dome`): where its run ends in a run's or a ring's section, the two are glued
+    /// there, and a piece `beside` it is glued to it (#962).
+    pub stands: bool,
 }
 
 

@@ -154,9 +154,11 @@ fn stands_within(body: &crate::solid::faces::BodyFaces, f: &Faces, groups: [&[us
             Piece::Run(run) => for q in points(run) {
                 // its middle first, then its ends, then between: where walls closer than the ball
                 // pass it, the middle sees the wall across, not the arc it ends on; and the centres
-                // within a chain turning both ways are no convex set
+                // within a chain turning both ways are no convex set (over its edge, or as much of
+                // it as it runs along: one ending in a standing ball's section, `stops_short`)
+                let (lo, hi) = (run.span[0].max(0.0), run.span[1].min(run.edge));
                 at.extend([0.5, 0.0, 1.0, 0.125, 0.25, 0.375, 0.625, 0.75, 0.875]
-                    .map(|s| add(q, scale(run.along, s * run.edge))));
+                    .map(|s| add(q, scale(run.along, lo + s * (hi - lo)))));
             },
             Piece::Ring(ring) => for q in points(&ring.section) {
                 at.extend((0..=16).map(|k| crate::brep::geom::Rigid::turn(ring.axis_origin, ring.axis,
@@ -292,8 +294,14 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
             let at = body.middle(e);
             let ends: Vec<V> = body.run_ends(&run).into_iter().map(|(v, ..)| v).collect();
             Ok(Piece::Rolled(match section {
-                Section::Round(r) => Rolled { at, r, flat: None, ends, cuts: Vec::new(), kept: Vec::new(), wedge: Vec::new(),
-                    beyond: None },
+                Section::Round(r) => {
+                    // a face as tight as the ball: it may stand still against it
+                    let tight = |g: &usize| body.cylinder(*g).map(|c| c.2).or_else(|| body.torus(*g).map(|t| t.3))
+                        .is_some_and(|radius| (radius - r).abs() <= 1e-9 * (r + norm(at)));
+                    let stands = ga.iter().chain(gb).any(tight);
+                    Rolled { at, r, flat: None, ends, cuts: Vec::new(), kept: Vec::new(), wedge: Vec::new(),
+                        beyond: None, beside: None, stands }
+                }
                 Section::Flat { la, lb } => {
                     let Some((fa, fb)) = ordered(e) else {
                         return Err(unbuilt("an edge not between two faces"));
@@ -302,7 +310,7 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
                     let t = toward(body.normal(fb, at), within);
                     let w = normalised(sub(t, scale(na, dot(t, na)))).ok_or("faces meeting tangent")?;
                     Rolled { at, r: 0.0, flat: Some(([la, lb], add(at, scale(w, 0.5 * la)))), ends, cuts: Vec::new(),
-                        kept: Vec::new(), wedge: Vec::new(), beyond: None }
+                        kept: Vec::new(), wedge: Vec::new(), beyond: None, beside: None, stands: false }
                 }
             }))
         }).collect();
@@ -474,7 +482,26 @@ fn piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: usize,
         return Ok(ring_piece(body, edge, fa, fb, within, section, ends, spill, units)?);
     }
     let Some(span) = body.segment(edge) else { return Err(unbuilt("a curved edge").into()) };
-    run_piece(body, span, fa, fb, within, section, ends, &[], spill).map(|p| vec![p])
+    let mut built = run_piece(body, span, fa, fb, within, section, ends, &[], spill)?;
+    // an end whose ball the face going on round a tighter round stops short of it: the run ends in
+    // the standing ball's section, the ball's piece past it to the crease's end the region's too
+    let mut besides = Vec::new();
+    if let (Piece::Run(run), Section::Round(r)) = (&mut built, section) {
+        if let Some(centre) = run.centre() {
+            let (along, length) = (run.along, norm(sub(span[1], span[0])));
+            let size = norm(span[0]) + length + r;
+            for (k, p) in [(0, span[0]), (1, span[1])] {
+                let at = |s: f64| Some(add(centre, scale(along, s)));
+                let crease = |s: f64| add(span[0], scale(along, s));
+                if let Some((s, beside)) = stops_short(body, [fa, fb], within, r, &at, &crease, [0.0, length], k, p) {
+                    run.span[k] = s;
+                    run.release(p, size);
+                    besides.push(beside);
+                }
+            }
+        }
+    }
+    Ok(std::iter::once(built).chain(besides).collect())
 }
 
 /// Round a circle `edge` where a plane, a cylinder, a cone or a sphere meet about one axis: the
@@ -548,8 +575,26 @@ fn ring_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: u
     // round a circle may come back out of it, and the other end may run into the same solid
     // from its other side)
     let (mut from, mut to, mut halves, mut kepts) = (t0, t1, Vec::new(), Vec::new());
+    // an end whose ball the face going on round a tighter round stops short of it: the ring ends in
+    // the standing ball's section, the ball's piece past it to the crease's end the region's too
+    let mut besides = Vec::new();
+    let mut stopped = [false; 2];
+    if let (Section::Round(r), false) = (section, closed) {
+        let centre_at = |t: f64| section_at(t).ok().and_then(|s| s.centre());
+        for (k, p) in [(0, p0), (1, p1)] {
+            let crease = |t: f64| add(centre, scale(radial_at(t), radius));
+            if let Some((t, beside)) = stops_short(body, [fa, fb], within, r, &centre_at, &crease, [t0, t1], k, p) {
+                if k == 0 { from = t } else { to = t }
+                stopped[k] = true;
+                besides.push(beside);
+            }
+        }
+    }
     if !closed {
         for (k, p, t) in [(0, p0, t0), (1, p1, t1)] {
+            if stopped[k] {
+                continue;
+            }
             let (planes, bent) = ends_at(body, ends, p)?;
             let planes: Vec<(V, f64)> = planes.into_iter().filter(|h| !meridian(h)).collect();
             if planes.is_empty() && bent.is_empty() {
@@ -605,7 +650,78 @@ fn ring_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: u
         let seams = spill.get(&[fa, fb][c]).expect("the face going on");
         ring.beyond = Some(beyond(body, edge, [fa, fb], c, seams, within, section, &mut ring)?);
     }
-    Ok(vec![Piece::Ring(ring)])
+    Ok(std::iter::once(Piece::Ring(ring)).chain(besides).collect())
+}
+
+/// **A run's ball stopped short of its crease's end by a round it goes on into** (#962): where
+/// face `f` of `faces` goes on tangent into a face whose offset by the ball's radius `r` closes (a
+/// frame's floor into its inside edge filled `r`, the fill's offset its axis), the run's ball —
+/// its centre `centre_at(s)` over its extent `span`, `k` the end at `vertex` — stands within its
+/// faces only up to where its centre meets what that offset closes onto: there it touches the
+/// face going on too, and stands still against the other face's meeting with it (`brep::fillet`'s
+/// standing ball). Where the end `k` is past that, the run ends in the standing ball's section, and
+/// the part of the standing ball's piece past its own stretch's end at `vertex` is this region's
+/// (`Rolled::beside`), `crease_at(s)` the run's edge there. The turn or length the run stops at,
+/// and that piece; `None` where its ball
+/// stands within its faces to the end.
+#[allow(clippy::too_many_arguments)]
+fn stops_short(body: &crate::solid::faces::BodyFaces, faces: [usize; 2], within: bool, r: f64,
+    centre_at: &dyn Fn(f64) -> Option<V>, crease_at: &dyn Fn(f64) -> V, span: [f64; 2], k: usize, vertex: V)
+    -> Option<(f64, Piece)> {
+    let sigma = if within { -1.0 } else { 1.0 };
+    let size = r + norm(vertex);
+    let tol = 1e-9 * size;
+    // how far from what a face's offset by `r` closes onto a point stands: its axis, or its middle
+    // circle; none where the face is no cylinder or torus of radius `r` (whose offset that is)
+    let closed = |g: usize| -> Option<Box<dyn Fn(V) -> f64>> {
+        if let Some((o, a, _)) = body.cylinder(g).filter(|c| (c.2 - r).abs() <= tol) {
+            return Some(Box::new(move |c: V| { let w = sub(c, o); norm(sub(w, scale(a, dot(w, a)))) }));
+        }
+        let (o, a, big, _) = body.torus(g).filter(|t| (t.3 - r).abs() <= tol)?;
+        Some(Box::new(move |c: V| {
+            let w = sub(c, o);
+            let h = dot(w, a);
+            (norm(sub(w, scale(a, h))) - big).hypot(h)
+        }))
+    };
+    let inner = 0.5 * (span[0] + span[1]);
+    for (f, &own) in faces.iter().enumerate() {
+        for g in body.smooth(&[own]).into_iter().filter(|&g| g != own) {
+            let Some(off) = closed(g) else { continue };
+            // the ball stands within the face going on to its end: nothing stops it
+            let past = |s: f64| centre_at(s).map(|c| sigma * body.carried_side_grad(g, c).0 - r);
+            if past(span[k]).is_none_or(|d| d >= -tol) {
+                continue;
+            }
+            // where between its middle and that end the centre comes nearest what the offset
+            // closes onto: on it, the ball touches the face going on round its circle there
+            let far = |s: f64| centre_at(s).map_or(f64::INFINITY, |c| off(c));
+            let n = 256;
+            let at = |i: usize| inner + (span[k] - inner) * i as f64 / n as f64;
+            let i = (0..=n).min_by(|&a, &b| far(at(a)).total_cmp(&far(at(b))))?;
+            let (mut lo, mut hi) = (at(i.saturating_sub(1)), at((i + 1).min(n)));
+            for _ in 0..200 {
+                let (x, y) = (lo + (hi - lo) / 3.0, hi - (hi - lo) / 3.0);
+                if far(x) <= far(y) { hi = y } else { lo = x }
+            }
+            let stop = 0.5 * (lo + hi);
+            if far(stop) > 1e-7 * size {
+                continue;
+            }
+            // the other face's meeting with the face going on (a piece of it, where the other face
+            // splits it), from this end's vertex: the stretch the ball stands over
+            let other = faces[1 - f];
+            let chain: Vec<usize> = body.smooth(&[own]).into_iter().filter(|&h| h != own).collect();
+            let ends_at = |e: u32| distance(body.along(e, 0.0), vertex).min(distance(body.along(e, 1.0), vertex));
+            let Some(e) = body.edges_between(&[other], &chain).into_iter().filter(|&e| ends_at(e) <= 1e-6 * size)
+                .min_by(|a, b| ends_at(*a).total_cmp(&ends_at(*b))) else { continue };
+            // (its `ends` where this run now ends: on its edge, the section's corner there)
+            return Some((stop, Piece::Rolled(super::Rolled { at: body.middle(e), r, flat: None,
+                ends: vec![crease_at(stop)], cuts: Vec::new(), kept: Vec::new(), wedge: Vec::new(),
+                beyond: None, beside: Some(vertex), stands: false })));
+        }
+    }
+    None
 }
 
 /// `x` to `n` significant figures.
@@ -819,7 +935,8 @@ fn traced_beyond(body: &crate::solid::faces::BodyFaces, run: &[u32], faces: [&[u
                     .ok_or("a wall along the plane's normal")?;
                 Ok((centres[k], if dot(d, sub(centres[1 - k], centres[k])) < 0.0 { scale(d, -1.0) } else { d }))
             }).collect::<Result<_, String>>()?;
-            Rolled { at, r, flat: None, ends: ends_of, cuts: Vec::new(), kept: Vec::new(), wedge, beyond: None }
+            Rolled { at, r, flat: None, ends: ends_of, cuts: Vec::new(), kept: Vec::new(), wedge, beyond: None,
+                beside: None, stands: false }
         }
         Section::Flat { la, lb } => {
             let of = |k: usize| body.faces_of(e).iter().copied().find(|f| faces[k].contains(f))
@@ -829,7 +946,8 @@ fn traced_beyond(body: &crate::solid::faces::BodyFaces, run: &[u32], faces: [&[u
             let t = toward(body.normal(fb, at), within);
             let wa = normalised(sub(t, scale(na, dot(t, na)))).ok_or("faces meeting tangent")?;
             Rolled { at, r: 0.0, flat: Some(([la, lb], add(at, scale(wa, 0.5 * la)))), ends: ends_of,
-                cuts: Vec::new(), kept: vec![Kept { face: split, inside: true }], wedge: Vec::new(), beyond: None }
+                cuts: Vec::new(), kept: vec![Kept { face: split, inside: true }], wedge: Vec::new(), beyond: None,
+                beside: None, stands: false }
         }
     };
     Ok(Piece::Rolled(Rolled { beyond: Some(beyond), ..own }))

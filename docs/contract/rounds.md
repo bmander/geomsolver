@@ -443,11 +443,68 @@ ball along (`round_lowering::a_rim_tilted_off_square_rounded_to_its_cylinders_ra
 (`brep::a_cylinders_rim_rounded_to_its_own_radius_is_a_dome`). Past a closing offset the band a
 ball needs is the whole of the face on the region's side (`holds_ball`), so a cylinder shorter
 than the radius is refused as too small to hold it. Refused by name too: both offsets closing, one
-closing onto a point (the ball is that face's sphere), the centre running along the curve it
-closes onto, and a stretch of a loop; and where only a surface will do — a chamfer's leg, a ball
+closing onto a point (the ball is that face's sphere), and the centre running along the curve it
+closes onto (a stretch of a loop is below); and where only a surface will do — a chamfer's leg, a ball
 beyond a seam — an offset that closes is refused as that, not as too wide
 (`Surface::offset_surface`: a spill's legs and balls). A cone shrunk past its apex is the same sheet
 placed at its own apex, never none.
+
+**A ball standing over a stretch of its loop** (#962, `rounds/onto_round.sv`): a boss rounded
+into a frame whose inside edge is already filled to the ball's radius. Against the fill's concave
+face a ball of its radius has its centre on the fill's axis alone, so the ball rolling along the
+floor beside the boss stops where its centre meets that axis, stands still there — touching the
+floor at the fill's seam, the fill round the great circle square to the axis, and the boss at its
+foot — and rolls on up the wall from there: one fill all round the boss's foot. Where the boss's
+side crosses the fill on a circle about its axis (square to it) the lowering builds a ring's
+stretch closed into a quarter ball, as a pocket's corner below; anywhere else the stretch of the
+boss's meeting with the fill goes to `fillet::roll`, which stands the ball still (`fillet::dome`).
+Every section of a still ball is a plane through its centre holding its foot; the run along the
+floor ends in the one holding the ball's touch on the floor's seam, the run up the wall in the one
+on the wall's, and the ball rounds from one to the other: the sphere's patch between the circle's
+arc and the arcs to the foot, the fill's strip, the boss's, and a cap in each section — exact,
+nothing fitted. **Each pair of faces is a region, and each region is the part of that one fill
+between the planes square to its crease at the crease's ends** (the plane both faces' normals lie
+in at the vertex, exact where the crease is traced), so the pairs divide it where their creases
+end, not where the balls do:
+- the crease's end in the ball's section (a round boss whose axis meets the fill's, a square
+  boss): the dome is the stretch's region, glued to the floor's and the wall's runs at its caps;
+- the floor's crease running on past the ball's section (the boss's axis farther from the wall
+  than the fill's: the fixture's): the floor's run stops short of it, its ball standing within
+  the floor's smooth chain only to where its centre meets what the fill's offset closes onto
+  (`piece::stops_short`, a ring's turn or a run's length cut there, its end in the ball's section),
+  and the standing ball's piece past the crease's end at the seam is the floor's region's
+  (`Rolled::beside`, `fillet::roll_beside`, its cap at the ball's section on the floor between
+  the boss's edge with it and the seam): the piece built in two at the plane square to the crease
+  there, each part by its faces, the plane's section a face of each (`fillet::dome_split`);
+- the floor's crease ending before the ball's section (nearer the wall, on its line too): the
+  floor's run ends at its crease's end as ever, its ball standing there, and the stretch's region
+  holds that run's canal rolled on over the fill from the crease's end to the standing ball — the
+  floor's and the boss's offsets meeting in a circle (a torus's stretch) or a line (a cylinder's)
+  — and the dome from its section, one piece (`fillet::dome_short`).
+Pieces that share a section are glued there (`assemble`: a standing ball's piece to the runs and
+rings ending where its stretch does, its part beside a run to its own and to that run), never
+unioned; where the piece is in two, its other end's section is the next run's in part, and those
+are unioned. Refused, saying which: both ends' runs stopping short, or both running on (not
+built yet); an end on a face cutting across the stretch (the dome is not carried past and cut
+off yet); a ball a hair under the fill's radius (its centre's spindle so short no section is
+carried past where the seams cut the rolled run off, `cannot roll on past`, or off the fill's
+axis its contact crossing the seam in another section, `seam_aligned`: the rolled canal between
+the two runs' last sections, divided as above, is not built yet); the chamfer (`no stretch of a
+flat closing to a point is cut off yet`); and a ball wider than the fill, which never touches its
+face — what none reaches runs along the fill without end, as up a pocket's corner — saying both:
+`… of radius 2.1, is larger than `…round` can hold, curved round it to a radius of 2`. The convex
+twin, a boss across an edge rounded convex, is an ordinary ball rolled against the round's
+cylinder (its offset never closes), built where the contacts stand on the seams. A tray's pocket
+filled all round its plan corners is the issue's own shape (`part.boss9 round(r: 0.5mm)
+part.plate`): the fill's smooth chain is runs and stretches of torus, which the field reads face by
+face as it does a pocket's walls ([sets.md](sets.md), `BodyFaces::bulging`).
+`tests/round_onto_round.rs` is the gate (round bosses of 3 to 10, their axes from on the wall's
+line to 6 off it, rounds of 0.5 to 2, either statement first, the square boss, and the tray with
+its boss anywhere along a straight wall at 0.5 and 2: the closed form's volume to 1e-9 — the L,
+its fill, the boss beyond them, the floor's ring turned between the balls less what of it lies in
+the fill, at each ball the cell of the floor, the wall and the boss less the ball and the fill,
+the wall's runs; a flat boss skewed 20°, the field drawing the kernel's boundary point by point;
+each refusal above; the convex twin built), each exported to STEP and STL.
 
 **A ball as wide as a corner** (#962, `rounds/corner.sv`): a pocket's floor rounded where its
 plan corners are arcs of radius `R`, or a boss's top rim, or a round pocket's or a round boss's
@@ -499,7 +556,15 @@ sixteen turns of its own. A flat's points each nearest its own face's patch of t
 meeting the other face — that arc and its radius where the round runs: a pocket rounded wider
 than its corners refuses at its first wall so (`… past `pocket.k0`, of radius 5mm where the round
 runs and tighter than the ball …`), as well as at each corner's ring. Rounded to the corners'
-radius, the centres reach the edge's ends on the arcs' axes and the wall alone is its prism. A
+radius, the centres reach the edge's ends on the arcs' axes and the wall alone is its prism. **A
+ball stopped by a face whose offset by its radius closes** — a frame's floor going on into its
+inside edge filled to the ball's radius, the ball's centre on the fill's axis — **ends in the ball
+standing still there** (`piece::stops_short`): the run or ring ends in that ball's section, and
+what lies past it to the crease's end is the standing ball's piece's (`Rolled::beside`, "A ball
+standing over a stretch of its loop" above), so it is not refused. Against a plane (the lone
+wall's next wall, the obround's far side) the ball stopped touches three faces at once, a corner
+ball, and what lies past it to the crease's end is a corner's cell in part, not the standing
+ball's: still refused here. A
 chain bulging no way is read through its nearest face and left to the gate. **The gate reads each
 edge near its ends and across its section** (`lowering::beside_edges`): besides the field just
 inside the corner a quarter, a half and three quarters along, it reads a fiftieth from each end,
