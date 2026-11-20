@@ -470,8 +470,9 @@ fn a_meeting_crossing_an_edge_lying_in_the_other_surface_cuts_it_there() {
 /// contact sweeps). Given the walls' meetings with the drum's top and side — the top's the ruling
 /// through the point, the side's nothing but the point — and the two points where they touch, the
 /// arrangement reads the rim there with no search: the drum `4π` and the channel `6 · 56/3` to the
-/// rounding, each point a vertex (given the meetings without the points, the rim is not parted
-/// there: the ruling it touches is no crossing).
+/// rounding, each point a vertex. With nothing given (#962's 7) the rim lies in the top, whose
+/// meeting with each wall is that ruling in closed form, and the circle touching the line is read
+/// in closed form too: the same cells and vertices, the touch a tangency of the two.
 #[test]
 fn a_rim_touching_a_wall_at_points_given_is_read_there_with_no_search() {
     use gcs_core::brep::boolean::{arrangement_given,Given};
@@ -521,9 +522,21 @@ fn a_rim_touching_a_wall_at_points_given_is_read_there_with_no_search() {
         let off = c.b.vertices.iter().map(|v| distance(v.p,*p)).fold(f64::INFINITY,f64::min);
         assert!(off <= 1e-12,"the touch at {p:?} a vertex: {off:e} off");
     }
-    // (with nothing given the search for where the rim meets a wall is refused: until a touch
-    // nothing constructed is proved, F3's second word, the road is to give what it knows)
-    let e = arrangement_given(&domain,&[&drum,&channel],&[],1e-9).err()
-        .expect("refused with nothing given");
-    assert!(e.contains("was not proved"),"{e}");
+    // with nothing given the search for where the rim meets a wall cannot settle the touch, but
+    // the rim lies in the drum's top, which meets each wall in closed form along the ruling through
+    // the point (#962's 7): it is read there, where it crosses the ruling — the same cells, the
+    // same vertices
+    let c = arrangement_given(&domain,&[&drum,&channel],&[],1e-9)
+        .unwrap_or_else(|e| panic!("the rim not read off the top's meeting: {e}"));
+    let inside = members(&c,&all,1e-9).unwrap();
+    let cells = c.cells().unwrap();
+    let held = |k: usize| -> f64 {
+        (1..cells.len()).filter(|&i| inside[i][k]).map(|i| cells[i].volume).sum()
+    };
+    close(held(1),4.*std::f64::consts::PI,1e-12);
+    close(held(2),112.,1e-12);
+    for p in &touches {
+        let off = c.b.vertices.iter().map(|v| distance(v.p,*p)).fold(f64::INFINITY,f64::min);
+        assert!(off <= 1e-12,"the touch at {p:?} a vertex: {off:e} off");
+    }
 }

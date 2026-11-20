@@ -732,7 +732,12 @@ boxes than any search may"), and the crossing of two curves in that face is no s
 edge bounding a face on that very surface lies along it (a rolled fill's crease, a fitted meeting of
 a sphere and a cylinder, against the cylinder a ring's cap lies on). A closed form meeting in no
 curve is not read so: it leaves out a point the two touch at, which the edge may pass
-(`a_cap_in_a_plane_a_torus_touches_round_a_circle_meets_it_on_that_circle`). **A touch run reaching an
+(`a_cap_in_a_plane_a_torus_touches_round_a_circle_meets_it_on_that_circle`). An edge and a meeting's
+curve both lines or circles cross in closed form (`query::curve_curve`), a tangency among the
+crossings, and a meeting's line runs on without end: so a drum's rim, touching a channel's walls at
+two points, is read with nothing given off its top's meeting with each wall — the ruling through
+the point, which the rim touches there — each touch a vertex, where until #962 the search was
+refused (`arrangement::a_rim_touching_a_wall_at_points_given_is_read_there_with_no_search`). **A touch run reaching an
 edge's own end is that end** (`at_its_ends`): a root the edge reaches from its nearer end within
 `ON_CURVE` tolerances of the surface all the way is read there, a touch (a swept sheet's rail
 leaves the pose it starts on tangent to it, and the run's far end was read as a vertex of its own).
