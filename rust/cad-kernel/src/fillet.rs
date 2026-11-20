@@ -304,7 +304,7 @@ pub fn roll_across(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)]) -> Result<Rol
     if let (Curve::Line {d,..},true) = (&spine,prismatic(&surfaces,&ends)) {
         let frame = |u: f64| { let c = spine.point(t0+span*u); (c,[toward(0,c),toward(1,c)]) };
         let reach = corner_reach(&frame,r,&names())?;
-        holds_ball(b,&uses,&sides_faces,&chain,&ends,&frame,&surfaces,sides,r,tol,&names(),wedge)?;
+        holds_ball(b,&uses,&sides_faces,&chain,&ends,&frame,&surfaces,sides,r,reach,tol,&names(),wedge)?;
         let ((c0,e),c1) = (frame(0.),spine.point(t0+span));
         let trims: Vec<Trim> = ends.into_iter().map(|x| x.trim).collect();
         let piece = carried(&round_section(across(c0,e,r),c0,e,r,*d),span,&trims)?;
@@ -331,7 +331,7 @@ pub fn roll_across(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)]) -> Result<Rol
     let canal = |u: f64,v: f64| { let (c,e) = frame_at(u); add(c,scale(slerp(e[0],e[1],v),r)) };
     let reach = corner_reach(&frame_at,r,&names())?;
     // (read uncached: the band's probes are no stations the fit asks for)
-    holds_ball(b,&uses,&sides_faces,&chain,&ends,&frame_of,&surfaces,sides,r,tol,&names(),wedge)?;
+    holds_ball(b,&uses,&sides_faces,&chain,&ends,&frame_of,&surfaces,sides,r,reach,tol,&names(),wedge)?;
     // fitted to the bar asked, or as near it as the densest net comes, no worse than a ten-millionth
     // of the boundary: its contacts are read at what was measured (`Edge::tol`)
     let bar = tol.max(1e-7*b.size());
@@ -431,7 +431,7 @@ fn standing(b: &Brep,m: &Meeting,offsets: [Offset;2],r: f64,tol: f64,wedge: &[(V
         (centre,e)
     };
     let reach = corner_reach(&frame_at,r,names)?;
-    holds_ball(b,uses,sides_faces,chain,&[],&frame_at,surfaces,*sides,r,tol,names,wedge)?;
+    holds_ball(b,uses,sides_faces,chain,&[],&frame_at,surfaces,*sides,r,reach,tol,names,wedge)?;
     // the piece: the loop, the circle, and the hemisphere over the circle — up its seam, round its
     // pole, back down — its loop counter-clockwise in its parameters (u round, v up from the circle)
     let mut out = Brep::default();
@@ -493,7 +493,7 @@ fn revolved(b: &Brep,m: &Meeting,onto: &super::geom::Traced,o: V,z: V,r: f64,tol
         (turn.point(c),e.map(|d| turn.vector(d)))
     };
     let reach = corner_reach(&frame_at,r,names)?;
-    holds_ball(b,uses,sides_faces,chain,&[],&frame_at,surfaces,*sides,r,tol,names,wedge)?;
+    holds_ball(b,uses,sides_faces,chain,&[],&frame_at,surfaces,*sides,r,reach,tol,names,wedge)?;
     let piece = super::build::revolve(&round_section(at,c,e,r,n),o,z,TAU)?;
     // the spine and each contact a circle about the axis, from the meridian
     let ring = |p: V| -> Result<BSpline,String> {
@@ -576,12 +576,26 @@ fn others<'b>(b: &'b Brep,uses: &'b [Vec<(usize,usize,usize)>],side: &'b [usize]
 /// edges. A face the ball takes the whole of is held: an edge on the contact, or beyond it, is
 /// the face's far boundary reached (`face_consumed`), and only an edge reaching inside it refuses
 /// the ball (`Band::enters`). `frame_at` the ball's centre and the directions to its contacts
-/// along the canal.
+/// along the canal, `reach` how far its corner stands from the centre at most (`corner_reach`).
+///
+/// **The band is the strip the ball's section sweeps** (#962), between the run and the contact,
+/// never every point of the face as near the other surface: that surface goes on past the other
+/// face, and may come back near this one far from the ball — a vane's side, a cylinder about a
+/// line off the disc's axis, passes within the ball's radius of the disc's rim across the disc,
+/// and a 2 mm ball was refused against a crown of R800 for it. Each section's strip runs from the
+/// crease to the contact, so it lies within the corner's reach of the ball's centre — twice it
+/// here, the crease of curved faces standing off their tangent planes' corner — and a point of an
+/// edge no centre stands that near is no point of the band.
 #[allow(clippy::too_many_arguments)]
 fn holds_ball(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2],chain: &[usize],ends: &[Stop],
-    frame_at: &dyn Fn(f64) -> (V,[V;2]),surfaces: &[Surface;2],sides: [f64;2],r: f64,tol: f64,names: &str,wedge: &[(V,V)])
-    -> Result<(),String> {
+    frame_at: &dyn Fn(f64) -> (V,[V;2]),surfaces: &[Surface;2],sides: [f64;2],r: f64,reach: f64,tol: f64,names: &str,
+    wedge: &[(V,V)]) -> Result<(),String> {
     let ending: std::collections::BTreeSet<usize> = ends.iter().flat_map(|s| s.faces.iter().copied()).collect();
+    // the centres at the band's stations, and how far apart two next ones stand at most
+    let n = Band::STATIONS;
+    let centres: Vec<V> = (0..=n).map(|i| frame_at(i as f64/n as f64).0).collect();
+    let gap = centres.windows(2).map(|w| distance(w[0],w[1])).fold(0.,f64::max);
+    let far = |p: V| centres.iter().all(|&c| distance(c,p) > 2.*reach+gap+tol);
     for k in 0..2 {
         let o = 1-k;
         let contact = |u: f64| { let (c,e) = frame_at(u); add(c,scale(e[k],r)) };
@@ -601,7 +615,7 @@ fn holds_ball(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usiz
         for (fi,e,gc) in others(b,uses,&sides_faces[k],chain,&ending) {
             let g = &b.edges[e];
             let crossed = seam(e);
-            let skip = |p: V| crossed && in_wedge(p);
+            let skip = |p: V| crossed && in_wedge(p) || far(p);
             if band.enters(gc,g.t,&skip,face_consumed(tol,g.tol)) {
                 return Err(format!("the ball of {names} is larger than `{}` can hold",b.faces[fi].name));
             }

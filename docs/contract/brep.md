@@ -722,7 +722,17 @@ no Newton on the three surfaces (singular where all three are tangent, it slid 3
 valley); a vertex is taken onto a given curve only within `ON_CURVE` tolerances (`points_on`: two
 sheets meeting smoothly along their shared rail, the sine of their angle nought, took a vertex 3e-3
 off it); and an edge of a face given a meeting with another's surface, whose search for where it
-meets that surface is refused, is read off the given curves (`on_given`). **A touch run reaching an
+meets that surface is refused, is read off the given curves (`on_given`). **So is an edge one face
+of which meets the surface in closed form** (#962's 7, after the search, in `crossings`): the edge
+lies in that face's surface, so it meets the other surface only on the two's meeting, whatever the
+other faces it bounds do — where that face's surface touches the other along a curve, the search
+reads a double root it cannot settle at the kernel's tolerance (a fill's cap in the plane of a
+vane's end, which the next fill's torus touches round its contact circle; on `main` "read more
+boxes than any search may"), and the crossing of two curves in that face is no such root; and an
+edge bounding a face on that very surface lies along it (a rolled fill's crease, a fitted meeting of
+a sphere and a cylinder, against the cylinder a ring's cap lies on). A closed form meeting in no
+curve is not read so: it leaves out a point the two touch at, which the edge may pass
+(`a_cap_in_a_plane_a_torus_touches_round_a_circle_meets_it_on_that_circle`). **A touch run reaching an
 edge's own end is that end** (`at_its_ends`): a root the edge reaches from its nearer end within
 `ON_CURVE` tolerances of the surface all the way is read there, a touch (a swept sheet's rail
 leaves the pose it starts on tangent to it, and the run's far end was read as a vertex of its own).

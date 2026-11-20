@@ -1375,6 +1375,35 @@ impl<'a> Arrangement<'a> {
             let meets = at_its_ends(meets,c,e.t,surface,tol.max(e.tol));
             (meets,started.elapsed().as_secs_f64())
         });
+        // **an edge one face of which meets that surface in closed form, where the search cannot
+        // settle it** (#962): the edge lies in that face's surface, so it meets the other surface
+        // only on the two's meeting — where it crosses those curves, or all along one — whatever
+        // the other faces it bounds do. Where the face's surface touches the other along a curve
+        // the search reads a double root it cannot prove at the kernel's tolerance (a fill's cap
+        // in the plane of a vane's end, which the next fill's torus touches round a circle); the
+        // crossing of two curves in that face is no such root. And where a face the edge bounds
+        // lies on that very surface, the edge lies along it (a rolled fill's crease, a fitted
+        // meeting of a sphere and a cylinder, read against the cylinder a ring's cap lies on).
+        // (A closed form that meets in no curve is not read so: it leaves out a point the two
+        // touch at, which the edge may pass.)
+        let mut read = read;
+        for (k,&(s,other,i,fi,e,c)) in asked.iter().enumerate() {
+            if !matches!(read[k].0,Meets::Refused(_)) { continue }
+            let surface = &self.solids[other].faces[fi].surface;
+            let j = self.shared.index(surface,tol);
+            let own: Vec<usize> = bounded[s][i].iter().map(|&h| self.shared.index(&self.solids[s].faces[h].surface,tol)).collect();
+            if own.contains(&j) { read[k].0 = Meets::Along; continue }
+            for own in own {
+                let curves = match self.shared.meeting(own,j,tol) {
+                    Ssi::Same => { read[k].0 = Meets::Along; break }
+                    Ssi::Curves(cs) if !cs.is_empty() => cs,
+                    _ => continue,
+                };
+                let meets = on_given(c,e.t,&curves,&[],surface,tol.max(e.tol));
+                read[k].0 = at_its_ends(meets,c,e.t,surface,tol.max(e.tol));
+                break
+            }
+        }
         // (how many were read and what they cost all told, said before any is acted on: a refusal
         // among them ends the arrangement before its phases are said, #942 F4)
         if self.say.timing {

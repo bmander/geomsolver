@@ -467,7 +467,16 @@ the edge may stand inside. A ball any wider reaches inside the face — past an 
 round's contact — and is refused as larger than the face can hold, as before (rung 3: a ball
 rolling against the edge it overflows, or across the face beyond). `tests/brep.rs`'s
 `rounds_that_take_the_whole_of_a_face` is the gate (each against its closed form to 1e-9, and each
-one wider refused).
+one wider refused). **The band is the strip the ball's section sweeps** (#962's 7), between the run
+and the contact, never every point of the face as near the other's surface: that surface goes on
+past the other face and may come back near this one far from the ball. Each section's strip runs
+from the crease to the contact, so it lies within the corner's reach of the ball's centre
+(`corner_reach`) — twice it is read, the crease of curved faces standing off their tangent planes'
+corner — and a point of an edge no centre stands that near is none of the band (`holds_ball`'s
+`far`). A vane whose side is an arc about a line 20 off a disc's axis, on the disc's crown, was
+refused as "larger than `disc.crown` can hold" for a 2 mm ball: the side's cylinder comes within the
+ball's radius of the disc's rim across the disc (`brep::a_band_is_the_strip_its_ball_sweeps_not_all_the_face_as_near_the_other`,
+on a plate, Pappus; `sphere_rounds::a_vane_whose_sides_are_about_another_axis_rolls_its_balls`).
 
 **A flat as wide as its cylinder** (brep-bench's chamfer/cylinder-rim-to-point): a chamfer's leg is
 a set like the offset it is read from (`fillet::Leg`) — face `k`'s surface met with the other's
@@ -493,6 +502,31 @@ Refused by name: both faces shrinking to points, a shrunk face holding another e
 (the flat would take it), a loop winding round the shrunk face's surface, what the offset closes onto
 missing that surface or lying in it, a stretch of a loop (no stretch closing to a point is cut off
 yet), and a leg past the radius (`None`: no point stands that far in).
+
+**Rounds against a sphere** (#962's 7, `rounds/vane.sv`): a plane meets a sphere in a circle about
+the line through the sphere's centre square to the plane, so a vane's flat side filled into a
+disc's spherical crown is a `Ring` about that line — no special case: `body.circle` reads the edge's
+circle, and the sphere centred on its axis is a circle in the meridian — a torus's stretch kept
+within the planes of the vane's other sides, which lie along its axis (a spiric section each).
+Where two stretches meet at the vane's corner, each one's cap lies in the plane the other's torus
+touches round its contact circle; the Boolean reads the cap's edge against that torus off the
+plane's own meeting with it ([brep.md](brep.md)), where on `main` its search was refused at any
+radius of ball. A side that is an arc concentric with the crown is a ring about the disc's axis, an
+end through the crown's centre a stretch about the line square to it kept between the sides'
+cylinders; a side about another axis is rolled (`fillet::roll`), held by the strip its ball sweeps
+(above). `tests/sphere_rounds.rs` is the gate, each a drawing of no freedom against its closed form
+(the part to 1e-9, the fills' own to 1e-7 where a stretch's cap is fitted; a rolled fill to the
+quadrature of its meridians or its sections, 1e-6): the vane at radii 0.5 to 19.5 (and 21 moved out), on crowns of R150
+and R806 and dished ones of R797 and R150, off the axis and skew and mirrored and across it, with
+concentric sides rounded and chamfered, with eccentric sides, trimmed by a wedge whose slant meets
+the crown (its stretch about the line square to the slant, the sides' kept by it as a turn
+`β − π/2 + asin(d/ρ)`), and a boss on the crown and on a dished pocket's floor, on the axis and off
+it. Still refused: a fill whose strip on the crown reaches over the crown's own pole — the issue's
+vane at a ball over 20, the near end's distance from the disc's axis — as "a sphere has a hole in no
+piece" (the crown's chart, not the drawing: the vane moved out to x = 25 holds a ball of 21); and a
+flat vane's foot chamfered onto the crown, its ring of the conic's turn cut by the vane's end plane
+along its axis, as "a run cut off at its end: a shell of the arrangement is kept on one side of a
+sphere (`a`) and dropped on another", as on `main`.
 
 **The closing case** (#197, `rust/examples/conrod/`): a forged rod, every round and chamfer a
 statement over the faces its solids gave it, built exactly (pockets drawn as prisms, so their walls
