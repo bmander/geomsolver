@@ -317,6 +317,9 @@ fn all_constraints(seed: u32) -> Sketch {
         ),
         Constraint::new(CKind::TangentCircleAt, vec![e(ae), e(le1), e(pe)]),
         Constraint::new(CKind::TangentCircleAt, vec![e(ce1), e(le2), e(qe)]),
+        // two rounds touching at a point of both (#962): a circle and an arc, two circles
+        Constraint::new(CKind::TangentCirclesAt, vec![e(ae), e(ce1), e(pe)]),
+        Constraint::new(CKind::TangentCirclesAt, vec![e(ce2), e(ce1), e(qe)]),
         // a projection between two held planes, and the lift over a free plane and a held one
         Constraint::project(&sk, EntRef::point(dp), pe).expect("two images on two planes that fold"),
         Constraint::new(CKind::Lift, vec![e(EntRef::point(lc)), e(pce)]),

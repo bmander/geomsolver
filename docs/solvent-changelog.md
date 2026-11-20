@@ -4,6 +4,21 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.224] A corner round beside an arc, and two rounds tangent at a point** (#962). A chain's
+corner round, `A -> round(r: R) B`, may have an arc the chain declares for either side or both: a
+jamb rounded into an arch, `(jamb := line(s, c)) -> (k := round(r: 12)) (arch := arc(center: o,
+start: c, end: d))`. The round is the circle of radius `R` tangent to both sides inside the
+corner, inside the arc's circle where the walk turns toward its centre and outside where it turns
+away; the corner stays a point on the line and on the arc's circle, and the arc runs from the
+round's end. A round more than a corner an arc turns toward can hold is said after the solve with
+the radius it holds. `a tangent(at: p) b` between two circles or arcs, `p` a point on both, states
+that they touch there (their centres and `p` on one line). Through 0.223 a round beside an arc was
+refused ("a round rounds the corner where two lines meet, and this is an arc", or at an arc
+declared elsewhere "… and `re` is an arc"), and `tangent(at: p)` between two rounds was E040 (no
+relation of those kinds). A round beside an arc declared apart from the chain is still refused,
+now saying to declare it in the chain; a round beside a circle reads "a corner joins lines and
+arcs". Nothing a document wrote before reads differently.
+
 **[0.223] Faces of two solids do not meet** (#961). `a meets b` of faces of two different
 solids is E103 at the document's statement that made the block, which is made for neither: an
 edge is two faces of one body meeting.  So `wall.far round(r: 2mm) plate.near`, `wall` and

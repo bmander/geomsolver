@@ -321,6 +321,7 @@ fn names(cx: &mut Elab<'_>, body: &[&Statement]) -> BTreeSet<StmtId> {
     let mut count: BTreeMap<EntKind, u32> = BTreeMap::new();
     let mut skip: BTreeSet<StmtId> = BTreeSet::new();
     let mut unmade: BTreeSet<&str> = BTreeSet::new();
+    let mut late: Vec<String> = Vec::new();
     // what each name is declared as, where a corner round asks of its curves (#948): before
     // any is counted, so one declared after the round is known too
     let rounded = body.iter().any(|st| super::rounds::is_round(st));
@@ -340,20 +341,42 @@ fn names(cx: &mut Elab<'_>, body: &[&Statement]) -> BTreeSet<StmtId> {
         // the *key*, which is resolution's question: an anonymous key is its own offset and a
         // copy's carries its prefix, so only a name the source wrote twice can actually collide
         let key = &name.key().text;
-        // a corner round between a curve and the next where either is declared no line (#948):
-        // said once, at the round, and nothing of it made — its arc's ends would be that curve's
-        // `p2` and `p1`, which an arc has none of, and each row of it one over an arc never built
-        let no_line = |r: &crate::syntax::Ref| {
-            let kind = declared.get(r.root.text.as_str()).filter(|_| r.path.is_empty())?;
-            (*kind != EntKind::Line).then_some(*kind)
+        // a corner round beside a curve that is neither a line nor an arc, or beside an arc
+        // declared apart from the chain (#948, #962): said once, at the round, and nothing of it
+        // made — the parser, which cannot know a name's kind, wrote the round's ends as a line's
+        // (`re.p2`, `re.p1`), which an arc has none of, and each row of it would be one over an
+        // arc never built.  An arc declared in the chain has its ends named as an arc's.
+        let named = match &st.kind {
+            StmtKind::Decl(d) if round.is_some() => [1, 2].map(|slot| {
+                let r = d.children.get(slot).and_then(|g| g.first()).and_then(|k| k.as_ref())?;
+                match r.path.last() {
+                    Some(crate::syntax::Seg::Field(n)) => Some(n.text.clone()),
+                    _ => None,
+                }
+            }),
+            _ => [None, None],
         };
-        let curve = round
-            .and_then(|k| [&k.from, &k.to].into_iter().find_map(|r| Some((r, no_line(r)?))));
-        if let Some((r, other)) = curve {
-            let what = crate::syntax::ref_text(r);
-            cx.diags.push(Diag::within(Code::E040, st.span, st.id, format!(
-                "{}: round a curve's edge by a round of the solid it bounds",
-                super::rounds::not_lines(&what, &other.a()))));
+        let refused = |r: &crate::syntax::Ref, end: &Option<String>| {
+            let kind = *declared.get(r.root.text.as_str()).filter(|_| r.path.is_empty())?;
+            let as_line = end.as_deref().is_some_and(|f| matches!(f, "p1" | "p2"));
+            match kind {
+                EntKind::Line => None,
+                EntKind::Arc if !as_line => None,
+                EntKind::Arc => Some(format!(
+                    "a round names the ends of a side it is not declared with as a line's, and \
+                     `{}` is an arc declared apart from the chain: declare it in the chain, \
+                     `(…) -> round(…) ({} := arc(…))`, where the round reads its ends",
+                    crate::syntax::ref_text(r), crate::syntax::ref_text(r))),
+                other => Some(format!(
+                    "{}: round a curve's edge by a round of the solid it bounds",
+                    super::rounds::not_sides(&crate::syntax::ref_text(r), &other.a()))),
+            }
+        };
+        let curve = round.and_then(|k| {
+            [(&k.from, &named[0]), (&k.to, &named[1])].into_iter().find_map(|(r, e)| refused(r, e))
+        });
+        if let Some(why) = curve {
+            cx.diags.push(Diag::within(Code::E040, st.span, st.id, why));
             skip.insert(st.id);
             unmade.insert(key.as_str());
             continue;
@@ -384,8 +407,6 @@ fn names(cx: &mut Elab<'_>, body: &[&Statement]) -> BTreeSet<StmtId> {
                 continue; // an open traversal binds a name but allocates no face
             }
         }
-        let n = count.entry(kind).or_insert(0);
-        res.of.insert(key.clone(), EntRef::new(kind, *n as usize));
         if let StmtKind::Decl(d) = &st.kind {
             res.kids.insert(
                 key.clone(),
@@ -395,6 +416,14 @@ fn names(cx: &mut Elab<'_>, body: &[&Statement]) -> BTreeSet<StmtId> {
                 }).collect(),
             );
         }
+        // a corner round's arc is counted, and built, after every other arc (#962): its ends
+        // are its sides' — an arc's among them, which mints its own as it is built
+        if round.is_some() {
+            late.push(key.clone());
+            continue;
+        }
+        let n = count.entry(kind).or_insert(0);
+        res.of.insert(key.clone(), EntRef::new(kind, *n as usize));
         *n += 1;
         // a plane's origin is a point minted with the points, in statement order — and a
         // frame's declared bare where its axes are read (#383)
@@ -404,6 +433,11 @@ fn names(cx: &mut Elab<'_>, body: &[&Statement]) -> BTreeSet<StmtId> {
             res.origins.insert(key.clone(), *n as usize);
             *n += 1;
         }
+    }
+    for key in late {
+        let n = count.entry(EntKind::Arc).or_insert(0);
+        res.of.insert(key, EntRef::new(EntKind::Arc, *n as usize));
+        *n += 1;
     }
     // and what states a row of a round left unmade
     for other in body.iter().filter(|_| !unmade.is_empty()) {
@@ -438,7 +472,16 @@ fn geometry(cx: &mut Elab<'_>, flat: &Flat<'_>) -> Vec<Deferred> {
         EntKind::Frame,
         EntKind::Curve,
     ] {
-        for st in &flat.body {
+        // a corner round's arc after every other arc (#962), as `names` counted it: an arc it
+        // rounds mints the end the round names
+        let decls = flat.body.iter().filter(|st| match &st.kind {
+            StmtKind::Decl(d) => kind != EntKind::Arc || d.round.is_none(),
+            _ => true,
+        });
+        let rounds = flat.body.iter().filter(|st| {
+            kind == EntKind::Arc && matches!(&st.kind, StmtKind::Decl(d) if d.round.is_some())
+        });
+        for st in decls.chain(rounds) {
             let StmtKind::Decl(d) = &st.kind else { continue };
             // a plane's origin, minted with the points in statement order (`Resolver::origins`)
             if kind == EntKind::Point && d.kind == EntKind::Frame && !flat.skip.contains(&st.id)

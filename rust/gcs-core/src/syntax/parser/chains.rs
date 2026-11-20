@@ -281,11 +281,14 @@ fn round_ref(rw: &RoundWord) -> Ref {
     Ref { span: root.span, root, path: Vec::new() }
 }
 
-/// The point at one end of a link, as a relation names it: its own field (`side.p2`), past the
-/// link's name however dotted.
+/// The point at one end of a link, as a relation names it: its own field (`side.p2`,
+/// `window.end`), past the link's name however dotted — a line's where the link names an element
+/// declared elsewhere, whose kind only elaboration knows (and refuses there where it is a curve,
+/// `program::names`).
 fn end_ref(link: &Link, slot: usize) -> Ref {
     let mut r = link.entity();
-    r.path.push(Seg::Field(Name::new(boundary_name(EntKind::Line, slot))));
+    let kind = link.kind().unwrap_or(EntKind::Line);
+    r.path.push(Seg::Field(Name::new(boundary_name(kind, slot))));
     r.span = Span::default();
     r
 }
@@ -1220,17 +1223,20 @@ impl<'a> P<'a> {
         at: Span,
     ) -> Option<RoundEnds> {
         for side in [li, ri] {
-            if let Some(k) = links[side].kind().filter(|k| *k != EntKind::Line) {
+            let sided = |k: &EntKind| matches!(k, EntKind::Line | EntKind::Arc);
+            if let Some(k) = links[side].kind().filter(|k| !sided(k)) {
                 self.errs.push(SynErr {
                     span: links[side].span_of_name(),
-                    message: format!("a round rounds the corner where two lines meet, and this \
-                        is {}", k.a()),
+                    message: format!("a round rounds the corner where two lines or arcs meet, \
+                        and this is {}", k.a()),
                 });
                 return None;
             }
         }
-        let ends = EntKind::Line.ends().expect("a line has ends");
-        let (exit, entry) = (ends.exit, ends.entry);
+        // each side's own ends — a line's `p1` and `p2`, an arc's `start` and `end` (#962) — and
+        // a side declared elsewhere a line's, its kind elaboration's to know
+        let ends = |i: usize| links[i].kind().unwrap_or(EntKind::Line).ends().expect("ends");
+        let (exit, entry) = (ends(li).exit, ends(ri).entry);
         let left = slot_ref(&links[li], exit);
         let right = slot_ref(&links[ri], entry).map(|r| match next {
             true => under_root("next", &r, at),
@@ -1238,11 +1244,25 @@ impl<'a> P<'a> {
         });
         let corner = match (left, right) {
             (Some(l), Some(r)) if !refs_eq(&l, &r) => {
+                // an arc whose other end names the corner is walked from its end, which a round
+                // does not take: it walks a side as written, from its start
+                let sides = [(li, ends(li).entry, &r), (ri, ends(ri).exit, &l)];
+                let back = sides.into_iter().find(|&(i, k, p)| {
+                    links[i].kind() == Some(EntKind::Arc)
+                        && slot_ref(&links[i], k).is_some_and(|q| refs_eq(&q, p))
+                });
+                let why = match back {
+                    Some((i, _, _)) => format!(": a round walks an arc beside it from its \
+                        start, and `{}` is written to be walked from its end — write its ends \
+                        the other way round, with `sense: cw` where it turns clockwise",
+                        ref_text(&links[i].entity())),
+                    None => String::new(),
+                };
                 self.errs.push(SynErr {
                     span: at,
                     message: format!(
                         "the round's corner is named twice: `{}` leaves at `{}` and `{}` \
-                         arrives at `{}`",
+                         arrives at `{}`{why}",
                         ref_text(&links[li].entity()),
                         ref_text(&l),
                         ref_text(&links[ri].entity()),
