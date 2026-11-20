@@ -481,7 +481,11 @@ there, and kept within (or outside) each face it ends on, whatever of its sectio
 leaves: the set's own extent, not a construction's. Short of it, where every point of the section
 has crossed a plane at that end (#218's `first_over`; each comes back within only past the
 halfway meridian) or stays a quarter of the way into a curved face's solid, the piece stops there
-as before — the same shape. A disc of 75 with four flats 74.5 out (#962's 149), its rim chamfered
+as before — the same shape. Only where the set's edges are **one run**: in several (a crease a
+slot cuts across) each point is read against the ends of the run nearest it (#881), the meeting
+is no one curve within one set of faces, and a piece goes on only as far as each end cuts its
+whole section off, refused by the old names where it does not (a short slot along the crease, a
+round end each: `round_lowering::a_refused_rounds_piece_is_said_at_its_round`). A disc of 75 with four flats 74.5 out (#962's 149), its rim chamfered
 1, was refused ("a stretch of a circle its end does not cut off"): the section's inner half never
 reaches the flat. Each rim's stretch now turns to the meridian halfway to the next arc, kept
 within its two flats, and two stretches carried to one meridian are one section there, glued; a
@@ -498,12 +502,20 @@ plane halfway across the chord (`run_piece`'s `halfway`), kept outside the face.
 one face of a smooth chain (#962's 125, a round of the R90 arc alone) ends square at the tangent
 seam: no face ends it there, so the meeting is the arc's whole circle, and the crease is the
 nearest of it only over the arc's own meridians — the set itself stops square, as the stretch
-does. `tests/curved_ends.rs` is the gate (the disc with one, two and four flats, chamfered and
-rounded just under, at and over the flat's depth, with and without a keyed bore, mirrored and
-turned, either cap; the two discs in common and in union, rounded under, at and over the
-overhang; the channel's fill broken by a hole inside, on and beyond its wall, at the channel's end
-and across a trench, square-on and skewed; each volume the closed form's to 1e-9, the section the
-rim leaves at each depth integrated by Gauss–Legendre or tanh–sinh).
+does. `tests/curved_ends.rs` is the gate (the disc with one, two and four flats, chamfered just
+under, at and over the flat's depth and rounded, with a bore keyed four times, once and not at
+all — a key whose arc turns past half round crossed by its side's plane, ending square — mirrored
+and turned, either cap; the two discs in common, rounded under and just either side of the
+overhang and well over it, mirrored, and chamfered, and in union; a drum of the two standing on a
+flange, its foot filled; a pocket's floor-to-wall fill broken by a hole inside, on and beyond its
+wall, at the pocket's end with no edge beyond, and across a trench under the floor, square-on and
+skewed; each volume the closed form's to 1e-9, the section left at each depth integrated by
+Gauss–Legendre or tanh–sinh, the pocket's against the kernel's body without the fill). Refused by
+the kernel yet, said where it stands: the round exactly as deep as the larger disc overhangs (the
+round's torus touching that cylinder: "where a traced … meets a plane was not proved: its search
+read more boxes than any search may"), and a chamfer past the overhang on some caps and depths,
+the smaller disc's whole ring kept within the larger's cylinder unioned with the larger's ring
+whose leg lies on that cylinder ("where a bspline … meets a cylinder was not proved").
 
 **A ball as wide as its cylinder** (brep-bench's fillet/cylinder-rim-to-dome): an offset by a
 radius that takes a surface's radius to nothing is what the surface is drawn about, never nothing
