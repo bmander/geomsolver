@@ -2559,6 +2559,43 @@ fn curvature_bound(s: &Surface,p: V,r: f64) -> Option<f64> {
     }
 }
 
+/// **How far from `p` a searchable surface's points within `r` of `p` reach along it**: a length
+/// `r'` such that each point of `s` within `r` of `p` (a point of `s`) is joined to `p` by a path
+/// on `s` that keeps within `r'` of `p` — so a face of `s` holding such a point and not `p` has
+/// boundary within `r'` of `p` (#961). `None` where the ball is not that small against the
+/// surface's shape there: it reaches across a cylinder or a tube, to a cone's other nappe or
+/// apex, or to a torus's axis.
+pub fn disc_reach(s: &Surface,p: V,r: f64) -> Option<f64> {
+    let [x,y,z] = s.frame().local(p);
+    let rho = x.dhypot(y);
+    match *s {
+        // a straight line from `p` in the plane's parameters; a sphere's great circle, or a
+        // cylinder's helix of least turn, from `p`, along which the chord from `p` only grows
+        Surface::Plane(_) => Some(r),
+        Surface::Sphere(..) => Some(r),
+        Surface::Cylinder(_,big) => (2.*r <= big.abs()).then_some(r),
+        // away from its apex and axis by twice the ball, at most twice the ball along the nappe:
+        // the other nappe stands `d min(1, sin 2α)` off, `d` the distance from the apex
+        Surface::Cone(_,big,a) => {
+            let (sa,ca) = a.dsin_cos();
+            let apex = if sa.abs() > 1e-12 { -big*ca/sa } else { return (2.*r <= big.abs()).then_some(r) };
+            let d = rho.dhypot(z-apex);
+            (2.*r <= rho && 2.*r <= d*(2.*sa*ca).abs().min(1.)).then_some(2.*r)
+        }
+        // within half its tube's radius, and away from its axis
+        Surface::Torus(_,_,minor) => (2.*r <= minor.abs() && 2.*r <= rho).then_some(2.*r),
+        // the ball's preimage lies in the ball of radius `r / σ_min` about `p`'s, and a path there
+        // is stretched by at most `σ_max`
+        Surface::Affine(ref m) => {
+            let [lo,hi] = m.stretch;
+            if !(lo > 0.) { return None }
+            disc_reach(&m.of,m.back.point(p),r/lo).map(|q| q*hi)
+        }
+        Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)
+            | Surface::Offset(..) => None,
+    }
+}
+
 /// Points along a traced curve, or a fitted one, no farther apart than `spacing` (a traced curve's
 /// chords: they pass within a sagitta of it far smaller than the spacing).
 fn samples_along(c: &Curve,spacing: f64) -> Vec<V> {
@@ -2591,15 +2628,21 @@ fn samples_along(c: &Curve,spacing: f64) -> Vec<V> {
 /// guessed. Two curves nearer than `leaf` are not told apart. `Ok(None)`: every part of the face is
 /// clear of `b` or beside a known curve. Both surfaces must be `searchable`.
 pub fn unseen(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &[Curve],lo: V,hi: V,tol: f64) -> Result<Option<V>,String> {
-    unseen_beside(a,domain,b,known,&[],&mut |_| false,lo,hi,tol)
+    unseen_beside(a,domain,b,known,&[],&mut |_| false,&mut |_,_| false,lo,hi,tol)
 }
 
 /// `unseen`, known also the curves `stretches` over their stretches (edges the two touch along),
 /// and a cell whose meeting (its middle pulled onto both) is `beside` a known meeting (a point
 /// where the two touch alone, its branches traced up to it) answered as beside a known curve.
+/// A cell down to `leaf` that is `clear` of the faces searched for is answered as clear of `b`, and
+/// never refused: `clear(p, r)` says no point within `r` of `p` lies on both faces, so whatever the
+/// two surfaces do there is no part of their faces' meeting (#961: the face's box of parameters,
+/// grown past its edges and a cone's past its apex onto the other nappe, and the faces' shared
+/// box reach where the surfaces run on past both faces). Without faces (`unseen`, a meeting over
+/// boxes) nothing is clear.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn unseen_beside(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &[Curve],stretches: &[(&Curve,[f64;2])],
-    beside: &mut dyn FnMut(V) -> bool,lo: V,hi: V,tol: f64) -> Result<Option<V>,String> {
+    beside: &mut dyn FnMut(V) -> bool,clear: &mut dyn FnMut(V,f64) -> bool,lo: V,hi: V,tol: f64) -> Result<Option<V>,String> {
     // a cap on the cells asked, far past any face this kernel builds, that a pathology ends at
     const CELLS: usize = 4_000_000;
     let pad = 4.*tol;
@@ -2649,6 +2692,8 @@ pub(crate) fn unseen_beside(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &
         }
         if reach <= leaf {
             if near_known(p,2.*reach+spacing) { continue }
+            // every meeting the cell may hold is within its reach of its middle, on `a`
+            if clear(p,reach) { continue }
             let q = probe.project(p);
             if beside(q) { continue }
             if off_both(a,b,q) <= 16.*tol {

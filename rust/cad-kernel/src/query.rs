@@ -2550,6 +2550,18 @@ impl<'a> Located<'a> {
     /// and read there the point would be in the face.
     pub fn face_holds(&self,fi: usize,p: V) -> bool { self.face_place(fi,p) == Place::In }
 
+    /// **Whether face `fi` is clear of every point of its surface within `r` of `p`**, a point of
+    /// that surface (#961): `p` outside the face, and every edge of its loops — a seam and an
+    /// apex among them — farther than `ssi::disc_reach(r)` from `p` by its box. Each such point
+    /// is joined to `p` along the surface within that reach, so were one in the face the path
+    /// would cross its boundary there. `false` where the reach is not established, or the face's
+    /// boundary comes within it: a point beside a face's edge is never read as clear of it.
+    pub fn face_clear(&self,fi: usize,p: V,r: f64) -> bool {
+        let f: &Face = &self.b.faces[fi];
+        let Some(reach) = super::ssi::disc_reach(&f.surface,p,r) else { return false };
+        f.loops.iter().flatten().all(|c| self.edge_gap(c.edge,p) > reach) && self.face_place(fi,p) == Place::Out
+    }
+
     /// Where a point of face `fi`'s surface stands against the face: `On` within `tol` of its
     /// boundary. A seam (an edge the face uses twice, once each side) is no boundary: a point on
     /// one, away from every other edge, is in the face.

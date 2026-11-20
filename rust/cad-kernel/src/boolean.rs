@@ -1971,8 +1971,22 @@ impl<'a> Arrangement<'a> {
             // more separate loops than any face pair this kernel builds meets in
             const LOOPS: usize = 64;
             let mut found = 0;
+            // **a near-contact outside either face is none of theirs** (#961): the search keeps
+            // to the smaller face's box of parameters (grown past its edges, a cone's past its
+            // apex onto the other nappe) and the box every face on the two surfaces fills, so it
+            // reaches where the surfaces run on past the faces; a cell there whose every point,
+            // within `r` of `p` on `mine`, stands beyond one face by more than the face's
+            // boundary comes (`Located::face_clear`) holds no point of what is built. One beside
+            // both faces, or whose reach along a surface is not shown, is refused as before
+            let (located,fs) = ([&self.located[oa],&self.located[ob]],[fa,fb]);
+            let clear = &mut |p: V,r: f64| (0..2).any(|k| {
+                let s = [sa,sb][k];
+                let foot = s.point(s.inverse(p));
+                // the ball about the foot holding the one about `p`
+                located[k].face_clear(fs[k],foot,r+distance(foot,p)+tol)
+            });
             // the edges they touch along are meetings already known, over their own stretch
-            while let Some(p) = super::ssi::unseen_beside(mine,domain,theirs,&traced,&stretches,beside,lo,hi,tol)? {
+            while let Some(p) = super::ssi::unseen_beside(mine,domain,theirs,&traced,&stretches,beside,clear,lo,hi,tol)? {
                 self.say.unseen(faces,surfaces,p);
                 found += 1;
                 if found > LOOPS {
