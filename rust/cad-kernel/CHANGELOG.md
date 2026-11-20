@@ -8,6 +8,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A branch beside a rail ends where the two fans touch** (#942 T1d-cube,
+  `swept::general`): two fans' second branch beside the corner's path they share reaches the path
+  only where the two are tangent, and its trace stopped short there or ran on along the path (the
+  cube tumbling 75°: 3.95e-6 past the corner, at a sine of 7e-7), the branch left hanging in a face
+  as a slit. An end within its meeting's reach of the path is carried to where the walls' normals
+  turn past each other along it, and to the road's corner there, the curve cut at it. New
+  `nurbs::BSpline::segment`, a curve's stretch exactly. The 75° cube is now refused where the 15°
+  one is, the boundary open along a rail edge.
+
 - **A fan that passes back through itself is cut into runs, their crossing given** (#942 T1d-cube,
   `swept::general`): an edge's fan was one wall over the whole roll, its strips faces of one
   surface, and where the edge's line passed back through where it stood a while before two faces of
@@ -18,8 +27,7 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   to it and a candidate of its own, given the rim it shares with the next, where the runs cross
   (traced run against run, one curve across a run's stretches), and each meeting of the whole wall
   restricted to the run (a rail over the run's span). A fan crossing itself nowhere is as it was.
-  The cube tumbling 15° and 75° get past it, each now refused where two fans' second crossing
-  beside their shared corner's path is traced short of the path. A seed on a branch traced already
+  The cube tumbling 15° and 75° get past it. A seed on a branch traced already
   is read within `tolerant::on_meeting`'s reach (two fans meeting shallowly traced one branch twice,
   4e-7 apart); a dump writes each wall with the number it is shared by, so a trim read back shares
   its walls as built and replays bit for bit. Gated by `swept_general`'s replays of the 15° and 75°

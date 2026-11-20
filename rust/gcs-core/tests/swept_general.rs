@@ -18,10 +18,10 @@ fn cube() -> gcs_core::brep::topo::Brep { crate::brep::block([2.4,-0.6,1.4],[3.6
 
 /// **A cube tumbling a short way is built closed** by the general road and judged. Not yet at 15°:
 /// one of its fans passes back through itself and is cut into two runs, their crossing given
-/// (#942 T1d-cube), and the trim then leaves the boundary open along a rail where two fans' second
-/// crossing beside the corner path they share runs into it and its trace stops short.
+/// (#942 T1d-cube), and the trim then leaves the boundary open along a rail edge, face 4 of candidate
+/// 8 parted by a meeting it was not given.
 #[test]
-#[ignore = "T1d-cube: two fans' second crossing beside their shared rail traced short of it"]
+#[ignore = "T1d-cube: the boundary open along a rail edge, a meeting the trim was not given"]
 fn a_cube_tumbling_a_little_is_built_by_the_general_road() {
     let cube = cube();
     let roll = [-15f64.to_radians(),15f64.to_radians()];
@@ -154,14 +154,17 @@ fn a_refused_trim_replays_from_its_dump_to_the_same_refusal() {
 /// same refusal run again from the files in a fraction of that. Refused by name since #942 F2 where
 /// its edge 5's fan passed back through itself, a meeting of the fan with itself that no given
 /// meeting of two surfaces lays; since #942 T1d-cube that fan is cut into two runs, two candidates
-/// whose crossing is given, and the trim gets past it, refused instead where two other fans'
-/// second crossing beside their shared rail is traced short of it.
+/// whose crossing is given, and the trim gets past it. Two other fans' second crossing beside their
+/// shared rail, once traced past the corner they touch at and left hanging in a face, is ended
+/// there (`general::ended_on_rails`), and the trim is refused instead as the 15° cube is, the
+/// boundary open along a rail edge.
 #[test]
 #[cfg_attr(not(feature = "slow"),ignore = "slow tier, 40 s: the bench's tumbling cube's candidates made, then its trim twice")]
 fn the_bench_tumbling_cubes_refused_trim_replays_from_its_dump_alike() {
     let why = replayed_alike(&cube_trimming(75.),"cube-75-dump");
-    // (no fan passing back through itself any more: its runs' crossing given, #942 T1d-cube)
-    assert!(why.contains("a meeting the trim was not given parts them") && !why.contains("passing back through itself"),"{why}");
+    // (no fan passing back through itself any more: its runs' crossing given; nor a branch beside a
+    // rail left hanging, #942 T1d-cube)
+    assert!(why.contains("the boundary is open along a rail edge") && !why.contains("passing back through itself"),"{why}");
 }
 
 /// **A meeting left out of what the trim is given is completed from its witness** (#942 F2's gate):

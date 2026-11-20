@@ -86,6 +86,21 @@ impl BSpline {
     }
     /// Where the curve is defined.
     pub fn domain(&self) -> [f64;2] { [self.knots[self.degree],self.knots[self.poles.len()]] }
+    /// The curve over `[a, b]` (within its domain) alone, exactly (`segment`): the same points at
+    /// the same parameters, clamped there; a rational one's in homogeneous coordinates.
+    pub fn segment(&self,[a,b]: [f64;2]) -> BSpline {
+        let [lo,hi] = self.domain();
+        let (a,b,p) = (a.max(lo),b.min(hi),self.degree);
+        if let Some(w) = &self.weights {
+            let h: Vec<Vec<[f64;4]>> = self.poles.iter().zip(w).map(|(q,&w)| vec![[w*q[0],w*q[1],w*q[2],w]]).collect();
+            let (knots,h) = segment(&self.knots,&h,p,a,b);
+            let poles = h.iter().map(|r| [r[0][0]/r[0][3],r[0][1]/r[0][3],r[0][2]/r[0][3]]).collect();
+            return BSpline {degree:p,knots,poles,weights:Some(h.iter().map(|r| r[0][3]).collect())}
+        }
+        let rows: Vec<Vec<V>> = self.poles.iter().map(|&q| vec![q]).collect();
+        let (knots,rows) = segment(&self.knots,&rows,p,a,b);
+        BSpline {degree:p,knots,poles:rows.into_iter().map(|r| r[0]).collect(),weights:None}
+    }
     /// The distinct knots strictly inside `[a, b]`, where the curve's third derivative may jump.
     pub fn breaks(&self,[a,b]: [f64;2]) -> Vec<f64> {
         let mut out: Vec<f64> = self.knots.iter().copied().filter(|&k| k > a && k < b).collect();

@@ -1992,12 +1992,24 @@ branch twice from two seeds, 4e-7 apart, laid side by side. A dump writes each w
 it is shared by (`dump::shared`), so a trim read back shares its walls as it was built: a wall's
 inverse starts from the last foot found on it, and walls read back apart moved a refusal's points in
 their last digits.
-**Not yet built**: the cube tumbled 15° and the bench's 75°, each past its fan crossing itself:
-where two fans from one corner cross a second time beside the path of the corner they share, that
-second branch runs into the path where the two fans come to touch, and its trace stops some 1e-3
-short of it (`beside_rails` through `meeting::through`); with both its ends open it parts nothing,
-and the trim leaves a piece unparted (75°, edges 1 and 9 at `(3.603, −0.554, 2.388)`) or the boundary
-open along a rail (15°). **A ring's fold pair born partway**
+**A branch beside a rail ends where the two fans touch** (#942 T1d-cube,
+`general::ended_on_rails`): two edges' fans from one corner meet in the corner's path and in a
+second branch beside it, and two branches of one meeting cross only where its surfaces are
+tangent; the two fans are tangent on their path where the corner's velocity lies in the face
+holding both edges, an instant that face turns, where the road cuts its stretches. There the trace,
+its surfaces meeting ever more shallowly, stops short or runs on along the path (the cube tumbling
+75°, edges 1 and 9: 3.95e-6 past the corner, two thousand tolerances, at a sine of 7e-7), and the
+branch hung in the face as a slit, the piece holding both its sides. An end within its meeting's
+reach of the path (`tolerant::on_meeting`) is carried to where the walls' normals turn past each
+other along it (`(nₐ × n_b) · r′` changing sign), and to the corner of either wall there, the road's
+own, where one stands nearer that root than the end did (the root, read through two numerical
+feet, stood 5e-9 off it, past the pool's tolerance); the curve is cut there (`BSpline::segment`).
+Not for one fan's runs meeting each other: their walls are one sheet across the rim they share, the
+sine along it nought throughout.
+**Not yet built**: the cube tumbled 15° and the bench's 75°, each past its fan crossing itself and
+its branches beside rails ended: the trim leaves the boundary open along a rail edge (15°, face 4 of
+candidate 8 at `(2.374, 0.946, 2.552)`; 75°, face 0 of candidate 5 at `(3.559, 0.839, 1.334)`), a
+meeting it was not given parting a piece from where it was read. **A ring's fold pair born partway**
 (`brep::swept::rings`): a pair narrower than its band read by its least `s''` along the band, on the
 curve's own branch; the roll cut where the contact changes shape (`rings::changes`), each stretch
 fitted alone, its tubes sewn across the cuts and trimmed; a sheet refused as folding only where it

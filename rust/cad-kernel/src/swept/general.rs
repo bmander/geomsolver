@@ -127,6 +127,83 @@ fn beside_rails(a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,rails: &[Curve],tol:
     kept
 }
 
+/// **A branch beside a rail ends on it where the two walls touch** (#942 T1d-cube): two branches
+/// of one meeting cross only where its two surfaces are tangent, so a branch beside the rail two
+/// edges' fans share reaches the rail where they touch — and there the trace, its surfaces meeting
+/// ever more shallowly, stops short or runs on along the rail (the cube tumbling 75°: its two
+/// fans' branch ran 3.95e-6 past the corner they touch at, two thousand tolerances, at a sine of
+/// 7e-7, and hung in the face as a slit). An end within its meeting's reach of a rail
+/// (`tolerant::on_meeting`) is carried to the rail's point where the walls' normals turn past each
+/// other — where `(nₐ × n_b) · r′` changes sign, within that reach along it — and the curve cut
+/// there; an end with no such point is left as traced.
+///
+/// The two fans touch where the corner's velocity lies in the face holding both edges, an instant
+/// the face turns and the contact changes, where the road cuts its stretches: so a corner of
+/// either wall on the rail nearer that root than the end stood is the touch, as the road placed it
+/// (the root, read through two numerical feet, 5e-9 off it, past the pool's tolerance). (Not for
+/// one fan's stretches meeting each other: their walls are one sheet across the rim they share,
+/// the sine along it nought throughout, and its sign there rounding's.)
+fn ended_on_rails(mut c: Curve,a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,rails: &[Curve],tol: f64) -> Curve {
+    use crate::util::space::{norm,normalised};
+    let unit = |s: &Surface,p: V| normalised(s.gradient(p)).unwrap_or([0.;3]);
+    for high in [false,true] {
+        let Some([t0,t1]) = crate::query::curve_domain(&c) else { return c };
+        let p = c.point(if high { t1 } else { t0 });
+        let reach = crate::tolerant::on_meeting(tol,norm(cross(unit(sa,p),unit(sb,p))));
+        let touch = rails.iter().find_map(|r| {
+            let [r0,r1] = crate::query::curve_domain(r)?;
+            let f = r.inverse(p);
+            if distance(r.point(f),p) > reach { return None }
+            // the sine of the walls' angle, signed along the rail
+            let signed = |s: f64| { let (q,d) = r.d1(s); dot(cross(unit(sa,q),unit(sb,q)),normalised(d).unwrap_or([0.;3])) };
+            let w = reach/norm(r.d1(f).1).max(1e-300);
+            let (lo,hi) = ((f-w).max(r0),(f+w).min(r1));
+            const LOOKS: usize = 16;
+            let at: Vec<(f64,f64)> = (0..=LOOKS).map(|k| { let s = lo+(hi-lo)*k as f64/LOOKS as f64; (s,signed(s)) }).collect();
+            let (from,to) = at.windows(2).filter(|w| w[0].1*w[1].1 <= 0. && w[0].1 != w[1].1).map(|w| (w[0],w[1]))
+                .min_by(|x,y| (0.5*(x.0.0+x.1.0)-f).abs().total_cmp(&(0.5*(y.0.0+y.1.0)-f).abs()))?;
+            let (s,_) = crate::util::roots::bisect(from.0,to.0,|x,y| 0.5*(x+y),|x,y| y-x > f64::EPSILON*(x.abs()+y.abs()),
+                |m| signed(m)*from.1 > 0.);
+            let q = r.point(s);
+            if distance(q,p) > reach { return None }
+            let corner = a.vertices.iter().chain(&b.vertices).map(|v| v.p).filter(|&v| distance(r.point(r.inverse(v)),v) <= tol)
+                .min_by(|x,y| distance(*x,q).total_cmp(&distance(*y,q))).filter(|&v| distance(v,q) < distance(p,q));
+            Some(corner.unwrap_or(q))
+        });
+        let Some(q) = touch else { continue };
+        let tc = c.inverse(q);
+        // (cut only within the end's half: the branch's other end is never the touch's)
+        let mid = 0.5*(t0+t1);
+        let cut = if high { tc > mid && tc < t1 } else { tc < mid && tc > t0 };
+        let ended = match &c {
+            Curve::BSpline(b) => {
+                let mut b = if cut { b.segment(if high { [t0,tc] } else { [tc,t1] }) } else { (**b).clone() };
+                let n = b.poles.len();
+                b.poles[if high { n-1 } else { 0 }] = q;
+                Some(Curve::BSpline(Arc::new(b)))
+            }
+            Curve::Traced(t) => {
+                let mut pts = t.pts.clone();
+                if high {
+                    if cut { pts.truncate(tc.floor() as usize+1) }
+                    if pts.len() > 1 && distance(pts[pts.len()-1],q) <= tol { pts.pop(); }
+                    pts.push(q);
+                } else {
+                    if cut { pts.drain(..tc.ceil() as usize); }
+                    if pts.len() > 1 && distance(pts[0],q) <= tol { pts.remove(0); }
+                    pts.insert(0,q);
+                }
+                Some(Curve::Traced(Arc::new(crate::geom::Traced {a:t.a.clone(),b:t.b.clone(),pts,closed:t.closed})))
+            }
+            _ => None,
+        };
+        let Some(ended) = ended else { continue };
+        if crate::debug() { eprintln!("general: a branch beside a rail ended where the walls touch, at {q:?}, {:.3e} from where it was traced to",distance(p,q)) }
+        c = ended;
+    }
+    c
+}
+
 
 /// How many pieces a stretch of the roll is cut into at the least, before any is halved.
 const FIRST_PIECES: usize = 4;
@@ -496,7 +573,12 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
                 // and two edges' fans from one corner cross a second time beside its path — the
                 // cube tumbling 5°, its top front edge's fan and its top side edge's, the hole
                 // between them left open — traced from where an edge of either crosses the other)
-                if !curves.is_empty() { curves.extend(beside_rails(&breps[x],&surfaces[x],&breps[y],&surfaces[y],&curves,tol)) }
+                if !curves.is_empty() {
+                    let (a,b,sa,sb) = (&breps[x],&breps[y],&surfaces[x],&surfaces[y]);
+                    let beside: Vec<Curve> = beside_rails(a,sa,b,sb,&curves,tol).into_iter()
+                        .map(|c| ended_on_rails(c,a,sa,b,sb,&curves,tol)).collect();
+                    curves.extend(beside);
+                }
             }
             // **a face and an edge of it**: the path of where the face's chord reaches the edge, where
             // the two touch — over each stretch whose shape holds that end, so each piece ends where
