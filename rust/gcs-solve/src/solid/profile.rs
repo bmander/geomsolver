@@ -232,21 +232,18 @@ pub(crate) fn curved_point(sk: &Sketch, e: EntRef, t: f64) -> (f64, f64) {
 /// test), read at the pose the sketch stands in — with its name in the face (`FaceE::edge_names`,
 /// empty where unnamed) and its length (model units).  A line's run, an arc's radius times its
 /// turn (none is a whole turn, as the recipe writes it), a circle's round, and a spline's or a
-/// curve's widest chord; against the face's reach from where its plane comes nearest the world's
-/// origin, as the recipe places a profile.  A face's walk drops such an edge as it tessellates
+/// curve's widest chord; against the face's own reach from its first corner — a face's size, not
+/// how far it stands from the world's origin (a kernel builds a part far out about its own
+/// origin, `cad::recipe_about`).  A face's walk drops such an edge as it tessellates
 /// (`tidy_poly`), so the face bounds a region all the same, and only a kernel would meet it, in
 /// its own terms.
 pub fn edge_of_no_length(sk: &Sketch, fi: usize) -> Option<(EntRef, String, f64)> {
-    use crate::space::{dot, norm, scale, sub};
     let f = sk.faces.get(fi)?;
-    let basis = match f.plane {
-        Some(p) => { sk.frames.get(p as usize)?; sk.basis(p as usize) }
-        None => Basis::page(),
-    };
-    let n = crate::space::normalised(basis.normal())?;
-    let foot = sub(basis.o, scale(n, dot(basis.o, n)));
-    let at = |q: (f64, f64)| norm(sub(basis.lift(q.0, q.1), foot));
     let xy = |p: u32| sk.point_xy(p as usize);
+    let first = f.edges.first().and_then(|&e| crate::model::edge_ends(sk, e)).map(|(p, _)| xy(p))
+        .or_else(|| f.edges.first().filter(|e| e.kind == EntKind::Circle)
+            .and_then(|e| sk.circles.get(e.i())).map(|c| xy(c.center)))?;
+    let at = |q: (f64, f64)| (q.0 - first.0).dhypot(q.1 - first.1);
     let span = |q: &[(f64, f64)]| q.iter()
         .map(|a| q.iter().map(|b| (a.0 - b.0).dhypot(a.1 - b.1)).fold(0.0, f64::max))
         .fold(0.0, f64::max);

@@ -640,7 +640,8 @@ placement carries inside the blank; CLI test readers zero the offset.
   **An operand's fault is the operand's** (#962, [0.223]): a face no solid can be made of —
   an edge of its outline or a hole with no length where the drawing stands
   (`solid::edge_of_no_length`, by the kernel's own test `brep::build::no_length`, each edge's
-  length a length whatever its parameter measures: an arc's radius times its turn), or loops that
+  length a length whatever its parameter measures — an arc's radius times its turn — against the
+  face's own reach, not its distance from the world's origin), or loops that
   bound no simple region (`section::face_polys`' refusal) — is `solid::face_fault`, read off the
   sketch before anything is built.  A primitive swept from it is refused for it (`validate`, in
   the face's words, never the kernel's `loop 0`), and `refused` says the fault **once, at the

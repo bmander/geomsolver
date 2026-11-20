@@ -471,3 +471,19 @@ fn a_round_that_selects_an_edge_says_nothing_of_it() {
     assert!(part(&src)["part.volume"] < part(SLAB)["part.volume"]);
     assert_eq!(w119(&src), []);
 }
+
+/// **No round of the library selects nothing** (#962): every document under
+/// `rust/examples/rounds/` rounds or chamfers edges it means to, so W119 says nothing of any — its
+/// rounds over a round's faces, its rims over rounded corners, its blocks picking faces by how
+/// they lie, its corners of three.
+#[test]
+fn no_round_of_the_library_says_it_selects_nothing() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/rounds");
+    let mut files = Vec::new();
+    crate::every_example::sources(&dir, &mut files);
+    assert!(files.len() > 20, "{}", files.len());
+    let said: Vec<(String, Vec<(u32, String)>)> = gcs_core::par::map(&files, |p| {
+        (p.display().to_string(), w119(&std::fs::read_to_string(p).unwrap()))
+    }).into_iter().filter(|(_, s)| !s.is_empty()).collect();
+    assert!(said.is_empty(), "{said:#?}");
+}
