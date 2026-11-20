@@ -80,6 +80,27 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
     let mm = cad::millimetres(sk);
     let origin = frame_origin(sk, si, REPORT_UNIT);
     let recipe = Recipe::read(&cad::recipe_about(sk, si, origin.map(|x| x * mm))?)?;
+    let (mut built, leading) = nodes(sk, si, &recipe, origin, true)?;
+    let brep = built.remove(&recipe.root).ok_or("recipe: no root")?;
+    Ok(named(brep, mm, origin, leading))
+}
+
+/// **Solid `si`'s operands, built where it is** (#961): its recipe's nodes but the root, each
+/// as `build` builds it about `si`'s origin (millimetres), by the node's id — what a reading of
+/// the body's terms against one another classifies, with no Boolean of the body made.
+pub(crate) fn operands(sk: &Sketch, si: usize) -> Result<(Recipe, BTreeMap<i64, Brep>), String> {
+    let mm = cad::millimetres(sk);
+    let origin = frame_origin(sk, si, REPORT_UNIT);
+    let recipe = Recipe::read(&cad::recipe_about(sk, si, origin.map(|x| x * mm))?)?;
+    let (built, _) = nodes(sk, si, &recipe, origin, false)?;
+    Ok((recipe, built))
+}
+
+/// `recipe`'s nodes built about `origin` (model units) for solid `si`, the root among them where
+/// `root`, and the faces whose facets lead.
+fn nodes(sk: &Sketch, si: usize, recipe: &Recipe, origin: [f64; 3], root: bool)
+    -> Result<(BTreeMap<i64, Brep>, BTreeSet<String>), String> {
+    let mm = cad::millimetres(sk);
     // the rounding of coordinates read where the solid stands, before the shift: a few units in
     // the last place of the largest
     let floor = 16.0 * f64::EPSILON * origin.iter().fold(0.0f64, |m, x| m.max(x.abs())) * mm;
@@ -89,6 +110,9 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
     let names: BTreeMap<i64, String> = recipe.nodes.iter().map(|n| (n.id, n.called())).collect();
     for n in &recipe.nodes {
         let id = n.id;
+        if !root && id == recipe.root {
+            continue;
+        }
         // an operand of one binding with others is its representative's B-rep, built once and
         // placed (#566), moved into this one's place; its faces are named already.  One of this
         // solid's own instance is read where this one is built, its preimage (#578); a mirrored
@@ -140,8 +164,7 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
         }
         built.insert(id, b);
     }
-    let brep = built.remove(&recipe.root).ok_or("recipe: no root")?;
-    Ok(named(brep, mm, origin, leading))
+    Ok((built, leading))
 }
 
 /// A B-rep whose faces a build named in two halves (`brep::recipe::NAMED`: a recipe's, a swept body's), as an

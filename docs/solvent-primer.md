@@ -2274,6 +2274,13 @@ body's are (`body.bore.hole`).
   `pinhole cut body`. `Through` only makes the cutter; every body it is cut from bounds it.
 - **`tip common body`** keeps only what the body has in common with `tip`. Union comes first;
   `cut` and `common` commute.
+- **A union does not put back what a cut takes**, wherever it is written: `hub union part` below
+  `hole cut part`, the hub lying wholly in the bore, leaves `part` the bored ring, and the
+  statement is told so — `` warning[W119]: `hub` lies wholly in what `hole` cuts from `part`, so
+  `part` keeps none of it ``.  To fill the bore, cut it in a body of its own and put the hub on
+  that one — `bored := solid(ring)`, `hole cut bored`, `part := solid(bored)`, `hub union part` —
+  or cut a bore that leaves the hub's place.  A union only partly cut (a hub bored through) keeps
+  the rest and says nothing.
 - **A pattern of solids.** A solid declared inside a `ring` is one solid a copy, each
   reached by its index (`peg[3]`), as a point of the ring is. To join every copy alike, start from
   an empty body — its first `union` is its stock — or cut each from the body:

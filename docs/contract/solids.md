@@ -1049,6 +1049,35 @@ placement carries inside the blank; CLI test readers zero the offset.
   band, now `sense: cw`.  `tests/clockwise_arc.rs`' `a_half_turn_a_face_turns_into_is_said` is the
   gate: the swapped slot end said, the slot as meant, the notch said clockwise and a hand-drawn
   inside fillet not.
+- **A union the body keeps none of is said at its statement** (W119, #961).  The body rule is
+  sets, so `hub union part` written below `hole cut part` puts back nothing the bore takes; a hub
+  lying wholly in the bore is not in `part` at all, and the document builds.  `u union b` states
+  that `u`'s material is `b`'s: with `b` = (S ∪ U) ∖ C ∩ K and `u` ⊆ U, `u` ∩ `b` = `u` ∖ C ∩ K,
+  so the body keeps none of `u` exactly where every point of `u` lies in some cut or outside some
+  common, whatever the stock and the other unions hold.  `solid::unkept` reads that containment
+  off the arrangement of `u` with the cuts whose boxes meet its own and the commons
+  (`brep::boolean::arrangement`, `members`): no cell of `u` outside every cut and inside every
+  common.  Cells have positive volume — a piece with no inside is none — so it is the set
+  statement decided by the kernel's classification, not a volume difference under a tolerance: a
+  hub flush with the bore's wall is said, one a micrometre wider is not.  The terms are the
+  body's written ones (its recipe's early sets, `exact::operands`: each node built where the body
+  stands, the body itself never); what reads its faces (a round's fill and cut) is no term
+  written.  `program::unkept` says it after the solve (`solid_diagnostics`) at the statement that
+  wrote the union (`SourceMap::joined`, placed by `Placing`), naming the union, the body and each
+  cut or common that takes some of it — `` `hub` lies wholly in what `hole` cuts from `part`, so
+  `part` keeps none of it `` — a warning as W116 is (a statement that makes nothing): the
+  document is legal and builds unchanged.  **Not said**: a union partly taken (a hub bored
+  through) or one the stock or another union holds already — its material is in the body as
+  stated, redundant and not lost; a cut that takes nothing, which the body rule does not defeat
+  and whose reading would classify every cut of every body; a `common` leaving nothing, the empty
+  body said by its export (#617).  **Cost**: nothing for a body with no union, or no cut and no
+  common; else its operands built once, and one arrangement per union whose box meets a cut's
+  (or of each union, where the body has a common) — a plate of 100 through holes under 100
+  bosses bored through reads in 1.6 s beside its 15 s build, the same plate with the bosses
+  beside the holes in 0.1 s.  The page does not say it: `solid_diagnostics` is `solventc`'s and a
+  drawing's, as W118 is.  `tests/unkept_union.rs` is the gate (the issue's hub either order, the
+  hub partly cut, flush and a hair wider, proud of a through bore, two cuts together naming both
+  and no other union, a common, the remedy of a body bored first).
 
 - **A part carries no views; a sheet asks for them** (§6.11, `hidden.rs`).  `view(body) in
   views.right` and `section(body, at: swing) in views.front` are *outputs*: no `Int` draw flag, no

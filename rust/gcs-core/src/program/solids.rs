@@ -208,7 +208,10 @@ fn body_rule(
         // the statements before it made it
         if let Err(why) = sk.join_body(b.i(), word, a.i()) {
             diags.push(Diag::within(Code::E041, at, st.id, why));
+            continue;
         }
+        map.joined.entry((b.i(), a.i()))
+            .or_insert(super::Site { stmt: st.id, span: st.span, path: super::InstPath(st.path.clone()) });
     }
     // a body swept over its whole roll, or a section through everything, that nothing bounds —
     // cut from no body, nor kept in common with one, itself or by a copy: refused where it is
