@@ -921,6 +921,8 @@ fn solids_and_surfaces(
     let (body, skip) = (&flat.body, &flat.skip);
     solids(sk, res, map, body, skip, probes, diags);
     super::solids::carry_legs(sk);
+    // faces of two solids a `when` asked whether they meet (#961), said where the bodies are known
+    super::solids::across(sk, res, &flat.expansion.across, diags);
     // the faces of the solids a block runs over, named for the next pass (#183 F4)
     // (named again too where its rounds have come to stand in other layers, #879: which faces
     // meet is read in the layer a round stands in)

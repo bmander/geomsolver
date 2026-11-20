@@ -149,6 +149,27 @@ body's cuts are one union (`document.rs`, `Spread` lower bounds); `MaterialField
 `crease::creases_under` trace each crease once. Measure with instructions retired
 (`/usr/bin/time -l`); Spotlight on a fresh target doubles wall-clock noise.
 
+**A static field that searches is read as a sweep is** (#961): a region whose terms are read by a
+nearest-point search rather than in closed form (`RegionField::searched`: a `Measure::Signed` —
+a distance from a body's faces or a set of them, a hull, a carried section; a round over a body's
+faces the kernel refused, read point by point) makes every static operand holding it
+(`SpatialField`'s `searched`, from its leaves) read from an adaptive distance field when the query
+is a mesher's (`Source::Cached`; `SpatialField::cached`, through `MaterialField::sign` and
+`below`): one octree per field and `Resolution`, kept with the field so clones share it, its root
+sixteen of the coarsest wide, each corner the field's exact value held within two roots of zero
+(a gate's `1e30` interpolates to nothing, and a corner past its cell's reach settles the cell
+either way); a reading names no operand, as a sweep's cached one does.  So the searches a
+surface costs follow the octree the facets need — cells a facet wide over a smooth stretch, the
+finest, twice the facet distance, only along a crease — not the refinement's every value, sign
+and difference gradient: a picture of a post whose rim round the kernel refuses took about a
+minute and is drawn in about 6 s (`refused_look::a_mesher_reads_a_round_that_searches_from_its_distance_field`,
+`cli::a_picture_of_a_refused_round_says_so_first_and_is_drawn_in_bounded_time`, and in the slow tier
+`a_picture_of_a_round_the_kernel_refuses_says_so_first_and_is_drawn_in_bounded_time`).  A field read in
+closed form is read exactly whatever is asked, bit for bit, and creases, admission and every
+query that is not a mesher's read exactly.  `FieldMesher::finish` steps 256 facets at a time,
+saying how far it has got on the gauge of the work it is inside (`progress::gauge`: `meshing its
+material field, final pass, 1890 points`); the step's size changes nothing refined.
+
 **Removed tracks (2026-09-25/26):** the certified swept boundary (`solid/swept_boundary`), the
 Manifold arrangement (`--stl-backend manifold`, `solid::sweep_candidates`), CGAL Mesh_3, the Ju et
 al. experiment, and the candidate construction (contact covers, meridian charts,

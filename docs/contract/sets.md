@@ -192,7 +192,7 @@ evaluated; coaxial to the fold's own tolerance, 1e-7 of the region's size, a pla
 two lines a solve holds on one axis hold to its acceptance, not to the bit, #283), memoised
 against `solid::reads` (`Caches::meridian`); every evaluator reads it —
 the recipe a `revolve`
-(`recipe::region_profile`, `Profile::to_json`), the field `RevolvedRegion::of_meridian` (also
+(`recipe::region_profile`, `Profile::section`), the field `RevolvedRegion::of_meridian` (also
 `read`, so patches trim by it), facets `region::face_polys` turned by `primitive::revolve`,
 admission `Turns::Line`/`Ball` and `tool()` — its loops `Region::outer_first`, a ball's
 `Region::half_disc`. A set used in a predicate's body is applied under the statement it was
@@ -517,7 +517,13 @@ face (`ball_sector`; the ball turned about an axis square to the way out of the 
 disc square to it too, so its poles and the meridians its turn is read from stand outside the cone
 and the sector is one face of the sphere — the axis and the seam's start set midway across the
 widest gap between the lines the cuts' planes meet that plane in, read round a quarter turn, so no
-cut passes through a pole or the seam, as an octahedron's would).  `grown::convex_corners_of_any_faces_grown_are_built_exactly` is
+cut passes through a pole or the seam, as an octahedron's would).  A vertex is a corner only where
+its faces' normals are three apart to the body's reading of tangent (`faces::TANGENT`, #962): two
+faces going on from one another across a seam tangent only to the drawing's stated numbers (a lobe
+and a waist a ten-millionth of a radian off) stand no corner, and their prisms meet in the seam's
+section (`rim_seams::a_body_grown_over_stated_seams_stands_no_corner_there`, Steiner's to 1e-9);
+read to a billionth, a corner's sector was cut there and no piece met it.
+`grown::convex_corners_of_any_faces_grown_are_built_exactly` is
 the gate (brep-bench's offset/tetrahedron-grown and an octahedron, to Steiner's).  **A concave
 edge** (two planes along a line) has no wedge: its faces' prisms overlap in a `d × d` column there,
 so each is cut back to the edge's bisector, the plane through it halfway between them

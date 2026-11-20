@@ -204,8 +204,9 @@ const SCREEN_SOLVED: f64 = 1e-9;
 /// and the witness cannot word it two ways.
 pub fn shaky_warning(n: usize) -> String {
     format!(
-        "{n} first-order motion(s) blocked at second order (a tangency at its own contact): \
-         rigid in practice, not counted in the DOF"
+        "{n} first-order motion(s) blocked at second order (a double root: a tangency at its own \
+         contact, or a number stated at the least or most it can be): rigid in practice, not \
+         counted in the DOF"
     )
 }
 
@@ -238,10 +239,17 @@ fn blocked_at_second_order(
 /// surviving basis, and how many went.
 ///
 /// Every guard lives here so no caller repeats one.  The sketch must be at a solution, or the
-/// settle measures the solve rather than the geometry.  The sketch must contain a tangency, the
-/// only thing a double root can be made of — which is what keeps the solves off every sketch
-/// whose freedoms are all real.  And `cap` — how many rows the matching cannot account for —
-/// bounds the *removals*, so a settle that lands short can never eat a genuine DOF.
+/// settle measures the solve rather than the geometry.  And `cap` — how many rows the matching
+/// cannot account for — bounds the *removals*, so a settle that lands short can never eat a
+/// genuine DOF; at `cap` 0, where the numbers see every row the matching does, no solve runs.
+///
+/// No kind of constraint is asked for (#961).  A double root is any pose where two statements
+/// meet without crossing, and a tangency at its own contact is only the one written as a word:
+/// a circle of stated radius through two points a diameter apart (an arc of a half turn whose
+/// ends and radius are all held) is the circles about its ends touching, and a coordinate held
+/// where the circle runs square to it is the circle touching that line.  Neither carries a
+/// tangency, and gated on one the first read a freedom and a surplus radius where there is
+/// neither.
 ///
 /// A candidate cannot be recognised any more cheaply than by trying it: at a solution reached
 /// exactly, a double root's singular value is as small as a real freedom's, so there is nothing
@@ -253,11 +261,7 @@ pub fn screen(
     null: Mat,
     cap: usize,
 ) -> (Mat, usize) {
-    if cap == 0
-        || null.cols == 0
-        || !sk.constraints.iter().any(|c| c.acts() && c.kind.is_tangency())
-        || sys.max_relative_residual(z0) > SCREEN_SOLVED
-    {
+    if cap == 0 || null.cols == 0 || sys.max_relative_residual(z0) > SCREEN_SOLVED {
         return (null, 0);
     }
     let x0 = sk.get_x();

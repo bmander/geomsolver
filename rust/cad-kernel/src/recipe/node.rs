@@ -1,45 +1,14 @@
-//! The CAD recipe read once: every node `solid::cad` writes, its fields typed, so a reader — this
-//! kernel's build, its meridian and sections, the swept construction, the native host — matches a
-//! `Node` and never pokes the JSON. A profile is kept as written (`Section`: its numbers as they
-//! stand, an arc's angles and a normal unnormalised), since the native host hands them on as they
-//! are; this kernel reads it into its own `Profile` (`Profile::of`). What cannot be read is a
-//! `Kind::Recipe` error naming the field.
-use crate::geom::{Frame,Surface,V};
-use crate::{vec3,KernelError,Kind};
-use crate::util::json::Json;
-
-type Read<T> = Result<T,KernelError>;
-
-/// A recipe that cannot be read, saying why.
-fn unread(msg: String) -> KernelError { KernelError::new(Kind::Recipe,msg) }
-/// A field of a recipe node, or an error naming it.
-fn field<'a>(j: &'a Json,k: &str) -> Read<&'a Json> { j.get(k).ok_or_else(|| unread(format!("recipe: no `{k}`"))) }
-/// A field of a recipe node's profile, or an error naming it.
-fn of_profile<'a>(j: &'a Json,k: &str) -> Read<&'a Json> { j.get(k).ok_or_else(|| unread(format!("profile: no `{k}`"))) }
-/// Three numbers of a node, by key.
-fn point(j: &Json,k: &str) -> Read<V> { Ok(vec3(field(j,k)?)) }
-/// A number of a node, by key.
-fn number(j: &Json,k: &str) -> Read<f64> { Ok(field(j,k)?.as_f64()) }
-/// A list of node ids, by key.
-fn ids(j: &Json,k: &str) -> Read<Vec<i64>> { Ok(field(j,k)?.arr().iter().map(Json::as_i64).collect()) }
-/// A list under `k`, empty where there is none.
-fn listed<'a>(j: &'a Json,k: &str) -> &'a [Json] { j.get(k).map_or(&[][..],Json::arr) }
-/// Each of a list read by `f`.
-fn each<T>(list: &[Json],f: impl Fn(&Json) -> Read<T>) -> Read<Vec<T>> { list.iter().map(f).collect() }
-/// Two numbers.
-fn pair(j: &Json) -> [f64;2] { [j.arr()[0].as_f64(),j.arr()[1].as_f64()] }
-/// A row-major 3x4 matrix under `k`, where there is one; `what` names its node in the error.
-fn rows(j: &Json,k: &str,what: &str) -> Read<Option<[f64;12]>> {
-    match j.get(k) {
-        None => Ok(None),
-        Some(m) if m.arr().len() == 12 => Ok(Some(std::array::from_fn(|i| m.arr()[i].as_f64()))),
-        Some(_) => Err(unread(format!("recipe: {what}'s `{k}` is not three rows of four"))),
-    }
-}
+//! The CAD recipe as the kernel builds it: every node `solid::cad` writes, its fields typed, so a
+//! reader — this kernel's build, its meridian and sections, the swept construction, the native
+//! host — matches a `Node`.  A writer makes these values directly; nothing is written as text and
+//! read back.  A profile is kept as written (`Section`: its numbers as they stand, an arc's angles
+//! and a normal unnormalised), since the native host hands them on as they are; this kernel reads
+//! it into its own `Profile` (`Profile::of`).
+use crate::geom::{Surface,V};
 
 /// A whole recipe: its nodes in the order they are built (each built from those before it) and
 /// the id of the one that is the solid.
-#[derive(Clone,Debug)]
+#[derive(Clone,Debug,Default)]
 pub struct Recipe { pub root: i64,pub nodes: Vec<Named> }
 
 /// A node of a recipe's list: its id, its name (the solid's, as the document spells it) and what
@@ -69,10 +38,6 @@ impl Named {
 pub struct Use { pub sources: Vec<i64>,pub matrix: Option<[f64;12]> }
 
 impl Use {
-    fn read(n: &Json) -> Read<Use> {
-        Ok(Use {sources:ids(n,"sources")?,matrix:rows(n,"matrix","a use")?})
-    }
-
     /// Where the use puts a profile through `origin` square to `normal`: its origin and normal.
     pub fn frame(&self,origin: V,normal: V) -> (V,V) {
         match &self.matrix {
@@ -170,7 +135,7 @@ pub struct FamilyWall { pub name: String,pub run: crate::family::Run,pub closed:
 
 /// A body: the stock, plus what is `on` it, less what `cut`s it, within what `bound`s it; then what
 /// reads the faces that makes, fills (`on_late`) then cuts (`cut_late`) — empty where it has none.
-#[derive(Clone,Debug)]
+#[derive(Clone,Debug,Default)]
 pub struct Body { pub stock: i64,pub on: Vec<i64>,pub cut: Vec<i64>,pub bound: Vec<i64>,
     pub on_late: Vec<i64>,pub cut_late: Vec<i64>,
     /// The step each operand adds to its faces' routes through this body, by the operand's id
@@ -187,6 +152,10 @@ pub struct Kept { pub node: Node,pub keep: bool }
 /// `stratum` is the body a rolled run is rolled against, where there is one.
 #[derive(Clone,Debug)]
 pub struct Lowered { pub pieces: Vec<Run>,pub corners: Vec<Corner>,pub rolled: Vec<Rolled>,pub joins: Vec<[usize;2]>,
+    /// For each join, how far apart the two sections it glues stand: at a seam where two faces meet
+    /// tangent to the body's reading of tangent, its pieces' caps not one to a billionth (#962);
+    /// else nothing.
+    pub gaps: Vec<f64>,
     pub stratum: Option<Body>,pub beyond: Vec<crate::spill::Beyond> }
 
 /// A lowered run or ring: a prism or a revolution, cut off at a slant behind each `within` plane
@@ -231,74 +200,8 @@ pub enum Stroke {
     Trochoid { origin: V,x_dir: V,y_dir: V,terms: Vec<[f64;5]>,span: [f64;2] },
 }
 
-impl Recipe {
-    /// A recipe's JSON read, or an error naming the first field it lacks.
-    pub fn read(j: &Json) -> Read<Recipe> {
-        let nodes = each(field(j,"nodes")?.arr(),|n| {
-            let name = n.get("name").map_or("",Json::as_str).to_string();
-            let said = n.get("said").map(|s| s.as_str().to_string());
-            Ok(Named {id:field(n,"id")?.as_i64(),name,node:Node::read(n)?,said})
-        })?;
-        Ok(Recipe {root:field(j,"root")?.as_i64(),nodes})
-    }
-}
-
 impl Node {
-    /// A node's JSON read: its `kind` and that kind's fields.
-    pub fn read(n: &Json) -> Read<Node> {
-        let profile = || Section::read(field(n,"profile")?);
-        Ok(match field(n,"kind")?.as_str() {
-            "prism" => Node::Prism {profile:profile()?,from:number(n,"from")?,to:number(n,"to")?,
-                draft:n.get("draft").map(Json::as_f64)},
-            "revolve" => Node::Revolve {profile:profile()?,origin:point(n,"origin")?,axis:point(n,"axis")?,
-                angle:number(n,"angle")?},
-            "placed" => Node::Placed {source:field(n,"source")?.as_i64(),
-                matrix:rows(n,"matrix","a placement")?.ok_or_else(|| unread("recipe: no `matrix`".into()))?},
-            "through" => Node::Through {profile:profile()?,uses:each(listed(n,"uses"),Use::read)?},
-            "body" => Node::Body(Body::read(n)?),
-            "canal" => Node::Canal {centre:point(n,"centre")?,radius:number(n,"radius")?,
-                spine:match n.get("tube") {
-                    Some(tube) => Spine::Tube(Family::read(tube)?),
-                    None => Spine::Screw {origin:point(n,"origin")?,axis:point(n,"axis")?,angle:number(n,"angle")?,
-                        advance:number(n,"advance")?},
-                },
-                face:field(n,"face")?.as_str().to_string()},
-            "region" => Node::Region(each(field(n,"pieces")?.arr(),|p| Ok(Kept {node:Node::read(p)?,
-                keep:matches!(field(p,"keep")?,Json::Bool(true))}))?),
-            "lowered" => Node::Lowered(Lowered::read(n)?),
-            "grown" => Node::Grown {body:field(n,"body")?.as_i64(),pieces:each(field(n,"pieces")?.arr(),Node::read)?},
-            "glued" => Node::Glued(each(field(n,"pieces")?.arr(),Node::read)?),
-            "family" => Node::Family(Family::read(n)?),
-            "carried" => Node::Carried {profile:profile()?,
-                start:rows(n,"start","a carried profile")?.ok_or_else(|| unread("recipe: no `start`".into()))?,
-                carry:carry(field(n,"carry")?)?},
-            "hull" => Node::Hull {points:each(field(n,"points")?.arr(),|p| Ok(crate::vec3(p)))?,
-                face:n.get("face").map_or("",Json::as_str).to_string()},
-            "sewn" => Node::Sewn {tol:number(n,"tol")?,pieces:each(field(n,"pieces")?.arr(),|p| {
-                let face = p.get("face").map_or("",Json::as_str).to_string();
-                Ok(match field(p,"kind")?.as_str() {
-                    "face" => SewnPiece::Face {profile:Section::read(field(p,"profile")?)?,face},
-                    "net" => {
-                        let knots = |k: &str| Ok::<_,super::super::KernelError>(
-                            field(p,k)?.arr().iter().map(Json::as_f64).collect::<Vec<f64>>());
-                        let poles = each(field(p,"poles")?.arr(),|row| Ok(row.arr().iter()
-                            .map(crate::vec3).collect::<Vec<V>>()))?;
-                        let net = crate::nurbs::Net {du:number(p,"du")? as usize,dv:number(p,"dv")? as usize,
-                            uknots:knots("uknots")?,vknots:knots("vknots")?,poles,weights:None};
-                        net.check().map_err(unread)?;
-                        SewnPiece::Net {net,face}
-                    }
-                    k => return Err(unread(format!("recipe: a sewn piece of kind `{k}`"))),
-                })
-            })?},
-            "half" => Node::Half {origin:point(n,"origin")?,keep:point(n,"into")?,
-                sources:each(field(n,"sources")?.arr(),|s| Ok(s.as_i64()))?,
-                face:n.get("face").map_or("",Json::as_str).to_string()},
-            k => return Err(unread(format!("recipe: a node of kind `{k}`"))),
-        })
-    }
-
-    /// The node's kind, as the recipe spells it.
+    /// The node's kind, a noun for what a message says of it.
     pub fn kind(&self) -> &'static str {
         match self {
             Node::Prism {..} => "prism",Node::Revolve {..} => "revolve",
@@ -312,143 +215,8 @@ impl Node {
 }
 
 impl Body {
-    /// A body's sets read off `n` (a body node, or the stratum a lowered node carries): the late
-    /// ones only where it has them.
-    pub fn read(n: &Json) -> Read<Body> {
-        let late = |k: &str| listed(n,k).iter().map(Json::as_i64).collect();
-        let steps = match n.get("steps") {
-            Some(Json::Obj(kv)) => kv.iter().map(|(k,v)| Ok((k.parse::<i64>()
-                .map_err(|_| unread(format!("recipe: a body's step for `{k}`, no operand's id")))?,
-                v.as_str().to_string()))).collect::<Read<_>>()?,
-            _ => Default::default(),
-        };
-        Ok(Body {stock:field(n,"stock")?.as_i64(),on:ids(n,"on")?,cut:ids(n,"cut")?,bound:ids(n,"bound")?,
-            on_late:late("on_late"),cut_late:late("cut_late"),steps})
-    }
     /// Each set after the stock, in the order the body applies them, by its key.
     pub fn sets(&self) -> [(&'static str,&[i64]);5] {
         [("on",&self.on),("cut",&self.cut),("bound",&self.bound),("on_late",&self.on_late),("cut_late",&self.cut_late)]
-    }
-}
-
-impl Family {
-    fn read(n: &Json) -> Read<Family> {
-        use crate::family::Run;
-        let numbers = |j: &Json| -> Vec<f64> { j.arr().iter().map(Json::as_f64).collect() };
-        let at = each(field(n,"at")?.arr(),|a| {
-            let a = numbers(a);
-            if a.len() != 6 { return Err(unread("recipe: a family's piece has not six stations".into())) }
-            Ok(std::array::from_fn(|k| a[k]))
-        })?;
-        let wall = |w: &Json| -> Read<FamilyWall> {
-            let run = match field(w,"run")?.as_str() {
-                "line" => Run::Line,
-                "round" => Run::Round,
-                "spline" => Run::Spline {degree:number(w,"degree")? as usize,knots:numbers(field(w,"knots")?),
-                    weights:w.get("weights").map(numbers)},
-                k => return Err(unread(format!("recipe: a family's wall of kind `{k}`"))),
-            };
-            Ok(FamilyWall {name:w.get("name").map_or("",Json::as_str).to_string(),run,
-                closed:matches!(field(w,"closed")?,Json::Bool(true)),nodes:field(w,"nodes")?.arr().iter().map(numbers).collect()})
-        };
-        let carry = match n.get("carry") {
-            None => None,
-            Some(c) => Some(carry(c)?),
-        };
-        Ok(Family {spans:field(n,"spans")?.arr().iter().map(pair).collect(),at,vanish:number(n,"vanish")?,
-            loops:each(field(n,"loops")?.arr(),|l| each(l.arr(),wall))?,carry})
-    }
-}
-
-/// A motion that carries a section, as a recipe writes it: a screw about the line through
-/// `center` along the unit `axis`, turning by `angle` and stepping `advance` along it, or a step
-/// `delta` along a line.
-fn carry(c: &Json) -> Read<crate::geom::Carry> {
-    Ok(match field(c,"kind")?.as_str() {
-        "screw" => crate::geom::Carry::Screw {center:point(c,"center")?,
-            axis:point(c,"axis")?,angle:number(c,"angle")?,advance:number(c,"advance")?},
-        "line" => crate::geom::Carry::Line {delta:point(c,"delta")?},
-        k => return Err(unread(format!("recipe: a section carried by a `{k}`"))),
-    })
-}
-
-impl Lowered {
-    fn read(n: &Json) -> Read<Lowered> {
-        let pieces = each(field(n,"pieces")?.arr(),|p| Ok(Run {node:Node::read(p)?,
-            within:each(listed(p,"within"),|h| Ok((point(h,"at")?,point(h,"normal")?)))?,
-            kept:each(listed(p,"kept"),|k| Ok((surface(k)?,matches!(field(k,"inside")?,Json::Bool(true)))))?}))?;
-        let corners = each(field(n,"corners")?.arr(),|c| Ok(Corner {vertex:point(c,"vertex")?,centre:point(c,"centre")?,
-            radius:number(c,"radius")?,faces:each(field(c,"faces")?.arr(),surface)?}))?;
-        let rolled = each(listed(n,"rolled"),|k| Ok(Rolled {at:point(k,"at")?,radius:number(k,"radius")?,
-            flat:match k.get("legs") { Some(legs) => Some((pair(legs),point(k,"on")?)),None => None },
-            cuts:each(listed(k,"cuts"),|c| Ok((point(c,"at")?,point(c,"normal")?,number(c,"reach")?)))?,
-            kept:each(listed(k,"kept"),|j| Ok((surface(j)?,matches!(field(j,"inside")?,Json::Bool(true)))))?,
-            wedge:each(listed(k,"wedge"),|j| Ok((point(j,"at")?,point(j,"normal")?)))?}))?;
-        let joins = field(n,"joins")?.arr().iter()
-            .map(|j| { let j = j.arr(); [j[0].as_i64() as usize,j[1].as_i64() as usize] }).collect();
-        // a ring's section beyond a seam's normal surface (#422), counted after the rolled runs
-        let beyond = each(listed(n,"beyond"),|b| {
-            use crate::spill::{Across,Seam};
-            let seam = field(b,"seam")?;
-            let ends = field(b,"ends")?.arr();
-            let sides = field(b,"sides")?.arr();
-            if ends.len() != 2 || sides.len() != 2 { return Err(unread("recipe: a piece beyond a seam, misread".into())) }
-            let face = surface(field(field(b,"along")?,"face")?)?;
-            let seam = match seam.get("point") {
-                Some(_) => Seam::Line(point(seam,"point")?,point(seam,"direction")?),
-                None => Seam::Circle(point(seam,"centre")?,point(seam,"normal")?,number(seam,"radius")?),
-            };
-            // a flat's legs and the surface it starts at, or a round's radius
-            let section = match b.get("radius") {
-                Some(_) => Across::Round {radius:number(b,"radius")?},
-                None => Across::Flat {legs:pair(field(b,"legs")?),split:surface(field(b,"split")?)?},
-            };
-            Ok(crate::spill::Beyond {face,toward:point(b,"toward")?,chain:surface(field(b,"chain")?)?,
-                wall:surface(field(b,"wall")?)?,sides:[sides[0].as_f64(),sides[1].as_f64()],seam,section,
-                ends:[vec3(&ends[0]),vec3(&ends[1])]})
-        })?;
-        Ok(Lowered {pieces,corners,rolled,joins,stratum:n.get("stratum").map(Body::read).transpose()?,beyond})
-    }
-}
-
-/// A lowered piece's end face or a corner's face, as `solid::lowering` writes it (millimetres): a
-/// plane through `origin` square to `normal`, a cylinder of `radius` about the line through `origin`
-/// along `axis`, a sphere of `radius` about `origin`, or a cone about the line through `origin`
-/// along `axis` of `radius` there, its `half` angle (radians).
-fn surface(j: &Json) -> Read<Surface> {
-    Ok(match field(j,"kind")?.as_str() {
-        "plane" => Surface::Plane(Frame::about(point(j,"origin")?,point(j,"normal")?)),
-        "cylinder" => Surface::Cylinder(Frame::about(point(j,"origin")?,point(j,"axis")?),number(j,"radius")?),
-        "cone" => Surface::Cone(Frame::about(point(j,"origin")?,point(j,"axis")?),number(j,"radius")?,number(j,"half")?),
-        "sphere" => Surface::Sphere(Frame::about(point(j,"origin")?,[0.,0.,1.]),number(j,"radius")?),
-        "torus" => Surface::Torus(Frame::about(point(j,"origin")?,point(j,"axis")?),number(j,"big")?,number(j,"tube")?),
-        k => return Err(unread(format!("recipe: a face on a surface of kind `{k}`"))),
-    })
-}
-
-impl Section {
-    /// A recipe's `profile` read.
-    pub fn read(j: &Json) -> Read<Section> {
-        let at = |e: &Json,k: &str| -> Read<V> { Ok(vec3(of_profile(e,k)?)) };
-        let edge = |e: &Json| -> Read<Edge> {
-            let shape = match of_profile(e,"kind")?.as_str() {
-                "line" => Stroke::Line {start:at(e,"start")?,end:at(e,"end")?},
-                "circle" => Stroke::Circle {center:at(e,"center")?,normal:at(e,"normal")?,x_dir:at(e,"x_dir")?,
-                    radius:of_profile(e,"radius")?.as_f64(),angles:e.get("angles").map(pair)},
-                "bspline" => Stroke::BSpline {degree:of_profile(e,"degree")?.as_f64() as usize,
-                    knots:of_profile(e,"knots")?.arr().iter().map(Json::as_f64).collect(),
-                    poles:of_profile(e,"poles")?.arr().iter().map(vec3).collect(),
-                    weights:e.get("weights").map(|w| w.arr().iter().map(Json::as_f64).collect())},
-                "trochoid" => Stroke::Trochoid {origin:at(e,"origin")?,x_dir:at(e,"x_dir")?,y_dir:at(e,"y_dir")?,
-                    terms:of_profile(e,"terms")?.arr().iter().map(|t| {
-                        let t: Vec<f64> = t.arr().iter().map(Json::as_f64).collect();
-                        std::array::from_fn(|k| t.get(k).copied().unwrap_or(f64::NAN))
-                    }).collect(),span:pair(of_profile(e,"span")?)},
-                k => return Err(unread(format!("profile: an edge of kind `{k}`"))),
-            };
-            Ok(Edge {name:e.get("name").map_or(String::new(),|n| n.as_str().to_string()),shape})
-        };
-        let loops = each(of_profile(j,"loops")?.arr(),|l| each(l.arr(),edge))?;
-        Ok(Section {origin:at(j,"origin")?,normal:at(j,"normal")?,loops})
     }
 }

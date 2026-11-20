@@ -76,8 +76,8 @@ assert!((volume(&drilled) - (1000. - 90. * std::f64::consts::PI)).abs() < 1e-6);
 
 ## What comes next
 
-- A public API designed for strangers: builders, and the recipe JSON kept as one front end among
-  several.
+- A public API designed for strangers: builders beside the typed recipe (`recipe::Recipe`), which
+  is built in memory and never read from text.
 - Edge fillets and chamfers, offsets of B-spline faces, and a sweep of any section along any path.
 - STEP import.
 - The kernel's own test suite moved into the crate, out of geomsolver's.

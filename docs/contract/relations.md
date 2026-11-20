@@ -368,7 +368,7 @@ came from.
   overlapping on one line.  `render_flat` refuses it.  `tests/corner_rounds.rs` is the gate: the
   slot's pocket to `rounds/slot.sv`'s longhand to 1e-9 in volume, drafted and with its solid
   round, the inside fillet drawn from its end, the star handle at DOF 0 on one root.
-- **A round's side may be an arc** (#962, [0.223]): `A -> round(r: R) B` where either side, or
+- **A round's side may be an arc** (#962, [0.224]): `A -> round(r: R) B` where either side, or
   both, is an arc the chain declares.  The construction is one for every pair: **the round is the
   circle of radius `R` tangent to both sides inside the corner**, its centre on each side's offset
   by `R` toward the turn — a line moved square to itself, an arc's circle shrunk by `R` where the

@@ -27,7 +27,7 @@ const GAUSS: [(f64,f64);10] = [
 ];
 
 /// `∫_a^b f` by ten-point Gauss–Legendre on `pieces` equal pieces.
-fn gauss(a: f64,b: f64,pieces: usize,f: &mut dyn FnMut(f64) -> f64) -> f64 {
+pub(crate) fn gauss(a: f64,b: f64,pieces: usize,f: &mut dyn FnMut(f64) -> f64) -> f64 {
     let h = (b-a)/pieces as f64;
     let mut sum = 0.;
     for p in 0..pieces {

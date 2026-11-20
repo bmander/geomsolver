@@ -12,7 +12,7 @@ use std::f64::consts::PI;
 use super::{cached, readers_of, without, FacePath};
 
 /// Two faces' outward normals nearer than this at a point meet tangent there: no edge.
-const TANGENT: f64 = 1e-6;
+pub(crate) const TANGENT: f64 = 1e-6;
 
 /// A point just along a run from its end `v`, `d` the way it runs from there (`by` −1: just past
 /// the end).
@@ -160,6 +160,11 @@ impl BodyFaces {
 
     /// Each face's name as the body names it, beside its boundary's faces (`brep`).
     pub fn paths(&self) -> &[FacePath] { &self.paths }
+
+    /// Face `fi` as a refusal names it: its path as the document reads it, in backticks.
+    pub fn said(&self, fi: usize) -> String {
+        format!("`{}`", crate::vocab::public_path(&self.paths[fi].text()))
+    }
 
     /// The boundary the faces are read off: in millimetres about `origin` (model units), `mm` of
     /// them a model unit.
@@ -339,7 +344,9 @@ impl BodyFaces {
         (v, fi, b.edges[e as usize].point(t, &b.vertices))
     }
 
-    /// The faces a reference names, by its path (`FacePath::matches`).
+    /// The faces a reference names, by its path (`FacePath::matches`).  The path alone is read:
+    /// the caller holds `f` to be a face of the solid this body is (`reading`, `one_body`), since
+    /// another solid's path may name some other face here (#961).
     pub fn faces(&self, f: &FaceRef) -> Vec<usize> {
         (0..self.paths.len()).filter(|&i| self.paths[i].matches(&f.path)).collect()
     }
@@ -941,6 +948,25 @@ pub fn reading(sk: &Sketch, f: &FaceRef, read: &mut Read)
     // a face a boolean ate, or none of that name, is no point: what reads it holds nowhere
     let faces = if f.smooth { body.smooth(&body.faces(f)) } else { body.faces(f) };
     Ok(Reading { body, faces, smooth: f.smooth })
+}
+
+/// **Faces read as one body's** (#961): the readings of `refs`, which name the faces an edge, a
+/// corner or the material's angle there is read between — refused where they are faces of two
+/// solids.  A reading's face numbers are its own body's, and an edge is two faces of one body
+/// meeting: read in another body's lists, one body's numbers name some other face of it, or
+/// none (one solid's face list indexed with another's face number).
+pub fn one_body(sk: &Sketch, refs: &[&FaceRef], read: &mut Read) -> Result<Vec<Reading>, String> {
+    if let Some(other) = refs.iter().find(|f| f.solid != refs[0].solid) {
+        return Err(not_one_body(sk, refs[0].solid as usize, other.solid as usize));
+    }
+    refs.iter().map(|f| reading(sk, f, read)).collect()
+}
+
+/// Why faces of solids `a` and `b` have no edge, corner or angle between them: they are not one
+/// body's.
+pub fn not_one_body(sk: &Sketch, a: usize, b: usize) -> String {
+    format!("`{}` and `{}` are not one body: faces meet in an edge of the one body both are faces \
+             of", sk.solid_name(a), sk.solid_name(b))
 }
 
 impl Reading {

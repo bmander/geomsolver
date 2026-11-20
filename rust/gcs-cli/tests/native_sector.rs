@@ -94,8 +94,8 @@ fn a_blank_of_revolutions_is_its_meridian_section_turned_and_any_other_its_boole
     let body = fixtures::solid(&e,"part");
     let recipe = cad::recipe_static(&e.sketch,body).unwrap();
     let session = native::Session::new().unwrap();
-    let (turned,meridian) = session.construct_meridian(&recipe.recipe).unwrap().expect("the ring's blank is a revolution");
-    let booleans = session.construct(&recipe.recipe).unwrap();
+    let (turned,meridian) = session.built_meridian(&recipe.recipe).unwrap().expect("the ring's blank is a revolution");
+    let booleans = session.built(&recipe.recipe).unwrap();
     let [a,b] = [turned,booleans].map(|s| session.volume(s).unwrap());
     eprintln!("turned {a:.9} mm³, {} faces; Booleans {b:.9} mm³, {} faces; about {:?} along {:?}",session.faces(turned).unwrap().len(),
         session.faces(booleans).unwrap().len(),meridian.origin,meridian.axis);
@@ -120,7 +120,7 @@ construction holder := solid(std.solids.Prism(face(bb, bw, bt, ba), from: -5mm, 
 holder common part
 ",sphere(2.),cradle_roll(2.5,Observer::Parallel),indexed_ring(6,3.5,4.2,1.7,2.3)));
     let recipe = cad::recipe_static(&boxed.sketch,fixtures::solid(&boxed,"part")).unwrap();
-    let why = session.construct_meridian(&recipe.recipe).unwrap().expect_err("a prism bounds the ring");
+    let why = session.built_meridian(&recipe.recipe).unwrap().expect_err("a prism bounds the ring");
     eprintln!("{why}");
     assert!(why.contains("prism"),"{why}");
 }
