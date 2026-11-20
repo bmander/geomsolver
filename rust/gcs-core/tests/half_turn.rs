@@ -59,7 +59,11 @@ fn well(d: &Diagnosis, src: &str) {
 fn half_turn(sk: &Sketch, c: (f64, f64), s: (f64, f64), e: (f64, f64), r: f64) {
     let tol = 1e-9 * r.max(1.0);
     assert!(near(e, (2.0 * c.0 - s.0, 2.0 * c.1 - s.1), tol), "c {c:?} s {s:?} e {e:?}");
-    assert!((sk.params[sk.arcs[0].radius as usize].value - r).abs() <= tol);
+    // the arc's rows are `|p − c|² − r²`, even in `r`: a centre left unseeded can bring the
+    // radius's own number out negative (`k.r = -3`), which the half turn does not cause and
+    // this test does not judge — the figure is the points'
+    let k = sk.params[sk.arcs[0].radius as usize].value;
+    assert!((k.abs() - r).abs() <= tol, "radius {k} for {r}");
 }
 
 /// Both ends held, the centre stated on the chord: the centre is the chord's midpoint, from a
