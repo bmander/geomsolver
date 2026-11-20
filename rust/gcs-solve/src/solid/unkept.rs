@@ -23,21 +23,17 @@
 //!
 //! **What it costs.**  Nothing for a body with no cut and no common, nor for a union whose box
 //! meets no cut's where the body has no common (a boss away from every hole): it keeps all of
-//! itself there.  Otherwise a few points well inside the union placed against the cuts and the
-//! commons, one of them kept answering at once (a witness), and only where none is, the
-//! arrangement of that union with the cuts whose boxes meet its own and the commons — its terms
-//! built where the body stands (`exact::operands`), the body never.
+//! itself there.  Otherwise the union's vertices and a point of each of its faces placed against
+//! the near cuts and the commons, one of them kept answering at once (a witness), and only where
+//! none is, the arrangement of that union with the cuts whose boxes meet its own and the commons
+//! — its terms built where the body stands (`exact::operands`), the body never.
 
 use super::*;
 use crate::brep::boolean::{arrangement, members, overlap};
-use crate::brep::query::{interior, Located, Place};
+use crate::brep::query::{Located, Place};
 use crate::brep::recipe::Node;
 use crate::brep::topo::Brep;
 use std::collections::BTreeSet;
-
-/// How many points well inside a union are read for one the body keeps before its arrangement is
-/// made: the deepest of a hub bored through lie on its axis, in the bore, and its rim's beside them.
-const WITNESSES: usize = 8;
 
 /// Union operand `union` of body `body` (solid indices), of which the body keeps nothing: every
 /// point of it lies in one of `cuts` or outside one of `commons` — those, of the body's cuts and
@@ -87,16 +83,21 @@ pub fn unkept(sk: &Sketch, body: usize) -> Result<Vec<Unkept>, String> {
         if near.is_empty() && commons.is_empty() {
             continue;
         }
-        // **a witness** first: a point well inside it that every near cut leaves outside and every
-        // common holds inside — each read by exact point location, at least the tolerance off
-        // every boundary, so a ball of it is kept — is the answer with no arrangement made (a hub
-        // bored through keeps its rim, which its deepest points away from the axis find)
+        // **a witness** first: a point of its boundary that every near cut leaves outside and
+        // every common holds inside, each read by exact point location — more than the tolerance
+        // off their boundaries, so a ball about it is outside the cuts and inside the commons,
+        // and the union's material within that ball is kept — is the answer with no arrangement
+        // made (a hub bored through keeps its rim, whose vertices lie beyond the bore)
         let own = Located::new(ub, tol);
         let taking: Vec<Located> = near.iter().map(|&k| Located::new(cuts[k].1, tol)).collect();
         let keeping: Vec<Located> = commons.iter().map(|(_, b)| Located::new(b, tol)).collect();
-        let witnessed = interior(ub, WITNESSES).unwrap_or_default().into_iter()
-            .any(|(p, _)| own.solid_place(p) == Place::In
-                && taking.iter().all(|c| c.solid_place(p) == Place::Out)
+        let faces = ub.faces.iter().enumerate().filter_map(|(fi, f)| {
+            let [[u0, u1], [v0, v1]] = crate::brep::boolean::face_parameters(ub, fi);
+            let p = f.surface.point([(u0 + u1) / 2.0, (v0 + v1) / 2.0]);
+            (own.face_place(fi, p) == Place::In).then_some(p)
+        });
+        let witnessed = ub.vertices.iter().map(|v| v.p).chain(faces)
+            .any(|p| taking.iter().all(|c| c.solid_place(p) == Place::Out)
                 && keeping.iter().all(|k| k.solid_place(p) == Place::In));
         if witnessed {
             continue;
