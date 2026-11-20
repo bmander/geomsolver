@@ -197,7 +197,8 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   is the last written, else `edit::round_size`.  `tests/edit_rounds.rs` and `app.test.ts` are the
   gates.
 
-- **Every word, and every command, is one menu** (`lexicon.rs`, FFI `gcs_elab_lexicon_json`,
+- **Every word, and every command, is one menu** (`lexicon.rs`, FFI `gcs_lexicon_json` and
+  `gcs_elab_words_json`,
   `core/lexicon.ts`, `app/words.ts`): there are **no toolbars**.  The Words button in the
   workspace's lower left (`/` anywhere outside a field) opens a menu of every word the document can
   be written with — the language's own, the standard library's (`std.*`, `hardware`), any other
@@ -210,13 +211,15 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   words that take everything selected, each thing in a slot of its own (`wordbox::fitsSelection`).
   **What a word takes is the core's** (`lexicon::lexicon`), read off the tables the elaborator
   settles statements by and never kept as a list beside them: an entity's slots are its kind's
-  `fields()`; a built-in relation word's operands are every pair of kinds `infix_op`/`prefix_op`
-  settles it over — each pair with the selectors it is settled by only when given (`tangent`
-  between two lines needs `at:`) — and its parentheses the specs those settle to, read as
-  `operator_text` prints them; a component's slots are its formals as typed; a relation word's are
+  `fields()`; a built-in relation word is every kind `CKind::operator` spells with it, its operands
+  every pair of kinds `infix_op`/`prefix_op` settles it over — each pair with the selectors it is
+  settled by only when given (`tangent` between two lines needs `at:`) — and its parentheses each
+  kind's spec as `syntax::place_of` places it, the one reading `operator_text` prints by; a component's slots are its formals as typed; a relation word's are
   what its body hands each operand and parameter to (`b right_of(d) a` makes `a` and `b` points and
   `d` a `Length`).  Each says what it means in a sentence: the language's from one table, a
-  definition's from the comment written above it.  A word or a command dragged out of the menu, or
+  definition's from the comment written above it.  The language's and the library's words are
+  the same for every document and read once (`lexicon::library_words`, over the library linked
+  once, `library::linked`); a document is asked only for its own (`lexicon::own_words`).  A word or a command dragged out of the menu, or
   starred, is kept on the **palette**, the strip beside the button, in the order put there and
   reordered or taken off (×, or dragged off) — the palette, the tree's arrangement and what was
   used lately are this browser's (`localStorage`), and a fresh one starts with what the toolbars
@@ -240,11 +243,13 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   number, once its operands are known, is put in as the drawing measures it now, selected so a
   number typed replaces it; the press on the workspace keeps the focus in the box.  Enter writes
   it, Escape puts it down.  **The statement is the core's**: `write_word` composes it from the
-  slots' texts (`lexicon::statement`), mints a name in its kind's alphabet where none was given,
+  slots' texts (`lexicon::statement`, a relation by the relation printer itself), mints a name in its kind's alphabet where none was given,
   brings in the module it is read from (a relation word imported bare, `use std.place (right_of)`,
   `edit::imported`) and holds the whole to the elaborator — refused in its words, the box left as
-  it was.  A line goes on from where it ended, so a run of clicks draws a chain; any other drawn
-  word is taken up again empty; a relation is put down once written.
+  it was.  The `word` tool is down for as long as a word is in hand, so a click on the workspace
+  never reselects under it; any other tool taken up puts the word down.  A line goes on from where
+  it ended, so a run of clicks draws a chain; any other word drawn on a plane (`Word.drawn`) is
+  taken up again empty; a relation is put down once written.
 - **The workspace** (`overview/workspace.rs`, `app/view.ts`) is the only model canvas: one scene
   in space, every sketch on its own plane, solids and panes drawn beneath by three.js
   (`app/box3d.ts`).  A view's page reaches the eye's picture plane by **one affine map**

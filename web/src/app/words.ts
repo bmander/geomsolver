@@ -11,6 +11,7 @@
  * beside the button, in the order it was put there; the palette, the tree's arrangement and what
  * was used lately are this browser's, kept in `localStorage` where it lets us. */
 import type { Slot, Word } from '../core/lexicon.js';
+import { kindMarkup } from './outline.js';
 
 /** A command of the app: what it is called, the branch it is listed under, its key. */
 export interface Command {
@@ -29,7 +30,7 @@ export interface Command {
 type Entry = { kind: 'word'; word: Word } | { kind: 'command'; cmd: Command };
 
 /** How the tree is arranged: by the module a word is read from, or by what it is for. */
-export type Arrangement = 'module' | 'yields';
+type Arrangement = 'module' | 'yields';
 
 const STORE = 'gcs.words';
 
@@ -55,37 +56,28 @@ function load(fallback: string[]): Kept {
 
 /* -- glyphs: what a slot takes, at a glance ------------------------------------------------ */
 
+/* The kinds are drawn as the model outline draws them (`outline.ts`); these are the rest: a
+ * number's, a place's, a command's and the star that keeps one on the palette. */
 const SVG = (body: string) =>
   `<svg class="glyph" viewBox="0 0 16 16" aria-hidden="true">${body}</svg>`;
-const DOT = (x: number, y: number, r = 1.5) =>
-  `<circle cx="${x}" cy="${y}" r="${r}" fill="currentColor" stroke="none"/>`;
 const GLYPH: Record<string, string> = {
-  point: DOT(8, 8, 2.7),
-  line: `<path d="M3.5 12.5l9-9"/>${DOT(3.5, 12.5)}${DOT(12.5, 3.5)}`,
-  circle: '<circle cx="8" cy="8" r="5.2"/>',
-  arc: `<path d="M3 12.5A9.5 9.5 0 0 1 12.5 3"/>${DOT(3, 12.5, 1.4)}${DOT(12.5, 3, 1.4)}`,
-  path: '<path d="M2 11C5 1.5 10 15.5 14 5"/>',
-  axis: '<path d="M2.5 13l8-8" stroke-dasharray="2.4 1.8"/><path d="M9.2 3.2h3.6v3.6"/>',
-  plane: '<path d="M1.8 11.8L5.4 4.2h8.8l-3.6 7.6z"/>',
-  face: '<path d="M1.8 11.8L5.4 4.2h8.8l-3.6 7.6z" fill="currentColor" fill-opacity=".28"/>',
-  solid: '<path d="M8 1.8l5.4 3v6.4L8 14.2l-5.4-3V4.8zM2.6 4.8l5.4 3 5.4-3M8 7.8v6.4"/>',
-  frame: '<path d="M8 9.5V2.5M8 9.5l5.5 3M8 9.5l-5.5 3"/><path d="M6.6 4L8 2.4 9.4 4"/>',
   Length: '<path d="M2 4v8M14 4v8M2.6 8h10.8M5 6L2.8 8 5 10M11 6l2.2 2L11 10"/>',
   Angle: '<path d="M2.5 13h11M2.5 13L10.5 3M9.2 13a6.7 6.7 0 0 0-2.5-5.2"/>',
   place: '<path d="M8 2v4M8 10v4M2 8h4M10 8h4"/>',
-  any: '<path d="M8 2.5l5.5 5.5L8 13.5 2.5 8z"/>',
   app: '<rect x="2.5" y="3" width="11" height="10" rx="1.6"/><path d="M2.5 6h11"/>',
   pin: '<path d="M8 2.2l1.8 3.7 4 .6-2.9 2.8.7 4L8 11.4l-3.6 1.9.7-4L2.2 6.5l4-.6z"/>',
 };
 const LETTER: Record<string, string> = {
   Scalar: '#', Int: 'n', Bool: '?', word: 'ab', expr: 'ƒ', vector: '(,)', name: ':=', set: '{}',
-  spline: '~', curve: '~',
 };
+/** The outline's name for a kind the lexicon names otherwise. */
+const OUTLINE: Record<string, string> = { any: 'entity', path: 'curve' };
 
 /** The glyph a kind or a type is shown by. */
 export function glyph(of: string): string {
-  const k = of === 'spline' || of === 'curve' ? 'path' : of;
-  if (GLYPH[k]) return SVG(GLYPH[k]);
+  const kind = kindMarkup(OUTLINE[of] ?? of, 'glyph kind');
+  if (kind) return kind;
+  if (GLYPH[of]) return SVG(GLYPH[of]);
   const t = LETTER[of] ?? '·';
   return SVG(`<text x="8" y="11.5" text-anchor="middle" font-size="${t.length > 2 ? 6.5 : 9}" `
     + `fill="currentColor" stroke="none">${t}</text>`);
@@ -93,11 +85,9 @@ export function glyph(of: string): string {
 
 /** What a slot is shown as: what it is clicked with, else what is typed. */
 export function slotGlyph(s: Slot): string {
-  if (s.kinds.length > 1 && s.kinds.every((k) => ['line', 'arc', 'circle', 'spline', 'curve'].includes(k))) {
-    return glyph('path');
-  }
-  if (s.kinds.length) return glyph(s.kinds[0]);
-  return glyph(s.type ?? 'expr');
+  const paths = ['line', 'arc', 'circle', 'spline', 'curve'];
+  if (s.kinds.length > 1 && s.kinds.every((k) => paths.includes(k))) return glyph('path');
+  return glyph(s.kinds[0] ?? s.type ?? 'expr');
 }
 
 /** Which of the three inks a slot is drawn in: clicked on the drawing, a number, a word chosen. */
@@ -114,13 +104,19 @@ export function said(xs: string[]): string {
   return `${xs.slice(0, -1).join(', ')} or ${xs[xs.length - 1]}`;
 }
 
-const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+const ENTITY: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
+/** Text as markup reads it. */
+export const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ENTITY[c]);
 
 /** A word's statement in small: the word, and a glyph per slot it needs. */
 function signature(w: Word): string {
   const need = (s: Slot) => !s.optional && s.role !== 'name';
-  const g = (s: Slot) => `<span class="g ${slotCategory(s)}" title="${esc(s.key ? `${s.key}: ` : '')}${esc(said(s.kinds.length ? s.kinds : [s.type ?? 'expr']))}">${slotGlyph(s)}</span>`;
-  const word = `<b>${esc(w.form === 'value' ? ':=' : w.word.replace(/^std\.\w+\./, ''))}</b>`;
+  const g = (s: Slot) => {
+    const takes = said(s.kinds.length ? s.kinds : [s.type ?? 'expr']);
+    const title = s.key ? `${s.key}: ${takes}` : takes;
+    return `<span class="g ${slotCategory(s)}" title="${esc(title)}">${slotGlyph(s)}</span>`;
+  };
+  const word = `<b>${esc(w.form === 'value' ? ':=' : bare(w.word))}</b>`;
   const inner = w.slots.filter((s) => need(s) && !['left', 'right', 'operand'].includes(s.role));
   const more = w.slots.some((s) => s.optional && s.role !== 'name');
   const parens = inner.length || more
@@ -130,13 +126,16 @@ function signature(w: Word): string {
   return `${left ? g(left) : ''}${word}${parens}${right ? g(right) : ''}`;
 }
 
+/** A word as it is read in a list: `right_of`, `Prism` — its module said beside it. */
+const bare = (word: string) => word.replace(/^std\.\w+\./, '');
+
 /* -- the menu and the palette ------------------------------------------------------------- */
 
 export interface WordsHost {
   /** Every word the document can be written with. */
   words(): Word[];
-  /** Whether a word takes what is selected, and so fills its slots from it. */
-  fits(w: Word): boolean;
+  /** The words that take what is selected, and so fill their slots from it. */
+  fitting(): Word[];
   /** What is selected, said: `l, m`. */
   selection(): string;
   /** Take a word up. */
@@ -152,16 +151,18 @@ export class Words {
   private readonly tree: HTMLElement;
   private readonly items: HTMLElement;
   private readonly arrange: HTMLElement;
-  /** A drag out of the menu or along the strip, while one is going. */
-  private dragging: { id: string; ghost: HTMLElement; from: number | null } | null = null;
+  /** A drag out of the menu or along the strip, while one is going: its ghost. */
+  private dragging: HTMLElement | null = null;
 
   constructor(private readonly button: HTMLButtonElement, private readonly menu: HTMLElement,
               private readonly strip: HTMLElement, private readonly host: WordsHost,
               private readonly commands: Command[], seed: string[]) {
     this.kept = load(seed);
-    menu.innerHTML = `<div class="words-head"><input type="search" id="words-search" autocomplete="off"
-      spellcheck="false" placeholder="Search every word — tangent, face, std.place, export…"
-      aria-label="Search every word and command"><div class="seg" role="group" aria-label="Arrange by">
+    menu.innerHTML = `<div class="words-head"><input type="search" id="words-search"
+      autocomplete="off" spellcheck="false"
+      placeholder="Search every word — tangent, face, std.place, export…"
+      aria-label="Search every word and command">
+      <div class="seg" role="group" aria-label="Arrange by">
       <button type="button" data-tree="module">By module</button>
       <button type="button" data-tree="yields">By what it makes</button></div></div>
       <div class="words-body"><nav class="words-tree" aria-label="Groups"></nav>
@@ -222,7 +223,7 @@ export class Words {
     this.button.setAttribute('aria-expanded', 'true');
     this.search.value = q;
     this.hi = 0;
-    if (!q && this.host.selection() && this.fitting().length) this.node = '@fits';
+    if (!q && this.fitting().length) this.node = '@fits';
     this.render();
     this.search.focus();
   }
@@ -241,7 +242,7 @@ export class Words {
       const c = this.command(b.dataset.id!);
       if (c?.pressed) b.setAttribute('aria-pressed', String(c.pressed()));
     }
-    const n = this.host.selection() ? this.fitting().length : 0;
+    const n = this.fitting().length;
     this.button.querySelector('.fits')!.textContent = n ? `${n} fit` : '';
   }
 
@@ -272,7 +273,7 @@ export class Words {
   }
 
   private fitting(): Entry[] {
-    return this.host.words().filter((w) => this.host.fits(w)).map((word): Entry => ({ kind: 'word', word }));
+    return this.host.fitting().map((word): Entry => ({ kind: 'word', word }));
   }
 
   /** Where an entry stands in the tree: its branch, and the twig under it. */
@@ -280,12 +281,21 @@ export class Words {
     if (e.kind === 'command') return ['App', e.cmd.branch];
     const w = e.word;
     const mod = w.module === '' ? 'language' : w.module === '.' ? 'This document' : w.module;
-    if (this.kept.tree === 'yields') return [w.module === '.' ? 'This document' : w.group, mod];
-    if (w.module === '') return ['language', w.group];
-    if (w.module === '.') return ['This document', w.group];
+    if (this.kept.tree === 'yields') return [w.module === '.' ? mod : w.group, mod];
     if (w.module === 'std') return ['std', 'datums'];
     if (w.module.startsWith('std.')) return ['std', w.module.slice(4)];
-    return [w.module, w.group];
+    return [mod, w.group];
+  }
+
+  /** What an entry is called in a list, and its glyph. */
+  private labelOf(e: Entry): string {
+    return e.kind === 'word' ? bare(e.word.word) : e.cmd.label;
+  }
+
+  private glyphOf(e: Entry): string {
+    if (e.kind === 'command') return glyph('app');
+    const w = e.word;
+    return glyph(w.makes ?? w.slots.find((s) => s.kinds.length)?.kinds[0] ?? 'expr');
   }
 
   /* -- drawing it ----------------------------------------------------------------------- */
@@ -310,15 +320,18 @@ export class Words {
     } else {
       order.sort((a, b) => rankModule(a) - rankModule(b) || a.localeCompare(b));
     }
-    const fits = this.host.selection() ? this.fitting() : [];
+    const fits = this.fitting();
     if (this.node === '@fits' && !fits.length) this.node = null;
     if (!this.node || (!this.node.startsWith('@') && !branches.has(this.node.split('/')[0]))) {
       this.node = order[0];
     }
     const q = this.search.value.trim().toLowerCase();
-    const n = (node: string, label: string, count: number, cls = '') =>
-      `<button type="button" class="${cls}${!q && this.node === node ? ' on' : ''}" data-node="${esc(node)}"`
-      + ` aria-current="${!q && this.node === node}"><span>${esc(label)}</span><span class="n">${count}</span></button>`;
+    const n = (node: string, label: string, count: number, cls = '') => {
+      const on = !q && this.node === node;
+      return `<button type="button" class="${cls}${on ? ' on' : ''}" data-node="${esc(node)}"`
+        + ` aria-current="${on}"><span>${esc(label)}</span>`
+        + `<span class="n">${count}</span></button>`;
+    };
     let t = '';
     if (fits.length) t += n('@fits', 'Fits selection', fits.length, 'fits');
     if (this.kept.recent.length) t += n('@recent', 'Recent', this.kept.recent.length);
@@ -339,26 +352,34 @@ export class Words {
       const toks = q.split(/\s+/);
       list = all.map((e): [number, Entry] | null => {
         const name = (e.kind === 'word' ? e.word.word : e.cmd.label).toLowerCase();
+        const shown = this.labelOf(e).toLowerCase();
         const hay = e.kind === 'word'
           ? `${e.word.id} ${e.word.module} ${e.word.group} ${e.word.doc} ${e.word.slots
             .map((s) => `${s.key} ${s.kinds.join(' ')} ${s.type ?? ''}`).join(' ')}`.toLowerCase()
           : `${e.cmd.label} ${e.cmd.branch} ${e.cmd.title ?? ''}`.toLowerCase();
         if (!toks.every((k) => hay.includes(k) || name.includes(k))) return null;
-        const bare = name.replace(/^std\.\w+\./, '');
-        const score = bare === q ? 0 : bare.startsWith(q) ? 1 : name.includes(q) ? 2 : 3;
+        const score = shown === q ? 0 : shown.startsWith(q) ? 1 : name.includes(q) ? 2 : 3;
         return [score, e];
       }).filter((x): x is [number, Entry] => !!x)
         .sort((a, b) => a[0] - b[0]).map((x) => x[1]);
       html = list.length
-        ? `<div class="head">${list.length} for “${esc(q)}”</div>${list.map((e, i) => this.row(e, crumb(e), i)).join('')}`
+        ? `<div class="head">${list.length} for “${esc(q)}”</div>`
+          + list.map((e, i) => this.row(e, crumb(e), i)).join('')
         : `<p class="empty">Nothing matches “${esc(q)}”. Words are found by name, module, what
            they take and what they do.</p>`;
     } else {
       const [top, twig] = this.node.split('/');
       if (this.node === '@fits') list = fits;
-      else if (this.node === '@recent') list = this.kept.recent.map((id) => this.find(id)).filter((e): e is Entry => !!e);
+      else if (this.node === '@recent') {
+        list = this.kept.recent.map((id) => this.find(id)).filter((e): e is Entry => !!e);
+      }
       else if (this.node === '@all') list = all;
-      else list = all.filter((e) => { const [a, b] = this.place(e); return a === top && (!twig || b === twig); });
+      else {
+        list = all.filter((e) => {
+          const [a, b] = this.place(e);
+          return a === top && (!twig || b === twig);
+        });
+      }
       const twigs = branches.get(top);
       if (!this.node.startsWith('@') && !twig && twigs && twigs.size > 1) {
         const grouped: Entry[] = [];
@@ -372,7 +393,8 @@ export class Words {
         list = grouped;
       } else {
         const title = this.node === '@fits' ? `Words that take ${this.host.selection()}`
-          : this.node === '@recent' ? 'Used lately' : this.node === '@all' ? 'Every word and command'
+          : this.node === '@recent' ? 'Used lately'
+          : this.node === '@all' ? 'Every word and command'
           : this.node.replace('/', ' ▸ ');
         html = `<div class="head">${esc(title)}</div>${list.map((e, i) =>
           this.row(e, this.node!.startsWith('@') ? crumb(e) : '', i)).join('')}`;
@@ -391,10 +413,14 @@ export class Words {
         + (e.cmd.key ? `<kbd>${esc(e.cmd.key.toUpperCase())}</kbd>` : '')
         + (e.cmd.checked?.() ? '<span class="tick">✓</span>' : '');
     const doc = e.kind === 'word' ? e.word.doc : e.cmd.title ?? '';
-    return `<div class="row${i === this.hi ? ' hi' : ''}${e.kind === 'command' ? ' cmd' : ''}" role="option"`
+    const cls = `row${i === this.hi ? ' hi' : ''}${e.kind === 'command' ? ' cmd' : ''}`;
+    const name = e.kind === 'word' ? e.word.id : e.cmd.label;
+    return `<div class="${cls}" role="option"`
       + ` data-id="${esc(id)}" aria-selected="${i === this.hi}"><span class="sig">${sig}</span>`
-      + `<span class="crumb">${esc(crumb)}</span><button type="button" class="keep" aria-pressed="${kept}"`
-      + ` title="${kept ? 'On the palette' : 'Keep on the palette'}" aria-label="Keep ${esc(e.kind === 'word' ? e.word.id : e.cmd.label)} on the palette">${glyph('pin')}</button>`
+      + `<span class="crumb">${esc(crumb)}</span>`
+      + `<button type="button" class="keep" aria-pressed="${kept}"`
+      + ` title="${kept ? 'On the palette' : 'Keep on the palette'}"`
+      + ` aria-label="Keep ${esc(name)} on the palette">${glyph('pin')}</button>`
       + (doc ? `<span class="doc">${esc(doc)}</span>` : '') + '</div>';
   }
 
@@ -402,7 +428,8 @@ export class Words {
     if (e.key === 'Escape') { e.preventDefault(); this.close(); return; }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      this.hi = Math.max(0, Math.min(this.shown.length - 1, this.hi + (e.key === 'ArrowDown' ? 1 : -1)));
+      const by = e.key === 'ArrowDown' ? 1 : -1;
+      this.hi = Math.max(0, Math.min(this.shown.length - 1, this.hi + by));
       for (const [i, r] of [...this.items.querySelectorAll('.row')].entries()) {
         r.classList.toggle('hi', i === this.hi);
         r.setAttribute('aria-selected', String(i === this.hi));
@@ -456,15 +483,16 @@ export class Words {
       if (!e) {
         // a word the document no longer has, kept for when it has it again
         b.classList.add('gone');
-        b.innerHTML = `${glyph('any')}<span>${esc(id.slice(2))}</span><i class="x" title="Take off the palette">×</i>`;
+        b.innerHTML = `${glyph('any')}<span>${esc(id.slice(2))}</span>`
+          + '<i class="x" title="Take off the palette">×</i>';
         return b;
       }
-      const label = e.kind === 'word' ? e.word.word.replace(/^std\.\w+\./, '') : e.cmd.label;
-      const ico = e.kind === 'word' ? glyph(e.word.makes ?? (e.word.slots.find((s) => s.kinds.length)?.kinds[0] ?? 'expr'))
-        : glyph('app');
       if (e.kind === 'command') b.classList.add('cmd');
-      b.title = e.kind === 'word' ? `${e.word.id} — ${e.word.doc}` : `${e.cmd.label}${e.cmd.key ? ` (${e.cmd.key.toUpperCase()})` : ''}${e.cmd.title ? ` — ${e.cmd.title}` : ''}`;
-      b.innerHTML = `${ico}<span>${esc(label)}</span><i class="x" title="Take off the palette">×</i>`;
+      b.title = e.kind === 'word' ? `${e.word.id} — ${e.word.doc}` : [
+        `${e.cmd.label}${e.cmd.key ? ` (${e.cmd.key.toUpperCase()})` : ''}`, e.cmd.title,
+      ].filter(Boolean).join(' — ');
+      b.innerHTML = `${this.glyphOf(e)}<span>${esc(this.labelOf(e))}</span>`
+        + '<i class="x" title="Take off the palette">×</i>';
       return b;
     }));
     this.refresh();
@@ -477,7 +505,10 @@ export class Words {
   /** Where along the strip a drop at `x` lands. */
   private slotAt(x: number): number {
     const chips = [...this.strip.querySelectorAll<HTMLElement>('.chip:not(.lifted)')];
-    const i = chips.findIndex((c) => { const r = c.getBoundingClientRect(); return x < r.left + r.width / 2; });
+    const i = chips.findIndex((c) => {
+      const r = c.getBoundingClientRect();
+      return x < r.left + r.width / 2;
+    });
     return i < 0 ? chips.length : i;
   }
 
@@ -491,7 +522,8 @@ export class Words {
   /** A row of the menu carried out to the palette: a press that moves picks it up. */
   private dragFromMenu(e: PointerEvent): void {
     const row = (e.target as HTMLElement).closest<HTMLElement>('.row[data-id]');
-    if (!row || e.button !== 0 || e.pointerType === 'touch' || (e.target as HTMLElement).closest('.keep')) return;
+    if (!row || e.button !== 0 || e.pointerType === 'touch') return;
+    if ((e.target as HTMLElement).closest('.keep')) return;
     this.carry(e, row.dataset.id!, row, null);
   }
 
@@ -508,7 +540,8 @@ export class Words {
     this.carry(e, id, chip, this.kept.palette.indexOf(id), () => this.choose(id));
   }
 
-  private carry(e: PointerEvent, id: string, from: HTMLElement, at: number | null, click?: () => void): void {
+  private carry(e: PointerEvent, id: string, from: HTMLElement, at: number | null,
+                click?: () => void): void {
     const [x0, y0] = [e.clientX, e.clientY];
     from.setPointerCapture(e.pointerId);
     const move = (ev: PointerEvent) => {
@@ -517,26 +550,25 @@ export class Words {
         const ghost = document.createElement('div');
         ghost.className = 'chip ghost';
         const entry = this.find(id);
-        ghost.innerHTML = `${glyph(entry?.kind === 'command' ? 'app' : 'any')}<span>${esc(
-          entry?.kind === 'word' ? entry.word.word : entry?.cmd.label ?? id)}</span>`;
+        ghost.innerHTML = !entry ? esc(id)
+          : `${this.glyphOf(entry)}<span>${esc(this.labelOf(entry))}</span>`;
         document.body.append(ghost);
-        this.dragging = { id, ghost, from: at };
+        this.dragging = ghost;
         this.menu.classList.add('carrying');
         if (at !== null) from.classList.add('lifted');
       }
-      const d = this.dragging;
-      d.ghost.style.left = `${ev.clientX}px`;
-      d.ghost.style.top = `${ev.clientY}px`;
+      this.dragging.style.left = `${ev.clientX}px`;
+      this.dragging.style.top = `${ev.clientY}px`;
       this.strip.classList.toggle('drop', this.overStrip(ev.clientX, ev.clientY));
     };
     const up = (ev: PointerEvent) => {
       from.removeEventListener('pointermove', move);
       from.removeEventListener('pointerup', up);
       from.removeEventListener('pointercancel', up);
-      const d = this.dragging;
-      if (!d) { if (ev.type === 'pointerup') click?.(); return; }
+      const ghost = this.dragging;
+      if (!ghost) { if (ev.type === 'pointerup') click?.(); return; }
       this.dragging = null;
-      d.ghost.remove();
+      ghost.remove();
       from.classList.remove('lifted');
       this.menu.classList.remove('carrying');
       this.strip.classList.remove('drop');
@@ -544,7 +576,7 @@ export class Words {
       setTimeout(() => { this.swallow = false; }, 0);
       if (ev.type !== 'pointerup') return;
       if (this.overStrip(ev.clientX, ev.clientY)) this.keep(id, this.slotAt(ev.clientX));
-      else if (d.from !== null) this.keep(id);       // dragged off the strip: taken off it
+      else if (at !== null) this.keep(id);           // dragged off the strip: taken off it
     };
     from.addEventListener('pointermove', move);
     from.addEventListener('pointerup', up);

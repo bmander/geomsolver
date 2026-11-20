@@ -260,8 +260,8 @@ export interface Rounding {
  *  object's edges and faces (and a body whole) with an edge tool, bodies with a Boolean, and
  *  nothing with a tool that draws. */
 export function picksAs(tool: Tool): 'all' | 'parts' | 'bodies' | null {
-  return tool === 'select' || tool === 'word' ? 'all' : roundsEdges(tool) ? 'parts' : combines(tool) ? 'bodies'
-    : null;
+  return tool === 'select' || tool === 'word' ? 'all' : roundsEdges(tool) ? 'parts'
+    : combines(tool) ? 'bodies' : null;
 }
 
 /** A Boolean about to be written: the body it is written on, its word and the tools it joins. */

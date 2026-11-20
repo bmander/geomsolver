@@ -6,11 +6,13 @@ import { Line, Point, distanceBetween, onRadius } from '../core/model.js';
 import { bodiesPicked, onePicked } from './solids.js';
 import { applyHidden, toolKinds } from './hidden.js';
 import { combines, picksAs, roundsEdges } from './view.js';
-import type { Place, SketchView, Tool } from './view.js';
+import type { Hit, Place, SketchView, Tool } from './view.js';
 
 export function setTool(v: SketchView, tool: Tool): void {
   const shown = v.kinds | toolKinds(v.tool);
   v.tool = tool;
+  // a word's slot is armed only while its tool is down
+  if (tool !== 'word') v.wordPick = null;
   // **a tool shows the kinds it needs while it is down** (#678), and they go with it
   if ((v.kinds | toolKinds(tool)) !== shown) {
     applyHidden(v);
@@ -244,10 +246,8 @@ function takenElsewhere(v: SketchView, sp: [number, number],
   // a word's slot armed: the nearest thing it takes fills it — or, where it places a point, a
   // click on nothing does
   if (v.tool === 'word') {
-    const pick = v.wordPick;
-    if (!pick) return true;
-    const hit = v.hitsAt(sp[0], sp[1]).find((h) => !('hidden' in h && h.hidden) && pick.accepts(h));
-    if (hit || pick.mints) pick.take(hit ?? null, sp);
+    const hit = wordHit(v, sp);
+    if (hit || v.wordPick?.mints) v.wordPick?.take(hit, sp);
     return true;
   }
   // a Boolean picks bodies where the eye sees them, on no plane
@@ -260,20 +260,13 @@ function takenElsewhere(v: SketchView, sp: [number, number],
     v.roundAt(sp[0], sp[1]);
     return true;
   }
-  // a standard plane chosen before the document had it is brought in by the first press: the
-  // document gains `use std`, and what the press makes is drawn on the plane it now has
-  if (!v.ensurePlane()) return true;
   // drawing in space, only a point and a line: a circle, an arc and a curve are drawn in a plane
   // (E060), and a region to sweep is bounded on one
   if (v.openSpace && !drawsInSpace(v.tool)) {
     v.onStatus(`the ${v.tool} tool draws on a plane — choose one to sketch on`);
     return true;
   }
-  // a plane seen edge on has no place on it under the pointer (`toolView` is the one read)
-  if (!v.viewCam().readable()) {
-    v.onStatus(`${v.planeName} is seen edge on — turn the view, or choose the plane again to face it`);
-    return true;
-  }
+  if (!drawableHere(v)) return true;
   // an extrusion writes its statements through `apply`, which takes its own undo step
   if (v.tool === 'extrude') {
     v.extrudeAt(sp[0], sp[1], mods.alt, mods.alt && mods.shift);
@@ -284,6 +277,27 @@ function takenElsewhere(v: SketchView, sp: [number, number],
     return true;
   }
   return false;
+}
+
+/** **Whether a click can put something on the plane being drawn on**: a standard plane chosen
+ *  before the document had it is brought in (`use std`), and a plane seen edge on has no place on
+ *  it under the pointer (`toolView` is the one read) — said in the status line where not. */
+export function drawableHere(v: SketchView): boolean {
+  if (!v.ensurePlane()) return false;
+  if (!v.viewCam().readable()) {
+    v.onStatus(`${v.planeName} is seen edge on — turn the view, or choose the plane again to face it`);
+    return false;
+  }
+  return true;
+}
+
+/** **What the armed slot of a word would take under the pointer** (`SketchView.wordPick`): the
+ *  nearest thing it accepts, an edge behind the material never — or nothing. */
+export function wordHit(v: SketchView, sp: [number, number]): Hit | null {
+  const pick = v.wordPick;
+  if (!pick) return null;
+  const behind = (h: Hit) => h.kind === 'solid' && h.hidden;
+  return v.hitsAt(sp[0], sp[1]).find((h) => !behind(h) && pick.accepts(h)) ?? null;
 }
 
 /** A drawing tool's click.  Whether the drawing changed and is to be solved: a tool still

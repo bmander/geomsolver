@@ -160,6 +160,15 @@ pub(super) fn chosen_name(
     name: Option<&str>,
     kind: EntKind,
 ) -> Result<String, String> {
+    chosen(taken, name, &syntax::kind_initial(kind).to_string())
+}
+
+/// `chosen_name`, a fresh name minted in `stem`'s sequence (`next_stem`).
+pub(super) fn chosen(
+    taken: &mut std::collections::BTreeSet<String>,
+    name: Option<&str>,
+    stem: &str,
+) -> Result<String, String> {
     match name {
         Some(n) if taken.contains(n) => Err(format!("`{n}` is already a name in this document")),
         Some(n) if !crate::syntax::is_name(n) => {
@@ -169,7 +178,7 @@ pub(super) fn chosen_name(
             taken.insert(n.to_string());
             Ok(n.to_string())
         }
-        None => Ok(next_name(taken, kind)),
+        None => Ok(next_stem(taken, stem)),
     }
 }
 

@@ -7,22 +7,28 @@
 //! as a second list beside them:
 //!
 //! * an **entity**'s slots are its kind's `fields()`;
-//! * a **built-in relation word**'s operands are every pair of kinds `constraints::infix_op` (or
-//!   `prefix_op`) settles the word over, and what goes in its parentheses is the spec of every
-//!   constraint those pairs settle to, read the way `syntax::operator_text` prints it;
+//! * a **built-in relation word** is every constraint kind `CKind::operator` spells with it, its
+//!   operands every pair of kinds `constraints::infix_op` (or `prefix_op`) settles it over, and
+//!   what goes in its parentheses each kind's spec as `syntax::place_of` places it — the reading
+//!   `operator_text` prints by;
 //! * a **component**'s slots are its formals, typed as written; and
 //! * a **relation word** a module defines (`b right_of(d) a`) takes what its body hands its
 //!   operands and parameters to: `a level(up) b` makes `a` and `b` points.
 //!
 //! `statement` is the inverse: a word and what fills its slots, written as the statement a person
-//! would write.  `edit::write_word` appends it, imports what it needs and holds it to the
-//! elaborator, so a front end composes no source.
+//! would write — a relation by the relation printer itself.  `edit::write_word` appends it,
+//! imports what it needs and holds it to the elaborator, so a front end composes no source.
+//!
+//! The language's and the library's words are the same for every document, and are read once
+//! (`library_words`); a document adds its own and those of the other modules it links
+//! (`own_words`).
 
-use crate::constraints::{infix_op, prefix_op, CKind, Fixity, SpecKind};
+use crate::constraints::{builtin_word, infix_op, kind_matches, prefix_op, CKind, Fixity, SpecKind,
+                         ALL_KINDS, OPERATORS};
 use crate::json::{object, Json};
 use crate::model::{EntKind, Field};
-use crate::syntax::{self, Arg, OpArg, Program, StmtKind, Ty};
-use std::collections::{BTreeMap, BTreeSet};
+use crate::syntax::{self, Arg, OpArg, Place, Program, StmtKind, Ty};
+use std::collections::BTreeMap;
 
 /// How a slot is written in its statement.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -140,12 +146,30 @@ impl Form {
     pub fn as_str(&self) -> &'static str {
         match self {
             Form::Declare => "declare",
-            Form::Infix => "infix",
-            Form::Prefix => "prefix",
-            Form::Call => "call",
+            Form::Infix | Form::Prefix | Form::Call => self.fixity().map_or("", Fixity::as_str),
             Form::Instance { .. } => "instance",
             Form::Param => "param",
             Form::Value => "value",
+        }
+    }
+
+    /// Where a relation's word stands to its operands; `None` for any other statement.
+    fn fixity(&self) -> Option<Fixity> {
+        match self {
+            Form::Infix => Some(Fixity::Infix),
+            Form::Prefix => Some(Fixity::Prefix),
+            Form::Call => Some(Fixity::Call),
+            _ => None,
+        }
+    }
+}
+
+impl From<Fixity> for Form {
+    fn from(f: Fixity) -> Form {
+        match f {
+            Fixity::Infix => Form::Infix,
+            Fixity::Prefix => Form::Prefix,
+            Fixity::Call => Form::Call,
         }
     }
 }
@@ -168,6 +192,9 @@ pub struct Entry {
     pub doc: String,
     /// The kind of thing it declares, if it declares one (`line`, `solid`, `set`, `instance`).
     pub makes: Option<String>,
+    /// A declaration drawn on a plane — a point, a line, a circle, an arc, a spline — written
+    /// `in` the plane being drawn on.
+    pub drawn: bool,
     pub slots: Vec<Slot>,
     /// A built-in infix word's operand kinds, pair by pair, as the elaborator settles them — so
     /// a front end narrows the second operand once the first is known — each with the selectors
@@ -182,7 +209,8 @@ impl Entry {
     fn new(id: &str, word: &str, module: &str, group: &str, form: Form, doc: &str) -> Entry {
         Entry {
             id: id.into(), word: word.into(), module: module.into(), group: group.into(), form,
-            doc: doc.into(), makes: None, slots: Vec::new(), pairs: Vec::new(), uses: None,
+            doc: doc.into(), makes: None, drawn: false, slots: Vec::new(), pairs: Vec::new(),
+            uses: None,
         }
     }
 }
@@ -204,7 +232,8 @@ const DOCS: &[(&str, &str)] = &[
     ("coincident", "Two points meet, or a point lies on a line, circle, arc, curve or plane."),
     ("distance", "A length between two things: points, a point and a line, two planes. With \
                   along, a signed run; with side, which side of a line."),
-    ("tangent", "Two things touch. Order carries meaning: an arc tangent to a line is at the arc's end."),
+    ("tangent", "Two things touch. Order carries meaning: an arc tangent to a line is at the arc's \
+                 end."),
     ("equal", "Two lines the same length, or two circles or arcs the same radius."),
     ("curvature", "A circle osculates a curve where they touch."),
     ("level", "Two points share an ordinate along a direction."),
@@ -215,6 +244,8 @@ const DOCS: &[(&str, &str)] = &[
     ("parallel", "Two lines, axes or planes run alike."),
     ("perpendicular", "Square to one another; sense says which quarter turn."),
     ("symmetry", "Two points mirrored in a line, or turned a half turn about an axis."),
+    ("touches", "A free curve pressed onto a line: a corner held somewhere on it, sliding to where \
+                 the pull along the line balances."),
     ("mapped", "A point where the map taking the sources to the targets carries another: two \
                 pairs the similarity, three the affine map."),
     ("horizontal", "A line is level in its view."),
@@ -235,110 +266,38 @@ fn doc_of(word: &str) -> &'static str {
     DOCS.iter().find(|(w, _)| *w == word).map_or("", |(_, d)| d)
 }
 
-/// The kinds a person clicks on, in the order a list of them is read.
+/// The kinds a person declares and clicks on, in the order a list of them is read.
 const DRAWN: [EntKind; 10] = [
     EntKind::Point, EntKind::Line, EntKind::Circle, EntKind::Arc, EntKind::Spline,
-    EntKind::Curve, EntKind::Frame, EntKind::Axis, EntKind::Face, EntKind::Solid,
+    EntKind::Curve, EntKind::Axis, EntKind::Frame, EntKind::Face, EntKind::Solid,
 ];
 
 /// A path: what a point runs along.
 const PATH: [&str; 5] = ["line", "arc", "circle", "spline", "curve"];
 
-/// The built-in words a statement relates two things with, and what each is for.
-const INFIX: [(&str, &str); 13] = [
-    ("coincident", "Relations"), ("tangent", "Relations"), ("parallel", "Relations"),
-    ("perpendicular", "Relations"), ("equal", "Relations"), ("midpoint", "Relations"),
-    ("symmetry", "Relations"), ("level", "Relations"), ("curvature", "Relations"),
-    ("project", "Relations"), ("mapped", "Relations"), ("distance", "Dimensions"),
-    ("angle", "Dimensions"),
-];
-const PREFIX: [(&str, &str); 4] = [
-    ("horizontal", "Relations"), ("vertical", "Relations"), ("radius", "Dimensions"),
-    ("length", "Dimensions"),
-];
-
 /// The selectors `infix_op` reads to tell one sense of a word from another, each as a statement
-/// would give it: a word is every constraint it settles to under any of them.
-const SELECTORS: [&[(&str, &str)]; 7] = [
+/// would give it: a pair of kinds a word settles over only when one is given needs it said.
+const SELECTORS: [&[(&str, &str)]; 8] = [
     &[], &[("t", "0.5")], &[("along", "u")], &[("at", "")], &[("at", "start")],
-    &[("about", "x")], &[("side", "left")],
+    &[("about", "x")], &[("pairs", "2")], &[("fraction", "0.5")],
 ];
 
-/// A constraint the workspace has nothing to click for: what a motion, an envelope or a meshing
-/// is held to, written in the program panel.
+/// A constraint the workspace has nothing to click for: what a motion, an envelope, a meshing or
+/// a traced body is held to, and where on a line a contact over an interval is (the flattener's
+/// own), written in the program panel.
 fn exotic(k: CKind) -> bool {
     k.spec().iter().any(|(_, s)| matches!(s, SpecKind::Envelope | SpecKind::Meshing
         | SpecKind::Motion | SpecKind::Traced | SpecKind::Carrier | SpecKind::Against))
-        || matches!(k, CKind::CarriedPoint | CKind::CarriedPointIn | CKind::LineFraction)
+        || k == CKind::LineFraction
 }
 
-/// What a constraint slot of this kind may be clicked on with.
-fn spec_kinds(s: SpecKind) -> &'static [&'static str] {
-    match s {
-        SpecKind::Point => &["point"],
-        SpecKind::Line => &["line"],
-        SpecKind::Circle => &["circle"],
-        SpecKind::Arc => &["arc"],
-        SpecKind::CircleOrArc => &["circle", "arc"],
-        SpecKind::Spline => &["spline"],
-        SpecKind::Curve => &["curve"],
-        SpecKind::Plane => &["plane"],
-        SpecKind::Axis => &["axis"],
-        SpecKind::Direction => &["line", "axis"],
-        SpecKind::Along => &["line", "axis", "plane"],
-        SpecKind::Scalar => &["point", "line", "circle", "arc", "axis", "plane"],
-        SpecKind::Solid => &["solid"],
-        _ => &[],
-    }
-}
-
-fn kind_word(k: EntKind) -> &'static str {
-    k.as_str()
-}
-
-/// How one constraint's spec is written around its word: `syntax::operator_text`'s reading.
-struct Shape {
-    /// The entities written by position, operands first.
-    ents: Vec<(&'static str, SpecKind, usize)>,
-    value: Option<SpecKind>,
-    /// `(label, kinds, words, pin)` for a labelled slot in the parentheses.
-    labelled: Vec<(&'static str, Vec<&'static str>, Vec<String>, Option<&'static str>, bool)>,
-}
-
-fn shape(k: CKind, word: &str) -> Shape {
-    let mut s = Shape { ents: Vec::new(), value: None, labelled: Vec::new() };
-    for (i, &(name, sk)) in k.spec().iter().enumerate() {
-        // what the core reads off the geometry and nobody writes: a projection's planes, a skew
-        // distance's sign, an ordinate's form
-        if (sk.is_entity() || matches!(name, "sign" | "form")) && k.infers_arg(i) {
-            continue;
-        }
-        let words: Vec<String> = k.words(i).map(|ws| ws.iter().map(|w| w.to_string()).collect())
-            .unwrap_or_default();
-        let labelled_ref = matches!(name, "at" | "by" | "about" | "under" | "seen_from")
-            || (name == "along" && word == "distance");
-        if sk.takes_ref() && labelled_ref {
-            s.labelled.push((name, spec_kinds(sk).to_vec(), words, None, false));
-        } else if sk.takes_ref() {
-            s.ents.push((name, sk, i));
-        } else if word == "level" && name == "along" {
-            // `a level(up) b`: the direction stands bare, as a third entity would
-            s.ents.push((name, sk, i));
-        } else if sk.is_param() {
-            s.labelled.push((name, Vec::new(), words, Some("Scalar"), true));
-        } else if sk.is_dimension() {
-            s.value = Some(sk);
-        } else {
-            let (ty, words) = match sk {
-                SpecKind::Bool => ("Bool", vec!["true".to_string(), "false".to_string()]),
-                SpecKind::Int => ("Int", words),
-                SpecKind::Float => ("Scalar", words),
-                _ => ("word", words),
-            };
-            s.labelled.push((name, Vec::new(), words, Some(ty), false));
-        }
-    }
-    s
+/// What a constraint slot of this kind may be clicked on with, by `constraints::kind_matches` —
+/// and for the operand of `fix`, any entity whose own numbers it holds.
+fn spec_kinds(s: SpecKind) -> Vec<String> {
+    let all = |k: &EntKind| s == SpecKind::Scalar || kind_matches(s, *k);
+    let drawable =
+        |k: &EntKind| !matches!(k, EntKind::Face | EntKind::Solid) || s == SpecKind::Solid;
+    DRAWN.iter().filter(|k| all(k) && drawable(k)).map(|k| k.as_str().to_string()).collect()
 }
 
 fn dim_ty(s: SpecKind) -> &'static str {
@@ -349,127 +308,143 @@ fn dim_ty(s: SpecKind) -> &'static str {
     }
 }
 
-fn push_unique(v: &mut Vec<String>, xs: impl IntoIterator<Item = impl ToString>) {
+fn push_unique<T: PartialEq>(v: &mut Vec<T>, xs: impl IntoIterator<Item = T>) {
     for x in xs {
-        let x = x.to_string();
         if !v.contains(&x) {
             v.push(x);
         }
     }
 }
 
-/// A built-in relation word, read off the tables that settle it.
-fn builtin(word: &str, group: &str, fixity: Fixity) -> Option<Entry> {
-    let form = match fixity {
-        Fixity::Infix => Form::Infix,
-        Fixity::Prefix => Form::Prefix,
-        Fixity::Call => Form::Call,
-    };
-    let mut e = Entry::new(word, word, "", group, form, doc_of(word));
-    let mut kinds: Vec<CKind> = Vec::new();
+/// The slot `key` in `slots`, made with `role` where there is none yet.
+fn slot_named<'a>(slots: &'a mut Vec<Slot>, key: &str, role: Role) -> &'a mut Slot {
+    match slots.iter().position(|s| s.key == key) {
+        Some(at) => &mut slots[at],
+        None => {
+            slots.push(Slot::new(key, role).optional());
+            slots.last_mut().unwrap()
+        }
+    }
+}
+
+/// A built-in relation word, read off the tables that settle it: the kinds `CKind::operator`
+/// spells with it, the pairs of drawn kinds it settles over, and each kind's spec as `place_of`
+/// places it.  `None` for a word the workspace has nothing to click for.
+fn builtin(word: &str, fixity: Fixity) -> Option<Entry> {
+    let kinds: Vec<CKind> = ALL_KINDS.iter().copied()
+        .filter(|k| k.operator() == Some((word, fixity)) && !exotic(*k)).collect();
+    let mut pairs: Vec<(String, String, Vec<String>)> = Vec::new();
     let (mut left, mut right): (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
     for a in DRAWN {
         if fixity == Fixity::Prefix {
-            if let Some(k) = prefix_op(word, a).filter(|&k| !exotic(k)) {
-                push_unique(&mut left, [kind_word(a)]);
-                if !kinds.contains(&k) {
-                    kinds.push(k);
-                }
+            if prefix_op(word, a).is_some_and(|k| !exotic(k)) {
+                push_unique(&mut left, [a.as_str().to_string()]);
             }
             continue;
         }
         for b in DRAWN {
             for sel in SELECTORS {
-                let pick = |key: &str| sel.iter().find(|(k, _)| *k == key).map(|(_, v)| v.to_string());
-                let Some(k) = infix_op(word, a, b, &pick).filter(|&k| !exotic(k)) else { continue };
-                let (x, y) = (kind_word(a), kind_word(b));
+                let pick =
+                    |key: &str| sel.iter().find(|(k, _)| *k == key).map(|(_, v)| v.to_string());
+                if !infix_op(word, a, b, &pick).is_some_and(|k| !exotic(k)) {
+                    continue;
+                }
+                let (x, y) = (a.as_str().to_string(), b.as_str().to_string());
                 // the first selectors that settle it, none before any: what the pair needs said
-                if !e.pairs.iter().any(|(p, q, _)| p == x && q == y) {
-                    let needs = sel.iter().map(|(key, _)| key.to_string()).collect();
-                    e.pairs.push((x.to_string(), y.to_string(), needs));
+                if !pairs.iter().any(|(p, q, _)| *p == x && *q == y) {
+                    let needs = sel.iter().map(|(k, _)| k.to_string()).collect();
+                    pairs.push((x.clone(), y.clone(), needs));
                 }
-                push_unique(&mut left, [kind_word(a)]);
-                push_unique(&mut right, [kind_word(b)]);
-                if !kinds.contains(&k) {
-                    kinds.push(k);
-                }
+                push_unique(&mut left, [x]);
+                push_unique(&mut right, [y]);
             }
         }
     }
-    if kinds.is_empty() {
+    if kinds.is_empty() || left.is_empty() {
         return None;
     }
-    // an angle made equal to another is chosen by the two lines in its parentheses
-    // (`program::relations`), which no selector says
-    if word == "angle" {
-        kinds.push(CKind::EqualAngle);
-    }
-    let shapes: Vec<Shape> = kinds.iter().map(|&k| shape(k, word)).collect();
+    let dimensioned = kinds.iter().any(|k| k.spec().iter().any(|(_, s)| s.is_dimension()));
+    let group = if dimensioned { "Dimensions" } else { "Relations" };
+    let mut e = Entry::new(word, word, "", group, fixity.into(), doc_of(word));
+    e.pairs = pairs;
+    // each kind's slots by place: its positional entities, its number, its labelled and pinned
     let operands = if fixity == Fixity::Infix { 2 } else { 1 };
-    // the operands named as the word's first sense names them: `p distance q`, `l1 angle l2`
-    let named = |j: usize| shapes[0].ents.get(j).map_or(if j == 0 { "a" } else { "b" }, |x| x.0);
-    match fixity {
-        Fixity::Infix => e.slots.push(Slot { kinds: left, ..Slot::new(named(0), Role::Left) }),
-        Fixity::Prefix => e.slots.push(Slot { kinds: left, ..Slot::new(named(0), Role::Operand) }),
-        Fixity::Call => {}
+    let mut positional: Vec<Slot> = Vec::new();
+    let mut labelled: Vec<Slot> = Vec::new();
+    let mut value: Option<Slot> = None;
+    let mut numbered = 0;
+    // how many of the word's senses write each positional entity: one some sense lacks is optional
+    let mut present: Vec<usize> = Vec::new();
+    for &k in &kinds {
+        let mut j = 0;
+        let mut has_number = false;
+        for (i, &(name, sk)) in k.spec().iter().enumerate() {
+            let words = k.words(i).unwrap_or(&[]).iter().map(|w| w.to_string());
+            match syntax::place_of(k, i) {
+                Place::Unwritten => {}
+                Place::Positional => {
+                    if positional.len() == j {
+                        positional.push(Slot::new(name, Role::Arg));
+                        present.push(0);
+                    }
+                    present[j] += 1;
+                    push_unique(&mut positional[j].kinds, spec_kinds(sk));
+                    push_unique(&mut positional[j].words, words);
+                    j += 1;
+                }
+                Place::Number => {
+                    has_number = true;
+                    let v = value
+                        .get_or_insert_with(|| Slot::new("value", Role::Value).ty(dim_ty(sk)));
+                    if v.ty.as_deref() != Some(dim_ty(sk)) {
+                        v.ty = Some("expr".into());
+                    }
+                }
+                place => {
+                    let role = if place == Place::Pin { Role::Pin } else { Role::Option };
+                    let l = slot_named(&mut labelled, name, role);
+                    if sk.takes_ref() {
+                        push_unique(&mut l.kinds, spec_kinds(sk));
+                    }
+                    push_unique(&mut l.words, words);
+                    if l.ty.is_none() && !sk.takes_ref() {
+                        l.ty = Some(match sk {
+                            SpecKind::Bool => {
+                                push_unique(&mut l.words, ["true", "false"].map(String::from));
+                                "Bool"
+                            }
+                            SpecKind::Int => "Int",
+                            SpecKind::Float | SpecKind::Param => "Scalar",
+                            _ => "word",
+                        }.into());
+                    }
+                }
+            }
+        }
+        numbered += has_number as usize;
     }
-    // the number, where the word has one: optional where some sense of it has none
-    let values: Vec<SpecKind> = shapes.iter().filter_map(|s| s.value).collect();
-    if !values.is_empty() {
-        let mut v = Slot::new("value", Role::Value);
-        let tys: Vec<&str> = values.iter().map(|&s| dim_ty(s)).collect();
-        push_unique(&mut v.kinds, std::iter::empty::<String>());
-        v.ty = Some(if tys.iter().all(|t| *t == tys[0]) { tys[0] } else { "expr" }.to_string());
-        v.optional = values.len() < shapes.len();
+    for (p, n) in positional.iter_mut().zip(present) {
+        p.optional = n < kinds.len();
+    }
+    // the operands named as the word's first sense names them: `p distance q`, `l1 angle l2`;
+    // what the pairs say they take, the kinds
+    let rest = positional.split_off(operands.min(positional.len()));
+    let mut ops = positional.into_iter();
+    let first = ops.next().map_or("a".to_string(), |s| s.key);
+    match fixity {
+        Fixity::Infix => e.slots.push(Slot { kinds: left, ..Slot::new(&first, Role::Left) }),
+        _ => e.slots.push(Slot { kinds: left, ..Slot::new(&first, Role::Operand) }),
+    }
+    if let Some(mut v) = value {
+        // optional where some sense of the word has no number (an angle made equal to another)
+        v.optional = numbered < kinds.len();
         e.slots.push(v);
     }
-    // the entities beyond the operands, by position (a mirror's line, an angle's other pair)
-    let skip = if fixity == Fixity::Call { 0 } else { operands };
-    let extra = shapes.iter().map(|s| s.ents.len().saturating_sub(skip)).max().unwrap_or(0);
-    for j in 0..extra {
-        let mut slot = Slot::new("", Role::Arg);
-        let mut present = 0;
-        for (s, &k) in shapes.iter().zip(&kinds) {
-            if let Some(&(name, sk, i)) = s.ents.get(skip + j) {
-                present += 1;
-                if slot.key.is_empty() {
-                    slot.key = name.to_string();
-                }
-                push_unique(&mut slot.kinds, spec_kinds(sk).iter());
-                if let Some(ws) = k.words(i) {
-                    push_unique(&mut slot.words, ws.iter());
-                }
-            }
-        }
-        slot.optional = present < shapes.len();
-        e.slots.push(slot);
-    }
-    // what goes labelled in the parentheses: a pin, a selector, an `at:` point
-    let mut labelled: Vec<Slot> = Vec::new();
-    for s in &shapes {
-        for (name, ks, ws, ty, pin) in &s.labelled {
-            if matches!(*name, "under" | "seen_from" | "mirror" | "sign") {
-                continue;
-            }
-            let at = match labelled.iter().position(|l| l.key == *name) {
-                Some(at) => at,
-                None => {
-                    let role = if *pin { Role::Pin } else { Role::Option };
-                    labelled.push(Slot::new(name, role).optional());
-                    labelled.len() - 1
-                }
-            };
-            let l = &mut labelled[at];
-            push_unique(&mut l.kinds, ks.iter());
-            push_unique(&mut l.words, ws.iter());
-            if l.ty.is_none() {
-                l.ty = ty.map(|t| t.to_string());
-            }
-        }
-    }
+    e.slots.extend(rest);
     e.slots.extend(labelled);
     if fixity == Fixity::Infix {
-        e.slots.push(Slot { kinds: right, ..Slot::new(named(1), Role::Right) });
+        let second = ops.next().map_or("b".to_string(), |s| s.key);
+        e.slots.push(Slot { kinds: right, ..Slot::new(&second, Role::Right) });
     }
     Some(e)
 }
@@ -486,47 +461,53 @@ fn orientation(word: &str) -> Entry {
 /// `fix(…) e`: what is held is the entity's own numbers, said whole or by member.
 fn fix() -> Entry {
     let mut e = Entry::new("fix", "fix", "", "Relations", Form::Prefix, doc_of("fix"));
-    e.slots.push(Slot::new("of", Role::Operand).kinds(&["point", "circle", "arc", "axis", "plane"]));
+    let held = ["point", "circle", "arc", "axis", "plane"];
+    e.slots.push(Slot::new("of", Role::Operand).kinds(&held));
     e.slots.push(Slot::new("value", Role::Value).ty("expr"));
     e
 }
 
 /// An entity declared: its kind's children and the numbers it is seeded with.
 fn declaration(kind: EntKind) -> Entry {
-    let word = kind_word(kind);
-    let group = if matches!(kind, EntKind::Face | EntKind::Solid) { "Faces & solids" } else { "Geometry" };
+    let word = kind.as_str();
+    let group = match kind {
+        EntKind::Face | EntKind::Solid => "Faces & solids",
+        _ => "Geometry",
+    };
     let mut e = Entry::new(word, word, "", group, Form::Declare, doc_of(word));
     e.makes = Some(word.into());
+    e.drawn = matches!(kind, EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc
+        | EntKind::Spline);
     e.slots.push(Slot::new("name", Role::Name).ty("name"));
     match kind {
         EntKind::Point => e.slots.push(Slot::new("", Role::Seed).ty("place").mints()),
-        EntKind::Spline => e.slots.push(Slot::new("ctrl", Role::Arg).kinds(&["point"]).many().mints()),
+        EntKind::Spline => {
+            e.slots.push(Slot::new("ctrl", Role::Arg).kinds(&["point"]).many().mints());
+        }
         EntKind::Curve => {
             e.slots.push(Slot::new("a", Role::Arg).kinds(&["point"]).mints());
             e.slots.push(Slot::new("b", Role::Arg).kinds(&["point"]).mints());
         }
         EntKind::Face => {
             e.slots.push(Slot::new("edges", Role::Arg).kinds(&PATH).many());
-            e.slots.push(Slot::new("holes", Role::Option).kinds(&["circle", "face"]).optional().many());
+            let holes = Slot::new("holes", Role::Option).kinds(&["circle", "face"]);
+            e.slots.push(holes.optional().many());
         }
-        EntKind::Solid => e.slots.push(Slot::new("of", Role::Arg).kinds(&["solid", "face"]).ty("expr")),
+        EntKind::Solid => {
+            e.slots.push(Slot::new("of", Role::Arg).kinds(&["solid", "face"]).ty("expr"));
+        }
         EntKind::Axis => e.slots.push(Slot::new("dir", Role::Seed).ty("vector").optional()),
         _ => {
-            let line = kind == EntKind::Line;
             for &(name, f) in kind.fields() {
                 match f {
                     Field::Child if kind == EntKind::Frame && name == "origin" => {}
+                    Field::Child if kind == EntKind::Frame => {
+                        e.slots.push(Slot::new(name, Role::Option).kinds(&["axis", "line"]));
+                    }
+                    // a line's two ends by position, every other kind's children by name
                     Field::Child => {
-                        let ks: &[&str] = match kind {
-                            EntKind::Frame => &["axis", "line"],
-                            _ => &["point"],
-                        };
-                        let role = if line { Role::Arg } else { Role::Option };
-                        let mut s = Slot::new(name, role).kinds(ks);
-                        if kind != EntKind::Frame {
-                            s = s.mints();
-                        }
-                        e.slots.push(s);
+                        let role = if kind == EntKind::Line { Role::Arg } else { Role::Option };
+                        e.slots.push(Slot::new(name, role).kinds(&["point"]).mints());
                     }
                     Field::Scalar if name == "r" => {
                         e.slots.push(Slot::new("r", Role::Seed).ty("Length").optional());
@@ -535,7 +516,8 @@ fn declaration(kind: EntKind) -> Entry {
                 }
             }
             if kind == EntKind::Arc {
-                e.slots.push(Slot::new("sense", Role::Option).ty("word").words(&["ccw", "cw"]).optional());
+                let sense = Slot::new("sense", Role::Option).ty("word").words(&["ccw", "cw"]);
+                e.slots.push(sense.optional());
             }
         }
     }
@@ -543,15 +525,13 @@ fn declaration(kind: EntKind) -> Entry {
 }
 
 fn language() -> Vec<Entry> {
-    let mut out: Vec<Entry> = [
-        EntKind::Point, EntKind::Line, EntKind::Circle, EntKind::Arc, EntKind::Spline,
-        EntKind::Curve, EntKind::Axis, EntKind::Frame, EntKind::Face, EntKind::Solid,
-    ].into_iter().map(declaration).collect();
-    for (w, g) in INFIX {
-        out.extend(builtin(w, g, Fixity::Infix));
-    }
-    for (w, g) in PREFIX {
-        out.extend(builtin(w, g, Fixity::Prefix));
+    let mut out: Vec<Entry> = DRAWN.into_iter().map(declaration).collect();
+    for word in OPERATORS {
+        for fixity in [Fixity::Infix, Fixity::Prefix] {
+            if builtin_word(word, fixity) {
+                out.extend(builtin(word, fixity));
+            }
+        }
     }
     out.push(fix());
     out.push(orientation("ccw"));
@@ -580,38 +560,41 @@ const VOCABULARY: [(&str, &str); 14] = [
     ("std.measures", "Dimensions"), ("hardware", "Parts"),
 ];
 
+/// A word of `module` by its path, `module.name`, or bare where it is the document's own.
+fn qualified(module: &str, name: &str) -> String {
+    if module == "." { name.to_string() } else { format!("{module}.{name}") }
+}
+
 /// The first sentence of the comment written above a definition at `lo` in `text`.
 fn comment_above(text: &str, lo: usize) -> String {
     let lo = lo.min(text.len());
     let head = &text[..text[..lo].rfind('\n').map_or(0, |k| k + 1)];
     let mut lines: Vec<&str> = Vec::new();
     for line in head.lines().rev() {
-        let t = line.trim();
-        let Some(c) = t.strip_prefix("//") else { break };
+        let Some(c) = line.trim().strip_prefix("//") else { break };
         lines.push(c.trim());
     }
     lines.reverse();
     // a section's banner (`// -- a frame's joint -- …`) is not what the definition means
-    let mut said = lines.iter().skip_while(|l| l.starts_with("--")).copied()
+    let said = lines.iter().skip_while(|l| l.starts_with("--")).copied()
         .collect::<Vec<_>>().join(" ");
-    said = said.trim_start_matches(':').trim().to_string();
+    let said = said.trim_start_matches(':').trim();
     let cut = said.char_indices()
         .find(|&(i, c)| c == '.' && said[i + 1..].starts_with(' ')
             && said[i + 1..].trim_start().chars().next().is_some_and(char::is_uppercase))
         .map_or(said.len(), |(i, _)| i + 1);
-    let mut s = said[..cut].trim().to_string();
-    if s.chars().count() > 220 {
-        s = s.chars().take(219).collect::<String>() + "…";
+    let s = said[..cut].trim();
+    match s.chars().count() > 220 {
+        true => s.chars().take(219).collect::<String>() + "…",
+        false => s.to_string(),
     }
-    s
 }
 
 /// A formal's slot: its type as a click or a typed number fills it.
 fn formal_slot(f: &syntax::Formal) -> Slot {
     let key = f.name.text.as_str();
     let mut s = match f.ty {
-        Ty::Ent(k) if f.frame => Slot::new(key, Role::Arg).kinds(&[kind_word(k), "frame"]),
-        Ty::Ent(k) => Slot::new(key, Role::Arg).kinds(&[kind_word(k)]),
+        Ty::Ent(k) => Slot::new(key, Role::Arg).kinds(&[k.as_str()]),
         Ty::Path => Slot::new(key, Role::Arg).kinds(&PATH),
         Ty::Set => Slot::new(key, Role::Arg).kinds(&["solid", "face"]).ty("expr"),
         Ty::Group => Slot::new(key, Role::Arg).ty("expr"),
@@ -628,19 +611,17 @@ fn formal_slot(f: &syntax::Formal) -> Slot {
         s.default = Some(d.clone());
         s.optional = true;
     }
-    if f.within.is_some() || f.frame {
-        s.optional = true;
-    }
+    s.optional |= f.within.is_some() || f.frame;
     s
 }
 
 /// A component's entry: an instance of it, its formals its slots.
 fn component(c: &syntax::Component, module: &str, group: &str, doc: String) -> Option<Entry> {
-    let name = c.name.as_ref()?.text.clone();
-    let path = if module == "." { name.clone() } else { format!("{module}.{name}") };
+    let path = qualified(module, &c.name.as_ref()?.text);
     let solid = module == "std.solids";
     let mut e = Entry::new(&path, &path, module, group, Form::Instance { solid }, &doc);
-    e.makes = Some(if solid { "solid" } else if c.set.is_some() { "set" } else { "instance" }.into());
+    let makes = if solid { "solid" } else if c.set.is_some() { "set" } else { "instance" };
+    e.makes = Some(makes.into());
     e.slots.push(Slot::new("name", Role::Name).ty("name"));
     e.slots.extend(c.formals.iter().map(formal_slot));
     if module != "." {
@@ -649,15 +630,15 @@ fn component(c: &syntax::Component, module: &str, group: &str, doc: String) -> O
     Some(e)
 }
 
-/// What the language's words at hand say of their operands and options, by word: the kinds a
-/// relation word's body hands an operand or a parameter to.
+/// What the words at hand say of their operands and options, by word: what a relation word's
+/// body hands an operand or a parameter to.
 #[derive(Clone, Default)]
 struct Takes {
     left: Vec<String>,
     right: Vec<String>,
     value: Option<String>,
     args: Vec<Vec<String>>,
-    labelled: BTreeMap<String, (Vec<String>, Vec<String>, Option<String>)>,
+    labelled: BTreeMap<String, Slot>,
 }
 
 fn takes_of(e: &Entry) -> Takes {
@@ -669,7 +650,7 @@ fn takes_of(e: &Entry) -> Takes {
             Role::Value => t.value = s.ty.clone(),
             Role::Arg => t.args.push(s.kinds.clone()),
             Role::Option | Role::Pin => {
-                t.labelled.insert(s.key.clone(), (s.kinds.clone(), s.words.clone(), s.ty.clone()));
+                t.labelled.insert(s.key.clone(), s.clone());
             }
             Role::Name | Role::Seed => {}
         }
@@ -693,16 +674,11 @@ fn narrow(have: &mut Option<Vec<String>>, by: &[String]) {
 fn relation_word(w: &syntax::WordDef, module: &str, group: &str, doc: String,
                  known: &BTreeMap<String, Takes>) -> Entry {
     let word = w.word.text.clone();
-    let id = if module == "." { word.clone() } else { format!("{module}.{word}") };
-    let form = match w.fixity {
-        Fixity::Infix => Form::Infix,
-        Fixity::Prefix => Form::Prefix,
-        Fixity::Call => Form::Call,
-    };
-    let mut e = Entry::new(&id, &word, module, group, form, &doc);
+    let mut e = Entry::new(&qualified(module, &word), &word, module, group, w.fixity.into(), &doc);
     let mut ops: Vec<Option<Vec<String>>> = vec![None; w.operands.len()];
-    let mut params: Vec<(Option<Vec<String>>, Vec<String>, Option<String>)> =
-        vec![(None, Vec::new(), None); w.params.len()];
+    // each parameter as a slot labelled by its name, its kinds narrowed by every use
+    let mut params: Vec<(Option<Vec<String>>, Slot)> = w.params.iter()
+        .map(|p| (None, Slot::new(&p.text, Role::Option))).collect();
     let bare = |r: &syntax::Ref, n: &str| r.path.is_empty() && r.root.text == n;
     let param_at = |s: &str| w.params.iter().position(|p| p.text == s.trim());
     for st in &w.body {
@@ -719,31 +695,33 @@ fn relation_word(w: &syntax::WordDef, module: &str, group: &str, doc: String,
         }
         let mut positional = 0;
         for a in &wr.args {
-            let (found, kinds, words, ty): (Option<usize>, Vec<String>, Vec<String>, Option<String>) =
-                match a {
-                    OpArg::Dim(text, _) => (param_at(text), Vec::new(), Vec::new(), t.value.clone()),
-                    OpArg::Named(label, arg) => {
-                        let at = match arg {
-                            Arg::Ref(r) if r.path.is_empty() => param_at(&r.root.text),
-                            Arg::Word(s) => param_at(s),
-                            Arg::Dim { text, .. } => param_at(text),
-                            _ => None,
-                        };
-                        let (k, ws, ty) = t.labelled.get(&label.text).cloned().unwrap_or_default();
-                        (at, k, ws, ty)
-                    }
-                    OpArg::Ent(r) => {
-                        positional += 1;
-                        let k = t.args.get(positional - 1).cloned().unwrap_or_default();
-                        (r.path.is_empty().then(|| param_at(&r.root.text)).flatten(), k, Vec::new(), None)
-                    }
-                    _ => (None, Vec::new(), Vec::new(), None),
-                };
+            let (found, like): (Option<usize>, Slot) = match a {
+                OpArg::Dim(text, _) => {
+                    (param_at(text), Slot { ty: t.value.clone(), ..Slot::new("", Role::Value) })
+                }
+                OpArg::Named(label, arg) => {
+                    let at = match arg {
+                        Arg::Ref(r) if r.path.is_empty() => param_at(&r.root.text),
+                        Arg::Word(s) | Arg::Dim { text: s, .. } => param_at(s),
+                        _ => None,
+                    };
+                    let like = t.labelled.get(&label.text).cloned();
+                    (at, like.unwrap_or(Slot::new("", Role::Option)))
+                }
+                OpArg::Ent(r) => {
+                    positional += 1;
+                    let kinds = t.args.get(positional - 1).cloned().unwrap_or_default();
+                    let at = if r.path.is_empty() { param_at(&r.root.text) } else { None };
+                    (at, Slot { kinds, ..Slot::new("", Role::Arg) })
+                }
+                _ => continue,
+            };
             if let Some(i) = found {
-                narrow(&mut params[i].0, &kinds);
-                push_unique(&mut params[i].1, words);
-                if params[i].2.is_none() {
-                    params[i].2 = ty;
+                let (kinds, slot) = &mut params[i];
+                narrow(kinds, &like.kinds);
+                push_unique(&mut slot.words, like.words);
+                if slot.ty.is_none() {
+                    slot.ty = like.ty.filter(|t| t != "word");
                 }
             }
         }
@@ -760,26 +738,19 @@ fn relation_word(w: &syntax::WordDef, module: &str, group: &str, doc: String,
         };
         s
     };
-    match w.fixity {
-        Fixity::Infix if w.operands.len() == 2 => e.slots.push(operand(0, Role::Left)),
-        Fixity::Prefix if !w.operands.is_empty() => {}
-        _ => {}
+    let infix = w.fixity == Fixity::Infix && w.operands.len() == 2;
+    if infix {
+        e.slots.push(operand(0, Role::Left));
     }
-    for (p, (kinds, words, ty)) in w.params.iter().zip(params) {
-        let mut s = Slot::new(&p.text, Role::Option);
+    for (kinds, mut s) in params {
         s.kinds = kinds.unwrap_or_default();
-        s.words = words;
-        s.ty = Some(match ty {
-            Some(t) if t != "word" => t,
-            _ if s.kinds.is_empty() && s.words.is_empty() => "expr".into(),
-            _ => "expr".into(),
-        });
+        s.ty.get_or_insert_with(|| "expr".into());
         e.slots.push(s);
     }
-    match w.fixity {
-        Fixity::Infix if w.operands.len() == 2 => e.slots.push(operand(1, Role::Right)),
-        Fixity::Prefix if !w.operands.is_empty() => e.slots.push(operand(0, Role::Operand)),
-        _ => {}
+    if infix {
+        e.slots.push(operand(1, Role::Right));
+    } else if w.fixity == Fixity::Prefix && !w.operands.is_empty() {
+        e.slots.push(operand(0, Role::Operand));
     }
     if module != "." {
         e.uses = Some((module.to_string(), Some(word)));
@@ -787,8 +758,9 @@ fn relation_word(w: &syntax::WordDef, module: &str, group: &str, doc: String,
     e
 }
 
-/// The words of every module in `prog` that `keep` admits, then the document's own, in the order
-/// each text writes them.
+/// The words of every module in `prog` that `keep` admits, then the document's own where `own`,
+/// in the order each text writes them; each relation word read joins `known`, so a later one
+/// written over it is typed by it.
 fn defined(prog: &Program, keep: &dyn Fn(&str) -> bool, own: bool,
            known: &mut BTreeMap<String, Takes>) -> Vec<Entry> {
     // (module index or none, where, component or word index)
@@ -801,7 +773,7 @@ fn defined(prog: &Program, keep: &dyn Fn(&str) -> bool, own: bool,
     for (i, w) in prog.words.iter().enumerate() {
         at.push((w.module, w.span.lo as usize, Err(i)));
     }
-    at.sort_by_key(|&(m, lo, _)| (m.map_or(usize::MAX, |m| m), lo));
+    at.sort_by_key(|&(m, lo, _)| (m.unwrap_or(usize::MAX), lo));
     let mut out = Vec::new();
     for (m, lo, which) in at {
         let (module, group, text, local) = match m {
@@ -810,7 +782,8 @@ fn defined(prog: &Program, keep: &dyn Fn(&str) -> bool, own: bool,
                 if !keep(&md.name) {
                     continue;
                 }
-                let group = VOCABULARY.iter().find(|(n, _)| *n == md.name).map_or("Parts", |(_, g)| g);
+                let group =
+                    VOCABULARY.iter().find(|(n, _)| *n == md.name).map_or("Parts", |(_, g)| g);
                 (md.name.clone(), group, md.text.as_str(), lo.saturating_sub(md.base))
             }
             None if own => (".".to_string(), "This document", prog.text(), lo),
@@ -834,51 +807,61 @@ fn defined(prog: &Program, keep: &dyn Fn(&str) -> bool, own: bool,
     out
 }
 
-/// The library's vocabulary, linked once: a program that `use`s every module of it.
-fn library() -> Program {
-    let src: String = VOCABULARY.iter().map(|(m, _)| format!("use {m}\n")).collect();
-    crate::library::parse_linked(&src).0
+fn vocabulary(module: &str) -> bool {
+    VOCABULARY.iter().any(|(m, _)| *m == module)
 }
 
-/// **Every word**: the language's, the library's, any other module the document links, and the
-/// document's own — `prog` being the document, or `None` for the words any document has.
-pub fn lexicon(prog: Option<&Program>) -> Vec<Entry> {
-    let mut out = language();
-    let mut known: BTreeMap<String, Takes> =
-        out.iter().filter(|e| matches!(e.form, Form::Infix | Form::Prefix | Form::Call))
+/// The words every document has, read once: the language's, and the library's vocabulary — with
+/// what each relation word says of its operands, for a document's own words to be typed by.
+fn every_document() -> &'static (Vec<Entry>, BTreeMap<String, Takes>) {
+    static WORDS: std::sync::OnceLock<(Vec<Entry>, BTreeMap<String, Takes>)> =
+        std::sync::OnceLock::new();
+    WORDS.get_or_init(|| {
+        let mut out = language();
+        let mut known: BTreeMap<String, Takes> = out.iter().filter(|e| e.form.fixity().is_some())
             .map(|e| (e.word.clone(), takes_of(e))).collect();
-    let vocabulary: BTreeSet<&str> = VOCABULARY.iter().map(|(m, _)| *m).collect();
-    out.extend(defined(&library(), &|m| vocabulary.contains(m), false, &mut known));
-    if let Some(p) = prog {
-        out.extend(defined(p, &|m| !vocabulary.contains(m), true, &mut known));
-    }
+        out.extend(defined(crate::library::linked(), &vocabulary, false, &mut known));
+        (out, known)
+    })
+}
+
+/// **The words every document can be written with**: the language's own and the standard
+/// library's, the same for each.
+pub fn library_words() -> &'static [Entry] {
+    &every_document().0
+}
+
+/// **The words `prog` adds**: its own components and relation words, and those of any module it
+/// links beyond the library's vocabulary.
+pub fn own_words(prog: &Program) -> Vec<Entry> {
+    let mut known = every_document().1.clone();
+    defined(prog, &|m| !vocabulary(m), true, &mut known)
+}
+
+/// **Every word** `prog` can be written with — `None` for the words any document has.
+pub fn lexicon(prog: Option<&Program>) -> Vec<Entry> {
+    let mut out = library_words().to_vec();
+    out.extend(prog.map(own_words).unwrap_or_default());
     out
 }
 
 /// The word `id` names, among those `prog` can be written with.
 pub fn entry(prog: Option<&Program>, id: &str) -> Option<Entry> {
-    lexicon(prog).into_iter().find(|e| e.id == id)
-}
-
-fn strs(v: &[String]) -> Json {
-    Json::Arr(v.iter().map(|s| Json::Str(s.clone())).collect())
-}
-
-fn opt_str(s: &Option<String>) -> Json {
-    s.as_ref().map_or(Json::Null, |s| Json::Str(s.clone()))
+    library_words().iter().find(|e| e.id == id).cloned()
+        .or_else(|| own_words(prog?).into_iter().find(|e| e.id == id))
 }
 
 pub fn slot_json(s: &Slot) -> Json {
     object([
         ("key", s.key.as_str().into()),
         ("role", s.role.as_str().into()),
-        ("kinds", strs(&s.kinds)),
-        ("type", opt_str(&s.ty)),
-        ("words", strs(&s.words)),
+        ("kinds", s.kinds.clone().into()),
+        ("type", s.ty.clone().into()),
+        ("words", s.words.clone().into()),
         ("optional", s.optional.into()),
         ("many", s.many.into()),
         ("mints", s.mints.into()),
-        ("default", opt_str(&s.default)),
+        ("default", s.default.clone().into()),
     ])
 }
 
@@ -890,112 +873,129 @@ pub fn entry_json(e: &Entry) -> Json {
         ("group", e.group.as_str().into()),
         ("form", e.form.as_str().into()),
         ("doc", e.doc.as_str().into()),
-        ("makes", opt_str(&e.makes)),
+        ("makes", e.makes.clone().into()),
+        ("drawn", e.drawn.into()),
         ("slots", Json::Arr(e.slots.iter().map(slot_json).collect())),
         ("pairs", Json::Arr(e.pairs.iter()
-            .map(|(a, b, needs)| Json::Arr(vec![Json::Str(a.clone()), Json::Str(b.clone()), strs(needs)]))
+            .map(|(a, b, needs)| {
+                Json::Arr(vec![a.as_str().into(), b.as_str().into(), needs.clone().into()])
+            })
             .collect())),
     ])
 }
 
-/// The lexicon as a front end reads it: `[{id, word, module, group, form, doc, makes, slots,
+/// Words as a front end reads them: `[{id, word, module, group, form, doc, makes, drawn, slots,
 /// pairs}]`.
-pub fn lexicon_json(prog: Option<&Program>) -> Json {
-    Json::Arr(lexicon(prog).iter().map(entry_json).collect())
+pub fn words_json(words: &[Entry]) -> Json {
+    Json::Arr(words.iter().map(entry_json).collect())
 }
 
 /* -- writing a word ------------------------------------------------------------------ */
 
 /// **The statement a word makes**, its slots filled from `args` — each slot's text by its key, a
 /// slot that takes several a comma-separated list — and the plane a drawn declaration is drawn
-/// in, if any.  Refused, in a sentence, for a slot required and empty.
+/// in, if any.  A relation is written by the relation printer (`syntax::write_stmt_to`), so it is
+/// spelled as every relation is.  Refused, in a sentence, for a slot required and empty.
 pub fn statement(e: &Entry, args: &BTreeMap<String, String>, plane: Option<&str>)
     -> Result<String, String> {
     let get = |s: &Slot| args.get(&s.key).map(|v| v.trim()).filter(|v| !v.is_empty());
     for s in &e.slots {
         if !s.optional && s.role != Role::Name && get(s).is_none() && s.default.is_none() {
-            let what = if s.key.is_empty() { "a place".to_string() } else { format!("`{}`", s.key) };
+            let what = match s.key.is_empty() {
+                true => "a place".to_string(),
+                false => format!("`{}`", s.key),
+            };
             return Err(format!("{} still needs {what}", e.word));
         }
     }
-    let name = e.slots.iter().find(|s| s.role == Role::Name).and_then(|s| get(s));
+    let first = |role: Role| e.slots.iter().filter(|s| s.role == role).find_map(get);
+    if let Some(fixity) = e.form.fixity() {
+        let mut ops = Vec::new();
+        let mut written = Vec::new();
+        for s in &e.slots {
+            let Some(v) = get(s) else { continue };
+            match s.role {
+                Role::Left | Role::Right | Role::Operand => ops.push(syntax::Ref::new(v)),
+                Role::Value => written.push(OpArg::Dim(v.into(), Default::default())),
+                Role::Arg => written.push(OpArg::Ent(syntax::Ref::new(v))),
+                Role::Pin => written.push(OpArg::Slot {
+                    key: syntax::Name::new(s.key.as_str()),
+                    arg: Arg::Dim { text: v.into(), span: Default::default() },
+                }),
+                _ => written.push(OpArg::Named(syntax::Name::new(s.key.as_str()),
+                                               Arg::Word(v.into()))),
+            }
+        }
+        let rel = syntax::Relation::of(syntax::RelationForm::Written(syntax::Written {
+            word: syntax::Name::new(e.word.as_str()),
+            fixity,
+            ops,
+            args: written,
+            span: Default::default(),
+            rates: Vec::new(),
+            lowered: syntax::Lowered::No,
+        }));
+        let mut out = String::new();
+        syntax::write_stmt_to(&mut out, &StmtKind::Relation(rel)).map_err(|e| e.to_string())?;
+        return Ok(out);
+    }
+    let name = e.slots.iter().find(|s| s.role == Role::Name).and_then(get);
     let named = |body: String| match name {
         Some(n) => format!("{n} := {body}"),
         None => body,
     };
-    let of = |role: Role| e.slots.iter().filter(move |s| s.role == role);
-    let first = |role: Role| of(role).find_map(|s| get(s).map(str::to_string));
-    // the parentheses: the number, the entities by position, the pins, the labelled
-    let mut parens: Vec<String> = Vec::new();
-    // a map's pairs, each a point and where it goes: `from -> a`
-    let mut from: Option<&str> = None;
-    for s in &e.slots {
-        let Some(v) = get(s) else { continue };
+    // a declaration's or a call's parentheses: its entities by position, the rest by label
+    let parens: Vec<String> = e.slots.iter().filter_map(|s| {
+        let v = get(s)?;
         match s.role {
-            Role::Value if e.form != Form::Param && e.form != Form::Value => parens.insert(0, v.into()),
-            Role::Arg if e.word == "mapped" => match from.take() {
-                Some(f) => parens.push(format!("{f} -> {v}")),
-                None => from = Some(v),
-            },
-            Role::Arg => parens.push(v.into()),
-            Role::Pin => parens.push(format!("{} == {v}", s.key)),
-            Role::Option if e.form != Form::Param => parens.push(format!("{}: {v}", s.key)),
-            _ => {}
+            Role::Arg => Some(v.to_string()),
+            Role::Option if e.form != Form::Param => Some(format!("{}: {v}", s.key)),
+            _ => None,
         }
-    }
-    let wrapped = |w: &str| match parens.is_empty() {
+    }).collect();
+    let call = |w: &str| match parens.is_empty() {
         true => w.to_string(),
         false => format!("{w}({})", parens.join(", ")),
     };
-    let seeds: Vec<String> = of(Role::Seed).filter_map(|s| get(s).map(|v| match s.key.as_str() {
-        "" => v.to_string(),
-        k => format!("{k}: {v}"),
-    })).collect();
-    let hint = match seeds.is_empty() {
-        true => String::new(),
-        false => format!(" hint({})", seeds.join(", ")),
+    let seed = |s: &Slot, v: &str| match s.key.is_empty() {
+        true => v.to_string(),
+        false => format!("{}: {v}", s.key),
     };
+    let seeds: Vec<String> = e.slots.iter().filter(|s| s.role == Role::Seed)
+        .filter_map(|s| get(s).map(|v| seed(s, v))).collect();
     Ok(match &e.form {
         Form::Declare => {
-            let drawn = matches!(e.word.as_str(), "point" | "line" | "circle" | "arc" | "spline");
-            let within = match plane.filter(|p| drawn && !p.is_empty()) {
-                Some(p) => format!(" in {p}"),
-                None => String::new(),
+            let hint = match seeds.is_empty() {
+                true => String::new(),
+                false => format!(" hint({})", seeds.join(", ")),
             };
-            named(format!("{}{hint}{within}", wrapped(&e.word)))
+            let within = plane.filter(|p| e.drawn && !p.is_empty()).map(|p| format!(" in {p}"));
+            named(format!("{}{hint}{}", call(&e.word), within.unwrap_or_default()))
         }
-        Form::Infix => format!("{} {} {}", first(Role::Left).unwrap_or_default(), wrapped(&e.word),
-                               first(Role::Right).unwrap_or_default()),
-        Form::Prefix => format!("{} {}", wrapped(&e.word), first(Role::Operand).unwrap_or_default()),
-        Form::Call => wrapped(&e.word),
         Form::Instance { solid } => {
-            let call = format!("{}({})", e.word, parens.join(", "));
-            named(if *solid { format!("solid({call})") } else { call })
+            let c = format!("{}({})", e.word, parens.join(", "));
+            named(if *solid { format!("solid({c})") } else { c })
         }
         Form::Param => {
-            let ty = args.get("type").map(|t| t.trim()).filter(|t| !t.is_empty()).unwrap_or("Length");
+            let ty = args.get("type").map(|t| t.trim()).filter(|t| !t.is_empty());
+            let ty = ty.unwrap_or("Length");
             let n = name.unwrap_or_default();
             match first(Role::Value) {
                 Some(v) => format!("param {n}: {ty} := {v}"),
                 None => format!("param {n}: {ty}"),
             }
         }
-        Form::Value => named(first(Role::Value).unwrap_or_default()),
+        Form::Value => named(first(Role::Value).unwrap_or_default().to_string()),
+        Form::Infix | Form::Prefix | Form::Call => unreachable!("a relation is printed above"),
     })
 }
 
-/// The kind initial a word's name is minted in: `l0` for a line, `body0` for a solid.
+/// The stem a name for what a word makes is minted in, where it makes no entity (an entity's is
+/// its kind's initial, `edit::mint`): `region0` for a set, `hex0` for an instance of `Hex`.
 pub fn name_stem(e: &Entry) -> String {
     match e.makes.as_deref() {
-        Some(k) => match EntKind::parse(k) {
-            Some(kind) => syntax::kind_initial(kind).to_string(),
-            None if k == "solid" => "body".into(),
-            None if k == "set" => "region".into(),
-            None => e.word.rsplit('.').next().unwrap_or("x").to_lowercase(),
-        },
-        None => match e.form {
-            Form::Param | Form::Value => "w".into(),
-            _ => "x".into(),
-        },
+        Some("set") => "region".into(),
+        Some(_) => e.word.rsplit('.').next().unwrap_or_default().to_lowercase(),
+        None => "w".into(),
     }
 }

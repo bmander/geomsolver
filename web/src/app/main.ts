@@ -11,7 +11,7 @@
  *             3 arc through two ends and a point on it
  *   Esc       stop a DOF animation, then drop the tool's pending points, then put the tool
  *             down — Select is not a tool, it is what no tool being held looks like, so it
- *             is also where clicking the pressed toolbar button leaves you
+ *             is also where clicking the pressed tool's chip on the palette leaves you
  *   select    the pointer lights what a click would take — a figure or point, a solid's edge,
  *             else its face — and a click takes it (shift = multi), or drag a box over empty
  *             canvas to take everything that lies entirely inside it.  ⌘-click (Ctrl off a
@@ -55,8 +55,9 @@
  * Everything below is presentation; the solver, diagnosis, decomposition and root selection
  * all live in core/ and are shared with the test suite.  This file is the wiring: what the menu
  * lists, what the keys do, and what the view calls back into.  The rest of the shell is
- * next door — `shell` holds the page and the view, `commands` the constraints bar, `dialogs`
- * what the menus open, `lists` the constraints window and the status line, and `dimbox` the
+ * next door — `shell` holds the page and the view, `words` the Words menu and its palette,
+ * `wordbox` the word in hand, `commands` the constraint commands, `dialogs` what the commands
+ * open, `lists` the constraints window and the status line, and `dimbox` the
  * number a dimension is edited in. */
 import * as io from '../core/io.js';
 import * as solids from '../core/mesh.js';
@@ -83,7 +84,7 @@ import {
   MenuItem, ToolbarButton, addButton, download, judgingLine, openImage, scenarioLine, toast,
 } from './ui.js';
 import { Command, Words } from './words.js';
-import { WordBox, fitsSelection, hitNamed } from './wordbox.js';
+import { WordBox, fitsSelection, selectionNamed } from './wordbox.js';
 import { BuildBar, clock } from './build-bar.js';
 import type { Judging } from './claim-judging.js';
 import type { Scenario, ScenarioAnswer } from '../core/program.js';
@@ -152,7 +153,7 @@ const SOLID_BUTTONS: ToolbarButton[] = [
 /* The workspace's own button, in its corner: orbit mode, where one finger turns the view — shown
  * only to a finger (`app.css`), since a mouse orbits with its right button; `o` works anywhere. */
 const VIEW_BUTTONS: ToolbarButton[] = [
-  { label: 'Orbit', key: 'o', toggle: true,
+  { label: 'Orbit', key: 'o', toggle: true, pressed: () => view.orbitMode,
     title: 'Orbit mode: a drag turns the workspace about, rather than drawing or selecting — one '
          + 'finger on a phone.  Click again to put it down',
     onClick: () => {
@@ -165,7 +166,7 @@ const [orbitButton] = VIEW_BUTTONS.map((b) => addButton(
 /** The Orbit button follows the view, as the tools' do. */
 view.onOrbitMode = (on) => orbitButton.setAttribute('aria-pressed', String(on));
 
-/* -- menu bar ------------------------------------------------------------------- */
+/* -- the commands' own work: export, the traced picture, the footer's lines ---------- */
 
 /** The drawing as an SVG file.
  *
@@ -402,7 +403,7 @@ const SHOWN: [ShownKind, string, string, string][] = [
   ['dimensions', 'Dimensions', '⇧d', 'The dimension callouts — editing one still shows it'],
 ];
 
-/* Everything that is neither a tool nor a constraint.  Like the constraints bar these are
+/* Everything that is neither a tool nor a constraint.  Like the constraint commands these are
  * tables rather than calls, so the accelerator printed beside an item is the same string the
  * keyboard handler matches — see ACTION_KEYS. */
 const MENUS: [string, (MenuItem | string | null)[]][] = [
@@ -525,7 +526,7 @@ const MENUS: [string, (MenuItem | string | null)[]][] = [
       title: 'The source, the specification and the issue tracker' },
   ]],
 ];
-for (const [label, items] of MENUS) {
+for (const [, items] of MENUS) {
   // The file menu and Help work in either view. Geometry commands need a selected model file.
   const shared = new Set(['New', 'Open…', 'Open drawing folder…', 'Open GitHub project…',
     'Open examples…',
@@ -543,8 +544,20 @@ for (const [label, items] of MENUS) {
 /* -- the Words menu, its palette and the argument box ------------------------------------ */
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-/** Every command of the app, as the menu's App branch lists them: the tools, the commands that
- *  read the selection, and what the old menus held — each with the key it always had. */
+/** **Every command that is not a tool, by the branch the menu lists it under** — the one table
+ *  the Words menu and the keyboard both read, so a command's chip and its key cannot drift. */
+const BRANCHES: [string, MenuItem[]][] = [
+  ['Tools', [...TOOL_BUTTONS, ...SOLID_BUTTONS]],
+  ['Constrain', CONSTRAINT_BUTTONS],
+  ['View', VIEW_BUTTONS],
+  ...MENUS.map(([branch, items]): [string, MenuItem[]] =>
+    [branch, items.filter((it): it is MenuItem => !!it && typeof it !== 'string')]),
+  ['Help', [{ label: 'About', onClick: () => void about(),
+              title: 'Where this project comes from' }]],
+];
+
+/** Every command of the app, as the menu's App branch lists them: the tools, then each branch
+ *  of `BRANCHES` — each with the key it always had. */
 const COMMANDS: Command[] = [
   ...TOOLS.map(([label, tool, key, what]): Command => ({
     id: `tool.${tool}`, label, branch: 'Tools', key,
@@ -552,38 +565,16 @@ const COMMANDS: Command[] = [
     run: () => view.setTool(view.tool === tool ? 'select' : tool),
     pressed: () => view.tool === tool,
   })),
-  ...[...TOOL_BUTTONS, ...SOLID_BUTTONS].map((b): Command => ({
-    id: `tool.${slug(b.label)}`, label: b.label, branch: 'Tools', key: b.key, title: b.title,
-    run: b.onClick,
-  })),
-  ...CONSTRAINT_BUTTONS.map((b): Command => ({
-    id: `constrain.${slug(b.label)}`, label: b.label, branch: 'Constrain', key: b.key,
-    title: b.title, run: b.onClick,
-  })),
-  ...VIEW_BUTTONS.map((b): Command => ({
-    id: `view.${slug(b.label)}`, label: b.label, branch: 'View', key: b.key, title: b.title,
-    run: b.onClick, pressed: () => view.orbitMode,
-  })),
-  ...MENUS.flatMap(([branch, items]) => items.flatMap((it): Command[] =>
-    !it || typeof it === 'string' ? [] : [{
-      id: `${slug(branch)}.${slug(it.label)}`, label: it.label, branch, key: it.key,
-      title: it.title, run: it.onClick, checked: it.checked,
-    }])),
-  { id: 'help.about', label: 'About', branch: 'Help', run: () => void about(),
-    title: 'Where this project comes from' },
+  ...BRANCHES.flatMap(([branch, items]) => items.map((b): Command => ({
+    id: `${branch === 'Tools' ? 'tool' : slug(branch)}.${slug(b.label)}`,
+    label: b.label, branch, key: b.key, title: b.title, run: b.onClick, checked: b.checked,
+    pressed: b.pressed,
+  }))),
 ];
 
 /** The word in hand, written as its statement with a chip per slot (`wordbox.ts`). */
 const wordBox = new WordBox(document.getElementById('word-box') as HTMLElement, view);
 
-/** What is selected, named as the program names it: `l, m`. */
-function selectionSaid(): string {
-  const hits = [
-    ...view.selected.map((ent) => ({ kind: 'entity' as const, ent })),
-    ...view.selectedSolids.map((pick) => ({ kind: 'solid' as const, pick })),
-  ];
-  return hits.map((h) => hitNamed(view, h)?.name).filter(Boolean).join(', ');
-}
 
 /** **The Words menu** and the palette beside it (`words.ts`): the palette starts with what the
  *  toolbars held most used, and is the person's from then on. */
@@ -593,8 +584,12 @@ const words = new Words(
   document.getElementById('palette') as HTMLElement,
   {
     words: () => view.doc.lexicon(),
-    fits: (w) => fitsSelection(view, w),
-    selection: selectionSaid,
+    // the selection named once, every word asked of it
+    fitting: () => {
+      const sel = selectionNamed(view);
+      return sel ? view.doc.lexicon().filter((w) => fitsSelection(sel, w)) : [];
+    },
+    selection: () => (selectionNamed(view) ?? []).map(([name]) => name).join(', '),
     use: (w) => wordBox.start(w),
   },
   COMMANDS,
@@ -603,13 +598,12 @@ const words = new Words(
    'c:edit.undo'],
 );
 /** The palette's tools are pressed as the view holds them: Escape backing out of a tool lets its
- *  chip up too.  A tool taken up puts a word in hand down. */
+ *  chip up too.  The word in hand holds the `word` tool, so any other taken up puts it down. */
 view.onTool = (t) => {
-  if (t !== 'word' && t !== 'select' && wordBox.active) wordBox.cancel();
+  if (t !== 'word') wordBox.cancel();
   words.refresh();
 };
 view.setTool('select');
-
 
 /* -- keyboard ------------------------------------------------------------------- */
 
@@ -631,28 +625,24 @@ const TOOL_KEYS: Record<string, Tool> =
   Object.fromEntries(TOOLS.map(([, tool, key]) => [key, tool]));
 /** Every accelerator in the app, read off the buttons and menu items themselves so there is
  *  one list and not two.  The token is the chip the control prints, lowercased: '⇧l', '⌘z'. */
-const ACTION_KEYS = new Map<string, () => void>(
-  [...TOOL_BUTTONS, ...SOLID_BUTTONS, ...VIEW_BUTTONS, ...CONSTRAINT_BUTTONS,
-   ...MENUS.flatMap(([, items]) => items)]
-    .flatMap((b) => (b && typeof b !== 'string' && b.key
-      ? [[b.key, b.onClick] as [string, () => void]] : [])));
+const ACTION_KEYS = new Map<string, () => void>(BRANCHES.flatMap(([, items]) => items)
+  .flatMap((b) => (b.key ? [[b.key, b.onClick] as [string, () => void]] : [])));
 
 window.addEventListener('keydown', (e) => {
   const t = e.target as HTMLElement | null;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
-  // a word in hand takes Enter, to write it, and Escape, to put it down
-  if (!drawingActive() && wordBox.handleKey(e)) return;
-  // `/` opens every word and command, as a search box does on a page
-  if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey && !drawingActive()) {
-    e.preventDefault();
-    words.open();
-    return;
-  }
   if (drawingActive()) {
-    if (e.key === 'Escape') words.close();
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p') {
       e.preventDefault(); toggleProgramPanel();
     }
+    return;
+  }
+  // a word in hand takes Enter, to write it, and Escape, to put it down
+  if (wordBox.handleKey(e)) return;
+  // `/` opens every word and command, as a search box does on a page
+  if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    e.preventDefault();
+    words.open();
     return;
   }
   if (e.metaKey || e.ctrlKey || e.altKey) {

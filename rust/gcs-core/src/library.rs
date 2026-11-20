@@ -61,17 +61,24 @@ pub fn parse_linked(src: &str) -> (crate::syntax::Program, Vec<crate::syntax::Sy
     (prog, errs, diags)
 }
 
+/// **The whole library, linked once** and kept: a program that `use`s every module of it.  What a
+/// question about the library itself reads — which module defines a name, the words it offers
+/// (`lexicon.rs`) — rather than parsing and linking it again each time it is asked.
+pub fn linked() -> &'static crate::syntax::Program {
+    static LIBRARY: std::sync::OnceLock<crate::syntax::Program> = std::sync::OnceLock::new();
+    LIBRARY.get_or_init(|| {
+        let uses: String = MODULES.iter().map(|(n, _)| format!("use {n}\n")).collect();
+        parse_linked(&uses).0
+    })
+}
+
 /// **The module of the library under `under` that defines `name`** — a component, an interface,
 /// a relation word, a value or a group, what a `use` may import (`program::defines`) — for a
 /// message that says which `use` reaches a name the file has not brought in: `Sphere` under `std`
 /// is `std.sets`'s, `horizontal` `std.place`'s.  The library is linked once, the first time a
 /// document misses a name, and kept.
 pub fn home(under: &str, name: &str) -> Option<&'static str> {
-    static LIBRARY: std::sync::OnceLock<crate::syntax::Program> = std::sync::OnceLock::new();
-    let p = LIBRARY.get_or_init(|| {
-        let uses: String = MODULES.iter().map(|(n, _)| format!("use {n}\n")).collect();
-        parse_linked(&uses).0
-    });
+    let p = linked();
     let prefix = format!("{under}.");
     MODULES.iter().map(|(n, _)| *n).filter(|n| n.starts_with(&prefix)).find(|n| {
         p.module_named(n).is_some_and(|k| crate::program::defines(p, k, name).is_some())

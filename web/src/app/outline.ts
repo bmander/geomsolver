@@ -94,6 +94,15 @@ const GLYPHS: Record<string, [Ink, string][]> = {
   entity: [['ink', 'M12 4l8 8-8 8-8-8z']],
 };
 
+/** A kind's icon as markup, from the outline's own table — what the Words menu and the word in
+ *  hand draw a slot's kind with, so a line is one picture everywhere it is shown.  `undefined`
+ *  for a kind the table has no picture of. */
+export function kindMarkup(name: string, cls: string): string | undefined {
+  const paths = GLYPHS[name];
+  return paths && `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">`
+    + paths.map(([ink, d]) => `<path class="${ink}" d="${d}"/>`).join('') + '</svg>';
+}
+
 /** A row's icon, in the tree's ink, from `GLYPHS`. */
 function kindIcon(name: string): SVGSVGElement {
   const svg = document.createElementNS(SVG, 'svg');

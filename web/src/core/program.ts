@@ -131,6 +131,9 @@ interface Report {
   constraints: [number, number, number][];
 }
 
+/** The words every document has (`Document.lexicon`), asked of the core the first time. */
+let library: Word[] | null = null;
+
 function edit(handle: number): Edit {
   if (!handle) throw new Error(lastError() || 'the edit could not be made');
   return takeJson<Edit>(handle);
@@ -465,12 +468,15 @@ export class Document {
     return edit(withJson({ type, args }, (p, n) => core().gcs_elab_add_relation(this.h, p, n)));
   }
 
-  /** **Every word this document can be written with** (`lexicon::lexicon_json`): the language's,
-   *  the library's, the modules it links and its own, each with the slots it takes.  Read once
-   *  per text: a word the document defines joins it as it is written. */
+  /** **Every word this document can be written with**: the language's and the library's, the
+   *  same for every document and asked of the core once (`lexicon::library_words`), then the
+   *  modules it links and its own (`lexicon::own_words`), read once per text — a word the
+   *  document defines joins it as it is written. */
   lexicon(): Word[] {
     if (this.words?.text !== this.text) {
-      this.words = { text: this.text, words: takeJson<Word[]>(core().gcs_elab_lexicon_json(this.h)) };
+      library ??= takeJson<Word[]>(core().gcs_lexicon_json());
+      const own = takeJson<Word[]>(core().gcs_elab_words_json(this.h));
+      this.words = { text: this.text, words: own.length ? [...library, ...own] : library };
     }
     return this.words.words;
   }

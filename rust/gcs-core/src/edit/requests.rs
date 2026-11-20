@@ -282,6 +282,32 @@ impl SelectionRequest {
     }
 }
 
+/// A word of the lexicon and what fills its slots (`edit::write_word`), `{id, args: {key: text},
+/// plane?}` — each slot's text by its key, a slot of several its names as an array — and the
+/// plane a drawn declaration is drawn in.
+#[derive(Clone, Debug, Default)]
+pub struct WordRequest {
+    pub id: String,
+    pub args: std::collections::BTreeMap<String, String>,
+    pub plane: Option<String>,
+}
+
+impl WordRequest {
+    pub fn from_json(v: &Json) -> Result<WordRequest, String> {
+        let id = text(v, "id").filter(|s| !s.is_empty()).ok_or("a word to write names its `id`")?;
+        let args = match v.get("args") {
+            Some(Json::Obj(kv)) => kv.iter().filter_map(|(k, j)| match j {
+                Json::Null => None,
+                Json::Arr(_) => Some((k.clone(), strings(j).join(", "))),
+                Json::Str(s) => Some((k.clone(), s.clone())),
+                other => Some((k.clone(), other.dump(None))),
+            }).collect(),
+            _ => Default::default(),
+        };
+        Ok(WordRequest { id, args, plane: text(v, "plane").filter(|s| !s.is_empty()) })
+    }
+}
+
 /// One constraint, in `report::constraint_from_json`'s shape but with entities by *name* — the
 /// document's own way of saying which, rather than an index into a sketch it is about to
 /// replace: `{type, args: [..]}`, as the relation `edit::add_relation` writes.  Either spelling

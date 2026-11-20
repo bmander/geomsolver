@@ -52,9 +52,14 @@ pub(super) fn taken_names(prog: &Program) -> std::collections::BTreeSet<String> 
 /// spelling of the fresh-name rule: `mint` asks it for a caller, and `reconcile` asks it for a
 /// new entity and again for an anonymous declaration a statement is about to reference.
 pub(super) fn next_name(taken: &mut std::collections::BTreeSet<String>, kind: EntKind) -> String {
-    let c = syntax::kind_initial(kind);
+    next_stem(taken, &syntax::kind_initial(kind).to_string())
+}
+
+/// The next name in `stem`'s sequence `taken` does not hold — `region0`, `hex1` for what is no
+/// entity — and now taken.
+pub(super) fn next_stem(taken: &mut std::collections::BTreeSet<String>, stem: &str) -> String {
     let name = (0..)
-        .map(|i| format!("{c}{i}"))
+        .map(|i| format!("{stem}{i}"))
         .find(|n| !taken.contains(n))
         .expect("an unbounded sequence always holds a fresh name");
     taken.insert(name.clone());
@@ -162,6 +167,18 @@ pub(super) fn use_line(prog: &Program, line: &str) -> Splice {
     };
     let lead = if at == text.len() && !text.is_empty() && !text.ends_with('\n') { "\n" } else { "" };
     Splice { at: Span::new(at, at), with: format!("{lead}{line}\n") }
+}
+
+/// `splice`, which writes words of `module`, made — and the `use` of `module` naming the `words`
+/// it writes where the document's does not (`imported`) — held to the elaborator.
+pub(super) fn checked_using(prog: &Program, splice: Splice, module: &str, words: &[&str],
+                            names: Vec<String>) -> Result<Edit, String> {
+    let splices = vec![splice, imported(prog, module, words)];
+    let (text, landed) = splice_landing(prog.text(), splices);
+    let regions: Vec<Span> = landed.into_iter()
+        .map(|l| l.ok_or("the edit is no place in the source"))
+        .collect::<Result<_, _>>()?;
+    checked_in(prog, text, &regions, names)
 }
 
 /// Append several statements as one splice, then hold the result to the elaborator: the edit is

@@ -56,9 +56,6 @@ export function showDrawing(next: drawing.DrawingBundle | null): void {
   bundle = next;
   pane.hidden = next === null;
   document.getElementById('app')!.classList.toggle('drawing-active', next !== null);
-  for (const id of ['dock', 'word-box', 'words-menu']) {
-    document.getElementById(id)!.inert = next !== null;
-  }
   if (next) renderDrawing();
   else {
     viewport.stopPan();

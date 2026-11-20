@@ -26,7 +26,7 @@ pub use names::{entity_name, hidden, name_uses, NameUse};
 pub use crate::model::kind_initial;
 pub use parser::{parse, parse_from, parse_legacy, parse_with_limits, ParseLimits};
 pub(crate) use parser::{reference_at, sweep_of, SweepParts, SWEPT_RETIRED};
-pub use print::{bounded, operator_text, render_flat, write_stmt_to, PrintError};
+pub use print::{bounded, operator_text, place_of, render_flat, write_stmt_to, Place, PrintError};
 pub(crate) use print::{sel_text, written_parts};
 pub use scenario::{Item, ItemKind, LoadText, RequirementText, Scenario};
 pub use symbols::{symbols, Occurrence, Symbol, SymbolKind, Symbols};

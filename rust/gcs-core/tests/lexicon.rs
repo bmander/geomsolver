@@ -134,6 +134,12 @@ fn a_built_in_word_is_read_off_the_tables_that_settle_it() {
     let at = slot(&entry("tangent"), "at").clone();
     assert!(at.kinds.contains(&"point".to_string()) && at.words.contains(&"start".to_string()));
     assert_eq!(slot(&entry("horizontal"), "line").kinds, ["line"]);
+    // a sense the elaborator refines after `infix_op` is a sense all the same: a mirror's line
+    // may be an axis (a half turn in space), and an angle may equal another
+    assert_eq!(slot(&entry("symmetry"), "line").kinds, ["line", "axis"]);
+    assert!(slot(&entry("angle"), "l3").optional);
+    // every built-in word is one the language spells (`CKind::operator`), none left out
+    assert_eq!(entry("touches").pairs, [("curve".to_string(), "line".to_string(), vec![])]);
     let r = slot(&entry("radius"), "circle").kinds.clone();
     assert!(r.contains(&"circle".to_string()) && r.contains(&"arc".to_string()) && r.len() == 2);
 }

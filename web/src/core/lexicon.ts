@@ -39,6 +39,9 @@ export interface Word {
   form: 'declare' | 'infix' | 'prefix' | 'call' | 'instance' | 'param' | 'value';
   doc: string;
   makes: string | null;
+  /** A declaration drawn on a plane (a point, a line, a circle, an arc, a spline): written `in`
+   *  the plane being drawn on. */
+  drawn: boolean;
   slots: Slot[];
   /** A built-in infix word's operand kinds, pair by pair, each with the selectors it is settled
    *  by only when they are given (`tangent` between two lines needs `at`). */

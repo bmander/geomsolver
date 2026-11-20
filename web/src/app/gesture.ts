@@ -16,7 +16,7 @@ import { moveDimension, placeDimension } from './dimension.js';
 import { COL } from './paint.js';
 import { partToOpen } from './hidden.js';
 import { insertControl } from './edit.js';
-import { cancelTool, toolClick } from './tools.js';
+import { cancelTool, toolClick, wordHit } from './tools.js';
 import { bodyAt, grabBody, grabHandle, handleAt } from './underlay.js';
 import { combinePick, roundPick, roundTarget } from './solids.js';
 import { bodyOf, picksAs, roundsEdges, sweepsRegion, toggled } from './view.js';
@@ -975,10 +975,8 @@ export function hover(v: SketchView, sp: [number, number]): void {
   }
   // a word's slot armed lights the nearest thing it would take, and only that
   if (v.tool === 'word') {
-    const pick = v.wordPick;
-    v.hovered = pick ? v.hitsAt(sp[0], sp[1]).find((h) => !('hidden' in h && h.hidden) && pick.accepts(h)) ?? null
-      : null;
-    v.canvas.style.cursor = v.hovered ? 'pointer' : pick?.mints ? 'crosshair' : '';
+    v.hovered = wordHit(v, sp);
+    v.canvas.style.cursor = v.hovered ? 'pointer' : v.wordPick?.mints ? 'crosshair' : '';
     return;
   }
   if (v.tool !== 'select') return;

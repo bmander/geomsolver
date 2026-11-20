@@ -7,7 +7,7 @@ import test from 'node:test';
 import { Line, Point } from '../core/model.js';
 import { initCore } from '../core/wasm.js';
 import type { Hit } from '../app/view.js';
-import { fitsSelection, hitNamed } from '../app/wordbox.js';
+import { fitsSelection, hitNamed, selectionNamed } from '../app/wordbox.js';
 import { clickSeen, docView } from './views.js';
 
 (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame ??=
@@ -79,12 +79,12 @@ test('a word fits the selection where it takes every selected thing', () => {
   const l = v.doc.entity('l'), m = v.doc.entity('m');
   assert.ok(l instanceof Line && m instanceof Line);
   v.selected = [l, m];
-  assert.ok(fitsSelection(v, word('parallel')));
-  assert.ok(fitsSelection(v, word('equal')));
-  assert.ok(!fitsSelection(v, word('radius')), 'a radius takes one circle, not two lines');
+  assert.ok(fitsSelection(selectionNamed(v), word('parallel')));
+  assert.ok(fitsSelection(selectionNamed(v), word('equal')));
+  assert.ok(!fitsSelection(selectionNamed(v), word('radius')), 'a radius takes one circle, not two lines');
   const p = v.doc.entity('p');
   assert.ok(p instanceof Point);
   v.selected = [p, l];
-  assert.ok(fitsSelection(v, word('distance')));
-  assert.ok(!fitsSelection(v, word('parallel')));
+  assert.ok(fitsSelection(selectionNamed(v), word('distance')));
+  assert.ok(!fitsSelection(selectionNamed(v), word('parallel')));
 });

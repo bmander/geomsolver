@@ -182,6 +182,8 @@ export interface ToolbarButton {
   key?: string;
   toggle?: boolean;
   title?: string;
+  /** A mode it turns on and off, pressed while on. */
+  pressed?: () => boolean;
 }
 
 export function addButton(bar: HTMLElement, spec: ToolbarButton): HTMLButtonElement {
@@ -210,11 +212,6 @@ export function addLink(bar: HTMLElement, label: string, href: string): HTMLAnch
   return a;
 }
 
-export function addSeparator(bar: HTMLElement): void {
-  const s = document.createElement('span');
-  s.className = 'sep';
-  bar.append(s);
-}
 
 /** The wrapper a labelled control sits in, so the text is part of the control's hit area and
  *  the tooltip covers both.  Callers append in the order the control reads: a checkbox before

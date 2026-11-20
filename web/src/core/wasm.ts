@@ -71,7 +71,8 @@ export interface Abi {
   gcs_elab_add_rectangle(h: number, w: number, hh: number, plane: number, planeLen: number): number;
   gcs_elab_add_entity(h: number, p: number, n: number): number;
   gcs_elab_add_relation(h: number, p: number, n: number): number;
-  gcs_elab_lexicon_json(h: number): number;
+  gcs_lexicon_json(): number;
+  gcs_elab_words_json(h: number): number;
   gcs_elab_word_text(h: number, p: number, n: number): number;
   gcs_elab_write_word(h: number, p: number, n: number): number;
   gcs_elab_add_face(h: number, p: number, n: number): number;

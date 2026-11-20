@@ -46,7 +46,7 @@ export const DIMMED = 0.3;
  *  word's slot is armed that would not take it. */
 function alphaOf(v: SketchView, ent: Primitive): number {
   // a slot of a word armed: what it would not take is dimmed, so what it would stands out
-  if (v.tool === 'word' && v.wordPick && !v.wordPick.accepts({ kind: 'entity', ent })) return DIMMED;
+  if (v.wordPick && !v.wordPick.accepts({ kind: 'entity', ent })) return DIMMED;
   return v.inside && !v.inside.ents.has(ent) ? DIMMED : 1;
 }
 

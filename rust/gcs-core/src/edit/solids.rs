@@ -120,18 +120,6 @@ fn body_word(word: syntax::BodyWord, what: &str, body: &str) -> StmtKind {
     })))
 }
 
-/// `splice`, which writes words of `module`, made — and the `use` of `module` naming the `words`
-/// it writes where the document's does not (`append::imported`) — held to the elaborator.
-fn checked_using(prog: &Program, splice: Splice, module: &str, words: &[&str], names: Vec<String>)
-    -> Result<Edit, String> {
-    let splices = vec![splice, imported(prog, module, words)];
-    let (text, landed) = splice_landing(prog.text(), splices);
-    let regions: Vec<Span> = landed.into_iter()
-        .map(|l| l.ok_or("the edit is no place in the source"))
-        .collect::<Result<_, _>>()?;
-    checked_in(prog, text, &regions, names)
-}
-
 /// `name := solid(face, …sweep)`.
 fn solid_stmt(name: &str, face: &str, sweep: syntax::Sweep) -> StmtKind {
     let mut d = gesture_decl(EntKind::Solid, name, vec![refs([face])], &[]);

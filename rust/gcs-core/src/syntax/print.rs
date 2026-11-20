@@ -1289,6 +1289,51 @@ fn notation_text(w: &Written) -> Option<String> {
     Some(format!("{}: {point} in {set} at{frames} {var}", quantifier(var, ends)))
 }
 
+/// **Where a constraint's slot is written around its word**: what `operator_text` prints by, and
+/// what the lexicon (`lexicon.rs`) offers a slot as — one reading of a spec, so the statement a
+/// word is offered as and the one printed cannot come to differ.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Place {
+    /// Read off the geometry and never written: a projection's planes, a skew distance's sign.
+    Unwritten,
+    /// An entity by position: the operands, then any third (`symmetry(l)`) in the parentheses.
+    Positional,
+    /// In the parentheses by its name: `side: left`, `at: p`, `about: ax`.
+    Labelled,
+    /// A slot's own unknown pinned, `t == 0.4` (or seeded, `hint(t: 0.4)`).
+    Pin,
+    /// The number, bare and first in the parentheses: `distance(80)`.
+    Number,
+}
+
+pub fn place_of(kind: CKind, i: usize) -> Place {
+    let Some(&(name, sk)) = kind.spec().get(i) else { return Place::Unwritten };
+    // an entity slot the core infers — a projection's planes — is never spelled, nor a skew
+    // distance's side (the seed's `sign`) or an ordinate's form
+    if (sk.is_entity() || matches!(name, "sign" | "form")) && kind.infers_arg(i) {
+        return Place::Unwritten;
+    }
+    // the point a tangent is at (#251), the tool a flank is cut by (#345), the axis a turn is
+    // read about (#558) and the motion a point is carried by (#326) go by their names: bare, the
+    // first would read as `symmetry`'s third entity
+    if sk.takes_ref() && matches!(name, "at" | "by" | "about" | "under") {
+        return Place::Labelled;
+    }
+    // `a level(up) b`: the direction stands bare, as a third entity would (`ordinate_text`)
+    if kind == CKind::Level && name == "along" {
+        return Place::Positional;
+    }
+    if sk.takes_ref() {
+        Place::Positional
+    } else if sk.is_param() {
+        Place::Pin
+    } else if sk.is_dimension() {
+        Place::Number
+    } else {
+        Place::Labelled
+    }
+}
+
 /// A constraint the *library* holds, written as the operator it is spelled with (spec §9.1).
 ///
 /// The inverse of parsing, and the one place it is done — `write_relation` prints a statement
@@ -1317,14 +1362,10 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
     let mut about = None;
     for (i, (name, sk)) in spec.iter().enumerate() {
         let Some(a) = args.get(i).and_then(|a| a.as_ref()) else { continue };
-        // an entity slot the core infers — a projection's planes — is never spelled: the
-        // source writes two points, and a lifted statement carries what the core filled in
-        if sk.is_entity() && kind.infers_arg(i) {
-            continue;
-        }
-        // nor is a skew distance's side (or a cylinder's tangency's, which is one): the word
-        // is `distance`, and the side is the seed's `sign`
-        if *name == "sign" && kind.infers_arg(i) {
+        let place = place_of(kind, i);
+        // what the core reads off the geometry is never spelled: the source writes two points,
+        // and a lifted statement carries what the core filled in (`place_of`)
+        if place == Place::Unwritten {
             continue;
         }
         // a selector nobody wrote is not written: the empty word is what an omitted `side:` or
@@ -1337,38 +1378,32 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
         if *name == "mirror" && matches!(a, Arg::Bool(false)) {
             continue;
         }
-        // the point a tangent is at goes in the parentheses by its name (#251), as written:
-        // unlabelled it would read as `symmetry`'s third entity
-        if sk.takes_ref() && *name == "at" {
-            parens.push(format!("at: {}", write_arg(name, *sk, a)));
-        } else if sk.takes_ref() && *name == "by" {
-            // and the tool a flank is cut by (#345)
-            parens.push(format!("by: {}", write_arg(name, *sk, a)));
-        } else if sk.takes_ref() && *name == "about" {
-            // and the axis a turn is read about (#558), last, after the sense it reads
-            about = Some(format!("about: {}", write_arg(name, *sk, a)));
+        let labelled = || format!("{name}: {}", write_arg(name, *sk, a));
+        if sk.takes_ref() && *name == "about" {
+            // the axis a turn is read about (#558), last, after the sense it reads
+            about = Some(labelled());
         } else if sk.takes_ref() && *name == "under" && stated {
             // the motion a point is read by at an instant is the instant's (#391 S2)
-            instant.push(format!("under: {}", write_arg(name, *sk, a)));
-        } else if sk.takes_ref() && *name == "under" {
-            // and the motion a point is carried by (#326)
-            parens.push(format!("under: {}", write_arg(name, *sk, a)));
+            instant.push(labelled());
         } else if kind.roll_slot() == Some(i) && matches!(a, Arg::Dim { .. }) {
             // and the instant it is read at, after its operand (#391 S2)
             roll = dim_text(a);
-        } else if sk.takes_ref() {
-            ents.push(write_arg(name, *sk, a));
-        } else if sk.is_param() {
-            let (pin, hint) = slot_text(name, a);
-            parens.extend(pin);
-            hints.extend(hint);
-        } else if sk.is_dimension() {
-            // the number is written bare and first, wherever its slot stands: a kind has at most
-            // one dimension, so there is nothing for a reader to confuse it with, and a selector
-            // may sit after it in spec order (`distance(12, side: left)`)
-            parens.insert(0, dim_text(a));
         } else {
-            parens.push(write_arg(name, *sk, a));
+            match place {
+                Place::Positional => ents.push(write_arg(name, *sk, a)),
+                Place::Pin => {
+                    let (pin, hint) = slot_text(name, a);
+                    parens.extend(pin);
+                    hints.extend(hint);
+                }
+                // the number is written bare and first, wherever its slot stands: a kind has at
+                // most one dimension, so there is nothing for a reader to confuse it with, and a
+                // selector may sit after it in spec order (`distance(12, side: left)`)
+                Place::Number => parens.insert(0, dim_text(a)),
+                // a selector is written bare (`sense: cw`); a reference by its name (`at: p`)
+                Place::Labelled if sk.takes_ref() => parens.push(labelled()),
+                Place::Labelled | Place::Unwritten => parens.push(write_arg(name, *sk, a)),
+            }
         }
     }
     parens.extend(about);
