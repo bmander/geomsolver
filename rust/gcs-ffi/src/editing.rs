@@ -431,3 +431,40 @@ pub unsafe extern "C" fn gcs_curve_polyline(
 pub unsafe extern "C" fn gcs_sketch_to_program(h: *mut Sketch) -> *mut u8 {
     guard(std::ptr::null_mut(), move || out_str(program::dumps(sk(h))))
 }
+
+/* -- the lexicon: every word, and a word written ------------------------------------------- */
+
+/// **Every word the document can be written with** (`lexicon::lexicon_json`): the language's,
+/// the library's, any module the document links and its own, each with the slots it takes.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_lexicon_json(h: *mut Elaborated) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        out_json(gcs_core::lexicon::lexicon_json(Some(&(*h).program)))
+    })
+}
+
+/// The statement a word would write, `{id, args: {key: text}, plane?}`, as `{text}` — or
+/// `{refused}`, in a sentence, while a slot it needs is empty (`edit::word_text`).
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_word_text(h: *mut Elaborated, ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let said = gcs_core::edit::WordRequest::from_json(&as_json(ptr, len))
+            .and_then(|r| gcs_core::edit::word_text(&(*h).program, &r));
+        out_json(match said {
+            Ok(text) => json::object([("text", Json::Str(text))]),
+            Err(why) => json::object([("refused", Json::Str(why))]),
+        })
+    })
+}
+
+/// **A word written** (`edit::write_word`), `{id, args: {key: text}, plane?}`: its statement
+/// appended, its module brought in, held to the elaborator.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_write_word(h: *mut Elaborated, ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let Some(r) = request(gcs_core::edit::WordRequest::from_json(&as_json(ptr, len))) else {
+            return std::ptr::null_mut();
+        };
+        out_edit(gcs_core::edit::write_word(&(*h).program, &r))
+    })
+}
