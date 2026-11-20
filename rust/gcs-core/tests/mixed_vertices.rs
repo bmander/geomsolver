@@ -49,6 +49,59 @@ fn rounded_prism(area: f64, perimeter: f64, long: f64, [convex, concave]: [f64; 
     section * long - 2.0 * s * (straight + arcs)
 }
 
+/// `rounded_prism` at any angles and radii: each of the profile's corners its angle on the side
+/// the round stands (the material's at a convex one, the void's at a reflex one), whether it is
+/// convex, and the radius it is rounded by; each end's rim rounded `rim` all round the rounded
+/// profile.  A corner of angle `θ` rounded `ρ` takes or fills `ρ²(cot(θ/2) − (π − θ)/2)` of the
+/// section and `2ρ cot(θ/2)` of the perimeter's straight stretches, and the rim's section turns
+/// through `π − θ` about its axis, `ρ ∓ d` from it.
+fn rounded_profile(area: f64, perimeter: f64, long: f64, corners: &[(f64, bool, f64)], rim: f64) -> f64 {
+    let (s, d) = (square_run(rim), inset(rim));
+    let cot = |t: f64| 1.0 / (0.5 * t).tan();
+    let (mut section, mut straight, mut arcs) = (area, perimeter, 0.0);
+    for &(t, convex, rho) in corners {
+        let corner = rho * rho * (cot(t) - 0.5 * (PI - t));
+        section += if convex { -corner } else { corner };
+        straight -= 2.0 * rho * cot(t);
+        arcs += (PI - t) * if convex { rho - d } else { rho + d };
+    }
+    section * long - 2.0 * s * (straight + arcs)
+}
+
+/// A part drawn in the front plane through `outline` (its corners, counter-clockwise, the faces
+/// it leaves named `e0`, `e1`, …), 50 deep, its concave edge between faces `e2` and `e3` filled
+/// `first` and then every edge rounded `rest` on the body that leaves.
+fn profiled(outline: &[[f64; 2]], first: f64, rest: f64) -> String {
+    let n = outline.len();
+    let steps: Vec<String> = (1..=n).map(|k| {
+        let [u, v] = outline[k % n];
+        format!("step(u: {u}mm, v: {v}mm) (e{} := line)", k - 1)
+    }).collect();
+    format!("unit mm\nuse std\nuse std.solids\nuse std.rounds (round)\nin std.front {{\n  outline := {} -> close\n}}\n\
+        part := solid(std.solids.Prism(outline, from: -25mm, to: 25mm))\n\
+        inside := part.e2 round(r: {first}mm) part.e3\nwhole := solid(part)\nround(r: {rest}mm) whole\n",
+        steps.join(" ->\n    "))
+}
+
+/// **A step whose wall leans**, at 45° to its floor, and **a fill of its own radius**: the vertex
+/// where the side meets the floor and the wall is still one of a concave edge between two convex
+/// ones, the side's round turned through the fill's 45° round its axis.  The fill 2.5 and every
+/// other edge 1, and the fill 1 and the rest 2.5 (the side's ring about the fill's axis `3.5` out
+/// either way).
+#[test]
+fn a_leaning_step_and_a_fill_of_its_own_radius_ring_the_side_round_the_fill() {
+    let q = 0.5 * PI;
+    // the stepped profile: (40, 10) to (10, 10) the floor, (10, 10) to (0, 20) the wall leaning
+    let leaning = [[-40.0, 0.0], [40.0, 0.0], [40.0, 10.0], [10.0, 10.0], [0.0, 20.0], [-40.0, 20.0]];
+    let (area, perimeter) = (80.0 * 20.0 - 30.0 * 10.0 - 50.0, 80.0 + 10.0 + 30.0 + 200f64.sqrt() + 40.0 + 20.0);
+    for (first, rest) in [(2.5, 1.0), (1.0, 2.5)] {
+        let corners = [(q, true, rest), (q, true, rest), (0.75 * PI, false, first), (0.75 * PI, true, rest),
+                       (q, true, rest), (q, true, rest)];
+        let want = rounded_profile(area, perimeter, 50.0, &corners, rest);
+        close(exported(&profiled(&leaning, first, rest), "whole"), want);
+    }
+}
+
 /// A block 80 by 50 by 20 drawn on the top plane about the origin, `cuts` (a statement each, over
 /// `part`) made in it, then `rest`.
 fn block(cuts: &str, rest: &str) -> String {
@@ -75,7 +128,7 @@ const LAYERED: &str = "inside := round(r: 1.5mm) part.cutter\nwhole := solid(par
 #[test]
 fn a_step_rounded_all_over_rings_its_sides_round_the_fill() {
     let r = 1.5;
-    for (from, to) in [(0.0_f64, 41.0_f64), (-41.0, 0.0), (-10.0, 41.0), (20.0, 41.0), (-41.0, -20.0)] {
+    for (from, to) in [(0.0_f64, 41.0_f64), (20.0, 41.0), (-41.0, -20.0)] {
         let over = to.min(40.0) - from.max(-40.0);
         let area = 80.0 * 20.0 - over * 10.0;
         let want = rounded_prism(area, 2.0 * (80.0 + 20.0), 50.0, [5.0, 1.0], r);

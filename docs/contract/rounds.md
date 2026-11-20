@@ -195,8 +195,9 @@ each alone at the block's side) wants three statements, the upright first. A cha
 no tangent chain, so a second statement chamfers the first one's flat against its own faces
 again: a chamfer of every edge at such a vertex is not said by the words yet, and its refusal says
 so. `tests/mixed_vertices.rs` is the gate (the step at either end and moved along the block,
-holes beside it, the pocket, the boss and `rounds/stock.sv`, each to its closed form to 1e-9 by
-Pappus and exported with no sliver; the field holding the high end's material where the corner's
+its wall leaning 45° with its fill 2.5 and the rest 1 and the other way round, holes beside it,
+the pocket, the boss and `rounds/stock.sv`, each to its closed form to 1e-9 by Pappus and exported
+with no sliver; the field holding the high end's material where the corner's
 groove ran; one statement of either word refused at the vertex).
 
 **Against the smooth surface** ([0.149], #422): `F.smooth` (`Member::Smooth`, `FaceRef::smooth`, read
