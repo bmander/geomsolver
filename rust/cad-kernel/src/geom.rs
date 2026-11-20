@@ -1025,13 +1025,31 @@ fn net_newton(n: &super::nurbs::Net,p: V,mut uv: Uv) -> Option<Uv> {
                 [(uv[0]-(a22*b1-a12*b2)/det).clamp(u0,u1),(uv[1]-(a11*b2-a12*b1)/det).clamp(v0,v1)]
             }
         };
-        // a step that moves farther off is halved back toward where it began
-        let mut next = next;
-        for _ in 0..8 {
-            let f = sub(n.point(next[0],next[1]),p);
-            if dot(f,f) <= dot(e,e) { break }
-            next = [(uv[0]+next[0])/2.,(uv[1]+next[1])/2.];
-        }
+        // a step that moves farther off is halved back toward where it began, down to the
+        // parameters' rounding; where no length of it gets nearer, the steepest descent is tried
+        // alike from its Cauchy step, and where no length of that does either the point is a foot
+        // to the rounding. (Eight halvings and then the step taken anyway: where the sheet folds
+        // flat, its two tangents all but one, the model's step is far too long — or, its metric
+        // all but singular, no descent at all — and a point within 1e-8 of the sheet was stepped
+        // thirty times to no end and the whole net searched, a thousand times the cost: the
+        // tumbling torus's tubes beside a swallowtail's point, #942 F6)
+        let nearer_along = |mut next: Uv| -> Option<Uv> {
+            while (next[0]-uv[0]).abs().max((next[1]-uv[1]).abs()) > 1e-14*size {
+                let f = sub(n.point(next[0],next[1]),p);
+                if dot(f,f) <= dot(e,e) { return Some(next) }
+                next = [(uv[0]+next[0])/2.,(uv[1]+next[1])/2.];
+            }
+            None
+        };
+        let steepest = || {
+            let (g11,g12,g22) = (dot(xu,xu),dot(xu,xv),dot(xv,xv));
+            let gg = b1*b1+b2*b2;
+            let curve = b1*(g11*b1+g12*b2)+b2*(g12*b1+g22*b2);
+            if !(gg > 0. && curve > 0.) { return None }
+            let t = gg/curve;
+            nearer_along([(uv[0]-t*b1).clamp(u0,u1),(uv[1]-t*b2).clamp(v0,v1)])
+        };
+        let Some(next) = nearer_along(next).or_else(steepest) else { return Some(uv) };
         let moved = (next[0]-uv[0]).abs().max((next[1]-uv[1]).abs());
         uv = next;
         // still: at a foot, or at the domain's edge with the point beyond it (the nearest the domain has)
