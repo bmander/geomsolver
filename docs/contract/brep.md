@@ -679,7 +679,15 @@ own, and says where (`Touch`). `complex::two_blocks_meeting_along_an_edge_…`, 
 `TANGENT` (1e-4 rad) of one another are ordered a step in: a fitted surface — a round's net — is
 tangent to the faces it joins only as closely as its fit, some 1e-5, and read to first order that
 error put a round's strip on the wrong side of it, every cell one shell (the round-lowering cases,
-each a Boolean's selection with none falling back). **A2, the meeting** (`brep::meeting`):
+each a Boolean's selection with none falling back). The step is read nearest first (#942 F6):
+sixty-four tolerances in, and ten times farther only while two ways still agree within what a
+tolerance's lean turns a way by there (`4 tol / step`), to at most a hundredth of the least exact
+radius among them or a thousandth of the complex. Read at that farthest step alone, the order was the
+box's: a drum screwed a short lead has rims' ramps thinner than a hundredth folding against the
+cylinders its side sweeps, a step of a thousandth of a box past them swapped a ramp with its
+cylinder, and as the box grew — a twentieth more room, or a slab a hundred times the sweep cut —
+the solid was judged wrong or the slab left whole
+(`swept_closed::a_drum_screwed_a_short_lead_cut_from_a_slab_a_hundred_times_its_sweep_takes_its_sweep`). **A2, the meeting** (`brep::meeting`):
 two surfaces' meeting over boxes of their parameters as branches (each crossing or touching all
 along), singular points (a touch alone, or branches crossing) and coincidence, complete — boundary
 crossings, every critical point of one's distance across the other's parameters (a closed branch
@@ -865,8 +873,10 @@ its centre — where they were traced and refused as nearly touching
 pieces are ordered by their curvature where they leave a point tangent** (`boolean::pieces_of_face`):
 each half's way out of a node is read a ten-thousandth along its own length, and where two of the
 ways there agree within `TANGENT_TIE` (a thousandth of a radian, what a step along an arc turns its
-chord) they are read again at one length along each — a ten-thousandth of the shortest of those
-tied, each half's chord to its point that far from the node, the part of its way there found by
+chord) they are read again at one length along each — first where a tolerance's lean (`4 tol / δ`)
+turns a way by the tie itself, `δ = 4 tol / TANGENT_TIE`, no more than a quarter of the shortest of
+those tied (#942 F6; nearer the node no reading parts two ways the tie holds as one), and ten times
+on while they still agree — each half's chord to its point that far from the node, the part of its way there found by
 halving (a curve's parameter runs at no one speed: a trace's counts its points, which crowd where it
 sets out, and two probes of its parameter there, extrapolated to that length, once read a way 80
 radians off, #791) — so two arcs touching there part by their

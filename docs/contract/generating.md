@@ -1986,14 +1986,22 @@ turns over. The stretches are sewn row by row (`sew::sewn_open`): a vertex merge
 stretches' vertices on its own row, a row's rim cut only at that row's vertices — beside a
 swallowtail's point a stretch two-hundredths of a radian wide has its two rows within the tolerance
 of one another. A row is the cut it sews (#942 F3, by construction): `across` names which cut's row
-a face's parameters lie on, and the two stretches either side of a cut, fitted a billionth of the
-roll clear of it, have one row there — told apart by their parameters' values, 6.3e-9 of the roll
+a face's parameters lie on, and the two stretches either side of a cut, fitted half the roll's grain
+clear of it (`closed::grain`; a billionth of the roll before #942 F6), have one row there — told apart by their parameters' values, 6.3e-9 of the roll
 apart beside the half turn's cut, no vertex of one was merged with the other's, nothing was sewn,
 and each stretch's row, lying along the next stretch's sheet, was searched for where it met it
 and not proved (gated with no sweep by
 `brep::two_stretches_of_a_sheet_fitted_either_side_of_a_cut_are_sewn_along_it_as_one_row`, and on
 the half turn's own sheets by
 `swept_rings::the_half_turns_stretches_are_sewn_across_its_cut_into_one_tube_a_contact_curve`).
+A double curve's preimage on a tube is unwrapped along it before the swallowtail's tail above it is
+read (#942 F6), as it already was where it is cut at the seams between faces. One crossing the seam
+where the tube's faces close round, read in `[0, pieces)`, ran from one end of the tube to the other:
+all but a sliver of the thin torus's middle stretch was dropped as tail, and its tube was sewn into
+two candidates where it is one
+(`swept_rings::a_double_curve_crossing_its_tubes_seam_bounds_a_tail_beside_it_not_the_whole_tube`,
+slow tier). `closed::ring_entered` is what the road enters before it trims: the tool posed at either
+end, the sheets sewn, their meetings given.
 A curve a tube is cut along where it crosses the tool at an end pose carries, as its pcurve, the
 places on the face it was traced through and the meeting's own point settled between each two, each
 at the curve's own parameter there — the coarsest cubic through every so many whose image holds the
@@ -2002,6 +2010,45 @@ the face only where none holds (#942 F3, by construction: beside a fold pair's b
 back on itself within 2e-4, and the half turn's cut, inverted from the line between its ends,
 landed on the other fold; gated in
 `swept_rings::the_half_turns_stretches_are_sewn_across_its_cut_into_one_tube_a_contact_curve`).
+A trace of a face's meeting with the tool of no length — its points all at one place on the
+face's square, within `ON_SIDE` — bounds nothing and is no chord; one along a side is kept, a rim
+lying on the tool (#942 F6: the near-orthogonal tori's, two points 2.4e-13 apart on the rim where a
+crossing ends, put two chords' ends at one place; `swept_rings::a_trace_of_no_length_bounds_nothing`),
+nor is one its ends' places put at one place when they are snapped to the seams.
+**Every threshold the roads under any motion read is the tolerance's, a feature size's, or the
+rounding's** (#942 F6), none a number of its own:
+- *the rounding* — a value read by cancellation is nought where half its digits are its rounding's,
+  `HALF_READ = √ε` of its scale: a meridian's normal velocity (a meridian touched whole, read in
+  closed form), a narrow pair's least `s''`, a root's jump at a piece's end, a fit row's area
+  element; `G` is carried, not divided, within `ε^(1/(order+2))` of a rim it touches to `order`,
+  where what its division leaves to the rounding is what carrying it on straight leaves of its
+  curvature;
+- *the tolerance* — the roll's grain, over which no corner of the tool moves it (`closed::grain`):
+  two shape changes nearer than it are one instant, and a ring's stretches are fitted half of it
+  clear of a cut, their rows so within the tolerance and sewn as one, a row read within twice that; a
+  double curve stepped so its own chord sags within it at its middle, halved from at most the angle
+  over which the meridian's chord sags it (`√(8 tol / r)`) down to the angle over which the meridian
+  moves it (`tol / r`, nearer two points are one) — at `√(8 tol / r)` alone the turned and the thin
+  tori's double curves were traced too coarsely and their trims refused an edge against a face — a
+  far apex within the step it stopped at either side, a seed on a traced curve where its point
+  stands within twice it of the curve's polyline; a tube's own branch within it of its net; seeds off a rail and on a traced
+  branch, within twice it; two corners at an instant one within the fit's exactness;
+- *the normal form and the trace's step* — a narrow pair's crossing sought from the bridge's ends,
+  its preimages within `√3 − 1` of the bridge's half-width past them (`θ³ − 3h²θ` crosses at
+  `±√3 h`); a chord's end within a trace's step (`MET_STEP`) of another chord ends on it, and two
+  traces whose ends stand that near are one chord;
+- *the structure* — a side of a face's square is straight, its way its own; a halving stops where
+  its middle stands between its ends; a face's characteristic line read as far as the face's reach;
+  feet within the slack of a line make no circle; the end pose a stuck instant is nearer is the one
+  that holds it, and the way the tool's point moves there is the motion's own velocity (no step);
+  every trim's hair is #880 Q1b's one rule (`closed::road_trim`), which the roads under any motion had
+  copied. (The screw's domain's room, a twentieth of its extent, and the trim's grown box's, a
+  tenth, are #806's and E1's, older than these roads, and stand. The domain's room decides how long
+  a screwed sweep takes — the fine thread with sharp crests 24 s at a twentieth, 70 s at the tool's
+  size, 118 s at the box's own extent — and no longer whether its solid is right: the drum screwed a
+  short lead through most of a turn, wrong at a tenth, the tool's size or the extent while the
+  complex read tied faces a thousandth of the box in, is right at a twentieth, a tenth and half the
+  extent since it reads them nearest first, `brep.md`'s A1.)
 **Not yet built**: the tumbling tori fit, are cut and sewn into one tube a contact curve, and are
 refused past the meetings their sewing settles — the torus turned whole where a piece of the torus
 at an end pose reads as the boundary facing behind; the thin one where its two tubes meet at under
