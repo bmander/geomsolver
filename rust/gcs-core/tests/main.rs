@@ -80,6 +80,7 @@ mod curve;
 mod curve_contact;
 mod curve_membership;
 mod curve_of;
+mod curved_ends;
 mod curvedef;
 mod cut_planes;
 mod decompose;

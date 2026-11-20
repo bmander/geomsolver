@@ -136,12 +136,18 @@ impl Assembly {
     /// it), so what they make is the whole section of the one glued to the other's cut short, and
     /// where the face crosses the ball's arc there the two rounds' surfaces, tangent along it,
     /// meet it in one point: neither glued nor unioned yet, and said where (`across`).
-    fn across(&mut self, p: usize, section: &[V], at: V, size: f64) {
+    /// A face both pieces are kept within cuts their two caps alike, and they stay one face (a
+    /// ring's stretch carried round past a flat to the meridian halfway to the next stretch of its
+    /// circle, which is carried back to the same meridian within the same flat: #962's 149).
+    fn across(&mut self, [p, o]: [usize; 2], section: &[V], at: V, size: f64) {
         let tol = 1e-9 * size;
         let n = self.runs.len();
-        let run = if p < n { &self.runs[p] } else { &self.rings[p - n].section };
-        let past = |&(m, d): &(V, f64)| section.iter().any(|&q| dot(m, q) > d + tol);
-        let reaches = |k: &Kept| section.iter().any(|&q| k.away(q) > tol);
+        let of = |p: usize| if p < n { &self.runs[p] } else { &self.rings[p - n].section };
+        let (run, other) = (of(p), of(o));
+        let shared = |&(m, d): &(V, f64)| other.within.iter()
+            .any(|&(k, e)| distance(m, k) <= 1e-9 && (d - e).abs() <= tol);
+        let past = |w: &(V, f64)| !shared(w) && section.iter().any(|&q| dot(w.0, q) > w.1 + tol);
+        let reaches = |k: &Kept| !other.kept.contains(k) && section.iter().any(|&q| k.away(q) > tol);
         if self.across.is_none() && (run.within.iter().any(past) || run.kept.iter().any(reaches)) {
             self.across = Some(at);
         }
@@ -338,7 +344,7 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
     }
     for (pair, gap, at, points) in seams {
         out.seam(pair, gap, size);
-        for p in pair {
+        for p in [pair, [pair[1], pair[0]]] {
             out.across(p, &points, at, size);
         }
     }

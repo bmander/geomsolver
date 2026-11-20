@@ -299,7 +299,9 @@ point's first crossing a sinusoid's rising root, `first_over` — a point on the
 stretch's end rising there at once, never a turn on, #948), and kept within it, #218: a D's rim
 at its flat — or at a cylinder or a sphere it runs into, carried a
 quarter of the way through what its section's points spend in that solid and kept on its side,
-`Kept`: the twin bar's rim), a run and a stretch going on from one
+`Kept`: the twin bar's rim; and in either case no further than the meridian halfway to where its
+circle comes back within the faces it ends on, square there whatever of its section they leave,
+"Where a run's end does not cut its section off" below), a run and a stretch going on from one
 another **glued** at their shared section (a face going on tangent across a seam is no end,
 `BodyFaces::continues`, the field's and the lowering's one rule), and so two stretches going on
 from one another across a seam between arcs (#574, `assemble::same_section`: one's turn ending in
@@ -462,6 +464,46 @@ section and refused over it; each volume the closed form's to 1e-9, a boss's cho
 and the plates grown 1 by Steiner's). Seams turned past `TANGENT` and short of a few thousandths
 of a radian are corners whose pieces are refused yet (a ring and a run unioned there, a turn of
 `1e-6` to `1e-4`: "a cylinder's pieces do not close").
+
+**Where a run's end does not cut its section off** (#962 item 3: a disc's rim chamfered past its
+flats, a rim ending on another arc's face, a channel's fill broken by a hole). `std.rounds` says a
+run is carried past its edge's end, cut off by the faces it ends on, and read against the meeting
+— the faces' surfaces' meeting within those faces (`crease.ends`) — only where its nearest point
+of that meeting is on the crease (`distance(p, crease) <= distance(p, meeting)`, the field's
+`conditions::Rest`). So the run goes past its end no further than **halfway to where the meeting
+comes back** within the faces it ends on: round a circle the meridian halfway across the gap to
+where the circle is next within them all (`piece::resumed`: sampled at a 720th of a turn and
+bisected, the gap itself where it never is — the crease's other end, so the two ends meet in the
+middle and the ring is a whole turn — and nothing where the circle goes on within them at once);
+along a line the plane square to it halfway across the chord the face it ends on cuts from the
+line, where the line comes back out within them. The piece is turned or carried that far, square
+there, and kept within (or outside) each face it ends on, whatever of its section that face
+leaves: the set's own extent, not a construction's. Short of it, where every point of the section
+has crossed a plane at that end (#218's `first_over`; each comes back within only past the
+halfway meridian) or stays a quarter of the way into a curved face's solid, the piece stops there
+as before — the same shape. A disc of 75 with four flats 74.5 out (#962's 149), its rim chamfered
+1, was refused ("a stretch of a circle its end does not cut off"): the section's inner half never
+reaches the flat. Each rim's stretch now turns to the meridian halfway to the next arc, kept
+within its two flats, and two stretches carried to one meridian are one section there, glued; a
+face both are kept within cuts their caps alike, so it is no face reaching back across a section
+the two share (`Assembly::across` reads it of one alone). A disc of 20 whose far side a disc of
+100 overhangs by 1, rounded deeper than 1 (#962's 125, "a stretch of a circle its curved end does
+not cut off"), turns the smaller rim's ring all round, kept within the larger disc. A straight run
+some of whose section's lines pass the curved face it ends on by is still joined to the run along
+the same line beyond that face (`across_cuts`) where there is one — now **between the same
+surfaces**, not the same faces: a trench under a channel's floor cuts the floor in two faces of
+one plane, each named by the channel, and the two runs on either side were never one (#962's 133,
+"a run its curved end does not cut off"); and where there is none, the run is carried to the
+plane halfway across the chord (`run_piece`'s `halfway`), kept outside the face. A round asked of
+one face of a smooth chain (#962's 125, a round of the R90 arc alone) ends square at the tangent
+seam: no face ends it there, so the meeting is the arc's whole circle, and the crease is the
+nearest of it only over the arc's own meridians — the set itself stops square, as the stretch
+does. `tests/curved_ends.rs` is the gate (the disc with one, two and four flats, chamfered and
+rounded just under, at and over the flat's depth, with and without a keyed bore, mirrored and
+turned, either cap; the two discs in common and in union, rounded under, at and over the
+overhang; the channel's fill broken by a hole inside, on and beyond its wall, at the channel's end
+and across a trench, square-on and skewed; each volume the closed form's to 1e-9, the section the
+rim leaves at each depth integrated by Gauss–Legendre or tanh–sinh).
 
 **A ball as wide as its cylinder** (brep-bench's fillet/cylinder-rim-to-dome): an offset by a
 radius that takes a surface's radius to nothing is what the surface is drawn about, never nothing
