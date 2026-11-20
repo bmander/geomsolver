@@ -443,11 +443,45 @@ ball along (`round_lowering::a_rim_tilted_off_square_rounded_to_its_cylinders_ra
 (`brep::a_cylinders_rim_rounded_to_its_own_radius_is_a_dome`). Past a closing offset the band a
 ball needs is the whole of the face on the region's side (`holds_ball`), so a cylinder shorter
 than the radius is refused as too small to hold it. Refused by name too: both offsets closing, one
-closing onto a point (the ball is that face's sphere), the centre running along the curve it
-closes onto, and a stretch of a loop; and where only a surface will do — a chamfer's leg, a ball
+closing onto a point (the ball is that face's sphere), and the centre running along the curve it
+closes onto (a stretch of a loop is below); and where only a surface will do — a chamfer's leg, a ball
 beyond a seam — an offset that closes is refused as that, not as too wide
 (`Surface::offset_surface`: a spill's legs and balls). A cone shrunk past its apex is the same sheet
 placed at its own apex, never none.
+
+**A ball standing over a stretch of its loop** (#962, `rounds/onto_round.sv`): a boss rounded
+into a frame whose inside edge is already filled to the ball's radius has, against the fill's
+concave face, its ball's centre on the fill's axis alone — where that axis meets the boss's side's
+offset — and the meeting there ends at the fill's two seams. Where the side crosses the fill on a
+circle about its axis (square to it) the lowering builds a ring's stretch closed into a quarter
+ball, as a pocket's corner below; anywhere else the edge goes to `fillet::roll`, which stands the
+ball still and rounds that stretch alone (`fillet::dome`). Every section of a still ball is a
+plane through its centre holding its foot on the other face, its arc from the circle it touches
+the fill round to that point; the stretch ends at each vertex's section (the plane through the
+centre, the foot and the vertex), so the piece is the sphere's patch between the circle's arc from
+one end's section to the other's and the two arcs to the foot, the fill's strip, the side's strip
+and a cap in each end's section — exact, nothing fitted or cut. Each end is a seam where the fill
+goes on tangent into the floor or the wall: the run along it takes on from the same section only
+where the ball's contact with the fill stands on the seam there, the rule a rolled run ending at
+a tangent seam keeps (`seam_aligned`, #218's 7) — a round boss whose axis meets the fill's, a
+square boss — and there the floor's half ring and the wall's runs end in the dome's caps, so each
+region is its set and their pieces glue at the caps. Elsewhere (a round boss off the fill's axis,
+a side skewed across it) the contact crosses the seam in another section than the stretch ends in,
+the ball along the floor stops short of the vertex's section (its run is refused by
+`piece::stands_within` too) and what neither ball reaches between those sections is no piece yet:
+refused, `… its contact crosses their seam in another section than its edge does …`, as a rolled
+run's is. Refused besides: an end on a face cutting across the stretch (the dome is not carried
+past and cut off yet), a ball a hair under the fill's radius (its spindle so short no section is
+carried past where the seams cut the rolled run off: `cannot roll on past`), the chamfer (`no
+stretch of a flat closing to a point is cut off yet`), and a ball wider than the fill, which never
+touches its face — what none reaches runs along the fill without end, as up a pocket's corner —
+saying both: `… of radius 2.1, is larger than `…round` can hold, curved round it to a radius of 2`.
+The convex twin, a boss across an edge rounded convex, is an ordinary ball rolled against the
+round's cylinder (its offset never closes), built where the contacts stand on the seams.
+`tests/round_onto_round.rs` is the gate (a round boss of 6 rounded 2 and one of 4 rounded 1.5,
+the statements either way round, and the square boss: the closed form's volume to 1e-9, the dome
+`(rb + r) π r² / 4 − ∫₀ʳ √(r² − s²) √(rb² − s²) ds − π r³ / 6` each side; each refusal above; the
+convex twin built), each exported to STEP and STL.
 
 **A ball as wide as a corner** (#962, `rounds/corner.sv`): a pocket's floor rounded where its
 plan corners are arcs of radius `R`, or a boss's top rim, or a round pocket's or a round boss's
