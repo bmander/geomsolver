@@ -33,14 +33,38 @@ staying a set over `distance`; `tests/brep.rs`'s `the_sphere_the_cone_and_the_to
 `props` (volume by Green's theorem), `query`, `ssi` (closed forms, else traced), `boolean` (split, arrange, classify,
 assemble), `mesh` (constrained Delaunay refined to a measured sag), `step` (AP214 with pcurves and
 seam curves), `recipe`.
-**A traced intersection is written as a cubic** (`step::bezier_curve`): no entity of the standard
-writes a `Traced` curve, so the file carries the piecewise Hermite cubic through its points and
-tangents, halved until each piece's quarter points lie within a tenth of `step::FIT` of the curve
-— as its pcurves are (`bezier_pcurve`) — and only where that does not close in, in at most 4096
-pieces, the polyline through it within the writer's tolerance.  A polyline at the default 1e-4 mm
-trims its faces that far off, and a reader measures the faces it trims: brep-bench's half torus,
-a ball bored off its centre and the saddle drums read 1e-6 to 1e-5 off their closed forms, the
-cubic 1e-9.  `tests/face_edits.rs::a_traced_curve_is_written_as_a_cubic`.
+**A traced intersection is written as a cubic held to the file's tolerance** (#961,
+`step::bezier_curve`, `step::hermite_fit`): no entity of the standard writes a `Traced` curve, so
+the file carries a piecewise Hermite cubic through its points and rates, every piece within
+`step::curve_fit(tol)` — half the uncertainty the file states, `tol` no finer than 1e-7 mm — of
+the exact curve, which is on both surfaces, read at sixteen points a piece. The pieces are marched
+along the curve as long as the bar allows (a cubic's miss goes as the fourth power of its length,
+so each is shortened where it misses and the next lengthened by the fourth root of the bar over
+the miss), stopping at every break of the curve (a spline's knots); joints where the curve is
+smooth share their rate and are double knots. Its pcurves are fitted alike (`bezier_pcurve`,
+measured on the surface the file writes against the edge's foot there), so the cubic and each
+pcurve's image stand within the stated uncertainty of each other at every parameter, and their
+ends are the edge's vertices. **A traced curve is written over the length along it** (`Along`),
+not its own parameter: that counts the march's points, and its speed steps at each (each stretch
+is a parabola through a neighbour behind on one side of a point and ahead on the other), so no
+cubic over several points follows it and every piece ended at a point. Over each stretch `s` is
+the cubic rising by the stretch's length (Gauss–Legendre on the curve's speed) at the curve's own
+speed at either end, so the curve in `s` is `C¹` across the points, and the curve and its pcurves
+are written over it alike. **The pieces follow the bar, not the march**: a fit held to a fixed
+1e-7 mm whatever the tolerance, cut at every marched point, wrote the issue's tube with one
+cross-hole in 3.3 MB, each of its two curves some 3,370 poles, the same at every tolerance; the
+poles now go as the fourth root of the tolerance. Only where the fit does not close in (a piece
+shortened to `2⁻³⁰` of the edge, 4096 pieces) is the polyline through the curve within the same
+bar written. A polyline trims its faces always inside the curve, and a reader measures the faces
+it trims (brep-bench's half torus, a ball bored off its centre and the saddle drums read 1e-6 to
+1e-5 off their closed forms at 1e-4 mm); a cubic's error is no chord's, and is the tolerance's to
+set. A meeting with a closed form STEP carries — a line, a circle, an ellipse, a conic as a
+rational quadratic — is written so and fitted nowhere. `tests/step_curves.rs` (the file read back
+and every traced cubic and pcurve sampled 64 times a knot span: within the bar of the curve and of
+both surfaces at 5e-4, 1e-4 and 5e-6 mm, each finer tolerance nearer and in more poles, none
+nearer than a sixteenth of its bar, for crossing cylinders at several places and radii, a ball drilled
+off its centre, a frustum and a torus drilled; ellipses written exactly),
+`tests/face_edits.rs::a_traced_curve_is_written_as_a_cubic`.
 **An affine map carries a solid onto its image exactly** (`Brep::mapped`, `affine::Affine`, any
 invertible `p ↦ M p + t`): its topology and pcurves are the solid's own, because every surface's
 and curve's image keeps their parameters. A kind whose image is a kind of its own is written so

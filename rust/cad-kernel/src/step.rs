@@ -1,15 +1,15 @@
 //! A B-rep written as STEP (ISO 10303-21, AP214's advanced B-rep): the product and units a
 //! reader expects (millimetres, radians), a manifold solid on one closed shell, its faces on
-//! their exact surfaces and its edges on their exact curves; a traced curve written as the
-//! B-spline of degree one through points within `tol` of it; every edge's curve in each face that
-//! uses it (its pcurve, a seam's two) written beside it, so a reader need not project its own; and
-//! a pole's degenerate edge left out of its loop, as a reader rebuilds it.
+//! their exact surfaces and its edges on their exact curves; a traced curve written as the cubic
+//! within `curve_fit(tol)` of it, in as few pieces as that allows; every edge's curve in each face
+//! that uses it (its pcurve, a seam's two) written beside it, so a reader need not project its
+//! own; and a pole's degenerate edge left out of its loop, as a reader rebuilds it.
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use super::geom::{Curve,Frame,Surface,V};
 use std::sync::Arc;
 use super::topo::{Brep,EdgeCurve};
-use crate::util::space::{add,distance,norm,scale,sub};
+use crate::util::space::{add,distance,norm,scale};
 use std::fmt::Write;
 
 /// A real as STEP writes one: shortest round-trip digits, a decimal point, `E` for the exponent.
@@ -348,110 +348,226 @@ pub fn face_net(b: &Brep,fi: usize) -> Option<Result<OnNet,String>> {
     Some(built.and_then(|(n,arcs)| net(Ok(n),arcs,m.frame)))
 }
 
-/// The curve `uv(t)` over `[t0, t1]` as cubic Bézier pieces (a B-spline of degree 3 whose inner
-/// knots are triple): cut at `breaks` (the edge's own knots, where its derivatives may jump) and
-/// halved wherever a piece's quarter points come onto `surface` farther than a tenth of `FIT`
-/// from `uv(t)`'s own; each piece is the Hermite cubic of its ends' values and derivatives.
-/// Measured against the edge's foot on the surface, not the edge: a fitted intersection curve
-/// stands off each of its surfaces by its own fit, which no pcurve can close. None where a piece
-/// halved thirty times still misses, or past 4096 pieces.
-fn bezier_pcurve(uv: &dyn Fn(f64) -> super::geom::Uv,duv: &dyn Fn(f64) -> super::geom::Uv,surface: &Surface,[t0,t1]: [f64;2],
-    breaks: &[f64]) -> Option<(Vec<[f64;2]>,Vec<f64>)> {
-    // (a rate not defined where the surface's parameters are not — an edge from a cone's apex, its
-    // pole — read as the chord to a point a millionth of the span along)
-    let rate = |x: f64,y: f64| { let d = duv(x); if d.iter().all(|v| v.is_finite()) { d } else {
-        let (p,q) = (uv(x),uv(x+1e-6*(y-x)));
-        [(q[0]-p[0])/(1e-6*(y-x)),(q[1]-p[1])/(1e-6*(y-x))]
-    } };
-    let hermite = |a: f64,b: f64| -> [[f64;2];4] {
-        let (p,q,dp,dq) = (uv(a),uv(b),rate(a,b),rate(b,a));
-        let h = (b-a)/3.;
-        [p,[p[0]+h*dp[0],p[1]+h*dp[1]],[q[0]-h*dq[0],q[1]-h*dq[1]],q]
-    };
-    let at = |c: &[[f64;2];4],s: f64| -> [f64;2] {
-        let w = [(1.-s).dpowi(3),3.*s*(1.-s)*(1.-s),3.*s*s*(1.-s),s.dpowi(3)];
-        [(0..4).map(|k| w[k]*c[k][0]).sum(),(0..4).map(|k| w[k]*c[k][1]).sum()]
-    };
-    let mut cuts = vec![t0];
-    cuts.extend(breaks.iter().copied().filter(|&k| k > t0 && k < t1));
-    cuts.push(t1);
-    let mut pieces: Vec<(f64,f64,[[f64;2];4])> = Vec::new();
-    for w in cuts.windows(2) {
-        let mut stack = vec![(w[0],w[1],0)];
-        while let Some((a,b,depth)) = stack.pop() {
-            let c = hermite(a,b);
-            let off = [0.25,0.5,0.75].iter().map(|&f| distance(surface.point(at(&c,f)),surface.point(uv(a+(b-a)*f)))).fold(0.,f64::max);
-            if !(off <= FIT/10.) {
-                if depth >= 30 || pieces.len()+stack.len() > 4096 { return None }
-                let m = (a+b)/2.;
-                stack.push((m,b,depth+1));
-                stack.push((a,m,depth+1));
-            } else { pieces.push((a,b,c)); }
-        }
-    }
-    let mut poles = vec![pieces[0].2[0]];
-    let mut knots = vec![t0;4];
-    for (k,(_,b,c)) in pieces.iter().enumerate() {
-        poles.extend_from_slice(&c[1..]);
-        knots.extend(std::iter::repeat_n(*b,if k+1 == pieces.len() { 4 } else { 3 }));
-    }
-    Some((poles,knots))
-}
+/// The least uncertainty a file states (millimetres): a tolerance asked finer is written as this,
+/// and the curves the file fits are held to it as to any other.
+const LEAST_UNCERTAINTY: f64 = 1e-7;
 
-/// **A curve in space as a cubic** over `[t0, t1]`: piecewise Hermite through its points and
-/// tangents (each piece a Bézier, so the knots inside are triple), split at `breaks` and halved
-/// until each piece's quarter points lie within a tenth of `FIT` of the curve's — a traced
-/// intersection written as a polyline within the file's tolerance trims its faces that far off,
-/// and a reader measures the faces it trims.  `None` where it does not close in (a curve that
-/// stands still, a tangent not defined) in at most 4096 pieces.
-fn bezier_curve(c: &Curve,[t0,t1]: [f64;2],breaks: &[f64]) -> Option<(Vec<V>,Vec<f64>)> {
-    let rate = |x: f64,y: f64| -> Option<V> {
-        let d = c.d1(x).1;
-        if d.iter().all(|v| v.is_finite()) && norm(d) > 0. { return Some(d) }
-        // where the rate is not defined, the chord to a point a millionth of the span along
-        let (p,q) = (c.point(x),c.point(x+1e-6*(y-x)));
-        let d = scale(sub(q,p),1./(1e-6*(y-x)));
-        (d.iter().all(|v| v.is_finite()) && norm(d) > 0.).then_some(d)
+/// **How near its exact curve a curve the file fits is written** (millimetres): half the
+/// uncertainty the file states (`tol`, no finer than `LEAST_UNCERTAINTY`). A traced edge's cubic and
+/// each of its pcurves' images stand within this of the exact curve at every parameter, so the
+/// curve and every pcurve stand within the stated uncertainty of one another, and of the surfaces
+/// the edge lies on — no nearer than that asks, so a coarser tolerance writes fewer poles.
+pub fn curve_fit(tol: f64) -> f64 { tol.max(LEAST_UNCERTAINTY)/2. }
+
+/// The interior points a piece of a fitted cubic is measured at, as sixteenths of it: the middle
+/// among them, where a Hermite cubic's error `s²(1 − s)²` is greatest, and enough beside it that
+/// an error of another shape (a rate that steps inside the piece) is not read between them.
+const MEASURED: usize = 16;
+
+/// **A curve as a cubic B-spline within `bar` of it** over `[t0, t1]` of its parameter: piecewise
+/// Hermite through its points and rates, each piece kept where its `MEASURED` points come within
+/// `bar` of the curve's at the same parameter (`off`, a distance in space). The pieces are
+/// marched from `t0`, stopping at every break (`breaks`: where the curve's derivatives may jump,
+/// a spline's knots), each as long as the bar allows: a cubic's miss goes as the fourth power of
+/// its length, so a piece that misses is shortened, and the next after one that holds lengthened,
+/// by the fourth root of the bar over its miss (a tenth short, at most halved or doubled), the way
+/// to the next stop shared evenly among the pieces it needs. A rate is the curve's own (`rate`)
+/// except at a break or where it is not defined (a cone's apex in its parameters), where it is
+/// the one-sided difference toward the piece; so two pieces meeting where the curve is smooth
+/// share their rate there, and the joint is a double knot (the cubic `C¹`, its joint's pole
+/// dropped), a triple one at a break. The pieces follow the bar, not the curve's own sampling: a
+/// trace marched in a thousand points is written in the few pieces the bar needs. The ends are the
+/// curve's own, exactly. `None` where a piece shortened to `2⁻³⁰` of the stretch still misses, past
+/// 4096 pieces, or where a rate cannot be read.
+fn hermite_fit<const N: usize>(at: &dyn Fn(f64) -> [f64;N],rate: &dyn Fn(f64) -> [f64;N],off: &dyn Fn([f64;N],f64) -> f64,
+    [t0,t1]: [f64;2],breaks: &[f64],bar: f64) -> Option<(Vec<[f64;N]>,Vec<f64>)> {
+    let finite = |d: &[f64;N]| d.iter().all(|x| x.is_finite()) && d.iter().any(|&x| x != 0.);
+    // the rate at `x` as the piece running toward `y` sees it
+    let rate = |x: f64,y: f64| -> Option<[f64;N]> {
+        if !breaks.contains(&x) { let d = rate(x); if finite(&d) { return Some(d) } }
+        // one-sided, second order: (−3 C(x) + 4 C(x + h) − C(x + 2h)) / 2h, `h` a ten-thousandth of
+        // the piece
+        let h = 1e-4*(y-x);
+        let (p,q,r) = (at(x),at(x+h),at(x+2.*h));
+        let d = std::array::from_fn(|k| (-3.*p[k]+4.*q[k]-r[k])/(2.*h));
+        finite(&d).then_some(d)
     };
-    let hermite = |a: f64,b: f64| -> Option<[V;4]> {
-        let (p,q) = (c.point(a),c.point(b));
+    let hermite = |a: f64,b: f64| -> Option<([[f64;N];4],[[f64;N];2])> {
+        let (p,q) = (at(a),at(b));
         let (dp,dq) = (rate(a,b)?,rate(b,a)?);
         let h = (b-a)/3.;
-        Some([p,add(p,scale(dp,h)),sub(q,scale(dq,h)),q])
+        Some(([p,std::array::from_fn(|k| p[k]+h*dp[k]),std::array::from_fn(|k| q[k]-h*dq[k]),q],[dp,dq]))
     };
-    let at = |k: &[V;4],s: f64| -> V {
+    let bezier = |c: &[[f64;N];4],s: f64| -> [f64;N] {
         let w = [(1.-s).dpowi(3),3.*s*(1.-s)*(1.-s),3.*s*s*(1.-s),s.dpowi(3)];
-        std::array::from_fn(|i| (0..4).map(|j| w[j]*k[j][i]).sum())
+        std::array::from_fn(|k| (0..4).map(|j| w[j]*c[j][k]).sum())
     };
-    let mut cuts = vec![t0];
-    cuts.extend(breaks.iter().copied().filter(|&k| k > t0 && k < t1));
-    cuts.push(t1);
-    let mut pieces: Vec<(f64,f64,[V;4])> = Vec::new();
-    for w in cuts.windows(2) {
-        let mut stack = vec![(w[0],w[1],0)];
-        while let Some((a,b,depth)) = stack.pop() {
-            let k = hermite(a,b)?;
-            let off = [0.25,0.5,0.75].iter().map(|&f| distance(at(&k,f),c.point(a+(b-a)*f))).fold(0.,f64::max);
-            if !(off <= FIT/10.) {
-                if depth >= 30 || pieces.len()+stack.len() > 4096 { return None }
-                let m = (a+b)/2.;
-                stack.push((m,b,depth+1));
-                stack.push((a,m,depth+1));
-            } else { pieces.push((a,b,k)); }
+    // each piece: its end, its poles, and its rates at its ends — marched from `t0`, each piece
+    // as long as the last one's miss says the bar allows (a cubic's misses as the fourth power
+    // of its length), shortened the same way where it misses, and the stretch to the next stop
+    // shared evenly among the pieces it needs
+    let mut stops: Vec<f64> = breaks.iter().copied().filter(|&k| k > t0 && k < t1).collect();
+    stops.sort_by(f64::total_cmp);
+    stops.push(t1);
+    let least = (t1-t0)*0.5f64.powi(30);
+    let mut pieces: Vec<(f64,[[f64;N];4],[[f64;N];2])> = Vec::new();
+    let (mut a,mut length,mut stop) = (t0,t1-t0,0);
+    while a < t1 {
+        while stops[stop] <= a { stop += 1; }
+        let left = stops[stop]-a;
+        let b = if length >= left { stops[stop] } else { a+left/(left/length).ceil() };
+        let (c,d) = hermite(a,b)?;
+        let miss = (1..MEASURED).map(|k| { let s = k as f64/MEASURED as f64; off(bezier(&c,s),a+(b-a)*s) }).fold(0.,f64::max);
+        // the length the bar allows, by the fourth power, a tenth short of it
+        let allowed = |most: f64| if miss > 0. { (0.9*(bar/miss).powf(0.25)).min(most) } else { most };
+        if miss <= bar {
+            pieces.push((b,c,d));
+            if pieces.len() > 4096 { return None }
+            length = (b-a)*allowed(2.);
+            a = b;
+        } else {
+            length = (b-a)*allowed(0.5).max(0.1);
+            if !(length >= least) { return None }
         }
     }
-    let mut poles = vec![pieces.first()?.2[0]];
+    let mut poles = vec![pieces.first()?.1[0]];
     let mut knots = vec![t0;4];
-    for (i,(_,b,k)) in pieces.iter().enumerate() {
-        poles.extend_from_slice(&k[1..]);
+    for (i,(b,c,_)) in pieces.iter().enumerate() {
+        // smooth where this piece starts at the rate the last one ended at: its joint pole dropped,
+        // the joint's knot made double
+        if i > 0 && pieces[i-1].2[1] == pieces[i].2[0] { poles.pop(); knots.pop(); }
+        poles.extend_from_slice(&c[1..]);
         knots.extend(std::iter::repeat_n(*b,if i+1 == pieces.len() { 4 } else { 3 }));
     }
     Some((poles,knots))
 }
 
+/// **The parameter the file writes an edge's curve over**: the curve's own, except a traced
+/// curve's. That counts its points, and its speed steps at each: the stretch between two points
+/// is the parabola through them and a neighbour pulled onto both surfaces, the neighbour behind
+/// on one side of a point and ahead on the other, so the rate at a point differs either side by
+/// some `(κh)²` of the speed (the march's step `h` against the curvature) — the curve is smooth,
+/// its parameter is not, and no cubic over several points follows that parameter within a bar
+/// finer than that step times a chord: every piece would end at a point. The file writes a
+/// traced curve over `s` instead, which runs over each stretch `[i, i + 1]` as the cubic in `t`
+/// rising by the stretch's length at the curve's own speed at each end, read on the stretch's
+/// side (`speeds`): so `dC/ds` is the unit tangent at every point from either side, and the
+/// curve in `s` is `C¹` across its points, its speed one but for the speed's departure from a
+/// quadratic within a stretch. (Rising by the chord instead, the speed was off by the chord's
+/// shortfall, and each piece drifted along the curve by that times its length.) A closed trace's
+/// `s` runs on round its period. Every curve of the edge, in space and in each face, is written
+/// over the same `s`.
+struct Along { chords: Option<Chords> }
+
+/// A traced curve's `s` (`Along`): where it stands at each point, and each stretch's speed in `t`
+/// at its start and its end.
+struct Chords { at: Vec<f64>,speeds: Vec<[f64;2]>,closed: bool }
+
+impl Along {
+    fn of(c: &Curve) -> Along {
+        let Curve::Traced(t) = c else { return Along {chords:None} };
+        let m = t.pts.len()-1;
+        // the speed at a point, from the side `toward` (one-sided, second order, a ten-thousandth
+        // of a stretch)
+        let speed = |x: f64,toward: f64| {
+            let h = 1e-4*(toward-x);
+            let (p,q,r) = (c.point(x),c.point(x+h),c.point(x+2.*h));
+            norm(std::array::from_fn(|k| (-3.*p[k]+4.*q[k]-r[k])/(2.*h)))
+        };
+        let mut at = vec![0.];
+        let mut speeds = Vec::with_capacity(m);
+        for i in 0..m {
+            // the stretch's length, by ten-point Gauss–Legendre (its nodes inside it, where the
+            // rate is the stretch's own)
+            let (a,z) = (i as f64,i as f64+1.);
+            let length = super::props::gauss(a,z,1,&mut |x| norm(c.d1(x).1));
+            let v = [speed(a,z),speed(z,a)];
+            // (a stretch of no length, or a speed not read, or one the cubic would turn back
+            // under: nothing to write it over)
+            if !(length > 0. && v.iter().all(|&v| v.is_finite() && v > 0. && v < 3.*length)) { return Along {chords:None} }
+            at.push(at[i]+length);
+            speeds.push(v);
+        }
+        Along {chords:Some(Chords {at,speeds,closed:t.closed})}
+    }
+    /// `s` at the curve's parameter `t`.
+    fn s(&self,t: f64) -> f64 {
+        let Some(c) = &self.chords else { return t };
+        let m = c.speeds.len();
+        let turns = if c.closed { (t/m as f64).floor() } else { 0. };
+        let i = ((t-turns*m as f64).floor().max(0.) as usize).min(m-1);
+        let f = t-turns*m as f64-i as f64;
+        turns*c.at[m]+c.at[i]+c.rise(i,f).0
+    }
+    /// The curve's parameter at `s`, and its rate `dt/ds` there.
+    fn t(&self,x: f64) -> (f64,f64) {
+        let Some(c) = &self.chords else { return (x,1.) };
+        let m = c.speeds.len();
+        let turns = if c.closed { (x/c.at[m]).floor() } else { 0. };
+        let r = x-turns*c.at[m];
+        let i = c.at.partition_point(|&k| k <= r).clamp(1,m)-1;
+        let goal = r-c.at[i];
+        // Newton on the stretch's cubic, which rises throughout, kept within the stretch's ends
+        // by halving the bracket where a step leaves it
+        let (mut lo,mut hi) = (0f64,1f64);
+        let mut f = (goal/(c.at[i+1]-c.at[i])).clamp(0.,1.);
+        for _ in 0..60 {
+            let (h,dh) = c.rise(i,f);
+            if h < goal { lo = f } else { hi = f }
+            let next = f-(h-goal)/dh;
+            let next = if next > lo && next < hi { next } else { 0.5*(lo+hi) };
+            if (next-f).abs() <= 4.*f64::EPSILON { f = next; break }
+            f = next;
+        }
+        (turns*m as f64+i as f64+f,1./c.rise(i,f).1)
+    }
+    /// The edge's stretch `[t0, t1]` in `s`.
+    fn span(&self,[t0,t1]: [f64;2]) -> [f64;2] { [self.s(t0),self.s(t1)] }
+    /// Where, over `[t0, t1]`, the curve may stop being smooth in `s`, its ends among them where
+    /// they are such points, as `hermite_fit` reads them: a curve's own `breaks`, but none of a
+    /// traced curve's points, across which it is smooth in `s`.
+    fn breaks(&self,c: &Curve,[t0,t1]: [f64;2]) -> Vec<f64> {
+        if self.chords.is_some() { return vec![] }
+        let w = 1e-9*(t1-t0).abs();
+        let mut out = c.breaks([t0-w,t1+w]);
+        for end in [t0,t1] { if out.iter().any(|&k| (k-end).abs() <= w) && !out.contains(&end) { out.push(end); } }
+        out
+    }
+}
+
+impl Chords {
+    /// How far `s` has risen from point `i` at the fraction `f` of its stretch, and its rate:
+    /// the cubic from nought to the stretch's length, its slopes the speeds at the ends.
+    fn rise(&self,i: usize,f: f64) -> (f64,f64) {
+        let (l,[v0,v1]) = (self.at[i+1]-self.at[i],self.speeds[i]);
+        let (f2,f3) = (f*f,f*f*f);
+        (l*(3.*f2-2.*f3)+v0*(f-2.*f2+f3)+v1*(f3-f2),l*(6.*f-6.*f2)+v0*(1.-4.*f+3.*f2)+v1*(3.*f2-2.*f))
+    }
+}
+
+/// A use's pcurve `uv(t)` as a cubic over `along`'s `s` within `bar` of the edge (`hermite_fit`),
+/// measured on `surface` against the edge's foot there, not the edge: a fitted intersection curve
+/// stands off each of its surfaces by its own fit, which no pcurve can close.
+fn bezier_pcurve(uv: &dyn Fn(f64) -> super::geom::Uv,duv: &dyn Fn(f64) -> super::geom::Uv,surface: &Surface,along: &Along,
+    c: &Curve,t: [f64;2],bar: f64) -> Option<(Vec<[f64;2]>,Vec<f64>)> {
+    let at = |s: f64| uv(along.t(s).0);
+    let rate = |s: f64| { let (t,r) = along.t(s); let d = duv(t); [d[0]*r,d[1]*r] };
+    hermite_fit(&at,&rate,&|q,s| distance(surface.point(q),surface.point(at(s))),along.span(t),&along.breaks(c,t),bar)
+}
+
+/// **A curve in space as a cubic** over `along`'s `s` within `bar` of it (`hermite_fit`): a traced
+/// intersection, which no entity of the standard writes.
+fn bezier_curve(c: &Curve,along: &Along,t: [f64;2],bar: f64) -> Option<(Vec<V>,Vec<f64>)> {
+    let at = |s: f64| c.point(along.t(s).0);
+    let rate = |s: f64| { let (t,r) = along.t(s); scale(c.d1(t).1,r) };
+    hermite_fit(&at,&rate,&|q,s| distance(q,at(s)),along.span(t),&along.breaks(c,t),bar)
+}
+
 /// A use's pcurve, as a STEP `PCURVE` on the face's surface: a line where it is one, a circle
-/// where a plane's edge is one turning the plane's way, otherwise the degree-one B-spline through
-/// its parameters at points chosen so each chord's middle maps within `tol` of the edge.
+/// where a plane's edge is one turning the plane's way, otherwise the cubic within `curve_fit(tol)`
+/// of the edge (`bezier_pcurve`), over the parameter the edge's curve is written over (`Along`);
+/// and where that does not close in, the degree-one B-spline through its parameters at points
+/// chosen so each chord's middle maps within the same of the edge.
 fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,context2: usize,tol: f64,net: Option<&OnNet>) -> usize {
     use super::topo::Pcurve;
     let f = &b.faces[fi];
@@ -471,10 +587,12 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
     };
     let (a,z) = (at(e.t[0]),at(e.t[1]));
     // a reader places a closed curve's vertices within its first period: the pcurve's parameter is
-    // the edge's moved there too (a traced curve is written over its own parameters, unmoved)
+    // the edge's moved there too (a traced curve is written over its chords' length, unmoved)
     let shift = match c { Curve::Circle(..) | Curve::Ellipse(..) => (e.t[0]/std::f64::consts::TAU).floor()*std::f64::consts::TAU,_ => 0. };
+    // the parameter the edge's curve is written over (a traced curve's chords, `Along`)
+    let along = Along::of(c);
     // affine in the edge's parameter (a coaxial circle on a cylinder, a line along its axis)
-    let affine = (1..8).all(|k| {
+    let affine = along.chords.is_none() && (1..8).all(|k| {
         let s = k as f64/8.;
         let q = at(e.t[0]+(e.t[1]-e.t[0])*s);
         (q[0]-(a[0]+s*(z[0]-a[0]))).abs().max((q[1]-(a[1]+s*(z[1]-a[1]))).abs()) <= 1e-12*(1.+a[0].abs().max(a[1].abs()))
@@ -508,19 +626,19 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
             let ids: Vec<String> = bs.poles.iter().map(|&q| { let l = pl.local(q); format!("#{}",p2(o,[l[0],l[1]])) }).collect();
             spline(o,bs.degree,&ids,&bs.knots,bs.weights.as_deref())
         }
-        // a cubic in the edge's parameter through its parameters at evenly spaced points, doubled
-        // until it maps within a tenth of `FIT` of the edge between them (a chordal pcurve within
-        // the file's tolerance trims a spline face that far off its edge, and a reader measures
-        // the face it trims: 1e-5 of a pinion read back): in the parameters the file writes, measured
-        // on the surface it writes — a net's, where they need be no affine image of the face's own
+        // a cubic in the edge's parameter through its parameters and rates, its pieces as few as
+        // map within `curve_fit` of the edge (`hermite_fit`; a cubic's error changes sign about
+        // the edge less than a chord's, which always cuts inside, so a reader measuring the face it
+        // trims reads it nearer): in the parameters the file writes, measured on the surface it
+        // writes — a net's, where they need be no affine image of the face's own
         _ if let Some((poles,knots)) = match net {
             Some(n) => bezier_pcurve(&at,&|t| {
                 let (uv,d) = u.pcurve.at_and_derivative(t,e,&f.surface,&b.vertices);
                 let rate = n.uv(uv).1;
                 [rate[0]*d[0],rate[1]*d[1]]
-            },&n.surface,e.t,&c.breaks(e.t)),
+            },&n.surface,&along,c,e.t,curve_fit(tol)),
             None => bezier_pcurve(&|t| u.pcurve.at(t,e,&f.surface,&b.vertices),&|t| u.pcurve.derivative(t,e,&f.surface,&b.vertices),
-                &f.surface,e.t,&c.breaks(e.t)).map(|(poles,knots)| (poles.iter().map(|&q| step_uv(&f.surface,q)).collect(),knots)),
+                &f.surface,&along,c,e.t,curve_fit(tol)).map(|(poles,knots)| (poles.iter().map(|&q| step_uv(&f.surface,q)).collect(),knots)),
         } => {
             let ids: Vec<String> = poles.iter().map(|&q| format!("#{}",p2(o,q))).collect();
             let knots: Vec<f64> = knots.iter().map(|k| k-shift).collect();
@@ -531,13 +649,13 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
                 let (ua,uz) = (u.pcurve.at(ta,e,&f.surface,&b.vertices),u.pcurve.at(tz,e,&f.surface,&b.vertices));
                 distance(f.surface.point([(ua[0]+uz[0])/2.,(ua[1]+uz[1])/2.]),c.point((ta+tz)/2.))
             };
-            let ts = samples(c,e.t,tol,&off);
+            let ts = samples(c,e.t,curve_fit(tol),&off);
             if super::debug() {
                 let middle = crate::util::warm::kept(|| at((e.t[0]+e.t[1])/2.));
                 eprintln!("step: a {} on a {} as {} points, ends {a:?} {z:?}, middle {middle:?}",c.kind(),f.surface.kind(),ts.len());
             }
             let ids: Vec<String> = ts.iter().map(|&t| format!("#{}",p2(o,at(t)))).collect();
-            let knots: Vec<f64> = ts.iter().map(|t| t-shift).collect();
+            let knots: Vec<f64> = ts.iter().map(|&t| along.s(t)-shift).collect();
             bspline(o,&ids,&knots)
         }
     };
@@ -706,7 +824,7 @@ fn geometric(o: &mut Out,tol: f64) -> usize {
     let mm = o.add("( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) )".into());
     let rad = o.add("( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) )".into());
     let sr = o.add("( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() )".into());
-    let uncertainty = o.add(format!("UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE({}),#{mm},'distance_accuracy_value','confusion accuracy')",real(tol.max(1e-7))));
+    let uncertainty = o.add(format!("UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE({}),#{mm},'distance_accuracy_value','confusion accuracy')",real(tol.max(LEAST_UNCERTAINTY))));
     o.add(format!("( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#{uncertainty})) \
         GLOBAL_UNIT_ASSIGNED_CONTEXT((#{mm},#{rad},#{sr})) REPRESENTATION_CONTEXT('Context #1','3D Context with UNIT and UNCERTAINTY') )"))
 }
@@ -762,18 +880,20 @@ fn solid(o: &mut Out,b: &Brep,tol: f64) -> Result<usize,String> {
             | Curve::Trochoid(..) => {
                 fitted(o,c,e.t,whose(c))?
             }
-            // a traced curve: the cubic through its points and tangents, within a tenth of `FIT`,
-            // as its pcurves are (`bezier_pcurve`); where that does not close in, the polyline
-            // through it within `tol`
-            Curve::Traced(_) => match bezier_curve(c,e.t,&c.breaks(e.t)) {
+            // a traced curve: the cubic through its points and tangents within `curve_fit` of
+            // the file's tolerance, as its pcurves are (`bezier_pcurve`); where that does not
+            // close in, the polyline through it within the same
+            // (over the length of its chords, `Along`, as its pcurves are)
+            Curve::Traced(_) => match bezier_curve(c,&Along::of(c),e.t,curve_fit(tol)) {
                 Some((poles,knots)) => {
                     let ids: Vec<String> = poles.iter().map(|&p| format!("#{}",o.point(p))).collect();
                     spline(o,3,&ids,&knots,None)
                 }
                 None => {
-                    let ts = samples(c,e.t,tol,&|a,z| distance(c.point((a+z)/2.),crate::util::space::lerp(c.point(a),c.point(z),0.5)));
+                    let ts = samples(c,e.t,curve_fit(tol),&|a,z| distance(c.point((a+z)/2.),crate::util::space::lerp(c.point(a),c.point(z),0.5)));
                     let ids: Vec<String> = ts.iter().map(|&t| format!("#{}",o.point(c.point(t)))).collect();
-                    bspline(o,&ids,&ts)
+                    let along = Along::of(c);
+                    bspline(o,&ids,&ts.iter().map(|&t| along.s(t)).collect::<Vec<_>>())
                 }
             },
         };
