@@ -197,7 +197,7 @@ fn mixed_vertex(sk: &Sketch,body: usize,ends: [[f64;3];2]) -> Option<String> {
         "A chamfer of every edge at such a vertex is not said by the words yet: chamfer the edges either side of it by \
          statements that leave one of them out (picking the edges by the faces they lie between)".to_string()
     } else {
-        format!("Round the edge alone in its turn first, by a statement of its own (`{first}`, or every edge among the \
+        format!("Round the edge alone in its turn first, by a statement of its own, named (`inside := {first}`, or every edge among the \
             faces of the step, the pocket or the boss it is an edge of), and every edge on a solid of the body that leaves \
             (`whole := solid({whole})`, then `round(r: …) whole`): each edge's round then goes on round the first one's, \
             tangent")

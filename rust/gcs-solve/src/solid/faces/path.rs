@@ -154,6 +154,18 @@ fn own_readers(sk: &Sketch, i: usize) -> std::collections::BTreeSet<usize> {
     super::layer_bodies(sk, i).into_iter().flat_map(|b| super::readers_of(sk, b)).collect()
 }
 
+/// How many statements' rounds or chamfers leave faces body `body` names by `path` (#962): the
+/// regions among its operands routed there, counted by the use that made each.  More than one
+/// where several statements written bare leave faces under one name.
+pub(crate) fn uses_naming(sk: &Sketch, body: usize, path: &[String]) -> usize {
+    let Some((_, route)) = path.split_last() else { return 0 };
+    let route = route.join(".");
+    let uses: std::collections::BTreeSet<&str> = crate::solid::document::operand_primitives(sk, body).into_values()
+        .filter(|(r, p)| *r == route && matches!(sk.solids[*p as usize].def, SolidDef::Region { .. }))
+        .map(|(_, p)| use_key(&sk.solids[p as usize].name)).collect();
+    uses.len()
+}
+
 /// The statement a solid was made by, as a key: its name up to the first segment a statement's
 /// use put there (`#17`, or a named use's `rim#17`), or its whole name where none did.
 pub(crate) fn use_key(name: &str) -> &str {

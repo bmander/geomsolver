@@ -40,9 +40,10 @@ part := solid(block)
 shoulder cut part
 pocket cut part
 
-// the features' own edges, each alone in its turn where it meets the part's
-round(r: r) part.shoulder
-round(r: r) part.pocket
+// the features' own edges, each alone in its turn where it meets the part's (each statement
+// named, so that a round over their faces reads each one's apart)
+stepped := round(r: r) part.shoulder
+pocketed := round(r: r) part.pocket
 
 // every edge, on the part as those leave it
 whole := solid(part)

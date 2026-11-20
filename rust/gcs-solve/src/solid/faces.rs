@@ -22,6 +22,7 @@ pub use layers::layer;
 pub use lays::Lays;
 pub use meets::{Meeting, Meets};
 pub use path::{face_paths, face_source, FacePath, FaceSource};
+pub(crate) use path::uses_naming;
 pub use path::same_step;
 pub(crate) use path::face_primitive;
 

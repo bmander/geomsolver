@@ -194,23 +194,52 @@ Written as one `round(r) part`, every edge reads the sharp body and the fill and
 along a line from the vertex: the export says so **at the vertex** (`export::mixed_vertex`,
 `BodyFaces::mixed_vertex`) — where it stands, the faces there by the body's names with each edge's
 turn, the edge alone in its turn and the two statements to write — and not "rounds of separate
-statements" alone. A vertex where one edge is alone at one end and paired at the other's (two
-steps meeting at a corner: the upright between their walls convex over two concave floor edges,
-each alone at the block's side) wants three statements, the upright first. Refused as on 0.223,
-by the gate: a top's rim rounded over a boss's uprights' rounds on a solid of a body the boss
-stands on a plate of (a ring over each upright's round whose foot ends on the plate: its
-construction and the field disagree just outside the round's cylinder near the stretch's ends,
-172 of 752 probes, `rim.sv`'s box standing alone built) — so a boss's own edges are rounded
-together first (its uprights, top rim and top corners), and two steps meeting, whose upper
-block's top rim must go round the upright's round, are not built yet. A chamfer's flats are
+statements" alone. **The order, in general**: an edge goes in a statement after each edge it
+must follow, and at each vertex where edges of both turns meet the edge alone in its turn must
+come before the other two — so an author lists the vertices of both turns, marks at each its lone
+edge, and writes the statements level by level: first the edges no vertex puts after another,
+then (on a solid of the body they leave) those whose every earlier edge is in a level written,
+then every edge left. Two steps meeting at a corner is three: the upright between their walls is
+alone at its foot (convex over two concave floor edges), each floor edge is alone where it meets
+the block's side, so the upright, then the floor into each wall (its fill going round the
+upright's foot), then every edge. Where two vertices disagree — an edge that must come before
+another at one and after it at another, which only two faces meeting in two edges can make — no
+order of statements says the smooth surface, and any order is refused at the vertex it gets
+wrong, as one statement is. **A name in pieces apart** (#962): statements written bare each leave
+their rounds' faces under one name (`filled.round`, `filled.near`), so a reference to it holds
+pieces of several statements on several surfaces, each going on smooth into a chain of its own (a
+cap on a step's side into the side, another on the first step's wall into the wall, its fill and
+the floor). The field reads each piece with its own chain, the one whose named piece is nearest
+the point (`faces::reading`, `BodyFaces::chains_apart`), and the lowering's check of where a ball
+stands the same (`piece::stands_within`); where such a round is still not built it is said with
+"… names the faces of rounds or chamfers of several statements written bare under one name …:
+name each of those statements" (`faces::uses_naming`, `cad::faces_said`). **Still refused, by the gate**: two steps
+meeting at a corner in its three statements. The block's top over the upright is a ring whose
+ball is as wide as the upright's round (`tests/tight_corners.rs`: its centres closing onto the
+axis, read face by face over a smooth chain bulging toward the ball, `BodyFaces::bulging`); here
+the round's chain goes on through the fill at the upright's foot into the floor, no chain bulging
+one way, and the field reads it through its nearest face, which never settles where the offset
+closes: "its exact construction leaves out what the field reads beside its edge". Reading only
+the chain's convex part from the faces named builds it, but changes the reading of every chain a
+round's section runs beside (a slot's rim beside its ends, a round spilled onto a rim's round),
+and is not taken: a chain read locally is item 1's to say.
+A chamfer's flats are
 no tangent chain, so a second statement chamfers the first one's flat against its own faces
 again: a chamfer of every edge at such a vertex is not said by the words yet, and its refusal says
-so. `tests/mixed_vertices.rs` is the gate (the step at either end and moved along the block,
-its wall leaning 45° with its fill 2.5 and the rest 1 and the other way round, holes beside it,
-the pocket, the boss and `rounds/stock.sv`, each to its closed form to 1e-9 by Pappus and exported
-with no sliver; the field holding the high end's material where the corner's groove ran; a
-corner on a floor in pieces of one name built; one statement of either word refused at the
-vertex; an edge not built said by its faces).
+so. "All edges" over a pocket whose plan corners are arcs has no vertex of both turns, and is one
+statement: corners of 3 and of exactly the round's radius are built (the floor's ring then the
+corner's ball), a corner tighter than the round refused by item 1's sentence naming its radius and
+the faces the round lies between. A bore's rims rounded on both faces of a plate thinner than
+`2r` overlap, and the set is their union: the two tori cross in a circle halfway through.
+`tests/mixed_vertices.rs` is the gate (the step at either end and moved along the block, its wall
+leaning 45° with its fill 2.5 and the rest 1 and the other way round, holes beside it, the pocket,
+the boss — its own edges first and its uprights alone first — a boss beside a step, two steps of
+two depths in two statements (and written bare, refused saying to name them), the pocket with
+rounded corners, the bore through a plate 3.2 and 2.6 thick, and `rounds/stock.sv`, each to its closed
+form to 1e-9 — Pappus, the vertex parts read off three closed forms, or a quadrature of the
+overlapping takes — and exported with no sliver; the field holding the high end's material where
+the corner's groove ran; a corner on a floor in pieces of one name built; one statement of either
+word refused at the vertex; an edge not built said by its faces).
 
 **Against the smooth surface** ([0.149], #422): `F.smooth` (`Member::Smooth`, `FaceRef::smooth`, read
 with `surface`) is the faces named and every face going on from them tangent across a seam

@@ -135,12 +135,16 @@ fn stands_within(body: &crate::solid::faces::BodyFaces, f: &Faces, groups: [&[us
     // each smooth face's chain, the others of it, and whether the field reads it face by face (a
     // chain bulging toward the ball, `BodyFaces::bulging`) or through its nearest face (any other:
     // a drafted shell's outline turning both ways)
-    let chains: Vec<(usize, Vec<usize>, bool)> = (0..2).filter(|&k| f.faces[k].smooth).map(|k| {
-        let chain = body.smooth(groups[k]);
-        let carried = body.bulging(&chain, true, !f.within).is_some_and(|(_, carried)| carried);
-        (k, chain.into_iter().filter(|g| !groups[k].contains(g)).collect(), carried)
+    // as far as the field reads it (#962): a name in pieces apart, each piece's own chain, read at
+    // a point as the one whose piece is nearest it
+    type Alt = (Vec<usize>, Vec<usize>, bool);
+    let chains: Vec<(usize, Vec<Alt>)> = (0..2).filter(|&k| f.faces[k].smooth).map(|k| {
+        (k, body.chains_apart(groups[k]).into_iter().map(|(named, chain)| {
+            let carried = body.bulging(&chain, true, !f.within).is_some_and(|(_, carried)| carried);
+            (named, chain.into_iter().filter(|g| !groups[k].contains(g)).collect(), carried)
+        }).collect())
     }).collect();
-    if chains.iter().all(|(_, others, _)| others.is_empty()) {
+    if chains.iter().all(|(_, alts)| alts.iter().all(|(_, others, _)| others.is_empty())) {
         return Ok(());
     }
     // the points each section is read at: its ball's centre, or its flat's own points; each where
@@ -176,7 +180,11 @@ fn stands_within(body: &crate::solid::faces::BodyFaces, f: &Faces, groups: [&[us
     let toward = |g: usize, q: V| sigma * body.carried_side_grad(g, q).0;
     for &q in &at {
         let tol = 1e-9 * (size + norm(q));
-        for (k, others, carried) in &chains {
+        for (k, alts) in &chains {
+            let near = |named: &[usize]| named.iter().map(|&g| body.patch_distance(g, q)).fold(f64::INFINITY, f64::min);
+            let Some((_, others, carried)) = alts.iter().min_by(|a, b| near(&a.0).total_cmp(&near(&b.0))) else {
+                continue;
+            };
             // how far the ball must stand off the others: its radius, or a flat's point as far as
             // from its own face
             let need = match section {

@@ -2522,12 +2522,20 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
   the note as the features' own edges first, then every edge on a solid of what they leave:
 
   ```sv
-  round(r: 1.5mm) part.step      // the step's floor into its wall
-  round(r: 1.5mm) part.pocket    // the pocket's uprights and floor
-  round(r: 1.5mm) part.boss      // the boss's uprights and top
-  whole := solid(part)           // the part as those leave it
-  round(r: 1.5mm) whole          // every edge: the side's round goes on round the step's fill
+  stepped := round(r: 1.5mm) part.step     // the step's floor into its wall
+  pocketed := round(r: 1.5mm) part.pocket  // the pocket's uprights and floor
+  bossed := round(r: 1.5mm) part.boss      // the boss's uprights and top
+  whole := solid(part)                     // the part as those leave it
+  round(r: 1.5mm) whole                    // every edge: the side's round goes round the step's fill
   ```
+
+  Name each first statement: written bare, their rounds' faces share one name, and a round over
+  them can read one feature's against another's (refused, saying to name them). Where an edge is
+  alone in its turn at one end and not at the other — two steps meeting at a corner, the upright
+  between their walls over two floor edges each alone at the block's side — the order has a level
+  more: at each vertex of both turns its lone edge goes before the other two, so the upright, then
+  the floor into each wall, then every edge, each level on a solid of the one before (that one is
+  not built yet: the top over the upright reads a chain running on through the fill at its foot).
 
   Each side's rim then runs round the step's fill as a ring, the top's rim round each upright's
   fill, a boss's foot round each upright's round (`rust/examples/rounds/stock.sv`). Written as one

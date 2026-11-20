@@ -218,6 +218,148 @@ fn a_boss_rounded_all_over_fills_its_foot_round_the_uprights() {
         middle("boss", 10.0, 20.0));
     let want = crate::common::rounds::rounded_box([80.0, 50.0, 10.0], r) + rounded_feature(40.0, 20.0, 10.0, r);
     close(exported(&src, "whole"), want);
+    // the uprights alone first, the edge alone in its turn at the foot: the top's rim then goes
+    // round each upright's round as the foot does — a ring whose ball is as wide as its circle,
+    // the corner's ball — and the body is the same
+    let alone = src.replace("outside := round(r: 1.5mm) part.boss\n",
+        "repeat f in part.boss { repeat g in part.boss { when f parallel std.z and g parallel std.z and f != g {\n\
+        \x20 f round(r: 1.5mm) g } } }\n");
+    close(exported(&alone, "whole"), want);
+}
+
+/// Each vertex's own part of a body every edge of which is rounded `r` at right angles — what is
+/// left once each edge has taken (convex) or given (concave) `s` along its whole length — read off
+/// three closed forms: the box (eight corners of three convex edges), the step (two of a concave
+/// edge between convex ones, ten of three convex) and the boss (four of a convex edge between
+/// concave ones, twelve of three convex).  Each vertex's rounding is its own, whatever the edges'
+/// lengths (each more than `2r`), so a body's volume is the sharp one's, less `s` along every
+/// convex edge, more along every concave one, plus these at its vertices.
+fn vertex_parts(r: f64) -> [f64; 3] {
+    let s = square_run(r);
+    let ccc = (crate::common::rounds::rounded_box([80.0, 50.0, 20.0], r) - 80000.0 + 600.0 * s) / 8.0;
+    let ccv = (rounded_prism(1200.0, 200.0, 50.0, [5.0, 1.0], r) - 60000.0 + 650.0 * s - 50.0 * s - 10.0 * ccc) / 2.0;
+    let cvv = (crate::common::rounds::rounded_box([80.0, 50.0, 10.0], r) + rounded_feature(40.0, 20.0, 10.0, r)
+        - 48000.0 + 720.0 * s - 120.0 * s - 12.0 * ccc) / 4.0;
+    [ccc, ccv, cvv]
+}
+
+/// **Two steps of two depths**, one down 10 across the block's end and one down 6 along its side
+/// (#962's reviewer's): each step's floor into its wall is alone at each end, and the two meet
+/// nowhere, so each step's own edges and then every edge, each step's statement named.  Edges: 690
+/// convex, 90 concave; twelve vertices of three convex edges, four of a concave between convex.
+/// Written bare, the two steps' fills leave their faces under one name (`filled.round`, and
+/// `filled.near` on the block's side and on the first step's wall), read as one face in pieces
+/// on their several surfaces: refused, saying so and to name the statements.
+#[test]
+fn two_steps_of_two_depths_round_in_two_statements() {
+    let s = square_run(1.5);
+    let [ccc, ccv, _] = vertex_parts(1.5);
+    let cuts = format!("{}in std.top {{\n  notch2 := step(u: -41mm, v: 5mm) line -> step(u: 41mm) line -> \
+        step(v: 26mm) line ->\n    step(u: -41mm) line -> close\n}}\n\
+        step2 := solid(std.solids.Prism(notch2, from: 14mm, to: 21mm))\nstep2 cut part\n", step(0.0, 41.0));
+    let rest = "first := round(r: 1.5mm) part.cutter\nsecond := round(r: 1.5mm) part.step2\n\
+        whole := solid(part)\nround(r: 1.5mm) whole\n";
+    let want = 55200.0 - 690.0 * s + 90.0 * s + 12.0 * ccc + 4.0 * ccv;
+    close(exported(&block(&cuts, rest), "whole"), want);
+    let bare = rest.replace("first := ", "").replace("second := ", "");
+    let e = solved(&block(&cuts, &bare));
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    match export::exact(&e.sketch, ent(&e, "whole").i(), None, None, &say) {
+        Ok(x) => close(props::volume(&x.solid), want),
+        Err(why) => assert!(why.message.contains("the faces of rounds or chamfers of several statements written \
+            bare under one name") && why.message.contains("name each of those statements"), "{}", why.message),
+    }
+}
+
+/// **A boss beside a step**: a boss 10 square and 6 tall standing on the step's floor, clear of
+/// its wall — the step's fill and the boss's own edges first, then every edge.  The rounded step,
+/// and the boss's prism less `s` along its convex edges, more along its foot, with four corners of
+/// three convex edges and four of a convex edge between concave ones.
+#[test]
+fn a_boss_beside_a_step_rounds_in_two_statements() {
+    let (r, s) = (1.5, square_run(1.5));
+    let [ccc, _, cvv] = vertex_parts(r);
+    let cuts = step(0.0, 41.0) + "in std.top {\n  pad := step(u: 15mm, v: -5mm) line -> step(u: 25mm) line -> \
+        step(v: 5mm) line ->\n    step(u: 15mm) line -> close\n}\n\
+        boss := solid(std.solids.Prism(pad, from: 10mm, to: 16mm))\nbody := solid(part)\nboss union body\n";
+    // (the boss stands on the stepped part: a cut of a body takes its unions too)
+    let rest = "inside := round(r: 1.5mm) body.part.cutter\noutside := round(r: 1.5mm) body.boss\n\
+        whole := solid(body)\nround(r: 1.5mm) whole\n";
+    let stepped = rounded_prism(1200.0, 200.0, 50.0, [5.0, 1.0], r);
+    let want = stepped + 600.0 - (24.0 + 40.0) * s + 40.0 * s + 4.0 * ccc + 4.0 * cvv;
+    close(exported(&block(&cuts, rest), "whole"), want);
+}
+
+/// A pocket 40 by 20, 10 deep, in the block's top, its plan corners arcs of `big`, every edge of
+/// the part rounded `r` by one statement: the pocket's walls go on tangent round its corners, so
+/// no vertex of it has edges of both turns.
+fn rounded_pocket(big: f64, r: f64) -> String {
+    let (x, y) = (20.0, 10.0);
+    let pts = [[-x, -y], [x, -y], [x, y], [-x, y]];
+    let mut s = String::from("in std.top {\n");
+    for (k, [u, v]) in pts.iter().enumerate() {
+        s += &format!("  q{k} := point\n  fix(({u}, {v})) q{k}\n");
+    }
+    let chain: Vec<String> = (0..4).map(|k| format!("(w{k} := line(q{k}, q{})) -> (c{} := round(r: {big}mm))",
+        (k + 1) % 4, (k + 1) % 4)).collect();
+    let names: Vec<String> = (0..4).map(|k| format!("w{k}, c{}", (k + 1) % 4)).collect();
+    s += &format!("  {} close\n  opening := face({})\n}}\n", chain.join(" "), names.join(", "));
+    block(&(s + "pocket := solid(std.solids.Prism(opening, from: 10mm, to: 21mm))\npocket cut part\n"),
+        &format!("round(r: {r}mm) part\n"))
+}
+
+/// **"All edges" over a pocket with rounded corners**, the commonest real part: corners of 3 and
+/// of exactly the round's 1.5 (the floor's ring a ball as wide as its corner, its torus closed
+/// onto the corner's axis, item 1), each in one statement — the block rounded all over less the
+/// pocket's void: its rounded plan the depth deep, its floor's fill turned in round each corner and
+/// its rim's round out, `4π s d` more along the four quarter turns.  With corners of 1 the floor's
+/// ball is wider than the corner: refused, naming the corner's radius and the faces it lies
+/// between.
+#[test]
+fn a_pocket_with_rounded_corners_is_rounded_all_over_in_one_statement() {
+    let (r, s, d) = (1.5, square_run(1.5), inset(1.5));
+    for big in [3.0, 1.5] {
+        let void = (40.0 * 20.0 - (4.0 - PI) * big * big) * 10.0 + 4.0 * PI * s * d;
+        let want = crate::common::rounds::rounded_box([80.0, 50.0, 20.0], r) - void;
+        close(exported(&rounded_pocket(big, r), "part"), want);
+    }
+    let e = solved(&rounded_pocket(1.0, r));
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    let why = format!("{:?}", export::exact(&e.sketch, ent(&e, "part").i(), None, None, &say).err().expect("refused"));
+    assert!(why.contains("of radius 1mm where the round runs and tighter than the ball") && why.contains("(where `part."),
+        "{why}");
+}
+
+/// **A bore's rims through a thin plate**: a plate 40 square and `thick`, a bore of 5 through it,
+/// its rims on both faces rounded 1.5.  Each rim takes what a ball touching the face and the bore
+/// cannot reach; the ball need stand within neither the other face, so where the plate is thinner
+/// than `2r` the two rims' takes overlap, and the bore's wall is gone between them: the two tori
+/// cross in a circle halfway through.  The volume: the plate less the bore less the takes' union,
+/// by symmetry twice the bottom one's from the face to halfway (or to its whole height), turned
+/// about the axis — a quadrature in the angle about the take's ball, its integrand smooth.
+#[test]
+fn a_bores_rims_through_a_plate_thinner_than_both_rounds_cross_halfway() {
+    let (r, big) = (1.5_f64, 5.0_f64);
+    for thick in [3.2_f64, 2.6] {
+        let src = format!("unit mm\nuse std\nuse std.solids (cut)\nuse std.rounds (round)\nin std.top {{\n\
+            \x20 plate_at := step(u: -20mm, v: -20mm) line -> step(u: 20mm) line -> step(v: 20mm) line ->\n\
+            \x20   step(u: -20mm) line -> close\n  o := point\n  fix((0, 0)) o\n  bore := circle(center: o) hint(r: 5)\n\
+            \x20 radius(5mm) bore\n}}\nplate := solid(std.solids.Prism(plate_at, from: 0mm, to: {thick}mm))\n\
+            drill := solid(std.solids.Prism(face(bore), from: -1mm, to: {}mm))\npart := solid(plate)\ndrill cut part\n\
+            part.drill round(r: 1.5mm) part\n", thick + 1.0);
+        // the bottom take at height z: out to `big + b(z)`, b = r − √(r² − (r − z)²); with r − z
+        // = r sin φ, b = r(1 − cos φ) and dz = −r cos φ dφ, from φ = π/2 (the face) down to where
+        // z reaches halfway or r
+        let top = (r - (0.5 * thick).min(r)) / r;
+        let from = top.asin();
+        let take: f64 = crate::common::rounds::gauss_legendre(40).iter().map(|&(x, w)| {
+            let phi = from + (0.5 * PI - from) * 0.5 * (x + 1.0);
+            let b = r * (1.0 - phi.cos());
+            w * 0.5 * (0.5 * PI - from) * (2.0 * big * b + b * b) * r * phi.cos()
+        }).sum();
+        let want = (1600.0 - PI * big * big) * thick - 2.0 * PI * take;
+        close(exported(&src, "part"), want);
+    }
 }
 
 /// **`rounds/stock.sv`**, the general note on a stock block with a step and a pocket: the stepped
@@ -279,7 +421,7 @@ fn every_edge_in_one_statement_names_the_vertex_of_both_turns() {
     let at = ["touches itself along a line", "edges of both turns meet where", "in a concave edge",
               "in a convex edge", "`part.cutter.far`", "`part.block."];
     let why = refused("round(r: 1.5mm)");
-    for said in at.iter().chain(&["(`part.cutter.", "round(r: …) part.cutter.", "whole := solid(part)"]) {
+    for said in at.iter().chain(&["(`inside := part.cutter.", "round(r: …) part.cutter.", "whole := solid(part)"]) {
         assert!(why.contains(said), "{said}: {why}");
     }
     // a chamfer's flats are no tangent chain, and the two statements would chamfer the first

@@ -19,8 +19,10 @@ note on a part where edges of both turns meet at a vertex (a step, a pocket, a b
 as the features' own edges first and every edge on a solid of what they leave; written as one
 statement, the export now says the vertex, its faces and the edge to round first; and a round
 or a chamfer of such a statement that is not built is said with the two faces of the part it
-lies between (where it was said only by the word's internal name). Nothing a document may write
-changed.
+lies between (where it was said only by the word's internal name), and where a face it reads is
+named by the rounds of several statements written bare, says to name them. A smooth face named in
+pieces whose chains lie apart is read with the chain of the piece nearest the point. Nothing a
+document may write changed.
 
 **[0.223] A round that selects no edge says so, and a face's fault is said at the face** (#962).
 A round or a chamfer (either word, either form) over faces that are all the body's but meet in no
