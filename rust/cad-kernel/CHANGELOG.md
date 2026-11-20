@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.19.0] - 2026-11-20
+
 - **A half-space bounded by the material it is kept with** (`recipe::Node::Half`, #953): the block
   behind a plane standing over the box of the nodes it is kept in common with, reaching past that
   box so only the plane's face meets them. **Breaking** for code matching `Node` exhaustively.
