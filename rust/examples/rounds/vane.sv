@@ -10,8 +10,15 @@
 // torus touches. Built exactly: 198988.300 mm³ and 22 faces, six of them tori (the long sides'
 // stretches each one torus, the ends' two each, split where the crown's seam crosses them).
 //
-// Edit `r` and apply (⌘↵): every ball the crown holds is built, up to the one whose fill along
-// the near end reaches over the crown's top (r = 20, the end's distance from the disc's axis).
+// The export says "`part` holds 2 faces thinner than the export's 10.000 µm: the first, `far`,
+// 763.758 nm across, beside `far` and `round`, near (19.9996, 2.0000, 10.9684) mm", and that is
+// the set's own: at each near corner the side's fill meets the vane's upright edge at z = 10.9684,
+// the end's at 11.0228, and between them the end's fill's cap goes on beside the vane's side in
+// one plane, a face of its own that the end's ball closes onto the edge as a cusp, 0.741 µm across
+// where the side's fill leaves the edge. On a flat disc both fills reach the edge at one height.
+//
+// Edit `r` and apply (⌘↵): every ball the crown holds is built — past r = 20, the near end's
+// distance from the disc's axis, the end's fill runs over the crown's top.
 unit mm
 use std
 use std.solids

@@ -1384,7 +1384,15 @@ leans to the axis by more than they do; one, a touch, read as above; none left t
 traced, a plane cutting a cone aslant through its apex crowded its steps toward the apex past a
 hundred thousand points and was refused there as a near touch. `brep::a_ball_cut_through_its_poles_is_its_part`,
 `meetings_through_a_balls_pole_split_it` and `a_cone_cut_through_its_apex_is_its_part` are the
-gate, each case to its closed forms to 1e-9 and meshed closed at the bench's sag.
+gate, each case to its closed forms to 1e-9 and meshed closed at the bench's sag. **A half's point
+at a pole takes the half's own value of the collapsed parameter** (#962's 7, `boolean`'s
+`uv_seeded`): there the surface's inverse reads it as it likes — a sphere's `u` as 0 or 2π — and
+a piece whose boundary runs along the seam's meridian into the pole and out along the opposite one
+was drawn from 2π back to π across itself, its area read with the wrong sign: taken for a hole,
+the face was refused ("a sphere has a hole in no piece"), a slab on a ball with its face on the
+seam's meridian, a vane's side through a crowned disc's axis, a fill over a crown's top
+(`a_cut_through_a_pole_along_the_seams_meridian_parts_the_sphere`, to its closed form to 1e-9;
+`sphere_rounds`).
 
 **The convex hull of points is a solid of plane faces, one a facet** (`build::hull`;
 brep-bench's offset/tetrahedron-grown, swept/box-slid-aslant, loft/square-to-octagon and the

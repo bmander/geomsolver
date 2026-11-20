@@ -289,6 +289,16 @@ fn crown_flat(big: f64, c: f64, d: f64, lo: &dyn Fn(f64) -> (f64, f64), hi: &dyn
 /// two cut by the ends' planes and the ends' two by the sides' — a spiric section each — where on
 /// `main` the Boolean refused the cap of one against the next one's torus, which touches the cap's
 /// plane round a circle. A drawing of no freedom; 22 faces, six of them tori, 198988.300 mm³.
+///
+/// **The two faces thinner than the export's 10 µm are the set's own** (`sliver::slivers`): at each
+/// of the vane's near corners the end's fill touches the end's plane along a circle that meets the
+/// corner's upright edge at `z_e = √(ρ₀² − 4) − 797 = 11.0228` (`ρ₀ = √((R + r)² − 18²)`), and the
+/// side's fill meets that edge lower, at `z_s = √((R + r)² − 20² − 4²) − 797 = 10.9684`; between
+/// them the end's fill's cap in the side's plane goes on beside the vane's side in one plane, a face
+/// of its own, which the ball's trace closes onto the edge at `z_e` as a cusp: `0.741 µm` across at
+/// `z_s` (`20 − 18 − √(r² − (√(4 + (z_s + 797)²) − ρ₀)²)`), read `0.76` and `0.79 µm` off the
+/// fitted trace. On a flat disc the two fills reach the edge at one height, `r` over the disc, and
+/// the cusp's tip is a vertex (`a_vane_on_a_flat_disc_leaves_no_sliver`).
 #[test]
 fn a_vane_filled_into_a_spherical_crown_is_four_torus_stretches() {
     let src = include_str!("../../examples/rounds/vane.sv");
@@ -298,21 +308,68 @@ fn a_vane_filled_into_a_spherical_crown_is_four_torus_stretches() {
     assert_eq!(kinds(&b).get("torus"), Some(&6), "{:?}", kinds(&b));
     assert_eq!(b.faces.len(), 22);
     assert!((props::volume(&b) - 198988.300).abs() < 5e-4, "{}", props::volume(&b));
+    let (r, rb) = (2.0, issue_big() + 2.0);
+    let rho0 = (rb * rb - 18f64.powi(2)).sqrt();
+    let zs = (rb * rb - 400.0 - 16.0).sqrt();
+    let across = 20.0 - 18.0 - (r * r - ((4.0 + zs * zs).sqrt() - rho0).powi(2)).sqrt();
+    assert!((across - 0.741e-3).abs() < 1e-6, "{across:e}");
+    let thin = gcs_core::brep::sliver::slivers(&b, 0.01);
+    assert_eq!(thin.len(), 2, "{thin:?}");
+    for s in &thin {
+        assert!(matches!(s.thin, gcs_core::brep::sliver::Thin::Face(_)) && b.faces[s.of[0]].surface.kind() == "plane", "{s:?}");
+        assert!(s.size >= across && s.size <= across + 0.1e-3, "{:e} against {across:e}", s.size);
+        let at = [20.0 - 0.5 * across, s.at[1].signum() * 2.0, zs - 797.0];
+        assert!(gcs_core::space::distance(s.at, at) <= 2e-3, "{:?} against {at:?}", s.at);
+    }
 }
 
-/// The vane at every radius of round its crown holds (`vane.sv`'s suggested edit) — up to the one
-/// whose fill along the near end reaches over the crown's top, where the disc's axis crosses it
-/// (20, the end's distance from that axis: past it the crown's face is refused as a sphere with a
-/// hole in no piece, its pole inside the fill's strip) — and, the vane moved out to x = 25, at 21.
+/// The same vane on a disc whose top is flat (z = 3): each fill a prism of the corner's section
+/// along its edge, cut by the planes of the sides beside it, and the side's and the end's reach the
+/// corner's upright edge at one height, `3 + r`, so no face is thinner than a micrometre: the disc,
+/// the vane over it and four runs, `(1 − π/4) r²` along each edge.
+#[test]
+fn a_vane_on_a_flat_disc_leaves_no_sliver() {
+    let src = Vane::issue(2.0).document();
+    let cut = src.find("in std.top").unwrap();
+    let flat = format!("unit mm\nuse std\nuse std.solids\nuse std.solids (union)\nuse std.rounds (round)\n\
+        in std.front {{\n  o := point\n  fix((0, 0)) o\n  r := point\n  fix((100, 0)) r\n  t := point\n  fix((100, 3)) t\n\
+        top := point\n  fix((0, 3)) top\n  section := face(o, r, t, top, -> close)\n}}\n\
+        disc := solid(std.solids.Revolution(section, about: std.z))\n{}", &src[cut..]);
+    let b = exported(&solved(&flat), "part");
+    let r = 2.0;
+    close(props::volume(&b), PI * 1e4 * 3.0 + 70.0 * 4.0 * 28.0 + (1.0 - PI / 4.0) * r * r * 2.0 * (70.0 + 4.0));
+    assert_eq!(gcs_core::brep::sliver::slivers(&b, 1e-3).len(), 0);
+}
+
+/// The vane at every radius of round its crown holds (`vane.sv`'s suggested edit), through the one
+/// whose fill along the near end touches the crown at its top, where the disc's axis crosses it
+/// (20, the end's distance from that axis), and past it, its strip on the crown over the crown's
+/// pole — the sphere's chart collapsing there, the meridian the fill's two stretches are glued on
+/// running into the pole and out the other side
+/// (`brep::a_cut_through_a_pole_along_the_seams_meridian_parts_the_sphere`) — and, the vane moved
+/// out to x = 25, at 21.
 #[test]
 fn the_vane_filled_at_every_radius_its_crown_holds() {
     let src = include_str!("../../examples/rounds/vane.sv");
-    for r in [0.5, 3.9, 19.5] {
+    for r in [0.5, 3.9, 19.5, 20.0, 20.5] {
         let v = Vane::issue(r);
         holds(&src.replace("r := 2mm", &format!("r := {r}mm")), v.stock(), v.fills(), 1e-7);
     }
     let v = Vane { e: [25.0, 90.0], ..Vane::issue(21.0) };
     holds(&v.document(), v.stock(), v.fills(), 1e-7);
+}
+
+/// A vane whose side's plane holds the disc's axis (`y = 0`, from x = −40 to 40), and one standing
+/// over the axis, from `y = −1` to 3: each side's fill a ring about the line square to it through
+/// the crown's centre, the one on `y = 0` running over the crown's top. On `main` the vane's union
+/// with the disc alone was refused, the crown's face "a sphere with a hole in no piece", its pole
+/// on the side's meeting with it.
+#[test]
+fn a_vane_whose_side_runs_through_the_crowns_axis() {
+    for v in [Vane { e: [-40.0, 40.0], s: [0.0, 4.0], ..Vane::issue(2.0) },
+              Vane { e: [-40.0, 40.0], s: [-1.0, 3.0], ..Vane::issue(2.0) }] {
+        holds(&v.document(), v.stock(), v.fills(), 1e-7);
+    }
 }
 
 /// A crown of R150, and dished crowns — the disc's top a sphere's cap below its centre — of R797
@@ -467,4 +524,3 @@ fn a_boss_on_a_spherical_pocket_floor() {
     let rolled = rolled_round([20.0, 0.0], 6.0, 1.0, [0.0, 0.0, 304.0], 300.0, false, r);
     holds(&pocket(20.0, 6.0), dished + over([20.0, 0.0], 6.0), rolled, 1e-6);
 }
-

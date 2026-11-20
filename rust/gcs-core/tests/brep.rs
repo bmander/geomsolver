@@ -3338,3 +3338,33 @@ fn a_band_is_the_strip_its_ball_sweeps_not_all_the_face_as_near_the_other() {
     b.check(1e-8).unwrap();
     crate::common::close(volume(&b),volume(&part)+volume(&round.piece));
 }
+/// **A cut through a pole along the seam's meridian** (#962's 7): a ball, its poles on z and its
+/// seam the meridian toward +x, unioned with a slab whose face `y = 0` holds both poles — the seam's
+/// meridian and the one opposite it, through the north pole. Each piece of the sphere the slab's
+/// face bounds runs along that meridian into the pole and out along the other; at the pole the
+/// sphere's inverse reads `u` as it likes, and read there as 2π where the half arriving runs at π,
+/// the piece was drawn back across itself and taken for a hole ("a sphere has a hole in no
+/// piece"); a half's point at a pole now takes the half's own value there. The slab either side
+/// of the plane, and across the axis at `x = 0` as before: the ball, the slab, less what they share
+/// (the slab's columns `√(25 − x² − y²) + 1` high inside the ball, across `y` in closed form).
+#[test]
+fn a_cut_through_a_pole_along_the_seams_meridian_parts_the_sphere() {
+    use gcs_core::brep::boolean::{combined,Op};
+    use gcs_core::brep::build::sphere;
+    let r = 5f64;
+    let ball = sphere([0.;3],[0.,0.,1.],r).unwrap();
+    let gauss = crate::common::rounds::gauss_legendre(64);
+    // what of the slab x in [x0, x1], y in [y0, y1], z in [−1, 6] lies in the ball
+    let shared = |[x0,x1]: [f64;2],[y0,y1]: [f64;2]| gauss.iter().map(|&(t,w)| {
+        let x = x0+0.5*(x1-x0)*(1.+t);
+        let a2 = r*r-x*x;
+        let f = |y: f64| 0.5*(y*(a2-y*y).sqrt()+a2*(y/a2.sqrt()).asin());
+        w*(f(y1)-f(y0)+(y1-y0))
+    }).sum::<f64>()*0.5*(x1-x0);
+    for (lo,hi) in [([-2.,0.,-1.],[2.,1.,6.]),([-2.,-1.,-1.],[2.,0.,6.]),([0.,-1.,-1.],[1.,1.,6.])] {
+        let both = combined(&ball,&block(lo,hi),Op::Union,0.).unwrap_or_else(|e| panic!("{lo:?}: {e}"));
+        both.check(1e-9).unwrap();
+        let slab = (hi[0]-lo[0])*(hi[1]-lo[1])*7.;
+        crate::common::close(volume(&both),4.*PI*r.powi(3)/3.+slab-shared([lo[0],hi[0]],[lo[1],hi[1]]));
+    }
+}

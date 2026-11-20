@@ -3106,7 +3106,13 @@ fn uv_seeded(h: &Half,f: &Face,e: &WEdge,t: f64,p: impl FnOnce() -> V,seed: Uv) 
             let key = [ARRANGEMENT.load(std::sync::atomic::Ordering::Relaxed),f as *const Face as u64,
                 p[0].to_bits(),p[1].to_bits(),p[2].to_bits(),near[0].to_bits(),near[1].to_bits()];
             if let Some(uv) = INVERTED.with(|m| m.borrow().get(&key).copied()) { return uv }
-            let uv = unwrap(f.surface.inverse_near(p,near),near,f.surface.periods());
+            let mut uv = unwrap(f.surface.inverse_near(p,near),near,f.surface.periods());
+            // (at a pole the chart collapses along one parameter, which the surface's inverse
+            // leaves to its own choice — a sphere's `u` read there as 0 or 2π, whatever the half
+            // arriving runs along: the half's own value there, as its ends record it, #962's 7. A
+            // meridian through the pole along the seam's half-plane was drawn from 2π back to π
+            // across the piece, and the piece read as a hole)
+            if let Some(k) = super::topo::pole_at(&f.surface,uv,1e-12*(1.+crate::util::space::norm(p))) { uv[k] = near[k]; }
             INVERTED.with(|m| {
                 let mut m = m.borrow_mut();
                 if m.len() >= INVERTED_MOST { m.clear() }
