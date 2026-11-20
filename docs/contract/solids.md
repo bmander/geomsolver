@@ -345,6 +345,25 @@ placement carries inside the blank; CLI test readers zero the offset.
   on, a revolution by hand's named side, a draft read off its tree, a through prism bounded by
   what it cuts — two bodies at different heights, a copy through its own — the retired labels naming the set), and `tests/extrude.rs`'s
   `a_family_saying_a_prism_is_resized_by_its_set` the gestures'.
+- **A body kept within half-spaces is the body in common with them** (#953, [0.221],
+  `solid::defined::trimmed`, called from `program/solids/build.rs` once the solid is made).  A
+  region whose terms keep it within one solid named whole or more (`p in hull`), outside any
+  others named whole, and within terms that read no face — `p in water`, `water :=
+  std.sets.HalfSpace(keel, std.z, d: T)` — is the body over those solids, kept in common with a
+  region of the other terms pushed as a solid **of the same name** (as `Sketch::as_body` pushes a
+  sweep's own stock), so its faces are named from it with no step of their own: the hull's
+  `immersed.hull.side`, the waterplane's `immersed.water`.  Through 0.220 such a region was read
+  by the field alone and no exact construction made of it, so nothing could measure it.  A region
+  of half-spaces alone kept with a body (`defined::kept_half`) has no end of its own: it is read
+  with none (`region::general`, never folded about an axis, where it would be refused for having
+  none), depends on the material of the bodies it is kept with (`document::evaluation_operands`),
+  and is built as the kernel's `half` node (`bounded::kept`, `Node::Half`): the block standing on
+  its plane over the box of that material — wide and deep enough to hold all of it, so nothing
+  but the plane reaches it, exact by construction and so gated by nothing.  Its height may read
+  an unknown a row binds (`TermNumber`, a driving measure's columns, [analysis.md](analysis.md)).
+  **Held to** (`tests/hydrostatics.rs`, `the_hull_in_water_is_built_exactly`): the barge's
+  immersed body is a `Body`, its faces listed by those paths, its volume `L B T` and its
+  waterplane's area `L B`.
 - **The sheet is a report** (Solvent §6.12, `hidden::generated`; issue #48).
   `dimensions(body) in views.right` asks for the callouts that *follow from the object*: overall
   extents in that view and the diameter of every round feature seen square on.  They go through

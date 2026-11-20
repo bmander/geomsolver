@@ -8,6 +8,7 @@ unit mm
 use std
 use std.solids
 use std.place (vertical)
+use std.measures (mass, volume)
 
 a := 100mm
 t := 5mm

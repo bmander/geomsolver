@@ -120,8 +120,9 @@ pub(super) fn elaborate_in(
             })
         }),
         // a bound on measurements is a term of the region solid whose point it reads, never a
-        // row: the copy's own solid's, over its turned sets
-        crate::ir::Operation::Measured(_) => true,
+        // row: the copy's own solid's, over its turned sets — an equation of integrals is the
+        // drawing's (§6.25)
+        crate::ir::Operation::Measured(m) => !m.integrates(),
         _ => false,
     };
     style_sheet(&mut cx, &body);
@@ -145,6 +146,8 @@ pub(super) fn elaborate_in(
     let (drawn, kept_off) = memberships(&mut cx, &flat, &deferred)?;
     // and each band's term at its probe (#645)
     super::developed::sheets(&mut cx, &expansion.sheets);
+    // and each closed shell's inside at its probe (#953)
+    super::developed::enclosed(&mut cx, &expansion.shells);
     let held = holds(&mut cx, &flat, &deferred, crossed);
     let planar = motions(&mut cx, &flat);
     let settled = seeds(&mut cx, &deferred, &held);
@@ -667,17 +670,16 @@ fn constraints(
             continue;
         }
         // a bound on measurements is a term of the region solid whose point it reads (#183 F3)
+        // — and an equation of integrals is stated once the beams are read (§6.25, `measures`)
         if let StmtKind::Measured(m) = &st.kind {
-            regions::measured_term(&cx.sk, &cx.res, m, st, &mut cx.probes, &mut cx.diags);
+            if !m.integrates() {
+                regions::measured_term(&cx.sk, &cx.res, m, st, &mut cx.probes, &mut cx.diags);
+            }
             continue;
         }
         let StmtKind::Relation(r) = &st.kind else { continue };
         if gauges::is_fix(r) || drawn.contains(&i) || kept_off.contains(&i)
             || cx.res.guides.contains(&st.id) {
-            continue;
-        }
-        // a mass or a volume is stated once the beams are read (#510, `measures`)
-        if super::measures::quantity(r).is_some() {
             continue;
         }
         // a relation reading a region's terms is stated once the solids hold them (#345)

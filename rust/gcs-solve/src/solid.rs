@@ -75,7 +75,7 @@ pub use document::resolve;
 pub use reads::{reads,same_reads,Memo,MemoKey,ShapeKey};
 mod static_boundary;
 pub use static_boundary::{static_solid,indexed,indexed_faces,primitive_triangles,StaticSolid,static_solid_at_unit};
-pub use document::{applied_to,built_on,evaluation_operands,operand_paths,past_step,reaches,
+pub use document::{applied_to,built_on,evaluation_operands,region_unknowns,operand_paths,past_step,reaches,
                    operands_reached,route_past,step_between,step_labels,step_through,uses,Use};
 use document::{frame_origin,resolve_at};
 mod field;
@@ -91,6 +91,7 @@ mod raycast;
 mod section;
 pub(crate) mod family;
 pub mod sheet;
+pub mod enclosed;
 pub mod rated;
 pub(crate) mod surface;
 mod sweep_contacts;

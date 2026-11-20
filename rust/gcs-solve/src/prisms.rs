@@ -1112,13 +1112,5 @@ impl Row {
         })
     }
 
-    /// Its constants, stating the deflection `d`.
-    pub fn consts(&self, d: f64) -> Vec<f64> {
-        self.structure.consts(&[d], &self.drive)
-    }
 
-    /// Its widths, `(n_par, n_const)`.
-    pub fn widths(&self) -> (usize, usize) {
-        self.structure.widths(false, &self.drive)
-    }
 }

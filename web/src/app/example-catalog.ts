@@ -187,6 +187,17 @@ const projects: Example[] = [{
     + 'the README says what each shows.',
   target: { kind: 'directory', path: 'developable', entry: 'frustum.sv' },
 }, {
+  label: 'Hydrostatics · where a body is made', key: 'hydrostatics',
+  description: 'Bodies kept within the water, each the hull in common with a half-space and built '
+    + 'exactly, its waterplane a face of it: a log floating at a draft its displacement finds, '
+    + 'its centre of buoyancy driven onto the circular segment\'s centroid; a V-wedge heeled about '
+    + 'its apex, an inclined waterline; a steel and an aluminium block whose centre of mass is the '
+    + 'same grouped as two components or as one; a pine box floating where it weighs the water it '
+    + 'displaces, one equation of two integrals; and a punt\'s hull of panels, the solid a closed '
+    + 'shell of developable sides and drawn faces encloses. The box barge in the library states BM '
+    + 'from its waterplane\'s second moment. The README says what each shows.',
+  target: { kind: 'directory', path: 'hydrostatics', entry: 'cylinder.sv' },
+}, {
   label: 'Paths in space · guides that leave the plane', key: 'paths',
   description: 'Seven solids swept along guides drawn in space: a square wire wound on a helix '
     + 'written by its ordinates, a ribbon in Frenet\'s frame facing its helix\'s axis beside one '

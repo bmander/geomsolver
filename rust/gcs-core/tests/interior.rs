@@ -146,7 +146,7 @@ fn a_structure_with_no_displacement_to_give_says_why() {
     assert_eq!(s.solve(&x3).err(), Some(Failure::Unstiff));
 
     let k = line.consts(&[0.0], &Drive::Stated);
-    let (n_par, n_const) = line.widths(false, &Drive::Stated);
+    let (n_par, n_const) = line.widths(&Drive::Stated);
     let kn = build_kernel(&Sketch::new(), KernelKey::Interior { n_par, n_const });
     let (mut r, mut j) = ([0.0], vec![0.0; n_par]);
     (kn.res)(1, &x, &k, &mut r);
@@ -171,20 +171,53 @@ fn the_gradient_is_one_more_solve_whatever_the_columns() {
     }
 }
 
-/// The constants are the structure, written and read back exactly, stated or free.
+/// **Structure `s` as an integral row reads it** (§6.25): where it reads a measure, its sides
+/// the measure against `c` — or, `unknown`, against `m u + c`, `u` the row's last column; any
+/// other structure as it is.
+pub fn sided(s: &Structure, m: f64, c: f64, unknown: bool) -> Structure {
+    use gcs_core::expr::{Ast, Op};
+    let mut s = s.clone();
+    if !s.reads.measure() {
+        return s;
+    }
+    let num = |v: f64| Box::new(Ast::Num(v, gcs_core::units::Dim::SCALAR));
+    let vars: Vec<String> = ["#0", "u"][..1 + unknown as usize].iter().map(|v| v.to_string())
+        .collect();
+    let rhs = match unknown {
+        true => Ast::Bin(Op::Add, Box::new(Ast::Bin(Op::Mul, num(m),
+                                                     Box::new(Ast::Var("u".into())))), num(c)),
+        false => *num(c),
+    };
+    let tape = |a: &Ast| gcs_core::tape::Tape::compile(a, &vars).unwrap().flat;
+    s.gauge.lhs = tape(&Ast::Var("#0".into()));
+    s.gauge.rhs = tape(&rhs);
+    s.gauge.unknowns = unknown as usize;
+    s
+}
+
+/// What a row over `s` states: a displacement's number, nothing for an integral row's.
+pub fn stated(s: &Structure, j0: f64) -> Vec<f64> {
+    if s.reads.measure() { Vec::new() } else { vec![j0] }
+}
+
+/// The constants are the structure, written and read back exactly: a displacement's row its
+/// number stated, an integral row's (§6.25) its sides, an unknown among them or not.
 #[test]
 fn a_structure_is_its_constants() {
     let mut rng = Rng::new(3);
     for dim in [2, 3] {
         let (s, _) = braced(dim, 7, &mut rng);
-        for stated in [&[1.5][..], &[2.0, -0.25]] {
-            let free = stated.len() == 2;
-            let k = s.consts(stated, &Drive::Stated);
-            let (back, got, drive) = Structure::read(&k, free).unwrap();
+        let measured = Structure { reads: gcs_core::interior::Reads::Volume, ..s.clone() };
+        let rows = [s.clone(), sided(&measured, 2.0, -0.25, false),
+                    sided(&measured, 2.0, -0.25, true)];
+        for s in rows {
+            let said = stated(&s, 1.5);
+            let k = s.consts(&said, &Drive::Stated);
+            let (back, got, drive) = Structure::read(&k).unwrap();
             assert_eq!(back, s);
-            assert_eq!(got, stated);
+            assert_eq!(got, &said[..]);
             assert_eq!(drive, Drive::Stated);
-            assert_eq!(s.widths(free, &Drive::Stated).1, k.len());
+            assert_eq!(s.widths(&Drive::Stated), (s.columns() + s.gauge.unknowns, k.len()));
         }
     }
 }
@@ -198,7 +231,7 @@ fn a_requirement_drives_the_area() {
     let want = p * f64::powf(w * w + h * h, 1.5) / (2.0 * e * h * h * sink);
     let (s, mut x) = two_bar(w, h, e, want / 2.0, p);
     let k = s.consts(&[-sink], &Drive::Stated);
-    let (n_par, n_const) = s.widths(false, &Drive::Stated);
+    let (n_par, n_const) = s.widths(&Drive::Stated);
     let kn = interior::kernel(n_par, n_const);
     let mut steps = 0;
     loop {
@@ -373,21 +406,22 @@ fn a_cantilevers_modes_and_buckling_are_its_closed_forms() {
             buckled.values);
 }
 
-/// A frame's constants are the frame, written and read back exactly, stated or free; and a free
-/// frame names what leaves it free.
+/// A frame's constants are the frame, written and read back exactly, a displacement's row and an
+/// integral row's; and a free frame names what leaves it free.
 #[test]
 fn a_frame_is_its_constants() {
     let mut rng = Rng::new(5);
     for dim in [2, 3] {
         let (s, x) = framed(dim, 6, &mut rng);
-        for stated in [&[1.5][..], &[2.0, -0.25]] {
-            let free = stated.len() == 2;
-            let k = s.consts(stated, &Drive::Stated);
-            let (back, got, drive) = Structure::read(&k, free).unwrap();
+        let measured = Structure { reads: gcs_core::interior::Reads::Mass, ..s.clone() };
+        for s in [s.clone(), sided(&measured, 2.0, -0.25, true)] {
+            let said = stated(&s, 1.5);
+            let k = s.consts(&said, &Drive::Stated);
+            let (back, got, drive) = Structure::read(&k).unwrap();
             assert_eq!(back, s);
-            assert_eq!(got, stated);
+            assert_eq!(got, &said[..]);
             assert_eq!(drive, Drive::Stated);
-            assert_eq!(s.widths(free, &Drive::Stated).1, k.len());
+            assert_eq!(s.widths(&Drive::Stated).1, k.len());
         }
         assert!(s.solve(&x).is_ok());
         assert_eq!(s.free(&x).text(dim), None, "held whole at its root");
@@ -444,18 +478,19 @@ fn a_rows_drive_is_its_constants() {
         Drive::Moved(Mover::Hull(_)) => 4,
     });
     assert_eq!(tags.collect::<Vec<_>>(), [0, 1, 2, 3, 4], "every drive");
-    for (s, d) in &rows {
-        for stated in [&[0.5][..], &[2.0, -0.25]] {
-            let free = stated.len() == 2;
-            let k = s.consts(stated, d);
-            let (n_par, n_const) = s.widths(free, d);
+    for (shown, d) in &rows {
+        // a displacement's row, and an integral row's (§6.25) with an unknown its sides read
+        let measured = Structure { reads: gcs_core::interior::Reads::Volume, ..shown.clone() };
+        for s in [shown.clone(), sided(&measured, 2.0, -0.25, true)] {
+            let said = stated(&s, 0.5);
+            let k = s.consts(&said, d);
+            let (n_par, n_const) = s.widths(d);
             assert_eq!(n_const, k.len());
-            assert_eq!(n_par, s.row_columns(d) + free as usize);
-            let (back, got, drive) = Structure::read(&k, free).expect("read back");
-            assert_eq!((&back, got, &drive), (s, stated, d));
-            assert!(Structure::read(&k, !free).is_none(), "its unknown's or not");
+            assert_eq!(n_par, s.row_columns(d) + s.gauge.unknowns);
+            let (back, got, drive) = Structure::read(&k).expect("read back");
+            assert_eq!((&back, got, &drive), (&s, &said[..], d));
             let none = |k: &[f64], what: &str| {
-                assert!(Structure::read(k, free).is_none(), "{what}");
+                assert!(Structure::read(k).is_none(), "{what}");
                 assert!(interior::reading(&vec![1.0; n_par], k).is_none(), "{what}");
             };
             let step = (k.len() / 40).max(1);
@@ -536,7 +571,7 @@ fn a_rows_sections_are_read_over_its_unknowns() {
                                                         tape("25 * h^3 / 12"), tape("1000")]] };
     let drive = Drive::Sized(sizing);
     let k = s.consts(&[-sink], &drive);
-    let (n_par, n_const) = s.widths(false, &drive);
+    let (n_par, n_const) = s.widths(&drive);
     assert_eq!((n_par, n_const), (2 * 2 + 1, k.len()));
     let kn = interior::kernel(n_par, n_const);
     let mut v = [&x[..4], &[40.0]].concat();
@@ -771,17 +806,14 @@ fn a_plane_interior_agrees_with_finite_differences() {
         for w in s.weight.iter_mut() {
             *w = rng.uniform(-1.0, 1.0);
         }
-        for stated in [&[0.01][..], &[1.7, -0.2]] {
-            let free = stated.len() == 2;
-            let (n_par, n_const) = s.widths(free, &Drive::Stated);
-            let k = s.consts(stated, &Drive::Stated);
+        {
+            let free = false;
+            let (n_par, n_const) = s.widths(&Drive::Stated);
+            let k = s.consts(&[0.01], &Drive::Stated);
             assert_eq!(k.len(), n_const);
-            assert_eq!(Structure::read(&k, free).unwrap().0, s);
+            assert_eq!(Structure::read(&k).unwrap().0, s);
             let kn = build_kernel(&Sketch::new(), KernelKey::Interior { n_par, n_const });
-            let mut v = x.clone();
-            if free {
-                v.push(0.4);
-            }
+            let v = x.clone();
             let res = |w: &[f64]| {
                 let mut r = vec![0.0; 1];
                 (kn.res)(1, w, &k, &mut r);
@@ -1146,17 +1178,14 @@ fn a_solid_interior_agrees_with_finite_differences() {
         for w in s.weight.iter_mut() {
             *w = rng.uniform(-1.0, 1.0);
         }
-        for stated in [&[0.01][..], &[1.7, -0.2]] {
-            let free = stated.len() == 2;
-            let (n_par, n_const) = s.widths(free, &Drive::Stated);
-            let k = s.consts(stated, &Drive::Stated);
+        {
+            let free = false;
+            let (n_par, n_const) = s.widths(&Drive::Stated);
+            let k = s.consts(&[0.01], &Drive::Stated);
             assert_eq!(k.len(), n_const);
-            assert_eq!(Structure::read(&k, free).unwrap().0, s);
+            assert_eq!(Structure::read(&k).unwrap().0, s);
             let kn = build_kernel(&Sketch::new(), KernelKey::Interior { n_par, n_const });
-            let mut v = x.clone();
-            if free {
-                v.push(0.4);
-            }
+            let v = x.clone();
             let res = |w: &[f64]| {
                 let mut r = vec![0.0; 1];
                 (kn.res)(1, w, &k, &mut r);

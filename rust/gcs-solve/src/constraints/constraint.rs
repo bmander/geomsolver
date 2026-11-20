@@ -696,7 +696,7 @@ impl Constraint {
     pub fn made_row_at(&self, sk: &Sketch, coarser: f64) -> Result<InteriorRow, String> {
         match self.kind {
             CKind::Deflection => self.deflection_made(sk, coarser),
-            CKind::Mass | CKind::Volume => self.measure_made(sk),
+            CKind::Integral => crate::measured::row(sk, self.measured(sk)?.0),
             _ => Err("it reads no structure".into()),
         }
     }
@@ -722,26 +722,22 @@ impl Constraint {
         crate::beams::Row::of(sk, sc, at, along).map(InteriorRow::Frame)
     }
 
-    /// **What a mass or a volume driven reads** (`CKind::Mass`, `CKind::Volume`): the members its
-    /// statement names, a beam's or a line's (`beams::Row::measured`), or the prism it names
-    /// (`prisms::Row::measured`, its face's mesh) — or why the solve cannot read it.
-    fn measure_made(&self, sk: &Sketch) -> Result<InteriorRow, String> {
-        let reads = self.kind.reads().ok_or("it measures nothing")?;
-        let (_, m) = self.measured(sk)?;
-        if !crate::beams::members(sk, &m.of).is_empty() {
-            return crate::beams::Row::measured(sk, &m.of, reads).map(InteriorRow::Frame);
+    /// **The unknowns an equation driven reads** (§6.25), each bound to a column the solve
+    /// moves: its sides' last columns.  None for any other row.
+    pub fn integral_unknowns(&self, sk: &Sketch) -> Vec<u32> {
+        match (self.kind, self.measured(sk)) {
+            (CKind::Integral, Ok((_, m))) => crate::measured::unknown_columns(sk, m),
+            _ => Vec::new(),
         }
-        let solid = m.of.solid().ok_or("it is of no beam, no member of one and no solid")?;
-        crate::prisms::Row::measured(sk, solid, reads).map(|r| InteriorRow::Meshed(r.into()))
     }
 
-    /// What a mass or a volume driven names: the drawing's statement of it, and its index.
+    /// What an equation driven names: the drawing's statement of it, and its index.
     fn measured<'s>(&self, sk: &'s Sketch) -> Result<(usize, &'s crate::model::Measured), String> {
         let Some(Arg::Int(k)) = self.args.first() else {
             return Err("a measure driven names what the drawing states of it".into());
         };
         usize::try_from(*k).ok().and_then(|k| Some((k, sk.measured.get(k)?)))
-            .ok_or_else(|| "it names no mass or volume the drawing states".into())
+            .ok_or_else(|| "it names no equation the drawing states".into())
     }
 
     /// The unknowns a frame's sections are read over, without its structure (#510 S1); a region's
@@ -749,7 +745,21 @@ impl Constraint {
     /// read over (`beams::measured_unknowns`); a prism's, none.
     pub fn frame_unknowns(&self, sk: &Sketch) -> Result<Vec<String>, String> {
         if self.kind != CKind::Deflection {
-            return crate::beams::measured_unknowns(sk, &self.measured(sk)?.1.of);
+            // an equation's: what its beams' sections read, and the unknowns its sides read
+            // (§6.25)
+            let m = self.measured(sk)?.1;
+            let mut out = Vec::new();
+            for i in &m.integrals {
+                if let crate::model::Domain::Of(of) = &i.over {
+                    out.extend(crate::beams::measured_unknowns(sk, of)?);
+                }
+            }
+            for n in &m.unknowns {
+                if !out.contains(n) {
+                    out.push(n.clone());
+                }
+            }
+            return Ok(out);
         }
         let (sc, at, _) = self.frame_read(sk)?;
         crate::beams::row_unknowns(sk, sc, at)
@@ -765,7 +775,7 @@ impl Constraint {
                 let Some(Arg::Int(k)) = self.args.get(2) else { return None };
                 Some(MeshedKey::Deflection { scenario: usize::try_from(*k).ok()?, at, along })
             }
-            CKind::Mass | CKind::Volume => Some(MeshedKey::Measure(self.measured(sk).ok()?.0)),
+            CKind::Integral => Some(MeshedKey::Measure(self.measured(sk).ok()?.0)),
             _ => None,
         }
     }
@@ -1215,19 +1225,19 @@ pub enum InteriorRow {
 }
 
 impl InteriorRow {
-    /// Its constants, stating the deflection `d`.
-    pub fn consts(&self, d: f64) -> Vec<f64> {
+    /// Its constants, stating `stated`: a deflection's `[J₀]`; nothing for an equation's.
+    pub fn consts(&self, stated: &[f64]) -> Vec<f64> {
         match self {
-            InteriorRow::Frame(r) => r.consts(d),
-            InteriorRow::Meshed(r) => r.consts(d),
+            InteriorRow::Frame(r) => r.structure.consts(stated, &r.drive),
+            InteriorRow::Meshed(r) => r.structure.consts(stated, &r.drive),
         }
     }
 
-    /// Its widths, `(n_par, n_const)`.
+    /// Its widths, `(n_par, n_const)` — its unknowns' columns last (§6.25).
     pub fn widths(&self) -> (usize, usize) {
         match self {
-            InteriorRow::Frame(r) => r.widths(),
-            InteriorRow::Meshed(r) => r.widths(),
+            InteriorRow::Frame(r) => r.structure.widths(&r.drive),
+            InteriorRow::Meshed(r) => r.structure.widths(&r.drive),
         }
     }
 

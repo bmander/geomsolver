@@ -475,6 +475,10 @@ impl<'a> Walk<'a> {
                     self.expand_reach(&su, &alias);
                 } else if touch {
                     self.expand_touch(&su);
+                } else if let Some(members) = self.shell_members(su.set().1, &alias) {
+                    // the inside of a closed shell (#953): recorded, its body never applied
+                    let abs = su.set().1.to_string();
+                    self.enclose(&su, members, &abs, &alias);
                 } else {
                     self.expand_use(&su);
                 }
@@ -1615,7 +1619,7 @@ fn region_body(
     };
     if let StmtKind::Measured(m) = &mut body[i].kind {
         if side != Cmp::Le {
-            m.cmp = m.cmp.turned().expect("a bound on measurements is one-sided");
+            m.cmp = m.cmp.map(|c| c.turned().expect("a bound on measurements is one-sided"));
         }
         return Ok(());
     }

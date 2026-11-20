@@ -132,12 +132,42 @@ pub(crate) fn through_span(sk: &Sketch, tool: usize, o: [f64; 3], n: [f64; 3],
     Ok(crate::brep::geom::through_span(spans))
 }
 
+/// **The unknowns solid `si` is made over** (#953): each name a region's number reads — a term's
+/// or its growth's — of every solid it is built on (`built_on`, through its operands and the
+/// solids its terms read), each once in the order first met.  What a row over the solid binds,
+/// so a half-space's height a volume sizes is a column of it.
+pub fn region_unknowns(sk: &Sketch, si: usize) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    let mut pending = vec![si];
+    while let Some(i) = pending.pop() {
+        if !seen.insert(i) || i >= sk.solids.len() {
+            continue;
+        }
+        if let SolidDef::Region { terms, .. } = &sk.solids[i].def {
+            for t in terms {
+                for n in [&t.lo].into_iter().chain(&t.grow).filter_map(|n| n.free.as_ref()) {
+                    if !out.contains(&n.0) {
+                        out.push(n.0.clone());
+                    }
+                }
+            }
+        }
+        pending.extend(built_on(sk, i).into_iter().rev());
+    }
+    out
+}
+
 /// Dependencies required to evaluate a solid, as distinct from its Boolean operands: an unbounded
 /// tool's the material of the bodies it is applied to (`material_of`).
 pub fn evaluation_operands(sk: &Sketch, i: usize) -> Result<Vec<u32>, String> {
     let s = sk.solids.get(i).ok_or_else(|| format!("no solid at index {i}"))?;
     match s.def {
         SolidDef::Through { .. } => material_of(sk, &applied_to(sk, i)),
+        // a half-space kept with a body is built over its material (#953)
+        SolidDef::Region { .. } if super::defined::kept_half(sk, i) => {
+            material_of(sk, &applied_to(sk, i))
+        }
         // a roll through everything reads its tool and that material (#271)
         SolidDef::Swept { source, roll: Roll::Through, .. } => {
             Ok(std::iter::once(source).chain(material_of(sk, &applied_to(sk, i))?).collect())

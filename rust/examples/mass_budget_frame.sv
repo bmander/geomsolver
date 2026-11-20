@@ -7,6 +7,7 @@
 unit mm
 use std
 use std.place (horizontal)
+use std.measures (mass)
 
 H := 600mm
 R := 400mm

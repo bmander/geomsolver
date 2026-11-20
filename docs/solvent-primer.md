@@ -271,7 +271,9 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | `level(dir)` | infix | two points with the same ordinate along `dir` (an axis, a line, or `up`/`right`); a point and a plane with `u`/`v`. `distance(0, along: …)` is the same row with a number of zero, a dimension |
 | `angle` | infix | two lines, directed (below); in space, an axis and a line or axis, unsigned — or, with `about: a`, directed about axis `a` (below). `l1 angle(l3, l4) l2` equates two angles |
 | `radius` | prefix | a circle or arc |
-| `mass`, `volume` | prefix | a beam, a line a beam is drawn on, or a solid: what it is made of (`mass(10kg) arm`, `volume(42 * 1cm^3) web`, `claim mass(<= 1kg) plank`) — the drawing's, never a scenario's (see *Frames* below) |
+| `mass`, `volume` | prefix | **`std.measures`'s** (`use std.measures (mass, volume)`): a beam, a line a beam is drawn on, or a solid — what it is made of (`mass(10kg) arm`, `volume(42 * 1cm^3) web`, `claim mass(<= 1kg) plank`), the drawing's, never a scenario's (see *Frames* below) |
+| `area`, `moment` | prefix | **`std.measures`'s**: a face of a solid — its area, `area(A) hull.water`, and its second moment about a line or axis, `moment(i: I, about: centreline) hull.water` (see *Where a body is made* below) |
+| `centroid`, `centerofmass` | infix | **`std.measures`'s**: a declared point and a solid (or a face of one, or an instance's bodies): `g centroid hull`, `g centerofmass boat` |
 | `length` | prefix | any path: a line (the distance between its ends); an arc (radius × counter-clockwise sweep); a spline or free curve (its whole length). `distance` relates two things and `length` measures one, so `distance(d) l` on a line is refused, naming `length(d) l` |
 | `symmetry(line)` | infix | two points; the line may be an axis, `a symmetry(std.x) b`: the half turn about it, in space (0.220) |
 | `midpoint` | infix | a point and a line |
@@ -2699,18 +2701,57 @@ scenario tip_load {
   `len` an unknown). `solventc` prints `driven == 4mm, held` and the unknown's value. `along:` is
   an axis or a line the drawing holds.
 - **A mass is the drawing's, not a scenario's**: what a body is made of answers no load, so it is
-  written beside the scenarios, never in one — `mass(10kg) arm` (or `volume(1200 * 1cm^3) arm`;
+  written beside the scenarios, never in one — with `use std.measures (mass, volume)`,
+  `mass(10kg) arm` (or `volume(1200 * 1cm^3) arm`;
   `1200cm^3` would be the cube of 1200 centimetres) is a row over the beam's members, or a member's
   line, sizing an unknown the area reads (`A: b * h`) or placing a joint, with no support and no
   load; beside a driving deflection it sizes a second unknown, as `weighed_cantilever.sv` finds a
   section's width and depth, and alone it sizes a whole frame (`mass_budget_frame.sv`); over a
   prism it sizes a hole (`lightened_web.sv`) or places a point (`sized_gusset.sv`), and over a
   turned or cut solid moves its faces (0.180). `claim mass(<= 2kg) arm` (`>=`, or a number alone) is judged after the
-  solve; a bound is a claim's alone. `solventc` prints each: `mass(arm) is 10kg: driven == 10kg,
-  held`. Any other driving requirement (`mode(arm, 1) == 30Hz`) is only judged yet. The library
+  solve; a bound is a claim's alone. `solventc` prints each: `mass(10kg) arm: 10 kg ± 0 kg == 10
+  kg: driven, held`. Any other driving requirement (`mode(arm, 1) == 30Hz`) is only judged yet. The library
   shows each: `sized_cantilever.sv` (a depth),
   `reach_cantilever.sv` (a length), `shelf_bracket.sv` (two members, a load spread along the arm)
   and `portal_frame.sv` (a tube's diameter, a point on a member, the frame's weight).
+- **Where a body is made** (#953): `g centroid hull` puts a declared point at the centroid of a
+  solid's volume (or of a face's area), `g centerofmass boat` at a body's centre of mass — of an
+  instance, every body under it, each by its density — and `area(A) hull.water` and `moment(i: I,
+  about: centreline) hull.water` measure a face. Each is a row stated and judged claimed, as
+  `volume` is; a stated number may read an unknown (`area(L * w) hull.water` finds `w`). A hull in
+  water is the hull kept within a half-space, built exactly:
+
+  ```
+  param T: Length hint(30mm)
+  water := std.sets.HalfSpace(keel, std.z, d: T)
+  immersed := solid({ p | p in hull; p in water })
+  volume(L * B * 40mm) immersed      // finds the waterline T
+  g := point hint((100, 0, 20))
+  g centroid immersed                // the centre of buoyancy
+  claim moment(i: L * B^3 / 12, about: centreline) immersed.water
+  ```
+
+  The waterplane is `immersed.water`; a second moment is about a line, so for BM name the
+  centreline in the waterplane (its points `T` above the keel). A hull of panels is the solid its
+  closed shell encloses — the developable sides and the faces that close them, each drawn:
+  `shell := { q | q in bottom or q in port or q in starboard or q in deck or q in bow or q in
+  stern }`, `hull := solid({ p | p in shell.side })`, its faces `hull.port` and so on. A shell
+  that does not close says the edge it is open at. Its waterline is driven as a box's is, its
+  panels held; a panel whose rails the solve moves is E040.
+- **An integral, written bare** (0.222): every word above is `std.measures`'s, an equation of
+  integrals, and a document may write its own. `integral(EXPR over p in S)` integrates over a
+  solid, a face of one, a beam or an instance's bodies, its body reading the point only through
+  `distance(p, X)` (to a point, a line, an axis or a plane), `distance(g, p, along: std.x)` (the
+  signed ordinate) and `density(p)`; either side of `==` is arithmetic over integrals, numbers and
+  declared unknowns, and it drives as a measure word does (`claim` it to judge it, `<=`/`>=`
+  claimed only). A boat floats where it weighs the water it displaces, one line:
+
+  ```
+  integral(density(p) over p in boat) == 1000kg / 1m^3 * integral(1 over p in immersed)
+  ```
+
+  An unknown inside a body is refused (move it outside the integral). A word's number given as a
+  bound, `claim mass(<= 2kg) arm`, turns its body's `== m` into `<= m`, for any word of a file.
 - `pinned` holds a joint's moves, `fixed` its turns too, so a beam pinned at both ends is free to
   twist about its own line — and `solventc` says so (`leaves `arm` free to turn about x …`).
 

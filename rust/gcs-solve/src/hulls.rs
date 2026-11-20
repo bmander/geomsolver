@@ -16,8 +16,8 @@
 //! a curve.
 
 use crate::bodies::{Mesh, Wall};
-use crate::interior::{Axis, Frame, Hull, Profile, Sheet};
-use crate::model::{EntKind, EntRef, Sketch, SolidDef};
+use crate::interior::{Axis, Direction, Frame, Hull, Place, Profile, Read, Sheet};
+use crate::model::{EntKind, EntRef, Reading, Sketch, SolidDef};
 use crate::solid::faces::BodyFaces;
 use std::collections::BTreeMap;
 
@@ -31,7 +31,7 @@ const NEAR: f64 = 0.25;
 
 /// What the sheets are made of: the columns read so far, each point's (its x, its y the next),
 /// each plane's and each sheet's.
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Builder {
     columns: Vec<u32>,
     points: BTreeMap<usize, usize>,
@@ -39,6 +39,7 @@ struct Builder {
     frame_of: BTreeMap<Option<u32>, usize>,
     sheets: Vec<Sheet>,
     sheet_of: BTreeMap<(usize, String), usize>,
+    facets: Vec<[f64; 9]>,
 }
 
 impl Builder {
@@ -48,6 +49,104 @@ impl Builder {
             let pt = &sk.points[q];
             self.columns.extend([pt.x, pt.y]);
             self.columns.len() - 2
+        })
+    }
+
+    /// **Point `q` as a sheet reads it** (#953): held where nothing the solve moves reads it, a
+    /// point in space by its three columns, a point of a plane or a spatial frame by its own
+    /// columns lifted by that plane.
+    fn place(&mut self, sk: &Sketch, q: usize) -> Place {
+        let pt = &sk.points[q];
+        if held_point(sk, q) {
+            return Place::Held(sk.world_point(q));
+        }
+        match (pt.z, pt.chart) {
+            (Some(z), Some(f)) => {
+                let frame = self.frame(sk, Some(f));
+                let c = self.columns.len();
+                self.columns.extend([pt.x, pt.y, z]);
+                Place::Chart { frame, c }
+            }
+            (Some(z), None) => {
+                let c = self.columns.len();
+                self.columns.extend([pt.x, pt.y, z]);
+                Place::Space(c)
+            }
+            (None, _) => {
+                let frame = self.frame(sk, sk.plane_of(q).map(|p| p as u32));
+                Place::Plane { frame, c: self.point(sk, q) }
+            }
+        }
+    }
+
+    /// **A half-space's direction as a sheet reads it** (#953): a plane's normal, an axis's
+    /// direction (held where the solve moves no number of it) — or why it is not moved yet.
+    fn direction(&mut self, sk: &Sketch, along: EntRef) -> Result<Direction, String> {
+        Ok(match along.kind {
+            EntKind::Frame => Direction::Normal(self.frame(sk, Some(along.idx))),
+            EntKind::Axis => {
+                let d = sk.axes[along.i()].d;
+                if d.iter().all(|&q| sk.params[q as usize].fixed) {
+                    Direction::Held(d.map(|q| sk.params[q as usize].value))
+                } else {
+                    let c = self.columns.len();
+                    self.columns.extend(d);
+                    Direction::Read(c)
+                }
+            }
+            EntKind::Line => {
+                let l = &sk.lines[along.i()];
+                if !(held_point(sk, l.p1 as usize) && held_point(sk, l.p2 as usize)) {
+                    return Err("a half-space along a line the solve moves, which a driving row \
+                                does not move yet".into());
+                }
+                let d = crate::space::sub(sk.world_point(l.p2 as usize), sk.world_point(l.p1 as usize));
+                Direction::Held(d)
+            }
+            kind => return Err(format!("a half-space along {}", kind.a())),
+        })
+    }
+
+    /// **What an integral's body reads, off the columns** (§6.25): a point where it stands, a
+    /// direction (an axis's, a plane's normal, a held line's), or a line whole — its first point,
+    /// and its direction held or read toward its second.
+    fn reading(&mut self, sk: &Sketch, r: Reading) -> Result<Read, String> {
+        Ok(match r {
+            Reading::Point(q) => Read { at: Some(self.place(sk, q)), along: None },
+            Reading::Direction(e) => Read { at: None, along: Some(self.direction(sk, e)?) },
+            Reading::Line(e) if e.kind == EntKind::Line => {
+                let l = &sk.lines[e.i()];
+                let a = self.place(sk, l.p1 as usize);
+                let d = match self.direction(sk, e) {
+                    Ok(d) => d,
+                    Err(_) => Direction::Toward(self.place(sk, l.p2 as usize)),
+                };
+                Read { at: Some(a), along: Some(d) }
+            }
+            Reading::Line(e) if e.kind == EntKind::Axis => {
+                let x = &sk.axes[e.i()];
+                let held = x.a.iter().all(|&q| sk.params[q as usize].fixed);
+                let a = if held {
+                    Place::Held(x.a.map(|q| sk.params[q as usize].value))
+                } else {
+                    let c = self.columns.len();
+                    self.columns.extend(x.a);
+                    Place::Space(c)
+                };
+                Read { at: Some(a), along: Some(self.direction(sk, e)?) }
+            }
+            Reading::Line(e) if e.kind == EntKind::Frame => {
+                let f = self.frame(sk, Some(e.idx));
+                let o = match &self.frames[f] {
+                    Frame::Held(k) => Place::Held([k[0], k[1], k[2]]),
+                    Frame::Read(c) => Place::Space(*c),
+                };
+                Read { at: Some(o), along: Some(Direction::Normal(f)) }
+            }
+            Reading::Line(e) => {
+                return Err(format!("an integral reads a line, an axis or a plane, not {}",
+                                   e.kind.a()));
+            }
         })
     }
 
@@ -158,6 +257,58 @@ impl Builder {
                 };
                 Sheet::Turned { frame, axis, curve }
             }
+            // a half-space kept with a body (#953): the plane of the term its face is named by
+            SolidDef::Region { terms, .. } if crate::solid::defined::kept_half(sk, p) => {
+                let mut named = terms.iter().filter(|t| t.name == face);
+                let (Some(t), None) = (named.next(), named.next()) else {
+                    return Err(format!("`{}` names no one half-space `{face}`", solid.name));
+                };
+                let crate::model::RegionShape::Plane { along, from, sign } = t.shape else {
+                    unreachable!("a kept half-space's every term is one")
+                };
+                if t.cmp == crate::vocab::Cmp::In {
+                    return Err(format!("`{face}` is an interval of a half-space's ordinate, whose \
+                                        two planes a driving row does not move yet"));
+                }
+                let at = self.place(sk, from as usize);
+                let along = self.direction(sk, along)?;
+                // `sign · n · (x − o) = c + m · t`: the plane where the ordinate along `sign · n`
+                // is the term's number, held to `n` by turning the number's sign
+                let c = sign * t.lo.c;
+                let (m, t) = match &t.lo.free {
+                    Some((name, m)) => {
+                        let q = sk.free_vars.get(name).copied().filter(|&q| !sk.params[q as usize].fixed)
+                            .ok_or_else(|| format!("`{name}` is an unknown nothing determines"))?;
+                        (*m, Some(self.param(q)))
+                    }
+                    None => (0.0, None),
+                };
+                Sheet::Ordinate { at, along, c, m: sign * m, t }
+            }
+            // a closed shell's member (#953): a face's plane, or a held panel's triangles
+            SolidDef::Region { .. } if let Some(members) = crate::solid::enclosed::members(sk, p) => {
+                use crate::model::Member;
+                let member = members.iter().find(|m| m.name() == face).ok_or_else(|| format!("`{}` has no face `{face}`", solid.name))?;
+                match member {
+                    Member::Face { face: f, .. } => {
+                        Sheet::Cap { frame: self.frame(sk, sk.faces[*f as usize].plane), h: 0.0 }
+                    }
+                    Member::Sheet { rails, name } => {
+                        let moves = rails.iter().flat_map(|r| r.links.iter())
+                            .flat_map(|&e| sk.entity_params(e))
+                            .any(|q| !sk.params[q as usize].fixed);
+                        if moves {
+                            return Err(format!("its panel `{name}`'s rails are moved by the solve, \
+                                which a driving row does not move a panel by yet"));
+                        }
+                        let shell = crate::solid::enclosed::built(sk, p, crate::solid::REPORT_UNIT)
+                            .ok_or("no shell")??;
+                        let first = self.facets.len();
+                        self.facets.extend(shell.triangles(name));
+                        Sheet::Facets { first, count: self.facets.len() - first }
+                    }
+                }
+            }
             SolidDef::Prism { .. } => {
                 return Err(format!("`{}` is drafted, which a driving row does not move yet",
                                    solid.name));
@@ -175,6 +326,13 @@ impl Builder {
         self.sheet_of.insert((p, face.to_string()), self.sheets.len() - 1);
         Ok(self.sheets.len() - 1)
     }
+}
+
+/// Whether point `q` is held where it stands: its own numbers fixed, and the plane or the spatial
+/// frame it is read in held.
+fn held_point(sk: &Sketch, q: usize) -> bool {
+    let pt = &sk.points[q];
+    sk.point_held(q) && pt.chart.or(pt.plane).is_none_or(|f| sk.plane_fixed(f as usize))
 }
 
 /// Sheet `s`'s normal at `p` where the columns stand at `v`, made unit.
@@ -203,19 +361,66 @@ fn meet(normals: &[[f64; 3]]) -> bool {
 /// node of a facet tagged with the sheets it lies on, the places and the feet at the drawing as it
 /// stands — and the columns the sheets read.  Or why a driving row cannot move it.
 pub fn hull_of(sk: &Sketch, solid: usize, mesh: &Mesh) -> Result<(Hull, Vec<u32>), String> {
-    let body = BodyFaces::whole(sk, solid)?;
+    bodies_hull(sk, &[(solid, mesh)])?.reading(sk, &[])
+}
+
+/// **A hull over several bodies before what is read off it** (§6.25): its sheets and its
+/// tagged nodes, and what built them, so the equations over the same bodies each add their own
+/// readings to one hull (`Bodies::reading`).
+#[derive(Clone)]
+pub struct Bodies {
+    b: Builder,
+    hull: Hull,
+}
+
+impl Bodies {
+    /// **The hull with `readings` read off it**, and the columns it reads — the sheets' first.
+    pub fn reading(self, sk: &Sketch, readings: &[Reading]) -> Result<(Hull, Vec<u32>), String> {
+        let Bodies { mut b, mut hull } = self;
+        hull.reads = readings.iter().map(|&r| b.reading(sk, r)).collect::<Result<_, _>>()?;
+        hull.columns = b.columns.len();
+        hull.frames = b.frames;
+        Ok((hull, b.columns))
+    }
+}
+
+/// **The sheets of `parts`' bodies and their tagged nodes**, nothing read off them yet: each
+/// body's mesh after the one before, its nodes numbered on from theirs, every body's sheets read
+/// over one set of columns — what an integral over an instance's bodies is read over.
+pub fn bodies_hull(sk: &Sketch, parts: &[(usize, &Mesh)]) -> Result<Bodies, String> {
     let mut b = Builder::default();
-    let paths = body.paths();
-    let face_sheet: Vec<usize> = paths.iter().map(|path| {
-        crate::solid::faces::face_primitive(sk, solid, &path.route)
-            .and_then(|p| b.sheet(sk, p, &path.face))
-            .map_err(|why| format!("its face `{}` is not moved: {why}", path.text()))
-    }).collect::<Result<_, _>>()?;
-    let n = mesh.nodes.len();
-    let mut hull = Hull { columns: b.columns.len(), frames: b.frames, sheets: b.sheets,
-                          nodes: vec![Vec::new(); n],
-                          x0: mesh.nodes.iter().flatten().copied().collect(),
-                          feet0: vec![0.0; 3 * n], extent: mesh.extent() };
+    // each body's faces' sheets, and where its nodes start among all of them
+    let mut sheets_of = Vec::new();
+    let mut first = Vec::new();
+    let mut n = 0;
+    for &(solid, mesh) in parts {
+        let body = BodyFaces::whole(sk, solid)?;
+        let face_sheet: Vec<usize> = body.paths().iter().map(|path| {
+            crate::solid::faces::face_primitive(sk, solid, &path.route)
+                .and_then(|p| b.sheet(sk, p, &path.face))
+                .map_err(|why| format!("its face `{}` is not moved: {why}", path.text()))
+        }).collect::<Result<_, _>>()?;
+        sheets_of.push(face_sheet);
+        first.push(n);
+        n += mesh.nodes.len();
+    }
+    let extent = parts.iter().map(|(_, m)| m.extent()).fold(0.0, f64::max);
+    let mut hull = Hull { columns: b.columns.len(), frames: b.frames.clone(),
+                          sheets: b.sheets.clone(), nodes: vec![Vec::new(); n],
+                          x0: parts.iter().flat_map(|(_, m)| m.nodes.iter().flatten().copied())
+                              .collect(),
+                          feet0: vec![0.0; 3 * n], extent, reads: Vec::new(),
+                          facets: std::mem::take(&mut b.facets) };
+    let v0: Vec<f64> = b.columns.iter().map(|&c| sk.params[c as usize].value).collect();
+    for (k, &(_, mesh)) in parts.iter().enumerate() {
+        tag(&mut hull, mesh, &sheets_of[k], first[k], &v0);
+    }
+    Ok(Bodies { b, hull })
+}
+
+/// **Each node of body `mesh`'s boundary tagged with the sheets it lies on** (`hull_of`), its
+/// faces' sheets `face_sheet`, its nodes `first` on among the hull's, the columns at `v0`.
+fn tag(hull: &mut Hull, mesh: &Mesh, face_sheet: &[usize], first: usize, v0: &[f64]) {
     // each node of a facet, the sheets of the facets it is a node of and how many
     let mut candidates: BTreeMap<usize, BTreeMap<usize, usize>> = BTreeMap::new();
     for (f, wall) in &mesh.facets {
@@ -225,10 +430,9 @@ pub fn hull_of(sk: &Sketch, solid: usize, mesh: &Mesh) -> Result<(Hull, Vec<u32>
             *candidates.entry(node).or_default().entry(s).or_default() += 1;
         }
     }
-    let v0: Vec<f64> = b.columns.iter().map(|&c| sk.params[c as usize].value).collect();
     let near = NEAR * mesh.near;
-    for (node, sheets) in candidates {
-        let p = mesh.nodes[node];
+    for (local, sheets) in candidates {
+        let (node, p) = (first + local, mesh.nodes[local]);
         // nearest first, the sheet more of its facets lie on first among equals
         let mut on: Vec<(f64, usize, usize, [f64; 3])> = sheets.into_iter().filter_map(|(s, count)| {
             let (phi, g) = hull.level_at(s, &v0, p);
@@ -266,5 +470,4 @@ pub fn hull_of(sk: &Sketch, solid: usize, mesh: &Mesh) -> Result<(Hull, Vec<u32>
             chosen.pop();
         }
     }
-    Ok((hull, b.columns))
 }

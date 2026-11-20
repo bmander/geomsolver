@@ -1001,6 +1001,28 @@ fn filled_row(sk: &Sketch, sc: &Scenario, solid: usize, at: usize, along: crate:
     Ok(prisms::Row { structure: s, drive: Drive::Moved(Mover::Hull(hull)), columns, x, coarser })
 }
 
+/* -- what a body is made of, and where (#953, §6.25) ----------------------------------------- */
+
+/// **The facets of face `f` of solid `solid`'s mesh**: those lying on the faces it names —
+/// refused where it names none of the body's, or none any facet lies on.
+pub(crate) fn face_facets(sk: &Sketch, solid: usize, f: &crate::model::FaceRef, mesh: &Mesh)
+    -> Result<Vec<[usize; 6]>, String>
+{
+    let body = BodyFaces::whole(sk, solid)?;
+    let named = body.faces(f);
+    let said = || format!("`{}.{}`", sk.solids[solid].name, f.path.join("."));
+    if named.is_empty() {
+        return Err(format!("{} names no face of the body", said()));
+    }
+    let facets: Vec<[usize; 6]> = mesh.facets.iter()
+        .filter(|(_, w)| matches!(w, Wall::Face(fi) if named.contains(fi)))
+        .map(|(f, _)| *f).collect();
+    if facets.is_empty() {
+        return Err(format!("{} has no area on the body", said()));
+    }
+    Ok(facets)
+}
+
 /// **The row of `mass(m) solid` or `volume(v) solid`** (`reads`), `solid` a filled body (#567):
 /// its exact boundary refined and filled once where the drawing stands, at a reading's size, its
 /// boundary's nodes moved by its sheets (`hulls::hull_of`) and its inner nodes left where they

@@ -2,6 +2,7 @@
 //! (`Row`), its structure solved there, its output less what it states and its adjoint rate —
 //! the last meshed row kept, since a step's accepted trial is where the next rate is taken.
 
+use crate::kernels::Num;
 use super::consts::{self, Drive, Mover};
 use super::{hull, moved, Hull, Moved, State, Structure, SECTION};
 use crate::diagnose::analysis::{self, Reach};
@@ -19,15 +20,21 @@ pub fn kernel(n_par: usize, n_const: usize) -> Kernel {
 }
 
 /// One row read off its columns `v` and constants `k`: the structure, the columns it is solved
-/// at, what it states, how many columns it reads before the unknown that may set its output,
-/// whether one does, and how its columns drive it.
+/// at, what it states, how many columns it reads before the unknowns an integral row's sides read,
+/// and how its columns drive it.
 struct Row {
     s: Structure,
     x: Vec<f64>,
     stated: Vec<f64>,
     cols: usize,
-    free: bool,
     driven: Driven,
+    /// The numbers an integral's bodies read where the columns stand (§6.25), read off the
+    /// hull's columns; none for a whole.
+    reads: Vec<f64>,
+    /// An integral row's integrals where it stands, and the moments taken for them: read once
+    /// with the row, so its value and its rate read them again from here (`LAST`).
+    ints: Vec<f64>,
+    taken: super::gauge::Taken,
 }
 
 /// **A row's drive read where its columns stand** (`Drive`): its sections each with its value and
@@ -41,14 +48,12 @@ enum Driven {
 
 impl Row {
     fn read(v: &[f64], k: &[f64]) -> Option<Row> {
-        // the unknown's column is one more than the columns the head says the structure reads
+        // the unknowns' columns follow the columns the head says the structure reads
         let cols = consts::columns(k)?;
-        let free = match v.len().checked_sub(cols)? {
-            0 => false,
-            1 => true,
-            _ => return None,
-        };
-        let (s, stated, drive) = Structure::read(k, free)?;
+        let (s, stated, drive) = Structure::read(k)?;
+        if v.len() != cols.checked_add(s.gauge.unknowns)? {
+            return None;
+        }
         let stated = stated.to_vec();
         // a measure reads the boundary alone: its inner nodes need no harmonic map
         let measure = s.reads.measure();
@@ -75,7 +80,20 @@ impl Row {
                 (std::mem::take(&mut placed.x), Driven::Hull(h, placed))
             }
         };
-        Some(Row { s, x, stated, cols, free, driven })
+        // an integral's bodies read a filled body's nodes and what they read off its hull
+        let reads = match &driven {
+            _ if s.gauge.whole() => Vec::new(),
+            Driven::Hull(h, _) if h.read_width() == s.gauge.reads => {
+                h.readings_at(&|c: usize| v[c])
+            }
+            _ => return None,
+        };
+        let (ints, taken) = match (s.reads.measure(), s.gauge.whole()) {
+            (false, _) => Default::default(),
+            (true, true) => (vec![s.measure(&x)], Vec::new()),
+            (true, false) => s.integrals_taken(&x, &reads),
+        };
+        Some(Row { s, x, stated, cols, driven, reads, ints, taken })
     }
 
     /// Whether its nodes move with the drawing: a region's, a prism's, a filled body's.
@@ -83,12 +101,10 @@ impl Row {
         matches!(self.driven, Driven::Plane(..) | Driven::Hull(..))
     }
 
-    /// What the row states the output is, at the unknown's column `v` reads.
-    fn target(&self, v: &[f64]) -> f64 {
-        match self.free {
-            true => self.stated[0] * v[self.cols] + self.stated[1],
-            false => self.stated[0],
-        }
+    /// **An integral row's two sides** at the unknowns `v` reads, each with its rate in the
+    /// integrals and the unknowns.
+    fn sides(&self, v: &[f64]) -> (crate::tape::Value, crate::tape::Value) {
+        self.s.gauge.sides(&self.ints, &v[self.cols..])
     }
 }
 
@@ -115,46 +131,67 @@ fn jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 }
 
 impl Row {
-    /// What the row reads where it stands, solved at `st`: the displacement `Σ weight · u`, or
-    /// what the structure is made of (`Reads::Volume`, `Reads::Mass`), which no solve reads.
-    fn output(&self, st: &Option<State>) -> f64 {
+    /// What the row reads where it stands, solved at `st`, and what it states there: the
+    /// displacement `Σ weight · u` and `J₀`, or an integral row's two sides (§6.25), which no
+    /// solve reads.
+    fn reading(&self, st: &Option<State>, v: &[f64]) -> (f64, f64) {
         match st {
-            Some(st) => self.s.output(st),
-            None => self.s.measure(&self.x),
+            Some(st) => (self.s.output(st), self.stated[0]),
+            None => {
+                let (lhs, rhs) = self.sides(v);
+                (lhs.v, rhs.v)
+            }
         }
     }
 
     /// The row's rate in its columns `v`, solved at `st`, into `row` (zeroed): the structure's
-    /// adjoint gradient — or a measure's own, where nothing is solved — carried to the drawing's
-    /// columns, and the unknown's where it sets what the row states.
+    /// adjoint gradient — or an integral row's own, where nothing is solved, each integral's
+    /// weighed by its side's rate in it — carried to the drawing's columns, and the unknowns'
+    /// where its sides read them.
     fn rate(&self, st: &Option<State>, v: &[f64], row: &mut [f64]) {
         let s = &self.s;
         let cols = self.cols;
-        let gradient = |g: &mut [f64]| match st {
-            Some(st) => s.gradient(st, &self.x, g),
-            None => s.measure_gradient(&self.x, g),
-        };
+        let mut g = vec![0.0; s.columns()];
+        let mut gr = vec![0.0; self.reads.len()];
+        let mut unknowns = Vec::new();
+        match st {
+            Some(st) => s.gradient(st, &self.x, &mut g),
+            None => {
+                let (lhs, rhs) = self.sides(v);
+                let n = s.gauge.integrals();
+                let w: Vec<f64> = (0..n).map(|j| lhs.d[j] - rhs.d[j]).collect();
+                unknowns = (0..s.gauge.unknowns).map(|k| lhs.d[n + k] - rhs.d[n + k]).collect();
+                if s.gauge.whole() {
+                    s.measure_gradient(&self.x, &mut g);
+                    g.iter_mut().for_each(|x| *x *= w[0]);
+                } else {
+                    s.integrals_gradient(&self.x, &self.reads, &w, &self.taken, &mut g, &mut gr);
+                }
+            }
+        }
         match &self.driven {
             // the nodes' rates carried through how they move with the drawing (#510 S2)
-            Driven::Plane(m, placed) => {
-                let mut g = vec![0.0; s.columns()];
-                gradient(&mut g);
-                m.chain(&v[..cols], placed, &g, &mut row[..cols]);
-            }
+            Driven::Plane(m, placed) => m.chain(&v[..cols], placed, &g, &mut row[..cols]),
             // a filled body's, through its sheets (#567)
             Driven::Hull(h, placed) => {
-                let mut g = vec![0.0; s.columns()];
-                gradient(&mut g);
                 if h.chain(&v[..cols], placed, &g, &mut row[..cols]).is_none() {
                     row.fill(f64::NAN);
                     return;
                 }
+                // and what the bodies read, each column read forward (§6.25)
+                if gr.iter().any(|&x| x != 0.0) {
+                    use crate::kernels::Dual;
+                    for c in h.extra_columns() {
+                        let col = |j: usize| if j == c { Dual::<1>::var(v[j], 0) }
+                                             else { Dual::<1>::cst(v[j]) };
+                        let r = h.readings_at(&col);
+                        row[c] += r.iter().zip(&gr).map(|(r, g)| r.g[0] * g).sum::<f64>();
+                    }
+                }
             }
-            Driven::Stated => gradient(&mut row[..cols]),
+            Driven::Stated => row[..cols].copy_from_slice(&g[..cols]),
             // a section's rate carried to the unknowns it is read over
             Driven::Sized(unknowns, sections) => {
-                let mut g = vec![0.0; s.columns()];
-                gradient(&mut g);
                 let direct = s.section_at(0);
                 row[..direct].copy_from_slice(&g[..direct]);
                 for (b, four) in sections.iter().enumerate() {
@@ -166,8 +203,8 @@ impl Row {
                 }
             }
         }
-        if self.free {
-            row[cols] = -self.stated[0];
+        for (k, d) in unknowns.into_iter().enumerate() {
+            row[cols + k] += d;
         }
     }
 }
@@ -226,8 +263,7 @@ fn solved(v: &[f64], k: &[f64]) -> Option<std::rc::Rc<Solved>> {
 /// cannot be read or its structure solved there.
 pub fn reading(v: &[f64], k: &[f64]) -> Option<(f64, f64)> {
     let got = solved(v, k)?;
-    let (read, st) = (&got.row, &got.state);
-    Some((read.output(st), read.target(v)))
+    Some(got.row.reading(&got.state, v))
 }
 
 /// **Whether one row is out of reach where its columns `v` stand** (#510 P7): its output and
@@ -243,6 +279,6 @@ pub fn reach_of(v: &[f64], k: &[f64], free: &[bool], scale: &[f64]) -> Option<(R
     if !g.iter().all(|g| g.is_finite()) {
         return None;
     }
-    let output = read.output(st);
-    Some((analysis::reach(output, read.target(v), &g, scale, free), output))
+    let (output, target) = read.reading(st, v);
+    Some((analysis::reach(output, target, &g, scale, free), output))
 }

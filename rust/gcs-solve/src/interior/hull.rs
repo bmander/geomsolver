@@ -75,14 +75,60 @@ pub enum Axis {
     Read { a: usize, d: usize },
 }
 
+/// **A point in space as a sheet reads it** (#953): held where it stands, a point in space by
+/// the column of its x (its y and z the next), a point drawn in a plane by the column of its x
+/// there (its y the next) lifted by that plane, or a point of a spatial frame by its three
+/// columns read along the frame's axes and normal.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Place {
+    Held([f64; 3]),
+    Space(usize),
+    Plane { frame: usize, c: usize },
+    Chart { frame: usize, c: usize },
+}
+
+/// **A half-space's direction** (#953): held, a plane's normal, or an axis's direction read off
+/// three columns — made unit wherever it is read.  A line a second moment is about may run to a
+/// second point the solve moves (`Toward`), its direction read from the line's first.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Direction {
+    Held([f64; 3]),
+    Normal(usize),
+    Read(usize),
+    Toward(Place),
+}
+
+/// **What an integral's body reads off a hull's columns** (§6.25): a point (`at`), a direction
+/// made unit (`along`), or a line, both — its direction read from its point where it runs toward
+/// a second one (`Direction::Toward`).  Three numbers each, the point's first.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Read {
+    pub at: Option<Place>,
+    pub along: Option<Direction>,
+}
+
+impl Read {
+    /// How many numbers it reads.
+    pub fn width(&self) -> usize {
+        3 * (self.at.is_some() as usize + self.along.is_some() as usize)
+    }
+}
+
 /// **A sheet a face of the body is a piece of**: a prism's cap at ordinate `h` along its plane's
-/// normal, a prism's side (a profile's line or circle swept along the normal), or a turn's face
-/// (a profile's line or circle turned about an axis).
+/// normal, a prism's side (a profile's line or circle swept along the normal), a turn's face (a
+/// profile's line or circle turned about an axis), or a half-space's plane (#953): the points
+/// `n · (x − o)` along its unit direction from its point at the ordinate `c + m · t`, `t` the
+/// column of the unknown it reads where it reads one — the waterline a volume sizes.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Sheet {
     Cap { frame: usize, h: f64 },
     Extruded { frame: usize, curve: Profile },
     Turned { frame: usize, axis: Axis, curve: Profile },
+    Ordinate { at: Place, along: Direction, c: f64, m: f64, t: Option<usize> },
+    /// A panel of a closed shell whose rails nothing the solve moves reads (#953): held, the
+    /// triangles `first..first + count` of the hull's `facets` it is drawn with, a node's level
+    /// the signed distance from the plane of the one nearest it.
+    Facets { first: usize, count: usize },
 }
 
 /// **A filled body's nodes as functions of the drawing's columns**: how many columns, the planes
@@ -98,6 +144,12 @@ pub struct Hull {
     pub x0: Vec<f64>,
     pub feet0: Vec<f64>,
     pub extent: f64,
+    /// What an integral's bodies read off the same columns (§6.25): points, directions and
+    /// lines, in the order their numbers run in the bodies' variables.
+    pub reads: Vec<Read>,
+    /// The triangles held panels are drawn with (#953, `Sheet::Facets`), each its three corners
+    /// turned out of the material.
+    pub facets: Vec<[f64; 9]>,
 }
 
 /// **Which stage a node is placed in**: a vertex at its foot; an edge's node, a face's and one
@@ -301,6 +353,12 @@ fn unit<T: Num>(a: V<T>) -> V<T> {
     vscale(a, T::cst(1.0) / vdot(a, a).sqrt())
 }
 
+/// How far `p` stands from the triangle of corners `t` (nine numbers).
+fn triangle_distance(t: &[f64; 9], p: [f64; 3]) -> f64 {
+    let c = |k: usize| [t[3 * k], t[3 * k + 1], t[3 * k + 2]];
+    crate::space::distance(p, crate::space::closest_on_triangle(p, c(0), c(1), c(2)).0)
+}
+
 /// Node `i`'s three numbers of `x`.
 fn at(x: &[f64], i: usize) -> [f64; 3] {
     [x[3 * i], x[3 * i + 1], x[3 * i + 2]]
@@ -328,11 +386,37 @@ impl Axis {
 }
 
 impl Sheet {
-    fn frame(&self) -> usize {
+    /// The plane its profile is drawn in; a half-space's has none of its own.
+    fn frame(&self) -> Option<usize> {
         match *self {
             Sheet::Cap { frame, .. } | Sheet::Extruded { frame, .. } | Sheet::Turned { frame, .. } => {
-                frame
+                Some(frame)
             }
+            Sheet::Ordinate { .. } | Sheet::Facets { .. } => None,
+        }
+    }
+}
+
+impl Place {
+    /// The plane it is lifted by, and the columns it reads of its own.
+    fn reads(&self) -> (Option<usize>, Vec<usize>) {
+        match *self {
+            Place::Held(_) => (None, Vec::new()),
+            Place::Space(c) => (None, vec![c, c + 1, c + 2]),
+            Place::Plane { frame, c } => (Some(frame), vec![c, c + 1]),
+            Place::Chart { frame, c } => (Some(frame), vec![c, c + 1, c + 2]),
+        }
+    }
+}
+
+impl Direction {
+    /// The plane it is the normal of, and the columns it reads of its own.
+    fn reads(&self) -> (Option<usize>, Vec<usize>) {
+        match *self {
+            Direction::Held(_) => (None, Vec::new()),
+            Direction::Normal(f) => (Some(f), Vec::new()),
+            Direction::Read(c) => (None, vec![c, c + 1, c + 2]),
+            Direction::Toward(p) => p.reads(),
         }
     }
 }
@@ -341,12 +425,16 @@ impl Hull {
     /// The columns sheet `s` reads, its plane's among them, in order and once each.
     fn sheet_columns(&self, s: usize) -> Vec<usize> {
         let sheet = &self.sheets[s];
-        let mut out = match self.frames[sheet.frame()] {
-            Frame::Read(c) => (c..c + 9).collect(),
-            Frame::Held(_) => Vec::new(),
-        };
+        let mut out: Vec<usize> = self.frame_columns(sheet.frame());
         match sheet {
-            Sheet::Cap { .. } => {}
+            Sheet::Ordinate { at, along, t, .. } => {
+                for (f, own) in [at.reads(), along.reads()] {
+                    out.extend(self.frame_columns(f));
+                    out.extend(own);
+                }
+                out.extend(t.iter().copied());
+            }
+            Sheet::Cap { .. } | Sheet::Facets { .. } => {}
             Sheet::Extruded { curve, .. } => out.extend(curve.columns()),
             Sheet::Turned { axis, curve, .. } => {
                 out.extend(curve.columns());
@@ -376,12 +464,113 @@ impl Hull {
         [o, u, v, n]
     }
 
+    /// **Where `at` stands** over the columns `col` reads (#953).
+    pub(crate) fn place_at<T: Num>(&self, at: Place, col: &dyn Fn(usize) -> T) -> V<T> {
+        match at {
+            Place::Held(q) => q.map(T::cst),
+            Place::Space(c) => [col(c), col(c + 1), col(c + 2)],
+            Place::Plane { frame, c } => {
+                let [o, u, v, _] = self.basis(frame, col);
+                vadd(o, vadd(vscale(u, col(c)), vscale(v, col(c + 1))))
+            }
+            Place::Chart { frame, c } => {
+                let [o, u, v, n] = self.basis(frame, col);
+                vadd(vadd(o, vadd(vscale(u, col(c)), vscale(v, col(c + 1)))), vscale(n, col(c + 2)))
+            }
+        }
+    }
+
+    /// **`along` made unit** over the columns `col` reads (#953).
+    pub(crate) fn direction_at<T: Num>(&self, along: Direction, col: &dyn Fn(usize) -> T) -> V<T> {
+        match along {
+            Direction::Held(d) => unit(d.map(T::cst)),
+            Direction::Normal(f) => self.basis(f, col)[3],
+            Direction::Read(c) => unit([col(c), col(c + 1), col(c + 2)]),
+            Direction::Toward(_) => unreachable!("a line's direction is read from its first point"),
+        }
+    }
+
+    /// The nine columns plane `f` is read off, where it is read rather than held.
+    fn frame_columns(&self, f: Option<usize>) -> Vec<usize> {
+        match f.map(|f| &self.frames[f]) {
+            Some(Frame::Read(c)) => (*c..*c + 9).collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// **The numbers an integral's bodies read** (§6.25, `reads`) where the columns `col` reads
+    /// stand: each reading's point, then its direction made unit.
+    pub(crate) fn readings_at<T: Num>(&self, col: &dyn Fn(usize) -> T) -> Vec<T> {
+        let mut out = Vec::new();
+        for r in &self.reads {
+            let a = r.at.map(|p| self.place_at(p, col));
+            out.extend(a.into_iter().flatten());
+            if let Some(d) = r.along {
+                let d = match (d, a) {
+                    (Direction::Toward(b), Some(a)) => unit(vsub(self.place_at(b, col), a)),
+                    (Direction::Toward(_), None) => [T::cst(f64::NAN); 3],
+                    (d, _) => self.direction_at(d, col),
+                };
+                out.extend(d);
+            }
+        }
+        out
+    }
+
+    /// How many numbers the bodies read (`readings_at`).
+    pub fn read_width(&self) -> usize {
+        self.reads.iter().map(Read::width).sum()
+    }
+
+    /// The columns the readings read, each once.
+    pub(crate) fn extra_columns(&self) -> Vec<usize> {
+        let mut out = Vec::new();
+        let reads = self.reads.iter()
+            .flat_map(|r| [r.at.map(|p| p.reads()), r.along.map(|d| d.reads())])
+            .flatten();
+        for (f, own) in reads {
+            out.extend(self.frame_columns(f));
+            out.extend(own);
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
     /// **Sheet `s`'s level at `p`**: its signed distance (on a turn's face, the distance in the
     /// meridian half-plane, the same thing) and that distance's gradient in space, over the
     /// columns `col` reads — NaN where the sheet is degenerate (a line of no length, a node on a
     /// turn's axis off a face square to it).
     fn level<T: Num>(&self, s: usize, col: &dyn Fn(usize) -> T, p: V<T>) -> (T, V<T>) {
-        let [o, u, v, n] = self.basis(self.sheets[s].frame(), col);
+        // a held panel (#953): the plane of the triangle nearest the node where it stands
+        if let Sheet::Facets { first, count } = self.sheets[s] {
+            let at = p.map(|q| q.val());
+            let near = (first..first + count)
+                .map(|f| (triangle_distance(&self.facets[f], at), f))
+                .min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, f)| f);
+            let Some(f) = near else {
+                let nan = T::cst(f64::NAN);
+                return (nan, [nan; 3]);
+            };
+            let t = &self.facets[f];
+            let (a, b, c) = ([t[0], t[1], t[2]], [t[3], t[4], t[5]], [t[6], t[7], t[8]]);
+            let n = crate::space::unit(crate::space::cross(crate::space::sub(b, a),
+                                                           crate::space::sub(c, a)));
+            let nd = n.map(T::cst);
+            return (vdot(vsub(p, a.map(T::cst)), nd), nd);
+        }
+        // a half-space's plane (#953): its point, its unit direction, its ordinate
+        if let Sheet::Ordinate { at, along, c, m, t } = self.sheets[s] {
+            let k = T::cst;
+            let o = self.place_at(at, col);
+            let n = self.direction_at(along, col);
+            let h = match t {
+                Some(t) => k(c) + k(m) * col(t),
+                None => k(c),
+            };
+            return (vdot(vsub(p, o), n) - h, n);
+        }
+        let [o, u, v, n] = self.basis(self.sheets[s].frame().expect("a sheet's plane"), col);
         let lift = |c: usize| vadd(o, vadd(vscale(u, col(c)), vscale(v, col(c + 1))));
         let k = T::cst;
         match self.sheets[s] {
@@ -396,6 +585,9 @@ impl Hull {
                 let w = vsub(d, vscale(n, vdot(d, n)));
                 let rho = vdot(w, w).sqrt();
                 (rho - col(r), vscale(w, k(1.0) / rho))
+            }
+            Sheet::Ordinate { .. } | Sheet::Facets { .. } => {
+                unreachable!("a half-space's and a panel's levels are read above")
             }
             Sheet::Turned { axis, curve, .. } => {
                 let (a, d) = match axis {
@@ -809,11 +1001,34 @@ impl Hull {
                         Axis::Read { a, d } => (2.0, [a as f64, d as f64, 0.0, 0.0, 0.0, 0.0]),
                     };
                     w[5] = kind;
-                    w[6..].copy_from_slice(&rest);
+                    w[6..12].copy_from_slice(&rest);
+                }
+                Sheet::Facets { first, count } => {
+                    w[..3].copy_from_slice(&[4.0, *first as f64, *count as f64]);
+                }
+                // its kind, its point's four and its direction's five (`place_code`,
+                // `direction_code`), then its ordinate's number, coefficient and unknown's
+                // column past one (none: nothing)
+                Sheet::Ordinate { at, along, c, m, t } => {
+                    w[0] = 3.0;
+                    w[1..5].copy_from_slice(&place_code(Some(*at)));
+                    w[5..10].copy_from_slice(&direction_code(Some(*along)));
+                    w[10] = *c;
+                    w[11] = *m;
+                    w[12] = t.map_or(0.0, |t| t as f64 + 1.0);
                 }
             }
             k.extend(w);
         }
+        // what an integral's bodies read (§6.25): how many, then each one's point and direction
+        k.push(self.reads.len() as f64);
+        for r in &self.reads {
+            k.extend(place_code(r.at));
+            k.extend(direction_code(r.along));
+        }
+        // the triangles held panels are drawn with (#953): how many, then each one's nine
+        k.push(self.facets.len() as f64);
+        k.extend(self.facets.iter().flatten());
         for s in &self.nodes {
             let mut w = [0.0; 4];
             w[0] = s.len() as f64;
@@ -829,7 +1044,8 @@ impl Hull {
 
     /// How many constants it is.
     pub fn width(&self) -> usize {
-        5 + 10 * self.frames.len() + SHEET * self.sheets.len() + 10 * self.nodes.len()
+        5 + 10 * self.frames.len() + SHEET * self.sheets.len() + 1 + READ * self.reads.len() + 1
+            + 9 * self.facets.len() + 10 * self.nodes.len()
     }
 
     /// What `consts` wrote, from `k`, and how many it read — `None` for constants that are not
@@ -859,6 +1075,28 @@ impl Hull {
             })
         }).collect::<Option<_>>()?;
         let frame = |v: f64| count(v).filter(|&f| f < n_frames);
+        // what `place_code` and `direction_code` wrote: `None` for constants that are not whole,
+        // `Some(None)` for nothing
+        let place = |w: &[f64]| -> Option<Option<Place>> {
+            Some(Some(match count(w[0])? {
+                0 => return Some(None),
+                1 => Place::Held([w[1], w[2], w[3]]),
+                2 => Place::Space(col(w[1], 3)?),
+                3 => Place::Plane { frame: frame(w[1])?, c: col(w[2], 2)? },
+                4 => Place::Chart { frame: frame(w[1])?, c: col(w[2], 3)? },
+                _ => return None,
+            }))
+        };
+        let direction = |w: &[f64]| -> Option<Option<Direction>> {
+            Some(Some(match count(w[0])? {
+                0 => return Some(None),
+                1 => Direction::Held([w[1], w[2], w[3]]),
+                2 => Direction::Normal(frame(w[1])?),
+                3 => Direction::Read(col(w[1], 3)?),
+                4 => Direction::Toward(place(&w[1..5])??),
+                _ => return None,
+            }))
+        };
         let curve = |c: &[f64]| Some(match c[0] {
             z if z == 0.0 => Profile::Line { a: col(c[1], 2)?, b: col(c[2], 2)? },
             z if z == 1.0 => Profile::Circle { c: col(c[1], 2)?, r: col(c[2], 1)? },
@@ -878,21 +1116,76 @@ impl Hull {
                     };
                     Sheet::Turned { frame: frame(s[1])?, axis, curve: curve(&s[2..5])? }
                 }
+                z if z == 4.0 => Sheet::Facets { first: count(s[1])?, count: count(s[2])? },
+                z if z == 3.0 => {
+                    let at = place(&s[1..5])??;
+                    let along = direction(&s[5..10])??;
+                    let t = match count(s[12])? {
+                        0 => None,
+                        t => Some(col((t - 1) as f64, 1)?),
+                    };
+                    Sheet::Ordinate { at, along, c: s[10], m: s[11], t }
+                }
                 _ => return None,
             })
         }).collect::<Option<_>>()?;
+        let n_reads = count(*take(1)?.first()?)?;
+        let reads: Vec<Read> = take(n_reads.checked_mul(READ)?)?.as_chunks::<READ>().0.iter()
+            .map(|e| {
+                let r = Read { at: place(&e[..4])?, along: direction(&e[4..9])? };
+                (r.at.is_some() || r.along.is_some()).then_some(r)
+            })
+            .collect::<Option<_>>()?;
+        let n_facets = count(*take(1)?.first()?)?;
+        let facets: Vec<[f64; 9]> = take(n_facets.checked_mul(9)?)?.as_chunks::<9>().0.to_vec();
         let nodes: Vec<Vec<usize>> = take(4 * n_nodes)?.as_chunks::<4>().0.iter().map(|w| {
             let n = count(w[0]).filter(|&n| n <= 3)?;
             w[1..1 + n].iter().map(|&s| count(s).filter(|&s| s < n_sheets)).collect()
         }).collect::<Option<_>>()?;
         let x0 = take(3 * n_nodes)?.to_vec();
         let feet0 = take(3 * n_nodes)?.to_vec();
-        Some((Hull { columns, frames, sheets, nodes, x0, feet0, extent }, at))
+        if sheets.iter().any(|s| matches!(*s, Sheet::Facets { first, count }
+            if first.checked_add(count).is_none_or(|e| e > facets.len()))) {
+            return None;
+        }
+        Some((Hull { columns, frames, sheets, nodes, x0, feet0, extent, reads, facets }, at))
     }
 }
 
-/// A sheet's constants: its kind, its plane, its profile's three, its axis's kind and six.
-const SHEET: usize = 12;
+/// A sheet's constants: its kind, its plane, its profile's three, its axis's kind and six; a
+/// half-space's kind, its point's four, its direction's five and its ordinate's three.
+const SHEET: usize = 13;
+
+/// The constants of what an integral's body reads (§6.25): four for its point, five for its
+/// direction.
+const READ: usize = 9;
+
+/// **A place's constants** (#953): its kind past one (none: nothing), then three — held, its
+/// numbers; else its plane's index and its first column, or its first column alone.
+fn place_code(p: Option<Place>) -> [f64; 4] {
+    match p {
+        None => [0.0; 4],
+        Some(Place::Held(q)) => [1.0, q[0], q[1], q[2]],
+        Some(Place::Space(c)) => [2.0, c as f64, 0.0, 0.0],
+        Some(Place::Plane { frame, c }) => [3.0, frame as f64, c as f64, 0.0],
+        Some(Place::Chart { frame, c }) => [4.0, frame as f64, c as f64, 0.0],
+    }
+}
+
+/// **A direction's constants** (#953): its kind past one (none: nothing), then four — held, its
+/// three; a plane's index or a first column; or the second point's four (`place_code`).
+fn direction_code(d: Option<Direction>) -> [f64; 5] {
+    match d {
+        None => [0.0; 5],
+        Some(Direction::Held(v)) => [1.0, v[0], v[1], v[2], 0.0],
+        Some(Direction::Normal(f)) => [2.0, f as f64, 0.0, 0.0, 0.0],
+        Some(Direction::Read(c)) => [3.0, c as f64, 0.0, 0.0, 0.0],
+        Some(Direction::Toward(b)) => {
+            let p = place_code(Some(b));
+            [4.0, p[0], p[1], p[2], p[3]]
+        }
+    }
+}
 
 /// `(JJᵀ)⁻¹ φ` over a node's levels and their gradients (one, two or three): `None` where the
 /// sheets are not independent there.

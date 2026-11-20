@@ -1,12 +1,14 @@
 //! `distance(p, f1) + distance(p, f2) <= 10mm` — a bound on measurements (#183 F3), **parsed
 //! once** (#190): each side a `Measuring` tree, its measurements over references read by `refr`
 //! as every other operand is, and whatever measures nothing kept as one number's text, which
-//! `expr` reads once the flattener has written the scope's numbers into it.
+//! `expr` reads once the flattener has written the scope's numbers into it.  An equation of
+//! integrals (§6.25), `integral(density(p) over p in boat) == M`, is the same tree with
+//! `integral(…)` and `density(…)` among its terms, compared by `==` too, and may be claimed.
 
 use super::P;
 use crate::expr::{Op, MEASURES};
 use crate::syntax::lexer::Tok;
-use crate::syntax::words::{level_end, Brackets};
+use crate::syntax::words::{self, level_end, Brackets};
 use crate::syntax::{Measured, Measurement, Measuring, Span};
 
 impl<'a> P<'a> {
@@ -21,7 +23,48 @@ impl<'a> P<'a> {
         let cmp = self.closed_cmp()?;
         let rhs = self.measuring(self.level_end(false))?;
         self.end_of_stmt();
-        Some(Measured { lhs, cmp, rhs, span: Span::new(lo, self.prev_hi()), through: Vec::new() })
+        Some(Measured { lhs, cmp: Some(cmp), rhs, span: Span::new(lo, self.prev_hi()), claim: false,
+                        head: None, through: Vec::new() })
+    }
+
+    /// **An equation of integrals** (§6.25), `claim` first where `claim`: `LHS == RHS`, or a
+    /// bound, `LHS <= RHS`, from the statement's first token.
+    pub(super) fn equation(&mut self, claim: bool) -> Option<Measured> {
+        let lo = self.here().lo as usize;
+        if claim {
+            self.i += 1;
+        }
+        let end = words::level_end(&self.t, self.i, self.t.len(), Brackets::All,
+                                   |t| matches!(t, Tok::P('<' | '>') | Tok::EqEq));
+        let lhs = self.measuring(end)?;
+        let cmp = match self.peek() {
+            Some(Tok::EqEq) => {
+                self.i += 1;
+                None
+            }
+            Some(Tok::P('<' | '>')) => Some(self.closed_cmp()?),
+            _ => {
+                self.fail("an integral is compared: `integral(… over p in S) == v`, or claimed \
+                           at most or at least a number");
+                return None;
+            }
+        };
+        let rhs = self.measuring(self.level_end(false))?;
+        self.end_of_stmt();
+        Some(Measured { lhs, cmp, rhs, span: Span::new(lo, self.prev_hi()), claim, head: None,
+                        through: Vec::new() })
+    }
+
+    /// Whether the statement from token `j` on is an equation of integrals: it compares two
+    /// sides outside every bracket (`==`, `<=`, `>=`), and integrates — which an energy, `k
+    /// minimizes integral(…)`, compares nothing to do (§9.10).
+    pub(super) fn integral_ahead(&self, j: usize) -> bool {
+        let at = words::level_end(&self.t, j, self.t.len(), Brackets::All,
+                                  |t| matches!(t, Tok::P('<' | '>') | Tok::EqEq));
+        let compared = matches!(self.t.get(at), Some((Tok::P('<' | '>') | Tok::EqEq, _)));
+        let end = words::level_end(&self.t, j, self.t.len(), Brackets::All, |_| false);
+        compared && (j..end).any(|k| matches!(&self.t[k].0, Tok::Ident(w) if w == "integral")
+            && matches!(self.t.get(k + 1), Some((Tok::P('('), _))))
     }
 
     /// One side, every token up to `end`.
@@ -41,7 +84,7 @@ impl<'a> P<'a> {
     /// What was read from the token `from` on: itself where it measures something, else the
     /// number its text is.
     fn m_folded(&self, from: usize, m: Measuring) -> Measuring {
-        if !m.measures().is_empty() {
+        if m.reads_geometry() {
             return m;
         }
         self.m_text(from)
@@ -142,6 +185,20 @@ impl<'a> P<'a> {
             Some(Tok::Ident(w)) if call && MEASURES.iter().any(|m| m.0 == w) => {
                 self.measurement(&w).map(Measuring::Measure)
             }
+            // an integral over a set and the density at its point (§6.25)
+            Some(Tok::Ident(w)) if call && w == "integral" => self.m_integral(end),
+            Some(Tok::Ident(w)) if call && w == "density" => {
+                let lo = self.here().lo as usize;
+                self.i += 1;
+                if !self.want_p('(') {
+                    return None;
+                }
+                let at = self.refr()?;
+                if !self.want_p(')') {
+                    return None;
+                }
+                Some(Measuring::Density(at, Span::new(lo, self.prev_hi())))
+            }
             // a function: of numbers, a number; of a measurement, kept for the elaborator to
             // refuse where it stands
             Some(Tok::Ident(_)) if call => {
@@ -176,6 +233,36 @@ impl<'a> P<'a> {
                 None
             }
         }
+    }
+
+    /// `integral(EXPR over p in S)` (§6.25), from its word: the body up to `over` outside every
+    /// bracket, the point it binds, and the set.
+    fn m_integral(&mut self, end: usize) -> Option<Measuring> {
+        let lo = self.here().lo as usize;
+        self.i += 1;
+        let close = self.m_close(end);
+        self.i += 1;
+        let over = level_end(&self.t, self.i, close, Brackets::Expr,
+                             |t| matches!(t, Tok::Ident(w) if w == "over"));
+        let Some(over) = Some(over).filter(|&k| k < close
+            && matches!(&self.t[k].0, Tok::Ident(w) if w == "over")) else {
+            self.fail("an integral is over a set: `integral(… over p in S)`");
+            return None;
+        };
+        let body = self.measuring(over)?;
+        self.i = over + 1;
+        let var = self.ident()?;
+        if !self.eat_word("in") {
+            self.fail("an integral is over a set: `integral(… over p in S)`");
+            return None;
+        }
+        let set = self.refr()?;
+        if !self.want_p(')') {
+            return None;
+        }
+        let span = Span::new(lo, self.prev_hi());
+        let integral = crate::syntax::Integration { body, var, over: set, span };
+        Some(Measuring::Integral(Box::new(integral)))
     }
 
     /// Where the argument from here ends: at a `,` outside every bracket, or `close`.
@@ -229,20 +316,30 @@ impl<'a> P<'a> {
         }
         let mut args = Vec::new();
         let mut at = None;
+        let mut along = None;
         loop {
             let labelled = matches!(self.t.get(self.i + 1), Some((Tok::P(':'), _)));
             match self.peek().cloned() {
-                // the point an angle between faces is read nearest (#183 F9), the one label a
-                // measurement takes
+                // the point an angle between faces is read nearest (#183 F9), and the direction a
+                // distance is signed along (§6.25): the labels a measurement takes
                 Some(Tok::Ident(l)) if labelled => {
-                    if l != "at" || measure != crate::expr::Measure::Angle || args.len() != n {
+                    use crate::expr::Measure;
+                    let fits = match l.as_str() {
+                        "at" => measure == Measure::Angle && at.is_none(),
+                        "along" => measure == Measure::Distance && along.is_none(),
+                        _ => false,
+                    };
+                    if !fits || args.len() != n {
                         self.fail(&format!("`{word}` takes no `{l}:`"));
                         return None;
                     }
                     self.i += 2;
-                    at = Some(self.refr()?);
+                    let r = self.refr()?;
+                    if l == "at" { at = Some(r) } else { along = Some(r) }
                 }
-                Some(Tok::Ident(_)) if at.is_none() && args.len() < n => args.push(self.refr()?),
+                Some(Tok::Ident(_)) if at.is_none() && along.is_none() && args.len() < n => {
+                    args.push(self.refr()?)
+                }
                 Some(Tok::Ident(_)) => {
                     self.fail(&format!("`{word}` takes {n} argument(s)"));
                     return None;
@@ -263,6 +360,6 @@ impl<'a> P<'a> {
             self.fail(&format!("`{word}` takes {n} argument(s)"));
             return None;
         }
-        Some(Measurement { measure, args, at, span: Span::new(lo, self.prev_hi()) })
+        Some(Measurement { measure, args, at, along, span: Span::new(lo, self.prev_hi()) })
     }
 }

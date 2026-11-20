@@ -302,11 +302,7 @@ pub(super) fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) ->
         // an energy goes with the curve it is over (#121)
         StmtKind::Minimize(m) => look(&m.curve),
         // a bound on measurements goes with what it measures (#183 F3)
-        StmtKind::Measured(m) => {
-            for x in m.lhs.measures().into_iter().chain(m.rhs.measures()) {
-                x.refs().for_each(&mut look);
-            }
-        }
+        StmtKind::Measured(m) => m.refs().into_iter().for_each(&mut look),
         // a set goes with what its body names (§6.21), as a component's call goes with its
         // arguments
         StmtKind::Set(set) => {

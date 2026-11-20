@@ -189,6 +189,7 @@ mod mapped;
 mod mirrored;
 mod materials;
 mod measured;
+mod hydrostatics;
 mod measurements;
 mod mechanism_examples;
 mod meets;

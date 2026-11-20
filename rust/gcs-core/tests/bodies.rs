@@ -105,7 +105,8 @@ fn a_bar_pulled_answers_to_rounding() {
     let (w, h, t, s, young, nu, rho, yields) =
         (80.0, 30.0, 10.0, 40e3, 200e6, 0.3, 7850.0 * 1e-9, 250e3);
     // its mass is the drawing's, claimed of it: no scenario's
-    let e = crate::common::text::solved(&(bar(claims) + "claim mass(>= 1g) plate\n"));
+    let mass = "use std.measures (mass)\nclaim mass(>= 1g) plate\n";
+    let e = crate::common::text::solved(&(bar(claims) + mass));
     let (words, read) = scenario_read(&e.sketch, &e.scenarios[0].scenario);
     assert!(words.is_empty(), "{words:?}");
     let v: Vec<f64> = read.answers.iter().map(|a| a.clone().unwrap().unwrap()).collect();
@@ -263,6 +264,7 @@ scenario pull {
   claim compliance(bar) >= 0J
   claim safety(bar) >= 1
 }
+use std.measures (mass)
 claim mass(>= 1g) bar
 ";
 
@@ -330,6 +332,7 @@ scenario pull {
   claim deflection(c, along: std.z) >= 0mm
   claim safety(rod) >= 1
 }
+use std.measures (mass)
 claim mass(>= 1g) rod
 ";
 

@@ -683,6 +683,21 @@ sheet used as a set any other way — a distance off a probe, an equality — is
 spelling. Every set the document makes that is a sheet is recorded for the report
 (`Expansion::panels`, `Sketch::panels`).
 
+**A closed shell, and the solid it encloses** (#953, [0.221]). A set whose body is a
+disjunction of memberships of panels and drawn faces, `shell := { q | q in bottom or q in port or
+q in deck }`, is the union of those surfaces: `syntax::notation`'s `disjunction` lowers a drawn
+face's membership to `coincident` (a panel's to `outside`, as any set's), where through 0.220 a
+face there was refused. Its **side** at a region solid's probe, `hull := solid({ p | p in
+shell.side })`, is what it encloses: the flattener recognises the shell by its body as written
+(`Walk::shell_members` — one `q outside #s`, `#s`'s every statement a sheet's `outside` or a
+face's `coincident`; a member that is a set and no sheet leaves it the union of regions it has
+always been) and, at the probe, records it (`Walk::enclose`, `EnclosedInfo`, `Expansion::shells`)
+rather than applying its body; `program::developed::enclosed` makes the probe's term,
+`RegionShape::Enclosed { members }`, each a panel by its rails or a face by its entity, named by
+the set it is. Refused (**E040**): a shell read from a drawn point, or as anything but its side.
+A member that is neither is refused where the shell is used. Built by `solid::enclosed` (below,
+[developables.md](developables.md)); its faces are its members' names (`hull.port`).
+
 **Outside a set, and Booleans as sets** (#737 P3, [0.199]): `p outside S`, `S` a set no one bound
 of which turns round in place (a conjunction, an interval, several numbers: `region_body` refuses
 it), is outside the set as its own point says it — `sets::complement` gives `S` a hidden point,

@@ -154,3 +154,24 @@ march carries (`a_rate_equal_to_a_rate_keeps_pace`); a rate of another formal is
 (`a_rate_against_a_rate_of_another_formal_is_refused`). A body mixing points in a plane with points
 in space is read where the core recognises it (`std.panels.Development`), not yet by the generic
 march.
+
+**A closed shell's solid** (#953, [0.221], `solid::enclosed`, [sets.md](sets.md)). The inside of
+a shell of panels and faces of the drawing is read by no field: each face is its planar face
+(`build::face` of its profile) and each panel the sheet of degree one each way through its
+rulings' ends at the stations that draw it to the flatness of a report (`Developable::stations`,
+as a band's are, at most `MAX_STATIONS`), each named by its member, and the kernel sews them
+(`Node::Sewn`, `sew::sewn`) to that tolerance — a panel's rail drawn through its stations stands
+off the face or panel beside it by its chords' sag at most. A shell that does not close is refused
+by the kernel, the edge bounding one face said; a panel that cannot be read is said by its member's
+name. Its field is its own exact boundary (`BuiltField`), and it is remembered against its members
+(`Caches::shell`, `solid::reads`: each panel's rails as paths, each face's loops). **Moved**: a
+driving row over a body built of it reads each face's plane as a cap of its plane's frame and each
+panel whose rails nothing the solve moves as held (`interior::Sheet::Facets`: the triangles of its
+strips, a node's level the signed distance from the plane of the nearest), so a waterline finds
+its height over a hull of panels; a panel whose rails the solve moves is refused where the row is
+stated (**E040**, `its panel … rails are moved by the solve`) — moving a panel by its rails is the
+open item. **Held to** (`tests/hydrostatics.rs`): a punt's shell of two developable sides and four
+faces, its volume `300 A + 300 · 40 · 1000` against its bottom's exact area, its waterline at the
+root of the trapezoids' volume and its waterplane's area to the tolerance its sides are drawn to
+(`a_hull_of_panels_floats`, slow tier), and the panel the solve moves said
+(`a_panel_the_solve_moves_is_said`).

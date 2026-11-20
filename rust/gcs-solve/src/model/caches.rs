@@ -162,6 +162,9 @@ pub struct Caches {
     /// Each developable panel's band faceted (`solid::sheet::band`, #645), against `solid::reads`
     /// at the unit it was faceted at.
     pub(crate) sheet: Memo<Result<Rc<crate::solid::sheet::Band>, String>>,
+    /// Each closed shell read (`solid::enclosed::built`, #953), against `solid::reads` at the unit
+    /// its panels were drawn at.
+    pub(crate) shell: Memo<Result<Rc<crate::solid::enclosed::Shell>, String>>,
     /// Each declared parameter's march (`follow::followed`, #391 S4), by its name, against every
     /// number of the drawing: a trace over it and the report each read it, and it is a solve a
     /// station.
@@ -221,6 +224,7 @@ impl Caches {
         self.built.clear();
         self.family.clear();
         self.sheet.clear();
+        self.shell.clear();
         self.followed.borrow_mut().clear();
         self.tracks.borrow_mut().clear();
         self.traced3.borrow_mut().clear();

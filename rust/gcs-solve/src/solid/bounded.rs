@@ -60,6 +60,10 @@ enum Shape {
     Half { o: V, n: V, reach: f64 },
     /// The hull of `corners` ([0.212]): a join of sets, read as the hull of finitely many points.
     Hull { corners: Vec<V> },
+    /// The half-space `n · (x − o) ≤ 0` (`n` unit) kept in common with a body (#953,
+    /// `defined::kept_half`): the block standing on its plane over the box of the solids
+    /// `sources`, the body's material, built before it (`Node::Half`).
+    Kept { o: V, n: V, sources: Vec<u32> },
     /// The solid torus about the line through `c` along `d` (unit): the tube of radius `r` about
     /// the circle of radius `big` about that line.
     Torus { c: V, d: V, big: f64, r: f64 },
@@ -113,6 +117,10 @@ fn region_node(pieces: &[Piece], w: &Writer) -> Result<Json, String> {
                         ("origin", w.line_origin(mm(a), d)), ("axis", Writer::triple(d)), ("angle", TAU.into())])
                 }
                 Shape::Half { o, n, reach } => half_space(w, o, scale(n, -1.0), reach, &piece.name)?,
+                Shape::Kept { o, n, ref sources } => object([("kind", "half".into()),
+                    ("origin", w.plane_origin(mm(o), n)), ("into", Writer::triple(scale(n, -1.0))),
+                    ("sources", Json::Arr(sources.iter().map(|&s| (s as i64).into()).collect())),
+                    ("face", piece.name.as_str().into())]),
                 Shape::Region(ref inner) => region_node(inner, w)?,
                 Shape::Torus { c, d, big, r } => {
                     // the tube's circle, in a plane through the line, turned once about it
@@ -146,11 +154,56 @@ pub(super) fn half_space(w: &Writer, o: V, keep: V, reach: f64, name: &str) -> R
 pub fn built(sk: &Sketch, solid: usize) -> Option<Result<Rc<Bounded>, String>> {
     let SolidDef::Region { .. } = &sk.solids.get(solid)?.def else { return None };
     sk.caches.bounded.get_or(solid, super::MemoKey::of(sk, solid), || {
+        if super::defined::kept_half(sk, solid) {
+            return Some(kept(sk, solid).map(Rc::new));
+        }
         construction(sk, solid).map(|b| b.and_then(|b| {
             gate(sk, solid, &b)?;
             Ok(Rc::new(b))
         }))
     })
+}
+
+/// **A half-space kept in common with a body** (#953, `defined::kept_half`): each of its terms the
+/// block on its plane over the material of the bodies it is kept with — exact by construction, so
+/// no gate reads it (the block is the half-space wherever the material reaches).
+fn kept(sk: &Sketch, solid: usize) -> Result<Bounded, String> {
+    let SolidDef::Region { terms, .. } = &sk.solids[solid].def else {
+        return Err("no region".into());
+    };
+    let name = &sk.solids[solid].name;
+    let sources = super::document::material_of(sk, &super::applied_to(sk, solid))?;
+    let mut pieces = Vec::new();
+    for t in terms {
+        let lo = t.lo.value(sk).map_err(|e| format!("`{name}`: {e}"))?;
+        let Ok(Some(super::field::region::Measure::Ordinate { o, n })) =
+            super::region::measure_of(sk, &t.shape) else {
+            return Err(format!("`{name}`: a term that is no half-space"));
+        };
+        let len = norm(n);
+        if !(len > 0.0) {
+            return Err(format!("`{name}`: a half-space of no direction"));
+        }
+        let (n, e) = (scale(n, 1.0 / len), (dot(n, o) + lo) / len);
+        // `n · x ≤ e`, `≥ e` turned round, and an interval two of them
+        let sides: Vec<(V, f64)> = match t.cmp {
+            Cmp::Le => vec![(n, e)],
+            Cmp::Ge => vec![(scale(n, -1.0), -e)],
+            Cmp::In => {
+                let hi = (dot(n, o) * len + t.hi.unwrap_or(lo)) / len;
+                vec![(n, hi), (scale(n, -1.0), -e)]
+            }
+        };
+        for (n, e) in sides {
+            let o = scale(n, e);
+            pieces.push(Piece { keep: true, shape: Shape::Kept { o, n, sources: sources.clone() },
+                                name: t.name.clone() });
+        }
+    }
+    if pieces.is_empty() {
+        return Err(format!("`{name}` keeps within no half-space"));
+    }
+    Ok(Bounded { pieces })
 }
 
 /// The pieces of region solid `solid`, or `None` where it is not read in general position or a

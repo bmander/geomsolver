@@ -8,6 +8,7 @@ unit mm
 use std
 use std.solids
 use std.place (horizontal, vertical)
+use std.measures (mass)
 
 H := 6000mm
 crest := 1500mm

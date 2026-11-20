@@ -18,6 +18,7 @@
 //! | `p coincident(under: m, over t in (a, b)) sec` (`Swept`: a face's patch), `m` a turn about a line in `sec`'s plane, one end of the interval nothing | `Revolve { face: sec, axis, sweep: b − a, sense }` |
 //! | `p inside sec` alone, unbounded along its normal | `Through { face: sec }`, naming no body: bounded by every body it is cut from (#746) |
 //! | `p inside A` and `p inside`/`p outside` other solids, or `p outside { q \| q outside a; q outside b }`, each solid named whole | `Body { stock, on, through, bound }` |
+//! | `p inside A` (and other solids named whole, kept or cut) with terms that read no face — a half-space, `p in water` | `Body` over the same solids, kept in common with a region of the other terms of the same name (`trimmed`, #953) |
 
 use crate::model::{EntKind, EntRef, Extent, RegionShape, RegionTerm, Sketch, SolidDef};
 use crate::vocab::Cmp;
@@ -85,6 +86,55 @@ fn boolean(terms: &[RegionTerm]) -> Option<SolidDef> {
         }
     };
     Some(SolidDef::Body { stock, on, through: cut, bound })
+}
+
+/// **A body trimmed by sets that read no face** (#953): solid `i`, a region whose terms keep it
+/// within one solid named whole or more (`p in hull`), outside any others named whole, and within
+/// terms that read no face (`p in water`, a half-space) — the hull in water.  It is made the body
+/// over those solids, kept in common with a region of the other terms, which is pushed as a solid
+/// of the same name (as `Sketch::as_body` pushes a sweep's own stock), so its faces are named from
+/// it with no step of their own: the hull's `immersed.low`, the waterplane's `immersed.water`.
+/// The region alone may be unbounded — a half-space is — and is bounded by the material it is
+/// kept with (`kept_half`), as a prism through everything is by what it is cut from.  `false`,
+/// leaving `i` as it is, for any other set.
+pub fn trimmed(sk: &mut Sketch, i: usize) -> bool {
+    let Some(SolidDef::Region { probe, terms }) = sk.solids.get(i).map(|s| &s.def) else {
+        return false;
+    };
+    let (mut within, mut cut, mut rest) = (Vec::new(), Vec::new(), Vec::new());
+    for t in terms {
+        match whole(t) {
+            Some((s, Cmp::Le)) => within.push(s),
+            Some((s, _)) => cut.push(s),
+            None if !super::faces::reads_faces(&t.shape)
+                && !matches!(t.shape, RegionShape::Outside { .. }) => rest.push(t.clone()),
+            None => return false,
+        }
+    }
+    let Some((&stock, bound)) = within.split_first() else { return false };
+    if rest.is_empty() {
+        return false;
+    }
+    let mut bound = bound.to_vec();
+    let half = sk.solids.len() as u32;
+    bound.push(half);
+    let region = SolidDef::Region { probe: *probe, terms: rest };
+    sk.solids.push(crate::model::SolidE { material: None, def: region, ..sk.solids[i].clone() });
+    sk.solids[i].def = SolidDef::Body { stock, on: Vec::new(), through: cut, bound };
+    true
+}
+
+/// **Whether region solid `i` is a set of half-spaces kept in common with a body** (#953,
+/// `trimmed`): every term an ordinate (`RegionShape::Plane`), and `i` in the set some body keeps
+/// in common with it — bounded by that body's material, not by anything of its own, so read with
+/// no end (`region::general`) and built over that material's box (`bounded`, `Node::Half`).
+pub fn kept_half(sk: &Sketch, i: usize) -> bool {
+    let Some(SolidDef::Region { terms, .. }) = sk.solids.get(i).map(|s| &s.def) else {
+        return false;
+    };
+    !terms.is_empty() && terms.iter().all(|t| matches!(t.shape, RegionShape::Plane { .. }))
+        && sk.solids.iter().any(|s| matches!(&s.def,
+            SolidDef::Body { bound, .. } if bound.contains(&(i as u32))))
 }
 
 /// **A revolution**: a face's patch swept by a turn about a line in its plane, over an interval

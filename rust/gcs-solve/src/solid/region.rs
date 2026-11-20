@@ -50,6 +50,11 @@ pub(crate) fn in_general_position(sk: &Sketch, solid: usize)
     let Some(SolidDef::Region { terms, .. }) = sk.solids.get(solid).map(|s| &s.def) else {
         return None;
     };
+    // a half-space kept with a body is read point by point, its end the body's (#953): never
+    // folded about an axis, where it would be refused for having none
+    if super::defined::kept_half(sk, solid) {
+        return Some(general(sk, solid));
+    }
     let key = match super::faces::strata(sk, terms) {
         Ok(strata) => super::MemoKey::own(sk, solid, strata),
         Err(_) => super::MemoKey::of(sk, solid),
@@ -80,12 +85,17 @@ pub enum Form {
     General(crate::solid::field::RegionField),
     /// A developable panel's band (#645), built from the panel's rulings (`solid::sheet`).
     Sheet(Rc<super::sheet::Band>),
+    /// The inside of a closed shell (#953), its panels and faces sewn (`solid::enclosed`).
+    Enclosed(Rc<super::enclosed::Shell>),
 }
 
 /// Region solid `solid`'s `Form`.
 pub fn form(sk: &Sketch, solid: usize) -> Result<Form, String> {
     if let Some(band) = super::sheet::band(sk, solid, super::REPORT_UNIT) {
         return band.map(Form::Sheet);
+    }
+    if let Some(shell) = super::enclosed::built(sk, solid, super::REPORT_UNIT) {
+        return shell.map(Form::Enclosed);
     }
     match in_general_position(sk, solid) {
         Some(g) => g.map(Form::General),
@@ -122,6 +132,8 @@ pub enum Route {
     /// A face carried over an interval of a constant twist (#846): the kernel's carried profile,
     /// or why it is refused.
     Carried(Result<Rc<super::carried::Carried>, String>),
+    /// The inside of a closed shell (#953): its panels and faces sewn.
+    Enclosed(Rc<super::enclosed::Shell>),
 }
 
 impl Route {
@@ -168,6 +180,8 @@ pub fn route(sk: &Sketch, solid: usize) -> Result<Route, String> {
     match form(sk, solid)? {
         Form::Meridian(m) => Ok(Route::Meridian(m)),
         Form::Sheet(b) => Ok(Route::Sheet(b)),
+        // the inside of a closed shell (#953): sewn, never read point by point
+        Form::Enclosed(s) => Ok(Route::Enclosed(s)),
         Form::General(_) => {
             if let Some(c) = super::carried::built(sk, solid) {
                 return Ok(Route::Carried(c));

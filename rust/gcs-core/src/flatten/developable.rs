@@ -209,6 +209,25 @@ pub struct SheetInfo {
     pub span: Span,
 }
 
+/// **One member of a closed shell** (#953): a recognised sheet by its rails, or a drawn face by
+/// absolute name — each with the name its faces take.
+#[derive(Clone, Debug)]
+pub enum MemberInfo {
+    Sheet { rails: [RailInfo; 2], name: String },
+    Face { face: String, name: String },
+}
+
+/// **The inside of a closed shell at a region solid's probe** (#953): `p in shell.side`, `shell
+/// := { q | q in bottom or q in port or … }` — the probe by absolute key, the shell's members,
+/// and its name.
+#[derive(Clone, Debug)]
+pub struct EnclosedInfo {
+    pub probe: String,
+    pub members: Vec<MemberInfo>,
+    pub name: String,
+    pub span: Span,
+}
+
 /// **A recognised development** (#645): its instance's prefix, the panel's rails, the home point
 /// on `a` by absolute name, the layer, and whether the panel is a band (both rails closed).
 #[derive(Clone, Debug)]
@@ -376,6 +395,81 @@ impl Walk<'_> {
             .filter_map(|(n, site)| Some((n.clone(), self.sheet_rails(site, &alias)?)))
             .collect();
         self.panels.extend(panels);
+    }
+
+    /// **The members of the closed shell `abs` names** (#953), where its body says one: the union
+    /// of panels and drawn faces, `{ q | q in bottom or q in port or q in deck }` — lowered as
+    /// `q outside #s`, `#s`'s body one membership of `q` a member, a sheet's `outside` it and a
+    /// face's `coincident` with it (`syntax::notation`'s `disjunction`).  `None` for any other set:
+    /// a member that is a set and no sheet makes the union of regions it has always been.
+    pub(super) fn shell_members(&self, abs: &str, alias: &BTreeMap<String, String>)
+        -> Option<Vec<MemberInfo>> {
+        let site = self.sets.made.get(abs)?;
+        let q = site.lit().bound.text.as_str();
+        fn written(st: &Stmt) -> Option<&crate::syntax::Written> {
+            match &st.kind {
+                StmtKind::Relation(r) if !r.claim => r.form.written(),
+                _ => None,
+            }
+        }
+        let outer: Vec<&crate::syntax::Written> = site.lit().body.iter().filter_map(written).collect();
+        let [w] = outer.as_slice() else { return None };
+        if w.word.text != "coincident" || w.ops.len() != 2 || bare(&w.ops[0]) != Some(q) {
+            return None;
+        }
+        // the hoisted set its body is outside of, written in the same body and reading its names
+        let held = bare(&w.ops[1])?;
+        let inner = site.lit().body.iter().find_map(|st| match &st.kind {
+            StmtKind::Set(d) if d.name.text == held => Some(&d.lit),
+            _ => None,
+        })?;
+        let q = inner.bound.text.as_str();
+        let mut members = Vec::new();
+        for st in &inner.body {
+            // as written, before its memberships are lowered: `q outside panel`, `q coincident F`
+            let w = written(st)?;
+            let outside = match w.word.text.as_str() {
+                "outside" => true,
+                "coincident" => false,
+                _ => return None,
+            };
+            if w.ops.len() != 2 || bare(&w.ops[0]) != Some(q) {
+                return None;
+            }
+            let x = self.stands_for(&w.ops[1], site.scope(), alias)?;
+            let name = crate::program::public_path(&x);
+            members.push(match self.sets.made.get(&x) {
+                // a panel: what is outside it, lowered from `q in panel`
+                Some(set) if outside => {
+                    MemberInfo::Sheet { rails: self.sheet_rails(set, alias)?, name }
+                }
+                Some(_) => return None,
+                // a face of the drawing: the face itself
+                None if !outside => MemberInfo::Face { face: x, name },
+                None => return None,
+            });
+        }
+        (!members.is_empty()).then_some(members)
+    }
+
+    /// **The inside of the closed shell `abs` at a region solid's probe** (#953): `p in
+    /// shell.side`, recorded as what it is (`EnclosedInfo`) and not applied as a body.  Refused
+    /// from a drawn point, and as anything but the shell's side: a shell has an inside only as a
+    /// solid's.
+    pub(super) fn enclose(&mut self, su: &super::sets::SetUse, members: Vec<MemberInfo>, abs: &str,
+                          alias: &BTreeMap<String, String>) {
+        let (k, at) = (su.set().0, su.u.at);
+        let set = crate::program::public_path(abs);
+        let probe = self.look(alias).raw(&su.w.ops[1 - k], su.u.scope)
+            .filter(|(p, rest)| rest.is_empty() && self.sets.probes.contains(p)).map(|(p, _)| p);
+        let side = su.w.lowered == crate::syntax::Lowered::Side
+            && matches!(su.w.bound(), Some((crate::syntax::Cmp::Le, None)));
+        let (Some(probe), true) = (probe, side) else {
+            let m = format!("`{set}` is a closed shell of panels and faces: what it encloses is its \
+                side, a region solid's, `solid({{ p | p in {set}.side }})`");
+            return self.once(Code::E040, at, m);
+        };
+        self.sets.shells.push(EnclosedInfo { probe, members, name: abs.to_string(), span: at });
     }
 
     /// A recognised sheet's rails, resolved from where its body is read, or `None` for any other

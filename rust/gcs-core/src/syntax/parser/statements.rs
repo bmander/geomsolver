@@ -162,6 +162,10 @@ impl<'a> P<'a> {
         let block = words::opens_block(&self.t, self.i);
         // a claim comparing measurements is judged after the solve (#940), and bounds nothing
         let claim = self.peek_word("claim");
+        // an equation of integrals (§6.25), stated or claimed
+        if !block && self.integral_ahead(self.i + claim as usize) {
+            return self.equation(claim).map(StmtKind::Measured);
+        }
         if !block && !claim && self.compared_ahead() && self.measures_ahead() {
             return self.measured().map(StmtKind::Measured);
         }

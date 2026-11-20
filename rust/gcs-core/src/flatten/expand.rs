@@ -207,6 +207,12 @@ impl<'a> Walk<'a> {
                 // resolved with the references (`rewrite`) (#183 F3, #190)
                 StmtKind::Measured(m) => {
                     let mut m2 = m.clone();
+                    // an equation of integrals is called as written (§6.25), before the numbers
+                    // are written in; a word's use renames it where the body is applied
+                    if m2.integrates() && m2.head.is_none() {
+                        m2.head = Some(format!("{} {} {}", m.lhs.text(), m.cmp_text(),
+                                               m.rhs.text()));
+                    }
                     for text in m2.lhs.numbers_mut().into_iter().chain(m2.rhs.numbers_mut()) {
                         let held = &self.held.names;
                         *text = super::values::substitute_in(text, vals, self.units, held);
