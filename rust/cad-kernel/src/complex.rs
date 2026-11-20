@@ -294,9 +294,15 @@ impl Complex {
                     // order a near tangency leaves (a ball and a cylinder of its radius leaving an
                     // edge 2e-6 apart, read a 45th of the ball's radius in, came out swapped)
                     let least = run.iter().filter_map(|x| radii[x.2]).fold(f64::INFINITY,f64::min);
-                    let near = (NEAR*least).min(step).max(64.*tol);
-                    if near < step {
-                        let (b1,b2) = crate::util::space::across(t);
+                    let far = (NEAR*least).min(step).max(64.*tol);
+                    // (read nearest first, sixty-four tolerances in, and ten times farther only while
+                    // two still agree within what a tolerance's lean turns a way by there: the order
+                    // at the edge, not past a feature thinner than the step — read at a thousandth of
+                    // the box, the drum screwed a short lead swapped its rim's ramp, thinner than a
+                    // hundredth, with the cylinder its side sweeps as the box grew, #942 F6)
+                    let (b1,b2) = crate::util::space::across(t);
+                    let mut near = (64.*tol).min(far);
+                    loop {
                         for x in run.iter_mut() {
                             let f = &b.faces[uses[e][x.2].0];
                             if let Some(dx) = in_parameters(&f.surface,x.5,x.3) {
@@ -306,6 +312,11 @@ impl Complex {
                                 if norm(q) > 0. { x.1 = dot(q,b2).datan2(dot(q,b1)) }
                             }
                         }
+                        let lean = 4.*tol/near;
+                        let mut ways: Vec<f64> = run.iter().map(|x| wrapped(x.1-base)).collect();
+                        ways.sort_by(f64::total_cmp);
+                        if ways.windows(2).all(|w| w[1]-w[0] > lean) || near >= far { break }
+                        near = (10.*near).min(far);
                     }
                     run.sort_by(|x,y| wrapped(x.1-base).total_cmp(&wrapped(y.1-base)).then(x.2.cmp(&y.2)));
                     if super::debug() {

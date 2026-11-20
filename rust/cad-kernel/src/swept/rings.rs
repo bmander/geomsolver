@@ -1453,8 +1453,20 @@ pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],rimmed: 
             }
             if run.len() >= 2 { cuts_of[face].push(run) }
         }
-        // whether `(u, t)` is in a narrow pair's tail: above its double curve, a curve over `u`
-        let tail = |u: f64,t: f64| doubles.iter().any(|line| {
+        // whether `(u, t)` is in a narrow pair's tail: above its double curve, a curve over `u` — its
+        // `u` unwrapped along it, as for the seams above: a curve crossing the tube's seam, read in
+        // `[0, pieces)`, jumped from one end of the tube to the other and made all of it tail
+        // (the thin tumbling torus's middle stretch, its tube left a sliver beside its start, #942 F6)
+        let unwrapped: Vec<Vec<[f64;2]>> = doubles.iter().map(|side| {
+            let np = pieces as f64;
+            let mut un: Vec<[f64;2]> = Vec::with_capacity(side.len());
+            for &[u,t] in side {
+                let u = match un.last() { Some(&[v,_]) => v+(u-v+0.5*np).rem_euclid(np)-0.5*np,None => u };
+                un.push([u,t]);
+            }
+            un
+        }).collect();
+        let tail = |u: f64,t: f64| unwrapped.iter().any(|line| {
             let mid = 0.5*(line[0][0]+line[line.len()-1][0]);
             let u = mid+(u-mid+0.5*pieces as f64).rem_euclid(pieces as f64)-0.5*pieces as f64;
             let i = line.partition_point(|p| p[0] < u);

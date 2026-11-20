@@ -949,8 +949,6 @@ pub(super) fn corners_of((lo,hi): (V,V)) -> Vec<V> {
     (0..8).map(|k| std::array::from_fn(|i| if (k>>i)&1 == 0 { lo[i] } else { hi[i] })).collect()
 }
 
-/// A cube holding `points` with a fifth of its size to spare each way: the box, its centre and half
-/// its side.
 /// **The roll's grain at the tolerance**: the stretch of `[a, b]` over which no corner of the tool's
 /// box moves `tol`, read at 4096 poses (#942 F6) — two instants nearer than this are one as the
 /// tolerance reads the sweep. The whole roll where nothing moves.
@@ -974,7 +972,8 @@ pub(crate) fn grain(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Re
 /// spread of poses its square root wide, more stretches than membership reads.
 fn hair(tol: f64,size: f64) -> f64 { (4.*tol).max(1e-6*size) }
 
-
+/// A cube holding `points` with a fifth of its size to spare each way: the box, its centre and half
+/// its side.
 pub(super) fn cube_holding<'a>(points: impl IntoIterator<Item=&'a V>,tol: f64) -> Result<(Brep,V,f64),Unbuilt> {
     let (blo,bhi) = points.into_iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(l,h),p|
         (std::array::from_fn(|k| l[k].min(p[k])),std::array::from_fn(|k| h[k].max(p[k]))));
@@ -1095,6 +1094,32 @@ pub fn ring_cut_from(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],ba
 /// `blank`.
 fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
     let [a,b] = [roll[0].min(roll[1]),roll[0].max(roll[1])];
+    let RingEntered {ends:[start,end],sheets,given,cut} = ring_entered(tool,path,[a,b],tol)?;
+    // **trimmed by membership where the roll is cut** (#880 T1d): its tubes met only where both come
+    // near the sweep's boundary (`trim`), as the contact's road meets its sheets — a turned whole
+    // ring's two tubes cross at under a degree inside the sweep, which the arrangement meets and
+    // cannot, and a thin one's run a hair apart all round, each pair searched for nothing
+    if cut {
+        let size = tool.size();
+        let trim = super::trim::Trim {resolution:size/32.,hair:hair(tol,size),reach:None};
+        let candidates: Vec<Brep> = [start,end].into_iter().chain(sheets).collect();
+        let swept = trimmed_or_dumped(tool,path,[a,b],&candidates,&given,bar,tol,trim)?;
+        return cut_blank(swept,blank,tol)
+    }
+    candidates(tool,path,[a,b],bar,tol,blank,[start,end],sheets,&given)
+}
+
+/// **What a ring's road enters** (`ring_entered`): the tool posed where the roll starts and where it
+/// stops, the sheets — one candidate per tube, its stretches sewn across the roll's cuts — and the
+/// meetings of the sheets with the tool at the end poses, given; and whether the roll was cut where
+/// the contact changes shape (the sweep then trimmed by membership, not arranged in a box).
+pub struct RingEntered { pub ends: [Brep;2],pub sheets: Vec<Brep>,pub given: Vec<crate::boolean::Given>,pub cut: bool }
+
+/// **A ring's candidates under a motion no constant twist takes**, as `ring` enters them before it
+/// builds: the roll cut where the contact changes shape, each stretch fitted, each fold pair's double
+/// curve traced and cut into the stretches it passes, the tubes entered at the end poses and sewn
+/// across the cuts.
+pub fn ring_entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Result<RingEntered,Unbuilt> {
     let clock = crate::util::clock::Instant::now();
     // (each step's time and what it read, where `SOLVENT_BREP_TIME` is set: #942 F4)
     let mut mark = (crate::util::clock::Instant::now(),super::rings::spent::now());
@@ -1176,18 +1201,7 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
     };
     phase("the stretches sewn");
     if crate::timing() { eprintln!("ring: entered in {:?}",clock.elapsed()) }
-    // **trimmed by membership where the roll is cut** (#880 T1d): its tubes met only where both come
-    // near the sweep's boundary (`trim`), as the contact's road meets its sheets — a turned whole
-    // ring's two tubes cross at under a degree inside the sweep, which the arrangement meets and
-    // cannot, and a thin one's run a hair apart all round, each pair searched for nothing
-    if !cuts.is_empty() {
-        let size = tool.size();
-        let trim = super::trim::Trim {resolution:size/32.,hair:hair(tol,size),reach:None};
-        let candidates: Vec<Brep> = [start,end].into_iter().chain(sheets).collect();
-        let swept = trimmed_or_dumped(tool,path,[a,b],&candidates,&given,bar,tol,trim)?;
-        return cut_blank(swept,blank,tol)
-    }
-    candidates(tool,path,[a,b],bar,tol,blank,[start,end],sheets,&given)
+    Ok(RingEntered {ends:[start,end],sheets,given,cut:!cuts.is_empty()})
 }
 
 /// K2's build from its candidates: the tool at each end pose and the sheets, their meetings
