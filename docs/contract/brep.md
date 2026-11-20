@@ -163,7 +163,21 @@ over, against a cylinder and a drafted wall's cone; `a_near_contact_within_both_
 holds the same near-contact, met over boxes that hold it, refused; and
 `a_face_is_clear_only_off_it_and_away_from_its_edges` the rule at a face's edges and a cone's apex;
 `a_surfaces_points_within_a_ball_reach_no_farther_along_it_than_said` holds each bound to seeded
-points and their paths.
+points and their paths. Clear is read only off the faces, so a refusal there no longer stands in
+for the faces' own meeting: **an edge is a stretch two faces touch along only where it lies in
+both their surfaces** (`boolean`'s stretches, each edge of one operand lying in the other's face
+held to this face's surface too). A round's run cut off by the lobe cylinder it leaves 1e-3 rad
+off tangent (a plate's rim past a reflex corner) has its wall's and end's upright edge on that
+cylinder, which its round face reaches only at the foot, where the two cross at 1e-3 rad: read as
+theirs, the foot's seed was dropped as a touch along it and the march, shallow there, ended 5 µm
+short of it on no edge, the arrangement's shells kept and dropped on either side of the cylinder.
+Before #961 a near-contact past the run's end, off the round face, was refused and the pair read
+from its ridges, which hid it; now the foot is seeded, refused as shallow, and the pair read from
+its ridges for that. `tests/rim_rounds.rs`'s `a_reflex_corner_off_tangent_rounds_its_rim` holds
+the plate rounded 1 and 2, mirrored, to its closed form (`std.rounds`' runs cut off by the faces
+they end on: the lobe's disc run on past the corner and within reach of the side is taken by
+neither), and `a_run_cut_off_by_the_cylinder_it_leaves_off_tangent_is_met_to_its_corner` the run
+cut off alone, turned 1e-3 to 1e-2, rounded 1 to 3 and mirrored.
 **A march that steps across a touch ends at the touch** (#879, `ssi::trace_beside`). Two rounds
 tangent to one face meet in a curve that ends where both touch it, a point where the two surfaces
 touch and their meeting's branches cross (`ssi::touch`); where that point is on a face's own edge
