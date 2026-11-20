@@ -714,9 +714,9 @@ pub(crate) struct Gated {
 fn canonical(node: &crate::brep::recipe::Lowered) -> String {
     let said = |x: &dyn std::fmt::Debug| format!("{x:?}");
     let corner = |c: &crate::brep::recipe::Corner| {
-        let mut c = c.clone();
-        c.faces.sort_by_cached_key(|f| said(f));
-        said(&c)
+        let mut faces: Vec<String> = c.faces.iter().map(|f| said(f)).collect();
+        faces.sort();
+        format!("{:?} {:?} {:?} {faces:?}", c.vertex, c.centre, c.radius)
     };
     // in the order joins count them: runs and rings, then corners, then rolled runs, then the
     // pieces beyond a seam's normal surface
@@ -755,12 +755,11 @@ fn gated(sk: &Sketch, pieces: &[Piece], body: &std::sync::Arc<super::faces::Body
     let (_, by, origin) = body.brep();
     let (writer, mm) =
         if rolled { (Writer::about(by, scale(origin, by)), Some(by)) } else { (Writer::world(1.0), None) };
-    let mut node = assemble(pieces).node(&writer)?;
-    let crate::brep::recipe::Node::Lowered(lowered) = &mut node else { unreachable!("an assembly is a lowered node") };
+    let mut lowered = assemble(pieces).node(&writer)?;
     if rolled {
         lowered.stratum = Some(crate::brep::recipe::Body { stock: 0, ..Default::default() });
     }
-    let key = canonical(lowered);
+    let key = canonical(&lowered);
     let stratum = rolled.then(|| body.clone());
     let at = |s: &Option<Arc<super::faces::BodyFaces>>| s.as_ref().map(Arc::as_ptr);
     let mut cache = sk.caches.gated.borrow_mut();
@@ -771,7 +770,7 @@ fn gated(sk: &Sketch, pieces: &[Piece], body: &std::sync::Arc<super::faces::Body
     }
     drop(cache);
     let built: std::collections::BTreeMap<_, _> = stratum.iter().map(|b| (0, b.brep().0.clone())).collect();
-    let brep = crate::brep::recipe::node_named(&node, &built, &Default::default(), 0.0)?;
+    let brep = crate::brep::recipe::node(&crate::brep::recipe::Node::Lowered(lowered), &built)?;
     let mesh = super::agreement::gate_mesh(&brep)?;
     let built = Rc::new(Gated { key, stratum, brep, mesh, mm });
     let mut cache = sk.caches.gated.borrow_mut();

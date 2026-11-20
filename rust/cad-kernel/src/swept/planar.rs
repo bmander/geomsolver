@@ -557,15 +557,16 @@ impl InnerEnvelope {
             let (poles,knots,_) = crate::cubic::fit_sampled(&sweep,(0.,1.),Some(((a[0],a[1]),(b[0],b[1]))),fit)
                 .ok_or_else(|| format!("`{name}`: the envelope's piece {piece} could not be fitted within \
                     {:.1e} mm",fit*scale))?;
-            Ok(crate::recipe::Edge {name:String::new(),shape:crate::cubic::bspline_edge(&poles,&knots,&lift)})
+            crate::cubic::spline_edge(&poles,&knots,&lift)
         }).collect::<Result<Vec<_>,_>>()?;
         let origin = self.world([0.,0.]);
-        let profile = crate::recipe::Section {loops:vec![edges],origin:origin.map(|x| x*scale),normal:n};
+        let profile = crate::build::Profile {loops:vec![edges],origin:origin.map(|x| x*scale),
+            normal:crate::util::space::unit(n),names:Vec::new()};
         // through the blank, a hair past it each way
         let at = crate::util::space::dot(origin,n);
         let [h0,h1] = heights;
         let pad = 1e-3*(h1-h0)+1e-6;
-        crate::build::prism(&crate::build::Profile::of(&profile)?,
+        crate::build::prism(&profile,
             (h0-pad-at)*scale,(h1+pad-at)*scale)
     }
 }

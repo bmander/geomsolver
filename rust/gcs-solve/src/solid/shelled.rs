@@ -98,20 +98,15 @@ impl Shelled {
     /// The recipe's node, written by `w`: the walls glued to the body as its recipe node's other
     /// terms make it.
     pub fn node(&self, w: &Writer) -> Result<Node, String> {
-        let stratum = match &self.built {
-            Built::Prism { .. } => None,
-            Built::Walls(Walls { terms: t, .. }) => Some(Node::Body(super::cad::body_terms(t.stock, &t.on, &t.cut, &t.bound))),
-        };
-        self.cavity(w, stratum)
+        self.cavity(w, None)
     }
 
     /// The cavity's node, written by `w`: the prism's `prism`, or a `region` keeping within it
     /// and outside each cut grown; the walls' `region`, the smaller block less the larger one less
-    /// the body (`stratum`, a node standing for it) and its openings' prisms with the walls glued
-    /// to that.
+    /// the body (`stratum`, a node standing for it, else the body's terms) and its openings' prisms
+    /// with the walls glued to that.
     fn cavity(&self, w: &Writer, stratum: Option<Node>) -> Result<Node, String> {
         let kept = |node: Node, keep: bool| Kept { node, keep };
-        let region = Node::Region;
         match &self.built {
             Built::Prism { section, length, cuts } => {
                 let prism = swept(section, *length, w)?;
@@ -122,15 +117,17 @@ impl Shelled {
                 for g in cuts {
                     pieces.push(kept(g.node(w)?, false));
                 }
-                Ok(region(pieces))
+                Ok(Node::Region(pieces))
             }
             Built::Walls(walls) => {
-                let stratum = stratum.ok_or("a shell's walls with no body to glue them to")?;
-                let outside = region(vec![kept(block(walls.boxes[1], w)?, true),
-                                          kept(plus(stratum, &walls.open, walls.reach, w)?, false)]);
+                let t = &walls.terms;
+                let stratum =
+                    stratum.unwrap_or_else(|| Node::Body(super::cad::body_terms(t.stock, &t.on, &t.cut, &t.bound)));
+                let outside = Node::Region(vec![kept(block(walls.boxes[1], w)?, true),
+                                                kept(plus(stratum, &walls.open, walls.reach, w)?, false)]);
                 let mut grown = vec![outside];
                 grown.extend(walls.walls.pieces_nodes(w)?);
-                Ok(region(vec![kept(block(walls.boxes[0], w)?, true), kept(glued(grown), false)]))
+                Ok(Node::Region(vec![kept(block(walls.boxes[0], w)?, true), kept(Node::Glued(grown), false)]))
             }
         }
     }
@@ -148,12 +145,7 @@ impl Shelled {
 
 /// Section `p` swept along its normal by `length`, as the recipe's `prism` (written by `w`).
 fn swept(p: &Profile, length: f64, w: &Writer) -> Result<Node, String> {
-    Ok(Node::Prism { profile: p.section(w)?, from: 0.0, to: length * w.scale, draft: None })
-}
-
-/// Pieces glued to one another, as the recipe's `glued`.
-fn glued(pieces: Vec<Node>) -> Node {
-    Node::Glued(pieces)
+    Ok(Node::Prism { profile: p.section(w)?, from: 0.0, to: w.length(length), draft: None })
 }
 
 /// The body (`stratum`, a node standing for it) with each opening's prism `reach` out from it glued
@@ -163,7 +155,7 @@ fn plus(stratum: Node, open: &[Profile], reach: f64, w: &Writer) -> Result<Node,
     for p in open {
         pieces.push(swept(p, reach, w)?);
     }
-    Ok(glued(pieces))
+    Ok(Node::Glued(pieces))
 }
 
 /// The block between the corners `lo` and `hi` (model units), as the recipe's `prism`.

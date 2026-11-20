@@ -84,7 +84,7 @@ impl Shell {
     /// the column of one point), but a run ending where the rails meet (`Developable::meeting`)
     /// along `v`, that end the row of one point.
     pub fn node(&self, sk: &Sketch, w: &Writer) -> Result<Node, String> {
-        let mm = |p: [f64; 3]| w.moved(p.map(|x| x * w.scale));
+        let mm = |p: [f64; 3]| w.point(p);
         let ends = || vec![0.0, 0.0, 1.0, 1.0];
         let mut pieces = Vec::with_capacity(self.pieces.len());
         for p in &self.pieces {

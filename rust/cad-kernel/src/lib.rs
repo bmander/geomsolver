@@ -47,16 +47,7 @@ pub mod turned;
 pub mod slid;
 pub mod trochoid;
 
-use crate::util::json::Json;
 use std::sync::OnceLock;
-
-/// Three numbers of a recipe or a dump (`[x, y, z]`).
-pub(crate) fn vec3(j: &Json) -> geom::V { let a = j.arr(); [a[0].as_f64(),a[1].as_f64(),a[2].as_f64()] }
-
-/// `j`'s field `k`, or an error naming it under `what` (`recipe`, `profile`, `brep json`).
-pub(crate) fn field<'a>(j: &'a Json,k: &str,what: &str) -> Result<&'a Json,String> {
-    j.get(k).ok_or(format!("{what}: no `{k}`"))
-}
 
 /// What a kernel error is, where a caller acts on it rather than only saying it.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
@@ -71,9 +62,6 @@ pub enum Kind {
     /// A recipe of another kind than a route builds (`recipe::Recipe::meridian`,
     /// `section::Sectioned`): its caller builds it another way.
     Refused,
-    /// A recipe node this kernel cannot build as written: a sewn piece's net that is no B-spline
-    /// (`recipe::Node::built`).
-    Recipe,
     /// Anything else this kernel could not do.
     Failed,
 }

@@ -127,10 +127,7 @@ fn sewn_node(pieces: &[SewnPiece],tol: f64) -> Built {
     for p in pieces {
         let (mut b,face) = match p {
             SewnPiece::Face {profile,face} => (super::build::face(&Profile::of(profile)?)?,face),
-            SewnPiece::Net {net,face} => {
-                net.check().map_err(|m| KernelError::new(Kind::Recipe,format!("recipe: a sewn net: {m}")))?;
-                (super::build::sheet(net.clone())?,face)
-            }
+            SewnPiece::Net {net,face} => (super::build::sheet(net.clone())?,face),
         };
         for f in &mut b.faces { f.name = face.clone(); }
         made.push(b);

@@ -84,7 +84,7 @@ pub struct SweptCut {
 /// can build the static remainder first. The root and its stock must be static,
 /// and a sweep may not be added to a body, since material this host classifies
 /// is only ever removed from a static blank.
-#[derive(Clone,Debug)]
+#[derive(Clone,Debug,Default)]
 pub struct StaticRecipe {
     pub recipe: Recipe,
     pub sweeps: Vec<SweptCut>,
@@ -348,8 +348,7 @@ impl<'a> Walk<'a> {
                     let members = self.groups.get(&i).cloned().unwrap_or_else(|| vec![i as u32]);
                     let pieces: Vec<_> = members.into_iter().map(|o| self.pieces_of(o)).collect();
                     let assembly = super::lowering::assemble(pieces.iter().flat_map(|p| p.iter()));
-                    let mut node = assembly.node(w)?;
-                    let Node::Lowered(lowered) = &mut node else { unreachable!("an assembly is a lowered node") };
+                    let mut lowered = assembly.node(w)?;
                     // the body it rounds: the one whose late sets take it, read before this
                     let late = |sets: &[Vec<u32>;4]| sets[2..].iter().any(|s| s.contains(&(i as u32)));
                     let body = self.bodies.iter().find(|(_,(sets,_))| late(sets));
@@ -370,7 +369,7 @@ impl<'a> Walk<'a> {
                         let SolidDef::Body {stock,bound,..} = &sk.solids[b].def else { unreachable!("a body's sets") };
                         lowered.stratum = Some(body_terms(*stock,&sets[0],&sets[1],bound));
                     }
-                    node
+                    Node::Lowered(lowered)
                 }
                 // in general position: the common of its terms' primitives, where they are ones that
                 // construction makes (#238)
@@ -427,8 +426,8 @@ impl<'a> Walk<'a> {
             }
             // its walls exact (#243 L2): the interval's pieces, the stations each is solved at, and
             // each wall's edge's numbers at every one of them
-            SolidDef::Family {..} => super::family::node(&super::family::walls(sk,i)
-                .map_err(|e| format!("`{}`: {e}",solid.name))?,w),
+            SolidDef::Family {..} => Node::Family(super::family::family(&super::family::walls(sk,i)
+                .map_err(|e| format!("`{}`: {e}",solid.name))?,w)),
         };
         Ok((node,called))
     }
@@ -493,7 +492,7 @@ pub(super) fn profile(sk: &Sketch,index: usize,w: &Writer) -> Result<Section,Str
     let p = super::face_poly(sk,index,super::REPORT_UNIT).ok_or("invalid CAD profile")?;
     let scale = w.scale;
     // a point of the profile, in millimetres as written
-    let lift = |q: (f64,f64)| w.moved(p.basis.lift(q.0,q.1).map(|v| v*scale));
+    let lift = |q: (f64,f64)| w.point(p.basis.lift(q.0,q.1));
     let x_dir = p.basis.u;
     // an edge's pieces in a profile: one, or a closed curve's smooth stretches
     let edge = |e: EntRef| -> Result<Vec<Stroke>,String> {

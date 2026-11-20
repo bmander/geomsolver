@@ -197,7 +197,7 @@ pub enum Stroke {
 }
 
 impl Node {
-    /// The node's kind, as the recipe spells it.
+    /// The node's kind, a noun for what a message says of it.
     pub fn kind(&self) -> &'static str {
         match self {
             Node::Prism {..} => "prism",Node::Revolve {..} => "revolve",

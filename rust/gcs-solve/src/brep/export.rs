@@ -744,7 +744,7 @@ impl Build {
     fn new(sk: &Sketch,asked: usize,part: bool) -> Result<Build,ExportRefusal> {
         let build = |body,state,recipe,moved,parts| Build {asked,body,recipe,state,done:0,moved,enveloped:false,parts,part,reads:Vec::new(),
             lowered:None};
-        let none = || cad::StaticRecipe {recipe:Default::default(),sweeps:Vec::new()};
+        let none = cad::StaticRecipe::default;
         // a body no sweep reaches is built as the export builds it, a stage, then meshed
         if !cad::contains_sweep(sk,asked) { return Ok(build(asked,State::Static,none(),None,Vec::new())) }
         // a placement of a swept body (`x in f`): the body it places, built and moved (#619)

@@ -12,17 +12,16 @@ use crate::space::{add, cross, distance, dot, norm, normalised, scale, sub};
 impl Surf {
     /// As a recipe holds it (written by `w`; `recipe::Lowered`'s faces).
     pub(super) fn surface(&self, w: &Writer) -> Surface {
-        let by = w.scale;
         match *self {
-            Surf::Plane { origin, normal } => Surface::Plane(Frame::about(w.moved(scale(origin, by)), normal)),
+            Surf::Plane { origin, normal } => Surface::Plane(Frame::about(w.point(origin), normal)),
             Surf::Cylinder { origin, axis, radius } =>
-                Surface::Cylinder(Frame::about(w.moved(scale(origin, by)), axis), radius * by),
+                Surface::Cylinder(Frame::about(w.point(origin), axis), w.length(radius)),
             Surf::Cone { origin, axis, radius, half } =>
-                Surface::Cone(Frame::about(w.moved(scale(origin, by)), axis), radius * by, half),
+                Surface::Cone(Frame::about(w.point(origin), axis), w.length(radius), half),
             Surf::Sphere { centre, radius } =>
-                Surface::Sphere(Frame::about(w.moved(scale(centre, by)), [0., 0., 1.]), radius * by),
+                Surface::Sphere(Frame::about(w.point(centre), [0., 0., 1.]), w.length(radius)),
             Surf::Torus { origin, axis, big, tube } =>
-                Surface::Torus(Frame::about(w.moved(scale(origin, by)), axis), big * by, tube * by),
+                Surface::Torus(Frame::about(w.point(origin), axis), w.length(big), w.length(tube)),
         }
     }
 }
@@ -467,15 +466,16 @@ fn same_section(g: &[Vec<V>; 2], h: &[Vec<V>; 2], size: f64) -> bool {
 }
 
 impl Assembly {
-    /// As a recipe node (written by `w`): each run a prism over its stretch (within the
+    /// As a recipe's lowered node (written by `w`): each run a prism over its stretch (within the
     /// half-spaces it is kept in), each ring a revolution, each corner where it stands, and the
     /// joins.
-    pub fn node(&self, w: &Writer) -> Result<recipe::Node, String> {
+    pub fn node(&self, w: &Writer) -> Result<recipe::Lowered, String> {
         use crate::brep::spill;
         let by = w.scale;
         let mut pieces = self.runs.iter().map(|r| {
             let [from, to] = r.span;
-            let prism = recipe::Node::Prism { profile: profile(r)?.section(w)?, from: from * by, to: to * by, draft: None };
+            let prism = recipe::Node::Prism { profile: profile(r)?.section(w)?, from: w.length(from), to: w.length(to),
+                draft: None };
             Ok(ends(prism, r, w))
         }).collect::<Result<Vec<_>, String>>()?;
         for g in &self.rings {
@@ -484,35 +484,36 @@ impl Assembly {
             pieces.push(ends(ring, &g.section, w));
         }
         let corners = self.corners.iter().map(|c| recipe::Corner {
-            vertex: w.moved(scale(c.vertex, by)), centre: w.moved(scale(c.centre, by)), radius: c.r * by,
+            vertex: w.point(c.vertex), centre: w.point(c.centre), radius: w.length(c.r),
             faces: c.faces.iter().map(|f| f.surface(w)).collect(),
         }).collect();
         let rolled = self.rolled.iter().map(|k| recipe::Rolled {
-            at: w.moved(scale(k.at, by)), radius: k.r * by,
-            flat: k.flat.map(|([la, lb], on)| ([la * by, lb * by], w.moved(scale(on, by)))),
-            cuts: k.cuts.iter().map(|&(at, n, reach)| (w.moved(scale(at, by)), n, reach * by)).collect(),
+            at: w.point(k.at), radius: w.length(k.r),
+            flat: k.flat.map(|([la, lb], on)| ([w.length(la), w.length(lb)], w.point(on))),
+            cuts: k.cuts.iter().map(|&(at, n, reach)| (w.point(at), n, w.length(reach))).collect(),
             kept: k.kept.iter().map(|kept| (kept.face.surface(w), kept.inside)).collect(),
-            wedge: k.wedge.iter().map(|&(at, n)| (w.moved(scale(at, by)), n)).collect(),
+            wedge: k.wedge.iter().map(|&(at, n)| (w.point(at), n)).collect(),
         }).collect();
         let beyond = self.beyond.iter().map(|b| spill::Beyond {
             face: b.face.surface(w), toward: b.toward, chain: b.chain.surface(w), wall: b.wall.surface(w),
             sides: b.sides,
             seam: match b.seam {
-                Seam::Circle(c, n, r) => spill::Seam::Circle(w.moved(scale(c, by)), n, r * by),
+                Seam::Circle(c, n, r) => spill::Seam::Circle(w.point(c), n, w.length(r)),
                 Seam::Line(p, d) => spill::Seam::Line(w.line_origin(scale(p, by), d), d),
             },
             // a flat's legs and the seam's normal surface it starts at, or a round's radius
             section: match b.section {
-                Across::Flat { legs, split } => spill::Across::Flat { legs: legs.map(|l| l * by), split: split.surface(w) },
-                Across::Round { radius } => spill::Across::Round { radius: radius * by },
+                Across::Flat { legs, split } =>
+                    spill::Across::Flat { legs: legs.map(|l| w.length(l)), split: split.surface(w) },
+                Across::Round { radius } => spill::Across::Round { radius: w.length(radius) },
             },
-            ends: b.ends.map(|p| w.moved(scale(p, by))),
+            ends: b.ends.map(|p| w.point(p)),
         }).collect();
-        Ok(recipe::Node::Lowered(recipe::Lowered { pieces, corners, rolled, joins: self.joins.clone(), stratum: None, beyond }))
+        Ok(recipe::Lowered { pieces, corners, rolled, joins: self.joins.clone(), stratum: None, beyond })
     }
 
     /// Built by this kernel (lengths times `by`).
     pub fn brep(&self, by: f64) -> Result<crate::brep::topo::Brep, String> {
-        crate::brep::recipe::node_named(&self.node(&Writer::world(by))?, &Default::default(), &Default::default(), 0.0)
+        crate::brep::recipe::node(&recipe::Node::Lowered(self.node(&Writer::world(by))?), &Default::default())
     }
 }

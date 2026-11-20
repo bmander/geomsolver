@@ -1056,12 +1056,12 @@ fn sampler<'a>(region: &'a SweptRegion,l: usize,k: usize) -> impl Fn(f64,f64,usi
 
 /// The region's loops as profiles (millimetres): each counter-clockwise loop with the clockwise
 /// loops within it as its holes.
-pub fn profiles(region: &SweptRegion,scale: f64,fit: f64,name: &str) -> Result<Vec<crate::recipe::Section>,String> {
-    use crate::recipe::{Edge,Section,Stroke};
+pub fn profiles(region: &SweptRegion,scale: f64,fit: f64,name: &str) -> Result<Vec<crate::build::Profile>,String> {
+    use crate::build::{Profile,ProfileEdge};
     let plane = region.setting.plane;
     let lift = |p: (f64,f64)| plane.world([p.0,p.1],0.).map(|x| x*scale);
     let point = |p: P| lift((p[0],p[1]));
-    let edges = |l: usize| -> Result<Vec<Edge>,String> {
+    let edges = |l: usize| -> Result<Vec<ProfileEdge>,String> {
         let lp = &region.loops[l];
         let n = lp.pieces.len();
         // a loop of one stretch (a whole ring) is split at its middle: an edge has two ends
@@ -1070,22 +1070,22 @@ pub fn profiles(region: &SweptRegion,scale: f64,fit: f64,name: &str) -> Result<V
             let (Some(a),Some(b)) = (region.point(l,k,f0),region.point(l,k,f1)) else {
                 return Err(format!("`{name}`: its swept region's boundary cannot be read"))
             };
-            let shape = match lp.pieces[k] {
-                Piece::Side {..} => Stroke::Line {start:point(a),end:point(b)},
+            match lp.pieces[k] {
+                Piece::Side {..} => Ok(ProfileEdge::Line {a:point(a),b:point(b)}),
                 Piece::Run {..} => {
                     let (poles,knots,_) = crate::cubic::fit_sampled(&sampler(region,l,k),(f0,f1),Some(((a[0],a[1]),(b[0],b[1]))),fit)
                         .ok_or_else(|| format!("`{name}`: a stretch of its swept region's boundary could \
                             not be fitted within {:.1e} mm",fit*scale))?;
-                    crate::cubic::bspline_edge(&poles,&knots,&lift)
+                    crate::cubic::spline_edge(&poles,&knots,&lift)
                 }
-            };
-            Ok(Edge {name:String::new(),shape})
+            }
         }).collect()
     };
     let mut out = Vec::new();
     for (l,holes) in region.nesting(8) {
         let loops = std::iter::once(l).chain(holes).map(edges).collect::<Result<Vec<_>,_>>()?;
-        out.push(Section {loops,origin:plane.o.map(|x| x*scale),normal:plane.n});
+        out.push(Profile {loops,origin:plane.o.map(|x| x*scale),normal:crate::util::space::unit(plane.n),
+            names:Vec::new()});
     }
     Ok(out)
 }

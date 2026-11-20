@@ -1545,8 +1545,3 @@ pub(crate) fn family(f: &Walls, w: &crate::brep::recipe::Writer) -> Walls {
     Walls { spans: f.spans.clone(), at: f.at.clone(), vanish: f.vanish * w.scale, loops,
         carry: f.carry.map(|c| super::cad::carry(c, w)) }
 }
-
-/// A face family's recipe node, written by `w` (`family`).
-pub(crate) fn node(f: &Walls, w: &crate::brep::recipe::Writer) -> crate::brep::recipe::Node {
-    crate::brep::recipe::Node::Family(family(f, w))
-}

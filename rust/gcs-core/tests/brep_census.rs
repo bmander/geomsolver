@@ -15,11 +15,6 @@ fn norm(a: V) -> f64 { dot(a, a).sqrt() }
 fn unit(a: V) -> V { let n = norm(a); [a[0] / n, a[1] / n, a[2] / n] }
 fn scale(a: V, s: f64) -> V { [a[0] * s, a[1] * s, a[2] * s] }
 fn add(a: V, b: V) -> V { [a[0] + b[0], a[1] + b[1], a[2] + b[2]] }
-/// An edge's kind, as a recipe names it.
-fn stroke_kind(s: &Stroke) -> &'static str {
-    match s { Stroke::Line { .. } => "line", Stroke::Circle { .. } => "circle", Stroke::BSpline { .. } => "bspline",
-        Stroke::Trochoid { .. } => "trochoid" }
-}
 
 /// An analytic surface an operand's boundary lies on.
 #[derive(Clone, Debug)]
@@ -92,7 +87,7 @@ fn prism(profile: &Section, extent: Option<(f64, f64)>, out: &mut Vec<Surf>, edg
                     *edges.entry(if angles.is_some() { "arc" } else { "circle" }.into()).or_default() += 1;
                     out.push(Surf::Cylinder { p: center, a: n, r: radius });
                 }
-                ref k => panic!("{} := edge", stroke_kind(k)),
+                ref k => panic!("{k:?} := edge"),
             }
         }
     }
@@ -137,7 +132,7 @@ fn revolve(profile: &Section, o: V, axis: V, angle: f64, out: &mut Vec<Surf>, ed
                         out.push(Surf::Torus { c: add(o, scale(a, zc)), a, major: rc, minor: r });
                     }
                 }
-                ref k => panic!("{} := edge", stroke_kind(k)),
+                ref k => panic!("{k:?} := edge"),
             }
         }
     }

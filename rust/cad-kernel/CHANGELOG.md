@@ -14,9 +14,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   `Recipe::read`, `Node::read`, `Section::read`, `Sectioned::read` and `Profile::from_json` are
   gone (`Sectioned::of`, `Profile::of`); `Profile::to_json` is `Profile::section`; `Writer`'s
   methods return numbers, not JSON, and `Writer::at` and `Writer::triple` are gone (`moved`);
-  `cubic::bspline_edge` returns a `recipe::Stroke` and drops the fit it never wrote anywhere read;
-  `swept::region::profiles` returns `recipe::Section`s.  `Recipe` and `Body` are `Default`.  A sewn
-  piece's net is checked where it is built (`Kind::Recipe`).  **Breaking.**
+  `cubic::bspline_edge` returns a `recipe::Stroke` and drops the fit it never wrote anywhere read,
+  and `cubic::spline_edge` is the same cubic as a `build::ProfileEdge`; `swept::region::profiles`
+  returns `build::Profile`s, built directly.  `Recipe` and `Body` are `Default`.  `Kind::Recipe` is
+  gone: `build::sheet` checks its net itself (`Failed`).  **Breaking.**
 
 ## [0.19.0] - 2026-11-20
 

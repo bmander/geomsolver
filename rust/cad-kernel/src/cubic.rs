@@ -388,3 +388,12 @@ pub fn fit_sampled(sweep: &dyn Fn(f64,f64,usize) -> Vec<(f64,f64)>,(a,b): (f64,f
 pub fn bspline_edge(poles: &[(f64,f64)],knots: &[f64],lift: &dyn Fn((f64,f64)) -> [f64;3]) -> crate::recipe::Stroke {
     crate::recipe::Stroke::BSpline {degree:DEGREE,knots:knots.to_vec(),poles:poles.iter().map(|&c| lift(c)).collect(),weights:None}
 }
+
+/// The same cubic as an edge of a profile this kernel sweeps (`build::ProfileEdge`), its poles lifted
+/// into space (millimetres).
+pub fn spline_edge(poles: &[(f64,f64)],knots: &[f64],lift: &dyn Fn((f64,f64)) -> [f64;3])
+    -> Result<crate::build::ProfileEdge,String> {
+    let b = crate::nurbs::BSpline::new(DEGREE,knots.to_vec(),poles.iter().map(|&c| lift(c)).collect())
+        .map_err(|m| format!("profile: {m}"))?;
+    Ok(crate::build::ProfileEdge::Spline(std::sync::Arc::new(b)))
+}

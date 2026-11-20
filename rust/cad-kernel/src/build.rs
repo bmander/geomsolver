@@ -1096,6 +1096,7 @@ pub fn lofted(origin: V,n: V,h: [f64;2],loops: Vec<Vec<crate::nurbs::Net>>) -> R
 /// A sheet: the whole of a B-spline surface as one face, bounded by its four boundary curves
 /// (each its net's outermost row or column of poles, exactly), its sense the net's own.
 pub fn sheet(net: crate::nurbs::Net) -> Result<Brep,String> {
+    net.check()?;
     let [[u0,u1],[v0,v1]] = net.domain();
     // a rational net's boundary rows and columns weighed as the net weighs them
     let row = |i: usize| Curve::BSpline(Arc::new(net.row(i)));
