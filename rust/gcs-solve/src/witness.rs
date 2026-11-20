@@ -261,8 +261,7 @@ pub fn screen(
     null: Mat,
     cap: usize,
 ) -> (Mat, usize) {
-    if cap == 0 || null.cols == 0 || sys.max_relative_residual(z0) > SCREEN_SOLVED
-    {
+    if cap == 0 || null.cols == 0 || sys.max_relative_residual(z0) > SCREEN_SOLVED {
         return (null, 0);
     }
     let x0 = sk.get_x();

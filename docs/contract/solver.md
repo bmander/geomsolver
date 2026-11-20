@@ -216,6 +216,12 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   touching that line; neither carries a tangency, and gated on one the first read `DOF 1` with
   the radius `over` (`tests/half_turn.rs`, `the_ends_and_a_radius_are_a_double_root`;
   `the_screen_blocks_no_real_freedom` holds that a theorem's real motions still settle away).
+  What bounds its cost is `cap` and `SCREEN_MAX`, not a kind: at most eight settles from a step
+  beside a solution, and only where the numbers see fewer rows than the matching.  Over the 297
+  documents of `rust/examples/` that elaborate, three tangency-free ones reach it (`altitudes`,
+  `square`, `polygon_chain`, at most eight settles, 0.5 ms to 1.7 ms); a grid of a hundred
+  rectangles each with its fourth right angle stated (800 columns, read by parts) diagnoses in
+  0.4 s either way.
   A double root's singular value is as small as a real freedom's, so a candidate is recognised
   only by trying it.
   **The tangent at a point of any path** (#251): `g tangent(at: m) l`, the parser reading `at:`
