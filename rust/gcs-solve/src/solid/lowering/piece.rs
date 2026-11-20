@@ -47,6 +47,9 @@ pub(super) fn build(body: &crate::solid::faces::BodyFaces, f: &Faces, section: S
     let mut pieces = Vec::new();
     for &[i, j] in f.pairs() {
         let ps = run(body, &groups[i], &groups[j], f.within, section, spill, units)?;
+        if f.faces.len() == 2 {
+            stands_within(body, f, [&groups[i], &groups[j]], section, &ps, spill, units)?;
+        }
         if ps.is_empty() {
             return Ok(Vec::new());
         }
@@ -97,6 +100,115 @@ pub(super) fn build(body: &crate::solid::faces::BodyFaces, f: &Faces, section: S
     }
     pieces.extend(corners.into_iter().map(|(c, ..)| Piece::Corner(c)));
     Ok(pieces)
+}
+
+/// **A ball that does not stand within the faces it rolls against** (#962): a round's ball
+/// centres are the points within both faces' smooth surfaces (or outside both) at least its radius
+/// off each, and a run or a ring is the set only where its ball, standing against its two faces,
+/// is one of them all along the edge.  Where a face goes on smooth into others bulging toward the
+/// ball (`BodyFaces::bulging`: a pocket's walls, a boss's sides) its ball may come nearer one of
+/// those than its radius — at the end of a wall rounded alone, whose ball stops at the next wall
+/// short of the edge's end; between walls closer together than the ball is wide — and there what
+/// no ball reaches is more than the run's section swept: refused, saying which face the ball comes
+/// how near.  A flat the same: each point of its section nearer its own face than any other of
+/// the chain's (where its section was built against the chain beside the edge, #422, the chain's
+/// nearest piece is its own, and that is the chain's to say).  Checked at the ends of a straight edge (the centres within a convex chain are a
+/// convex set, so the ends hold the whole run) and round a ring at sixteen turns of its own.  A
+/// chain no side of which is convex toward the ball is read through its nearest face by the
+/// field, and left to the gate.
+fn stands_within(body: &crate::solid::faces::BodyFaces, f: &Faces, groups: [&[usize]; 2], section: Section,
+    pieces: &[Piece], spill: &Spill, units: crate::units::Units) -> Result<(), String> {
+    // a flat built against the chain beside its edge (#422) measures each point from the chain's
+    // nearest piece already, the next face's where it has crossed the seam
+    if matches!(section, Section::Flat { .. }) && groups.iter().any(|g| g.iter().any(|fi| spill.contains_key(fi))) {
+        return Ok(());
+    }
+    // toward the side the region is on: into the material within, the void outside
+    let sigma = if f.within { -1.0 } else { 1.0 };
+    let chains: Vec<(usize, Vec<usize>)> = (0..2).filter(|&k| f.faces[k].smooth).filter_map(|k| {
+        let chain = body.smooth(groups[k]);
+        let (faces, carried) = body.bulging(&chain, true, !f.within)?;
+        carried.then(|| (k, faces.into_iter().filter(|g| !groups[k].contains(g)).collect()))
+    }).collect();
+    if chains.iter().all(|(_, others)| others.is_empty()) {
+        return Ok(());
+    }
+    // the points each section is read at: its ball's centre, or its flat's own points; each where
+    // the piece stands along its edge
+    let points = |run: &Run| -> Vec<V> {
+        match section {
+            Section::Round(_) => run.centre().into_iter().collect(),
+            Section::Flat { .. } => run.strokes.iter().flat_map(|(s, _)| match *s {
+                Stroke::Line { from, to } => vec![from, to],
+                Stroke::Conic { a, b, .. } => vec![a, b],
+                Stroke::Arc { .. } => Vec::new(),
+            }).collect(),
+        }
+    };
+    let mut at: Vec<V> = Vec::new();
+    for p in pieces {
+        match p {
+            Piece::Run(run) => for q in points(run) {
+                // its middle first, then its ends: where walls closer than the ball pass it, the
+                // middle sees the wall across, not the arc it ends on
+                at.extend([0.5, 0.0, 1.0].map(|s| add(q, scale(run.along, s * run.edge))));
+            },
+            Piece::Ring(ring) => for q in points(&ring.section) {
+                at.extend((0..=16).map(|k| crate::brep::geom::Rigid::turn(ring.axis_origin, ring.axis,
+                    ring.angle * k as f64 / 16.0).point(q)));
+            },
+            _ => {}
+        }
+    }
+    let size = section.size();
+    let toward = |g: usize, q: V| sigma * body.carried_side_grad(g, q).0;
+    for &q in &at {
+        let tol = 1e-9 * (size + norm(q));
+        for (k, others) in &chains {
+            // how far the ball must stand off the others: its radius, or a flat's point as far as
+            // from its own face
+            let need = match section {
+                Section::Round(r) => r,
+                Section::Flat { .. } => groups[*k].iter().map(|&g| body.patch_distance(g, q)).fold(f64::INFINITY, f64::min),
+            };
+            // of the faces it comes too near, the one whose patch is nearest (a wall, not the arc
+            // carried on along the wall's plane past its seam)
+            let Some((g, d)) = others.iter().map(|&g| (g, toward(g, q))).filter(|&(_, d)| d < need - tol)
+                .min_by(|a, b| body.patch_distance(a.0, q).total_cmp(&body.patch_distance(b.0, q))) else {
+                continue;
+            };
+            let said = |fi: usize| body.paths().get(fi).map(|p| p.text()).filter(|t| !t.is_empty())
+                .map_or_else(|| "a face".to_string(), |t| format!("`{t}`"));
+            let own = said(groups[*k][0]);
+            // the arc of the chain tighter than the ball between, where it meets the other face: the
+            // corner's radius where the round runs (a drafted one's there), the ball's against it
+            let tight = others.iter().filter(|&&h| body.plane(h).is_none()).flat_map(|&h| {
+                body.edges_between(&[h], groups[1 - *k]).into_iter()
+                    .filter_map(move |e| body.circle(e).map(|(_, _, radius, _)| (h, radius)))
+            }).filter(|&(_, radius)| radius < need - tol)
+                .min_by(|a, b| body.patch_distance(a.0, q).total_cmp(&body.patch_distance(b.0, q)));
+            // to the fewest figures, three at least, that tell the ball's radius from how near it
+            // comes and from the arc's
+            let apart = |a: f64, b: f64| (3..16).find(|&n| figured(a, n) != figured(b, n)).unwrap_or(16);
+            let n = apart(need, d).max(tight.map_or(3, |(_, radius)| apart(need, radius)));
+            let length = |x: f64| crate::units::Dim::LENGTH.number_text(figured(x, n), units);
+            let near = if d >= 0.0 { format!("within {} of", length(d)) } else { format!("{} past", length(-d)) };
+            let past = tight.map_or_else(String::new, |(h, radius)| {
+                format!(" past {}, of radius {} where the {} runs and tighter than the {}", said(h), length(radius),
+                    if matches!(section, Section::Round(_)) { "round" } else { "chamfer" },
+                    if matches!(section, Section::Round(_)) { "ball" } else { "flat's leg" })
+            });
+            return Err(match section {
+                Section::Round(r) => format!("its ball, of radius {}, rolled against {own} comes {near} {}, which \
+                    {own} goes on into smoothly{past}: no ball of that radius stands there within both faces, and \
+                    what none reaches is more than the round of the edge, so none is made of it", length(r), said(g)),
+                Section::Flat { .. } => format!("its flat, reaching {} from {own}, comes {near} {}, which {own} \
+                    goes on into smoothly{past}, nearer than to {own} itself, so no chamfer of the edge is made of it",
+                    length(need), said(g)),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// The corner at `vertex` where the faces `ids` meet — planes, or a cylinder or a sphere among
@@ -479,6 +591,13 @@ fn ring_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: u
     Ok(vec![Piece::Ring(ring)])
 }
 
+/// `x` to `n` significant figures.
+fn figured(x: f64, n: i32) -> f64 {
+    if x == 0.0 { return 0.0 }
+    let k = 10f64.powi(n - 1 - x.abs().log10().floor() as i32);
+    (x * k).round() / k
+}
+
 /// **A ball wider than the circle it rolls round** (#962): where the section of a ring stretches
 /// past the circle's axis — a ball's centre standing toward the axis by more than the circle's
 /// radius, a pocket's corner rounded wider than it, a boss's rim or a drafted shell's where its
@@ -488,7 +607,10 @@ fn ring_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: u
 /// end with the edge — it runs on along the corner's face away from the edge, its centres every
 /// ball's within both faces, so it rounds the corner itself to the ball's radius as far as that
 /// face goes (up a pocket's corner, out of the body and on without end; down a boss's, into what it
-/// stands on).  Refused, saying the corner's radius where the round runs against the ball's (or
+/// stands on).  A face alone — a whole cylinder, a cone, an arc between creases — has no faces
+/// either side: no ball of that radius stands on the round's side of it at all, its centres are
+/// none, and the set is all of that side along its whole length.  Refused, saying the corner's
+/// radius where the round runs against the ball's (or
 /// the flat's leg), in the document's unit.  At the radius itself the section's arc is centred on
 /// the axis and turns into a sphere (`dome.sv`, a pocket's corner rounded to its own radius); a
 /// hair short, a spindle torus the same set reads, and both are built.
@@ -515,19 +637,28 @@ fn wider(body: &crate::solid::faces::BodyFaces, faces: [usize; 2], section: Sect
     }
     // to the fewest figures, three at least, that tell the two apart
     let size = match section { Section::Round(r) => r, Section::Flat { la, lb } => la.max(lb) };
-    let figured = |x: f64, n: i32| { let k = 10f64.powi(n - 1 - x.abs().log10().floor() as i32); (x * k).round() / k };
     let figures = (3..16).find(|&n| figured(size, n) != figured(radius, n)).unwrap_or(16);
     let length = |x: f64| crate::units::Dim::LENGTH.number_text(figured(x, figures), units);
     // the face the circle's radius is of: a cylinder's or a cone's about the axis, else the other
     let curved = faces.into_iter().find(|&fi| body.plane(fi).is_none()).unwrap_or(faces[0]);
-    let face = body.paths().get(curved).map(|p| p.text()).filter(|t| !t.is_empty())
-        .map_or_else(|| "the corner's face".to_string(), |t| format!("`{t}`"));
+    let other = if curved == faces[0] { faces[1] } else { faces[0] };
+    let said = |fi: usize, none: &str| body.paths().get(fi).map(|p| p.text()).filter(|t| !t.is_empty())
+        .map_or_else(|| none.to_string(), |t| format!("`{t}`"));
+    let (face, from) = (said(curved, "the corner's face"), said(other, "the other face"));
     let what = if closed { "circle" } else { "arc" };
     Err(match section {
-        Section::Round(_) => format!("its ball, of radius {}, is wider than the {what} it rolls round, of \
-            radius {} where the round runs: it touches the faces either side of {face} and never {face} \
-            itself, and what no ball reaches runs on along {face} away from the edge, rounding it to the \
-            ball's radius, so no round of the edge is made of it", length(size), length(radius)),
+        // the curved face goes on smooth into others (a pocket's walls): the ball stands against
+        // those, and the set rounds the corner itself along the face away from the edge
+        Section::Round(_) if body.smooth(&[curved]).len() > 1 => format!("its ball, of radius {}, is wider \
+            than the {what} it rolls round, of radius {} where the round runs: it touches the faces either side \
+            of {face} and never {face} itself, and what no ball reaches runs on along {face} away from the edge, \
+            rounding it to the ball's radius, so no round of the edge is made of it", length(size), length(radius)),
+        // alone (a whole cylinder, a cone, an arc between creases): no ball of that radius stands on
+        // the round's side of it at all — the centres are none, and the set all of that side
+        Section::Round(_) => format!("its ball, of radius {}, is wider than the {what} it rolls round, of radius \
+            {} where the round runs: no ball of that radius stands on the round's side of {face} at all, so \
+            what none reaches is everything on that side of it from {from} on, along its whole length and past \
+            the body without end, and no round of the edge is made of it", length(size), length(radius)),
         Section::Flat { .. } => format!("its flat's leg, {}, is longer than the radius of the {what} it \
             runs round, {} where the chamfer runs: the flat crosses the axis of {face}, so no chamfer of the \
             edge is made of it", length(size), length(radius)),
