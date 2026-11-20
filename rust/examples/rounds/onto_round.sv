@@ -12,9 +12,10 @@
 // cylinders and planes.
 //
 // Edit `r` and apply (⌘↵): over 2 the ball never touches the fill and is refused, saying both
-// radii.  Move the boss off the fill's axis (`fix((14, -20)) o`) and each ball's contact crosses
-// the floor's seam in another section than the stretch ends in, so no one section joins the round
-// along the floor to the ball's: refused so.
+// radii.  Move the boss off the fill's axis (`fix((14, -20)) o`): the ball along the floor stops
+// short of where the boss meets the fill, stands still, and its patch is in two, the floor's part
+// and the fill's; nearer the wall (`fix((11, -20)) o`) the floor's ball rolls on over the fill to
+// where it stands, a stretch of torus.
 unit mm
 use std
 use std.solids (union)
