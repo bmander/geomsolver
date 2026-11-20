@@ -144,7 +144,7 @@ fn ring_by_rays(pose: &(dyn Fn(f64) -> ([[f64;2];2],[f64;2])+Sync),w: f64,rays: 
 /// A swept solid's checks apart from its volume: valid, closed, and its STEP file the solid's.
 fn holds_as_a_solid(b: &Brep,name: &str) {
     b.check(tolerance(b.size())).unwrap();
-    let text = gcs_core::brep::step::write(b,name,1e-7).unwrap();
+    let text = gcs_core::brep::step::write(b,name,1e-7,gcs_core::brep::step::Fit::Exact).unwrap();
     gcs_core::brep::step_check::verify(&text,&gcs_core::brep::step_check::Solid::of(b)).unwrap();
 }
 
