@@ -42,8 +42,10 @@
 //! point of each of its faces are placed against the terms near it: one strictly outside the stock
 //! and the other unions, outside every cut and inside every common, has a ball about it the union's
 //! material in which the body keeps and no other term gives (a witness: (A) fails, a boss bored
-//! through at its rim).  Only where there is none is the arrangement made.  The terms are built
-//! where the body stands (`exact::operands`), the body never.
+//! through at its rim).  Only where there is none is an arrangement made: of the union with the
+//! near cuts and the commons, which answers (B) alone — a union nothing takes needs no more —
+//! then, where something is taken, with the stock and the unions beside it too.  The terms are
+//! built where the body stands (`exact::operands`), the body never.
 
 use super::*;
 use crate::brep::boolean::{arrangement, members, overlap};
@@ -109,19 +111,28 @@ impl<'a> Reader<'a> {
     }
 
     /// **A witness that union `u` adds the body material** no other term gives: a vertex of it,
-    /// or a point of one of its faces, strictly outside every material term beside it and every
-    /// near cut, and strictly inside every common — each by exact point location, more than the
-    /// tolerance off their boundaries, so a ball about it holds none of theirs, and `u`'s
-    /// material within it is kept and the union's alone.
+    /// the middle of an edge or a point of one of its faces, strictly outside every material term
+    /// beside it and every near cut, and strictly inside every common — each by exact point
+    /// location, more than the tolerance off their boundaries, so a ball about it holds none of
+    /// theirs, and `u`'s material within it is kept and the union's alone.
     fn witness(&self, u: Term<'a>, beside: &[Term<'a>], near: &[Term<'a>]) -> bool {
         let own = &self.located[&u.0];
-        let faces = u.1.faces.iter().enumerate().filter_map(|(fi, f)| {
+        // its vertices, each edge's middle, and a grid of three by three on each face, kept
+        // where the face holds it
+        let edges = u.1.edges.iter().filter_map(|e| match &e.curve {
+            crate::brep::topo::EdgeCurve::Curve(c) => Some(c.point((e.t[0] + e.t[1]) / 2.0)),
+            _ => None,
+        });
+        let faces = u.1.faces.iter().enumerate().flat_map(|(fi, f)| {
             let [[u0, u1], [v0, v1]] = crate::brep::boolean::face_parameters(u.1, fi);
-            let p = f.surface.point([(u0 + u1) / 2.0, (v0 + v1) / 2.0]);
-            (own.face_place(fi, p) == Place::In).then_some(p)
+            (1..4).flat_map(move |i| (1..4).map(move |j| (i, j))).filter_map(move |(i, j)| {
+                let at = |a: f64, b: f64, k: i32| a + (b - a) * k as f64 / 4.0;
+                let p = f.surface.point([at(u0, u1, i), at(v0, v1, j)]);
+                (own.face_place(fi, p) == Place::In).then_some(p)
+            })
         });
         let out = |t: &Term, p| self.located[&t.0].solid_place(p) == Place::Out;
-        u.1.vertices.iter().map(|v| v.p).chain(faces).any(|p| {
+        u.1.vertices.iter().map(|v| v.p).chain(edges).chain(faces).any(|p| {
             beside.iter().chain(near).all(|t| out(t, p))
                 && self.commons.iter().all(|k| self.located[&k.0].solid_place(p) == Place::In)
         })
@@ -212,11 +223,14 @@ pub fn unkept(sk: &Sketch, body: usize) -> Result<Vec<Unkept>, String> {
             r.adds.borrow_mut().insert(u.0, true);
             continue;
         }
-        let read = r.read(u, &beside, &near)?;
-        // (B): nothing of it taken, or (a union of no cell) nothing of it at all
-        if read.by_cut.is_empty() && read.by_common.is_empty() {
+        // (B) first, against the cuts and commons alone — a smaller arrangement, and the whole
+        // answer for a union nothing takes (a pad inside the plate beside a hole): nothing of it
+        // taken, or (a union of no cell) nothing of it at all
+        let taken = r.read(u, &[], &near)?;
+        if taken.by_cut.is_empty() && taken.by_common.is_empty() {
             continue;
         }
+        let read = r.read(u, &beside, &near)?;
         // (A): each cell it keeps the stock's or another union's that adds material of its own
         let mut held = BTreeSet::new();
         let mut adds = false;
