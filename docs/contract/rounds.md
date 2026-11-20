@@ -422,6 +422,45 @@ side turns 7.6° back in, by the stack's mitre with each run square at a reflex 
 unrounded; the ball turned about the corner's edge — a ring about that edge through the turn,
 glued to both — is what fills it, and waits on a set that says it.
 
+**A seam tangent to the drawing's numbers** (#962: a deck plate's stepped edge, a plate of twelve
+lobes and waists, a hook's band). Where two faces meet tangent is one rule, the body's: their
+outward normals one there to `faces::TANGENT`, a millionth (`BodyFaces::continues`, `seam`), so no
+edge, no end and no corner. The pieces going on from one another across such a seam — a run and a
+ring's stretch, or two stretches — are one section there by the same reading
+(`assemble::one_section`: their sections through the seam's point, each point of either within a
+billionth of the construction's size, and four `TANGENT`s of its distance from that point, of the
+other's), not only where their directions agree to a billionth. An author states numbers to five
+or six places, and a seam is tangent to those alone: `rounds/step.sv`'s side leaves its lobe a
+ten-millionth of a radian off the lobe's tangent, the lobe meets its arc of 5 half a millionth off.
+There the body read no end and the assembly no one section, so the pieces were unioned, their caps
+a millionth apart, and the Boolean could not classify them ("a piece of `end` (a plane) touches
+`near` … along no face of either", naming the round's own construction planes); or two
+stretches' caps through one seam, planes whose normals agree to the rounding of the arcs' centres
+and not to `1e-12`, were never the one face the glue pairs ("two pieces joined at a section share
+no face there"). Each join at a seam carries how far apart its two sections stand
+(`Assembly::gaps`; the recipe's join `[i, j, gap]`), the glue reads them that far apart
+(`recipe::chained`: eight tolerances and twice the gap) and measures the chain's edges once it is
+whole, as at a rolled piece's fitted cap; and `boolean::glued` takes two plane faces as one
+surface where each's corners lie within its tolerance of the other's plane. **A face a run ends on reaching
+back across a seam** is refused by name: a flush boss whose side one end of a run along an
+obround's flat stands on, kept outside it, reaching back over the section where the flat runs
+tangent into the half circle. The half circle's ring is its own region's, whose run ends nowhere
+there, so nothing cuts it: the shape is the ring's whole section beside the run's cut short, and
+where the boss crosses the ball's arc there, the run's round and the ring's, tangent along that
+arc, meet it in one point — not one face to glue, and neither unioned nor cut from the two glued
+by this kernel yet (its search for where the boss's meeting with the run's round meets the ring's
+torus, at a point where it only touches it, does not end): "where its round goes on tangent
+across a seam at […], a face one of its runs ends on reaches back across the section the two
+share" (`Assembly::across`), said by the round's body and label. `tests/rim_seams.rs` is the gate
+(the step at every line length down to none and every radius to past its concave arc's, plates
+of four, six and twelve alternating arcs, each stated to the micron, mirrored and turned, round and
+chamfer, either cap; seams `1e-8` to `5e-7` off tangent; `step.sv` as drawn, with the stack's mitre
+at the frame's corners; the boss slid along the rim through the seam, built either side of the
+section and refused over it; each volume the closed form's to 1e-9, a boss's chord by
+quadrature). Seams turned past `TANGENT` and short of a few thousandths
+of a radian are corners whose pieces are refused yet (a ring and a run unioned there, a turn of
+`1e-6` to `1e-4`: "a cylinder's pieces do not close").
+
 **A ball as wide as its cylinder** (brep-bench's fillet/cylinder-rim-to-dome): an offset by a
 radius that takes a surface's radius to nothing is what the surface is drawn about, never nothing
 (`Surface::offset` → `Offset`: a cylinder's axis, a sphere's centre, a torus's middle circle; `None`

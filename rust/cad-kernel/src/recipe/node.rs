@@ -187,6 +187,10 @@ pub struct Kept { pub node: Node,pub keep: bool }
 /// `stratum` is the body a rolled run is rolled against, where there is one.
 #[derive(Clone,Debug)]
 pub struct Lowered { pub pieces: Vec<Run>,pub corners: Vec<Corner>,pub rolled: Vec<Rolled>,pub joins: Vec<[usize;2]>,
+    /// For each join, how far apart the two sections it glues stand: at a seam where two faces meet
+    /// tangent to the body's reading of tangent, its pieces' caps not one to a billionth (#962);
+    /// else nothing.
+    pub gaps: Vec<f64>,
     pub stratum: Option<Body>,pub beyond: Vec<crate::spill::Beyond> }
 
 /// A lowered run or ring: a prism or a revolution, cut off at a slant behind each `within` plane
@@ -384,8 +388,10 @@ impl Lowered {
             cuts:each(listed(k,"cuts"),|c| Ok((point(c,"at")?,point(c,"normal")?,number(c,"reach")?)))?,
             kept:each(listed(k,"kept"),|j| Ok((surface(j)?,matches!(field(j,"inside")?,Json::Bool(true)))))?,
             wedge:each(listed(k,"wedge"),|j| Ok((point(j,"at")?,point(j,"normal")?)))?}))?;
+        // (each a pair of pieces, and how far apart their sections stand where that is said)
         let joins = field(n,"joins")?.arr().iter()
             .map(|j| { let j = j.arr(); [j[0].as_i64() as usize,j[1].as_i64() as usize] }).collect();
+        let gaps = field(n,"joins")?.arr().iter().map(|j| j.arr().get(2).map_or(0.,Json::as_f64)).collect();
         // a ring's section beyond a seam's normal surface (#422), counted after the rolled runs
         let beyond = each(listed(n,"beyond"),|b| {
             use crate::spill::{Across,Seam};
@@ -407,7 +413,7 @@ impl Lowered {
                 wall:surface(field(b,"wall")?)?,sides:[sides[0].as_f64(),sides[1].as_f64()],seam,section,
                 ends:[vec3(&ends[0]),vec3(&ends[1])]})
         })?;
-        Ok(Lowered {pieces,corners,rolled,joins,stratum:n.get("stratum").map(Body::read).transpose()?,beyond})
+        Ok(Lowered {pieces,corners,rolled,joins,gaps,stratum:n.get("stratum").map(Body::read).transpose()?,beyond})
     }
 }
 

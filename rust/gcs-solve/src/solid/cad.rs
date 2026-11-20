@@ -361,17 +361,23 @@ impl<'a> Walk<'a> {
                     let members = self.groups.get(&i).cloned().unwrap_or_else(|| vec![i as u32]);
                     let pieces: Vec<_> = members.into_iter().map(|o| self.pieces_of(o)).collect();
                     let assembly = super::lowering::assemble(pieces.iter().flat_map(|p| p.iter()));
-                    let mut node = assembly.node(w)?;
                     // the body it rounds: the one whose late sets take it, read before this
                     let late = |sets: &[Vec<u32>;4]| sets[2..].iter().any(|s| s.contains(&(i as u32)));
                     let body = self.bodies.iter().find(|(_,(sets,_))| late(sets));
                     // its solid is named by the use of the word that made it (`#17.0.….taken`),
                     // which no document wrote: a failure to build it says the body it rounds and
                     // the step its faces are named by there (#879)
-                    if let Some((&b,_)) = body {
+                    let called = body.map(|(&b,_)| {
                         let of = &sk.solids[b];
-                        node.set("said",format!("`{}`'s round or chamfer `{}`",
-                            crate::vocab::public_path(of.written_name()),super::step_through(of,solid)).into());
+                        format!("`{}`'s round or chamfer `{}`",crate::vocab::public_path(of.written_name()),
+                            super::step_through(of,solid))
+                    });
+                    let mut node = assembly.node(w).map_err(|e| match &called {
+                        Some(c) => format!("{c}: {e}"),
+                        None => said(sk,i,e),
+                    })?;
+                    if let Some(c) = called {
+                        node.set("said",c.into());
                     }
                     // a ball rolled along a traced run is rolled against the body as its terms but the
                     // late ones make it, all built before this (they come first in its dependencies)
