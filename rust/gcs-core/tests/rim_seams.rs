@@ -298,12 +298,16 @@ fn a_plate_of_alternating_lobes_and_waists_is_rimmed_whole() {
 /// The step with the lobe's end turned `eps` on round its circle past the origin, so the line
 /// from there to `(0, length)` leaves it `eps` off its tangent, and the arc of 8's start turned
 /// `eps` on too: two seams the body reads as tangent that are not, to the drawing's numbers.
-fn creased(eps: f64) -> Outline {
+fn creased(eps: f64) -> Outline { creased_at(eps, eps) }
+
+/// The step with the lobe's end turned `lobe_eps` on round its circle past the origin and the arc
+/// of 8's start `root_eps` on round its own (either negative: turned back short of it).
+fn creased_at(lobe_eps: f64, root_eps: f64) -> Outline {
     let mut o = step(5.0, 13.75);
     let lobe = [-12.0, 0.0];
-    let v11 = [lobe[0] + 12.0 * eps.cos(), lobe[1] + 12.0 * eps.sin()];
+    let v11 = [lobe[0] + 12.0 * lobe_eps.cos(), lobe[1] + 12.0 * lobe_eps.sin()];
     let c3 = [8.0, 13.75];
-    let v12 = [c3[0] - 8.0 * eps.cos(), c3[1] + 8.0 * eps.sin()];
+    let v12 = [c3[0] - 8.0 * root_eps.cos(), c3[1] + 8.0 * root_eps.sin()];
     for g in &mut o {
         match g {
             Seg::Arc { c, e, .. } if *c == lobe => *e = v11,
@@ -427,17 +431,69 @@ fn a_flush_boss_slid_through_the_seam_stops_the_round() {
     for x in [-343.0, -360.0, -380.0] {
         built(x);
     }
-    for x in [-339.17, -341.0] {
-        let e = solved(&flange_and_boss(x));
-        let say = gcs_core::brep::sweep::Say { stage: &|_: &str| {}, mark: &|_| {} };
-        let body = crate::common::ent(&e, "part").i();
-        let refusal = gcs_core::brep::export::exact(&e.sketch, body, None, None, &say).err().expect("refused").message;
-        let said = "`part`'s round or chamfer `taken`: where its round goes on tangent across a seam at \
-                    [-384.620000, -88.740000, -131.500000], a face one of its runs ends on reaches back across \
-                    the section the two share";
-        assert!(refusal.starts_with(said), "{x}: {refusal}");
+    // how far the boss's side stands over the section at the seam: its radius less the distance
+    // from its axis to the section's corner on the top, the round's 10 in from the side
+    let over = |x: f64| 46.76 - (x + 384.62f64).hypot(-88.74 + 10.0 + 67.9);
+    for (x, depth) in [(-339.17, "0.035mm"), (-341.0, "1.8mm")] {
+        assert_eq!(gcs_core::json::fmt_g(over(x), 2) + "mm", depth);
+        let refusal = refused(&flange_and_boss(x), "part");
+        let said = format!("`part`'s round or chamfer `taken`: its round goes on tangent from `outer.flange.s` into \
+                            `outer.flange.al` across their seam at [-384.62, -88.74, -131.5]mm, and \
+                            `outer.boss.disc`, which its run along `outer.flange.s` ends on, reaches {depth} back \
+                            over the section there");
+        assert!(refusal.starts_with(&said), "{x}: {refusal}");
+        assert!(refusal.ends_with("Move `outer.boss.disc` clear of the seam, or over it"), "{refusal}");
         assert!(!refusal.contains("`start`") && !refusal.contains("`end`"), "{refusal}");
     }
+}
+
+/// The export's refusal of solid `name` of document `src`, as text.
+fn refused(src: &str, name: &str) -> String {
+    let e = solved(src);
+    let say = gcs_core::brep::sweep::Say { stage: &|_: &str| {}, mark: &|_| {} };
+    let body = crate::common::ent(&e, name).i();
+    gcs_core::brep::export::exact(&e.sketch, body, None, None, &say).err().expect("refused").message
+}
+
+/// Whether solid `name` of document `src` is built exactly.
+fn builds(src: &str, name: &str) -> bool {
+    let e = solved(src);
+    let say = gcs_core::brep::sweep::Say { stage: &|_: &str| {}, mark: &|_| {} };
+    gcs_core::brep::export::exact(&e.sketch, crate::common::ent(&e, name).i(), None, None, &say).is_ok()
+}
+
+/// **A corner too nearly tangent to round, said by its faces** (#962): the step's side turned
+/// `eps` off the lobe of 12 it leaves, a reflex corner — inside the body's reading of tangent
+/// (`5e-7`) a seam the round goes on across, built; past it a corner, whose round meets the lobe
+/// again `2R sin θ` on round it, which the kernel tells apart from the corner only where `sin² θ`
+/// is over `ON_CURVE tol / R` (here `2.9e-4` rad: `tol` a billionth of the plate's diagonal of
+/// 124.5): at `2e-6`, `1e-5`, `1e-4` and `2e-4` refused, naming the side `k3` and the lobe `k2`, the
+/// turn, the bound, and the remedy (before, "a cylinder's pieces do not close"); at `3e-4` and
+/// `1e-3` built as a corner, at a round of 2 and of 5.  A chamfer's flat crosses the side, and is
+/// built at `1e-5`; so is the side turned off the concave arc of 8 it runs into.
+#[test]
+fn a_corner_too_nearly_tangent_to_round_is_said_by_its_faces() {
+    let round = |eps: f64, r: f64| document(&creased_at(eps, 0.0), "near", Word::Round(r));
+    assert!(builds(&round(5e-7, 2.0), "plate"));
+    for (eps, turn) in [(2e-6, "2e-06"), (1e-5, "1e-05"), (1e-4, "0.0001"), (2e-4, "0.0002")] {
+        let refusal = refused(&round(eps, 2.0), "plate");
+        // (the witness, the lobe's end, to the tenth of a micron under the kernel's tolerance)
+        let at = |x: f64| gcs_core::json::fmt_g((x / 1e-7).round() * 1e-7, 6);
+        let said = format!("`k3` and `k2` meet at a turn of {turn} rad at [{}, {}, 10]mm: not tangent, so their \
+                            edge is a corner and no seam a round goes on across, and too nearly tangent a corner \
+                            for this kernel to round at 2mm against `k2`'s radius of 12mm",
+                           at(12.0 * eps.cos() - 12.0), at(12.0 * eps.sin()));
+        assert!(refusal.contains(&said), "{eps}: {refusal}");
+        assert!(refusal.contains("(a turn of 0.00029 rad or more is built)"), "{refusal}");
+        assert!(refusal.contains("State the tangency (`k3` tangent `k2`, or a chain's `-> tangent` joint)"), "{refusal}");
+    }
+    for r in [2.0, 5.0] {
+        for eps in [3e-4, 1e-3] {
+            assert!(builds(&round(eps, r), "plate"), "{eps} at {r}");
+        }
+    }
+    assert!(builds(&document(&creased_at(1e-5, 0.0), "near", Word::Chamfer(1.5)), "plate"));
+    assert!(builds(&document(&creased_at(0.0, 1e-5), "near", Word::Round(2.0)), "plate"));
 }
 
 /// **A body grown over seams tangent to the drawing's numbers** (#962's 132, `std.rounds.Grown`):
@@ -464,3 +520,4 @@ fn a_body_grown_over_stated_seams_stands_no_corner_there() {
         close(props::volume(&exact(&e, "g.body")), want);
     }
 }
+

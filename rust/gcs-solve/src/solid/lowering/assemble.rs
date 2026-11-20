@@ -125,7 +125,25 @@ pub struct Assembly {
     pub gaps: Vec<(usize, f64)>,
     /// Where a face a run or a ring ends on reaches back across a section it shares with a piece
     /// it goes on from across a seam (`across`): no construction is made of it yet.
-    pub across: Option<V>,
+    pub across: Option<BackOver>,
+}
+
+/// **A face an end stands on reaching back over a seam** (`Assembly::across`): the seam's point,
+/// how far past the face the section there reaches, and the face — a plane's half-space the piece
+/// is kept within (`n·x <= d`), or a curved face's surface — as `lowering::back_over_said` names
+/// it off the body.
+#[derive(Clone, Debug)]
+pub struct BackOver {
+    pub at: V,
+    pub depth: f64,
+    pub end: EndOf,
+}
+
+/// What an end of a piece is kept within (`BackOver`).
+#[derive(Clone, Debug)]
+pub enum EndOf {
+    Half(V, f64),
+    Solid(Surf),
 }
 
 impl Assembly {
@@ -145,12 +163,17 @@ impl Assembly {
         let n = self.runs.len();
         let of = |p: usize| if p < n { &self.runs[p] } else { &self.rings[p - n].section };
         let (run, other) = (of(p), of(o));
+        // (a face both pieces are kept within cuts their caps alike: none reaching back, #962's 149)
         let shared = |&(m, d): &(V, f64)| other.within.iter()
             .any(|&(k, e)| distance(m, k) <= 1e-9 && (d - e).abs() <= tol);
-        let past = |w: &(V, f64)| !shared(w) && section.iter().any(|&q| dot(w.0, q) > w.1 + tol);
-        let reaches = |k: &Kept| !other.kept.contains(k) && section.iter().any(|&q| k.away(q) > tol);
-        if self.across.is_none() && (run.within.iter().any(past) || run.kept.iter().any(reaches)) {
-            self.across = Some(at);
+        let deepest = |f: &dyn Fn(V) -> f64| section.iter().map(|&q| f(q)).fold(f64::NEG_INFINITY, f64::max);
+        let halves = run.within.iter().filter(|w| !shared(w))
+            .map(|&(m, d)| (deepest(&|q| dot(m, q) - d), EndOf::Half(m, d)));
+        let solids = run.kept.iter().filter(|k| !other.kept.contains(k))
+            .map(|k| (deepest(&|q| k.away(q)), EndOf::Solid(k.face)));
+        let Some((depth, end)) = halves.chain(solids).max_by(|a, b| a.0.total_cmp(&b.0)) else { return };
+        if self.across.is_none() && depth > tol {
+            self.across = Some(BackOver { at, depth, end });
         }
     }
 
@@ -613,10 +636,11 @@ impl Assembly {
             }
             pieces.push(o);
         }
-        if let Some(at) = self.across {
+        // (said by the faces it is of where the body is at hand, `lowering::back_over_said`)
+        if let Some(BackOver { at, depth, .. }) = self.across {
             return Err(format!("where its round goes on tangent across a seam at [{:.6}, {:.6}, {:.6}], a face one \
-                of its runs ends on reaches back across the section the two share: {}", at[0], at[1], at[2],
-                "no exact construction is made of it yet"));
+                of its runs ends on reaches {depth:.3e} back over the section the two share: no exact construction \
+                is made of it yet", at[0], at[1], at[2]));
         }
         let corners = self.corners.iter().map(|c| object([
             ("vertex", w.at(scale(c.vertex, by))), ("centre", w.at(scale(c.centre, by))),

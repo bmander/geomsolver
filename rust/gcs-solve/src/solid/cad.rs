@@ -376,6 +376,10 @@ impl<'a> Walk<'a> {
                         format!("`{}`'s round or chamfer `{}`{flush}",crate::vocab::public_path(of.written_name()),
                             super::step_through(of,solid))
                     });
+                    // a face a run ends on reaching back over a seam, said by the faces it is of
+                    if let Some(said) = assembly.across.as_ref().and_then(|b| super::lowering::back_over_said(sk,i,b)) {
+                        return Err(match &called { Some(c) => format!("{c}: {said}"), None => self::said(sk,i,said) });
+                    }
                     let mut node = assembly.node(w).map_err(|e| match &called {
                         Some(c) => format!("{c}: {e}"),
                         None => said(sk,i,e),
