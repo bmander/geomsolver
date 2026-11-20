@@ -17,8 +17,10 @@ not end at all, and a corner's ball at its other end rounded on along it past th
 block's corner beside a filled step carried a groove under the step's high end). The general
 note on a part where edges of both turns meet at a vertex (a step, a pocket, a boss) is written
 as the features' own edges first and every edge on a solid of what they leave; written as one
-statement, the export now says the vertex, its faces and the edge to round first. Nothing a
-document may write changed.
+statement, the export now says the vertex, its faces and the edge to round first; and a round
+or a chamfer of such a statement that is not built is said with the two faces of the part it
+lies between (where it was said only by the word's internal name). Nothing a document may write
+changed.
 
 **[0.223] A round that selects no edge says so, and a face's fault is said at the face** (#962).
 A round or a chamfer (either word, either form) over faces that are all the body's but meet in no

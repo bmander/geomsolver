@@ -177,6 +177,20 @@ fn the_stock_block_has_every_edge_rounded() {
     close(exported(include_str!("../../examples/rounds/stock.sv"), "whole"), want);
 }
 
+/// **An edge the general note cannot build is said by the faces it lies between**: a rod of
+/// radius 3 rounded all over by 4, its rims a ball wider than the rod holds.  The round no
+/// document named (a word's use, `#….taken`) is said with the two faces of the part it rounds,
+/// in the author's names, so the statement can leave that edge out.
+#[test]
+fn an_edge_the_general_note_cannot_build_is_said_by_its_faces() {
+    let e = solved("unit mm\nuse std\nuse std.solids\nuse std.rounds (round)\nin std.top {\n  o := point\n  fix((0, 0)) o\n\
+        \x20 rim := circle(center: o) hint(r: 3)\n  radius(3mm) rim\n}\n\
+        rod := solid(std.solids.Prism(face(rim), from: 0mm, to: 10mm))\nround(r: 4mm) rod\n");
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    let why = format!("{:?}", export::exact(&e.sketch, ent(&e, "rod").i(), None, None, &say).err().expect("refused"));
+    assert!(why.contains("(where `rod.") && why.contains("` and `rod.") && why.contains("` meet)"), "{why}");
+}
+
 /// **Every edge as one statement**: each round reads the sharp block, so at each corner of the
 /// step the side's rounds and the step's fill touch along a line — refused by the export, naming
 /// the vertex, the faces there with each edge's turn, and the edge to round first.

@@ -143,7 +143,15 @@ on either cap to one volume). **A round that is not built is said by its body an
 its solid's name is the use's that made it (`#17.0.….taken`), which no document wrote, so its
 recipe node carries what a failure calls it (`"said"`, `` `box`'s round or chamfer `vert.taken` ``:
 the body whose late sets take it, `step_through`; `recipe::Named::called`, what every
-`built_names` holds).
+`built_names` holds). **And by the faces it stands on** (#962, `cad::faces_said`): a region over
+a body's faces refused or read only by the field is said with the faces of its `FaceSide` terms in
+the body's names (`` `taken[1]` (where `rod.rim` and `rod.near` meet): … ``) — the edge or
+the corner in the author's terms, which a statement over many faces (`round(r) part`, the general
+note) does not name. Such a statement is refused whole where one of its edges is not built: a
+general note is every edge, and half of it is not the note; the faces said are what a block over
+the faces leaves out (`when`, "pick edges by the faces they lie between" in the primer).
+`tests/mixed_vertices.rs` (`an_edge_the_general_note_cannot_build_is_said_by_its_faces`) is the
+gate.
 
 **Where edges of both turns meet at a vertex** (#962's 8c, [0.224]: "all edges R1.5" on a stock
 block). At a vertex of three faces whose edges are not all of one turn, one edge is alone in its

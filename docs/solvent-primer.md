@@ -2533,7 +2533,9 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
   fill, a boss's foot round each upright's round (`rust/examples/rounds/stock.sv`). Written as one
   `round(r: 1.5mm) part`, every edge reads the sharp part, and at such a vertex the cut and the
   fill touch along a line: the export refuses it naming the vertex, its faces and each edge's
-  turn, and the edge to round first. To leave an edge out, pick the edges by the faces they lie
+  turn, and the edge to round first. Where one edge of the part cannot be rounded, the whole
+  statement is not built, and the refusal names the two faces that edge lies between
+  ("where `rod.near` and `rod.rim` meet"); to leave it out, pick the edges by the faces they lie
   between (above). A chamfer of every edge at such a vertex is not said yet.
 - **The ball and the flat follow a face across a seam**: where the far face goes on tangent into
   a rim's round, a chamfer at a boss standing near the rim lands its leg on the round

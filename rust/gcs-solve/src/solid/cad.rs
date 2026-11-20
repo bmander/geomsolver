@@ -607,5 +607,29 @@ pub(super) fn profile(sk: &Sketch,index: usize,w: &Writer) -> Result<Json,String
 fn said(sk: &Sketch,i: usize,why: impl std::fmt::Display) -> String {
     let why = why.to_string();
     let key = format!("{}: ",sk.solids[i].name);
-    format!("`{}`: {}",sk.solid_said(i),why.strip_prefix(&key).unwrap_or(&why))
+    let why = why.strip_prefix(&key).unwrap_or(&why);
+    match faces_said(sk,i) {
+        Some(faces) => format!("`{}` (where {faces} meet): {why}",sk.solid_said(i)),
+        None => format!("`{}`: {why}",sk.solid_said(i)),
+    }
+}
+
+/// The faces a region over a body's faces stands on, each by the body's name for it
+/// (`part.block.edge3`), as the author wrote them — what a round or a chamfer no document named
+/// (`#42.0.….taken`, a word's use) is said by where it is not built (#962): the edge or the corner
+/// it is, so a statement over many faces can leave that one out.  `None` for any other solid.
+fn faces_said(sk: &Sketch,i: usize) -> Option<String> {
+    let SolidDef::Region {terms,..} = &sk.solids.get(i)?.def else { return None };
+    let mut faces: Vec<String> = Vec::new();
+    for t in terms {
+        if let crate::model::RegionShape::FaceSide {face} = &t.shape {
+            let path = std::iter::once(sk.solid_name(face.solid as usize)).chain(face.path.iter().cloned())
+                .collect::<Vec<_>>().join(".");
+            if !faces.contains(&path) { faces.push(path) }
+        }
+    }
+    match &faces.iter().map(|f| format!("`{f}`")).collect::<Vec<_>>()[..] {
+        [] | [_] => None,
+        [rest @ ..,last] => Some(format!("{} and {last}",rest.join(", "))),
+    }
 }
