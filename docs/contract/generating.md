@@ -2033,9 +2033,10 @@ rounding's** (#942 F6), none a number of its own:
   its middle stands between its ends; a face's characteristic line read as far as the face's reach;
   feet within the slack of a line make no circle; the end pose a stuck instant is nearer is the one
   that holds it, and the way the tool's point moves there is the motion's own velocity (no step);
-  the screw's domain and the trim's grown box stand clear of what they hold by the Boolean's reach
-  twice over (`closed::room`: at a tenth of its extent the drum screwed a short lead through most
-  of a turn was built wrong); every trim's hair is #880 Q1b's one rule (`closed::hair`), which the
+  the screw's domain and the trim's grown box stand clear of what they hold by membership's bar and
+  the Boolean's reach twice over (`closed::room`: at a tenth of its extent the drum screwed a short
+  lead through most of a turn was built wrong, at the reach alone three screwed bars, a cell thinner
+  than the bar left between the box's ends and theirs); every trim's hair is #880 Q1b's one rule (`closed::hair`), which the
   roads under any motion had copied.
 **Not yet built**: the tumbling tori fit, are cut and sewn into one tube a contact curve, and are
 refused past the meetings their sewing settles — the torus turned whole where a piece of the torus

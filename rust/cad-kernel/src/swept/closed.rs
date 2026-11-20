@@ -789,7 +789,7 @@ fn build_by(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank:
     let size = { let (lo,hi) = tool.bounds(); norm(sub(hi,lo)) };
     let eps = 1e-9*(1.+size);
     let gather::Candidates {cutters,touches,seams,held,..} = gather::Candidates::gathered(tool,&legs,tol,eps,size)?;
-    let domain = domain(tool,&legs,&held,tol)?;
+    let domain = domain(tool,&legs,&held,bar,tol)?;
     // only the candidates that carry some of the boundary: membership differing on their two sides
     // somewhere over the box (a candidate is kept where a point of it cannot be settled)
     let solid = Solid::new(tool,bar,1.)?;
@@ -838,7 +838,7 @@ struct Domain { solid: Brep,centre: V,half: f64,tall: Option<(f64,f64,f64)> }
 /// turn where the sweep climbs less than a turn's step. Cut from a blank, the box is the sweep's
 /// reach (#847): every candidate reaches across it, and the blank is split by them within it alone
 /// (`boolean::arrangement_reached`).
-fn domain(tool: &Brep,legs: &Legs,held: &[V],tol: f64) -> Result<Domain,Unbuilt> {
+fn domain(tool: &Brep,legs: &Legs,held: &[V],bar: f64,tol: f64) -> Result<Domain,Unbuilt> {
     if legs.iter().all(|l| l.0.is_slide() || l.0.is_turn()) {
         let (solid,centre,half) = cube_holding(held,tol)?;
         return Ok(Domain {solid,centre,half,tall:None})
@@ -862,7 +862,7 @@ fn domain(tool: &Brep,legs: &Legs,held: &[V],tol: f64) -> Result<Domain,Unbuilt>
     }
     let (mut l,mut h) = bx;
     let sag = reach*(1.-(0.5*(screw.ratio*(b-a)).abs()/STEPS as f64).dcos());
-    let margin = room(tol);
+    let margin = room(bar,tol);
     let pad = [sag+margin,sag+margin,margin];
     for i in 0..3 { l[i] -= pad[i]; h[i] += pad[i] }
     let at = |x: f64,y: f64| f.at([x,y,l[2]]);
@@ -975,11 +975,13 @@ pub(crate) fn grain(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Re
 fn hair(tol: f64,size: f64) -> f64 { (4.*tol).max(1e-6*size) }
 
 /// **How far a box holding a sweep stands clear of it, beyond what it holds** (the sweep's own
-/// extent and sag, each box's to add): clear of the Boolean's reach twice over (`ON_CURVE`
-/// tolerances), so no face of the box meets the sweep (#942 F6: the screw's domain and the trim's
-/// box had a twentieth and a tenth of their extent; at a tenth the drum screwed a short lead through
-/// most of a turn was built wrong, `swept_closed::a_drum_screwed_a_short_lead_through_most_of_a_turn_closes`).
-pub(super) fn room(tol: f64) -> f64 { 2.*crate::tolerant::ON_CURVE*tol }
+/// extent and sag, each box's to add): membership's `bar` — the cell between the box and the sweep
+/// no thinner than the tool's mesh sag, which membership settles — and the Boolean's reach twice
+/// over (`ON_CURVE` tolerances), so no face of the box meets the sweep (#942 F6: the screw's domain
+/// and the trim's box had a twentieth and a tenth of their extent; at a tenth the drum screwed a
+/// short lead through most of a turn was built wrong, and at the reach alone three screwed bars,
+/// their box's ends a cell thinner than the bar from their flat ends, were).
+pub(super) fn room(bar: f64,tol: f64) -> f64 { bar+2.*crate::tolerant::ON_CURVE*tol }
 
 pub(super) fn cube_holding<'a>(points: impl IntoIterator<Item=&'a V>,tol: f64) -> Result<(Brep,V,f64),Unbuilt> {
     let (blo,bhi) = points.into_iter().fold(([f64::INFINITY;3],[f64::NEG_INFINITY;3]),|(l,h),p|

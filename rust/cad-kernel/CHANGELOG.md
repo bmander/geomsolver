@@ -15,7 +15,7 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   its bridge's half-width), the trace's step, or the structure's (a side of a face's square read by
   its own way, a halving to the roll's rounding), or is gone. New shared rules: `closed::grain` (the
   roll over which no corner of the tool moves the tolerance), `closed::room` (how far a box holding
-  a sweep stands clear of what it holds: the Boolean's reach twice over), `closed::hair` (the hair
+  a sweep stands clear of what it holds: membership's bar and the Boolean's reach twice over), `closed::hair` (the hair
   a trim reads at, #880 Q1b's), and
   `rings::on_double_curve`. `rings::cut_along` takes the tolerance. A chord whose ends are snapped
   to one place has no length and is dropped; a double curve is stepped adaptively, by its own
