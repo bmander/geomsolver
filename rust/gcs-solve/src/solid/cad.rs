@@ -390,8 +390,8 @@ impl<'a> Walk<'a> {
                     // step its faces are named by there (#962): a face a run ends on reaching back
                     // over a seam by the faces it is of, any other in the assembly's own words
                     let named = |e: String| match &called { Some(c) => format!("{c}: {e}"), None => said(sk,i,e) };
-                    if let Some(over) = assembly.across.as_ref().and_then(|b| super::lowering::back_over_said(sk,i,b)) {
-                        return Err(named(over));
+                    if let Some(b) = &assembly.across {
+                        return Err(named(super::lowering::back_over_said(sk,i,b)));
                     }
                     let mut lowered = assembly.node(w).map_err(named)?;
                     // a ball rolled along a traced run is rolled against the body as its terms but the

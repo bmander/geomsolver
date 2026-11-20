@@ -181,8 +181,10 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
     let all: Vec<usize> = ga.iter().chain(gb).copied().collect();
     let ends = body.end_faces(&edges, &all);
     if let Section::Round(r) = section {
+        // the kernel's tolerance over the body (`geom::tolerance` of its box's diagonal)
+        let tol = { let (lo, hi) = body.bounds(); crate::brep::geom::tolerance(distance(lo, hi)) };
         for &edge in edges.iter().filter(|&&e| body.convex(e) == Some(within)) {
-            if let Some(why) = nearly_tangent(body, edge, &ends, r, unit) {
+            if let Some(why) = nearly_tangent(body, edge, &ends, r, tol, unit) {
                 return Err(why);
             }
         }
@@ -228,10 +230,10 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
 /// side turned `1e-5` to `2e-4` off the lobe it leaves, a teardrop's tangents stated to three
 /// places).  A chamfer's flat crosses the edge's face, no tangent to it, and is built.  Said by the
 /// two faces, the turn, the bound, and what is true to do: state the tangency, or make the corner
-/// one.  `tol` is the kernel's over the body (`geom::tolerance` of its box's diagonal).
-fn nearly_tangent(body: &crate::solid::faces::BodyFaces, edge: u32, ends: &Ends, r: f64, unit: &str) -> Option<String> {
-    let (lo, hi) = body.bounds();
-    let tol = crate::brep::geom::tolerance(distance(lo, hi));
+/// one.  `tol` is the kernel's over the body (`geom::tolerance` of its box's diagonal), and the
+/// bound the kernel's own (`tolerant::least_sine_apart`).
+fn nearly_tangent(body: &crate::solid::faces::BodyFaces, edge: u32, ends: &Ends, r: f64, tol: f64, unit: &str)
+    -> Option<String> {
     let faces = body.faces_of(edge);
     for p in [body.along(edge, 0.0), body.along(edge, 1.0)] {
         for &(by, _, far) in ends.iter() {
@@ -251,11 +253,11 @@ fn nearly_tangent(body: &crate::solid::faces::BodyFaces, edge: u32, ends: &Ends,
             let n = body.normal(c, p);
             let Some((own, turn)) = faces.iter().map(|&f| (f, dot(body.normal(f, p), n).clamp(-1.0, 1.0).dacos()))
                 .min_by(|a, b| a.1.total_cmp(&b.1)) else { continue };
-            let bound = (crate::brep::tolerant::ON_CURVE * tol / radius).sqrt().dasin();
+            let bound = crate::brep::tolerant::least_sine_apart(radius, tol).dasin();
             if !(turn < bound) {
                 continue;
             }
-            let name = |fi: usize| format!("`{}`", crate::vocab::public_path(&body.paths()[fi].text()));
+            let name = |fi: usize| body.said(fi);
             let fig = |x: f64| crate::json::fmt_g(x, 2);
             // (the witness to the power of ten under the kernel's tolerance)
             let grid = 10f64.powi(tol.max(1e-12).log10().floor() as i32);

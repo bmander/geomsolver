@@ -161,6 +161,11 @@ impl BodyFaces {
     /// Each face's name as the body names it, beside its boundary's faces (`brep`).
     pub fn paths(&self) -> &[FacePath] { &self.paths }
 
+    /// Face `fi` as a refusal names it: its path as the document reads it, in backticks.
+    pub fn said(&self, fi: usize) -> String {
+        format!("`{}`", crate::vocab::public_path(&self.paths[fi].text()))
+    }
+
     /// The boundary the faces are read off: in millimetres about `origin` (model units), `mm` of
     /// them a model unit.
     pub fn brep(&self) -> (&crate::brep::topo::Brep, f64, V) { (&self.loc.b, self.mm, self.origin) }

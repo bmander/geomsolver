@@ -340,9 +340,9 @@ fn lowered_run(piece: &Run,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
 /// and the chains set beside one another (`beside`).
 fn chained(pieces: &[Brep],joins: &[[usize;2]],gaps: &[f64],first_rolled: usize,floor: f64) -> Built {
     if joins.iter().flatten().any(|&k| k >= pieces.len()) { return Err("recipe: a join names no piece".into()) }
+    if gaps.len() != joins.len() { return Err("recipe: a join's gap is not given".into()) }
     let mut next: Vec<Vec<(usize,f64)>> = vec![Vec::new();pieces.len()];
-    for (n,&[i,j]) in joins.iter().enumerate() {
-        let gap = gaps.get(n).copied().unwrap_or(0.);
+    for (&[i,j],&gap) in joins.iter().zip(gaps) {
         next[i].push((j,gap));
         next[j].push((i,gap));
     }
