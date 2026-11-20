@@ -1,7 +1,7 @@
 //! A B-rep written as STEP (ISO 10303-21, AP214's advanced B-rep): the product and units a
 //! reader expects (millimetres, radians), a manifold solid on one closed shell, its faces on
 //! their exact surfaces and its edges on their exact curves; a traced curve written as the cubic
-//! within `curve_fit(tol)` of it, in as few pieces as that allows; every edge's curve in each face
+//! within `Fit::bar` of it, in as few pieces as that allows; every edge's curve in each face
 //! that uses it (its pcurve, a seam's two) written beside it, so a reader need not project its
 //! own; and a pole's degenerate edge left out of its loop, as a reader rebuilds it.
 #[allow(unused_imports)]
@@ -9,7 +9,7 @@ use crate::util::fmath::Det;
 use super::geom::{Curve,Frame,Surface,V};
 use std::sync::Arc;
 use super::topo::{Brep,EdgeCurve};
-use crate::util::space::{add,distance,norm,scale};
+use crate::util::space::{add,distance,dot,norm,scale};
 use std::fmt::Write;
 
 /// A real as STEP writes one: shortest round-trip digits, a decimal point, `E` for the exponent.
@@ -348,16 +348,47 @@ pub fn face_net(b: &Brep,fi: usize) -> Option<Result<OnNet,String>> {
     Some(built.and_then(|(n,arcs)| net(Ok(n),arcs,m.frame)))
 }
 
-/// The least uncertainty a file states (millimetres): a tolerance asked finer is written as this,
-/// and the curves the file fits are held to it as to any other.
+/// The least uncertainty a file states (millimetres): a tolerance asked finer is written as this.
 const LEAST_UNCERTAINTY: f64 = 1e-7;
 
-/// **How near its exact curve a curve the file fits is written** (millimetres): half the
-/// uncertainty the file states (`tol`, no finer than `LEAST_UNCERTAINTY`). A traced edge's cubic and
-/// each of its pcurves' images stand within this of the exact curve at every parameter, so the
-/// curve and every pcurve stand within the stated uncertainty of one another, and of the surfaces
-/// the edge lies on — no nearer than that asks, so a coarser tolerance writes fewer poles.
-pub fn curve_fit(tol: f64) -> f64 { tol.max(LEAST_UNCERTAINTY)/2. }
+/// **How near the exact geometry a curve the file fits is held** (#961): a traced edge's cubic and
+/// every cubic pcurve. Two things the file says are kept apart here: the uncertainty it states
+/// (`write`'s `tol`, what a reader may take two points to be one within, and the bar of a polyline
+/// written where no cubic closes in), and how near its fitted curves stand to the exact ones.
+/// Where no tolerance was asked, the second is no licence of the first's size: the curves are held
+/// to `EXACT`, so a reader measures the solid the kernel built (only a polyline written where no
+/// cubic closes in, the last resort, stands as far off as the stated uncertainty).
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub enum Fit {
+    /// No tolerance stated: every fitted curve within `EXACT` of the exact one, on each face it
+    /// trims, so a reader measuring the faces reads the solid's measures to the kernel's own
+    /// (brep-bench's half torus, a ball bored off its centre, the saddle drums, the grazing
+    /// cylinders: within some 1e-9 of their closed forms, as before #961).
+    Exact,
+    /// A tolerance the author stated, as the bar its fitted curves are held to (millimetres, no
+    /// finer than `EXACT`): each face the file trims is trimmed within it of the exact meeting,
+    /// measured on that face, and the file is the smaller for it (`Fit::stated`).
+    Within(f64),
+}
+
+/// The bar a curve is fitted to where no tolerance is stated (millimetres): a thousandth of `FIT`,
+/// the bar a loft's face or rail is written within. A Hermite cubic's error keeps its sign along a
+/// piece, so a reader's measures move by about the bar over the solid's size — over its thickness,
+/// for a thin one: held to a tenth of `FIT`, the half torus read 1.5e-8 off by the kernel's own
+/// measure; to a hundredth, brep-bench's grazing cylinders (a cushion 0.01 thick) 2.6e-8, where
+/// cutting a piece at every marched point read them 6e-9.
+pub const EXACT: f64 = FIT/1000.;
+
+impl Fit {
+    /// The bar the fitted curves are held to.
+    pub fn bar(self) -> f64 { match self { Fit::Exact => EXACT,Fit::Within(b) => b.max(EXACT) } }
+    /// The fit an export at a stated tolerance licenses, its file stating `uncertainty`: half of
+    /// it, so the curve and each of its pcurves stand within the uncertainty of one another.
+    pub fn stated(uncertainty: f64) -> Fit { Fit::Within(uncertainty.max(LEAST_UNCERTAINTY)/2.) }
+    /// The bar of a polyline written where no cubic closes in: the stated uncertainty where no
+    /// tolerance was asked (the polyline is the last resort), else the stated fit's.
+    fn polyline(self,tol: f64) -> f64 { match self { Fit::Exact => tol.max(LEAST_UNCERTAINTY),Fit::Within(_) => self.bar() } }
+}
 
 /// The interior points a piece of a fitted cubic is measured at, as sixteenths of it: the middle
 /// among them, where a Hermite cubic's error `s²(1 − s)²` is greatest, and enough beside it that
@@ -555,20 +586,44 @@ fn bezier_pcurve(uv: &dyn Fn(f64) -> super::geom::Uv,duv: &dyn Fn(f64) -> super:
     hermite_fit(&at,&rate,&|q,s| distance(surface.point(q),surface.point(at(s))),along.span(t),&along.breaks(c,t),bar)
 }
 
-/// **A curve in space as a cubic** over `along`'s `s` within `bar` of it (`hermite_fit`): a traced
-/// intersection, which no entity of the standard writes.
+/// **A traced intersection as a cubic** over `along`'s `s` (`hermite_fit`), which no entity of the
+/// standard writes: within `bar` of the curve at the same `s`, and — what a reader measures, which
+/// puts each loop on its face by the feet of the edge's curve there — the foot of each of its
+/// points on either surface within `bar` of the meeting, along that surface. Where the two
+/// surfaces meet at an angle `θ`, a point `δ` off the meeting in space has a foot as much as
+/// `δ / sin θ` along the surface from it: two cylinders grazing at a few degrees, their cubic
+/// held to `5e-5` in space, trimmed a face 1e-3 off its meeting (brep-bench's grazing cylinders,
+/// their cushion's volume 1.2e-4 off). `None` for any other curve.
 fn bezier_curve(c: &Curve,along: &Along,t: [f64;2],bar: f64) -> Option<(Vec<V>,Vec<f64>)> {
+    let Curve::Traced(tr) = c else { return None };
     let at = |s: f64| c.point(along.t(s).0);
     let rate = |s: f64| { let (t,r) = along.t(s); scale(c.d1(t).1,r) };
-    hermite_fit(&at,&rate,&|q,s| distance(q,at(s)),along.span(t),&along.breaks(c,t),bar)
+    // the foot of `q` on `surface`, by Newton along its gradient (the surfaces' sides are signed
+    // distances, so a step or two)
+    let foot = |surface: &Surface,q: V| {
+        let mut p = q;
+        for _ in 0..8 {
+            let (f,g) = surface.side(p);
+            let gg = dot(g,g);
+            if !(gg > 0.) || f.abs() <= 1e-15*(1.+norm(p)) { break }
+            p = add(p,scale(g,-f/gg));
+        }
+        p
+    };
+    let off = |q: V,s: f64| {
+        let mut d = distance(q,at(s));
+        for surface in [&tr.a,&tr.b] { let p = foot(surface,q); d = d.max(distance(p,tr.project(p))); }
+        d
+    };
+    hermite_fit(&at,&rate,&off,along.span(t),&along.breaks(c,t),bar)
 }
 
 /// A use's pcurve, as a STEP `PCURVE` on the face's surface: a line where it is one, a circle
-/// where a plane's edge is one turning the plane's way, otherwise the cubic within `curve_fit(tol)`
+/// where a plane's edge is one turning the plane's way, otherwise the cubic within `fit`'s bar
 /// of the edge (`bezier_pcurve`), over the parameter the edge's curve is written over (`Along`);
 /// and where that does not close in, the degree-one B-spline through its parameters at points
-/// chosen so each chord's middle maps within the same of the edge.
-fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,context2: usize,tol: f64,net: Option<&OnNet>) -> usize {
+/// chosen so each chord's middle maps within `Fit::polyline` of the edge.
+fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,context2: usize,tol: f64,fit: Fit,net: Option<&OnNet>) -> usize {
     use super::topo::Pcurve;
     let f = &b.faces[fi];
     let e = &b.edges[u.edge as usize];
@@ -627,7 +682,7 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
             spline(o,bs.degree,&ids,&bs.knots,bs.weights.as_deref())
         }
         // a cubic in the edge's parameter through its parameters and rates, its pieces as few as
-        // map within `curve_fit` of the edge (`hermite_fit`; a cubic's error changes sign about
+        // map within `fit`'s bar of the edge (`hermite_fit`; a cubic's error changes sign about
         // the edge less than a chord's, which always cuts inside, so a reader measuring the face it
         // trims reads it nearer): in the parameters the file writes, measured on the surface it
         // writes — a net's, where they need be no affine image of the face's own
@@ -636,9 +691,9 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
                 let (uv,d) = u.pcurve.at_and_derivative(t,e,&f.surface,&b.vertices);
                 let rate = n.uv(uv).1;
                 [rate[0]*d[0],rate[1]*d[1]]
-            },&n.surface,&along,c,e.t,curve_fit(tol)),
+            },&n.surface,&along,c,e.t,fit.bar()),
             None => bezier_pcurve(&|t| u.pcurve.at(t,e,&f.surface,&b.vertices),&|t| u.pcurve.derivative(t,e,&f.surface,&b.vertices),
-                &f.surface,&along,c,e.t,curve_fit(tol)).map(|(poles,knots)| (poles.iter().map(|&q| step_uv(&f.surface,q)).collect(),knots)),
+                &f.surface,&along,c,e.t,fit.bar()).map(|(poles,knots)| (poles.iter().map(|&q| step_uv(&f.surface,q)).collect(),knots)),
         } => {
             let ids: Vec<String> = poles.iter().map(|&q| format!("#{}",p2(o,q))).collect();
             let knots: Vec<f64> = knots.iter().map(|k| k-shift).collect();
@@ -649,7 +704,7 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
                 let (ua,uz) = (u.pcurve.at(ta,e,&f.surface,&b.vertices),u.pcurve.at(tz,e,&f.surface,&b.vertices));
                 distance(f.surface.point([(ua[0]+uz[0])/2.,(ua[1]+uz[1])/2.]),c.point((ta+tz)/2.))
             };
-            let ts = samples(c,e.t,curve_fit(tol),&off);
+            let ts = samples(c,e.t,fit.polyline(tol),&off);
             if super::debug() {
                 let middle = crate::util::warm::kept(|| at((e.t[0]+e.t[1])/2.));
                 eprintln!("step: a {} on a {} as {} points, ends {a:?} {z:?}, middle {middle:?}",c.kind(),f.surface.kind(),ts.len());
@@ -663,16 +718,17 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
     o.add(format!("PCURVE('',#{surface},#{rep})"))
 }
 
-/// The solid as a STEP file, `name` its product's.
-/// Refused where a loft's face or rail cannot be fitted within `FIT`.
-pub fn write(b: &Brep,name: &str,tol: f64) -> Result<String,String> {
+/// The solid as a STEP file, `name` its product's: stating the uncertainty `tol` (millimetres, no
+/// finer than 1e-7), its fitted curves held as `fit` says — `Fit::Exact` where no tolerance was
+/// asked. Refused where a loft's face or rail cannot be fitted within `FIT`.
+pub fn write(b: &Brep,name: &str,tol: f64,fit: Fit) -> Result<String,String> {
     let mut o = Out {text:String::new(),next:1};
     let context = application(&mut o);
     let pctx = o.add(format!("PRODUCT_CONTEXT('',#{context},'mechanical')"));
     let name = name.replace('\'',"''");
     let (_,shape) = product(&mut o,&name,context,pctx,&mut None);
     let gctx = geometric(&mut o,tol);
-    let solid = solid(&mut o,b,tol)?;
+    let solid = solid(&mut o,b,tol,fit)?;
     let origin = o.placement(&Frame::WORLD);
     let rep = o.add(format!("ADVANCED_BREP_SHAPE_REPRESENTATION('',(#{origin},#{solid}),#{gctx})"));
     o.add(format!("SHAPE_DEFINITION_REPRESENTATION(#{shape},#{rep})"));
@@ -739,7 +795,7 @@ impl Assembly {
 /// of a styled item, its surfaces filled with the colour on both sides (AP214's presentation, the
 /// chain CAD readers take a part's colour from), the styles of one colour written once and
 /// shared; the styled items are listed by one presentation representation in the shapes' context.
-pub fn write_assembly(a: &Assembly,name: &str,tol: f64) -> Result<String,String> {
+pub fn write_assembly(a: &Assembly,name: &str,tol: f64,fit: Fit) -> Result<String,String> {
     a.check()?;
     let mut o = Out {text:String::new(),next:1};
     let context = application(&mut o);
@@ -755,7 +811,7 @@ pub fn write_assembly(a: &Assembly,name: &str,tol: f64) -> Result<String,String>
         let origin = o.placement(&Frame::WORLD);
         let rep = match &p.solid {
             Some(b) => {
-                let solid = solid(&mut o,b,tol)?;
+                let solid = solid(&mut o,b,tol,fit)?;
                 if let Some(c) = p.colour { coloured.push((solid,c)); }
                 o.add(format!("ADVANCED_BREP_SHAPE_REPRESENTATION('',(#{origin},#{solid}),#{gctx})"))
             }
@@ -836,7 +892,7 @@ fn file(name: &str,data: &str) -> String {
 }
 
 /// The solid's topology and geometry, bottom up, to its manifold solid: its id.
-fn solid(o: &mut Out,b: &Brep,tol: f64) -> Result<usize,String> {
+fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<usize,String> {
     // the topology, bottom up
     // only the vertices a written edge ends at (a pole's degenerate edge is not written)
     let mut wanted = vec![false;b.vertices.len()];
@@ -880,17 +936,17 @@ fn solid(o: &mut Out,b: &Brep,tol: f64) -> Result<usize,String> {
             | Curve::Trochoid(..) => {
                 fitted(o,c,e.t,whose(c))?
             }
-            // a traced curve: the cubic through its points and tangents within `curve_fit` of
-            // the file's tolerance, as its pcurves are (`bezier_pcurve`); where that does not
-            // close in, the polyline through it within the same
+            // a traced curve: the cubic through its points and tangents within `fit`'s bar, as
+            // its pcurves are (`bezier_pcurve`); where that does not close in, the polyline
+            // through it within `Fit::polyline`
             // (over the length of its chords, `Along`, as its pcurves are)
-            Curve::Traced(_) => match bezier_curve(c,&Along::of(c),e.t,curve_fit(tol)) {
+            Curve::Traced(_) => match bezier_curve(c,&Along::of(c),e.t,fit.bar()) {
                 Some((poles,knots)) => {
                     let ids: Vec<String> = poles.iter().map(|&p| format!("#{}",o.point(p))).collect();
                     spline(o,3,&ids,&knots,None)
                 }
                 None => {
-                    let ts = samples(c,e.t,curve_fit(tol),&|a,z| distance(c.point((a+z)/2.),crate::util::space::lerp(c.point(a),c.point(z),0.5)));
+                    let ts = samples(c,e.t,fit.polyline(tol),&|a,z| distance(c.point((a+z)/2.),crate::util::space::lerp(c.point(a),c.point(z),0.5)));
                     let ids: Vec<String> = ts.iter().map(|&t| format!("#{}",o.point(c.point(t)))).collect();
                     let along = Along::of(c);
                     bspline(o,&ids,&ts.iter().map(|&t| along.s(t)).collect::<Vec<_>>())
@@ -900,7 +956,7 @@ fn solid(o: &mut Out,b: &Brep,tol: f64) -> Result<usize,String> {
         // the edge's curve in each face that uses it: a seam's two in one face, or one in each
         let uses: Vec<(usize,&super::topo::Coedge)> = b.faces.iter().enumerate()
             .flat_map(|(fi,f)| f.loops.iter().flatten().filter(|c| c.edge as usize == ei).map(move |c| (fi,c))).collect();
-        let pcurves: Vec<String> = uses.iter().map(|&(fi,u)| format!("#{}",pcurve(o,b,fi,u,surfaces[fi],context2,tol,nets[fi].as_ref()))).collect();
+        let pcurves: Vec<String> = uses.iter().map(|&(fi,u)| format!("#{}",pcurve(o,b,fi,u,surfaces[fi],context2,tol,fit,nets[fi].as_ref()))).collect();
         let seam = uses.len() == 2 && uses[0].0 == uses[1].0;
         let geometry = o.add(format!("{}('',#{curve},({}),.PCURVE_S1.)",if seam { "SEAM_CURVE" } else { "SURFACE_CURVE" },pcurves.join(",")));
         Ok(Some(o.add(format!("EDGE_CURVE('',#{},#{},#{geometry},.T.)",vertices[e.v[0] as usize],vertices[e.v[1] as usize]))))

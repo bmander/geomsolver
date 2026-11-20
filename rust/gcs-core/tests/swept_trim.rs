@@ -159,7 +159,7 @@ fn the_bar_screwed_through_the_rod_is_trimmed_over_its_whole_roll() {
     let (b,report) = bar_trimmed(roll,1.);
     near(volume(&b),bar_volume(roll),1e-9,"the bar's sweep");
     assert!(report.paired < report.boxed,"{report:?}");
-    let text = gcs_core::brep::step::write(&b,"swept",1e-7).unwrap();
+    let text = gcs_core::brep::step::write(&b,"swept",1e-7,gcs_core::brep::step::Fit::Exact).unwrap();
     gcs_core::brep::step_check::verify(&text,&gcs_core::brep::step_check::Solid::of(&b)).unwrap_or_else(|e| panic!("its STEP: {e}"));
     let rod = prism(&disc([0.;3],[0.,0.,1.],5.),0.,20.).unwrap();
     let cut = gcs_core::brep::boolean::combined(&rod,&b,gcs_core::brep::boolean::Op::Cut,1e-7).unwrap();

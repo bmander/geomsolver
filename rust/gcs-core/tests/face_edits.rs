@@ -127,7 +127,7 @@ fn a_traced_curve_is_written_as_a_cubic() {
         part := solid(std.sets.Ball(std.origin, r: 20mm))\ndrill cut part\n");
     let s = ent(&e, "part").i();
     let x = e.sketch.exact_solid(s).unwrap();
-    let text = gcs_core::brep::step::write(&x.brep, "part", 1e-4).unwrap();
+    let text = gcs_core::brep::step::write(&x.brep, "part", 1e-4, gcs_core::brep::step::Fit::Exact).unwrap();
     let curves: Vec<&str> = text.lines().filter(|l| l.contains("B_SPLINE_CURVE_WITH_KNOTS('',")).collect();
     assert!(!curves.is_empty(), "no spline curve written");
     // a degree-one spline in space would be a traced curve's polyline; its pcurves are cubics too
