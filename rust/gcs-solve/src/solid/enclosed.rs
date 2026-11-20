@@ -78,9 +78,9 @@ impl Shell {
     /// **The recipe's node, written by `w`**: `sewn`, each face its profile, each panel its runs
     /// of stations (`runs`), each the sheet of degree one each way through its rulings' ends —
     /// sewn to the tolerance its panels are drawn to.  A run is laid so that where it shrinks to a
-    /// point it is a pole along `u`, as a cone's apex is, the one way the kernel reads a pole: a
-    /// fan's stations run along `u` (its corner the row of one point), any other run's along `v`
-    /// (an end where the rails meet the column of one point, `Developable::meeting`).
+    /// point it is a pole along `u`, as a cone's apex is, the one way the kernel reads a pole: its
+    /// stations run along `u` (a fan's corner the column of one point), but a run ending where
+    /// the rails meet (`Developable::meeting`) along `v`, that end the row of one point.
     pub fn node(&self, sk: &Sketch, w: &Writer) -> Result<Json, String> {
         let mm = |p: [f64; 3]| w.at(p.map(|x| x * w.scale));
         let clamped = |n: usize| {
@@ -97,14 +97,14 @@ impl Shell {
                     ("profile", super::cad::profile(sk, *face as usize, w)?),
                     ("face", name.as_str().into())])),
                 Piece::Panel { stations, name } => {
-                    for (run, fan) in runs(stations) {
+                    for (run, pointed) in runs(stations) {
                         let n = run.len();
-                        let (uknots, vknots, poles) = match fan {
+                        let (uknots, vknots, poles) = match pointed {
                             // rows its stations, columns a ruling's two ends
-                            true => (clamped(n), ends(), run.iter()
+                            false => (clamped(n), ends(), run.iter()
                                 .map(|r| Json::Arr(vec![mm(r.m), mm(r.n)])).collect()),
                             // rows a ruling's two ends, columns its stations
-                            false => (ends(), clamped(n), [|r: &Ruling| r.m, |r: &Ruling| r.n]
+                            true => (ends(), clamped(n), [|r: &Ruling| r.m, |r: &Ruling| r.n]
                                 .map(|end| Json::Arr(run.iter().map(|r| mm(end(r))).collect()))
                                 .to_vec()),
                         };
@@ -144,21 +144,24 @@ impl Shell {
 }
 
 /// **A panel's stations in runs**, each drawn as one sheet, neighbouring runs sharing their
-/// station: a fan about a corner (`true`) — one end of every ruling the same point, the corner a
-/// panel turns about where a rail breaks or ends — or the rulings between (`false`).  Drawn whole,
-/// a fan's corner would be a stretch of the sheet's edge standing still, which no curve of the
-/// neighbouring panel along that rail can be read back onto.
+/// station: a fan about a corner — one end of every ruling the same point, the corner a panel
+/// turns about where a rail breaks or ends — or the rulings between, each beside whether it ends
+/// in a station that is a point (`Developable::meeting`).  Drawn whole, a fan's corner would be a
+/// stretch of the sheet's edge standing still, which no curve of the neighbouring panel along
+/// that rail can be read back onto.
 fn runs(stations: &[Ruling]) -> Vec<(&[Ruling], bool)> {
     let size = stations.iter().map(|r| norm(sub(r.n, r.m))).fold(1.0, f64::max);
     let same = |p: [f64; 3], q: [f64; 3]| norm(sub(p, q)) <= 1e-9 * size;
     let fan = |a: &Ruling, b: &Ruling| same(a.m, b.m) || same(a.n, b.n);
+    let point = |r: &Ruling| same(r.m, r.n);
     let mut out = Vec::new();
     let mut start = 0;
     for k in 1..stations.len() {
         let step = fan(&stations[k - 1], &stations[k]);
         let next = stations.get(k + 1).map(|s| fan(&stations[k], s));
         if next != Some(step) {
-            out.push((&stations[start..=k], step));
+            let run = &stations[start..=k];
+            out.push((run, !step && (point(&run[0]) || point(&run[run.len() - 1]))));
             start = k;
         }
     }
