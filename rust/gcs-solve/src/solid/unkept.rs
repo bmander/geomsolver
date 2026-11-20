@@ -23,14 +23,21 @@
 //!
 //! **What it costs.**  Nothing for a body with no cut and no common, nor for a union whose box
 //! meets no cut's where the body has no common (a boss away from every hole): it keeps all of
-//! itself there.  Otherwise one arrangement of that union with the cuts whose boxes meet its own
-//! and the commons — its terms built where the body stands (`exact::operands`), the body never.
+//! itself there.  Otherwise a few points well inside the union placed against the cuts and the
+//! commons, one of them kept answering at once (a witness), and only where none is, the
+//! arrangement of that union with the cuts whose boxes meet its own and the commons — its terms
+//! built where the body stands (`exact::operands`), the body never.
 
 use super::*;
 use crate::brep::boolean::{arrangement, members, overlap};
+use crate::brep::query::{interior, Located, Place};
 use crate::brep::recipe::Node;
 use crate::brep::topo::Brep;
 use std::collections::BTreeSet;
+
+/// How many points well inside a union are read for one the body keeps before its arrangement is
+/// made: the deepest of a hub bored through lie on its axis, in the bore, and its rim's beside them.
+const WITNESSES: usize = 8;
 
 /// Union operand `union` of body `body` (solid indices), of which the body keeps nothing: every
 /// point of it lies in one of `cuts` or outside one of `commons` — those, of the body's cuts and
@@ -51,7 +58,10 @@ pub fn unkept(sk: &Sketch, body: usize) -> Result<Vec<Unkept>, String> {
     let SolidDef::Body { on, through, bound, .. } = &sk.solids[body].def else {
         return Ok(Vec::new());
     };
-    if on.is_empty() || through.is_empty() && bound.is_empty() || cad::contains_sweep(sk, body) {
+    // its written terms: what reads its faces (a round's fill and cut, the stratum) is none
+    let readers = faces::readers_of(sk, body);
+    let written = |of: &[u32]| of.iter().any(|o| !readers.contains(&(*o as usize)));
+    if !written(on) || !written(through) && bound.is_empty() || cad::contains_sweep(sk, body) {
         return Ok(Vec::new());
     }
     let (recipe, built) = exact::operands(sk, body)?;
@@ -75,6 +85,20 @@ pub fn unkept(sk: &Sketch, body: usize) -> Result<Vec<Unkept>, String> {
         let near: Vec<usize> = (0..cuts.len())
             .filter(|&k| overlap(&boxes[&u], &boxes[&cuts[k].0], tol)).collect();
         if near.is_empty() && commons.is_empty() {
+            continue;
+        }
+        // **a witness** first: a point well inside it that every near cut leaves outside and every
+        // common holds inside — each read by exact point location, at least the tolerance off
+        // every boundary, so a ball of it is kept — is the answer with no arrangement made (a hub
+        // bored through keeps its rim, which its deepest points away from the axis find)
+        let own = Located::new(ub, tol);
+        let taking: Vec<Located> = near.iter().map(|&k| Located::new(cuts[k].1, tol)).collect();
+        let keeping: Vec<Located> = commons.iter().map(|(_, b)| Located::new(b, tol)).collect();
+        let witnessed = interior(ub, WITNESSES).unwrap_or_default().into_iter()
+            .any(|(p, _)| own.solid_place(p) == Place::In
+                && taking.iter().all(|c| c.solid_place(p) == Place::Out)
+                && keeping.iter().all(|k| k.solid_place(p) == Place::In));
+        if witnessed {
             continue;
         }
         // it first, then the cuts, then the commons

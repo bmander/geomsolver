@@ -80,25 +80,77 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
     let mm = cad::millimetres(sk);
     let origin = frame_origin(sk, si, REPORT_UNIT);
     let recipe = Recipe::read(&cad::recipe_about(sk, si, origin.map(|x| x * mm))?)?;
-    let (mut built, leading) = nodes(sk, si, &recipe, origin, true)?;
+    let (mut built, leading) = nodes(sk, si, &recipe, origin, None)?;
     let brep = built.remove(&recipe.root).ok_or("recipe: no root")?;
     Ok(named(brep, mm, origin, leading))
 }
 
-/// **Solid `si`'s operands, built where it is** (#961): its recipe's nodes but the root, each
-/// as `build` builds it about `si`'s origin (millimetres), by the node's id — what a reading of
-/// the body's terms against one another classifies, with no Boolean of the body made.
+/// **Solid `si`'s written terms, built where it is** (#961): the nodes its root body's stock,
+/// unions, cuts and commons need — what reads its faces (a round's fill and cut) left unbuilt —
+/// each as `build` builds it about `si`'s origin (millimetres), by the node's id: what a reading
+/// of the body's terms against one another classifies, with no Boolean of the body made.  Where
+/// a needed node reads others no walk here lists, every node but the root is built.
 pub(crate) fn operands(sk: &Sketch, si: usize) -> Result<(Recipe, BTreeMap<i64, Brep>), String> {
+    use crate::brep::recipe::Node;
     let mm = cad::millimetres(sk);
     let origin = frame_origin(sk, si, REPORT_UNIT);
-    let recipe = Recipe::read(&cad::recipe_about(sk, si, origin.map(|x| x * mm))?)?;
-    let (built, _) = nodes(sk, si, &recipe, origin, false)?;
+    let recipe = Recipe::read(&cad::recipe_of_terms(sk, si, origin.map(|x| x * mm))?)?;
+    let of: BTreeMap<i64, &Node> = recipe.nodes.iter().map(|n| (n.id, &n.node)).collect();
+    let mut wanted: Option<BTreeSet<i64>> = match of.get(&recipe.root) {
+        Some(Node::Body(b)) => Some(std::iter::once(b.stock)
+            .chain(b.on.iter().chain(&b.cut).chain(&b.bound).copied()).collect()),
+        _ => None,
+    };
+    // every node those read, all the way down
+    let mut pending: Vec<i64> = wanted.iter().flatten().copied().collect();
+    while let (Some(id), Some(w)) = (pending.pop(), wanted.as_mut()) {
+        match of.get(&id).map(|n| reads(n)) {
+            Some(Some(more)) => pending.extend(more.into_iter().filter(|m| w.insert(*m))),
+            Some(None) => wanted = None,
+            None => {}
+        }
+    }
+    let wanted =
+        wanted.unwrap_or_else(|| of.keys().copied().filter(|&id| id != recipe.root).collect());
+    let (built, _) = nodes(sk, si, &recipe, origin, Some(&wanted))?;
     Ok((recipe, built))
 }
 
-/// `recipe`'s nodes built about `origin` (model units) for solid `si`, the root among them where
-/// `root`, and the faces whose facets lead.
-fn nodes(sk: &Sketch, si: usize, recipe: &Recipe, origin: [f64; 3], root: bool)
+/// The nodes node `n` reads as it is built, where this walk knows them: none for one of a
+/// profile, points or a family, its sources for a placement, a half-space or a prism through
+/// everything, its terms for a body; `None` for a lowered region, whose pieces read the body.
+fn reads(n: &crate::brep::recipe::Node) -> Option<Vec<i64>> {
+    use crate::brep::recipe::Node;
+    let all = |pieces: &mut dyn Iterator<Item = &Node>| -> Option<Vec<i64>> {
+        let mut out = Vec::new();
+        for p in pieces {
+            out.extend(reads(p)?);
+        }
+        Some(out)
+    };
+    Some(match n {
+        Node::Prism { .. } | Node::Revolve { .. } | Node::Hull { .. } | Node::Sewn { .. }
+        | Node::Canal { .. } | Node::Family(_) | Node::Carried { .. } => Vec::new(),
+        Node::Placed { source, .. } => vec![*source],
+        Node::Through { uses, .. } => uses.iter().flat_map(|u| u.sources.iter().copied()).collect(),
+        Node::Half { sources, .. } => sources.clone(),
+        Node::Body(b) => std::iter::once(&b.stock).chain(b.sets().into_iter().flat_map(|(_, l)| l))
+            .copied().collect(),
+        Node::Grown { body, pieces } => {
+            let mut out = all(&mut pieces.iter())?;
+            out.push(*body);
+            out
+        }
+        Node::Region(kept) => all(&mut kept.iter().map(|k| &k.node))?,
+        Node::Glued(pieces) => all(&mut pieces.iter())?,
+        Node::Lowered(_) => return None,
+    })
+}
+
+/// `recipe`'s nodes built about `origin` (model units) for solid `si` — those of `only` where it
+/// says (the root then not among them), else every one — and the faces whose facets lead.
+fn nodes(sk: &Sketch, si: usize, recipe: &Recipe, origin: [f64; 3],
+         only: Option<&BTreeSet<i64>>)
     -> Result<(BTreeMap<i64, Brep>, BTreeSet<String>), String> {
     let mm = cad::millimetres(sk);
     // the rounding of coordinates read where the solid stands, before the shift: a few units in
@@ -110,7 +162,7 @@ fn nodes(sk: &Sketch, si: usize, recipe: &Recipe, origin: [f64; 3], root: bool)
     let names: BTreeMap<i64, String> = recipe.nodes.iter().map(|n| (n.id, n.called())).collect();
     for n in &recipe.nodes {
         let id = n.id;
-        if !root && id == recipe.root {
+        if only.is_some_and(|w| !w.contains(&id) || id == recipe.root) {
             continue;
         }
         // an operand of one binding with others is its representative's B-rep, built once and

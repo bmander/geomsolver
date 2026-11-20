@@ -71,6 +71,13 @@ pub fn recipe_about(sk: &Sketch,root: usize,by: [f64;3]) -> Result<Json,String> 
     Ok(recipe_with(sk,root,false,Some(by))?.recipe)
 }
 
+/// `recipe_about` of body `root` as its statements write it (#961): its stock, unions, cuts and
+/// commons, and what reads its faces (a round's fill and cut, the stratum) left out — never
+/// lowered, so a body rounded all over is read as cheaply as one with no round.
+pub fn recipe_of_terms(sk: &Sketch,root: usize,by: [f64;3]) -> Result<Json,String> {
+    Ok(recipe_walk(sk,root,false,Some(by),true)?.recipe)
+}
+
 /// One continuous sweep a static recipe left out of a body's cuts: the swept
 /// solid and the pose (model units) at which the body subtracts it, composed
 /// from the placements between the body and the sweep.
@@ -172,10 +179,17 @@ pub(crate) fn swept_cut(sk: &Sketch,i: usize) -> Result<Option<SweptCut>,String>
 }
 
 fn recipe_with(sk: &Sketch,root: usize,static_only: bool,about: Option<[f64;3]>) -> Result<StaticRecipe,String> {
+    recipe_walk(sk,root,static_only,about,false)
+}
+
+/// `recipe_with`, the root's late sets left out where `terms` (`recipe_of_terms`).
+fn recipe_walk(sk: &Sketch,root: usize,static_only: bool,about: Option<[f64;3]>,terms: bool)
+    -> Result<StaticRecipe,String> {
     super::validate(sk,root)?;
     let scale = millimetres(sk);
     let w = Writer {scale,about};
     let mut walk = Walk::new(sk,static_only);
+    walk.terms_of = terms.then_some(root);
     let mut pending = vec![(root,false)];
     let mut seen = BTreeSet::new();
     let mut nodes = Vec::new();
@@ -236,13 +250,16 @@ struct Walk<'a> {
     bodies: BTreeMap<usize,([Vec<u32>;4],Vec<SweptCut>)>,
     /// The swept cuts left out, each listed once, on the emitting visit.
     sweeps: Vec<SweptCut>,
+    /// The body written as its terms alone (`recipe_of_terms`): what reads its faces left out.
+    terms_of: Option<usize>,
 }
 
 impl<'a> Walk<'a> {
     fn new(sk: &'a Sketch,static_only: bool) -> Walk<'a> {
         let mut users: BTreeMap<u32,usize> = Default::default();
         for s in &sk.solids { for o in s.operands() { *users.entry(o).or_default() += 1; } }
-        Walk {sk,static_only,users,groups:Default::default(),routes:Default::default(),bodies:Default::default(),sweeps:Vec::new()}
+        Walk {sk,static_only,users,groups:Default::default(),routes:Default::default(),bodies:Default::default(),sweeps:Vec::new(),
+            terms_of:None}
     }
 
     /// Solid `o`'s route, where it is a region.
@@ -269,6 +286,13 @@ impl<'a> Walk<'a> {
             return Err(format!("`{}`: `{}` holds nowhere, so the body has no material",sk.solids[i].name,
                 sk.solid_name(*o as usize)));
         }
+        // a body written as its terms: what reads its faces never asked of (`nowhere` lowers it)
+        let terms = self.terms_of == Some(i);
+        let readers = if terms { super::faces::readers_of(sk,i) } else { BTreeSet::new() };
+        let early = |all: &[u32]| -> Vec<u32> {
+            all.iter().copied().filter(|o| !readers.contains(&(*o as usize))).collect()
+        };
+        let (on,through) = (&early(on),&early(through));
         let mut cut: Vec<u32> = through.iter().copied().filter(|o| !self.nowhere(o)).collect();
         // The static remainder of a body: its swept cuts are listed, not built.
         let mut swept = Vec::new();
@@ -289,7 +313,10 @@ impl<'a> Walk<'a> {
         // **the stratum** (#183 F6): what reads the body's faces acts on the body its other
         // terms make, after them, fills then cuts, as the field applies them
         let [on,cut,on_late,cut_late] = super::faces::stratum(sk,i,on.iter().copied().filter(|o| !self.nowhere(o)),cut);
-        let (on_late,cut_late) = (self.lump(i,on_late),self.lump(i,cut_late));
+        let (on_late,cut_late) = match terms {
+            true => (Vec::new(),Vec::new()),
+            false => (self.lump(i,on_late),self.lump(i,cut_late)),
+        };
         let dependencies = std::iter::once(*stock).chain(on.iter().copied()).chain(cut.iter().copied())
             .chain(bound.iter().copied()).chain(on_late.iter().copied()).chain(cut_late.iter().copied()).collect();
         self.bodies.insert(i,([on,cut,on_late,cut_late],swept));
