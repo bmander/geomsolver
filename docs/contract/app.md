@@ -197,6 +197,54 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   is the last written, else `edit::round_size`.  `tests/edit_rounds.rs` and `app.test.ts` are the
   gates.
 
+- **Every word, and every command, is one menu** (`lexicon.rs`, FFI `gcs_elab_lexicon_json`,
+  `core/lexicon.ts`, `app/words.ts`): there are **no toolbars**.  The Words button in the
+  workspace's lower left (`/` anywhere outside a field) opens a menu of every word the document can
+  be written with — the language's own, the standard library's (`std.*`, `hardware`), any other
+  module it links and its own components and relation words — and, under a branch of its own
+  (**App**), every command of the app: the drawing tools, the commands that read the selection
+  (Dimension, Coincident, …) and what File, Edit, View, Insert, Solution and Help held, each with
+  the key it always had (`main.ts`'s tables are still what the keyboard reads, `ACTION_KEYS`).  A
+  search reads a word's name, module, group, sentence and what its slots take; the tree is by
+  module or by what a word makes (`Word.group`), the reader's choice; **Fits selection** lists the
+  words that take everything selected, each thing in a slot of its own (`wordbox::fitsSelection`).
+  **What a word takes is the core's** (`lexicon::lexicon`), read off the tables the elaborator
+  settles statements by and never kept as a list beside them: an entity's slots are its kind's
+  `fields()`; a built-in relation word's operands are every pair of kinds `infix_op`/`prefix_op`
+  settles it over — each pair with the selectors it is settled by only when given (`tangent`
+  between two lines needs `at:`) — and its parentheses the specs those settle to, read as
+  `operator_text` prints them; a component's slots are its formals as typed; a relation word's are
+  what its body hands each operand and parameter to (`b right_of(d) a` makes `a` and `b` points and
+  `d` a `Length`).  Each says what it means in a sentence: the language's from one table, a
+  definition's from the comment written above it.  A word or a command dragged out of the menu, or
+  starred, is kept on the **palette**, the strip beside the button, in the order put there and
+  reordered or taken off (×, or dragged off) — the palette, the tree's arrangement and what was
+  used lately are this browser's (`localStorage`), and a fresh one starts with what the toolbars
+  held most used.  `tests/lexicon.rs` is the gate (every library word in the lexicon, said; a
+  built-in word read off its tables; **every pair a built-in word publishes writes**, each held to
+  the elaborator), with `web/src/test/words.test.ts`.
+- **The word in hand is written as its statement** (`app/wordbox.ts`; `edit::write_word`,
+  `edit::word_text`, FFI `gcs_elab_write_word`, `gcs_elab_word_text`): a box above the palette
+  holds a chip for each slot in the order the statement writes them — `[p] distance([80], side:
+  […]) [q]`, `[name] := solid(std.solids.Prism([section], from: [0mm], to: […]))` — each saying
+  what it takes by a glyph, a caption and its ink (clicked on the drawing, a number, a word
+  chosen), the optional ones folded into `+n` until asked for.  A slot is **armed** by a click on
+  its chip, by Tab, or by the box as each is filled; while one clicked on is armed **the
+  workspace takes only what it takes**: the `word` tool is down, `SketchView.wordPick` answers
+  which hits are wanted, what it would not take is drawn dimmed (`paint::alphaOf`), the pointer
+  lights the nearest thing it takes and a click fills the slot with what the program names it — a
+  click on nothing places a new point for a slot that makes one (a line's ends), drawn on the
+  plane being drawn on.  A built-in word's second operand narrows to the kinds its pairs allow
+  with the first, and a selector the pair needs is asked for.  A name typed in the chip fills it
+  as well.  What is selected when a word is taken up fills the slots it fits; a dimension's
+  number, once its operands are known, is put in as the drawing measures it now, selected so a
+  number typed replaces it; the press on the workspace keeps the focus in the box.  Enter writes
+  it, Escape puts it down.  **The statement is the core's**: `write_word` composes it from the
+  slots' texts (`lexicon::statement`), mints a name in its kind's alphabet where none was given,
+  brings in the module it is read from (a relation word imported bare, `use std.place (right_of)`,
+  `edit::imported`) and holds the whole to the elaborator — refused in its words, the box left as
+  it was.  A line goes on from where it ended, so a run of clicks draws a chain; any other drawn
+  word is taken up again empty; a relation is put down once written.
 - **The workspace** (`overview/workspace.rs`, `app/view.ts`) is the only model canvas: one scene
   in space, every sketch on its own plane, solids and panes drawn beneath by three.js
   (`app/box3d.ts`).  A view's page reaches the eye's picture plane by **one affine map**

@@ -163,7 +163,21 @@ over, against a cylinder and a drafted wall's cone; `a_near_contact_within_both_
 holds the same near-contact, met over boxes that hold it, refused; and
 `a_face_is_clear_only_off_it_and_away_from_its_edges` the rule at a face's edges and a cone's apex;
 `a_surfaces_points_within_a_ball_reach_no_farther_along_it_than_said` holds each bound to seeded
-points and their paths.
+points and their paths. Clear is read only off the faces, so a refusal there no longer stands in
+for the faces' own meeting: **an edge is a stretch two faces touch along only where it lies in
+both their surfaces** (`boolean`'s stretches, each edge of one operand lying in the other's face
+held to this face's surface too). A round's run cut off by the lobe cylinder it leaves 1e-3 rad
+off tangent (a plate's rim past a reflex corner) has its wall's and end's upright edge on that
+cylinder, which its round face reaches only at the foot, where the two cross at 1e-3 rad: read as
+theirs, the foot's seed was dropped as a touch along it and the march, shallow there, ended 5 µm
+short of it on no edge, the arrangement's shells kept and dropped on either side of the cylinder.
+Before #961 a near-contact past the run's end, off the round face, was refused and the pair read
+from its ridges, which hid it; now the foot is seeded, refused as shallow, and the pair read from
+its ridges for that. `tests/rim_rounds.rs`'s `a_reflex_corner_off_tangent_rounds_its_rim` holds
+the plate rounded 1 and 2, mirrored, to its closed form (`std.rounds`' runs cut off by the faces
+they end on: the lobe's disc run on past the corner and within reach of the side is taken by
+neither), and `a_run_cut_off_by_the_cylinder_it_leaves_off_tangent_is_met_to_its_corner` the run
+cut off alone, turned 1e-3 to 1e-2, rounded 1 to 3 and mirrored.
 **A march that steps across a touch ends at the touch** (#879, `ssi::trace_beside`). Two rounds
 tangent to one face meet in a curve that ends where both touch it, a point where the two surfaces
 touch and their meeting's branches cross (`ssi::touch`); where that point is on a face's own edge
@@ -679,7 +693,15 @@ own, and says where (`Touch`). `complex::two_blocks_meeting_along_an_edge_…`, 
 `TANGENT` (1e-4 rad) of one another are ordered a step in: a fitted surface — a round's net — is
 tangent to the faces it joins only as closely as its fit, some 1e-5, and read to first order that
 error put a round's strip on the wrong side of it, every cell one shell (the round-lowering cases,
-each a Boolean's selection with none falling back). **A2, the meeting** (`brep::meeting`):
+each a Boolean's selection with none falling back). The step is read nearest first (#942 F6):
+sixty-four tolerances in, and ten times farther only while two ways still agree within what a
+tolerance's lean turns a way by there (`4 tol / step`), to at most a hundredth of the least exact
+radius among them or a thousandth of the complex. Read at that farthest step alone, the order was the
+box's: a drum screwed a short lead has rims' ramps thinner than a hundredth folding against the
+cylinders its side sweeps, a step of a thousandth of a box past them swapped a ramp with its
+cylinder, and as the box grew — a twentieth more room, or a slab a hundred times the sweep cut —
+the solid was judged wrong or the slab left whole
+(`swept_closed::a_drum_screwed_a_short_lead_cut_from_a_slab_a_hundred_times_its_sweep_takes_its_sweep`). **A2, the meeting** (`brep::meeting`):
 two surfaces' meeting over boxes of their parameters as branches (each crossing or touching all
 along), singular points (a touch alone, or branches crossing) and coincidence, complete — boundary
 crossings, every critical point of one's distance across the other's parameters (a closed branch
@@ -865,8 +887,10 @@ its centre — where they were traced and refused as nearly touching
 pieces are ordered by their curvature where they leave a point tangent** (`boolean::pieces_of_face`):
 each half's way out of a node is read a ten-thousandth along its own length, and where two of the
 ways there agree within `TANGENT_TIE` (a thousandth of a radian, what a step along an arc turns its
-chord) they are read again at one length along each — a ten-thousandth of the shortest of those
-tied, each half's chord to its point that far from the node, the part of its way there found by
+chord) they are read again at one length along each — first where a tolerance's lean (`4 tol / δ`)
+turns a way by the tie itself, `δ = 4 tol / TANGENT_TIE`, no more than a quarter of the shortest of
+those tied (#942 F6; nearer the node no reading parts two ways the tie holds as one), and ten times
+on while they still agree — each half's chord to its point that far from the node, the part of its way there found by
 halving (a curve's parameter runs at no one speed: a trace's counts its points, which crowd where it
 sets out, and two probes of its parameter there, extrapolated to that length, once read a way 80
 radians off, #791) — so two arcs touching there part by their

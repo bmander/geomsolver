@@ -42,8 +42,11 @@ const EDGE_ON = 12;
  *  dimmed round the part. */
 export const DIMMED = 0.3;
 
-/** The alpha an entity is drawn at: dimmed while a part is open that did not make it. */
+/** The alpha an entity is drawn at: dimmed while a part is open that did not make it, or while a
+ *  word's slot is armed that would not take it. */
 function alphaOf(v: SketchView, ent: Primitive): number {
+  // a slot of a word armed: what it would not take is dimmed, so what it would stands out
+  if (v.tool === 'word' && v.wordPick && !v.wordPick.accepts({ kind: 'entity', ent })) return DIMMED;
   return v.inside && !v.inside.ents.has(ent) ? DIMMED : 1;
 }
 

@@ -8,6 +8,59 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The roads under any motion read no threshold of their own** (#942 F6): every local number the
+  T1d work added to the ring road, the general road, the trim, `closed`, `contacts` and the Boolean
+  is now the tolerance's, a feature size's, the rounding's (`util::fmath::HALF_READ = √ε`, `G` carried
+  within `ε^(1/(order+2))` of a rim), the normal form's (a narrow pair's crossing within `√3 − 1` of
+  its bridge's half-width), the trace's step, or the structure's (a side of a face's square read by
+  its own way, a halving to the roll's rounding), or is gone. New shared rules: `closed::grain` (the
+  roll over which no corner of the tool moves the tolerance), `closed::road_trim` (the hair a trim reads
+  at, #880 Q1b's), and
+  `rings::on_double_curve`. `rings::cut_along` takes the tolerance. A chord whose ends are snapped
+  to one place has no length and is dropped; a double curve is stepped adaptively, by its own
+  chord's sag. Brep-bench's swept category run before and after: the 68 cases that built still
+  build, each within 1e-10 in volume and area but `tumbling-torus` (3e-9, beside the 3.3e-5 it stands
+  from the volume made apart), the 23 refused still refused. The full turn's tumbling torus reaches
+  its refusal in 34 s where it took 30: its first swallowtail point now stands where its double
+  curve settles it, at roll 1.47717 — settled to `tol / r` it stands there to the digit — where the
+  fixed step of `2e-4` put it 5e-4 of the roll past (1.47767). Its stretches either side are fitted
+  over their true spans, entered in 43 faces where they were 38, and its trim reads the more.
+
+- **Faces tangent along an edge are ordered round it nearest first** (#942 F6): the complex reads
+  the faces tangent along an edge a step into each, and that step was a hundredth of their least
+  exact radius or a thousandth of the complex, whichever is less — a thousandth of the box where a
+  face has no exact radius. It is now read sixty-four tolerances in first, and ten times farther
+  only while two still agree within a tolerance's lean there (`4 tol / step`), to that step at
+  most. The drum screwed a short lead through most of a turn has rims' ramps thinner than a
+  hundredth folding against the cylinders its side sweeps; a thousandth of its box read past them,
+  so its solid depended on the box's size — built right in a box with a twentieth of its extent to
+  spare, judged wrong with a tenth, at the tool's size or at the extent, and cut from a slab a
+  hundred times its sweep it left the slab almost whole (99993.7 where 99897.9 is the slab less
+  the sweep). It is now right with a twentieth, a tenth and half the extent to spare, and from the
+  slab. Gated by
+  `swept_closed::a_drum_screwed_a_short_lead_cut_from_a_slab_a_hundred_times_its_sweep_takes_its_sweep`
+  (1.5 s), the slab left whole without the rule. The screw domain's room, a twentieth (#806), stands:
+  it now decides how much a sweep reads, not whether its solid is right.
+
+- **A double curve crossing its tube's seam bounds a tail beside it, not the whole tube** (#942
+  F6): a ring's tube entered beside a fold pair drops what lies above its double curve's preimage,
+  the swallowtail's tail; that preimage, read in the tube's `[0, pieces)`, is now unwrapped along it,
+  as it already was where it is cut at the seams between faces. One crossing the seam ran from one
+  end of the tube to the other, and all but a sliver of the thin tumbling torus's middle stretch
+  was dropped: its tube was sewn into two candidates where it is one, and its trim searched three
+  more pairs (85 s to 117 s, the same refusal). Gated by
+  `swept_rings::a_double_curve_crossing_its_tubes_seam_bounds_a_tail_beside_it_not_the_whole_tube`
+  (slow tier), refused without the rule. `closed::ring_entered` gives what the ring road enters
+  before it trims (`RingEntered`).
+
+- **A trace of no length is no chord** (#942 F6): a ring's tube entered at an end pose leaves out
+  a trace of its face's meeting with the tool whose points all stand at one place on the face's
+  square — the tool touching the face there, not crossing it; a trace along a side, a rim lying on
+  the tool, is kept. The near-orthogonal tumbling tori each had one,
+  two points 2.4e-13 apart where a crossing of the face ends on the rim, and were refused ("two of a
+  ring's sheet's crossings of the tool end at one place on a face's rim"); their tubes are now
+  entered, and they are refused later, where the end pose's torus face is assembled.
+
 - **A sampled stretch held nearer than its tolerance where its fit closes in** (`cubic::fit_held`,
   `cubic::HELD_SPANS`): the cubic doubled until it stands within `held`, the nearest fit met within
   `tol` standing where a doubling no longer brings it four times nearer or its spans pass
