@@ -447,6 +447,15 @@ fn ring_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: u
             }
             let way = if k == 0 { -1.0 } else { 1.0 };
             let hull = section_at(t)?.section_hull();
+            // a plane square to the axis: along the stretch, cutting it lengthwise or not at all
+            // (`along_run`), no end of it
+            let (lengthwise, planes): (Vec<(V, f64)>, Vec<(V, f64)>) = planes.into_iter()
+                .partition(|&(n, _)| norm(cross(n, axis)) < 1e-6);
+            let reach_of = 1e-9 * (1.0 + norm(centre) + radius);
+            halves.extend(lengthwise.into_iter().filter(|&h| along_run(&hull, h, reach_of)));
+            if planes.is_empty() && bent.is_empty() {
+                continue;
+            }
             let turned = |q: V, phi: f64| crate::brep::geom::Rigid::turn(centre, axis, way * phi).point(q);
             // the set's own reach past this end: the meridian halfway to where the circle comes
             // back within every face the run ends on (`resumed`) — past it a point's nearest point
@@ -833,8 +842,9 @@ fn run_piece(body: &crate::solid::faces::BodyFaces, [p0, p1]: [V; 2], fa: usize,
     let width = outline.iter().map(|&q| distance(q, p0)).fold(0.0, f64::max);
     for &(n, d) in &halves {
         let slope = dot(n, along);
+        // a face along the run cuts it lengthwise or not at all (`along_run`): no end of it
         if slope.abs() < 1e-6 {
-            return Err(unbuilt("a run carried on along the face it ends on").into());
+            continue;
         }
         // how far along each line of the section the plane stands, the way the run is carried
         let way = slope.signum();
@@ -924,6 +934,7 @@ fn run_piece(body: &crate::solid::faces::BodyFaces, [p0, p1]: [V; 2], fa: usize,
     let hull = run.hull();
     run.within = halves.into_iter()
         .filter(|&(n, d)| hull.iter().any(|&p| dot(n, p) > d + 1e-9 * (1.0 + length))).collect();
+    run.flush = flush_only(body, ends, [p0, p1]);
     Ok(Piece::Run(run))
 }
 
@@ -943,6 +954,46 @@ fn run_piece(body: &crate::solid::faces::BodyFaces, [p0, p1]: [V; 2], fa: usize,
 /// is the face's plane itself, exactly, at any slant.  A ring's stretch is turned so (`first`,
 /// `last` and `width` turns), no further than halfway to where a point of it comes back.
 fn clear_of(first: f64, last: f64, width: f64) -> f64 { last.max(first + 1e-3 * width) }
+
+/// **Two faces flush only to the drawing's numbers where a run ends** (#962 item 4): a plane the
+/// run ends on at one of its ends `ps` and another plane of the body through that end, turned from
+/// it by less than a thousandth of a radian and more than the kernel reads as parallel — a boss's
+/// end drawn flush with a side the solve leaves a hundred-millionth of a radian off it.  The run is
+/// cut off exactly at the face it ends on (`clear_of`), and the other stands nanometres beside its
+/// end; where the Boolean joining the run to its body cannot close that, its refusal says so, in
+/// the faces' names, by how far they are turned, and where.
+fn flush_only(body: &crate::solid::faces::BodyFaces, ends: &Ends, ps: [V; 2]) -> Option<String> {
+    let name = |f: usize| {
+        let path = &body.paths()[f];
+        path.route.iter().chain(std::iter::once(&path.face)).cloned().collect::<Vec<_>>().join(".")
+    };
+    for p in ps {
+        let near = |n: V, o: V, by: f64| dot(n, sub(p, o)).abs() <= by * (1.0 + norm(p));
+        for &(by, _, far) in ends {
+            let (EndBy::Face(c), None) = (by, far) else { continue };
+            let Some((n, _)) = body.plane(c).filter(|&(n, o)| near(n, o, 1e-7)) else { continue };
+            for g in (0..body.paths().len()).filter(|&g| g != c) {
+                let Some((m, _)) = body.plane(g).filter(|&(m, q)| near(m, q, 1e-6)) else { continue };
+                let turn = norm(cross(n, m));
+                if turn > 1e-12 && turn < 1e-3 && dot(n, m) > 0.0 {
+                    return Some(format!("where `{}` and `{}` are flush only to the drawing's numbers, turned {turn:.1e} \
+                        of a radian from one another at [{:.4}, {:.4}, {:.4}]", name(c), name(g), p[0], p[1], p[2]));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// **A face along a run cuts it lengthwise or not at all** (#962 item 4): a plane the run ends on
+/// that lies along it — a boss's underside where it overhangs the side the run ends at, in the
+/// plane of the floor the run stands on; for a ring's stretch, a plane square to its axis — stands
+/// at no distance along it, so it is no end and carries the piece nowhere.  Its half-space, the
+/// side `BodyFaces::end_faces` keeps (the material's behind it where the run lies in it), holds the
+/// section or cuts it along its length: whether some point of the section's `hull` stands past it
+/// by more than `eps`.  Where none does it is no cut (the fill on its floor); where one does the
+/// piece is kept within it, a prism or a revolution clipped by a plane along it, exactly.
+fn along_run(hull: &[V], (n, d): (V, f64), eps: f64) -> bool { hull.iter().any(|&q| dot(n, q) > d + eps) }
 
 /// Which of an edge's two faces goes on across a seam its section reaches, and what it reads of it
 /// (none where neither does); refused where both do.

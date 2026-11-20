@@ -189,7 +189,8 @@ pub(super) fn cut_chain(p0: V, along: V, traces: [Trace; 2], (c, next): (usize, 
         strokes.extend(middle.iter().map(|(g, n)| (lift(&g.reversed()), *n)));
         strokes.extend(walk_c.iter().rev().map(|g| (lift(&g.reversed()), "b")));
     }
-    let run = Run { origin: p0, along, edge: 0.0, span: [0.0; 2], strokes, within: Vec::new(), kept: Vec::new() };
+    let run = Run { origin: p0, along, edge: 0.0, span: [0.0; 2], strokes, within: Vec::new(), kept: Vec::new(),
+        flush: None };
     Ok((run, corner.lift(foot)))
 }
 
