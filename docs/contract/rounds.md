@@ -526,7 +526,9 @@ tan θ` into its material from its own plane, the parting plane (an outer loop i
 evaluator reads it: the facets (`primitive::prism`'s `taper`, `offset` by mitres, a side breaking at
 the plane; `drafted_away` refuses a side taken to nothing, at validation, saying the ordinate's
 size at which it comes to nothing from the face's own plane, to three figures, and that the sides
-lean from it, #765), the field
+lean from it, #765 — read by the section's own rule, `brep::build::drafted_away`, where the face's
+sides are lines and arcs, so a corner sliding along an arc never reads the arc's chords as sides,
+and saying so too of a corner whose moved sides part, #962; by the facets for a spline), the field
 (`ExtrudedField::drafted`: the side's value plus `|w| tan`, times the cosine — exact only where
 `PlanarField::draftable`: convex loops of lines and whole circles, any other loop of lines and arcs
 read by its sections, `field/sections.rs`) and the exact kernel (the recipe's prism `"draft"`;
