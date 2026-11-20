@@ -177,6 +177,7 @@ mod json_escapes;
 mod kernel_blank;
 mod language_pipeline;
 mod laws;
+mod lexicon;
 mod limit_measure;
 mod linalg;
 mod lines;
