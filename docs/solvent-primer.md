@@ -533,9 +533,9 @@ right (`p1 -> p2` on a line, `start -> end` counter-clockwise on an arc).
 - `profile := … -> close` names the traversal, which a solid can sweep (1.14); its edges keep
   their own names. Every joint in a named chain carries `->`.
 
-**A corner round is a joint.** `A -> round(r: R) B`, `A` and `B` lines written meeting at a
-corner, rounds that corner with an arc of radius `R` tangent to both — the arc it mints, its two
-tangencies and its branch all said by the one word. Name the arc where it stands,
+**A corner round is a joint.** `A -> round(r: R) B`, `A` and `B` lines or arcs written meeting
+at a corner, rounds that corner with an arc of radius `R` tangent to both — the arc it mints, its
+two tangencies and its branch all said by the one word. Name the arc where it stands,
 `-> (k := round(r: 2mm))`, to list it in a face or dimension it; unnamed, it is still an edge of a
 named chain.
 
@@ -552,9 +552,18 @@ named chain.
 - A trailing `-> round(…)` at a `cycle`'s or a `ring`'s `}` rounds the corner the next copy is
   entered by (a `repeat`'s first copy has none: E040). `-> round(r: R) close` rounds the corner
   that closes a loop.
+- **A side may be an arc** (0.223), declared in the chain: `(jamb := line(s, c)) -> (k :=
+  round(r: 12)) (arch := arc(center: o, start: c, end: d))`. The round is the one inside the
+  corner as before — inside the arc's circle where the walk turns toward its centre, outside where
+  it turns away — and the corner `c` stays on the jamb and on the arch's circle; the arch now
+  runs from `k.end` (`arch.start`). An arc walks from its `start:`, so one turning clockwise is
+  written `sense: cw` with its ends in walking order. `rust/examples/arched_window.sv` is a
+  window whose jambs are rounded into an R97.5 arch so.
 - A round that does not fit is said by name after the solve: `` `k` (r 9mm) runs past `up`'s far
-  end; it fits up to r 6mm``, two rounds whose setbacks overlap on one line, a corner its lines run
-  straight through (E040 where it is drawn so).
+  end; it fits up to r 6mm``, two rounds whose setbacks overlap on one side, a corner its sides run
+  straight through (E040 where it is drawn so), and a round larger than a corner an arc turns
+  toward can hold: `` `k` (r 17mm) is more than the corner of `flat` and `bowl` holds: `bowl`
+  turns toward it there; it fits up to r 16mm``.
 
 ```
 in std.front {
@@ -570,9 +579,10 @@ in std.front {
 }
 ```
 
-Refused: a round beside a line and an arc (lines only, for now), its corner named differently by
-the two sides, a corner named while a side is declared elsewhere (its end is its own point, the
-arc's), another word at the round's joint. A bare `A round(r) B`, no marker, is still `std.rounds`'
+Refused: a round beside an arc declared apart from the chain (declare it in the chain: the round
+names its ends), beside a circle or anything else with no ends, its corner named differently by
+the two sides (an arc written to be walked from its end among them), a corner named while a side
+is declared elsewhere (its end is its own point, the arc's), another word at the round's joint. A bare `A round(r) B`, no marker, is still `std.rounds`'
 round of the edges where two solids' faces meet (1.14).
 
 **A step says where a line's end stands, one number per run.** `step(…)` before a line, or before
