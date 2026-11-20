@@ -233,7 +233,7 @@ fn every_node_the_kernel_builds_is_occts() {
                     refused.push(format!("{label}: pinches at {:?}",b.pinches()[0]));
                 } else if whole {
                     // our STEP, parsed back and checked against our solid face by face
-                    let text = match gcs_core::brep::step::write(&b,"oracle",1e-5) {
+                    let text = match gcs_core::brep::step::write(&b,"oracle",1e-5,gcs_core::brep::step::Fit::Exact) {
                         Ok(text) => text,
                         Err(err) => { failures.push(format!("{label}: not written as STEP: {err}")); continue }
                     };
@@ -311,7 +311,7 @@ fn rational_solids_go_through_occt_and_back() {
         ("ring",revolve(&Profile {names:vec![],origin:[0.;3],normal:xz,loops:vec![vec![spline(arc(&Frame::new([3.,0.,1.],xz,[1.,0.,0.]),1.,[0.,TAU]))]]},[0.;3],[0.,0.,1.],TAU).unwrap(),TAU*3.*PI,true),
     ];
     for (what,b,whole,back) in solids {
-        let text = gcs_core::brep::step::write(&b,what,1e-5).unwrap();
+        let text = gcs_core::brep::step::write(&b,what,1e-5,gcs_core::brep::step::Fit::Exact).unwrap();
         assert!(text.contains("RATIONAL_B_SPLINE_CURVE"),"{what}: nothing rational written");
         let file = std::env::temp_dir().join(format!("solvent-rational-{what}-{}.step",std::process::id()));
         std::fs::write(&file,&text).unwrap();

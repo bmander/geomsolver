@@ -265,12 +265,19 @@ fn lowered_node(n: &Lowered,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i6
     // piece is to a corner's cell (a chamfer's on the seam's normal surface, a round's at its ends)
     for b in &n.beyond {
         let tol = tolerance_over(1.+crate::util::space::norm(b.ends[0])+b.section.size(),floor);
-        pieces.push(match b.section {
+        let (mut piece,square) = match b.section {
             super::spill::Across::Round { .. } => super::spill::round_beyond(b,tol)
                 .map_err(|e| format!("a round beyond a seam: {e}"))?,
-            super::spill::Across::Flat { .. } => super::spill::flat_beyond(b,tol)
-                .map_err(|e| format!("a flat beyond a seam: {e}"))?,
-        });
+            super::spill::Across::Flat { .. } => (super::spill::flat_beyond(b,tol)
+                .map_err(|e| format!("a flat beyond a seam: {e}"))?,Vec::new()),
+        };
+        // the whole length of an edge (#962): cut off where its run ends, as the run's own piece is,
+        // and square to the edge where it was carried to
+        for &(at,normal) in b.run.iter().flatten().chain(&square) {
+            piece = kept(&piece,at,normal.map(|x| -x),floor)
+                .map_err(|e| format!("a piece beyond a seam cut off at its end: {e}"))?;
+        }
+        pieces.push(piece);
     }
     chained(&pieces,&n.joins,first_rolled,floor)
 }

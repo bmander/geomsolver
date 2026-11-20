@@ -3008,6 +3008,14 @@ half (OCCT's deflection is no bound), float32 rounding counted with it (`mesh::s
 `brep::export::written_within`: far from the origin refused, #60); the mesh contract counts clusters
 (`TinyTriangles::clustered`); the field is probed at max(2 tol, 2 µm).
 `--measure FILE` checks an export (`solid::accuracy`) and exits 1 over tolerance.
+**A STEP's fitted curves follow a stated tolerance and only a stated one** (#961,
+`brep::export::step_accuracy`): with `--tolerance` the file states a twentieth of it as its
+uncertainty and holds every curve it fits (a traced intersection, a pcurve) within half that of the
+exact meeting **on each face it trims**, measured along the face (`step::Fit::stated`) — at a
+grazing meeting nearer in space by the angle's sine — so a coarser tolerance writes a smaller file.
+Without it the file states the gross 1e-4 mm and its curves are held to `step::Fit::Exact`, 1e-9
+mm: a document exported with no tolerance asked reads as exactly as the kernel builds
+it (brep.md, "A traced intersection is written as a cubic").
 **An empty body is refused as one** (#617): a body built with no face is what the document drew,
 not a limit of the encoding, so `brep::export::exact` refuses it, whatever path built it, saying
 which solid is empty and which statement emptied it (`` `shared` is empty: `b common shared` leaves

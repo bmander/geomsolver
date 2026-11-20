@@ -85,6 +85,19 @@ impl Stroke {
     }
 }
 
+impl Beyond {
+    /// Whether it is `b`, within a billionth of `size`: the same section between the same ends,
+    /// against the same faces, cut off by the same planes.
+    fn same(&self, b: &Beyond, size: f64) -> bool {
+        let near = |p: V, q: V| distance(p, q) <= 1e-9 * size;
+        let halves = |x: &[(V, f64)], y: &[(V, f64)]| x.len() == y.len()
+            && x.iter().zip(y).all(|(p, q)| near(p.0, q.0) && (p.1 - q.1).abs() <= 1e-9 * size);
+        self.ends.iter().zip(&b.ends).all(|(&p, &q)| near(p, q)) && self.section == b.section
+            && self.face == b.face && self.chain == b.chain && self.wall == b.wall
+            && match (&self.run, &b.run) { (Some(x), Some(y)) => halves(x, y), (None, None) => true, _ => false }
+    }
+}
+
 impl Run {
     /// Whether it is `b`, within a billionth of `size`: the same section over the same stretch,
     /// kept within the same faces.
@@ -116,11 +129,13 @@ pub struct Assembly {
     pub beyond: Vec<Beyond>,
 }
 
-/// What a piece beyond a seam's normal surface is glued to: the ring, or the rolled run, it was
-/// made with (counted among its kind).
+/// What a piece beyond a seam's normal surface is glued to: the ring, the rolled run or the run it
+/// was made with (counted among its kind); none for a round's the whole length of an edge, which is
+/// the whole of what the region is there (#962).
 enum Partner {
     Ring(usize),
     Rolled(usize),
+    Run(usize),
 }
 
 /// The union of `pieces` as one construction (`Assembly`).
@@ -132,12 +147,14 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
         Piece::Ring(g) => (norm(g.section.origin) + norm(g.axis_origin)).max(beyond_size(&g.beyond)),
         Piece::Corner(c) => norm(c.vertex) + c.r,
         Piece::Rolled(k) => (norm(k.at) + k.r + k.flat.map_or(0.0, |([la, lb], _)| la.max(lb))).max(beyond_size(&k.beyond)),
+        Piece::Along { run, beyond } => run.as_ref().map_or(0.0, |r| norm(r.origin) + r.span[0].abs().max(r.span[1].abs()))
+            .max(norm(beyond.ends[0]).max(norm(beyond.ends[1])) + beyond.section.size()),
     }).fold(1.0, f64::max);
     let near = |p: V, q: V| distance(p, q) <= 1e-9 * size;
     let mut out = Assembly::default();
     // each piece beyond a seam's normal surface goes with the piece that holds it: kept with it,
     // joined to it, and dropped with it where another region named the same edge
-    let mut partners = Vec::new();
+    let mut partners: Vec<Option<Partner>> = Vec::new();
     for p in pieces {
         match p {
             Piece::Run(r) if !out.runs.iter().any(|q| q.same(r, size)) => out.runs.push(r.clone()),
@@ -146,7 +163,7 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
                 let mut g = g.clone();
                 if let Some(b) = g.beyond.take() {
                     out.beyond.push(b);
-                    partners.push(Partner::Ring(out.rings.len()));
+                    partners.push(Some(Partner::Ring(out.rings.len())));
                 }
                 out.rings.push(g);
             }
@@ -158,9 +175,20 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
                 let mut k = k.clone();
                 if let Some(b) = k.beyond.take() {
                     out.beyond.push(b);
-                    partners.push(Partner::Rolled(out.rolled.len()));
+                    partners.push(Some(Partner::Rolled(out.rolled.len())));
                 }
                 out.rolled.push(k);
+            }
+            // the whole length of an edge (#962): a flat's own run and the piece beyond it, once
+            // (two regions naming the edge in either order build one run); a round's piece beyond alone
+            Piece::Along { run: Some(r), beyond } if !out.runs.iter().any(|q| q.same(r, size)) => {
+                out.beyond.push(beyond.clone());
+                partners.push(Some(Partner::Run(out.runs.len())));
+                out.runs.push(r.clone());
+            }
+            Piece::Along { run: None, beyond } if !out.beyond.iter().any(|b| b.same(beyond, size)) => {
+                out.beyond.push(beyond.clone());
+                partners.push(None);
             }
             _ => {}
         }
@@ -259,7 +287,12 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
     let rolled_from = out.runs.len() + out.rings.len() + out.corners.len();
     let first = rolled_from + out.rolled.len();
     for (k, partner) in partners.iter().enumerate() {
-        let at = match *partner { Partner::Ring(i) => out.runs.len() + i, Partner::Rolled(i) => rolled_from + i };
+        let at = match *partner {
+            Some(Partner::Ring(i)) => out.runs.len() + i,
+            Some(Partner::Rolled(i)) => rolled_from + i,
+            Some(Partner::Run(i)) => i,
+            None => continue,
+        };
         out.joins.push([at, first + k]);
     }
     // a run and a stretch of a ring going on from one another (a round along an obround's flat
@@ -501,6 +534,8 @@ impl Assembly {
                 Seam::Circle(c, n, r) => spill::Seam::Circle(w.point(c), n, w.length(r)),
                 Seam::Line(p, d) => spill::Seam::Line(w.line_origin(scale(p, by), d), d),
             },
+            // the whole length of an edge (#962): the half-spaces its run is kept within
+            run: b.run.as_ref().map(|run| run.iter().map(|&(n, d)| (w.moved(scale(n, d * w.scale)), n)).collect()),
             // a flat's legs and the seam's normal surface it starts at, or a round's radius
             section: match b.section {
                 Across::Flat { legs, split } =>

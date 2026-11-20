@@ -2453,6 +2453,9 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
 - `A` and `B` are **face paths**: `block` (every face), `block.near` (one), `pad.boss` (every face
   the boss gave), `pad.plate.near`, read from the solid through its operands' names, never by
   suffix. Faces that do not meet make nothing; a face a Boolean ate names nothing.
+- **Both faces are one body's** (0.223): an edge is where two faces of one body meet, so
+  `wall.far round(r: 2mm) plate.near` of two solids is E103.  Where both are unioned into `part`,
+  write them through it — `part.wall.far round(r: 2mm) part.plate.near` — as the refusal says.
 - **One copy of a pattern** (0.157): an operand written in a `repeat` or a `ring` is named with
   its copy's index, as `--where` reports it — the hole the second drill cut is
   `flange.drill[1].hole`. `flange.cd chamfer(d: 1mm) flange.drill[1]` chamfers that one hole

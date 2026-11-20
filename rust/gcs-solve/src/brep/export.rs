@@ -248,11 +248,25 @@ fn emptied(sk: &Sketch,body: usize) -> ExportRefusal {
     empty(&sk.solid_name(body),"it leaves no material")
 }
 
+/// **What a STEP file is written to** (#961): the uncertainty it states and how near its fitted
+/// curves stand to the exact ones (`step::Fit`). A tolerance stated (`--tolerance`) gives the file
+/// a tenth of the share the STL's sag does not use, and its curves half of that, each face's trims
+/// within it of the exact meeting on that face: the file is the smaller for the licence. No
+/// tolerance stated is no licence: the file states the gross 1e-4 mm a reader may take two points
+/// to be one within, and its curves are held `Fit::Exact`, as near as the kernel's own fits.
+pub fn step_accuracy(tolerance: Option<Tolerance>) -> (f64,super::step::Fit) {
+    match tolerance {
+        Some(t) => { let uncertainty = t.deflection()*0.1; (uncertainty,super::step::Fit::stated(uncertainty)) }
+        None => (1e-4,super::step::Fit::Exact),
+    }
+}
+
 /// The STEP file of a built solid, parsed back and held to it (every reference, the topology's
 /// counts, units, and each face's surface and its numbers), with what the check counted.
 pub fn step(exact: &Exact,name: &str,tolerance: Option<Tolerance>,say: &Say) -> Result<String,ExportRefusal> {
     let started = crate::clock::Instant::now();
-    let text = super::step::write(&exact.solid,name,tolerance.map_or(1e-4,|t| t.deflection()*0.1)).at(Stage::Step)?;
+    let (uncertainty,fit) = step_accuracy(tolerance);
+    let text = super::step::write(&exact.solid,name,uncertainty,fit).at(Stage::Step)?;
     let verified = super::step_check::verify(&text,&super::step_check::Solid::of(&exact.solid))
         .map_err(|e| ExportRefusal::at(Stage::Step,format!("the STEP file does not describe the solid: {e}")))?;
     (say.stage)(&format!("the STEP output: {} entities; {} faces, {} edges and {} vertices, each the solid's ({:?})",
@@ -341,7 +355,8 @@ pub fn assembly(sk: &Sketch,objects: &[usize],name: &str,tolerance: Option<Toler
 /// solid, and every use of a product where the assembly places it (`step_check::verify_assembly`).
 pub fn assembly_step(a: &super::step::Assembly,name: &str,tolerance: Option<Tolerance>,say: &Say) -> Result<String,ExportRefusal> {
     let started = crate::clock::Instant::now();
-    let text = super::step::write_assembly(a,name,tolerance.map_or(1e-4,|t| t.deflection()*0.1)).at(Stage::Step)?;
+    let (uncertainty,fit) = step_accuracy(tolerance);
+    let text = super::step::write_assembly(a,name,uncertainty,fit).at(Stage::Step)?;
     let verified = super::step_check::verify_assembly(&text,&super::step_check::Structure::of(a))
         .map_err(|e| ExportRefusal::at(Stage::Step,format!("the STEP file does not describe the assembly: {e}")))?;
     (say.stage)(&format!("the STEP output: {} entities; {} products and {} uses, each the assembly's; {} faces, {} edges and {} vertices, \

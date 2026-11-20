@@ -209,7 +209,7 @@ fn an_assembly_that_is_not_a_tree_laid_out_top_down_is_refused() {
     let fine =
         step::Assembly { products: products(), uses: vec![usage(0, 1), usage(0, 2), usage(0, 1)] };
     assert!(fine.check().is_ok());
-    assert!(step::write_assembly(&fine, "fine", 1e-4).is_ok());
+    assert!(step::write_assembly(&fine, "fine", 1e-4, step::Fit::Exact).is_ok());
 }
 
 /// Three colours dealt to the objects by their solids' indices, so the four parts are not all
