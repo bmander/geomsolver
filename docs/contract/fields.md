@@ -163,7 +163,8 @@ surface costs follow the octree the facets need — cells a facet wide over a sm
 finest, twice the facet distance, only along a crease — not the refinement's every value, sign
 and difference gradient: a picture of a post whose rim round the kernel refuses took about a
 minute and is drawn in about 6 s (`refused_look::a_mesher_reads_a_round_that_searches_from_its_distance_field`,
-`cli::a_picture_of_a_refused_round_says_so_first_and_is_drawn_in_bounded_time`).  A field read in
+`cli::a_picture_of_a_refused_round_says_so_first_and_is_drawn_in_bounded_time`, and in the slow tier
+`a_picture_of_a_round_the_kernel_refuses_says_so_first_and_is_drawn_in_bounded_time`).  A field read in
 closed form is read exactly whatever is asked, bit for bit, and creases, admission and every
 query that is not a mesher's read exactly.  `FieldMesher::finish` steps 256 facets at a time,
 saying how far it has got on the gauge of the work it is inside (`progress::gauge`: `meshing its
