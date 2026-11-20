@@ -1058,6 +1058,61 @@ placement carries inside the blank; CLI test readers zero the offset.
   band, now `sense: cw`.  `tests/clockwise_arc.rs`' `a_half_turn_a_face_turns_into_is_said` is the
   gate: the swapped slot end said, the slot as meant, the notch said clockwise and a hand-drawn
   inside fillet not.
+- **A union that adds its body nothing while a cut takes some of it is said at its statement**
+  (W119, #961).  The body rule is sets, so `hub union part` written below `hole cut part` puts
+  back nothing the bore takes: a hub in the bore, or a web drawn across it with its ends in the
+  wall it was to join, leaves `part` as it would be without the statement, and the document
+  builds.  With `b` = (S ∪ U) ∖ C ∩ K, the statement changes the body by `u` ∖ (S ∪ U′) ∖ C ∩ K;
+  that alone does not tell a lost union from a redundant one — the issue's hub lies inside its
+  ring's stock, a disc the bore is cut from, so `u` ∖ S is empty for it as for a pad drawn inside
+  a plate and never cut — and what tells them apart is whether the cuts take any of it.  So
+  `solid::unkept` says a union where **(A)** every point of it the body keeps (outside every cut,
+  inside every common) is the stock's or another union's that adds material of its own, and
+  **(B)** some point of it is in a cut or outside a common.  A union clear of every other term
+  satisfies (A) where the body keeps none of it, said so — `` `hub` lies wholly in what `hole`
+  cuts from `part`, so `part` keeps none of it `` — and one that keeps only what others give it
+  is said as that — `` `part` keeps of `web` only what `ring` gives it already, and the rest of
+  `web` lies in what `hole` cuts from `part`, so `part` is as it would be without `web` `` —
+  each with the body rule after it, naming the union, the body, the holders and each cut or
+  common that takes some.  **No two unions vouch for one another**: a union holds a point for
+  (A) only where it adds material no other term holds (`Reader::adds`, read against the stock
+  and every union, never against what is said of the others), so two hubs lost in one bore are
+  each said, and two copies of one pad, drilled, keep what each other holds and neither is
+  said.  Each answer is read off the arrangement of `u` with the terms whose boxes meet its own
+  (`brep::boolean::arrangement`, `members`); cells have positive volume — a piece with no
+  inside is none — so it is the set statement decided by the kernel's classification, not a
+  volume difference under a tolerance.  A hub flush with the bore's wall keeps none of itself;
+  one a micrometre wider keeps a skin a micrometre thick, a cell like any other, which is the
+  ring's already: said too, as holding only the ring's.  The terms are the body's written ones
+  (`exact::operands` over `cad::recipe_of_terms`: what reads its faces, a round, is no term
+  written and never lowered for it).  `program::unkept` says it after the solve
+  (`solid_diagnostics`) at the statement that wrote the union (`SourceMap::joined`, placed by
+  `Placing`), a warning as W116 is (a statement that makes nothing): the document is legal and
+  builds unchanged.  **Not said**: a union that adds any kept material of its own (a boss bored
+  through, its rim proud of the plate; a web running on past the ring to a lug); one nothing
+  takes (a pad inside the ring, uncut) — redundant, not lost; a cut that takes nothing, which the
+  body rule does not defeat and whose reading would classify every cut of every body; a
+  `common` leaving nothing, the empty body said by its export (#617).  A pad inside the ring
+  that a drill crosses is said: the statement changes nothing, and the drill took some of it.
+  **Cost**: nothing for a body whose written terms have no union, or no cut and no common; else
+  its terms built once (a body among them its own remembered build), and for each union whose
+  box meets a cut's (or each, where the body has a common) a witness sought — a vertex, an
+  edge's middle or a point of a three by three grid on a face, strictly outside the stock, the
+  unions and the cuts beside it and inside every common, has a ball of the union's own kept
+  material about it — and only where none is found, the union arranged with the near cuts and
+  commons, which answers (B) alone, then with the stock and the unions beside it where
+  something is taken.  Measured against main (best of three): a plate of 100 through holes
+  under 100 bosses bored through +0.04 s (each boss a witness at its rim), the bosses beside the
+  holes +0.06 s, 100 pads inside the plate each beside a hole and uncut +0.8 s (no witness: an
+  arrangement of each with its hole); `hypoid_drive` +0.4 s on 1.0 (its nested bodies built as
+  terms, none arranged), `shaft_drive` +0.85 s on 13, `turbine_blade` +0.1 s (its rounded
+  stock built), every other example that unions and cuts under 0.05 s.
+  The page does not say it: `solid_diagnostics` is `solventc`'s and a drawing's, as W118 is.
+  `tests/unkept_union.rs` is the gate (the issue's hub either order, the hub reaching into the
+  wall either order, flush and a hair wider, proud of a through bore, two cuts together naming
+  both and no other union, a common, a web into the wall, run on to a lug and ending in one, a
+  pad inside the ring uncut, beyond it and drilled, a boss bored through, two lost hubs and two
+  drilled copies, the remedy of a body bored first).
 
 - **A part carries no views; a sheet asks for them** (§6.11, `hidden.rs`).  `view(body) in
   views.right` and `section(body, at: swing) in views.front` are *outputs*: no `Int` draw flag, no
