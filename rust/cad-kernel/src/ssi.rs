@@ -330,6 +330,49 @@ pub fn same(a: &Surface,b: &Surface,tol: f64) -> bool {
     }
 }
 
+/// **Two surfaces are one over a region** (#961): `same` held over the box `region` alone — the
+/// part of space faces on both may share — where `same` holds them over all of space. Two planes,
+/// or two cylinders, whose normals or axes lean a hair apart are one where every point of either
+/// within the region stands within `tol` of the other: a plane stands off the other by a linear
+/// function of where it is read, greatest at a corner of the region, and an axis off the other
+/// likewise at the ends of the region's span along it. So the angle two surfaces may lean apart and
+/// still be one is the tolerance over the region's reach, not `same`'s fixed `1e-12`: two faces
+/// drawn on one plane through points rounded to nine decimals lean `1e-10` apart, a hundredth of
+/// the tolerance over a part a hundred millimetres across, and every point of one is on the other
+/// (`Located::solid_place`) — read as two planes, their meeting was laid across both at a grazing
+/// angle, and the complex could not order them round it (`faces … coincide along it`, `a piece …
+/// touches … along no face of either`). Any other pair, or an empty region, is `same`'s.
+pub fn same_over(a: &Surface,b: &Surface,tol: f64,region: super::geom::Box3) -> bool {
+    if same(a,b,tol) { return true }
+    if !(0..3).all(|k| region.0[k] <= region.1[k]) { return false }
+    let (f,g) = (a.frame(),b.frame());
+    // only a lean the region can tell from none: past `1e-3` rad two surfaces are not one anywhere
+    // their region is wider than a thousand tolerances, and `same` has read them
+    if norm(cross(f.z,g.z)) > 1e-3 { return false }
+    let centre: V = std::array::from_fn(|k| 0.5*(region.0[k]+region.1[k]));
+    let reach = 0.5*distance(region.0,region.1);
+    let corners: [V;8] = std::array::from_fn(|i| std::array::from_fn(|k| if i>>k & 1 == 0 { region.0[k] } else { region.1[k] }));
+    // the greatest distance from the line through `q` along `w` of a point of the line through `p`
+    // along `d`, over the region's span along that line
+    let axes_apart = |p: V,d: V,q: V,w: V| -> f64 {
+        let at = |s: f64| { let x = add(p,scale(d,dot(sub(centre,p),d)+s)); norm(cross(sub(x,q),w)) };
+        at(-reach).max(at(reach))
+    };
+    match (a,b) {
+        (Surface::Plane(_),Surface::Plane(_)) => {
+            // each corner read onto each plane, its height over the other
+            let apart = |f: &Frame,g: &Frame| corners.iter().map(|&c| {
+                let on = sub(c,scale(f.z,dot(sub(c,f.o),f.z)));
+                dot(sub(on,g.o),g.z).abs()
+            }).fold(0.,f64::max);
+            apart(f,g).max(apart(g,f)) <= tol
+        }
+        (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) =>
+            axes_apart(f.o,f.z,g.o,g.z).max(axes_apart(g.o,g.z,f.o,f.z))+(r-s).abs() <= tol,
+        _ => false,
+    }
+}
+
 /// **A sheet is the sheet of one net**: two nets of the same degrees, knots and weights whose poles
 /// stand within `tol` of each other are one surface, a point of either within `tol` of the other's
 /// at its parameters (a B-spline is an affine combination of its poles) — a face's sheet and the

@@ -126,6 +126,27 @@ struct Arranged<'a> {
     /// Each operand's faces clear of the others: whose boxes miss the box each other's faces fill,
     /// so nothing of the others meets them and all of each lies outside them (#589).
     clear: Sides<Vec<bool>>,
+    /// Which faces of the operands are on one surface (`Surfaces::one`).
+    surfaces: Surfaces,
+}
+
+/// **Which faces of an arrangement lie on one surface** (#961): the index each face's surface was
+/// given among the arrangement's (`Arrangement::surface_index`), so a piece lying on a face of
+/// another operand is read on the surface its meetings were found on — two faces on one surface
+/// there, coinciding (no meeting laid between them), are one here, and no phase reads them apart.
+struct Surfaces { of: BTreeMap<(Side,usize),usize>,shared: super::meeting::Shared,tol: f64 }
+
+impl Surfaces {
+    /// Whether operand `s`'s face `f` and operand `o`'s face `g` lie on one surface: as their
+    /// meeting reads them (`Shared::one`) where both were given an index, else over the part of
+    /// space both faces' boxes hold (`ssi::same_over`, a trim's faces it met with nothing).
+    fn one(&self,solids: &Sides<&Brep>,(s,f): (Side,usize),(o,g): (Side,usize)) -> bool {
+        if let (Some(&i),Some(&j)) = (self.of.get(&(s,f)),self.of.get(&(o,g))) { return self.shared.one(i,j,self.tol) }
+        let bx = |s: Side,f: usize| super::flush::face_box(solids[s],&solids[s].faces[f]);
+        let region = super::meeting::common(bx(s,f),bx(o,g),self.tol);
+        (0..3).all(|k| region.0[k] <= region.1[k])
+            && super::ssi::same_over(&solids[s].faces[f].surface,&solids[o].faces[g].surface,super::tolerant::ON_CURVE*self.tol,region)
+    }
 }
 
 /// **Two solids sharing a face, joined there** (the pieces of a chain of fillets, each ending in
@@ -540,7 +561,7 @@ pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> { Ok(bo
 fn boolean_known(a: &Brep,known: Option<&Known>,b: &Brep,op: Op,tol: f64) -> Result<(Brep,Known),String> {
     // touches laid as edges, so the complex is split along them as any arrangement is, and every
     // meeting's edge taken back out of the result where a face is kept on both sides of it (`heal`)
-    let Arranged {solids,located,pool,out,met,pieces,clear} = arrange(&[a,b],known,&[],tol)?;
+    let Arranged {solids,located,pool,out,met,pieces,clear,surfaces} = arrange(&[a,b],known,&[],tol)?;
     // the faces of the complex the two part space into (#735 A4): every piece but those with no
     // inside and those a coincident piece of A stands for, each with what it is known by — its box
     // and whether it was checked, for a face carried whole — and whether each of its sides, behind
@@ -581,8 +602,8 @@ fn boolean_known(a: &Brep,known: Option<&Known>,b: &Brep,op: Op,tol: f64) -> Res
         let Some(&first) = inner.peek() else { continue };
         // a face of the other on this one's surface holding `p`
         let partner = |p: V| (0..solids[other].faces.len()).find(|&g|
-            super::ssi::same(&f.surface,&solids[other].faces[g].surface,tol) && located[other].face_holds(g,p));
-        let (p,place) = inner.map(|p| (p,located[other].solid_place(p)))
+            surfaces.one(&solids,(s,fi),(other,g)) && located[other].face_holds(g,p));
+        let (p,place) = inner.map(|p| (p,if partner(p).is_some() { Place::On } else { located[other].solid_place(p) }))
             .find(|&(p,place)| place != Place::On || partner(p).is_some())
             .unwrap_or((first,Place::On));
         match place {
@@ -838,7 +859,7 @@ pub fn arrangement_reached(domain: &Brep,reach: Option<&Brep>,operands: &[&Brep]
 /// `arrangement`, every piece of an operand lying outside any of the first `clips` before it left
 /// out (the domain, then a reach); the meetings `given` known.
 fn arranged(operands: &[&Brep],given: &[Given],clips: usize,tol: f64) -> Result<Complex,String> {
-    let Arranged {solids,located,pool,out,met,pieces,..} = arrange(operands,None,given,tol)?;
+    let Arranged {solids,located,pool,out,met,pieces,surfaces,..} = arrange(operands,None,given,tol)?;
     // each piece read on its own, across the cores (`util::par`, in the pieces' order): a point
     // inside it, where it stands against the domain and the reach — the reach first, a box most
     // pieces of the candidates lie outside of, read before the domain whose cuts (a blank's
@@ -859,7 +880,7 @@ fn arranged(operands: &[&Brep],given: &[Given],clips: usize,tol: f64) -> Result<
         let mut stood_for = false;
         for o in solids.all().filter(|&o| o != s) {
             for (g,h) in solids[o].faces.iter().enumerate() {
-                if !super::ssi::same(&f.surface,&h.surface,tol) || !located[o].face_holds(g,p) { continue }
+                if !surfaces.one(&solids,(s,fi),(o,g)) || !located[o].face_holds(g,p) { continue }
                 if o < s { stood_for = true; }
                 from.push(Origin {operand:o.0,face:g,alike:facing_alike(f,h,p)});
             }
@@ -895,7 +916,7 @@ fn arranged(operands: &[&Brep],given: &[Given],clips: usize,tol: f64) -> Result<
 /// whose meeting `meet` left out, kept, leaves the boundary open, which `Brep::check` says.
 pub fn trimmed(operands: &[&Brep],given: &[Given],meet: Meet<'_>,side: &(dyn Fn(&Face,&mut dyn Iterator<Item=V>) -> Result<Option<bool>,String>+Sync),
     tol: f64) -> Result<Brep,String> {
-    let Arranged {solids,located,pool,out,met,pieces,..} = crate::util::warm::fresh(|| arrange_phases(operands,None,given,Some(meet),tol))?;
+    let Arranged {solids,located,pool,out,met,pieces,surfaces,..} = crate::util::warm::fresh(|| arrange_phases(operands,None,given,Some(meet),tol))?;
     // each piece read on its own, across the cores: stood for by a lower operand's on its surface,
     // or read by `side` at its inner points
     let read = crate::util::par::map(&pieces,|&(s,fi,ref piece)| -> Result<Option<bool>,String> {
@@ -905,8 +926,8 @@ pub fn trimmed(operands: &[&Brep],given: &[Given],meet: Meet<'_>,side: &(dyn Fn(
             if crate::debug() { eprintln!("trimmed: a piece of operand {} face {fi} ({}) has no point inside: dropped",s.0,f.surface.kind()) }
             return Ok(None)
         };
-        let stood_for = solids.all().filter(|&o| o < s).any(|o| solids[o].faces.iter().enumerate().any(|(g,h)|
-            super::ssi::same(&f.surface,&h.surface,tol) && located[o].face_holds(g,p)));
+        let stood_for = solids.all().filter(|&o| o < s).any(|o| (0..solids[o].faces.len()).any(|g|
+            surfaces.one(&solids,(s,fi),(o,g)) && located[o].face_holds(g,p)));
         if stood_for {
             if crate::debug() { eprintln!("trimmed: a piece of operand {} face {fi} ({}) at {p:?} stood for by a lower operand's",s.0,f.surface.kind()) }
             return Ok(None)
@@ -1150,8 +1171,9 @@ fn arrange_phases<'a>(solids: &[&'a Brep],known: Option<&Known>,given: &[Given],
     for pieces in split.pieces_of.iter().take(own) {
         for &(p,_) in pieces { if !split.gone[p as usize] { met[split.rep[p as usize].0 as usize] = false } }
     }
-    let Arrangement {solids,located,pool,clear,..} = arr;
-    Ok(Arranged {solids,located,pool,out:split.out,met,pieces,clear})
+    let Arrangement {solids,located,pool,clear,surface_of,shared,tol,..} = arr;
+    let surfaces = Surfaces {of:surface_of,shared,tol};
+    Ok(Arranged {solids,located,pool,out:split.out,met,pieces,clear,surfaces})
 }
 
 /// **The working state `arrange`'s phases share**: the two solids and where each face lies, the
@@ -1253,6 +1275,18 @@ impl<'a> Arrangement<'a> {
             shared:Default::default(),surface_of:BTreeMap::new(),say:Narration::new(),meet:None}
     }
 
+    /// **The index of operand `s`'s face `fi`'s surface among the arrangement's** (`meeting::Shared`,
+    /// #961): one surface with another wherever the two are one over the box their faces fill
+    /// (`Shared::index_over`), found once and asked by every phase alike — the meetings, a flat
+    /// root's, and which face of another a piece lies on.
+    fn surface_index(&mut self,s: Side,fi: usize) -> usize {
+        if let Some(&i) = self.surface_of.get(&(s,fi)) { return i }
+        let (b,f) = (self.solids[s],&self.solids[s].faces[fi]);
+        let i = self.shared.index_over(&f.surface,self.tol,super::flush::face_box(b,f));
+        self.surface_of.insert((s,fi),i);
+        i
+    }
+
     /// Edge `i` of solid `s`'s index among the working edges.
     fn working(&self,s: Side,i: usize) -> usize { self.first_edge[s]+i }
 
@@ -1334,11 +1368,11 @@ impl<'a> Arrangement<'a> {
         // misses it
         let mut by_given: Vec<Option<(Vec<Curve>,Vec<V>)>> = Vec::with_capacity(asked.len());
         for &(s,other,i,fi,_,_) in &asked {
-            let j = self.shared.index(&self.solids[other].faces[fi].surface,tol);
+            let j = self.surface_index(other,fi);
             let (mut curves,mut touches) = (Vec::new(),Vec::new());
             let mut all = !bounded[s][i].is_empty();
             for &h in &bounded[s][i] {
-                let k = self.shared.index(&self.solids[s].faces[h].surface,tol);
+                let k = self.surface_index(s,h);
                 if self.shared.given(k,j) {
                     curves.extend(self.shared.given_curves(k,j));
                     touches.extend(self.shared.given_touches(k,j));
@@ -1477,9 +1511,11 @@ impl<'a> Arrangement<'a> {
         for l in loose {
             let beside = &crossings.beside[l.edge];
             if self.cuts[l.edge].len() < 2 && beside.is_empty() { continue }
-            let e = &self.solids[l.side].edges[l.index];
+            let j = self.surface_index(l.against,l.face);
+            let solids = Sides(self.solids.0.clone());
+            let e = &solids[l.side].edges[l.index];
             let EdgeCurve::Curve(c) = &e.curve else { continue };
-            let s = &self.solids[l.against].faces[l.face].surface;
+            let s = &solids[l.against].faces[l.face].surface;
             let near = |t: f64| s.implicit(c.point(t)).abs() <= FLAT*tol.max(e.tol);
             // out from the root each way, doubling, as far as the edge stays that near
             let reach = |dir: f64| {
@@ -1509,10 +1545,10 @@ impl<'a> Arrangement<'a> {
             // touches the ball round a great circle, its crossing of that circle moved to its far
             // end, a millimetre off)
             let q = self.pool.pts[l.vertex as usize];
-            let j = self.shared.index(s,tol);
-            let on_given = (0..self.solids[l.side].faces.len()).filter(|&h| self.solids[l.side].faces[h].loops.iter().flatten().any(|u| u.edge as usize == l.index))
-                .any(|h| { let k = self.shared.index(&self.solids[l.side].faces[h].surface,tol);
-                    self.shared.exact_curves(k,j).iter().any(|g| distance(g.point(g.inverse(q)),q) <= super::tolerant::ON_CURVE*tol) });
+            let bounding: Vec<usize> = (0..solids[l.side].faces.len())
+                .filter(|&h| solids[l.side].faces[h].loops.iter().flatten().any(|u| u.edge as usize == l.index)).collect();
+            let on_given = bounding.into_iter().any(|h| { let k = self.surface_index(l.side,h);
+                self.shared.exact_curves(k,j).iter().any(|g| distance(g.point(g.inverse(q)),q) <= super::tolerant::ON_CURVE*tol) });
             if on_given { continue }
             self.say.flat_root(self.pool.pts[l.vertex as usize],self.pool.pts[w as usize]);
             self.cuts[l.edge].retain(|&(_,u)| u != l.vertex);
@@ -1549,14 +1585,7 @@ impl<'a> Arrangement<'a> {
         for faces in &pairs {
             for k in 0..2 {
                 let key = (faces.s[k],faces.f[k]);
-                let i = match self.surface_of.get(&key) {
-                    Some(&i) => i,
-                    None => {
-                        let i = self.shared.index(&self.solids[key.0].faces[key.1].surface,self.tol);
-                        self.surface_of.insert(key,i);
-                        i
-                    }
-                };
+                let i = self.surface_index(key.0,key.1);
                 super::geom::widen(filled.entry(i).or_insert(super::geom::EMPTY),self.boxes[key.0][key.1]);
             }
         }
@@ -1624,7 +1653,7 @@ impl<'a> Arrangement<'a> {
                 // a curve that comes nowhere near both faces (a far crossing of two nearly parallel
                 // meridians) leaves nothing on them
                 if far(&c,lo,hi) { continue }
-                let mut ts = self.points_on(&c,surfaces,&crossings.on_face[sb][fb],&crossings.on_face[sa][fa],crossed);
+                let mut ts = self.points_on(&c,surfaces,ids,&crossings.on_face[sb][fb],&crossings.on_face[sa][fa],crossed);
                 let domain = closed_domain(&c,self.tol);
                 let closed = c.period().is_some() || domain.is_some();
                 let spans = spans(&c,domain,&mut ts,&mut self.pool);
@@ -1835,14 +1864,14 @@ impl<'a> Arrangement<'a> {
     /// parameter along it: those on B's face and on A's (`on_b`, `on_a`: where the other solid's
     /// edges cross it) within reach of the curve, then those of `crossed`, where it crosses
     /// another curve of the same meeting, each pooled.
-    fn points_on(&mut self,c: &Curve,surfaces: [&Surface;2],on_b: &[u32],on_a: &[u32],crossed: Vec<V>) -> Vec<(f64,u32)> {
+    fn points_on(&mut self,c: &Curve,surfaces: [&Surface;2],ids: [usize;2],on_b: &[u32],on_a: &[u32],crossed: Vec<V>) -> Vec<(f64,u32)> {
         let (sa,sb) = (surfaces[0],surfaces[1]);
         // (a given meeting's curve lies on both surfaces, known to the tolerance: no vertex is taken
         // onto it from farther — two neighbouring sheets of a sweep meet smoothly along the rail they
         // share, the sine of their angle nought, and a vertex 3e-3 off the rail was cut into it — nor
         // onto one found in closed form, as exact: a cylinder touching a ball round a great circle,
         // a vertex of the ball's a millimetre off the circle stood within the tolerance of both)
-        let given = { let (i,j) = (self.shared.index(sa,self.tol),self.shared.index(sb,self.tol)); self.shared.given(i,j) || self.shared.closed_form(i,j) };
+        let given = self.shared.given(ids[0],ids[1]) || self.shared.closed_form(ids[0],ids[1]);
         let mut ts: Vec<(f64,u32)> = Vec::new();
         for &v in on_b.iter().chain(on_a) {
             let p = self.pool.pts[v as usize];

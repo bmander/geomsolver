@@ -1049,6 +1049,12 @@ pub fn meet_with(a: &Surface,da: [[f64;2];2],b: &Surface,db: [[f64;2];2],tol: f6
     Ok(Meeting {same:false,branches,singular,closed_form})
 }
 
+/// The part two boxes share, each widened by `pad`: empty (`geom::EMPTY`'s sense, a least corner
+/// past the greatest) where they are apart, and where either is.
+pub fn common(a: super::geom::Box3,b: super::geom::Box3,pad: f64) -> super::geom::Box3 {
+    (std::array::from_fn(|k| a.0[k].max(b.0[k])-pad),std::array::from_fn(|k| a.1[k].min(b.1[k])+pad))
+}
+
 /// **Meetings computed once and shared** (#735 A2): each distinct surface given an index, two faces
 /// on surfaces the kernel holds the same (`ssi::same`) the same one, and each pair of indices'
 /// closed-form meeting (`ssi::intersect`) found the first time any two faces on them are met and
@@ -1059,6 +1065,8 @@ pub fn meet_with(a: &Surface,da: [[f64;2];2],b: &Surface,db: [[f64;2];2],tol: f6
 #[derive(Clone,Debug,Default)]
 pub struct Shared {
     surfaces: Vec<Surface>,
+    /// the box the faces given each index fill (`index_over`): the region it is one surface over
+    regions: Vec<super::geom::Box3>,
     /// each kind's surfaces among them, which alone a surface of that kind is compared with
     of_kind: std::collections::BTreeMap<&'static str,Vec<usize>>,
     meetings: std::collections::BTreeMap<(usize,usize),Ssi>,
@@ -1075,13 +1083,37 @@ pub struct Shared {
 impl Shared {
     /// The index of `s` among the surfaces seen: an earlier one it is the same as (exactly, or
     /// within `tol` where both are of the same kind), else a new one.
-    pub fn index(&mut self,s: &Surface,tol: f64) -> usize {
+    pub fn index(&mut self,s: &Surface,tol: f64) -> usize { self.index_over(s,tol,super::geom::EMPTY) }
+    /// **The index of a face's surface** (#961, `tolerant`'s surface onto a surface): `index`, the
+    /// surface `s` of a face filling the box `region`, the same as an earlier one where the two stand
+    /// within `ON_CURVE` tolerances of each other over the part of the face's box the faces given
+    /// that index fill (`ssi::same_over`, `common`) — where alone a point of the face can lie on one
+    /// of theirs — the reach at which an edge lying along another is that edge. So two faces drawn
+    /// on one plane through rounded points, leaning a hair apart, are on one surface wherever any
+    /// phase of the arrangement asks, and an edge of either merged into the other's bounds faces on
+    /// one surface. The index's region grows by the face's.
+    pub fn index_over(&mut self,s: &Surface,tol: f64,region: super::geom::Box3) -> usize {
         let mine = self.of_kind.entry(s.kind()).or_default();
-        if let Some(&i) = mine.iter().find(|&&i| self.surfaces[i] == *s) { return i }
-        if let Some(&i) = mine.iter().find(|&&i| super::ssi::same(&self.surfaces[i],s,tol)) { return i }
+        let found = mine.iter().copied().find(|&i| self.surfaces[i] == *s)
+            .or_else(|| mine.iter().copied().find(|&i| match common(self.regions[i],region,tol) {
+                r if (0..3).all(|k| r.0[k] <= r.1[k]) => super::ssi::same_over(&self.surfaces[i],s,super::tolerant::ON_CURVE*tol,r),
+                _ => super::ssi::same(&self.surfaces[i],s,tol),
+            }));
+        if let Some(i) = found { super::geom::widen(&mut self.regions[i],region); return i }
         self.surfaces.push(s.clone());
+        self.regions.push(region);
         mine.push(self.surfaces.len()-1);
         self.surfaces.len()-1
+    }
+    /// **Whether surfaces `i` and `j` are one** (#961): one index, or one over the part of space
+    /// the faces given each fill (`ssi::same_over`, within `ON_CURVE` tolerances) — two of two
+    /// kinds, which `index_over` keeps apart, a sheet lying in a plane. Their meeting is then
+    /// `Ssi::Same`, and a piece on a face of the one is on the other's (`boolean`'s `Surfaces::one`).
+    pub fn one(&self,i: usize,j: usize,tol: f64) -> bool {
+        if i == j { return true }
+        let shared = common(self.regions[i],self.regions[j],tol);
+        (0..3).all(|k| shared.0[k] <= shared.1[k])
+            && super::ssi::same_over(&self.surfaces[i],&self.surfaces[j],super::tolerant::ON_CURVE*tol,shared)
     }
     /// The meeting of surfaces `i` and `j` (indices), found once: the first surface of each index
     /// met with the other's, in the order asked (a closed form's curves run as the order says).
@@ -1096,7 +1128,7 @@ impl Shared {
             return m
         }
         let start = crate::util::clock::Instant::now();
-        let m = intersect(&self.surfaces[i],&self.surfaces[j],tol);
+        let m = if i != j && self.one(i,j,tol) { Ssi::Same } else { intersect(&self.surfaces[i],&self.surfaces[j],tol) };
         // the profile's count of meetings found in closed form and left to a trace (#777 V4)
         crate::util::meter::meeting(self.surfaces[i].kind(),self.surfaces[j].kind(),!matches!(m,Ssi::Traced),start.elapsed());
         self.meetings.insert((i,j),m.clone());

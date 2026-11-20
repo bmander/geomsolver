@@ -644,7 +644,22 @@ the same in one place — a point onto a vertex within `tol` (`Pool`, each verte
 farthest point merged into it stood: `topo::Vertex::tol`, which `check` reads an edge's end
 against), a vertex onto an edge and an edge onto an edge within `ON_CURVE` tolerances, a point onto
 a meeting within `on_meeting`, a flat root onto a crossing within `FLAT`, a sliver into its edge —
-applied once, in that order. A non-rational B-spline's heights over a plane are its distances from
+applied once, in that order. **A surface onto a surface** (#961, `meeting::Shared::index_over`,
+`ssi::same_over`): two faces' surfaces standing within `ON_CURVE` tolerances of each other over the
+part of space both faces' boxes hold (their edges' bounds) are one surface of the arrangement,
+whatever angle they lean apart at elsewhere — the reach at which an edge lying along another is
+that edge — and every phase asks the one index each face's surface is given (`surface_index`): the
+meetings, a flat root's given curves, and which face of another operand a piece lies on, a piece
+holding a point of such a face read on it before its place in that solid is. Read with `same`'s
+fixed `1e-12` on the angle, two faces meant on one plane and drawn through points rounded to a
+few decimals (`1e-6` to `1e-10` rad apart) were two planes whose meeting was laid along an edge
+both bound, and the complex refused them as coinciding along it, or a piece of one touched the
+other along no face (fixture 115's strips at five, seven and nine decimals);
+`brep_coincident::a_pad_leaning_a_hair_off_a_plate_is_united_with_it`,
+`flush_blocks_overlapping_in_part_are_united`, `coaxial_rods_of_one_radius_leaning_a_hair_are_united`
+and `fixture_115s_strips_unite_at_every_precision` are the gates (volumes to the closed form, either
+operand first), and `a_pad_leaning_past_the_reach_keeps_its_foot` holds a lean past the reach two
+planes. A non-rational B-spline's heights over a plane are its distances from
 it, so its reading against a plane (`query::spline_plane`) proves a run where a stretch's heights are
 enclosed within half the tolerance (`HeightsWithin`), settled as one meeting: a contact curve running
 in the plane of a torus's seam circle over a stretch read 185 roots a hair apart and was halved past
