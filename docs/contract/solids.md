@@ -683,7 +683,12 @@ placement carries inside the blank; CLI test readers zero the offset.
   the exit unchanged, since what was asked is all there: a quick look is never read as "this
   builds" when the export would refuse it
   (`shell::a_shell_not_built_is_drawn_from_its_field_and_says_why`,
-  `cli::a_picture_of_a_solid_not_built_says_so`).  The other way round (#904 A15): an exact
+  `cli::a_picture_of_a_solid_not_built_says_so`).  Where the look is to be meshed from the field
+  here and now, the line is said **before** that refinement, and not again after (#961,
+  `Sketch::field_meshed_ahead`: the `Unbuilt` the evaluation will carry, from what it asks first —
+  validation and the routes' refusals — never the mesh): the refinement is what such a look waits
+  on, and a slow one is then told from a hang with its cause known at once
+  (`refused_look::a_refused_round_is_said_before_its_field_is_meshed`).  The other way round (#904 A15): an exact
   export refused never writes the field in its place — its file is the build held to the
   tolerance, and a field's mesh is neither — but where the solid's boundary is its field's
   (`Sketch::is_swept`) an exact STL refused is followed by what writes that reading, in the core's
