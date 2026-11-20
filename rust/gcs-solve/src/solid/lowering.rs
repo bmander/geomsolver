@@ -476,7 +476,8 @@ pub fn lowered(sk: &Sketch, solid: usize) -> Option<Result<Rc<Vec<Piece>>, Strin
 /// round its fill, a boss's foot round its upright's round), as it rounds that face's own edges.
 /// A name the boundary has not is no face of it.  `None` for a region no entry recognises.
 pub fn face_names(sk: &Sketch, terms: &[crate::model::RegionTerm]) -> Option<Vec<&'static str>> {
-    recognise::recognised(sk, terms).map(|(_, section)| vec![section.face(), "far", "near", "start", "end"])
+    recognise::recognised(sk, terms)
+        .map(|(_, section)| vec![section.face(), "far", "near", "start", "end"])
 }
 
 /// How many points along each edge `seams_beside` stands a section at (and its ends).
