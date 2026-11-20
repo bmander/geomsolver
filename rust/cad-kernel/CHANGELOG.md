@@ -20,7 +20,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   to one place has no length and is dropped; a double curve is stepped adaptively, by its own
   chord's sag. Brep-bench's swept category run before and after: the 68 cases that built still
   build, each within 1e-10 in volume and area but `tumbling-torus` (3e-9, beside the 3.3e-5 it stands
-  from the volume made apart), the 23 refused still refused, none slower.
+  from the volume made apart), the 23 refused still refused. None is slower but two tori reaching
+  their refusals: the thin one 85 s to 117 s, the full turn 28 s to 35 s. The thin one's first tube
+  is entered beside its swallowtail point in fewer faces and sewn into two candidates where it was
+  one, and its trim searches three more pairs. That swallowtail point is placed only to within a
+  step of its double curve, and where it lands decides how the stretches beside it sew. Settled to
+  the tolerance it lands elsewhere again, and the full turn is refused earlier ("a ring's sheet's
+  face's pieces among its chords do not close"). That is T1d-tori's ground, not a threshold's.
 
 - **A trace of no length is no chord** (#942 F6): a ring's tube entered at an end pose leaves out
   a trace of its face's meeting with the tool whose points all stand at one place on the face's
