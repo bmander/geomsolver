@@ -17,7 +17,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   roll over which no corner of the tool moves the tolerance), `closed::room` (how far a box holding
   a sweep stands clear of it), `closed::hair` (the hair a trim reads at), and
   `rings::on_double_curve`. `rings::cut_along` takes the tolerance. A chord whose ends are snapped
-  to one place has no length and is dropped.
+  to one place has no length and is dropped; a double curve is stepped adaptively, by its own
+  chord's sag. Brep-bench's swept category run before and after: the 68 cases that built still
+  build, each within 1e-10 in volume and area but `tumbling-torus` (3e-9, beside the 3.3e-5 it stands
+  from the volume made apart), the 23 refused still refused, none slower.
 
 - **A trace of no length is no chord** (#942 F6): a ring's tube entered at an end pose leaves out
   a trace of its face's meeting with the tool whose points all stand at one place on the face's
