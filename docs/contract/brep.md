@@ -702,7 +702,33 @@ the same in one place — a point onto a vertex within `tol` (`Pool`, each verte
 farthest point merged into it stood: `topo::Vertex::tol`, which `check` reads an edge's end
 against), a vertex onto an edge and an edge onto an edge within `ON_CURVE` tolerances, a point onto
 a meeting within `on_meeting`, a flat root onto a crossing within `FLAT`, a sliver into its edge —
-applied once, in that order. A non-rational B-spline's heights over a plane are its distances from
+applied once, in that order. **A surface onto a surface** (#961, `meeting::Shared::index_over`,
+`ssi::same_over`): two faces' surfaces standing within `ON_CURVE` tolerances of each other over the
+part of space both faces' boxes hold (their edges' bounds) are one surface of the arrangement,
+whatever angle they lean apart at elsewhere — the reach at which an edge lying along another is
+that edge. `same_over` reads planes by the corners of the region, and cylinders, cones and tori as
+one turned by the lean about a point of its axis (its apex, its centre) and moved, a point within
+the region moving no farther than the lean times its distance from that point, the move and the
+difference of their sizes; a sphere has no axis, and `same` reads two by centre and radius alone.
+A surface swept or turned from a curve (`Extrusion`, `Revolution`), a blend, a sheet, an affine
+image, a family and an offset stay on `same`, parallel to `1e-12`. The face the two pieces become
+is written on the lower operand's surface (the solid's, in a body's Boolean), and the other
+operand's edges and corners laid on it stand off it by no more than the two stood apart there,
+within the reach (`brep_coincident`'s `built` holds every edge of every result to it, and the
+result to `check` at the ten tolerances `combined` checks it to). Every phase asks the one index each face's surface is given (`surface_index`): the
+meetings, a flat root's given curves, and which face of another operand a piece lies on, a piece
+holding a point of such a face read on it before its place in that solid is. Read with `same`'s
+fixed `1e-12` on the angle, two faces meant on one plane and drawn through points rounded to a
+few decimals (`1e-6` to `1e-10` rad apart) were two planes whose meeting was laid along an edge
+both bound, and the complex refused them as coinciding along it, or a piece of one touched the
+other along no face (fixture 115's strips at five, seven and nine decimals);
+`brep_coincident::a_pad_leaning_a_hair_off_a_plate_is_united_with_it`,
+`flush_blocks_overlapping_in_part_are_united`, `coaxial_rods_of_one_radius_leaning_a_hair_are_united`,
+`frustums_of_one_cone_leaning_a_hair_are_united`, `sectors_of_one_torus_leaning_a_hair_are_united`,
+`a_ball_drawn_a_few_tolerances_off_itself_is_one_ball` and
+`fixture_115s_strips_unite_at_every_precision` are the gates (volumes to the closed form, either
+operand first), and `a_pad_leaning_past_the_reach_keeps_its_foot` holds a lean past the reach two
+planes. A non-rational B-spline's heights over a plane are its distances from
 it, so its reading against a plane (`query::spline_plane`) proves a run where a stretch's heights are
 enclosed within half the tolerance (`HeightsWithin`), settled as one meeting: a contact curve running
 in the plane of a torus's seam circle over a stretch read 185 roots a hair apart and was halved past
