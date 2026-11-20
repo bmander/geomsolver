@@ -450,7 +450,24 @@ onto (`Surface::offset`'s `Offset`), held as conditions with a gradient everywhe
 (`conditions::closed_onto`): two planes through an axis, three through a centre, a plane and a
 cylinder about a torus's middle circle — the side's own turns over on the axis, and the steps
 toward it would never settle (the axis alone is exercised: no closed loop rounds with its
-centres on a sphere's centre or a torus's middle circle). `d(p, E) <= d(p, M)` with `E` on the
+centres on a sphere's centre or a torus's middle circle). **Within or outside faces whose side is
+convex toward the point, and at least a distance off them** (#962: one plane, or a smooth chain
+— `F.smooth` gone on across a seam — every face a plane or a cylinder, a sphere or a cone with
+that side inside it, every edge between them a seam or a crease convex from it,
+`Reading::bulging`): each face is its own condition, its side carried on past its patch by its
+tangent planes (`BodyFaces::carried_side_grad`, the signed distance from the convex solid the
+patch and those planes bound), so the side is their common part and a point at least `d` inside
+it is at least `d` inside each — a pocket's walls seen from its air, a boss's from its material.
+Read through the nearest face alone, a corner of the offset (an arc's offset closed onto its
+axis, a pocket's corner rounded to its own radius, or past it) is where the nearest face turns,
+and the steps never settled there. **The steps stop at the first point keeping every condition
+where every condition is convex** (`Cond::convex`: a plane's side, a face's carried side held
+toward its solid): each step's linearisation then holds the whole set, so a point of it is the
+nearest; their own fixed point is not steady where a surface curves tightly about a point far
+off — a ball's centres a hair short of closing onto a corner's axis, seen from the corner, moved
+along it by the distance over the radius times any error in where the last step stood. A QP's
+active rows are chosen among every inequality, not the first ten (`project`).
+`tests/tight_corners.rs` is the gate. `d(p, E) <= d(p, M)` with `E` on the
 patches of the faces `M` is on the surfaces of is read as `d(p, E) − d(p, rest)` (`Rest`: `M`'s
 nearest point when off `E`, and where `E`'s run ends), the same points with a negative inside.
 `ends` is `max σ·side` over the faces at each end of the run (σ the side it runs on), a face

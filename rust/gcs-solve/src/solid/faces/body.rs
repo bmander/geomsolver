@@ -482,6 +482,35 @@ impl BodyFaces {
         if f.reversed { (-s, scale(g, -1.0)) } else { (s, g) }
     }
 
+    /// Face `fi`'s side carried on past its patch by its tangent planes, and its gradient at `p`
+    /// (model units): its surface's signed distance where `p`'s foot on it lies on the face, else
+    /// the signed distance from the plane tangent to the surface at the point of the face's edges
+    /// nearest `p`.  Where the face bulges toward a side (a plane, or a cylinder, a sphere or a cone
+    /// with that side inside it), this is the signed distance from the convex solid its patch and
+    /// those planes bound on that side — so past a seam where it goes on tangent into a face like
+    /// it, the next face's own side, and over a smooth chain of them their sides together say the
+    /// chain's (`Reading::bulging`).
+    pub fn carried_side_grad(&self, fi: usize, p: V) -> (f64, V) {
+        let q = self.q(p);
+        let f = &self.loc.b.faces[fi];
+        // a plane's tangent planes are itself
+        if matches!(f.surface, crate::brep::geom::Surface::Plane(_)) {
+            return self.side_grad(fi, p);
+        }
+        let foot = f.surface.point(f.surface.inverse(q));
+        if self.loc.face_place(fi, foot) != Place::Out {
+            return self.side_grad(fi, p);
+        }
+        let Some((at, _)) = self.edges[fi].iter().map(|&e| {
+            let (t, d) = self.loc.nearest(e, q);
+            (self.loc.b.edges[e as usize].point(t, &self.loc.b.vertices), d)
+        }).min_by(|a, b| a.1.total_cmp(&b.1)) else {
+            return self.side_grad(fi, p);
+        };
+        let n = self.outward(fi, at);
+        (dot(n, sub(q, at)) / self.mm, n)
+    }
+
     /// The vertices three groups of faces share: where a face of each meets, with the faces of
     /// each group standing there (model units).
     pub fn vertices_among(&self, groups: &[&[usize]]) -> Vec<(V, Vec<Vec<usize>>)> {
@@ -1037,5 +1066,48 @@ impl Reading {
             }
         }
         Some(pieces)
+    }
+
+    /// Where the faces are a smooth chain (`F.smooth` gone on across a seam) bulging toward the
+    /// side read — within them, or (`beyond`) outside them: every face a plane, or a cylinder, a
+    /// sphere or a cone with that side inside it, and every edge between two of them a seam or a
+    /// crease convex from that side — the faces, each read by its side carried on past its patch by
+    /// its tangent planes (`BodyFaces::carried_side_grad`).  That side is then the common part of
+    /// each face's carried side, each convex, and a point at least `d` inside it is at least `d`
+    /// inside each, so either condition holds face by face.  Read through the nearest face alone,
+    /// a corner of the chain's offset — where an arc's offset closes onto its axis, a ball as wide
+    /// as a pocket's corner, or has passed it, a wider one standing against both walls — is where
+    /// the nearest face turns from one to another, and a projection onto it with it, never
+    /// settling there.  `None` where the faces are one surface's, go on across no seam, meet
+    /// otherwise, or lie on several shells.
+    pub fn bulging(&self, beyond: bool) -> Option<Vec<usize>> {
+        let (shell, _) = self.body.shells();
+        if !self.smooth || self.faces.len() < 2
+            || self.faces.iter().any(|&fi| shell[fi] != shell[self.faces[0]]) {
+            return None;
+        }
+        let mut seams = false;
+        for &fi in &self.faces {
+            // the side read within the face's surface's solid (a plane's half-space either way)
+            match self.body.level(fi, 0.0)? {
+                Level::Bound(Bound::Half { .. }, _) => {}
+                Level::Bound(Bound::Cylinder { .. } | Bound::Ball { .. } | Bound::Cone { .. }, within)
+                    if within != beyond => {}
+                _ => return None,
+            }
+            for &e in &self.body.edges[fi] {
+                let [x, y] = *self.body.faces_of(e) else { continue };
+                let other = if x == fi { y } else { x };
+                if other == fi || !self.faces.contains(&other) {
+                    continue;
+                }
+                if self.body.seam(e) {
+                    seams = true;
+                } else if self.body.convex(e) != Some(!beyond) {
+                    return None;
+                }
+            }
+        }
+        seams.then(|| self.faces.clone())
     }
 }
