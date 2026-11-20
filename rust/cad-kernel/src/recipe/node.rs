@@ -405,7 +405,9 @@ impl Lowered {
             };
             Ok(crate::spill::Beyond {face,toward:point(b,"toward")?,chain:surface(field(b,"chain")?)?,
                 wall:surface(field(b,"wall")?)?,sides:[sides[0].as_f64(),sides[1].as_f64()],seam,section,
-                ends:[vec3(&ends[0]),vec3(&ends[1])]})
+                ends:[vec3(&ends[0]),vec3(&ends[1])],
+                // the whole length of an edge beside a seam along it (#962): the planes it is kept behind
+                run:b.get("run").map(|r| each(r.arr(),|h| Ok((point(h,"at")?,point(h,"normal")?)))).transpose()?})
         })?;
         Ok(Lowered {pieces,corners,rolled,joins,stratum:n.get("stratum").map(Body::read).transpose()?,beyond})
     }

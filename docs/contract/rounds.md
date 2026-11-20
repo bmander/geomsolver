@@ -202,10 +202,34 @@ there a point's distance from either face is its distance from the seam, so the 
   (`fillet::roll_across`, its band let cross the tangent seam) with the stretch between the planes
   of its arc where it touches the seam cut away (`Rolled::wedge`), and the ball rolled against the
   next face there, glued at both.
+- **along a straight edge beside a seam along it into a face no line along the edge turns about**
+  (#962, fixture 126's feet: a foot or a rib standing against a drafted side by its rounded corner,
+  the side's plane going on into the corner's cone along a generator, its side drawn to — or a
+  little short of — the tangent line the drawing dimensions; `piece::along_beyond`,
+  `Piece::Along`): in the plane every distance is the same along the edge, so the section reaches
+  across the seam the edge's whole length or nowhere, and the piece beyond runs the whole of it
+  (`Beyond::run`). A round's ball touches the next face past the seam's normal plane all the way:
+  the piece is that ball rolled against it, the plane's strip from the edge to the seam and the
+  next face's from the seam to the touch, its caps in the planes of the ball's arc
+  (`spill::round_beyond`). A flat changes face on the seam's normal plane all the way: the edge's
+  own run, the corner of its two faces, kept within that plane, and beyond it a tube of the next
+  face's strip, the flat fitted and the normal plane, capped square to the edge
+  (`spill::flat_beyond`), glued to the run there (`Partner::Run`, #423). Either is carried past
+  the edge's ends until its whole section lies past each plane the run ends on there and square to
+  the edge where it is carried to, as a run's prism is, and cut off by them (`spill::carried_past`;
+  a plane where an edge a run-out goes along ends cuts it without carrying it): the casting's
+  floor, the foot's top, a pocket's floor turning back over a side leaning in, which ends it
+  square (#952). `rounds/foot.sv`; `tests/composed_rounds.rs`: the foot's fill, rounded 5 and 2.5
+  with its side 2 short of the seam and rounded 5 with it 3.7 µm short, mirrored and turned to the
+  other corner and side, against a quadrature of `std.rounds.Fill`'s words to 1e-6, chamfered to
+  `FlatFill`'s to 1e-8; a pocket's rim rounded and chamfered within the casting, its floor ending
+  it square, to the same bars; the foot rounded all round, its other edges' prisms in closed form,
+  to 1e-6; a ball short of the seam the side's prism, to 1e-9.
 
 `brep::spill` has **one section model** (#425): every piece beyond is read along the meeting of
 the face it stands on and the wall, in the planes square to it — a ring's circle a meeting like
-any other, whose square planes are the half-planes through its axis. Its edges are the meetings
+any other, whose square planes are the half-planes through its axis, a straight edge's whole
+length (#962) the same line between other ends. Its edges are the meetings
 `ssi::intersect` gives in closed form wherever it gives one through their ends (a ring's crease
 its circle, a slope's an ellipse; a round cap's edge down the wall a line where its plane holds a
 cylinder's or a cone's axis, an ellipse where it cuts a cylinder aslant, a circle on a sphere),
@@ -226,13 +250,17 @@ The recipe's `"beyond"` (after the rolled runs in a lowered node's joins): the e
 `"along"` (the `"face"` it stands on, meeting the wall in that edge), `"toward"`, the
 `"chain"`'s face and the `"wall"` with their `"sides"`, the `"seam"` (a circle or a line), a flat's
 `"legs"` and `"split"` surface or a round's `"radius"` alone (which of the two is read by the key),
-and the `"ends"`; a rolled run's `"kept"` and `"wedge"`; all
+and the `"ends"` — along the whole length of an edge (#962) the edge's ends, with the half-spaces
+its `"run"` is kept within there, `"at"` and `"normal"` as a prism's `"within"`; a rolled run's
+`"kept"` and `"wedge"`; all
 written through the node's `Writer`, so `cad::recipe_about` carries them. **A piece beyond is held
-by the piece it is made with** (#423: `Ring::beyond`, `Rolled::beyond`), never a `Piece` of its
-own: `assemble` keeps it with its partner, drops it with its partner where another region names the
-same edge (two regions naming one edge in either order still make one pair, as `canonical` needs),
-and copies that join — no rule of geometry pairs them, so two runs kept short of one seam's normal
-surface are each glued to their own. `boolean::glued` glues on
+by the piece it is made with** (#423: `Ring::beyond`, `Rolled::beyond`, the run of
+`Piece::Along`), never a `Piece` of its own: `assemble` keeps it with its partner, drops it with
+its partner where another region names the same edge (two regions naming one edge in either order
+still make one pair, as `canonical` needs), and copies that join — no rule of geometry pairs them,
+so two runs kept short of one seam's normal surface are each glued to their own.  A round's piece
+the whole length of an edge (#962) has no partner: it is all the region is there, kept once
+however many regions name the edge (`Beyond::same`). `boolean::glued` glues on
 a curved face too, an edge matched by a point of it on the other's (a traced meeting and a fitted
 one). It is symmetric in its two pieces (#424): the shared faces' boundaries are paired run by run
 between the vertices both have, each side's edges lying along the other's, and each side cut where
@@ -250,7 +278,10 @@ no plane, into a face no cylinder along a straight seam nor torus about the plan
 beside a wall neither a plane, a cylinder, a cone nor a sphere; off the seam's axis, round a stretch
 of a circle, where the edge or the wall's strip crosses the seam's normal surface or the leg
 crosses no seam; along a traced edge, where the run crosses the seam's normal surface or its
-footprint crosses the seam other than twice. The gate holds every one to the
+footprint crosses the seam other than twice; beside a seam along a straight edge into a face no
+line along the edge turns about (#962), past that face (a chain of more than one face into it),
+from a face no plane, beside or into a face neither a plane, a cylinder, a cone nor a sphere, or
+where its run ends on a curved face. The gate holds every one to the
 field as ever. `tests/composed_rounds.rs` is the gate (each against a closed form or a quadrature
 of the set's own words: `spill.sv` at every boss radius from 21 to 21.7, chamfered and rounded, to
 1e-6, and its volume to the field's mesh within the mesh's own stand-off; the straight, coaxial and

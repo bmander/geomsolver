@@ -703,6 +703,7 @@ fn beyond_of(body: &crate::solid::faces::BodyFaces, chained: &Chained, w: usize,
             Section::Round(radius) => Across::Round { radius },
         },
         ends,
+        run: None,
     })
 }
 
@@ -744,11 +745,21 @@ fn run_piece(body: &crate::solid::faces::BodyFaces, [p0, p1]: [V; 2], fa: usize,
             .collect::<Result<Vec<Next>, String>>()?;
         super::chain::cut_chain(p0, along, traces, (c, &next), within, section)
     };
+    // a seam along the edge into a face no plane nor cylinder along it (#962): the section in the
+    // planes square to the edge is no prism's, and the piece beyond the seam runs the edge's whole
+    // length; the edge's own run, a flat's, is the corner of its two faces kept short of the seam's
+    // normal plane
+    let spread = match chain {
+        Some((c, (s, g))) if trace(g, s).is_err() => {
+            Some(along_beyond(body, [p0, p1], [fa, fb], c, (s, g), within, section)?)
+        }
+        _ => None,
+    };
     // the chain from the edge's face on, each further seam along the edge
     let mut run = match chain {
-        None => against(0, &[])?.0,
-        Some((c, first)) => chain_from(body, [fa, fb][c], first, |seams| against(c, seams),
+        Some((c, first)) if spread.is_none() => chain_from(body, [fa, fb][c], first, |seams| against(c, seams),
             |across| seam_along(body, across, p0, along, length))?.1,
+        _ => against(0, &[])?.0,
     };
     let outline = run.section_hull();
     run.span = [0.0, length];
@@ -821,11 +832,124 @@ fn run_piece(body: &crate::solid::faces::BodyFaces, [p0, p1]: [V; 2], fa: usize,
             }
         }
     }
+    // the piece beyond a seam along the edge (#962): carried past each end and cut off by every
+    // plane the run is (a curved end refused), the edge's own run a flat's alone, kept short of the
+    // seam's normal plane
+    if let Some(mut beyond) = spread {
+        if !run.kept.is_empty() {
+            return Err(spilled("beside a seam along a straight edge into a face no cylinder along it, its run ending on a \
+                curved face").into());
+        }
+        beyond.run = Some(halves.clone());
+        let split = match beyond.section {
+            Across::Round { .. } => return Ok(Piece::Along { run: None, beyond }),
+            Across::Flat { split: Surf::Plane { origin, normal }, .. } => (normal, dot(normal, origin)),
+            Across::Flat { .. } => unreachable!("a straight seam's normal surface is a plane"),
+        };
+        let hull = run.hull();
+        run.within = halves.into_iter()
+            .filter(|&(n, d)| hull.iter().any(|&p| dot(n, p) > d + 1e-9 * (1.0 + length))).collect();
+        run.within.push(split);
+        return Ok(Piece::Along { run: Some(run), beyond });
+    }
     // only those reaching into the prism: a square end is the prism's own
     let hull = run.hull();
     run.within = halves.into_iter()
         .filter(|&(n, d)| hull.iter().any(|&p| dot(n, p) > d + 1e-9 * (1.0 + length))).collect();
     Ok(Piece::Run(run))
+}
+
+/// **The piece beyond a seam along a straight edge, the edge's whole length** (#962): the edge from
+/// `p0` to `p1` between `faces`, face `c` a plane going on tangent across the seam through `s` (its
+/// point in the section through `p0`, a line along the edge) into face `g`, which no line along the
+/// edge turns about — a drafted side's plane going on into its rounded corner's cone, a foot standing
+/// against the side beside the corner.  Every distance in the plane is the same along the edge, so
+/// the section reaches across the seam all along it or nowhere: a round's ball touches `g` beyond
+/// the seam's normal plane (the plane through the seam along the face's normal) the whole way, and
+/// a flat changes face on that plane the whole way.  Refused by name where the section reaches
+/// past `g`, or where `g`'s or the wall's surface is none the kernel offsets.  Its `run` (the planes
+/// it is cut off by) the caller's.
+#[allow(clippy::too_many_arguments)]
+fn along_beyond(body: &crate::solid::faces::BodyFaces, [p0, p1]: [V; 2], faces: [usize; 2], c: usize,
+    (s, g): (V, usize), within: bool, section: Section) -> Result<Beyond, String> {
+    let along = normalised(sub(p1, p0)).ok_or("an edge of no length")?;
+    let w = faces[1 - c];
+    let Some((n, _)) = body.plane(faces[c]) else { return Err(spilled("from a face no plane")) };
+    let wall = Surf::of(body, w)
+        .ok_or_else(|| spilled("beside a face neither a plane, a cylinder, a cone nor a sphere"))?;
+    let chain = Surf::of(body, g)
+        .ok_or_else(|| spilled("into a face neither a plane, a cylinder, a cone nor a sphere"))?;
+    // the seam's normal plane, negative on the edge's side
+    let m = normalised(cross(along, n)).ok_or("a seam along the plane's normal")?;
+    let m = if dot(m, sub(p0, s)) > 0.0 { scale(m, -1.0) } else { m };
+    let split = Surf::Plane { origin: s, normal: m };
+    // where the section reaches on the next face, along the edge (short of its ends, where the face
+    // may end with it): on it, past the seam's normal plane
+    let mid = scale(add(p0, p1), 0.5);
+    for k in [0.25, 0.5, 0.75] {
+        let q = add(p0, scale(sub(p1, p0), k));
+        let (reach, centre) = reach_on(body, g, w, q, along, n, within, section, c)
+            .ok_or_else(|| spilled("beside a seam along a straight edge, where it touches the next face nowhere"))?;
+        if onto(body, faces[c], g, reach)?.is_some() {
+            return Err(spilled("past the face it goes on into beside a seam along a straight edge (a chain of more than \
+                one face into a face no cylinder along it)"));
+        }
+        if split.side(centre.unwrap_or(reach)) <= 0.0 {
+            return Err(unbuilt("a section beside a seam along its edge reaching the next face short of the seam's normal \
+                plane"));
+        }
+    }
+    let size = section.size();
+    let at_seam = add(s, scale(along, dot(sub(mid, s), along)));
+    let orient = |fi: usize, sf: &Surf, q: V| toward_region(body, fi, sf, q, within, size);
+    Ok(Beyond {
+        face: Surf::Plane { origin: p0, normal: n }, toward: toward(n, within), chain, wall,
+        sides: [orient(g, &chain, at_seam), orient(w, &wall, mid)], seam: Seam::Line(s, along),
+        section: match section {
+            Section::Flat { la, lb } => Across::Flat { legs: if c == 0 { [la, lb] } else { [lb, la] }, split },
+            Section::Round(radius) => Across::Round { radius },
+        },
+        ends: [p0, p1],
+        run: None,
+    })
+}
+
+/// Where the section beside the edge at its point `q` reaches on face `g` going on from the edge's
+/// face `c` (`n` its plane's normal) across a seam along the edge, against the other face `w`, in
+/// the plane through `q` square to `along`: a flat's leg on `g` from `w`'s surface; a round's
+/// touch on `g`, with its ball's centre `r` from both surfaces — on the region's side of each
+/// (`within`), by Newton's steps (none where they find none).
+#[allow(clippy::too_many_arguments)]
+fn reach_on(body: &crate::solid::faces::BodyFaces, g: usize, w: usize, q: V, along: V, n: V, within: bool,
+    section: Section, c: usize) -> Option<(V, Option<V>)> {
+    let want = if within { -1.0 } else { 1.0 };
+    let (into_k, into_o) = (toward(n, within), toward(body.normal(w, q), within));
+    let size = section.size();
+    let settled = |at: &[(V, f64); 3]| at.iter().all(|(_, m)| m.abs() <= 1e-12 * (size + norm(q)));
+    let square = (along, dot(along, q));
+    match section {
+        Section::Flat { la, lb } => {
+            let l = if c == 0 { la } else { lb };
+            let way = normalised(sub(into_o, scale(n, dot(into_o, n))))?;
+            let start = add(q, scale(way, l / dot(way, into_o).max(0.1)));
+            let leg = crate::roots::newton_onto::<3>(start, size, |x| {
+                let (sg, gg) = body.side_grad(g, x);
+                let (sw, gw) = body.side_grad(w, x);
+                Some([(gg, sg), (gw, sw - want * l), (square.0, dot(square.0, x) - square.1)])
+            }, settled)?;
+            Some((leg, None))
+        }
+        Section::Round(r) => {
+            let start = crate::brep::fillet::across(q, [into_k, into_o], r);
+            let centre = crate::roots::newton_onto::<3>(start, size, |x| {
+                let (sg, gg) = body.side_grad(g, x);
+                let (sw, gw) = body.side_grad(w, x);
+                Some([(gg, sg - want * r), (gw, sw - want * r), (square.0, dot(square.0, x) - square.1)])
+            }, settled)?;
+            let (sg, gg) = body.side_grad(g, centre);
+            Some((sub(centre, scale(gg, sg)), Some(centre)))
+        }
+    }
 }
 
 /// Which of an edge's two faces goes on across a seam its section reaches, and what it reads of it
