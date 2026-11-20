@@ -71,7 +71,8 @@ pub enum Kind {
     /// A recipe of another kind than a route builds (`recipe::Recipe::meridian`,
     /// `section::Sectioned`): its caller builds it another way.
     Refused,
-    /// A recipe this kernel cannot read (`recipe::Recipe::read`).
+    /// A recipe node this kernel cannot build as written: a sewn piece's net that is no B-spline
+    /// (`recipe::Node::built`).
     Recipe,
     /// Anything else this kernel could not do.
     Failed,

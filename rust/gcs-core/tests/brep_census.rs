@@ -3,7 +3,7 @@
 //! and every Boolean whose operands share a surface — a flush bore, a boss `on` its stock, a mate,
 //! coaxial cylinders of one radius. A report, ignored:
 //! `cargo test brep_census -- --ignored --nocapture`.
-use gcs_core::json::Json;
+use gcs_core::brep::recipe::{Node,Section,Stroke};
 use gcs_core::model::Sketch;
 use std::collections::BTreeMap;
 
@@ -15,7 +15,11 @@ fn norm(a: V) -> f64 { dot(a, a).sqrt() }
 fn unit(a: V) -> V { let n = norm(a); [a[0] / n, a[1] / n, a[2] / n] }
 fn scale(a: V, s: f64) -> V { [a[0] * s, a[1] * s, a[2] * s] }
 fn add(a: V, b: V) -> V { [a[0] + b[0], a[1] + b[1], a[2] + b[2]] }
-fn vec3(j: &Json) -> V { let a = j.arr(); [a[0].as_f64(), a[1].as_f64(), a[2].as_f64()] }
+/// An edge's kind, as a recipe names it.
+fn stroke_kind(s: &Stroke) -> &'static str {
+    match s { Stroke::Line { .. } => "line", Stroke::Circle { .. } => "circle", Stroke::BSpline { .. } => "bspline",
+        Stroke::Trochoid { .. } => "trochoid" }
+}
 
 /// An analytic surface an operand's boundary lies on.
 #[derive(Clone, Debug)]
@@ -73,24 +77,22 @@ impl Surf {
 }
 
 /// The surfaces of a profile swept along its normal (`from`/`to` known or not).
-fn prism(profile: &Json, extent: Option<(f64, f64)>, out: &mut Vec<Surf>, edges: &mut BTreeMap<String, usize>) {
-    let n = unit(vec3(profile.get("normal").unwrap()));
-    let o = vec3(profile.get("origin").unwrap());
-    for l in profile.get("loops").unwrap().arr() {
-        for e in l.arr() {
-            match e.get("kind").unwrap().as_str() {
-                "line" => {
+fn prism(profile: &Section, extent: Option<(f64, f64)>, out: &mut Vec<Surf>, edges: &mut BTreeMap<String, usize>) {
+    let n = unit(profile.normal);
+    let o = profile.origin;
+    for l in &profile.loops {
+        for e in l {
+            match e.shape {
+                Stroke::Line { start: s, end: t } => {
                     *edges.entry("line".into()).or_default() += 1;
-                    let (s, t) = (vec3(e.get("start").unwrap()), vec3(e.get("end").unwrap()));
                     let side = unit(cross(sub(t, s), n));
                     out.push(Surf::Plane { n: side, d: dot(side, s) });
                 }
-                "circle" => {
-                    *edges.entry(if e.get("angles").is_some() { "arc" } else { "circle" }.into()).or_default() += 1;
-                    out.push(Surf::Cylinder { p: vec3(e.get("center").unwrap()), a: n,
-                        r: e.get("radius").unwrap().as_f64() });
+                Stroke::Circle { center, radius, angles, .. } => {
+                    *edges.entry(if angles.is_some() { "arc" } else { "circle" }.into()).or_default() += 1;
+                    out.push(Surf::Cylinder { p: center, a: n, r: radius });
                 }
-                k => panic!("{k} := edge"),
+                ref k => panic!("{} := edge", stroke_kind(k)),
             }
         }
     }
@@ -101,18 +103,15 @@ fn prism(profile: &Json, extent: Option<(f64, f64)>, out: &mut Vec<Surf>, edges:
 }
 
 /// The surfaces of a profile turned about an axis in its plane.
-fn revolve(node: &Json, out: &mut Vec<Surf>, edges: &mut BTreeMap<String, usize>) {
-    let profile = node.get("profile").unwrap();
-    let o = vec3(node.get("origin").unwrap());
-    let a = unit(vec3(node.get("axis").unwrap()));
-    let angle = node.get("angle").unwrap().as_f64();
+fn revolve(profile: &Section, o: V, axis: V, angle: f64, out: &mut Vec<Surf>, edges: &mut BTreeMap<String, usize>) {
+    let a = unit(axis);
     let rz = |p: V| { let z = dot(sub(p, o), a); (norm(sub(sub(p, o), scale(a, z))), z) };
     const EPS: f64 = 1e-9;
-    for l in profile.get("loops").unwrap().arr() {
-        for e in l.arr() {
-            match e.get("kind").unwrap().as_str() {
-                "line" => {
-                    let ((r0, z0), (r1, z1)) = (rz(vec3(e.get("start").unwrap())), rz(vec3(e.get("end").unwrap())));
+    for l in &profile.loops {
+        for e in l {
+            match e.shape {
+                Stroke::Line { start, end } => {
+                    let ((r0, z0), (r1, z1)) = (rz(start), rz(end));
                     if (r0 - r1).abs() < EPS && r0 < EPS {
                         *edges.entry("line on the axis".into()).or_default() += 1;
                     } else if (z0 - z1).abs() < EPS {
@@ -128,10 +127,8 @@ fn revolve(node: &Json, out: &mut Vec<Surf>, edges: &mut BTreeMap<String, usize>
                             half: ((r1 - r0) / (z1 - z0)).abs().atan() });
                     }
                 }
-                "circle" => {
-                    let c = vec3(e.get("center").unwrap());
+                Stroke::Circle { center: c, radius: r, .. } => {
                     let (rc, zc) = rz(c);
-                    let r = e.get("radius").unwrap().as_f64();
                     if rc < EPS {
                         *edges.entry("arc centred on the axis".into()).or_default() += 1;
                         out.push(Surf::Sphere { c, r });
@@ -140,7 +137,7 @@ fn revolve(node: &Json, out: &mut Vec<Surf>, edges: &mut BTreeMap<String, usize>
                         out.push(Surf::Torus { c: add(o, scale(a, zc)), a, major: rc, minor: r });
                     }
                 }
-                k => panic!("{k} := edge"),
+                ref k => panic!("{} := edge", stroke_kind(k)),
             }
         }
     }
@@ -185,26 +182,24 @@ fn brep_census() {
             built += 1;
             // every node's surfaces, operands' by id
             let mut surfs: BTreeMap<i64, Vec<Surf>> = BTreeMap::new();
-            for node in recipe.get("nodes").unwrap().arr() {
-                let id = node.get("id").unwrap().as_i64();
-                let kind = node.get("kind").unwrap().as_str().to_string();
-                *nodes.entry(kind.clone()).or_default() += 1;
+            for named in &recipe.nodes {
+                let id = named.id;
+                let kind = named.node.kind();
+                *nodes.entry(kind.to_string()).or_default() += 1;
                 let mut out = Vec::new();
-                match kind.as_str() {
-                    "prism" => prism(node.get("profile").unwrap(), Some((node.get("from").unwrap().as_f64(),
-                        node.get("to").unwrap().as_f64())), &mut out, &mut edges),
-                    "through" => prism(node.get("profile").unwrap(), None, &mut out, &mut edges),
-                    "revolve" => revolve(node, &mut out, &mut edges),
-                    "placed" => {
-                        let m: Vec<f64> = node.get("matrix").unwrap().arr().iter().map(Json::as_f64).collect();
-                        out = surfs[&node.get("source").unwrap().as_i64()].iter().map(|s| s.moved(&m)).collect();
+                match &named.node {
+                    Node::Prism { profile, from, to, .. } => prism(profile, Some((*from, *to)), &mut out, &mut edges),
+                    Node::Through { profile, .. } => prism(profile, None, &mut out, &mut edges),
+                    Node::Revolve { profile, origin, axis, angle } => revolve(profile, *origin, *axis, *angle, &mut out, &mut edges),
+                    Node::Placed { source, matrix } => {
+                        out = surfs[source].iter().map(|s| s.moved(matrix)).collect();
                     }
-                    "body" => {
-                        let stock = node.get("stock").unwrap().as_i64();
+                    Node::Body(body) => {
+                        let stock = body.stock;
                         out = surfs[&stock].clone();
                         let mut operands = vec![("stock", stock)];
-                        for op in ["on", "cut", "bound"] {
-                            for x in node.get(op).unwrap().arr() { operands.push((op, x.as_i64())); }
+                        for (op, list) in [("on", &body.on), ("cut", &body.cut), ("bound", &body.bound)] {
+                            for &x in list { operands.push((op, x)); }
                         }
                         for (i, &(op, x)) in operands.iter().enumerate().skip(1) {
                             // the operand's surfaces against everything before it
@@ -223,13 +218,13 @@ fn brep_census() {
                                 if let Some(t) = before.iter().find(|t| s.same(t, 1e-6)) {
                                     let _ = t;
                                     shared.entry(format!("{op}: {}", s.kind())).or_default()
-                                        .push(format!("{name}: {}", node.get("name").unwrap().as_str()));
+                                        .push(format!("{name}: {}", named.name));
                                 }
                             }
                             out.extend(mine.iter().cloned());
                         }
                     }
-                    k => panic!("node {k}"),
+                    _ => panic!("node {kind}"),
                 }
                 for s in &out { if kind != "body" && kind != "placed" { *kinds.entry(s.kind().into()).or_default() += 1; } }
                 surfs.insert(id, out);
@@ -298,21 +293,20 @@ fn brep_body_debug() {
         }
     };
     let mut built: std::collections::BTreeMap<i64,Brep> = Default::default();
-    let names: std::collections::BTreeMap<i64,String> = r.get("nodes").unwrap().arr().iter()
-        .map(|n| (n.get("id").unwrap().as_i64(),n.get("name").unwrap().as_str().to_string())).collect();
-    for n in r.get("nodes").unwrap().arr() {
-        let id = n.get("id").unwrap().as_i64();
-        if n.get("kind").unwrap().as_str() != "body" {
-            let b = gcs_core::brep::recipe::node(n,&built).unwrap();
-            if id == r.get("root").unwrap().as_i64() { report(&b); }
+    let names: std::collections::BTreeMap<i64,String> = r.nodes.iter().map(|n| (n.id,n.name.clone())).collect();
+    for n in &r.nodes {
+        let id = n.id;
+        let Node::Body(body) = &n.node else {
+            let b = gcs_core::brep::recipe::node(&n.node,&built).unwrap();
+            if id == r.root { report(&b); }
             built.insert(id,b);
             continue
-        }
-        let mut solid = built[&n.get("stock").unwrap().as_i64()].clone();
-        for (key,op) in [("on",Op::Union),("cut",Op::Cut),("bound",Op::Common)] {
-            for x in n.get(key).unwrap().arr() {
-                let operand = &built[&x.as_i64()];
-                eprintln!("{} {key} `{}`",names[&id],names[&x.as_i64()]);
+        };
+        let mut solid = built[&body.stock].clone();
+        for (key,op,list) in [("on",Op::Union,&body.on),("cut",Op::Cut,&body.cut),("bound",Op::Common,&body.bound)] {
+            for x in list {
+                let operand = &built[x];
+                eprintln!("{} {key} `{}`",names[&id],names[x]);
                 let tol = 1e-9*solid.size().max(operand.size());
                 let next = match boolean(&solid,operand,op,tol) {
                     Ok(b) => b,

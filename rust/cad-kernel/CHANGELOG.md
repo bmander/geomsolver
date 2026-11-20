@@ -8,6 +8,16 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The recipe is typed values, never JSON** (`recipe::Recipe`, `recipe::Node`): a writer builds
+  the nodes itself and the kernel builds them as they are, with no text written and read back.
+  `recipe::build`, `recipe::node` and `recipe::node_named` take a `&Recipe` or a `&Node`;
+  `Recipe::read`, `Node::read`, `Section::read`, `Sectioned::read` and `Profile::from_json` are
+  gone (`Sectioned::of`, `Profile::of`); `Profile::to_json` is `Profile::section`; `Writer`'s
+  methods return numbers, not JSON, and `Writer::at` and `Writer::triple` are gone (`moved`);
+  `cubic::bspline_edge` returns a `recipe::Stroke` and drops the fit it never wrote anywhere read;
+  `swept::region::profiles` returns `recipe::Section`s.  `Recipe` and `Body` are `Default`.  A sewn
+  piece's net is checked where it is built (`Kind::Recipe`).  **Breaking.**
+
 ## [0.19.0] - 2026-11-20
 
 - **A half-space bounded by the material it is kept with** (`recipe::Node::Half`, #953): the block

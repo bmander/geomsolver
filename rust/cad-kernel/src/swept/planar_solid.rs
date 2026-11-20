@@ -88,7 +88,7 @@ pub fn swept(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> R
         }
         if region.loops.is_empty() { return Err(Unbuilt::Failed(format!("the tool's section at height {h:.6} sweeps no region"))) }
         for profile in profiles(&region,1.,FIT*tol,"the sweep")? {
-            solids.push(prism(&Profile::from_json(&profile)?,h0,h1)?);
+            solids.push(prism(&Profile::of(&profile)?,h0,h1)?);
         }
         held.extend([bounds[0],bounds[1]].iter().flat_map(|&p| [plane.world(p,h0),plane.world(p,h1)]));
     }

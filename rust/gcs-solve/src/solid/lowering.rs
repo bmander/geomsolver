@@ -48,7 +48,6 @@
 //! left unioned (two runs crossing at a corner whose third edge stays sharp: a mitre).
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use crate::json::{object, Json};
 use crate::model::{Sketch, SolidDef};
 use crate::space::{add, cross, distance, dot, norm, normalised, scale, sub};
 use piece::toward;
@@ -710,38 +709,28 @@ pub(crate) struct Gated {
 }
 
 /// A lowered node's text up to the order it lists things in: its pieces, its corners (each's
-/// faces sorted), its rolled runs, and its joins, each as the pair of what it joins.
-fn canonical(node: &Json) -> String {
-    let dump = |j: &Json| j.dump(None);
-    let corner = |c: &Json| {
-        let mut faces = c.get("faces").map_or(&[][..], Json::arr).to_vec();
-        faces.sort_by_cached_key(dump);
+/// faces sorted), its rolled runs, and its joins, each as the pair of what it joins — every item
+/// said by its `Debug` text, which writes each number so it reads back exactly.
+fn canonical(node: &crate::brep::recipe::Lowered) -> String {
+    let said = |x: &dyn std::fmt::Debug| format!("{x:?}");
+    let corner = |c: &crate::brep::recipe::Corner| {
         let mut c = c.clone();
-        c.set("faces", Json::Arr(faces));
-        c.dump(None)
+        c.faces.sort_by_cached_key(|f| said(f));
+        said(&c)
     };
     // in the order joins count them: runs and rings, then corners, then rolled runs, then the
     // pieces beyond a seam's normal surface
-    let listed = |key: &str| node.get(key).map_or(&[][..], Json::arr);
-    let each: Vec<String> = listed("pieces").iter().map(dump).chain(listed("corners").iter().map(corner))
-        .chain(listed("rolled").iter().map(dump)).chain(listed("beyond").iter().map(dump)).collect();
-    let mut joins: Vec<[&str; 2]> = listed("joins").iter().map(|j| {
-        let at = |k: usize| j.arr().get(k).map_or(usize::MAX, |i| i.as_i64() as usize);
-        let mut pair = [0, 1].map(|k| each.get(at(k)).map_or("", String::as_str));
+    let each: Vec<String> = node.pieces.iter().map(|p| said(p)).chain(node.corners.iter().map(corner))
+        .chain(node.rolled.iter().map(|r| said(r))).chain(node.beyond.iter().map(|b| said(b))).collect();
+    let mut joins: Vec<[&str; 2]> = node.joins.iter().map(|j| {
+        let mut pair = j.map(|k| each.get(k).map_or("", String::as_str));
         pair.sort();
         pair
     }).collect();
     joins.sort();
     let mut sorted: Vec<&str> = each.iter().map(String::as_str).collect();
     sorted.sort();
-    let mut out = object([
-        ("each", Json::Arr(sorted.into_iter().map(|t| Json::Str(t.into())).collect())),
-        ("joins", Json::Arr(joins.into_iter().map(|p| Json::Arr(p.map(|t| Json::Str(t.into())).to_vec())).collect())),
-    ]);
-    if let Some(stratum) = node.get("stratum") {
-        out.set("stratum", stratum.clone());
-    }
-    out.dump(None)
+    format!("{sorted:?} {joins:?} {:?}", node.stratum)
 }
 
 /// How many constructions `Caches::gated` keeps, the latest asked: enough for the orders of a
@@ -767,11 +756,11 @@ fn gated(sk: &Sketch, pieces: &[Piece], body: &std::sync::Arc<super::faces::Body
     let (writer, mm) =
         if rolled { (Writer::about(by, scale(origin, by)), Some(by)) } else { (Writer::world(1.0), None) };
     let mut node = assemble(pieces).node(&writer)?;
+    let crate::brep::recipe::Node::Lowered(lowered) = &mut node else { unreachable!("an assembly is a lowered node") };
     if rolled {
-        node.set("stratum", object([("kind", "body".into()), ("stock", 0.into()), ("on", Json::Arr(vec![])),
-            ("cut", Json::Arr(vec![])), ("bound", Json::Arr(vec![]))]));
+        lowered.stratum = Some(crate::brep::recipe::Body { stock: 0, ..Default::default() });
     }
-    let key = canonical(&node);
+    let key = canonical(lowered);
     let stratum = rolled.then(|| body.clone());
     let at = |s: &Option<Arc<super::faces::BodyFaces>>| s.as_ref().map(Arc::as_ptr);
     let mut cache = sk.caches.gated.borrow_mut();

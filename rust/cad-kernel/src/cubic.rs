@@ -5,7 +5,6 @@
 //! with.
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
-use crate::util::json::Json;
 
 /// The one degree the kernels are compiled for.  The basis below is written for general `p`; a
 /// second degree costs a kernel pair and a `CKind` that selects it, which is why the model
@@ -384,11 +383,8 @@ pub fn fit_sampled(sweep: &dyn Fn(f64,f64,usize) -> Vec<(f64,f64)>,(a,b): (f64,f
     }
 }
 
-/// A profile's cubic B-spline edge as a recipe writes it: its knots, its poles lifted into space
-/// (millimetres) and the fit it was measured within (mm).
-pub fn bspline_edge(poles: &[(f64,f64)],knots: &[f64],fit_mm: f64,lift: &dyn Fn((f64,f64)) -> [f64;3]) -> Json {
-    crate::util::json::object([("kind","bspline".into()),("degree",DEGREE.into()),
-        ("knots",Json::Arr(knots.iter().map(|&k| k.into()).collect())),
-        ("poles",Json::Arr(poles.iter().map(|&c| Json::Arr(lift(c).iter().map(|&x| x.into()).collect())).collect())),
-        ("fit",fit_mm.into())])
+/// A profile's cubic B-spline edge as a recipe writes it: its knots and its poles lifted into space
+/// (millimetres).
+pub fn bspline_edge(poles: &[(f64,f64)],knots: &[f64],lift: &dyn Fn((f64,f64)) -> [f64;3]) -> crate::recipe::Stroke {
+    crate::recipe::Stroke::BSpline {degree:DEGREE,knots:knots.to_vec(),poles:poles.iter().map(|&c| lift(c)).collect(),weights:None}
 }

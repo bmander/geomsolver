@@ -1,5 +1,6 @@
 //! The CAD recipe (`solid::cad::recipe`) built by this kernel: the same millimetre-valued DAG the
-//! native host is handed, node by node, so the two kernels can be held to each other.
+//! native host is handed, node by node, so the two kernels can be held to each other.  It is
+//! handed over as typed values (`Recipe`, `Node`), never as text.
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use super::boolean::{combined,Op};
@@ -7,7 +8,6 @@ use super::build::{cut_before,drafted,kept,kept_by_solid,prism,revolve,Profile};
 use super::geom::{through_span,tolerance,tolerance_over,widen,Rigid,V,EMPTY};
 use super::topo::Brep;
 use super::{KernelError,Kind};
-use crate::util::json::Json;
 use std::collections::BTreeMap;
 
 /// A node built, or why not.
@@ -42,13 +42,13 @@ pub fn name_under(key: &str,face: &str) -> String { format!("{key}{NAMED}{face}"
 
 /// One node of a recipe built from the nodes before it; `Err` names what this kernel does not
 /// build yet.
-pub fn node(n: &Json,built: &BTreeMap<i64,Brep>) -> Result<Brep,String> { node_named(n,built,&BTreeMap::new(),0.) }
+pub fn node(n: &Node,built: &BTreeMap<i64,Brep>) -> Result<Brep,String> { node_named(n,built,&BTreeMap::new(),0.) }
 
 /// `node`, naming each operand in what it says, its Booleans' tolerance never under `floor` (mm):
 /// the rounding a recipe read off coordinates far from its origin carries (a part solved at 1e9 mm
 /// is placed to 1e-7 mm, wherever it is built about).
-pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Result<Brep,String> {
-    Ok(Node::read(n)?.built(built,built_names,floor)?)
+pub fn node_named(n: &Node,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Result<Brep,String> {
+    Ok(n.built(built,built_names,floor)?)
 }
 
 impl Node {
@@ -127,7 +127,10 @@ fn sewn_node(pieces: &[SewnPiece],tol: f64) -> Built {
     for p in pieces {
         let (mut b,face) = match p {
             SewnPiece::Face {profile,face} => (super::build::face(&Profile::of(profile)?)?,face),
-            SewnPiece::Net {net,face} => (super::build::sheet(net.clone())?,face),
+            SewnPiece::Net {net,face} => {
+                net.check().map_err(|m| KernelError::new(Kind::Recipe,format!("recipe: a sewn net: {m}")))?;
+                (super::build::sheet(net.clone())?,face)
+            }
         };
         for f in &mut b.faces { f.name = face.clone(); }
         made.push(b);
@@ -419,7 +422,7 @@ fn body(n: &Body,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,f
 /// name, a placement's copies by the placement and the route to the primitive in its source —
 /// the walk `solid::document::operand_primitives` makes over the solids, made over the nodes, so
 /// the names are `solid::exact`'s.
-pub fn build(recipe: &Json) -> Result<Brep,String> { Ok(Recipe::read(recipe)?.build()?) }
+pub fn build(recipe: &Recipe) -> Result<Brep,String> { Ok(recipe.build()?) }
 
 impl Recipe {
     /// The root, built (`build`).

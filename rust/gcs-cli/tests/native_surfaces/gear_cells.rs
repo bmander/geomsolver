@@ -62,7 +62,7 @@ fn single_space(member: &str,expected: f64) {
     let blank_id = e.map.ent_named(&format!("pair.{member}.blank")).unwrap().i();
     let single_id = e.map.ent_named(&format!("pair.{member}.single")).unwrap().i();
     let cad = Cad::new();
-    let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,blank_id).unwrap()).unwrap();
+    let blank = cad.0.built(&gcs_core::solid::cad::recipe(&e.sketch,blank_id).unwrap()).unwrap();
     let blank_volume = cad.0.volume(blank).unwrap();
     let started = std::time::Instant::now();
     let (face,sheet,error) = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,removal,blank,&Millimetres::<SpatialField>::read(&e.sketch,blank_id,1e-10).unwrap(),None).unwrap();
@@ -104,7 +104,7 @@ fn the_native_space_at_an_offset_against_its_field() {
     let member = std::env::var("SOLVENT_INSPECT_MEMBER").unwrap_or("pinion".into());
     let id = |n: &str| e.map.ent_named(&format!("pair.{member}.{n}")).unwrap().i();
     let cad = Cad::new();
-    let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,id("blank")).unwrap()).unwrap();
+    let blank = cad.0.built(&gcs_core::solid::cad::recipe(&e.sketch,id("blank")).unwrap()).unwrap();
     let blank_volume = cad.0.volume(blank).unwrap();
     let started = std::time::Instant::now();
     let built = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,id("cut.removal"),blank,&Millimetres::<SpatialField>::read(&e.sketch,id("blank"),1e-10).unwrap(),None);
@@ -187,7 +187,7 @@ fn a_roll_that_leaves_the_cutter_in_the_blank_is_refused() {
     let removal = e.map.ent_named("pair.gear.cut.removal").unwrap().i();
     let blank_id = e.map.ent_named("pair.gear.blank").unwrap().i();
     let cad = Cad::new();
-    let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,blank_id).unwrap()).unwrap();
+    let blank = cad.0.built(&gcs_core::solid::cad::recipe(&e.sketch,blank_id).unwrap()).unwrap();
     let error = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,removal,blank,&Millimetres::<SpatialField>::read(&e.sketch,blank_id,1e-10).unwrap(),None).unwrap_err();
     eprintln!("{error}");
     assert!(error.message.contains("leaves the cutter inside the blank") && error.message.contains("35.0 degrees"));
@@ -204,14 +204,11 @@ fn the_static_recipe_lists_swept_cuts_with_their_poses() {
     assert!(recipe.sweeps.iter().all(|s| s.swept == removal));
     // The static remainder is the blank: no sweep node, the body nothing but its stock, and the
     // stock the blank's region, one revolution of its meridian.
-    let nodes = recipe.recipe.get("nodes").unwrap().arr();
-    assert!(nodes.iter().all(|n| n.get("kind").unwrap().as_str() != "swept"));
-    let id = |n: &gcs_core::json::Json,key: &str| n.get(key).unwrap().as_i64() as usize;
-    let node = |want: usize| nodes.iter().find(|n| id(n,"id") == want).unwrap();
-    let blank = node(body);
-    assert!(["cut","bound"].iter().all(|k| blank.get(k).unwrap().arr().is_empty()));
-    let stock = node(id(blank,"stock"));
-    assert_eq!(stock.get("kind").unwrap().as_str(),"revolve");
+    use gcs_core::brep::recipe::Node;
+    let node = |want: i64| &recipe.recipe.nodes.iter().find(|n| n.id == want).unwrap().node;
+    let Node::Body(blank) = node(body as i64) else { panic!("the blank is a body") };
+    assert!(blank.cut.is_empty() && blank.bound.is_empty());
+    assert!(matches!(node(blank.stock),Node::Revolve {..}));
     assert!(gcs_core::solid::cad::recipe(&e.sketch,body).unwrap_err().contains("continuous motion sweeps"));
 }
 
@@ -282,7 +279,7 @@ fn where_a_sheet_misses_its_contacts() {
     let member = std::env::var("SOLVENT_INSPECT_MEMBER").unwrap_or("gear".into());
     let id = |n: &str| e.map.ent_named(&format!("pair.{member}.{n}")).unwrap().i();
     let cad = Cad::new();
-    let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,id("blank")).unwrap()).unwrap();
+    let blank = cad.0.built(&gcs_core::solid::cad::recipe(&e.sketch,id("blank")).unwrap()).unwrap();
     let field = Millimetres::<SpatialField>::read(&e.sketch,id("blank"),1e-10).unwrap();
     let (_face,sheet,error) = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,id("cut.removal"),blank,&field,None).unwrap();
     eprintln!("sheet {}x{}, withheld error {error:.4}",sheet.rows,sheet.columns);

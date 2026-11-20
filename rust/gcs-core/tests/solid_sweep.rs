@@ -68,7 +68,7 @@ fn continuous_sweep_source_has_the_full_interval_and_endpoint_caps() {
     }
     // a ball under one turn: its recipe the tube about its centre's arc (#238, `solid::canal`)
     let recipe = solid::cad::recipe(&e.sketch,i).unwrap();
-    assert_eq!(recipe.get("nodes").unwrap().arr().last().unwrap().get("kind").unwrap().as_str(),"canal");
+    assert_eq!(recipe.nodes.last().unwrap().node.kind(),"canal");
 }
 
 /// The ball of `solid_generating_sweep.sv` made a cylinder of radius 1 and height 2 on the same

@@ -554,20 +554,18 @@ impl InnerEnvelope {
                 let p = self.point(piece,lo+(hi-lo)*j as f64/m as f64).unwrap_or([f64::NAN;2]);
                 (p[0],p[1])
             }).collect() };
-            let (poles,knots,err) = crate::cubic::fit_sampled(&sweep,(0.,1.),Some(((a[0],a[1]),(b[0],b[1]))),fit)
+            let (poles,knots,_) = crate::cubic::fit_sampled(&sweep,(0.,1.),Some(((a[0],a[1]),(b[0],b[1]))),fit)
                 .ok_or_else(|| format!("`{name}`: the envelope's piece {piece} could not be fitted within \
                     {:.1e} mm",fit*scale))?;
-            Ok(crate::cubic::bspline_edge(&poles,&knots,err*scale,&lift))
+            Ok(crate::recipe::Edge {name:String::new(),shape:crate::cubic::bspline_edge(&poles,&knots,&lift)})
         }).collect::<Result<Vec<_>,_>>()?;
         let origin = self.world([0.,0.]);
-        use crate::util::json::{object,Json};
-        let vec = |v: [f64;3]| Json::Arr(v.iter().map(|&x| x.into()).collect());
-        let profile = object([("loops",Json::Arr(vec![Json::Arr(edges)])),("origin",vec(origin.map(|x| x*scale))),("normal",vec(n))]);
+        let profile = crate::recipe::Section {loops:vec![edges],origin:origin.map(|x| x*scale),normal:n};
         // through the blank, a hair past it each way
         let at = crate::util::space::dot(origin,n);
         let [h0,h1] = heights;
         let pad = 1e-3*(h1-h0)+1e-6;
-        crate::build::prism(&crate::build::Profile::from_json(&profile)?,
+        crate::build::prism(&crate::build::Profile::of(&profile)?,
             (h0-pad-at)*scale,(h1+pad-at)*scale)
     }
 }

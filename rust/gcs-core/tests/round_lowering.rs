@@ -287,11 +287,9 @@ fn a_run_cut_off_at_a_slant_by_the_face_it_ends_on() {
     // behind move with the rest (a cut's volume cannot tell, its prism past a face cutting air)
     let recipe = gcs_core::solid::cad::recipe(&e.sketch, ent(&e, "block").i()).unwrap();
     let by = [5.0, 7.0, 11.0];
-    let planes = |r: &gcs_core::json::Json| -> Vec<[f64; 3]> {
-        r.get("nodes").unwrap().arr().iter().filter_map(|n| n.get("pieces")).flat_map(|p| p.arr().iter())
-            .filter_map(|p| p.get("within")).flat_map(|w| w.arr().iter())
-            .map(|h| { let a = h.get("at").unwrap().arr(); [a[0].as_f64(), a[1].as_f64(), a[2].as_f64()] })
-            .collect()
+    let planes = |r: &gcs_core::brep::recipe::Recipe| -> Vec<[f64; 3]> {
+        r.nodes.iter().filter_map(|n| match &n.node { gcs_core::brep::recipe::Node::Lowered(l) => Some(l), _ => None })
+            .flat_map(|l| &l.pieces).flat_map(|p| &p.within).map(|&(at, _)| at).collect()
     };
     let about = gcs_core::solid::cad::recipe_about(&e.sketch, ent(&e, "block").i(), by).unwrap();
     let (before, after) = (planes(&recipe), planes(&about));
@@ -552,11 +550,9 @@ fn a_run_cut_off_by_a_post_it_runs_into() {
     // cut off by moves with the rest
     let recipe = gcs_core::solid::cad::recipe(&e.sketch, ent(&e, "stand").i()).unwrap();
     let by = [5.0, 7.0, 11.0];
-    let walls = |r: &gcs_core::json::Json| -> Vec<[f64; 3]> {
-        r.get("nodes").unwrap().arr().iter().filter_map(|n| n.get("pieces")).flat_map(|p| p.arr().iter())
-            .filter_map(|p| p.get("kept")).flat_map(|w| w.arr().iter())
-            .map(|h| { let a = h.get("origin").unwrap().arr(); [a[0].as_f64(), a[1].as_f64(), a[2].as_f64()] })
-            .collect()
+    let walls = |r: &gcs_core::brep::recipe::Recipe| -> Vec<[f64; 3]> {
+        r.nodes.iter().filter_map(|n| match &n.node { gcs_core::brep::recipe::Node::Lowered(l) => Some(l), _ => None })
+            .flat_map(|l| &l.pieces).flat_map(|p| &p.kept).map(|(face, _)| face.frame().o).collect()
     };
     let about = gcs_core::solid::cad::recipe_about(&e.sketch, ent(&e, "stand").i(), by).unwrap();
     let (before, after) = (walls(&recipe), walls(&about));

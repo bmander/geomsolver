@@ -34,7 +34,6 @@ use crate::trajectory::{Motion,Trajectory};
 use crate::plane2::{add,cross,dist,dot,left,meet,norm as length,scale,sub,unit,Carrier,Edge,Touch};
 use super::planar::Region;
 use std::sync::Arc;
-use crate::util::json::Json;
 use crate::topo::Brep;
 
 type P = [f64;2];
@@ -1057,35 +1056,36 @@ fn sampler<'a>(region: &'a SweptRegion,l: usize,k: usize) -> impl Fn(f64,f64,usi
 
 /// The region's loops as profiles (millimetres): each counter-clockwise loop with the clockwise
 /// loops within it as its holes.
-pub fn profiles(region: &SweptRegion,scale: f64,fit: f64,name: &str) -> Result<Vec<Json>,String> {
+pub fn profiles(region: &SweptRegion,scale: f64,fit: f64,name: &str) -> Result<Vec<crate::recipe::Section>,String> {
+    use crate::recipe::{Edge,Section,Stroke};
     let plane = region.setting.plane;
     let lift = |p: (f64,f64)| plane.world([p.0,p.1],0.).map(|x| x*scale);
-    let vec = |v: [f64;3]| Json::Arr(v.iter().map(|&x| x.into()).collect());
-    let point = |p: P| vec(lift((p[0],p[1])));
-    let edges = |l: usize| -> Result<Json,String> {
+    let point = |p: P| lift((p[0],p[1]));
+    let edges = |l: usize| -> Result<Vec<Edge>,String> {
         let lp = &region.loops[l];
         let n = lp.pieces.len();
         // a loop of one stretch (a whole ring) is split at its middle: an edge has two ends
         let halves: Vec<(usize,[f64;2])> = if n == 1 { vec![(0,[0.,0.5]),(0,[0.5,1.])] } else { (0..n).map(|k| (k,[0.,1.])).collect() };
-        Ok(Json::Arr(halves.into_iter().map(|(k,[f0,f1])| {
+        halves.into_iter().map(|(k,[f0,f1])| {
             let (Some(a),Some(b)) = (region.point(l,k,f0),region.point(l,k,f1)) else {
                 return Err(format!("`{name}`: its swept region's boundary cannot be read"))
             };
-            match lp.pieces[k] {
-                Piece::Side {..} => Ok(crate::util::json::object([("kind","line".into()),("start",point(a)),("end",point(b))])),
+            let shape = match lp.pieces[k] {
+                Piece::Side {..} => Stroke::Line {start:point(a),end:point(b)},
                 Piece::Run {..} => {
-                    let (poles,knots,err) = crate::cubic::fit_sampled(&sampler(region,l,k),(f0,f1),Some(((a[0],a[1]),(b[0],b[1]))),fit)
+                    let (poles,knots,_) = crate::cubic::fit_sampled(&sampler(region,l,k),(f0,f1),Some(((a[0],a[1]),(b[0],b[1]))),fit)
                         .ok_or_else(|| format!("`{name}`: a stretch of its swept region's boundary could \
                             not be fitted within {:.1e} mm",fit*scale))?;
-                    Ok(crate::cubic::bspline_edge(&poles,&knots,err*scale,&lift))
+                    crate::cubic::bspline_edge(&poles,&knots,&lift)
                 }
-            }
-        }).collect::<Result<Vec<_>,_>>()?))
+            };
+            Ok(Edge {name:String::new(),shape})
+        }).collect()
     };
     let mut out = Vec::new();
     for (l,holes) in region.nesting(8) {
         let loops = std::iter::once(l).chain(holes).map(edges).collect::<Result<Vec<_>,_>>()?;
-        out.push(crate::util::json::object([("loops",Json::Arr(loops)),("origin",vec(plane.o.map(|x| x*scale))),("normal",vec(plane.n))]));
+        out.push(Section {loops,origin:plane.o.map(|x| x*scale),normal:plane.n});
     }
     Ok(out)
 }

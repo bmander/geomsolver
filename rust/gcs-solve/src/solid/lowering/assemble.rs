@@ -4,39 +4,36 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use crate::brep::recipe::Writer;
-use crate::json::{object, Json};
+use crate::brep::geom::{Frame, Surface};
+use crate::brep::recipe;
 use super::{Across, Beyond, Corner, Piece, Ring, Rolled, Run, Seam, Stroke, Surf, V};
 use crate::space::{add, cross, distance, dot, norm, normalised, scale, sub};
 
 impl Surf {
-    /// As a recipe reads it (written by `w`; `recipe::Lowered`'s faces).
-    pub(super) fn json(&self, w: &Writer) -> Json {
-        let (by, vector) = (w.scale, Writer::triple);
+    /// As a recipe holds it (written by `w`; `recipe::Lowered`'s faces).
+    pub(super) fn surface(&self, w: &Writer) -> Surface {
+        let by = w.scale;
         match *self {
-            Surf::Plane { origin, normal } => object([("kind", "plane".into()),
-                ("origin", w.at(scale(origin, by))), ("normal", vector(normal))]),
-            Surf::Cylinder { origin, axis, radius } => object([("kind", "cylinder".into()),
-                ("origin", w.at(scale(origin, by))), ("axis", vector(axis)), ("radius", (radius * by).into())]),
-            Surf::Cone { origin, axis, radius, half } => object([("kind", "cone".into()),
-                ("origin", w.at(scale(origin, by))), ("axis", vector(axis)), ("radius", (radius * by).into()),
-                ("half", half.into())]),
-            Surf::Sphere { centre, radius } => object([("kind", "sphere".into()),
-                ("origin", w.at(scale(centre, by))), ("radius", (radius * by).into())]),
-            Surf::Torus { origin, axis, big, tube } => object([("kind", "torus".into()),
-                ("origin", w.at(scale(origin, by))), ("axis", vector(axis)), ("big", (big * by).into()),
-                ("tube", (tube * by).into())]),
+            Surf::Plane { origin, normal } => Surface::Plane(Frame::about(w.moved(scale(origin, by)), normal)),
+            Surf::Cylinder { origin, axis, radius } =>
+                Surface::Cylinder(Frame::about(w.moved(scale(origin, by)), axis), radius * by),
+            Surf::Cone { origin, axis, radius, half } =>
+                Surface::Cone(Frame::about(w.moved(scale(origin, by)), axis), radius * by, half),
+            Surf::Sphere { centre, radius } =>
+                Surface::Sphere(Frame::about(w.moved(scale(centre, by)), [0., 0., 1.]), radius * by),
+            Surf::Torus { origin, axis, big, tube } =>
+                Surface::Torus(Frame::about(w.moved(scale(origin, by)), axis), big * by, tube * by),
         }
     }
 }
 
-/// What a piece is kept within at its ends, as a recipe reads it (written by `w`): each plane's
-/// half-space, `within` (`at` on it, its `normal` out of it), and each curved face's solid, `kept`
-/// (its surface, and whether `inside`).
-fn ends_json(r: &Run, w: &Writer) -> [(&'static str, Json); 2] {
-    let within = r.within.iter().map(|&(n, d)| object([("at", w.at(scale(n, d * w.scale))), ("normal", Writer::triple(n))]))
-        .collect();
-    let kept = r.kept.iter().map(|k| { let mut o = k.face.json(w); o.set("inside", k.inside.into()); o }).collect();
-    [("within", Json::Arr(within)), ("kept", Json::Arr(kept))]
+/// What a piece is kept within at its ends, as a recipe holds it (written by `w`): each plane's
+/// half-space, `within` (a point on it, its normal out of it), and each curved face's solid, `kept`
+/// (its surface, and whether inside).
+fn ends(node: crate::brep::recipe::Node, r: &Run, w: &Writer) -> recipe::Run {
+    let within = r.within.iter().map(|&(n, d)| (w.moved(scale(n, d * w.scale)), n)).collect();
+    let kept = r.kept.iter().map(|k| (k.face.surface(w), k.inside)).collect();
+    recipe::Run { node, within, kept }
 }
 
 /// A run's section moved by `m` (a turn about a ring's axis): its strokes, its origin and way; the
@@ -473,81 +470,45 @@ impl Assembly {
     /// As a recipe node (written by `w`): each run a prism over its stretch (within the
     /// half-spaces it is kept in), each ring a revolution, each corner where it stands, and the
     /// joins.
-    pub fn node(&self, w: &Writer) -> Result<Json, String> {
-        let (by, vector) = (w.scale, Writer::triple);
+    pub fn node(&self, w: &Writer) -> Result<recipe::Node, String> {
+        use crate::brep::spill;
+        let by = w.scale;
         let mut pieces = self.runs.iter().map(|r| {
             let [from, to] = r.span;
-            let mut o = object([
-                ("kind", "prism".into()), ("profile", profile(r)?.to_json(w)?),
-                ("from", (from * by).into()), ("to", (to * by).into()),
-            ]);
-            for (k, v) in ends_json(r, w) {
-                o.set(k, v);
-            }
-            Ok(o)
+            let prism = recipe::Node::Prism { profile: profile(r)?.section(w)?, from: from * by, to: to * by, draft: None };
+            Ok(ends(prism, r, w))
         }).collect::<Result<Vec<_>, String>>()?;
         for g in &self.rings {
-            let mut o = object([
-                ("kind", "revolve".into()), ("profile", profile(&g.section)?.to_json(w)?),
-                ("origin", w.line_origin(scale(g.axis_origin, by), g.axis)), ("axis", vector(g.axis)), ("angle", g.angle.into()),
-            ]);
-            for (k, v) in ends_json(&g.section, w) {
-                o.set(k, v);
-            }
-            pieces.push(o);
+            let ring = recipe::Node::Revolve { profile: profile(&g.section)?.section(w)?,
+                origin: w.line_origin(scale(g.axis_origin, by), g.axis), axis: g.axis, angle: g.angle };
+            pieces.push(ends(ring, &g.section, w));
         }
-        let corners = self.corners.iter().map(|c| object([
-            ("vertex", w.at(scale(c.vertex, by))), ("centre", w.at(scale(c.centre, by))),
-            ("radius", (c.r * by).into()), ("faces", Json::Arr(c.faces.iter().map(|f| f.json(w)).collect())),
-        ])).collect();
-        let joins = self.joins.iter().map(|j| Json::Arr(j.iter().map(|&k| k.into()).collect())).collect();
-        let rolled = self.rolled.iter().map(|k| {
-            let mut o = object([("at", w.at(scale(k.at, by))), ("radius", (k.r * by).into())]);
-            if let Some(([la, lb], on)) = k.flat {
-                o.set("legs", Json::Arr(vec![(la * by).into(), (lb * by).into()]));
-                o.set("on", w.at(scale(on, by)));
-            }
-            if !k.cuts.is_empty() {
-                o.set("cuts", Json::Arr(k.cuts.iter().map(|&(at, n, reach)| object([("at", w.at(scale(at, by))),
-                    ("normal", vector(n)), ("reach", (reach * by).into())])).collect()));
-            }
-            if !k.wedge.is_empty() {
-                o.set("wedge", Json::Arr(k.wedge.iter().map(|&(at, n)| object([("at", w.at(scale(at, by))),
-                    ("normal", vector(n))])).collect()));
-            }
-            if !k.kept.is_empty() {
-                o.set("kept", Json::Arr(k.kept.iter().map(|kept| { let mut s = kept.face.json(w); s.set("inside", kept.inside.into()); s })
-                    .collect()));
-            }
-            o
+        let corners = self.corners.iter().map(|c| recipe::Corner {
+            vertex: w.moved(scale(c.vertex, by)), centre: w.moved(scale(c.centre, by)), radius: c.r * by,
+            faces: c.faces.iter().map(|f| f.surface(w)).collect(),
         }).collect();
-        let beyond = self.beyond.iter().map(|b| {
-            let mut o = object([
-                ("toward", vector(b.toward)), ("chain", b.chain.json(w)), ("wall", b.wall.json(w)),
-                ("sides", Json::Arr(b.sides.iter().map(|&x| x.into()).collect())),
-                ("seam", match b.seam {
-                    Seam::Circle(c, n, r) => object([("centre", w.at(scale(c, by))), ("normal", vector(n)), ("radius", (r * by).into())]),
-                    Seam::Line(p, d) => object([("point", w.line_origin(scale(p, by), d)), ("direction", vector(d))]),
-                }),
-                ("ends", Json::Arr(b.ends.iter().map(|&p| w.at(scale(p, by))).collect())),
-                ("along", object([("face", b.face.json(w))])),
-            ]);
+        let rolled = self.rolled.iter().map(|k| recipe::Rolled {
+            at: w.moved(scale(k.at, by)), radius: k.r * by,
+            flat: k.flat.map(|([la, lb], on)| ([la * by, lb * by], w.moved(scale(on, by)))),
+            cuts: k.cuts.iter().map(|&(at, n, reach)| (w.moved(scale(at, by)), n, reach * by)).collect(),
+            kept: k.kept.iter().map(|kept| (kept.face.surface(w), kept.inside)).collect(),
+            wedge: k.wedge.iter().map(|&(at, n)| (w.moved(scale(at, by)), n)).collect(),
+        }).collect();
+        let beyond = self.beyond.iter().map(|b| spill::Beyond {
+            face: b.face.surface(w), toward: b.toward, chain: b.chain.surface(w), wall: b.wall.surface(w),
+            sides: b.sides,
+            seam: match b.seam {
+                Seam::Circle(c, n, r) => spill::Seam::Circle(w.moved(scale(c, by)), n, r * by),
+                Seam::Line(p, d) => spill::Seam::Line(w.line_origin(scale(p, by), d), d),
+            },
             // a flat's legs and the seam's normal surface it starts at, or a round's radius
-            match b.section {
-                Across::Flat { legs, split } => {
-                    o.set("legs", Json::Arr(legs.iter().map(|&l| (l * by).into()).collect()));
-                    o.set("split", split.json(w));
-                }
-                Across::Round { radius } => o.set("radius", (radius * by).into()),
-            }
-            o
+            section: match b.section {
+                Across::Flat { legs, split } => spill::Across::Flat { legs: legs.map(|l| l * by), split: split.surface(w) },
+                Across::Round { radius } => spill::Across::Round { radius: radius * by },
+            },
+            ends: b.ends.map(|p| w.moved(scale(p, by))),
         }).collect();
-        let mut node = object([("kind", "lowered".into()), ("pieces", Json::Arr(pieces)), ("corners", Json::Arr(corners)),
-            ("joins", Json::Arr(joins)), ("rolled", Json::Arr(rolled))]);
-        if !self.beyond.is_empty() {
-            node.set("beyond", Json::Arr(beyond));
-        }
-        Ok(node)
+        Ok(recipe::Node::Lowered(recipe::Lowered { pieces, corners, rolled, joins: self.joins.clone(), stratum: None, beyond }))
     }
 
     /// Built by this kernel (lengths times `by`).

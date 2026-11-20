@@ -39,7 +39,7 @@ pub fn cut(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,tol
         for slab in &found.slabs {
             match slab.stations.as_slice() {
                 [(_,region)] => for profile in profiles(region,scale,fit,name).at(Stage::Reach)? {
-                    let p = crate::brep::build::Profile::from_json(&profile).at(Stage::Reach)?;
+                    let p = crate::brep::build::Profile::of(&profile).at(Stage::Reach)?;
                     cutters.push(crate::brep::build::prism(&p,slab.reach[0]*scale,slab.reach[1]*scale).at(Stage::Reach)?);
                 },
                 stations => cutters.extend(lofted(stations,scale,fit,name).at(Stage::Reach)?),
