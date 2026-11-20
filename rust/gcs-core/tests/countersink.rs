@@ -10,11 +10,14 @@
 //! its closed form, a draft taken to nothing within a prism's ordinates said where it comes to
 //! nothing and why, and a countersink beside a counterbore built though the surfaces run on past
 //! both faces come near there (#961), a near-contact no face clears refused still.
-use gcs_core::brep::geom::{tolerance, Surface};
+use gcs_core::brep::affine::{Affine, Mapped};
+use gcs_core::brep::geom::{tolerance, Frame, Surface, V};
 use gcs_core::brep::query::Located;
 use gcs_core::brep::topo::Brep;
 use gcs_core::brep::{export, props, ssi, sweep::Say};
 use gcs_core::program::Elaborated;
+use gcs_core::rng::Rng;
+use gcs_core::space::{add, distance, dot, norm, scale, sub};
 use gcs_core::solid::faces::{face_paths, FacePath};
 use gcs_core::solid::{ApproximationPolicy::Report, MaterialField};
 use std::f64::consts::PI;
@@ -510,4 +513,118 @@ fn a_face_is_clear_only_off_it_and_away_from_its_edges() {
     assert_eq!(ssi::disc_reach(&cb.faces[wall].surface, on_wall(5.0), r), Some(r));
     assert_eq!(ssi::disc_reach(&csk.faces[cone].surface, on_cone(-2.0), r), Some(2.0 * r));
     assert_eq!(ssi::disc_reach(&csk.faces[cone].surface, on_cone(-4.0 - 1e-7), r), None);
+}
+
+/// A path on `s` from `p` to `q`, both on it: the one `ssi::disc_reach`'s bound is argued by — a
+/// plane's segment, a sphere's great-circle arc, a cylinder's helix the shorter way round, a cone's
+/// or a torus's parallel to `q`'s azimuth and then its meridian the shorter way, an image's its
+/// preimage's mapped.
+fn path_on(s: &Surface, p: V, q: V) -> Vec<V> {
+    const N: usize = 256;
+    let t = |j: usize| j as f64 / N as f64;
+    let shorter = |a: f64, b: f64, period: Option<f64>| {
+        let d = b - a;
+        period.map_or(d, |w| d - (d / w).round() * w)
+    };
+    match s {
+        Surface::Plane(_) => (0..=N).map(|j| add(p, scale(sub(q, p), t(j)))).collect(),
+        Surface::Sphere(f, _) => {
+            let (a, b) = (sub(p, f.o), sub(q, f.o));
+            let w = (dot(a, b) / (norm(a) * norm(b))).clamp(-1.0, 1.0).acos();
+            if w < 1e-9 { return vec![p, q] }
+            (0..=N).map(|j| add(f.o, add(scale(a, ((1.0 - t(j)) * w).sin() / w.sin()),
+                                         scale(b, (t(j) * w).sin() / w.sin())))).collect()
+        }
+        Surface::Cylinder(..) => {
+            let (a, b) = (s.inverse(p), s.inverse(q));
+            let du = shorter(a[0], b[0], s.periods()[0]);
+            (0..=N).map(|j| s.point([a[0] + t(j) * du, a[1] + t(j) * (b[1] - a[1])])).collect()
+        }
+        Surface::Cone(..) | Surface::Torus(..) => {
+            let (a, b, periods) = (s.inverse(p), s.inverse(q), s.periods());
+            let (du, dv) = (shorter(a[0], b[0], periods[0]), shorter(a[1], b[1], periods[1]));
+            (0..=N).map(|j| s.point([a[0] + t(j) * du, a[1]]))
+                .chain((0..=N).map(|j| s.point([a[0] + du, a[1] + t(j) * dv]))).collect()
+        }
+        Surface::Affine(m) => path_on(&m.of, m.back.point(p), m.back.point(q)).into_iter()
+            .map(|x| m.map.point(x)).collect(),
+        _ => unreachable!("not a searchable surface"),
+    }
+}
+
+/// **`ssi::disc_reach` holds by every path it is argued by** (#961), whatever the argument: over
+/// each searchable kind — a plane, a sphere, a cylinder, cones from narrow to wide (past 45°, where
+/// the other nappe is nearest), a ring torus with its circle either side of the axis, an
+/// ellipsoid and an elliptic cylinder as images — seeded points `p` of the surface, the largest
+/// ball the bound admits about each and a smaller one, and many points `q` of the surface within
+/// it (the feet of seeded points of the ball, so any sheet within the ball is reached): the path
+/// from `p` to `q` ends at `q` and keeps within the reach given. A spindle or a horn torus, a cone
+/// at its apex and a ball across a cylinder are given none.
+#[test]
+fn a_surfaces_points_within_a_ball_reach_no_farther_along_it_than_said() {
+    let tilted = Frame::new([1.0, -2.0, 0.5], [0.3, 0.4, 1.0], [1.0, 0.0, 0.0]);
+    let mapped = |of: Surface| {
+        let axes = Frame::new([0.5, 0.0, 1.0], [0.0, 0.6, 1.0], [1.0, 1.0, 0.0]);
+        let map = Affine::stretch(&axes, [1.0, 2.5, 0.6]);
+        Surface::Affine(std::sync::Arc::new(Mapped::new(map.unwrap(), of)))
+    };
+    let (round, along, across) = ([0.0, 6.3], [-10.0, 10.0], [-1.5, 1.5]);
+    let mut surfaces = vec![
+        ("a plane", Surface::Plane(tilted), [along, along]),
+        ("a sphere", Surface::Sphere(tilted, 5.0), [round, across]),
+        ("a cylinder", Surface::Cylinder(tilted, 4.0), [round, along]),
+        ("a ring torus", Surface::Torus(tilted, 6.0, 2.0), [round, round]),
+        ("a ring torus drawn across", Surface::Torus(tilted, -5.0, 3.0), [round, round]),
+        ("an ellipsoid", mapped(Surface::Sphere(tilted, 3.0)), [round, across]),
+        ("an elliptic cylinder", mapped(Surface::Cylinder(tilted, 2.0)), [round, along]),
+    ];
+    for alpha in [10.0, 30.0, 45.0, 60.0, 80.0] {
+        let cone = Surface::Cone(tilted, 2.0, f64::to_radians(alpha));
+        surfaces.push(("a cone", cone, [round, [-12.0, 12.0]]));
+    }
+    let mut rng = Rng::new(961);
+    for (what, s, [[u0, u1], [v0, v1]]) in &surfaces {
+        let mut asked = 0;
+        for _ in 0..24 {
+            let p = s.point([rng.uniform(*u0, *u1), rng.uniform(*v0, *v1)]);
+            // the largest ball the bound admits about `p`, by halving (it admits a smaller one too)
+            let admits = |r: f64| ssi::disc_reach(s, p, r).is_some();
+            if !admits(1e-9) { continue }
+            let (mut lo, mut hi) = (1e-9, 1e3);
+            for _ in 0..80 { let m = 0.5 * (lo + hi); if admits(m) { lo = m } else { hi = m } }
+            for r in [lo, rng.uniform(0.1, 1.0) * lo] {
+                let reach = ssi::disc_reach(s, p, r).unwrap();
+                for _ in 0..200 {
+                    let x = loop {
+                        let d = [rng.uniform(-r, r), rng.uniform(-r, r), rng.uniform(-r, r)];
+                        if norm(d) <= r { break add(p, d) }
+                    };
+                    let q = s.point(s.inverse(x));
+                    if distance(p, q) > r { continue }
+                    asked += 1;
+                    let path = path_on(s, p, q);
+                    let end = *path.last().unwrap();
+                    assert!(distance(end, q) <= 1e-9 * (1.0 + r),
+                            "{what}: the path from {p:?} ends at {end:?}, not {q:?}");
+                    let far = path.iter().map(|&x| distance(x, p)).fold(0.0, f64::max);
+                    assert!(far <= reach * (1.0 + 1e-9),
+                            "{what}: from {p:?} to {q:?} within {r}: {far} past the reach {reach}");
+                }
+            }
+        }
+        assert!(asked > 1000, "{what}: {asked} points asked");
+    }
+    // where the surface's points within the ball are not one disc about `p`, no reach is said
+    for (big, minor) in [(1.0, 3.0), (2.0, 2.0), (-1.0, 3.0)] {
+        let s = Surface::Torus(tilted, big, minor);
+        let p = s.point([0.7, 0.4]);
+        assert_eq!(ssi::disc_reach(&s, p, 1e-6), None, "a spindle or horn torus, {big}, {minor}");
+    }
+    let cone = Surface::Cone(Frame::WORLD, 2.0, f64::to_radians(30.0));
+    let apex = [0.0, 0.0, -2.0 / f64::to_radians(30.0).tan()];
+    assert_eq!(ssi::disc_reach(&cone, apex, 1e-6), None, "at the apex");
+    let beside = cone.point([1.0, -4.0 + 1e-7]);
+    assert_eq!(ssi::disc_reach(&cone, beside, 1e-6), None, "beside the apex");
+    let tube = Surface::Cylinder(Frame::WORLD, 4.0);
+    assert_eq!(ssi::disc_reach(&tube, [4.0, 0.0, 0.0], 3.0), None, "across a cylinder");
 }

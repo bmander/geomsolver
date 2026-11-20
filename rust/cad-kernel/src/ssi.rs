@@ -2560,32 +2560,53 @@ fn curvature_bound(s: &Surface,p: V,r: f64) -> Option<f64> {
 }
 
 /// **How far from `p` a searchable surface's points within `r` of `p` reach along it**: a length
-/// `r'` such that each point of `s` within `r` of `p` (a point of `s`) is joined to `p` by a path
-/// on `s` that keeps within `r'` of `p` — so a face of `s` holding such a point and not `p` has
-/// boundary within `r'` of `p` (#961). `None` where the ball is not that small against the
-/// surface's shape there: it reaches across a cylinder or a tube, to a cone's other nappe or
-/// apex, or to a torus's axis.
+/// `r'` such that each point `q` of `s` within `r` of `p` (a point of `s`) is joined to `p` by a
+/// path on `s` that keeps within `r'` of `p` — so a face of `s` holding such a point and not `p`
+/// has boundary within `r'` of `p` (#961). `None` where that is not shown: the ball reaches across
+/// a cylinder or a tube, to a cone's other nappe or apex, or to an axis, or the torus is a horn
+/// or a spindle, whose sheets meet on the axis (`None` is always sound: nothing is read as clear).
+///
+/// The bounds, each by a path exhibited (`tests/countersink.rs` holds them to seeded samples):
+/// * a plane: the segment `pq`, within `|pq| ≤ r`.
+/// * a sphere: the shorter great-circle arc from `p` to `q`, along which the chord from `p` only
+///   grows, so within `r`.
+/// * a cylinder of radius `R ≥ 2r`: the helix straight in its parameters from `p` to `q` the shorter
+///   way round; its chord from `p` is `√((2R sin(tφ/2))² + (tz)²)` at `t ∈ [0, 1]`, growing in `t`
+///   while `φ ≤ π`, which holds (the two stand within `r ≤ R/2` across the axis), so within `r`.
+/// * the surfaces of revolution about an axis, `p` at `ρ ≥ 2r` from it (the cone and the torus):
+///   `q`'s projection square to the axis is within `r` of `p`'s, so their azimuths differ by `φ`
+///   with `ρ sin φ ≤ r` and `φ < 90°` (at `90°` or more the projection is `ρ > r` off), hence
+///   `sin φ ≤ 1/2`, `φ ≤ 30°`. `p` turned about the axis to `q`'s azimuth is `p'`, the arc of its
+///   parallel within its chord `2ρ sin(φ/2) = ρ sin φ / cos(φ/2) ≤ r / cos 15° < 1.036 r` of `p`.
+///   - a cone, `p` at `d` from its apex with `d min(1, |sin 2α|) ≥ 2r` (`α` its half-angle): a
+///     generator of the other nappe makes an angle `θ ≥ π − 2α` with `p`'s, so stands
+///     `d sin θ ≥ d sin 2α` off `p` where `θ < 90°` and `d` (the apex) otherwise — so `q` is on
+///     `p`'s nappe, on the one generator of it at `q`'s azimuth, which holds `p'`: the segment
+///     `p'q` is within `max(|pp'|, |pq|) < 1.036 r` of `p` (a ball is convex). Reach `< 2r`.
+///   - a ring torus (`minor < |big|`, a tube that keeps off the axis) of `minor ≥ 2r`: the
+///     meridian half-plane at `q`'s azimuth holds one circle of the tube, through `p'` and `q`,
+///     `|p'q| < 2.036 r` apart; the shorter arc between them stands within its sagitta
+///     `minor − √(minor² − |p'q|²/4) ≤ 2r − √(4r² − 1.036² r²) < 0.29 r` of the chord `p'q`, which
+///     is within `1.036 r` of `p`. Reach `< 1.33 r < 2r`.
+/// * an affine image of a preimage surface: a point within `r` of `p` has its preimage within
+///   `r / σ_min` of `p`'s, joined there by a path within the preimage's reach, which the map
+///   stretches by at most `σ_max`.
 pub fn disc_reach(s: &Surface,p: V,r: f64) -> Option<f64> {
     let [x,y,z] = s.frame().local(p);
     let rho = x.dhypot(y);
     match *s {
-        // a straight line from `p` in the plane's parameters; a sphere's great circle, or a
-        // cylinder's helix of least turn, from `p`, along which the chord from `p` only grows
-        Surface::Plane(_) => Some(r),
-        Surface::Sphere(..) => Some(r),
+        Surface::Plane(_) | Surface::Sphere(..) => Some(r),
         Surface::Cylinder(_,big) => (2.*r <= big.abs()).then_some(r),
-        // away from its apex and axis by twice the ball, at most twice the ball along the nappe:
-        // the other nappe stands `d min(1, sin 2α)` off, `d` the distance from the apex
         Surface::Cone(_,big,a) => {
             let (sa,ca) = a.dsin_cos();
+            // a cone of no lean is the cylinder of its radius
             let apex = if sa.abs() > 1e-12 { -big*ca/sa } else { return (2.*r <= big.abs()).then_some(r) };
             let d = rho.dhypot(z-apex);
             (2.*r <= rho && 2.*r <= d*(2.*sa*ca).abs().min(1.)).then_some(2.*r)
         }
-        // within half its tube's radius, and away from its axis
-        Surface::Torus(_,_,minor) => (2.*r <= minor.abs() && 2.*r <= rho).then_some(2.*r),
-        // the ball's preimage lies in the ball of radius `r / σ_min` about `p`'s, and a path there
-        // is stretched by at most `σ_max`
+        // `big` may be negative (the tube's circle drawn in the opposite half-plane): a ring torus
+        // is one whose tube's radius is less than its circle's, whatever its sign
+        Surface::Torus(_,big,minor) => (minor.abs() < big.abs() && 2.*r <= minor.abs() && 2.*r <= rho).then_some(2.*r),
         Surface::Affine(ref m) => {
             let [lo,hi] = m.stretch;
             if !(lo > 0.) { return None }
