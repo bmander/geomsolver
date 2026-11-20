@@ -1,6 +1,8 @@
 //! Immutable spatial composition of analytic material fields.
 use super::{min,max,union_support,intersection_support,Error,I,V,RevolvedField,ExtrudedField,RegionField,BuiltField};
 use crate::motion::{Family,MotionBounds};
+use super::adf::{Adf,Resolution};
+use super::memo::Memo;
 use std::{collections::HashMap,sync::Arc};
 
 type Cache = HashMap<(usize,[[u64;2];3]),I>;
@@ -25,20 +27,31 @@ enum Node {
 /// node is made: `bounds` is asked it on every roll of every sweep query. So is how many
 /// leaves it has as a reading numbers them (`leaves`): a Boolean's second operand's are
 /// numbered on from its first's, whatever point is read.
+///
+/// **A field read by a search is cached for a mesher** (#961): where a leaf of it is read by a
+/// nearest-point search (`RegionField::searched`: a round over a body's faces, read point by point
+/// because its exact build was refused), a mesher's reads at a resolution (`Source::Cached`) come
+/// from an adaptive distance field over the whole of it (`cached`), as a sweep's do: exact at the
+/// octree's corners, refined only where the surface may pass and to the resolution the pass needs,
+/// so the searches a surface costs follow the facets drawn rather than every value and gradient
+/// the refinement asks.  Kept with the field, so its clones share it.
 #[derive(Clone,Debug)]
-pub struct SpatialField {node:Arc<Node>,depth:u8,shares:bool,leaves:usize}
+pub struct SpatialField {node:Arc<Node>,depth:u8,shares:bool,leaves:usize,searched:bool,adfs:Arc<Memo<[u64;3],Adf>>}
 
 impl From<RevolvedField> for SpatialField {
-    fn from(source: RevolvedField) -> Self { Self {node:Arc::new(Node::Revolved(source)),depth:1,shares:false,leaves:1} }
+    fn from(source: RevolvedField) -> Self { Self {node:Arc::new(Node::Revolved(source)),depth:1,shares:false,leaves:1,searched:false,adfs:Default::default()} }
 }
 impl From<ExtrudedField> for SpatialField {
-    fn from(source: ExtrudedField) -> Self { Self {node:Arc::new(Node::Extruded(source)),depth:1,shares:false,leaves:1} }
+    fn from(source: ExtrudedField) -> Self { Self {node:Arc::new(Node::Extruded(source)),depth:1,shares:false,leaves:1,searched:false,adfs:Default::default()} }
 }
 impl From<RegionField> for SpatialField {
-    fn from(source: RegionField) -> Self { Self {node:Arc::new(Node::Region(source)),depth:1,shares:false,leaves:1} }
+    fn from(source: RegionField) -> Self {
+        let searched = source.searched();
+        Self {node:Arc::new(Node::Region(source)),depth:1,shares:false,leaves:1,searched,adfs:Default::default()}
+    }
 }
 impl From<BuiltField> for SpatialField {
-    fn from(source: BuiltField) -> Self { Self {node:Arc::new(Node::Built(source)),depth:1,shares:false,leaves:1} }
+    fn from(source: BuiltField) -> Self { Self {node:Arc::new(Node::Built(source)),depth:1,shares:false,leaves:1,searched:false,adfs:Default::default()} }
 }
 
 impl SpatialField {
@@ -70,7 +83,12 @@ impl SpatialField {
             Node::Transformed {source,..} => source.leaves,
             Node::Union(a,b) | Node::Intersection(a,b) | Node::Difference(a,b) => a.leaves+b.leaves,
         };
-        let mut field = Self {node:Arc::new(node),depth,shares:false,leaves};
+        let searched = match &node {
+            Node::Revolved(_) | Node::Extruded(_) | Node::Region(_) | Node::Built(_) => false,
+            Node::Transformed {source,..} => source.searched,
+            Node::Union(a,b) | Node::Intersection(a,b) | Node::Difference(a,b) => a.searched || b.searched,
+        };
+        let mut field = Self {node:Arc::new(node),depth,shares:false,leaves,searched,adfs:Default::default()};
         field.shares = field.shares_nodes();
         Ok(field)
     }
@@ -157,6 +175,28 @@ impl SpatialField {
                 higher(x,y.negated(),q.tie)
             }
         }
+    }
+
+    /// The value and gradient at `p` from the field's adaptive distance field refined to
+    /// `resolution` (`adf.rs`), where a leaf of it is read by a search (`searched`): exact
+    /// (`value`) at the octree's corners and interpolated between, refined only where the surface
+    /// may pass, its root cells sixteen of the coarsest wide.  A reading for a mesher that accepts
+    /// the resolution's tolerance, never an interval claim; `None` for a field read in closed
+    /// form, or no resolution.  A corner is held within a root cell's reach of zero: a term that
+    /// fails reads far past any distance (`region::general`'s gate), which no interpolation can
+    /// carry, and a corner farther than its cell's reach settles the cell as clear either way.
+    pub(super) fn cached(&self,p: [f64;3],resolution: Resolution) -> Option<(f64,[f64;3])> {
+        if !self.searched || !(resolution.finest > 0.) || !(resolution.coarsest >= resolution.finest) { return None; }
+        let root = 16.*resolution.coarsest;
+        if !root.is_finite() { return None; }
+        let reach = 2.*root;
+        let mut adfs = self.adfs.lock();
+        let key = super::memo::bits([resolution.finest,resolution.coarsest,resolution.tolerance]);
+        let adf = adfs.entry(key).or_insert_with(|| Adf::new(root,resolution));
+        Some(adf.read(p,&mut |q| {
+            let v = self.value(q);
+            if v.is_nan() { v } else { v.clamp(-reach,reach) }
+        }))
     }
 
     /// How many leaves the field has, as `reading` numbers them.

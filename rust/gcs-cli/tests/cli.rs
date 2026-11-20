@@ -1969,6 +1969,68 @@ fn a_picture_of_a_solid_not_built_says_so() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// **A picture of a solid whose round is refused says so first, and is drawn in bounded time**
+/// (#961): the refusal an export of it says at once — the kernel's, a ball standing still on a
+/// stretch of a loop; or the lowering's, a stretch of a circle its end does not cut off — is said
+/// against the picture before its field is meshed (`--progress` puts it before the solid's
+/// evaluation is done), once, and the picture is written; the field's round, read from a distance
+/// field rather than by a search at every value, is meshed in seconds where it took 71 s and 25 s.
+/// A round the kernel builds is drawn with nothing said ahead.
+#[test]
+fn a_picture_of_a_refused_round_says_so_first_and_is_drawn_in_bounded_time() {
+    let dir = std::env::temp_dir().join(format!("solventc-png-refused-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let post = |top: &str, round: &str| format!("unit mm\nuse std\nuse std.solids (cut, union, common)\n\
+        use std.rounds (round)\nin std.top {{\n  o := point\n  fix((0, 0)) o\n  a := point\n  fix((3, -4)) a\n\
+        \x20 b := point\n  fix((3, 4)) b\n  side := arc(center: o, start: b, end: a) hint(r: 5)\n\
+        \x20 flat := line(a, b)\n}}\npost := solid(std.solids.Prism(face(side, flat), from: 0mm, to: 14mm))\n{top}\
+        drum := solid(post)\n{round}\n");
+    let lid = "across := axis hint(dir: (0, 1, 0))\nacross parallel std.y\n\
+        u := axis hint(dir: (0.94, 0, -0.34))\nu perpendicular across\nu angle(20deg, about: std.y) std.x\n\
+        slant := plane(u: u, v: across)\nfix(origin == (0mm, 0mm, 10mm)) slant\n\
+        in slant {\n  p := point\n  q := point\n  r := point\n  s := point\n\
+        \x20 fix((-20, -20)) p\n  fix((20, -20)) q\n  fix((20, 20)) r\n  fix((-20, 20)) s\n\
+        \x20 (pq := line(p, q)) -> (qr := line(q, r)) -> (rs := line(r, s)) -> (sp := line(s, p)) -> close\n}\n\
+        lid := solid(std.solids.Prism(face(pq, qr, rs, sp), from: 0mm, to: 30mm))\nlid cut drum\n";
+    let cases = [
+        (post(lid, "drum.lid round(r: 5mm) drum.post.side"),
+         "a rolled round: the ball between `post.side` with `lid.far` stands still, and their meeting is a \
+          stretch of a loop: no stretch of its dome is cut off yet"),
+        (post("", "drum.post.far round(r: 5mm) drum.post.side"),
+         "a stretch of a circle its end does not cut off"),
+    ];
+    let source = dir.join("post.sv");
+    let png = dir.join("post.png").to_str().unwrap().to_string();
+    for (text, why) in &cases {
+        std::fs::write(&source, text).unwrap();
+        // the export refuses it, in the words the picture says
+        let step = dir.join("post.step").to_str().unwrap().to_string();
+        let out = run(&[source.to_str().unwrap(), "--no-check", "--solid", "drum", "--step", &step]);
+        assert!(String::from_utf8_lossy(&out.stderr).contains(why), "{}", String::from_utf8_lossy(&out.stderr));
+        let clock = std::time::Instant::now();
+        let out = run(&[source.to_str().unwrap(), "--no-check", "--progress", "--size", "120", "--png", &png]);
+        let took = clock.elapsed().as_secs_f64();
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(0), "{stderr}");
+        assert!(std::fs::metadata(&png).is_ok_and(|m| m.len() > 0), "written");
+        let said = format!("solventc: {png}: `drum` is drawn from its material field, not built: ");
+        assert_eq!(stderr.matches(&said).count(), 1, "said once: {stderr}");
+        let line = stderr.lines().find(|l| l.starts_with(&said)).unwrap();
+        assert!(line.contains(why), "{line}");
+        // said before the field is meshed, which the solid's evaluation is
+        let at = stderr.find(&said).unwrap();
+        let evaluated = stderr.find("evaluated drum in").expect("the evaluation said");
+        assert!(at < evaluated, "{stderr}");
+        assert!(took < 60.0, "{took} s");
+    }
+    // a round the kernel builds: nothing is said, ahead or after
+    let out = run(&[&doc("rounds/dome.sv"), "--no-check", "--no-progress", "--size", "120", "--png", &png]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(0), "{stderr}");
+    assert!(!stderr.contains("not built"), "{stderr}");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 /// **A sliver the solid holds is said against each file and picture** (#836): a bore ending 1 µm
 /// over a pocket's ceiling leaves a strip of its walls 1 µm tall, which the STEP, the STL and the
 /// picture are each written with and said against, in the core's words — the solid, the faces, the
