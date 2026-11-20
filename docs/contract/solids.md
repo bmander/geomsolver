@@ -1070,11 +1070,17 @@ placement carries inside the blank; CLI test readers zero the offset.
   through) or one the stock or another union holds already — its material is in the body as
   stated, redundant and not lost; a cut that takes nothing, which the body rule does not defeat
   and whose reading would classify every cut of every body; a `common` leaving nothing, the empty
-  body said by its export (#617).  **Cost**: nothing for a body with no union, or no cut and no
-  common; else its operands built once, and one arrangement per union whose box meets a cut's
-  (or of each union, where the body has a common) — a plate of 100 through holes under 100
-  bosses bored through reads in 1.6 s beside its 15 s build, the same plate with the bosses
-  beside the holes in 0.1 s.  The page does not say it: `solid_diagnostics` is `solventc`'s and a
+  body said by its export (#617).  **Cost**: nothing for a body whose written terms have no
+  union, or no cut and no common (what reads its faces, a round, is never lowered for it,
+  `cad::recipe_of_terms`); else the nodes its unions, cuts and commons need built once (a body
+  among them its own remembered build), and for each union whose box meets a cut's (or each,
+  where the body has a common) its vertices and a point of each face placed against those cuts
+  and commons — one outside every cut and inside every common, by more than the tolerance, is a
+  witness that a ball of its material is kept — and only where none is, the arrangement.  A
+  plate of 100 through holes under 100 bosses bored through reads in 0.3 s beside a 15 s build;
+  `hypoid_drive` pays 0.9 s, `shaft_drive` 0.9 s of 21, `turbine_blade` 0.2 s, every other
+  example under a tenth.
+  The page does not say it: `solid_diagnostics` is `solventc`'s and a
   drawing's, as W118 is.  `tests/unkept_union.rs` is the gate (the issue's hub either order, the
   hub partly cut, flush and a hair wider, proud of a through bore, two cuts together naming both
   and no other union, a common, the remedy of a body bored first).
