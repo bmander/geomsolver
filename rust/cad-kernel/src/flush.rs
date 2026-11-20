@@ -66,8 +66,9 @@ pub fn flushed(solid: &Brep,operand: &Brep,tol: f64) -> Option<Brep> {
     out
 }
 
-/// A face's box: its edges'.
-fn face_box(b: &Brep,f: &Face) -> Box3 {
+/// A face's box: its edges' (`Curve::bounds`, unpadded) — a planar face's own, a face lying in the
+/// hull of its boundary.
+pub(super) fn face_box(b: &Brep,f: &Face) -> Box3 {
     let mut bx = EMPTY;
     for c in f.loops.iter().flatten() {
         let e = &b.edges[c.edge as usize];

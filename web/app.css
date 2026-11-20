@@ -53,47 +53,6 @@ body {
 /* a phone's toolbars come and go over the page: the height left between them, not the largest */
 @supports (height: 100dvh) { #app { height: 100dvh; } }
 
-header { border-bottom: 1px solid var(--line); background: var(--panel); flex: none; }
-.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 5px 8px; }
-.bar > * { flex: none; }        /* wrap onto a new row rather than shrinking to a sliver */
-.bar + .bar { border-top: 1px solid var(--line); }
-.bar .sep { width: 1px; height: 20px; background: var(--line); margin: 0 6px; }
-.bar button { white-space: nowrap; }
-
-/* A bar that folds its topics (`ui::fitBar`): one row while folding can make it one, and it
-   wraps only where folding every topic cannot.  Open, a topic is its buttons standing on the bar;
-   folded, a head named for it, dropping them as a menu does.  The head reads as pressed while a
-   tool it holds is the one down, so a folded bar still says what the pointer will do. */
-.bar.fitted { flex-wrap: nowrap; }
-.bar.fitted.wrapping { flex-wrap: wrap; }
-.topic { position: relative; display: flex; }
-.topic-items { display: flex; align-items: center; gap: 4px; }
-.topic > .topic-head { display: none; }
-.topic.folded > .topic-head { display: block; }
-.topic-head::after { content: ' ▾'; color: var(--muted); }
-.topic-head[aria-expanded="true"] { background: var(--accent-soft); border-color: var(--accent); }
-.topic.folded:has(> .topic-items > button[aria-pressed="true"]) > .topic-head {
-  background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600;
-}
-.topic.folded > .topic-items {
-  display: none; position: absolute; top: calc(100% + 2px); left: 0; z-index: 20;
-  flex-direction: column; align-items: stretch; min-width: 170px; padding: 4px; overflow-y: auto;
-  background: var(--bg); border: 1px solid var(--line); border-radius: 7px;
-  box-shadow: 0 8px 24px rgba(0,0,0,.18);
-}
-/* a list that would run off the right of the screen hangs from its head's right edge instead */
-.topic.folded.flip > .topic-items { left: auto; right: 0; }
-.topic.folded:has(> .topic-head[aria-expanded="true"]) > .topic-items { display: flex; }
-.topic.folded > .topic-items > button {
-  display: flex; justify-content: space-between; gap: 24px; text-align: left;
-}
-.topic.folded > .topic-items > .sep { width: auto; height: 1px; margin: 4px 2px; }
-/* Every bar folded to its heads: they share one row under the menu bar (`ui::fitBars`). */
-header.compact { display: flex; flex-wrap: wrap; }
-header.compact > .menubar { flex: 1 0 100%; border-bottom: 1px solid var(--line); }
-header.compact > .bar + .bar { border-top: 0; }
-header.compact > .bar.fitted + .bar.fitted { padding-left: 0; }
-
 button, select {
   font: inherit; color: inherit;
   background: var(--bg);
@@ -107,40 +66,6 @@ button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(
 button:disabled { opacity: .45; cursor: default; border-color: var(--line); }
 button kbd { font: inherit; color: var(--muted); margin-left: 4px; }
 label.check { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; color: var(--text); }
-
-/* the menu bar.  It behaves like a desktop one: a click opens a menu, and while any menu
-   is open the others take over on hover.  Which one is down is recorded once, in the top
-   button's aria-expanded, and the list is dropped off that. */
-.menubar { gap: 2px; padding: 2px 6px; }
-.menu { position: relative; }
-.menu > button { background: none; border: 1px solid transparent; padding: 3px 10px; }
-.menu > button:hover, .menu > button[aria-expanded="true"] {
-  background: var(--accent-soft); border-color: transparent; color: var(--accent);
-}
-.menu ul {
-  display: none; position: absolute; top: calc(100% + 2px); left: 0; z-index: 20;
-  min-width: 200px; margin: 0; padding: 4px; list-style: none;
-  background: var(--bg); border: 1px solid var(--line); border-radius: 7px;
-  box-shadow: 0 8px 24px rgba(0,0,0,.18);
-}
-.menu:has(> button[aria-expanded="true"]) ul { display: block; }
-.menubar .brand {
-  padding: 2px 7px; margin-right: 4px; font-weight: 600; letter-spacing: .04em;
-  background: none; color: var(--accent); border-color: var(--accent);
-}
-.menubar .brand:hover { background: var(--accent-soft); }
-.menu li.sep { height: 1px; margin: 4px 2px; background: var(--line); }
-.menu li > button {
-  display: flex; width: 100%; gap: 24px; justify-content: space-between;
-  background: none; border: 0; padding: 4px 8px; white-space: nowrap;
-}
-.menu li > button:hover { background: var(--accent-soft); color: var(--accent); }
-.menu li.head { padding: 4px 8px 2px; font-size: 11px; color: var(--muted); }
-/* a check box: its tick in the margin before the label, room kept for it while unticked */
-.menu li > button[role="menuitemcheckbox"] { position: relative; padding-left: 24px; }
-.menu li > button[role="menuitemcheckbox"][aria-checked="true"]::before {
-  content: '\2713'; position: absolute; left: 8px;
-}
 
 #banner { display: none; align-items: center; gap: 10px; padding: 7px 12px; font-weight: 600; flex: none; }
 #banner.conflict { display: flex; background: var(--danger-bg); color: #8a0000; border-bottom: 1px solid #d62728; }
@@ -398,12 +323,171 @@ dialog input[type=search] {
 #build-bar .build-row.refused .build-state, #build-bar .build-row.refused .build-detail { color: #a03b46; }
 #build-bar .build-row.waiting { opacity: .6; }
 
+/* -- every word and every command (`app/words.ts`, `app/wordbox.ts`) ---------------------------
+
+   No toolbars: the Words button in the workspace's lower left opens a menu of every word of the
+   language and every command of the app, the palette beside it keeps what is wanted at hand, and
+   the word in hand is the box above them, written as the statement it will make.  A slot's ink
+   says what fills it: a click on the drawing (the accent), a number, or a word chosen. */
+#dock {
+  position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 6;
+  display: flex; gap: 8px; align-items: center; pointer-events: none;
+}
+#dock > * { pointer-events: auto; }
+/* the bar of objects being built runs along the very bottom: the dock stands on it */
+#canvas-wrap:has(#build-bar:not([hidden])) #dock { bottom: 40px; }
+#canvas-wrap:has(#build-bar:not([hidden])) #timeline { bottom: 92px; }
+.drawing-active #dock, .drawing-active #word-box, .drawing-active #words-menu { display: none; }
+#words-button {
+  flex: none; display: flex; align-items: center; gap: 7px; height: 38px; padding: 0 12px 0 8px;
+  border-radius: 10px; background: var(--bg); font-weight: 650;
+  box-shadow: 0 4px 16px rgba(0,0,0,.12);
+}
+#words-button[aria-expanded="true"] { border-color: var(--syn-word); }
+#words-button .logo {
+  font: 700 13px var(--mono); color: #fff; background: var(--syn-word); border-radius: 6px;
+  padding: 2px 5px;
+}
+#words-button kbd { margin: 0; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px;
+  font: 10.5px var(--mono); }
+#words-button .fits:not(:empty) {
+  font-size: 11px; font-weight: 600; color: #a0156b; background: var(--row-sel);
+  border-radius: 9px; padding: 1px 7px;
+}
+#palette {
+  display: flex; gap: 5px; align-items: center; min-width: 0; min-height: 38px; overflow-x: auto;
+  padding: 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+  box-shadow: 0 4px 16px rgba(0,0,0,.12); scrollbar-width: thin;
+}
+#palette:empty::before { content: 'drag words here'; color: var(--muted); font-size: 12px; padding: 0 8px; white-space: nowrap; }
+#palette.drop { outline: 2px dashed var(--syn-word); outline-offset: -2px; }
+.chip {
+  flex: none; display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 5px 0 7px;
+  border-radius: 7px; font: 12.5px var(--mono); color: var(--syn-word); white-space: nowrap;
+  touch-action: none; user-select: none; -webkit-user-select: none;
+}
+.chip.cmd { font-family: inherit; color: var(--text); }
+.chip.gone { color: var(--muted); text-decoration: line-through; }
+.chip.lifted { opacity: .3; }
+.chip .x { font-style: normal; color: var(--muted); padding: 0 2px; border-radius: 4px; }
+.chip .x:hover { color: var(--text); background: var(--panel); }
+.chip.ghost {
+  position: fixed; z-index: 60; pointer-events: none; transform: translate(-50%, -50%) rotate(-2deg);
+  background: var(--bg); border: 1px solid var(--syn-word); box-shadow: 0 6px 20px rgba(0,0,0,.2);
+}
+.glyph { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5;
+  stroke-linecap: round; stroke-linejoin: round; font-family: var(--mono); }
+
+#words-menu {
+  position: absolute; left: 12px; bottom: 60px; z-index: 8;
+  width: min(720px, calc(100% - 24px)); height: min(520px, calc(100% - 72px));
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 10px 32px rgba(0,0,0,.2);
+}
+#words-menu[hidden] { display: none; }
+#words-menu.carrying { opacity: .15; pointer-events: none; }
+.words-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px;
+  border-bottom: 1px solid var(--line); }
+.words-head input { flex: 1; min-width: 150px; font: 14px system-ui, sans-serif; padding: 7px 10px;
+  border: 1px solid var(--line); border-radius: 8px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; font-size: 12px; padding: 4px 9px; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; font-weight: 400; }
+.words-body { display: grid; grid-template-columns: 180px minmax(0, 1fr); min-height: 0; }
+.words-tree { overflow: auto; padding: 6px; background: var(--panel); border-right: 1px solid var(--line); }
+.words-tree button {
+  display: flex; width: 100%; justify-content: space-between; gap: 6px; text-align: left;
+  border: 0; background: none; padding: 4px 8px; border-radius: 5px;
+}
+.words-tree button.twig { padding-left: 20px; font-size: 12px; }
+.words-tree button.fits { color: #a0156b; }
+.words-tree button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.words-tree .n { color: var(--muted); font-size: 11px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.words-tree .rule { height: 1px; background: var(--line); margin: 5px 4px; }
+.words-items { overflow: auto; padding: 6px; }
+.words-items .head { padding: 9px 8px 3px; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.words-items .empty { padding: 24px 16px; color: var(--muted); text-align: center; }
+.words-items .row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 1px 8px; align-items: center;
+  padding: 5px 8px; border-radius: 7px; cursor: grab; user-select: none; -webkit-user-select: none;
+}
+.words-items .row:hover, .words-items .row.hi { background: var(--accent-soft); }
+.words-items .sig { display: flex; flex-wrap: wrap; align-items: center; gap: 1px 2px; min-width: 0;
+  font: 12.5px var(--mono); }
+.words-items .sig b { font-weight: 400; color: var(--syn-word); }
+.words-items .cmd .sig { font-family: inherit; gap: 6px; }
+.words-items .sig kbd { font: 10.5px var(--mono); color: var(--muted); border: 1px solid var(--line);
+  border-radius: 4px; padding: 0 4px; }
+.words-items .sig .tick { color: var(--accent); }
+.words-items .sig .more { color: var(--muted); }
+.words-items .g { display: inline-flex; color: var(--muted); }
+.words-items .g.pick { color: var(--accent); }
+.words-items .g.value { color: var(--syn-number); }
+.words-items .g.choice { color: var(--syn-label); }
+.words-items .crumb { font: 10.5px var(--mono); color: var(--syn-type); white-space: nowrap; }
+.words-items .keep { display: flex; border: 0; background: none; padding: 3px; color: var(--muted); }
+.words-items .keep[aria-pressed="true"] { color: var(--syn-word); font-weight: 400; background: none; }
+.words-items .keep[aria-pressed="true"] .glyph { fill: currentColor; }
+.words-items .doc { grid-column: 1 / -1; font-size: 12px; color: var(--muted); min-width: 0; }
+.words-foot { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 6px 12px; font-size: 11.5px;
+  color: var(--muted); border-top: 1px solid var(--line); }
+.words-foot kbd { font: 10.5px var(--mono); }
+
+#word-box {
+  position: absolute; left: 12px; right: 12px; bottom: 60px; z-index: 7; margin: 0 auto;
+  width: fit-content; max-width: calc(100% - 24px); box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 5px; padding: 8px 10px 7px;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 10px 32px rgba(0,0,0,.18);
+}
+#word-box[hidden] { display: none; }
+#word-box .box-row { display: flex; align-items: flex-start; gap: 8px; }
+#word-box .grip { color: var(--muted); padding-top: 6px; }
+#word-box .sentence { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 4px 4px; min-width: 0;
+  font: 13px var(--mono); }
+#word-box .lit { white-space: pre; line-height: 28px; }
+#word-box .lit.word { color: var(--syn-word); }
+#word-box .slotwrap { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; }
+#word-box .slotwrap.dim { opacity: .55; }
+#word-box .cap { font: 10px system-ui, sans-serif; color: var(--syn-type); white-space: nowrap; }
+#word-box .slot {
+  --c: var(--accent);
+  display: inline-flex; align-items: center; gap: 4px; height: 28px; box-sizing: border-box;
+  padding: 0 7px; border-radius: 7px; border: 1.5px dashed var(--c); color: var(--c); cursor: pointer;
+}
+#word-box .slot.value { --c: var(--syn-number); }
+#word-box .slot.choice { --c: var(--syn-label); }
+#word-box .slot.name { --c: var(--syn-def); }
+#word-box .slot.filled { border-style: solid; background: color-mix(in srgb, var(--c) 10%, transparent); }
+#word-box .slot.armed { border-style: solid; box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 30%, transparent); }
+#word-box .slot input, #word-box .slot select {
+  border: 0; padding: 0; min-height: 0; background: none; outline: none; color: var(--text);
+  font: 12.5px var(--mono);
+}
+#word-box .slot input::placeholder { color: var(--c); opacity: .7; }
+#word-box .more { height: 22px; margin-top: 3px; padding: 0 5px; border: 1px dashed var(--syn-label);
+  color: var(--syn-label); background: none; font: 11px var(--mono); border-radius: 6px; }
+#word-box .acts { display: flex; gap: 5px; }
+#word-box .acts button { height: 28px; padding: 0 8px; display: inline-flex; align-items: center; gap: 4px; }
+#word-box .acts .write.ready { background: var(--accent); border-color: var(--accent); color: #fff; }
+#word-box .acts .write.ready kbd { color: inherit; }
+#word-box .prompt { font-size: 11.5px; color: var(--muted); }
+#word-box .prompt b { color: var(--text); font-weight: 600; }
+#word-box .prompt kbd { font: 10.5px var(--mono); }
+@media (max-width: 700px) {
+  .words-body { grid-template-columns: 118px minmax(0, 1fr); }
+  .words-foot { display: none; }
+  #words-button kbd { display: none; }
+}
+
 /* the measurement readout: pinned to the canvas's lower right, only while two things are picked */
 /* the timeline (#398 L): a strip in the viewport's lower left, a row per parameter.  The track's
    solid part is what the march reached; past it, hatched, no drawing was followed, and the mark
    is the singular instant the march stopped at */
 #timeline {
-  position: absolute; left: 12px; bottom: 12px; z-index: 3;
+  position: absolute; left: 12px; bottom: 64px; z-index: 3;
   display: flex; flex-direction: column; gap: 4px;
   width: min(460px, calc(100% - 24px)); padding: 6px 9px;
   border: 1px solid var(--line); border-radius: 7px;
@@ -743,15 +827,11 @@ dialog input[type=search] {
 /* -- a finger -------------------------------------------------------------------------------
 
    A control a fingertip can land on: every button and chooser grows to a tap's height, and the
-   keyboard chips go, since a touch screen has no keys to name.  The sizes stay constant: a bar
-   short of room folds its topics (`ui::fitBar`) rather than shrink them. */
+   keyboard chips go, since a touch screen has no keys to name. */
 @media (pointer: coarse) {
   #view-buttons { display: flex; }
   button, select { min-height: 36px; padding: 6px 12px; }
-  .bar { gap: 6px; }
-  .menu > button { padding: 6px 12px; }
-  .menu li > button, .topic.folded > .topic-items > button { padding: 10px 12px; }
-  .menubar .brand { padding: 6px 10px; }
+  #palette .chip, #words-menu .row { min-height: 40px; }
   #program-compile, #outline-isolate, #outline-show-all { min-height: 32px; padding: 4px 12px;
     font-size: 13px; }
   #ppanel-fold { min-height: 40px; min-width: 40px; }

@@ -105,7 +105,7 @@ fn a_leaning_v_wheel_turned_whole_is_its_shadow_revolved() {
     let v = volume(&built);
     assert!((v-apart).abs() <= 1e-6*apart,"the wheel turned whole: {v} against {apart} worked apart");
     crate::swept_closed::agrees_over(&built,&wheel,&path,[0.,TAU]);
-    let text = gcs_core::brep::step::write(&built,"groove",1e-3).unwrap();
+    let text = gcs_core::brep::step::write(&built,"groove",1e-3,gcs_core::brep::step::Fit::Exact).unwrap();
     gcs_core::brep::step_check::verify(&text,&gcs_core::brep::step_check::Solid::of(&built)).unwrap_or_else(|m| panic!("its STEP: {m}"));
     // the rod grooved: the sweep subtracted by the Boolean
     let rod = prism(&disc([0.;3],[0.,0.,1.],5.),0.,20.).unwrap();

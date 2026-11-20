@@ -1,5 +1,6 @@
 //! The CAD recipe (`solid::cad::recipe`) built by this kernel: the same millimetre-valued DAG the
-//! native host is handed, node by node, so the two kernels can be held to each other.
+//! native host is handed, node by node, so the two kernels can be held to each other.  It is
+//! handed over as typed values (`Recipe`, `Node`), never as text.
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use super::boolean::{combined,Op};
@@ -7,7 +8,6 @@ use super::build::{cut_before,drafted,kept,kept_by_solid,prism,revolve,Profile};
 use super::geom::{through_span,tolerance,tolerance_over,widen,Rigid,V,EMPTY};
 use super::topo::Brep;
 use super::{KernelError,Kind};
-use crate::util::json::Json;
 use std::collections::BTreeMap;
 
 /// A node built, or why not.
@@ -42,13 +42,13 @@ pub fn name_under(key: &str,face: &str) -> String { format!("{key}{NAMED}{face}"
 
 /// One node of a recipe built from the nodes before it; `Err` names what this kernel does not
 /// build yet.
-pub fn node(n: &Json,built: &BTreeMap<i64,Brep>) -> Result<Brep,String> { node_named(n,built,&BTreeMap::new(),0.) }
+pub fn node(n: &Node,built: &BTreeMap<i64,Brep>) -> Result<Brep,String> { node_named(n,built,&BTreeMap::new(),0.) }
 
 /// `node`, naming each operand in what it says, its Booleans' tolerance never under `floor` (mm):
 /// the rounding a recipe read off coordinates far from its origin carries (a part solved at 1e9 mm
 /// is placed to 1e-7 mm, wherever it is built about).
-pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Result<Brep,String> {
-    Ok(Node::read(n)?.built(built,built_names,floor)?)
+pub fn node_named(n: &Node,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Result<Brep,String> {
+    Ok(n.built(built,built_names,floor)?)
 }
 
 impl Node {
@@ -265,14 +265,21 @@ fn lowered_node(n: &Lowered,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i6
     // piece is to a corner's cell (a chamfer's on the seam's normal surface, a round's at its ends)
     for b in &n.beyond {
         let tol = tolerance_over(1.+crate::util::space::norm(b.ends[0])+b.section.size(),floor);
-        pieces.push(match b.section {
+        let (mut piece,square) = match b.section {
             super::spill::Across::Round { .. } => super::spill::round_beyond(b,tol)
                 .map_err(|e| format!("a round beyond a seam: {e}"))?,
-            super::spill::Across::Flat { .. } => super::spill::flat_beyond(b,tol)
-                .map_err(|e| format!("a flat beyond a seam: {e}"))?,
-        });
+            super::spill::Across::Flat { .. } => (super::spill::flat_beyond(b,tol)
+                .map_err(|e| format!("a flat beyond a seam: {e}"))?,Vec::new()),
+        };
+        // the whole length of an edge (#962): cut off where its run ends, as the run's own piece is,
+        // and square to the edge where it was carried to
+        for &(at,normal) in b.run.iter().flatten().chain(&square) {
+            piece = kept(&piece,at,normal.map(|x| -x),floor)
+                .map_err(|e| format!("a piece beyond a seam cut off at its end: {e}"))?;
+        }
+        pieces.push(piece);
     }
-    chained(&pieces,&n.joins,first_rolled,floor)
+    chained(&pieces,&n.joins,&n.gaps,first_rolled,floor)
 }
 
 /// One rolled run of a `lowered` node: the ball rolled along it against the `stratum`, or a
@@ -329,11 +336,16 @@ fn lowered_run(piece: &Run,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
 
 /// A lowered region's pieces, those `joins` names glued at their shared sections into chains, each
 /// walked from its first piece breadth first at the tolerance of its pieces (looser at a rolled
-/// piece's, those from `first_rolled` on), and the chains set beside one another (`beside`).
-fn chained(pieces: &[Brep],joins: &[[usize;2]],first_rolled: usize,floor: f64) -> Built {
+/// piece's, those from `first_rolled` on, and at a seam's whose two sections stand `gaps` apart),
+/// and the chains set beside one another (`beside`).
+fn chained(pieces: &[Brep],joins: &[[usize;2]],gaps: &[f64],first_rolled: usize,floor: f64) -> Built {
     if joins.iter().flatten().any(|&k| k >= pieces.len()) { return Err("recipe: a join names no piece".into()) }
-    let mut next: Vec<Vec<usize>> = vec![Vec::new();pieces.len()];
-    for &[i,j] in joins { next[i].push(j); next[j].push(i); }
+    if gaps.len() != joins.len() { return Err("recipe: a join's gap is not given".into()) }
+    let mut next: Vec<Vec<(usize,f64)>> = vec![Vec::new();pieces.len()];
+    for (&[i,j],&gap) in joins.iter().zip(gaps) {
+        next[i].push((j,gap));
+        next[j].push((i,gap));
+    }
     let tol = tolerance_over(pieces.iter().map(Brep::size).fold(1.,f64::max),floor);
     let mut solid: Option<Brep> = None;
     let mut done = vec![false;pieces.len()];
@@ -341,24 +353,27 @@ fn chained(pieces: &[Brep],joins: &[[usize;2]],first_rolled: usize,floor: f64) -
         if done[first] { continue }
         done[first] = true;
         let mut chain = pieces[first].clone();
-        let mut rolled = false;
+        let mut measured = false;
         let mut queue = std::collections::VecDeque::from([first]);
         while let Some(i) = queue.pop_front() {
-            for &k in &next[i] {
+            for &(k,gap) in &next[i] {
                 if done[k] { continue }
                 done[k] = true;
                 // a rolled piece's cap is cut from its fitted canal: its edges are the cell's
                 // to within the canal's fit (`fillet::roll`'s bar, a ten-millionth of the
-                // boundary), and the shared edges are measured once the chain is whole
+                // boundary), and the shared edges are measured once the chain is whole; so at a
+                // seam of the body's two faces meeting tangent only to its reading of tangent
+                // (#962), its two sections as far apart as they stand
                 let rolled_join = [i,k].iter().any(|&p| p >= first_rolled);
-                let bar = if rolled_join { (2e-7*chain.size().max(pieces[k].size())).max(8.*tol) } else { 8.*tol };
+                let mut bar = if rolled_join { (2e-7*chain.size().max(pieces[k].size())).max(8.*tol) } else { 8.*tol };
+                if gap > 0. { bar = bar.max(8.*tol+2.*gap); }
                 chain = super::boolean::glued(&chain,&pieces[k],bar)
                     .ok_or("two pieces joined at a section share no face there")?;
-                rolled |= rolled_join;
+                measured |= rolled_join || gap > 0.;
                 queue.push_back(k);
             }
         }
-        if rolled { chain.measure_tolerances(); }
+        if measured { chain.measure_tolerances(); }
         solid = Some(match solid { None => chain,Some(s) => beside(&s,&chain,floor)? });
     }
     solid.ok_or_else(|| "recipe: a lowered region of no pieces".into())
@@ -419,7 +434,7 @@ fn body(n: &Body,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,f
 /// name, a placement's copies by the placement and the route to the primitive in its source —
 /// the walk `solid::document::operand_primitives` makes over the solids, made over the nodes, so
 /// the names are `solid::exact`'s.
-pub fn build(recipe: &Json) -> Result<Brep,String> { Ok(Recipe::read(recipe)?.build()?) }
+pub fn build(recipe: &Recipe) -> Result<Brep,String> { Ok(recipe.build()?) }
 
 impl Recipe {
     /// The root, built (`build`).

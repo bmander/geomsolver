@@ -91,11 +91,8 @@ impl SetDistance {
         let patches: Option<Vec<crate::model::FaceRef>> = terms.iter()
             .map(|t| on_face(t, sk).filter(|(_, surface)| !surface).map(|(f, _)| f)).collect();
         if let Some(fs) = patches {
-            let readings = fs.iter().map(|f| super::faces::reading(sk, f, read))
-                .collect::<Result<Vec<_>, String>>()?;
-            if readings.iter().any(|r| !Arc::ptr_eq(&r.body, &readings[0].body)) {
-                return Err("the faces a set is on are one body's".to_string());
-            }
+            // its edges or corners there: of one body (#961)
+            let readings = super::faces::one_body(sk, &fs.iter().collect::<Vec<_>>(), read)?;
             let body = readings[0].body.clone();
             return Ok(match readings.as_slice() {
                 [one] => SetDistance::Patch(Arc::new(Reading { body, faces: one.faces.clone(), smooth: one.smooth })),

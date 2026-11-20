@@ -135,7 +135,7 @@ component FlatFill(a: face, b: face, la: Length, lb: Length) symmetric((a, la), 
 A round(r) B := {
   repeat a in A {
     repeat b in B {
-      when b != a and b meets a {
+      when b != a and a meets b {
         run := Run(a, b, r: r)
         taken := solid(run)
         A.body and { p | p not in taken }
@@ -163,7 +163,7 @@ round(r) X := X round(r: r) X
 A chamfer(d) B := {
   repeat a in A {
     repeat b in B {
-      when b != a and b meets a {
+      when b != a and a meets b {
         flat := Flat(a, b, la: d, lb: d)
         taken := solid(flat)
         A.body and { p | p not in taken }

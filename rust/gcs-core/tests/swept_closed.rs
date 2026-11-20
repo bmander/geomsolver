@@ -1148,6 +1148,31 @@ fn a_drum_screwed_a_short_lead_through_most_of_a_turn_closes() {
     agrees_over(&built,&tool,&path,[0.,theta]);
 }
 
+/// **A drum screwed a short lead through most of a turn, cut from a slab a hundred times its sweep,
+/// takes its helical sweep from it** (#942 F6): the drum of
+/// `a_drum_screwed_a_short_lead_through_most_of_a_turn_closes`, its rims' ramps thinner than a
+/// hundredth where they fold against the cylinders its side sweeps, now in a box as wide as the
+/// slab. The complex orders the faces tangent along an edge by reading a step into each; a step of a
+/// thousandth of the box read past the ramps, and as the box grew it swapped a ramp with the
+/// cylinder beside it and the solid was judged wrong (built closed in its own box, a tenth of its
+/// extent to spare for a twentieth did the same). Read nearest first, farther only while two still
+/// agree within a tolerance's lean there, the order is the edge's whatever the box: the slab less
+/// `π + Θ (20 + k π)`.
+#[test]
+fn a_drum_screwed_a_short_lead_cut_from_a_slab_a_hundred_times_its_sweep_takes_its_sweep() {
+    use gcs_core::brep::build::{disc,prism};
+    use gcs_core::brep::swept::closed::cut_from;
+    use std::f64::consts::{PI,TAU};
+    let tool = prism(&disc([10.,0.,-0.5],[0.,0.,1.],1.),0.,1.).unwrap();
+    let theta = 280f64.to_radians();
+    let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.,advance:0.5});
+    let slab = block([-100.,-100.,-1.],[100.,100.,1.5]);
+    let cut = cut_from(&slab,&tool,&path,[0.,theta],0.002,1e-6).unwrap_or_else(|e| panic!("not cut: {e:?}"));
+    let sweep = PI+theta*(20.+0.5/TAU*PI);
+    let expected = volume(&slab)-sweep;
+    assert!((volume(&cut)-expected).abs() <= 1e-9*sweep,"{} against {expected}",volume(&cut));
+}
+
 /// **A drum screwed across a ring sector bores its helical groove on one arrangement** (#721 F2c5,
 /// #699 C): the drum of `ramp` screwed half a millimetre a turn through 280° about the middle of a
 /// sixth of a ring 8 to 12 across and 2 high, which it passes wholly across, the sector its blank.

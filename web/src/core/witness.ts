@@ -30,7 +30,7 @@ export interface WitnessReport {
   dependencies: Dependency[];
   motions: Motion[];             /* null-space basis: rigid modes first, then internal DOFs */
   movable: number[];             /* free-parameter indices taking part in some motion */
-  /** First-order motions blocked at second order (a tangency at its own contact): rigid in
+  /** First-order motions blocked at second order (a double root): rigid in
    *  practice, not in `motions` and not DOF. */
   blocked: number;
   warnings: string[];

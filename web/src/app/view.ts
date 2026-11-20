@@ -210,7 +210,18 @@ export interface Place {
 
 export type Tool =
   'select' | 'point' | 'line' | 'rect' | 'circle' | 'arc' | 'arc3' | 'spline' | 'splinefit'
-  | 'extrude' | 'revolve' | 'union' | 'cut' | 'common' | 'fillet' | 'chamfer';
+  | 'extrude' | 'revolve' | 'union' | 'cut' | 'common' | 'fillet' | 'chamfer'
+  /* a slot of the argument box armed (`wordbox.ts`): a click fills it, and only what it takes */
+  | 'word';
+
+/** **A slot of a word being filled** (`wordbox.ts`), while the `word` tool is down: what it takes,
+ *  whether a click on nothing places a new point for it, and what is done with a click. */
+export interface WordPick {
+  accepts(hit: Hit): boolean;
+  mints: boolean;
+  /** A click: the hit it took, or `null` on nothing (only where `mints`). */
+  take(hit: Hit | null, sp: [number, number]): void;
+}
 
 /** Whether a tool makes a solid of the closed region a click is inside (Extrude, Revolve): it
  *  washes the region under the pointer, and draws no snap. */
@@ -249,7 +260,7 @@ export interface Rounding {
  *  object's edges and faces (and a body whole) with an edge tool, bodies with a Boolean, and
  *  nothing with a tool that draws. */
 export function picksAs(tool: Tool): 'all' | 'parts' | 'bodies' | null {
-  return tool === 'select' ? 'all' : roundsEdges(tool) ? 'parts' : combines(tool) ? 'bodies'
+  return tool === 'select' || tool === 'word' ? 'all' : roundsEdges(tool) ? 'parts' : combines(tool) ? 'bodies'
     : null;
 }
 
@@ -494,6 +505,8 @@ export class SketchView {
    *  lit where it is drawn, the drawing's in the highlight's ink and an object's part in the box —
    *  or a row of the list a ⌘-click opened, while the pointer is on it.  View state. */
   hovered: Hit | null = null;
+  /** The slot of a word a click fills while the `word` tool is down (`wordbox.ts`). */
+  wordPick: WordPick | null = null;
   /** **Several things are under a ⌘-click**: the shell lists them at `at` (canvas coordinates) to
    *  choose among, each row lit as it is pointed at (`hoverHit`), the one chosen taken as a click
    *  on it would be (`takeHit`, with `add` the click's shift). */

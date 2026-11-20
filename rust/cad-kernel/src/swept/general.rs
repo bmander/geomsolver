@@ -78,7 +78,8 @@ pub(super) fn parameters(b: &Brep,tol: f64) -> [[f64;2];2] {
 }
 
 /// **Where two walls sharing a rail cross elsewhere** (`candidates`): seeded where an edge of either
-/// wall crosses the other's surface farther than a millionth of their size from every rail, met
+/// wall crosses the other's surface farther than twice the tolerance from every rail (a seed on a
+/// rail and the rail each on the meeting within it, #942 F6), met
 /// through both within their shared box by the kernel's one fallback (`meeting::through`: traced in
 /// space, and where that is refused as shallow marched in both walls' parameters), each seed on its
 /// own, and kept where some point of the curve stands that far off the rails. None where nothing
@@ -88,8 +89,7 @@ fn beside_rails(a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,rails: &[Curve],tol:
     let (lb,hb) = b.bounds();
     let (lo,hi): (V,V) = (std::array::from_fn(|k| la[k].max(lb[k])-tol),std::array::from_fn(|k| ha[k].min(hb[k])+tol));
     if (0..3).any(|k| lo[k] > hi[k]) { return Vec::new() }
-    let size = distance(la,ha).max(distance(lb,hb));
-    let off_rails = |p: V| rails.iter().all(|r| distance(r.point(r.inverse(p)),p) > 1e-6*size);
+    let off_rails = |p: V| rails.iter().all(|r| distance(r.point(r.inverse(p)),p) > 2.*tol);
     let mut seeds: Vec<V> = Vec::new();
     for (from,onto) in [(a,sb),(b,sa)] {
         for e in &from.edges {
@@ -108,7 +108,9 @@ fn beside_rails(a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,rails: &[Curve],tol:
     let (da,db) = (parameters(a,tol),parameters(b,tol));
     let mut traced: Vec<Curve> = Vec::new();
     for &p in &seeds {
-        let on = traced.iter().any(|c| distance(c.point(c.inverse(p)),p) <= 2e-3*size);
+        // (a seed on a branch met already: the seed and the branch each on the meeting within the
+        // tolerance)
+        let on = traced.iter().any(|c| distance(c.point(c.inverse(p)),p) <= 2.*tol);
         if on { continue }
         match crate::meeting::through(sa,da,sb,db,&[p],lo,hi,tol) {
             Ok(t) => traced.extend(t),
@@ -127,16 +129,9 @@ fn beside_rails(a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,rails: &[Curve],tol:
 /// How many pieces a stretch of the roll is cut into at the least, before any is halved.
 const FIRST_PIECES: usize = 4;
 
-/// The shortest piece a stretch of the roll is halved to, as a part of the stretch.
-const SHORTEST: f64 = 1e-6;
-
 /// How many readings of the contact's shape over the roll the instants it changes are sought
 /// between.
 const LOOKS: usize = 4096;
-
-/// How far past the face's reach about its middle its characteristic line is read: every chord of it
-/// lies within the face, so within its reach of the middle.
-const PAST: f64 = 1.5;
 
 /// Where an end of a piece of the contact stands.
 #[derive(Clone,Copy,Debug,PartialEq,Eq,PartialOrd,Ord)]
@@ -267,7 +262,7 @@ impl<'a> Tool<'a> {
 /// **The instants over `[a, b]` where the contact's shape changes**, and the shape between each two:
 /// the shape read at `LOOKS` places, and between two that differ halved to the rounding of the roll,
 /// as often as it changes there.
-fn events(shape: &dyn Fn(f64) -> Result<Vec<Piece>,Unbuilt>,[a,b]: [f64;2]) -> Result<(Vec<f64>,Vec<Vec<Piece>>),Unbuilt> {
+fn events(shape: &dyn Fn(f64) -> Result<Vec<Piece>,Unbuilt>,[a,b]: [f64;2],grain: f64) -> Result<(Vec<f64>,Vec<Vec<Piece>>),Unbuilt> {
     let at = |k: usize| if k == LOOKS { b } else { a+(b-a)*k as f64/LOOKS as f64 };
     let mut cuts = vec![a];
     let mut shapes: Vec<Vec<Piece>> = Vec::new();
@@ -295,14 +290,14 @@ fn events(shape: &dyn Fn(f64) -> Result<Vec<Piece>,Unbuilt>,[a,b]: [f64;2]) -> R
     }
     shapes.push(here);
     cuts.push(b);
-    // (a shape over less than a billionth of the roll — two changes at one instant, read a rounding
-    // apart — is the passing state between its neighbours, and dropped: the next runs from the last
-    // instant kept)
+    // (a shape over less of the roll than `grain` — over which no point of the tool moves the
+    // tolerance, #942 F6: two changes at one instant as the tolerance reads it — is the passing
+    // state between its neighbours, and dropped: the next runs from the last instant kept)
     let mut out_cuts = vec![cuts[0]];
     let mut out_shapes: Vec<Vec<Piece>> = Vec::new();
     for (k,s) in shapes.into_iter().enumerate() {
-        if cuts[k+1]-cuts[k] <= 1e-9*(b-a) && k+1 < cuts.len()-1 { continue }
-        if cuts[k+1]-out_cuts.last().unwrap() <= 1e-9*(b-a) && !out_shapes.is_empty() { *out_cuts.last_mut().unwrap() = cuts[k+1]; continue }
+        if cuts[k+1]-cuts[k] <= grain && k+1 < cuts.len()-1 { continue }
+        if cuts[k+1]-out_cuts.last().unwrap() <= grain && !out_shapes.is_empty() { *out_cuts.last_mut().unwrap() = cuts[k+1]; continue }
         out_cuts.push(cuts[k+1]);
         out_shapes.push(s);
     }
@@ -324,7 +319,7 @@ struct Rolled<'a>(&'a Sheet);
 impl super::contacts::Rolled for Rolled<'_> {
     fn at(&self,u: f64,v: f64) -> V { let [a,b] = self.0.span(); self.0.rim(u,a+(b-a)*v).0 }
     fn rate(&self,u: f64,v: f64) -> V { let [a,b] = self.0.span(); scale(self.0.d1([u,a+(b-a)*v]).2,b-a) }
-    fn still(&self,_: f64) -> bool { false }
+    fn still(&self,_: f64,_: f64) -> bool { false }
 }
 
 /// One side of a strip of a bearer: its `u` at either end of the strip's stretch, its curve in space
@@ -346,7 +341,9 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
     let read = Tool::read(tool)?;
     let posed = |s: f64| -> Result<Rigid,Unbuilt> { let q = path.pose(s)?; Ok(Rigid {r:q.r,t:q.p}) };
     let twist = |s: f64| -> Result<Twist,Unbuilt> { Ok(Twist::body(path.at(s)?)) };
-    let (cuts,shapes) = events(&|s| read.contact(&twist(s)?),[a,b])?;
+    // (two changes nearer than the roll's grain at the tolerance are one instant, #942 F6)
+    let grain = super::closed::grain(tool,path,[a,b],tol)?;
+    let (cuts,shapes) = events(&|s| read.contact(&twist(s)?),[a,b],grain)?;
     // **no stretch longer than a quarter turn or the tool's size of travel** (the tool's motion read
     // at its box's corners): a strip's sides over a long roll — a bar screwed four turns — are curves
     // a search for their meeting with another strip reads more boxes of than any may
@@ -393,9 +390,12 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
         let face = &tool.faces[f];
         let corners: Vec<V> = face.loops.iter().flatten().map(|c| tool.vertices[tool.ends(c)[0] as usize].p).collect();
         let middle = scale(corners.iter().fold([0.;3],|acc,&p| add(acc,p)),1./corners.len().max(1) as f64);
-        let reach = PAST*corners.iter().map(|&p| distance(p,middle)).fold(0.,f64::max);
+        // (its characteristic line read as far as the face's reach about its middle either way from
+        // the line's point nearest the middle: every chord of the face lies within the face, so
+        // within that reach of the middle, and of that point along the line)
+        let reach = corners.iter().map(|&p| distance(p,middle)).fold(0.,f64::max);
         let (n,q) = (*n,middle);
-        let near = |s: f64| -> Result<bool,Unbuilt> { Ok(line(path,n,q,s)?.is_some_and(|(c,_)| distance(c,q) < reach/PAST)) };
+        let near = |s: f64| -> Result<bool,Unbuilt> { Ok(line(path,n,q,s)?.is_some_and(|(c,_)| distance(c,q) < reach)) };
         for span in runs(&near,&|s| Ok(line(path,n,q,s)?.is_some()),[a,b])? {
             let numbers = |s: f64| -> Result<Vec<Vec<f64>>,Unbuilt> {
                 let (c,d) = line(path,n,q,s)?.ok_or_else(|| Unbuilt::Failed("a face's characteristic line lost partway".into()))?;
@@ -583,7 +583,9 @@ fn on_a_cylinder(sheet: &Sheet,slack: f64) -> Option<Surface> {
     let n = cross(e1,e2);
     let nn = dot(n,n);
     let reach = feet.iter().map(|&f| distance(f,p0)).fold(0.,f64::max);
-    if !(nn.sqrt() > 1e-6*reach*reach) { return None }
+    // (feet within `slack` of a line make no circle: the third stands `|n|/|e₁|` off the first two's
+    // line, and `|e₁|` is within the reach, #942 F6)
+    if !(nn.sqrt() > slack*reach) { return None }
     // the circle through three feet: its centre
     let c = add(p0,scale(add(scale(cross(n,e1),dot(e2,e2)),scale(cross(e2,n),dot(e1,e1))),0.5/nn));
     let r = distance(p0,c);
@@ -610,16 +612,18 @@ fn faces_of(bearer: &Bearer,strips: &[Strip],exact: f64) -> Result<Brep,Unbuilt>
         }
     };
     let mut out = Brep::default();
-    let same = 1e-9;
+    // (two corners at an instant one where their rims' points stand within `exact` of one another,
+    // #942 F6)
+    let same = |s: f64,u: f64,w: f64| u == w || distance(sheet.rim(u,s).0,sheet.rim(w,s).0) <= exact;
     // the corners at each instant: (s, u) to a vertex
     let mut corners: Vec<(f64,f64,u32)> = Vec::new();
     for st in strips { for i in 0..2 { for side in &st.sides {
         let (s,u) = (st.span[i],side.u[i]);
-        if corners.iter().any(|c| c.0 == s && (c.1-u).abs() <= same) { continue }
+        if corners.iter().any(|c| c.0 == s && same(s,c.1,u)) { continue }
         let v = out.vertex(sheet.rim(u,s).0);
         corners.push((s,u,v));
     } } }
-    let corner = |s: f64,u: f64| corners.iter().find(|c| c.0 == s && (c.1-u).abs() <= same).map_or(0,|c| c.2);
+    let corner = |s: f64,u: f64| corners.iter().find(|c| c.0 == s && same(s,c.1,u)).map_or(0,|c| c.2);
     // the rim edges at each instant between each two corners there, made as a strip asks
     let mut rims: Vec<(f64,[f64;2],u32)> = Vec::new();
     let mut faces = Vec::new();
@@ -630,7 +634,8 @@ fn faces_of(bearer: &Bearer,strips: &[Strip],exact: f64) -> Result<Brep,Unbuilt>
         for (i,forward) in [(0,true),(1,false)] {
             let s = st.span[i];
             let (lo,hi) = (st.sides[0].u[i],st.sides[1].u[i]);
-            let mut stops: Vec<(f64,u32)> = corners.iter().filter(|c| c.0 == s && c.1 >= lo-same && c.1 <= hi+same).map(|c| (c.1,c.2)).collect();
+            let mut stops: Vec<(f64,u32)> = corners.iter().filter(|c| c.0 == s && (c.1 >= lo || same(s,c.1,lo)) && (c.1 <= hi || same(s,c.1,hi)))
+                .map(|c| (c.1,c.2)).collect();
             stops.sort_by(|x,y| x.0.total_cmp(&y.0));
             stops.dedup_by(|x,y| x.1 == y.1);
             let mut pieces: Vec<Coedge> = Vec::new();
@@ -638,7 +643,7 @@ fn faces_of(bearer: &Bearer,strips: &[Strip],exact: f64) -> Result<Brep,Unbuilt>
                 let ([u0,v0],[u1,v1]) = ([w[0].0,w[0].1 as f64],[w[1].0,w[1].1 as f64]);
                 let (v0,v1) = (v0 as u32,v1 as u32);
                 if v0 == v1 { continue }
-                let edge = match rims.iter().find(|r| r.0 == s && (r.1[0]-u0).abs() <= same && (r.1[1]-u1).abs() <= same) {
+                let edge = match rims.iter().find(|r| r.0 == s && same(s,r.1[0],u0) && same(s,r.1[1],u1)) {
                     Some(r) => r.2,
                     None => { let e = out.edge(EdgeCurve::Curve(Curve::Rim(sheet.clone(),s)),[u0,u1],[v0,v1]); rims.push((s,[u0,u1],e)); e }
                 };
@@ -722,7 +727,8 @@ fn sheets(count: usize,numbers: &dyn Fn(f64) -> Result<Vec<Vec<f64>>,Unbuilt>,[a
                 }
             }
         }
-        if off > exact && hi-lo > SHORTEST*(b-a) {
+        // (halved while its middle stands between its ends, the roll's rounding: refused there)
+        if off > exact && mid > lo && mid < hi {
             todo.push([mid,hi]);
             todo.push([lo,mid]);
             continue
@@ -744,7 +750,9 @@ fn line(path: &Trajectory,n: V,q: V,s: f64) -> Result<Option<(V,V)>,Unbuilt> {
     let w = Twist::body(path.at(s)?);
     let g = cross(n,w.omega);
     let gg = dot(g,g);
-    if !(gg > 1e-24) { return Ok(None) }
+    // (where `n × ω` all but vanishes the line stands far off, past any face's reach about `q`,
+    // where `near` reads it so: only none at all is none, #942 F6)
+    if !(gg > 0.) { return Ok(None) }
     let c = add(q,scale(g,(-dot(n,w.v0)-dot(q,g))/gg));
     Ok(Some((c,scale(cross(n,g),1./gg.sqrt()))))
 }

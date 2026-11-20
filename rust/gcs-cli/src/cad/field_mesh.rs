@@ -151,7 +151,7 @@ fn features(sk: &gcs_core::model::Sketch,solid: usize,field: &MaterialField,scal
     let found = if super::rust_kernel() { ours()? } else {
         use super::native::{Session,features::NativeBlank};
         let session = Session::new()?;
-        let blank = session.construct_recipe(&gcs_core::solid::cad::recipe_static(sk,solid)?.recipe)?;
+        let blank = session.built(&gcs_core::solid::cad::recipe_static(sk,solid)?.recipe)?;
         blank_features::features(&NativeBlank::new(&session,blank)?,field,scale,diagonal,grid)?
     };
     #[cfg(not(feature="occt"))]

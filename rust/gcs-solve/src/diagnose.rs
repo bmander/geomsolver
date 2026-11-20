@@ -267,7 +267,7 @@ pub fn summary(d: &Diagnosis) -> String {
     }
     if d.shaky > 0 {
         parts.push(format!(
-            "{} motion(s) blocked at second order (a tangency at its contact) — not DOF",
+            "{} motion(s) blocked at second order (a double root) — not DOF",
             d.shaky
         ));
     }

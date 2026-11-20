@@ -39,6 +39,7 @@
 //! | `Flat` / `FlatFill` along such an edge | the flat sectioned square to the faces' meeting between its legs and fitted (`brep::fillet::flat_along`), its strips and ends as a rolled round's |
 //! | any of them where a face goes on tangent across a seam beside the edge the section reaches (`F.smooth`, #422): along a line seam, or round a circle seam about its axis | the section against the chain — the face's own trace to the seam, the next face's from there — the ball against the piece it touches, the flat each piece's sum of distances in turn (`chain`) |
 //! | the same round a circle seam off its axis, or along an edge no line or coaxial circle carries | the edge's own piece kept short of the seam's normal surface (a ring, a flat cut along the run) or with the stretch past the seam cut away (a ring's stretch, a ball rolled along the run), and the section against the next face beyond it, sectioned and fitted (`Beyond`, `brep::spill`), glued to it |
+//! | the same along a straight edge beside a line seam along it into a face no line along the edge turns about (a drafted side's plane into its corner's cone, #962) | the section reaches across the seam the edge's whole length: a round's ball rolled against the next face all along it, a flat's run kept short of the seam's normal plane and the flat against the next face beyond it, sectioned square to the edge and fitted (`Piece::Along`, `brep::spill`), carried past the edge's ends and cut off where the run is |
 //! | any of them where the faces meet nowhere, or an edge turns the other way | nothing |
 //!
 //! A region is its **pieces** (`Piece`: a run along an edge, a ball's cell at a corner), and the
@@ -48,7 +49,6 @@
 //! left unioned (two runs crossing at a corner whose third edge stays sharp: a mitre).
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use crate::json::{object, Json};
 use crate::model::{Sketch, SolidDef};
 use crate::space::{add, cross, distance, dot, norm, normalised, scale, sub};
 use piece::toward;
@@ -59,7 +59,7 @@ mod assemble;
 mod chain;
 mod piece;
 mod recognise;
-pub use assemble::{assemble, Assembly};
+pub use assemble::{assemble, Assembly, BackOver, EndOf};
 
 type V = [f64; 3];
 
@@ -273,8 +273,15 @@ impl Run {
 
     /// Points at both ends of the prism whose hull holds it (`section_hull`, at either end).
     fn hull(&self) -> Vec<V> {
-        let [from, to] = self.span.map(|s| scale(self.along, s));
-        self.section_hull().into_iter().flat_map(|p| [add(p, from), add(p, to)]).collect()
+        let mut points = self.end_hull(0);
+        points.extend(self.end_hull(1));
+        points
+    }
+
+    /// Points of the section at end `k` of its stretch whose hull holds it (`section_hull` there).
+    fn end_hull(&self, k: usize) -> Vec<V> {
+        let by = scale(self.along, self.span[k]);
+        self.section_hull().into_iter().map(|p| add(p, by)).collect()
     }
 
     /// Points of the section's plane whose hull holds the section: each line's ends, and each
@@ -331,8 +338,13 @@ pub struct Ring {
 impl Ring {
     /// Where its section stands at the end of its turn, and the way the turn runs on there.
     fn end(&self) -> (V, V) {
-        let turn = crate::brep::geom::Rigid::turn(self.axis_origin, self.axis, self.angle);
+        let turn = self.turn();
         (turn.point(self.section.origin), turn.vector(self.section.along))
+    }
+
+    /// Its whole turn, which carries its section from where it starts to where it ends.
+    fn turn(&self) -> crate::brep::geom::Rigid {
+        crate::brep::geom::Rigid::turn(self.axis_origin, self.axis, self.angle)
     }
 
     /// Whether it turns short of a whole turn: a stretch, with an end at each side.
@@ -348,6 +360,14 @@ pub enum Piece {
     Ring(Ring),
     Corner(Corner),
     Rolled(Rolled),
+    /// **A straight run beside a seam along its edge into a face no cylinder along it** (#962: a
+    /// foot standing against a drafted side by its rounded corner, the side's plane going on into
+    /// the corner's cone): the section reaches across the seam all along the edge, so the piece
+    /// beyond it runs the edge's whole length (`Beyond::run`, cut off where the run is) — a round's
+    /// ball touching the next face everywhere, the whole of it; a flat's the edge's own run too,
+    /// kept short of the seam's normal plane (`run`), the piece beyond glued to it there and held
+    /// by it (#423).
+    Along { run: Option<Run>, beyond: Beyond },
 }
 
 /// A section beyond a seam's normal surface (#422, model units): where an edge's face goes on
@@ -375,6 +395,11 @@ pub struct Beyond {
     pub seam: Seam,
     pub section: Across<Surf>,
     pub ends: [V; 2],
+    /// Along the whole length of a straight edge beside a seam along it (#962, `Piece::Along`):
+    /// `ends` the edge's ends, and the half-spaces `n·x <= d` its run is kept within there (its
+    /// `within`), past which it is carried and cut off.  None: between where the leg or the touch
+    /// crosses the seam.
+    pub run: Option<Vec<(V, f64)>>,
 }
 
 /// A seam a section reaches across (model units here, the recipe's in its own): a circle or a line;
@@ -449,10 +474,8 @@ impl Section {
 /// hundreds of regions, each reading one body, and a key over the body's every term would walk
 /// them all for each.
 pub fn lowered(sk: &Sketch, solid: usize) -> Option<Result<Rc<Vec<Piece>>, String>> {
-    let SolidDef::Region { terms, .. } = &sk.solids.get(solid)?.def else { return None };
-    let (faces, section) = recognise::recognised(sk, terms)?;
-    let body = match super::faces::cached(sk, faces.faces[0].solid as usize) {
-        Ok(b) => b,
+    let (faces, section, body) = match on_body(sk, solid)? {
+        Ok(on) => on,
         Err(e) => return Some(Err(e)),
     };
     let key = super::MemoKey::own(sk, solid, vec![body.clone()]);
@@ -463,6 +486,72 @@ pub fn lowered(sk: &Sketch, solid: usize) -> Option<Result<Rc<Vec<Piece>>, Strin
         gate(sk, solid, &pieces, &body, || beside_edges(&body, &faces, section))?;
         Ok(Rc::new(pieces))
     })))
+}
+
+/// The faces region `solid` is recognised by, the section it is built of, and the body those faces
+/// are of: `None` where no entry recognises it, an error where its body is not to be read.
+fn on_body(sk: &Sketch, solid: usize)
+    -> Option<Result<(Faces<'_>, Section, std::sync::Arc<super::faces::BodyFaces>), String>> {
+    let SolidDef::Region { terms, .. } = &sk.solids.get(solid)?.def else { return None };
+    let (faces, section) = recognise::recognised(sk, terms)?;
+    Some(super::faces::cached(sk, faces.faces[0].solid as usize).map(|body| (faces, section, body)))
+}
+
+/// **A face a run ends on reaching back over a seam, said by the faces it is of** (#962): the
+/// round of region `solid`'s set going on tangent across a seam between two faces of its body,
+/// the face one of its runs ends on standing over the section there by `b.depth` — in the names
+/// the document gives them and its unit, the seam's point the witness — and what the author can
+/// do (`back_over_in`); by the point alone where the region's body is not to be read.
+pub fn back_over_said(sk: &Sketch, solid: usize, b: &BackOver) -> String {
+    match on_body(sk, solid) {
+        Some(Ok((_, _, body))) => back_over_in(sk, &body, b),
+        _ => back_over_unnamed(sk, b),
+    }
+}
+
+/// `back_over_said` off `body`: the seam's two faces, those of the seam edge nearest its point
+/// (`BodyFaces::seam`, the body's reading of tangent); the face reaching back, the one on `b.end`'s
+/// surface nearest the point; and the run's own face of the two, the one that face meets in an
+/// edge.
+fn back_over_in(sk: &Sketch, body: &super::faces::BodyFaces, b: &BackOver) -> String {
+    let at = b.at;
+    let (lo, hi) = body.bounds();
+    let tol = 1e-7 * (1.0 + distance(lo, hi));
+    let n = body.paths().len();
+    let seams: Vec<u32> = (0..n).flat_map(|fi| body.edges_of(fi).iter().copied()).filter(|&e| body.seam(e)).collect();
+    let seam = body.nearest_edge(&seams, at).filter(|&(_, _, d)| d <= tol)
+        .and_then(|(e, _, _)| match *body.faces_of(e) { [f, g] => Some((f, g)), _ => None });
+    let on = |fi: usize| match b.end {
+        EndOf::Half(m, d) => body.plane(fi).is_some_and(|(nf, o)| norm(cross(nf, m)) <= 1e-9 && (dot(m, o) - d).abs() <= tol),
+        EndOf::Solid(surf) => Surf::of(body, fi).is_some_and(|s| s.same(&surf)),
+    };
+    let away = |fi: usize| body.nearest_edge(body.edges_of(fi), at).map_or(f64::INFINITY, |(_, _, d)| d);
+    let end = (0..n).filter(|&fi| on(fi)).map(|fi| (fi, away(fi))).min_by(|a, b| a.1.total_cmp(&b.1)).map(|(fi, _)| fi);
+    let (Some((f, g)), Some(e)) = (seam, end) else { return back_over_unnamed(sk, b) };
+    let (own, next) = if body.edges_between(&[e], &[g]).is_empty() { (f, g) } else { (g, f) };
+    let (witness, depth) = back_over_numbers(sk, b);
+    format!("its round goes on tangent from {} into {} across their seam at {witness}, and {}, which its run \
+        along {} ends on, reaches {depth} back over the section there: the round along {} ends nowhere there and \
+        keeps that section whole, so the two meet in no one section, and no exact construction is made of that \
+        yet. Move {} clear of the seam, or over it",
+        body.said(own), body.said(next), body.said(e), body.said(own), body.said(next), body.said(e))
+}
+
+/// `back_over_said` where the faces are not to be named: the seam's point and the depth.
+fn back_over_unnamed(sk: &Sketch, b: &BackOver) -> String {
+    let (witness, depth) = back_over_numbers(sk, b);
+    format!("where its round goes on tangent across a seam at {witness}, a face one of its runs ends on reaches \
+        {depth} back over the section the two share: no exact construction is made of that yet; move that face \
+        clear of the seam, or over it")
+}
+
+/// A back-over's seam point and depth as the document says them: the point to six figures in its
+/// unit, the depth a length to two.
+fn back_over_numbers(sk: &Sketch, b: &BackOver) -> (String, String) {
+    let figures = |x: f64| crate::json::fmt_g(x, 6);
+    let witness = format!("[{}, {}, {}]{}", figures(b.at[0]), figures(b.at[1]), figures(b.at[2]), sk.units.name());
+    let depth = crate::units::Dim::LENGTH.number_text(crate::json::fmt_g(b.depth, 2).parse().unwrap_or(b.depth), sk.units);
+    (witness, depth)
 }
 
 /// **The face a recognised region leaves on its body, by the name its construction gives it**
@@ -740,38 +829,28 @@ pub(crate) struct Gated {
 }
 
 /// A lowered node's text up to the order it lists things in: its pieces, its corners (each's
-/// faces sorted), its rolled runs, and its joins, each as the pair of what it joins.
-fn canonical(node: &Json) -> String {
-    let dump = |j: &Json| j.dump(None);
-    let corner = |c: &Json| {
-        let mut faces = c.get("faces").map_or(&[][..], Json::arr).to_vec();
-        faces.sort_by_cached_key(dump);
-        let mut c = c.clone();
-        c.set("faces", Json::Arr(faces));
-        c.dump(None)
+/// faces sorted), its rolled runs, and its joins, each as the pair of what it joins — every item
+/// said by its `Debug` text, which writes each number so it reads back exactly.
+fn canonical(node: &crate::brep::recipe::Lowered) -> String {
+    let said = |x: &dyn std::fmt::Debug| format!("{x:?}");
+    let corner = |c: &crate::brep::recipe::Corner| {
+        let mut faces: Vec<String> = c.faces.iter().map(|f| said(f)).collect();
+        faces.sort();
+        format!("{:?} {:?} {:?} {faces:?}", c.vertex, c.centre, c.radius)
     };
     // in the order joins count them: runs and rings, then corners, then rolled runs, then the
     // pieces beyond a seam's normal surface
-    let listed = |key: &str| node.get(key).map_or(&[][..], Json::arr);
-    let each: Vec<String> = listed("pieces").iter().map(dump).chain(listed("corners").iter().map(corner))
-        .chain(listed("rolled").iter().map(dump)).chain(listed("beyond").iter().map(dump)).collect();
-    let mut joins: Vec<[&str; 2]> = listed("joins").iter().map(|j| {
-        let at = |k: usize| j.arr().get(k).map_or(usize::MAX, |i| i.as_i64() as usize);
-        let mut pair = [0, 1].map(|k| each.get(at(k)).map_or("", String::as_str));
+    let each: Vec<String> = node.pieces.iter().map(|p| said(p)).chain(node.corners.iter().map(corner))
+        .chain(node.rolled.iter().map(|r| said(r))).chain(node.beyond.iter().map(|b| said(b))).collect();
+    let mut joins: Vec<[&str; 2]> = node.joins.iter().map(|j| {
+        let mut pair = j.map(|k| each.get(k).map_or("", String::as_str));
         pair.sort();
         pair
     }).collect();
     joins.sort();
     let mut sorted: Vec<&str> = each.iter().map(String::as_str).collect();
     sorted.sort();
-    let mut out = object([
-        ("each", Json::Arr(sorted.into_iter().map(|t| Json::Str(t.into())).collect())),
-        ("joins", Json::Arr(joins.into_iter().map(|p| Json::Arr(p.map(|t| Json::Str(t.into())).to_vec())).collect())),
-    ]);
-    if let Some(stratum) = node.get("stratum") {
-        out.set("stratum", stratum.clone());
-    }
-    out.dump(None)
+    format!("{sorted:?} {joins:?} {:?}", node.stratum)
 }
 
 /// How many constructions `Caches::gated` keeps, the latest asked: enough for the orders of a
@@ -796,12 +875,15 @@ fn gated(sk: &Sketch, pieces: &[Piece], body: &std::sync::Arc<super::faces::Body
     let (_, by, origin) = body.brep();
     let (writer, mm) =
         if rolled { (Writer::about(by, scale(origin, by)), Some(by)) } else { (Writer::world(1.0), None) };
-    let mut node = assemble(pieces).node(&writer)?;
-    if rolled {
-        node.set("stratum", object([("kind", "body".into()), ("stock", 0.into()), ("on", Json::Arr(vec![])),
-            ("cut", Json::Arr(vec![])), ("bound", Json::Arr(vec![]))]));
+    let assembly = assemble(pieces);
+    if let Some(b) = &assembly.across {
+        return Err(back_over_in(sk, body, b));
     }
-    let key = canonical(&node);
+    let mut lowered = assembly.node(&writer)?;
+    if rolled {
+        lowered.stratum = Some(crate::brep::recipe::Body { stock: 0, ..Default::default() });
+    }
+    let key = canonical(&lowered);
     let stratum = rolled.then(|| body.clone());
     let at = |s: &Option<Arc<super::faces::BodyFaces>>| s.as_ref().map(Arc::as_ptr);
     let mut cache = sk.caches.gated.borrow_mut();
@@ -812,7 +894,7 @@ fn gated(sk: &Sketch, pieces: &[Piece], body: &std::sync::Arc<super::faces::Body
     }
     drop(cache);
     let built: std::collections::BTreeMap<_, _> = stratum.iter().map(|b| (0, b.brep().0.clone())).collect();
-    let brep = crate::brep::recipe::node_named(&node, &built, &Default::default(), 0.0)?;
+    let brep = crate::brep::recipe::node(&crate::brep::recipe::Node::Lowered(lowered), &built)?;
     let mesh = super::agreement::gate_mesh(&brep)?;
     let built = Rc::new(Gated { key, stratum, brep, mesh, mm });
     let mut cache = sk.caches.gated.borrow_mut();

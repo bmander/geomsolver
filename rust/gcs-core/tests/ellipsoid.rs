@@ -234,7 +234,7 @@ fn an_ellipsoid_is_written_to_step_as_its_net() {
     let above = prism(&square([0.,0.,3.],[0.,0.,1.],30.),0.,20.).unwrap();
     let half = combined(&b,&above,Op::Common,0.).unwrap();
     for (what,solid) in [("ellipsoid",&b),("ellipsoid-half",&half)] {
-        let text = gcs_core::brep::step::write(solid,what,1e-4).unwrap_or_else(|e| panic!("{what}: {e}"));
+        let text = gcs_core::brep::step::write(solid,what,1e-4,gcs_core::brep::step::Fit::Exact).unwrap_or_else(|e| panic!("{what}: {e}"));
         assert!(text.contains("RATIONAL_B_SPLINE_SURFACE"),"{what}: no rational net written");
         gcs_core::brep::step_check::verify(&text,&gcs_core::brep::step_check::Solid::of(solid))
             .unwrap_or_else(|e| panic!("{what}: {e}"));

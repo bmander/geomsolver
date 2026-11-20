@@ -136,6 +136,13 @@ impl RegionField {
         }
         best
     }
+    /// Whether a term of it is read by a search rather than in closed form (`Measure::Signed`: a
+    /// distance from a body's faces or a set of them, a hull, a carried section): each value then
+    /// costs a nearest-point search over what it reads, where every other measure costs a few
+    /// operations, and a mesher reads it from an adaptive distance field (`SpatialField::cached`).
+    pub fn searched(&self) -> bool {
+        !self.empty && self.terms.iter().any(|t| matches!(t.measure, Measure::Signed(_)))
+    }
     pub fn piece_count(&self) -> usize { self.terms.len() }
     pub fn carrier(&self, p: P3, piece: usize) -> Option<f64> { self.terms.get(piece).map(|t| t.value(p)) }
     pub fn support_bounds(&self) -> Result<Option<V>, Error> {

@@ -377,8 +377,10 @@ function primaryTaken(v: SketchView, e: PointerEvent, sp: [number, number]): boo
     return true;
   }
   if (v.tool !== 'select') {
-    // an edge tool's number keeps the keyboard across the clicks that pick more
-    if (roundsEdges(v.tool)) e.preventDefault();
+    // an edge tool's number keeps the keyboard across the clicks that pick more, and so does
+    // the word in hand: the slot a click fills hands the focus to the next one, which the press
+    // would otherwise take back
+    if (roundsEdges(v.tool) || v.tool === 'word') e.preventDefault();
     toolClick(v, sp, { alt: e.altKey, shift: e.shiftKey });
     return true;
   }
@@ -969,6 +971,14 @@ export function hover(v: SketchView, sp: [number, number]): void {
     const pick = takes === 'parts' ? roundTarget(v, sp[0], sp[1]) : v.solidAt(sp[0], sp[1]);
     v.hovered = pick && { kind: 'solid', pick: takes === 'bodies' ? bodyOf(pick) : pick };
     v.canvas.style.cursor = pick ? 'pointer' : '';
+    return;
+  }
+  // a word's slot armed lights the nearest thing it would take, and only that
+  if (v.tool === 'word') {
+    const pick = v.wordPick;
+    v.hovered = pick ? v.hitsAt(sp[0], sp[1]).find((h) => !('hidden' in h && h.hidden) && pick.accepts(h)) ?? null
+      : null;
+    v.canvas.style.cursor = v.hovered ? 'pointer' : pick?.mints ? 'crosshair' : '';
     return;
   }
   if (v.tool !== 'select') return;
