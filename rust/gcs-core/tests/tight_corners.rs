@@ -17,7 +17,10 @@ use crate::common::rounds::{exported, kinds};
 /// A plate 120 × 80 × 20 with a pocket 10 deep cut into it, the pocket the polygon `outline` (each
 /// vertex in turn, counter-clockwise) its corners rounded by `corners`, and its floor's edges
 /// treated by `word` (`round(r: 5mm)`).
-fn tray(outline: &[[f64; 2]], corners: &[f64], word: &str) -> String {
+fn tray(outline: &[[f64; 2]], corners: &[f64], word: &str) -> String { tray_against(outline, corners, word, "") }
+
+/// `tray`, the floor's word against the pocket's faces under `against` alone (`.e0`: one wall).
+fn tray_against(outline: &[[f64; 2]], corners: &[f64], word: &str, against: &str) -> String {
     let n = outline.len();
     let mut s = String::from("unit mm\nuse std\nuse std.solids (cut)\nuse std.rounds (round, chamfer)\n\
         in std.top {\n  a := point\n  b := point\n  c := point\n  d := point\n  fix((-60, -40)) a\n  \
@@ -35,7 +38,7 @@ fn tray(outline: &[[f64; 2]], corners: &[f64], word: &str) -> String {
     s += &format!("  {} close\n  pocket_f := face({})\n}}\n", chain.join(" "), names.join(", "));
     s + "plate := solid(std.solids.Prism(plate_f, from: 0mm, to: 20mm))\n\
         pocket := solid(std.solids.Prism(pocket_f, from: 10mm, to: 21mm))\n\
-        pocket cut plate\n" + &format!("plate.pocket.far {word} plate.pocket\n")
+        pocket cut plate\n" + &format!("plate.pocket.far {word} plate.pocket{against}\n")
 }
 
 /// The pocket 60 × 40 of the issue.
@@ -80,6 +83,15 @@ fn tray_volume(outline: &[[f64; 2]], corners: &[f64], r: f64, flat: bool) -> f64
     120.0 * 80.0 * 20.0 - 10.0 * area + fill
 }
 
+/// Why each region of a document an entry recognises is refused, region by region.
+fn regions_refused(src: &str) -> Vec<String> {
+    let e = solved(src);
+    (0..e.sketch.solids.len()).filter_map(|i| match gcs_core::solid::lowering::lowered(&e.sketch, i) {
+        Some(Err(why)) => Some(why),
+        _ => None,
+    }).collect()
+}
+
 /// Solid `name` refused, and why.
 fn refused(src: &str, name: &str) -> String {
     let e = solved(src);
@@ -113,20 +125,26 @@ fn the_corner_example_is_its_closed_form() {
     let under = src.replace("\nr := 5mm", "\nr := 4mm");
     close(props::volume(&exported(&solved(&under), "plate")), tray_volume(&RECT, &[5.0; 4], 4.0, false));
     let why = refused(&src.replace("\nr := 5mm", "\nr := 6mm"), "plate");
-    assert!(why.contains("is wider than the arc it rolls round, of radius 5mm where the round runs"), "{why}");
+    assert!(why.contains("past `pocket.sw`, of radius 5mm where the round runs and tighter than the ball"), "{why}");
 }
 
-/// **Wider than the corner**:the ball never touches the corner's arc, and what none reaches runs
+/// **Wider than the corner**: the ball never touches the corner's arc, and what none reaches runs
 /// up the corner without end (`std.rounds`' centres are every ball within both faces), so no ring
 /// is the set — refused saying the arc's radius against the ball's, to the figures that tell them
-/// apart.  The same just over, and at the issue's 8.
+/// apart.  The walls' runs either side are refused too, their balls stopped short of the edge's
+/// ends by the wall across the corner (`piece::stands_within`), saying the corner they pass and its
+/// radius: the body says the first.  The same just over, and at the issue's 8.
 #[test]
 fn a_pocket_floor_rounded_wider_than_its_corners_is_refused_saying_why() {
     for (r, said) in [(5.001, "5.001mm"), (5.0 + 1e-6, "5.000001mm"), (8.0, "8mm")] {
-        let why = refused(&tray(&RECT, &[5.0; 4], &format!("round(r: {r}mm)")), "plate");
-        assert!(why.contains(&format!("its ball, of radius {said}, is wider than the arc it rolls round, of radius 5")),
-            "{why}");
-        assert!(why.contains("`pocket.k"), "{why}");
+        let src = tray(&RECT, &[5.0; 4], &format!("round(r: {r}mm)"));
+        let regions = regions_refused(&src);
+        assert!(regions.iter().any(|why| why.contains(&format!("its ball, of radius {said}, is wider than the arc it \
+            rolls round, of radius 5mm where the round runs: it touches the faces either side of `pocket.k"))),
+            "{regions:?}");
+        let why = refused(&src, "plate");
+        assert!(why.contains(&format!("its ball, of radius {said}, rolled against `pocket.e0` comes within")), "{why}");
+        assert!(why.contains("of radius 5mm where the round runs and tighter than the ball"), "{why}");
         assert!(!why.contains("revolution"), "{why}");
     }
 }
@@ -140,8 +158,12 @@ fn a_pocket_floor_chamfered_to_its_corners_radius() {
         let b = exported(&solved(&tray(&RECT, &[5.0; 4], &format!("chamfer(d: {d}mm)"))), "plate");
         close(props::volume(&b), tray_volume(&RECT, &[5.0; 4], d, true));
     }
-    let why = refused(&tray(&RECT, &[5.0; 4], "chamfer(d: 5.001mm)"), "plate");
-    assert!(why.contains("its flat's leg, 5.001mm, is longer than the radius of the arc it runs round, 5mm"), "{why}");
+    let src = tray(&RECT, &[5.0; 4], "chamfer(d: 5.001mm)");
+    let regions = regions_refused(&src);
+    assert!(regions.iter().any(|why| why.contains("its flat's leg, 5.001mm, is longer than the radius of the arc it \
+        runs round, 5mm")), "{regions:?}");
+    let why = refused(&src, "plate");
+    assert!(why.contains("of radius 5mm where the chamfer runs and tighter than the flat's leg"), "{why}");
 }
 
 /// **Corners of unequal radii in one pocket**: rounded 3, 5, 5 and 8, the floor rounded 3 is a
@@ -153,7 +175,7 @@ fn a_pocket_whose_corners_differ_is_rounded_to_its_tightest() {
     close(props::volume(&b), tray_volume(&RECT, &corners, 3.0, false));
     assert_eq!(kinds(&b), [("cylinder", 8), ("plane", 11), ("sphere", 1), ("torus", 3)].into());
     let why = refused(&tray(&RECT, &corners, "round(r: 5mm)"), "plate");
-    assert!(why.contains("of radius 5mm, is wider than the arc it rolls round, of radius 3mm"), "{why}");
+    assert!(why.contains("past `pocket.k0`, of radius 3mm where the round runs and tighter than the ball"), "{why}");
 }
 
 /// **Corners other than a right angle**: a trapezoid whose corners turn 60° and 120°, each rounded
@@ -221,7 +243,102 @@ fn a_boss_rim_rounded_to_its_corners_radius_is_built() {
 /// wider than the corner where the round runs, said so — the top's radius, not the drawn one.
 #[test]
 fn a_drafted_rim_whose_corner_shrinks_under_the_ball_is_refused_saying_its_radius_there() {
-    let why = refused(&boss(10.0, 10.0, 8.0), "plate");
-    assert!(why.contains("its ball, of radius 8mm, is wider than the arc it rolls round, of radius 6.47mm where the \
-        round runs"), "{why}");
+    let src = boss(10.0, 10.0, 8.0);
+    let regions = regions_refused(&src);
+    assert!(regions.iter().any(|why| why.contains("its ball, of radius 8mm, is wider than the arc it rolls round, of \
+        radius 6.47mm where the round runs")), "{regions:?}");
+    let why = refused(&src, "plate");
+    assert!(why.contains("of radius 6.47mm where the round runs and tighter than the ball"), "{why}");
+}
+
+/// A plate with a round pocket or a round boss of radius 5 at (10, 5): the pocket cut 10 deep and
+/// its floor rounded `r`, or the boss standing 20 on the plate and its top rim rounded `r`.
+fn round(boss: bool, r: f64) -> String {
+    let (word, body, solid) = if boss {
+        ("union", "hole union plate\nplate.hole.near round(r: {r}mm) plate.hole\n",
+            "hole := solid(std.solids.Prism(face(rim), from: 20mm, to: 40mm))\n")
+    } else {
+        ("cut", "hole cut plate\nplate.hole.far round(r: {r}mm) plate.hole\n",
+            "hole := solid(std.solids.Prism(face(rim), from: 10mm, to: 21mm))\n")
+    };
+    format!("unit mm\nuse std\nuse std.solids ({word})\nuse std.rounds (round)\nin std.top {{\n\
+        a := point\nb := point\nc := point\nd := point\n\
+        fix((-60, -40)) a\nfix((60, -40)) b\nfix((60, 40)) c\nfix((-60, 40)) d\n\
+        plate_f := face(a, b, c, d, -> close)\no := point\nfix((10, 5)) o\nrim := radius(5mm) circle(center: o)\n}}\n\
+        plate := solid(std.solids.Prism(plate_f, from: 0mm, to: 20mm))\n{solid}{}", body.replace("{r}", &r.to_string()))
+}
+
+/// **A round pocket's floor rounded to its radius** (the commonest of the family: a ball-end
+/// cutter's pocket) — one cylinder, no chain, read face by face as one convex solid all the same
+/// (`BodyFaces::bulging`): a hair short a spindle torus, at it a hemisphere, the pocket less the
+/// fill a cylinder less a hemisphere.  Its convex twin, a round boss's rim, is a dome.  Over the
+/// radius no ball of it stands inside the cylinder at all: the field reads the whole of the
+/// pocket above its floor, up past the plate without end, and the refusal says so.
+#[test]
+fn a_round_pockets_floor_and_a_round_boss_rounded_to_their_radius() {
+    for r in [4.9, 4.999, 4.9999, 5.0] {
+        let b = exported(&solved(&round(false, r)), "plate");
+        close(props::volume(&b), 120.0 * 80.0 * 20.0 - 10.0 * 25.0 * PI + added(5.0, 2.0 * PI, r, false).0);
+        let b = exported(&solved(&round(true, r)), "plate");
+        close(props::volume(&b), 120.0 * 80.0 * 20.0 + 20.0 * 25.0 * PI - added(5.0, 2.0 * PI, r, false).0);
+    }
+    for (r, said) in [(5.0001, "5.0001mm"), (6.0, "6mm")] {
+        for boss in [false, true] {
+            let why = refused(&round(boss, r), "plate");
+            assert!(why.contains(&format!("its ball, of radius {said}, is wider than the circle it rolls round, of \
+                radius 5mm where the round runs: no ball of that radius stands on the round's side of `hole.rim` at \
+                all")), "{why}");
+        }
+    }
+}
+
+/// **The floor rounded against one wall alone** (`plate.pocket.e0`): the wall goes on smoothly
+/// into the corners' arcs and the walls beyond, so the ball's centres stop 8 short of `e3` and `e1`
+/// — and rounded 8, 3 short of the edge's ends, where what no ball reaches is more than the run's
+/// section: refused, naming the wall it comes within 5 of.  Rounded 5 the centres reach the edge's
+/// ends on the arcs' axes, and the run is the prism of its section over the edge's 50, the closed
+/// form's; the chamfer the same at 5, refused at 8.
+#[test]
+fn a_floor_rounded_against_one_wall_stops_where_its_ball_does() {
+    let rect = |word: &str| tray_against(&RECT, &[5.0; 4], word, ".e0");
+    let plain = 120.0 * 80.0 * 20.0 - 10.0 * (2400.0 - 25.0 * (4.0 - PI));
+    for r in [4.0, 5.0] {
+        close(props::volume(&exported(&solved(&rect(&format!("round(r: {r}mm)"))), "plate")),
+            plain + 50.0 * (1.0 - PI / 4.0) * r * r);
+    }
+    close(props::volume(&exported(&solved(&rect("chamfer(d: 5mm)")), "plate")), plain + 50.0 * 12.5);
+    let why = refused(&rect("round(r: 8mm)"), "plate");
+    assert!(why.contains("its ball, of radius 8mm, rolled against `pocket.e0` comes within 5mm of `pocket.e3`"), "{why}");
+    let why = refused(&rect("chamfer(d: 8mm)"), "plate");
+    assert!(why.contains("its flat, reaching 8mm from `pocket.e0`, comes within 5mm of `pocket.e3`"), "{why}");
+}
+
+/// An obround pocket, two walls 10 apart joined by half circles of 5, its floor rounded `r`.
+fn obround(r: f64) -> String {
+    format!("unit mm\nuse std\nuse std.solids (cut)\nuse std.rounds (round)\nin std.top {{\n\
+        a := point\nb := point\nc := point\nd := point\n\
+        fix((-60, -40)) a\nfix((60, -40)) b\nfix((60, 40)) c\nfix((-60, 40)) d\n\
+        plate_f := face(a, b, c, d, -> close)\n\
+        p := point\nq := point\nr := point\ns := point\ncl := point\ncr := point\n\
+        fix((-25, -5)) p\nfix((25, -5)) q\nfix((25, 5)) r\nfix((-25, 5)) s\nfix((25, 0)) cr\nfix((-25, 0)) cl\n\
+        e0 := line(p, q)\nk1 := arc(center: cr, start: q, end: r)\ne2 := line(r, s)\n\
+        k3 := arc(center: cl, start: s, end: p)\npocket_f := face(e0, k1, e2, k3)\n}}\n\
+        plate := solid(std.solids.Prism(plate_f, from: 0mm, to: 20mm))\n\
+        pocket := solid(std.solids.Prism(pocket_f, from: 10mm, to: 21mm))\n\
+        pocket cut plate\nplate.pocket.far round(r: {r}mm) plate.pocket\n")
+}
+
+/// **Walls closer than the ball is wide**: an obround 10 wide rounded 5 — its walls' rounds tangent
+/// along its middle, its ends half balls — and a hair short; rounded 5.0001 the ball rolled
+/// against one wall comes within 4.9999 of the other: refused, saying so.
+#[test]
+fn an_obround_rounded_as_wide_as_it_is() {
+    for r in [4.9999, 5.0] {
+        let b = exported(&solved(&obround(r)), "plate");
+        close(props::volume(&b), 120.0 * 80.0 * 20.0 - 10.0 * (500.0 + 25.0 * PI)
+            + 100.0 * (1.0 - PI / 4.0) * r * r + 2.0 * added(5.0, PI, r, false).0);
+    }
+    let why = refused(&obround(5.0001), "plate");
+    assert!(why.contains("its ball, of radius 5.0001mm, rolled against `pocket.e0` comes within 4.9999mm of `pocket.e2`"),
+        "{why}");
 }
