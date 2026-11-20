@@ -1,7 +1,6 @@
 //! The native kernel (OCCT, through `backend/`): a session constructing the core's recipes,
 //! and the swept construction over it. What is written, and whether, is `cad::output`'s.
 use gcs_core::brep::recipe::{Edge,Kept,Named,Node,Recipe,Stroke};
-use gcs_core::json::Json;
 use std::{collections::BTreeMap,ffi::{c_char,c_int,c_void,CStr,CString}};
 pub(crate) use super::progress::{beside,holding,mark,side_by_side,stage,under};
 
@@ -47,7 +46,7 @@ pub(crate) fn turned_about(origin: [f64;3],axis: [f64;3],angle: f64) -> Result<g
         .then(Motion::translation(origin,[0.;3]).map_err(error)?))
 }
 
-/// A blank built as its meridian region turned about its line (`Session::construct_meridian`): the
+/// A blank built as its meridian region turned about its line (`Session::built_meridian`): the
 /// region, in the half-plane of the line towards `seam`, which the same solid may be turned from
 /// again with its faces' parameters starting elsewhere.
 #[derive(Clone,Copy,Debug)]
@@ -206,10 +205,6 @@ impl Session {
     /// in space took a Boolean of revolutions each (docs/native-speed-plan.md). None, with the reason,
     /// where the recipe is not such (a prism, a placement, a partial turn, a revolution about another
     /// line, a section crossing its axis). `SOLVENT_BLANK=booleans` builds every blank by its Booleans.
-    pub(crate) fn construct_meridian(&self,recipe: &Json) -> Result<Result<(c_int,Meridian),String>,String> {
-        self.built_meridian(&Recipe::read(recipe)?)
-    }
-    /// `construct_meridian` of a recipe read.
     pub(crate) fn built_meridian(&self,recipe: &Recipe) -> Result<Result<(c_int,Meridian),String>,String> {
         if std::env::var("SOLVENT_BLANK").is_ok_and(|v| v == "booleans") { return Ok(Err("its Booleans asked for".into())); }
         let nodes = &recipe.nodes;
@@ -324,9 +319,6 @@ impl Session {
         let solid = self.revolve_region(region,origin,axis)?;
         Ok(Ok((solid,Meridian {region,origin,axis,seam})))
     }
-
-    /// The recipe built by the native kernel (`built`), read first.
-    pub(crate) fn construct(&self,recipe: &Json) -> Result<c_int,String> { self.built(&Recipe::read(recipe)?) }
 
     /// Every node of the recipe built in turn, each checked, and the root returned.
     pub(crate) fn built(&self,recipe: &Recipe) -> Result<c_int,String> {

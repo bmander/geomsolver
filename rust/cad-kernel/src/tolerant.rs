@@ -10,6 +10,11 @@
 //! where that is larger:
 //! - **a point onto a vertex** (`Pool::at`): within `tol` of it, or of any point already merged
 //!   there — so a vertex is where its first point stood, and its tolerance how far the others were;
+//! - **a surface onto a surface** (`meeting::Shared::index_over`, #961): two faces' surfaces within
+//!   `8 tol` of each other over the part of space both faces' boxes hold are one surface, whatever
+//!   angle they lean apart at elsewhere — so two faces bounded by one edge and leaving it one way
+//!   are one face of the complex, and a piece lying on the other's face is on it (its partner,
+//!   read before its place in the other solid);
 //! - **a vertex onto an edge** (`on_stretch`): within `8 tol` of the edge's curve inside its stretch
 //!   and clear of its ends by as much: the edge is cut there;
 //! - **a point onto a meeting** (`on_meeting`): within `8 tol / sin θ` of the curve two surfaces

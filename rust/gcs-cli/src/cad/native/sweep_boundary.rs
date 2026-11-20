@@ -263,7 +263,7 @@ pub(crate) struct SweptCut {
     name: String,
     scale: f64,
     /// The cutter's recipe, the motion and the declared roll's limits.
-    recipe: gcs_core::json::Json,
+    recipe: gcs_core::brep::recipe::Recipe,
     family: Family,
     limits: [f64;2],
     /// The contacts, whose failure to read is the reach's.
@@ -358,13 +358,12 @@ impl Awaited {
 }
 
 /// A static blank built: as its meridian region turned where every operand is a revolution about one
-/// line (`Session::construct_meridian`), by its recipe's Booleans otherwise; and how.
-fn blank_of(session: &Session,recipe: &gcs_core::json::Json) -> Result<(Blank,String),String> {
-    let recipe = gcs_core::brep::recipe::Recipe::read(recipe)?;
-    match session.built_meridian(&recipe) {
+/// line (`Session::built_meridian`), by its recipe's Booleans otherwise; and how.
+fn blank_of(session: &Session,recipe: &gcs_core::brep::recipe::Recipe) -> Result<(Blank,String),String> {
+    match session.built_meridian(recipe) {
         Ok(Ok((solid,meridian))) => Ok((Blank {solid,meridian:Some(meridian)},", its meridian section turned about its axis".into())),
         Ok(Err(why)) | Err(why) => {
-            let solid = session.built(&recipe)?;
+            let solid = session.built(recipe)?;
             Ok((Blank {solid,meridian:None},format!(", by its Booleans ({why})")))
         }
     }
@@ -457,7 +456,7 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
     };
     let scale = field.scale();
     let name = &sk.solids[body].name;
-    let operations = recipe.recipe.get("nodes").unwrap().arr().len();
+    let operations = recipe.recipe.nodes.len();
     // The blank, then each sweep's sheet on a thread of its own, what each says said in order once
     // all are done.
     let field_ref = &field;
@@ -571,7 +570,7 @@ pub(crate) fn construct_solid_as(session: &Session,sk: &Sketch,solid: usize,reci
 fn built_as(session: &Session,sk: &Sketch,solid: usize,recipe: &cad::StaticRecipe,
     admission: Option<&Admission>,tolerance: Option<Tolerance>,asked: Construction) -> Result<Built,ExportRefusal> {
     if recipe.sweeps.is_empty() {
-        return session.construct(&recipe.recipe).at(Stage::Blank).map(|solid| Built {solid,how:Construction::Whole,sector:None,
+        return session.built(&recipe.recipe).at(Stage::Blank).map(|solid| Built {solid,how:Construction::Whole,sector:None,
             unchecked:None});
     }
     let admission = admission.ok_or_else(|| ExportRefusal::at(Stage::Admission,format!("`{}`: a body with swept cuts is \

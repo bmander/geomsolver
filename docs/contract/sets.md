@@ -192,7 +192,7 @@ evaluated; coaxial to the fold's own tolerance, 1e-7 of the region's size, a pla
 two lines a solve holds on one axis hold to its acceptance, not to the bit, #283), memoised
 against `solid::reads` (`Caches::meridian`); every evaluator reads it —
 the recipe a `revolve`
-(`recipe::region_profile`, `Profile::to_json`), the field `RevolvedRegion::of_meridian` (also
+(`recipe::region_profile`, `Profile::section`), the field `RevolvedRegion::of_meridian` (also
 `read`, so patches trim by it), facets `region::face_polys` turned by `primitive::revolve`,
 admission `Turns::Line`/`Ball` and `tool()` — its loops `Region::outer_first`, a ball's
 `Region::half_disc`. A set used in a predicate's body is applied under the statement it was

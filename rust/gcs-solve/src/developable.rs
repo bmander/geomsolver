@@ -757,6 +757,22 @@ impl Developable {
         Ok(Ruling { sigma, u: y[0], w: y[1], m: l.m, n: l.n, normal: l.normal, piece: p.piece })
     }
 
+    /// **The point the panel's rulings shrink to near ruling `r`**, where `r` ends the panel at
+    /// a meeting of its rails' ends (`MEET`): the march stops short of it, by a ruling of `MEET`'s
+    /// length, and a drawing of the panel runs on to it — so a shell's neighbouring panel, whose
+    /// edge runs to the same point, meets it there.  `None` at an end whose ruling has a length.
+    pub fn meeting(&self, r: &Ruling) -> Option<V> {
+        let (a, b) = (&self.a, &self.b);
+        let size = a.path.size().max(b.path.size()).max(1.0);
+        if a.closed || b.closed || norm(sub(r.n, r.m)) > 4.0 * MEET * size {
+            return None;
+        }
+        let ends = |x: &Rail| [x.path.point(x.lo), x.path.point(x.hi)];
+        ends(a).into_iter().flat_map(|p| ends(b).map(|q| (p, q)))
+            .find(|&(p, q)| norm(sub(q, p)) <= MEET * size && norm(sub(r.m, p)) <= 16.0 * MEET * size)
+            .map(|(p, q)| scale(add(p, q), 0.5))
+    }
+
     /// Rulings enough to draw the panel to `tol`: each piece's ends, and between them halved
     /// where the middle ruling's feet, or its middle, stand off the chord between its neighbours'
     /// by more.

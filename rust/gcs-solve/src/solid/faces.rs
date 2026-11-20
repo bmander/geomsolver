@@ -17,11 +17,11 @@ mod lays;
 mod meets;
 mod path;
 pub(crate) use body::along_run;
-pub use body::{reading, BodyFaces, Bound, EndBy, Level, Read, Reading};
+pub use body::{not_one_body, one_body, reading, BodyFaces, Bound, EndBy, Level, Read, Reading};
 pub use layers::layer;
 pub use lays::Lays;
 pub use meets::Meets;
-pub use path::{face_paths, face_source, FacePath, FaceSource};
+pub use path::{face_paths, face_source, one_body_of, FacePath, FaceSource};
 pub use path::same_step;
 pub(crate) use path::face_primitive;
 

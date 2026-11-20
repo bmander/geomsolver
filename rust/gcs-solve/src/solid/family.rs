@@ -1525,9 +1525,8 @@ fn stated_carry(sk: &Sketch, si: usize) -> Option<crate::brep::geom::Carry> {
 /// A face family's walls as the recipe writes them (`walls`): every point in millimetres about the
 /// origin written about, every direction in millimetres, an arc's sweep and a spline's span as
 /// they stand.
-pub(crate) fn json(f: &Walls, w: &crate::brep::recipe::Writer) -> crate::json::Json {
-    use crate::json::{object, Json};
-    let numbers = |run: &Run, n: &[f64]| -> Json {
+pub(crate) fn family(f: &Walls, w: &crate::brep::recipe::Writer) -> Walls {
+    let numbers = |run: &Run, n: &[f64]| -> Vec<f64> {
         let (pts, dirs, _) = run.shape(n.len());
         let mut out = n.to_vec();
         for i in 0..pts + dirs {
@@ -1535,31 +1534,14 @@ pub(crate) fn json(f: &Walls, w: &crate::brep::recipe::Writer) -> crate::json::J
             let v = if i < pts { w.moved(v) } else { v };
             out[3 * i..3 * i + 3].copy_from_slice(&v);
         }
-        Json::Arr(out.into_iter().map(Json::from).collect())
+        out
     };
-    let list = |xs: &[f64]| Json::Arr(xs.iter().map(|&x| x.into()).collect());
-    let loops = f.loops.iter().map(|walls| Json::Arr(walls.iter().map(|wall| {
-        let mut o = object([("name", wall.name.clone().into()), ("run", wall.run.kind().into()),
-            ("closed", Json::Bool(wall.closed)),
-            ("nodes", Json::Arr(wall.nodes.iter().map(|n| numbers(&wall.run, n)).collect()))]);
-        if let Run::Spline { degree, knots, weights } = &wall.run {
-            o.set("degree", (*degree).into());
-            o.set("knots", list(knots));
-            if let Some(ws) = weights {
-                o.set("weights", list(ws));
-            }
-        }
-        o
-    }).collect())).collect();
-    let mut o = object([("kind", "family".into()),
-        ("spans", Json::Arr(f.spans.iter().map(|s| list(s)).collect())),
-        ("at", Json::Arr(f.at.iter().map(|s| list(s)).collect())),
-        ("vanish", (f.vanish * w.scale).into()),
-        ("loops", Json::Arr(loops))]);
+    let loops = f.loops.iter().map(|walls| walls.iter().map(|wall| FamilyWall {
+        name: wall.name.clone(), run: wall.run.clone(), closed: wall.closed,
+        nodes: wall.nodes.iter().map(|n| numbers(&wall.run, n)).collect(),
+    }).collect()).collect();
     // the motion carrying it, where the statements say one (#366): a point moved and scaled, a
     // direction as it is, a length scaled
-    if let Some(c) = f.carry {
-        o.set("carry", super::cad::carry_json(c, w));
-    }
-    o
+    Walls { spans: f.spans.clone(), at: f.at.clone(), vanish: f.vanish * w.scale, loops,
+        carry: f.carry.map(|c| super::cad::carry(c, w)) }
 }

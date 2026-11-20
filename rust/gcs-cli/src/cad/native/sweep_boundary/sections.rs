@@ -140,9 +140,8 @@ pub(super) struct Cutter { pub(super) solid: c_int,faces: Vec<c_int>,origin: [f6
 const FIRST_STATION: f64 = TAU*0.5/96.;
 
 impl Session {
-    pub(super) fn cutter(&self,recipe: &gcs_core::json::Json) -> Result<Cutter,String> {
-        let recipe = Recipe::read(recipe)?;
-        let solid = self.built(&recipe)?;
+    pub(super) fn cutter(&self,recipe: &Recipe) -> Result<Cutter,String> {
+        let solid = self.built(recipe)?;
         let mut axes: Vec<([f64;3],[f64;3])> = Vec::new();
         for Named {name,node,..} in &recipe.nodes {
             match node {

@@ -7,10 +7,17 @@
 //! kernel a revolve of its triangle, the field and the facets its meridian turned.  Held here: the
 //! cone's volume to its closed form, its faces named as a prism's (`near`, and its side by the
 //! rim's edge), the same set written by hand built alike, a strap countersunk on its top face to
-//! its closed form, and a draft taken to nothing within a prism's ordinates said where it comes
-//! to nothing and why.
-use gcs_core::brep::{export, props, sweep::Say};
+//! its closed form, a draft taken to nothing within a prism's ordinates said where it comes to
+//! nothing and why, and a countersink beside a counterbore built though the surfaces run on past
+//! both faces come near there (#961), a near-contact no face clears refused still.
+use gcs_core::brep::affine::{Affine, Mapped};
+use gcs_core::brep::geom::{tolerance, Frame, Surface, V};
+use gcs_core::brep::query::Located;
+use gcs_core::brep::topo::Brep;
+use gcs_core::brep::{export, props, ssi, sweep::Say};
 use gcs_core::program::Elaborated;
+use gcs_core::rng::Rng;
+use gcs_core::space::{add, distance, dot, norm, scale, sub};
 use gcs_core::solid::faces::{face_paths, FacePath};
 use gcs_core::solid::{ApproximationPolicy::Report, MaterialField};
 use std::f64::consts::PI;
@@ -307,4 +314,317 @@ in deck {
         assert!(facets.inside([x, y, 21.5]), "{sink} under its rim at ({x:.3}, {y:.3})");
         assert!(!facets.inside([x + 2.5, y, 21.5]), "{sink} narrows below its rim");
     }
+}
+
+/// The issue's part (#961): a disc of radius 100 from −20 to 20, a counterbore of radius 62.5
+/// down to its floor at 0 — its wall a cylinder unless `draft` leans it (a cone) — a hole of
+/// radius 3.5 from −16 to 1 at `(x, y)`, and a Ø8 × 90° countersink on it, opening on the
+/// floor (where `sink`). `flipped`: the same part turned over, the counterbore below the floor
+/// and the countersink drawn on a plane facing down, so it sinks up.
+fn beside(x: f64, y: f64, draft: f64, flipped: bool, sink: bool) -> String {
+    let (cb, hole, deck) = if flipped { ("-21mm, to: 0mm", "-1mm, to: 16mm", "under") }
+        else { ("0mm, to: 21mm", "-16mm, to: 1mm", "std.top") };
+    let bore = if draft == 0.0 { format!("std.solids.Prism(face(cbore), from: {cb})") }
+        else { format!("std.solids.Drafted(face(cbore), from: {cb}, draft: {draft}deg)") };
+    let ty = if flipped { -y } else { y };
+    let sink = if sink {
+        "csk := solid(std.solids.Countersink(face(sink), angle: 90deg))\ncsk cut part\n"
+    } else { "" };
+    format!("unit mm
+use std
+use std.solids
+use std.solids (cut)
+under := plane
+fix(origin == (0mm, 0mm, 0mm)) under
+fix(dir == (1, 0, 0)) under.u
+fix(dir == (0, -1, 0)) under.v
+in std.top {{
+  o := point
+  fix((0, 0)) o
+  rim := circle(center: o) hint(r: 100)
+  radius(100mm) rim
+  cbore := circle(center: o) hint(r: 62.5)
+  radius(62.5mm) cbore
+  h := point
+  fix(({x}, {y})) h
+  drill := circle(center: h) hint(r: 3.5)
+  radius(3.5mm) drill
+}}
+in {deck} {{
+  c := point
+  fix(({x}, {ty})) c
+  sink := circle(center: c) hint(r: 4)
+  radius(4mm) sink
+}}
+part := solid(std.solids.Prism(face(rim), from: -20mm, to: 20mm))
+cb := solid({bore})
+cb cut part
+hole := solid(std.solids.Prism(face(drill), from: {hole}))
+hole cut part
+{sink}")
+}
+
+/// What the countersink takes from the drilled part, whose hole it is coaxial with: the cone of
+/// radius 4 to its point 4 deep, less what of it the hole of radius 3.5 already took — the cone's
+/// last 3.5 and the cylinder of the top half millimetre.
+fn sunk() -> f64 { PI / 3.0 * (64.0 - 3.5f64.powi(3)) - PI * 3.5 * 3.5 * 0.5 }
+
+/// The issue's part to its closed form, the hole centred `d` from the axis: the disc, less the
+/// counterbore, the hole below the floor, the hole's top millimetre where it stands outside the
+/// counterbore (the circles' lens subtracted), and the countersink.
+fn beside_volume(d: f64) -> f64 {
+    let (r, big) = (3.5f64, 62.5f64);
+    let lens = r * r * ((d * d + r * r - big * big) / (2.0 * d * r)).acos()
+        + big * big * ((d * d + big * big - r * r) / (2.0 * d * big)).acos()
+        - 0.5 * ((-d + r + big) * (d + r - big) * (d - r + big) * (d + r + big)).sqrt();
+    PI * 1e4 * 40.0 - PI * big * big * 20.0 - PI * r * r * 16.0 - (PI * r * r - lens) - sunk()
+}
+
+/// The exact part, checked a valid closed shell, and its volume.
+fn built(src: &str, what: &str) -> f64 {
+    let e = solved(src);
+    let b = exact(&e, "part").unwrap_or_else(|m| panic!("{what}: {m}"));
+    b.check(gcs_core::brep::geom::tolerance(b.size())).unwrap_or_else(|m| panic!("{what}: {m}"));
+    props::volume(&b)
+}
+
+/// **A countersink beside a counterbore** (#961): its cone's box of parameters, grown past the
+/// apex onto the other nappe, and the counterbore wall's surface, run on below the floor, came
+/// within 4e-7 of one another 4.25 below the floor — on neither face — and the search for where
+/// they meet refused that as unresolved.  A near-contact off either face is no part of what is
+/// built: the part is its closed form wherever the hole stands by the wall (centred 0.08 inside
+/// it, 0.1 inside, on it, and 1.5 inside, which always built), turned about the axis and turned
+/// over, a valid closed shell each time.
+#[test]
+fn a_countersink_beside_a_counterbore_is_built() {
+    for (d, turn, flipped) in [(62.42, 0.0, false), (62.4, 0.0, false), (62.5, 0.0, false),
+                               (61.0, 0.0, false), (62.42, 37.0, false), (62.4, 200.0, false),
+                               (62.42, 0.0, true), (62.5, 200.0, true)] {
+        let a = f64::to_radians(turn);
+        let (x, y) = ((d * a.cos() * 1e9).round() / 1e9, (d * a.sin() * 1e9).round() / 1e9);
+        let over = if flipped { ", turned over" } else { "" };
+        let what = format!("centred {d} out at {turn}°{over}");
+        close(&what, built(&beside(x, y, 0.0, flipped, true), &what), beside_volume(d), 1e-9);
+    }
+}
+
+/// The same near-contact between two cones (#961): the counterbore drafted, its wall a cone run on
+/// below the floor, leaning either way, beside the countersink's apex.  Each part is the drilled
+/// part less what the countersink takes from it (the cone below the floor, the drafted counterbore
+/// above it, nothing of the one in the other).
+#[test]
+fn a_countersink_beside_a_drafted_counterbore_is_built() {
+    for (draft, d) in [(2.0, 62.5), (5.0, 62.8), (-5.0, 62.1)] {
+        let what = format!("drafted {draft}°, centred {d} out");
+        let drilled = built(&beside(d, 0.0, draft, false, false), &format!("{what}, drilled"));
+        close(&what, built(&beside(d, 0.0, draft, false, true), &what), drilled - sunk(), 1e-9);
+    }
+}
+
+/// The countersink's cone and the counterbore's wall of the issue's part, the cone's box of its
+/// face's parameters grown as a Boolean grows it (a sixteenth a side, past the apex), and its
+/// face; the wall's face.
+fn cone_and_wall() -> (Brep, usize, [[f64; 2]; 2], Brep, usize) {
+    let e = solved(&beside(62.42, 0.0, 0.0, false, true));
+    let (cb, csk) = (exact(&e, "cb").unwrap(), exact(&e, "csk").unwrap());
+    let wall = cb.faces.iter().position(|f| matches!(f.surface, Surface::Cylinder(..))).unwrap();
+    let cone = csk.faces.iter().position(|f| matches!(f.surface, Surface::Cone(..))).unwrap();
+    let d = gcs_core::brep::boolean::face_parameters(&csk, cone);
+    let periods = csk.faces[cone].surface.periods();
+    let grown = std::array::from_fn(|k| {
+        let g = (d[k][1] - d[k][0]) / 16.0 + 1e-9 * (1.0 + d[k][0].abs().max(d[k][1].abs()));
+        match periods[k] {
+            Some(p) if d[k][1] - d[k][0] + 2.0 * g >= p => [d[k][0], d[k][0] + p],
+            _ => [d[k][0] - g, d[k][1] + g],
+        }
+    });
+    (csk, cone, grown, cb, wall)
+}
+
+/// **A near-contact within both patches is refused still** (#961): the same cone and cylinder met
+/// over boxes of their parameters — the cone's grown past its apex, the wall's run on 30 below
+/// the floor and above the top, so the issue's point lies in both — and searched with no faces
+/// to clear it, after tracing the meeting the search finds, come within a tolerance at the
+/// issue's point and are refused there, as before: only a face's trim clears a near-contact.
+#[test]
+fn a_near_contact_within_both_patches_is_still_refused() {
+    let (csk, cone, da, cb, wall) = cone_and_wall();
+    let (sc, sw) = (&csk.faces[cone].surface, &cb.faces[wall].surface);
+    let dw = gcs_core::brep::boolean::face_parameters(&cb, wall);
+    let db = [dw[0], [dw[1][0] - 30.0, dw[1][1] + 30.0]];
+    let tol = 1e-7;
+    let at = "[62.4996, -0.2370, -4.2500] and no meeting was found there: \
+              whether they touch is not resolved";
+    let met = gcs_core::brep::meeting::meet(sc, da, sw, db, tol);
+    let why = met.map(|m| m.branches.len()).unwrap_err();
+    assert!(why.contains(at), "met over boxes: {why}");
+    let (lo, hi) = ([-200.0, -200.0, -30.0], [200.0, 200.0, 30.0]);
+    let mut known = Vec::new();
+    let why = loop {
+        match ssi::unseen(sc, da, sw, &known, lo, hi, tol) {
+            Ok(Some(q)) => {
+                let more = ssi::trace(sc, sw, &[q], lo, hi, tol).unwrap_or_default();
+                assert!(!more.is_empty() && known.len() < 8, "a meeting at {q:?} not traced");
+                known.extend(more);
+            }
+            Ok(None) => panic!("searched with no faces, the near-contact was read as none"),
+            Err(why) => break why,
+        }
+    };
+    assert!(why.contains(at), "searched with no faces: {why}");
+}
+
+/// **What is clear of a face** (#961, `Located::face_clear`): a point of its surface outside it
+/// with no edge — a seam, an apex — within the reach along the surface of the ball asked about.
+/// In the face, or beside its edge by less than that reach, is never clear; a ball too large for
+/// its surface to be read as one disc about the point (across the cylinder, or at the cone's
+/// apex) is not either.
+#[test]
+fn a_face_is_clear_only_off_it_and_away_from_its_edges() {
+    let (csk, cone, _, cb, wall) = cone_and_wall();
+    let lc = Located::new(&csk, tolerance(csk.size()));
+    let lw = Located::new(&cb, tolerance(cb.size()));
+    let r = 1e-6;
+    // the wall, of radius 62.5 from 0 to 21
+    let on_wall = |z: f64| [62.5 * 0.3f64.cos(), 62.5 * 0.3f64.sin(), z];
+    for (z, clear) in [(10.0, false), (-4.25, true), (-3e-7, false), (-1e-3, true),
+                       (21.0 + 3e-7, false), (21.001, true)] {
+        assert_eq!(lw.face_clear(wall, on_wall(z), r), clear, "the wall at {z}");
+    }
+    assert!(!lw.face_clear(wall, on_wall(-30.0), 40.0), "a ball across the cylinder");
+    // the countersink's cone from its point at (62.42, 0, -4) up to its rim at 0: below the point
+    // is its other nappe
+    let on_cone = |z: f64| {
+        let rho = (z + 4.0).abs();
+        [62.42 + rho * 1.1f64.cos(), rho * 1.1f64.sin(), z]
+    };
+    for (z, clear) in [(-2.0, false), (-4.25, true), (-4.0 - 1e-7, false), (-4.0 - 1e-3, true),
+                       (2e-7, false), (0.25, true)] {
+        assert_eq!(lc.face_clear(cone, on_cone(z), r), clear, "the cone at {z}");
+    }
+    // the issue's near-contact is clear of both: each face's foot of it
+    let p = [62.4996, -0.2370, -4.2500];
+    for (l, b, f) in [(&lc, &csk, cone), (&lw, &cb, wall)] {
+        let s = &b.faces[f].surface;
+        assert!(l.face_clear(f, s.point(s.inverse(p)), r), "{}", s.kind());
+    }
+    // how far a ball's points reach along a surface: as far as the ball on a cylinder, twice it
+    // on a cone away from its apex, and not read where the ball reaches the apex
+    assert_eq!(ssi::disc_reach(&cb.faces[wall].surface, on_wall(5.0), r), Some(r));
+    assert_eq!(ssi::disc_reach(&csk.faces[cone].surface, on_cone(-2.0), r), Some(2.0 * r));
+    assert_eq!(ssi::disc_reach(&csk.faces[cone].surface, on_cone(-4.0 - 1e-7), r), None);
+}
+
+/// A path on `s` from `p` to `q`, both on it: the one `ssi::disc_reach`'s bound is argued by — a
+/// plane's segment, a sphere's great-circle arc, a cylinder's helix the shorter way round, a cone's
+/// or a torus's parallel to `q`'s azimuth and then its meridian the shorter way, an image's its
+/// preimage's mapped.
+fn path_on(s: &Surface, p: V, q: V) -> Vec<V> {
+    const N: usize = 256;
+    let t = |j: usize| j as f64 / N as f64;
+    let shorter = |a: f64, b: f64, period: Option<f64>| {
+        let d = b - a;
+        period.map_or(d, |w| d - (d / w).round() * w)
+    };
+    match s {
+        Surface::Plane(_) => (0..=N).map(|j| add(p, scale(sub(q, p), t(j)))).collect(),
+        Surface::Sphere(f, _) => {
+            let (a, b) = (sub(p, f.o), sub(q, f.o));
+            let w = (dot(a, b) / (norm(a) * norm(b))).clamp(-1.0, 1.0).acos();
+            if w < 1e-9 { return vec![p, q] }
+            (0..=N).map(|j| add(f.o, add(scale(a, ((1.0 - t(j)) * w).sin() / w.sin()),
+                                         scale(b, (t(j) * w).sin() / w.sin())))).collect()
+        }
+        Surface::Cylinder(..) => {
+            let (a, b) = (s.inverse(p), s.inverse(q));
+            let du = shorter(a[0], b[0], s.periods()[0]);
+            (0..=N).map(|j| s.point([a[0] + t(j) * du, a[1] + t(j) * (b[1] - a[1])])).collect()
+        }
+        Surface::Cone(..) | Surface::Torus(..) => {
+            let (a, b, periods) = (s.inverse(p), s.inverse(q), s.periods());
+            let (du, dv) = (shorter(a[0], b[0], periods[0]), shorter(a[1], b[1], periods[1]));
+            (0..=N).map(|j| s.point([a[0] + t(j) * du, a[1]]))
+                .chain((0..=N).map(|j| s.point([a[0] + du, a[1] + t(j) * dv]))).collect()
+        }
+        Surface::Affine(m) => path_on(&m.of, m.back.point(p), m.back.point(q)).into_iter()
+            .map(|x| m.map.point(x)).collect(),
+        _ => unreachable!("not a searchable surface"),
+    }
+}
+
+/// **`ssi::disc_reach` holds by every path it is argued by** (#961), whatever the argument: over
+/// each searchable kind — a plane, a sphere, a cylinder, cones from narrow to wide (past 45°, where
+/// the other nappe is nearest), a ring torus with its circle either side of the axis, an
+/// ellipsoid and an elliptic cylinder as images — seeded points `p` of the surface, the largest
+/// ball the bound admits about each and a smaller one, and many points `q` of the surface within
+/// it (the feet of seeded points of the ball, so any sheet within the ball is reached): the path
+/// from `p` to `q` ends at `q` and keeps within the reach given. A spindle or a horn torus, a cone
+/// at its apex and a ball across a cylinder are given none.
+#[test]
+fn a_surfaces_points_within_a_ball_reach_no_farther_along_it_than_said() {
+    let tilted = Frame::new([1.0, -2.0, 0.5], [0.3, 0.4, 1.0], [1.0, 0.0, 0.0]);
+    let mapped = |of: Surface| {
+        let axes = Frame::new([0.5, 0.0, 1.0], [0.0, 0.6, 1.0], [1.0, 1.0, 0.0]);
+        let map = Affine::stretch(&axes, [1.0, 2.5, 0.6]);
+        Surface::Affine(std::sync::Arc::new(Mapped::new(map.unwrap(), of)))
+    };
+    let (round, along, across) = ([0.0, 6.3], [-10.0, 10.0], [-1.5, 1.5]);
+    let mut surfaces = vec![
+        ("a plane", Surface::Plane(tilted), [along, along]),
+        ("a sphere", Surface::Sphere(tilted, 5.0), [round, across]),
+        ("a cylinder", Surface::Cylinder(tilted, 4.0), [round, along]),
+        ("a ring torus", Surface::Torus(tilted, 6.0, 2.0), [round, round]),
+        ("a ring torus drawn across", Surface::Torus(tilted, -5.0, 3.0), [round, round]),
+        ("an ellipsoid", mapped(Surface::Sphere(tilted, 3.0)), [round, across]),
+        ("an elliptic cylinder", mapped(Surface::Cylinder(tilted, 2.0)), [round, along]),
+    ];
+    for alpha in [10.0, 30.0, 45.0, 60.0, 80.0] {
+        let cone = Surface::Cone(tilted, 2.0, f64::to_radians(alpha));
+        surfaces.push(("a cone", cone, [round, [-12.0, 12.0]]));
+    }
+    let mut rng = Rng::new(961);
+    for (what, s, [[u0, u1], [v0, v1]]) in &surfaces {
+        let mut asked = 0;
+        for _ in 0..24 {
+            let p = s.point([rng.uniform(*u0, *u1), rng.uniform(*v0, *v1)]);
+            // the largest ball the bound admits about `p`, by halving (it admits a smaller one too)
+            let admits = |r: f64| ssi::disc_reach(s, p, r).is_some();
+            if !admits(1e-9) { continue }
+            let (mut lo, mut hi) = (1e-9, 1e3);
+            for _ in 0..80 { let m = 0.5 * (lo + hi); if admits(m) { lo = m } else { hi = m } }
+            for r in [lo, rng.uniform(0.1, 1.0) * lo] {
+                let reach = ssi::disc_reach(s, p, r).unwrap();
+                for _ in 0..200 {
+                    let x = loop {
+                        let d = [rng.uniform(-r, r), rng.uniform(-r, r), rng.uniform(-r, r)];
+                        if norm(d) <= r { break add(p, d) }
+                    };
+                    let q = s.point(s.inverse(x));
+                    if distance(p, q) > r { continue }
+                    asked += 1;
+                    let path = path_on(s, p, q);
+                    let end = *path.last().unwrap();
+                    assert!(distance(end, q) <= 1e-9 * (1.0 + r),
+                            "{what}: the path from {p:?} ends at {end:?}, not {q:?}");
+                    let far = path.iter().map(|&x| distance(x, p)).fold(0.0, f64::max);
+                    assert!(far <= reach * (1.0 + 1e-9),
+                            "{what}: from {p:?} to {q:?} within {r}: {far} past the reach {reach}");
+                }
+            }
+        }
+        assert!(asked > 1000, "{what}: {asked} points asked");
+    }
+    // where the surface's points within the ball are not one disc about `p`, no reach is said
+    for (big, minor) in [(1.0, 3.0), (2.0, 2.0), (-1.0, 3.0)] {
+        let s = Surface::Torus(tilted, big, minor);
+        let p = s.point([0.7, 0.4]);
+        assert_eq!(ssi::disc_reach(&s, p, 1e-6), None, "a spindle or horn torus, {big}, {minor}");
+    }
+    let cone = Surface::Cone(Frame::WORLD, 2.0, f64::to_radians(30.0));
+    let apex = [0.0, 0.0, -2.0 / f64::to_radians(30.0).tan()];
+    assert_eq!(ssi::disc_reach(&cone, apex, 1e-6), None, "at the apex");
+    let beside = cone.point([1.0, -4.0 + 1e-7]);
+    assert_eq!(ssi::disc_reach(&cone, beside, 1e-6), None, "beside the apex");
+    let tube = Surface::Cylinder(Frame::WORLD, 4.0);
+    assert_eq!(ssi::disc_reach(&tube, [4.0, 0.0, 0.0], 3.0), None, "across a cylinder");
 }

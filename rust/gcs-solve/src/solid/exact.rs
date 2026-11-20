@@ -79,7 +79,7 @@ impl Exact {
 pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
     let mm = cad::millimetres(sk);
     let origin = frame_origin(sk, si, REPORT_UNIT);
-    let recipe = Recipe::read(&cad::recipe_about(sk, si, origin.map(|x| x * mm))?)?;
+    let recipe = cad::recipe_about(sk, si, origin.map(|x| x * mm))?;
     let (mut built, leading) = nodes(sk, si, &recipe, origin, None)?;
     let brep = built.remove(&recipe.root).ok_or("recipe: no root")?;
     Ok(named(brep, mm, origin, leading))
@@ -94,7 +94,7 @@ pub(crate) fn operands(sk: &Sketch, si: usize) -> Result<(Recipe, BTreeMap<i64, 
     use crate::brep::recipe::Node;
     let mm = cad::millimetres(sk);
     let origin = frame_origin(sk, si, REPORT_UNIT);
-    let recipe = Recipe::read(&cad::recipe_of_terms(sk, si, origin.map(|x| x * mm))?)?;
+    let recipe = cad::recipe_of_terms(sk, si, origin.map(|x| x * mm))?;
     let of: BTreeMap<i64, &Node> = recipe.nodes.iter().map(|n| (n.id, &n.node)).collect();
     let mut wanted: Option<BTreeSet<i64>> = match of.get(&recipe.root) {
         Some(Node::Body(b)) => Some(std::iter::once(b.stock)

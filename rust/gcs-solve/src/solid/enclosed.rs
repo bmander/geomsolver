@@ -11,7 +11,8 @@ use super::*;
 use crate::developable::Ruling;
 use crate::model::{Member, RegionShape};
 use crate::brep::recipe::Writer;
-use crate::json::{object, Json};
+use crate::brep::recipe::{Node, SewnPiece};
+use crate::space::{norm, sub};
 use std::rc::Rc;
 
 /// The most stations a panel of a shell is drawn at.
@@ -74,32 +75,43 @@ pub fn built(sk: &Sketch, si: usize, unit: f64) -> Option<Result<Rc<Shell>, Stri
 }
 
 impl Shell {
-    /// **The recipe's node, written by `w`**: `sewn`, each face its profile, each panel the sheet
-    /// of degree one each way through its rulings' ends — rows its stations, columns a ruling's
-    /// two ends — sewn to the tolerance its panels are drawn to.
-    pub fn node(&self, sk: &Sketch, w: &Writer) -> Result<Json, String> {
-        let mm = |p: [f64; 3]| w.at(p.map(|x| x * w.scale));
-        let pieces = self.pieces.iter().map(|p| Ok(match p {
-            Piece::Face { face, name } => object([("kind", "face".into()),
-                ("profile", super::cad::profile(sk, *face as usize, w)?),
-                ("face", name.as_str().into())]),
-            Piece::Panel { stations, name } => {
-                let n = stations.len();
-                // clamped, degree one: a knot at every station
-                let mut uknots = vec![0.0];
-                uknots.extend((0..n).map(|k| k as f64));
-                uknots.push((n - 1) as f64);
-                let poles = stations.iter().map(|r| Json::Arr(vec![mm(r.m), mm(r.n)])).collect();
-                object([("kind", "net".into()), ("du", 1.0.into()), ("dv", 1.0.into()),
-                    ("uknots", Json::Arr(uknots.into_iter().map(Json::from).collect())),
-                    ("vknots", Json::Arr([0.0, 0.0, 1.0, 1.0].map(Json::from).to_vec())),
-                    ("poles", Json::Arr(poles)), ("face", name.as_str().into())])
+    /// **The recipe's node, written by `w`**: `sewn`, each face its profile, each panel its runs
+    /// of stations (`runs`), each the sheet straight along its rulings and smooth across them —
+    /// cubic through its stations' rulings' ends (`smooth`), each ruling on it exactly, no crease
+    /// between them for a plane's trace to break at — sewn to the tolerance its panels are drawn
+    /// to.  A run is laid so that where it shrinks to a point it is a pole along `u`, as a cone's
+    /// apex is, the one way the kernel reads a pole: its stations run along `u` (a fan's corner
+    /// the column of one point), but a run ending where the rails meet (`Developable::meeting`)
+    /// along `v`, that end the row of one point.
+    pub fn node(&self, sk: &Sketch, w: &Writer) -> Result<Node, String> {
+        let mm = |p: [f64; 3]| w.point(p);
+        let ends = || vec![0.0, 0.0, 1.0, 1.0];
+        let mut pieces = Vec::with_capacity(self.pieces.len());
+        for p in &self.pieces {
+            match p {
+                Piece::Face { face, name } => pieces.push(SewnPiece::Face {
+                    profile: super::cad::profile(sk, *face as usize, w)?, face: name.clone() }),
+                Piece::Panel { stations, name } => {
+                    for (run, pointed) in runs(stations) {
+                        let (degree, knots, [ms, ns]) = smooth(run);
+                        let line = |q: &[[f64; 3]]| q.iter().map(|&q| mm(q)).collect::<Vec<_>>();
+                        let (du, dv, uknots, vknots, poles) = match pointed {
+                            // rows its stations, columns a ruling's two ends
+                            false => (degree, 1, knots, ends(), ms.iter().zip(&ns)
+                                .map(|(&m, &n)| vec![mm(m), mm(n)]).collect()),
+                            // rows a ruling's two ends, columns its stations
+                            true => (1, degree, ends(), knots, vec![line(&ms), line(&ns)]),
+                        };
+                        let net = crate::brep::nurbs::Net { du, dv, uknots, vknots, poles, weights: None };
+                        pieces.push(SewnPiece::Net { net, face: name.clone() });
+                    }
+                }
             }
-        })).collect::<Result<Vec<_>, String>>()?;
+        }
         // a panel's rail drawn through its stations stands off the rail, and off a face or a
         // panel beside it drawn through other stations, by the chords' sag, `tol` at most
         let tol = (self.tol * w.scale).max(crate::brep::geom::tolerance(1.0));
-        Ok(object([("kind", "sewn".into()), ("pieces", Json::Arr(pieces)), ("tol", tol.into())]))
+        Ok(Node::Sewn { pieces, tol })
     }
 
     /// **The triangles panel `name` is drawn with** (#953): each strip between neighbouring
@@ -122,4 +134,56 @@ impl Shell {
         }
         out
     }
+}
+
+/// **A run's two rails through its stations' rulings' ends**, each a B-spline at one parameter a
+/// station (the chord length along the rulings' middles), cubic where there are four stations or
+/// more: its degree, its knots and each rail's poles.  Where the middles do not run apart (a
+/// station twice over), each rail through its stations' ends straight, as their chords.
+fn smooth(run: &[Ruling]) -> (usize, Vec<f64>, [Vec<[f64; 3]>; 2]) {
+    use crate::brep::nurbs::interpolate;
+    use crate::space::{add, scale};
+    let ends = [run.iter().map(|r| r.m).collect::<Vec<_>>(), run.iter().map(|r| r.n).collect()];
+    let middle = |r: &Ruling| scale(add(r.m, r.n), 0.5);
+    let mut t = vec![0.0];
+    for w in run.windows(2) {
+        t.push(t[t.len() - 1] + norm(sub(middle(&w[1]), middle(&w[0]))));
+    }
+    let fitted = (run.len() >= 3).then(|| {
+        let [a, b] = [interpolate(&ends[0], &t, 3)?, interpolate(&ends[1], &t, 3)?];
+        (a.knots == b.knots).then_some((a.degree, a.knots, [a.poles, b.poles]))
+    }).flatten();
+    fitted.unwrap_or_else(|| {
+        // clamped, degree one: a knot at every station
+        let n = run.len();
+        let mut k = vec![0.0];
+        k.extend((0..n).map(|k| k as f64));
+        k.push((n - 1) as f64);
+        (1, k, ends)
+    })
+}
+
+/// **A panel's stations in runs**, each drawn as one sheet, neighbouring runs sharing their
+/// station: a fan about a corner — one end of every ruling the same point, the corner a panel
+/// turns about where a rail breaks or ends — or the rulings between, each beside whether it ends
+/// in a station that is a point (`Developable::meeting`).  Drawn whole, a fan's corner would be a
+/// stretch of the sheet's edge standing still, which no curve of the neighbouring panel along
+/// that rail can be read back onto.
+fn runs(stations: &[Ruling]) -> Vec<(&[Ruling], bool)> {
+    let size = stations.iter().map(|r| norm(sub(r.n, r.m))).fold(1.0, f64::max);
+    let same = |p: [f64; 3], q: [f64; 3]| norm(sub(p, q)) <= 1e-9 * size;
+    let fan = |a: &Ruling, b: &Ruling| same(a.m, b.m) || same(a.n, b.n);
+    let point = |r: &Ruling| same(r.m, r.n);
+    let mut out = Vec::new();
+    let mut start = 0;
+    for k in 1..stations.len() {
+        let step = fan(&stations[k - 1], &stations[k]);
+        let next = stations.get(k + 1).map(|s| fan(&stations[k], s));
+        if next != Some(step) {
+            let run = &stations[start..=k];
+            out.push((run, !step && (point(&run[0]) || point(&run[run.len() - 1]))));
+            start = k;
+        }
+    }
+    out
 }
