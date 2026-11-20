@@ -125,12 +125,15 @@ fn stands_within(body: &crate::solid::faces::BodyFaces, f: &Faces, groups: [&[us
     }
     // toward the side the region is on: into the material within, the void outside
     let sigma = if f.within { -1.0 } else { 1.0 };
-    let chains: Vec<(usize, Vec<usize>)> = (0..2).filter(|&k| f.faces[k].smooth).filter_map(|k| {
+    // each smooth face's chain, the others of it, and whether the field reads it face by face (a
+    // chain bulging toward the ball, `BodyFaces::bulging`) or through its nearest face (any other:
+    // a drafted shell's outline turning both ways)
+    let chains: Vec<(usize, Vec<usize>, bool)> = (0..2).filter(|&k| f.faces[k].smooth).map(|k| {
         let chain = body.smooth(groups[k]);
-        let (faces, carried) = body.bulging(&chain, true, !f.within)?;
-        carried.then(|| (k, faces.into_iter().filter(|g| !groups[k].contains(g)).collect()))
+        let carried = body.bulging(&chain, true, !f.within).is_some_and(|(_, carried)| carried);
+        (k, chain.into_iter().filter(|g| !groups[k].contains(g)).collect(), carried)
     }).collect();
-    if chains.iter().all(|(_, others)| others.is_empty()) {
+    if chains.iter().all(|(_, others, _)| others.is_empty()) {
         return Ok(());
     }
     // the points each section is read at: its ball's centre, or its flat's own points; each where
@@ -149,9 +152,11 @@ fn stands_within(body: &crate::solid::faces::BodyFaces, f: &Faces, groups: [&[us
     for p in pieces {
         match p {
             Piece::Run(run) => for q in points(run) {
-                // its middle first, then its ends: where walls closer than the ball pass it, the
-                // middle sees the wall across, not the arc it ends on
-                at.extend([0.5, 0.0, 1.0].map(|s| add(q, scale(run.along, s * run.edge))));
+                // its middle first, then its ends, then between: where walls closer than the ball
+                // pass it, the middle sees the wall across, not the arc it ends on; and the centres
+                // within a chain turning both ways are no convex set
+                at.extend([0.5, 0.0, 1.0, 0.125, 0.25, 0.375, 0.625, 0.75, 0.875]
+                    .map(|s| add(q, scale(run.along, s * run.edge))));
             },
             Piece::Ring(ring) => for q in points(&ring.section) {
                 at.extend((0..=16).map(|k| crate::brep::geom::Rigid::turn(ring.axis_origin, ring.axis,
@@ -164,19 +169,31 @@ fn stands_within(body: &crate::solid::faces::BodyFaces, f: &Faces, groups: [&[us
     let toward = |g: usize, q: V| sigma * body.carried_side_grad(g, q).0;
     for &q in &at {
         let tol = 1e-9 * (size + norm(q));
-        for (k, others) in &chains {
+        for (k, others, carried) in &chains {
             // how far the ball must stand off the others: its radius, or a flat's point as far as
             // from its own face
             let need = match section {
                 Section::Round(r) => r,
                 Section::Flat { .. } => groups[*k].iter().map(|&g| body.patch_distance(g, q)).fold(f64::INFINITY, f64::min),
             };
-            // of the faces it comes too near, the one whose patch is nearest (a wall, not the arc
-            // carried on along the wall's plane past its seam)
-            let Some((g, d)) = others.iter().map(|&g| (g, toward(g, q))).filter(|&(_, d)| d < need - tol)
-                .min_by(|a, b| body.patch_distance(a.0, q).total_cmp(&body.patch_distance(b.0, q))) else {
-                continue;
+            // read as the field reads the centres: off each face's carried side where the chain
+            // bulges toward the ball — of the faces it comes too near, the one whose patch is
+            // nearest (a wall, not the arc carried on along the wall's plane past its seam) — else
+            // off the side of the face whose patch is nearest, where that is another's
+            let by_patch = |a: &(usize, f64), b: &(usize, f64)| body.patch_distance(a.0, q).total_cmp(&body.patch_distance(b.0, q));
+            let found = if let Section::Flat { .. } = section {
+                // a flat's sum reads each face's patch (`distance(p, b.smooth)`): its point's
+                // nearest piece of the chain must be its own
+                others.iter().map(|&g| (g, body.patch_distance(g, q))).filter(|&(_, d)| d < need - tol)
+                    .min_by(|a, b| a.1.total_cmp(&b.1))
+            } else if *carried {
+                others.iter().map(|&g| (g, toward(g, q))).filter(|&(_, d)| d < need - tol).min_by(by_patch)
+            } else {
+                let nearest = groups[*k].iter().chain(others).map(|&g| (g, 0.0)).min_by(by_patch);
+                nearest.filter(|&(g, _)| !groups[*k].contains(&g)).map(|(g, _)| (g, sigma * body.side(g, q)))
+                    .filter(|&(_, d)| d < need - tol)
             };
+            let Some((g, d)) = found else { continue };
             let said = |fi: usize| body.paths().get(fi).map(|p| p.text()).filter(|t| !t.is_empty())
                 .map_or_else(|| "a face".to_string(), |t| format!("`{t}`"));
             let own = said(groups[*k][0]);
