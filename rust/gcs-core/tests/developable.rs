@@ -712,6 +712,73 @@ fn rails_meeting_at_their_ends_come_to_a_point_and_elsewhere_are_refused() {
     }
 }
 
+/// A canoe of panels, every point of its drawing moved by `o`: a bottom between two chines that
+/// meet at the bow and at the stern, rising to them, each side between its chine and a sheer, and a
+/// flat deck between the sheers, which meet too — the shell they make and the hull it encloses.
+fn canoe(o: [f64; 3]) -> String {
+    let at = |x: f64, y: f64, z: f64| format!("({}mm, {}mm, {}mm)", x + o[0], y + o[1], z + o[2]);
+    let chine = |s: &str, k: f64| [(1, 250.0, 260.0, 20.0), (2, 500.0, 300.0, 0.0),
+                                   (3, 750.0, 260.0, 20.0)].iter()
+        .map(|&(i, x, y, z)| format!("{s}{i} := point\nfix({}) {s}{i}\n", at(x, k * y, z)))
+        .collect::<String>();
+    let sheer = |s: &str, k: f64| [(1, 250.0, 300.0), (2, 500.0, 340.0), (3, 750.0, 300.0)]
+        .iter().map(|&(i, x, y)| format!("  {s}{i} := point\n  fix(({x}mm, {}mm)) {s}{i}\n", k * y))
+        .collect::<String>();
+    format!("\
+unit mm
+use std
+use std.panels
+bow := point
+fix({bow}) bow
+stern := point
+fix({stern}) stern
+{port}{starboard}port_chine := spline(bow, pc1, pc2, pc3, stern)
+starboard_chine := spline(bow, sc1, sc2, sc3, stern)
+deck_plane := plane
+fix(origin == {deck}) deck_plane
+fix(dir == (1, 0, 0)) deck_plane.u
+fix(dir == (0, 1, 0)) deck_plane.v
+in deck_plane {{
+  ps0 := point
+  fix((0mm, 0mm)) ps0
+  ps4 := point
+  fix((1000mm, 0mm)) ps4
+{ps}{ss}  port_sheer := spline(ps0, ps1, ps2, ps3, ps4)
+  starboard_sheer := spline(ps0, ss1, ss2, ss3, ps4)
+  deck := face(port_sheer, starboard_sheer)
+}}
+bottom := std.panels.Developable(starboard_chine, port_chine)
+port := std.panels.Developable(port_chine, port_sheer)
+starboard := std.panels.Developable(starboard_sheer, starboard_chine)
+shell := {{ q | q in bottom or q in port or q in starboard or q in deck }}
+hull := solid({{ p | p in shell.side }})
+", bow = at(0.0, 0.0, 100.0), stern = at(1000.0, 0.0, 100.0), port = chine("pc", -1.0),
+       starboard = chine("sc", 1.0), deck = at(0.0, 0.0, 300.0), ps = sheer("ps", -1.0),
+       ss = sheer("ss", 1.0))
+}
+
+/// **A pointed hull closes**: where a panel's rails meet at its ends — the canoe's bottom between
+/// its chines, its deck's sheers — its first and last rulings are that point, so the panels the
+/// shell sews meet there, and a run of rulings fanning from one point is a net of its own whose
+/// pole runs along it.  The hull it encloses is a closed shell: its volume the same wherever the
+/// drawing stands, and within the box about its rails.
+#[test]
+fn a_pointed_hull_of_panels_closes() {
+    let volume = |o: [f64; 3]| {
+        let e = determined(&canoe(o));
+        let i = e.map.ent_named("hull").unwrap().i();
+        let names: Vec<String> = gcs_core::solid::faces::face_paths(&e.sketch, i).iter()
+            .map(|f| f.text()).collect();
+        assert_eq!(names, ["bottom", "port", "starboard", "deck"]);
+        let x = e.sketch.exact_preimage(i).expect("the hull is built exactly");
+        gcs_core::brep::props::volume(&x.brep) / x.mm.powi(3)
+    };
+    let (here, there) = (volume([0.0; 3]), volume([700.0, -400.0, 250.0]));
+    assert!(here > 0.25 * 1000.0 * 680.0 * 300.0 && here < 1000.0 * 680.0 * 300.0, "{here}");
+    // the same to the tolerance the panels are sewn to, a gap's flux moving with the drawing
+    assert!(rel(here, there) < 1e-6, "{here} against {there}");
+}
+
 /* -- the report ------------------------------------------------------------------------------ */
 
 /// `--where flat` and `--where panel`: the laid rails' lengths, the pattern's area and box, the

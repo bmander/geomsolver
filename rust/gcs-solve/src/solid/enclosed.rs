@@ -12,6 +12,7 @@ use crate::developable::Ruling;
 use crate::model::{Member, RegionShape};
 use crate::brep::recipe::Writer;
 use crate::json::{object, Json};
+use crate::space::{norm, sub};
 use std::rc::Rc;
 
 /// The most stations a panel of a shell is drawn at.
@@ -74,28 +75,46 @@ pub fn built(sk: &Sketch, si: usize, unit: f64) -> Option<Result<Rc<Shell>, Stri
 }
 
 impl Shell {
-    /// **The recipe's node, written by `w`**: `sewn`, each face its profile, each panel the sheet
-    /// of degree one each way through its rulings' ends — rows its stations, columns a ruling's
-    /// two ends — sewn to the tolerance its panels are drawn to.
+    /// **The recipe's node, written by `w`**: `sewn`, each face its profile, each panel its runs
+    /// of stations (`runs`), each the sheet of degree one each way through its rulings' ends —
+    /// sewn to the tolerance its panels are drawn to.  A run is laid so that where it shrinks to a
+    /// point it is a pole along `u`, as a cone's apex is, the one way the kernel reads a pole: a
+    /// fan's stations run along `u` (its corner the row of one point), any other run's along `v`
+    /// (an end where the rails meet the column of one point, `Developable::meeting`).
     pub fn node(&self, sk: &Sketch, w: &Writer) -> Result<Json, String> {
         let mm = |p: [f64; 3]| w.at(p.map(|x| x * w.scale));
-        let pieces = self.pieces.iter().map(|p| Ok(match p {
-            Piece::Face { face, name } => object([("kind", "face".into()),
-                ("profile", super::cad::profile(sk, *face as usize, w)?),
-                ("face", name.as_str().into())]),
-            Piece::Panel { stations, name } => {
-                let n = stations.len();
-                // clamped, degree one: a knot at every station
-                let mut uknots = vec![0.0];
-                uknots.extend((0..n).map(|k| k as f64));
-                uknots.push((n - 1) as f64);
-                let poles = stations.iter().map(|r| Json::Arr(vec![mm(r.m), mm(r.n)])).collect();
-                object([("kind", "net".into()), ("du", 1.0.into()), ("dv", 1.0.into()),
-                    ("uknots", Json::Arr(uknots.into_iter().map(Json::from).collect())),
-                    ("vknots", Json::Arr([0.0, 0.0, 1.0, 1.0].map(Json::from).to_vec())),
-                    ("poles", Json::Arr(poles)), ("face", name.as_str().into())])
+        let clamped = |n: usize| {
+            let mut k = vec![0.0];
+            k.extend((0..n).map(|k| k as f64));
+            k.push((n - 1) as f64);
+            Json::Arr(k.into_iter().map(Json::from).collect())
+        };
+        let ends = || Json::Arr([0.0, 0.0, 1.0, 1.0].map(Json::from).to_vec());
+        let mut pieces = Vec::with_capacity(self.pieces.len());
+        for p in &self.pieces {
+            match p {
+                Piece::Face { face, name } => pieces.push(object([("kind", "face".into()),
+                    ("profile", super::cad::profile(sk, *face as usize, w)?),
+                    ("face", name.as_str().into())])),
+                Piece::Panel { stations, name } => {
+                    for (run, fan) in runs(stations) {
+                        let n = run.len();
+                        let (uknots, vknots, poles) = match fan {
+                            // rows its stations, columns a ruling's two ends
+                            true => (clamped(n), ends(), run.iter()
+                                .map(|r| Json::Arr(vec![mm(r.m), mm(r.n)])).collect()),
+                            // rows a ruling's two ends, columns its stations
+                            false => (ends(), clamped(n), [|r: &Ruling| r.m, |r: &Ruling| r.n]
+                                .map(|end| Json::Arr(run.iter().map(|r| mm(end(r))).collect()))
+                                .to_vec()),
+                        };
+                        pieces.push(object([("kind", "net".into()), ("du", 1.0.into()),
+                            ("dv", 1.0.into()), ("uknots", uknots), ("vknots", vknots),
+                            ("poles", Json::Arr(poles)), ("face", name.as_str().into())]));
+                    }
+                }
             }
-        })).collect::<Result<Vec<_>, String>>()?;
+        }
         // a panel's rail drawn through its stations stands off the rail, and off a face or a
         // panel beside it drawn through other stations, by the chords' sag, `tol` at most
         let tol = (self.tol * w.scale).max(crate::brep::geom::tolerance(1.0));
@@ -122,4 +141,26 @@ impl Shell {
         }
         out
     }
+}
+
+/// **A panel's stations in runs**, each drawn as one sheet, neighbouring runs sharing their
+/// station: a fan about a corner (`true`) — one end of every ruling the same point, the corner a
+/// panel turns about where a rail breaks or ends — or the rulings between (`false`).  Drawn whole,
+/// a fan's corner would be a stretch of the sheet's edge standing still, which no curve of the
+/// neighbouring panel along that rail can be read back onto.
+fn runs(stations: &[Ruling]) -> Vec<(&[Ruling], bool)> {
+    let size = stations.iter().map(|r| norm(sub(r.n, r.m))).fold(1.0, f64::max);
+    let same = |p: [f64; 3], q: [f64; 3]| norm(sub(p, q)) <= 1e-9 * size;
+    let fan = |a: &Ruling, b: &Ruling| same(a.m, b.m) || same(a.n, b.n);
+    let mut out = Vec::new();
+    let mut start = 0;
+    for k in 1..stations.len() {
+        let step = fan(&stations[k - 1], &stations[k]);
+        let next = stations.get(k + 1).map(|s| fan(&stations[k], s));
+        if next != Some(step) {
+            out.push((&stations[start..=k], step));
+            start = k;
+        }
+    }
+    out
 }

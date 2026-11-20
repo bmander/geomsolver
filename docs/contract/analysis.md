@@ -651,7 +651,9 @@ unless a rule names another.
   P6's `delaunay::refine::volume`). A solid that is no prism — turned, united, cut — is meshed over
   its domain the body's signed distance (`BodyFaces::signed_distance`, of the drawing's own B-rep
   with its rounds made), each sharp edge of its boundary (where two faces meet at a corner,
-  `BodyFaces::convex`) protected as a feature curve read in `CURVE` (64) pieces, its cells held
+  `BodyFaces::convex`, turning by more than `4δ/h` for facets of size `h` a distance `δ` from
+  the surface — a crease shallower is meshed through within `δ`, as a panel's sheets meet at a
+  ruling) protected as a feature curve read in `CURVE` (64) pieces, its cells held
   to a radius–edge ratio of 2, a least dihedral of 12° and a size of `FILLED` (1/16) of its
   extent or `BREADTH` of its breadth (`3V/A`, from the B-rep's exact properties), whichever is less:
   at the extent's size alone a bar 10mm thick and its reading twice as coarse, cells of 10mm, lost

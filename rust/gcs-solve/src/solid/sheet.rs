@@ -75,12 +75,19 @@ fn built(sk: &Sketch, si: usize, unit: f64) -> Result<Band, String> {
 }
 
 /// **The rulings `panel` is drawn at**, to `tol` (`Developable::stations`), every few of them where
-/// there are more than `most` — its last kept; `None` for fewer than two.  A band's and a closed
-/// shell's panels alike (`solid::enclosed`).
+/// there are more than `most` — its last kept; `None` for fewer than two.  An end where the rails
+/// meet is drawn to their meeting, its ruling that point (`Developable::meeting`).  A band's and a
+/// closed shell's panels alike (`solid::enclosed`).
 pub(crate) fn stations(panel: &Developable, tol: f64, most: usize) -> Option<Vec<Ruling>> {
     let mut stations = panel.stations(tol);
     if stations.len() < 2 {
         return None;
+    }
+    for k in [0, stations.len() - 1] {
+        if let Some(p) = panel.meeting(&stations[k]) {
+            stations[k].m = p;
+            stations[k].n = p;
+        }
     }
     if stations.len() > most {
         let step = stations.len().div_ceil(most);
