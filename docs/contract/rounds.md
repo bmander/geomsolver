@@ -478,8 +478,12 @@ touches its face — what none reaches runs along the fill without end, as up a 
 saying both: `… of radius 2.1, is larger than `…round` can hold, curved round it to a radius of 2`.
 The convex twin, a boss across an edge rounded convex, is an ordinary ball rolled against the
 round's cylinder (its offset never closes), built where the contacts stand on the seams.
-`tests/round_onto_round.rs` is the gate (a round boss of 6 rounded 2 and one of 4 rounded 1.5,
-the statements either way round, and the square boss: the closed form's volume to 1e-9, the dome
+A tray's pocket filled all round its plan corners is the issue's own shape (`part.boss9 round(r:
+0.5mm) part.plate`): the fill's smooth chain is runs and stretches of torus, which the field reads
+face by face as it does a pocket's walls ([sets.md](sets.md), `BodyFaces::bulging`).
+`tests/round_onto_round.rs` is the gate (round bosses of 6, 4 and 3 rounded 0.5 to 2, the
+statements either way round, the square boss, and the tray at 0.5 and 2: the closed form's volume
+to 1e-9, the dome
 `(rb + r) π r² / 4 − ∫₀ʳ √(r² − s²) √(rb² − s²) ds − π r³ / 6` each side; each refusal above; the
 convex twin built), each exported to STEP and STL.
 

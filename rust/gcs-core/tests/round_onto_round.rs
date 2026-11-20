@@ -143,11 +143,12 @@ fn standing_volume(rb: f64, y: f64, r: f64) -> f64 {
 /// to the fill's own radius stands a ball each side on the fill's axis, its dome over the stretch
 /// where the boss's side crosses the fill — a sphere's patch, glued to the half ring along the
 /// floor and the runs up the wall at the sections through the stretch's ends, where each ball's
-/// contact stands on the fill's seams.  The issue's 2 against a boss of 6; 1.5 against a boss of 4
-/// moved along the frame; the two statements written the other way round.
+/// contact stands on the fill's seams.  2 against a boss of 6; 1.5 against a boss of 4
+/// moved along the frame; the issue's 0.5 and 2 against a boss of 3, 0.5 against 6; the two
+/// statements written the other way round.
 #[test]
 fn a_round_boss_across_a_filled_edge_on_its_axis_stands_a_ball_each_side() {
-    for (rb, y, r) in [(6.0, -20.0, 2.0), (4.0, -10.0, 1.5)] {
+    for (rb, y, r) in [(6.0, -20.0, 2.0), (4.0, -10.0, 1.5), (3.0, -20.0, 0.5), (3.0, -20.0, 2.0), (6.0, -20.0, 0.5)] {
         let src = framed(&round_boss(10.0 + r, y, rb), r, &format!("round(r: {r}mm)"));
         let b = exported(&solved(&src), "part");
         close(props::volume(&b), standing_volume(rb, y, r));
@@ -231,4 +232,64 @@ fn the_onto_round_example_is_its_closed_form() {
     assert!(why.contains("of radius 2.5, is larger than"), "{why}");
     let why = refused(&src.replace("fix((12, -20)) o", "fix((14, -20)) o"));
     assert!(why.contains("crosses their seam in another section"), "{why}");
+}
+
+/// A plate 120 × 80 × 20 with a pocket 100 × 60 cut 10 deep, its plan corners drawn round to 5 and
+/// its floor filled `big` all round (`filled`: four runs and four stretches of torus), a round boss
+/// `boss9` of radius 3 about `at` standing from z = 5 to 18, unioned, and rounded `big` into the
+/// plate (`part.boss9 round(r: …) part.plate`, the issue's words).
+fn tray(at: [f64; 2], big: f64) -> String {
+    format!("unit mm\nuse std\nuse std.solids (cut, union)\nuse std.rounds (round)\n\
+        in std.top {{\n  a := point\n  b := point\n  c := point\n  d := point\n  fix((-60, -40)) a\n  \
+        fix((60, -40)) b\n  fix((60, 40)) c\n  fix((-60, 40)) d\n  outline := face(a, b, c, d, -> close)\n  \
+        p := point\n  q := point\n  s := point\n  t := point\n  fix((-50, -30)) p\n  fix((50, -30)) q\n  \
+        fix((50, 30)) s\n  fix((-50, 30)) t\n  (south := line(p, q)) -> (se := round(r: 5mm)) (east := line(q, s)) -> \
+        (ne := round(r: 5mm)) (north := line(s, t)) -> (nw := round(r: 5mm)) (west := line(t, p)) -> \
+        (sw := round(r: 5mm)) close\n  mouth := face(south, se, east, ne, north, nw, west, sw)\n  \
+        o := point\n  fix(({}, {})) o\n  b9 := circle(center: o) hint(r: 3)\n  radius(3mm) b9\n}}\n\
+        plate := solid(std.solids.Prism(outline, from: 0mm, to: 20mm))\n\
+        pocket := solid(std.solids.Prism(mouth, from: 10mm, to: 21mm))\n\
+        pocket cut plate\n\
+        filled := plate.pocket.far round(r: {big}mm) plate.pocket\n\
+        part := solid(plate)\n\
+        boss9 := solid(std.solids.Prism(face(b9), from: 5mm, to: 18mm))\n\
+        boss9 union part\n\
+        part.boss9 round(r: {big}mm) part.plate\n", at[0], at[1])
+}
+
+/// `tray`'s volume, the boss's axis meeting the south fill's (`y = −30 + r`): the plate less the
+/// pocket with its corners, the floor's fill along each wall and turned round each corner (Pappus),
+/// and the boss's own, as `standing_volume`'s — the boss 8 tall beyond the wall, the half ring, the
+/// two balls, the runs up the wall from the fill's seam to the boss's top at 18.
+fn tray_volume(r: f64) -> f64 {
+    let (big, rb) = (5.0, 3.0);
+    let a = big - r;
+    let corner = 0.5 * PI * (r * (big * big - a * a) / 2.0 - a * PI * r * r / 4.0 - r * r * r / 3.0);
+    let walls = 2.0 * (100.0 - 2.0 * big) + 2.0 * (60.0 - 2.0 * big);
+    let plate = 192000.0 - 10.0 * (6000.0 - 4.0 * big * big * (1.0 - PI / 4.0)) + 4.0 * corner + square_run(r) * walls;
+    let behind = rb * rb * (r / rb).acos() - r * (rb * rb - r * r).sqrt();
+    let k = (rb * rb - r * r).sqrt();
+    let section = area([0.0, -k], &[
+        Step::To([0.0, -rb - r]),
+        Step::Arc([r, -rb - r], r, PI, 0.5 * PI),
+        Step::Arc([r, 0.0], rb, -0.5 * PI, (-k).atan2(-r)),
+    ]);
+    plate + 8.0 * (PI * rb * rb - behind) + 0.5 * root_ring(rb, r) + 2.0 * standing_dome(rb, r)
+        + 2.0 * (18.0 - (10.0 + r)) * section
+}
+
+/// **The issue's own shape**: a tray whose pocket's floor is filled all round, its plan corners
+/// arcs — so the fill's smooth chain is runs and stretches of torus, which the field now reads face
+/// by face as it does a pocket's walls (`BodyFaces::bulging`) — and a boss across its south wall
+/// rounded into it, at the issue's 0.5 and at 2: the closed form to 1e-9.  Off the fill's axis the
+/// boss is refused as the frame's is.
+#[test]
+fn a_boss_across_a_trays_filled_wall_is_its_closed_form() {
+    for r in [0.5, 2.0] {
+        let b = exported(&solved(&tray([0.0, -30.0 + r], r)), "part");
+        close(props::volume(&b), tray_volume(r));
+        assert_eq!(kinds(&b).get("sphere"), Some(&2), "{r}: {:?}", kinds(&b));
+    }
+    let why = refused(&tray([0.0, -27.0], 0.5));
+    assert!(why.contains("runs on smoothly into `pocket.far`, but its contact crosses their seam"), "{why}");
 }
