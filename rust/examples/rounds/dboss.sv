@@ -36,7 +36,6 @@ in std.top {
   flat := line(f2, f1)
   round_side := arc(center: o, start: f1, end: f2)
   radius(10mm) round_side
-  f2 x(< 0mm) o
 }
 plate := solid(std.solids.Prism(face(s, e, n, w), from: -5mm, to: 0mm))
 boss := solid(std.solids.Drafted(face(flat, round_side), from: 0mm, to: 12mm, draft: dr))

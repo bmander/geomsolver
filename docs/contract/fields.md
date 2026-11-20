@@ -104,7 +104,9 @@ where its moved sides meet (`build::drafted`'s section), a line–line corner mo
 divided by `√(1 + (tan·mitre)²)`, the most the field can change per unit length, so it stays
 one-Lipschitz with the drafted sides its zero; its interval bound is its value at a box's middle
 widened by the box's half-diagonal.  A section that loses a side within the prism's depths is
-refused when read.  `planar_subtraction::the_field_reads_a_drafted_plus`.
+refused when read.  `planar_subtraction::the_field_reads_a_drafted_plus`; the exact kernel builds
+the same sections, a corner where an arc meets a side at an angle along its conic, and the two are
+held alike (`draft_corners`, #962).
 
 **An operand built exactly is read by its own boundary** (#419; `document.rs`'s `built`,
 `field/built.rs`): a body some of whose terms read its faces (the stratum's late ones: a round),

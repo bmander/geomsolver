@@ -1222,7 +1222,8 @@ quintic along `s`: a cubic through 512 rows misses a 3½-turn auger by 1e-6), ra
 cubics within it.
 Rung 2 is done: `Curve::BSpline` (`brep::nurbs`), `Surface::Extrusion`/`Revolution`, a face's
 stretch of a traced or formula curve (`k from p to q`, `CurveE::trim`, `cad::FIT_MM`), and a
-section carried to its own image (`build::ruled`: a drafted prism's offset, a canal's screwed disc;
+section carried to its own image (`build::ruled`: a drafted prism's offset — its corners where an arc
+meets a side at an angle on the conics they move along, `build::ruled_by`, #962 — a canal's screwed disc;
 `Surface::Blend`, `Curve::Iso` rails, `step::FIT`), each edge joined to the edge it became at equal
 parameter fractions.  Two sections drawn apart are no input to it (#243 L3): what a section becomes
 along a path is the face family's (`brep::family`).

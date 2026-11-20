@@ -326,15 +326,9 @@ pub fn drafted(p: &Profile,from: f64,to: f64,draft: f64) -> Result<Brep,String> 
     let taper = draft.dtan();
     // every section between the ends is offset no further than the farther end's is (the offset
     // grows with |h|); where that one fails, the ordinate's size at which the failure begins
-    let far = h0.abs().max(h1.abs());
-    if let Err(why) = offset(p,far*taper) {
-        let (mut ok,mut bad) = (0.,far);
-        for _ in 0..60 {
-            let mid = (ok+bad)/2.;
-            if offset(p,mid*taper).is_ok() { ok = mid } else { bad = mid }
-        }
-        return Err(format!("{why} {:.4} from the parting plane, the plane its face is drawn in, within the prism's \
-            ordinates ({h0} to {h1})",(ok+bad)/2.))
+    if let Some((what,at)) = drafted_away(p,h0.abs().max(h1.abs()),taper) {
+        return Err(format!("a draft {what} {at:.4} from the parting plane, the plane its face is drawn in, within the \
+            prism's ordinates ({h0} to {h1})"))
     }
     let (walks,moving) = movements(p)?;
     let section = |h: f64| -> Result<(f64,Profile),String> {
@@ -557,8 +551,44 @@ pub fn corners_move_straight(p: &Profile) -> Result<bool,String> {
 /// their ends as two lines' are. Refused for a spline, a side the move takes to nothing, and a
 /// corner whose moved sides part.
 pub fn offset(p: &Profile,d: f64) -> Result<Profile,String> {
+    moved_in(p,d).map_err(|f| match f {
+        Away::Gone(s) => format!("a draft takes {} to nothing",said(&s)),
+        Away::Parts(a,b) => format!("a draft parts {} from {} at their corner",said(&a),said(&b)),
+        Away::Not(why) => why,
+    })
+}
+
+/// Why a profile is not moved: a side the move takes to nothing, a corner whose moved sides part
+/// (each side by its name, empty where unnamed), or anything else, said.
+enum Away { Gone(String),Parts(String,String),Not(String) }
+
+/// A side's name as a refusal says it.
+fn said(name: &str) -> String { if name.is_empty() { "a side".into() } else { format!("`{name}`") } }
+
+/// **Where a draft first takes the profile's sides to nothing or parts a corner's**, moving it
+/// `taper` a unit of ordinate as far as ordinate `reach` (its size): what it does, in the author's
+/// terms (`takes the side `x` to nothing`, `parts `a` from `b` at their corner`), and the ordinate's
+/// size at which it begins — none where every section within `reach` keeps its sides and corners.
+/// The section's rule is `offset`'s, the one the kernel lofts and the field reads, so a corner
+/// sliding along an arc eats the arc as the set does, never a tessellation's chords.
+pub fn drafted_away(p: &Profile,reach: f64,taper: f64) -> Option<(String,f64)> {
+    let what = match moved_in(p,reach*taper) {
+        Ok(_) | Err(Away::Not(_)) => return None,
+        Err(Away::Gone(s)) => format!("takes the side {} to nothing",said(&s)),
+        Err(Away::Parts(a,b)) => format!("parts {} from {} at their corner",said(&a),said(&b)),
+    };
+    let (mut ok,mut bad) = (0.,reach);
+    for _ in 0..60 {
+        let mid = (ok+bad)/2.;
+        if moved_in(p,mid*taper).is_ok() { ok = mid } else { bad = mid }
+    }
+    Some((what,(ok+bad)/2.))
+}
+
+/// `offset`, saying why not as `Away`.
+fn moved_in(p: &Profile,d: f64) -> Result<Profile,Away> {
     if d == 0. { return Ok(p.clone()) }
-    let (walks,moving) = movements(p)?;
+    let (walks,moving) = movements(p).map_err(Away::Not)?;
     let n = unit(p.normal);
     // a step's side into its material at its parameter `t`: its left along the walk
     let inward = |s: &Seg,t: f64| cross(n,unit(scale(s.curve.tangent(t),if s.forward() { 1. } else { -1. })));
@@ -566,15 +596,15 @@ pub fn offset(p: &Profile,d: f64) -> Result<Profile,String> {
     let mut out = p.clone();
     for (li,walk) in walks.iter().enumerate() {
         let m = walk.len();
-        let named = |s: &Seg| match p.name(li,s.source) { x if x.is_empty() => "a side".to_string(),x => format!("`{x}`") };
+        let named = |s: &Seg| p.name(li,s.source);
         // each corner, where step `k` starts
         let corners: Vec<V> = (0..m).map(|k| moving[li][k].at(d).filter(|_| moving[li][k].holds(0.,d)).ok_or_else(||
-            format!("a draft parts {} from {} at their corner",named(&walk[(k+m-1)%m]),named(&walk[k])))).collect::<Result<_,_>>()?;
+            Away::Parts(named(&walk[(k+m-1)%m]),named(&walk[k])))).collect::<Result<_,_>>()?;
         for (k,s) in walk.iter().enumerate() {
             let (start,end) = (corners[k],corners[(k+1)%m]);
-            let gone = || format!("a draft takes {} to nothing",named(s));
+            let gone = || Away::Gone(named(s));
             out.loops[li][s.source] = match p.loops[li][s.source] {
-                ProfileEdge::Exact(ref curve) => return Err(format!("a {} curve is not drafted",curve.kind())),
+                ProfileEdge::Exact(ref curve) => return Err(Away::Not(format!("a {} curve is not drafted",curve.kind()))),
                 ProfileEdge::Line {a,b} => {
                     let (a2,b2) = if s.forward() { (start,end) } else { (end,start) };
                     if dot(sub(b2,a2),sub(b,a)) <= tol*tol { return Err(gone()) }

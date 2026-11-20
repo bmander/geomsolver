@@ -479,8 +479,10 @@ lone prism's cap passing through the blank (T1, asked by its own points where no
 it: a partial revolution's end, a slanted cut, `prism_caps::a_cap_of_a_tool_no_lone_prism_is_refused`;
 under a constant twist only where the motion's contact lies on it, #721 F1d below);
 a crease where a drafted prism's halves fold, concave where it is drafted outward both ways (T2, as
-a concave corner is, by the chord between points of the two halves beside it); a drafted corner the
-kernel builds no boundary of (T1, G8: `drafted_tools::a_drafted_tool_the_class_does_not_read_is_refused`).
+a concave corner is, by the chord between points of the two halves beside it); a drafted corner
+where an arc meets a side at an angle, which the kernel builds as the conic its plane and cone meet
+in (#962) and the class pairs no corner of (T1, G8, `swept::read`'s `Tool::read`; and the cutter,
+whose sections are no blends of its ends: `drafted_tools::a_drafted_tool_the_class_does_not_read_is_refused`).
 The faces are named as the B-rep names them (`read::named`: the solid's key and the face's own, a
 dot between), so a prism's caps are `far` (at its least height) and `near`, not the drawing's
 `start` and `end`, and a corner names its faces in the B-rep's order.  Three notes F1a's review
@@ -2793,7 +2795,8 @@ the ruled surface between its edge's two end sections, a plane or a cone (`Extru
 from the field's `Sections`; `Sections::linear`), its points' normals their own, so its contacts are
 read as an undrafted side's and every row is asked of it. The rest is refused by name: a prism
 drafted outward both ways from its plane (its sides meet there in a concave crease, T2 since #721
-F1b), an arc meeting a side at an angle (T1: the kernel builds no boundary of it, G8), a side no
+F1b), an arc meeting a side at an angle (T1, G8: the kernel builds its corner as a conic, #962, which
+the class pairs no corner of), a side no
 line, arc or circle (T1). The cutter sections it at a station as the blend of its two end sections
 (`cutter::Half::ends`, from `build::offset`), walked by the profile's lengths so a walk length
 is a ruling at every station (by its own, a shrinking section moved where contacts leave the roll's

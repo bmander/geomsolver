@@ -322,10 +322,11 @@ in std.top {
   fix((6, 8)) a
   fix((-6, 8)) b
   chord := line(b, a)
-  arc := arc(center: o, start: a, end: b)
+  cap := arc(center: o, start: a, end: b)
 }
-d := solid(std.solids.Drafted(face(chord, arc), from: 0mm, to: 30mm, draft: 3deg))
+d := solid(std.solids.Drafted(face(chord, cap), from: 0mm, to: 30mm, draft: 3deg))
 ");
     let why = e.sketch.evaluated_solid(crate::common::ent(&e,"d").i(),gcs_core::solid::ApproximationPolicy::Report).unwrap_err();
-    assert!(why.contains("to nothing") && why.contains("`chord`"), "{why}");
+    assert!((why.contains("takes the side `chord` to nothing") || why.contains("parts `cap` from `chord`"))
+        && why.contains("19.1mm from the face's own plane"), "{why}");
 }

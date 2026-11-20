@@ -88,6 +88,19 @@ impl Tool {
         let size = b.size();
         let tol = 1e-7*(1.+size);
         let reader = Reader {b,tol,uses:b.uses(),parameters:vec![Default::default();b.faces.len()]};
+        // a drafted corner where an arc meets a side at an angle (#962): a plane and a cone (or two
+        // cones) meeting in a conic the corner moves along, which no strip's ruling or meridian's
+        // end is — the class pairs no corner there yet (G8)
+        for (e,uses) in reader.uses.iter().enumerate() {
+            let EdgeCurve::Curve(Curve::BSpline(_)) = b.edges[e].curve else { continue };
+            let faces: Vec<usize> = uses.iter().map(|u| u.0).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+            let [f,g] = faces[..] else { continue };
+            if [f,g].iter().all(|&k| matches!(b.faces[k].surface,Surface::Plane(_) | Surface::Cone(..)))
+                && [f,g].iter().any(|&k| matches!(b.faces[k].surface,Surface::Cone(..))) {
+                return Err(Unread::Boundary(format!("its faces `{}` and `{}` meet in a drafted corner where an arc meets a side \
+                    at an angle, a conic, which the class reads no corner of yet",joined(&b.faces[f].name),joined(&b.faces[g].name))))
+            }
+        }
         let order: Vec<usize> = (0..b.faces.len()).filter(|&fi| !matches!(b.faces[fi].surface,Surface::Plane(_)))
             .chain((0..b.faces.len()).filter(|&fi| matches!(b.faces[fi].surface,Surface::Plane(_)))).collect();
         let witness = |fi: usize| reader.witness(fi).map(|x| x/scale);
