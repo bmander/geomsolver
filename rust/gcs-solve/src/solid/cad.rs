@@ -375,7 +375,6 @@ impl<'a> Walk<'a> {
                     let members = self.groups.get(&i).cloned().unwrap_or_else(|| vec![i as u32]);
                     let pieces: Vec<_> = members.into_iter().map(|o| self.pieces_of(o)).collect();
                     let assembly = super::lowering::assemble(pieces.iter().flat_map(|p| p.iter()));
-                    let mut lowered = assembly.node(w)?;
                     // the body it rounds: the one whose late sets take it, read before this
                     let late = |sets: &[Vec<u32>;4]| sets[2..].iter().any(|s| s.contains(&(i as u32)));
                     let body = self.bodies.iter().find(|(_,(sets,_))| late(sets));
@@ -387,6 +386,14 @@ impl<'a> Walk<'a> {
                         called = Some(format!("`{}`'s round or chamfer `{}`",
                             crate::vocab::public_path(of.written_name()),super::step_through(of,solid)));
                     }
+                    // a refusal of the assembly is the round's, said by the body it rounds and the
+                    // step its faces are named by there (#962): a face a run ends on reaching back
+                    // over a seam by the faces it is of, any other in the assembly's own words
+                    let named = |e: String| match &called { Some(c) => format!("{c}: {e}"), None => said(sk,i,e) };
+                    if let Some(b) = &assembly.across {
+                        return Err(named(super::lowering::back_over_said(sk,i,b)));
+                    }
+                    let mut lowered = assembly.node(w).map_err(named)?;
                     // a ball rolled along a traced run is rolled against the body as its terms but the
                     // late ones make it, all built before this (they come first in its dependencies)
                     if !assembly.rolled.is_empty() {

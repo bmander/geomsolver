@@ -18,6 +18,7 @@ mod meets;
 mod path;
 pub(crate) use body::along_run;
 pub use body::{not_one_body, one_body, reading, BodyFaces, Bound, EndBy, Level, Read, Reading};
+pub(crate) use body::TANGENT;
 pub use layers::layer;
 pub use lays::Lays;
 pub use meets::Meets;

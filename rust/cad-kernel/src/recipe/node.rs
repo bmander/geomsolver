@@ -152,6 +152,10 @@ pub struct Kept { pub node: Node,pub keep: bool }
 /// `stratum` is the body a rolled run is rolled against, where there is one.
 #[derive(Clone,Debug)]
 pub struct Lowered { pub pieces: Vec<Run>,pub corners: Vec<Corner>,pub rolled: Vec<Rolled>,pub joins: Vec<[usize;2]>,
+    /// For each join, how far apart the two sections it glues stand: at a seam where two faces meet
+    /// tangent to the body's reading of tangent, its pieces' caps not one to a billionth (#962);
+    /// else nothing.
+    pub gaps: Vec<f64>,
     pub stratum: Option<Body>,pub beyond: Vec<crate::spill::Beyond> }
 
 /// A lowered run or ring: a prism or a revolution, cut off at a slant behind each `within` plane

@@ -250,10 +250,13 @@ pub(crate) fn pieces(body: &BodyFaces, d: f64, name: &str) -> Result<Grown, Stri
     for v in 0..b.vertices.len() as u32 {
         let c = body.back(b.vertices[v as usize].p);
         let edges = &at_vertex[v as usize];
+        // (two faces whose normals are one to the body's reading of tangent go on from one another
+        // across a seam there, and stand no corner between them: a drawing's arcs tangent to its
+        // own numbers alone, #962)
         let mut normals: Vec<V> = Vec::new();
         for fi in body.faces_at(v, &[]) {
             let n = body.normal(fi, c);
-            if !normals.iter().any(|&m| norm(sub(m, n)) < 1e-9) {
+            if !normals.iter().any(|&m| norm(sub(m, n)) < crate::solid::faces::TANGENT) {
                 normals.push(n);
             }
         }

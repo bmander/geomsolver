@@ -190,6 +190,13 @@ pub fn glued(a: &Brep,b: &Brep,tol: f64) -> Option<Brep> {
     };
     let plane = |f: &Face| matches!(f.surface,Surface::Plane(_));
     let corners = |s: &Brep,f: &Face| -> Vec<V> { f.loops.iter().flatten().map(|c| start(s,(c.edge,!c.reversed))).collect() };
+    // two faces on one surface over where both lie (`ssi::same_over`, as `Surfaces::one` reads it):
+    // a seam's two sections, turned from one another by what the faces they stand between were
+    // tangent to, are one there (#962)
+    let one_surface = |fa: &Face,fb: &Face| {
+        let region = super::meeting::common(super::flush::face_box(a,fa),super::flush::face_box(b,fb),tol);
+        super::ssi::same_over(&fa.surface,&fb.surface,tol,region)
+    };
     // a face's loops cut into runs at the vertices the other face has too; `None` where a loop has none
     let runs = |s: &Brep,f: &Face,other: &[V]| -> Option<Vec<Walk>> {
         let mut out = Vec::new();
@@ -244,8 +251,9 @@ pub fn glued(a: &Brep,b: &Brep,tol: f64) -> Option<Brep> {
         let Some(p) = at(a,fa) else { continue };
         let na = outward(fa,p);
         for (j,fb) in b.faces.iter().enumerate() {
-            if shared_b.contains(&j) || plane(fa) != plane(fb) || !super::ssi::same(&fa.surface,&fb.surface,tol) { continue }
+            if shared_b.contains(&j) || plane(fa) != plane(fb) { continue }
             if crate::util::space::dot(na,outward(fb,p)) > if plane(fa) { -1.+1e-9 } else { 0. } { continue }
+            if !one_surface(fa,fb) { continue }
             let (Some(ra),Some(rb)) = (runs(a,fa,&corners(b,fb)),runs(b,fb,&corners(a,fa))) else { continue };
             if ra.len() != rb.len() { continue }
             let mut used = vec![false;ra.len()];
