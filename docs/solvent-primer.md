@@ -1951,8 +1951,12 @@ words of `std.solids` (`rust/lib/std/solids.sv`) are sets written in the languag
   30mm`. Write the face where it is not at an end.
 - **Draft.** The sides lean from the face's own plane (the parting plane, ordinate 0), away from it
   on both sides, a hole widening as the outside narrows; lines' sides stay planes and circles'
-  become cones. An arc meeting a side at an angle (not tangent) is refused by the exact kernel.
-  `conrod/rod.sv` drafts its eyes and shank. **The ordinates do not move the parting plane**: a
+  become cones. Where an arc meets a side at an angle (not tangent) the corner runs up the curve
+  the side's plane and the arc's cone meet in, a conic, built exactly ([0.223]); every corner is
+  where the moved sides meet, a reflex one (a hole's) as a convex one, so a D-shaped hole grows
+  with its corners mitred, never rounded. `conrod/rod.sv` drafts its eyes and shank,
+  `rounds/drafted_vane.sv` a vane whose arc ends meet its sides at an angle, `rounds/dboss.sv` a D-shaped
+  boss. **The ordinates do not move the parting plane**: a
   face drawn in `std.top` and drafted `from: 31mm, to: 33mm` has shrunk `31 tan θ` before it starts,
   and a side taken to nothing within the ordinates is E080, saying how far from the face's plane
   it went. To part elsewhere, draw the face there — on a plane lying on the face it opens on

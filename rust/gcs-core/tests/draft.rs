@@ -162,8 +162,8 @@ disc := solid(std.solids.Drafted(f, from: -4, to: 3, draft: 5deg))
 
 /// What a draft cannot say, and where it is said: on a turned solid (the word, which takes none), a
 /// right angle or more (the elaborator, E080), a draft taking a side to nothing within the prism's
-/// reach (where it is evaluated), an arc meeting a side at an angle (the exact kernel: its cone and the side's
-/// plane meet along a curve) and a side of a drafted prism sketched on.
+/// reach (where it is evaluated) and a side of a drafted prism sketched on; an arc meeting a side
+/// tangent or at an angle is built (#962: its cone and the side's plane meet along a conic).
 #[test]
 fn what_a_draft_cannot_say_is_refused() {
     // a revolution has no draft to give: the word has no such parameter
@@ -214,7 +214,9 @@ s := solid(std.solids.Drafted(f, from: -2, to: 2, draft: 4deg))
     // a quadratic in h each side: Simpson's rule is exact
     let half = (section(0.0) + 4.0 * section(1.0) + section(2.0)) * 2.0 / 6.0;
     close("the drafted slot, exactly", props::volume(&exact(&e, "s").unwrap()), 2.0 * half, 1e-9);
-    // a quarter disc's arc meets its two radii square: refused by name
+    // a quarter disc's arc meets its two radii square: built (#962), each corner's edge where a
+    // radius's plane meets the arc's cone, the section at `h` the disc of `10 − k` beyond both
+    // radii moved `k = |h| t` (`tests/draft_corners.rs` holds the family)
     let e = solved("unit mm
 use std
 use std.solids
@@ -232,8 +234,21 @@ in std.front {
 }
 s := solid(std.solids.Drafted(f, from: -2, to: 2, draft: 4deg))
 ");
-    let why = exact(&e, "s").unwrap_err();
-    assert!(why.contains("at an angle where one is an arc"), "{why}");
+    let quarter = |h: f64| {
+        let (k, r) = (h.abs() * t, 10.0 - h.abs() * t);
+        let s = (r * r - k * k).sqrt();
+        let up = |x: f64| 0.5 * (x * (r * r - x * x).sqrt() + r * r * (x / r).asin());
+        up(s) - up(k) - k * (s - k)
+    };
+    // Simpson's rule on 400 panels each side: the area is smooth in `|h|`
+    let simpson = |a: f64, b: f64| {
+        let n = 400;
+        let w = (b - a) / n as f64;
+        (0..=n).map(|i| quarter(a + w * i as f64)
+            * if i == 0 || i == n { 1.0 } else if i % 2 == 1 { 4.0 } else { 2.0 }).sum::<f64>() * w / 3.0
+    };
+    close("the drafted quarter disc, exactly", props::volume(&exact(&e, "s").unwrap()),
+          simpson(-2.0, 0.0) + simpson(0.0, 2.0), 1e-9);
 }
 
 /// A drafted side leans off its face's plane, so it is no set to sketch on; a cap still is.

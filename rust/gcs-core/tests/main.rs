@@ -90,6 +90,7 @@ mod describe;
 mod developable;
 mod diagnose;
 mod draft;
+mod draft_corners;
 mod drafted_tools;
 mod drag;
 mod drawing;

@@ -4,6 +4,15 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.223] A drafted corner where an arc meets a side at an angle** (#962). `std.solids.Drafted`
+of a face whose arc meets a line or another arc at an angle, not tangent, is built: the corner
+moves where the moved sides meet, along the conic the side's plane and the arc's cone (or two
+cones) meet in, and that conic is the edge between their faces. The rule at every corner is the
+one two lines keep — where the moved sides' lines and circles meet, at a reflex corner (a hole's)
+as at a convex one. A corner whose moved sides part within the ordinates refuses the solid, saying
+how far from the face's plane. Through 0.222 such a face's drafted solid was refused when built
+exactly ("… meets … at an angle where one is an arc"), though the field read it.
+
 **[0.222] An integral, and the measure words moved to `std.measures`** (#953). `integral(EXPR
 over p in S)` integrates an expression over the point it binds, `S` a solid, a face of one, a beam
 or a line one is drawn on, or an instance's bodies, by `S`'s own measure; its body reads the

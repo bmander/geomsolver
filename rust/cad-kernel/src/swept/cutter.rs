@@ -189,8 +189,8 @@ struct Extruded { walks: Vec<Vec<Seg>>,extent: [f64;2],drafted: Option<Drafted> 
 /// A drafted prism's halves, one each side of its parting plane that it runs into (#684 P), or the
 /// one: each from one ordinate to the other, with its sections there in the profile's plane, each
 /// walk step for step its profile's. Between them a side's point at a fraction of its edge moves
-/// along a line, so a section between is the two's blend (`build::offset` builds only such
-/// corners). Where there are two the sides fold between them at the plane, and the stations cross
+/// along a line, so a section between is the two's blend (a corner where an arc meets a side at
+/// an angle moves along a conic: refused, `build::corners_move_straight`). Where there are two the sides fold between them at the plane, and the stations cross
 /// that crease's fan over `fan` (`CREASE_SCALE` a radian of it): a station is the ordinate below
 /// the plane, and `fan` more than the ordinate above it. And each step's cumulative chord lengths
 /// along the profile itself, the same at every station.
@@ -406,6 +406,11 @@ impl Cutter {
             // admission refuses such a tool at T1 (`ExtrudedSurface::drafted`); the kernel says so too
             if parted && draft < 0. {
                 return Err("the core sections no drafted prism whose sides meet at its parting plane in a concave crease".into())
+            }
+            // a corner where an arc meets a side at an angle moves along a conic (`build::offset`),
+            // so a section between two is not their blend
+            if !crate::build::corners_move_straight(&profile)? {
+                return Err("the core sections no drafted prism with a corner where an arc meets a side at an angle".into())
             }
             let taper = draft.dtan();
             // the step of a moved walk that is `s`, walked the same way
