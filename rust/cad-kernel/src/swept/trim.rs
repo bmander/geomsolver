@@ -600,7 +600,7 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
         Some(b) => b,
         None => {
             let (lo,hi) = out.bounds();
-            let grow = super::closed::room(bar,tol);
+            let grow = 0.1*distance(lo,hi);
             let foot = [0.5*(lo[0]+hi[0]),0.5*(lo[1]+hi[1]),lo[2]-grow];
             let half = 0.5*(hi[0]-lo[0]).max(hi[1]-lo[1])+grow;
             grown = crate::build::prism(&crate::build::square(foot,[0.,0.,1.],half),0.,hi[2]-lo[2]+2.*grow)?;

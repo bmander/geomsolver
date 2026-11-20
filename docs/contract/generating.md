@@ -2033,11 +2033,13 @@ rounding's** (#942 F6), none a number of its own:
   its middle stands between its ends; a face's characteristic line read as far as the face's reach;
   feet within the slack of a line make no circle; the end pose a stuck instant is nearer is the one
   that holds it, and the way the tool's point moves there is the motion's own velocity (no step);
-  the screw's domain and the trim's grown box stand clear of what they hold by membership's bar and
-  the Boolean's reach twice over (`closed::room`: at a tenth of its extent the drum screwed a short
-  lead through most of a turn was built wrong, at the reach alone three screwed bars, a cell thinner
-  than the bar left between the box's ends and theirs); every trim's hair is #880 Q1b's one rule (`closed::hair`), which the
-  roads under any motion had copied.
+  every trim's hair is #880 Q1b's one rule (`closed::hair`), which the roads under any motion had
+  copied. (The screw's domain's room, a twentieth of its extent, and the trim's grown box's, a
+  tenth, are #806's and E1's, older than these roads, and stand: the domain's room decides both
+  how long a screwed sweep takes — the fine thread with sharp crests 24 s at a twentieth, 70 s at the
+  tool's size, 118 s at the box's own extent — and whether the drum screwed a short lead through
+  most of a turn is built right, which it is at a twentieth and not at a tenth, the tool's size or
+  the box's extent: a box's size should not decide a solid, a defect to be found.)
 **Not yet built**: the tumbling tori fit, are cut and sewn into one tube a contact curve, and are
 refused past the meetings their sewing settles — the torus turned whole where a piece of the torus
 at an end pose reads as the boundary facing behind; the thin one where its two tubes meet at under
