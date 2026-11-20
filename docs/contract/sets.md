@@ -451,13 +451,15 @@ onto (`Surface::offset`'s `Offset`), held as conditions with a gradient everywhe
 cylinder about a torus's middle circle — the side's own turns over on the axis, and the steps
 toward it would never settle (the axis alone is exercised: no closed loop rounds with its
 centres on a sphere's centre or a torus's middle circle). **Within or outside faces whose side is
-convex toward the point, and at least a distance off them** (#962: one plane, or a smooth chain
-— `F.smooth` gone on across a seam — every face a plane or a cylinder, a sphere or a cone with
-that side inside it, every edge between them a seam or a crease convex from it,
-`Reading::bulging`): each face is its own condition, its side carried on past its patch by its
-tangent planes (`BodyFaces::carried_side_grad`, the signed distance from the convex solid the
-patch and those planes bound), so the side is their common part and a point at least `d` inside
-it is at least `d` inside each — a pocket's walls seen from its air, a boss's from its material.
+convex toward the point, and at least a distance off them** (#962, `BodyFaces::bulging`): one
+face a plane, or a cylinder, a sphere or a cone with that side inside it — read by its whole
+surface's side, that convex solid's (a round pocket from its air, a round boss from its
+material); or a smooth chain — `F.smooth` gone on across a seam — every face of which is so and
+every edge between them a seam or a crease convex from that side, each face its own condition,
+its side carried on past its patch by its tangent planes (`BodyFaces::carried_side_grad`, the
+signed distance from the convex solid the patch and those planes bound), so the side is their
+common part and a point at least `d` inside it is at least `d` inside each — a pocket's walls
+seen from its air, a boss's from its material.
 Read through the nearest face alone, a corner of the offset (an arc's offset closed onto its
 axis, a pocket's corner rounded to its own radius, or past it) is where the nearest face turns,
 and the steps never settled there. **The steps stop at the first point keeping every condition

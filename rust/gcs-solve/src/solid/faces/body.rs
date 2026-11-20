@@ -511,6 +511,58 @@ impl BodyFaces {
         (dot(n, sub(q, at)) / self.mm, n)
     }
 
+    /// **Faces whose side is convex toward a point** (#962), within them or (`beyond`) outside them:
+    /// one face a plane, or a cylinder, a sphere or a cone with that side inside it — that solid,
+    /// read by its surface's side, the face's own (a closed cylinder's pocket from inside, a boss's
+    /// from its material); or a smooth chain (`smooth`, `F.smooth` gone on across a seam) every face
+    /// of which is so and every edge between two of them a seam or a crease convex from that side —
+    /// each read by its side carried on past its patch by its tangent planes
+    /// (`carried_side_grad`, the second of the pair `true`).  That side is then the common part of
+    /// each face's convex solid, and a point at least `d` inside it is at least `d` inside each, so
+    /// either condition holds face by face, each convex.  Read through the nearest face alone, a
+    /// corner of the chain's offset — where an arc's offset closes onto its axis, a ball as wide as
+    /// a pocket's corner, or has passed it — is where the nearest face turns from one to another,
+    /// and a projection onto it with it, never settling there; and an offset that has all but
+    /// closed onto an axis or a centre is a surface curved tightly about a point far off, whose
+    /// steps are steady only toward a convex set (`conditions::nearest`).  `None` where a face is
+    /// none of those, the faces lie on several surfaces without a seam between them, meet
+    /// otherwise, or lie on several shells.
+    pub fn bulging(&self, faces: &[usize], smooth: bool, beyond: bool) -> Option<(Vec<usize>, bool)> {
+        let (shell, _) = self.shells();
+        let &f0 = faces.first()?;
+        if faces.iter().any(|&fi| shell[fi] != shell[f0]) {
+            return None;
+        }
+        for &fi in faces {
+            // the side read within the face's surface's solid (a plane's half-space either way)
+            match self.level(fi, 0.0)? {
+                Level::Bound(Bound::Half { .. }, _) => {}
+                Level::Bound(Bound::Cylinder { .. } | Bound::Ball { .. } | Bound::Cone { .. }, within)
+                    if within != beyond => {}
+                _ => return None,
+            }
+        }
+        if let [_] = faces {
+            return Some((faces.to_vec(), false));
+        }
+        let mut seams = false;
+        for &fi in faces {
+            for &e in &self.edges[fi] {
+                let [x, y] = *self.faces_of(e) else { continue };
+                let other = if x == fi { y } else { x };
+                if other == fi || !faces.contains(&other) {
+                    continue;
+                }
+                if self.seam(e) {
+                    seams = true;
+                } else if self.convex(e) != Some(!beyond) {
+                    return None;
+                }
+            }
+        }
+        (smooth && seams).then(|| (faces.to_vec(), true))
+    }
+
     /// The vertices three groups of faces share: where a face of each meets, with the faces of
     /// each group standing there (model units).
     pub fn vertices_among(&self, groups: &[&[usize]]) -> Vec<(V, Vec<Vec<usize>>)> {
@@ -1068,46 +1120,10 @@ impl Reading {
         Some(pieces)
     }
 
-    /// Where the faces are a smooth chain (`F.smooth` gone on across a seam) bulging toward the
-    /// side read — within them, or (`beyond`) outside them: every face a plane, or a cylinder, a
-    /// sphere or a cone with that side inside it, and every edge between two of them a seam or a
-    /// crease convex from that side — the faces, each read by its side carried on past its patch by
-    /// its tangent planes (`BodyFaces::carried_side_grad`).  That side is then the common part of
-    /// each face's carried side, each convex, and a point at least `d` inside it is at least `d`
-    /// inside each, so either condition holds face by face.  Read through the nearest face alone,
-    /// a corner of the chain's offset — where an arc's offset closes onto its axis, a ball as wide
-    /// as a pocket's corner, or has passed it, a wider one standing against both walls — is where
-    /// the nearest face turns from one to another, and a projection onto it with it, never
-    /// settling there.  `None` where the faces are one surface's, go on across no seam, meet
-    /// otherwise, or lie on several shells.
-    pub fn bulging(&self, beyond: bool) -> Option<Vec<usize>> {
-        let (shell, _) = self.body.shells();
-        if !self.smooth || self.faces.len() < 2
-            || self.faces.iter().any(|&fi| shell[fi] != shell[self.faces[0]]) {
-            return None;
-        }
-        let mut seams = false;
-        for &fi in &self.faces {
-            // the side read within the face's surface's solid (a plane's half-space either way)
-            match self.body.level(fi, 0.0)? {
-                Level::Bound(Bound::Half { .. }, _) => {}
-                Level::Bound(Bound::Cylinder { .. } | Bound::Ball { .. } | Bound::Cone { .. }, within)
-                    if within != beyond => {}
-                _ => return None,
-            }
-            for &e in &self.body.edges[fi] {
-                let [x, y] = *self.body.faces_of(e) else { continue };
-                let other = if x == fi { y } else { x };
-                if other == fi || !self.faces.contains(&other) {
-                    continue;
-                }
-                if self.body.seam(e) {
-                    seams = true;
-                } else if self.body.convex(e) != Some(!beyond) {
-                    return None;
-                }
-            }
-        }
-        seams.then(|| self.faces.clone())
+    /// Where the faces' side is convex toward the side read — within them, or (`beyond`) outside
+    /// them (`BodyFaces::bulging`): the faces each condition is read off, and whether each is read
+    /// by its side carried on past its patch (a smooth chain) or by its whole surface's (one face).
+    pub fn bulging(&self, beyond: bool) -> Option<(Vec<usize>, bool)> {
+        self.body.bulging(&self.faces, self.smooth, beyond)
     }
 }

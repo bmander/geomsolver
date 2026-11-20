@@ -248,11 +248,11 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, sides_of: &Sides,
     // `σ` grows it into the side the point is on, where the side is that face's convex solid's, so
     // it is that solid's signed distance turned round there and the condition convex — one
     // condition each face
-    let carried = |r: &Reading, faces: Vec<usize>, sigma: f64| -> Vec<Cond> {
+    let carried = |r: &Reading, (faces, past): (Vec<usize>, bool), sigma: f64| -> Vec<Cond> {
         faces.into_iter().flat_map(|fi| {
             let body = r.body.clone();
             held_as(Arc::new(move |x| {
-                let (s, g) = body.carried_side_grad(fi, x);
+                let (s, g) = if past { body.carried_side_grad(fi, x) } else { body.side_grad(fi, x) };
                 (sigma * s, scale(g, sigma))
             }), true)
         }).collect()
@@ -263,17 +263,15 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, sides_of: &Sides,
         let f = patch(f);
         if sides_of.beyond.contains(&f) { Some(true) } else if within.contains(&f) { Some(false) } else { None }
     };
-    // the faces read face by face where their side is convex toward it: one plane, or a smooth
-    // chain bulging toward it
-    let convex_toward = |r: &Reading, beyond: bool| -> Option<Vec<usize>> {
-        if r.half_space().is_some() { Some(r.faces.clone()) } else { r.bulging(beyond) }
-    };
+    // the faces read face by face where their side is convex toward it: one plane, cylinder,
+    // sphere or cone, or a smooth chain of them bulging toward it
+    let convex_toward = |r: &Reading, beyond: bool| -> Option<(Vec<usize>, bool)> { r.bulging(beyond) };
     match &t.shape {
         // within faces on several surfaces meeting convex: within each surface's side
         RegionShape::FaceSide { face } => {
             let Some(r) = reading(face)? else { return Ok(None) };
-            // within (or outside) a plane, or a smooth chain bulging that way: each face's side
-            // carried on past it
+            // within (or outside) a face convex toward the point, or a smooth chain bulging that
+            // way: each face's side, a chain's carried on past it
             if t.cmp != Cmp::In && t.hi.is_none() && r.convex_pieces().is_none() {
                 if let Some(faces) = convex_toward(&r, t.cmp == Cmp::Ge) {
                     return Ok(Some(carried(&r, faces, 1.0)));
@@ -303,10 +301,10 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, sides_of: &Sides,
                             return Ok(Some(on));
                         }
                     }
-                    // at least a distance off a plane, or a smooth chain bulging toward the side
-                    // the point is on: off each face's side carried on past it
-                    // (`Reading::bulging`), each its own condition, so a projection sees every
-                    // face meeting at a corner of the offset
+                    // at least a distance off a face convex toward the side the point is on, or a
+                    // smooth chain bulging toward it: off each face's side, a chain's carried on
+                    // past it (`BodyFaces::bulging`), each its own condition, so a projection sees
+                    // every face meeting at a corner of the offset, and the steps stop on it
                     if t.cmp == Cmp::Ge && c > 0.0 && r.convex_pieces().is_none() {
                         if let Some(beyond) = side_of(f) {
                             if let Some(faces) = convex_toward(&r, beyond) {
