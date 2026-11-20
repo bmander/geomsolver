@@ -199,6 +199,40 @@ coordinate the circle *crosses* there, never by one it runs square to: at `(10, 
 along y, so `fix(x == 10mm)` holds nothing to first order (numeric rank short of structural) and
 `fix(y == 0mm)` places it.
 
+**An arc of a half turn** has its ends a diameter apart, through its centre: that is one fact, so
+the arc is four numbers, not five. Say the fact and hold four. With both ends held, put the centre
+on the chord (in a D-shaped profile the chord is the drawn line):
+
+```
+fix((10, 0)) s
+fix((-10, 0)) e
+k := arc(center: c, start: s, end: e)
+construction chord := line(s, e)
+c coincident chord                    c at (0, 0), from either side: DOF 0, well
+```
+
+With the centre and the start held, say the radii run opposite, which leaves the end one root:
+
+```
+fix((0, 0)) c
+fix((10, 0)) s
+k := arc(center: c, start: s, end: e)
+construction r0 := line(c, s)
+construction r1 := line(c, e)
+r0 parallel(sense: opposite) r1       e at (-10, 0), even seeded beside s: DOF 0, well
+```
+
+What else is tried, and what the report says of it:
+
+| held | report | why |
+|---|---|---|
+| `c`, `s` and `e` | `said twice among: s coincident k`, `… e coincident k` | the radius twice, as for any arc |
+| `s` and `e` | `DOF 1` | the centre slides along the ends' bisector: the half turn is unsaid |
+| `s`, `e` and `c midpoint chord` | `said twice among: c midpoint chord, s coincident k, e coincident k` | the arc already puts `c` on the bisector; `midpoint` says it again, `coincident` only the rest |
+| `s`, `e` and `radius(10mm) k` | `DOF 0` with `c.y = 1.90298e-06`; started on the root, `1 motion(s) blocked at second order (a double root) — not DOF` | 10 is the least radius through ends 20 apart: the circles about the ends touch rather than cross, so the centre is found only to the square root of the tolerance. Drop the radius; the chord says it |
+| `c`, `s` and `fix(x == -10mm) e` | as the radius: a double root | the circle runs square to x there (above) |
+| `c`, `s` and `fix(y == 0mm) e` | `DOF 0`, well | it works, but it is a coordinate (a lint), and has two roots: seeded beside `s` it lands on `s`, a whole turn (`k.length = 62.8319`) |
+
 **Members and vectors.** An entity's numbers are its members. A vector is `(a, b)` or `(a, b, c)`.
 A point *is* its place, so it is seeded and held whole by a vector — `hint((3, 4))`,
 `fix((0, 0)) p` — or by one of `x`, `y`, `z`; an axis has the vectors `dir` and `origin`, a plane
@@ -2274,6 +2308,16 @@ body's are (`body.bore.hole`).
   `pinhole cut body`. `Through` only makes the cutter; every body it is cut from bounds it.
 - **`tip common body`** keeps only what the body has in common with `tip`. Union comes first;
   `cut` and `common` commute.
+- **A union does not put back what a cut takes**, wherever it is written: `hub union part` below
+  `hole cut part`, the hub lying wholly in the bore, leaves `part` the bored ring, and the
+  statement is told so — `` warning[W119]: `hub` lies wholly in what `hole` cuts from `part`, so
+  `part` keeps none of it ``.  A web drawn across the bore with its ends in the wall is lost the
+  same way, its ends being the ring's already: `` `part` keeps of `web` only what `ring` gives it
+  already, and the rest of `web` lies in what `hole` cuts from `part`, so `part` is as it would
+  be without `web` ``.  To fill the bore, cut it in a body of its own and put the hub on that one
+  — `bored := solid(ring)`, `hole cut bored`, `part := solid(bored)`, `hub union part` — or cut a
+  bore that leaves the hub's place.  A union that adds any material of its own the cuts leave (a
+  boss bored through, standing proud of the plate) says nothing, nor one nothing cuts.
 - **A pattern of solids.** A solid declared inside a `ring` is one solid a copy, each
   reached by its index (`peg[3]`), as a point of the ring is. To join every copy alike, start from
   an empty body — its first `union` is its stock — or cut each from the body:
@@ -2453,6 +2497,9 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
 - `A` and `B` are **face paths**: `block` (every face), `block.near` (one), `pad.boss` (every face
   the boss gave), `pad.plate.near`, read from the solid through its operands' names, never by
   suffix. Faces that do not meet make nothing; a face a Boolean ate names nothing.
+- **Both faces are one body's** (0.223): an edge is where two faces of one body meet, so
+  `wall.far round(r: 2mm) plate.near` of two solids is E103.  Where both are unioned into `part`,
+  write them through it — `part.wall.far round(r: 2mm) part.plate.near` — as the refusal says.
 - **One copy of a pattern** (0.157): an operand written in a `repeat` or a `ring` is named with
   its copy's index, as `--where` reports it — the hole the second drill cut is
   `flange.drill[1].hole`. `flange.cd chamfer(d: 1mm) flange.drill[1]` chamfers that one hole

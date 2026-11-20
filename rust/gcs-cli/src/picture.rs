@@ -151,8 +151,10 @@ pub struct Drawn {
     pub slivers: Vec<String>,
 }
 
-/// The picture of what `ask` names, seen from `ask.eye` (`Drawn`).
-pub fn render(sk: &Sketch, ask: &Ask) -> Result<Drawn, String> {
+/// The picture of what `ask` names, seen from `ask.eye` (`Drawn`).  Each solid to be meshed from
+/// its material field is given to `ahead` before it is, in the words `Drawn::unbuilt` holds it in
+/// after (`Sketch::field_meshed_ahead`, #961): that refinement is what the picture waits on.
+pub fn render(sk: &Sketch, ask: &Ask, ahead: &mut dyn FnMut(String)) -> Result<Drawn, String> {
     let axes = eye_frame(ask.eye.az, ask.eye.el);
     let chosen = chosen(sk, ask)?;
     // a swept object drawn from its exact surface where this kernel builds one, as the workspace
@@ -165,6 +167,9 @@ pub fn render(sk: &Sketch, ask: &Ask) -> Result<Drawn, String> {
     let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
     let mut any = false;
     for i in chosen {
+        if let Some(u) = sk.field_meshed_ahead(i) {
+            ahead(gcs_core::report::unbuilt_text(sk, i, &u));
+        }
         let solid = match sk.evaluated_solid(i, ApproximationPolicy::Mesh) {
             Ok(s) => s,
             Err(why) => { missing.push(why); continue; }

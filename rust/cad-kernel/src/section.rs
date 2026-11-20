@@ -13,7 +13,6 @@ use super::geom::{Rigid,V};
 use super::planar::{boolean,Chart,Op,Region,Step};
 use super::recipe::{meridian_of,refused,revolutions_tolerance,whole_turn,Named,Node,Recipe,Unread};
 use super::KernelError;
-use crate::util::json::Json;
 use crate::util::space::{add,cross,dot,norm,scale,sub,unit};
 use std::collections::BTreeMap;
 
@@ -91,9 +90,6 @@ fn untag(tag: u32) -> (Option<usize>,usize,usize) {
 }
 
 impl Sectioned {
-    /// The recipe's JSON read (`of`).
-    pub fn read(recipe: &Json) -> Result<Sectioned,KernelError> { Sectioned::of(&Recipe::read(recipe)?) }
-
     /// The recipe read, or a `Kind::Refused` error naming why it is not of this kind.
     pub fn of(recipe: &Recipe) -> Result<Sectioned,KernelError> {
         let tol = revolutions_tolerance(&recipe.nodes);

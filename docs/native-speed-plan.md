@@ -319,7 +319,7 @@ field agreement and the pair check held. In the order of the pipeline:
 - **The blank, by its meridian section.** Where every operand is a full revolution about one line
   (or a ball centred on it), each operand's section is taken in one half-plane of the line, the
   recipe's Booleans are taken of the sections and the region is turned once
-  (`Session::construct_meridian`, `solvent_cad_revolve_region`): 30–40 ms where the Booleans in
+  (`Session::built_meridian`, `solvent_cad_revolve_region`): 30–40 ms where the Booleans in
   space took 1–3.7 s beside the sheets; any other recipe is built by its Booleans, with the reason
   (`SOLVENT_BLANK=booleans` always). The sector's blank is that region turned again from the
   half-plane its parameters start on. That blank meshes the pinion's two sides at the gross bar with

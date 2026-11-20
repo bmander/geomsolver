@@ -139,7 +139,8 @@ const PATTERN_MATCH: f64 = 1e-6;
 fn ours_step(session: &native::Session,b: &gcs_core::brep::topo::Brep,name: &str,tolerance: Option<Tolerance>,file: &str)
     -> Result<String,String> {
     let started = std::time::Instant::now();
-    let text = gcs_core::brep::step::write(b,name,tolerance.map_or(1e-4,|t| t.deflection()*0.1))?;
+    let (uncertainty,fit) = gcs_core::brep::export::step_accuracy(tolerance);
+    let text = gcs_core::brep::step::write(b,name,uncertainty,fit)?;
     let verified = native::step_check::verify(&text,&native::step_check::Solid::of(b))
         .map_err(|e| format!("the STEP file does not describe the solid: {e}"))?;
     std::fs::write(file,&text).map_err(|e| format!("{file}: {e}"))?;

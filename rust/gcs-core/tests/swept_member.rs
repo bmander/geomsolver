@@ -4,7 +4,6 @@
 //! solver's material field, the semantic reference, over the solid sweeps series: at seeded points
 //! about each sweep, wherever the field proves a ball about the point all material or all removed,
 //! the kernel says the same, and it settles most of them. Sampled.
-use gcs_core::brep::recipe::Recipe;
 use gcs_core::brep::swept::member::{Solid,Swept};
 use gcs_core::model::SolidDef;
 use gcs_core::solid::{cad,Millimetres,MaterialField,ProbeState};
@@ -17,7 +16,7 @@ fn held(file: &str,name: &str) -> (usize,usize) {
     let swept = fixtures::solid(&e,name);
     let SolidDef::Swept {source,motion,..} = &sk.solids[swept].def else { panic!("`{name}` is a sweep") };
     let scale = cad::millimetres(sk);
-    let tool = Recipe::read(&cad::recipe(sk,*source as usize).unwrap()).unwrap().build().unwrap();
+    let tool = cad::recipe(sk,*source as usize).unwrap().build().unwrap();
     let solid = Solid::new(&tool,0.01,scale).unwrap();
     let path = gcs_core::motion::Family::read(sk,*motion as usize).unwrap().trajectory().unwrap();
     let roll = gcs_core::solid::roll::interval(sk,swept).unwrap();

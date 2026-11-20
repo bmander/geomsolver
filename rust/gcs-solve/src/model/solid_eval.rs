@@ -208,6 +208,15 @@ impl Sketch {
         self.own_solid(i, policy)
     }
 
+    /// **Why solid `i`'s next evaluation will be meshed from its material field, asked before it
+    /// is** (#961, `EvaluatedSolid::field_ahead`): the `Unbuilt` that evaluation will carry, where
+    /// it is its field's and the field is meshed here and now — the refinement a picture then
+    /// waits on, said first, so a slow look at a refused build is told from a hang and its cause
+    /// is known at once.  `None` where it is built, supplied, or no field's.
+    pub fn field_meshed_ahead(&self, i: usize) -> Option<crate::solid::Unbuilt> {
+        crate::solid::EvaluatedSolid::field_ahead(self, i)
+    }
+
     /// **Solid `i` evaluated as its own**, from the entities it reads, its binding unread: what a
     /// binding's representative is, and what is placed where a solid is its binding's (#566).
     fn own_solid(&self, i: usize, policy: crate::solid::ApproximationPolicy)
