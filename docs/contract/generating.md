@@ -2018,9 +2018,12 @@ rounding's** (#942 F6), none a number of its own:
 - *the tolerance* — the roll's grain, over which no corner of the tool moves it (`closed::grain`):
   two shape changes nearer than it are one instant, and a ring's stretches are fitted half of it
   clear of a cut, their rows so within the tolerance and sewn as one, a row read within twice that; a
-  double curve stepped by the angle over which the meridian's chord sags it, `√(8 tol / r)`, a far
-  apex within a step either side, a seed on a traced curve where its point stands within twice it of
-  the curve's polyline; a tube's own branch within it of its net; seeds off a rail and on a traced
+  double curve stepped so its own chord sags within it at its middle, halved from at most the angle
+  over which the meridian's chord sags it (`√(8 tol / r)`) down to the angle over which the meridian
+  moves it (`tol / r`, nearer two points are one) — at `√(8 tol / r)` alone the turned and the thin
+  tori's double curves were traced too coarsely and their trims refused an edge against a face — a
+  far apex within the step it stopped at either side, a seed on a traced curve where its point
+  stands within twice it of the curve's polyline; a tube's own branch within it of its net; seeds off a rail and on a traced
   branch, within twice it; two corners at an instant one within the fit's exactness;
 - *the normal form and the trace's step* — a narrow pair's crossing sought from the bridge's ends,
   its preimages within `√3 − 1` of the bridge's half-width past them (`θ³ − 3h²θ` crosses at

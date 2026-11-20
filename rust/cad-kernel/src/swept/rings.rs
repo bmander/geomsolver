@@ -1171,9 +1171,11 @@ fn sheet_at(ring: &Ring,path: &Trajectory,theta: f64,t: f64,sigma: f64) -> Optio
 /// preimages all but met, the pair's end too — the curve then a loop, closed through it.
 pub fn double_curve(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],seed: [(f64,f64,f64);2],tol: f64) -> Result<Vec<(f64,f64,f64)>,Unbuilt> {
     let failed = || Unbuilt::Failed("a ring's sheet's double curve about a fold pair not traced".into());
-    // (stepped round the axis, as the angle its first preimage moves, by the angle over which the
-    // meridian's chord sags the tolerance, `√(8 tol / r)`, #942 F6)
-    let step = (8.*tol/ring.thickness).sqrt();
+    // (stepped round the axis, as the angle its first preimage moves, by as much as the angle over
+    // which the meridian's chord sags the tolerance, `√(8 tol / r)`, and halved where the curve's
+    // own chord sags more at its middle, down to the angle over which the meridian moves the
+    // tolerance, `tol / r` — nearer, two points are one to the tolerance, #942 F6)
+    let (most,least) = ((8.*tol/ring.thickness).sqrt(),tol/ring.thickness);
     // the three unknowns `t₁, θ₂, t₂` settled at `θ₁`, from `z`
     let settle = |th1: f64,z: [f64;3],s1: f64,s2: f64| -> Option<([f64;3],f64,f64)> {
         let g = |z: [f64;3]| -> Option<(V,f64,f64)> {
@@ -1203,11 +1205,23 @@ pub fn double_curve(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],seed: [(f64,f64
     // meeting, where the preimages meet again — a pair born and later vanishing, its double curve
     // a loop through two swallowtail points, #880 T1d's thin torus)
     let mut short = false;
+    let mut stopped_at = most;
     for (dir,out) in [(toward,&mut near),(-toward,&mut far)] {
         let (mut th,mut z,mut sg1,mut sg2) = (th1,[t1,th2,t2],s1,s2);
+        let mut step = most;
         for _ in 0..200_000 {
             let next = th+dir*step;
-            let Some((y,a1,a2)) = settle(next,z,sg1,sg2) else {
+            let settled = settle(next,z,sg1,sg2);
+            // (the step halved where it settles on no meeting, or where the curve's chord over it
+            // sags more than the tolerance at its middle)
+            let sag = settled.and_then(|(y,a1,_)| {
+                let (ym,am,_) = settle(th+dir*0.5*step,z,sg1,sg2)?;
+                let (p0,p1,pm) = (sheet_at(ring,path,th,z[0],sg1)?.0,sheet_at(ring,path,next,y[0],a1)?.0,sheet_at(ring,path,th+dir*0.5*step,ym[0],am)?.0);
+                Some(crate::util::space::distance(pm,scale(crate::util::space::add(p0,p1),0.5)))
+            });
+            if sag.is_none_or(|g| g > tol) && 0.5*step >= least { step *= 0.5; continue }
+            stopped_at = step;
+            let Some((y,a1,a2)) = settled else {
                 if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
                     eprintln!("ring: a double curve's way {} stops at θ₁ {th:.6} with (t₁, θ₂, t₂) {z:?}, σ {sg1:.4} {sg2:.4}",if dir == toward { "toward" } else { "away" });
                 }
@@ -1235,6 +1249,8 @@ pub fn double_curve(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],seed: [(f64,f64
             if dir == toward && (y[1]-next)*toward <= 0. { break }
             (th,z,sg1,sg2) = (next,y,a1,a2);
             out.push([(th,y[0],a1),(y[1],y[2],a2)]);
+            // (grown again where the chord sagged a quarter of the tolerance or less)
+            if sag.is_some_and(|g| g <= 0.25*tol) { step = (2.*step).min(most) }
         }
     }
     if near.is_empty() && far.is_empty() { return Err(failed()) }
@@ -1249,10 +1265,10 @@ pub fn double_curve(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],seed: [(f64,f64
     let mut out: Vec<(f64,f64,f64)> = first.into_iter().chain(second).collect();
     // (the swallowtail point: between the two leaves' preimages, put at the end of the list)
     let ap = if apex > 0 && apex < out.len() { let (p,q) = (out[apex-1],out[apex]); (0.5*(p.0+q.0),0.5*(p.1+q.1),p.2) } else { out[apex.min(out.len()-1)] };
-    // (and where the way away stopped short with its preimages within a step either side of one
-    // another, the second: the curve closed through it, from the second preimage's far end to the
-    // first's)
-    let far_apex = far.last().filter(|l| short && (l[1].0-l[0].0).abs() <= 2.*step)
+    // (and where the way away stopped short with its preimages within the step it stopped at either
+    // side of one another, the second: the curve closed through it, from the second preimage's far
+    // end to the first's)
+    let far_apex = far.last().filter(|l| short && (l[1].0-l[0].0).abs() <= 2.*stopped_at)
         .map(|l| (0.5*(l[0].0+l[1].0),0.5*(l[0].1+l[1].1),l[0].2));
     if let Some(q) = far_apex { let first = out[0]; out.push(q); out.push(first) }
     if toward < 0. { out.reverse() }
