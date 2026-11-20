@@ -459,7 +459,12 @@ every edge between them a seam or a crease convex from that side, each face its 
 its side carried on past its patch by its tangent planes (`BodyFaces::carried_side_grad`, the
 signed distance from the convex solid the patch and those planes bound), so the side is their
 common part and a point at least `d` inside it is at least `d` inside each — a pocket's walls
-seen from its air, a boss's from its material.
+seen from its air, a boss's from its material. A torus's patch is so in a chain where it lies on
+the outer half of its tube with that side inside the tube, both its curvatures' centres there (a
+pocket's floor filled round its plan corners, seen from the air; `BodyFaces::outer_half`), never
+alone (its whole surface's side winds round the axis): a ball standing on a run's axis beside
+those stretches was read through the nearest face and the gate refused it
+(`round_onto_round::a_boss_across_a_trays_filled_wall_is_its_closed_form`).
 Read through the nearest face alone, a corner of the offset (an arc's offset closed onto its
 axis, a pocket's corner rounded to its own radius, or past it) is where the nearest face turns,
 and the steps never settled there. **The steps stop at the first point keeping every condition

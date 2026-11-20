@@ -231,7 +231,8 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
                 out.corners.push(c.clone())
             }
             Piece::Rolled(k) if !out.rolled.iter().any(|j| near(j.at, k.at) && (j.r - k.r).abs() <= 1e-9 * size
-                && j.flat.is_some() == k.flat.is_some()) => {
+                && j.flat.is_some() == k.flat.is_some()
+                && match (j.beside, k.beside) { (None, None) => true, (Some(a), Some(b)) => near(a, b), _ => false }) => {
                 let mut k = k.clone();
                 if let Some(b) = k.beyond.take() {
                     out.beyond.push(b);
@@ -354,6 +355,49 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
             None => continue,
         };
         out.joins.push([at, first + k]);
+    }
+    // a ball standing still over a stretch (#962): its piece glued where it ends in a run's or a
+    // ring's section, and its part beside a run glued to its own and to the run or ring it was made
+    // beside, which ends in the ball's section (at that piece's `ends`) — one section each, never
+    // unioned
+    for (i, k) in out.rolled.iter().enumerate() {
+        let at = rolled_from + i;
+        if k.beside.is_some() {
+            for (j, own) in out.rolled.iter().enumerate() {
+                if own.beside.is_none() && own.stands && near(own.at, k.at) {
+                    out.joins.push([rolled_from + j, at]);
+                }
+            }
+            let Some(&c) = k.ends.first() else { continue };
+            for (j, r) in out.runs.iter().enumerate() {
+                if near(r.end(0), c) || near(r.end(1), c) {
+                    out.joins.push([j, at]);
+                }
+            }
+            for (j, g) in out.rings.iter().enumerate().filter(|(_, g)| g.stretch()) {
+                if near(g.section.origin, c) || near(g.end().0, c) {
+                    out.joins.push([out.runs.len() + j, at]);
+                }
+            }
+        } else if k.stands {
+            // (where a part of it lies beside a run, its other end's section is the next run's only
+            // in part: those are unioned)
+            if out.rolled.iter().any(|b| b.beside.is_some() && near(b.at, k.at)) {
+                continue;
+            }
+            for &v in &k.ends {
+                for (j, r) in out.runs.iter().enumerate() {
+                    if near(r.end(0), v) || near(r.end(1), v) {
+                        out.joins.push([j, at]);
+                    }
+                }
+                for (j, g) in out.rings.iter().enumerate().filter(|(_, g)| g.stretch()) {
+                    if near(g.section.origin, v) || near(g.end().0, v) {
+                        out.joins.push([out.runs.len() + j, at]);
+                    }
+                }
+            }
+        }
     }
     // each stretch of a ring by where its turn starts and ends, and its section's hull there
     let hulls: Vec<Option<([V; 2], [Vec<V>; 2])>> = out.rings.iter().map(|g| g.stretch().then(|| {
@@ -661,6 +705,7 @@ impl Assembly {
             cuts: k.cuts.iter().map(|&(at, n, reach)| (w.point(at), n, w.length(reach))).collect(),
             kept: k.kept.iter().map(|kept| (kept.face.surface(w), kept.inside)).collect(),
             wedge: k.wedge.iter().map(|&(at, n)| (w.point(at), n)).collect(),
+            beside: k.beside.map(|v| w.point(v)),
         }).collect();
         let beyond = self.beyond.iter().map(|b| spill::Beyond {
             face: b.face.surface(w), toward: b.toward, chain: b.chain.surface(w), wall: b.wall.surface(w),

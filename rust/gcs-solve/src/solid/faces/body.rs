@@ -546,6 +546,13 @@ impl BodyFaces {
                 Level::Bound(Bound::Half { .. }, _) => {}
                 Level::Bound(Bound::Cylinder { .. } | Bound::Ball { .. } | Bound::Cone { .. }, within)
                     if within != beyond => {}
+                // a torus's patch on the outer half of its tube, that side inside the tube: both
+                // its curvatures' centres (the tube's middle circle, the axis) on that side, so
+                // convex there — a fill round a pocket's arc, a boss's foot rounded — read in a
+                // chain alone, by its side carried on past its patch (its whole surface's side
+                // winds round the axis, no convex solid)
+                Level::Bound(Bound::Torus { .. }, within) if within != beyond && faces.len() > 1
+                    && self.outer_half(fi) => {}
                 _ => return None,
             }
         }
@@ -568,6 +575,21 @@ impl BodyFaces {
             }
         }
         (smooth && seams).then(|| (faces.to_vec(), true))
+    }
+
+    /// Whether face `fi`, on a torus, lies on the outer half of its tube: every point of its
+    /// edges at least the middle circle's radius from the axis.
+    fn outer_half(&self, fi: usize) -> bool {
+        let crate::brep::geom::Surface::Torus(frame, big, _) = self.loc.b.faces[fi].surface else { return false };
+        let b = &self.loc.b;
+        self.edges[fi].iter().all(|&e| {
+            let ed = &b.edges[e as usize];
+            (0..=8).all(|k| {
+                let p = sub(ed.point(ed.t[0] + (ed.t[1] - ed.t[0]) * k as f64 / 8.0, &b.vertices), frame.o);
+                let rho = norm(sub(p, scale(frame.z, dot(p, frame.z))));
+                rho >= big * (1.0 - 1e-9)
+            })
+        })
     }
 
     /// The vertices three groups of faces share: where a face of each meets, with the faces of
