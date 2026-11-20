@@ -367,9 +367,13 @@ impl<'a> Walk<'a> {
                     // its solid is named by the use of the word that made it (`#17.0.….taken`),
                     // which no document wrote: a failure to build it says the body it rounds and
                     // the step its faces are named by there (#879)
+                    // and where it ends on a face flush with another only to the drawing's numbers,
+                    // that, which the Boolean joining it to its body may not read (#962 item 4)
+                    let flush = assembly.runs.iter().find_map(|r| r.flush.as_ref())
+                        .map_or(String::new(),|f| format!(", which ends {f}"));
                     let called = body.map(|(&b,_)| {
                         let of = &sk.solids[b];
-                        format!("`{}`'s round or chamfer `{}`",crate::vocab::public_path(of.written_name()),
+                        format!("`{}`'s round or chamfer `{}`{flush}",crate::vocab::public_path(of.written_name()),
                             super::step_through(of,solid))
                     });
                     // a face a run ends on reaching back over a seam, said by the faces it is of

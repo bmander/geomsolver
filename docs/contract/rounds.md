@@ -543,6 +543,80 @@ read more boxes than any search may"), and a chamfer past the overhang on some c
 the smaller disc's whole ring kept within the larger's cylinder unioned with the larger's ring
 whose leg lies on that cylinder ("where a bspline … meets a cylinder was not proved").
 
+**A piece cut off at a plane goes clear past it** (#962 item 4: an eye across an arm, its caps
+flush with the arm's sides, filled to the arm's top and bottom; a channel's cutter rounded before
+it is cut). A run carried past a plane it ends on at a slant was carried only until the last line
+of its section crossed it, and a stretch of a ring turned only until the last point of its section
+had (`first_over`): the plane then stood through the piece's end, turned from it by however far
+the face was off square. A drawing states its numbers to five or six places, so a side is square
+to an edge, or through a ring's axis, only to those — #962's 122 has an arm's side through a point
+the solve leaves 0.8 µm off its other end's line across 67 mm, a turn of 1.2e-8 — and the piece
+was cut along its own end by a plane a hundred-millionth of a millimetre off it, a sliver the
+Boolean could not classify ("a run cut off at its end: a piece of `far` (a plane) touches `far` (a
+plane) … along no face of either"; turned 1e-7, "a shell of the arrangement is kept on one side of
+a plane (`far`) and dropped on another: two of its cells joined round an edge"), or, where the
+turn was under a billionth of the run, left square with its cap that far off the face, which the
+Boolean joining it to its body could not read ("a piece of the slot's `c0` (a plane) touches
+`near` …"). Now a plane that cuts the piece at all — some line of its section crossing it short of the edge's
+end or past it, to a part in 10¹² — is gone clear past: at least a thousandth of the section's
+width past where it first meets it (`piece::clear_of`; a ring's stretch that far round in turns, no
+further than halfway to where a point of its section comes back across it, `over_from`), so the
+plane crosses the piece's sides and the cut end is the face's plane itself, exactly, at any slant.
+No tolerance stands in for square: the set is cut where the face is. `tests/flush_ends.rs` is the
+gate (an eye and a block boss flush with both sides, proud of both, flush with one, and — rounded
+along the eye's cylinder or the boss's sides alone — 50 µm and half a millimetre short or proud,
+the flush one their closed form's limit; round and chamfer, the eye's axis at the arm's middle and
+off it; the eye and the block across the arm at a slant, kept between the sides' planes; a block
+flush with the arm's end too; the arm's sides turned 1e-8 to 1e-3 of a radian; a slot open at both
+sides, its rim rounded and its floor filled; its cutter rounded first, its ends square or turned
+1e-8 to 1e-3, flush or proud; a half-round lug flush with a side, its centre 1e-8 to 0.1 off that
+side either way; and #962's 122 as the issue reduced it, against the same drawing with its side
+square: each volume the closed form's to 1e-9, each exported with no sliver). Refused by the
+kernel yet, said where it stands, and not by the round: a boss's cap flush with a side only to the
+drawing's numbers, the two planes crossing within the cap. The body's own union, unrounded, is
+refused there — at a turn of 1e-8 it cannot read the two as one face ("a shell of the arrangement
+is kept on one side of a plane (`s0`) and dropped on another", or "a piece of the eye's `far` (a
+plane) touches the part's `s2` (a plane) … along no face of either"), and from 1e-7 to 1e-3 it
+leaves strips of the top and the bottom nanometres to microns wide between the cap and the side,
+which the export refuses ("`part` holds 4 faces thinner than the export's 10.000 µm"); a round
+over the cap then fills the shelf the strip is ("the solid touches itself along a line").
+`flush.rs` moves a face parallel to a plane onto it, not one turned from it: a cap turned from
+the side by what the drawing's numbers leave is the next rule it needs. Rounded over its caps (`part.eye`, not `part.eye.eo`), a boss short of a side
+meets the top in an edge of its own, filled however narrow the shelf it stands on: the set is not
+continuous at flush there, as it is along the boss's sides.
+
+**A face along a run cuts it lengthwise or not at all** (#962 item 4: a boss drawn standing on a
+part's top, `from:` the top's height, and running past the part's side). Where the boss overhangs
+the side, its underside is a face the fill along the boss's sides ends on, lying along the run in
+the plane of the floor the fill stands on; a ring's stretch round a disc boss so overhanging ends
+on that underside too, a plane square to its axis. Such a plane stands at no distance along the
+run, so it is no end of it and carries the piece nowhere (it was refused, "a run carried on along
+the face it ends on", and the ring "a stretch of a circle its end does not cut off"). Its
+half-space is the side `BodyFaces::end_faces` keeps — where the run's own edge lies in the plane,
+the material's behind it, which holds the fill on its floor — and it cuts the piece along its
+length or not at all (`piece::along_run`: some point of the section past it, by a billionth of the
+construction): where none is, no cut; where one is, the piece kept within it, a prism or a
+revolution clipped by a plane along it, exactly. A boss sunk into the top had no such face and was
+built before. No face of #962's 122's eye lies along a run: its caps are in the side's planes,
+square to the fills. **Two faces flush only to the drawing's numbers where a run ends** are named
+where they cannot be built (`piece::flush_only`, `Run::flush`, carried into what the failure calls
+the round, `cad.rs`): a boss's end drawn flush with a side the solve leaves turned 1e-8 from it
+leaves a strip of the boss's underside half a nanometre wide that the body, under its tolerance,
+reads as none, while the fill is cut exactly at the side — and the Boolean joining them cannot close
+the boss's wall half a nanometre past the fill's end: "`part`'s round or chamfer `filled`, which
+ends where `arm.s0` and `boss.b0` are flush only to the drawing's numbers, turned 1.0e-8 of a radian
+from one another at […]: a plane's pieces do not close". Turned 1e-7 to 1e-4 the body keeps the
+strip (4.2 nm to 4.2 µm), which the export warns of with or without the round, and the round builds
+beside it; at 1e-3 the strip is 42 µm and nothing is warned of. A boss short of the side by a hair,
+rounded over its faces, leaves a strip of the top as wide as the hair between the side and its end's
+fill, which is whole however narrow the shelf it stands on: the set's own, and the body's unrounded.
+`tests/flush_ends.rs` holds the standing boss proud of one side, of both, flush with one and proud
+of the other, flush with both, a hair (1 µm, 50 µm, 0.5 mm) short or proud along its sides alone
+(the flush one their limit) and short over all its faces, at the part's corner flush with its side
+and its end, round and chamfer; the side turned 1e-8 to 1e-3 either way, flush and 2 proud; and the
+disc boss 3 and 5 past the side, its ring turned through `2π − 2 acos(e/ρ)`; each volume the closed
+form's to 1e-9, each sliver the export warns of one the body has unrounded.
+
 **A ball as wide as its cylinder** (brep-bench's fillet/cylinder-rim-to-dome): an offset by a
 radius that takes a surface's radius to nothing is what the surface is drawn about, never nothing
 (`Surface::offset` → `Offset`: a cylinder's axis, a sphere's centre, a torus's middle circle; `None`

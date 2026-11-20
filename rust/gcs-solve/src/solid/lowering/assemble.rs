@@ -53,6 +53,7 @@ pub(super) fn turned(r: &Run, m: &crate::brep::geom::Rigid) -> Run {
         strokes: r.strokes.iter().map(|(s, name)| (stroke(s), *name)).collect(),
         within: r.within.clone(),
         kept: r.kept.clone(),
+        flush: r.flush.clone(),
     }
 }
 

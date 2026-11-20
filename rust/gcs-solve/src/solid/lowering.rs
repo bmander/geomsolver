@@ -96,6 +96,9 @@ pub struct Run {
     pub strokes: Vec<(Stroke, &'static str)>,
     pub within: Vec<(V, f64)>,
     pub kept: Vec<Kept>,
+    /// Where it ends on a plane flush with another face only to the drawing's numbers
+    /// (`piece::flush_only`): what a failure to build it says of why, in the faces' names.
+    pub flush: Option<String>,
 }
 
 /// A face's surface as a corner's cell or a piece's end reads it (model units): a plane through
