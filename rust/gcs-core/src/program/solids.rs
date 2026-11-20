@@ -406,3 +406,35 @@ fn res_forget(res: &mut Resolver, probes: &mut super::regions::Probes, name: &st
         }
     }
 }
+
+/// **Faces of two solids asked whether they meet** (#961, `flatten::Across`), refused at the
+/// document's statement that asked — a round or a chamfer between a face of one solid and a face
+/// of another it is not part of.  An edge is two faces of one body meeting, so the faces are
+/// named through the body both are of: where one holds both (`wall` and `plate` unioned into
+/// `part`), the names it gives them are said, which is what the author meant.
+pub(super) fn across(sk: &Sketch, res: &Resolver, across: &[crate::flatten::Across],
+                     diags: &mut Vec<Diag>) {
+    for a in across {
+        let [(sa, fa), (sb, fb)] = &a.faces;
+        let solid = |abs: &str| res.of.get(abs).filter(|e| e.kind == EntKind::Solid).map(|e| e.i());
+        let (pa, pb) = (super::public_path(sa), super::public_path(sb));
+        let mut message = format!(
+            "`{pa}.{fa}` and `{pb}.{fb}` are faces of two solids, and `{pa}` and `{pb}` are not \
+             one body: an edge is where two faces of one body meet");
+        let held = solid(sa).zip(solid(sb)).and_then(|(i, j)| {
+            crate::solid::faces::one_body_of(sk, (i, fa), (j, fb))
+        });
+        match held {
+            Some((body, [na, nb])) => {
+                let body = sk.solid_name(body);
+                message.push_str(&format!(
+                    ", and both are faces of `{body}`: name them through it, `{body}.{na}` and \
+                     `{body}.{nb}`"));
+            }
+            None => message.push_str(&format!(
+                ", and no body is made of both: `{pa} union {pb}` makes `{pb}` one, its faces \
+                 named through it")),
+        }
+        diags.push(Diag::new(Code::E103, a.at, None, message));
+    }
+}

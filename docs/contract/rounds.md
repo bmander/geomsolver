@@ -34,11 +34,23 @@ and one cut or fill of each (`flatten::same`, [language.md](language.md)): `roun
 regions, not 52 (240, not 1152, before the words paired only faces that meet).
 `tests/symmetric.rs` holds the count and the block rounded and chamfered all over to the words
 written without `symmetric`.
-**Only faces that meet** (#625, [0.187]): the words pair `a` and `b` only where `b meets a`, and
+**Only faces that meet** (#625, [0.187]): the words pair `a` and `b` only where `a meets b`, and
 round a corner only of three that each meet the other two ([language.md](language.md)), so a body
 whose faces are many — every operand's listed, eaten or not — makes copies for its edges and
 corners, not for the cube of its faces: #625's web cut by four turned spokes lists 28 faces and
 rounds 16 edges and no corner (`tests/meets.rs`).
+**Both faces are one body's** (#961, [0.223]): an edge, a corner and the material's angle are
+between faces of one body, so a word over a face of one solid and a face of another is refused
+where `meets` is asked ([language.md](language.md), E103 naming the body both are faces of, the
+spelling meant), and nothing below the walk reads one body's face numbers in another's lists:
+`angle(a, b, at: p)` over faces of two solids is E040 where it is stated (`program::regions`), and
+the field's readers of two or more faces' edges and corners — `RegionShape::Angle`
+(`region::general`) and a set on their patches (`conditions::SetDistance::of`) — read them through
+`solid::faces::one_body`, which refuses faces of two solids by name (`not_one_body`), so a model
+handed to the solver without the language is refused there and never panics nor rounds the wrong
+face.  `BodyFaces::faces` reads a reference's path alone: each of its callers holds the reference
+to be of that body (`reading`; the lowering, whose `recognise` takes faces of one solid; a shell's
+kept faces; a scenario's faces, `analysis::reentrant_of` given the solid). `tests/one_body.rs`.
 **Which edges are the faces'** (#763, [0.204]): a word takes every edge where its faces meet, and
 a block over the faces picks among them — by name, or by how each face lies (`when f parallel l`,
 [language.md](language.md)) — so the words take no option saying which edges: `rounds/hub.sv`

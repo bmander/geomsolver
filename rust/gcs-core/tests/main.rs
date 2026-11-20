@@ -206,6 +206,7 @@ mod object_builder;
 mod ode;
 mod offset_corners;
 mod offsets;
+mod one_body;
 mod open_joint;
 mod order;
 mod orientation;
