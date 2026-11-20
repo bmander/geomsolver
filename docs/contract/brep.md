@@ -1306,8 +1306,21 @@ A family in bands is never carried rigidly.
 STEP writes a sheet as the net fitted within `step::FIT` (`family_net`, cubic along the edge and
 quintic along `s`: a cubic through 512 rows misses a 3½-turn auger by 1e-6), rails and rims as
 cubics within it.
+**A stretch of a traced or formula curve in a profile is held as near as a surface the kernel
+fits** (`cad::HELD_MM`, which is `step::FIT`, 1e-6 mm; `brep::cubic::fit_held`): the stretch is
+what the solid's face is carried along or turned from, and a reader measures the solid by that
+face, so the bar of what may be refused (`cad::FIT_MM`, 1e-4 mm) is no licence to stand that far
+off — a hyperbola turned, fitted within `FIT_MM` alone, read 1.03e-6 off its closed form where
+brep-bench grades to 1e-6, and within `HELD_MM` reads 1.7e-9 off. The samples are doubled until
+the fit stands within `HELD_MM`; where a doubling no longer brings it four times nearer (a cubic
+through a smooth curve comes sixteen times nearer, so the fit is at the curve's own roughness) or
+its spans pass `cubic::HELD_SPANS`, the nearest fit met within `FIT_MM` stands, and only a curve
+with no fit within `FIT_MM` is refused, as before. `tests/solid_lang.rs`
+(`a_stretch_turned_is_held_as_near_as_a_fitted_surface`, a hyperbola stated by its foci turned, to
+1e-8 of its closed form;
+`a_fit_is_held_where_it_closes_in_and_stands_within_its_tolerance_where_it_does_not`) is the gate.
 Rung 2 is done: `Curve::BSpline` (`brep::nurbs`), `Surface::Extrusion`/`Revolution`, a face's
-stretch of a traced or formula curve (`k from p to q`, `CurveE::trim`, `cad::FIT_MM`), and a
+stretch of a traced or formula curve (`k from p to q`, `CurveE::trim`, `cad::HELD_MM`), and a
 section carried to its own image (`build::ruled`: a drafted prism's offset, a canal's screwed disc;
 `Surface::Blend`, `Curve::Iso` rails, `step::FIT`), each edge joined to the edge it became at equal
 parameter fractions.  Two sections drawn apart are no input to it (#243 L3): what a section becomes

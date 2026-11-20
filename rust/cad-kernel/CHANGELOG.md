@@ -8,6 +8,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A sampled stretch held nearer than its tolerance where its fit closes in** (`cubic::fit_held`,
+  `cubic::HELD_SPANS`): the cubic doubled until it stands within `held`, the nearest fit met within
+  `tol` standing where a doubling no longer brings it four times nearer or its spans pass
+  `HELD_SPANS`.  `cubic::fit_sampled` is the same fit held to `tol` itself, as it was.
 - **The recipe is typed values, never JSON** (`recipe::Recipe`, `recipe::Node`): a writer builds
   the nodes itself and the kernel builds them as they are, with no text written and read back.
   `recipe::build`, `recipe::node` and `recipe::node_named` take a `&Recipe` or a `&Node`;
