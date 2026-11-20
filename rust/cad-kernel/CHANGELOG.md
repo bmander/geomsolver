@@ -8,6 +8,23 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A fan that passes back through itself is cut into runs, their crossing given** (#942 T1d-cube,
+  `swept::general`): an edge's fan was one wall over the whole roll, its strips faces of one
+  surface, and where the edge's line passed back through where it stood a while before two faces of
+  one surface crossed — refused by the trim's witness as a meeting of a surface with itself (the
+  bench's cube tumbling 75°, its edge 5's fan). Each two of a bearer's stretches are met as two
+  surfaces, its wall restricted to each (`family::Sheet::restricted`); a fan crossing itself is cut
+  into the fewest runs of stretches that part every two crossing ones, each run its wall restricted
+  to it and a candidate of its own, given the rim it shares with the next, where the runs cross
+  (traced run against run, one curve across a run's stretches), and each meeting of the whole wall
+  restricted to the run (a rail over the run's span). A fan crossing itself nowhere is as it was.
+  The cube tumbling 15° and 75° get past it, each now refused where two fans' second crossing
+  beside their shared corner's path is traced short of the path. A seed on a branch traced already
+  is read within `tolerant::on_meeting`'s reach (two fans meeting shallowly traced one branch twice,
+  4e-7 apart); a dump writes each wall with the number it is shared by, so a trim read back shares
+  its walls as built and replays bit for bit. Gated by `swept_general`'s replays of the 15° and 75°
+  cubes, refused where they are now and replayed alike.
+
 - **The roads under any motion read no threshold of their own** (#942 F6): every local number the
   T1d work added to the ring road, the general road, the trim, `closed`, `contacts` and the Boolean
   is now the tolerance's, a feature size's, the rounding's (`util::fmath::HALF_READ = √ε`, `G` carried

@@ -874,9 +874,9 @@ apart from the build. On the general road's own candidates
 5°, its fans' branches beside their rails taken out of what it is given, completed to the volume the
 whole given builds. A witness nothing missing crosses is the refusal, naming what parts it where it
 can: a pair met by search that missed the crossing, or another face of the same surface crossing the
-walk — the surface passing back through itself, which no given meeting of two surfaces lays (in the
-slow tier the tumbling cube at 75°, its edge 5's fan crossing itself). A mixed piece is never kept
-whole or dropped whole.
+walk — the surface passing back through itself, which no given meeting of two surfaces lays (the
+tumbling cube at 75°, its edge 5's fan crossing itself, until the general road cut such a fan into
+runs, below). A mixed piece is never kept whole or dropped whole.
 Faces whose surfaces a `Given` names are always met, where their boxes do (`trim`'s pairing): the
 given curves are the meeting laid with no search, and near balls alone left a thin stretch's face
 and the plane it crosses unpaired.
@@ -1971,14 +1971,33 @@ fans sharing a vertex are given, beside its path, every other branch of their me
 the march in space refuses a branch (the two under a degree apart) it is marched in the two sheets'
 own parameters (`marched`: the 3 × 4 Jacobian's null vector, minimum-norm Newton, landed on the
 patch's edge, a cubic or, where it turns within a few points, a polyline within the tolerance).
-**Not yet built**: the cube tumbled 15° — the cylinder the top face's chord sweeps touches the top
-face posed at either end along its rim, so on the end pose's side face its meeting leaves tangent
-to that face's rim and to the line the two posed faces meet in, and the face's walk turns the wrong
-way there (one piece of it also missing, a thin stretch's face never paired with the plane); and
-the bench's 75° — its edge 1 and edge 9 fans' second branch now reaches the pinch exactly, but two
-regions stay open (28 boundary edges): about the corner of edges 2, 5 and 6, where edge 2's fan
-crosses face 4's strip with no edge seeding it (a branch from a rail back to a rail), and along
-the side face's fans at x ≈ 2.35, whose rails stand inside the sweep. **A ring's fold pair born partway**
+**A fan that passes back through itself** (#942 T1d-cube, `general::crossed`): an edge's fan is one
+wall over the whole roll, its strips its faces, and where the edge's line passes back through where
+it stood a while before (the cube tumbling 15° and 75°: edge 5's strip over `[0.39, 0.50]`
+crossing its strip over `[0.23, 0.29]`) two faces of one surface cross, which no given meeting
+describes. Each two of a bearer's stretches are met as two surfaces, its wall restricted to each
+(`Sheet::restricted`: its pieces over the stretch, the end ones cut short, each still the polynomial
+through its own nodes), from where an edge of either crosses the other away from the rim they share
+(`beside_rails`); a fan crossing itself nowhere stays one surface, as it was. One that does is cut
+into the fewest runs of stretches that part every two crossing ones, each run its wall restricted to
+it, its strips' surface and a candidate of its own (the trim meets no two faces of one candidate).
+Each meeting given of the whole wall is given of each run, each curve as much of it as lies on the
+run — a rail over the run's span, any other where its points stand within it — and each two runs
+are given the rim they share and where they cross, met run against run, so a branch is one curve
+across a run's stretches (traced a pair of stretches at a time, its pieces ended some tolerances
+apart and closed nothing). The fan's double curve ends at the pinch where it is born, on the rim
+two runs share. A seed lies on a branch traced already within the reach a point of two surfaces
+meeting at their angle there has (`tolerant::on_meeting`): two fans meeting shallowly traced one
+branch twice from two seeds, 4e-7 apart, laid side by side. A dump writes each wall with the number
+it is shared by (`dump::shared`), so a trim read back shares its walls as it was built: a wall's
+inverse starts from the last foot found on it, and walls read back apart moved a refusal's points in
+their last digits.
+**Not yet built**: the cube tumbled 15° and the bench's 75°, each past its fan crossing itself:
+where two fans from one corner cross a second time beside the path of the corner they share, that
+second branch runs into the path where the two fans come to touch, and its trace stops some 1e-3
+short of it (`beside_rails` through `meeting::through`); with both its ends open it parts nothing,
+and the trim leaves a piece unparted (75°, edges 1 and 9 at `(3.603, −0.554, 2.388)`) or the boundary
+open along a rail (15°). **A ring's fold pair born partway**
 (`brep::swept::rings`): a pair narrower than its band read by its least `s''` along the band, on the
 curve's own branch; the roll cut where the contact changes shape (`rings::changes`), each stretch
 fitted alone, its tubes sewn across the cuts and trimmed; a sheet refused as folding only where it

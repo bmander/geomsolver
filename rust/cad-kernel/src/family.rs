@@ -223,6 +223,21 @@ impl Sheet {
     pub fn ring_period(&self) -> Option<f64> { let [a,b] = self.span(); self.ring.then_some(b-a) }
     /// The interval the wall runs over.
     pub fn span(&self) -> [f64;2] { self.stations.span() }
+    /// **The wall over a stretch of its interval** (#942 T1d-cube): its pieces over `[s0, s1]`, the
+    /// first and last cut short there, each still the polynomial through its own six nodes — the
+    /// same wall there to the rounding, and a surface of its own: an edge's fan that passes back
+    /// through itself is two of them where it crosses, whose meeting can be read and given.
+    pub fn restricted(&self,[s0,s1]: [f64;2]) -> Result<Sheet,String> {
+        let st = &self.stations;
+        let js: Vec<usize> = (0..st.spans.len()).filter(|&j| st.spans[j][1] > s0 && st.spans[j][0] < s1).collect();
+        let (Some(&first),Some(&last)) = (js.first(),js.last()) else { return Err("a wall restricted to a stretch it does not run over".into()) };
+        let mut spans: Vec<[f64;2]> = st.spans[first..=last].to_vec();
+        spans[0][0] = s0;
+        let n = spans.len();
+        spans[n-1][1] = s1;
+        let stations = Stations::new(spans,st.at[first..=last].to_vec())?;
+        Sheet::new(self.run.clone(),Arc::new(stations),self.nodes[6*first..6*last+6].to_vec(),self.closed)
+    }
     /// `s` within the interval: a ring's carried round into it, any other's as it is.
     fn within(&self,s: f64) -> f64 { let [a,b] = self.span(); if self.ring { a+(s-a).rem_euclid(b-a) } else { s } }
     /// `s` after a step: a ring's carried round into the interval, any other's held to it.

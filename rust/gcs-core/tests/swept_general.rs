@@ -17,10 +17,11 @@ fn tumble() -> Trajectory {
 fn cube() -> gcs_core::brep::topo::Brep { crate::brep::block([2.4,-0.6,1.4],[3.6,0.6,2.6]) }
 
 /// **A cube tumbling a short way is built closed** by the general road and judged. Not yet at 15°:
-/// on its start pose's face x = 2.4 two cuts the trim lays meet where three of its sheets do, and one
-/// ends 1.5e-4 short of the other there, so the face's pieces do not close (`general`'s module).
+/// one of its fans passes back through itself and is cut into two runs, their crossing given
+/// (#942 T1d-cube), and the trim then leaves the boundary open along a rail where two fans' second
+/// crossing beside the corner path they share runs into it and its trace stops short.
 #[test]
-#[ignore = "T1d: a cut ending 1.5e-4 short of another where three sheets meet"]
+#[ignore = "T1d-cube: two fans' second crossing beside their shared rail traced short of it"]
 fn a_cube_tumbling_a_little_is_built_by_the_general_road() {
     let cube = cube();
     let roll = [-15f64.to_radians(),15f64.to_radians()];
@@ -137,27 +138,30 @@ fn the_general_roads_candidates_are_written_and_read_back_whole() {
 }
 
 /// **A refused trim replays from its dump to the same refusal** (#942 F5's gate, fast): the cube
-/// tumbling 15° either way, refused in its trim, gives the same refusal run again from the files.
+/// tumbling 15° either way, refused in its trim, gives the same refusal run again from the files —
+/// its fan cut into runs, each a wall restricted to its stretches and the rails given it restricted
+/// alike, and every wall written with the number it is shared by, so the walls read back are shared
+/// as they were built (a wall's inverse starts from its last foot: read back apart, the refusal's
+/// points moved in their last digits).
 #[test]
 fn a_refused_trim_replays_from_its_dump_to_the_same_refusal() {
     let why = replayed_alike(&cube_trimming(15.),"cube-15-dump");
-    assert!(why.contains("do not close"),"{why}");
+    assert!(why.contains("the boundary is open along a rail edge"),"{why}");
 }
 
 /// **The bench's tumbling cube's refused trim replays from its dump alike** (#942 F5's gate): the
 /// cube tumbling 75° either way, its candidates taken 17 s to make, refused in its trim, gives the
-/// same refusal run again from the files in a fraction of that. Refused by name since #942 F2: a
-/// piece of its edge 5's fan read off the boundary at one point and the boundary at another 0.015
-/// away, a meeting it was not given parting them (where it left 28 boundary edges open) — the fan
-/// at later instants passing back through that piece between the two, a meeting of the fan with
-/// itself, which no given meeting of two surfaces lays.
+/// same refusal run again from the files in a fraction of that. Refused by name since #942 F2 where
+/// its edge 5's fan passed back through itself, a meeting of the fan with itself that no given
+/// meeting of two surfaces lays; since #942 T1d-cube that fan is cut into two runs, two candidates
+/// whose crossing is given, and the trim gets past it, refused instead where two other fans'
+/// second crossing beside their shared rail is traced short of it.
 #[test]
 #[cfg_attr(not(feature = "slow"),ignore = "slow tier, 40 s: the bench's tumbling cube's candidates made, then its trim twice")]
 fn the_bench_tumbling_cubes_refused_trim_replays_from_its_dump_alike() {
     let why = replayed_alike(&cube_trimming(75.),"cube-75-dump");
-    // (a piece of one edge's fan read apart, and the fan at later instants passing back through it
-    // between the two points: the meeting missing is the fan's with itself, #942 F2)
-    assert!(why.contains("a meeting the trim was not given parts them") && why.contains("passing back through itself"),"{why}");
+    // (no fan passing back through itself any more: its runs' crossing given, #942 T1d-cube)
+    assert!(why.contains("a meeting the trim was not given parts them") && !why.contains("passing back through itself"),"{why}");
 }
 
 /// **A meeting left out of what the trim is given is completed from its witness** (#942 F2's gate):
