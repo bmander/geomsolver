@@ -988,9 +988,10 @@ rounds its own faces or another round's. **[0.210]** A face a round made is the 
 has: a round's `round` and a chamfer's `flat` (`plate.rim.taken.round`), named so to a block as
 to a report, whatever set the word's body says it by — so a round over a round's face
 (`box.near round(r: 1mm) box.vert`, the arc where the top meets the round of an upright edge) is
-made as one over a chamfer's is. **[0.224]** A fill (at a concave edge) cut off by a face it ends
-on leaves its cap there, on that face's surface, a face of the body (`part.filled.far`), so a round
-over the filled body rounds the fill's rim on that face as it rounds the face's own edges; at a
+made as one over a chamfer's is. **[0.224]** A round's piece cut off by a face it ends on, the
+material going on beyond, leaves its cap there on that face's surface, a face of the body (a
+fill's end on a step's side, `part.filled.far`; an upright's round's foot on a plate), so a round
+over the rounded body rounds the edge the cap makes with the round as it rounds the face's own; at a
 vertex where edges of both turns meet, the edge alone in its turn rounded first and every edge
 then on a solid of what it leaves is the smooth surface every edge rounded means. And which faces meet (`meets`) and how a face lies (`parallel`,
 `perpendicular`) is read in the layer the round that asks stands in, the body that round reads.
@@ -2424,7 +2425,10 @@ is: so a region along an edge (a round's run) stops where the edge stops, cut of
 ends on. A run that closes on itself ends nowhere, and `p in S.ends` holds everywhere. **[0.209]**
 Where `S`'s edges are in several runs (a crease a slot cuts across), `p` is held to the ends of
 the run nearest it, the run a round beside it is along: the runs either side of a slot end on
-its two sides, and within every run's ends at once is within none.
+its two sides, and within every run's ends at once is within none. **[0.224]** A straight run that
+ends on no face — every other face at its end goes on from one of its two across a seam, tangent
+or a piece of the same surface — ends on the plane square to it there: a corner's ball rounds the
+edge no further than the edge runs.
 `outside` is **E040**: past where an edge ends is no region. `edge` and `seam` are element
 keywords (§19), so a set may not be called so.
 

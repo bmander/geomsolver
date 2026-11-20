@@ -203,7 +203,7 @@ fn mixed_vertex(sk: &Sketch,body: usize,ends: [[f64;3];2]) -> Option<String> {
     };
     Some(format!("at [{:.4}, {:.4}, {:.4}] edges of both turns meet where {listed} do ({}), and a round or a chamfer of \
         each, read off the body as its other terms leave it, takes or fills it before the others: their material touches \
-        there, which no manifold file describes. {write}",at[0]*mm,at[1]*mm,at[2]*mm,said.join("; ")))
+        along that line, and no manifold file describes it. {write}",at[0]*mm,at[1]*mm,at[2]*mm,said.join("; ")))
 }
 
 /// Whether solid `body` is a mirrored instance's, or reaches one among its operands (#578).

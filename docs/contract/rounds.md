@@ -159,26 +159,37 @@ rounded corner — and a foot's fill round a boss's upright's round the same. `C
 that order already say it. So **the general note is two statements**: the lone edges first (a
 feature's own edges: `round(r) part.step`, `round(r) part.pocket`, `round(r) part.boss`), then
 every edge on a solid of the body they leave (`whole := solid(part)`, `round(r) whole`) — the
-idiom `rim.sv` writes for a rim over rounded corners. Two things make the second statement round
-what the first left: **a fill's caps are faces of the body** (`lowering::face_names`): a fill cut
-off by a face it ends on leaves its piece's cap there, on that face's surface beside it — the
-step's fill its two ends on the block's sides, an upright's its end on the top — and a block over
-the faces lists them (`far`, `near` of a run's prism, `start`, `end` of a ring's stretch; a name
-the boundary has not is no face of it, `ListedFaces::read_above`), so the fill's rim on that face
-is paired and rounded as the face's own edges are; a cut leaves no cap on the body and lists none.
-And the face and the cap are pieces of one surface (#952): no edge between them, the section
-against both. Written as one `round(r) part`, every edge reads the sharp body and the fill and the
-cuts touch along a line from the vertex: the export says so **at the vertex**
-(`export::mixed_vertex`, `BodyFaces::mixed_vertex`) — where it stands, the faces there by the
-body's names with each edge's turn, the edge alone in its turn and the two statements to write —
-and not "rounds of separate statements" alone. A vertex where one edge is alone at one end and
-paired at the other's (two steps meeting at a corner: the upright between their walls convex over
-two concave floor edges, each of which is alone at the block's side) wants three statements, the
-upright first; a chamfer's flats are no tangent chain, so the second statement chamfers the first
-one's flat against its own faces again, and a chamfer of every edge at such a vertex is not yet
-said by the words. `tests/mixed_vertices.rs` is the gate (the step at either end and moved along
-the block, the pocket, the boss and `rounds/stock.sv`, each to its closed form to 1e-9 by Pappus
-and exported with no sliver; one statement refused at the vertex).
+idiom `rim.sv` writes for a rim over rounded corners. Two rules make the second statement round
+what the first left. **A round's caps are faces of the body** (`lowering::face_names`): a piece
+cut off by a face it ends on, with the body's material beyond, leaves its cap there on that face's
+surface — a fill's two ends on a step's sides, an upright's fill's end on a pocket's top, an
+upright's round's foot on the plate a boss stands on — and a block over the faces lists them
+(`far`, `near` of a run's prism, `start`, `end` of a ring's stretch; a name the boundary has not is
+no face of it, `ListedFaces::read_above`, or eaten), so the edge a cap makes with its round is
+paired and rounded as the face's own edges are; the face and the cap are pieces of one surface
+(#952), no edge between them, the section against both. **A straight edge ends square where it
+ends on no face** (`BodyFaces::end_faces`): where every other face at its end goes on from one of
+its faces across a seam (into a round tangent, or a piece of the same surface) or is one the run
+goes across, the run ends on the plane square to it there, as "where a run ends on a face all but
+along it" below says. A run's own common part ends there already; a corner's edges have nothing
+else, and the block's corner at a step's far end, its edge along the side ending where the floor
+goes on into the fill, carried a run on under the step's high end — a groove 1.5 deep the field
+read and the exact build had not, which the gate's probes found at one placing of the step in
+five. (An arc's square plane is a half-space through its axis, which would cut a stretch of more
+than half a turn short of its other end: an arc ending on no face is left to its meridian.)
+Written as one `round(r) part`, every edge reads the sharp body and the fill and the cuts touch
+along a line from the vertex: the export says so **at the vertex** (`export::mixed_vertex`,
+`BodyFaces::mixed_vertex`) — where it stands, the faces there by the body's names with each edge's
+turn, the edge alone in its turn and the two statements to write — and not "rounds of separate
+statements" alone. A vertex where one edge is alone at one end and paired at the other's (two
+steps meeting at a corner: the upright between their walls convex over two concave floor edges,
+each alone at the block's side) wants three statements, the upright first. A chamfer's flats are
+no tangent chain, so a second statement chamfers the first one's flat against its own faces
+again: a chamfer of every edge at such a vertex is not said by the words yet, and its refusal says
+so. `tests/mixed_vertices.rs` is the gate (the step at either end and moved along the block,
+holes beside it, the pocket, the boss and `rounds/stock.sv`, each to its closed form to 1e-9 by
+Pappus and exported with no sliver; the field holding the high end's material where the corner's
+groove ran; one statement of either word refused at the vertex).
 
 **Against the smooth surface** ([0.149], #422): `F.smooth` (`Member::Smooth`, `FaceRef::smooth`, read
 with `surface`) is the faces named and every face going on from them tangent across a seam
@@ -434,7 +445,10 @@ the field (`conditions::ends`, through `end_sides`) and the lowering (`piece::en
 — and only where every edge of the set is one the lowering carries a section along
 (`BodyFaces::carried`): a ball rolled along a traced run is cut by `fillet::end_at`'s own reading.
 What a run ends on is a face, or a plane square to an edge where its run ends on none
-(`faces::EndBy`).
+(`faces::EndBy`): where an edge a run-out goes along ends on none, and ([0.224], #962) a straight
+run's own end where it ends on no face (its faces going on across seams there, or every face there
+one it goes across) — a corner's edge read no further than it runs ("Where edges of both turns
+meet at a vertex" above).
 - **A face whose surface the run itself goes across is no face it ends on** (`ends_at`,
   `goes_across`: some point of the run's edges past the surface on the side that would keep it,
   by more than the boundary's tolerance — exactly for a plane against a line or an arc, at 64
