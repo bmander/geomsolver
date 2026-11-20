@@ -59,7 +59,7 @@ mod assemble;
 mod chain;
 mod piece;
 mod recognise;
-pub use assemble::{assemble, Assembly};
+pub use assemble::{assemble, Assembly, BackOver, EndOf};
 
 type V = [f64; 3];
 
@@ -458,11 +458,62 @@ pub fn lowered(sk: &Sketch, solid: usize) -> Option<Result<Rc<Vec<Piece>>, Strin
     let key = super::MemoKey::own(sk, solid, vec![body.clone()]);
     Some(sk.caches.lowering.get_or(solid, key, || {
         let spill = seams_beside(&body, &faces, section);
-        piece::build(&body, &faces, section, &spill)
+        piece::build(&body, &faces, section, &spill, sk.units.name())
     }.and_then(|pieces| {
         gate(sk, solid, &pieces, &body, || beside_edges(&body, &faces, section))?;
         Ok(Rc::new(pieces))
     })))
+}
+
+/// **A face a run ends on reaching back over a seam, said by the faces it is of** (#962): the
+/// round of region `solid`'s set going on tangent across a seam between two faces of its body,
+/// the face one of its runs ends on standing over the section there by `b.depth` — in the names
+/// the document gives them and its unit, the seam's point the witness — and what the author can
+/// do (`back_over_in`).  `None` where the region's body is not to be read.
+pub fn back_over_said(sk: &Sketch, solid: usize, b: &BackOver) -> Option<String> {
+    let SolidDef::Region { terms, .. } = &sk.solids.get(solid)?.def else { return None };
+    let (faces, _) = recognise::recognised(sk, terms)?;
+    let body = super::faces::cached(sk, faces.faces[0].solid as usize).ok()?;
+    Some(back_over_in(sk, &body, b))
+}
+
+/// `back_over_said` off `body`: the seam's two faces, the faces at its point whose outward
+/// normals there are one to the body's reading of tangent (`faces::TANGENT`); the face reaching
+/// back, the one on `b.end`'s surface nearest the point; and the run's own face of the two, the
+/// one that face meets in an edge.
+fn back_over_in(sk: &Sketch, body: &super::faces::BodyFaces, b: &BackOver) -> String {
+    let at = b.at;
+    let (lo, hi) = body.bounds();
+    let tol = 1e-7 * (1.0 + distance(lo, hi));
+    let away = |fi: usize| body.nearest_edge(body.edges_of(fi), at).map_or(f64::INFINITY, |(_, _, d)| d);
+    let name = |fi: usize| format!("`{}`", crate::vocab::public_path(&body.paths()[fi].text()));
+    let n = body.paths().len();
+    let at_seam: Vec<usize> = (0..n).filter(|&fi| away(fi) <= tol).collect();
+    let tangent = |f: usize, g: usize| norm(sub(body.normal(f, at), body.normal(g, at))) < super::faces::TANGENT;
+    let seam = at_seam.iter().flat_map(|&f| at_seam.iter().map(move |&g| (f, g)))
+        .find(|&(f, g)| f < g && tangent(f, g));
+    let on = |fi: usize| match b.end {
+        EndOf::Half(m, d) => body.plane(fi).is_some_and(|(nf, o)| norm(cross(nf, m)) <= 1e-9 && (dot(m, o) - d).abs() <= tol),
+        EndOf::Solid(surf) => Surf::of(body, fi).is_some_and(|s| s.same(&surf)),
+    };
+    let end = (0..n).filter(|&fi| on(fi)).min_by(|&f, &g| away(f).total_cmp(&away(g)));
+    let length = |x: f64| crate::units::Dim::LENGTH.number_text(x, sk.units);
+    let figures = |x: f64| crate::json::fmt_g(x, 6);
+    let witness = format!("[{}, {}, {}]{}", figures(at[0]), figures(at[1]), figures(at[2]), sk.units.name());
+    let depth = length(crate::json::fmt_g(b.depth, 2).parse().unwrap_or(b.depth));
+    match (seam, end) {
+        (Some((f, g)), Some(e)) => {
+            let (own, next) = if body.edges_between(&[e], &[g]).is_empty() { (f, g) } else { (g, f) };
+            format!("its round goes on tangent from {} into {} across their seam at {witness}, and {}, which \
+                its run along {} ends on, reaches {depth} back over the section there: the round along {} ends \
+                nowhere there and keeps that section whole, so the two meet in no one section, and no exact \
+                construction is made of that yet. Move {} clear of the seam, or over it",
+                name(own), name(next), name(e), name(own), name(next), name(e))
+        }
+        _ => format!("where its round goes on tangent across a seam at {witness}, a face one of its runs ends \
+            on reaches {depth} back over the section the two share: no exact construction is made of that yet; \
+            move that face clear of the seam, or over it"),
+    }
 }
 
 /// **The face a recognised region leaves on its body, by the name its construction gives it**
@@ -766,7 +817,11 @@ fn gated(sk: &Sketch, pieces: &[Piece], body: &std::sync::Arc<super::faces::Body
     let (_, by, origin) = body.brep();
     let (writer, mm) =
         if rolled { (Writer::about(by, scale(origin, by)), Some(by)) } else { (Writer::world(1.0), None) };
-    let mut node = assemble(pieces).node(&writer)?;
+    let assembly = assemble(pieces);
+    if let Some(b) = &assembly.across {
+        return Err(back_over_in(sk, body, b));
+    }
+    let mut node = assembly.node(&writer)?;
     if rolled {
         node.set("stratum", object([("kind", "body".into()), ("stock", 0.into()), ("on", Json::Arr(vec![])),
             ("cut", Json::Arr(vec![])), ("bound", Json::Arr(vec![]))]));

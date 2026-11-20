@@ -451,17 +451,43 @@ there, so nothing cuts it: the shape is the ring's whole section beside the run'
 where the boss crosses the ball's arc there, the run's round and the ring's, tangent along that
 arc, meet it in one point — not one face to glue, and neither unioned nor cut from the two glued
 by this kernel yet (its search for where the boss's meeting with the run's round meets the ring's
-torus, at a point where it only touches it, does not end): "where its round goes on tangent
-across a seam at […], a face one of its runs ends on reaches back across the section the two
-share" (`Assembly::across`), said by the round's body and label. `tests/rim_seams.rs` is the gate
-(the step at every line length down to none and every radius to past its concave arc's, plates
-of four, six and twelve alternating arcs, each stated to the micron, mirrored and turned, round and
-chamfer, either cap; seams `1e-8` to `5e-7` off tangent; `step.sv` as drawn, with the stack's mitre
-at the frame's corners; the boss slid along the rim through the seam, built either side of the
-section and refused over it; each volume the closed form's to 1e-9, a boss's chord by quadrature,
-and the plates grown 1 by Steiner's). Seams turned past `TANGENT` and short of a few thousandths
-of a radian are corners whose pieces are refused yet (a ring and a run unioned there, a turn of
-`1e-6` to `1e-4`: "a cylinder's pieces do not close").
+torus, at a point where it only touches it, does not end). It is said by the faces it is of
+(`lowering::back_over_said`, off the body: the seam's two faces those whose normals at its point
+are one to `TANGENT`, the face reaching back the one on the end's surface nearest it, the run's
+own face the one of the two that face meets in an edge), how far, the seam's point as the witness,
+and what is true to do: "`part`'s round or chamfer `taken`: its round goes on tangent from
+`outer.flange.s` into `outer.flange.al` across their seam at [-384.62, -88.74, -131.5]mm, and
+`outer.boss.disc`, which its run along `outer.flange.s` ends on, reaches 0.035mm back over the
+section there: … Move `outer.boss.disc` clear of the seam, or over it" — #962's 127; its boss at
+−335 or −343 is built. **A corner too nearly tangent to round** is refused by name before any
+piece is built (`piece::nearly_tangent`): where a round's edge ends on a curved face (a cylinder,
+a cone or a sphere, of radius `R` at the corner) meeting one of the edge's own faces at a turn `θ`
+past `TANGENT` — a corner, no seam — the ball's surface, tangent to the edge's face, meets the
+curved face at the corner and again `2R sin θ` on round it, where the face's plane comes back
+across that surface. The kernel reads a point within its tolerance of two surfaces meeting at `θ`
+as on their meeting as far as `ON_CURVE tol / sin θ` off it (`tolerant::on_meeting`), so it tells
+the two meetings apart only where `sin² θ > ON_CURVE tol / R`, `tol` a billionth of the body's
+diagonal: short of that its Booleans read one meeting for two ("a cylinder's pieces do not close",
+a step's side turned `1e-5` off its lobe of 12, a teardrop whose tangent points are stated to three
+places). Said by the two faces, the turn, the bound, the witness, and the remedy: state the
+tangency (`a tangent b`, a chain's `-> tangent` joint) rather than coordinates rounded off it, or
+make the corner wider than the bound — "`k3` and `k2` meet at a turn of 1e-05 rad at [0,
+0.00012, 10]mm: not tangent, so their edge is a corner and no seam a round goes on across, and too
+nearly tangent a corner for this kernel to round at 2mm against `k2`'s radius of 12mm …". The
+bound is the kernel's: on the step, `2.9e-4` rad; at `3e-4` and `1e-3` the corner is built at
+rounds of 2 and 5. A chamfer's flat crosses the edge's face, and is built at any turn the
+sweep reached; a reflex corner of a line into a concave arc (the step's arc of 8) is built too.
+Still refused otherwise: the same reflex corner at a round of 0.5 between `3e-4` and `1e-3` ("a
+run cut off at a curved end: a shell of the arrangement …"), and a convex corner a few millionths
+to a few hundredths of a radian off tangent by #962's item 3's refusals ("a stretch of a circle
+its end does not cut off", "a run its curved end does not cut off"). `tests/rim_seams.rs` is the
+gate (the step at every line length down to none and every radius to past its concave arc's,
+plates of four, six and twelve alternating arcs, each stated to the micron, mirrored and turned,
+round and chamfer, either cap; seams `1e-8` to `5e-7` off tangent; `step.sv` as drawn, with the
+stack's mitre at the frame's corners; the boss slid along the rim through the seam, built either
+side of the section and refused over it, by its faces; the step's side turned `2e-6` to `2e-4` off
+its lobe refused by its faces, and `5e-7`, `3e-4` and `1e-3` built; each volume the closed form's
+to 1e-9, a boss's chord by quadrature, and the plates grown 1 by Steiner's).
 
 **A ball as wide as its cylinder** (brep-bench's fillet/cylinder-rim-to-dome): an offset by a
 radius that takes a surface's radius to nothing is what the surface is drawn about, never nothing
