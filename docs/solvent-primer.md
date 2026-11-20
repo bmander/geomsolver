@@ -2463,6 +2463,14 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
   its copy's index: `joint.pad union part` in the block's body is `part.joint[0].pad`, …;
   `part.joint` names every copy's. `--where part` lists the names exactly as a round takes them,
   and a path naming no face of its solid is **W116**, with the steps its faces are named by.
+- **A round that selects no edge says so** (0.223): a round or a chamfer takes the edges where its
+  faces meet, convex and concave alike, so one whose faces meet nowhere (`part.near round(r: 1mm)
+  part.far`), only along a tangent seam (a line running on into an arc), only at a corner, whose
+  faces the body took in (a block unioned inside it), or that names one face (`round(r: 1mm)
+  part.near`) makes nothing — **W119** at the statement, saying which and why. A face with an edge
+  of no length (two coincident points joined by a line) is said once **at the face**, naming the
+  edge and its points; the prism of it and every round over that say only that they are not built
+  (N080).
 - **Pick edges by the faces they lie between** (0.204): a word takes every edge where its faces
   meet, so a block over the faces chooses. Two faces both along a direction meet in lines along
   it, so the edges in plan of a part drawn in plan are

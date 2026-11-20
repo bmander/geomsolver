@@ -261,6 +261,7 @@ fn expand(
     }
     cx.map.private_names = expansion.private_names.clone();
     cx.map.apart = std::mem::take(&mut expansion.apart);
+    cx.map.unmade = std::mem::take(&mut expansion.unmade);
     cx.map.along = std::mem::take(&mut expansion.along);
     cx.map.unread = std::mem::take(&mut expansion.unread);
     // an instance drawn has its path; one cut short (a recursion refused) has none and is not one

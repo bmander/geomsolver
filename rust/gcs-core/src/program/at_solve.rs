@@ -65,6 +65,88 @@ pub(super) fn read_again(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
     diags
 }
 
+/// **A round or a chamfer that selects no edge** (#962, W119): each statement whose blocks over a
+/// solid's faces paired them by `meets` (`flatten::Unmade`), read where the drawing stands in `sk`
+/// edge by edge (`ListedFaces::meeting`, in the layer each pair was asked in): where no pair it
+/// asked meets in an edge — the faces apart or one of them taken in by the body's other terms, at
+/// a corner alone, or along seams where one goes on tangent into the other, which are no edges —
+/// or its blocks ran over one face alone, it makes nothing, and says so once at the statement,
+/// naming what it looked at and why.  Never where a pair meets in an edge, where the boundary
+/// cannot say of a face, nor at a statement `said` already (`read_again`'s E080).
+pub(super) fn unmade(sk: &Sketch, map: &SourceMap, said: &[Diag]) -> Vec<Diag> {
+    use crate::solid::faces::{Meeting, Layered};
+    let mut out = Vec::new();
+    for u in &map.unmade {
+        if said.iter().any(|d| d.span == u.at) {
+            continue;
+        }
+        let Some(e) = map.ent_named(&u.solid).filter(|e| e.kind == EntKind::Solid) else { continue };
+        let (layers, paths) = (Layers::of(sk, e.i()), face_paths(sk, e.i()));
+        let solid = public_path(&u.solid);
+        let path = |rest: &[String]| public_path(&std::iter::once(u.solid.as_str())
+            .chain(rest.iter().map(String::as_str)).collect::<Vec<_>>().join("."));
+        // a round's `A` and its `B`; `round(r) X` is `X` with itself
+        let (a, b) = match &u.blocks[..] {
+            [a] => (a, a),
+            [a, b, ..] => (a, b),
+            [] => continue,
+        };
+        let between = if a.0 == b.0 {
+            format!("no two of `{}`'s faces meet in an edge of `{solid}`", path(&a.0))
+        } else {
+            format!("`{}` and `{}` meet in no edge of `{solid}`", path(&a.0), path(&b.0))
+        };
+        // the pairs whose edge the word takes: two faces, one of `A` and one of `B` — what else a
+        // `when` asked (a corner's third face against a face of its own side, a face against
+        // itself) selects no edge of its own
+        let (ina, inb) = (|f: &String| a.1.contains(f), |f: &String| b.1.contains(f));
+        let pairs: Vec<&([String; 2], usize)> = u.pairs.iter().filter(|([x, y], _)| x != y
+            && (ina(x) && inb(y) || inb(x) && ina(y))).collect();
+        let one: BTreeSet<&String> = a.1.iter().chain(&b.1).collect();
+        let why = if pairs.is_empty() {
+            if one.len() != 1 {
+                continue;
+            }
+            format!("`{}` is one face, and an edge is where two meet", path(&a.0))
+        } else {
+            let mut worst = Meeting::Apart;
+            let mut eaten = BTreeSet::new();
+            let mut unread = false;
+            for (faces, layer) in pairs {
+                let Some(read) = Layered::listed_in(sk, &layers, &paths, *layer) else {
+                    unread = true;
+                    break;
+                };
+                for f in faces {
+                    if read.eaten(f) == Some(true) {
+                        eaten.insert(f.clone());
+                    }
+                }
+                match read.meeting(&faces[0], &faces[1]) {
+                    Some(m) => worst = worst.max(m),
+                    None => unread = true,
+                }
+            }
+            if unread || worst == Meeting::Edge {
+                continue;
+            }
+            // a block every face of which the body took in says so before anything else
+            let gone = [a, b].into_iter().find(|blk| blk.1.iter().all(|f| eaten.contains(f)));
+            match (gone, worst) {
+                (Some(blk), _) => format!("none of `{}`'s faces is left on `{solid}`'s \
+                    boundary, the body's other terms having taken them in", path(&blk.0)),
+                (None, Meeting::Apart) => "they meet nowhere".to_string(),
+                (None, Meeting::Corner) => "they meet only at a corner".to_string(),
+                (None, _) => "they meet only where one goes on tangent into the other, a seam \
+                    and no edge".to_string(),
+            }
+        };
+        out.push(Diag::new(Code::W119, u.at, None,
+            format!("{between}: {why}, so nothing is made over them")));
+    }
+    out
+}
+
 /// Each solid's faces where the drawing is solved, by its absolute name, where its boundary says:
 /// which meet and how each lies, in each of its layers — a read is asked again in the layer it
 /// was read in (#879).

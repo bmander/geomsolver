@@ -4,6 +4,18 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.223] A round that selects no edge says so, and a face's fault is said at the face** (#962).
+A round or a chamfer (either word, either form) over faces that are all the body's but meet in no
+edge of it — nowhere, only at a corner, only along a seam where one runs on tangent into the
+other, all taken in by the body's other terms, or one face alone — is **W119** at its statement,
+naming its operands and why; through 0.222 it made nothing and said nothing. A face with an edge
+of no length where the drawing stands (a line whose two points coincide, an arc or a circle of no
+round), or whose loops bound no simple region, is said once at the face (E080), naming the edge
+and its points, and every solid swept from it and every round over those is a note that it is not
+built (N080); through 0.222 it was said at the prism in the kernel's words ("loop 0 has an edge of
+no length") and again at a round over it by each of its pieces. Nothing a document may write
+changed.
+
 **[0.222] An integral, and the measure words moved to `std.measures`** (#953). `integral(EXPR
 over p in S)` integrates an expression over the point it binds, `S` a solid, a face of one, a beam
 or a line one is drawn on, or an instance's bodies, by `S`'s own measure; its body reads the

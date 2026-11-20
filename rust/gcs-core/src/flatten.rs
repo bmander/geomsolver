@@ -442,6 +442,9 @@ pub struct Expansion {
     /// drawing is seeded, which made the copy nothing — for the elaborator to read again where
     /// it is solved (`program::at_solve`).
     pub apart: Vec<Apart>,
+    /// Every statement whose blocks over a solid's faces may have selected no edge (#962) — for
+    /// the elaborator to read where it is solved (`program::at_solve::unmade`).
+    pub unmade: Vec<Unmade>,
     /// Every `when` that read faces along a direction or square to it (#763), where the drawing
     /// is seeded — for the elaborator to decide again where it is solved (`program::at_solve`).
     pub along: Vec<WhenRead>,
@@ -455,6 +458,38 @@ pub struct Expansion {
     pub unread: BTreeSet<Span>,
     /// Whether the walk stopped at `MAX_FLAT`, its statements cut short: no drawing.
     pub overflowed: bool,
+}
+
+/// **A statement whose blocks over a solid's faces may have selected no edge** (#962, W119): a
+/// round's or a chamfer's, whose `when`s read faces and none of whose pairs read where the drawing
+/// stands met in a way that could not be told — to be read edge by edge where it is solved
+/// (`program::at_solve::unmade`), and said there if no two of its faces meet in an edge.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Unmade {
+    /// The document's statement that made the blocks.
+    pub at: Span,
+    /// The solid, by its absolute name.
+    pub solid: String,
+    /// Each block's path past the solid and the faces it ran over (by name from the solid), in
+    /// the order met: a round's `A` then its `B`, once each.
+    pub blocks: Vec<(Vec<String>, Vec<String>)>,
+    /// Each pair of faces a `when` asked `meets` of (each by its name from the solid), with the
+    /// layer it read them in — none where no `when` paired two (one face, paired with itself).
+    pub pairs: Vec<([String; 2], usize)>,
+}
+
+/// What the `when`s under one statement read of faces and made (`Unmade`): the blocks over a
+/// solid's faces met under it, the pairs asked `meets` of, whether any read a face, whether any
+/// was made or refused, and whether any read faces whose meeting no boundary says (faces of two
+/// solids, or of one not built where the drawing stands).
+#[derive(Default)]
+struct Selecting {
+    blocks: Vec<(String, Vec<String>, Vec<String>)>,
+    pairs: BTreeSet<(String, [String; 2], usize)>,
+    asked: bool,
+    held: bool,
+    failed: bool,
+    fixed: bool,
 }
 
 /// **Two faces of a solid a `when … meets …` left apart** (#625): the solid by its absolute
@@ -973,6 +1008,9 @@ struct FaceState {
     repeats: BTreeSet<String>,
     /// See `Expansion::apart`.
     apart: BTreeSet<Apart>,
+    /// What the `when`s under each statement read of faces and made (#962), by the statement —
+    /// see `Expansion::unmade`.
+    selecting: BTreeMap<Span, Selecting>,
     /// See `Expansion::along`.
     along: Vec<WhenRead>,
     /// The directions drawn, where the elaborator has said (`Directions`).
@@ -1154,6 +1192,39 @@ impl<'a> Walk<'a> {
         self.diagnostic(Diag::new(code, span, None, message.into()));
     }
 
+    /// **The statements whose blocks over a solid's faces may have selected no edge** (#962):
+    /// each whose `when`s read faces, none of them refused nor reading faces whose meeting no
+    /// boundary says, of one solid — where they paired faces, every pair asked (to be read edge by
+    /// edge where the drawing is solved); where none did and none was made, its blocks ran over
+    /// one face alone.  None said already to name no face (W116).
+    fn unmade(&self) -> Vec<Unmade> {
+        self.faces.selecting.iter().filter_map(|(&at, s)| {
+            if !s.asked || s.failed || s.fixed || s.blocks.is_empty()
+                || self.diagnostics.iter().any(|d| d.code == Code::W116 && d.span == at) {
+                return None;
+            }
+            let solid = &s.blocks[0].0;
+            if s.blocks.iter().any(|b| &b.0 != solid) || s.pairs.iter().any(|p| &p.0 != solid) {
+                return None;
+            }
+            // one face: no `when` paired two, and no copy was made
+            let one = s.pairs.is_empty() && !s.held && {
+                let faces: BTreeSet<&String> = s.blocks.iter().flat_map(|b| &b.2).collect();
+                faces.len() == 1
+            };
+            if s.pairs.is_empty() && !one {
+                return None;
+            }
+            Some(Unmade {
+                at,
+                solid: solid.clone(),
+                blocks: s.blocks.iter().map(|(_, rest, listed)| (rest.clone(), listed.clone()))
+                    .collect(),
+                pairs: s.pairs.iter().map(|(_, faces, layer)| (faces.clone(), *layer)).collect(),
+            })
+        }).collect()
+    }
+
     /// An error said once at its place, however many times the walk passes it — a block in a
     /// component instantiated thirty times is one mistake.
     fn once(&mut self, code: Code, span: Span, message: impl Into<String>) {
@@ -1249,6 +1320,7 @@ impl<'a> Walk<'a> {
             flat.append(&mut datums);
             aliases = resolved;
         }
+        let unmade = self.unmade();
         Expansion {
             private_names: self.private_names,
             flat,
@@ -1282,6 +1354,7 @@ impl<'a> Walk<'a> {
             held: self.held.names,
             reads: self.held.reads,
             apart: self.faces.apart.into_iter().collect(),
+            unmade,
             along: self.faces.along,
             directions_wanted: self.faces.wanted,
             unread: self.faces.unread,

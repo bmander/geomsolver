@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.222 — November 2026**
+**Specification, Draft 0.223 — November 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -2359,7 +2359,10 @@ index on the declaration the copy holds: the `pad` of an instance `joint` a `rep
 outside the body's scope (a solid an instance was given) is a step of its own name's last segment,
 and a word's solids keep theirs (`rim.taken`, §9.9). A face path a block over faces runs over that
 names no face of its solid makes nothing, and is said (**W116**), with the steps the solid's faces
-are named by where the path leaves them.
+are named by where the path leaves them. **[0.223]** One whose faces are the solid's but meet in no
+edge of it where the drawing is solved — nowhere, at a corner alone, along seams alone where one
+goes on tangent into the other, all taken in by the body's other terms, or one face alone — makes
+nothing too, and is said (**W119**), with why.
 
 **Members** **[0.70]**. `S.ends` (where the edge a set is ends, below), `boundary(F.side)` (a face's or a
 set's whole surface), **[0.149]** `F.smooth` (a face's surface carried on across every seam where a
@@ -3735,6 +3738,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | W114 | a free curve whose length nothing holds and no length makes its energy stationary in (§9.10) **[0.57]** |
 | W116 | a face path a block over a solid's faces runs over (a round's, a chamfer's, §12.8) that names no face of the solid: the block makes nothing **[0.203]** |
 | W117 | a solid a claim over a frame's roll names (§9.8) placed at an instant of another frame's motion: the sweep turns only what is placed under the frame it names, so the solid stands still **[0.214]** |
+| W119 | a round or a chamfer (§12.8) whose faces are the solid's but meet in no edge of it where the drawing is solved — nowhere, at a corner alone, along tangent seams alone, all taken in by the body's other terms, or one face alone: it makes nothing **[0.223]** |
 
 ### 16.3 DOF ledger
 

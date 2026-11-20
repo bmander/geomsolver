@@ -39,6 +39,26 @@ round a corner only of three that each meet the other two ([language.md](languag
 whose faces are many — every operand's listed, eaten or not — makes copies for its edges and
 corners, not for the cube of its faces: #625's web cut by four turned spokes lists 28 faces and
 rounds 16 edges and no corner (`tests/meets.rs`).
+**A round or a chamfer that selects no edge says so** (#962, [0.223]): the words take an edge
+where `b meets a` and nowhere else, and take it whichever way it turns (`Run` and `Fill`, `Flat`
+and `FlatFill`, each pair both), so the set a statement over faces that are all the body's (no
+W116) selects is empty exactly when no two of its faces — one of `A` and one of `B`, or two of
+`X`'s — meet in an edge of the body: they meet nowhere, one side's faces were all taken in by the
+body's other terms (a Boolean ate them: `Meets` gives such a face no point), they meet only at a
+corner, or only along seams where one goes on tangent into the other (no edge, `BodyFaces::seam`:
+a ball rolled there or a flat cut takes nothing; `meets` reads them as meeting, so the copy is
+made and is empty), or `X` is one face, paired with nothing. The walk records, for each document
+statement whose blocks over one solid's faces had a `when` read a face, the blocks and every pair
+asked `meets` (`flatten::Unmade`, `Walk::unmade`; none where a `when` was refused, read faces of
+two solids or of an unread boundary, or the path was W116), and after the solve each pair of a
+face of `A` and another of `B` — the pairs whose edge the word takes; a corner's third face read
+against its own side, or a face against itself, selects none — is read edge by edge in the layer
+it was asked in (`Layered::listed_in`, `ListedFaces::meeting`); where none meets in an edge,
+**W119** at the statement, once, naming the operands and why
+(`program::at_solve::unmade`) — never where one pair does, where the boundary cannot say of a
+face, nor at a statement `read_again` said E080 at. `tests/face_names.rs`
+(`a_round_that_selects_no_edge_says_why`, `a_round_that_selects_an_edge_says_nothing_of_it`) is
+the gate.
 **Which edges are the faces'** (#763, [0.204]): a word takes every edge where its faces meet, and
 a block over the faces picks among them — by name, or by how each face lies (`when f parallel l`,
 [language.md](language.md)) — so the words take no option saying which edges: `rounds/hub.sv`

@@ -20,7 +20,7 @@ pub(crate) use body::along_run;
 pub use body::{reading, BodyFaces, Bound, EndBy, Level, Read, Reading};
 pub use layers::layer;
 pub use lays::Lays;
-pub use meets::Meets;
+pub use meets::{Meeting, Meets};
 pub use path::{face_paths, face_source, FacePath, FaceSource};
 pub use path::same_step;
 pub(crate) use path::face_primitive;
@@ -260,6 +260,15 @@ impl Layered {
             ListedFaces::read_above(sk, b, listed, &below).map(|l| (Meets::of(&l), Lays::of(&l)))
         }).collect::<Option<Vec<_>>>()?;
         Some(Layered { layers })
+    }
+
+    /// The faces `listed` of a body read in layer `layer` of its `layers` (the top's, past it), as
+    /// `read` reads each: how two of them meet, edge by edge (`ListedFaces::meeting`, #962).
+    pub fn listed_in(sk: &Sketch, layers: &Layers, listed: &[FacePath], layer: usize)
+        -> Option<ListedFaces> {
+        let k = layer.min(layers.bodies.len() - 1);
+        let below = |of: &str| layers.uses.get(of).is_some_and(|&l| l < k);
+        ListedFaces::read_above(sk, layers.bodies[k], listed, &below)
     }
 
     /// Layer `layer`'s reading (the top's, past it).
