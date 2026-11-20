@@ -352,7 +352,11 @@ placement carries inside the blank; CLI test readers zero the offset.
   std.sets.HalfSpace(keel, std.z, d: T)` — is the body over those solids, kept in common with a
   region of the other terms pushed as a solid **of the same name** (as `Sketch::as_body` pushes a
   sweep's own stock), so its faces are named from it with no step of their own: the hull's
-  `immersed.hull.side`, the waterplane's `immersed.water`.  Through 0.220 such a region was read
+  `immersed.hull.side`, the waterplane's `immersed.water`.  That region is pushed past the body,
+  so every solid declared after it stands one further on than the names were counted to: as each
+  solid is built its name takes it and the later ones follow (`solids::build_solids`), so a
+  second body kept within the water is read as itself, not as the first's region
+  (`tests/hydrostatics.rs`, `two_bodies_kept_within_the_water_are_two`).  Through 0.220 such a region was read
   by the field alone and no exact construction made of it, so nothing could measure it.  A region
   of half-spaces alone kept with a body (`defined::kept_half`) has no end of its own: it is read
   with none (`region::general`, never folded about an axis, where it would be refused for having

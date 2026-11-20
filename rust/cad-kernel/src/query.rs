@@ -2532,7 +2532,17 @@ impl<'a> Located<'a> {
     }
 
     /// How far edge `e`'s box is from `p`: no point of the edge is nearer.
-    pub fn edge_gap(&self,e: u32,p: V) -> f64 { gap(self.edge_space[e as usize],p) }
+    pub fn edge_gap(&self,e: u32,p: V) -> f64 {
+        let g = gap(self.edge_space[e as usize],p);
+        // a long spline's spans boxed each (its stretch lies within its whole curve's), less the
+        // edge's tolerance and the hair its box is grown by
+        let edge = &self.b.edges[e as usize];
+        match &edge.curve {
+            EdgeCurve::Curve(Curve::BSpline(c)) => crate::nurbs::BSpline::gap_indexed(c,p)
+                .map_or(g,|s| g.max(s-edge.tol-1e-9*self.size.max(1.))),
+            _ => g,
+        }
+    }
 
     /// How far face `fi`'s box is from `p`: no point of the face or its edges is nearer.
     pub fn face_gap(&self,fi: usize,p: V) -> f64 { gap(self.space[fi],p) }

@@ -243,7 +243,7 @@ impl Mesh {
     /// **A solid that is no prism, meshed by refining its exact boundary** (#510 S3, P6's
     /// `delaunay::refine::volume`): the domain the boundary's signed distance
     /// (`BodyFaces::signed_distance`), the boundary's sharp edges — each where two faces meet at
-    /// a corner — protected as feature curves, the cells held to a radius–edge ratio of 2, a
+    /// a corner turning by more than the facets' distance allows — protected as feature curves, the cells held to a radius–edge ratio of 2, a
     /// least dihedral angle of 12° and a size of `FILLED` of the body's extent or `BREADTH` of
     /// its breadth (three times its volume over its area), whichever is less, `coarser` times
     /// it; each cell a TET10 whose boundary nodes lie on the surface and the curves.  Each facet
@@ -264,13 +264,17 @@ impl Mesh {
         let area: f64 = b.faces.iter().map(|f| crate::brep::props::area(b, f)).sum();
         let breadth = 3.0 * crate::brep::props::volume(b) / area / mm;
         let size = coarser * (FILLED * extent).min(BREADTH * breadth);
-        let edges = body.brep().0.edges.len() as u32;
-        let curves: Vec<Vec<V>> = (0..edges).filter(|&e| body.convex(e).is_some()).map(|e| {
-            (0..=CURVE).map(|k| body.along(e, k as f64 / CURVE as f64)).collect()
-        }).collect();
         let criteria = Criteria { facet_size: size, facet_distance: size / 20.0, facet_angle: 25.0,
                                   edge_size: size, bisection: 1e-9 * extent,
                                   max_points: 200_000, normal_angle: 0.0 };
+        // a crease turning by θ, meshed through, leaves facets of size h about hθ/4 from it: one
+        // within the facet distance is no feature (a ruled panel's facets, joined at a ruling)
+        let crease = 4.0 * criteria.facet_distance / size;
+        let edges = body.brep().0.edges.len() as u32;
+        let curves: Vec<Vec<V>> = (0..edges).filter(|&e| {
+            let x = body.along(e, 0.5);
+            body.angle(&[e], x).is_some_and(|a| (a - std::f64::consts::PI).abs() > crease)
+        }).map(|e| (0..=CURVE).map(|k| body.along(e, k as f64 / CURVE as f64)).collect()).collect();
         let cells = Cells { radius_edge: 2.0, size, dihedral: 12.0 };
         let domain = Boundary { body: &body, slack: body.distance_slack() };
         let v = volume(domain, centre, radius, &curves, &criteria, &cells)

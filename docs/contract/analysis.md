@@ -651,7 +651,9 @@ unless a rule names another.
   P6's `delaunay::refine::volume`). A solid that is no prism — turned, united, cut — is meshed over
   its domain the body's signed distance (`BodyFaces::signed_distance`, of the drawing's own B-rep
   with its rounds made), each sharp edge of its boundary (where two faces meet at a corner,
-  `BodyFaces::convex`) protected as a feature curve read in `CURVE` (64) pieces, its cells held
+  `BodyFaces::convex`, turning by more than `4δ/h` for facets of size `h` a distance `δ` from
+  the surface — a crease shallower is meshed through within `δ`, as a panel's sheets meet at a
+  ruling) protected as a feature curve read in `CURVE` (64) pieces, its cells held
   to a radius–edge ratio of 2, a least dihedral of 12° and a size of `FILLED` (1/16) of its
   extent or `BREADTH` of its breadth (`3V/A`, from the B-rep's exact properties), whichever is less:
   at the extent's size alone a bar 10mm thick and its reading twice as coarse, cells of 10mm, lost
@@ -1096,8 +1098,18 @@ unless a rule names another.
 - **Claimed, it is judged on the solved drawing** (`measured::read`, `report::measure_answers`):
   its integrals read as its row reads them, whole or gauged, and its sides worked out; beside its
   left the error estimated, the change from the reading twice as coarse (nothing where the two
-  agree to rounding); kept where its sides are equal, or on their side, within that error or a
-  billionth of its size (`measured::keeps`, `Answer::size`: its sides' and each integral's
+  agree to rounding). **A claim whose every integral is quadratic** in its point, over solids
+  built exactly or faces of them, **is read off their exact boundaries** instead (`measured::
+  exactly`): each integral its coefficients (`interior::quadratic`) against the ten moments of
+  the body's B-rep by volume or of the face's by area, about the body's box — each the flux of
+  a field whose divergence the monomial is (`brep::props::moments`), or the face's area weighed by
+  it (`face_moments`), read off the loops as a volume is, only those the body weighs — so nothing
+  is meshed and its error is none: a hull of panels judged at a waterline in a second where its
+  filling took minutes. A stated equation is read as its row reads it, meshed. Held to by the
+  log stood at its draft, its displacement, its centre of buoyancy's height and its waterplane's
+  second moment each within a ten-billionth of its closed form
+  (`a_claim_over_an_exact_body_is_read_off_its_boundary`). Kept where its sides are equal, or on
+  their side, within that error or a billionth of its size (`measured::keeps`, `Answer::size`: its sides' and each integral's
   `∫ |f|` weighed by its side's rate in it). **What the report says**, stated and claimed alike,
   in the order written and after the scenarios' answers, each equation its line, called by the
   word's use that stated it: `` mass(10kg) arm: 10 kg ± 0 kg == 10 kg: driven, held `` (a stated

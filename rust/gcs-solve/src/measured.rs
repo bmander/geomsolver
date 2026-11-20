@@ -374,6 +374,104 @@ pub fn integrals_at(sk: &Sketch, m: &Measured, coarser: f64, sized: bool, fills:
     }
 }
 
+/// **Equation `m`'s integrals read off its bodies' exact boundaries** (#953), where every one is
+/// quadratic in its point (`Integral::quadratic`) and over solids or faces of them: each through
+/// the ten moments of the body's B-rep by volume, or of the face's by area
+/// (`brep::props::moments`, `face_moments`), taken about the body's box — nothing meshed, nothing
+/// estimated.  Each beside its terms' size, what its rounding is measured against.  `None` where
+/// an integral is no polynomial of degree two in its point, is over a beam or a line one is drawn
+/// on, or a body has no exact boundary.
+fn exactly(sk: &Sketch, m: &Measured) -> Option<Result<(Vec<f64>, Vec<f64>), String>> {
+    use crate::model::Property;
+    use crate::solid::faces::BodyFaces;
+    let solid = |i: &Integral| match &i.over {
+        Domain::Of(Applied::Ent(e)) => e.kind == EntKind::Solid,
+        Domain::Of(Applied::Face(_)) => true,
+        Domain::Of(_) => false,
+        Domain::Bodies(b) => !b.is_empty(),
+    };
+    if !m.integrals.iter().all(|i| i.quadratic() && solid(i)) {
+        return None;
+    }
+    let (readings, starts) = readings(m);
+    let width: usize = readings.iter().map(|r| r.width()).sum();
+    if POINT_VARS + width > crate::tape::MAX_VARS {
+        return None;
+    }
+    let mut bodies = BTreeMap::new();
+    for b in m.solids() {
+        bodies.insert(b, BodyFaces::whole(sk, b).ok()?);
+    }
+    let read = || -> Result<(Vec<f64>, Vec<f64>), String> {
+        let mut r = Vec::new();
+        for q in readings.iter() {
+            r.extend(reading_at(sk, *q)?);
+        }
+        let (mut ints, mut sizes) = (Vec::new(), Vec::new());
+        for (i, starts) in m.integrals.iter().zip(&starts) {
+            let flat = integrand(i, starts, width)?;
+            let reads_density = i.integrand.deps().contains(&integrand_var(3));
+            let (mut v, mut size) = (0.0, 0.0);
+            let mut add = |body: &BodyFaces, rho: f64, face: Option<&crate::model::FaceRef>| {
+                let (b, mm, _) = body.brep();
+                let (lo, hi) = body.reach();
+                let c: [f64; 3] = std::array::from_fn(|k| 0.5 * (lo[k] + hi[k]));
+                let h = (0..3).map(|k| 0.5 * (hi[k] - lo[k])).fold(0.0, f64::max).max(1e-300);
+                let (cq, hq) = (body.q(c), h * mm);
+                let a = crate::interior::quadratic(&flat, POINT_VARS + width, rho, &r, c, h);
+                // only the moments the body weighs: a volume reads one
+                let want = a.map(|a| a != 0.0);
+                let m = match face {
+                    Some(f) => {
+                        let mut sum = [0.0; 10];
+                        for fi in body.faces(f) {
+                            let fm = crate::brep::props::face_moments(b, &b.faces[fi], cq, hq,
+                                                                      want);
+                            for k in 0..10 {
+                                sum[k] += fm[k];
+                            }
+                        }
+                        sum.map(|x| x / (mm * mm))
+                    }
+                    None => crate::brep::props::moments(b, cq, hq, want).map(|x| x / mm.powi(3)),
+                };
+                let (x, s) = a.iter().zip(&m)
+                    .fold((0.0, 0.0), |(v, s), (a, m)| (v + a * m, s + (a * m).abs()));
+                v += x;
+                size += s;
+            };
+            match i.over.face() {
+                Some(f) => {
+                    let solid = f.solid as usize;
+                    let body = &bodies[&solid];
+                    if body.faces(f).is_empty() {
+                        return Err(format!("`{}.{}` names no face of the body",
+                                           sk.solids[solid].name, f.path.join(".")));
+                    }
+                    if reads_density {
+                        return Err("a face weighs nothing: its integral reads no density".into());
+                    }
+                    add(body, 0.0, Some(f));
+                }
+                None => {
+                    for b in i.over.solids() {
+                        let rho = if reads_density {
+                            crate::prisms::property(sk, b, Property::Rho)?
+                        } else {
+                            0.0
+                        };
+                        add(&bodies[&b], rho, None);
+                    }
+                }
+            }
+            ints.push(v);
+            sizes.push(size);
+        }
+        Ok((ints, sizes))
+    };
+    Some(read())
+}
+
 /// **An equation read**: its two sides, the error estimated in its left (none where the coarser
 /// reading has no value), and the size its rounding is measured against.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -403,6 +501,17 @@ pub fn read(sk: &Sketch, m: &Measured) -> Result<Answer, String> {
 
 /// `read`, its bodies filled once among `fills`.
 pub fn read_in(sk: &Sketch, m: &Measured, fills: &mut Fills) -> Result<Answer, String> {
+    // a claim of quadratic integrals over bodies built exactly, read off their boundaries: what
+    // it says of the drawing exactly (a stated equation is read as its row reads it, meshed)
+    if m.claim {
+        if let Some(read) = exactly(sk, m) {
+            let (ints, sizes) = read?;
+            let (lhs, rhs) = sides_at(sk, m, &ints)?;
+            let size = lhs.v.abs() + rhs.v.abs() + sizes.iter().enumerate()
+                .map(|(j, s)| (lhs.d[j] - rhs.d[j]).abs() * s).sum::<f64>();
+            return Ok(Answer { lhs: lhs.v, rhs: rhs.v, error: Some(0.0), size });
+        }
+    }
     let (ints, sizes) = integrals_at(sk, m, 1.0, true, fills)?;
     let (lhs, rhs) = sides_at(sk, m, &ints)?;
     let size = lhs.v.abs() + rhs.v.abs()

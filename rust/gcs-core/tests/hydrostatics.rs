@@ -620,6 +620,54 @@ volume(30000 * 1cm^3) hull
         moved by the solve")), "{errs:?}");
 }
 
+/// **A claim over a body built exactly is read off its boundary** (#953): the log of
+/// `cylinder.sv` stood at its draft, 25mm, its displacement, its centre of buoyancy's height over
+/// its keel and its waterplane's second moment about the centreline each claimed within a
+/// ten-billionth of its closed form — `L R² (α − sin α cos α)`, `R − 4 R sin³α / (3 (2α − sin
+/// 2α))`, `L (2 R sin α)³ / 12` at α = 60° — and kept, each read through the ten moments of the
+/// exact B-rep (`brep::props::moments`, `face_moments`), no error beside it, nothing meshed.
+#[test]
+fn a_claim_over_an_exact_body_is_read_off_its_boundary() {
+    let (r, l, alpha) = (50.0f64, 200.0, std::f64::consts::FRAC_PI_3);
+    let volume = l * r * r * (alpha - alpha.sin() * alpha.cos());
+    let kb = r - 4.0 * r * alpha.sin().powi(3) / (3.0 * (2.0 * alpha - (2.0 * alpha).sin()));
+    let i = l * (2.0 * r * alpha.sin()).powi(3) / 12.0;
+    let within = |name: &str, v: f64, unit: &str, what: &str| format!(
+        "claim {what} >= {lo} * {unit}\nclaim {what} <= {hi} * {unit}\n",
+        lo = v * (1.0 - 1e-10), hi = v * (1.0 + 1e-10), what = what.replace("NAME", name));
+    let src = example("cylinder.sv")
+        .replace("param T: Length hint(20mm)", "T := 25mm")
+        .replace("volume(L * R^2 * (pi / 3 - sqrt(3) / 4)) immersed\n", "")
+        .replace("buoyancy := point hint((100, 0, -30))\nbuoyancy centroid immersed\n", "")
+        + "fore := point\nfix((0mm, 0mm, -25mm)) fore\naft := point\nfix((200mm, 0mm, -25mm)) aft\n\
+           centreline := line(fore, aft)\n"
+        + &within("", volume, "1mm^3", "integral(1 over p in immersed)")
+        + &within("", kb, "1mm", "integral(distance(keel, p, along: std.z) over p in immersed) \
+                                   / integral(1 over p in immersed)")
+        + &within("", i, "1mm^4", "integral(distance(p, centreline)^2 over p in immersed.water)");
+    let (said, _) = read(&src);
+    assert_eq!(said.len(), 6, "{said:#?}");
+    assert!(said.iter().all(|s| s.ends_with("kept") && s.contains(" ± 0 ")), "{said:#?}");
+}
+
+/// **Two bodies kept within the water are two** (#953): the barge kept within a half-space 30
+/// deep and within another 50 deep — the first's half-space's region made past it
+/// (`defined::trimmed`), every solid declared after it as far further on — each claim reads its
+/// own body and its own waterplane: `L B T` and `L B` at each draft, not the first's.
+#[test]
+fn two_bodies_kept_within_the_water_are_two() {
+    let src = barge("T := 30mm\n").replace("param T: Length hint(30mm)\n", "")
+        + "deeper := std.sets.HalfSpace(keel, std.z, d: 50mm)\n\
+           wetter := solid({ p | p in hull; p in deeper })\n\
+           claim volume(360000 * 1mm^3) immersed\n\
+           claim area(12000 * 1mm^2) immersed.water\n\
+           claim volume(600000 * 1mm^3) wetter\n\
+           claim area(12000 * 1mm^2) wetter.deeper\n";
+    let (said, _) = read(&src);
+    assert_eq!(said.len(), 4, "{said:#?}");
+    assert!(said.iter().all(|s| s.ends_with("kept")), "{said:#?}");
+}
+
 /// One of the hydrostatics examples (`rust/examples/hydrostatics/`), as its text stands.
 fn example(name: &str) -> String {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
