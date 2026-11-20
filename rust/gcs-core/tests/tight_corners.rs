@@ -313,6 +313,121 @@ fn a_floor_rounded_against_one_wall_stops_where_its_ball_does() {
     assert!(why.contains("its flat, reaching 8mm from `pocket.e0`, comes within 5mm of `pocket.e3`"), "{why}");
 }
 
+/// A shell 200 × 150 in plan, its corners rounded 25, drafted 2° over its height of 325 — its
+/// corners 25 − 325 tan 2° = 13.651 at the top — and its top rim treated by `word`.
+fn drafted_shell(word: &str) -> String {
+    format!("unit mm\nuse std\nuse std.solids\nuse std.rounds (round, chamfer)\nin std.top {{\n\
+        p := point\nq := point\nr := point\ns := point\n\
+        fix((-100, -75)) p\nfix((100, -75)) q\nfix((100, 75)) r\nfix((-100, 75)) s\n\
+        (e0 := line(p, q)) -> (k1 := round(r: 25mm)) (e1 := line(q, r)) -> (k2 := round(r: 25mm)) \
+        (e2 := line(r, s)) -> (k3 := round(r: 25mm)) (e3 := line(s, p)) -> (k0 := round(r: 25mm)) close\n\
+        outline := face(e0, k1, e1, k2, e2, k3, e3, k0)\n}}\n\
+        shell := solid(std.solids.Drafted(outline, from: 0mm, to: 325mm, draft: 2deg))\n\
+        body := solid(shell)\nbody.shell.near {word} body.shell\n")
+}
+
+/// The drafted shell's closed form: its sections integrated up its height (each the plan offset in
+/// by `h tan 2°`), less the rim's section along its four straight runs (150, 100, 150, 100: an
+/// offset keeps them) and turned a quarter about each corner's axis at the top (Pappus).  The
+/// section, in the plane square to the rim with `u` out of the shell and `v` down from the top:
+/// the corner at the edge, the top's touch or leg, the side's (leaning out by 2° as it goes down),
+/// less a round's sector about its ball's centre.
+fn drafted_shell_volume(r: f64, flat: bool) -> f64 {
+    let (h, t) = (325.0, (2.0 * PI / 180.0).tan());
+    let (c, sn) = ((2.0 * PI / 180.0).cos(), (2.0 * PI / 180.0).sin());
+    let body = 30000.0 * h - 350.0 * t * h * h + 4.0 / 3.0 * t * t * h * h * h
+        - (4.0 - PI) * (25.0f64.powi(3) - (25.0 - t * h).powi(3)) / (3.0 * t);
+    // a polygon's area and its centroid's `u`
+    let shoelace = |pts: &[[f64; 2]]| {
+        let (mut a, mut mu) = (0.0, 0.0);
+        for k in 0..pts.len() {
+            let ([x0, y0], [x1, y1]) = (pts[k], pts[(k + 1) % pts.len()]);
+            let w = x0 * y1 - x1 * y0;
+            a += w / 2.0;
+            mu += (x0 + x1) * w / 6.0;
+        }
+        (a.abs(), mu / a)
+    };
+    let (area, u) = if flat {
+        shoelace(&[[0.0, 0.0], [-r / c, 0.0], [r * t, r]])
+    } else {
+        let centre = [-r * (1.0 - sn) / c, r];
+        let (kite, ku) = shoelace(&[[0.0, 0.0], [centre[0], 0.0], centre, [centre[0] + r * c, r - r * sn]]);
+        // the sector at the centre between its touches, `π/2 − 2°` wide, its centroid along their
+        // bisector (toward the edge: half way between straight up and square to the side, out)
+        let phi = PI / 2.0 - 2.0 * PI / 180.0;
+        let (up, side) = ([0.0, -1.0], [c, -sn]);
+        let mid = [(up[0] + side[0]) / 2.0, (up[1] + side[1]) / 2.0];
+        let m = mid[0].hypot(mid[1]);
+        let sector = phi * r * r / 2.0;
+        let su = centre[0] + 4.0 * r * (phi / 2.0).sin() / (3.0 * phi) * mid[0] / m;
+        (kite - sector, (kite * ku - sector * su) / (kite - sector))
+    };
+    body - area * (500.0 + 2.0 * PI * (25.0 - t * h + u))
+}
+
+/// **A drafted shell's rim** (fixture 126's class, stated): its corners shrink to 13.651 at the
+/// top.  Rounded 13 and 13.6 the rim is built; rounded 13.7, over the corner's radius at the rim
+/// but under where the ball stands — a drafted corner widens downward, and the ball's centre is
+/// its radius below the top, where the corner is 13.651 + 13.7 tan 2° — it is built too, its
+/// centre short of the axis.  Rounded 20 it is refused, naming the corner's radius where the round
+/// runs against the ball's.  Chamfered 13 and 13.6 it is built; 13.7 is a leg longer than the
+/// radius at the rim, refused.
+#[test]
+fn a_drafted_shells_rim_rounded_about_its_corners_radius() {
+    for r in [13.0, 13.6, 13.7] {
+        let b = exported(&solved(&drafted_shell(&format!("round(r: {r}mm)"))), "body");
+        close(props::volume(&b), drafted_shell_volume(r, false));
+    }
+    for d in [13.0, 13.6] {
+        let b = exported(&solved(&drafted_shell(&format!("chamfer(d: {d}mm)"))), "body");
+        close(props::volume(&b), drafted_shell_volume(d, true));
+    }
+    let why = refused(&drafted_shell("round(r: 20mm)"), "body");
+    assert!(why.contains("its ball, of radius 20mm, rolled against `shell.e0` comes within"), "{why}");
+    assert!(why.contains("of radius 13.7mm where the round runs and tighter than the ball"), "{why}");
+    let why = refused(&drafted_shell("chamfer(d: 13.7mm)"), "body");
+    assert!(why.contains("of radius 13.65mm where the chamfer runs and tighter than the flat's leg"), "{why}");
+}
+
+/// Fixture 126 itself, the issue's fragment: its outline's two free points stand a millimetre or
+/// two apart, so its walls pinch there, and a ball of 20 on the rim's first run comes past the wall
+/// across; it is refused saying so, and naming the corner of 13.7 at the rim it passes, against
+/// the ball's 20 — not that the construction leaves out what the field reads.
+#[test]
+fn fixture_126_is_refused_naming_the_corner_where_the_round_runs() {
+    let why = refused(FIXTURE_126, "body");
+    assert!(why.contains("its ball, of radius 20mm, rolled against `ou_e0`"), "{why}");
+    assert!(why.contains("of radius 13.7mm where the round runs and tighter than the ball"), "{why}");
+}
+
+/// Issue #962's fixture 126, as the issue gives it.
+const FIXTURE_126: &str = r#"use std.solids (cut, union)
+rim := plane
+in rim {
+  ou0 := point
+  ou1 := point
+  fix((-155, -175)) ou1
+  ou2 := point
+  fix((10, -250)) ou2
+  ou3 := point
+  ou4 := point
+  fix((380, 250)) ou4
+  ou5 := point
+  fix((10, 250)) ou5
+  ou6 := point
+  fix((-155, 175)) ou6
+  ou7 := point
+  fix((-380, 175)) ou7
+  (ou_e0 := line(ou0, ou1)) -> (ou_k1 := round(r: 25mm)) (ou_e1 := line(ou1, ou2)) -> (ou_k2 := round(r: 25mm)) (ou_e2 := line(ou2, ou3)) -> (ou_k3 := round(r: 25mm)) (ou_e3 := line(ou3, ou4)) -> (ou_k4 := round(r: 25mm)) (ou_e4 := line(ou4, ou5)) -> (ou_k5 := round(r: 25mm)) (ou_e5 := line(ou5, ou6)) -> (ou_k6 := round(r: 25mm)) (ou_e6 := line(ou6, ou7)) -> (ou_k7 := round(r: 25mm)) (ou_e7 := line(ou7, ou0)) -> (ou_k0 := round(r: 25mm)) close
+  ou_f := face(ou_e0, ou_k1, ou_e1, ou_k2, ou_e2, ou_k3, ou_e3, ou_k4, ou_e4, ou_k5, ou_e5, ou_k6, ou_e6, ou_k7, ou_e7, ou_k0)
+}
+shell0 := solid(std.solids.Drafted(ou_f, from: 0mm, to: 325mm, draft: 2deg))
+use std.rounds (round)
+shell0.near round(r: 20mm) shell0
+body := solid(shell0)
+"#;
+
 /// An obround pocket, two walls 10 apart joined by half circles of 5, its floor rounded `r`.
 fn obround(r: f64) -> String {
     format!("unit mm\nuse std\nuse std.solids (cut)\nuse std.rounds (round)\nin std.top {{\n\

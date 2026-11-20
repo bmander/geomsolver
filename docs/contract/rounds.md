@@ -486,11 +486,15 @@ rounded alone (`plate.pocket.far round(r: 8mm) plate.pocket.e0`) goes on smooth 
 corners' arcs into the walls beyond, whose offsets stop the centres 8 short of them: 3 short of
 the edge's ends, where what no ball reaches is more than the section swept (the field reads
 material at x = 24 the prism of the section leaves out). Two walls closer than the ball is wide
-(an obround 10 wide rounded 5.0001) are the same seen from the middle of the run. Where the
-chain bulges toward the ball (`BodyFaces::bulging`) its centres are a convex set, so the ends of
-a straight edge hold the whole run (its middle read first, so the wall across is named, not the
-arc it ends on) and a ring is read at sixteen turns of its own; a flat the same, each point of its
-section nearer its own face than any other of the chain's. Refused, saying which face the ball
+(an obround 10 wide rounded 5.0001) are the same seen from the middle of the run. The ball's
+centre is read as the field reads the centres: off each face's carried side where the chain
+bulges toward the ball (`BodyFaces::bulging`), else off the side of the face whose patch is
+nearest — a chain turning both ways, as a drafted shell's outline with a reflex corner does
+(fixture 126, whose rim's first run the stricter gate below refused as leaving out what the field
+reads before anything named the corner). A straight edge is read at its middle, its ends and
+between (its middle first, so the wall across is named, not the arc it ends on), a ring at
+sixteen turns of its own. A flat's points each nearest its own face's patch of the chain's
+(`distance(p, b.smooth)` reads patches), not its carried side. Refused, saying which face the ball
 (or the flat) comes how near, and — where an arc of the chain tighter than the ball lies between,
 meeting the other face — that arc and its radius where the round runs: a pocket rounded wider
 than its corners refuses at its first wall so (`… past `pocket.k0`, of radius 5mm where the round
@@ -506,7 +510,14 @@ nowhere near the ends, and the wall alone built a prism the gate never saw was s
 it now refuses it even where `stands_within` would not. `tests/tight_corners.rs` is the gate
 (the wall alone rounded 4 and 5 and chamfered 5, the closed forms; rounded and chamfered 8
 refused naming `pocket.e3`; the obround 10 wide rounded 4.9999 and 5, its two half balls, refused
-at 5.0001 naming `pocket.e2`; a round pocket and a round boss at 4.9 to 5, refused at 5.0001 and 6).
+at 5.0001 naming `pocket.e2`; a round pocket and a round boss at 4.9 to 5, refused at 5.0001 and 6;
+a shell 200 × 150 with corners of 25 drafted 2° over 325 — 13.651 at its rim — rounded 13, 13.6
+and 13.7 and chamfered 13 and 13.6, each the closed form's volume (its sections integrated, the
+rim's by Pappus) to 1e-9, refused rounded 20 and chamfered 13.7 naming 13.7 and 13.65 where the
+round runs; fixture 126 refused naming 13.7 against 20). Rounded 13.7, over the rim's radius, the
+drafted corner still holds the ball: its centre stands a radius below the top, where the corner
+has widened by `r tan 2°`, and short of the axis; `wider` refuses where the centre itself passes
+the axis, and says the radius at the rim, where the round runs.
 
 **A ball that takes the whole of a face** (brep-bench's fillet/slab-half-round,
 l-block-inside-consumed, hole-waist, sliver-strip, boss-s-curve): the band a ball's contact
