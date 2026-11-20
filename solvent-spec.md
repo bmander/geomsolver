@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.223 — November 2026**
+**Specification, Draft 0.224 — November 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -988,7 +988,11 @@ rounds its own faces or another round's. **[0.210]** A face a round made is the 
 has: a round's `round` and a chamfer's `flat` (`plate.rim.taken.round`), named so to a block as
 to a report, whatever set the word's body says it by — so a round over a round's face
 (`box.near round(r: 1mm) box.vert`, the arc where the top meets the round of an upright edge) is
-made as one over a chamfer's is; and which faces meet (`meets`) and how a face lies (`parallel`,
+made as one over a chamfer's is. **[0.224]** A fill (at a concave edge) cut off by a face it ends
+on leaves its cap there, on that face's surface, a face of the body (`part.filled.far`), so a round
+over the filled body rounds the fill's rim on that face as it rounds the face's own edges; at a
+vertex where edges of both turns meet, the edge alone in its turn rounded first and every edge
+then on a solid of what it leaves is the smooth surface every edge rounded means. And which faces meet (`meets`) and how a face lies (`parallel`,
 `perpendicular`) is read in the layer the round that asks stands in, the body that round reads.
 **A round over a rounded body** is a round of a solid of it: `part := solid(box)` is `box` as its
 rounds leave it, the faces they made among `part.box`'s, and `part.box.near round(r: 1mm)

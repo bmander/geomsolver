@@ -145,6 +145,41 @@ recipe node carries what a failure calls it (`"said"`, `` `box`'s round or chamf
 the body whose late sets take it, `step_through`; `recipe::Named::called`, what every
 `built_names` holds).
 
+**Where edges of both turns meet at a vertex** (#962's 8c, [0.224]: "all edges R1.5" on a stock
+block). At a vertex of three faces whose edges are not all of one turn, one edge is alone in its
+turn — a step's floor meeting its wall (concave) between two convex edges of the block's side, a
+pocket's upright between two convex edges of the top, a boss's upright (convex) between two
+concave edges of its foot. The ball rolled along every edge leaves a smooth surface there only
+where that edge is rounded first and the other two on the body it leaves: each is then a round
+against the first one's chain (`F.smooth`, the face going on tangent into its round), so the
+side's round goes on round the step's fill as a ring about the fill's axis — a torus of `2r` about
+it, a stretch glued to the runs either side at the sections they share, as a rim goes round a
+rounded corner — and a foot's fill round a boss's upright's round the same. `Corner` and
+`CornerFill` say the three-of-a-turn vertices; no set says a mixed one, for the words read in
+that order already say it. So **the general note is two statements**: the lone edges first (a
+feature's own edges: `round(r) part.step`, `round(r) part.pocket`, `round(r) part.boss`), then
+every edge on a solid of the body they leave (`whole := solid(part)`, `round(r) whole`) — the
+idiom `rim.sv` writes for a rim over rounded corners. Two things make the second statement round
+what the first left: **a fill's caps are faces of the body** (`lowering::face_names`): a fill cut
+off by a face it ends on leaves its piece's cap there, on that face's surface beside it — the
+step's fill its two ends on the block's sides, an upright's its end on the top — and a block over
+the faces lists them (`far`, `near` of a run's prism, `start`, `end` of a ring's stretch; a name
+the boundary has not is no face of it, `ListedFaces::read_above`), so the fill's rim on that face
+is paired and rounded as the face's own edges are; a cut leaves no cap on the body and lists none.
+And the face and the cap are pieces of one surface (#952): no edge between them, the section
+against both. Written as one `round(r) part`, every edge reads the sharp body and the fill and the
+cuts touch along a line from the vertex: the export says so **at the vertex**
+(`export::mixed_vertex`, `BodyFaces::mixed_vertex`) — where it stands, the faces there by the
+body's names with each edge's turn, the edge alone in its turn and the two statements to write —
+and not "rounds of separate statements" alone. A vertex where one edge is alone at one end and
+paired at the other's (two steps meeting at a corner: the upright between their walls convex over
+two concave floor edges, each of which is alone at the block's side) wants three statements, the
+upright first; a chamfer's flats are no tangent chain, so the second statement chamfers the first
+one's flat against its own faces again, and a chamfer of every edge at such a vertex is not yet
+said by the words. `tests/mixed_vertices.rs` is the gate (the step at either end and moved along
+the block, the pocket, the boss and `rounds/stock.sv`, each to its closed form to 1e-9 by Pappus
+and exported with no sliver; one statement refused at the vertex).
+
 **Against the smooth surface** ([0.149], #422): `F.smooth` (`Member::Smooth`, `FaceRef::smooth`, read
 with `surface`) is the faces named and every face going on from them tangent across a seam
 (`BodyFaces::smooth`: an edge two faces bound whose outward normals are one at its middle), a side

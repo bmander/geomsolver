@@ -197,6 +197,7 @@ mod membership;
 mod mesh;
 mod millimetres;
 mod minimize;
+mod mixed_vertices;
 mod modules;
 mod motions;
 mod names;

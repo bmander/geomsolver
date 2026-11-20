@@ -96,10 +96,11 @@ pub fn face_paths(sk: &Sketch, i: usize) -> Vec<FacePath> {
                 let reads = super::terms_read_faces(terms);
                 // a round or a chamfer the table builds leaves the face its construction names
                 // (`round`, `flat`), whatever the set that says it is called (#879): a block
-                // lists the faces the body has, and a body is read off its exact boundary
-                if let Some(face) = reads.then(|| crate::solid::lowering::face_name(sk, terms))
+                // lists the faces the body has, and a body is read off its exact boundary — a
+                // fill's caps where it ends on a face too (#962)
+                if let Some(faces) = reads.then(|| crate::solid::lowering::face_names(sk, terms))
                     .flatten() {
-                    return vec![face.to_string()];
+                    return faces.into_iter().map(str::to_string).collect();
                 }
                 let mut v: Vec<String> = terms.iter().map(|t| t.name.clone())
                     .filter(|n| !(reads && n.is_empty())).collect();

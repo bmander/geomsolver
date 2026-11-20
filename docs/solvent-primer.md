@@ -2512,6 +2512,29 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
   Written on `box` itself (`box.near round(r: 1mm) box`) the rim would read the box before its
   corners were rounded. With the first round named (`vert := f round(r: 5mm) g`), `box.near
   round(r: 1mm) box.vert` rounds the four arcs alone, where the top meets `vert`'s faces.
+- **Every edge of a part: "all edges R1.5", "break all edges"** (0.224). `round(r: 1.5mm) part`
+  is every edge among the part's faces, and on a plain block, or one with a through hole, that is
+  all it takes. A step, a pocket, a slot or a boss, though, makes a vertex where edges of both
+  turns meet: a step's floor meets its wall in a concave edge between two convex edges of the
+  block's side; a pocket's upright is concave between two convex edges of the top; a boss's
+  upright is convex between two concave edges of its foot. The surface is smooth there only where
+  that edge, alone in its turn, is rounded first and the others are rounded round it — so write
+  the note as the features' own edges first, then every edge on a solid of what they leave:
+
+  ```sv
+  round(r: 1.5mm) part.step      // the step's floor into its wall
+  round(r: 1.5mm) part.pocket    // the pocket's uprights and floor
+  round(r: 1.5mm) part.boss      // the boss's uprights and top
+  whole := solid(part)           // the part as those leave it
+  round(r: 1.5mm) whole          // every edge: the side's round goes on round the step's fill
+  ```
+
+  Each side's rim then runs round the step's fill as a ring, the top's rim round each upright's
+  fill, a boss's foot round each upright's round (`rust/examples/rounds/stock.sv`). Written as one
+  `round(r: 1.5mm) part`, every edge reads the sharp part, and at such a vertex the cut and the
+  fill touch along a line: the export refuses it naming the vertex, its faces and each edge's
+  turn, and the edge to round first. To leave an edge out, pick the edges by the faces they lie
+  between (above). A chamfer of every edge at such a vertex is not said yet.
 - **The ball and the flat follow a face across a seam**: where the far face goes on tangent into
   a rim's round, a chamfer at a boss standing near the rim lands its leg on the round
   (`F.smooth`, a face's surface carried across its tangent seams). Where the leg or the ball

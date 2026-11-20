@@ -4,6 +4,17 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.224] A fill's caps are faces of the body; every edge where edges of both turns meet**
+(#962). A fill (a round or a chamfer at a concave edge) cut off by a face it ends on leaves its
+piece's cap there, on that face's surface: those caps are now among the faces a block over the
+body runs over (`part.filled.far`, `near`, a ring's stretch's `start` and `end`), so a round over
+the filled body (`whole := solid(part)`, `round(r: 1.5mm) whole`) rounds the fill's rim where it
+ends on a face, as it rounds that face's own edges; through 0.223 only its `round` (`flat`) was
+listed, and the rim stayed sharp. The general note on a part where edges of both turns meet at a
+vertex (a step, a pocket, a boss) is written as the features' own edges first and every edge on
+a solid of what they leave; written as one statement, the export now says the vertex, its faces
+and the edge to round first. Nothing a document may write changed.
+
 **[0.223] A round that selects no edge says so, and a face's fault is said at the face** (#962).
 A round or a chamfer (either word, either form) over faces that are all the body's but meet in no
 edge of it — nowhere, only at a corner, only along a seam where one runs on tangent into the

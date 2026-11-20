@@ -702,7 +702,18 @@ impl BodyFaces {
         };
         for (v, d, vid) in self.run_ends(es) {
             let Some(run) = runs.iter().find(|run| touches(run, vid)) else { continue };
-            for (c, sign) in self.ends_at(run, faces, v, d, vid, plain) {
+            let at = self.ends_at(run, faces, v, d, vid, plain);
+            // a run that ends on no face — its faces going on across seams there, tangent into
+            // another or into a piece of the same surface, or every face there one it goes across
+            // — ends square there (#962): what a corner's edge reads as its end, where nothing
+            // else bounds it, so a ball at one end of an edge rounds no further than its other
+            // (a run's own common part ends there already).  A straight run: a plane square to an
+            // arc is a half-space through its axis, which would cut a stretch of more than half a
+            // turn short of its own other end
+            if at.is_empty() && plain && run.iter().all(|&e| self.segment(e).is_some()) {
+                sides.push((EndBy::Square { at: v, out: scale(d, -1.0) }, 1.0, None));
+            }
+            for (c, sign) in at {
                 sides.push((EndBy::Face(c), sign, None));
                 // (a plane: one curved is carried into only as far as its section takes)
                 if !plain || self.plane(c).is_none() {
@@ -877,6 +888,24 @@ impl BodyFaces {
         let edge = &self.loc.b.edges[e as usize];
         let at = edge.point(0.5 * (edge.t[0] + edge.t[1]), &self.loc.b.vertices);
         norm(sub(self.outward(x, at), self.outward(y, at))) < TANGENT
+    }
+
+    /// **A vertex where edges of both turns meet** (#962): a vertex of the boundary within `tol`
+    /// (model units) of one of `near`, where its edges (seams aside) are convex and concave both —
+    /// where it stands, and each of those edges by the two faces it lies between and whether it is
+    /// convex.
+    pub fn mixed_vertex(&self, near: &[V], tol: f64) -> Option<(V, Vec<([usize; 2], bool)>)> {
+        (0..self.loc.b.vertices.len() as u32).find_map(|v| {
+            let at = self.back(self.loc.b.vertices[v as usize].p);
+            near.iter().any(|&p| norm(sub(p, at)) <= tol).then_some(())?;
+            let edges: Vec<([usize; 2], bool)> = (0..self.loc.b.edges.len() as u32)
+                .filter(|&e| self.loc.b.edges[e as usize].v.contains(&v) && !self.seam(e))
+                .filter_map(|e| match (self.faces_of(e), self.convex(e)) {
+                    (&[a, b], Some(c)) => Some(([a, b], c)),
+                    _ => None,
+                }).collect();
+            (edges.iter().any(|e| e.1) && edges.iter().any(|e| !e.1)).then_some((at, edges))
+        })
     }
 
     /// The faces at vertex `v` other than `not`.
