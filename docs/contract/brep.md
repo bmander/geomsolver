@@ -106,6 +106,25 @@ A traced pair is seeded where edges cross faces; between analytic
 surfaces `ssi::unseen` then searches one face for curves no edge reaches (cells proved clear by
 the signed distance's Lipschitz and second-order bounds, else beside a known curve, else seeded),
 refusing what it cannot resolve: an untraced meeting is never read as none (issue #58).
+**What it cannot resolve off either face is none of theirs** (#961, `Located::face_clear`): the
+search keeps to the face's box of parameters, grown past its edges (a cone's past its apex, onto
+the other nappe), and to the box every face on the two surfaces fills, so it reaches where both
+surfaces run on past the faces; a cell down to the leaf whose every point — within its reach of
+its middle, and of that point's foot on the other surface — stands off one of the two faces is
+answered clear and never refused. Off a face means outside it (`face_place`) with every edge of
+its loops (a seam, an apex) farther by its box than the surface's points within that ball reach
+along it (`ssi::disc_reach`, each kind's bound argued by a path in its comment; none where
+the ball crosses a tube or reaches an apex or an axis, nor on a horn or spindle torus):
+a near-contact beside a face's edge is held to it and refused as before, and so is one within
+both faces, and any near-contact of a meeting over boxes (`meeting::meet`), which has no faces.
+A countersink beside a counterbore, whose cone past its apex came within 4e-7 of the wall's
+cylinder run on below the floor, was refused so; `tests/countersink.rs`'s
+`a_countersink_beside_*` hold the part to its closed form, centred by the wall, turned and turned
+over, against a cylinder and a drafted wall's cone; `a_near_contact_within_both_patches_is_still_refused`
+holds the same near-contact, met over boxes that hold it, refused; and
+`a_face_is_clear_only_off_it_and_away_from_its_edges` the rule at a face's edges and a cone's apex;
+`a_surfaces_points_within_a_ball_reach_no_farther_along_it_than_said` holds each bound to seeded
+points and their paths.
 **A march that steps across a touch ends at the touch** (#879, `ssi::trace_beside`). Two rounds
 tangent to one face meet in a curve that ends where both touch it, a point where the two surfaces
 touch and their meeting's branches cross (`ssi::touch`); where that point is on a face's own edge

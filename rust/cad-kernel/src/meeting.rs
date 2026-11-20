@@ -1016,7 +1016,9 @@ pub fn meet_with(a: &Surface,da: [[f64;2];2],b: &Surface,db: [[f64;2];2],tol: f6
                     let stretches: Vec<(&Curve,[f64;2])> = known.branches().iter().filter(|br| br.contact == Contact::Touching)
                         .filter_map(|br| if let Curve::BSpline(s) = &br.curve { Some((&br.curve,s.domain())) } else { None }).collect();
                     let mut beside = |p: V| on_a_branch(a,b,known,p,tol);
-                    while let Some(p) = super::ssi::unseen_beside(a,da,b,&[traced.clone(),curves.clone()].concat(),&stretches,&mut beside,lo,hi,tol)? {
+                    // (no faces trim the boxes: every part of them is the meeting's, none clear)
+                    while let Some(p) = super::ssi::unseen_beside(a,da,b,&[traced.clone(),curves.clone()].concat(),&stretches,&mut beside,
+                        &mut |_,_| false,lo,hi,tol)? {
                         more += 1;
                         if more > 64 { return Err(format!("a {} and a {} meet in more than 64 curves no seed reaches",a.kind(),b.kind()).into()) }
                         let found = match super::ssi::trace(a,b,&[p],lo,hi,tol) {
