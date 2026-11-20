@@ -152,7 +152,7 @@ fn a_rounds_node_says_its_body_and_its_label() {
                              box.near round(r: 1mm) box.cd\n"));
     let body = crate::common::ent(&e, "box").i();
     let recipe = gcs_core::solid::cad::recipe(&e.sketch, body).unwrap();
-    let said: Vec<String> = gcs_core::brep::recipe::Recipe::read(&recipe).unwrap().nodes.iter()
+    let said: Vec<String> = recipe.nodes.iter()
         .filter(|n| n.said.is_some()).map(|n| n.called()).collect();
     assert_eq!(said, ["`box`'s round or chamfer `vert.taken`", "`box`'s round or chamfer `taken`"]);
 }

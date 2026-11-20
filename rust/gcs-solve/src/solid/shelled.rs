@@ -42,7 +42,7 @@ use crate::brep::geom::Frame;
 use crate::brep::plane2::{self, Touch};
 use crate::brep::planar::Seg;
 use crate::brep::recipe::Writer;
-use crate::json::{object, Json};
+use crate::brep::recipe::{Kept, Node};
 use crate::model::{FaceRef, RegionShape, RegionTerm, Sketch, SolidDef, Target, TermNumber};
 use crate::space::{dot, norm, scale, sub};
 use crate::vocab::Cmp;
@@ -97,25 +97,16 @@ struct Terms {
 impl Shelled {
     /// The recipe's node, written by `w`: the walls glued to the body as its recipe node's other
     /// terms make it.
-    pub fn node(&self, w: &Writer) -> Result<Json, String> {
-        let stratum = match &self.built {
-            Built::Prism { .. } => Json::Null,
-            Built::Walls(Walls { terms: t, .. }) => {
-                let mut node = super::cad::body_terms(t.stock, &t.on, &t.cut, &t.bound);
-                node.set("kind", "body".into());
-                node
-            }
-        };
-        self.cavity(w, stratum)
+    pub fn node(&self, w: &Writer) -> Result<Node, String> {
+        self.cavity(w, None)
     }
 
     /// The cavity's node, written by `w`: the prism's `prism`, or a `region` keeping within it
     /// and outside each cut grown; the walls' `region`, the smaller block less the larger one less
-    /// the body (`stratum`, a node standing for it) and its openings' prisms with the walls glued
-    /// to that.
-    fn cavity(&self, w: &Writer, stratum: Json) -> Result<Json, String> {
-        let kept = |mut n: Json, keep: bool| { n.set("keep", Json::Bool(keep)); n };
-        let region = |pieces: Vec<Json>| object([("kind", "region".into()), ("pieces", Json::Arr(pieces))]);
+    /// the body (`stratum`, a node standing for it, else the body's terms) and its openings' prisms
+    /// with the walls glued to that.
+    fn cavity(&self, w: &Writer, stratum: Option<Node>) -> Result<Node, String> {
+        let kept = |node: Node, keep: bool| Kept { node, keep };
         match &self.built {
             Built::Prism { section, length, cuts } => {
                 let prism = swept(section, *length, w)?;
@@ -126,14 +117,17 @@ impl Shelled {
                 for g in cuts {
                     pieces.push(kept(g.node(w)?, false));
                 }
-                Ok(region(pieces))
+                Ok(Node::Region(pieces))
             }
             Built::Walls(walls) => {
-                let outside = region(vec![kept(block(walls.boxes[1], w)?, true),
-                                          kept(plus(stratum, &walls.open, walls.reach, w)?, false)]);
+                let t = &walls.terms;
+                let stratum =
+                    stratum.unwrap_or_else(|| Node::Body(super::cad::body_terms(t.stock, &t.on, &t.cut, &t.bound)));
+                let outside = Node::Region(vec![kept(block(walls.boxes[1], w)?, true),
+                                                kept(plus(stratum, &walls.open, walls.reach, w)?, false)]);
                 let mut grown = vec![outside];
-                grown.extend(walls.walls.pieces_json(w)?);
-                Ok(region(vec![kept(block(walls.boxes[0], w)?, true), kept(glued(grown), false)]))
+                grown.extend(walls.walls.pieces_nodes(w)?);
+                Ok(Node::Region(vec![kept(block(walls.boxes[0], w)?, true), kept(Node::Glued(grown), false)]))
             }
         }
     }
@@ -150,28 +144,22 @@ impl Shelled {
 }
 
 /// Section `p` swept along its normal by `length`, as the recipe's `prism` (written by `w`).
-fn swept(p: &Profile, length: f64, w: &Writer) -> Result<Json, String> {
-    Ok(object([("kind", "prism".into()), ("profile", p.to_json(w)?), ("from", 0.0.into()),
-               ("to", (length * w.scale).into())]))
-}
-
-/// Pieces glued to one another, as the recipe's `glued`.
-fn glued(pieces: Vec<Json>) -> Json {
-    object([("kind", "glued".into()), ("pieces", Json::Arr(pieces))])
+fn swept(p: &Profile, length: f64, w: &Writer) -> Result<Node, String> {
+    Ok(Node::Prism { profile: p.section(w)?, from: 0.0, to: w.length(length), draft: None })
 }
 
 /// The body (`stratum`, a node standing for it) with each opening's prism `reach` out from it glued
 /// on: what the walls are within reach of the outside of.
-fn plus(stratum: Json, open: &[Profile], reach: f64, w: &Writer) -> Result<Json, String> {
+fn plus(stratum: Node, open: &[Profile], reach: f64, w: &Writer) -> Result<Node, String> {
     let mut pieces = vec![stratum];
     for p in open {
         pieces.push(swept(p, reach, w)?);
     }
-    Ok(glued(pieces))
+    Ok(Node::Glued(pieces))
 }
 
 /// The block between the corners `lo` and `hi` (model units), as the recipe's `prism`.
-fn block((lo, hi): (V, V), w: &Writer) -> Result<Json, String> {
+fn block((lo, hi): (V, V), w: &Writer) -> Result<Node, String> {
     let at = |x: f64, y: f64| [x, y, lo[2]];
     let c = [at(lo[0], lo[1]), at(hi[0], lo[1]), at(hi[0], hi[1]), at(lo[0], hi[1])];
     let p = Profile { origin: c[0], normal: [0.0, 0.0, 1.0], loops: vec![super::grown::polygon(&c)],
@@ -381,10 +369,9 @@ fn construction(sk: &Sketch, solid: usize, r: &Recognised, faces: &BodyFaces) ->
 const STRATUM: i64 = -1;
 
 /// A recipe node standing for the body's own boundary as `faces` read it (`STRATUM`).
-fn stratum_node() -> Json {
+fn stratum_node() -> Node {
     let identity = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0];
-    object([("kind", "placed".into()), ("source", STRATUM.into()),
-            ("matrix", Json::Arr(identity.into_iter().map(Json::from).collect()))])
+    Node::Placed { source: STRATUM, matrix: identity }
 }
 
 /// The walls of the body whose faces are `body` (made by `terms`), leaving open those not `shut`,
@@ -667,7 +654,7 @@ fn gate(sk: &Sketch, solid: usize, body: usize, s: &Shelled, faces: &BodyFaces) 
         let shift = crate::brep::geom::Rigid { t: scale(sub(at, origin), mm), ..crate::brep::geom::Rigid::identity() };
         built.insert(c as i64, b.moved(&shift));
     }
-    let cavity = crate::brep::recipe::node(&s.cavity(&w, stratum_node())?, &built)?;
+    let cavity = crate::brep::recipe::node(&s.cavity(&w, Some(stratum_node()))?, &built)?;
     let shelled = crate::brep::boolean::combined(stratum, &cavity, crate::brep::boolean::Op::Cut, 0.0)
         .map_err(|e| format!("`{}`: {}", sk.solid_name(solid), String::from(e)))?;
     let field = super::MaterialField::read(sk, body, super::cad::AXIS_TOLERANCE)?;

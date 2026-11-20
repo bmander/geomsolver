@@ -1117,18 +1117,20 @@ a vertex twice), where the boundary between them runs more than four bars and si
 distance (two loops, or one far round) — and an edge shorter than the bar of no such face; a pole
 is none. Read off the B-rep, it is the same wherever the solid
 stands (`brep_flush::a_sliver_is_found_by_its_boundary_wherever_it_stands`).
-**The recipe is read once** (`recipe::Recipe::read`): every reader — this kernel's build and
-meridian, `section`, the swept cutter and sector, `solid::exact`/`canal`, the native host's
-`Session` — matches a typed `recipe::Node`, never the JSON; a profile stays as written
-(`recipe::Section`, the numbers the native host hands on) until `Profile::of` reads it. A new node
-or field is one arm of `Node::read` and of each match. Every writer writes its points through one
-`recipe::Writer` (millimetres, about the world's origin or `cad::recipe_about`'s). **A kernel error
+**The recipe is typed values, never text** (`recipe::Recipe`, `recipe::Node`): `solid::cad` and
+every node writer build the nodes themselves, and every reader — this kernel's build and meridian,
+`section`, the swept cutter and sector, `solid::exact`/`canal`, the native host's `Session` —
+matches a `Node`; nothing is written as JSON and read back.  A profile stays as written
+(`recipe::Section`, the numbers the native host hands on) until `Profile::of` reads it, and
+`Profile::section` writes one back.  A new node or field is one variant or field and one arm of
+each match.  Every writer writes its points through one `recipe::Writer` (millimetres, about the
+world's origin or `cad::recipe_about`'s), which returns the numbers themselves. **A kernel error
 has a kind** (`brep::KernelError`, `Kind`): `Brep::check`'s edge used as often each way, more than
 once, is `NotManifold` (material touching along it: what `boolean::combined` and the body's
 stratum act on), one used more often one way or never `Open` (a face missing: the kernel's own failure,
 which the stratum never reads as rounds meeting; `brep::an_edge_used_twice_each_way_touches_and_one_used_once_is_open`), a recipe of another kind
 than a route builds (`Recipe::meridian`, `Sectioned`) is `Refused` (its caller builds it
-another way), an unreadable recipe `Recipe`; its message is all it says, and it becomes a `String`
+another way); its message is all it says, and it becomes a `String`
 where a caller outside `brep` wants one. Never match an error's text.
 **This kernel is every export's default** (phase 5): OCCT answers only `--kernel occt` /
 `--stl-backend occt` / `SOLVENT_KERNEL=occt` (the oracle; refused in a build without OCCT), its

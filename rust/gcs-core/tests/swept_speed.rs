@@ -255,7 +255,7 @@ chamfers common disc
     assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
     let disc = e.map.ent_named("disc").unwrap().i();
     let recipe = gcs_core::solid::cad::recipe_static(&e.sketch, disc).unwrap();
-    let read = gcs_core::brep::recipe::Recipe::read(&recipe.recipe).unwrap();
+    let read = &recipe.recipe;
     let (turned, _, _) = read.meridian([1., 0., 0.]).unwrap_or_else(|e| panic!("{e:?}"));
     let built = read.build().unwrap();
     let volume = gcs_core::brep::props::volume;
