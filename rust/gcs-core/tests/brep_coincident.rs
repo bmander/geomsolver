@@ -7,7 +7,7 @@
 //! `ssi::same_over`), their volumes those of the solids drawn and their boundaries closed. A lean
 //! past the reach is two surfaces still.
 use gcs_core::brep::boolean::{combined_written,Op};
-use gcs_core::brep::build::{prism,Profile,ProfileEdge};
+use gcs_core::brep::build::{cone,prism,revolve,sphere,Profile,ProfileEdge};
 use gcs_core::brep::geom::{tolerance,Frame,Rigid,Surface,V};
 use gcs_core::brep::props::volume;
 use gcs_core::brep::ssi::{same,same_over};
@@ -36,9 +36,26 @@ fn moved_by(a: &Brep,b: &Brep,area: f64) -> f64 { gcs_core::brep::tolerant::ON_C
 /// `a` combined with `b` by `op` as a body's Boolean is (`combined_written`), checked closed to the
 /// ten tolerances its Boolean checks it to (an edge laid on a face of the other operand stands off
 /// it by as much as the two faces stood apart there).
+/// And every face agrees with the edges and corners it is bounded by to within the reach the
+/// arrangement merged them at (`ON_CURVE` tolerances): a face two operands' coincident faces
+/// became is written on the solid's surface (the lower operand's), and the other's edges and
+/// corners laid on it stood no farther off it than the two surfaces stood apart there.
 fn built(a: &Brep,b: &Brep,op: Op,what: &str) -> Brep {
+    let tol = tolerance(a.size().max(b.size()));
     let out = combined_written(a,None,b,op,0.).unwrap_or_else(|e| panic!("{what}: {e}")).0;
-    out.check(10.*tolerance(a.size().max(b.size()))).unwrap_or_else(|e| panic!("{what}: {e}"));
+    out.check(10.*tol).unwrap_or_else(|e| panic!("{what}: {e}"));
+    let reach = gcs_core::brep::tolerant::ON_CURVE*tol;
+    for (fi,f) in out.faces.iter().enumerate() {
+        for c in f.loops.iter().flatten() {
+            let e = &out.edges[c.edge as usize];
+            for k in 0..=8 {
+                let p = e.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/8.,&out.vertices);
+                let off = gcs_core::space::distance(f.surface.point(f.surface.inverse(p)),p);
+                assert!(off <= reach,"{what}: face {fi} ({}) stands {off:e} off its edge {} at {k}/8, past {reach:e}",
+                    f.surface.kind(),c.edge);
+            }
+        }
+    }
     out
 }
 
@@ -124,6 +141,70 @@ fn coaxial_rods_of_one_radius_leaning_a_hair_are_united() {
     }
 }
 
+/// **Two frustums of one cone, one leaning a hair, are one cone where they overlap** (a
+/// countersink's cone flush with a chamfer's, drawn from rounded coordinates): the frustum from
+/// radius 5 to 3 over ten millimetres and the one from 4 to 2 over the next ten, from halfway up
+/// the first, united are the frustum from 5 to 2 over fifteen, `π h (R² + R r + r²) / 3`.
+#[test]
+fn frustums_of_one_cone_leaning_a_hair_are_united() {
+    let low = cone([0.;3],XY,5.,3.,10.).unwrap();
+    assert!(low.faces.iter().any(|f| f.surface.kind() == "cone"),"a frustum's side is a cone");
+    for &theta in &LEANS[..4] { for &axis in &ABOUT {
+        let high = cone([0.,0.,5.],XY,4.,2.,10.).unwrap().moved(&Rigid::turn([0.,0.,7.5],axis,theta));
+        let what = format!("a frustum leaning {theta:e} about {axis:?}");
+        for (x,y) in [(&low,&high),(&high,&low)] {
+            let u = built(x,y,Op::Union,&what);
+            close(volume(&u),PI*15./3.*(25.+10.+4.),moved_by(x,y,2.*PI*4.5*5.),&what);
+        }
+    } }
+}
+
+/// The sector of the torus of middle radius `big` and tube `small` about the z axis through the
+/// origin, from `from` round `turn` radians.
+fn torus_sector(big: f64,small: f64,from: f64,turn: f64) -> Brep {
+    let f = Frame::new([0.;3],XY,[1.,0.,0.]);
+    let centre = [big,0.,0.];
+    let section = ProfileEdge::Arc {frame:Frame::new(centre,f.y,f.x),r:small,span:None};
+    let p = Profile {origin:centre,normal:f.y,loops:vec![vec![section]],names:Vec::new()};
+    revolve(&p,[0.;3],XY,turn).unwrap().moved(&Rigid::turn([0.;3],XY,from))
+}
+
+/// **Two sectors of one torus, one leaning a hair, are one torus where they overlap**: the sectors
+/// from 0 to 200° and from 160° to 360°, the second leaning about the torus's centre, united are
+/// the whole ring, `2 π² R r²`, either first.
+#[test]
+fn sectors_of_one_torus_leaning_a_hair_are_united() {
+    let (big,small) = (10.,3.);
+    let one = torus_sector(big,small,0.,200f64.to_radians());
+    assert!(one.faces.iter().any(|f| f.surface.kind() == "torus"),"a sector's side is a torus");
+    for &theta in &LEANS[..4] { for &axis in &ABOUT {
+        let other = torus_sector(big,small,160f64.to_radians(),200f64.to_radians()).moved(&Rigid::turn([0.;3],axis,theta));
+        let what = format!("a sector leaning {theta:e} about {axis:?}");
+        for (x,y) in [(&one,&other),(&other,&one)] {
+            let u = built(x,y,Op::Union,&what);
+            close(volume(&u),2.*PI*PI*big*small*small,moved_by(x,y,4.*PI*PI*big*small*40./360.),&what);
+        }
+    } }
+}
+
+/// **A ball and the same ball drawn a few tolerances off, seamed about another axis, are one
+/// ball**: a sphere has no axis, so `same` reads two by centre and radius alone, at the reach the
+/// arrangement reads every surface by; united either way they are the ball, `4 π r³ / 3`.
+#[test]
+fn a_ball_drawn_a_few_tolerances_off_itself_is_one_ball() {
+    let r = 6.;
+    let ball = sphere([0.;3],XY,r).unwrap();
+    let tol = tolerance(2.*r);
+    for off in [0.,tol,3.*tol] {
+        let other = sphere([off,0.5*off,0.],[0.,1.,0.],r).unwrap();
+        let what = format!("a ball {off:e} off");
+        for (x,y) in [(&ball,&other),(&other,&ball)] {
+            let u = built(x,y,Op::Union,&what);
+            close(volume(&u),4./3.*PI*r*r*r,moved_by(x,y,4.*PI*r*r),&what);
+        }
+    }
+}
+
 /// **One surface over a region, and not past it** (`ssi::same_over`): two planes leaning `θ` apart
 /// through a common line are one over a box within `tol / θ` of the line, and two elsewhere; two
 /// cylinders of one radius whose axes lean apart likewise; and with no region, `same`'s reading
@@ -145,6 +226,17 @@ fn surfaces_leaning_apart_are_one_over_a_region_within_the_tolerance() {
     assert!(same_over(&axis(0.),&axis(theta),tol,([-3.,-3.,-10.],[3.,3.,10.])),"two rods' walls, one over their length");
     assert!(!same_over(&axis(0.),&axis(theta),tol,([-3.,-3.,990.],[3.,3.,1010.])),"a metre up the axis, two");
     assert!(!same_over(&axis(0.),&axis(1e-6),tol,([-3.,-3.,-10.],[3.,3.,10.])),"a lean a thousand times that: two");
+    // a cone and a torus likewise, about the apex and the centre
+    let cone_at = |lean: f64| Surface::Cone(Frame::new([0.;3],[lean.sin(),0.,lean.cos()],[0.,1.,0.]),5.,-0.2);
+    let near_apex = ([-6.,-6.,0.],[6.,6.,10.]);
+    assert!(same_over(&cone_at(0.),&cone_at(theta),tol,near_apex),"a cone leaning 1e-9, one over its frustum");
+    assert!(!same_over(&cone_at(0.),&cone_at(1e-6),tol,near_apex),"leaning 1e-6, two");
+    let ring = |lean: f64| Surface::Torus(Frame::new([0.;3],[lean.sin(),0.,lean.cos()],[0.,1.,0.]),10.,3.);
+    let round = ([-13.,-13.,-3.],[13.,13.,3.]);
+    assert!(same_over(&ring(0.),&ring(theta),tol,round),"a torus leaning 1e-9, one over its ring");
+    assert!(!same_over(&ring(0.),&ring(1e-6),tol,round),"leaning 1e-6, two");
+    let fat = Surface::Torus(Frame::new([0.;3],XY,[1.,0.,0.]),10.,3.+2.*tol);
+    assert!(!same_over(&ring(0.),&fat,tol,round),"a tube twice the tolerance fatter: two");
 }
 
 /// Fixture 115's fragment (#961): two folded strips whose pads overlap, flush, at a corner, and a

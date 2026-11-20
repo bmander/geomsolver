@@ -332,10 +332,14 @@ pub fn same(a: &Surface,b: &Surface,tol: f64) -> bool {
 
 /// **Two surfaces are one over a region** (#961): `same` held over the box `region` alone — the
 /// part of space faces on both may share — where `same` holds them over all of space. Two planes,
-/// or two cylinders, whose normals or axes lean a hair apart are one where every point of either
-/// within the region stands within `tol` of the other: a plane stands off the other by a linear
-/// function of where it is read, greatest at a corner of the region, and an axis off the other
-/// likewise at the ends of the region's span along it. So the angle two surfaces may lean apart and
+/// cylinders, cones or tori whose normals or axes lean a hair apart are one where every point of
+/// either within the region stands within `tol` of the other: a plane stands off the other by a
+/// linear function of where it is read, greatest at a corner of the region; a surface of
+/// revolution is the other turned by the lean about a point of its axis and moved, and a point of
+/// it moves by no more than the lean times its distance from that point (the farthest corner's),
+/// the move and the difference of their sizes. A sphere has no axis, and `same` reads two spheres
+/// by centre and radius alone; a swept curve's surface and a sheet are `same`'s (their sweep's or
+/// their nets' reading, parallel to `1e-12`). So the angle two surfaces may lean apart and
 /// still be one is the tolerance over the region's reach, not `same`'s fixed `1e-12`: two faces
 /// drawn on one plane through points rounded to nine decimals lean `1e-10` apart, a hundredth of
 /// the tolerance over a part a hundred millimetres across, and every point of one is on the other
@@ -348,16 +352,20 @@ pub fn same_over(a: &Surface,b: &Surface,tol: f64,region: super::geom::Box3) -> 
     let (f,g) = (a.frame(),b.frame());
     // only a lean the region can tell from none: past `1e-3` rad two surfaces are not one anywhere
     // their region is wider than a thousand tolerances, and `same` has read them
-    if norm(cross(f.z,g.z)) > 1e-3 { return false }
-    let centre: V = std::array::from_fn(|k| 0.5*(region.0[k]+region.1[k]));
-    let reach = 0.5*distance(region.0,region.1);
+    let lean = norm(cross(f.z,g.z));
+    if lean > 1e-3 { return false }
     let corners: [V;8] = std::array::from_fn(|i| std::array::from_fn(|k| if i>>k & 1 == 0 { region.0[k] } else { region.1[k] }));
-    // the greatest distance from the line through `q` along `w` of a point of the line through `p`
-    // along `d`, over the region's span along that line
-    let axes_apart = |p: V,d: V,q: V,w: V| -> f64 {
-        let at = |s: f64| { let x = add(p,scale(d,dot(sub(centre,p),d)+s)); norm(cross(sub(x,q),w)) };
-        at(-reach).max(at(reach))
-    };
+    // how far from `p` the region reaches
+    let farthest = |p: V| corners.iter().map(|&c| distance(c,p)).fold(0.,f64::max);
+    // **a surface of revolution leaning off another**: the second is the first turned by the lean
+    // about a point `p` of the first's axis (which turns it onto the second's axis: the surface is
+    // its own image under any turn about that axis), moved from `p` to the second's matching point
+    // `q`, and changed in its own sizes by `sizes` at a distance `d` from `p` — a point of the first
+    // within the region moved by no more than `lean d + |q − p| + sizes(d)`
+    let moved = |p: V,q: V,sizes: &dyn Fn(f64) -> f64| { let d = farthest(p); lean*d+distance(p,q)+sizes(d) <= tol };
+    // the foot on the line through `o` along `z` of the region's middle
+    let centre: V = std::array::from_fn(|k| 0.5*(region.0[k]+region.1[k]));
+    let foot = |o: V,z: V| add(o,scale(z,dot(sub(centre,o),z)));
     match (a,b) {
         (Surface::Plane(_),Surface::Plane(_)) => {
             // each corner read onto each plane, its height over the other
@@ -367,8 +375,24 @@ pub fn same_over(a: &Surface,b: &Surface,tol: f64,region: super::geom::Box3) -> 
             }).fold(0.,f64::max);
             apart(f,g).max(apart(g,f)) <= tol
         }
-        (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) =>
-            axes_apart(f.o,f.z,g.o,g.z).max(axes_apart(g.o,g.z,f.o,f.z))+(r-s).abs() <= tol,
+        (&Surface::Cylinder(_,r),&Surface::Cylinder(_,s)) => {
+            let p = foot(f.o,f.z);
+            moved(p,add(g.o,scale(g.z,dot(sub(p,g.o),g.z))),&|_| (r.abs()-s.abs()).abs())
+        }
+        (&Surface::Cone(_,r,half),&Surface::Cone(_,s,kalf)) => {
+            // apex to apex; the half-angles differing by `δ` part the two by `d sin δ` at a distance
+            // `d` from the apex; each opening the same way
+            let (sa,sb) = (half.dsin(),kalf.dsin());
+            if !(sa.abs() > 1e-12 && sb.abs() > 1e-12) { return false }
+            let opens = |z: V,a: f64| scale(z,a.signum());
+            if dot(opens(f.z,half),opens(g.z,kalf)) <= 0. { return false }
+            let delta = (half.abs()-kalf.abs()).abs();
+            moved(cone_apex(f,r,half),cone_apex(g,s,kalf),&|d| d*delta.min(1.))
+        }
+        (&Surface::Torus(_,big,r),&Surface::Torus(_,bog,s)) =>
+            moved(f.o,g.o,&|_| (big-bog).abs()+(r.abs()-s.abs()).abs()),
+        // a sphere has no axis: `same`'s reading (centres and radii) is already its reading over any
+        // region; a swept curve's or a sheet's is `same`'s
         _ => false,
     }
 }
