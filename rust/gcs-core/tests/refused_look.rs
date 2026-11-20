@@ -12,8 +12,9 @@ use crate::common::{ent, text::solved};
 /// A post 14 high on a D — an arc of radius 5 about the origin closed by a chord at `x = 3` —
 /// cut by a lid tilted 20° about the y axis through (0, 0, 10), its rim along the arc `round`ed:
 /// to 5, the post's own radius, the ball stands still on the axis and the meeting is a stretch of
-/// the top's loop, which the kernel refuses (`fillet::standing`, "no stretch of its dome is cut
-/// off yet"); to 2, it rolls, and its end against the chord is refused instead.
+/// the top's loop ending where the chord's face cuts across it, which the kernel refuses
+/// (`fillet::standing`, "no stretch of its dome is carried past and cut off by a face yet"); to 2,
+/// it rolls, and its end against the chord is refused instead.
 fn tilted_d_post(round: &str) -> String {
     format!("unit mm\nuse std\nuse std.solids (cut, union, common)\nuse std.rounds (round)\n\
         in std.top {{\n  o := point\n  fix((0, 0)) o\n  a := point\n  fix((3, -4)) a\n  b := point\n\
@@ -56,7 +57,8 @@ fn lattice(lo: [f64; 3], hi: [f64; 3], n: usize) -> Vec<[f64; 3]> {
 /// say, and nor does a solid with no round.
 #[test]
 fn a_refused_round_is_said_before_its_field_is_meshed() {
-    for (src, why) in [(tilted_d_post("round(r: 5mm)"), "stands still, and their meeting is a stretch of a loop"),
+    for (src, why) in [(tilted_d_post("round(r: 5mm)"),
+                        "stands still, and their meeting ends where `post.flat` cuts across it"),
                        (square_d_post(), "a stretch of a circle its end does not cut off")] {
         let e = solved(&src);
         let i = ent(&e, "drum").i();
