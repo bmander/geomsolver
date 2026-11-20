@@ -131,9 +131,10 @@ pub enum Code {
     /// a notch — written turning the default way, counter-clockwise from its `start:` (#952):
     /// its ends written the other way round would bulge out
     W118,
-    /// a `union` the body keeps none of (#961): what it would add lies wholly in what the body's
-    /// cuts take, or outside what it is in `common` with — a cut takes material wherever its
-    /// statement stands, so a union written after it puts nothing back
+    /// a `union` that leaves its body as it would be without it while the body's cuts take some
+    /// of it, or its commons leave some out (#961): all it keeps is the stock's or another
+    /// union's already — a cut takes material wherever its statement stands, so a union written
+    /// after it puts nothing back
     W119,
     /// The drift lint (#462, `program::drift`): advisory, asked for and never raised by
     /// elaboration.  The `W2xx` block is ours, as the `E1xx` one is.

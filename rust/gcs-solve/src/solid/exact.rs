@@ -85,8 +85,8 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
     Ok(named(brep, mm, origin, leading))
 }
 
-/// **Solid `si`'s written terms, built where it is** (#961): the nodes its root body's unions,
-/// cuts and commons need — what reads its faces (a round's fill and cut) left unbuilt —
+/// **Solid `si`'s written terms, built where it is** (#961): the nodes its root body's stock,
+/// unions, cuts and commons need — what reads its faces (a round's fill and cut) left unbuilt —
 /// each as `build` builds it about `si`'s origin (millimetres), by the node's id: what a reading
 /// of the body's terms against one another classifies, with no Boolean of the body made.  Where
 /// a needed node reads others no walk here lists, every node but the root is built.
@@ -97,8 +97,8 @@ pub(crate) fn operands(sk: &Sketch, si: usize) -> Result<(Recipe, BTreeMap<i64, 
     let recipe = Recipe::read(&cad::recipe_of_terms(sk, si, origin.map(|x| x * mm))?)?;
     let of: BTreeMap<i64, &Node> = recipe.nodes.iter().map(|n| (n.id, &n.node)).collect();
     let mut wanted: Option<BTreeSet<i64>> = match of.get(&recipe.root) {
-        // the stock only where a term reads it (a prism through everything spans it)
-        Some(Node::Body(b)) => Some(b.on.iter().chain(&b.cut).chain(&b.bound).copied().collect()),
+        Some(Node::Body(b)) => Some(std::iter::once(b.stock)
+            .chain(b.on.iter().chain(&b.cut).chain(&b.bound).copied()).collect()),
         _ => None,
     };
     // every node those read, all the way down

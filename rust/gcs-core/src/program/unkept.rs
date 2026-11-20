@@ -1,7 +1,8 @@
-//! **A union the body keeps none of, said** (#961, W119): `solid::unkept` reads which unions of a
-//! body add it no material because its cuts take all of what they would add, or its commons
-//! leave it out; each is said at the statement that wrote the union, naming the union, the body
-//! and the statements that take its material, as the document calls them.
+//! **A union that adds its body nothing, said** (#961, W119): `solid::unkept` reads which unions
+//! of a body leave it as it would be without them while its cuts take some of them, or its
+//! commons leave some out; each is said at the statement that wrote the union, naming the union,
+//! the body, the terms whose material is all the body keeps of it, and the statements that take
+//! the rest, as the document calls them.
 
 use super::refused::Placing;
 use super::{Code, Diag, SourceMap};
@@ -17,7 +18,8 @@ fn listed(sk: &Sketch, of: &[usize]) -> String {
     }
 }
 
-/// Each union a body keeps none of, at the statement that wrote it.  A body whose terms are not
+/// Each union that adds a body nothing while its cuts or commons take some of it, at the
+/// statement that wrote it.  A body whose terms are not
 /// built exactly says nothing here: what refuses it is said where it is built.
 pub(super) fn unions(sk: &Sketch, map: &SourceMap, place: &Placing) -> Vec<Diag> {
     let mut out = Vec::new();
@@ -45,11 +47,20 @@ pub(super) fn unions(sk: &Sketch, map: &SourceMap, place: &Placing) -> Vec<Diag>
             } else {
                 "a `union` written after a cut puts nothing back"
             };
-            out.push(Diag::new(Code::W119, span, stmt, format!(
-                "`{x}` lies wholly {}, so `{b}` keeps none of it: a body is its stock and what is \
-                 in `union` with it, less what cuts it and within what it is in `common` with, \
-                 whatever order its statements stand in — {after}",
-                whence.join(" or "))));
+            let tail = format!("a body is its stock and what is in `union` with it, less what \
+                cuts it and within what it is in `common` with, whatever order its statements \
+                stand in — {after}");
+            let whence = whence.join(" or ");
+            // clear of every other term, it is wholly taken; else what it keeps is another's
+            let message = if u.held.is_empty() {
+                format!("`{x}` lies wholly {whence}, so `{b}` keeps none of it: {tail}")
+            } else {
+                let give = if u.held.len() == 1 { "gives" } else { "give" };
+                format!("`{b}` keeps of `{x}` only what {} {give} it already, and the rest of \
+                         `{x}` lies {whence}, so `{b}` is as it would be without `{x}`: {tail}",
+                        listed(sk, &u.held))
+            };
+            out.push(Diag::new(Code::W119, span, stmt, message));
         }
     }
     out
