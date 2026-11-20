@@ -1,0 +1,9 @@
+// Presentation of box_barge.sv. Model geometry is independent of this drawing.
+model m from "box_barge.sv"
+
+sheet drawing {
+  size A4
+  label "A BOX BARGE FLOATING" at (14mm, 18mm)
+  label "Its waterline found by its displacement, its centre of buoyancy and BM by the rows" at (14mm, 28mm)
+  sketch top(m) at (40mm, 110mm)
+}

@@ -328,7 +328,7 @@ fn nearest_held(b: &Arc<BSpline>,p: V) -> f64 {
     let held = HELD_CURVE_FEET.with(|c| c.borrow().0.iter().flatten().find(|(c,q,_)| Arc::ptr_eq(c,b) && same(q))
         .map(|e| e.2));
     if let Some(t) = held { return t }
-    let t = b.nearest(p);
+    let t = BSpline::nearest_indexed(b,p);
     HELD_CURVE_FEET.with(|c| {
         let (slots,next) = &mut *c.borrow_mut();
         slots[*next] = Some((b.clone(),p,t));
@@ -1063,14 +1063,14 @@ fn net_inverse(net: &std::sync::Arc<super::nurbs::Net>,p: V) -> Uv {
     let n: &super::nurbs::Net = net;
     let key = n as *const _ as usize;
     let near = 1e-3*(1.+dot(p,p).sqrt());
-    let warm = crate::util::warm::get(crate::util::warm::Kind::Net,key).and_then(|s| net_newton(n,p,s))
-        .filter(|&uv| crate::util::space::distance(n.point(uv[0],uv[1]),p) <= near);
-    // else from the spans whose boxes stand nearest (each boxed by its Bézier points,
-    // `query::net_index`), found best first by their boxes alone, Newton's method from each one's
-    // middle, the nearest foot it settles on taken — where it stands within `near` of the nearest
-    // box: the surface lies in its spans' boxes, so no foot is nearer than that box, and a foot
-    // farther off is a local one (Newton's method settling on another fold of a fitted sheet,
-    // 1.4 off a point on it), read again by the search below
+    let start = crate::util::warm::get(crate::util::warm::Kind::Net,key);
+    // The spans whose boxes stand nearest (each boxed by its Bézier points, `query::net_index`),
+    // found best first by their boxes alone: the surface lies in its spans' boxes, so no foot is
+    // nearer than the nearest box, and a foot within `near` of it is the nearest, to `near`.
+    // The last foot's start is tried first — a mesh asks of points a step apart, mostly off the
+    // sheet — then Newton's method from each near span's middle, the nearest foot it settles on
+    // taken; a foot farther off is a local one (Newton's method settling on another fold of a
+    // fitted sheet, 1.4 off a point on it), read again by the search below
     let indexed = || -> Option<Uv> {
         if n.weights.is_some() { return None }
         let index = crate::query::net_index(net);
@@ -1087,13 +1087,19 @@ fn net_inverse(net: &std::sync::Arc<super::nurbs::Net>,p: V) -> Uv {
         });
         let nearest = nearest.into_inner();
         let least = nearest[0].0;
+        let foot = |uv: Uv| (crate::util::space::distance(n.point(uv[0],uv[1]),p),uv);
+        if let Some(uv) = start.and_then(|s| net_newton(n,p,s)).filter(|&uv| foot(uv).0 <= least+near) {
+            return Some(uv)
+        }
         nearest.iter().filter(|c| c.1 != usize::MAX).filter_map(|&(_,i)| {
             let [su,sv] = index.spans[i];
-            let uv = net_newton(n,p,[0.5*(su[0]+su[1]),0.5*(sv[0]+sv[1])])?;
-            Some((crate::util::space::distance(n.point(uv[0],uv[1]),p),uv))
+            net_newton(n,p,[0.5*(su[0]+su[1]),0.5*(sv[0]+sv[1])]).map(foot)
         }).min_by(|a,b| a.0.total_cmp(&b.0)).filter(|&(d,_)| d <= least+near).map(|(_,uv)| uv)
     };
-    let uv = warm.or_else(indexed).unwrap_or_else(|| {
+    // a rational sheet has no index: its last foot taken where it lies on the sheet
+    let warm = || start.filter(|_| n.weights.is_some()).and_then(|s| net_newton(n,p,s))
+        .filter(|&uv| crate::util::space::distance(n.point(uv[0],uv[1]),p) <= near);
+    let uv = warm().or_else(indexed).unwrap_or_else(|| {
         let greville = |k: &[f64],d: usize,i: usize| k[i+1..=i+d].iter().sum::<f64>()/d as f64;
         // from the nearest poles' Greville points, the nearest first, then the grid
         let mut nearest = [(f64::INFINITY,(0,0));4];

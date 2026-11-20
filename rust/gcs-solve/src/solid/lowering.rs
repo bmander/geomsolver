@@ -39,6 +39,7 @@
 //! | `Flat` / `FlatFill` along such an edge | the flat sectioned square to the faces' meeting between its legs and fitted (`brep::fillet::flat_along`), its strips and ends as a rolled round's |
 //! | any of them where a face goes on tangent across a seam beside the edge the section reaches (`F.smooth`, #422): along a line seam, or round a circle seam about its axis | the section against the chain — the face's own trace to the seam, the next face's from there — the ball against the piece it touches, the flat each piece's sum of distances in turn (`chain`) |
 //! | the same round a circle seam off its axis, or along an edge no line or coaxial circle carries | the edge's own piece kept short of the seam's normal surface (a ring, a flat cut along the run) or with the stretch past the seam cut away (a ring's stretch, a ball rolled along the run), and the section against the next face beyond it, sectioned and fitted (`Beyond`, `brep::spill`), glued to it |
+//! | the same along a straight edge beside a line seam along it into a face no line along the edge turns about (a drafted side's plane into its corner's cone, #962) | the section reaches across the seam the edge's whole length: a round's ball rolled against the next face all along it, a flat's run kept short of the seam's normal plane and the flat against the next face beyond it, sectioned square to the edge and fitted (`Piece::Along`, `brep::spill`), carried past the edge's ends and cut off where the run is |
 //! | any of them where the faces meet nowhere, or an edge turns the other way | nothing |
 //!
 //! A region is its **pieces** (`Piece`: a run along an edge, a ball's cell at a corner), and the
@@ -48,7 +49,6 @@
 //! left unioned (two runs crossing at a corner whose third edge stays sharp: a mitre).
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use crate::json::{object, Json};
 use crate::model::{Sketch, SolidDef};
 use crate::space::{add, cross, distance, dot, norm, normalised, scale, sub};
 use piece::toward;
@@ -348,6 +348,14 @@ pub enum Piece {
     Ring(Ring),
     Corner(Corner),
     Rolled(Rolled),
+    /// **A straight run beside a seam along its edge into a face no cylinder along it** (#962: a
+    /// foot standing against a drafted side by its rounded corner, the side's plane going on into
+    /// the corner's cone): the section reaches across the seam all along the edge, so the piece
+    /// beyond it runs the edge's whole length (`Beyond::run`, cut off where the run is) — a round's
+    /// ball touching the next face everywhere, the whole of it; a flat's the edge's own run too,
+    /// kept short of the seam's normal plane (`run`), the piece beyond glued to it there and held
+    /// by it (#423).
+    Along { run: Option<Run>, beyond: Beyond },
 }
 
 /// A section beyond a seam's normal surface (#422, model units): where an edge's face goes on
@@ -375,6 +383,11 @@ pub struct Beyond {
     pub seam: Seam,
     pub section: Across<Surf>,
     pub ends: [V; 2],
+    /// Along the whole length of a straight edge beside a seam along it (#962, `Piece::Along`):
+    /// `ends` the edge's ends, and the half-spaces `n·x <= d` its run is kept within there (its
+    /// `within`), past which it is carried and cut off.  None: between where the leg or the touch
+    /// crosses the seam.
+    pub run: Option<Vec<(V, f64)>>,
 }
 
 /// A seam a section reaches across (model units here, the recipe's in its own): a circle or a line;
@@ -710,38 +723,28 @@ pub(crate) struct Gated {
 }
 
 /// A lowered node's text up to the order it lists things in: its pieces, its corners (each's
-/// faces sorted), its rolled runs, and its joins, each as the pair of what it joins.
-fn canonical(node: &Json) -> String {
-    let dump = |j: &Json| j.dump(None);
-    let corner = |c: &Json| {
-        let mut faces = c.get("faces").map_or(&[][..], Json::arr).to_vec();
-        faces.sort_by_cached_key(dump);
-        let mut c = c.clone();
-        c.set("faces", Json::Arr(faces));
-        c.dump(None)
+/// faces sorted), its rolled runs, and its joins, each as the pair of what it joins — every item
+/// said by its `Debug` text, which writes each number so it reads back exactly.
+fn canonical(node: &crate::brep::recipe::Lowered) -> String {
+    let said = |x: &dyn std::fmt::Debug| format!("{x:?}");
+    let corner = |c: &crate::brep::recipe::Corner| {
+        let mut faces: Vec<String> = c.faces.iter().map(|f| said(f)).collect();
+        faces.sort();
+        format!("{:?} {:?} {:?} {faces:?}", c.vertex, c.centre, c.radius)
     };
     // in the order joins count them: runs and rings, then corners, then rolled runs, then the
     // pieces beyond a seam's normal surface
-    let listed = |key: &str| node.get(key).map_or(&[][..], Json::arr);
-    let each: Vec<String> = listed("pieces").iter().map(dump).chain(listed("corners").iter().map(corner))
-        .chain(listed("rolled").iter().map(dump)).chain(listed("beyond").iter().map(dump)).collect();
-    let mut joins: Vec<[&str; 2]> = listed("joins").iter().map(|j| {
-        let at = |k: usize| j.arr().get(k).map_or(usize::MAX, |i| i.as_i64() as usize);
-        let mut pair = [0, 1].map(|k| each.get(at(k)).map_or("", String::as_str));
+    let each: Vec<String> = node.pieces.iter().map(|p| said(p)).chain(node.corners.iter().map(corner))
+        .chain(node.rolled.iter().map(|r| said(r))).chain(node.beyond.iter().map(|b| said(b))).collect();
+    let mut joins: Vec<[&str; 2]> = node.joins.iter().map(|j| {
+        let mut pair = j.map(|k| each.get(k).map_or("", String::as_str));
         pair.sort();
         pair
     }).collect();
     joins.sort();
     let mut sorted: Vec<&str> = each.iter().map(String::as_str).collect();
     sorted.sort();
-    let mut out = object([
-        ("each", Json::Arr(sorted.into_iter().map(|t| Json::Str(t.into())).collect())),
-        ("joins", Json::Arr(joins.into_iter().map(|p| Json::Arr(p.map(|t| Json::Str(t.into())).to_vec())).collect())),
-    ]);
-    if let Some(stratum) = node.get("stratum") {
-        out.set("stratum", stratum.clone());
-    }
-    out.dump(None)
+    format!("{sorted:?} {joins:?} {:?}", node.stratum)
 }
 
 /// How many constructions `Caches::gated` keeps, the latest asked: enough for the orders of a
@@ -766,12 +769,11 @@ fn gated(sk: &Sketch, pieces: &[Piece], body: &std::sync::Arc<super::faces::Body
     let (_, by, origin) = body.brep();
     let (writer, mm) =
         if rolled { (Writer::about(by, scale(origin, by)), Some(by)) } else { (Writer::world(1.0), None) };
-    let mut node = assemble(pieces).node(&writer)?;
+    let mut lowered = assemble(pieces).node(&writer)?;
     if rolled {
-        node.set("stratum", object([("kind", "body".into()), ("stock", 0.into()), ("on", Json::Arr(vec![])),
-            ("cut", Json::Arr(vec![])), ("bound", Json::Arr(vec![]))]));
+        lowered.stratum = Some(crate::brep::recipe::Body { stock: 0, ..Default::default() });
     }
-    let key = canonical(&node);
+    let key = canonical(&lowered);
     let stratum = rolled.then(|| body.clone());
     let at = |s: &Option<Arc<super::faces::BodyFaces>>| s.as_ref().map(Arc::as_ptr);
     let mut cache = sk.caches.gated.borrow_mut();
@@ -782,7 +784,7 @@ fn gated(sk: &Sketch, pieces: &[Piece], body: &std::sync::Arc<super::faces::Body
     }
     drop(cache);
     let built: std::collections::BTreeMap<_, _> = stratum.iter().map(|b| (0, b.brep().0.clone())).collect();
-    let brep = crate::brep::recipe::node_named(&node, &built, &Default::default(), 0.0)?;
+    let brep = crate::brep::recipe::node(&crate::brep::recipe::Node::Lowered(lowered), &built)?;
     let mesh = super::agreement::gate_mesh(&brep)?;
     let built = Rc::new(Gated { key, stratum, brep, mesh, mm });
     let mut cache = sk.caches.gated.borrow_mut();

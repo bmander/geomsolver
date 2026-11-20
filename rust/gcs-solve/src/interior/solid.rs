@@ -46,7 +46,13 @@ fn rule2() -> [([f64; 3], f64); 4] {
 /// Walkington's degree-five rule of fourteen points, every weight positive: for the consistent
 /// mass (`NᵀN`, of degree four), the volume (a curved element's `det J` is of degree three), the
 /// loads through it and the geometric stiffness.
-fn rule5() -> Vec<([f64; 3], f64)> {
+fn rule5() -> &'static [([f64; 3], f64)] {
+    static RULE: std::sync::OnceLock<Vec<([f64; 3], f64)>> = std::sync::OnceLock::new();
+    RULE.get_or_init(rule5_points)
+}
+
+/// `rule5`'s fourteen points and weights, made once.
+fn rule5_points() -> Vec<([f64; 3], f64)> {
     let mut out = Vec::with_capacity(14);
     for (a, w) in [(0.092_735_250_310_891_226, 0.012_248_840_519_393_658),
                    (0.310_885_919_263_300_61, 0.018_781_320_953_002_642)] {
@@ -111,6 +117,22 @@ fn shape_d(p: [f64; 3]) -> [[f64; 10]; 3] {
 /// `Structure::measure_gradient`).
 pub(crate) fn volume_of<T: Num>(x: &[P<T>; 10]) -> T {
     rule5().iter().fold(T::cst(0.0), |a, &(p, w)| a + T::cst(w) * jacobian(x, &shape_d(p)).1)
+}
+
+/// **Each point of the degree-five rule in the element** (#953): where it stands at its nodes'
+/// places `x`, its weight, and `det J` there, each handed to `f` — what a moment of the element is
+/// summed over (`gauge::tet`).
+pub(crate) fn each_point<T: Num>(x: &[P<T>; 10], mut f: impl FnMut(P<T>, f64, T)) {
+    for &(p, w) in rule5() {
+        let n = shape(p);
+        let mut at = [T::cst(0.0); 3];
+        for k in 0..10 {
+            for c in 0..3 {
+                at[c] = at[c] + T::cst(n[k]) * x[k][c];
+            }
+        }
+        f(at, w, jacobian(x, &shape_d(p)).1);
+    }
 }
 
 /// The element's Jacobian at a point of it, `J[r][c] = ∂x_c/∂ξ_r`, and its determinant.
@@ -258,7 +280,7 @@ impl Tet10 {
     /// **Its consistent mass**, `ρ ∫ NᵀN` by the degree-five rule, the same along x, y and z.
     pub fn mass(&self, x: &[P<f64>; 10]) -> Result<[[f64; 30]; 30], Failure> {
         let mut m = [[0.0; 30]; 30];
-        for (p, w) in rule5() {
+        for &(p, w) in rule5() {
             let (_, det) = jacobian(&lift(x), &shape_d(p));
             if !(det.v > 0.0) {
                 return Err(Failure::Collapsed);
@@ -323,7 +345,7 @@ impl Tet10 {
     /// stiffness, a pull stiffening and a press softening.  `None` where it is turned over.
     pub fn geometric(&self, x: &[P<f64>; 10], u: &[f64; 30]) -> Option<[[f64; 30]; 30]> {
         let mut m = [[0.0; 30]; 30];
-        for (p, w) in rule5() {
+        for &(p, w) in rule5() {
             let (g, det) = Tet10::gradients(x, p)?;
             let s = self.stress_of(Tet10::strain(&g, u));
             let t = [[s[0], s[5], s[4]], [s[5], s[1], s[3]], [s[4], s[3], s[2]]];
@@ -405,7 +427,7 @@ pub(crate) fn element_load<T: Num>(borne: &Borne, x: &[P<T>; 10]) -> ([[T; 3]; 1
         Borne::Through { force, .. } | Borne::Body { force, .. } => *force,
         _ => return (f, volume),
     };
-    for (p, w) in rule5() {
+    for &(p, w) in rule5() {
         let (_, det) = jacobian(x, &shape_d(p));
         let (n, dv) = (shape(p), det * T::cst(w));
         volume = volume + dv;

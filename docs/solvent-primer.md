@@ -199,6 +199,40 @@ coordinate the circle *crosses* there, never by one it runs square to: at `(10, 
 along y, so `fix(x == 10mm)` holds nothing to first order (numeric rank short of structural) and
 `fix(y == 0mm)` places it.
 
+**An arc of a half turn** has its ends a diameter apart, through its centre: that is one fact, so
+the arc is four numbers, not five. Say the fact and hold four. With both ends held, put the centre
+on the chord (in a D-shaped profile the chord is the drawn line):
+
+```
+fix((10, 0)) s
+fix((-10, 0)) e
+k := arc(center: c, start: s, end: e)
+construction chord := line(s, e)
+c coincident chord                    c at (0, 0), from either side: DOF 0, well
+```
+
+With the centre and the start held, say the radii run opposite, which leaves the end one root:
+
+```
+fix((0, 0)) c
+fix((10, 0)) s
+k := arc(center: c, start: s, end: e)
+construction r0 := line(c, s)
+construction r1 := line(c, e)
+r0 parallel(sense: opposite) r1       e at (-10, 0), even seeded beside s: DOF 0, well
+```
+
+What else is tried, and what the report says of it:
+
+| held | report | why |
+|---|---|---|
+| `c`, `s` and `e` | `said twice among: s coincident k`, `… e coincident k` | the radius twice, as for any arc |
+| `s` and `e` | `DOF 1` | the centre slides along the ends' bisector: the half turn is unsaid |
+| `s`, `e` and `c midpoint chord` | `said twice among: c midpoint chord, s coincident k, e coincident k` | the arc already puts `c` on the bisector; `midpoint` says it again, `coincident` only the rest |
+| `s`, `e` and `radius(10mm) k` | `DOF 0` with `c.y = 1.90298e-06`; started on the root, `1 motion(s) blocked at second order (a double root) — not DOF` | 10 is the least radius through ends 20 apart: the circles about the ends touch rather than cross, so the centre is found only to the square root of the tolerance. Drop the radius; the chord says it |
+| `c`, `s` and `fix(x == -10mm) e` | as the radius: a double root | the circle runs square to x there (above) |
+| `c`, `s` and `fix(y == 0mm) e` | `DOF 0`, well | it works, but it is a coordinate (a lint), and has two roots: seeded beside `s` it lands on `s`, a whole turn (`k.length = 62.8319`) |
+
 **Members and vectors.** An entity's numbers are its members. A vector is `(a, b)` or `(a, b, c)`.
 A point *is* its place, so it is seeded and held whole by a vector — `hint((3, 4))`,
 `fix((0, 0)) p` — or by one of `x`, `y`, `z`; an axis has the vectors `dir` and `origin`, a plane
@@ -271,9 +305,11 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | `level(dir)` | infix | two points with the same ordinate along `dir` (an axis, a line, or `up`/`right`); a point and a plane with `u`/`v`. `distance(0, along: …)` is the same row with a number of zero, a dimension |
 | `angle` | infix | two lines, directed (below); in space, an axis and a line or axis, unsigned — or, with `about: a`, directed about axis `a` (below). `l1 angle(l3, l4) l2` equates two angles |
 | `radius` | prefix | a circle or arc |
-| `mass`, `volume` | prefix | a beam, a line a beam is drawn on, or a solid: what it is made of (`mass(10kg) arm`, `volume(42 * 1cm^3) web`, `claim mass(<= 1kg) plank`) — the drawing's, never a scenario's (see *Frames* below) |
+| `mass`, `volume` | prefix | **`std.measures`'s** (`use std.measures (mass, volume)`): a beam, a line a beam is drawn on, or a solid — what it is made of (`mass(10kg) arm`, `volume(42 * 1cm^3) web`, `claim mass(<= 1kg) plank`), the drawing's, never a scenario's (see *Frames* below) |
+| `area`, `moment` | prefix | **`std.measures`'s**: a face of a solid — its area, `area(A) hull.water`, and its second moment about a line or axis, `moment(i: I, about: centreline) hull.water` (see *Where a body is made* below) |
+| `centroid`, `centerofmass` | infix | **`std.measures`'s**: a declared point and a solid (or a face of one, or an instance's bodies): `g centroid hull`, `g centerofmass boat` |
 | `length` | prefix | any path: a line (the distance between its ends); an arc (radius × counter-clockwise sweep); a spline or free curve (its whole length). `distance` relates two things and `length` measures one, so `distance(d) l` on a line is refused, naming `length(d) l` |
-| `symmetry(line)` | infix | two points |
+| `symmetry(line)` | infix | two points; the line may be an axis, `a symmetry(std.x) b`: the half turn about it, in space (0.220) |
 | `midpoint` | infix | a point and a line |
 | `parallel`, `perpendicular` | infix | two lines; an axis and a line or axis; an axis and a plane; `perpendicular` a line and a plane (the line along its normal, in space); `parallel` two planes. `l1 perpendicular(sense: ccw) l2`: `l2` a quarter turn anticlockwise of `l1` (`cw` the other way), in a plane; in space only about an axis, `perpendicular(sense: ccw, about: a)`. `a parallel(sense: same) b`: the two run alike (`opposite`: apart), lines or axes, in a plane or in space; alone, either way, the seed's. `coincident` between a line and an axis or two axes takes the same `sense:` |
 | `project` | infix | two points in two planes: two images of one point in space (1.12) |
@@ -352,7 +388,7 @@ their places in space; no selector is needed:
 | `a coincident l`, `a coincident c` | on the line's extension; on the circle in its own view |
 | `l1 angle(90deg) l2` | the **unsigned** angle, strictly between 0° and 180° (say `parallel` for 0°); `angle(90deg, about: a)` the turn about `a` |
 | `parallel`, `perpendicular`, `equal` | directions, and true lengths |
-| `a midpoint l`, `a symmetry(l) b` | the midpoint in space; a half turn about the line |
+| `a midpoint l`, `a symmetry(l) b` | the midpoint in space; a half turn about the line — or about an axis, `a symmetry(std.z) b`, wherever the points are drawn |
 | `a distance(20, along: std.z) b` | how far apart along the axis, in space |
 
 A word with no meaning in space — `horizontal`, a view's own `along: u` between two points (name
@@ -2272,6 +2308,16 @@ body's are (`body.bore.hole`).
   `pinhole cut body`. `Through` only makes the cutter; every body it is cut from bounds it.
 - **`tip common body`** keeps only what the body has in common with `tip`. Union comes first;
   `cut` and `common` commute.
+- **A union does not put back what a cut takes**, wherever it is written: `hub union part` below
+  `hole cut part`, the hub lying wholly in the bore, leaves `part` the bored ring, and the
+  statement is told so — `` warning[W119]: `hub` lies wholly in what `hole` cuts from `part`, so
+  `part` keeps none of it ``.  A web drawn across the bore with its ends in the wall is lost the
+  same way, its ends being the ring's already: `` `part` keeps of `web` only what `ring` gives it
+  already, and the rest of `web` lies in what `hole` cuts from `part`, so `part` is as it would
+  be without `web` ``.  To fill the bore, cut it in a body of its own and put the hub on that one
+  — `bored := solid(ring)`, `hole cut bored`, `part := solid(bored)`, `hub union part` — or cut a
+  bore that leaves the hub's place.  A union that adds any material of its own the cuts leave (a
+  boss bored through, standing proud of the plate) says nothing, nor one nothing cuts.
 - **A pattern of solids.** A solid declared inside a `ring` is one solid a copy, each
   reached by its index (`peg[3]`), as a point of the ring is. To join every copy alike, start from
   an empty body — its first `union` is its stock — or cut each from the body:
@@ -2451,6 +2497,9 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
 - `A` and `B` are **face paths**: `block` (every face), `block.near` (one), `pad.boss` (every face
   the boss gave), `pad.plate.near`, read from the solid through its operands' names, never by
   suffix. Faces that do not meet make nothing; a face a Boolean ate names nothing.
+- **Both faces are one body's** (0.223): an edge is where two faces of one body meet, so
+  `wall.far round(r: 2mm) plate.near` of two solids is E103.  Where both are unioned into `part`,
+  write them through it — `part.wall.far round(r: 2mm) part.plate.near` — as the refusal says.
 - **One copy of a pattern** (0.157): an operand written in a `repeat` or a `ring` is named with
   its copy's index, as `--where` reports it — the hole the second drill cut is
   `flange.drill[1].hole`. `flange.cd chamfer(d: 1mm) flange.drill[1]` chamfers that one hole
@@ -2699,18 +2748,57 @@ scenario tip_load {
   `len` an unknown). `solventc` prints `driven == 4mm, held` and the unknown's value. `along:` is
   an axis or a line the drawing holds.
 - **A mass is the drawing's, not a scenario's**: what a body is made of answers no load, so it is
-  written beside the scenarios, never in one — `mass(10kg) arm` (or `volume(1200 * 1cm^3) arm`;
+  written beside the scenarios, never in one — with `use std.measures (mass, volume)`,
+  `mass(10kg) arm` (or `volume(1200 * 1cm^3) arm`;
   `1200cm^3` would be the cube of 1200 centimetres) is a row over the beam's members, or a member's
   line, sizing an unknown the area reads (`A: b * h`) or placing a joint, with no support and no
   load; beside a driving deflection it sizes a second unknown, as `weighed_cantilever.sv` finds a
   section's width and depth, and alone it sizes a whole frame (`mass_budget_frame.sv`); over a
   prism it sizes a hole (`lightened_web.sv`) or places a point (`sized_gusset.sv`), and over a
   turned or cut solid moves its faces (0.180). `claim mass(<= 2kg) arm` (`>=`, or a number alone) is judged after the
-  solve; a bound is a claim's alone. `solventc` prints each: `mass(arm) is 10kg: driven == 10kg,
-  held`. Any other driving requirement (`mode(arm, 1) == 30Hz`) is only judged yet. The library
+  solve; a bound is a claim's alone. `solventc` prints each: `mass(10kg) arm: 10 kg ± 0 kg == 10
+  kg: driven, held`. Any other driving requirement (`mode(arm, 1) == 30Hz`) is only judged yet. The library
   shows each: `sized_cantilever.sv` (a depth),
   `reach_cantilever.sv` (a length), `shelf_bracket.sv` (two members, a load spread along the arm)
   and `portal_frame.sv` (a tube's diameter, a point on a member, the frame's weight).
+- **Where a body is made** (#953): `g centroid hull` puts a declared point at the centroid of a
+  solid's volume (or of a face's area), `g centerofmass boat` at a body's centre of mass — of an
+  instance, every body under it, each by its density — and `area(A) hull.water` and `moment(i: I,
+  about: centreline) hull.water` measure a face. Each is a row stated and judged claimed, as
+  `volume` is; a stated number may read an unknown (`area(L * w) hull.water` finds `w`). A hull in
+  water is the hull kept within a half-space, built exactly:
+
+  ```
+  param T: Length hint(30mm)
+  water := std.sets.HalfSpace(keel, std.z, d: T)
+  immersed := solid({ p | p in hull; p in water })
+  volume(L * B * 40mm) immersed      // finds the waterline T
+  g := point hint((100, 0, 20))
+  g centroid immersed                // the centre of buoyancy
+  claim moment(i: L * B^3 / 12, about: centreline) immersed.water
+  ```
+
+  The waterplane is `immersed.water`; a second moment is about a line, so for BM name the
+  centreline in the waterplane (its points `T` above the keel). A hull of panels is the solid its
+  closed shell encloses — the developable sides and the faces that close them, each drawn:
+  `shell := { q | q in bottom or q in port or q in starboard or q in deck or q in bow or q in
+  stern }`, `hull := solid({ p | p in shell.side })`, its faces `hull.port` and so on. A shell
+  that does not close says the edge it is open at. Its waterline is driven as a box's is, its
+  panels held; a panel whose rails the solve moves is E040.
+- **An integral, written bare** (0.222): every word above is `std.measures`'s, an equation of
+  integrals, and a document may write its own. `integral(EXPR over p in S)` integrates over a
+  solid, a face of one, a beam or an instance's bodies, its body reading the point only through
+  `distance(p, X)` (to a point, a line, an axis or a plane), `distance(g, p, along: std.x)` (the
+  signed ordinate) and `density(p)`; either side of `==` is arithmetic over integrals, numbers and
+  declared unknowns, and it drives as a measure word does (`claim` it to judge it, `<=`/`>=`
+  claimed only). A boat floats where it weighs the water it displaces, one line:
+
+  ```
+  integral(density(p) over p in boat) == 1000kg / 1m^3 * integral(1 over p in immersed)
+  ```
+
+  An unknown inside a body is refused (move it outside the integral). A word's number given as a
+  bound, `claim mass(<= 2kg) arm`, turns its body's `== m` into `<= m`, for any word of a file.
 - `pinned` holds a joint's moves, `fixed` its turns too, so a beam pinned at both ends is free to
   twist about its own line — and `solventc` says so (`leaves `arm` free to turn about x …`).
 

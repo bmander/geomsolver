@@ -7,6 +7,7 @@ unit mm
 use std
 use std.solids
 use std.place (horizontal, vertical)
+use std.measures (mass)
 
 a := 400mm
 t := 10mm

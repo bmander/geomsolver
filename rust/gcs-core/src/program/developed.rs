@@ -5,7 +5,7 @@
 
 use super::elaborate::Elab;
 use super::{Code, Diag, Made};
-use crate::flatten::developable::{DevelopedInfo, RailInfo, SheetInfo};
+use crate::flatten::developable::{DevelopedInfo, EnclosedInfo, MemberInfo, RailInfo, SheetInfo};
 use crate::model::{EntKind, EntRef, Rail};
 
 /// A rail by the entities the drawing built for its names, or the name that names none.
@@ -22,6 +22,41 @@ fn rail(cx: &Elab<'_>, r: &RailInfo) -> Result<Rail, String> {
 /// A panel's two rails, or why one names no path.
 fn rails(cx: &Elab<'_>, r: &[RailInfo; 2]) -> Result<[Rail; 2], String> {
     Ok([rail(cx, &r[0])?, rail(cx, &r[1])?])
+}
+
+/// **Each closed shell's inside at its probe** (#953): its members — each panel by its rails,
+/// each face of the drawing by its entity — the probe's term, as a band's is.
+pub(super) fn enclosed(cx: &mut Elab<'_>, shells: &[EnclosedInfo]) {
+    for s in shells {
+        let Some(p) = cx.res.of.get(&s.probe).copied() else { continue };
+        let members = s.members.iter().map(|m| Ok(match m {
+            MemberInfo::Sheet { rails: r, name } => {
+                crate::model::Member::Sheet { rails: Box::new(rails(cx, r)?), name: name.clone() }
+            }
+            MemberInfo::Face { face, name } => {
+                let f = cx.res.of.get(face).copied().filter(|e| e.kind == EntKind::Face)
+                    .ok_or_else(|| format!("`{name}` is no panel and no face of the drawing: a \
+                        closed shell is panels and faces"))?;
+                crate::model::Member::Face { face: f.i() as u32, name: name.clone() }
+            }
+        })).collect::<Result<Vec<_>, String>>();
+        let members = match members {
+            Ok(m) => m,
+            Err(m) => {
+                cx.diags.push(Diag::new(Code::E040, s.span, None, m));
+                continue;
+            }
+        };
+        let term = crate::model::RegionTerm {
+            shape: crate::model::RegionShape::Enclosed { members },
+            cmp: crate::vocab::Cmp::Le,
+            lo: crate::model::TermNumber::stated(0.0),
+            hi: None,
+            grow: None,
+            name: crate::program::public_path(&s.name),
+        };
+        cx.probes.terms.entry(p.i()).or_default().push(term);
+    }
 }
 
 /// **Each band's term at its probe** (#645): the panel's rails and the band's side and thickness,

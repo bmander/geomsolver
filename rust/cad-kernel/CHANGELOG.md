@@ -61,6 +61,42 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   ring's sheet's crossings of the tool end at one place on a face's rim"); their tubes are now
   entered, and they are refused later, where the end pose's torus face is assembled.
 
+- **A sampled stretch held nearer than its tolerance where its fit closes in** (`cubic::fit_held`,
+  `cubic::HELD_SPANS`): the cubic doubled until it stands within `held`, the nearest fit met within
+  `tol` standing where a doubling no longer brings it four times nearer or its spans pass
+  `HELD_SPANS`.  `cubic::fit_sampled` is the same fit held to `tol` itself, as it was.
+- **The recipe is typed values, never JSON** (`recipe::Recipe`, `recipe::Node`): a writer builds
+  the nodes itself and the kernel builds them as they are, with no text written and read back.
+  `recipe::build`, `recipe::node` and `recipe::node_named` take a `&Recipe` or a `&Node`;
+  `Recipe::read`, `Node::read`, `Section::read`, `Sectioned::read` and `Profile::from_json` are
+  gone (`Sectioned::of`, `Profile::of`); `Profile::to_json` is `Profile::section`; `Writer`'s
+  methods return numbers, not JSON, and `Writer::at` and `Writer::triple` are gone (`moved`);
+  `cubic::bspline_edge` returns a `recipe::Stroke` and drops the fit it never wrote anywhere read,
+  and `cubic::spline_edge` is the same cubic as a `build::ProfileEdge`; `swept::region::profiles`
+  returns `build::Profile`s, built directly.  `Recipe` and `Body` are `Default`.  `Kind::Recipe` is
+  gone: `build::sheet` checks its net itself (`Failed`).  **Breaking.**
+
+## [0.19.0] - 2026-11-20
+
+- **A half-space bounded by the material it is kept with** (`recipe::Node::Half`, #953): the block
+  behind a plane standing over the box of the nodes it is kept in common with, reaching past that
+  box so only the plane's face meets them. **Breaking** for code matching `Node` exhaustively.
+- **Sheets and faces sewn into the solid they enclose** (`recipe::Node::Sewn`, `SewnPiece`, #953):
+  each piece a profile's planar face or a B-spline net's sheet, named, sewn to a tolerance
+  (`sew::sewn`) and refused where they do not close. **Breaking** for code matching `Node`
+  exhaustively.
+- **The ten moments of a solid, and of a face** (`props::moments`, `props::face_moments`, #953):
+  `∫ 1`, the three first and the six second moments of `(X − c) / h`, a solid's by the divergence
+  theorem and a face's by area, each read off the faces' loops as the volume and the area are, so
+  nothing is meshed. Only the moments asked for are read.
+- **The nearest point on a long B-spline reads its spans through an index**
+  (`BSpline::nearest_indexed`, `BSpline::gap_indexed`): built once for a curve and kept, it reads
+  the spans `nearest` would and finds the same foot. `Located::edge_gap` is bounded by a long
+  spline's spans' boxes, so a point beside a long edge skips measuring it, and a polynomial net's
+  inverse tries its last foot first, accepted by the bound every other candidate is.
+
+## [0.18.0] - 2026-11-19
+
 - **A ring's tube cut at an end pose carries the places it was traced through as the cut's pcurve**
   (#942 F3): `rings::chord_curve` returns, beside the curve, the places on the face it passes — the
   traced points and the meeting's own point settled between each two — at the curve's own

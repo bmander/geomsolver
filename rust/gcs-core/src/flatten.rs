@@ -382,6 +382,9 @@ pub struct Expansion {
     /// Every band of a recognised sheet at a region solid's probe (#645): its term is the band,
     /// built exactly (`model::RegionShape::Sheet`).
     pub sheets: Vec<developable::SheetInfo>,
+    /// Each closed shell's inside at a region solid's probe (#953), the shell's members recorded
+    /// and its body never applied: what `program::developed` makes the probe's term.
+    pub shells: Vec<developable::EnclosedInfo>,
     /// Every recognised development (#645): its laid rails made by the elaborator
     /// (`model::Developed`).
     pub developed: Vec<developable::DevelopedInfo>,
@@ -450,8 +453,21 @@ pub struct Expansion {
     /// again where it solves (`program::at_solve`) — a seed off its arc's circle builds no face,
     /// where the solve does.
     pub unread: BTreeSet<Span>,
+    /// Every document statement whose `when` asked whether faces of two solids meet (#961),
+    /// once each: for the elaborator to refuse, naming the body that holds both where one does
+    /// (`program::solids::across`).
+    pub across: Vec<Across>,
     /// Whether the walk stopped at `MAX_FLAT`, its statements cut short: no drawing.
     pub overflowed: bool,
+}
+
+/// **Two faces of two solids a `when … meets …` asked of** (#961): each by its solid's absolute
+/// name and its name from it, and the document's statement that made the block.  An edge is two
+/// faces of one body meeting, so the block is refused, not made.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Across {
+    pub faces: [(String, String); 2],
+    pub at: Span,
 }
 
 /// **Two faces of a solid a `when … meets …` left apart** (#625): the solid by its absolute
@@ -916,6 +932,7 @@ struct SetState<'a> {
     binders: BTreeMap<String, (String, String)>,
     /// Each band of a recognised sheet at a probe (#645) — see `Expansion::sheets`.
     sheets: Vec<developable::SheetInfo>,
+    shells: Vec<developable::EnclosedInfo>,
 }
 
 /// **A solid's faces as the elaborator names them** (#183 F4): each by the path it is named by
@@ -977,6 +994,8 @@ struct FaceState {
     wanted: BTreeSet<String>,
     /// See `Expansion::unread`.
     unread: BTreeSet<Span>,
+    /// See `Expansion::across`.
+    across: Vec<Across>,
     /// The document's own statement being walked — its root body's — where a block set aside
     /// was met: what a fault deep in what it expands to is said at (#625).
     at: Span,
@@ -1128,6 +1147,7 @@ impl<'a> Walk<'a> {
                 probes: Vec::new(),
                 binders: BTreeMap::new(),
                 sheets: Vec::new(),
+                shells: Vec::new(),
             },
             developing: Vec::new(),
             developed: Vec::new(),
@@ -1267,6 +1287,7 @@ impl<'a> Walk<'a> {
             probes: self.sets.probes,
             binders: self.sets.binders,
             sheets: self.sets.sheets,
+            shells: self.sets.shells,
             developed: self.developed,
             panels: self.panels,
             face_repeats: self.faces.repeats,
@@ -1279,6 +1300,7 @@ impl<'a> Walk<'a> {
             along: self.faces.along,
             directions_wanted: self.faces.wanted,
             unread: self.faces.unread,
+            across: self.faces.across,
             overflowed: self.overflowed,
         }
     }

@@ -5,7 +5,6 @@
 //! with.
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
-use crate::util::json::Json;
 
 /// The one degree the kernels are compiled for.  The basis below is written for general `p`; a
 /// second degree costs a kernel pair and a `CKind` that selects it, which is why the model
@@ -351,9 +350,27 @@ pub fn interpolating_ctrl_at(
 /// its ends put exactly at `ends` where given: its poles, knots and the error measured.
 pub fn fit_sampled(sweep: &dyn Fn(f64,f64,usize) -> Vec<(f64,f64)>,(a,b): (f64,f64),ends: Option<((f64,f64),(f64,f64))>,tol: f64)
     -> Option<(Vec<(f64,f64)>,Vec<f64>,f64)> {
+    fit_held(sweep,(a,b),ends,tol,tol)
+}
+
+/// The most spans a fit is doubled to for the sake of `held` alone (`fit_held`): past it the fit
+/// in hand within `tol` stands.
+pub const HELD_SPANS: usize = 512;
+
+/// The same stretch **held within `held` where its fit closes in, and never further off than
+/// `tol`** (`held <= tol`): the samples are doubled until the fit stands within `held`, and the
+/// nearest fit met stands where it does not — where a doubling no longer brings the fit four
+/// times nearer (a cubic through a smooth curve comes sixteen times nearer; one that does not is
+/// at the curve's own roughness, which more poles would only follow) or the spans pass
+/// `HELD_SPANS` — so long as it is within `tol`.  `None` as `fit_sampled`'s: no fit within `tol`.
+pub fn fit_held(sweep: &dyn Fn(f64,f64,usize) -> Vec<(f64,f64)>,(a,b): (f64,f64),ends: Option<((f64,f64),(f64,f64))>,
+    held: f64,tol: f64) -> Option<(Vec<(f64,f64)>,Vec<f64>,f64)> {
     use crate::nurbs::BSpline;
     let (lo,hi) = (a.min(b),a.max(b));
     let mut n = 8;
+    // the nearest fit met within `tol`, and the error of the fit before this one
+    let mut nearest: Option<(Vec<(f64,f64)>,Vec<f64>,f64)> = None;
+    let mut before = f64::INFINITY;
     loop {
         let mut fine = sweep(lo,hi,2*n);
         if a > b { fine.reverse(); }
@@ -378,17 +395,29 @@ pub fn fit_sampled(sweep: &dyn Fn(f64,f64,usize) -> Vec<(f64,f64)>,(a,b): (f64,f
             }
             crate::util::space::distance(s.point(u),q)
         }).fold(0.,f64::max);
-        if err <= tol { return Some((ctrl,knots,err)) }
+        if err <= held { return Some((ctrl,knots,err)) }
+        let closing = err <= before/4.;
+        before = err;
+        if err <= tol && nearest.as_ref().is_none_or(|f| err < f.2) {
+            nearest = Some((ctrl,knots,err));
+        }
         n *= 2;
-        if n > 2048 { return None }
+        if nearest.is_some() && (!closing || n > HELD_SPANS) { return nearest }
+        if n > 2048 { return nearest }
     }
 }
 
-/// A profile's cubic B-spline edge as a recipe writes it: its knots, its poles lifted into space
-/// (millimetres) and the fit it was measured within (mm).
-pub fn bspline_edge(poles: &[(f64,f64)],knots: &[f64],fit_mm: f64,lift: &dyn Fn((f64,f64)) -> [f64;3]) -> Json {
-    crate::util::json::object([("kind","bspline".into()),("degree",DEGREE.into()),
-        ("knots",Json::Arr(knots.iter().map(|&k| k.into()).collect())),
-        ("poles",Json::Arr(poles.iter().map(|&c| Json::Arr(lift(c).iter().map(|&x| x.into()).collect())).collect())),
-        ("fit",fit_mm.into())])
+/// A profile's cubic B-spline edge as a recipe writes it: its knots and its poles lifted into space
+/// (millimetres).
+pub fn bspline_edge(poles: &[(f64,f64)],knots: &[f64],lift: &dyn Fn((f64,f64)) -> [f64;3]) -> crate::recipe::Stroke {
+    crate::recipe::Stroke::BSpline {degree:DEGREE,knots:knots.to_vec(),poles:poles.iter().map(|&c| lift(c)).collect(),weights:None}
+}
+
+/// The same cubic as an edge of a profile this kernel sweeps (`build::ProfileEdge`), its poles lifted
+/// into space (millimetres).
+pub fn spline_edge(poles: &[(f64,f64)],knots: &[f64],lift: &dyn Fn((f64,f64)) -> [f64;3])
+    -> Result<crate::build::ProfileEdge,String> {
+    let b = crate::nurbs::BSpline::new(DEGREE,knots.to_vec(),poles.iter().map(|&c| lift(c)).collect())
+        .map_err(|m| format!("profile: {m}"))?;
+    Ok(crate::build::ProfileEdge::Spline(std::sync::Arc::new(b)))
 }

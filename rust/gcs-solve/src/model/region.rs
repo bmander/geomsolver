@@ -37,6 +37,11 @@ pub enum RegionShape {
     /// no foot past them.  The panel is the one a plane touches along each ruling between `rails`
     /// (`developable`), recognised by what its set says.
     Sheet { rails: Box<[super::Rail; 2]>, side: f64 },
+    /// **The inside of a closed shell** (#953): the points a shell of panels and drawn faces
+    /// encloses — `p in shell.side`, `shell := { q | q in bottom or q in port or … }` — each
+    /// member a panel by its rails or a face of the drawing, named by the set it is.  Built by
+    /// sewing them into the solid they bound (`solid::enclosed`), never read point by point.
+    Enclosed { members: Vec<Member> },
     /// **A drawn face read as a set** (#737 P1): the signed distance in the face's plane from its
     /// boundary, at the probe's foot on that plane — negative within its loops, positive outside
     /// them and inside a hole.  `p inside sec` is at most nothing: in the face's plane, the
@@ -61,6 +66,23 @@ pub enum RegionShape {
     /// where each is the hull of finitely many points, the hull of them all (`solid::joined`),
     /// its value the most any of the hull's planes stands below the point.  Held at nothing.
     Join { of: Vec<Target> },
+}
+
+/// **One member of a closed shell** (#953): a panel between its two rails, or a face of the
+/// drawing — each named by the set the shell says it is in, the name its faces take.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Member {
+    Sheet { rails: Box<[super::Rail; 2]>, name: String },
+    Face { face: u32, name: String },
+}
+
+impl Member {
+    /// The name its faces take.
+    pub fn name(&self) -> &str {
+        match self {
+            Member::Sheet { name, .. } | Member::Face { name, .. } => name,
+        }
+    }
 }
 
 impl RegionShape {
@@ -100,6 +122,12 @@ impl RegionShape {
             RegionShape::Sheet { ref rails, .. } => {
                 rails.iter().flat_map(|r| r.links.iter().copied()).collect()
             }
+            RegionShape::Enclosed { ref members } => members.iter().flat_map(|m| match m {
+                Member::Sheet { rails, .. } => {
+                    rails.iter().flat_map(|r| r.links.iter().copied()).collect::<Vec<_>>()
+                }
+                Member::Face { face, .. } => vec![EntRef::face(*face as usize)],
+            }).collect(),
             RegionShape::Section { face } => vec![EntRef::face(face as usize)],
             RegionShape::Swept { face, .. } => vec![EntRef::face(face as usize)],
             RegionShape::Outside { ref set } => set.entities(),
@@ -140,6 +168,17 @@ impl RegionShape {
             RegionShape::Section { face } => {
                 RegionShape::Section { face: i(EntKind::Face, face)? }
             }
+            RegionShape::Enclosed { ref members } => RegionShape::Enclosed {
+                members: members.iter().map(|m| Some(match m {
+                    Member::Sheet { rails, name } => Member::Sheet {
+                        rails: Box::new([rails[0].remapped(map)?, rails[1].remapped(map)?]),
+                        name: name.clone(),
+                    },
+                    Member::Face { face, name } => {
+                        Member::Face { face: i(EntKind::Face, *face)?, name: name.clone() }
+                    }
+                })).collect::<Option<_>>()?,
+            },
             RegionShape::Swept { motion, roll, face } => {
                 RegionShape::Swept { motion, roll, face: i(EntKind::Face, face)? }
             }

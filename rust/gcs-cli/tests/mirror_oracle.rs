@@ -81,7 +81,7 @@ fn a_reflection_is_occts_mirror() {
         let l = e.map.entity_path(&sk,"left.body").unwrap().i();
         // the body where it was solved, built by OCCT, and mirrored there
         let recipe = gcs_core::solid::cad::recipe(&sk,l).unwrap();
-        let built = session.construct(&recipe).unwrap();
+        let built = session.built(&recipe).unwrap();
         let at = [0.;3];
         let mirrored = session.result(unsafe { solvent_cad_mirror(session.as_ptr(),built,at.as_ptr(),normal.as_ptr()) })
             .unwrap_or_else(|e| panic!("{word}: OCCT's mirror: {e}"));

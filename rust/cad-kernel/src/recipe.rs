@@ -1,5 +1,6 @@
 //! The CAD recipe (`solid::cad::recipe`) built by this kernel: the same millimetre-valued DAG the
-//! native host is handed, node by node, so the two kernels can be held to each other.
+//! native host is handed, node by node, so the two kernels can be held to each other.  It is
+//! handed over as typed values (`Recipe`, `Node`), never as text.
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use super::boolean::{combined,Op};
@@ -7,7 +8,6 @@ use super::build::{cut_before,drafted,kept,kept_by_solid,prism,revolve,Profile};
 use super::geom::{through_span,tolerance,tolerance_over,widen,Rigid,V,EMPTY};
 use super::topo::Brep;
 use super::{KernelError,Kind};
-use crate::util::json::Json;
 use std::collections::BTreeMap;
 
 /// A node built, or why not.
@@ -15,7 +15,7 @@ type Built = Result<Brep,KernelError>;
 
 mod node;
 mod writer;
-pub use node::{Body,Corner,Edge,Family,FamilyWall,Kept,Lowered,Named,Node,Recipe,Rolled,Run,Section,Spine,Stroke,Use};
+pub use node::{Body,Corner,Edge,Family,FamilyWall,Kept,Lowered,Named,Node,Recipe,Rolled,Run,Section,SewnPiece,Spine,Stroke,Use};
 pub use writer::Writer;
 
 /// Between a face's solid and its own name while a recipe is built (`build`, `meridian`,
@@ -42,13 +42,13 @@ pub fn name_under(key: &str,face: &str) -> String { format!("{key}{NAMED}{face}"
 
 /// One node of a recipe built from the nodes before it; `Err` names what this kernel does not
 /// build yet.
-pub fn node(n: &Json,built: &BTreeMap<i64,Brep>) -> Result<Brep,String> { node_named(n,built,&BTreeMap::new(),0.) }
+pub fn node(n: &Node,built: &BTreeMap<i64,Brep>) -> Result<Brep,String> { node_named(n,built,&BTreeMap::new(),0.) }
 
 /// `node`, naming each operand in what it says, its Booleans' tolerance never under `floor` (mm):
 /// the rounding a recipe read off coordinates far from its origin carries (a part solved at 1e9 mm
 /// is placed to 1e-7 mm, wherever it is built about).
-pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Result<Brep,String> {
-    Ok(Node::read(n)?.built(built,built_names,floor)?)
+pub fn node_named(n: &Node,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Result<Brep,String> {
+    Ok(n.built(built,built_names,floor)?)
 }
 
 impl Node {
@@ -64,6 +64,8 @@ impl Node {
                 for f in &mut b.faces { f.name = face.clone(); }
                 Ok(b)
             }
+            Node::Half {origin,keep,sources,face} => half_node(*origin,*keep,sources,face,built),
+            Node::Sewn {pieces,tol} => sewn_node(pieces,*tol),
             Node::Placed {source,matrix} => {
                 let source = built.get(source).ok_or("recipe: `source` not built before its user")?;
                 Ok(source.moved(&Rigid::from_rows(matrix)))
@@ -87,6 +89,50 @@ impl Node {
                 Ok(super::build::carried(&Profile::of(profile)?.moved(&Rigid::from_rows(start)),*carry)?),
         }
     }
+}
+
+/// A `half` node (#953): the block behind the plane through `origin` (`keep` its unit normal
+/// into the half-space) standing on it over the box of `sources` — reaching past that box's
+/// farthest corner across the plane and along `keep`, so its only face the box's material can
+/// meet is the plane's.  Every face called `face`.
+fn half_node(origin: V,keep: V,sources: &[i64],face: &str,built: &BTreeMap<i64,Brep>) -> Built {
+    use crate::util::space::{add,dot,norm,scale,sub};
+    let mut bounds = EMPTY;
+    for s in sources {
+        widen(&mut bounds,built.get(s).ok_or("recipe: a half-space's material not built before it")?.bounds());
+    }
+    if sources.is_empty() || (0..3).any(|k| !(bounds.0[k] <= bounds.1[k])) {
+        return Err("recipe: a half-space kept with no material".to_string().into());
+    }
+    let len = norm(keep);
+    if !(len > 0.) { return Err("recipe: a half-space of no direction".to_string().into()) }
+    let keep = scale(keep,1./len);
+    let middle: V = std::array::from_fn(|k| (bounds.0[k]+bounds.1[k])/2.);
+    let h = 0.5*norm(sub(bounds.1,bounds.0)).max(f64::MIN_POSITIVE);
+    // the middle's foot on the plane, and a reach past every corner of the box from it
+    let foot = add(middle,scale(keep,-dot(sub(middle,origin),keep)));
+    let reach = 2.*(h+norm(sub(middle,foot)));
+    let p = super::build::square(foot,keep,reach);
+    let names = vec![vec![face.to_string();p.loops[0].len()]];
+    let mut b = prism(&Profile {names,..p},0.,reach)?;
+    for f in &mut b.faces { f.name = face.to_string(); }
+    Ok(b)
+}
+
+/// A `sewn` node (#953): each piece made — a profile's planar face, a net's sheet — its faces
+/// named, and all sewn into the solid they enclose to `tol` (`sew::sewn`): refused where they do
+/// not close (`Kind::Open`, the edge bounding one face said by the kernel).
+fn sewn_node(pieces: &[SewnPiece],tol: f64) -> Built {
+    let mut made = Vec::with_capacity(pieces.len());
+    for p in pieces {
+        let (mut b,face) = match p {
+            SewnPiece::Face {profile,face} => (super::build::face(&Profile::of(profile)?)?,face),
+            SewnPiece::Net {net,face} => (super::build::sheet(net.clone())?,face),
+        };
+        for f in &mut b.faces { f.name = face.clone(); }
+        made.push(b);
+    }
+    super::sew::sewn(&made,tol)
 }
 
 /// A `family` node: each wall's sheet over the pieces of its interval, the solid they bound.
@@ -219,12 +265,19 @@ fn lowered_node(n: &Lowered,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i6
     // piece is to a corner's cell (a chamfer's on the seam's normal surface, a round's at its ends)
     for b in &n.beyond {
         let tol = tolerance_over(1.+crate::util::space::norm(b.ends[0])+b.section.size(),floor);
-        pieces.push(match b.section {
+        let (mut piece,square) = match b.section {
             super::spill::Across::Round { .. } => super::spill::round_beyond(b,tol)
                 .map_err(|e| format!("a round beyond a seam: {e}"))?,
-            super::spill::Across::Flat { .. } => super::spill::flat_beyond(b,tol)
-                .map_err(|e| format!("a flat beyond a seam: {e}"))?,
-        });
+            super::spill::Across::Flat { .. } => (super::spill::flat_beyond(b,tol)
+                .map_err(|e| format!("a flat beyond a seam: {e}"))?,Vec::new()),
+        };
+        // the whole length of an edge (#962): cut off where its run ends, as the run's own piece is,
+        // and square to the edge where it was carried to
+        for &(at,normal) in b.run.iter().flatten().chain(&square) {
+            piece = kept(&piece,at,normal.map(|x| -x),floor)
+                .map_err(|e| format!("a piece beyond a seam cut off at its end: {e}"))?;
+        }
+        pieces.push(piece);
     }
     chained(&pieces,&n.joins,first_rolled,floor)
 }
@@ -373,7 +426,7 @@ fn body(n: &Body,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,f
 /// name, a placement's copies by the placement and the route to the primitive in its source —
 /// the walk `solid::document::operand_primitives` makes over the solids, made over the nodes, so
 /// the names are `solid::exact`'s.
-pub fn build(recipe: &Json) -> Result<Brep,String> { Ok(Recipe::read(recipe)?.build()?) }
+pub fn build(recipe: &Recipe) -> Result<Brep,String> { Ok(recipe.build()?) }
 
 impl Recipe {
     /// The root, built (`build`).

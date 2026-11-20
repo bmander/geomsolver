@@ -330,6 +330,73 @@ pub fn same(a: &Surface,b: &Surface,tol: f64) -> bool {
     }
 }
 
+/// **Two surfaces are one over a region** (#961): `same` held over the box `region` alone — the
+/// part of space faces on both may share — where `same` holds them over all of space. Two planes,
+/// cylinders, cones or tori whose normals or axes lean a hair apart are one where every point of
+/// either within the region stands within `tol` of the other: a plane stands off the other by a
+/// linear function of where it is read, greatest at a corner of the region; a surface of
+/// revolution is the other turned by the lean about a point of its axis and moved, and a point of
+/// it moves by no more than the lean times its distance from that point (the farthest corner's),
+/// the move and the difference of their sizes. A sphere has no axis, and `same` reads two spheres
+/// by centre and radius alone; a swept curve's surface and a sheet are `same`'s (their sweep's or
+/// their nets' reading, parallel to `1e-12`). So the angle two surfaces may lean apart and
+/// still be one is the tolerance over the region's reach, not `same`'s fixed `1e-12`: two faces
+/// drawn on one plane through points rounded to nine decimals lean `1e-10` apart, a hundredth of
+/// the tolerance over a part a hundred millimetres across, and every point of one is on the other
+/// (`Located::solid_place`) — read as two planes, their meeting was laid across both at a grazing
+/// angle, and the complex could not order them round it (`faces … coincide along it`, `a piece …
+/// touches … along no face of either`). Any other pair, or an empty region, is `same`'s.
+pub fn same_over(a: &Surface,b: &Surface,tol: f64,region: super::geom::Box3) -> bool {
+    if same(a,b,tol) { return true }
+    if !(0..3).all(|k| region.0[k] <= region.1[k]) { return false }
+    let (f,g) = (a.frame(),b.frame());
+    // only a lean the region can tell from none: past `1e-3` rad two surfaces are not one anywhere
+    // their region is wider than a thousand tolerances, and `same` has read them
+    let lean = norm(cross(f.z,g.z));
+    if lean > 1e-3 { return false }
+    let corners: [V;8] = std::array::from_fn(|i| std::array::from_fn(|k| if i>>k & 1 == 0 { region.0[k] } else { region.1[k] }));
+    // how far from `p` the region reaches
+    let farthest = |p: V| corners.iter().map(|&c| distance(c,p)).fold(0.,f64::max);
+    // **a surface of revolution leaning off another**: the second is the first turned by the lean
+    // about a point `p` of the first's axis (which turns it onto the second's axis: the surface is
+    // its own image under any turn about that axis), moved from `p` to the second's matching point
+    // `q`, and changed in its own sizes by `sizes` at a distance `d` from `p` — a point of the first
+    // within the region moved by no more than `lean d + |q − p| + sizes(d)`
+    let moved = |p: V,q: V,sizes: &dyn Fn(f64) -> f64| { let d = farthest(p); lean*d+distance(p,q)+sizes(d) <= tol };
+    // the foot on the line through `o` along `z` of the region's middle
+    let centre: V = std::array::from_fn(|k| 0.5*(region.0[k]+region.1[k]));
+    let foot = |o: V,z: V| add(o,scale(z,dot(sub(centre,o),z)));
+    match (a,b) {
+        (Surface::Plane(_),Surface::Plane(_)) => {
+            // each corner read onto each plane, its height over the other
+            let apart = |f: &Frame,g: &Frame| corners.iter().map(|&c| {
+                let on = sub(c,scale(f.z,dot(sub(c,f.o),f.z)));
+                dot(sub(on,g.o),g.z).abs()
+            }).fold(0.,f64::max);
+            apart(f,g).max(apart(g,f)) <= tol
+        }
+        (&Surface::Cylinder(_,r),&Surface::Cylinder(_,s)) => {
+            let p = foot(f.o,f.z);
+            moved(p,add(g.o,scale(g.z,dot(sub(p,g.o),g.z))),&|_| (r.abs()-s.abs()).abs())
+        }
+        (&Surface::Cone(_,r,half),&Surface::Cone(_,s,kalf)) => {
+            // apex to apex; the half-angles differing by `δ` part the two by `d sin δ` at a distance
+            // `d` from the apex; each opening the same way
+            let (sa,sb) = (half.dsin(),kalf.dsin());
+            if !(sa.abs() > 1e-12 && sb.abs() > 1e-12) { return false }
+            let opens = |z: V,a: f64| scale(z,a.signum());
+            if dot(opens(f.z,half),opens(g.z,kalf)) <= 0. { return false }
+            let delta = (half.abs()-kalf.abs()).abs();
+            moved(cone_apex(f,r,half),cone_apex(g,s,kalf),&|d| d*delta.min(1.))
+        }
+        (&Surface::Torus(_,big,r),&Surface::Torus(_,bog,s)) =>
+            moved(f.o,g.o,&|_| (big-bog).abs()+(r.abs()-s.abs()).abs()),
+        // a sphere has no axis: `same`'s reading (centres and radii) is already its reading over any
+        // region; a swept curve's or a sheet's is `same`'s
+        _ => false,
+    }
+}
+
 /// **A sheet is the sheet of one net**: two nets of the same degrees, knots and weights whose poles
 /// stand within `tol` of each other are one surface, a point of either within `tol` of the other's
 /// at its parameters (a B-spline is an affine combination of its poles) — a face's sheet and the
@@ -2559,6 +2626,64 @@ fn curvature_bound(s: &Surface,p: V,r: f64) -> Option<f64> {
     }
 }
 
+/// **How far from `p` a searchable surface's points within `r` of `p` reach along it**: a length
+/// `r'` such that each point `q` of `s` within `r` of `p` (a point of `s`) is joined to `p` by a
+/// path on `s` that keeps within `r'` of `p` — so a face of `s` holding such a point and not `p`
+/// has boundary within `r'` of `p` (#961). `None` where that is not shown: the ball reaches across
+/// a cylinder or a tube, to a cone's other nappe or apex, or to an axis, or the torus is a horn
+/// or a spindle, whose sheets meet on the axis (`None` is always sound: nothing is read as clear).
+///
+/// The bounds, each by a path exhibited (`tests/countersink.rs` holds them to seeded samples):
+/// * a plane: the segment `pq`, within `|pq| ≤ r`.
+/// * a sphere: the shorter great-circle arc from `p` to `q`, along which the chord from `p` only
+///   grows, so within `r`.
+/// * a cylinder of radius `R ≥ 2r`: the helix straight in its parameters from `p` to `q` the shorter
+///   way round; its chord from `p` is `√((2R sin(tφ/2))² + (tz)²)` at `t ∈ [0, 1]`, growing in `t`
+///   while `φ ≤ π`, which holds (the two stand within `r ≤ R/2` across the axis), so within `r`.
+/// * the surfaces of revolution about an axis, `p` at `ρ ≥ 2r` from it (the cone and the torus):
+///   `q`'s projection square to the axis is within `r` of `p`'s, so their azimuths differ by `φ`
+///   with `ρ sin φ ≤ r` and `φ < 90°` (at `90°` or more the projection is `ρ > r` off), hence
+///   `sin φ ≤ 1/2`, `φ ≤ 30°`. `p` turned about the axis to `q`'s azimuth is `p'`, the arc of its
+///   parallel within its chord `2ρ sin(φ/2) = ρ sin φ / cos(φ/2) ≤ r / cos 15° < 1.036 r` of `p`.
+///   - a cone, `p` at `d` from its apex with `d min(1, |sin 2α|) ≥ 2r` (`α` its half-angle): a
+///     generator of the other nappe makes an angle `θ ≥ π − 2α` with `p`'s, so stands
+///     `d sin θ ≥ d sin 2α` off `p` where `θ < 90°` and `d` (the apex) otherwise — so `q` is on
+///     `p`'s nappe, on the one generator of it at `q`'s azimuth, which holds `p'`: the segment
+///     `p'q` is within `max(|pp'|, |pq|) < 1.036 r` of `p` (a ball is convex). Reach `< 2r`.
+///   - a ring torus (`minor < |big|`, a tube that keeps off the axis) of `minor ≥ 2r`: the
+///     meridian half-plane at `q`'s azimuth holds one circle of the tube, through `p'` and `q`,
+///     `|p'q| < 2.036 r` apart; the shorter arc between them stands within its sagitta
+///     `minor − √(minor² − |p'q|²/4) ≤ 2r − √(4r² − 1.036² r²) < 0.29 r` of the chord `p'q`, which
+///     is within `1.036 r` of `p`. Reach `< 1.33 r < 2r`.
+/// * an affine image of a preimage surface: a point within `r` of `p` has its preimage within
+///   `r / σ_min` of `p`'s, joined there by a path within the preimage's reach, which the map
+///   stretches by at most `σ_max`.
+pub fn disc_reach(s: &Surface,p: V,r: f64) -> Option<f64> {
+    let [x,y,z] = s.frame().local(p);
+    let rho = x.dhypot(y);
+    match *s {
+        Surface::Plane(_) | Surface::Sphere(..) => Some(r),
+        Surface::Cylinder(_,big) => (2.*r <= big.abs()).then_some(r),
+        Surface::Cone(_,big,a) => {
+            let (sa,ca) = a.dsin_cos();
+            // a cone of no lean is the cylinder of its radius
+            let apex = if sa.abs() > 1e-12 { -big*ca/sa } else { return (2.*r <= big.abs()).then_some(r) };
+            let d = rho.dhypot(z-apex);
+            (2.*r <= rho && 2.*r <= d*(2.*sa*ca).abs().min(1.)).then_some(2.*r)
+        }
+        // `big` may be negative (the tube's circle drawn in the opposite half-plane): a ring torus
+        // is one whose tube's radius is less than its circle's, whatever its sign
+        Surface::Torus(_,big,minor) => (minor.abs() < big.abs() && 2.*r <= minor.abs() && 2.*r <= rho).then_some(2.*r),
+        Surface::Affine(ref m) => {
+            let [lo,hi] = m.stretch;
+            if !(lo > 0.) { return None }
+            disc_reach(&m.of,m.back.point(p),r/lo).map(|q| q*hi)
+        }
+        Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)
+            | Surface::Offset(..) => None,
+    }
+}
+
 /// Points along a traced curve, or a fitted one, no farther apart than `spacing` (a traced curve's
 /// chords: they pass within a sagitta of it far smaller than the spacing).
 fn samples_along(c: &Curve,spacing: f64) -> Vec<V> {
@@ -2591,15 +2716,21 @@ fn samples_along(c: &Curve,spacing: f64) -> Vec<V> {
 /// guessed. Two curves nearer than `leaf` are not told apart. `Ok(None)`: every part of the face is
 /// clear of `b` or beside a known curve. Both surfaces must be `searchable`.
 pub fn unseen(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &[Curve],lo: V,hi: V,tol: f64) -> Result<Option<V>,String> {
-    unseen_beside(a,domain,b,known,&[],&mut |_| false,lo,hi,tol)
+    unseen_beside(a,domain,b,known,&[],&mut |_| false,&mut |_,_| false,lo,hi,tol)
 }
 
 /// `unseen`, known also the curves `stretches` over their stretches (edges the two touch along),
 /// and a cell whose meeting (its middle pulled onto both) is `beside` a known meeting (a point
 /// where the two touch alone, its branches traced up to it) answered as beside a known curve.
+/// A cell down to `leaf` that is `clear` of the faces searched for is answered as clear of `b`, and
+/// never refused: `clear(p, r)` says no point within `r` of `p` lies on both faces, so whatever the
+/// two surfaces do there is no part of their faces' meeting (#961: the face's box of parameters,
+/// grown past its edges and a cone's past its apex onto the other nappe, and the faces' shared
+/// box reach where the surfaces run on past both faces). Without faces (`unseen`, a meeting over
+/// boxes) nothing is clear.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn unseen_beside(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &[Curve],stretches: &[(&Curve,[f64;2])],
-    beside: &mut dyn FnMut(V) -> bool,lo: V,hi: V,tol: f64) -> Result<Option<V>,String> {
+    beside: &mut dyn FnMut(V) -> bool,clear: &mut dyn FnMut(V,f64) -> bool,lo: V,hi: V,tol: f64) -> Result<Option<V>,String> {
     // a cap on the cells asked, far past any face this kernel builds, that a pathology ends at
     const CELLS: usize = 4_000_000;
     let pad = 4.*tol;
@@ -2649,6 +2780,8 @@ pub(crate) fn unseen_beside(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &
         }
         if reach <= leaf {
             if near_known(p,2.*reach+spacing) { continue }
+            // every meeting the cell may hold is within its reach of its middle, on `a`
+            if clear(p,reach) { continue }
             let q = probe.project(p);
             if beside(q) { continue }
             if off_both(a,b,q) <= 16.*tol {

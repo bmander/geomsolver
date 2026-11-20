@@ -121,6 +121,7 @@ macro_rules! undrawn {
             | CKind::EqualLength3
             | CKind::Midpoint3
             | CKind::Symmetric3
+            | CKind::SymmetricAxis
             | CKind::LineOnPlane
             | CKind::AxisUnit
             | CKind::AxisFoot
@@ -155,8 +156,7 @@ macro_rules! undrawn {
             // deformed frame, which is presentation the drawing's `.svd` is to say — nor what a
             // body is made of, a mass or a volume, which no view of the drawing draws
             | CKind::Deflection
-            | CKind::Mass
-            | CKind::Volume
+            | CKind::Integral
             // nor a point carried by a motion, at a roll it owns or one stated: a turn about
             // whatever the motion turns about, which no view of the drawing shows (#366)
             | CKind::CarriedPoint

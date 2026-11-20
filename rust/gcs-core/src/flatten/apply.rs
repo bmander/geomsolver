@@ -212,8 +212,9 @@ impl<'a> Walk<'a> {
         if !made.is_empty() {
             self.words.declaring.insert(prefix);
         }
+        // — and a `fix` holding what it declares (§6.25, `std.measures`'s held axes)
         let places = |r: &Relation| r.form.written().is_some_and(|w| {
-            w.word.text == "coincident" && w.rates.is_empty()
+            (w.word.text == "coincident" && w.rates.is_empty() || w.word.text == "fix")
                 && w.ops.first().is_some_and(|o| o.path.is_empty() && made.iter().any(|m| {
                     m.rsplit('.').next() == Some(o.root.text.as_str())
                 }))
@@ -225,8 +226,16 @@ impl<'a> Walk<'a> {
             // so is more of a body's set (#783 P3, `bore cut body` applied), so a body it refuses
             // or a cycle it closes is said where the word is written
             let whole = match &mut st.kind {
+                // and an equation of integrals is claimed where its word's use is (§6.25)
                 StmtKind::Measured(m) => {
                     m.through = through_all(std::mem::take(&mut m.through));
+                    m.claim |= u.rel.claim;
+                    // a report calls it by the use that stated it, the outermost's stamped last
+                    let mut text = String::new();
+                    let rel = StmtKind::Relation(Relation { claim: false, ..u.rel.clone() });
+                    if crate::syntax::write_stmt_to(&mut text, &rel).is_ok() {
+                        m.head = Some(text);
+                    }
                     true
                 }
                 StmtKind::Minimize(_) => true,

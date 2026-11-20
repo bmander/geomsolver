@@ -81,8 +81,13 @@ impl Constraint {
         // a deflection driven: its structure, a frame's sections read over its unknowns (#510 S1)
         // or a region's nodes over the drawing (S2) — and a mass or a volume, each its number last
         if self.kind.interior() {
-            let d = self.args.last().map_or(0.0, Arg::num);
-            return self.interior_parts(sk).map(|(r, _)| r.consts(d)).unwrap_or_default();
+            // a deflection's number; an equation's sides say all it compares (§6.25)
+            let stated = match self.kind {
+                CKind::Deflection => vec![self.args.last().map_or(0.0, Arg::num)],
+                _ => Vec::new(),
+            };
+            return self.interior_parts(sk).map(|(r, _)| r.consts(&stated))
+                .unwrap_or_default();
         }
         // a margin reading an unknown (#904) is that unknown's map, the row's last column
         if self.kind == CKind::RegularWithin {
@@ -554,8 +559,7 @@ impl Constraint {
             | CKind::CarriedPointIn
             | CKind::RegularWithin
             | CKind::Deflection
-            | CKind::Mass
-            | CKind::Volume
+            | CKind::Integral
             | CKind::PointOnTraced
             // a development's length, a plane touching a path and a line's fraction (#645): a
             // segment's own `b − a`, or a corner's links read through their ends
@@ -593,6 +597,7 @@ impl Constraint {
             | CKind::PlaneAxis
             | CKind::PointOnAxis
             | CKind::LineOnAxis
+            | CKind::SymmetricAxis
             | CKind::Mapped
             | CKind::MappedSimilar
             | CKind::MappedCircle
@@ -982,8 +987,11 @@ impl Constraint {
             }
             // a deflection driven: a frame's every joint's lift, then its sections' unknowns (#510
             // S1); a region's points' numbers and radii (S2) — a mass's or a volume's alike
-            CKind::Deflection | CKind::Mass | CKind::Volume => {
-                self.interior_parts(sk).map(|(_, c)| c).unwrap_or_default()
+            CKind::Deflection | CKind::Integral => {
+                let mut cols = self.interior_parts(sk).map(|(_, c)| c).unwrap_or_default();
+                // and the unknowns an equation's sides read, last (§6.25)
+                cols.extend(self.integral_unknowns(sk));
+                cols
             }
             // a point a motion carries to a stated roll (#366): both points' lifts, the axes of
             // the plane the first is drawn in where it is read there, then the motion's axes
@@ -1061,14 +1069,10 @@ impl Constraint {
                 let r = &sk.axes[e(0).i()];
                 [r.a, r.d].concat()
             }
-            // the point's lift, then the axis's place and direction
-            CKind::PointOnAxis => {
-                let r = &sk.axes[e(1).i()];
-                [self.lifted_columns(sk), r.a.to_vec(), r.d.to_vec()].concat()
-            }
-            // the line's ends lifted, then the axis's place and direction
-            CKind::LineOnAxis => {
-                let r = &sk.axes[e(1).i()];
+            // the point, both points or the line's ends lifted, then the place and direction of
+            // the axis in the one slot whose place it reads
+            CKind::PointOnAxis | CKind::SymmetricAxis | CKind::LineOnAxis => {
+                let r = &sk.axes[e(self.kind.place_slots()[0]).i()];
                 [self.lifted_columns(sk), r.a.to_vec(), r.d.to_vec()].concat()
             }
             // where the plane stands, in the point's place, and the axis's place and direction
@@ -1131,7 +1135,7 @@ impl Constraint {
             [l.p1 as usize, l.p2 as usize]
         };
         match self.kind {
-            CKind::Coincident3 | CKind::Distance3 | CKind::ProjectSolved => {
+            CKind::Coincident3 | CKind::Distance3 | CKind::ProjectSolved | CKind::SymmetricAxis => {
                 vec![e(0).i(), e(1).i()]
             }
             CKind::PointLine3 | CKind::PointOnLine3 | CKind::Midpoint3 | CKind::PointAlongLine3 => {
@@ -1219,7 +1223,7 @@ impl Constraint {
             // every point the envelope and the regions' terms read (#345)
             CKind::RegularWithin => self.regular_parts(sk).map(|p| p.lifted()).unwrap_or_default(),
             // every joint of the frame (#510 S1); a region's points are read in their plane (S2)
-            CKind::Deflection | CKind::Mass | CKind::Volume => {
+            CKind::Deflection | CKind::Integral => {
                 self.interior_row(sk).map(|r| r.lifted()).unwrap_or_default()
             }
             // both points, then every point the motion's axes read (#326, #366)

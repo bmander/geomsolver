@@ -20,6 +20,7 @@ pub const MODULES: &[(&str, &str)] = &[
     ("std.ports", include_str!("../../lib/std/ports.sv")),
     ("std.bearings", include_str!("../../lib/std/bearings.sv")),
     ("std.retaining", include_str!("../../lib/std/retaining.sv")),
+    ("std.measures", include_str!("../../lib/std/measures.sv")),
     ("hardware", include_str!("../../lib/hardware.sv")),
     ("engine.dims", include_str!("../../examples/engine/dims.sv")),
     ("engine.parts", include_str!("../../examples/engine/parts.sv")),

@@ -4,6 +4,63 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.223] Faces of two solids do not meet** (#961). `a meets b` of faces of two different
+solids is E103 at the document's statement that made the block, which is made for neither: an
+edge is two faces of one body meeting.  So `wall.far round(r: 2mm) plate.near`, `wall` and
+`plate` two solids, is refused — naming the body both are faces of where one is made of both,
+`part.wall.far` and `part.plate.near` where both are unioned into `part`, and otherwise saying a
+`union` makes them one.  `std.rounds`' `round` and `chamfer` ask `a meets b`, in the order the
+faces are written.  Through 0.222 faces of two solids were taken to meet: the round panicked
+reading one solid's face list by the other's face number, or, where the number was in range,
+read some other face of it.
+
+**[0.222] An integral, and the measure words moved to `std.measures`** (#953). `integral(EXPR
+over p in S)` integrates an expression over the point it binds, `S` a solid, a face of one, a beam
+or a line one is drawn on, or an instance's bodies, by `S`'s own measure; its body reads the
+point through `distance(p, X)` (to a point, a line, an axis or a plane), the signed ordinate
+`distance(g, p, along: d)`, and `density(p)`, the density of what the point is in. An equation of
+integrals is a statement of the drawing, `LHS == RHS`, either side arithmetic over integrals,
+numbers and declared unknowns, its dimensions agreeing; claimed, it may be a bound. A word's body
+may state one. A word's number parameter may be
+given as a bound, `claim mass(<= 2kg) arm`: each comparison its body states with the parameter
+alone on one side becomes that bound. `mass`, `volume`, `area`, `moment`, `centroid` and
+`centerofmass` are no longer the language's: they are `std.measures`'s words, each an equation of
+integrals, imported by name (`use std.measures (mass)`); `moment` takes its number by label,
+`moment(i: I, about: l) F`. A report calls each equation by the word's use that stated it and says
+its two sides, `mass(10kg) arm: 10 kg ± 0 kg == 10 kg: driven, held`; a centroid is three lines,
+each how far the point stands off the centroid along an axis of the world.
+Through 0.221 `integral(…)` and `density(…)` outside an energy were E001, a bound given to a
+word's parameter was E103, and a word's body stating anything but relations, declarations, sets
+and energies was E100; the six measure words were the
+language's own, so a document writing one with no `use` now reads E102, naming the module, and
+`moment(I, about: l)` reads E004 (its number is given by label).
+
+**[0.221] Where a body is made, and a face's measures** (#953). `g centroid B` and `g
+centerofmass B` put a declared point where a solid's volume (or a face's area) or its mass is
+centred, `B` a solid, a face of one (a centroid), or an instance — every body under it that no
+other solid is built of, each weighed by its density, so a centre of mass does not depend on how
+bodies are grouped; `area(A) F` and `moment(I, about: l) F` measure a face of a solid, its area
+and its second moment about a line or an axis. Each is a row of the drawing stated, as `volume`
+is, and judged claimed; a stated measure's number may read one declared unknown, which the row
+determines. A region keeping solids named whole within a half-space, `solid({ p | p in hull; p
+in water })`, is the body in common with it, built exactly, its faces the hull's and the
+waterplane's (`immersed.water`), and the half-space's height may be an unknown a measure drives.
+A set whose body is a disjunction of memberships of panels and faces of the drawing, `shell := { q
+| q in bottom or q in port or q in deck }`, is a closed shell, and `solid({ p | p in shell.side
+})` the solid it encloses, its faces its members (`hull.port`); a face in such a disjunction was
+E001.
+Through 0.220 the four words were E040 (`no such entity`, or a relation of no table), such a
+region was read by its field alone and nothing measured it, and a measure's number reading an
+unknown was E040. Nothing else a document wrote reads differently.
+
+**[0.220] The mirror in an axis.** `symmetry` takes an axis in its parentheses as well as a
+line: `a symmetry(std.x) b` is the half turn about the axis's line, in space wherever the points
+are drawn — what the mirror in a line drawn in space already was (§9.2) — and, reading where the
+axis is, it places one that nothing else does, as `coincident` does. Through 0.219 it was E040
+("`std.x` is an axis, and a line is wanted here"), so a figure symmetric about a world axis drew
+a line on the axis to mirror in. A regular tetrahedron is one corner and its half turns about the
+three axes, made regular by three edges. Nothing a document wrote before reads differently.
+
 **[0.219] A chain link in parentheses that names nothing, a pie slice, a condition over two lines**
 (#952). A chain's link may stand in parentheses without a name, `pk := (line(c0, c1)) -> round(r:
 4mm) (line(c1, c2)) -> … close`, the bare link as before; through 0.218 the line was read as a number

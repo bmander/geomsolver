@@ -42,6 +42,7 @@ use crate::sparse::Ata;
 
 mod beam;
 mod consts;
+mod gauge;
 mod hull;
 mod moved;
 mod plane;
@@ -49,7 +50,8 @@ mod row;
 mod solid;
 pub use beam::{fixed_end, into_axes, out_of_axes, Axes};
 pub use consts::{Drive, Mover, Sizing, HEAD};
-pub use hull::{Axis, Frame, Hull, Profile, Sheet};
+pub use gauge::{eval_sides, quadratic, Domain, Gauge, Part};
+pub use hull::{Axis, Direction, Frame, Hull, Place, Profile, Read, Sheet};
 pub use moved::{Edge, Moved, Node, Stack};
 pub use plane::{Laid, Tri6};
 pub use solid::{Borne, Tet10};
@@ -120,6 +122,9 @@ pub struct Structure {
     pub tets: Vec<Tet10>,
     pub borne: Vec<Borne>,
     pub reads: Reads,
+    /// What an integral row reads (§6.25): its integrals and its equation's sides — of a
+    /// measure's row alone.
+    pub gauge: Gauge,
 }
 
 /// **What a row reads of its structure**: the displacement `Σ weight · u` its loads give (#510
@@ -140,14 +145,6 @@ impl Reads {
     /// Whether it is a measure of the structure rather than a displacement of it.
     pub fn measure(self) -> bool {
         self != Reads::Displacement
-    }
-
-    /// What a row of the drawing's `quantity` reads.
-    pub fn of(quantity: crate::model::Quantity) -> Reads {
-        match quantity {
-            crate::model::Quantity::Mass => Reads::Mass,
-            crate::model::Quantity::Volume => Reads::Volume,
-        }
     }
 
     /// What weighs a member or an element of density `rho`: its density for a mass, one for a

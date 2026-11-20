@@ -63,7 +63,8 @@ corners (`a_square_to_round_is_triangles_and_corner_fans`); the dory's chine fan
 ruling shrinks to nothing and the panel comes to a point: `F` has a saddle there, its level set
 crossing itself, and a march's drift off it is no longer small against the ruling, so the march
 stops where the ruling is `MEET` (a hundred-thousandth) of the panel's size — that ruling its end,
-laid like any other. The dory's bottom is pointed at its forefoot, and its two sides share the
+laid like any other; drawn (`solid::sheet::stations`), that end's station is the point itself
+(`Developable::meeting`), so a panel sewn beside it meets it there. The dory's bottom is pointed at its forefoot, and its two sides share the
 stem line (`a_dory_is_three_panels_cut_from_two_sheets`); rails meeting short of either's end are
 refused below (`rails_meeting_at_their_ends_come_to_a_point_and_elsewhere_are_refused`). `PlaneSupportsCorner` is the corner's row
 in kernel form, held by `tests/jacobians.rs`; the recogniser builds a fan exactly.
@@ -154,3 +155,33 @@ march carries (`a_rate_equal_to_a_rate_keeps_pace`); a rate of another formal is
 (`a_rate_against_a_rate_of_another_formal_is_refused`). A body mixing points in a plane with points
 in space is read where the core recognises it (`std.panels.Development`), not yet by the generic
 march.
+
+**A closed shell's solid** (#953, [0.221], `solid::enclosed`, [sets.md](sets.md)). The inside of
+a shell of panels and faces of the drawing is read by no field: each face is its planar face
+(`build::face` of its profile) and each panel a sheet straight along its rulings and cubic
+across them through its rulings' ends at the stations that draw it to the flatness of a report
+(`Developable::stations`, as a band's are, at most `MAX_STATIONS`; `enclosed::smooth`, at the
+chord length along the rulings' middles), every station's ruling on it exactly and no crease
+between them for a plane's trace to break at, each named by its member — one sheet a run of its
+stations, a fan's run (its stations sharing an end) apart from the regular runs either side, its
+point a pole along the sheet's first parameter as the kernel's integrals read one, so no flux is
+read where the sheet's parameters fold — and the kernel sews them
+(`Node::Sewn`, `sew::sewn`) to that tolerance — a panel's rail drawn through its stations stands
+off the face or panel beside it by its chords' sag at most. A shell that does not close is refused
+by the kernel, the edge bounding one face said; a panel that cannot be read is said by its member's
+name. Its field is its own exact boundary (`BuiltField`), and it is remembered against its members
+(`Caches::shell`, `solid::reads`: each panel's rails as paths, each face's loops). **Moved**: a
+driving row over a body built of it reads each face's plane as a cap of its plane's frame and each
+panel whose rails nothing the solve moves as held (`interior::Sheet::Facets`: the triangles of its
+strips, a node's level the signed distance from the plane of the nearest), so a waterline finds
+its height over a hull of panels; a panel whose rails the solve moves is refused where the row is
+stated (**E040**, `its panel … rails are moved by the solve`) — moving a panel by its rails is the
+open item. **Held to** (`tests/hydrostatics.rs`): a punt's shell of two developable sides and four
+faces, its volume `300 A + 300 · 40 · 1000` against its bottom's exact area, a canoe's pointed
+shell — a bottom between chines meeting at both ends, a deck between sheers that meet — closed,
+its volume the same wherever it stands, and kept within the water at four heights, cut cleanly,
+what it displaces the same wherever it stands (`developable.rs`,
+`a_pointed_hull_of_panels_closes`), its waterline at the
+root of the trapezoids' volume and its waterplane's area to the tolerance its sides are drawn to
+(`a_hull_of_panels_floats`, slow tier), and the panel the solve moves said
+(`a_panel_the_solve_moves_is_said`).

@@ -17,11 +17,11 @@ mod lays;
 mod meets;
 mod path;
 pub(crate) use body::along_run;
-pub use body::{reading, BodyFaces, Bound, EndBy, Level, Read, Reading};
+pub use body::{not_one_body, one_body, reading, BodyFaces, Bound, EndBy, Level, Read, Reading};
 pub use layers::layer;
 pub use lays::Lays;
 pub use meets::Meets;
-pub use path::{face_paths, face_source, FacePath, FaceSource};
+pub use path::{face_paths, face_source, one_body_of, FacePath, FaceSource};
 pub use path::same_step;
 pub(crate) use path::face_primitive;
 
@@ -61,7 +61,7 @@ fn reads_body(shape: &RegionShape, body: usize) -> bool {
     let solid = |e: &crate::model::EntRef| e.kind == crate::model::EntKind::Solid && e.i() == body;
     match shape {
         RegionShape::Ball { .. } | RegionShape::Cylinder { .. } | RegionShape::Cone { .. }
-        | RegionShape::Sheet { .. } | RegionShape::Section { .. }
+        | RegionShape::Sheet { .. } | RegionShape::Section { .. } | RegionShape::Enclosed { .. }
         | RegionShape::Swept { .. } => false,
         RegionShape::Plane { along, .. } => solid(along),
         RegionShape::Measured { of } => of.iter().any(|(t, _)| target_reads_body(t, body)),

@@ -207,6 +207,13 @@ impl MaterialField {
         list
     }
 
+    /// Static material's value and gradient from its adaptive distance field, where the query
+    /// is a mesher's at a resolution (`Source::Cached`) and a leaf of it is read by a search
+    /// (`SpatialField::cached`): as a sweep is read, naming no operand.
+    fn cached(source: &SpatialField,p: [f64;3],q: &Query) -> Option<(f64,[f64;3])> {
+        match q.source { Source::Cached(resolution) => source.cached(p,resolution),_ => None }
+    }
+
     /// A point query (`Query`): the field's sign, or its value, gradient and deciding operand. The
     /// hints of a warm query (`Source::Warm`) are left holding this point's contact times.
     pub fn query(&self,p: [f64;3],q: &mut Query) -> Reading {
@@ -234,7 +241,10 @@ impl MaterialField {
     /// (which keep signs). Which side a point is on, for a mesher; never an interval claim.
     fn sign(plan: &Plan,i: OpId,p: [f64;3],q: &Query) -> f64 {
         match &plan.op(i).kind {
-            Kind::Static(source) => source.value(p),
+            Kind::Static(source) => match Self::cached(source,p,q) {
+                Some((value,_)) => value,
+                None => source.value(p),
+            },
             Kind::Swept(source) => source.query(p,q,f64::INFINITY,&mut None,0).value,
             Kind::Transformed {source,pose} => Self::sign(plan,*source,pose.inverse_point_mid(p),q),
             // One operand may settle the sign alone: then the other is not asked.
@@ -265,7 +275,10 @@ impl MaterialField {
     fn below(plan: &Plan,i: OpId,p: [f64;3],q: &Query,first: usize,hints: &mut Vec<Option<f64>>,cap: f64) -> Reading {
         use super::reading::{higher,lower};
         match &plan.op(i).kind {
-            Kind::Static(source) => source.reading(p,q,first),
+            Kind::Static(source) => match Self::cached(source,p,q) {
+                Some((value,gradient)) => Reading {gradient,..Reading::bound(value)},
+                None => source.reading(p,q,first),
+            },
             Kind::Swept(source) => {
                 // the sweep is keyed by the number its first source leaf takes
                 if hints.len() <= first { hints.resize(first+1,None); }

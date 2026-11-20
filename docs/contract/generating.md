@@ -88,7 +88,7 @@ written over (`graft::Part::around_all`: a motion owns no number, so is never a 
 swept over an interval written in place under a screw, a slide or a turn (#846, [0.208]) is the
 same carry with no station to solve: the recipe's `carried` node, the face's profile placed where
 the interval begins and carried by `brep::build::carried` (`screwed`, `ruled` or `revolve`), its
-`carry` written by the one writer a family's is (`cad::carry_json`) — [sets.md](sets.md)'s.
+`carry` written by the one writer a family's is (`cad::carry`) — [sets.md](sets.md)'s.
 
 **A frame's numbers are stated or solved** (#383 stages 3 and 5): a ratio or advance measured
 off the solved drawing (`ratio: -length(a) / length(b)`) is E107, as every measurement in a
@@ -594,7 +594,7 @@ where another meets it, and the pieces whose middles lie on their faces of the B
 joined into loops, so a crown bounded by its neighbour (the spiral bevel's and the hypoid's
 cutters) is sectioned by its faces as its recipe's Boolean was.  `SweptCut::cutter` takes the
 B-rep's prism, else its cutter of revolutions, and reads no recipe: `Cutter::read` and its recipe
-prism are retired, and `Sectioned::read` of a recipe stays only as the oracle the B-rep's sections
+prism are retired, and `Sectioned::of` a recipe stays only as the oracle the B-rep's sections
 are held to.  The gate is
 `tool_reading::the_catalogues_cutters_of_revolution_section_from_their_boundaries`: every catalogue
 sweep the recipe sections as revolutions (23) the B-rep sections alike, the two sections at five
@@ -3055,6 +3055,14 @@ half (OCCT's deflection is no bound), float32 rounding counted with it (`mesh::s
 `brep::export::written_within`: far from the origin refused, #60); the mesh contract counts clusters
 (`TinyTriangles::clustered`); the field is probed at max(2 tol, 2 µm).
 `--measure FILE` checks an export (`solid::accuracy`) and exits 1 over tolerance.
+**A STEP's fitted curves follow a stated tolerance and only a stated one** (#961,
+`brep::export::step_accuracy`): with `--tolerance` the file states a twentieth of it as its
+uncertainty and holds every curve it fits (a traced intersection, a pcurve) within half that of the
+exact meeting **on each face it trims**, measured along the face (`step::Fit::stated`) — at a
+grazing meeting nearer in space by the angle's sine — so a coarser tolerance writes a smaller file.
+Without it the file states the gross 1e-4 mm and its curves are held to `step::Fit::Exact`, 1e-9
+mm: a document exported with no tolerance asked reads as exactly as the kernel builds
+it (brep.md, "A traced intersection is written as a cubic").
 **An empty body is refused as one** (#617): a body built with no face is what the document drew,
 not a limit of the encoding, so `brep::export::exact` refuses it, whatever path built it, saying
 which solid is empty and which statement emptied it (`` `shared` is empty: `b common shared` leaves
@@ -3086,7 +3094,7 @@ and turned. OCCT's parallel `BRepCheck_Analyzer` is unreliable: `valid_solid` ch
 separate analyzers. **Phase 5:** admission proves placements alike from the solid graph when every
 blank operand is a full revolution about the indexing line or a ball on it
 (`admission::Equivalence::Revolved`, 1e-12 of the blank; else `Sampled`); such a blank is its
-meridian section turned once (`Session::construct_meridian`, `solvent_cad_revolve_region`;
+meridian section turned once (`Session::built_meridian`, `solvent_cad_revolve_region`;
 `SOLVENT_BLANK=booleans`); field agreement probes one sector, reading cuts not proved positive
 (`agreement::Sector`, `MaterialField::without_cuts`; `SOLVENT_AGREEMENT=whole`); STEP text is
 formatted on every core, the kernel's to the byte (`SOLVENT_STEP_TEXT_CHECK`).

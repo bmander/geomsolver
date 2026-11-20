@@ -171,7 +171,7 @@ fn every_kind_of_face_maps_to_its_image() {
                     }
                 }
             }
-            let text = gcs_core::brep::step::write(&m,&what,1e-4).unwrap_or_else(|e| panic!("{what}: {e}"));
+            let text = gcs_core::brep::step::write(&m,&what,1e-4,gcs_core::brep::step::Fit::Exact).unwrap_or_else(|e| panic!("{what}: {e}"));
             gcs_core::brep::step_check::verify(&text,&gcs_core::brep::step_check::Solid::of(&m)).unwrap_or_else(|e| panic!("{what}: {e}"));
             let bar = 2e-3*m.size();
             let mesh = gcs_core::brep::mesh::mesh(&m,bar,0.2).unwrap_or_else(|e| panic!("{what}: {e}"));

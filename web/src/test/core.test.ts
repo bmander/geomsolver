@@ -1339,7 +1339,7 @@ test('a document says what its load scenarios answer, a claim refuted as well as
     const measures = doc.scenariosPictured(-1).measures;
     assert.ok(measures.length === 2 && measures.every((m) => m.holds === true),
       JSON.stringify(measures));
-    assert.match(measures[0].text, /^mass\(bracket\) is .*kg.*: claimed >= .*kg, kept$/);
+    assert.match(measures[0].text, /^mass\(>= .*\) bracket: .* kg.* >= .* kg: claimed, kept$/);
     doc.dispose();
     return ss;
   };
@@ -1554,8 +1554,8 @@ test('the registry the binding generates its classes from matches the kernels', 
     // length is built at its spline's count, an envelope contact at its source's and its motion's,
     // a point on a meshing at its flanks' and its motion's (#283), and a motion's twist read at
     // its motion's and a contact with a body traced in space at its body's (#326), and a rate of
-    // a contact at its source's (#365), and a frame's deflection, mass and volume at its frame's
-    // (#510 S1).  Every other type names a static kernel, and must.
+    // a contact at its source's (#365), and a frame's deflection and an equation of integrals at
+    // its structure's (#510 S1, §6.25).  Every other type names a static kernel, and must.
     if (t.kernel === -1) {
       // exactly the kinds with a curve, an envelope, a meshing, a motion, a traced or a carrier
       // slot, the spline's length and an energy's stationarity
@@ -1563,7 +1563,7 @@ test('the registry the binding generates its classes from matches the kernels', 
         .some(([, k]) => k === 'curve' || k === 'envelope' || k === 'meshing' || k === 'motion'
           || k === 'traced' || k === 'carrier');
       assert.ok(built || t.name === 'SplineLength' || t.name === 'Stationary'
-        || t.name === 'Deflection' || t.name === 'Mass' || t.name === 'Volume',
+        || t.name === 'Deflection' || t.name === 'Integral',
       `${t.name} has no static kernel`);
     } else {
       assert.ok(t.kernel >= 0 && t.kernel < reg.kernels.length, t.name);

@@ -20,7 +20,9 @@ pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionF
     let SolidDef::Region { terms, .. } = &s.def else {
         return Err(format!("`{}` is not a region", s.name));
     };
-    field_of(sk, &s.name, terms, true, &mut Vec::new())
+    // a half-space kept in common with a body has the body's end, not one of its own (#953)
+    let bounded = !crate::solid::defined::kept_half(sk, solid);
+    field_of(sk, &s.name, terms, bounded, &mut Vec::new())
 }
 
 /// The field of `terms` taken together, the region of solid `name`'s; `bounded` where it must
@@ -135,8 +137,9 @@ fn field_of(sk: &Sketch, name: &str, terms: &[RegionTerm], bounded: bool,
                 Measure::Signed(Signed(std::sync::Arc::new(move |p| r.side(p))))
             }
             RegionShape::Angle { ref a, ref b } => {
-                let ra = crate::solid::faces::reading(sk, a, read).map_err(named)?;
-                let rb = crate::solid::faces::reading(sk, b, read).map_err(named)?;
+                // the material's angle is at an edge, two faces of one body meeting (#961)
+                let [ra, rb] = <[_; 2]>::try_from(crate::solid::faces::one_body(sk, &[a, b], read)
+                    .map_err(named)?).ok().expect("two readings");
                 let edges = ra.body.edges_between(&ra.faces, &rb.faces);
                 let body = ra.body.clone();
                 let (cmp, lo, hi) = (t.cmp, lo, t.hi.unwrap_or(lo));

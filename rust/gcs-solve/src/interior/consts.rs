@@ -395,12 +395,18 @@ impl Structure {
         k
     }
 
-    /// A row's widths, `(n_par, n_const)`: its columns, and the unknown's where it has one; and
-    /// how many constants `consts` writes, counted by writing them.
-    pub fn widths(&self, free: bool, drive: &Drive) -> (usize, usize) {
+    /// A row's widths, `(n_par, n_const)`: its columns, and the unknowns' an integral row's sides
+    /// read (§6.25); and how many constants `consts` writes, counted by writing them.
+    pub fn widths(&self, drive: &Drive) -> (usize, usize) {
         let mut n = 0;
-        self.write(&[0.0; 2][..1 + free as usize], drive, &mut n);
-        (self.row_columns(drive) + free as usize, n)
+        self.write(&[0.0; 1][..self.stated()], drive, &mut n);
+        (self.row_columns(drive) + self.gauge.unknowns, n)
+    }
+
+    /// How many numbers a row over it states: a displacement's `J₀`; nothing for an integral
+    /// row, whose sides say all it compares.
+    pub fn stated(&self) -> usize {
+        usize::from(!self.reads.measure())
     }
 
     /// How many columns a row over the structure, driven by `drive`, reads before the unknown
@@ -447,6 +453,26 @@ impl Structure {
         for i in 0..self.fixed.len() {
             k.put([self.fixed[i] as u8 as f64, self.load[i], self.weight[i]]);
         }
+        // an integral row's equation (§6.25): how many parts, unknowns and numbers read, each
+        // side's length and its tape, then each part's where and its body
+        let g = &self.gauge;
+        k.put([g.parts.len(), g.unknowns, g.reads, g.lhs.len(), g.rhs.len()].map(|n| n as f64));
+        k.put(g.lhs.iter().copied());
+        k.put(g.rhs.iter().copied());
+        for part in &g.parts {
+            match &part.domain {
+                super::Domain::Tets(runs) => {
+                    k.put([0.0, runs.len() as f64]);
+                    k.put(runs.iter().flat_map(|&(a, n)| [a as f64, n as f64]));
+                }
+                super::Domain::Facets(facets) => {
+                    k.put([1.0, facets.len() as f64]);
+                    k.put(facets.iter().flatten().map(|&n| n as f64));
+                }
+            }
+            k.put([part.integrand.len() as f64, part.quadratic as u8 as f64]);
+            k.put(part.integrand.iter().copied());
+        }
         match drive {
             Drive::Stated => {}
             Drive::Sized(z) => {
@@ -459,15 +485,14 @@ impl Structure {
         }
     }
 
-    /// What `consts` wrote, `free` where an unknown sets the output (the row has its column, as
-    /// `integral::length_widths` reads a length's): the structure, what it states and its drive
-    /// — `None` for constants that are not whole (a document is untrusted input): a count out of
-    /// range, a node, a beam or an element named past its count, a tape reading past its
-    /// unknowns, a mover that does not fit the structure, or a constant left over.
-    pub fn read(k: &[f64], free: bool) -> Option<(Structure, &[f64], Drive)> {
+    /// What `consts` wrote: the structure, what it states and its drive — `None` for constants
+    /// that are not whole (a document is untrusted input): a count out of range, a node, a beam
+    /// or an element named past its count, a tape reading past its unknowns, a mover that does
+    /// not fit the structure, or a constant left over.
+    pub fn read(k: &[f64]) -> Option<(Structure, &[f64], Drive)> {
         let mut r = Take::new(k);
         let h = Head::read(&mut r)?;
-        let stated = r.take(1 + free as usize)?;
+        let stated = r.take(usize::from(!h.reads.measure()))?;
         let node = |v: f64| count(v).filter(|&i| i < h.nodes);
         let bars = r.records::<3>(h.bars)?.iter()
             .map(|c| Some(Bar { a: node(c[0])?, b: node(c[1])?, e: c[2] }))
@@ -497,7 +522,7 @@ impl Structure {
             .collect::<Option<_>>()?;
         let mut s = Structure { dim: h.dim, nodes: h.nodes, bars, beams, fixed: Vec::new(),
                                 load: Vec::new(), weight: Vec::new(), spread, tris, laid, tets,
-                                borne, reads: h.reads };
+                                borne, reads: h.reads, gauge: Default::default() };
         // a plane element is of the plane, a solid one of space, each moves without turning, and
         // neither is a member's nor the other's
         let mixed = !s.beams.is_empty() || !s.bars.is_empty();
@@ -510,6 +535,51 @@ impl Structure {
         s.fixed = per.iter().map(|c| c[0] != 0.0).collect();
         s.load = per.iter().map(|c| c[1]).collect();
         s.weight = per.iter().map(|c| c[2]).collect();
+        let g = r.take(5)?;
+        let (parts, unknowns, reads, lhs, rhs) =
+            (count(g[0])?, count(g[1])?, count(g[2])?, count(g[3])?, count(g[4])?);
+        s.gauge.unknowns = unknowns;
+        s.gauge.reads = reads;
+        s.gauge.lhs = r.take(lhs)?.to_vec();
+        s.gauge.rhs = r.take(rhs)?.to_vec();
+        s.gauge.parts = (0..parts).map(|_| {
+            let head = r.take(2)?;
+            let domain = match (count(head[0])?, count(head[1])?) {
+                (0, n) => super::Domain::Tets(r.records::<2>(n)?.iter().map(|c| {
+                    let (a, n) = (count(c[0])?, count(c[1])?);
+                    (a.checked_add(n)? <= h.tets).then_some((a, n))
+                }).collect::<Option<_>>()?),
+                (1, n) => super::Domain::Facets(r.records::<6>(n)?.iter().map(|f| {
+                    let f = f.map(node);
+                    Some([f[0]?, f[1]?, f[2]?, f[3]?, f[4]?, f[5]?])
+                }).collect::<Option<_>>()?),
+                _ => return None,
+            };
+            let (n, quadratic) = (r.count()?, r.count()?);
+            if quadratic > 1 {
+                return None;
+            }
+            Some(super::Part { domain, integrand: r.take(n)?.to_vec(), quadratic: quadratic == 1 })
+        }).collect::<Option<_>>()?;
+        // a displacement's row reads no equation; an integral row's sides read its integrals and
+        // its unknowns, its parts' bodies their point and what they read, and its parts are of a
+        // solid's nodes (§6.25)
+        let gauge = &s.gauge;
+        let sides = gauge.integrals() + gauge.unknowns;
+        let fits = match s.reads.measure() {
+            false => parts == 0 && unknowns == 0 && reads == 0 && lhs == 0 && rhs == 0,
+            true => !gauge.lhs.is_empty() && !gauge.rhs.is_empty()
+                && sides <= crate::tape::MAX_VARS
+                && gauge.integrand_vars() <= crate::tape::MAX_VARS
+                && crate::tape::reads_within(&gauge.lhs, sides)
+                && crate::tape::reads_within(&gauge.rhs, sides)
+                && gauge.parts.iter().all(|p| crate::tape::reads_within(&p.integrand,
+                                                                         gauge.integrand_vars()))
+                && (gauge.whole() || s.dim == 3),
+        };
+        if !fits {
+            return None;
+        }
         let drive = match h.drive {
             Tag::Stated => (h.over == 0).then_some(Drive::Stated)?,
             Tag::Sized => {

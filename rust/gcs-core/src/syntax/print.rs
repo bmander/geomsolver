@@ -350,7 +350,10 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
             out.push_str(" }");
         }
         StmtKind::Measured(m) => {
-            out.push_str(&format!("{} {} {}", m.lhs.text(), m.cmp.text(), m.rhs.text()));
+            if m.claim {
+                out.push_str("claim ");
+            }
+            out.push_str(&format!("{} {} {}", m.lhs.text(), m.cmp_text(), m.rhs.text()));
         }
         StmtKind::Scenario(sc) => sc.write(out),
         StmtKind::Beam(b) => b.write(out),

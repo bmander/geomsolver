@@ -164,7 +164,8 @@ fn a_sheet_pulled_answers_to_rounding() {
         (80.0, 30.0, 2.0, 40e3, 200e6, 0.3, 7850.0 * 1e-9, 250e3);
     for plane in ["stress", "strain"] {
         // its mass is the drawing's, claimed of it: no scenario's
-        let e = crate::common::text::solved(&(sheet(plane, claims) + "claim mass(>= 1g) plate\n"));
+        let mass = "use std.measures (mass)\nclaim mass(>= 1g) plate\n";
+        let e = crate::common::text::solved(&(sheet(plane, claims) + mass));
         let strain = plane == "strain";
         let e1 = if strain { young / (1.0 - nu * nu) } else { young };
         let (got, words) = answers(&e);

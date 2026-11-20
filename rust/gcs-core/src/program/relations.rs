@@ -142,16 +142,19 @@ pub(crate) fn settle(
         // only a gauge word is written as a call, and those were settled above
         Fixity::Call => return Err((w.word.span, format!("`{word}` is not a call"))),
     };
-    // **an angle stated as another angle** (`l1 angle(l3, l4) l2`): the second pair of lines
-    // stands in the parentheses where the number would, so the word between two lines is the
-    // equality whenever its parentheses hold entities.  A kind states at most one number, so a
-    // pair there can be nothing else — `op_args` has already read it as two references
-    let kind = if kind == CKind::Angle
-        && w.args.iter().any(|a| matches!(a, crate::syntax::OpArg::Ent(_)))
-    {
-        CKind::EqualAngle
-    } else {
-        kind
+    // an entity in the parentheses, and one there that is an axis
+    let in_parens = |axis: bool| w.args.iter().any(|a| matches!(a, crate::syntax::OpArg::Ent(r)
+        if !axis || kind_of(r) == Some(EntKind::Axis)));
+    let kind = match kind {
+        // **an angle stated as another angle** (`l1 angle(l3, l4) l2`): the second pair of lines
+        // stands in the parentheses where the number would, so the word between two lines is the
+        // equality whenever its parentheses hold entities.  A kind states at most one number, so
+        // a pair there can be nothing else — `op_args` has already read it as two references
+        CKind::Angle if in_parens(false) => CKind::EqualAngle,
+        // **the mirror in an axis** (`a symmetry(std.x) b`): the half turn about its line, in
+        // space whatever the points are drawn in — an axis is a place, and has no page to mirror
+        CKind::Symmetric if in_parens(true) => CKind::SymmetricAxis,
+        k => k,
     };
     // the tangent at a point of a line is the line's direction (#251): `parallel`, the point
     // saying nothing a line does not

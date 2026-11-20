@@ -76,8 +76,8 @@ pub(super) trait Names {
     fn stands(&self, name: &str) -> Option<String>;
     fn faces(&self, name: &str) -> Option<Vec<String>>;
     /// Whether two faces, each by what its name stands for, share a point (#625): `None` where
-    /// either is no face a solid lists.
-    fn meets(&self, a: &str, b: &str) -> Option<bool>;
+    /// either is no face a solid lists, and why not where they are faces of two solids (#961).
+    fn meets(&self, a: &str, b: &str) -> Option<Result<bool, String>>;
     /// Whether a face, by what its name stands for, lies `along` the direction `line` stands for
     /// (#763): `None` where it is no face a solid lists, and why not where it cannot be read.
     fn along(&self, along: expr::Along, face: &str, line: &str) -> Option<Result<bool, String>>;
@@ -182,7 +182,7 @@ fn holds(
                 "`{x} meets {y}` asks whether two faces of a solid share a point, and `{}` is \
                  no face: name a face a `repeat … in` runs over",
                 if names.faces(x).is_none() { x } else { y }
-            )))?
+            )))?.map_err(|why| (Code::E103, why))?
         }
         Cond::Along(w, x, y) => {
             let (p, q) = (stands(x)?, stands(y)?);
@@ -564,13 +564,21 @@ fn of_vals_in<'a, T: Table + ?Sized>(
             });
         }
         // the constant is of the whole's dimension, so it says so as a number does above, or
-        // `(-0.25 * m + 0)` adds a plain number to a length once `m: Length` is written in
+        // `(-0.25 * m + 0)` adds a plain number to a length once `m: Length` is written in; and
+        // the coefficient of what the whole and the name differ by, where the table knows the
+        // name's (`bm * L * B * 40mm`, a fourth power of length over a length)
+        let named = vals.value(n).filter(|f| f.free.as_ref() == Some(n) && f.m == 1.0
+                                            && f.c == 0.0).map(|f| a.dim.div(f.dim));
+        let m = match named {
+            Some(k) if !k.is_scalar() => k.number_text(a.m, units),
+            _ => crate::syntax::num(a.m),
+        };
         Some(if a.m == 1.0 && a.c == 0.0 {
             n.clone()
         } else if a.c == 0.0 {
-            format!("({} * {n})", crate::syntax::num(a.m))
+            format!("({m} * {n})")
         } else {
-            format!("({} * {n} + {})", crate::syntax::num(a.m), a.dim.number_text(a.c, units))
+            format!("({m} * {n} + {})", a.dim.number_text(a.c, units))
         })
     }
 }

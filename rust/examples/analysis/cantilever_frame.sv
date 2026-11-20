@@ -6,6 +6,7 @@
 // cubic's to approximate.  The claims bracket each as the solid's do, within 1% and 3%.
 unit mm
 use std
+use std.measures (mass)
 
 L := 1000mm
 h := 50mm

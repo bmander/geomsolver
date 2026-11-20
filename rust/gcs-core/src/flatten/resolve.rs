@@ -773,11 +773,8 @@ fn rewrite(
         // an energy names the curve it is over (#121)
         StmtKind::Minimize(m) => fix(&mut m.curve, bad),
         // a bound on measurements names what it measures, as a motion's numbers do (#183 F3)
-        StmtKind::Measured(m) => {
-            for x in m.lhs.measures_mut().into_iter().chain(m.rhs.measures_mut()) {
-                x.refs_mut().for_each(|r| fix(r, bad));
-            }
-        }
+        // and an integral what it is over, never the point it binds (§6.25)
+        StmtKind::Measured(m) => m.refs_mut().into_iter().for_each(|r| fix(r, bad)),
         // a load case names what it holds, loads and requires of (#510 P4)
         StmtKind::Scenario(sc) => sc.refs_mut().into_iter().for_each(|r| fix(r, bad)),
         // a frame's members name their lines, and the material they are made of (#510 S0)

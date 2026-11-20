@@ -209,7 +209,10 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   (`a_picture_missing_a_solid_fails_naming_it`).  An object drawn from its field or its facet
   term, not its exact build — a round its gate refuses, a shell whose cavity no construction
   builds — is in the picture and said against it as not built, in the core's words
-  (`EvaluatedSolid::unbuilt`, `report::unbuilt_text`, solids.md; #762), the exit unchanged; a
+  (`EvaluatedSolid::unbuilt`, `report::unbuilt_text`, solids.md; #762), the exit unchanged —
+  said before the solid is drawn where its field is to be meshed for it
+  (`Sketch::field_meshed_ahead`, #961), so a picture waiting on that refinement has said why
+  first (`a_picture_of_a_refused_round_says_so_first_and_is_drawn_in_bounded_time`); a
   `--gltf` and a faceted `--stl` say the same of their files
   (`a_picture_of_a_solid_not_built_says_so`).  A sliver an object's exact build holds — a face
   thinner than the export's tolerance somewhere, an edge shorter (`brep::export::slivers_drawn`,
