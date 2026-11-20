@@ -1197,7 +1197,8 @@ fn a_corner_of_a_face_in_pieces_is_rounded() {
     lowered(&e);
     assert!(agrees_with_field(&e, "stand", 0.01) > 0.0);
     let why = refused(&e, "stand");
-    assert!(why.contains("touches itself along a line") && why.contains("no manifold file describes it"), "{why}");
+    assert!(why.contains("touches itself along a line") && why.contains("no manifold file describes it")
+        && why.contains("edges of both turns meet where `stand.plate.ab`"), "{why}");
 }
 
 /// **A vertex where convex and concave rounds meet** (#218): `twin.sv`'s bar rounded all over.
@@ -1213,7 +1214,8 @@ fn rounds_meeting_at_a_vertex_of_both_kinds_touch_along_a_line() {
     lowered(&e);
     assert!(agrees_with_field(&e, "bar", 0.01) > 0.0);
     let why = refused(&e, "bar");
-    assert!(why.contains("touches itself along a line") && why.contains("no manifold file describes it"), "{why}");
+    assert!(why.contains("touches itself along a line") && why.contains("no manifold file describes it")
+        && why.contains("in a concave edge") && why.contains("round(r: …) bar.right.small"), "{why}");
 }
 
 /// **A corner where two curved faces meet** (#218's 4): `bores.sv`, a slab drilled twice, the
