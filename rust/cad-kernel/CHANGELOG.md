@@ -8,6 +8,23 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A half-space bounded by the material it is kept with** (`recipe::Node::Half`, #953): the block
+  behind a plane standing over the box of the nodes it is kept in common with, reaching past that
+  box so only the plane's face meets them. **Breaking** for code matching `Node` exhaustively.
+- **Sheets and faces sewn into the solid they enclose** (`recipe::Node::Sewn`, `SewnPiece`, #953):
+  each piece a profile's planar face or a B-spline net's sheet, named, sewn to a tolerance
+  (`sew::sewn`) and refused where they do not close. **Breaking** for code matching `Node`
+  exhaustively.
+- **The ten moments of a solid, and of a face** (`props::moments`, `props::face_moments`, #953):
+  `∫ 1`, the three first and the six second moments of `(X − c) / h`, a solid's by the divergence
+  theorem and a face's by area, each read off the faces' loops as the volume and the area are, so
+  nothing is meshed. Only the moments asked for are read.
+- **The nearest point on a long B-spline reads its spans through an index**
+  (`BSpline::nearest_indexed`, `BSpline::gap_indexed`): built once for a curve and kept, it reads
+  the spans `nearest` would and finds the same foot. `Located::edge_gap` is bounded by a long
+  spline's spans' boxes, so a point beside a long edge skips measuring it, and a polynomial net's
+  inverse tries its last foot first, accepted by the bound every other candidate is.
+
 ## [0.18.0] - 2026-11-19
 
 - **A ring's tube cut at an end pose carries the places it was traced through as the cut's pcurve**
