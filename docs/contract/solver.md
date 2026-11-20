@@ -208,9 +208,16 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   settle-test the surplus motions: step along a null direction, settle, and a motion that walks back
   is `shaky` — out of the DOF, "blocked at second order", never painted under- or over-constrained.
   `numeric_rank` already includes them; nothing adds `shaky` back.  Every guard is inside
-  `witness::screen`: at a solution, a tangency present, removals capped at what the matching cannot
-  account for, at most `SCREEN_MAX`.  A double root's singular value is as small as a real
-  freedom's, so a candidate is recognised only by trying it.
+  `witness::screen`: at a solution, removals capped at what the matching cannot account for (so
+  no solve runs where the numbers see every row the matching does), at most `SCREEN_MAX`.  **No
+  kind of constraint is asked for** (#961): a tangency at its contact is only the double root
+  written as a word.  The ends of an arc of a half turn held with its radius are the circles
+  about the ends touching, and a coordinate held where a circle runs square to it is the circle
+  touching that line; neither carries a tangency, and gated on one the first read `DOF 1` with
+  the radius `over` (`tests/half_turn.rs`, `the_ends_and_a_radius_are_a_double_root`;
+  `the_screen_blocks_no_real_freedom` holds that a theorem's real motions still settle away).
+  A double root's singular value is as small as a real freedom's, so a candidate is recognised
+  only by trying it.
   **The tangent at a point of any path** (#251): `g tangent(at: m) l`, the parser reading `at:`
   as a point unless it is `start`/`end`/`p1`/`p2` — of a spline or a curve the contact's **rate**
   there held along the line, `CKind::Rate` (#365, the one kernel every rate of a contact runs,
