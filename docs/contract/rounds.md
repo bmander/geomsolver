@@ -184,21 +184,33 @@ else, and the block's corner at a step's far end, its edge along the side ending
 goes on into the fill, carried a run on under the step's high end — a groove 1.5 deep the field
 read and the exact build had not, which the gate's probes found at one placing of the step in
 five. (An arc's square plane is a half-space through its axis, which would cut a stretch of more
-than half a turn short of its other end: an arc ending on no face is left to its meridian.)
+than half a turn short of its other end: an arc ending on no face is left to its meridian.) So
+the lowering holds a corner's runs within each edge's ends **as the field reads them**
+(`piece::build`): the run of the references' edges through the corner, a face in pieces of one
+name going on across its seams (a floor a second cut splits, both pieces `cut1.far`), and not
+the one piece's edge, whose seam would end it square and refuse the corner as "a ball larger
+than the edges it rounds".
 Written as one `round(r) part`, every edge reads the sharp body and the fill and the cuts touch
 along a line from the vertex: the export says so **at the vertex** (`export::mixed_vertex`,
 `BodyFaces::mixed_vertex`) — where it stands, the faces there by the body's names with each edge's
 turn, the edge alone in its turn and the two statements to write — and not "rounds of separate
 statements" alone. A vertex where one edge is alone at one end and paired at the other's (two
 steps meeting at a corner: the upright between their walls convex over two concave floor edges,
-each alone at the block's side) wants three statements, the upright first. A chamfer's flats are
+each alone at the block's side) wants three statements, the upright first. Refused as on 0.223,
+by the gate: a top's rim rounded over a boss's uprights' rounds on a solid of a body the boss
+stands on a plate of (a ring over each upright's round whose foot ends on the plate: its
+construction and the field disagree just outside the round's cylinder near the stretch's ends,
+172 of 752 probes, `rim.sv`'s box standing alone built) — so a boss's own edges are rounded
+together first (its uprights, top rim and top corners), and two steps meeting, whose upper
+block's top rim must go round the upright's round, are not built yet. A chamfer's flats are
 no tangent chain, so a second statement chamfers the first one's flat against its own faces
 again: a chamfer of every edge at such a vertex is not said by the words yet, and its refusal says
 so. `tests/mixed_vertices.rs` is the gate (the step at either end and moved along the block,
 its wall leaning 45° with its fill 2.5 and the rest 1 and the other way round, holes beside it,
 the pocket, the boss and `rounds/stock.sv`, each to its closed form to 1e-9 by Pappus and exported
-with no sliver; the field holding the high end's material where the corner's
-groove ran; one statement of either word refused at the vertex).
+with no sliver; the field holding the high end's material where the corner's groove ran; a
+corner on a floor in pieces of one name built; one statement of either word refused at the
+vertex; an edge not built said by its faces).
 
 **Against the smooth surface** ([0.149], #422): `F.smooth` (`Member::Smooth`, `FaceRef::smooth`, read
 with `surface`) is the faces named and every face going on from them tangent across a seam

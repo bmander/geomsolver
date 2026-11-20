@@ -244,6 +244,28 @@ fn an_edge_the_general_note_cannot_build_is_said_by_its_faces() {
     assert!(why.contains("(where `rod.") && why.contains("` and `rod.") && why.contains("` meet)"), "{why}");
 }
 
+/// **A corner whose face is in pieces of one name**: two steps cut down 10 along one end and one
+/// side of the block, the second cut splitting the first one's floor in two pieces, both
+/// `part.cut1.far`.  The block's corner at the first step's far end rounds the floor's edge with
+/// the end along both pieces — the edge goes on across their seam, so the field reads its ends
+/// where the reference's run ends, and the corner is held within those, not within the one
+/// piece's (whose seam, where a straight run ends on no face, ends it square): built, not "a ball
+/// larger than the edges it rounds".  Rounded all over in one statement the part is refused, as
+/// ever, at a vertex of both turns.
+#[test]
+fn a_corner_whose_face_is_in_pieces_of_one_name_is_held_within_the_references_run() {
+    let cuts = "in std.top {\n  first := step(u: 0mm, v: -26mm) (w1 := line) -> step(u: 41mm) line -> step(v: 26mm) line ->\n\
+        \x20   step(u: 0mm) line -> close\n\
+        \x20 second := step(u: 41mm, v: 0mm) (w2 := line) -> step(v: 26mm) line -> step(u: -41mm) line ->\n\
+        \x20   step(v: 0mm) line -> close\n}\n\
+        cut1 := solid(std.solids.Prism(first, from: 10mm, to: 21mm))\n\
+        cut2 := solid(std.solids.Prism(second, from: 10mm, to: 21mm))\ncut1 cut part\ncut2 cut part\n";
+    let e = solved(&block(cuts, "round(r: 1.5mm) part\n"));
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    let why = format!("{:?}", export::exact(&e.sketch, ent(&e, "part").i(), None, None, &say).err().expect("refused"));
+    assert!(why.contains("edges of both turns meet where") && !why.contains("a ball larger"), "{why}");
+}
+
 /// **Every edge as one statement**: each round reads the sharp block, so at each corner of the
 /// step the side's rounds and the step's fill touch along a line — refused by the export, naming
 /// the vertex, the faces there with each edge's turn, and the edge to round first.

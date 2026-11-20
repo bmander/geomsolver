@@ -79,9 +79,16 @@ pub(super) fn build(body: &crate::solid::faces::BodyFaces, f: &Faces, section: S
             return Ok(pieces);
         }
         let mut bounds = Vec::new();
+        // each edge's ends as the field reads them: the run of the references' edges through the
+        // corner, a face in pieces of one name (a top split by a cut) going on across its seams,
+        // so the end where a straight run ends on no face is where the reference's edge ends
+        // (#962), and not where one piece of it does
         for &[i, j] in f.pairs() {
-            let es = body.edges_between(&[ids[i]], &[ids[j]]);
-            bounds.extend(ends_at_all(body, &body.end_faces(&es, &[ids[i], ids[j]])));
+            let own = body.edges_between(&[ids[i]], &[ids[j]]);
+            let es = body.runs(&body.edges_between(&groups[i], &groups[j])).into_iter()
+                .find(|run| own.iter().any(|e| run.contains(e))).unwrap_or(own);
+            let faces: Vec<usize> = groups[i].iter().chain(&groups[j]).copied().collect();
+            bounds.extend(ends_at_all(body, &body.end_faces(&es, &faces)));
         }
         let runs: Vec<&Run> = pieces.iter().filter_map(|p| match p { Piece::Run(r) => Some(r), _ => None }).collect();
         let size = runs.iter().map(|r| r.span[1] - r.span[0]).fold(r, f64::max);
