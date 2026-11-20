@@ -310,6 +310,7 @@ mod space_paths;
 mod spatial;
 mod spatial_lang;
 mod spatial_surfaces;
+mod sphere_rounds;
 mod spline_length;
 mod step;
 mod step_assembly;
