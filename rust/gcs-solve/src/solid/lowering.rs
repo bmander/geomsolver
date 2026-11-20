@@ -458,7 +458,7 @@ pub fn lowered(sk: &Sketch, solid: usize) -> Option<Result<Rc<Vec<Piece>>, Strin
     let key = super::MemoKey::own(sk, solid, vec![body.clone()]);
     Some(sk.caches.lowering.get_or(solid, key, || {
         let spill = seams_beside(&body, &faces, section);
-        piece::build(&body, &faces, section, &spill)
+        piece::build(&body, &faces, section, &spill, sk.units)
     }.and_then(|pieces| {
         gate(sk, solid, &pieces, &body, || beside_edges(&body, &faces, section))?;
         Ok(Rc::new(pieces))
