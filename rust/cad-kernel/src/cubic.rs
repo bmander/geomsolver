@@ -350,9 +350,27 @@ pub fn interpolating_ctrl_at(
 /// its ends put exactly at `ends` where given: its poles, knots and the error measured.
 pub fn fit_sampled(sweep: &dyn Fn(f64,f64,usize) -> Vec<(f64,f64)>,(a,b): (f64,f64),ends: Option<((f64,f64),(f64,f64))>,tol: f64)
     -> Option<(Vec<(f64,f64)>,Vec<f64>,f64)> {
+    fit_held(sweep,(a,b),ends,tol,tol)
+}
+
+/// The most spans a fit is doubled to for the sake of `held` alone (`fit_held`): past it the fit
+/// in hand within `tol` stands.
+pub const HELD_SPANS: usize = 512;
+
+/// The same stretch **held within `held` where its fit closes in, and never further off than
+/// `tol`** (`held <= tol`): the samples are doubled until the fit stands within `held`, and the
+/// nearest fit met stands where it does not — where a doubling no longer brings the fit four
+/// times nearer (a cubic through a smooth curve comes sixteen times nearer; one that does not is
+/// at the curve's own roughness, which more poles would only follow) or the spans pass
+/// `HELD_SPANS` — so long as it is within `tol`.  `None` as `fit_sampled`'s: no fit within `tol`.
+pub fn fit_held(sweep: &dyn Fn(f64,f64,usize) -> Vec<(f64,f64)>,(a,b): (f64,f64),ends: Option<((f64,f64),(f64,f64))>,
+    held: f64,tol: f64) -> Option<(Vec<(f64,f64)>,Vec<f64>,f64)> {
     use crate::nurbs::BSpline;
     let (lo,hi) = (a.min(b),a.max(b));
     let mut n = 8;
+    // the nearest fit met within `tol`, and the error of the fit before this one
+    let mut nearest: Option<(Vec<(f64,f64)>,Vec<f64>,f64)> = None;
+    let mut before = f64::INFINITY;
     loop {
         let mut fine = sweep(lo,hi,2*n);
         if a > b { fine.reverse(); }
@@ -377,9 +395,15 @@ pub fn fit_sampled(sweep: &dyn Fn(f64,f64,usize) -> Vec<(f64,f64)>,(a,b): (f64,f
             }
             crate::util::space::distance(s.point(u),q)
         }).fold(0.,f64::max);
-        if err <= tol { return Some((ctrl,knots,err)) }
+        if err <= held { return Some((ctrl,knots,err)) }
+        let closing = err <= before/4.;
+        before = err;
+        if err <= tol && nearest.as_ref().is_none_or(|f| err < f.2) {
+            nearest = Some((ctrl,knots,err));
+        }
         n *= 2;
-        if n > 2048 { return None }
+        if nearest.is_some() && (!closing || n > HELD_SPANS) { return nearest }
+        if n > 2048 { return nearest }
     }
 }
 

@@ -442,24 +442,32 @@ pub(super) fn body_terms(stock: u32,on: &[u32],cut: &[u32],bound: &[u32]) -> rec
 /// How near its curve a fitted stretch must pass (millimetres).
 pub const FIT_MM: f64 = 1e-4;
 
+/// How near its curve a profile's fitted stretch is held where its fit closes in (millimetres):
+/// the kernel's bar for a surface it fits (`step::FIT`), since the stretch is what the solid's face
+/// is carried along or turned from, and a reader measures the solid by that face — a hyperbola
+/// turned, fitted within `FIT_MM` alone, read 1.03e-6 off its closed form and within this 1.7e-9.
+pub const HELD_MM: f64 = crate::brep::step::FIT;
+
 /// The cubic B-spline through a curve's samples (Piegl and Tiller's global interpolation,
 /// `curve::interpolating_ctrl_at`) in the curve's own coordinates, over its interval from first end
 /// to second, its parameter the fraction of the curve's at every sample: the samples doubled until
-/// every sample halfway between two it passes through is within `tol` of it, measured by projecting
-/// that sample onto the fit. A trimmed stretch's or a free curve's first and last poles are its end
-/// points themselves, which its neighbours share. The poles, the knots and the error measured;
-/// `None` past 4096 samples.
-pub fn fit_curve(sk: &Sketch,i: usize,tol: f64) -> Option<(Vec<(f64,f64)>,Vec<f64>,f64)> {
+/// every sample halfway between two it passes through is within `held` of it, measured by
+/// projecting that sample onto the fit, or, where the fit stops closing in on the curve
+/// (`brep::cubic::fit_held`), the nearest met within `tol`. A trimmed stretch's or a free curve's
+/// first and last poles are its end points themselves, which its neighbours share. The poles, the
+/// knots and the error measured; `None` where no fit of up to 4096 samples is within `tol`.
+pub fn fit_curve(sk: &Sketch,i: usize,held: f64,tol: f64) -> Option<(Vec<(f64,f64)>,Vec<f64>,f64)> {
     let (a,b) = sk.curve_domain(i);
     let ends = sk.curve_ends(i).map(|(p,q)| (sk.point_xy(p as usize),sk.point_xy(q as usize)));
-    fit_stretch(sk,i,(a,b),ends,tol)
+    fit_stretch(sk,i,(a,b),ends,held,tol)
 }
 
 /// The curve over `(a, b)` (decreasing where the stretch runs against the curve) as a cubic
-/// B-spline within `tol`, its two ends put exactly at `ends` where given.
-fn fit_stretch(sk: &Sketch,i: usize,(a,b): (f64,f64),ends: Option<((f64,f64),(f64,f64))>,tol: f64)
+/// B-spline held within `held` and never further off than `tol`, its two ends put exactly at
+/// `ends` where given.
+fn fit_stretch(sk: &Sketch,i: usize,(a,b): (f64,f64),ends: Option<((f64,f64),(f64,f64))>,held: f64,tol: f64)
     -> Option<(Vec<(f64,f64)>,Vec<f64>,f64)> {
-    fit_sampled(&|lo,hi,n| sk.curve_sweep(i,lo,hi,n),(a,b),ends,tol)
+    crate::brep::cubic::fit_held(&|lo,hi,n| sk.curve_sweep(i,lo,hi,n),(a,b),ends,held,tol)
 }
 
 /// A planar stretch sampled, fitted as a cubic B-spline within a tolerance, is the kernel's
@@ -523,7 +531,8 @@ pub(super) fn profile(sk: &Sketch,index: usize,w: &Writer) -> Result<Section,Str
             }
             EntKind::Curve => {
                 // a stretch of a traced or formula curve: the cubic B-spline through it, fitted
-                // until it is within `FIT_MM` of the curve, and what the fit measured
+                // until it is within `HELD_MM` of the curve or, where its fit stops closing in,
+                // the nearest met within `FIT_MM`, and what the fit measured
                 let fitted = |(poles,knots,_): (Vec<(f64,f64)>,Vec<f64>,f64)| bspline_edge(&poles,&knots,&lift);
                 let unfitted = || format!("`{}`: a curve in its profile could not be fitted within {FIT_MM} mm",face.name);
                 if sk.curve_ends(e.i()).is_none() {
@@ -537,10 +546,11 @@ pub(super) fn profile(sk: &Sketch,index: usize,w: &Writer) -> Result<Section,Str
                     let (a,b) = sk.curve_domain(e.i());
                     let m = 0.5*(a+b);
                     let (start,middle) = (sk.curve_point(e.i(),a),sk.curve_point(e.i(),m));
-                    let half = |stretch,ends| fit_stretch(sk,e.i(),stretch,Some(ends),FIT_MM/scale).ok_or_else(unfitted).map(fitted);
+                    let half = |stretch,ends| fit_stretch(sk,e.i(),stretch,Some(ends),HELD_MM/scale,FIT_MM/scale)
+                        .ok_or_else(unfitted).map(fitted);
                     return Ok(vec![half((a,m),(start,middle))?,half((m,b),(middle,start))?]);
                 }
-                fitted(fit_curve(sk,e.i(),FIT_MM/scale).ok_or_else(unfitted)?)
+                fitted(fit_curve(sk,e.i(),HELD_MM/scale,FIT_MM/scale).ok_or_else(unfitted)?)
             }
             _ => return Err(format!("`{}`: CAD profiles currently require lines, arcs, circles, splines or stretches of curves",face.name)),
         }])
