@@ -2311,15 +2311,20 @@ fn on_given(c: &Curve,t: [f64;2],curves: &[Curve],touches: &[V],surface: &Surfac
     if curves.iter().any(lies_along) { return Meets::Along }
     let step = 64.*reach/c.speed().max(1e-300);
     let mut roots: Vec<(f64,bool)> = Vec::new();
+    // (each root's point, and whether a crossing was read already: the two points within `reach`
+    // of one another, #942 F6)
+    let mut at: Vec<V> = Vec::new();
+    let read = |at: &[V],x: V| at.iter().any(|&q| distance(q,x) <= reach);
     for g in curves {
         for (s,_,_) in super::meeting::crossings(c,t,g,domain(g),reach) {
-            // (a crossing read already: the two points within `reach` of one another, #942 F6)
-            if roots.iter().any(|r| distance(c.point(r.0),c.point(s)) <= reach) { continue }
+            let x = c.point(s);
+            if read(&at,x) { continue }
             let touch = s-step > t[0] && s+step < t[1] && {
                 let (a,b) = (surface.implicit(c.point(s-step)),surface.implicit(c.point(s+step)));
                 (a < 0.) == (b < 0.)
             };
             roots.push((s,touch));
+            at.push(x);
         }
     }
     // (and where it passes through a point the two are given to touch at, #942 F3: a touch)
@@ -2328,8 +2333,10 @@ fn on_given(c: &Curve,t: [f64;2],curves: &[Curve],touches: &[V],surface: &Surfac
         let s = match c.period() { Some(period) => super::geom::around(s,t[0],period),None => s };
         let slack = reach/c.speed().max(1e-300);
         if s < t[0]-slack || s > t[1]+slack || distance(c.point(s),p) > reach { continue }
-        if roots.iter().any(|r| distance(c.point(r.0),c.point(s)) <= reach) { continue }
-        roots.push((s.clamp(t[0],t[1]),true));
+        if read(&at,c.point(s)) { continue }
+        let s = s.clamp(t[0],t[1]);
+        roots.push((s,true));
+        at.push(c.point(s));
     }
     roots.sort_by(|x,y| x.0.total_cmp(&y.0));
     Meets::At(roots)

@@ -10,11 +10,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 - **The roads under any motion read no threshold of their own** (#942 F6): every local number the
   T1d work added to the ring road, the general road, the trim, `closed`, `contacts` and the Boolean
-  is now the tolerance's, a feature size's, the rounding's (`rings::HALF_READ = √ε`, `G` carried
+  is now the tolerance's, a feature size's, the rounding's (`util::fmath::HALF_READ = √ε`, `G` carried
   within `ε^(1/(order+2))` of a rim), the normal form's (a narrow pair's crossing within `√3 − 1` of
   its bridge's half-width), the trace's step, or the structure's (a side of a face's square read by
   its own way, a halving to the roll's rounding), or is gone. New shared rules: `closed::grain` (the
-  roll over which no corner of the tool moves the tolerance), `closed::hair` (the hair a trim reads
+  roll over which no corner of the tool moves the tolerance), `closed::road_trim` (the hair a trim reads
   at, #880 Q1b's), and
   `rings::on_double_curve`. `rings::cut_along` takes the tolerance. A chord whose ends are snapped
   to one place has no length and is dropped; a double curve is stepped adaptively, by its own

@@ -465,7 +465,7 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
                 if let (Ok(q0),Ok(m)) = (path.pose(roll[e]),path.at(roll[e])) {
                     let v = m.velocity(q0.inverse().point(p));
                     let lead = crate::util::space::dot(v,n)*if e == 0 { 1. } else { -1. };
-                    if lead.abs() > super::rings::HALF_READ*crate::util::space::norm(v) { ahead = Ok(lead > 0.); behind = Ok(true) }
+                    if lead.abs() > crate::util::fmath::HALF_READ*crate::util::space::norm(v) { ahead = Ok(lead > 0.); behind = Ok(true) }
                 }
             }
         }

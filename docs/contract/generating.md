@@ -2041,7 +2041,7 @@ rounding's** (#942 F6), none a number of its own:
   its middle stands between its ends; a face's characteristic line read as far as the face's reach;
   feet within the slack of a line make no circle; the end pose a stuck instant is nearer is the one
   that holds it, and the way the tool's point moves there is the motion's own velocity (no step);
-  every trim's hair is #880 Q1b's one rule (`closed::hair`), which the roads under any motion had
+  every trim's hair is #880 Q1b's one rule (`closed::road_trim`), which the roads under any motion had
   copied. (The screw's domain's room, a twentieth of its extent, and the trim's grown box's, a
   tenth, are #806's and E1's, older than these roads, and stand. The domain's room decides how long
   a screwed sweep takes — the fine thread with sharp crests 24 s at a twentieth, 70 s at the tool's

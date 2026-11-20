@@ -705,8 +705,7 @@ const REACH: f64 = 0.0937;
 /// membership reads.
 fn contacts_road(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
     let (candidates,given) = super::contacts::candidates(tool,path,roll,tol)?;
-    let size = tool.size();
-    let trim = super::trim::Trim {resolution:size/32.,hair:hair(tol,size),reach:None};
+    let trim = road_trim(tool,tol);
     // **the sweep within the blank's reach, where the whole does not close** (#880 T1c): cut from a
     // blank, the sweep is wanted only inside a box holding the blank — grown by `REACH` of its size
     // — and trimmed
@@ -954,7 +953,7 @@ pub(super) fn corners_of((lo,hi): (V,V)) -> Vec<V> {
 /// tolerance reads the sweep. The whole roll where nothing moves.
 pub(crate) fn grain(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Result<f64,Unbuilt> {
     const LOOKS: usize = 4096;
-    let corners = { let (lo,hi) = tool.bounds(); (0..8).map(|k| std::array::from_fn(|i| if k>>i & 1 == 0 { lo[i] } else { hi[i] })).collect::<Vec<V>>() };
+    let corners = corners_of(tool.bounds());
     let step = (b-a)/LOOKS as f64;
     let mut fastest = 0f64;
     let mut last = path.pose(a)?;
@@ -966,11 +965,15 @@ pub(crate) fn grain(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Re
     Ok(if fastest > 0. { tol/fastest } else { b-a })
 }
 
-/// **The hair a trim reads a piece's sides at** (#880 Q1b, every road's since #942 F6): the larger of
-/// four tolerances, above the sections' fit, and a millionth of the tool — a hair of a few
-/// tolerances at a fine one leaves a point within it of the sweep within it of the tool over a
-/// spread of poses its square root wide, more stretches than membership reads.
-fn hair(tol: f64,size: f64) -> f64 { (4.*tol).max(1e-6*size) }
+/// **How every road's trim reads its pieces** (#880 Q1b, every road's since #942 F6): the tool
+/// meshed to a thirty-second of its size, and a piece's sides read at a hair the larger of four
+/// tolerances, above the sections' fit, and a millionth of the tool — a hair of a few tolerances at
+/// a fine one leaves a point within it of the sweep within it of the tool over a spread of poses its
+/// square root wide, more stretches than membership reads. Held to no box.
+fn road_trim(tool: &Brep,tol: f64) -> super::trim::Trim {
+    let size = tool.size();
+    super::trim::Trim {resolution:size/32.,hair:(4.*tol).max(1e-6*size),reach:None}
+}
 
 /// A cube holding `points` with a fifth of its size to spare each way: the box, its centre and half
 /// its side.
@@ -1052,8 +1055,7 @@ fn k2(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Optio
 fn general_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
     let (candidates,given) = super::general::candidates(tool,path,roll,tol)?;
     crate::util::meter::go_on()?;
-    let size = tool.size();
-    let trim = super::trim::Trim {resolution:size/32.,hair:hair(tol,size),reach:None};
+    let trim = road_trim(tool,tol);
     let swept = trimmed_or_dumped(tool,path,roll,&candidates,&given,bar,tol,trim)?;
     cut_blank(swept,blank,tol)
 }
@@ -1094,19 +1096,17 @@ pub fn ring_cut_from(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],ba
 /// `blank`.
 fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
     let [a,b] = [roll[0].min(roll[1]),roll[0].max(roll[1])];
-    let RingEntered {ends:[start,end],sheets,given,cut} = ring_entered(tool,path,[a,b],tol)?;
+    let RingEntered {ends,sheets,given,cut} = ring_entered(tool,path,[a,b],tol)?;
     // **trimmed by membership where the roll is cut** (#880 T1d): its tubes met only where both come
     // near the sweep's boundary (`trim`), as the contact's road meets its sheets — a turned whole
     // ring's two tubes cross at under a degree inside the sweep, which the arrangement meets and
     // cannot, and a thin one's run a hair apart all round, each pair searched for nothing
     if cut {
-        let size = tool.size();
-        let trim = super::trim::Trim {resolution:size/32.,hair:hair(tol,size),reach:None};
-        let candidates: Vec<Brep> = [start,end].into_iter().chain(sheets).collect();
-        let swept = trimmed_or_dumped(tool,path,[a,b],&candidates,&given,bar,tol,trim)?;
+        let candidates: Vec<Brep> = ends.into_iter().chain(sheets).collect();
+        let swept = trimmed_or_dumped(tool,path,[a,b],&candidates,&given,bar,tol,road_trim(tool,tol))?;
         return cut_blank(swept,blank,tol)
     }
-    candidates(tool,path,[a,b],bar,tol,blank,[start,end],sheets,&given)
+    candidates(tool,path,[a,b],bar,tol,blank,ends,sheets,&given)
 }
 
 /// **What a ring's road enters** (`ring_entered`): the tool posed where the roll starts and where it
