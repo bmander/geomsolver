@@ -449,6 +449,31 @@ beyond a seam — an offset that closes is refused as that, not as too wide
 (`Surface::offset_surface`: a spill's legs and balls). A cone shrunk past its apex is the same sheet
 placed at its own apex, never none.
 
+**A ball as wide as a corner** (#962, `rounds/corner.sv`): a pocket's floor rounded where its
+plan corners are arcs of radius `R`, or a boss's top rim — round each arc a `Ring`'s stretch,
+its ball's centre `R − r` from the arc's axis. Short of the axis the stretch's face is a spindle
+torus, on it (to the kernel's tolerance) a sphere — a quarter ball at a right angle, the
+corner's turn of one otherwise — the same ring built as ever; what the field had read wrong
+there was the centres, through the walls' nearest face alone, and it reads them face by face
+now ([sets.md](sets.md), `Reading::bulging`), so the gate holds the ring to them as strictly as
+before. A chamfer's leg on the floor ending on the axis is a cone to its apex there.
+**A ball wider than the corner is refused, saying so** (`piece::wider`): where the section's
+ball centre — or a flat's leg — stands past the axis no turn of it is the set. The ball touches
+the faces either side of the corner and never the corner's own face, and `std.rounds`' set,
+whose centres are every ball within both faces at least `r` off each, holds the corner itself
+rounded to the ball's radius along that face away from the edge — up a pocket's corner out of the
+body without end, down a boss's into what it stands on, down a drafted shell's until the corner
+has widened to the ball. No round of the edge is that, and none is made: the refusal names the
+corner's face and says its radius where the round runs (a drafted corner's there, not the drawn
+one) against the ball's, or the flat's leg, in the document's unit, to the fewest figures —
+three at least — that tell them apart, where the kernel had said a revolution's profile crossed
+its axis. `tests/tight_corners.rs` is the gate (the pocket at 4 to 5 − 1e-8 and 5, a trapezoid's
+60° and 120° corners, corners of 3, 5, 5 and 8 in one pocket, a boss's rim, the chamfer: each the
+closed form's volume by Pappus to 1e-9; refused at 5 + 1e-6, 5.001 and 8, the chamfer at 5.001,
+and a drafted boss whose corner of 10 shrinks to 6.47 under a ball of 8). A trapezoid's floor
+rounded 4.9999 keeps a hole 0.1 µm across about each corner's axis: built and gated, but its
+STL's chords round 120° of so small a circle fall under float32 and are refused as slivers.
+
 **A ball that takes the whole of a face** (brep-bench's fillet/slab-half-round,
 l-block-inside-consumed, hole-waist, sliver-strip, boss-s-curve): the band a ball's contact
 bounds on the face it rolls on — the points of the face nearer the other face's surface than the
