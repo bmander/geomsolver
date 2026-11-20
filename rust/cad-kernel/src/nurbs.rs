@@ -166,10 +166,53 @@ impl BSpline {
     pub fn nearest(&self,p: V) -> f64 {
         if self.degree < 4 { self.nearest_in::<4>(p) } else { self.nearest_in::<W>(p) }
     }
+    /// **The foot of `p` on `b`, its spans found through their index** where it has many
+    /// (`SpanIndex`): the same foot `nearest` finds — every span read whose box is no farther than
+    /// the nearest sample, which alone decide it — without boxing every span at every point.
+    pub fn nearest_indexed(b: &std::sync::Arc<BSpline>,p: V) -> f64 {
+        if b.degree >= 4 || b.weights.is_some() || b.poles.len() < INDEXED_SPANS { return b.nearest(p) }
+        let index = span_index(b);
+        let gap = |x: crate::util::bvh::Bounds<3>| {
+            let d: V = std::array::from_fn(|k| (x.lo[k]-p[k]).max(p[k]-x.hi[k]).max(0.));
+            crate::util::space::norm(d)*(1.-1e-12)
+        };
+        let best = std::cell::Cell::new((f64::INFINITY,b.domain()[0]));
+        index.tree.query_nearest(gap,|| best.get().0,|s| {
+            let mut found = best.get();
+            b.read_span::<4>(index.spans[s],p,&mut found);
+            best.set(found);
+        });
+        b.settled(p,best.get().1)
+    }
+    /// **How far `p` is from the nearest of `b`'s spans' boxes**, where its spans are indexed
+    /// (`nearest_indexed`): no point of the curve is nearer — a bound far tighter than its whole
+    /// box for a long curve, which a point beside its middle is within.
+    pub fn gap_indexed(b: &std::sync::Arc<BSpline>,p: V) -> Option<f64> {
+        if b.degree >= 4 || b.weights.is_some() || b.poles.len() < INDEXED_SPANS { return None }
+        let index = span_index(b);
+        let gap = |x: crate::util::bvh::Bounds<3>| {
+            let d: V = std::array::from_fn(|k| (x.lo[k]-p[k]).max(p[k]-x.hi[k]).max(0.));
+            crate::util::space::norm(d)
+        };
+        let best = std::cell::Cell::new(f64::INFINITY);
+        index.tree.query_nearest(gap,|| best.get(),|s| best.set(best.get().min(gap(index.boxes[s]))));
+        Some(best.get())
+    }
+    /// Span `s`'s seventeen samples read against `best`, the nearer kept (the earlier on a tie).
+    fn read_span<const M: usize>(&self,s: usize,p: V,best: &mut (f64,f64)) {
+        let (w0,w1) = (self.knots[s],self.knots[s+1]);
+        let bezier = self.bezier::<M>(s);
+        for j in 0..=16 {
+            let f = j as f64/16.;
+            let t = w0+(w1-w0)*f;
+            let d = crate::util::space::distance(casteljau::<M>(&bezier[..=self.degree],f),p);
+            if d < best.0 || (d == best.0 && t < best.1) { *best = (d,t); }
+        }
+    }
     /// `nearest`, a span's Bézier poles in a table of `M` (more than the degree).
     fn nearest_in<const M: usize>(&self,p: V) -> f64 {
         let (deg,n) = (self.degree,self.poles.len());
-        let [a,z] = self.domain();
+        let [a,_] = self.domain();
         let mut spans: Vec<(f64,usize)> = (deg..n).filter(|&s| self.knots[s] < self.knots[s+1]).map(|s| {
             let poles = &self.poles[s-deg..=s];
             let gap: [f64;3] = std::array::from_fn(|i| {
@@ -182,16 +225,14 @@ impl BSpline {
         let mut best = (f64::INFINITY,a);
         for (bound,s) in spans {
             if bound > best.0 { break }
-            let (w0,w1) = (self.knots[s],self.knots[s+1]);
-            let bezier = self.bezier::<M>(s);
-            for j in 0..=16 {
-                let f = j as f64/16.;
-                let t = w0+(w1-w0)*f;
-                let d = crate::util::space::distance(casteljau::<M>(&bezier[..=deg],f),p);
-                if d < best.0 || (d == best.0 && t < best.1) { best = (d,t); }
-            }
+            self.read_span::<M>(s,p,&mut best);
         }
-        let t = self.refined(p,best.1);
+        self.settled(p,best.1)
+    }
+    /// The foot refined from the nearest sample `t`, a closed spline's read from both ends.
+    fn settled(&self,p: V,t: f64) -> f64 {
+        let [a,z] = self.domain();
+        let t = self.refined(p,t);
         // (a closed spline passing its seam smoothly, its foot held at one end by the search's clamp,
         // read again from the other end, the nearer kept: a point of a closed spline's extrusion just
         // short of its seam, seeded at the seam's first end, read a foot 0.07 off, #880 Q1b S6)
@@ -946,4 +987,37 @@ pub fn net_parameters(points: &[V],rows: usize,columns: usize,kind: Parametrizat
     let tu = spread(rows,columns,&|j,i| crate::util::space::distance(at(i-1,j),at(i,j)))?;
     let tv = spread(columns,rows,&|i,j| crate::util::space::distance(at(i,j-1),at(i,j)))?;
     Some((tu,tv))
+}
+
+/// The fewest poles a curve has for its spans to be indexed (`BSpline::nearest_indexed`).
+const INDEXED_SPANS: usize = 32;
+
+/// How many curves' indexes are kept at once (`span_index`): past it the store is emptied.
+const INDEXED_CURVES: usize = 1024;
+
+/// **A curve's spans, each boxed by its poles, in a bounding-volume hierarchy**: each item a span's
+/// first knot's index.
+struct SpanIndex { spans: Vec<usize>,boxes: Vec<crate::util::bvh::Bounds<3>>,tree: crate::util::bvh::Bvh<3> }
+
+/// The index of `b`'s spans, built once for the curve and kept, keyed by the curve it was built for
+/// (held, so no other curve takes its place).
+fn span_index(b: &std::sync::Arc<BSpline>) -> std::sync::Arc<SpanIndex> {
+    type Store = std::collections::BTreeMap<usize,(std::sync::Arc<BSpline>,std::sync::Arc<SpanIndex>)>;
+    static STORE: std::sync::Mutex<Store> = std::sync::Mutex::new(std::collections::BTreeMap::new());
+    let key = std::sync::Arc::as_ptr(b) as usize;
+    if let Some((_,i)) = STORE.lock().unwrap().get(&key) { return i.clone() }
+    let deg = b.degree;
+    let spans: Vec<usize> = (deg..b.poles.len()).filter(|&s| b.knots[s] < b.knots[s+1]).collect();
+    let boxes: Vec<crate::util::bvh::Bounds<3>> = spans.iter().map(|&s| {
+        let poles = &b.poles[s-deg..=s];
+        let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
+        for q in poles { for k in 0..3 { lo[k] = lo[k].min(q[k]); hi[k] = hi[k].max(q[k]); } }
+        crate::util::bvh::Bounds { lo,hi }
+    }).collect();
+    let tree = crate::util::bvh::Bvh::new(boxes.iter().copied());
+    let index = std::sync::Arc::new(SpanIndex { tree,boxes,spans });
+    let mut store = STORE.lock().unwrap();
+    if store.len() >= INDEXED_CURVES { store.clear() }
+    store.insert(key,(b.clone(),index.clone()));
+    index
 }

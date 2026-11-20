@@ -120,6 +120,20 @@ fn build_solids(
         match build_solid(sk, res, d, st, probes, diags) {
             Some(i) => {
                 let e = EntRef::solid(i);
+                // the solids declared after it stand where the solids built so far end: a solid
+                // that made more than itself (a body kept within a half-space makes the
+                // half-space's region past itself, `defined::trimmed`, #953) puts them as many
+                // further on, one refused before it one nearer — so a second body kept within
+                // the water is not read as the first's region
+                if let Some(was) = res.of.get(&name).copied().filter(|w| w.kind == EntKind::Solid) {
+                    let by = sk.solids.len() as i64 - (was.idx as i64 + 1);
+                    for x in res.of.values_mut() {
+                        if x.kind == EntKind::Solid && x.idx > was.idx {
+                            x.idx = (x.idx as i64 + by) as u32;
+                        }
+                    }
+                }
+                res.of.insert(name.clone(), e);
                 map.bind(&name, e, d.name.named());
                 map.record(st, Made::Ent(e));
                 // The solid owns its inline section and that section's closing lines.

@@ -131,6 +131,15 @@ fn coefficients(flat: &[f64], n: usize, rho: f64, r: &[f64], frame: &Frame, s: &
      cross[2]]
 }
 
+/// **A quadratic body's ten coefficients** in `t = (x − c) / h` (`MOMENTS`' order), at density
+/// `rho`, reading `r` (`coefficients`): with a domain's ten moments in the same numbers — a
+/// body's exact ones (`brep::props::moments`) — its integral, `Σ a_k m_k`, exactly.
+pub fn quadratic(flat: &[f64], n: usize, rho: f64, r: &[f64], c: [f64; 3], h: f64)
+    -> [f64; MOMENTS]
+{
+    coefficients(flat, n, rho, r, &Frame { c, h }, &mut Scratch::new()).map(|a| a.v)
+}
+
 /// **What an integral row reads**: its integrals (none: the structure's whole), its sides as
 /// tapes over `[I…, u…]` — the integrals, then the `unknowns` its last columns are — and how many
 /// numbers its parts' bodies read of the drawing (`reads`, the hull's readings').

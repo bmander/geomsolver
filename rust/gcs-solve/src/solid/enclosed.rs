@@ -76,20 +76,17 @@ pub fn built(sk: &Sketch, si: usize, unit: f64) -> Option<Result<Rc<Shell>, Stri
 
 impl Shell {
     /// **The recipe's node, written by `w`**: `sewn`, each face its profile, each panel its runs
-    /// of stations (`runs`), each the sheet of degree one each way through its rulings' ends —
-    /// sewn to the tolerance its panels are drawn to.  A run is laid so that where it shrinks to a
-    /// point it is a pole along `u`, as a cone's apex is, the one way the kernel reads a pole: its
-    /// stations run along `u` (a fan's corner the column of one point), but a run ending where
-    /// the rails meet (`Developable::meeting`) along `v`, that end the row of one point.
+    /// of stations (`runs`), each the sheet straight along its rulings and smooth across them —
+    /// cubic through its stations' rulings' ends (`smooth`), each ruling on it exactly, no crease
+    /// between them for a plane's trace to break at — sewn to the tolerance its panels are drawn
+    /// to.  A run is laid so that where it shrinks to a point it is a pole along `u`, as a cone's
+    /// apex is, the one way the kernel reads a pole: its stations run along `u` (a fan's corner
+    /// the column of one point), but a run ending where the rails meet (`Developable::meeting`)
+    /// along `v`, that end the row of one point.
     pub fn node(&self, sk: &Sketch, w: &Writer) -> Result<Json, String> {
         let mm = |p: [f64; 3]| w.at(p.map(|x| x * w.scale));
-        let clamped = |n: usize| {
-            let mut k = vec![0.0];
-            k.extend((0..n).map(|k| k as f64));
-            k.push((n - 1) as f64);
-            Json::Arr(k.into_iter().map(Json::from).collect())
-        };
-        let ends = || Json::Arr([0.0, 0.0, 1.0, 1.0].map(Json::from).to_vec());
+        let numbers = |k: &[f64]| Json::Arr(k.iter().copied().map(Json::from).collect());
+        let ends = || numbers(&[0.0, 0.0, 1.0, 1.0]);
         let mut pieces = Vec::with_capacity(self.pieces.len());
         for p in &self.pieces {
             match p {
@@ -98,18 +95,17 @@ impl Shell {
                     ("face", name.as_str().into())])),
                 Piece::Panel { stations, name } => {
                     for (run, pointed) in runs(stations) {
-                        let n = run.len();
-                        let (uknots, vknots, poles) = match pointed {
+                        let (degree, knots, [ms, ns]) = smooth(run);
+                        let line = |q: &[[f64; 3]]| Json::Arr(q.iter().map(|&q| mm(q)).collect());
+                        let (du, dv, uknots, vknots, poles) = match pointed {
                             // rows its stations, columns a ruling's two ends
-                            false => (clamped(n), ends(), run.iter()
-                                .map(|r| Json::Arr(vec![mm(r.m), mm(r.n)])).collect()),
+                            false => (degree, 1, numbers(&knots), ends(), ms.iter().zip(&ns)
+                                .map(|(&m, &n)| Json::Arr(vec![mm(m), mm(n)])).collect()),
                             // rows a ruling's two ends, columns its stations
-                            true => (ends(), clamped(n), [|r: &Ruling| r.m, |r: &Ruling| r.n]
-                                .map(|end| Json::Arr(run.iter().map(|r| mm(end(r))).collect()))
-                                .to_vec()),
+                            true => (1, degree, ends(), numbers(&knots), vec![line(&ms), line(&ns)]),
                         };
-                        pieces.push(object([("kind", "net".into()), ("du", 1.0.into()),
-                            ("dv", 1.0.into()), ("uknots", uknots), ("vknots", vknots),
+                        pieces.push(object([("kind", "net".into()), ("du", (du as f64).into()),
+                            ("dv", (dv as f64).into()), ("uknots", uknots), ("vknots", vknots),
                             ("poles", Json::Arr(poles)), ("face", name.as_str().into())]));
                     }
                 }
@@ -141,6 +137,33 @@ impl Shell {
         }
         out
     }
+}
+
+/// **A run's two rails through its stations' rulings' ends**, each a B-spline at one parameter a
+/// station (the chord length along the rulings' middles), cubic where there are four stations or
+/// more: its degree, its knots and each rail's poles.  Where the middles do not run apart (a
+/// station twice over), each rail through its stations' ends straight, as their chords.
+fn smooth(run: &[Ruling]) -> (usize, Vec<f64>, [Vec<[f64; 3]>; 2]) {
+    use crate::brep::nurbs::interpolate;
+    use crate::space::{add, scale};
+    let ends = [run.iter().map(|r| r.m).collect::<Vec<_>>(), run.iter().map(|r| r.n).collect()];
+    let middle = |r: &Ruling| scale(add(r.m, r.n), 0.5);
+    let mut t = vec![0.0];
+    for w in run.windows(2) {
+        t.push(t[t.len() - 1] + norm(sub(middle(&w[1]), middle(&w[0]))));
+    }
+    let fitted = (run.len() >= 3).then(|| {
+        let [a, b] = [interpolate(&ends[0], &t, 3)?, interpolate(&ends[1], &t, 3)?];
+        (a.knots == b.knots).then_some((a.degree, a.knots, [a.poles, b.poles]))
+    }).flatten();
+    fitted.unwrap_or_else(|| {
+        // clamped, degree one: a knot at every station
+        let n = run.len();
+        let mut k = vec![0.0];
+        k.extend((0..n).map(|k| k as f64));
+        k.push((n - 1) as f64);
+        (1, k, ends)
+    })
 }
 
 /// **A panel's stations in runs**, each drawn as one sheet, neighbouring runs sharing their

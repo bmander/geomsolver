@@ -57,7 +57,7 @@ fn gauss2(a: f64,b: f64,mut f: impl FnMut(f64) -> f64) -> f64 {
 /// `u` — each column's crossings with the loops bisected on the uses' own curves, `g` gathered
 /// between them — the error stands where `g` itself vanishes, at the fold. `None` for any other
 /// face, and for a sheet running round (a period), whose columns would wrap.
-fn by_columns(b: &Brep,f: &Face,area: bool,lo: Uv,hi: Uv) -> Option<f64> {
+fn by_columns(b: &Brep,f: &Face,what: What,lo: Uv,hi: Uv) -> Option<f64> {
     let s = &f.surface;
     if s.periods().iter().any(Option::is_some) || !(hi[0] > lo[0] && hi[1] > lo[1]) { return None }
     // each use, its curve in the parameters read at points along its edge (in the loop's order)
@@ -82,7 +82,7 @@ fn by_columns(b: &Brep,f: &Face,area: bool,lo: Uv,hi: Uv) -> Option<f64> {
             }
         }
         vs.sort_by(f64::total_cmp);
-        vs.chunks(2).filter(|c| c.len() == 2).map(|c| gauss(c[0],c[1],4,&mut |v| integrand(s,[u,v],area))).sum()
+        vs.chunks(2).filter(|c| c.len() == 2).map(|c| gauss(c[0],c[1],4,&mut |v| integrand(s,[u,v],what))).sum()
     };
     // over `u`, cut where a column's crossings change: at the uses' ends and where a use turns in `u`
     // (turns a billionth of the box apart one cut: a use along a column turns at its own rounding)
@@ -95,17 +95,41 @@ fn by_columns(b: &Brep,f: &Face,area: bool,lo: Uv,hi: Uv) -> Option<f64> {
     cuts.dedup_by(|x,y| (*x-*y).abs() <= 1e-9*(hi[0]-lo[0]));
     let total: f64 = cuts.windows(2).map(|w| settled(w[0],w[1],4,&mut column)).sum();
     // the face's side, as Green's theorem takes it: the way its loops run round the parameters
-    Some(if area { total.abs() } else { total*f.loops.iter().map(|l| b.loop_area(f,l)).sum::<f64>().signum() })
+    // (a weighed area's sign is its caller's, read off its area the same way: `face_moments`)
+    Some(match what {
+        What::Area => total.abs(),
+        What::Weighed(_) => total,
+        _ => total*f.loops.iter().map(|l| b.loop_area(f,l)).sum::<f64>().signum(),
+    })
 }
 
 /// The area factor (`Surface::area_factor`) a swept sheet's face is read by columns below, at a
 /// point of a use: on the fold point's path, to the rounding of the use's inversion there.
 const ON_FOLD: f64 = 1e-6;
 
-/// The integrand of a face's measure at `uv`: the area's `|S_u × S_v|` or the flux's `X · (S_u × S_v)`.
-fn integrand(s: &Surface,uv: Uv,area: bool) -> f64 {
+/// **What a face's measure integrates**: the flux of `X` or the area — each with its closed forms
+/// and tables — or the flux of a field `F(X)`, or the area weighed by `w(X)`, read by the rule
+/// alone (`moments`, `face_moments`).
+#[derive(Clone,Copy)]
+enum What<'a> { Flux,Area,Field(&'a (dyn Fn(V) -> V + Sync)),Weighed(&'a (dyn Fn(V) -> f64 + Sync)) }
+
+impl What<'_> {
+    /// Whether it is the area, read by the area's closed forms.
+    fn area(self) -> bool { matches!(self,What::Area) }
+    /// Whether it is the flux of `X` or the area, which have closed forms and tables.
+    fn plain(self) -> bool { matches!(self,What::Flux | What::Area) }
+}
+
+/// The integrand of a face's measure at `uv`: the area's `|S_u × S_v|`, the flux's
+/// `X · (S_u × S_v)`, a field's `F(X) · (S_u × S_v)` or a weighed area's `w(X) |S_u × S_v|`.
+fn integrand(s: &Surface,uv: Uv,what: What) -> f64 {
     let (x,su,sv) = s.d1(uv);
-    if area { norm(cross(su,sv)) } else { dot(x,cross(su,sv)) }
+    match what {
+        What::Flux => dot(x,cross(su,sv)),
+        What::Area => norm(cross(su,sv)),
+        What::Field(f) => dot(f(x),cross(su,sv)),
+        What::Weighed(w) => w(x)*norm(cross(su,sv)),
+    }
 }
 
 /// `gauss` over `pieces`, then twice as many, keeping the coarser reading where they agree.
@@ -534,22 +558,64 @@ pub fn fluxes(b: &Brep) -> Vec<f64> {
 /// A face's flux term by term: for each use of each loop, its line integral and the closing
 /// segment from its end to the next use's start (what a reading of the face can be compared by);
 /// a swept sheet's face across its fold, read by columns (`by_columns`), one term.
-pub fn terms(b: &Brep,fi: usize) -> Vec<Vec<(f64,f64)>> { integrated(b,&b.faces[fi],false) }
+pub fn terms(b: &Brep,fi: usize) -> Vec<Vec<(f64,f64)>> { integrated(b,&b.faces[fi],What::Flux) }
 
 /// A face's area, `∬ |S_u × S_v| du dv` over its domain, read off its loops as its flux is — so a
 /// face on another surface over the same boundary can be held to it (`family::lower`). The face
 /// need not be one of `b`'s, only its edges.
 pub fn area(b: &Brep,f: &Face) -> f64 {
-    integrated(b,f,true).iter().flatten().map(|t| t.0+t.1).sum::<f64>().abs()
+    integrated(b,f,What::Area).iter().flatten().map(|t| t.0+t.1).sum::<f64>().abs()
 }
 
-/// `terms`, of the flux or (`area`) of the area.
-fn integrated(b: &Brep,f: &Face,area: bool) -> Vec<Vec<(f64,f64)>> {
+/// **The ten moments of the solid `b` bounds** (#953): `∫ 1`, `∫ t₀`, `∫ t₁`, `∫ t₂`, then
+/// `∫ t₀²`, `t₁²`, `t₂²`, `t₀ t₁`, `t₀ t₂`, `t₁ t₂` by volume, `t = (X − c) / h` — each by the
+/// divergence theorem the flux of a field whose divergence it is, `F = (h t₀^(a+1)/(a+1) t₁^b t₂^c,
+/// 0, 0)` for `t₀^a t₁^b t₂^c`, each face's read off its loops as the volume's is, so nothing is
+/// meshed.  Its parameters' polynomial the rule reads exactly on a polynomial sheet, its knots
+/// cut.  Only those `want` asks for are read; the rest are nought.
+pub fn moments(b: &Brep,c: V,h: f64,want: [bool;10]) -> [f64;10] {
+    let t = move |x: V| -> V { std::array::from_fn(|k| (x[k]-c[k])/h) };
+    let fields: [&(dyn Fn(V) -> V + Sync);10] = [
+        &|x| [h*t(x)[0],0.,0.],
+        &|x| [h*t(x)[0].powi(2)/2.,0.,0.],
+        &|x| { let t = t(x); [h*t[0]*t[1],0.,0.] },
+        &|x| { let t = t(x); [h*t[0]*t[2],0.,0.] },
+        &|x| [h*t(x)[0].powi(3)/3.,0.,0.],
+        &|x| { let t = t(x); [h*t[0]*t[1]*t[1],0.,0.] },
+        &|x| { let t = t(x); [h*t[0]*t[2]*t[2],0.,0.] },
+        &|x| { let t = t(x); [h*t[0]*t[0]/2.*t[1],0.,0.] },
+        &|x| { let t = t(x); [h*t[0]*t[0]/2.*t[2],0.,0.] },
+        &|x| { let t = t(x); [h*t[0]*t[1]*t[2],0.,0.] },
+    ];
+    std::array::from_fn(|k| if !want[k] { 0. } else {
+        crate::util::par::indices(b.faces.len(),|fi| {
+            integrated(b,&b.faces[fi],What::Field(fields[k])).iter().flatten().map(|t| t.0+t.1).sum::<f64>()
+        }).iter().sum()
+    })
+}
+
+/// **The ten moments of face `f` of `b`** by area, in `moments`' order and numbers: the area
+/// weighed by each monomial of `t = (X − c) / h`, read off its loops as its area is, its sign its
+/// area's.  Only those `want` asks for are read; the rest are nought.
+pub fn face_moments(b: &Brep,f: &Face,c: V,h: f64,want: [bool;10]) -> [f64;10] {
+    let t = move |x: V| -> V { std::array::from_fn(|k| (x[k]-c[k])/h) };
+    let weights: [&(dyn Fn(V) -> f64 + Sync);10] = [
+        &|_| 1.,&|x| t(x)[0],&|x| t(x)[1],&|x| t(x)[2],
+        &|x| t(x)[0].powi(2),&|x| t(x)[1].powi(2),&|x| t(x)[2].powi(2),
+        &|x| { let t = t(x); t[0]*t[1] },&|x| { let t = t(x); t[0]*t[2] },&|x| { let t = t(x); t[1]*t[2] },
+    ];
+    let read = |k: usize| integrated(b,f,What::Weighed(weights[k])).iter().flatten().map(|t| t.0+t.1).sum::<f64>();
+    let sense = read(0).signum();
+    std::array::from_fn(|k| if want[k] { sense*read(k) } else { 0. })
+}
+
+/// `terms`, of what `what` integrates.
+fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
     {
         let mut out: Vec<Vec<(f64,f64)>> = Vec::new();
         let s = &f.surface;
         let [pu,pv] = s.periods();
-        let g = |u: f64,v: f64| integrand(s,[u,v],area);
+        let g = |u: f64,v: f64| integrand(s,[u,v],what);
         // The face's box in its parameters. Away from a spline's table, `g` is integrated from the
         // middle of the face's range and across the parameter it spans less: `G` is then as small
         // as the face allows, and an error δ in a use's parameters moves the flux by `G δ` — from 0
@@ -567,22 +633,22 @@ fn integrated(b: &Brep,f: &Face,area: bool) -> Vec<Vec<(f64,f64)>> {
             }
         }
         // (a swept sheet's face across its fold read by columns instead)
-        if folds { if let Some(v) = by_columns(b,f,area,lo,hi) { return vec![vec![(v,0.)]] } }
+        if folds { if let Some(v) = by_columns(b,f,what,lo,hi) { return vec![vec![(v,0.)]] } }
         // a polynomial net's `G` tabled from the face's middle `u` (`Prefix`); a rational net's `g`
         // is a quotient, which no Gauss rule integrates exactly: it takes the stretch-by-stretch
         // rule a swept face does
-        let mut prefix = match s { Surface::BSpline(_,n) if !n.is_rational() && !area => Some(Prefix::new(n,(lo[0]+hi[0])/2.)),_ => None };
+        let mut prefix = match s { Surface::BSpline(_,n) if !n.is_rational() && matches!(what,What::Flux) => Some(Prefix::new(n,(lo[0]+hi[0])/2.)),_ => None };
         // a sheet carried between two straight edges (a polyhedral tool's edge swept, `Blend`): its
         // point affine in `u` at every `v` — the carry is rigid, its rate affine in the point — so
         // the flux's `g` is a quadratic in `u`, which two Gauss nodes integrate exactly, read along
         // `u` whichever its face spans less (along `v` the screw's turn makes it no polynomial, and
         // the general rule read forty nodes a stretch, every face of a sweep's arrangement)
-        let ruled = !area && matches!(s,Surface::Blend(_,bl) if matches!((&bl.a,&bl.b),(Curve::Line {..},Curve::Line {..})));
+        let ruled = matches!(what,What::Flux) && matches!(s,Surface::Blend(_,bl) if matches!((&bl.a,&bl.b),(Curve::Line {..},Curve::Line {..})));
         // the parameter `g` is integrated along (`G` then multiplies the other's derivative)
         let along = if ruled || prefix.is_some() || !(hi[1]-lo[1] < hi[0]-lo[0]) { 0 } else { 1 };
         let base = if prefix.is_some() || !lo[along].is_finite() { 0. } else { (lo[along]+hi[along])/2. };
         let periodic = [pu,pv][along].is_some();
-        let closed = if prefix.is_some() { None } else { Closed::new(s,area,along,base) };
+        let closed = if prefix.is_some() || !what.plain() { None } else { Closed::new(s,what.area(),along,base) };
         // ∫ from the base, a stretch at a time between the surface's breaks along it
         let mut big_g = |u: f64,v: f64| {
             if let Some(p) = prefix.as_mut() { return p.big_g(u,v) }

@@ -761,9 +761,33 @@ hull := solid({{ p | p in shell.side }})
 /// its chines, its deck's sheers — its first and last rulings are that point, so the panels the
 /// shell sews meet there, and a run of rulings fanning from one point is a net of its own whose
 /// pole runs along it.  The hull it encloses is a closed shell: its volume the same wherever the
-/// drawing stands, and within the box about its rails.
+/// drawing stands, and within the box about its rails.  Kept within the water at any height, the
+/// body is cut cleanly — each sheet smooth across its stations, no crease for the waterplane's
+/// trace to break at — and what it displaces, read off its exact boundary, is the same wherever
+/// it stands and grows with the waterline.
 #[test]
 fn a_pointed_hull_of_panels_closes() {
+    let immersed = |o: [f64; 3], t: f64| {
+        let src = format!("{}use std.sets
+use std.measures (volume)
+keel := point
+            fix(({}mm, {}mm, {}mm)) keel
+water := std.sets.HalfSpace(keel, std.z, d: {t}mm)
+            immersed := solid({{ p | p in hull; p in water }})
+claim volume(>= 1 * 1mm^3)             immersed
+", canoe(o), o[0], o[1], o[2]);
+        let (e, sk) = crate::common::read_solved(&src);
+        let said = gcs_core::report::measure_answers(&sk, &e.measures);
+        assert!(said[0].text.ends_with("kept"), "{:?}", said[0].text);
+        said[0].value.unwrap()
+    };
+    let far = [700.0, -400.0, 250.0];
+    let mut last = 0.0;
+    for t in [30.0, 60.0, 90.0, 150.0] {
+        let (here, there) = (immersed([0.0; 3], t), immersed(far, t));
+        assert!(rel(here, there) < 1e-6 && here > last, "{t}: {here} against {there}, {last}");
+        last = here;
+    }
     let volume = |o: [f64; 3]| {
         let e = determined(&canoe(o));
         let i = e.map.ent_named("hull").unwrap().i();

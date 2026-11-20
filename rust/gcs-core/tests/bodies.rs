@@ -339,8 +339,8 @@ claim mass(>= 1g) rod
 /// **A turned rod answers its closed forms** (#510 S3): a solid of revolution is no prism, so
 /// its exact boundary is refined and filled, its cylinder's nodes on it.  Pulled along its axis,
 /// its head moves `σ L / E` within 1e-3 — a point names the node nearest it, and the points
-/// holding its base across are near the axis, not on it — and its mass is `ρ π r² L` within the
-/// error estimated beside it.
+/// holding its base across are near the axis, not on it — and its mass, claimed, is `ρ π r² L`
+/// to rounding, read off its exact boundary with no error beside it.
 #[test]
 fn a_turned_rod_answers_its_closed_forms() {
     let (r, l, s, young, rho) = (10.0f64, 100.0, 40e3, 200e6, 7850.0 * 1e-9);
@@ -351,7 +351,8 @@ fn a_turned_rod_answers_its_closed_forms() {
     assert!((moved - s * l / young).abs() <= 2e-3 * s * l / young, "{moved}");
     let [(mass, Some(error), true)] = measured(&e)[..] else { panic!("one mass, kept") };
     let want = rho * std::f64::consts::PI * r * r * l;
-    assert!((mass - want).abs() <= error && error <= 1e-2 * want, "{mass} ± {error}: {want}");
+    assert!((mass - want).abs() <= error.max(1e-12 * want) && error <= 1e-2 * want,
+            "{mass} ± {error}: {want}");
 }
 
 /// The library's solids read in three dimensions (#510 S3), each a capability: a driving row

@@ -1098,8 +1098,18 @@ unless a rule names another.
 - **Claimed, it is judged on the solved drawing** (`measured::read`, `report::measure_answers`):
   its integrals read as its row reads them, whole or gauged, and its sides worked out; beside its
   left the error estimated, the change from the reading twice as coarse (nothing where the two
-  agree to rounding); kept where its sides are equal, or on their side, within that error or a
-  billionth of its size (`measured::keeps`, `Answer::size`: its sides' and each integral's
+  agree to rounding). **A claim whose every integral is quadratic** in its point, over solids
+  built exactly or faces of them, **is read off their exact boundaries** instead (`measured::
+  exactly`): each integral its coefficients (`interior::quadratic`) against the ten moments of
+  the body's B-rep by volume or of the face's by area, about the body's box — each the flux of
+  a field whose divergence the monomial is (`brep::props::moments`), or the face's area weighed by
+  it (`face_moments`), read off the loops as a volume is, only those the body weighs — so nothing
+  is meshed and its error is none: a hull of panels judged at a waterline in a second where its
+  filling took minutes. A stated equation is read as its row reads it, meshed. Held to by the
+  log stood at its draft, its displacement, its centre of buoyancy's height and its waterplane's
+  second moment each within a ten-billionth of its closed form
+  (`a_claim_over_an_exact_body_is_read_off_its_boundary`). Kept where its sides are equal, or on
+  their side, within that error or a billionth of its size (`measured::keeps`, `Answer::size`: its sides' and each integral's
   `∫ |f|` weighed by its side's rate in it). **What the report says**, stated and claimed alike,
   in the order written and after the scenarios' answers, each equation its line, called by the
   word's use that stated it: `` mass(10kg) arm: 10 kg ± 0 kg == 10 kg: driven, held `` (a stated
