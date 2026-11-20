@@ -1227,7 +1227,8 @@ fn section_holes_refuse_invalid_boundaries() {
         (11, 2, "", "strictly inside"),
         (9, 2, "", "strictly inside"),
         (8, 2, "", "strictly inside"),
-        (0, 0, "", "degenerate hole"),
+        // a hole of no radius is an edge of no length (#962)
+        (0, 0, "", "`inner` has no length"),
         (0, 6, ", second", "disjoint"),
         (4, 3, ", second", "disjoint"),
         (7, 2, ", second", "disjoint"),
