@@ -439,3 +439,28 @@ fn a_flush_boss_slid_through_the_seam_stops_the_round() {
         assert!(!refusal.contains("`start`") && !refusal.contains("`end`"), "{refusal}");
     }
 }
+
+/// **A body grown over seams tangent to the drawing's numbers** (#962's 132, `std.rounds.Grown`):
+/// a vertex where two faces go on from one another across a seam is no corner — two of its faces'
+/// normals one to the body's reading of tangent — so no ball's sector stands there, and the two
+/// faces' prisms meet in the seam's section.  Read to a billionth, the normals of a lobe and a
+/// waist met tangent only to the stated numbers were two, a corner's sector was cut at a seam, and
+/// "a grown body's piece shares no face with the rest".  The plate of twelve arcs and the step,
+/// each stated, grown 1: Steiner's `(A + Pd + πd²)h + 2(Ad + πPd²/4 + 2πd³/3)` over the outline's
+/// area `A` and perimeter `P`, its reach past `d` everywhere.
+#[test]
+fn a_body_grown_over_stated_seams_stands_no_corner_there() {
+    for o in [stated(&lobed(6, 45.0, 10.0, 40.0)), stated(&step(5.0, 13.75))] {
+        let src = document(&o, "near", Word::Round(1.0))
+            .replace("plate.near round(r: 1mm) plate\n", "g := std.rounds.Grown(plate, d: 1mm)\n");
+        let e = solved(&src);
+        assert!(e.diags.is_empty(), "{:?}", e.diags);
+        let (a, d, h) = (area(&o).abs(), 1.0, 10.0);
+        let p: f64 = o.iter().map(|g| match *g {
+            Seg::Line(p, q) => (q[0] - p[0]).hypot(q[1] - p[1]),
+            Seg::Arc { c, s, .. } => (s[0] - c[0]).hypot(s[1] - c[1]) * g.sweep().abs(),
+        }).sum();
+        let want = (a + p * d + PI * d * d) * h + 2.0 * (a * d + p * PI * d * d / 4.0 + 2.0 * PI * d * d * d / 3.0);
+        close(props::volume(&exact(&e, "g.body")), want);
+    }
+}

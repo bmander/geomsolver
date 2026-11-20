@@ -441,7 +441,9 @@ no face there"). Each join at a seam carries how far apart its two sections stan
 (`Assembly::gaps`; the recipe's join `[i, j, gap]`), the glue reads them that far apart
 (`recipe::chained`: eight tolerances and twice the gap) and measures the chain's edges once it is
 whole, as at a rolled piece's fitted cap; and `boolean::glued` takes two plane faces as one
-surface where each's corners lie within its tolerance of the other's plane. **A face a run ends on reaching
+surface where each's corners lie within its tolerance of the other's plane. `std.rounds.Grown`
+reads a vertex's faces by the same rule (`solid::grown`: two normals one to `TANGENT` are no
+corner, so no ball's sector is cut at a seam; [sets.md](sets.md)). **A face a run ends on reaching
 back across a seam** is refused by name: a flush boss whose side one end of a run along an
 obround's flat stands on, kept outside it, reaching back over the section where the flat runs
 tangent into the half circle. The half circle's ring is its own region's, whose run ends nowhere
@@ -456,8 +458,8 @@ share" (`Assembly::across`), said by the round's body and label. `tests/rim_seam
 of four, six and twelve alternating arcs, each stated to the micron, mirrored and turned, round and
 chamfer, either cap; seams `1e-8` to `5e-7` off tangent; `step.sv` as drawn, with the stack's mitre
 at the frame's corners; the boss slid along the rim through the seam, built either side of the
-section and refused over it; each volume the closed form's to 1e-9, a boss's chord by
-quadrature). Seams turned past `TANGENT` and short of a few thousandths
+section and refused over it; each volume the closed form's to 1e-9, a boss's chord by quadrature,
+and the plates grown 1 by Steiner's). Seams turned past `TANGENT` and short of a few thousandths
 of a radian are corners whose pieces are refused yet (a ring and a run unioned there, a turn of
 `1e-6` to `1e-4`: "a cylinder's pieces do not close").
 
