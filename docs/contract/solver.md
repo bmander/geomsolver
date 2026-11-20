@@ -216,7 +216,12 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   there held along the line, `CKind::Rate` (#365, the one kernel every rate of a contact runs,
   `contact_rate`: `spline_tangent_line`'s direction row over `C′` from the spline's or the curve's
   frame), of a circle or arc `TangentCircleAt` (the
-  `tangent_arc_line` kernel over `[at, centre, line]`), of a line `parallel`. The spline's and
+  `tangent_arc_line` kernel over `[at, centre, line]`), of a line `parallel`; and **two rounds
+  touching at a point of both** (#962), `a tangent(at: p) b`, `TangentCirclesAt`: the
+  `tangent_circles_at` kernel over `[p, a's centre, b's centre]`, `(p − a) × (p − b) / |p − b|`,
+  how far `a`'s radius to `p` runs along `b`'s tangent there — degree 1, nil with the centres and
+  `p` on one line, inside or out (the drawing's branch), regular where `TangentCircleCircle` is a
+  double root once both pass through `p`.  The spline's and
   curve's own `t` is **the contact's**: `Sketch::add` hands it the place of the contact holding
   `m` on `g` (`Constraint::tangent_at`/`holds_on`, `Sketch::holding`), whichever comes first
   (`share_place` re-points an earlier tangent), whatever it arrived carrying, so a graft, JSON and
