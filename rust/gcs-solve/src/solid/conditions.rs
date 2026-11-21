@@ -73,18 +73,19 @@ fn sides(r: Reading, split: bool) -> Vec<Fv> {
     }
 }
 
-/// **A smooth chain read face by face as well** (#994): one measure for each face of `r`'s chain
-/// — a smooth chain of several faces, one chain (not pieces apart), read through its nearest face
-/// — beside the chain's own reading, each under `d` only where the point is nearer than `d` to a
-/// patch of the chain.  The chain's reading, the side of the face whose patch is nearest, is never
-/// more than the least patch distance, so a point it keeps each of these keeps: the set is the
-/// same.  What they add is the shape of the offset where the nearest face turns from one to
-/// another: where an arc's offset closes onto its axis — a pocket's floor rounded as tight as its
-/// corner, in a pocket whose reflex corner keeps its chain from bulging one way
-/// (`BodyFaces::bulging`); a rim rounded to the uprights' radius over a block's outline with a
-/// tab, its sides, rounds and fills one chain — the centres' corner is the two walls' offsets
-/// meeting on the axis, and a projection onto the nearest face's side alone steps from one
-/// wall's to the other's, never onto both (`nearest`).  Each face reads:
+/// **A smooth chain read face by face as well** (#994): one measure for each face of `r`'s chain —
+/// a smooth chain of several faces, one chain (not pieces apart), read through its nearest face —
+/// beside the chain's own reading, each under `d` only where the point is nearer than `d` to a
+/// patch of the chain.  Every patch is of the chain's surface, so a point at least `d` off that
+/// surface is at least `d` off each patch, and each of these says only what the distance from the
+/// surface says — however the chain's own reading picks its face, at its rim too
+/// (`BodyFaces::nearest_face`): the set is the same.  What they add is the shape of the offset
+/// where the nearest face turns from one to another: where an arc's offset closes onto its axis — a
+/// pocket's floor rounded as tight as its corner, in a pocket whose reflex corner keeps its chain
+/// from bulging one way (`BodyFaces::bulging`); a rim rounded to the uprights' radius over a
+/// block's outline with a tab, its sides, rounds and fills one chain — the centres' corner is the
+/// two walls' offsets meeting on the axis, and a projection onto the nearest face's side alone
+/// steps from one wall's to the other's, never onto both (`nearest`).  Each face reads:
 /// - where the point's foot lies on its patch, its surface's side, the patch's distance;
 /// - past a seam into a face of the chain bulging toward the ball on its own (`BodyFaces::bulges`:
 ///   a wall into a pocket's corner arc, the arc into the next wall), its side carried on by its
