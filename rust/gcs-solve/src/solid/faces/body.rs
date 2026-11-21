@@ -609,6 +609,16 @@ impl BodyFaces {
         out
     }
 
+    /// Of `alts`, the one whose faces `named` gives hold the patch nearest `p` (`patch_distance`,
+    /// each alternative measured once; the first of two as near): of a name in pieces whose chains
+    /// lie apart (`chains_apart`), the chain of the piece nearest `p`.
+    pub fn nearest_named<'a, T>(&self, p: V, alts: &'a [T], named: impl Fn(&T) -> &[usize])
+        -> Option<&'a T> {
+        let near = |fs: &[usize]| fs.iter().map(|&fi| self.patch_distance(fi, p))
+            .fold(f64::INFINITY, f64::min);
+        alts.iter().map(|a| (near(named(a)), a)).min_by(|x, y| x.0.total_cmp(&y.0)).map(|(_, a)| a)
+    }
+
     /// The vertices three groups of faces share: where a face of each meets, with the faces of
     /// each group standing there (model units).
     pub fn vertices_among(&self, groups: &[&[usize]]) -> Vec<(V, Vec<Vec<usize>>)> {
@@ -1081,8 +1091,8 @@ pub struct Reading {
     pub body: std::sync::Arc<BodyFaces>,
     pub faces: Vec<usize>,
     pub smooth: bool,
-    /// A smooth reference whose named faces go on into chains apart (#962): each chain, with the
-    /// named faces it holds.  Empty where they are one chain.
+    /// A smooth reference whose named faces go on into chains apart (#962): the named faces each
+    /// chain holds, with the chain (`BodyFaces::chains_apart`).  Empty where they are one chain.
     pub(crate) chains: Vec<(Vec<usize>, Vec<usize>)>,
 }
 
@@ -1099,16 +1109,15 @@ pub fn reading(sk: &Sketch, f: &FaceRef, read: &mut Read)
     };
     // a face a boolean ate, or none of that name, is no point: what reads it holds nowhere
     let named = body.faces(f);
-    let faces = if f.smooth { body.smooth(&named) } else { named.clone() };
     // a name in pieces that go on into chains apart (two rounds' caps under one name, one on a
-    // step's side and one on its wall): each piece read with its own chain, not the others'
-    let mut chains: Vec<(Vec<usize>, Vec<usize>)> = Vec::new();
-    if f.smooth {
-        chains = body.chains_apart(&named).into_iter().map(|(own, chain)| (chain, own)).collect();
-        if chains.len() < 2 {
-            chains.clear();
-        }
-    }
+    // step's side and one on its wall): each piece read with its own chain, not the others' (one
+    // face is one chain)
+    let chains = if f.smooth && named.len() > 1 {
+        Some(body.chains_apart(&named)).filter(|c| c.len() > 1).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let faces = if f.smooth { body.smooth(&named) } else { named };
     Ok(Reading { body, faces, smooth: f.smooth, chains })
 }
 
@@ -1145,8 +1154,7 @@ impl Reading {
         let near = |fs: &[usize]| fs.iter().map(|&fi| (self.body.patch_distance(fi, p), fi))
             .min_by(|a, b| a.0.total_cmp(&b.0));
         if !self.chains.is_empty() {
-            let chain = self.chains.iter().filter_map(|(c, own)| near(own).map(|(d, _)| (d, c)))
-                .min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, c)| c)?;
+            let (_, chain) = self.body.nearest_named(p, &self.chains, |c| &c.0[..])?;
             return near(chain).map(|(_, fi)| fi);
         }
         near(&self.faces).map(|(_, fi)| fi)

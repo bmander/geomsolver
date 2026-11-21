@@ -1153,8 +1153,7 @@ impl<'a> Walk<'a> {
                 let s = self.faces.selecting.entry(self.faces.at).or_default();
                 s.asked = true;
                 s.held |= matches!(decided, Ok(true));
-                s.failed |= decided.is_err();
-                s.fixed |= fixed;
+                s.unsure |= decided.is_err() || fixed;
                 s.pairs.extend(pairs);
             }
             if alone {
@@ -2232,7 +2231,7 @@ impl super::values::Names for Asked<'_, '_> {
     fn stands(&self, name: &str) -> Option<String> {
         let stands = self.ask(name, |r, alias| self.walk.stands_for(r, self.scope, alias));
         // a face compared with another (`b != a`) is a face read (#962)
-        if stands.as_deref().is_some_and(|s| self.face(s).is_some()) {
+        if !self.faced.get() && stands.as_deref().is_some_and(|s| self.face(s).is_some()) {
             self.faced.set(true);
         }
         stands

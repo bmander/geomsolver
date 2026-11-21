@@ -199,8 +199,10 @@ const BARS: &str = "unit mm\nuse std\nuse std.solids (cut, union)\nuse std.round
     part := solid(spine.body)\n";
 
 /// What a document's `part` came to: its volume and its faces' areas, by name.
-fn part(src: &str) -> Areas {
-    let e = solved(src);
+fn part(src: &str) -> Areas { part_of(&solved(src)) }
+
+/// `part`, of a document solved.
+fn part_of(e: &Elaborated) -> Areas {
     gcs_core::report::positions(&e.sketch, &e.map).into_iter()
         .filter(|(k, _)| k.starts_with("part.") && (k.ends_with(".area") || k == "part.volume"))
         .collect()
@@ -408,8 +410,10 @@ post union part\n\
 block union part\n";
 
 /// Each W120 of `src`, solved: the line it is said at, and its words.
-fn w119(src: &str) -> Vec<(u32, String)> {
-    let e = solved(src);
+fn w120(src: &str) -> Vec<(u32, String)> { w120_of(&solved(src), src) }
+
+/// `w120`, of `src` solved as `e`.
+fn w120_of(e: &Elaborated, src: &str) -> Vec<(u32, String)> {
     gcs_core::program::solid_diagnostics(&e.sketch, &e.map, &e.program).iter()
         .filter(|d| d.code.as_str() == "W120")
         .map(|d| (gcs_core::syntax::line_col(src, d.span.lo).0, d.message.clone())).collect()
@@ -437,8 +441,9 @@ fn a_round_that_selects_no_edge_says_why() {
                 other terms having taken them in, so nothing is made over them"),
         ] {
             let src = format!("{SLAB}{a} {word} {b}\n");
-            assert_eq!(w119(&src), [(line, said.to_string())], "{word}");
-            assert_eq!(part(&src)["part.volume"], plain, "{a} {word} {b}");
+            let e = solved(&src);
+            assert_eq!(w120_of(&e, &src), [(line, said.to_string())], "{word}");
+            assert_eq!(part_of(&e)["part.volume"], plain, "{a} {word} {b}");
         }
         for (x, said) in [
             ("part.block", "no two of `part.block`'s faces meet in an edge of `part`: none of \
@@ -448,8 +453,9 @@ fn a_round_that_selects_no_edge_says_why() {
                 is one face, and an edge is where two meet, so nothing is made over them"),
         ] {
             let src = format!("{SLAB}{word} {x}\n");
-            assert_eq!(w119(&src), [(line, said.to_string())], "{word}");
-            assert_eq!(part(&src)["part.volume"], plain, "{word} {x}");
+            let e = solved(&src);
+            assert_eq!(w120_of(&e, &src), [(line, said.to_string())], "{word}");
+            assert_eq!(part_of(&e)["part.volume"], plain, "{word} {x}");
         }
     }
 }
@@ -464,12 +470,13 @@ fn a_round_that_selects_an_edge_says_nothing_of_it() {
                  "round(r: 1mm) part.post", "chamfer(d: 1mm) part.post",
                  "part.cap round(r: 1mm) part.near", "round(r: 1mm) part",
                  "part.near round(r: 1mm) part.nothing"] {
-        assert_eq!(w119(&format!("{SLAB}{tail}\n")), [], "{tail}");
+        assert_eq!(w120(&format!("{SLAB}{tail}\n")), [], "{tail}");
     }
     // the post's top edges rounded: the volume less, and still nothing said
     let src = format!("{SLAB}part.post.near round(r: 1mm) part.post\n");
-    assert!(part(&src)["part.volume"] < part(SLAB)["part.volume"]);
-    assert_eq!(w119(&src), []);
+    let e = solved(&src);
+    assert!(part_of(&e)["part.volume"] < part(SLAB)["part.volume"]);
+    assert_eq!(w120_of(&e, &src), []);
 }
 
 /// **No round of the library selects nothing** (#962): every document under
@@ -483,7 +490,7 @@ fn no_round_of_the_library_says_it_selects_nothing() {
     crate::every_example::sources(&dir, &mut files);
     assert!(files.len() > 20, "{}", files.len());
     let said: Vec<(String, Vec<(u32, String)>)> = gcs_core::par::map(&files, |p| {
-        (p.display().to_string(), w119(&std::fs::read_to_string(p).unwrap()))
+        (p.display().to_string(), w120(&std::fs::read_to_string(p).unwrap()))
     }).into_iter().filter(|(_, s)| !s.is_empty()).collect();
     assert!(said.is_empty(), "{said:#?}");
 }

@@ -182,8 +182,7 @@ fn stands_within(body: &crate::solid::faces::BodyFaces, f: &Faces, groups: [&[us
     for &q in &at {
         let tol = 1e-9 * (size + norm(q));
         for (k, alts) in &chains {
-            let near = |named: &[usize]| named.iter().map(|&g| body.patch_distance(g, q)).fold(f64::INFINITY, f64::min);
-            let Some((_, others, carried)) = alts.iter().min_by(|a, b| near(&a.0).total_cmp(&near(&b.0))) else {
+            let Some((_, others, carried)) = body.nearest_named(q, alts, |a| &a.0[..]) else {
                 continue;
             };
             // how far the ball must stand off the others: its radius, or a flat's point as far as

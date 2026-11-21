@@ -69,9 +69,9 @@ pub enum Meeting {
 
 impl ListedFaces {
     /// Whether face `a` (by its name from the solid) is listed and none of it is on the
-    /// boundary: a Boolean took it in.  `None` where the boundary cannot say.
-    pub fn eaten(&self, a: &str) -> Option<bool> {
-        self.own(a).map(|x| x.is_empty())
+    /// boundary: a Boolean took it in.  Not where the boundary cannot say.
+    pub fn eaten(&self, a: &str) -> bool {
+        self.own(a).is_some_and(|x| x.is_empty())
     }
 
     /// How faces `a` and `b` meet (`Meeting`); `None` where the boundary cannot say of either.

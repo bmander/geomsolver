@@ -74,14 +74,16 @@ pub(super) fn read_again(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
 /// naming what it looked at and why.  Never where a pair meets in an edge, where the boundary
 /// cannot say of a face, nor at a statement `said` already (`read_again`'s E080).
 pub(super) fn unmade(sk: &Sketch, map: &SourceMap, said: &[Diag]) -> Vec<Diag> {
-    use crate::solid::faces::{Meeting, Layered};
+    use crate::solid::faces::{FacePath, ListedFaces, Meeting};
+    // each solid's layers and faces read once, and each of its layers' listed faces once
+    let mut bodies: BTreeMap<usize, (Layers, Vec<FacePath>)> = BTreeMap::new();
+    let mut listed: BTreeMap<(usize, usize), Option<ListedFaces>> = BTreeMap::new();
     let mut out = Vec::new();
-    for u in &map.unmade {
+    'statements: for u in &map.unmade {
         if said.iter().any(|d| d.span == u.at) {
             continue;
         }
         let Some(e) = map.ent_named(&u.solid).filter(|e| e.kind == EntKind::Solid) else { continue };
-        let (layers, paths) = (Layers::of(sk, e.i()), face_paths(sk, e.i()));
         let solid = public_path(&u.solid);
         let path = |rest: &[String]| public_path(&std::iter::once(u.solid.as_str())
             .chain(rest.iter().map(String::as_str)).collect::<Vec<_>>().join("."));
@@ -102,36 +104,30 @@ pub(super) fn unmade(sk: &Sketch, map: &SourceMap, said: &[Diag]) -> Vec<Diag> {
         let (ina, inb) = (|f: &String| a.1.contains(f), |f: &String| b.1.contains(f));
         let pairs: Vec<&([String; 2], usize)> = u.pairs.iter().filter(|([x, y], _)| x != y
             && (ina(x) && inb(y) || inb(x) && ina(y))).collect();
-        let one: BTreeSet<&String> = a.1.iter().chain(&b.1).collect();
         let why = if pairs.is_empty() {
-            if one.len() != 1 {
+            if a.1.iter().chain(&b.1).collect::<BTreeSet<_>>().len() != 1 {
                 continue;
             }
             format!("`{}` is one face, and an edge is where two meet", path(&a.0))
         } else {
+            // nothing is said where a pair meets in an edge, or where the boundary cannot say
+            let (layers, paths) = bodies.entry(e.i())
+                .or_insert_with(|| (Layers::of(sk, e.i()), face_paths(sk, e.i())));
             let mut worst = Meeting::Apart;
             let mut eaten = BTreeSet::new();
-            let mut unread = false;
             for (faces, layer) in pairs {
-                let Some(read) = Layered::listed_in(sk, &layers, &paths, *layer) else {
-                    unread = true;
-                    break;
-                };
-                for f in faces {
-                    if read.eaten(f) == Some(true) {
-                        eaten.insert(f.clone());
-                    }
-                }
+                let read = listed.entry((e.i(), *layer))
+                    .or_insert_with(|| layers.listed(sk, paths, *layer));
+                let Some(read) = read.as_ref() else { continue 'statements };
+                eaten.extend(faces.iter().filter(|f| read.eaten(f)).map(String::as_str));
                 match read.meeting(&faces[0], &faces[1]) {
+                    Some(Meeting::Edge) | None => continue 'statements,
                     Some(m) => worst = worst.max(m),
-                    None => unread = true,
                 }
-            }
-            if unread || worst == Meeting::Edge {
-                continue;
             }
             // a block every face of which the body took in says so before anything else
-            let gone = [a, b].into_iter().find(|blk| blk.1.iter().all(|f| eaten.contains(f)));
+            let gone = [a, b].into_iter()
+                .find(|blk| blk.1.iter().all(|f| eaten.contains(f.as_str())));
             match (gone, worst) {
                 (Some(blk), _) => format!("none of `{}`'s faces is left on `{solid}`'s \
                     boundary, the body's other terms having taken them in", path(&blk.0)),

@@ -126,7 +126,7 @@ impl Profile {
     }
 
     /// A length the profile's tolerances are taken against.
-    pub fn size(&self) -> f64 {
+    fn size(&self) -> f64 {
         let mut s: f64 = 0.;
         for l in &self.loops { for e in l { match *e {
             ProfileEdge::Line {a,b} => s = s.max(norm(sub(a,self.origin))).max(norm(sub(b,self.origin))),
@@ -197,7 +197,8 @@ pub fn no_length(length: f64,size: f64) -> bool { !(length > tolerance(size)) }
 /// Each loop of a profile as a closed walk, the outer one counter-clockwise in `(x, y)` and the
 /// holes clockwise, where `coords` reads a point's coordinates in the plane.
 pub fn walks(p: &Profile,coords: &dyn Fn(V) -> [f64;2]) -> Result<Vec<Vec<Seg>>,String> {
-    let tol = tolerance(p.size());
+    let size = p.size();
+    let tol = tolerance(size);
     let mut out = Vec::new();
     for (li,l) in p.loops.iter().enumerate() {
         let segs: Vec<Seg> = l.iter().enumerate().map(|(source,e)| match *e {
@@ -209,7 +210,7 @@ pub fn walks(p: &Profile,coords: &dyn Fn(V) -> [f64;2]) -> Result<Vec<Vec<Seg>>,
             ProfileEdge::Spline(ref b) => Seg {curve:Curve::BSpline(b.clone()),t:b.domain(),source},
             ProfileEdge::Exact(ref curve) => Seg {curve:curve.clone(),t:exact_span(curve),source},
         }).collect();
-        if let Some(s) = segs.iter().find(|s| no_length(s.length(),p.size())) {
+        if let Some(s) = segs.iter().find(|s| no_length(s.length(),size)) {
             let name = p.name(li,s.source);
             let edge = if name.is_empty() { format!("edge {}",s.source) } else { format!("edge `{name}`") };
             return Err(format!("loop {li}'s {edge} has no length"))

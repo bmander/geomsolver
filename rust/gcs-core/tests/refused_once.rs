@@ -214,10 +214,8 @@ fn an_edge_of_no_length_is_said_once_at_its_face() {
     let src = stubbed("0.001", &[]);
     let (diags, _) = said(&src);
     assert!(diags.is_empty(), "{diags:#?}");
-    let e = crate::common::build(&src);
-    let part = e.sketch.evaluated_solid(e.map.ent_named("part").unwrap().i(),
-        gcs_core::solid::ApproximationPolicy::Report).expect("built");
-    assert!((part.volume() - 12000.0).abs() < 1e-6, "{}", part.volume());
+    let volume = crate::common::gestures::volume(&crate::common::build(&src), "part");
+    assert!((volume - 12000.0).abs() < 1e-6, "{volume}");
 }
 
 /// **Every way a face bounds no solid is the face's** (#962): a loop crossing itself (`face_polys`'

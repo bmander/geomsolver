@@ -214,16 +214,6 @@ enum Root {
     Face(usize),
 }
 
-/// The face a primitive is swept from (a prism, a prism through everything, a revolution).
-fn swept_face(sk: &Sketch, i: usize) -> Option<usize> {
-    match sk.solids[i].def {
-        SolidDef::Prism { face, .. } | SolidDef::Through { face } | SolidDef::Revolve { face, .. } => {
-            Some(face as usize)
-        }
-        _ => None,
-    }
-}
-
 /// **A face's fault in the document's words** (#962): the face, the edge of no length by its name
 /// and its ends' (a line's two points, which coincide or how far apart they are), or why its loops
 /// bound no region — and that no solid can be made of it.
@@ -263,11 +253,14 @@ fn face_said(sk: &Sketch, map: &SourceMap, fi: usize, fault: &crate::solid::Face
 /// fault is said once at the face, and the solid's statement says it is not built.
 pub(super) fn solids(sk: &Sketch, map: &SourceMap, place: &Placing) -> Vec<Diag> {
     let causes = Causes::new(sk);
-    // each root swept from a face with a fault, by the face (#962)
+    // each root swept from a face with a fault (a prism, a prism through everything, a
+    // revolution: `Solid::face`), by the face (#962), each face's fault read once
+    let mut faults: BTreeMap<usize, Option<crate::solid::FaceFault>> = BTreeMap::new();
     let faulted: BTreeMap<usize, (usize, crate::solid::FaceFault)> = causes.root.iter()
         .filter_map(|&i| {
-            let f = swept_face(sk, i)?;
-            Some((i, (f, crate::solid::face_fault(sk, f)?)))
+            let f = sk.solids[i].face()? as usize;
+            let fault = faults.entry(f).or_insert_with(|| crate::solid::face_fault(sk, f));
+            Some((i, (f, fault.clone()?)))
         })
         .collect();
     let key = |i: usize| faulted.get(&i).map_or(Root::Solid(i), |&(f, _)| Root::Face(f));

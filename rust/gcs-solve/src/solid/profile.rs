@@ -229,15 +229,15 @@ pub(crate) fn curved_point(sk: &Sketch, e: EntRef, t: f64) -> (f64, f64) {
 
 /// **An edge of face `fi` of no length** (#962): the first edge of its outline, then of each hole
 /// in turn, that a kernel building the face would refuse it for (`brep::build::no_length`, the one
-/// test), read at the pose the sketch stands in — with its name in the face (`FaceE::edge_names`,
-/// empty where unnamed) and its length (model units).  A line's run, an arc's radius times its
-/// turn (none is a whole turn, as the recipe writes it), a circle's round, and a spline's or a
-/// curve's widest chord; against the face's own reach from its first corner — a face's size, not
+/// test), read at the pose the sketch stands in — as a `FaceFault::NoLength`, with its name in
+/// the face (`FaceE::edge_names`, empty where unnamed) and its length (model units).  A line's
+/// run, an arc's radius times its turn (none is a whole turn, as the recipe writes it), a
+/// circle's round, and a spline's or a curve's widest chord; against the face's own reach from its first corner — a face's size, not
 /// how far it stands from the world's origin (a kernel builds a part far out about its own
 /// origin, `cad::recipe_about`).  A face's walk drops such an edge as it tessellates
 /// (`tidy_poly`), so the face bounds a region all the same, and only a kernel would meet it, in
 /// its own terms.
-pub fn edge_of_no_length(sk: &Sketch, fi: usize) -> Option<(EntRef, String, f64)> {
+pub fn edge_of_no_length(sk: &Sketch, fi: usize) -> Option<FaceFault> {
     let f = sk.faces.get(fi)?;
     let xy = |p: u32| sk.point_xy(p as usize);
     let first = f.edges.first().and_then(|&e| crate::model::edge_ends(sk, e)).map(|(p, _)| xy(p))
@@ -259,8 +259,7 @@ pub fn edge_of_no_length(sk: &Sketch, fi: usize) -> Option<(EntRef, String, f64)
         Some(match e.kind {
             EntKind::Line => {
                 let l = sk.lines.get(e.i())?;
-                let (a, b) = (xy(l.p1), xy(l.p2));
-                ((a.0 - b.0).dhypot(a.1 - b.1), at(a).max(at(b)))
+                (sk.line_length(e.i()), at(xy(l.p1)).max(at(xy(l.p2))))
             }
             EntKind::Arc => {
                 let a = sk.arcs.get(e.i())?;
@@ -282,15 +281,15 @@ pub fn edge_of_no_length(sk: &Sketch, fi: usize) -> Option<(EntRef, String, f64)
             _ => return None,
         })
     };
-    let edges: Vec<(EntRef, &str)> = f.boundaries()
+    let measured: Vec<(EntRef, &str, (f64, f64))> = f.boundaries()
         .flat_map(|(es, names)| es.iter().enumerate()
             .map(move |(k, &e)| (e, names.get(k).map_or("", String::as_str))))
-        .collect();
-    let measured: Vec<(EntRef, &str, (f64, f64))> = edges.iter()
-        .filter_map(|&(e, name)| Some((e, name, measure(e)?))).collect();
+        .filter_map(|(e, name)| Some((e, name, measure(e)?))).collect();
     let size = measured.iter().map(|m| m.2 .1).fold(1e-300, f64::max);
     measured.into_iter().find(|m| crate::brep::build::no_length(m.2 .0, size))
-        .map(|(e, name, (length, _))| (e, name.to_string(), length))
+        .map(|(edge, name, (length, _))| {
+            FaceFault::NoLength { edge, name: name.to_string(), length }
+        })
 }
 
 /// **What keeps a face from being any solid's** (#962): an edge of it of no length
@@ -308,10 +307,9 @@ pub enum FaceFault {
 
 /// Face `fi`'s fault, where it has one (`FaceFault`).
 pub fn face_fault(sk: &Sketch, fi: usize) -> Option<FaceFault> {
-    if let Some((edge, name, length)) = edge_of_no_length(sk, fi) {
-        return Some(FaceFault::NoLength { edge, name, length });
-    }
-    super::section::face_polys(sk, fi, super::REPORT_UNIT).err().map(FaceFault::Outline)
+    edge_of_no_length(sk, fi).or_else(|| {
+        super::section::face_polys(sk, fi, super::REPORT_UNIT).err().map(FaceFault::Outline)
+    })
 }
 
 impl FaceFault {

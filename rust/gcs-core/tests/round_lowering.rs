@@ -11,7 +11,7 @@ use gcs_core::solid::MaterialField;
 use std::f64::consts::PI;
 
 use crate::common::{close, ent, text::solved};
-use crate::common::rounds::{beside_cylinder, exported, kinds, root_ring, square_run};
+use crate::common::rounds::{beside_cylinder, exported, kinds, refused, root_ring, square_run};
 use crate::common::rounds::meridian::{knob_neck, knob_rounded};
 
 /// A block 40 × 24 × 12 drawn on the front plane (x, z), its near face at y = 0, standing 12 deep.
@@ -1170,12 +1170,6 @@ fn agrees_with_field(e: &Elaborated, name: &str, offset: f64) -> f64 {
     assert!(report.agrees(), "{name}: {} of {} probes disagree: {:?}", report.disagreements.len(), report.probes,
         report.disagreements);
     props::volume(b) / exact.mm.powi(3)
-}
-
-/// The export's refusal of solid `name`, as text.
-fn refused(e: &Elaborated, name: &str) -> String {
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    format!("{:?}", export::exact(&e.sketch, ent(e, name).i(), None, None, &say).err().expect("refused"))
 }
 
 /// **A corner of a face in pieces** (#218's 4): `post.sv`'s stand rounded all over. The post

@@ -13,26 +13,8 @@
 use gcs_core::brep::{export, props, sweep::Say};
 use std::f64::consts::PI;
 
-use crate::common::rounds::square_run;
+use crate::common::rounds::{exported_volume, inset, refused, square_run};
 use crate::common::{close, ent, text::solved};
-
-/// The solid `name` built exactly, and exported: its STEP written, and no face of it thinner than
-/// the export's tolerance.
-fn exported(src: &str, name: &str) -> f64 {
-    let e = solved(src);
-    assert!(e.diags.is_empty(), "{:?}", e.diags);
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let body = ent(&e, name).i();
-    let exact = export::exact(&e.sketch, body, None, None, &say).unwrap_or_else(|r| panic!("{name}: {r:?}"));
-    if let Some(s) = export::slivers(&e.sketch, body, &exact, None) {
-        panic!("{}", s.message);
-    }
-    export::step(&exact, name, None, &say).unwrap();
-    props::volume(&exact.solid)
-}
-
-/// How far in from each face the centroid of a round's section stands.
-fn inset(r: f64) -> f64 { (10.0 - 3.0 * PI) / (3.0 * (4.0 - PI)) * r }
 
 /// A prism `long` long of a profile all of whose corners are right angles — `convex` of them
 /// convex, `concave` reflex — of area `area` and perimeter `perimeter`, every edge rounded `r`:
@@ -98,7 +80,7 @@ fn a_leaning_step_and_a_fill_of_its_own_radius_ring_the_side_round_the_fill() {
         let corners = [(q, true, rest), (q, true, rest), (0.75 * PI, false, first), (0.75 * PI, true, rest),
                        (q, true, rest), (q, true, rest)];
         let want = rounded_profile(area, perimeter, 50.0, &corners, rest);
-        close(exported(&profiled(&leaning, first, rest), "whole"), want);
+        close(exported_volume(&profiled(&leaning, first, rest), "whole"), want);
     }
 }
 
@@ -132,7 +114,7 @@ fn a_step_rounded_all_over_rings_its_sides_round_the_fill() {
         let over = to.min(40.0) - from.max(-40.0);
         let area = 80.0 * 20.0 - over * 10.0;
         let want = rounded_prism(area, 2.0 * (80.0 + 20.0), 50.0, [5.0, 1.0], r);
-        close(exported(&block(&step(from, to), LAYERED), "whole"), want);
+        close(exported_volume(&block(&step(from, to), LAYERED), "whole"), want);
     }
 }
 
@@ -170,7 +152,8 @@ fn holes_beside_a_step_are_rounded_with_it() {
     let stepped = rounded_prism(80.0 * 20.0 - 40.0 * 10.0, 2.0 * (80.0 + 20.0), 50.0, [5.0, 1.0], r);
     let bore = PI * 25.0 * 20.0 + 2.0 * 2.0 * PI * s * (5.0 + d);
     let blind = PI * 16.0 * 6.0 + 4.0 * PI * s * d;
-    close(exported(&block(&(step(0.0, 41.0) + holes), LAYERED), "whole"), stepped - bore - blind);
+    let whole = exported_volume(&block(&(step(0.0, 41.0) + holes), LAYERED), "whole");
+    close(whole, stepped - bore - blind);
 }
 
 /// A rectangle 40 by 20 about the block's middle, `name`d, a prism of it `from` to `to`.
@@ -200,7 +183,7 @@ fn a_pocket_rounded_all_over_rings_its_rim_round_the_uprights() {
     let cuts = format!("{}pocket cut part\n", middle("pocket", 10.0, 21.0));
     let rest = "inside := round(r: 1.5mm) part.pocket\nwhole := solid(part)\nround(r: 1.5mm) whole\n";
     let want = crate::common::rounds::rounded_box([80.0, 50.0, 20.0], r) - rounded_feature(40.0, 20.0, 10.0, r);
-    close(exported(&block(&cuts, rest), "whole"), want);
+    close(exported_volume(&block(&cuts, rest), "whole"), want);
 }
 
 /// **A boss rounded all over**: each upright where two of its sides meet is convex, between two
@@ -217,14 +200,14 @@ fn a_boss_rounded_all_over_fills_its_foot_round_the_uprights() {
         outside := round(r: 1.5mm) part.boss\nwhole := solid(part)\nround(r: 1.5mm) whole\n",
         middle("boss", 10.0, 20.0));
     let want = crate::common::rounds::rounded_box([80.0, 50.0, 10.0], r) + rounded_feature(40.0, 20.0, 10.0, r);
-    close(exported(&src, "whole"), want);
+    close(exported_volume(&src, "whole"), want);
     // the uprights alone first, the edge alone in its turn at the foot: the top's rim then goes
     // round each upright's round as the foot does — a ring whose ball is as wide as its circle,
     // the corner's ball — and the body is the same
     let alone = src.replace("outside := round(r: 1.5mm) part.boss\n",
         "repeat f in part.boss { repeat g in part.boss { when f parallel std.z and g parallel std.z and f != g {\n\
         \x20 f round(r: 1.5mm) g } } }\n");
-    close(exported(&alone, "whole"), want);
+    close(exported_volume(&alone, "whole"), want);
 }
 
 /// Each vertex's own part of a body every edge of which is rounded `r` at right angles — what is
@@ -260,7 +243,7 @@ fn two_steps_of_two_depths_round_in_two_statements() {
     let rest = "first := round(r: 1.5mm) part.cutter\nsecond := round(r: 1.5mm) part.step2\n\
         whole := solid(part)\nround(r: 1.5mm) whole\n";
     let want = 55200.0 - 690.0 * s + 90.0 * s + 12.0 * ccc + 4.0 * ccv;
-    close(exported(&block(&cuts, rest), "whole"), want);
+    close(exported_volume(&block(&cuts, rest), "whole"), want);
     let bare = rest.replace("first := ", "").replace("second := ", "");
     let e = solved(&block(&cuts, &bare));
     let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
@@ -287,7 +270,7 @@ fn a_boss_beside_a_step_rounds_in_two_statements() {
         whole := solid(body)\nround(r: 1.5mm) whole\n";
     let stepped = rounded_prism(1200.0, 200.0, 50.0, [5.0, 1.0], r);
     let want = stepped + 600.0 - (24.0 + 40.0) * s + 40.0 * s + 4.0 * ccc + 4.0 * cvv;
-    close(exported(&block(&cuts, rest), "whole"), want);
+    close(exported_volume(&block(&cuts, rest), "whole"), want);
 }
 
 /// A pocket 40 by 20, 10 deep, in the block's top, its plan corners arcs of `big`, every edge of
@@ -321,11 +304,10 @@ fn a_pocket_with_rounded_corners_is_rounded_all_over_in_one_statement() {
     for big in [3.0, 1.5] {
         let void = (40.0 * 20.0 - (4.0 - PI) * big * big) * 10.0 + 4.0 * PI * s * d;
         let want = crate::common::rounds::rounded_box([80.0, 50.0, 20.0], r) - void;
-        close(exported(&rounded_pocket(big, r), "part"), want);
+        close(exported_volume(&rounded_pocket(big, r), "part"), want);
     }
     let e = solved(&rounded_pocket(1.0, r));
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let why = format!("{:?}", export::exact(&e.sketch, ent(&e, "part").i(), None, None, &say).err().expect("refused"));
+    let why = refused(&e, "part");
     assert!(why.contains("of radius 1mm where the round runs and tighter than the ball") && why.contains("(where `part."),
         "{why}");
 }
@@ -358,7 +340,7 @@ fn a_bores_rims_through_a_plate_thinner_than_both_rounds_cross_halfway() {
             w * 0.5 * (0.5 * PI - from) * (2.0 * big * b + b * b) * r * phi.cos()
         }).sum();
         let want = (1600.0 - PI * big * big) * thick - 2.0 * PI * take;
-        close(exported(&src, "part"), want);
+        close(exported_volume(&src, "part"), want);
     }
 }
 
@@ -369,7 +351,7 @@ fn the_stock_block_has_every_edge_rounded() {
     let r = 1.5;
     let want = rounded_prism(80.0 * 20.0 - 20.0 * 10.0, 2.0 * (80.0 + 20.0), 50.0, [5.0, 1.0], r)
         - rounded_feature(30.0, 24.0, 8.0, r);
-    close(exported(include_str!("../../examples/rounds/stock.sv"), "whole"), want);
+    close(exported_volume(include_str!("../../examples/rounds/stock.sv"), "whole"), want);
 }
 
 /// **An edge the general note cannot build is said by the faces it lies between**: a rod of
@@ -381,8 +363,7 @@ fn an_edge_the_general_note_cannot_build_is_said_by_its_faces() {
     let e = solved("unit mm\nuse std\nuse std.solids\nuse std.rounds (round)\nin std.top {\n  o := point\n  fix((0, 0)) o\n\
         \x20 rim := circle(center: o) hint(r: 3)\n  radius(3mm) rim\n}\n\
         rod := solid(std.solids.Prism(face(rim), from: 0mm, to: 10mm))\nround(r: 4mm) rod\n");
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let why = format!("{:?}", export::exact(&e.sketch, ent(&e, "rod").i(), None, None, &say).err().expect("refused"));
+    let why = refused(&e, "rod");
     assert!(why.contains("(where `rod.") && why.contains("` and `rod.") && why.contains("` meet)"), "{why}");
 }
 
@@ -403,8 +384,7 @@ fn a_corner_whose_face_is_in_pieces_of_one_name_is_held_within_the_references_ru
         cut1 := solid(std.solids.Prism(first, from: 10mm, to: 21mm))\n\
         cut2 := solid(std.solids.Prism(second, from: 10mm, to: 21mm))\ncut1 cut part\ncut2 cut part\n";
     let e = solved(&block(cuts, "round(r: 1.5mm) part\n"));
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let why = format!("{:?}", export::exact(&e.sketch, ent(&e, "part").i(), None, None, &say).err().expect("refused"));
+    let why = refused(&e, "part");
     assert!(why.contains("edges of both turns meet where") && !why.contains("a ball larger"), "{why}");
 }
 
@@ -414,9 +394,8 @@ fn a_corner_whose_face_is_in_pieces_of_one_name_is_held_within_the_references_ru
 #[test]
 fn every_edge_in_one_statement_names_the_vertex_of_both_turns() {
     let refused = |word: &str| {
-        let e = solved(&block(&step(0.0, 41.0), &format!("{word} part\n")));
-        let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-        format!("{:?}", export::exact(&e.sketch, ent(&e, "part").i(), None, None, &say).err().expect("refused"))
+        let src = block(&step(0.0, 41.0), &format!("{word} part\n"));
+        crate::common::rounds::refused(&solved(&src), "part")
     };
     let at = ["touches itself along a line", "edges of both turns meet where", "in a concave edge",
               "in a convex edge", "`part.cutter.far`", "`part.block."];

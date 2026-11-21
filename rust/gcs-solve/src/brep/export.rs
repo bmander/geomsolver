@@ -175,11 +175,10 @@ fn mixed_vertex(sk: &Sketch,body: usize,ends: [[f64;3];2]) -> Option<String> {
     let mut all: Vec<usize> = edges.iter().flat_map(|(f,_)| *f).collect();
     all.sort_unstable();
     all.dedup();
-    let listed = match &all.iter().map(|&f| name(f)).collect::<Vec<_>>()[..] {
-        [one] => one.clone(),
-        [rest @ ..,last] => format!("{} and {last}",rest.join(", ")),
-        [] => return None,
-    };
+    if all.is_empty() {
+        return None;
+    }
+    let listed = crate::vocab::all_of(&all.iter().map(|&f| name(f)).collect::<Vec<_>>());
     let turn = |convex: bool| if convex { "convex" } else { "concave" };
     let said: Vec<String> = edges.iter().map(|([x,y],c)| format!("{} and {} in a {} edge",name(*x),name(*y),turn(*c))).collect();
     let convex = edges.iter().filter(|e| e.1).count();
@@ -189,8 +188,8 @@ fn mixed_vertex(sk: &Sketch,body: usize,ends: [[f64;3];2]) -> Option<String> {
     // a chamfer's flats are no tangent chain: a second statement over the body the first leaves
     // would chamfer the first one's flat against its own faces again
     let flat = crate::solid::faces::readers_of(sk,body).into_iter().any(|r| match &sk.solids[r].def {
-        crate::model::SolidDef::Region {terms,..} => crate::solid::lowering::face_names(sk,terms)
-            .is_some_and(|f| f.first() == Some(&"flat")),
+        crate::model::SolidDef::Region {terms,..} =>
+            crate::solid::lowering::face_name(sk,terms) == Some("flat"),
         _ => false,
     });
     let write = if flat {

@@ -563,20 +563,23 @@ fn back_over_numbers(sk: &Sketch, b: &BackOver) -> (String, String) {
     (witness, depth)
 }
 
-/// **The faces a recognised region leaves on its body, by the names its construction gives them**
-/// (#879, `Section::face`) — what a block over the body's faces lists them by
-/// (`faces::face_paths`), so a round over another's faces names what the body's boundary has.
-/// Its round or its flat, and where a piece is cut off by a face it ends on with the body's
-/// material beyond, the piece's cap there — on that face's surface, beside it, a face of the body:
-/// a run's prism's `far` and `near`, a ring's stretch's `start` and `end` (#962).  A fill's ends on
-/// a step's sides or a pocket's top; an upright's round's foot on the plate a boss stands on.  So
-/// a round over the rounded body rounds the edge a cap makes with the round (a step's side's rim
-/// round its fill, a boss's foot round its upright's round), as it rounds that face's own edges.
-/// A name the boundary has not is no face of it.  `None` for a region no entry recognises.
-pub fn face_names(sk: &Sketch, terms: &[crate::model::RegionTerm]) -> Option<Vec<&'static str>> {
-    recognise::recognised(sk, terms)
-        .map(|(_, section)| vec![section.face(), "far", "near", "start", "end"])
+/// **The face a recognised region leaves on its body, by the name its construction gives it**
+/// (#879, `Section::face`) — what a block over the body's faces lists it by
+/// (`faces::face_paths`), so a round over another's faces names what the body's boundary has: its
+/// round or its flat, listed before its caps (`CAPS`).  `None` for a region no entry recognises.
+pub fn face_name(sk: &Sketch, terms: &[crate::model::RegionTerm]) -> Option<&'static str> {
+    recognise::recognised(sk, terms).map(|(_, section)| section.face())
 }
+
+/// **A recognised region's caps, by the names its construction gives them** (#962): where a
+/// piece is cut off by a face it ends on with the body's material beyond, the piece's cap there —
+/// on that face's surface, beside it, a face of the body: a run's prism's `far` and `near`, a
+/// ring's stretch's `start` and `end`.  A fill's ends on a step's sides or a pocket's top; an
+/// upright's round's foot on the plate a boss stands on.  So a round over the rounded body rounds
+/// the edge a cap makes with the round (a step's side's rim round its fill, a boss's foot round
+/// its upright's round), as it rounds that face's own edges.  A name the boundary has not is no
+/// face of it.
+pub const CAPS: [&str; 4] = ["far", "near", "start", "end"];
 
 /// How many points along each edge `seams_beside` stands a section at (and its ends).
 const SEAM_SAMPLES: usize = 32;

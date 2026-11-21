@@ -181,7 +181,7 @@ that order already say it. So **the general note is two statements**: the lone e
 feature's own edges: `round(r) part.step`, `round(r) part.pocket`, `round(r) part.boss`), then
 every edge on a solid of the body they leave (`whole := solid(part)`, `round(r) whole`) — the
 idiom `rim.sv` writes for a rim over rounded corners. Two rules make the second statement round
-what the first left. **A round's caps are faces of the body** (`lowering::face_names`): a piece
+what the first left. **A round's caps are faces of the body** (`lowering::CAPS`): a piece
 cut off by a face it ends on, with the body's material beyond, leaves its cap there on that face's
 surface — a fill's two ends on a step's sides, an upright's fill's end on a pocket's top, an
 upright's round's foot on the plate a boss stands on — and a block over the faces lists them

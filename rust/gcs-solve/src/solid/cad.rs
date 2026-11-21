@@ -607,11 +607,10 @@ fn said(sk: &Sketch,i: usize,why: impl std::fmt::Display) -> String {
     let why = why.to_string();
     let key = format!("{}: ",sk.solids[i].name);
     let why = why.strip_prefix(&key).unwrap_or(&why);
-    match faces_said(sk,i) {
-        Some((faces,None)) => format!("`{}` (where {faces} meet): {why}",sk.solid_said(i)),
-        Some((faces,Some(shared))) => format!("`{}` (where {faces} meet): {why}; {shared}",sk.solid_said(i)),
-        None => format!("`{}`: {why}",sk.solid_said(i)),
-    }
+    let (faces,shared) = faces_said(sk,i).map_or((String::new(),String::new()),|(faces,shared)| {
+        (format!(" (where {faces} meet)"),shared.map_or(String::new(),|s| format!("; {s}")))
+    });
+    format!("`{}`{faces}: {why}{shared}",sk.solid_said(i))
 }
 
 /// The faces a region over a body's faces stands on, each by the body's name for it
@@ -634,10 +633,10 @@ fn faces_said(sk: &Sketch,i: usize) -> Option<(String,Option<String>)> {
             if !faces.contains(&path) { faces.push(path) }
         }
     }
-    let said = match &faces.iter().map(|f| format!("`{f}`")).collect::<Vec<_>>()[..] {
-        [] | [_] => return None,
-        [rest @ ..,last] => format!("{} and {last}",rest.join(", ")),
-    };
+    if faces.len() < 2 {
+        return None;
+    }
+    let said = crate::vocab::all_of(&faces.iter().map(|f| format!("`{f}`")).collect::<Vec<_>>());
     Some((said,match &shared[..] {
         [] => None,
         named => Some(format!("{} the faces of rounds or chamfers of several statements written bare under one \

@@ -484,16 +484,15 @@ pub struct Unmade {
 
 /// What the `when`s under one statement read of faces and made (`Unmade`): the blocks over a
 /// solid's faces met under it, the pairs asked `meets` of, whether any read a face, whether any
-/// was made or refused, and whether any read faces whose meeting no boundary says (faces of two
-/// solids, or of one not built where the drawing stands).
+/// was made, and whether any was refused or read faces whose meeting no boundary says (faces of
+/// two solids, or of one not built where the drawing stands).
 #[derive(Default)]
 struct Selecting {
     blocks: Vec<(String, Vec<String>, Vec<String>)>,
     pairs: BTreeSet<(String, [String; 2], usize)>,
     asked: bool,
     held: bool,
-    failed: bool,
-    fixed: bool,
+    unsure: bool,
 }
 
 /// **Two faces of two solids a `when … meets …` asked of** (#961): each by its solid's absolute
@@ -1211,10 +1210,11 @@ impl<'a> Walk<'a> {
     /// each whose `when`s read faces, none of them refused nor reading faces whose meeting no
     /// boundary says, of one solid — where they paired faces, every pair asked (to be read edge by
     /// edge where the drawing is solved); where none did and none was made, its blocks ran over
-    /// one face alone.  None said already to name no face (W116).
-    fn unmade(&self) -> Vec<Unmade> {
-        self.faces.selecting.iter().filter_map(|(&at, s)| {
-            if !s.asked || s.failed || s.fixed || s.blocks.is_empty()
+    /// one face alone.  None said already to name no face (W116).  Taken out of the state, as
+    /// `finish` hands it on.
+    fn unmade(&mut self) -> Vec<Unmade> {
+        std::mem::take(&mut self.faces.selecting).into_iter().filter_map(|(at, s)| {
+            if !s.asked || s.unsure || s.blocks.is_empty()
                 || self.diagnostics.iter().any(|d| d.code == Code::W116 && d.span == at) {
                 return None;
             }
@@ -1222,20 +1222,16 @@ impl<'a> Walk<'a> {
             if s.blocks.iter().any(|b| &b.0 != solid) || s.pairs.iter().any(|p| &p.0 != solid) {
                 return None;
             }
-            // one face: no `when` paired two, and no copy was made
-            let one = s.pairs.is_empty() && !s.held && {
-                let faces: BTreeSet<&String> = s.blocks.iter().flat_map(|b| &b.2).collect();
-                faces.len() == 1
-            };
-            if s.pairs.is_empty() && !one {
+            // where no `when` paired two, one face, and no copy made
+            let faces = || s.blocks.iter().flat_map(|b| &b.2).collect::<BTreeSet<_>>().len();
+            if s.pairs.is_empty() && (s.held || faces() != 1) {
                 return None;
             }
             Some(Unmade {
                 at,
                 solid: solid.clone(),
-                blocks: s.blocks.iter().map(|(_, rest, listed)| (rest.clone(), listed.clone()))
-                    .collect(),
-                pairs: s.pairs.iter().map(|(_, faces, layer)| (faces.clone(), *layer)).collect(),
+                blocks: s.blocks.into_iter().map(|(_, rest, listed)| (rest, listed)).collect(),
+                pairs: s.pairs.into_iter().map(|(_, faces, layer)| (faces, layer)).collect(),
             })
         }).collect()
     }
