@@ -210,13 +210,19 @@ fn completed(w: &Witness,candidates: &[&Brep],located: &[crate::query::Located],
                     if hm*h0 > 0. { (t0,h0) = (tm,hm) } else { t1 = tm }
                 }
                 let x = at(0.5*(t0+t1));
-                if !located[k2].face_holds(g,x) { continue }
+                if !located[k2].face_holds(g,x) {
+                    if debug() { eprintln!("trim: completing from {:?}: face ({k2}, {g})'s surface crosses it at {x:?}, outside the face",w.at) }
+                    continue
+                }
                 let key = if [k,i] <= [k2,g] { ([k,i],[k2,g]) } else { ([k2,g],[k,i]) };
                 let had = given.iter().position(|gv| same_pair(gv,s,sg));
                 let through = had.is_some_and(|n| given[n].curves.iter().any(|cv| distance(cv.point(cv.inverse(x)),x) <= hair));
                 // (met there already; or met by search, which missed it: not the trim's to give — a pair
                 // given what one trace finds loses what its search found — but named)
-                if through { continue }
+                if through {
+                    if debug() { eprintln!("trim: completing from {:?}: face ({k2}, {g}), a {}, crosses it at {x:?}, on a curve given",w.at,sg.kind()) }
+                    continue
+                }
                 if had.is_none() && pairs.contains(&key) { missed.get_or_insert((k2,g,x)); continue }
                 let (la,ha) = candidates[k].bounds();
                 let (lb,hb) = c.bounds();

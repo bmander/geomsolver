@@ -159,9 +159,20 @@ fn inverse_from(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface,seed: Opti
 
 /// `d(u, v)/dt` of the curve of points of `surface` nearest the edge's, at its point's parameters
 /// `uv`: the edge's tangent by least squares in `[S_u S_v]` there.
+///
+/// Where the two derivatives are parallel there — a fan's pinch, where its sheet's parameters
+/// fold — the least squares has no answer, and the rate is the chord of the curve's own feet
+/// either side of `t`, along the edge (#942 T1d-cube: a rim 2e-6 long at the pinch where a fan's
+/// crossing with itself is born gave the solid's volume as NaN).
 fn inverse_derivative(uv: Uv,t: f64,edge: &Edge,surface: &Surface) -> Uv {
     let EdgeCurve::Curve(c) = &edge.curve else { return [0.;2] };
-    in_parameters(surface,uv,c.tangent(t))
+    let d = in_parameters(surface,uv,c.tangent(t));
+    if d.iter().all(|x| x.is_finite()) { return d }
+    let h = 1e-3*(edge.t[1]-edge.t[0]);
+    let (lo,hi) = ((t-h).max(edge.t[0]),(t+h).min(edge.t[1]));
+    if !(hi > lo) { return [0.;2] }
+    let [a,b] = [lo,hi].map(|x| surface.inverse_near(c.point(x),uv));
+    [(b[0]-a[0])/(hi-lo),(b[1]-a[1])/(hi-lo)]
 }
 
 /// `d` in `surface`'s parameters at `uv`: the least-squares `[S_u S_v] x = d` (not finite where the
@@ -541,6 +552,19 @@ impl Brep {
                             eprintln!("topo: face {fi} breaks between edge {} ({}, tol {:e}) and edge {} ({}, tol {:e}) at vertex {:?} (tol {at:e}): {:?} and {:?} apart {:e}, corner {corner:e}",
                                 c.edge,kind(c),self.edges[c.edge as usize].tol,next.edge,kind(next),self.edges[next.edge as usize].tol,self.vertices[self.ends(c)[1] as usize].p,
                                 f.surface.point(a),f.surface.point(b),distance(f.surface.point(a),f.surface.point(b)));
+                            for x in [c,next] {
+                                let e = &self.edges[x.edge as usize];
+                                let (what,ends) = match &e.curve {
+                                    EdgeCurve::Curve(cv) => (match cv {
+                                        super::geom::Curve::Rail(w,u) => format!("a rail at u {u} of a wall {:p} over {:?}",std::sync::Arc::as_ptr(w),w.span()),
+                                        _ => cv.kind().to_string(),
+                                    },[cv.point(e.t[0]),cv.point(e.t[1])]),
+                                    EdgeCurve::Degenerate => (String::new(),[[0.;3];2]),
+                                };
+                                let users: Vec<(usize,&str)> = self.faces.iter().enumerate().filter(|(_,g)| g.loops.iter().flatten().any(|y| y.edge == x.edge))
+                                    .map(|(gi,g)| (gi,g.name.as_str())).collect();
+                                eprintln!("topo:   edge {} {what} over {:?}, its ends {:?}, its pcurve {:?}, used by {users:?}",x.edge,e.t,ends,x.pcurve);
+                            }
                         }
                         return Err(format!("face {fi} ({}): loop {li} breaks in parameters after use {k}: {a:?} to {b:?}",f.name).into())
                     }
@@ -578,7 +602,10 @@ impl Brep {
                     let (kind,says) = if u.0 == u.1 && u.0 > 1 { (super::Kind::NotManifold,NOT_MANIFOLD) } else { (super::Kind::Open,OPEN) };
                     if super::debug() {
                         for (fi,f) in self.faces.iter().enumerate().filter(|(_,f)| f.loops.iter().flatten().any(|c| c.edge as usize == i)) {
-                            eprintln!("check: edge {i} used by face {fi} ({}, {}), its edges {:?}",f.name,f.surface.kind(),f.loops.iter().flatten().map(|c| c.edge).collect::<Vec<_>>());
+                            eprintln!("check: edge {i} used by face {fi} ({}, {}, reversed {}), its edges {:?}, this one {}",f.name,f.surface.kind(),f.reversed,
+                                f.loops.iter().flatten().map(|c| c.edge).collect::<Vec<_>>(),
+                                f.loops.iter().flatten().find(|c| c.edge as usize == i).map_or(String::new(),|c| format!("reversed {}, from {:?} to {:?}",c.reversed,
+                                    c.pcurve.at(self.edges[i].t[0],&self.edges[i],&f.surface,&self.vertices),c.pcurve.at(self.edges[i].t[1],&self.edges[i],&f.surface,&self.vertices))));
                         }
                         let m = e.point(0.5*(e.t[0]+e.t[1]),&self.vertices);
                         let ends = e.v.map(|v| self.vertices[v as usize].p);

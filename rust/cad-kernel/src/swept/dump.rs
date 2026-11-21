@@ -85,9 +85,12 @@ fn sheet(w: &crate::family::Sheet) -> Json {
             o
         }
     };
-    object([("run",run),("spans",Json::Arr(w.stations.spans.iter().map(|s| reals(s)).collect())),
+    let mut o = object([("run",run),("spans",Json::Arr(w.stations.spans.iter().map(|s| reals(s)).collect())),
         ("at",Json::Arr(w.stations.at.iter().map(|a| reals(a)).collect())),("nodes",Json::Arr(w.nodes.iter().map(|n| reals(n)).collect())),
-        ("closed",w.closed.into())])
+        ("closed",w.closed.into())]);
+    // (a run of a fan that passes back through itself, its feet sought with care: written where so)
+    if w.is_layered() { o.set("layered",true.into()) }
+    o
 }
 fn rsheet(j: &Json) -> Result<crate::family::Sheet,String> {
     use crate::family::{Run,Sheet,Stations};
@@ -101,8 +104,56 @@ fn rsheet(j: &Json) -> Result<crate::family::Sheet,String> {
     let spans = field(j,"spans")?.arr().iter().map(|s| { let s = rreals(s); [s[0],s[1]] }).collect();
     let at = field(j,"at")?.arr().iter().map(|a| { let a = rreals(a); std::array::from_fn(|k| a[k]) }).collect();
     let nodes = field(j,"nodes")?.arr().iter().map(rreals).collect();
-    Sheet::new(run,Arc::new(Stations::new(spans,at)?),nodes,field(j,"closed")?.as_bool())
+    let sheet = Sheet::new(run,Arc::new(Stations::new(spans,at)?),nodes,field(j,"closed")?.as_bool())?;
+    Ok(if j.get("layered").is_some_and(|l| l.as_bool()) { sheet.layered() } else { sheet })
 }
+
+thread_local! {
+    /// The walls written so far in this dump, by address: each one's place the number it is shared
+    /// by (`shared`).
+    static WRITTEN: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
+    /// The walls read so far in this load, by the number they were written with (`rshared`).
+    static READ: std::cell::RefCell<std::collections::BTreeMap<i64,Arc<crate::family::Sheet>>> =
+        const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
+}
+
+/// **A wall written with the number it is shared by** (#942 T1d-cube): one wall borne by several
+/// faces and curves — a fan's run, the rails restricted to it — is one wall read back, as it was
+/// built. A wall's inverse starts from the last foot found on it (`warm`), so walls read back apart
+/// read their feet from other starts, to the rounding otherwise, and a trim replayed was not the
+/// trim refused bit for bit.
+fn shared(w: &Arc<crate::family::Sheet>) -> Json {
+    let at = Arc::as_ptr(w) as usize;
+    let id = WRITTEN.with(|v| { let mut v = v.borrow_mut(); v.iter().position(|&p| p == at).unwrap_or_else(|| { v.push(at); v.len()-1 }) });
+    let mut o = sheet(w);
+    o.set("share",id.into());
+    o
+}
+/// A wall `shared` wrote, the one already read where its number was (a dump written before #942
+/// T1d-cube shares none).
+fn rshared(j: &Json) -> Result<Arc<crate::family::Sheet>,String> {
+    let Some(id) = j.get("share").map(Json::as_i64) else { return Ok(Arc::new(rsheet(j)?)) };
+    if let Some(w) = READ.with(|m| m.borrow().get(&id).cloned()) { return Ok(w) }
+    let w = Arc::new(rsheet(j)?);
+    READ.with(|m| m.borrow_mut().insert(id,w.clone()));
+    Ok(w)
+}
+thread_local! {
+    /// Whether a dump or a load is under way, its files' walls numbered as one (`Walls`).
+    static WHOLE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// The tables of walls shared, emptied.
+fn fresh_walls() { WRITTEN.with(|v| v.borrow_mut().clear()); READ.with(|m| m.borrow_mut().clear()) }
+
+/// **A dump or a load under way** (`shared`): its tables emptied as it starts, its every file's walls
+/// numbered as one while it lasts; a brep written or read alone (`write`, `read`) numbers its own.
+struct Walls;
+impl Walls {
+    fn whole() -> Walls { fresh_walls(); WHOLE.with(|w| w.set(true)); Walls }
+    fn alone() { if !WHOLE.with(|w| w.get()) { fresh_walls() } }
+}
+impl Drop for Walls { fn drop(&mut self) { WHOLE.with(|w| w.set(false)); fresh_walls() } }
 
 fn pair(j: &Json,k: &str) -> Result<[f64;2],String> { let r = rreals(field(j,k)?); Ok([r[0],r[1]]) }
 fn contact(c: &crate::turned::Contact) -> Json {
@@ -142,8 +193,8 @@ fn curve(c: &Curve) -> Result<Json,String> {
         Curve::Slid(t) => { let c = &t.contact;
             object([("kind","slid".into()),("frame",frame(&t.frame)),("big",c.big.into()),("small",c.small.into()),("d",v3(c.d)),
                 ("side",c.side.into()),("span",reals(&t.span)),("contour",t.contour.into())]) }
-        Curve::Rail(w,u) => object([("kind","rail".into()),("sheet",sheet(w)),("u",(*u).into())]),
-        Curve::Rim(w,at) => object([("kind","rim".into()),("sheet",sheet(w)),("s",(*at).into())]),
+        Curve::Rail(w,u) => object([("kind","rail".into()),("sheet",shared(w)),("u",(*u).into())]),
+        Curve::Rim(w,at) => object([("kind","rim".into()),("sheet",shared(w)),("s",(*at).into())]),
         other => return Err(format!("sweep dump: a {} curve is not written",other.kind())),
     })
 }
@@ -173,8 +224,8 @@ fn rcurve(j: &Json) -> Result<Curve,String> {
             let contact = crate::slid::Contact {big:num(j,"big")?,small:num(j,"small")?,d:rv3(field(j,"d")?),side:num(j,"side")?};
             let contour = field(j,"contour")?.as_bool();
             Curve::Slid(Arc::new(crate::slid::Slid {frame:rframe(field(j,"frame")?)?,contact,span:[span[0],span[1]],contour})) }
-        "rail" => Curve::Rail(Arc::new(rsheet(field(j,"sheet")?)?),num(j,"u")?),
-        "rim" => Curve::Rim(Arc::new(rsheet(field(j,"sheet")?)?),num(j,"s")?),
+        "rail" => Curve::Rail(rshared(field(j,"sheet")?)?,num(j,"u")?),
+        "rim" => Curve::Rim(rshared(field(j,"sheet")?)?,num(j,"s")?),
         k => return Err(format!("sweep dump: a curve of kind `{k}`")),
     })
 }
@@ -198,7 +249,7 @@ fn surface(s: &Surface) -> Result<Json,String> {
             o
         }
         Surface::Affine(m) => object([("kind","affine".into()),("map",affine(&m.map)),("of",surface(&m.of)?)]),
-        Surface::Family(f,w) => with("family",f,vec![("sheet",sheet(w))]),
+        Surface::Family(f,w) => with("family",f,vec![("sheet",shared(w))]),
         Surface::Offset(..) => return Err("sweep dump: an offset read by its signed distance is no face's surface".into()),
     })
 }
@@ -215,7 +266,7 @@ fn rsurface(j: &Json) -> Result<Surface,String> {
         "extrusion" => Surface::Extrusion(f,Arc::new(rcurve(field(j,"curve")?)?)),
         "revolution" => Surface::Revolution(f,Arc::new(rcurve(field(j,"curve")?)?)),
         "blend" => Surface::Blend(f,Arc::new(rblend(field(j,"blend")?)?)),
-        "family" => Surface::Family(f,Arc::new(rsheet(field(j,"sheet")?)?)),
+        "family" => Surface::Family(f,rshared(field(j,"sheet")?)?),
         "bspline" => {
             let poles: Vec<Vec<V>> = field(j,"poles")?.arr().iter().map(|r| r.arr().iter().map(rv3).collect()).collect();
             let weights = j.get("weights").map(|w| w.arr().iter().map(rreals).collect());
@@ -248,6 +299,7 @@ fn rpcurve(j: &Json) -> Result<Pcurve,String> {
 /// **A B-rep written whole**: every vertex, edge and use as it is, each curve and surface by its
 /// exact parameters (`read` gives it back bit for bit).
 pub fn write(b: &Brep) -> Result<String,String> {
+    Walls::alone();
     let vertices = Json::Arr(b.vertices.iter().map(|v| object([("p",v3(v.p)),("tol",v.tol.into())])).collect());
     let edges = b.edges.iter().map(|e| -> Result<Json,String> {
         let c = match &e.curve { EdgeCurve::Curve(c) => curve(c)?,EdgeCurve::Degenerate => Json::Null };
@@ -266,6 +318,7 @@ pub fn write(b: &Brep) -> Result<String,String> {
 
 /// The B-rep `write` wrote.
 pub fn read(text: &str) -> Result<Brep,String> {
+    Walls::alone();
     let j = parse(text)?;
     let vertices = field(&j,"vertices")?.arr().iter().map(|v| Ok(Vertex {p:rv3(field(v,"p")?),tol:num(v,"tol")?})).collect::<Result<Vec<_>,String>>()?;
     let edges = field(&j,"edges")?.arr().iter().map(|e| -> Result<Edge,String> {
@@ -325,6 +378,7 @@ fn rgivens(j: &Json) -> Result<Vec<Given>,String> {
 pub fn dump(dir: &std::path::Path,domain: &Brep,reach: Option<&Brep>,candidates: &[&Brep],given: &[Given],tol: f64,why: &str)
     -> Result<(),String> {
     let io = |e: std::io::Error| format!("sweep dump: {e}");
+    let _walls = Walls::whole();
     std::fs::create_dir_all(dir).map_err(io)?;
     std::fs::write(dir.join("domain.json"),write(domain)?).map_err(io)?;
     if let Some(reach) = reach { std::fs::write(dir.join("reach.json"),write(reach)?).map_err(io)? }
@@ -336,6 +390,7 @@ pub fn dump(dir: &std::path::Path,domain: &Brep,reach: Option<&Brep>,candidates:
 /// The arrangement `dump` wrote into `dir`.
 pub fn load(dir: &std::path::Path) -> Result<Arrangement,String> {
     let io = |e: std::io::Error| format!("sweep dump: {}: {e}",dir.display());
+    let _walls = Walls::whole();
     let meta = parse(&std::fs::read_to_string(dir.join("arrangement.json")).map_err(io)?)?;
     let n = field(&meta,"candidates")?.as_i64() as usize;
     let domain = read(&std::fs::read_to_string(dir.join("domain.json")).map_err(io)?)?;
@@ -511,6 +566,7 @@ pub struct Through { pub faces: Vec<Near>,pub edges: Vec<(usize,usize,&'static s
 pub fn dump_trim(dir: &std::path::Path,tool: &Brep,path: &crate::trajectory::Trajectory,roll: [f64;2],candidates: &[Brep],given: &[Given],
     bar: f64,tol: f64,trim: super::trim::Trim,why: &str) -> Result<(),String> {
     let io = |e: std::io::Error| format!("sweep dump: {e}");
+    let _walls = Walls::whole();
     let path = trajectory(path)?;
     std::fs::create_dir_all(dir).map_err(io)?;
     std::fs::write(dir.join("tool.json"),write(tool)?).map_err(io)?;
@@ -525,6 +581,7 @@ pub fn dump_trim(dir: &std::path::Path,tool: &Brep,path: &crate::trajectory::Tra
 /// The trim `dump_trim` wrote into `dir`.
 pub fn load_trim(dir: &std::path::Path) -> Result<Trimming,String> {
     let io = |e: std::io::Error| format!("sweep dump: {}: {e}",dir.display());
+    let _walls = Walls::whole();
     let meta = parse(&std::fs::read_to_string(dir.join("trim.json")).map_err(io)?)?;
     let n = field(&meta,"candidates")?.as_i64() as usize;
     let tool = read(&std::fs::read_to_string(dir.join("tool.json")).map_err(io)?)?;
