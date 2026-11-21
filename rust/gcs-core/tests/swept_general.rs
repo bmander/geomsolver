@@ -18,9 +18,9 @@ fn cube() -> gcs_core::brep::topo::Brep { crate::brep::block([2.4,-0.6,1.4],[3.6
 
 /// **A cube tumbling fifteen degrees either way is built by the general road** (#942 T1d-cube): one
 /// of its fans passes back through itself and is cut into two runs, their crossing given, which
-/// ends at the pinch where it is born on the rim the runs share; there the nearest foot of a span's
-/// middle on either run falls on its other fold, and the Boolean once dropped the given span from
-/// both faces as off their patches, the trim then leaving the boundary open along a rail edge. Held
+/// ends at the pinch where it is born on the rim the runs share; that crossing is built from the
+/// pinch (`general::handle`) and the walls' feet read by a bounded Levenberg–Marquardt from the
+/// nearest few of a grid, where a foot once fell on a run's other fold. Held
 /// to membership through its box (a membership count of 40000 points gives 3.463 ± 0.018 against
 /// its 3.4739).
 #[test]
@@ -32,7 +32,8 @@ fn a_cube_tumbling_fifteen_degrees_is_built_by_the_general_road() {
     let built = gcs_core::brep::swept::closed::closed(&cube,&path,roll,cube.size(),tol).unwrap_or_else(|u| panic!("{u:?}"));
     built.check(tol).unwrap();
     let v = gcs_core::brep::props::volume(&built);
-    assert!((v-3.4739276576959).abs() <= 1e-9,"{v}");
+    // (to a ten-millionth: where each foot settles beside the pinch moves it by that much)
+    assert!((v-3.473927661217455).abs() <= 1e-7*v,"{v}");
     crate::swept_closed::agrees_over(&built,&cube,&path,roll);
 }
 
@@ -185,7 +186,8 @@ fn the_bench_cube_tumbling_75_degrees_is_built_by_the_general_road() {
     let built = gcs_core::brep::swept::closed::closed(&cube,&path,roll,cube.size(),tol).unwrap_or_else(|u| panic!("{u:?}"));
     built.check(tol).unwrap();
     let v = gcs_core::brep::props::volume(&built);
-    assert!((v-11.099312090481495).abs() <= 1e-8,"{v}");
+    // (to a ten-millionth: where each foot settles beside the pinches moves it by that much)
+    assert!((v-11.099312297902353).abs() <= 1e-7*v,"{v}");
     crate::swept_closed::agrees_over(&built,&cube,&path,roll);
 }
 

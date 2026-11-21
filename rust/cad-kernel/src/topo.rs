@@ -554,9 +554,13 @@ impl Brep {
                                 f.surface.point(a),f.surface.point(b),distance(f.surface.point(a),f.surface.point(b)));
                             for x in [c,next] {
                                 let e = &self.edges[x.edge as usize];
-                                let what = match &e.curve { EdgeCurve::Curve(super::geom::Curve::Rail(w,u)) => format!("a rail at u {u} of a wall {:p} over {:?}",std::sync::Arc::as_ptr(w),w.span()),
-                                    EdgeCurve::Curve(cv) => cv.kind().to_string(),_ => String::new() };
-                                let ends = match &e.curve { EdgeCurve::Curve(cv) => [cv.point(e.t[0]),cv.point(e.t[1])],_ => [[0.;3];2] };
+                                let (what,ends) = match &e.curve {
+                                    EdgeCurve::Curve(cv) => (match cv {
+                                        super::geom::Curve::Rail(w,u) => format!("a rail at u {u} of a wall {:p} over {:?}",std::sync::Arc::as_ptr(w),w.span()),
+                                        _ => cv.kind().to_string(),
+                                    },[cv.point(e.t[0]),cv.point(e.t[1])]),
+                                    EdgeCurve::Degenerate => (String::new(),[[0.;3];2]),
+                                };
                                 let users: Vec<(usize,&str)> = self.faces.iter().enumerate().filter(|(_,g)| g.loops.iter().flatten().any(|y| y.edge == x.edge))
                                     .map(|(gi,g)| (gi,g.name.as_str())).collect();
                                 eprintln!("topo:   edge {} {what} over {:?}, its ends {:?}, its pcurve {:?}, used by {users:?}",x.edge,e.t,ends,x.pcurve);

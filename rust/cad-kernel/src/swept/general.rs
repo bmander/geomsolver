@@ -145,9 +145,8 @@ fn beside_rails(a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,rails: &[Curve],tol:
 /// the sine along it nought throughout, and its sign there rounding's.)
 fn ended_on_rails(c: Curve,a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,rails: &[Curve],tol: f64) -> Curve {
     use crate::util::space::{norm,normalised};
-    let unit = |s: &Surface,p: V| normalised(s.gradient(p)).unwrap_or([0.;3]);
     ended_on(c,a,b,tol,"where the walls touch",&|p: V| {
-        let reach = crate::tolerant::on_meeting(tol,norm(cross(unit(sa,p),unit(sb,p))));
+        let reach = reach(sa,sb,p,tol);
         rails.iter().find_map(|r| {
             let [r0,r1] = crate::query::curve_domain(r)?;
             let f = r.inverse(p);
@@ -170,14 +169,12 @@ fn ended_on_rails(c: Curve,a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,rails: &[
 /// or 8e-7, as the walls' feet were read; its edge 11's 1.6e-5, and its runs' pieces did not
 /// close). An end within its meeting's reach of the rim is carried to the rim's point where that
 /// rate turns over, and to the corner of either run there (`ended_on`).
-fn ended_at_pinch(c: Curve,a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,sheet: &Arc<Sheet>,at: f64,tol: f64) -> Curve {
+fn ended_at_pinch(c: Curve,a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,rim: &Curve,tol: f64) -> Curve {
     use crate::util::space::{norm,normalised};
-    let unit = |s: &Surface,p: V| normalised(s.gradient(p)).unwrap_or([0.;3]);
-    let rim = Curve::Rim(sheet.clone(),at);
-    // the rate across the rim at `u`, off the rim's own way
-    let across = |u: f64| { let (_,su,ss) = sheet.d1([u,at]); let k = dot(ss,su)/dot(su,su).max(1e-300); sub(ss,scale(su,k)) };
+    let Curve::Rim(sheet,at) = rim else { return c };
+    let (sheet,at) = (&**sheet,*at);
     ended_on(c,a,b,tol,"at the pinch it is born at",&|p: V| {
-        let reach = crate::tolerant::on_meeting(tol,norm(cross(unit(sa,p),unit(sb,p))));
+        let reach = reach(sa,sb,p,tol);
         let f = sheet.rim_inverse(at,p);
         let (x,su,_) = sheet.d1([f,at]);
         // (an end lying on the rim, to the tolerance, is on it only at the pinch: carried to the
@@ -186,16 +183,37 @@ fn ended_at_pinch(c: Curve,a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,sheet: &A
         // nothing of the reach, #942 T1d-cube 15°: an end on the rim 4.2e-6 short of its pinch)
         let on = distance(x,p) <= crate::tolerant::ON_CURVE*tol;
         if !on && distance(x,p) > reach { return None }
-        let way = normalised(across(f)).unwrap_or([0.;3]);
+        let way = normalised(across(sheet,at,f)).unwrap_or([0.;3]);
         let mut w = reach/norm(su).max(1e-300);
         let u = loop {
-            if let Some(u) = changed(|u| dot(across(u),way),f,[(f-w).max(0.),(f+w).min(1.)]) { break u }
+            if let Some(u) = changed(|u| dot(across(sheet,at,u),way),f,[(f-w).max(0.),(f+w).min(1.)]) { break u }
             if !on || (f-w <= 0. && f+w >= 1.) { return None }
             w *= 2.;
         };
         let q = sheet.d1([u,at]).0;
-        (on || distance(q,p) <= reach).then_some((q,&rim))
+        (on || distance(q,p) <= reach).then_some((q,rim))
     })
+}
+
+/// A surface's unit normal at its point nearest `p`.
+fn unit(s: &Surface,p: V) -> V { crate::util::space::normalised(s.gradient(p)).unwrap_or([0.;3]) }
+
+/// How far off two walls' meeting a point within the tolerance of both may stand at `p`
+/// (`tolerant::on_meeting`, by the sine of their angle there).
+fn reach(sa: &Surface,sb: &Surface,p: V,tol: f64) -> f64 {
+    crate::tolerant::on_meeting(tol,crate::util::space::norm(cross(unit(sa,p),unit(sb,p))))
+}
+
+/// A fan's rate across its rim at `at`, at `u`: `Sₛ` less its part along the rim.
+fn across(sheet: &Sheet,at: f64,u: f64) -> V {
+    let (_,su,ss) = sheet.d1([u,at]);
+    sub(ss,scale(su,dot(ss,su)/dot(su,su).max(1e-300)))
+}
+
+/// The corner of either wall lying on `r` nearest `q`, where one stands within `within` of it.
+fn corner_on(a: &Brep,b: &Brep,r: &Curve,q: V,within: f64,tol: f64) -> Option<V> {
+    a.vertices.iter().chain(&b.vertices).map(|v| v.p).filter(|&v| distance(v,q) <= within)
+        .filter(|&v| distance(r.point(r.inverse(v)),v) <= tol).min_by(|x,y| distance(*x,q).total_cmp(&distance(*y,q)))
 }
 
 /// **The pinches on a fan's rim at `at`**: where its rate across the rim (`Sₛ` less its part along
@@ -203,16 +221,18 @@ fn ended_at_pinch(c: Curve,a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,sheet: &A
 /// rounding — the points its sheet is singular at, where a crossing of the fan with itself is born.
 fn pinches(sheet: &Sheet,at: f64) -> Vec<f64> {
     const PINCH_LOOKS: usize = 512;
-    let across = |u: f64| { let (_,su,ss) = sheet.d1([u,at]); let k = dot(ss,su)/dot(su,su).max(1e-300); sub(ss,scale(su,k)) };
-    let us: Vec<f64> = (0..=PINCH_LOOKS).map(|k| k as f64/PINCH_LOOKS as f64).collect();
     let mut out = Vec::new();
-    for w in us.windows(2) {
-        // (the way the rate points at the window's start: it turns over where it comes to point back)
-        let way = across(w[0]);
-        if !(dot(across(w[1]),way) < 0.) { continue }
-        let (u,_) = crate::util::roots::bisect(w[0],w[1],|x,y| 0.5*(x+y),|x,y| y-x > f64::EPSILON*(x.abs()+y.abs()).max(1e-300),
-            |m| dot(across(m),way) > 0.);
-        out.push(u);
+    let (mut u0,mut way) = (0.,across(sheet,at,0.));
+    for k in 1..=PINCH_LOOKS {
+        let u1 = k as f64/PINCH_LOOKS as f64;
+        let next = across(sheet,at,u1);
+        // (the way the rate points at a look: it turns over where it comes to point back)
+        if dot(next,way) < 0. {
+            let (u,_) = crate::util::roots::bisect(u0,u1,|x,y| 0.5*(x+y),|x,y| y-x > f64::EPSILON*(x.abs()+y.abs()),
+                |m| dot(across(sheet,at,m),way) > 0.);
+            out.push(u);
+        }
+        (u0,way) = (u1,next);
     }
     out
 }
@@ -243,12 +263,8 @@ fn handle(sheet: &Sheet,at: f64,up: f64,start: Option<V>,[lo,hi]: [f64;2],tol: f
             let (p2,u2,s2) = sheet.d1([x[1],x[2]]);
             let r = sub(p1,p2);
             if norm(r) <= 1e-3*tol { return Some(x) }
-            // [X_u(1)  −X_u(2)  −X_s(2)] δ = −r, by Cramer
-            let (a,b,c) = (u1,scale(u2,-1.),scale(s2,-1.));
-            let det = dot(a,cross(b,c));
-            if !(det.abs() > 0.) { return None }
-            let m = scale(r,-1.);
-            let d = [dot(m,cross(b,c))/det,dot(a,cross(m,c))/det,dot(a,cross(b,m))/det];
+            // [X_u(1)  −X_u(2)  −X_s(2)] δ = −r
+            let d = crate::ssi::solve3(std::array::from_fn(|i| [u1[i],-u2[i],-s2[i]]),scale(r,-1.));
             x = [x[0]+d[0],x[1]+d[1],x[2]+d[2]];
             if !x.iter().all(|v| v.is_finite()) { return None }
         }
@@ -258,17 +274,17 @@ fn handle(sheet: &Sheet,at: f64,up: f64,start: Option<V>,[lo,hi]: [f64;2],tol: f
     let inside = |t: f64,x: [f64;3]| at-t >= lo && x[2] <= hi && (0. ..=1.).contains(&x[0]) && (0. ..=1.).contains(&x[1]);
     // (the first a ten-thousandth of the way: nearer, the three columns all but dependent)
     let t0 = 1e-4*(hi-lo);
-    let mut pts: Vec<(f64,[f64;3])> = Vec::new();
+    let mut table: Vec<(f64,[f64;3])> = Vec::new();
     let first = solve(t0,[up+lambda*t0,up-lambda*t0,at+t0])?;
     if !inside(t0,first) { return None }
-    pts.push((t0,first));
+    table.push((t0,first));
     let mut h = t0;
     loop {
-        let (t,x) = *pts.last()?;
+        let (t,x) = *table.last()?;
         // (the next from the last two carried on)
-        let guess = |dt: f64| match pts.len() {
+        let guess = |dt: f64| match table.len() {
             1 => [x[0]+lambda*dt,x[1]-lambda*dt,x[2]+dt],
-            n => { let (tp,xp) = pts[n-2]; let k = dt/(t-tp); [x[0]+k*(x[0]-xp[0]),x[1]+k*(x[1]-xp[1]),x[2]+k*(x[2]-xp[2])] }
+            n => { let (tp,xp) = table[n-2]; let k = dt/(t-tp); [x[0]+k*(x[0]-xp[0]),x[1]+k*(x[1]-xp[1]),x[2]+k*(x[2]-xp[2])] }
         };
         let next = solve(t+h,guess(h)).filter(|y| inside(t+h,*y));
         match next {
@@ -276,18 +292,17 @@ fn handle(sheet: &Sheet,at: f64,up: f64,start: Option<V>,[lo,hi]: [f64;2],tol: f
                 // (a step no longer than a sixty-fourth of the span, its chord short in space)
                 let far = distance(sheet.d1([x[0],at-t]).0,sheet.d1([y[0],at-t-h]).0);
                 if far > 1e-2*(hi-lo).max(1.) && h > t0 { h *= 0.5; continue }
-                pts.push((t+h,y));
+                table.push((t+h,y));
                 h = (2.*h).min((hi-lo)/64.);
             }
             None if h > 1e-9*(hi-lo) => { h *= 0.5; }
             None => break,
         }
-        if pts.len() > 4096 { break }
+        if table.len() > 4096 { break }
     }
-    if pts.len() < 2 { return None }
+    if table.len() < 2 { return None }
     // the curve: the pinch, then the solved points, by chord length
     let point = |t: f64,x: [f64;3]| sheet.d1([x[0],at-t]).0;
-    let mut table: Vec<(f64,[f64;3])> = pts;
     for _ in 0..8 {
         let mut ps: Vec<V> = vec![x0];
         ps.extend(table.iter().map(|&(t,x)| point(t,x)));
@@ -335,9 +350,7 @@ fn ended_on<'r>(mut c: Curve,a: &Brep,b: &Brep,tol: f64,what: &str,touch: &dyn F
         let Some([t0,t1]) = crate::query::curve_domain(&c) else { return c };
         let p = c.point(if high { t1 } else { t0 });
         let Some((q,r)) = touch(p) else { continue };
-        let corner = a.vertices.iter().chain(&b.vertices).map(|v| v.p).filter(|&v| distance(r.point(r.inverse(v)),v) <= tol)
-            .min_by(|x,y| distance(*x,q).total_cmp(&distance(*y,q))).filter(|&v| distance(v,q) < distance(p,q));
-        let q = corner.unwrap_or(q);
+        let q = corner_on(a,b,r,q,distance(p,q),tol).unwrap_or(q);
         let tc = c.inverse(q);
         // (cut only within the end's half: the branch's other end is never the touch's)
         let mid = 0.5*(t0+t1);
@@ -346,8 +359,7 @@ fn ended_on<'r>(mut c: Curve,a: &Brep,b: &Brep,tol: f64,what: &str,touch: &dyn F
             Curve::BSpline(b) => {
                 let b = if cut { b.segment(if high { [t0,tc] } else { [tc,t1] }) } else { (**b).clone() };
                 // (its end span first made a few times the move long, so the end pole carried there
-                // bends no more of it: a span an eighth of the curve, its end carried 4.2e-6, stood
-                // 1.4e-6 off its walls all along it)
+                // bends no more of it than that: a fitted span can be an eighth of the curve)
                 let [lo,hi] = b.domain();
                 let end = if high { hi } else { lo };
                 let span = 8.*distance(p,q)/crate::util::space::norm(b.d1(end).1).max(1e-300);
@@ -741,6 +753,12 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
     let spans: Vec<Vec<[f64;2]>> = held.iter().map(|&bi| strips[bi].iter().map(|st| st.span).collect()).collect();
     let mut breps = breps;
     let split = crossed(&mut breps,&spans,&surfaces,tol)?;
+    // (each split bearer's runs as the walls they are, once)
+    let walls: Vec<Option<Vec<(Brep,Surface)>>> = split.iter().zip(&breps).map(|(sp,b)| sp.as_ref().map(|(runs,_)| run_walls(b,runs))).collect();
+    let pieces = |x: usize| -> Vec<(&Brep,&Surface)> { match &walls[x] {
+        None => vec![(&breps[x],&surfaces[x])],
+        Some(w) => w.iter().map(|(b,s)| (b,s)).collect(),
+    } };
     let mut given: Vec<Given> = Vec::new();
     let mut per_run: Vec<Given> = Vec::new();
     for x in 0..held.len() { for y in x+1..held.len() {
@@ -763,10 +781,10 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
                         let met = beside(&breps[x],&surfaces[x],&breps[y],&surfaces[y]);
                         curves.extend(met);
                     } else {
-                        for (a,sa) in walls_of(&breps[x],&surfaces[x],&split[x]) { for (b,sb) in walls_of(&breps[y],&surfaces[y],&split[y]) {
-                            let met = beside(&a,&sa,&b,&sb);
+                        for (a,sa) in pieces(x) { for (b,sb) in pieces(y) {
+                            let met = beside(a,sa,b,sb);
                             if crate::debug() { for c in &met { let d = crate::query::curve_domain(c).unwrap_or([0.,1.]); eprintln!("general: given between bearers {bi} and {bj}, run by run: {} from {:?} to {:?}",c.kind(),c.point(d[0]),c.point(d[1])) } }
-                            if !met.is_empty() { per_run.push(Given {surfaces:[sa.clone(),sb],curves:met,touches:Vec::new()}) }
+                            if !met.is_empty() { per_run.push(Given {surfaces:[sa.clone(),sb.clone()],curves:met,touches:Vec::new()}) }
                         } }
                     }
                 }
@@ -830,7 +848,7 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
         Given {surfaces:[surfaces[k].clone(),f.surface.clone()],curves,touches:Vec::new()}
     });
     given.extend(met);
-    let (breps,given) = given_to_runs(breps,&split,&surfaces,given,per_run,tol)?;
+    let (breps,given) = given_to_runs(breps,walls,&split,&surfaces,given,per_run,tol)?;
     let mut out = breps;
     out.extend(poses);
     Ok((out,given))
@@ -913,23 +931,20 @@ fn crossed(breps: &mut [Brep],spans: &[Vec<[f64;2]>],surfaces: &[Surface],tol: f
         // (each two runs met again as the two surfaces they are, so a branch crossing several of a
         // run's stretches is one curve: traced a pair of stretches at a time, its pieces ended some
         // tolerances apart where one stretch gives way to the next, and closed nothing)
-        let on_run = |r: usize| { let mut b = breps[x].clone(); b.faces.retain(|f| f.surface == out[r].1); b.compacted() };
+        let walls = run_walls(&breps[x],&out);
         let mut between: Vec<(usize,usize,Vec<Curve>)> = Vec::new();
         for g in 0..runs { for h in g+1..runs {
             let rails: Vec<Curve> = if out[g].0[1] == out[h].0[0] { vec![Curve::Rim(sheet.clone(),out[g].0[1])] } else { Vec::new() };
-            let (rg,rh) = (on_run(g),on_run(h));
-            let mut met: Vec<Curve> = beside_rails(&rg,&out[g].1,&rh,&out[h].1,&rails,tol).into_iter()
-                .map(|c| if rails.is_empty() { c } else { ended_at_pinch(c,&rg,&out[g].1,&rh,&out[h].1,sheet,out[g].0[1],tol) }).collect();
+            let ((rg,sg),(rh,sh)) = (&walls[g],&walls[h]);
+            let mut met: Vec<Curve> = beside_rails(rg,sg,rh,sh,&rails,tol);
             // (where the two runs share a rim, their crossing from each pinch on it built, and any
             // branch traced to a pinch — the trace's poor copy of it — given no more)
-            if !rails.is_empty() {
+            if let Some(rim) = rails.first() {
                 let at = out[g].0[1];
-                let rim = Curve::Rim(sheet.clone(),at);
-                let corner = |p: V| rg.vertices.iter().chain(&rh.vertices).map(|v| v.p).filter(|&v| distance(rim.point(rim.inverse(v)),v) <= tol)
-                    .min_by(|x,y| distance(*x,p).total_cmp(&distance(*y,p))).filter(|&v| distance(v,p) <= crate::tolerant::ON_CURVE*tol);
+                met = met.into_iter().map(|c| ended_at_pinch(c,rg,sg,rh,sh,rim,tol)).collect();
                 let handles: Vec<(V,Curve)> = pinches(sheet,at).into_iter().filter_map(|u| {
                     let p = sheet.d1([u,at]).0;
-                    let start = corner(p);
+                    let start = corner_on(rg,rh,rim,p,crate::tolerant::ON_CURVE*tol,tol);
                     handle(sheet,at,u,start,[out[g].0[0],out[h].0[1]],tol).map(|c| (start.unwrap_or(p),c))
                 }).collect();
                 if !handles.is_empty() {
@@ -951,29 +966,24 @@ fn crossed(breps: &mut [Brep],spans: &[Vec<[f64;2]>],surfaces: &[Surface],tol: f
 /// A split bearer's runs, each its span and surface, and the curves given between each two runs.
 type Runs = (Vec<([f64;2],Surface)>,Vec<(usize,usize,Vec<Curve>)>);
 
-/// A bearer's wall as the pieces it is met in: the whole of it, or each of its runs where it passes
-/// back through itself (`crossed`), each the faces on it and its surface.
-fn walls_of(b: &Brep,whole: &Surface,split: &Option<Runs>) -> Vec<(Brep,Surface)> {
-    match split {
-        None => vec![(b.clone(),whole.clone())],
-        Some((runs,_)) => runs.iter().map(|r| { let mut c = b.clone(); c.faces.retain(|f| f.surface == r.1); (c.compacted(),r.1.clone()) }).collect(),
-    }
+/// A split bearer's runs as the walls they are (`crossed`): each the faces on it and its surface.
+fn run_walls(b: &Brep,runs: &[([f64;2],Surface)]) -> Vec<(Brep,Surface)> {
+    runs.iter().map(|r| { let mut c = b.clone(); c.faces.retain(|f| f.surface == r.1); (c.compacted(),r.1.clone()) }).collect()
 }
 
 /// **The meetings given of split walls, given of their runs** (#942 T1d-cube): each split bearer a
 /// candidate per run, and each meeting given of its whole wall given of each run (`on_run`); with
 /// `per_run`, the meetings found run by run, joined to their runs' meetings.
-fn given_to_runs(breps: Vec<Brep>,split: &[Option<Runs>],surfaces: &[Surface],given: Vec<crate::boolean::Given>,
-    per_run: Vec<crate::boolean::Given>,tol: f64) -> Result<(Vec<Brep>,Vec<crate::boolean::Given>),Unbuilt> {
+fn given_to_runs(breps: Vec<Brep>,walls: Vec<Option<Vec<(Brep,Surface)>>>,split: &[Option<Runs>],surfaces: &[Surface],
+    given: Vec<crate::boolean::Given>,per_run: Vec<crate::boolean::Given>,tol: f64) -> Result<(Vec<Brep>,Vec<crate::boolean::Given>),Unbuilt> {
     use crate::boolean::Given;
-    if split.iter().all(Option::is_none) {
-        let mut given = given;
-        given.extend(per_run);
-        return Ok((breps,given))
-    }
+    if split.iter().all(Option::is_none) { return Ok((breps,given)) }
     // (each run a candidate of its own: a candidate is one sheet, its faces never met with one
     // another, and two runs that cross are met as two candidates are)
-    let breps: Vec<Brep> = breps.iter().zip(surfaces).zip(split).flat_map(|((b,s),sp)| walls_of(b,s,sp).into_iter().map(|w| w.0)).collect();
+    let breps: Vec<Brep> = breps.into_iter().zip(walls).flat_map(|(b,w)| match w {
+        None => vec![b],
+        Some(w) => w.into_iter().map(|w| w.0).collect(),
+    }).collect();
     // each meeting given of a split bearer's whole wall, given of each of its runs, each curve as
     // much of it as lies on the run (a given curve lies on both its surfaces, and a run's is its wall
     // over the run alone): a rail, a path over the roll, over the run's span; any other cut to the
@@ -1053,24 +1063,11 @@ fn on_wall(c: &Curve,wall: &Surface,tol: f64) -> Vec<Curve> {
     const LOOKS: usize = 64;
     let Some([t0,t1]) = crate::query::curve_domain(c) else { return vec![c.clone()] };
     let on = |t: f64| { let p = c.point(t); distance(wall.point(wall.inverse(p)),p) <= 1e3*tol };
-    let at: Vec<(f64,bool)> = (0..=LOOKS).map(|k| { let t = t0+(t1-t0)*k as f64/LOOKS as f64; (t,on(t)) }).collect();
-    if at.iter().all(|x| x.1) { return vec![c.clone()] }
+    let pieces = super::shadow::stretches(&on,[t0,t1],LOOKS);
+    if pieces == [[t0,t1]] { return vec![c.clone()] }
     if !matches!(c,Curve::BSpline(_) | Curve::Traced(_)) {
-        return if at.iter().any(|x| x.1) { vec![c.clone()] } else { Vec::new() }
+        return if pieces.is_empty() { Vec::new() } else { vec![c.clone()] }
     }
-    // each change between two looks, found by halving: where the curve leaves the wall or comes on it
-    let change = |a: f64,b: f64,from: bool| crate::util::roots::bisect(a,b,|x,y| 0.5*(x+y),|x,y| y-x > f64::EPSILON*(x.abs()+y.abs()).max(1.),
-        |m| on(m) == from);
-    let mut pieces: Vec<[f64;2]> = Vec::new();
-    let mut start = at[0].1.then_some(t0);
-    for w in at.windows(2) {
-        match (w[0].1,w[1].1) {
-            (true,false) => { if let Some(s) = start.take() { pieces.push([s,change(w[0].0,w[1].0,true).0]) } }
-            (false,true) => { start = Some(change(w[0].0,w[1].0,false).1) }
-            _ => {}
-        }
-    }
-    if let Some(s) = start { pieces.push([s,t1]) }
     pieces.into_iter().filter(|&[a,b]| b > a).filter_map(|[a,b]| match c {
         Curve::BSpline(sp) => Some(Curve::BSpline(Arc::new(sp.segment([a,b])))),
         Curve::Traced(tr) => {

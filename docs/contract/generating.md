@@ -2014,11 +2014,7 @@ and back along itself 3e-7 apart, a crossing 5.7e-6 off any of them left a piece
 meeting found run by run joins what its two runs are given. Any other curve given of the whole
 wall is cut to the stretches of it that lie on a run's wall (`on_wall`: read at 64 places, on it
 within what a patch is read to, `1e3 tol`, each change halved to the rounding), never given whole
-where one point stood within the run. **The Boolean keeps a given span it cannot read on a patch**
-(`boolean`'s `kept`): a given meeting's curves lie on both its surfaces as given, and two runs of the
-15° cube's fan, given where they cross up to the pinch it is born at, had the nearest foot of a
-span's middle on either run fall on its other fold, 4.5e-4 off, and the span was dropped from both
-faces. The cube tumbled 15° is built (`swept_general`'s gate, held to membership through its box: a
+where one point stood within the run (`shadow::stretches`). The cube tumbled 15° is built (`swept_general`'s gate, held to membership through its box: a
 count of 40000 points gives 3.463 ± 0.018 against its 3.4739).
 **A fan's crossing with itself is built from the pinch it is born at** (#942 T1d-cube,
 `general::pinches`, `general::handle`): where two runs of a fan share a rim, the fan's sheet is

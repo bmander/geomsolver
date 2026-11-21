@@ -318,53 +318,60 @@ impl Sheet {
     pub fn inverse(&self,p: V) -> Uv {
         let key = self as *const Sheet as usize;
         let on = crate::util::fmath::HALF_READ*(1.+dot(p,p).sqrt());
-        let warm = crate::util::warm::get(crate::util::warm::Kind::Wall,key).map(|f| self.newton(p,f))
-            .map(|uv| (distance(self.d1(uv).0,p),uv));
-        let uv = match warm { Some((d,uv)) if d <= on => uv,_ => {
-            let searched = self.searched(p);
-            match warm { Some((d,uv)) if d < distance(self.d1(searched).0,p) => uv,_ => searched }
-        } };
+        let warm = crate::util::warm::get(crate::util::warm::Kind::Wall,key).map(|f| self.settled(p,f));
+        let (uv,_) = match warm {
+            Some((uv,d)) if d <= on => (uv,d),
+            _ => {
+                let found = self.searched(p,warm.map_or(f64::INFINITY,|w| w.1));
+                match warm { Some(w) if w.1 < found.1 => w,_ => found }
+            }
+        };
         crate::util::warm::put(crate::util::warm::Kind::Wall,key,uv);
         uv
     }
-    /// `inverse`'s search: Gauss–Newton from the nearest of the grid.
-    fn searched(&self,p: V) -> Uv {
-        {
-            let reach = |b: &Box3| { let gap: V = std::array::from_fn(|i| (b.0[i]-p[i]).max(p[i]-b.1[i]).max(0.)); norm(gap)*(1.-1e-12) };
-            let mut order: Vec<(f64,usize)> = self.boxes.iter().enumerate().map(|(j,b)| (reach(b),j)).collect();
-            order.sort_by(|x,y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
-            // (the nearest few of the grid, each settled and the nearest kept: a wall passing within
-            // a grid's step of itself — a fan's fold — has its nearest grid point on the other
-            // layer, #942 T1d-cube)
-            const STARTS: usize = 4;
-            let mut best: Vec<(f64,Uv)> = Vec::new();
-            for (bound,j) in order {
-                if best.len() == STARTS && bound > best[STARTS-1].0 { break }
-                let sp = self.stations.spans[j];
-                for k in 0..=4 {
-                    let s = sp[0]+(sp[1]-sp[0])*k as f64/4.;
-                    let n = &self.numbers(s);
-                    for i in 0..=16 {
-                        let u = i as f64/16.;
-                        let d = distance(self.at(n,u).0,p);
-                        if best.len() < STARTS || d < best[best.len()-1].0 {
-                            let at = best.partition_point(|x| x.0 <= d);
-                            best.insert(at,(d,[u,s]));
-                            best.truncate(STARTS);
-                        }
+    /// `inverse`'s search: the nearest few of the grid, read no farther than `within` (where a foot
+    /// that near is in hand), each settled and the nearest kept. (A wall passing within a grid's
+    /// step of itself — a fan's fold — has its nearest grid point on the other layer, #942 T1d-cube.)
+    fn searched(&self,p: V,within: f64) -> (Uv,f64) {
+        const STARTS: usize = 4;
+        let reach = |b: &Box3| { let gap: V = std::array::from_fn(|i| (b.0[i]-p[i]).max(p[i]-b.1[i]).max(0.)); norm(gap)*(1.-1e-12) };
+        let mut order: Vec<(f64,usize)> = self.boxes.iter().enumerate().map(|(j,b)| (reach(b),j)).collect();
+        order.sort_by(|x,y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
+        // each start: its distance and its parameters
+        let mut best: Vec<(f64,Uv)> = Vec::new();
+        let worst = |best: &Vec<(f64,Uv)>| if best.len() == STARTS { best[STARTS-1].0 } else { f64::INFINITY };
+        for (bound,j) in order {
+            if bound > worst(&best).min(within) { break }
+            let sp = self.stations.spans[j];
+            let step = 0.25*(sp[1]-sp[0]);
+            for k in 0..=4 {
+                let s = sp[0]+step*k as f64;
+                let n = &self.numbers(s);
+                for i in 0..=16 {
+                    let u = i as f64/16.;
+                    let d = distance(self.at(n,u).0,p);
+                    if d < worst(&best) {
+                        let at = best.partition_point(|x| x.0 <= d);
+                        best.insert(at,(d,[u,s]));
+                        best.truncate(STARTS);
                     }
                 }
             }
-            best.iter().map(|&(_,uv)| self.newton(p,uv)).map(|uv| (distance(self.d1(uv).0,p),uv))
-                .fold((f64::INFINITY,[0.;2]),|a,b| if b.0 < a.0 { b } else { a }).1
         }
+        // (every start settled, the nearest kept: a point on a fan's double curve has a foot on each
+        // layer at nought, and which of them a search takes is to be the same however it is asked)
+        best.iter().map(|&(_,uv)| self.settled(p,uv)).fold(([0.;2],f64::INFINITY),|a,b| if b.1 < a.1 { b } else { a })
     }
+    /// `newton`, and how far its point stands from `p`.
+    fn settled(&self,p: V,uv: Uv) -> (Uv,f64) { let uv = self.newton(p,uv); (uv,distance(self.d1(uv).0,p)) }
     /// **The parameters of the wall's point nearest `p`, from `uv`** — Levenberg–Marquardt over the
     /// wall's domain: each step solves `(JᵀJ + μ diag JᵀJ) δ = −Jᵀe`, `J = [Sᵤ Sₛ]`, and is taken
     /// only where it comes nearer `p`, `μ` falling by three where it does and rising fourfold where
     /// it does not; a step leaving the domain is held at its bound and the other parameter stepped
     /// alone along it (projected: the foot on a rim or a rail is that curve's nearest point). With
-    /// `μ` small it is Gauss–Newton, as quick where the wall is well read.
+    /// `μ` small it is Gauss–Newton, as quick where the wall is well read; it stops where a step
+    /// moves the parameters by no more than their rounding, or one refused moved them by no more than
+    /// a millionth of a millionth.
     ///
     /// (#942 T1d-cube: beside a fan's pinch its two derivatives all but parallel, a full Gauss–Newton
     /// step from beside the foot ran along the direction the wall barely moves in, past a run's end,
@@ -374,15 +381,14 @@ impl Sheet {
         let [a,b] = self.span();
         let bound = |u: f64| if self.closed { u } else { u.clamp(0.,1.) };
         let mut uv = [bound(uv[0]),self.held(uv[1])];
-        let (mut x,mut su,mut ss) = self.d1(uv);
+        let (x,mut su,mut ss) = self.d1(uv);
         let mut e = sub(x,p);
         let mut off = dot(e,e);
         let mut mu = 1e-3;
-        for _ in 0..60 {
+        'steps: for _ in 0..60 {
             if !(off > 0.) { break }
             let (a11,a12,a22) = (dot(su,su),dot(su,ss),dot(ss,ss));
             let (b1,b2) = (dot(su,e),dot(ss,e));
-            let mut taken = None;
             for _ in 0..24 {
                 let (h11,h22) = (a11*(1.+mu),a22*(1.+mu));
                 let det = h11*h22-a12*a12;
@@ -397,17 +403,20 @@ impl Sheet {
                     (true,false) if h22 > 0. => [u_held,self.held(uv[1]-b2/h22)],
                     _ => [u_held,s_held],
                 };
+                let moved = (next[0]-uv[0]).abs().max((next[1]-uv[1]).abs()/(b-a));
+                if moved < 1e-15 { break 'steps }
                 let (nx,nsu,nss) = self.d1(next);
                 let ne = sub(nx,p);
-                if dot(ne,ne) < off { taken = Some((next,nx,nsu,nss,ne)); mu = (mu/3.).max(1e-12); break }
+                if dot(ne,ne) < off {
+                    (uv,su,ss,e,off) = (next,nsu,nss,ne,dot(ne,ne));
+                    mu = (mu/3.).max(1e-12);
+                    continue 'steps
+                }
+                if moved < 1e-12 { break 'steps }
                 mu *= 4.;
             }
-            let Some((next,nx,nsu,nss,ne)) = taken else { break };
-            let moved = (next[0]-uv[0]).abs().max((next[1]-uv[1]).abs()/(b-a));
-            (uv,x,su,ss,e,off) = (next,nx,nsu,nss,ne,dot(ne,ne));
-            if moved < 1e-15 { break }
+            break
         }
-        let _ = x;
         if self.closed { uv[0] = uv[0].rem_euclid(1.); }
         uv
     }

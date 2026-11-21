@@ -92,32 +92,28 @@ impl BSpline {
     pub fn with_knot(&self,t: f64) -> BSpline {
         let [lo,hi] = self.domain();
         if !(t > lo && t < hi) { return self.clone() }
-        let p = self.degree;
-        let mut knots = self.knots.clone();
-        if let Some(w) = &self.weights {
-            let mut h: Vec<Vec<[f64;4]>> = self.poles.iter().zip(w).map(|(q,&w)| vec![[w*q[0],w*q[1],w*q[2],w]]).collect();
-            insert(&mut knots,&mut h,p,t);
-            let poles = h.iter().map(|r| [r[0][0]/r[0][3],r[0][1]/r[0][3],r[0][2]/r[0][3]]).collect();
-            return BSpline {degree:p,knots,poles,weights:Some(h.iter().map(|r| r[0][3]).collect())}
-        }
-        let mut rows: Vec<Vec<V>> = self.poles.iter().map(|&q| vec![q]).collect();
-        insert(&mut knots,&mut rows,p,t);
-        BSpline {degree:p,knots,poles:rows.into_iter().map(|r| r[0]).collect(),weights:None}
+        let (mut knots,mut h) = (self.knots.clone(),self.lifted());
+        insert(&mut knots,&mut h,self.degree,t);
+        self.dropped(knots,h)
     }
     /// The curve over `[a, b]` (within its domain) alone, exactly (`segment`): the same points at
     /// the same parameters, clamped there; a rational one's in homogeneous coordinates.
     pub fn segment(&self,[a,b]: [f64;2]) -> BSpline {
         let [lo,hi] = self.domain();
-        let (a,b,p) = (a.max(lo),b.min(hi),self.degree);
-        if let Some(w) = &self.weights {
-            let h: Vec<Vec<[f64;4]>> = self.poles.iter().zip(w).map(|(q,&w)| vec![[w*q[0],w*q[1],w*q[2],w]]).collect();
-            let (knots,h) = segment(&self.knots,&h,p,a,b);
-            let poles = h.iter().map(|r| [r[0][0]/r[0][3],r[0][1]/r[0][3],r[0][2]/r[0][3]]).collect();
-            return BSpline {degree:p,knots,poles,weights:Some(h.iter().map(|r| r[0][3]).collect())}
-        }
-        let rows: Vec<Vec<V>> = self.poles.iter().map(|&q| vec![q]).collect();
-        let (knots,rows) = segment(&self.knots,&rows,p,a,b);
-        BSpline {degree:p,knots,poles:rows.into_iter().map(|r| r[0]).collect(),weights:None}
+        let (knots,h) = segment(&self.knots,&self.lifted(),self.degree,a.max(lo),b.min(hi));
+        self.dropped(knots,h)
+    }
+    /// Its poles as rows of one homogeneous point, `(w x, w y, w z, w)` (`w` 1 unless rational):
+    /// what `insert` and `segment` combine.
+    fn lifted(&self) -> Vec<Vec<[f64;4]>> {
+        let w = |i: usize| self.weights.as_ref().map_or(1.,|w| w[i]);
+        self.poles.iter().enumerate().map(|(i,q)| { let w = w(i); vec![[w*q[0],w*q[1],w*q[2],w]] }).collect()
+    }
+    /// A curve of its degree and kind from `knots` and `lifted` rows.
+    fn dropped(&self,knots: Vec<f64>,h: Vec<Vec<[f64;4]>>) -> BSpline {
+        let poles = h.iter().map(|r| [r[0][0]/r[0][3],r[0][1]/r[0][3],r[0][2]/r[0][3]]).collect();
+        let weights = self.weights.is_some().then(|| h.iter().map(|r| r[0][3]).collect());
+        BSpline {degree:self.degree,knots,poles,weights}
     }
     /// The distinct knots strictly inside `[a, b]`, where the curve's third derivative may jump.
     pub fn breaks(&self,[a,b]: [f64;2]) -> Vec<f64> {

@@ -19,13 +19,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   `nurbs::BSpline::with_knot`; a branch's end carried onto a rail or a pinch bends only its last
   span. The 15° cube's volume moves by 4e-8 with its crossing built.
 
-- **The cube tumbling 15° is built** (#942 T1d-cube, `swept::general`, `boolean`): a fan's runs are
+- **The cube tumbling 15° is built** (#942 T1d-cube, `swept::general`): a fan's runs are
   found before the bearers are met, and two fans' branches beside a shared rail are traced on each
   run's own wall (traced on the whole wall a fan crossing itself folds over, they ran 1e-5 off both
   walls); any other curve given of a whole wall is cut to what lies on each run's wall, not given
-  whole. The Boolean keeps a span of a given meeting it cannot read on a surface's patch (the
-  nearest foot of a span's middle fell on a run's other fold, and the span was dropped from both
-  faces). The bench's 75° cube now gets through its trim, refused by the solid's check (a loop
+  whole. The bench's 75° cube now gets through its trim, refused by the solid's check (a loop
   breaking in its parameters by 6.8e-7 beside a run's end); the 10° and 12° cubes are refused in
   their trim, with no fan crossing itself.
 
