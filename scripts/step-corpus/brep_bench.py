@@ -44,6 +44,10 @@ MANIFEST = os.path.join(REPO, "rust", "gcs-core", "tests", "step_corpus", "brep_
 # the bench's grade (harness/run.py's EXACT), where a case gives no tolerance of its own
 EXACT = 1e-6
 JOBS = int(os.environ.get("JOBS", "2"))
+# the OCCT runner's interpreter: an environment of its own with the OCP the bench's cases need
+OCCT_OCP = "8.0.1.1.0"
+OCCT_PYTHON = os.environ.get("OCCT_PYTHON", os.path.join(CORPUS, "build", "venv-ocp8", "bin",
+                                                         "python"))
 
 
 def kernels():
@@ -109,7 +113,13 @@ def build(names):
         if name == "geomsolver":
             ok = build_geomsolver()
         elif name == "occt":
-            ok = subprocess.run([sys.executable, "-c", "import OCP"]).returncode == 0
+            # the bench's OCCT cases use OCP 8 (`OCP.collections`); the oracle stays on the
+            # system's OCP, so the runner has an environment of its own
+            venv = os.path.dirname(os.path.dirname(OCCT_PYTHON))
+            if not os.path.exists(OCCT_PYTHON):
+                subprocess.run([sys.executable, "-m", "venv", venv], check=True)
+            ok = subprocess.run([OCCT_PYTHON, "-m", "pip", "install", "-q",
+                                 f"cadquery-ocp=={OCCT_OCP}"]).returncode == 0
         elif k.get("build", [None])[0] == "cargo":
             ok = subprocess.run(["cargo", "build", "-j", os.environ.get("CARGO_JOBS", "2"),
                                  "--release", "--manifest-path",
@@ -229,7 +239,8 @@ def run(names, jobs, timeout, prefix, force):
                 time.sleep(0.05)
             tmp = os.path.join(CORPUS, "build", "runs", name, c["id"].replace("/", "--"))
             os.makedirs(tmp, exist_ok=True)
-            argv = [a if a != "python3" else sys.executable for a in k["command"]]
+            python = OCCT_PYTHON if name == "occt" else sys.executable
+            argv = [a if a != "python3" else python for a in k["command"]]
             argv = [os.path.join(BENCH, a) if a.startswith("kernels/") else a for a in argv]
             p = subprocess.Popen(argv + [c["id"], os.path.join(tmp, "result.stl"),
                                          os.path.join(tmp, "result.step")], cwd=BENCH,

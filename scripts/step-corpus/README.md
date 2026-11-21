@@ -43,6 +43,7 @@ python3 -I $S/brep_bench.py run occt cad-kernel geomsolver kentron arris vcad br
 python3 -I $S/brep_bench.py references                      # the reference shapes' files
 python3 -I $S/variants.py --jobs 2                          # the habits, over the sample
 python3 -I $S/oracle.py --corpus --jobs 2                   # OCCT's reading of every file
+python3 -I $S/oracle.py --remap                             # faces named again (after a stepscan change)
 python3 -I $S/table.py measure --jobs 2                     # the bench measurer's
 python3 -I $S/table.py                                      # reference.tsv, committed and in $STEP_CORPUS
 python3 -I $S/brep_bench.py manifest                        # brep_bench_cases.tsv (on a new bench commit)
@@ -58,7 +59,9 @@ corpus whose files differ from the committed table's is reported **stale** by th
 
 Kernels of brep-bench's `kernels.json` with `"step": true` that build here from crates.io:
 `cad-kernel` (=0.15.0), `kentron`, `arris`, `vcad`, `brepkit`, `next.BREP`, `springrep`; `occt`
-runs on the installed OCP; `geomsolver` is `solventc` at the tag its `build.py` names, built from
+runs in an environment of its own, `build/venv-ocp8` with cadquery-ocp 8.0.1 (the bench's cases
+use `OCP.collections`, which 7.9 lacks; `build occt` makes it), while the oracle reads with the
+system's 7.9.3; `geomsolver` is `solventc` at the tag its `build.py` names, built from
 this repository's own history (`git archive`, no network). Not built: `solidcraft`, `popkern`,
 `geop`, `cadrs` (their sources are on GitHub repositories this machine cannot reach), `aetheris`
 (.NET 10 and a GitHub source), `smlib` (no STEP writer), `monstertruck` (no runner).

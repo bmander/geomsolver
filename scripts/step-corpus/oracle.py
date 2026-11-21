@@ -224,21 +224,44 @@ def oracle(path, faces=False):
     out["healed_valid"] = h["valid"]
     out["healed_tol_length"] = h["tol_length"]
     if faces:
-        listed = [f for s in scan["solids"] for f in s["face_list"]]
-        mapped_ = len(listed) == len(rows) and all(r[1] == f[1] or f[1] in ("revolution",
-                                                   "extrusion", "offset")
-                                                   for r, f in zip(rows, listed))
-        out["faces_mapped"] = mapped_
-        for r, f in zip(rows, listed):
-            r.insert(1, f[0] if mapped_ else 0)
-            r.insert(3, f[1])
-        if not mapped_:
-            for r in rows[len(listed):]:
-                r.insert(1, 0)
-                r.insert(3, "?")
+        out["faces_mapped"] = name_faces(rows, scan)
         out["face_rows"] = rows
     out["seconds"] = round(time.time() - clock, 2)
     return out
+
+
+def name_faces(rows, scan):
+    """Each of OCCT's face rows `[index, kind, …]` given, after its index, the ADVANCED_FACE it
+    was read from and that entity's surface kind: OCCT makes a solid's faces in the order its
+    shells list them, and whether the two lists' kinds agree face by face is the check (0 for the
+    entity where they do not). Whether they all agreed."""
+    listed = [f for s in scan["solids"] for f in s["face_list"]]
+    mapped = len(listed) == len(rows) and all(
+        r[1] == f[1] or f[1] in ("revolution", "extrusion", "offset") for r, f in zip(rows, listed))
+    for k, r in enumerate(rows):
+        f = listed[k] if k < len(listed) else (0, "?")
+        r.insert(1, f[0] if mapped else 0)
+        r.insert(3, f[1])
+    return mapped
+
+
+def remap(root):
+    """The faces of every file already read named again (`name_faces`), from its face table and
+    the text: what a change to the text's scan needs, without OCCT."""
+    for f in corpus_files(root):
+        js, tsv = (os.path.join(root, "oracle", f + x) for x in (".json", ".faces.tsv"))
+        if not (os.path.exists(js) and os.path.exists(tsv)):
+            continue
+        got = json.load(open(js))
+        if "error" in got:
+            continue
+        rows = [line.split("\t") for line in open(tsv).read().splitlines()[1:]]
+        rows = [[int(r[0]), r[2]] + r[4:] for r in rows]
+        got["faces_mapped"] = name_faces(rows, stepscan.scan(os.path.join(root, f)))
+        with open(tsv, "w") as fh:
+            fh.write(FACE_HEADER + "\n" + "".join("\t".join(str(x) for x in r) + "\n" for r in rows))
+        with open(js, "w") as fh:
+            json.dump(got, fh, indent=1, sort_keys=True)
 
 
 FACE_HEADER = "index\tentity\tkind\tstep_kind\torientation\tarea\tcx\tcy\tcz"
@@ -329,6 +352,9 @@ def main():
             fh.write(faces_tsv(rows))
         with open(into + ".json", "w") as fh:
             json.dump(got, fh, indent=1, sort_keys=True)
+        return
+    if args[:1] == ["--remap"]:
+        remap(corpus())
         return
     if args[:1] == ["--corpus"]:
         jobs, timeout, only = 2, 1800.0, []

@@ -83,7 +83,8 @@ def kinds_of(rhs):
             m = NAME.match(rhs, i)
             if m:
                 names.append(m.group(1))
-                i = m.end() - 1
+                i = m.end() - 1  # at the part's `(`, which the next turn counts
+                continue
         i += 1
     return names
 
