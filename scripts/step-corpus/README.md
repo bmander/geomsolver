@@ -11,6 +11,7 @@ reference: `rust/gcs-core/tests/step_corpus/`.
 |---|---|
 | `cadgenbench.tsv` | the 32 CADGenBench inputs by id, with their sizes and SHA-256: `fetch.sh` checks every byte against it |
 | `brep_bench_cases.tsv` | brep-bench's settled cases (its commit in the first line): closed forms of volume and area, the tolerance the bench grades at, the centroid where the case gives one |
+| `commercial_files.tsv` | the files commercial systems wrote, by path, with their sizes, SHA-256, and the archive and member each is taken from: `fetch.sh` checks every byte against it |
 | `reference.tsv` | a row per file of the corpus: its DATA section's SHA-256, the entities its solids hold, OCCT's reading (healing off, and what healing changed), brep-bench's measurer's, and the reference volume and area with the bar a reading must come within (`table.py` says how each is chosen) |
 
 ## The corpus
@@ -22,6 +23,9 @@ $STEP_CORPUS/
   brep-bench/<kernel>/runs.tsv                each run: ok, refused (why), no-step, crashed, timeout
   brep-bench/reference/<category>/<case>.step a case's reference shape (integration/benchy)
   variants/<habit>/<source path>              a sample written again by OCCT: nopcurves, ap203, ap242, inches
+  commercial/<source>/<file>.stp              files commercial CAD systems wrote (below)
+  mutants/<kind>/<source>.<k>.step            corpus files each broken by one edit (below)
+  mutants/manifest.tsv                        each mutant's source, kind, entity and edit
   oracle/<path>.json, .faces.tsv, .mass.json  OCCT's reading, per face, and the bench measurer's
   reference.tsv                               the table, as table.py last wrote it
   build/                                      the bench's copy, the runners' builds, logs
@@ -36,7 +40,7 @@ take `--jobs 2`/`CARGO_JOBS=2`.
 ```sh
 export STEP_CORPUS=/home/user/step-corpus BREP_BENCH=/home/user/brep-bench
 S=scripts/step-corpus
-sh $S/fetch.sh                                              # CADGenBench, checked byte for byte
+sh $S/fetch.sh                                              # CADGenBench and the commercial files, checked byte for byte
 python3 -I $S/brep_bench.py prepare                         # copy the bench into build/
 python3 -I $S/brep_bench.py build mass occt cad-kernel geomsolver kentron arris vcad brepkit next.BREP springrep
 python3 -I $S/brep_bench.py run occt cad-kernel geomsolver kentron arris vcad brepkit next.BREP springrep --jobs 2
@@ -48,6 +52,10 @@ python3 -I $S/table.py measure --jobs 2                     # the bench measurer
 python3 -I $S/table.py                                      # reference.tsv, committed and in $STEP_CORPUS
 python3 -I $S/brep_bench.py manifest                        # brep_bench_cases.tsv (on a new bench commit)
 python3 -I $S/brep_bench.py census                          # entity kinds per source
+python3 -I $S/commercial.py                                 # each commercial file's writer
+python3 -I $S/mutants.py make                               # the mutants (after table.py)
+python3 -I $S/mutants.py oracle --jobs 2                    # OCCT's reading of each
+python3 -I $S/mutants.py table                              # step_mutants/mutants.tsv, committed
 ```
 
 Every step is idempotent: a file already made, read or measured (by its DATA section's hash) is
@@ -65,6 +73,58 @@ system's 7.9.3; `geomsolver` is `solventc` at the tag its `build.py` names, buil
 this repository's own history (`git archive`, no network). Not built: `solidcraft`, `popkern`,
 `geop`, `cadrs` (their sources are on GitHub repositories this machine cannot reach), `aetheris`
 (.NET 10 and a GitHub source), `smlib` (no STEP writer), `monstertruck` (no runner).
+
+## Files commercial systems wrote
+
+`commercial/` holds what commercial CAD systems export, the habits of the writers the stage names
+("tolerant edges and the other habits of commercial writers"). All are public domain (works of the
+US government, 17 U.S.C. 105), fetched by `fetch.sh` from nist.gov:
+
+* `commercial/nist-pmi/` — 33 files of NIST's MBE PMI Validation and Conformance Testing project
+  (`NIST-PMI-STEP-Files.zip`): the CTC, FTC and STC test parts, each one solid, exported to
+  AP203 (geometry only, and with graphical PMI) and AP242 editions 1–3 (with semantic PMI) by the
+  project's CAD systems (CATIA V5, Creo, NX, SolidWorks, Inventor), 7.6 kB to 6.1 MB. NIST removed
+  the originating system from their headers; `commercial.py` names each file's writer from habits
+  of its DATA section (its docstring says which), and is no more certain than they are.
+  `nist_ftc_08_asme1_ap242-e1-tg.stp` holds tessellated faces and no solid (`ref_from` `refuse`).
+* `commercial/nist-d2mi/` — the five STEP files of NIST's Design to Manufacturing and Inspection
+  project (`NIST-D2MI-Models.zip`): four written by NX 8.5 through ST-Developer (AP203), one by
+  CT CoreTechnologie's 3D_Evolution (AP242, the NX part translated). Their headers name both.
+
+Their rows are in `reference.tsv` under `commercial/`, made as the others' (`oracle.py --corpus`,
+`table.py measure`, `table.py`). Most hold PMI and some construction surfaces
+(`SHELL_BASED_SURFACE_MODEL`) beside the one solid; many are in inches. brep-bench's measurer
+reads inches as millimetres (above), so most rows are OCCT's alone, or `occt!` where the measurer
+read the inch file. Not reached from here: CAx-IF's public files (www.cax-if.org refused by this
+machine's proxy), GrabCAD and TraceParts (refused); the ABC dataset (Onshape, archive.nyu.edu)
+comes in 7z chunks of gigabytes with no extractor here; the Fusion 360 Gallery's licence is for
+research use and does not say redistribution is allowed.
+
+`python3 -I scripts/step-corpus/commercial.py SURVEY.txt` tallies a `step_survey` run over
+`$STEP_CORPUS/commercial/` by writer and refusal.
+
+## Mutants
+
+`mutants.py` breaks small corpus files on purpose, each by one edit of its text that leaves it
+well-formed Part 21 — a face's, an oriented edge's, an edge's or a bound's sense flipped, a face
+dropped from its shell or listed twice, an edge's vertices swapped, a vertex moved by a thousandth
+of the part and by half of it, a radius scaled, a direction negated, a knot or a weight changed, a
+pcurve on another surface, the length unit changed, the uncertainty made huge or zero, a reference
+to an entity of the wrong type, to none, and a face whose surface is itself — and OCCT reads each
+as it reads the corpus. Its docstring says how the sources are chosen (four per writer, at most
+40 kB, each OCCT reads valid and unhealed; 39 files, 920 mutants) and what each mutant must be
+read to: `refuse` where OCCT reads no solid of positive volume (an open or inverted shell, a
+crash, a hang), finds it invalid with its measures moved, or reads it only with its tolerances
+raised past a part in fifty; `disputed` where OCCT's healing reads it otherwise or its analyzer
+finds a defect that moves nothing; else OCCT's reading at the bar one reader's reading has.
+
+The gate is `step_mutants::no_mutant_is_read_wrong` (rust/gcs-core/tests/step_mutants.rs, behind
+`#[ignore]` as the corpus's, run the same way with `-- step_mutants:: --ignored`): every mutant
+refused, or read to its row's solid within the bar; none read from a `refuse` row; no panic; none
+past 60 s. It prints the progress report and a tally by mutation. `step_mutants.rs` also holds
+two fast tests the ordinary suite runs, needing no corpus: mutants of files the kernel writes
+(refused, or read to the solid's own measures where the edit leaves or scales it), and a written
+file truncated, its bytes replaced and its lines shuffled, read without a panic.
 
 ## The gate
 

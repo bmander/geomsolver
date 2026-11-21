@@ -36,16 +36,16 @@
 use gcs_core::brep::props::{area,volume};
 use gcs_core::brep::step_read::{read,Given,Refusal};
 use std::collections::BTreeSet;
-use std::path::PathBuf;
+use std::path::{Path,PathBuf};
 use std::sync::OnceLock;
-use std::time::Instant;
+use std::time::{Duration,Instant};
 
 /// The committed table, read when the tests run (a table regenerated needs no rebuild).
 const TABLE: &str = concat!(env!("CARGO_MANIFEST_DIR"),"/tests/step_corpus/reference.tsv");
 
-/// A file's row of the reference table.
-struct Row {
-    path: String,
+/// A file's row of the reference table (and of `step_mutants`'s, which has its columns).
+pub(crate) struct Row {
+    pub(crate) path: String,
     data_sha256: String,
     solids: usize,
     /// The entities its solids hold: ADVANCED_FACEs, EDGE_CURVEs and VERTEX_POINTs, each once.
@@ -57,20 +57,24 @@ struct Row {
     /// Where the reference comes from: `closed` (the case's closed form), `mass+occt`, `mass`,
     /// `occt`, `source:…`; `refuse` for a file that represents no solid; `disputed` for one the
     /// two readers read differently, where `alt` is the second reading.
-    from: String,
+    pub(crate) from: String,
     alt: Option<(f64,f64)>,
 }
 
 impl Row {
     /// Whether the file represents no solid, so that the reader must refuse it.
-    fn refuse(&self) -> bool { self.from == "refuse" }
+    pub(crate) fn refuse(&self) -> bool { self.from == "refuse" }
     /// Whether a refusal finishes the file: one that represents no solid, or one the readers
     /// dispute (its loops against the standard, which a reader may refuse).
-    fn may_refuse(&self) -> bool { self.refuse() || self.from == "disputed" }
+    pub(crate) fn may_refuse(&self) -> bool { self.refuse() || self.from == "disputed" }
 }
 
 fn table() -> Vec<Row> {
-    let path = std::env::var("STEP_CORPUS_TABLE").unwrap_or_else(|_| TABLE.to_string());
+    table_at(&std::env::var("STEP_CORPUS_TABLE").unwrap_or_else(|_| TABLE.to_string()))
+}
+
+/// The rows of the table at `path`: a `#` line is a comment, the first other its header.
+pub(crate) fn table_at(path: &str) -> Vec<Row> {
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
     let mut lines = text.lines().filter(|l| !l.starts_with('#'));
     let head: Vec<&str> = lines.next().expect("the table's header").split('\t').collect();
@@ -90,17 +94,19 @@ fn table() -> Vec<Row> {
 }
 
 /// What reading a file came to.
-enum Outcome {
+pub(crate) enum Outcome {
     /// Not in the corpus.
     Missing,
     /// In the corpus, but not the bytes the table describes.
     Stale(String),
     Refused(Refusal),
     Panicked(String),
+    /// Not done within the time bound (seconds); its thread is left to run.
+    Hung(f64),
     Read { solids: usize,entities: [usize; 3],volume: f64,area: f64 },
 }
 
-struct Read { outcome: Outcome,seconds: f64 }
+pub(crate) struct Read { pub(crate) outcome: Outcome,pub(crate) seconds: f64 }
 
 /// The entities `given` read, each once (0, an entity the reader laid itself, not counted).
 fn entities(given: &[Given]) -> [usize; 3] {
@@ -110,12 +116,25 @@ fn entities(given: &[Given]) -> [usize; 3] {
         distinct(&mut given.iter().flat_map(|g| g.vertices.iter().copied()))]
 }
 
-fn read_one(root: &PathBuf,row: &Row) -> Outcome {
+fn read_one(root: &Path,row: &Row,bound: Option<Duration>) -> Outcome {
     let Ok(bytes) = std::fs::read(root.join(&row.path)) else { return Outcome::Missing };
     let data = bytes.windows(6).position(|w| w == b"\nDATA;").unwrap_or(0);
     let sha = hex(&sha256(&bytes[data..]));
     if sha != row.data_sha256 { return Outcome::Stale(sha) }
     let text = String::from_utf8_lossy(&bytes).into_owned();
+    match bound { Some(bound) => within(text,bound),None => measured(&text) }
+}
+
+/// `measured` on a thread of its own, waited on no longer than `bound`: `Hung` past it (the
+/// thread left to run).
+pub(crate) fn within(text: String,bound: Duration) -> Outcome {
+    let (tx,rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || { let _ = tx.send(measured(&text)); });
+    rx.recv_timeout(bound).unwrap_or(Outcome::Hung(bound.as_secs_f64()))
+}
+
+/// The solids `text` reads to, measured; a refusal, or the panic's message.
+pub(crate) fn measured(text: &str) -> Outcome {
     let got = std::panic::catch_unwind(|| read(&text).map(|given| {
         let v: f64 = given.iter().map(|g| volume(&g.brep)).sum();
         let a: f64 = given.iter().map(|g| g.brep.faces.iter().map(|f| area(&g.brep,f)).sum::<f64>()).sum();
@@ -133,44 +152,49 @@ fn read_one(root: &PathBuf,row: &Row) -> Outcome {
 /// corpus.
 fn outcomes() -> Option<&'static (Vec<Row>,Vec<Read>)> {
     static ALL: OnceLock<Option<(Vec<Row>,Vec<Read>)>> = OnceLock::new();
-    ALL.get_or_init(|| {
-        let Ok(root) = std::env::var("STEP_CORPUS") else {
-            eprintln!("STEP_CORPUS is not set: no corpus to read (scripts/step-corpus/README.md)");
-            return None
-        };
-        let root = PathBuf::from(root);
-        let only = std::env::var("STEP_CORPUS_ONLY").unwrap_or_default();
-        let rows: Vec<Row> = table().into_iter().filter(|r| r.path.starts_with(&only)).collect();
-        let mut order: Vec<usize> = (0..rows.len()).collect();
-        let size = |i: usize| std::fs::metadata(root.join(&rows[i].path)).map(|m| m.len()).unwrap_or(0);
-        order.sort_by_key(|&i| std::cmp::Reverse(size(i)));
-        let threads = std::env::var("STEP_CORPUS_THREADS").ok().and_then(|t| t.parse().ok())
-            .unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2));
-        let next = std::sync::atomic::AtomicUsize::new(0);
-        let done = std::sync::Mutex::new((0..rows.len()).map(|_| None).collect::<Vec<Option<Read>>>());
-        let clock = Instant::now();
-        std::thread::scope(|s| for _ in 0..threads.max(1) {
-            s.spawn(|| loop {
-                let k = next.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
-                let Some(&i) = order.get(k) else { break };
-                let start = Instant::now();
-                let outcome = read_one(&root,&rows[i]);
-                done.lock().unwrap()[i] = Some(Read {outcome,seconds: start.elapsed().as_secs_f64()});
-            });
-        });
-        eprintln!("{} files of {} read in {:.1} s, {threads} at once",rows.len(),root.display(),
-            clock.elapsed().as_secs_f64());
-        let reads = done.into_inner().unwrap().into_iter().map(|r| r.unwrap()).collect();
-        Some((rows,reads))
-    }).as_ref()
+    ALL.get_or_init(|| read_table(table(),None)).as_ref()
 }
 
-fn rel(got: f64,want: f64) -> f64 { (got-want).abs()/want.abs() }
+/// `rows`'s files under `$STEP_CORPUS` (narrowed by `STEP_CORPUS_ONLY`) each read once, in
+/// parallel, the largest first, each within `bound` where one is given; `None` where there is no
+/// corpus.
+pub(crate) fn read_table(rows: Vec<Row>,bound: Option<Duration>) -> Option<(Vec<Row>,Vec<Read>)> {
+    let Ok(root) = std::env::var("STEP_CORPUS") else {
+        eprintln!("STEP_CORPUS is not set: no corpus to read (scripts/step-corpus/README.md)");
+        return None
+    };
+    let root = PathBuf::from(root);
+    let only = std::env::var("STEP_CORPUS_ONLY").unwrap_or_default();
+    let rows: Vec<Row> = rows.into_iter().filter(|r| r.path.starts_with(&only)).collect();
+    let mut order: Vec<usize> = (0..rows.len()).collect();
+    let size = |i: usize| std::fs::metadata(root.join(&rows[i].path)).map(|m| m.len()).unwrap_or(0);
+    order.sort_by_key(|&i| std::cmp::Reverse(size(i)));
+    let threads = std::env::var("STEP_CORPUS_THREADS").ok().and_then(|t| t.parse().ok())
+        .unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2));
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let done = std::sync::Mutex::new((0..rows.len()).map(|_| None).collect::<Vec<Option<Read>>>());
+    let clock = Instant::now();
+    std::thread::scope(|s| for _ in 0..threads.max(1) {
+        s.spawn(|| loop {
+            let k = next.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
+            let Some(&i) = order.get(k) else { break };
+            let start = Instant::now();
+            let outcome = read_one(&root,&rows[i],bound);
+            done.lock().unwrap()[i] = Some(Read {outcome,seconds: start.elapsed().as_secs_f64()});
+        });
+    });
+    eprintln!("{} files of {} read in {:.1} s, {threads} at once",rows.len(),root.display(),
+        clock.elapsed().as_secs_f64());
+    let reads = done.into_inner().unwrap().into_iter().map(|r| r.unwrap()).collect();
+    Some((rows,reads))
+}
+
+pub(crate) fn rel(got: f64,want: f64) -> f64 { (got-want).abs()/want.abs() }
 
 /// Why a read is wrong against its row, if it is.
-fn wrong(row: &Row,read: &Outcome) -> Option<String> {
+pub(crate) fn wrong(row: &Row,read: &Outcome) -> Option<String> {
     let Outcome::Read {solids,entities,volume,area} = read else { return None };
-    if row.refuse() { return Some(format!("read {solids} solids from a file that represents none")) }
+    if row.refuse() { return Some(format!("read {solids} solids, volume {volume:.12e} area {area:.12e}, from a file that represents none")) }
     if *solids != row.solids { return Some(format!("{solids} solids, the file has {}",row.solids)) }
     if *entities != row.entities {
         return Some(format!("faces, edges, vertices read {entities:?}, the file's solids hold {:?}",row.entities))
@@ -186,7 +210,7 @@ fn wrong(row: &Row,read: &Outcome) -> Option<String> {
 }
 
 /// The progress report: a line a file.
-fn report(rows: &[Row],reads: &[Read]) {
+pub(crate) fn report(rows: &[Row],reads: &[Read]) {
     let mut tally = std::collections::BTreeMap::<&str,usize>::new();
     println!("{:<64} {:<8} {:>9} {:>9} {:>7}  why / witness","file","outcome","dV","dA","s");
     for (row,r) in rows.iter().zip(reads) {
@@ -195,6 +219,7 @@ fn report(rows: &[Row],reads: &[Read]) {
             Outcome::Stale(sha) => ("stale","".into(),"".into(),format!("DATA's sha256 {sha}")),
             Outcome::Refused(f) => (if row.refuse() { "nosolid" } else if row.may_refuse() { "disputed" } else { "refused" },"".into(),"".into(),format!("{:?} {f}",f.why)),
             Outcome::Panicked(m) => ("PANIC","".into(),"".into(),m.clone()),
+            Outcome::Hung(s) => ("HUNG","".into(),"".into(),format!("not done in {s} s")),
             Outcome::Read {volume,area,..} => match wrong(row,&r.outcome) {
                 Some(w) => ("WRONG",format!("{:.1e}",rel(*volume,row.volume)),format!("{:.1e}",rel(*area,row.area)),w),
                 None => ("read",format!("{:.1e}",rel(*volume,row.volume)),format!("{:.1e}",rel(*area,row.area)),String::new()),
@@ -208,7 +233,7 @@ fn report(rows: &[Row],reads: &[Read]) {
 }
 
 /// A file missing or stale is said, and is a failure only where the table should describe it.
-fn unread(rows: &[Row],reads: &[Read]) -> Vec<String> {
+pub(crate) fn unread(rows: &[Row],reads: &[Read]) -> Vec<String> {
     rows.iter().zip(reads).filter_map(|(row,r)| match &r.outcome {
         Outcome::Stale(sha) => Some(format!("{}: its DATA's sha256 is {sha}, the table's {} \
             (regenerate the table: scripts/step-corpus/table.py)",row.path,row.data_sha256)),
