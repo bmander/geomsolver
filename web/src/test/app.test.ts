@@ -10,7 +10,7 @@ import * as C from '../core/constraints.js';
 import { Constraint } from '../core/constraints.js';
 import * as examples from '../core/examples.js';
 import * as io from '../core/io.js';
-import { Axis, Line, Plane, Point, Sketch, dimensionBetweenLines } from '../core/model.js';
+import { Axis, Line, Plane, Point, Sketch, Traced, dimensionBetweenLines } from '../core/model.js';
 import { Document, fromSketch } from '../core/program.js';
 import { meant, sortSelection, stated } from '../app/relate.js';
 import type { Diagnosis } from '../core/diagnose.js';
@@ -1755,6 +1755,25 @@ test('a spline over points in space is written, and read again as a curve in spa
   assert.ok(/s\d+ := spline\(p0, p1, p2, p3\)\n/.test(view.source), view.source);
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   for (const n of ['p0', 'p1', 'p2', 'p3']) assert.ok(view.inSpace(pointNamed(view, n)), n);
+});
+
+test('a spline in space is picked where it is seen, selected, and deleted', () => {
+  const view = docView('use std\na := point hint((0, 0, 0))\nb := point hint((10, 20, 5))\n'
+    + 'c := point hint((30, -10, 15))\nd := point hint((40, 10, 0))\ns := spline(a, b, c, d)\n');
+  view.orbit = { az: 0.6, el: 0.5 };
+  // where the box draws it: the curve traced in space the spline is
+  const drawn = overview3(view.sketch, 0, 'datums').find((i) => i.kind === 'traced')!;
+  assert.ok(drawn, 'the spline is drawn as a curve in space');
+  const at = seenAt(view, drawn.pts[Math.floor(drawn.pts.length / 2)]);
+  const hit = view.pick(...at);
+  assert.ok(hit instanceof Traced, `picked ${hit?.kind}`);
+  assert.equal(view.doc.nameOf(hit), 's', 'by the name the document gave the spline');
+  view.setTool('select');
+  drag(view, at, at);
+  assert.deepEqual(view.selected, [hit]);
+  view.deleteSelected();
+  assert.ok(!view.source.includes('s := spline'), view.source);
+  assert.ok(view.source.includes('d := point hint((40, 10, 0))'), 'its points stay');
 });
 
 test('a standard plane the document does not have comes in with `use std` on the first press', () => {

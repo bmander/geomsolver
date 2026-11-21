@@ -227,8 +227,8 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   `edit::word_text`, FFI `gcs_elab_write_word`, `gcs_elab_word_text`): a box above the palette
   holds a chip for each slot in the order the statement writes them — `[p] distance([80], side:
   […]) [q]`, `[name] := solid(std.solids.Prism([section], from: [0mm], to: […]))` — each saying
-  what it takes by a glyph, a caption and its ink (clicked on the drawing, a number, a word
-  chosen), the optional ones folded into `+n` until asked for.  A slot is **armed** by a click on
+  what it takes by a glyph, its placeholder and its ink (clicked on the drawing, a number, a word
+  chosen) and nothing under it, the optional ones folded into `+n` until asked for.  A slot is **armed** by a click on
   its chip, by Tab, or by the box as each is filled; while one clicked on is armed **the
   workspace takes only what it takes**: the `word` tool is down, `SketchView.wordPick` answers
   which hits are wanted, what it would not take is drawn dimmed (`paint::alphaOf`), the pointer
@@ -413,7 +413,15 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   draws what `scene3d` says stands in space — panes, axes, the axes and the curves traced in space (`IN_SPACE`: `axis`,
   `traced`; a spline over points in space is one, #363 S3) — and every object in its own
   coordinates, placed by the matrix the core gives (`core/mesh.ts::drawn`, `placement`; #412),
-  computing no coordinate.  **An object is drawn as a CAD viewer draws a part** (#674–#676):
+  computing no coordinate.  **A curve traced in space is a figure**: stroked as the canvas strokes
+  one (`paint::strokeOf` — the style's ink, width and dash, the selection's and the hover's
+  weight, colour by state, a traced curve as bad as the worst of what it is traced over,
+  `diagnose::entity_states`), dimmed as one is (`alphaOf`), over the solids; picked where it is
+  drawn, beneath every figure in a view and above the axes (`workspace::pick`'s
+  `nearest_traced`, `a_curve_traced_in_space_is_picked_where_it_is_drawn`), selected as a
+  `Traced` (kind 18), named, described and deleted by the spline's statement
+  (`EntKind::from_wire`; "a spline in space is picked where it is seen, selected, and
+  deleted").  **An object is drawn as a CAD viewer draws a part** (#674–#676):
   **one indexed geometry a shape** (`mesh::drawn`, `gcs_solid_drawn`: `grouped`'s triangles over
   vertices shared within a face — a flat face its corners and one normal, a round one smooth
   across its facets — each vertex with the face it is of, and one byte buffer of `f32`/`u32`),

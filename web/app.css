@@ -412,14 +412,14 @@ dialog input[type=search] {
 }
 #word-box[hidden] { display: none; }
 #word-box .box-row { display: flex; align-items: flex-start; gap: 8px; }
-#word-box .grip { color: var(--muted); padding-top: 6px; }
 #word-box .sentence { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 4px 4px; min-width: 0;
   font: 13px var(--mono); }
 #word-box .lit { white-space: pre; line-height: 28px; }
 #word-box .lit.word { color: var(--syn-word); }
 #word-box .slotwrap { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; }
 #word-box .slotwrap.dim { opacity: .55; }
-#word-box .cap { font: 10px system-ui, sans-serif; color: var(--syn-type); white-space: nowrap; }
+/* why the core would not write it, until the box changes */
+#word-box .refused { font-size: 11.5px; color: var(--danger); }
 #word-box .slot {
   --c: var(--accent);
   display: inline-flex; align-items: center; gap: 4px; height: 28px; box-sizing: border-box;
@@ -441,9 +441,6 @@ dialog input[type=search] {
 #word-box .acts button { height: 28px; padding: 0 8px; display: inline-flex; align-items: center; gap: 4px; }
 #word-box .acts .write.ready { background: var(--accent); border-color: var(--accent); color: #fff; }
 #word-box .acts .write.ready kbd { color: inherit; }
-#word-box .prompt { font-size: 11.5px; color: var(--muted); }
-#word-box .prompt b { color: var(--text); font-weight: 600; }
-#word-box .prompt kbd { font: 10.5px var(--mono); }
 @media (max-width: 700px) {
   .words-body { grid-template-columns: 118px minmax(0, 1fr); }
   .words-foot { display: none; }

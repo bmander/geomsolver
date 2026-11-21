@@ -125,7 +125,7 @@ pub unsafe extern "C" fn gcs_counts_len() -> i32 {
     N_COUNTS as i32
 }
 
-const N_COUNTS: usize = 12;
+const N_COUNTS: usize = 13;
 
 #[no_mangle]
 pub unsafe extern "C" fn gcs_sketch_counts(h: *mut Sketch, out: *mut i32) {
@@ -147,6 +147,8 @@ pub unsafe extern "C" fn gcs_sketch_counts(h: *mut Sketch, out: *mut i32) {
             0,
             s.frames.len(),
             s.axes.len(),
+            // the curves traced in space (#363), a spline over points in space among them
+            s.traced.len(),
         ];
         debug_assert_eq!(v.len(), N_COUNTS, "gcs_counts_len is what callers size their buffer by");
         for (i, x) in v.iter().enumerate() {

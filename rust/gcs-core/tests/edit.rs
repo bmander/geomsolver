@@ -1180,3 +1180,22 @@ fn a_round_in_space_is_lifted_as_it_was_written() {
     assert_eq!(own(&back), own(&e), "the same circles, the same normals");
     assert_eq!(back.sketch.arcs.iter().filter(|a| a.round.is_some()).count(), 1);
 }
+
+/// **A spline in space is deleted as it is selected** (#363): the curve it is traced as, by its
+/// wire kind `traced` — a reference's kind and no declaration's (`EntKind::from_wire`) — takes the
+/// spline's statement, and its points stay.
+#[test]
+fn a_spline_in_space_is_deleted_by_the_curve_it_is_traced_as() {
+    let doc = "use std\na := point hint((0, 0, 0))\nb := point hint((10, 20, 5))\n\
+               c := point hint((30, -10, 15))\nd := point hint((40, 10, 0))\ns := spline(a, b, c, d)\n";
+    let e = elaborate(&prog_of(doc));
+    let s = e.map.ent_named("s").unwrap();
+    assert_eq!(s.kind, EntKind::Traced);
+    let req = edit::SelectionRequest::from_json(&gcs_core::json::parse(
+        &format!("{{\"entities\": [[\"traced\", {}]]}}", s.i())).unwrap());
+    assert_eq!(req.ents, vec![s], "read by its wire kind");
+    let gone = edit::remove(&e, &e.program, &e.sketch, &req.ents, &req.cons);
+    assert_eq!(gone.refused, None);
+    assert!(!gone.text.contains("s := spline"), "{}", gone.text);
+    assert!(gone.text.contains("d := point hint((40, 10, 0))"), "the points stay: {}", gone.text);
+}

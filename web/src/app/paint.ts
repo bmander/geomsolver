@@ -44,7 +44,7 @@ export const DIMMED = 0.3;
 
 /** The alpha an entity is drawn at: dimmed while a part is open that did not make it, or while a
  *  word's slot is armed that would not take it. */
-function alphaOf(v: SketchView, ent: Primitive): number {
+export function alphaOf(v: SketchView, ent: Primitive): number {
   // a slot of a word armed: what it would not take is dimmed, so what it would stands out
   if (v.tool === 'word' && v.wordPick && !v.wordPick.accepts({ kind: 'entity', ent })) return DIMMED;
   return v.inside && !v.inside.ents.has(ent) ? DIMMED : 1;
@@ -74,9 +74,10 @@ export function inkOf(v: SketchView, sel: Set<Primitive>, hl: Set<Primitive>,
  * highlight, colour-by-state — is layered over it here, because that is a view toggle and not a
  * statement in the document.  `paint` knows what a class is nowhere.
  *
- * Module-level rather than a closure so the three.js layer inks by the same rule (`inkOf`): a
- * thing picked is lit the same way wherever it is drawn. */
-function strokeOf(v: SketchView, sel: Set<Primitive>, hl: Set<Primitive>,
+ * Module-level rather than a closure so the three.js layer strokes by the same rule (`inkOf`, and
+ * a curve in space by this whole of it): a thing picked is lit the same way wherever it is
+ * drawn. */
+export function strokeOf(v: SketchView, sel: Set<Primitive>, hl: Set<Primitive>,
                   base: string, ent: Primitive, st?: Style): [string, number] {
   const lw = st?.width ?? 1.8;   // the other copy is `svg::PLAIN_PX`; the two must agree
   const chrome = chromeOf(sel, hl, ent);

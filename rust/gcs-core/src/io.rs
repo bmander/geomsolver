@@ -43,7 +43,7 @@ fn ref_from_json(sk: &Sketch, j: &Json, what: &str) -> Result<EntRef, String> {
     if a.len() != 2 {
         return Err(format!("{what} must be [kind, index]"));
     }
-    let kind = EntKind::parse(a[0].as_str())
+    let kind = EntKind::from_wire(a[0].as_str())
         .ok_or_else(|| format!("unknown {what} kind {:?}", a[0].as_str()))?;
     Ok(EntRef::new(kind, index(a[1].as_i64(), sk.count(kind), what)?))
 }

@@ -344,8 +344,24 @@ fn point_gaps<'a>(sk: &'a Sketch, proj: &'a Projection, at: (f64, f64))
 /// frame (`nearest_pane`).  What the outline hid is not picked (#435).
 pub fn pick(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64, unit: f64) -> Option<EntRef> {
     crate::model::pick_by(sk, nearest_point(sk, proj, at), tol, |e| proj.reach(sk, e, at, tol, unit))
+        .or_else(|| nearest_traced(sk, proj, at, tol))
         .or_else(|| nearest_axis(sk, proj, at, tol))
         .or_else(|| nearest_pane(sk, proj, at, tol))
+}
+
+/// The curve traced in space whose polyline, seen, passes nearest `at` within `tol` (#363): a
+/// spline over points in space among them, which stands in no view — measured on the polyline the
+/// box draws it as (`overview::traced_polyline` at the scene's refinement), so picked where it is
+/// seen, beneath every figure drawn in a view and above the axes.
+fn nearest_traced(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Option<EntRef> {
+    let unit = super::scene_unit(sk);
+    let near = super::traced_drawn(sk).filter_map(|i| {
+        let seen: Vec<(f64, f64)> =
+            super::traced_polyline(sk, i, unit).into_iter().map(|p| proj.seen(p)).collect();
+        let d = (seen.len() >= 2).then(|| polyline_distance(&seen, at.0, at.1))?;
+        (d <= tol).then_some((d, i))
+    }).collect();
+    nearest(near, tol).map(|i| EntRef::new(EntKind::Traced, i))
 }
 
 /// The axis whose drawn line, seen, passes nearest `at` within `tol`.  Two lying on one another

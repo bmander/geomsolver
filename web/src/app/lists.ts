@@ -3,8 +3,8 @@
  * of". */
 import * as io from '../core/io.js';
 import {
-  Arc, Axis, Circle, Curve, Line, Plane, Point, Primitive, Spline, angleBetween, distanceBetween,
-  expand,
+  Arc, Axis, Circle, Curve, Line, Plane, Point, Primitive, Spline, Traced, angleBetween,
+  distanceBetween, expand,
 } from '../core/model.js';
 import { unbuilt } from '../core/mesh.js';
 import {
@@ -32,6 +32,8 @@ function describeEntity(e: Primitive, ix: io.Index): string {
     // a curve written in the language is its statement; the program panel says the rest
     : e instanceof Curve ? 'curve'
     : e instanceof Axis ? 'axis'
+    // a spline over points in space, among others: a curve the core traces, in no view
+    : e instanceof Traced ? 'curve in space'
     : 'point';
   return `${n}${body}${tag}`;
 }

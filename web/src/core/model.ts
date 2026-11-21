@@ -14,22 +14,23 @@ import './constraints.js';
 /** (xmin, ymin, xmax, ymax) */
 export type Box = [number, number, number, number];
 
-export type Kind = 'point' | 'line' | 'circle' | 'arc' | 'spline' | 'curve' | 'frame' | 'axis';
+export type Kind =
+  'point' | 'line' | 'circle' | 'arc' | 'spline' | 'curve' | 'frame' | 'axis' | 'traced';
 /** Which way an extrusion runs from its face: behind it (`depth:`), in front of it (`from: 0,
  *  to:`), or both ways — the core's words, and in this order its numbers. */
 export const WAYS = ['behind', 'front', 'both'] as const;
 export type Way = typeof WAYS[number];
 
 /** The core's kind ids (`kind_id` in the ABI), one per kind with a proxy here — the one table:
- *  an axis is 16, past kinds that have none. */
+ *  an axis is 16 and a curve traced in space 18, past kinds that have none. */
 export const KIND_ID: Record<Kind, number> =
-  { point: 0, line: 1, circle: 2, arc: 3, spline: 4, curve: 5, frame: 6, axis: 16 };
+  { point: 0, line: 1, circle: 2, arc: 3, spline: 4, curve: 5, frame: 6, axis: 16, traced: 18 };
 /** Every kind with a proxy here. */
 export const KINDS = Object.keys(KIND_ID) as Kind[];
 
 /** Where each kind's count sits in `gcs_sketch_counts` — appended to, never reordered. */
 const COUNT_SLOT: Record<Kind, number> =
-  { point: 1, line: 2, circle: 3, arc: 4, spline: 6, curve: 8, frame: 10, axis: 11 };
+  { point: 1, line: 2, circle: 3, arc: 4, spline: 6, curve: 8, frame: 10, axis: 11, traced: 12 };
 
 /** A kind as the core's documents and reports spell it: the frame kind is written `plane`, the
  *  word its flat ones are declared with (#383) — `toWire` and `fromWire` are the one seam. */
@@ -448,15 +449,22 @@ export class Axis extends Styled {
   readonly kind = 'axis' as const;
 }
 
+/** A curve traced in space (#363) — a spline over points in space among them, which the document
+ *  still calls by the spline's name: drawn by the box as its polyline in space, in no view, and
+ *  picked where it is seen there (`workspace::pick`). */
+export class Traced extends Styled {
+  readonly kind = 'traced' as const;
+}
+
 /** The class every plane is: a frame, of which a plane is the flat kind (`Frame.planar`) —
  *  what every pane, pick and chooser of the workspace names. */
 export { Frame as Plane };
 
-export type Primitive = Point | Line | Circle | Arc | Spline | Curve | Frame | Axis;
+export type Primitive = Point | Line | Circle | Arc | Spline | Curve | Frame | Axis | Traced;
 
 const CLASSES =
   { point: Point, line: Line, circle: Circle, arc: Arc, spline: Spline,
-    curve: Curve, frame: Frame, axis: Axis } as const;
+    curve: Curve, frame: Frame, axis: Axis, traced: Traced } as const;
 
 /** The CCW arc through three points: centre, radius, and the sweep that passes through the
  *  third point.  `swapped` is true when that sweep runs from the *second* given point. */
@@ -501,7 +509,7 @@ export class Sketch {
   private params_: Param[] = [];
   private ents: Record<Kind, Entity[]> =
     { point: [], line: [], circle: [], arc: [], spline: [], curve: [],
-      frame: [], axis: [] };
+      frame: [], axis: [], traced: [] };
   private cons: Constraint[] = [];
   /** Constraint id → its proxy, so identity survives every round trip. */
   readonly byId = new Map<number, Constraint>();

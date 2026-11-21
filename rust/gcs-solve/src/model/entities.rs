@@ -118,6 +118,13 @@ impl EntKind {
         }
     }
 
+    /// **A kind as a reference spells it** — `[kind, index]` in a selection, a sketch's JSON —
+    /// `as_str`'s word for every kind, where `parse` reads only those a document declares: a
+    /// curve traced in space (`traced`) is a reference's kind and no declaration's.
+    pub fn from_wire(s: &str) -> Option<EntKind> {
+        EntKind::ALL.into_iter().find(|k| k.as_str() == s)
+    }
+
     /// Every kind, in declaration order — what a question about the whole table walks.
     pub const ALL: [EntKind; 15] = [
         EntKind::Point,
