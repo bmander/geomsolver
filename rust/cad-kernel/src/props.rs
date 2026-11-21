@@ -522,9 +522,11 @@ impl<'a> Closed<'a> {
                 let (sv,cv) = v.dsin_cos();
                 let q = big+r*cv;
                 if area {
-                    if along == 0 { r*q.abs()*int_1 } else {
-                        if big < r { return None }
-                        r*(big*int_1+r*trig().2)
+                    if along == 0 { r*q.abs()*int_1 } else if big >= r { r*(big*int_1+r*trig().2) } else {
+                        if !(big > -r) { return None }
+                        // a spindle torus's `|R + r cos v|` changes its sign at `cos v = −R/r`: its
+                        // integral the odd, piecewise `h` on a half turn and whole turns of it
+                        r*(spindle(big,r,x)-spindle(big,r,base))
                     }
                 } else if along == 0 {
                     let (_,_,int_c,int_s) = trig();
@@ -545,6 +547,17 @@ impl<'a> Closed<'a> {
             _ => return None,
         })
     }
+}
+
+/// `∫_0^x |a + r cos σ| dσ` (`|a| < r`): on `[0, π]` the integral of `a + r cos` up to its root
+/// `s₀ = acos(−a/r)` and back down past it, odd about 0, and `P` a whole turn.
+fn spindle(a: f64,r: f64,x: f64) -> f64 {
+    let s0 = (-a/r).acos();
+    let up = |x: f64| a*x+r*x.dsin();
+    let h = |x: f64| if x <= s0 { up(x) } else { 2.*up(s0)-up(x) };
+    let turns = (x/std::f64::consts::TAU).round();
+    let y = x-turns*std::f64::consts::TAU;
+    turns*2.*h(std::f64::consts::PI)+if y < 0. { -h(-y) } else { h(y) }
 }
 
 /// The volume the boundary encloses (negative if it is turned inside out). A boundary standing
@@ -649,7 +662,20 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
         // a polynomial net's `G` tabled from the face's middle `u` (`Prefix`); a rational net's `g`
         // is a quotient, which no Gauss rule integrates exactly: it takes the stretch-by-stretch
         // rule a swept face does
-        let mut prefix = match s { Surface::BSpline(_,n) if !n.is_rational() && matches!(what,What::Flux) => Some(Prefix::new(n,(lo[0]+hi[0])/2.)),_ => None };
+        // a pole a loop passes through, where the uses arriving and leaving set out along different
+        // values of the parameter the surface collapses there (`Brep::close_poles` lays a
+        // degenerate edge between them): `g` integrated along that parameter, so that `G` there
+        // is nought and the value a use arrives along — which a file's edge standing off its face
+        // leaves to within that gap, and a curve passing near the pole sweeps through in a hair of
+        // its span — weighs nothing
+        let collapsed = f.loops.iter().flatten().find_map(|c| match (&b.edges[c.edge as usize].curve,&c.pcurve) {
+            (EdgeCurve::Degenerate,&Pcurve::Line {a,b}) => (0..2).max_by(|&i,&j| (a[i]-b[i]).abs().total_cmp(&(a[j]-b[j]).abs())),
+            _ => None,
+        });
+        let mut prefix = match s {
+            Surface::BSpline(_,n) if !n.is_rational() && matches!(what,What::Flux) && collapsed != Some(1) => Some(Prefix::new(n,(lo[0]+hi[0])/2.)),
+            _ => None,
+        };
         // a sheet carried between two straight edges (a polyhedral tool's edge swept, `Blend`): its
         // point affine in `u` at every `v` — the carry is rigid, its rate affine in the point — so
         // the flux's `g` is a quadratic in `u`, which two Gauss nodes integrate exactly, read along
@@ -657,7 +683,8 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
         // the general rule read forty nodes a stretch, every face of a sweep's arrangement)
         let ruled = matches!(what,What::Flux) && matches!(s,Surface::Blend(_,bl) if matches!((&bl.a,&bl.b),(Curve::Line {..},Curve::Line {..})));
         // the parameter `g` is integrated along (`G` then multiplies the other's derivative)
-        let along = if ruled || prefix.is_some() || !(hi[1]-lo[1] < hi[0]-lo[0]) { 0 } else { 1 };
+        let near_pole = collapsed.is_some() || !(super::topo::poleless(s) || matches!(s,Surface::BSpline(..) | Surface::Blend(..)));
+        let along = match collapsed { Some(k) if !ruled => k,_ => if ruled || prefix.is_some() || !(hi[1]-lo[1] < hi[0]-lo[0]) { 0 } else { 1 } };
         let base = if prefix.is_some() || !lo[along].is_finite() { 0. } else { (lo[along]+hi[along])/2. };
         let periodic = [pu,pv][along].is_some();
         let closed = if prefix.is_some() || !what.plain() { None } else { Closed::new(s,what.area(),along,base) };
@@ -718,7 +745,10 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
                     cuts.extend(breaks);
                     cuts.push(e.t[1]);
                     let each = if let EdgeCurve::Curve(Curve::Traced(_)) = &e.curve { 1 } else { 2 };
-                    cuts.windows(2).map(|w| gauss(w[0],w[1],each,&mut integrand)).sum()
+                    // (settled a stretch at a time on a surface with a pole, where a curve passing near
+                    // it sweeps half a turn of the collapsed parameter in a hair of a stretch)
+                    if near_pole { cuts.windows(2).map(|w| settled(w[0],w[1],each,&mut integrand)).sum() }
+                    else { cuts.windows(2).map(|w| gauss(w[0],w[1],each,&mut integrand)).sum() }
                 } else { settled(e.t[0],e.t[1],pieces(span,periodic),&mut integrand) };
                 row.push((if c.reversed { -line } else { line },0.));
             }

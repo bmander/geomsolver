@@ -58,10 +58,10 @@ struct Walked { entity: u32,surface: u32,reversed: bool,name: String,bounds: Vec
 /// and whether it runs along its curve.
 struct Written { entity: u32,ends: [usize;2],geometry: u32,same_sense: bool }
 
-/// An edge read: the kernel's, whether it runs against the file's (its vertices taken the other
+/// An edge read: its entity, the kernel's, whether it runs against the file's (its vertices taken the other
 /// way round), the kernel's parameter per the file's along its curve, and its curves in faces'
 /// parameters as the file writes them, by the surface's entity.
-struct Read { edge: Edge,flip: bool,rate: f64,pcurves: Vec<(u32,Flat)> }
+struct Read { entity: u32,edge: Edge,flip: bool,rate: f64,pcurves: Vec<(u32,Flat)> }
 
 /// The topology walked from a solid down, each edge and vertex numbered once by its entity.
 struct Walk<'g,'f,'a> {
@@ -156,7 +156,10 @@ impl Walk<'_,'_,'_> {
         let Some(r) = r else { return Err(Refusal::malformed(from,"a shell: a reference expected")) };
         match self.g.file.get(r).simple() {
             Some(("CLOSED_SHELL",v)) => {
-                for f in list(v.get(1),r,"a shell's faces")? { out.push(self.face(r,f.reference(),turned,0)?); }
+                let faces = list(v.get(1),r,"a shell's faces")?;
+                // (a shell of no face bounds nothing: no solid of no volume)
+                if faces.is_empty() { return Err(Refusal::new(Why::Empty,Some(r),"a closed shell of no face bounds no solid")) }
+                for f in faces { out.push(self.face(r,f.reference(),turned,0)?); }
                 Ok(())
             }
             Some(("ORIENTED_CLOSED_SHELL",v)) if v.len() == 4 => {
@@ -234,7 +237,7 @@ fn read_edge(g: &Geometry,w: &Written,points: &[V],within: f64) -> Result<Read,R
     // laid along its curve: from its first vertex where it runs along, else its last
     let v = if w.same_sense { w.ends } else { [w.ends[1],w.ends[0]] };
     let t = parameters(&curve.curve,[points[v[0]],points[v[1]]],v[0] == v[1],r,within)?;
-    Ok(Read {edge:Edge {curve:EdgeCurve::Curve(curve.curve),t,v:[v[0] as u32,v[1] as u32],tol:0.},flip:!w.same_sense,rate:curve.rate,pcurves})
+    Ok(Read {entity:r,edge:Edge {curve:EdgeCurve::Curve(curve.curve),t,v:[v[0] as u32,v[1] as u32],tol:0.},flip:!w.same_sense,rate:curve.rate,pcurves})
 }
 
 /// The file's curve of an edge in a spline face's parameters as the kernel's pcurve, read over
@@ -295,21 +298,59 @@ fn roughly(flat: &Flat,e: &Edge,rate: f64,t: f64) -> Uv {
 /// the use's direction), read one after another from `from` (the start's, on the branch the loop
 /// reached it on), each sought from `hint` of its step and the last (the last itself, but for a
 /// seam walked again on its other side) and on the branch nearest that. At a pole the collapsed
-/// parameter is read a step in from it (`topo::pole_at`).
-fn track(s: &Surface,e: &Edge,vs: &[Vertex],travel: [f64;2],from: Uv,n: usize,within: f64,hint: &dyn Fn(usize,Uv) -> Uv) -> Vec<Uv> {
+/// parameter is read a step in from it (`topo::pole_at`). A step that sweeps more than a twelfth
+/// of a period round is read again in halves (a curve passing near a pole sweeps half a turn of
+/// the collapsed parameter in a hair of its span), and where halving does not end it — the curve
+/// crossing the pole, the parameter jumping by half a turn there — the jump goes the way that
+/// keeps the face on the use's left (`pole_branch`), the face `reversed` or not. Beside the `n + 1`
+/// points, every point read, by the fraction of the way along it lies at.
+fn track(s: &Surface,e: &Edge,vs: &[Vertex],travel: [f64;2],from: Uv,n: usize,within: f64,reversed: bool,
+    hint: &dyn Fn(usize,Uv) -> Uv) -> (Vec<Uv>,Vec<(f64,Uv)>) {
     let periods = s.periods();
     let mut out = vec![from];
+    let mut all = vec![(0.,from)];
     let pole = pole_at(s,from,within);
+    let foot = |f: f64,near: Uv| unwrap(s.inverse_near(e.point(travel[0]+(travel[1]-travel[0])*f,vs),near),near,periods);
+    let sweeps = |a: Uv,b: Uv| (0..2).find(|&k| periods[k].is_some_and(|p| (b[k]-a[k]).abs() > p/12.));
     for j in 1..=n {
-        let t = travel[0]+(travel[1]-travel[0])*j as f64/n as f64;
+        let (f0,f1) = ((j-1) as f64/n as f64,j as f64/n as f64);
         let at = out[j-1];
         let near = hint(j,at);
-        let mut uv = unwrap(s.inverse_near(e.point(t,vs),near),near,periods);
-        if j == n { if let Some(k) = pole_at(s,uv,within) { uv[k] = at[k]; } }
-        if j == 1 { if let Some(k) = pole { out[0][k] = uv[k]; } }
+        let mut uv = foot(f1,near);
+        if hint(j,at) == at && sweeps(at,uv).is_some() {
+            // (read again in halves from the last, each half from the last read)
+            let mut stack = vec![(f1,0usize)];
+            let (mut fa,mut a) = (f0,at);
+            while let Some((fb,depth)) = stack.pop() {
+                let b = foot(fb,a);
+                match sweeps(a,b) {
+                    Some(_) if depth < 52 && fb-fa > 0. => { stack.push((fb,depth+1)); stack.push((0.5*(fa+fb),depth+1)); }
+                    Some(k) => {
+                        // crossing the pole: the jump the way that keeps the face on the left
+                        let mut b = b;
+                        if let Some(p) = periods[k] {
+                            let g = |x: f64| { let mut q = b; q[1-k] = x; let (_,su,sv) = s.d1(q); norm([su,sv][k]) };
+                            let h = 1e-6*(1.+b[1-k].abs());
+                            let inward = (g(b[1-k]+h)-g(b[1-k]-h)).signum();
+                            b[k] = pole_branch(b[k],a[k],p,k,inward,reversed,false);
+                        }
+                        all.push((fb,b));
+                        (fa,a) = (fb,b);
+                    }
+                    None => { all.push((fb,b)); (fa,a) = (fb,b); }
+                }
+            }
+            uv = a;
+        } else { all.push((f1,uv)); }
+        if j == n { if let Some(k) = pole_at(s,uv,within) {
+            let before = all[all.len().saturating_sub(2)].1;
+            uv[k] = before[k];
+            if let Some(x) = all.last_mut() { x.1 = uv; }
+        } }
+        if j == 1 { if let Some(k) = pole { out[0][k] = uv[k]; all[0].1[k] = uv[k]; } }
         out.push(uv);
     }
-    out
+    (out,all)
 }
 
 /// **The branch a use leaving a pole sets out on**: its collapsed parameter `k`'s value `x`
@@ -428,7 +469,7 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
                     let q = near.unwrap_or_else(|| s.inverse(e.point(travel[0]+(travel[1]-travel[0])/16.,&b.vertices)));
                     unwrap(s.inverse_near(begin,q),q,periods)
                 });
-                let mut walked = track(s,e,&b.vertices,travel,from,steps,st.within,&|_,at| at);
+                let (mut walked,mut read) = track(s,e,&b.vertices,travel,from,steps,st.within,reversed,&|_,at| at);
                 // a seam of a sheet closed without a period: walked again, every point of it on the
                 // domain's edge sought on the one side — the side its other use is not on, or for
                 // the first, the side the face lies left of (`seam_side`)
@@ -457,7 +498,7 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
                         };
                         let first = walked.clone();
                         let snap = |mut q: Uv| { if on(q,k) { q[k] = side; } q };
-                        walked = track(s,e,&b.vertices,travel,snap(first[0]),steps,st.within,&|j,_| snap(first[j]));
+                        (walked,read) = track(s,e,&b.vertices,travel,snap(first[0]),steps,st.within,reversed,&|j,_| snap(first[j]));
                         // (its ends too, where a pole's collapse left them on the other edge)
                         walked[0] = snap(walked[0]);
                         walked[steps] = snap(walked[steps]);
@@ -471,6 +512,20 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
                         let x = pole_branch(a[k],l[k],p,k,(m[1-k]-a[1-k]).signum(),reversed,seams.contains(&ei));
                         let d = x-a[k];
                         for q in [&mut a,&mut m,&mut z] { q[k] += d; }
+                    }
+                }
+                // the edge's inverse read on the branch nearest the line between its ends
+                // (`Pcurve::Inverse`): that is the walk's own only where the walk keeps within
+                // five twelfths of a period of the line — a curve winding unevenly round a pole,
+                // sweeping its half turn at one end of a whole one, does not, and is refused
+                let off = [a[0]-walked[0][0],a[1]-walked[0][1]];
+                for &(f,q) in &read {
+                    if pole_at(s,q,st.within).is_some() { continue }
+                    let line = [a[0]+(z[0]-a[0])*f,a[1]+(z[1]-a[1])*f];
+                    if let Some(k) = (0..2).find(|&k| periods[k].is_some_and(|p| (q[k]+off[k]-line[k]).abs() > p*5./12.)) {
+                        return Err(Refusal::unsupported(st.reads[ei].entity,format!("an edge whose curve sweeps round its face's pole \
+                            so unevenly that its parameters {} stand {:.3} from the line between its ends, past the five twelfths of \
+                            a period a curve inverted between its ends is read within",["u","v"][k],(q[k]+off[k]-line[k]).abs())))
                     }
                 }
                 let (ea,eb) = if rev { (z,a) } else { (a,z) };

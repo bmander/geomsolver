@@ -229,3 +229,133 @@ fn a_cap_written_with_no_seam_reads_to_its_closed_form() {
     let r = read(&band).map(|_| ()).expect_err("a band with no seam");
     assert_eq!((r.why, r.entity), (Why::Unsupported, Some(43)), "{r}");
 }
+
+/// `x` written as STEP writes a real: always with its point.
+fn real(x: f64) -> String { let s = format!("{x:?}"); if s.contains('.') || s.contains('e') { s.replace("e", "E") } else { format!("{s}.") } }
+
+/// A point or a direction written.
+fn triple(p: V) -> String { format!("({},{},{})", real(p[0]), real(p[1]), real(p[2])) }
+
+/// Two balls' common part, written as a writer of lenses writes it — the larger ball's cap bounded
+/// by the circle they meet in alone, the smaller's by the circle and a meridian seam from its south
+/// pole to the circle's vertex — the pole `inside` within the larger ball: the circle passing that
+/// far from it, its vertex the circle's point nearest it; or, `inside` nought, the circle through
+/// the pole and its vertex a micron round from it. The file, its edge on the circle's entity (#34),
+/// and the lens's closed volume `Σ π h² (3r − h) / 3` and area `Σ 2π r h`.
+fn lens(inside: f64) -> (String, f64, f64) {
+    use gcs_core::space::{add, cross, dot, norm, normalised, scale, sub};
+    let (ra, rb) = (5., 3.);
+    // the smaller ball's centre placed so that its south pole lies `inside` within the larger and
+    // its north pole outside it
+    let c: V = [4., 2., 3. - ((ra - inside) * (ra - inside) - 20f64).sqrt()];
+    let pole = sub(c, [0., 0., rb]);
+    let n = normalised(c).unwrap();
+    let dc = norm(c);
+    let d1 = (dc * dc + ra * ra - rb * rb) / (2. * dc);
+    let rho = (ra * ra - d1 * d1).sqrt();
+    let centre = scale(n, d1);
+    let toward = sub(sub(pole, centre), scale(n, dot(sub(pole, centre), n)));
+    let x = normalised(toward).unwrap();
+    let y = cross(n, x);
+    // the circle's vertex: its point nearest the pole, or a micron round from it
+    let t = if inside > 0. { 0. } else { 1e-3 / rho };
+    let v = add(centre, add(scale(x, rho * t.cos()), scale(y, rho * t.sin())));
+    let m = normalised(cross(sub(pole, c), sub(v, c))).unwrap();
+    let px = normalised(sub(pole, c)).unwrap();
+    assert!((norm(pole) - (ra - inside)).abs() < 1e-12 && gcs_core::space::distance(pole, v) < 1e-2);
+    let text = file(&format!("#14 = SPHERICAL_SURFACE('',#13,{ra});\n\
+        #15 = CARTESIAN_POINT('',{});\n#16 = AXIS2_PLACEMENT_3D('',#15,#11,#12);\n#17 = SPHERICAL_SURFACE('',#16,{rb});\n\
+        #20 = CARTESIAN_POINT('',{});\n#21 = DIRECTION('',{});\n#22 = DIRECTION('',{});\n#23 = AXIS2_PLACEMENT_3D('',#20,#21,#22);\n\
+        #24 = CIRCLE('',#23,{});\n#25 = DIRECTION('',{});\n#26 = DIRECTION('',{});\n#27 = AXIS2_PLACEMENT_3D('',#15,#25,#26);\n\
+        #28 = CIRCLE('',#27,{rb});\n#30 = CARTESIAN_POINT('',{});\n#31 = VERTEX_POINT('',#30);\n\
+        #32 = CARTESIAN_POINT('',{});\n#33 = VERTEX_POINT('',#32);\n#34 = EDGE_CURVE('',#31,#31,#24,.T.);\n\
+        #35 = EDGE_CURVE('',#33,#31,#28,.T.);\n\
+        #40 = ORIENTED_EDGE('',*,*,#34,.T.);\n#41 = EDGE_LOOP('',(#40));\n#42 = FACE_BOUND('',#41,.T.);\n\
+        #43 = ADVANCED_FACE('',(#42),#14,.T.);\n#44 = ORIENTED_EDGE('',*,*,#35,.T.);\n#45 = ORIENTED_EDGE('',*,*,#34,.F.);\n\
+        #46 = ORIENTED_EDGE('',*,*,#35,.F.);\n#47 = EDGE_LOOP('',(#44,#45,#46));\n#48 = FACE_BOUND('',#47,.T.);\n\
+        #49 = ADVANCED_FACE('',(#48),#17,.T.);\n#50 = CLOSED_SHELL('',(#43,#49));\n#51 = MANIFOLD_SOLID_BREP('',#50);\n",
+        triple(c), triple(centre), triple(n), triple(x), real(rho), triple(m), triple(px), triple(v), triple(pole)));
+    let (ha, hb) = (ra - d1, rb - (dc - d1));
+    let pi = std::f64::consts::PI;
+    (text, pi * ha * ha * (3. * ra - ha) / 3. + pi * hb * hb * (3. * rb - hb) / 3., 2. * pi * (ra * ha + rb * hb))
+}
+
+/// **A lens whose circle passes a hair from a sphere's pole reads to its closed form** (#993): the
+/// smaller ball's circle sweeps half a turn of its chart's `u` in a hair of its span either side
+/// of its vertex, which a fixed rule over its knots misses; the faces are integrated along the
+/// parameter a pole collapses (`props`), settled a stretch at a time, and read to `1e-9`. **The
+/// same circle through the pole itself, its vertex a micron past it, is refused naming the edge**:
+/// its `u` jumps half a turn a micron from its end of a whole turn, the way that keeps the face on
+/// its left (`track`), so that no point of it lies near the line between its ends that the
+/// kernel's inverse curve reads its branch by.
+#[test]
+fn a_lens_whose_circle_passes_a_pole_reads_to_its_closed_form() {
+    for inside in [1e-3, 1e-6] {
+        let (text, v, a) = lens(inside);
+        let given = read(&text).unwrap_or_else(|r| panic!("{inside}: {r:?}"));
+        let b = &given[0].brep;
+        close(&format!("{inside}: the lens's volume"), volume(b), v, 1e-9);
+        close(&format!("{inside}: the lens's area"), total_area(b), a, 1e-9);
+    }
+    let r = read(&lens(0.).0).map(|_| ()).expect_err("a circle through the pole");
+    assert_eq!((r.why, r.entity), (Why::Unsupported, Some(34)), "{r}");
+}
+
+/// **The value a use arrives at a pole along weighs nothing** (`props`): a ball's faces integrated
+/// along the parameter its poles collapse, so that the integral gathered there is nought, the
+/// ball's measures are the same with every pole's degenerate edge moved along the pole — a jump in
+/// the loop's parameters there, which the loop's closing segments run along — as without. A
+/// file's edge standing off its face by its tolerance at a pole leaves the value it arrives along
+/// to within that gap; a fifth of a turn here.
+#[test]
+fn the_value_a_use_arrives_at_a_pole_along_weighs_nothing() {
+    use gcs_core::brep::topo::Pcurve;
+    let b = sphere([0.5, 0., 0.], [0.3, 0.2, 1.], 1.3).unwrap();
+    let mut moved = b.clone();
+    let mut jumps = 0;
+    for f in &mut moved.faces {
+        for c in f.loops.iter_mut().flatten() {
+            if !matches!(b.edges[c.edge as usize].curve, EdgeCurve::Degenerate) { continue }
+            let Pcurve::Line { a, b: z } = c.pcurve else { continue };
+            let k = if (a[0] - z[0]).abs() > (a[1] - z[1]).abs() { 0 } else { 1 };
+            let mut z = z;
+            z[k] += 0.2 * TAU;
+            c.pcurve = Pcurve::Line { a, b: z };
+            jumps += 1;
+        }
+    }
+    assert!(jumps > 0, "a ball with no pole edge");
+    close("the ball's volume", volume(&moved), volume(&b), 1e-12);
+    close("the ball's area", total_area(&moved), total_area(&b), 1e-12);
+    close("the ball's volume, its closed form", volume(&b), 4. / 3. * std::f64::consts::PI * 1.3f64.powi(3), 1e-12);
+}
+
+/// **A spindle torus's area is the integral of `|R + r cos v|`** (`props`): a torus whose tube
+/// crosses its axis (`R < r`, an offset grown past its hole), written whole with its two seams,
+/// reads to the volume `2π² R r²` its signed flux gives and the area
+/// `2π r ∫|R + r cos v| dv = 4π r (2R s₀ + 2r sin s₀ − πR)`, `cos s₀ = −R/r` — the integrand's
+/// sign changes at `s₀`, which a Gauss rule across it reads to some 1e-4.
+#[test]
+fn a_spindle_torus_reads_to_its_closed_form() {
+    let (big, r) = (4., 5.);
+    let text = file("#14 = TOROIDAL_SURFACE('',#13,4.,5.);\n#20 = CARTESIAN_POINT('',(9.,0.,0.));\n#21 = VERTEX_POINT('',#20);\n\
+        #22 = CARTESIAN_POINT('',(4.,0.,0.));\n#23 = DIRECTION('',(0.,1.,0.));\n#24 = AXIS2_PLACEMENT_3D('',#22,#23,#12);\n\
+        #25 = CIRCLE('',#24,5.);\n#26 = EDGE_CURVE('',#21,#21,#25,.T.);\n#27 = CIRCLE('',#13,9.);\n#28 = EDGE_CURVE('',#21,#21,#27,.T.);\n\
+        #30 = ORIENTED_EDGE('',*,*,#26,.T.);\n#31 = ORIENTED_EDGE('',*,*,#28,.T.);\n#32 = ORIENTED_EDGE('',*,*,#26,.F.);\n\
+        #33 = ORIENTED_EDGE('',*,*,#28,.F.);\n#34 = EDGE_LOOP('',(#30,#31,#32,#33));\n#35 = FACE_OUTER_BOUND('',#34,.T.);\n\
+        #36 = ADVANCED_FACE('',(#35),#14,.T.);\n#50 = CLOSED_SHELL('',(#36));\n#51 = MANIFOLD_SOLID_BREP('',#50);\n");
+    let given = read(&text).unwrap_or_else(|r| panic!("{r:?}"));
+    let b = &given[0].brep;
+    let pi = std::f64::consts::PI;
+    let s0 = (-big / r as f64).acos();
+    close("the spindle's volume", volume(b), 2. * pi * pi * big * r * r, 1e-9);
+    close("the spindle's area", total_area(b), 4. * pi * r * (2. * big * s0 + 2. * r * s0.sin() - pi * big), 1e-9);
+}
+
+/// **A shell of no face is refused naming it**: it bounds no solid (`Why::Empty`), not one of
+/// volume and area nought.
+#[test]
+fn an_empty_shell_is_refused_naming_it() {
+    let r = read(&file("#50 = CLOSED_SHELL('',());\n#51 = MANIFOLD_SOLID_BREP('',#50);\n")).map(|_| ()).expect_err("an empty shell");
+    assert_eq!((r.why, r.entity), (Why::Empty, Some(50)), "{r}");
+}

@@ -232,6 +232,24 @@ pub(crate) fn pole_at(surface: &Surface,uv: Uv,within: f64) -> Option<usize> {
     else { None }
 }
 
+/// Whether the pole at `uv` (its collapsed parameter `along`) is a cusp: the surface's derivative
+/// across it one line whatever the collapsed parameter's value — read at three values a third of
+/// its span apart — so that no tangent plane is there and a curve's tangent arriving says nothing
+/// of the value it arrives along (a horn torus's middle; a net whose collapsed row's neighbour is
+/// one point too). A sphere's pole and a cone's apex are none.
+pub(crate) fn cusp(surface: &Surface,uv: Uv,along: usize) -> bool {
+    let span = match (surface.periods()[along],surface) {
+        (Some(p),_) => p,
+        (None,Surface::BSpline(_,n)) => { let [lo,hi] = n.domain()[along]; hi-lo }
+        _ => return false,
+    };
+    let across = |x: f64| { let mut q = uv; q[along] = x; let (_,su,sv) = surface.d1(q); if along == 0 { sv } else { su } };
+    let d: Vec<V> = (0..3).map(|i| across(uv[along]+span*i as f64/3.)).collect();
+    let sizes: Vec<f64> = d.iter().map(|x| norm(*x)).collect();
+    if sizes.iter().any(|&s| !(s > 0.)) { return false }
+    (0..3).all(|i| norm(crate::util::space::cross(d[i],d[(i+1)%3])) <= 1e-9*sizes[i]*sizes[(i+1)%3])
+}
+
 /// Whether `surface` is one no chart of which collapses anywhere, so it has no pole: a plane, a
 /// cylinder, an extrusion, a ring torus.
 pub(crate) fn poleless(surface: &Surface) -> bool {
@@ -392,7 +410,14 @@ impl Brep {
             let inner = c.pcurve.at(e.t[end]+into*1e-3*(e.t[1]-e.t[0]),e,&f.surface,&self.vertices);
             // (from the curve's own end, which a vertex read from a file need not be: a step
             // out from a vertex on the far side of the pole reads the meridian opposite, #993)
-            let limit = leaving_pole(&f.surface,curve.point(e.t[end]),scale(curve.tangent(e.t[end]),into),inner,along)?;
+            // (at a cusp — a horn torus's middle, a net's row collapsed with its neighbour, every
+            // curve arriving along one line — the tangent says nothing of the value: the limit of
+            // the curve's own feet, extrapolated from three steps in, `x(h) = x₀ + a h + b h²`)
+            let limit = if cusp(&f.surface,a,along) {
+                let x = |h: f64| c.pcurve.at(e.t[end]+into*h*(e.t[1]-e.t[0]),e,&f.surface,&self.vertices)[along];
+                let (x1,x2,x4) = (x(1e-3),x(5e-4),x(2.5e-4));
+                (8.*x4-6.*x2+x1)/3.
+            } else { leaving_pole(&f.surface,curve.point(e.t[end]),scale(curve.tangent(e.t[end]),into),inner,along)? };
             let mut ends = [*from,*to];
             // (an end already there, to a hair, is kept as it was)
             if (ends[end][along]-limit).abs() <= 1e-9 { return None }
