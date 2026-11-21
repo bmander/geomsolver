@@ -1658,7 +1658,7 @@ that hold its curves, where both are carried (`closed`'s `Touch`). The closed cl
   - Each such face is given those points against the sheet, and nothing else.
   - The circle where the neighbour meets the band touches the sheet there: a double root, which no
     search proves by a change of sign. It is read off the given points as a touch, with no search
-    (`boolean`'s `on_given`).
+    (`boolean`'s `on_known`).
   - Gate: brep-bench's bull-nose pushed in at a lean, its mill turned from a meridian that puts
     the touches mid-span on its side's rim. It was refused ("a circle … meets a extrusion was not
     proved"), and is now cut from the block to `swept_slid::Mill::plunged_away`'s closed form to
