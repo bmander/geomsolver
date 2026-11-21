@@ -477,6 +477,29 @@ fn an_axis_is_picked_where_it_is_drawn_and_the_drawing_outranks_it() {
     assert_eq!(pick(sk, &front, seen([10.0, 0.0, 10.0], -FRAC_PI_2, 0.0), 0.5, 0.01), None);
 }
 
+/// **A curve traced in space is picked where it is drawn** (#363): a spline over points in space
+/// is a curve in space, in no view, drawn by the box as its polyline — and a click on that
+/// polyline, as the eye sees it from any side, picks it, by the name the document gave the
+/// spline; beside it, nothing.
+#[test]
+fn a_curve_traced_in_space_is_picked_where_it_is_drawn() {
+    let e = build("use std\na := point hint((0, 0, 0))\nb := point hint((10, 20, 5))\n\
+                   c := point hint((30, -10, 15))\nd := point hint((40, 10, 0))\n\
+                   s := spline(a, b, c, d)\n");
+    let sk = &e.sketch;
+    let s = e.map.ent_named("s").unwrap();
+    assert_eq!(s.kind, EntKind::Traced, "drawn as a curve in space");
+    let poly = gcs_core::overview::traced_polyline(sk, s.i(), 0.01);
+    let mid = poly[poly.len() / 2];
+    for (az, el) in [(0.6, 0.5), (-FRAC_PI_2, 0.0), (2.0, -0.4)] {
+        let proj = Projection::new(sk, az, el);
+        assert_eq!(pick(sk, &proj, seen(mid, az, el), 0.5, 0.01), Some(s), "from ({az}, {el})");
+    }
+    let proj = Projection::new(sk, 0.6, 0.5);
+    let off = seen([mid[0], mid[1], mid[2] + 30.0], 0.6, 0.5);
+    assert_eq!(pick(sk, &proj, off, 0.5, 0.01), None, "beside it, nothing");
+}
+
 /// A blank sheet's axes are drawn one arrow each: `std.back`, which lies on `std.x` reversed, is
 /// that line drawn once, the first declared's, and not a second head pointing left.  An axis
 /// on a line of its own is drawn, whatever it is parallel to.

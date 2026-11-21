@@ -40,12 +40,15 @@ fn reconciled(e: &mut Elaborated, sk: &Sketch, prog: &Program) -> Result<Edit, S
     let mut names = Vec::new();
     let mut taken = taken_names(prog);
     // a name for each new entity first, so a line drawn between two new points can refer to them
-    let minted = new_entities(e, sk, &mut taken);
+    // what the rounds over points in space are drawn over, declared and held nowhere
+    let rounds = sk.round_owned();
+    let minted = new_entities(e, sk, &rounds, &mut taken);
     // **What the sketch holds fixed, walked once**: the naming pass below must know what a gauge
     // will have to name, and `gauges` writes those same holds out as statements further down.
     // Two walks were two readings of one question — and the walk is not cheap, `root_declared`
-    // ending in a scan of the root body.
-    let held = held_refs(sk, &e.map.held_within, &|r| root_declared(e, prog, r));
+    // ending in a scan of the root body.  A round's own is held by the elaboration that drew it.
+    let held = held_refs(sk, &e.map.held_within,
+                         &|r| root_declared(e, prog, r) && !rounds.contains(&r));
     let mut needed = needed(e, sk, &minted, &held);
     let memberships = memberships(e, sk, prog, &mut needed)?;
     let (named, renamed) = name_anonymous(e, sk, prog, needed, &minted, &mut taken, &mut names)?;
@@ -106,10 +109,12 @@ fn origin_of(sk: &Sketch, r: EntRef) -> Option<usize> {
 /// A fresh name for each entity the sketch has past what the elaboration made — the high-water
 /// mark, per kind: past it is new — but a plane's origin, and a plane's normal: minted where the
 /// document reads it, and `o.plane.normal` after every axis a statement made (#463), so past the
-/// mark and still nothing a gesture drew.
+/// mark and still nothing a gesture drew; nor what an arc or a circle over points in space is
+/// drawn over (`Sketch::round_owned`), minted after everything the document declares.
 fn new_entities(
     e: &Elaborated,
     sk: &Sketch,
+    rounds: &std::collections::BTreeSet<EntRef>,
     taken: &mut std::collections::BTreeSet<String>,
 ) -> Names {
     let mut high: std::collections::BTreeMap<EntKind, usize> = std::collections::BTreeMap::new();
@@ -121,6 +126,7 @@ fn new_entities(
     for r in sk.primitives() {
         if r.i() < high.get(&r.kind).copied().unwrap_or(0) || origin_of(sk, r).is_some()
             || (r.kind == EntKind::Axis && sk.normal_of(r.i()).is_some())
+            || rounds.contains(&r)
         {
             continue;
         }
@@ -419,7 +425,8 @@ fn declarations(said: &Said, adds: &mut Vec<StmtKind>, made: &mut Vec<Made>, nam
         d.name = syntax::DeclName::Written(syntax::Name::new(name.clone()));
         rename_children(&mut d, sk, r, &|k| said.name_of(k));
         // the plane its points are on, by the name the document calls it
-        d.membership = crate::program::plane_of_entity(sk, r)
+        // — none for an arc or a circle over points in space, drawn in a plane of its own
+        d.membership = crate::program::plane_of_entity(sk, r).filter(|_| sk.round(r).is_none())
             .map(|p| syntax::Membership::lifted(syntax::Ref::new(said.name_of(EntRef::frame(p)))))
             .unwrap_or_default();
         names.push(name.clone());
@@ -548,7 +555,7 @@ fn rename_children(
     r: EntRef,
     name_of: &dyn Fn(EntRef) -> String,
 ) {
-    let kids = sk.children(r);
+    let kids = crate::program::written_children(sk, r);
     let mut i = 0usize;
     for slot in d.children.iter_mut() {
         for c in slot.iter_mut() {
@@ -557,6 +564,12 @@ fn rename_children(
             }
             i += 1;
         }
+    }
+    // a circle's normal named, as the document calls it (#363 S6)
+    if let (Some(syntax::Normal::Axis(n)), Some((axis, _))) =
+        (d.normal.as_mut(), sk.round(r).and_then(|r| r.normal))
+    {
+        *n = syntax::Ref::new(name_of(axis));
     }
 }
 

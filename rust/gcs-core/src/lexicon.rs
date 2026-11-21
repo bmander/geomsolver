@@ -537,6 +537,11 @@ fn declaration(kind: EntKind) -> Entry {
             if kind == EntKind::Arc {
                 e.slots.push(Slot::new("sense", Role::Option).ty("word").words(&["ccw", "cw"]).optional());
             }
+            // what a circle about a point in space stands square to (#363 S6): an axis or a line,
+            // or its own seeded along a direction, `hint(dir: (0, 0, 1))`
+            if kind == EntKind::Circle {
+                e.slots.push(Slot::new("normal", Role::Option).kinds(&["axis", "line"]).optional());
+            }
         }
     }
     e

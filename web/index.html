@@ -24,18 +24,14 @@
       <!-- the objects being built, off the page's thread, along the workspace's bottom edge while
            any is (`app/build-bar.ts`); clicked, the list of them -->
       <div id="build-bar" role="progressbar" aria-label="Objects being built" hidden></div>
-      <!-- the viewport's choosers, in its upper right: the plane drawn on, and — where the
-           document states one — the load scenario drawn over the workspace, its card unfolding
-           beneath it once one is chosen.  Filled by `main` and `scenario-card` -->
+      <!-- the viewport's chooser, in its upper right: where the document states one, the load
+           scenario drawn over the workspace, its card unfolding beneath it once one is chosen.
+           Filled by `scenario-card` -->
       <div id="view-picks">
         <div class="picks">
           <label id="scenario-pick" hidden title="A load scenario the document states — choosing one draws its supports and loads, and how the drawing moves under it; None draws none">
             <span>Scenario</span>
             <select id="scenario-select" aria-label="Load scenario"></select>
-          </label>
-          <label id="plane-pick" title="The plane the next thing is drawn on — choosing one also turns the view square on to it; None draws points and lines in space">
-            <span>Sketch on</span>
-            <select id="plane-select" aria-label="Sketch plane"></select>
           </label>
         </div>
         <section id="scenario-card" hidden aria-label="Load scenario">
@@ -92,10 +88,6 @@
       <!-- a row per parameter the drawing declares, its interval a slider: filled by `timeline` -->
       <div id="timeline" aria-label="Parameters" hidden></div>
       <div id="measure" aria-live="polite"></div>
-      <div id="cpanel" hidden>
-        <h2 id="cpanel-title"></h2>
-        <ul id="clist"></ul>
-      </div>
     </div>
     <div id="psplit" role="separator" aria-orientation="vertical" tabindex="0"
          aria-label="Resize the program panel"></div>

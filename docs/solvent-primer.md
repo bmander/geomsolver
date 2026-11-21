@@ -1508,7 +1508,9 @@ plane as an argument does not imply `in`.
 held `fix((x, y, z)) p`; a line between two is a line in space. An arc over points in space is
 drawn in the plane through its centre and its ends, the short way round, so a chain of lines and
 arcs may bend in any plane with none written; a circle about a point in space takes the axis it
-stands square to, `circle(center: o, normal: ax)` (with none it is E060). In a plane an arc runs
+stands square to, `circle(center: o, normal: ax)` — or an axis of its own, seeded along a direction
+and free for its constraints to turn, `circle(center: o, normal: hint(dir: (0, 0, 1)))` (with
+neither it is E060). In a plane an arc runs
 counter-clockwise from its start; `arc(center: c, sense: cw)` runs clockwise, so a chain in a
 plane may turn right at it. A chain may also enter an arc at its end and walk it to its start —
 threaded with both ends written, `-> tangent (k := arc(center: c, start: f, end: e)) ->` entered

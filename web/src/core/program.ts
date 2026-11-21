@@ -16,7 +16,7 @@
  */
 import type { Level, Pictured, ScenarioMark } from './scenario.js';
 import { Constraint } from './constraints.js';
-import { Kind, KINDS, Plane, Primitive, Sketch, fromWire } from './model.js';
+import { Kind, KINDS, Primitive, Sketch, fromWire } from './model.js';
 import type { Way } from './model.js';
 import type { Row } from './outline.js';
 import type { Word, WordRequest } from './lexicon.js';
@@ -83,6 +83,8 @@ export type BodyWord = 'union' | 'cut' | 'common';
 /** A region of the drawing (`Document.regionAt`): the edges of its outer loop and of each hole in
  *  walk order, by name, and the rings — outer first — in the plane's own coordinates. */
 export interface Region {
+  /** The plane it is on, by index — `-1` the page — and the view its rings are drawn in. */
+  plane: number;
   outer: string[];
   holes: string[][];
   rings: [number, number][][];
@@ -501,8 +503,8 @@ export class Document {
   }
 
   /** A plane or an axis dropped by a button, constrained to what `from` names (the selection)
-   *  by the core's table, and seeded off the live drawing; `current` is the plane being drawn
-   *  on, which a datum with nothing selected is set off. */
+   *  by the core's table, and seeded off the live drawing; `current` names the plane a datum
+   *  with nothing selected is set off. */
   addDatum(kind: 'plane' | 'axis', from: string[], current?: string, name?: string): Edit {
     return edit(withJson({ kind, from, current, name },
       (p, n) => core().gcs_elab_add_datum(this.h, this.sketch.handle, p, n)));
@@ -574,12 +576,15 @@ export class Document {
     );
   }
 
-  /** The region of the drawing on `plane` (null the page) around `(x, y)` in its coordinates:
-   *  the outer loop's edges and each hole's, by the names a face is written with, and their
-   *  rings to wash — or null where no loop encloses it, or `{ refused }` with the cause. */
-  regionAt(plane: Plane | null, x: number, y: number, unit: number): Region | { refused: string } | null {
-    const i = plane ? plane.index : -1;
-    return takeJson(core().gcs_elab_region_json(this.h, this.sketch.handle, i, x, y, unit));
+  /** The region of the drawing under `(x, y)` on the picture plane of the eye at `az`, `el`
+   *  (radians): on the nearest plane under it that has one, else on the page — the plane it is
+   *  on, the outer loop's edges and each hole's, by the names a face is written with, and their
+   *  rings to wash in that plane — or null where no loop encloses it, or `{ refused }` with the
+   *  cause (`overview::region::region_seen`). */
+  regionSeen(az: number, el: number, x: number, y: number,
+             unit: number): Region | { refused: string } | null {
+    return takeJson(core().gcs_elab_region_seen_json(this.h, this.sketch.handle, az, el, x, y,
+                                                     unit));
   }
 
   /** Take out the statements that declare these, and every statement that named one.  An entity

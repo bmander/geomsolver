@@ -59,7 +59,7 @@ import * as tools from './tools.js';
 import * as underlay from './underlay.js';
 import type { Bitmap, Underlay } from './underlay.js';
 import {
-  NOWHERE, PAGE, boundsSeen, calloutSeen, lookOf, maps, nearestSeen, ofView, panesSeen, pickSeen,
+  NOWHERE, PAGE, boundsSeen, calloutSeen, eyeFrame, maps, nearestSeen, ofView, pickSeen,
   pickEdgeSeen, pickSolidSeen, placeOf, spacePoints, underSeen, workspace,
 } from '../core/workspace.js';
 import type { View, Workspace } from '../core/workspace.js';
@@ -163,13 +163,12 @@ export const PICK_PX = 8;
 export const TOUCH_PICK_PX = 22;
 
 /** The planes every workspace offers, whether or not the document has them yet — a CAD part's
- *  origin planes.  `std.front` is the page itself seen in space, so geometry drawn on it with no
- *  `use std` stays on the page; the other two bring the library in the first time they are drawn
- *  on (`ensurePlane`). */
+ *  origin planes.  A tool that still draws in a plane draws in the one of them the eye is most
+ *  square to (`facingPlane`), bringing the library in the first time (`ensureToolPlane`). */
 export const STANDARD_PLANES = ['std.front', 'std.side', 'std.top'] as const;
 
 /** A document of nothing but `use std`, read once: where the standard planes are for a document
- *  that does not have them yet, so the eye can be turned to one before it is drawn on. */
+ *  that does not have them yet, so the workspace can be sectioned by one. */
 let stdDoc: Document | null = null;
 function standardDocument(): Document {
   return stdDoc ??= Document.read('use std\n');
@@ -179,8 +178,6 @@ function standardDocument(): Document {
  *  document with solids or geometry off the front plane opens with. */
 const FRONT = { az: -Math.PI / 2, el: 0 };
 const THREE_QUARTER = { az: -Math.PI / 3, el: Math.PI / 6 };
-/** How long the eye takes to swing square on to a chosen plane. */
-const LOOK_MS = 260;
 
 /** How long after an edit, with the page otherwise quiet, its parameters are followed where the
  *  page cannot say when it is idle (#412). */
@@ -317,15 +314,11 @@ export class SketchView {
   set selected(prims: Primitive[]) {
     this._selected = prims;
     // assigning the drawing's selection, even to nothing, lets the solids go: a press on a
-    // callout or on the constraint list selects that instead
+    // callout selects that instead
     this._solids = [];
     if (prims.length) this.dropImage();
-    // picking a view is choosing where to draw: a plane selected on its own becomes the current
-    // one, and stays so past the selection — the point drawn next is in it
-    if (prims.length === 1 && prims[0] instanceof Plane) {
-      this.plane = prims[0];
-      this.openSpace = false;
-    }
+    // a plane is selected as anything else is, and let go with it: nothing is drawn on it for
+    // being picked
   }
   private _selected: Primitive[] = [];
   /** **The outline's rows hidden** (#435), by the key each is carried by (`hidden.rowKey`): view
@@ -366,17 +359,34 @@ export class SketchView {
    *  constrains one beside a point, and holding both would leave Delete ambiguous. */
   get selectedSolids(): readonly SolidPick[] { return this._solids; }
   private _solids: SolidPick[] = [];
-  /** **The current plane**: the view every point a tool mints is drawn in, or null for the
-   *  page.  A proxy of the current sketch, carried across a re-elaboration by name like the
-   *  selection, and let go when the name no longer resolves — a deleted plane, or a load. */
-  plane: Plane | null = null;
-  /** A standard plane chosen to draw on that the document does not have yet — it says no
-   *  `use std` — named until the first press of a tool brings it in (`ensurePlane`). */
-  pendingPlane: string | null = null;
-  /** **Drawing in space** — the chooser's None: no plane is current, and every point a tool mints
-   *  stands in space, in no view, where the eye sees the click (`Sketch.pointSeen`).  View state,
-   *  like the current plane: kept across an edit and an undo, let go by a load. */
-  openSpace = false;
+  /** **Everything is drawn in space.**  There is no current plane: what a tool mints stands in
+   *  no view, on the plane through the origin square to the eye's ray, where the eye sees the
+   *  click (`Sketch.pointSeen`), nought deep — its constraints say the rest.  A tool that cannot
+   *  draw in space yet (`drawsInPlane`) draws in the standard plane the eye is most square to,
+   *  chosen afresh at each press: `toolPlane`, null for every other tool. */
+  get toolPlane(): Plane | null {
+    return tools.drawsInPlane(this.tool) ? this.facingStd() : null;
+  }
+
+  /** The standard plane the eye is most square to, where the document has it. */
+  facingStd(): Plane | null {
+    const pl = this.doc.entity(this.facingPlane());
+    return pl instanceof Plane ? pl : null;
+  }
+
+  /** The standard plane the eye is most square to: the one whose normal lies nearest its ray —
+   *  asked again only when the eye turns. */
+  facingPlane(): typeof STANDARD_PLANES[number] {
+    const { az, el } = this.orbit;
+    const f = this.facing;
+    if (f && f.az === az && f.el === el) return f.name;
+    const t = eyeFrame(az, el).toward.map(Math.abs);
+    // std.side is (y, z), square to x; std.front (x, z), to y; std.top (x, y), to z
+    const name = t[0] >= t[1] && t[0] >= t[2] ? 'std.side' : t[1] >= t[2] ? 'std.front' : 'std.top';
+    this.facing = { az, el, name };
+    return name;
+  }
+  private facing: { az: number; el: number; name: typeof STANDARD_PLANES[number] } | null = null;
   highlight: Primitive[] = [];
   pending: Point[] = [];
   /** Where the fit tool has been told the curve must pass, before there is a curve.  Places
@@ -450,7 +460,7 @@ export class SketchView {
   onHidden: () => void = () => {};
   /** Fired when the section is turned on or off, moved or flipped, so its bar follows. */
   onSection: () => void = () => {};
-  /** Per gesture frame: the sketch's structure and the constraint list are unchanged, so
+  /** Per gesture frame: the sketch's structure and its constraints are unchanged, so
    *  only the status line needs updating (a drag's numbers, a band's selection count). */
   onDragFrame: () => void = () => {};
   onStatus: (msg: string) => void = () => {};
@@ -568,8 +578,6 @@ export class SketchView {
   /** A gesture moved geometry, so the null space no longer describes the pose on screen. */
   staleDiagnosis = false;
   private frame = 0;
-  /** The eye swinging square on to a plane: its timer, so a second choice replaces the first. */
-  private looking = 0;
   /** Every object, built exactly by a pool of workers and drawn as it arrives (#671): the page's
    *  own thread builds none.  Without workers (node, a test's view) the sketch builds its own. */
   builds = new ObjectBuilds((error) => this.objectsArrived(error), (r) => this.onBuilds(r), undefined,
@@ -589,19 +597,9 @@ export class SketchView {
     this.doc = doc;
     this.box3d = new Box3D(boxCanvas);
     this.ctx = canvas.getContext('2d')!;
-    this.drawOnFront();
     // the parts closed and the kinds shown, told the drawing it opens on (#678, #679)
     hidden.applyHidden(this);
     bindEvents(this);
-  }
-
-  /** There is no page: a document nothing has been chosen on is drawn on the front, brought in by
-   *  the first press of a tool where the document does not say `use std` yet (`ensurePlane`). */
-  private drawOnFront(): void {
-    if (this.plane || this.pendingPlane || this.openSpace) return;
-    const front = this.doc.entity('std.front');
-    if (front instanceof Plane) this.plane = front;
-    else this.pendingPlane = 'std.front';
   }
 
   /** The drawing the source came to.  Read everywhere and written nowhere: a new drawing is a
@@ -618,7 +616,8 @@ export class SketchView {
    * workspace onto, which zooms and pans.  A **view's** camera is that composed with the view's
    * own map (`ViewCam`), and is what turns page coordinates into pixels — so `w2s` and `s2w` read
    * whichever view is being worked in: the one the painter is drawing (`inView`), else the
-   * current plane, which is where a tool puts what it makes. */
+   * tool's — the eye's own picture plane, or the plane a tool that cannot draw in space draws
+   * in. */
 
   w2s(x: number, y: number): [number, number] { return this.viewCam().w2s(x, y); }
 
@@ -671,16 +670,11 @@ export class SketchView {
   /** The view the painter is drawing in, while it is — see `inView`. */
   private drawing: ViewCam | null = null;
 
-  /** The plane being drawn on: the current plane's view, else the page's — and none at all while
-   *  drawing in space, where no view's callouts are the ones being drawn. */
-  get activeView(): View {
-    if (this.openSpace) return NOWHERE;
-    return this.plane ? this.plane.index : PAGE;
-  }
-
-  /** The view a tool reads its clicks off: the plane being drawn on. */
+  /** The view a tool reads its clicks off: its plane's, or none at all — in space, the eye's
+   *  own picture plane. */
   get toolView(): View {
-    return this.activeView;
+    const pl = this.toolPlane;
+    return pl ? pl.index : NOWHERE;
   }
 
   /** A view's camera, or null for a figure that stands in no one view. */
@@ -688,20 +682,17 @@ export class SketchView {
     return ofView(this.cams(), view);
   }
 
-  /** The camera of the view being worked in: the painter's, else the tool's — the eye's own while
-   *  drawing in space, whose clicks are read on its picture plane. */
+  /** The camera of the view being worked in: the painter's, else the tool's — the eye's own in
+   *  space, whose clicks are read on its picture plane. */
   viewCam(): ViewCam {
     return this.drawing ?? this.toolCam();
   }
 
-  /** The camera a tool reads its clicks through: the current plane's, or the eye's own while
-   *  drawing in space. */
+  /** The camera a tool reads its clicks through: the eye's own, in space — or the plane's of a
+   *  tool that draws in one. */
   toolCam(): ViewCam {
-    if (this.openSpace) {
-      this.cams();
-      return this.camCache!.eye;
-    }
-    return this.camOf(this.toolView) ?? this.cams()[0];
+    const pl = this.toolPlane;
+    return (pl && this.camOf(pl.index)) ?? this.eyeCam();
   }
 
   /** The view a point stands in. */
@@ -872,7 +863,7 @@ export class SketchView {
   }
 
   /** The view a scene item belongs to, as a `Plane` — the other decode of the wire, for the pane
-   *  `box3d` bolds as the plane being drawn on. */
+   *  `box3d` lights while a plane standing there is selected. */
   planeOf(it: Omit<Item, 'pts' | 'shade'>): Plane | null {
     const p = it.plane !== undefined ? this.doc.entityOf({ kind: 'frame', index: it.plane }) : null;
     return p instanceof Plane ? p : null;
@@ -968,11 +959,6 @@ export class SketchView {
       this.dropUndo();
       return false;
     }
-    // another document is drawn on its front until told, as a view opens
-    if (this.openSpace) {
-      this.openSpace = false;
-      this.drawOnFront();
-    }
     this.onLoad();
     return true;
   }
@@ -1046,17 +1032,10 @@ export class SketchView {
     this.settle(carry);               // before the swap: nothing in flight may reach the new sketch
     const held = carry ? this.namesOf(this.selected) : [];
     const heldSolids = carry ? this._solids : [];
-    const heldPlane = carry && this.plane ? this.doc.nameOf(this.plane) : undefined;
-    const space = this.openSpace;
     const old = this.doc;
     this.doc = next;
     // the outgoing elaboration owns a core sketch, and a wasm heap only grows
     if (old !== next) old.dispose();
-    // the current plane crosses by name too, and only if the name still reaches a plane: an
-    // edit keeps it, deleting it or loading another document lets it go
-    // the selection first: its setter arms the current plane when a lone plane is picked, and
-    // what the swap carries is the answer — otherwise a plane still selected but deliberately
-    // *not* current (`choosePlane`) would be re-armed by the rebind
     this.selected = carry ? this.rebind(held) : [];
     // a solid crosses by name too; the face path is the source's words and needs no rebinding
     if (heldSolids.length) {
@@ -1071,21 +1050,6 @@ export class SketchView {
     // the section by its plane's name, on the drawing just taken (a load let it go first)
     this.applySection();
     if (this.liveExtent && !extent.liveHandle(this)) this.endExtent();
-    const again = heldPlane ? this.doc.entity(heldPlane) : undefined;
-    this.plane = again instanceof Plane ? again : null;
-    // drawing in space is no plane to lose, and outlasts a lone plane the selection re-armed
-    this.openSpace = space;
-    this.drawOnFront();
-    // a standard plane chosen before the document had it: brought in by the edit just taken
-    if (this.pendingPlane) {
-      const wanted = this.doc.entity(this.pendingPlane);
-      if (wanted instanceof Plane) {
-        this.plane = wanted;
-        this.pendingPlane = null;
-      } else if (!carry) {
-        this.pendingPlane = null;   // another document: it chooses its own
-      }
-    }
     // a new document is looked at the way it is drawn: a flat one square on, one with solids or
     // with geometry off the front plane from three quarters
     if (fit && !carry) this.orbit = this.homeOrbit();
@@ -1311,7 +1275,7 @@ export class SketchView {
     // A dimension still being laid down is being *said*, not solved, and the drawing holds
     // still under the number while somebody decides where to put it and which one it is: no
     // solve, and no re-diagnosis either — nothing changes colour, no banner appears and
-    // disappears under the pointer, and the constraint list does not rebuild on every kind the
+    // disappears under the pointer, and the status line does not change on every kind the
     // number passes through.  The click that plants it is when all of it happens, once, and
     // when what it came to is reported — see `dimension.placeDimension`.
     if (this.liveDim?.placing) {
@@ -1673,19 +1637,6 @@ export class SketchView {
       ? [...this.highlight, h.ent] : this.highlight;
   }
 
-  /** The plane whose pane is under the canvas point, nearest the eye, as the chooser names it — a
-   *  pane is the plane, so double-clicking one is choosing it.  Of panes standing in one place
-   *  (`std.up` on `std.front`), the one the chooser offers. */
-  paneAt(sx: number, sy: number): string | null {
-    const { az, el } = this.orbit;
-    const offered = this.planeChoices();
-    for (const pl of panesSeen(this.sketch, az, el, ...this.eye(sx, sy))) {
-      const name = this.doc.nameOf(pl);
-      if (name && offered.includes(name)) return name;
-    }
-    return null;
-  }
-
   // -- a load scenario, drawn (#510) -----------------------------------------
 
   /** The document's load scenarios, by name, in the order written. */
@@ -1786,13 +1737,11 @@ export class SketchView {
     return c && (c === this.litConstraint || this.showsCallouts(hit.view)) ? c : null;
   }
 
-  /** Whether a view's callouts are shown: those of the plane being drawn on, as a CAD tool shows
-   *  the dimensions of the sketch being edited — and of any view standing in the same place, as
-   *  the page and `std.front` do.  The rest of the workspace's dimensions would be a thicket from
-   *  any one eye; the dimension being written or focused is shown wherever it is. */
+  /** Whether a view's callouts are shown: every plane's, there being no one plane being drawn
+   *  on — the painter passes by a plane seen edge on (`EDGE_ON`).  One in no view has no figure
+   *  to draw; the dimension being written or focused is shown wherever it is. */
   showsCallouts(view: View): boolean {
-    const ws = this.workspace();
-    return view !== NOWHERE && placeOf(ws, view) === placeOf(ws, this.activeView);
+    return view !== NOWHERE;
   }
 
   /** The view a dimension's callout is laid out in — where a press on it is read, and where it
@@ -1910,7 +1859,6 @@ export class SketchView {
   addDatum(kind: 'plane' | 'axis', name?: string): boolean {
     return solids.addDatum(this, kind, name);
   }
-  sketchOnFace(pick: SolidPick): boolean { return solids.sketchOnFace(this, pick); }
 
   extentArrow(): Handle | null { return extent.extentArrow(this); }
   sizeExtent(sx: number, sy: number, both = false): void {
@@ -1918,9 +1866,9 @@ export class SketchView {
   }
   commitExtent(text?: string): string | null { return extent.commitExtent(this, text); }
   endExtent(): void { extent.endExtent(this); }
-  /** **The planes a sketch can be drawn on**, by name, for the workspace's chooser: the three
-   *  standard ones first, whether or not the document has them yet, then every other plane the
-   *  document names (`std.up` is the front plane turned, so it is not offered twice). */
+  /** **The planes the workspace can be sectioned by**, by name, for the section bar's chooser:
+   *  the three standard ones first, whether or not the document has them yet, then every other
+   *  plane the document names (`std.up` is the front plane turned, so it is not offered twice). */
   planeChoices(): string[] {
     const ws = this.workspace();
     const names = new Set<string>(STANDARD_PLANES);
@@ -1941,14 +1889,6 @@ export class SketchView {
     return [...names];
   }
 
-  /** The name of the plane being drawn on, as the chooser shows it — `''` while drawing in
-   *  space, the chooser's None. */
-  get planeName(): string {
-    if (this.openSpace) return '';
-    if (this.pendingPlane) return this.pendingPlane;
-    return (this.plane && this.doc.nameOf(this.plane)) || 'std.front';
-  }
-
   /** **Section the workspace**, or stop: `next` names its plane, which side it keeps and how far
    *  along its normal it is moved.  The core is told (`applySection`) and the box re-cuts. */
   setSection(next: Sectioning | null): void {
@@ -1959,10 +1899,10 @@ export class SketchView {
     this.draw();
   }
 
-  /** Section by the plane being drawn on (the front where none is), or stop sectioning. */
+  /** Section by the standard plane the eye is most square to, or stop sectioning. */
   toggleSection(): void {
     if (this.section) return this.setSection(null);
-    const plane = this.planeName || 'std.front';
+    const plane = this.facingPlane();
     this.setSection({ plane, flip: false, offset: 0 });
     this.onStatus(`section on ${plane}`);
   }
@@ -1993,104 +1933,22 @@ export class SketchView {
     setCut(this.sketch, frame && this.section && { frame, ...this.section });
   }
 
-  /** **Sketch on a plane**: make it the one the next thing is drawn in, and turn the eye square
-   *  on to it unless `look` is false (a double-click on its pane leaves the eye where it is).  A
-   *  standard plane the document does not have yet is remembered by name and brought in by the
-   *  first press of a tool (`ensurePlane`), so choosing one writes nothing. */
-  choosePlane(name: string, look = true): void {
-    const found = this.doc.entity(name);
-    if (found instanceof Plane) {
-      // **choosing a hidden plane shows it**
-      hidden.reveal(this, found);
-      this.plane = found;
-      this.pendingPlane = null;
-    } else if ((STANDARD_PLANES as readonly string[]).includes(name)) {
-      this.plane = null;
-      this.pendingPlane = name;
-    } else {
-      return this.onStatus(`there is no plane ${name}`);
+  /** Bring the plane a tool draws in into the document before anything is drawn on it: a tool
+   *  that cannot draw in space yet draws in the standard plane the eye is most square to, and a
+   *  document without `use std` gains it (one undoable edit).  True when the tool can draw. */
+  ensureToolPlane(): boolean {
+    if (!tools.drawsInPlane(this.tool)) return true;
+    const name = this.facingPlane();
+    if (!this.facingStd() && !this.apply(this.doc.addUse('std'), `use std, for ${name}`)) {
+      return false;
     }
-    this.openSpace = false;
-    // the plane is where the next thing goes, not a thing picked: a selected plane would open the
-    // constraints window over the drawing about to be made
-    if (this.selected.some((e) => e instanceof Plane)) {
-      this.selected = this.selected.filter((e) => !(e instanceof Plane));
-    }
-    if (look) this.lookAt(this.lookFor(name));
-    this.onStatus(`drawing on ${name}`);
-    this.onChanged();
-  }
-
-  /** **Draw in space** — the chooser's None: no plane is current, and what a tool makes next stands
-   *  in space where the eye sees it, nought deep (`workspace::unseen`); its constraints say the
-   *  rest.  The eye stays where it is — there is no plane to face — and nothing is written. */
-  drawInSpace(): void {
-    this.plane = null;
-    this.pendingPlane = null;
-    this.openSpace = true;
-    if (this.selected.some((e) => e instanceof Plane)) {
-      this.selected = this.selected.filter((e) => !(e instanceof Plane));
-    }
-    this.onStatus('drawing in space');
-    this.onChanged();
-  }
-
-  /** The eye square on to a named plane: this document's own where it has the plane, else the
-   *  standard library's, read once from a document of nothing but `use std`. */
-  private lookFor(name: string): { az: number; el: number } {
-    const here = this.doc.entity(name);
-    if (here instanceof Plane) return lookOf(this.workspace(), here.index) ?? { ...this.orbit };
-    if (name === 'std.front') return lookOf(this.workspace(), PAGE) ?? { ...this.orbit };
-    const std = standardDocument();
-    const pl = std.entity(name);
-    return (pl instanceof Plane && lookOf(workspace(std.sketch), pl.index)) || { ...this.orbit };
-  }
-
-  /** Swing the eye to `to`, the short way round, and redraw as it goes.  The camera's own
-   *  similarity is left where it is, so what was in the middle of the screen stays there. */
-  lookAt(to: { az: number; el: number }): void {
-    // where there is no clock to animate by (a test's view), the eye is simply there
-    const clock = typeof window !== 'undefined' && typeof window.setInterval === 'function';
-    if (clock) window.clearInterval(this.looking);
-    const from = { ...this.orbit };
-    let daz = to.az - from.az;
-    daz -= 2 * Math.PI * Math.round(daz / (2 * Math.PI));
-    if (!clock) {
-      this.orbit = { az: from.az + daz, el: to.el };
-      this.draw();
-      return;
-    }
-    const t0 = performance.now();
-    const step = (): void => {
-      const t = Math.min(1, (performance.now() - t0) / LOOK_MS);
-      const k = t * t * (3 - 2 * t);
-      this.orbit = { az: from.az + daz * k, el: from.el + (to.el - from.el) * k };
-      this.draw();
-      if (t >= 1) {
-        window.clearInterval(this.looking);
-        this.looking = 0;
-      }
-    };
-    this.looking = window.setInterval(step, 16);
-    step();
-  }
-
-  /** Bring a chosen standard plane into the document before anything is drawn on it: the
-   *  document gains `use std` (one undoable edit) and so the plane, which becomes current.
-   *  True when the plane is ready to be drawn on. */
-  ensurePlane(): boolean {
-    // drawing on a hidden plane shows it, as choosing it does
-    if (this.plane) hidden.reveal(this, this.plane);
-    if (!this.pendingPlane) return true;
-    const name = this.pendingPlane;
-    if (!this.apply(this.doc.addUse('std'), `use std, for ${name}`)) return false;
-    const pl = this.doc.entity(name);
-    if (!(pl instanceof Plane)) {
+    const pl = this.facingStd();
+    if (!pl) {
       this.onStatus(`${name} is not in the standard library`);
       return false;
     }
-    this.plane = pl;
-    this.pendingPlane = null;
+    // drawing on a hidden plane shows it
+    hidden.reveal(this, pl);
     return true;
   }
 

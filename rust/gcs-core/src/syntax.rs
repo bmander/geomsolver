@@ -1080,11 +1080,12 @@ pub struct Decl {
     /// start: l, end: m)`: its control points minted, its ends' tangents along `start:` and
     /// `end:` where they are written (`flatten::through`).  `None` for every other declaration.
     pub through: Option<Through>,
-    /// A circle's **normal** (#363 S6), `circle(center: o, normal: ax)`: an axis or a line the
-    /// circle stands square to, where its centre stands in space — the plane it is drawn in
+    /// A circle's **normal** (#363 S6), `circle(center: o, normal: ax)`: what the circle stands
+    /// square to, where its centre stands in space — an axis or a line named, or an axis of its
+    /// own seeded along a direction, `normal: hint(dir: (0, 0, 1))` — the plane it is drawn in
     /// minted through the centre (`program::entities::circles_in_space`).  `None` for every
     /// other declaration, and for a circle drawn `in` a plane.
-    pub normal: Option<Ref>,
+    pub normal: Option<Normal>,
     /// Which way an arc drawn in a plane turns from its start (#363 S4), `arc(center: c, sense:
     /// cw)`: clockwise, so a chain in a plane may turn right at it — drawn counter-clockwise in its
     /// plane turned over (`program::entities::arcs_in_space`).  `None`, counter-clockwise.
@@ -1595,6 +1596,8 @@ pub enum Sense {
 
 /// A named child, an anonymous point seed, or a face written inside a solid. Only chain
 /// desugaring may leave a partial child list; threading fills it before elaboration.
+///
+/// (A circle's `normal:` is no child: `Normal`, beside this.)
 /// `D` is a syntax declaration here and an IR declaration after lowering.
 #[derive(Clone, Debug)]
 pub enum Kid<D = Decl> {
@@ -1632,6 +1635,26 @@ impl<D> Kid<D> {
             Kid::Ref(r) => vec![r],
             Kid::Trim { curve, from, to, .. } => vec![curve, from, to],
             Kid::Hint(_) | Kid::Face { .. } => Vec::new(),
+        }
+    }
+}
+
+/// **What a circle in space stands square to** (#363 S6), its `normal:`: an axis or a line the
+/// document names, or an axis of the circle's own, seeded along a direction as a plane's `u:` is
+/// — `normal: hint(dir: (0, 0, 1))`, or `hint(dir: g)` read off geometry — free for its
+/// constraints to turn, and written back where a solve turns it.
+#[derive(Clone, Debug)]
+pub enum Normal {
+    Axis(Ref),
+    Seed(KidSeed),
+}
+
+impl Normal {
+    /// What it names: the axis or line, or what its seed's direction is read off.
+    pub fn refs_mut(&mut self) -> Vec<&mut Ref> {
+        match self {
+            Normal::Axis(r) => vec![r],
+            Normal::Seed(s) => s.dir.iter_mut().flat_map(|d| d.refs_mut()).collect(),
         }
     }
 }

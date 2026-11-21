@@ -14,12 +14,7 @@ export const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 /** The workspace's three.js canvas: under the sketch's and deaf to the pointer.  It is a *second
  *  surface* and not a second app — every gesture runs against the one above it. */
 export const boxCanvas = document.getElementById('box') as HTMLCanvasElement;
-/** The plane the next thing is drawn on, chosen in the viewport's upper right. */
-export const planeSelect = document.getElementById('plane-select') as HTMLSelectElement;
 export const aboutDag = document.getElementById('about-dag') as HTMLTemplateElement;
-export const cpanel = document.getElementById('cpanel') as HTMLElement;
-export const cpanelTitle = document.getElementById('cpanel-title') as HTMLElement;
-export const clist = document.getElementById('clist') as HTMLElement;
 export const banner = document.getElementById('banner') as HTMLElement;
 export const bannerText = document.getElementById('banner-text') as HTMLElement;
 export const bannerSelect = document.getElementById('banner-select') as HTMLButtonElement;

@@ -72,10 +72,6 @@ label.check { display: inline-flex; align-items: center; gap: 4px; cursor: point
 #banner.over, #banner.unbuilt { display: flex; background: var(--warn-bg); color: var(--warn); border-bottom: 1px solid #e69500; }
 #banner-text { flex: 1; min-width: 0; }
 
-#clist li.claim-proved      { color: var(--ok); }
-#clist li.claim-refuted     { color: #d62728; }
-#clist li.claim-independent { color: #b06d00; }
-
 /* A claim's verdict, washed behind the statement that made it (`app/program.ts::marks`).
    Background only — a border or a padding here would advance the copy's glyphs past the box's
    and put the caret beside the character it is on; see the four rules in `app/editor.ts`.
@@ -105,20 +101,20 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: 
    given a place in the order too, or the solids cover it. */
 #box { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
 #canvas { position: relative; z-index: 1; }
-/* the plane being drawn on, in the viewport's upper right as a CAD tool keeps it: over the
-   canvases, under the windows that float over the drawing */
+/* the viewport's choosers, in its upper right as a CAD tool keeps them: over the canvases,
+   under the windows that float over the drawing */
 #view-picks { position: absolute; top: 10px; right: 12px; z-index: 3;
   display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
   max-width: calc(100% - 24px); pointer-events: none; }
 #view-picks > * { pointer-events: auto; }
 #view-picks .picks { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-#plane-pick, #scenario-pick {
+#scenario-pick {
   display: flex; align-items: center; gap: 6px; padding: 3px 6px;
   font-size: 12px; color: var(--muted); background: var(--bg);
   border: 1px solid var(--line); border-radius: 6px;
   box-shadow: 0 1px 4px rgba(0,0,0,.08); }
 #scenario-pick[hidden] { display: none; }
-#plane-pick select, #scenario-pick select { font: inherit; color: var(--text); }
+#scenario-pick select { font: inherit; color: var(--text); }
 #scenario-pick.failed select { color: var(--danger); }
 /* the scenario drawn: its card, the exaggeration in its head, the legend, its lines */
 #scenario-card { width: 320px; max-width: 100%; max-height: 55vh; display: flex;
@@ -171,38 +167,10 @@ canvas.select { cursor: default; }
 #drawing-zoom { min-width: 4ch; text-align: center; font-variant-numeric: tabular-nums; }
 #drawing-status { margin: 0; white-space: pre-wrap; }
 #drawing-status:empty { display: none; }
-.drawing-active #canvas, .drawing-active #box, .drawing-active #cpanel,
+.drawing-active #canvas, .drawing-active #box,
 .drawing-active #measure, .drawing-active #banner, .drawing-active #component,
 .drawing-active #stats { visibility: hidden; }
 .drawing-active #bar-tools, .drawing-active #bar-constraints { opacity: .35; }
-
-/* what holds the selected component: a small window over the drawing rather than a column
-   beside it, so the page is the drawing.  It comes up where it was last put — its header is
-   a handle — and only while something is picked, so it costs nothing when nothing is. */
-#cpanel {
-  position: absolute; top: 12px; right: 12px; z-index: 6;
-  display: flex; flex-direction: column;
-  width: 300px; max-width: calc(100% - 24px); max-height: calc(100% - 24px);
-  border: 1px solid var(--line); border-radius: 7px;
-  background: color-mix(in srgb, var(--panel) 94%, transparent);
-  box-shadow: 0 4px 18px rgba(0,0,0,.16);
-}
-#cpanel[hidden] { display: none; }
-#cpanel h2 {
-  font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted);
-  margin: 0; padding: 7px 10px 6px; border-bottom: 1px solid var(--line); flex: none;
-  cursor: move; user-select: none;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-#clist { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1; font-family: var(--mono); font-size: 12px; }
-#clist li { padding: 3px 10px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#clist li:hover { background: #e9e9ed; }
-#clist li[aria-current="true"] { outline: 1px solid var(--accent); outline-offset: -1px; background: var(--row-sel); }
-#clist li.culprit { color: var(--danger); }
-#clist li.violated { color: #d62728; }
-#clist li.over { color: #b06d00; }
-#clist li.implied { color: var(--muted); font-style: italic; }
-#clist li.expr-error { color: #b06d00; text-decoration: underline dotted; }
 
 footer {
   flex: none; border-top: 1px solid var(--line); background: var(--panel);
@@ -210,7 +178,7 @@ footer {
   white-space: nowrap; overflow-x: auto;
 }
 footer #toast { color: var(--text); }
-/* what is picked, said in words: the same line the constraints window is headed by */
+/* what is picked, said in words */
 footer #component { color: var(--text); }
 /* the geometry on screen does not satisfy the constraints — the numbers in the status
    line are describing a sketch you are not actually looking at */
@@ -444,14 +412,14 @@ dialog input[type=search] {
 }
 #word-box[hidden] { display: none; }
 #word-box .box-row { display: flex; align-items: flex-start; gap: 8px; }
-#word-box .grip { color: var(--muted); padding-top: 6px; }
 #word-box .sentence { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 4px 4px; min-width: 0;
   font: 13px var(--mono); }
 #word-box .lit { white-space: pre; line-height: 28px; }
 #word-box .lit.word { color: var(--syn-word); }
 #word-box .slotwrap { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; }
 #word-box .slotwrap.dim { opacity: .55; }
-#word-box .cap { font: 10px system-ui, sans-serif; color: var(--syn-type); white-space: nowrap; }
+/* why the core would not write it, until the box changes */
+#word-box .refused { font-size: 11.5px; color: var(--danger); }
 #word-box .slot {
   --c: var(--accent);
   display: inline-flex; align-items: center; gap: 4px; height: 28px; box-sizing: border-box;
@@ -473,9 +441,6 @@ dialog input[type=search] {
 #word-box .acts button { height: 28px; padding: 0 8px; display: inline-flex; align-items: center; gap: 4px; }
 #word-box .acts .write.ready { background: var(--accent); border-color: var(--accent); color: #fff; }
 #word-box .acts .write.ready kbd { color: inherit; }
-#word-box .prompt { font-size: 11.5px; color: var(--muted); }
-#word-box .prompt b { color: var(--text); font-weight: 600; }
-#word-box .prompt kbd { font: 10.5px var(--mono); }
 @media (max-width: 700px) {
   .words-body { grid-template-columns: 118px minmax(0, 1fr); }
   .words-foot { display: none; }
@@ -559,10 +524,9 @@ dialog input[type=search] {
 /* still being carried: the click that settles where it goes belongs to the canvas under it */
 #canvas-wrap input.dim.carried { pointer-events: none; }
 
-/* The program the drawing came from, shown beside it.  A column and not a floating window like
-   #cpanel: the constraints window is a *remark* about what is picked and goes away with it, but
-   the program is what the drawing IS — permanently present, and typed into.  A window big enough
-   to edit a program in would cover the thing it describes. */
+/* The program the drawing came from, shown beside it.  A column and not a floating window: the
+   program is what the drawing IS — permanently present, and typed into.  A window big enough to
+   edit a program in would cover the thing it describes. */
 #ppanel {
   flex: none; width: 30%; min-width: 240px; max-width: 60%;
   display: flex; flex-direction: column;
@@ -821,7 +785,7 @@ dialog input[type=search] {
   #ppanel.folded { height: auto; }
   #ppanel.folded > :not(#ppanel-head) { display: none; }
   #ppanel.folded #ppanel-head { border-bottom: 0; }
-  #plane-pick > span, #scenario-pick > span { display: none; }
+  #scenario-pick > span { display: none; }
 }
 
 /* -- a finger -------------------------------------------------------------------------------
@@ -835,7 +799,7 @@ dialog input[type=search] {
   #program-compile, #outline-isolate, #outline-show-all { min-height: 32px; padding: 4px 12px;
     font-size: 13px; }
   #ppanel-fold { min-height: 40px; min-width: 40px; }
-  #pdiags li, #clist li { padding: 8px 10px; }
+  #pdiags li { padding: 8px 10px; }
 }
 @media (hover: none) and (pointer: coarse) {
   button kbd { display: none; }

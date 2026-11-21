@@ -44,7 +44,7 @@ export const DIMMED = 0.3;
 
 /** The alpha an entity is drawn at: dimmed while a part is open that did not make it, or while a
  *  word's slot is armed that would not take it. */
-function alphaOf(v: SketchView, ent: Primitive): number {
+export function alphaOf(v: SketchView, ent: Primitive): number {
   // a slot of a word armed: what it would not take is dimmed, so what it would stands out
   if (v.tool === 'word' && v.wordPick && !v.wordPick.accepts({ kind: 'entity', ent })) return DIMMED;
   return v.inside && !v.inside.ents.has(ent) ? DIMMED : 1;
@@ -74,9 +74,10 @@ export function inkOf(v: SketchView, sel: Set<Primitive>, hl: Set<Primitive>,
  * highlight, colour-by-state — is layered over it here, because that is a view toggle and not a
  * statement in the document.  `paint` knows what a class is nowhere.
  *
- * Module-level rather than a closure so the three.js layer inks by the same rule (`inkOf`): a
- * thing picked is lit the same way wherever it is drawn. */
-function strokeOf(v: SketchView, sel: Set<Primitive>, hl: Set<Primitive>,
+ * Module-level rather than a closure so the three.js layer strokes by the same rule (`inkOf`, and
+ * a curve in space by this whole of it): a thing picked is lit the same way wherever it is
+ * drawn. */
+export function strokeOf(v: SketchView, sel: Set<Primitive>, hl: Set<Primitive>,
                   base: string, ent: Primitive, st?: Style): [string, number] {
   const lw = st?.width ?? 1.8;   // the other copy is `svg::PLAIN_PX`; the two must agree
   const chrome = chromeOf(sel, hl, ent);
@@ -87,7 +88,7 @@ function strokeOf(v: SketchView, sel: Set<Primitive>, hl: Set<Primitive>,
 /** The app's own layer over the document's ink — selected, then highlighted — as a colour and
  *  the weight it adds, or null where the document's ink shows through.  The one statement of
  *  that order, read by the sheet's stroke and by the box's datum marks alike. */
-export function chromeOf(sel: Set<Primitive>, hl: Set<Primitive>, ent: Primitive): [string, number] | null {
+export function chromeOf<T>(sel: ReadonlySet<T>, hl: ReadonlySet<T>, ent: T): [string, number] | null {
   if (sel.has(ent)) return [COL.sel, 1.5];
   if (hl.has(ent)) return [COL.highlight, 1];
   return null;
@@ -109,15 +110,14 @@ export function paint(v: SketchView): void {
   const hl = new Set(v.lit);
   paintFigures(v, sel, hl);
   paintSplines(v, sel, hl);
-  // a plane is not stroked here: it is a pane of the workspace, drawn in space below, and the
-  // plane being drawn on is named in the chooser over the viewport
+  // a plane is not stroked here: it is a pane of the workspace, drawn in space below
   ctx.setLineDash([]);
-  // a tool's preview is where its clicks are read (`toolCam`): the eye's own, drawing in space
+  // a tool's preview is where its clicks are read (`toolCam`): the eye's own, in space
   if (v.pending.length || v.pendingFit.length) v.withCam(v.toolCam(), () => paintPreview(v));
   // the region a click would extrude, washed where it is drawn
   // (the Revolve tool's, once a click chose it, while the line to turn it about is found)
   const region = sweepsRegion(v.tool) ? v.pendingRevolve ?? v.hoverRegion : null;
-  if (region && !('refused' in region)) v.inView(v.toolView, () => paintRegion(v, region.rings));
+  if (region && !('refused' in region)) v.inView(region.plane, () => paintRegion(v, region.rings));
   if (v.diagnosis?.conflicts?.length) paintConflicts(v);
 
   paintPoints(v, sel, hl);
@@ -488,6 +488,9 @@ export function paintPreview(v: SketchView): void {
   const cur = v.cursor;
   // the fit tool collects places rather than points, so `pending` may be empty here
   const p0 = v.pending.length ? v.seen(v.pending[0]) : ([0, 0] as [number, number]);
+  // a point placed so far, where the tool reads its clicks: in its plane's coordinates, or on the
+  // eye's picture plane for one in space — read back through where it is seen
+  const at = (p: Point): [number, number] => v.s2w(...v.seen(p));
   /** A dashed line from the last point placed to the cursor. */
   const rubber = (): void => {
     ctx.beginPath();
@@ -519,7 +522,7 @@ export function paintPreview(v: SketchView): void {
   } else if (v.tool === 'spline') {
     // the control polygon so far, then a rubber band to the cursor: what is being placed is
     // the polygon, and the curve only exists once there are enough points for a cubic
-    polyPath(v, v.pending.map((p) => p.xy));
+    polyPath(v, v.pending.map(at));
     ctx.stroke();
     rubber();
   } else if (v.tool === 'rect') {
@@ -527,13 +530,13 @@ export function paintPreview(v: SketchView): void {
     const a = v.pendingFit.length ? v.w2s(...v.pendingFit[0].at) : p0;
     ctx.strokeRect(a[0], a[1], cur[0] - a[0], cur[1] - a[1]);
   } else if (v.tool === 'circle') {
-    const c = v.pending[0].xy;
+    const c = at(v.pending[0]);
     const w = v.s2w(cur[0], cur[1]);
     circlePath(v, c, Math.hypot(w[0] - c[0], w[1] - c[1]));
     ctx.stroke();
   } else if (v.tool === 'arc3') {
     const g = v.pending.length === 2
-      ? threePointArc(...v.pending[0].xy, ...v.pending[1].xy, ...v.s2w(cur[0], cur[1]))
+      ? threePointArc(...at(v.pending[0]), ...at(v.pending[1]), ...v.s2w(cur[0], cur[1]))
       : null;
     if (g) {
       arcPath(v, [g.cx, g.cy], g.r, g.a0, g.a1);
@@ -547,16 +550,18 @@ export function paintPreview(v: SketchView): void {
     } else {
       // the same rule the third click will apply: the cursor gives a direction, the second
       // point the radius
-      const [cx, cy] = v.pending[0].xy;
-      const [ex, ey] = v.pending[1].xy;
+      const [cx, cy] = at(v.pending[0]);
+      const [ex, ey] = at(v.pending[1]);
       const rw = Math.hypot(ex - cx, ey - cy);
       const q = onRadius(cx, cy, ...v.s2w(cur[0], cur[1]), rw);
       if (q) {
         // the sweep is measured where the arc will be, the same way the model measures one
-        const a0 = Math.atan2(ey - cy, ex - cx);
+        let a0 = Math.atan2(ey - cy, ex - cx);
         let a1 = Math.atan2(q[1] - cy, q[0] - cx);
         if (a1 <= a0) a1 += 2 * Math.PI;
-        arcPath(v, v.pending[0].xy, rw, a0, a1);
+        // in space an arc is the short way round (`arcs_in_space`): drawn back from its end
+        if (!v.toolPlane && a1 - a0 > Math.PI) [a0, a1] = [a1, a0 + 2 * Math.PI];
+        arcPath(v, [cx, cy], rw, a0, a1);
         ctx.stroke();
       }
     }

@@ -17,7 +17,7 @@ use crate::fmath::Det;
 use crate::cgraph::coincident_classes;
 use crate::constraints::{CKind, Constraint};
 use crate::graph;
-use crate::model::{EntRef, Sketch};
+use crate::model::{EntKind, EntRef, Sketch};
 use crate::newton::Method;
 use crate::solve::SolveOpts;
 use crate::system::{Sizes, Stop, System};
@@ -826,7 +826,8 @@ fn conflicts(
 
 /// Each primitive's state, by the worst any constraint touching it (or a child of it) says:
 /// `blamed` for a conflict, `in_over`, or a parameter in `under` — and no parent better than its
-/// worst child.
+/// worst child; a curve traced in space (#363) as bad as the worst of what it is traced over, a
+/// spline over points in space its control points.
 fn entity_states(
     sk: &Sketch,
     blamed: &BTreeSet<u32>,
@@ -842,7 +843,8 @@ fn entity_states(
             }
         }
     }
-    let ents = sk.primitives();
+    let mut ents = sk.primitives();
+    ents.extend((0..sk.traced.len()).map(|i| EntRef::new(EntKind::Traced, i)));
     let mut state: BTreeMap<EntRef, State> = BTreeMap::new();
     // a ring's turned copy is as free as what it is worked out from
     let derived: BTreeMap<u32, Vec<u32>> =
@@ -863,8 +865,9 @@ fn entity_states(
         state.insert(e, st);
     }
     for &e in &ents {
+        // a traced body's children are what it was given, not every one of them a primitive
         for ch in sk.children(e) {
-            let cs = state[&ch];
+            let Some(&cs) = state.get(&ch) else { continue };
             if cs > state[&e] {
                 state.insert(e, cs);
             }

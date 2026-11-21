@@ -270,7 +270,7 @@ impl SelectionRequest {
         let ents = v.get("entities").map(|a| a.arr().iter().filter_map(|r| {
             let p = r.arr();
             (p.len() == 2)
-                .then(|| EntKind::parse(p[0].as_str()))
+                .then(|| EntKind::from_wire(p[0].as_str()))
                 .flatten()
                 .map(|k| EntRef::new(k, p[1].as_i64() as usize))
         }).collect()).unwrap_or_default();

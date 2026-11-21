@@ -378,6 +378,23 @@ pub struct Item3 {
 const TRACED_SPANS: usize = 16;
 const TRACED_DEPTH: u32 = 8;
 
+/// The scale-free refinement the box is drawn to: a world length the drawing's size makes one of
+/// `SCENE_PX` parts of, no finer than a report's — what the scene is refined by when no unit is
+/// asked, and so what a pick measures what it draws by.
+pub(crate) fn scene_unit(sk: &Sketch) -> f64 {
+    (sk.extent() / SCENE_PX).max(crate::solid::REPORT_UNIT)
+}
+
+/// The curves traced in space the box draws, by index: each shown, and none of what is solved
+/// and never drawn (`Sketch::undrawn`, a face family's station among it).
+pub(crate) fn traced_drawn(sk: &Sketch) -> impl Iterator<Item = usize> + '_ {
+    let undrawn = sk.undrawn();
+    (0..sk.traced.len()).filter(move |&i| {
+        let e = EntRef::new(EntKind::Traced, i);
+        !undrawn.contains(&e) && sk.shown(e)
+    })
+}
+
 /// **A curve traced in space, as a polyline in space** (#363): its point read at places over its
 /// formal's domain (`traced::reading`), each span halved where the curve at its middle strays
 /// from the chord by more than the sheet's flatness at `unit` (`curve::flatness`).  Empty for a
@@ -448,7 +465,7 @@ pub fn scene3d_of(sk: &Sketch, unit: f64, layer: Layer) -> Vec<Item3> {
     // term (158 ms for the V-twin cylinder's edges and 332 ms for its mesh, natively, and finer
     // without bound as you zoomed in), while an orbit moved nothing.  So a caller says `0` and
     // gets the scale-free rule `mesh_unit` already states for the mesh: refine to the object.
-    let unit = if unit > 0.0 { unit } else { (sk.extent() / SCENE_PX).max(crate::solid::REPORT_UNIT) };
+    let unit = if unit > 0.0 { unit } else { scene_unit(sk) };
     let mut items: Vec<Item3> = Vec::new();
     let (datums, objects_too) = (layer != Layer::Objects, layer != Layer::Datums);
     let views = views(sk);
@@ -540,12 +557,8 @@ pub fn scene3d_of(sk: &Sketch, unit: f64, layer: Layer) -> Vec<Item3> {
     // a curve traced in space — a spline over points in space among them (#363) — stands in
     // space and in no view, as an axis does: its polyline refined to the scene's flatness
     if datums {
-        let stations = sk.stations();
-        for i in 0..sk.traced.len() {
+        for i in traced_drawn(sk) {
             let e = EntRef::new(EntKind::Traced, i);
-            if stations.contains(&e) || !sk.shown(e) {
-                continue;
-            }
             let pts = traced_polyline(sk, i, unit);
             if pts.len() >= 2 {
                 items.push(Item3 { of: Some(e), in_plane: None, what: Part::Drawn, pts });
@@ -774,12 +787,13 @@ fn finish(items: Vec<Item>) -> Scene {
 /// **Each plane's place**: the first plane standing on the same plane in space
 /// (`Basis::coplanar`, `workspace::Views`' rule and tolerance, the page left out — it has no
 /// pane).  `std.up` is `std.front` turned a quarter, so its place is the front's.  A face
-/// family's station plane has none (#243 L1): no pane, and none taken from a plane it lies on.
+/// family's station plane has none (#243 L1), nor the plane a round over points in space is
+/// drawn in (#363 S6): no pane, and none taken from a plane it lies on.
 fn places(sk: &Sketch) -> Vec<Option<usize>> {
     let bases: Vec<_> = (0..sk.frames.len()).map(|i| sk.basis(i)).collect();
-    let stations = sk.stations();
+    let undrawn = sk.undrawn();
     // a spatial frame draws no pane: its points stand in space (#383)
-    let placed = |k: usize| !stations.contains(&EntRef::frame(k)) && sk.frames[k].planar();
+    let placed = |k: usize| !undrawn.contains(&EntRef::frame(k)) && sk.frames[k].planar();
     let tol = 1e-9 * sk.extent();
     (0..bases.len())
         .map(|k| placed(k).then(|| {

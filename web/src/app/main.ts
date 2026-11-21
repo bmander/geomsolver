@@ -1,4 +1,4 @@
-/* The sketcher shell: the Words menu and its palette, the constraint list, the diagnosis banner
+/* The sketcher shell: the Words menu and its palette, the diagnosis banner
  * and the dialogs.
  *
  *   words     / (or the Words button) opens every word of the language and every command of the
@@ -39,9 +39,9 @@
  *   workspace one scene in space: every sketch stands on its own plane and solids are drawn
  *             under them.  Right-drag orbits, middle-drag (or ⇧ right-drag) pans, the wheel
  *             zooms; a trackpad pinches to zoom and scrolls to pan, and two fingers on a touch
- *             screen pinch and pan together.  The chooser in the viewport's upper right is the plane the next thing is
- *             drawn on — std.front, std.side, std.top and every plane the document names — and
- *             choosing one turns the view square on to it.  Plane (N) and Axis (X) drop a datum
+ *             screen pinch and pan together.  Everything is drawn in space, on the plane
+ *             through the origin square to the eye; a tool that cannot yet draws in the
+ *             standard plane the eye is most square to.  Plane (N) and Axis (X) drop a datum
  *             constrained to the selection, and Insert ▸ Plane… names the plane first; J
  *             projects two points, one in each of two views, onto one point in space
  *   solids    U extrude and Q revolve the region under a click; M union, Z cut and Y intersect
@@ -56,7 +56,7 @@
  * all live in core/ and are shared with the test suite.  This file is the wiring: what the menu
  * lists, what the keys do, and what the view calls back into.  The rest of the shell is
  * next door — `shell` holds the page and the view, `commands` the constraints bar, `dialogs`
- * what the menus open, `lists` the constraints window and the status line, and `dimbox` the
+ * what the menus open, `lists` the banner and the status line, and `dimbox` the
  * number a dimension is edited in. */
 import * as io from '../core/io.js';
 import * as solids from '../core/mesh.js';
@@ -74,9 +74,9 @@ import { bindProgramPanel, goToSource, onSide, openDrawing, openSide, refreshPro
   resetProgramFiles, saveProjectFile, showClaims, showStatementFor, toggleProgramPanel }
   from './program.js';
 import { OutlinePane } from './outline.js';
-import { closePanel, openPanel, refresh, refreshPanel, refreshStatus } from './lists.js';
+import { refresh, refreshHeld, refreshStatus } from './lists.js';
 import {
-  canvas, currentConstraint, focusConstraint, hooks, planeSelect, view, initialExample,
+  canvas, currentConstraint, focusConstraint, hooks, view, initialExample,
   initialGithub,
 } from './shell.js';
 import {
@@ -132,22 +132,11 @@ const TOOL_BUTTONS: ToolbarButton[] = [
   { label: 'Plane', key: 'n', onClick: () => view.addDatum('plane'),
     title: 'A plane, constrained to the selection: through a point · three points · a point, '
          + 'square to a line or axis · holding two lines or axes · parallel to a plane · '
-         + 'with nothing selected, free, beside the plane being drawn on' },
+         + 'with nothing selected, free, beside the standard plane the eye faces' },
   { label: 'Axis', key: 'x', onClick: () => view.addDatum('axis'),
     title: 'An axis, constrained to the selection: through a point · two points · along a line '
          + '· square to a plane, through a point or its origin · where two planes meet · with '
-         + 'nothing selected, free, square to the plane being drawn on' },
-];
-/* What is drawn on an object's face. */
-const SOLID_BUTTONS: ToolbarButton[] = [
-  { label: 'Sketch on face', key: 'k',
-    onClick: () => {
-      const [pick] = view.selectedSolids;
-      if (pick) view.sketchOnFace(pick);
-      else toast('select a face of a solid first — or double-click it');
-    },
-    title: 'Draw on the selected face of a solid: the plane lying there, or a plane written onto '
-         + 'it that follows the solid (double-click a face does the same)' },
+         + 'nothing selected, free, square to the standard plane the eye faces' },
 ];
 /* The workspace's own button, in its corner: orbit mode, where one finger turns the view — shown
  * only to a finger (`app.css`), since a mouse orbits with its right button; `o` works anywhere. */
@@ -496,7 +485,7 @@ const MENUS: [string, (MenuItem | string | null)[]][] = [
            + 'run-out) — off, only the sharp edges' },
     { label: 'Section', key: '⇧x', checked: () => !!view.section,
       onClick: () => view.toggleSection(),
-      title: 'Cut every object by the plane being drawn on, the side its normal points to taken '
+      title: 'Cut every object by the standard plane the eye faces, the side its normal points to taken '
            + 'away and the cut face hatched — move it, flip it or choose another plane in the '
            + 'bar it opens' },
   ]],
@@ -552,7 +541,7 @@ const COMMANDS: Command[] = [
     run: () => view.setTool(view.tool === tool ? 'select' : tool),
     pressed: () => view.tool === tool,
   })),
-  ...[...TOOL_BUTTONS, ...SOLID_BUTTONS].map((b): Command => ({
+  ...TOOL_BUTTONS.map((b): Command => ({
     id: `tool.${slug(b.label)}`, label: b.label, branch: 'Tools', key: b.key, title: b.title,
     run: b.onClick,
   })),
@@ -632,7 +621,7 @@ const TOOL_KEYS: Record<string, Tool> =
 /** Every accelerator in the app, read off the buttons and menu items themselves so there is
  *  one list and not two.  The token is the chip the control prints, lowercased: '⇧l', '⌘z'. */
 const ACTION_KEYS = new Map<string, () => void>(
-  [...TOOL_BUTTONS, ...SOLID_BUTTONS, ...VIEW_BUTTONS, ...CONSTRAINT_BUTTONS,
+  [...TOOL_BUTTONS, ...VIEW_BUTTONS, ...CONSTRAINT_BUTTONS,
    ...MENUS.flatMap(([, items]) => items)]
     .flatMap((b) => (b && typeof b !== 'string' && b.key
       ? [[b.key, b.onClick] as [string, () => void]] : [])));
@@ -694,8 +683,7 @@ window.addEventListener('keydown', (e) => {
 
 /* -- boot ------------------------------------------------------------------------- */
 
-/* A canvas press takes the selection over from the constraint that had the focus — and one
- * that picked nothing shuts the constraints window, which is the only thing that does. */
+/* A canvas press takes the selection over from the constraint that had the focus. */
 /* The model outline (#435): the document's instances as a tree, one of the panel's panes. */
 const outline = new OutlinePane(document.getElementById('outline-tree')!, view,
   (row) => { if (row.span) goToSource(row.span); },
@@ -710,41 +698,17 @@ view.onHidden = () => outline.paint();
 view.onSelect = () => {
   words.refresh();
   if (currentConstraint) focusConstraint(null);
-  if (!view.selected.length) closePanel();
   showStatementFor();
   outline.reveal();
 };
-/* A dimension on the drawing and its row in the window are the same constraint, so clicking
- * either does the same thing — and double-clicking either opens the same number.  One clicked
- * on the drawing takes no selection with it, so it opens the window on what it holds. */
+/* A dimension clicked on the drawing is focused, and double-clicked opens its number. */
 view.onPickConstraint = (c) => {
   focusConstraint(c);
-  openPanel(view.highlight);
   refresh();
   view.draw();
 };
 view.onEditConstraint = (c) => editValue(c);
 
-/* -- the plane being drawn on ------------------------------------------------- */
-
-/** The chooser follows the view: None — drawing in space, its value `''` — then the planes on
- *  offer, and the one being drawn on.  Rebuilt only when the list itself changed, so a repaint
- *  does not close it under the pointer. */
-function refreshPlanes(): void {
-  const names = ['', ...view.planeChoices()];
-  const current = view.planeName;
-  if (!names.includes(current)) names.push(current);
-  const shown = [...planeSelect.options].map((o) => o.value);
-  if (shown.length !== names.length || names.some((n, i) => shown[i] !== n)) {
-    planeSelect.replaceChildren(...names.map((n) => new Option(n || 'None', n)));
-  }
-  planeSelect.value = current;
-}
-planeSelect.addEventListener('change', () => {
-  if (planeSelect.value) view.choosePlane(planeSelect.value);
-  else view.drawInSpace();
-  planeSelect.blur();              // the keys are the drawing's again: a tool letter, Escape
-});
 view.onDimension = onDimension;
 view.onExtent = onExtent;
 view.onRound = onRound;
@@ -755,9 +719,9 @@ const sectionBar = new SectionBar(document.getElementById('section-bar') as HTML
 view.onSection = () => sectionBar.refresh();
 sectionBar.refresh();
 view.onChanged = () => {
-  refresh(); refreshProgram(); refreshPlanes(); outline.refresh(); sectionBar.refresh();
+  refresh(); refreshProgram(); outline.refresh(); sectionBar.refresh();
 };
-view.onPicked = refreshPanel;
+view.onPicked = refreshHeld;
 // the source changed without the drawing's structure doing so — a drag wrote its seeds back, or a
 // number was spliced.  Never per frame: `onDragFrame` is the frame seam and this is not wired to it
 view.onProgram = () => { refreshProgram(); outline.refresh(); };

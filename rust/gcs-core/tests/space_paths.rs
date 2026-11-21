@@ -826,6 +826,42 @@ tube := solid({ p | some s: p in Round(route, std.z, r: 4mm).f at s })");
     }
 }
 
+/// **The arc tool's end, in space, put on its radius** (`Sketch::onto_radius`): moved along the
+/// ray from the centre, onto the circle through the start — so the arc written over the three
+/// is already solved, and the solve moves none of them.  Nothing moves for a point in a plane,
+/// nor one standing on the centre.
+#[test]
+fn an_end_in_space_is_put_on_the_radius_along_its_ray() {
+    use gcs_core::model::EntRef;
+    let mut e = gcs_core::program::elaborate(&crate::common::parsed::prog_of(
+        "use std\nc := point hint((1, 2, 3))\ns := point hint((31, 2, 3))\n\
+         e := point hint((1, 12, 13))\nf := point hint((1, 2, 3))\nq := point in std.front\n"));
+    let at = |e: &Elaborated, n: &str| e.map.ent_named(n).unwrap().i();
+    let (c, s, end) = (at(&e, "c"), at(&e, "s"), at(&e, "e"));
+    assert!(e.sketch.onto_radius(c, s, end));
+    let [x, y, z] = e.sketch.world_point(end);
+    near(x, 1.0, 1e-12, "along the ray: x");
+    near(y, 2.0 + 30.0 / 2f64.sqrt(), 1e-12, "along the ray: y");
+    near(z, 3.0 + 30.0 / 2f64.sqrt(), 1e-12, "along the ray: z");
+    // on the centre there is no ray, and a point in a plane is not one in space
+    assert!(!e.sketch.onto_radius(c, s, at(&e, "f")));
+    assert!(!e.sketch.onto_radius(c, s, at(&e, "q")));
+    // written over the three, the arc is solved where they stand
+    let text = format!("use std\nc := point hint((1, 2, 3))\ns := point hint((31, 2, 3))\n\
+                        e := point hint(({x}, {y}, {z}))\nk := arc(center: c, start: s, end: e)\n");
+    let mut back = gcs_core::program::elaborate(&crate::common::parsed::prog_of(&text));
+    assert!(back.ok(), "{:?}", back.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let before: Vec<[f64; 3]> =
+        ["c", "s", "e"].iter().map(|n| back.sketch.world_point(at(&back, n))).collect();
+    let opts = gcs_core::solve::SolveOpts::default();
+    assert!(gcs_core::solve::solve(&mut back.sketch, opts).success);
+    for (n, was) in ["c", "s", "e"].iter().zip(before) {
+        let now = back.sketch.world_point(at(&back, n));
+        assert!((0..3).all(|k| (now[k] - was[k]).abs() <= 1e-9), "`{n}` moved: {was:?} to {now:?}");
+    }
+    assert!(back.sketch.round(EntRef::arc(0)).is_some(), "drawn in the plane through its points");
+}
+
 /// L0's S-bend drawn in space, no plane written: a straight, a left turn, a straight, a right
 /// turn, a straight, each 20 and each bend of radius 20, its third link `k3` as given — and a
 /// round tube along it.
@@ -996,7 +1032,9 @@ in std.top {{
 #[test]
 fn normal_and_sense_print_as_written() {
     let (p, errs) = crate::common::parse("unit mm\nk := circle(center: o, normal: ax)\n\
-                                          a := arc(center: c, start: s, end: e, sense: cw)\n");
+        a := arc(center: c, start: s, end: e, sense: cw)\n\
+        n := circle(center: o, normal: hint(dir: (0, 0.6, 0.8)))\n\
+        g := circle(center: o, normal: hint(dir: std.z))\n");
     assert!(errs.is_empty(), "{errs:?}");
     let mut said = Vec::new();
     for st in &p.root().body {
@@ -1007,7 +1045,9 @@ fn normal_and_sense_print_as_written() {
         }
     }
     assert_eq!(said, ["k := circle(center: o, normal: ax)",
-                      "a := arc(center: c, start: s, end: e, sense: cw)"]);
+                      "a := arc(center: c, start: s, end: e, sense: cw)",
+                      "n := circle(center: o, normal: hint(dir: (0, 0.6, 0.8)))",
+                      "g := circle(center: o, normal: hint(dir: std.z))"]);
 }
 
 /// **A circle about a point in space stands square to its normal** (#363 S6): `circle(center: o,
@@ -1056,6 +1096,73 @@ k := arc(center: p1, start: p0, end: p2)
 "));
     assert!(said.iter().any(|m| m.starts_with("E060") && m.contains("stand in a line")),
             "{said:?}");
+}
+
+/// **A circle in space stands square to an axis of its own** (#363 S6): `normal: hint(dir: …)`
+/// mints the axis the circle stands square to, seeded along it and free — the circle's own,
+/// declared and drawn nowhere — so a circle with its centre and radius held keeps the two
+/// freedoms of its turn, and two points held on it settle them, the solve turning the axis to
+/// the plane through them and the seed written back as it was said, `hint(dir: (…))`, which reads
+/// back to the same circle.  A seed read off geometry is a seed: `hint(dir: std.z)`; one along
+/// nothing is refused.
+#[test]
+fn a_circle_in_space_stands_square_to_an_axis_of_its_own() {
+    use gcs_core::diagnose::{diagnose, DiagnoseOptions};
+    let held = "
+oc := point hint((5, 5, 5))
+fix((5mm, 5mm, 5mm)) oc
+k := circle(center: oc, normal: hint(dir: (0, 0, 1)))
+radius(4mm) k
+";
+    let mut e = solved(&format!("{PATHS}{held}"));
+    let k = e.map.ent_named("k").unwrap();
+    let (n, _) = e.sketch.round(k).and_then(|r| r.normal).expect("square to its normal");
+    assert!(e.sketch.round(k).unwrap().own, "the axis is the circle's own");
+    assert!(e.sketch.round_owned().contains(&n) && !e.sketch.drawn().contains(&n),
+            "declared and drawn nowhere");
+    let dir = |e: &Elaborated| e.sketch.axes[n.i()].d.map(|p| e.sketch.params[p as usize].value);
+    assert!(dot(unit(dir(&e)), [0.0, 0.0, 1.0]) > 1.0 - 1e-9, "along its seed: {:?}", dir(&e));
+    assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 2, "free to turn");
+    // a seed is a direction: one written short of unit length, not turned, is not written back
+    let short = format!("{PATHS}{}", held.replace("(0, 0, 1)", "(0.7266, 0.5, 0.4714)"));
+    let s = solved(&short);
+    let text = gcs_core::edit::commit_seeds(&s, &s.sketch, &s.program).text;
+    assert!(text.contains("k := circle(center: oc, normal: hint(dir: (0.7266, 0.5, 0.4714)))\n"),
+            "an unturned seed rewritten: {text}");
+    // two points held on it settle its turn: the plane through the centre and them, x + y = 10
+    let src = format!("{PATHS}{held}
+q1 := point hint((9, 5, 5))
+q2 := point hint((5, 5, 9))
+q1 coincident k
+q2 coincident k
+fix((7mm, 3mm, 5mm + sqrt(8) * 1mm)) q1
+fix((3mm, 7mm, 5mm + sqrt(8) * 1mm)) q2
+disc := solid(std.solids.Prism(face(k), from: -10mm, to: 0))");
+    let e = determined(&src);
+    near(exact(&e, "disc"), PI * 16.0 * 10.0, 1e-9, "the disc");
+    let want = unit([1.0, 1.0, 0.0]);
+    assert!(dot(unit(dir(&e)), want).abs() > 1.0 - 1e-9, "turned to the plane: {:?}", dir(&e));
+    // the seed written back where it was said, and read back to the same circle
+    let text = gcs_core::edit::commit_seeds(&e, &e.sketch, &e.program).text;
+    assert!(text.contains("k := circle(center: oc, normal: hint(dir: ("), "{text}");
+    assert!(!text.contains("hint(dir: (0, 0, 1))"), "the seed moved: {text}");
+    let back = determined(&text);
+    let k2 = back.map.ent_named("k").unwrap();
+    let (n2, _) = back.sketch.round(k2).and_then(|r| r.normal).unwrap();
+    let d2 = back.sketch.axes[n2.i()].d.map(|p| back.sketch.params[p as usize].value);
+    assert!(dot(unit(d2), want).abs() > 1.0 - 1e-9, "read back: {d2:?}");
+    // a seed read off geometry, and one along nothing
+    let g = solved(&format!("{PATHS}
+oc := point hint((5, 5, 5))
+k := circle(center: oc, normal: hint(dir: std.x)) hint(r: 2)"));
+    let (n, _) = g.sketch.round(g.map.ent_named("k").unwrap()).and_then(|r| r.normal).unwrap();
+    let d = g.sketch.axes[n.i()].d.map(|p| g.sketch.params[p as usize].value);
+    assert!(dot(unit(d), [1.0, 0.0, 0.0]) > 1.0 - 1e-9, "seeded along std.x: {d:?}");
+    let said = refusals(&format!("{PATHS}
+oc := point hint((5, 5, 5))
+k := circle(center: oc, normal: hint(dir: (0, 0, 0)))
+"));
+    assert!(said.iter().any(|m| m.starts_with("E103") && m.contains("no direction")), "{said:?}");
 }
 
 /// **A circle's gauge is taken again where a solve ends** (#363 S6): its turn about its normal
