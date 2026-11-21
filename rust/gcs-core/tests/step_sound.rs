@@ -364,6 +364,12 @@ fn a_plate_of_four_hundred_holes_is_read_quickly() {
     let took = started.elapsed();
     eprintln!("a plate of {} faces, {} edges: sound in {took:?}",large.faces.len(),large.edges.len());
     assert!(took.as_secs_f64() < 4.,"{took:?}");
+    // its rims given as circles in the caps' parameters, as a native kernel hands them over
+    let drawn = in_parameters(&large);
+    drawn.check(1e-7).unwrap();
+    let started = std::time::Instant::now();
+    sound(&drawn,&context()).unwrap();
+    eprintln!("its rims as circles in its caps' parameters: sound in {:?}",started.elapsed());
     let started = std::time::Instant::now();
     sound(&b,&context()).unwrap();
     let took = started.elapsed();
@@ -376,6 +382,60 @@ fn a_plate_of_four_hundred_holes_is_read_quickly() {
     assert!(u.msg.contains("crosses loop") && u.face.is_some_and(|f| b.faces[f].loops.len() == 401),"{u:?}");
 }
 
+
+/// `b` with every circle on a plane read in the plane's parameters as a circle of its own
+/// (`Pcurve::Curve`), at the edge's own parameter: what a native kernel's pcurve is.
+fn in_parameters(b: &Brep) -> Brep {
+    use gcs_core::brep::geom::Curve;
+    let mut out = b.clone();
+    for f in &mut out.faces {
+        let Surface::Plane(pf) = f.surface else { continue };
+        let local = |d: V| [gcs_core::space::dot(d,pf.x),gcs_core::space::dot(d,pf.y),0.];
+        for c in f.loops.iter_mut().flatten() {
+            let EdgeCurve::Curve(Curve::Circle(cf,r)) = b.edges[c.edge as usize].curve else { continue };
+            let o = local(gcs_core::space::sub(cf.o,pf.o));
+            let frame = Frame {o,x:local(cf.x),y:local(cf.y),z:[0.,0.,1.]};
+            c.pcurve = Pcurve::Curve(std::sync::Arc::new(Curve::Circle(frame,r)));
+        }
+    }
+    out
+}
+
+/// **A native kernel's boundary read through `brep::json` is sound**: a cylinder whose side is a
+/// rational spline sheet, its rims rational splines, each cap's rim its own rational spline in the
+/// cap's parameters (`Pcurve::Curve`), as OCCT writes them; turned inside out, refused.
+#[test]
+fn a_native_kernels_cylinder_is_sound() {
+    use gcs_core::brep::nurbs::arc;
+    let (r,h) = (1.5,4.);
+    let c = arc(&Frame::new([0.;3],UP,[1.,0.,0.]),r,[0.,TAU]);
+    let w = c.weights.as_ref().unwrap();
+    let list = |x: &[f64]| format!("[{}]",x.iter().map(|v| format!("{v:?}")).collect::<Vec<_>>().join(","));
+    let rim = |z: f64| format!("{{\"kind\":\"bspline\",\"degree\":2,\"knots\":{},\"poles\":[{}],\"weights\":{}}}",
+        list(&c.knots),c.poles.iter().map(|p| list(&[p[0],p[1],z])).collect::<Vec<_>>().join(","),list(w));
+    let side = format!("{{\"kind\":\"bspline\",\"du\":2,\"dv\":1,\"uknots\":{},\"vknots\":[0,0,{h:?},{h:?}],\"poles\":[{}],\"weights\":[{}]}}",
+        list(&c.knots),c.poles.iter().map(|p| format!("[{},{}]",list(&[p[0],p[1],0.]),list(&[p[0],p[1],h]))).collect::<Vec<_>>().join(","),
+        w.iter().map(|&x| list(&[x,x])).collect::<Vec<_>>().join(","));
+    let line = |p: [f64;2],d: [f64;2]| format!("{{\"kind\":\"line\",\"p\":[{:?},{:?},0],\"d\":[{:?},{:?},0]}}",p[0],p[1],d[0],d[1]);
+    let plane = |z: f64| format!("{{\"kind\":\"plane\",\"frame\":{{\"o\":[0,0,{z:?}],\"x\":[1,0,0],\"y\":[0,1,0],\"z\":[0,0,1]}}}}");
+    let used = |e: usize,reversed: bool,pcurve: String| format!("{{\"edge\":{e},\"reversed\":{reversed},\"pcurve\":{pcurve}}}");
+    let json = format!("{{\"vertices\":[{{\"p\":{},\"tol\":0}},{{\"p\":{},\"tol\":0}}],\"edges\":[\
+        {{\"v\":[0,0],\"t\":[0,{TAU:?}],\"tol\":0,\"curve\":{}}},\
+        {{\"v\":[1,1],\"t\":[0,{TAU:?}],\"tol\":0,\"curve\":{}}},\
+        {{\"v\":[0,1],\"t\":[0,{h:?}],\"tol\":0,\"curve\":{{\"kind\":\"line\",\"p\":{},\"d\":[0,0,1]}}}}],\"faces\":[\
+        {{\"reversed\":false,\"surface\":{side},\"loops\":[{{\"outer\":true,\"uses\":[{},{},{},{}]}}]}},\
+        {{\"reversed\":true,\"surface\":{},\"loops\":[{{\"outer\":true,\"uses\":[{}]}}]}},\
+        {{\"reversed\":false,\"surface\":{},\"loops\":[{{\"outer\":true,\"uses\":[{}]}}]}}]}}",
+        list(&[r,0.,0.]),list(&[r,0.,h]),rim(0.),rim(h),list(&[r,0.,0.]),
+        used(0,false,line([0.,0.],[1.,0.])),used(2,false,line([TAU,0.],[0.,1.])),
+        used(1,true,line([0.,h],[1.,0.])),used(2,true,line([0.,0.],[0.,1.])),
+        plane(0.),used(0,false,rim(0.)),plane(h),used(1,false,rim(0.)));
+    let b = gcs_core::brep::json::read(&json).unwrap();
+    assert!(b.faces.iter().flat_map(|f| f.loops.iter().flatten()).any(|c| matches!(&c.pcurve,Pcurve::Curve(x) if matches!(**x,gcs_core::brep::geom::Curve::BSpline(_)))));
+    is_sound("a native kernel's cylinder",&b);
+    let all: Vec<usize> = (0..b.faces.len()).collect();
+    refused(&flipped(&b,&all),Some(0),None,"inside out");
+}
 
 /// **A spline face trimmed by many traced holes is held sound quickly**: brep-bench's bezier dome
 /// in common with a plate of 64 bores, its dome face trimmed by 64 curves traced on the spline,
@@ -391,7 +451,10 @@ fn a_spline_face_of_many_traced_holes_is_read_quickly() {
     is_sound("a dome of 64 traced holes",&b);
     let started = std::time::Instant::now();
     sound(&b,&context()).unwrap();
-    eprintln!("{} faces, {} edges: sound in {:?}",b.faces.len(),b.edges.len(),started.elapsed());
+    let took = started.elapsed();
+    eprintln!("{} faces, {} edges: sound in {took:?}",b.faces.len(),b.edges.len());
+    // (most of it the volume, `props::fluxes` read along the traced curves)
+    assert!(took.as_secs_f64() < 5.,"{took:?}");
 }
 
 /// **Every corpus solid the kernel builds exactly, held sound**: each static object of every
