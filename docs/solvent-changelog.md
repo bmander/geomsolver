@@ -4,6 +4,25 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.228] A drafted corner where an arc meets a side at an angle** (#962). `std.solids.Drafted`
+of a face whose arc meets a line or another arc at an angle, not tangent, is built: the corner
+moves where the moved sides meet, along the conic the side's plane and the arc's cone (or two
+cones) meet in, and that conic is the edge between their faces. The rule at every corner is the
+one two lines keep — where the moved sides' lines and circles meet, at a reflex corner (a hole's)
+as at a convex one. A corner whose moved sides part within the ordinates refuses the solid, saying
+how far from the face's plane. Through 0.227 such a face's drafted solid was refused when built
+exactly ("… meets … at an angle where one is an arc"), though the field read it.
+
+**[0.227] A circle in space square to an axis of its own.** A circle's `normal:` takes a seed as
+well as a name: `circle(center: o, normal: hint(dir: (0, 0, 1)))` stands the circle square to an
+axis of its own, seeded along that direction (or `hint(dir: g)`, read off geometry) and free, so
+the circle's constraints may turn it — two points held on it settle its turn — and a solve that
+turns it writes the seed back where it was said.  The axis is the circle's, declared and drawn
+nowhere.  A seed along no direction is E103.  Through 0.226 `normal:` named an axis or a line,
+and a circle about a point in space written back by a gesture lost its `normal:`; it is written
+now as it was said, by name or by its seed, and an arc's or a circle's points in space by the
+points the document wrote.
+
 **[0.226] A round's caps are faces of the body, an edge ends where it ends on no face, every edge**
 (#962). A fill (a round or a chamfer at a concave edge) cut off by a face it ends on leaves its
 piece's cap there, on that face's surface: those caps are now among the faces a block over the
@@ -23,6 +42,7 @@ lies between (where it was said only by the word's internal name), and where a f
 named by the rounds of several statements written bare, says to name them. A smooth face named in
 pieces whose chains lie apart is read with the chain of the piece nearest the point. Nothing a
 document may write changed.
+
 **[0.225] A round that selects no edge says so, and a face's fault is said at the face** (#962).
 A round or a chamfer (either word, either form) over faces that are all the body's but meet in no
 edge of it — nowhere, only at a corner, only along a seam where one runs on tangent into the

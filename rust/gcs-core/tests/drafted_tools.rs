@@ -295,7 +295,8 @@ fn a_drafted_tool_the_class_does_not_read_is_refused() {
         admission::admit_body(&e.sketch,fixtures::solid(&e,"gear"),&Options::default())
     });
     assert_eq!((r.condition,r.class()),(Condition::Tool,"generating-sweep class"));
-    assert!(r.message.contains("a drafted corner there is a curve where a cone meets a plane, not built yet"),"{}",r.message);
+    // built exactly since #962, its corners conics, which the class pairs no corner of
+    assert!(r.message.contains("a drafted corner where an arc meets a side at an angle"),"{}",r.message);
 }
 
 /// **A drafted prism's cutter is read from its B-rep** (#721 F1d): the rack's tooth drafted one way

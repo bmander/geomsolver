@@ -9,7 +9,7 @@
 //! after arriving — after the dangling edges, which bound nothing, are pruned; a circle or a
 //! closed curve is a loop by itself.
 
-use super::workspace::Views;
+use super::workspace::{panes_at, seen_on, Projection, Views};
 use super::drawable;
 use crate::graph::UnionFind;
 use crate::model::{edge_ends, EntKind, EntRef, Sketch};
@@ -44,6 +44,35 @@ struct Half {
     pts: Vec<(f64, f64)>,
     /// The way it leaves `from`.
     angle: f64,
+}
+
+/// **The region under the eye** (#162 F2): around `at` on the eye's picture plane, on the
+/// nearest plane under it that has one (`workspace::panes_at`, each place asked once), else on
+/// the page — with the plane it is on (`None` the page).  There being no one plane drawn on, this
+/// is where a sweep finds what it sweeps.  A loop that cannot be a face's is said only where no
+/// place under `at` has a region.
+pub fn region_seen(
+    sk: &Sketch,
+    proj: &Projection,
+    at: (f64, f64),
+    unit: f64,
+) -> Result<Option<(Option<usize>, Region)>, String> {
+    let mut asked = BTreeSet::new();
+    let mut refused = None;
+    for plane in panes_at(sk, proj, at).into_iter().map(Some).chain([None]) {
+        if !asked.insert(proj.views.place(plane)) {
+            continue;
+        }
+        let Some(on) = seen_on(proj, plane, at) else { continue };
+        match region_at(sk, plane, on, unit) {
+            Ok(Some(r)) => return Ok(Some((plane, r))),
+            Ok(None) => {}
+            Err(why) => {
+                refused.get_or_insert(why);
+            }
+        }
+    }
+    refused.map_or(Ok(None), Err)
 }
 
 /// The region of the drawing on `plane` (`None` the page) around `at`, in that plane's

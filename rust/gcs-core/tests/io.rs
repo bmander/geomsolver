@@ -781,7 +781,8 @@ fn a_paste_draws_in_the_plane_the_document_already_has() {
 }
 
 /// A plane built on two drawn lines from one point, which it stands at (#535, #819); an arc drawn
-/// through three points in space (#363 S6); and a circle about a point in space square to an axis.
+/// through three points in space (#363 S6); a circle about a point in space square to an axis; and
+/// one square to an axis of its own, seeded in its `normal:`.
 const BUILT_IN_SPACE: &str = "\
 unit mm
 use std
@@ -801,6 +802,8 @@ o := point hint((5, 5, 5))
 fix((5, 5, 5)) o
 r := circle(center: o, normal: ax)
 radius(4mm) r
+s := circle(center: o, normal: hint(dir: (0, 1, 0)))
+radius(3mm) s
 ";
 
 /// A post seated in a square frame of its own (#548), drawn in its frame's datums (#542).

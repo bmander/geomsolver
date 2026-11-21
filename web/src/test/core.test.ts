@@ -2270,12 +2270,15 @@ test('the region around a place is named for a face, its holes beside it', () =>
                           + 'hole := circle(center: o) hint(r: 5)\n}\n');
   const front = d.entity('std.front');
   assert.ok(front instanceof Plane);
-  const r = d.regionAt(front, 5, 5, 0.05);
+  // square on to the front, the eye sees (x, z) — the front's own (x, y) — where it is
+  const square = -Math.PI / 2;
+  const r = d.regionSeen(square, 0, 5, 5, 0.05);
   assert.ok(r && !('refused' in r), JSON.stringify(r));
+  assert.equal(r.plane, front.index, 'on the front');
   assert.deepEqual([...r.outer].sort(), ['ab', 'bc', 'cd', 'da']);
   assert.deepEqual(r.holes, [['hole']]);
   assert.equal(r.rings.length, 2, 'the outer ring and the hole\'s');
-  assert.equal(d.regionAt(front, 80, 5, 0.05), null, 'outside every loop');
+  assert.equal(d.regionSeen(square, 0, 80, 5, 0.05), null, 'outside every loop');
   const face = d.addFace(r.outer, r.holes);
   assert.equal(face.refused, null);
   assert.ok(face.text.includes('holes: hole'), face.text);

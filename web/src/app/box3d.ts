@@ -44,7 +44,9 @@ import type { Sectioned } from '../core/section.js';
 import { eyeFrame, placeOf, solidEdges } from '../core/workspace.js';
 import type { SolidEdge } from '../core/workspace.js';
 import type { Item3 } from '../core/overview.js';
-import { COL, DIMMED, chromeOf, inkOf } from './paint.js';
+import { Plane, Traced } from '../core/model.js';
+import type { Primitive } from '../core/model.js';
+import { COL, DIMMED, alphaOf, chromeOf, inkOf, strokeOf } from './paint.js';
 import { dropLabel, scaleLabels, textLabel } from './label.js';
 import type { Label } from './label.js';
 import { ScenarioScene } from './scenario-box.js';
@@ -79,9 +81,9 @@ const HATCH = { pitch: 9, ink: 2 };
 /** How much of a Boolean's tool shows through as a ghost. */
 const GHOST = 0.4;
 
-/** A pane's frame, in screen pixels: the plane being drawn on is bold.  WebGL draws every
+/** A pane's frame, in screen pixels: a plane selected or highlighted is bold.  WebGL draws every
  *  `LineBasicMaterial` one pixel wide whatever it is asked, so a frame is a fat line. */
-const FRAME_PX = { plain: 1, current: 2.5 };
+const FRAME_PX = { plain: 1, lit: 2.5 };
 
 /** How an assembly shown on its parts draws its datums (#679): quietly — a pane's wash, its
  *  frame and the axes — so the parts are what is seen. */
@@ -238,6 +240,9 @@ export class Box3D {
    *  the cursor is on, and what is selected.  A material is written per frame; a rebuild is not,
    *  which is what keeps a mesh off the hover path. */
   private readonly frames: { it: Item3; line: THREE.LineSegments }[] = [];
+  /** The curves traced in space — a spline over points in space among them — each a fat line
+   *  stroked as the canvas strokes a figure (`strokeOf`), written per frame by `chrome`. */
+  private readonly curves: { it: Item3; line: LineSegments2 }[] = [];
   /** Each pane's frame, apart from `frames` because it is a fat line with a width to write. */
   private readonly panes: { it: Item3; line: LineSegments2 }[] = [];
   /** **What a Boolean being picked would make of its target** (#162 F4), shown in the target's
@@ -631,6 +636,7 @@ export class Box3D {
    *  in space. */
   private buildDatums(v: SketchView, items: Item3[]): void {
     this.frames.length = 0;
+    this.curves.length = 0;
     this.panes.length = 0;
     release(this.datums);
     // an assembly shown on its parts draws its datums quietly, each pane labelled (#679)
@@ -660,7 +666,9 @@ export class Box3D {
     // of what is drawn, only what stands in space: a sketch on a plane is stroked on the canvas
     // above, through its plane's camera, with the selection and the state colours it carries
     for (const it of items.filter((i) => i.part === 'drawn' && IN_SPACE.has(i.kind ?? ''))) {
-      this.frames.push({ it, line: this.lines(this.datums, [it], INK.drawn, 1)! });
+      // a curve is a figure, stroked as one is on the canvas; an axis is a datum, drawn quiet
+      if (it.kind === 'traced') this.curves.push({ it, line: this.fatLine(it, false) });
+      else this.frames.push({ it, line: this.lines(this.datums, [it], INK.drawn, 1)! });
     }
   }
 
@@ -905,8 +913,8 @@ export class Box3D {
     }
   }
 
-  /** **What the app says about the scene, written per frame.**  The selection and the plane being
-   *  drawn on change without the drawing changing, so they are a material write and never a
+  /** **What the app says about the scene, written per frame.**  The selection and what is under
+   *  the pointer change without the drawing changing, so they are a material write and never a
    *  rebuild: the ink rule itself is `paint.ts`'s, so a thing picked is lit the same colour here
    *  as on the canvas above. */
   private chrome(v: SketchView): void {
@@ -914,27 +922,53 @@ export class Box3D {
     const hl = new Set(v.lit);
     // std's datums are the document's frame of reference, held outright: they keep their quiet
     // ink, so only what the drawing adds is coloured by its state
-    const ink = (it: Item3, base: string | number): string | number => {
-      const ent = v.entityOf(it);
+    const ink = (ent: Primitive | null | undefined, base: string | number): string | number => {
       if (!ent) return base;
       const own = !v.doc.nameOf(ent)?.startsWith('std.');
       return (own ? inkOf(v, sel, hl, ent) : chromeOf(sel, hl, ent)?.[0]) ?? base;
     };
     for (const { it, line } of this.frames) {
-      (line.material as THREE.LineBasicMaterial).color.set(ink(it, INK.drawn));
+      (line.material as THREE.LineBasicMaterial).color.set(ink(v.entityOf(it), INK.drawn));
+    }
+    // a curve in space as a figure on the canvas is stroked: the document's style and the app's
+    // chrome over it (`strokeOf`), dimmed as one is, drawn over the solids as the canvas is
+    for (const { it, line } of this.curves) {
+      const ent = v.entityOf(it);
+      if (!(ent instanceof Traced)) continue;
+      const st = ent.style;
+      const [col, lw] = strokeOf(v, sel, hl, COL.spline, ent, st);
+      const m = line.material;
+      line.visible = !st.hidden;
+      m.color.set(col);
+      m.linewidth = lw;
+      m.opacity = alphaOf(v, ent);
+      // a dash is in pixels, as the canvas's is: the eye's length of one, as the eye zooms
+      const dashed = st.dash.length > 0;
+      if (m.dashed !== dashed) {
+        m.dashed = dashed;
+        m.needsUpdate = true;
+      }
+      if (dashed) {
+        m.dashSize = st.dash[0] * v.unit;
+        m.gapSize = (st.dash[1] ?? st.dash[0]) * v.unit;
+      }
+      m.resolution.set(v.width, v.height);
     }
     // a pane is a place's (`std.up` has none of its own: it stands where `std.front` does), so
-    // the one that bolds is the place of the plane being drawn on
+    // it is lit as any plane standing there is: selected, then highlighted, by `chromeOf`'s order
     const ws = v.workspace();
-    const here = v.plane ? placeOf(ws, v.plane.index) : null;
+    const placesOf = (ps: Iterable<Primitive>): Set<number> =>
+      new Set([...ps].flatMap((p) => p instanceof Plane ? [placeOf(ws, p.index)] : []));
+    const selPlaces = placesOf(sel);
+    const hlPlaces = placesOf(hl);
     for (const { it, line } of this.panes) {
       const m = line.material;
-      m.color.set(ink(it, INK.pane));
-      // the plane being drawn on: its frame bolds, so where the next thing goes is in sight
       const pl = v.planeOf(it);
-      const current = here !== null && pl !== null && placeOf(ws, pl.index) === here;
-      m.opacity = current ? 0.8 : v.onParts ? QUIET.frame : 0.35;
-      m.linewidth = current ? FRAME_PX.current : FRAME_PX.plain;
+      // a plane is picked as anything is, and lit only while it is
+      const lit = pl && chromeOf(selPlaces, hlPlaces, placeOf(ws, pl.index));
+      m.color.set(lit ? lit[0] : ink(pl, INK.pane));
+      m.opacity = lit ? 0.8 : v.onParts ? QUIET.frame : 0.35;
+      m.linewidth = lit ? FRAME_PX.lit : FRAME_PX.plain;
       m.resolution.set(v.width, v.height);
     }
     // (each object's colour and tint is `sync`'s, which has just run)
@@ -949,20 +983,35 @@ export class Box3D {
 
   /** A pane's frame as a closed fat line; `chrome` writes its colour, opacity and width. */
   private frame(it: Item3): LineSegments2 {
+    const line = this.fatLine(it, true);
+    line.material.color.set(INK.pane);
+    line.material.linewidth = FRAME_PX.plain;
+    line.material.opacity = 0.35;
+    return line;
+  }
+
+  /** An item's polyline as a fat line, `closed` back to its first corner where it is not already
+   *  — a pane's frame — or open, a curve in space over everything, as the canvas's figures are;
+   *  `chrome` writes its ink, width and opacity. */
+  private fatLine(it: Item3, closed: boolean): LineSegments2 {
     const pts: number[] = [];
     const n = it.pts.length;
     for (let i = 0; i + 1 < n; i++) pts.push(...it.pts[i], ...it.pts[i + 1]);
     // the core's face comes back to its first corner; closed here should one not
     const [a, b] = [it.pts[0], it.pts[n - 1]];
-    if (n > 2 && a.some((x, k) => x !== b[k])) pts.push(...b, ...a);
+    if (closed && n > 2 && a.some((x, k) => x !== b[k])) pts.push(...b, ...a);
     const g = new LineSegmentsGeometry();
     g.setPositions(pts);
     const line = new LineSegments2(g, new LineMaterial({
-      color: INK.pane,
-      linewidth: FRAME_PX.plain,
+      color: INK.drawn,
+      linewidth: 1,
       transparent: true,
-      opacity: 0.35,
+      depthTest: closed,
     }));
+    if (!closed) {
+      line.computeLineDistances();      // where a dash falls along it
+      line.renderOrder = 3;
+    }
     this.datums.add(line);
     return line;
   }
@@ -989,6 +1038,7 @@ export class Box3D {
   /** Free every buffer and material the last scene made. */
   private dispose(): void {
     this.frames.length = 0;
+    this.curves.length = 0;
     this.panes.length = 0;
     release(this.datums);
     this.nameAt(new Map());

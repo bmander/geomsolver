@@ -695,8 +695,8 @@ painted. A non-plane or no `at:`, E040; a labelled reference fills its slot
   **Sketching on a face** is `v1.origin coincident b0.near.surface` + `v1 tangent(at:
   v1.origin) b0.near.surface` (`at:` takes a path), written by `edit::sketch_on_face` seeded on the numeric twin
   `solid::carrier` where the eye's ray met it (`SolidHit::at`); `edit::face_plane` finds a plane
-  already lying there, which the app chooses instead (a double-click on a face, or Solids ▸
-  Sketch on face, `k`).  A plane dropped from a plane states `P distance(d) v` and is sized as an
+  already lying there.  The app no longer offers it: everything is drawn in space, and there is
+  no plane to choose (app.md).  A plane dropped from a plane states `P distance(d) v` and is sized as an
   extrusion is (`LiveExtent` kind `offset`, `workspace::offset_handle`/`offset_at`; previewed by
   the constraint's number and a solve, written once by `set_dimension`).  `tests/face_sets.rs`
   and `tests/edit_datums.rs` are the gates.

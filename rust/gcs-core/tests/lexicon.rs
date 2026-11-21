@@ -187,6 +187,10 @@ fn a_statement_is_written_as_a_person_writes_it() {
          "l9 := line(p, q) in std.front"),
         ("circle", &[("name", "k9"), ("center", "c"), ("r", "5")], Some("std.front"),
          "k9 := circle(center: c) hint(r: 5) in std.front"),
+        ("circle", &[("name", "k8"), ("center", "c"), ("normal", "ax"), ("r", "5")], None,
+         "k8 := circle(center: c, normal: ax) hint(r: 5)"),
+        ("circle", &[("name", "k7"), ("center", "c"), ("normal", "hint(dir: (0, -1, 0))")], None,
+         "k7 := circle(center: c, normal: hint(dir: (0, -1, 0)))"),
         ("arc", &[("name", "w9"), ("center", "c"), ("start", "a1"), ("end", "a2"), ("sense", "cw")],
          None, "w9 := arc(center: c, start: a1, end: a2, sense: cw)"),
         ("spline", &[("name", "s9"), ("ctrl", "k0, k1, k2, k3")], None, "s9 := spline(k0, k1, k2, k3)"),
@@ -233,6 +237,12 @@ fn writing_a_word_imports_it_and_holds_it_to_the_elaborator() {
     // an entity's name in its kind's alphabet
     let line = write(DOC, "line", &[("p1", "t"), ("p2", "r")]).unwrap();
     assert_eq!(line.names, ["l0"]);
+    // a circle about a point in space, square to an axis of its own (#363 S6)
+    let spaced = format!("{DOC}o3 := point hint((1, 2, 3))\n");
+    let k = write(&spaced, "circle", &[("center", "o3"), ("normal", "hint(dir: (0, -1, 0))"),
+                                       ("r", "5")]).unwrap();
+    assert!(k.text.ends_with("c0 := circle(center: o3, normal: hint(dir: (0, -1, 0))) hint(r: 5)\n"),
+            "{}", k.text);
     // refused: a slot left empty, a name taken, and what the elaborator will not have
     assert_eq!(write(DOC, "distance", &[("p", "p"), ("q", "q")]).unwrap_err(),
                "distance still needs `value`");

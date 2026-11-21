@@ -1375,7 +1375,8 @@ with no fit within `FIT_MM` is refused, as before. `tests/solid_lang.rs`
 `a_fit_is_held_where_it_closes_in_and_stands_within_its_tolerance_where_it_does_not`) is the gate.
 Rung 2 is done: `Curve::BSpline` (`brep::nurbs`), `Surface::Extrusion`/`Revolution`, a face's
 stretch of a traced or formula curve (`k from p to q`, `CurveE::trim`, `cad::HELD_MM`), and a
-section carried to its own image (`build::ruled`: a drafted prism's offset, a canal's screwed disc;
+section carried to its own image (`build::ruled`: a drafted prism's offset — its corners where an arc
+meets a side at an angle on the conics they move along, `build::ruled_by`, #962 — a canal's screwed disc;
 `Surface::Blend`, `Curve::Iso` rails, `step::FIT`), each edge joined to the edge it became at equal
 parameter fractions.  Two sections drawn apart are no input to it (#243 L3): what a section becomes
 along a path is the face family's (`brep::family`).

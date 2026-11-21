@@ -1074,12 +1074,37 @@ tan θ` into its material from its own plane, the parting plane (an outer loop i
 evaluator reads it: the facets (`primitive::prism`'s `taper`, `offset` by mitres, a side breaking at
 the plane; `drafted_away` refuses a side taken to nothing, at validation, saying the ordinate's
 size at which it comes to nothing from the face's own plane, to three figures, and that the sides
-lean from it, #765), the field
+lean from it, #765 — read by the section's own rule, `brep::build::drafted_away`, where the face's
+sides are lines and arcs, so a corner sliding along an arc never reads the arc's chords as sides,
+and saying so too of a corner whose moved sides part, #962; by the facets for a spline), the field
 (`ExtrudedField::drafted`: the side's value plus `|w| tan`, times the cosine — exact only where
-`PlanarField::draftable`: convex loops of lines and whole circles, else refused) and the exact
-kernel (the recipe's prism `"draft"`; `brep::build::drafted`: `offset` the profile — a line moved
-square, a circle's radius, corners where lines cross or where sides go on tangent, an arc at an
-angle refused — and `ruled` lofts each side of the plane, `boolean::glued` there; OCCT refuses it).
+`PlanarField::draftable`: convex loops of lines and whole circles, any other loop of lines and arcs
+read by its sections, `field/sections.rs`) and the exact kernel (the recipe's prism `"draft"`;
+`brep::build::drafted`: `offset` the profile — a line moved square, a circle's radius, each corner
+where the moved sides meet — and `ruled_by` lofts each side of the plane, `boolean::glued` there;
+OCCT refuses it). **A corner's edge is the path the corner moves along** (#962, `build::Moving`):
+a line where two lines meet or the sides go on tangent (their tangents within 1e-9, the field's
+reading too), and where an arc meets a line or another arc at an angle the conic the side's plane
+and the arc's cone (or the two cones) meet in — always planar, for the moved line and circle meet
+where `y² = ((c − o)·t)² − 2d((c − o)·n + σr)`, affine in the offset `d`, a parabola, and two moved
+circles on the line square to their centres at `x` affine in `d` with `y² = (r₁ − σ₁d)² − x²`
+quadratic, an ellipse, parabola or hyperbola — built as the rational quadratic Bézier between the
+sections' corners (the parabola polynomial, its middle pole read without crossing two
+near-parallel tangents), exact; each arc's side its cone, its ends at whatever angles the moved
+corners stand. The rule at every corner is the one two lines keep: where the moved sides' carriers
+meet, at a reflex corner as at a convex one (a mitre, the moved line and circle met beyond the
+arc's end), so a hole's corners move out along the same conics. Where a corner's moved sides part
+(the square comes to nothing) or a side is taken to nothing, the prism is refused, saying how far
+from the parting plane it happens (the elaborator's `drafted_away` says the side first, as above).
+A corner a hair off tangent is a conic all but straight, its faces read as tangent where their
+normals agree to `faces::TANGENT`. The generating class does not read such a tool: its sections are
+not blends of its ends (`build::corners_move_straight`, the cutter). `tests/draft_corners.rs` is
+the gate: a line meeting a convex arc square, acute and obtuse, meeting a concave arc three ways,
+two arcs the same way round and opposite ways, a plate's D-shaped hole, a D, a lens, a vane and a
+flat 1e-3 to 1e-7 off tangent, each to the integral of its section's closed-form area over its
+height to 1e-9, one side of the parting plane and across it, drafted 0.5°, 3°, 15° and outward,
+turned, mirrored and stood on another plane, each conic edge on both its faces to 1e-9, and
+`rounds/drafted_vane.sv` and `rounds/dboss.sv` read alike by the field.
 Faces keep the prism's names, a side crossing the plane two pieces of one name; a round over such a
 face takes the pieces as one (`round(r) X` never rounds their crease), and the field's set distances
 read a face in pieces on several surfaces meeting convex surface by surface

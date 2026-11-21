@@ -1508,7 +1508,9 @@ plane as an argument does not imply `in`.
 held `fix((x, y, z)) p`; a line between two is a line in space. An arc over points in space is
 drawn in the plane through its centre and its ends, the short way round, so a chain of lines and
 arcs may bend in any plane with none written; a circle about a point in space takes the axis it
-stands square to, `circle(center: o, normal: ax)` (with none it is E060). In a plane an arc runs
+stands square to, `circle(center: o, normal: ax)` — or an axis of its own, seeded along a direction
+and free for its constraints to turn, `circle(center: o, normal: hint(dir: (0, 0, 1)))` (with
+neither it is E060). In a plane an arc runs
 counter-clockwise from its start; `arc(center: c, sense: cw)` runs clockwise, so a chain in a
 plane may turn right at it. A chain may also enter an arc at its end and walk it to its start —
 threaded with both ends written, `-> tangent (k := arc(center: c, start: f, end: e)) ->` entered
@@ -1995,8 +1997,12 @@ words of `std.solids` (`rust/lib/std/solids.sv`) are sets written in the languag
   30mm`. Write the face where it is not at an end.
 - **Draft.** The sides lean from the face's own plane (the parting plane, ordinate 0), away from it
   on both sides, a hole widening as the outside narrows; lines' sides stay planes and circles'
-  become cones. An arc meeting a side at an angle (not tangent) is refused by the exact kernel.
-  `conrod/rod.sv` drafts its eyes and shank. **The ordinates do not move the parting plane**: a
+  become cones. Where an arc meets a side at an angle (not tangent) the corner runs up the curve
+  the side's plane and the arc's cone meet in, a conic, built exactly ([0.228]); every corner is
+  where the moved sides meet, a reflex one (a hole's) as a convex one, so a D-shaped hole grows
+  with its corners mitred, never rounded. `conrod/rod.sv` drafts its eyes and shank,
+  `rounds/drafted_vane.sv` a vane whose arc ends meet its sides at an angle, `rounds/dboss.sv` a D-shaped
+  boss. **The ordinates do not move the parting plane**: a
   face drawn in `std.top` and drafted `from: 31mm, to: 33mm` has shrunk `31 tan θ` before it starts,
   and a side taken to nothing within the ordinates is E080, saying how far from the face's plane
   it went. To part elsewhere, draw the face there — on a plane lying on the face it opens on

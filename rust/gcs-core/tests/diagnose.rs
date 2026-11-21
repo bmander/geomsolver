@@ -878,3 +878,24 @@ b1 := solid(std.solids.Revolution(f1, about: std.x))
     assert_eq!((left.dof, left.status, left.under_params),
                (said.dof, said.status, said.under_params));
 }
+
+/// **A curve traced in space has a state** (#363): a spline over points in space is the curve it
+/// is traced as, as free as the worst of its control points — under while one is free, well once
+/// every one is held — so it is coloured by state as the figures drawn in a plane are.
+#[test]
+fn a_spline_in_space_is_as_free_as_its_control_points() {
+    use gcs_core::model::EntKind;
+    let points = "use std\na := point hint((0, 0, 0))\nb := point hint((10, 20, 5))\n\
+                  c := point hint((30, -10, 15))\nd := point hint((40, 10, 0))\n\
+                  s := spline(a, b, c, d)\n";
+    let state = |src: &str| {
+        let mut e = gcs_core::program::elaborate(&crate::common::parsed::prog_of(src));
+        let s = e.map.ent_named("s").unwrap();
+        assert_eq!(s.kind, EntKind::Traced);
+        diagnose(&mut e.sketch, DiagnoseOptions::default()).entity_state.get(&s).copied()
+    };
+    assert_eq!(state(points), Some(State::Under));
+    let held = format!("{points}fix((0, 0, 0)) a\nfix((10, 20, 5)) b\nfix((30, -10, 15)) c\n\
+                        fix((40, 10, 0)) d\n");
+    assert_eq!(state(&held), Some(State::Well));
+}

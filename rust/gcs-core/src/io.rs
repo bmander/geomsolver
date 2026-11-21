@@ -43,7 +43,7 @@ fn ref_from_json(sk: &Sketch, j: &Json, what: &str) -> Result<EntRef, String> {
     if a.len() != 2 {
         return Err(format!("{what} must be [kind, index]"));
     }
-    let kind = EntKind::parse(a[0].as_str())
+    let kind = EntKind::from_wire(a[0].as_str())
         .ok_or_else(|| format!("unknown {what} kind {:?}", a[0].as_str()))?;
     Ok(EntRef::new(kind, index(a[1].as_i64(), sk.count(kind), what)?))
 }
@@ -933,9 +933,10 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
 }
 
 /// An arc's or a circle's plane in space as JSON (#363 S6): its plane, each own point with the
-/// point in space it is tied to, and a circle's normal and gauge.
+/// point in space it is tied to, and a circle's normal and gauge — and `own` where the normal is
+/// its own axis.
 fn round_json(r: &crate::model::RoundIn) -> Json {
-    let crate::model::RoundIn { plane, ties, normal } = r;
+    let crate::model::RoundIn { plane, ties, normal, own } = r;
     let mut o = object([
         ("plane", (*plane as i64).into()),
         ("ties", Json::Arr(ties.iter()
@@ -944,6 +945,9 @@ fn round_json(r: &crate::model::RoundIn) -> Json {
     if let Some((n, g)) = normal {
         o.set("normal", ref_json(*n));
         o.set("gauge", (*g as i64).into());
+        if *own {
+            o.set("own", Json::Bool(true));
+        }
     }
     o
 }
@@ -973,7 +977,8 @@ fn round_from_json(sk: &Sketch, j: &Json) -> Result<crate::model::RoundIn, Strin
         }
         None => None,
     };
-    Ok(crate::model::RoundIn { plane: plane as u32, ties, normal })
+    let own = normal.is_some() && j.get("own").is_some_and(|v| matches!(v, Json::Bool(true)));
+    Ok(crate::model::RoundIn { plane: plane as u32, ties, normal, own })
 }
 
 pub fn dumps(sk: &Sketch, indent: Option<usize>) -> String {
