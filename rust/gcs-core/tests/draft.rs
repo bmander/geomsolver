@@ -12,7 +12,8 @@ use gcs_core::program::Elaborated;
 use gcs_core::solid::{ApproximationPolicy::Report, MaterialField};
 use std::f64::consts::PI;
 
-use crate::common::{ent, text::solved};
+use crate::brep::simpson;
+use crate::common::{ent, rounds::disc_band, text::solved};
 
 /// A 20 × 30 block `f` in the front plane (x along u, z along v; its normal is −y), its solid the
 /// `std.solids` word `sweep` over it, with whatever `more` adds.
@@ -237,18 +238,13 @@ s := solid(std.solids.Drafted(f, from: -2, to: 2, draft: 4deg))
     let quarter = |h: f64| {
         let (k, r) = (h.abs() * t, 10.0 - h.abs() * t);
         let s = (r * r - k * k).sqrt();
-        let up = |x: f64| 0.5 * (x * (r * r - x * x).sqrt() + r * r * (x / r).asin());
+        // half the disc's area between its centre's line and a line `x` from it
+        let up = |x: f64| disc_band(r, x) / 4.0;
         up(s) - up(k) - k * (s - k)
     };
     // Simpson's rule on 400 panels each side: the area is smooth in `|h|`
-    let simpson = |a: f64, b: f64| {
-        let n = 400;
-        let w = (b - a) / n as f64;
-        (0..=n).map(|i| quarter(a + w * i as f64)
-            * if i == 0 || i == n { 1.0 } else if i % 2 == 1 { 4.0 } else { 2.0 }).sum::<f64>() * w / 3.0
-    };
     close("the drafted quarter disc, exactly", props::volume(&exact(&e, "s").unwrap()),
-          simpson(-2.0, 0.0) + simpson(0.0, 2.0), 1e-9);
+          simpson(-2.0, 0.0, 400, quarter) + simpson(0.0, 2.0, 400, quarter), 1e-9);
 }
 
 /// A drafted side leans off its face's plane, so it is no set to sketch on; a cap still is.

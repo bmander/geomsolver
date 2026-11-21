@@ -633,19 +633,24 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
         // it comes to nothing, measured from the plane the face is drawn in, which the sides lean
         // from whatever the ordinates (#765)
         if let SolidDef::Prism { from, to, draft: Some(d), .. } = &s.def {
-            let reach = from.value.abs().max(to.value.abs());
-            // read by the section's own rule where the face's sides are lines and arcs (each
-            // corner where the moved sides meet, a corner where an arc meets a side at an angle
-            // sliding along the arc: `brep::build::drafted_away`, #962); else by its facets, a
-            // tessellated arc's chords coming to nothing a little short of the arc
-            let exact = cad::profile(sk, face as usize, &crate::brep::recipe::Writer::world(1.0))
-                .and_then(|s| crate::brep::build::Profile::of(&s))
-                .ok().filter(|p| p.loops.iter().flatten().all(|e| matches!(e,
-                    crate::brep::build::ProfileEdge::Line { .. } | crate::brep::build::ProfileEdge::Arc { .. })));
+            let (reach, taper) = (from.value.abs().max(to.value.abs()), d.value.dtan());
+            // read by the section's own rule where the face's sides are lines, arcs and circles
+            // (each corner where the moved sides meet, a corner where an arc meets a side at an
+            // angle sliding along the arc: `brep::build::drafted_away`, #962); else by its facets,
+            // a tessellated arc's chords coming to nothing a little short of the arc
+            // (its edges' kinds read first, so a traced or formula curve is never fitted for it)
+            let lines_and_arcs = sk.faces[face as usize].boundaries().all(|(edges, _)| edges.iter()
+                .all(|e| matches!(e.kind, EntKind::Line | EntKind::Arc | EntKind::Circle)));
+            let exact = lines_and_arcs.then(|| {
+                cad::profile(sk, face as usize, &crate::brep::recipe::Writer::world(1.0))
+                    .and_then(|s| crate::brep::build::Profile::of(&s)).ok()
+            }).flatten();
             let away = match exact {
-                Some(p) => crate::brep::build::drafted_away(&p, reach, d.value.dtan()),
+                // (a profile the rule moves not at all, a corner turning straight back, is refused
+                // where the kernel builds it, in its words)
+                Some(p) => crate::brep::build::drafted_away(&p, reach, taper).unwrap_or(None),
                 None => polys.iter().enumerate().find_map(|(k, p)| {
-                    primitive::drafted_away(&p.pts, reach, primitive::loop_taper(k, d.value.dtan()))
+                    primitive::drafted_away(&p.pts, reach, primitive::loop_taper(k, taper))
                         .map(|(i, at)| (format!("takes the side `{}` to nothing", p.names[p.of[i].0]), at))
                 }),
             };

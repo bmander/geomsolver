@@ -18,6 +18,9 @@ use gcs_core::brep::props;
 use gcs_core::brep::topo::{Brep,EdgeCurve};
 use std::f64::consts::PI;
 
+use crate::common::rounds::{disc_band,gauss_legendre};
+use crate::round_lowering::lens;
+
 type P = [f64;2];
 
 /// A profile's edge in the `(x, y)` plane: a line, or an arc about `c` of radius `r` turning
@@ -26,6 +29,7 @@ type P = [f64;2];
 enum E { L(P,P),A(P,f64,f64,f64) }
 
 /// A drawing in the `(x, y)` plane, its loops (the first the outer), each edge named.
+#[derive(Clone)]
 struct Drawing { loops: Vec<Vec<(E,&'static str)>> }
 
 impl Drawing {
@@ -52,40 +56,38 @@ impl Drawing {
 /// A point at angle `a` on the circle about `c` of radius `r`.
 fn on(c: P,r: f64,a: f64) -> P { [c[0]+r*a.cos(),c[1]+r*a.sin()] }
 
+/// The chord `y = c` of the circle of radius `r` about the origin (`|c| < r`): the angle `phi` its
+/// right end stands at, and its ends, right and left.
+fn chord(r: f64,c: f64) -> (f64,P,P) {
+    let phi = (c/r).asin();
+    (phi,on([0.,0.],r,phi),on([0.,0.],r,PI-phi))
+}
+
+/// The vane of fixture 147: its sides `y = ±t` from `x0` to `x1`, each end an arc of radius `rr`
+/// about `(cr, 0)` or `(cl, 0)` bulging 0.5 past its sides' ends.
+#[derive(Clone,Copy)]
+struct Vane { x0: f64,x1: f64,t: f64,rr: f64,cr: f64,cl: f64 }
+
+impl Vane {
+    /// 70 long and 4 thick, its ends' arcs of radius 4.25.
+    fn new() -> Vane {
+        let (x0,x1,t,b) = (20.,90.,2.,0.5);
+        let rr = (t*t+b*b)/(2.*b);
+        Vane {x0,x1,t,rr,cr:x1+b-rr,cl:x0-b+rr}
+    }
+    /// Its section's area at offset `d`: the band between its moved sides and its moved arcs'
+    /// discs' bands between them.
+    fn area(&self,d: f64) -> f64 { let (t,r) = (self.t-d,self.rr-d); 2.*t*(self.cr-self.cl)+disc_band(r,t) }
+}
+
 /// The area of the disc of radius `r` beyond the line `c` from its centre (`|c| < r`).
 fn segment(r: f64,c: f64) -> f64 { r*r*(c/r).acos()-c*(r*r-c*c).sqrt() }
-
-/// The area two discs of radii `a` and `b` whose centres stand `d` apart have in common (they cross).
-fn lens(a: f64,b: f64,d: f64) -> f64 {
-    a*a*((d*d+a*a-b*b)/(2.*d*a)).acos()+b*b*((d*d+b*b-a*a)/(2.*d*b)).acos()
-        -0.5*((-d+a+b)*(d+a-b)*(d-a+b)*(d+a+b)).sqrt()
-}
-
-/// Gauss–Legendre nodes and weights on `[-1, 1]`, by Newton's method on the Legendre polynomial.
-fn legendre(n: usize) -> Vec<(f64,f64)> {
-    (0..n).map(|i| {
-        let mut x = (PI*(i as f64+0.75)/(n as f64+0.5)).cos();
-        loop {
-            let (mut p0,mut p1) = (1.,x);
-            for k in 2..=n { let p2 = ((2*k-1) as f64*x*p1-(k-1) as f64*p0)/k as f64; p0 = p1; p1 = p2; }
-            let dp = n as f64*(x*p1-p0)/(x*x-1.);
-            let dx = p1/dp;
-            x -= dx;
-            if dx.abs() < 1e-16 {
-                let (mut p0,mut p1) = (1.,x);
-                for k in 2..=n { let p2 = ((2*k-1) as f64*x*p1-(k-1) as f64*p0)/k as f64; p0 = p1; p1 = p2; }
-                let dp = n as f64*(x*p1-p0)/(x*x-1.);
-                return (x,2./((1.-x*x)*dp*dp))
-            }
-        }
-    }).collect()
-}
 
 /// `∫ area(|h| tan θ) dh` from `h0` to `h1`, each side of the parting plane apart (the area is
 /// smooth in the offset, not in `h` across it), on eight panels of twenty points each.
 fn volume_of(area: &dyn Fn(f64) -> f64,h0: f64,h1: f64,theta: f64) -> f64 {
     let t = theta.tan();
-    let rule = legendre(20);
+    let rule = gauss_legendre(20);
     let span = |a: f64,b: f64| -> f64 {
         (0..8).map(|k| {
             let (lo,hi) = (a+(b-a)*k as f64/8.,a+(b-a)*(k+1) as f64/8.);
@@ -132,17 +134,16 @@ fn holds(what: &str,b: &Brep,want: f64,names: &[&str]) -> usize {
 }
 
 /// Each drawing of the family, with its section's area at offset `d`.
-struct Case { what: &'static str,drawing: Drawing,area: Box<dyn Fn(f64) -> f64>,names: Vec<&'static str>,conics: bool }
+struct Case { what: &'static str,drawing: Drawing,area: Box<dyn Fn(f64) -> f64>,names: Vec<&'static str> }
 
 fn family() -> Vec<Case> {
     let mut out = Vec::new();
     // a disc of radius 10 above the line y = c: a right angle at c = 0, acute above, obtuse below
     for (what,c) in [("a D, its chord square to its arc",0.),("a D, acute",4.),("a D, obtuse",-4.)] {
         let (r,c): (f64,f64) = (10.,c);
-        let phi = (c/r).asin();
-        let (a,b) = (on([0.,0.],r,phi),on([0.,0.],r,PI-phi));
+        let (phi,a,b) = chord(r,c);
         out.push(Case {what,drawing:Drawing {loops:vec![vec![(E::L(b,a),"chord"),(E::A([0.,0.],r,phi,PI-phi),"arc")]]},
-            area:Box::new(move |d| segment(r-d,c+d)),names:vec!["chord","arc"],conics:true});
+            area:Box::new(move |d| segment(r-d,c+d)),names:vec!["chord","arc"]});
     }
     // a rectangle 40 × 20 with a bite of radius 6 out of its top side, about a centre `e` above it:
     // a line meeting a concave arc square to it, and at an acute and an obtuse angle
@@ -155,7 +156,7 @@ fn family() -> Vec<Case> {
         let loops = vec![vec![(E::L([-w,0.],[w,0.]),"floor"),(E::L([w,0.],[w,h]),"east"),(E::L([w,h],[s,h]),"top_e"),
             (E::A(c,rho,a0,a1),"bite"),(E::L([-s,h],[-w,h]),"top_w"),(E::L([-w,h],[-w,0.]),"west")]];
         out.push(Case {what,drawing:Drawing {loops},area:Box::new(move |d| (2.*(w-d))*(h-2.*d)-segment(rho+d,e+d)),
-            names:vec!["floor","east","top_e","bite","top_w","west"],conics:true});
+            names:vec!["floor","east","top_e","bite","top_w","west"]});
     }
     // two convex arcs meeting at an angle: a lens of radii 10 and 8, centres 12 apart
     {
@@ -165,7 +166,7 @@ fn family() -> Vec<Case> {
         let t1 = y.atan2(x);
         let t2 = y.atan2(x-dd);
         let loops = vec![vec![(E::A([0.,0.],r1,-t1,t1),"right"),(E::A([dd,0.],r2,t2,2.*PI-t2),"left")]];
-        out.push(Case {what:"a lens",drawing:Drawing {loops},area:Box::new(move |d| lens(r1-d,r2-d,dd)),names:vec!["right","left"],conics:true});
+        out.push(Case {what:"a lens",drawing:Drawing {loops},area:Box::new(move |d| lens(r1-d,r2-d,dd)),names:vec!["right","left"]});
     }
     // a convex arc meeting a concave one: a disc of 10 less a disc of 5 about a centre 11 off
     {
@@ -176,40 +177,36 @@ fn family() -> Vec<Case> {
         let t2 = y.atan2(x-dd);
         let loops = vec![vec![(E::A([0.,0.],r1,t1,2.*PI-t1),"rim"),(E::A([dd,0.],r2,t2,2.*PI-t2),"bite")]];
         out.push(Case {what:"a crescent",drawing:Drawing {loops},area:Box::new(move |d| PI*(r1-d).powi(2)-lens(r1-d,r2+d,dd)),
-            names:vec!["rim","bite"],conics:true});
+            names:vec!["rim","bite"]});
     }
     // a hole of that kind: a plate 60 × 40 with a D of radius 8 above y = -3 cut through it; the
     // draft grows the hole, its corners reflex in the plate, met where the moved sides meet
     {
         let (r,c): (f64,f64) = (8.,-3.);
-        let phi = (c/r).asin();
-        let (a,b) = (on([0.,0.],r,phi),on([0.,0.],r,PI-phi));
+        let (phi,a,b) = chord(r,c);
         let loops = vec![vec![(E::L([-30.,-20.],[30.,-20.]),"south"),(E::L([30.,-20.],[30.,20.]),"east"),
             (E::L([30.,20.],[-30.,20.]),"north"),(E::L([-30.,20.],[-30.,-20.]),"west")],
             vec![(E::L(b,a),"flat"),(E::A([0.,0.],r,phi,PI-phi),"bore")]];
         out.push(Case {what:"a plate with a D-shaped hole",drawing:Drawing {loops},
-            area:Box::new(move |d| (60.-2.*d)*(40.-2.*d)-segment(r+d,c-d)),names:vec!["flat","bore","south"],conics:true});
+            area:Box::new(move |d| (60.-2.*d)*(40.-2.*d)-segment(r+d,c-d)),names:vec!["flat","bore","south"]});
     }
     // a vane: 70 long and 4 thick, each end an arc of radius 4.25 bulging 0.5 past its sides' ends,
     // meeting them at an angle (fixture 147's)
     {
-        let (x0,x1,t,b): (f64,f64,f64,f64) = (20.,90.,2.,0.5);
-        let rr = (t*t+b*b)/(2.*b);
-        let (cr,cl) = (x1+b-rr,x0-b+rr);
+        let v = Vane::new();
+        let Vane {x0,x1,t,rr,cr,cl} = v;
         let a = (t/rr).asin();
         let loops = vec![vec![(E::L([x0,-t],[x1,-t]),"south"),(E::A([cr,0.],rr,-a,a),"tip"),(E::L([x1,t],[x0,t]),"north"),
             (E::A([cl,0.],rr,PI-a,PI+a),"root")]];
-        let area = move |d: f64| { let (t,r) = (t-d,rr-d); 2.*t*(cr-cl)+2.*(t*(r*r-t*t).sqrt()+r*r*(t/r).asin()) };
-        out.push(Case {what:"a vane",drawing:Drawing {loops},area:Box::new(area),names:vec!["south","tip","north","root"],conics:true});
+        out.push(Case {what:"a vane",drawing:Drawing {loops},area:Box::new(move |d| v.area(d)),names:vec!["south","tip","north","root"]});
     }
     // a disc of 10 with a flat a hair off tangent to it: its chord turning ε from the arc at each end
     for (what,eps) in [("a flat 1e-3 off tangent",1e-3),("a flat 1e-5 off tangent",1e-5),("a flat 1e-7 off tangent",1e-7)] {
         let r: f64 = 10.;
         let c = r*(eps as f64).cos();
-        let phi = (c/r).asin();
-        let (a,b) = (on([0.,0.],r,phi),on([0.,0.],r,PI-phi));
+        let (phi,a,b) = chord(r,c);
         out.push(Case {what,drawing:Drawing {loops:vec![vec![(E::L(a,b),"flat"),(E::A([0.,0.],r,PI-phi,2.*PI+phi),"round")]]},
-            area:Box::new(move |d| PI*(r-d).powi(2)-segment(r-d,c-d)),names:vec!["flat","round"],conics:true});
+            area:Box::new(move |d| PI*(r-d).powi(2)-segment(r-d,c-d)),names:vec!["flat","round"]});
     }
     out
 }
@@ -222,14 +219,14 @@ fn a_drafted_corner_where_an_arc_meets_a_side_is_its_conic() {
     let theta = 3f64.to_radians();
     for case in family() {
         for mirrored in [false,true] {
-            let drawing = if mirrored { case.drawing.mirrored() } else { Drawing {loops:case.drawing.loops.clone()} };
+            let drawing = if mirrored { case.drawing.mirrored() } else { case.drawing.clone() };
             for (place,m) in placements() {
                 for (h0,h1) in [(0.,6.),(-4.,5.)] {
                     let what = format!("{}{}, {place}, from {h0} to {h1}",case.what,if mirrored { " mirrored" } else { "" });
                     let b = drafted(&drawing.profile(&m),h0,h1,theta).unwrap_or_else(|e| panic!("{what}: {e}"));
                     let want = volume_of(&*case.area,h0,h1,theta);
                     let conics = holds(&what,&b,want,&case.names);
-                    assert!(!case.conics || conics > 0, "{what}: no conic corner");
+                    assert!(conics > 0, "{what}: no conic corner");
                 }
             }
         }
@@ -278,11 +275,8 @@ fn near(what: &str,got: f64,want: f64) {
 #[test]
 fn the_drafted_vane_is_built_and_read_alike() {
     let e = crate::common::text::solved(include_str!("../../examples/rounds/drafted_vane.sv"));
-    let (x0,x1,t,b) = (20f64,90f64,2f64,0.5f64);
-    let rr = (t*t+b*b)/(2.*b);
-    let (cr,cl) = (x1+b-rr,x0-b+rr);
-    let area = move |d: f64| { let (t,r) = (t-d,rr-d); 2.*t*(cr-cl)+2.*(t*(r*r-t*t).sqrt()+r*r*(t/r).asin()) };
-    let vane = volume_of(&area,0.,30.,2f64.to_radians());
+    let v = Vane::new();
+    let vane = volume_of(&|d| v.area(d),0.,30.,2f64.to_radians());
     near("the vane",exported(&e,"vane"),vane);
     near("the impeller",exported(&e,"impeller"),vane+PI*100f64.powi(2)*3.);
 }
@@ -303,8 +297,7 @@ fn the_drafted_d_boss_is_built_and_read_alike() {
 #[test]
 fn a_corner_drafted_away_is_refused_saying_where() {
     let (r,c): (f64,f64) = (10.,8.);
-    let phi = (c/r).asin();
-    let (a,b) = (on([0.,0.],r,phi),on([0.,0.],r,PI-phi));
+    let (phi,a,b) = chord(r,c);
     let d = Drawing {loops:vec![vec![(E::L(b,a),"chord"),(E::A([0.,0.],r,phi,PI-phi),"arc")]]};
     let why = drafted(&d.profile(&placements()[0].1),0.,30.,3f64.to_radians()).unwrap_err();
     let at = 1./3f64.to_radians().tan();

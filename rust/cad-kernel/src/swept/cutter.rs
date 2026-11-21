@@ -408,7 +408,8 @@ impl Cutter {
                 return Err("the core sections no drafted prism whose sides meet at its parting plane in a concave crease".into())
             }
             // a corner where an arc meets a side at an angle moves along a conic (`build::offset`),
-            // so a section between two is not their blend
+            // so a section between two is not their blend (the reader refuses such a tool first
+            // today, `Tool::read`; this guards the cutter for when it pairs conic corners, G8)
             if !crate::build::corners_move_straight(&profile)? {
                 return Err("the core sections no drafted prism with a corner where an arc meets a side at an angle".into())
             }
