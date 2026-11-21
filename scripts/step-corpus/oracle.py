@@ -29,7 +29,8 @@ For each file it gives:
   the value reported is the finest's, `spread` the largest relative difference of the adaptive
   ones from it, `gauss_err` the fixed rule's;
 * the same file read **with healing on** (OCCT's default, `FromSTEP`), and `healed`, what healing
-  changed: counts, validity, tolerances, measures (empty where nothing did);
+  changed: counts, validity, tolerances, measures (empty where nothing did), and its edges'
+  `tol_length` (healing measures an edge's tolerance where it fixes its parameters);
 * per face (`--faces`): its index in OCCT's order, the ADVANCED_FACE it was read from (OCCT keeps
   the shells' order of faces; the surface kinds of the two lists are compared, and `faces_mapped`
   says whether they all agree), its surface kind, orientation and area.
@@ -221,6 +222,7 @@ def oracle(path, faces=False):
         changed["area"] = rel(ha, a)
     out["healed"] = changed
     out["healed_valid"] = h["valid"]
+    out["healed_tol_length"] = h["tol_length"]
     if faces:
         listed = [f for s in scan["solids"] for f in s["face_list"]]
         mapped_ = len(listed) == len(rows) and all(r[1] == f[1] or f[1] in ("revolution",

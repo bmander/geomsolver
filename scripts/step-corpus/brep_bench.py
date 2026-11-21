@@ -2,10 +2,10 @@
 """brep-bench's settled cases as other kernels write them: STEP files for the corpus (#993 stage 1).
 
     python3 -I scripts/step-corpus/brep_bench.py prepare            # copy the bench's checkout
-    python3 -I scripts/step-corpus/brep_bench.py build KERNEL...    # build their runners
+    python3 -I scripts/step-corpus/brep_bench.py build KERNEL...    # build their runners (and
+                                                                    # `mass`, the bench's measurer)
     python3 -I scripts/step-corpus/brep_bench.py run KERNEL... [--jobs 2] [--timeout 120] [--case P]
     python3 -I scripts/step-corpus/brep_bench.py references         # the reference shapes' files
-    python3 -I scripts/step-corpus/brep_bench.py mass KERNEL...     # the bench's own measures
     python3 -I scripts/step-corpus/brep_bench.py manifest           # the committed closed forms
     python3 -I scripts/step-corpus/brep_bench.py census             # entity kinds, per source
 
@@ -100,6 +100,12 @@ def build(names):
     for name in names:
         k = ks[name]
         clock = time.time()
+        if name == "mass":
+            ok = subprocess.run(["cargo", "build", "-j", os.environ.get("CARGO_JOBS", "2"),
+                                 "--release", "--manifest-path",
+                                 os.path.join(BENCH, "harness", "mass", "Cargo.toml")]).returncode == 0
+            print(f"mass: {'built' if ok else 'FAILED'}")
+            continue
         if name == "geomsolver":
             ok = build_geomsolver()
         elif name == "occt":
@@ -264,54 +270,6 @@ def references():
         print(f"reference {c['id']}: {len(data)} bytes")
 
 
-def mass(names, jobs, timeout):
-    """The bench's own measures of each file (harness/mass/, built here): a second reader, apart
-    from OCCT, written to `<kernel>/mass.tsv`."""
-    manifest = os.path.join(BENCH, "harness", "mass", "Cargo.toml")
-    subprocess.run(["cargo", "build", "-j", os.environ.get("CARGO_JOBS", "2"), "--release",
-                    "--manifest-path", manifest], check=True)
-    binary = os.path.join(BENCH, "harness", "mass", "target", "release", "mass")
-    for name in names:
-        root = os.path.join(OUT, name)
-        files = sorted(os.path.relpath(os.path.join(d, f), root)[:-5]
-                       for d, _, fs in os.walk(root) for f in fs if f.endswith(".step"))
-        rows, running = {}, []
-
-        def reap():
-            for item in list(running):
-                p, cid, start = item
-                killed = p.poll() is None and time.time() - start > timeout
-                if killed:
-                    p.kill()
-                    p.wait()
-                if p.poll() is None:
-                    continue
-                running.remove(item)
-                out, err = p.communicate()
-                got = last_json(out) or {}
-                if killed or p.returncode or "volume" not in got:
-                    why = f"over {timeout:g} s" if killed else (got.get("error") or err.strip()[-200:]
-                                                                 or f"exit {p.returncode}")
-                    rows[cid] = [cid, "", "", re.sub(r"\s+", " ", str(why))[:200]]
-                else:
-                    rows[cid] = [cid, repr(got["volume"]), repr(got["area"]), ""]
-        for cid in files:
-            while len(running) >= jobs:
-                reap()
-                time.sleep(0.02)
-            p = subprocess.Popen([binary, os.path.join(root, cid + ".step")],
-                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            running.append((p, cid, time.time()))
-        while running:
-            reap()
-            time.sleep(0.02)
-        with open(os.path.join(root, "mass.tsv"), "w") as f:
-            f.write("case\tvolume\tarea\terror\n")
-            for cid in sorted(rows):
-                f.write("\t".join(rows[cid]) + "\n")
-        print(f"{name}: {sum(1 for r in rows.values() if r[1])} of {len(rows)} measured")
-
-
 def manifest():
     """The settled cases' closed forms, with the tolerance the bench grades each at."""
     commit = open(os.path.join(BENCH, "COMMIT")).read().strip()
@@ -377,8 +335,6 @@ def main():
         run(names, opts["--jobs"], opts["--timeout"], opts["--case"], force)
     elif cmd == "references":
         references()
-    elif cmd == "mass":
-        mass(names, opts["--jobs"], opts["--timeout"])
     elif cmd == "manifest":
         manifest()
     elif cmd == "census":
