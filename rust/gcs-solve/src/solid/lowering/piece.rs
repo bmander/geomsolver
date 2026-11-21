@@ -32,8 +32,8 @@ pub(super) fn toward(n: V, within: bool) -> V { if within { scale(n, -1.0) } els
 
 /// The region's faces read off its body (the stratum), and the pieces it is (none: it holds
 /// nowhere).
-pub(super) fn build(body: &crate::solid::faces::BodyFaces, f: &Faces, section: Section, spill: &Spill)
-    -> Result<Vec<Piece>, String> {
+pub(super) fn build(body: &crate::solid::faces::BodyFaces, f: &Faces, section: Section, spill: &Spill,
+    unit: &str) -> Result<Vec<Piece>, String> {
     // each reference's faces: one, or a face another operand split in pieces (a plate's top a rod
     // is sunk along); one a boolean ate, or none of that name, holds nowhere
     let mut groups = Vec::new();
@@ -46,7 +46,7 @@ pub(super) fn build(body: &crate::solid::faces::BodyFaces, f: &Faces, section: S
     }
     let mut pieces = Vec::new();
     for &[i, j] in f.pairs() {
-        let ps = run(body, &groups[i], &groups[j], f.within, section, spill)?;
+        let ps = run(body, &groups[i], &groups[j], f.within, section, spill, unit)?;
         if ps.is_empty() {
             return Ok(Vec::new());
         }
@@ -136,8 +136,8 @@ fn corner_at(body: &crate::solid::faces::BodyFaces, ids: &[usize], vertex: V, wi
 /// The run along the edges where the faces `ga` (a reference's) meet the faces `gb`: a piece per
 /// edge, each where the edge turns the side the region asks (`within`, convex) — none where they
 /// meet in none — and all within where the run of them ends, as the field reads it.
-fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within: bool, section: Section, spill: &Spill)
-    -> Result<Vec<Piece>, String> {
+fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within: bool, section: Section, spill: &Spill,
+    unit: &str) -> Result<Vec<Piece>, String> {
     let edges = body.edges_between(ga, gb);
     // an edge's two faces, `ga`'s first; none where it is not between two
     let ordered = |e: u32| match *body.faces_of(e) {
@@ -180,6 +180,15 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
     }
     let all: Vec<usize> = ga.iter().chain(gb).copied().collect();
     let ends = body.end_faces(&edges, &all);
+    if let Section::Round(r) = section {
+        // the kernel's tolerance over the body (`geom::tolerance` of its box's diagonal)
+        let tol = { let (lo, hi) = body.bounds(); crate::brep::geom::tolerance(distance(lo, hi)) };
+        for &edge in edges.iter().filter(|&&e| body.convex(e) == Some(within)) {
+            if let Some(why) = nearly_tangent(body, edge, &ends, r, tol, unit) {
+                return Err(why);
+            }
+        }
+    }
     let mut built = Vec::new();
     for &edge in &edges {
         let Some((fa, fb)) = ordered(edge) else {
@@ -206,6 +215,64 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
         pieces.extend(b?);
     }
     Ok(pieces)
+}
+
+/// **A corner too nearly tangent to round** (#962): where a round's edge ends on a curved face (a
+/// cylinder, a cone or a sphere, `R` its radius there) that meets one of the edge's own faces at a
+/// turn `θ` past the body's reading of tangent (`faces::TANGENT`) — so a corner, and no seam the
+/// round goes on across — the ball's surface, tangent to the edge's face, meets the curved face at
+/// the corner and again `2R sin θ` on round it, where the face's plane comes back across its
+/// surface.  The kernel reads a point within its tolerance `tol` of two surfaces meeting at `θ` as
+/// on their meeting as far as `ON_CURVE tol / sin θ` off it (`brep::tolerant::on_meeting`), so it
+/// tells the two meetings apart only where `2R sin θ` is more than twice that: `sin² θ > ON_CURVE
+/// tol / R`.  Short of it the pieces' Booleans read one meeting where there are two and leave a
+/// face that does not close ("a cylinder's pieces do not close"; #962's 117 stepped plate with its
+/// side turned `1e-5` to `2e-4` off the lobe it leaves, a teardrop's tangents stated to three
+/// places).  A chamfer's flat crosses the edge's face, no tangent to it, and is built.  Said by the
+/// two faces, the turn, the bound, and what is true to do: state the tangency, or make the corner
+/// one.  `tol` is the kernel's over the body (`geom::tolerance` of its box's diagonal), and the
+/// bound the kernel's own (`tolerant::least_sine_apart`).
+fn nearly_tangent(body: &crate::solid::faces::BodyFaces, edge: u32, ends: &Ends, r: f64, tol: f64, unit: &str)
+    -> Option<String> {
+    let faces = body.faces_of(edge);
+    for p in [body.along(edge, 0.0), body.along(edge, 1.0)] {
+        for &(by, _, far) in ends.iter() {
+            let (EndBy::Face(c), None) = (by, far) else { continue };
+            if body.end_side(&by, p).0.abs() > 1e-7 * (1.0 + norm(p)) {
+                continue;
+            }
+            // the curved face's radius at the corner: a sphere's, or the distance from its axis
+            let radius = match Surf::of(body, c)? {
+                Surf::Sphere { radius, .. } => radius,
+                Surf::Cylinder { origin, axis, .. } | Surf::Cone { origin, axis, .. } => {
+                    let w = sub(p, origin);
+                    norm(sub(w, scale(axis, dot(w, axis))))
+                }
+                _ => continue,
+            };
+            let n = body.normal(c, p);
+            let Some((own, turn)) = faces.iter().map(|&f| (f, dot(body.normal(f, p), n).clamp(-1.0, 1.0).dacos()))
+                .min_by(|a, b| a.1.total_cmp(&b.1)) else { continue };
+            let bound = crate::brep::tolerant::least_sine_apart(radius, tol).dasin();
+            if !(turn < bound) {
+                continue;
+            }
+            let name = |fi: usize| body.said(fi);
+            let fig = |x: f64| crate::json::fmt_g(x, 2);
+            // (the witness to the power of ten under the kernel's tolerance)
+            let grid = 10f64.powi(tol.max(1e-12).log10().floor() as i32);
+            let fig6 = |x: f64| crate::json::fmt_g((x / grid).round() * grid, 6);
+            return Some(format!("{} and {} meet at a turn of {} rad at [{}, {}, {}]{unit}: not tangent, so their \
+                edge is a corner and no seam a round goes on across, and too nearly tangent a corner for this \
+                kernel to round at {}{unit} against {}'s radius of {}{unit} — the round meets {} again {}{unit} on round it, \
+                closer than the kernel tells two meetings apart at that turn (a turn of {} rad or more is \
+                built). State the tangency ({} tangent {}, or a chain's `-> tangent` joint) rather than \
+                coordinates rounded off it, or make it a corner of more than {} rad",
+                name(own), name(c), fig(turn), fig6(p[0]), fig6(p[1]), fig6(p[2]), fig(r), name(c), fig(radius),
+                name(c), fig(2.0 * radius * turn.dsin()), fig(bound), name(own), name(c), fig(bound)));
+        }
+    }
+    None
 }
 
 /// Why a straight run is not cut off by a curved face it ends on: some line along it through its

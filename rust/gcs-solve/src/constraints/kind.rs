@@ -230,6 +230,13 @@ pub enum CKind {
     /// to `at` square to the line, `TangentArcLine`'s kernel with the point named rather than
     /// chosen by `start`/`end` or `p1`/`p2`. No place to share: the point is on the round already.
     TangentCircleAt,
+    /// Two rounds touching at a point a relation already holds on both (#962): `a tangent(at: p)
+    /// b`, the radius of `a` to `p` along the radius of `b` there — their centres and `p` on one
+    /// line, one row, regular where `TangentCircleCircle`'s distance between the centres is a
+    /// double root at every solution once both pass through `p`.  Inside or outside is the
+    /// drawing's branch, as a side of a line is `TangentCircleAt`'s.  What a corner round between
+    /// a line and an arc, or two arcs, states at its arc's end.
+    TangentCirclesAt,
     /// Two points are images of one point in space, each on the plane it is `in`: their
     /// coordinates along the fold line the two planes share agree (`plane::fold_line`).  One
     /// row over both points, with the fold line as constants: both planes fixed (where either
@@ -498,7 +505,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 95] = [
+pub const ALL_KINDS: [CKind; 96] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -594,6 +601,7 @@ pub const ALL_KINDS: [CKind; 95] = [
     CKind::PlaneSupportsCorner,
     CKind::LineFraction,
     CKind::SymmetricAxis,
+    CKind::TangentCirclesAt,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -822,6 +830,7 @@ impl CKind {
             CKind::PointOnExtrusion => "PointOnExtrusion",
             CKind::CurveTangentLine => "CurveTangentLine",
             CKind::TangentCircleAt => "TangentCircleAt",
+            CKind::TangentCirclesAt => "TangentCirclesAt",
             CKind::CurveCurvature => "CurveCurvature",
             CKind::PointOnEnvelope => "PointOnEnvelope",
             CKind::PointOnMeshing => "PointOnMeshing",
@@ -1039,6 +1048,9 @@ impl CKind {
             ],
             CKind::TangentCircleAt | CKind::TangentCircleAt3 => {
                 &[("circle", S::CircleOrArc), ("line", S::Line), ("at", S::Point)]
+            }
+            CKind::TangentCirclesAt => {
+                &[("circle", S::CircleOrArc), ("other", S::CircleOrArc), ("at", S::Point)]
             }
             CKind::DevelopedLength => &[("curve", S::Curve)],
             CKind::PlaneTangentLine => &[("plane", S::Plane), ("line", S::Line), ("at", S::Point)],
@@ -1317,13 +1329,14 @@ impl CKind {
             // the ordinate's zero; `horizontal` and `vertical` between points are the standard
             // library's words for two of its readings (§9.9)
             CKind::Level => ("level", Infix),
-            // touching: seven kinds, told apart by the pair and by `at:`
+            // touching: eight kinds, told apart by the pair and by `at:`
             CKind::TangentLineCircle
             | CKind::TangentLineCircleAt
             | CKind::TangentCircleCircle
             | CKind::TangentArcLine
             | CKind::SplineTangentLine
             | CKind::TangentCircleAt
+            | CKind::TangentCirclesAt
             => ("tangent", Infix),
             CKind::EqualLength | CKind::EqualRadius => ("equal", Infix),
             CKind::SplineCurvature => ("curvature", Infix),
@@ -1787,7 +1800,8 @@ impl CKind {
             | CKind::CurveCurvature
             // a rate held along a line is a tangency at the contact's point (#365)
             | CKind::Rate
-            | CKind::TangentCircleAt => true,
+            | CKind::TangentCircleAt
+            | CKind::TangentCirclesAt => true,
             CKind::Coincident
             | CKind::Distance
             | CKind::Midpoint
@@ -1993,6 +2007,8 @@ impl CKind {
             CKind::TangentLineCircleAt => K::TangentArcLine,
             // and at a point named: the same three things
             CKind::TangentCircleAt => K::TangentArcLine,
+            // two rounds at a point named: the point, then each one's centre
+            CKind::TangentCirclesAt => K::TangentCirclesAt,
             CKind::Symmetric => K::Symmetric,
             CKind::PointOnSpline => K::PointOnSpline,
             CKind::SplineTangentLine => K::SplineTangentLine,
@@ -2124,6 +2140,7 @@ impl CKind {
             | CKind::SplineTangentLine
             | CKind::SplineCurvature
             | CKind::TangentCircleAt
+            | CKind::TangentCirclesAt
             | CKind::PointOnEnvelope
             | CKind::PointOnMeshing
             // nor a point a motion carries (#326), nor a rate: its free twin is its source's own

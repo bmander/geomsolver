@@ -52,6 +52,17 @@ pub const LEAST_SINE: f64 = 1e-4;
 /// `tol` of both may stand, and still be a point of it.
 pub fn on_meeting(tol: f64,sine: f64) -> f64 { ON_CURVE*tol/sine.max(LEAST_SINE) }
 
+/// **The least sine of a turn at which two meetings are told apart** (#962): a round tangent to
+/// one face meets a curved face of `radius`, turned `θ` from it, at their corner and again
+/// `2 radius sin θ` on round it, and a point within `tol` of both surfaces is read as on their
+/// meeting as far as `on_meeting(tol, sin θ)` off it either way — so the two meetings are two only
+/// where `radius sin θ` is more than that: `sin² θ > ON_CURVE tol / radius`, or, where that sine
+/// is under `LEAST_SINE`, `sin θ > ON_CURVE tol / (radius LEAST_SINE)`.
+pub fn least_sine_apart(radius: f64,tol: f64) -> f64 {
+    let k = ON_CURVE*tol/radius;
+    if k.sqrt() >= LEAST_SINE { k.sqrt() } else { k/LEAST_SINE }
+}
+
 /// **A vertex onto an edge** (the second rule): the parameter at which the point `p` stands on the
 /// stretch `t` of `c` (a closed curve's read from the stretch's start), where it stands within
 /// `ON_CURVE tol` of the curve inside the stretch and no nearer either end than that; the edge is

@@ -190,6 +190,13 @@ pub fn glued(a: &Brep,b: &Brep,tol: f64) -> Option<Brep> {
     };
     let plane = |f: &Face| matches!(f.surface,Surface::Plane(_));
     let corners = |s: &Brep,f: &Face| -> Vec<V> { f.loops.iter().flatten().map(|c| start(s,(c.edge,!c.reversed))).collect() };
+    // two faces on one surface over where both lie (`ssi::same_over`, as `Surfaces::one` reads it):
+    // a seam's two sections, turned from one another by what the faces they stand between were
+    // tangent to, are one there (#962)
+    let one_surface = |fa: &Face,fb: &Face| {
+        let region = super::meeting::common(super::flush::face_box(a,fa),super::flush::face_box(b,fb),tol);
+        super::ssi::same_over(&fa.surface,&fb.surface,tol,region)
+    };
     // a face's loops cut into runs at the vertices the other face has too; `None` where a loop has none
     let runs = |s: &Brep,f: &Face,other: &[V]| -> Option<Vec<Walk>> {
         let mut out = Vec::new();
@@ -244,8 +251,9 @@ pub fn glued(a: &Brep,b: &Brep,tol: f64) -> Option<Brep> {
         let Some(p) = at(a,fa) else { continue };
         let na = outward(fa,p);
         for (j,fb) in b.faces.iter().enumerate() {
-            if shared_b.contains(&j) || plane(fa) != plane(fb) || !super::ssi::same(&fa.surface,&fb.surface,tol) { continue }
+            if shared_b.contains(&j) || plane(fa) != plane(fb) { continue }
             if crate::util::space::dot(na,outward(fb,p)) > if plane(fa) { -1.+1e-9 } else { 0. } { continue }
+            if !one_surface(fa,fb) { continue }
             let (Some(ra),Some(rb)) = (runs(a,fa,&corners(b,fb)),runs(b,fb,&corners(a,fa))) else { continue };
             if ra.len() != rb.len() { continue }
             let mut used = vec![false;ra.len()];
@@ -1951,9 +1959,25 @@ impl<'a> Arrangement<'a> {
         let on = &crossings.on_face;
         let mut seeds: Vec<V> = on[ob][fb].iter().chain(&on[oa][fa]).map(|&v| self.pool.pts[v as usize])
             .filter(|&p| sa.implicit(p).abs() <= 8.*tol && sb.implicit(p).abs() <= 8.*tol).collect();
-        // the edges either lies in that the other's face holds (`Meets::Along`), over their stretches
+        // the edges either lies in that the other's face holds (`Meets::Along`), over their stretches.
+        // **An edge is a stretch of these two only where it lies in both their surfaces** (#961 item
+        // 2): an edge of one operand lying in the other's face may bound another face of its own,
+        // which this one only reaches at the edge's end — a round's run stood on a cylinder, its
+        // wall's and its end's edge on the cylinder and its round face meeting the cylinder 1e-3 rad
+        // off tangent at that edge's foot. Read as theirs, the foot's seed was dropped as a touch
+        // along it, and the march, shallow there, ended beside it 5 µm short of the foot, an end on
+        // no edge, the arrangement's shells kept and dropped on either side of the cylinder
+        // (`rim_rounds::a_reflex_corner_off_tangent_rounds_its_rim`)
         let along = &crossings.along_face;
-        let mut stretches: Vec<(&Curve,[f64;2])> = along[ob][fb].iter().chain(&along[oa][fa])
+        let lies_in = |s: &Surface,we: usize| match &self.edges[we] {
+            WEdge {curve:EdgeCurve::Curve(c),t,gap,..} => (0..=16).all(|k| {
+                let p = c.point(t[0]+(t[1]-t[0])*k as f64/16.);
+                distance(s.point(s.inverse(p)),p) <= ON_CURVE*tol.max(*gap)
+            }),
+            WEdge {curve:EdgeCurve::Degenerate,..} => false,
+        };
+        let mut stretches: Vec<(&Curve,[f64;2])> = along[ob][fb].iter().filter(|&&we| lies_in(sa,we))
+            .chain(along[oa][fa].iter().filter(|&&we| lies_in(sb,we)))
             .filter_map(|&we| match &self.edges[we].curve {
                 EdgeCurve::Curve(c) => Some((c,self.edges[we].t)),
                 EdgeCurve::Degenerate => None,

@@ -12,7 +12,7 @@ use std::f64::consts::PI;
 use super::{cached, readers_of, without, FacePath};
 
 /// Two faces' outward normals nearer than this at a point meet tangent there: no edge.
-const TANGENT: f64 = 1e-6;
+pub(crate) const TANGENT: f64 = 1e-6;
 
 /// A point just along a run from its end `v`, `d` the way it runs from there (`by` −1: just past
 /// the end).
@@ -160,6 +160,11 @@ impl BodyFaces {
 
     /// Each face's name as the body names it, beside its boundary's faces (`brep`).
     pub fn paths(&self) -> &[FacePath] { &self.paths }
+
+    /// Face `fi` as a refusal names it: its path as the document reads it, in backticks.
+    pub fn said(&self, fi: usize) -> String {
+        format!("`{}`", crate::vocab::public_path(&self.paths[fi].text()))
+    }
 
     /// The boundary the faces are read off: in millimetres about `origin` (model units), `mm` of
     /// them a model unit.
