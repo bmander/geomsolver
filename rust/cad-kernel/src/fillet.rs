@@ -167,7 +167,7 @@ pub fn roll(b: &Brep,at: V,r: f64,tol: f64) -> Result<Rolled,String> { roll_acro
 /// `wedge` (each a point and a normal, the wedge what stands on every normal's side): the stretch
 /// of the run a piece beyond that seam's normal surface takes, cut away from this one (#422).
 pub fn roll_across(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)]) -> Result<Rolled,String> {
-    roll_part(b,at,r,tol,wedge,None)
+    roll_part(b,at,r,tol,wedge,false)
 }
 
 /// **What a standing ball rounds beside the run it stands over** (#962): where the ball between
@@ -176,15 +176,13 @@ pub fn roll_across(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)]) -> Result<Rol
 /// than the standing ball's section — the part of the standing ball's piece past the plane square
 /// to this run's edge at `vertex`, which the run's own region holds (its crease runs on to there).
 /// `Err` where the ball does not stand still, or its section there passes the vertex.
-pub fn roll_beside(b: &Brep,at: V,r: f64,tol: f64,vertex: V) -> Result<Brep,String> {
-    Ok(roll_part(b,at,r,tol,&[],Some(vertex))?.piece)
+pub fn roll_beside(b: &Brep,at: V,r: f64,tol: f64) -> Result<Brep,String> {
+    Ok(roll_part(b,at,r,tol,&[],true)?.piece)
 }
 
 /// `roll_across`, or (`beside`) `roll_beside`'s part.
-fn roll_part(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)],beside: Option<V>) -> Result<Rolled,String> {
+fn roll_part(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)],beside: bool) -> Result<Rolled,String> {
     let m = meeting(b,at,tol)?;
-    let not_beside = || format!("the ball between {} rolls, standing nowhere: nothing of it is beside the run going on",
-        m.names);
     // the ball's centre is where the faces' offsets by its radius meet: along a curve, or — where
     // one closes onto what its surface is drawn about, a ball as wide as a cylinder — at a point
     // (a sheet's offset has no closed form: read by its signed distance, `Surface::parallel`)
@@ -207,7 +205,10 @@ fn roll_part(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)],beside: Option<V>) -
             })
         }
     };
-    if beside.is_some() { return Err(not_beside()) }
+    if beside {
+        return Err(format!("the ball between {} rolls, standing nowhere: nothing of it is beside the run going on",
+            m.names))
+    }
     let onto = super::geom::Traced {a:oa,b:ob,pts:Vec::new(),closed:false};
     // **about one axis the round is turned**: between surfaces turned about one axis with straight
     // meridians round a loop that closes, the ball's centre runs round a circle about it and the
@@ -424,7 +425,7 @@ fn roll_part(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)],beside: Option<V>) -
 /// where both close, where one closes onto a point (the ball is that face's own sphere), where the
 /// ball would roll along the curve it closes onto, and where the ball is larger than a face holds
 /// (`holds_ball`).
-fn standing(b: &Brep,m: &Meeting,offsets: [Offset;2],r: f64,tol: f64,wedge: &[(V,V)],beside: Option<V>)
+fn standing(b: &Brep,m: &Meeting,offsets: [Offset;2],r: f64,tol: f64,wedge: &[(V,V)],beside: bool)
     -> Result<Rolled,String> {
     let Meeting {uses,faces,sides_faces,chain,stops,p,into,theta,concave,sides,surfaces,names,..} = m;
     // the face whose offset closes onto a curve, and the other's offset
@@ -456,7 +457,7 @@ fn standing(b: &Brep,m: &Meeting,offsets: [Offset;2],r: f64,tol: f64,wedge: &[(V
         return Err(format!("the ball between {names} touches `{}` round no circle",b.faces[sides_faces[k][0]].name));
     }
     if !stops.is_empty() { return dome(b,m,k,centre,ring,foot,r,tol,wedge,beside) }
-    if beside.is_some() {
+    if beside {
         return Err(format!("the ball between {names} stands still round a whole loop: nothing of it is beside a run"))
     }
     let frame_at = |u: f64| -> (V,[V;2]) {
@@ -514,13 +515,13 @@ fn standing(b: &Brep,m: &Meeting,offsets: [Offset;2],r: f64,tol: f64,wedge: &[(V
 /// of the face going on between its edge with the other face, the seam and the cap. Each strip
 /// exact, nothing fitted. Each region is its set: the stretch's own is the piece short of the
 /// plane square to its edge at each such vertex, and the part past it is the run going on's
-/// (`beside`, the vertex it is beside). Refused, saying which: an end on a face cutting across the
+/// (`beside`). Refused, saying which: an end on a face cutting across the
 /// stretch (the dome is not carried past and cut off yet), a vertex the run going on reaches past
 /// the ball's section (its ball rolls on over face `k`, which is not built yet), and a ball larger
 /// than a face holds.
 #[allow(clippy::too_many_arguments)]
 fn dome(b: &Brep,m: &Meeting,k: usize,centre: V,ring: Frame,foot: V,r: f64,tol: f64,wedge: &[(V,V)],
-    beside: Option<V>) -> Result<Rolled,String> {
+    beside: bool) -> Result<Rolled,String> {
     let Meeting {uses,faces,sides_faces,chain,stops,p,concave,sides,surfaces,names,..} = m;
     let o = 1-k;
     let axis = ring.z;
@@ -595,17 +596,27 @@ fn dome(b: &Brep,m: &Meeting,k: usize,centre: V,ring: Frame,foot: V,r: f64,tol: 
         (centre,e)
     };
     let reach = corner_reach(&frame_at,r,names)?;
-    let stops_of: Vec<Stop> = ends.iter().map(|x| Stop {trim:x.stop.trim.clone(),t:0.,faces:x.stop.faces.clone()}).collect();
+    let stops_of: Vec<Stop> = ends.iter().map(|x| Stop {t:0.,..x.stop.clone()}).collect();
     holds_ball(b,uses,sides_faces,chain,&stops_of,&frame_at,surfaces,*sides,r,tol,names,wedge)?;
     // a vertex past its section: the run going on's ball rolled on to the standing ball over face `k`
     let short = |x: &DomeEnd| x.within < -1e3*tol*(1.+norm(x.pv));
+    // a vertex past its section: the run going on's ball rolled on to the standing ball over face
+    // `k`; a vertex within it: the piece in two, the stretch's and the run going on's
     match (ends.iter().filter(|x| short(x)).count(),ends.iter().filter(|x| inside(x)).count()) {
-        (0,_) => {}
+        (0,0) if beside => return Err(format!("the ball between {names} stands in the sections through both ends of \
+            their meeting: nothing of it is beside a run going on")),
+        (0,0) => {}
+        (0,1) => {
+            let j = (0..2).find(|&j| inside(&ends[j])).expect("one");
+            let mut built = dome_split(b,m,k,centre,ring,foot,r,tol,[from,from+span],&ends,j,beside)?;
+            built.reach = reach;
+            return Ok(built)
+        }
+        (0,_) => return Err(format!("the ball between {names} stands still, and the runs going on from both ends of \
+            their meeting stop short of them: not built yet")),
+        (1,0) if beside => return Err(format!("the ball between {names} stands still past where the run going on \
+            ends: nothing of it is beside that run")),
         (1,0) => {
-            if beside.is_some() {
-                return Err(format!("the ball between {names} stands still past where the run going on ends: nothing of \
-                    it is beside that run"))
-            }
             let j = (0..2).find(|&j| short(&ends[j])).expect("one");
             let mut built = dome_short(b,m,k,centre,ring,foot,r,tol,[from,from+span],&ends,j)?;
             built.reach = reach;
@@ -613,20 +624,6 @@ fn dome(b: &Brep,m: &Meeting,k: usize,centre: V,ring: Frame,foot: V,r: f64,tol: 
         }
         _ => return Err(format!("the ball between {names} stands still, and the runs going on from both ends of their \
             meeting end apart from its sections: not built yet")),
-    }
-    // a vertex within its section: the piece in two, the stretch's and the run going on's
-    match ends.iter().filter(|x| inside(x)).count() {
-        0 => {}
-        1 => {
-            let j = (0..2).find(|&j| inside(&ends[j])).expect("one");
-            let mut built = dome_split(b,m,k,centre,ring,foot,r,tol,[from,from+span],&ends,j,beside)?;
-            built.reach = reach;
-            return Ok(built)
-        }
-        _ => return Err(format!("the ball between {names} stands still, and the runs going on from both ends of their             meeting stop short of them: not built yet")),
-    }
-    if beside.is_some() {
-        return Err(format!("the ball between {names} stands in the sections through both ends of their meeting: nothing             of it is beside a run going on"))
     }
     // the piece: the patch of the sphere, the strips, the caps
     let mut out = Brep::default();
@@ -709,7 +706,7 @@ struct DomeEnd { v: u32,pv: V,going: usize,seam: Curve,e: V,keep: V,square: V,wi
 /// piece otherwise.
 #[allow(clippy::too_many_arguments)]
 fn dome_split(b: &Brep,m: &Meeting,k: usize,centre: V,ring: Frame,foot: V,r: f64,tol: f64,turn: [f64;2],
-    ends: &[DomeEnd],j: usize,beside: Option<V>) -> Result<Rolled,String> {
+    ends: &[DomeEnd],j: usize,beside: bool) -> Result<Rolled,String> {
     let Meeting {uses,sides_faces,chain,concave,surfaces,names,..} = m;
     let (o,i) = (1-k,1-j);
     let touch = add(centre,scale(foot,r));
@@ -786,7 +783,7 @@ fn dome_split(b: &Brep,m: &Meeting,k: usize,centre: V,ring: Frame,foot: V,r: f64
     // the section's four edges, shared by both parts' constructions
     let (qv,sv,tv) = (out.vertex(q),out.vertex(s),out.vertex(tp));
     let piece = match beside {
-        None => {
+        false => {
             let (copied,run) = copy_run(b,chain,&mut out);
             let (vf,vw) = (copied[&cut.v],copied[&other.v]);
             let a_o = add(centre,scale(eo,r));
@@ -811,7 +808,7 @@ fn dome_split(b: &Brep,m: &Meeting,k: usize,centre: V,ring: Frame,foot: V,r: f64
             strip(&mut out,sides_faces[o][0],&surfaces[o],&es)?;
             out
         }
-        Some(_) => {
+        true => {
             let vf = out.vertex(pv);
             let fv = out.vertex(touch);
             let a_j = add(centre,scale(cut.e,r));
@@ -890,7 +887,7 @@ fn dome_split(b: &Brep,m: &Meeting,k: usize,centre: V,ring: Frame,foot: V,r: f64
 #[allow(clippy::too_many_arguments)]
 fn dome_short(b: &Brep,m: &Meeting,k: usize,centre: V,ring: Frame,foot: V,r: f64,tol: f64,turn: [f64;2],
     ends: &[DomeEnd],j: usize) -> Result<Rolled,String> {
-    let Meeting {uses,sides_faces,chain,concave,sides,surfaces,names,faces,..} = m;
+    let Meeting {sides_faces,chain,concave,sides,surfaces,names,..} = m;
     let (o,i) = (1-k,1-j);
     let touch = add(centre,scale(foot,r));
     let way = |a: f64| ring.dir([a.dcos(),a.dsin(),0.]);
@@ -1009,7 +1006,6 @@ fn dome_short(b: &Brep,m: &Meeting,k: usize,centre: V,ring: Frame,foot: V,r: f64
     let mut es = run.clone();
     es.extend([leg_o_i,on_b,leg_o]);
     strip(&mut out,sides_faces[o][0],&surfaces[o],&es,names_of(o))?;
-    let _ = (uses,faces);
     out.measure_tolerances();
     out.check(10.*tol.max(worst))?;
     let mut contacts = [arc_spline(&ring,r,turn[0],turn[1]-turn[0])?,still(touch)?];
@@ -1726,6 +1722,7 @@ impl Trim {
 
 /// An end of a run that ends: where it is cut off, the spine's parameter at the ball over its
 /// vertex, and the faces there besides the run's two (all in one plane).
+#[derive(Clone)]
 struct Stop { trim: Trim,t: f64,faces: Vec<usize> }
 
 /// The point `r` from both planes through `p` square to the unit `a` and `b`, along their bisector:

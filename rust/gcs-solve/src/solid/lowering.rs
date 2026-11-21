@@ -809,7 +809,11 @@ fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &std::sync::Arc<super
             if place(add(e, scale(w, inside))) != Place::In || place(add(e, scale(w, outside))) != Place::Out {
                 continue;
             }
+            // (to a thousandth of the step past it: the probe stands beyond the crossing either way)
             for _ in 0..48 {
+                if outside - inside <= 1e-3 * offset {
+                    break;
+                }
                 let mid = 0.5 * (inside + outside);
                 if place(add(e, scale(w, mid))) == Place::Out { outside = mid } else { inside = mid }
             }

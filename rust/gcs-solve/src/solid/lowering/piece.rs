@@ -130,7 +130,7 @@ fn stands_within(body: &crate::solid::faces::BodyFaces, f: &Faces, groups: [&[us
     // a drafted shell's outline turning both ways)
     let chains: Vec<(usize, Vec<usize>, bool)> = (0..2).filter(|&k| f.faces[k].smooth).map(|k| {
         let chain = body.smooth(groups[k]);
-        let carried = body.bulging(&chain, true, !f.within).is_some_and(|(_, carried)| carried);
+        let carried = body.bulging(&chain, true, !f.within) == Some(true);
         (k, chain.into_iter().filter(|g| !groups[k].contains(g)).collect(), carried)
     }).collect();
     if chains.iter().all(|(_, others, _)| others.is_empty()) {
@@ -182,33 +182,29 @@ fn stands_within(body: &crate::solid::faces::BodyFaces, f: &Faces, groups: [&[us
             // bulges toward the ball — of the faces it comes too near, the one whose patch is
             // nearest (a wall, not the arc carried on along the wall's plane past its seam) — else
             // off the side of the face whose patch is nearest, where that is another's
-            let by_patch = |a: &(usize, f64), b: &(usize, f64)| body.patch_distance(a.0, q).total_cmp(&body.patch_distance(b.0, q));
             let found = if let Section::Flat { .. } = section {
                 // a flat's sum reads each face's patch (`distance(p, b.smooth)`): its point's
                 // nearest piece of the chain must be its own
                 others.iter().map(|&g| (g, body.patch_distance(g, q))).filter(|&(_, d)| d < need - tol)
                     .min_by(|a, b| a.1.total_cmp(&b.1))
             } else if *carried {
-                others.iter().map(|&g| (g, toward(g, q))).filter(|&(_, d)| d < need - tol).min_by(by_patch)
+                nearest_patch(body, q, others.iter().map(|&g| (g, toward(g, q))).filter(|&(_, d)| d < need - tol))
             } else {
-                let nearest = groups[*k].iter().chain(others).map(|&g| (g, 0.0)).min_by(by_patch);
+                let nearest = nearest_patch(body, q, groups[*k].iter().chain(others).map(|&g| (g, 0.0)));
                 nearest.filter(|&(g, _)| !groups[*k].contains(&g)).map(|(g, _)| (g, sigma * body.side(g, q)))
                     .filter(|&(_, d)| d < need - tol)
             };
             let Some((g, d)) = found else { continue };
-            let said = |fi: usize| body.paths().get(fi).map(|p| p.text()).filter(|t| !t.is_empty())
-                .map_or_else(|| "a face".to_string(), |t| format!("`{t}`"));
+            let said = |fi: usize| face_said(body, fi, "a face");
             let own = said(groups[*k][0]);
             // the arc of the chain tighter than the ball between, where it meets the other face: the
             // corner's radius where the round runs (a drafted one's there), the ball's against it
-            let tight = others.iter().filter(|&&h| body.plane(h).is_none()).flat_map(|&h| {
+            let tight = nearest_patch(body, q, others.iter().filter(|&&h| body.plane(h).is_none()).flat_map(|&h| {
                 body.edges_between(&[h], groups[1 - *k]).into_iter()
                     .filter_map(move |e| body.circle(e).map(|(_, _, radius, _)| (h, radius)))
-            }).filter(|&(_, radius)| radius < need - tol)
-                .min_by(|a, b| body.patch_distance(a.0, q).total_cmp(&body.patch_distance(b.0, q)));
+            }).filter(|&(_, radius)| radius < need - tol));
             // to the fewest figures, three at least, that tell the ball's radius from how near it
             // comes and from the arc's
-            let apart = |a: f64, b: f64| (3..16).find(|&n| figured(a, n) != figured(b, n)).unwrap_or(16);
             let n = apart(need, d).max(tight.map_or(3, |(_, radius)| apart(need, radius)));
             let length = |x: f64| crate::units::Dim::LENGTH.number_text(figured(x, n), units);
             let near = if d >= 0.0 { format!("within {} of", length(d)) } else { format!("{} past", length(-d)) };
@@ -753,7 +749,9 @@ fn stops_short(body: &crate::solid::faces::BodyFaces, faces: [usize; 2], within:
     };
     let inner = 0.5 * (span[0] + span[1]);
     for (f, &own) in faces.iter().enumerate() {
-        for g in body.smooth(&[own]).into_iter().filter(|&g| g != own) {
+        // the faces `own` goes on into smoothly
+        let chain: Vec<usize> = body.smooth(&[own]).into_iter().filter(|&h| h != own).collect();
+        for &g in &chain {
             let Some(off) = closed(g) else { continue };
             // the ball stands within the face going on to its end: nothing stops it
             let past = |s: f64| centre_at(s).map(|c| sigma * body.carried_side_grad(g, c).0 - r);
@@ -765,9 +763,15 @@ fn stops_short(body: &crate::solid::faces::BodyFaces, faces: [usize; 2], within:
             let far = |s: f64| centre_at(s).map_or(f64::INFINITY, |c| off(c));
             let n = 256;
             let at = |i: usize| inner + (span[k] - inner) * i as f64 / n as f64;
-            let i = (0..=n).min_by(|&a, &b| far(at(a)).total_cmp(&far(at(b))))?;
+            let (i, _) = (0..=n).map(|i| (i, far(at(i)))).min_by(|a, b| a.1.total_cmp(&b.1))?;
             let (mut lo, mut hi) = (at(i.saturating_sub(1)), at((i + 1).min(n)));
+            // (down to the numbers' own resolution there; the bracket runs either way, toward
+            // either end)
+            let least = 4.0 * f64::EPSILON * (1.0 + lo.abs().max(hi.abs()));
             for _ in 0..200 {
+                if (hi - lo).abs() <= least {
+                    break;
+                }
                 let (x, y) = (lo + (hi - lo) / 3.0, hi - (hi - lo) / 3.0);
                 if far(x) <= far(y) { hi = y } else { lo = x }
             }
@@ -778,7 +782,6 @@ fn stops_short(body: &crate::solid::faces::BodyFaces, faces: [usize; 2], within:
             // the other face's meeting with the face going on (a piece of it, where the other face
             // splits it), from this end's vertex: the stretch the ball stands over
             let other = faces[1 - f];
-            let chain: Vec<usize> = body.smooth(&[own]).into_iter().filter(|&h| h != own).collect();
             let ends_at = |e: u32| distance(body.along(e, 0.0), vertex).min(distance(body.along(e, 1.0), vertex));
             let Some(e) = body.edges_between(&[other], &chain).into_iter().filter(|&e| ends_at(e) <= 1e-6 * size)
                 .min_by(|a, b| ends_at(*a).total_cmp(&ends_at(*b))) else { continue };
@@ -796,6 +799,24 @@ fn figured(x: f64, n: i32) -> f64 {
     if x == 0.0 { return 0.0 }
     let k = 10f64.powi(n - 1 - x.abs().log10().floor() as i32);
     (x * k).round() / k
+}
+
+/// The fewest figures, three at least, that tell `a` from `b`.
+fn apart(a: f64, b: f64) -> i32 { (3..16).find(|&n| figured(a, n) != figured(b, n)).unwrap_or(16) }
+
+/// Face `fi` as a refusal names it (`BodyFaces::said`), or `none` where it has no name.
+fn face_said(body: &crate::solid::faces::BodyFaces, fi: usize, none: &str) -> String {
+    match body.paths().get(fi) {
+        Some(p) if !p.text().is_empty() => body.said(fi),
+        _ => none.to_string(),
+    }
+}
+
+/// Of `(face, value)` pairs, the one whose face's patch is nearest `q` (`BodyFaces::patch_distance`,
+/// read once each).
+fn nearest_patch(body: &crate::solid::faces::BodyFaces, q: V, of: impl Iterator<Item = (usize, f64)>)
+    -> Option<(usize, f64)> {
+    of.map(|(g, d)| (g, d, body.patch_distance(g, q))).min_by(|a, b| a.2.total_cmp(&b.2)).map(|(g, d, _)| (g, d))
 }
 
 /// **A ball wider than the circle it rolls round** (#962): where the section of a ring stretches
@@ -836,15 +857,13 @@ fn wider(body: &crate::solid::faces::BodyFaces, faces: [usize; 2], section: Sect
         return Ok(());
     }
     // to the fewest figures, three at least, that tell the two apart
-    let size = match section { Section::Round(r) => r, Section::Flat { la, lb } => la.max(lb) };
-    let figures = (3..16).find(|&n| figured(size, n) != figured(radius, n)).unwrap_or(16);
+    let size = section.size();
+    let figures = apart(size, radius);
     let length = |x: f64| crate::units::Dim::LENGTH.number_text(figured(x, figures), units);
     // the face the circle's radius is of: a cylinder's or a cone's about the axis, else the other
     let curved = faces.into_iter().find(|&fi| body.plane(fi).is_none()).unwrap_or(faces[0]);
     let other = if curved == faces[0] { faces[1] } else { faces[0] };
-    let said = |fi: usize, none: &str| body.paths().get(fi).map(|p| p.text()).filter(|t| !t.is_empty())
-        .map_or_else(|| none.to_string(), |t| format!("`{t}`"));
-    let (face, from) = (said(curved, "the corner's face"), said(other, "the other face"));
+    let (face, from) = (face_said(body, curved, "the corner's face"), face_said(body, other, "the other face"));
     let what = if closed { "circle" } else { "arc" };
     Err(match section {
         // the curved face goes on smooth into others (a pocket's walls): the ball stands against

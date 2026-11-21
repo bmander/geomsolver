@@ -508,10 +508,7 @@ impl BodyFaces {
         if self.loc.face_place(fi, foot) != Place::Out {
             return self.side_grad(fi, p);
         }
-        let Some((at, _)) = self.edges[fi].iter().map(|&e| {
-            let (t, d) = self.loc.nearest(e, q);
-            (self.loc.b.edges[e as usize].point(t, &self.loc.b.vertices), d)
-        }).min_by(|a, b| a.1.total_cmp(&b.1)) else {
+        let Some((_, at, _)) = self.nearest_edge(&self.edges[fi], p) else {
             return self.side_grad(fi, p);
         };
         let n = self.outward(fi, at);
@@ -524,7 +521,7 @@ impl BodyFaces {
     /// from its material); or a smooth chain (`smooth`, `F.smooth` gone on across a seam) every face
     /// of which is so and every edge between two of them a seam or a crease convex from that side —
     /// each read by its side carried on past its patch by its tangent planes
-    /// (`carried_side_grad`, the second of the pair `true`).  That side is then the common part of
+    /// (`carried_side_grad`, `Some(true)`; one face's, `Some(false)`).  That side is then the common part of
     /// each face's convex solid, and a point at least `d` inside it is at least `d` inside each, so
     /// either condition holds face by face, each convex.  Read through the nearest face alone, a
     /// corner of the chain's offset — where an arc's offset closes onto its axis, a ball as wide as
@@ -534,7 +531,7 @@ impl BodyFaces {
     /// steps are steady only toward a convex set (`conditions::nearest`).  `None` where a face is
     /// none of those, the faces lie on several surfaces without a seam between them, meet
     /// otherwise, or lie on several shells.
-    pub fn bulging(&self, faces: &[usize], smooth: bool, beyond: bool) -> Option<(Vec<usize>, bool)> {
+    pub fn bulging(&self, faces: &[usize], smooth: bool, beyond: bool) -> Option<bool> {
         let (shell, _) = self.shells();
         let &f0 = faces.first()?;
         if faces.iter().any(|&fi| shell[fi] != shell[f0]) {
@@ -557,7 +554,7 @@ impl BodyFaces {
             }
         }
         if let [_] = faces {
-            return Some((faces.to_vec(), false));
+            return Some(false);
         }
         let mut seams = false;
         for &fi in faces {
@@ -574,7 +571,7 @@ impl BodyFaces {
                 }
             }
         }
-        (smooth && seams).then(|| (faces.to_vec(), true))
+        (smooth && seams).then_some(true)
     }
 
     /// Whether face `fi`, on a torus, lies on the outer half of its tube: every point of its
@@ -1169,9 +1166,9 @@ impl Reading {
     }
 
     /// Where the faces' side is convex toward the side read — within them, or (`beyond`) outside
-    /// them (`BodyFaces::bulging`): the faces each condition is read off, and whether each is read
-    /// by its side carried on past its patch (a smooth chain) or by its whole surface's (one face).
-    pub fn bulging(&self, beyond: bool) -> Option<(Vec<usize>, bool)> {
+    /// them (`BodyFaces::bulging`), each of its faces a condition: whether each is read by its side
+    /// carried on past its patch (a smooth chain) or by its whole surface's (one face).
+    pub fn bulging(&self, beyond: bool) -> Option<bool> {
         self.body.bulging(&self.faces, self.smooth, beyond)
     }
 }
