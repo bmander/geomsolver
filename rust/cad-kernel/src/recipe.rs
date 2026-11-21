@@ -288,6 +288,8 @@ fn lowered_node(n: &Lowered,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i6
 fn rolled_run(k: &Rolled,stratum: &Brep,tol: f64,floor: f64) -> Built {
     let mut piece = match k.flat {
         Some((legs,on)) => super::fillet::flat_along(stratum,k.at,legs,Some(on),tol).map_err(|e| format!("a flat along a run: {e}"))?,
+        None if k.beside => super::fillet::roll_beside(stratum,k.at,k.radius,tol)
+            .map_err(|e| format!("a standing ball beside a run: {e}"))?,
         None => super::fillet::roll_across(stratum,k.at,k.radius,tol,&k.wedge)
             .map_err(|e| format!("a rolled round: {e}"))?.piece,
     };

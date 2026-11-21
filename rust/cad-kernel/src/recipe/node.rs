@@ -173,10 +173,12 @@ pub struct Corner { pub vertex: V,pub centre: V,pub radius: f64,pub faces: Vec<S
 /// section's normal, its reach), and kept within or outside each of `kept` (a seam's normal surface
 /// a piece beyond takes the rest past, #422: a plane's half-space, a curved face's solid); a ball
 /// rolled with the stretch between the planes of `wedge` cut away (each a point and its normal
-/// into the stretch), a piece beyond taking it.
+/// into the stretch), a piece beyond taking it; or (`beside`) where the ball stands still,
+/// the part of its piece past that end of its run, a run going on from there holding it
+/// (`fillet::roll_beside`, #962).
 #[derive(Clone,Debug)]
 pub struct Rolled { pub at: V,pub radius: f64,pub flat: Option<([f64;2],V)>,pub cuts: Vec<(V,V,f64)>,
-    pub kept: Vec<(Surface,bool)>,pub wedge: Vec<(V,V)> }
+    pub kept: Vec<(Surface,bool)>,pub wedge: Vec<(V,V)>,pub beside: bool }
 
 /// A profile as a recipe writes it (millimetres): its plane, through `origin` square to `normal`
 /// (as written, not made unit), and its loops of edges in written order.

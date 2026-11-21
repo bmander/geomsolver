@@ -22,11 +22,13 @@ type V = [f64; 3];
 /// A condition's value and gradient at a point.
 type Fv = Arc<dyn Fn(V) -> (f64, V) + Send + Sync>;
 
-/// One condition on the set's point: `f ≤ 0`, or `f = 0`.
+/// One condition on the set's point: `f ≤ 0`, or `f = 0`; `convex` where `f` is known convex
+/// (affine, for an equality), so the set of points keeping it is.
 #[derive(Clone)]
 pub struct Cond {
     f: Fv,
     eq: bool,
+    convex: bool,
 }
 
 /// How a set's distance is read.
@@ -128,6 +130,12 @@ impl SetDistance {
             RegionShape::FaceSide { face } if t.cmp == Cmp::Le => Some(patch(face)),
             _ => None,
         }).collect();
+        // and the faces it is outside of (a concave edge's ball, outside both)
+        let beyond: Vec<crate::model::FaceRef> = terms.iter().filter_map(|t| match &t.shape {
+            RegionShape::FaceSide { face } if t.cmp == Cmp::Ge => Some(patch(face)),
+            _ => None,
+        }).collect();
+        let sides_of = Sides { within: &within, beyond: &beyond };
         // within the faces of a body in pieces: the conditions of each shell apart, the nearest
         // read
         let mut pieces: Vec<Arc<BodyFaces>> = Vec::new();
@@ -143,7 +151,7 @@ impl SetDistance {
             let mut each = Vec::new();
             for k in 0..body.shells().1 {
                 // a shell none of a term's faces is on holds none of the set
-                let terms = terms.iter().map(|t| conditions(sk, t, read, &within, Some((body, k))))
+                let terms = terms.iter().map(|t| conditions(sk, t, read, &sides_of, Some((body, k))))
                     .collect::<Result<Vec<_>, String>>()?;
                 if let Some(conds) = terms.into_iter().collect::<Option<Vec<_>>>() {
                     each.push(SetDistance::Conditions(conds.into_iter().flatten().collect()));
@@ -153,7 +161,7 @@ impl SetDistance {
         }
         let mut conds = Vec::new();
         for t in terms {
-            conds.extend(conditions(sk, t, read, &within, None)?.expect("every term holds somewhere unsplit"));
+            conds.extend(conditions(sk, t, read, &sides_of, None)?.expect("every term holds somewhere unsplit"));
         }
         Ok(SetDistance::Conditions(conds))
     }
@@ -194,11 +202,18 @@ fn shift(m: Fv, k: f64, sign: f64) -> Fv {
     Arc::new(move |x| { let (v, g) = m(x); (sign * (v - k), scale(g, sign)) })
 }
 
-/// A term of a set measured from, as conditions on its point, `within` the faces the set says
-/// its point is within — the faces of `shell` alone where one is named (a body, and which of its
+/// The faces a set says its point is within, and those it says it is outside of.
+struct Sides<'a> {
+    within: &'a [crate::model::FaceRef],
+    beyond: &'a [crate::model::FaceRef],
+}
+
+/// A term of a set measured from, as conditions on its point, on the `sides` of the faces the set
+/// says its point is on — the faces of `shell` alone where one is named (a body, and which of its
 /// shells): `None` where the term's faces have none on it.
-fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, within: &[crate::model::FaceRef],
+fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, sides_of: &Sides,
     shell: Option<(&Arc<BodyFaces>, usize)>) -> Result<Option<Vec<Cond>>, String> {
+    let within = sides_of.within;
     // the faces a face reference names, kept to the shell
     let mut reading = |f: &crate::model::FaceRef| -> Result<Option<Reading>, String> {
         let r = super::faces::reading(sk, f, read)?;
@@ -214,19 +229,48 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, within: &[crate::mod
     let (lo, grow) = t.value(sk)?;
     let hi = t.hi.unwrap_or(lo);
     // a measure `m` held by the term: `m ≤ lo`, `m ≥ lo`, `lo ≤ m ≤ hi` (`m = lo` where they meet)
-    let held = |m: Fv| -> Vec<Cond> {
+    // `convex` where every condition made is: `m` affine, or convex held below a number (concave
+    // held above one)
+    let held_as = |m: Fv, convex: bool| -> Vec<Cond> {
         match t.cmp {
-            Cmp::Le => vec![Cond { f: shift(m, lo + grow, 1.0), eq: false }],
-            Cmp::Ge => vec![Cond { f: shift(m, lo + grow, -1.0), eq: false }],
-            Cmp::In if hi == lo => vec![Cond { f: shift(m, lo, 1.0), eq: true }],
-            Cmp::In => vec![Cond { f: shift(m.clone(), hi, 1.0), eq: false },
-                            Cond { f: shift(m, lo, -1.0), eq: false }],
+            Cmp::Le => vec![Cond { f: shift(m, lo + grow, 1.0), eq: false, convex }],
+            Cmp::Ge => vec![Cond { f: shift(m, lo + grow, -1.0), eq: false, convex }],
+            Cmp::In if hi == lo => vec![Cond { f: shift(m, lo, 1.0), eq: true, convex }],
+            Cmp::In => vec![Cond { f: shift(m.clone(), hi, 1.0), eq: false, convex },
+                            Cond { f: shift(m, lo, -1.0), eq: false, convex }],
         }
+    };
+    let held = |m: Fv| held_as(m, false);
+    // the faces' sides carried on past them (`BodyFaces::carried_side_grad`), each `σ·side` held:
+    // `σ` grows it into the side the point is on, where the side is that face's convex solid's, so
+    // it is that solid's signed distance turned round there and the condition convex — one
+    // condition each face
+    let carried = |r: &Reading, past: bool, sigma: f64| -> Vec<Cond> {
+        r.faces.iter().copied().flat_map(|fi| {
+            let body = r.body.clone();
+            held_as(Arc::new(move |x| {
+                let (s, g) = if past { body.carried_side_grad(fi, x) } else { body.side_grad(fi, x) };
+                (sigma * s, scale(g, sigma))
+            }), true)
+        }).collect()
+    };
+    // which way the point stands of face `f`, where the set says: within (`Some(false)`) or
+    // outside (`Some(true)`)
+    let side_of = |f: &crate::model::FaceRef| -> Option<bool> {
+        let f = patch(f);
+        if sides_of.beyond.contains(&f) { Some(true) } else if within.contains(&f) { Some(false) } else { None }
     };
     match &t.shape {
         // within faces on several surfaces meeting convex: within each surface's side
         RegionShape::FaceSide { face } => {
             let Some(r) = reading(face)? else { return Ok(None) };
+            // within (or outside) a face convex toward the point, or a smooth chain bulging that
+            // way: each face's side, a chain's carried on past it
+            if t.cmp != Cmp::In && t.hi.is_none() && r.convex_pieces().is_none() {
+                if let Some(past) = r.bulging(t.cmp == Cmp::Ge) {
+                    return Ok(Some(carried(&r, past, 1.0)));
+                }
+            }
             Ok(Some(sides(r, t.cmp == Cmp::Le).into_iter().flat_map(held).collect()))
         }
         RegionShape::Measured { of } => {
@@ -240,7 +284,7 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, within: &[crate::mod
                     // on the surface: its side is nothing, a smooth condition
                     if t.cmp == Cmp::Le && lo == 0.0 && grow == 0.0 {
                         let r = Arc::new(r);
-                        return Ok(Some(vec![Cond { f: Arc::new(move |x| r.side_grad(x)), eq: true }]));
+                        return Ok(Some(vec![Cond { f: Arc::new(move |x| r.side_grad(x)), eq: true, convex: false }]));
                     }
                     // at least a distance off faces on several surfaces meeting convex, within them:
                     // off each (outside them, another piece's surface runs on past the crease)
@@ -249,6 +293,17 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, within: &[crate::mod
                     if split && c > 0.0 {
                         if let Some(on) = closed_onto(&r, (lo + grow) / c) {
                             return Ok(Some(on));
+                        }
+                    }
+                    // at least a distance off a face convex toward the side the point is on, or a
+                    // smooth chain bulging toward it: off each face's side, a chain's carried on
+                    // past it (`BodyFaces::bulging`), each its own condition, so a projection sees
+                    // every face meeting at a corner of the offset, and the steps stop on it
+                    if t.cmp == Cmp::Ge && c > 0.0 && r.convex_pieces().is_none() {
+                        if let Some(beyond) = side_of(f) {
+                            if let Some(past) = r.bulging(beyond) {
+                                return Ok(Some(carried(&r, past, if beyond { c } else { -c })));
+                            }
                         }
                     }
                     return Ok(Some(sides(r, split).into_iter().flat_map(|side| held(Arc::new(move |x| {
@@ -281,7 +336,7 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, within: &[crate::mod
             let most = runs.runs.iter().map(|(_, sides)| sides.len()).max().unwrap_or(0);
             Ok(Some((0..most).map(|k| {
                 let runs = runs.clone();
-                Cond { f: Arc::new(move |x| match runs.nearest(x).get(k) {
+                Cond { convex: false, f: Arc::new(move |x| match runs.nearest(x).get(k) {
                     Some(&(c, sign)) => {
                         let (v, g) = runs.body.end_side(&c, x);
                         (sign * v, scale(g, sign))
@@ -313,10 +368,10 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, within: &[crate::mod
             };
             Ok(Some(if t.cmp == Cmp::In && hi == lo {
                 let t2 = term.clone();
-                vec![Cond { f: numeric(Arc::new(move |x| t2.from_surface(x, lo))), eq: true }]
+                vec![Cond { f: numeric(Arc::new(move |x| t2.from_surface(x, lo))), eq: true, convex: false }]
             } else {
                 let t2 = term.clone();
-                vec![Cond { f: numeric(Arc::new(move |x| t2.value(x))), eq: false }]
+                vec![Cond { f: numeric(Arc::new(move |x| t2.value(x))), eq: false, convex: false }]
             }))
         }
     }
@@ -343,7 +398,7 @@ fn closed_onto(r: &Reading, d: f64) -> Option<Vec<Cond>> {
     if matches!(onto, Offset::Surface(_)) || r.surfaces().0.len() != 1 {
         return None;
     }
-    let plane = |o: V, n: V| Cond { f: Arc::new(move |x: V| (dot(n, sub(x, o)), n)), eq: true };
+    let plane = |o: V, n: V| Cond { f: Arc::new(move |x: V| (dot(n, sub(x, o)), n)), eq: true, convex: true };
     Some(match onto {
         Offset::Point(c) => {
             let o = r.body.back(c);
@@ -364,6 +419,7 @@ fn closed_onto(r: &Reading, d: f64) -> Option<Vec<Cond>> {
                     (rho - big, if rho > 0.0 { scale(radial, 1.0 / rho) } else { crate::space::across(a).0 })
                 }),
                 eq: true,
+                convex: false,
             };
             vec![plane(o, a), round]
         }
@@ -372,18 +428,31 @@ fn closed_onto(r: &Reading, d: f64) -> Option<Vec<Cond>> {
 }
 
 /// The point satisfying every condition nearest `p`: from `p`, each step the nearest point of the
-/// conditions linearised where the last one stood.
+/// conditions linearised where the last one stood.  Where every condition is convex its
+/// linearisation holds all of its points, so a step's point keeping every condition is the
+/// nearest: the steps stop there.  (Their own fixed point is no steadier: a step onto a surface
+/// curved tightly about a point far off — a ball's centres a hair short of closing onto a pocket
+/// corner's axis, seen from the corner — moves along it by the distance over the radius times any
+/// error in where the last step stood, and the steps wander round it.)
 fn nearest(cs: &[Cond], p: V) -> Option<V> {
     let tol = 1e-12 * (1.0 + norm(p));
+    let kept = 1e-9 * (1.0 + norm(p));
+    let convex = cs.iter().all(|c| c.convex);
     let mut x = p;
     let mut rows: Vec<(V, f64, bool)> = Vec::with_capacity(cs.len());
-    for _ in 0..80 {
+    for k in 0..80 {
         rows.clear();
+        let mut off: f64 = 0.0;
         rows.extend(cs.iter().map(|c| {
             let (v, g) = (c.f)(x);
+            off = off.max(if c.eq { v.abs() } else { v.max(0.0) });
             // a · y ≤ b, the condition linearised at x
             (g, dot(g, x) - v, c.eq)
         }));
+        // (every condition just read there keeps within `kept`, inside the final reading's bar)
+        if convex && k > 0 && off <= kept {
+            return Some(x);
+        }
         let y = project(p, &rows, tol)?;
         let step = norm(sub(y, x));
         x = y;
@@ -427,23 +496,27 @@ fn project(p: V, rows: &[(V, f64, bool)], tol: f64) -> Option<V> {
     if eqs.len() > 3 {
         return None;
     }
-    // every subset of the inequalities, beside every equality (at most three rows in all, held on
-    // the stack: this runs thousands of times a field query)
-    let n = ineqs.len();
+    // every choice of at most three rows: every equality, and inequalities beside them, each
+    // set of them once — among all of them, so a row is never left out of the choice (held on the
+    // stack: this runs thousands of times a field query)
+    let free = 3 - eqs.len();
     let mut active = [0usize; 3];
     active[..eqs.len()].copy_from_slice(&eqs);
-    for mask in 0u32..(1 << n.min(10)) {
-        if (mask.count_ones() as usize) + eqs.len() > 3 {
-            continue;
-        }
-        let mut k = eqs.len();
-        for (bit, &i) in ineqs.iter().enumerate().take(10) {
-            if mask >> bit & 1 == 1 {
-                active[k] = i;
-                k += 1;
+    let k = eqs.len();
+    choose(&active[..k]);
+    // (as many of them as are free to stand beside the equalities)
+    let upto = |f: usize| if free >= f { ineqs.len() } else { 0 };
+    for (i, &first) in ineqs.iter().enumerate().take(upto(1)) {
+        active[k] = first;
+        choose(&active[..k + 1]);
+        for (j, &second) in ineqs.iter().enumerate().skip(i + 1).take(upto(2)) {
+            active[k + 1] = second;
+            choose(&active[..k + 2]);
+            for &third in ineqs.iter().skip(j + 1).take(upto(3)) {
+                active[k + 2] = third;
+                choose(&active[..k + 3]);
             }
         }
-        choose(&active[..k]);
     }
     best.or(fallback).map(|(_, y)| y)
 }
@@ -530,7 +603,7 @@ impl Rest {
             match on_face(t, sk) {
                 Some((f, true)) => fm.push(patch(&f)),
                 None if matches!(t.shape, RegionShape::Ends { .. }) => {
-                    within.extend(conditions(sk, t, read, &[], None).ok()??)
+                    within.extend(conditions(sk, t, read, &Sides { within: &[], beyond: &[] }, None).ok()??)
                 }
                 _ => return None,
             }
