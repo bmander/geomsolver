@@ -179,3 +179,38 @@ fn a_region_is_asked_of_one_plane_and_another_planes_lines_are_not_in_it() {
     let (outer, _) = written(&e.map, &r).unwrap();
     assert_eq!(set(&outer), of(&["t1", "t2", "t3", "t4"]));
 }
+
+/// **The region under the eye** (`region_seen`): there being no one plane drawn on, the region a
+/// sweep takes is the one on the nearest plane under the pointer that has one, said with the
+/// plane it is on.  Square on to the front the top is edge on and the front's square is found;
+/// from above, the top's, its rings in the top's own coordinates; off both squares, none.
+#[test]
+fn the_region_under_the_eye_is_on_the_nearest_plane_that_has_one() {
+    use gcs_core::overview::region::region_seen;
+    use gcs_core::overview::workspace::Projection;
+    use std::f64::consts::FRAC_PI_2;
+    let src = format!("unit mm\nuse std\nin std.front {{\n{}}}\nin std.top {{\n{}}}\n",
+        square("f", 0.0, 0.0, 10.0), square("t", 30.0, 30.0, 10.0));
+    let e = build(&src);
+    let plane = |n: &str| e.map.ent_named(n).map(|p| p.i());
+    // where the eye sees (x, y) of `pl`
+    let seen = |proj: &Projection, pl: Option<usize>, (x, y): (f64, f64)| {
+        let m = proj.map(pl);
+        (m[0] * x + m[1] * y + m[2], m[3] * x + m[4] * y + m[5])
+    };
+    let front = Projection::new(&e.sketch, -FRAC_PI_2, 0.0);
+    let at = seen(&front, plane("std.front"), (5.0, 5.0));
+    let (on, r) = region_seen(&e.sketch, &front, at, 0.05).unwrap().unwrap();
+    assert_eq!(on, plane("std.front"));
+    assert_eq!(set(&written(&e.map, &r).unwrap().0), of(&["f1", "f2", "f3", "f4"]));
+    let above = Projection::new(&e.sketch, -FRAC_PI_2, FRAC_PI_2);
+    let at = seen(&above, plane("std.top"), (35.0, 35.0));
+    let (on, r) = region_seen(&e.sketch, &above, at, 0.05).unwrap().unwrap();
+    assert_eq!(on, plane("std.top"));
+    assert_eq!(set(&written(&e.map, &r).unwrap().0), of(&["t1", "t2", "t3", "t4"]));
+    let on_top = |v: f64| (30.0..=40.0).contains(&v);
+    assert!(r.rings[0].iter().all(|&(x, y)| on_top(x) && on_top(y)),
+            "in the top's coordinates: {:?}", r.rings[0]);
+    let at = seen(&above, plane("std.top"), (20.0, 20.0));
+    assert!(region_seen(&e.sketch, &above, at, 0.05).unwrap().is_none(), "off both squares");
+}

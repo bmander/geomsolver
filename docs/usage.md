@@ -179,7 +179,7 @@ build/solventc rust/examples/solid_flange.sv --png half.png --section front \
 build/solventc bot.sv --png cut.png --view front --section "y=-12.47mm±5mm" --hide frame
 ```
 
-In the app, View ▸ Section (`⇧X`) cuts the workspace by the plane being drawn on; its bar chooses
+In the app, View ▸ Section (`⇧X`) cuts the workspace by the standard plane the eye faces; its bar chooses
 another plane, slides the cut along the plane's normal and flips the side kept.
 
 `--solid`, `--view`, `--size`, `--hide` and `--section` qualify the output before them: `--solid` the last

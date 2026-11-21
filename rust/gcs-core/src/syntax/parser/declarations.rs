@@ -6,8 +6,8 @@ use crate::style::{Classes, Style};
 use crate::syntax::lexer::Tok;
 use crate::syntax::words::trails_decl;
 use crate::syntax::{
-    decl_head, Arg, AtRef, Decl, DeclName, DirRef, Kid, KidSeed, Membership, Name, Ref, Sense, Span, StmtKind, StyleRule, Sweep,
-    Weight,
+    decl_head, Arg, AtRef, Decl, DeclName, DirRef, Kid, KidSeed, Membership, Name, Normal, Ref,
+    Sense, Span, StmtKind, StyleRule, Sweep, Weight,
 };
 
 /// A solid's sweep arguments while the bracket list is being read.
@@ -140,7 +140,7 @@ fn kid_slot(kind: EntKind, label: Option<&str>, positional: usize, in_holes: boo
 /// What a declaration's bracket list carried (`P::decl_list`).
 struct DeclList {
     children: Vec<Vec<Kid>>,
-    normal: Option<Ref>,
+    normal: Option<Normal>,
     sense: Option<Sense>,
     swp: SweepParts,
     surface_from: Option<Arg>,
@@ -390,7 +390,7 @@ impl<'a> P<'a> {
         // a spline through a chain's corners: the chain, and its end tangents (#243 L7)
         let mut fit: [Option<Ref>; 3] = [None, None, None];
         // a circle about a point in space, square to an axis (#363 S6)
-        let mut normal: Option<Ref> = None;
+        let mut normal: Option<Normal> = None;
         // an arc drawn in a plane turning clockwise from its start (#363 S4)
         let mut sense: Option<Sense> = None;
         let name_end = self.prev_hi();
@@ -462,7 +462,11 @@ impl<'a> P<'a> {
                             self.fail("`normal:` is given twice");
                             return None;
                         }
-                        normal = Some(self.refr()?);
+                        // an axis named, or one of the circle's own seeded along a direction
+                        normal = Some(match self.eat_hint_clause() {
+                            Some(lo) => Normal::Seed(self.kid_seed(lo, true)?),
+                            None => Normal::Axis(self.refr()?),
+                        });
                     }
                     Some(l) if kind == EntKind::Surface && (l == "from" || l == "to") => {
                         let slot = if l == "from" { &mut surface_from } else { &mut surface_to };

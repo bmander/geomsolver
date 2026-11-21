@@ -317,9 +317,10 @@ impl Sketch {
         let mut v = self.primitives();
         let normals: Vec<u32> = self.frames.iter().filter_map(|p| p.chart.as_ref()?.normal).collect();
         v.retain(|e| e.kind != EntKind::Axis || !normals.contains(&(e.i() as u32)));
-        // a face family's station is written in place and never drawn (#243 L1)
-        let stations = self.stations();
-        v.retain(|e| !stations.contains(e));
+        // a face family's station is written in place and never drawn (#243 L1), nor what a
+        // round over points in space is drawn over (#363 S6)
+        let undrawn = self.undrawn();
+        v.retain(|e| !undrawn.contains(e));
         // a mirrored instance is drawn as its image (#578): its preimage, solved, is not, nor
         // the datums its image is drawn in, which stand where its frame's do
         if !self.mirrors.is_empty() {
@@ -353,6 +354,15 @@ impl Sketch {
         self.hidden = ents.into_iter().chain(solids.into_iter().map(EntRef::solid)).collect();
     }
 
+    /// **What is solved and never drawn** — no stroke, no pane, no callout, no pick: a face
+    /// family's stations (#243 L1), and what an arc or a circle over points in space is drawn over
+    /// (`Sketch::round_owned`, #363 S6), which stands for what the document wrote.
+    pub fn undrawn(&self) -> std::collections::BTreeSet<EntRef> {
+        let mut out = self.stations();
+        out.extend(self.round_owned());
+        out
+    }
+
     /// Every entity a face family's station is made of (#243 L1): written in place, solved with
     /// the drawing at the middle of its interval and never drawn — no stroke, no pane and no
     /// callout.
@@ -374,9 +384,9 @@ impl Sketch {
     /// it swept; one that is not should not start.  A face family's station is not drawn, so it
     /// is not in it either (#243 L1).
     pub fn drawn_bounds(&self) -> Box2 {
-        let stations = self.stations();
+        let undrawn = self.undrawn();
         let mut v = self.primitives();
-        v.retain(|e| !stations.contains(e));
+        v.retain(|e| !undrawn.contains(e));
         self.bounds_of(&v).unwrap_or_else(|| self.bbox())
     }
 

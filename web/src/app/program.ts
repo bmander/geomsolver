@@ -65,7 +65,7 @@ function names(): Names | null {
   return joined;
 }
 // a name the caret is put on selects what it names in the workspace, as a press there would:
-// the window, the status line and the outline follow it
+// the status line and the outline follow it
 occurrences.onName = (o) => {
   const n = names();
   if (!n || view.gesture || !selectRows(view, n.rowsAt(o))) return;

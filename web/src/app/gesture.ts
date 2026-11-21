@@ -108,10 +108,10 @@ function bindPointer(v: SketchView, touch: TouchNavigation): void {
   });
 }
 
-/** A double-click: a dimension's number edited, a handle put on a curve, a face drawn on, or a
- *  plane chosen. */
+/** A double-click: a dimension's number edited, a handle put on a curve, or a closed part
+ *  opened. */
 function onDoubleClick(v: SketchView, e: MouseEvent): void {
-  // the same gesture the constraint list uses: double-click a dimension, type a new number
+  // double-click a dimension, type a new number
   const sp = local(v, e);
   const c = v.pickCallout(...sp);
   if (c) {
@@ -129,31 +129,11 @@ function onDoubleClick(v: SketchView, e: MouseEvent): void {
     insertControl(v, hit, ...v.s2wIn(v.viewOf(hit.ctrl[0]), ...sp));
     return;
   }
-  // on a solid's face, the face drawn on (#162 F5): the plane lying there chosen, or written —
-  // a pane's frame lies beneath a solid, as a press finds it
-  const frame = hit instanceof Plane ? hit : null;
-  const face = hit && !frame ? null : v.solidAt(...sp);
   // on a closed part's object, the part opened (#679): its insides drawn, the rest dimmed — a
-  // face of the part open, or of an object the root made, is drawn on
+  // pane's frame lies beneath a solid, as a press finds it
+  const face = hit && !(hit instanceof Plane) ? null : v.solidAt(...sp);
   const part = face && partToOpen(v, face.index);
-  if (part) {
-    v.openPart(part);
-    return;
-  }
-  if (face) {
-    v.sketchOnFace(face);
-    return;
-  }
-  // on a pane's frame, which picks its plane, that plane chosen as a press inside it would be
-  const named = frame ? v.doc.nameOf(frame) : null;
-  if (named && v.planeChoices().includes(named)) {
-    v.choosePlane(named, false);
-    return;
-  }
-  // and on a pane, with nothing drawn under the pointer, it is that plane chosen: the next thing
-  // is drawn there.  The eye stays where it is — the pane was double-clicked where it was seen
-  const pane = hit && !frame ? null : v.paneAt(...sp);
-  if (pane) v.choosePlane(pane, false);
+  if (part) v.openPart(part);
 }
 
 /** The wheel.  A pinch on a trackpad comes as a wheel with ctrl held, in small steps; two
@@ -452,7 +432,7 @@ function pressedApart(v: SketchView, e: PointerEvent, sp: [number, number], at: 
     v.pickImage();
     v.gesture = grabBody(v, sp);
     v.onSelect();
-    v.onChanged();          // as every other press does: the window and the readout follow it
+    v.onChanged();          // as every other press does: the status line and the readout follow it
     v.draw();
     return true;
   }

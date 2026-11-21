@@ -74,9 +74,12 @@ pub fn to_program(sk: &Sketch) -> Program {
     for st in materials(sk, &names) {
         p.push(st);
     }
+    // what an arc or a circle over points in space is drawn over is its own, and written in it
+    // (#363 S6): declared nowhere and held by no `fix`
+    let rounds = sk.round_owned();
     // a plane's origin is the plane's own, minted with it and never declared apart — minted with
     // the points, in statement order, so the plane is written where its origin stands among them
-    for e in sk.primitives() {
+    for e in sk.primitives().into_iter().filter(|e| !rounds.contains(e)) {
         match e.kind {
             EntKind::Frame => continue,
             // and a normal by a statement reading it, never declared
@@ -111,7 +114,7 @@ pub fn to_program(sk: &Sketch) -> Program {
     // every held number is said, with what it is held at; a plane's origin is not, since the
     // plane holds it at its own `(0, 0)` and no `fix` says so (`holds`)
     let twin = |e: &EntRef| e.kind == EntKind::Point && twin_of(sk, e.i()).is_some();
-    for e in sk.primitives().into_iter().filter(|e| !twin(e)) {
+    for e in sk.primitives().into_iter().filter(|e| !twin(e) && !rounds.contains(e)) {
         let held = holds(sk, e);
         if !held.is_empty() {
             p.push(StmtKind::Relation(lift_gauge(&name(sk, e), e.kind, point_len(sk, e), &held)));
@@ -237,8 +240,40 @@ fn renamed(mut rel: Relation, names: &BTreeMap<String, String>) -> Relation {
     rel
 }
 
+/// **The children a declaration writes** (#363 S6): an arc or a circle over points in space is
+/// drawn over points of its own, each standing for the one the document wrote
+/// (`Sketch::stands_for`), and is written over those.
+pub(crate) fn written_children(sk: &Sketch, e: EntRef) -> Vec<EntRef> {
+    let kids = sk.children(e);
+    if sk.round(e).is_none() {
+        return kids;
+    }
+    kids.into_iter()
+        .map(|k| match k.kind {
+            EntKind::Point => sk.stands_for(k.i() as u32).map_or(k, |p| EntRef::point(p as usize)),
+            _ => k,
+        })
+        .collect()
+}
+
+/// **A circle's `normal:`, as written** (#363 S6): the axis or line it stands square to by name,
+/// or, where the normal is its own, the seed of that axis's direction.  `None` for a circle drawn
+/// in a plane and for every other kind.
+fn lift_normal(sk: &Sketch, e: EntRef) -> Option<crate::syntax::Normal> {
+    use crate::syntax::{KidSeed, Normal};
+    let r = sk.round(e).filter(|_| e.kind == EntKind::Circle)?;
+    let (n, _) = r.normal?;
+    Some(match r.own {
+        true => {
+            let d = sk.axes[n.i()].d.map(|p| sk.seed_value(n, p));
+            Normal::Seed(KidSeed { v: d, axis: true, ..KidSeed::default() })
+        }
+        false => Normal::Axis(Ref::new(name(sk, n))),
+    })
+}
+
 pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
-    let mut kids = sk.children(e);
+    let mut kids = written_children(sk, e);
     // a plane's origin is its own, never written: `plane(u: r0, v: r1)`
     if e.kind == EntKind::Frame {
         kids.truncate(2);
@@ -310,7 +345,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         close: None,
         mint_close: None,
         through: None,
-        normal: None,
+        normal: lift_normal(sk, e),
         sense: reversed.then_some(crate::syntax::Sense::Cw),
         bare: e.kind == EntKind::Frame && !sk.frames[e.i()].planar(),
         carried: None,
@@ -383,6 +418,10 @@ fn lift_curve(sk: &Sketch, i: usize) -> crate::syntax::CurveSpec {
 /// statement can say), lifts without one.
 pub(crate) fn lift_plane(sk: &Sketch, e: EntRef) -> crate::syntax::Membership {
     let plane = |p: usize| Ref::new(name(sk, EntRef::frame(p)));
+    // an arc or a circle over points in space is drawn in a plane of its own, and in none written
+    if sk.round(e).is_some() {
+        return Default::default();
+    }
     match plane_of_entity(sk, e) {
         // and a point drawn in further planes names each, its twins' (§6.7)
         Some(p) if e.kind == EntKind::Point && sk.twins.contains_key(&e.i()) => {

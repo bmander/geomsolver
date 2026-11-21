@@ -227,14 +227,14 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   `edit::word_text`, FFI `gcs_elab_write_word`, `gcs_elab_word_text`): a box above the palette
   holds a chip for each slot in the order the statement writes them — `[p] distance([80], side:
   […]) [q]`, `[name] := solid(std.solids.Prism([section], from: [0mm], to: […]))` — each saying
-  what it takes by a glyph, a caption and its ink (clicked on the drawing, a number, a word
-  chosen), the optional ones folded into `+n` until asked for.  A slot is **armed** by a click on
+  what it takes by a glyph, its placeholder and its ink (clicked on the drawing, a number, a word
+  chosen) and nothing under it, the optional ones folded into `+n` until asked for.  A slot is **armed** by a click on
   its chip, by Tab, or by the box as each is filled; while one clicked on is armed **the
   workspace takes only what it takes**: the `word` tool is down, `SketchView.wordPick` answers
   which hits are wanted, what it would not take is drawn dimmed (`paint::alphaOf`), the pointer
   lights the nearest thing it takes and a click fills the slot with what the program names it — a
-  click on nothing places a new point for a slot that makes one (a line's ends), drawn on the
-  plane being drawn on.  A built-in word's second operand narrows to the kinds its pairs allow
+  click on nothing places a new point for a slot that makes one (a line's ends), in space where
+  the eye sees it; a word declares no plane.  A built-in word's second operand narrows to the kinds its pairs allow
   with the first, and a selector the pair needs is asked for.  A name typed in the chip fills it
   as well.  What is selected when a word is taken up fills the slots it fits; a dimension's
   number, once its operands are known, is put in as the drawing measures it now, selected so a
@@ -253,7 +253,7 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   arithmetic exists above the ABI.  **What is under the pointer is asked where the eye sees it**
   (`workspace::pick`, `nearest_point`, `overlapping`, `callout::pick_seen`): two views' coordinates
   overlap but are apart in space, so nothing is picked in view coordinates.  `w2s`/`s2w` read the
-  view being worked in — the painter's (`inView`), else the current plane's; a drag reads the
+  view being worked in — the painter's (`inView`), else the tool's (`toolCam`); a drag reads the
   dragged point's view, a callout its dimension's (`calloutView`).  A view seen edge on refuses a
   press (`ViewCam::readable`).  **A gesture writes the digits its zoom justifies**: what a tool
   puts down — a fresh point, a place a curve passes through, a circle's radius, a rectangle's
@@ -335,27 +335,42 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   camera), drawn and picked, and dragged where the eye sees them (`PlanDrag::seen`, numeric:
   `CKind::DragSeen`, two soft rows across the picture plane and a third a thousandth as strong
   holding the depth it was taken hold at, so depth is the constraints' and a free point keeps
-  its own).  A view opens drawing on `std.front`
-  (`drawOnFront`), and File ▸ New is `use std`.  `workspace::Views` is what does not depend on
+  its own).  File ▸ New is `use std`.  `workspace::Views` is what does not depend on
   the eye — each view placed in space (slot 0 a 2D sketch's front plane, `Basis::page`), the view
   each point and entity stands in (a curve, owning no point, its tool's: `Sketch::curve_view`), and each view's **place** (the first view on the same plane in
   space: `std.front`, `std.up`)
   — read once an edit (`gcs_workspace_json`); the maps are per frame (`gcs_workspace_maps`, a
-  buffer).  The front end compares place ids, never maps.  The chooser in the viewport's upper right (`#plane-select`) lists `std.front`,
-  `std.side`, `std.top`, then the document's planes; `choosePlane` sets `v.plane` and swings the
-  eye square on (`workspace::look_at`).  A standard plane the document lacks is `pendingPlane`
-  until a tool's first press adds `use std` (`edit::add_use`, `ensurePlane`) — choosing writes
-  nothing.  The chooser's first entry, **None** (value `''`, `drawInSpace`), is drawing in space:
-  `v.openSpace`, no plane current and the eye left where it is; a click is read on the eye's
-  picture plane (`toolCam`, the eye's own camera) and mints a point in space where it was seen,
-  nought deep (`workspace::unseen`, `gcs_sketch_point_seen`, `Sketch.pointSeen`), written
-  `pN := point hint((x, y, z))` with no `in`.  Only Point and Line draw there (`drawsInSpace`; a
-  circle, arc or curve over a point in space is E060, a region is bounded on a plane); the rest
-  say to choose a plane.  It outlasts an edit and an undo, and a load, a chosen plane or a lone
-  plane selected ends it.  A double-click on a pane (select tool, nothing drawn under the pointer) chooses its
-  plane without turning the eye (`choosePlane(name, false)`): `workspace::panes_at` lists them
-  nearest the eye first, `paneAt` takes the first the chooser offers.  Callouts are drawn for the
-  current plane's place only (`showsCallouts`), and the one being written or focused.  Right-drag
+  buffer).  The front end compares place ids, never maps.  **Everything is drawn in space**:
+  there is no current plane, no chooser of one and nothing a click on a plane makes current.  A
+  tool's click is read on the eye's picture plane (`toolCam`, the eye's own camera) and mints a
+  point in space where it was seen, on the plane through the origin square to the eye's ray,
+  nought deep (`workspace::unseen`, `gcs_sketch_point_seen`, `Sketch.pointSeen`), each
+  coordinate to the digits the zoom justifies, written `pN := point hint((x, y, z))` with no
+  `in`.  Every tool draws there but those `drawsInPlane` names; an arc over
+  its three points has a fresh end put on its radius along the ray from its centre
+  (`Sketch::onto_radius`, `an_end_in_space_is_put_on_the_radius_along_its_ray`), so the solve
+  moves none of the three, and is written as its statement, `arc(center: c, start: s, end: e)`,
+  one undo step with its points; the elaborator draws it in the plane through them
+  (`arcs_in_space`), its own plane, axes and points declared, held and drawn nowhere
+  (`Sketch::round_owned`, `Sketch::undrawn`: `reconcile` neither declares nor holds them, the box
+  draws no pane of theirs and no callout reads them,
+  `a_point_drawn_beside_rounds_in_space_writes_only_the_point`).  A spline over points in space is
+  read again once written, the elaborator drawing it as a curve in space (`splines_in_space`).  A
+  circle stands square to the eye's line of sight, its radius as the eye sees it about where its
+  centre is seen, written `circle(center: c, normal: hint(dir: (…))) hint(r: …)` — an axis of its
+  own seeded along the sight to four places, free to turn (space.md) — one undo step with its
+  centre (`writeInSpace`, which the arc shares; the circle word's `normal` slot, `lexicon`;
+  "a circle is drawn in space square to the line of sight").  A tool that cannot draw in space
+  yet — the three-point arc, the fitted curve, Rect — draws in the
+  standard plane the eye is most square to (`SketchView.facingPlane`, `toolPlane`), chosen afresh
+  at each press, a document without `use std` gaining it on the first (`ensureToolPlane`, one
+  undo step), and snaps only to points in a plane (`snapTarget`).  Extrude and Revolve take the
+  region on the nearest plane under the pointer that has one (`planesAt`, `solids::regionAt`),
+  else on the page.  A plane dropped with nothing selected, and a section turned on, are set off
+  the plane the eye faces.  **A plane is selected as anything else is** — a click picks it, a
+  click on nothing lets it go — and nothing is drawn on it for being picked (`app.test.ts`, "a
+  plane selected is drawn on no more than anything else is").  Callouts are drawn for every
+  plane not seen edge on (`showsCallouts`), and the one being written or focused.  Right-drag
   orbits, middle or ⇧right-drag pans, the wheel zooms; a trackpad's pinch (ctrl-wheel, Safari's
   `gesturechange`) zooms and its scroll pans (`gesture::scrolled`), and two touch fingers pinch
   and pan (`touchNavigation`: a lone finger's press waits `TOUCH_HOLD_MS` or `TOUCH_SLOP_PX`, so
@@ -387,7 +402,8 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   **A place is one pane** (`overview::places`, `Basis::coplanar`): planes standing on one plane
   in space (`std.up` on `std.front`) are drawn as the first one's pane, reaching over what is
   drawn on any of them, so drawing on the front leaves no second frame behind
-  (`planes_in_one_place_are_one_pane`); the pane that bolds is the current plane's place.
+  (`planes_in_one_place_are_one_pane`); a pane is lit and bold while a plane standing there is
+  selected or highlighted, and only then.
   **The box shows the objects, not the features they are made of** — a solid is the object exactly
   when nothing else is made of it (`overview::objects`).  **A copy is not made of its source**
   (#904 A10): `b := a at(under: m) τ` stands another solid of `a`'s shape, and `a` stays where it
@@ -397,7 +413,15 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   draws what `scene3d` says stands in space — panes, axes, the axes and the curves traced in space (`IN_SPACE`: `axis`,
   `traced`; a spline over points in space is one, #363 S3) — and every object in its own
   coordinates, placed by the matrix the core gives (`core/mesh.ts::drawn`, `placement`; #412),
-  computing no coordinate.  **An object is drawn as a CAD viewer draws a part** (#674–#676):
+  computing no coordinate.  **A curve traced in space is a figure**: stroked as the canvas strokes
+  one (`paint::strokeOf` — the style's ink, width and dash, the selection's and the hover's
+  weight, colour by state, a traced curve as bad as the worst of what it is traced over,
+  `diagnose::entity_states`), dimmed as one is (`alphaOf`), over the solids; picked where it is
+  drawn, beneath every figure in a view and above the axes (`workspace::pick`'s
+  `nearest_traced`, `a_curve_traced_in_space_is_picked_where_it_is_drawn`), selected as a
+  `Traced` (kind 18), named, described and deleted by the spline's statement
+  (`EntKind::from_wire`; "a spline in space is picked where it is seen, selected, and
+  deleted").  **An object is drawn as a CAD viewer draws a part** (#674–#676):
   **one indexed geometry a shape** (`mesh::drawn`, `gcs_solid_drawn`: `grouped`'s triangles over
   vertices shared within a face — a flat face its corners and one normal, a round one smooth
   across its facets — each vertex with the face it is of, and one byte buffer of `f32`/`u32`),
@@ -430,9 +454,9 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   which and why** in the core's words (`overview::unbuilt`, after a conflict or an over-block;
   a swept object still being meshed is not one —
   `an_object_that_does_not_evaluate_is_reported_with_its_reason`); sketches on planes are the 2D canvas's, stroked over
-  it.  Its camera is set from `v.orbit` and the eye's camera; the current plane's pane is bold, a
-  material write per frame.  **A section** (`⇧X`, View ▸ Section; `SketchView.section`) cuts
-  every object by a plane — the one being drawn on when it is turned on, then whichever the
+  it.  Its camera is set from `v.orbit` and the eye's camera; a selected plane's pane is lit and
+  bold, a material write per frame.  **A section** (`⇧X`, View ▸ Section; `SketchView.section`) cuts
+  every object by a plane — the standard one the eye faces when it is turned on, then whichever the
   section bar (`section-bar.ts`, the viewport's upper left) chooses among `planeChoices`, a
   standard plane the document lacks read from the library's — moved along that plane's normal
   over the range the objects reach (`workspace::reach_along`, `gcs_workspace_reach_along`) and
@@ -674,7 +698,7 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   drag (`gesture::endGesture`, guaranteed numeric) and `syncSource` at the end of `afterEdit`.
   The panel is wired to `onProgram`, never to `onDragFrame`.
 - **The scenario chooser** (#510; `app/scenario-card.ts`, `app/scenario-box.ts`,
-  `SketchView.scenario`, `chooseScenario`).  Beside **Sketch on**, in the viewport's upper right
+  `SketchView.scenario`, `chooseScenario`).  In the viewport's upper right
   (`#view-picks`), `#scenario-pick` lists the document's load scenarios by name (*None*, then each
   in the order written, an extended one `heavy : shelf`; `Document.scenarioNames`), hidden for a
   document with none and inked as failing while one of them fails.  **Choosing is view state**,
