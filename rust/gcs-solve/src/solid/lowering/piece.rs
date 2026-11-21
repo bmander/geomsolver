@@ -701,15 +701,6 @@ fn ring_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: u
             }
             let way = if k == 0 { -1.0 } else { 1.0 };
             let hull = section_at(t)?.section_hull();
-            // a plane square to the axis: along the stretch, cutting it lengthwise or not at all
-            // (`along_run`), no end of it
-            let (lengthwise, planes): (Vec<(V, f64)>, Vec<(V, f64)>) = planes.into_iter()
-                .partition(|&(n, _)| norm(cross(n, axis)) < 1e-6);
-            let reach_of = 1e-9 * (1.0 + norm(centre) + radius);
-            halves.extend(lengthwise.into_iter().filter(|&h| along_run(&hull, h, reach_of)));
-            if planes.is_empty() && bent.is_empty() {
-                continue;
-            }
             let turned = |q: V, phi: f64| crate::brep::geom::Rigid::turn(centre, axis, way * phi).point(q);
             // the set's own reach past this end: the meridian halfway to where the circle comes
             // back within every face the run ends on (`resumed`) — past it a point's nearest point
@@ -1277,7 +1268,8 @@ fn run_piece(body: &crate::solid::faces::BodyFaces, [p0, p1]: [V; 2], fa: usize,
     let width = outline.iter().map(|&q| distance(q, p0)).fold(0.0, f64::max);
     for &(n, d) in &halves {
         let slope = dot(n, along);
-        // a face along the run cuts it lengthwise or not at all (`along_run`): no end of it
+        // a plane along the run stands at no distance along it: no end of it (`ends_at` leaves out
+        // a face along the run)
         if slope.abs() < 1e-6 {
             continue;
         }
@@ -1439,16 +1431,6 @@ fn flush_only(body: &crate::solid::faces::BodyFaces, ends: &Ends, ps: [V; 2]) ->
     }
     None
 }
-
-/// **A face along a run cuts it lengthwise or not at all** (#962 item 4): a plane the run ends on
-/// that lies along it — a boss's underside where it overhangs the side the run ends at, in the
-/// plane of the floor the run stands on; for a ring's stretch, a plane square to its axis — stands
-/// at no distance along it, so it is no end and carries the piece nowhere.  Its half-space, the
-/// side `BodyFaces::end_faces` keeps (the material's behind it where the run lies in it), holds the
-/// section or cuts it along its length: whether some point of the section's `hull` stands past it
-/// by more than `eps`.  Where none does it is no cut (the fill on its floor); where one does the
-/// piece is kept within it, a prism or a revolution clipped by a plane along it, exactly.
-fn along_run(hull: &[V], (n, d): (V, f64), eps: f64) -> bool { hull.iter().any(|&q| dot(n, q) > d + eps) }
 
 /// **The piece beyond a seam along a straight edge, the edge's whole length** (#962): the edge from
 /// `p0` to `p1` between `faces`, face `c` a plane going on tangent across the seam through `s` (its

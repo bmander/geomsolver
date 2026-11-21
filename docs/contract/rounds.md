@@ -751,19 +751,46 @@ the side by what the drawing's numbers leave is the next rule it needs. Rounded 
 meets the top in an edge of its own, filled however narrow the shelf it stands on: the set is not
 continuous at flush there, as it is along the boss's sides.
 
-**A face along a run cuts it lengthwise or not at all** (#962 item 4: a boss drawn standing on a
-part's top, `from:` the top's height, and running past the part's side). Where the boss overhangs
-the side, its underside is a face the fill along the boss's sides ends on, lying along the run in
-the plane of the floor the fill stands on; a ring's stretch round a disc boss so overhanging ends
-on that underside too, a plane square to its axis. Such a plane stands at no distance along the
-run, so it is no end of it and carries the piece nowhere (it was refused, "a run carried on along
-the face it ends on", and the ring "a stretch of a circle its end does not cut off"). Its
-half-space is the side `BodyFaces::end_faces` keeps — where the run's own edge lies in the plane,
-the material's behind it, which holds the fill on its floor — and it cuts the piece along its
-length or not at all (`piece::along_run`: some point of the section past it, by a billionth of the
-construction): where none is, no cut; where one is, the piece kept within it, a prism or a
-revolution clipped by a plane along it, exactly. A boss sunk into the top had no such face and was
-built before. No face of #962's 122's eye lies along a run: its caps are in the side's planes,
+**A face along a run is no end of it** (#962 item 4, #996 item 4: a boss drawn standing on a
+part's top, `from:` the top's height, and running past the part's side; a rib whose sloped edge
+starts at a flange's end edge, the flange's end rounded into the slope). Where the boss overhangs
+the side, its underside is a face at the end of the fill along the boss's sides, lying along the
+run in the plane of the floor the fill stands on (a ring's stretch round a disc boss so
+overhanging: a plane square to its axis); where the rib's slope starts at the flange's edge, the
+flange's underside is a face at each end of the round of the flange's end into the slope, in the
+plane the rounded edge itself lies in, and meets the rib's side there in a concave edge. Such a
+face's surface holds the run's edge at that end (`BodyFaces::ends_at`: neither side of it holds
+a point of the edge past the boundary's tolerance, `goes_across` both ways), and its patch lies past
+the end: it stands at no distance along the run, cuts it nowhere, and no side of it is the run's —
+the round's section between the flange's end and the slope lies on both sides of the underside's
+plane. So it is no face the run ends on, for the field (`crease.ends`) and the lowering alike: the
+run ends on the faces that cross its edge (the rib's side, square), or square where there are none.
+It was read as a cut along the run by the side holding its material, which kept the fill on its
+floor but took only the flange's part of the round's section — the rib's left whole, touching the
+flange's material along a line at each end, which the export refused as a vertex of both turns
+where one round stood, and an overhanging rib's fill halved, silently. The run now ends square on
+the rib's side with its section whole: a cap of the section's part above the underside on the
+side's plane, where the flange goes on (`r²(cot(θ/2) − (π − θ)/2)` taken over the rib's width,
+`θ = 146.3°`: 0.105 mm³ of the issue's). `tests/mixed_vertices.rs`
+(`a_round_ending_where_a_rib_meets_a_flange_ends_square_on_the_ribs_side`: the slope 10° to 80°
+off the end's plane and overhanging 30° and 60°, round and chamfer, R 1, 6 and 12, the rib flush
+with the flange's side either way, mirrored, each the prism's closed form to 1e-9 and exported
+whole) and `tests/flush_ends.rs` (the standing boss) are the gate.
+**No round or chamfer leaves the body touching itself alone** (#996 item 4,
+`recipe::touching_alone`): where applying one of a body's late terms leaves it touching itself
+along a line it did not before (the Boolean holds such a line twice, `Brep::unpinched`) and no
+round or chamfer applied before it has a face through that line, the line is between that one's
+material and the body's own, which no reading of separate rounds against each other makes; it is
+refused there, by the round's name and the line, before anything — a `--where`, a later Boolean
+or round, an export — reads the body. Rounds whose materials meet so (#218, a vertex of both turns
+rounded in one statement) are built still and said by the export at the vertex. The check is a
+pass over the result's edges after each late term, and asks the earlier terms' surfaces only at a
+new line's middle; `tests/mixed_vertices.rs`
+(`a_round_alone_touching_the_body_along_a_line_is_refused_by_its_name`: a plate's quarter taken by
+a late term diagonal to one its own cut took, refused by the round's name and the line; the two
+quarters taken by two late terms built, the line held twice) is the gate.
+
+No face of #962's 122's eye lies along a run: its caps are in the side's planes,
 square to the fills. **Two faces flush only to the drawing's numbers where a run ends** are named
 where they cannot be built (`piece::flush_only`, `Run::flush`, carried into what the failure calls
 the round, `cad.rs`): a boss's end drawn flush with a side the solve leaves turned 1e-8 from it

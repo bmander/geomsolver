@@ -923,17 +923,28 @@ impl BodyFaces {
     /// outside of turning back over the run's faces (a reflex corner of less than a right angle),
     /// whose half-space reaches back over the section from the end, the more the shallower the
     /// turn (a whole side's length at a few degrees): past the end it cuts all of the run, and
-    /// alongside nothing is past the end.  The run ends there square, as at a seam (each where
-    /// `plain`, `end_faces_as`).
+    /// alongside nothing is past the end.  Nor a face **along** the run (#996 item 4): one whose
+    /// surface holds the run's edge at this end — a flange's underside where a rib's sloped edge
+    /// rounded against the flange's end starts at the flange's edge, the plane the edge lies in
+    /// beyond the rib's side; a boss's underside overhanging a part's side, in the plane of the
+    /// floor its fill stands on.  Its patch is past the end, its surface along the edge, so it
+    /// stands at no distance along the run and cuts it nowhere: no side of it is the run's, and
+    /// the section of a convex edge whose faces it splits lies on both.  The run ends there
+    /// square, as at a seam (each where `plain`, `end_faces_as`).
     fn ends_at(&self, run: &[u32], faces: &[usize], v: V, d: V, vid: u32, plain: bool)
         -> Vec<(usize, f64)> {
         let on = along_run(v, d, 1.0);
         let back = |c: usize| self.plane(c)
             .is_some_and(|(n, _)| faces.iter().any(|&f| dot(n, self.normal(f, v)) > 1e-9));
+        // the run's edge at this end, and whether a face's surface holds it (neither side past)
+        let here: Vec<u32> = run.iter().copied()
+            .filter(|&e| self.loc.b.edges[e as usize].v.contains(&vid)).collect();
+        let along = |c: usize| !here.is_empty()
+            && !self.goes_across(c, 1.0, &here) && !self.goes_across(c, -1.0, &here);
         let ends = self.faces_at(vid, faces).into_iter().filter(|&c| !self.continues(c, faces, v));
         ends.filter_map(|c| {
             let sign = if self.side(c, on) <= 0.0 { 1.0 } else { -1.0 };
-            let across = plain && (self.goes_across(c, sign, run) || sign < 0.0 && back(c));
+            let across = plain && (self.goes_across(c, sign, run) || sign < 0.0 && back(c) || along(c));
             (!across).then_some((c, sign))
         }).collect()
     }
