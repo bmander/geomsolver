@@ -4,6 +4,19 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+## [NEXT-flush-deck]
+
+**A run ends on a face going on tangent that carries no round on** (#994). In `S.ends`, a face
+going on tangent from one of an edge's faces where the edge ends was no end of it, the round taken
+to go on round it; it now ends nothing only where it meets the edge's other face there in an edge
+of the same turn (an obround's half circle after its flat side). A deck's corner arc running
+tangent into its side, flush with the block it stands on, ends its foot's fill on the block's side
+— kept within the block, thinning to nothing — where through 0.228 the fill hung past the wall
+over air, and the block's rim rounded along that side ends on the deck's arc, kept outside it. A
+face's `.smooth` gone on into a face whose surface ends short of the point (the block's side
+beyond its top edge) is read there by the nearest face whose surface's foot lies on it, and a
+chain is read as one convex solid only where it is one sheet.
+
 **[0.228] A drafted corner where an arc meets a side at an angle** (#962). `std.solids.Drafted`
 of a face whose arc meets a line or another arc at an angle, not tangent, is built: the corner
 moves where the moved sides meet, along the conic the side's plane and the arc's cone (or two
