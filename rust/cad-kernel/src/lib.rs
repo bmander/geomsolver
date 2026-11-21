@@ -24,6 +24,8 @@ pub mod sew;
 pub mod props;
 pub mod step;
 pub mod step_check;
+pub mod step_file;
+pub mod step_read;
 pub mod query;
 pub mod enclose;
 pub mod ssi;
