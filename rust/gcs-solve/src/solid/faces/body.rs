@@ -530,7 +530,8 @@ impl BodyFaces {
     /// closed onto an axis or a centre is a surface curved tightly about a point far off, whose
     /// steps are steady only toward a convex set (`conditions::nearest`).  `None` where a face is
     /// none of those, the faces lie on several surfaces without a seam between them, meet
-    /// otherwise, or lie on several shells.
+    /// otherwise, lie on several shells, or are no one sheet: a face's patch outside another's
+    /// convex solid (a block's side flush with a deck's, the deck's corner arc above it, #994).
     pub fn bulging(&self, faces: &[usize], smooth: bool, beyond: bool) -> Option<bool> {
         let (shell, _) = self.shells();
         let &f0 = faces.first()?;
@@ -571,7 +572,17 @@ impl BodyFaces {
                 }
             }
         }
-        (smooth && seams).then_some(true)
+        // and one sheet: each face's patch within every other's convex solid, so their common part
+        // is what the chain bounds — not a block's side flush with a deck's, the deck's corner arc
+        // carried on by its tangent planes through the block below it (#994)
+        let sigma = if beyond { -1.0 } else { 1.0 };
+        let sheet = faces.iter().all(|&f| faces.iter().filter(|&&g| g != f).all(|&g| {
+            self.edges[g].iter().all(|&e| (0..=4).all(|k| {
+                let x = self.along(e, k as f64 / 4.0);
+                sigma * self.carried_side_grad(f, x).0 <= self.past(x)
+            }))
+        }));
+        (smooth && seams && sheet).then_some(true)
     }
 
     /// Whether face `fi`, on a torus, lies on the outer half of its tube: every point of its
@@ -617,6 +628,21 @@ impl BodyFaces {
         let near = |fs: &[usize]| fs.iter().map(|&fi| self.patch_distance(fi, p))
             .fold(f64::INFINITY, f64::min);
         alts.iter().map(|a| (near(named(a)), a)).min_by(|x, y| x.0.total_cmp(&y.0)).map(|(_, a)| a)
+    }
+
+    /// Which of `fs` a point `p` reads a smooth surface's side by: the face whose patch is nearest
+    /// it — but where that is a point of their rim, an edge to a face they do not hold, the surface
+    /// ending there, no side is theirs: past a flush wall's top edge the wall says within, the deck
+    /// it goes on into without (#994).  There the nearest face whose surface's foot lies on it,
+    /// where one does.  `None` where `fs` is empty.
+    pub fn nearest_face(&self, fs: &[usize], p: V) -> Option<usize> {
+        let (_, fi) = fs.iter().map(|&fi| (self.patch_distance(fi, p), fi)).min_by(|a, b| a.0.total_cmp(&b.0))?;
+        let rim = |e: u32| self.faces_of(e).iter().any(|g| !fs.contains(g));
+        if !self.off_face(fi, p).is_some_and(rim) {
+            return Some(fi);
+        }
+        Some(fs.iter().copied().filter(|&g| self.off_face(g, p).is_none())
+            .map(|g| (self.side(g, p).abs(), g)).min_by(|a, b| a.0.total_cmp(&b.0)).map_or(fi, |(_, g)| g))
     }
 
     /// The vertices three groups of faces share: where a face of each meets, with the faces of
@@ -685,6 +711,20 @@ impl BodyFaces {
         let q = self.q(v);
         let n = self.outward(c, q);
         faces.iter().any(|&f| norm(sub(self.outward(f, q), n)) < TANGENT)
+    }
+
+    /// Whether face `c` at vertex `vid` (at `v`, model units) carries a run between `faces` of the
+    /// turn `turn` (convex: `Some(true)`) on past it: going on tangent from one of them across a
+    /// seam there (`continues`) and meeting another of them there in an edge of that turn, along
+    /// which the round goes on — an obround's half circle after its flat side (#994).  A face going
+    /// on tangent that meets them there only in an edge of the other turn, or in none, carries
+    /// nothing on: the run ends on it — a deck's corner arc running tangent into its side, flush
+    /// with the block it stands on, whose side meets the block's top in a convex edge.
+    fn carries_on(&self, c: usize, faces: &[usize], turn: Option<bool>, v: V, vid: u32) -> bool {
+        self.continues(c, faces, v) && (turn.is_none() || self.edges[c].iter().any(|&e| {
+            self.loc.b.edges[e as usize].v.contains(&vid) && self.convex(e) == turn
+                && self.faces_of(e).iter().any(|g| *g != c && faces.contains(g))
+        }))
     }
 
     /// Face `fi`'s plane, where it lies in one: its unit normal away from the material and its
@@ -930,7 +970,8 @@ impl BodyFaces {
         let on = along_run(v, d, 1.0);
         let back = |c: usize| self.plane(c)
             .is_some_and(|(n, _)| faces.iter().any(|&f| dot(n, self.normal(f, v)) > 1e-9));
-        let ends = self.faces_at(vid, faces).into_iter().filter(|&c| !self.continues(c, faces, v));
+        let turn = run.first().and_then(|&e| self.convex(e));
+        let ends = self.faces_at(vid, faces).into_iter().filter(|&c| !self.carries_on(c, faces, turn, v, vid));
         ends.filter_map(|c| {
             let sign = if self.side(c, on) <= 0.0 { 1.0 } else { -1.0 };
             let across = plain && (self.goes_across(c, sign, run) || sign < 0.0 && back(c));
@@ -1151,13 +1192,12 @@ impl Reading {
         if let [fi] = self.faces[..] {
             return Some(fi);
         }
-        let near = |fs: &[usize]| fs.iter().map(|&fi| (self.body.patch_distance(fi, p), fi))
-            .min_by(|a, b| a.0.total_cmp(&b.0));
+        let near = |fs: &[usize]| self.body.nearest_face(fs, p);
         if !self.chains.is_empty() {
             let (_, chain) = self.body.nearest_named(p, &self.chains, |c| &c.0[..])?;
-            return near(chain).map(|(_, fi)| fi);
+            return near(chain);
         }
-        near(&self.faces).map(|(_, fi)| fi)
+        near(&self.faces)
     }
     /// The distance from the faces' patches, or (`surface`) their surfaces — a smooth surface's
     /// the one of the piece whose patch is nearest, so it follows the faces across their seams

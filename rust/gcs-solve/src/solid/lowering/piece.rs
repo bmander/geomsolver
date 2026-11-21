@@ -414,7 +414,9 @@ fn nearly_tangent(body: &crate::solid::faces::BodyFaces, edge: u32, ends: &Ends,
             let Some((own, turn)) = faces.iter().map(|&f| (f, dot(body.normal(f, p), n).clamp(-1.0, 1.0).dacos()))
                 .min_by(|a, b| a.1.total_cmp(&b.1)) else { continue };
             let bound = crate::brep::tolerant::least_sine_apart(radius, tol).dasin();
-            if !(turn < bound) {
+            // (tangent to the body's reading, no corner: a face going on tangent from the edge's own
+            // that carries no round on, which the run ends on running out along it, #994)
+            if turn < crate::solid::faces::TANGENT || !(turn < bound) {
                 continue;
             }
             let name = |fi: usize| body.said(fi);
