@@ -77,7 +77,8 @@ back and every traced cubic and pcurve sampled 64 times a knot span: within the 
 both surfaces and, its feet, of the meeting along each face, at three stated tolerances and none,
 each finer tolerance nearer and in more poles, none nearer than a sixteenth of its bar, for crossing
 cylinders at several places and radii, a ball drilled off its centre, a frustum and a torus drilled;
-the half torus, the ball bored off its centre and the grazing cylinders as the file trims them,
+a torus cut beside its axis (the half torus, cut through it, is cut along its meridians in
+closed form since #996), the ball bored off its centre and the grazing cylinders as the file trims them,
 measured by `props`: within 1e-8 with no tolerance stated, within the bar's strip at one; ellipses
 written exactly), `tests/face_edits.rs::a_traced_curve_is_written_as_a_cubic`.
 **An affine map carries a solid onto its image exactly** (`Brep::mapped`, `affine::Affine`, any
@@ -153,7 +154,7 @@ its middle, and of that point's foot on the other surface — stands off one of 
 answered clear and never refused. Off a face means outside it (`face_place`) with every edge of
 its loops (a seam, an apex) farther by its box than the surface's points within that ball reach
 along it (`ssi::disc_reach`, each kind's bound argued by a path in its comment; none where
-the ball crosses a tube or reaches an apex or an axis, nor on a horn or spindle torus):
+the ball crosses a tube or reaches an apex or an axis, or a horn's or a spindle torus's other sheet):
 a near-contact beside a face's edge is held to it and refused as before, and so is one within
 both faces, and any near-contact of a meeting over boxes (`meeting::meet`), which has no faces.
 A countersink beside a counterbore, whose cone past its apex came within 4e-7 of the wall's
@@ -178,6 +179,30 @@ the plate rounded 1 and 2, mirrored, to its closed form (`std.rounds`' runs cut 
 they end on: the lobe's disc run on past the corner and within reach of the side is taken by
 neither), and `a_run_cut_off_by_the_cylinder_it_leaves_off_tangent_is_met_to_its_corner` the run
 cut off alone, turned 1e-3 to 1e-2, rounded 1 to 3 and mirrored.
+**A turn's torus is read whole, its lemon and its poles included** (#996). A spindle torus
+(`minor > |big|`, a section clipped where it reaches its axis) has in each meridian half-plane two
+circles of its tube's radius, about `±|big|`: its outer sheet and its lemon, which meet at the two
+poles on the axis (a horn's touch there, a ring's second lies wholly across it). A point's distance
+from a surface of revolution is its distance from the meridian in its own half-plane, so a ball
+about a point farther than its radius from the other circle holds points of its own sheet alone,
+and `ssi::disc_reach` gives every torus the ring torus's reach there (`minor ≥ 2r`, `ρ ≥ 2r`): a
+near-contact on the lemon past a turn's clipped arc, where a leg's cylinder runs on tangent to the
+torus's continuation, is clear of the turn's face and no longer refused as unresolved. The
+search's derivative bounds over a strip of `v` (`ssi::derivative_bounds`) are the parallels' own,
+`|big + minor cos v|`, which vanish at a pole: read as the widest parallel's, a strip beside a
+pole, all one point, was halved along `u` until the search's four million cells ran out. **A plane
+through a torus's axis meets it in its meridian either side**, two circles in closed form
+(`ssi::intersect`, as a plane through a cone's axis holds its generators): a turn's caps stand in
+such planes, and traced, each cap took its circles in two marches of 100 000 points, a quarter
+elbow and its two legs 3.3 s, now some 20 ms. **A loop's area in its face's parameters is
+Simpson's** (`Brep::loop_area`): each curved use sampled, each pair of steps' bulge past its chord
+taken as a parabola's, the steps doubled until two readings agree within the area: a crescent
+between a turn's cap's rim and a leg's a thousandth inside it, 308° long, read as a polygon's area
+turned the wrong way. `countersink::a_surfaces_points_within_a_ball_reach_no_farther_along_it_than_said`
+(spindle and horn tori among its surfaces), `brep::a_plane_through_a_toruss_axis_meets_it_in_its_meridians`
+and `brep_export::a_swept_elbow_joins_its_legs_at_their_tangent_seams` (ring, horn and spindle
+sections, turns of 45° to 135°, one arc or two, the legs either way round or the turn first, and
+a tube a thousandth wider than its legs, each held to Pappus and the legs' own union) are the gate.
 **A march that steps across a touch ends at the touch** (#879, `ssi::trace_beside`). Two rounds
 tangent to one face meet in a curve that ends where both touch it, a point where the two surfaces
 touch and their meeting's branches cross (`ssi::touch`); where that point is on a face's own edge
