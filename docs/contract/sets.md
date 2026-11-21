@@ -465,8 +465,9 @@ own, whichever of its faces says it, so a plate's top and the caps the fills of 
 uprights leave on it, a chain of one face and four for each pocket, is one condition, not one a
 piece — each projection's active rows are chosen among every three (`project`), so a chain
 growing with the body made each reading of a round on that top cost the cube of the body's
-pockets (`tests/blanket.rs`'s plate of nine pockets rounded all over built in a twentieth of the
-time, the same volume). A torus's patch is so in a chain where it lies on
+pockets (a plate of nine pockets rounded all over, the pockets' own edges first, built in a
+twentieth of the time, its volume the same to every digit); the rounds' gates are unchanged
+(`tests/tight_corners.rs`, `round_lowering`, `round_onto_round`). A torus's patch is so in a chain where it lies on
 the outer half of its tube with that side inside the tube, both its curvatures' centres there (a
 pocket's floor filled round its plan corners, seen from the air; `BodyFaces::outer_half`), never
 alone (its whole surface's side winds round the axis): a ball standing on a run's axis beside
