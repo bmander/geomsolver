@@ -78,7 +78,7 @@ impl Pcurve {
         match *self {
             Pcurve::Curve(ref c) => { let p = c.point(t); [p[0],p[1]] }
             Pcurve::Line {a,b} => along(a,b,fraction(t,edge)),
-            Pcurve::Inverse {a,b} => inverse_at(a,b,t,edge.point(t,vertices),edge,surface),
+            Pcurve::Inverse {a,b} => inverse_from(a,b,t,edge.point(t,vertices),edge,surface,None,reach(t,edge,vertices)),
         }
     }
     /// `d(u, v)/dt` at `t`.
@@ -108,7 +108,7 @@ impl Pcurve {
     pub fn at_and_derivative_from(&self,t: f64,edge: &Edge,surface: &Surface,vertices: &[Vertex],seed: Option<Uv>) -> (Uv,Uv) {
         match *self {
             Pcurve::Inverse {a,b} => {
-                let uv = inverse_from(a,b,t,edge.point(t,vertices),edge,surface,seed);
+                let uv = inverse_from(a,b,t,edge.point(t,vertices),edge,surface,seed,reach(t,edge,vertices));
                 (uv,inverse_derivative(uv,t,edge,surface))
             }
             _ => self.at_and_derivative(t,edge,surface,vertices),
@@ -145,16 +145,23 @@ fn fraction(t: f64,edge: &Edge) -> f64 { if edge.t[1] > edge.t[0] { (t-edge.t[0]
 /// An inverse curve's parameters at `t` (`Pcurve::Inverse {a, b}`), the edge's point there given as
 /// `x`: `Pcurve::at`, for what reads the edge's curve some other way (`props`, a traced edge read
 /// across planes).
-pub(crate) fn inverse_at(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface) -> Uv { inverse_from(a,b,t,x,edge,surface,None) }
+pub(crate) fn inverse_at(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface) -> Uv { inverse_from(a,b,t,x,edge,surface,None,0.) }
+
+/// How far from a pole an inverse curve's end at `t` is read as on it: its vertex's tolerance
+/// there (a file's curve may pass its vertex at a pole on the pole's far side, #993), none
+/// between its ends.
+fn reach(t: f64,edge: &Edge,vertices: &[Vertex]) -> f64 {
+    match fraction(t,edge) { 0. => vertices[edge.v[0] as usize].tol,1. => vertices[edge.v[1] as usize].tol,_ => 0. }
+}
 
 /// `inverse_at`, the point sought from `seed` where one is given (finite) and not from the line
 /// between the ends, its branch on a periodic surface still the one nearest that line.
-fn inverse_from(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface,seed: Option<Uv>) -> Uv {
+fn inverse_from(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface,seed: Option<Uv>,reach: f64) -> Uv {
     let s = fraction(t,edge);
     let near = along(a,b,s);
     let from = seed.filter(|q| q.iter().all(|x| x.is_finite())).unwrap_or(near);
     let uv = unwrap(surface.inverse_near(x,from),near,surface.periods());
-    if s == 0. || s == 1. { on_pole(surface,uv,near) } else { uv }
+    if s == 0. || s == 1. { on_pole(surface,uv,near,reach) } else { uv }
 }
 
 /// `d(u, v)/dt` of the curve of points of `surface` nearest the edge's, at its point's parameters
@@ -200,14 +207,14 @@ pub fn unwrap(mut uv: Uv,near: Uv,periods: [Option<f64>;2]) -> Uv {
 /// it the one point) taken from `near` instead: where an inverse curve ends on a pole, the surface's
 /// inverse of the point says nothing of which value the curve arrives along (a cone's apex reads
 /// `u = 0` whatever the generator), and the end its pcurve is given there does (#797).
-fn on_pole(surface: &Surface,uv: Uv,near: Uv) -> Uv {
+fn on_pole(surface: &Surface,uv: Uv,near: Uv,reach: f64) -> Uv {
     let (mut out,mut p) = (uv,None);
     for k in 0..2 {
         if !((uv[k]-near[k]).abs() > 1e-6) { continue }
         let mut alt = uv;
         alt[k] = near[k];
         let p = *p.get_or_insert_with(|| surface.point(uv));
-        if distance(surface.point(alt),p) <= 1e-9*(1.+norm(p)) { out[k] = near[k]; }
+        if distance(surface.point(alt),p) <= (1e-9*(1.+norm(p))).max(2.*reach) { out[k] = near[k]; }
     }
     out
 }
@@ -381,7 +388,9 @@ impl Brep {
             let into = if end == 0 { 1. } else { -1. };
             // beside the use's own value a little way in, on its branch of the periods
             let inner = c.pcurve.at(e.t[end]+into*1e-3*(e.t[1]-e.t[0]),e,&f.surface,&self.vertices);
-            let limit = leaving_pole(&f.surface,vertex.p,scale(curve.tangent(e.t[end]),into),inner,along)?;
+            // (from the curve's own end, which a vertex read from a file need not be: a step
+            // out from a vertex on the far side of the pole reads the meridian opposite, #993)
+            let limit = leaving_pole(&f.surface,curve.point(e.t[end]),scale(curve.tangent(e.t[end]),into),inner,along)?;
             let mut ends = [*from,*to];
             // (an end already there, to a hair, is kept as it was)
             if (ends[end][along]-limit).abs() <= 1e-9 { return None }

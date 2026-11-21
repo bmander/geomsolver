@@ -342,7 +342,7 @@ struct Setting<'r> { b: &'r Brep,reads: &'r [Read],within: f64,near: f64 }
 /// **A loop walked in its face's parameters** (the module's doc): each use's pcurve, its ends on
 /// the branch the walk reached them on.
 fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],reversed: bool,seams: &BTreeSet<usize>,face: u32)
-    -> Result<Vec<Coedge>,Refusal> {
+    -> Result<(Vec<Coedge>,Option<Wound>),Refusal> {
     let s = &sheet.surface;
     let (b,periods) = (st.b,s.periods());
     let spline = matches!(s,Surface::BSpline(..));
@@ -398,19 +398,67 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
         out.push(Coedge {edge:ei as u32,reversed:rev,pcurve});
         last = Some(end);
     }
-    // round to where it began, on the same branch
+    // round to where it began, on the same branch, or round a whole period of `u`
+    let mut wound = None;
     if let (Some(l),Some((a,p))) = (last,first) {
         let pole = pole_at(s,a,st.within);
         for k in 0..2 {
             let Some(period) = periods[k] else { continue };
             if pole == Some(k) || pole_at(s,l,st.within) == Some(k) { continue }
             if (l[k]-a[k]).abs() > 0.5*period {
+                if k == 0 && matches!(s,Surface::Sphere(..) | Surface::Cone(..)) && (l[1]-a[1]).abs() <= 1e-3 {
+                    wound = Some(Wound {at:a,turn:l[0]-a[0]});
+                    continue
+                }
                 return Err(Refusal::unsupported(face,format!("a face whose bound winds round its surface's period with no seam, at {p:?}: \
                     a face whole round its surface without a seam edge is not read yet")))
             }
         }
     }
-    Ok(out)
+    Ok((out,wound))
+}
+
+/// A loop winding once round a sphere's or a cone's axis: where it begins in the face's
+/// parameters, and how far round it comes (a whole turn, either way).
+struct Wound { at: Uv,turn: f64 }
+
+/// **The seam a loop winding round a pole is joined to it along** (a face holding a sphere's pole
+/// or a cone's apex inside it, which a file writes with no seam): the meridian (a sphere's) or
+/// generator (a cone's) from the loop's first vertex `v` to the pole the face holds — north of
+/// the loop where it winds `+u` with the face's material normal its surface's, south where either
+/// is turned — and the pole, laid; the loop walked on up the seam from where it came round to,
+/// and back down it to where it began (`Brep::close_poles` lays the pole's edge between).
+fn pole_seam(s: &Surface,w: &Wound,v: u32,reversed: bool,laid: u32) -> Option<(V,Edge,[Coedge;2])> {
+    let north = (w.turn > 0.) != reversed;
+    let u = w.at[0];
+    let (pole,curve) = match *s {
+        Surface::Sphere(f,r) => {
+            let out = add(scale(f.x,u.dcos()),scale(f.y,u.dsin()));
+            (if north { std::f64::consts::FRAC_PI_2 } else { -std::f64::consts::FRAC_PI_2 },
+                Curve::Circle(Frame {o:f.o,x:out,y:f.z,z:cross(out,f.z)},r))
+        }
+        Surface::Cone(_,r,half) => {
+            let apex = -r/half.dsin();
+            // the apex lies north (toward +v) of the loop or south of it, as the face holds it
+            if (apex > w.at[1]) != north { return None }
+            let (p,q) = (s.point([u,apex]),s.point(w.at));
+            let d = crate::util::space::normalised(sub(q,p))?;
+            (apex,Curve::Line {p,d})
+        }
+        _ => return None,
+    };
+    let point = s.point([u,pole]);
+    // the seam's own parameters at the vertex and at the pole, and which runs first
+    let (tv,tp) = (curve.inverse(s.point(w.at)),curve.inverse(point));
+    let tp = if let Curve::Circle(..) = curve { if north { std::f64::consts::FRAC_PI_2 } else { -std::f64::consts::FRAC_PI_2 } } else { tp };
+    let tv = if let Curve::Circle(..) = curve { w.at[1] } else { tv };
+    let up = tv < tp;
+    let (t,ends) = if up { ([tv,tp],[v,laid]) } else { ([tp,tv],[laid,v]) };
+    let edge = Edge {curve:EdgeCurve::Curve(curve),t,v:ends,tol:0.};
+    let along = |u: f64| { let (a,b) = ([u,w.at[1]],[u,pole]); if up { Pcurve::Inverse {a,b} } else { Pcurve::Inverse {a:b,b:a} } };
+    // up from where the loop came round to, and down to where it began
+    let seam = LAID;
+    Some((point,edge,[Coedge {edge:seam,reversed:!up,pcurve:along(u+w.turn)},Coedge {edge:seam,reversed:up,pcurve:along(u)}]))
 }
 
 fn distance2(a: Uv,b: Uv) -> f64 { (a[0]-b[0]).dhypot(a[1]-b[1]) }
@@ -428,9 +476,9 @@ fn span(b: &Brep,f: &Face,l: &[Coedge]) -> [[f64;2];2] {
     out
 }
 
-/// A face built, and the edges it lays (a whole torus's seams), which its loops name from
-/// `LAID` down.
-struct Built { face: Face,laid: Vec<Edge> }
+/// A face built, the edges it lays (a whole torus's seams, a pole's seam), which its loops name
+/// from `LAID` down, and the vertices it lays (a pole), which those edges name so.
+struct Built { face: Face,laid: Vec<Edge>,poles: Vec<V> }
 
 const LAID: u32 = u32::MAX;
 
@@ -468,7 +516,27 @@ fn face(st: &Setting,sheet: &Sheet,w: &Walked) -> Result<Built,Refusal> {
         l.rotate_left(k);
         l
     }).collect();
-    let loops = uses.iter().map(|l| walk_loop(st,sheet,w.surface,l,reversed,&seams,w.entity)).collect::<Result<Vec<_>,_>>()?;
+    let walked = uses.iter().map(|l| walk_loop(st,sheet,w.surface,l,reversed,&seams,w.entity)).collect::<Result<Vec<_>,_>>()?;
+    // a loop winding round a pole the face holds is joined to it by a seam laid (one loop alone:
+    // two winding bound a band, which wants a seam between them)
+    let (mut laid,mut poles) = (Vec::new(),Vec::new());
+    if walked.iter().filter(|x| x.1.is_some()).count() > 1 {
+        return Err(Refusal::unsupported(w.entity,"a face between two bounds winding round its surface, with no seam: not read yet"))
+    }
+    let mut loops = Vec::new();
+    for ((mut l,wound),u) in walked.into_iter().zip(&uses) {
+        if let Some(x) = wound {
+            let v = b.edges[u[0].0].v[u[0].1 as usize];
+            let Some((p,e,uses)) = pole_seam(s,&x,v,reversed,LAID) else {
+                return Err(Refusal::unsupported(w.entity,"a face whose bound winds round its surface's period with no seam: not read yet"))
+            };
+            // (the edge laid names the pole laid as `LAID`, patched where it is numbered)
+            laid.push(e);
+            poles.push(p);
+            l.extend(uses);
+        }
+        loops.push(l);
+    }
     let mut f = Face {surface:s.clone(),reversed,loops,name:w.name.clone()};
     // the outer loop first: the one enclosing the most of the face's parameters
     if f.loops.len() > 1 {
@@ -489,7 +557,7 @@ fn face(st: &Setting,sheet: &Sheet,w: &Walked) -> Result<Built,Refusal> {
             if d != [0.;2] { for c in &mut f.loops[li] { c.pcurve = moved(&c.pcurve,d); } }
         }
     }
-    Ok(Built {face:f,laid:Vec::new()})
+    Ok(Built {face:f,laid,poles})
 }
 
 /// **A whole torus**, bounded by the vertex at `p` alone (Open CASCADE writes one so): its two
@@ -509,7 +577,7 @@ fn whole_torus(s: &Surface,p: V,v: u32,reversed: bool,name: &str) -> Built {
     let mut l = vec![Coedge {edge:LAID,reversed:false,pcurve:line(a,bu)},Coedge {edge:LAID-1,reversed:false,pcurve:line(bu,c)},
         Coedge {edge:LAID,reversed:true,pcurve:line(d,c)},Coedge {edge:LAID-1,reversed:true,pcurve:line(a,d)}];
     if reversed { l = reverse_loop(l); }
-    Built {face:Face {surface:s.clone(),reversed,loops:vec![l],name:name.to_string()},laid}
+    Built {face:Face {surface:s.clone(),reversed,loops:vec![l],name:name.to_string()},laid,poles:Vec::new()}
 }
 
 /// The entity a check's message names: its first face or edge, by its index in the `Brep`.
@@ -528,6 +596,7 @@ fn witness(msg: &str,given: &Given) -> Option<u32> {
 
 /// The solid `found` names, read; refused naming the entity that could not be.
 pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
+    let clock = std::time::Instant::now(); let lap = |w: &str| if std::env::var_os("STEP_READ_TIME").is_some() { eprintln!("{w} {:?}",clock.elapsed()) };
     let g = Geometry {file,context:found.context};
     let mut w = Walk {g:&g,edges:BTreeMap::new(),written:Vec::new(),vertices:BTreeMap::new(),points:Vec::new()};
     let mut faces = Vec::new();
@@ -550,22 +619,29 @@ pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
     let size = if points.is_empty() { 0. } else { norm(sub(hi,lo)) };
     let uncertainty = found.context.uncertainty.unwrap_or(0.);
     let within = (1e-9*size).max(uncertainty);
+    lap("walked");
     let reads = crate::util::par::indices(w.written.len(),|i| read_edge(&g,&w.written[i],&points,within.max(1e-7*size)))
         .into_iter().collect::<Result<Vec<_>,_>>()?;
+    lap("edges");
     let mut b = Brep {vertices:points.iter().map(|&p| Vertex {p,tol:0.}).collect(),edges:reads.iter().map(|r| r.edge.clone()).collect(),faces:Vec::new()};
     // the surfaces, each read once
     let ids: Vec<u32> = faces.iter().map(|f| f.surface).collect::<BTreeSet<_>>().into_iter().collect();
     let sheets: BTreeMap<u32,Sheet> = ids.iter().copied().zip(crate::util::par::indices(ids.len(),|i| g.surface(ids[i],Some(ids[i])))
         .into_iter().collect::<Result<Vec<_>,_>>()?).collect();
+    lap("surfaces");
     let built = {
         let st = Setting {b:&b,reads:&reads,within:1e-7*(1.+size),near:uncertainty.max(1e-6)};
         crate::util::par::indices(faces.len(),|i| face(&st,&sheets[&faces[i].surface],&faces[i])).into_iter().collect::<Result<Vec<_>,_>>()?
     };
+    lap("faces");
     let mut edges: Vec<u32> = w.written.iter().map(|x| x.entity).collect();
+    let mut vertices = w.points.clone();
     for mut x in built {
-        let at = b.edges.len() as u32;
+        let (at,pole) = (b.edges.len() as u32,b.vertices.len() as u32);
         for c in x.face.loops.iter_mut().flatten() { if c.edge > LAID-16 { c.edge = at+(LAID-c.edge); } }
+        for e in &mut x.laid { for v in &mut e.v { if *v > LAID-16 { *v = pole+(LAID-*v); } } }
         b.edges.extend(x.laid.drain(..));
+        for p in x.poles { b.vertices.push(Vertex {p,tol:0.}); vertices.push(0); }
         b.faces.push(x.face);
     }
     // a vertex at a pole stands as far off it as half a turn of the collapsed parameter moves
@@ -588,7 +664,9 @@ pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
         }
     }
     for (v,d) in at_poles { b.vertices[v].tol = b.vertices[v].tol.max(d); }
+    lap("poles marked");
     b.close_poles();
+    lap("poles closed");
     b.measure_tolerances();
     // (a foot searched for on a spline reads the last bits of a gap differently from one reading to
     // the next: the gap measured is held to a billionth more)
@@ -606,11 +684,13 @@ pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
             } }
         }
     }
-    let given = Given {name:found.name,entity:r,brep:b,context:found.context,faces:faces.iter().map(|f| f.entity).collect(),edges,vertices:w.points.clone()};
+    let given = Given {name:found.name,entity:r,brep:b,context:found.context,faces:faces.iter().map(|f| f.entity).collect(),edges,vertices};
+    lap("measured");
     if let Err(e) = given.brep.check(within) {
         let why = match e.kind { crate::Kind::Open => Why::Open,crate::Kind::NotManifold => Why::NotManifold,_ => Why::Unsound };
         let entity = witness(&e.msg,&given).or(Some(r));
         return Err(Refusal::new(why,entity,e.msg))
     }
+    lap("checked");
     Ok(given)
 }
