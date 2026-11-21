@@ -597,6 +597,100 @@ pub fn bore_flat(big: f64, small: f64, leg: f64) -> f64 {
     )
 }
 
+/// **A fill against a sphere, turned about the line square to its face** (#962): a face's plane
+/// `h = 0` meets a sphere of radius `big` whose centre stands at height `c` on a line square to
+/// the plane (`h` along it, `ρ` from it), and the fill's section in a half-plane through that line
+/// lies on `h > 0` between the sphere and `curve` — `(ρ, h, dh/dt)` over `span`, from where it
+/// leaves the plane to where it lands on the sphere: a ball's arc, or a chamfer's flat. Turned
+/// about the line, a point at `(ρ, h)` keeps the turns `[lo, hi]` its other faces leave it, each
+/// `k + asin(a / ρ)` for `(k, a)` read at its height — a plane parallel to the line `a` from it, a
+/// cylinder about a line parallel to the plane a root in `h`. Each slice of the section at a
+/// height is turned in closed form; the slices are summed by Gauss–Legendre's rule along `curve`.
+/// The fill lies outside the sphere (`outside`) or within it.
+pub fn crown_section(big: f64, outside: bool, c: f64, curve: &dyn Fn(f64) -> (f64, f64, f64), span: [f64; 2],
+                     lo: &dyn Fn(f64) -> (f64, f64), hi: &dyn Fn(f64) -> (f64, f64)) -> f64 {
+    let sigma = if outside { 1.0 } else { -1.0 };
+    // ∫ ρ θ dρ for θ = k + asin(a / ρ)
+    let turned = |rho: f64, (k, a): (f64, f64)| {
+        0.5 * rho * rho * (k + (a / rho).asin()) + 0.5 * a * (rho * rho - a * a).sqrt()
+    };
+    let g = |rho: f64, h: f64| turned(rho, hi(h)) - turned(rho, lo(h));
+    let gauss = gauss_legendre(64);
+    let [t0, t1] = span;
+    gauss.iter().map(|&(x, w)| {
+        let t = t0 + 0.5 * (t1 - t0) * (1.0 + x);
+        let (rho, h, dh) = curve(t);
+        let sphere = (big * big - (h - c).powi(2)).sqrt();
+        w * sigma * (g(rho, h) - g(sphere, h)) * dh
+    }).sum::<f64>() * 0.5 * (t1 - t0)
+}
+
+/// `crown_section`'s ball of radius `r` rolled between the plane and the sphere: its arc from the
+/// plane (`φ = 0`) to the sphere, `ρ = ρ₀ ∓ r sin φ`, `h = r(1 − cos φ)`.
+pub fn crown_ball(big: f64, outside: bool, c: f64, r: f64, lo: &dyn Fn(f64) -> (f64, f64),
+                  hi: &dyn Fn(f64) -> (f64, f64)) -> f64 {
+    let sigma = if outside { 1.0 } else { -1.0 };
+    let rb = big + sigma * r;
+    let rho0 = (rb * rb - (r - c).powi(2)).sqrt();
+    let end = (rho0 / rb).atan2(sigma * (r - c) / rb);
+    let arc = |phi: f64| { let (s, co) = phi.sin_cos(); (rho0 - sigma * r * s, r - r * co, r * s) };
+    crown_section(big, outside, c, &arc, [0.0, end], lo, hi)
+}
+
+/// The moment `∫∫ ρ dA` about z of a section in a half-plane through z, by Green's theorem round
+/// its boundary: `pieces`, each `(ρ, z, dz/dt)` over its span, end to end round the loop.
+pub fn moment(pieces: &[(&dyn Fn(f64) -> (f64, f64, f64), [f64; 2])]) -> f64 {
+    let gauss = gauss_legendre(64);
+    pieces.iter().map(|(f, [t0, t1])| gauss.iter().map(|&(x, w)| {
+        let (rho, _, dz) = f(t0 + 0.5 * (t1 - t0) * (1.0 + x));
+        w * 0.5 * rho * rho * dz
+    }).sum::<f64>() * 0.5 * (t1 - t0)).sum::<f64>().abs()
+}
+
+/// The fill's section about z where a cylinder `ρ = w` meets a sphere of radius `big` about
+/// `(0, zc)` — its cap above the centre (`up`) or below — on the side `s` of the cylinder (`+1`
+/// outside it) and outside the sphere or within it (`outside`): a ball of radius `r` between them
+/// (`Some(r)`), or else a chamfer's flat of legs `d` (the points whose two distances sum to `d`).
+/// Its moment about z: times the turn, its volume (Pappus).
+#[allow(clippy::too_many_arguments)]
+pub fn meridian_fill(w: f64, s: f64, big: f64, zc: f64, up: bool, outside: bool, round: Option<f64>, d: f64) -> f64 {
+    let (tau, sigma) = (if up { 1.0 } else { -1.0 }, if outside { 1.0 } else { -1.0 });
+    let on_sphere = |rho: f64| zc + tau * (big * big - rho * rho).sqrt();
+    let k = on_sphere(w);
+    let short = |a: f64| (a + PI).rem_euclid(2.0 * PI) - PI;
+    let line = |z0: f64, z1: f64| move |t: f64| (w, z0 + (z1 - z0) * t, z1 - z0);
+    let about = |o: [f64; 2], rad: f64| move |a: f64| (o[0] + rad * a.cos(), o[1] + rad * a.sin(), rad * a.cos());
+    let angle = |o: [f64; 2], p: [f64; 2]| (p[1] - o[1]).atan2(p[0] - o[0]);
+    let centre = [0.0, zc];
+    match round {
+        Some(r) => {
+            let rb = big + sigma * r;
+            let b = [w + s * r, zc + tau * (rb * rb - (w + s * r).powi(2)).sqrt()];
+            let touch = [b[0] * big / rb, zc + (b[1] - zc) * big / rb];
+            let (a0, a1) = (angle(b, [w, b[1]]), angle(b, touch));
+            let (b0, b1) = (angle(centre, touch), angle(centre, [w, k]));
+            moment(&[(&line(k, b[1]), [0.0, 1.0]), (&about(b, r), [a0, a0 + short(a1 - a0)]),
+                (&about(centre, big), [b0, b0 + short(b1 - b0)])])
+        }
+        None => {
+            // the leg on the cylinder, `d` from the sphere, and on the sphere, `d` from the cylinder
+            let l1 = [w, zc + tau * ((big + sigma * d).powi(2) - w * w).sqrt()];
+            let l2 = [w + s * d, on_sphere(w + s * d)];
+            // the flat: `s(ρ − w) + σ(|q − c| − big) = d`, polar about the centre
+            let flat = move |a: f64| {
+                let (sn, co) = a.sin_cos();
+                let t = (d + s * w + sigma * big) / (s * co + sigma);
+                let dt = s * sn * t / (s * co + sigma);
+                (t * co, zc + t * sn, dt * sn + t * co)
+            };
+            let (f0, f1) = (angle(centre, l1), angle(centre, l2));
+            let (b0, b1) = (angle(centre, l2), angle(centre, [w, k]));
+            moment(&[(&line(k, l1[1]), [0.0, 1.0]), (&flat, [f0, f0 + short(f1 - f0)]),
+                (&about(centre, big), [b0, b0 + short(b1 - b0)])])
+        }
+    }
+}
+
 /// The meridian's closed forms: a turned body's volume read off its `(ρ, z)` section.
 pub mod meridian {
     use gcs_core::brep::planar::Seg;

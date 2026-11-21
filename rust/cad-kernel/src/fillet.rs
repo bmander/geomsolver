@@ -337,7 +337,7 @@ fn roll_part(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)],beside: bool) -> Res
     if let (Curve::Line {d,..},true) = (&spine,prismatic(&surfaces,&ends)) {
         let frame = |u: f64| { let c = spine.point(t0+span*u); (c,[toward(0,c),toward(1,c)]) };
         let reach = corner_reach(&frame,r,&names())?;
-        holds_ball(b,&uses,&sides_faces,&chain,&ends,&frame,&surfaces,sides,r,tol,&names(),wedge)?;
+        holds_ball(b,&uses,&sides_faces,&chain,&ends,&frame,&surfaces,sides,r,reach,tol,&names(),wedge)?;
         let ((c0,e),c1) = (frame(0.),spine.point(t0+span));
         let trims: Vec<Trim> = ends.into_iter().map(|x| x.trim).collect();
         let piece = carried(&round_section(across(c0,e,r),c0,e,r,*d),span,&trims)?;
@@ -364,7 +364,7 @@ fn roll_part(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)],beside: bool) -> Res
     let canal = |u: f64,v: f64| { let (c,e) = frame_at(u); add(c,scale(slerp(e[0],e[1],v),r)) };
     let reach = corner_reach(&frame_at,r,&names())?;
     // (read uncached: the band's probes are no stations the fit asks for)
-    holds_ball(b,&uses,&sides_faces,&chain,&ends,&frame_of,&surfaces,sides,r,tol,&names(),wedge)?;
+    holds_ball(b,&uses,&sides_faces,&chain,&ends,&frame_of,&surfaces,sides,r,reach,tol,&names(),wedge)?;
     // fitted to the bar asked, or as near it as the densest net comes, no worse than a ten-millionth
     // of the boundary: its contacts are read at what was measured (`Edge::tol`)
     let bar = tol.max(1e-7*b.size());
@@ -466,7 +466,7 @@ fn standing(b: &Brep,m: &Meeting,offsets: [Offset;2],r: f64,tol: f64,wedge: &[(V
         (centre,e)
     };
     let reach = corner_reach(&frame_at,r,names)?;
-    holds_ball(b,uses,sides_faces,chain,&[],&frame_at,surfaces,*sides,r,tol,names,wedge)?;
+    holds_ball(b,uses,sides_faces,chain,&[],&frame_at,surfaces,*sides,r,reach,tol,names,wedge)?;
     // the piece: the loop, the circle, and the hemisphere over the circle — up its seam, round its
     // pole, back down — its loop counter-clockwise in its parameters (u round, v up from the circle)
     let mut out = Brep::default();
@@ -597,7 +597,7 @@ fn dome(b: &Brep,m: &Meeting,k: usize,centre: V,ring: Frame,foot: V,r: f64,tol: 
     };
     let reach = corner_reach(&frame_at,r,names)?;
     let stops_of: Vec<Stop> = ends.iter().map(|x| Stop {t:0.,..x.stop.clone()}).collect();
-    holds_ball(b,uses,sides_faces,chain,&stops_of,&frame_at,surfaces,*sides,r,tol,names,wedge)?;
+    holds_ball(b,uses,sides_faces,chain,&stops_of,&frame_at,surfaces,*sides,r,reach,tol,names,wedge)?;
     // a vertex past its section: the run going on's ball rolled on to the standing ball over face `k`
     let short = |x: &DomeEnd| x.within < -1e3*tol*(1.+norm(x.pv));
     // a vertex past its section: the run going on's ball rolled on to the standing ball over face
@@ -1084,7 +1084,7 @@ fn revolved(b: &Brep,m: &Meeting,onto: &super::geom::Traced,o: V,z: V,r: f64,tol
         (turn.point(c),e.map(|d| turn.vector(d)))
     };
     let reach = corner_reach(&frame_at,r,names)?;
-    holds_ball(b,uses,sides_faces,chain,&[],&frame_at,surfaces,*sides,r,tol,names,wedge)?;
+    holds_ball(b,uses,sides_faces,chain,&[],&frame_at,surfaces,*sides,r,reach,tol,names,wedge)?;
     let piece = super::build::revolve(&round_section(at,c,e,r,n),o,z,TAU)?;
     // the spine and each contact a circle about the axis, from the meridian
     let ring = |p: V| -> Result<BSpline,String> {
@@ -1167,12 +1167,39 @@ fn others<'b>(b: &'b Brep,uses: &'b [Vec<(usize,usize,usize)>],side: &'b [usize]
 /// edges. A face the ball takes the whole of is held: an edge on the contact, or beyond it, is
 /// the face's far boundary reached (`face_consumed`), and only an edge reaching inside it refuses
 /// the ball (`Band::enters`). `frame_at` the ball's centre and the directions to its contacts
-/// along the canal.
+/// along the canal, `reach` how far its corner stands from the centre at most (`corner_reach`).
+///
+/// **The band is the strip the ball's section sweeps** (#962), between the run and the contact,
+/// never every point of the face as near the other surface: that surface goes on past the other
+/// face, and may come back near this one far from the ball — a vane's side, a cylinder about a
+/// line off the disc's axis, passes within the ball's radius of the disc's rim across the disc,
+/// and a 2 mm ball was refused against a crown of R800 for it. Each section's strip runs on the face
+/// from the contact — the face's point nearest the ball's centre in the section — to the crease,
+/// where the run crosses the section's plane (`crease_at`), and along it the distance from the
+/// centre rises from `r` to the crease's: its rate is the cosine between the way along the section
+/// and the way out from the centre, nought at the contact and growing while the section turns from
+/// the centre slower than the line from it does, as every face the ball rolls on does (its
+/// curvature toward the ball under `1/r`, or the contact would be no nearest point; the strip a
+/// part of the corner, less than a quarter turn of it). So the strip at a station lies within the
+/// crease's distance of its centre, and a point of an edge farther than that from every centre —
+/// and than how far a centre and its crease move between two stations — is none of the band.
+/// Beyond the run's ends, where an end's face cuts the strip off, the station's tangent planes'
+/// corner stands for its crease (`reach`). An edge this read wrongly let into the band would leave
+/// the piece crossing it, which the gate refuses (`solid::lowering`'s `agreement`, `beside_edges`).
 #[allow(clippy::too_many_arguments)]
 fn holds_ball(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2],chain: &[usize],ends: &[Stop],
-    frame_at: &dyn Fn(f64) -> (V,[V;2]),surfaces: &[Surface;2],sides: [f64;2],r: f64,tol: f64,names: &str,wedge: &[(V,V)])
-    -> Result<(),String> {
+    frame_at: &dyn Fn(f64) -> (V,[V;2]),surfaces: &[Surface;2],sides: [f64;2],r: f64,reach: f64,tol: f64,names: &str,
+    wedge: &[(V,V)]) -> Result<(),String> {
     let ending: std::collections::BTreeSet<usize> = ends.iter().flat_map(|s| s.faces.iter().copied()).collect();
+    // each station's centre and how far its strip reaches from it: the crease's distance, or the
+    // tangent planes' corner's past the run's ends; and how far either moves between stations
+    let n = Band::STATIONS;
+    let stations: Vec<(V,f64)> = (0..=n).map(|i| {
+        let (c,e) = frame_at(i as f64/n as f64);
+        (c,crease_at(b,chain,c,e).map_or(reach,|k| distance(k,c).max(r)))
+    }).collect();
+    let gap = stations.windows(2).map(|w| distance(w[0].0,w[1].0)+(w[0].1-w[1].1).abs()).fold(0.,f64::max);
+    let far = |p: V| stations.iter().all(|&(c,d)| distance(c,p) > d+gap+tol);
     for k in 0..2 {
         let o = 1-k;
         let contact = |u: f64| { let (c,e) = frame_at(u); add(c,scale(e[k],r)) };
@@ -1192,13 +1219,44 @@ fn holds_ball(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usiz
         for (fi,e,gc) in others(b,uses,&sides_faces[k],chain,&ending) {
             let g = &b.edges[e];
             let crossed = seam(e);
-            let skip = |p: V| crossed && in_wedge(p);
+            let skip = |p: V| crossed && in_wedge(p) || far(p);
             if band.enters(gc,g.t,&skip,face_consumed(tol,g.tol)) {
                 return Err(format!("the ball of {names} is larger than `{}` can hold",b.faces[fi].name));
             }
         }
     }
     Ok(())
+}
+
+/// **The crease of a ball's section**: where the run `chain` crosses the plane of the section
+/// about the centre `c` (the plane of its arc, through `c` square to the way the contacts `e` turn
+/// about), the crossing nearest `c` — each edge sampled and the crossing bisected on its own
+/// parameter. None where the run crosses that plane nowhere (past its ends).
+fn crease_at(b: &Brep,chain: &[usize],c: V,e: [V;2]) -> Option<V> {
+    let t = crate::util::space::normalised(cross(e[0],e[1]))?;
+    let side = |p: V| dot(sub(p,c),t);
+    let mut best: Option<(f64,V)> = None;
+    for &ei in chain {
+        let ed = &b.edges[ei];
+        let EdgeCurve::Curve(_) = &ed.curve else { continue };
+        let at = |s: f64| ed.point(s,&b.vertices);
+        const SAMPLES: usize = 64;
+        let ts: Vec<f64> = (0..=SAMPLES).map(|k| ed.t[0]+(ed.t[1]-ed.t[0])*k as f64/SAMPLES as f64).collect();
+        for w in ts.windows(2) {
+            let (mut lo,mut hi) = (w[0],w[1]);
+            let (mut slo,shi) = (side(at(lo)),side(at(hi)));
+            if (slo < 0.) == (shi < 0.) && slo != 0. { continue }
+            for _ in 0..60 {
+                let m = 0.5*(lo+hi);
+                let sm = side(at(m));
+                if (sm < 0.) == (slo < 0.) { lo = m; slo = sm; } else { hi = m; }
+            }
+            let k = at(0.5*(lo+hi));
+            let d = distance(k,c);
+            if best.is_none_or(|(bd,_)| d < bd) { best = Some((d,k)); }
+        }
+    }
+    best.map(|(_,k)| k)
 }
 
 /// How near the contact an edge of the face may lie and be the face's far boundary reached — the
