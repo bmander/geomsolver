@@ -943,6 +943,8 @@ pub fn meet_with(a: &Surface,da: [[f64;2];2],b: &Surface,db: [[f64;2];2],tol: f6
     let (ra,rb) = (reach(a,da),reach(b,db));
     let (lo,hi) = shared(ra,rb);
     let mut singular: Vec<Point> = Vec::new();
+    // the touches read alone over their radii (`ssi::alone_over`), which the search passes
+    let mut alone: Vec<super::ssi::Touch> = Vec::new();
     // the Morse analysis in each surface's parameters: the critical set of the other's distance,
     // found once a side and read for the singular points, the ridges and the seeds (#780 R4)
     let sets = [critical_set(a,da,b,tol),critical_set(b,db,a,tol)];
@@ -957,7 +959,10 @@ pub fn meet_with(a: &Surface,da: [[f64;2];2],b: &Surface,db: [[f64;2];2],tol: f6
     for &(p,zero) in &critical {
         if !zero || singular.iter().any(|q| distance(q.at,p) <= 1e3*tol) { continue }
         match super::ssi::touch(a,b,p) {
-            Some(t) if t.branches.is_empty() => singular.push(Point {at:p,kind:Singular::Touch}),
+            Some(t) if t.branches.is_empty() => {
+                singular.push(Point {at:p,kind:Singular::Touch});
+                if super::ssi::alone_over(a,b,&t) { alone.push(t) }
+            }
             Some(t) => singular.push(Point {at:p,kind:Singular::Crossing(t.branches)}),
             // degenerate to second order: the two touch along a curve through it, said by its branch
             None => {}
@@ -1015,7 +1020,8 @@ pub fn meet_with(a: &Surface,da: [[f64;2];2],b: &Surface,db: [[f64;2];2],tol: f6
                     // a ridge holds is beside a known meeting
                     let stretches: Vec<(&Curve,[f64;2])> = known.branches().iter().filter(|br| br.contact == Contact::Touching)
                         .filter_map(|br| if let Curve::BSpline(s) = &br.curve { Some((&br.curve,s.domain())) } else { None }).collect();
-                    let mut beside = |p: V| on_a_branch(a,b,known,p,tol);
+                    // and a cell about a touch read alone is beside a known meeting, the point (#996 §3)
+                    let mut beside = |p: V| on_a_branch(a,b,known,p,tol) || alone.iter().any(|t| distance(t.at,p) <= t.radius);
                     // (no faces trim the boxes: every part of them is the meeting's, none clear)
                     while let Some(p) = super::ssi::unseen_beside(a,da,b,&[traced.clone(),curves.clone()].concat(),&stretches,&mut beside,
                         &mut |_,_| false,lo,hi,tol)? {

@@ -2351,12 +2351,22 @@ impl<'s,'a> Touches<'s,'a> {
     /// or two branches crossing at it (`ssi::touch`); where none of the branches runs into both
     /// faces the two meet there alone, and nothing is traced through it. A touch with a branch
     /// into both is left to the trace, which refuses it. Each read is kept, as alone or not,
-    /// within its radius.
+    /// within its radius. **A definite touch is alone where its higher orders keep it so over its
+    /// radius** (`ssi::alone_over`, #996 §3), whatever the faces' size: no branch is asked after,
+    /// so no face need reach past it. Branches are asked after twice the radius out, which only
+    /// a touch small beside the smaller face reaches on it.
     fn alone(&mut self,p: V) -> bool {
         let (tol,(sa,sb)) = (self.arr.tol,(self.surfaces[0],self.surfaces[1]));
         let Some(at) = super::ssi::touch_near(sa,sb,p,tol) else { return false };
         let Some(t) = super::ssi::touch(sa,sb,at) else { return false };
-        if t.radius > 0.05*self.least || distance(at,p) > t.radius { return false }
+        if distance(at,p) > t.radius { return false }
+        if t.branches.is_empty() {
+            let lone = super::ssi::alone_over(sa,sb,&t);
+            if lone { self.arr.say.touch_alone(self.faces,self.surfaces,&t); }
+            self.read.push((t,lone));
+            return lone
+        }
+        if t.radius > 0.05*self.least { return false }
         let place = |k: usize,d: V| {
             let s = self.surfaces[k];
             let q = crate::util::space::add(at,crate::util::space::scale(d,2.*t.radius));

@@ -331,3 +331,71 @@ fn a_march_refused_as_shallow_says_so_by_its_type() {
     assert!(said.starts_with("a plane and a cylinder meet at 0.00°") && said.contains("nearly touching: their meeting is ill-conditioned"),
         "{said}");
 }
+
+/// A wall `x = 0` standing on the floor `z = 0` (material on `x < 0`, a run `run` long below the
+/// seam `y = 0`) going on through a concave blend of radius `big` about the upright line through
+/// `(big, 0)` into a shelf `y = big`, `height` tall; and a rim's bar along the wall's foot from
+/// `y = −run − 1` to `y = past`: the box `r` square less the cylinder of radius `r` about the line
+/// through `(−r, ·, r)` along `y`, what a round of radius `r` takes of the foot. Each turned by
+/// `turn` about the upright through the seam's foot and, where `mirrored`, reflected through the
+/// plane `y = 0` after. The bar's cylinder and the blend's touch at `(0, 0, r)` from either side of
+/// the wall, crossed square, and meet nowhere else.
+fn wall_blend_and_rim(big: f64,run: f64,height: f64,r: f64,past: f64,turn: f64,mirrored: bool) -> (Brep,Brep) {
+    use gcs_core::brep::geom::Rigid;
+    let (w,shelf,beyond) = (10.,6.,4.);
+    let z = [0.,0.,1.];
+    let at = |x: f64,y: f64| [x,y,0.];
+    // the blend's arc from the wall's foot (0, 0) to the shelf's (big, big), about (big, 0)
+    let arc = ProfileEdge::Arc {frame:Frame::new(at(big,0.),[0.,0.,-1.],[-1.,0.,0.]),r:big,span:Some([0.,TAU/4.])};
+    let corners = [at(-w,-run),at(0.,-run),at(0.,0.),at(big,big),at(big+beyond,big),at(big+beyond,big+shelf),at(-w,big+shelf)];
+    let mut edges: Vec<ProfileEdge> = (0..corners.len()).filter(|&k| k != 2).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%corners.len()]}).collect();
+    edges.push(arc);
+    let body = prism(&Profile {origin:at(0.,0.),normal:z,names:Vec::new(),loops:vec![edges]},0.,height).unwrap();
+    let (y0,y1) = (-run-1.,past);
+    let bar = gcs_core::brep::build::block([-r,y0,0.],[0.,y1,r]).unwrap();
+    let tool = prism(&gcs_core::brep::build::disc([-r,y0-1.,r],[0.,1.,0.],r),0.,y1-y0+2.).unwrap();
+    let bar = gcs_core::brep::boolean::combined(&bar,&tool,gcs_core::brep::boolean::Op::Cut,0.).unwrap();
+    let placed = |b: &Brep| {
+        let b = b.moved(&Rigid::turn([0.;3],z,turn));
+        if mirrored { b.reflected(&Rigid {r:[[1.,0.,0.],[0.,-1.,0.],[0.,0.,1.]],t:[0.;3]}).unwrap() } else { b }
+    };
+    (placed(&body),placed(&bar))
+}
+
+/// **A rim's round crossing a blend's foot touches it at a point alone, however small its face**
+/// (#996 §3; `Touches::alone`, `ssi::alone_over`): a convex round along a wall's foot and a concave
+/// blend tangent to the wall are cylinders crossed square touching from either side of it at the
+/// point where the blend's foot crosses the round's tangent line — a definite touch, the two apart
+/// everywhere else — within `2 SHALLOW · big` of which a trace cannot follow them. Read alone only
+/// where that radius was a twentieth of the smaller face, a bar 4 long under a blend of 8 (an R2
+/// rim on a lug's neck, CADGenBench fixture 104) was refused, "a cylinder and a cylinder meet …
+/// where no edge crosses, in a curve that could not be traced". Cut from the wall, the blend 8, 20
+/// and 40, the round 1, 2 and 3, the bar ending at the seam and past it (the touch on its edge and
+/// inside its face), the whole turned and mirrored: each valid, its volume the body's less the
+/// bar's inside it, `r² (1 − π/4)` along it, to 1e-9.
+#[test]
+fn a_rims_round_crossing_a_blends_foot_touches_it_at_a_point_alone() {
+    use gcs_core::brep::boolean::{combined,Op};
+    let height = 8.;
+    let mut failed: Vec<String> = Vec::new();
+    for big in [8.,20.,40.] { for r in [1.,2.,3.] { for (run,past) in [(2.5,0.),(2.5,1.5),(6.,0.5)] {
+        for (turn,mirrored) in [(0.,false),(0.7,false),(-2.,true)] {
+            let what = format!("blend {big}, round {r}, run {run} to {past}, turned {turn}{}",if mirrored { ", mirrored" } else { "" });
+            let (body,bar) = wall_blend_and_rim(big,run,height,r,past,turn,mirrored);
+            let (w,shelf,beyond) = (10.,6.,4.);
+            let section = w*(run+big+shelf)+(big+beyond)*shelf+big*big*(1.-PI_4);
+            let taken = r*r*(1.-PI_4)*(run+past);
+            match combined(&body,&bar,Op::Cut,0.) {
+                Err(e) => failed.push(format!("{what}: {}",e.msg)),
+                Ok(cut) => {
+                    if let Err(e) = cut.check(1e-6) { failed.push(format!("{what}: {}",e.msg)); continue }
+                    let (got,want) = (volume(&cut),height*section-taken);
+                    if (got-want).abs() > 1e-9*want { failed.push(format!("{what}: a volume of {got}, not {want}")) }
+                }
+            }
+        }
+    } } }
+    assert!(failed.is_empty(),"{}",failed.join("\n"));
+}
+
+const PI_4: f64 = std::f64::consts::FRAC_PI_4;

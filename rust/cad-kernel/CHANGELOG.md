@@ -8,6 +8,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A definite touch is read alone by its own orders, not by the faces' size** (#996 item 3): two
+  faces touching at a point, their meeting there the point alone to second order, were read so only
+  where the touch's radius — where a trace cannot follow them — was under a twentieth of the
+  smaller face; a rim's round on a short side crossing a wide blend's foot was refused ("a cylinder
+  and a cylinder meet … where no edge crosses, in a curve that could not be traced").  Now such a
+  touch is alone where `b`'s distance along `a` grows as its second order says over the whole
+  radius (`ssi::alone_over`), and `meeting::meet`'s search passes the touches it found, which it
+  refused before in the same words.
+
 ## [0.20.0] - 2026-11-21
 
 - **A drafted corner where an arc meets a side at an angle is built** (#962 item 8b): `build::offset`
