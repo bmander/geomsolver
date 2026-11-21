@@ -427,6 +427,7 @@ fn sequential<'a>(lx: &mut Lexer<'a>) -> Parsed<Vec<Entity<'a>>> {
         match lx.peek()? {
             Some(b'#') => out.push(lx.entity()?),
             Some(b'E') if lx.literal("ENDSEC")? => break,
+            Some(b'E') if lx.bytes()[lx.at..].starts_with(b"END-ISO-10303-21") => return Err(after(lx.error("the DATA section has no ENDSEC"),&out)),
             None => return Err(after(lx.error("the DATA section has no ENDSEC"),&out)),
             _ => return Err(after(lx.error("an entity expected"),&out)),
         }
