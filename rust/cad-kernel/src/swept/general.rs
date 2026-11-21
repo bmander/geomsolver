@@ -143,41 +143,215 @@ fn beside_rails(a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,rails: &[Curve],tol:
 /// (the root, read through two numerical feet, 5e-9 off it, past the pool's tolerance). (Not for
 /// one fan's stretches meeting each other: their walls are one sheet across the rim they share,
 /// the sine along it nought throughout, and its sign there rounding's.)
-fn ended_on_rails(mut c: Curve,a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,rails: &[Curve],tol: f64) -> Curve {
+fn ended_on_rails(c: Curve,a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,rails: &[Curve],tol: f64) -> Curve {
     use crate::util::space::{norm,normalised};
     let unit = |s: &Surface,p: V| normalised(s.gradient(p)).unwrap_or([0.;3]);
-    for high in [false,true] {
-        let Some([t0,t1]) = crate::query::curve_domain(&c) else { return c };
-        let p = c.point(if high { t1 } else { t0 });
+    ended_on(c,a,b,tol,"where the walls touch",&|p: V| {
         let reach = crate::tolerant::on_meeting(tol,norm(cross(unit(sa,p),unit(sb,p))));
-        let touch = rails.iter().find_map(|r| {
+        rails.iter().find_map(|r| {
             let [r0,r1] = crate::query::curve_domain(r)?;
             let f = r.inverse(p);
             if distance(r.point(f),p) > reach { return None }
             // the sine of the walls' angle, signed along the rail
             let signed = |s: f64| { let (q,d) = r.d1(s); dot(cross(unit(sa,q),unit(sb,q)),normalised(d).unwrap_or([0.;3])) };
             let w = reach/norm(r.d1(f).1).max(1e-300);
-            let (lo,hi) = ((f-w).max(r0),(f+w).min(r1));
-            const LOOKS: usize = 16;
-            let at: Vec<(f64,f64)> = (0..=LOOKS).map(|k| { let s = lo+(hi-lo)*k as f64/LOOKS as f64; (s,signed(s)) }).collect();
-            let (from,to) = at.windows(2).filter(|w| w[0].1*w[1].1 <= 0. && w[0].1 != w[1].1).map(|w| (w[0],w[1]))
-                .min_by(|x,y| (0.5*(x.0.0+x.1.0)-f).abs().total_cmp(&(0.5*(y.0.0+y.1.0)-f).abs()))?;
-            let (s,_) = crate::util::roots::bisect(from.0,to.0,|x,y| 0.5*(x+y),|x,y| y-x > f64::EPSILON*(x.abs()+y.abs()),
-                |m| signed(m)*from.1 > 0.);
+            let s = changed(signed,f,[(f-w).max(r0),(f+w).min(r1)])?;
             let q = r.point(s);
-            if distance(q,p) > reach { return None }
-            let corner = a.vertices.iter().chain(&b.vertices).map(|v| v.p).filter(|&v| distance(r.point(r.inverse(v)),v) <= tol)
-                .min_by(|x,y| distance(*x,q).total_cmp(&distance(*y,q))).filter(|&v| distance(v,q) < distance(p,q));
-            Some(corner.unwrap_or(q))
-        });
-        let Some(q) = touch else { continue };
+            (distance(q,p) <= reach).then_some((q,r))
+        })
+    })
+}
+
+/// **A branch between two runs of one fan ends on their rim at the pinch it is born at** (#942
+/// T1d-cube): two runs of a fan crossing itself are one sheet across the rim they share, and their
+/// crossing is born where that sheet is singular — its rate across the rim, `Sₛ` less its part
+/// along the rim, nought — and there the trace, its two layers meeting ever more shallowly, stops
+/// short or runs on (the cube tumbling 75°: its edge 5's crossing ended 7e-9 off the corner there
+/// or 8e-7, as the walls' feet were read; its edge 11's 1.6e-5, and its runs' pieces did not
+/// close). An end within its meeting's reach of the rim is carried to the rim's point where that
+/// rate turns over, and to the corner of either run there (`ended_on`).
+fn ended_at_pinch(c: Curve,a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,sheet: &Arc<Sheet>,at: f64,tol: f64) -> Curve {
+    use crate::util::space::{norm,normalised};
+    let unit = |s: &Surface,p: V| normalised(s.gradient(p)).unwrap_or([0.;3]);
+    let rim = Curve::Rim(sheet.clone(),at);
+    // the rate across the rim at `u`, off the rim's own way
+    let across = |u: f64| { let (_,su,ss) = sheet.d1([u,at]); let k = dot(ss,su)/dot(su,su).max(1e-300); sub(ss,scale(su,k)) };
+    ended_on(c,a,b,tol,"at the pinch it is born at",&|p: V| {
+        let reach = crate::tolerant::on_meeting(tol,norm(cross(unit(sa,p),unit(sb,p))));
+        let f = sheet.rim_inverse(at,p);
+        let (x,su,_) = sheet.d1([f,at]);
+        // (an end lying on the rim, to the tolerance, is on it only at the pinch: carried to the
+        // nearest one along it however far — there the two runs' normals, each read from its own
+        // piece of the sheet, swing with a rate across the rim of 4e-6, and their angle says
+        // nothing of the reach, #942 T1d-cube 15°: an end on the rim 4.2e-6 short of its pinch)
+        let on = distance(x,p) <= crate::tolerant::ON_CURVE*tol;
+        if !on && distance(x,p) > reach { return None }
+        let way = normalised(across(f)).unwrap_or([0.;3]);
+        let mut w = reach/norm(su).max(1e-300);
+        let u = loop {
+            if let Some(u) = changed(|u| dot(across(u),way),f,[(f-w).max(0.),(f+w).min(1.)]) { break u }
+            if !on || (f-w <= 0. && f+w >= 1.) { return None }
+            w *= 2.;
+        };
+        let q = sheet.d1([u,at]).0;
+        (on || distance(q,p) <= reach).then_some((q,&rim))
+    })
+}
+
+/// **The pinches on a fan's rim at `at`**: where its rate across the rim (`Sₛ` less its part along
+/// the rim) turns over — read at `PINCH_LOOKS` places along the rim, each change halved to the
+/// rounding — the points its sheet is singular at, where a crossing of the fan with itself is born.
+fn pinches(sheet: &Sheet,at: f64) -> Vec<f64> {
+    const PINCH_LOOKS: usize = 512;
+    let across = |u: f64| { let (_,su,ss) = sheet.d1([u,at]); let k = dot(ss,su)/dot(su,su).max(1e-300); sub(ss,scale(su,k)) };
+    let us: Vec<f64> = (0..=PINCH_LOOKS).map(|k| k as f64/PINCH_LOOKS as f64).collect();
+    let mut out = Vec::new();
+    for w in us.windows(2) {
+        // (the way the rate points at the window's start: it turns over where it comes to point back)
+        let way = across(w[0]);
+        if !(dot(across(w[1]),way) < 0.) { continue }
+        let (u,_) = crate::util::roots::bisect(w[0],w[1],|x,y| 0.5*(x+y),|x,y| y-x > f64::EPSILON*(x.abs()+y.abs()).max(1e-300),
+            |m| dot(across(m),way) > 0.);
+        out.push(u);
+    }
+    out
+}
+
+/// **A fan's crossing with itself from the pinch it is born at, built** (#942 T1d-cube): about a
+/// pinch `(u_p, at)` of the sheet — its rate in time there `λ` times its rate along the edge — the
+/// sheet is a Whitney umbrella, the two points `(u_p ± λt, at ∓ t)` meeting to the third order in
+/// `t`, one on the run before `at` and one on the run after; so the crossing of the two runs is the
+/// pairs `X(u₁, at − t) = X(u₂, s₂)`, each solved by Newton from the last (from that pair at the
+/// first), marched out in `t` until a run's span `[lo, hi]` or the edge ends. Traced toward the
+/// pinch, the two runs meeting ever more shallowly there, the crossing lost itself on the rim the
+/// runs share (the cube tumbling 15°: its edge 11's crossing wandered along the rim 2e-3 either way
+/// of its pinch), and was given so. The curve: the pinch, then each solved point, interpolated and
+/// points put in where it strays more than the tolerance from the crossing.
+fn handle(sheet: &Sheet,at: f64,up: f64,start: Option<V>,[lo,hi]: [f64;2],tol: f64) -> Option<Curve> {
+    use crate::util::space::norm;
+    let (x0,su,ss) = sheet.d1([up,at]);
+    // (begun at the runs' corner there where one stands: the road's own pinch, its stretches cut where
+    // the edge's two faces' contacts reach it together, the instant its sheet is singular there)
+    let x0 = start.unwrap_or(x0);
+    let lambda = dot(ss,su)/dot(su,su);
+    // the pair at `t` from the guess `g`: Newton on `(u₁, u₂, s₂)`
+    let solve = |t: f64,g: [f64;3]| -> Option<[f64;3]> {
+        let s1 = at-t;
+        let mut x = g;
+        for _ in 0..40 {
+            let (p1,u1,_) = sheet.d1([x[0],s1]);
+            let (p2,u2,s2) = sheet.d1([x[1],x[2]]);
+            let r = sub(p1,p2);
+            if norm(r) <= 1e-3*tol { return Some(x) }
+            // [X_u(1)  −X_u(2)  −X_s(2)] δ = −r, by Cramer
+            let (a,b,c) = (u1,scale(u2,-1.),scale(s2,-1.));
+            let det = dot(a,cross(b,c));
+            if !(det.abs() > 0.) { return None }
+            let m = scale(r,-1.);
+            let d = [dot(m,cross(b,c))/det,dot(a,cross(m,c))/det,dot(a,cross(b,m))/det];
+            x = [x[0]+d[0],x[1]+d[1],x[2]+d[2]];
+            if !x.iter().all(|v| v.is_finite()) { return None }
+        }
+        let r = sub(sheet.d1([x[0],s1]).0,sheet.d1([x[1],x[2]]).0);
+        (norm(r) <= 1e-3*tol).then_some(x)
+    };
+    let inside = |t: f64,x: [f64;3]| at-t >= lo && x[2] <= hi && (0. ..=1.).contains(&x[0]) && (0. ..=1.).contains(&x[1]);
+    // (the first a ten-thousandth of the way: nearer, the three columns all but dependent)
+    let t0 = 1e-4*(hi-lo);
+    let mut pts: Vec<(f64,[f64;3])> = Vec::new();
+    let first = solve(t0,[up+lambda*t0,up-lambda*t0,at+t0])?;
+    if !inside(t0,first) { return None }
+    pts.push((t0,first));
+    let mut h = t0;
+    loop {
+        let (t,x) = *pts.last()?;
+        // (the next from the last two carried on)
+        let guess = |dt: f64| match pts.len() {
+            1 => [x[0]+lambda*dt,x[1]-lambda*dt,x[2]+dt],
+            n => { let (tp,xp) = pts[n-2]; let k = dt/(t-tp); [x[0]+k*(x[0]-xp[0]),x[1]+k*(x[1]-xp[1]),x[2]+k*(x[2]-xp[2])] }
+        };
+        let next = solve(t+h,guess(h)).filter(|y| inside(t+h,*y));
+        match next {
+            Some(y) => {
+                // (a step no longer than a sixty-fourth of the span, its chord short in space)
+                let far = distance(sheet.d1([x[0],at-t]).0,sheet.d1([y[0],at-t-h]).0);
+                if far > 1e-2*(hi-lo).max(1.) && h > t0 { h *= 0.5; continue }
+                pts.push((t+h,y));
+                h = (2.*h).min((hi-lo)/64.);
+            }
+            None if h > 1e-9*(hi-lo) => { h *= 0.5; }
+            None => break,
+        }
+        if pts.len() > 4096 { break }
+    }
+    if pts.len() < 2 { return None }
+    // the curve: the pinch, then the solved points, by chord length
+    let point = |t: f64,x: [f64;3]| sheet.d1([x[0],at-t]).0;
+    let mut table: Vec<(f64,[f64;3])> = pts;
+    for _ in 0..8 {
+        let mut ps: Vec<V> = vec![x0];
+        ps.extend(table.iter().map(|&(t,x)| point(t,x)));
+        let mut chord = vec![0.];
+        for w in ps.windows(2) { let l = chord[chord.len()-1]+distance(w[0],w[1]); chord.push(l) }
+        if !(chord[chord.len()-1] > 0.) { return None }
+        let b = crate::nurbs::interpolate(&ps,&chord,3)?;
+        // (between each two, the crossing solved midway and read against the curve)
+        let mut more: Vec<(f64,[f64;3])> = Vec::new();
+        for (j,w) in table.windows(2).enumerate() {
+            let ((ta,xa),(tb,xb)) = (w[0],w[1]);
+            let tm = 0.5*(ta+tb);
+            let Some(xm) = solve(tm,[0.5*(xa[0]+xb[0]),0.5*(xa[1]+xb[1]),0.5*(xa[2]+xb[2])]) else { continue };
+            let pm = point(tm,xm);
+            let cm = 0.5*(chord[j+1]+chord[j+2]);
+            let q = b.point(b.refined(pm,cm));
+            if distance(q,pm) > 0.5*tol { more.push((tm,xm)) }
+        }
+        if more.is_empty() {
+            if crate::debug() { eprintln!("general: a fan's crossing from its pinch at {x0:?}, {} points, to {:?}",ps.len(),ps[ps.len()-1]) }
+            return Some(Curve::BSpline(Arc::new(b)))
+        }
+        table.extend(more);
+        table.sort_by(|a,b| a.0.total_cmp(&b.0));
+    }
+    None
+}
+
+/// Where `signed` changes sign over `[lo, hi]` nearest `f`: read at sixteen places, the change
+/// nearest `f` halved to the rounding.
+fn changed(signed: impl Fn(f64) -> f64,f: f64,[lo,hi]: [f64;2]) -> Option<f64> {
+    const LOOKS: usize = 16;
+    let at: Vec<(f64,f64)> = (0..=LOOKS).map(|k| { let s = lo+(hi-lo)*k as f64/LOOKS as f64; (s,signed(s)) }).collect();
+    let (from,to) = at.windows(2).filter(|w| w[0].1*w[1].1 <= 0. && w[0].1 != w[1].1).map(|w| (w[0],w[1]))
+        .min_by(|x,y| (0.5*(x.0.0+x.1.0)-f).abs().total_cmp(&(0.5*(y.0.0+y.1.0)-f).abs()))?;
+    Some(crate::util::roots::bisect(from.0,to.0,|x,y| 0.5*(x+y),|x,y| y-x > f64::EPSILON*(x.abs()+y.abs()),|m| signed(m)*from.1 > 0.).0)
+}
+
+/// `c` with each end that `touch` carries somewhere (to a point and the curve it lies on) ended
+/// there — at the corner of either wall on that curve, where one stands nearer the point than the
+/// end did (the road's own, its stretches cut where the contact changes) — and the curve cut there
+/// (`BSpline::segment`, a trace at its points).
+fn ended_on<'r>(mut c: Curve,a: &Brep,b: &Brep,tol: f64,what: &str,touch: &dyn Fn(V) -> Option<(V,&'r Curve)>) -> Curve {
+    for high in [false,true] {
+        let Some([t0,t1]) = crate::query::curve_domain(&c) else { return c };
+        let p = c.point(if high { t1 } else { t0 });
+        let Some((q,r)) = touch(p) else { continue };
+        let corner = a.vertices.iter().chain(&b.vertices).map(|v| v.p).filter(|&v| distance(r.point(r.inverse(v)),v) <= tol)
+            .min_by(|x,y| distance(*x,q).total_cmp(&distance(*y,q))).filter(|&v| distance(v,q) < distance(p,q));
+        let q = corner.unwrap_or(q);
         let tc = c.inverse(q);
         // (cut only within the end's half: the branch's other end is never the touch's)
         let mid = 0.5*(t0+t1);
         let cut = if high { tc > mid && tc < t1 } else { tc < mid && tc > t0 };
         let ended = match &c {
             Curve::BSpline(b) => {
-                let mut b = if cut { b.segment(if high { [t0,tc] } else { [tc,t1] }) } else { (**b).clone() };
+                let b = if cut { b.segment(if high { [t0,tc] } else { [tc,t1] }) } else { (**b).clone() };
+                // (its end span first made a few times the move long, so the end pole carried there
+                // bends no more of it: a span an eighth of the curve, its end carried 4.2e-6, stood
+                // 1.4e-6 off its walls all along it)
+                let [lo,hi] = b.domain();
+                let end = if high { hi } else { lo };
+                let span = 8.*distance(p,q)/crate::util::space::norm(b.d1(end).1).max(1e-300);
+                let mut b = if span < 0.5*(hi-lo) { b.with_knot(if high { hi-span } else { lo+span }) } else { b };
                 let n = b.poles.len();
                 b.poles[if high { n-1 } else { 0 }] = q;
                 Some(Curve::BSpline(Arc::new(b)))
@@ -198,7 +372,7 @@ fn ended_on_rails(mut c: Curve,a: &Brep,sa: &Surface,b: &Brep,sb: &Surface,rails
             _ => None,
         };
         let Some(ended) = ended else { continue };
-        if crate::debug() { eprintln!("general: a branch beside a rail ended where the walls touch, at {q:?}, {:.3e} from where it was traced to",distance(p,q)) }
+        if crate::debug() { eprintln!("general: a branch ended {what}, at {q:?}, {:.3e} from where it was traced to",distance(p,q)) }
         c = ended;
     }
     c
@@ -743,7 +917,27 @@ fn crossed(breps: &mut [Brep],spans: &[Vec<[f64;2]>],surfaces: &[Surface],tol: f
         let mut between: Vec<(usize,usize,Vec<Curve>)> = Vec::new();
         for g in 0..runs { for h in g+1..runs {
             let rails: Vec<Curve> = if out[g].0[1] == out[h].0[0] { vec![Curve::Rim(sheet.clone(),out[g].0[1])] } else { Vec::new() };
-            let met = beside_rails(&on_run(g),&out[g].1,&on_run(h),&out[h].1,&rails,tol);
+            let (rg,rh) = (on_run(g),on_run(h));
+            let mut met: Vec<Curve> = beside_rails(&rg,&out[g].1,&rh,&out[h].1,&rails,tol).into_iter()
+                .map(|c| if rails.is_empty() { c } else { ended_at_pinch(c,&rg,&out[g].1,&rh,&out[h].1,sheet,out[g].0[1],tol) }).collect();
+            // (where the two runs share a rim, their crossing from each pinch on it built, and any
+            // branch traced to a pinch — the trace's poor copy of it — given no more)
+            if !rails.is_empty() {
+                let at = out[g].0[1];
+                let rim = Curve::Rim(sheet.clone(),at);
+                let corner = |p: V| rg.vertices.iter().chain(&rh.vertices).map(|v| v.p).filter(|&v| distance(rim.point(rim.inverse(v)),v) <= tol)
+                    .min_by(|x,y| distance(*x,p).total_cmp(&distance(*y,p))).filter(|&v| distance(v,p) <= crate::tolerant::ON_CURVE*tol);
+                let handles: Vec<(V,Curve)> = pinches(sheet,at).into_iter().filter_map(|u| {
+                    let p = sheet.d1([u,at]).0;
+                    let start = corner(p);
+                    handle(sheet,at,u,start,[out[g].0[0],out[h].0[1]],tol).map(|c| (start.unwrap_or(p),c))
+                }).collect();
+                if !handles.is_empty() {
+                    let ends = |c: &Curve| { let d = crate::query::curve_domain(c).unwrap_or([0.,1.]); [c.point(d[0]),c.point(d[1])] };
+                    met.retain(|c| !ends(c).iter().any(|&e| handles.iter().any(|(p,_)| distance(*p,e) <= crate::tolerant::ON_CURVE*tol)));
+                    met.extend(handles.into_iter().map(|(_,c)| c));
+                }
+            }
             let mut curves = rails;
             curves.extend(met);
             between.push((g,h,curves));

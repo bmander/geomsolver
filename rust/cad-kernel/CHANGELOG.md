@@ -8,6 +8,17 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The bench's cube tumbling 75° is built** (#942 T1d-cube, `swept::general`, `family`, `topo`):
+  a fan's crossing with itself is built from the pinch it is born at — the runs' corner where the
+  sheet's rate across their rim turns over — as the pairs of points of the two runs that meet, each
+  solved by Newton and marched out from the Whitney umbrella's own pairs, not traced toward the
+  pinch, where the trace lost itself on the runs' rim. A wall's foot is found by a bounded
+  Levenberg–Marquardt (`Sheet::newton`), its last foot trusted only where it settles on the point,
+  else the nearest four of a grid settled and the nearest kept (`Sheet::inverse`). An inverse curve
+  on a face takes its feet's chord for its rate where the face is singular. New
+  `nurbs::BSpline::with_knot`; a branch's end carried onto a rail or a pinch bends only its last
+  span. The 15° cube's volume moves by 4e-8 with its crossing built.
+
 - **The cube tumbling 15° is built** (#942 T1d-cube, `swept::general`, `boolean`): a fan's runs are
   found before the bearers are met, and two fans' branches beside a shared rail are traced on each
   run's own wall (traced on the whole wall a fan crossing itself folds over, they ran 1e-5 off both

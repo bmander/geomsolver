@@ -32,7 +32,7 @@ fn a_cube_tumbling_fifteen_degrees_is_built_by_the_general_road() {
     let built = gcs_core::brep::swept::closed::closed(&cube,&path,roll,cube.size(),tol).unwrap_or_else(|u| panic!("{u:?}"));
     built.check(tol).unwrap();
     let v = gcs_core::brep::props::volume(&built);
-    assert!((v-3.4739277944468).abs() <= 1e-9,"{v}");
+    assert!((v-3.4739276576959).abs() <= 1e-9,"{v}");
     crate::swept_closed::agrees_over(&built,&cube,&path,roll);
 }
 
@@ -157,24 +157,36 @@ fn a_refused_trim_replays_from_its_dump_to_the_same_refusal() {
     assert!(why.contains("a meeting the trim was not given"),"{why}");
 }
 
-/// **The bench's tumbling cube's refused trim replays from its dump alike** (#942 F5's gate): the
-/// cube tumbling 75° either way, its candidates taken 17 s to make, refused in its trim, gives the
-/// same refusal run again from the files in a fraction of that. Refused by name since #942 F2 where
-/// its edge 5's fan passed back through itself, a meeting of the fan with itself that no given
-/// meeting of two surfaces lays; since #942 T1d-cube that fan is cut into two runs, two candidates
-/// whose crossing is given, and the trim gets past it. Two other fans' second crossing beside their
-/// shared rail, once traced past the corner they touch at and left hanging in a face, is ended
-/// there (`general::ended_on_rails`); the branches beside rails are traced on each run's own wall,
-/// and the Boolean keeps a given span it once read as off both runs' patches. The trim now builds a
-/// solid, refused by its check: a loop of a face on edge 5's fan breaks in its parameters by 6.8e-7
-/// at a rail's piece 3e-6 long beside the run's end.
+/// **The bench's tumbling cube's trim replays from its dump alike** (#942 F5's gate): the cube
+/// tumbling 75° either way, its candidates taken some seconds to make, gives the same solid, to the
+/// bit, trimmed again from the files — its fans cut into runs, each a wall restricted to its
+/// stretches, and every wall written with the number it is shared by. Refused by name from #942 F2
+/// until #942 T1d-cube built it.
 #[test]
-#[cfg_attr(not(feature = "slow"),ignore = "slow tier, 40 s: the bench's tumbling cube's candidates made, then its trim twice")]
-fn the_bench_tumbling_cubes_refused_trim_replays_from_its_dump_alike() {
-    let why = replayed_alike(&cube_trimming(75.),"cube-75-dump");
-    // (no fan passing back through itself any more: its runs' crossing given; nor a branch beside a
-    // rail left hanging, nor the boundary open along a rail, #942 T1d-cube)
-    assert!(why.contains("breaks in parameters") && !why.contains("passing back through itself"),"{why}");
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, 50 s: the bench's tumbling cube's candidates made, then its trim twice")]
+fn the_bench_tumbling_cubes_trim_replays_from_its_dump_alike() {
+    let what = replayed_alike(&cube_trimming(75.),"cube-75-dump");
+    assert!(what.starts_with("built: "),"{what}");
+}
+
+/// **The bench's cube tumbling 75° either way is built by the general road** (#942 T1d-cube): two of
+/// its edges' fans pass back through themselves, each cut into runs, and the runs' crossing is built
+/// from the pinch it is born at (`general::handle`), not traced toward it; the walls' feet are read by
+/// a bounded Levenberg–Marquardt from the nearest few of a grid (`family::Sheet::newton`,
+/// `Sheet::inverse`). Held to membership through its box (a count of 40000 points gives 11.029 ±
+/// 0.072 against its 11.0993).
+#[test]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, 35 s: the bench's tumbling cube built and read at points")]
+fn the_bench_cube_tumbling_75_degrees_is_built_by_the_general_road() {
+    let cube = cube();
+    let roll = [-75f64.to_radians(),75f64.to_radians()];
+    let tol = gcs_core::brep::geom::tolerance(cube.size());
+    let path = tumble();
+    let built = gcs_core::brep::swept::closed::closed(&cube,&path,roll,cube.size(),tol).unwrap_or_else(|u| panic!("{u:?}"));
+    built.check(tol).unwrap();
+    let v = gcs_core::brep::props::volume(&built);
+    assert!((v-11.099312090481495).abs() <= 1e-8,"{v}");
+    crate::swept_closed::agrees_over(&built,&cube,&path,roll);
 }
 
 /// **A meeting left out of what the trim is given is completed from its witness** (#942 F2's gate):

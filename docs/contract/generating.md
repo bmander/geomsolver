@@ -2020,10 +2020,32 @@ where one point stood within the run. **The Boolean keeps a given span it cannot
 span's middle on either run fall on its other fold, 4.5e-4 off, and the span was dropped from both
 faces. The cube tumbled 15° is built (`swept_general`'s gate, held to membership through its box: a
 count of 40000 points gives 3.463 ± 0.018 against its 3.4739).
-**Not yet built**: the bench's 75° cube is trimmed into a solid its check refuses, a loop of a face
-on edge 5's fan breaking in its parameters by 6.8e-7 at a rail's piece 3e-6 long beside the run's
-end; the cube tumbled 10° and 12° is refused in its trim, a piece the boundary at one point and off
-it at another (candidate 6 near `(2.99, 0.77, 2.59)`), with no fan crossing itself. **A ring's fold pair born partway**
+**A fan's crossing with itself is built from the pinch it is born at** (#942 T1d-cube,
+`general::pinches`, `general::handle`): where two runs of a fan share a rim, the fan's sheet is
+singular on it at each point its rate across the rim (`Sₛ` less its part along the rim) turns over
+— a pinch, the instant the edge's two faces' contacts reach it together, where the road cuts its
+stretches, so the runs' corner there. About it the sheet is a Whitney umbrella: with `Sₛ = λ Sᵤ`
+there, the points `(u_p ± λt, at ∓ t)`, one on each run, meet to the third order, and the crossing
+is the pairs `X(u₁, at − t) = X(u₂, s₂)`, each solved by Newton from the last, marched out in `t`
+until a run's span or the edge ends, interpolated from the corner and refined until it lies within
+half the tolerance of the pairs solved between. Traced toward the pinch instead, the runs meeting
+ever more shallowly there, the crossing lost itself on the rim they share (the 15° cube: its edge
+11's crossing wandered 2e-3 along the rim either way of its pinch); a branch traced to a pinch is
+carried onto it (`ended_at_pinch`, an end lying on the rim carried to the nearest pinch along it)
+and given no more where the pinch's crossing is built. **A wall's foot** (`family::Sheet::newton`,
+`Sheet::inverse`): Levenberg–Marquardt over the wall's domain, each step taken only where it comes
+nearer, one leaving the domain held at its bound and the other parameter stepped alone along it —
+beside a pinch the wall's two derivatives all but parallel, a full Gauss–Newton step ran along the
+way the wall barely moves, onto a run's rim, and stalled there 1.4e-6 off a point lying on the
+wall; the last foot found trusted only where it settles on the point itself, to the rounding, and
+otherwise the nearest four of a grid each settled and the nearest kept (the 75° cube's edge 5 fan
+passes within 5e-3 of itself, a foot from the last one settled on its other layer, and a face was
+kept facing the wrong way). A curve on a face read by its inverse takes the chord of its feet for
+its rate where the face's two derivatives are parallel (`topo::inverse_derivative`: the volume
+read NaN at a pinch). The bench's 75° cube is built (`swept_general`'s slow gate, held to
+membership: a count of 40000 points gives 11.029 ± 0.072 against its 11.0993). **Not yet built**:
+the cube tumbled 10° and 12° is refused in its trim, a piece the boundary at one point and off it at
+another (candidate 6 near `(2.99, 0.77, 2.59)`), with no fan crossing itself. **A ring's fold pair born partway**
 (`brep::swept::rings`): a pair narrower than its band read by its least `s''` along the band, on the
 curve's own branch; the roll cut where the contact changes shape (`rings::changes`), each stretch
 fitted alone, its tubes sewn across the cuts and trimmed; a sheet refused as folding only where it
