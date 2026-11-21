@@ -400,6 +400,8 @@ fn body(n: &Body,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,f
     let mut solid = built.get(&n.stock).ok_or("recipe: `stock` not built before its user")?.clone();
     // what each step knows of the faces it hands the next (`boolean::Known`, #589)
     let mut known: Option<super::boolean::Known> = None;
+    // the rounds and chamfers applied so far, for where one leaves the body touching itself
+    let mut late: Vec<&Brep> = Vec::new();
     for ((key,list),op) in n.sets().into_iter().zip([Op::Union,Op::Cut,Op::Common,Op::Union,Op::Cut]) {
         // the late sets (fills, then cuts) are what reads the faces the rest make
         let written = !key.ends_with("_late");
@@ -426,10 +428,49 @@ fn body(n: &Body,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,f
                     _ => e.saying(|e| format!("{key} {name}: {e}")),
                 }
             })?;
+            if !written {
+                if let Some(why) = touching_alone(&solid,&s,&late) {
+                    return Err(KernelError::new(Kind::NotManifold,if name.is_empty() { format!("{key}: {why}") }
+                        else { format!("{key} {name}: {why}") }));
+                }
+                late.push(operand);
+            }
             (solid,known) = (s,Some(k));
         }
     }
     Ok(solid)
+}
+
+/// **A round or a chamfer leaves no body touching itself alone** (#996 item 4): where `after`, the
+/// body `before` with a round or a chamfer applied, touches itself along a line it did not
+/// before (`Brep::self_touching`: the Boolean holds such a line twice, `Brep::unpinched`), and no
+/// round or chamfer applied before it (`late`) has a face through that line, the line is between
+/// this one's material and the body's own: no reading of rounds of separate statements against
+/// each other makes it (#218, which the export says at the vertex), and no manifold solid is
+/// that, so it is refused here, at the statement, rather than built and handed on to a `--where`,
+/// a later Boolean or round, or an export.  What it says.  Read only where the line is new, so a
+/// body that touches itself already is the statement's that made it so.  Cheap: the lines are a
+/// pass over the edges, and an earlier piece's surfaces are asked only at a new line's middle.
+fn touching_alone(before: &Brep,after: &Brep,late: &[&Brep]) -> Option<String> {
+    use crate::util::space::{distance,scale,add};
+    let tol = 1e-9*after.size().max(1.);
+    let lines = after.self_touching(tol);
+    if lines.is_empty() { return None }
+    let had = before.self_touching(tol);
+    let same = |[a,b]: [V;2],[c,d]: [V;2]| distance(a,c).max(distance(b,d)) <= 1e3*tol
+        || distance(a,d).max(distance(b,c)) <= 1e3*tol;
+    // through a face of `b` (its surface there, within its box)
+    let through = |b: &Brep,p: V| {
+        let (lo,hi) = b.bounds();
+        let near = 1e3*tol;
+        (0..3).all(|k| p[k] >= lo[k]-near && p[k] <= hi[k]+near)
+            && b.faces.iter().any(|f| distance(f.surface.point(f.surface.inverse(p)),p) <= near)
+    };
+    let [a,b] = lines.into_iter().find(|&l| !had.iter().any(|&h| same(l,h))
+        && !late.iter().any(|&o| through(o,scale(add(l[0],l[1]),0.5))))?;
+    Some(format!("it leaves the solid touching itself along a line from [{:.4}, {:.4}, {:.4}] to [{:.4}, {:.4}, {:.4}] mm, \
+        where its material, read off the body as its other terms leave it, meets the body's own and no other round or \
+        chamfer: no manifold solid is that, and the round or chamfer is not built so",a[0],a[1],a[2],b[0],b[1],b[2]))
 }
 
 /// The recipe's root, built, each face named by its node (`NAMED`): a primitive's by the node's

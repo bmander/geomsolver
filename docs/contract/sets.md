@@ -485,7 +485,8 @@ patches of the faces `M` is on the surfaces of is read as `d(p, E) − d(p, rest
 nearest point when off `E`, and where `E`'s run ends), the same points with a negative inside.
 `ends` is `max σ·side` over the faces at each end of the run (σ the side it runs on), a face
 carrying one of the run's on across a tangent seam none (`BodyFaces::continues`), nor one whose
-surface the run itself goes across (`BodyFaces::goes_across`: no side of it holds the run), nor a
+surface the run itself goes across (`BodyFaces::goes_across`: no side of it holds the run), nor one
+whose surface holds the run's edge there (a face along the run, its patch past the end, #996), nor a
 plane turning back over it at a reflex corner of less than a right angle — the run ends there
 square — and with them where an edge a run-out at that end runs along ends, a face or the plane
 square to it (`BodyFaces::end_faces`, `faces::EndBy`, #952, [rounds.md](rounds.md)); a closed run
