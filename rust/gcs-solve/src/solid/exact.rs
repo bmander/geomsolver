@@ -79,7 +79,81 @@ impl Exact {
 pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
     let mm = cad::millimetres(sk);
     let origin = frame_origin(sk, si, REPORT_UNIT);
-    let recipe = Recipe::read(&cad::recipe_about(sk, si, origin.map(|x| x * mm))?)?;
+    let recipe = cad::recipe_about(sk, si, origin.map(|x| x * mm))?;
+    let (mut built, leading) = nodes(sk, si, &recipe, origin, None)?;
+    let brep = built.remove(&recipe.root).ok_or("recipe: no root")?;
+    Ok(named(brep, mm, origin, leading))
+}
+
+/// **Solid `si`'s written terms, built where it is** (#961): the nodes its root body's stock,
+/// unions, cuts and commons need — what reads its faces (a round's fill and cut) left unbuilt —
+/// each as `build` builds it about `si`'s origin (millimetres), by the node's id: what a reading
+/// of the body's terms against one another classifies, with no Boolean of the body made.  Where
+/// a needed node reads others no walk here lists, every node but the root is built.
+pub(crate) fn operands(sk: &Sketch, si: usize) -> Result<(Recipe, BTreeMap<i64, Brep>), String> {
+    use crate::brep::recipe::Node;
+    let mm = cad::millimetres(sk);
+    let origin = frame_origin(sk, si, REPORT_UNIT);
+    let recipe = cad::recipe_of_terms(sk, si, origin.map(|x| x * mm))?;
+    let of: BTreeMap<i64, &Node> = recipe.nodes.iter().map(|n| (n.id, &n.node)).collect();
+    let mut wanted: Option<BTreeSet<i64>> = match of.get(&recipe.root) {
+        Some(Node::Body(b)) => Some(std::iter::once(b.stock)
+            .chain(b.on.iter().chain(&b.cut).chain(&b.bound).copied()).collect()),
+        _ => None,
+    };
+    // every node those read, all the way down
+    let mut pending: Vec<i64> = wanted.iter().flatten().copied().collect();
+    while let (Some(id), Some(w)) = (pending.pop(), wanted.as_mut()) {
+        // a body is built as its own (`nodes`), reading nothing here
+        match of.get(&id).filter(|n| !matches!(n, Node::Body(_))).map(|n| reads(n)) {
+            Some(Some(more)) => pending.extend(more.into_iter().filter(|m| w.insert(*m))),
+            Some(None) => wanted = None,
+            None => {}
+        }
+    }
+    let wanted =
+        wanted.unwrap_or_else(|| of.keys().copied().filter(|&id| id != recipe.root).collect());
+    let (built, _) = nodes(sk, si, &recipe, origin, Some(&wanted))?;
+    Ok((recipe, built))
+}
+
+/// The nodes node `n` reads as it is built, where this walk knows them: none for one of a
+/// profile, points or a family, its sources for a placement, a half-space or a prism through
+/// everything, its terms for a body; `None` for a lowered region, whose pieces read the body.
+fn reads(n: &crate::brep::recipe::Node) -> Option<Vec<i64>> {
+    use crate::brep::recipe::Node;
+    let all = |pieces: &mut dyn Iterator<Item = &Node>| -> Option<Vec<i64>> {
+        let mut out = Vec::new();
+        for p in pieces {
+            out.extend(reads(p)?);
+        }
+        Some(out)
+    };
+    Some(match n {
+        Node::Prism { .. } | Node::Revolve { .. } | Node::Hull { .. } | Node::Sewn { .. }
+        | Node::Canal { .. } | Node::Family(_) | Node::Carried { .. } => Vec::new(),
+        Node::Placed { source, .. } => vec![*source],
+        Node::Through { uses, .. } => uses.iter().flat_map(|u| u.sources.iter().copied()).collect(),
+        Node::Half { sources, .. } => sources.clone(),
+        Node::Body(b) => std::iter::once(&b.stock).chain(b.sets().into_iter().flat_map(|(_, l)| l))
+            .copied().collect(),
+        Node::Grown { body, pieces } => {
+            let mut out = all(&mut pieces.iter())?;
+            out.push(*body);
+            out
+        }
+        Node::Region(kept) => all(&mut kept.iter().map(|k| &k.node))?,
+        Node::Glued(pieces) => all(&mut pieces.iter())?,
+        Node::Lowered(_) => return None,
+    })
+}
+
+/// `recipe`'s nodes built about `origin` (model units) for solid `si` — those of `only` where it
+/// says (the root then not among them), else every one — and the faces whose facets lead.
+fn nodes(sk: &Sketch, si: usize, recipe: &Recipe, origin: [f64; 3],
+         only: Option<&BTreeSet<i64>>)
+    -> Result<(BTreeMap<i64, Brep>, BTreeSet<String>), String> {
+    let mm = cad::millimetres(sk);
     // the rounding of coordinates read where the solid stands, before the shift: a few units in
     // the last place of the largest
     let floor = 16.0 * f64::EPSILON * origin.iter().fold(0.0f64, |m, x| m.max(x.abs())) * mm;
@@ -89,6 +163,9 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
     let names: BTreeMap<i64, String> = recipe.nodes.iter().map(|n| (n.id, n.called())).collect();
     for n in &recipe.nodes {
         let id = n.id;
+        if only.is_some_and(|w| !w.contains(&id) || id == recipe.root) {
+            continue;
+        }
         // an operand of one binding with others is its representative's B-rep, built once and
         // placed (#566), moved into this one's place; its faces are named already.  One of this
         // solid's own instance is read where this one is built, its preimage (#578); a mirrored
@@ -96,12 +173,15 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
         let bound = |i: usize| sk.solids[i].binding.as_ref();
         let own = bound(id as usize).zip(bound(si)).is_some_and(|(a, b)| a.at == b.at);
         let mirrored = bound(id as usize).is_some_and(|b| b.mirror.is_some());
+        // and where only some are asked for (`operands`), a body among them is its own build,
+        // remembered (`Sketch::exact_solid`): what reads a term of a body reads it once
+        let body = only.is_some() && matches!(n.node, crate::brep::recipe::Node::Body(_));
         let leaf = if id as usize == si {
             None
         } else if own {
-            sk.shared(id as usize).then(|| sk.exact_preimage(id as usize))
+            (sk.shared(id as usize) || body).then(|| sk.exact_preimage(id as usize))
         } else {
-            (sk.shared(id as usize) || mirrored).then(|| sk.exact_solid(id as usize))
+            (sk.shared(id as usize) || mirrored || body).then(|| sk.exact_solid(id as usize))
         };
         if let Some(Ok(x)) = leaf {
             let t = std::array::from_fn(|k| (x.origin[k] - origin[k]) * mm);
@@ -140,8 +220,7 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
         }
         built.insert(id, b);
     }
-    let brep = built.remove(&recipe.root).ok_or("recipe: no root")?;
-    Ok(named(brep, mm, origin, leading))
+    Ok((built, leading))
 }
 
 /// A B-rep whose faces a build named in two halves (`brep::recipe::NAMED`: a recipe's, a swept body's), as an

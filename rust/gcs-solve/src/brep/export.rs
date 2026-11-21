@@ -142,9 +142,13 @@ fn own(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,mirrored:
     let tol = 1e-9*solid.size().max(1.);
     solid.check(10.*tol).map_err(|e| ExportRefusal::at(Stage::Blank,format!("the built boundary is invalid: {e}")))?;
     if let Some([a,b]) = solid.self_touching(tol).first() {
-        return Err(ExportRefusal::at(Stage::Blank,format!("the solid touches itself along a line from [{:.4}, {:.4}, {:.4}] to \
-            [{:.4}, {:.4}, {:.4}] mm (two of its pieces meet there and nowhere else near, as rounds of separate statements leave \
-            them where each reads the body before the other): no manifold file describes it",a[0],a[1],a[2],b[0],b[1],b[2])))
+        let line = format!("the solid touches itself along a line from [{:.4}, {:.4}, {:.4}] to [{:.4}, {:.4}, {:.4}] mm",
+            a[0],a[1],a[2],b[0],b[1],b[2]);
+        return Err(ExportRefusal::at(Stage::Blank,match mixed_vertex(sk,body,[*a,*b]) {
+            Some(why) => format!("{line}: {why}"),
+            None => format!("{line} (two of its pieces meet there and nowhere else near, as rounds of separate statements \
+                leave them where each reads the body before the other): no manifold file describes it"),
+        }))
     }
     if let Some(p) = solid.pinches().first() {
         return Err(ExportRefusal::at(Stage::Blank,format!("the solid pinches to a point at [{:.4}, {:.4}, {:.4}] mm (two of its \
@@ -153,6 +157,53 @@ fn own(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,mirrored:
     (say.stage)(&format!("built the solid by the Rust kernel: {:.6} mm³, {} faces, {} edges ({:?})",super::props::volume(&solid),
         solid.faces.len(),solid.edges.len(),started.elapsed()));
     Ok(Exact {solid,pattern:None,indexed:None,swept:false,emptied:None})
+}
+
+/// **Where the solid touches itself at a vertex of edges of both turns** (#962): the line `ends`
+/// (millimetres) starting at a vertex of the body's faces as its rounds read them (`faces::cached`)
+/// where convex and concave edges meet, said by the faces there in the body's names for them, the
+/// edge alone in its turn, and what to write: that edge rounded by a statement of its own, the
+/// others on a solid of the body it leaves.  `None` where the line starts at no such vertex.
+fn mixed_vertex(sk: &Sketch,body: usize,ends: [[f64;3];2]) -> Option<String> {
+    let faces = crate::solid::faces::cached(sk,body).ok()?;
+    let mm = faces.brep().1;
+    let near = ends.map(|p| p.map(|x| x/mm));
+    let size = near.iter().map(|p| crate::space::norm(*p)).fold(1.,f64::max);
+    let (at,edges) = faces.mixed_vertex(&near,1e-6*size)?;
+    let path = |fi: usize| format!("{}.{}",sk.solid_name(body),faces.paths()[fi].text());
+    let name = |fi: usize| format!("`{}`",path(fi));
+    let mut all: Vec<usize> = edges.iter().flat_map(|(f,_)| *f).collect();
+    all.sort_unstable();
+    all.dedup();
+    if all.is_empty() {
+        return None;
+    }
+    let listed = crate::vocab::all_of(&all.iter().map(|&f| name(f)).collect::<Vec<_>>());
+    let turn = |convex: bool| if convex { "convex" } else { "concave" };
+    let said: Vec<String> = edges.iter().map(|([x,y],c)| format!("{} and {} in a {} edge",name(*x),name(*y),turn(*c))).collect();
+    let convex = edges.iter().filter(|e| e.1).count();
+    let lone = match (convex,edges.len()-convex) { (1,_) => edges.iter().find(|e| e.1),(_,1) => edges.iter().find(|e| !e.1),_ => None };
+    let first = lone.map_or("…".to_string(),|([x,y],_)| format!("{} round(r: …) {}",path(*x),path(*y)));
+    let whole = sk.solid_name(body);
+    // a chamfer's flats are no tangent chain: a second statement over the body the first leaves
+    // would chamfer the first one's flat against its own faces again
+    let flat = crate::solid::faces::readers_of(sk,body).into_iter().any(|r| match &sk.solids[r].def {
+        crate::model::SolidDef::Region {terms,..} =>
+            crate::solid::lowering::face_name(sk,terms) == Some("flat"),
+        _ => false,
+    });
+    let write = if flat {
+        "A chamfer of every edge at such a vertex is not said by the words yet: chamfer the edges either side of it by \
+         statements that leave one of them out (picking the edges by the faces they lie between)".to_string()
+    } else {
+        format!("Round the edge alone in its turn first, by a statement of its own, named (`inside := {first}`, or every edge among the \
+            faces of the step, the pocket or the boss it is an edge of), and every edge on a solid of the body that leaves \
+            (`whole := solid({whole})`, then `round(r: …) whole`): each edge's round then goes on round the first one's, \
+            tangent")
+    };
+    Some(format!("at [{:.4}, {:.4}, {:.4}] edges of both turns meet where {listed} do ({}), and a round or a chamfer of \
+        each, read off the body as its other terms leave it, takes or fills it before the others: their material touches \
+        along that line, and no manifold file describes it. {write}",at[0]*mm,at[1]*mm,at[2]*mm,said.join("; ")))
 }
 
 /// Whether solid `body` is a mirrored instance's, or reaches one among its operands (#578).
@@ -248,11 +299,25 @@ fn emptied(sk: &Sketch,body: usize) -> ExportRefusal {
     empty(&sk.solid_name(body),"it leaves no material")
 }
 
+/// **What a STEP file is written to** (#961): the uncertainty it states and how near its fitted
+/// curves stand to the exact ones (`step::Fit`). A tolerance stated (`--tolerance`) gives the file
+/// a tenth of the share the STL's sag does not use, and its curves half of that, each face's trims
+/// within it of the exact meeting on that face: the file is the smaller for the licence. No
+/// tolerance stated is no licence: the file states the gross 1e-4 mm a reader may take two points
+/// to be one within, and its curves are held `Fit::Exact`, as near as the kernel's own fits.
+pub fn step_accuracy(tolerance: Option<Tolerance>) -> (f64,super::step::Fit) {
+    match tolerance {
+        Some(t) => { let uncertainty = t.deflection()*0.1; (uncertainty,super::step::Fit::stated(uncertainty)) }
+        None => (1e-4,super::step::Fit::Exact),
+    }
+}
+
 /// The STEP file of a built solid, parsed back and held to it (every reference, the topology's
 /// counts, units, and each face's surface and its numbers), with what the check counted.
 pub fn step(exact: &Exact,name: &str,tolerance: Option<Tolerance>,say: &Say) -> Result<String,ExportRefusal> {
     let started = crate::clock::Instant::now();
-    let text = super::step::write(&exact.solid,name,tolerance.map_or(1e-4,|t| t.deflection()*0.1)).at(Stage::Step)?;
+    let (uncertainty,fit) = step_accuracy(tolerance);
+    let text = super::step::write(&exact.solid,name,uncertainty,fit).at(Stage::Step)?;
     let verified = super::step_check::verify(&text,&super::step_check::Solid::of(&exact.solid))
         .map_err(|e| ExportRefusal::at(Stage::Step,format!("the STEP file does not describe the solid: {e}")))?;
     (say.stage)(&format!("the STEP output: {} entities; {} faces, {} edges and {} vertices, each the solid's ({:?})",
@@ -341,7 +406,8 @@ pub fn assembly(sk: &Sketch,objects: &[usize],name: &str,tolerance: Option<Toler
 /// solid, and every use of a product where the assembly places it (`step_check::verify_assembly`).
 pub fn assembly_step(a: &super::step::Assembly,name: &str,tolerance: Option<Tolerance>,say: &Say) -> Result<String,ExportRefusal> {
     let started = crate::clock::Instant::now();
-    let text = super::step::write_assembly(a,name,tolerance.map_or(1e-4,|t| t.deflection()*0.1)).at(Stage::Step)?;
+    let (uncertainty,fit) = step_accuracy(tolerance);
+    let text = super::step::write_assembly(a,name,uncertainty,fit).at(Stage::Step)?;
     let verified = super::step_check::verify_assembly(&text,&super::step_check::Structure::of(a))
         .map_err(|e| ExportRefusal::at(Stage::Step,format!("the STEP file does not describe the assembly: {e}")))?;
     (say.stage)(&format!("the STEP output: {} entities; {} products and {} uses, each the assembly's; {} faces, {} edges and {} vertices, \
@@ -744,7 +810,7 @@ impl Build {
     fn new(sk: &Sketch,asked: usize,part: bool) -> Result<Build,ExportRefusal> {
         let build = |body,state,recipe,moved,parts| Build {asked,body,recipe,state,done:0,moved,enveloped:false,parts,part,reads:Vec::new(),
             lowered:None};
-        let none = || cad::StaticRecipe {recipe:crate::json::Json::Null,sweeps:Vec::new()};
+        let none = cad::StaticRecipe::default;
         // a body no sweep reaches is built as the export builds it, a stage, then meshed
         if !cad::contains_sweep(sk,asked) { return Ok(build(asked,State::Static,none(),None,Vec::new())) }
         // a placement of a swept body (`x in f`): the body it places, built and moved (#619)

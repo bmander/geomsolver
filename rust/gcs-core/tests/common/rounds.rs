@@ -69,6 +69,9 @@ pub fn root_ring(big: f64, r: f64) -> f64 {
 /// one `root_ring` turns.
 pub fn square_run(r: f64) -> f64 { (1.0 - PI / 4.0) * r * r }
 
+/// How far in from each face the centroid of a round's section stands (`square_run`'s).
+pub fn inset(r: f64) -> f64 { (10.0 - 3.0 * PI) / (3.0 * (4.0 - PI)) * r }
+
 /// The section beside a cylinder of radius `big` whose axis lies in a plane, where the ball of
 /// radius `r` touches both: the triangle of the axis, the plane's touch and the ball's centre, less
 /// the ball's sector and the cylinder's.
@@ -105,6 +108,31 @@ pub fn exported(e: &gcs_core::program::Elaborated, name: &str) -> gcs_core::brep
     let stl = export::stl(&e.sketch, body, &exact, None, &say).unwrap();
     gcs_core::mesh::stl_shells(&stl).unwrap();
     exact.solid
+}
+
+/// Document `src` solved with nothing said, and its solid `name` built exactly and exported: its
+/// STEP written, and no face of it thinner than the export's tolerance.  Its volume.
+pub fn exported_volume(src: &str, name: &str) -> f64 {
+    use gcs_core::brep::{export, props, sweep::Say};
+    let e = super::text::solved(src);
+    assert!(e.diags.is_empty(), "{:?}", e.diags);
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    let body = super::ent(&e, name).i();
+    let exact = export::exact(&e.sketch, body, None, None, &say)
+        .unwrap_or_else(|r| panic!("{name}: {r:?}"));
+    if let Some(s) = export::slivers(&e.sketch, body, &exact, None) {
+        panic!("{}", s.message);
+    }
+    export::step(&exact, name, None, &say).unwrap();
+    props::volume(&exact.solid)
+}
+
+/// The export's refusal of solid `name` of `e`, as text.
+pub fn refused(e: &gcs_core::program::Elaborated, name: &str) -> String {
+    use gcs_core::brep::{export, sweep::Say};
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    format!("{:?}", export::exact(&e.sketch, super::ent(e, name).i(), None, None, &say).err()
+        .expect("refused"))
 }
 
 /// How many of a B-rep's faces lie on each kind of surface.

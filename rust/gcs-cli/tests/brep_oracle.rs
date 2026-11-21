@@ -11,7 +11,7 @@ mod native;
 #[allow(dead_code)]
 mod progress;
 use gcs_core::brep::{geom::Surface,props::volume,recipe};
-use gcs_core::json::{object,Json};
+use gcs_core::brep::recipe::Node;
 use gcs_core::space::{cross,norm,sub as minus3};
 use std::collections::BTreeMap;
 
@@ -24,34 +24,33 @@ const CONVERGED: f64 = 1e-9;
 /// plane through its axis: `2π ∬ s dA`, `s` the distance from the axis, by Green's theorem `∮ s²/2
 /// dt` (`t` along the axis), each line's and arc's integral by Gauss–Legendre (a polynomial along a
 /// line, a trigonometric one along an arc).
-fn pappus(n: &Json) -> Option<f64> {
+fn pappus(n: &Node) -> Option<f64> {
+    use gcs_core::brep::recipe::Stroke;
     use gcs_core::space::{add,dot,normalised,scale};
     type V = [f64;3];
-    let v = |j: &Json| -> V { std::array::from_fn(|i| j.arr()[i].as_f64()) };
-    if n.get("kind")?.as_str() != "revolve" || (n.get("angle")?.as_f64().abs()-2.*std::f64::consts::PI).abs() > 1e-12 { return None }
-    let loops = n.get("profile")?.get("loops")?.arr();
+    let Node::Revolve {profile,origin,axis,angle} = n else { return None };
+    if (angle.abs()-2.*std::f64::consts::PI).abs() > 1e-12 { return None }
+    let loops = &profile.loops;
     if loops.len() != 1 { return None }
-    let (o,a) = (v(n.get("origin")?),normalised(v(n.get("axis")?))?);
+    let (o,a) = (*origin,normalised(*axis)?);
     // each piece as a point and its derivative over [0, 1], in the loop's order
     let mut pieces: Vec<Box<dyn Fn(f64) -> (V,V)>> = Vec::new();
     let mut last: Option<V> = None;
-    let entries = loops[0].arr();
+    let entries = &loops[0];
     for (k,e) in entries.iter().enumerate() {
-        match e.get("kind")?.as_str() {
-            "line" => {
-                let (p,q) = (v(e.get("start")?),v(e.get("end")?));
+        match e.shape {
+            Stroke::Line {start:p,end:q} => {
                 let d = minus3(q,p);
                 pieces.push(Box::new(move |u| (add(p,scale(d,u)),d)));
                 last = Some(q);
             }
-            "circle" => {
-                let (c,nn,x,r) = (v(e.get("center")?),v(e.get("normal")?),v(e.get("x_dir")?),e.get("radius")?.as_f64());
+            Stroke::Circle {center:c,normal:nn,x_dir:x,radius:r,angles} => {
                 let y = cross(nn,x);
-                let span = e.get("angles")?.arr();
-                let (a0,a1) = (span[0].as_f64(),span[1].as_f64());
+                let [a0,a1] = angles?;
                 let at = move |th: f64| add(c,add(scale(x,r*th.cos()),scale(y,r*th.sin())));
                 // walked from the end that meets its neighbour
-                let next = entries.get(k+1).or(entries.first()).and_then(|f| f.get("start")).map(&v);
+                let next = entries.get(k+1).or(entries.first())
+                    .and_then(|f| match f.shape { Stroke::Line {start,..} => Some(start),_ => None });
                 let far = |p: V,q: V| { let d = minus3(q,p); dot(d,d) };
                 let from_a0 = match (last,next) {
                     (Some(p),_) => far(at(a0),p) <= far(at(a1),p),
@@ -90,14 +89,14 @@ fn pappus(n: &Json) -> Option<f64> {
 
 /// A body node's volume built operand by operand by the Boolean at a tolerance `k` of its size: its
 /// stock, plus what is `on` it, less what `cut`s it, within what `bound`s it (none late).
-fn rebuilt(n: &Json,ours: &BTreeMap<i64,gcs_core::brep::topo::Brep>,k: f64) -> Result<f64,String> {
+fn rebuilt(n: &Node,ours: &BTreeMap<i64,gcs_core::brep::topo::Brep>,k: f64) -> Result<f64,String> {
     use gcs_core::brep::boolean::{boolean,Op};
-    let ids = |key: &str| n.get(key).map(|l| l.arr().iter().map(|x| x.as_i64()).collect::<Vec<_>>()).unwrap_or_default();
-    if !ids("on_late").is_empty() || !ids("cut_late").is_empty() { return Err("late operands".into()) }
+    let Node::Body(body) = n else { return Err("no body".into()) };
+    if !body.on_late.is_empty() || !body.cut_late.is_empty() { return Err("late operands".into()) }
     let of = |i: i64| ours.get(&i).ok_or_else(|| format!("no operand {i}"));
-    let mut b = of(n.get("stock").ok_or("no stock")?.as_i64())?.clone();
-    for (key,op) in [("on",Op::Union),("cut",Op::Cut),("bound",Op::Common)] {
-        for i in ids(key) {
+    let mut b = of(body.stock)?.clone();
+    for (ids,op) in [(&body.on,Op::Union),(&body.cut,Op::Cut),(&body.bound,Op::Common)] {
+        for &i in ids {
             let other = of(i)?;
             b = boolean(&b,other,op,k*b.size().max(other.size()))?;
         }
@@ -122,28 +121,27 @@ fn every_node_the_kernel_builds_is_occts() {
         gcs_core::solve::solve(&mut sk,gcs_core::solve::SolveOpts::default());
         for root in gcs_core::overview::objects(&sk) {
             let Ok(r) = gcs_core::solid::cad::recipe(&sk,root) else { continue };
-            let root_id = r.get("root").unwrap().as_i64();
-            let nodes = r.get("nodes").unwrap().arr();
+            let root_id = r.root;
+            let nodes = &r.nodes;
+            let names: BTreeMap<i64,String> = nodes.iter().map(|m| (m.id,m.called())).collect();
             let mut ours = BTreeMap::new();
-            for (i,n) in nodes.iter().enumerate() {
-                let id = n.get("id").unwrap().as_i64();
-                let label = format!("{name}: `{}` ({})",n.get("name").unwrap().as_str(),n.get("kind").unwrap().as_str());
-                let names: std::collections::BTreeMap<i64,String> = recipe::Recipe::read(&r).unwrap().nodes.iter().map(|m| (m.id,m.called())).collect();
+            for (i,named) in nodes.iter().enumerate() {
+                let (id,n) = (named.id,&named.node);
+                let label = format!("{name}: `{}` ({})",named.name,n.kind());
                 let b = match recipe::node_named(n,&ours,&names,0.) {
                     Ok(b) => b,
                     // a refusal by name is the kernel saying what it does not build yet
                     Err(err) if err.contains("not built yet") => { refused.push(format!("{label}: {err}")); continue }
-                    Err(err) if n.get("kind").unwrap().as_str() == "body" => { failures.push(format!("{label}: {err}")); continue }
+                    Err(err) if matches!(n,Node::Body(_)) => { failures.push(format!("{label}: {err}")); continue }
                     Err(err) => { *skipped.entry(err).or_default() += 1; continue }
                 };
                 let tol = 1e-9*b.size().max(1.);
                 if let Err(err) = b.check(tol*10.) { failures.push(format!("{label}: {err}")); continue }
-                let sub = object([("schema",1.into()),("units","mm".into()),("root",id.into()),
-                    ("nodes",Json::Arr(nodes[..=i].to_vec()))]);
+                let sub = recipe::Recipe {root:id,nodes:nodes[..=i].to_vec()};
                 let (v,faces) = (volume(&b),b.faces.len());
                 // OCCT builds no face family (#243 L10): for one (and what is built of it) the faceted
                 // kernel is the reference
-                let theirs = match session.construct(&sub) {
+                let theirs = match session.built(&sub) {
                     Ok(t) => Some(t),
                     Err(err) if err.contains("face family") => { eprintln!("{label}: {v:.9} mm³ (OCCT builds no face families)"); None }
                     // nor a lowered round (`tests/fillet_oracle.rs` holds those to OCCT's fillet)
@@ -162,9 +160,8 @@ fn every_node_the_kernel_builds_is_occts() {
                 // about a spline face, takes from its poles, where this kernel samples the face: the
                 // prism's depth is then a little different and nothing cut by it is
                 let swept = |b: &gcs_core::brep::topo::Brep| b.faces.iter().any(|f| matches!(f.surface,Surface::Extrusion(..) | Surface::Revolution(..)));
-                let through_splines = n.get("kind").unwrap().as_str() == "through"
-                    && n.get("uses").unwrap().arr().iter().flat_map(|u| u.get("sources").unwrap().arr())
-                        .any(|s| ours.get(&s.as_i64()).is_some_and(swept));
+                let through_splines = matches!(n,Node::Through {uses,..}
+                    if uses.iter().flat_map(|u| &u.sources).any(|s| ours.get(s).is_some_and(swept)));
                 // OCCT integrates a face swept from a spline (its adaptive rule asked for 1e-9) to a few
                 // parts in a million, where this kernel's Gauss rule is exact on each knot span: on
                 // `solid_tooth` fitted within 1e-7 mm this kernel meets the involute's closed form to
@@ -189,7 +186,7 @@ fn every_node_the_kernel_builds_is_occts() {
                         let [p,q,r] = t.map(|i| m.pts[i as usize]);
                         0.5*norm(cross(minus3(q,p),minus3(r,p)))
                     }).sum::<f64>()).unwrap_or(f64::INFINITY);
-                    let held = n.get("kind").unwrap().as_str() == "body" && edge_tol > DECLARED
+                    let held = matches!(n,Node::Body(_)) && edge_tol > DECLARED
                         && (v-w).abs() <= edge_tol*area
                         && [1e-8,1e-10].iter().all(|&k| rebuilt(n,&ours,k).is_ok_and(|u| ((u-v)/v).abs() < CONVERGED));
                     if !held { failures.push(format!("{label}: volume {v} against OCCT's {w}")); continue }
@@ -230,13 +227,13 @@ fn every_node_the_kernel_builds_is_occts() {
                     }
                 }
                 }
-                let whole = n.get("kind").unwrap().as_str() == "body" || id == root_id;
+                let whole = matches!(n,Node::Body(_)) || id == root_id;
                 if whole && !b.pinches().is_empty() {
                     // a solid touching itself at a point has no manifold file (OCCT's export of one refuses too)
                     refused.push(format!("{label}: pinches at {:?}",b.pinches()[0]));
                 } else if whole {
                     // our STEP, parsed back and checked against our solid face by face
-                    let text = match gcs_core::brep::step::write(&b,"oracle",1e-5) {
+                    let text = match gcs_core::brep::step::write(&b,"oracle",1e-5,gcs_core::brep::step::Fit::Exact) {
                         Ok(text) => text,
                         Err(err) => { failures.push(format!("{label}: not written as STEP: {err}")); continue }
                     };
@@ -314,7 +311,7 @@ fn rational_solids_go_through_occt_and_back() {
         ("ring",revolve(&Profile {names:vec![],origin:[0.;3],normal:xz,loops:vec![vec![spline(arc(&Frame::new([3.,0.,1.],xz,[1.,0.,0.]),1.,[0.,TAU]))]]},[0.;3],[0.,0.,1.],TAU).unwrap(),TAU*3.*PI,true),
     ];
     for (what,b,whole,back) in solids {
-        let text = gcs_core::brep::step::write(&b,what,1e-5).unwrap();
+        let text = gcs_core::brep::step::write(&b,what,1e-5,gcs_core::brep::step::Fit::Exact).unwrap();
         assert!(text.contains("RATIONAL_B_SPLINE_CURVE"),"{what}: nothing rational written");
         let file = std::env::temp_dir().join(format!("solvent-rational-{what}-{}.step",std::process::id()));
         std::fs::write(&file,&text).unwrap();

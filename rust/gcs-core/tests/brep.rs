@@ -225,7 +225,7 @@ fn sewn_holds(b: &gcs_core::brep::topo::Brep,v: f64,area: f64) {
     close(total_area(b),area);
     let m = gcs_core::brep::mesh::mesh(b,1e-3*b.size(),0.1).unwrap();
     assert!((mesh_volume(&m)/v-1.).abs() < 1e-2);
-    let text = gcs_core::brep::step::write(b,"sewn",1e-7).unwrap();
+    let text = gcs_core::brep::step::write(b,"sewn",1e-7,gcs_core::brep::step::Fit::Exact).unwrap();
     gcs_core::brep::step_check::verify(&text,&gcs_core::brep::step_check::Solid::of(b)).unwrap();
 }
 

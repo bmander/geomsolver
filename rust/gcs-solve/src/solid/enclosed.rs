@@ -11,7 +11,7 @@ use super::*;
 use crate::developable::Ruling;
 use crate::model::{Member, RegionShape};
 use crate::brep::recipe::Writer;
-use crate::json::{object, Json};
+use crate::brep::recipe::{Node, SewnPiece};
 use crate::space::{norm, sub};
 use std::rc::Rc;
 
@@ -83,30 +83,27 @@ impl Shell {
     /// apex is, the one way the kernel reads a pole: its stations run along `u` (a fan's corner
     /// the column of one point), but a run ending where the rails meet (`Developable::meeting`)
     /// along `v`, that end the row of one point.
-    pub fn node(&self, sk: &Sketch, w: &Writer) -> Result<Json, String> {
-        let mm = |p: [f64; 3]| w.at(p.map(|x| x * w.scale));
-        let numbers = |k: &[f64]| Json::Arr(k.iter().copied().map(Json::from).collect());
-        let ends = || numbers(&[0.0, 0.0, 1.0, 1.0]);
+    pub fn node(&self, sk: &Sketch, w: &Writer) -> Result<Node, String> {
+        let mm = |p: [f64; 3]| w.point(p);
+        let ends = || vec![0.0, 0.0, 1.0, 1.0];
         let mut pieces = Vec::with_capacity(self.pieces.len());
         for p in &self.pieces {
             match p {
-                Piece::Face { face, name } => pieces.push(object([("kind", "face".into()),
-                    ("profile", super::cad::profile(sk, *face as usize, w)?),
-                    ("face", name.as_str().into())])),
+                Piece::Face { face, name } => pieces.push(SewnPiece::Face {
+                    profile: super::cad::profile(sk, *face as usize, w)?, face: name.clone() }),
                 Piece::Panel { stations, name } => {
                     for (run, pointed) in runs(stations) {
                         let (degree, knots, [ms, ns]) = smooth(run);
-                        let line = |q: &[[f64; 3]]| Json::Arr(q.iter().map(|&q| mm(q)).collect());
+                        let line = |q: &[[f64; 3]]| q.iter().map(|&q| mm(q)).collect::<Vec<_>>();
                         let (du, dv, uknots, vknots, poles) = match pointed {
                             // rows its stations, columns a ruling's two ends
-                            false => (degree, 1, numbers(&knots), ends(), ms.iter().zip(&ns)
-                                .map(|(&m, &n)| Json::Arr(vec![mm(m), mm(n)])).collect()),
+                            false => (degree, 1, knots, ends(), ms.iter().zip(&ns)
+                                .map(|(&m, &n)| vec![mm(m), mm(n)]).collect()),
                             // rows a ruling's two ends, columns its stations
-                            true => (1, degree, ends(), numbers(&knots), vec![line(&ms), line(&ns)]),
+                            true => (1, degree, ends(), knots, vec![line(&ms), line(&ns)]),
                         };
-                        pieces.push(object([("kind", "net".into()), ("du", (du as f64).into()),
-                            ("dv", (dv as f64).into()), ("uknots", uknots), ("vknots", vknots),
-                            ("poles", Json::Arr(poles)), ("face", name.as_str().into())]));
+                        let net = crate::brep::nurbs::Net { du, dv, uknots, vknots, poles, weights: None };
+                        pieces.push(SewnPiece::Net { net, face: name.clone() });
                     }
                 }
             }
@@ -114,7 +111,7 @@ impl Shell {
         // a panel's rail drawn through its stations stands off the rail, and off a face or a
         // panel beside it drawn through other stations, by the chords' sag, `tol` at most
         let tol = (self.tol * w.scale).max(crate::brep::geom::tolerance(1.0));
-        Ok(object([("kind", "sewn".into()), ("pieces", Json::Arr(pieces)), ("tol", tol.into())]))
+        Ok(Node::Sewn { pieces, tol })
     }
 
     /// **The triangles panel `name` is drawn with** (#953): each strip between neighbouring

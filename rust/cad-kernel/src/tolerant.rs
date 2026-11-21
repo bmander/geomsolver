@@ -10,6 +10,11 @@
 //! where that is larger:
 //! - **a point onto a vertex** (`Pool::at`): within `tol` of it, or of any point already merged
 //!   there — so a vertex is where its first point stood, and its tolerance how far the others were;
+//! - **a surface onto a surface** (`meeting::Shared::index_over`, #961): two faces' surfaces within
+//!   `8 tol` of each other over the part of space both faces' boxes hold are one surface, whatever
+//!   angle they lean apart at elsewhere — so two faces bounded by one edge and leaving it one way
+//!   are one face of the complex, and a piece lying on the other's face is on it (its partner,
+//!   read before its place in the other solid);
 //! - **a vertex onto an edge** (`on_stretch`): within `8 tol` of the edge's curve inside its stretch
 //!   and clear of its ends by as much: the edge is cut there;
 //! - **a point onto a meeting** (`on_meeting`): within `8 tol / sin θ` of the curve two surfaces
@@ -46,6 +51,17 @@ pub const LEAST_SINE: f64 = 1e-4;
 /// How far off the curve two surfaces meet in, at an angle whose sine is `sine`, a point within
 /// `tol` of both may stand, and still be a point of it.
 pub fn on_meeting(tol: f64,sine: f64) -> f64 { ON_CURVE*tol/sine.max(LEAST_SINE) }
+
+/// **The least sine of a turn at which two meetings are told apart** (#962): a round tangent to
+/// one face meets a curved face of `radius`, turned `θ` from it, at their corner and again
+/// `2 radius sin θ` on round it, and a point within `tol` of both surfaces is read as on their
+/// meeting as far as `on_meeting(tol, sin θ)` off it either way — so the two meetings are two only
+/// where `radius sin θ` is more than that: `sin² θ > ON_CURVE tol / radius`, or, where that sine
+/// is under `LEAST_SINE`, `sin θ > ON_CURVE tol / (radius LEAST_SINE)`.
+pub fn least_sine_apart(radius: f64,tol: f64) -> f64 {
+    let k = ON_CURVE*tol/radius;
+    if k.sqrt() >= LEAST_SINE { k.sqrt() } else { k/LEAST_SINE }
+}
 
 /// **A vertex onto an edge** (the second rule): the parameter at which the point `p` stands on the
 /// stretch `t` of `c` (a closed curve's read from the stretch's start), where it stands within

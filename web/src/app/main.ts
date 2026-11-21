@@ -1,5 +1,12 @@
-/* The sketcher shell: toolbars, the constraint list, the diagnosis banner and the dialogs.
+/* The sketcher shell: the Words menu and its palette, the constraint list, the diagnosis banner
+ * and the dialogs.
  *
+ *   words     / (or the Words button) opens every word of the language and every command of the
+ *             app: search, or walk the tree by module or by what a word makes.  A word taken up
+ *             is the box above the palette, its statement with a chip per slot — a click on a
+ *             chip arms it, and the drawing then takes only what that slot takes; Enter writes
+ *             it, Esc puts it down.  Drag a word or a command to the palette (or star it) to keep
+ *             it at hand
  *   tools     P point · L line · R rectangle · C circle · A arc (centre, start, end)
  *             3 arc through two ends and a point on it
  *   Esc       stop a DOF animation, then drop the tool's pending points, then put the tool
@@ -42,12 +49,12 @@
  *             result before it is written — and a click back on the first (or Enter) writes it.
  *             ⇧F fillet and ⇧C chamfer the edges selected, or clicked — a face for every edge
  *             of it, a body for every edge of the body — at the size typed
- *   menus     File/Edit/Insert/Solution/Help hold everything that is not a tool or a constraint;
- *             the solver's own switches are behind Solution ▸ Options
+ *   commands  the Words menu's App branch holds every tool and everything File, Edit, View,
+ *             Insert, Solution and Help did; the solver's own switches are Solution ▸ Options
  *
  * Everything below is presentation; the solver, diagnosis, decomposition and root selection
- * all live in core/ and are shared with the test suite.  This file is the wiring: what is on
- * the bars, what the keys do, and what the view calls back into.  The rest of the shell is
+ * all live in core/ and are shared with the test suite.  This file is the wiring: what the menu
+ * lists, what the keys do, and what the view calls back into.  The rest of the shell is
  * next door — `shell` holds the page and the view, `commands` the constraints bar, `dialogs`
  * what the menus open, `lists` the constraints window and the status line, and `dimbox` the
  * number a dimension is edited in. */
@@ -69,13 +76,14 @@ import { bindProgramPanel, goToSource, onSide, openDrawing, openSide, refreshPro
 import { OutlinePane } from './outline.js';
 import { closePanel, openPanel, refresh, refreshPanel, refreshStatus } from './lists.js';
 import {
-  aboutBadge, barConstraints, barTools, canvas, currentConstraint, focusConstraint, hooks, menubar,
-  planeSelect, view, initialExample, initialGithub,
+  canvas, currentConstraint, focusConstraint, hooks, planeSelect, view, initialExample,
+  initialGithub,
 } from './shell.js';
 import {
-  MenuItem, ToolbarButton, addButton, addMenu, addTopic, closeMenus, download, fitBars,
-  judgingLine, openImage, scenarioLine, toast,
+  MenuItem, ToolbarButton, addButton, download, judgingLine, openImage, scenarioLine, toast,
 } from './ui.js';
+import { Command, Words } from './words.js';
+import { WordBox, fitsSelection, hitNamed } from './wordbox.js';
 import { BuildBar, clock } from './build-bar.js';
 import type { Judging } from './claim-judging.js';
 import type { Scenario, ScenarioAnswer } from '../core/program.js';
@@ -85,20 +93,14 @@ import type { ShownKind } from '../core/model.js';
 import { Timeline } from './timeline.js';
 import { SectionBar } from './section-bar.js';
 
-/* -- toolbars ---------------------------------------------------------------- */
+/* -- the tools and commands ------------------------------------------------------ *
+ *
+ * There are no toolbars: every command is in the Words menu (`words.ts`), the drawing tools and
+ * the commands under its App branch beside the language's words, and whichever are wanted at
+ * hand are kept on its palette.  The tables below are what the menu lists and what the keyboard
+ * reads — so the chip and the accelerator stay one string, see ACTION_KEYS. */
 
-const toolButtons = new Map<Tool, HTMLButtonElement>();
-
-/** The buttons follow the view, so Escape backing out of a tool updates them too.  Select is
- *  not a button: it is what the toolbar looks like with nothing pressed, so clicking the
- *  pressed tool puts it down and lands you back there. */
-view.onTool = (t) => {
-  for (const [k, b] of toolButtons) b.setAttribute('aria-pressed', String(k === t));
-};
-/* The element tools, then past a divider what the geometry you drew is *for*, as against the
- * constraints that hold it — all under one head, Elements, on a bar too narrow for them
- * (`fitBar`).  A table like the constraints bar's, so the chip and the accelerator stay one
- * string — see ACTION_KEYS. */
+/* The element tools. */
 const ELEMENT_TOOLS = [
   ['Point', 'point', 'p'], ['Line', 'line', 'l'], ['Rect', 'rect', 'r'],
   ['Circle', 'circle', 'c'], ['Arc', 'arc', 'a'], ['Arc 3-pt', 'arc3', '3'],
@@ -120,11 +122,6 @@ const SOLID_TOOLS = [
   ['Chamfer', 'chamfer', '⇧c', `Cut edges of a solid flat (std's \`chamfer\`): ${EDGES}`],
 ] as [string, Tool, string, string?][];
 const TOOLS = [...ELEMENT_TOOLS, ...SOLID_TOOLS];
-const toolButton = ([label, tool, key, what]: [string, Tool, string, string?]): ToolbarButton => ({
-  label, key, toggle: true,
-  title: `${what ?? ''}Click again to put the tool down and go back to selecting`,
-  onClick: () => view.setTool(view.tool === tool ? 'select' : tool),
-});
 const TOOL_BUTTONS: ToolbarButton[] = [
   { label: 'Construction', key: 'g', onClick: () => view.toggleConstructionSelected(),
     title: 'Draw the selected lines/circles/arcs dashed as reference geometry (they still constrain)' },
@@ -141,14 +138,8 @@ const TOOL_BUTTONS: ToolbarButton[] = [
          + '· square to a plane, through a point or its origin · where two planes meet · with '
          + 'nothing selected, free, square to the plane being drawn on' },
 ];
-/** A head over tools, and past a divider any other buttons; the tools' buttons are the ones
- *  `onTool` presses. */
-const toolTopic = (label: string, tools: [string, Tool, string, string?][],
-                   rest: ToolbarButton[] = []) =>
-  addTopic(barTools, label, [...tools.map(toolButton), ...(rest.length ? [null, ...rest] : [])])
-    .slice(0, tools.length).forEach((b, i) => toolButtons.set(tools[i][1], b));
-toolTopic('Elements', ELEMENT_TOOLS, TOOL_BUTTONS);
-toolTopic('Solids', SOLID_TOOLS, [
+/* What is drawn on an object's face. */
+const SOLID_BUTTONS: ToolbarButton[] = [
   { label: 'Sketch on face', key: 'k',
     onClick: () => {
       const [pick] = view.selectedSolids;
@@ -157,7 +148,7 @@ toolTopic('Solids', SOLID_TOOLS, [
     },
     title: 'Draw on the selected face of a solid: the plane lying there, or a plane written onto '
          + 'it that follows the solid (double-click a face does the same)' },
-]);
+];
 /* The workspace's own button, in its corner: orbit mode, where one finger turns the view — shown
  * only to a finger (`app.css`), since a mouse orbits with its right button; `o` works anywhere. */
 const VIEW_BUTTONS: ToolbarButton[] = [
@@ -173,9 +164,6 @@ const [orbitButton] = VIEW_BUTTONS.map((b) => addButton(
   document.getElementById('view-buttons') as HTMLElement, b));
 /** The Orbit button follows the view, as the tools' do. */
 view.onOrbitMode = (on) => orbitButton.setAttribute('aria-pressed', String(on));
-view.setTool('select');
-addTopic(barConstraints, 'Constraints', CONSTRAINT_BUTTONS);
-fitBars(document.querySelector('header')!, [barTools, barConstraints]);
 
 /* -- menu bar ------------------------------------------------------------------- */
 
@@ -550,9 +538,78 @@ for (const [label, items] of MENUS) {
       action();
     };
   }
-  addMenu(menubar, label, items);
 }
-aboutBadge.addEventListener('click', () => void about());
+
+/* -- the Words menu, its palette and the argument box ------------------------------------ */
+
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+/** Every command of the app, as the menu's App branch lists them: the tools, the commands that
+ *  read the selection, and what the old menus held — each with the key it always had. */
+const COMMANDS: Command[] = [
+  ...TOOLS.map(([label, tool, key, what]): Command => ({
+    id: `tool.${tool}`, label, branch: 'Tools', key,
+    title: `${what ?? ''}Again, or Esc, to put the tool down`,
+    run: () => view.setTool(view.tool === tool ? 'select' : tool),
+    pressed: () => view.tool === tool,
+  })),
+  ...[...TOOL_BUTTONS, ...SOLID_BUTTONS].map((b): Command => ({
+    id: `tool.${slug(b.label)}`, label: b.label, branch: 'Tools', key: b.key, title: b.title,
+    run: b.onClick,
+  })),
+  ...CONSTRAINT_BUTTONS.map((b): Command => ({
+    id: `constrain.${slug(b.label)}`, label: b.label, branch: 'Constrain', key: b.key,
+    title: b.title, run: b.onClick,
+  })),
+  ...VIEW_BUTTONS.map((b): Command => ({
+    id: `view.${slug(b.label)}`, label: b.label, branch: 'View', key: b.key, title: b.title,
+    run: b.onClick, pressed: () => view.orbitMode,
+  })),
+  ...MENUS.flatMap(([branch, items]) => items.flatMap((it): Command[] =>
+    !it || typeof it === 'string' ? [] : [{
+      id: `${slug(branch)}.${slug(it.label)}`, label: it.label, branch, key: it.key,
+      title: it.title, run: it.onClick, checked: it.checked,
+    }])),
+  { id: 'help.about', label: 'About', branch: 'Help', run: () => void about(),
+    title: 'Where this project comes from' },
+];
+
+/** The word in hand, written as its statement with a chip per slot (`wordbox.ts`). */
+const wordBox = new WordBox(document.getElementById('word-box') as HTMLElement, view);
+
+/** What is selected, named as the program names it: `l, m`. */
+function selectionSaid(): string {
+  const hits = [
+    ...view.selected.map((ent) => ({ kind: 'entity' as const, ent })),
+    ...view.selectedSolids.map((pick) => ({ kind: 'solid' as const, pick })),
+  ];
+  return hits.map((h) => hitNamed(view, h)?.name).filter(Boolean).join(', ');
+}
+
+/** **The Words menu** and the palette beside it (`words.ts`): the palette starts with what the
+ *  toolbars held most used, and is the person's from then on. */
+const words = new Words(
+  document.getElementById('words-button') as HTMLButtonElement,
+  document.getElementById('words-menu') as HTMLElement,
+  document.getElementById('palette') as HTMLElement,
+  {
+    words: () => view.doc.lexicon(),
+    fits: (w) => fitsSelection(view, w),
+    selection: selectionSaid,
+    use: (w) => wordBox.start(w),
+  },
+  COMMANDS,
+  ['c:tool.line', 'c:tool.rect', 'c:tool.circle', 'c:tool.arc', 'c:constrain.dimension',
+   'c:constrain.coincident', 'w:tangent', 'w:distance', 'c:tool.extrude', 'c:tool.fillet',
+   'c:edit.undo'],
+);
+/** The palette's tools are pressed as the view holds them: Escape backing out of a tool lets its
+ *  chip up too.  A tool taken up puts a word in hand down. */
+view.onTool = (t) => {
+  if (t !== 'word' && t !== 'select' && wordBox.active) wordBox.cancel();
+  words.refresh();
+};
+view.setTool('select');
+
 
 /* -- keyboard ------------------------------------------------------------------- */
 
@@ -575,15 +632,24 @@ const TOOL_KEYS: Record<string, Tool> =
 /** Every accelerator in the app, read off the buttons and menu items themselves so there is
  *  one list and not two.  The token is the chip the control prints, lowercased: '⇧l', '⌘z'. */
 const ACTION_KEYS = new Map<string, () => void>(
-  [...TOOL_BUTTONS, ...VIEW_BUTTONS, ...CONSTRAINT_BUTTONS, ...MENUS.flatMap(([, items]) => items)]
+  [...TOOL_BUTTONS, ...SOLID_BUTTONS, ...VIEW_BUTTONS, ...CONSTRAINT_BUTTONS,
+   ...MENUS.flatMap(([, items]) => items)]
     .flatMap((b) => (b && typeof b !== 'string' && b.key
       ? [[b.key, b.onClick] as [string, () => void]] : [])));
 
 window.addEventListener('keydown', (e) => {
   const t = e.target as HTMLElement | null;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
+  // a word in hand takes Enter, to write it, and Escape, to put it down
+  if (!drawingActive() && wordBox.handleKey(e)) return;
+  // `/` opens every word and command, as a search box does on a page
+  if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey && !drawingActive()) {
+    e.preventDefault();
+    words.open();
+    return;
+  }
   if (drawingActive()) {
-    if (e.key === 'Escape') closeMenus();
+    if (e.key === 'Escape') words.close();
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p') {
       e.preventDefault(); toggleProgramPanel();
     }
@@ -600,7 +666,10 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   const k = e.key.toLowerCase();
-  if (k === 'escape') { if (!closeChooser() && !closeMenus()) view.cancelTool(); return; }
+  if (k === 'escape') {
+    if (!closeChooser() && !words.close()) view.cancelTool();
+    return;
+  }
   // the curve tools collect as many points as the user wants, and a Boolean as many bodies, so
   // they need a way to say "that is all" — the only tools whose click count is not known
   if (k === 'enter') { e.preventDefault(); view.finishCurve(); return; }
@@ -639,6 +708,7 @@ onWays(goToSource, (row) => {
 });
 view.onHidden = () => outline.paint();
 view.onSelect = () => {
+  words.refresh();
   if (currentConstraint) focusConstraint(null);
   if (!view.selected.length) closePanel();
   showStatementFor();

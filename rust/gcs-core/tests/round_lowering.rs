@@ -11,7 +11,7 @@ use gcs_core::solid::MaterialField;
 use std::f64::consts::PI;
 
 use crate::common::{close, ent, text::solved};
-use crate::common::rounds::{beside_cylinder, exported, kinds, root_ring, square_run};
+use crate::common::rounds::{beside_cylinder, exported, kinds, refused, root_ring, square_run};
 use crate::common::rounds::meridian::{knob_neck, knob_rounded};
 
 /// A block 40 × 24 × 12 drawn on the front plane (x, z), its near face at y = 0, standing 12 deep.
@@ -287,11 +287,9 @@ fn a_run_cut_off_at_a_slant_by_the_face_it_ends_on() {
     // behind move with the rest (a cut's volume cannot tell, its prism past a face cutting air)
     let recipe = gcs_core::solid::cad::recipe(&e.sketch, ent(&e, "block").i()).unwrap();
     let by = [5.0, 7.0, 11.0];
-    let planes = |r: &gcs_core::json::Json| -> Vec<[f64; 3]> {
-        r.get("nodes").unwrap().arr().iter().filter_map(|n| n.get("pieces")).flat_map(|p| p.arr().iter())
-            .filter_map(|p| p.get("within")).flat_map(|w| w.arr().iter())
-            .map(|h| { let a = h.get("at").unwrap().arr(); [a[0].as_f64(), a[1].as_f64(), a[2].as_f64()] })
-            .collect()
+    let planes = |r: &gcs_core::brep::recipe::Recipe| -> Vec<[f64; 3]> {
+        r.nodes.iter().filter_map(|n| match &n.node { gcs_core::brep::recipe::Node::Lowered(l) => Some(l), _ => None })
+            .flat_map(|l| &l.pieces).flat_map(|p| &p.within).map(|&(at, _)| at).collect()
     };
     let about = gcs_core::solid::cad::recipe_about(&e.sketch, ent(&e, "block").i(), by).unwrap();
     let (before, after) = (planes(&recipe), planes(&about));
@@ -552,11 +550,9 @@ fn a_run_cut_off_by_a_post_it_runs_into() {
     // cut off by moves with the rest
     let recipe = gcs_core::solid::cad::recipe(&e.sketch, ent(&e, "stand").i()).unwrap();
     let by = [5.0, 7.0, 11.0];
-    let walls = |r: &gcs_core::json::Json| -> Vec<[f64; 3]> {
-        r.get("nodes").unwrap().arr().iter().filter_map(|n| n.get("pieces")).flat_map(|p| p.arr().iter())
-            .filter_map(|p| p.get("kept")).flat_map(|w| w.arr().iter())
-            .map(|h| { let a = h.get("origin").unwrap().arr(); [a[0].as_f64(), a[1].as_f64(), a[2].as_f64()] })
-            .collect()
+    let walls = |r: &gcs_core::brep::recipe::Recipe| -> Vec<[f64; 3]> {
+        r.nodes.iter().filter_map(|n| match &n.node { gcs_core::brep::recipe::Node::Lowered(l) => Some(l), _ => None })
+            .flat_map(|l| &l.pieces).flat_map(|p| &p.kept).map(|(face, _)| face.frame().o).collect()
     };
     let about = gcs_core::solid::cad::recipe_about(&e.sketch, ent(&e, "stand").i(), by).unwrap();
     let (before, after) = (walls(&recipe), walls(&about));
@@ -1176,12 +1172,6 @@ fn agrees_with_field(e: &Elaborated, name: &str, offset: f64) -> f64 {
     props::volume(b) / exact.mm.powi(3)
 }
 
-/// The export's refusal of solid `name`, as text.
-fn refused(e: &Elaborated, name: &str) -> String {
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    format!("{:?}", export::exact(&e.sketch, ent(e, name).i(), None, None, &say).err().expect("refused"))
-}
-
 /// **A corner of a face in pieces** (#218's 4): `post.sv`'s stand rounded all over. The post
 /// splits the plate's front side in two, so a corner where the plate's top, its front and an end
 /// meet takes the piece of the front standing at that vertex. Where the plate's convex top edge
@@ -1197,7 +1187,8 @@ fn a_corner_of_a_face_in_pieces_is_rounded() {
     lowered(&e);
     assert!(agrees_with_field(&e, "stand", 0.01) > 0.0);
     let why = refused(&e, "stand");
-    assert!(why.contains("touches itself along a line") && why.contains("no manifold file describes it"), "{why}");
+    assert!(why.contains("touches itself along a line") && why.contains("no manifold file describes it")
+        && why.contains("edges of both turns meet where `stand.plate.ab`"), "{why}");
 }
 
 /// **A vertex where convex and concave rounds meet** (#218): `twin.sv`'s bar rounded all over.
@@ -1213,7 +1204,8 @@ fn rounds_meeting_at_a_vertex_of_both_kinds_touch_along_a_line() {
     lowered(&e);
     assert!(agrees_with_field(&e, "bar", 0.01) > 0.0);
     let why = refused(&e, "bar");
-    assert!(why.contains("touches itself along a line") && why.contains("no manifold file describes it"), "{why}");
+    assert!(why.contains("touches itself along a line") && why.contains("no manifold file describes it")
+        && why.contains("in a concave edge") && why.contains("round(r: …) bar.right.small"), "{why}");
 }
 
 /// **A corner where two curved faces meet** (#218's 4): `bores.sv`, a slab drilled twice, the
