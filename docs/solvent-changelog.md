@@ -30,6 +30,21 @@ lying on it are never paired as two faces that meet. A smooth outline turning bo
 with a tab, its uprights rounded) now has its rim rounded to the uprights' own radius, where it
 was refused as leaving out what the field reads.
 
+## [NEXT-blanket-scale]
+
+**A round over a whole body walks its edges, and says so** (#994).  A block over a solid's faces
+whose `when` asks `v meets y` of a face read before it copies only the faces meeting `y`
+(`Walk::adjacent`): `round(r: …) X` walks a copy for each face, each pair of faces that meets and
+each three, its edges and corners, where it walked one for every pair and every three paired with
+an edge — a body of a hundred faces took minutes, and one whose boundary cannot say which faces
+meet passed the expansion's limit.  Nothing it makes changes.  The first such block of a statement
+is said to whoever listens with what it runs over (`` expanded `round(r: 0.5mm) whole` over 10
+faces of `whole`, of which 24 pairs meet and 16 threes meet each other ``, `solventc --progress`),
+and an expansion past the limit says it in its E103 with what to do, rather than only where in
+`std.rounds` it had got to.  A chain of faces on one plane (a top and the caps its pockets'
+fills leave on it) is one condition of a set, so a round on that top no longer costs the cube of
+the pockets.
+
 **[0.228] A drafted corner where an arc meets a side at an angle** (#962). `std.solids.Drafted`
 of a face whose arc meets a line or another arc at an angle, not tangent, is built: the corner
 moves where the moved sides meet, along the conic the side's plane and the arc's cone (or two

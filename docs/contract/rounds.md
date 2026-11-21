@@ -38,7 +38,15 @@ written without `symmetric`.
 round a corner only of three that each meet the other two ([language.md](language.md)), so a body
 whose faces are many — every operand's listed, eaten or not — makes copies for its edges and
 corners, not for the cube of its faces: #625's web cut by four turned spokes lists 28 faces and
-rounds 16 edges and no corner (`tests/meets.rs`).
+rounds 16 edges and no corner (`tests/meets.rs`).  **Nor walks a copy for every pair** (#994):
+a block over faces whose `when` asks `v meets y` copies only the faces meeting `y`
+([language.md](language.md), `Walk::adjacent`), so `round(r: …) X` walks a copy for each face, each
+pair that meets and each three — the body's edges and corners — and what it makes grows with
+them (`tests/blanket.rs`: a prism's round makes as much more for each side added, however many
+it has).  It says what it runs over as it starts (`progress::Work::expand`: `` expanded
+`round(r: 0.5mm) whole` over 10 faces of `whole`, of which 24 pairs meet and 16 threes meet each
+other ``), and the build of the body rounded says which of its terms it has reached on its gauge
+([architecture.md](architecture.md)).
 **Both faces are one body's** (#961, [0.223]): an edge, a corner and the material's angle are
 between faces of one body, so a word over a face of one solid and a face of another is refused
 where `meets` is asked ([language.md](language.md), E103 naming the body both are faces of, the

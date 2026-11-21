@@ -75,6 +75,10 @@ fn out_of_reach(name: &str, vals: &Vals, scope: &Scope) -> Option<(Code, String)
 pub(super) trait Names {
     fn stands(&self, name: &str) -> Option<String>;
     fn faces(&self, name: &str) -> Option<Vec<String>>;
+    /// Whether the face `me` (by what its name stands for) is among those `name` names — `None`
+    /// where `name` names no faces, as `faces`; each face looked up by its name rather than every
+    /// face listed (#994).
+    fn among(&self, me: &str, name: &str) -> Option<bool>;
     /// Whether two faces, each by what its name stands for, share a point (#625): `None` where
     /// either is no face a solid lists, and why not where they are faces of two solids (#961).
     fn meets(&self, a: &str, b: &str) -> Option<Result<bool, String>>;
@@ -165,7 +169,7 @@ fn holds(
         Cond::And(..) | Cond::Or(..) | Cond::Not(..) => unreachable!("`decide` takes a connective"),
         Cond::In(x, y) => {
             let me = stands(x)?;
-            let Some(faces) = names.faces(y) else {
+            let Some(among) = names.among(&me, y) else {
                 if names.stands(y).is_none() && !env.contains_key(y.as_str()) {
                     return Err(nothing(y));
                 }
@@ -174,7 +178,7 @@ fn holds(
                      faces, as `B` is in `A round(r) B`"
                 )));
             };
-            faces.contains(&me)
+            among
         }
         Cond::Meets(x, y) => {
             let (p, q) = (stands(x)?, stands(y)?);
