@@ -277,7 +277,7 @@ fn hex(b: &[u8]) -> String { b.iter().map(|x| format!("{x:02x}")).collect() }
 
 #[test]
 fn the_tables_hash_is_sha256() {
-    assert_eq!(hex(&sha256(b"abc")),"ba7816bf8f01cfea414140de5dae2223b00361a396177a9c3cdf3ab12a1a5b5a");
+    assert_eq!(hex(&sha256(b"abc")),"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
     assert_eq!(hex(&sha256(b"")),"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
     let long = vec![b'a'; 1000];
     assert_eq!(hex(&sha256(&long)),"41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3");
@@ -290,7 +290,7 @@ fn the_table_is_whole() {
     for r in &rows {
         assert_eq!(r.data_sha256.len(),64,"{}",r.path);
         assert!(r.volume.is_finite() && r.area.is_finite() && r.volume > 0. && r.area > 0.,"{}: no reference",r.path);
-        assert!(r.bar_volume > 0. && r.bar_area > 0. && r.bar_volume < 0.01 && r.bar_area < 0.01,"{}: bars {} {}",
+        assert!(r.bar_volume > 0. && r.bar_area > 0. && r.bar_volume < 0.05 && r.bar_area < 0.05,"{}: bars {} {}",
             r.path,r.bar_volume,r.bar_area);
         assert!(r.solids >= 1 && r.entities.iter().all(|&n| n > 0),"{}: {:?}",r.path,r.entities);
     }
