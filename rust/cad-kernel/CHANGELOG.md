@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.20.0] - 2026-11-21
+
 - **A drafted corner where an arc meets a side at an angle is built** (#962 item 8b): `build::offset`
   knew only corners that move along a line as the offset grows, so a draft of an outline where an
   arc meets a line or another arc at a corner was refused ("a curve where a cone meets a plane, not
