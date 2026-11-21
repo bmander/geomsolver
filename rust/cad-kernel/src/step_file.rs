@@ -162,8 +162,14 @@ impl std::error::Error for Error {}
 
 type Parsed<T> = Result<T,Error>;
 
-/// A byte reader over the text up to `end`.
-struct Lexer<'a> { text: &'a str,at: usize,end: usize }
+/// A byte reader over the text up to `end`; `depth` the lists open where it stands.
+struct Lexer<'a> { text: &'a str,at: usize,end: usize,depth: usize }
+
+/// How deep lists may nest: a B-spline surface's weights are a list of lists in a typed parameter
+/// in a complex entity, four deep. Deeper than this is no exchange structure a writer means, and a
+/// parser that followed it would run off its stack (which no `catch_unwind` catches) and so would
+/// the value's drop.
+const DEPTH: usize = 64;
 
 fn keyword_byte(c: u8) -> bool { c.is_ascii_uppercase() || c.is_ascii_digit() || c == b'_' }
 
@@ -218,8 +224,15 @@ impl<'a> Lexer<'a> {
         if self.at == start { return self.fail("an instance number expected") }
         self.text[start..self.at].parse().or_else(|_| { self.at = start; self.fail("an instance number beyond 4294967295") })
     }
-    /// `( value, … )`, the parenthesis already met.
+    /// `( value, … )`, the parenthesis already met; no deeper than `DEPTH`.
     fn values(&mut self) -> Parsed<Vec<Value<'a>>> {
+        if self.depth >= DEPTH { return self.fail(&format!("lists nested deeper than {DEPTH}")) }
+        self.depth += 1;
+        let got = self.items();
+        self.depth -= 1;
+        got
+    }
+    fn items(&mut self) -> Parsed<Vec<Value<'a>>> {
         let mut out = Vec::new();
         if self.peek()? == Some(b')') { self.at += 1; return Ok(out) }
         loop {
@@ -456,7 +469,7 @@ fn plain_end(text: &str) -> Option<usize> {
 /// each, as many at once as there are cores); the answer does not depend on `runs`.
 fn sections(text: &str,runs: usize) -> Parsed<(Header<'_>,Vec<Entity<'_>>)> {
     let bom = if text.starts_with('\u{feff}') { 3 } else { 0 };
-    let mut lx = Lexer {text,at:bom,end:text.len()};
+    let mut lx = Lexer {text,at:bom,end:text.len(),depth:0};
     let header = prologue(&mut lx)?;
     let from = lx.at;
     if let Some(to) = plain_end(text).filter(|&to| to >= from) {
@@ -474,7 +487,7 @@ fn sections(text: &str,runs: usize) -> Parsed<(Header<'_>,Vec<Entity<'_>>)> {
         }
         cuts.push(to);
         cuts.dedup();
-        let parsed = crate::util::par::indices(cuts.len()-1,|r| Lexer {text,at:cuts[r],end:cuts[r+1]}.run());
+        let parsed = crate::util::par::indices(cuts.len()-1,|r| Lexer {text,at:cuts[r],end:cuts[r+1],depth:0}.run());
         if parsed.iter().all(Result::is_ok) {
             return Ok((header,parsed.into_iter().flat_map(Result::unwrap).collect()))
         }
