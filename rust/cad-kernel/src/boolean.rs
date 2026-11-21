@@ -1905,8 +1905,13 @@ impl<'a> Arrangement<'a> {
         // revolution's meridian, an extrusion's section, a sheet) inverts a point off it onto its
         // rim, which a face's place reads as on its boundary (a hyperboloid's rulings run on past
         // the heights it is built over, where a plane holding one meets it)
-        // (planes, cylinders, cones, spheres and tori run on without end, and need no reading)
-        if surfaces.iter().any(|s| s.bounded() && distance(s.point(s.inverse(m)),m) > 1e3*self.tol) { return false }
+        // (planes, cylinders, cones, spheres and tori run on without end, and need no reading; nor
+        // does a given meeting, whose curves lie on both its surfaces as given, #942 T1d-cube: two
+        // runs of one fan crossing itself, given where they cross up to the pinch where that crossing
+        // is born, where the nearest foot of the span's middle on either run fell on its other fold,
+        // 4.5e-4 off, and the span was dropped from both faces)
+        let given = self.shared.given(self.surface_of[&(faces.s[0],faces.f[0])],self.surface_of[&(faces.s[1],faces.f[1])]);
+        if !given && surfaces.iter().any(|s| s.bounded() && distance(s.point(s.inverse(m)),m) > 1e3*self.tol) { return false }
         // where the two only touch (their normals parallel) nothing crosses from one side to the
         // other, and the span is laid all the same: a touch represented (#735)
         true

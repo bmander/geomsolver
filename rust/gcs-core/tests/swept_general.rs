@@ -16,24 +16,24 @@ fn tumble() -> Trajectory {
 /// The cube of edge 1.2 about `(3, 0, 2)`.
 fn cube() -> gcs_core::brep::topo::Brep { crate::brep::block([2.4,-0.6,1.4],[3.6,0.6,2.6]) }
 
-/// **A cube tumbling a short way is built closed** by the general road and judged. Not yet at 15°:
-/// one of its fans passes back through itself and is cut into two runs, their crossing given
-/// (#942 T1d-cube), and the trim then leaves the boundary open along a rail edge, face 4 of candidate
-/// 8 parted by a meeting it was not given.
+/// **A cube tumbling fifteen degrees either way is built by the general road** (#942 T1d-cube): one
+/// of its fans passes back through itself and is cut into two runs, their crossing given, which
+/// ends at the pinch where it is born on the rim the runs share; there the nearest foot of a span's
+/// middle on either run falls on its other fold, and the Boolean once dropped the given span from
+/// both faces as off their patches, the trim then leaving the boundary open along a rail edge. Held
+/// to membership through its box (a membership count of 40000 points gives 3.463 ± 0.018 against
+/// its 3.4739).
 #[test]
-#[ignore = "T1d-cube: the boundary open along a rail edge, a meeting the trim was not given"]
-fn a_cube_tumbling_a_little_is_built_by_the_general_road() {
+fn a_cube_tumbling_fifteen_degrees_is_built_by_the_general_road() {
     let cube = cube();
     let roll = [-15f64.to_radians(),15f64.to_radians()];
     let tol = gcs_core::brep::geom::tolerance(cube.size());
     let path = tumble();
-    let (candidates,given) = gcs_core::brep::swept::general::candidates(&cube,&path,roll,tol).unwrap();
-    let size = cube.size();
-    let trim = gcs_core::brep::swept::trim::Trim {resolution:size/32.,hair:(4.*tol).max(1e-6*size),reach:None};
-    let (swept,report) = gcs_core::brep::swept::trim::trimmed(&cube,&path,roll,&candidates,&given,cube.size(),tol,trim).unwrap();
-    eprintln!("{report:?}");
-    swept.check(tol).unwrap();
-    eprintln!("{} faces, volume {}",swept.faces.len(),gcs_core::brep::props::volume(&swept));
+    let built = gcs_core::brep::swept::closed::closed(&cube,&path,roll,cube.size(),tol).unwrap_or_else(|u| panic!("{u:?}"));
+    built.check(tol).unwrap();
+    let v = gcs_core::brep::props::volume(&built);
+    assert!((v-3.4739277944468).abs() <= 1e-9,"{v}");
+    crate::swept_closed::agrees_over(&built,&cube,&path,roll);
 }
 
 /// **A cube tumbling two degrees either way is built by the general road through `closed`** (#880
@@ -81,18 +81,26 @@ fn cube_trimming(deg: f64) -> gcs_core::brep::swept::dump::Trimming {
     gcs_core::brep::swept::dump::Trimming {bar:tool.size(),tool,path,roll,candidates,given,tol,trim}
 }
 
-/// The refusal a trim replayed from its dump gives (#942 F5): what `trim.replay()` refused, then the
-/// same trim written (`dump_trim`), read back (`load_trim`) and replayed refusing alike.
+/// What a trim gives (#942 F5): its solid's faces, volume to the bit and report, or its refusal.
+fn outcome(trimming: &gcs_core::brep::swept::dump::Trimming) -> String {
+    match trimming.replay() {
+        Ok((b,report)) => format!("built: {} faces, volume {:e}, {report:?}",b.faces.len(),gcs_core::brep::props::volume(&b)),
+        Err(why) => format!("{why:?}"),
+    }
+}
+
+/// What a trim replayed from its dump gives (#942 F5): what `trim.replay()` gave, then the same
+/// trim written (`dump_trim`), read back (`load_trim`) and replayed giving it alike.
 fn replayed_alike(trimming: &gcs_core::brep::swept::dump::Trimming,name: &str) -> String {
     use gcs_core::brep::swept::dump::{dump_trim,load_trim};
-    let direct = format!("{:?}",trimming.replay().expect_err("the trim refuses"));
+    let direct = outcome(trimming);
     let dir = std::env::temp_dir().join(format!("{name}-{}",std::process::id()));
     let t = trimming;
     dump_trim(&dir,&t.tool,&t.path,t.roll,&t.candidates,&t.given,t.bar,t.tol,t.trim,&direct).unwrap();
     let loaded = load_trim(&dir).unwrap();
     let _ = std::fs::remove_dir_all(&dir);
-    let again = format!("{:?}",loaded.replay().expect_err("the replayed trim refuses"));
-    assert_eq!(again,direct,"replayed from its dump, the trim refuses otherwise");
+    let again = outcome(&loaded);
+    assert_eq!(again,direct,"replayed from its dump, the trim gives otherwise");
     direct
 }
 
@@ -138,15 +146,15 @@ fn the_general_roads_candidates_are_written_and_read_back_whole() {
 }
 
 /// **A refused trim replays from its dump to the same refusal** (#942 F5's gate, fast): the cube
-/// tumbling 15° either way, refused in its trim, gives the same refusal run again from the files —
-/// its fan cut into runs, each a wall restricted to its stretches and the rails given it restricted
-/// alike, and every wall written with the number it is shared by, so the walls read back are shared
-/// as they were built (a wall's inverse starts from its last foot: read back apart, the refusal's
-/// points moved in their last digits).
+/// tumbling 10° either way, refused in its trim, gives the same refusal run again from the files —
+/// every wall written with the number it is shared by, so the walls read back are shared as they
+/// were built (a wall's inverse starts from its last foot: read back apart, the refusal's points
+/// moved in their last digits). The 15° cube replayed its refusal here until #942 T1d-cube built
+/// it; the bench's 75° cube, below, replays one with a fan cut into runs.
 #[test]
 fn a_refused_trim_replays_from_its_dump_to_the_same_refusal() {
-    let why = replayed_alike(&cube_trimming(15.),"cube-15-dump");
-    assert!(why.contains("the boundary is open along a rail edge"),"{why}");
+    let why = replayed_alike(&cube_trimming(10.),"cube-10-dump");
+    assert!(why.contains("a meeting the trim was not given"),"{why}");
 }
 
 /// **The bench's tumbling cube's refused trim replays from its dump alike** (#942 F5's gate): the
@@ -156,15 +164,17 @@ fn a_refused_trim_replays_from_its_dump_to_the_same_refusal() {
 /// meeting of two surfaces lays; since #942 T1d-cube that fan is cut into two runs, two candidates
 /// whose crossing is given, and the trim gets past it. Two other fans' second crossing beside their
 /// shared rail, once traced past the corner they touch at and left hanging in a face, is ended
-/// there (`general::ended_on_rails`), and the trim is refused instead as the 15° cube is, the
-/// boundary open along a rail edge.
+/// there (`general::ended_on_rails`); the branches beside rails are traced on each run's own wall,
+/// and the Boolean keeps a given span it once read as off both runs' patches. The trim now builds a
+/// solid, refused by its check: a loop of a face on edge 5's fan breaks in its parameters by 6.8e-7
+/// at a rail's piece 3e-6 long beside the run's end.
 #[test]
 #[cfg_attr(not(feature = "slow"),ignore = "slow tier, 40 s: the bench's tumbling cube's candidates made, then its trim twice")]
 fn the_bench_tumbling_cubes_refused_trim_replays_from_its_dump_alike() {
     let why = replayed_alike(&cube_trimming(75.),"cube-75-dump");
     // (no fan passing back through itself any more: its runs' crossing given; nor a branch beside a
-    // rail left hanging, #942 T1d-cube)
-    assert!(why.contains("the boundary is open along a rail edge") && !why.contains("passing back through itself"),"{why}");
+    // rail left hanging, nor the boundary open along a rail, #942 T1d-cube)
+    assert!(why.contains("breaks in parameters") && !why.contains("passing back through itself"),"{why}");
 }
 
 /// **A meeting left out of what the trim is given is completed from its witness** (#942 F2's gate):

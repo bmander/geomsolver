@@ -2006,10 +2006,24 @@ own, where one stands nearer that root than the end did (the root, read through 
 feet, stood 5e-9 off it, past the pool's tolerance); the curve is cut there (`BSpline::segment`).
 Not for one fan's runs meeting each other: their walls are one sheet across the rim they share, the
 sine along it nought throughout.
-**Not yet built**: the cube tumbled 15° and the bench's 75°, each past its fan crossing itself and
-its branches beside rails ended: the trim leaves the boundary open along a rail edge (15°, face 4 of
-candidate 8 at `(2.374, 0.946, 2.552)`; 75°, face 0 of candidate 5 at `(3.559, 0.839, 1.334)`), a
-meeting it was not given parting a piece from where it was read. **A ring's fold pair born partway**
+**A fan's runs are found before the bearers are met** (#942 T1d-cube, `general::crossed` then
+`given_to_runs`): the branches beside a rail two fans share are traced on each run's own wall,
+run by run (`walls_of`), not on the whole wall a fan crossing itself folds over: there the trace's
+feet fell on the fold its other run lays over it, and its branches ran 1e-5 off both walls, one out
+and back along itself 3e-7 apart, a crossing 5.7e-6 off any of them left a piece unparted. A
+meeting found run by run joins what its two runs are given. Any other curve given of the whole
+wall is cut to the stretches of it that lie on a run's wall (`on_wall`: read at 64 places, on it
+within what a patch is read to, `1e3 tol`, each change halved to the rounding), never given whole
+where one point stood within the run. **The Boolean keeps a given span it cannot read on a patch**
+(`boolean`'s `kept`): a given meeting's curves lie on both its surfaces as given, and two runs of the
+15° cube's fan, given where they cross up to the pinch it is born at, had the nearest foot of a
+span's middle on either run fall on its other fold, 4.5e-4 off, and the span was dropped from both
+faces. The cube tumbled 15° is built (`swept_general`'s gate, held to membership through its box: a
+count of 40000 points gives 3.463 ± 0.018 against its 3.4739).
+**Not yet built**: the bench's 75° cube is trimmed into a solid its check refuses, a loop of a face
+on edge 5's fan breaking in its parameters by 6.8e-7 at a rail's piece 3e-6 long beside the run's
+end; the cube tumbled 10° and 12° is refused in its trim, a piece the boundary at one point and off
+it at another (candidate 6 near `(2.99, 0.77, 2.59)`), with no fan crossing itself. **A ring's fold pair born partway**
 (`brep::swept::rings`): a pair narrower than its band read by its least `s''` along the band, on the
 curve's own branch; the roll cut where the contact changes shape (`rings::changes`), each stretch
 fitted alone, its tubes sewn across the cuts and trimmed; a sheet refused as folding only where it

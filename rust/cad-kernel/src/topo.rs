@@ -541,6 +541,13 @@ impl Brep {
                             eprintln!("topo: face {fi} breaks between edge {} ({}, tol {:e}) and edge {} ({}, tol {:e}) at vertex {:?} (tol {at:e}): {:?} and {:?} apart {:e}, corner {corner:e}",
                                 c.edge,kind(c),self.edges[c.edge as usize].tol,next.edge,kind(next),self.edges[next.edge as usize].tol,self.vertices[self.ends(c)[1] as usize].p,
                                 f.surface.point(a),f.surface.point(b),distance(f.surface.point(a),f.surface.point(b)));
+                            for x in [c,next] {
+                                let e = &self.edges[x.edge as usize];
+                                let what = match &e.curve { EdgeCurve::Curve(super::geom::Curve::Rail(w,u)) => format!("a rail at u {u} of a wall {:p} over {:?}",std::sync::Arc::as_ptr(w),w.span()),
+                                    EdgeCurve::Curve(cv) => cv.kind().to_string(),_ => String::new() };
+                                let ends = match &e.curve { EdgeCurve::Curve(cv) => [cv.point(e.t[0]),cv.point(e.t[1])],_ => [[0.;3];2] };
+                                eprintln!("topo:   edge {} {what} over {:?}, its ends {:?}, its pcurve {:?}",x.edge,e.t,ends,x.pcurve);
+                            }
                         }
                         return Err(format!("face {fi} ({}): loop {li} breaks in parameters after use {k}: {a:?} to {b:?}",f.name).into())
                     }

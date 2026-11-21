@@ -560,7 +560,15 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
     let held: Vec<usize> = (0..bearers.len()).filter(|&bi| !strips[bi].is_empty()).collect();
     let breps: Vec<Brep> = held.iter().map(|&bi| faces_of(&bearers[bi],&strips[bi],exact)).collect::<Result<_,_>>()?;
     let surfaces: Vec<Surface> = held.iter().map(|&bi| breps[held.iter().position(|&x| x == bi).unwrap()].faces[0].surface.clone()).collect();
+    // **a fan that passes back through itself, its sheet restricted to runs of stretches**, found
+    // before the bearers are met, so a meeting beside a rail is traced on each run's own wall
+    // (#942 T1d-cube: traced on the whole wall, the trace's feet fell on the fold its other run
+    // lays over it, and its branches ran 1e-5 off both walls, one out and back along itself)
+    let spans: Vec<Vec<[f64;2]>> = held.iter().map(|&bi| strips[bi].iter().map(|st| st.span).collect()).collect();
+    let mut breps = breps;
+    let split = crossed(&mut breps,&spans,&surfaces,tol)?;
     let mut given: Vec<Given> = Vec::new();
+    let mut per_run: Vec<Given> = Vec::new();
     for x in 0..held.len() { for y in x+1..held.len() {
         let (bi,bj) = (held[x],held[y]);
         let mut curves = Vec::new();
@@ -574,10 +582,19 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
                 // cube tumbling 5°, its top front edge's fan and its top side edge's, the hole
                 // between them left open — traced from where an edge of either crosses the other)
                 if !curves.is_empty() {
-                    let (a,b,sa,sb) = (&breps[x],&breps[y],&surfaces[x],&surfaces[y]);
-                    let beside: Vec<Curve> = beside_rails(a,sa,b,sb,&curves,tol).into_iter()
-                        .map(|c| ended_on_rails(c,a,sa,b,sb,&curves,tol)).collect();
-                    curves.extend(beside);
+                    let beside = |a: &Brep,sa: &Surface,b: &Brep,sb: &Surface| -> Vec<Curve> {
+                        beside_rails(a,sa,b,sb,&curves,tol).into_iter().map(|c| ended_on_rails(c,a,sa,b,sb,&curves,tol)).collect()
+                    };
+                    if split[x].is_none() && split[y].is_none() {
+                        let met = beside(&breps[x],&surfaces[x],&breps[y],&surfaces[y]);
+                        curves.extend(met);
+                    } else {
+                        for (a,sa) in walls_of(&breps[x],&surfaces[x],&split[x]) { for (b,sb) in walls_of(&breps[y],&surfaces[y],&split[y]) {
+                            let met = beside(&a,&sa,&b,&sb);
+                            if crate::debug() { for c in &met { let d = crate::query::curve_domain(c).unwrap_or([0.,1.]); eprintln!("general: given between bearers {bi} and {bj}, run by run: {} from {:?} to {:?}",c.kind(),c.point(d[0]),c.point(d[1])) } }
+                            if !met.is_empty() { per_run.push(Given {surfaces:[sa.clone(),sb],curves:met,touches:Vec::new()}) }
+                        } }
+                    }
                 }
             }
             // **a face and an edge of it**: the path of where the face's chord reaches the edge, where
@@ -639,9 +656,7 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
         Given {surfaces:[surfaces[k].clone(),f.surface.clone()],curves,touches:Vec::new()}
     });
     given.extend(met);
-    // **a fan that passes back through itself, its sheet restricted to runs of stretches**
-    let spans: Vec<Vec<[f64;2]>> = held.iter().map(|&bi| strips[bi].iter().map(|st| st.span).collect()).collect();
-    let (breps,given) = crossed(breps,&spans,&surfaces,given,tol)?;
+    let (breps,given) = given_to_runs(breps,&split,&surfaces,given,per_run,tol)?;
     let mut out = breps;
     out.extend(poses);
     Ok((out,given))
@@ -663,9 +678,7 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
 /// share and where they cross, met run against run as the wall restricted to each (past a stretch
 /// its own end pieces carried on, so two runs of one wall meet only where it crosses itself), so a
 /// branch is one curve across a run.
-fn crossed(mut breps: Vec<Brep>,spans: &[Vec<[f64;2]>],surfaces: &[Surface],given: Vec<crate::boolean::Given>,tol: f64)
-    -> Result<(Vec<Brep>,Vec<crate::boolean::Given>),Unbuilt> {
-    use crate::boolean::Given;
+fn crossed(breps: &mut [Brep],spans: &[Vec<[f64;2]>],surfaces: &[Surface],tol: f64) -> Result<Vec<Option<Runs>>,Unbuilt> {
     let surface_of = |sheet: &Sheet,[s0,s1]: [f64;2]| -> Result<Surface,Unbuilt> {
         let r = Arc::new(sheet.restricted([s0,s1]).map_err(Unbuilt::Failed)?);
         let (p,du,ds) = r.d1([0.5,0.5*(s0+s1)]);
@@ -675,7 +688,7 @@ fn crossed(mut breps: Vec<Brep>,spans: &[Vec<[f64;2]>],surfaces: &[Surface],give
 
     // per bearer split: its runs, each its span, surface and faces' indices, and the curves given
     // between each two runs
-    let mut split: Vec<Option<(Vec<([f64;2],Surface)>,Vec<(usize,usize,Vec<Curve>)>)>> = vec![None;breps.len()];
+    let mut split: Vec<Option<Runs>> = vec![None;breps.len()];
     for x in 0..breps.len() {
         let Surface::Family(_,sheet) = &surfaces[x] else { continue };
         let mut stretches: Vec<[f64;2]> = spans[x].clone();
@@ -738,17 +751,41 @@ fn crossed(mut breps: Vec<Brep>,spans: &[Vec<[f64;2]>],surfaces: &[Surface],give
         if crate::debug() { eprintln!("general: a fan cut into {} runs: {:?}",out.len(),out.iter().map(|r| r.0).collect::<Vec<_>>()) }
         split[x] = Some((out,between));
     }
-    if split.iter().all(Option::is_none) { return Ok((breps,given)) }
+    Ok(split)
+}
+
+/// A split bearer's runs, each its span and surface, and the curves given between each two runs.
+type Runs = (Vec<([f64;2],Surface)>,Vec<(usize,usize,Vec<Curve>)>);
+
+/// A bearer's wall as the pieces it is met in: the whole of it, or each of its runs where it passes
+/// back through itself (`crossed`), each the faces on it and its surface.
+fn walls_of(b: &Brep,whole: &Surface,split: &Option<Runs>) -> Vec<(Brep,Surface)> {
+    match split {
+        None => vec![(b.clone(),whole.clone())],
+        Some((runs,_)) => runs.iter().map(|r| { let mut c = b.clone(); c.faces.retain(|f| f.surface == r.1); (c.compacted(),r.1.clone()) }).collect(),
+    }
+}
+
+/// **The meetings given of split walls, given of their runs** (#942 T1d-cube): each split bearer a
+/// candidate per run, and each meeting given of its whole wall given of each run (`on_run`); with
+/// `per_run`, the meetings found run by run, joined to their runs' meetings.
+fn given_to_runs(breps: Vec<Brep>,split: &[Option<Runs>],surfaces: &[Surface],given: Vec<crate::boolean::Given>,
+    per_run: Vec<crate::boolean::Given>,tol: f64) -> Result<(Vec<Brep>,Vec<crate::boolean::Given>),Unbuilt> {
+    use crate::boolean::Given;
+    if split.iter().all(Option::is_none) {
+        let mut given = given;
+        given.extend(per_run);
+        return Ok((breps,given))
+    }
     // (each run a candidate of its own: a candidate is one sheet, its faces never met with one
     // another, and two runs that cross are met as two candidates are)
-    let breps: Vec<Brep> = breps.into_iter().zip(&split).flat_map(|(b,sp)| match sp {
-        None => vec![b],
-        Some((runs,_)) => runs.iter().map(|r| { let mut c = b.clone(); c.faces.retain(|f| f.surface == r.1); c.compacted() }).collect(),
-    }).collect();
+    let breps: Vec<Brep> = breps.iter().zip(surfaces).zip(split).flat_map(|((b,s),sp)| walls_of(b,s,sp).into_iter().map(|w| w.0)).collect();
     // each meeting given of a split bearer's whole wall, given of each of its runs, each curve as
     // much of it as lies on the run (a given curve lies on both its surfaces, and a run's is its wall
-    // over the run alone): a rail, a path over the roll, over the run's span; any other where its
-    // points stand within it
+    // over the run alone): a rail, a path over the roll, over the run's span; any other cut to the
+    // stretches of it that lie on the run's wall (#942 T1d-cube: a curve traced on the whole wall
+    // passes from one run's stretches to the other's, and given whole to each, wherever a point of
+    // it stood within the run, ran 3.8e-3 off the run's wall along the other run's fold)
     let runs_of = |s: &Surface| -> Vec<(Surface,Option<(Arc<Sheet>,[f64;2])>)> {
         let found = surfaces.iter().position(|x| x == s).and_then(|x| split[x].as_ref().map(|sp| (x,sp)));
         match found {
@@ -763,8 +800,8 @@ fn crossed(mut breps: Vec<Brep>,spans: &[Vec<[f64;2]>],surfaces: &[Surface],give
     // shares it: a wall read anew from where its own was cached reads its points otherwise to the
     // rounding)
     let restricted = std::cell::RefCell::new(std::collections::BTreeMap::<(usize,u64,u64),Arc<Sheet>>::new());
-    let on_run = |c: &Curve,run: &Option<(Arc<Sheet>,[f64;2])>| -> Result<Option<Curve>,Unbuilt> {
-        let Some((sheet,[r0,r1])) = run else { return Ok(Some(c.clone())) };
+    let on_run = |c: &Curve,wall: &Surface,run: &Option<(Arc<Sheet>,[f64;2])>| -> Result<Vec<Curve>,Unbuilt> {
+        let Some((sheet,[r0,r1])) = run else { return Ok(vec![c.clone()]) };
         // (a roll within the run, to the parameters' rounding of its span)
         let slack = 1e-12*(r1-r0).abs().max(1.);
         let within = |s: f64| s >= r0-slack && s <= r1+slack;
@@ -772,7 +809,7 @@ fn crossed(mut breps: Vec<Brep>,spans: &[Vec<[f64;2]>],surfaces: &[Surface],give
             Curve::Rail(w,u) => {
                 let [a,b] = w.span();
                 let [lo,hi] = [a.max(*r0),b.min(*r1)];
-                if !(hi > lo) { None } else if lo == a && hi == b { Some(c.clone()) }
+                if !(hi > lo) { Vec::new() } else if lo == a && hi == b { vec![c.clone()] }
                 else {
                     let key = (Arc::as_ptr(w) as usize,lo.to_bits(),hi.to_bits());
                     let cached = restricted.borrow().get(&key).cloned();
@@ -781,14 +818,11 @@ fn crossed(mut breps: Vec<Brep>,spans: &[Vec<[f64;2]>],surfaces: &[Surface],give
                         restricted.borrow_mut().insert(key,r.clone());
                         r
                     } };
-                    Some(Curve::Rail(r,*u))
+                    vec![Curve::Rail(r,*u)]
                 }
             }
-            Curve::Rim(w,s) if Arc::ptr_eq(w,sheet) => within(*s).then(|| c.clone()),
-            _ => {
-                let Some([t0,t1]) = crate::query::curve_domain(c) else { return Ok(Some(c.clone())) };
-                (0..=32).any(|k| within(sheet.inverse(c.point(t0+(t1-t0)*k as f64/32.))[1])).then(|| c.clone())
-            }
+            Curve::Rim(w,s) => if Arc::ptr_eq(w,sheet) { within(*s).then(|| c.clone()).into_iter().collect() } else { on_wall(c,wall,tol) },
+            _ => on_wall(c,wall,tol),
         })
     };
     let mut out = Vec::new();
@@ -796,8 +830,7 @@ fn crossed(mut breps: Vec<Brep>,spans: &[Vec<[f64;2]>],surfaces: &[Surface],give
         for (a,ra) in runs_of(&g.surfaces[0]) { for (b,rb) in runs_of(&g.surfaces[1]) {
             let mut curves = Vec::new();
             for c in &g.curves {
-                let Some(c) = on_run(c,&ra)? else { continue };
-                if let Some(c) = on_run(&c,&rb)? { curves.push(c) }
+                for c in on_run(c,&a,&ra)? { curves.extend(on_run(&c,&b,&rb)?) }
             }
             out.push(Given {surfaces:[a.clone(),b],curves,touches:g.touches.clone()})
         } }
@@ -805,7 +838,56 @@ fn crossed(mut breps: Vec<Brep>,spans: &[Vec<[f64;2]>],surfaces: &[Surface],give
     for (runs,between) in split.iter().flatten() {
         for (g,h,curves) in between { out.push(Given {surfaces:[runs[*g].1.clone(),runs[*h].1.clone()],curves:curves.clone(),touches:Vec::new()}) }
     }
+    // (a meeting found run by run joined to what its two runs are given already: one given meeting
+    // of two surfaces is the whole of it)
+    for g in per_run {
+        match out.iter_mut().find(|o| o.surfaces == g.surfaces) {
+            Some(o) => o.curves.extend(g.curves),
+            None => out.push(g),
+        }
+    }
     Ok((breps,out))
+}
+
+/// **The stretches of a curve that lie on a wall** (#942 T1d-cube): its points read against the
+/// wall, a run of a fan over its stretches, at `LOOKS` places along it — on it where the wall's
+/// nearest point stands within what a surface's patch is read to (`1e3 tol`, `boolean`'s), off it
+/// on the other run's fold — and each change from one to the other found by halving to the
+/// rounding, the curve cut there (a B-spline exactly, a trace at its points); a curve of another
+/// kind kept whole where any point of it is on the wall.
+fn on_wall(c: &Curve,wall: &Surface,tol: f64) -> Vec<Curve> {
+    const LOOKS: usize = 64;
+    let Some([t0,t1]) = crate::query::curve_domain(c) else { return vec![c.clone()] };
+    let on = |t: f64| { let p = c.point(t); distance(wall.point(wall.inverse(p)),p) <= 1e3*tol };
+    let at: Vec<(f64,bool)> = (0..=LOOKS).map(|k| { let t = t0+(t1-t0)*k as f64/LOOKS as f64; (t,on(t)) }).collect();
+    if at.iter().all(|x| x.1) { return vec![c.clone()] }
+    if !matches!(c,Curve::BSpline(_) | Curve::Traced(_)) {
+        return if at.iter().any(|x| x.1) { vec![c.clone()] } else { Vec::new() }
+    }
+    // each change between two looks, found by halving: where the curve leaves the wall or comes on it
+    let change = |a: f64,b: f64,from: bool| crate::util::roots::bisect(a,b,|x,y| 0.5*(x+y),|x,y| y-x > f64::EPSILON*(x.abs()+y.abs()).max(1.),
+        |m| on(m) == from);
+    let mut pieces: Vec<[f64;2]> = Vec::new();
+    let mut start = at[0].1.then_some(t0);
+    for w in at.windows(2) {
+        match (w[0].1,w[1].1) {
+            (true,false) => { if let Some(s) = start.take() { pieces.push([s,change(w[0].0,w[1].0,true).0]) } }
+            (false,true) => { start = Some(change(w[0].0,w[1].0,false).1) }
+            _ => {}
+        }
+    }
+    if let Some(s) = start { pieces.push([s,t1]) }
+    pieces.into_iter().filter(|&[a,b]| b > a).filter_map(|[a,b]| match c {
+        Curve::BSpline(sp) => Some(Curve::BSpline(Arc::new(sp.segment([a,b])))),
+        Curve::Traced(tr) => {
+            // (its points between, and the two ends where it was cut)
+            let mut pts = vec![c.point(a)];
+            pts.extend(tr.pts.iter().enumerate().filter(|&(i,_)| (i as f64) > a && (i as f64) < b).map(|(_,&p)| p));
+            pts.push(c.point(b));
+            (pts.len() >= 2).then(|| Curve::Traced(Arc::new(crate::geom::Traced {a:tr.a.clone(),b:tr.b.clone(),pts,closed:false})))
+        }
+        _ => None,
+    }).collect()
 }
 
 /// How many stations a bearer is read at for whether its lines stand on one cylinder.
