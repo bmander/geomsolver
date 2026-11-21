@@ -465,29 +465,32 @@ pocket's floor filled round its plan corners, seen from the air; `BodyFaces::out
 alone (its whole surface's side winds round the axis): a ball standing on a run's axis beside
 those stretches was read through the nearest face and the gate refused it
 (`round_onto_round::a_boss_across_a_trays_filled_wall_is_its_closed_form`).
-**A smooth chain turning both ways is read about its nearest face** (#994, `conditions::about_nearest`,
-`BodyFaces::bulging_about`): a block's outline with a reflex corner, its every upright rounded,
-is one chain of sides, convex rounds and the reflex corners' fills, bulging neither way, and no
-face's side carried past its patch is the chain's (the block's side carried on past a tab's fill
-runs through the tab). At least a distance off it, within it or outside it, is read at each step
-about the face whose patch is nearest: where that face bulges toward the point, it and each face
-going on from it across a seam that bulges too, each its own condition by its side carried on —
-the chain there is convex, and the corner of their offsets (a rim rounded to the uprights' own
-radius, its centres closing onto each convex upright's axis) is met as a corner of conditions;
-where it does not (a fill seen from its material), its own side's distance, as before. Each slot
-is a condition, the `k`th the `k`th face read there, holding everywhere where fewer are; none is
-held convex, so the steps run to their fixed point. A chain that bulges one way is read whole,
-as above. `tests/rim_over_rounds.rs` is the gate.
 Read through the nearest face alone, a corner of the offset (an arc's offset closed onto its
 axis, a pocket's corner rounded to its own radius, or past it) is where the nearest face turns,
-and the steps never settled there. **A smooth chain bulging no one way** (#994: a pocket's walls
-turning both ways at a reflex corner, an L) is still read through its nearest face, and each face
-of it besides (`conditions::faces_apart`): its side where the point's foot lies on its patch, its
-tangent plane past a seam into a face bulging toward the point where that face is nearer than
-the distance, nothing past any other seam, its tangent plane past any other edge only nearer the
-patch than the distance — each under the distance only where a patch of the chain is, so the
-nearest face's side, never more than the least patch distance, keeps the same points, and the
-steps see both walls about a convex corner of the offset. **The steps stop at the first point keeping every condition
+and the steps never settled there. **A smooth chain turning both ways is read through its
+nearest face and face by face besides** (#994, `conditions::faces_apart`,
+`BodyFaces::carried_past`): a pocket's walls with a reflex corner (an L, six walls, a chevron)
+seen from its air, a block's outline with a tab, its every upright rounded, seen from its
+material — sides, convex rounds and the reflex corners' fills in one chain bulging neither way, so
+no face's side carried past its patch is the chain's (a block's side carried on past a tab's fill
+runs through the tab). Besides the nearest face's side, each face of the chain is a condition:
+its side where the point's foot lies on its patch (the patch's distance); its tangent plane past
+a seam into a face bulging toward the point (`BodyFaces::bulges`) where that face is nearer than
+the distance — the chain read as a convex one about the corner; nothing past a seam into any
+other face (a reflex corner's arc or fill, whose tangent plane runs on through the pocket or the
+tab beyond it), which is nearer and says it; its tangent plane past any other edge only where the
+patch is nearer than the distance, and nothing where not. Each is under the distance only where
+the point is that near a patch of the chain, and the nearest face's side is never more than the
+least patch distance, so the points kept are the same; what the conditions add is every wall
+meeting at a corner of the offset in each step, where the closing axis (a floor or a rim rounded
+to a convex corner's own radius) is met as a corner of conditions, as in a convex chain. A
+condition holding with no gradient is no row of the step's program (`nearest`), so a step chooses
+among the faces near the point, not the whole chain. Read about the nearest face alone — that face
+and its bulging neighbours, slots changing with the face — a 56° corner as tight as the ball was
+still refused by the gate (`tests/tight_corners.rs`, six walls): which walls a step sees there
+hangs on which face the step stands nearest. A chain that bulges
+one way is read whole, as above. `tests/tight_corners.rs` and `tests/rim_over_rounds.rs` are the
+gate. **The steps stop at the first point keeping every condition
 where every condition is convex** (`Cond::convex`: a plane's side, a face's carried side held
 toward its solid): each step's linearisation then holds the whole set, so a point of it is the
 nearest; their own fixed point is not steady where a surface curves tightly about a point far

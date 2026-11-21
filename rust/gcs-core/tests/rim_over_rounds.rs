@@ -3,7 +3,7 @@
 //! (`whole := solid(part)`), the documented order for a vertex where edges of both turns meet.
 //! Where the outline has a reflex corner — an L, a block with a tab — its sides, the convex
 //! uprights' rounds and the reflex uprights' fills are one smooth chain turning both ways, so the
-//! rim's ball centres are read about the chain's nearest face (`conditions::about_nearest`); read
+//! rim's ball centres are read face by face besides its nearest face (`conditions::faces_apart`); read
 //! through that face alone, a rim rounded to the uprights' own radius, whose centres close onto
 //! each convex upright's axis, never settled there and the gate refused the corner's quarter ball
 //! as leaving out what the field reads.  Each volume is the closed form's to 1e-9: the outline's
@@ -84,7 +84,7 @@ fn both_rims_over_a_rectangles_rounded_uprights() {
     }
 }
 
-/// The L, one reflex corner: read about the nearest face, its chain turning both ways.
+/// The L, one reflex corner: read face by face besides the nearest, its chain turning both ways.
 #[test]
 fn both_rims_over_an_ls_rounded_uprights() {
     for r in [1.0, 1.5] {

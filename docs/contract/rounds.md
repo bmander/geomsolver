@@ -235,10 +235,10 @@ one way, and the field reads it through its nearest face, which never settles wh
 closes: "its exact construction leaves out what the field reads beside its edge". Reading only
 the chain's convex part from the faces named builds it, but changes the reading of every chain a
 round's section runs beside (a slot's rim beside its ends, a round spilled onto a rim's round),
-and is not taken. **A chain turning both ways is read about its nearest face** (#994,
-[sets.md](sets.md), `conditions::about_nearest`): the face whose patch is nearest each step, and
-where it bulges toward the ball those going on from it that bulge too, each by its carried side —
-a chain bulging one way is read whole as before, a slot's rim beside its ends included. So **a rim
+and is not taken. **A chain turning both ways is read through its nearest face and face by face
+besides** (#994, [sets.md](sets.md), `conditions::faces_apart`), the same points with every wall
+about a corner seen in each step — a chain bulging one way is read whole as before, a slot's rim
+beside its ends included. So **a rim
 over rounded uprights whose outline has a reflex corner** builds (fixture 150, a block with a
 tab; an L): the uprights first, then the rims on `whole := solid(part)`, the rim to the uprights'
 own radius a quarter ball about each convex upright's axis, a torus of `ru + r` about each
@@ -919,25 +919,17 @@ and a drafted boss whose corner of 10 shrinks to 6.47 under a ball of 8). A trap
 rounded 4.9999 keeps a hole 0.1 µm across about each corner's axis: built and gated, but its
 STL's chords round 120° of so small a circle fall under float32 and are refused as slivers.
 **In a pocket that is no rectangle** (#994, fixtures 118 and 124: an L, six sides) the walls'
-chain turns both ways at a reflex corner, bulges toward the ball no one way, and the field reads
-the centres through its nearest face; at a convex corner as tight as the ball the walls' offsets
-meet on the arc's axis, and a projection onto the nearest face's side alone stepped from one
-wall's offset to the other's, never onto both, never settled, and read material inside the
-corner's ball: "its exact construction leaves out what the field reads beside its edge" at `k1`,
-whatever the reflex corner's radius, a ball a hair short of the corner built. Such a chain is now
-read face by face as well (`conditions::faces_apart`): each face's own measure, under the ball's
-radius only where the point is nearer than that to a patch of the chain — its side where its foot
-lies on its patch, its tangent plane past a seam into a face bulging toward the ball where that
-face is nearer than the radius (the chain read as a convex one about the corner), nothing past a
-seam into a reflex corner's arc, whose tangent plane runs on through the pocket beyond it. The
-nearest face's side is never more than the least patch distance, so the set is the same; the
-projection sees both walls at the corner and settles on the axis (`BodyFaces::carried_past`).
-`tests/tight_corners.rs` holds it: the issue's L with corners of 1 and a reflex corner of 3 or 1,
-rounded 1 and 0.9; the L five times the size rounded 5 and 4.9, refused at 5.1 at its first wall
-as a rectangle is; six walls turning 56° and 117° with a reflex corner, a chevron, a regular
-hexagon and a triangle, each rounded 4.9 and 5 in corners of 5; an L-shaped boss's rim at 4.9 and
-5 — each the closed form's volume by Pappus, a reflex corner's ring turned on the far side of its
-axis.
+chain turns both ways at a reflex corner and bulges toward the ball no one way: read through its
+nearest face alone, at a convex corner as tight as the ball the steps went from one wall's offset
+to the other's and never settled on the axis, and the field read material inside the corner's
+ball ("its exact construction leaves out what the field reads beside its edge" at `k1`, whatever
+the reflex corner's radius, a ball a hair short of the corner built). It is read face by face
+besides, the same points ([sets.md](sets.md), `conditions::faces_apart`). `tests/tight_corners.rs`
+holds it: the issue's L with corners of 1 and a reflex corner of 3 or 1, rounded 1 and 0.9; the L
+five times the size rounded 5 and 4.9, refused at 5.1 at its first wall as a rectangle is; six
+walls turning 56°, 90° and 117° with a reflex corner rounded 5 and 4.9; a chevron, a regular
+hexagon and a triangle rounded 5; an L-shaped boss's rim at 4.9 and 5 — each the closed form's
+volume by Pappus, a reflex corner's ring turned on the far side of its axis.
 
 **A ball that does not stand within its faces' smooth surfaces** (#962, `piece::stands_within`):
 a run or a ring is the set only where its ball, standing against its two faces, is one of the
@@ -979,8 +971,8 @@ standing over a stretch of its loop" above), so it is not refused. Against a pla
 wall's next wall, the obround's far side) the ball stopped touches three faces at once, a corner
 ball, and what lies past it to the crease's end is a corner's cell in part, not the standing
 ball's: still refused here. A
-chain bulging no way is read about its nearest face ([sets.md](sets.md), #994) and left to the
-gate. **The gate reads each edge near its ends and across its section**
+chain bulging no way is read through its nearest face and face by face besides
+([sets.md](sets.md), #994) and left to the gate. **The gate reads each edge near its ends and across its section**
 (`lowering::beside_edges`): besides the field just inside the corner a quarter, a half and three
 quarters along, it reads a fiftieth from each end,
 and along the bisector and five ways from along one face to along the other it finds where the

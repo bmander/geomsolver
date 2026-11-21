@@ -81,22 +81,25 @@ fn sides(r: Reading, split: bool) -> Vec<Fv> {
 /// same.  What they add is the shape of the offset where the nearest face turns from one to
 /// another: where an arc's offset closes onto its axis — a pocket's floor rounded as tight as its
 /// corner, in a pocket whose reflex corner keeps its chain from bulging one way
-/// (`BodyFaces::bulging`) — the centres' corner is the two walls' offsets meeting on the axis,
-/// and a projection onto the nearest face's side alone steps from one wall's to the other's,
-/// never onto both (`nearest`).  Each face reads:
+/// (`BodyFaces::bulging`); a rim rounded to the uprights' radius over a block's outline with a
+/// tab, its sides, rounds and fills one chain — the centres' corner is the two walls' offsets
+/// meeting on the axis, and a projection onto the nearest face's side alone steps from one
+/// wall's to the other's, never onto both (`nearest`).  Each face reads:
 /// - where the point's foot lies on its patch, its surface's side, the patch's distance;
-/// - past a seam into a face of the chain bulging toward the ball on its own (a wall into a
-///   pocket's corner arc, the arc into the next wall), its side carried on by its tangent plane
-///   there (`BodyFaces::carried_past`, turned by `beyond` toward the side the point is on) where
-///   the point is nearer that face than `d` — the chain read as a convex one is about the corner,
-///   so the step sees the wall beyond the arc as well as the one the point is nearest — and
+/// - past a seam into a face of the chain bulging toward the ball on its own (`BodyFaces::bulges`:
+///   a wall into a pocket's corner arc, the arc into the next wall), its side carried on by its
+///   tangent plane there (`BodyFaces::carried_past`, turned by `beyond` toward the side the point
+///   is on) where the point is nearer that face than `d` — the chain read as a convex one is about
+///   the corner, so the step sees the wall beyond the arc as well as the one the point is nearest — and
 ///   nothing (`d`, no gradient) where it is not: the next face is no further from the point than
 ///   this one's patch, so it says all this one would;
-/// - past a seam into any other face of the chain (a reflex corner's arc, whose tangent plane runs
-///   on through the pocket beyond it), nothing: that face is nearer, and says it;
+/// - past a seam into any other face of the chain (a reflex corner's arc or fill, whose tangent
+///   plane runs on through the pocket or the tab beyond it), nothing: that face is nearer, and
+///   says it;
 /// - past any other edge, its side carried on where the point is nearer the patch than `d` (a
 ///   tangent plane through the patch's nearest point is no further than it), nothing where not.
-/// Empty for one face, and for chains apart.
+/// A face far from the point holds with no gradient, no row of a step's program (`nearest`), so a
+/// step chooses among the faces near the point.  Empty for one face, and for chains apart.
 fn faces_apart(r: &Reading, c: f64, beyond: bool, d: f64) -> Vec<Fv> {
     if !r.smooth || r.faces.len() < 2 || !r.chains.is_empty() {
         return Vec::new();
@@ -104,8 +107,8 @@ fn faces_apart(r: &Reading, c: f64, beyond: bool, d: f64) -> Vec<Fv> {
     let sigma = if beyond { 1.0 } else { -1.0 };
     let chain = Arc::new(r.faces.clone());
     // the faces of the chain each bulging toward the ball on its own
-    let toward: Arc<Vec<usize>> = Arc::new(r.faces.iter().copied()
-        .filter(|&g| r.body.bulging(&[g], false, beyond).is_some()).collect());
+    let toward: Arc<Vec<usize>> =
+        Arc::new(r.faces.iter().copied().filter(|&g| r.body.bulges(g, beyond, true)).collect());
     r.faces.iter().map(|&fi| {
         let (body, chain, toward) = (r.body.clone(), chain.clone(), toward.clone());
         Arc::new(move |x| {
@@ -357,10 +360,6 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, sides_of: &Sides,
                             if let Some(past) = r.bulging(beyond) {
                                 return Ok(Some(carried(&r, past, if beyond { c } else { -c })));
                             }
-                            // a smooth chain turning both ways: read about its nearest face
-                            if r.smooth && r.faces.len() > 1 {
-                                return Ok(Some(about_nearest(r, beyond, c, lo + grow)));
-                            }
                         }
                     }
                     // any other: off the side of the face whose patch is nearest — and, a smooth
@@ -449,49 +448,6 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, sides_of: &Sides,
     }
 }
 
-/// **At least `d` off a smooth chain that turns both ways, read about its nearest face** (#994): a
-/// block's outline with a tab, its every upright rounded — convex rounds and the tab's filled
-/// reflex corners in one chain, which bulges neither way (`BodyFaces::bulging`), so no face's side
-/// carried past its patch is the chain's.  Read through the nearest patch's side alone, the
-/// condition turns from one face to the next where their offsets meet, and where a round's offset
-/// closes onto its axis (a rim rounded to the uprights' radius) its gradient turns over there and
-/// the nearest point's steps never settle.  So the chain is read about the face whose patch is
-/// nearest the step: where that face bulges toward the point, it and the faces going on from it
-/// across a seam that bulge too (`BodyFaces::bulging_about`), each by its side carried on past its
-/// patch, as a convex chain's every face is — the corner of their offsets, the closing axis, met
-/// as a corner of conditions; where it does not (a filled reflex corner seen from its material),
-/// its own side's distance, as before.  Each slot is a condition (`EndRuns`' way): the `k`th the
-/// `k`th face read there, holding everywhere where fewer are.  `c · |side| ≥ d` (`c` the
-/// measurement's weight), within the faces or (`beyond`) outside them.
-fn about_nearest(r: Reading, beyond: bool, c: f64, d: f64) -> Vec<Cond> {
-    let r = Arc::new(r);
-    // each face's chain about it, read once
-    let about: Arc<Vec<Vec<usize>>> = Arc::new(r.faces.iter().map(|&fi| r.body.bulging_about(fi, &r.faces, beyond))
-        .collect());
-    let slots = about.iter().map(Vec::len).max().unwrap_or(0).max(1);
-    let sigma = if beyond { c } else { -c };
-    (0..slots).map(|k| {
-        let (r, about) = (r.clone(), about.clone());
-        Cond { convex: false, eq: false, f: Arc::new(move |x: V| {
-            let Some(fi) = r.nearest(x) else { return (-1.0, [0.0; 3]) };
-            let at = r.faces.iter().position(|&g| g == fi).map_or(&[][..], |i| &about[i][..]);
-            match (at.get(k), k) {
-                // `d − σ·side ≤ 0`, the side carried on past its patch
-                (Some(&g), _) => {
-                    let (s, grad) = r.body.carried_side_grad(g, x);
-                    (d - sigma * s, scale(grad, -sigma))
-                }
-                // a face that does not bulge toward the point: its own side's distance
-                (None, 0) => {
-                    let (s, grad) = r.body.side_grad(fi, x);
-                    (d - c * s.abs(), scale(grad, -c * s.signum()))
-                }
-                _ => (-1.0, [0.0; 3]),
-            }
-        }) }
-    }).collect()
-}
-
 /// **Within faces and at least their surface's radius off it** (`side ≤ −d`, `d` the radius of the
 /// one surface the faces `r` reads lie on: `q inside F` with `q distance(>= d) F.surface`, a round's
 /// ball centres): the surface offset inward by `d` closes onto what it is drawn about
@@ -558,11 +514,13 @@ fn nearest(cs: &[Cond], p: V) -> Option<V> {
     for k in 0..80 {
         rows.clear();
         let mut off: f64 = 0.0;
-        rows.extend(cs.iter().map(|c| {
+        rows.extend(cs.iter().filter_map(|c| {
             let (v, g) = (c.f)(x);
             off = off.max(if c.eq { v.abs() } else { v.max(0.0) });
-            // a · y ≤ b, the condition linearised at x
-            (g, dot(g, x) - v, c.eq)
+            // a · y ≤ b, the condition linearised at x — none where it holds with no gradient
+            // (`faces_apart`'s faces far from the point), so the rows a step chooses among are
+            // the conditions near it
+            (c.eq || v > 0.0 || g != [0.0; 3]).then(|| (g, dot(g, x) - v, c.eq))
         }));
         // (every condition just read there keeps within `kept`, inside the final reading's bar)
         if convex && k > 0 && off <= kept {
