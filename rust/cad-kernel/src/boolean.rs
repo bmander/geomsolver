@@ -1610,7 +1610,7 @@ impl<'a> Arrangement<'a> {
             // the two surfaces' meeting, found once for every two faces on them
             let ids = [0,1].map(|k| self.surface_of[&(faces.s[k],faces.f[k])]);
             // two curves of one meeting in closed form may cross one another (`crossings_among`)
-            let (curves,crossed) = match self.shared.meeting(ids[0],ids[1],self.tol) {
+            let (curves,crossed,traced) = match self.shared.meeting(ids[0],ids[1],self.tol) {
                 Ssi::Curves(cs) => {
                     let mut x = crossings_among(surfaces[0],&cs,self.shared(faces),self.pad,self.tol)?;
                     ends_on_one_another(&cs,&mut x,self.tol);
@@ -1629,7 +1629,7 @@ impl<'a> Arrangement<'a> {
                         }
                         kept
                     } else { (cs,x) };
-                    (cs,x)
+                    (cs,x,false)
                 }
                 Ssi::Same => { found.same_pairs.push(faces); continue }
                 Ssi::Traced => {
@@ -1651,7 +1651,7 @@ impl<'a> Arrangement<'a> {
                         None => true,
                     });
                     let met = ends_met(&traced,self.tol);
-                    (traced,met)
+                    (traced,met,true)
                 }
             };
             self.say.curves(faces,surfaces,curves.len());
@@ -1669,6 +1669,20 @@ impl<'a> Arrangement<'a> {
                 for (t,v) in spans {
                     if (t[1]-t[0])*c.speed() <= self.tol || (v[0] == v[1] && !closed) { continue }
                     if !self.kept(&c,t,v,faces,surfaces) { continue }
+                    // **a span of a traced meeting lying along edges either face has already is
+                    // those edges** (#735 A2, over a span and a chain of edges): a trace runs on past
+                    // the faces, so the whole curve lies along no edge, and a face may hold its stretch
+                    // as several — a ring kept within a cylinder its round crosses 0.001 deep, the
+                    // meeting passing the ring's top plane 5e-7 under it, built at the cylinder's
+                    // tolerance and cut at the top's circle into two edges there. Laid again beside
+                    // them, a hair apart, the two were tangent wherever they ran, and the walk round
+                    // the face could not tell them apart (#962 item 3's lens rounded 1.001)
+                    if traced {
+                        if let Some((k,es)) = self.span_along_edges(&c,t,faces,surfaces) {
+                            for e in es { found.along_edges.push((self.working(faces.s[k],e),faces.s[1-k],faces.f[1-k])) }
+                            continue
+                        }
+                    }
                     let we = self.add_edge(EdgeCurve::Curve(c.clone()),t,v);
                     found.ssi_edges.push((we,faces));
                 }
@@ -1711,6 +1725,45 @@ impl<'a> Arrangement<'a> {
                     u >= e.t[0]-1e-9 && u <= e.t[1]+1e-9 && distance(ec.point(u),p) <= reach
                 })
             }).map(|co| (k,co.edge as usize))
+        })
+    }
+
+    /// The edges of either of the two faces that span `t` of the meeting `c` lies along, over all
+    /// of it — which face's (0 or 1) and the edges, its own solid's: each of the span's points
+    /// within the reach a point of two surfaces meeting at its angle has (`on_meeting`) of one of
+    /// those edges' curves inside its stretch, and each of those edges within that reach of the
+    /// span all its stretch. `None` where no face's edges hold the whole span.
+    fn span_along_edges(&self,c: &Curve,t: [f64;2],faces: Two,surfaces: [&Surface;2]) -> Option<(usize,Vec<usize>)> {
+        // each point with the reach a point of the two surfaces meeting at its angle has
+        let reach = |p: V| on_meeting(self.tol,norm(crate::util::space::cross(surfaces[0].gradient(p),surfaces[1].gradient(p))));
+        let pts: Vec<(V,f64)> = (0..=32).map(|k| { let p = c.point(t[0]+(t[1]-t[0])*k as f64/32.); (p,reach(p)) }).collect();
+        // (where `c` runs, in its own parameter: inside the span, to a billionth of it)
+        let slack = 1e-9*(t[1]-t[0]).abs().max(1e-300);
+        let on_span = |p: V| {
+            let mut u = c.inverse(p);
+            if let Some(period) = c.period() { u = around(u,t[0],period); }
+            u >= t[0]-slack && u <= t[1]+slack && distance(c.point(u),p) <= reach(p)
+        };
+        (0..2).find_map(|k| {
+            let sol = self.solids[faces.s[k]];
+            let f = &sol.faces[faces.f[k]];
+            // the face's edges lying along the span all their stretch, each once
+            let mut along: Vec<usize> = Vec::new();
+            for co in f.loops.iter().flatten() {
+                let e = &sol.edges[co.edge as usize];
+                let EdgeCurve::Curve(ec) = &e.curve else { continue };
+                if along.contains(&(co.edge as usize)) { continue }
+                if (0..=16).all(|j| on_span(ec.point(e.t[0]+(e.t[1]-e.t[0])*j as f64/16.))) { along.push(co.edge as usize) }
+            }
+            // and the span's every point on one of them
+            let holds = |&(p,r): &(V,f64)| along.iter().any(|&i| {
+                let e = &sol.edges[i];
+                let EdgeCurve::Curve(ec) = &e.curve else { return false };
+                let mut u = ec.inverse(p);
+                if let Some(period) = ec.period() { u = around(u,e.t[0],period); }
+                u >= e.t[0]-1e-9 && u <= e.t[1]+1e-9 && distance(ec.point(u),p) <= r
+            });
+            (!along.is_empty() && pts.iter().all(holds)).then_some((k,along))
         })
     }
 

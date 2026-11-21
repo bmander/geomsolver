@@ -24,7 +24,13 @@
 //! section the ring round its half circle starts from, and the two are glued there; a ring's
 //! stretch is turned through its circle's angle, and on round past an end on a plane not through
 //! its axis until its section has crossed it, kept within it (or into a cylinder or a ball it ends
-//! on, kept on its side of that solid). Along an edge no line or coaxial circle carries, a round's
+//! on, kept on its side of that solid) — and no further than the meridian halfway to where its
+//! circle comes back within the faces it ends on, where the crease stops being the nearest of the
+//! meeting (#962): there square, whatever of its section those faces leave (a disc's rim chamfered
+//! deeper than its flat stands in), round its whole turn where the circle never comes back.  A
+//! straight run some lines of whose section pass a curved end by goes on to the run beyond it
+//! along the line, or, where none is, to the plane halfway across the chord the face cuts from
+//! the line. Along an edge no line or coaxial circle carries, a round's
 //! ball is rolled and a chamfer's flat cut (`brep::fillet`), each run of such edges one piece, cut
 //! off by every face at its ends (a plane's half-space, a curved face's solid) or, where a corner
 //! stands there, cut short at the corner's section and glued to its cell.
@@ -90,6 +96,9 @@ pub struct Run {
     pub strokes: Vec<(Stroke, &'static str)>,
     pub within: Vec<(V, f64)>,
     pub kept: Vec<Kept>,
+    /// Where it ends on a plane flush with another face only to the drawing's numbers
+    /// (`piece::flush_only`): what a failure to build it says of why, in the faces' names.
+    pub flush: Option<String>,
 }
 
 /// A face's surface as a corner's cell or a piece's end reads it (model units): a plane through

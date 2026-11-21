@@ -49,6 +49,7 @@ pub(super) fn turned(r: &Run, m: &crate::brep::geom::Rigid) -> Run {
         strokes: r.strokes.iter().map(|(s, name)| (stroke(s), *name)).collect(),
         within: r.within.clone(),
         kept: r.kept.clone(),
+        flush: r.flush.clone(),
     }
 }
 
@@ -163,16 +164,25 @@ impl Assembly {
     /// it), so what they make is the whole section of the one glued to the other's cut short, and
     /// where the face crosses the ball's arc there the two rounds' surfaces, tangent along it,
     /// meet it in one point: neither glued nor unioned yet, and said where (`across`).
-    fn across(&mut self, p: usize, section: &[V], at: V, size: f64) {
+    /// A face both pieces are kept within cuts their two caps alike, and they stay one face (a
+    /// ring's stretch carried round past a flat to the meridian halfway to the next stretch of its
+    /// circle, which is carried back to the same meridian within the same flat: #962's 149).
+    fn across(&mut self, [p, o]: [usize; 2], section: &[V], at: V, size: f64) {
         if self.across.is_some() {
             return;
         }
         let tol = 1e-9 * size;
         let n = self.runs.len();
-        let run = if p < n { &self.runs[p] } else { &self.rings[p - n].section };
+        let of = |p: usize| if p < n { &self.runs[p] } else { &self.rings[p - n].section };
+        let (run, other) = (of(p), of(o));
+        // (a face both pieces are kept within cuts their caps alike: none reaching back, #962's 149)
+        let shared = |&(m, d): &(V, f64)| other.within.iter()
+            .any(|&(k, e)| distance(m, k) <= 1e-9 && (d - e).abs() <= tol);
         let deepest = |f: &dyn Fn(V) -> f64| section.iter().map(|&q| f(q)).fold(f64::NEG_INFINITY, f64::max);
-        let halves = run.within.iter().map(|&(m, d)| (deepest(&|q| dot(m, q) - d), EndOf::Half(m, d)));
-        let solids = run.kept.iter().map(|k| (deepest(&|q| k.away(q)), EndOf::Solid(k.face)));
+        let halves = run.within.iter().filter(|w| !shared(w))
+            .map(|&(m, d)| (deepest(&|q| dot(m, q) - d), EndOf::Half(m, d)));
+        let solids = run.kept.iter().filter(|k| !other.kept.contains(k))
+            .map(|k| (deepest(&|q| k.away(q)), EndOf::Solid(k.face)));
         let Some((depth, end)) = halves.chain(solids).max_by(|a, b| a.0.total_cmp(&b.0)) else { return };
         if depth > tol {
             self.across = Some(BackOver { at, depth, end });
@@ -428,7 +438,7 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
         let [first, last] = ring_ends(g, section_points(&g.section));
         let points = if end == 0 { first } else { last };
         out.seam(pair, gap, size);
-        for p in pair {
+        for p in [pair, [pair[1], pair[0]]] {
             out.across(p, &points, at, size);
         }
     }

@@ -769,6 +769,11 @@ split by all the others at once — where three faces of three operands meet at 
 passes, the two meetings on each face cut there (`triple_points`) — a span two faces only touch along
 laid as an edge, every piece a face of the complex but a sliver, coincident pieces one face naming
 each operand; a traced meeting along an edge one face already has is that edge, laid once (`along_an_edge`),
+and so is a span of one along edges either face has, however many (`span_along_edges`: a trace runs on
+past the faces, and a face may hold its stretch in two edges — a ring kept within a cylinder its
+round crosses 0.001 deep, built at the cylinder's tolerance and cut at its top plane's circle where
+the meeting passes 5e-7 under it; laid again beside them, a hair apart and tangent all along, the
+walk round the face could not order the two, `curved_ends::a_rim_ending_on_another_arc_at_a_corner_is_built`),
 and laid across the other face too wherever it lies inside it (`Meetings::along_edges`: a torus's
 seam in the plane through its axis that holds it, `brep::a_torus_cut_along_its_seam_is_half_of_it`); a meeting
 known before any is sought given it (`Given`, `arrangement_given`, #810): curves on two operands'
