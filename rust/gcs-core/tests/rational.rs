@@ -191,7 +191,7 @@ fn holds(what: &str,b: &Brep,whole: f64) {
         let v = mesh_volume(&m);
         assert!((v-whole).abs() <= 24.*bar*whole.abs().powf(2./3.),"{what} at {bar}: {v} against {whole}");
     }
-    let text = gcs_core::brep::step::write(b,what,1e-4).unwrap_or_else(|e| panic!("{what}: {e}"));
+    let text = gcs_core::brep::step::write(b,what,1e-4,gcs_core::brep::step::Fit::Exact).unwrap_or_else(|e| panic!("{what}: {e}"));
     assert!(text.contains("RATIONAL_B_SPLINE"),"{what}: nothing rational written");
     gcs_core::brep::step_check::verify(&text,&gcs_core::brep::step_check::Solid::of(b)).unwrap_or_else(|e| panic!("{what}: {e}"));
 }

@@ -303,8 +303,19 @@ only, refused by `expr::decide`) holds where two faces of one solid share an edg
 its stratum. The elaborator reads it as it names a solid's faces (`solids_and_surfaces`), where the
 drawing is seeded: `solid::faces::Meets::read` over `faces::cached`, each listed `FacePath` matched
 to its patches by route and face, beside the paths in `flatten::Listed` and read again only when
-the paths change. `expand::Asked::meets` answers it; faces of two solids, a face a round made that
-the stratum has not, and a body with a swept cut (no `Meets`) meet. A pair read apart that alone
+the paths change. `expand::Asked::meets` answers it; a face a round made that the stratum has
+not, and a body with a swept cut (no `Meets`), meet.  **Faces of two solids are refused**
+([0.223], #961): an edge is two faces of one body meeting, so `meets` answers them with no truth,
+the block is made for neither, and the pair is an `flatten::Across` at the document's statement
+(`FaceState::at`), once per statement (`Expansion::across`), said by the elaborator once the
+solids are built (`program::solids::across`, E103): `` `wall.far` and `plate.near` are faces of
+two solids, and `wall` and `plate` are not one body ``, then the body both are faces of and their
+names through it where one is made of both (`solid::faces::one_body_of`: the least body whose
+operands hold both faces' primitives, each name checked against its `face_paths`), else that a
+`union` makes them one.  `std.rounds`' words ask `a meets b`, so the faces are said as written.
+`tests/one_body.rs` is the gate (the issue's document with `--solid` naming each solid, two
+solids of six faces each — the number in range — the walls unioned into a part, the spelling the
+refusal gives building the round, the round and the chamfer over whole solids said once). A pair read apart that alone
 left a block out (the condition asked again with every pair meeting) is an `flatten::Apart` at the
 document's statement (`FaceState::at`, carried in `Pending::at`), kept in `SourceMap::apart`.
 **Then it is read where the drawing solves ([0.202], #761):** once a pass elaborates with an

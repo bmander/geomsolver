@@ -15,11 +15,12 @@ use crate::util::fmath::Det;
 use super::geom::{BSpline,Curve,Frame,Surface,V};
 use super::nurbs::Net;
 use super::topo::{reverse_loop,Brep,Coedge,EdgeCurve,Face,Pcurve};
-use super::vec3;
 use crate::util::json::Json;
 use std::sync::Arc;
 
-fn field<'a>(j: &'a Json,k: &str) -> Result<&'a Json,String> { super::field(j,k,"brep json") }
+fn field<'a>(j: &'a Json,k: &str) -> Result<&'a Json,String> { j.get(k).ok_or(format!("brep json: no `{k}`")) }
+/// Three numbers (`[x, y, z]`).
+fn vec3(j: &Json) -> V { let a = j.arr(); [a[0].as_f64(),a[1].as_f64(),a[2].as_f64()] }
 fn reals(j: &Json) -> Vec<f64> { j.arr().iter().map(Json::as_f64).collect() }
 
 /// A placement's axes as written, right-handed or not (`Frame::right`).

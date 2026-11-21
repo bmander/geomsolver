@@ -269,7 +269,7 @@ fn a_face_no_closed_form_reads_is_refused_by_name() {
 
 
 /// **A cutter of revolution is sectioned from its B-rep as from its recipe** (#721 F1d): every
-/// sweep whose tool's recipe is sectioned as revolutions (`Sectioned::read`) has its B-rep sectioned
+/// sweep whose tool's recipe is sectioned as revolutions (`Sectioned::of`) has its B-rep sectioned
 /// so too where it is revolutions about one line (`Sectioned::of_boundary`), the two sections at
 /// several half-planes one region — the same area, and every point of a grid over it in both or
 /// in neither, read in space — a cutter of revolutions about parallel lines (a spiral bevel's, a
@@ -297,7 +297,7 @@ fn sketch_sections_alike(name: &str,sk: &gcs_core::model::Sketch) -> (usize,usiz
             let SolidDef::Swept {source,..} = &sk.solids[swept].def else { continue };
             let what = format!("{name}: `{}`",sk.solids[swept].name);
             let Ok(recipe) = cad::recipe(sk,*source as usize) else { continue };
-            let Ok(drawn) = Sectioned::read(&recipe) else { continue };
+            let Ok(drawn) = Sectioned::of(&recipe) else { continue };
             let Ok(brep) = gcs_core::brep::recipe::build(&recipe) else { continue };
             let read = match Sectioned::of_boundary(&brep) {
                 Ok(read) => read,

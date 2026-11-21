@@ -19,6 +19,7 @@ import { Constraint } from './constraints.js';
 import { Kind, KINDS, Plane, Primitive, Sketch, fromWire } from './model.js';
 import type { Way } from './model.js';
 import type { Row } from './outline.js';
+import type { Word, WordRequest } from './lexicon.js';
 import { core, lastError, takeJson, takeStr, withBuf, withJson, withStr } from './wasm.js';
 
 /** Where a statement sits in the program text, plus the line and column the core worked out, so
@@ -462,6 +463,29 @@ export class Document {
    *  the way the document names them, rather than indexed into a sketch about to be replaced. */
   addRelation(type: string, args: unknown[]): Edit {
     return edit(withJson({ type, args }, (p, n) => core().gcs_elab_add_relation(this.h, p, n)));
+  }
+
+  /** **Every word this document can be written with** (`lexicon::lexicon_json`): the language's,
+   *  the library's, the modules it links and its own, each with the slots it takes.  Read once
+   *  per text: a word the document defines joins it as it is written. */
+  lexicon(): Word[] {
+    if (this.words?.text !== this.text) {
+      this.words = { text: this.text, words: takeJson<Word[]>(core().gcs_elab_lexicon_json(this.h)) };
+    }
+    return this.words.words;
+  }
+  private words: { text: string; words: Word[] } | null = null;
+
+  /** The statement a word would write, as written, or the sentence saying what it still needs
+   *  (`edit::word_text`). */
+  wordText(r: WordRequest): { text?: string; refused?: string } {
+    return takeJson(withJson(r, (p, n) => core().gcs_elab_word_text(this.h, p, n)));
+  }
+
+  /** **A word written** (`edit::write_word`): its statement appended, its module brought in by a
+   *  `use`, held to the elaborator — refused in its words where what it says is wrong. */
+  writeWord(r: WordRequest): Edit {
+    return edit(withJson(r, (p, n) => core().gcs_elab_write_word(this.h, p, n)));
   }
 
   /** A face over drawn edges, `edges` in walk order.  A hole that is one circle is named as it

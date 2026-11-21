@@ -30,6 +30,7 @@ mod reconcile;
 mod component;
 mod requests;
 mod rebind;
+mod words;
 
 pub use seeds::*;
 pub use append::*;
@@ -42,6 +43,7 @@ pub use reconcile::*;
 pub use component::make_component;
 pub use requests::*;
 pub use rebind::{binds, rebind, Rebound};
+pub use words::{word_text, write_word, WordRequest};
 
 /// What an edit did to the document, and what it costs to take up.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

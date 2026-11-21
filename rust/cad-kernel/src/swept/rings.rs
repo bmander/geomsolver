@@ -93,7 +93,7 @@
 //! faces whose sheet crosses the tool at an end pose across two of them is refused by name: the
 //! crossing is not yet cut where it passes from face to face.
 #[allow(unused_imports)]
-use crate::util::fmath::Det;
+use crate::util::fmath::{Det,HALF_READ};
 use crate::boolean::Given;
 use crate::geom::{Curve,Frame};
 use crate::nurbs::Net;
@@ -234,14 +234,18 @@ impl Ring {
                     let cross_z = cross(ez,w.omega);
                     let (pp,q,qq) = ([dot(uc,e1),dot(uc,e2)],dot(ez,uc),[c[0]*dot(cross_z,e1),c[0]*dot(cross_z,e2)]);
                     let size = pp[0].dhypot(pp[1])+q.abs()+qq[0].dhypot(qq[1]);
-                    if a.dhypot(b) <= 1e-6*size {
+                    // (read so where `A` and `B` are no more than their rounding's half the scale's
+                    // digits, and at the nearer of the two angles `A` vanishes at where `B` does too,
+                    // #942 F6)
+                    if a.dhypot(b) <= HALF_READ*size {
+                        use std::f64::consts::PI;
                         let base = (-pp[0]).datan2(pp[1]);
-                        let whole = [base,base+std::f64::consts::PI].into_iter().find(|&st| {
-                            let (ss,cs) = st.dsin_cos();
-                            (q+qq[0]*cs+qq[1]*ss).abs() <= 1e-9*size && ((theta-st+std::f64::consts::PI).rem_euclid(TAU)-std::f64::consts::PI).abs() < 1e-2
-                        });
-                        if let Some(st) = whole {
-                            let d = (theta-st+std::f64::consts::PI).rem_euclid(TAU)-std::f64::consts::PI;
+                        // (θ's way from an angle, wrapped into (−π, π])
+                        let way = |st: f64| (theta-st+PI).rem_euclid(TAU)-PI;
+                        let st = if way(base).abs() <= way(base+PI).abs() { base } else { base+PI };
+                        let (ss,cs) = st.dsin_cos();
+                        if (q+qq[0]*cs+qq[1]*ss).abs() <= HALF_READ*size {
+                            let d = way(st);
                             let (sm,cm) = (theta-0.5*d).dsin_cos();
                             let half = if d < 0. { -1. } else { 1. };
                             (a,b) = (half*(-pp[0]*sm+pp[1]*cm),half*(-qq[0]*sm+qq[1]*cm));
@@ -537,12 +541,13 @@ impl Ring {
                                     let (x1,x2) = (hi-g*(hi-lo),lo+g*(hi-lo));
                                     if value(x1) < value(x2) { hi = x2 } else { lo = x1 }
                                 }
-                                // (clearly below nought, by a ten-millionth of the scale: so the
-                                // instants a hair either side of where a pair is born read alike)
+                                // (clearly below nought, by more than its rounding leaves unread of the
+                                // scale: so the instants a hair either side of where a pair is born
+                                // read alike, #942 F6)
                                 let mid = 0.5*(lo+hi);
                                 let least = best.min(value(mid));
-                                if least < -1e-7*scale_bend { narrow.push(([first,last],near.clone(),sign,mid,least)) }
-                                least < -1e-7*scale_bend
+                                if least < -HALF_READ*scale_bend { narrow.push(([first,last],near.clone(),sign,mid,least)) }
+                                least < -HALF_READ*scale_bend
                             };
                             // (a dip that folds nowhere is the stretches' about it; and a pair narrower
                             // than the band is read as touching here, its bridge put in below)
@@ -698,7 +703,9 @@ struct Read { instant: Instant,pose: Pose,curves: Vec<Vec<Piece>> }
 #[derive(Clone,Debug)]
 pub struct Fitted { pub nets: Vec<Net>,pub on: Vec<Vec<On>>,pub sides: Vec<Vec<Side>>,pub roll: [f64;2],
     /// Per net, where its outer leaves cross about each narrow pair's bridge (#880 T1d): the double
-    /// curve's preimage on the leaf before the bridge and on the one after, each a row's `(u, t)`.
+    /// curve's preimage on the leaf before the bridge and on the one after, each a row's `(u, t)`,
+    /// its `u` continuous along the line — unwrapped across the seam where the tube's faces close
+    /// round, read modulo their number (#942 F6).
     pub doubles: Vec<Vec<Vec<[f64;2]>>>,
     /// Where each narrow pair's outer leaves are first found crossing in this stretch: the two
     /// preimages as angles round the axis, rolls and places round the meridian (`double_curve`).
@@ -808,7 +815,7 @@ impl<'a> Reader<'a> {
         if f <= 0. || f >= 1. {
             let hair = (1e-10f64).min(0.25*(p.to-p.from).abs());
             let inner = at(th+if f <= 0. { hair } else { -hair }*(p.to-p.from).signum())?;
-            if crate::util::space::distance(inner.x,root.x) > 1e-6*self.ring.thickness { root = inner }
+            if crate::util::space::distance(inner.x,root.x) > HALF_READ*self.ring.thickness { root = inner }
         }
         // (a narrow pair's bridge, between two touching pieces, is the sheet itself: the double curve
         // its outer leaves cross along passes through it, and its tail is cut off there, #880 T1d)
@@ -847,7 +854,7 @@ impl<'a> Reader<'a> {
         }.then(|| p.unwrap().0);
         for (j,row) in read.iter().enumerate() {
             for (i,p) in row.iter().enumerate() {
-                if let Some((x,c,rates)) = p { if norm(*c) <= 1e-9*rates {
+                if let Some((x,c,rates)) = p { if norm(*c) <= HALF_READ*rates {
                     if std::env::var_os("SOLVENT_RING_DEBUG").is_some() { eprintln!("ring: no area at u {:.6} t {:.6} over {:?}: {:e} of {:e}",us[i],ts[j],self.roll,norm(*c),rates) }
                     return Err(Unbuilt::Folded {at:*x})
                 } }
@@ -984,9 +991,11 @@ pub fn fitted_over(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],s
         };
         // **where the outer leaves cross about each narrow pair's bridge** (#880 T1d): a bridge between
         // two touching pieces, at each fitted row the leaves' meeting `Σ(u₁, t) = Σ(u₂, t₂)` settled by
-        // Newton's method on the net from beside the bridge's ends (the normal form puts it a fifth of
-        // the bridge's half-width past them); a row where it settles on none is where the pair is
-        // born, its bridge no wider than the rounding, both preimages the bridge's middle
+        // Newton's method on the net from the bridge's ends (the normal form `θ³ − 3h²θ` puts the
+        // preimages at `±√3 h`, `√3 − 1` of the half-width `h` past the folds, and the bridge, its
+        // band within a hair of the folds, is no narrower: so within that of its ends, #942 F6); a
+        // row where it settles on none is where the pair is born, its bridge no wider than the
+        // rounding, both preimages the bridge's middle
         if crate::timing() {
             eprintln!("ring: curve {} over {:?} fitted in {:?}: {rounds} rounds, {} faces, {} rows; {}",run.curve,[a,b],fit_clock.elapsed(),pieces,ts.len()-1,
                 spent::since(fit_before))
@@ -1007,17 +1016,18 @@ pub fn fitted_over(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],s
                 let half = 0.5*(pf.to-pf.from);
                 // (each neighbour's angle a unit of `u` spans: its stretch over its faces)
                 let per = |i: usize| faces.iter().filter(|g| g.piece == i).count().max(1) as f64;
-                let (dl,dr) = (0.22*half/((pl.to-pl.from)/per((f.piece+n-1)%n)).max(1e-300),0.22*half/((pr.to-pr.from)/per((f.piece+1)%n)).max(1e-300));
-                let mut x = last.unwrap_or([k0-dl,k1+dr,t]);
+                let past = (3f64.sqrt()-1.)*half;
+                let (dl,dr) = (past/((pl.to-pl.from)/per((f.piece+n-1)%n)).max(1e-300),past/((pr.to-pr.from)/per((f.piece+1)%n)).max(1e-300));
+                let mut x = last.unwrap_or([k0,k1,t]);
                 let mut settled = false;
                 // (damped least squares, Levenberg–Marquardt, each unknown scaled by its column: near
                 // where the pair is born the two leaves are all but tangent and the sheet's rates all
                 // but parallel, and Newton's own steps flew off)
-                // (each preimage within two of the bridge's half-widths past its end, where the
-                // normal form puts it at √3 − 1 of one: past that a leaf meets another stretch of
-                // the tube, which is the trim's to meet, not the pair's double curve)
-                let lo = [(k0-per((f.piece+n-1)%n)).max(k0-dl*2./0.22),k1,a];
-                let hi = [k0,(k1+per((f.piece+1)%n)).min(k1+dr*2./0.22),b];
+                // (each preimage within `√3 − 1` of the bridge's half-width past its end: past that a
+                // leaf meets another stretch of the tube, which is the trim's to meet, not the pair's
+                // double curve)
+                let lo = [(k0-per((f.piece+n-1)%n)).max(k0-dl),k1,a];
+                let hi = [k0,(k1+per((f.piece+1)%n)).min(k1+dr),b];
                 let residual = |x: [f64;3]| -> (V,[V;3]) {
                     let ((p1,du1,_),(p2,du2,dt2)) = (net.d1(x[0].rem_euclid(pieces as f64),t),net.d1(x[1].rem_euclid(pieces as f64),x[2]));
                     (crate::util::space::sub(p1,p2),[du1,du2.map(|v| -v),dt2.map(|v| -v)])
@@ -1126,6 +1136,24 @@ pub fn changes(ring: &Ring,path: &Trajectory,[a,b]: [f64;2]) -> Result<(f64,Vec<
 /// The ring's root at the angle `θ` with label `l` under twist `w` (`Ring::root`).
 fn self_root(ring: &Ring,w: &Twist,theta: f64,l: Label) -> Option<Root> { ring.root(w,theta.rem_euclid(TAU),l,false) }
 
+/// **Whether `at` (`(θ, t, σ)`, a contact's point at an instant) lies on the double curve `curve`**
+/// (`double_curve`'s points): its point within twice `tol` of the curve's polyline in space — each
+/// traced point on the curve, and the chords between them sagging within `tol` (its step, #942 F6).
+pub fn on_double_curve(ring: &Ring,path: &Trajectory,curve: &[(f64,f64,f64)],at: (f64,f64,f64),tol: f64) -> bool {
+    use crate::util::space::{distance,segment_distance};
+    let Some((x,_)) = sheet_at(ring,path,at.0,at.1,at.2) else { return false };
+    // (read along the curve, the first point or chord within reach the answer)
+    let mut last: Option<V> = None;
+    for &(th,t,sg) in curve {
+        let p = if th.is_finite() && t.is_finite() { sheet_at(ring,path,th,t,sg).map(|p| p.0) } else { None };
+        if let Some(p) = p {
+            if distance(x,p) <= 2.*tol || last.is_some_and(|q| segment_distance(x,q,p) <= 2.*tol) { return true }
+        }
+        last = p;
+    }
+    false
+}
+
 /// The sheet's point at the angle `θ` and roll `t`, the contact's root there nearest the place `σ`
 /// round the meridian, and that root's place.
 fn sheet_at(ring: &Ring,path: &Trajectory,theta: f64,t: f64,sigma: f64) -> Option<(V,f64)> {
@@ -1135,9 +1163,6 @@ fn sheet_at(ring: &Ring,path: &Trajectory,theta: f64,t: f64,sigma: f64) -> Optio
     let (_,r) = ring.roots(&w,theta.rem_euclid(TAU)).into_iter().min_by(|a,b| apart(a.1.sigma).total_cmp(&apart(b.1.sigma)))?;
     Some((path.pose(t).ok()?.point(r.x),r.sigma))
 }
-
-/// How far round the axis a double curve is stepped at once, as the angle its first preimage moves.
-const DOUBLE_STEP: f64 = 2e-4;
 
 /// **A ring's sheet's double curve about a fold pair, over `[a, b]`** (#880 T1d): where its outer
 /// leaves cross, `Σ(θ₁, t₁) = Σ(θ₂, t₂)`, from `seed` — the first preimage's angle stepped, the other
@@ -1151,6 +1176,11 @@ const DOUBLE_STEP: f64 = 2e-4;
 /// preimages all but met, the pair's end too — the curve then a loop, closed through it.
 pub fn double_curve(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],seed: [(f64,f64,f64);2],tol: f64) -> Result<Vec<(f64,f64,f64)>,Unbuilt> {
     let failed = || Unbuilt::Failed("a ring's sheet's double curve about a fold pair not traced".into());
+    // (stepped round the axis, as the angle its first preimage moves, by as much as the angle over
+    // which the meridian's chord sags the tolerance, `√(8 tol / r)`, and halved where the curve's
+    // own chord sags more at its middle, down to the angle over which the meridian moves the
+    // tolerance, `tol / r` — nearer, two points are one to the tolerance, #942 F6)
+    let (most,least) = ((8.*tol/ring.thickness).sqrt(),tol/ring.thickness);
     // the three unknowns `t₁, θ₂, t₂` settled at `θ₁`, from `z`
     let settle = |th1: f64,z: [f64;3],s1: f64,s2: f64| -> Option<([f64;3],f64,f64)> {
         let g = |z: [f64;3]| -> Option<(V,f64,f64)> {
@@ -1180,11 +1210,24 @@ pub fn double_curve(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],seed: [(f64,f64
     // meeting, where the preimages meet again — a pair born and later vanishing, its double curve
     // a loop through two swallowtail points, #880 T1d's thin torus)
     let mut short = false;
+    let mut stopped_at = most;
     for (dir,out) in [(toward,&mut near),(-toward,&mut far)] {
         let (mut th,mut z,mut sg1,mut sg2) = (th1,[t1,th2,t2],s1,s2);
+        let mut step = most;
         for _ in 0..200_000 {
-            let next = th+dir*DOUBLE_STEP;
-            let Some((y,a1,a2)) = settle(next,z,sg1,sg2) else {
+            let next = th+dir*step;
+            let settled = settle(next,z,sg1,sg2);
+            // (the step halved where it settles on no meeting, or where the curve's chord over it
+            // sags more than the tolerance at its middle)
+            let sag = settled.and_then(|(y,a1,_)| {
+                let mid = th+dir*0.5*step;
+                let (ym,am,_) = settle(mid,z,sg1,sg2)?;
+                let (p0,p1,pm) = (sheet_at(ring,path,th,z[0],sg1)?.0,sheet_at(ring,path,next,y[0],a1)?.0,sheet_at(ring,path,mid,ym[0],am)?.0);
+                Some(crate::util::space::distance(pm,scale(crate::util::space::add(p0,p1),0.5)))
+            });
+            if sag.is_none_or(|g| g > tol) && 0.5*step >= least { step *= 0.5; continue }
+            stopped_at = step;
+            let Some((y,a1,a2)) = settled else {
                 if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
                     eprintln!("ring: a double curve's way {} stops at θ₁ {th:.6} with (t₁, θ₂, t₂) {z:?}, σ {sg1:.4} {sg2:.4}",if dir == toward { "toward" } else { "away" });
                 }
@@ -1212,6 +1255,8 @@ pub fn double_curve(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],seed: [(f64,f64
             if dir == toward && (y[1]-next)*toward <= 0. { break }
             (th,z,sg1,sg2) = (next,y,a1,a2);
             out.push([(th,y[0],a1),(y[1],y[2],a2)]);
+            // (grown again where the chord sagged a quarter of the tolerance or less)
+            if sag.is_some_and(|g| g <= 0.25*tol) { step = (2.*step).min(most) }
         }
     }
     if near.is_empty() && far.is_empty() { return Err(failed()) }
@@ -1226,9 +1271,10 @@ pub fn double_curve(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],seed: [(f64,f64
     let mut out: Vec<(f64,f64,f64)> = first.into_iter().chain(second).collect();
     // (the swallowtail point: between the two leaves' preimages, put at the end of the list)
     let ap = if apex > 0 && apex < out.len() { let (p,q) = (out[apex-1],out[apex]); (0.5*(p.0+q.0),0.5*(p.1+q.1),p.2) } else { out[apex.min(out.len()-1)] };
-    // (and where the way away stopped short with its preimages within a twentieth of a radian, the
-    // second: the curve closed through it, from the second preimage's far end to the first's)
-    let far_apex = far.last().filter(|l| short && (l[1].0-l[0].0).abs() <= 0.05)
+    // (and where the way away stopped short with its preimages within the step it stopped at either
+    // side of one another, the second: the curve closed through it, from the second preimage's far
+    // end to the first's)
+    let far_apex = far.last().filter(|l| short && (l[1].0-l[0].0).abs() <= 2.*stopped_at)
         .map(|l| (0.5*(l[0].0+l[1].0),0.5*(l[0].1+l[1].1),l[0].2));
     if let Some(q) = far_apex { let first = out[0]; out.push(q); out.push(first) }
     if toward < 0. { out.reverse() }
@@ -1244,8 +1290,8 @@ pub fn double_curve(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],seed: [(f64,f64
 
 /// **The double curves cut into a stretch's fit** (`Fitted::doubles`): each curve's points within the
 /// stretch on each tube, in that tube's `(u, t)` — those whose root is the tube's curve's at their
-/// angle — with where it crosses the stretch's ends.
-pub fn cut_along(ring: &Ring,path: &Trajectory,whole: [f64;2],fit: &mut Fitted,scale: f64,curves: &[Vec<(f64,f64,f64)>]) -> Result<(),Unbuilt> {
+/// angle, its point within `tol` of the tube's fitted net — with where it crosses the stretch's ends.
+pub fn cut_along(ring: &Ring,path: &Trajectory,whole: [f64;2],fit: &mut Fitted,scale: f64,curves: &[Vec<(f64,f64,f64)>],tol: f64) -> Result<(),Unbuilt> {
     let [a,b] = fit.roll;
     let reader = Reader::within(ring,path,whole,[a,b],0.5*(a+b),scale)?;
     let runs = runs(&reader.first);
@@ -1280,9 +1326,17 @@ pub fn cut_along(ring: &Ring,path: &Trajectory,whole: [f64;2],fit: &mut Fitted,s
             let th = seams[0]+(th-seams[0]).rem_euclid(TAU);
             let Some(k) = (0..n).find(|&k| th >= seams[k] && th <= seams[k+1]) else { return Ok(None) };
             let u = k as f64+(th-seams[k])/(seams[k+1]-seams[k]).max(1e-300);
-            // (the tube's own branch: another stands some half a piece of the meridian away)
+            // (the tube's own branch: within the tolerance of its net, which fits it within less,
+            // where another stands some half a piece of the meridian away, #942 F6)
             let Some((x,_)) = sheet_at(ring,path,th,t,sg) else { return Ok(None) };
-            Ok((crate::util::space::distance(x,net.point(u,t)) <= 1e-2*ring.thickness).then_some(u))
+            Ok((crate::util::space::distance(x,net.point(u,t)) <= tol).then_some(u))
+        };
+        // (each line's `u` unwrapped along it as it is laid: a line crossing the tube's seam, read in
+        // `[0, n)`, jumps from one end of the tube to the other, #942 F6)
+        let laid = |line: &mut Vec<[f64;2]>,u: f64,t: f64| {
+            let nf = n as f64;
+            let u = match line.last() { Some(&[v,_]) => v+(u-v+0.5*nf).rem_euclid(nf)-0.5*nf,None => u };
+            line.push([u,t]);
         };
         let mut out = Vec::new();
         for full in curves {
@@ -1300,12 +1354,12 @@ pub fn cut_along(ring: &Ring,path: &Trajectory,whole: [f64;2],fit: &mut Fitted,s
                     for edge in [a,b] {
                         if (t0-edge)*(t-edge) < 0. {
                             let f = (edge-t0)/(t-t0);
-                            if let Some(u) = u_of((th0+(th-th0)*f,edge,if f < 0.5 { sg0 } else { sg }))? { line.push([u,edge]) }
+                            if let Some(u) = u_of((th0+(th-th0)*f,edge,if f < 0.5 { sg0 } else { sg }))? { laid(&mut line,u,edge) }
                             if !inside && line.len() >= 2 { out.push(std::mem::take(&mut line)) } else if !inside { line.clear() }
                         }
                     }
                 }
-                if inside { if let Some(u) = u_of((th,t,sg))? { line.push([u,t]) } }
+                if inside { if let Some(u) = u_of((th,t,sg))? { laid(&mut line,u,t) } }
             }
             if line.len() >= 2 { out.push(line) }
         }
@@ -1382,14 +1436,9 @@ pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],rimmed: 
         let y_of = |t: f64| (t-a)/(b-a);
         // each double curve's preimages cut at the seams between faces: per face its chords
         let mut cuts_of: Vec<Vec<Vec<P2>>> = vec![Vec::new();pieces];
-        for side in doubles {
-            // (its `u` unwrapped along it, and each step cut at every seam it crosses)
-            let np = pieces as f64;
-            let mut un: Vec<[f64;2]> = Vec::new();
-            for &[u,t] in side {
-                let u = match un.last() { Some(&[v,_]) => v+(u-v+0.5*np).rem_euclid(np)-0.5*np,None => u };
-                un.push([u,t]);
-            }
+        let np = pieces as f64;
+        for un in doubles {
+            // (each step cut at every seam it crosses, its `u` continuous along it)
             let face_of = |u: f64| (u.rem_euclid(np).floor() as usize).min(pieces-1);
             let mut run: Vec<P2> = vec![[un[0][0]-face_of(un[0][0]+1e-12) as f64-(un[0][0]/np).floor()*np,y_of(un[0][1])]];
             let mut face = face_of(un[0][0]+1e-12);
@@ -1412,7 +1461,10 @@ pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],rimmed: 
             }
             if run.len() >= 2 { cuts_of[face].push(run) }
         }
-        // whether `(u, t)` is in a narrow pair's tail: above its double curve, a curve over `u`
+        // whether `(u, t)` is in a narrow pair's tail: above its double curve, a curve over `u` (its
+        // `u` continuous along it: read wrapped, a curve crossing the tube's seam ran from one end of
+        // the tube to the other and made all of it tail — the thin tumbling torus's middle stretch,
+        // its tube left a sliver beside its start, #942 F6)
         let tail = |u: f64,t: f64| doubles.iter().any(|line| {
             let mid = 0.5*(line[0][0]+line[line.len()-1][0]);
             let u = mid+(u-mid+0.5*pieces as f64).rem_euclid(pieces as f64)-0.5*pieces as f64;
@@ -1436,7 +1488,13 @@ pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],rimmed: 
             // traced back along it — is one chord: two along one another split each other into a
             // thousand pieces, #880 T1d M2's ring beside its whole-touched meridian)
             for (e,c) in (0..2).flat_map(|e| readings[e].as_ref().map_or(Vec::new(),traces).into_iter().map(move |c| (e,c))) {
-                let near = |p: P2,q: P2| (p[0]-q[0]).hypot(p[1]-q[1]) <= 1e-6;
+                // (a trace of no length — all its points within `ON_SIDE` of its first, one place on
+                // the face's square — bounds nothing: the tool touching the face there, not crossing
+                // it; the near-orthogonal tori's, two points 2.4e-13 apart on the rim where a crossing
+                // of the face ends, #942 F6. A trace along a side is kept: a rim lying on the tool)
+                if no_length(&c) { continue }
+                // (its ends within the trace's step of the other's: a trace's end is placed to it)
+                let near = |p: P2,q: P2| (p[0]-q[0]).hypot(p[1]-q[1]) <= MET_STEP;
                 let mid = c[c.len()/2];
                 let again = chords.iter().any(|(f,d)| *f == e && (near(d[0],c[0]) && near(d[d.len()-1],c[c.len()-1]) || near(d[0],c[c.len()-1]) && near(d[d.len()-1],c[0]))
                     && d.iter().any(|&p| (p[0]-mid[0]).hypot(p[1]-mid[1]) <= 4.*MET_STEP));
@@ -1477,8 +1535,11 @@ pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],rimmed: 
 /// a part of the face's domain each way; and the most steps it takes.
 const MET_RIM: usize = 512;
 const MET_STEP: f64 = 2e-3;
-/// How near the rim at its end `G` is not divided but carried on from just off it.
-const G_CARRIED: f64 = 1e-4;
+/// How near the rim at its end `G` is not divided but carried on from just off it (#942 F6): where
+/// what its division by `(y − e)^order` leaves to the rounding, `ε / d^order`, is what carrying it
+/// on straight from `d` and `2d` leaves of its curvature, `d²` — `ε^(1/(order + 2))`, a touching
+/// rim's (`order` 2) `ε^¼` and a crossing one's `ε^⅓`, the face's roll its unit.
+fn g_carried(order: i32) -> f64 { f64::EPSILON.powf(1./(order as f64+2.)) }
 const MET_MOST: usize = 20_000;
 
 /// **A tube's face read against the tool at one end pose, in its own domain**: the face of `net`
@@ -1503,7 +1564,7 @@ impl Reading<'_> {
         // (no rim of the face on this tool: read plainly)
         if self.order == 0 { return self.f(x,y) }
         // how near the touching rim the division is not made but carried from just off it
-        let near = G_CARRIED;
+        let near = g_carried(self.order);
         let (e,order) = (self.end,self.order);
         let rim = self.f(x,e);
         let raw = |y: f64| (self.f(x,y)-rim)/(y-e).powi(order);
@@ -1723,7 +1784,7 @@ fn settled(r: &Reading,p: P2) -> Option<P2> {
 /// T1d M2 — where the tool's side changes within four steps; any other place as it is.
 fn polished(r: &Reading,p: P2) -> P2 {
     let (x0,y) = (p[0],p[1]);
-    if r.order == 0 || !(x0 > 0. && x0 < 1.) || !((y-r.end).abs() > 0. && (y-r.end).abs() < G_CARRIED) { return p }
+    if r.order == 0 || !(x0 > 0. && x0 < 1.) || !((y-r.end).abs() > 0. && (y-r.end).abs() < g_carried(r.order)) { return p }
     let f = |x: f64| r.f(x,y);
     let f0 = f(x0);
     let mut h = 1e-12;
@@ -1789,6 +1850,10 @@ enum Walk { Side(f64,f64),Chord(usize,bool) }
 /// exactly (`traces` settles it there).
 const ON_SIDE: f64 = 1e-12;
 
+/// Whether a run of places on a face's square has no length: every one within `ON_SIDE` of its
+/// first, one place — bounding nothing (#942 F6).
+fn no_length(c: &[P2]) -> bool { c.iter().all(|&p| (p[0]-c[0][0]).hypot(p[1]-c[0][1]) <= ON_SIDE) }
+
 /// A place on the face's normalised square, as a way round it counter-clockwise from `(0, 0)`:
 /// along the rim at the start, up the far seam, back along the rim at the stop, down the near seam.
 fn perimeter([x,y]: P2) -> f64 {
@@ -1846,9 +1911,10 @@ fn pieces_of_square(chords: &[(usize,Vec<P2>)]) -> Result<Vec<Vec<Walk>>,Unbuilt
 /// **A square's chords split where they cross or one ends on another** (#880 T1d: a double curve
 /// ending on a tube's meeting with the tool at an end pose): each chord cut at every place another
 /// crosses it, and at every end of another standing within `SNAP_ON` of it (that end put there),
-/// each piece keeping its chord's kind.
+/// each piece keeping its chord's kind. A trace's end is placed to its step (`MET_STEP`), so an end
+/// within a step of another chord ends on it (#942 F6).
 fn split_chords(chords: &[(usize,Vec<P2>)]) -> Vec<(usize,Vec<P2>)> {
-    const SNAP_ON: f64 = 1e-3;
+    const SNAP_ON: f64 = MET_STEP;
     let on_rim = |p: P2| p[0] <= ON_SIDE || p[0] >= 1.-ON_SIDE || p[1] <= ON_SIDE || p[1] >= 1.-ON_SIDE;
     let mut lines: Vec<(usize,Vec<P2>)> = chords.to_vec();
     // each chord's cuts: (segment, fraction along it, place)
@@ -1926,6 +1992,10 @@ fn pieces_among(chords: &[(usize,Vec<P2>)]) -> Result<Vec<Vec<Walk>>,Unbuilt> {
         r.sort_by(|&x,&y| perimeter(nodes[x]).total_cmp(&perimeter(nodes[y]))); r };
     let mut out: Vec<Vec<(f64,Walk,usize)>> = vec![Vec::new();nodes.len()];
     let angle = |a: P2,b: P2| (b[1]-a[1]).atan2(b[0]-a[0]);
+    // (a side of the square is straight: its way is its own, read off no step along it, #942 F6 —
+    // counter-clockwise round the square from `(0, 0)`, the side `⌊s⌋` from `s` on)
+    let side_way = |k: i64| [[1.,0.],[0.,1.],[-1.,0.],[0.,-1.]][k.rem_euclid(4) as usize];
+    let way = |d: [f64;2]| d[1].atan2(d[0]);
     for (i,(_,c)) in chords.iter().enumerate() {
         let [p,q] = ends[i];
         out[p].push((angle(c[0],c[1]),Walk::Chord(i,true),q));
@@ -1934,14 +2004,14 @@ fn pieces_among(chords: &[(usize,Vec<P2>)]) -> Result<Vec<Vec<Walk>>,Unbuilt> {
     for w in 0..rim.len() {
         let (p,q) = (rim[w],rim[(w+1)%rim.len()]);
         let (s0,s1) = (perimeter(nodes[p]),if w+1 == rim.len() { 4. } else { perimeter(nodes[q]) });
-        // (the way out along the side, read a hair along it)
-        let ahead = round_square(s0+1e-6);
-        out[p].push((angle(nodes[p],ahead),Walk::Side(s0,s1),q));
+        // (the way out along the side it runs on from here)
+        out[p].push((way(side_way(s0.floor() as i64)),Walk::Side(s0,s1),q));
     }
     // the way back into each place along each way, to turn from
     let back = |w: &Walk| -> Option<f64> {
         match *w {
-            Walk::Side(_,s1) => { let at = round_square(s1); Some(angle(at,round_square(s1-1e-6))) }
+            // (back along the side it arrives on: the one before a corner it arrives at)
+            Walk::Side(_,s1) => { let d = side_way(s1.ceil() as i64-1); Some(way([-d[0],-d[1]])) }
             Walk::Chord(i,f) => { let c = &chords[i].1; Some(if f { angle(c[c.len()-1],c[c.len()-2]) } else { angle(c[0],c[1]) }) }
         }
     };
@@ -2032,6 +2102,8 @@ fn trimmed(net: &Net,roll: [f64;2],mut faces: Vec<Trimmed>,tol: f64) -> Result<(
             let last = c.len()-1;
             for i in [0,last] { if let Some(s) = seam_of(k,c[i][0]) { c[i] = [c[i][0].round(),seams[s][place(s,c[i][1])?]] } }
         }
+        // (and one its ends' places put at one place has no length, and bounds nothing, #942 F6)
+        face.chords.retain(|(_,c)| !no_length(c));
     }
     let mut out = Brep::default();
     let frame = Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]);
