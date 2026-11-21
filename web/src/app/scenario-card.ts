@@ -1,4 +1,4 @@
-/* **The scenario chooser and its card** (#510): beside the plane chooser, where the document
+/* **The scenario chooser and its card** (#510): in the viewport's corner, where the document
  * states a load scenario, a chooser of them; once one is chosen, a card beneath it with the
  * exaggeration the picture is drawn at in its head, the colour ramp the moves are read by, what
  * the reading says, and a row for each line of the scenario — the line as written, and what the

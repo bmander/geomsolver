@@ -44,6 +44,8 @@ import type { Sectioned } from '../core/section.js';
 import { eyeFrame, placeOf, solidEdges } from '../core/workspace.js';
 import type { SolidEdge } from '../core/workspace.js';
 import type { Item3 } from '../core/overview.js';
+import { Plane } from '../core/model.js';
+import type { Primitive } from '../core/model.js';
 import { COL, DIMMED, chromeOf, inkOf } from './paint.js';
 import { dropLabel, scaleLabels, textLabel } from './label.js';
 import type { Label } from './label.js';
@@ -79,9 +81,9 @@ const HATCH = { pitch: 9, ink: 2 };
 /** How much of a Boolean's tool shows through as a ghost. */
 const GHOST = 0.4;
 
-/** A pane's frame, in screen pixels: the plane being drawn on is bold.  WebGL draws every
+/** A pane's frame, in screen pixels: a plane selected or highlighted is bold.  WebGL draws every
  *  `LineBasicMaterial` one pixel wide whatever it is asked, so a frame is a fat line. */
-const FRAME_PX = { plain: 1, current: 2.5 };
+const FRAME_PX = { plain: 1, lit: 2.5 };
 
 /** How an assembly shown on its parts draws its datums (#679): quietly — a pane's wash, its
  *  frame and the axes — so the parts are what is seen. */
@@ -905,8 +907,8 @@ export class Box3D {
     }
   }
 
-  /** **What the app says about the scene, written per frame.**  The selection and the plane being
-   *  drawn on change without the drawing changing, so they are a material write and never a
+  /** **What the app says about the scene, written per frame.**  The selection and what is under
+   *  the pointer change without the drawing changing, so they are a material write and never a
    *  rebuild: the ink rule itself is `paint.ts`'s, so a thing picked is lit the same colour here
    *  as on the canvas above. */
   private chrome(v: SketchView): void {
@@ -914,27 +916,29 @@ export class Box3D {
     const hl = new Set(v.lit);
     // std's datums are the document's frame of reference, held outright: they keep their quiet
     // ink, so only what the drawing adds is coloured by its state
-    const ink = (it: Item3, base: string | number): string | number => {
-      const ent = v.entityOf(it);
+    const ink = (ent: Primitive | null | undefined, base: string | number): string | number => {
       if (!ent) return base;
       const own = !v.doc.nameOf(ent)?.startsWith('std.');
       return (own ? inkOf(v, sel, hl, ent) : chromeOf(sel, hl, ent)?.[0]) ?? base;
     };
     for (const { it, line } of this.frames) {
-      (line.material as THREE.LineBasicMaterial).color.set(ink(it, INK.drawn));
+      (line.material as THREE.LineBasicMaterial).color.set(ink(v.entityOf(it), INK.drawn));
     }
     // a pane is a place's (`std.up` has none of its own: it stands where `std.front` does), so
-    // the one that bolds is the place of the plane being drawn on
+    // it is lit as any plane standing there is: selected, then highlighted, by `chromeOf`'s order
     const ws = v.workspace();
-    const here = v.plane ? placeOf(ws, v.plane.index) : null;
+    const placesOf = (ps: Iterable<Primitive>): Set<number> =>
+      new Set([...ps].flatMap((p) => p instanceof Plane ? [placeOf(ws, p.index)] : []));
+    const selPlaces = placesOf(sel);
+    const hlPlaces = placesOf(hl);
     for (const { it, line } of this.panes) {
       const m = line.material;
-      m.color.set(ink(it, INK.pane));
-      // the plane being drawn on: its frame bolds, so where the next thing goes is in sight
       const pl = v.planeOf(it);
-      const current = here !== null && pl !== null && placeOf(ws, pl.index) === here;
-      m.opacity = current ? 0.8 : v.onParts ? QUIET.frame : 0.35;
-      m.linewidth = current ? FRAME_PX.current : FRAME_PX.plain;
+      // a plane is picked as anything is, and lit only while it is
+      const lit = pl && chromeOf(selPlaces, hlPlaces, placeOf(ws, pl.index));
+      m.color.set(lit ? lit[0] : ink(pl, INK.pane));
+      m.opacity = lit ? 0.8 : v.onParts ? QUIET.frame : 0.35;
+      m.linewidth = lit ? FRAME_PX.lit : FRAME_PX.plain;
       m.resolution.set(v.width, v.height);
     }
     // (each object's colour and tint is `sync`'s, which has just run)

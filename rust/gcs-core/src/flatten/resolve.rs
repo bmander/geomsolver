@@ -921,8 +921,8 @@ fn rewrite_decl(
             d.membership.ride_in(r);
         }
     }
-    // a circle's normal is a name of the scope (#363 S6)
-    if let Some(r) = d.normal.as_mut() {
+    // a circle's normal is a name of the scope (#363 S6), as what its seed is read off is
+    for r in d.normal.iter_mut().flat_map(|n| n.refs_mut()) {
         fix(r, bad);
     }
     // a corner round's lines and corner are names of the scope its chain was written in (#576)
@@ -1611,6 +1611,12 @@ impl<'a> Walk<'a> {
                         if let Kid::Hint(crate::syntax::KidSeed { dir: Some(dir), .. }) = kid {
                             free.extend(dir.refs().map(|r| r.span));
                         }
+                    }
+                    // and a circle's normal seeded off geometry (#363 S6)
+                    if let Some(crate::syntax::Normal::Seed(crate::syntax::KidSeed {
+                        dir: Some(dir), ..
+                    })) = &d.normal {
+                        free.extend(dir.refs().map(|r| r.span));
                     }
                     free.extend(d.membership.plane().map(|r| r.span));
                     // and the frames it rides on carry every copy alike (#383)

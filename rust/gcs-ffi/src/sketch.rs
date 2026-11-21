@@ -170,12 +170,13 @@ pub unsafe extern "C" fn gcs_sketch_point(
 }
 
 /// A **point in space**, in no plane, where the eye at `az`, `el` (radians) sees `(x, y)` on its
-/// picture plane (`workspace::unseen`): what a tool mints with no plane chosen.  Its index.
+/// picture plane: what a tool mints, each coordinate to the digits a pixel `px` long justifies
+/// (`workspace::unseen_placed`; `px <= 0` leaves it as it fell).  Its index.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_sketch_point_seen(h: *mut Sketch, az: f64, el: f64, x: f64,
-                                               y: f64) -> i32 {
+                                               y: f64, px: f64) -> i32 {
     guard(-1, move || {
-        let at = gcs_core::overview::workspace::unseen(az, el, (x, y));
+        let at = gcs_core::overview::workspace::unseen_placed(az, el, (x, y), px);
         sk(h).point3(at, false, "") as i32
     })
 }
@@ -280,6 +281,15 @@ pub unsafe extern "C" fn gcs_sketch_circle(
     guard(-1, move || {
         sk(h).circle(center as usize, r, as_str(name, name_len)) as i32
     })
+}
+
+/// **Point `end` in space put on the circle about `center` through `start`** (`Sketch::
+/// onto_radius`): the arc tool's end on its radius before an arc over points in space is
+/// written.  1 where it moved, 0 where `end` is no point in space or stands on the centre.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_onto_radius(h: *mut Sketch, center: i32, start: i32,
+                                                end: i32) -> i32 {
+    guard(0, move || sk(h).onto_radius(center as usize, start as usize, end as usize) as i32)
 }
 
 #[no_mangle]

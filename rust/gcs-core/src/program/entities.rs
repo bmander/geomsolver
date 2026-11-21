@@ -179,7 +179,7 @@ pub(super) fn build(
     }
     if let (EntKind::Circle, Some(n)) = (d.kind, &d.normal) {
         deferred.push(Deferred::Normal { circle: idx, normal: n.clone(), span: st.span,
-                                         stmt: st.id });
+                                         stmt: st.id, names: d.seed_names.clone() });
     }
     set_class(sk, e, d.class.clone());
     defer_seeds(sk, d, st, e, deferred);
@@ -868,7 +868,8 @@ pub(super) fn arcs_in_space(sk: &mut Sketch, map: &super::SourceMap, deferred: &
         // the arc's own rows, its ends on it, over its new ends
         sk.derive(Owner::Arc(i as u32));
         let ties = [[origin, pts[0]], [start, pts[1]], [end, pts[2]]].map(|t| t.map(|p| p as u32));
-        sk.arcs[i].round = Some(RoundIn { plane: pi as u32, ties: ties.to_vec(), normal: None });
+        sk.arcs[i].round = Some(RoundIn { plane: pi as u32, ties: ties.to_vec(), normal: None,
+                                          own: false });
         sk.derive(Owner::Round(arc));
     }
 }
@@ -929,7 +930,9 @@ pub(super) fn walked_back(sk: &Sketch, res: &Resolver, diags: &mut Vec<Diag>) ->
 
 /// **A circle about a point in space stands square to its `normal:`** (#363 S6): `k := circle(
 /// center: o, normal: ax)` with `o` standing in space mints the plane through `o` square to `ax`
-/// — an axis, or a line read as one — and draws the circle there about its origin, tied to `o`
+/// — an axis, or a line read as one, or an axis of the circle's own, `normal: hint(dir: (…))`,
+/// minted here along its seed and free, so its constraints may turn the circle (its `RoundIn` says
+/// it is `own`) — and draws the circle there about its origin, tied to `o`
 /// (`Coincident3`), its axes square to the normal and to each other: the circle's `RoundIn`,
 /// whose rows are its own (`Owner::Round`).  A circle has no
 /// turn of its own, so the plane's turn about the normal is a gauge, held square to the world's
@@ -945,7 +948,7 @@ pub(super) fn circles_in_space(
     use crate::model::{Owner, RoundIn};
     use crate::space::{cross, norm, sub};
     for d in deferred {
-        let Deferred::Normal { circle, normal, span, stmt } = d else { continue };
+        let Deferred::Normal { circle, normal, span, stmt, names } = d else { continue };
         let (i, c) = (*circle, sk.circles[*circle].center as usize);
         if sk.plane_of(c).is_some() {
             diags.push(Diag::within(Code::E040, *span, *stmt, "`normal:` stands a circle about a \
@@ -953,20 +956,45 @@ pub(super) fn circles_in_space(
                 which is the plane it is drawn in".to_string()));
             continue;
         }
-        let axis = res.entity(sk, normal)
-            .filter(|e| matches!(e.kind, EntKind::Axis | EntKind::Line));
-        let dir = axis.map(|e| match e.kind {
-            EntKind::Axis => sk.axes[e.i()].d.map(|p| sk.params[p as usize].value),
-            _ => {
-                let l = &sk.lines[e.i()];
-                sub(sk.world_point(l.p2 as usize), sk.world_point(l.p1 as usize))
+        let name = map.name_of(EntRef::circle(i)).cloned()
+            .unwrap_or_else(|| entity_name(EntRef::circle(i)));
+        let (axis, dir, own) = match normal {
+            crate::syntax::Normal::Axis(r) => {
+                let axis = res.entity(sk, r)
+                    .filter(|e| matches!(e.kind, EntKind::Axis | EntKind::Line));
+                let dir = axis.map(|e| match e.kind {
+                    EntKind::Axis => sk.axes[e.i()].d.map(|p| sk.params[p as usize].value),
+                    _ => {
+                        let l = &sk.lines[e.i()];
+                        sub(sk.world_point(l.p2 as usize), sk.world_point(l.p1 as usize))
+                    }
+                });
+                let (Some(axis), Some(dir)) = (axis, dir.filter(|d| norm(*d) > 0.0)) else {
+                    diags.push(Diag::within(Code::E103, r.span, *stmt, format!("`normal:` names \
+                        the axis a circle stands square to, an axis or a line, and `{}` is none",
+                        crate::syntax::ref_text(r))));
+                    continue;
+                };
+                (axis, dir, false)
             }
-        });
-        let (Some(axis), Some(dir)) = (axis, dir.filter(|d| norm(*d) > 0.0)) else {
-            diags.push(Diag::within(Code::E103, normal.span, *stmt, format!("`normal:` names the \
-                axis a circle stands square to, an axis or a line, and `{}` is none",
-                crate::syntax::ref_text(normal))));
-            continue;
+            // an axis of its own, along its seed: the numbers written, or read off geometry
+            crate::syntax::Normal::Seed(seed) => {
+                let dir = match &seed.dir {
+                    Some(g) => direction_of(sk, res, g, names),
+                    None if norm(seed.v) > 0.0 => Ok(seed.v),
+                    None => Err("a circle's `normal:` seeds the axis it stands square to, and \
+                                 `(0, 0, 0)` is no direction".to_string()),
+                };
+                let dir = match dir {
+                    Ok(d) => d,
+                    Err(m) => {
+                        diags.push(Diag::within(Code::E103, seed.span, *stmt, m));
+                        continue;
+                    }
+                };
+                let ax = sk.axis(dir.map(|x| x / norm(dir)), &format!("{name}.normal"));
+                (EntRef::axis(ax), dir, true)
+            }
         };
         let n = dir.map(|x| x / norm(dir));
         let k = (0..3).min_by(|&a, &b| n[a].abs().total_cmp(&n[b].abs())).unwrap_or(0);
@@ -976,8 +1004,6 @@ pub(super) fn circles_in_space(
         let u = w.map(|x| x / norm(w));
         let v = cross(n, u);
         let at = sk.world_point(c);
-        let name = map.name_of(EntRef::circle(i)).cloned()
-            .unwrap_or_else(|| entity_name(EntRef::circle(i)));
         let (pi, origin) = round_plane(sk, &name, [u, v], at);
         // the gauge: the world's axis least along the normal, held, and taken again where a
         // solve leaves the normal near it (`Sketch::retake_round_gauges`)
@@ -988,7 +1014,7 @@ pub(super) fn circles_in_space(
         sk.circles[i].center = origin as u32;
         sk.circles[i].round = Some(RoundIn { plane: pi as u32,
                                              ties: vec![[origin as u32, c as u32]],
-                                             normal: Some((axis, gauge as u32)) });
+                                             normal: Some((axis, gauge as u32)), own });
         sk.derive(Owner::Round(EntRef::circle(i)));
     }
 }
@@ -1230,8 +1256,15 @@ pub(super) enum Deferred {
     /// step may place instead (`walk_seeds`, #330).
     Scattered { point: usize },
     /// A circle's `normal:` (#363 S6): the axis it stands square to, read where its centre
-    /// stands in space (`circles_in_space`), once every axis is built.
-    Normal { circle: usize, normal: crate::syntax::Ref, span: Span, stmt: StmtId },
+    /// stands in space (`circles_in_space`), once every axis is built — or one of its own minted
+    /// there along its seed, the names the seed may read beside it.
+    Normal {
+        circle: usize,
+        normal: crate::syntax::Normal,
+        span: Span,
+        stmt: StmtId,
+        names: Vec<(String, String)>,
+    },
     /// An arc said to turn clockwise from its start, `sense: cw` (#363 S4): drawn in its plane
     /// turned over (`arcs_in_space`).
     Clockwise { arc: usize, span: Span, stmt: StmtId },

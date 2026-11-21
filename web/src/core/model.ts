@@ -577,9 +577,10 @@ export class Sketch {
   }
 
   /** A point in space, in no plane, where the eye at bearing `az` and elevation `el` (radians)
-   *  sees `(x, y)` on its picture plane — nought deep, the constraints' to say the rest. */
-  pointSeen(az: number, el: number, x: number, y: number): Point {
-    const i = core().gcs_sketch_point_seen(this.handle, az, el, x, y);
+   *  sees `(x, y)` on its picture plane — nought deep, the constraints' to say the rest — each
+   *  coordinate to the digits a pixel `px` long justifies (`io.placed`). */
+  pointSeen(az: number, el: number, x: number, y: number, px = 0): Point {
+    const i = core().gcs_sketch_point_seen(this.handle, az, el, x, y, px);
     if (i < 0) throw new Error(lastError() || 'no point in space');
     return this.points[i];
   }
@@ -650,6 +651,13 @@ export class Sketch {
       core().gcs_sketch_arc(this.handle, center.index, start.index, end.index, p, n));
     this.touch();     // the two intrinsic PointOnCircle constraints came with it
     return this.arcs[i];
+  }
+
+  /** Point `end`, in space, put on the circle about `center` through `start`, along the ray
+   *  from `center` — an arc tool's end on its radius.  Whether it moved: not for a point in a
+   *  plane, nor one standing on the centre. */
+  ontoRadius(center: Point, start: Point, end: Point): boolean {
+    return core().gcs_sketch_onto_radius(this.handle, center.index, start.index, end.index) === 1;
   }
 
   /** Arc from `start` to `end` bulging through `through`; null if the three are collinear. */

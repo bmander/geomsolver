@@ -131,6 +131,25 @@ impl Sketch {
         self.points[p].chart = Some(f as u32);
     }
 
+    /// **Point `e` in space put on the circle about `c` through `s`** (#363 S6): moved along the
+    /// ray from `c` to where it stands, as the arc tool's end is put on its radius before the arc
+    /// over points in space is written — so the solve that follows moves none of the three.
+    /// False, and nothing moved, where `e` is not a point in space — in no plane and no chart,
+    /// its three numbers its place in the world — or stands on `c`.
+    pub fn onto_radius(&mut self, c: usize, s: usize, e: usize) -> bool {
+        use crate::space::{add, distance, normalised, scale, sub};
+        let p = &self.points[e];
+        let (Some(z), None, None) = (p.z, p.plane, p.chart) else { return false };
+        let at = self.world_point(c);
+        let Some(ray) = normalised(sub(self.world_point(e), at)) else { return false };
+        let to = add(at, scale(ray, distance(self.world_point(s), at)));
+        let p = &self.points[e];
+        for (param, v) in [p.x, p.y, z].into_iter().zip(to) {
+            self.params[param as usize].value = v;
+        }
+        true
+    }
+
     /// Put point `p`, in no plane, in space at height `z`: its third coordinate — what the
     /// elaborator does to a point no `in` reached once every membership is in.
     pub fn give_place(&mut self, p: usize, z: f64) {

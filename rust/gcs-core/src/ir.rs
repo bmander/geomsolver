@@ -74,7 +74,7 @@ pub struct Decl {
     pub angular_span: Option<syntax::AngularSpan>,
     pub membership: Membership,
     /// A circle's normal, where its centre stands in space (#363 S6, `syntax::Decl::normal`).
-    pub normal: Option<syntax::Ref>,
+    pub normal: Option<syntax::Normal>,
     /// Which way an arc drawn in a plane turns (#363 S4, `syntax::Decl::sense`).
     pub sense: Option<syntax::Sense>,
     /// A spatial frame declared bare (#383, `syntax::Decl::bare`).

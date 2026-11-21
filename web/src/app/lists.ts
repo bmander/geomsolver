@@ -1,58 +1,19 @@
-/* The constraints window, the banner and the status line: everything the shell says about the
- * sketch rather than draws of it.
- *
- * The window belongs to what is picked.  It lists what holds the selected component and
- * nothing else, and the status line says in words which component that is — the two are the
- * one answer to "what have I got hold of", one as a list and one as a line.  The list is
- * rebuilt only when its contents change, so rows keep their DOM nodes, and the scroll
- * position, across ordinary edits and drags. */
+/* The banner and the status line: everything the shell says about the sketch rather than draws
+ * of it.  The status line says in words what is picked — the answer to "what have I got hold
+ * of". */
 import * as io from '../core/io.js';
-import { Constraint } from '../core/constraints.js';
 import {
   Arc, Axis, Circle, Curve, Line, Plane, Point, Primitive, Spline, angleBetween, distanceBetween,
   expand,
 } from '../core/model.js';
-import { expressions } from '../core/expr.js';
 import { unbuilt } from '../core/mesh.js';
 import {
-  banner, bannerSelect, bannerText, clearFocus, clist, componentEl, cpanel, cpanelTitle,
-  currentConstraint, focusConstraint, footerEl, measureEl, view,
+  banner, bannerSelect, bannerText, clearFocus, componentEl, currentConstraint, focusConstraint,
+  footerEl, measureEl, view,
 } from './shell.js';
-import { dragWindow, stats } from './ui.js';
+import { stats } from './ui.js';
 import { pickName } from './view.js';
 import type { SolidPick } from './view.js';
-
-/** The constraints the window was last built from, and the components it is open on: the list
- *  is rebuilt only when what it holds actually changed, or when `invalidateRows` says a number
- *  in it moved under the same constraints. */
-let rows: Constraint[] = [];
-let subject: Primitive[] = [];
-let stale = false;
-
-function rebuildRows(next: Constraint[]): void {
-  const ix = new io.Index(view.sketch);
-  clist.replaceChildren();
-  next.forEach((c) => {
-    const li = document.createElement('li');
-    li.dataset.base = io.describe(c, view.doc);
-    li.textContent = li.dataset.base;
-    li.addEventListener('click', () => {
-      focusConstraint(c);
-      refresh();
-      view.draw();
-    });
-    // a dimension's row and its callout on the drawing are the same constraint, so both
-    // open its number through the one hook the shell wires for it
-    li.addEventListener('dblclick', () => view.onEditConstraint(c));
-    clist.append(li);
-  });
-  rows = next;
-}
-/** Same objects in the same order — the lists are rebuilt only when this fails, so rows keep
- *  their DOM nodes (and the user's scroll position) across ordinary edits and drags. */
-function sameList<T>(a: readonly T[], b: readonly T[]): boolean {
-  return a.length === b.length && a.every((c, i) => c === b[i]);
-}
 
 /** A component in words: its short name, its type, and the points that define it, so what the
  *  status line says is the sketch's structure rather than coordinates that churn on every
@@ -86,137 +47,29 @@ function planeName(pl: Plane): string {
   return view.doc.nameOf(pl) ?? pl.name;
 }
 
-/** What the window is open on: the selection while there is one, and otherwise whatever it was
- *  last opened on, minus anything that has since left the document.  Staying put is the whole
- *  point of the second clause — focusing a constraint empties the selection, so a row of the
- *  window would otherwise pull the window out from under the pointer that clicked it.
- *
- *  Nothing here infers where a focus came from; `openPanel` and `closePanel` are how the two
- *  other things that pick — a callout on the drawing, the banner's button, a press that hits
- *  nothing — say what they picked. */
-function panelSubject(live: Set<Primitive>): Primitive[] {
-  if (view.selected.length) return view.selected;
-  return subject.filter((e) => live.has(e));
-}
-
-/** Every constraint that reaches the window's subject: one stated *on* it, and one stated on
- *  a point that defines it.  The same test the constraint rows were marked with when they were
- *  a list of the whole sketch. */
-function holding(cs: readonly Constraint[], on: readonly Primitive[]): Constraint[] {
-  if (!on.length) return [];
-  const direct = new Set(on);
-  const all = new Set(expand(on));
-  return cs.filter((c) => c.entities().some((e) => all.has(e))
-    || expand(c.entities()).some((e) => direct.has(e)));
-}
-
-/** Open the window on some geometry nothing has *selected* — the constraint behind a callout
- *  clicked on the drawing, the culprits the banner names.  What it holds is what there is to
- *  look at then, and there is no selection to say it. */
-export function openPanel(on: readonly Primitive[]): void {
-  subject = [...new Set(on)];
-}
-
-/** A press that picked nothing: the window has nothing to be open on, so it shuts. */
-export function closePanel(): void {
-  subject = [];
-}
-
-/** The window, the status line's component and the banner: everything that only changes when
- *  the sketch or the selection does. */
-export function refreshRows(): void {
-  const sk = view.sketch;
-  const all = sk.userConstraints();
-  // the focused constraint has left the document — a row of the window is not where that is
-  // noticed any more, since the window holds only the ones reaching what is picked
-  if (currentConstraint && !all.includes(currentConstraint)) clearFocus();
-  subject = panelSubject(new Set(sk.allEntities()));
-  const next = holding(all, subject);
-  if (stale || !sameList(next, rows)) { stale = false; rebuildRows(next); }
-
-  const d = view.diagnosis;
-  const culprits = new Set(d?.conflicts ?? []);
-  const bad = new Set(d?.violated ?? []);          // culprits are handled first, below
-  const over = new Set(d?.over ?? []);
-  const implied = new Set(d?.implied ?? []);   // a theorem made it follow: a note, not a fault
-  // a claim (§9.7) is judged, never solved for, so its verdict is its own and none of the sets
-  // above ever holds one — which is why these are read separately rather than folded in
-  const proved = new Set(d?.claimsTheorem ?? []);
-  const refuted = new Set(d?.claimsViolated ?? []);
-  const independent = new Set(d?.claimsConsuming ?? []);
-  // an expression that could not be computed: its constraint holds the number it last had
-  const exprError = new Map<number, string>();
-  for (const it of expressions(sk)) if (it.error) exprError.set(it.id, it.error);
-  if (exprError.size || rows.some((c) => Object.keys(c.exprs).length)) {
-    // an expression's number moves when a name it reads does, without the list changing — so
-    // the rows' text is re-read while any expression is about
-    const ix = new io.Index(sk);
-    rows.forEach((c, i) => { (clist.children[i] as HTMLElement).dataset.base = io.describe(c, view.doc); });
-  }
-  rows.forEach((c, i) => {
-    const li = clist.children[i] as HTMLElement;
-    const base = li.dataset.base ?? '';
-    li.className = '';
-    li.removeAttribute('title');
-    if (exprError.has(c.id)) {
-      li.textContent = `ƒ ${base}`;
-      li.classList.add('expr-error');
-      li.title = `expression: ${exprError.get(c.id)} — the last number stands`;
-    }
-    // a claim's verdict comes before the ordinary readings because none of them can apply to
-    // one: it joins no conflict, no over-block and no implied set, so what is left to say about
-    // it is exactly which of the three it landed in
-    else if (proved.has(c)) {
-      li.textContent = `⊢ ${base}`;
-      li.classList.add('claim-proved');
-      li.title = 'proved — the rest of the document entails it, and nothing needs fixing';
-    }
-    else if (refuted.has(c)) {
-      li.textContent = `⊬ ${base}`;
-      li.classList.add('claim-refuted');
-      li.title = 'refuted — this drawing is a counterexample; the drawing is fine, the claim is wrong';
-    }
-    else if (independent.has(c)) {
-      li.textContent = `? ${base}`;
-      li.classList.add('claim-independent');
-      li.title = 'independent — true here, but the document does not say so: stating it would cost a freedom';
-    }
-    else if (culprits.has(c)) { li.textContent = `✗ ${base}`; li.classList.add('culprit'); }
-    else if (bad.has(c)) { li.textContent = base; li.classList.add('violated'); }
-    else if (over.has(c)) { li.textContent = `≈ ${base}`; li.classList.add('over'); }
-    else if (implied.has(c)) {
-      li.textContent = `≡ ${base}`;
-      li.classList.add('implied');
-      li.title = 'already implied by the other constraints — consistent, nothing to fix';
-    }
-    else li.textContent = base;
-    li.setAttribute('aria-current', String(c === currentConstraint));
-  });
-  refreshPanel();
+/** What only changes when the sketch or the selection does: the status line's component and
+ *  the banner. */
+function refreshPicked(): void {
+  // the focused constraint has left the document
+  const focus = currentConstraint;
+  if (focus && !view.sketch.userConstraints().includes(focus)) clearFocus();
+  refreshHeld();
   refreshBanner();
 }
 
-/** The window's heading and whether it is up at all, and the same answer in the status line:
- *  what is picked, said the way the old sidebar's row said it. */
-export function refreshPanel(): void {
-  cpanel.hidden = subject.length === 0;
-  if (!subject.length) {
-    // the traced picture is picked the way an entity is, so it says so where an entity does —
-    // it has no constraints on it and so no window, only the line that names what you hold
+/** What is picked, in the status line: one thing as its description, several by name. */
+export function refreshHeld(): void {
+  const picked = view.selected;
+  if (!picked.length) {
     componentEl.textContent = heldLine();
     return;
   }
   const ix = new io.Index(view.sketch);
-  const names = subject.map((e) => ix.name(e)).join(' ');
-  const n = rows.length;
-  cpanelTitle.textContent = `${names} — ${n || 'no'} constraint${n === 1 ? '' : 's'}`;
-  // one thing picked reads as its sidebar row did; several read as a list of names, because a
-  // status line is one line and the descriptions do not fit across it
-  componentEl.textContent = `${subject.length === 1 ? describeEntity(subject[0], ix)
-    : `${subject.length} components: ${names}`}   |   `;
+  // a status line is one line, and several descriptions do not fit across it
+  componentEl.textContent = `${picked.length === 1 ? describeEntity(picked[0], ix)
+    : `${picked.length} components: ${picked.map((e) => ix.name(e)).join(' ')}`}   |   `;
 }
-/** The status line for a selection that is not the drawing's: the traced picture, or solids —
- *  neither has constraints on it, so no window, only the line naming what you hold. */
+/** The status line for a selection that is not the drawing's: the traced picture, or solids. */
 function heldLine(): string {
   const u = view.underlay;
   if (u?.picked) return `image ${u.name} — ${Math.round(u.opacity * 100)}%   |   `;
@@ -229,9 +82,6 @@ function heldLine(): string {
   if (solids.length) return `${solids.length} picked: ${solids.map(said).join(', ')}   |   `;
   return '';
 }
-// where the window sits is the user's, not the layout's
-dragWindow(cpanel, cpanelTitle);
-
 /** Measurement readout: with exactly two entities picked, what separates them.
  *
  *  Distances come from `distanceBetween` in the model, so the readout and any constraint you
@@ -273,14 +123,12 @@ export function refreshStatus(): void {
   const state = conflict ? '⚠ CONFLICT'
       : unsolved ? `⚠ NOT CONVERGED${r ? `  max|r|=${r.maxResidual.toExponential(1)}` : ''}`
       : `DOF ${d ? d.dof : view.sketch.freeIndices().length}`;
-  // and where the next point goes, while that is somewhere other than the page
-  stats(view.plane ? `${state}   ·   drawing in ${planeName(view.plane)}`
-    : view.openSpace ? `${state}   ·   drawing in space` : state);
+  stats(state);
   refreshMeasure();
 }
 
 export function refresh(): void {
-  refreshRows();
+  refreshPicked();
   refreshStatus();
 }
 
@@ -322,15 +170,6 @@ bannerSelect.addEventListener('click', () => {
   // Delete would remove, rather than on the geometry the set happens to touch
   const lit = expand(new Set(culprits.flatMap((c) => c.entities())));
   focusConstraint(culprits[0] ?? null, lit);
-  openPanel(lit);
   refresh();
   view.draw();
 });
-
-/** The rows state their constraints' numbers, so a number that changed under them means the
- *  list has to be rebuilt even though it holds the same constraints in the same order.  A flag
- *  rather than an emptied list: `rows` is also how the window knows a focused constraint came
- *  from one of its own rows. */
-export function invalidateRows(): void {
-  stale = true;
-}

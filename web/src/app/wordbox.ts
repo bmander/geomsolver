@@ -247,15 +247,10 @@ export class WordBox {
     this.advance();
   }
 
-  /** A new point where the click was, drawn on the plane being drawn on (or in space), its name
-   *  the one the document gives it. */
+  /** A new point where the click was, in space where the eye sees it, its name the one the
+   *  document gives it. */
   private mint(sp: [number, number]): string | null {
     const v = this.v;
-    if (!v.ensurePlane()) return null;
-    if (!v.openSpace && !v.viewCam().readable()) {
-      v.onStatus(`${v.planeName} is seen edge on — turn the view to place a point on it`);
-      return null;
-    }
     v.pushUndo();
     const p = snapOrNew(v, sp);
     v.releasePlan();
@@ -324,8 +319,8 @@ export class WordBox {
     const w = this.word!;
     const args: Record<string, string> = {};
     w.slots.forEach((s, i) => { if (this.filled(i)) args[s.key] = this.vals[i].trim(); });
-    const drawn = w.form === 'declare' && ['point', 'line', 'circle', 'arc', 'spline'].includes(w.id);
-    return { id: w.id, args, ...(drawn && this.v.planeName ? { plane: this.v.planeName } : {}) };
+    // drawn in space, as every tool draws: a word declares no plane
+    return { id: w.id, args };
   }
 
   /** **Write the word**: the core composes the statement and holds it to the elaborator.  A line
@@ -340,8 +335,6 @@ export class WordBox {
       this.arm(i);
       return;
     }
-    const drawn = w.form === 'declare' && ['line', 'circle', 'arc', 'spline'].includes(w.id);
-    if (drawn && !this.v.ensurePlane()) return;
     const r = this.request();
     const said = this.v.doc.wordText(r).text ?? w.word;
     if (!this.v.apply(this.v.doc.writeWord(r), `wrote ${said}`)) return;

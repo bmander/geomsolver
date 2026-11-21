@@ -123,6 +123,12 @@ pub fn unseen(az: f64, el: f64, at: (f64, f64)) -> [f64; 3] {
     std::array::from_fn(|k| right[k] * at.0 + up[k] * at.1)
 }
 
+/// `unseen`, each coordinate to the digits a pixel `px` long justifies (`edit::placed`): where a
+/// click puts a point in space, written no finer than the click was good to.
+pub fn unseen_placed(az: f64, el: f64, at: (f64, f64), px: f64) -> [f64; 3] {
+    unseen(az, el, at).map(|w| crate::edit::placed(w, px))
+}
+
 impl Views {
     pub fn new(sk: &Sketch) -> Views {
         let placements = placements(sk);
@@ -436,11 +442,7 @@ pub fn panes_at(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Vec<usize> {
         if !pane_readable(proj, i) || places[i].is_none() || !sk.shown(EntRef::frame(i)) {
             continue;
         }
-        let m = proj.map(Some(i));
-        let det = m[0] * m[4] - m[1] * m[3];
-        // where the eye's ray through `at` meets the plane, in its own coordinates
-        let (x, y) = (at.0 - m[2], at.1 - m[5]);
-        let (px, py) = ((m[4] * x - m[1] * y) / det, (-m[3] * x + m[0] * y) / det);
+        let Some((px, py)) = seen_on(proj, Some(i), at) else { continue };
         let (x0, y0, x1, y1) = super::pane(sk, i, &views, &places, &rule);
         if px < x0 || px > x1 || py < y0 || py > y1 {
             continue;
@@ -449,6 +451,15 @@ pub fn panes_at(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Vec<usize> {
     }
     hits.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
     hits.into_iter().map(|(_, i)| i).collect()
+}
+
+/// Where the eye's ray through `at` on its picture plane meets view `view` (`None` the page), in
+/// that view's own coordinates: the inverse of its map, `None` for one seen exactly edge on.
+pub fn seen_on(proj: &Projection, view: Option<usize>, at: (f64, f64)) -> Option<(f64, f64)> {
+    let m = proj.map(view);
+    let det = m[0] * m[4] - m[1] * m[3];
+    let (x, y) = (at.0 - m[2], at.1 - m[5]);
+    (det != 0.0).then(|| ((m[4] * x - m[1] * y) / det, (-m[3] * x + m[0] * y) / det))
 }
 
 /// A face of an object the eye's ray meets: which object (an index into `sketch.solids`), the

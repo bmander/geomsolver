@@ -3,7 +3,7 @@
 use super::names::write_ref;
 use super::{
     num, snake, Arg, CurveSpec, CurveTarget, Decl, InstArg, InstVal, Instance, Kid,
-    KidSeed, OpArg, Program, Ref, Relation, Sense, Span, StmtId, StmtKind, Sweep, Written,
+    KidSeed, Normal, OpArg, Program, Ref, Relation, Sense, Span, StmtId, StmtKind, Sweep, Written,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use crate::constraints::{CKind, Fixity, SpecKind};
@@ -838,8 +838,10 @@ pub(crate) fn decl_args(d: &Decl) -> String {
             None => parts.extend(sweep_parts(sweep)),
         }
     }
-    if let Some(n) = &d.normal {
-        parts.push(format!("normal: {}", super::ref_text(n)));
+    match &d.normal {
+        Some(Normal::Axis(n)) => parts.push(format!("normal: {}", super::ref_text(n))),
+        Some(Normal::Seed(k)) => parts.push(format!("normal: {}", kid_seed_text(k))),
+        None => {}
     }
     if let Some(s) = d.sense {
         parts.push(format!("sense: {}", if s == Sense::Cw { "cw" } else { "ccw" }));

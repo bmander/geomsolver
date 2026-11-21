@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.223 — November 2026**
+**Specification, Draft 0.224 — November 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -634,8 +634,11 @@ space is drawn in the plane through its centre and its ends — the short way ro
 half turn — its points those written, so its radius, its contacts and a chain's joints are an
 arc's; three points in a line, which no one plane is through, are **E060**. A circle over a point
 in space is drawn in the plane through its centre square to its **normal**, `circle(center: o,
-normal: ax)`, `ax` an axis or a line; with none it is **E060**, and a `normal:` of a circle drawn
-in a plane is **E040**. **[0.126]** A spline over a point in
+normal: ax)`, `ax` an axis or a line — or **[0.224]** an axis of the circle's own, seeded along a
+direction as a plane's `u:` is, `normal: hint(dir: (0, 0, 1))` or `hint(dir: g)` read off
+geometry: free, so its constraints may turn the circle, and its seed written back where a solve
+turns it; a seed along no direction is **E103**. With none it is **E060**, and a `normal:` of a
+circle drawn in a plane is **E040**. **[0.126]** A spline over a point in
 space is a **curve in space** (§6.5): the same curve, `Σ Rᵢ(u)·Pᵢ` over its control points where
 they stand and its parameter over its own domain, whose contacts are a curve in space's and which
 is a `path`; `spline(through: …)` over corners in space is the cubic through them. It is drawn in

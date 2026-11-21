@@ -774,12 +774,13 @@ fn finish(items: Vec<Item>) -> Scene {
 /// **Each plane's place**: the first plane standing on the same plane in space
 /// (`Basis::coplanar`, `workspace::Views`' rule and tolerance, the page left out — it has no
 /// pane).  `std.up` is `std.front` turned a quarter, so its place is the front's.  A face
-/// family's station plane has none (#243 L1): no pane, and none taken from a plane it lies on.
+/// family's station plane has none (#243 L1), nor the plane a round over points in space is
+/// drawn in (#363 S6): no pane, and none taken from a plane it lies on.
 fn places(sk: &Sketch) -> Vec<Option<usize>> {
     let bases: Vec<_> = (0..sk.frames.len()).map(|i| sk.basis(i)).collect();
-    let stations = sk.stations();
+    let undrawn = sk.undrawn();
     // a spatial frame draws no pane: its points stand in space (#383)
-    let placed = |k: usize| !stations.contains(&EntRef::frame(k)) && sk.frames[k].planar();
+    let placed = |k: usize| !undrawn.contains(&EntRef::frame(k)) && sk.frames[k].planar();
     let tol = 1e-9 * sk.extent();
     (0..bases.len())
         .map(|k| placed(k).then(|| {

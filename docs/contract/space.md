@@ -77,9 +77,17 @@ arcs over a point in space are drawn in a plane they mint (#363 S6, [0.127];
 `entities::arcs_in_space`, `circles_in_space`, in `holds`, before E060 is asked): an arc the plane
 through its centre and ends (axes `u` toward the start and `v` in the plane, its normal
 `(s − c) × (e − c)` — the short way round; collinear, E060), a circle the plane through its centre
-square to its `normal:` (`Decl::normal`, parsed for a circle as a spline's `through:` is, rescoped
-by `rewrite_decl`, read as `Deferred::Normal` once the axes are built; none, E060 saying to give
-one; on a circle drawn in a plane, E040).  The round is drawn over points of its own there — the
+square to its `normal:` (`Decl::normal`, a `syntax::Normal`: an axis or a line named, or
+**[0.224]** a seed, `normal: hint(dir: …)`, minting an axis of the circle's own along it, free —
+`RoundIn::own` — which `commit_seeds` writes back where a solve turns it; parsed for a circle as a
+spline's `through:` is, rescoped by `rewrite_decl`, read as `Deferred::Normal` once the axes are
+built; none, E060 saying to give one; a seed along nothing, E103; on a circle drawn in a plane,
+E040; a seed is a direction, so one written short of unit length that the solve did not turn is
+not written back; `a_circle_in_space_stands_square_to_an_axis_of_its_own`).  **What a round is drawn over is
+its own** (`Sketch::round_owned`: its plane, axes and points, its gauge, its normal where `own`),
+declared, held and drawn nowhere (`Sketch::undrawn`): `reconcile` and the lift write the round
+over the points the document wrote (`lift::written_children`, through `stands_for`) with its
+`normal:` as said and no `in` (`a_round_in_space_is_lifted_as_it_was_written`).  The round is drawn over points of its own there — the
 centre the plane's origin, an arc's start on the plane's `u` (a gauge, its `y` held), its end free
 — each tied to the point written by a `Coincident3`, the axes held square (`Perpendicular3`), and a
 circle's turn about its normal held square to the world axis least along it (a held hidden axis),
@@ -273,7 +281,7 @@ round: the line's ends' hidden points, two rows across `P`'s normal as `AxisPerp
   `Constraint::project` share one rule.  `operator_text` skips an inferred slot (`a project b`).
   A plane's minted label starts with `v` (`model::kind_initial`).  Its glyph (`plane::glyph`)
   is drawn under the *implicit class* `.plane` (`EntKind::implicit_class`, resolved in `style_of`; JSON
-  never writes it); in the workspace it is a pane, chosen in the plane chooser rather than picked.
+  never writes it); in the workspace it is a pane, picked by its frame as anything else is.
   Deleting a plane (`edit::remove`) splices the `in` clause out of every
   surviving declaration, and dooms every statement whose *elaborated* constraint named it.
   `commit_seeds` replaces the bracket list at `Decl::list_span`.

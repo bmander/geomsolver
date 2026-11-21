@@ -270,6 +270,23 @@ impl<'a> DeclPose<'a> {
                 None => missing |= v.iter().any(|&c| c != 0.0),
             }
         }
+        // a circle's own normal (#363 S6) is seeded in its `normal:` as a plane's axis is in its
+        // slot, and written back there where the solve turned it — a seed is a direction, so one
+        // written short of unit length and pointing where the axis does has not moved; one read
+        // off geometry is a seed given as geometry
+        let own = sk.round(parent).filter(|r| r.own).and_then(|r| r.normal);
+        if let (Some(syntax::Normal::Seed(s @ syntax::KidSeed { dir: None, .. })), Some((n, _))) =
+            (&d.normal, own)
+        {
+            let now = sk.axes[n.i()].d.map(|p| sk.params[p as usize].value);
+            let said = crate::space::normalised(s.v);
+            let turned = said.is_none_or(|w| crate::space::distance(w, now) > 1e-9);
+            for (i, &p) in sk.axes[n.i()].d.iter().enumerate().filter(|_| turned) {
+                let (sp, miss) = self.one(sk.seed_value(n, p), s.text[i].as_ref(), s.spans[i]);
+                mine.extend(sp);
+                missing |= miss;
+            }
+        }
         InPlace { mine, missing, redundant }
     }
 

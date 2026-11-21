@@ -2,7 +2,9 @@
  * A tool that makes geometry as it goes takes its undo snapshot on the first click of a run;
  * the fit tool makes nothing until it finishes and takes its own there. */
 import * as C from '../core/constraints.js';
+import * as io from '../core/io.js';
 import { Line, Point, distanceBetween, onRadius } from '../core/model.js';
+import { eyeFrame } from '../core/workspace.js';
 import { bodiesPicked, onePicked } from './solids.js';
 import { applyHidden, toolKinds } from './hidden.js';
 import { combines, picksAs, roundsEdges } from './view.js';
@@ -51,14 +53,15 @@ export function finishCurve(v: SketchView): void {
   else if (roundsEdges(v.tool)) v.finishRound();
 }
 
-/** Every point minted since there were `n0` is drawn in the current plane.  Called at the two
- *  places a tool mints one — a click that found nothing to snap to, and a fitted curve's
- *  control polygon — so the membership is in the sketch before the source catches up, and
- *  `reconcile` writes the `in` clause.  A snapped point already exists and is left where it is:
- *  it was drawn somewhere on purpose. */
+/** Every point minted since there were `n0` is drawn in the tool's plane, where it draws in
+ *  one (`toolPlane`).  Called at the two places a tool mints one — a click that found nothing
+ *  to snap to, and a fitted curve's control polygon — so the membership is in the sketch before
+ *  the source catches up, and `reconcile` writes the `in` clause.  A snapped point already
+ *  exists and is left where it is: it was drawn somewhere on purpose. */
 export function joinPlane(v: SketchView, n0: number): void {
-  if (!v.plane) return;
-  for (const p of v.sketch.points.slice(n0)) p.plane = v.plane;
+  const pl = v.toolPlane;
+  if (!pl) return;
+  for (const p of v.sketch.points.slice(n0)) p.plane = pl;
 }
 
 export function finishSplineFit(v: SketchView): void {
@@ -104,9 +107,13 @@ export function finishSpline(v: SketchView): void {
     v.onStatus('those control points do not make a curve');
     return;
   }
+  // over points in space the elaborator draws it as a curve in space (`splines_in_space`), which
+  // the live sketch's spline is not: written, it is read again
+  const inSpace = v.pending.some((p) => v.inSpace(p));
   v.pending = [];
   v.releasePlan();
   v.afterEdit();
+  if (inSpace) v.rereadSource();
 }
 
 /** Escape, in stages: stop a DOF animation, then drop the points the active tool has
@@ -160,16 +167,29 @@ export function cancelTool(v: SketchView): void {
   // nothing else to back out of: the part open is closed (#679)
   else v.closePart();
 }
-/** Whether a tool can draw with no plane chosen: what it mints stands in space. */
-export function drawsInSpace(tool: Tool): boolean {
-  return tool === 'point' || tool === 'line';
+/** **Whether a tool still draws in a plane.**  Every tool draws in space, what it mints standing
+ *  in no plane where the eye sees the click — but these, until the core can draw them there: a
+ *  three-point arc and a curve fitted through places in space, and a rectangle.  They draw in
+ *  the standard plane the eye is most square to (`SketchView.toolPlane`). */
+export function drawsInPlane(tool: Tool): boolean {
+  return tool === 'rect' || tool === 'arc3' || tool === 'splinefit';
+}
+
+/** The point a tool's click lands on, if it lands on one it can draw from: any, in space — but
+ *  a tool that draws in a plane does not take a point in space, which a circle, a three-point
+ *  arc or a rectangle in that plane could not be drawn about. */
+function snapTarget(v: SketchView, sp: [number, number]): Point | null {
+  const on = v.pickPoint(sp[0], sp[1]);
+  return on && v.toolPlane && v.inSpace(on) ? null : on;
 }
 
 export function snapOrNew(v: SketchView, sp: [number, number]): Point {
-  const on = v.pickPoint(sp[0], sp[1]);
+  const on = snapTarget(v, sp);
   if (on) return on;
   // in no plane: in space, where the eye sees the click
-  if (v.openSpace) return v.sketch.pointSeen(v.orbit.az, v.orbit.el, ...v.s2w(sp[0], sp[1]));
+  if (!v.toolPlane) {
+    return v.sketch.pointSeen(v.orbit.az, v.orbit.el, ...v.s2w(sp[0], sp[1]), v.viewCam().pixel);
+  }
   const n0 = v.sketch.points.length;
   const p = v.sketch.point(...v.place(sp[0], sp[1]));
   joinPlane(v, n0);
@@ -180,7 +200,7 @@ export function snapOrNew(v: SketchView, sp: [number, number]): Point {
  *  and the three-point arc share this rule: a click that found a point *meant* that point, so
  *  the geometry should be held to it rather than merely built near it. */
 export function pickPlace(v: SketchView, sp: [number, number]): Place {
-  const on = v.pickPoint(sp[0], sp[1]);
+  const on = snapTarget(v, sp);
   return { at: on ? on.xy : v.place(sp[0], sp[1]), on };
 }
 
@@ -238,7 +258,7 @@ export function toolClick(v: SketchView, sp: [number, number],
 }
 
 /** A press the drawing tools never see — a Boolean's, an edge tool's, a sweep's, or one refused
- *  for want of a plane to draw on.  Whether it was taken. */
+ *  for want of a plane to draw in.  Whether it was taken. */
 function takenElsewhere(v: SketchView, sp: [number, number],
                         mods: { alt?: boolean; shift?: boolean }): boolean {
   // a word's slot armed: the nearest thing it takes fills it — or, where it places a point, a
@@ -260,20 +280,6 @@ function takenElsewhere(v: SketchView, sp: [number, number],
     v.roundAt(sp[0], sp[1]);
     return true;
   }
-  // a standard plane chosen before the document had it is brought in by the first press: the
-  // document gains `use std`, and what the press makes is drawn on the plane it now has
-  if (!v.ensurePlane()) return true;
-  // drawing in space, only a point and a line: a circle, an arc and a curve are drawn in a plane
-  // (E060), and a region to sweep is bounded on one
-  if (v.openSpace && !drawsInSpace(v.tool)) {
-    v.onStatus(`the ${v.tool} tool draws on a plane — choose one to sketch on`);
-    return true;
-  }
-  // a plane seen edge on has no place on it under the pointer (`toolView` is the one read)
-  if (!v.viewCam().readable()) {
-    v.onStatus(`${v.planeName} is seen edge on — turn the view, or choose the plane again to face it`);
-    return true;
-  }
   // an extrusion writes its statements through `apply`, which takes its own undo step
   if (v.tool === 'extrude') {
     v.extrudeAt(sp[0], sp[1], mods.alt, mods.alt && mods.shift);
@@ -283,6 +289,9 @@ function takenElsewhere(v: SketchView, sp: [number, number],
     v.revolveAt(sp[0], sp[1], mods.alt);
     return true;
   }
+  // a tool that cannot draw in space yet draws in the standard plane the eye is most square to,
+  // brought in by the first press where the document does not say `use std` yet
+  if (!v.ensureToolPlane()) return true;
   return false;
 }
 
@@ -300,8 +309,7 @@ function drawClick(v: SketchView, sp: [number, number]): boolean {
       rectClick(v, sp);
       return true;
     case 'circle':
-      circleClick(v, sp);
-      return true;
+      return circleClick(v, sp);
     case 'arc3':
       return arc3Click(v, sp);
     case 'splinefit':
@@ -311,8 +319,7 @@ function drawClick(v: SketchView, sp: [number, number]): boolean {
       splineClick(v, sp);
       return false;                                // still collecting: nothing to solve yet
     case 'arc':
-      arcClick(v, sp);
-      return true;
+      return arcClick(v, sp);
     default:
       return true;
   }
@@ -338,27 +345,46 @@ function rectClick(v: SketchView, sp: [number, number]): void {
   const [x0, y0] = v.pendingFit[0].at;
   const [x1, y1] = v.place(sp[0], sp[1]);
   v.pendingFit = [];
-  // the instance joins the current plane whole — `in top` on its one statement —
+  // the instance joins the tool's plane whole — `in top` on its one statement —
   // reaching every point the component makes, which per-point membership cannot
   const e = v.doc.addRectangle(
     v.placeLength(Math.abs(x1 - x0)) || 1,
     v.placeLength(Math.abs(y1 - y0)) || 1,
-    (v.plane && v.doc.nameOf(v.plane)) || '',
+    v.facingPlane(),
   );
   if (v.apply(e, `${e.names[0]}: Rectangle`)) {
     placeRectangle(v, e.names[0], e.names[1], x0, y0, x1, y1);
   }
 }
 
-function circleClick(v: SketchView, sp: [number, number]): void {
+/** Centre, then a point on it.  In space the circle stands square to the eye's line of sight,
+ *  its radius as the eye sees it, and is written — `circle(center: c, normal: hint(dir: (…)))`,
+ *  an axis of its own seeded along the sight, free for its constraints to turn — the elaborator
+ *  drawing it in the plane through its centre (`circles_in_space`).  False where it was written:
+ *  the edit took its own solve. */
+function circleClick(v: SketchView, sp: [number, number]): boolean {
   if (!v.pending.length) {
     v.pending = [snapOrNew(v, sp)];
-    return;
+    return true;
   }
   const [x, y] = v.s2w(sp[0], sp[1]);
   const c = v.pending[0];
-  v.sketch.circle(c, v.placeLength(Math.hypot(x - c.x.value, y - c.y.value)) || 1);
   v.pending = [];
+  if (!v.toolPlane) {
+    // where the eye sees the centre, on the same picture plane the click is read on
+    const [cx, cy] = v.s2w(...v.seen(c));
+    const r = v.placeLength(Math.hypot(x - cx, y - cy)) || 1;
+    return !writeInSpace(v, 'circle', { center: c },
+                         { normal: `hint(dir: (${sight(v).join(', ')}))`, r: String(r) });
+  }
+  v.sketch.circle(c, v.placeLength(Math.hypot(x - c.x.value, y - c.y.value)) || 1);
+  return true;
+}
+
+/** The eye's line of sight, toward it, to the digits a direction is written with. */
+function sight(v: SketchView): [number, number, number] {
+  return eyeFrame(v.orbit.az, v.orbit.el).toward.map((x) => io.placed(x, 1e-4)) as
+    [number, number, number];
 }
 
 /** Two endpoints, then a point the arc must pass through.  That third click is construction
@@ -428,17 +454,46 @@ function splineClick(v: SketchView, sp: [number, number]): void {
   v.draw();
 }
 
-function arcClick(v: SketchView, sp: [number, number]): void {
-  const existing = v.pickPoint(sp[0], sp[1]) !== null;
+/** Centre, start, end.  In a plane the arc is drawn at once, its end put on the radius; in space
+ *  it is written — `arc(center: c, start: s, end: e)`, no `in` — and the elaborator draws it in
+ *  the plane through its three points, the short way round (`arcs_in_space`), its end held to
+ *  the radius by the arc's own rows.  False where the arc was written: the edit took its own
+ *  solve. */
+function arcClick(v: SketchView, sp: [number, number]): boolean {
+  const existing = snapTarget(v, sp) !== null;
   v.pending.push(snapOrNew(v, sp));
-  if (v.pending.length !== 3) return;
+  if (v.pending.length !== 3) return true;
   const [cpt, s, en] = v.pending;
-  if (new Set([cpt, s, en]).size === 3) {
-    if (!existing) {                               // freshly placed end point: put it on the radius
-      const q = onRadius(...cpt.xy, ...en.xy, distanceBetween(cpt, s));
-      if (q) [en.x.value, en.y.value] = q;
-    }
-    v.sketch.arc(cpt, s, en);
-  }
   v.pending = [];
+  if (new Set([cpt, s, en]).size !== 3) return true;
+  if (!v.toolPlane) {
+    // a freshly placed end point put on the radius, as in a plane: the solve then moves nothing
+    if (!existing) v.sketch.ontoRadius(cpt, s, en);
+    return !writeInSpace(v, 'arc', { center: cpt, start: s, end: en });
+  }
+  if (!existing) {                                 // freshly placed end point: put it on the radius
+    const q = onRadius(...cpt.xy, ...en.xy, distanceBetween(cpt, s));
+    if (q) [en.x.value, en.y.value] = q;
+  }
+  v.sketch.arc(cpt, s, en);
+  return true;
+}
+
+/** **A figure over points in space, written as its statement**: the word `id` over `points`, by
+ *  slot, and `args` beside them — the points brought into the source first, so the statement can
+ *  name them, and the figure's edit folded into the undo step the tool's first click took.  The
+ *  elaborator draws it in the plane it mints (`arcs_in_space`, `circles_in_space`).  Whether it
+ *  was written. */
+function writeInSpace(v: SketchView, id: string, points: Record<string, Point>,
+                      args: Record<string, string> = {}): boolean {
+  v.syncSource();
+  const named = Object.entries(points).map(([slot, p]) => [slot, v.doc.nameOf(p)] as const);
+  if (named.some(([, n]) => !n)) {
+    v.onStatus(`the ${id}'s points have no names in the source to write it over`);
+    return false;
+  }
+  const r = { id, args: { ...Object.fromEntries(named), ...args } as Record<string, string> };
+  if (!v.apply(v.doc.writeWord(r))) return false;
+  v.dropUndo();                    // one step with the points: the tool's first click took it
+  return true;
 }
