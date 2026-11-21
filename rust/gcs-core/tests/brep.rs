@@ -3291,3 +3291,108 @@ fn a_ball_in_a_paraboloid_cup_that_fits_its_bottom() {
     }
 }
 
+
+/// **An edge lying in a plane a surface touches round a circle meets it there** (#962's 7): the
+/// edge meets the surface only where it meets the plane's meeting with it, so where the search for
+/// that root cannot settle it — a double root, the surface touching the plane — the edge is read
+/// against the circle in the plane. Two fills at a vane's corner on a spherical crown (R806 about
+/// (0, 0, −797)), each a torus's stretch: the one along the vane's side `y = 2` cut by the plane
+/// of its end `x = 20` (a spiric section), the one along the end, which touches that plane round
+/// its contact circle, kept between `y = ±2`. Each the closed form's (its cut fitted, to 1e-7),
+/// and unioned — touching along the vane's upright edge alone — their sum; on `main` refused,
+/// the cap's edge against the end's torus read more boxes than any search may.
+#[test]
+fn a_cap_in_a_plane_a_torus_touches_round_a_circle_meets_it_on_that_circle() {
+    use gcs_core::brep::boolean::{combined,Op};
+    use crate::common::rounds::crown_ball;
+    let (big,zc,r) = (650_000f64.sqrt(),-797.,2.);
+    // a fill's section in its meridian: the corner `k` on the face's plane and the crown, the ball
+    // about `b` touching the plane at `p` and the crown at `s`, in the plane with normal `n`
+    // through the crown's centre, `x` along the face's plane's normal from it, `up` along z
+    // (`h` the face's plane along `x`, the ball on its `side`; angles in the plane from `x`
+    // toward z, which is `n × x`)
+    let section = |n: V,x: V,h: f64,side: f64| {
+        let at = |u: f64,v: f64| -> V { [x[0]*u,x[1]*u,x[2]*u+v+zc] };
+        let rho = |u: f64,rad: f64| (rad*rad-u*u).sqrt();
+        let (bu,bv) = (h+side*r,rho(h+side*r,big+r));
+        let (k,p,s,b,c) = (at(h,rho(h,big)),at(h,bv),at(bu*big/(big+r),bv*big/(big+r)),at(bu,bv),at(0.,0.));
+        let angle = |o: V,q: V| { let w = gcs_core::space::sub(q,o); gcs_core::space::dot(w,[0.,0.,1.]).atan2(gcs_core::space::dot(w,x)) };
+        let short = |a0: f64,a1: f64| { let d = (a1-a0+PI).rem_euclid(TAU)-PI; [a0.min(a0+d),a0.max(a0+d)] };
+        vec![line(k,p),arc(b,r,n,x,Some(short(angle(b,p),angle(b,s)))),arc(c,big,n,x,Some(short(angle(c,s),angle(c,k))))]
+    };
+    let turned = |edges: Vec<ProfileEdge>,n: V,axis: V,lo: V,hi: V| {
+        let ring = revolve(&Profile {names:vec![],origin:[0.,0.,zc],normal:n,loops:vec![edges]},[0.,0.,zc],axis,TAU).unwrap();
+        combined(&ring,&block(lo,hi),Op::Common,0.).unwrap()
+    };
+    // along the side y = 2: its meridian the plane x = 0, the ball on y > 2
+    let side = turned(section([1.,0.,0.],[0.,1.,0.],2.,1.),[1.,0.,0.],[0.,1.,0.],[20.,-10.,-5.],[90.,10.,20.]);
+    // along the end x = 20: its meridian the plane y = 0, the ball on x < 20
+    let end = turned(section([0.,-1.,0.],[1.,0.,0.],20.,-1.),[0.,-1.,0.],[1.,0.,0.],[-5.,-2.,-5.],[30.,2.,20.]);
+    let want = [crown_ball(big,true,-2.,r,&|_| (0.,20.),&|_| (0.,90.)),crown_ball(big,true,20.,r,&|_| (0.,-2.),&|_| (0.,2.))];
+    for (b,want) in [(&side,want[0]),(&end,want[1])] {
+        b.check(1e-8).unwrap();
+        assert!((volume(b)-want).abs() <= 1e-7*want,"{} against {want}",volume(b));
+    }
+    let both = combined(&side,&end,Op::Union,0.).unwrap();
+    both.check(1e-8).unwrap();
+    crate::common::close(volume(&both),volume(&side)+volume(&end));
+}
+
+/// **The band a ball holds is the strip it sweeps** (#962's 7): a vane standing on a plate, its
+/// sides arcs of 75 and 79 about (−20, 0) over ±5°, its outer foot filled by a ball of 2 — a ring
+/// of the corner's section turned over the 10°, Pappus. The outer side's cylinder comes back round
+/// to within 1 of the plate's far edge, 160 away across the plate: no point of the strip the ball
+/// sweeps, though nearer that cylinder than the ball's contact on the plate. On `main` the ball
+/// was refused as larger than the plate's top can hold.
+#[test]
+fn a_band_is_the_strip_its_ball_sweeps_not_all_the_face_as_near_the_other() {
+    use gcs_core::brep::boolean::{combined,Op};
+    let r = 2.;
+    let k = [-20.,0.,0.];
+    let at = |rad: f64,deg: f64| -> V { let a = f64::to_radians(deg); [k[0]+rad*a.cos(),rad*a.sin(),0.] };
+    let half = 5f64.to_radians();
+    // (each arc framed from its far side, so its seam is not on the vane)
+    let outline = vec![arc(k,75.,XY,[-1.,0.,0.],Some([PI-half,PI+half])),line(at(75.,5.),at(79.,5.)),
+        arc(k,79.,XY,[-1.,0.,0.],Some([PI-half,PI+half])),line(at(79.,-5.),at(75.,-5.))];
+    let names = vec![["inner","end1","outer","end0"].map(String::from).to_vec()];
+    let vane = prism(&Profile {names,origin:[0.;3],normal:XY,loops:vec![outline]},0.,20.).unwrap();
+    let part = combined(&block([-100.,-100.,-10.],[100.,100.,0.]),&vane,Op::Union,0.).unwrap();
+    let round = gcs_core::brep::fillet::roll(&part,at(79.,0.),r,gcs_core::brep::geom::tolerance(part.size())).unwrap();
+    round.piece.check(1e-8).unwrap();
+    // (its canal fitted within the bar, a ten-millionth of the boundary)
+    let fill = 2.*half*(1.-PI/4.)*r*r*(79.+r*(10.-3.*PI)/(12.-3.*PI));
+    assert!((volume(&round.piece)-fill).abs() <= 1e-7*fill,"{} against {fill}",volume(&round.piece));
+    let b = rounded(&part,&[at(79.,0.)],r).unwrap();
+    b.check(1e-8).unwrap();
+    crate::common::close(volume(&b),volume(&part)+volume(&round.piece));
+}
+/// **A cut through a pole along the seam's meridian** (#962's 7): a ball, its poles on z and its
+/// seam the meridian toward +x, unioned with a slab whose face `y = 0` holds both poles — the seam's
+/// meridian and the one opposite it, through the north pole. Each piece of the sphere the slab's
+/// face bounds runs along that meridian into the pole and out along the other; at the pole the
+/// sphere's inverse reads `u` as it likes, and read there as 2π where the half arriving runs at π,
+/// the piece was drawn back across itself and taken for a hole ("a sphere has a hole in no
+/// piece"); a half's point at a pole now takes the half's own value there. The slab either side
+/// of the plane, and across the axis at `x = 0` as before: the ball, the slab, less what they share
+/// (the slab's columns `√(25 − x² − y²) + 1` high inside the ball, across `y` in closed form).
+#[test]
+fn a_cut_through_a_pole_along_the_seams_meridian_parts_the_sphere() {
+    use gcs_core::brep::boolean::{combined,Op};
+    use gcs_core::brep::build::sphere;
+    let r = 5f64;
+    let ball = sphere([0.;3],[0.,0.,1.],r).unwrap();
+    let gauss = crate::common::rounds::gauss_legendre(64);
+    // what of the slab x in [x0, x1], y in [y0, y1], z in [−1, 6] lies in the ball
+    let shared = |[x0,x1]: [f64;2],[y0,y1]: [f64;2]| gauss.iter().map(|&(t,w)| {
+        let x = x0+0.5*(x1-x0)*(1.+t);
+        let a2 = r*r-x*x;
+        let f = |y: f64| 0.5*(y*(a2-y*y).sqrt()+a2*(y/a2.sqrt()).asin());
+        w*(f(y1)-f(y0)+(y1-y0))
+    }).sum::<f64>()*0.5*(x1-x0);
+    for (lo,hi) in [([-2.,0.,-1.],[2.,1.,6.]),([-2.,-1.,-1.],[2.,0.,6.]),([0.,-1.,-1.],[1.,1.,6.])] {
+        let both = combined(&ball,&block(lo,hi),Op::Union,0.).unwrap_or_else(|e| panic!("{lo:?}: {e}"));
+        both.check(1e-9).unwrap();
+        let slab = (hi[0]-lo[0])*(hi[1]-lo[1])*7.;
+        crate::common::close(volume(&both),4.*PI*r.powi(3)/3.+slab-shared([lo[0],hi[0]],[lo[1],hi[1]]));
+    }
+}

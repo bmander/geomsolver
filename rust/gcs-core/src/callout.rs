@@ -91,6 +91,7 @@ macro_rules! undrawn {
             | CKind::SplineTangentLine
             | CKind::SplineCurvature
             | CKind::TangentCircleAt
+            | CKind::TangentCirclesAt
             // a rate of a contact is a direction, and its distance a velocity, a length a radian
             // of a slot: no figure on any view (#365)
             | CKind::Rate
@@ -357,11 +358,12 @@ pub fn layout_figured(sk: &Sketch, unit: f64, ids: Option<&[u32]>, figure: &dyn 
         spins: BTreeMap::new(),
     };
     let mut out = Vec::with_capacity(sk.constraints.len());
-    // a face family's station is never drawn, nor its dimensions (#243 L1)
-    let stations = sk.stations();
+    // a face family's station is never drawn, nor its dimensions (#243 L1), nor what a round
+    // over points in space is drawn over (#363 S6)
+    let undrawn = sk.undrawn();
     let images = sk.images();
     for c in &sk.constraints {
-        if !stations.is_empty() && c.entities().iter().any(|e| stations.contains(e)) {
+        if !undrawn.is_empty() && c.entities().iter().any(|e| undrawn.contains(e)) {
             continue;
         }
         // a drag target is a number, not a dimension, and an arc's own definition is not

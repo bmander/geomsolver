@@ -252,12 +252,15 @@ test('a selection in the workspace opens the tree to its row', (t) => {
   assert.equal(rowKey(selectionRow(v)!.row), 'stock');
 });
 
-test('choosing a hidden plane shows it', (t) => {
+test('drawing in a hidden plane shows it', (t) => {
   const v = docView(DOC);
   t.after(() => v.doc.dispose());
   setRowHidden(v, row(v, 'std'), true);
   assert.ok(v.hiddenEnts.has(ent(v, 'std.front')));
-  v.choosePlane('std.front');
+  // a three-point arc is drawn in the standard plane the eye faces: square on, the front
+  v.orbit = { az: -Math.PI / 2, el: 0 };
+  v.setTool('arc3');
+  assert.ok(v.ensureToolPlane());
   assert.ok(!v.hiddenEnts.has(ent(v, 'std.front')));
   assert.ok(v.hiddenEnts.has(ent(v, 'std.top')), 'the rest of the group stays hidden');
 });

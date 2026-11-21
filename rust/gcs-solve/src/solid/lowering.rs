@@ -24,7 +24,13 @@
 //! section the ring round its half circle starts from, and the two are glued there; a ring's
 //! stretch is turned through its circle's angle, and on round past an end on a plane not through
 //! its axis until its section has crossed it, kept within it (or into a cylinder or a ball it ends
-//! on, kept on its side of that solid). Along an edge no line or coaxial circle carries, a round's
+//! on, kept on its side of that solid) — and no further than the meridian halfway to where its
+//! circle comes back within the faces it ends on, where the crease stops being the nearest of the
+//! meeting (#962): there square, whatever of its section those faces leave (a disc's rim chamfered
+//! deeper than its flat stands in), round its whole turn where the circle never comes back.  A
+//! straight run some lines of whose section pass a curved end by goes on to the run beyond it
+//! along the line, or, where none is, to the plane halfway across the chord the face cuts from
+//! the line. Along an edge no line or coaxial circle carries, a round's
 //! ball is rolled and a chamfer's flat cut (`brep::fillet`), each run of such edges one piece, cut
 //! off by every face at its ends (a plane's half-space, a curved face's solid) or, where a corner
 //! stands there, cut short at the corner's section and glued to its cell.
@@ -59,7 +65,7 @@ mod assemble;
 mod chain;
 mod piece;
 mod recognise;
-pub use assemble::{assemble, Assembly};
+pub use assemble::{assemble, Assembly, BackOver, EndOf};
 
 type V = [f64; 3];
 
@@ -90,6 +96,9 @@ pub struct Run {
     pub strokes: Vec<(Stroke, &'static str)>,
     pub within: Vec<(V, f64)>,
     pub kept: Vec<Kept>,
+    /// Where it ends on a plane flush with another face only to the drawing's numbers
+    /// (`piece::flush_only`): what a failure to build it says of why, in the faces' names.
+    pub flush: Option<String>,
 }
 
 /// A face's surface as a corner's cell or a piece's end reads it (model units): a plane through
@@ -273,8 +282,15 @@ impl Run {
 
     /// Points at both ends of the prism whose hull holds it (`section_hull`, at either end).
     fn hull(&self) -> Vec<V> {
-        let [from, to] = self.span.map(|s| scale(self.along, s));
-        self.section_hull().into_iter().flat_map(|p| [add(p, from), add(p, to)]).collect()
+        let mut points = self.end_hull(0);
+        points.extend(self.end_hull(1));
+        points
+    }
+
+    /// Points of the section at end `k` of its stretch whose hull holds it (`section_hull` there).
+    fn end_hull(&self, k: usize) -> Vec<V> {
+        let by = scale(self.along, self.span[k]);
+        self.section_hull().into_iter().map(|p| add(p, by)).collect()
     }
 
     /// Points of the section's plane whose hull holds the section: each line's ends, and each
@@ -331,8 +347,13 @@ pub struct Ring {
 impl Ring {
     /// Where its section stands at the end of its turn, and the way the turn runs on there.
     fn end(&self) -> (V, V) {
-        let turn = crate::brep::geom::Rigid::turn(self.axis_origin, self.axis, self.angle);
+        let turn = self.turn();
         (turn.point(self.section.origin), turn.vector(self.section.along))
+    }
+
+    /// Its whole turn, which carries its section from where it starts to where it ends.
+    fn turn(&self) -> crate::brep::geom::Rigid {
+        crate::brep::geom::Rigid::turn(self.axis_origin, self.axis, self.angle)
     }
 
     /// Whether it turns short of a whole turn: a stretch, with an end at each side.
@@ -421,6 +442,15 @@ pub struct Rolled {
     /// run, and how far the corner's cell reaches from it: what lies on the corner's side within
     /// that reach is cut from the piece, the cell taking it (#218's 7).
     pub cuts: Vec<(V, V, f64)>,
+    /// Where the ball stands still past the run along another face's end at this vertex — the run
+    /// stopped short of its crease's end, its ball standing within its faces no further — the part
+    /// of the standing ball's piece past that end, which the run's region holds (#962,
+    /// `brep::fillet::roll_beside`): `at` a point of the stretch the ball stands over.
+    pub beside: Option<V>,
+    /// Whether its ball may stand still (a face of its two is a cylinder or a torus as tight as it,
+    /// `brep::fillet::dome`): where its run ends in a run's or a ring's section, the two are glued
+    /// there, and a piece `beside` it is glued to it (#962).
+    pub stands: bool,
 }
 
 
@@ -462,29 +492,103 @@ impl Section {
 /// hundreds of regions, each reading one body, and a key over the body's every term would walk
 /// them all for each.
 pub fn lowered(sk: &Sketch, solid: usize) -> Option<Result<Rc<Vec<Piece>>, String>> {
-    let SolidDef::Region { terms, .. } = &sk.solids.get(solid)?.def else { return None };
-    let (faces, section) = recognise::recognised(sk, terms)?;
-    let body = match super::faces::cached(sk, faces.faces[0].solid as usize) {
-        Ok(b) => b,
+    let (faces, section, body) = match on_body(sk, solid)? {
+        Ok(on) => on,
         Err(e) => return Some(Err(e)),
     };
     let key = super::MemoKey::own(sk, solid, vec![body.clone()]);
     Some(sk.caches.lowering.get_or(solid, key, || {
         let spill = seams_beside(&body, &faces, section);
-        piece::build(&body, &faces, section, &spill)
+        piece::build(&body, &faces, section, &spill, sk.units)
     }.and_then(|pieces| {
         gate(sk, solid, &pieces, &body, || beside_edges(&body, &faces, section))?;
         Ok(Rc::new(pieces))
     })))
 }
 
+/// The faces region `solid` is recognised by, the section it is built of, and the body those faces
+/// are of: `None` where no entry recognises it, an error where its body is not to be read.
+fn on_body(sk: &Sketch, solid: usize)
+    -> Option<Result<(Faces<'_>, Section, std::sync::Arc<super::faces::BodyFaces>), String>> {
+    let SolidDef::Region { terms, .. } = &sk.solids.get(solid)?.def else { return None };
+    let (faces, section) = recognise::recognised(sk, terms)?;
+    Some(super::faces::cached(sk, faces.faces[0].solid as usize).map(|body| (faces, section, body)))
+}
+
+/// **A face a run ends on reaching back over a seam, said by the faces it is of** (#962): the
+/// round of region `solid`'s set going on tangent across a seam between two faces of its body,
+/// the face one of its runs ends on standing over the section there by `b.depth` — in the names
+/// the document gives them and its unit, the seam's point the witness — and what the author can
+/// do (`back_over_in`); by the point alone where the region's body is not to be read.
+pub fn back_over_said(sk: &Sketch, solid: usize, b: &BackOver) -> String {
+    match on_body(sk, solid) {
+        Some(Ok((_, _, body))) => back_over_in(sk, &body, b),
+        _ => back_over_unnamed(sk, b),
+    }
+}
+
+/// `back_over_said` off `body`: the seam's two faces, those of the seam edge nearest its point
+/// (`BodyFaces::seam`, the body's reading of tangent); the face reaching back, the one on `b.end`'s
+/// surface nearest the point; and the run's own face of the two, the one that face meets in an
+/// edge.
+fn back_over_in(sk: &Sketch, body: &super::faces::BodyFaces, b: &BackOver) -> String {
+    let at = b.at;
+    let (lo, hi) = body.bounds();
+    let tol = 1e-7 * (1.0 + distance(lo, hi));
+    let n = body.paths().len();
+    let seams: Vec<u32> = (0..n).flat_map(|fi| body.edges_of(fi).iter().copied()).filter(|&e| body.seam(e)).collect();
+    let seam = body.nearest_edge(&seams, at).filter(|&(_, _, d)| d <= tol)
+        .and_then(|(e, _, _)| match *body.faces_of(e) { [f, g] => Some((f, g)), _ => None });
+    let on = |fi: usize| match b.end {
+        EndOf::Half(m, d) => body.plane(fi).is_some_and(|(nf, o)| norm(cross(nf, m)) <= 1e-9 && (dot(m, o) - d).abs() <= tol),
+        EndOf::Solid(surf) => Surf::of(body, fi).is_some_and(|s| s.same(&surf)),
+    };
+    let away = |fi: usize| body.nearest_edge(body.edges_of(fi), at).map_or(f64::INFINITY, |(_, _, d)| d);
+    let end = (0..n).filter(|&fi| on(fi)).map(|fi| (fi, away(fi))).min_by(|a, b| a.1.total_cmp(&b.1)).map(|(fi, _)| fi);
+    let (Some((f, g)), Some(e)) = (seam, end) else { return back_over_unnamed(sk, b) };
+    let (own, next) = if body.edges_between(&[e], &[g]).is_empty() { (f, g) } else { (g, f) };
+    let (witness, depth) = back_over_numbers(sk, b);
+    format!("its round goes on tangent from {} into {} across their seam at {witness}, and {}, which its run \
+        along {} ends on, reaches {depth} back over the section there: the round along {} ends nowhere there and \
+        keeps that section whole, so the two meet in no one section, and no exact construction is made of that \
+        yet. Move {} clear of the seam, or over it",
+        body.said(own), body.said(next), body.said(e), body.said(own), body.said(next), body.said(e))
+}
+
+/// `back_over_said` where the faces are not to be named: the seam's point and the depth.
+fn back_over_unnamed(sk: &Sketch, b: &BackOver) -> String {
+    let (witness, depth) = back_over_numbers(sk, b);
+    format!("where its round goes on tangent across a seam at {witness}, a face one of its runs ends on reaches \
+        {depth} back over the section the two share: no exact construction is made of that yet; move that face \
+        clear of the seam, or over it")
+}
+
+/// A back-over's seam point and depth as the document says them: the point to six figures in its
+/// unit, the depth a length to two.
+fn back_over_numbers(sk: &Sketch, b: &BackOver) -> (String, String) {
+    let figures = |x: f64| crate::json::fmt_g(x, 6);
+    let witness = format!("[{}, {}, {}]{}", figures(b.at[0]), figures(b.at[1]), figures(b.at[2]), sk.units.name());
+    let depth = crate::units::Dim::LENGTH.number_text(crate::json::fmt_g(b.depth, 2).parse().unwrap_or(b.depth), sk.units);
+    (witness, depth)
+}
+
 /// **The face a recognised region leaves on its body, by the name its construction gives it**
 /// (#879, `Section::face`) — what a block over the body's faces lists it by
-/// (`faces::face_paths`), so a round over another's faces names what the body's boundary has.
-/// `None` for a region no entry recognises.
+/// (`faces::face_paths`), so a round over another's faces names what the body's boundary has: its
+/// round or its flat, listed before its caps (`CAPS`).  `None` for a region no entry recognises.
 pub fn face_name(sk: &Sketch, terms: &[crate::model::RegionTerm]) -> Option<&'static str> {
     recognise::recognised(sk, terms).map(|(_, section)| section.face())
 }
+
+/// **A recognised region's caps, by the names its construction gives them** (#962): where a
+/// piece is cut off by a face it ends on with the body's material beyond, the piece's cap there —
+/// on that face's surface, beside it, a face of the body: a run's prism's `far` and `near`, a
+/// ring's stretch's `start` and `end`.  A fill's ends on a step's sides or a pocket's top; an
+/// upright's round's foot on the plate a boss stands on.  So a round over the rounded body rounds
+/// the edge a cap makes with the round (a step's side's rim round its fill, a boss's foot round
+/// its upright's round), as it rounds that face's own edges.  A name the boundary has not is no
+/// face of it.
+pub const CAPS: [&str; 4] = ["far", "near", "start", "end"];
 
 /// How many points along each edge `seams_beside` stands a section at (and its ends).
 const SEAM_SAMPLES: usize = 32;
@@ -652,10 +756,12 @@ fn footprint(body: &super::faces::BodyFaces, fk: usize, fo: usize, p: V, within:
     }
 }
 
-/// Points just inside the corner along each edge the region rounds or cuts (a quarter, a half and
-/// three quarters along it), a tenth of the section's size in along the bisector of its two faces:
-/// where the field reads the region there, the pieces must hold it (`gate`).
-fn beside_edges(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Vec<V> {
+/// Where the gate reads the region beside each edge it rounds or cuts (`gate`): points of the edge
+/// — a quarter, a half and three quarters along it, and a fiftieth from each end, where a run's
+/// ball may be stopped short by a face its own goes on into (#962) — each with the ways across the
+/// section from it toward the region, the first the bisector of its two faces, then five from along
+/// one face to along the other; and the section's size.
+fn beside_edges(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Vec<(V, Vec<V>, f64)> {
     let size = match section { Section::Round(r) => r, Section::Flat { la, lb } => la.min(lb) };
     let groups: Vec<Vec<usize>> = f.faces.iter().map(|r| body.faces(r)).collect();
     let mut out = Vec::new();
@@ -665,12 +771,18 @@ fn beside_edges(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> 
             if body.convex(e) != Some(f.within) {
                 continue;
             }
-            for s in [0.25, 0.5, 0.75] {
+            for s in [0.02, 0.25, 0.5, 0.75, 0.98] {
                 let p = body.along(e, s);
-                let Some(w) = normalised(add(toward(body.normal(fa, p), f.within), toward(body.normal(fb, p), f.within))) else {
+                let (ta, tb) = (toward(body.normal(fa, p), f.within), toward(body.normal(fb, p), f.within));
+                let Some(w) = normalised(add(ta, tb)) else {
                     continue;
                 };
-                out.push(add(p, scale(w, 0.1 * size)));
+                // along each face, square to the edge, into the region
+                let (Some(da), Some(db)) = (normalised(sub(tb, scale(ta, dot(ta, tb)))),
+                    normalised(sub(ta, scale(tb, dot(ta, tb))))) else { continue };
+                let mut ways = vec![w];
+                ways.extend([0.1, 0.3, 0.5, 0.7, 0.9].into_iter().filter_map(|s| normalised(add(scale(da, 1.0 - s), scale(db, s)))));
+                out.push((p, ways, size));
             }
         }
     }
@@ -679,10 +791,14 @@ fn beside_edges(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> 
 
 /// **The gate**: a lowering stands only where the region's own field agrees with it — every probe
 /// a little inside the built boundary material by the field, every one a little outside not
-/// (`agreement`, sampled by area), and what the field reads `beside` each edge held; one holding
-/// nowhere, only where the field reads it empty too.
+/// (`agreement`, sampled by area), and what the field reads `beside` each edge held: just inside
+/// the corner, and just past where the pieces' boundary crosses the bisector, along each edge and
+/// near both its ends (a prism's faces meshed in strips the length of the edge put no probe of
+/// the agreement's there, and a run whose ball the next face stops short of its end built the
+/// section on to the end unseen, #962); one holding nowhere, only where the field reads it empty
+/// too.
 fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &std::sync::Arc<super::faces::BodyFaces>,
-    beside: impl FnOnce() -> Vec<V>) -> Result<(), String> {
+    beside: impl FnOnce() -> Vec<(V, Vec<V>, f64)>) -> Result<(), String> {
     if pieces.is_empty() {
         let empty = matches!(super::region::form(sk, solid), Ok(super::region::Form::General(f)) if f.is_empty());
         return if empty { Ok(()) } else {
@@ -695,12 +811,34 @@ fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &std::sync::Arc<super
     // no piece left out: what the field reads of the region just inside each edge, the pieces
     // hold (a probe of the boundary built sees nothing of a piece never built)
     let located = crate::brep::query::Located::new(b, 1e-9 * b.size().max(f64::MIN_POSITIVE));
-    for p in beside() {
-        if field.side(p) < -1e-6 * (1.0 + norm(p)) {
-            let q = if mm.is_some() { body.q(p) } else { p };
-            if located.solid_place(q) == crate::brep::query::Place::Out {
-                return Err(format!("its exact construction leaves out what the field reads beside its edge at [{:.6}, {:.6}, {:.6}]",
-                    p[0], p[1], p[2]));
+    use crate::brep::query::Place;
+    let place = |p: V| located.solid_place(if mm.is_some() { body.q(p) } else { p });
+    // the agreement's own offset (model units)
+    let offset = 2e-3 * b.size().max(f64::MIN_POSITIVE) / mm.unwrap_or(1.0);
+    let leaves_out = |p: V| format!("its exact construction leaves out what the field reads beside its edge at \
+        [{:.6}, {:.6}, {:.6}]", p[0], p[1], p[2]);
+    for (e, ways, size) in beside() {
+        let p = add(e, scale(ways[0], 0.1 * size));
+        if field.side(p) < -1e-6 * (1.0 + norm(p)) && place(p) == Place::Out {
+            return Err(leaves_out(p));
+        }
+        // where the pieces' boundary crosses each way across, and a step past it: no material there
+        for &w in &ways {
+            let (mut inside, mut outside) = (0.02 * size, 4.0 * size);
+            if place(add(e, scale(w, inside))) != Place::In || place(add(e, scale(w, outside))) != Place::Out {
+                continue;
+            }
+            // (to a thousandth of the step past it: the probe stands beyond the crossing either way)
+            for _ in 0..48 {
+                if outside - inside <= 1e-3 * offset {
+                    break;
+                }
+                let mid = 0.5 * (inside + outside);
+                if place(add(e, scale(w, mid))) == Place::Out { outside = mid } else { inside = mid }
+            }
+            let q = add(e, scale(w, outside + offset));
+            if field.side(q) < -0.25 * offset {
+                return Err(leaves_out(q));
             }
         }
     }
@@ -769,7 +907,11 @@ fn gated(sk: &Sketch, pieces: &[Piece], body: &std::sync::Arc<super::faces::Body
     let (_, by, origin) = body.brep();
     let (writer, mm) =
         if rolled { (Writer::about(by, scale(origin, by)), Some(by)) } else { (Writer::world(1.0), None) };
-    let mut lowered = assemble(pieces).node(&writer)?;
+    let assembly = assemble(pieces);
+    if let Some(b) = &assembly.across {
+        return Err(back_over_in(sk, body, b));
+    }
+    let mut lowered = assembly.node(&writer)?;
     if rolled {
         lowered.stratum = Some(crate::brep::recipe::Body { stock: 0, ..Default::default() });
     }

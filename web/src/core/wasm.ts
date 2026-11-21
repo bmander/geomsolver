@@ -97,15 +97,15 @@ export interface Abi {
   gcs_elab_sketch_on_face(h: number, s: number, solid: number, p: number, n: number): number;
   gcs_elab_face_plane_json(h: number, s: number, solid: number, p: number, n: number): number;
   gcs_elab_add_rounds(h: number, s: number, solid: number, p: number, n: number): number;
-  gcs_elab_region_json(h: number, s: number, plane: number, x: number, y: number,
-                       unit: number): number;
+  gcs_elab_region_seen_json(h: number, s: number, az: number, el: number, x: number, y: number,
+                            unit: number): number;
   gcs_elab_remove(h: number, sk: number, p: number, n: number): number;
   gcs_elab_make_component(h: number, sk: number, p: number, n: number): number;
   gcs_elab_set_dimension(h: number, cid: number, ap: number, an: number,
                          tp: number, tn: number): number;
   gcs_sketch_counts(h: number, out: number): void;
   gcs_sketch_point(h: number, x: number, y: number, fixed: number, name: number, nameLen: number): number;
-  gcs_sketch_point_seen(h: number, az: number, el: number, x: number, y: number): number;
+  gcs_sketch_point_seen(h: number, az: number, el: number, x: number, y: number, px: number): number;
   gcs_sketch_line(h: number, p1: number, p2: number): number;
   gcs_sketch_set_hidden(h: number, p: number, n: number): number;
   gcs_sketch_set_shown_kinds(h: number, kinds: number, onParts: number, p: number,
@@ -118,6 +118,7 @@ export interface Abi {
   gcs_solid_shown_json(h: number): number;
   gcs_sketch_circle(h: number, center: number, r: number, name: number, nameLen: number): number;
   gcs_sketch_arc(h: number, c: number, s: number, e: number, name: number, nameLen: number): number;
+  gcs_sketch_onto_radius(h: number, c: number, s: number, e: number): number;
   gcs_sketch_arc_through(h: number, s: number, e: number, tx: number, ty: number, name: number, nameLen: number): number;
   gcs_sketch_plane(h: number, ux: number, uy: number, uz: number, vx: number, vy: number,
                    vz: number, name: number, nameLen: number): number;

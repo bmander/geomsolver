@@ -279,7 +279,7 @@ fn lowered_node(n: &Lowered,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i6
         }
         pieces.push(piece);
     }
-    chained(&pieces,&n.joins,first_rolled,floor)
+    chained(&pieces,&n.joins,&n.gaps,first_rolled,floor)
 }
 
 /// One rolled run of a `lowered` node: the ball rolled along it against the `stratum`, or a
@@ -288,6 +288,8 @@ fn lowered_node(n: &Lowered,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i6
 fn rolled_run(k: &Rolled,stratum: &Brep,tol: f64,floor: f64) -> Built {
     let mut piece = match k.flat {
         Some((legs,on)) => super::fillet::flat_along(stratum,k.at,legs,Some(on),tol).map_err(|e| format!("a flat along a run: {e}"))?,
+        None if k.beside => super::fillet::roll_beside(stratum,k.at,k.radius,tol)
+            .map_err(|e| format!("a standing ball beside a run: {e}"))?,
         None => super::fillet::roll_across(stratum,k.at,k.radius,tol,&k.wedge)
             .map_err(|e| format!("a rolled round: {e}"))?.piece,
     };
@@ -336,11 +338,16 @@ fn lowered_run(piece: &Run,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
 
 /// A lowered region's pieces, those `joins` names glued at their shared sections into chains, each
 /// walked from its first piece breadth first at the tolerance of its pieces (looser at a rolled
-/// piece's, those from `first_rolled` on), and the chains set beside one another (`beside`).
-fn chained(pieces: &[Brep],joins: &[[usize;2]],first_rolled: usize,floor: f64) -> Built {
+/// piece's, those from `first_rolled` on, and at a seam's whose two sections stand `gaps` apart),
+/// and the chains set beside one another (`beside`).
+fn chained(pieces: &[Brep],joins: &[[usize;2]],gaps: &[f64],first_rolled: usize,floor: f64) -> Built {
     if joins.iter().flatten().any(|&k| k >= pieces.len()) { return Err("recipe: a join names no piece".into()) }
-    let mut next: Vec<Vec<usize>> = vec![Vec::new();pieces.len()];
-    for &[i,j] in joins { next[i].push(j); next[j].push(i); }
+    if gaps.len() != joins.len() { return Err("recipe: a join's gap is not given".into()) }
+    let mut next: Vec<Vec<(usize,f64)>> = vec![Vec::new();pieces.len()];
+    for (&[i,j],&gap) in joins.iter().zip(gaps) {
+        next[i].push((j,gap));
+        next[j].push((i,gap));
+    }
     let tol = tolerance_over(pieces.iter().map(Brep::size).fold(1.,f64::max),floor);
     let mut solid: Option<Brep> = None;
     let mut done = vec![false;pieces.len()];
@@ -348,24 +355,27 @@ fn chained(pieces: &[Brep],joins: &[[usize;2]],first_rolled: usize,floor: f64) -
         if done[first] { continue }
         done[first] = true;
         let mut chain = pieces[first].clone();
-        let mut rolled = false;
+        let mut measured = false;
         let mut queue = std::collections::VecDeque::from([first]);
         while let Some(i) = queue.pop_front() {
-            for &k in &next[i] {
+            for &(k,gap) in &next[i] {
                 if done[k] { continue }
                 done[k] = true;
                 // a rolled piece's cap is cut from its fitted canal: its edges are the cell's
                 // to within the canal's fit (`fillet::roll`'s bar, a ten-millionth of the
-                // boundary), and the shared edges are measured once the chain is whole
+                // boundary), and the shared edges are measured once the chain is whole; so at a
+                // seam of the body's two faces meeting tangent only to its reading of tangent
+                // (#962), its two sections as far apart as they stand
                 let rolled_join = [i,k].iter().any(|&p| p >= first_rolled);
-                let bar = if rolled_join { (2e-7*chain.size().max(pieces[k].size())).max(8.*tol) } else { 8.*tol };
+                let mut bar = if rolled_join { (2e-7*chain.size().max(pieces[k].size())).max(8.*tol) } else { 8.*tol };
+                if gap > 0. { bar = bar.max(8.*tol+2.*gap); }
                 chain = super::boolean::glued(&chain,&pieces[k],bar)
                     .ok_or("two pieces joined at a section share no face there")?;
-                rolled |= rolled_join;
+                measured |= rolled_join || gap > 0.;
                 queue.push_back(k);
             }
         }
-        if rolled { chain.measure_tolerances(); }
+        if measured { chain.measure_tolerances(); }
         solid = Some(match solid { None => chain,Some(s) => beside(&s,&chain,floor)? });
     }
     solid.ok_or_else(|| "recipe: a lowered region of no pieces".into())

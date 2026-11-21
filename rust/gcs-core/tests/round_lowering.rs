@@ -11,7 +11,7 @@ use gcs_core::solid::MaterialField;
 use std::f64::consts::PI;
 
 use crate::common::{close, ent, text::solved};
-use crate::common::rounds::{beside_cylinder, exported, kinds, root_ring, square_run};
+use crate::common::rounds::{beside_cylinder, exported, kinds, refused, root_ring, square_run};
 use crate::common::rounds::meridian::{knob_neck, knob_rounded};
 
 /// A block 40 × 24 × 12 drawn on the front plane (x, z), its near face at y = 0, standing 12 deep.
@@ -1172,12 +1172,6 @@ fn agrees_with_field(e: &Elaborated, name: &str, offset: f64) -> f64 {
     props::volume(b) / exact.mm.powi(3)
 }
 
-/// The export's refusal of solid `name`, as text.
-fn refused(e: &Elaborated, name: &str) -> String {
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    format!("{:?}", export::exact(&e.sketch, ent(e, name).i(), None, None, &say).err().expect("refused"))
-}
-
 /// **A corner of a face in pieces** (#218's 4): `post.sv`'s stand rounded all over. The post
 /// splits the plate's front side in two, so a corner where the plate's top, its front and an end
 /// meet takes the piece of the front standing at that vertex. Where the plate's convex top edge
@@ -1193,7 +1187,8 @@ fn a_corner_of_a_face_in_pieces_is_rounded() {
     lowered(&e);
     assert!(agrees_with_field(&e, "stand", 0.01) > 0.0);
     let why = refused(&e, "stand");
-    assert!(why.contains("touches itself along a line") && why.contains("no manifold file describes it"), "{why}");
+    assert!(why.contains("touches itself along a line") && why.contains("no manifold file describes it")
+        && why.contains("edges of both turns meet where `stand.plate.ab`"), "{why}");
 }
 
 /// **A vertex where convex and concave rounds meet** (#218): `twin.sv`'s bar rounded all over.
@@ -1209,7 +1204,8 @@ fn rounds_meeting_at_a_vertex_of_both_kinds_touch_along_a_line() {
     lowered(&e);
     assert!(agrees_with_field(&e, "bar", 0.01) > 0.0);
     let why = refused(&e, "bar");
-    assert!(why.contains("touches itself along a line") && why.contains("no manifold file describes it"), "{why}");
+    assert!(why.contains("touches itself along a line") && why.contains("no manifold file describes it")
+        && why.contains("in a concave edge") && why.contains("round(r: …) bar.right.small"), "{why}");
 }
 
 /// **A corner where two curved faces meet** (#218's 4): `bores.sv`, a slab drilled twice, the

@@ -209,6 +209,44 @@ fn preview_gestures_keep_source_mappings_with_statements_after_the_block() {
     assert_eq!(elaborate(&prog_of(&removed.text)).sketch.points.len(), 1 + STD_POINTS);
 }
 
+/// **What a round over points in space is drawn over is declared nowhere** (#363 S6): an arc or a
+/// circle about points in space is drawn in a plane of its own, over points of its own — minted
+/// by the elaboration after everything the document declares, so past the high-water mark.  A
+/// point drawn beside them is the one thing a gesture drew, and the one statement written.
+#[test]
+fn a_point_drawn_beside_rounds_in_space_writes_only_the_point() {
+    let doc = "use std\nc := point hint((0, 0, 0))\ns := point hint((30, 0, 0))\n\
+               e := point hint((0, 0, 30))\na := arc(center: c, start: s, end: e)\n\
+               k := circle(center: c, normal: std.z) hint(r: 10)\n\
+               m := circle(center: s, normal: hint(dir: (0, 1, 0))) hint(r: 5)\n";
+    let mut e = elaborate(&prog_of(doc));
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let arc = e.map.ent_named("a").unwrap();
+    let circle = e.map.ent_named("k").unwrap();
+    // the arc's plane, its axes, its origin and its ends are its own; the circle's gauge too
+    let owned = e.sketch.round_owned();
+    let pl = e.sketch.round(arc).unwrap().plane as usize;
+    assert!(owned.contains(&EntRef::frame(pl)));
+    assert!(owned.contains(&EntRef::point(e.sketch.arcs[arc.i()].start as usize)));
+    let (_, gauge) = e.sketch.round(circle).unwrap().normal.unwrap();
+    assert!(owned.contains(&EntRef::axis(gauge as usize)));
+    assert!(!owned.contains(&e.map.ent_named("s").unwrap()), "a point the document wrote");
+    // a circle's normal is its own where it is seeded in its `normal:`
+    let (own, _) = e.sketch.round(e.map.ent_named("m").unwrap()).unwrap().normal.unwrap();
+    assert!(owned.contains(&own) && !owned.contains(&e.map.ent_named("std.z").unwrap()));
+    // and none of it is drawn: no stroke, no pane, no pick
+    let drawn = e.sketch.drawn();
+    assert!(owned.iter().all(|r| !drawn.contains(r)), "a round's own is drawn");
+    assert!(drawn.contains(&arc) && drawn.contains(&circle), "the arc and the circle are");
+    e.sketch.point3([5.0, 0.0, 5.0], false, "");
+    let edit = reconciled(&mut e);
+    assert_eq!(edit.kind, Kind::Structural);
+    assert_eq!(edit.names, vec!["p0"], "the drawn point, and nothing the rounds are drawn over");
+    // the arc's radius seeded as any arc's is; nothing of what it is drawn over held or declared
+    let arc_seeded = doc.replace("end: e)\n", "end: e) hint(r: 30)\n");
+    assert_eq!(edit.text, format!("{arc_seeded}p0 := point hint((5, 0, 5))\n"));
+}
+
 /// **The Rect tool writes a component, once, and instances after.**  The first rectangle
 /// brings the `Rectangle` definition with it — the chain of four lines welded at right
 /// angles from a corner it is given, the first level — and every rectangle is a corner and one
@@ -1113,4 +1151,51 @@ in std.front {
         let refused = set(kv).unwrap_err();
         assert!(refused.starts_with(why), "{kv:?}: {refused}");
     }
+}
+
+/// **A round in space is lifted as it was written** (#363 S6): an arc over points in space over
+/// the points the document wrote, a circle square to the axis it names, or along the seed of its
+/// own — and nothing they are drawn over: no plane, axis or point of theirs declared, none held,
+/// and no `in`.  What is written reads back to the same rounds.
+#[test]
+fn a_round_in_space_is_lifted_as_it_was_written() {
+    let e = elaborate(&prog_of("use std\nc := point hint((0, 0, 0))\ns := point hint((30, 0, 0))\n\
+        e := point hint((0, 0, 30))\na := arc(center: c, start: s, end: e)\n\
+        k := circle(center: c, normal: std.z) hint(r: 10)\n\
+        n := circle(center: s, normal: hint(dir: (0, 1, 0))) hint(r: 5)\n"));
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let text = gcs_core::program::dumps(&e.sketch);
+    for line in ["c0 := circle(center: p0, normal: x2) hint(r: 10)\n",
+                 "c1 := circle(center: p1, normal: hint(dir: (0, 1, 0))) hint(r: 5)\n",
+                 "a0 := arc(center: p0, start: p1, end: p2) hint(r: 30)\n"] {
+        assert!(text.contains(line), "{line}in\n{text}");
+    }
+    assert!(!text.contains('#') && !text.contains("fix(y == 0)"),
+            "nothing of the rounds':\n{text}");
+    let back = elaborate(&prog_of(&text));
+    assert!(back.ok(), "{:?}", back.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let own = |e: &gcs_core::program::Elaborated| -> Vec<bool> {
+        e.sketch.circles.iter().map(|c| c.round.as_ref().is_some_and(|r| r.own)).collect()
+    };
+    assert_eq!(own(&back), own(&e), "the same circles, the same normals");
+    assert_eq!(back.sketch.arcs.iter().filter(|a| a.round.is_some()).count(), 1);
+}
+
+/// **A spline in space is deleted as it is selected** (#363): the curve it is traced as, by its
+/// wire kind `traced` — a reference's kind and no declaration's (`EntKind::from_wire`) — takes the
+/// spline's statement, and its points stay.
+#[test]
+fn a_spline_in_space_is_deleted_by_the_curve_it_is_traced_as() {
+    let doc = "use std\na := point hint((0, 0, 0))\nb := point hint((10, 20, 5))\n\
+               c := point hint((30, -10, 15))\nd := point hint((40, 10, 0))\ns := spline(a, b, c, d)\n";
+    let e = elaborate(&prog_of(doc));
+    let s = e.map.ent_named("s").unwrap();
+    assert_eq!(s.kind, EntKind::Traced);
+    let req = edit::SelectionRequest::from_json(&gcs_core::json::parse(
+        &format!("{{\"entities\": [[\"traced\", {}]]}}", s.i())).unwrap());
+    assert_eq!(req.ents, vec![s], "read by its wire kind");
+    let gone = edit::remove(&e, &e.program, &e.sketch, &req.ents, &req.cons);
+    assert_eq!(gone.refused, None);
+    assert!(!gone.text.contains("s := spline"), "{}", gone.text);
+    assert!(gone.text.contains("d := point hint((40, 10, 0))"), "the points stay: {}", gone.text);
 }

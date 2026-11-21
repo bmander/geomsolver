@@ -125,7 +125,7 @@ export function dimension(cs: Constraint[], alt: DimAlt | null = null): void {
 
 /** Open a dimension the drawing already carries: it is in the sketch, so there is nothing to
  *  add and nothing to place, only the number to write.  `dimbox::editValue` is the way in —
- *  the constraint list's double-click and a callout's both land there, and it is what checks
+ *  a callout's double-click lands there, and it is what checks
  *  there is a number to edit at all. */
 export function editDimension(c: Constraint): void {
   view.startDimension([c], false, null);

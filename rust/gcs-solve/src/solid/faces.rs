@@ -18,10 +18,12 @@ mod meets;
 mod path;
 pub(crate) use body::along_run;
 pub use body::{not_one_body, one_body, reading, BodyFaces, Bound, EndBy, Level, Read, Reading};
+pub(crate) use body::TANGENT;
 pub use layers::layer;
 pub use lays::Lays;
-pub use meets::Meets;
+pub use meets::{Meeting, Meets};
 pub use path::{face_paths, face_source, one_body_of, FacePath, FaceSource};
+pub(crate) use path::uses_naming;
 pub use path::same_step;
 pub(crate) use path::face_primitive;
 
@@ -220,6 +222,16 @@ impl Layers {
         let made = faces.iter().filter_map(|f| self.uses.get(f.of.as_deref()?)).map(|&l| l + 1);
         made.fold(stands, usize::max).min(self.bodies.len() - 1)
     }
+
+    /// The faces `listed` of the body read in layer `layer` (the top's, past it): a face made by
+    /// a use standing in a layer beneath it read as that layer's stratum has it
+    /// (`ListedFaces::read_above`).  What `Layered::read` reads each layer by, and what a round
+    /// asks how two faces meet edge by edge in (`ListedFaces::meeting`, #962).
+    pub fn listed(&self, sk: &Sketch, listed: &[FacePath], layer: usize) -> Option<ListedFaces> {
+        let k = layer.min(self.bodies.len() - 1);
+        let below = |of: &str| self.uses.get(of).is_some_and(|&l| l < k);
+        ListedFaces::read_above(sk, self.bodies[k], listed, &below)
+    }
 }
 
 /// Body `body` and the bodies of its layers beneath it, the lowest first: each a body of its
@@ -255,9 +267,8 @@ impl Layered {
     /// The faces `listed` of solid `body` read in each of its `layers`, or `None` where its
     /// boundary is not read (`ListedFaces::read`).
     pub fn read(sk: &Sketch, layers: &Layers, listed: &[FacePath]) -> Option<Layered> {
-        let layers = layers.bodies.iter().enumerate().map(|(k, &b)| {
-            let below = |of: &str| layers.uses.get(of).is_some_and(|&l| l < k);
-            ListedFaces::read_above(sk, b, listed, &below).map(|l| (Meets::of(&l), Lays::of(&l)))
+        let layers = (0..layers.bodies.len()).map(|k| {
+            layers.listed(sk, listed, k).map(|l| (Meets::of(&l), Lays::of(&l)))
         }).collect::<Option<Vec<_>>>()?;
         Some(Layered { layers })
     }

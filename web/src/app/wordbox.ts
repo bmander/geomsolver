@@ -1,7 +1,7 @@
 /* **The argument box**: a word in hand, written as the statement it will make, with a chip for
  * each slot in the order the statement writes them — `[p] distance([80mm], side: […]) [q]`.
  *
- * A chip says what it takes — a glyph and a caption, `point, line or plane`, `Length` — and is
+ * A chip says what it takes by its glyph and its ink, and in its placeholder — and is
  * *armed* by a click on it, by Tab, or by the box itself as each slot is filled.  While a slot that
  * is filled by a click is armed, the workspace takes only what it would take: the `word` tool is
  * down, `SketchView.wordPick` answers which hits are wanted, everything else is dimmed, and a click
@@ -16,7 +16,7 @@ import { Arc, Circle, Line, angleBetween, distanceBetween, toWire } from '../cor
 import type { Primitive } from '../core/model.js';
 import { snapOrNew } from './tools.js';
 import type { Hit, SketchView } from './view.js';
-import { glyph, said, slotCategory, slotGlyph } from './words.js';
+import { said, slotCategory, slotGlyph } from './words.js';
 
 /** What a hit is called in the program, and the kind it is as the lexicon names kinds. */
 export function hitNamed(v: SketchView, h: Hit): { name: string; kind: string } | null {
@@ -78,6 +78,8 @@ export class WordBox {
   private open = false;
   /** Slots a number was put in for, from the drawing, and not yet looked at. */
   private measured = new Set<number>();
+  /** Why the core would not write it, said under the statement until the next edit. */
+  private refused = '';
 
   constructor(private readonly el: HTMLElement, private readonly v: SketchView) {
     el.addEventListener('pointerdown', (e) => {
@@ -107,6 +109,7 @@ export class WordBox {
       this.vals[i] = f.value;
       this.kinds[i] = null;
       this.measured.delete(i);
+      this.unrefuse();
       chip.classList.toggle('filled', !!f.value.trim());
       if (f instanceof HTMLInputElement) f.size = Math.max(4, f.value.length + 1);
       this.say();
@@ -129,6 +132,7 @@ export class WordBox {
     this.kinds = w.slots.map(() => null);
     this.measured.clear();
     this.open = false;
+    this.refused = '';
     for (const [i, name, kind] of fillFrom(this.v, w) ?? []) {
       this.vals[i] = this.vals[i] && w.slots[i].many ? `${this.vals[i]}, ${name}` : name;
       this.kinds[i] = kind;
@@ -170,6 +174,13 @@ export class WordBox {
     return (!s.optional || this.needs().includes(s.key)) && s.role !== 'name' && s.default === null;
   }
 
+  /** Something changed since the core refused it: the refusal is about what was. */
+  private unrefuse(): void {
+    if (!this.refused) return;
+    this.refused = '';
+    this.el.querySelector('.refused')?.remove();
+  }
+
   private complete(): boolean {
     return this.word!.slots.every((_, i) => !this.required(i) || this.filled(i));
   }
@@ -192,6 +203,7 @@ export class WordBox {
     const w = this.word;
     if (!w || i < 0 || i >= w.slots.length) return;
     this.armed = i;
+    this.unrefuse();
     if (w.slots[i].optional) this.open = true;
     const s = w.slots[i];
     const takes = this.takes(i);
@@ -239,6 +251,7 @@ export class WordBox {
     const s = w.slots[i];
     this.vals[i] = s.many && this.filled(i) ? `${this.vals[i]}, ${named.name}` : named.name;
     this.kinds[i] = named.kind;
+    this.unrefuse();
     if (s.many) {
       this.render(true);
       this.v.draw();
@@ -247,15 +260,10 @@ export class WordBox {
     this.advance();
   }
 
-  /** A new point where the click was, drawn on the plane being drawn on (or in space), its name
-   *  the one the document gives it. */
+  /** A new point where the click was, in space where the eye sees it, its name the one the
+   *  document gives it. */
   private mint(sp: [number, number]): string | null {
     const v = this.v;
-    if (!v.ensurePlane()) return null;
-    if (!v.openSpace && !v.viewCam().readable()) {
-      v.onStatus(`${v.planeName} is seen edge on — turn the view to place a point on it`);
-      return null;
-    }
     v.pushUndo();
     const p = snapOrNew(v, sp);
     v.releasePlan();
@@ -324,8 +332,8 @@ export class WordBox {
     const w = this.word!;
     const args: Record<string, string> = {};
     w.slots.forEach((s, i) => { if (this.filled(i)) args[s.key] = this.vals[i].trim(); });
-    const drawn = w.form === 'declare' && ['point', 'line', 'circle', 'arc', 'spline'].includes(w.id);
-    return { id: w.id, args, ...(drawn && this.v.planeName ? { plane: this.v.planeName } : {}) };
+    // drawn in space, as every tool draws: a word declares no plane
+    return { id: w.id, args };
   }
 
   /** **Write the word**: the core composes the statement and holds it to the elaborator.  A line
@@ -336,15 +344,16 @@ export class WordBox {
     if (!w) return;
     if (!this.complete()) {
       const i = w.slots.findIndex((_, k) => this.required(k) && !this.filled(k));
-      this.v.onStatus(`${w.word} still needs ${this.need(w.slots[i])}`);
       this.arm(i);
+      this.refuse(`${w.word} still needs ${this.need(w.slots[i])}`);
       return;
     }
-    const drawn = w.form === 'declare' && ['line', 'circle', 'arc', 'spline'].includes(w.id);
-    if (drawn && !this.v.ensurePlane()) return;
     const r = this.request();
     const said = this.v.doc.wordText(r).text ?? w.word;
-    if (!this.v.apply(this.v.doc.writeWord(r), `wrote ${said}`)) return;
+    // what the core will not write is said here, beside what it is about, and the box stays
+    const e = this.v.doc.writeWord(r);
+    if (e.refused) return this.refuse(e.refused);
+    if (!this.v.apply(e, `wrote ${said}`)) return;
     if (w.form === 'declare' && w.id !== 'face' && w.id !== 'solid') {
       const end = w.id === 'line' ? r.args.p2 : undefined;
       this.start(w);
@@ -391,31 +400,16 @@ export class WordBox {
 
   /* -- drawing it ------------------------------------------------------------------------- */
 
-  /** The prompt under the sentence: what the armed slot wants, said. */
-  private prompt(): string {
-    const w = this.word!;
-    if (this.armed < 0) {
-      return this.complete() ? 'Ready: <kbd>↵</kbd> writes it, <kbd>esc</kbd> puts it down.' : '';
-    }
-    const s = w.slots[this.armed];
-    const cat = slotCategory(s);
-    if (w.id === 'point') return 'Click where the point goes.';
-    if (cat === 'pick') {
-      const many = s.many ? ', one after another; <kbd>↵</kbd> when that is all' : '';
-      const mint = s.mints ? ', or empty space for a new point' : '';
-      return `Click ${esc(this.need(s).replace(/ for .*/, ''))} for <b>${esc(s.key)}</b>${mint}${many}, or type its name.`;
-    }
-    if (cat === 'choice') return `Choose <b>${esc(s.key)}</b>.`;
-    if (cat === 'name') return 'The name it is given — left empty, the next one free.';
-    const now = this.filled(this.armed) ? ' — shown as the drawing measures it now' : '';
-    return `Type ${esc(s.type === 'expr' ? 'a number or a name' : `a ${s.type}`)} for <b>${esc(s.key || 'it')}</b>${now}.`;
+  /** Say why it was not written, under the statement, until something in the box changes. */
+  private refuse(why: string): void {
+    this.refused = why;
+    this.render();
   }
 
+  /** Whether it can be written yet, on its button. */
   private say(): void {
     const ok = this.el.querySelector('.write');
     ok?.classList.toggle('ready', this.complete());
-    const p = this.el.querySelector('.prompt');
-    if (p) p.innerHTML = this.prompt();
   }
 
   private chip(i: number): HTMLElement {
@@ -443,13 +437,6 @@ export class WordBox {
     }
     chip.innerHTML = (cat === 'name' ? '' : slotGlyph(s)) + field;
     wrap.append(chip);
-    const cap = document.createElement('span');
-    cap.className = 'cap';
-    cap.textContent = cat === 'name' ? 'new name'
-      : (s.kinds.length ? short(this.takes(i)) : s.words.length ? short(s.words) : s.type ?? '')
-        + (s.mints ? ' · or new' : '') + (s.many ? ' · several' : '')
-        + (s.optional && !this.needs().includes(s.key) ? ' · optional' : '');
-    wrap.append(cap);
     return wrap;
   }
 
@@ -554,15 +541,14 @@ export class WordBox {
         }
       }
     }
-    const grip = `<span class="grip" aria-hidden="true">${glyph('any')}</span>`;
-    this.el.innerHTML = `<div class="box-row">${grip}<div class="sentence-host"></div>`
+    this.el.innerHTML = `<div class="box-row"><div class="sentence-host"></div>`
       + `<div class="acts"><button type="button" class="write${this.complete() ? ' ready' : ''}"`
       + ` title="Write it into the program (↵)">write <kbd>↵</kbd></button>`
       + `<button type="button" class="discard" aria-label="Put the word down (esc)"`
       + ` title="Put the word down (esc)">×</button></div></div>`
-      + `<div class="prompt" role="status"></div>`;
+      + (this.refused ? `<div class="refused" role="alert">${esc(this.refused)}</div>` : '');
     this.el.querySelector('.sentence-host')!.replaceWith(sent);
-    this.el.querySelector('.grip')?.setAttribute('title', w.doc || w.id);
+    sent.title = w.doc || w.id;
     this.say();
     if (focus && this.armed >= 0) {
       const f = this.el.querySelector<HTMLInputElement | HTMLSelectElement>(`#wordbox-${this.armed}`);
@@ -574,7 +560,3 @@ export class WordBox {
   }
 }
 
-/** Kinds said short, for a caption: `point, line +3`. */
-function short(xs: string[]): string {
-  return xs.length > 3 ? `${xs.slice(0, 2).join(', ')} +${xs.length - 2}` : said(xs);
-}

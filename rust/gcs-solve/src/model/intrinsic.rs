@@ -76,18 +76,20 @@ pub enum Place {
 /// — its centre the plane's origin, an arc's ends in it — each tied to the point in space the
 /// document wrote, `ties` as (its own point, the point written); and for a circle the axis or line
 /// it stands square to with the axis its plane's turn is gauged by (`normal`), which a solve
-/// takes again where it leaves the normal near it (`Sketch::retake_round_gauges`).
+/// takes again where it leaves the normal near it (`Sketch::retake_round_gauges`).  `own`: the
+/// normal is an axis of the circle's own, seeded in its `normal:`, and so the round's.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RoundIn {
     pub plane: u32,
     pub ties: Vec<[u32; 2]>,
     pub normal: Option<(EntRef, u32)>,
+    pub own: bool,
 }
 
 impl RoundIn {
     /// The same plane over the entities `map` renumbers, or `None` where one did not come.
     pub fn remapped(&self, map: &Remap) -> Option<RoundIn> {
-        let RoundIn { plane, ties, normal } = self;
+        let RoundIn { plane, ties, normal, own } = self;
         let point = |p: u32| renumbered(map, EntKind::Point, p);
         Some(RoundIn {
             plane: renumbered(map, EntKind::Frame, *plane)?,
@@ -96,6 +98,7 @@ impl RoundIn {
                 Some((n, g)) => Some((map(*n)?, renumbered(map, EntKind::Axis, *g)?)),
                 None => None,
             },
+            own: *own,
         })
     }
 }
@@ -449,6 +452,31 @@ impl Sketch {
     pub fn stands_for(&self, p: u32) -> Option<u32> {
         self.rounded().filter_map(|e| self.round(e))
             .flat_map(|r| r.ties.iter()).find(|t| t[0] == p).map(|t| t[1])
+    }
+
+    /// **What the rounds own** (#363 S6): the plane each arc or circle over points in space is
+    /// drawn in, its axes and its origin, the points drawn in it, and a circle's gauge and its
+    /// normal where that is its own, seeded in its `normal:` — minted
+    /// by the elaboration, standing for what the document wrote, declared nowhere and drawn
+    /// nowhere (`Sketch::undrawn`).
+    pub fn round_owned(&self) -> std::collections::BTreeSet<EntRef> {
+        let mut out = std::collections::BTreeSet::new();
+        for r in self.rounded().filter_map(|r| self.round(r)) {
+            out.insert(EntRef::frame(r.plane as usize));
+            if let Some(c) = self.frames.get(r.plane as usize).and_then(|f| f.chart.as_ref()) {
+                out.extend([c.u, c.v].map(|a| EntRef::axis(a as usize)));
+            }
+            // its own points, each tied to the one the document wrote: its origin and an arc's ends
+            out.extend(r.ties.iter().map(|t| EntRef::point(t[0] as usize)));
+            if let Some((n, g)) = r.normal {
+                out.insert(EntRef::axis(g as usize));
+                // and its normal, where that is its own
+                if r.own {
+                    out.insert(n);
+                }
+            }
+        }
+        out
     }
 
     /// The gauges circles about points in space hold their planes' turn by: each gauge axis with

@@ -181,14 +181,17 @@ test('a tool shows the kinds it needs while it is down', (t) => {
   assert.ok(!v.kindOn('points'), 'View ▸ Show is as it was');
 });
 
-test('a plane chosen to draw on, or a row chosen from the outline, is shown whatever its kind',
+test('a plane a tool draws in, or a row chosen from the outline, is shown whatever its kind',
      (t) => {
   const v = docView(KINDS);
   t.after(() => v.doc.dispose());
   v.setKind('planes', false);
   const front = ent(v, 'std.front');
   assert.ok(v.hiddenEnts.has(front) && v.hiddenEnts.has(ent(v, 'std.top')));
-  v.choosePlane('std.front');
+  v.orbit = { az: -Math.PI / 2, el: 0 };     // square on to the front, which a three-point arc is drawn in
+  v.setTool('arc3');
+  assert.ok(v.ensureToolPlane());
+  v.setTool('select');                      // which shows what the arc tool needs no longer
   assert.ok(!v.hiddenEnts.has(front), 'the plane drawn on is shown');
   assert.ok(v.hiddenEnts.has(ent(v, 'std.top')), 'the others are not');
   // a row of a kind not shown, chosen from the outline: that one thing

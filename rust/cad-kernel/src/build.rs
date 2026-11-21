@@ -156,6 +156,10 @@ impl Seg {
     pub fn start(&self) -> V { self.curve.point(self.t[0]) }
     pub fn end(&self) -> V { self.curve.point(self.t[1]) }
     pub fn forward(&self) -> bool { self.t[1] > self.t[0] }
+    /// The step's direction along the walk at its parameter `t`, unit.
+    fn along(&self,t: f64) -> V { unit(scale(self.curve.tangent(t),if self.forward() { 1. } else { -1. })) }
+    /// Its side into its material at `t`, in a walk about `n` with its material on its left.
+    fn inward(&self,t: f64,n: V) -> V { cross(n,self.along(t)) }
     fn reversed(&self) -> Seg { Seg {curve:self.curve.clone(),t:[self.t[1],self.t[0]],source:self.source} }
     /// The edge's parameters, increasing.
     pub fn span(&self) -> [f64;2] { if self.forward() { self.t } else { [self.t[1],self.t[0]] } }
@@ -170,15 +174,35 @@ impl Seg {
             _ => self,
         }
     }
+    /// How long the step is: a line's run, an arc's radius times its turn, and any other curve
+    /// its widest chord among seventeen points along it — nothing only where they all coincide.
+    /// A length, whatever the curve's parameter measures (an arc's is an angle).
+    pub fn length(&self) -> f64 {
+        match self.curve {
+            Curve::Line {..} => (self.t[1]-self.t[0]).abs(),
+            Curve::Circle(_,r) => r.abs()*(self.t[1]-self.t[0]).abs(),
+            _ => {
+                let q: Vec<V> = (0..=16).map(|k| self.curve.point(self.t[0]+(self.t[1]-self.t[0])*k as f64/16.)).collect();
+                q.iter().map(|a| q.iter().map(|b| distance(*a,*b)).fold(0.,f64::max)).fold(0.,f64::max)
+            }
+        }
+    }
     pub(crate) fn samples(&self,n: usize) -> impl Iterator<Item = V> + '_ {
         (0..n).map(move |j| self.curve.point(self.t[0]+(self.t[1]-self.t[0])*j as f64/n as f64))
     }
 }
 
+/// **Whether an edge `length` long has no length** in a profile of `size` (its reach from its
+/// origin, as `Profile::size` reads it): within the profile's tolerance of nothing, where no walk
+/// can tell its ends apart.  The one test, which `walks` refuses a loop by and a host asks of the
+/// edges it draws before it hands them over, so the refusal is said in the host's terms (#962).
+pub fn no_length(length: f64,size: f64) -> bool { !(length > tolerance(size)) }
+
 /// Each loop of a profile as a closed walk, the outer one counter-clockwise in `(x, y)` and the
 /// holes clockwise, where `coords` reads a point's coordinates in the plane.
 pub fn walks(p: &Profile,coords: &dyn Fn(V) -> [f64;2]) -> Result<Vec<Vec<Seg>>,String> {
-    let tol = tolerance(p.size());
+    let size = p.size();
+    let tol = tolerance(size);
     let mut out = Vec::new();
     for (li,l) in p.loops.iter().enumerate() {
         let segs: Vec<Seg> = l.iter().enumerate().map(|(source,e)| match *e {
@@ -190,7 +214,11 @@ pub fn walks(p: &Profile,coords: &dyn Fn(V) -> [f64;2]) -> Result<Vec<Vec<Seg>>,
             ProfileEdge::Spline(ref b) => Seg {curve:Curve::BSpline(b.clone()),t:b.domain(),source},
             ProfileEdge::Exact(ref curve) => Seg {curve:curve.clone(),t:exact_span(curve),source},
         }).collect();
-        if segs.iter().any(|s| (s.t[1]-s.t[0]).abs() <= tol) { return Err(format!("loop {li} has an edge of no length")) }
+        if let Some(s) = segs.iter().find(|s| no_length(s.length(),size)) {
+            let name = p.name(li,s.source);
+            let edge = if name.is_empty() { format!("edge {}",s.source) } else { format!("edge `{name}`") };
+            return Err(format!("loop {li}'s {edge} has no length"))
+        }
         let mut used = vec![false;segs.len()];
         let mut walk = vec![segs[0].clone()];
         used[0] = true;
@@ -293,20 +321,36 @@ const PARTING: &str = "#parting";
 /// from its own plane, the parting plane (#245): the section at ordinate `h` is the profile moved
 /// `|h| tan draft` into its material (`offset`), so a straight side is a plane and a circle's a
 /// cone, each leaning away from the plane either side of it. A prism crossing the plane is two
-/// pieces (`ruled`), one each side, glued at the section they share; its sides there are two faces
-/// of one name, its caps named as a prism's.
+/// pieces (`ruled_by`), one each side, glued at the section they share; its sides there are two
+/// faces of one name, its caps named as a prism's. Each corner's edge between a piece's sections is
+/// the path the corner moves along (`Moving`): straight where two lines meet or the sides go on
+/// tangent, and where an arc meets a side at an angle the conic its cone and the side's plane (or
+/// the two cones) meet in, exact (#962). A section the draft takes a side to nothing in, or parts a
+/// corner's sides in, is refused, saying how far from the parting plane it comes to that.
 pub fn drafted(p: &Profile,from: f64,to: f64,draft: f64) -> Result<Brep,String> {
     if draft == 0. { return prism(p,from,to) }
     let (h0,h1) = (from.min(to),from.max(to));
     if !(h1 > h0) { return Err("a prism of no depth".into()) }
     let n = unit(p.normal);
     let taper = draft.dtan();
+    let (walks,moving) = movements(p)?;
+    // every section between the ends is offset no further than the farther end's is (the offset
+    // grows with |h|); where that one fails, the ordinate's size at which the failure begins
+    if let Some((what,at)) = away_with(p,&walks,&moving,h0.abs().max(h1.abs()),taper) {
+        return Err(format!("a draft {what} {at:.4} from the parting plane, the plane its face is drawn in, within the \
+            prism's ordinates ({h0} to {h1})"))
+    }
     let section = |h: f64| -> Result<(f64,Profile),String> {
-        let q = offset(p,h.abs()*taper)?;
+        let q = offset_with(p,&walks,&moving,h.abs()*taper)?;
         Ok((h,q.moved(&Rigid {r:Rigid::identity().r,t:scale(n,h)})))
     };
     let piece = |(a,start): &(f64,Profile),(b,end): &(f64,Profile)| -> Result<Brep,String> {
-        let mut s = ruled(start,end,Carry::Line {delta:scale(n,b-a)})?;
+        // within a piece the offset runs `kappa` a unit of ordinate: one sign of `h`
+        let kappa = if a+b < 0. { -taper } else { taper };
+        let rail = |li: usize,source: usize| -> Result<Option<Curve>,String> {
+            moving[li].get(source).ok_or("a drafted section's corner is not its profile's")?.path(n,kappa,[*a,*b])
+        };
+        let mut s = ruled_by(start,end,Carry::Line {delta:scale(n,b-a)},Some(&rail))?;
         let k = s.faces.len();
         s.faces[k-2].name = if *a == h0 { "far".into() } else { PARTING.into() };
         s.faces[k-1].name = if *b == h1 { "near".into() } else { PARTING.into() };
@@ -322,59 +366,288 @@ pub fn drafted(p: &Profile,from: f64,to: f64,draft: f64) -> Result<Brep,String> 
     Ok(b)
 }
 
-/// The profile moved `d` into its material, each side along its own normal (#245): a line moved
-/// square to itself, a circle's radius less `d` where its material is inside it (more where it is
-/// outside, a hole's), each corner where the moved sides either side of it meet. Where those are
-/// two lines the corner is their crossing; where the sides go on tangent the corner moves square
-/// to both. An arc meeting another side at an angle is refused (its cone and the side's plane meet
-/// along a curve, which `ruled` does not carry), as is a spline, and a side the move takes to nothing.
-pub fn offset(p: &Profile,d: f64) -> Result<Profile,String> {
-    if d == 0. { return Ok(p.clone()) }
+/// A side of a profile as a draft moves it at a corner: a line through the corner along `t`, its
+/// material toward `inward`, moved `d` along `inward`; or a circle about `o` of radius `r`, its
+/// material inside it (`sigma` 1) or outside (−1), its radius moved to `r − sigma d`.
+#[derive(Clone,Copy,Debug)]
+enum Carrier { Line { t: V,inward: V },Circle { o: V,r: f64,sigma: f64 } }
+
+impl Carrier {
+    /// Step `s`'s carrier at its parameter `t`, in a walk about `n` (its material on its left).
+    fn of(s: &Seg,t: f64,n: V) -> Carrier {
+        match s.curve {
+            Curve::Circle(f,r) => Carrier::Circle {o:f.o,r,sigma:-dot(s.inward(t,n),unit(sub(s.curve.point(t),f.o)))},
+            _ => Carrier::Line {t:s.along(t),inward:s.inward(t,n)},
+        }
+    }
+}
+
+/// **How a drafted section's corner moves as the offset `d` grows** (#245, #962): where its moved
+/// sides meet, in the profile's plane.
+///
+/// - Two lines meet in a point moving along a line, and so do sides going on tangent (square to
+///   both): `Straight`, `c + m d`.
+/// - A line meeting a circle at an angle: with the line through the corner `c` along `t`, its
+///   material toward `n`, and the circle about `o` of radius `r` moved to `r − σd`, the moved line's
+///   point `c + d n + s t` is on the moved circle where `(s + b)² = b² − 2d((c − o)·n + σr)` (`b =
+///   (c − o)·t`, `|c − o| = r`): the square of `y = s + b` affine in `d`, a parabola.
+/// - Two circles meeting at an angle: subtracting one moved circle's equation from the other's
+///   leaves the line square to their centres' `x = x₀ + x₁ d` (`σ² = 1`, so `d²` cancels), and across
+///   it `y² = (r₁ − σ₁d)² − x²`, quadratic in `d`: an ellipse, a parabola or a hyperbola.
+///
+/// So each is `Conic`: `o + d k + y e`, `y = sign √(q₀ + q₁ d + q₂ d²)` on the branch through the
+/// drawn corner, and the corner's path in space, `(corner(|h| tan θ), h)`, an affine image of `(d,
+/// y)`, the same conic in a plane: where the side's plane meets the cone (or two cones meet), exactly.
+/// Where the square comes to nothing the moved sides part, touching there and missing beyond.
+#[derive(Clone,Copy,Debug)]
+enum Moving { Straight { c: V,m: V },Conic { o: V,k: V,e: V,q: [f64;3],sign: f64 } }
+
+impl Moving {
+    /// The corner where step `b` starts, after step `a` ends, in a walk about `n` (its material on
+    /// its left), and how it moves; `named` says a step as the author does.
+    fn of(a: &Seg,b: &Seg,n: V,named: &dyn Fn(&Seg) -> String) -> Result<Moving,String> {
+        let back = || format!("{} turns straight back at a corner",named(b));
+        let c = b.start();
+        let (ta,tb) = (a.along(a.t[1]),b.along(b.t[0]));
+        if norm(cross(ta,tb)) <= 1e-9 {
+            if dot(ta,tb) > 0. { return Ok(Moving::Straight {c,m:b.inward(b.t[0],n)}) }
+            return Err(back())
+        }
+        Ok(match (Carrier::of(a,a.t[1],n),Carrier::of(b,b.t[0],n)) {
+            (Carrier::Line {t:ta,inward:na},Carrier::Line {t:tb,inward:nb}) => {
+                // the moved lines, each through the corner moved square to it, crossing: a unit of
+                // offset along `m` (`w` is `|ta × tb|` above 1e-9, both square to `n`)
+                let w = dot(cross(ta,tb),n);
+                Moving::Straight {c,m:add(na,scale(ta,dot(cross(sub(nb,na),tb),n)/w))}
+            }
+            (Carrier::Line {t,inward},Carrier::Circle {o,r,sigma}) | (Carrier::Circle {o,r,sigma},Carrier::Line {t,inward}) => {
+                let w = sub(c,o);
+                let b = dot(w,t);
+                Moving::Conic {o:sub(c,scale(t,b)),k:inward,e:t,q:[b*b-dot(w,w)+r*r,-2.*(dot(w,inward)+sigma*r),0.],sign:b.signum()}
+            }
+            (Carrier::Circle {o:o1,r:r1,sigma:s1},Carrier::Circle {o:o2,r:r2,sigma:s2}) => {
+                let between = sub(o2,o1);
+                let dd = norm(between);
+                // (concentric within the tolerance, their tangents can still stand up to about 2e-9 apart)
+                if dd <= tolerance(r1+r2) { return Err(back()) }
+                let e = scale(between,1./dd);
+                let across = cross(n,e);
+                let (x0,x1) = ((dd*dd+r1*r1-r2*r2)/(2.*dd),-(s1*r1-s2*r2)/dd);
+                Moving::Conic {o:add(o1,scale(e,x0)),k:scale(e,x1),e:across,q:[r1*r1-x0*x0,-2.*s1*r1-2.*x0*x1,1.-x1*x1],
+                    sign:dot(sub(c,o1),across).signum()}
+            }
+        })
+    }
+
+    /// The square `y²` at offset `d` (a conic's), and its rate.
+    fn square(q: [f64;3],d: f64) -> (f64,f64) { (q[0]+d*(q[1]+d*q[2]),q[1]+2.*d*q[2]) }
+
+    /// The corner moved `d`, or none where its moved sides have parted (or touch: no corner either
+    /// side of it then).
+    fn at(&self,d: f64) -> Option<V> {
+        match *self {
+            Moving::Straight {c,m} => Some(add(c,scale(m,d))),
+            Moving::Conic {o,k,e,q,sign} => {
+                let (y2,_) = Moving::square(q,d);
+                (y2 > 0.).then(|| add(add(o,scale(k,d)),scale(e,sign*y2.sqrt())))
+            }
+        }
+    }
+
+    /// The corner's rate per unit of offset at `d` (none where it has none: its sides part there).
+    fn rate(&self,d: f64) -> Option<V> {
+        match *self {
+            Moving::Straight {m,..} => Some(m),
+            Moving::Conic {k,e,q,sign,..} => {
+                let (y2,dy2) = Moving::square(q,d);
+                (y2 > 0.).then(|| add(k,scale(e,sign*dy2/(2.*y2.sqrt()))))
+            }
+        }
+    }
+
+    /// Whether the moved sides keep meeting all the way between offsets `d0` and `d1`: the square
+    /// stays above nothing at both and, where it turns between them, there too.
+    fn holds(&self,d0: f64,d1: f64) -> bool {
+        let Moving::Conic {q,..} = *self else { return true };
+        let (lo,hi) = (d0.min(d1),d0.max(d1));
+        let low = if q[2] > 0. { (-q[1]/(2.*q[2])).clamp(lo,hi) } else { lo };
+        [lo,hi,low].iter().all(|&d| Moving::square(q,d).0 > 0.)
+    }
+
+    /// **The corner's edge between ordinates `h[0]` and `h[1]`** (one side of the parting plane, the
+    /// offset `kappa h` along them), from the first to the second as the curve's parameter runs 0 to
+    /// 1: none where it is straight (the caller's line between the sections' corners), else the
+    /// conic as a rational quadratic Bézier — its ends the corner at each ordinate, its middle pole
+    /// where their tangents cross, its weight `w` read off the corner halfway, whose barycentric
+    /// coordinates `(α, β, γ)` against the poles have `β² = 4 w² α γ` on any such curve. A line
+    /// meeting a circle moves along a parabola, which is the polynomial Bézier whose middle pole is
+    /// `P₀ + Δh P′(h₀) |y₀| / (|y₀| + |y₁|)` (with `u = |y|` the parabola is quadratic in `u`, and `Δu
+    /// = Δy²/(u₀ + u₁)`), read without the crossing of two near-parallel tangents.
+    fn path(&self,n: V,kappa: f64,h: [f64;2]) -> Result<Option<Curve>,String> {
+        let Moving::Conic {q,..} = *self else { return Ok(None) };
+        let parted = || "a draft parts a corner's sides between its sections".to_string();
+        if !self.holds(kappa*h[0],kappa*h[1]) { return Err(parted()) }
+        let point = |h: f64| self.at(kappa*h).map(|c| add(c,scale(n,h))).ok_or_else(parted);
+        let tangent = |h: f64| self.rate(kappa*h).map(|r| add(scale(r,kappa),n)).ok_or_else(parted);
+        let (p0,p2) = (point(h[0])?,point(h[1])?);
+        let (t0,t2) = (tangent(h[0])?,tangent(h[1])?);
+        let curve = |poles: Vec<V>,weights: Option<Vec<f64>>| -> Result<Option<Curve>,String> {
+            let knots = vec![0.,0.,0.,1.,1.,1.];
+            let b = match weights { Some(w) => BSpline::rational(2,knots,poles,w),None => BSpline::new(2,knots,poles) };
+            Ok(Some(Curve::BSpline(Arc::new(b.map_err(|m| format!("a drafted corner's edge: {m}"))?))))
+        };
+        if q[2] == 0. {
+            let u = |h: f64| Moving::square(q,kappa*h).0.sqrt();
+            let (u0,u1) = (u(h[0]),u(h[1]));
+            return curve(vec![p0,add(p0,scale(t0,(h[1]-h[0])*u0/(u0+u1))),p2],None)
+        }
+        // the tangents' crossing, by least squares in the conic's plane
+        let chord = sub(p2,p0);
+        let (aa,ab,bb) = (dot(t0,t0),-dot(t0,t2),dot(t2,t2));
+        let (ra,rb) = (dot(t0,chord),-dot(t2,chord));
+        let det = aa*bb-ab*ab;
+        let mid = point((h[0]+h[1])/2.)?;
+        // a path turning less than its numbers can say is its chord
+        let off = norm(sub(sub(mid,p0),scale(chord,dot(sub(mid,p0),chord)/dot(chord,chord))));
+        if !(det > 1e-24*aa*bb) || off <= 1e-12*norm(chord) { return Ok(None) }
+        let (lam,mu) = ((ra*bb-ab*rb)/det,(aa*rb-ab*ra)/det);
+        let p1 = scale(add(add(p0,scale(t0,lam)),add(p2,scale(t2,mu))),0.5);
+        // the middle point's barycentric coordinates against the poles, by least squares
+        let (e0,e2,s) = (sub(p0,p1),sub(p2,p1),sub(mid,p1));
+        let (g00,g02,g22) = (dot(e0,e0),dot(e0,e2),dot(e2,e2));
+        let g = g00*g22-g02*g02;
+        let (al,ga) = ((dot(s,e0)*g22-dot(s,e2)*g02)/g,(dot(s,e2)*g00-dot(s,e0)*g02)/g);
+        let be = 1.-al-ga;
+        let w = be/(2.*(al*ga).sqrt());
+        if !(lam > 0. && mu < 0. && al > 0. && ga > 0. && w.is_finite() && w > 0.) {
+            return Err("a drafted corner's edge is no conic arc between its sections".into())
+        }
+        curve(vec![p0,p1,p2],Some(vec![1.,w,1.]))
+    }
+}
+
+/// Each loop of a profile walked with its material on its left (`walks` in its own plane), and how
+/// each corner moves as a draft offsets it (`Moving`), the one where edge `source` starts at
+/// `source`. Refused for a spline or an exact curve, and a walk turning straight back.
+fn movements(p: &Profile) -> Result<(Vec<Vec<Seg>>,Vec<Vec<Moving>>),String> {
     let n = unit(p.normal);
     let frame = Frame::about(p.origin,n);
     let walks = walks(p,&|q| { let l = frame.local(q); [l[0],l[1]] })?;
-    let tol = tolerance(p.size());
-    let mut out = p.clone();
+    let mut moving = Vec::new();
     for (li,walk) in walks.iter().enumerate() {
         let m = walk.len();
-        let named = |s: &Seg| match p.name(li,s.source) { x if x.is_empty() => "a side".to_string(),x => format!("`{x}`") };
-        // a step's direction along the walk at its parameter `t`, and into its material: its left
-        let along = |s: &Seg,t: f64| unit(scale(s.curve.tangent(t),if s.forward() { 1. } else { -1. }));
-        let inward = |s: &Seg,t: f64| cross(n,along(s,t));
+        let named = |s: &Seg| said(&p.name(li,s.source));
         for s in walk {
+            if let ProfileEdge::Exact(ref curve) = p.loops[li][s.source] { return Err(format!("a {} curve is not drafted",curve.kind())) }
             if !matches!(s.curve,Curve::Line {..} | Curve::Circle(..)) {
                 return Err(format!("{}: a drafted side of a spline is not built yet",named(s)))
             }
         }
+        // each corner, by the edge that starts there (a walk steps along every edge of its loop once)
+        let mut corners = (0..m).map(|k| Ok((walk[k].source,Moving::of(&walk[(k+m-1)%m],&walk[k],n,&named)?)))
+            .collect::<Result<Vec<_>,String>>()?;
+        corners.sort_by_key(|&(source,_)| source);
+        moving.push(corners.into_iter().map(|(_,c)| c).collect());
+    }
+    Ok((walks,moving))
+}
+
+/// Whether every corner of the profile moves along a line as a draft offsets it — where two lines
+/// meet, or the sides go on tangent — so that a section between two is their blend, as a drafted
+/// tool's sections are read (`swept::cutter`); not where an arc meets a side at an angle (a conic).
+pub fn corners_move_straight(p: &Profile) -> Result<bool,String> {
+    Ok(movements(p)?.1.iter().flatten().all(|m| matches!(m,Moving::Straight {..})))
+}
+
+/// The profile moved `d` into its material, each side along its own normal (#245): a line moved
+/// square to itself, a circle's radius less `d` where its material is inside it (more where it is
+/// outside, a hole's), each corner where the moved sides either side of it meet (`Moving`): two
+/// lines' crossing, square to both where the sides go on tangent, and where an arc meets a side at
+/// an angle the point the moved line and circle (or the two moved circles) meet at, on the branch
+/// through the drawn corner — at a reflex corner as at a convex one, the sides' carriers met beyond
+/// their ends as two lines' are. Refused for a spline, a side the move takes to nothing, and a
+/// corner whose moved sides part.
+pub fn offset(p: &Profile,d: f64) -> Result<Profile,String> {
+    if d == 0. { return Ok(p.clone()) }
+    let (walks,moving) = movements(p)?;
+    offset_with(p,&walks,&moving,d)
+}
+
+/// `offset`, the profile's walks and corners' movements (`movements`) in hand.
+fn offset_with(p: &Profile,walks: &[Vec<Seg>],moving: &[Vec<Moving>],d: f64) -> Result<Profile,String> {
+    moved_with(p,walks,moving,d).map_err(|f| format!("a draft {}",f.said("")))
+}
+
+/// Why a profile is not moved: a side the move takes to nothing, or a corner whose moved sides
+/// part (each side by its name, empty where unnamed).
+enum Away { Gone(String),Parts(String,String) }
+
+impl Away {
+    /// What the move does, in the author's terms: `takes `x` to nothing` (`side` before a named
+    /// side, `takes the side `x` to nothing`), `parts `a` from `b` at their corner`; a side unnamed
+    /// is `a side`.
+    fn said(&self,side: &str) -> String {
+        match self {
+            Away::Gone(s) if s.is_empty() => format!("takes {} to nothing",said(s)),
+            Away::Gone(s) => format!("takes {side}{} to nothing",said(s)),
+            Away::Parts(a,b) => format!("parts {} from {} at their corner",said(a),said(b)),
+        }
+    }
+}
+
+/// A side's name as a refusal says it.
+fn said(name: &str) -> String { if name.is_empty() { "a side".into() } else { format!("`{name}`") } }
+
+/// **Where a draft first takes the profile's sides to nothing or parts a corner's**, moving it
+/// `taper` a unit of ordinate as far as ordinate `reach` (its size): what it does, in the author's
+/// terms (`takes the side `x` to nothing`, `parts `a` from `b` at their corner`), and the ordinate's
+/// size at which it begins — none where every section within `reach` keeps its sides and corners.
+/// The section's rule is `offset`'s, the one the kernel lofts and the field reads, so a corner
+/// sliding along an arc eats the arc as the set does, never a tessellation's chords. Refused, as
+/// `offset` refuses it, for a profile the rule does not move at all (a spline, an exact curve, a
+/// walk turning straight back).
+pub fn drafted_away(p: &Profile,reach: f64,taper: f64) -> Result<Option<(String,f64)>,String> {
+    let (walks,moving) = movements(p)?;
+    Ok(away_with(p,&walks,&moving,reach,taper))
+}
+
+/// `drafted_away`, the profile's walks and corners' movements in hand.
+fn away_with(p: &Profile,walks: &[Vec<Seg>],moving: &[Vec<Moving>],reach: f64,taper: f64) -> Option<(String,f64)> {
+    let moved = |h: f64| moved_with(p,walks,moving,h*taper);
+    let Err(away) = moved(reach) else { return None };
+    // the ordinate's size where the sections begin to fail, halved until the middle stops moving
+    // (or sixty times: a corner parting at once is not followed into the subnormals)
+    let (ok,bad) = crate::util::roots::bisect(0.,reach,|a,b| (a+b)/2.,
+        |a,b| { let mid = (a+b)/2.; mid > a && mid < b && b-a > reach*2f64.powi(-60) },|h| moved(h).is_ok());
+    Some((away.said("the side "),(ok+bad)/2.))
+}
+
+/// `offset`, the profile's walks and corners' movements in hand, saying why not as `Away`.
+fn moved_with(p: &Profile,walks: &[Vec<Seg>],moving: &[Vec<Moving>],d: f64) -> Result<Profile,Away> {
+    if d == 0. { return Ok(p.clone()) }
+    let n = unit(p.normal);
+    let tol = tolerance(p.size());
+    let mut out = p.clone();
+    for (li,walk) in walks.iter().enumerate() {
+        let m = walk.len();
+        let named = |s: &Seg| p.name(li,s.source);
         // each corner, where step `k` starts
-        let corners: Vec<V> = (0..m).map(|k| -> Result<V,String> {
-            let (a,b) = (&walk[(k+m-1)%m],&walk[k]);
-            let c = b.start();
-            let (ta,tb) = (along(a,a.t[1]),along(b,b.t[0]));
-            if norm(cross(ta,tb)) <= 1e-9 && dot(ta,tb) > 0. { return Ok(add(c,scale(inward(b,b.t[0]),d))) }
-            let (Curve::Line {..},Curve::Line {..}) = (&a.curve,&b.curve) else {
-                return Err(format!("{} meets {} at an angle where one is an arc: a drafted corner there \
-                    is a curve where a cone meets a plane, not built yet",named(a),named(b)))
-            };
-            // the moved lines, each through the corner moved square to it, crossing
-            let (pa,pb) = (add(c,scale(inward(a,a.t[1]),d)),add(c,scale(inward(b,b.t[0]),d)));
-            let w = dot(cross(ta,tb),n);
-            if w.abs() <= 1e-12 { return Err(format!("{} turns straight back at a corner",named(b))) }
-            Ok(add(pa,scale(ta,dot(cross(sub(pb,pa),tb),n)/w)))
+        let corners: Vec<V> = (0..m).map(|k| {
+            let corner = &moving[li][walk[k].source];
+            corner.at(d).filter(|_| corner.holds(0.,d)).ok_or_else(|| Away::Parts(named(&walk[(k+m-1)%m]),named(&walk[k])))
         }).collect::<Result<_,_>>()?;
         for (k,s) in walk.iter().enumerate() {
             let (start,end) = (corners[k],corners[(k+1)%m]);
-            let gone = || format!("a draft takes {} to nothing",named(s));
+            let gone = || Away::Gone(named(s));
             out.loops[li][s.source] = match p.loops[li][s.source] {
-                ProfileEdge::Exact(ref curve) => return Err(format!("a {} curve is not drafted",curve.kind())),
                 ProfileEdge::Line {a,b} => {
                     let (a2,b2) = if s.forward() { (start,end) } else { (end,start) };
                     if dot(sub(b2,a2),sub(b,a)) <= tol*tol { return Err(gone()) }
                     ProfileEdge::Line {a:a2,b:b2}
                 }
                 ProfileEdge::Arc {frame:f,r,span} => {
-                    let radial = unit(sub(s.start(),f.o));
-                    let r2 = r+d*dot(inward(s,s.t[0]),radial);
+                    let Carrier::Circle {sigma,..} = Carrier::of(s,s.t[0],n) else { unreachable!("an arc's carrier is its circle") };
+                    let r2 = r-d*sigma;
                     if !(r2 > tol) { return Err(gone()) }
                     let span = match span {
                         None => None,
@@ -388,7 +661,7 @@ pub fn offset(p: &Profile,d: f64) -> Result<Profile,String> {
                     };
                     ProfileEdge::Arc {frame:f,r:r2,span}
                 }
-                ProfileEdge::Spline(_) => unreachable!("refused above"),
+                ProfileEdge::Spline(_) | ProfileEdge::Exact(_) => unreachable!("refused by `movements`"),
             };
         }
     }
@@ -786,7 +1059,17 @@ fn screw(c: V,a: V,angle: f64,advance: f64) -> Rigid {
 /// a line, edges that are coplanar lines join in a plane and coaxial circles and arcs in step in a
 /// cone or a cylinder, and the rails between them are straight; everything else is a `Blend`, and
 /// screwed about an axis the rails are its iso-curves.
-fn ruled(start: &Profile,end: &Profile,carry: Carry) -> Result<Brep,String> {
+fn ruled(start: &Profile,end: &Profile,carry: Carry) -> Result<Brep,String> { ruled_by(start,end,carry,None) }
+
+/// What a drafted piece's corner edges are: for loop `l`'s corner where its edge `source` starts,
+/// the curve from the start section's corner to the end's over parameters 0 to 1, or none for the
+/// line between them.
+type Rails<'a> = &'a dyn Fn(usize,usize) -> Result<Option<Curve>,String>;
+
+/// `ruled`, its corners' rails given (a drafted prism's, `Moving::path`) where they are not lines:
+/// then each side is a plane or a cone along the carry, joined to its neighbours along those
+/// rails, its ends at whatever angles the end section's corners stand (refused otherwise).
+fn ruled_by(start: &Profile,end: &Profile,carry: Carry,given: Option<Rails>) -> Result<Brep,String> {
     let n = unit(start.normal);
     // what carries the end section back to the start, and the direction a line carries along
     let (back,line) = match carry {
@@ -794,6 +1077,7 @@ fn ruled(start: &Profile,end: &Profile,carry: Carry) -> Result<Brep,String> {
         Carry::Screw {center,axis,angle,advance} => (screw(center,axis,-angle,-advance),None),
     };
     let tol = tolerance(start.size()+end.size()+norm(sub(end.origin,start.origin)));
+    let drafting = given.is_some();
     let frame = Frame::about(start.origin,n);
     let starts = walks(start,&|q| { let l = frame.local(q); [l[0],l[1]] })?;
     let ends = walks(end,&|q| { let l = frame.local(back.point(q)); [l[0],l[1]] })?;
@@ -824,28 +1108,39 @@ fn ruled(start: &Profile,end: &Profile,carry: Carry) -> Result<Brep,String> {
             closed:m == 1 && matches!(sw[k].curve,Curve::Circle(..)) && matches!(ew[k].curve,Curve::Circle(..))};
         // the rails, each where an edge of the start section begins: straight along a line, the
         // blend's own iso-curve turned about an axis
-        let rails: Vec<u32> = (0..m).map(|k| {
+        let rails: Vec<u32> = (0..m).map(|k| -> Result<u32,String> {
             let (p,q) = (sw[k].start(),ew[k].start());
-            match line {
+            if let Some(curve) = given.map(|rail| rail(li,sw[k].source)).transpose()?.flatten() {
+                if distance(curve.point(0.),p) > 1e3*tol || distance(curve.point(1.),q) > 1e3*tol {
+                    return Err("a drafted corner's edge does not run between its sections' corners".into())
+                }
+                return Ok(b.edge(EdgeCurve::Curve(curve),[0.,1.],[pv[k],qv[k]]))
+            }
+            Ok(match line {
                 Some(_) => b.edge(EdgeCurve::Curve(Curve::Line {p,d:unit(sub(q,p))}),[0.,distance(p,q)],[pv[k],qv[k]]),
                 None => b.edge(EdgeCurve::Curve(Curve::Iso(Arc::new(blend(k)),0.)),[0.,1.],[pv[k],qv[k]]),
-            }
-        }).collect();
+            })
+        }).collect::<Result<_,_>>()?;
         for k in 0..m {
             let (a,z) = (&sw[k],&ew[k]);
             let k1 = (k+1)%m;
             // outward, in the section's plane: right of a walk counter-clockwise about n
             let mid = (a.t[0]+a.t[1])/2.;
-            let d = scale(a.curve.tangent(mid),if a.forward() { 1. } else { -1. });
-            let outward = cross(d,n);
-            let (surface,mut l) = match line.and_then(|e| analytic_ruled(a,z,e,outward,tol)) {
+            let outward = cross(a.along(mid),n);
+            let analytic = line.and_then(|e| analytic_ruled(a,z,e,outward,tol,drafting));
+            if drafting && analytic.is_none() { return Err("a drafted side is neither a plane nor a cone".into()) }
+            let (surface,mut l) = match analytic {
                 Some((surface,rim)) => {
                     let at = |p: V| surface.inverse(p);
-                    // the face's parameters at each corner, the rails at the arc's start (u = 0) and end
+                    // the face's parameters at each corner, the rails at the arc's start (u = 0) and end;
+                    // the end section's arc read by its own angles in the same frame where its ends
+                    // stand elsewhere (a drafted arc meeting a side at an angle)
                     let e = line.unwrap();
-                    let turn = if rim { (a.t[1]-a.t[0])*dot(match &a.curve { Curve::Circle(f,_) => f.z,_ => e },e) } else { 0. };
-                    let corner = |p: V,u_end: bool| { let mut uv = at(p); if rim { uv[0] = if u_end { turn } else { 0. }; } uv };
-                    let (u_p0,u_p1,u_q0,u_q1) = (corner(a.start(),false),corner(a.end(),true),corner(z.start(),false),corner(z.end(),true));
+                    let way = dot(match &a.curve { Curve::Circle(f,_) => f.z,_ => e },e);
+                    let turn = if rim { (a.t[1]-a.t[0])*way } else { 0. };
+                    let corner = |p: V,u: f64| { let mut uv = at(p); if rim { uv[0] = u; } uv };
+                    let (v0,v1) = if drafting { ((z.t[0]-a.t[0])*way,(z.t[1]-a.t[0])*way) } else { (0.,turn) };
+                    let (u_p0,u_p1,u_q0,u_q1) = (corner(a.start(),0.),corner(a.end(),turn),corner(z.start(),v0),corner(z.end(),v1));
                     let pc = |x: Uv,y: Uv| Pcurve::Inverse {a:x,b:y};
                     let edge_uv = |s: &Seg,first: Uv,last: Uv| if s.forward() { pc(first,last) } else { pc(last,first) };
                     (surface,vec![
@@ -908,7 +1203,7 @@ fn ruled(start: &Profile,end: &Profile,carry: Carry) -> Result<Brep,String> {
 /// The analytic face joining a start edge to its end edge along the line `e`, where there is one
 /// (and whether its parameters run round an axis): a plane for coplanar lines, a cone or cylinder
 /// for coaxial circles and arcs in step.
-fn analytic_ruled(a: &Seg,z: &Seg,e: V,outward: V,tol: f64) -> Option<(Surface,bool)> {
+fn analytic_ruled(a: &Seg,z: &Seg,e: V,outward: V,tol: f64,free: bool) -> Option<(Surface,bool)> {
     match (&a.curve,&z.curve) {
         (Curve::Line {..},Curve::Line {..}) => {
             let (p0,p1,q0,q1) = (a.start(),a.end(),z.start(),z.end());
@@ -927,9 +1222,10 @@ fn analytic_ruled(a: &Seg,z: &Seg,e: V,outward: V,tol: f64) -> Option<(Surface,b
             let aligned = |sa: V,sz: V| norm(cross(radial(sa,fa.o),radial(sz,fb.o))) <= 1e-9
                 && dot(radial(sa,fa.o),radial(sz,fb.o)) > 0.;
             let mid = (a.t[0]+a.t[1])/2.;
+            // (where the rails are given, a drafted arc's ends may move round it: free)
             if norm(cross(fa.z,e)) > 1e-9 || norm(cross(fb.z,e)) > 1e-9 || off > 1e3*tol || h <= 0.
-                || !aligned(a.start(),z.start()) || !aligned(a.end(),z.end())
-                || !aligned(a.curve.point(mid),z.curve.point((z.t[0]+z.t[1])/2.)) { return None }
+                || !free && (!aligned(a.start(),z.start()) || !aligned(a.end(),z.end())
+                    || !aligned(a.curve.point(mid),z.curve.point((z.t[0]+z.t[1])/2.))) { return None }
             let f = Frame::new(fa.o,e,radial(a.start(),fa.o));
             Some((if (ra-rb).abs() <= tol { Surface::Cylinder(f,*ra) } else { Surface::Cone(f,*ra,((rb-ra)/h).datan()) },true))
         }

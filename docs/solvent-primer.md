@@ -567,9 +567,9 @@ right (`p1 -> p2` on a line, `start -> end` counter-clockwise on an arc).
 - `profile := … -> close` names the traversal, which a solid can sweep (1.14); its edges keep
   their own names. Every joint in a named chain carries `->`.
 
-**A corner round is a joint.** `A -> round(r: R) B`, `A` and `B` lines written meeting at a
-corner, rounds that corner with an arc of radius `R` tangent to both — the arc it mints, its two
-tangencies and its branch all said by the one word. Name the arc where it stands,
+**A corner round is a joint.** `A -> round(r: R) B`, `A` and `B` lines or arcs written meeting
+at a corner, rounds that corner with an arc of radius `R` tangent to both — the arc it mints, its
+two tangencies and its branch all said by the one word. Name the arc where it stands,
 `-> (k := round(r: 2mm))`, to list it in a face or dimension it; unnamed, it is still an edge of a
 named chain.
 
@@ -586,9 +586,18 @@ named chain.
 - A trailing `-> round(…)` at a `cycle`'s or a `ring`'s `}` rounds the corner the next copy is
   entered by (a `repeat`'s first copy has none: E040). `-> round(r: R) close` rounds the corner
   that closes a loop.
+- **A side may be an arc** (0.224), declared in the chain: `(jamb := line(s, c)) -> (k :=
+  round(r: 12)) (arch := arc(center: o, start: c, end: d))`. The round is the one inside the
+  corner as before — inside the arc's circle where the walk turns toward its centre, outside where
+  it turns away — and the corner `c` stays on the jamb and on the arch's circle; the arch now
+  runs from `k.end` (`arch.start`). An arc walks from its `start:`, so one turning clockwise is
+  written `sense: cw` with its ends in walking order. `rust/examples/arched_window.sv` is a
+  window whose jambs are rounded into an R97.5 arch so.
 - A round that does not fit is said by name after the solve: `` `k` (r 9mm) runs past `up`'s far
-  end; it fits up to r 6mm``, two rounds whose setbacks overlap on one line, a corner its lines run
-  straight through (E040 where it is drawn so).
+  end; it fits up to r 6mm``, two rounds whose setbacks overlap on one side, a corner its sides run
+  straight through (E040 where it is drawn so), and a round larger than a corner an arc turns
+  toward can hold: `` `k` (r 17mm) is more than the corner of `flat` and `bowl` holds: `bowl`
+  turns toward it there; it fits up to r 16mm``.
 
 ```
 in std.front {
@@ -604,9 +613,10 @@ in std.front {
 }
 ```
 
-Refused: a round beside a line and an arc (lines only, for now), its corner named differently by
-the two sides, a corner named while a side is declared elsewhere (its end is its own point, the
-arc's), another word at the round's joint. A bare `A round(r) B`, no marker, is still `std.rounds`'
+Refused: a round beside an arc declared apart from the chain (declare it in the chain: the round
+names its ends), beside a circle or anything else with no ends, its corner named differently by
+the two sides (an arc written to be walked from its end among them), a corner named while a side
+is declared elsewhere (its end is its own point, the arc's), another word at the round's joint. A bare `A round(r) B`, no marker, is still `std.rounds`'
 round of the edges where two solids' faces meet (1.14).
 
 **A step says where a line's end stands, one number per run.** `step(…)` before a line, or before
@@ -1498,7 +1508,9 @@ plane as an argument does not imply `in`.
 held `fix((x, y, z)) p`; a line between two is a line in space. An arc over points in space is
 drawn in the plane through its centre and its ends, the short way round, so a chain of lines and
 arcs may bend in any plane with none written; a circle about a point in space takes the axis it
-stands square to, `circle(center: o, normal: ax)` (with none it is E060). In a plane an arc runs
+stands square to, `circle(center: o, normal: ax)` — or an axis of its own, seeded along a direction
+and free for its constraints to turn, `circle(center: o, normal: hint(dir: (0, 0, 1)))` (with
+neither it is E060). In a plane an arc runs
 counter-clockwise from its start; `arc(center: c, sense: cw)` runs clockwise, so a chain in a
 plane may turn right at it. A chain may also enter an arc at its end and walk it to its start —
 threaded with both ends written, `-> tangent (k := arc(center: c, start: f, end: e)) ->` entered
@@ -1985,8 +1997,12 @@ words of `std.solids` (`rust/lib/std/solids.sv`) are sets written in the languag
   30mm`. Write the face where it is not at an end.
 - **Draft.** The sides lean from the face's own plane (the parting plane, ordinate 0), away from it
   on both sides, a hole widening as the outside narrows; lines' sides stay planes and circles'
-  become cones. An arc meeting a side at an angle (not tangent) is refused by the exact kernel.
-  `conrod/rod.sv` drafts its eyes and shank. **The ordinates do not move the parting plane**: a
+  become cones. Where an arc meets a side at an angle (not tangent) the corner runs up the curve
+  the side's plane and the arc's cone meet in, a conic, built exactly ([0.228]); every corner is
+  where the moved sides meet, a reflex one (a hole's) as a convex one, so a D-shaped hole grows
+  with its corners mitred, never rounded. `conrod/rod.sv` drafts its eyes and shank,
+  `rounds/drafted_vane.sv` a vane whose arc ends meet its sides at an angle, `rounds/dboss.sv` a D-shaped
+  boss. **The ordinates do not move the parting plane**: a
   face drawn in `std.top` and drafted `from: 31mm, to: 33mm` has shrunk `31 tan θ` before it starts,
   and a side taken to nothing within the ordinates is E080, saying how far from the face's plane
   it went. To part elsewhere, draw the face there — on a plane lying on the face it opens on
@@ -2510,6 +2526,14 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
   its copy's index: `joint.pad union part` in the block's body is `part.joint[0].pad`, …;
   `part.joint` names every copy's. `--where part` lists the names exactly as a round takes them,
   and a path naming no face of its solid is **W116**, with the steps its faces are named by.
+- **A round that selects no edge says so** (0.225): a round or a chamfer takes the edges where its
+  faces meet, convex and concave alike, so one whose faces meet nowhere (`part.near round(r: 1mm)
+  part.far`), only along a tangent seam (a line running on into an arc), only at a corner, whose
+  faces the body took in (a block unioned inside it), or that names one face (`round(r: 1mm)
+  part.near`) makes nothing — **W120** at the statement, saying which and why. A face with an edge
+  of no length (two coincident points joined by a line) is said once **at the face**, naming the
+  edge and its points; the prism of it and every round over that say only that they are not built
+  (N080).
 - **Pick edges by the faces they lie between** (0.204): a word takes every edge where its faces
   meet, so a block over the faces chooses. Two faces both along a direction meet in lines along
   it, so the edges in plan of a part drawn in plan are
@@ -2551,6 +2575,39 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
   Written on `box` itself (`box.near round(r: 1mm) box`) the rim would read the box before its
   corners were rounded. With the first round named (`vert := f round(r: 5mm) g`), `box.near
   round(r: 1mm) box.vert` rounds the four arcs alone, where the top meets `vert`'s faces.
+- **Every edge of a part: "all edges R1.5", "break all edges"** (0.226). `round(r: 1.5mm) part`
+  is every edge among the part's faces, and on a plain block, or one with a through hole, that is
+  all it takes. A step, a pocket, a slot or a boss, though, makes a vertex where edges of both
+  turns meet: a step's floor meets its wall in a concave edge between two convex edges of the
+  block's side; a pocket's upright is concave between two convex edges of the top; a boss's
+  upright is convex between two concave edges of its foot. The surface is smooth there only where
+  that edge, alone in its turn, is rounded first and the others are rounded round it — so write
+  the note as the features' own edges first, then every edge on a solid of what they leave:
+
+  ```sv
+  stepped := round(r: 1.5mm) part.step     // the step's floor into its wall
+  pocketed := round(r: 1.5mm) part.pocket  // the pocket's uprights and floor
+  bossed := round(r: 1.5mm) part.boss      // the boss's uprights and top
+  whole := solid(part)                     // the part as those leave it
+  round(r: 1.5mm) whole                    // every edge: the side's round goes round the step's fill
+  ```
+
+  Name each first statement: written bare, their rounds' faces share one name, and a round over
+  them can read one feature's against another's (refused, saying to name them). Where an edge is
+  alone in its turn at one end and not at the other — two steps meeting at a corner, the upright
+  between their walls over two floor edges each alone at the block's side — the order has a level
+  more: at each vertex of both turns its lone edge goes before the other two, so the upright, then
+  the floor into each wall, then every edge, each level on a solid of the one before (that one is
+  not built yet: the top over the upright reads a chain running on through the fill at its foot).
+
+  Each side's rim then runs round the step's fill as a ring, the top's rim round each upright's
+  fill, a boss's foot round each upright's round (`rust/examples/rounds/stock.sv`). Written as one
+  `round(r: 1.5mm) part`, every edge reads the sharp part, and at such a vertex the cut and the
+  fill touch along a line: the export refuses it naming the vertex, its faces and each edge's
+  turn, and the edge to round first. Where one edge of the part cannot be rounded, the whole
+  statement is not built, and the refusal names the two faces that edge lies between
+  ("where `rod.near` and `rod.rim` meet"); to leave it out, pick the edges by the faces they lie
+  between (above). A chamfer of every edge at such a vertex is not said yet.
 - **The ball and the flat follow a face across a seam**: where the far face goes on tangent into
   a rim's round, a chamfer at a boss standing near the rim lands its leg on the round
   (`F.smooth`, a face's surface carried across its tangent seams). Where the leg or the ball

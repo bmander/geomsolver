@@ -127,7 +127,11 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap, p: &Program
     }
     // faces read apart where the drawing was decided that meet where it is solved (#625), and a
     // block over faces read along a direction that comes out the other way there (#763)
-    diags.extend(at_solve::read_again(sk, map));
+    let again = at_solve::read_again(sk, map);
+    // and a round or a chamfer whose faces meet in no edge there (#962): never at a statement
+    // those have said
+    diags.extend(at_solve::unmade(sk, map, &again));
+    diags.extend(again);
     // a module's own place, where no statement of the document made it
     crate::modules::localize(p, &mut diags);
     diags
@@ -141,7 +145,9 @@ use crate::syntax::{Name, Program, Span, Stmt, StmtId, StmtKind};
 use elaborate::{elaborate_in, Elab};
 pub(crate) use entities::child_names;
 use entities::Deferred;
-pub(crate) use lift::{holds_except, lift_decl, lift_gauge, lift_relation, point_len};
+pub(crate) use lift::{
+    holds_except, lift_decl, lift_gauge, lift_relation, point_len, written_children,
+};
 pub(crate) use planes::{drawn_plane, plane_of_entity, plane_of_entity_by};
 pub(crate) use relations::written_zero;
 pub(crate) use words::defines;

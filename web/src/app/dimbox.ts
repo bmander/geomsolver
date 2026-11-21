@@ -5,7 +5,6 @@
 import * as io from '../core/io.js';
 import { Constraint } from '../core/constraints.js';
 import { editDimension } from './commands.js';
-import { invalidateRows } from './lists.js';
 import { view } from './shell.js';
 import { toast } from './ui.js';
 import { roundsEdges } from './view.js';
@@ -148,7 +147,6 @@ function finishDim(commit: boolean, keepOpen = false): void {
     const why = view.rewriteDimension(text);
     if (why === null) {
       dimBox.close();
-      invalidateRows();
       return;
     }
     toast(why);
@@ -159,7 +157,6 @@ function finishDim(commit: boolean, keepOpen = false): void {
     commit = false;
   }
   dimBox.close();
-  invalidateRows();                 // the row text states the number, so it has to rebuild
   view.endDimension(commit);
 }
 

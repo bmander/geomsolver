@@ -1,6 +1,6 @@
 /* The solid tools: Extrude and Revolve over the closed region a click is inside (#162 F2, F3),
  * the Booleans over the bodies picked in turn (F4), Fillet and Chamfer over a body's edges and
- * faces, and the datums a button drops or a face is sketched on (F5).  Each writes the source by
+ * faces, and the datums a button drops.  Each writes the source by
  * one edit the core computes — one splice, one undo step — and what it makes is then sized by its
  * arrow (`extent.ts`).  The view keeps the state; this is what a click with one of them does. */
 import * as io from '../core/io.js';
@@ -29,12 +29,10 @@ const COMBINE = {
   common: { target: 'the body to intersect', tools: 'intersect it with', done: 'intersected' },
 } as const;
 
-/** The closed region of the drawing under a canvas point, on the plane being drawn on. */
+/** The closed region of the drawing under a canvas point: on the nearest plane under it that
+ *  has one, there being no one plane being drawn on, else the page (`region_seen`). */
 export function regionAt(v: SketchView, sx: number, sy: number): Region | { refused: string } | null {
-  // a region is bounded on a plane, and in space there is none being drawn on
-  if (v.openSpace) return null;
-  const [x, y] = v.s2wIn(v.toolView, sx, sy);
-  return v.doc.regionAt(v.plane, x, y, v.unit);
+  return v.doc.regionSeen(v.orbit.az, v.orbit.el, ...v.eye(sx, sy), v.unit);
 }
 
 /** **Extrude** the region under a canvas point (#162 F2): the face, the solid and — with a body
@@ -335,18 +333,15 @@ function pickSolidNamed(v: SketchView, name: string): void {
 
 /** **Drop a datum**: a plane or an axis, written at once and constrained to what is selected
  *  by the core's table (`edit::add_datum`): through a point, along a line, square to a plane —
- *  or, with nothing selected, free, set off the plane being drawn on.  It is constrained further
- *  like anything else; the new one is selected, and a plane so becomes the current one. */
+ *  or, with nothing selected, free, set off the standard plane the eye is most square to.  It is
+ *  constrained further like anything else, and the new one is selected. */
 export function addDatum(v: SketchView, kind: 'plane' | 'axis', name?: string): boolean {
-  // a standard plane chosen before the document had it is brought in first, as a tool's press
-  // brings it in, so the datum is set off the plane chosen
-  if (!v.ensurePlane()) return false;
   const from = v.namesOf(v.selected);
   if (from.length < v.selected.length) {
     v.onStatus('something selected has no name in the source to constrain to: name it first');
     return false;
   }
-  const current = v.plane ? v.doc.nameOf(v.plane) : undefined;
+  const current = v.facingStd() ? v.facingPlane() : undefined;
   const e = v.doc.addDatum(kind, from, current, name);
   if (!v.apply(e, `${kind} ${e.names[0]}`)) return false;
   const made = v.doc.entity(e.names[0]);
@@ -362,26 +357,6 @@ export function addDatum(v: SketchView, kind: 'plane' | 'axis', name?: string): 
   }
   v.onSelect();
   v.onChanged();
-  v.draw();
-  return true;
-}
-
-/** **Sketch on a face** (#162 F5): the plane already lying on it chosen, or a plane written
- *  lying on it — its origin where the click met the face, touching the face there, so it
- *  follows the solid — and chosen.  One edit, one undo step. */
-export function sketchOnFace(v: SketchView, pick: SolidPick): boolean {
-  if (!pick.face) {
-    v.onStatus('click a face of the solid to sketch on it');
-    return false;
-  }
-  const there = v.doc.facePlane(pick.index, pick.face);
-  if (there) {
-    v.choosePlane(there, false);
-    return true;
-  }
-  const e = v.doc.sketchOnFace(pick.index, pick.face, pick.at);
-  if (!v.apply(e, `sketching on ${pick.face}`)) return false;
-  v.choosePlane(e.names[0], false);
   v.draw();
   return true;
 }

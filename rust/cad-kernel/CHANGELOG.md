@@ -52,6 +52,84 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   4e-7 apart); a dump writes each wall with the number it is shared by, so a trim read back shares
   its walls as built and replays bit for bit. Gated by `swept_general`'s replays of the 15° and 75°
   cubes, refused where they are now and replayed alike.
+## [0.20.0] - 2026-11-21
+
+- **A drafted corner where an arc meets a side at an angle is built** (#962 item 8b): `build::offset`
+  knew only corners that move along a line as the offset grows, so a draft of an outline where an
+  arc meets a line or another arc at a corner was refused ("a curve where a cone meets a plane, not
+  built yet").  Such a corner's edge is always a conic — a parabola where a line meets a circle, an
+  ellipse, parabola or hyperbola where two circles do — and is built exactly as a quadratic
+  (rational) Bézier, each arc's side its cone, reflex corners mitred.  New: `build::drafted_away`,
+  the section's own rule for a side the draft takes to nothing (with the height it goes at), and
+  `build::corners_move_straight`.
+
+- **Rounds against a spherical crown** (#962 item 7): an edge lying in its own face's surface meets
+  the other operand's surface only on that surface's meeting with its face, so where the search is
+  refused and that meeting has a closed form the edge is read against it, tangencies included (a cap
+  on a torus touching it round a circle, "was not proved").  `fillet`'s `holds_ball` reads the
+  ball's band as the strip its section sweeps, each station's reach measured to the crease, not by
+  height alone (a 2 mm ball "larger than" an R800 crown).  A sphere face whose boundary runs through
+  the chart's pole takes the collapsed parameter from the half-edge ("a sphere has a hole in no
+  piece").
+
+- **An error building a face says the face once** (#962 diagnostics): `build::Seg::length` is a
+  length whatever the curve's parameter measures (an arc's angle was compared to a length
+  tolerance), and `build::no_length` is the one rule for an edge of none; the kernel's check names
+  the edge.
+
+- **A round as tight as its corner, and a boss rounded onto a filled edge** (#962 items 1 and 5):
+  `fillet::roll_beside` builds the part of a standing ball's piece past the end of its run, a run
+  going on from there holding it; `recipe::Rolled` gains `beside`, which asks for it.  **Breaking**
+  for code building `Rolled` as a literal.
+
+- **A rim's pieces glued at a seam the body reads as tangent** (#962 item 2): a drawing tangent to
+  only some 1e-7 rad left the body seeing no end and the assembly no shared section ("two pieces
+  joined at a section share no face there").  `recipe::Lowered` gains `gaps`, one per join, how
+  far apart the two caps a seam glues stand; the chain is glued at that gap and its edge tolerances
+  measured.  `boolean::glued` takes two faces as one surface where `ssi::same_over` reads them so.
+  New: `tolerant::least_sine_apart`, the least turn at which two meetings are told apart.
+  **Breaking** for code building `Lowered` as a literal.
+
+- **An edge is a stretch two faces touch along only where it lies in both**: a pair of faces' stretches
+  were every edge of one operand lying in the other's face, whatever face of its own the edge
+  bounds; now an edge is one only where it also lies in this face's surface.  A rim rounded past a
+  reflex corner 1e-3 rad off tangent builds again (a regression the next entry exposed).
+
+- **A near-contact off either face no longer refuses a Boolean** (#961 item 2): `ssi::unseen_beside`
+  takes a `clear(p, r)` callback, and a leaf cell clear of either face is neither traced nor
+  refused (a countersink beside a counterbore, refused where the cone's other nappe passed the
+  wall's cylinder below the floor).  New: `query::Located::face_clear`, and `ssi::disc_reach`, how far
+  along a surface the points within `r` of `p` can be.  `ssi::unseen` and `meeting::meet` behave as
+  before.
+
+- **Faces on one surface but for rounding are one surface in every phase** (#961 item 3):
+  `ssi::same_over(a, b, tol, region)` holds two planes, cylinders, cones or tori one where every
+  point of either inside `region` lies within `tol` of the other; `meeting::Shared::index_over` and
+  `Shared::one` index each face's surface by it over the overlap of the faces' boxes, within
+  `ON_CURVE`·tol, and every phase of the arrangement asks that one index.  Pads drawn flush from
+  coordinates rounded to five decimals build.  `ssi::same` is unchanged; new: `meeting::common`.
+
+- **A round or a flat beside a seam along its edge into a cone** (#962 item 6): `spill::Beyond` gains
+  `run`, the planes a piece carried the whole length of the edge past the seam is kept behind, and
+  `spill::round_beyond` returns those planes with the piece.  **Breaking.**
+
+- **STEP: fitted curves held to a bar, the stated tolerance's where one is stated** (#961 item 4):
+  every traced edge and cubic pcurve was refined to a fixed 1e-7 at every marched point, whatever
+  tolerance was given (a tube with one cross-hole, 3.3 MB at any tolerance).  One Hermite fit marches
+  pieces sized by their miss, over a traced curve's length rather than its point count, each held to
+  the bar on both faces it trims.  `step::write` and `step::write_assembly` take a `step::Fit`:
+  `Fit::Exact`, every fitted curve within `step::EXACT` = 1e-9 mm, or `Fit::Within(b)`.  The tube is
+  997 KB by default and 55 KB at `--tolerance 0.01mm`.  **Breaking.**
+
+- **A span of a traced meeting lying along edges a face already has is those edges** (#962 item 3):
+  the arrangement took a traced meeting for an edge one of its faces has only where the whole curve
+  was one `Traced` lying along one edge (`along_an_edge`), and a traced meeting is fitted, and runs
+  on past the faces; now each span it lays is checked against the faces' edges, any number of them
+  (`span_along_edges`), and laid once. A ring kept within a cylinder its round crosses 0.001 deep
+  has its meeting with that cylinder cut at the ring's top circle, which it passes 5e-7 under; the
+  union beside it laid the meeting again a hair from those two edges, tangent all along, and the
+  walk round the cylinder's face — reading ties nearer the node since #942 F6 — ordered the two
+  wrongly ("a cylinder's pieces do not close").
 
 - **The roads under any motion read no threshold of their own** (#942 F6): every local number the
   T1d work added to the ring road, the general road, the trim, `closed`, `contacts` and the Boolean

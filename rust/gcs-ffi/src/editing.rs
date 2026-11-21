@@ -290,24 +290,27 @@ pub unsafe extern "C" fn gcs_elab_add_rounds(h: *mut Elaborated, s: *mut Sketch,
     })
 }
 
-/// The region of the drawing on plane `plane` (-1 the page) around (x, y) in its coordinates:
-/// `{outer: [names], holes: [[names]], rings: [[[x, y]…]…]}`, `null` where no loop encloses it,
-/// or `{refused}` with the cause — `overview::region::region_at`, named by the source.  The live
+/// The region of the drawing under (x, y) on the picture plane of the eye at `az`, `el`
+/// (radians), on the nearest plane under it that has one, else on the page:
+/// `{plane, outer: [names], holes: [[names]], rings: [[[x, y]…]…]}` — `plane` the plane's index
+/// (-1 the page) and the rings in its coordinates — `null` where no loop encloses it, or
+/// `{refused}` with the cause — `overview::region::region_seen`, named by the source.  The live
 /// sketch is `s`, the elaboration's own having been taken out into it.
 #[no_mangle]
-pub unsafe extern "C" fn gcs_elab_region_json(h: *mut Elaborated, s: *mut Sketch, plane: i32,
-                                              x: f64, y: f64, unit: f64) -> *mut u8 {
+pub unsafe extern "C" fn gcs_elab_region_seen_json(h: *mut Elaborated, s: *mut Sketch, az: f64,
+                                                   el: f64, x: f64, y: f64, unit: f64) -> *mut u8 {
     json_out(move || {
-        use gcs_core::overview::region;
-        let plane = index(plane);
+        use gcs_core::overview::{region, workspace::Projection};
         let names = |n: Vec<String>| Json::Arr(n.into_iter().map(Json::Str).collect());
         let refused = |why: String| json::object([("refused", Json::Str(why))]);
-        match region::region_at(sk(s), plane, (x, y), unit) {
+        let proj = Projection::new(sk(s), az, el);
+        match region::region_seen(sk(s), &proj, (x, y), unit) {
             Ok(None) => Json::Null,
             Err(why) => refused(why),
-            Ok(Some(r)) => match region::written(&(*h).map, &r) {
+            Ok(Some((plane, r))) => match region::written(&(*h).map, &r) {
                 Err(why) => refused(why),
                 Ok((outer, holes)) => json::object([
+                    ("plane", Json::Int(plane.map_or(-1, |p| p as i64))),
                     ("outer", names(outer)),
                     ("holes", Json::Arr(holes.into_iter().map(names).collect())),
                     ("rings", Json::Arr(r.rings.iter().map(|ring| Json::Arr(ring.iter()

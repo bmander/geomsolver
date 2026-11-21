@@ -123,6 +123,12 @@ pub fn unseen(az: f64, el: f64, at: (f64, f64)) -> [f64; 3] {
     std::array::from_fn(|k| right[k] * at.0 + up[k] * at.1)
 }
 
+/// `unseen`, each coordinate to the digits a pixel `px` long justifies (`edit::placed`): where a
+/// click puts a point in space, written no finer than the click was good to.
+pub fn unseen_placed(az: f64, el: f64, at: (f64, f64), px: f64) -> [f64; 3] {
+    unseen(az, el, at).map(|w| crate::edit::placed(w, px))
+}
+
 impl Views {
     pub fn new(sk: &Sketch) -> Views {
         let placements = placements(sk);
@@ -338,8 +344,24 @@ fn point_gaps<'a>(sk: &'a Sketch, proj: &'a Projection, at: (f64, f64))
 /// frame (`nearest_pane`).  What the outline hid is not picked (#435).
 pub fn pick(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64, unit: f64) -> Option<EntRef> {
     crate::model::pick_by(sk, nearest_point(sk, proj, at), tol, |e| proj.reach(sk, e, at, tol, unit))
+        .or_else(|| nearest_traced(sk, proj, at, tol))
         .or_else(|| nearest_axis(sk, proj, at, tol))
         .or_else(|| nearest_pane(sk, proj, at, tol))
+}
+
+/// The curve traced in space whose polyline, seen, passes nearest `at` within `tol` (#363): a
+/// spline over points in space among them, which stands in no view — measured on the polyline the
+/// box draws it as (`overview::traced_polyline` at the scene's refinement), so picked where it is
+/// seen, beneath every figure drawn in a view and above the axes.
+fn nearest_traced(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Option<EntRef> {
+    let unit = super::scene_unit(sk);
+    let near = super::traced_drawn(sk).filter_map(|i| {
+        let seen: Vec<(f64, f64)> =
+            super::traced_polyline(sk, i, unit).into_iter().map(|p| proj.seen(p)).collect();
+        let d = (seen.len() >= 2).then(|| polyline_distance(&seen, at.0, at.1))?;
+        (d <= tol).then_some((d, i))
+    }).collect();
+    nearest(near, tol).map(|i| EntRef::new(EntKind::Traced, i))
 }
 
 /// The axis whose drawn line, seen, passes nearest `at` within `tol`.  Two lying on one another
@@ -436,11 +458,7 @@ pub fn panes_at(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Vec<usize> {
         if !pane_readable(proj, i) || places[i].is_none() || !sk.shown(EntRef::frame(i)) {
             continue;
         }
-        let m = proj.map(Some(i));
-        let det = m[0] * m[4] - m[1] * m[3];
-        // where the eye's ray through `at` meets the plane, in its own coordinates
-        let (x, y) = (at.0 - m[2], at.1 - m[5]);
-        let (px, py) = ((m[4] * x - m[1] * y) / det, (-m[3] * x + m[0] * y) / det);
+        let Some((px, py)) = seen_on(proj, Some(i), at) else { continue };
         let (x0, y0, x1, y1) = super::pane(sk, i, &views, &places, &rule);
         if px < x0 || px > x1 || py < y0 || py > y1 {
             continue;
@@ -449,6 +467,15 @@ pub fn panes_at(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Vec<usize> {
     }
     hits.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
     hits.into_iter().map(|(_, i)| i).collect()
+}
+
+/// Where the eye's ray through `at` on its picture plane meets view `view` (`None` the page), in
+/// that view's own coordinates: the inverse of its map, `None` for one seen exactly edge on.
+pub fn seen_on(proj: &Projection, view: Option<usize>, at: (f64, f64)) -> Option<(f64, f64)> {
+    let m = proj.map(view);
+    let det = m[0] * m[4] - m[1] * m[3];
+    let (x, y) = (at.0 - m[2], at.1 - m[5]);
+    (det != 0.0).then(|| ((m[4] * x - m[1] * y) / det, (-m[3] * x + m[0] * y) / det))
 }
 
 /// A face of an object the eye's ray meets: which object (an index into `sketch.solids`), the
