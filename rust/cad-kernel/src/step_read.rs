@@ -87,15 +87,31 @@ pub struct Given {
     pub vertices: Vec<u32>,
 }
 
-/// Every solid `text` gives, in the file's order; refused where any of them is, or where there
-/// is none.
-pub fn read(text: &str) -> Result<Vec<Given>,Refusal> {
+/// What a file gives: its solids (`read`), and what it holds beside them that the reader does not
+/// give as a solid — a surface model, a wireframe, construction geometry, tessellated geometry,
+/// annotation — each by its entity (`context::Beside`), so that a caller can say what was left.
+#[derive(Clone,Debug)]
+pub struct Reading { pub solids: Vec<Given>,pub beside: Vec<Beside> }
+
+pub use context::Beside;
+
+/// Every solid `text` gives, in the file's order, each in its product's space; refused where any
+/// of them is, or where there is none.
+pub fn read(text: &str) -> Result<Vec<Given>,Refusal> { reading(text).map(|r| r.solids) }
+
+/// Every solid `text` gives (`read`), and what the file holds beside them. A solid its product's
+/// shape places (a mapped item, a representation relationship with a transformation) is read in
+/// its own representation's context and moved by that rigid motion, exactly (`Brep::moved`).
+pub fn reading(text: &str) -> Result<Reading,Refusal> {
     let file = context::parse(text)?;
-    let found = context::solids(&file)?;
-    if found.is_empty() { return Err(Refusal::new(Why::Empty,None,"the file represents no solid")) }
-    found.into_iter().map(|f| {
-        let given = topology::solid(&file,f)?;
+    let shapes = context::shapes(&file)?;
+    if shapes.solids.is_empty() { return Err(Refusal::new(Why::Empty,None,"the file represents no solid")) }
+    let solids = shapes.solids.into_iter().map(|f| {
+        let placed = f.placed;
+        let mut given = topology::solid(&file,f)?;
         sound::sound(&given.brep,&given.context).map_err(|u| u.refusal(&given))?;
+        if let Some(p) = placed { given.brep = given.brep.moved(&p.motion); }
         Ok(given)
-    }).collect()
+    }).collect::<Result<_,_>>()?;
+    Ok(Reading {solids,beside:shapes.beside})
 }
