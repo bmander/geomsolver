@@ -571,7 +571,28 @@ impl BodyFaces {
                 }
             }
         }
-        (smooth && seams).then_some(true)
+        if !(smooth && seams) {
+            return None;
+        }
+        // convex across every seam and crease between its faces, a chain can still turn the
+        // other way along a face's own outline: a top in two flush pieces, a rim of one rounded
+        // and the other's run beside it past the reflex corner between them (#996).  The sides
+        // carried on bound the chain's convex solid only where every face of it lies within each
+        // other's side carried on past its patch; elsewhere the carried side of one cuts off
+        // another face's patch, and the chain bulges no way
+        let sigma = if beyond { -1.0 } else { 1.0 };
+        let tol = TANGENT * (1.0 + self.loc.b.size() / self.mm);
+        for &fi in faces {
+            for &g in faces.iter().filter(|&&g| g != fi) {
+                for &e in &self.edges[g] {
+                    let out = |k: usize| sigma * self.carried_side_grad(fi, self.along(e, k as f64 / 8.0)).0 > tol;
+                    if (0..=8).any(out) {
+                        return None;
+                    }
+                }
+            }
+        }
+        Some(true)
     }
 
     /// Whether face `fi`, on a torus, lies on the outer half of its tube: every point of its

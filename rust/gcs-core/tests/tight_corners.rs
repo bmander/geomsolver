@@ -297,7 +297,8 @@ fn a_round_pockets_floor_and_a_round_boss_rounded_to_their_radius() {
 /// — and rounded 8, 3 short of the edge's ends, where what no ball reaches is more than the run's
 /// section: refused, naming the wall it comes within 5 of.  Rounded 5 the centres reach the edge's
 /// ends on the arcs' axes, and the run is the prism of its section over the edge's 50, the closed
-/// form's; the chamfer the same at 5, refused at 8.
+/// form's; the chamfer the same at 5, refused at 8.  The refusal says where the wall goes on into
+/// the one its ball comes near: across the seam where the corner's arc meets it (#996's fifth item).
 #[test]
 fn a_floor_rounded_against_one_wall_stops_where_its_ball_does() {
     let rect = |word: &str| tray_against(&RECT, &[5.0; 4], word, ".e0");
@@ -309,6 +310,9 @@ fn a_floor_rounded_against_one_wall_stops_where_its_ball_does() {
     close(props::volume(&exported(&solved(&rect("chamfer(d: 5mm)")), "plate")), plain + 50.0 * 12.5);
     let why = refused(&rect("round(r: 8mm)"), "plate");
     assert!(why.contains("its ball, of radius 8mm, rolled against `pocket.e0` comes within 5mm of `pocket.e3`"), "{why}");
+    // and how the wall goes on into the one it comes near: past the corner, across the seam there
+    assert!(why.contains("which `pocket.e0` goes on into smoothly across the seam at [-30, -15, 18]mm past `pocket.k0`"),
+        "{why}");
     let why = refused(&rect("chamfer(d: 8mm)"), "plate");
     assert!(why.contains("its flat, reaching 8mm from `pocket.e0`, comes within 5mm of `pocket.e3`"), "{why}");
 }

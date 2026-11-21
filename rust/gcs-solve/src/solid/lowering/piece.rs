@@ -119,7 +119,9 @@ pub(super) fn build(body: &crate::solid::faces::BodyFaces, f: &Faces, section: S
 /// no ball reaches is more than the run's section swept: refused, saying which face the ball comes
 /// how near.  A flat the same: each point of its section nearer its own face than any other of
 /// the chain's (where its section was built against the chain beside the edge, #422, the chain's
-/// nearest piece is its own, and that is the chain's to say).  Checked at the ends of a straight edge (the centres within a convex chain are a
+/// nearest piece is its own, and that is the chain's to say).  A face is its surface in the pieces
+/// flush faces leave it (`super::pieces`, #952): a piece of its own surface is never a face it goes
+/// on into (#996's fifth item).  Checked at the ends of a straight edge (the centres within a convex chain are a
 /// convex set, so the ends hold the whole run) and round a ring at sixteen turns of its own.  A
 /// chain no side of which is convex toward the ball is read through its nearest face by the
 /// field, and left to the gate.
@@ -132,15 +134,24 @@ fn stands_within(body: &crate::solid::faces::BodyFaces, f: &Faces, groups: [&[us
     }
     // toward the side the region is on: into the material within, the void outside
     let sigma = if f.within { -1.0 } else { 1.0 };
+    // each face's surface in the pieces flush faces leave it (#952, `pieces`): the section stands
+    // against the surface, so a piece of it is the face's own, never one it goes on into
+    let surfaces: [Vec<usize>; 2] = std::array::from_fn(|k| {
+        let mut own: Vec<usize> = Vec::new();
+        for g in groups[k].iter().flat_map(|&fi| super::pieces(body, fi)) {
+            if !own.contains(&g) { own.push(g) }
+        }
+        own
+    });
     // each smooth face's chain, the others of it, and whether the field reads it face by face (a
     // chain bulging toward the ball, `BodyFaces::bulging`) or through its nearest face (any other:
     // a drafted shell's outline turning both ways) — as far as the field reads it (#962): a name in
     // pieces apart, each piece's own chain, read at a point as the one whose piece is nearest it
     type Alt = (Vec<usize>, Vec<usize>, bool);
     let chains: Vec<(usize, Vec<Alt>)> = (0..2).filter(|&k| f.faces[k].smooth).map(|k| {
-        (k, body.chains_apart(groups[k]).into_iter().map(|(named, chain)| {
+        (k, body.chains_apart(&surfaces[k]).into_iter().map(|(named, chain)| {
             let carried = body.bulging(&chain, true, !f.within) == Some(true);
-            (named, chain.into_iter().filter(|g| !groups[k].contains(g)).collect(), carried)
+            (named, chain.into_iter().filter(|g| !surfaces[k].contains(g)).collect(), carried)
         }).collect())
     }).collect();
     if chains.iter().all(|(_, alts)| alts.iter().all(|(_, others, _)| others.is_empty())) {
@@ -189,7 +200,7 @@ fn stands_within(body: &crate::solid::faces::BodyFaces, f: &Faces, groups: [&[us
             // from its own face
             let need = match section {
                 Section::Round(r) => r,
-                Section::Flat { .. } => groups[*k].iter().map(|&g| body.patch_distance(g, q)).fold(f64::INFINITY, f64::min),
+                Section::Flat { .. } => surfaces[*k].iter().map(|&g| body.patch_distance(g, q)).fold(f64::INFINITY, f64::min),
             };
             // read as the field reads the centres: off each face's carried side where the chain
             // bulges toward the ball — of the faces it comes too near, the one whose patch is
@@ -203,8 +214,8 @@ fn stands_within(body: &crate::solid::faces::BodyFaces, f: &Faces, groups: [&[us
             } else if *carried {
                 nearest_patch(body, q, others.iter().map(|&g| (g, toward(g, q))).filter(|&(_, d)| d < need - tol))
             } else {
-                let nearest = nearest_patch(body, q, groups[*k].iter().chain(others).map(|&g| (g, 0.0)));
-                nearest.filter(|&(g, _)| !groups[*k].contains(&g)).map(|(g, _)| (g, sigma * body.side(g, q)))
+                let nearest = nearest_patch(body, q, surfaces[*k].iter().chain(others).map(|&g| (g, 0.0)));
+                nearest.filter(|&(g, _)| !surfaces[*k].contains(&g)).map(|(g, _)| (g, sigma * body.side(g, q)))
                     .filter(|&(_, d)| d < need - tol)
             };
             let Some((g, d)) = found else { continue };
@@ -226,6 +237,18 @@ fn stands_within(body: &crate::solid::faces::BodyFaces, f: &Faces, groups: [&[us
                     if matches!(section, Section::Round(_)) { "round" } else { "chamfer" },
                     if matches!(section, Section::Round(_)) { "ball" } else { "flat's leg" })
             });
+            // how it goes on into that face: the faces it crosses on the way (but the arc said
+            // already), and where it crosses into it (#996's fifth item: the author sees the meeting)
+            let chain: Vec<usize> = surfaces[*k].iter().chain(others).copied().collect();
+            let way = reached(body, &surfaces[*k], &chain, g, q).map_or_else(String::new, |(between, at)| {
+                let between: Vec<String> = between.into_iter().filter(|&h| tight.is_none_or(|(t, _)| t != h))
+                    .map(said).collect();
+                let figures = |x: f64| crate::json::fmt_g(x, 6);
+                let at = format!("[{}, {}, {}]{}", figures(at[0]), figures(at[1]), figures(at[2]), units.name());
+                let through = if between.is_empty() { String::new() } else { format!(" through {}", between.join(", ")) };
+                format!("{through} across the seam at {at}")
+            });
+            let past = format!("{way}{past}");
             return Err(match section {
                 Section::Round(r) => format!("its ball, of radius {}, rolled against {own} comes {near} {}, which \
                     {own} goes on into smoothly{past}: no ball of that radius stands there within both faces, and \
@@ -237,6 +260,39 @@ fn stands_within(body: &crate::solid::faces::BodyFaces, f: &Faces, groups: [&[us
         }
     }
     Ok(())
+}
+
+/// **How face `g` of a smooth chain is reached from faces `own`** (`BodyFaces::smooth`): across
+/// seams between faces of `chain`, the fewest, the faces crossed between (in order) and the point of
+/// the seam into `g` nearest `q` (model units).
+fn reached(body: &crate::solid::faces::BodyFaces, own: &[usize], chain: &[usize], g: usize, q: V)
+    -> Option<(Vec<usize>, V)> {
+    let mut came: Vec<(usize, Option<usize>)> = own.iter().map(|&fi| (fi, None)).collect();
+    let mut k = 0;
+    while k < came.len() && !came.iter().any(|&(fi, _)| fi == g) {
+        let fi = came[k].0;
+        for &e in body.edges_of(fi) {
+            for &h in body.faces_of(e) {
+                if chain.contains(&h) && !came.iter().any(|&(x, _)| x == h) && body.seam(e) {
+                    came.push((h, Some(k)));
+                }
+            }
+        }
+        k += 1;
+    }
+    let mut at = came.iter().position(|&(fi, _)| fi == g)?;
+    let last = came[came[at].1?].0;
+    let seams: Vec<u32> = body.edges_between(&[last], &[g]).into_iter().filter(|&e| body.seam(e)).collect();
+    let (_, point, _) = body.nearest_edge(&seams, q)?;
+    let mut between = Vec::new();
+    while let Some(prev) = came[at].1 {
+        at = prev;
+        if came[at].1.is_some() {
+            between.push(came[at].0);
+        }
+    }
+    between.reverse();
+    Some((between, body.back(point)))
 }
 
 /// The corner at `vertex` where the faces `ids` meet — planes, or a cylinder or a sphere among

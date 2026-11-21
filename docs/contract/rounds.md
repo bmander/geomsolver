@@ -909,11 +909,22 @@ centre is read as the field reads the centres: off each face's carried side wher
 bulges toward the ball (`BodyFaces::bulging`), else off the side of the face whose patch is
 nearest — a chain turning both ways, as a drafted shell's outline with a reflex corner does
 (fixture 126, whose rim's first run the stricter gate below refused as leaving out what the field
-reads before anything named the corner). A straight edge is read at its middle, its ends and
+reads before anything named the corner), or one turning back along a face's outline (a block's
+top flush with a flange's whose rim is rounded, the block's side meeting the flange's at a reflex
+corner: the round's carried side cut off the block's top, and the ball on the block's side was
+refused as standing 30 past the flange's round, #996's fifth item). **A face is its surface in
+the pieces flush faces leave it** (`lowering::pieces`, as the table reads it, #952): a piece of
+the face's own surface is never a face it goes on into, so a flat reaching past the edge between
+two pieces lands on its own face (a hole's chamfer under a post over a plate's edge, both
+bottoms one plane, refused as coming within 0 of the post's piece, #994's first item; the same
+on two pieces of one cylinder: `rim_rounds::a_hole_over_flush_pieces_of_a_plane_is_chamfered_and_rounded_as_one_face`,
+`…::a_rim_over_flush_pieces_of_a_cylinder_is_the_rim_over_one_wall`). A straight edge is read at its middle, its ends and
 between (its middle first, so the wall across is named, not the arc it ends on), a ring at
 sixteen turns of its own. A flat's points each nearest its own face's patch of the chain's
 (`distance(p, b.smooth)` reads patches), not its carried side. Refused, saying which face the ball
-(or the flat) comes how near, and — where an arc of the chain tighter than the ball lies between,
+(or the flat) comes how near, how its face goes on into that one — the faces crossed on the way and
+the point of the seam it goes across into it (`piece::reached`, #996's fifth item: `… which
+`pocket.e0` goes on into smoothly across the seam at [-30, -15, 18]mm past `pocket.k0` …`) — and — where an arc of the chain tighter than the ball lies between,
 meeting the other face — that arc and its radius where the round runs: a pocket rounded wider
 than its corners refuses at its first wall so (`… past `pocket.k0`, of radius 5mm where the round
 runs and tighter than the ball …`), as well as at each corner's ring. Rounded to the corners'

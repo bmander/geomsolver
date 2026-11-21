@@ -459,7 +459,13 @@ every edge between them a seam or a crease convex from that side, each face its 
 its side carried on past its patch by its tangent planes (`BodyFaces::carried_side_grad`, the
 signed distance from the convex solid the patch and those planes bound), so the side is their
 common part and a point at least `d` inside it is at least `d` inside each — a pocket's walls
-seen from its air, a boss's from its material. A torus's patch is so in a chain where it lies on
+seen from its air, a boss's from its material. **And every face of the chain within each other's
+side carried on** (#996's fifth item), read at points along each face's edges: convex at every
+seam and crease between its faces, a chain may still turn the other way along a face's own
+outline — a top in two flush pieces, the flange's rim rounded and the block's side meeting the
+flange's at a reflex corner of the top — where one face's carried side cuts off another's patch
+and no convex solid is theirs: it bulges no way, and is read through the nearest face
+(`rim_rounds::a_run_beside_a_chain_turning_back_along_its_outline_is_built`). A torus's patch is so in a chain where it lies on
 the outer half of its tube with that side inside the tube, both its curvatures' centres there (a
 pocket's floor filled round its plan corners, seen from the air; `BodyFaces::outer_half`), never
 alone (its whole surface's side winds round the axis): a ball standing on a run's axis beside
