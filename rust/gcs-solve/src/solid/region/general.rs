@@ -137,8 +137,9 @@ fn field_of(sk: &Sketch, name: &str, terms: &[RegionTerm], bounded: bool,
                 Measure::Signed(Signed(std::sync::Arc::new(move |p| r.side(p))))
             }
             RegionShape::Angle { ref a, ref b } => {
-                let ra = crate::solid::faces::reading(sk, a, read).map_err(named)?;
-                let rb = crate::solid::faces::reading(sk, b, read).map_err(named)?;
+                // the material's angle is at an edge, two faces of one body meeting (#961)
+                let [ra, rb] = <[_; 2]>::try_from(crate::solid::faces::one_body(sk, &[a, b], read)
+                    .map_err(named)?).ok().expect("two readings");
                 let edges = ra.body.edges_between(&ra.faces, &rb.faces);
                 let body = ra.body.clone();
                 let (cmp, lo, hi) = (t.cmp, lo, t.hi.unwrap_or(lo));

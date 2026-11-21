@@ -353,7 +353,7 @@ fn structurally_alike(sk: &Sketch,root: usize,poses: &BTreeMap<usize,Vec<Motion>
 /// static remainder's field, a point within `margin` of whose boundary is not in it, the box its
 /// support stands in, and the box its own boundary stands in, built from its recipe the first time
 /// a planar class asks it.
-struct Blank<'a> { field: &'a SpatialField,margin: f64,extent: Option<(V,V)>,recipe: Option<crate::json::Json>,
+struct Blank<'a> { field: &'a SpatialField,margin: f64,extent: Option<(V,V)>,recipe: Option<crate::brep::recipe::Recipe>,
     boxed: std::sync::OnceLock<Option<(V,V)>>,mm: f64 }
 
 impl dispatch::Blank for Blank<'_> {
@@ -483,7 +483,7 @@ pub fn blank_box(sk: &Sketch,root: usize) -> Option<(V,V)> {
 
 /// The box static recipe `recipe` (millimetres) stands in, built by this kernel, in model units
 /// (`mm` a unit).
-fn boxed(recipe: &crate::json::Json,mm: f64) -> Option<(V,V)> {
+fn boxed(recipe: &crate::brep::recipe::Recipe,mm: f64) -> Option<(V,V)> {
     let (lo,hi) = crate::brep::recipe::build(recipe).ok()?.bounds();
     Some((lo.map(|x| x/mm),hi.map(|x| x/mm)))
 }

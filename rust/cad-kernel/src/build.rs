@@ -10,7 +10,6 @@ use super::geom::{tolerance,BSpline,Blend,Carry,Curve,Frame,Rigid,Surface,Uv,V};
 use std::sync::Arc;
 use super::topo::{reverse_loop,Brep,Coedge,EdgeCurve,Face,Pcurve};
 use super::recipe::Writer;
-use crate::util::json::Json;
 use crate::util::space::{add,cross,distance,dot,norm,scale,sub,unit};
 mod hull;
 pub use hull::hull;
@@ -53,8 +52,6 @@ impl Profile {
     }
     /// The name of loop `l`'s edge `k`, or nothing.
     pub fn name(&self,l: usize,k: usize) -> String { self.names.get(l).and_then(|n| n.get(k)).cloned().unwrap_or_default() }
-    /// From a recipe's `profile` (millimetres).
-    pub fn from_json(j: &Json) -> Result<Profile,String> { Profile::of(&super::recipe::Section::read(j)?) }
     /// A recipe's profile as this kernel reads it (millimetres): each arc's angles as the span it
     /// turns through counter-clockwise, its normal made unit.
     pub fn of(s: &super::recipe::Section) -> Result<Profile,String> {
@@ -96,52 +93,36 @@ impl Profile {
         Ok(Profile {origin:s.origin,normal:unit(s.normal),loops,names})
     }
 
-    /// As a recipe writes it (`from_json`'s inverse; its lengths model units, written by `w`):
-    /// lines, arcs and B-splines (their weights where rational), each named where it is. It never
-    /// fails.
-    pub fn to_json(&self,w: &Writer) -> Result<Json,String> {
-        use crate::util::json::object;
+    /// As a recipe writes it (`of`'s inverse; its lengths model units, written by `w`): lines,
+    /// arcs, B-splines (their weights where rational) and trochoids, each named where it is; any
+    /// other exact curve has no recipe's form.
+    pub fn section(&self,w: &Writer) -> Result<super::recipe::Section,String> {
+        use super::recipe::{Edge,Section,Stroke};
         let scale = w.scale;
-        let v = |p: V,s: f64| Json::Arr(p.iter().map(|&x| Json::from(x*s)).collect());
-        let at = |p: V| w.at(p.map(|x| x*scale));
+        let at = |p: V| w.moved(p.map(|x| x*scale));
         let mut loops = Vec::new();
         for (l,edges) in self.loops.iter().enumerate() {
             let mut out = Vec::new();
             for (k,e) in edges.iter().enumerate() {
-                let mut j = match *e {
-                    ProfileEdge::Line {a,b} => object([("kind","line".into()),("start",at(a)),("end",at(b))]),
-                    ProfileEdge::Arc {frame,r,span} => {
-                        let mut o = object([("kind","circle".into()),("center",at(frame.o)),
-                            ("normal",v(frame.z,1.)),("x_dir",v(frame.x,1.)),("radius",(r*scale).into())]);
-                        if let Some([a0,a1]) = span { o.set("angles",Json::Arr(vec![a0.into(),a1.into()])); }
-                        o
-                    }
-                    ProfileEdge::Spline(ref b) => {
-                        let mut o = object([("kind","bspline".into()),("degree",b.degree.into()),
-                            ("knots",Json::Arr(b.knots.iter().map(|&k| k.into()).collect())),
-                            ("poles",Json::Arr(b.poles.iter().map(|&p| at(p)).collect()))]);
-                        if let Some(weights) = &b.weights { o.set("weights",Json::Arr(weights.iter().map(|&x| x.into()).collect())); }
-                        o
-                    }
+                let shape = match *e {
+                    ProfileEdge::Line {a,b} => Stroke::Line {start:at(a),end:at(b)},
+                    ProfileEdge::Arc {frame,r,span} => Stroke::Circle {center:at(frame.o),normal:frame.z,x_dir:frame.x,
+                        radius:r*scale,angles:span},
+                    ProfileEdge::Spline(ref b) => Stroke::BSpline {degree:b.degree,knots:b.knots.clone(),
+                        poles:b.poles.iter().map(|&p| at(p)).collect(),weights:b.weights.clone()},
                     ProfileEdge::Exact(Curve::Trochoid(ref t)) => {
                         let f = &t.frame;
                         // (each term's `a` and `b` lengths, scaled as points are; its rate not)
-                        let terms = t.terms.iter().map(|q| Json::Arr([q.a[0]*scale,q.a[1]*scale,q.b[0]*scale,q.b[1]*scale,q.w].iter()
-                            .map(|&x| x.into()).collect()));
-                        object([("kind","trochoid".into()),("origin",at(f.o)),("x_dir",v(f.x,1.)),("y_dir",v(f.y,1.)),
-                            ("terms",Json::Arr(terms.collect())),("span",Json::Arr(vec![t.span[0].into(),t.span[1].into()]))])
+                        let terms = t.terms.iter().map(|q| [q.a[0]*scale,q.a[1]*scale,q.b[0]*scale,q.b[1]*scale,q.w]).collect();
+                        Stroke::Trochoid {origin:at(f.o),x_dir:f.x,y_dir:f.y,terms,span:t.span}
                     }
                     ProfileEdge::Exact(ref curve) => return Err(format!("a {} curve has no recipe's form",curve.kind())),
                 };
-                let name = self.name(l,k);
-                if !name.is_empty() { j.set("name",name.into()); }
-                out.push(j);
+                out.push(Edge {name:self.name(l,k),shape});
             }
-            loops.push(Json::Arr(out));
+            loops.push(out);
         }
-        let normal = self.normal.map(|x| x*1.);
-        Ok(object([("origin",w.plane_origin(self.origin.map(|x| x*scale),normal)),("normal",Writer::triple(normal)),
-            ("loops",Json::Arr(loops))]))
+        Ok(Section {origin:w.plane_origin(self.origin.map(|x| x*scale),self.normal),normal:self.normal,loops})
     }
 
     /// A length the profile's tolerances are taken against.
@@ -189,15 +170,35 @@ impl Seg {
             _ => self,
         }
     }
+    /// How long the step is: a line's run, an arc's radius times its turn, and any other curve
+    /// its widest chord among seventeen points along it — nothing only where they all coincide.
+    /// A length, whatever the curve's parameter measures (an arc's is an angle).
+    pub fn length(&self) -> f64 {
+        match self.curve {
+            Curve::Line {..} => (self.t[1]-self.t[0]).abs(),
+            Curve::Circle(_,r) => r.abs()*(self.t[1]-self.t[0]).abs(),
+            _ => {
+                let q: Vec<V> = (0..=16).map(|k| self.curve.point(self.t[0]+(self.t[1]-self.t[0])*k as f64/16.)).collect();
+                q.iter().map(|a| q.iter().map(|b| distance(*a,*b)).fold(0.,f64::max)).fold(0.,f64::max)
+            }
+        }
+    }
     pub(crate) fn samples(&self,n: usize) -> impl Iterator<Item = V> + '_ {
         (0..n).map(move |j| self.curve.point(self.t[0]+(self.t[1]-self.t[0])*j as f64/n as f64))
     }
 }
 
+/// **Whether an edge `length` long has no length** in a profile of `size` (its reach from its
+/// origin, as `Profile::size` reads it): within the profile's tolerance of nothing, where no walk
+/// can tell its ends apart.  The one test, which `walks` refuses a loop by and a host asks of the
+/// edges it draws before it hands them over, so the refusal is said in the host's terms (#962).
+pub fn no_length(length: f64,size: f64) -> bool { !(length > tolerance(size)) }
+
 /// Each loop of a profile as a closed walk, the outer one counter-clockwise in `(x, y)` and the
 /// holes clockwise, where `coords` reads a point's coordinates in the plane.
 pub fn walks(p: &Profile,coords: &dyn Fn(V) -> [f64;2]) -> Result<Vec<Vec<Seg>>,String> {
-    let tol = tolerance(p.size());
+    let size = p.size();
+    let tol = tolerance(size);
     let mut out = Vec::new();
     for (li,l) in p.loops.iter().enumerate() {
         let segs: Vec<Seg> = l.iter().enumerate().map(|(source,e)| match *e {
@@ -209,7 +210,11 @@ pub fn walks(p: &Profile,coords: &dyn Fn(V) -> [f64;2]) -> Result<Vec<Vec<Seg>>,
             ProfileEdge::Spline(ref b) => Seg {curve:Curve::BSpline(b.clone()),t:b.domain(),source},
             ProfileEdge::Exact(ref curve) => Seg {curve:curve.clone(),t:exact_span(curve),source},
         }).collect();
-        if segs.iter().any(|s| (s.t[1]-s.t[0]).abs() <= tol) { return Err(format!("loop {li} has an edge of no length")) }
+        if let Some(s) = segs.iter().find(|s| no_length(s.length(),size)) {
+            let name = p.name(li,s.source);
+            let edge = if name.is_empty() { format!("edge {}",s.source) } else { format!("edge `{name}`") };
+            return Err(format!("loop {li}'s {edge} has no length"))
+        }
         let mut used = vec![false;segs.len()];
         let mut walk = vec![segs[0].clone()];
         used[0] = true;
@@ -1115,6 +1120,7 @@ pub fn lofted(origin: V,n: V,h: [f64;2],loops: Vec<Vec<crate::nurbs::Net>>) -> R
 /// A sheet: the whole of a B-spline surface as one face, bounded by its four boundary curves
 /// (each its net's outermost row or column of poles, exactly), its sense the net's own.
 pub fn sheet(net: crate::nurbs::Net) -> Result<Brep,String> {
+    net.check()?;
     let [[u0,u1],[v0,v1]] = net.domain();
     // a rational net's boundary rows and columns weighed as the net weighs them
     let row = |i: usize| Curve::BSpline(Arc::new(net.row(i)));

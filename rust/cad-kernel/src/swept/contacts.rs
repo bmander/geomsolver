@@ -583,14 +583,18 @@ pub(super) trait Rolled: Sync {
     /// Its rate along the roll there, `∂/∂v`.
     fn rate(&self,u: f64,v: f64) -> V;
     /// Whether the section's end at `u` (0 or 1) stands still over the roll: a pole, its side of the
-    /// parameters one point.
-    fn still(&self,u: f64) -> bool;
+    /// parameters one point — carried less than `tol` anywhere along it (#942 F6).
+    fn still(&self,u: f64,tol: f64) -> bool;
 }
 
 impl Rolled for crate::geom::Blend {
     fn at(&self,u: f64,v: f64) -> V { self.carry.at(self.a.point(u),v) }
     fn rate(&self,u: f64,v: f64) -> V { self.carry.rate(self.at(u,v)) }
-    fn still(&self,u: f64) -> bool { let q = self.a.point(u); distance(self.carry.at(q,1.),q) <= 1e-9*(1.+norm_of(q)) }
+    fn still(&self,u: f64,tol: f64) -> bool {
+        let q = self.a.point(u);
+        // (read at four places along the carry, so a whole turn's end, back where it began, is not)
+        [0.25,0.5,0.75,1.].into_iter().all(|v| distance(self.carry.at(q,v),q) <= tol)
+    }
 }
 
 /// **A sheet's whole meeting with a face of the tool posed at an end of the roll** (#880 Q1b): the
@@ -822,7 +826,7 @@ pub(super) fn pose_meeting(sheet: &dyn Rolled,surface: &Surface,within: ([f64;3]
     let snapped = |p: Uv| corners.iter().copied().filter(|&c| rounding(c,p))
         .min_by(|a,b| (a[0]-p[0]).hypot(a[1]-p[1]).total_cmp(&(b[0]-p[0]).hypot(b[1]-p[1]))).unwrap_or(p);
     // the sheet's sides that are one point: a section's end on the turn's axis, which the carry holds
-    let poles: Vec<(f64,V)> = [0.,1.].into_iter().filter(|&u| sheet.still(u)).map(|u| (u,at(u,0.))).collect();
+    let poles: Vec<(f64,V)> = [0.,1.].into_iter().filter(|&u| sheet.still(u,tol)).map(|u| (u,at(u,0.))).collect();
     let on_pole = |p: Uv| poles.iter().any(|&(u,q)| (p[0]-u).abs() <= 1e-9 || distance(at(p[0],p[1]),q) <= tol);
     // (the face where the section does not lie on it, read where it holds the sheet's corners)
     use crate::query::Place;

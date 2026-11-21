@@ -37,6 +37,7 @@ pub mod gltf;
 pub mod hidden;
 pub mod io;
 pub mod ir;
+pub mod lexicon;
 pub mod library;
 pub mod lowering;
 pub mod modules;

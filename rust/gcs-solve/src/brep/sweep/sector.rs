@@ -13,7 +13,6 @@ use crate::brep::props::volume;
 use crate::brep::query::interior;
 use crate::brep::topo::Brep;
 use crate::envelope::Motion;
-use crate::brep::recipe::Recipe;
 use crate::brep::Kind;
 use crate::model::Sketch;
 use crate::solid::cad::{self,StaticRecipe};
@@ -129,7 +128,7 @@ pub fn premises(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,field
     let cuts: Vec<Vec<V>> = sheets.iter().enumerate()
         .map(|(k,s)| s.sheet.points.iter().chain(&s.sheet.withheld).map(|&p| mm(poses[k][0],p)).filter(|&p| inside(p)).collect()).collect();
     let all: Vec<V> = cuts.iter().flatten().copied().collect();
-    let mut candidates: Vec<Slices> = sphere_centres(&Recipe::read(&recipe.recipe)?,frame,size).into_iter().map(Slices::Spheres).collect();
+    let mut candidates: Vec<Slices> = sphere_centres(&recipe.recipe,frame,size).into_iter().map(Slices::Spheres).collect();
     candidates.push(Slices::Planes);
     let chosen = Boundary::choose(&indexing,&all,&candidates)?;
     let fit = sheets.iter().map(|s| s.error).fold(0.,f64::max);
@@ -185,7 +184,7 @@ pub fn premises(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,field
 pub fn construct(recipe: &StaticRecipe,distinct: &[usize],premises: Premises,say: &Say) -> Result<Sector,String> {
     let Premises {frame,n,pitch,across,side,other,tools,body_field} = premises;
     let clock = crate::clock::Instant::now();
-    let turned = blank_from(&Recipe::read(&recipe.recipe)?,frame.origin,frame.axis,frame.radial(across))?;
+    let turned = blank_from(&recipe.recipe,frame.origin,frame.axis,frame.radial(across))?;
     let whole = volume(&turned);
     let halves = split(&turned,&side.joined(&other),SPLIT_TOL)?;
     let volumes: Vec<f64> = halves.iter().map(volume).collect();
@@ -236,7 +235,7 @@ pub fn whole(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,distinct
     }
     // a solid of revolution made again with its seams opposite the cuts, as a sector's blank is: a
     // sheet across a face's seam is a split this kernel does not finish
-    let read = Recipe::read(&recipe.recipe)?;
+    let read = &recipe.recipe;
     let blank = match read.meridian([1.,0.,0.]) {
         Ok((_,origin,axis)) => {
             let centres: Vec<V> = tools.iter().map(|(_,(a,b))| std::array::from_fn(|k| (a[k]+b[k])/2.)).collect();

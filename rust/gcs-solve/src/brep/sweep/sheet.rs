@@ -23,7 +23,7 @@ pub struct SweptCut {
     pub name: String,
     pub scale: f64,
     /// The cutter's recipe, the motion and the declared roll's limits.
-    pub recipe: crate::json::Json,
+    pub recipe: crate::brep::recipe::Recipe,
     pub family: Family,
     pub limits: [f64;2],
     /// The contacts, whose failure to read is the reach's.

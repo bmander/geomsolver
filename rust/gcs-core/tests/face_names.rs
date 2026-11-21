@@ -199,8 +199,10 @@ const BARS: &str = "unit mm\nuse std\nuse std.solids (cut, union)\nuse std.round
     part := solid(spine.body)\n";
 
 /// What a document's `part` came to: its volume and its faces' areas, by name.
-fn part(src: &str) -> Areas {
-    let e = solved(src);
+fn part(src: &str) -> Areas { part_of(&solved(src)) }
+
+/// `part`, of a document solved.
+fn part_of(e: &Elaborated) -> Areas {
     gcs_core::report::positions(&e.sketch, &e.map).into_iter()
         .filter(|(k, _)| k.starts_with("part.") && (k.ends_with(".area") || k == "part.volume"))
         .collect()
@@ -383,4 +385,112 @@ fn a_solid_a_blocks_copy_makes_is_called_by_its_index() {
     let m = sk.solid_called("box.peg[1]").unwrap_err();
     assert!(m.starts_with("no solid called `box.peg[1]`: the objects are "), "{m}");
     assert!(called.iter().all(|c| m.contains(&format!("`{c}`"))) && !m.contains('#'), "{m}");
+}
+
+/// A slab 40 long and 20 wide whose east end is a half round running on tangent into its sides
+/// (`bot`, `cap`, `top`, `west`), 10 deep; a post standing clear of it east, unioned in, and a
+/// block within it, unioned in and so taken in whole.
+const SLAB: &str = "unit mm\nuse std\nuse std.solids (cut, union)\nuse std.rounds (round, chamfer)\n\
+in std.top {\n\
+  a := point\n  b := point\n  c := point\n  d := point\n  o := point\n\
+  fix((0, 0)) a\n  fix((40, 0)) b\n  fix((40, 20)) c\n  fix((0, 20)) d\n  fix((40, 10)) o\n\
+  bot := line(a, b)\n  cap := arc(center: o, start: b, end: c)\n  top := line(c, d)\n\
+  west := line(d, a)\n  outline := face(bot, cap, top, west)\n\
+  p := point\n  q := point\n  s := point\n  t := point\n\
+  fix((70, 0)) p\n  fix((80, 0)) q\n  fix((80, 10)) s\n  fix((70, 10)) t\n\
+  post_f := face(p, q, s, t, -> close)\n\
+  u := point\n  v := point\n  w := point\n  x := point\n\
+  fix((10, 5)) u\n  fix((20, 5)) v\n  fix((20, 15)) w\n  fix((10, 15)) x\n\
+  block_f := face(u, v, w, x, -> close)\n\
+}\n\
+part := solid(std.solids.Prism(outline, from: 0mm, to: 10mm))\n\
+post := solid(std.solids.Prism(post_f, from: 0mm, to: 10mm))\n\
+block := solid(std.solids.Prism(block_f, from: 2mm, to: 8mm))\n\
+post union part\n\
+block union part\n";
+
+/// Each W120 of `src`, solved: the line it is said at, and its words.
+fn w120(src: &str) -> Vec<(u32, String)> { w120_of(&solved(src), src) }
+
+/// `w120`, of `src` solved as `e`.
+fn w120_of(e: &Elaborated, src: &str) -> Vec<(u32, String)> {
+    gcs_core::program::solid_diagnostics(&e.sketch, &e.map, &e.program).iter()
+        .filter(|d| d.code.as_str() == "W120")
+        .map(|d| (gcs_core::syntax::line_col(src, d.span.lo).0, d.message.clone())).collect()
+}
+
+/// **A round or a chamfer that selects no edge says so** (#962, W120): written over faces that
+/// are all the body's — no path naming nothing, which is W116 — that meet in no edge of it: apart,
+/// one of them taken in by the body's other terms, only along a seam where one goes on tangent
+/// into the other (no edge: a ball rolled or a flat cut there takes nothing), or one face alone.
+/// Said once, at the statement, in both forms and by both words, naming what it looked at and why
+/// nothing was selected; and the part is as it was.
+#[test]
+fn a_round_that_selects_no_edge_says_why() {
+    let plain = part(SLAB)["part.volume"];
+    let line = SLAB.lines().count() as u32 + 1;
+    for word in ["round(r: 1mm)", "chamfer(d: 1mm)"] {
+        for (a, b, said) in [
+            ("part.near", "part.far", "`part.near` and `part.far` meet in no edge of `part`: \
+                they meet nowhere, so nothing is made over them"),
+            ("part.bot", "part.cap", "`part.bot` and `part.cap` meet in no edge of `part`: they \
+                meet only where one goes on tangent into the other, a seam and no edge, so \
+                nothing is made over them"),
+            ("part.post", "part.block", "`part.post` and `part.block` meet in no edge of \
+                `part`: none of `part.block`'s faces is left on `part`'s boundary, the body's \
+                other terms having taken them in, so nothing is made over them"),
+        ] {
+            let src = format!("{SLAB}{a} {word} {b}\n");
+            let e = solved(&src);
+            assert_eq!(w120_of(&e, &src), [(line, said.to_string())], "{word}");
+            assert_eq!(part_of(&e)["part.volume"], plain, "{a} {word} {b}");
+        }
+        for (x, said) in [
+            ("part.block", "no two of `part.block`'s faces meet in an edge of `part`: none of \
+                `part.block`'s faces is left on `part`'s boundary, the body's other terms having \
+                taken them in, so nothing is made over them"),
+            ("part.near", "no two of `part.near`'s faces meet in an edge of `part`: `part.near` \
+                is one face, and an edge is where two meet, so nothing is made over them"),
+        ] {
+            let src = format!("{SLAB}{word} {x}\n");
+            let e = solved(&src);
+            assert_eq!(w120_of(&e, &src), [(line, said.to_string())], "{word}");
+            assert_eq!(part_of(&e)["part.volume"], plain, "{word} {x}");
+        }
+    }
+}
+
+/// **…and only then** (#962): a round or a chamfer that selects an edge says nothing, however
+/// many pairs of its faces meet in none — the blanket form over the body, a face and the body, an
+/// operand clear of the rest rounded all round — nor does one whose path names no face, which
+/// W116 says alone.
+#[test]
+fn a_round_that_selects_an_edge_says_nothing_of_it() {
+    for tail in ["part.near round(r: 1mm) part.bot", "part.near chamfer(d: 1mm) part",
+                 "round(r: 1mm) part.post", "chamfer(d: 1mm) part.post",
+                 "part.cap round(r: 1mm) part.near", "round(r: 1mm) part",
+                 "part.near round(r: 1mm) part.nothing"] {
+        assert_eq!(w120(&format!("{SLAB}{tail}\n")), [], "{tail}");
+    }
+    // the post's top edges rounded: the volume less, and still nothing said
+    let src = format!("{SLAB}part.post.near round(r: 1mm) part.post\n");
+    let e = solved(&src);
+    assert!(part_of(&e)["part.volume"] < part(SLAB)["part.volume"]);
+    assert_eq!(w120_of(&e, &src), []);
+}
+
+/// **No round of the library selects nothing** (#962): every document under
+/// `rust/examples/rounds/` rounds or chamfers edges it means to, so W120 says nothing of any — its
+/// rounds over a round's faces, its rims over rounded corners, its blocks picking faces by how
+/// they lie, its corners of three.
+#[test]
+fn no_round_of_the_library_says_it_selects_nothing() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/rounds");
+    let mut files = Vec::new();
+    crate::every_example::sources(&dir, &mut files);
+    assert!(files.len() > 20, "{}", files.len());
+    let said: Vec<(String, Vec<(u32, String)>)> = gcs_core::par::map(&files, |p| {
+        (p.display().to_string(), w120(&std::fs::read_to_string(p).unwrap()))
+    }).into_iter().filter(|(_, s)| !s.is_empty()).collect();
+    assert!(said.is_empty(), "{said:#?}");
 }

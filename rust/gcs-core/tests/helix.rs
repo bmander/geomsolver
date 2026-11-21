@@ -245,7 +245,7 @@ component Swelling(base: plane, r: Length, wire: Length, pitch: Length, turns: S
 swelling := solid({ p | some s: p in Swelling(std.top, r: 10mm, wire: 1mm, pitch: 5mm, turns: 4).f at s })");
     for name in ["thread", "spring"] {
         let b = brep(&e, name);
-        let text = gcs_core::brep::step::write(&b, name, 1e-3).unwrap();
+        let text = gcs_core::brep::step::write(&b, name, 1e-3, gcs_core::brep::step::Fit::Exact).unwrap();
         let solid = gcs_core::brep::step_check::Solid::of(&b);
         gcs_core::brep::step_check::verify(&text, &solid).unwrap_or_else(|m| panic!("{name}: {m}"));
     }

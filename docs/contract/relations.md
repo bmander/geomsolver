@@ -368,6 +368,42 @@ came from.
   overlapping on one line.  `render_flat` refuses it.  `tests/corner_rounds.rs` is the gate: the
   slot's pocket to `rounds/slot.sv`'s longhand to 1e-9 in volume, drafted and with its solid
   round, the inside fillet drawn from its end, the star handle at DOF 0 on one root.
+- **A round's side may be an arc** (#962, [0.224]): `A -> round(r: R) B` where either side, or
+  both, is an arc the chain declares.  The construction is one for every pair: **the round is the
+  circle of radius `R` tangent to both sides inside the corner**, its centre on each side's offset
+  by `R` toward the turn — a line moved square to itself, an arc's circle shrunk by `R` where the
+  walk turns toward its centre (the round inside it) and grown where it turns away — and of the
+  two crossings of a line's offset and a circle's, or two circles', mirror images, the one on the
+  corner's side of the mirror, the root that comes to the corner as `R` comes to nothing
+  (`model::rounded`, every number a closed form; between two lines the bisector's, as before).
+  The parser names an arc's ends as an arc's (`end_ref`, `round_corner` reading each side's own
+  `EntKind::ends`: `A.end`, `B.start`), its slot at the corner given up as a line's is; the round
+  states `k tangent(at: A.end) A`, between two rounds **`TangentCirclesAt`** (`infix_op`'s round
+  pair with `at:` a point — the centres and the point on one line, one regular row, degree 1,
+  where `TangentCircleCircle` is a double root once both pass through it; `at:` naming an end
+  stays refused), and the corner `coincident` the arc, `PointOnCircle`.  `program::names` counts
+  a round's arc, and `geometry` builds it, after every other arc, since an arc it rounds mints the
+  end it names (a `ring`'s next copy's too).  `program::rounds` reads an arc side through the
+  corner (`RoundSide::Arc`, its radius the centre's distance from a corner written, seeded so), and
+  orients the round by its chord, a line side as before, and an arc side by the arc's centre on
+  the chord's same side where the round is inside its circle and the other where it is outside
+  (`Rounded::inside`) — so of the eight circles tangent to a line and a circle the one inside the
+  corner is the only root.  `Sketch::side_ends`, `round_side`, `round_far` and `round_corner`
+  read a side either way (an unwritten corner of an arc the crossing nearest the round).  **What
+  does not fit is said after a solve** (`model::overruns`, the radius the `radius` row states): a
+  corner an arc turns toward holds a round only up to `Rounded::most` — `(ρ + h)/2` beside a line
+  whose turn's side the arc's centre stands `h` off, `(ρ₁ + ρ₂ − D)/2` between two arcs both
+  turning toward it, `(ρᵢ − ρⱼ + D)/2` where one does — said as `` `k` (r 17mm) is more than the
+  corner of `flat` and `bowl` holds: `bowl` turns toward it there; it fits up to r 16mm ``; a
+  round past an arc's far end is said as past a line's, with the radius of the round touching the
+  side at that end (`model::fitting`), and two overlapping on an arc by their lengths along it.
+  Refused: an arc declared apart from the chain (E040 at the round, `program::names`: the parser
+  named its ends as a line's), an arc written to be walked from its end (the corner named twice,
+  saying so), a circle or any side with no ends (the parser's "a corner joins lines and arcs").
+  `tests/corner_rounds.rs` is the gate: a jamb into a bulging and a sagging arch, turned, walked
+  clockwise and closing the loop, each round's centre and ends to their closed forms to 1e-9 and
+  the extruded window to its area; two arcs rounded round a `ring`; `rounded` at, under and over
+  `most`; the shipped `arched_window.sv`.
 - A **step** (#330, Solvent §6.6 [0.101]) is a prefix word over a line, `step(u: s, dv: b) l`,
   the end's ordinates by label — `du`/`dv` from `l.p1`, `u`/`v` from the frame's origin — and the
   ordinate it does not name kept.  It is **no operator and no `CKind`**: `constraints::step_word`

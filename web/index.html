@@ -13,13 +13,6 @@
 </head>
 <body>
 <div id="app">
-  <header>
-    <div class="bar menubar" id="menubar">
-      <button class="brand" id="about" title="About this project">gcs</button>
-    </div>
-    <div class="bar" id="bar-tools"></div>
-    <div class="bar" id="bar-constraints"></div>
-  </header>
   <div id="banner"><span id="banner-text"></span><button id="banner-select">Select culprits</button></div>
   <main>
     <div id="canvas-wrap">
@@ -63,6 +56,18 @@
           <p id="scenario-status" role="status"></p>
           <ul id="scenario-lines"></ul>
         </section>
+      </div>
+      <!-- **every word and every command** (`app/words.ts`): the Words button, the menu it opens and
+           the palette of what is kept at hand, along the workspace's bottom edge — there are no
+           toolbars.  The word in hand is the box above it (`app/wordbox.ts`), written as the
+           statement it will make, a chip for each slot -->
+      <div id="word-box" aria-label="The word in hand" hidden></div>
+      <div id="words-menu" role="dialog" aria-label="Every word and command" hidden></div>
+      <div id="dock">
+        <button id="words-button" type="button" aria-expanded="false" aria-controls="words-menu"
+                title="Every word of the language and every command of the app (/)"><span
+                class="logo" aria-hidden="true">:=</span>Words<kbd>/</kbd><span class="fits"></span></button>
+        <div id="palette" aria-label="Palette: the words and commands kept at hand"></div>
       </div>
       <!-- the workspace's own buttons, in its corner where a thumb finds them: filled by `main` -->
       <div id="view-buttons" aria-label="Workspace"></div>

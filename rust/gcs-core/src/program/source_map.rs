@@ -54,6 +54,9 @@ pub struct SourceMap {
     /// Every pair of faces a `when … meets …` read apart where the drawing is seeded (#625), to
     /// be read again where it is solved (`program::meets`).
     pub(crate) apart: Vec<crate::flatten::Apart>,
+    /// Every statement whose blocks over a solid's faces may have selected no edge (#962), to be
+    /// read edge by edge where the drawing is solved (`program::at_solve::unmade`, W120).
+    pub(crate) unmade: Vec<crate::flatten::Unmade>,
     /// Every `when` that read faces along a direction where the drawing is seeded (#763), to be
     /// decided again where it is solved (`program::meets`).
     pub(crate) along: Vec<crate::flatten::WhenRead>,
@@ -69,6 +72,9 @@ pub struct SourceMap {
     /// The points nothing seeded (#904 A13), each where its creation order scattered it: what
     /// the seeds say no side of (`program::crossed_seeds`).
     pub(crate) unseeded: BTreeSet<usize>,
+    /// Each body statement joining a solid to a body (`hub union part`), by the body and the
+    /// solid joined (#961): where what is said of that term is said.
+    pub(crate) joined: BTreeMap<(usize, usize), Site>,
 }
 
 /// One component instance as expanded — see `SourceMap::instances`.
@@ -344,6 +350,7 @@ impl Elaborated {
     /// Every site in the map: what the drawing was made from, entities and constraints alike.
     fn sites(&self) -> impl Iterator<Item = &Site> {
         self.map.of_entity.values().chain(self.map.of_constraint.values())
+            .chain(self.map.joined.values())
     }
 
     /// Point every site at where its statement now is.  The one mechanism `retext` and `adopt`
@@ -352,8 +359,10 @@ impl Elaborated {
         if keep == Keep::Live {
             self.map.of_entity.retain(|_, s| at.contains_key(&s.stmt));
             self.map.of_constraint.retain(|_, s| at.contains_key(&s.stmt));
+            self.map.joined.retain(|_, s| at.contains_key(&s.stmt));
         }
-        for s in self.map.of_entity.values_mut().chain(self.map.of_constraint.values_mut()) {
+        for s in self.map.of_entity.values_mut().chain(self.map.of_constraint.values_mut())
+            .chain(self.map.joined.values_mut()) {
             if let Some(&sp) = at.get(&s.stmt) {
                 s.span = sp;
             }

@@ -199,6 +199,40 @@ coordinate the circle *crosses* there, never by one it runs square to: at `(10, 
 along y, so `fix(x == 10mm)` holds nothing to first order (numeric rank short of structural) and
 `fix(y == 0mm)` places it.
 
+**An arc of a half turn** has its ends a diameter apart, through its centre: that is one fact, so
+the arc is four numbers, not five. Say the fact and hold four. With both ends held, put the centre
+on the chord (in a D-shaped profile the chord is the drawn line):
+
+```
+fix((10, 0)) s
+fix((-10, 0)) e
+k := arc(center: c, start: s, end: e)
+construction chord := line(s, e)
+c coincident chord                    c at (0, 0), from either side: DOF 0, well
+```
+
+With the centre and the start held, say the radii run opposite, which leaves the end one root:
+
+```
+fix((0, 0)) c
+fix((10, 0)) s
+k := arc(center: c, start: s, end: e)
+construction r0 := line(c, s)
+construction r1 := line(c, e)
+r0 parallel(sense: opposite) r1       e at (-10, 0), even seeded beside s: DOF 0, well
+```
+
+What else is tried, and what the report says of it:
+
+| held | report | why |
+|---|---|---|
+| `c`, `s` and `e` | `said twice among: s coincident k`, `… e coincident k` | the radius twice, as for any arc |
+| `s` and `e` | `DOF 1` | the centre slides along the ends' bisector: the half turn is unsaid |
+| `s`, `e` and `c midpoint chord` | `said twice among: c midpoint chord, s coincident k, e coincident k` | the arc already puts `c` on the bisector; `midpoint` says it again, `coincident` only the rest |
+| `s`, `e` and `radius(10mm) k` | `DOF 0` with `c.y = 1.90298e-06`; started on the root, `1 motion(s) blocked at second order (a double root) — not DOF` | 10 is the least radius through ends 20 apart: the circles about the ends touch rather than cross, so the centre is found only to the square root of the tolerance. Drop the radius; the chord says it |
+| `c`, `s` and `fix(x == -10mm) e` | as the radius: a double root | the circle runs square to x there (above) |
+| `c`, `s` and `fix(y == 0mm) e` | `DOF 0`, well | it works, but it is a coordinate (a lint), and has two roots: seeded beside `s` it lands on `s`, a whole turn (`k.length = 62.8319`) |
+
 **Members and vectors.** An entity's numbers are its members. A vector is `(a, b)` or `(a, b, c)`.
 A point *is* its place, so it is seeded and held whole by a vector — `hint((3, 4))`,
 `fix((0, 0)) p` — or by one of `x`, `y`, `z`; an axis has the vectors `dir` and `origin`, a plane
@@ -533,9 +567,9 @@ right (`p1 -> p2` on a line, `start -> end` counter-clockwise on an arc).
 - `profile := … -> close` names the traversal, which a solid can sweep (1.14); its edges keep
   their own names. Every joint in a named chain carries `->`.
 
-**A corner round is a joint.** `A -> round(r: R) B`, `A` and `B` lines written meeting at a
-corner, rounds that corner with an arc of radius `R` tangent to both — the arc it mints, its two
-tangencies and its branch all said by the one word. Name the arc where it stands,
+**A corner round is a joint.** `A -> round(r: R) B`, `A` and `B` lines or arcs written meeting
+at a corner, rounds that corner with an arc of radius `R` tangent to both — the arc it mints, its
+two tangencies and its branch all said by the one word. Name the arc where it stands,
 `-> (k := round(r: 2mm))`, to list it in a face or dimension it; unnamed, it is still an edge of a
 named chain.
 
@@ -552,9 +586,18 @@ named chain.
 - A trailing `-> round(…)` at a `cycle`'s or a `ring`'s `}` rounds the corner the next copy is
   entered by (a `repeat`'s first copy has none: E040). `-> round(r: R) close` rounds the corner
   that closes a loop.
+- **A side may be an arc** (0.224), declared in the chain: `(jamb := line(s, c)) -> (k :=
+  round(r: 12)) (arch := arc(center: o, start: c, end: d))`. The round is the one inside the
+  corner as before — inside the arc's circle where the walk turns toward its centre, outside where
+  it turns away — and the corner `c` stays on the jamb and on the arch's circle; the arch now
+  runs from `k.end` (`arch.start`). An arc walks from its `start:`, so one turning clockwise is
+  written `sense: cw` with its ends in walking order. `rust/examples/arched_window.sv` is a
+  window whose jambs are rounded into an R97.5 arch so.
 - A round that does not fit is said by name after the solve: `` `k` (r 9mm) runs past `up`'s far
-  end; it fits up to r 6mm``, two rounds whose setbacks overlap on one line, a corner its lines run
-  straight through (E040 where it is drawn so).
+  end; it fits up to r 6mm``, two rounds whose setbacks overlap on one side, a corner its sides run
+  straight through (E040 where it is drawn so), and a round larger than a corner an arc turns
+  toward can hold: `` `k` (r 17mm) is more than the corner of `flat` and `bowl` holds: `bowl`
+  turns toward it there; it fits up to r 16mm``.
 
 ```
 in std.front {
@@ -570,9 +613,10 @@ in std.front {
 }
 ```
 
-Refused: a round beside a line and an arc (lines only, for now), its corner named differently by
-the two sides, a corner named while a side is declared elsewhere (its end is its own point, the
-arc's), another word at the round's joint. A bare `A round(r) B`, no marker, is still `std.rounds`'
+Refused: a round beside an arc declared apart from the chain (declare it in the chain: the round
+names its ends), beside a circle or anything else with no ends, its corner named differently by
+the two sides (an arc written to be walked from its end among them), a corner named while a side
+is declared elsewhere (its end is its own point, the arc's), another word at the round's joint. A bare `A round(r) B`, no marker, is still `std.rounds`'
 round of the edges where two solids' faces meet (1.14).
 
 **A step says where a line's end stands, one number per run.** `step(…)` before a line, or before
@@ -2274,6 +2318,16 @@ body's are (`body.bore.hole`).
   `pinhole cut body`. `Through` only makes the cutter; every body it is cut from bounds it.
 - **`tip common body`** keeps only what the body has in common with `tip`. Union comes first;
   `cut` and `common` commute.
+- **A union does not put back what a cut takes**, wherever it is written: `hub union part` below
+  `hole cut part`, the hub lying wholly in the bore, leaves `part` the bored ring, and the
+  statement is told so — `` warning[W119]: `hub` lies wholly in what `hole` cuts from `part`, so
+  `part` keeps none of it ``.  A web drawn across the bore with its ends in the wall is lost the
+  same way, its ends being the ring's already: `` `part` keeps of `web` only what `ring` gives it
+  already, and the rest of `web` lies in what `hole` cuts from `part`, so `part` is as it would
+  be without `web` ``.  To fill the bore, cut it in a body of its own and put the hub on that one
+  — `bored := solid(ring)`, `hole cut bored`, `part := solid(bored)`, `hub union part` — or cut a
+  bore that leaves the hub's place.  A union that adds any material of its own the cuts leave (a
+  boss bored through, standing proud of the plate) says nothing, nor one nothing cuts.
 - **A pattern of solids.** A solid declared inside a `ring` is one solid a copy, each
   reached by its index (`peg[3]`), as a point of the ring is. To join every copy alike, start from
   an empty body — its first `union` is its stock — or cut each from the body:
@@ -2453,6 +2507,9 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
 - `A` and `B` are **face paths**: `block` (every face), `block.near` (one), `pad.boss` (every face
   the boss gave), `pad.plate.near`, read from the solid through its operands' names, never by
   suffix. Faces that do not meet make nothing; a face a Boolean ate names nothing.
+- **Both faces are one body's** (0.223): an edge is where two faces of one body meet, so
+  `wall.far round(r: 2mm) plate.near` of two solids is E103.  Where both are unioned into `part`,
+  write them through it — `part.wall.far round(r: 2mm) part.plate.near` — as the refusal says.
 - **One copy of a pattern** (0.157): an operand written in a `repeat` or a `ring` is named with
   its copy's index, as `--where` reports it — the hole the second drill cut is
   `flange.drill[1].hole`. `flange.cd chamfer(d: 1mm) flange.drill[1]` chamfers that one hole
@@ -2463,6 +2520,14 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
   its copy's index: `joint.pad union part` in the block's body is `part.joint[0].pad`, …;
   `part.joint` names every copy's. `--where part` lists the names exactly as a round takes them,
   and a path naming no face of its solid is **W116**, with the steps its faces are named by.
+- **A round that selects no edge says so** (0.225): a round or a chamfer takes the edges where its
+  faces meet, convex and concave alike, so one whose faces meet nowhere (`part.near round(r: 1mm)
+  part.far`), only along a tangent seam (a line running on into an arc), only at a corner, whose
+  faces the body took in (a block unioned inside it), or that names one face (`round(r: 1mm)
+  part.near`) makes nothing — **W120** at the statement, saying which and why. A face with an edge
+  of no length (two coincident points joined by a line) is said once **at the face**, naming the
+  edge and its points; the prism of it and every round over that say only that they are not built
+  (N080).
 - **Pick edges by the faces they lie between** (0.204): a word takes every edge where its faces
   meet, so a block over the faces chooses. Two faces both along a direction meet in lines along
   it, so the edges in plan of a part drawn in plan are
@@ -2504,6 +2569,39 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
   Written on `box` itself (`box.near round(r: 1mm) box`) the rim would read the box before its
   corners were rounded. With the first round named (`vert := f round(r: 5mm) g`), `box.near
   round(r: 1mm) box.vert` rounds the four arcs alone, where the top meets `vert`'s faces.
+- **Every edge of a part: "all edges R1.5", "break all edges"** (0.226). `round(r: 1.5mm) part`
+  is every edge among the part's faces, and on a plain block, or one with a through hole, that is
+  all it takes. A step, a pocket, a slot or a boss, though, makes a vertex where edges of both
+  turns meet: a step's floor meets its wall in a concave edge between two convex edges of the
+  block's side; a pocket's upright is concave between two convex edges of the top; a boss's
+  upright is convex between two concave edges of its foot. The surface is smooth there only where
+  that edge, alone in its turn, is rounded first and the others are rounded round it — so write
+  the note as the features' own edges first, then every edge on a solid of what they leave:
+
+  ```sv
+  stepped := round(r: 1.5mm) part.step     // the step's floor into its wall
+  pocketed := round(r: 1.5mm) part.pocket  // the pocket's uprights and floor
+  bossed := round(r: 1.5mm) part.boss      // the boss's uprights and top
+  whole := solid(part)                     // the part as those leave it
+  round(r: 1.5mm) whole                    // every edge: the side's round goes round the step's fill
+  ```
+
+  Name each first statement: written bare, their rounds' faces share one name, and a round over
+  them can read one feature's against another's (refused, saying to name them). Where an edge is
+  alone in its turn at one end and not at the other — two steps meeting at a corner, the upright
+  between their walls over two floor edges each alone at the block's side — the order has a level
+  more: at each vertex of both turns its lone edge goes before the other two, so the upright, then
+  the floor into each wall, then every edge, each level on a solid of the one before (that one is
+  not built yet: the top over the upright reads a chain running on through the fill at its foot).
+
+  Each side's rim then runs round the step's fill as a ring, the top's rim round each upright's
+  fill, a boss's foot round each upright's round (`rust/examples/rounds/stock.sv`). Written as one
+  `round(r: 1.5mm) part`, every edge reads the sharp part, and at such a vertex the cut and the
+  fill touch along a line: the export refuses it naming the vertex, its faces and each edge's
+  turn, and the edge to round first. Where one edge of the part cannot be rounded, the whole
+  statement is not built, and the refusal names the two faces that edge lies between
+  ("where `rod.near` and `rod.rim` meet"); to leave it out, pick the edges by the faces they lie
+  between (above). A chamfer of every edge at such a vertex is not said yet.
 - **The ball and the flat follow a face across a seam**: where the far face goes on tangent into
   a rim's round, a chamfer at a boss standing near the rim lands its leg on the round
   (`F.smooth`, a face's surface carried across its tangent seams). Where the leg or the ball

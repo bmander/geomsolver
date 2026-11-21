@@ -67,7 +67,7 @@ pub use caches::Caches;
 pub use running::Running;
 pub use material::{Material, Property};
 pub use shown::Kinds;
-pub use rounds::{overruns, rounded, Round, Rounded};
+pub use rounds::{fitting, overruns, rounded, Round, Rounded, RoundSide};
 pub use beam::{Beam, Over, Section, SectionProp};
 pub use scenario::{
     Applied, Grade, Hold, InPlane, Load, LoadKind, LoadValue, Output, PlaneReading, Requirement,
