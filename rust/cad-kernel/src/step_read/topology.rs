@@ -659,6 +659,19 @@ fn face(st: &Setting,sheet: &Sheet,w: &Walked) -> Result<Built,Refusal> {
             laid.extend(x.laid);
             poles.extend(x.poles);
         }
+    } else if poles.is_empty() && matches!(s,Surface::Sphere(..)) {
+        // a sphere's face whose every loop turns as a hole does (a ball less a cap, written with no
+        // seam): the whole sphere its outer loop, both poles laid
+        let g = Face {surface:s.clone(),reversed,loops:loops.clone(),name:String::new()};
+        if loops.iter().all(|l| (b.loop_area(&g,l) > 0.) == reversed) {
+            let p = s.point([0.,std::f64::consts::FRAC_PI_2]);
+            if let Some(x) = whole_sphere(s,p,LAID-1,None,reversed,&w.name,st.within) {
+                loops.extend(x.face.loops);
+                laid.extend(x.laid);
+                poles.extend(x.poles);
+                poles.push(p);
+            }
+        }
     }
     let mut f = Face {surface:s.clone(),reversed,loops,name:w.name.clone()};
     // the outer loop first: the one enclosing the most of the face's parameters
