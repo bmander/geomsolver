@@ -2572,6 +2572,10 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
 
   `part.box` is every face of the rounded box, the sides and the faces the round made
   (`part.box.taken.round`), so the top is paired with all of them (`rust/examples/rounds/rim.sv`).
+  Where an upright is concave (a block with a tab, an L) its fill ends flush on the top in a cap
+  of its own name (`part.vs.filled.near`); the top takes in the caps lying on it, so the same
+  statement goes round each fill's arc too, and the rim is rounded all the way round. A cap named
+  alone (`part.vs.filled.near round(r: 1mm) part.vs.filled.round`) is that arc alone.
   Written on `box` itself (`box.near round(r: 1mm) box`) the rim would read the box before its
   corners were rounded. With the first round named (`vert := f round(r: 5mm) g`), `box.near
   round(r: 1mm) box.vert` rounds the four arcs alone, where the top meets `vert`'s faces.

@@ -174,7 +174,8 @@ impl ListedFaces {
             by_name.entry((&p.route, &p.face)).or_default().push(k);
         }
         let faces = listed.iter().map(|f| {
-            let own = by_name.get(&(&f.route[..], &f.face[..])).cloned().unwrap_or_default();
+            // with the caps lying on it (`BodyFaces::with_caps`, #994), as a reference reads it
+            let own = read.with_caps(by_name.get(&(&f.route[..], &f.face[..])).cloned().unwrap_or_default());
             // a round's face the stratum has not: it cannot say of that one, unless the round
             // is of a layer beneath, which the stratum holds whole
             let unread = own.is_empty() && f.of.as_deref().is_some_and(|of| !below(of));

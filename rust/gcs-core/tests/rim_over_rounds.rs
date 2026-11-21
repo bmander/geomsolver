@@ -108,30 +108,52 @@ fn every_edge_over_rounded_uprights_turning_both_ways() {
     close(got, volume(TAB, 1.5, 1.5, 2.0));
 }
 
-/// **The fixture's statement** (`whole.part.stock.far round(r: 1.5mm) whole`), on either cap: built.
-/// A fill's cap is a face of its own name (`vs.filled.far`, `lowering::CAPS`) on the cap's
-/// plane, so the arc it makes with the fill is no edge of `stock.far`, and stays sharp: the rim
-/// less a quarter torus of `ru + inset` at each reflex upright.  Named too, the whole rim.
+/// **The fixture's statement** (`whole.part.stock.far round(r: 1.5mm) whole`), on either cap:
+/// the rim all the way round.  A reflex upright's fill ends flush on the cap's plane in a cap of
+/// its own name (`vs.filled.far`, `lowering::CAPS`), which has grown the top: `stock.far` of
+/// `whole` is the top with the caps lying on it (`BodyFaces::with_caps`), so the rim goes on round
+/// each fill's arc as round each convex upright's.  Named with the caps too, the same rim: the cap
+/// and the top are one face, never paired as two.
 fn one_rim(outline: &[[f64; 2]], cap: &str) {
-    let (_, _, _, reflex) = measures(outline);
-    let ring = 0.5 * PI * square_run(1.5) * (1.5 + inset(1.5));
     let rim = format!("whole.part.stock.{cap} round(r: 1.5mm) whole");
-    let got = exported_volume(&block(outline, 1.5, &rim), "whole");
-    close(got, volume(outline, 1.5, 1.5, 1.0) + reflex as f64 * ring);
+    close(exported_volume(&block(outline, 1.5, &rim), "whole"), volume(outline, 1.5, 1.5, 1.0));
     let rim = format!("{rim}\nwhole.part.vs.filled.{cap} round(r: 1.5mm) whole");
     close(exported_volume(&block(outline, 1.5, &rim), "whole"), volume(outline, 1.5, 1.5, 1.0));
 }
 
 /// The fixture itself, its far rim (#994's repro).
 #[test]
-fn the_fixtures_far_rim_leaves_the_fills_caps_to_be_named() {
+fn the_fixtures_far_rim_goes_round_the_fills_caps() {
     one_rim(TAB, "far");
 }
 
 /// The L's near rim.
 #[test]
-fn an_ls_near_rim_leaves_the_fills_cap_to_be_named() {
+fn an_ls_near_rim_goes_round_the_fills_cap() {
     one_rim(ELL, "near");
+}
+
+/// **A chamfer the same**: the L's top chamfered 1 all the way round over its rounded uprights —
+/// the flat's triangle along the sides and turned about each upright's axis, its centroid
+/// `ru ∓ d/3` from it.
+#[test]
+fn an_ls_rim_chamfered_goes_round_the_fills_cap() {
+    let src = block(ELL, 1.5, "whole.part.stock.far chamfer(d: 1mm) whole").replace("(round)", "(round, chamfer)");
+    let (_, perimeter, convex, reflex) = measures(ELL);
+    let flat = 0.5 * (perimeter - 3.0 * (convex + reflex) as f64)
+        + 0.25 * PI * (convex as f64 * (1.5 - 1.0 / 3.0) + reflex as f64 * (1.5 + 1.0 / 3.0));
+    close(exported_volume(&src, "whole"), volume(ELL, 1.5, 0.0, 0.0) - flat);
+}
+
+/// **A cap is still a face of its own name**: rounded alone against the fill it ends, the rim is
+/// the quarter torus of `ru + inset` round each reflex upright, the sides' edges with the top
+/// sharp.
+#[test]
+fn a_fills_cap_named_alone_is_itself() {
+    let (_, _, _, reflex) = measures(ELL);
+    let ring = 0.5 * PI * square_run(1.5) * (1.5 + inset(1.5));
+    let src = block(ELL, 1.5, "whole.part.vs.filled.far round(r: 1.5mm) whole.part.vs.filled.round");
+    close(exported_volume(&src, "whole"), volume(ELL, 1.5, 0.0, 0.0) - reflex as f64 * ring);
 }
 
 /// **A rim wider than the uprights' round is refused, saying so**: no ball of it stands on the
