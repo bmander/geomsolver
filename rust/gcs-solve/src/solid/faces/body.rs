@@ -548,21 +548,28 @@ impl BodyFaces {
     /// it, the next face's own side, and over a smooth chain of them their sides together say the
     /// chain's (`Reading::bulging`).
     pub fn carried_side_grad(&self, fi: usize, p: V) -> (f64, V) {
+        // a plane's tangent planes are itself
+        if matches!(self.loc.b.faces[fi].surface, crate::brep::geom::Surface::Plane(_)) {
+            return self.side_grad(fi, p);
+        }
+        self.carried_past(fi, p).1
+    }
+
+    /// `carried_side_grad` read past the patch whatever the surface (a plane's too), with the edge
+    /// of the face it is carried on past and the distance from the patch (model units): `None`
+    /// and the surface's own side where `p`'s foot on it lies on the face.
+    pub fn carried_past(&self, fi: usize, p: V) -> (Option<(u32, f64)>, (f64, V)) {
         let q = self.q(p);
         let f = &self.loc.b.faces[fi];
-        // a plane's tangent planes are itself
-        if matches!(f.surface, crate::brep::geom::Surface::Plane(_)) {
-            return self.side_grad(fi, p);
-        }
         let foot = f.surface.point(f.surface.inverse(q));
         if self.loc.face_place(fi, foot) != Place::Out {
-            return self.side_grad(fi, p);
+            return (None, self.side_grad(fi, p));
         }
-        let Some((_, at, _)) = self.nearest_edge(&self.edges[fi], p) else {
-            return self.side_grad(fi, p);
+        let Some((e, at, d)) = self.nearest_edge(&self.edges[fi], p) else {
+            return (None, self.side_grad(fi, p));
         };
         let n = self.outward(fi, at);
-        (dot(n, sub(q, at)) / self.mm, n)
+        (Some((e, d)), (dot(n, sub(q, at)) / self.mm, n))
     }
 
     /// **Faces whose side is convex toward a point** (#962), within them or (`beyond`) outside them:
@@ -626,7 +633,7 @@ impl BodyFaces {
     /// reads each of its faces: a plane, or a cylinder, a sphere or a cone with that side inside
     /// it; in a chain (`chained`) also a torus's patch on the outer half of its tube, that side
     /// inside the tube.
-    fn bulges(&self, fi: usize, beyond: bool, chained: bool) -> bool {
+    pub fn bulges(&self, fi: usize, beyond: bool, chained: bool) -> bool {
         // the side read within the face's surface's solid (a plane's half-space either way)
         match self.level(fi, 0.0) {
             Some(Level::Bound(Bound::Half { .. }, _)) => true,
@@ -640,32 +647,6 @@ impl BodyFaces {
             Some(Level::Bound(Bound::Torus { .. }, within)) => within != beyond && chained && self.outer_half(fi),
             _ => false,
         }
-    }
-
-    /// **A smooth chain read where it bulges, about one of its faces** (#994): of `chain`, face
-    /// `fi` and the faces going on from it across a seam, each convex toward a point within them
-    /// or (`beyond`) outside them (`bulges`) — `fi` first; empty where `fi` itself is not.  Where
-    /// a chain turns both ways (an outline with a reflex corner, its every upright rounded) no
-    /// side carried past its patch is the chain's (`bulging`: a block's side carried on past a
-    /// tab's filled corner runs through the tab), but about a face that bulges, the face and
-    /// those going on from it that bulge too are the chain there: a point whose nearest patch is
-    /// that face is within the chain by `d` only where it is within each of their sides carried
-    /// on (`carried_side_grad`) by `d` — the corner of their offsets, where an arc's offset
-    /// closes onto its axis, read as `bulging` reads a whole convex chain's.
-    pub fn bulging_about(&self, fi: usize, chain: &[usize], beyond: bool) -> Vec<usize> {
-        if !self.bulges(fi, beyond, true) {
-            return Vec::new();
-        }
-        let mut out = vec![fi];
-        for &e in &self.edges[fi] {
-            let [x, y] = *self.faces_of(e) else { continue };
-            let other = if x == fi { y } else { x };
-            if other != fi && chain.contains(&other) && !out.contains(&other) && self.seam(e)
-                && self.bulges(other, beyond, true) {
-                out.push(other);
-            }
-        }
-        out
     }
 
     /// Whether face `fi`, on a torus, lies on the outer half of its tube: every point of its
@@ -1293,7 +1274,7 @@ impl Reading {
     }
     /// The face whose patch is nearest `p` (one face is, measuring nothing).
     /// Of a name in pieces whose chains lie apart, in the chain of the named piece nearest `p`.
-    pub(crate) fn nearest(&self, p: V) -> Option<usize> {
+    fn nearest(&self, p: V) -> Option<usize> {
         if let [fi] = self.faces[..] {
             return Some(fi);
         }

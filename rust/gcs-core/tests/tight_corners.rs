@@ -56,8 +56,18 @@ fn added(big: f64, turn: f64, r: f64, flat: bool) -> (f64, f64) {
 }
 
 /// The closed form: the plate less the pocket 10 deep, plus what the floor's round or chamfer adds
-/// along each wall and round each corner.
+/// along each wall and round each corner (`treated`).
 fn tray_volume(outline: &[[f64; 2]], corners: &[f64], r: f64, flat: bool) -> f64 {
+    let (area, fill) = treated(outline, corners, r, flat);
+    120.0 * 80.0 * 20.0 - 10.0 * area + fill
+}
+
+/// The outline's area, its corners rounded, and what a round or a chamfer of its edge at a face
+/// square to its walls adds along each wall and turns through each corner (Pappus).  A reflex
+/// corner turns the other way (its turn negative): its arc's axis stands across the wall from the
+/// section, which turns about it on the far side, `big` read negative in `added`; its tangent
+/// points stand as far from the vertex as a convex one's.
+fn treated(outline: &[[f64; 2]], corners: &[f64], r: f64, flat: bool) -> (f64, f64) {
     let n = outline.len();
     let at = |k: usize| outline[k % n];
     let (mut area, mut fill) = (0.0, 0.0);
@@ -74,13 +84,14 @@ fn tray_volume(outline: &[[f64; 2]], corners: &[f64], r: f64, flat: bool) -> f64
         let (big, half) = (corners[k], (0.5 * phi).tan());
         // the corner's plan area outside its arc, and the round turned through the corner
         area -= big * big * (half - 0.5 * phi);
-        let (ring, run) = added(big, phi, r, flat);
+        let (ring, run) = added(big * phi.signum(), phi, r, flat);
         fill += ring;
         // the wall from this corner's arc to the next's
-        let length = (x1 - x0).hypot(y1 - y0) - big * half - corners[(k + 1) % n] * (0.5 * turn(k + 1)).tan();
+        let length = (x1 - x0).hypot(y1 - y0) - big * half.abs()
+            - corners[(k + 1) % n] * (0.5 * turn(k + 1)).tan().abs();
         fill += run * length;
     }
-    120.0 * 80.0 * 20.0 - 10.0 * area + fill
+    (area, fill)
 }
 
 /// Why each region of a document an entry recognises is refused, region by region.
@@ -456,4 +467,114 @@ fn an_obround_rounded_as_wide_as_it_is() {
     let why = refused(&obround(5.0001), "plate");
     assert!(why.contains("its ball, of radius 5.0001mm, rolled against `pocket.e0` comes within 4.9999mm of `pocket.e2`"),
         "{why}");
+}
+
+/// The L-shaped pocket of #994's item 2a (fixture 118): six walls, five convex corners and one
+/// reflex corner, at (0, −1).
+const L: [[f64; 2]; 6] = [[-12.0, -11.0], [12.0, -11.0], [12.0, -1.0], [0.0, -1.0], [0.0, 9.0], [-12.0, 9.0]];
+
+/// The L as wide again five times over, its corners 5.
+const L5: [[f64; 2]; 6] = [[-30.0, -20.0], [30.0, -20.0], [30.0, 0.0], [0.0, 0.0], [0.0, 20.0], [-30.0, 20.0]];
+
+/// Each `(outline, corners, r)` its tray's floor rounded `r`: built, held to its field, the closed
+/// form's volume, and a quarter ball (or a corner's turn of one) at each convex corner as tight as
+/// the ball, a torus at the rest.
+fn trays_rounded(cases: &[(&[[f64; 2]], Vec<f64>, f64)]) {
+    for (outline, corners, r) in cases {
+        let b = exported(&solved(&tray(outline, corners, &format!("round(r: {r}mm)"))), "plate");
+        close(props::volume(&b), tray_volume(outline, corners, *r, false));
+        let n = outline.len();
+        let convex = |k: usize| {
+            let ([x0, y0], [x1, y1], [x2, y2]) = (outline[(k + n - 1) % n], outline[k], outline[(k + 1) % n]);
+            (x1 - x0) * (y2 - y1) - (y1 - y0) * (x2 - x1) > 0.0
+        };
+        let balls = (0..n).filter(|&k| convex(k) && corners[k] == *r).count();
+        assert_eq!(kinds(&b).get("sphere").copied().unwrap_or(0), balls, "{outline:?} {corners:?} r {r}");
+    }
+}
+
+/// **A pocket that is no rectangle, rounded as tight as its corners** (#994, fixtures 118 and 124):
+/// its walls' chain turns both ways at a reflex corner, so it bulges toward the ball no one way and
+/// the field reads the ball's centres through the nearest face (`BodyFaces::bulging`) — where an
+/// arc's offset closes onto its axis, the walls' offsets meet there, and the nearest face turns
+/// from one wall to the other.  Each face of the chain is read besides (`conditions::faces_apart`),
+/// so the projection sees both walls and settles on the axis: the convex corners' quarter balls
+/// are built.  The issue's L, its corners 1 and its reflex corner 3, rounded 1 and a hair short at
+/// 0.9; its reflex corner 1 too, rounded 1.
+#[test]
+fn an_l_pockets_floor_rounded_to_its_corners_radius_is_built() {
+    let mut reflex3 = vec![1.0; 6];
+    reflex3[3] = 3.0;
+    trays_rounded(&[(&L, reflex3.clone(), 1.0), (&L, reflex3, 0.9), (&L, vec![1.0; 6], 1.0)]);
+}
+
+/// **The L five times the size**, every corner 5 (the reflex one too), its floor rounded 5 and
+/// 4.9.
+#[test]
+fn a_larger_l_pockets_floor_rounded_to_its_corners_radius_is_built() {
+    trays_rounded(&[(&L5, vec![5.0; 6], 5.0), (&L5, vec![5.0; 6], 4.9)]);
+}
+
+/// **Six walls at other angles, turning both ways** (fixture 124's class): one corner reflex, the
+/// others turning 56°, 90° and 117°, each rounded 5, the floor rounded 5 and 4.9.
+#[test]
+fn a_pocket_of_six_walls_turning_both_ways_is_rounded_to_its_corners() {
+    let notched: [[f64; 2]; 6] = [[-30.0, -20.0], [30.0, -20.0], [30.0, 20.0], [10.0, 20.0], [0.0, 5.0], [-30.0, 20.0]];
+    trays_rounded(&[(&notched, vec![5.0; 6], 5.0), (&notched, vec![5.0; 6], 4.9)]);
+}
+
+/// **A chevron**, five walls turning both ways, its corners 5 and its floor rounded 5; and a regular
+/// hexagon and a triangle the same, convex, each read face by face as a convex chain already.
+#[test]
+fn a_chevron_a_hexagon_and_a_triangle_are_rounded_to_their_corners() {
+    let chevron: [[f64; 2]; 5] = [[-30.0, -20.0], [30.0, -20.0], [30.0, 20.0], [0.0, 0.0], [-30.0, 20.0]];
+    let h = 26.0;
+    let hexagon = [[-30.0, 0.0], [-15.0, -h], [15.0, -h], [30.0, 0.0], [15.0, h], [-15.0, h]];
+    let triangle = [[-30.0, -20.0], [30.0, -20.0], [0.0, 25.0]];
+    trays_rounded(&[(&chevron, vec![5.0; 5], 5.0), (&hexagon, vec![5.0; 6], 5.0), (&triangle, vec![5.0; 3], 5.0)]);
+}
+
+/// A plate 120 × 80 × 10 with a boss standing 20 on it, the polygon `outline` its corners rounded
+/// `corners`, and its top rim rounded `r`.
+fn boss_of(outline: &[[f64; 2]], corners: &[f64], r: f64) -> String {
+    let n = outline.len();
+    let mut s = String::from("unit mm\nuse std\nuse std.solids (union)\nuse std.rounds (round)\nin std.top {\n\
+        a := point\nb := point\nc := point\nd := point\nfix((-60, -40)) a\nfix((60, -40)) b\nfix((60, 40)) c\n\
+        fix((-60, 40)) d\nplate_f := face(a, b, c, d, -> close)\n");
+    for (k, [x, y]) in outline.iter().enumerate() {
+        s += &format!("p{k} := point\nfix(({x}, {y})) p{k}\n");
+    }
+    let (mut chain, mut names) = (Vec::new(), Vec::new());
+    for k in 0..n {
+        chain.push(format!("(e{k} := line(p{k}, p{})) -> (k{} := round(r: {}mm))", (k + 1) % n, (k + 1) % n,
+            corners[(k + 1) % n]));
+        names.push(format!("e{k}, k{}", (k + 1) % n));
+    }
+    s += &format!("{} close\nboss_f := face({})\n}}\n", chain.join(" "), names.join(", "));
+    s + "plate := solid(std.solids.Prism(plate_f, from: -10mm, to: 0mm))\n\
+        boss := solid(std.solids.Prism(boss_f, from: 0mm, to: 20mm))\nboss union plate\n" +
+        &format!("plate.boss.near round(r: {r}mm) plate.boss\n")
+}
+
+/// **The mirrored case, an L-shaped boss's top rim** (the ball within the boss, its chain turning
+/// both ways the same): rounded to its corners' 5, a quarter ball at each convex corner, and short
+/// of it; what is taken the pocket's fill turned inside out, the same closed form.
+#[test]
+fn an_l_bosss_rim_rounded_to_its_corners_radius_is_built() {
+    for r in [4.9, 5.0] {
+        let b = exported(&solved(&boss_of(&L5, &[5.0; 6], r)), "plate");
+        let (area, taken) = treated(&L5, &[5.0; 6], r, false);
+        close(props::volume(&b), 120.0 * 80.0 * 10.0 + 20.0 * area - taken);
+    }
+}
+
+/// **Wider than the L's corners**: still refused at its first wall, saying the ball comes within
+/// the wall across of it, past the corner tighter than the ball — the chain read face by face
+/// besides changes nothing of the set.
+#[test]
+fn an_l_pockets_floor_rounded_wider_than_its_corners_is_refused_saying_why() {
+    let why = refused(&tray(&L5, &[5.0; 6], "round(r: 5.1mm)"), "plate");
+    assert!(why.contains("its ball, of radius 5.1mm, rolled against `pocket.e0` comes within 5mm of `pocket.e5`"),
+        "{why}");
+    assert!(why.contains("of radius 5mm where the round runs and tighter than the ball"), "{why}");
 }
