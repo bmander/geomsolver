@@ -101,7 +101,7 @@
 //! own contact surface along a line, or holding the ruling of a hyperboloid it is tangent to at its
 //! throat; a hyperboloid touching the cylinder of its throat's radius round a circle; a plane
 //! crossing that circle, where the two meetings it lays are tangent — each laid as an edge, or cut
-//! at the one vertex the tolerant rules make of it (`boolean`'s `touch_point`, `touch_root`,
+//! at the one vertex the tolerant rules make of it (`boolean`'s `touch_point`, `on_known`,
 //! `crossing_in_touch`). Under a screw, a level edge's sheet touches the cylinder its foot (its
 //! point nearest the axis) runs on along that point's helix, and a face along the axis at an end
 //! pose holds a ruling of the sheet of its own level edge, touching it at that foot: all three

@@ -31,7 +31,7 @@
 //!   surfaces touch there, at the third's root along their curve or the vertex already in the
 //!   stretch the two tangent meetings stay within reach of each other (`boolean`'s `touch_point`,
 //!   `crossing_in_touch`); an edge touching a surface its own face touches, at its crossing with
-//!   their touch curve (`touch_root`).
+//!   their touch curve (`boolean`'s `on_known`).
 //!
 //! Each is applied once, in that order, so the same two features are never merged by one rule in
 //! one call and parted by another in the next.
