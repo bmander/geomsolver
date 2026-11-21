@@ -192,7 +192,7 @@ evaluated; coaxial to the fold's own tolerance, 1e-7 of the region's size, a pla
 two lines a solve holds on one axis hold to its acceptance, not to the bit, #283), memoised
 against `solid::reads` (`Caches::meridian`); every evaluator reads it —
 the recipe a `revolve`
-(`recipe::region_profile`, `Profile::to_json`), the field `RevolvedRegion::of_meridian` (also
+(`recipe::region_profile`, `Profile::section`), the field `RevolvedRegion::of_meridian` (also
 `read`, so patches trim by it), facets `region::face_polys` turned by `primitive::revolve`,
 admission `Turns::Line`/`Ball` and `tool()` — its loops `Region::outer_first`, a ball's
 `Region::half_disc`. A set used in a predicate's body is applied under the statement it was
@@ -450,7 +450,31 @@ onto (`Surface::offset`'s `Offset`), held as conditions with a gradient everywhe
 (`conditions::closed_onto`): two planes through an axis, three through a centre, a plane and a
 cylinder about a torus's middle circle — the side's own turns over on the axis, and the steps
 toward it would never settle (the axis alone is exercised: no closed loop rounds with its
-centres on a sphere's centre or a torus's middle circle). `d(p, E) <= d(p, M)` with `E` on the
+centres on a sphere's centre or a torus's middle circle). **Within or outside faces whose side is
+convex toward the point, and at least a distance off them** (#962, `BodyFaces::bulging`): one
+face a plane, or a cylinder, a sphere or a cone with that side inside it — read by its whole
+surface's side, that convex solid's (a round pocket from its air, a round boss from its
+material); or a smooth chain — `F.smooth` gone on across a seam — every face of which is so and
+every edge between them a seam or a crease convex from that side, each face its own condition,
+its side carried on past its patch by its tangent planes (`BodyFaces::carried_side_grad`, the
+signed distance from the convex solid the patch and those planes bound), so the side is their
+common part and a point at least `d` inside it is at least `d` inside each — a pocket's walls
+seen from its air, a boss's from its material. A torus's patch is so in a chain where it lies on
+the outer half of its tube with that side inside the tube, both its curvatures' centres there (a
+pocket's floor filled round its plan corners, seen from the air; `BodyFaces::outer_half`), never
+alone (its whole surface's side winds round the axis): a ball standing on a run's axis beside
+those stretches was read through the nearest face and the gate refused it
+(`round_onto_round::a_boss_across_a_trays_filled_wall_is_its_closed_form`).
+Read through the nearest face alone, a corner of the offset (an arc's offset closed onto its
+axis, a pocket's corner rounded to its own radius, or past it) is where the nearest face turns,
+and the steps never settled there. **The steps stop at the first point keeping every condition
+where every condition is convex** (`Cond::convex`: a plane's side, a face's carried side held
+toward its solid): each step's linearisation then holds the whole set, so a point of it is the
+nearest; their own fixed point is not steady where a surface curves tightly about a point far
+off — a ball's centres a hair short of closing onto a corner's axis, seen from the corner, moved
+along it by the distance over the radius times any error in where the last step stood. A QP's
+active rows are chosen among every inequality, not the first ten (`project`).
+`tests/tight_corners.rs` is the gate. `d(p, E) <= d(p, M)` with `E` on the
 patches of the faces `M` is on the surfaces of is read as `d(p, E) − d(p, rest)` (`Rest`: `M`'s
 nearest point when off `E`, and where `E`'s run ends), the same points with a negative inside.
 `ends` is `max σ·side` over the faces at each end of the run (σ the side it runs on), a face

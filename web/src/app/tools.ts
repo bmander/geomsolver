@@ -241,6 +241,15 @@ export function toolClick(v: SketchView, sp: [number, number],
  *  for want of a plane to draw on.  Whether it was taken. */
 function takenElsewhere(v: SketchView, sp: [number, number],
                         mods: { alt?: boolean; shift?: boolean }): boolean {
+  // a word's slot armed: the nearest thing it takes fills it — or, where it places a point, a
+  // click on nothing does
+  if (v.tool === 'word') {
+    const pick = v.wordPick;
+    if (!pick) return true;
+    const hit = v.hitsAt(sp[0], sp[1]).find((h) => !('hidden' in h && h.hidden) && pick.accepts(h));
+    if (hit || pick.mints) pick.take(hit ?? null, sp);
+    return true;
+  }
   // a Boolean picks bodies where the eye sees them, on no plane
   if (combines(v.tool)) {
     v.combineAt(sp[0], sp[1]);

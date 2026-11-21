@@ -502,7 +502,7 @@ fn cut_within(case: &Case,tol: f64,within: impl Fn(&Brep) -> f64) {
     let volume = gcs_core::brep::props::volume(&cut);
     let within = within(&cut).max(case.known);
     assert!((volume-case.volume).abs() <= within,"{}: the cut's volume {volume}, apart from the build {}",case.what,case.volume);
-    let text = gcs_core::brep::step::write(&cut,"swept",tol).unwrap();
+    let text = gcs_core::brep::step::write(&cut,"swept",tol,gcs_core::brep::step::Fit::Exact).unwrap();
     gcs_core::brep::step_check::verify(&text,&gcs_core::brep::step_check::Solid::of(&cut))
         .unwrap_or_else(|e| panic!("{}: its STEP: {e}",case.what));
 }

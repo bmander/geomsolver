@@ -31,6 +31,8 @@ mod evaluated;
 pub(crate) mod exact;
 pub use exact::Exact;
 pub(crate) use exact::build as build_exact;
+pub mod unkept;
+pub use unkept::{unkept, Unkept};
 pub(crate) mod field_mesh;
 pub use field_mesh::{FieldMesher, FieldMeshing, FieldProgress, FieldSurface, ExactFaces, ExactEdge, FieldJob, ObjectJob, ObjectState, Supplied, Supplies, field_key, reads_key, FINENESS as FIELD_FINENESS};
 pub use field_mesh::{first_pass as field_first_pass, creases as field_creases};
@@ -64,7 +66,7 @@ pub(crate) mod profile;
 mod primitive;
 pub(crate) mod document;
 mod reads;
-pub use profile::{FacePoly,face_poly,arcs_turned_in};
+pub use profile::{FacePoly,face_poly,arcs_turned_in,face_fault,FaceFault};
 pub use profile::{ring_area, ring_centroid};
 pub use section::inside_ring;
 use profile::loop_poly;
@@ -614,6 +616,11 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
                 continue;
             }
         };
+        // a face with an edge of no length is no profile a kernel builds: refused in the face's
+        // own words, which a front end says once at the face (#962), never the kernel's loop
+        if let Some(fault) = profile::edge_of_no_length(sk, face as usize) {
+            return Err(fail(&fault.words(sk, face as usize)));
+        }
         let polys = face_polys(sk, face as usize, unit).map_err(|m| fail(&m))?;
         let poly = &polys[0];
         let reserved = s.caps();

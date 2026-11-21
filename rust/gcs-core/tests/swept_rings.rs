@@ -388,3 +388,59 @@ fn the_half_turns_stretches_are_sewn_across_its_cut_into_one_tube_a_contact_curv
         assert_eq!(uses[i].len(),2,"row edge {i} bounds {} faces",uses[i].len());
     }
 }
+
+/// **A trace of no length bounds nothing** (#942 F6): brep-bench's
+/// `tumbling-torus-near-orthogonal`, a torus of tube 0.08 tumbled a whole turn about two lines a
+/// degree from square, its tube entered where it crosses the torus at each end pose. One trace of a
+/// face's meeting with the tool there is two points on the face's rim 2.4e-13 apart, where a
+/// crossing of the face ends: the tool touching the face at a point, not crossing it. Taken for a
+/// chord, its two ends and the crossing's stood at one place on the rim and the face was refused
+/// ("two of a ring's sheet's crossings of the tool end at one place on a face's rim"); a trace all of
+/// whose points stand at one place is left out, and the tubes are entered.
+#[test]
+fn a_trace_of_no_length_bounds_nothing() {
+    use gcs_core::brep::swept::rings::{entered,fitted,posed};
+    use gcs_core::brep::trajectory::Screw;
+    let tool = gcs_core::brep::build::torus([2.02,0.,1.],[0.,0.,1.],1.,0.08).unwrap();
+    let (sl,cl) = 1f64.to_radians().sin_cos();
+    let (sa,ca) = 89f64.to_radians().sin_cos();
+    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:1.01,advance:0.});
+    let frame = Trajectory::Twist(Screw {origin:[0.,0.,0.],axis:[ca,sa*cl,sa*sl],ratio:1.,advance:0.});
+    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
+    let roll = [-std::f64::consts::PI,std::f64::consts::PI];
+    let tol = 0.08/50_000.;
+    let ring = Ring::read(&tool).unwrap();
+    let fit = fitted(&ring,&path,roll,0.1*tol).unwrap();
+    let ends = roll.map(|t| posed(&tool,&ring,&path,&fit,t).unwrap());
+    let poses = roll.map(|t| path.pose(t).unwrap());
+    let (tubes,_) = entered(&fit,&ring,[&ends[0],&ends[1]],poses,tol).unwrap_or_else(|e| panic!("its tubes not entered: {e:?}"));
+    assert_eq!(tubes.len(),2,"a tube for each contact curve");
+}
+
+/// **A double curve crossing its tube's seam bounds a tail beside it, not the whole tube** (#942
+/// F6): brep-bench's `tumbling-torus-thin`, a torus of tube 0.015 turned a quarter of a radian about
+/// one line and back a radian about another, its roll cut where a fold pair is born and where it
+/// vanishes and again at each swallowtail point. In the stretch between, one leaf's preimage of the
+/// pair's double curve crosses the seam where the tube's faces close round, read from 2.99 to 0.15
+/// of its three faces. Read so, wrapped, the curve above which lies the swallowtail's tail ran from
+/// one end of the tube to the other: all but a sliver beside its start row was taken for tail and
+/// dropped, the stretch met the next at no row, and the tube was sewn into two candidates where it
+/// is one — its trim searched three more pairs for the same refusal. Unwrapped along it, as the
+/// seams it is cut at already were, the tubes are sewn one a contact curve.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 20 s: the thin tumbling torus entered and sewn")]
+fn a_double_curve_crossing_its_tubes_seam_bounds_a_tail_beside_it_not_the_whole_tube() {
+    use gcs_core::brep::swept::closed::{RingEntered,ring_entered};
+    use gcs_core::brep::trajectory::Screw;
+    let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.015).unwrap();
+    let (sl,cl) = 45f64.to_radians().sin_cos();
+    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.25,advance:0.});
+    let frame = Trajectory::Twist(Screw {origin:[0.,0.5f64.sqrt()*cl,0.5f64.sqrt()*sl],axis:[1.,0.,0.],
+        ratio:1.,advance:0.});
+    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
+    let roll = [-75f64.to_radians(),75f64.to_radians()];
+    let RingEntered {sheets,cut,..} = ring_entered(&tool,&path,roll,0.015/50_000.)
+        .unwrap_or_else(|e| panic!("not entered: {e:?}"));
+    assert!(cut,"the roll is cut where the contact changes shape");
+    assert_eq!(sheets.len(),2,"one tube a contact curve: {:?}",sheets.iter().map(|s| s.faces.len()).collect::<Vec<_>>());
+}

@@ -23,7 +23,6 @@
 //! it.
 use crate::brep::geom::Carry;
 use crate::brep::recipe::Writer;
-use crate::json::{object, Json};
 use crate::model::{RegionShape, Sketch, SolidDef};
 use crate::motion::Screw;
 use crate::plane::Basis;
@@ -151,14 +150,13 @@ impl Carried {
 
     /// The recipe's `carried` node (`brep::build::carried`): the face's profile, the motion's pose
     /// where the interval begins, and its carry from there to where it ends.
-    pub fn node(&self, sk: &Sketch, w: &Writer) -> Result<Json, String> {
+    pub fn node(&self, sk: &Sketch, w: &Writer) -> Result<crate::brep::recipe::Node, String> {
         let start = crate::motion::Family::read(sk, self.motion as usize)?.at(self.roll[0])?;
-        Ok(object([
-            ("kind", "carried".into()),
-            ("profile", super::cad::profile(sk, self.face as usize, w)?),
-            ("start", w.matrix(super::cad::placement_matrix(start, w.scale))),
-            ("carry", super::cad::carry_json(self.carry(), w)),
-        ]))
+        Ok(crate::brep::recipe::Node::Carried {
+            profile: super::cad::profile(sk, self.face as usize, w)?,
+            start: w.matrix(super::cad::placement_matrix(start, w.scale)),
+            carry: super::cad::carry(self.carry(), w),
+        })
     }
 
     /// The motion's carry over the interval, in model units: a screw's turn and step, a turn's, or

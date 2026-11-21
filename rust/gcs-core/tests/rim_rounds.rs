@@ -2,7 +2,9 @@
 //! rounded or chamfered round the corners' arcs as one tangent run — the faces a round makes
 //! listed to a block by the names the body's boundary has (`round`, `flat`), which faces meet read
 //! in the layer the round that asks stands in, and the kernel's meeting of two rounds tangent to
-//! one face ending at the point where both touch it.  Each volume is the closed form's to 1e-9.
+//! one face ending at the point where both touch it; and a plate's top rim rounded past a reflex
+//! corner a hair off tangent, its run cut off by the cylinder it leaves (#961 item 2).  Each
+//! volume is the closed form's to 1e-9.
 use gcs_core::brep::props;
 use gcs_core::program::Code;
 use std::f64::consts::PI;
@@ -152,7 +154,7 @@ fn a_rounds_node_says_its_body_and_its_label() {
                              box.near round(r: 1mm) box.cd\n"));
     let body = crate::common::ent(&e, "box").i();
     let recipe = gcs_core::solid::cad::recipe(&e.sketch, body).unwrap();
-    let said: Vec<String> = gcs_core::brep::recipe::Recipe::read(&recipe).unwrap().nodes.iter()
+    let said: Vec<String> = recipe.nodes.iter()
         .filter(|n| n.said.is_some()).map(|n| n.called()).collect();
     assert_eq!(said, ["`box`'s round or chamfer `vert.taken`", "`box`'s round or chamfer `taken`"]);
 }
@@ -226,4 +228,201 @@ fn a_rim_over_a_plate_of_pieces_is_the_rim_over_one_top() {
     let (crescent, whole) = (built("core", "ear"), built("ear", "core"));
     close(props::volume(&crescent), props::volume(&whole));
     assert_eq!(kinds(&crescent), kinds(&whole));
+}
+
+/// The stepped plate's outline (#961 item 2), counter-clockwise on the top plane: its thirteen
+/// vertices, and each side's arc — its centre and whether it turns clockwise — or none for a line.
+/// The side `k3` leaves the lobe arc `k2` (radius 12 about (-12, 0)) at `v3`, `turn` round from the
+/// lobe's rightmost point, so the line turns `turn` outward of the circle there: a reflex corner a
+/// hair off tangent, the line crossing the circle again `2 · 12 sin turn` back along it.
+type Outline = ([[f64; 2]; 13], [Option<([f64; 2], bool)>; 13]);
+
+fn stepped(turn: f64) -> Outline {
+    let v = [[-60.0, -4.25], [-26.26315182559591221, -4.25], [-22.06810717100887942, -6.52941176470588225],
+             [12.0 * turn.cos() - 12.0, 12.0 * turn.sin()], [0.0, 13.75], [8.0, 21.75], [30.0, 21.75],
+             [40.0, 31.75], [40.0, 40.0], [30.0, 50.0], [-60.0, 50.0], [-70.0, 40.0], [-70.0, 5.75]];
+    let arc = |c: [f64; 2], cw: bool| Some((c, cw));
+    let sides = [None, arc([-26.26315182559591221, -9.25], true), arc([-12.0, 0.0], false), None,
+                 arc([8.0, 13.75], true), None, arc([30.0, 31.75], false), None, arc([30.0, 40.0], false),
+                 None, arc([-60.0, 40.0], false), None, arc([-60.0, 5.75], false)];
+    (v, sides)
+}
+
+/// The stepped plate drawn, extruded 0 to 10, its top rim rounded `r`; mirrored across the y axis
+/// where asked (its arcs then turning the other way).
+fn stepped_plate(turn: f64, r: f64, mirrored: bool) -> String {
+    let (v, sides) = stepped(turn);
+    let x = |x: f64| if mirrored { 0.0 - x } else { x };
+    let mut s = String::from("unit mm\nuse std\nuse std.solids\nuse std.rounds (round)\nin std.top {\n");
+    for (i, p) in v.iter().enumerate() {
+        s += &format!("  v{i} := point\n  fix(({:?}, {:?})) v{i}\n", x(p[0]), p[1]);
+    }
+    for (k, side) in sides.iter().enumerate() {
+        let (a, b) = (k, (k + 1) % 13);
+        s += &match side {
+            None => format!("  k{k} := line(v{a}, v{b})\n"),
+            Some((c, cw)) => format!("  c{k} := point hint(({:?}, {:?}))\n  fix(y == {:?}mm) c{k}\n  \
+                                      k{k} := arc(center: c{k}, start: v{a}, end: v{b}{})\n",
+                                     x(c[0]), c[1], c[1], if *cw != mirrored { ", sense: cw" } else { "" }),
+        };
+    }
+    let all: Vec<String> = (0..13).map(|k| format!("k{k}")).collect();
+    s + &format!("  outline := face({})\n}}\nplate := solid(std.solids.Prism(outline, from: 0mm, to: 10mm))\n\
+                  plate.near round(r: {r}mm) plate\n", all.join(", "))
+}
+
+/// `∫ f` over `[a, b]` by Gauss–Legendre's 16 nodes on each of 48 panels halving toward `a`: at a
+/// reflex corner `turn` off tangent the crossing a section's boundary turns at is analytic in the
+/// round's angle but for a branch point some `turn` off `a`, which one rule over the whole span
+/// converges to only slowly.
+fn legendre(a: f64, b: f64, f: impl Fn(f64) -> f64) -> f64 {
+    let nodes = crate::common::rounds::gauss_legendre(16);
+    (0..48).map(|j| {
+        let (lo, hi) = (a + (b - a) * 0.5f64.powi(j + 1), a + (b - a) * 0.5f64.powi(j));
+        let (m, h) = (0.5 * (lo + hi), 0.5 * (hi - lo));
+        nodes.iter().map(|&(x, w)| w * h * f(m + h * x)).sum::<f64>()
+    }).sum()
+}
+
+/// Where the line through `p` along the unit `u` leaves the circle of radius `big` about `c`, `p`
+/// within it: how far along.
+fn leaving(p: [f64; 2], u: [f64; 2], c: [f64; 2], big: f64) -> f64 {
+    let f = [p[0] - c[0], p[1] - c[1]];
+    let b = f[0] * u[0] + f[1] * u[1];
+    -b + (b * b - (f[0] * f[0] + f[1] * f[1] - big * big)).sqrt()
+}
+
+/// What the stepped plate keeps with its top rim rounded `r`, in closed form: at the height where
+/// the ball's arc stands `w` in from the side, the plate's section less every run's band `w` wide
+/// (its area by Green's theorem over its lines and arcs, `½ ∮ x dy − y dx`), integrated up the
+/// round's height in the angle about its axis, where the section is analytic, by Gauss–Legendre.
+/// Every side but `k3` meets the next tangent, so its band ends square where the next one's
+/// begins (a line's band to its offset, an arc's ring to its offset arc, `R − w` turning left and
+/// `R + w` turning right). At the reflex corner `v3` each of `std.rounds`' two `Run`s is cut off
+/// by the face it ends on: `k2`'s ring ends square at `v3`, and `k3`'s band is kept outside `k2`'s
+/// cylinder, so the section's boundary runs from the ring's end out to `v3`, on round the lobe's
+/// circle to where `k3`'s offset line leaves it, and up that line — what lies within the circle
+/// run on past `v3` and within `w` of `k3` is taken by neither run, and stands.
+fn stepped_kept(turn: f64, r: f64) -> f64 {
+    let (v, sides) = stepped(turn);
+    let seg = |a: [f64; 2], b: [f64; 2]| 0.5 * (a[0] * b[1] - a[1] * b[0]);
+    let arc = |c: [f64; 2], rho: f64, t0: f64, sweep: f64| {
+        let t1 = t0 + sweep;
+        0.5 * (rho * rho * sweep + rho * c[0] * (t1.sin() - t0.sin()) - rho * c[1] * (t1.cos() - t0.cos()))
+    };
+    let angle = |c: [f64; 2], p: [f64; 2]| (p[1] - c[1]).atan2(p[0] - c[0]);
+    let section = |w: f64| (0..13).map(|k| {
+        let (a, b) = (v[k], v[(k + 1) % 13]);
+        match sides[k] {
+            None => {
+                let l = (b[0] - a[0]).hypot(b[1] - a[1]);
+                let (u, n) = ([(b[0] - a[0]) / l, (b[1] - a[1]) / l], [(a[1] - b[1]) / l, (b[0] - a[0]) / l]);
+                let (a2, b2) = ([a[0] + w * n[0], a[1] + w * n[1]], [b[0] + w * n[0], b[1] + w * n[1]]);
+                if k != 3 { return seg(a2, b2) }
+                // from `v3` on round the lobe to where `k3`'s offset line leaves it
+                let c = [-12.0, 0.0];
+                let t = leaving(a2, u, c, 12.0);
+                let x = [a2[0] + t * u[0], a2[1] + t * u[1]];
+                arc(c, 12.0, angle(c, a), angle(c, x) - angle(c, a)) + seg(x, b2)
+            }
+            Some((c, cw)) => {
+                let big = (a[0] - c[0]).hypot(a[1] - c[1]);
+                let (rho, t0) = (if cw { big + w } else { big - w }, angle(c, a));
+                let sweep = (angle(c, b) - t0).rem_euclid(2.0 * PI);
+                let sweep = if cw { sweep - 2.0 * PI } else { sweep };
+                let end = [c[0] + rho * (t0 + sweep).cos(), c[1] + rho * (t0 + sweep).sin()];
+                // the lobe's ring ends square at `v3`: out along its radius to it
+                arc(c, rho, t0, sweep) + if k == 2 { seg(end, b) } else { 0.0 }
+            }
+        }
+    }).sum::<f64>();
+    let whole = section(0.0);
+    10.0 * whole - legendre(0.0, PI / 2.0, |t| (whole - section(r * (1.0 - t.cos()))) * r * t.cos())
+}
+
+/// **A rim rounded past a reflex corner a hair off tangent** (#961 item 2): the stepped plate's
+/// top rim rounded 1 and 2, `k3` leaving the lobe `1e-3` off tangent, built and mirrored to the
+/// closed form. `k3`'s run is cut off by the lobe's cylinder (`build::kept_by_solid`), the run's
+/// round face meeting the cylinder at `1e-3` rad where it reaches the run's end at `v3` (and again
+/// 24 µm back past it, off the face). The run's upright edge at `v3` lies in the cylinder, and was
+/// read as an edge the round face and the cylinder touch along, though the face only reaches its
+/// foot: the foot's seed was dropped as a touch along it, and the march, shallow there, ended
+/// beside it 5 µm short of the foot, on no edge — refused, the arrangement's shells kept and
+/// dropped on either side of the cylinder. It was built until the search for unseen meetings left
+/// alone what lies off either face (`fe9ae66`): before, a near-contact on the cylinder past the
+/// run's end, off its round face, was refused, which sent the pair to be read from its ridges, and
+/// that carried the meeting through the foot. Turned `3e-3` or `1e-2`, or rounded 3 (which reaches
+/// `v4`'s concave arc), the plate is refused before this Boolean, as it was before `fe9ae66`:
+/// those are not held here.
+#[test]
+fn a_reflex_corner_off_tangent_rounds_its_rim() {
+    for r in [1.0, 2.0] {
+        let want = stepped_kept(1e-3, r);
+        for mirrored in [false, true] {
+            let e = solved(&stepped_plate(1e-3, r, mirrored));
+            assert!(e.diags.is_empty(), "r {r}, mirrored {mirrored}: {:?}", e.diags);
+            close(props::volume(&exported(&e, "plate")), want);
+        }
+    }
+    // the closed form is the volume `694cb72` built the plate rounded 2 to
+    assert!((stepped_kept(1e-3, 2.0) - 49556.781577).abs() < 1e-6);
+}
+
+/// **An edge of one operand lying in the other's face is a meeting of the faces it lies in**
+/// (`boolean`'s stretches, #961 item 2): the stepped plate's run along `k3` — its round's section
+/// swept from `v3` to `v4` — cut off by the lobe's cylinder it leaves `turn` off tangent, what
+/// `a_reflex_corner_off_tangent_rounds_its_rim` asks of the kernel. The run's upright edge at `v3`
+/// lies in the cylinder; its round face reaches that edge only at its foot, where the two cross at
+/// `turn`, and their meeting is traced to that foot, not ended where the march comes within the
+/// spread of a touch along the edge. Kept outside the cylinder: the run less what the lobe's disc
+/// holds of it, each line of the run's section along `k3` inside the disc to where it leaves it
+/// (`leaving`), integrated over the section — to within what the Boolean's tolerance moves its
+/// boundary by, its area times the tolerance (the piece reads some 2e-9 of itself low, whatever
+/// the turn). Turned `1e-3` to `1e-2`, rounded 1 to 3, mirrored. (Turned `3e-4`, its two crossings
+/// 7 µm apart, the cylinder's pieces are refused as not closing, as the plate so turned and
+/// rounded 1 was before #961: not held here.)
+#[test]
+fn a_run_cut_off_by_the_cylinder_it_leaves_off_tangent_is_met_to_its_corner() {
+    use gcs_core::brep::build::{kept_by_solid, prism, Profile, ProfileEdge};
+    use gcs_core::brep::geom::{tolerance, Frame, Surface};
+    for (turn, r) in [1e-3, 3e-3, 1e-2].into_iter().flat_map(|t| [(t, 1.0), (t, 2.0), (t, 3.0)]) {
+        let (v, _) = stepped(turn);
+        let length = (v[4][0] - v[3][0]).hypot(v[4][1] - v[3][1]);
+        let u = [(v[4][0] - v[3][0]) / length, (v[4][1] - v[3][1]) / length];
+        // into the plate, left of `k3`
+        let n = [-u[1], u[0]];
+        let (c, big) = ([-12.0, 0.0], 12.0);
+        // the section's line `s` in from the side stands `r (1 − sin φ)` high, `s = r (1 − cos φ)`
+        let taken = legendre(0.0, PI / 2.0, |phi| {
+            let s = r * (1.0 - phi.cos());
+            r * (1.0 - phi.sin()) * leaving([v[3][0] + s * n[0], v[3][1] + s * n[1]], u, c, big) * r * phi.sin()
+        });
+        let want = square_run(r) * length - taken;
+        for mirrored in [false, true] {
+            let m = |p: [f64; 3]| if mirrored { [-p[0], p[1], p[2]] } else { p };
+            let (u3, n3) = (m([u[0], u[1], 0.0]), m([n[0], n[1], 0.0]));
+            let corner = m([v[3][0], v[3][1], 10.0]);
+            let at = |s: f64, d: f64| [corner[0] + s * n3[0], corner[1] + s * n3[1], 10.0 - d];
+            let frame = Frame::new(at(r, r), u3, [-n3[0], -n3[1], 0.0]);
+            let angle = |p: [f64; 3]| {
+                let d = [p[0] - frame.o[0], p[1] - frame.o[1], p[2] - frame.o[2]];
+                let along = |a: [f64; 3]| d[0] * a[0] + d[1] * a[1] + d[2] * a[2];
+                along(frame.y).atan2(along(frame.x))
+            };
+            let (wall, top) = (angle(at(0.0, r)), angle(at(r, 0.0)));
+            let edges = vec![ProfileEdge::Line { a: corner, b: at(0.0, r) },
+                             ProfileEdge::Arc { frame, r, span: Some([wall.min(top), wall.max(top)]) },
+                             ProfileEdge::Line { a: at(r, 0.0), b: corner }];
+            let section = Profile { origin: corner, normal: u3, loops: vec![edges], names: Vec::new() };
+            let run = prism(&section, 0.0, length).unwrap();
+            close(props::volume(&run), square_run(r) * length);
+            let lobe = Surface::Cylinder(Frame::new(m([c[0], c[1], 0.0]), [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]), big);
+            let kept = kept_by_solid(&run, &lobe, false, 0.0)
+                .unwrap_or_else(|why| panic!("turn {turn}, r {r}, mirrored {mirrored}: {why}"));
+            let tol = tolerance(kept.size());
+            kept.check(tol).unwrap();
+            let (got, area) = (props::volume(&kept), kept.faces.iter().map(|f| props::area(&kept, f)).sum::<f64>());
+            assert!((got - want).abs() <= tol * area, "turn {turn}, r {r}, mirrored {mirrored}: {got} against {want}");
+        }
+    }
 }

@@ -135,8 +135,12 @@ impl<'a> Causes<'a> {
         // on that one though no operand of it is — refused in those words, where the kernel met
         // it only building the body's faces, and only where it is not built alone either (a
         // swept body's operand whose field is unread is built, and the sweep is the fault)
+        // — never on itself: a stock split off its body (`as_body`) goes by the body's name, which
+        // picks the body, so its own `` `part`: … `` led to the body built on it, and with the
+        // body's rounds built on that, nothing was a root and every piece said it again (#962)
         let led: Vec<(usize, usize, String)> = refused.iter().filter_map(|(&i, message)| {
-            let (j, from) = chained_cause(sk, message).filter(|&(j, _)| j != i)?;
+            let (j, from) = chained_cause(sk, message)
+                .filter(|&(j, _)| j != i && sk.solids[j].name != sk.solids[i].name)?;
             let unbuilt = refused.contains_key(&j) || sk.exact_preimage(j).is_err();
             unbuilt.then(|| (i, j, message[from..].to_string()))
         }).collect();
@@ -196,30 +200,97 @@ impl<'a> Causes<'a> {
 #[derive(Default)]
 struct Unbuilt {
     stmt: Option<StmtId>,
-    roots: BTreeSet<usize>,
+    roots: BTreeSet<Root>,
     via: BTreeSet<String>,
 }
 
+/// **What a statement's solids follow from** (#572, #962): a solid refused in its own words, or a
+/// face of the drawing no solid can be made of (`solid::face_fault`) — an operand's fault, said
+/// once at the face however many solids are swept from it, each of which says only that it is
+/// not built.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Root {
+    Solid(usize),
+    Face(usize),
+}
+
+/// **A face's fault in the document's words** (#962): the face, the edge of no length by its name
+/// and its ends' (a line's two points, which coincide or how far apart they are), or why its loops
+/// bound no region — and that no solid can be made of it.
+fn face_said(sk: &Sketch, map: &SourceMap, fi: usize, fault: &crate::solid::FaceFault) -> String {
+    use crate::solid::FaceFault;
+    use crate::model::EntKind;
+    let called = |e: EntRef| super::rings::called(map, e);
+    let face = called(EntRef::new(EntKind::Face, fi));
+    let length = |x: f64| crate::units::Dim::LENGTH.number_text(x, sk.units);
+    match fault {
+        FaceFault::NoLength { edge, length: long, .. } => {
+            let point = |p: u32| called(EntRef::new(EntKind::Point, p as usize));
+            let how = match edge.kind {
+                EntKind::Line => {
+                    let l = &sk.lines[edge.i()];
+                    let apart = if *long == 0.0 { "which coincide".to_string() }
+                                else { format!("which are {} apart", length(*long)) };
+                    format!("it runs from {} to {}, {apart}", point(l.p1), point(l.p2))
+                }
+                EntKind::Arc => {
+                    let a = &sk.arcs[edge.i()];
+                    format!("it turns from {} to {} about {}, {} long", point(a.start),
+                            point(a.end), point(a.center), length(*long))
+                }
+                _ => format!("it is {} long", length(*long)),
+            };
+            format!("{face}'s edge {} has no length: {how}, so no solid can be made of {face}",
+                    called(*edge))
+        }
+        FaceFault::Outline(why) => format!("no solid can be made of {face}: {why}"),
+    }
+}
+
 /// The refused roots in their own words, then the note that each statement whose solids follow
-/// from one is not built (N080), then the faces a body bears on that it does not have.
+/// from one is not built (N080), then the faces a body bears on that it does not have.  A root
+/// swept from a face that has a fault of its own (`solid::face_fault`) follows from the face: the
+/// fault is said once at the face, and the solid's statement says it is not built.
 pub(super) fn solids(sk: &Sketch, map: &SourceMap, place: &Placing) -> Vec<Diag> {
     let causes = Causes::new(sk);
-    let mut roots: BTreeMap<usize, Diag> = BTreeMap::new();
+    // each root swept from a face with a fault (a prism, a prism through everything, a
+    // revolution: `Solid::face`), by the face (#962), each face's fault read once
+    let mut faults: BTreeMap<usize, Option<crate::solid::FaceFault>> = BTreeMap::new();
+    let faulted: BTreeMap<usize, (usize, crate::solid::FaceFault)> = causes.root.iter()
+        .filter_map(|&i| {
+            let f = sk.solids[i].face()? as usize;
+            let fault = faults.entry(f).or_insert_with(|| crate::solid::face_fault(sk, f));
+            Some((i, (f, fault.clone()?)))
+        })
+        .collect();
+    let key = |i: usize| faulted.get(&i).map_or(Root::Solid(i), |&(f, _)| Root::Face(f));
+    let mut roots: BTreeMap<Root, Diag> = BTreeMap::new();
     // each statement not built, by where it is said
     let mut unbuilt: BTreeMap<Span, Unbuilt> = BTreeMap::new();
     let mut note = |(span, stmt): (Span, Option<StmtId>), from: &[usize], under: Vec<usize>| {
         let u = unbuilt.entry(span).or_insert_with(|| Unbuilt { stmt, ..Unbuilt::default() });
         u.via.extend(causes.via(from, &under));
-        u.roots.extend(under);
+        u.roots.extend(under.into_iter().map(key));
     };
     for (&i, message) in &causes.refused {
         let at = place.site(map.site_of(EntRef::solid(i)));
         let under = if causes.root.contains(&i) { Vec::new() } else { causes.roots(&causes.on[i]) };
-        // a solid with no root below it (refused solids built on one another all round) is said
-        // in its own words as well
-        if under.is_empty() {
-            // said as the document reads it: a key a kernel or a shared name put in it, its path
-            roots.insert(i, Diag::new(Code::E080, at.0, at.1, crate::vocab::public_words(message)));
+        if let Some((f, fault)) = faulted.get(&i) {
+            // the face's fault, at the face, once; the solid swept from it is not built
+            let face = place.site(map.site_of(EntRef::new(crate::model::EntKind::Face, *f)));
+            let (span, stmt) = if face.1.is_some() { face } else { at };
+            roots.entry(Root::Face(*f)).or_insert_with(||
+                Diag::new(Code::E080, span, stmt, face_said(sk, map, *f, fault)));
+            // (a stock split off its body has no statement of its own: the body's says it)
+            if at.1.is_some() && span != at.0 {
+                note(at, &[], vec![i]);
+            }
+        } else if under.is_empty() {
+            // a solid with no root below it (refused solids built on one another all round) is
+            // said in its own words as well, as the document reads it: a key a kernel or a shared
+            // name put in it, its path
+            roots.insert(Root::Solid(i),
+                         Diag::new(Code::E080, at.0, at.1, crate::vocab::public_words(message)));
         } else {
             note(at, &causes.on[i], under);
         }
@@ -236,14 +307,20 @@ pub(super) fn solids(sk: &Sketch, map: &SourceMap, place: &Placing) -> Vec<Diag>
         }
     }
     // a root is said as the document shows it before a note points at it
-    let (ids, mut out): (Vec<usize>, Vec<Diag>) = roots.into_iter().unzip();
+    let (ids, mut out): (Vec<Root>, Vec<Diag>) = roots.into_iter().unzip();
+    // a statement a root is said at says nothing more (a body and the stock split off it, #962)
+    let at_root: BTreeSet<Span> = out.iter().map(|d| d.span).collect();
     crate::modules::localize(place.p, &mut out);
-    let said: BTreeMap<usize, Span> = ids.into_iter().zip(out.iter().map(|d| d.span)).collect();
-    for (span, u) in unbuilt {
+    let said: BTreeMap<Root, Span> = ids.into_iter().zip(out.iter().map(|d| d.span)).collect();
+    for (span, u) in unbuilt.into_iter().filter(|(span, _)| !at_root.contains(span)) {
         let named: Vec<String> = u.roots.iter().map(|r| {
             let (line, col) = crate::syntax::line_col(place.p.text(), said[r].lo);
             // its path, as the document reads it: where it is said tells it from a namesake
-            format!("`{}` ({line}:{col})", crate::vocab::public_path(&sk.solids[*r].name))
+            let name = match *r {
+                Root::Solid(i) => crate::vocab::public_path(&sk.solids[i].name),
+                Root::Face(f) => crate::vocab::public_path(&sk.faces[f].name),
+            };
+            format!("`{name}` ({line}:{col})")
         }).collect();
         let named = match named.split_last() {
             Some((last, [])) => last.clone(),

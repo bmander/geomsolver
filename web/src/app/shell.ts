@@ -16,11 +16,7 @@ export const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 export const boxCanvas = document.getElementById('box') as HTMLCanvasElement;
 /** The plane the next thing is drawn on, chosen in the viewport's upper right. */
 export const planeSelect = document.getElementById('plane-select') as HTMLSelectElement;
-export const menubar = document.getElementById('menubar') as HTMLElement;
-export const aboutBadge = document.getElementById('about') as HTMLButtonElement;
 export const aboutDag = document.getElementById('about-dag') as HTMLTemplateElement;
-export const barTools = document.getElementById('bar-tools') as HTMLElement;
-export const barConstraints = document.getElementById('bar-constraints') as HTMLElement;
 export const cpanel = document.getElementById('cpanel') as HTMLElement;
 export const cpanelTitle = document.getElementById('cpanel-title') as HTMLElement;
 export const clist = document.getElementById('clist') as HTMLElement;

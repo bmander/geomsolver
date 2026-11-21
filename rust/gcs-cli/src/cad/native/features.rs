@@ -22,7 +22,6 @@ impl BoundaryEdge {
 pub(crate) struct EdgePoint { pub position: [f64;3],pub normals: [[f64;3];2],pub dihedral: f64 }
 
 impl Session {
-    pub(crate) fn construct_recipe(&self,recipe: &Json) -> Result<c_int,String> { self.construct(recipe) }
 
     pub(crate) fn boundary(&self,solid: c_int) -> Result<Vec<BoundaryEdge>,String> {
         let count = self.result(unsafe { solvent_cad_boundary(self.0,solid,std::ptr::null_mut(),0) })?;

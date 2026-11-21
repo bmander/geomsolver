@@ -443,7 +443,7 @@ fn run(dir: &Path, program: &str, args: &[&str]) {
 
 /// The case's solid meshed by gmsh from its STEP file.
 fn mesh(case: &Case, x: &gcs_core::solid::Exact, dir: &Path) -> Mesh {
-    let step = gcs_core::brep::step::write(&x.brep, case.name, STEP_TOL).expect("STEP");
+    let step = gcs_core::brep::step::write(&x.brep, case.name, STEP_TOL, gcs_core::brep::step::Fit::Exact).expect("STEP");
     std::fs::write(dir.join("solid.step"), step).unwrap();
     let (size, curvature) = case.mesh;
     let plane = case.reading == Reading::Plane;

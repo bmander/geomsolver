@@ -28,7 +28,8 @@
 //! (`Exact`): the foot on each face where it lies within the face, else the nearest point of an
 //! edge, signed by the B-rep's own classification of the point. A body the kernel refuses by name
 //! falls back to its turned faces; a face family is not metered, its material field refusing it. That B-rep holds a stretch of a
-//! traced or formula curve as the B-spline the recipe fits within `cad::FIT_MM` of it; the field
+//! traced or formula curve as the B-spline the recipe fits within `cad::HELD_MM` of it (where its
+//! fit stops closing in, within `cad::FIT_MM`); the field
 //! route reads the curve itself (as chords within `CHORD_SLACK` of the profile's reach).
 //!
 //! What this does not claim: a generated face is not trimmed by the other cuts (another index,

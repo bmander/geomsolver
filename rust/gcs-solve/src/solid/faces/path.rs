@@ -96,10 +96,12 @@ pub fn face_paths(sk: &Sketch, i: usize) -> Vec<FacePath> {
                 let reads = super::terms_read_faces(terms);
                 // a round or a chamfer the table builds leaves the face its construction names
                 // (`round`, `flat`), whatever the set that says it is called (#879): a block
-                // lists the faces the body has, and a body is read off its exact boundary
+                // lists the faces the body has, and a body is read off its exact boundary — a
+                // fill's caps where it ends on a face too (#962)
                 if let Some(face) = reads.then(|| crate::solid::lowering::face_name(sk, terms))
                     .flatten() {
-                    return vec![face.to_string()];
+                    return std::iter::once(face).chain(crate::solid::lowering::CAPS)
+                        .map(str::to_string).collect();
                 }
                 let mut v: Vec<String> = terms.iter().map(|t| t.name.clone())
                     .filter(|n| !(reads && n.is_empty())).collect();
@@ -139,6 +141,47 @@ pub fn face_paths(sk: &Sketch, i: usize) -> Vec<FacePath> {
     out
 }
 
+/// **The body faces of two solids are both faces of** (#961): the least body (fewest primitives)
+/// whose operands hold the primitives faces `a` and `b` are of (either solid itself, where it is a
+/// body holding the other) — each a solid and its face's name
+/// from it (`far`, `boss.near`) — and the names it gives them: `part`, `wall.far`, `plate.near`
+/// where `wall` and `plate` are unioned into `part`.  An edge, a corner or the material's angle is
+/// between two faces of one body, so a refusal of two solids' faces names it.  `None` where no
+/// body holds both, or names either otherwise.
+pub fn one_body_of(sk: &Sketch, a: (usize, &str), b: (usize, &str))
+    -> Option<(usize, [String; 2])> {
+    use crate::solid::document::operand_primitives;
+    let segments = |t: &str| -> Vec<String> {
+        t.split('.').filter(|s| !s.is_empty()).map(str::to_string).collect()
+    };
+    // the primitive a face is of, by its key, and the face's name past its route
+    let of = |(solid, face): (usize, &str)| -> Option<(String, Vec<String>)> {
+        let face = segments(face);
+        operand_primitives(sk, solid).into_iter()
+            .map(|(key, (route, _))| (key, segments(&route)))
+            .filter(|(_, route)| route.len() < face.len() && face.starts_with(route))
+            .max_by_key(|(_, route)| route.len())
+            .map(|(key, route)| (key, face[route.len()..].to_vec()))
+    };
+    let (pa, pb) = (of(a)?, of(b)?);
+    (0..sk.solids.len())
+        .filter(|&i| matches!(sk.solids[i].def, SolidDef::Body { .. }))
+        .filter_map(|i| {
+            let prims = operand_primitives(sk, i);
+            let name = |(key, rest): &(String, Vec<String>)| -> Option<String> {
+                let (route, _) = prims.get(key)?;
+                Some(segments(route).into_iter().chain(rest.iter().cloned()).collect::<Vec<_>>()
+                    .join("."))
+            };
+            let names = [name(&pa)?, name(&pb)?];
+            let listed = face_paths(sk, i);
+            names.iter().all(|n| listed.iter().any(|f| &f.text() == n))
+                .then_some((prims.len(), i, names))
+        })
+        .min_by_key(|(n, i, _)| (*n, *i))
+        .map(|(_, i, names)| (i, names))
+}
+
 /// Whether segment `written` of a face path names segment `mine` of a face's name: the same, or
 /// `mine` a copy of it (`drill` names `drill[1]`; `drill[1]` names only itself).
 pub fn same_step(written: &str, mine: &str) -> bool {
@@ -151,6 +194,18 @@ pub fn same_step(written: &str, mine: &str) -> bool {
 /// own name, `layers`).
 fn own_readers(sk: &Sketch, i: usize) -> std::collections::BTreeSet<usize> {
     super::layer_bodies(sk, i).into_iter().flat_map(|b| super::readers_of(sk, b)).collect()
+}
+
+/// How many statements' rounds or chamfers leave faces body `body` names by `path` (#962): the
+/// regions among its operands routed there, counted by the use that made each.  More than one
+/// where several statements written bare leave faces under one name.
+pub(crate) fn uses_naming(sk: &Sketch, body: usize, path: &[String]) -> usize {
+    let Some((_, route)) = path.split_last() else { return 0 };
+    let route = route.join(".");
+    let uses: std::collections::BTreeSet<&str> = crate::solid::document::operand_primitives(sk, body).into_values()
+        .filter(|(r, p)| *r == route && matches!(sk.solids[*p as usize].def, SolidDef::Region { .. }))
+        .map(|(_, p)| use_key(&sk.solids[p as usize].name)).collect();
+    uses.len()
 }
 
 /// The statement a solid was made by, as a key: its name up to the first segment a statement's

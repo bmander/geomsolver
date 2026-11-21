@@ -209,7 +209,10 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   (`a_picture_missing_a_solid_fails_naming_it`).  An object drawn from its field or its facet
   term, not its exact build — a round its gate refuses, a shell whose cavity no construction
   builds — is in the picture and said against it as not built, in the core's words
-  (`EvaluatedSolid::unbuilt`, `report::unbuilt_text`, solids.md; #762), the exit unchanged; a
+  (`EvaluatedSolid::unbuilt`, `report::unbuilt_text`, solids.md; #762), the exit unchanged —
+  said before the solid is drawn where its field is to be meshed for it
+  (`Sketch::field_meshed_ahead`, #961), so a picture waiting on that refinement has said why
+  first (`a_picture_of_a_refused_round_says_so_first_and_is_drawn_in_bounded_time`); a
   `--gltf` and a faceted `--stl` say the same of their files
   (`a_picture_of_a_solid_not_built_says_so`).  A sliver an object's exact build holds — a face
   thinner than the export's tolerance somewhere, an edge shorter (`brep::export::slivers_drawn`,
@@ -281,11 +284,11 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   `selected`, and `selected` is a *setter* that lets the picture go, so paste, a rubber band and the
   constraint list inherit the rule.  Pick precedence is stated once, in `gesture::whatIsAt`.
   `SketchView` keeps a one-line delegator for each verb the shell calls.  The *shell*: `shell.ts`,
-  `commands` (constraints bar), `dialogs`, `lists`, `dimbox` (a dimension's number), `program` over
+  `words` (the Words menu and its palette: every word and command, **no toolbars**), `wordbox`
+  (the word in hand, written as its statement), `commands` (what the constraint commands read
+  off the selection), `dialogs`, `lists`, `dimbox` (a dimension's number), `program` over
   `editor` (knows nothing of Solvent), `ui`, `main.ts` (only wiring). `index.html` is structure and
-  `app.css` the whole of the styling.  **A phone**: a bar's buttons keep their size, and where they do not fit
-  fold under one head (`ui::addTopic`/`fitBars`: every element tool and Construction under
-  Elements, every constraint under Constraints; a bar wraps only past that), and bars folded to
-  their heads share one row (`header.compact`); under 720px the program is a drawer above the footer, opened folded
+  `app.css` the whole of the styling.  **A phone**: the Words button, the palette and the menu
+  are the same at any width, the palette scrolling along its strip; under 720px the program is a drawer above the footer, opened folded
   (`program.ts::bindDrawer`), its head carrying Compile (`applyProgram`, what ⌘↵ does); a finger
   picks within `TOUCH_PICK_PX` (`SketchView::pickPx`, set per press by `pointerType`).

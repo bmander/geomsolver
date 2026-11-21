@@ -62,7 +62,7 @@ fn check(name: &str,source: &str,solid: &str) {
     let sk = &e.sketch;
     let body = fixtures::solid(&e,solid);
     let session = native::Session::new().unwrap();
-    let shape = session.construct(&cad::recipe(sk,body).unwrap()).unwrap();
+    let shape = session.built(&cad::recipe(sk,body).unwrap()).unwrap();
     let out = std::env::temp_dir().join(format!("solvent-measure-{name}-{}",std::process::id()));
     std::fs::create_dir_all(&out).unwrap();
     let (step,stl) = (out.join("part.step"),out.join("part.stl"));
@@ -127,7 +127,7 @@ fn a_step_file_is_verified_against_its_solid_and_a_corrupted_one_refused() {
     let e = fixtures::read(&std::fs::read_to_string(path).unwrap());
     let body = fixtures::solid(&e,"body");
     let session = native::Session::new().unwrap();
-    let shape = session.construct(&cad::recipe(&e.sketch,body).unwrap()).unwrap();
+    let shape = session.built(&cad::recipe(&e.sketch,body).unwrap()).unwrap();
     let file = std::env::temp_dir().join(format!("solvent-step-check-{}.step",std::process::id()));
     let said = session.step_verified(shape,file.to_str().unwrap(),Verification::Light).unwrap();
     eprintln!("light: {said}");

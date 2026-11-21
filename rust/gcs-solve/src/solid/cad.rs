@@ -1,7 +1,7 @@
 //! Solved analytic construction data for a native CAD host. No meshed surfaces,
 //! filesystem access or kernel dependency enters the core through this interface.
-use crate::{json::{object,Json},model::{EntKind,EntRef,Sense,Sketch,SolidDef}};
-use crate::brep::recipe::Writer;
+use crate::model::{EntKind,EntRef,Sense,Sketch,SolidDef};
+use crate::brep::recipe::{self as recipe,Edge,Node,Recipe,Section,Stroke,Writer};
 use std::collections::{BTreeMap,BTreeSet};
 
 /// How far from a revolution's axis an endpoint is read as on it, whenever an export reads the
@@ -13,20 +13,16 @@ pub const POSE_CACHE: usize = 4096;
 /// Model length units to millimetres, which every native export is written in.
 pub fn millimetres(sk: &Sketch) -> f64 { sk.units.mm_per() }
 
-pub(super) fn vector(v: [f64;3]) -> Json { Json::Arr(v.into_iter().map(Json::from).collect()) }
-
 /// A motion that carries a section (model units), as the recipe writes it by `w`: a point moved
 /// and scaled, a direction as it is, a length scaled (a family's `carry`, a carried profile's, #846).
-pub(super) fn carry_json(c: crate::brep::geom::Carry,w: &Writer) -> Json {
+pub(super) fn carry(c: crate::brep::geom::Carry,w: &Writer) -> crate::brep::geom::Carry {
+    use crate::brep::geom::Carry;
     match c {
-        crate::brep::geom::Carry::Screw {center,axis,angle,advance} => object([("kind","screw".into()),
-            ("center",w.point(center)),("axis",vector(axis)),("angle",angle.into()),
-            ("advance",(advance*w.scale).into())]),
-        crate::brep::geom::Carry::Line {delta} => object([("kind","line".into()),
-            ("delta",vector(delta.map(|x| x*w.scale)))]),
+        Carry::Screw {center,axis,angle,advance} => Carry::Screw {center:w.point(center),axis,angle,advance:advance*w.scale},
+        Carry::Line {delta} => Carry::Line {delta:delta.map(|x| x*w.scale)},
     }
 }
-fn ids(v: &[u32]) -> Json { Json::Arr(v.iter().copied().map(Json::from).collect()) }
+fn ids(v: &[u32]) -> Vec<i64> { v.iter().map(|&o| o as i64).collect() }
 
 /// Row-major 3x4 native placement. Rotation is dimensionless; only the
 /// translation changes from model length units to millimetres.
@@ -44,7 +40,7 @@ pub fn placement_matrix(pose: crate::envelope::Motion,scale: f64) -> [f64;12] {
 /// An immutable, millimetre-valued DAG of the selected solid's current solved
 /// geometry. Unsupported operations fail before a host receives a partial recipe.
 /// Native construction must additionally validate its analytic profiles and solids.
-pub fn recipe(sk: &Sketch,root: usize) -> Result<Json,String> {
+pub fn recipe(sk: &Sketch,root: usize) -> Result<Recipe,String> {
     Ok(recipe_with(sk,root,false,None)?.recipe)
 }
 
@@ -67,8 +63,15 @@ pub fn tool_brep(sk: &Sketch,swept: usize) -> Result<std::sync::Arc<crate::brep:
 /// every direction as it was; a point that only places a plane or a line put where its plane or
 /// line comes nearest the new origin (`brep::recipe::Writer`). A kernel building a solid far from
 /// the world's origin builds it about its own instead.
-pub fn recipe_about(sk: &Sketch,root: usize,by: [f64;3]) -> Result<Json,String> {
+pub fn recipe_about(sk: &Sketch,root: usize,by: [f64;3]) -> Result<Recipe,String> {
     Ok(recipe_with(sk,root,false,Some(by))?.recipe)
+}
+
+/// `recipe_about` of body `root` as its statements write it (#961): its stock, unions, cuts and
+/// commons, and what reads its faces (a round's fill and cut, the stratum) left out — never
+/// lowered, so a body rounded all over is read as cheaply as one with no round.
+pub fn recipe_of_terms(sk: &Sketch,root: usize,by: [f64;3]) -> Result<Recipe,String> {
+    Ok(recipe_walk(sk,root,false,Some(by),true)?.recipe)
 }
 
 /// One continuous sweep a static recipe left out of a body's cuts: the swept
@@ -88,9 +91,9 @@ pub struct SweptCut {
 /// can build the static remainder first. The root and its stock must be static,
 /// and a sweep may not be added to a body, since material this host classifies
 /// is only ever removed from a static blank.
-#[derive(Clone,Debug)]
+#[derive(Clone,Debug,Default)]
 pub struct StaticRecipe {
-    pub recipe: Json,
+    pub recipe: Recipe,
     pub sweeps: Vec<SweptCut>,
 }
 
@@ -172,10 +175,17 @@ pub(crate) fn swept_cut(sk: &Sketch,i: usize) -> Result<Option<SweptCut>,String>
 }
 
 fn recipe_with(sk: &Sketch,root: usize,static_only: bool,about: Option<[f64;3]>) -> Result<StaticRecipe,String> {
+    recipe_walk(sk,root,static_only,about,false)
+}
+
+/// `recipe_with`, the root's late sets left out where `terms` (`recipe_of_terms`).
+fn recipe_walk(sk: &Sketch,root: usize,static_only: bool,about: Option<[f64;3]>,terms: bool)
+    -> Result<StaticRecipe,String> {
     super::validate(sk,root)?;
     let scale = millimetres(sk);
     let w = Writer {scale,about};
     let mut walk = Walk::new(sk,static_only);
+    walk.terms_of = terms.then_some(root);
     let mut pending = vec![(root,false)];
     let mut seen = BTreeSet::new();
     let mut nodes = Vec::new();
@@ -210,14 +220,11 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool,about: Option<[f64;3]>)
             pending.extend(dependencies.iter().rev().map(|&i| (i as usize,false)));
             continue;
         }
-        let mut node = match &shell { Some(s) => s.node(&w)?,None => walk.node(i,&dependencies,&w)? };
-        node.set("id",i.into());
-        node.set("name",sk.solids[i].name.clone().into());
-        nodes.push(node);
+        let (node,said) = match &shell { Some(s) => (s.node(&w)?,None),None => walk.node(i,&dependencies,&w)? };
+        nodes.push(recipe::Named {id:i as i64,name:sk.solids[i].name.clone(),node,said});
         seen.insert(i);
     }
-    Ok(StaticRecipe {recipe:object([("schema",1.into()),("units","mm".into()),
-        ("root",root.into()),("nodes",Json::Arr(nodes))]),sweeps:walk.sweeps})
+    Ok(StaticRecipe {recipe:Recipe {root:root as i64,nodes},sweeps:walk.sweeps})
 }
 
 /// A recipe's walk over the solids (`recipe_with`): each body's sets gathered on its first visit
@@ -236,13 +243,16 @@ struct Walk<'a> {
     bodies: BTreeMap<usize,([Vec<u32>;4],Vec<SweptCut>)>,
     /// The swept cuts left out, each listed once, on the emitting visit.
     sweeps: Vec<SweptCut>,
+    /// The body written as its terms alone (`recipe_of_terms`): what reads its faces left out.
+    terms_of: Option<usize>,
 }
 
 impl<'a> Walk<'a> {
     fn new(sk: &'a Sketch,static_only: bool) -> Walk<'a> {
         let mut users: BTreeMap<u32,usize> = Default::default();
         for s in &sk.solids { for o in s.operands() { *users.entry(o).or_default() += 1; } }
-        Walk {sk,static_only,users,groups:Default::default(),routes:Default::default(),bodies:Default::default(),sweeps:Vec::new()}
+        Walk {sk,static_only,users,groups:Default::default(),routes:Default::default(),bodies:Default::default(),sweeps:Vec::new(),
+            terms_of:None}
     }
 
     /// Solid `o`'s route, where it is a region.
@@ -269,6 +279,13 @@ impl<'a> Walk<'a> {
             return Err(format!("`{}`: `{}` holds nowhere, so the body has no material",sk.solids[i].name,
                 sk.solid_name(*o as usize)));
         }
+        // a body written as its terms: what reads its faces never asked of (`nowhere` lowers it)
+        let terms = self.terms_of == Some(i);
+        let readers = if terms { super::faces::readers_of(sk,i) } else { BTreeSet::new() };
+        let early = |all: &[u32]| -> Vec<u32> {
+            all.iter().copied().filter(|o| !readers.contains(&(*o as usize))).collect()
+        };
+        let (on,through) = (&early(on),&early(through));
         let mut cut: Vec<u32> = through.iter().copied().filter(|o| !self.nowhere(o)).collect();
         // The static remainder of a body: its swept cuts are listed, not built.
         let mut swept = Vec::new();
@@ -289,7 +306,10 @@ impl<'a> Walk<'a> {
         // **the stratum** (#183 F6): what reads the body's faces acts on the body its other
         // terms make, after them, fills then cuts, as the field applies them
         let [on,cut,on_late,cut_late] = super::faces::stratum(sk,i,on.iter().copied().filter(|o| !self.nowhere(o)),cut);
-        let (on_late,cut_late) = (self.lump(i,on_late),self.lump(i,cut_late));
+        let (on_late,cut_late) = match terms {
+            true => (Vec::new(),Vec::new()),
+            false => (self.lump(i,on_late),self.lump(i,cut_late)),
+        };
         let dependencies = std::iter::once(*stock).chain(on.iter().copied()).chain(cut.iter().copied())
             .chain(bound.iter().copied()).chain(on_late.iter().copied()).chain(cut_late.iter().copied()).collect();
         self.bodies.insert(i,([on,cut,on_late,cut_late],swept));
@@ -318,37 +338,31 @@ impl<'a> Walk<'a> {
     }
 
     /// Solid `i` written as its recipe node by `w`, every solid it depends on (`dependencies`)
-    /// written before it.
-    fn node(&mut self,i: usize,dependencies: &[u32],w: &Writer) -> Result<Json,String> {
+    /// written before it, and what a failure to build it calls it where its name is none the
+    /// document wrote (`recipe::Named::said`).
+    fn node(&mut self,i: usize,dependencies: &[u32],w: &Writer) -> Result<(Node,Option<String>),String> {
         let (sk,scale) = (self.sk,w.scale);
         let solid = &sk.solids[i];
-        Ok(match &solid.def {
+        let mut called = None;
+        let node = match &solid.def {
             // a ball under one turn: the tube about its centre's path (#238)
             SolidDef::Swept {..} if let Some(c) = super::canal::built(sk,i) => c?.node(w),
             SolidDef::Swept {..} => return Err(format!(
                 "`{}`: native CAD boundary construction for continuous motion sweeps is not yet supported",solid.name)),
             SolidDef::Placed { source, motion, at } => {
                 let pose = crate::motion::Family::read(sk,*motion as usize)?.at(at.value)?;
-                object([("kind","placed".into()),("source",(*source).into()),
-                    ("matrix",w.matrix(placement_matrix(pose,scale)))])
+                Node::Placed {source:*source as i64,matrix:w.matrix(placement_matrix(pose,scale))}
             }
             SolidDef::Body {stock,bound,..} => {
                 let ([on,cut,on_late,cut_late],swept) = self.bodies.remove(&i).expect("a body's sets, read on its first visit");
                 // (each sweep listed once, on the emitting visit)
                 self.sweeps.extend(swept);
-                let mut node = body_terms(*stock,&on,&cut,bound);
-                node.set("kind","body".into());
-                if !on_late.is_empty() || !cut_late.is_empty() {
-                    node.set("on_late",ids(&on_late));
-                    node.set("cut_late",ids(&cut_late));
-                }
                 // the step each operand adds to its faces' routes through this body (#760)
                 let all = std::iter::once(stock).chain(&on).chain(&cut).chain(bound)
                     .chain(&on_late).chain(&cut_late);
-                let steps: BTreeMap<String,Json> = all.map(|&o| (o.to_string(),
-                    super::step_through(solid,&sk.solids[o as usize]).into())).collect();
-                node.set("steps",Json::Obj(steps.into_iter().collect()));
-                node
+                let steps = all.map(|&o| (o as i64,super::step_through(solid,&sk.solids[o as usize]))).collect();
+                Node::Body(recipe::Body {on_late:ids(&on_late),cut_late:ids(&cut_late),steps,
+                    ..body_terms(*stock,&on,&cut,bound)})
             }
             // a region: built as its route says (`region::route`)
             SolidDef::Region {..} => match self.route(i).map_or_else(|| super::region::route(sk,i),Ok)? {
@@ -371,22 +385,19 @@ impl<'a> Walk<'a> {
                     // that, which the Boolean joining it to its body may not read (#962 item 4)
                     let flush = assembly.runs.iter().find_map(|r| r.flush.as_ref())
                         .map_or(String::new(),|f| format!(", which ends {f}"));
-                    let called = body.map(|(&b,_)| {
+                    if let Some((&b,_)) = body {
                         let of = &sk.solids[b];
-                        format!("`{}`'s round or chamfer `{}`{flush}",crate::vocab::public_path(of.written_name()),
-                            super::step_through(of,solid))
-                    });
-                    // a face a run ends on reaching back over a seam, said by the faces it is of
-                    if let Some(said) = assembly.across.as_ref().and_then(|b| super::lowering::back_over_said(sk,i,b)) {
-                        return Err(match &called { Some(c) => format!("{c}: {said}"), None => self::said(sk,i,said) });
+                        called = Some(format!("`{}`'s round or chamfer `{}`{flush}",
+                            crate::vocab::public_path(of.written_name()),super::step_through(of,solid)));
                     }
-                    let mut node = assembly.node(w).map_err(|e| match &called {
-                        Some(c) => format!("{c}: {e}"),
-                        None => said(sk,i,e),
-                    })?;
-                    if let Some(c) = called {
-                        node.set("said",c.into());
+                    // a refusal of the assembly is the round's, said by the body it rounds and the
+                    // step its faces are named by there (#962): a face a run ends on reaching back
+                    // over a seam by the faces it is of, any other in the assembly's own words
+                    let named = |e: String| match &called { Some(c) => format!("{c}: {e}"), None => said(sk,i,e) };
+                    if let Some(b) = &assembly.across {
+                        return Err(named(super::lowering::back_over_said(sk,i,b)));
                     }
+                    let mut lowered = assembly.node(w).map_err(named)?;
                     // a ball rolled along a traced run is rolled against the body as its terms but the
                     // late ones make it, all built before this (they come first in its dependencies)
                     if !assembly.rolled.is_empty() {
@@ -394,9 +405,9 @@ impl<'a> Walk<'a> {
                             return Err(format!("`{}`: a rolled round is built against the body it rounds",sk.solid_said(i)));
                         };
                         let SolidDef::Body {stock,bound,..} = &sk.solids[b].def else { unreachable!("a body's sets") };
-                        node.set("stratum",body_terms(*stock,&sets[0],&sets[1],bound));
+                        lowered.stratum = Some(body_terms(*stock,&sets[0],&sets[1],bound));
                     }
-                    node
+                    Node::Lowered(lowered)
                 }
                 // in general position: the common of its terms' primitives, where they are ones that
                 // construction makes (#238)
@@ -418,21 +429,14 @@ impl<'a> Walk<'a> {
                 super::region::Route::Meridian(m) => {
                     let name = |t: u32| m.name(t);
                     let p = crate::brep::recipe::region_profile(&m.region,m.origin,m.seam,m.axis,&name);
-                    object([
-                        ("kind","revolve".into()),("profile",p.to_json(w)?),
-                        ("origin",w.line_origin(m.origin.map(|v| v*scale),m.axis)),("axis",vector(m.axis)),
-                        ("angle",std::f64::consts::TAU.into()),
-                    ])
+                    Node::Revolve {profile:p.section(w)?,origin:w.line_origin(m.origin.map(|v| v*scale),m.axis),
+                        axis:m.axis,angle:std::f64::consts::TAU}
                 }
             },
             SolidDef::Prism {face,from,to,draft} => {
-                let mut node = object([
-                    ("kind","prism".into()),("profile",profile(sk,*face as usize,w)?),
-                    ("from",(from.value*scale).into()),("to",(to.value*scale).into()),
-                ]);
                 // its sides tapered from the profile's plane (#245), an angle in radians
-                if let Some(d) = draft { node.set("draft",d.value.into()); }
-                node
+                Node::Prism {profile:profile(sk,*face as usize,w)?,from:from.value*scale,to:to.value*scale,
+                    draft:draft.as_ref().map(|d| d.value)}
             }
             // through everything (#737): a use a body it is applied to, its material as the walk
             // keeps it (`dependencies`), and the placement its copy stands the profile at
@@ -441,16 +445,9 @@ impl<'a> Walk<'a> {
                     let material = super::document::material_sources(sk,u.body)?;
                     let sources: Vec<u32> = material.into_iter()
                         .filter(|o| dependencies.contains(o)).collect();
-                    let mut node = object([("sources",ids(&sources))]);
-                    if let Some(pose) = u.pose {
-                        node.set("matrix",w.matrix(placement_matrix(pose,scale)));
-                    }
-                    Ok(node)
+                    Ok(recipe::Use {sources:ids(&sources),matrix:u.pose.map(|pose| w.matrix(placement_matrix(pose,scale)))})
                 }).collect::<Result<Vec<_>,String>>()?;
-                object([
-                    ("kind","through".into()),("profile",profile(sk,*face as usize,w)?),
-                    ("uses",Json::Arr(uses)),
-                ])
+                Node::Through {profile:profile(sk,*face as usize,w)?,uses}
             }
             SolidDef::Revolve {face,axis,sweep,sense} => {
                 // Use the profile's frame for both axis endpoints, as the solid
@@ -462,49 +459,53 @@ impl<'a> Walk<'a> {
                 let a = p.basis.lift(a2.0,a2.1);
                 let b = p.basis.lift(b2.0,b2.1);
                 let along = std::array::from_fn(|k| b[k]-a[k]);
-                object([
-                    ("kind","revolve".into()),("profile",profile(sk,*face as usize,w)?),
-                    ("origin",w.line_origin(a.map(|v| v*scale),along)),
-                    ("axis",vector(along)),
-                    ("angle",(sweep.value.min(std::f64::consts::TAU)
-                        * if *sense == Sense::Cw { -1. } else { 1. }).into()),
-                ])
+                Node::Revolve {profile:profile(sk,*face as usize,w)?,origin:w.line_origin(a.map(|v| v*scale),along),
+                    axis:along,angle:sweep.value.min(std::f64::consts::TAU)*if *sense == Sense::Cw { -1. } else { 1. }}
             }
             // its walls exact (#243 L2): the interval's pieces, the stations each is solved at, and
             // each wall's edge's numbers at every one of them
-            SolidDef::Family {..} => super::family::json(&super::family::walls(sk,i)
-                .map_err(|e| format!("`{}`: {e}",solid.name))?,w),
-        })
+            SolidDef::Family {..} => Node::Family(super::family::family(&super::family::walls(sk,i)
+                .map_err(|e| format!("`{}`: {e}",solid.name))?,w)),
+        };
+        Ok((node,called))
     }
 }
 
 /// A body's terms but the late ones — its stock, what is on it, what cuts it, what bounds it — as
 /// the recipe's `body` reads them: the body node's, and the stratum a rolled round is rolled against.
-pub(super) fn body_terms(stock: u32,on: &[u32],cut: &[u32],bound: &[u32]) -> Json {
-    object([("stock",stock.into()),("on",ids(on)),("cut",ids(cut)),("bound",ids(bound))])
+pub(super) fn body_terms(stock: u32,on: &[u32],cut: &[u32],bound: &[u32]) -> recipe::Body {
+    recipe::Body {stock:stock as i64,on:ids(on),cut:ids(cut),bound:ids(bound),..Default::default()}
 }
 
 /// How near its curve a fitted stretch must pass (millimetres).
 pub const FIT_MM: f64 = 1e-4;
 
+/// How near its curve a profile's fitted stretch is held where its fit closes in (millimetres):
+/// the kernel's bar for a surface it fits (`step::FIT`), since the stretch is what the solid's face
+/// is carried along or turned from, and a reader measures the solid by that face — a hyperbola
+/// turned, fitted within `FIT_MM` alone, read 1.03e-6 off its closed form and within this 1.7e-9.
+pub const HELD_MM: f64 = crate::brep::step::FIT;
+
 /// The cubic B-spline through a curve's samples (Piegl and Tiller's global interpolation,
 /// `curve::interpolating_ctrl_at`) in the curve's own coordinates, over its interval from first end
 /// to second, its parameter the fraction of the curve's at every sample: the samples doubled until
-/// every sample halfway between two it passes through is within `tol` of it, measured by projecting
-/// that sample onto the fit. A trimmed stretch's or a free curve's first and last poles are its end
-/// points themselves, which its neighbours share. The poles, the knots and the error measured;
-/// `None` past 4096 samples.
-pub fn fit_curve(sk: &Sketch,i: usize,tol: f64) -> Option<(Vec<(f64,f64)>,Vec<f64>,f64)> {
+/// every sample halfway between two it passes through is within `held` of it, measured by
+/// projecting that sample onto the fit, or, where the fit stops closing in on the curve
+/// (`brep::cubic::fit_held`), the nearest met within `tol`. A trimmed stretch's or a free curve's
+/// first and last poles are its end points themselves, which its neighbours share. The poles, the
+/// knots and the error measured; `None` where no fit of up to 4096 samples is within `tol`.
+pub fn fit_curve(sk: &Sketch,i: usize,held: f64,tol: f64) -> Option<(Vec<(f64,f64)>,Vec<f64>,f64)> {
     let (a,b) = sk.curve_domain(i);
     let ends = sk.curve_ends(i).map(|(p,q)| (sk.point_xy(p as usize),sk.point_xy(q as usize)));
-    fit_stretch(sk,i,(a,b),ends,tol)
+    fit_stretch(sk,i,(a,b),ends,held,tol)
 }
 
 /// The curve over `(a, b)` (decreasing where the stretch runs against the curve) as a cubic
-/// B-spline within `tol`, its two ends put exactly at `ends` where given.
-fn fit_stretch(sk: &Sketch,i: usize,(a,b): (f64,f64),ends: Option<((f64,f64),(f64,f64))>,tol: f64)
+/// B-spline held within `held` and never further off than `tol`, its two ends put exactly at
+/// `ends` where given.
+fn fit_stretch(sk: &Sketch,i: usize,(a,b): (f64,f64),ends: Option<((f64,f64),(f64,f64))>,held: f64,tol: f64)
     -> Option<(Vec<(f64,f64)>,Vec<f64>,f64)> {
-    fit_sampled(&|lo,hi,n| sk.curve_sweep(i,lo,hi,n),(a,b),ends,tol)
+    crate::brep::cubic::fit_held(&|lo,hi,n| sk.curve_sweep(i,lo,hi,n),(a,b),ends,held,tol)
 }
 
 /// A planar stretch sampled, fitted as a cubic B-spline within a tolerance, is the kernel's
@@ -519,35 +520,32 @@ pub(crate) use crate::brep::cubic::bspline_edge;
 /// its roll a trochoid edge (`brep::trochoid::Trochoid`) in the plane of `basis` as `lift` carries it (model
 /// units to the recipe's millimetres, `scale` a unit), carried into the B-rep exactly where a fit
 /// would stand within `FIT_MM` of it. None for any other curve.
-fn trochoid_halves(sk: &Sketch,i: usize,basis: &crate::plane::Basis,lift: &dyn Fn((f64,f64)) -> [f64;3],scale: f64) -> Option<Vec<Json>> {
+fn trochoid_halves(sk: &Sketch,i: usize,basis: &crate::plane::Basis,lift: &dyn Fn((f64,f64)) -> [f64;3],scale: f64) -> Option<Vec<Stroke>> {
     let crate::model::CurveBody::Envelope(g) = &sk.curve_defs[sk.curves[i].def as usize].body else { return None };
     let attached = sk.generated_flat(i,&g.flat).ok()?;
     let flat = attached.as_deref().map_or(&g.flat[..],|v| &v[..]);
     let (a,b) = sk.curve_domain(i);
     let terms = crate::generate::point_path(flat,&sk.curve_vars(i,a))?;
     let o = lift((0.,0.));
-    let terms = Json::Arr(terms.iter().map(|t| Json::Arr([t.a[0]*scale,t.a[1]*scale,t.b[0]*scale,t.b[1]*scale,t.w].iter()
-        .map(|&x| x.into()).collect())).collect());
+    let terms: Vec<[f64;5]> = terms.iter().map(|t| [t.a[0]*scale,t.a[1]*scale,t.b[0]*scale,t.b[1]*scale,t.w]).collect();
     let m = 0.5*(a+b);
-    Some([[a,m],[m,b]].iter().map(|&[s0,s1]| object([("kind","trochoid".into()),("origin",vector(o)),("x_dir",vector(basis.u)),
-        ("y_dir",vector(basis.v)),("terms",terms.clone()),("span",Json::Arr(vec![s0.into(),s1.into()]))])).collect())
+    Some([[a,m],[m,b]].iter().map(|&span| Stroke::Trochoid {origin:o,x_dir:basis.u,y_dir:basis.v,terms:terms.clone(),span})
+        .collect())
 }
 
-pub(super) fn profile(sk: &Sketch,index: usize,w: &Writer) -> Result<Json,String> {
+pub(super) fn profile(sk: &Sketch,index: usize,w: &Writer) -> Result<Section,String> {
     let face = &sk.faces[index];
     let p = super::face_poly(sk,index,super::REPORT_UNIT).ok_or("invalid CAD profile")?;
     let scale = w.scale;
     // a point of the profile, in millimetres as written
-    let lift = |q: (f64,f64)| w.moved(p.basis.lift(q.0,q.1).map(|v| v*scale));
+    let lift = |q: (f64,f64)| w.point(p.basis.lift(q.0,q.1));
     let x_dir = p.basis.u;
     // an edge's pieces in a profile: one, or a closed curve's smooth stretches
-    let edge = |e: EntRef| -> Result<Vec<Json>,String> {
+    let edge = |e: EntRef| -> Result<Vec<Stroke>,String> {
         Ok(vec![match e.kind {
             EntKind::Line => {
                 let l = &sk.lines[e.i()];
-                object([("kind","line".into()),
-                    ("start",vector(lift(sk.point_xy(l.p1 as usize)))),
-                    ("end",vector(lift(sk.point_xy(l.p2 as usize))))])
+                Stroke::Line {start:lift(sk.point_xy(l.p1 as usize)),end:lift(sk.point_xy(l.p2 as usize))}
             }
             EntKind::Circle | EntKind::Arc => {
                 let (center,radius,angles) = if e.kind == EntKind::Circle {
@@ -559,29 +557,21 @@ pub(super) fn profile(sk: &Sketch,index: usize,w: &Writer) -> Result<Json,String
                 };
                 // a radius solves to either sign (its rows read it squared or by a point's distance),
                 // and the angles are its ends' own, so the circle written is the one of its magnitude
-                let mut result = object([("kind","circle".into()),
-                    ("center",vector(lift(sk.point_xy(center as usize)))),
-                    ("normal",vector(p.basis.normal())),("x_dir",vector(x_dir)),
-                    ("radius",(sk.params[radius as usize].value.abs()*scale).into())]);
-                if let Some((start,end)) = angles {
-                    result.set("angles",Json::Arr(vec![start.into(),end.into()]));
-                }
-                result
+                Stroke::Circle {center:lift(sk.point_xy(center as usize)),normal:p.basis.normal(),x_dir,
+                    radius:sk.params[radius as usize].value.abs()*scale,angles:angles.map(|(start,end)| [start,end])}
             }
             EntKind::Spline => {
                 // a clamped cubic B-spline: its knots and its control points, lifted
                 let sp = &sk.splines[e.i()];
-                let mut o = object([("kind","bspline".into()),("degree",crate::curve::DEGREE.into()),
-                    ("knots",Json::Arr(sp.knots.iter().map(|&k| k.into()).collect())),
-                    ("poles",Json::Arr(sp.ctrl.iter().map(|&c| vector(lift(sk.point_xy(c as usize)))).collect()))]);
                 // a rational one's weights: the same curve exactly, in either kernel
-                if let Some(w) = &sp.weights { o.set("weights",Json::Arr(w.iter().map(|&x| x.into()).collect())); }
-                o
+                Stroke::BSpline {degree:crate::curve::DEGREE,knots:sp.knots.clone(),
+                    poles:sp.ctrl.iter().map(|&c| lift(sk.point_xy(c as usize))).collect(),weights:sp.weights.clone()}
             }
             EntKind::Curve => {
                 // a stretch of a traced or formula curve: the cubic B-spline through it, fitted
-                // until it is within `FIT_MM` of the curve, and what the fit measured
-                let fitted = |(poles,knots,err): (Vec<(f64,f64)>,Vec<f64>,f64)| bspline_edge(&poles,&knots,err*scale,&lift);
+                // until it is within `HELD_MM` of the curve or, where its fit stops closing in,
+                // the nearest met within `FIT_MM`, and what the fit measured
+                let fitted = |(poles,knots,_): (Vec<(f64,f64)>,Vec<f64>,f64)| bspline_edge(&poles,&knots,&lift);
                 let unfitted = || format!("`{}`: a curve in its profile could not be fitted within {FIT_MM} mm",face.name);
                 if sk.curve_ends(e.i()).is_none() {
                     // a closed curve standing alone: two halves meeting at two vertices, so no side
@@ -594,10 +584,11 @@ pub(super) fn profile(sk: &Sketch,index: usize,w: &Writer) -> Result<Json,String
                     let (a,b) = sk.curve_domain(e.i());
                     let m = 0.5*(a+b);
                     let (start,middle) = (sk.curve_point(e.i(),a),sk.curve_point(e.i(),m));
-                    let half = |stretch,ends| fit_stretch(sk,e.i(),stretch,Some(ends),FIT_MM/scale).ok_or_else(unfitted).map(fitted);
+                    let half = |stretch,ends| fit_stretch(sk,e.i(),stretch,Some(ends),HELD_MM/scale,FIT_MM/scale)
+                        .ok_or_else(unfitted).map(fitted);
                     return Ok(vec![half((a,m),(start,middle))?,half((m,b),(middle,start))?]);
                 }
-                fitted(fit_curve(sk,e.i(),FIT_MM/scale).ok_or_else(unfitted)?)
+                fitted(fit_curve(sk,e.i(),HELD_MM/scale,FIT_MM/scale).ok_or_else(unfitted)?)
             }
             _ => return Err(format!("`{}`: CAD profiles currently require lines, arcs, circles, splines or stretches of curves",face.name)),
         }])
@@ -606,13 +597,11 @@ pub(super) fn profile(sk: &Sketch,index: usize,w: &Writer) -> Result<Json,String
     // of it, which a kernel building the solid gives that face (`brep::build`)
     // (a closed curve's stretches each named as the curve is)
     let loops = face.boundaries().map(|(edges,names)|
-        edges.iter().enumerate().map(|(k,&e)| edge(e).map(|pieces| pieces.into_iter().map(|mut j| {
-            if let Some(n) = names.get(k).filter(|n| !n.is_empty()) { j.set("name",n.clone().into()); }
-            j
-        }).collect::<Vec<_>>())).collect::<Result<Vec<_>,_>>().map(|l| Json::Arr(l.concat())))
+        edges.iter().enumerate().map(|(k,&e)| edge(e).map(|pieces| pieces.into_iter().map(|shape| {
+            Edge {name:names.get(k).cloned().unwrap_or_default(),shape}
+        }).collect::<Vec<_>>())).collect::<Result<Vec<_>,_>>().map(|l| l.concat()))
         .collect::<Result<Vec<_>,_>>()?;
-    Ok(object([("loops",Json::Arr(loops)),("origin",w.plane_origin(p.basis.o.map(|v| v*scale),p.basis.normal())),
-        ("normal",vector(p.basis.normal()))]))
+    Ok(Section {loops,origin:w.plane_origin(p.basis.o.map(|v| v*scale),p.basis.normal()),normal:p.basis.normal()})
 }
 
 /// A refusal of solid `i` in its words: `` `name`: why `` (`Sketch::solid_said`), its name not
@@ -621,5 +610,43 @@ pub(super) fn profile(sk: &Sketch,index: usize,w: &Writer) -> Result<Json,String
 fn said(sk: &Sketch,i: usize,why: impl std::fmt::Display) -> String {
     let why = why.to_string();
     let key = format!("{}: ",sk.solids[i].name);
-    format!("`{}`: {}",sk.solid_said(i),why.strip_prefix(&key).unwrap_or(&why))
+    let why = why.strip_prefix(&key).unwrap_or(&why);
+    let (faces,shared) = faces_said(sk,i).map_or((String::new(),String::new()),|(faces,shared)| {
+        (format!(" (where {faces} meet)"),shared.map_or(String::new(),|s| format!("; {s}")))
+    });
+    format!("`{}`{faces}: {why}{shared}",sk.solid_said(i))
+}
+
+/// The faces a region over a body's faces stands on, each by the body's name for it
+/// (`part.block.edge3`), as the author wrote them — what a round or a chamfer no document named
+/// (`#42.0.….taken`, a word's use) is said by where it is not built (#962): the edge or the corner
+/// it is, so a statement over many faces can leave that one out.  `None` for any other solid.
+fn faces_said(sk: &Sketch,i: usize) -> Option<(String,Option<String>)> {
+    let SolidDef::Region {terms,..} = &sk.solids.get(i)?.def else { return None };
+    let mut faces: Vec<String> = Vec::new();
+    // a name the rounds of several statements written bare each leave faces under (#962): read as
+    // one face in pieces on their several surfaces, where each statement's own is what is meant
+    let mut shared: Vec<String> = Vec::new();
+    for t in terms {
+        if let crate::model::RegionShape::FaceSide {face} = &t.shape {
+            let path = std::iter::once(sk.solid_name(face.solid as usize)).chain(face.path.iter().cloned())
+                .collect::<Vec<_>>().join(".");
+            if super::faces::uses_naming(sk,face.solid as usize,&face.path) > 1 && !shared.contains(&path) {
+                shared.push(path.clone())
+            }
+            if !faces.contains(&path) { faces.push(path) }
+        }
+    }
+    if faces.len() < 2 {
+        return None;
+    }
+    let said = crate::vocab::all_of(&faces.iter().map(|f| format!("`{f}`")).collect::<Vec<_>>());
+    Some((said,match &shared[..] {
+        [] => None,
+        named => Some(format!("{} the faces of rounds or chamfers of several statements written bare under one \
+            name, read as one face in pieces on their several surfaces: name each of those statements (`inside := \
+            round(r: …) …`) so that each one's faces are read apart",
+            named.iter().map(|f| format!("`{f}`")).collect::<Vec<_>>().join(" and ")
+                + if named.len() > 1 { " name" } else { " names" })),
+    }))
 }

@@ -50,3 +50,48 @@ impl Meets {
         }
     }
 }
+
+/// **How two listed faces of a body meet** (#962), worst first: what a round or a chamfer
+/// between them has to go along.  Two faces sharing a point (`Meets`) need share no edge: they
+/// may touch only at a corner, or only along a seam where one goes on tangent into the other,
+/// which is no edge (`BodyFaces::seam`) — and a ball rolled there, or a flat cut, takes nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Meeting {
+    /// No point in common, or one of them a face the body's other terms took in.
+    Apart,
+    /// Only a corner.
+    Corner,
+    /// Only seams.
+    Seam,
+    /// An edge.
+    Edge,
+}
+
+impl ListedFaces {
+    /// Whether face `a` (by its name from the solid) is listed and none of it is on the
+    /// boundary: a Boolean took it in.  Not where the boundary cannot say.
+    pub fn eaten(&self, a: &str) -> bool {
+        self.own(a).is_some_and(|x| x.is_empty())
+    }
+
+    /// How faces `a` and `b` meet (`Meeting`); `None` where the boundary cannot say of either.
+    pub fn meeting(&self, a: &str, b: &str) -> Option<Meeting> {
+        let (x, y) = (self.own(a)?, self.own(b)?);
+        let read = &self.read;
+        let edges = read.edges_between(x, y);
+        if !edges.is_empty() {
+            let edge = edges.iter().any(|&e| !read.seam(e));
+            return Some(if edge { Meeting::Edge } else { Meeting::Seam });
+        }
+        let corners = |fs: &[usize]| -> BTreeSet<u32> {
+            fs.iter().flat_map(|&fi| read.edges_of(fi).iter().flat_map(|&e| read.ends(e))).collect()
+        };
+        let apart = x.iter().all(|i| !y.contains(i)) && corners(x).is_disjoint(&corners(y));
+        Some(if apart { Meeting::Apart } else { Meeting::Corner })
+    }
+
+    /// Face `a`'s patches, where it is listed and the boundary can say of it.
+    fn own(&self, a: &str) -> Option<&[usize]> {
+        self.faces.iter().find(|(t, _)| t == a).and_then(|(_, own)| own.as_deref())
+    }
+}

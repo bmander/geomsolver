@@ -472,7 +472,7 @@ impl Constraint {
                 let l = &sk.lines[self.args[0].ent().i()];
                 Some(if at(1) { l.p1 } else { l.p2 } as usize)
             }
-            CKind::TangentCircleAt => Some(self.args[2].ent().i()),
+            CKind::TangentCircleAt | CKind::TangentCirclesAt => Some(self.args[2].ent().i()),
             _ => None,
         }
     }
@@ -541,6 +541,8 @@ impl Constraint {
             | CKind::AnnularDistance
             | CKind::TangentLineCircle
             | CKind::TangentCircleCircle
+            // two rounds' radii, no line among them (#962)
+            | CKind::TangentCirclesAt
             | CKind::Symmetric
             | CKind::PointOnSpline
             | CKind::SplineCurvature
@@ -906,6 +908,8 @@ impl Constraint {
             // both say "the radius is perpendicular to the line at the contact", so both are
             // [contact point, centre, line] — the arc names the line second, the circle first
             CKind::TangentCircleAt => [pt(2), centre(0), ln(1)].concat(),
+            // the contact, then each round's centre (#962)
+            CKind::TangentCirclesAt => [pt(2), centre(0), centre(1)].concat(),
             CKind::TangentArcLine | CKind::TangentLineCircleAt => {
                 let at = self.contact_point(sk).unwrap();
                 let line = if self.kind == CKind::TangentArcLine { 1 } else { 0 };

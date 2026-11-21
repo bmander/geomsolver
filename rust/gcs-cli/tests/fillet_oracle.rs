@@ -22,7 +22,7 @@ mod native;
 #[allow(dead_code)]
 mod progress;
 use gcs_core::brep::{export,geom::Rigid,props::volume,sweep::Say};
-use gcs_core::json::Json;
+use gcs_core::brep::recipe::{Node,Recipe,Section,Stroke as Drawn};
 use gcs_core::model::{RegionShape,SolidDef};
 use gcs_core::solid::lowering::{self,Piece,Run,Stroke};
 use gcs_core::space::{add,distance as dist,norm,scale};
@@ -81,56 +81,44 @@ fn edge_and_kind(p: &Piece) -> Option<(V,f64,bool,bool)> {
 
 
 /// The body's recipe less its lowered regions: what the rounds read.
-fn stratum(recipe: &Json) -> Json {
-    let nodes = recipe.get("nodes").unwrap().arr();
-    let lowered: BTreeSet<i64> = nodes.iter().filter(|n| n.get("kind").unwrap().as_str() == "lowered")
-        .map(|n| n.get("id").unwrap().as_i64()).collect();
-    let kept = nodes.iter().filter(|n| !lowered.contains(&n.get("id").unwrap().as_i64())).map(|n| {
+fn stratum(recipe: &Recipe) -> Recipe {
+    let lowered: BTreeSet<i64> = recipe.nodes.iter().filter(|n| matches!(n.node,Node::Lowered(_))).map(|n| n.id).collect();
+    let kept = recipe.nodes.iter().filter(|n| !lowered.contains(&n.id)).map(|n| {
         let mut n = n.clone();
-        for key in ["on","cut","bound","on_late","cut_late"] {
-            if let Some(Json::Arr(list)) = n.get(key) {
-                let list = list.iter().filter(|x| !lowered.contains(&x.as_i64())).cloned().collect();
-                n.set(key,Json::Arr(list));
+        if let Node::Body(b) = &mut n.node {
+            for list in [&mut b.on,&mut b.cut,&mut b.bound,&mut b.on_late,&mut b.cut_late] {
+                list.retain(|x| !lowered.contains(x));
             }
         }
         n
     }).collect();
-    let mut out = recipe.clone();
-    out.set("nodes",Json::Arr(kept));
-    out
+    Recipe {root:recipe.root,nodes:kept}
 }
 
-fn vector_of(j: &Json) -> V { std::array::from_fn(|i| j.arr()[i].as_f64()) }
-fn json_of(v: V) -> Json { Json::Arr(v.iter().map(|&x| Json::Num(x)).collect()) }
-
-/// A profile's every point and direction turned by `turn`, by what its keys say they are.
-fn profile_turned(j: &mut Json,turn: &Rigid) {
-    match j {
-        Json::Arr(list) => for x in list { profile_turned(x,turn) },
-        Json::Obj(pairs) => for (key,x) in pairs.iter_mut() {
-            match key.as_str() {
-                "start" | "end" | "center" | "origin" => *x = json_of(turn.point(vector_of(x))),
-                "normal" | "x_dir" => *x = json_of(turn.vector(vector_of(x))),
-                "poles" => for p in match x { Json::Arr(l) => l,_ => unreachable!() } { *p = json_of(turn.point(vector_of(p))) },
-                _ => profile_turned(x,turn),
+/// A profile's every point and direction turned by `turn`.
+fn profile_turned(s: &mut Section,turn: &Rigid) {
+    s.origin = turn.point(s.origin);
+    s.normal = turn.vector(s.normal);
+    for e in s.loops.iter_mut().flatten() {
+        match &mut e.shape {
+            Drawn::Line {start,end} => { *start = turn.point(*start); *end = turn.point(*end); }
+            Drawn::Circle {center,normal,x_dir,..} => {
+                *center = turn.point(*center); *normal = turn.vector(*normal); *x_dir = turn.vector(*x_dir);
             }
-        },
-        _ => {}
+            Drawn::BSpline {poles,..} => for p in poles { *p = turn.point(*p) },
+            Drawn::Trochoid {origin,x_dir,y_dir,..} => {
+                *origin = turn.point(*origin); *x_dir = turn.vector(*x_dir); *y_dir = turn.vector(*y_dir);
+            }
+        }
     }
 }
 
 /// A whole circle's start turned round it, `angle` about its normal.
-fn circles_turned(j: &mut Json,angle: f64) {
-    match j {
-        Json::Arr(list) => for x in list { circles_turned(x,angle) },
-        Json::Obj(_) => {
-            if j.get("kind").is_some_and(|k| *k == Json::Str("circle".into())) && j.get("angles").is_none() {
-                let (n,x) = (vector_of(j.get("normal").unwrap()),vector_of(j.get("x_dir").unwrap()));
-                j.set("x_dir",json_of(Rigid::turn([0.;3],n,angle).vector(x)));
-            }
-            if let Json::Obj(pairs) = j { for (_,x) in pairs.iter_mut() { circles_turned(x,angle) } }
+fn circles_turned(s: &mut Section,angle: f64) {
+    for e in s.loops.iter_mut().flatten() {
+        if let Drawn::Circle {normal,x_dir,angles:None,..} = &mut e.shape {
+            *x_dir = Rigid::turn([0.;3],*normal,angle).vector(*x_dir);
         }
-        _ => {}
     }
 }
 
@@ -140,25 +128,18 @@ fn circles_turned(j: &mut Json,angle: f64) {
 /// rod's seam where a plate's top meets it, a frustum's along the plane that halves it), and the
 /// mirror image of that edge, off the seam, it rounds: the oracle asks it again of the same solid
 /// described from another start.
-fn seams_turned(recipe: &Json) -> Json {
+fn seams_turned(recipe: &Recipe) -> Recipe {
     let mut out = recipe.clone();
-    let Some(Json::Arr(nodes)) = out.get("nodes").cloned() else { return out };
-    let nodes = nodes.into_iter().map(|mut n| {
-        let whole = n.get("kind").is_some_and(|k| *k == Json::Str("revolve".into()))
-            && (n.get("angle").unwrap().as_f64().abs() - 2.*std::f64::consts::PI).abs() < 1e-9;
-        if whole {
-            let turn = Rigid::turn(vector_of(n.get("origin").unwrap()),vector_of(n.get("axis").unwrap()),1.);
-            let mut profile = n.get("profile").unwrap().clone();
-            profile_turned(&mut profile,&turn);
-            n.set("profile",profile);
+    for n in &mut out.nodes {
+        if let Node::Revolve {profile,origin,axis,angle} = &mut n.node {
+            if (angle.abs()-2.*std::f64::consts::PI).abs() < 1e-9 { profile_turned(profile,&Rigid::turn(*origin,*axis,1.)) }
         }
-        if let Some(mut profile) = n.get("profile").cloned() {
-            circles_turned(&mut profile,1.);
-            n.set("profile",profile);
+        match &mut n.node {
+            Node::Prism {profile,..} | Node::Revolve {profile,..} | Node::Through {profile,..} | Node::Carried {profile,..} =>
+                circles_turned(profile,1.),
+            _ => {}
         }
-        n
-    }).collect();
-    out.set("nodes",Json::Arr(nodes));
+    }
     out
 }
 
@@ -169,9 +150,9 @@ const FLAT_FIT: f64 = 1e-6;
 /// fitted face of ours (a grid of its parameters, off the fit's nodes), the distance from each of the two faces of OCCT's own
 /// body (`body`, the stratum) that meet at the flat's edge, the second the one the first leg is
 /// on. The number of points read, and the worst `|d_a / l_b + d_b / l_a − 1|`.
-fn flats_by_occt(session: &native::Session,body: &Json,ours: &gcs_core::brep::topo::Brep,flats: &[(V,[f64;2],V)])
+fn flats_by_occt(session: &native::Session,body: &Recipe,ours: &gcs_core::brep::topo::Brep,flats: &[(V,[f64;2],V)])
     -> Result<(usize,f64),String> {
-    let theirs = session.construct(body)?;
+    let theirs = session.built(body)?;
     let faces = session.faces(theirs)?;
     let distance = |face: std::os::raw::c_int,points: &[V]| -> Result<Vec<f64>,String> {
         Ok(session.surface_feet_near(face,points,&vec![[f64::NAN;2];points.len()],0.)?.into_iter()
@@ -332,7 +313,7 @@ fn every_rounds_example_is_occts_fillet() {
         }
         let recipe = gcs_core::solid::cad::recipe(sk,body).unwrap();
         // OCCT's fillet fails on an edge along or ending on a seam: asked again with them turned
-        let turning = |build: &dyn Fn(&Json) -> Result<std::os::raw::c_int,String>| build(&stratum(&recipe)).or_else(|first| {
+        let turning = |build: &dyn Fn(&Recipe) -> Result<std::os::raw::c_int,String>| build(&stratum(&recipe)).or_else(|first| {
             let turned = build(&seams_turned(&stratum(&recipe)));
             if turned.is_ok() { eprintln!("{file} `{name}`: OCCT builds it with its seams turned ({first})"); }
             turned
@@ -344,15 +325,15 @@ fn every_rounds_example_is_occts_fillet() {
         // theirs: its volume and the kinds of its faces, and the solid where OCCT made one whole
         let theirs: Result<(f64,BTreeSet<&str>,Option<std::os::raw::c_int>),String> = match how {
             Fillet if beside_curved => Err("a chamfer beside a curved face is std's flat, not OCCT's chamfer".into()),
-            Fillet => turning(&|recipe| session.construct(recipe).and_then(|mut id| {
+            Fillet => turning(&|recipe| session.built(recipe).and_then(|mut id| {
                 if !rounds.is_empty() { id = session.round(id,&rounds,false)?; }
                 if !flats.is_empty() { id = session.round(id,&flats,true)?; }
                 valid(id)
             })).map(|id| (session.volume(id).unwrap(),kinds_of(id),Some(id))),
             // (offset, an edge along a seam is misread whole and the solid valid: so never asked so)
-            Opened(r) => session.construct(&seams_turned(&stratum(&recipe))).and_then(|id| valid(session.opened(id,r)?))
+            Opened(r) => session.built(&seams_turned(&stratum(&recipe))).and_then(|id| valid(session.opened(id,r)?))
                 .map(|id| (session.volume(id).unwrap(),kinds_of(id),Some(id))),
-            Lofted(added) => session.construct(&stratum(&recipe)).and_then(|id| {
+            Lofted(added) => session.built(&stratum(&recipe)).and_then(|id| {
                 let (v,kinds) = added(&session)?;
                 let sharp = session.volume(id)?;
                 // what the flat adds, alone

@@ -38,7 +38,7 @@ use crate::brep::build::{Profile, ProfileEdge};
 use crate::brep::geom::{Curve, Frame, Surface};
 use crate::brep::recipe::Writer;
 use crate::brep::topo::EdgeCurve;
-use crate::json::{object, Json};
+use crate::brep::recipe::{Kept, Node};
 use crate::model::{FaceRef, RegionShape, RegionTerm, Sketch, SolidDef, Target};
 use crate::space::{add, cross, dot, norm, scale, sub, unit};
 use crate::vocab::Cmp;
@@ -110,48 +110,40 @@ impl Grown {
     /// The recipe's node, written by `w`: `grown`, the body's node and its `pieces` each a `prism`
     /// or a `revolve`, or one cut back a `region` keeping it and a block on each of its planes, or
     /// a face's pieces about a foot `glued` to one another.
-    pub fn node(&self, w: &Writer) -> Result<Json, String> {
+    pub fn node(&self, w: &Writer) -> Result<Node, String> {
         let body = self.body.ok_or("a body grown's pieces with no body to glue them to")?;
-        Ok(object([("kind", "grown".into()), ("body", (body as usize).into()),
-                   ("pieces", Json::Arr(self.pieces_json(w)?))]))
+        Ok(Node::Grown { body: body as i64, pieces: self.pieces_nodes(w)? })
     }
 
     /// Its pieces' nodes, written by `w`: each a `prism` or a `revolve`, or one cut back a
     /// `region`, or a face's pieces about a foot `glued` to one another.
-    pub(crate) fn pieces_json(&self, w: &Writer) -> Result<Vec<Json>, String> {
+    pub(crate) fn pieces_nodes(&self, w: &Writer) -> Result<Vec<Node>, String> {
         self.pieces.iter().map(|group| match &group[..] {
             [piece] => self.piece(piece, w),
-            group => {
-                let parts = group.iter().map(|p| self.piece(p, w)).collect::<Result<Vec<_>, String>>()?;
-                Ok(object([("kind", "glued".into()), ("pieces", Json::Arr(parts))]))
-            }
+            group => Ok(Node::Glued(group.iter().map(|p| self.piece(p, w)).collect::<Result<Vec<_>, String>>()?)),
         }).collect()
     }
 
     /// One piece's node: its sweep, or that cut back to each of its planes.
-    fn piece(&self, piece: &Piece, w: &Writer) -> Result<Json, String> {
+    fn piece(&self, piece: &Piece, w: &Writer) -> Result<Node, String> {
         let s = w.scale;
         let names = piece.section.loops.iter().map(|l| vec![self.name.clone(); l.len()]).collect();
-        let profile = Profile { names, ..piece.section.clone() }.to_json(w)?;
-        let mut swept = match piece.sweep {
-            Sweep::Along(to) => object([("kind", "prism".into()), ("profile", profile),
-                ("from", 0.0.into()), ("to", (to * s).into())]),
-            Sweep::About { origin, axis, angle } => object([("kind", "revolve".into()),
-                ("profile", profile), ("origin", w.line_origin(origin.map(|x| x * s), axis)),
-                ("axis", Writer::triple(axis)), ("angle", angle.into())]),
+        let profile = Profile { names, ..piece.section.clone() }.section(w)?;
+        let swept = match piece.sweep {
+            Sweep::Along(to) => Node::Prism { profile, from: 0.0, to: to * s, draft: None },
+            Sweep::About { origin, axis, angle } =>
+                Node::Revolve { profile, origin: w.line_origin(origin.map(|x| x * s), axis), axis, angle },
         };
         if piece.cuts.is_empty() {
             return Ok(swept);
         }
         // cut back to each bisector: in common with a block standing on its plane
-        swept.set("keep", Json::Bool(true));
-        let mut kept = vec![swept];
+        let mut kept = vec![Kept { node: swept, keep: true }];
         for cut in &piece.cuts {
-            let mut block = super::bounded::half_space(w, cut.at, cut.keep, self.reach, &self.name)?;
-            block.set("keep", Json::Bool(true));
-            kept.push(block);
+            let block = super::bounded::half_space(w, cut.at, cut.keep, self.reach, &self.name)?;
+            kept.push(Kept { node: block, keep: true });
         }
-        Ok(object([("kind", "region".into()), ("pieces", Json::Arr(kept))]))
+        Ok(Node::Region(kept))
     }
 
     /// The solid it is glued to, whose recipe node its own reads.
