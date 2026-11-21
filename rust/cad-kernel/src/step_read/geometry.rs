@@ -825,7 +825,16 @@ impl<'f,'a> Geometry<'f,'a> {
         if points.iter().all(|&p| { let l = f.local(p); l[1].abs() <= within && l[0] >= -within }) {
             return Ok(Sheet {surface:Surface::Revolution(f,Arc::new(swept.curve)),scale:[self.context.angle,swept.rate],seat:None})
         }
-        // a curve leaving the half-plane: the rational net that is its revolution exactly
+        // a curve crossing the axis in a plane of it (a circle about a point of the axis, turned to
+        // a sphere): its halves turn to the same points facing opposite ways, the file's own
+        // parameters saying which a face is on — its net kept as the file's, whole turns from where
+        // its parameters start, never seated
+        if points.iter().all(|&p| f.local(p)[1].abs() <= within) {
+            let net = turned(&f,&swept.curve,[0.,TAU],0.).ok_or_else(|| Refusal::unsupported(r,"a revolution of a curve the reader cannot make a net of"))?;
+            net.check().map_err(|m| Refusal::malformed(r,m))?;
+            return Ok(Sheet {surface:Surface::BSpline(Frame::WORLD,Arc::new(net)),scale:[1.,1.],seat:None})
+        }
+        // a curve leaving the axis's plane: the rational net that is its revolution exactly
         Seat::Turned {f,curve:swept.curve,offset:0.}.sheet(r)
     }
     /// **An open conic turned about the axis through `o` along `z`** (`Seat::Meridian`), refused
