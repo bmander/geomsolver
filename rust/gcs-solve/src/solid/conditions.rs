@@ -305,6 +305,10 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, sides_of: &Sides,
                             if let Some(past) = r.bulging(beyond) {
                                 return Ok(Some(carried(&r, past, if beyond { c } else { -c })));
                             }
+                            // a smooth chain turning both ways: read about its nearest face
+                            if r.smooth && r.faces.len() > 1 {
+                                return Ok(Some(about_nearest(r, beyond, c, lo + grow)));
+                            }
                         }
                     }
                     return Ok(Some(sides(r, split).into_iter().flat_map(|side| held(Arc::new(move |x| {
@@ -376,6 +380,49 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, sides_of: &Sides,
             }))
         }
     }
+}
+
+/// **At least `d` off a smooth chain that turns both ways, read about its nearest face** (#994): a
+/// block's outline with a tab, its every upright rounded — convex rounds and the tab's filled
+/// reflex corners in one chain, which bulges neither way (`BodyFaces::bulging`), so no face's side
+/// carried past its patch is the chain's.  Read through the nearest patch's side alone, the
+/// condition turns from one face to the next where their offsets meet, and where a round's offset
+/// closes onto its axis (a rim rounded to the uprights' radius) its gradient turns over there and
+/// the nearest point's steps never settle.  So the chain is read about the face whose patch is
+/// nearest the step: where that face bulges toward the point, it and the faces going on from it
+/// across a seam that bulge too (`BodyFaces::bulging_about`), each by its side carried on past its
+/// patch, as a convex chain's every face is — the corner of their offsets, the closing axis, met
+/// as a corner of conditions; where it does not (a filled reflex corner seen from its material),
+/// its own side's distance, as before.  Each slot is a condition (`EndRuns`' way): the `k`th the
+/// `k`th face read there, holding everywhere where fewer are.  `c · |side| ≥ d` (`c` the
+/// measurement's weight), within the faces or (`beyond`) outside them.
+fn about_nearest(r: Reading, beyond: bool, c: f64, d: f64) -> Vec<Cond> {
+    let r = Arc::new(r);
+    // each face's chain about it, read once
+    let about: Arc<Vec<Vec<usize>>> = Arc::new(r.faces.iter().map(|&fi| r.body.bulging_about(fi, &r.faces, beyond))
+        .collect());
+    let slots = about.iter().map(Vec::len).max().unwrap_or(0).max(1);
+    let sigma = if beyond { c } else { -c };
+    (0..slots).map(|k| {
+        let (r, about) = (r.clone(), about.clone());
+        Cond { convex: false, eq: false, f: Arc::new(move |x: V| {
+            let Some(fi) = r.nearest(x) else { return (-1.0, [0.0; 3]) };
+            let at = r.faces.iter().position(|&g| g == fi).map_or(&[][..], |i| &about[i][..]);
+            match (at.get(k), k) {
+                // `d − σ·side ≤ 0`, the side carried on past its patch
+                (Some(&g), _) => {
+                    let (s, grad) = r.body.carried_side_grad(g, x);
+                    (d - sigma * s, scale(grad, -sigma))
+                }
+                // a face that does not bulge toward the point: its own side's distance
+                (None, 0) => {
+                    let (s, grad) = r.body.side_grad(fi, x);
+                    (d - c * s.abs(), scale(grad, -c * s.signum()))
+                }
+                _ => (-1.0, [0.0; 3]),
+            }
+        }) }
+    }).collect()
 }
 
 /// **Within faces and at least their surface's radius off it** (`side ≤ −d`, `d` the radius of the
