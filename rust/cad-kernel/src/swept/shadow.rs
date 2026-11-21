@@ -143,10 +143,10 @@ impl Meridian {
     }
 }
 
-/// The stretches of `[a, b]` where `inside` holds, each end found by bisection between samples that
-/// differ.
-fn stretches(inside: &dyn Fn(f64) -> bool,[a,b]: [f64;2]) -> Vec<[f64;2]> {
-    let ts: Vec<f64> = (0..=SAMPLES).map(|k| a+(b-a)*k as f64/SAMPLES as f64).collect();
+/// The stretches of `[a, b]` where `inside` holds, read at `samples + 1` places, each end found by
+/// bisection between samples that differ.
+pub(super) fn stretches(inside: &dyn Fn(f64) -> bool,[a,b]: [f64;2],samples: usize) -> Vec<[f64;2]> {
+    let ts: Vec<f64> = (0..=samples).map(|k| a+(b-a)*k as f64/samples as f64).collect();
     let ins: Vec<bool> = ts.iter().map(|&t| inside(t)).collect();
     let edge = |lo: f64,hi: f64,lo_in: bool| {
         let (lo,hi) = crate::util::roots::bisect(lo,hi,|x,y| 0.5*(x+y),|x,y| y-x > 1e-15*(1.+x.abs()),|m| inside(m) == lo_in);
@@ -235,7 +235,7 @@ impl Reader<'_> {
     /// E(s)` (point location reads a point a tolerance off an edge as on it, so a bisected end
     /// stands up to that far past the face).
     fn within(&self,k: usize,x: &dyn Fn(f64) -> (V,V),[a,b]: [f64;2]) -> Vec<[f64;2]> {
-        let mut out = stretches(&|t| self.in_face(k,x(t).0),[a,b]);
+        let mut out = stretches(&|t| self.in_face(k,x(t).0),[a,b],SAMPLES);
         for s in out.iter_mut() {
             for end in 0..2 {
                 if s[end] == a || s[end] == b { continue }
