@@ -4,6 +4,19 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+## [NEXT-rim-over-rounds]
+
+**A face takes in the caps lying on it** (#994). Where a fill (or any round or chamfer the
+lowering builds) ends flush on a face of the body, its cap (`part.vs.filled.far`) lies on that
+face's own surface with no edge between them, and a reference to the face now reads it with those
+caps: on a solid of a body whose reflex uprights are filled, `whole.part.stock.far round(r) whole`
+rounds the rim all the way round, the arc where each fill meets the top too. Through 0.228 that
+arc was left sharp, silently, unless the caps were named as well. A cap named alone is still
+itself, a face of another operand on the same surface keeps its own name, and a face and a cap
+lying on it are never paired as two faces that meet. A smooth outline turning both ways (a block
+with a tab, its uprights rounded) now has its rim rounded to the uprights' own radius, where it
+was refused as leaving out what the field reads.
+
 **[0.228] A drafted corner where an arc meets a side at an angle** (#962). `std.solids.Drafted`
 of a face whose arc meets a line or another arc at an angle, not tangent, is built: the corner
 moves where the moved sides meet, along the conic the side's plane and the arc's cone (or two

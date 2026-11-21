@@ -245,18 +245,30 @@ own radius a quarter ball about each convex upright's axis, a torus of `ru + r` 
 reflex one's fill, the rim wider than the uprights refused naming their radius. Before, the
 outline's sides, rounds and fills were one chain bulging neither way, read through the nearest
 face alone, which never settled on a convex upright's axis however far the reflex corner stood.
-**A fill's cap is a face of its own name**: a reflex upright's fill ends on each rim's plane in a
-cap (`vs.filled.far`), so `whole.part.stock.far round(r) whole` takes the rim along the sides and
-round each convex upright and leaves the arc where the cap meets the fill sharp; the rim all the
-way round names the caps too (`… vs.filled.far round(r) whole`, or every face square to the
-uprights: `repeat a in whole { when a parallel std.x and a parallel std.y { … } }`), or is the
-general note's second statement (`round(r) whole`). Rounded in one statement with the uprights,
-the reflex upright's fill and the rim's two runs each read the sharp body, and the fill and the
+**A face takes in the caps lying on it** (#994, `BodyFaces::with_caps`): a reflex upright's
+fill ends flush on each rim's plane in a cap of its own name (`vs.filled.far`), which has grown
+the face: the cap lies on the face's own surface with no edge between them. So a reference to a
+face of the body — `whole.part.stock.far` — reads the face and every round's or chamfer's cap
+(`CAPS`, of a region the table recognises: `BodyFaces::caps`) going on from it across a seam on
+its own surface, and from such a cap on; and `whole.part.stock.far round(r) whole` is the rim
+all the way round, the arc where each cap meets its fill too, as the primer's "rounding a solid
+of it" promises. Read the same by every reader of a reference — the field and the lowering
+(`BodyFaces::faces`) and the walk's `meets`, the "selects no edge" diagnosis and its listing
+(`ListedFaces::read_above`). A cap named is itself alone (`vs.filled.far round(r)
+vs.filled.round` is the arcs alone), and a face of another operand on the same surface (a
+post's foot flush with a plate's bottom, #952) keeps its own name: only a round's cap has grown
+its face. Two names sharing a patch — the face and a cap on it — meet where the rest of each does
+(`meets::apart`): a face does not meet itself, so the face and its cap are never paired, nor
+taken for two faces of a corner; the cap named beside the face (or every edge, `round(r) whole`)
+reaches the arc twice, one set of points, the same body. Where the body has no cap (a stratum beneath
+its rounds; `part` itself, before `solid(part)`) nothing changes. Rounded in one statement with
+the uprights, the reflex upright's fill and the rim's two runs each read the sharp body, and the fill and the
 block's uncut corner touch along the upright's line for the run's depth (`Corner`/`CornerFill`
 say a corner of one turn only): refused at the vertex as above. `tests/rim_over_rounds.rs` is
 the gate (a rectangle, an L and the tab, rims of 1, 1.49 and 1.5 over uprights of 1.5, both
-rims, every edge, the fixture's one rim with and without the caps named: each the closed form's
-volume to 1e-9 by Pappus; a rim of 2 refused; one statement refused at the vertex). The two steps
+rims, every edge, the fixture's one rim alone and with the caps named, the L's rim chamfered, a
+cap rounded alone against its fill: each the closed form's volume to 1e-9 by Pappus; a rim of 2
+refused; one statement refused at the vertex). The two steps
 meeting at a corner are not re-examined under this reading.
 A chamfer's flats are
 no tangent chain, so a second statement chamfers the first one's flat against its own faces
