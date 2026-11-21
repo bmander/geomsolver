@@ -71,7 +71,27 @@ def read(path, healing):
     shape = r.OneShape()
     if shape.IsNull():
         raise RuntimeError("OCCT reads no shape")
-    return shape
+    return solids_of(shape)
+
+
+def solids_of(shape):
+    """The solids of what OCCT read, as one compound, where there are any: what else a file holds
+    beside them (construction surfaces, wireframe) is no part of their volume or area, and
+    `BRepGProp` measured over the whole would count its faces' areas and their open "volumes".
+    The shape as read where it holds no solid."""
+    from OCP.BRep import BRep_Builder
+    from OCP.TopAbs import TopAbs_SOLID
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS_Compound
+    x = TopExp_Explorer(shape, TopAbs_SOLID)
+    if not x.More():
+        return shape
+    c, b = TopoDS_Compound(), BRep_Builder()
+    b.MakeCompound(c)
+    while x.More():
+        b.Add(c, x.Current())
+        x.Next()
+    return c
 
 
 def kind_of(face):
