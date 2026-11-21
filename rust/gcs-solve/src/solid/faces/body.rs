@@ -633,15 +633,19 @@ impl BodyFaces {
     /// Which of `fs` a point `p` reads a smooth surface's side by: the face whose patch is nearest
     /// it — but where that is a point of their rim, an edge to a face they do not hold, the surface
     /// ending there, no side is theirs: past a flush wall's top edge the wall says within, the deck
-    /// it goes on into without (#994).  There the nearest face whose surface's foot lies on it,
-    /// where one does.  `None` where `fs` is empty.
+    /// it goes on into without (#994).  There the side is that of the surface going on from the
+    /// rim's ends — the nearest face of `fs` at either end of that edge whose surface's foot lies
+    /// on it, where one does (where none does, a hole a boss's foot cuts in a side, the nearest
+    /// face's still).  `None` where `fs` is empty.
     pub fn nearest_face(&self, fs: &[usize], p: V) -> Option<usize> {
         let (_, fi) = fs.iter().map(|&fi| (self.patch_distance(fi, p), fi)).min_by(|a, b| a.0.total_cmp(&b.0))?;
-        let rim = |e: u32| self.faces_of(e).iter().any(|g| !fs.contains(g));
-        if !self.off_face(fi, p).is_some_and(rim) {
+        let Some(e) = self.off_face(fi, p).filter(|&e| self.faces_of(e).iter().any(|g| !fs.contains(g))) else {
             return Some(fi);
-        }
-        Some(fs.iter().copied().filter(|&g| self.off_face(g, p).is_none())
+        };
+        // (a face going on from the rim's ends: one bounding an edge at either)
+        let ends = self.loc.b.edges[e as usize].v;
+        let at_end = |g: usize| self.edges[g].iter().any(|&x| self.loc.b.edges[x as usize].v.iter().any(|w| ends.contains(w)));
+        Some(fs.iter().copied().filter(|&g| g != fi && at_end(g) && self.off_face(g, p).is_none())
             .map(|g| (self.side(g, p).abs(), g)).min_by(|a, b| a.0.total_cmp(&b.0)).map_or(fi, |(_, g)| g))
     }
 
@@ -718,13 +722,28 @@ impl BodyFaces {
     /// seam there (`continues`) and meeting another of them there in an edge of that turn, along
     /// which the round goes on — an obround's half circle after its flat side (#994).  A face going
     /// on tangent that meets them there only in an edge of the other turn, or in none, carries
-    /// nothing on: the run ends on it — a deck's corner arc running tangent into its side, flush
+    /// nothing on — unless it is a piece of the surface of one of the edge's own faces there
+    /// (`own`), along which the run goes on: the run ends on it — a deck's corner arc running tangent into its side, flush
     /// with the block it stands on, whose side meets the block's top in a convex edge.
-    fn carries_on(&self, c: usize, faces: &[usize], turn: Option<bool>, v: V, vid: u32) -> bool {
-        self.continues(c, faces, v) && (turn.is_none() || self.edges[c].iter().any(|&e| {
+    fn carries_on(&self, c: usize, faces: &[usize], own: &[usize], turn: Option<bool>, v: V, vid: u32) -> bool {
+        if !self.continues(c, faces, v) {
+            return false;
+        }
+        // a piece of the surface of one of the edge's own faces (a floor two cuts leave in two
+        // pieces): the run goes on along it, whatever it meets
+        let on = |f: usize| self.edges[c].iter().all(|&e| (0..=4).all(|k| {
+            let x = self.along(e, k as f64 / 4.0);
+            self.side(f, x).abs() <= self.past(x)
+        }));
+        if own.iter().any(|&f| on(f)) {
+            return true;
+        }
+        // (one of them, or a face it goes on into across a seam: a fill's cap flush with a side)
+        let going = self.smooth(faces);
+        turn.is_none() || self.edges[c].iter().any(|&e| {
             self.loc.b.edges[e as usize].v.contains(&vid) && self.convex(e) == turn
-                && self.faces_of(e).iter().any(|g| *g != c && faces.contains(g))
-        }))
+                && self.faces_of(e).iter().any(|g| *g != c && going.contains(g))
+        })
     }
 
     /// Face `fi`'s plane, where it lies in one: its unit normal away from the material and its
@@ -971,7 +990,10 @@ impl BodyFaces {
         let back = |c: usize| self.plane(c)
             .is_some_and(|(n, _)| faces.iter().any(|&f| dot(n, self.normal(f, v)) > 1e-9));
         let turn = run.first().and_then(|&e| self.convex(e));
-        let ends = self.faces_at(vid, faces).into_iter().filter(|&c| !self.carries_on(c, faces, turn, v, vid));
+        // the faces of the run's edge at this end
+        let own: Vec<usize> = run.iter().filter(|&&e| self.loc.b.edges[e as usize].v.contains(&vid))
+            .flat_map(|&e| self.faces_of(e).iter().copied()).collect();
+        let ends = self.faces_at(vid, faces).into_iter().filter(|&c| !self.carries_on(c, faces, &own, turn, v, vid));
         ends.filter_map(|c| {
             let sign = if self.side(c, on) <= 0.0 { 1.0 } else { -1.0 };
             let across = plain && (self.goes_across(c, sign, run) || sign < 0.0 && back(c));

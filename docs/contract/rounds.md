@@ -789,8 +789,10 @@ side). The fill round the deck's foot runs round the arc to where it meets the f
 that side there is no edge: the deck's side and the block's are one plane. At that vertex the
 block's side goes on tangent from the arc — their normals one there — but it meets the block's top
 in a convex edge, so it carries no fill on: a face going on tangent from one of a run's faces ends
-nothing only where it meets the other in an edge of the run's own turn, along which the round goes
-on (`BodyFaces::carries_on`; an obround's half circle after its flat side). Otherwise it is a face
+nothing only where it meets the other (or a face that one goes on into across a seam, a fill's cap
+flush with a side) in an edge of the run's own turn, along which the round goes on, or is a piece of
+the surface of the run's own face there (`BodyFaces::carries_on`; an obround's half circle after its
+flat side, a floor two cuts leave in two pieces). Otherwise it is a face
 the run ends on, and the set is cut off at it, kept within the block: the ring round the arc thins
 to nothing at the side, each point of its section at `ρ` from the arc's axis turned through
 `π/2 − acos(c/ρ)` (`c` the axis's distance from the side; `c = R` tangent, `c < R` the arc meeting
@@ -800,9 +802,10 @@ refused it ("its exact construction leaves out what the field reads beside its e
 side goes on into the block's across their flush seam (`dck.k3.smooth` holds `base.j3`), so two
 readings of that chain are made right with it: its side is read by the face whose patch is nearest
 the point, but where that is a point of the chain's rim — an edge to a face it does not hold, the
-surface ending there — by the nearest face whose surface's foot lies on it (`BodyFaces::nearest_face`:
-over the block's top beside its rim the wall said within, and a fill ran along the wall's top edge
-in the air); and it is read face by face as one convex solid only where each face's patch lies
+surface ending there — by the surface going on from the rim's ends: the nearest face of the chain at
+either end of that edge whose surface's foot lies on it (`BodyFaces::nearest_face`: over the block's
+top beside its rim the wall said within, and a fill ran along the wall's top edge in the air; where
+none does, a hole a foot's union cuts in a casting's side, the nearest face's as before); and it is read face by face as one convex solid only where each face's patch lies
 within every other's (`BodyFaces::bulging`: the arc's tangent planes carried down through the block
 where its side stands flat, so no ball stood within the block's rim beside the deck). The mirrored
 case is the block's top rim along the flush side rounded: its run ends on the deck's arc, kept
