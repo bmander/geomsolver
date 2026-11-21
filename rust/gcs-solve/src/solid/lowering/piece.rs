@@ -82,9 +82,16 @@ pub(super) fn build(body: &crate::solid::faces::BodyFaces, f: &Faces, section: S
             return Ok(pieces);
         }
         let mut bounds = Vec::new();
+        // each edge's ends as the field reads them: the run of the references' edges through the
+        // corner, a face in pieces of one name (a top split by a cut) going on across its seams,
+        // so the end where a straight run ends on no face is where the reference's edge ends
+        // (#962), and not where one piece of it does
         for &[i, j] in f.pairs() {
-            let es = body.edges_between(&[ids[i]], &[ids[j]]);
-            bounds.extend(ends_at_all(body, &body.end_faces(&es, &[ids[i], ids[j]])));
+            let own = body.edges_between(&[ids[i]], &[ids[j]]);
+            let es = body.runs(&body.edges_between(&groups[i], &groups[j])).into_iter()
+                .find(|run| own.iter().any(|e| run.contains(e))).unwrap_or(own);
+            let faces: Vec<usize> = groups[i].iter().chain(&groups[j]).copied().collect();
+            bounds.extend(ends_at_all(body, &body.end_faces(&es, &faces)));
         }
         let runs: Vec<&Run> = pieces.iter().filter_map(|p| match p { Piece::Run(r) => Some(r), _ => None }).collect();
         let size = runs.iter().map(|r| r.span[1] - r.span[0]).fold(r, f64::max);
@@ -127,13 +134,16 @@ fn stands_within(body: &crate::solid::faces::BodyFaces, f: &Faces, groups: [&[us
     let sigma = if f.within { -1.0 } else { 1.0 };
     // each smooth face's chain, the others of it, and whether the field reads it face by face (a
     // chain bulging toward the ball, `BodyFaces::bulging`) or through its nearest face (any other:
-    // a drafted shell's outline turning both ways)
-    let chains: Vec<(usize, Vec<usize>, bool)> = (0..2).filter(|&k| f.faces[k].smooth).map(|k| {
-        let chain = body.smooth(groups[k]);
-        let carried = body.bulging(&chain, true, !f.within) == Some(true);
-        (k, chain.into_iter().filter(|g| !groups[k].contains(g)).collect(), carried)
+    // a drafted shell's outline turning both ways) — as far as the field reads it (#962): a name in
+    // pieces apart, each piece's own chain, read at a point as the one whose piece is nearest it
+    type Alt = (Vec<usize>, Vec<usize>, bool);
+    let chains: Vec<(usize, Vec<Alt>)> = (0..2).filter(|&k| f.faces[k].smooth).map(|k| {
+        (k, body.chains_apart(groups[k]).into_iter().map(|(named, chain)| {
+            let carried = body.bulging(&chain, true, !f.within) == Some(true);
+            (named, chain.into_iter().filter(|g| !groups[k].contains(g)).collect(), carried)
+        }).collect())
     }).collect();
-    if chains.iter().all(|(_, others, _)| others.is_empty()) {
+    if chains.iter().all(|(_, alts)| alts.iter().all(|(_, others, _)| others.is_empty())) {
         return Ok(());
     }
     // the points each section is read at: its ball's centre, or its flat's own points; each where
@@ -171,7 +181,10 @@ fn stands_within(body: &crate::solid::faces::BodyFaces, f: &Faces, groups: [&[us
     let toward = |g: usize, q: V| sigma * body.carried_side_grad(g, q).0;
     for &q in &at {
         let tol = 1e-9 * (size + norm(q));
-        for (k, others, carried) in &chains {
+        for (k, alts) in &chains {
+            let Some((_, others, carried)) = body.nearest_named(q, alts, |a| &a.0[..]) else {
+                continue;
+            };
             // how far the ball must stand off the others: its radius, or a flat's point as far as
             // from its own face
             let need = match section {

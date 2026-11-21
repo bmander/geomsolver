@@ -180,7 +180,8 @@ fn a_rim_beside_a_filled_corner_is_refused_by_name() {
     let e = solved(&sharp(&["round(r: rp) rod.front_pocket",
                             "rod.front_pocket round(r: re) rod.shank"]));
     let why = built(&e).unwrap_err();
-    assert!(why.contains("touches itself along a line") && why.contains("no manifold file describes it"), "{why}");
+    assert!(why.contains("touches itself along a line") && why.contains("no manifold file describes it")
+        && why.contains("`rod.front_pocket.pr` and `rod.front_pocket.kb` in a concave edge"), "{why}");
     assert!(e.sketch.exact_solid(ent(&e, "rod").i()).is_ok());
     let field = MaterialField::read(&e.sketch, ent(&e, "rod").i(), 1e-10).unwrap();
     assert!(field.side([0.0, 0.0, 70.0]) < 0.0);

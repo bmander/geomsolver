@@ -142,9 +142,13 @@ fn own(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,mirrored:
     let tol = 1e-9*solid.size().max(1.);
     solid.check(10.*tol).map_err(|e| ExportRefusal::at(Stage::Blank,format!("the built boundary is invalid: {e}")))?;
     if let Some([a,b]) = solid.self_touching(tol).first() {
-        return Err(ExportRefusal::at(Stage::Blank,format!("the solid touches itself along a line from [{:.4}, {:.4}, {:.4}] to \
-            [{:.4}, {:.4}, {:.4}] mm (two of its pieces meet there and nowhere else near, as rounds of separate statements leave \
-            them where each reads the body before the other): no manifold file describes it",a[0],a[1],a[2],b[0],b[1],b[2])))
+        let line = format!("the solid touches itself along a line from [{:.4}, {:.4}, {:.4}] to [{:.4}, {:.4}, {:.4}] mm",
+            a[0],a[1],a[2],b[0],b[1],b[2]);
+        return Err(ExportRefusal::at(Stage::Blank,match mixed_vertex(sk,body,[*a,*b]) {
+            Some(why) => format!("{line}: {why}"),
+            None => format!("{line} (two of its pieces meet there and nowhere else near, as rounds of separate statements \
+                leave them where each reads the body before the other): no manifold file describes it"),
+        }))
     }
     if let Some(p) = solid.pinches().first() {
         return Err(ExportRefusal::at(Stage::Blank,format!("the solid pinches to a point at [{:.4}, {:.4}, {:.4}] mm (two of its \
@@ -153,6 +157,53 @@ fn own(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,mirrored:
     (say.stage)(&format!("built the solid by the Rust kernel: {:.6} mm³, {} faces, {} edges ({:?})",super::props::volume(&solid),
         solid.faces.len(),solid.edges.len(),started.elapsed()));
     Ok(Exact {solid,pattern:None,indexed:None,swept:false,emptied:None})
+}
+
+/// **Where the solid touches itself at a vertex of edges of both turns** (#962): the line `ends`
+/// (millimetres) starting at a vertex of the body's faces as its rounds read them (`faces::cached`)
+/// where convex and concave edges meet, said by the faces there in the body's names for them, the
+/// edge alone in its turn, and what to write: that edge rounded by a statement of its own, the
+/// others on a solid of the body it leaves.  `None` where the line starts at no such vertex.
+fn mixed_vertex(sk: &Sketch,body: usize,ends: [[f64;3];2]) -> Option<String> {
+    let faces = crate::solid::faces::cached(sk,body).ok()?;
+    let mm = faces.brep().1;
+    let near = ends.map(|p| p.map(|x| x/mm));
+    let size = near.iter().map(|p| crate::space::norm(*p)).fold(1.,f64::max);
+    let (at,edges) = faces.mixed_vertex(&near,1e-6*size)?;
+    let path = |fi: usize| format!("{}.{}",sk.solid_name(body),faces.paths()[fi].text());
+    let name = |fi: usize| format!("`{}`",path(fi));
+    let mut all: Vec<usize> = edges.iter().flat_map(|(f,_)| *f).collect();
+    all.sort_unstable();
+    all.dedup();
+    if all.is_empty() {
+        return None;
+    }
+    let listed = crate::vocab::all_of(&all.iter().map(|&f| name(f)).collect::<Vec<_>>());
+    let turn = |convex: bool| if convex { "convex" } else { "concave" };
+    let said: Vec<String> = edges.iter().map(|([x,y],c)| format!("{} and {} in a {} edge",name(*x),name(*y),turn(*c))).collect();
+    let convex = edges.iter().filter(|e| e.1).count();
+    let lone = match (convex,edges.len()-convex) { (1,_) => edges.iter().find(|e| e.1),(_,1) => edges.iter().find(|e| !e.1),_ => None };
+    let first = lone.map_or("…".to_string(),|([x,y],_)| format!("{} round(r: …) {}",path(*x),path(*y)));
+    let whole = sk.solid_name(body);
+    // a chamfer's flats are no tangent chain: a second statement over the body the first leaves
+    // would chamfer the first one's flat against its own faces again
+    let flat = crate::solid::faces::readers_of(sk,body).into_iter().any(|r| match &sk.solids[r].def {
+        crate::model::SolidDef::Region {terms,..} =>
+            crate::solid::lowering::face_name(sk,terms) == Some("flat"),
+        _ => false,
+    });
+    let write = if flat {
+        "A chamfer of every edge at such a vertex is not said by the words yet: chamfer the edges either side of it by \
+         statements that leave one of them out (picking the edges by the faces they lie between)".to_string()
+    } else {
+        format!("Round the edge alone in its turn first, by a statement of its own, named (`inside := {first}`, or every edge among the \
+            faces of the step, the pocket or the boss it is an edge of), and every edge on a solid of the body that leaves \
+            (`whole := solid({whole})`, then `round(r: …) whole`): each edge's round then goes on round the first one's, \
+            tangent")
+    };
+    Some(format!("at [{:.4}, {:.4}, {:.4}] edges of both turns meet where {listed} do ({}), and a round or a chamfer of \
+        each, read off the body as its other terms leave it, takes or fills it before the others: their material touches \
+        along that line, and no manifold file describes it. {write}",at[0]*mm,at[1]*mm,at[2]*mm,said.join("; ")))
 }
 
 /// Whether solid `body` is a mirrored instance's, or reaches one among its operands (#578).

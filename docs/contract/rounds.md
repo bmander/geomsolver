@@ -51,6 +51,27 @@ handed to the solver without the language is refused there and never panics nor 
 face.  `BodyFaces::faces` reads a reference's path alone: each of its callers holds the reference
 to be of that body (`reading`; the lowering, whose `recognise` takes faces of one solid; a shell's
 kept faces; a scenario's faces, `analysis::reentrant_of` given the solid). `tests/one_body.rs`.
+
+**A round or a chamfer that selects no edge says so** (#962, [0.225]): the words take an edge
+where `b meets a` and nowhere else, and take it whichever way it turns (`Run` and `Fill`, `Flat`
+and `FlatFill`, each pair both), so the set a statement over faces that are all the body's (no
+W116) selects is empty exactly when no two of its faces — one of `A` and one of `B`, or two of
+`X`'s — meet in an edge of the body: they meet nowhere, one side's faces were all taken in by the
+body's other terms (a Boolean ate them: `Meets` gives such a face no point), they meet only at a
+corner, or only along seams where one goes on tangent into the other (no edge, `BodyFaces::seam`:
+a ball rolled there or a flat cut takes nothing; `meets` reads them as meeting, so the copy is
+made and is empty), or `X` is one face, paired with nothing. The walk records, for each document
+statement whose blocks over one solid's faces had a `when` read a face, the blocks and every pair
+asked `meets` (`flatten::Unmade`, `Walk::unmade`; none where a `when` was refused, read faces of
+two solids or of an unread boundary, or the path was W116), and after the solve each pair of a
+face of `A` and another of `B` — the pairs whose edge the word takes; a corner's third face read
+against its own side, or a face against itself, selects none — is read edge by edge in the layer
+it was asked in (`Layered::listed_in`, `ListedFaces::meeting`); where none meets in an edge,
+**W120** at the statement, once, naming the operands and why
+(`program::at_solve::unmade`) — never where one pair does, where the boundary cannot say of a
+face, nor at a statement `read_again` said E080 at. `tests/face_names.rs`
+(`a_round_that_selects_no_edge_says_why`, `a_round_that_selects_an_edge_says_nothing_of_it`) is
+the gate.
 **Which edges are the faces'** (#763, [0.204]): a word takes every edge where its faces meet, and
 a block over the faces picks among them — by name, or by how each face lies (`when f parallel l`,
 [language.md](language.md)) — so the words take no option saying which edges: `rounds/hub.sv`
@@ -135,7 +156,103 @@ on either cap to one volume). **A round that is not built is said by its body an
 its solid's name is the use's that made it (`#17.0.….taken`), which no document wrote, so its
 recipe node carries what a failure calls it (`"said"`, `` `box`'s round or chamfer `vert.taken` ``:
 the body whose late sets take it, `step_through`; `recipe::Named::called`, what every
-`built_names` holds).
+`built_names` holds). **And by the faces it stands on** (#962, `cad::faces_said`): a region over
+a body's faces refused or read only by the field is said with the faces of its `FaceSide` terms in
+the body's names (`` `taken[1]` (where `rod.rim` and `rod.near` meet): … ``) — the edge or
+the corner in the author's terms, which a statement over many faces (`round(r) part`, the general
+note) does not name. Such a statement is refused whole where one of its edges is not built: a
+general note is every edge, and half of it is not the note; the faces said are what a block over
+the faces leaves out (`when`, "pick edges by the faces they lie between" in the primer).
+`tests/mixed_vertices.rs` (`an_edge_the_general_note_cannot_build_is_said_by_its_faces`) is the
+gate.
+
+**Where edges of both turns meet at a vertex** (#962's 8c, [0.226]: "all edges R1.5" on a stock
+block). At a vertex of three faces whose edges are not all of one turn, one edge is alone in its
+turn — a step's floor meeting its wall (concave) between two convex edges of the block's side, a
+pocket's upright between two convex edges of the top, a boss's upright (convex) between two
+concave edges of its foot. The ball rolled along every edge leaves a smooth surface there only
+where that edge is rounded first and the other two on the body it leaves: each is then a round
+against the first one's chain (`F.smooth`, the face going on tangent into its round), so the
+side's round goes on round the step's fill as a ring about the fill's axis — a torus of `2r` about
+it, a stretch glued to the runs either side at the sections they share, as a rim goes round a
+rounded corner — and a foot's fill round a boss's upright's round the same. `Corner` and
+`CornerFill` say the three-of-a-turn vertices; no set says a mixed one, for the words read in
+that order already say it. So **the general note is two statements**: the lone edges first (a
+feature's own edges: `round(r) part.step`, `round(r) part.pocket`, `round(r) part.boss`), then
+every edge on a solid of the body they leave (`whole := solid(part)`, `round(r) whole`) — the
+idiom `rim.sv` writes for a rim over rounded corners. Two rules make the second statement round
+what the first left. **A round's caps are faces of the body** (`lowering::CAPS`): a piece
+cut off by a face it ends on, with the body's material beyond, leaves its cap there on that face's
+surface — a fill's two ends on a step's sides, an upright's fill's end on a pocket's top, an
+upright's round's foot on the plate a boss stands on — and a block over the faces lists them
+(`far`, `near` of a run's prism, `start`, `end` of a ring's stretch; a name the boundary has not is
+no face of it, `ListedFaces::read_above`, or eaten), so the edge a cap makes with its round is
+paired and rounded as the face's own edges are; the face and the cap are pieces of one surface
+(#952), no edge between them, the section against both. **A straight edge ends square where it
+ends on no face** (`BodyFaces::end_faces`): where every other face at its end goes on from one of
+its faces across a seam (into a round tangent, or a piece of the same surface) or is one the run
+goes across, the run ends on the plane square to it there, as "where a run ends on a face all but
+along it" below says. A run's own common part ends there already; a corner's edges have nothing
+else, and the block's corner at a step's far end, its edge along the side ending where the floor
+goes on into the fill, carried a run on under the step's high end — a groove 1.5 deep the field
+read and the exact build had not, which the gate's probes found at one placing of the step in
+five. (An arc's square plane is a half-space through its axis, which would cut a stretch of more
+than half a turn short of its other end: an arc ending on no face is left to its meridian.) So
+the lowering holds a corner's runs within each edge's ends **as the field reads them**
+(`piece::build`): the run of the references' edges through the corner, a face in pieces of one
+name going on across its seams (a floor a second cut splits, both pieces `cut1.far`), and not
+the one piece's edge, whose seam would end it square and refuse the corner as "a ball larger
+than the edges it rounds".
+Written as one `round(r) part`, every edge reads the sharp body and the fill and the cuts touch
+along a line from the vertex: the export says so **at the vertex** (`export::mixed_vertex`,
+`BodyFaces::mixed_vertex`) — where it stands, the faces there by the body's names with each edge's
+turn, the edge alone in its turn and the two statements to write — and not "rounds of separate
+statements" alone. **The order, in general**: an edge goes in a statement after each edge it
+must follow, and at each vertex where edges of both turns meet the edge alone in its turn must
+come before the other two — so an author lists the vertices of both turns, marks at each its lone
+edge, and writes the statements level by level: first the edges no vertex puts after another,
+then (on a solid of the body they leave) those whose every earlier edge is in a level written,
+then every edge left. Two steps meeting at a corner is three: the upright between their walls is
+alone at its foot (convex over two concave floor edges), each floor edge is alone where it meets
+the block's side, so the upright, then the floor into each wall (its fill going round the
+upright's foot), then every edge. Where two vertices disagree — an edge that must come before
+another at one and after it at another, which only two faces meeting in two edges can make — no
+order of statements says the smooth surface, and any order is refused at the vertex it gets
+wrong, as one statement is. **A name in pieces apart** (#962): statements written bare each leave
+their rounds' faces under one name (`filled.round`, `filled.near`), so a reference to it holds
+pieces of several statements on several surfaces, each going on smooth into a chain of its own (a
+cap on a step's side into the side, another on the first step's wall into the wall, its fill and
+the floor). The field reads each piece with its own chain, the one whose named piece is nearest
+the point (`faces::reading`, `BodyFaces::chains_apart`), and the lowering's check of where a ball
+stands the same (`piece::stands_within`); where such a round is still not built it is said with
+"… names the faces of rounds or chamfers of several statements written bare under one name …:
+name each of those statements" (`faces::uses_naming`, `cad::faces_said`). **Still refused, by the gate**: two steps
+meeting at a corner in its three statements. The block's top over the upright is a ring whose
+ball is as wide as the upright's round (`tests/tight_corners.rs`: its centres closing onto the
+axis, read face by face over a smooth chain bulging toward the ball, `BodyFaces::bulging`); here
+the round's chain goes on through the fill at the upright's foot into the floor, no chain bulging
+one way, and the field reads it through its nearest face, which never settles where the offset
+closes: "its exact construction leaves out what the field reads beside its edge". Reading only
+the chain's convex part from the faces named builds it, but changes the reading of every chain a
+round's section runs beside (a slot's rim beside its ends, a round spilled onto a rim's round),
+and is not taken: a chain read locally is item 1's to say.
+A chamfer's flats are
+no tangent chain, so a second statement chamfers the first one's flat against its own faces
+again: a chamfer of every edge at such a vertex is not said by the words yet, and its refusal says
+so. "All edges" over a pocket whose plan corners are arcs has no vertex of both turns, and is one
+statement: corners of 3 and of exactly the round's radius are built (the floor's ring then the
+corner's ball), a corner tighter than the round refused by item 1's sentence naming its radius and
+the faces the round lies between. A bore's rims rounded on both faces of a plate thinner than
+`2r` overlap, and the set is their union: the two tori cross in a circle halfway through.
+`tests/mixed_vertices.rs` is the gate (the step at either end and moved along the block, its wall
+leaning 45° with its fill 2.5 and the rest 1 and the other way round, holes beside it, the pocket,
+the boss — its own edges first and its uprights alone first — a boss beside a step, two steps of
+two depths in two statements (and written bare, refused saying to name them), the pocket with
+rounded corners, the bore through a plate 3.2 and 2.6 thick, and `rounds/stock.sv`, each to its closed
+form to 1e-9 — Pappus, the vertex parts read off three closed forms, or a quadrature of the
+overlapping takes — and exported with no sliver; the field holding the high end's material where
+the corner's groove ran; a corner on a floor in pieces of one name built; one statement of either
+word refused at the vertex; an edge not built said by its faces).
 
 **Against the smooth surface** ([0.149], #422): `F.smooth` (`Member::Smooth`, `FaceRef::smooth`, read
 with `surface`) is the faces named and every face going on from them tangent across a seam
@@ -422,7 +539,10 @@ the field (`conditions::ends`, through `end_sides`) and the lowering (`piece::en
 — and only where every edge of the set is one the lowering carries a section along
 (`BodyFaces::carried`): a ball rolled along a traced run is cut by `fillet::end_at`'s own reading.
 What a run ends on is a face, or a plane square to an edge where its run ends on none
-(`faces::EndBy`).
+(`faces::EndBy`): where an edge a run-out goes along ends on none, and ([0.226], #962) a straight
+run's own end where it ends on no face (its faces going on across seams there, or every face there
+one it goes across) — a corner's edge read no further than it runs ("Where edges of both turns
+meet at a vertex" above).
 - **A face whose surface the run itself goes across is no face it ends on** (`ends_at`,
   `goes_across`: some point of the run's edges past the surface on the side that would keep it,
   by more than the boundary's tolerance — exactly for a plane against a line or an arc, at 64

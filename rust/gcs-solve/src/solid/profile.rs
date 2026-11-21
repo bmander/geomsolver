@@ -227,6 +227,106 @@ pub(crate) fn curved_point(sk: &Sketch, e: EntRef, t: f64) -> (f64, f64) {
     }
 }
 
+/// **An edge of face `fi` of no length** (#962): the first edge of its outline, then of each hole
+/// in turn, that a kernel building the face would refuse it for (`brep::build::no_length`, the one
+/// test), read at the pose the sketch stands in — as a `FaceFault::NoLength`, with its name in
+/// the face (`FaceE::edge_names`, empty where unnamed) and its length (model units).  A line's
+/// run, an arc's radius times its turn (none is a whole turn, as the recipe writes it), a
+/// circle's round, and a spline's or a curve's widest chord; against the face's own reach from its first corner — a face's size, not
+/// how far it stands from the world's origin (a kernel builds a part far out about its own
+/// origin, `cad::recipe_about`).  A face's walk drops such an edge as it tessellates
+/// (`tidy_poly`), so the face bounds a region all the same, and only a kernel would meet it, in
+/// its own terms.
+pub fn edge_of_no_length(sk: &Sketch, fi: usize) -> Option<FaceFault> {
+    let f = sk.faces.get(fi)?;
+    let xy = |p: u32| sk.point_xy(p as usize);
+    let first = f.edges.first().and_then(|&e| crate::model::edge_ends(sk, e)).map(|(p, _)| xy(p))
+        .or_else(|| f.edges.first().filter(|e| e.kind == EntKind::Circle)
+            .and_then(|e| sk.circles.get(e.i())).map(|c| xy(c.center)))?;
+    let at = |q: (f64, f64)| (q.0 - first.0).dhypot(q.1 - first.1);
+    let span = |q: &[(f64, f64)]| q.iter()
+        .map(|a| q.iter().map(|b| (a.0 - b.0).dhypot(a.1 - b.1)).fold(0.0, f64::max))
+        .fold(0.0, f64::max);
+    let sampled = |e: EntRef| -> Vec<(f64, f64)> {
+        let (lo, hi) = match e.kind {
+            EntKind::Spline => crate::curve::domain(sk, e.i()),
+            _ => sk.curve_domain(e.i()),
+        };
+        (0..=16).map(|k| curved_point(sk, e, lo + (hi - lo) * k as f64 / 16.0)).collect()
+    };
+    // each edge's length, and its reach from the profile's origin
+    let measure = |e: EntRef| -> Option<(f64, f64)> {
+        Some(match e.kind {
+            EntKind::Line => {
+                let l = sk.lines.get(e.i())?;
+                (sk.line_length(e.i()), at(xy(l.p1)).max(at(xy(l.p2))))
+            }
+            EntKind::Arc => {
+                let a = sk.arcs.get(e.i())?;
+                let r = sk.params[a.radius as usize].value.abs();
+                let (a0, a1) = sk.arc_angles(e.i());
+                let turn = (a1 - a0).rem_euclid(std::f64::consts::TAU);
+                let turn = if turn == 0.0 { std::f64::consts::TAU } else { turn };
+                (r * turn, at(xy(a.center)) + r)
+            }
+            EntKind::Circle => {
+                let c = sk.circles.get(e.i())?;
+                let r = sk.params[c.radius as usize].value.abs();
+                (r * std::f64::consts::TAU, at(xy(c.center)) + r)
+            }
+            EntKind::Spline | EntKind::Curve => {
+                let q = sampled(e);
+                (span(&q), q.iter().map(|&p| at(p)).fold(0.0, f64::max))
+            }
+            _ => return None,
+        })
+    };
+    let measured: Vec<(EntRef, &str, (f64, f64))> = f.boundaries()
+        .flat_map(|(es, names)| es.iter().enumerate()
+            .map(move |(k, &e)| (e, names.get(k).map_or("", String::as_str))))
+        .filter_map(|(e, name)| Some((e, name, measure(e)?))).collect();
+    let size = measured.iter().map(|m| m.2 .1).fold(1e-300, f64::max);
+    measured.into_iter().find(|m| crate::brep::build::no_length(m.2 .0, size))
+        .map(|(edge, name, (length, _))| {
+            FaceFault::NoLength { edge, name: name.to_string(), length }
+        })
+}
+
+/// **What keeps a face from being any solid's** (#962): an edge of it of no length
+/// (`edge_of_no_length`), or a loop that bounds no simple region (`section::face_polys`'s
+/// refusal, in its words).  The face's own fault, read at the pose the sketch stands in, whatever
+/// is built of it: a primitive swept from it is refused for it (`validate`), and a front end says
+/// it once, at the face (`program::solid_diagnostics`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum FaceFault {
+    /// Edge `edge`, the face's `name` for it (empty where unnamed), `length` model units long.
+    NoLength { edge: EntRef, name: String, length: f64 },
+    /// Its outline or a hole bounds no simple region: why.
+    Outline(String),
+}
+
+/// Face `fi`'s fault, where it has one (`FaceFault`).
+pub fn face_fault(sk: &Sketch, fi: usize) -> Option<FaceFault> {
+    edge_of_no_length(sk, fi).or_else(|| {
+        super::section::face_polys(sk, fi, super::REPORT_UNIT).err().map(FaceFault::Outline)
+    })
+}
+
+impl FaceFault {
+    /// The fault in the words the sketch has for it: the face's name and its edge's.
+    pub fn words(&self, sk: &Sketch, fi: usize) -> String {
+        let face = &sk.faces[fi].name;
+        match self {
+            FaceFault::NoLength { name, length, .. } => {
+                let edge = if name.is_empty() { "an edge".to_string() } else { format!("`{name}`") };
+                format!("`{face}`'s edge {edge} has no length ({})",
+                    crate::units::Dim::LENGTH.number_text(*length, sk.units))
+            }
+            FaceFault::Outline(why) => format!("`{face}`: {why}"),
+        }
+    }
+}
+
 /// A zero-length side is no side: two coincident vertices would give a facet with no normal and
 /// a seam with no direction.  Coordinates are left exactly as the solve found them.
 fn tidy_poly(mut f: FacePoly) -> FacePoly {
