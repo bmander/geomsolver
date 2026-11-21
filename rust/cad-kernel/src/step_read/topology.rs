@@ -240,7 +240,9 @@ fn read_edge(g: &Geometry,w: &Written,points: &[V],within: f64) -> Result<Read,R
 /// The file's curve of an edge in a spline face's parameters as the kernel's pcurve, read over
 /// the kernel's parameter of the edge (`rate` of the file's, and moved by whole periods of a
 /// closed curve to where its domain says): kept where its image lies as near the edge as the
-/// surface does, within `near`, at every eighth of it, else none.
+/// surface does, within `near`, at its ends and eight points between, spaced unevenly (a curve
+/// matching the edge only where a symmetry makes it — a line through a rational arc's
+/// parameters, right at its knots and its spans' middles — is not kept), else none.
 fn file_pcurve(flat: &Flat,e: &Edge,rate: f64,s: &Surface,vs: &[Vertex],near: f64) -> Option<Pcurve> {
     let period = match &e.curve { EdgeCurve::Curve(c) => c.period(),EdgeCurve::Degenerate => None };
     let shifts: Vec<f64> = match (period,flat.domain()) {
@@ -263,18 +265,14 @@ fn file_pcurve(flat: &Flat,e: &Edge,rate: f64,s: &Surface,vs: &[Vertex],near: f6
         };
         // as near the edge as the surface is, within `near` (a file's edge may stand its
         // tolerance off its faces, and its curve in each lies under it)
-        let on = (0..=8).all(|j| {
-            let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/8.;
+        let on = [0.,0.07,0.19,0.31,0.43,0.5,0.61,0.73,0.89,1.].iter().all(|&j| {
+            let t = e.t[0]+(e.t[1]-e.t[0])*j;
             let (q,p) = (pc.at(t,e,s,vs),e.point(t,vs));
             let d = distance(s.point(q),p);
-            d <= near || d <= s.foot_from(p,q).map_or(0.,|f| distance(s.point(f),p))+near
+            // (the foot sought from the curve's own point: where it goes farther, none found)
+            d <= near || d <= s.foot_from(p,q).map(|f| distance(s.point(f),p)).filter(|&x| x <= d).unwrap_or(0.)+near
         });
         if on { return Some(pc) }
-        if std::env::var_os("STEP_READ_DEBUG").is_some() {
-            let g: Vec<String> = (0..=8).map(|j| { let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/8.; let (q,p) = (pc.at(t,e,s,vs),e.point(t,vs));
-                format!("{:?}/{:.2e}/{:?}",q,distance(s.point(q),p),s.foot_from(p,q).map(|f| distance(s.point(f),p))) }).collect();
-            eprintln!("file pcurve off: t {:?} shift {shift} {g:?}",e.t);
-        }
     }
     None
 }
@@ -375,13 +373,48 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
             let mut found: Vec<(Pcurve,Uv,usize)> = mine.iter().enumerate().filter(|&(k,_)| Some(k) != other)
                 .filter_map(|(k,f)| Some((f.scaled(sheet.scale)?,k))).filter_map(|(f,k)| Some((file_pcurve(&f,e,st.reads[ei].rate,s,&b.vertices,st.near)?,k)))
                 .map(|(pc,k)| {
+                    // (on a spline sheet closed round a parameter, a curve a whole span outside its
+                    // domain — a writer's of a periodic sheet — moved by the span into it)
+                    let pc = match s {
+                        Surface::BSpline(_,n) => {
+                            let (a,dom) = (pc.at(travel[0],e,s,&b.vertices),n.domain());
+                            let d: Uv = std::array::from_fn(|k| {
+                                let [lo,hi] = dom[k];
+                                let w = hi-lo;
+                                if a[k] < lo-1e-6*w { ((lo-a[k])/w).ceil()*w } else if a[k] > hi+1e-6*w { -((a[k]-hi)/w).ceil()*w } else { 0. }
+                            });
+                            let mut d = d;
+                            // (onto the side of the seam its other use is not on)
+                            if d != [0.;2] { if let Some(&o) = placed.get(&ei) {
+                                for k in 0..2 {
+                                    let [lo,hi] = dom[k];
+                                    let x = a[k]+d[k];
+                                    if d[k] != 0. && (x-o[k]).abs() <= 1e-6*(hi-lo) { d[k] += if x-lo < hi-x { hi-lo } else { lo-hi }; }
+                                }
+                            } }
+                            if d == [0.;2] { pc } else { moved(&pc,d) }
+                        }
+                        _ => pc,
+                    };
                     let a = pc.at(travel[0],e,s,&b.vertices);
                     let Some(l) = last else { return (pc,a,k) };
                     let d: Uv = std::array::from_fn(|k| periods[k].map_or(0.,|p| ((l[k]-a[k])/p).round()*p));
                     if d == [0.;2] { (pc,a,k) } else { (moved(&pc,d),[a[0]+d[0],a[1]+d[1]],k) }
                 }).collect();
             if let Some(l) = last { found.sort_by(|x,y| distance2(x.1,l).total_cmp(&distance2(y.1,l))); }
-            found.into_iter().next().map(|(pc,a,k)| { taken.insert(ei,k); (pc,a) })
+            found.into_iter().next().map(|(pc,a,k)| {
+                // a seam's first use on the side of it the face lies left of
+                let (pc,a) = if seams.contains(&ei) && !placed.contains_key(&ei) && last.is_none() {
+                    let mid = 0.5*(e.t[0]+e.t[1]);
+                    let dd = pc.derivative(mid,e,s,&b.vertices);
+                    let dd = if rev { [-dd[0],-dd[1]] } else { dd };
+                    let shift = seam_side(s,pc.at(mid,e,s,&b.vertices),dd,reversed);
+                    if shift == [0.;2] { (pc,a) } else { (moved(&pc,shift),[a[0]+shift[0],a[1]+shift[1]]) }
+                } else { (pc,a) };
+                taken.insert(ei,k);
+                placed.entry(ei).or_insert(pc.at(0.5*(e.t[0]+e.t[1]),e,s,&b.vertices));
+                (pc,a)
+            })
         } else { None };
         let (pcurve,start,end) = match given {
             Some((pc,a)) => { let z = pc.at(travel[1],e,s,&b.vertices); (pc,a,z) }
@@ -396,17 +429,30 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
                     unwrap(s.inverse_near(begin,q),q,periods)
                 });
                 let mut walked = track(s,e,&b.vertices,travel,from,steps,st.within,&|_,at| at);
-                // a seam of a sheet closed without a period, walked where its other use was: walked
-                // again along the other side of the sheet's domain, each point sought from its
-                // mirror there
-                if let (Surface::BSpline(_,n),Some(&other)) = (s,placed.get(&ei)) {
+                // a seam of a sheet closed without a period: walked again, every point of it on the
+                // domain's edge sought on the one side — the side its other use is not on, or for
+                // the first, the side the face lies left of (`seam_side`)
+                if let (Surface::BSpline(_,n),true) = (s,seams.contains(&ei)) {
                     let (dom,m) = (n.domain(),walked[steps/2]);
-                    if (0..2).all(|k| (m[k]-other[k]).abs() <= 1e-6*(dom[k][1]-dom[k][0])) {
-                        if let Some(k) = (0..2).find(|&k| { let [lo,hi] = dom[k]; (m[k]-lo).min(hi-m[k]) <= 1e-6*(hi-lo) }) {
-                            let mirror = |mut q: Uv| { q[k] = dom[k][0]+dom[k][1]-q[k]; q };
-                            let first = walked.clone();
-                            walked = track(s,e,&b.vertices,travel,mirror(first[0]),steps,st.within,&|j,_| mirror(first[j]));
-                        }
+                    let on = |q: Uv,k: usize| { let [lo,hi] = dom[k]; (q[k]-lo).min(hi-q[k]) <= 1e-6*(hi-lo) };
+                    if let Some(k) = (0..2).find(|&k| on(m,k)) {
+                        let [lo,hi] = dom[k];
+                        let here = if m[k]-lo < hi-m[k] { lo } else { hi };
+                        let side = match placed.get(&ei) {
+                            Some(o) if on(*o,k) => if o[k]-lo < hi-o[k] { hi } else { lo },
+                            _ => {
+                                let (p,q) = (walked[steps/2-1],walked[steps/2+1]);
+                                let mut x = m;
+                                x[k] = here;
+                                here+seam_side(s,x,[q[0]-p[0],q[1]-p[1]],reversed)[k]
+                            }
+                        };
+                        let first = walked.clone();
+                        let snap = |mut q: Uv| { if on(q,k) { q[k] = side; } q };
+                        walked = track(s,e,&b.vertices,travel,snap(first[0]),steps,st.within,&|j,_| snap(first[j]));
+                        // (its ends too, where a pole's collapse left them on the other edge)
+                        walked[0] = snap(walked[0]);
+                        walked[steps] = snap(walked[steps]);
                     }
                 }
                 let [mut a,mut m,mut z] = [walked[0],walked[steps/2],walked[steps]];
@@ -423,7 +469,6 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
                 (Pcurve::Inverse {a:ea,b:eb},a,z)
             }
         };
-        if std::env::var_os("STEP_READ_DEBUG").is_some() { eprintln!("face #{face} use edge {ei} rev {rev} {} {start:?} -> {end:?}",match pcurve { Pcurve::Inverse {..} => "inverse",_ => "file" }); }
         first.get_or_insert((start,begin));
         out.push(Coedge {edge:ei as u32,reversed:rev,pcurve});
         last = Some(end);
@@ -489,6 +534,30 @@ fn pole_seam(s: &Surface,w: &Wound,v: u32,reversed: bool,laid: u32) -> Option<(V
     // up from where the loop came round to, and down to where it began
     let seam = LAID;
     Some((point,edge,[Coedge {edge:seam,reversed:!up,pcurve:along(u+w.turn)},Coedge {edge:seam,reversed:up,pcurve:along(u)}]))
+}
+
+/// **The side of a closed spline sheet's seam a use runs along**: where `m`, a use's middle, lies
+/// on an edge of the sheet's domain the sheet closes across (its points there one with those on
+/// the opposite edge), and `d` its direction in the face's parameters runs along it, the shift
+/// (by the domain's span) to the other edge where the face would not lie on the use's left there
+/// — inward from the domain's edge, with the material normal up (`reversed` turning it).
+fn seam_side(s: &Surface,m: Uv,d: Uv,reversed: bool) -> Uv {
+    let Surface::BSpline(_,n) = s else { return [0.;2] };
+    let dom = n.domain();
+    let left = if reversed { [d[1],-d[0]] } else { [-d[1],d[0]] };
+    let mut out = [0.;2];
+    for k in 0..2 {
+        let [lo,hi] = dom[k];
+        let w = hi-lo;
+        if !(d[k].abs() <= 1e-3*d[1-k].abs()) { continue }
+        let mut other = m;
+        other[k] = if (m[k]-lo).abs() <= 1e-6*w { hi } else if (hi-m[k]).abs() <= 1e-6*w { lo } else { continue };
+        let scale = 1.+norm(s.point(m));
+        if distance(s.point(m),s.point(other)) > 1e-7*scale { continue }
+        let at_lo = other[k] == hi;
+        if at_lo && left[k] < 0. { out[k] = w } else if !at_lo && left[k] > 0. { out[k] = -w }
+    }
+    out
 }
 
 fn distance2(a: Uv,b: Uv) -> f64 { (a[0]-b[0]).dhypot(a[1]-b[1]) }
@@ -592,13 +661,6 @@ fn face(st: &Setting,sheet: &Sheet,w: &Walked) -> Result<Built,Refusal> {
         }
     }
     let mut f = Face {surface:s.clone(),reversed,loops,name:w.name.clone()};
-    if std::env::var_os("STEP_READ_DEBUG").is_some() {
-        for c in f.loops.iter().flatten() {
-            if c.edge > LAID-16 { continue }
-            let e = &b.edges[c.edge as usize];
-            for j in 0..=32 { let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/32.; let q = c.pcurve.at(t,e,s,&b.vertices); if !(q[0].is_finite() && q[1].is_finite()) { eprintln!("face #{} edge {} t {:?} at {t} {q:?} {:?}",w.entity,c.edge,e.t,c.pcurve); break } }
-        }
-    }
     // the outer loop first: the one enclosing the most of the face's parameters
     if f.loops.len() > 1 {
         // (a face laying an edge read against the boundary with what it lays, its laid edges and
@@ -696,7 +758,6 @@ fn witness(msg: &str,given: &Given) -> Option<u32> {
 
 /// The solid `found` names, read; refused naming the entity that could not be.
 pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
-    let clock = std::time::Instant::now(); let lap = |w: &str| if std::env::var_os("STEP_READ_TIME").is_some() { eprintln!("{w} {:?}",clock.elapsed()) };
     let g = Geometry {file,context:found.context};
     let mut w = Walk {g:&g,edges:BTreeMap::new(),written:Vec::new(),vertices:BTreeMap::new(),points:Vec::new()};
     let mut faces = Vec::new();
@@ -719,21 +780,17 @@ pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
     let size = if points.is_empty() { 0. } else { norm(sub(hi,lo)) };
     let uncertainty = found.context.uncertainty.unwrap_or(0.);
     let within = (1e-9*size).max(uncertainty);
-    lap("walked");
     let reads = crate::util::par::indices(w.written.len(),|i| read_edge(&g,&w.written[i],&points,within.max(1e-7*size)))
         .into_iter().collect::<Result<Vec<_>,_>>()?;
-    lap("edges");
     let mut b = Brep {vertices:points.iter().map(|&p| Vertex {p,tol:0.}).collect(),edges:reads.iter().map(|r| r.edge.clone()).collect(),faces:Vec::new()};
     // the surfaces, each read once
     let ids: Vec<u32> = faces.iter().map(|f| f.surface).collect::<BTreeSet<_>>().into_iter().collect();
     let sheets: BTreeMap<u32,Sheet> = ids.iter().copied().zip(crate::util::par::indices(ids.len(),|i| g.surface(ids[i],Some(ids[i])))
         .into_iter().collect::<Result<Vec<_>,_>>()?).collect();
-    lap("surfaces");
     let built = {
-        let st = Setting {b:&b,reads:&reads,within:1e-7*(1.+size),near:uncertainty.max(1e-6)};
+        let st = Setting {b:&b,reads:&reads,within:1e-7*(1.+size),near:uncertainty.min(1e-6*size).max(1e-12*size)};
         crate::util::par::indices(faces.len(),|i| face(&st,&sheets[&faces[i].surface],&faces[i])).into_iter().collect::<Result<Vec<_>,_>>()?
     };
-    lap("faces");
     let mut edges: Vec<u32> = w.written.iter().map(|x| x.entity).collect();
     let mut vertices = w.points.clone();
     for mut x in built {
@@ -764,9 +821,7 @@ pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
         }
     }
     for (v,d) in at_poles { b.vertices[v].tol = b.vertices[v].tol.max(d); }
-    lap("poles marked");
     b.close_poles();
-    lap("poles closed");
     // (twice: a vertex's tolerance, measured, is how far an inverse curve's end reads as on a pole
     // there, which the edges' tolerances are then measured with)
     b.measure_tolerances();
@@ -775,20 +830,7 @@ pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
     // the next: the gap measured is held to a billionth more)
     for e in &mut b.edges { e.tol *= 1.+1e-9; }
     edges.resize(b.edges.len(),0);
-    if std::env::var_os("STEP_READ_DEBUG").is_some() {
-        for (i,e) in b.edges.iter().enumerate().filter(|(_,e)| e.tol > 1e-4) {
-            let EdgeCurve::Curve(c) = &e.curve else { continue };
-            let ends = [0,1].map(|k| distance(c.point(e.t[k]),b.vertices[e.v[k] as usize].p));
-            eprintln!("edge {i} #{} {} t {:?} tol {:e} ends {ends:?}",edges[i],c.kind(),e.t,e.tol);
-            for f in &b.faces { for u in f.loops.iter().flatten().filter(|u| u.edge as usize == i) {
-                let g = (0..=32).map(|j| { let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/32.; distance(f.surface.point(u.pcurve.at(t,e,&f.surface,&b.vertices)),e.point(t,&b.vertices)) }).fold(0.,f64::max);
-                let k = match u.pcurve { Pcurve::Line {..} => "line",Pcurve::Inverse {..} => "inverse",Pcurve::Curve(_) => "curve" };
-                eprintln!("   on {} by {k}: {g:e}",f.surface.kind());
-            } }
-        }
-    }
     let given = Given {name:found.name,entity:r,brep:b,context:found.context,faces:faces.iter().map(|f| f.entity).collect(),edges,vertices};
-    lap("measured");
     // an edge standing off its faces (or its vertices off it) farther than a hundred times the
     // file's uncertainty and a thousandth of the solid's size is no edge of theirs read right — a
     // loop's foot clamped at a closed sheet's seam it crosses, a curve the file gives that is not
@@ -803,6 +845,5 @@ pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
         let entity = witness(&e.msg,&given).or(Some(r));
         return Err(Refusal::new(why,entity,e.msg))
     }
-    lap("checked");
     Ok(given)
 }

@@ -547,8 +547,20 @@ impl<'a> Closed<'a> {
     }
 }
 
-/// The volume the boundary encloses (negative if it is turned inside out).
-pub fn volume(b: &Brep) -> f64 { fluxes(b).iter().sum::<f64>()/3. }
+/// The volume the boundary encloses (negative if it is turned inside out). A boundary standing
+/// farther from the origin than ten times its size is measured moved to it (by the middle of its
+/// vertices): `X · n` there is the volume's flux plus the far point's, which cancels round the
+/// boundary, and its rounding is the far point's (a millimetre solid a kilometre out read 5e-5
+/// of itself off, #993).
+pub fn volume(b: &Brep) -> f64 {
+    let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
+    for v in &b.vertices { for k in 0..3 { lo[k] = lo[k].min(v.p[k]); hi[k] = hi[k].max(v.p[k]); } }
+    let c: V = std::array::from_fn(|k| 0.5*(lo[k]+hi[k]));
+    let size = (0..3).map(|k| (hi[k]-lo[k]).powi(2)).sum::<f64>().sqrt();
+    if b.vertices.is_empty() || !(norm(c) > 10.*size) { return fluxes(b).iter().sum::<f64>()/3. }
+    let moved = b.moved(&crate::geom::Rigid {r:crate::geom::Rigid::identity().r,t:c.map(|x| -x)});
+    fluxes(&moved).iter().sum::<f64>()/3.
+}
 
 /// Each face's flux `∬ X·n dA` out of the solid, side by side.
 pub fn fluxes(b: &Brep) -> Vec<f64> {
