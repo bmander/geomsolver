@@ -896,6 +896,26 @@ closed form's volume by Pappus to 1e-9; refused at 5 + 1e-6, 5.001 and 8, the ch
 and a drafted boss whose corner of 10 shrinks to 6.47 under a ball of 8). A trapezoid's floor
 rounded 4.9999 keeps a hole 0.1 µm across about each corner's axis: built and gated, but its
 STL's chords round 120° of so small a circle fall under float32 and are refused as slivers.
+**In a pocket that is no rectangle** (#994, fixtures 118 and 124: an L, six sides) the walls'
+chain turns both ways at a reflex corner, bulges toward the ball no one way, and the field reads
+the centres through its nearest face; at a convex corner as tight as the ball the walls' offsets
+meet on the arc's axis, and a projection onto the nearest face's side alone stepped from one
+wall's offset to the other's, never onto both, never settled, and read material inside the
+corner's ball: "its exact construction leaves out what the field reads beside its edge" at `k1`,
+whatever the reflex corner's radius, a ball a hair short of the corner built. Such a chain is now
+read face by face as well (`conditions::faces_apart`): each face's own measure, under the ball's
+radius only where the point is nearer than that to a patch of the chain — its side where its foot
+lies on its patch, its tangent plane past a seam into a face bulging toward the ball where that
+face is nearer than the radius (the chain read as a convex one about the corner), nothing past a
+seam into a reflex corner's arc, whose tangent plane runs on through the pocket beyond it. The
+nearest face's side is never more than the least patch distance, so the set is the same; the
+projection sees both walls at the corner and settles on the axis (`BodyFaces::carried_past`).
+`tests/tight_corners.rs` holds it: the issue's L with corners of 1 and a reflex corner of 3 or 1,
+rounded 1 and 0.9; the L five times the size rounded 5 and 4.9, refused at 5.1 at its first wall
+as a rectangle is; six walls turning 56° and 117° with a reflex corner, a chevron, a regular
+hexagon and a triangle, each rounded 4.9 and 5 in corners of 5; an L-shaped boss's rim at 4.9 and
+5 — each the closed form's volume by Pappus, a reflex corner's ring turned on the far side of its
+axis.
 
 **A ball that does not stand within its faces' smooth surfaces** (#962, `piece::stands_within`):
 a run or a ring is the set only where its ball, standing against its two faces, is one of the

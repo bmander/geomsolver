@@ -467,7 +467,14 @@ those stretches was read through the nearest face and the gate refused it
 (`round_onto_round::a_boss_across_a_trays_filled_wall_is_its_closed_form`).
 Read through the nearest face alone, a corner of the offset (an arc's offset closed onto its
 axis, a pocket's corner rounded to its own radius, or past it) is where the nearest face turns,
-and the steps never settled there. **The steps stop at the first point keeping every condition
+and the steps never settled there. **A smooth chain bulging no one way** (#994: a pocket's walls
+turning both ways at a reflex corner, an L) is still read through its nearest face, and each face
+of it besides (`conditions::faces_apart`): its side where the point's foot lies on its patch, its
+tangent plane past a seam into a face bulging toward the point where that face is nearer than
+the distance, nothing past any other seam, its tangent plane past any other edge only nearer the
+patch than the distance — each under the distance only where a patch of the chain is, so the
+nearest face's side, never more than the least patch distance, keeps the same points, and the
+steps see both walls about a convex corner of the offset. **The steps stop at the first point keeping every condition
 where every condition is convex** (`Cond::convex`: a plane's side, a face's carried side held
 toward its solid): each step's linearisation then holds the whole set, so a point of it is the
 nearest; their own fixed point is not steady where a surface curves tightly about a point far

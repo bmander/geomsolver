@@ -73,6 +73,58 @@ fn sides(r: Reading, split: bool) -> Vec<Fv> {
     }
 }
 
+/// **A smooth chain read face by face as well** (#994): one measure for each face of `r`'s chain
+/// — a smooth chain of several faces, one chain (not pieces apart), read through its nearest face
+/// — beside the chain's own reading, each under `d` only where the point is nearer than `d` to a
+/// patch of the chain.  The chain's reading, the side of the face whose patch is nearest, is never
+/// more than the least patch distance, so a point it keeps each of these keeps: the set is the
+/// same.  What they add is the shape of the offset where the nearest face turns from one to
+/// another: where an arc's offset closes onto its axis — a pocket's floor rounded as tight as its
+/// corner, in a pocket whose reflex corner keeps its chain from bulging one way
+/// (`BodyFaces::bulging`) — the centres' corner is the two walls' offsets meeting on the axis,
+/// and a projection onto the nearest face's side alone steps from one wall's to the other's,
+/// never onto both (`nearest`).  Each face reads:
+/// - where the point's foot lies on its patch, its surface's side, the patch's distance;
+/// - past a seam into a face of the chain bulging toward the ball on its own (a wall into a
+///   pocket's corner arc, the arc into the next wall), its side carried on by its tangent plane
+///   there (`BodyFaces::carried_past`, turned by `beyond` toward the side the point is on) where
+///   the point is nearer that face than `d` — the chain read as a convex one is about the corner,
+///   so the step sees the wall beyond the arc as well as the one the point is nearest — and
+///   nothing (`d`, no gradient) where it is not: the next face is no further from the point than
+///   this one's patch, so it says all this one would;
+/// - past a seam into any other face of the chain (a reflex corner's arc, whose tangent plane runs
+///   on through the pocket beyond it), nothing: that face is nearer, and says it;
+/// - past any other edge, its side carried on where the point is nearer the patch than `d` (a
+///   tangent plane through the patch's nearest point is no further than it), nothing where not.
+/// Empty for one face, and for chains apart.
+fn faces_apart(r: &Reading, c: f64, beyond: bool, d: f64) -> Vec<Fv> {
+    if !r.smooth || r.faces.len() < 2 || !r.chains.is_empty() {
+        return Vec::new();
+    }
+    let sigma = if beyond { 1.0 } else { -1.0 };
+    let chain = Arc::new(r.faces.clone());
+    // the faces of the chain each bulging toward the ball on its own
+    let toward: Arc<Vec<usize>> = Arc::new(r.faces.iter().copied()
+        .filter(|&g| r.body.bulging(&[g], false, beyond).is_some()).collect());
+    r.faces.iter().map(|&fi| {
+        let (body, chain, toward) = (r.body.clone(), chain.clone(), toward.clone());
+        Arc::new(move |x| {
+            let (past, (s, g)) = body.carried_past(fi, x);
+            let side = (c * sigma * s, scale(g, c * sigma));
+            let nothing = (c * d, [0.0; 3]);
+            let Some((e, off)) = past else { return (c * s.abs(), scale(g, c * s.signum())) };
+            let next = body.faces_of(e).iter().copied().find(|&h| h != fi && chain.contains(&h));
+            match next {
+                Some(h) if body.seam(e) => {
+                    let near = toward.contains(&h) && body.patch_distance(h, x) < d;
+                    if near { side } else { nothing }
+                }
+                _ => if off < d { side } else { nothing },
+            }
+        }) as Fv
+    }).collect()
+}
+
 /// The face a term reads, as a patch (`Some(false)`) or a surface (`Some(true)`) held to
 /// nothing further: `q coincident F` / `q coincident F.surface`.
 fn on_face(t: &RegionTerm, sk: &Sketch) -> Option<(crate::model::FaceRef, bool)> {
@@ -307,10 +359,25 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, sides_of: &Sides,
                             }
                         }
                     }
-                    return Ok(Some(sides(r, split).into_iter().flat_map(|side| held(Arc::new(move |x| {
-                        let (s, g) = side(x);
-                        (c * s.abs(), scale(g, c * s.signum()))
-                    }))).collect()));
+                    // any other: off the side of the face whose patch is nearest — and, a smooth
+                    // chain bulging no one way (a pocket's walls with a reflex corner), off each
+                    // face's patch besides (`faces_apart`): what that reading says already, so the
+                    // set is the same, but a projection sees each face meeting at a corner of the
+                    // offset
+                    let pieces = split && r.convex_pieces().is_some();
+                    let apart = match side_of(f) {
+                        Some(beyond) if t.cmp == Cmp::Ge && c > 0.0 && !pieces => {
+                            faces_apart(&r, c, beyond, (lo + grow) / c)
+                        }
+                        _ => Vec::new(),
+                    };
+                    let mut conds: Vec<Cond> = sides(r, split).into_iter()
+                        .flat_map(|side| held(Arc::new(move |x| {
+                            let (s, g) = side(x);
+                            (c * s.abs(), scale(g, c * s.signum()))
+                        }))).collect();
+                    conds.extend(apart.into_iter().flat_map(held));
+                    return Ok(Some(conds));
                 }
                 Target::Ent(e) if e.kind == crate::model::EntKind::Point => {
                     let o = sk.world_point(e.i());
