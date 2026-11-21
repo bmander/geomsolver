@@ -1193,13 +1193,20 @@ fn holds_ball(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usiz
     let ending: std::collections::BTreeSet<usize> = ends.iter().flat_map(|s| s.faces.iter().copied()).collect();
     // each station's centre and how far its strip reaches from it: the crease's distance, or the
     // tangent planes' corner's past the run's ends; and how far either moves between stations
-    let n = Band::STATIONS;
-    let stations: Vec<(V,f64)> = (0..=n).map(|i| {
-        let (c,e) = frame_at(i as f64/n as f64);
-        (c,crease_at(b,chain,c,e).map_or(reach,|k| distance(k,c).max(r)))
-    }).collect();
-    let gap = stations.windows(2).map(|w| distance(w[0].0,w[1].0)+(w[0].1-w[1].1).abs()).fold(0.,f64::max);
-    let far = |p: V| stations.iter().all(|&(c,d)| distance(c,p) > d+gap+tol);
+    // (read the first time a point of an edge asks)
+    let stations: std::cell::OnceCell<(Vec<(V,f64)>,f64)> = std::cell::OnceCell::new();
+    let far = |p: V| {
+        let (stations,gap) = stations.get_or_init(|| {
+            let (n,run) = (Band::STATIONS,crease_samples(b,chain));
+            let at: Vec<(V,f64)> = (0..=n).map(|i| {
+                let (c,e) = frame_at(i as f64/n as f64);
+                (c,crease_at(b,&run,c,e).map_or(reach,|k| distance(k,c).max(r)))
+            }).collect();
+            let gap = at.windows(2).map(|w| distance(w[0].0,w[1].0)+(w[0].1-w[1].1).abs()).fold(0.,f64::max);
+            (at,gap)
+        });
+        stations.iter().all(|&(c,d)| distance(c,p) > d+gap+tol)
+    };
     for k in 0..2 {
         let o = 1-k;
         let contact = |u: f64| { let (c,e) = frame_at(u); add(c,scale(e[k],r)) };
@@ -1228,29 +1235,33 @@ fn holds_ball(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usiz
     Ok(())
 }
 
-/// **The crease of a ball's section**: where the run `chain` crosses the plane of the section
-/// about the centre `c` (the plane of its arc, through `c` square to the way the contacts `e` turn
-/// about), the crossing nearest `c` — each edge sampled and the crossing bisected on its own
-/// parameter. None where the run crosses that plane nowhere (past its ends).
-fn crease_at(b: &Brep,chain: &[usize],c: V,e: [V;2]) -> Option<V> {
+/// Each curved edge of the run `chain` and its points at even steps of its parameter, the samples
+/// `crease_at` reads against each station's plane.
+fn crease_samples(b: &Brep,chain: &[usize]) -> Vec<(usize,Vec<(f64,V)>)> {
+    const SAMPLES: usize = 64;
+    chain.iter().filter(|&&ei| matches!(b.edges[ei].curve,EdgeCurve::Curve(_))).map(|&ei| {
+        let ed = &b.edges[ei];
+        (ei,(0..=SAMPLES).map(|k| { let s = ed.t[0]+(ed.t[1]-ed.t[0])*k as f64/SAMPLES as f64; (s,ed.point(s,&b.vertices)) }).collect())
+    }).collect()
+}
+
+/// **The crease of a ball's section**: where the run crosses the plane of the section about the
+/// centre `c` (the plane of its arc, through `c` square to the way the contacts `e` turn about),
+/// the crossing nearest `c` — each edge's samples (`crease_samples`) read for a change of side and
+/// the crossing bisected on its own parameter. None where the run crosses that plane nowhere (past
+/// its ends).
+fn crease_at(b: &Brep,run: &[(usize,Vec<(f64,V)>)],c: V,e: [V;2]) -> Option<V> {
     let t = crate::util::space::normalised(cross(e[0],e[1]))?;
     let side = |p: V| dot(sub(p,c),t);
     let mut best: Option<(f64,V)> = None;
-    for &ei in chain {
-        let ed = &b.edges[ei];
-        let EdgeCurve::Curve(_) = &ed.curve else { continue };
-        let at = |s: f64| ed.point(s,&b.vertices);
-        const SAMPLES: usize = 64;
-        let ts: Vec<f64> = (0..=SAMPLES).map(|k| ed.t[0]+(ed.t[1]-ed.t[0])*k as f64/SAMPLES as f64).collect();
-        for w in ts.windows(2) {
-            let (mut lo,mut hi) = (w[0],w[1]);
-            let (mut slo,shi) = (side(at(lo)),side(at(hi)));
+    for (ei,samples) in run {
+        let at = |s: f64| b.edges[*ei].point(s,&b.vertices);
+        let sides: Vec<f64> = samples.iter().map(|&(_,p)| side(p)).collect();
+        for w in 1..samples.len() {
+            let (slo,shi) = (sides[w-1],sides[w]);
             if (slo < 0.) == (shi < 0.) && slo != 0. { continue }
-            for _ in 0..60 {
-                let m = 0.5*(lo+hi);
-                let sm = side(at(m));
-                if (sm < 0.) == (slo < 0.) { lo = m; slo = sm; } else { hi = m; }
-            }
+            let (lo,hi) = crate::util::roots::bisect(samples[w-1].0,samples[w].0,|x,y| 0.5*(x+y),
+                |x,y| { let m = 0.5*(x+y); m != x && m != y },|m| (side(at(m)) < 0.) == (slo < 0.));
             let k = at(0.5*(lo+hi));
             let d = distance(k,c);
             if best.is_none_or(|(bd,_)| d < bd) { best = Some((d,k)); }
@@ -1332,12 +1343,12 @@ impl<'a> Band<'a> {
         // is the whole of the face on the region's side: an edge lies in it or not, by its start)
         let start = c.point(t[0]);
         let top = self.highest+tol;
-        let under = !skip(start) && { let h = self.height(start); h > tol && h < top };
+        let under = { let h = self.height(start); h > tol && h < top } && !skip(start);
         if !(under || self.meets(c,t,top,&|p,_| !skip(p))) { return false }
         // how far inside the band `p` stands: positive inside, at most zero on the contact or past it
         let depth = |p: V| {
             let h = self.height(p);
-            if skip(p) || h <= tol { return f64::NEG_INFINITY }
+            if h <= tol || skip(p) { return f64::NEG_INFINITY }
             self.height_near(p)-slack-h
         };
         // under the lowest contact: a crossing of that level is a point inside, exactly

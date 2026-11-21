@@ -17,7 +17,8 @@ use gcs_core::brep::props;
 use std::f64::consts::PI;
 
 use crate::common::close;
-use crate::common::rounds::{crown_ball, crown_section, exported, gauss_legendre, kinds, meridian_fill, rolled_over, V};
+use crate::common::rounds::{crown_ball, crown_section, exported, kinds, rolled_over, square_run, under_circle};
+use crate::common::rounds::{dot, first_root, quad, quad_by, ray_cylinder, scale, sub, unit, V};
 use crate::common::text::{dof, solved};
 
 /// A disc of radius 100 whose crown is a sphere of radius `big` about (0, 0, `zc`) — over the
@@ -66,8 +67,8 @@ impl Vane {
         let sigma = if self.convex() { 1.0 } else { -1.0 };
         let across = |u: f64| {
             let a2 = big * big - u * u;
-            let f = |v: f64| 0.5 * (v * (a2 - v * v).sqrt() + a2 * (v / a2.sqrt()).asin());
-            (self.s[1] - self.s[0]) * (self.top - zc) - sigma * (f(self.s[1]) - f(self.s[0]))
+            let [s0, s1] = self.s;
+            (s1 - s0) * (self.top - zc) - sigma * (under_circle(a2, s1) - under_circle(a2, s0))
         };
         disc_volume(big, zc, self.convex()) + quad(self.e, &across)
     }
@@ -105,40 +106,17 @@ fn disc_volume(big: f64, zc: f64, convex: bool) -> f64 {
 /// The issue's crown's height at `rho` from its axis.
 fn crown(rho: f64) -> f64 { -797.0 + (650_000.0 - rho * rho).sqrt() }
 
-/// `∫ f` over `[a, b]` by 64 points of Gauss–Legendre.
-fn quad([a, b]: [f64; 2], f: &dyn Fn(f64) -> f64) -> f64 {
-    gauss_legendre(64).iter().map(|&(x, w)| w * f(a + 0.5 * (b - a) * (1.0 + x))).sum::<f64>() * 0.5 * (b - a)
-}
-
 /// `∫∫ f` over the disc of radius `radius` about `(x, y)`, in polar coordinates about it.
 fn over_disc([x, y]: [f64; 2], radius: f64, f: &dyn Fn(V) -> f64) -> f64 {
     quad([0.0, 2.0 * PI], &|phi| quad([0.0, radius], &|rho| rho * f([x + rho * phi.cos(), y + rho * phi.sin(), 0.0])))
 }
 
-/// The roots of `|o + t w − centre|² = radius²` (`w` a unit), nearer first; none where it misses.
-fn sphere_roots(o: V, w: V, centre: V, radius: f64) -> Option<[f64; 2]> {
-    let d: V = std::array::from_fn(|i| o[i] - centre[i]);
-    let b = d.iter().zip(w).map(|(a, b)| a * b).sum::<f64>();
-    let c = d.iter().map(|a| a * a).sum::<f64>() - radius * radius;
-    let disc = b * b - c;
-    (disc >= 0.0).then(|| [-b - disc.sqrt(), -b + disc.sqrt()])
+/// Where a ray from `o` along `w` first meets the sphere of `radius` about `centre` (infinitely far
+/// where it misses it or meets it behind).
+fn ray_sphere(o: V, w: V, centre: V, radius: f64) -> f64 {
+    let d = sub(o, centre);
+    first_root(dot(w, w), 2.0 * dot(d, w), dot(d, d) - radius * radius)
 }
-
-/// The roots along `o + t w` of the upright cylinder of `radius` about `(x, y)`, nearer first.
-fn drum_roots(o: V, w: V, [x, y]: [f64; 2], radius: f64) -> Option<[f64; 2]> {
-    let (ox, oy) = (o[0] - x, o[1] - y);
-    let a = w[0] * w[0] + w[1] * w[1];
-    let (b, c) = (ox * w[0] + oy * w[1], ox * ox + oy * oy - radius * radius);
-    let disc = b * b - a * c;
-    (a > 1e-300 && disc >= 0.0).then(|| [(-b - disc.sqrt()) / a, (-b + disc.sqrt()) / a])
-}
-
-/// The first of `roots` ahead; none (infinitely far) where the surface is missed or behind.
-fn hit(roots: Option<[f64; 2]>) -> f64 {
-    roots.into_iter().flatten().filter(|&t| t > 0.0).fold(f64::INFINITY, f64::min)
-}
-
-fn unit2(v: V) -> V { let n = v.iter().map(|a| a * a).sum::<f64>().sqrt(); v.map(|a| a / n) }
 
 /// The ball of radius `r` rolled round where a cylinder of `radius` about `(x, y)` meets a sphere
 /// of radius `big` about `centre`: from outside the cylinder (`side` +1) or within it (−1), outside
@@ -152,10 +130,10 @@ fn rolled_round(at: [f64; 2], radius: f64, side: f64, centre: V, big: f64, outsi
         let h = (rb * rb - (x - centre[0]).powi(2) - (y - centre[1]).powi(2)).sqrt();
         [x, y, centre[2] + sigma * h]
     };
-    let to_sphere = |p: V| unit2(std::array::from_fn(|i| sigma * (centre[i] - p[i])));
-    let to_drum = |p: V| unit2([side * (at[0] - p[0]), side * (at[1] - p[1]), 0.0]);
-    let on_sphere = |o: V, w: V| hit(sphere_roots(o, w, centre, big));
-    let on_drum = |o: V, w: V| hit(drum_roots(o, w, at, radius));
+    let to_sphere = |p: V| unit(scale(sub(centre, p), sigma));
+    let to_drum = |p: V| unit([side * (at[0] - p[0]), side * (at[1] - p[1]), 0.0]);
+    let on_sphere = |o: V, w: V| ray_sphere(o, w, centre, big);
+    let on_drum = |o: V, w: V| ray_cylinder(o, w, [at[0], at[1], 0.0], 2, radius);
     rolled_over(&spine, [0.0, 2.0 * PI], [&to_sphere, &to_drum], [&on_sphere, &on_drum], r, &[], &[])
 }
 
@@ -179,9 +157,9 @@ fn rolled_about(at: [f64; 2], radius: f64, side: f64, centre: V, big: f64, r: f6
     // contact to the cylinder's
     let canal = |psi: f64, t: f64| -> V {
         let p = spine(psi);
-        let a = unit2(std::array::from_fn(|i| centre[i] - p[i]));
-        let b = unit2([side * (at[0] - p[0]), side * (at[1] - p[1]), 0.0]);
-        let w = a.iter().zip(b).map(|(x, y)| x * y).sum::<f64>().clamp(-1.0, 1.0).acos();
+        let a = unit(sub(centre, p));
+        let b = unit([side * (at[0] - p[0]), side * (at[1] - p[1]), 0.0]);
+        let w = dot(a, b).clamp(-1.0, 1.0).acos();
         let (ka, kb) = (((1.0 - t) * w).sin() / w.sin(), (t * w).sin() / w.sin());
         std::array::from_fn(|i| p[i] + r * (ka * a[i] + kb * b[i]))
     };
@@ -199,13 +177,11 @@ fn rolled_about(at: [f64; 2], radius: f64, side: f64, centre: V, big: f64, r: f6
         }
         polar(canal(psi, t))
     };
-    let gauss = gauss_legendre(48);
-    let line = |f: &dyn Fn(f64) -> (f64, f64)| gauss.iter().map(|&(x, w)| {
-        let t = 0.5 * (1.0 + x);
+    let line = |f: &dyn Fn(f64) -> (f64, f64)| quad_by(48, [0.0, 1.0], &|t| {
         let (rho, _) = f(t);
         let dz = (f(t + 1e-6).1 - f(t - 1e-6).1) / 2e-6;
-        w * 0.5 * rho * rho * dz
-    }).sum::<f64>() * 0.5;
+        0.5 * rho * rho * dz
+    });
     let slice = |phi: f64| {
         let (s, c) = phi.sin_cos();
         let on_crown = |rho: f64| crown(at[0] + rho * c, at[1] + rho * s);
@@ -285,6 +261,59 @@ fn crown_flat(big: f64, c: f64, d: f64, lo: &dyn Fn(f64) -> (f64, f64), hi: &dyn
     crown_section(big, true, c, &conic, [angle(l1), angle(l2)], lo, hi)
 }
 
+/// The moment `∫∫ ρ dA` about z of a section in a half-plane through z, by Green's theorem round
+/// its boundary: `pieces`, each `(ρ, z, dz/dt)` over its span, end to end round the loop.
+fn moment(pieces: &[(&dyn Fn(f64) -> (f64, f64, f64), [f64; 2])]) -> f64 {
+    pieces.iter().map(|&(f, span)| quad(span, &|t| {
+        let (rho, _, dz) = f(t);
+        0.5 * rho * rho * dz
+    })).sum::<f64>().abs()
+}
+
+/// The fill's section about z where a cylinder `ρ = w` meets a sphere of radius `big` about
+/// `(0, zc)` — its cap above the centre (`up`) or below — on the side `s` of the cylinder (`+1`
+/// outside it) and outside the sphere or within it (`outside`): a ball of radius `r` between them
+/// (`Some(r)`), or else a chamfer's flat of legs `d` (the points whose two distances sum to `d`).
+/// Its moment about z: times the turn, its volume (Pappus).
+#[allow(clippy::too_many_arguments)]
+fn meridian_fill(w: f64, s: f64, big: f64, zc: f64, up: bool, outside: bool, round: Option<f64>, d: f64) -> f64 {
+    let (tau, sigma) = (if up { 1.0 } else { -1.0 }, if outside { 1.0 } else { -1.0 });
+    let on_sphere = |rho: f64| zc + tau * (big * big - rho * rho).sqrt();
+    let k = on_sphere(w);
+    let short = |a: f64| (a + PI).rem_euclid(2.0 * PI) - PI;
+    let line = |z0: f64, z1: f64| move |t: f64| (w, z0 + (z1 - z0) * t, z1 - z0);
+    let about = |o: [f64; 2], rad: f64| move |a: f64| (o[0] + rad * a.cos(), o[1] + rad * a.sin(), rad * a.cos());
+    let angle = |o: [f64; 2], p: [f64; 2]| (p[1] - o[1]).atan2(p[0] - o[0]);
+    let centre = [0.0, zc];
+    match round {
+        Some(r) => {
+            let rb = big + sigma * r;
+            let b = [w + s * r, zc + tau * (rb * rb - (w + s * r).powi(2)).sqrt()];
+            let touch = [b[0] * big / rb, zc + (b[1] - zc) * big / rb];
+            let (a0, a1) = (angle(b, [w, b[1]]), angle(b, touch));
+            let (b0, b1) = (angle(centre, touch), angle(centre, [w, k]));
+            moment(&[(&line(k, b[1]), [0.0, 1.0]), (&about(b, r), [a0, a0 + short(a1 - a0)]),
+                (&about(centre, big), [b0, b0 + short(b1 - b0)])])
+        }
+        None => {
+            // the leg on the cylinder, `d` from the sphere, and on the sphere, `d` from the cylinder
+            let l1 = [w, zc + tau * ((big + sigma * d).powi(2) - w * w).sqrt()];
+            let l2 = [w + s * d, on_sphere(w + s * d)];
+            // the flat: `s(ρ − w) + σ(|q − c| − big) = d`, polar about the centre
+            let flat = move |a: f64| {
+                let (sn, co) = a.sin_cos();
+                let t = (d + s * w + sigma * big) / (s * co + sigma);
+                let dt = s * sn * t / (s * co + sigma);
+                (t * co, zc + t * sn, dt * sn + t * co)
+            };
+            let (f0, f1) = (angle(centre, l1), angle(centre, l2));
+            let (b0, b1) = (angle(centre, l2), angle(centre, [w, k]));
+            moment(&[(&line(k, l1[1]), [0.0, 1.0]), (&flat, [f0, f0 + short(f1 - f0)]),
+                (&about(centre, big), [b0, b0 + short(b1 - b0)])])
+        }
+    }
+}
+
 /// **#962's 7, built** (`rounds/vane.sv`): the vane's four fills are torus stretches, the sides'
 /// two cut by the ends' planes and the ends' two by the sides' — a spiric section each — where on
 /// `main` the Boolean refused the cap of one against the next one's torus, which touches the cap's
@@ -337,7 +366,7 @@ fn a_vane_on_a_flat_disc_leaves_no_sliver() {
         disc := solid(std.solids.Revolution(section, about: std.z))\n{}", &src[cut..]);
     let b = exported(&solved(&flat), "part");
     let r = 2.0;
-    close(props::volume(&b), PI * 1e4 * 3.0 + 70.0 * 4.0 * 28.0 + (1.0 - PI / 4.0) * r * r * 2.0 * (70.0 + 4.0));
+    close(props::volume(&b), PI * 1e4 * 3.0 + 70.0 * 4.0 * 28.0 + square_run(r) * 2.0 * (70.0 + 4.0));
     assert_eq!(gcs_core::brep::sliver::slivers(&b, 1e-3).len(), 0);
 }
 
@@ -433,10 +462,7 @@ fn a_vane_whose_sides_are_about_another_axis_rolls_its_balls() {
     let side = |radius: f64, s: f64| rolled_about(centre, radius, s, [0.0, 0.0, -797.0], issue_big(), r, wedge);
     let rolled = side(75.0, -1.0) + side(79.0, 1.0);
     let rings = end_ring(centre, radii, -5.0, -1.0, r, None) + end_ring(centre, radii, 5.0, 1.0, r, None);
-    let b = exported(&solved(&arc_vane(centre, radii, angles, "round(r: 2mm)")), "part");
-    let got = props::volume(&b);
-    close(got, stock + rolled + rings);
-    assert!((got - stock - rolled - rings).abs() <= 1e-6 * (rolled + rings), "{} against {}", got - stock, rolled + rings);
+    holds(&arc_vane(centre, radii, angles, "round(r: 2mm)"), stock, rolled + rings, 1e-6);
 }
 
 /// The vane trimmed by a wedge as the fixture's is: cut by the plane through (40, 40) and
@@ -463,7 +489,7 @@ fn a_vane_trimmed_by_a_wedge() {
     // the vane over the crown: along x in closed form, across it by quadrature
     let stock = disc_volume(big, zc, true) + quad([-2.0, 2.0], &|y| {
         let a2 = big * big - y * y;
-        let f = |x: f64| 0.5 * (x * (a2 - x * x).sqrt() + a2 * (x / a2.sqrt()).asin());
+        let f = |x: f64| under_circle(a2, x);
         let knee = (p - 31.0) / q;
         // where the slant comes down to the crown: (p − zc − q x)² = a² − x²
         let (pp, qq) = (p - zc, q);
@@ -479,21 +505,27 @@ fn a_vane_trimmed_by_a_wedge() {
     holds(&src, stock, fills, 1e-7);
 }
 
+/// A round boss standing from z = 1 to 30, its rim a circle of `radius` about `(x, 0)` in the
+/// top plane.
+fn boss(x: f64, radius: f64) -> String {
+    format!("in std.top {{\n  k := point\n  fix(({x}, 0)) k\n  rim := circle(center: k) \
+        hint(r: {radius})\n  radius({radius}mm) rim\n}}\n\
+        boss := solid(std.solids.Prism(face(rim), from: 1mm, to: 30mm))\n")
+}
+
 /// A round boss on the crown: on its axis, a ring about it (Pappus); off it, 50 out, its foot no
 /// circle, the ball rolled round it (the quadrature, #85).
 #[test]
 fn a_boss_on_the_crown_on_its_axis_and_off_it() {
     let (big, zc, r) = (issue_big(), -797.0, 2.0);
-    let boss = |x: f64, radius: f64| crowned(&format!("in std.top {{\n  k := point\n  fix(({x}, 0)) k\n\
-        rim := circle(center: k) hint(r: {radius})\n  radius({radius}mm) rim\n}}\n\
-        boss := solid(std.solids.Prism(face(rim), from: 1mm, to: 30mm))\npart := solid(disc)\n\
-        boss union part\npart.boss round(r: 2mm) part.disc\n"));
+    let on_crown = |x: f64, radius: f64| crowned(&format!("{}part := solid(disc)\nboss union part\n\
+        part.boss round(r: 2mm) part.disc\n", boss(x, radius)));
     let disc = disc_volume(big, zc, true);
     let over = |at: [f64; 2], radius: f64| over_disc(at, radius, &|p| 30.0 - crown(p[0].hypot(p[1])));
-    holds(&boss(0.0, 10.0), disc + over([0.0, 0.0], 10.0),
+    holds(&on_crown(0.0, 10.0), disc + over([0.0, 0.0], 10.0),
         2.0 * PI * meridian_fill(10.0, 1.0, big, zc, true, true, Some(r), 0.0), 1e-9);
     let rolled = rolled_round([50.0, 0.0], 8.0, 1.0, [0.0, 0.0, zc], big, true, r);
-    holds(&boss(50.0, 8.0), disc + over([50.0, 0.0], 8.0), rolled, 1e-6);
+    holds(&on_crown(50.0, 8.0), disc + over([50.0, 0.0], 8.0), rolled, 1e-6);
 }
 
 /// A pocket 40 in radius sunk into the crown, its floor a dish of R300 whose lowest point is at
@@ -508,11 +540,9 @@ fn a_boss_on_a_spherical_pocket_floor() {
             p2 := point\n  fix((40, 20)) p2\n  p3 := point\n  fix((40, {rim:.12})) p3\n  pc := point\n  fix((0, 304)) pc\n\
             floor := arc(center: pc, start: p0, end: p3)\n  axis0 := line(p1, p0)\n  lid := line(p2, p1)\n\
             wall := line(p3, p2)\n  hollow := face(floor, wall, lid, axis0)\n}}\n\
-            pocket := solid(std.solids.Revolution(hollow, about: std.z))\n\
-            in std.top {{\n  k := point\n  fix(({x}, 0)) k\n  rim := circle(center: k) hint(r: {radius})\n\
-            radius({radius}mm) rim\n}}\nboss := solid(std.solids.Prism(face(rim), from: 1mm, to: 30mm))\n\
+            pocket := solid(std.solids.Revolution(hollow, about: std.z))\n{}\
             dished := solid(disc)\npocket cut dished\npart := solid(dished)\nboss union part\n\
-            part.boss round(r: 2mm) part.dished\n"))
+            part.boss round(r: 2mm) part.dished\n", boss(x, radius)))
     };
     let floor = |rho: f64| 304.0 - (90_000.0 - rho * rho).sqrt();
     // the disc less the pocket under its crown, `∫ 2πρ (crown − floor)` within 40

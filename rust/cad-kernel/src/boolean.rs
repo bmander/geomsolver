@@ -1389,7 +1389,7 @@ impl<'a> Arrangement<'a> {
             by_given.push(all.then_some((curves,touches)));
         }
         let (solids,boxes) = (&self.solids,&self.boxes);
-        let read = crate::util::par::map_in_order(&asked.iter().zip(&by_given).collect::<Vec<_>>(),|&(&(_,other,_,fi,e,c),given)| {
+        let mut read = crate::util::par::map_in_order(&asked.iter().zip(&by_given).collect::<Vec<_>>(),|&(&(_,other,_,fi,e,c),given)| {
             let started = crate::util::clock::Instant::now();
             // an edge measured off its surfaces by more than the tolerance (a fitted contact's
             // `tol`, `Brep::measure_tolerances`) is read at its own: it lies in a face it is
@@ -1428,12 +1428,11 @@ impl<'a> Arrangement<'a> {
         // meeting of a sphere and a cylinder, read against the cylinder a ring's cap lies on).
         // (A closed form that meets in no curve is not read so: it leaves out a point the two
         // touch at, which the edge may pass.)
-        let mut read = read;
         for (k,&(s,other,i,fi,e,c)) in asked.iter().enumerate() {
             if !matches!(read[k].0,Meets::Refused(_)) { continue }
             let surface = &self.solids[other].faces[fi].surface;
-            let j = self.shared.index(surface,tol);
-            let own: Vec<usize> = bounded[s][i].iter().map(|&h| self.shared.index(&self.solids[s].faces[h].surface,tol)).collect();
+            let j = self.surface_index(other,fi);
+            let own: Vec<usize> = bounded[s][i].iter().map(|&h| self.surface_index(s,h)).collect();
             if own.contains(&j) { read[k].0 = Meets::Along; continue }
             for own in own {
                 let curves = match self.shared.meeting(own,j,tol) {
@@ -2448,37 +2447,33 @@ fn at_its_ends(meets: Meets,c: &Curve,t: [f64;2],surface: &Surface,tol: f64) -> 
 /// at each of its crossings with them, a touch where the surface's signed distance keeps its sign
 /// a step either side along the edge. Where both are lines or circles their crossings are read in
 /// closed form (`query::curve_curve`), a tangency among them (#962's 7: a rim in a plane, touching
-/// the line a wall touches that plane along); a meeting's line runs on without end.
+/// the line a wall touches that plane along); a meeting's line, which runs on without end, read
+/// over the edge's shadow on it and as much again either side.
 fn on_given(c: &Curve,t: [f64;2],curves: &[Curve],touches: &[V],surface: &Surface,tol: f64) -> Meets {
     let reach = ON_CURVE*tol;
-    let domain = |g: &Curve| super::query::curve_domain(g)
-        .unwrap_or(if matches!(g,Curve::Line {..}) { [f64::NEG_INFINITY,f64::INFINITY] } else { [0.,1.] });
-    let lies_along = |g: &Curve| {
-        let [g0,g1] = domain(g);
-        (0..=16).all(|k| {
-            let p = c.point(t[0]+(t[1]-t[0])*k as f64/16.);
-            distance(g.point(g.inverse(p).clamp(g0,g1)),p) <= reach
-        })
-    };
-    if curves.iter().any(lies_along) { return Meets::Along }
+    let domain = |g: &Curve| super::query::curve_domain(g).unwrap_or(if matches!(g,Curve::Line {..}) {
+        // (a stretch of the line `crossings` can sample: the edge's shadow on it, as much again either side)
+        let (lo,hi) = (0..=32).map(|k| g.inverse(c.point(t[0]+(t[1]-t[0])*k as f64/32.)))
+            .fold((f64::INFINITY,f64::NEG_INFINITY),|(lo,hi),s| (lo.min(s),hi.max(s)));
+        let pad = 1.+(hi-lo);
+        [lo-pad,hi+pad]
+    } else { [0.,1.] });
+    let domains: Vec<[f64;2]> = curves.iter().map(domain).collect();
+    let lies_along = |g: &Curve,[g0,g1]: [f64;2]| (0..=16).all(|k| {
+        let p = c.point(t[0]+(t[1]-t[0])*k as f64/16.);
+        distance(g.point(g.inverse(p).clamp(g0,g1)),p) <= reach
+    });
+    if curves.iter().zip(&domains).any(|(g,&span)| lies_along(g,span)) { return Meets::Along }
     let step = 64.*reach/c.speed().max(1e-300);
     let mut roots: Vec<(f64,bool)> = Vec::new();
     // (each root's point, and whether a crossing was read already: the two points within `reach`
     // of one another, #942 F6)
     let mut at: Vec<V> = Vec::new();
     let read = |at: &[V],x: V| at.iter().any(|&q| distance(q,x) <= reach);
-    for g in curves {
-        let found: Vec<f64> = match super::query::curve_curve(c,t,g,domain(g),reach) {
+    for (g,&span) in curves.iter().zip(&domains) {
+        let found: Vec<f64> = match super::query::curve_curve(c,t,g,span,reach) {
             Some(at) => at.into_iter().map(|(s,_)| s).collect(),
-            // (a line no closed form reads against `c` is no stretch `crossings` can sample)
-            None if matches!(g,Curve::Line {..}) => {
-                // (its stretch the edge's shadow on it, and as much again either side)
-                let along: Vec<f64> = (0..=32).map(|k| g.inverse(c.point(t[0]+(t[1]-t[0])*k as f64/32.))).collect();
-                let (lo,hi) = (along.iter().copied().fold(f64::INFINITY,f64::min),along.iter().copied().fold(f64::NEG_INFINITY,f64::max));
-                let pad = 1.+(hi-lo);
-                super::meeting::crossings(c,t,g,[lo-pad,hi+pad],reach).into_iter().map(|(s,..)| s).collect()
-            }
-            None => super::meeting::crossings(c,t,g,domain(g),reach).into_iter().map(|(s,..)| s).collect(),
+            None => super::meeting::crossings(c,t,g,span,reach).into_iter().map(|(s,..)| s).collect(),
         };
         for s in found {
             let x = c.point(s);
@@ -3240,7 +3235,7 @@ fn uv_seeded(h: &Half,f: &Face,e: &WEdge,t: f64,p: impl FnOnce() -> V,seed: Uv) 
             // arriving runs along: the half's own value there, as its ends record it, #962's 7. A
             // meridian through the pole along the seam's half-plane was drawn from 2π back to π
             // across the piece, and the piece read as a hole)
-            if let Some(k) = super::topo::pole_at(&f.surface,uv,1e-12*(1.+crate::util::space::norm(p))) { uv[k] = near[k]; }
+            if !poleless(&f.surface) { if let Some(k) = pole_at(&f.surface,uv,1e-12*(1.+norm(p))) { uv[k] = near[k]; } }
             INVERTED.with(|m| {
                 let mut m = m.borrow_mut();
                 if m.len() >= INVERTED_MOST { m.clear() }

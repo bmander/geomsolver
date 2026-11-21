@@ -508,35 +508,25 @@ fn a_rim_touching_a_wall_at_points_given_is_read_there_with_no_search() {
         given.push(Given {surfaces:[t,w.surface.clone()],curves:ruling,touches:touch.clone()});
         given.push(Given {surfaces:[c,w.surface.clone()],curves:Vec::new(),touches:touch});
     }
-    let c = arrangement_given(&domain,&[&drum,&channel],&given,1e-9)
-        .unwrap_or_else(|e| panic!("the rim not read: {e}"));
+    // read with those given, and with nothing given (#962's 7): the search for where the rim meets
+    // a wall cannot settle the touch, but the rim lies in the drum's top, which meets each wall in
+    // closed form along the ruling through the point, so it is read there, where it crosses the
+    // ruling — the same cells, the same vertices
     let all = [&domain,&drum,&channel];
-    let inside = members(&c,&all,1e-9).unwrap();
-    let cells = c.cells().unwrap();
-    let held = |k: usize| -> f64 {
-        (1..cells.len()).filter(|&i| inside[i][k]).map(|i| cells[i].volume).sum()
-    };
-    close(held(1),4.*std::f64::consts::PI,1e-12);
-    close(held(2),112.,1e-12);
-    for p in &touches {
-        let off = c.b.vertices.iter().map(|v| distance(v.p,*p)).fold(f64::INFINITY,f64::min);
-        assert!(off <= 1e-12,"the touch at {p:?} a vertex: {off:e} off");
-    }
-    // with nothing given the search for where the rim meets a wall cannot settle the touch, but
-    // the rim lies in the drum's top, which meets each wall in closed form along the ruling through
-    // the point (#962's 7): it is read there, where it crosses the ruling — the same cells, the
-    // same vertices
-    let c = arrangement_given(&domain,&[&drum,&channel],&[],1e-9)
-        .unwrap_or_else(|e| panic!("the rim not read off the top's meeting: {e}"));
-    let inside = members(&c,&all,1e-9).unwrap();
-    let cells = c.cells().unwrap();
-    let held = |k: usize| -> f64 {
-        (1..cells.len()).filter(|&i| inside[i][k]).map(|i| cells[i].volume).sum()
-    };
-    close(held(1),4.*std::f64::consts::PI,1e-12);
-    close(held(2),112.,1e-12);
-    for p in &touches {
-        let off = c.b.vertices.iter().map(|v| distance(v.p,*p)).fold(f64::INFINITY,f64::min);
-        assert!(off <= 1e-12,"the touch at {p:?} a vertex: {off:e} off");
+    let off_the_top = "the rim not read off the top's meeting";
+    for (given,what) in [(&given[..],"the rim not read"),(&[][..],off_the_top)] {
+        let c = arrangement_given(&domain,&[&drum,&channel],given,1e-9)
+            .unwrap_or_else(|e| panic!("{what}: {e}"));
+        let inside = members(&c,&all,1e-9).unwrap();
+        let cells = c.cells().unwrap();
+        let held = |k: usize| -> f64 {
+            (1..cells.len()).filter(|&i| inside[i][k]).map(|i| cells[i].volume).sum()
+        };
+        close(held(1),4.*std::f64::consts::PI,1e-12);
+        close(held(2),112.,1e-12);
+        for p in &touches {
+            let off = c.b.vertices.iter().map(|v| distance(v.p,*p)).fold(f64::INFINITY,f64::min);
+            assert!(off <= 1e-12,"the touch at {p:?} a vertex: {off:e} off");
+        }
     }
 }

@@ -44,6 +44,12 @@ pub fn disc_band(r: f64, h: f64) -> f64 {
     2.0 * (h * (r * r - h * h).sqrt() + r * r * (h / r).asin())
 }
 
+/// The area under the circle `y = √(a2 − x²)` from `x = 0` to `v`:
+/// `(v√(a2 − v²) + a2 asin(v/√a2)) / 2`.
+pub fn under_circle(a2: f64, v: f64) -> f64 {
+    0.5 * (v * (a2 - v * v).sqrt() + a2 * (v / a2.sqrt()).asin())
+}
+
 /// The stack's Steiner volume of a box `l × w × h` rounded all over: the inset box grown by a
 /// ball.
 pub fn rounded_box([l, w, h]: [f64; 3], r: f64) -> f64 {
@@ -145,7 +151,7 @@ pub fn kinds(b: &gcs_core::brep::topo::Brep) -> std::collections::BTreeMap<&'sta
 }
 
 /// The least positive root of `a t² + b t + c` (infinite where there is none).
-fn first_root(a: f64, b: f64, c: f64) -> f64 {
+pub fn first_root(a: f64, b: f64, c: f64) -> f64 {
     let disc = b * b - 4.0 * a * c;
     if disc < 0.0 {
         return f64::INFINITY;
@@ -156,7 +162,7 @@ fn first_root(a: f64, b: f64, c: f64) -> f64 {
 
 /// Where a ray from `o` along `w` first meets the cylinder of `radius` about the coordinate axis
 /// `axis` through `at`.
-fn ray_cylinder(o: V, w: V, at: V, axis: usize, radius: f64) -> f64 {
+pub fn ray_cylinder(o: V, w: V, at: V, axis: usize, radius: f64) -> f64 {
     let o = sub(o, at);
     let (i, j) = ((axis + 1) % 3, (axis + 2) % 3);
     let (a, b) = (w[i] * w[i] + w[j] * w[j], 2.0 * (o[i] * w[i] + o[j] * w[j]));
@@ -573,6 +579,15 @@ pub fn gauss_legendre(n: usize) -> Vec<(f64, f64)> {
     }).collect()
 }
 
+/// `∫ f` over `[a, b]` by `n` points of Gauss–Legendre.
+pub fn quad_by(n: usize, [a, b]: [f64; 2], f: &dyn Fn(f64) -> f64) -> f64 {
+    let at = |x: f64| a + 0.5 * (b - a) * (1.0 + x);
+    gauss_legendre(n).iter().map(|&(x, w)| w * f(at(x))).sum::<f64>() * 0.5 * (b - a)
+}
+
+/// `∫ f` over `[a, b]` by 64 points of Gauss–Legendre.
+pub fn quad(span: [f64; 2], f: &dyn Fn(f64) -> f64) -> f64 { quad_by(64, span, f) }
+
 /// The stack's tee crotch chamfered: the main pipe of radius `big` about x, a branch of radius
 /// `small` about z standing on it, the flat of legs `leg` where they meet (outside both).
 pub fn tee_flat(big: f64, small: f64, leg: f64) -> f64 {
@@ -615,14 +630,11 @@ pub fn crown_section(big: f64, outside: bool, c: f64, curve: &dyn Fn(f64) -> (f6
         0.5 * rho * rho * (k + (a / rho).asin()) + 0.5 * a * (rho * rho - a * a).sqrt()
     };
     let g = |rho: f64, h: f64| turned(rho, hi(h)) - turned(rho, lo(h));
-    let gauss = gauss_legendre(64);
-    let [t0, t1] = span;
-    gauss.iter().map(|&(x, w)| {
-        let t = t0 + 0.5 * (t1 - t0) * (1.0 + x);
+    quad(span, &|t| {
         let (rho, h, dh) = curve(t);
         let sphere = (big * big - (h - c).powi(2)).sqrt();
-        w * sigma * (g(rho, h) - g(sphere, h)) * dh
-    }).sum::<f64>() * 0.5 * (t1 - t0)
+        sigma * (g(rho, h) - g(sphere, h)) * dh
+    })
 }
 
 /// `crown_section`'s ball of radius `r` rolled between the plane and the sphere: its arc from the
@@ -635,60 +647,6 @@ pub fn crown_ball(big: f64, outside: bool, c: f64, r: f64, lo: &dyn Fn(f64) -> (
     let end = (rho0 / rb).atan2(sigma * (r - c) / rb);
     let arc = |phi: f64| { let (s, co) = phi.sin_cos(); (rho0 - sigma * r * s, r - r * co, r * s) };
     crown_section(big, outside, c, &arc, [0.0, end], lo, hi)
-}
-
-/// The moment `∫∫ ρ dA` about z of a section in a half-plane through z, by Green's theorem round
-/// its boundary: `pieces`, each `(ρ, z, dz/dt)` over its span, end to end round the loop.
-pub fn moment(pieces: &[(&dyn Fn(f64) -> (f64, f64, f64), [f64; 2])]) -> f64 {
-    let gauss = gauss_legendre(64);
-    pieces.iter().map(|(f, [t0, t1])| gauss.iter().map(|&(x, w)| {
-        let (rho, _, dz) = f(t0 + 0.5 * (t1 - t0) * (1.0 + x));
-        w * 0.5 * rho * rho * dz
-    }).sum::<f64>() * 0.5 * (t1 - t0)).sum::<f64>().abs()
-}
-
-/// The fill's section about z where a cylinder `ρ = w` meets a sphere of radius `big` about
-/// `(0, zc)` — its cap above the centre (`up`) or below — on the side `s` of the cylinder (`+1`
-/// outside it) and outside the sphere or within it (`outside`): a ball of radius `r` between them
-/// (`Some(r)`), or else a chamfer's flat of legs `d` (the points whose two distances sum to `d`).
-/// Its moment about z: times the turn, its volume (Pappus).
-#[allow(clippy::too_many_arguments)]
-pub fn meridian_fill(w: f64, s: f64, big: f64, zc: f64, up: bool, outside: bool, round: Option<f64>, d: f64) -> f64 {
-    let (tau, sigma) = (if up { 1.0 } else { -1.0 }, if outside { 1.0 } else { -1.0 });
-    let on_sphere = |rho: f64| zc + tau * (big * big - rho * rho).sqrt();
-    let k = on_sphere(w);
-    let short = |a: f64| (a + PI).rem_euclid(2.0 * PI) - PI;
-    let line = |z0: f64, z1: f64| move |t: f64| (w, z0 + (z1 - z0) * t, z1 - z0);
-    let about = |o: [f64; 2], rad: f64| move |a: f64| (o[0] + rad * a.cos(), o[1] + rad * a.sin(), rad * a.cos());
-    let angle = |o: [f64; 2], p: [f64; 2]| (p[1] - o[1]).atan2(p[0] - o[0]);
-    let centre = [0.0, zc];
-    match round {
-        Some(r) => {
-            let rb = big + sigma * r;
-            let b = [w + s * r, zc + tau * (rb * rb - (w + s * r).powi(2)).sqrt()];
-            let touch = [b[0] * big / rb, zc + (b[1] - zc) * big / rb];
-            let (a0, a1) = (angle(b, [w, b[1]]), angle(b, touch));
-            let (b0, b1) = (angle(centre, touch), angle(centre, [w, k]));
-            moment(&[(&line(k, b[1]), [0.0, 1.0]), (&about(b, r), [a0, a0 + short(a1 - a0)]),
-                (&about(centre, big), [b0, b0 + short(b1 - b0)])])
-        }
-        None => {
-            // the leg on the cylinder, `d` from the sphere, and on the sphere, `d` from the cylinder
-            let l1 = [w, zc + tau * ((big + sigma * d).powi(2) - w * w).sqrt()];
-            let l2 = [w + s * d, on_sphere(w + s * d)];
-            // the flat: `s(ρ − w) + σ(|q − c| − big) = d`, polar about the centre
-            let flat = move |a: f64| {
-                let (sn, co) = a.sin_cos();
-                let t = (d + s * w + sigma * big) / (s * co + sigma);
-                let dt = s * sn * t / (s * co + sigma);
-                (t * co, zc + t * sn, dt * sn + t * co)
-            };
-            let (f0, f1) = (angle(centre, l1), angle(centre, l2));
-            let (b0, b1) = (angle(centre, l2), angle(centre, [w, k]));
-            moment(&[(&line(k, l1[1]), [0.0, 1.0]), (&flat, [f0, f0 + short(f1 - f0)]),
-                (&about(centre, big), [b0, b0 + short(b1 - b0)])])
-        }
-    }
 }
 
 /// The meridian's closed forms: a turned body's volume read off its `(ρ, z)` section.

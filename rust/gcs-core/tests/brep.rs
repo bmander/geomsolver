@@ -3319,6 +3319,7 @@ fn a_cap_in_a_plane_a_torus_touches_round_a_circle_meets_it_on_that_circle() {
 #[test]
 fn a_band_is_the_strip_its_ball_sweeps_not_all_the_face_as_near_the_other() {
     use gcs_core::brep::boolean::{combined,Op};
+    use crate::common::rounds::{inset,square_run};
     let r = 2.;
     let k = [-20.,0.,0.];
     let at = |rad: f64,deg: f64| -> V { let a = f64::to_radians(deg); [k[0]+rad*a.cos(),rad*a.sin(),0.] };
@@ -3332,9 +3333,11 @@ fn a_band_is_the_strip_its_ball_sweeps_not_all_the_face_as_near_the_other() {
     let round = gcs_core::brep::fillet::roll(&part,at(79.,0.),r,gcs_core::brep::geom::tolerance(part.size())).unwrap();
     round.piece.check(1e-8).unwrap();
     // (its canal fitted within the bar, a ten-millionth of the boundary)
-    let fill = 2.*half*(1.-PI/4.)*r*r*(79.+r*(10.-3.*PI)/(12.-3.*PI));
+    let fill = 2.*half*square_run(r)*(79.+inset(r));
     assert!((volume(&round.piece)-fill).abs() <= 1e-7*fill,"{} against {fill}",volume(&round.piece));
-    let b = rounded(&part,&[at(79.,0.)],r).unwrap();
+    // (the piece in hand, filled into the corner: its run concave)
+    assert!(round.concave);
+    let b = combined(&part,&round.piece,Op::Union,0.).unwrap();
     b.check(1e-8).unwrap();
     crate::common::close(volume(&b),volume(&part)+volume(&round.piece));
 }
@@ -3351,16 +3354,14 @@ fn a_band_is_the_strip_its_ball_sweeps_not_all_the_face_as_near_the_other() {
 fn a_cut_through_a_pole_along_the_seams_meridian_parts_the_sphere() {
     use gcs_core::brep::boolean::{combined,Op};
     use gcs_core::brep::build::sphere;
+    use crate::common::rounds::{quad,under_circle};
     let r = 5f64;
     let ball = sphere([0.;3],[0.,0.,1.],r).unwrap();
-    let gauss = crate::common::rounds::gauss_legendre(64);
     // what of the slab x in [x0, x1], y in [y0, y1], z in [−1, 6] lies in the ball
-    let shared = |[x0,x1]: [f64;2],[y0,y1]: [f64;2]| gauss.iter().map(|&(t,w)| {
-        let x = x0+0.5*(x1-x0)*(1.+t);
+    let shared = |[x0,x1]: [f64;2],[y0,y1]: [f64;2]| quad([x0,x1],&|x| {
         let a2 = r*r-x*x;
-        let f = |y: f64| 0.5*(y*(a2-y*y).sqrt()+a2*(y/a2.sqrt()).asin());
-        w*(f(y1)-f(y0)+(y1-y0))
-    }).sum::<f64>()*0.5*(x1-x0);
+        under_circle(a2,y1)-under_circle(a2,y0)+(y1-y0)
+    });
     for (lo,hi) in [([-2.,0.,-1.],[2.,1.,6.]),([-2.,-1.,-1.],[2.,0.,6.]),([0.,-1.,-1.],[1.,1.,6.])] {
         let both = combined(&ball,&block(lo,hi),Op::Union,0.).unwrap_or_else(|e| panic!("{lo:?}: {e}"));
         both.check(1e-9).unwrap();
