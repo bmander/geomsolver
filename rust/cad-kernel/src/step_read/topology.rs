@@ -133,6 +133,13 @@ impl Walk<'_,'_,'_> {
                         uses.reverse();
                         for u in &mut uses { u.along = !u.along; }
                     }
+                    // each edge ending at the vertex the next one starts at (the standard's
+                    // `edge_loop`: no two vertices at one place taken for one)
+                    let ends = |u: &Use| { let e = &self.written[u.edge].ends; if u.along { [e[0],e[1]] } else { [e[1],e[0]] } };
+                    if let Some(k) = (0..uses.len()).find(|&k| ends(&uses[k])[1] != ends(&uses[(k+1)%uses.len()])[0]) {
+                        return Err(Refusal::malformed(lp,format!("a loop whose edge #{} ends at a vertex the next does not start at",
+                            self.written[uses[k].edge].entity)))
+                    }
                     bounds.push(Bound::Edges(uses));
                 }
                 Some(("VERTEX_LOOP",lv)) => { let k = self.vertex(lp,lv.get(1).and_then(Value::reference))?; bounds.push(Bound::Vertex(lp,k)); }
@@ -341,8 +348,8 @@ struct Setting<'r> { b: &'r Brep,reads: &'r [Read],within: f64,near: f64 }
 
 /// **A loop walked in its face's parameters** (the module's doc): each use's pcurve, its ends on
 /// the branch the walk reached them on.
-fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],reversed: bool,seams: &BTreeSet<usize>,face: u32)
-    -> Result<(Vec<Coedge>,Option<Wound>),Refusal> {
+fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],reversed: bool,seams: &BTreeSet<usize>,face: u32,
+    taken: &mut BTreeMap<usize,usize>) -> Result<(Vec<Coedge>,Option<Wound>),Refusal> {
     let s = &sheet.surface;
     let (b,periods) = (st.b,s.periods());
     let spline = matches!(s,Surface::BSpline(..));
@@ -360,16 +367,19 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
         let end = b.vertices[e.v[!rev as usize] as usize].p;
         let free = spline || topo_poleless(s) || [begin,end].iter().all(|&p| pole_at(s,s.inverse(p),st.within).is_none());
         let given = if free {
-            let mut found: Vec<(Pcurve,Uv)> = st.reads[ei].pcurves.iter().filter(|(id,_)| *id == surface)
-                .filter_map(|(_,f)| f.scaled(sheet.scale)).filter_map(|f| file_pcurve(&f,e,st.reads[ei].rate,s,&b.vertices,st.near))
-                .map(|pc| {
+            // (a seam's other use took the other of its two)
+            let mine: Vec<&Flat> = st.reads[ei].pcurves.iter().filter(|(id,_)| *id == surface).map(|(_,f)| f).collect();
+            let other = taken.get(&ei).copied().filter(|_| mine.len() > 1);
+            let mut found: Vec<(Pcurve,Uv,usize)> = mine.iter().enumerate().filter(|&(k,_)| Some(k) != other)
+                .filter_map(|(k,f)| Some((f.scaled(sheet.scale)?,k))).filter_map(|(f,k)| Some((file_pcurve(&f,e,st.reads[ei].rate,s,&b.vertices,st.near)?,k)))
+                .map(|(pc,k)| {
                     let a = pc.at(travel[0],e,s,&b.vertices);
-                    let Some(l) = last else { return (pc,a) };
+                    let Some(l) = last else { return (pc,a,k) };
                     let d: Uv = std::array::from_fn(|k| periods[k].map_or(0.,|p| ((l[k]-a[k])/p).round()*p));
-                    if d == [0.;2] { (pc,a) } else { (moved(&pc,d),[a[0]+d[0],a[1]+d[1]]) }
+                    if d == [0.;2] { (pc,a,k) } else { (moved(&pc,d),[a[0]+d[0],a[1]+d[1]],k) }
                 }).collect();
             if let Some(l) = last { found.sort_by(|x,y| distance2(x.1,l).total_cmp(&distance2(y.1,l))); }
-            found.into_iter().next()
+            found.into_iter().next().map(|(pc,a,k)| { taken.insert(ei,k); (pc,a) })
         } else { None };
         let (pcurve,start,end) = match given {
             Some((pc,a)) => { let z = pc.at(travel[1],e,s,&b.vertices); (pc,a,z) }
@@ -378,7 +388,10 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
                 // the file gives one (the side of a closed spline's seam)
                 let from = last.unwrap_or_else(|| {
                     let near = st.reads[ei].pcurves.iter().find(|(id,_)| *id == surface).map(|(_,f)| roughly(f,e,st.reads[ei].rate,travel[0]));
-                    match near { Some(q) => unwrap(s.inverse_near(begin,q),q,periods),None => s.inverse(begin) }
+                    // (else from a step in along the edge, whose foot is the face's own where its
+                    // start is on a closed sheet's seam)
+                    let q = near.unwrap_or_else(|| s.inverse(e.point(travel[0]+(travel[1]-travel[0])/16.,&b.vertices)));
+                    unwrap(s.inverse_near(begin,q),q,periods)
                 });
                 let [mut a,mut m,mut z] = track(s,e,&b.vertices,travel,from,steps,st.within);
                 // leaving a pole after another use: on the branch that keeps the face on the left
@@ -516,7 +529,8 @@ fn face(st: &Setting,sheet: &Sheet,w: &Walked) -> Result<Built,Refusal> {
         l.rotate_left(k);
         l
     }).collect();
-    let walked = uses.iter().map(|l| walk_loop(st,sheet,w.surface,l,reversed,&seams,w.entity)).collect::<Result<Vec<_>,_>>()?;
+    let mut taken = BTreeMap::new();
+    let walked = uses.iter().map(|l| walk_loop(st,sheet,w.surface,l,reversed,&seams,w.entity,&mut taken)).collect::<Result<Vec<_>,_>>()?;
     // a loop winding round a pole the face holds is joined to it by a seam laid (one loop alone:
     // two winding bound a band, which wants a seam between them)
     let (mut laid,mut poles) = (Vec::new(),Vec::new());
@@ -538,6 +552,13 @@ fn face(st: &Setting,sheet: &Sheet,w: &Walked) -> Result<Built,Refusal> {
         loops.push(l);
     }
     let mut f = Face {surface:s.clone(),reversed,loops,name:w.name.clone()};
+    if std::env::var_os("STEP_READ_DEBUG").is_some() {
+        for c in f.loops.iter().flatten() {
+            if c.edge > LAID-16 { continue }
+            let e = &b.edges[c.edge as usize];
+            for j in 0..=32 { let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/32.; let q = c.pcurve.at(t,e,s,&b.vertices); if !(q[0].is_finite() && q[1].is_finite()) { eprintln!("face #{} edge {} t {:?} at {t} {q:?} {:?}",w.entity,c.edge,e.t,c.pcurve); break } }
+        }
+    }
     // the outer loop first: the one enclosing the most of the face's parameters
     if f.loops.len() > 1 {
         let areas: Vec<f64> = f.loops.iter().map(|l| b.loop_area(&f,l).abs()).collect();
@@ -667,6 +688,9 @@ pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
     lap("poles marked");
     b.close_poles();
     lap("poles closed");
+    // (twice: a vertex's tolerance, measured, is how far an inverse curve's end reads as on a pole
+    // there, which the edges' tolerances are then measured with)
+    b.measure_tolerances();
     b.measure_tolerances();
     // (a foot searched for on a spline reads the last bits of a gap differently from one reading to
     // the next: the gap measured is held to a billionth more)

@@ -288,13 +288,28 @@ impl<'f,'a> Geometry<'f,'a> {
         let degree = integer(head.first(),r,"a B-spline's degree")?;
         if !(1..=crate::nurbs::MAX_DEGREE as i64).contains(&degree) { return Err(Refusal::unsupported(r,format!("a B-spline of degree {degree}"))) }
         let poles: Vec<V> = list(head.get(1),r,"a B-spline's poles")?.iter().map(|p| self.pole(r,p.reference(),flat)).collect::<Result<_,_>>()?;
-        let knots = knots(list(ks.first(),r,"a B-spline's multiplicities")?,list(ks.get(1),r,"a B-spline's knots")?,r)?;
-        let s = match weights {
-            Some(w) => {
-                let w = list(w.first(),r,"a B-spline's weights")?.iter().map(|x| number(Some(x),r,"a weight")).collect::<Result<Vec<_>,_>>()?;
-                BSpline::rational(degree as usize,knots,poles,w)
+        let mut knots = knots(list(ks.first(),r,"a B-spline's multiplicities")?,list(ks.get(1),r,"a B-spline's knots")?,r)?;
+        let mut poles = poles;
+        let mut weights = match weights {
+            Some(w) => Some(list(w.first(),r,"a B-spline's weights")?.iter().map(|x| number(Some(x),r,"a weight")).collect::<Result<Vec<_>,_>>()?),
+            None => None,
+        };
+        // an end knot repeated past the degree and one more weighs its end pole nothing over the
+        // domain (a span of no length beyond it): that pole and knot dropped, the same curve
+        let p = degree as usize;
+        if knots.len() == poles.len()+p+1 && weights.as_ref().is_none_or(|w| w.len() == poles.len()) {
+            while poles.len() > p+1 && knots[poles.len()-1] == knots[poles.len()] {
+                poles.pop(); knots.pop();
+                if let Some(w) = &mut weights { w.pop(); }
             }
-            None => BSpline::new(degree as usize,knots,poles),
+            while poles.len() > p+1 && knots[p] == knots[p+1] {
+                poles.remove(0); knots.remove(0);
+                if let Some(w) = &mut weights { w.remove(0); }
+            }
+        }
+        let s = match weights {
+            Some(w) => BSpline::rational(p,knots,poles,w),
+            None => BSpline::new(p,knots,poles),
         };
         s.map_err(|m| Refusal::malformed(r,m))
     }
