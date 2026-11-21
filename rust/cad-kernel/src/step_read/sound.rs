@@ -24,7 +24,9 @@
 //!   loop touching itself or another at a vertex, a kernel's pinch) are apart when each lies in
 //!   a cone about its chord from the corner (half-angle eight times its sag over its length, what a
 //!   parabola's tangents turn through, doubled) and the cones part, or when both lie within the
-//!   corner's tolerance of it. A crossing is refused; so is a **touch**, two pieces nearer than
+//!   corner's reach: its tolerance, or its **tongue** where the two uses leave it tangent (an arc
+//!   tangent to a line at their vertex, the face between them thinner than the tolerance for a
+//!   stretch: `Drawn::tongue`). A crossing is refused; so is a **touch**, two pieces nearer than
 //!   their tolerance away from any corner they share: the tolerant boundary's topology is not
 //!   decided there, and "never read wrong" says an unprovable face is refused (OCCT's own check
 //!   refuses wires intersecting within tolerance away from their vertices). At a corner passed more
@@ -35,11 +37,16 @@
 //!   outer loop winds it — inside the outer loop, inside no other hole. Seams are two uses a period
 //!   apart and poles a degenerate edge's line in the parameters, so neither is a crossing. A face
 //!   whose area in its parameters is provably under its tolerance times its perimeter has none.
-//! * **One shell outside, its voids inside it** (`shells`): the faces' components by shared edges
-//!   are the shells; each shell's signed volume from `props::fluxes`; one shell of positive
-//!   volume, every other negative (a void), none of no volume. Each void's vertex is located
-//!   against the outer shell alone (`query::Located::solid_place`, a ray's crossings): inside, or
-//!   refused; a void inside another void (their boxes nesting, then located) is refused.
+//! * **One solid outside, its voids inside it** (`shells`): the faces' components by shared edges
+//!   are the shells; each shell's signed volume from `props::fluxes`; none of no volume (under the
+//!   floor times the size squared). The shell of greatest positive volume, with every positive
+//!   shell sharing a vertex with it or with one that does (a kernel's solid pinched along a line,
+//!   its edges there held twice by `Brep::unpinched`), is the solid; any other positive shell is a
+//!   second solid, refused; none positive, the boundary is inside out. Each negative shell is a
+//!   void: one of its first eight vertices read off the solid's shells is located against them
+//!   alone (`query::Located::solid_place`, a ray's crossings, exact where the queries prove them):
+//!   inside, or refused; none read off them, its place is undecided and refused. A void inside
+//!   another (their faces' boxes nesting, then located the same way) is refused.
 //!
 //! **Not decided**: two faces that are not neighbours crossing each other in space (a global
 //! self-intersection), and a void's shell crossing its outer shell where a vertex of it reads
@@ -92,9 +99,9 @@ pub fn sound(b: &Brep,context: &Context) -> Result<(),Unsound> {
     let size = extent(b);
     let floor = crate::geom::tolerance(size);
     edges(b,context,size,floor)?;
-    let faces = crate::util::par::indices(b.faces.len(),|fi| face(b,fi,context,size,floor));
+    let faces = crate::util::par::indices(b.faces.len(),|fi| face(b,fi,context,floor));
     for r in faces { r? }
-    shells(b,floor)
+    shells(b,size,floor)
 }
 
 /// Every index in range and every number finite, so nothing after reads past an array or loops on
@@ -180,11 +187,11 @@ fn edges(b: &Brep,context: &Context,size: f64,floor: f64) -> Result<(),Unsound> 
 
 /// One face held to its rules: its vertices apart, its loops simple, apart and nested as its sense
 /// says, and of some area.
-fn face(b: &Brep,fi: usize,context: &Context,size: f64,floor: f64) -> Result<(),Unsound> {
+fn face(b: &Brep,fi: usize,context: &Context,floor: f64) -> Result<(),Unsound> {
     let f = &b.faces[fi];
     if f.loops.is_empty() || f.loops.iter().any(Vec::is_empty) { return Ok(()) }
     vertices_apart(b,fi,context,floor)?;
-    let mut d = Drawn::new(b,fi,floor,size)?;
+    let mut d = Drawn::new(b,fi,floor)?;
     d.wraps()?;
     d.passages()?;
     d.crossings()?;
@@ -278,7 +285,7 @@ fn crosses(p: &Piece,q: &Piece,m: f64) -> bool {
 fn at_uv(fi: usize,what: &str,uv: Uv) -> Unsound { Unsound::face(fi,format!("face {fi}: {what}, near {:?} in its parameters",uv.map(|x| (x*1e6).round()/1e6))) }
 
 impl<'a> Drawn<'a> {
-    fn new(b: &'a Brep,fi: usize,floor: f64,_size: f64) -> Result<Drawn<'a>,Unsound> {
+    fn new(b: &'a Brep,fi: usize,floor: f64) -> Result<Drawn<'a>,Unsound> {
         let f = &b.faces[fi];
         let mut d = Drawn {b,fi,runs:Vec::new(),pieces:Vec::new(),loops:Vec::new(),joints:Vec::new(),floor,fastest:0.,steps:0,corners:Vec::new(),tongues:Default::default()};
         let mut centre = [0.;2];
@@ -712,6 +719,17 @@ impl<'a> Drawn<'a> {
     fn winding(&mut self,lk: usize,x: Uv) -> Option<i32> {
         let above = |p: Uv| p[1] > x[1];
         let mut w = 0;
+        // the loop closed straight between each piece's end and the next's start (the gaps
+        // `check` lets a corner's two ends stand apart by), each read exactly
+        let r = self.loops[lk].clone();
+        for i in r.clone() {
+            let (a,b) = (self.pieces[i].p[1],self.pieces[if i+1 == r.end { r.start } else { i+1 }].p[0]);
+            if a == b || (above(a) == above(b) && !(to_segment(x,a,b) <= self.tol(&self.pieces[i],&self.pieces[i]))) { continue }
+            if to_segment(x,a,b) <= self.tol(&self.pieces[i],&self.pieces[i]) { return None }
+            // where it crosses the level line through `x`
+            let u = a[0]+(x[1]-a[1])/(b[1]-a[1])*(b[0]-a[0]);
+            if u > x[0] { w += above(b) as i32-above(a) as i32; }
+        }
         let mut stack: Vec<(Piece,u32)> = self.pieces[self.loops[lk].clone()].iter().map(|&p| (p,0)).collect();
         while let Some((p,depth)) = stack.pop() {
             let g = SAFE*p.sag+self.tol(&p,&p);
@@ -753,7 +771,7 @@ fn cones_apart(p: &Piece,i: usize,q: &Piece,k: usize,slop: f64) -> bool {
 
 /// The faces' components by the edges they share, each a shell: one of positive volume, the rest
 /// negative and inside it, none inside another.
-fn shells(b: &Brep,floor: f64) -> Result<(),Unsound> {
+fn shells(b: &Brep,size: f64,floor: f64) -> Result<(),Unsound> {
     let nf = b.faces.len();
     if nf == 0 { return Ok(()) }
     let mut root: Vec<usize> = (0..nf).collect();
@@ -775,15 +793,10 @@ fn shells(b: &Brep,floor: f64) -> Result<(),Unsound> {
         shells[label[r]].push(fi);
     }
     let flux = crate::props::fluxes(b);
-    let boxes: Vec<crate::geom::Box3> = shells.iter().map(|s| {
-        let mut bx = crate::geom::EMPTY;
-        for &fi in s { crate::geom::widen(&mut bx,crate::query::face_box(b,fi)); }
-        bx
-    }).collect();
     let volumes: Vec<f64> = shells.iter().map(|s| s.iter().map(|&f| flux[f]).sum::<f64>()/3.).collect();
     for (k,s) in shells.iter().enumerate() {
-        let d = norm(std::array::from_fn(|i| boxes[k].1[i]-boxes[k].0[i]));
-        if !(volumes[k].abs() > floor*d*d) {
+        // (a slab the floor thick across the whole boundary is no volume)
+        if !(volumes[k].abs() > floor*size*size) {
             return Err(Unsound::face(s[0],format!("the shell of face {} bounds no volume ({:e} mm³)",s[0],volumes[k])))
         }
     }
@@ -831,6 +844,11 @@ fn shells(b: &Brep,floor: f64) -> Result<(),Unsound> {
             None => return Err(Unsound::face(shells[k][0],format!("the void of face {} touches the solid's outer shell: its place is not decided",shells[k][0]))),
         }
     }
+    let boxes: Vec<crate::geom::Box3> = shells.iter().enumerate().map(|(k,s)| {
+        let mut bx = crate::geom::EMPTY;
+        if !body.contains(&k) { for &fi in s { crate::geom::widen(&mut bx,crate::query::face_box(b,fi)); } }
+        bx
+    }).collect();
     let inside = |a: &crate::geom::Box3,z: &crate::geom::Box3| (0..3).all(|i| a.0[i] >= z.0[i]-floor && a.1[i] <= z.1[i]+floor);
     for &j in &voids {
         let nested: Vec<usize> = voids.iter().copied().filter(|&k| k != j && inside(&boxes[k],&boxes[j])).collect();
