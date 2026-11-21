@@ -355,6 +355,28 @@ fn a_rim_ending_on_another_arc_at_a_corner_is_built() {
     lens_holds(20.0, 15.0, 25.0, false, "far", Word::Chamfer(1.0));
 }
 
+/// **A D's rim rounded to its own radius is a dome its flat cuts** (#961's post, refused before
+/// #962 item 3 as "a stretch of a circle its end does not cut off"): an arc of 5 about the origin
+/// closed by a chord at `x = 3`, 10 high, its near rim along the arc rounded 5.  The ball's centre
+/// stands on the axis, so no point of the ring's section on the axis ever crosses the flat; the
+/// circle comes back within the flat only across it, so the ring is carried round from both ends
+/// to the middle of the flat, a whole turn, kept within it.  Under the round's 5 the D is the
+/// hemisphere less the half of its cap of height 2 past the flat, `⅔π5³ − ½·π2²(15 − 2)/3 =
+/// 224π/3`; over it the D's area, `25(π − acos ⅗) + 12`, 5 high.
+#[test]
+fn a_ds_rim_rounded_to_its_radius_is_a_dome_its_flat_cuts() {
+    let src = "unit mm\nuse std\nuse std.solids\nuse std.rounds (round)\nin std.top {\n  \
+        o := point\n  fix((0, 0)) o\n  a := point\n  fix((3, -4)) a\n  b := point\n  fix((3, 4)) b\n  \
+        side := arc(center: o, start: b, end: a) hint(r: 5)\n  flat := line(a, b)\n}\n\
+        drum := solid(std.solids.Prism(face(side, flat), from: 0mm, to: 10mm))\n\
+        drum.near round(r: 5mm) drum.side\n";
+    let e = solved(src);
+    assert!(e.diags.is_empty(), "{:?}", e.diags);
+    assert_eq!(e.sketch.field_meshed_ahead(crate::common::ent(&e, "drum").i()), None);
+    let d = 25.0 * (PI - 0.6f64.acos()) + 12.0;
+    close(props::volume(&exported(&e, "drum")), 5.0 * d + 224.0 * PI / 3.0);
+}
+
 /// The two discs' common part `height` tall standing on a flange of 70 about the origin, 10 thick,
 /// and where they meet filled by `word`.
 fn drum(ra: f64, rb: f64, xb: f64, word: Word) -> String {

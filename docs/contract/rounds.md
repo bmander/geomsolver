@@ -698,7 +698,10 @@ and turned, either cap; the two discs in common, rounded under and just either s
 overhang and well over it, mirrored, and chamfered, and in union; a drum of the two standing on a
 flange, its foot filled; a pocket's floor-to-wall fill broken by a hole inside, on and beyond its
 wall, at the pocket's end with no edge beyond, and across a trench under the floor, square-on and
-skewed; each volume the closed form's to 1e-9, the section left at each depth integrated by
+skewed; #961's D post, its arc's rim rounded to the arc's own radius — the ball's centre on the
+axis, so its ring's section never crosses the flat, carried round from both ends to the flat's
+middle, a whole turn kept within it: the hemisphere the flat cuts, `224π/3` under the D's prism;
+each volume the closed form's to 1e-9, the section left at each depth integrated by
 Gauss–Legendre or tanh–sinh, the pocket's against the kernel's body without the fill). Refused by
 the kernel yet, said where it stands: the round exactly as deep as the larger disc overhangs (the
 round's torus touching that cylinder: "where a traced … meets a plane was not proved: its search

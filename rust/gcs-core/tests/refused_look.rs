@@ -30,14 +30,26 @@ fn tilted_d_post(round: &str) -> String {
         drum := solid(post)\nlid cut drum\ndrum.lid {round} drum.post.side\n")
 }
 
-/// The same D square-topped, its arc's rim rounded to the post's radius: refused by the lowering
-/// itself, before the kernel is asked ("a stretch of a circle its end does not cut off").
-fn square_d_post() -> String {
-    "unit mm\nuse std\nuse std.solids\nuse std.rounds (round)\nin std.top {\n  o := point\n  fix((0, 0)) o\n\
-     \x20 a := point\n  fix((3, -4)) a\n  b := point\n  fix((3, 4)) b\n\
-     \x20 side := arc(center: o, start: b, end: a) hint(r: 5)\n  flat := line(a, b)\n}\n\
-     drum := solid(std.solids.Prism(face(side, flat), from: 0mm, to: 10mm))\n\
-     drum.near round(r: 5mm) drum.side\n".to_string()
+/// `bracket.sv` (an L bracket, its foot filled into its plate) with a short slot across the
+/// crease, along it, in place of its slots: each run ends on one of the slot's round ends, which
+/// its section reaches past — into the slot between them, where neither run's end is the other's —
+/// refused by the lowering itself, before the kernel is asked ("a run its curved end does not cut
+/// off", `round_lowering::a_refused_rounds_piece_is_said_at_its_round`).  `round` false leaves the
+/// fill out.  (The same D as `tilted_d_post` square-topped, its arc's rim rounded to the post's
+/// radius, was refused here as "a stretch of a circle its end does not cut off"; its ring is now
+/// carried round to the middle of the flat and built, #962 item 3:
+/// `curved_ends::a_ds_rim_rounded_to_its_radius_is_a_dome_its_flat_cuts`.)
+fn slotted_bracket(round: bool) -> String {
+    let src = include_str!("../../examples/rounds/bracket.sv");
+    let slots = src.find("  // a slot along the foot").unwrap();
+    let fill = src.find("  body.foot round").unwrap();
+    let slot = "  slot := Block(x0: 5.5mm, x1: 6.5mm, y0: -1mm, y1: 1mm, z0: -1mm, z1: 7mm)\n  \
+        slot.body cut body\n  near := Post(x: 6mm, y: -1mm, d: 1mm, z0: -1mm, z1: 7mm)\n  \
+        near.body cut body\n  far := Post(x: 6mm, y: 1mm, d: 1mm, z0: -1mm, z1: 7mm)\n  \
+        far.body cut body\n";
+    let line = "  body.foot round(r: r) body.plate\n";
+    let rest = if round { &src[fill..] } else { &src[fill + line.len()..] };
+    format!("{}{slot}{rest}", &src[..slots])
 }
 
 /// A field's reading at `p` from a mesher at `resolution` (`Source::Cached`), and exactly.
@@ -57,11 +69,12 @@ fn lattice(lo: [f64; 3], hi: [f64; 3], n: usize) -> Vec<[f64; 3]> {
 /// say, and nor does a solid with no round.
 #[test]
 fn a_refused_round_is_said_before_its_field_is_meshed() {
-    for (src, why) in [(tilted_d_post("round(r: 5mm)"),
-                        "stands still, and their meeting ends where `post.flat` cuts across it"),
-                       (square_d_post(), "a stretch of a circle its end does not cut off")] {
+    let kernels = "stands still, and their meeting ends where `post.flat` cuts across it";
+    let lowerings = "a run its curved end does not cut off";
+    for (src, solid, why) in [(tilted_d_post("round(r: 5mm)"), "drum", kernels),
+                              (slotted_bracket(true), "bracket.body", lowerings)] {
         let e = solved(&src);
-        let i = ent(&e, "drum").i();
+        let i = ent(&e, solid).i();
         let clock = std::time::Instant::now();
         let ahead = e.sketch.field_meshed_ahead(i).expect("the field is to be meshed");
         assert!(clock.elapsed().as_secs_f64() < 2.0, "asking meshed nothing");
@@ -110,15 +123,15 @@ fn thread_seconds() -> Option<f64> {
 }
 
 /// **Drawn in time that follows the facets** (#961's sibling refusal): meshing the field of a
-/// post whose round the lowering refuses took 18–25 s natively before the round was read from a
+/// post whose round the lowering refused took 18–25 s natively before the round was read from a
 /// distance field and about 2.5 s after (the kernel's refusal, the issue's: about a minute and
-/// 6 s); under the test profile it is held to thirty seconds of its thread's time, about three
-/// alone.  What was said ahead is what the evaluation carries, and the surface it gives holds
-/// most of the D's prism.
+/// 6 s); the slotted bracket's, about 3 s alone under the test profile, is held to thirty seconds
+/// of its thread's time.  What was said ahead is what the evaluation carries, and the surface it
+/// gives holds the bracket unrounded and no more than the fill all along its edge adds.
 #[test]
 fn a_solid_whose_round_is_refused_is_drawn_in_bounded_time() {
-    let e = solved(&square_d_post());
-    let i = ent(&e, "drum").i();
+    let e = solved(&slotted_bracket(true));
+    let i = ent(&e, "bracket.body").i();
     let ahead = e.sketch.field_meshed_ahead(i).expect("the field is to be meshed");
     let (clock, cpu) = (std::time::Instant::now(), thread_seconds());
     let solid = e.sketch.evaluated_solid(i, ApproximationPolicy::Mesh).expect("drawn from its field");
@@ -132,8 +145,15 @@ fn a_solid_whose_round_is_refused_is_drawn_in_bounded_time() {
     assert_eq!(solid.unbuilt(), Some(&ahead));
     // drawn, a second look meshes nothing more, and says the same
     assert_eq!(e.sketch.field_meshed_ahead(i).as_ref(), Some(&ahead));
-    // the D's area, 10 high, less what the round takes: under the prism, and most of it
-    let d = 25.0 * (std::f64::consts::PI - (0.6f64).acos()) + 3.0 * 4.0;
+    // the bracket built exactly without its fill, and that fill's section, (1 − π/4) r² with r 3,
+    // along all 40 of its edge: the fill adds to the one, and no more than the other (the slot
+    // takes some of it)
+    let bare = solved(&slotted_bracket(false));
+    let say = gcs_core::brep::sweep::Say { stage: &|_: &str| {}, mark: &|_| {} };
+    let unrounded = gcs_core::brep::export::exact(&bare.sketch, ent(&bare, "bracket.body").i(), None,
+        None, &say).expect("the bracket unrounded is built").solid;
+    let unrounded = gcs_core::brep::props::volume(&unrounded);
+    let fill = (1.0 - std::f64::consts::FRAC_PI_4) * 9.0 * 40.0;
     let v = solid.volume();
-    assert!(v < 10.0 * d && v > 0.5 * 10.0 * d, "{v} against {}", 10.0 * d);
+    assert!(v > unrounded && v < unrounded + fill, "{v} against {unrounded} and {fill} more");
 }
