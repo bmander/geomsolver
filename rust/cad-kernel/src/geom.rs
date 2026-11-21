@@ -1198,7 +1198,9 @@ impl Surface {
     /// The periods in `u` and `v` (none where the parameter is not periodic).
     pub fn periods(&self) -> [Option<f64>;2] {
         match self {
-            Surface::Plane(_) | Surface::Extrusion(..) => [None,None],
+            Surface::Plane(_) => [None,None],
+            // a closed conic swept is closed round it (a file's elliptic cylinder, #993)
+            Surface::Extrusion(_,c) => [c.period(),None],
             // a sharp circle's ring is closed round its meridian too, as a torus is (#780 L2)
             Surface::Revolution(_,c) => [Some(TAU),c.period()],
             Surface::Blend(_,b) => [b.closed.then_some(1.),None],
