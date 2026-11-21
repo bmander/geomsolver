@@ -35,7 +35,7 @@ use super::{Given,Refusal,Why};
 use crate::geom::{Curve,Frame,Surface,Uv,V};
 use crate::nurbs::BSpline;
 use crate::step_file::{File,Value};
-use crate::topo::{pole_at,reverse_loop,unwrap,Brep,Coedge,Edge,EdgeCurve,Face,Pcurve,Vertex};
+use crate::topo::{pole_at,poleless as topo_poleless,reverse_loop,unwrap,Brep,Coedge,Edge,EdgeCurve,Face,Pcurve,Vertex};
 use crate::util::space::{add,cross,distance,norm,scale,sub};
 use std::collections::{BTreeMap,BTreeSet};
 use std::f64::consts::TAU;
@@ -232,8 +232,8 @@ fn read_edge(g: &Geometry,w: &Written,points: &[V],within: f64) -> Result<Read,R
 
 /// The file's curve of an edge in a spline face's parameters as the kernel's pcurve, read over
 /// the kernel's parameter of the edge (`rate` of the file's, and moved by whole periods of a
-/// closed curve to where its domain says): kept where it lies on the edge within `near` at every
-/// ninth of it, else none.
+/// closed curve to where its domain says): kept where its image lies as near the edge as the
+/// surface does, within `near`, at every eighth of it, else none.
 fn file_pcurve(flat: &Flat,e: &Edge,rate: f64,s: &Surface,vs: &[Vertex],near: f64) -> Option<Pcurve> {
     let period = match &e.curve { EdgeCurve::Curve(c) => c.period(),EdgeCurve::Degenerate => None };
     let shifts: Vec<f64> = match (period,flat.domain()) {
@@ -254,18 +254,36 @@ fn file_pcurve(flat: &Flat,e: &Edge,rate: f64,s: &Surface,vs: &[Vertex],near: f6
             Flat::Curve(c) if rate == 1. => Pcurve::Curve(Arc::new(c.clone())),
             Flat::Curve(_) => return None,
         };
+        // as near the edge as the surface is, within `near` (a file's edge may stand its
+        // tolerance off its faces, and its curve in each lies under it)
         let on = (0..=8).all(|j| {
             let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/8.;
-            distance(s.point(pc.at(t,e,s,vs)),e.point(t,vs)) <= near
+            let (q,p) = (pc.at(t,e,s,vs),e.point(t,vs));
+            let d = distance(s.point(q),p);
+            d <= near || d <= s.foot_from(p,q).map_or(0.,|f| distance(s.point(f),p))+near
         });
         if on { return Some(pc) }
         if std::env::var_os("STEP_READ_DEBUG").is_some() {
-            let gaps: Vec<f64> = (0..=8).map(|j| { let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/8.; distance(s.point(pc.at(t,e,s,vs)),e.point(t,vs)) }).collect();
-            let feet: Vec<f64> = (0..=8).map(|j| { let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/8.; let p = e.point(t,vs); distance(s.point(s.inverse(p)),p) }).collect();
-            eprintln!("file pcurve off: shift {shift} gaps {gaps:?} feet {feet:?}");
+            let g: Vec<String> = (0..=8).map(|j| { let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/8.; let (q,p) = (pc.at(t,e,s,vs),e.point(t,vs));
+                format!("{:?}/{:.2e}/{:?}",q,distance(s.point(q),p),s.foot_from(p,q).map(|f| distance(s.point(f),p))) }).collect();
+            eprintln!("file pcurve off: t {:?} shift {shift} {g:?}",e.t);
         }
     }
     None
+}
+
+/// Where the file's curve `flat` has an edge's point at its parameter `t`, roughly: read at the
+/// file's parameter `t / rate`, moved by whole periods of a closed curve into its domain — a
+/// curve in a face's parameters need not run at its edge's own (a cone's, read across the axis),
+/// but it lies on the branch of the surface its edge does.
+fn roughly(flat: &Flat,e: &Edge,rate: f64,t: f64) -> Uv {
+    let period = match &e.curve { EdgeCurve::Curve(c) => c.period(),EdgeCurve::Degenerate => None };
+    let shift = match (period,flat.domain()) {
+        (Some(p),Some([d0,d1])) => ((0.5*(e.t[0]+e.t[1])-rate*0.5*(d0+d1))/p).round()*p,
+        _ => 0.,
+    };
+    let x = (t-shift)/rate;
+    flat.at(match flat.domain() { Some([d0,d1]) => x.clamp(d0,d1),None => x })
 }
 
 /// The parameters of a use's start, middle and end on `s`, its points read one after another from
@@ -323,8 +341,9 @@ struct Setting<'r> { b: &'r Brep,reads: &'r [Read],within: f64,near: f64 }
 
 /// **A loop walked in its face's parameters** (the module's doc): each use's pcurve, its ends on
 /// the branch the walk reached them on.
-fn walk_loop(st: &Setting,s: &Surface,surface: u32,uses: &[(usize,bool)],reversed: bool,seams: &BTreeSet<usize>,face: u32)
+fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],reversed: bool,seams: &BTreeSet<usize>,face: u32)
     -> Result<Vec<Coedge>,Refusal> {
+    let s = &sheet.surface;
     let (b,periods) = (st.b,s.periods());
     let spline = matches!(s,Surface::BSpline(..));
     let steps = if matches!(s,Surface::Plane(_)) { 2 } else { 16 };
@@ -335,17 +354,32 @@ fn walk_loop(st: &Setting,s: &Surface,surface: u32,uses: &[(usize,bool)],reverse
         let e = &b.edges[ei];
         let travel = if rev { [e.t[1],e.t[0]] } else { e.t };
         let begin = b.vertices[e.v[rev as usize] as usize].p;
-        // the file's own curve, on a spline: the one nearest where the loop stands (a seam's two)
-        let given = if spline {
+        // the file's own curve, moved by whole periods to where the loop stands, the nearest of
+        // them there (a seam's two on a spline); on a surface with poles, of a use reaching none,
+        // whose ends at a pole the walk reads (`pole_branch`)
+        let end = b.vertices[e.v[!rev as usize] as usize].p;
+        let free = spline || topo_poleless(s) || [begin,end].iter().all(|&p| pole_at(s,s.inverse(p),st.within).is_none());
+        let given = if free {
             let mut found: Vec<(Pcurve,Uv)> = st.reads[ei].pcurves.iter().filter(|(id,_)| *id == surface)
-                .filter_map(|(_,f)| file_pcurve(f,e,st.reads[ei].rate,s,&b.vertices,st.near)).map(|pc| { let a = pc.at(travel[0],e,s,&b.vertices); (pc,a) }).collect();
+                .filter_map(|(_,f)| f.scaled(sheet.scale)).filter_map(|f| file_pcurve(&f,e,st.reads[ei].rate,s,&b.vertices,st.near))
+                .map(|pc| {
+                    let a = pc.at(travel[0],e,s,&b.vertices);
+                    let Some(l) = last else { return (pc,a) };
+                    let d: Uv = std::array::from_fn(|k| periods[k].map_or(0.,|p| ((l[k]-a[k])/p).round()*p));
+                    if d == [0.;2] { (pc,a) } else { (moved(&pc,d),[a[0]+d[0],a[1]+d[1]]) }
+                }).collect();
             if let Some(l) = last { found.sort_by(|x,y| distance2(x.1,l).total_cmp(&distance2(y.1,l))); }
             found.into_iter().next()
         } else { None };
         let (pcurve,start,end) = match given {
             Some((pc,a)) => { let z = pc.at(travel[1],e,s,&b.vertices); (pc,a,z) }
             None => {
-                let from = last.unwrap_or_else(|| s.inverse(begin));
+                // where the walk begins, the vertex read near where the file's curve has it, where
+                // the file gives one (the side of a closed spline's seam)
+                let from = last.unwrap_or_else(|| {
+                    let near = st.reads[ei].pcurves.iter().find(|(id,_)| *id == surface).map(|(_,f)| roughly(f,e,st.reads[ei].rate,travel[0]));
+                    match near { Some(q) => unwrap(s.inverse_near(begin,q),q,periods),None => s.inverse(begin) }
+                });
                 let [mut a,mut m,mut z] = track(s,e,&b.vertices,travel,from,steps,st.within);
                 // leaving a pole after another use: on the branch that keeps the face on the left
                 if let (Some(l),Some(k)) = (last,pole_at(s,from,st.within)) {
@@ -359,6 +393,7 @@ fn walk_loop(st: &Setting,s: &Surface,surface: u32,uses: &[(usize,bool)],reverse
                 (Pcurve::Inverse {a:ea,b:eb},a,z)
             }
         };
+        if std::env::var_os("STEP_READ_DEBUG").is_some() { eprintln!("face #{face} use edge {ei} rev {rev} {} {start:?} -> {end:?}",match pcurve { Pcurve::Inverse {..} => "inverse",_ => "file" }); }
         first.get_or_insert((start,begin));
         out.push(Coedge {edge:ei as u32,reversed:rev,pcurve});
         last = Some(end);
@@ -433,7 +468,7 @@ fn face(st: &Setting,sheet: &Sheet,w: &Walked) -> Result<Built,Refusal> {
         l.rotate_left(k);
         l
     }).collect();
-    let loops = uses.iter().map(|l| walk_loop(st,s,w.surface,l,reversed,&seams,w.entity)).collect::<Result<Vec<_>,_>>()?;
+    let loops = uses.iter().map(|l| walk_loop(st,sheet,w.surface,l,reversed,&seams,w.entity)).collect::<Result<Vec<_>,_>>()?;
     let mut f = Face {surface:s.clone(),reversed,loops,name:w.name.clone()};
     // the outer loop first: the one enclosing the most of the face's parameters
     if f.loops.len() > 1 {
@@ -523,7 +558,7 @@ pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
     let sheets: BTreeMap<u32,Sheet> = ids.iter().copied().zip(crate::util::par::indices(ids.len(),|i| g.surface(ids[i],Some(ids[i])))
         .into_iter().collect::<Result<Vec<_>,_>>()?).collect();
     let built = {
-        let st = Setting {b:&b,reads:&reads,within:1e-7*(1.+size),near:(10.*uncertainty).max(1e-6)};
+        let st = Setting {b:&b,reads:&reads,within:1e-7*(1.+size),near:uncertainty.max(1e-6)};
         crate::util::par::indices(faces.len(),|i| face(&st,&sheets[&faces[i].surface],&faces[i])).into_iter().collect::<Result<Vec<_>,_>>()?
     };
     let mut edges: Vec<u32> = w.written.iter().map(|x| x.entity).collect();
@@ -543,13 +578,21 @@ pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
             for (k,uv) in ends.into_iter().enumerate() {
                 let Some(along) = pole_at(&f.surface,uv,pole) else { continue };
                 let (_,su,sv) = f.surface.d1(uv);
-                at_poles.push((b.ends(c)[k] as usize,std::f64::consts::PI*norm([su,sv][along])*(1.+1e-9)));
+                // (and as far as twice the farthest the uses' ends there stand from it, so two
+                // of them are one point of it)
+                let v = b.ends(c)[k] as usize;
+                let off = f.loops.iter().flatten().flat_map(|d| { let e = b.uv_ends(f,d); let w = b.ends(d); [(w[0],e[0]),(w[1],e[1])] })
+                    .filter(|&(w,_)| w as usize == v).map(|(_,uv)| distance(f.surface.point(uv),b.vertices[v].p)).fold(0.,f64::max);
+                at_poles.push((v,(std::f64::consts::PI*norm([su,sv][along])).max(2.*off)*(1.+1e-9)));
             }
         }
     }
     for (v,d) in at_poles { b.vertices[v].tol = b.vertices[v].tol.max(d); }
     b.close_poles();
     b.measure_tolerances();
+    // (a foot searched for on a spline reads the last bits of a gap differently from one reading to
+    // the next: the gap measured is held to a billionth more)
+    for e in &mut b.edges { e.tol *= 1.+1e-9; }
     edges.resize(b.edges.len(),0);
     if std::env::var_os("STEP_READ_DEBUG").is_some() {
         for (i,e) in b.edges.iter().enumerate().filter(|(_,e)| e.tol > 1e-4) {

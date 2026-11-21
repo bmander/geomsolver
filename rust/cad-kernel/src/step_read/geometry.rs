@@ -36,9 +36,14 @@ pub struct Geometry<'f,'a> { pub file: &'f File<'a>,pub context: Context }
 #[derive(Clone,Debug)]
 pub struct Spatial { pub curve: Curve,pub rate: f64 }
 
-/// A surface as the kernel holds it, in millimetres and radians.
+/// A surface as the kernel holds it, in millimetres and radians, and the kernel's parameters per
+/// the file's along each (`scale`): a length's the unit of length, an angle's the unit of angle, a
+/// cone's along its generator the unit of length over the cosine of its half-angle (the file reads
+/// it along the axis), a spline's 1. Where the kernel's parameters are no such scaling of the
+/// file's (an extrusion whose curve was carried into the plane square to it) a curve in the face's
+/// parameters read through it lies off the edge, and is not used (`topology::file_pcurve`).
 #[derive(Clone,Debug)]
-pub struct Sheet { pub surface: Surface }
+pub struct Sheet { pub surface: Surface,pub scale: [f64;2] }
 
 /// A curve in a face's parameters as the file writes it, over the file's own parameter and in
 /// the file's parameters of the surface: a line `p + t d` (`d` carrying its magnitude), or a
@@ -50,6 +55,18 @@ impl Flat {
     /// The point at the file's parameter `t`.
     pub fn at(&self,t: f64) -> [f64;2] {
         match self { Flat::Line {p,d} => [p[0]+t*d[0],p[1]+t*d[1]],Flat::Curve(c) => { let q = c.point(t); [q[0],q[1]] } }
+    }
+    /// The same curve with its parameters scaled by `s`, the file's to the kernel's (its own
+    /// parameter kept): none for a conic scaled unevenly.
+    pub fn scaled(&self,s: [f64;2]) -> Option<Flat> {
+        let p = |q: V| [q[0]*s[0],q[1]*s[1],0.];
+        Some(match self {
+            Flat::Line {p:o,d} => Flat::Line {p:[o[0]*s[0],o[1]*s[1]],d:[d[0]*s[0],d[1]*s[1]]},
+            Flat::Curve(Curve::BSpline(b)) => Flat::Curve(Curve::BSpline(Arc::new(BSpline {poles:b.poles.iter().map(|&q| p(q)).collect(),..(**b).clone()}))),
+            Flat::Curve(Curve::Circle(f,r)) if s[0] == s[1] => Flat::Curve(Curve::Circle(Frame {o:p(f.o),..*f},r*s[0])),
+            Flat::Curve(Curve::Ellipse(f,a,b)) if s[0] == s[1] => Flat::Curve(Curve::Ellipse(Frame {o:p(f.o),..*f},a*s[0],b*s[0])),
+            Flat::Curve(_) => return None,
+        })
     }
     /// Where its parameter is bounded (a B-spline's domain), if it is.
     pub fn domain(&self) -> Option<[f64;2]> { match self { Flat::Curve(Curve::BSpline(b)) => Some(b.domain()),_ => None } }
@@ -287,29 +304,29 @@ impl<'f,'a> Geometry<'f,'a> {
         let r = r.ok_or_else(|| Refusal::malformed(from,"a surface: a reference expected"))?;
         let e = self.file.get(r);
         if e.is("B_SPLINE_SURFACE") || e.is("B_SPLINE_SURFACE_WITH_KNOTS") {
-            return Ok(Sheet {surface:Surface::BSpline(Frame::WORLD,Arc::new(self.net(r)?))})
+            return Ok(Sheet {surface:Surface::BSpline(Frame::WORLD,Arc::new(self.net(r)?)),scale:[1.,1.]})
         }
         let Some((kind,v)) = e.simple() else { return Err(Refusal::unsupported(r,format!("a surface of the kinds {}",self.kinds(r)))) };
-        let a = self.context.angle;
+        let (l,a) = (self.context.length,self.context.angle);
         let place = || self.placement(r,v.get(1).and_then(Value::reference));
-        let surface = match kind {
-            "PLANE" => Surface::Plane(place()?),
-            "CYLINDRICAL_SURFACE" => Surface::Cylinder(place()?,self.length(v.get(2),r,"a cylinder's radius")?),
+        let (surface,scale) = match kind {
+            "PLANE" => (Surface::Plane(place()?),[l,l]),
+            "CYLINDRICAL_SURFACE" => (Surface::Cylinder(place()?,self.length(v.get(2),r,"a cylinder's radius")?),[a,l]),
             "CONICAL_SURFACE" => {
                 let rad = number(v.get(2),r,"a cone's radius")?;
                 let half = number(v.get(3),r,"a cone's semi-angle")?*a;
                 if !(rad >= 0.) { return Err(Refusal::malformed(r,format!("a cone's radius of {rad}"))) }
                 if !(half > 0. && half < std::f64::consts::FRAC_PI_2) { return Err(Refusal::malformed(r,format!("a cone's semi-angle of {half} rad"))) }
-                Surface::Cone(place()?,rad*self.context.length,half)
+                (Surface::Cone(place()?,rad*l,half),[a,l/half.dcos()])
             }
-            "SPHERICAL_SURFACE" => Surface::Sphere(place()?,self.length(v.get(2),r,"a sphere's radius")?),
-            "TOROIDAL_SURFACE" => Surface::Torus(place()?,number(v.get(2),r,"a torus's major radius")?*self.context.length,
-                self.length(v.get(3),r,"a torus's minor radius")?),
+            "SPHERICAL_SURFACE" => (Surface::Sphere(place()?,self.length(v.get(2),r,"a sphere's radius")?),[a,a]),
+            "TOROIDAL_SURFACE" => (Surface::Torus(place()?,number(v.get(2),r,"a torus's major radius")?*l,
+                self.length(v.get(3),r,"a torus's minor radius")?),[a,a]),
             "SURFACE_OF_LINEAR_EXTRUSION" => self.extrusion(r,v)?,
             "SURFACE_OF_REVOLUTION" => self.revolution(r,v)?,
             _ => return Err(Refusal::unsupported(r,format!("a surface of the kind {kind}"))),
         };
-        Ok(Sheet {surface})
+        Ok(Sheet {surface,scale})
     }
     /// A B-spline surface, simple or the complex entity with its weights.
     fn net(&self,r: u32) -> Result<Net,Refusal> {
@@ -351,9 +368,10 @@ impl<'f,'a> Geometry<'f,'a> {
     /// through the curve's first point — the same surface, its curve an affine image (a spline's
     /// poles, a line's point and direction); a conic slanted to `z` is refused (its image is an
     /// ellipse of another frame, not read yet).
-    fn extrusion(&self,r: u32,v: &[Value]) -> Result<Surface,Refusal> {
+    fn extrusion(&self,r: u32,v: &[Value]) -> Result<(Surface,[f64;2]),Refusal> {
         let swept = self.curve(r,v.get(1).and_then(Value::reference))?;
-        let (d,_) = self.vector(r,v.get(2).and_then(Value::reference),false)?;
+        let (d,m) = self.vector(r,v.get(2).and_then(Value::reference),false)?;
+        let rates = [swept.rate,m*self.context.length];
         let z = [d[0],d[1],d[2]];
         let o = swept.curve.point(match &swept.curve { Curve::BSpline(b) => b.domain()[0],_ => 0. });
         let flat = |p: V| sub(p,scale(z,dot(sub(p,o),z)));
@@ -368,12 +386,12 @@ impl<'f,'a> Geometry<'f,'a> {
             Curve::Ellipse(f,s1,s2) if square(&f) => Curve::Ellipse(Frame {o:flat(f.o),..f},s1,s2),
             other => return Err(Refusal::unsupported(r,format!("an extrusion of a {} slanted to its direction",other.kind()))),
         };
-        Ok(Surface::Extrusion(Frame::about(o,z),Arc::new(curve)))
+        Ok((Surface::Extrusion(Frame::about(o,z),Arc::new(curve)),rates))
     }
     /// A surface of revolution, its curve turned about the axis: the frame's `x` toward the curve,
     /// which must lie in the half-plane of the axis it points to (the kernel turns a meridian);
     /// a curve leaving that half-plane is refused.
-    fn revolution(&self,r: u32,v: &[Value]) -> Result<Surface,Refusal> {
+    fn revolution(&self,r: u32,v: &[Value]) -> Result<(Surface,[f64;2]),Refusal> {
         let swept = self.curve(r,v.get(1).and_then(Value::reference))?;
         let (a,_,axis) = self.of(r,v.get(2).and_then(Value::reference),&["AXIS1_PLACEMENT"],"a revolution's axis")?;
         let o = self.point(a,axis.get(1).and_then(Value::reference))?;
@@ -396,6 +414,6 @@ impl<'f,'a> Geometry<'f,'a> {
                 return Err(Refusal::unsupported(r,"a revolution of a curve leaving the half-plane of its axis"))
             }
         }
-        Ok(Surface::Revolution(f,Arc::new(swept.curve)))
+        Ok((Surface::Revolution(f,Arc::new(swept.curve)),[self.context.angle,swept.rate]))
     }
 }

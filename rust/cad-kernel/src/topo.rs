@@ -161,16 +161,30 @@ fn inverse_from(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface,seed: Opti
 /// `uv`: the edge's tangent by least squares in `[S_u S_v]` there.
 fn inverse_derivative(uv: Uv,t: f64,edge: &Edge,surface: &Surface) -> Uv {
     let EdgeCurve::Curve(c) = &edge.curve else { return [0.;2] };
-    in_parameters(surface,uv,c.tangent(t))
+    let (x,d) = c.d1(t);
+    // a curve standing off its surface (a file's edge within its tolerance of its faces, #993):
+    // its feet run at another rate than its tangent read on the surface (by the surface's
+    // curvature times the gap), so the rate of the feet themselves, by a difference a millionth
+    // of the edge long, toward its inside
+    if distance(surface.point(uv),x) > 1e-9*(1.+norm(x)) {
+        let h = 1e-6*(edge.t[1]-edge.t[0])*if t+1e-6*(edge.t[1]-edge.t[0]) <= edge.t[1] { 1. } else { -1. };
+        let next = unwrap(surface.inverse_near(c.point(t+h),uv),uv,surface.periods());
+        let rate = [(next[0]-uv[0])/h,(next[1]-uv[1])/h];
+        if rate.iter().all(|r| r.is_finite()) { return rate }
+    }
+    in_parameters(surface,uv,d)
 }
 
 /// `d` in `surface`'s parameters at `uv`: the least-squares `[S_u S_v] x = d` (not finite where the
-/// two derivatives are parallel, a pole's).
+/// two derivatives are parallel and neither vanishes).
 pub(crate) fn in_parameters(surface: &Surface,uv: Uv,d: V) -> Uv {
     let (_,su,sv) = surface.d1(uv);
     let (a11,a12,a22) = (dot(su,su),dot(su,sv),dot(sv,sv));
     let (b1,b2) = (dot(su,d),dot(sv,d));
     let det = a11*a22-a12*a12;
+    // (where one derivative vanishes — a spline's collapsed row, its foot clamped onto it — the
+    // least-squares answer of least norm: along the other alone, #993)
+    if det == 0. && a11+a22 > 0. { return if a11 >= a22 { [b1/a11,0.] } else { [0.,b2/a22] } }
     [(a22*b1-a12*b2)/det,(a11*b2-a12*b1)/det]
 }
 
@@ -570,7 +584,7 @@ impl Brep {
                 if settled { continue }
                 let area = self.loop_area(f,l);
                 let ccw = area > 0.;
-                if (li == 0) != (ccw != f.reversed) {
+                if (li == 0) != (ccw != f.reversed) && !self.sliver(f,l,area,tol) {
                     return Err(format!("face {fi} ({}): loop {li} turns the wrong way ({area:e} in its parameters)",f.name).into())
                 }
             }
@@ -713,6 +727,27 @@ impl Brep {
             if roots.len() > 1 { out.push(v.p); }
         }
         out
+    }
+
+    /// **Whether a loop is a sliver its edges' tolerance cannot orient** (#993): the area it
+    /// encloses in its face's parameters (`area`), carried into space at its first corner, no
+    /// more than its length times the largest tolerance among its edges and vertices, or the one
+    /// the check is asked for — a face thinner than its edges stand off their vertices, as a file's
+    /// sloppy edges leave one, which turns whichever way they stray. Never one built exact and
+    /// checked exactly, whose tolerances are nought.
+    fn sliver(&self,f: &Face,l: &[Coedge],area: f64,tol: f64) -> bool {
+        let widest = l.iter().map(|c| { let e = &self.edges[c.edge as usize]; e.v.iter().map(|&v| self.vertices[v as usize].tol).fold(e.tol,f64::max) })
+            .fold(tol,f64::max);
+        if !(widest > 0.) { return false }
+        let Some(c) = l.first() else { return false };
+        let (_,su,sv) = f.surface.d1(self.uv_ends(f,c)[0]);
+        let mut length = 0.;
+        for c in l {
+            let e = &self.edges[c.edge as usize];
+            let pts: Vec<V> = (0..=8).map(|j| e.point(e.t[0]+(e.t[1]-e.t[0])*j as f64/8.,&self.vertices)).collect();
+            length += pts.windows(2).map(|w| distance(w[0],w[1])).sum::<f64>();
+        }
+        area.abs()*norm(crate::util::space::cross(su,sv)) <= length*widest
     }
 
     /// The signed area a loop encloses in its face's parameters (counter-clockwise positive),

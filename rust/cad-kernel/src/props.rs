@@ -668,8 +668,10 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
             let mut row: Vec<(f64,f64)> = Vec::new();
             for c in l {
                 let e = &b.edges[c.edge as usize];
-                // a pole's degenerate edge runs along u alone: nothing in dv, but its du counts
-                if matches!(e.curve,EdgeCurve::Degenerate) && (other == 1 || !matches!(c.pcurve,Pcurve::Line {..})) {
+                // a pole's degenerate edge counts by its line in the face's parameters: along `u` (a
+                // sphere's, a cone's) nothing in dv but its du, along `v` (a spline's collapsed row,
+                // #993) its dv, `G` there the face's width up to it
+                if matches!(e.curve,EdgeCurve::Degenerate) && !matches!(c.pcurve,Pcurve::Line {..}) {
                     row.push((0.,0.)); continue
                 }
                 // `G dv` at a point of the edge on the face, given its parameters and their rate
