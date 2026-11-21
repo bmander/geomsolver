@@ -2033,10 +2033,13 @@ and given no more where the pinch's crossing is built. **A wall's foot** (`famil
 nearer, one leaving the domain held at its bound and the other parameter stepped alone along it —
 beside a pinch the wall's two derivatives all but parallel, a full Gauss–Newton step ran along the
 way the wall barely moves, onto a run's rim, and stalled there 1.4e-6 off a point lying on the
-wall; the last foot found trusted only where it settles on the point itself, to the rounding, and
-otherwise the nearest four of a grid each settled and the nearest kept (the 75° cube's edge 5 fan
-passes within 5e-3 of itself, a foot from the last one settled on its other layer, and a face was
-kept facing the wrong way). A curve on a face read by its inverse takes the chord of its feet for
+wall. On a run of a fan that passes back through itself (`Sheet::layered`, set by `crossed`) the
+last foot found is trusted only where it settles on the point itself, to the rounding, and
+otherwise the nearest four of a grid are each settled and the nearest kept (the 75° cube's edge 5
+fan passes within 5e-3 of itself, a foot from the last one settled on its other layer, and a face
+was kept facing the wrong way); on any other wall the last foot is trusted where it settles within
+a thousandth, and the search settles the grid's nearest point alone (asked of every wall, the care
+doubled the hypoid gear's trim, 125 s to 269 s). A curve on a face read by its inverse takes the chord of its feet for
 its rate where the face's two derivatives are parallel (`topo::inverse_derivative`: the volume
 read NaN at a pinch). The bench's 75° cube is built (`swept_general`'s slow gate, held to
 membership: a count of 40000 points gives 11.029 ± 0.072 against its 11.0993). **Not yet built**:

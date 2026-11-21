@@ -85,9 +85,12 @@ fn sheet(w: &crate::family::Sheet) -> Json {
             o
         }
     };
-    object([("run",run),("spans",Json::Arr(w.stations.spans.iter().map(|s| reals(s)).collect())),
+    let mut o = object([("run",run),("spans",Json::Arr(w.stations.spans.iter().map(|s| reals(s)).collect())),
         ("at",Json::Arr(w.stations.at.iter().map(|a| reals(a)).collect())),("nodes",Json::Arr(w.nodes.iter().map(|n| reals(n)).collect())),
-        ("closed",w.closed.into())])
+        ("closed",w.closed.into())]);
+    // (a run of a fan that passes back through itself, its feet sought with care: written where so)
+    if w.is_layered() { o.set("layered",true.into()) }
+    o
 }
 fn rsheet(j: &Json) -> Result<crate::family::Sheet,String> {
     use crate::family::{Run,Sheet,Stations};
@@ -101,7 +104,8 @@ fn rsheet(j: &Json) -> Result<crate::family::Sheet,String> {
     let spans = field(j,"spans")?.arr().iter().map(|s| { let s = rreals(s); [s[0],s[1]] }).collect();
     let at = field(j,"at")?.arr().iter().map(|a| { let a = rreals(a); std::array::from_fn(|k| a[k]) }).collect();
     let nodes = field(j,"nodes")?.arr().iter().map(rreals).collect();
-    Sheet::new(run,Arc::new(Stations::new(spans,at)?),nodes,field(j,"closed")?.as_bool())
+    let sheet = Sheet::new(run,Arc::new(Stations::new(spans,at)?),nodes,field(j,"closed")?.as_bool())?;
+    Ok(if j.get("layered").is_some_and(|l| l.as_bool()) { sheet.layered() } else { sheet })
 }
 
 thread_local! {

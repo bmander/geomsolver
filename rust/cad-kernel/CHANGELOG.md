@@ -13,8 +13,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   sheet's rate across their rim turns over — as the pairs of points of the two runs that meet, each
   solved by Newton and marched out from the Whitney umbrella's own pairs, not traced toward the
   pinch, where the trace lost itself on the runs' rim. A wall's foot is found by a bounded
-  Levenberg–Marquardt (`Sheet::newton`), its last foot trusted only where it settles on the point,
-  else the nearest four of a grid settled and the nearest kept (`Sheet::inverse`). An inverse curve
+  Levenberg–Marquardt (`Sheet::newton`); on a run of a fan crossing itself (`Sheet::layered`) its
+  last foot is trusted only where it settles on the point, else the nearest four of a grid are
+  settled and the nearest kept (`Sheet::inverse`), any other wall's as before. An inverse curve
   on a face takes its feet's chord for its rate where the face is singular. New
   `nurbs::BSpline::with_knot`; a branch's end carried onto a rail or a pinch bends only its last
   span. The 15° cube's volume moves by 4e-8 with its crossing built.

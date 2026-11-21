@@ -192,6 +192,9 @@ pub struct Sheet {
     boxes: Vec<Box3>,
     /// Whether the wall comes back to itself along `s` (`ring`): `s` periodic over its interval.
     ring: bool,
+    /// Whether the wall may pass within a grid's step of itself (`layered`): a run of a fan that
+    /// passes back through itself, whose feet `inverse` seeks with care.
+    layered: bool,
 }
 
 
@@ -210,7 +213,7 @@ impl Sheet {
         if !ok || nodes.len() != 6*stations.spans.len() || nodes.iter().any(|n| n.len() != len || n.iter().any(|x| !x.is_finite())) {
             return Err(format!("a face family's {} wall has numbers of the wrong count",run.kind()))
         }
-        Ok(Sheet {run,stations,nodes,closed,boxes:Vec::new(),ring:false}.boxed())
+        Ok(Sheet {run,stations,nodes,closed,boxes:Vec::new(),ring:false,layered:false}.boxed())
     }
     /// The sheet with its pieces' boxes read off its numbers.
     fn boxed(mut self) -> Sheet {
@@ -220,6 +223,12 @@ impl Sheet {
     /// Whole-circle walls run round once: `u` periodic with period 1.
     pub fn period(&self) -> Option<f64> { self.closed.then_some(1.) }
     /// A ring's wall runs round its interval: `s` periodic with the interval's length.
+    /// The same wall marked as one that may pass within a grid's step of itself (#942 T1d-cube: a
+    /// run of a fan that passes back through itself, `swept::general::crossed`), its feet sought
+    /// with care (`inverse`).
+    pub fn layered(self) -> Sheet { Sheet {layered:true,..self} }
+    /// Whether the wall is marked as one that may pass within a grid's step of itself.
+    pub fn is_layered(&self) -> bool { self.layered }
     pub fn ring_period(&self) -> Option<f64> { let [a,b] = self.span(); self.ring.then_some(b-a) }
     /// The interval the wall runs over.
     pub fn span(&self) -> [f64;2] { self.stations.span() }
@@ -278,7 +287,7 @@ impl Sheet {
     /// The wall over the pieces `js` alone, read over `stations` (`Stations::band`'s of them).
     fn band(&self,stations: Arc<Stations>,js: std::ops::Range<usize>) -> Sheet {
         let nodes = self.nodes[6*js.start..6*js.end].to_vec();
-        Sheet {run:self.run.clone(),stations,nodes,closed:self.closed,boxes:Vec::new(),ring:false}.boxed()
+        Sheet {run:self.run.clone(),stations,nodes,closed:self.closed,boxes:Vec::new(),ring:false,layered:false}.boxed()
     }
     /// `∂S/∂s` at `(u, s)` as piece `j` reads it: at a joint, from either side of it.
     fn rate_in(&self,j: usize,[u,s]: Uv) -> V {
@@ -317,35 +326,37 @@ impl Sheet {
     /// other, its normal 150° off, and a piece of the boundary was kept facing the wrong way.)
     pub fn inverse(&self,p: V) -> Uv {
         let key = self as *const Sheet as usize;
-        let on = crate::util::fmath::HALF_READ*(1.+dot(p,p).sqrt());
+        let scale = 1.+dot(p,p).sqrt();
+        // (a layered wall's last foot trusted only where it settles on `p` itself, its search from
+        // the nearest four of the grid; any other's where it settles near `p`, from the nearest one)
+        let (on,starts) = if self.layered { (crate::util::fmath::HALF_READ*scale,4) } else { (1e-3*scale,1) };
         let warm = crate::util::warm::get(crate::util::warm::Kind::Wall,key).map(|f| self.settled(p,f));
         let (uv,_) = match warm {
             Some((uv,d)) if d <= on => (uv,d),
             _ => {
-                let found = self.searched(p,warm.map_or(f64::INFINITY,|w| w.1));
+                let found = self.searched(p,warm.map_or(f64::INFINITY,|w| w.1),starts);
                 match warm { Some(w) if w.1 < found.1 => w,_ => found }
             }
         };
         crate::util::warm::put(crate::util::warm::Kind::Wall,key,uv);
         uv
     }
-    /// `inverse`'s search: the nearest few of the grid, read no farther than `within` (where a foot
-    /// that near is in hand), each settled and the nearest kept. (A wall passing within a grid's
-    /// step of itself — a fan's fold — has its nearest grid point on the other layer, #942 T1d-cube.)
-    fn searched(&self,p: V,within: f64) -> (Uv,f64) {
-        const STARTS: usize = 4;
+    /// `inverse`'s search: the nearest `starts` of the grid, read no farther than `within` (where
+    /// a foot that near is in hand), each settled and the nearest kept. (A wall passing within a
+    /// grid's step of itself — a fan's fold — has its nearest grid point on the other layer, #942
+    /// T1d-cube.)
+    fn searched(&self,p: V,within: f64,starts: usize) -> (Uv,f64) {
         let reach = |b: &Box3| { let gap: V = std::array::from_fn(|i| (b.0[i]-p[i]).max(p[i]-b.1[i]).max(0.)); norm(gap)*(1.-1e-12) };
         let mut order: Vec<(f64,usize)> = self.boxes.iter().enumerate().map(|(j,b)| (reach(b),j)).collect();
         order.sort_by(|x,y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
         // each start: its distance and its parameters
         let mut best: Vec<(f64,Uv)> = Vec::new();
-        let worst = |best: &Vec<(f64,Uv)>| if best.len() == STARTS { best[STARTS-1].0 } else { f64::INFINITY };
+        let worst = |best: &Vec<(f64,Uv)>| if best.len() == starts { best[starts-1].0 } else { f64::INFINITY };
         for (bound,j) in order {
             if bound > worst(&best).min(within) { break }
             let sp = self.stations.spans[j];
-            let step = 0.25*(sp[1]-sp[0]);
             for k in 0..=4 {
-                let s = sp[0]+step*k as f64;
+                let s = sp[0]+(sp[1]-sp[0])*k as f64/4.;
                 let n = &self.numbers(s);
                 for i in 0..=16 {
                     let u = i as f64/16.;
@@ -353,7 +364,7 @@ impl Sheet {
                     if d < worst(&best) {
                         let at = best.partition_point(|x| x.0 <= d);
                         best.insert(at,(d,[u,s]));
-                        best.truncate(STARTS);
+                        best.truncate(starts);
                     }
                 }
             }
@@ -389,6 +400,10 @@ impl Sheet {
             if !(off > 0.) { break }
             let (a11,a12,a22) = (dot(su,su),dot(su,ss),dot(ss,ss));
             let (b1,b2) = (dot(su,e),dot(ss,e));
+            // (a foot already: `p`'s offset square to both rates, to their rounding — no step comes
+            // nearer, and each refused one is a reading of the wall)
+            let level = crate::util::fmath::HALF_READ*crate::util::fmath::HALF_READ*off;
+            if b1*b1 <= level*a11 && b2*b2 <= level*a22 { break }
             for _ in 0..24 {
                 let (h11,h22) = (a11*(1.+mu),a22*(1.+mu));
                 let det = h11*h22-a12*a12;

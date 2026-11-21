@@ -872,7 +872,7 @@ pub fn candidates(tool: &Brep,path: &Trajectory,roll: [f64;2],tol: f64) -> Resul
 /// branch is one curve across a run.
 fn crossed(breps: &mut [Brep],spans: &[Vec<[f64;2]>],surfaces: &[Surface],tol: f64) -> Result<Vec<Option<Runs>>,Unbuilt> {
     let surface_of = |sheet: &Sheet,[s0,s1]: [f64;2]| -> Result<Surface,Unbuilt> {
-        let r = Arc::new(sheet.restricted([s0,s1]).map_err(Unbuilt::Failed)?);
+        let r = Arc::new(sheet.restricted([s0,s1]).map_err(Unbuilt::Failed)?.layered());
         let (p,du,ds) = r.d1([0.5,0.5*(s0+s1)]);
         let normal = crate::util::space::normalised(cross(du,ds)).unwrap_or([0.,0.,1.]);
         Ok(Surface::Family(Frame::about(p,normal),r))
