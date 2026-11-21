@@ -221,6 +221,7 @@ def oracle(path, faces=False):
     if rel(ha, a) > 1e-12:
         changed["area"] = rel(ha, a)
     out["healed"] = changed
+    out["healed_volume"], out["healed_area"] = hv, ha
     out["healed_valid"] = h["valid"]
     out["healed_tol_length"] = h["tol_length"]
     if faces:
@@ -278,19 +279,20 @@ def faces_tsv(rows):
 def corpus_files(root):
     """Every STEP file of the corpus, by its path under `root`, in order."""
     out = []
-    for sub in ("cadgenbench", "brep-bench", "variants"):
+    for sub in ("cadgenbench", "brep-bench", "variants", "commercial"):
         for d, _, fs in os.walk(os.path.join(root, sub)):
             for f in fs:
-                if f.endswith(".step"):
+                if f.endswith(".step") or f.endswith(".stp"):
                     out.append(os.path.relpath(os.path.join(d, f), root))
     return sorted(out)
 
 
-def run_corpus(root, jobs, timeout, only):
-    """Each file of the corpus not yet read (or changed since), read in a process of its own (a
-    file OCCT hangs on is given `timeout` seconds), into `oracle/<path>.json` and its faces into
-    `oracle/<path>.faces.tsv`."""
-    files = [f for f in corpus_files(root) if not only or any(f.startswith(o) for o in only)]
+def run_corpus(root, jobs, timeout, only, files=None):
+    """Each file of the corpus (or of `files`, paths under `root`) not yet read (or changed since),
+    read in a process of its own (a file OCCT hangs on is given `timeout` seconds), into
+    `oracle/<path>.json` and its faces into `oracle/<path>.faces.tsv`."""
+    files = [f for f in (files if files is not None else corpus_files(root))
+             if not only or any(f.startswith(o) for o in only)]
     todo = []
     for f in files:
         js = os.path.join(root, "oracle", f + ".json")
