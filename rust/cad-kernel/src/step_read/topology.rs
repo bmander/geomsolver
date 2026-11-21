@@ -381,7 +381,7 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
                             let d: Uv = std::array::from_fn(|k| {
                                 let [lo,hi] = dom[k];
                                 let w = hi-lo;
-                                if a[k] < lo-1e-6*w { ((lo-a[k])/w).ceil()*w } else if a[k] > hi+1e-6*w { -((a[k]-hi)/w).ceil()*w } else { 0. }
+                                if a[k] < lo-0.5*w { ((lo-a[k])/w).round()*w } else if a[k] > hi+0.5*w { -((a[k]-hi)/w).round()*w } else { 0. }
                             });
                             let mut d = d;
                             // (onto the side of the seam its other use is not on)
@@ -435,7 +435,15 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
                 if let (Surface::BSpline(_,n),true) = (s,seams.contains(&ei)) {
                     let (dom,m) = (n.domain(),walked[steps/2]);
                     let on = |q: Uv,k: usize| { let [lo,hi] = dom[k]; (q[k]-lo).min(hi-q[k]) <= 1e-6*(hi-lo) };
-                    if let Some(k) = (0..2).find(|&k| on(m,k)) {
+                    // (an edge of the domain the sheet closes across: its points there one with
+                    // those on the opposite edge)
+                    let closed = |k: usize| {
+                        let [lo,hi] = dom[k];
+                        let (mut x,mut y) = (m,m);
+                        x[k] = lo; y[k] = hi;
+                        distance(s.point(x),s.point(y)) <= 1e-7*(1.+norm(s.point(x)))
+                    };
+                    if let Some(k) = (0..2).find(|&k| on(m,k) && closed(k)) {
                         let [lo,hi] = dom[k];
                         let here = if m[k]-lo < hi-m[k] { lo } else { hi };
                         let side = match placed.get(&ei) {
