@@ -805,6 +805,42 @@ and its end, round and chamfer; the side turned 1e-8 to 1e-3 either way, flush a
 disc boss 3 and 5 past the side, its ring turned through `2π − 2 acos(e/ρ)`; each volume the closed
 form's to 1e-9, each sliver the export warns of one the body has unrounded.
 
+**A run whose edge runs out into a face flush with one of its own** (#994 item 2b, fixture 117: a
+deck standing on a block, its side flush with the block's, its corner arc running tangent into that
+side). The fill round the deck's foot runs round the arc to where it meets the flush side, and along
+that side there is no edge: the deck's side and the block's are one plane. At that vertex the
+block's side goes on tangent from the arc — their normals one there — but it meets the block's top
+in a convex edge, so it carries no fill on: a face going on tangent from one of a run's faces ends
+nothing only where it meets the other (or a face that one goes on into across a seam, a fill's cap
+flush with a side) in an edge of the run's own turn, along which the round goes on, or is a piece of
+the surface of the run's own face there (`BodyFaces::carries_on`; an obround's half circle after its
+flat side, a floor two cuts leave in two pieces). Otherwise it is a face
+the run ends on, and the set is cut off at it, kept within the block: the ring round the arc thins
+to nothing at the side, each point of its section at `ρ` from the arc's axis turned through
+`π/2 − acos(c/ρ)` (`c` the axis's distance from the side; `c = R` tangent, `c < R` the arc meeting
+the side at an angle, which was built before and is the tangent's limit). Read past the arc's end
+as no end, the field's fill hung a lip up to the ball's radius past the wall over air, and the gate
+refused it ("its exact construction leaves out what the field reads beside its edge"). The deck's
+side goes on into the block's across their flush seam (`dck.k3.smooth` holds `base.j3`), so two
+readings of that chain are made right with it: its side is read by the face whose patch is nearest
+the point, but where that is a point of the chain's rim — an edge to a face it does not hold, the
+surface ending there — by the surface going on from the rim's ends: the nearest face of the chain at
+either end of that edge whose surface's foot lies on it (`BodyFaces::nearest_face`: over the block's
+top beside its rim the wall said within, and a fill ran along the wall's top edge in the air; where
+none does, a hole a foot's union cuts in a casting's side, the nearest face's as before); and it is read face by face as one convex solid only where each face's patch lies
+within every other's (`BodyFaces::bulging`: the arc's tangent planes carried down through the block
+where its side stands flat, so no ball stood within the block's rim beside the deck). The mirrored
+case is the block's top rim along the flush side rounded: its run ends on the deck's arc, kept
+outside it, and nothing is cut from under the deck's foot — that arc tangent to the run's own face is
+no corner, so `piece::nearly_tangent` does not refuse it. `tests/flush_decks.rs` is the gate (the
+deck's corner square, an arc of 15, 2 and 1 tangent to the side and one of 15 meeting it at an
+angle, its foot filled 2 and 1; the block's rim along the flush side rounded 2 and 1 against each
+tangent arc and the square corner; each volume the closed form's to 1e-9 by Gauss–Legendre,
+exported with no sliver). Still refused, by its faces: a chamfer at the deck's arc, whose flat's leg
+from `b.smooth` is read from its patches (`distance(p, b.smooth)`), the block's side the nearer
+beside its rim ("its flat, reaching 1.5mm from `dck.k3`, comes within 1.28mm of `base.j3`, which
+`dck.k3` goes on into smoothly").
+
 **A ball as wide as its cylinder** (brep-bench's fillet/cylinder-rim-to-dome): an offset by a
 radius that takes a surface's radius to nothing is what the surface is drawn about, never nothing
 (`Surface::offset` → `Offset`: a cylinder's axis, a sphere's centre, a torus's middle circle; `None`

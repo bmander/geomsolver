@@ -455,7 +455,10 @@ convex toward the point, and at least a distance off them** (#962, `BodyFaces::b
 face a plane, or a cylinder, a sphere or a cone with that side inside it — read by its whole
 surface's side, that convex solid's (a round pocket from its air, a round boss from its
 material); or a smooth chain — `F.smooth` gone on across a seam — every face of which is so and
-every edge between them a seam or a crease convex from that side, each face its own condition,
+every edge between them a seam or a crease convex from that side, and each face's patch within
+every other's convex solid — one sheet (#994: a block's side flush with a deck's whose corner arc
+runs tangent into it is no sheet, the arc carried down through the block by its tangent planes
+where the block's side stands flat) — each face its own condition,
 its side carried on past its patch by its tangent planes (`BodyFaces::carried_side_grad`, the
 signed distance from the convex solid the patch and those planes bound), so the side is their
 common part and a point at least `d` inside it is at least `d` inside each — a pocket's walls
@@ -491,7 +494,14 @@ active rows are chosen among every inequality, not the first ten (`project`).
 patches of the faces `M` is on the surfaces of is read as `d(p, E) − d(p, rest)` (`Rest`: `M`'s
 nearest point when off `E`, and where `E`'s run ends), the same points with a negative inside.
 `ends` is `max σ·side` over the faces at each end of the run (σ the side it runs on), a face
-carrying one of the run's on across a tangent seam none (`BodyFaces::continues`), nor one whose
+carrying the run on none: one going on tangent from one of the run's faces across a seam
+(`BodyFaces::continues`) that meets another of them, or a face one goes on into across a seam (a
+fill's cap flush with a side), there in an edge of the run's own turn, along which the round goes
+on, or that is a piece of the surface of the run's own face there (a floor two cuts leave in two
+pieces) (`BodyFaces::carries_on`, #994) — a face going on tangent that meets them there only in an
+edge of the other turn carries nothing on, and the run ends on it (a deck's corner
+arc running tangent into its side, flush with the block's, the block's side meeting its top in a
+convex edge: the foot's fill kept within the block, not hung past its wall); nor one whose
 surface the run itself goes across (`BodyFaces::goes_across`: no side of it holds the run), nor a
 plane turning back over it at a reflex corner of less than a right angle — the run ends there
 square — and with them where an edge a run-out at that end runs along ends, a face or the plane
