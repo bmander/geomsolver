@@ -18,8 +18,10 @@
 //! the convex twin, open at both sides, its rim rounded and its floor filled; a cutter rounded
 //! before it is cut from the arm (#962's 133), its ends square, or square only to the drawing's
 //! numbers; the arm's sides turned off square by 1e-8 to 1e-3 of a radian; and #962's 122 as the
-//! issue reduced it.  Each is exported (STEP and STL, read back) with no face thinner than the
-//! export's tolerance.
+//! issue reduced it.  And a face along a run, or back to back with one of its faces, is no face it
+//! ends on (#996 item 2): a flange's underside rimmed where the boxes it stands on end flush with
+//! its side or run on past it.  Each is exported (STEP and STL, read back) with no face thinner
+//! than the export's tolerance.
 use gcs_core::brep::{export, props, sweep::Say};
 use std::f64::consts::PI;
 
@@ -648,6 +650,308 @@ fn a_disc_boss_standing_past_the_side_is_filled_round_to_it() {
             }).sum();
             let s = Standing { block: None, disc: Some(y0), tilt: 0.0, faces: "boss", word: Some(word) };
             assert!(s.holds(ARM + PI * 64.0 * 12.0 + turned).is_none());
+        }
+    }
+}
+
+/// **A flange's underside rimmed where the bodies it stands on end flush with its edge, or run on
+/// past it** (#996 item 2).  A plate 80 × 68 with corners of 10 (its sides `s0` along y = −34,
+/// `k1`, `s1` along x = 40, `k2`, `s2`, `k3`, `s3`, `k0`), 10 thick on the top plane, stands on
+/// boxes under it, and `far`'s rim is rounded or chamfered against the plate's sides.  Where a box
+/// runs out to or past the plate's side, its top lies in the underside's plane past the box's own
+/// side, back to back with the underside: the two meet at the point where the box's side crosses
+/// the rim.  The top lies along the run there and says nothing of where it ends — kept within it
+/// the run was cut whole ("a piece of nothing cut off at a plane"), or, where it reached back over
+/// a corner's seam, refused naming the underside as the face the run ends on.  The run ends on
+/// the box's side, which crosses the corner's rounded side below it and makes no corner with it:
+/// the ring is cut off by its plane.
+const FLANGE: &str = "unit mm\nuse std\nuse std.solids (union)\nuse std.rounds (round, chamfer)\n\
+    in std.top {\n  a := point\n  b := point\n  c := point\n  d := point\n  fix((-40, -34)) a\n  \
+    fix((40, -34)) b\n  fix((40, 34)) c\n  fix((-40, 34)) d\n  \
+    (s0 := line(a, b)) -> (k1 := round(r: 10mm)) (s1 := line(b, c)) -> (k2 := round(r: 10mm)) \
+    (s2 := line(c, d)) -> (k3 := round(r: 10mm)) (s3 := line(d, a)) -> (k0 := round(r: 10mm)) \
+    close\n  fl_f := face(s0, k1, s1, k2, s2, k3, s3, k0)\n}\n\
+    flange := solid(std.solids.Prism(fl_f, from: 0mm, to: 10mm))\n";
+
+/// The plate's volume.
+const PLATE: f64 = (80.0 * 68.0 - 4.0 * (1.0 - PI / 4.0) * 100.0) * 10.0;
+
+/// A box under the plate: `[x0, x1] × [y0, y1] × [−60, 0]`, its top past the plate's side `x = 40`
+/// falling `fall` by its far end (a plane through that side's foot).
+#[derive(Clone, Copy, Debug)]
+struct Under {
+    x: [f64; 2],
+    y: [f64; 2],
+    fall: f64,
+}
+
+impl Under {
+    fn text(&self, name: &str) -> String {
+        let [x0, x1] = self.x;
+        let mut points = vec![[x0, 0.0], [x0, -60.0], [x1, -60.0], [x1, -self.fall]];
+        if self.fall != 0.0 {
+            points.push([40.0, 0.0]);
+        }
+        let mut s = String::from("in std.front {\n");
+        for (k, p) in points.iter().enumerate() {
+            s.push_str(&format!("  {name}{k} := point\n  fix(({}, {})) {name}{k}\n", p[0], p[1]));
+        }
+        let names: Vec<String> = (0..points.len()).map(|k| format!("{name}{k}")).collect();
+        // the front plane's normal is −y: from −y1 to −y0, its `near` at y0 and `far` at y1
+        s.push_str(&format!("  {name}f := face({}, -> close)\n}}\n\
+            {name} := solid(std.solids.Prism({name}f, from: {}mm, to: {}mm))\n",
+            names.join(", "), -self.y[1], -self.y[0]));
+        s
+    }
+
+    /// Its plan's area across x, times its depth along y.
+    fn volume(&self) -> f64 {
+        let across = (self.x[1] - self.x[0]) * 60.0 - 0.5 * (self.x[1] - 40.0) * self.fall;
+        across * (self.y[1] - self.y[0])
+    }
+
+    /// Whether its plan holds `(x, y)`, its sides included.
+    fn holds(&self, x: f64, y: f64) -> bool {
+        self.x[0] <= x && x <= self.x[1] && self.y[0] <= y && y <= self.y[1]
+    }
+}
+
+/// The plate standing on `under` (each named, unioned in the order given), and `stmt`.
+fn flange_on(under: &[(&str, Under)], stmt: &str) -> String {
+    let mut s = String::from(FLANGE);
+    for (name, u) in under {
+        s.push_str(&u.text(name));
+    }
+    s.push_str("part := solid(flange)\n");
+    for (name, _) in under {
+        s.push_str(&format!("{name} union part\n"));
+    }
+    s.push_str(stmt);
+    s.push('\n');
+    s
+}
+
+/// What `word` takes along the plate's rim at `z = 0` where no box stands under it: each side's
+/// stretch of its line out of every box's plan, its section's area along it, and round each
+/// corner's arc (about `(±30, ±24)`, radius 10) the section's points at `ρ` from the axis turned
+/// through the arc's angles out of every box's plan — the run cut off by the box's side it ends
+/// on, whatever of its section that side's plane leaves — integrated over `ρ` by Gauss–Legendre
+/// (no box's corner stands within the section's reach of an arc, so each angle is smooth in `ρ`).
+fn rim_taken(word: Word, under: &[Under]) -> f64 {
+    let open = |x: f64, y: f64| !under.iter().any(|u| u.holds(x, y));
+    // each side: a point at `s` along it, and its length
+    let sides: [(Box<dyn Fn(f64) -> [f64; 2]>, f64); 4] = [
+        (Box::new(|s| [-30.0 + s, -34.0]), 60.0),
+        (Box::new(|s| [40.0, -24.0 + s]), 48.0),
+        (Box::new(|s| [30.0 - s, 34.0]), 60.0),
+        (Box::new(|s| [-40.0, 24.0 - s]), 48.0),
+    ];
+    // where a side's line crosses a box's plan's sides, and its stretches between, open or not
+    let mut straight = 0.0;
+    for (at, length) in &sides {
+        let [a, b] = [at(0.0), at(1.0)];
+        let mut cuts = vec![0.0, *length];
+        for u in under {
+            for (k, c) in [(0, u.x[0]), (0, u.x[1]), (1, u.y[0]), (1, u.y[1])] {
+                let rate = b[k] - a[k];
+                if rate.abs() > 0.0 {
+                    let s = (c - a[k]) / rate;
+                    if s > 0.0 && s < *length {
+                        cuts.push(s);
+                    }
+                }
+            }
+        }
+        cuts.sort_by(f64::total_cmp);
+        let between = |w: &&[f64]| { let m = at(0.5 * (w[0] + w[1])); open(m[0], m[1]) };
+        straight += cuts.windows(2).filter(between).map(|w| w[1] - w[0]).sum::<f64>();
+    }
+    // the section's points at `ρ` from a corner's axis and their height, at `s` over `[0, 1]`, and
+    // `dρ/ds`: a round's over the ball's quarter turn (its height `r (1 − cos φ)` at `ρ = 10 − r +
+    // r sin φ`, smooth where the arc meets the rim), a chamfer's along its leg
+    let section: Box<dyn Fn(f64) -> (f64, f64, f64)> = match word {
+        Word::Round(r) => Box::new(move |s: f64| {
+            let (sin, cos) = (0.5 * PI * s).sin_cos();
+            (10.0 - r + r * sin, r * (1.0 - cos), 0.5 * PI * r * cos)
+        }),
+        Word::Chamfer(d) => Box::new(move |s: f64| (10.0 - d + d * s, d * s, d)),
+    };
+    let corners = [([30.0, -24.0], -0.5 * PI), ([30.0, 24.0], 0.0), ([-30.0, 24.0], 0.5 * PI),
+                   ([-30.0, -24.0], PI)];
+    let open_turn = |c: [f64; 2], t0: f64, rho: f64| -> f64 {
+        let at = |t: f64| [c[0] + rho * t.cos(), c[1] + rho * t.sin()];
+        let mut cuts = vec![t0, t0 + 0.5 * PI];
+        for u in under {
+            for (k, v) in [(0, u.x[0]), (0, u.x[1]), (1, u.y[0]), (1, u.y[1])] {
+                let q = (v - c[k]) / rho;
+                if q.abs() >= 1.0 {
+                    continue;
+                }
+                let base = if k == 0 { q.acos() } else { q.asin() };
+                let roots = if k == 0 { [base, -base] } else { [base, PI - base] };
+                for t in roots {
+                    let t = t0 + (t - t0).rem_euclid(2.0 * PI);
+                    if t < t0 + 0.5 * PI {
+                        cuts.push(t);
+                    }
+                }
+            }
+        }
+        cuts.sort_by(f64::total_cmp);
+        cuts.windows(2).filter(|w| { let m = at(0.5 * (w[0] + w[1])); open(m[0], m[1]) })
+            .map(|w| w[1] - w[0]).sum()
+    };
+    let turned: f64 = corners.iter().map(|&(c, t0)| {
+        gauss_legendre(40).iter().map(|&(x, w)| {
+            let (rho, height, rate) = section(0.5 * (1.0 + x));
+            0.5 * w * rate * rho * height * open_turn(c, t0, rho)
+        }).sum::<f64>()
+    }).sum();
+    word.square() * straight + turned
+}
+
+/// The plate and its boxes, unrounded: two overlapping boxes standing as deep, their common plan
+/// counted once.
+fn flange_and(under: &[Under]) -> f64 {
+    let mut v = PLATE + under.iter().map(Under::volume).sum::<f64>();
+    for (i, a) in under.iter().enumerate() {
+        for b in &under[i + 1..] {
+            let span = |p: [f64; 2], q: [f64; 2]| (p[1].min(q[1]) - p[0].max(q[0])).max(0.0);
+            v -= span(a.x, b.x) * span(a.y, b.y) * 60.0;
+        }
+    }
+    v
+}
+
+/// The plate on `under`, `far`'s rim rounded or chamfered against the plate's sides by `word`:
+/// built, exported with no sliver, and its volume the closed form's.
+fn rim_holds(under: &[(&str, Under)], word: Word) {
+    let src = flange_on(under, &format!("part.flange.far {} part.flange", word.text()));
+    assert_eq!(dof(&src), 0, "{src}");
+    let boxes: Vec<Under> = under.iter().map(|&(_, u)| u).collect();
+    close(built(&src, "part"), flange_and(&boxes) - rim_taken(word, &boxes));
+}
+
+/// **The issue's flange** (#996 item 2, as reported): a rib 12 wide and a wider block under it,
+/// both drawn as pentagons ending flush with the plate's side `s1`, the rib's slope rising to the
+/// plate's opposite side.  Its whole underside rim rounded 1: refused, "a run cut off at its end: a
+/// piece of nothing cut off at a plane" — the block's top, past the plate's corner `k1`, read as a
+/// face the corner's ring ends on.  Now the ring along `k1` ends on the block's side `y = −30`,
+/// which crosses the arc 38 along, cut off by its plane; `s1`'s run ends square on the block's
+/// other side, and `s3`'s on the rib's.  The flange's sides and the rib and the block, less the
+/// rim's runs and rings (the closed form's, as `rim_taken` reads them).
+#[test]
+fn the_issues_flange_is_rimmed_where_its_bodies_end_flush() {
+    let pentagon = |x0: f64| [[x0, 0.0], [0.0, -60.0], [30.0, -60.0], [40.0, -30.0], [40.0, 0.0]];
+    let shoelace = |p: [[f64; 2]; 5]| {
+        let cross = |k: usize| p[k][0] * p[(k + 1) % 5][1] - p[(k + 1) % 5][0] * p[k][1];
+        0.5 * (0..5).map(cross).sum::<f64>().abs()
+    };
+    let (rib, block) = (pentagon(-40.0), pentagon(0.0));
+    let drawn = |name: &str, p: [[f64; 2]; 5], y: [f64; 2]| {
+        let mut s = String::from("in std.front {\n");
+        for (k, q) in p.iter().enumerate() {
+            s.push_str(&format!("  {name}{k} := point\n  fix(({}, {})) {name}{k}\n", q[0], q[1]));
+        }
+        s + &format!("  {name}f := face({name}0, {name}1, {name}2, {name}3, {name}4, -> close)\n\
+            }}\n{name} := solid(std.solids.Prism({name}f, from: {}mm, to: {}mm))\n", -y[1], -y[0])
+    };
+    for word in [Word::Round(1.0), Word::Chamfer(1.0)] {
+        let src = format!("{FLANGE}{}{}part := solid(flange)\nrib union part\nblock union part\n\
+            part.flange.far {} part.flange\n", drawn("rib", rib, [-6.0, 6.0]),
+            drawn("block", block, [-30.0, 6.0]), word.text());
+        assert_eq!(dof(&src), 0, "{src}");
+        // the rib's plan at the underside: `[−40, 40] × [−6, 6]`, its slope rising to `s3`'s foot
+        let under = [Under { x: [-40.0, 40.0], y: [-6.0, 6.0], fall: 0.0 },
+                     Under { x: [0.0, 40.0], y: [-30.0, 6.0], fall: 0.0 }];
+        let whole = PLATE + 12.0 * shoelace(rib) + 24.0 * shoelace(block);
+        close(built(&src, "part"), whole - rim_taken(word, &under));
+    }
+}
+
+/// Boxes ending flush with the plate's side `s1`: crossing the corner `k1`'s arc and ending
+/// mid-side (and mirrored, under `s3` and `k0`); reaching over a corner whole (`k2` stands on it,
+/// `s2` ending on its end); its side through the seam where `k1` goes on into `s1` (the ring whole,
+/// ending at its meridian); ending mid-side at both ends (`s1` in two runs).
+const FLUSH: [Under; 5] = [
+    Under { x: [0.0, 40.0], y: [-30.0, 6.0], fall: 0.0 },
+    Under { x: [-40.0, 0.0], y: [-30.0, 6.0], fall: 0.0 },
+    Under { x: [0.0, 40.0], y: [-30.0, 40.0], fall: 0.0 },
+    Under { x: [0.0, 40.0], y: [-24.0, 6.0], fall: 0.0 },
+    Under { x: [0.0, 40.0], y: [-10.0, 6.0], fall: 0.0 },
+];
+
+/// **The class, rounded**: each of the flush boxes (`FLUSH`) under the plate, its underside's rim
+/// rounded 1.
+#[test]
+fn a_flanges_rim_is_rounded_where_a_box_under_it_ends_flush() {
+    for u in FLUSH {
+        rim_holds(&[("blk", u)], Word::Round(1.0));
+    }
+}
+
+/// **Other radii**: the first box, the rim rounded 2 and 0.5, the block's side crossing the
+/// corner's ring at another place in its section.
+#[test]
+fn a_flanges_rim_is_rounded_at_other_radii_where_a_box_under_it_ends_flush() {
+    for word in [Word::Round(2.0), Word::Round(0.5)] {
+        rim_holds(&[("blk", FLUSH[0])], word);
+    }
+}
+
+/// **The class, chamfered**: the same runs and rings, each a flat's.
+#[test]
+fn a_flanges_rim_is_chamfered_where_a_box_under_it_ends_flush() {
+    for u in FLUSH {
+        rim_holds(&[("blk", u)], Word::Chamfer(1.0));
+    }
+}
+
+/// **A rib under the box, in either order of the unions**: a rib 12 wide reaching on under the
+/// plate, unioned before the box and after it.
+#[test]
+fn a_flanges_rim_over_a_rib_and_a_box_is_one_in_either_order() {
+    let rib = Under { x: [-20.0, 40.0], y: [-6.0, 6.0], fall: 0.0 };
+    rim_holds(&[("rib", rib), ("blk", FLUSH[0])], Word::Round(1.0));
+    rim_holds(&[("blk", FLUSH[0]), ("rib", rib)], Word::Round(1.0));
+}
+
+/// **A box running on past the plate's side** (the issue's second variant): its top past `x = 40`
+/// in the underside's plane, or falling 1 by its far end (a plane through the side's foot, along
+/// the run of `s1`'s rim and back to back with no face).  Either lies along the run and ends
+/// nothing: `s1`'s run ends square on the box's side, the corner's ring on the box's other side.
+/// Refused before, the level top as the round reaching back over `k2`'s seam, "`flange.far`, which
+/// its run along `flange.k2` ends on, reaches 1mm back over the section there … Move `flange.far`
+/// clear of the seam, or over it" — the face rounded, named as the face its run ends on.  Over one
+/// corner and over two, round and chamfer.
+#[test]
+fn a_flanges_rim_is_rounded_where_a_box_under_it_runs_on_past_its_edge() {
+    for word in [Word::Round(1.0), Word::Chamfer(1.0)] {
+        for u in [Under { x: [0.0, 50.0], y: [-30.0, 6.0], fall: 0.0 },
+                  Under { x: [0.0, 50.0], y: [-30.0, 6.0], fall: 1.0 },
+                  Under { x: [0.0, 50.0], y: [-30.0, 40.0], fall: 0.0 }] {
+            rim_holds(&[("blk", u)], word);
+        }
+    }
+}
+
+/// **The other rim, and the concave edges beside the flush box**: the plate's top rim rounded
+/// whole over the box flush with its side; and the underside filled into the box's sides, each
+/// fill its section along its edge — along `y = 6` to the plate's side `x = 40`, where the box's
+/// side goes on flush with the plate's, and along `y = −30` to where it meets the corner's arc at
+/// `x = 38`, ending square there (the arc's cylinder, which the fill's own edge goes across, is no
+/// face it ends on), the box's top past the arc back to back with the underside and no end of it.
+#[test]
+fn a_flanges_other_rim_and_its_fills_into_a_flush_box_are_built() {
+    let flush = Under { x: [0.0, 40.0], y: [-30.0, 6.0], fall: 0.0 };
+    let bare = flange_and(&[flush]);
+    let src = flange_on(&[("blk", flush)], "part.flange.near round(r: 1mm) part.flange");
+    close(built(&src, "part"), bare - rim_taken(Word::Round(1.0), &[]));
+    for word in [Word::Round(1.0), Word::Chamfer(1.0)] {
+        for (side, length) in [("far", 40.0), ("near", 38.0)] {
+            let stmt = format!("part.flange.far {} part.blk.{side}", word.text());
+            let src = flange_on(&[("blk", flush)], &stmt);
+            close(built(&src, "part"), bare + word.square() * length);
         }
     }
 }

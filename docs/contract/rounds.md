@@ -555,8 +555,9 @@ meet at a vertex" above).
   arc a second time across the disc. The run ends there square, as at a seam: the field's meeting
   goes on past that end, and the ring stops at its end's meridian.
 - **Nor is a plane turning back over the run at a reflex corner of less than a right angle**
-  (`ends_at`: the run outside it, and its outward normal along one of the run's faces'): kept off
-  it, the run lost what of its section the plane reaches back over, `s / tan θ` from the corner at
+  (`ends_at`: the run outside it, and its outward normal along that of one of the run's faces it
+  meets in an edge there — one meeting it at the vertex alone makes no corner with it, #996):
+  kept off it, the run lost what of its section the plane reaches back over, `s / tan θ` from the corner at
   depth `s` in from its side — at 7.6° the round cut back along 15 of a side's 15.5, its cap meeting
   the next corner's round at its touch in a sliver 6 µm wide. What an end cuts is what lies past
   it, and past such a corner the plane cuts all of the run: it ends square there. At a right angle
@@ -618,7 +619,8 @@ arc, meet it in one point — not one face to glue, and neither unioned nor cut 
 by this kernel yet (its search for where the boss's meeting with the run's round meets the ring's
 torus, at a point where it only touches it, does not end). It is said by the faces it is of
 (`lowering::back_over_said`, off the body: the seam's two faces those whose normals at its point
-are one to `TANGENT`, the face reaching back the one on the end's surface nearest it, the run's
+are one to `TANGENT`, the face reaching back the one on the end's surface nearest it — never a face
+the region rounds, which may lie on that surface and which no run of it ends on (#996) — the run's
 own face the one of the two that face meets in an edge), how far, the seam's point as the witness,
 and what is true to do: "`part`'s round or chamfer `taken`: its round goes on tangent from
 `outer.flange.s` into `outer.flange.al` across their seam at [-384.62, -88.74, -131.5]mm, and
@@ -751,20 +753,32 @@ the side by what the drawing's numbers leave is the next rule it needs. Rounded 
 meets the top in an edge of its own, filled however narrow the shelf it stands on: the set is not
 continuous at flush there, as it is along the boss's sides.
 
-**A face along a run cuts it lengthwise or not at all** (#962 item 4: a boss drawn standing on a
-part's top, `from:` the top's height, and running past the part's side). Where the boss overhangs
-the side, its underside is a face the fill along the boss's sides ends on, lying along the run in
-the plane of the floor the fill stands on; a ring's stretch round a disc boss so overhanging ends
-on that underside too, a plane square to its axis. Such a plane stands at no distance along the
-run, so it is no end of it and carries the piece nowhere (it was refused, "a run carried on along
-the face it ends on", and the ring "a stretch of a circle its end does not cut off"). Its
-half-space is the side `BodyFaces::end_faces` keeps — where the run's own edge lies in the plane,
-the material's behind it, which holds the fill on its floor — and it cuts the piece along its
-length or not at all (`piece::along_run`: some point of the section past it, by a billionth of the
-construction): where none is, no cut; where one is, the piece kept within it, a prism or a
-revolution clipped by a plane along it, exactly. A boss sunk into the top had no such face and was
-built before. No face of #962's 122's eye lies along a run: its caps are in the side's planes,
-square to the fills. **Two faces flush only to the drawing's numbers where a run ends** are named
+**A face along a run is no face it ends on** (#962 item 4: a boss drawn standing on a part's top,
+`from:` the top's height, and running past the part's side; #996 item 2: a flange standing on a
+block that ends flush with its side or runs on past it). Where the boss overhangs the side, its
+underside lies along the fill along the boss's sides, in the plane of the floor the fill stands on;
+a ring's stretch round a disc boss so overhanging meets that underside too, a plane square to its
+axis. Such a plane stands at no distance along the run and carries the piece nowhere (it was
+refused, "a run carried on along the face it ends on", and the ring "a stretch of a circle its end
+does not cut off"). A face whose surface holds the run's edge at its end (`BodyFaces::lies_along`,
+nine points of the edge on it), or one back to back there with a face of the run, their outward
+normals opposite (`back_to_back`), meets the run's faces at the vertex alone or along the edge's
+own line past it: it lies beyond the face the run does end on (the part's side), and
+`BodyFaces::end_faces` reads it as no end at all, for the field and the lowering alike. Read as one
+— kept within its half-space, the side the run's own edge leaves ambiguous — it cut a convex run
+whole: a flange's underside rounded where a block under it crosses its corner's arc, the block's
+top beyond its side in the underside's plane, made the ring a piece of nothing ("a run cut off at
+its end: a piece of nothing cut off at a plane"; on a curved end, "… at a curved face", #994 §5);
+a block running on past the flange's side kept the side's run within its top and reached back over
+the corner's seam, refused naming the underside itself as the face its run ends on; a top falling
+from the side's foot cut the run along its length. The fill on its floor it left whole, as it
+leaves it now. (`piece::along_run` still reads such a plane, should one reach a piece, as a cut
+along its length or none.) The side a block crosses the corner's rounded side below the flange
+at makes no corner with it: **a plane turns back over a face of the run only where it meets that
+face in an edge** (`ends_at`'s reflex rule, above), so the ring ends on the block's side, cut off
+by its plane where its section reaches over the block. A boss sunk into the top had no such face
+and was built before. No face of #962's 122's eye lies along a run: its caps are in the side's
+planes, square to the fills. **Two faces flush only to the drawing's numbers where a run ends** are named
 where they cannot be built (`piece::flush_only`, `Run::flush`, carried into what the failure calls
 the round, `cad.rs`): a boss's end drawn flush with a side the solve leaves turned 1e-8 from it
 leaves a strip of the boss's underside half a nanometre wide that the body, under its tolerance,
@@ -781,7 +795,16 @@ of the other, flush with both, a hair (1 µm, 50 µm, 0.5 mm) short or proud alo
 (the flush one their limit) and short over all its faces, at the part's corner flush with its side
 and its end, round and chamfer; the side turned 1e-8 to 1e-3 either way, flush and 2 proud; and the
 disc boss 3 and 5 past the side, its ring turned through `2π − 2 acos(e/ρ)`; each volume the closed
-form's to 1e-9, each sliver the export warns of one the body has unrounded.
+form's to 1e-9, each sliver the export warns of one the body has unrounded. It holds #996's flange
+too (`the_issues_flange_is_rimmed_where_its_bodies_end_flush`, `a_flanges_rim_is_…`,
+`a_flanges_other_rim_and_its_fills_into_a_flush_box_are_built`): the issue's rib and block flush
+with the side, and a box under the plate crossing a corner's arc and ending mid-side, mirrored, over
+a corner whole, its side through a corner's seam, ending mid-side at both ends, beside a rib in
+either order of the unions, running on 10 past the side level or its top falling 1 from the side's
+foot, over one corner and two; its underside's rim rounded 0.5, 1 and 2 and chamfered 1, the plate's
+top rim, and the underside filled into the box's sides; each the closed form's to 1e-9 (the rim's
+runs its stretches out of every box's plan, each ring's section turned through the arc's angles out
+of them by Gauss–Legendre), exported with no sliver.
 
 **A ball as wide as its cylinder** (brep-bench's fillet/cylinder-rim-to-dome): an offset by a
 radius that takes a surface's radius to nothing is what the surface is drawn about, never nothing

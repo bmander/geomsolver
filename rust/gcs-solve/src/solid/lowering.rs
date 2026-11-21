@@ -522,16 +522,21 @@ fn on_body(sk: &Sketch, solid: usize)
 /// do (`back_over_in`); by the point alone where the region's body is not to be read.
 pub fn back_over_said(sk: &Sketch, solid: usize, b: &BackOver) -> String {
     match on_body(sk, solid) {
-        Some(Ok((_, _, body))) => back_over_in(sk, &body, b),
+        Some(Ok((faces, _, body))) => {
+            let rounded: Vec<usize> = faces.faces.iter().flat_map(|r| body.faces(r)).collect();
+            back_over_in(sk, &body, &rounded, b)
+        }
         _ => back_over_unnamed(sk, b),
     }
 }
 
 /// `back_over_said` off `body`: the seam's two faces, those of the seam edge nearest its point
 /// (`BodyFaces::seam`, the body's reading of tangent); the face reaching back, the one on `b.end`'s
-/// surface nearest the point; and the run's own face of the two, the one that face meets in an
-/// edge.
-fn back_over_in(sk: &Sketch, body: &super::faces::BodyFaces, b: &BackOver) -> String {
+/// surface nearest the point, never one of the faces the region rounds (`rounded`), which no run
+/// of it ends on though one lie on that surface (a flange's underside, in the plane of the top of
+/// a block it stands on); and the run's own face of the two, the one that face meets in an edge.
+fn back_over_in(sk: &Sketch, body: &super::faces::BodyFaces, rounded: &[usize], b: &BackOver)
+    -> String {
     let at = b.at;
     let (lo, hi) = body.bounds();
     let tol = 1e-7 * (1.0 + distance(lo, hi));
@@ -544,7 +549,8 @@ fn back_over_in(sk: &Sketch, body: &super::faces::BodyFaces, b: &BackOver) -> St
         EndOf::Solid(surf) => Surf::of(body, fi).is_some_and(|s| s.same(&surf)),
     };
     let away = |fi: usize| body.nearest_edge(body.edges_of(fi), at).map_or(f64::INFINITY, |(_, _, d)| d);
-    let end = (0..n).filter(|&fi| on(fi)).map(|fi| (fi, away(fi))).min_by(|a, b| a.1.total_cmp(&b.1)).map(|(fi, _)| fi);
+    let end = (0..n).filter(|&fi| !rounded.contains(&fi) && on(fi)).map(|fi| (fi, away(fi)))
+        .min_by(|a, b| a.1.total_cmp(&b.1)).map(|(fi, _)| fi);
     let (Some((f, g)), Some(e)) = (seam, end) else { return back_over_unnamed(sk, b) };
     let (own, next) = if body.edges_between(&[e], &[g]).is_empty() { (f, g) } else { (g, f) };
     let (witness, depth) = back_over_numbers(sk, b);
@@ -806,7 +812,7 @@ fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &std::sync::Arc<super
         };
     }
     let field = super::MaterialField::read(sk, solid, super::cad::AXIS_TOLERANCE)?;
-    let built = gated(sk, pieces, body)?;
+    let built = gated(sk, solid, pieces, body)?;
     let (b, mm) = (&built.brep, built.mm);
     // no piece left out: what the field reads of the region just inside each edge, the pieces
     // hold (a probe of the boundary built sees nothing of a piece never built)
@@ -897,7 +903,8 @@ const GATED: usize = 16;
 /// the faces it names, so `Corner(a, b, c)` and `Corner(b, a, c)` lower to the same pieces
 /// listed in another order — one point set, built and meshed once and held to each region's own
 /// field.
-fn gated(sk: &Sketch, pieces: &[Piece], body: &std::sync::Arc<super::faces::BodyFaces>) -> Result<Rc<Gated>, String> {
+fn gated(sk: &Sketch, solid: usize, pieces: &[Piece], body: &std::sync::Arc<super::faces::BodyFaces>)
+    -> Result<Rc<Gated>, String> {
     use crate::brep::recipe::Writer;
     use std::sync::Arc;
     let rolled = pieces.iter().any(|p| matches!(p, Piece::Rolled(_)));
@@ -909,7 +916,7 @@ fn gated(sk: &Sketch, pieces: &[Piece], body: &std::sync::Arc<super::faces::Body
         if rolled { (Writer::about(by, scale(origin, by)), Some(by)) } else { (Writer::world(1.0), None) };
     let assembly = assemble(pieces);
     if let Some(b) = &assembly.across {
-        return Err(back_over_in(sk, body, b));
+        return Err(back_over_said(sk, solid, b));
     }
     let mut lowered = assembly.node(&writer)?;
     if rolled {
