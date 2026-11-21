@@ -9,11 +9,10 @@
 //! square, the next side's plane no face it ends on.  Each volume is its closed form's to 1e-9
 //! (Pappus for a ring, the stack's mitre at a convex corner, nothing more at a reflex one), and
 //! each solid is exported with no sliver.
-use gcs_core::brep::{export, props, sweep::Say};
 use std::f64::consts::PI;
 
-use crate::common::rounds::square_run;
-use crate::common::{close, ent, text::solved};
+use crate::common::rounds::{exported_volume, inset, square_run};
+use crate::common::close;
 
 /// The plate's thickness: drawn on the side plane from 40.75 to 53.95.
 const THICK: f64 = 13.2;
@@ -42,28 +41,10 @@ const LUGGED: &str = "in std.side {\n  c := point\n  fix((50.75mm, 1.55mm)) c\n\
     body := solid(plate)\nlugt union body\npart := solid(body)\n\
     part.body.lugt.near round(r: 2mm) part.body.lugt\n";
 
-/// The solid `name` built exactly, and exported: its STEP written, and no face of it thinner than
-/// the export's tolerance.
-fn exported(src: &str, name: &str) -> f64 {
-    let e = solved(src);
-    assert!(e.diags.is_empty(), "{:?}", e.diags);
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let body = ent(&e, name).i();
-    let exact = export::exact(&e.sketch, body, None, None, &say).unwrap_or_else(|r| panic!("{name}: {r:?}"));
-    if let Some(s) = export::slivers(&e.sketch, body, &exact, None) {
-        panic!("{}", s.message);
-    }
-    export::step(&exact, name, None, &say).unwrap();
-    props::volume(&exact.solid)
-}
-
 /// A polygon's area (shoelace), signed: positive counter-clockwise.
 fn area(p: &[[f64; 2]]) -> f64 {
     0.5 * (0..p.len()).map(|i| { let (a, b) = (p[i], p[(i + 1) % p.len()]); a[0] * b[1] - b[0] * a[1] }).sum::<f64>()
 }
-
-/// How far in from each face the centroid of a round's section stands (`square_run`'s).
-fn inset(r: f64) -> f64 { (10.0 - 3.0 * PI) / (3.0 * (4.0 - PI)) * r }
 
 /// What the lug's rim rounded takes, the ring over `turn` of its arc ending square at both ends
 /// (Pappus: the section's centroid turned about the lug's axis).
@@ -80,20 +61,20 @@ fn ring(turn: f64) -> f64 { square_run(R) * (LUG - inset(R)) * turn }
 fn a_ring_ends_square_where_the_face_it_ends_on_goes_back_across_it() {
     let slanted = [[50.75, 9.05], [50.75, -5.95], [41.05, -6.25], [35.75, 9.05]];
     let whole = (area(&slanted).abs() + 0.5 * PI * LUG * LUG) * THICK;
-    close(exported(&plate(&slanted, LUGGED), "part"), whole - ring(PI));
+    close(exported_volume(&plate(&slanted, LUGGED), "part"), whole - ring(PI));
     // the plate's top at 8.05, crossing the rim at 6.5 above the lug's centre: the disc over it
     // is half of its segment there, and the ring turns from that crossing round to the bottom
     let crossed = [[33.05, 14.75], [44.05, 8.05], [50.75, 8.05], [50.75, -5.95], [41.05, -6.25], [35.05, -11.25]];
     let (h, w) = (6.5, (LUG * LUG - 6.5 * 6.5).sqrt());
     let segment = LUG * LUG * (h / LUG).acos() - h * w;
     let whole = (area(&crossed).abs() + 0.5 * PI * LUG * LUG + 0.5 * segment) * THICK;
-    close(exported(&plate(&crossed, LUGGED), "part"), whole - ring(h.atan2(-w) + 0.5 * PI));
+    close(exported_volume(&plate(&crossed, LUGGED), "part"), whole - ring(h.atan2(-w) + 0.5 * PI));
     // and its bottom crossing the rim too, 6.5 below the lug's centre: the plate's near face and
     // the lug's are pieces of one plane, the seam between them no seam a round spills over (bug
     // 3's), and the ring turns from one crossing round to the other
     let both = [[33.05, 14.75], [44.05, 8.05], [50.75, 8.05], [50.75, -4.95], [41.05, -4.95], [35.05, -11.25]];
     let whole = (area(&both).abs() + 0.5 * PI * LUG * LUG + segment) * THICK;
-    close(exported(&plate(&both, LUGGED), "part"), whole - ring(2.0 * h.atan2(-w)));
+    close(exported_volume(&plate(&both, LUGGED), "part"), whole - ring(2.0 * h.atan2(-w)));
 }
 
 /// The rim of a plate drawn through `outline` rounded all round: a run along each side less the
@@ -117,7 +98,7 @@ fn rim(outline: &[[f64; 2]]) {
     }
     let taken = (1.0 - PI / 4.0) * R * R * perimeter - (5.0 / 3.0 - PI / 2.0) * R.powi(3) * cots;
     let src = plate(outline, "body := solid(plate)\nbody.plate.near round(r: 2mm) body.plate\n");
-    close(exported(&src, "body"), area(outline).abs() * THICK - taken);
+    close(exported_volume(&src, "body"), area(outline).abs() * THICK - taken);
 }
 
 /// **Two runs turning a degree from one another, beside a corner turning back in**: two sides of

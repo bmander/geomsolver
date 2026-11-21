@@ -1270,24 +1270,26 @@ impl<'a> Walk<'a> {
     /// in pad.boss`) and the elaborator has named that solid's: each a reference to the face
     /// (`pad.boss.near`), as `faces_named` lists them.  Which copies make anything is a `when`'s
     /// in the body (#267).  With them the solid, and why there are none where its path names no
-    /// face of it (W116, `names_no_face`).
+    /// face of it (W116, `names_no_face`), and the block as `OverFaces` records it.
     fn face_links(
         &self,
         p: &Pending,
         alias: &dyn Aliases,
-    ) -> Option<(Result<Vec<(Vec<Link>, bool)>, (Span, String)>, String, Option<String>)> {
+    ) -> Option<(Result<Vec<(Vec<Link>, bool)>, (Span, String)>, OverFaces)> {
         let StmtKind::Block(b) = &p.st.kind else { return None };
         let over = b.over.as_ref().filter(|o| o.zip.is_empty())?;
         let sc = self.pending_scope(p);
         let (abs, rest) = self.look(alias).find(&over.chain, &sc)?;
         let paths = &self.faces.given.get(&abs)?.paths;
-        let links: Vec<Link> = paths.iter().filter(|f| f.listed_by(&rest, sc.prefix())).map(|f| {
-            let r = Ref::dotted(&format!("{abs}.{}", f.text()), over.chain.span);
+        let listed: Vec<String> = paths.iter().filter(|f| f.listed_by(&rest, sc.prefix()))
+            .map(|f| f.text()).collect();
+        let links: Vec<Link> = listed.iter().map(|f| {
+            let r = Ref::dotted(&format!("{abs}.{f}"), over.chain.span);
             // an absolute name, read from the document's root
             Link::Edge(r, Scope::absolute(sc.access.clone()))
         }).collect();
         let nothing = links.is_empty().then(|| names_no_face(&abs, &rest, paths)).flatten();
-        Some((Ok(vec![(links, false)]), abs, nothing))
+        Some((Ok(vec![(links, false)]), OverFaces { solid: abs, rest, listed, nothing }))
     }
 
     /// The items of a list a block runs over, where the list is defined and its items name what
@@ -1328,23 +1330,31 @@ impl<'a> Walk<'a> {
                 .iter()
                 .enumerate()
                 .find_map(|(i, p)| {
-                    self.walks_of(p, &alias).map(|c| (c, None, None))
-                        .or_else(|| self.face_links(p, &alias)
-                            .map(|(c, abs, none)| (c, Some(abs), none)))
-                        .or_else(|| self.listed_links(p, &alias).map(|c| (c, None, None)))
+                    self.walks_of(p, &alias).map(|c| (c, None))
+                        .or_else(|| self.face_links(p, &alias).map(|(c, o)| (c, Some(o))))
+                        .or_else(|| self.listed_links(p, &alias).map(|c| (c, None)))
                         .map(|c| (i, c))
                 });
-            let Some((i, (walks, over, nothing))) = found else { break };
-            // a block over a solid's faces names it however they were named: the elaborator
-            // names them again where its solids now give them otherwise ([0.149])
-            if let Some(abs) = over {
-                self.faces.repeats.insert(abs);
-            }
+            let Some((i, (walks, over))) = found else { break };
             let p = self.aside.blocks.remove(i);
-            // said at the document's statement it was met under (a round's, not the word's
-            // block), however many copies reach it
-            if let Some(m) = nothing {
-                self.once(Code::W116, p.at, m);
+            if let Some(o) = over {
+                // a block over a solid's faces names it however they were named: the
+                // elaborator names them again where its solids now give them otherwise ([0.149])
+                self.faces.repeats.insert(o.solid.clone());
+                match o.nothing {
+                    // said at the document's statement it was met under (a round's, not the
+                    // word's block), however many copies reach it
+                    Some(m) => self.once(Code::W116, p.at, m),
+                    // and what it ran over, for what its `when`s select to be read (#962)
+                    None if !o.listed.is_empty() => {
+                        let blocks = &mut self.faces.selecting.entry(p.at).or_default().blocks;
+                        let block = (o.solid, o.rest, o.listed);
+                        if !blocks.contains(&block) {
+                            blocks.push(block);
+                        }
+                    }
+                    None => {}
+                }
             }
             match walks {
                 Ok(walks) => self.expand_edges(p, walks),
@@ -1982,6 +1992,16 @@ impl<'a> Walk<'a> {
                 point: abs[i.prefix.len()..].to_string(),
             })
     }
+}
+
+/// A block over a solid's faces as the walk found it (`Walk::face_links`): the solid by its
+/// absolute name, the path past it, the faces it runs over by their names from it, and why there
+/// are none where its path names none (W116).
+struct OverFaces {
+    solid: String,
+    rest: Vec<String>,
+    listed: Vec<String>,
+    nothing: Option<String>,
 }
 
 /// Why a block over solid `abs`'s faces (`repeat a in part.pad`) runs over none (W116, #760): its

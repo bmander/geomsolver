@@ -78,7 +78,7 @@ arcs over a point in space are drawn in a plane they mint (#363 S6, [0.127];
 through its centre and ends (axes `u` toward the start and `v` in the plane, its normal
 `(s − c) × (e − c)` — the short way round; collinear, E060), a circle the plane through its centre
 square to its `normal:` (`Decl::normal`, a `syntax::Normal`: an axis or a line named, or
-**[0.225]** a seed, `normal: hint(dir: …)`, minting an axis of the circle's own along it, free —
+**[0.227]** a seed, `normal: hint(dir: …)`, minting an axis of the circle's own along it, free —
 `RoundIn::own` — which `commit_seeds` writes back where a solve turns it; parsed for a circle as a
 spline's `through:` is, rescoped by `rewrite_decl`, read as `Deferred::Normal` once the axes are
 built; none, E060 saying to give one; a seed along nothing, E103; on a circle drawn in a plane,

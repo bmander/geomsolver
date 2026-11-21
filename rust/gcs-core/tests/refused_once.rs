@@ -66,6 +66,22 @@ fn an_unbuildable_operand_is_said_once_and_each_round_on_it_once() {
     }
 }
 
+/// **…and so is a round straight over the operand** (#962): rounded where it is written, the slot
+/// is a body and its prism a stock split off it under its name, so the prism's own refusal
+/// (`` `slot`: … ``) named the body built on it, the body's rounds built on the body, and nothing
+/// was a root: every piece of the round said the draft again.  Now the slot says it once, at its
+/// statement — which says nothing more of the body it is — and the round that it is not built.
+#[test]
+fn a_round_straight_over_an_unbuildable_operand_is_said_once() {
+    let src = format!("{}slot.far round(r: 0.5mm) slot\n", slot(0));
+    let (diags, lines) = said(&src);
+    assert_eq!(diags.len(), 2, "{diags:#?}");
+    assert_eq!((diags[0].code, lines[0]), (Code::E080, 20), "{diags:#?}");
+    assert!(diags[0].message.starts_with("`slot`: a draft of `8deg` takes the side"), "{diags:#?}");
+    assert_eq!((diags[1].code, lines[1]), (Code::N080, 22), "{diags:#?}");
+    assert_eq!(diags[1].cause, Some(diags[0].span));
+}
+
 #[test]
 fn no_piece_of_a_region_is_a_diagnostic() {
     let (diags, _) = said(&slot(2));
@@ -125,4 +141,102 @@ fn a_refusal_is_said_at_its_round_by_the_names_the_document_reads() {
     assert_eq!(line(span), "part.boss round(r: 1mm) part.slab", "{why}");
     let words = public_words(&why[from..]);
     assert!(!words.contains('#') && words.contains("crosses their seam"), "{words}");
+}
+
+/// A plate 40 × 30 whose south edge stops `gap` short of its corner, the rest of the way a line
+/// `stub` from `b` to `b2`; swept 10 deep as `part`, and `rounds` rounds over it after.  At no gap
+/// the stub has no length.
+fn stubbed(gap: &str, rounds: &[&str]) -> String {
+    let mut src = format!("\
+unit mm
+use std
+use std.solids
+use std.rounds (round, chamfer)
+in std.top {{
+  a := point
+  b := point
+  b2 := point
+  c := point
+  d := point
+  fix((0, 0)) a
+  fix((40 - {gap}, 0)) b
+  fix((40, 0)) b2
+  fix((40, 30)) c
+  fix((0, 30)) d
+  south := line(a, b)
+  stub := line(b, b2)
+  east := line(b2, c)
+  north := line(c, d)
+  west := line(d, a)
+  outline := face(south, stub, east, north, west)
+}}
+part := solid(std.solids.Prism(outline, from: 0mm, to: 10mm))
+");
+    for r in rounds {
+        src.push_str(r);
+        src.push('\n');
+    }
+    src
+}
+
+/// **A face's own fault is the face's, said once at the face** (#962): an edge of a face's outline
+/// with no length (here a line whose two points coincide) is a fault of the face, whatever is
+/// built of it — said at the face, in its words (the edge, its points, how far apart they are),
+/// never as a kernel's `loop 0`; the prism swept from it says only that it is not built, and each
+/// round over the prism the same, once each, never once per piece.  A stub of a micron is a face
+/// like any other, and the rounds over it are built.
+#[test]
+fn an_edge_of_no_length_is_said_once_at_its_face() {
+    let rounds = ["round(r: 1mm) part", "part.near chamfer(d: 1mm) part"];
+    for k in 0..=2 {
+        let src = stubbed("0", &rounds[..k]);
+        let (diags, lines) = said(&src);
+        assert_eq!(diags.len(), 2 + k, "{k} rounds: {diags:#?}");
+        let root = &diags[0];
+        assert_eq!((root.code, lines[0]), (Code::E080, 21), "{root:?}");
+        assert_eq!(root.message, "`outline`'s edge `stub` has no length: it runs from `b` to \
+            `b2`, which coincide, so no solid can be made of `outline`");
+        for (j, d) in diags.iter().enumerate().skip(1) {
+            assert_eq!((d.code, lines[j]), (Code::N080, 22 + j as u32), "{d:?}");
+            assert_eq!(d.cause, Some(root.span), "{d:?}");
+            assert!(d.message.starts_with("not built: it is built on ") && d.message
+                .ends_with("`outline` (21:3), which could not be built"), "{d:?}");
+        }
+        for d in &diags {
+            assert!(!d.message.contains("loop") && !d.message.contains("taken"), "{d:?}");
+        }
+    }
+    // short of nothing, how far apart its points are
+    let (diags, _) = said(&stubbed("0.000000001", &[]));
+    let m = &diags[0].message;
+    assert!(m.contains("it runs from `b` to `b2`, which are ") && m.contains("mm apart"), "{m}");
+    // a micron is an edge: the face is swept, its volume the plate's
+    let src = stubbed("0.001", &[]);
+    let (diags, _) = said(&src);
+    assert!(diags.is_empty(), "{diags:#?}");
+    let volume = crate::common::gestures::volume(&crate::common::build(&src), "part");
+    assert!((volume - 12000.0).abs() < 1e-6, "{volume}");
+}
+
+/// **Every way a face bounds no solid is the face's** (#962): a loop crossing itself (`face_polys`'
+/// refusal) is said at the face as an edge of no length is, the prism swept from it not built;
+/// a face two solids are swept from is said once, each solid not built; and a revolution's face
+/// the same.
+#[test]
+fn a_face_no_solid_is_made_of_is_said_once_for_every_solid_of_it() {
+    let crossed = stubbed("0", &[]).replace("fix((40, 30)) c", "fix((0, 30)) c")
+        .replace("fix((0, 30)) d", "fix((40, 30)) d")
+        .replace("fix((40 - 0, 0)) b", "fix((20, 0)) b");
+    let (diags, lines) = said(&crossed);
+    assert_eq!((diags[0].code, lines[0]), (Code::E080, 21), "{diags:#?}");
+    assert!(diags[0].message.starts_with("no solid can be made of `outline`: "), "{diags:#?}");
+    assert_eq!((diags.len(), diags[1].code, lines[1]), (2, Code::N080, 23), "{diags:#?}");
+    // swept twice, and turned
+    let twice = stubbed("0", &["other := solid(std.solids.Prism(outline, from: 20mm, to: 30mm))",
+        "turned := solid(std.solids.Revolution(outline, about: west))"]);
+    let (diags, lines) = said(&twice);
+    assert_eq!(diags.iter().filter(|d| d.code == Code::E080).count(), 1, "{diags:#?}");
+    assert_eq!(diags.len(), 4, "{diags:#?}");
+    assert_eq!(lines[1..], [23, 24, 25]);
+    assert!(diags[1..].iter().all(|d| d.code == Code::N080 && d.cause == Some(diags[0].span)));
 }

@@ -8,6 +8,16 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A span of a traced meeting lying along edges a face already has is those edges** (#962 item 3):
+  the arrangement took a traced meeting for an edge one of its faces has only where the whole curve
+  was one `Traced` lying along one edge (`along_an_edge`), and a traced meeting is fitted, and runs
+  on past the faces; now each span it lays is checked against the faces' edges, any number of them
+  (`span_along_edges`), and laid once. A ring kept within a cylinder its round crosses 0.001 deep
+  has its meeting with that cylinder cut at the ring's top circle, which it passes 5e-7 under; the
+  union beside it laid the meeting again a hair from those two edges, tangent all along, and the
+  walk round the cylinder's face — reading ties nearer the node since #942 F6 — ordered the two
+  wrongly ("a cylinder's pieces do not close").
+
 - **The roads under any motion read no threshold of their own** (#942 F6): every local number the
   T1d work added to the ring road, the general road, the trim, `closed`, `contacts` and the Boolean
   is now the tolerance's, a feature size's, the rounding's (`util::fmath::HALF_READ = √ε`, `G` carried

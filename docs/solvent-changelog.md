@@ -4,15 +4,46 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.225] A circle in space square to an axis of its own.** A circle's `normal:` takes a seed as
+**[0.227] A circle in space square to an axis of its own.** A circle's `normal:` takes a seed as
 well as a name: `circle(center: o, normal: hint(dir: (0, 0, 1)))` stands the circle square to an
 axis of its own, seeded along that direction (or `hint(dir: g)`, read off geometry) and free, so
 the circle's constraints may turn it — two points held on it settle its turn — and a solve that
 turns it writes the seed back where it was said.  The axis is the circle's, declared and drawn
-nowhere.  A seed along no direction is E103.  Through 0.224 `normal:` named an axis or a line,
+nowhere.  A seed along no direction is E103.  Through 0.226 `normal:` named an axis or a line,
 and a circle about a point in space written back by a gesture lost its `normal:`; it is written
 now as it was said, by name or by its seed, and an arc's or a circle's points in space by the
 points the document wrote.
+
+**[0.226] A round's caps are faces of the body, an edge ends where it ends on no face, every edge**
+(#962). A fill (a round or a chamfer at a concave edge) cut off by a face it ends on leaves its
+piece's cap there, on that face's surface: those caps are now among the faces a block over the
+body runs over (`part.filled.far`, `near`, a ring's stretch's `start` and `end`), so a round over
+the filled body (`whole := solid(part)`, `round(r: 1.5mm) whole`) rounds the fill's rim where it
+ends on a face, as it rounds that face's own edges; through 0.225 only its `round` (`flat`) was
+listed, and the rim stayed sharp. A cut's cap is listed too where the material goes on beyond it
+(an upright's round's foot on the plate a boss stands on). A straight edge that ends on no face
+— its faces going on across seams there — ends square there in `S.ends`: through 0.225 it did
+not end at all, and a corner's ball at its other end rounded on along it past the seam (a
+block's corner beside a filled step carried a groove under the step's high end). The general
+note on a part where edges of both turns meet at a vertex (a step, a pocket, a boss) is written
+as the features' own edges first and every edge on a solid of what they leave; written as one
+statement, the export now says the vertex, its faces and the edge to round first; and a round
+or a chamfer of such a statement that is not built is said with the two faces of the part it
+lies between (where it was said only by the word's internal name), and where a face it reads is
+named by the rounds of several statements written bare, says to name them. A smooth face named in
+pieces whose chains lie apart is read with the chain of the piece nearest the point. Nothing a
+document may write changed.
+**[0.225] A round that selects no edge says so, and a face's fault is said at the face** (#962).
+A round or a chamfer (either word, either form) over faces that are all the body's but meet in no
+edge of it — nowhere, only at a corner, only along a seam where one runs on tangent into the
+other, all taken in by the body's other terms, or one face alone — is **W120** at its statement,
+naming its operands and why; through 0.224 it made nothing and said nothing. A face with an edge
+of no length where the drawing stands (a line whose two points coincide, an arc or a circle of no
+round), or whose loops bound no simple region, is said once at the face (E080), naming the edge
+and its points, and every solid swept from it and every round over those is a note that it is not
+built (N080); through 0.224 it was said at the prism in the kernel's words ("loop 0 has an edge of
+no length") and again at a round over it by each of its pieces. Nothing a document may write
+changed.
 
 **[0.224] A corner round beside an arc, and two rounds tangent at a point** (#962). A chain's
 corner round, `A -> round(r: R) B`, may have an arc the chain declares for either side or both: a

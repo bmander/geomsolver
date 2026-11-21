@@ -49,6 +49,7 @@ pub(super) fn turned(r: &Run, m: &crate::brep::geom::Rigid) -> Run {
         strokes: r.strokes.iter().map(|(s, name)| (stroke(s), *name)).collect(),
         within: r.within.clone(),
         kept: r.kept.clone(),
+        flush: r.flush.clone(),
     }
 }
 
@@ -163,16 +164,25 @@ impl Assembly {
     /// it), so what they make is the whole section of the one glued to the other's cut short, and
     /// where the face crosses the ball's arc there the two rounds' surfaces, tangent along it,
     /// meet it in one point: neither glued nor unioned yet, and said where (`across`).
-    fn across(&mut self, p: usize, section: &[V], at: V, size: f64) {
+    /// A face both pieces are kept within cuts their two caps alike, and they stay one face (a
+    /// ring's stretch carried round past a flat to the meridian halfway to the next stretch of its
+    /// circle, which is carried back to the same meridian within the same flat: #962's 149).
+    fn across(&mut self, [p, o]: [usize; 2], section: &[V], at: V, size: f64) {
         if self.across.is_some() {
             return;
         }
         let tol = 1e-9 * size;
         let n = self.runs.len();
-        let run = if p < n { &self.runs[p] } else { &self.rings[p - n].section };
+        let of = |p: usize| if p < n { &self.runs[p] } else { &self.rings[p - n].section };
+        let (run, other) = (of(p), of(o));
+        // (a face both pieces are kept within cuts their caps alike: none reaching back, #962's 149)
+        let shared = |&(m, d): &(V, f64)| other.within.iter()
+            .any(|&(k, e)| distance(m, k) <= 1e-9 && (d - e).abs() <= tol);
         let deepest = |f: &dyn Fn(V) -> f64| section.iter().map(|&q| f(q)).fold(f64::NEG_INFINITY, f64::max);
-        let halves = run.within.iter().map(|&(m, d)| (deepest(&|q| dot(m, q) - d), EndOf::Half(m, d)));
-        let solids = run.kept.iter().map(|k| (deepest(&|q| k.away(q)), EndOf::Solid(k.face)));
+        let halves = run.within.iter().filter(|w| !shared(w))
+            .map(|&(m, d)| (deepest(&|q| dot(m, q) - d), EndOf::Half(m, d)));
+        let solids = run.kept.iter().filter(|k| !other.kept.contains(k))
+            .map(|k| (deepest(&|q| k.away(q)), EndOf::Solid(k.face)));
         let Some((depth, end)) = halves.chain(solids).max_by(|a, b| a.0.total_cmp(&b.0)) else { return };
         if depth > tol {
             self.across = Some(BackOver { at, depth, end });
@@ -231,7 +241,8 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
                 out.corners.push(c.clone())
             }
             Piece::Rolled(k) if !out.rolled.iter().any(|j| near(j.at, k.at) && (j.r - k.r).abs() <= 1e-9 * size
-                && j.flat.is_some() == k.flat.is_some()) => {
+                && j.flat.is_some() == k.flat.is_some()
+                && match (j.beside, k.beside) { (None, None) => true, (Some(a), Some(b)) => near(a, b), _ => false }) => {
                 let mut k = k.clone();
                 if let Some(b) = k.beyond.take() {
                     out.beyond.push(b);
@@ -355,6 +366,38 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
         };
         out.joins.push([at, first + k]);
     }
+    // a ball standing still over a stretch (#962): its piece glued where it ends in a run's or a
+    // ring's section, and its part beside a run glued to its own and to the run or ring it was made
+    // beside, which ends in the ball's section (at that piece's `ends`) — one section each, never
+    // unioned
+    // (the runs, and stretches of rings, whose sections end at `v`)
+    let ending_at = |v: V| -> Vec<usize> {
+        let runs = out.runs.iter().enumerate().filter(|(_, r)| near(r.end(0), v) || near(r.end(1), v)).map(|(j, _)| j);
+        let rings = out.rings.iter().enumerate()
+            .filter(|(_, g)| g.stretch() && (near(g.section.origin, v) || near(g.end().0, v)))
+            .map(|(j, _)| out.runs.len() + j);
+        runs.chain(rings).collect()
+    };
+    let mut standing = Vec::new();
+    for (i, k) in out.rolled.iter().enumerate() {
+        let at = rolled_from + i;
+        if k.beside.is_some() {
+            for (j, own) in out.rolled.iter().enumerate() {
+                if own.beside.is_none() && own.stands && near(own.at, k.at) {
+                    standing.push([rolled_from + j, at]);
+                }
+            }
+        } else if !k.stands || out.rolled.iter().any(|b| b.beside.is_some() && near(b.at, k.at)) {
+            // (where a part of it lies beside a run, its other end's section is the next run's only
+            // in part: those are unioned)
+            continue;
+        }
+        // (a part beside a run has one end, where that run now ends: `piece::stops_short`)
+        for &v in &k.ends {
+            standing.extend(ending_at(v).into_iter().map(|j| [j, at]));
+        }
+    }
+    out.joins.extend(standing);
     // each stretch of a ring by where its turn starts and ends, and its section's hull there
     let hulls: Vec<Option<([V; 2], [Vec<V>; 2])>> = out.rings.iter().map(|g| g.stretch().then(|| {
         ([g.section.origin, g.end().0], ring_ends(g, g.section.section_hull()))
@@ -395,7 +438,7 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
         let [first, last] = ring_ends(g, section_points(&g.section));
         let points = if end == 0 { first } else { last };
         out.seam(pair, gap, size);
-        for p in pair {
+        for p in [pair, [pair[1], pair[0]]] {
             out.across(p, &points, at, size);
         }
     }
@@ -661,6 +704,7 @@ impl Assembly {
             cuts: k.cuts.iter().map(|&(at, n, reach)| (w.point(at), n, w.length(reach))).collect(),
             kept: k.kept.iter().map(|kept| (kept.face.surface(w), kept.inside)).collect(),
             wedge: k.wedge.iter().map(|&(at, n)| (w.point(at), n)).collect(),
+            beside: k.beside.is_some(),
         }).collect();
         let beyond = self.beyond.iter().map(|b| spill::Beyond {
             face: b.face.surface(w), toward: b.toward, chain: b.chain.surface(w), wall: b.wall.surface(w),

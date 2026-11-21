@@ -637,6 +637,30 @@ placement carries inside the blank; CLI test readers zero the offset.
   the document holds it (`refused::Placing`): a site in a module at the deepest instance on its
   path the document holds (the round that used `std.rounds.round`), else at the `use`
   (`modules::localize`).  `tests/refused_once.rs` is the gate.
+  **An operand's fault is the operand's** (#962, [0.225]): a face no solid can be made of —
+  an edge of its outline or a hole with no length where the drawing stands
+  (`solid::edge_of_no_length`, by the kernel's own test `brep::build::no_length`, each edge's
+  length a length whatever its parameter measures — an arc's radius times its turn — against the
+  face's own reach, not its distance from the world's origin), or loops that
+  bound no simple region (`section::face_polys`' refusal) — is `solid::face_fault`, read off the
+  sketch before anything is built.  A primitive swept from it is refused for it (`validate`, in
+  the face's words, never the kernel's `loop 0`), and `refused` says the fault **once, at the
+  face's statement** (E080: the face, the edge, its two points and how far apart they are —
+  "`outline`'s edge `stub` has no length: it runs from `b` to `b2`, which coincide, so no solid
+  can be made of `outline`"), however many solids are swept from it; each of them, and each round
+  or chamfer over them, is a note that it is not built (N080) pointing at the face
+  (`refused::Root::Face`).  So a round says only that its operand was not built: through 0.224 a
+  zero-length line in a prism's face was said at the prism in the kernel's words and again at the
+  round by every piece (`taken[1]`, `filled[1]`, …), their body and the pieces built on each other
+  all round.  **A refusal's chain never leads a solid to itself**: a stock split off its body
+  (`as_body`) goes by the body's name, which picks the body, so a stock refused in its own words
+  (`` `slot`: a draft … ``) was led to the body built on it (`refused::Causes::new`'s `led`), the
+  body's rounds built on that, and no solid was a root — every piece of a round written straight
+  over a refused operand said the refusal again; a name the solid itself goes by leads nowhere,
+  and a statement a root is said at says nothing more.
+  `refused_once::an_edge_of_no_length_is_said_once_at_its_face`,
+  `a_face_no_solid_is_made_of_is_said_once_for_every_solid_of_it` and
+  `a_round_straight_over_an_unbuildable_operand_is_said_once` are the gates.
   **A declaration refused while elaborating shifts nothing onto another** (#952,
   `program::solids::res_forget`): what is declared is numbered where it is to be made, and the
   sets a region reads (`Probes::terms`) are gathered before the solids are built, so forgetting a

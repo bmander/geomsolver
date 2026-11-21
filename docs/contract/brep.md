@@ -769,6 +769,11 @@ split by all the others at once — where three faces of three operands meet at 
 passes, the two meetings on each face cut there (`triple_points`) — a span two faces only touch along
 laid as an edge, every piece a face of the complex but a sliver, coincident pieces one face naming
 each operand; a traced meeting along an edge one face already has is that edge, laid once (`along_an_edge`),
+and so is a span of one along edges either face has, however many (`span_along_edges`: a trace runs on
+past the faces, and a face may hold its stretch in two edges — a ring kept within a cylinder its
+round crosses 0.001 deep, built at the cylinder's tolerance and cut at its top plane's circle where
+the meeting passes 5e-7 under it; laid again beside them, a hair apart and tangent all along, the
+walk round the face could not order the two, `curved_ends::a_rim_ending_on_another_arc_at_a_corner_is_built`),
 and laid across the other face too wherever it lies inside it (`Meetings::along_edges`: a torus's
 seam in the plane through its axis that holds it, `brep::a_torus_cut_along_its_seam_is_half_of_it`); a meeting
 known before any is sought given it (`Given`, `arrangement_given`, #810): curves on two operands'
@@ -828,7 +833,22 @@ no Newton on the three surfaces (singular where all three are tangent, it slid 3
 valley); a vertex is taken onto a given curve only within `ON_CURVE` tolerances (`points_on`: two
 sheets meeting smoothly along their shared rail, the sine of their angle nought, took a vertex 3e-3
 off it); and an edge of a face given a meeting with another's surface, whose search for where it
-meets that surface is refused, is read off the given curves (`on_given`). **A touch run reaching an
+meets that surface is refused, is read off the given curves (`on_given`). **So is an edge one face
+of which meets the surface in closed form** (#962's 7, after the search, in `crossings`): the edge
+lies in that face's surface, so it meets the other surface only on the two's meeting, whatever the
+other faces it bounds do — where that face's surface touches the other along a curve, the search
+reads a double root it cannot settle at the kernel's tolerance (a fill's cap in the plane of a
+vane's end, which the next fill's torus touches round its contact circle; on `main` "read more
+boxes than any search may"), and the crossing of two curves in that face is no such root; and an
+edge bounding a face on that very surface lies along it (a rolled fill's crease, a fitted meeting of
+a sphere and a cylinder, against the cylinder a ring's cap lies on). A closed form meeting in no
+curve is not read so: it leaves out a point the two touch at, which the edge may pass
+(`a_cap_in_a_plane_a_torus_touches_round_a_circle_meets_it_on_that_circle`). An edge and a meeting's
+curve both lines or circles cross in closed form (`query::curve_curve`), a tangency among the
+crossings, and a meeting's line runs on without end: so a drum's rim, touching a channel's walls at
+two points, is read with nothing given off its top's meeting with each wall — the ruling through
+the point, which the rim touches there — each touch a vertex, where until #962 the search was
+refused (`arrangement::a_rim_touching_a_wall_at_points_given_is_read_there_with_no_search`). **A touch run reaching an
 edge's own end is that end** (`at_its_ends`): a root the edge reaches from its nearer end within
 `ON_CURVE` tolerances of the surface all the way is read there, a touch (a swept sheet's rail
 leaves the pose it starts on tangent to it, and the run's far end was read as a vertex of its own).
@@ -1492,7 +1512,15 @@ leans to the axis by more than they do; one, a touch, read as above; none left t
 traced, a plane cutting a cone aslant through its apex crowded its steps toward the apex past a
 hundred thousand points and was refused there as a near touch. `brep::a_ball_cut_through_its_poles_is_its_part`,
 `meetings_through_a_balls_pole_split_it` and `a_cone_cut_through_its_apex_is_its_part` are the
-gate, each case to its closed forms to 1e-9 and meshed closed at the bench's sag.
+gate, each case to its closed forms to 1e-9 and meshed closed at the bench's sag. **A half's point
+at a pole takes the half's own value of the collapsed parameter** (#962's 7, `boolean`'s
+`uv_seeded`): there the surface's inverse reads it as it likes — a sphere's `u` as 0 or 2π — and
+a piece whose boundary runs along the seam's meridian into the pole and out along the opposite one
+was drawn from 2π back to π across itself, its area read with the wrong sign: taken for a hole,
+the face was refused ("a sphere has a hole in no piece"), a slab on a ball with its face on the
+seam's meridian, a vane's side through a crowned disc's axis, a fill over a crown's top
+(`a_cut_through_a_pole_along_the_seams_meridian_parts_the_sphere`, to its closed form to 1e-9;
+`sphere_rounds`).
 
 **The convex hull of points is a solid of plane faces, one a facet** (`build::hull`;
 brep-bench's offset/tetrahedron-grown, swept/box-slid-aslant, loft/square-to-octagon and the

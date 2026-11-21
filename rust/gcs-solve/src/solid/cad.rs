@@ -381,9 +381,13 @@ impl<'a> Walk<'a> {
                     // its solid is named by the use of the word that made it (`#17.0.….taken`),
                     // which no document wrote: a failure to build it says the body it rounds and
                     // the step its faces are named by there (#879)
+                    // and where it ends on a face flush with another only to the drawing's numbers,
+                    // that, which the Boolean joining it to its body may not read (#962 item 4)
+                    let flush = assembly.runs.iter().find_map(|r| r.flush.as_ref())
+                        .map_or(String::new(),|f| format!(", which ends {f}"));
                     if let Some((&b,_)) = body {
                         let of = &sk.solids[b];
-                        called = Some(format!("`{}`'s round or chamfer `{}`",
+                        called = Some(format!("`{}`'s round or chamfer `{}`{flush}",
                             crate::vocab::public_path(of.written_name()),super::step_through(of,solid)));
                     }
                     // a refusal of the assembly is the round's, said by the body it rounds and the
@@ -606,5 +610,43 @@ pub(super) fn profile(sk: &Sketch,index: usize,w: &Writer) -> Result<Section,Str
 fn said(sk: &Sketch,i: usize,why: impl std::fmt::Display) -> String {
     let why = why.to_string();
     let key = format!("{}: ",sk.solids[i].name);
-    format!("`{}`: {}",sk.solid_said(i),why.strip_prefix(&key).unwrap_or(&why))
+    let why = why.strip_prefix(&key).unwrap_or(&why);
+    let (faces,shared) = faces_said(sk,i).map_or((String::new(),String::new()),|(faces,shared)| {
+        (format!(" (where {faces} meet)"),shared.map_or(String::new(),|s| format!("; {s}")))
+    });
+    format!("`{}`{faces}: {why}{shared}",sk.solid_said(i))
+}
+
+/// The faces a region over a body's faces stands on, each by the body's name for it
+/// (`part.block.edge3`), as the author wrote them — what a round or a chamfer no document named
+/// (`#42.0.….taken`, a word's use) is said by where it is not built (#962): the edge or the corner
+/// it is, so a statement over many faces can leave that one out.  `None` for any other solid.
+fn faces_said(sk: &Sketch,i: usize) -> Option<(String,Option<String>)> {
+    let SolidDef::Region {terms,..} = &sk.solids.get(i)?.def else { return None };
+    let mut faces: Vec<String> = Vec::new();
+    // a name the rounds of several statements written bare each leave faces under (#962): read as
+    // one face in pieces on their several surfaces, where each statement's own is what is meant
+    let mut shared: Vec<String> = Vec::new();
+    for t in terms {
+        if let crate::model::RegionShape::FaceSide {face} = &t.shape {
+            let path = std::iter::once(sk.solid_name(face.solid as usize)).chain(face.path.iter().cloned())
+                .collect::<Vec<_>>().join(".");
+            if super::faces::uses_naming(sk,face.solid as usize,&face.path) > 1 && !shared.contains(&path) {
+                shared.push(path.clone())
+            }
+            if !faces.contains(&path) { faces.push(path) }
+        }
+    }
+    if faces.len() < 2 {
+        return None;
+    }
+    let said = crate::vocab::all_of(&faces.iter().map(|f| format!("`{f}`")).collect::<Vec<_>>());
+    Some((said,match &shared[..] {
+        [] => None,
+        named => Some(format!("{} the faces of rounds or chamfers of several statements written bare under one \
+            name, read as one face in pieces on their several surfaces: name each of those statements (`inside := \
+            round(r: …) …`) so that each one's faces are read apart",
+            named.iter().map(|f| format!("`{f}`")).collect::<Vec<_>>().join(" and ")
+                + if named.len() > 1 { " name" } else { " names" })),
+    }))
 }

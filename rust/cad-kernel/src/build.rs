@@ -170,15 +170,35 @@ impl Seg {
             _ => self,
         }
     }
+    /// How long the step is: a line's run, an arc's radius times its turn, and any other curve
+    /// its widest chord among seventeen points along it — nothing only where they all coincide.
+    /// A length, whatever the curve's parameter measures (an arc's is an angle).
+    pub fn length(&self) -> f64 {
+        match self.curve {
+            Curve::Line {..} => (self.t[1]-self.t[0]).abs(),
+            Curve::Circle(_,r) => r.abs()*(self.t[1]-self.t[0]).abs(),
+            _ => {
+                let q: Vec<V> = (0..=16).map(|k| self.curve.point(self.t[0]+(self.t[1]-self.t[0])*k as f64/16.)).collect();
+                q.iter().map(|a| q.iter().map(|b| distance(*a,*b)).fold(0.,f64::max)).fold(0.,f64::max)
+            }
+        }
+    }
     pub(crate) fn samples(&self,n: usize) -> impl Iterator<Item = V> + '_ {
         (0..n).map(move |j| self.curve.point(self.t[0]+(self.t[1]-self.t[0])*j as f64/n as f64))
     }
 }
 
+/// **Whether an edge `length` long has no length** in a profile of `size` (its reach from its
+/// origin, as `Profile::size` reads it): within the profile's tolerance of nothing, where no walk
+/// can tell its ends apart.  The one test, which `walks` refuses a loop by and a host asks of the
+/// edges it draws before it hands them over, so the refusal is said in the host's terms (#962).
+pub fn no_length(length: f64,size: f64) -> bool { !(length > tolerance(size)) }
+
 /// Each loop of a profile as a closed walk, the outer one counter-clockwise in `(x, y)` and the
 /// holes clockwise, where `coords` reads a point's coordinates in the plane.
 pub fn walks(p: &Profile,coords: &dyn Fn(V) -> [f64;2]) -> Result<Vec<Vec<Seg>>,String> {
-    let tol = tolerance(p.size());
+    let size = p.size();
+    let tol = tolerance(size);
     let mut out = Vec::new();
     for (li,l) in p.loops.iter().enumerate() {
         let segs: Vec<Seg> = l.iter().enumerate().map(|(source,e)| match *e {
@@ -190,7 +210,11 @@ pub fn walks(p: &Profile,coords: &dyn Fn(V) -> [f64;2]) -> Result<Vec<Vec<Seg>>,
             ProfileEdge::Spline(ref b) => Seg {curve:Curve::BSpline(b.clone()),t:b.domain(),source},
             ProfileEdge::Exact(ref curve) => Seg {curve:curve.clone(),t:exact_span(curve),source},
         }).collect();
-        if segs.iter().any(|s| (s.t[1]-s.t[0]).abs() <= tol) { return Err(format!("loop {li} has an edge of no length")) }
+        if let Some(s) = segs.iter().find(|s| no_length(s.length(),size)) {
+            let name = p.name(li,s.source);
+            let edge = if name.is_empty() { format!("edge {}",s.source) } else { format!("edge `{name}`") };
+            return Err(format!("loop {li}'s {edge} has no length"))
+        }
         let mut used = vec![false;segs.len()];
         let mut walk = vec![segs[0].clone()];
         used[0] = true;

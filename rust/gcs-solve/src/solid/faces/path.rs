@@ -96,10 +96,12 @@ pub fn face_paths(sk: &Sketch, i: usize) -> Vec<FacePath> {
                 let reads = super::terms_read_faces(terms);
                 // a round or a chamfer the table builds leaves the face its construction names
                 // (`round`, `flat`), whatever the set that says it is called (#879): a block
-                // lists the faces the body has, and a body is read off its exact boundary
+                // lists the faces the body has, and a body is read off its exact boundary — a
+                // fill's caps where it ends on a face too (#962)
                 if let Some(face) = reads.then(|| crate::solid::lowering::face_name(sk, terms))
                     .flatten() {
-                    return vec![face.to_string()];
+                    return std::iter::once(face).chain(crate::solid::lowering::CAPS)
+                        .map(str::to_string).collect();
                 }
                 let mut v: Vec<String> = terms.iter().map(|t| t.name.clone())
                     .filter(|n| !(reads && n.is_empty())).collect();
@@ -192,6 +194,18 @@ pub fn same_step(written: &str, mine: &str) -> bool {
 /// own name, `layers`).
 fn own_readers(sk: &Sketch, i: usize) -> std::collections::BTreeSet<usize> {
     super::layer_bodies(sk, i).into_iter().flat_map(|b| super::readers_of(sk, b)).collect()
+}
+
+/// How many statements' rounds or chamfers leave faces body `body` names by `path` (#962): the
+/// regions among its operands routed there, counted by the use that made each.  More than one
+/// where several statements written bare leave faces under one name.
+pub(crate) fn uses_naming(sk: &Sketch, body: usize, path: &[String]) -> usize {
+    let Some((_, route)) = path.split_last() else { return 0 };
+    let route = route.join(".");
+    let uses: std::collections::BTreeSet<&str> = crate::solid::document::operand_primitives(sk, body).into_values()
+        .filter(|(r, p)| *r == route && matches!(sk.solids[*p as usize].def, SolidDef::Region { .. }))
+        .map(|(_, p)| use_key(&sk.solids[p as usize].name)).collect();
+    uses.len()
 }
 
 /// The statement a solid was made by, as a key: its name up to the first segment a statement's

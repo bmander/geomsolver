@@ -136,6 +136,10 @@ pub enum Code {
     /// union's already — a cut takes material wherever its statement stands, so a union written
     /// after it puts nothing back
     W119,
+    /// a round or a chamfer (a block over a solid's faces paired by `meets`) whose faces meet in
+    /// no edge where the drawing is solved — apart, at a corner alone, along a seam where one goes
+    /// on tangent into the other, or one face alone — so it makes nothing (#962)
+    W120,
     /// The drift lint (#462, `program::drift`): advisory, asked for and never raised by
     /// elaboration.  The `W2xx` block is ours, as the `E1xx` one is.
     ///
@@ -210,6 +214,7 @@ impl Code {
             Code::W117 => "W117",
             Code::W118 => "W118",
             Code::W119 => "W119",
+            Code::W120 => "W120",
             Code::W201 => "W201",
             Code::W202 => "W202",
             Code::W203 => "W203",
@@ -224,7 +229,7 @@ impl Code {
     pub fn severity(self) -> Severity {
         match self {
             Code::W110 | Code::W112 | Code::W113 | Code::W114 | Code::W115 | Code::W116
-            | Code::W117 | Code::W118 | Code::W119 | Code::W201
+            | Code::W117 | Code::W118 | Code::W119 | Code::W120 | Code::W201
             | Code::W202 | Code::W203 | Code::W204 | Code::W205 | Code::W206
             | Code::W207 => Severity::Warning,
             Code::N080 => Severity::Note,

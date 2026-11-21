@@ -1970,10 +1970,25 @@ fn a_picture_of_a_solid_not_built_says_so() {
 }
 
 /// A post 14 high on a D — an arc of radius 5 closed by a chord — whose arc's rim is rounded to
-/// the post's own radius: under a lid tilted 20° (`tilted`), the kernel refuses it (the ball
-/// stands still on a stretch of a loop, #961's refusal); square-topped, the lowering does.  With
-/// the words an export of it refuses it in.
-fn refused_post(tilted: bool) -> (String, &'static str) {
+/// the post's own radius under a lid tilted 20° (`tilted`): the kernel refuses it (the ball stands
+/// still on a stretch of a loop the D's flat cuts across, #961's refusal).  Else `bracket.sv` with
+/// a short slot across its crease, along it, in place of its slots: the lowering refuses its fill
+/// (each run ends on one of the slot's round ends, which its section reaches past).  (The D
+/// square-topped was the lowering's refusal here until #962 item 3 carried its ring round to the
+/// middle of the flat and built it.)  With the solid pictured and the words an export of it
+/// refuses it in.
+fn refused_post(tilted: bool) -> (String, &'static str, &'static str) {
+    if !tilted {
+        let src = include_str!("../../examples/rounds/bracket.sv");
+        let slots = src.find("  // a slot along the foot").unwrap();
+        let fill = src.find("  body.foot round").unwrap();
+        let slot = "  slot := Block(x0: 5.5mm, x1: 6.5mm, y0: -1mm, y1: 1mm, z0: -1mm, z1: 7mm)\n  \
+            slot.body cut body\n  near := Post(x: 6mm, y: -1mm, d: 1mm, z0: -1mm, z1: 7mm)\n  \
+            near.body cut body\n  far := Post(x: 6mm, y: 1mm, d: 1mm, z0: -1mm, z1: 7mm)\n  \
+            far.body cut body\n";
+        return (format!("{}{slot}{}", &src[..slots], &src[fill..]), "bracket.body",
+                "a run its curved end does not cut off")
+    }
     let lid = "across := axis hint(dir: (0, 1, 0))\nacross parallel std.y\n\
         u := axis hint(dir: (0.94, 0, -0.34))\nu perpendicular across\nu angle(20deg, about: std.y) std.x\n\
         slant := plane(u: u, v: across)\nfix(origin == (0mm, 0mm, 10mm)) slant\n\
@@ -1981,30 +1996,25 @@ fn refused_post(tilted: bool) -> (String, &'static str) {
         \x20 fix((-20, -20)) p\n  fix((20, -20)) q\n  fix((20, 20)) r\n  fix((-20, 20)) s\n\
         \x20 (pq := line(p, q)) -> (qr := line(q, r)) -> (rs := line(r, s)) -> (sp := line(s, p)) -> close\n}\n\
         lid := solid(std.solids.Prism(face(pq, qr, rs, sp), from: 0mm, to: 30mm))\nlid cut drum\n";
-    let (top, round, why) = if tilted {
-        (lid, "drum.lid round(r: 5mm) drum.post.side",
-         "a rolled round: the ball between `post.side` with `lid.far` stands still, and their meeting is a \
-          stretch of a loop: no stretch of its dome is cut off yet")
-    } else {
-        ("", "drum.post.far round(r: 5mm) drum.post.side", "a stretch of a circle its end does not cut off")
-    };
     (format!("unit mm\nuse std\nuse std.solids (cut, union, common)\n\
         use std.rounds (round)\nin std.top {{\n  o := point\n  fix((0, 0)) o\n  a := point\n  fix((3, -4)) a\n\
         \x20 b := point\n  fix((3, 4)) b\n  side := arc(center: o, start: b, end: a) hint(r: 5)\n\
         \x20 flat := line(a, b)\n}}\npost := solid(std.solids.Prism(face(side, flat), from: 0mm, to: 14mm))\n\
-        drum := solid(post)\n{top}{round}\n"), why)
+        drum := solid(post)\n{lid}drum.lid round(r: 5mm) drum.post.side\n"), "drum",
+     "a rolled round: the ball between `post.side` with `lid.far` stands still, and their meeting \
+      ends where `post.flat` cuts across it")
 }
 
 /// `refused_post(tilted)` exported and pictured in `dir`: the export refuses it, and the picture
 /// says that refusal once, before the solid's evaluation (which meshes its field) is done, is
 /// written, and is done within `bound` seconds.
 fn refused_post_pictured(dir: &std::path::Path, tilted: bool, bound: f64) {
-    let (text, why) = refused_post(tilted);
+    let (text, solid, why) = refused_post(tilted);
     let source = dir.join("post.sv");
     let png = dir.join("post.png").to_str().unwrap().to_string();
     std::fs::write(&source, text).unwrap();
     let step = dir.join("post.step").to_str().unwrap().to_string();
-    let out = run(&[source.to_str().unwrap(), "--no-check", "--solid", "drum", "--step", &step]);
+    let out = run(&[source.to_str().unwrap(), "--no-check", "--solid", solid, "--step", &step]);
     assert!(String::from_utf8_lossy(&out.stderr).contains(why), "{}", String::from_utf8_lossy(&out.stderr));
     let clock = std::time::Instant::now();
     let out = run(&[source.to_str().unwrap(), "--no-check", "--progress", "--size", "120", "--png", &png]);
@@ -2012,22 +2022,22 @@ fn refused_post_pictured(dir: &std::path::Path, tilted: bool, bound: f64) {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(out.status.code(), Some(0), "{stderr}");
     assert!(std::fs::metadata(&png).is_ok_and(|m| m.len() > 0), "written");
-    let said = format!("solventc: {png}: `drum` is drawn from its material field, not built: ");
+    let said = format!("solventc: {png}: `{solid}` is drawn from its material field, not built: ");
     assert_eq!(stderr.matches(&said).count(), 1, "said once: {stderr}");
     let line = stderr.lines().find(|l| l.starts_with(&said)).unwrap();
     assert!(line.contains(why), "{line}");
     // said before the field is meshed, which the solid's evaluation is
-    let evaluated = stderr.find("evaluated drum in").expect("the evaluation said");
+    let evaluated = stderr.find(&format!("evaluated {solid} in")).expect("the evaluation said");
     assert!(stderr.find(&said).unwrap() < evaluated, "{stderr}");
     assert!(took < bound, "{took} s");
 }
 
 /// **A picture of a solid whose round is refused says so first, and is drawn in bounded time**
-/// (#961): the lowering's refusal of a stretch of a circle is said against the picture before its
-/// field is meshed (`--progress` puts it before the solid's evaluation is done), once, and the
-/// picture is written; the field's round, read from a distance field rather than by a search at
-/// every value, is meshed in about 2.5 s natively where it took 18–25 s.  A round the kernel
-/// builds is drawn with nothing said.
+/// (#961): the lowering's refusal of a run its curved end does not cut off is said against the
+/// picture before its field is meshed (`--progress` puts it before the solid's evaluation is done),
+/// once, and the picture is written; the field's round, read from a distance field rather than by
+/// a search at every value, is meshed in seconds (a D post's refused round took 18–25 s natively
+/// before, about 2.5 s after).  A round the kernel builds is drawn with nothing said.
 #[test]
 fn a_picture_of_a_refused_round_says_so_first_and_is_drawn_in_bounded_time() {
     let dir = std::env::temp_dir().join(format!("solventc-png-round-refused-{}", std::process::id()));
