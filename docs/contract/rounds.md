@@ -38,7 +38,10 @@ written without `symmetric`.
 round a corner only of three that each meet the other two ([language.md](language.md)), so a body
 whose faces are many — every operand's listed, eaten or not — makes copies for its edges and
 corners, not for the cube of its faces: #625's web cut by four turned spokes lists 28 faces and
-rounds 16 edges and no corner (`tests/meets.rs`).
+rounds 16 edges and no corner (`tests/meets.rs`).  A body the seeds do not build (a short side
+between two corner rounds seeded with its ends past each other) is read where the drawing solves,
+never taken as every face meeting every other (#994, [language.md](language.md),
+`tests/short_straights.rs`).
 **Both faces are one body's** (#961, [0.223]): an edge, a corner and the material's angle are
 between faces of one body, so a word over a face of one solid and a face of another is refused
 where `meets` is asked ([language.md](language.md), E103 naming the body both are faces of, the

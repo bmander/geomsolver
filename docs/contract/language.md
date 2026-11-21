@@ -304,7 +304,22 @@ its stratum. The elaborator reads it as it names a solid's faces (`solids_and_su
 drawing is seeded: `solid::faces::Meets::read` over `faces::cached`, each listed `FacePath` matched
 to its patches by route and face, beside the paths in `flatten::Listed` and read again only when
 the paths change. `expand::Asked::meets` answers it; a face a round made that the stratum has
-not, and a body with a swept cut (no `Meets`), meet.  **Faces of two solids are refused**
+not, and a body with a swept cut (no `Meets`, `solid::faces::Unread::Field`), meet.  **A body
+the seeds do not build is read where the drawing solves** (#994): `Layered::read` says why a
+boundary is not read (`Unread`), and of one that does not build where the drawing stands
+(`Unread::Unbuilt`, the stratum's refusal) `meets` answers that no two faces meet — taken to
+meet, every two and three of its faces made a copy of a round over the whole body, and a plate
+with three slots whose 0.05 straights the seeds put past their ends ran to `MAX_FLAT`.  The
+statement is an `flatten::Unbuilt` (`SourceMap::unbuilt`) and its span is in `unread`, so
+`at_solve` reads the drawing again where it solves, as for a face held along a direction (#948);
+where the body is not built there either, `refused::solids` says the statement not built, built
+on that body (N080, its cause the body's root, a face's edge of no length said at the face), and
+where the body is built at last but its faces were not read again (the drawing does not solve,
+or is refused besides) E080 at the statement says so with the seeds' reason
+(`tests/short_straights.rs`: the slot's floor rounds and rim chamfer each the closed form at
+straights of 0.5, 0.05 and 0.01 seeded short, a round over the whole plate making the copies
+seeded short it makes seeded where it stands, a straight of none and one of 1e-8 refused at the
+face; `refused_once.rs`).  **Faces of two solids are refused**
 ([0.223], #961): an edge is two faces of one body meeting, so `meets` answers them with no truth,
 the block is made for neither, and the pair is an `flatten::Across` at the document's statement
 (`FaceState::at`), once per statement (`Expansion::across`), said by the elaborator once the
