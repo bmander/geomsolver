@@ -633,20 +633,36 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
         // it comes to nothing, measured from the plane the face is drawn in, which the sides lean
         // from whatever the ordinates (#765)
         if let SolidDef::Prism { from, to, draft: Some(d), .. } = &s.def {
-            let reach = from.value.abs().max(to.value.abs());
-            for (k, p) in polys.iter().enumerate() {
-                if let Some((i, at)) = primitive::drafted_away(&p.pts, reach, primitive::loop_taper(k, d.value.dtan())) {
-                    let length = |x: f64| crate::units::Dim::LENGTH.number_text(x, sk.units);
-                    // to three figures: a tessellated arc's chords come to nothing a little short
-                    // of the arc
-                    let figures = 10f64.powi(2 - at.abs().log10().floor() as i32);
-                    let at = (at * figures).round() / figures;
-                    return Err(fail(&format!("a draft of `{}` takes the side `{}` to nothing {} \
-                        from the face's own plane, within the prism's ordinates ({} to {}): its \
-                        sides lean from the plane the face is drawn in, the parting plane, so draw \
-                        the face where the draft parts", d.text, p.names[p.of[i].0], length(at),
-                        length(from.value), length(to.value))));
-                }
+            let (reach, taper) = (from.value.abs().max(to.value.abs()), d.value.dtan());
+            // read by the section's own rule where the face's sides are lines, arcs and circles
+            // (each corner where the moved sides meet, a corner where an arc meets a side at an
+            // angle sliding along the arc: `brep::build::drafted_away`, #962); else by its facets,
+            // a tessellated arc's chords coming to nothing a little short of the arc
+            // (its edges' kinds read first, so a traced or formula curve is never fitted for it)
+            let lines_and_arcs = sk.faces[face as usize].boundaries().all(|(edges, _)| edges.iter()
+                .all(|e| matches!(e.kind, EntKind::Line | EntKind::Arc | EntKind::Circle)));
+            let exact = lines_and_arcs.then(|| {
+                cad::profile(sk, face as usize, &crate::brep::recipe::Writer::world(1.0))
+                    .and_then(|s| crate::brep::build::Profile::of(&s)).ok()
+            }).flatten();
+            let away = match exact {
+                // (a profile the rule moves not at all, a corner turning straight back, is refused
+                // where the kernel builds it, in its words)
+                Some(p) => crate::brep::build::drafted_away(&p, reach, taper).unwrap_or(None),
+                None => polys.iter().enumerate().find_map(|(k, p)| {
+                    primitive::drafted_away(&p.pts, reach, primitive::loop_taper(k, taper))
+                        .map(|(i, at)| (format!("takes the side `{}` to nothing", p.names[p.of[i].0]), at))
+                }),
+            };
+            if let Some((what, at)) = away {
+                let length = |x: f64| crate::units::Dim::LENGTH.number_text(x, sk.units);
+                // to three figures
+                let figures = 10f64.powi(2 - at.abs().log10().floor() as i32);
+                let at = (at * figures).round() / figures;
+                return Err(fail(&format!("a draft of `{}` {what} {} from the face's own plane, \
+                    within the prism's ordinates ({} to {}): its sides lean from the plane the \
+                    face is drawn in, the parting plane, so draw the face where the draft parts",
+                    d.text, length(at), length(from.value), length(to.value))));
             }
         }
         if let SolidDef::Revolve { face, axis, sweep, .. } = &s.def {
