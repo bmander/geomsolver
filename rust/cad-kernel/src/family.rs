@@ -380,9 +380,9 @@ impl Sheet {
     /// only where it comes nearer `p`, `μ` falling by three where it does and rising fourfold where
     /// it does not; a step leaving the domain is held at its bound and the other parameter stepped
     /// alone along it (projected: the foot on a rim or a rail is that curve's nearest point). With
-    /// `μ` small it is Gauss–Newton, as quick where the wall is well read; it stops where a step
-    /// moves the parameters by no more than their rounding, or one refused moved them by no more than
-    /// a millionth of a millionth.
+    /// `μ` small it is Gauss–Newton, as quick where the wall is well read; it stops at a foot, the
+    /// offset square to both rates to their rounding, or where a step taken moves the parameters by
+    /// no more than their rounding.
     ///
     /// (#942 T1d-cube: beside a fan's pinch its two derivatives all but parallel, a full Gauss–Newton
     /// step from beside the foot ran along the direction the wall barely moves in, past a run's end,
@@ -418,16 +418,20 @@ impl Sheet {
                     (true,false) if h22 > 0. => [u_held,self.held(uv[1]-b2/h22)],
                     _ => [u_held,s_held],
                 };
+                // (a step that moves nothing: a larger `μ` moves less still)
                 let moved = (next[0]-uv[0]).abs().max((next[1]-uv[1]).abs()/(b-a));
-                if moved < 1e-15 { break 'steps }
+                if !(moved > 0.) { break 'steps }
                 let (nx,nsu,nss) = self.d1(next);
                 let ne = sub(nx,p);
                 if dot(ne,ne) < off {
                     (uv,su,ss,e,off) = (next,nsu,nss,ne,dot(ne,ne));
                     mu = (mu/3.).max(1e-12);
+                    // (settled where a step taken moves the parameters by their rounding — not where
+                    // a refused one, `μ` grown, moves them little: that one was damped, not done,
+                    // and the ball along a spline was cut on a foot left short of its own)
+                    if moved < 1e-15 { break 'steps }
                     continue 'steps
                 }
-                if moved < 1e-12 { break 'steps }
                 mu *= 4.;
             }
             break
