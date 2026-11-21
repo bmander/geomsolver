@@ -1176,10 +1176,14 @@ pub fn ring_entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Re
     let last = fits.len()-1;
     let mut pieces = Vec::new();
     let mut given = Vec::new();
+    // (a place of a tube proved inside the sweep by more than the tolerance — a sheet on the boundary
+    // stands within its fit of it, a tenth of the tolerance — bounds nothing, and is dropped with the
+    // tails, #942 T1d-tori)
+    let inside = |x: V| ring.held(path,[a,b],x,tol);
     for (k,fit) in fits.iter().enumerate() {
         // (both end poses read on every stretch: a tube carried on can cross either far from it)
         let at = [Some((&start,poses[0])),Some((&end,poses[1]))];
-        let (s,g) = super::rings::entered_at(fit,&ring,at,[k == 0,k == last],tol)?;
+        let (s,g) = super::rings::entered_at(fit,&ring,at,[k == 0,k == last],&inside,tol)?;
         if crate::debug() { eprintln!("ring: stretch {k} over {:?}: pieces {}..{}, faces {:?}",fit.roll,pieces.len(),pieces.len()+s.len(),s.iter().map(|b: &Brep| b.faces.len()).collect::<Vec<_>>()) }
         phase(&format!("stretch {k} entered at the end poses"));
         pieces.extend(s);

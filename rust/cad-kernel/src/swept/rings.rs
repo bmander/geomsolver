@@ -1414,7 +1414,7 @@ pub fn posed(tool: &Brep,ring: &Ring,path: &Trajectory,fit: &Fitted,t: f64) -> R
 /// on the tool's faces holding it — and the curves a face is cut along — each on the face it lies on
 /// — all lie on the tool, and are each face's whole meeting with it, given.
 pub fn entered(fit: &Fitted,ring: &Ring,ends: [&Brep;2],poses: [Pose;2],tol: f64) -> Result<(Vec<Brep>,Vec<Given>),Unbuilt> {
-    entered_at(fit,ring,[Some((ends[0],poses[0])),Some((ends[1],poses[1]))],[true,true],tol)
+    entered_at(fit,ring,[Some((ends[0],poses[0])),Some((ends[1],poses[1]))],[true,true],&|_| false,tol)
 }
 
 /// `entered`, where an end of the fit's stretch of the roll may be no end of the roll (`rimmed`
@@ -1424,7 +1424,8 @@ pub fn entered(fit: &Fitted,ring: &Ring,ends: [&Brep;2],poses: [Pose;2],tol: f64
 /// tube carried on past where the roll's end pose stands — the thin torus, its double curve ending
 /// where one leaf's partner reaches the end of the roll, on that pose's tool, partway along another
 /// stretch.
-pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],rimmed: [bool;2],tol: f64) -> Result<(Vec<Brep>,Vec<Given>),Unbuilt> {
+pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],rimmed: [bool;2],inside: &(dyn Fn(V) -> bool+Sync),tol: f64)
+    -> Result<(Vec<Brep>,Vec<Given>),Unbuilt> {
     let mut sheets = Vec::new();
     let mut given = Vec::new();
     let n = ring.elements.len();
@@ -1501,7 +1502,17 @@ pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],rimmed: 
                 if !again { chords.push((e,c)) }
             }
             chords.extend(cuts_of[k].iter().map(|c| (2,c.clone())));
-            let tail: Box<dyn Fn(P2) -> bool+Sync+Send+'_> = Box::new(move |[x,y]: P2| tail(k as f64+x,a+(b-a)*y));
+            // (and a place proved inside the sweep, `inside`, bounds nothing whatever the double curves
+            // say of it, #942 T1d-tori: a tail is what lies above its double curve up to where that
+            // curve meets the tool at an end pose, and where the curve dips into the stretch before
+            // and comes back across the tube's seam, above it is no stretch of it — the full turn's
+            // last stretch, a face between the curve and the seam, 3e-3 deep, kept, its crossing
+            // of the tool where it stops hung open at the seam, and the end pose's torus a piece the
+            // boundary on one side of it and off it on the other)
+            let tail: Box<dyn Fn(P2) -> bool+Sync+Send+'_> = Box::new(move |[x,y]: P2| {
+                let (u,t) = (k as f64+x,a+(b-a)*y);
+                tail(u,t) || inside(net.point(u,t))
+            });
             Trimmed {readings,chords,tail}
         });
         let (sheet,cut) = trimmed(net,fit.roll,faces,tol)?;
@@ -1912,7 +1923,11 @@ fn pieces_of_square(chords: &[(usize,Vec<P2>)]) -> Result<Vec<Vec<Walk>>,Unbuilt
 /// ending on a tube's meeting with the tool at an end pose): each chord cut at every place another
 /// crosses it, and at every end of another standing within `SNAP_ON` of it (that end put there),
 /// each piece keeping its chord's kind. A trace's end is placed to its step (`MET_STEP`), so an end
-/// within a step of another chord ends on it (#942 F6).
+/// within a step of another chord ends on it (#942 F6). A double curve's end stays where it is, and
+/// the chord it stands on is cut there (#942 T1d-tori, by construction): it ends where one leaf
+/// reaches the end of the roll, on the tool posed there, so on the other leaf's meeting with that
+/// tool — put on that trace's polyline instead, the full turn's stood 2.4e-6 inside the tool, two
+/// tolerances from the same point on the leaf whose rim it is, and the two never met.
 fn split_chords(chords: &[(usize,Vec<P2>)]) -> Vec<(usize,Vec<P2>)> {
     const SNAP_ON: f64 = MET_STEP;
     let on_rim = |p: P2| p[0] <= ON_SIDE || p[0] >= 1.-ON_SIDE || p[1] <= ON_SIDE || p[1] >= 1.-ON_SIDE;
@@ -1931,7 +1946,9 @@ fn split_chords(chords: &[(usize,Vec<P2>)]) -> Vec<(usize,Vec<P2>)> {
                 let q = [a[0]+d[0]*f,a[1]+d[1]*f];
                 ((q[0]-p[0]).hypot(q[1]-p[1]),j,k,f,q)
             }).min_by(|x,y| x.0.total_cmp(&y.0));
-            if let Some((dist,j,k,f,q)) = best { if dist <= SNAP_ON { lines[i].1[e] = q; cuts[j].push((k,f,q)) } }
+            if let Some((dist,j,k,f,q)) = best { if dist <= SNAP_ON {
+                if lines[i].0 == 2 { cuts[j].push((k,f,p)) } else { lines[i].1[e] = q; cuts[j].push((k,f,q)) }
+            } }
         }
     }
     for i in 0..lines.len() { for j in i+1..lines.len() {
@@ -2322,6 +2339,33 @@ impl Ring {
             if d < best.0 { best = (d,k,inside) }
         }
         (if best.2 { -best.0 } else { best.0 },best.1)
+    }
+
+    /// **Whether some pose over `roll` along `path` holds the point `x` more than `r` deep** (#942
+    /// T1d-tori): then every point within `r` of `x` is inside the sweep — the ring's signed distance
+    /// (`signed`) is 1-Lipschitz and a rigid motion keeps distances — proved by the pose found, never
+    /// guessed. Read as membership reads (`member::Swept::beyond`): best first over the roll, a
+    /// stretch of half-width `h` about a roll where `x` stands `d` from the ring reaching no deeper than
+    /// `d − L h`, `L` the trajectory's speed bound there, halved no finer than `L h ≤ r/4` and no more
+    /// stretches read than membership's proofs read; `false` where none is found.
+    pub fn held(&self,path: &Trajectory,[a,b]: [f64;2],x: V,r: f64) -> bool {
+        let Ok(domain) = crate::util::interval::Interval::new(a.min(b),a.max(b)) else { return false };
+        let Ok(speed) = path.inverse_point_speed_bound(x,domain) else { return false };
+        let depth = |t: f64| path.pose(t).ok().map(|q| self.signed(q.inverse().point(x)).0);
+        // (each stretch by the deepest it may reach, the deepest read first)
+        let mut frontier: Vec<(f64,f64,f64)> = vec![(f64::NEG_INFINITY,a.min(b),a.max(b))];
+        for _ in 0..super::member::BEYOND_READS {
+            let Some(i) = (0..frontier.len()).min_by(|&i,&j| frontier[i].0.total_cmp(&frontier[j].0)) else { return false };
+            let (reach,lo,hi) = frontier.swap_remove(i);
+            if reach >= -r { return false }
+            let m = 0.5*(lo+hi);
+            let Some(d) = depth(m) else { return false };
+            if d < -r { return true }
+            let h = 0.5*(hi-lo);
+            if d-speed*h >= -r || speed*h <= 0.25*r { continue }
+            frontier.extend([(d-speed*h,lo,m),(d-speed*h,m,hi)]);
+        }
+        false
     }
 
     /// **Whether the ring holds the point `x`** (its own coordinates): its `(ρ, z)` within the
