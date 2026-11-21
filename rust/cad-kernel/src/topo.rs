@@ -172,8 +172,10 @@ fn inverse_derivative(uv: Uv,t: f64,edge: &Edge,surface: &Surface) -> Uv {
     // a curve standing off its surface (a file's edge within its tolerance of its faces, #993):
     // its feet run at another rate than its tangent read on the surface (by the surface's
     // curvature times the gap), so the rate of the feet themselves, by a difference a millionth
-    // of the edge long, toward its inside
-    if distance(surface.point(uv),x) > 1e-9*(1.+norm(x)) {
+    // of the edge long, toward its inside — where the gap is a file's tolerance, a hundred-thousandth
+    // of the point's distance from the origin or more (a fitted curve's micron is left to its
+    // tangent, which a swept build's measures are read by)
+    if distance(surface.point(uv),x) > 1e-5*(1.+norm(x)) {
         let h = 1e-6*(edge.t[1]-edge.t[0])*if t+1e-6*(edge.t[1]-edge.t[0]) <= edge.t[1] { 1. } else { -1. };
         let next = unwrap(surface.inverse_near(c.point(t+h),uv),uv,surface.periods());
         let rate = [(next[0]-uv[0])/h,(next[1]-uv[1])/h];
