@@ -12,7 +12,7 @@
 //! stands.  What still comes out otherwise where the drawing solves is said here, at the
 //! document's statement that made the block, rather than built wrong.
 use super::{own_values, public_path, Code, Diag, Elaborated, SourceMap, Stood};
-use crate::flatten::{Apart, FaceRead};
+use crate::flatten::FaceRead;
 use crate::model::{EntKind, EntRef, Sketch};
 use crate::solid::faces::{face_paths, Layered, Layers};
 use crate::syntax::Span;
@@ -30,7 +30,7 @@ pub(super) fn at_solve(e: &Elaborated) -> Stood {
     // though that pass refused the block (#948), where such refusals are all it refused
     let unread = !e.map.unread.is_empty()
         && e.errors().all(|d| d.code == Code::E103 && e.map.unread.contains(&d.span));
-    let read = !(e.map.apart.is_empty() && e.map.along.is_empty());
+    let read = !(e.map.apart.is_empty() && e.map.pruned.is_empty() && e.map.along.is_empty());
     if !unread && (!read || !e.ok()) {
         return Stood::new();
     }
@@ -48,6 +48,7 @@ pub(super) fn at_solve(e: &Elaborated) -> Stood {
 pub(super) fn read_again(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
     let reads = map.along.iter().flat_map(|w| &w.reads);
     let meets: BTreeSet<&str> = map.apart.iter().map(|a| a.solid.as_str())
+        .chain(map.pruned.iter().map(|p| p.solid.as_str()))
         .chain(reads.clone().filter_map(|r| match r {
             FaceRead::Meets { solid, .. } => Some(solid.as_str()),
             _ => None,
@@ -101,9 +102,11 @@ pub(super) fn unmade(sk: &Sketch, map: &SourceMap, said: &[Diag]) -> Vec<Diag> {
         // the pairs whose edge the word takes: two faces, one of `A` and one of `B` — what else a
         // `when` asked (a corner's third face against a face of its own side, a face against
         // itself) selects no edge of its own
-        let (ina, inb) = (|f: &String| a.1.contains(f), |f: &String| b.1.contains(f));
-        let pairs: Vec<&([String; 2], usize)> = u.pairs.iter().filter(|([x, y], _)| x != y
-            && (ina(x) && inb(y) || inb(x) && ina(y))).collect();
+        let ina = |f: &str| a.1.iter().any(|g| g == f);
+        let inb = |f: &str| b.1.iter().any(|g| g == f);
+        let asked = u.pairs.iter().map(|([x, y], layer)| ([x.as_str(), y.as_str()], *layer));
+        let pairs: Vec<([&str; 2], usize)> = asked.chain(u.pruned.iter().flat_map(|p| p.pairs()))
+            .filter(|([x, y], _)| x != y && (ina(x) && inb(y) || inb(x) && ina(y))).collect();
         let why = if pairs.is_empty() {
             if a.1.iter().chain(&b.1).collect::<BTreeSet<_>>().len() != 1 {
                 continue;
@@ -116,11 +119,11 @@ pub(super) fn unmade(sk: &Sketch, map: &SourceMap, said: &[Diag]) -> Vec<Diag> {
             let mut worst = Meeting::Apart;
             let mut eaten = BTreeSet::new();
             for (faces, layer) in pairs {
-                let read = listed.entry((e.i(), *layer))
-                    .or_insert_with(|| layers.listed(sk, paths, *layer));
+                let read = listed.entry((e.i(), layer))
+                    .or_insert_with(|| layers.listed(sk, paths, layer));
                 let Some(read) = read.as_ref() else { continue 'statements };
-                eaten.extend(faces.iter().filter(|f| read.eaten(f)).map(String::as_str));
-                match read.meeting(&faces[0], &faces[1]) {
+                eaten.extend(faces.into_iter().filter(|f| read.eaten(f)));
+                match read.meeting(faces[0], faces[1]) {
                     Some(Meeting::Edge) | None => continue 'statements,
                     Some(m) => worst = worst.max(m),
                 }
@@ -153,20 +156,24 @@ type Read<'m> = BTreeMap<&'m str, Layered>;
 fn apart(map: &SourceMap, read: &Read) -> Vec<Diag> {
     // each pair once, whichever way round it was asked
     let mut said = BTreeSet::new();
-    let met = map.apart.iter().filter(|a| {
-        let [x, y] = &a.faces;
-        said.insert((a.at, a.solid.as_str(), x.min(y), x.max(y)))
-            && read.get(a.solid.as_str()).is_some_and(|r| r.meets(a.layer).meets(x, y))
+    // every pair read apart: one by one, and those a block made no copy of (#994)
+    let each = map.apart.iter().map(|a| (a.at, a.solid.as_str(), [a.faces[0].as_str(),
+                                         a.faces[1].as_str()], a.layer))
+        .chain(map.pruned.iter()
+            .flat_map(|p| p.pairs().map(|(f, l)| (p.at, p.solid.as_str(), f, l))));
+    let met = each.filter(|&(at, solid, [x, y], layer)| {
+        said.insert((at, solid, x.min(y), x.max(y)))
+            && read.get(solid).is_some_and(|r| r.meets(layer).meets(x, y))
     });
-    grouped(met.map(|a: &Apart| (a.at, a.solid.as_str(), a))).into_iter().map(|(at, a, n)| {
-        let [x, y] = &a.faces;
-        Diag::new(Code::E080, at, None, format!(
-            "`{}`'s faces `{x}` and `{y}` meet where the drawing solves, but not where it is \
-             seeded, where `meets` read them apart{}: what they would make is not made — seed \
-             the drawing nearer where it solves",
-            public_path(&a.solid), more(n, "pair")
-        ))
-    }).collect()
+    grouped(met.map(|(at, solid, faces, _)| (at, solid, (solid, faces)))).into_iter()
+        .map(|(at, (solid, [x, y]), n)| {
+            Diag::new(Code::E080, at, None, format!(
+                "`{}`'s faces `{x}` and `{y}` meet where the drawing solves, but not where it is \
+                 seeded, where `meets` read them apart{}: what they would make is not made — seed \
+                 the drawing nearer where it solves",
+                public_path(solid), more(n, "pair")
+            ))
+        }).collect()
 }
 
 /// One E080 for each statement and solid with a `when` over faces read along a direction that,

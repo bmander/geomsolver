@@ -27,6 +27,7 @@ mod ball_paths;
 mod bare_plane;
 mod beams;
 mod bindings;
+mod blanket;
 mod bodies;
 mod block_measure;
 mod block_order;

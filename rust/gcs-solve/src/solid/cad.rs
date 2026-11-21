@@ -286,7 +286,16 @@ impl<'a> Walk<'a> {
             all.iter().copied().filter(|o| !readers.contains(&(*o as usize))).collect()
         };
         let (on,through) = (&early(on),&early(through));
-        let mut cut: Vec<u32> = through.iter().copied().filter(|o| !self.nowhere(o)).collect();
+        // each term read (a round's region lowered and checked against its field, the long part
+        // of a body rounded all over) said on the build's gauge as it is reached (#994)
+        let (total,reached) = (on.len()+through.len(),std::cell::Cell::new(0));
+        let nowhere = |o: &u32| {
+            reached.set(reached.get()+1);
+            crate::progress::gauge(|| format!("now at term {} of {total} of `{}`",reached.get(),
+                sk.solid_name(i)));
+            self.nowhere(o)
+        };
+        let mut cut: Vec<u32> = through.iter().copied().filter(|o| !nowhere(o)).collect();
         // The static remainder of a body: its swept cuts are listed, not built.
         let mut swept = Vec::new();
         if self.static_only {
@@ -305,7 +314,7 @@ impl<'a> Walk<'a> {
         }
         // **the stratum** (#183 F6): what reads the body's faces acts on the body its other
         // terms make, after them, fills then cuts, as the field applies them
-        let [on,cut,on_late,cut_late] = super::faces::stratum(sk,i,on.iter().copied().filter(|o| !self.nowhere(o)),cut);
+        let [on,cut,on_late,cut_late] = super::faces::stratum(sk,i,on.iter().copied().filter(|o| !nowhere(o)),cut);
         let (on_late,cut_late) = match terms {
             true => (Vec::new(),Vec::new()),
             false => (self.lump(i,on_late),self.lump(i,cut_late)),
