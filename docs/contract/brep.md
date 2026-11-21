@@ -833,8 +833,8 @@ no Newton on the three surfaces (singular where all three are tangent, it slid 3
 valley); a vertex is taken onto a given curve only within `ON_CURVE` tolerances (`points_on`: two
 sheets meeting smoothly along their shared rail, the sine of their angle nought, took a vertex 3e-3
 off it). **An edge is read against a known meeting by one rule** (#990, `Arrangement::known`,
-`on_known`): it lies in each of its own faces' surfaces, so it meets another operand's surface
-only where one of those meets that surface. Where a face of its own lies on that very surface, the
+`meeting::Shared::known`, `on_known`): it lies in each of its own faces' surfaces, so it meets
+another operand's surface only where one of those meets that surface. Where a face of its own lies on that very surface, the
 edge lies along it (a rolled fill's crease, a fitted meeting of a sphere and a cylinder, against
 the cylinder a ring's cap lies on). Else the meetings of its faces with that surface that are known
 — given, with the points the two are given to touch at, or found in closed form, whatever the

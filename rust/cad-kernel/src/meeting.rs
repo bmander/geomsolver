@@ -1057,6 +1057,14 @@ pub fn common(a: super::geom::Box3,b: super::geom::Box3,pad: f64) -> super::geom
     (std::array::from_fn(|k| a.0[k].max(b.0[k])-pad),std::array::from_fn(|k| a.1[k].min(b.1[k])+pad))
 }
 
+/// **What two surfaces are known to meet on** (#990, `Shared::known`): they are one, or they meet
+/// on these curves and touch at these points besides.
+#[derive(Clone,Debug)]
+pub enum Met {
+    Same,
+    On(Vec<Curve>,Vec<V>),
+}
+
 /// **Meetings computed once and shared** (#735 A2): each distinct surface given an index, two faces
 /// on surfaces the kernel holds the same (`ssi::same`) the same one, and each pair of indices'
 /// closed-form meeting (`ssi::intersect`) found the first time any two faces on them are met and
@@ -1170,6 +1178,19 @@ impl Shared {
     pub fn exact_curves(&self,i: usize,j: usize) -> Vec<Curve> {
         if self.given(i,j) { return self.given_curves(i,j) }
         [(i,j),(j,i)].iter().find_map(|k| match self.meetings.get(k) { Some(Ssi::Curves(c)) => Some(c.clone()),_ => None }).unwrap_or_default()
+    }
+    /// **What surfaces `i` and `j` are known to meet on** (#990): one surface (`Met::Same`), or the
+    /// curves of their meeting given (`give`, with the points they are given to touch at) or found
+    /// in closed form (`meeting`, asked in that order). A closed form meeting in no curve is no
+    /// knowledge of it: it leaves out a point the two touch at. `None` where it is traced, or
+    /// that.
+    pub fn known(&mut self,i: usize,j: usize,tol: f64) -> Option<Met> {
+        if self.given(i,j) { return Some(Met::On(self.given_curves(i,j),self.given_touches(i,j))) }
+        match self.meeting(i,j,tol) {
+            Ssi::Same => Some(Met::Same),
+            Ssi::Curves(cs) if !cs.is_empty() => Some(Met::On(cs,Vec::new())),
+            _ => None,
+        }
     }
     /// The curves given for surfaces `i` and `j`'s meeting (`give`), asked for or not.
     pub fn given_curves(&self,i: usize,j: usize) -> Vec<Curve> {

@@ -8,6 +8,7 @@ use crate::util::fmath::Det;
 use super::geom::{around,Box3,Curve,Surface,Uv,V};
 use super::query::{crossings_in,curve_surface_within,Located,Meets,Outline,Place};
 use super::ssi::Ssi;
+use super::meeting::Met;
 use super::complex::{Complex,Origin};
 use super::topo::{leaving_pole,pole_at,poleless,reverse_loop,unwrap,Brep,Coedge,Edge,EdgeCurve,Face,Pcurve};
 use crate::util::space::{distance,norm,scale};
@@ -1298,32 +1299,24 @@ impl<'a> Arrangement<'a> {
     /// **What an edge bounding operand `s`'s faces `bounds` is known to meet operand `other`'s face
     /// `fi`'s surface on** (#990): an edge lies in each of its own faces' surfaces, so it meets
     /// that surface only where one of those does. All along it where one of its faces lies on that
-    /// very surface (a rolled fill's crease, a fitted meeting of a sphere and a cylinder, against
-    /// the cylinder a ring's cap lies on); else on the curves of every meeting of a face of its own
-    /// with that surface known — given (#880 Q1b, with the points the two are given to touch at),
-    /// or found in closed form (#962's 7) — whatever the other faces it bounds do. A closed form
-    /// meeting in no curve is no knowledge of it: it leaves out a point the two touch at, which the
-    /// edge may pass. `None` where no meeting is known.
-    fn known(&mut self,s: Side,bounds: &[usize],other: Side,fi: usize) -> Option<KnownMeeting> {
-        let tol = self.tol;
-        let j = self.surface_index(other,fi);
+    /// very surface (`Met::Same`: a rolled fill's crease, a fitted meeting of a sphere and a
+    /// cylinder, against the cylinder a ring's cap lies on); else on what each meeting of a face
+    /// of its own with that surface that is known (`meeting::Shared::known`) is on, whatever the
+    /// other faces it bounds do. Each meeting asked with the lower operand's surface first, as `meetings` asks it,
+    /// so it is found once. `None` where no meeting is known.
+    fn known(&mut self,s: Side,bounds: &[usize],other: Side,fi: usize) -> Option<Met> {
+        let (tol,j) = (self.tol,self.surface_index(other,fi));
         let own: Vec<usize> = bounds.iter().map(|&h| self.surface_index(s,h)).collect();
-        if own.contains(&j) { return Some(KnownMeeting::Along) }
+        if own.contains(&j) { return Some(Met::Same) }
         let (mut curves,mut touches,mut any) = (Vec::new(),Vec::new(),false);
         for k in own {
-            if self.shared.given(k,j) {
-                curves.extend(self.shared.given_curves(k,j));
-                touches.extend(self.shared.given_touches(k,j));
-                any = true;
-                continue
-            }
-            match self.shared.meeting(k,j,tol) {
-                Ssi::Same => return Some(KnownMeeting::Along),
-                Ssi::Curves(cs) if !cs.is_empty() => { curves.extend(cs); any = true }
-                _ => {}
+            match if s < other { self.shared.known(k,j,tol) } else { self.shared.known(j,k,tol) } {
+                Some(Met::Same) => return Some(Met::Same),
+                Some(Met::On(cs,ts)) => { curves.extend(cs); touches.extend(ts); any = true }
+                None => {}
             }
         }
-        any.then_some(KnownMeeting::On(curves,touches))
+        any.then_some(Met::On(curves,touches))
     }
 
     /// Edge `i` of solid `s`'s index among the working edges.
@@ -1400,11 +1393,8 @@ impl<'a> Arrangement<'a> {
         // **an edge against a surface it is known to meet on** (#990): an edge lies in each of its
         // own faces' surfaces, so it meets another operand's surface only where one of those meets
         // it. Where those meetings are known — given (#880 Q1b), or found in closed form (#962's 7)
-        // — the edge is read against them (`known`, `on_known`) by one rule: their crossings where
-        // the edge's curve and theirs cross in closed form, the search's roots taken onto them
-        // where the crossings are only sampled, and the crossings alone where the search is
-        // refused.
-        let known: Vec<Option<KnownMeeting>> = asked.iter().map(|&(s,other,i,fi,..)| self.known(s,&bounded[s][i],other,fi)).collect();
+        // — the edge is read against them by one rule (`known`, `on_known`).
+        let known: Vec<Option<Met>> = asked.iter().map(|&(s,other,i,fi,..)| self.known(s,&bounded[s][i],other,fi)).collect();
         let (solids,boxes) = (&self.solids,&self.boxes);
         let read = crate::util::par::map_in_order(&asked.iter().zip(&known).collect::<Vec<_>>(),|&(&(_,other,_,fi,e,c),known)| {
             let started = crate::util::clock::Instant::now();
@@ -1416,23 +1406,8 @@ impl<'a> Arrangement<'a> {
             let search = || curve_surface_within(c,e.t,surface,tol,boxes[other][fi],pad);
             let meets = match known {
                 None => search(),
-                Some(KnownMeeting::Along) => Meets::Along,
-                Some(KnownMeeting::On(curves,touches)) => match on_known(c,e.t,curves,touches,surface,tol,false) {
-                    // (every crossing read in closed form: the reading, whatever a search for a
-                    // double root among them would settle at this tolerance)
-                    Some(meets) => meets,
-                    // (a crossing of two curves all but tangent — a rim crossing a path near a fold
-                    // of its contact — the search settles where the curves' sampled polish misses
-                    // it: the search first, each of its roots taken onto the crossing it found)
-                    None => match search() {
-                        Meets::Refused(_) => on_known(c,e.t,curves,touches,surface,tol,true).expect("sampled"),
-                        Meets::At(roots) if !roots.is_empty() => match on_known(c,e.t,curves,touches,surface,tol,true) {
-                            Some(Meets::At(exact)) => Meets::At(onto(c,roots,&exact,tol)),
-                            _ => Meets::At(roots),
-                        },
-                        meets => meets,
-                    },
-                },
+                Some(Met::Same) => Meets::Along,
+                Some(Met::On(curves,touches)) => on_known(c,e.t,curves,touches,surface,tol,search),
             };
             let meets = at_its_ends(meets,c,e.t,surface,tol);
             (meets,started.elapsed().as_secs_f64())
@@ -2433,23 +2408,20 @@ fn at_its_ends(meets: Meets,c: &Curve,t: [f64;2],surface: &Surface,tol: f64) -> 
     Meets::At(out)
 }
 
-/// **What an edge is known to meet another operand's surface on** (#990, `Arrangement::known`):
-/// all along it, or on the curves of its own faces' meetings with that surface and the points they
-/// are given to touch at.
-enum KnownMeeting {
-    Along,
-    On(Vec<Curve>,Vec<V>),
-}
-
-/// **Where an edge meets a surface it is known to meet on** (`KnownMeeting::On`, `crossings`):
-/// along it where it lies within `ON_CURVE` tolerances of one of `curves` all its stretch `t`; else
-/// at each of its crossings with them, and where it passes through a point of `touches` — a touch
-/// where the surface's signed distance keeps its sign a step either side along the edge. Where both
-/// are lines or circles their crossings are read in closed form (`query::curve_curve`), a tangency
-/// among them (#962's 7: a rim in a plane, touching the line a wall touches that plane along); a
-/// meeting's line runs on without end. Any other crossing is sampled (`meeting::crossings`), and
-/// with `sampled` false is not read: `None`.
-fn on_known(c: &Curve,t: [f64;2],curves: &[Curve],touches: &[V],surface: &Surface,tol: f64,sampled: bool) -> Option<Meets> {
+/// **Where an edge meets a surface it is known to meet on** (#990, `crossings`): along it where
+/// it lies within `ON_CURVE` tolerances of one of `curves` all its stretch `t`; else at each of its
+/// crossings with them, and where it passes through a point of `touches` — a touch where the
+/// surface's signed distance keeps its sign a step either side along the edge. Where both are lines
+/// or circles their crossings are read in closed form (`query::curve_curve`), a tangency among them
+/// (#962's 7: a rim in a plane, touching the line a wall touches that plane along), and a meeting's
+/// line runs on without end; where every crossing is, that is the reading, whatever a search for a
+/// double root among them would settle at this tolerance. Any other crossing is only sampled
+/// (`meeting::crossings`), and there the `search` for where the edge meets the surface is read
+/// first — a crossing of two curves all but tangent (a rim crossing a path near a fold of its
+/// contact) it settles where the sampled polish misses it — each of its roots taken onto the
+/// crossing nearest it (`onto`); the crossings are the reading alone where it is refused.
+fn on_known(c: &Curve,t: [f64;2],curves: &[Curve],touches: &[V],surface: &Surface,tol: f64,
+    search: impl FnOnce() -> Meets) -> Meets {
     let reach = ON_CURVE*tol;
     let domain = |g: &Curve| super::query::curve_domain(g)
         .unwrap_or(if matches!(g,Curve::Line {..}) { [f64::NEG_INFINITY,f64::INFINITY] } else { [0.,1.] });
@@ -2460,37 +2432,48 @@ fn on_known(c: &Curve,t: [f64;2],curves: &[Curve],touches: &[V],surface: &Surfac
             distance(g.point(g.inverse(p).clamp(g0,g1)),p) <= reach
         })
     };
-    if curves.iter().any(lies_along) { return Some(Meets::Along) }
+    if curves.iter().any(lies_along) { return Meets::Along }
+    // each crossing's parameter: those in closed form, then — after the search — those sampled
+    let (mut found,mut sampled): (Vec<f64>,Vec<&Curve>) = (Vec::new(),Vec::new());
+    for g in curves {
+        match super::query::curve_curve(c,t,g,domain(g),reach) {
+            Some(at) => found.extend(at.into_iter().map(|(s,_)| s)),
+            None => sampled.push(g),
+        }
+    }
+    let searched = if sampled.is_empty() { None } else {
+        match search() {
+            Meets::Refused(_) => None,
+            Meets::At(roots) if !roots.is_empty() => Some(roots),
+            meets => return meets,
+        }
+    };
+    for g in sampled {
+        // (a line no closed form reads against `c` is no stretch `crossings` can sample: its
+        // stretch the edge's shadow on it, and as much again either side)
+        let span = if matches!(g,Curve::Line {..}) {
+            let along: Vec<f64> = (0..=32).map(|k| g.inverse(c.point(t[0]+(t[1]-t[0])*k as f64/32.))).collect();
+            let (lo,hi) = (along.iter().copied().fold(f64::INFINITY,f64::min),along.iter().copied().fold(f64::NEG_INFINITY,f64::max));
+            let pad = 1.+(hi-lo);
+            [lo-pad,hi+pad]
+        } else { domain(g) };
+        found.extend(super::meeting::crossings(c,t,g,span,reach).into_iter().map(|(s,..)| s));
+    }
     let step = 64.*reach/c.speed().max(1e-300);
     let mut roots: Vec<(f64,bool)> = Vec::new();
     // (each root's point, and whether a crossing was read already: the two points within `reach`
     // of one another, #942 F6)
     let mut at: Vec<V> = Vec::new();
     let read = |at: &[V],x: V| at.iter().any(|&q| distance(q,x) <= reach);
-    for g in curves {
-        let found: Vec<f64> = match super::query::curve_curve(c,t,g,domain(g),reach) {
-            Some(at) => at.into_iter().map(|(s,_)| s).collect(),
-            None if !sampled => return None,
-            // (a line no closed form reads against `c` is no stretch `crossings` can sample)
-            None if matches!(g,Curve::Line {..}) => {
-                // (its stretch the edge's shadow on it, and as much again either side)
-                let along: Vec<f64> = (0..=32).map(|k| g.inverse(c.point(t[0]+(t[1]-t[0])*k as f64/32.))).collect();
-                let (lo,hi) = (along.iter().copied().fold(f64::INFINITY,f64::min),along.iter().copied().fold(f64::NEG_INFINITY,f64::max));
-                let pad = 1.+(hi-lo);
-                super::meeting::crossings(c,t,g,[lo-pad,hi+pad],reach).into_iter().map(|(s,..)| s).collect()
-            }
-            None => super::meeting::crossings(c,t,g,domain(g),reach).into_iter().map(|(s,..)| s).collect(),
+    for s in found {
+        let x = c.point(s);
+        if read(&at,x) { continue }
+        let touch = s-step > t[0] && s+step < t[1] && {
+            let (a,b) = (surface.implicit(c.point(s-step)),surface.implicit(c.point(s+step)));
+            (a < 0.) == (b < 0.)
         };
-        for s in found {
-            let x = c.point(s);
-            if read(&at,x) { continue }
-            let touch = s-step > t[0] && s+step < t[1] && {
-                let (a,b) = (surface.implicit(c.point(s-step)),surface.implicit(c.point(s+step)));
-                (a < 0.) == (b < 0.)
-            };
-            roots.push((s,touch));
-            at.push(x);
-        }
+        roots.push((s,touch));
+        at.push(x);
     }
     // (and where it passes through a point the two are given to touch at, #942 F3: a touch)
     for &p in touches {
@@ -2504,7 +2487,7 @@ fn on_known(c: &Curve,t: [f64;2],curves: &[Curve],touches: &[V],surface: &Surfac
         at.push(c.point(s));
     }
     roots.sort_by(|x,y| x.0.total_cmp(&y.0));
-    Some(Meets::At(roots))
+    Meets::At(match searched { Some(found) => onto(c,found,&roots,tol),None => roots })
 }
 
 /// **A search's roots taken onto the crossings `exact` read off a known meeting** (`on_known`):
