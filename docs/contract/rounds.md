@@ -963,7 +963,22 @@ the edge may stand inside. A ball any wider reaches inside the face — past an 
 round's contact — and is refused as larger than the face can hold, as before (rung 3: a ball
 rolling against the edge it overflows, or across the face beyond). `tests/brep.rs`'s
 `rounds_that_take_the_whole_of_a_face` is the gate (each against its closed form to 1e-9, and each
-one wider refused).
+one wider refused). **The band is the strip the ball's section sweeps** (#962's 7), between the run
+and the contact, never every point of the face as near the other's surface: that surface goes on
+past the other face and may come back near this one far from the ball. Each section's strip runs on
+the face from the contact — its point nearest the ball's centre — to the crease, where the run
+crosses the section's plane (`fillet::crease_at`, bisected on the edge's own parameter), and the
+distance from the centre rises along it: nought its rate at the contact, and growing while the
+section turns from the centre slower than the line from it, as on every face a ball rolls on (its
+curvature toward the ball under `1/r`, the strip less than a quarter turn of the corner). So the
+strip lies within the crease's distance of its centre, and a point of an edge farther than that
+from every station's centre — and than how far a centre and its crease move between two stations —
+is none of the band (`holds_ball`'s `far`); past the run's ends, where an end's face cuts the strip
+off, the tangent planes' corner (`corner_reach`) stands for the crease. An edge this let into the
+band wrongly would leave the piece crossing it, which the gate refuses. A vane whose side is an arc about a line 20 off a disc's axis, on the disc's crown, was
+refused as "larger than `disc.crown` can hold" for a 2 mm ball: the side's cylinder comes within the
+ball's radius of the disc's rim across the disc (`brep::a_band_is_the_strip_its_ball_sweeps_not_all_the_face_as_near_the_other`,
+on a plate, Pappus; `sphere_rounds::a_vane_whose_sides_are_about_another_axis_rolls_its_balls`).
 
 **A flat as wide as its cylinder** (brep-bench's chamfer/cylinder-rim-to-point): a chamfer's leg is
 a set like the offset it is read from (`fillet::Leg`) — face `k`'s surface met with the other's
@@ -989,6 +1004,43 @@ Refused by name: both faces shrinking to points, a shrunk face holding another e
 (the flat would take it), a loop winding round the shrunk face's surface, what the offset closes onto
 missing that surface or lying in it, a stretch of a loop (no stretch closing to a point is cut off
 yet), and a leg past the radius (`None`: no point stands that far in).
+
+**Rounds against a sphere** (#962's 7, `rounds/vane.sv`): a plane meets a sphere in a circle about
+the line through the sphere's centre square to the plane, so a vane's flat side filled into a
+disc's spherical crown is a `Ring` about that line — no special case: `body.circle` reads the edge's
+circle, and the sphere centred on its axis is a circle in the meridian — a torus's stretch kept
+within the planes of the vane's other sides, which lie along its axis (a spiric section each).
+Where two stretches meet at the vane's corner, each one's cap lies in the plane the other's torus
+touches round its contact circle; the Boolean reads the cap's edge against that torus off the
+plane's own meeting with it ([brep.md](brep.md)), where on `main` its search was refused at any
+radius of ball. A side that is an arc concentric with the crown is a ring about the disc's axis, an
+end through the crown's centre a stretch about the line square to it kept between the sides'
+cylinders; a side about another axis is rolled (`fillet::roll`), held by the strip its ball sweeps
+(above). `tests/sphere_rounds.rs` is the gate, each a drawing of no freedom against its closed form
+(the part to 1e-9, the fills' own to 1e-7 where a stretch's cap is fitted; a rolled fill to the
+quadrature of its meridians or its sections, 1e-6): the vane at radii 0.5 to 20.5 (and 21 moved
+out) — at 20, the near end's distance from the disc's axis, the end's fill touches the crown at its
+top, and past it runs over it — on crowns of R150 and R806 and dished ones of R797 and R150, off
+the axis and skew and mirrored and across it, a side's plane through the axis, with concentric
+sides rounded and chamfered, with eccentric sides, trimmed by a wedge whose slant meets the crown
+(its stretch about the line square to the slant, the sides' kept by it as a turn
+`β − π/2 + asin(d/ρ)`), and a boss on the crown and on a dished pocket's floor, on the axis and off
+it. A fill over the crown's top, or a side through the axis, puts an edge through the crown's pole
+along the meridian of its seam ([brep.md](brep.md): a half's point at a pole takes the half's own
+value of the collapsed parameter; a boss about the axis puts none there, its loops round the pole).
+**Faces thinner than the export's tolerance at a vane's corner are the set's own**: the side's fill
+meets the corner's upright edge at `z_s = √((R + r)² − x_e² − (s + r)²) − z_c`, the end's at
+`z_e = √((R + r)² − (x_e − r)² − s²) − z_c` (`x_e` the end's and `s` the side's distance from the
+crown's centre's line), and between them the end's fill's cap goes on beside the vane's side in one
+plane, a face of its own, which the end's ball's trace closes onto the edge at `z_e` as a cusp —
+0.741 µm across at `z_s` for the issue's vane, which exports saying "`part` holds 2 faces thinner
+than the export's 10.000 µm: the first, `far`, 763.758 nm across" (read off the fitted trace). On a
+flat disc both reach the edge `r` over it and the tip is a vertex
+(`sphere_rounds::a_vane_on_a_flat_disc_leaves_no_sliver`). Still refused: a flat vane's foot
+chamfered onto the crown, its ring of the conic's turn cut by the vane's end plane along its axis,
+as "a run cut off at its end: a shell of the arrangement is kept on one side of a sphere (`a`) and
+dropped on another", as on `main` (the plane's meeting with the conic's turn stands 3.7e-4 off the
+leg's circle there).
 
 **The closing case** (#197, `rust/examples/conrod/`): a forged rod, every round and chamfer a
 statement over the faces its solids gave it, built exactly (pockets drawn as prisms, so their walls

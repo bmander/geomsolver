@@ -1417,6 +1417,35 @@ impl<'a> Arrangement<'a> {
             let meets = at_its_ends(meets,c,e.t,surface,tol.max(e.tol));
             (meets,started.elapsed().as_secs_f64())
         });
+        // **an edge one face of which meets that surface in closed form, where the search cannot
+        // settle it** (#962): the edge lies in that face's surface, so it meets the other surface
+        // only on the two's meeting — where it crosses those curves, or all along one — whatever
+        // the other faces it bounds do. Where the face's surface touches the other along a curve
+        // the search reads a double root it cannot prove at the kernel's tolerance (a fill's cap
+        // in the plane of a vane's end, which the next fill's torus touches round a circle); the
+        // crossing of two curves in that face is no such root. And where a face the edge bounds
+        // lies on that very surface, the edge lies along it (a rolled fill's crease, a fitted
+        // meeting of a sphere and a cylinder, read against the cylinder a ring's cap lies on).
+        // (A closed form that meets in no curve is not read so: it leaves out a point the two
+        // touch at, which the edge may pass.)
+        let mut read = read;
+        for (k,&(s,other,i,fi,e,c)) in asked.iter().enumerate() {
+            if !matches!(read[k].0,Meets::Refused(_)) { continue }
+            let surface = &self.solids[other].faces[fi].surface;
+            let j = self.shared.index(surface,tol);
+            let own: Vec<usize> = bounded[s][i].iter().map(|&h| self.shared.index(&self.solids[s].faces[h].surface,tol)).collect();
+            if own.contains(&j) { read[k].0 = Meets::Along; continue }
+            for own in own {
+                let curves = match self.shared.meeting(own,j,tol) {
+                    Ssi::Same => { read[k].0 = Meets::Along; break }
+                    Ssi::Curves(cs) if !cs.is_empty() => cs,
+                    _ => continue,
+                };
+                let meets = on_given(c,e.t,&curves,&[],surface,tol.max(e.tol));
+                read[k].0 = at_its_ends(meets,c,e.t,surface,tol.max(e.tol));
+                break
+            }
+        }
         // (how many were read and what they cost all told, said before any is acted on: a refusal
         // among them ends the arrangement before its phases are said, #942 F4)
         if self.say.timing {
@@ -2417,10 +2446,13 @@ fn at_its_ends(meets: Meets,c: &Curve,t: [f64;2],surface: &Surface,tol: f64) -> 
 /// **Where an edge meets a surface its face's meeting with is given** (`Arrangement::crossings`):
 /// along it where it lies within `ON_CURVE` tolerances of one of `curves` all its stretch `t`; else
 /// at each of its crossings with them, a touch where the surface's signed distance keeps its sign
-/// a step either side along the edge.
+/// a step either side along the edge. Where both are lines or circles their crossings are read in
+/// closed form (`query::curve_curve`), a tangency among them (#962's 7: a rim in a plane, touching
+/// the line a wall touches that plane along); a meeting's line runs on without end.
 fn on_given(c: &Curve,t: [f64;2],curves: &[Curve],touches: &[V],surface: &Surface,tol: f64) -> Meets {
     let reach = ON_CURVE*tol;
-    let domain = |g: &Curve| super::query::curve_domain(g).unwrap_or([0.,1.]);
+    let domain = |g: &Curve| super::query::curve_domain(g)
+        .unwrap_or(if matches!(g,Curve::Line {..}) { [f64::NEG_INFINITY,f64::INFINITY] } else { [0.,1.] });
     let lies_along = |g: &Curve| {
         let [g0,g1] = domain(g);
         (0..=16).all(|k| {
@@ -2436,7 +2468,19 @@ fn on_given(c: &Curve,t: [f64;2],curves: &[Curve],touches: &[V],surface: &Surfac
     let mut at: Vec<V> = Vec::new();
     let read = |at: &[V],x: V| at.iter().any(|&q| distance(q,x) <= reach);
     for g in curves {
-        for (s,_,_) in super::meeting::crossings(c,t,g,domain(g),reach) {
+        let found: Vec<f64> = match super::query::curve_curve(c,t,g,domain(g),reach) {
+            Some(at) => at.into_iter().map(|(s,_)| s).collect(),
+            // (a line no closed form reads against `c` is no stretch `crossings` can sample)
+            None if matches!(g,Curve::Line {..}) => {
+                // (its stretch the edge's shadow on it, and as much again either side)
+                let along: Vec<f64> = (0..=32).map(|k| g.inverse(c.point(t[0]+(t[1]-t[0])*k as f64/32.))).collect();
+                let (lo,hi) = (along.iter().copied().fold(f64::INFINITY,f64::min),along.iter().copied().fold(f64::NEG_INFINITY,f64::max));
+                let pad = 1.+(hi-lo);
+                super::meeting::crossings(c,t,g,[lo-pad,hi+pad],reach).into_iter().map(|(s,..)| s).collect()
+            }
+            None => super::meeting::crossings(c,t,g,domain(g),reach).into_iter().map(|(s,..)| s).collect(),
+        };
+        for s in found {
             let x = c.point(s);
             if read(&at,x) { continue }
             let touch = s-step > t[0] && s+step < t[1] && {
@@ -3190,7 +3234,13 @@ fn uv_seeded(h: &Half,f: &Face,e: &WEdge,t: f64,p: impl FnOnce() -> V,seed: Uv) 
             let key = [ARRANGEMENT.load(std::sync::atomic::Ordering::Relaxed),f as *const Face as u64,
                 p[0].to_bits(),p[1].to_bits(),p[2].to_bits(),near[0].to_bits(),near[1].to_bits()];
             if let Some(uv) = INVERTED.with(|m| m.borrow().get(&key).copied()) { return uv }
-            let uv = unwrap(f.surface.inverse_near(p,near),near,f.surface.periods());
+            let mut uv = unwrap(f.surface.inverse_near(p,near),near,f.surface.periods());
+            // (at a pole the chart collapses along one parameter, which the surface's inverse
+            // leaves to its own choice — a sphere's `u` read there as 0 or 2π, whatever the half
+            // arriving runs along: the half's own value there, as its ends record it, #962's 7. A
+            // meridian through the pole along the seam's half-plane was drawn from 2π back to π
+            // across the piece, and the piece read as a hole)
+            if let Some(k) = super::topo::pole_at(&f.surface,uv,1e-12*(1.+crate::util::space::norm(p))) { uv[k] = near[k]; }
             INVERTED.with(|m| {
                 let mut m = m.borrow_mut();
                 if m.len() >= INVERTED_MOST { m.clear() }
