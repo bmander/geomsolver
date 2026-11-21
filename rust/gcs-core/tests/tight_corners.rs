@@ -476,47 +476,62 @@ const L: [[f64; 2]; 6] = [[-12.0, -11.0], [12.0, -11.0], [12.0, -1.0], [0.0, -1.
 /// The L as wide again five times over, its corners 5.
 const L5: [[f64; 2]; 6] = [[-30.0, -20.0], [30.0, -20.0], [30.0, 0.0], [0.0, 0.0], [0.0, 20.0], [-30.0, 20.0]];
 
+/// Each `(outline, corners, r)` its tray's floor rounded `r`: built, held to its field, the closed
+/// form's volume, and a quarter ball (or a corner's turn of one) at each convex corner as tight as
+/// the ball, a torus at the rest.
+fn trays_rounded(cases: &[(&[[f64; 2]], Vec<f64>, f64)]) {
+    for (outline, corners, r) in cases {
+        let b = exported(&solved(&tray(outline, corners, &format!("round(r: {r}mm)"))), "plate");
+        close(props::volume(&b), tray_volume(outline, corners, *r, false));
+        let n = outline.len();
+        let convex = |k: usize| {
+            let ([x0, y0], [x1, y1], [x2, y2]) = (outline[(k + n - 1) % n], outline[k], outline[(k + 1) % n]);
+            (x1 - x0) * (y2 - y1) - (y1 - y0) * (x2 - x1) > 0.0
+        };
+        let balls = (0..n).filter(|&k| convex(k) && corners[k] == *r).count();
+        assert_eq!(kinds(&b).get("sphere").copied().unwrap_or(0), balls, "{outline:?} {corners:?} r {r}");
+    }
+}
+
 /// **A pocket that is no rectangle, rounded as tight as its corners** (#994, fixtures 118 and 124):
 /// its walls' chain turns both ways at a reflex corner, so it bulges toward the ball no one way and
 /// the field reads the ball's centres through the nearest face (`BodyFaces::bulging`) — where an
 /// arc's offset closes onto its axis, the walls' offsets meet there, and the nearest face turns
 /// from one wall to the other.  Each face of the chain is read besides (`conditions::faces_apart`),
 /// so the projection sees both walls and settles on the axis: the convex corners' quarter balls
-/// are built.  The issue's L with corners of 1 and a reflex corner of 3, and of 1 too, rounded 1
-/// and 0.9; the L five times the size rounded 5 and 4.9; each the closed form's volume.
+/// are built.  The issue's L, its corners 1 and its reflex corner 3, rounded 1 and a hair short at
+/// 0.9; its reflex corner 1 too, rounded 1.
 #[test]
 fn an_l_pockets_floor_rounded_to_its_corners_radius_is_built() {
-    let mut reflex3 = [1.0; 6];
+    let mut reflex3 = vec![1.0; 6];
     reflex3[3] = 3.0;
-    for (outline, corners, r) in [(&L, reflex3, 1.0), (&L, reflex3, 0.9), (&L, [1.0; 6], 1.0), (&L5, [5.0; 6], 5.0),
-        (&L5, [5.0; 6], 4.9)] {
-        let b = exported(&solved(&tray(outline, &corners, &format!("round(r: {r}mm)"))), "plate");
-        close(props::volume(&b), tray_volume(outline, &corners, r, false));
-        // a quarter ball at each convex corner as tight as the ball, a torus at the rest
-        let balls = corners.iter().enumerate().filter(|&(k, &c)| k != 3 && c == r).count();
-        assert_eq!(kinds(&b).get("sphere").copied().unwrap_or(0), balls, "{corners:?} r {r}");
-    }
+    trays_rounded(&[(&L, reflex3.clone(), 1.0), (&L, reflex3, 0.9), (&L, vec![1.0; 6], 1.0)]);
 }
 
-/// **Corners other than a right angle in a pocket turning both ways**: six walls, one corner
-/// reflex and the others turning 56°, 90° and the rest, each rounded 5, the floor rounded 5 and
-/// 4.9; a chevron of five the same.  A regular hexagon, convex, and a triangle the same, each
-/// read face by face as a convex chain already.  Each the closed form's volume.
+/// **The L five times the size**, every corner 5 (the reflex one too), its floor rounded 5 and
+/// 4.9.
 #[test]
-fn a_pocket_turning_both_ways_at_any_angle_is_rounded_to_its_corners() {
-    let notched = [[-30.0, -20.0], [30.0, -20.0], [30.0, 20.0], [10.0, 20.0], [0.0, 5.0], [-30.0, 20.0]];
-    let chevron = [[-30.0, -20.0], [30.0, -20.0], [30.0, 20.0], [0.0, 0.0], [-30.0, 20.0]];
+fn a_larger_l_pockets_floor_rounded_to_its_corners_radius_is_built() {
+    trays_rounded(&[(&L5, vec![5.0; 6], 5.0), (&L5, vec![5.0; 6], 4.9)]);
+}
+
+/// **Six walls at other angles, turning both ways** (fixture 124's class): one corner reflex, the
+/// others turning 56°, 90° and 117°, each rounded 5, the floor rounded 5 and 4.9.
+#[test]
+fn a_pocket_of_six_walls_turning_both_ways_is_rounded_to_its_corners() {
+    let notched: [[f64; 2]; 6] = [[-30.0, -20.0], [30.0, -20.0], [30.0, 20.0], [10.0, 20.0], [0.0, 5.0], [-30.0, 20.0]];
+    trays_rounded(&[(&notched, vec![5.0; 6], 5.0), (&notched, vec![5.0; 6], 4.9)]);
+}
+
+/// **A chevron**, five walls turning both ways, its corners 5 and its floor rounded 5; and a regular
+/// hexagon and a triangle the same, convex, each read face by face as a convex chain already.
+#[test]
+fn a_chevron_a_hexagon_and_a_triangle_are_rounded_to_their_corners() {
+    let chevron: [[f64; 2]; 5] = [[-30.0, -20.0], [30.0, -20.0], [30.0, 20.0], [0.0, 0.0], [-30.0, 20.0]];
     let h = 26.0;
     let hexagon = [[-30.0, 0.0], [-15.0, -h], [15.0, -h], [30.0, 0.0], [15.0, h], [-15.0, h]];
     let triangle = [[-30.0, -20.0], [30.0, -20.0], [0.0, 25.0]];
-    let outlines: [&[[f64; 2]]; 4] = [&notched, &chevron, &hexagon, &triangle];
-    for outline in outlines {
-        let corners = vec![5.0; outline.len()];
-        for r in [4.9, 5.0] {
-            let b = exported(&solved(&tray(outline, &corners, &format!("round(r: {r}mm)"))), "plate");
-            close(props::volume(&b), tray_volume(outline, &corners, r, false));
-        }
-    }
+    trays_rounded(&[(&chevron, vec![5.0; 5], 5.0), (&hexagon, vec![5.0; 6], 5.0), (&triangle, vec![5.0; 3], 5.0)]);
 }
 
 /// A plate 120 × 80 × 10 with a boss standing 20 on it, the polygon `outline` its corners rounded
