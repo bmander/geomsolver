@@ -60,7 +60,8 @@ use super::context::Context;
 use super::{Given,Refusal,Why};
 use crate::geom::Uv;
 use crate::topo::{unwrap,Brep,Coedge,Edge,EdgeCurve,Pcurve};
-use crate::util::space::{distance,norm};
+use crate::util::space::{distance,dot,norm,sub};
+use crate::geom::V;
 
 /// A boundary that is no solid's: why, the face or the edge of it that witnesses it (by its
 /// index in the `Brep`), and what there is to say.
@@ -78,9 +79,6 @@ impl Unsound {
     fn edge(ei: usize,msg: String) -> Unsound { Unsound {why:Why::Unsound,face:None,edge:Some(ei),msg} }
 }
 
-/// The most an edge's measured tolerance may be of its length: past half, its tube is wider than
-/// it is long, and its ends no longer tell its way.
-pub const THIN: f64 = 0.5;
 /// The most any tolerance may be of the boundary's size (the diagonal of its box): a gap of a
 /// thousandth of the part is a shape the file draws, not a tolerance it keeps.
 pub const LOOSE: f64 = 1e-3;
@@ -95,13 +93,14 @@ const NONE: u32 = u32::MAX;
 
 /// Whether `b`, read in `context`, is a solid's boundary.
 pub fn sound(b: &Brep,context: &Context) -> Result<(),Unsound> {
+    if b.faces.is_empty() { return Err(Unsound {why:Why::Open,face:None,edge:None,msg:"the boundary has no faces: it bounds nothing".into()}) }
     indexed(b)?;
     let size = extent(b);
     let floor = crate::geom::tolerance(size);
-    edges(b,context,size,floor)?;
-    let faces = crate::util::par::indices(b.faces.len(),|fi| face(b,fi,context,floor));
+    edges(b,context,size)?;
+    let faces = crate::util::par::indices(b.faces.len(),|fi| face(b,fi,floor));
     for r in faces { r? }
-    shells(b,size,floor)
+    shells(b,floor)
 }
 
 /// Every index in range and every number finite, so nothing after reads past an array or loops on
@@ -141,36 +140,16 @@ fn stated(x: f64,context: &Context) -> String {
     }
 }
 
-/// An edge's length, the sum of its chords at its curve's breaks and sixteen even steps: never
-/// more than its length.
-fn length(e: &Edge) -> f64 {
-    let EdgeCurve::Curve(c) = &e.curve else { return 0. };
-    let mut ts: Vec<f64> = (0..=16).map(|k| e.t[0]+(e.t[1]-e.t[0])*k as f64/16.).collect();
-    ts.extend(c.breaks(e.t));
-    ts.sort_by(f64::total_cmp);
-    ts.windows(2).map(|w| distance(c.point(w[0]),c.point(w[1]))).sum()
-}
-
-/// Each edge's tolerance against its length and the boundary's size, its length against the
-/// floor, and its vertices apart by more than their tolerances; each vertex's tolerance against
-/// the boundary's size.
-fn edges(b: &Brep,context: &Context,size: f64,floor: f64) -> Result<(),Unsound> {
+/// Each edge's and each vertex's tolerance against the boundary's size. (An edge's tolerance
+/// against its own length, or two vertices within their tolerances of each other, are a tolerant
+/// writer's habits, not a solid's defects: the file says which vertex is which.)
+fn edges(b: &Brep,context: &Context,size: f64) -> Result<(),Unsound> {
     let loose = LOOSE*size;
     let found = crate::util::par::indices(b.edges.len(),|ei| -> Result<(),Unsound> {
         let e = &b.edges[ei];
         if matches!(e.curve,EdgeCurve::Degenerate) { return Ok(()) }
         if e.tol > loose {
             return Err(Unsound::edge(ei,format!("edge {ei} stands off its faces by {}: more than {LOOSE:e} of the solid's size {size:e} mm",stated(e.tol,context))))
-        }
-        let len = length(e);
-        if !(len > floor) { return Err(Unsound::edge(ei,format!("edge {ei} ({}) has no length ({len:e} mm)",e.curve.kind()))) }
-        if e.tol > THIN*len {
-            return Err(Unsound::edge(ei,format!("edge {ei}'s tolerance {} is not small against its length {len:e} mm",stated(e.tol,context))))
-        }
-        let [a,z] = e.v.map(|v| &b.vertices[v as usize]);
-        if e.v[0] != e.v[1] && distance(a.p,z.p) <= a.tol+z.tol+floor {
-            return Err(Unsound::edge(ei,format!("edge {ei}'s vertices {} and {} stand {:e} mm apart, within their tolerances ({} and {})",e.v[0],e.v[1],
-                distance(a.p,z.p),stated(a.tol,context),stated(z.tol,context))))
         }
         Ok(())
     });
@@ -185,41 +164,17 @@ fn edges(b: &Brep,context: &Context,size: f64,floor: f64) -> Result<(),Unsound> 
     Ok(())
 }
 
-/// One face held to its rules: its vertices apart, its loops simple, apart and nested as its sense
-/// says, and of some area.
-fn face(b: &Brep,fi: usize,context: &Context,floor: f64) -> Result<(),Unsound> {
+/// One face held to its rules: its loops crossing nowhere deeper than their tolerance, nested as
+/// its sense says, of some area, and apart from their images a period along.
+fn face(b: &Brep,fi: usize,floor: f64) -> Result<(),Unsound> {
     let f = &b.faces[fi];
     if f.loops.is_empty() || f.loops.iter().any(Vec::is_empty) { return Ok(()) }
-    vertices_apart(b,fi,context,floor)?;
     let mut d = Drawn::new(b,fi,floor)?;
-    d.wraps()?;
     d.passages()?;
-    d.crossings()?;
+    d.crossings(None)?;
     d.area()?;
-    d.holes()
-}
-
-/// No two vertices of face `fi` within each other's tolerances.
-fn vertices_apart(b: &Brep,fi: usize,context: &Context,floor: f64) -> Result<(),Unsound> {
-    let f = &b.faces[fi];
-    let mut vs: Vec<u32> = f.loops.iter().flatten().flat_map(|c| b.edges[c.edge as usize].v).collect();
-    vs.sort_unstable();
-    vs.dedup();
-    let reach = vs.iter().map(|&v| b.vertices[v as usize].tol).fold(0.,f64::max)*2.+floor;
-    vs.sort_by(|&x,&y| b.vertices[x as usize].p[0].total_cmp(&b.vertices[y as usize].p[0]).then(x.cmp(&y)));
-    for (i,&x) in vs.iter().enumerate() {
-        let a = &b.vertices[x as usize];
-        for &y in &vs[i+1..] {
-            let z = &b.vertices[y as usize];
-            if z.p[0]-a.p[0] > reach { break }
-            let d = distance(a.p,z.p);
-            if d <= a.tol+z.tol+floor {
-                return Err(Unsound::face(fi,format!("face {fi}'s vertices {x} and {y} stand {d:e} mm apart, within their tolerances ({} and {})",
-                    stated(a.tol,context),stated(z.tol,context))))
-            }
-        }
-    }
-    Ok(())
+    d.holes()?;
+    d.turns()
 }
 
 /// One use of an edge read in its face's parameters along its own way, `s` from 0 at its start to
@@ -253,8 +208,20 @@ struct Drawn<'a> {
     corners: Vec<[(u32,Uv);2]>,
     /// The tongues read (`tongue`), by joint and the two runs.
     tongues: std::collections::BTreeMap<(u32,u32,u32),f64>,
+    /// Each run past the face's own (`turns`): the run it is the image of, and how far along.
+    copies: Vec<(u32,Uv)>,
+    /// Each loop's corners: the first's joint, and how many.
+    rings: Vec<(u32,u32)>,
 }
 
+/// How far `p` is from the segment `a b` in space.
+fn segment_distance(p: V,a: V,b: V) -> f64 {
+    let d = sub(b,a);
+    let l = dot(d,d);
+    if !(l > 0.) { return distance(p,a) }
+    let t = (dot(sub(p,a),d)/l).clamp(0.,1.);
+    distance(p,[a[0]+t*d[0],a[1]+t*d[1],a[2]+t*d[2]])
+}
 fn dist(a: Uv,b: Uv) -> f64 { (a[0]-b[0]).hypot(a[1]-b[1]) }
 fn cross(o: Uv,a: Uv,b: Uv) -> f64 { (a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]) }
 /// How far `p` is from the segment `a b`.
@@ -287,7 +254,7 @@ fn at_uv(fi: usize,what: &str,uv: Uv) -> Unsound { Unsound::face(fi,format!("fac
 impl<'a> Drawn<'a> {
     fn new(b: &'a Brep,fi: usize,floor: f64) -> Result<Drawn<'a>,Unsound> {
         let f = &b.faces[fi];
-        let mut d = Drawn {b,fi,runs:Vec::new(),pieces:Vec::new(),loops:Vec::new(),joints:Vec::new(),floor,fastest:0.,steps:0,corners:Vec::new(),tongues:Default::default()};
+        let mut d = Drawn {b,fi,runs:Vec::new(),pieces:Vec::new(),loops:Vec::new(),joints:Vec::new(),floor,fastest:0.,steps:0,corners:Vec::new(),tongues:Default::default(),copies:Vec::new(),rings:Vec::new()};
         let mut centre = [0.;2];
         for (li,l) in f.loops.iter().enumerate() {
             let start = d.pieces.len();
@@ -295,6 +262,7 @@ impl<'a> Drawn<'a> {
             let corner = d.joints.len() as u32;
             d.joints.extend(l.iter().map(|c| b.ends(c)[1]));
             let n = l.len() as u32;
+            d.rings.push((corner,n));
             let mut shift = [0.;2];
             for (k,c) in l.iter().enumerate() {
                 let e = &b.edges[c.edge as usize];
@@ -398,6 +366,41 @@ impl<'a> Drawn<'a> {
             }
             laid.push(p);
         }
+        // a piece whose chord spans over half a period, whose middle stands near one end of its
+        // chord or which no halving flattened: the use may leap there
+        if !self.runs[r].straight {
+            let periods = self.b.faces[self.fi].surface.periods();
+            for p in &laid {
+                let (d,l) = ([p.p[1][0]-p.p[0][0],p.p[1][1]-p.p[0][1]],p.len());
+                let along = if l > 0. { ((p.mid[0]-p.p[0][0])*d[0]+(p.mid[1]-p.p[0][1])*d[1])/(l*l) } else { 0.5 };
+                let wide = (0..2).any(|k| periods[k].is_some_and(|t| d[k].abs() > t/2.));
+                if !(wide || p.sag > l/16. || !(along > 0.125 && along < 0.875)) { continue }
+                if let Some((s,from,to)) = self.leap(p) {
+                    let surface = &self.b.faces[self.fi].surface;
+                    let (by,tau) = (dist(from,to),self.runs[r].tau);
+                    let apart = distance(surface.point(from),surface.point(to));
+                    let period = (0..2).find(|&k| periods[k].is_some_and(|t| ((to[k]-from[k]).abs()/t-1.).abs() < 1e-3));
+                    // how far the surface's greater speed carries the leap, and whether it
+                    // collapses there (a pole, a spline sheet's collapsed row)
+                    let (mut fast,mut least) = (0f64,f64::INFINITY);
+                    for x in [from,[(from[0]+to[0])/2.,(from[1]+to[1])/2.],to] {
+                        let (_,su,sv) = surface.d1(x);
+                        let f = norm(su).max(norm(sv));
+                        fast = fast.max(f);
+                        least = least.min(norm(crate::util::space::cross(su,sv))/(f*f));
+                    }
+                    let how = if let Some(k) = period { format!("a period of its {}",["u","v"][k]) }
+                        else if apart > 2.*tau { format!("{apart:e} mm in space, past twice its tolerance") }
+                        // (within the tolerance in space and no wider in the parameters than
+                        // `check` lets a corner's two ends stand apart: a tolerant corner's slop)
+                        else if by <= 1e-3_f64.max(2.*tau/fast) { continue }
+                        else if least <= 1e-3 { "along a pole, one point in space: the use's end read on another branch of the pole than its curve".to_string() }
+                        else { format!("{apart:e} mm in space but {:e} as the surface's greater speed carries it",by*fast) };
+                    return Err(at_uv(self.fi,&format!("edge {}'s curve in its parameters leaps {by:e} ({how}) at {s:.6} of its use's way: it is no one curve there",
+                        self.runs[r].c.edge),from))
+                }
+            }
+        }
         // the use's ends its corners, each break between two pieces a joint of their own
         let n = laid.len();
         for k in 0..n {
@@ -408,6 +411,24 @@ impl<'a> Drawn<'a> {
         Ok(())
     }
 
+    /// **Where a use leaps**: piece `p`'s half of the longer chord followed down sixty halvings;
+    /// a curve that is one curve there spans less and less, a leap (an inverse curve's branch
+    /// changing mid-edge, its end read on another branch of a pole than its curve) spans as much
+    /// at every scale. The `s` and the parameters either side, where the chord still spans more
+    /// than the tolerance at the end.
+    fn leap(&self,p: &Piece) -> Option<(f64,Uv,Uv)> {
+        let r = p.run as usize;
+        let (mut s,mut a,mut z) = (p.s,p.p[0],p.p[1]);
+        for _ in 0..60 {
+            let m = (s[0]+s[1])/2.;
+            if !(m > s[0] && m < s[1]) { break }
+            let x = self.raw_at(r,m);
+            if !x.iter().all(|v| v.is_finite()) { return None }
+            if dist(a,x) >= dist(x,z) { s[1] = m; z = x } else { s[0] = m; a = x }
+        }
+        (dist(a,z) > self.tol(p,p)).then_some(((s[0]+s[1])/2.,a,z))
+    }
+
     /// A new joint at `vertex`.
     fn joint(&mut self,vertex: u32) -> u32 { self.joints.push(vertex); (self.joints.len()-1) as u32 }
 
@@ -416,17 +437,24 @@ impl<'a> Drawn<'a> {
     fn merge(&mut self) {
         // each corner's place: the end of the piece arriving there
         let mut corners: Vec<(u32,u32,Uv)> = Vec::new();
+        let mut seen = vec![false;self.joints.len()];
         for p in &self.pieces {
             let j = p.joint[1];
-            if self.joints[j as usize] != NONE && !corners.iter().any(|c| c.1 == j) { corners.push((self.joints[j as usize],j,p.p[1])); }
+            if self.joints[j as usize] != NONE && !seen[j as usize] { seen[j as usize] = true; corners.push((self.joints[j as usize],j,p.p[1])); }
         }
+        // two corners one use apart along a loop (an edge closing on its vertex, a pole's
+        // degenerate edge) are two places of it, never a loop touching itself
+        let adjacent = |a: u32,z: u32| self.rings.iter().any(|&(base,n)| {
+            let (a,z) = (a.wrapping_sub(base),z.wrapping_sub(base));
+            a < n && z < n && ((a+1)%n == z || (z+1)%n == a)
+        });
         corners.sort_by(|a,b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
         let mut alias: Vec<u32> = (0..self.joints.len() as u32).collect();
         for i in 0..corners.len() {
             for k in i+1..corners.len() {
                 if corners[k].0 != corners[i].0 { break }
                 let (a,z) = (corners[i].2,corners[k].2);
-                if (a[0]-z[0]).abs().max((a[1]-z[1]).abs()) <= 1e-3 && alias[corners[k].1 as usize] == corners[k].1 {
+                if (a[0]-z[0]).abs().max((a[1]-z[1]).abs()) <= 1e-3 && alias[corners[k].1 as usize] == corners[k].1 && !adjacent(corners[i].1,corners[k].1) {
                     alias[corners[k].1 as usize] = alias[corners[i].1 as usize];
                 }
             }
@@ -442,20 +470,52 @@ impl<'a> Drawn<'a> {
         tau/if speed > 0. { speed } else if self.fastest > 0. { self.fastest } else { 1. }
     }
 
-    /// No loop reaching farther along a period than the period: it would overlap itself.
-    fn wraps(&self) -> Result<(),Unsound> {
-        let f = &self.b.faces[self.fi];
-        for (k,period) in f.surface.periods().into_iter().enumerate() {
+    /// **A face reaching farther along a period than the period** (a thread's band wound round
+    /// its cylinder, a helix's strip) overlaps itself only where its boundary meets its own
+    /// image a whole number of periods along: those images are laid beside it (`copies`) and read
+    /// against it as its loops are against each other (`crossings`), a crossing deeper than the
+    /// tolerance refused. (A region can never lie inside its own translate, so a boundary apart
+    /// from its images is a face that does not overlap itself.)
+    fn turns(&mut self) -> Result<(),Unsound> {
+        let periods = self.b.faces[self.fi].surface.periods();
+        let mut reach = [0usize;2];
+        for (k,period) in periods.into_iter().enumerate() {
             let Some(period) = period else { continue };
-            for (li,r) in self.loops.iter().enumerate() {
-                let (lo,hi) = self.pieces[r.clone()].iter().flat_map(|p| [p.p[0],p.mid]).fold((f64::INFINITY,f64::NEG_INFINITY),|(lo,hi),q| (lo.min(q[k]),hi.max(q[k])));
-                let slack = self.pieces[r.clone()].iter().map(|p| SAFE*p.sag+self.tol(p,p)).fold(0.,f64::max);
-                if hi-lo > period+slack {
-                    return Err(Unsound::face(self.fi,format!("face {}: loop {li} reaches {:e} along a period of {period:e}: it overlaps itself",self.fi,hi-lo)))
+            let (lo,hi) = self.pieces.iter().flat_map(|p| [p.p[0],p.mid]).fold((f64::INFINITY,f64::NEG_INFINITY),|(lo,hi),q| (lo.min(q[k]),hi.max(q[k])));
+            let slack = self.pieces.iter().map(|p| SAFE*p.sag+self.tol(p,p)).fold(0.,f64::max);
+            let span = hi-lo+slack;
+            if span > period {
+                // (a loop reaching a thousand periods is no face read right: said so, not read)
+                if !(span < 1e3*period) {
+                    return Err(Unsound::face(self.fi,format!("face {}: its boundary reaches {:e} along a period of {period:e}",self.fi,hi-lo)))
                 }
+                reach[k] = (span/period).ceil() as usize;
             }
         }
-        Ok(())
+        if reach == [0,0] { return Ok(()) }
+        let p = periods.map(|x| x.unwrap_or(0.));
+        let (ku,kv) = (reach[0] as i64,reach[1] as i64);
+        let shifts: Vec<Uv> = (-ku..=ku).flat_map(|i| (-kv..=kv).map(move |j| (i,j))).filter(|&(i,j)| i > 0 || (i == 0 && j > 0))
+            .map(|(i,j)| [i as f64*p[0],j as f64*p[1]]).collect();
+        let n = self.pieces.len();
+        let runs = self.runs.len();
+        for d in &shifts {
+            let at = self.runs.len() as u32;
+            for r in 0..runs {
+                let run = &self.runs[r];
+                let moved = Run {c:run.c,e:run.e,straight:run.straight,ends:run.ends.map(|q| [q[0]+d[0],q[1]+d[1]]),shift:[run.shift[0]+d[0],run.shift[1]+d[1]],tau:run.tau};
+                self.runs.push(moved);
+                self.copies.push((r as u32,*d));
+                self.corners.push([(NONE,[0.;2]);2]);
+            }
+            for i in 0..n {
+                let q = self.pieces[i];
+                let m = |x: Uv| [x[0]+d[0],x[1]+d[1]];
+                self.pieces.push(Piece {run:at+q.run,p:q.p.map(m),mid:m(q.mid),joint:[NONE;2],..q});
+            }
+        }
+        // each image read against the face itself, never against another image
+        self.crossings(Some(n))
     }
 
     /// At a corner the boundary passes more than once, the passages' ways in and out not
@@ -496,7 +556,8 @@ impl<'a> Drawn<'a> {
 
     /// Every two pieces whose boxes meet read against each other (`resolve`), the boxes swept
     /// along `u`.
-    fn crossings(&mut self) -> Result<(),Unsound> {
+    /// With `images`, only pieces before it against pieces from it on (`turns`).
+    fn crossings(&mut self,images: Option<usize>) -> Result<(),Unsound> {
         let grown = |d: &Drawn,p: &Piece| SAFE*p.sag+d.tol(p,p);
         let mut order: Vec<(f64,usize)> = self.pieces.iter().enumerate().map(|(i,p)| (p.p[0][0].min(p.p[1][0])-grown(self,p),i)).collect();
         order.sort_by(|a,b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
@@ -507,6 +568,7 @@ impl<'a> Drawn<'a> {
             let g = grown(self,&p);
             let (vlo,vhi) = (p.p[0][1].min(p.p[1][1])-g,p.p[0][1].max(p.p[1][1])+g);
             for k in 0..active.len() {
+                if images.is_some_and(|n| (i < n) == (active[k].1 < n)) { continue }
                 let q = self.pieces[active[k].1];
                 let h = grown(self,&q);
                 if q.p[0][1].min(q.p[1][1])-h > vhi || q.p[0][1].max(q.p[1][1])+h < vlo { continue }
@@ -548,14 +610,16 @@ impl<'a> Drawn<'a> {
                 if let Some(r) = corner { if p.len()+SAFE*p.sag <= r && q.len()+SAFE*q.sag <= r { continue } }
                 if corner.is_none() {
                     if p.sag.max(q.sag)*SAFE <= tol/8. && gap <= tol*1.125+m {
-                        if crosses(&p,&q,0.) { return Err(at_uv(self.fi,&self.say("crosses",&p,&q),p.p[0])) }
-                        return Err(at_uv(self.fi,&format!("{}: within the tolerance of each other ({tol:e} in its parameters), away from any vertex they share",
-                            self.say("touches",&p,&q)),p.p[0]))
+                        // within the tolerance of each other: a touch, which a tolerant boundary
+                        // makes; refused only where it is a crossing reaching past the tolerance
+                        // on either side (`deep`)
+                        if crosses(&p,&q,0.) { self.crossed(&p,&q,tol)? }
+                        continue
                     }
-                    if crosses(&p,&q,m) { return Err(at_uv(self.fi,&self.say("crosses",&p,&q),p.p[0])) }
+                    if crosses(&p,&q,m+tol) { self.crossed(&p,&q,tol)? }
                 }
             }
-            if shared.is_some() && crosses(&p,&q,m) { return Err(at_uv(self.fi,&self.say("crosses",&p,&q),p.p[0])) }
+            if shared.is_some() && crosses(&p,&q,m+tol) { self.crossed(&p,&q,tol)? }
             if depth >= DEEPEST {
                 return Err(at_uv(self.fi,&format!("{}: not read apart within {DEEPEST} halvings",self.say("may touch",&p,&q)),p.p[0]))
             }
@@ -643,6 +707,154 @@ impl<'a> Drawn<'a> {
         while first > 0 && sep(first-1) <= tol { first -= 1; }
         if first == 0 || first == n { return 0. }
         2.*dist(pa[(first-1).min(pa.len()-1)],x).max(dist(pb[(first-1).min(pb.len()-1)],y))
+    }
+
+    /// Two pieces whose chords cross refused where they cross deeper than their tolerance
+    /// (`deep`).
+    fn crossed(&self,p: &Piece,q: &Piece,tol: f64) -> Result<(),Unsound> {
+        match self.deep(p,q,tol) {
+            Some((r,by)) => Err(at_uv(self.fi,&format!("{}: each runs on {by:e} mm past the other within {r:e} of where they cross (in its parameters), more than their tolerance",
+                self.say("crosses",p,q)),p.p[0])),
+            None => Ok(()),
+        }
+    }
+
+    /// **Whether two pieces whose chords cross within their tolerance cross deeper than it**: the
+    /// radius about the crossing at which it is seen to, if any. Each loop is followed both ways
+    /// from the crossing to the radius `r` (four tolerances, doubled up to ten times), as the
+    /// polyline of its pieces' ends: once each arc's two ends stand farther from the other arc than
+    /// the tolerance (and the polylines' sag), the arcs cross deeper than the tolerance exactly
+    /// where their polylines cross an odd number of times — a curve passing through the other —
+    /// and only touch where it is even. Arcs never so far apart run within the tolerance of each
+    /// other: a touch. Two points of one loop nearer along it than four tolerances are its own
+    /// neighbourhood (a pcurve wiggling within its tolerance), never a crossing; a loop's arcs
+    /// are followed no farther than half the way between them, so they never overlap.
+    fn deep(&self,p: &Piece,q: &Piece,tol: f64) -> Option<(f64,f64)> {
+        let ([a,b],[c,d]) = (p.p,q.p);
+        let den = cross([0.;2],[b[0]-a[0],b[1]-a[1]],[d[0]-c[0],d[1]-c[1]]);
+        if !(den != 0.) { return None }
+        let lp = cross(c,d,a)/(cross(c,d,a)-cross(c,d,b));
+        let lq = cross(a,b,c)/(cross(a,b,c)-cross(a,b,d));
+        let ((x,dx),(y,dy)) = (self.locate(p,lp)?,self.locate(q,lq)?);
+        let tau = self.runs[p.run as usize].tau.max(self.runs[q.run as usize].tau);
+        let speed = p.speed.max(q.speed);
+        let mut cap = f64::INFINITY;
+        if x.0 == y.0 && dx == dy {
+            let (at,whole) = self.along(x.0);
+            let (u,w) = (self.position(&x,&at),self.position(&y,&at));
+            let sep = (u-w).abs().min(whole-(u-w).abs());
+            if sep <= 4.*tol { return None }
+            cap = sep/2.;
+        }
+        let mut r = 4.*tol;
+        for _ in 0..=10 {
+            let r_ = r.min(cap);
+            let (Some((pa,ma)),Some((pb,mb))) = (self.arc(&x,r_),self.arc(&y,r_)) else { return None };
+            let moved = |a: Vec<Uv>,d: Uv| -> Vec<Uv> { a.into_iter().map(|q| [q[0]+d[0],q[1]+d[1]]).collect() };
+            let (pa,pb) = (moved(pa,dx),moved(pb,dy));
+            // (how far apart, read in space: a tolerance is a distance there, and a surface's two
+            // speeds may differ by any factor)
+            let far = tau+ma.max(mb)*speed;
+            let surface = &self.b.faces[self.fi].surface;
+            let on = |a: &[Uv]| -> Vec<V> { a.iter().map(|&q| surface.point(q)).collect() };
+            let (sa,sb) = (on(&pa),on(&pb));
+            let off = |e: V,poly: &[V]| poly.windows(2).map(|s| segment_distance(e,s[0],s[1])).fold(f64::INFINITY,f64::min);
+            let ends = |a: &[V]| [a[0],a[a.len()-1]];
+            let by = ends(&sa).iter().map(|&e| off(e,&sb)).chain(ends(&sb).iter().map(|&e| off(e,&sa))).fold(f64::INFINITY,f64::min);
+            if by > far {
+                let mut n = 0;
+                for s in pa.windows(2) {
+                    for t in pb.windows(2) {
+                        let (x,y,z,w) = (cross(s[0],s[1],t[0]),cross(s[0],s[1],t[1]),cross(t[0],t[1],s[0]),cross(t[0],t[1],s[1]));
+                        if x*y < 0. && z*w < 0. { n += 1; }
+                    }
+                }
+                return if n%2 == 1 { Some((r_,by)) } else { None }
+            }
+            if r_ >= cap { return None }
+            r *= 2.;
+        }
+        None
+    }
+
+    /// Where along its chord `l` of the way piece `p` is: its loop, the index there of the piece
+    /// laid that holds it, and its run's `s` — and, for a piece of an image (`turns`), how far
+    /// the image is moved from the face's own run.
+    fn locate(&self,p: &Piece,l: f64) -> Option<((usize,usize,f64),Uv)> {
+        let s = p.s[0]+l.clamp(0.,1.)*(p.s[1]-p.s[0]);
+        let own = self.runs.len()-self.copies.len();
+        let (run,d) = if (p.run as usize) < own { (p.run,[0.;2]) } else { *self.copies.get(p.run as usize-own)? };
+        self.loops.iter().enumerate().find_map(|(li,r)| self.pieces[r.clone()].iter().position(|x| x.run == run && x.s[0] <= s && s <= x.s[1]).map(|k| ((li,k,s),d)))
+    }
+
+    /// Loop `li`'s pieces' starts along it (their chords' lengths and the gaps between them
+    /// summed), and its whole length.
+    fn along(&self,li: usize) -> (Vec<f64>,f64) {
+        let ps = &self.pieces[self.loops[li].clone()];
+        let mut at = Vec::with_capacity(ps.len());
+        let mut sum = 0.;
+        for (k,p) in ps.iter().enumerate() {
+            at.push(sum);
+            sum += p.len()+dist(p.p[1],ps[(k+1)%ps.len()].p[0]);
+        }
+        (at,sum)
+    }
+
+    fn position(&self,x: &(usize,usize,f64),at: &[f64]) -> f64 {
+        let p = &self.pieces[self.loops[x.0].start+x.1];
+        let l = if p.s[1] > p.s[0] { (x.2-p.s[0])/(p.s[1]-p.s[0]) } else { 0. };
+        at[x.1]+l*p.len()
+    }
+
+    /// The arc of the loop through `x` (`locate`) both ways to `r` from it, as a polyline, and the
+    /// most its pieces stray from their chords; none where the loop stays within `r` all round.
+    fn arc(&self,x: &(usize,usize,f64),r: f64) -> Option<(Vec<Uv>,f64)> {
+        let range = self.loops[x.0].clone();
+        let n = range.len();
+        let start = self.pieces[range.start+x.1];
+        let o = self.raw_at(start.run as usize,x.2);
+        let mut sag = 0f64;
+        // the stretch of run `run` over `a`..`z` laid as its chord: how far its middle strays
+        let mut stray = |run: usize,a: f64,z: f64,pa: Uv,pz: Uv| sag = sag.max(SAFE*to_segment(self.raw_at(run,(a+z)/2.),pa,pz));
+        let mut ways: [Vec<Uv>;2] = [Vec::new(),Vec::new()];
+        for (w,way) in ways.iter_mut().enumerate() {
+            let (mut k,mut from,mut at) = (x.1,x.2,o);
+            let mut reached = false;
+            for _ in 0..=n {
+                let p = self.pieces[range.start+k];
+                let run = p.run as usize;
+                let (end,to) = if w == 0 { (p.p[1],p.s[1]) } else { (p.p[0],p.s[0]) };
+                if dist(end,o) >= r {
+                    // the first place the piece reaches `r`, between `from` (within it) and its end
+                    let (mut lo,mut hi) = (from,to);
+                    for _ in 0..60 {
+                        let m = (lo+hi)/2.;
+                        if !(m != lo && m != hi) { break }
+                        if dist(self.raw_at(run,m),o) < r { lo = m } else { hi = m }
+                    }
+                    let y = if hi == to { end } else { self.raw_at(run,hi) };
+                    stray(run,from,hi,at,y);
+                    way.push(y);
+                    reached = true;
+                    break
+                }
+                stray(run,from,to,at,end);
+                way.push(end);
+                k = if w == 0 { (k+1)%n } else { (k+n-1)%n };
+                let next = self.pieces[range.start+k];
+                let (gap,s) = if w == 0 { (next.p[0],next.s[0]) } else { (next.p[1],next.s[1]) };
+                way.push(gap);
+                if dist(gap,o) >= r { reached = true; break }
+                (from,at) = (s,gap);
+            }
+            if !reached { return None }
+        }
+        let [fore,back] = ways;
+        // (the point through `x` left out: it is where the two arcs were found to cross, on both,
+        // where a count of their segments' crossings would read none; the chord past it strays
+        // from it as far as it stands from that chord)
+        if let (Some(&a),Some(&z)) = (back.first(),fore.first()) { sag = sag.max(SAFE*to_segment(o,a,z)); }
+        Some((back.into_iter().rev().chain(fore).collect(),sag))
     }
 
     /// What two pieces do to each other, said of their edges and loops.
@@ -769,11 +981,14 @@ fn cones_apart(p: &Piece,i: usize,q: &Piece,k: usize,slop: f64) -> bool {
     angle > half(p.sag,la)+half(q.sag,lb)+off
 }
 
-/// The faces' components by the edges they share, each a shell: one of positive volume, the rest
-/// negative and inside it, none inside another.
-fn shells(b: &Brep,size: f64,floor: f64) -> Result<(),Unsound> {
+/// The faces' components by the edges they share, each a shell: each facing one way, out or in
+/// (`facing`); the outward ones (lumps) and the inward ones (voids) nested so that the shell
+/// nearest about each is of the other sense — a lump inside nothing or inside a void, a void
+/// inside a lump — and no two crossing. However many lumps: a cut can part a body, and
+/// `step::write` writes all its lumps in one shell's faces.
+fn shells(b: &Brep,floor: f64) -> Result<(),Unsound> {
+    use crate::query::Place;
     let nf = b.faces.len();
-    if nf == 0 { return Ok(()) }
     let mut root: Vec<usize> = (0..nf).collect();
     fn find(r: &mut [usize],mut i: usize) -> usize { while r[i] != i { r[i] = r[r[i]]; i = r[i]; } i }
     let mut user = vec![usize::MAX;b.edges.len()];
@@ -792,74 +1007,132 @@ fn shells(b: &Brep,size: f64,floor: f64) -> Result<(),Unsound> {
         if label[r] == usize::MAX { label[r] = shells.len(); shells.push(Vec::new()); }
         shells[label[r]].push(fi);
     }
-    let flux = crate::props::fluxes(b);
-    let volumes: Vec<f64> = shells.iter().map(|s| s.iter().map(|&f| flux[f]).sum::<f64>()/3.).collect();
-    for (k,s) in shells.iter().enumerate() {
-        // (a slab the floor thick across the whole boundary is no volume)
-        if !(volumes[k].abs() > floor*size*size) {
-            return Err(Unsound::face(s[0],format!("the shell of face {} bounds no volume ({:e} mm³)",s[0],volumes[k])))
-        }
+    let tol_of = |s: &[usize]| s.iter().flat_map(|&f| b.faces[f].loops.iter().flatten()).map(|c| b.edges[c.edge as usize].tol).fold(floor,f64::max);
+    // each shell alone, and where a point stands against it
+    let parts: Vec<Brep> = if shells.len() == 1 { Vec::new() } else {
+        shells.iter().map(|s| Brep {vertices:b.vertices.clone(),edges:b.edges.clone(),faces:s.iter().map(|&f| b.faces[f].clone()).collect()}.compacted()).collect()
+    };
+    let located: Vec<crate::query::Located> = if shells.len() == 1 { vec![crate::query::Located::new(b,tol_of(&shells[0]))] }
+        else { parts.iter().zip(&shells).map(|(p,s)| crate::query::Located::new(p,tol_of(s))).collect() };
+    let outward: Vec<bool> = shells.iter().zip(&located).map(|(s,l)| facing(b,s,l,tol_of(s))).collect::<Result<_,_>>()?;
+    if outward.iter().all(|&o| !o) {
+        return Err(Unsound::face(shells[0][0],format!("the shell of face {} is inside out: a point just outside each face it is read at lies inside it",shells[0][0])))
     }
-    let mut positive: Vec<usize> = (0..shells.len()).filter(|&k| volumes[k] > 0.).collect();
-    if positive.is_empty() {
-        let k = (0..shells.len()).max_by(|&x,&y| volumes[x].abs().total_cmp(&volumes[y].abs()).then(y.cmp(&x))).unwrap();
-        return Err(Unsound::face(shells[k][0],format!("the shell of face {} is inside out: its volume is {:e} mm³",shells[k][0],volumes[k])))
-    }
-    positive.sort_by(|&x,&y| volumes[y].total_cmp(&volumes[x]).then(x.cmp(&y)));
-    // the positive shells touching the largest at its vertices, and those touching them (a solid
-    // pinched along a line, its edges there held twice, `Brep::unpinched`): one solid
+    if shells.len() == 1 { return Ok(()) }
     let vertices_of = |k: usize| -> Vec<u32> {
         let mut vs: Vec<u32> = shells[k].iter().flat_map(|&f| b.faces[f].loops.iter().flatten()).flat_map(|c| b.edges[c.edge as usize].v).collect();
         vs.sort_unstable();
         vs.dedup();
         vs
     };
-    let mut body = vec![positive[0]];
-    let mut held: std::collections::BTreeSet<u32> = vertices_of(positive[0]).into_iter().collect();
-    let mut rest: Vec<usize> = positive[1..].to_vec();
-    while let Some(at) = rest.iter().position(|&k| vertices_of(k).iter().any(|v| held.contains(v))) {
-        let k = rest.remove(at);
-        held.extend(vertices_of(k));
-        body.push(k);
-    }
-    if let Some(&k) = rest.iter().min() {
-        return Err(Unsound::face(shells[k][0],format!("the shell of face {} bounds a second solid ({:e} mm³) beside the one of face {}",shells[k][0],volumes[k],shells[positive[0]][0])))
-    }
-    if shells.len() == body.len() { return Ok(()) }
-    // shells alone, their edges and vertices numbered again
-    let part = |s: &[usize]| Brep {vertices:b.vertices.clone(),edges:b.edges.clone(),faces:s.iter().map(|&f| b.faces[f].clone()).collect()}.compacted();
-    let tol_of = |s: &[usize]| s.iter().flat_map(|&f| b.faces[f].loops.iter().flatten()).map(|c| b.edges[c.edge as usize].tol).fold(floor,f64::max);
-    // where shell `k`'s vertices stand against `within`: In, Out, or none read off it
-    let place = |k: usize,within: &crate::query::Located| -> Option<crate::query::Place> {
-        vertices_of(k).iter().take(8).map(|&v| within.solid_place(b.vertices[v as usize].p)).find(|p| *p != crate::query::Place::On)
-    };
-    let solid: Vec<usize> = body.iter().flat_map(|&k| shells[k].iter().copied()).collect();
-    let whole = part(&solid);
-    let located = crate::query::Located::new(&whole,tol_of(&solid));
-    let voids: Vec<usize> = (0..shells.len()).filter(|&k| !body.contains(&k)).collect();
-    for &k in &voids {
-        match place(k,&located) {
-            Some(crate::query::Place::In) => {}
-            Some(_) => return Err(Unsound::face(shells[k][0],format!("the void of face {} lies outside the solid's outer shell",shells[k][0]))),
-            None => return Err(Unsound::face(shells[k][0],format!("the void of face {} touches the solid's outer shell: its place is not decided",shells[k][0]))),
-        }
-    }
-    let boxes: Vec<crate::geom::Box3> = shells.iter().enumerate().map(|(k,s)| {
+    let boxes: Vec<crate::geom::Box3> = shells.iter().map(|s| {
         let mut bx = crate::geom::EMPTY;
-        if !body.contains(&k) { for &fi in s { crate::geom::widen(&mut bx,crate::query::face_box(b,fi)); } }
+        for &fi in s { crate::geom::widen(&mut bx,crate::query::face_box(b,fi)); }
         bx
     }).collect();
-    let inside = |a: &crate::geom::Box3,z: &crate::geom::Box3| (0..3).all(|i| a.0[i] >= z.0[i]-floor && a.1[i] <= z.1[i]+floor);
-    for &j in &voids {
-        let nested: Vec<usize> = voids.iter().copied().filter(|&k| k != j && inside(&boxes[k],&boxes[j])).collect();
-        if nested.is_empty() { continue }
-        let other = part(&shells[j]);
-        let located = crate::query::Located::new(&other,tol_of(&shells[j]));
-        for k in nested {
-            if place(k,&located) != Some(crate::query::Place::Out) {
-                return Err(Unsound::face(shells[k][0],format!("the void of face {} lies inside the void of face {}",shells[k][0],shells[j][0])))
+    let grow = |k: usize| tol_of(&shells[k]).max(floor);
+    let within = |x: usize,y: usize| { let g = grow(y); (0..3).all(|i| boxes[x].0[i] >= boxes[y].0[i]-g && boxes[x].1[i] <= boxes[y].1[i]+g) };
+    let meet = |x: usize,y: usize| { let g = grow(x)+grow(y); (0..3).all(|i| boxes[x].0[i] <= boxes[y].1[i]+g && boxes[y].0[i] <= boxes[x].1[i]+g) };
+    let vs: Vec<Vec<u32>> = (0..shells.len()).map(vertices_of).collect();
+    // `inside[x]`: the shells `x` lies inside
+    let mut inside: Vec<Vec<usize>> = vec![Vec::new();shells.len()];
+    for y in 0..shells.len() {
+        for x in (0..shells.len()).filter(|&x| x != y && meet(x,y)) {
+            // where `x`'s vertices stand against `y`: each read one of its own, the shared ones
+            // (a pinch) on it; read alike, or the two cross
+            let mut read: Option<Place> = None;
+            for &v in vs[x].iter().filter(|v| vs[y].binary_search(v).is_err()).take(16) {
+                let at = located[y].solid_place(b.vertices[v as usize].p);
+                if at == Place::On { continue }
+                match read {
+                    None => read = Some(at),
+                    Some(was) if was != at => {
+                        return Err(Unsound::face(shells[x][0],format!("the shell of face {} crosses the shell of face {}: its vertex {v} is {}, another {}",
+                            shells[x][0],shells[y][0],if at == Place::In { "inside" } else { "outside" },if at == Place::In { "outside" } else { "inside" })))
+                    }
+                    Some(_) => {}
+                }
+            }
+            match read {
+                Some(Place::In) => inside[x].push(y),
+                Some(_) => {}
+                None if within(x,y) => return Err(Unsound::face(shells[x][0],format!("the shell of face {} touches the shell of face {} all round: its place is not decided",shells[x][0],shells[y][0]))),
+                None => {}
             }
         }
     }
+    for x in 0..shells.len() {
+        // the shell nearest about `x`: the one of those it lies inside that lies inside all the
+        // others
+        let about = inside[x].iter().copied().find(|&y| inside[x].iter().all(|&z| z == y || inside[y].contains(&z)));
+        let (f,sense) = (shells[x][0],outward[x]);
+        match (sense,about) {
+            (true,None) => {}
+            (false,None) => return Err(Unsound::face(f,format!("the void of face {f} lies outside the solid's outer shell"))),
+            (_,Some(y)) if outward[y] != sense => {}
+            (true,Some(y)) => return Err(Unsound::face(f,format!("the shell of face {f} bounds a solid inside the solid of face {}, both outward",shells[y][0]))),
+            (false,Some(y)) => return Err(Unsound::face(f,format!("the void of face {f} lies inside the void of face {}",shells[y][0]))),
+        }
+    }
     Ok(())
+}
+
+/// **Which way a shell faces**: a point stepped off each of up to seven of its faces (those of
+/// the largest boxes, until three read alike and none against) along the face's outward normal, from a point of the face beside the middle
+/// of its longest edge, located against the shell alone: outside, the shell faces out (a lump);
+/// inside, in (a void, or a boundary inside out). Each step is twice the shell's greatest
+/// tolerance, then eight and thirty-two times, until the point is read off the shell; inward from
+/// the edge twice as far again, so that a point beside a concave edge stands in the wedge outside
+/// it. The faces read vote, and the shell faces the way most of them say, or is refused where
+/// they tie (a shell facing both ways bounds no volume) or none is read. (Where a shell's signed
+/// volume would say the same, its integral over every face costs more than the whole read.)
+fn facing(b: &Brep,shell: &[usize],located: &crate::query::Located,tau: f64) -> Result<bool,Unsound> {
+    use crate::query::Place;
+    use crate::util::space::{add,cross,scale};
+    let mut picks: Vec<(f64,usize)> = shell.iter().map(|&fi| { let (lo,hi) = crate::query::face_box(b,fi); (distance(lo,hi),fi) }).collect();
+    picks.sort_by(|a,b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+    let (mut out,mut inward) = (0,0);
+    for &(_,fi) in picks.iter().take(7) {
+        // (three alike and none against settle it)
+        if (out >= 3 || inward >= 3) && out.min(inward) == 0 { break }
+        let f = &b.faces[fi];
+        // the face's longest edge, at its middle, its way along the use
+        let Some(c) = f.loops.iter().flatten().filter(|c| !matches!(b.edges[c.edge as usize].curve,EdgeCurve::Degenerate))
+            .max_by(|x,y| { let l = |c: &Coedge| { let e = &b.edges[c.edge as usize]; distance(e.point(e.t[0],&b.vertices),e.point((e.t[0]+e.t[1])/2.,&b.vertices)) }; l(x).total_cmp(&l(y)) }) else { continue };
+        let e = &b.edges[c.edge as usize];
+        let (tm,dt) = ((e.t[0]+e.t[1])/2.,(e.t[1]-e.t[0])*1e-4);
+        let at = |t: f64| c.pcurve.at(t,e,&f.surface,&b.vertices);
+        let (uv,a,z) = (at(tm),at(tm-dt),at(tm+dt));
+        let mut way = [z[0]-a[0],z[1]-a[1]];
+        if c.reversed { way = [-way[0],-way[1]]; }
+        // the face's inside to the left of its loops' way, or to the right where it is reversed
+        let mut side = [-way[1],way[0]];
+        if f.reversed { side = [-side[0],-side[1]]; }
+        let l = side[0].hypot(side[1]);
+        if !(l > 0.) || !uv.iter().all(|x| x.is_finite()) { continue }
+        let side = [side[0]/l,side[1]/l];
+        let (_,su,sv) = f.surface.d1(uv);
+        let speed = crate::util::space::norm(add(scale(su,side[0]),scale(sv,side[1])));
+        if !(speed > 0.) { continue }
+        for k in 0..3 {
+            let h = 2.*tau*4f64.powi(k);
+            let d = 2.*h/speed;
+            let w = [uv[0]+d*side[0],uv[1]+d*side[1]];
+            let (p,su,sv) = f.surface.d1(w);
+            let nrm = cross(su,sv);
+            let ln = crate::util::space::norm(nrm);
+            if !(ln > 0.) { break }
+            let nrm = scale(nrm,if f.reversed { -1./ln } else { 1./ln });
+            match located.solid_place(add(p,scale(nrm,h))) {
+                Place::Out => { out += 1; break }
+                Place::In => { inward += 1; break }
+                Place::On => {}
+            }
+        }
+    }
+    if out > inward { return Ok(true) }
+    if inward > out { return Ok(false) }
+    let f = shell[0];
+    Err(Unsound::face(f,if out == 0 { format!("the shell of face {f} could not be read facing either way") }
+        else { format!("the shell of face {f} faces both ways ({out} of its faces read outward, as many inward): it bounds no volume") }))
 }
