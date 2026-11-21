@@ -615,11 +615,7 @@ fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> 
     let groups: Vec<Vec<usize>> = f.faces.iter().map(|r| body.faces(r)).collect();
     let mut out = Spill::new();
     for (k, _) in f.faces.iter().enumerate().filter(|(_, r)| r.smooth) {
-        let chain = body.smooth(&groups[k]);
-        let mut own: Vec<usize> = groups[k].iter().flat_map(|&fi| pieces(body, fi)).collect();
-        own.sort_unstable();
-        own.dedup();
-        let beyond: Vec<usize> = chain.into_iter().filter(|fi| !own.contains(fi)).collect();
+        let (own, beyond) = going_on(body, &groups[k]);
         if beyond.is_empty() {
             continue;
         }
@@ -700,6 +696,23 @@ pub(crate) fn pieces(body: &super::faces::BodyFaces, fi: usize) -> Vec<usize> {
         k += 1;
     }
     out
+}
+
+/// **The faces `faces` go on into smoothly, their own surfaces aside** (#994): the pieces of each
+/// one's surface (`pieces`, `faces` first), and every other face of their smooth chain
+/// (`BodyFaces::smooth`) — the faces a section standing against them can come to across a seam.
+/// A piece of the same surface is none of those: a flat's point or a ball's centre over it is as
+/// far from the surface as from `faces`' own patch, and a plate's bottom flush with a post's,
+/// each named by its own operand, is one plane to whatever stands against either.
+pub(crate) fn going_on(body: &super::faces::BodyFaces, faces: &[usize]) -> (Vec<usize>, Vec<usize>) {
+    let mut own: Vec<usize> = Vec::new();
+    for g in faces.iter().flat_map(|&fi| pieces(body, fi)) {
+        if !own.contains(&g) {
+            own.push(g);
+        }
+    }
+    let beyond = body.smooth(&own).into_iter().filter(|g| !own.contains(g)).collect();
+    (own, beyond)
 }
 
 /// Where `q` (on the surface of `faces`, the pieces of one: `pieces`) lies off them all: the edge

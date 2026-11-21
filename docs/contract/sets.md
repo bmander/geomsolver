@@ -465,6 +465,19 @@ pocket's floor filled round its plan corners, seen from the air; `BodyFaces::out
 alone (its whole surface's side winds round the axis): a ball standing on a run's axis beside
 those stretches was read through the nearest face and the gate refused it
 (`round_onto_round::a_boss_across_a_trays_filled_wall_is_its_closed_form`).
+**A smooth chain turning both ways is read about its nearest face** (#994, `conditions::about_nearest`,
+`BodyFaces::bulging_about`): a block's outline with a reflex corner, its every upright rounded,
+is one chain of sides, convex rounds and the reflex corners' fills, bulging neither way, and no
+face's side carried past its patch is the chain's (the block's side carried on past a tab's fill
+runs through the tab). At least a distance off it, within it or outside it, is read at each step
+about the face whose patch is nearest: where that face bulges toward the point, it and each face
+going on from it across a seam that bulges too, each its own condition by its side carried on —
+the chain there is convex, and the corner of their offsets (a rim rounded to the uprights' own
+radius, its centres closing onto each convex upright's axis) is met as a corner of conditions;
+where it does not (a fill seen from its material), its own side's distance, as before. Each slot
+is a condition, the `k`th the `k`th face read there, holding everywhere where fewer are; none is
+held convex, so the steps run to their fixed point. A chain that bulges one way is read whole,
+as above. `tests/rim_over_rounds.rs` is the gate.
 Read through the nearest face alone, a corner of the offset (an arc's offset closed onto its
 axis, a pocket's corner rounded to its own radius, or past it) is where the nearest face turns,
 and the steps never settled there. **A smooth chain bulging no one way** (#994: a pocket's walls
