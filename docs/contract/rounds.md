@@ -912,7 +912,18 @@ nearest — a chain turning both ways, as a drafted shell's outline with a refle
 reads before anything named the corner). A straight edge is read at its middle, its ends and
 between (its middle first, so the wall across is named, not the arc it ends on), a ring at
 sixteen turns of its own. A flat's points each nearest its own face's patch of the chain's
-(`distance(p, b.smooth)` reads patches), not its carried side. Refused, saying which face the ball
+(`distance(p, b.smooth)` reads patches), not its carried side. **The chain is read past the
+pieces of each face's own surface** (#994, `lowering::going_on`, as `seams_beside` reads it, #952):
+a face the same surface goes on into across a seam is no other face of the chain, and a flat's
+point is measured from the nearest of those pieces. A hole through a post whose foot is flush
+with its plate's bottom, the post across the plate's edge, has its bottom rim on `stock.far` and
+`post.far`, one plane: its chamfer's flat, reaching past the seam onto the other piece, was
+refused as coming "within 0mm of `shell.post.far`" (fixture 101, built by v0.1.26). The same
+reading serves `stops_short`'s faces going on and the wider-than-its-arc message.
+`tests/flush_rims.rs` is the gate (the post at 40, 45, 50 and 55 against the plate's edge at 50,
+the rims chamfered and rounded 1.5, with and without the post's foot filled 2.5 at the plate's
+side, each to its closed form to 1e-9; the wall alone in a plate of two halves unioned flush
+still refused at 8, naming `pocket.e3`). Refused, saying which face the ball
 (or the flat) comes how near, and — where an arc of the chain tighter than the ball lies between,
 meeting the other face — that arc and its radius where the round runs: a pocket rounded wider
 than its corners refuses at its first wall so (`… past `pocket.k0`, of radius 5mm where the round
