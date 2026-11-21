@@ -293,23 +293,25 @@ fn roughly(flat: &Flat,e: &Edge,rate: f64,t: f64) -> Uv {
     flat.at(match flat.domain() { Some([d0,d1]) => x.clamp(d0,d1),None => x })
 }
 
-/// The parameters of a use's start, middle and end on `s`, its points read one after another from
-/// `from` (the start's, on the branch the loop reached it on), each on the branch nearest the
-/// last: `n` steps along `travel`, the edge's parameters in the use's direction. At a pole the
-/// collapsed parameter is read a step in from it (`topo::pole_at`).
-fn track(s: &Surface,e: &Edge,vs: &[Vertex],travel: [f64;2],from: Uv,n: usize,within: f64) -> [Uv;3] {
+/// The parameters of a use's points on `s`, `n` steps along `travel` (the edge's parameters in
+/// the use's direction), read one after another from `from` (the start's, on the branch the loop
+/// reached it on), each sought from `hint` of its step and the last (the last itself, but for a
+/// seam walked again on its other side) and on the branch nearest that. At a pole the collapsed
+/// parameter is read a step in from it (`topo::pole_at`).
+fn track(s: &Surface,e: &Edge,vs: &[Vertex],travel: [f64;2],from: Uv,n: usize,within: f64,hint: &dyn Fn(usize,Uv) -> Uv) -> Vec<Uv> {
     let periods = s.periods();
-    let (mut at,mut start,mut mid) = (from,from,from);
+    let mut out = vec![from];
     let pole = pole_at(s,from,within);
     for j in 1..=n {
         let t = travel[0]+(travel[1]-travel[0])*j as f64/n as f64;
-        let mut uv = unwrap(s.inverse_near(e.point(t,vs),at),at,periods);
+        let at = out[j-1];
+        let near = hint(j,at);
+        let mut uv = unwrap(s.inverse_near(e.point(t,vs),near),near,periods);
         if j == n { if let Some(k) = pole_at(s,uv,within) { uv[k] = at[k]; } }
-        if j == 1 { if let Some(k) = pole { start[k] = uv[k]; } }
-        if 2*j == n { mid = uv; }
-        at = uv;
+        if j == 1 { if let Some(k) = pole { out[0][k] = uv[k]; } }
+        out.push(uv);
     }
-    [start,mid,at]
+    out
 }
 
 /// **The branch a use leaving a pole sets out on**: its collapsed parameter `k`'s value `x`
@@ -349,7 +351,7 @@ struct Setting<'r> { b: &'r Brep,reads: &'r [Read],within: f64,near: f64 }
 /// **A loop walked in its face's parameters** (the module's doc): each use's pcurve, its ends on
 /// the branch the walk reached them on.
 fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],reversed: bool,seams: &BTreeSet<usize>,face: u32,
-    taken: &mut BTreeMap<usize,usize>) -> Result<(Vec<Coedge>,Option<Wound>),Refusal> {
+    taken: &mut BTreeMap<usize,usize>,placed: &mut BTreeMap<usize,Uv>) -> Result<(Vec<Coedge>,Option<Wound>),Refusal> {
     let s = &sheet.surface;
     let (b,periods) = (st.b,s.periods());
     let spline = matches!(s,Surface::BSpline(..));
@@ -393,7 +395,22 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
                     let q = near.unwrap_or_else(|| s.inverse(e.point(travel[0]+(travel[1]-travel[0])/16.,&b.vertices)));
                     unwrap(s.inverse_near(begin,q),q,periods)
                 });
-                let [mut a,mut m,mut z] = track(s,e,&b.vertices,travel,from,steps,st.within);
+                let mut walked = track(s,e,&b.vertices,travel,from,steps,st.within,&|_,at| at);
+                // a seam of a sheet closed without a period, walked where its other use was: walked
+                // again along the other side of the sheet's domain, each point sought from its
+                // mirror there
+                if let (Surface::BSpline(_,n),Some(&other)) = (s,placed.get(&ei)) {
+                    let (dom,m) = (n.domain(),walked[steps/2]);
+                    if (0..2).all(|k| (m[k]-other[k]).abs() <= 1e-6*(dom[k][1]-dom[k][0])) {
+                        if let Some(k) = (0..2).find(|&k| { let [lo,hi] = dom[k]; (m[k]-lo).min(hi-m[k]) <= 1e-6*(hi-lo) }) {
+                            let mirror = |mut q: Uv| { q[k] = dom[k][0]+dom[k][1]-q[k]; q };
+                            let first = walked.clone();
+                            walked = track(s,e,&b.vertices,travel,mirror(first[0]),steps,st.within,&|j,_| mirror(first[j]));
+                        }
+                    }
+                }
+                let [mut a,mut m,mut z] = [walked[0],walked[steps/2],walked[steps]];
+                placed.insert(ei,m);
                 // leaving a pole after another use: on the branch that keeps the face on the left
                 if let (Some(l),Some(k)) = (last,pole_at(s,from,st.within)) {
                     if let Some(p) = periods[k] {
@@ -529,8 +546,8 @@ fn face(st: &Setting,sheet: &Sheet,w: &Walked) -> Result<Built,Refusal> {
         l.rotate_left(k);
         l
     }).collect();
-    let mut taken = BTreeMap::new();
-    let walked = uses.iter().map(|l| walk_loop(st,sheet,w.surface,l,reversed,&seams,w.entity,&mut taken)).collect::<Result<Vec<_>,_>>()?;
+    let (mut taken,mut placed) = (BTreeMap::new(),BTreeMap::new());
+    let walked = uses.iter().map(|l| walk_loop(st,sheet,w.surface,l,reversed,&seams,w.entity,&mut taken,&mut placed)).collect::<Result<Vec<_>,_>>()?;
     // a loop winding round a pole the face holds is joined to it by a seam laid (one loop alone:
     // two winding bound a band, which wants a seam between them)
     let (mut laid,mut poles) = (Vec::new(),Vec::new());
@@ -710,6 +727,15 @@ pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
     }
     let given = Given {name:found.name,entity:r,brep:b,context:found.context,faces:faces.iter().map(|f| f.entity).collect(),edges,vertices};
     lap("measured");
+    // an edge standing off its faces (or its vertices off it) farther than a hundred times the
+    // file's uncertainty and a thousandth of the solid's size is no edge of theirs read right — a
+    // loop's foot clamped at a closed sheet's seam it crosses, a curve the file gives that is not
+    // its face's: refused, not measured into a tolerance
+    let far = (100.*uncertainty).max(1e-3*size);
+    if let Some((i,e)) = given.brep.edges.iter().enumerate().find(|(_,e)| e.tol > far) {
+        return Err(Refusal::new(Why::Unsound,Some(given.edges[i]).filter(|&x| x != 0).or(Some(r)),
+            format!("an edge stands {:.3e} mm off its faces or its vertices, past the {far:.3e} mm the reader accepts",e.tol)))
+    }
     if let Err(e) = given.brep.check(within) {
         let why = match e.kind { crate::Kind::Open => Why::Open,crate::Kind::NotManifold => Why::NotManifold,_ => Why::Unsound };
         let entity = witness(&e.msg,&given).or(Some(r));

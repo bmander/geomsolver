@@ -381,8 +381,8 @@ impl<'f,'a> Geometry<'f,'a> {
     }
     /// A linear extrusion, `C(u) + v z`: its curve carried along `z` into the plane square to it
     /// through the curve's first point — the same surface, its curve an affine image (a spline's
-    /// poles, a line's point and direction); a conic slanted to `z` is refused (its image is an
-    /// ellipse of another frame, not read yet).
+    /// poles, a line's point and direction, a conic slanted to `z` the ellipse it projects to,
+    /// `slanted`).
     fn extrusion(&self,r: u32,v: &[Value]) -> Result<(Surface,[f64;2]),Refusal> {
         let swept = self.curve(r,v.get(1).and_then(Value::reference))?;
         let (d,m) = self.vector(r,v.get(2).and_then(Value::reference),false)?;
@@ -399,13 +399,16 @@ impl<'f,'a> Geometry<'f,'a> {
             }
             Curve::Circle(f,rad) if square(&f) => Curve::Circle(Frame {o:flat(f.o),..f},rad),
             Curve::Ellipse(f,s1,s2) if square(&f) => Curve::Ellipse(Frame {o:flat(f.o),..f},s1,s2),
-            other => return Err(Refusal::unsupported(r,format!("an extrusion of a {} slanted to its direction",other.kind()))),
+            Curve::Circle(f,rad) => slanted(&f,rad,rad,z,flat(f.o)).ok_or_else(|| Refusal::malformed(r,"an extrusion of a circle along its plane"))?,
+            Curve::Ellipse(f,s1,s2) => slanted(&f,s1,s2,z,flat(f.o)).ok_or_else(|| Refusal::malformed(r,"an extrusion of an ellipse along its plane"))?,
+            other => return Err(Refusal::unsupported(r,format!("an extrusion of a {other:?}"))),
         };
         Ok((Surface::Extrusion(Frame::about(o,z),Arc::new(curve)),rates))
     }
     /// A surface of revolution, its curve turned about the axis: the frame's `x` toward the curve,
-    /// which must lie in the half-plane of the axis it points to (the kernel turns a meridian);
-    /// a curve leaving that half-plane is refused.
+    /// where it lies in the half-plane of the axis it points to (the kernel turns a meridian); a
+    /// curve leaving that half-plane — a circle beside the axis, not about it — turned as a
+    /// rational net (`turned`), the same surface exactly, its `u` the arc's parameter.
     fn revolution(&self,r: u32,v: &[Value]) -> Result<(Surface,[f64;2]),Refusal> {
         let swept = self.curve(r,v.get(1).and_then(Value::reference))?;
         let (a,_,axis) = self.of(r,v.get(2).and_then(Value::reference),&["AXIS1_PLACEMENT"],"a revolution's axis")?;
@@ -423,12 +426,57 @@ impl<'f,'a> Geometry<'f,'a> {
         let f = Frame::new(o,z,x);
         let size = points.iter().map(|&p| norm(sub(p,o))).fold(0.,f64::max);
         let within = 1e-9*size+self.context.uncertainty.unwrap_or(0.);
-        for &p in &points {
-            let l = f.local(p);
-            if l[1].abs() > within || l[0] < -within {
-                return Err(Refusal::unsupported(r,"a revolution of a curve leaving the half-plane of its axis"))
-            }
+        if points.iter().all(|&p| { let l = f.local(p); l[1].abs() <= within && l[0] >= -within }) {
+            return Ok((Surface::Revolution(f,Arc::new(swept.curve)),[self.context.angle,swept.rate]))
         }
-        Ok((Surface::Revolution(f,Arc::new(swept.curve)),[self.context.angle,swept.rate]))
+        // a curve leaving the half-plane: the rational net that is its revolution exactly
+        let net = turned(&f,&swept.curve).ok_or_else(|| Refusal::unsupported(r,"a revolution of a line leaving the plane of its axis"))?;
+        net.check().map_err(|m| Refusal::malformed(r,m))?;
+        Ok((Surface::BSpline(Frame::WORLD,Arc::new(net)),[1.,1.]))
     }
+}
+
+/// **A curve turned once about `f.z` as the rational net that is exactly its surface of
+/// revolution** (Piegl and Tiller A8.1): each of its poles turned by each of a whole turn's rational
+/// arc's (`nurbs::arc`, its parameter meeting the angle at every knot) — a turn and a stretch in the
+/// plane square to the axis, linear in the pole — weighed the product of the two. A conic is taken as
+/// its own rational spline first; a line, which runs on without end, has none.
+pub fn turned(f: &Frame,c: &Curve) -> Option<Net> {
+    let s = match c {
+        Curve::BSpline(b) => (**b).clone(),
+        Curve::Circle(g,r) => crate::nurbs::arc(g,*r,[0.,std::f64::consts::TAU]),
+        Curve::Ellipse(g,a,b) => {
+            let unit = crate::nurbs::arc(&Frame::WORLD,1.,[0.,std::f64::consts::TAU]);
+            BSpline {poles:unit.poles.iter().map(|p| g.at([a*p[0],b*p[1],0.])).collect(),..unit}
+        }
+        _ => return None,
+    };
+    let round = crate::nurbs::arc(&Frame::WORLD,1.,[0.,std::f64::consts::TAU]);
+    let (wu,wv) = (round.weights.clone()?,s.weights.clone().unwrap_or_else(|| vec![1.;s.poles.len()]));
+    let poles = round.poles.iter().map(|q| s.poles.iter().map(|&p| { let l = f.local(p); f.at([l[0]*q[0]-l[1]*q[1],l[0]*q[1]+l[1]*q[0],l[2]]) }).collect()).collect();
+    let weights = wu.iter().map(|a| wv.iter().map(|b| a*b).collect()).collect();
+    Some(Net {du:2,dv:s.degree,uknots:round.knots.clone(),vknots:s.knots.clone(),poles,weights:Some(weights)})
+}
+
+/// **The ellipse a conic `o + a cos t x + b sin t y` of the frame `f` projects to along the unit
+/// `z`**, centred at `centre`: the projection is linear, `M (cos t, sin t)` in the plane square to
+/// `z`, and `M = U Σ Vᵀ` (its singular values the semi-axes, `U`'s columns the axes) is the same
+/// ellipse turned by a constant in its parameter — `V` taken a turn, never a reflection, so it runs
+/// the way the conic did and the surface's normal is kept. None where the conic's plane holds `z`.
+fn slanted(f: &Frame,a: f64,b: f64,z: V,centre: V) -> Option<Curve> {
+    let g = Frame::about([0.;3],z);
+    let flat = |d: V| { let d = sub(d,scale(z,dot(d,z))); [dot(d,g.x),dot(d,g.y)] };
+    let (p,q) = (flat(scale(f.x,a)),flat(scale(f.y,b)));
+    // `M = [p q]`; `MᵀM`'s eigenvectors are `V`'s columns
+    let (m11,m12,m22) = (p[0]*p[0]+p[1]*p[1],p[0]*q[0]+p[1]*q[1],q[0]*q[0]+q[1]*q[1]);
+    let angle = 0.5*(2.*m12).datan2(m11-m22);
+    let (s,c) = angle.dsin_cos();
+    let (v1,v2) = ([c,s],[-s,c]);
+    let image = |v: [f64;2]| [p[0]*v[0]+q[0]*v[1],p[1]*v[0]+q[1]*v[1]];
+    let (u1,u2) = (image(v1),image(v2));
+    let (s1,s2) = (u1[0].dhypot(u1[1]),u2[0].dhypot(u2[1]));
+    if !(s1 > 1e-12*(a+b) && s2 > 1e-12*(a+b)) { return None }
+    let x = normalised(add(scale(g.x,u1[0]),scale(g.y,u1[1])))?;
+    let y = normalised(add(scale(g.x,u2[0]),scale(g.y,u2[1])))?;
+    Some(Curve::Ellipse(Frame {o:centre,x,y,z:cross(x,y)},s1,s2))
 }
