@@ -21,7 +21,8 @@ corpus; `bytes` and `data_sha256` (the DATA section's, not the header's time sta
 `occt_faces`, `occt_edges` (`seams` and `degenerate` among them), `occt_vertices`, `voids`,
 `valid`, `healed` (what healing changed, `-` for nothing), `tol_edge`, `occt_volume`,
 `occt_area`, `occt_spread` (volume's, area's); `mass_volume`, `mass_area` (or `mass_error`); and
-the reference: `ref_volume`, `ref_area`, `ref_from`, `bar_volume`, `bar_area` (relative), `note`.
+the reference: `ref_volume`, `ref_area`, `ref_from`, `bar_volume`, `bar_area` (relative), `note`; and for a disputed file,
+`alt_volume`, `alt_area`, the second reading it may be read to.
 
 **The reference and its bar**, per file (`reference`):
 
@@ -39,10 +40,22 @@ the reference: `ref_volume`, `ref_area`, `ref_from`, `bar_volume`, `bar_area` (r
   it: the file's stated uncertainty, or more where an edge needs it) times its area over its
   volume, no less than `ALONE`; where neither does (the measurer refuses and OCCT has not
   converged), OCCT's finest at `AGREE` times its own spread, no less than the slack (`ref_from`
-  `occt?`). The slack is calibrated on the CADGenBench files both read: their readings differ by
+  `occt?`). Where the two disagree past the slack and OCCT's spread together, the measurer is set
+  aside and OCCT's finest taken so (`occt!`): on cadgenbench/243 the measurer's area is 2.4% off
+  OCCT's, which has converged to 3e-8 (a misread face of the measurer's, not the file's slack).
+  A brep-bench file so disputed is `disputed` instead: OCCT's reading the reference, the
+  measurer's the alternative (`alt_volume`, `alt_area`), and a refusal, or a reading within the
+  bar of either, is accepted. Those files are mostly ones whose loops run against ISO 10303-42
+  (which OCCT repairs silently and the bench's measurer, reading by the standard, does not:
+  SPEC.md, "STEP is the answer"), and some the measurer misreads. The slack is calibrated on the CADGenBench files both read: their readings differ by
   up to 0.04 of tolerance × area / volume (cadgenbench/242: 2.1e-4 in volume, at tolerances of
   0.02 mm), the gaps a file's uncertainty leaves between an edge's curve and its faces read two
   ways; `SLACK` leaves a margin of two and a half over that.
+* a file OCCT reads to no solid of positive volume (`unread`): `refuse` where its text holds no
+  solid (the reader must refuse it); else the bench measurer's reading alone, at `UNCORROBORATED`
+  (or the closed forms where that reading holds them);
+* no row where the bar would pass `CAP` (a part in fifty): a file OCCT reads only by raising its
+  tolerances that far is no reference;
 * a variant: its source's reference and bar (the solid written is the source's), widened to
   `AGREE` times how far the readers of the variant stand from it, where they stand farther (the
   writer's round trip: inches written to 13 digits, a solid OCCT itself read and wrote).
@@ -70,12 +83,14 @@ AGREE = 3.0
 FLOOR = 1e-7
 ALONE = 1e-6
 SLACK = 0.1
+UNCORROBORATED = 1e-5
+CAP = 0.02
 EXACT = 1e-6
 
 COLUMNS = ("path bytes data_sha256 source case ap units uncertainty solids step_faces step_edges "
            "step_vertices occt_faces occt_edges seams degenerate occt_vertices voids valid healed "
            "tol_edge occt_volume occt_area occt_spread mass_volume mass_area mass_error ref_volume "
-           "ref_area ref_from bar_volume bar_area note").split()
+           "ref_area ref_from bar_volume bar_area note alt_volume alt_area").split()
 
 
 def measure(jobs, timeout=120.0):
@@ -151,7 +166,9 @@ def cases():
 def readers(o, m):
     """The independent readings of a file that count: [(name, volume, area)]."""
     out = []
-    if m and "volume" in m:
+    # the measurer reads a CONVERSION_BASED_UNIT's lengths as millimetres (brep-bench 7d811e9: an
+    # inch file's volume comes out in cubic inches), so it counts only for a file in millimetres
+    if m and "volume" in m and o["units"].split(",")[0] == "mm":
         out.append(("mass", m["volume"], m["area"]))
     if o["spread_volume"] <= CONVERGED and o["spread_area"] <= CONVERGED:
         out.append(("occt", o["volume"], o["area"]))
@@ -160,15 +177,29 @@ def readers(o, m):
 
 def own(o, m):
     """The reference a file's own solid gives, and its bar (the second bullet above)."""
+    alone = max(ALONE, SLACK * o["tol_edge"] * o["area"] / o["volume"])
+    if m and "volume" in m and disputed(o, m, alone):
+        # the two readers disagree past what the file's slack and OCCT's own spread allow: the
+        # measurer is the one set aside (OCCT's area converges on every file where this happens)
+        return (o["volume"], o["area"], "occt!", max(alone, AGREE * o["spread_volume"]),
+                max(alone, AGREE * o["spread_area"]))
     r = readers(o, m)
     if len(r) == 2:
         dv, da = rel(r[1][1], r[0][1]), rel(r[1][2], r[0][2])
         return r[0][1], r[0][2], "mass+occt", max(FLOOR, AGREE * dv), max(FLOOR, AGREE * da)
-    alone = max(ALONE, SLACK * o["tol_edge"] * o["area"] / o["volume"])
     if len(r) == 1:
         return r[0][1], r[0][2], r[0][0], alone, alone
     return (o["volume"], o["area"], "occt?", max(alone, AGREE * o["spread_volume"]),
             max(alone, AGREE * o["spread_area"]))
+
+
+def disputed(o, m, alone):
+    """Whether the bench's measurer and OCCT read the file to different solids: their volumes or
+    areas apart by more than the slack and AGREE times OCCT's own spread together."""
+    if o["units"].split(",")[0] != "mm":
+        return False
+    return (rel(m["volume"], o["volume"]) > alone + AGREE * o["spread_volume"]
+            or rel(m["area"], o["area"]) > alone + AGREE * o["spread_area"])
 
 
 def reference(path, o, m, known, cs):
@@ -178,7 +209,7 @@ def reference(path, o, m, known, cs):
         src = known.get("/".join(parts[2:]))
         if src is None:
             return None
-        v, a, frm, bv, ba, _ = src
+        v, a, frm, bv, ba = src[:5]
         devs = [(rel(x[1], v), rel(x[2], a)) for x in readers(o, m)]
         dv = max((d[0] for d in devs), default=0.0)
         da = max((d[1] for d in devs), default=0.0)
@@ -194,6 +225,13 @@ def reference(path, o, m, known, cs):
             if judge and rel(judge[1], c["volume"]) <= tol and rel(judge[2], c["area"]) <= tol:
                 return c["volume"], c["area"], "closed", tol, tol, f"the case's solid, by {judge[0]}"
             v, a, frm, bv, ba = own(o, m)
+            if frm == "occt!":
+                # a brep-bench file the two read differently: OCCT repairs what the standard
+                # reads otherwise (loops against the faces' normals, a seam's loop clockwise:
+                # SPEC.md), or the measurer misreads; either reading, or a refusal, is accepted
+                return (v, a, "disputed", bv, ba,
+                        f"OCCT and the measurer disagree: the measurer reads {m['volume']!r} "
+                        f"{m['area']!r}", (m["volume"], m["area"]))
             why = (f"not the case's solid: {judge[0]} reads volume {rel(judge[1], c['volume']):.1e} "
                    f"and area {rel(judge[2], c['area']):.1e} off its closed forms") if judge else \
                 "no converged reading to judge it by"
@@ -231,8 +269,11 @@ def write(outs):
             skipped.append((f, "not read by the oracle yet"))
             continue
         if "error" in o or o.get("solids", 0) == 0 or not (o.get("volume", 0) > 0):
-            skipped.append((f, o.get("error") or f"OCCT reads {o.get('solids', 0)} solids, "
-                            f"volume {o.get('volume')}"))
+            row = unread(f, o, cs)
+            if isinstance(row, str):
+                skipped.append((f, row))
+            else:
+                rows.append(row)
             continue
         sha = stepscan.data_sha256(open(os.path.join(CORPUS, f), "rb").read())
         if sha != o["data_sha256"]:
@@ -248,6 +289,12 @@ def write(outs):
         ref = reference(f, o, m, known, cs)
         if ref is None:
             skipped.append((f, "its source has no row"))
+            continue
+        if max(ref[3], ref[4]) > CAP:
+            # a file OCCT reads only with its tolerances raised past a part in CAP (an edge far
+            # off its faces, solids it splits): no reference worth a gate
+            skipped.append((f, f"no reference within {CAP:g}: {ref[2]}, bars {ref[3]:.2g} "
+                            f"{ref[4]:.2g}; {ref[5]}"))
             continue
         known[f] = ref
         source, case = source_of(f)
@@ -266,7 +313,9 @@ def write(outs):
                "mass_area": m["area"] if m and "area" in m else "",
                "mass_error": (m.get("error", "") if m else "not measured")[:120].replace("\t", " "),
                "ref_volume": ref[0], "ref_area": ref[1], "ref_from": ref[2],
-               "bar_volume": f"{ref[3]:.2g}", "bar_area": f"{ref[4]:.2g}", "note": ref[5]}
+               "bar_volume": f"{ref[3]:.2g}", "bar_area": f"{ref[4]:.2g}", "note": ref[5],
+               "alt_volume": ref[6][0] if len(ref) > 6 else "",
+               "alt_area": ref[6][1] if len(ref) > 6 else ""}
         if o["step_solids"] != o["solids"]:
             row["note"] = (row["note"] + "; " if row["note"] else "") + \
                 f"OCCT reads {o['solids']} solids of {o['step_solids']}"
@@ -283,6 +332,57 @@ def write(outs):
     print(f"{len(rows)} rows, to {', '.join(outs)}")
     for f, why in skipped:
         print(f"no row: {f}: {why}")
+
+
+def unread(f, o, cs):
+    """The row of a file OCCT reads to no solid of positive volume (or fails on), from the text and
+    the bench's measurer alone, or why there is none: a file that represents no solid (its text
+    holds no MANIFOLD_SOLID_BREP or BREP_WITH_VOIDS) is one the reader must refuse (`ref_from`
+    `refuse`); one the measurer reads to a solid is held to its reading, uncorroborated (`mass`,
+    at `UNCORROBORATED`), or to the closed forms where the bench would pass it."""
+    why = o.get("error") or f"OCCT reads {o.get('solids', 0)} solids, volume {o.get('volume')}"
+    why = why.strip().splitlines()[-1][-160:] if "\n" in why else why[-160:]
+    path = os.path.join(CORPUS, f)
+    raw = open(path, "rb").read()
+    s = stepscan.scan(path)
+    sha = stepscan.data_sha256(raw)
+    m = None
+    try:
+        m = json.load(open(os.path.join(CORPUS, "oracle", f + ".mass.json")))
+        if m.get("data_sha256") != sha:
+            m = None
+    except (OSError, ValueError):
+        pass
+    source, case = source_of(f)
+    row = {c: "" for c in COLUMNS}
+    row.update(path=f, bytes=len(raw), data_sha256=sha, source=source, case=case, ap=s["ap"],
+               units=s["units"] or "?", uncertainty=s["uncertainty"] or "-",
+               solids=len(s["solids"]), step_faces=sum(x["faces"] for x in s["solids"]),
+               step_edges=sum(x["edges"] for x in s["solids"]),
+               step_vertices=sum(x["vertices"] for x in s["solids"]), healed="-",
+               mass_volume=m["volume"] if m and "volume" in m else "",
+               mass_area=m["area"] if m and "area" in m else "",
+               mass_error=(m.get("error", "") if m else "not measured")[:120].replace("\t", " "))
+    if not s["solids"]:
+        row.update(ref_volume="", ref_area="", ref_from="refuse", bar_volume="", bar_area="",
+                   note="the file represents no solid: " + ", ".join(
+                       k for k in s["census"] if "SHELL" in k or "SURFACE_MODEL" in k))
+        return row
+    if m and s["units"].split(",")[0] != "mm":
+        m = None
+    if not (m and "volume" in m and m["volume"] > 1e-9 * max(1.0, m["area"]) ** 1.5):
+        return f"{why}; and the measurer: {(m or {}).get('error', (m or {}).get('volume'))}"
+    c = cs.get(case) if source.startswith("brep-bench") else None
+    if c and rel(m["volume"], c["volume"]) <= c["tolerance"] and \
+            rel(m["area"], c["area"]) <= c["tolerance"]:
+        row.update(ref_volume=c["volume"], ref_area=c["area"], ref_from="closed",
+                   bar_volume=f"{c['tolerance']:.2g}", bar_area=f"{c['tolerance']:.2g}",
+                   note=f"the case's solid, by mass; OCCT: {why}")
+    else:
+        row.update(ref_volume=m["volume"], ref_area=m["area"], ref_from="mass",
+                   bar_volume=f"{UNCORROBORATED:.2g}", bar_area=f"{UNCORROBORATED:.2g}",
+                   note=f"OCCT: {why}")
+    return row
 
 
 def main():

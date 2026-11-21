@@ -246,8 +246,8 @@ def name_faces(rows, scan):
 
 
 def remap(root):
-    """The faces of every file already read named again (`name_faces`), from its face table and
-    the text: what a change to the text's scan needs, without OCCT."""
+    """The faces of every file already read named again (`name_faces`), and its units read again,
+    from its face table and the text: what a change to the text's scan needs, without OCCT."""
     for f in corpus_files(root):
         js, tsv = (os.path.join(root, "oracle", f + x) for x in (".json", ".faces.tsv"))
         if not (os.path.exists(js) and os.path.exists(tsv)):
@@ -257,7 +257,9 @@ def remap(root):
             continue
         rows = [line.split("\t") for line in open(tsv).read().splitlines()[1:]]
         rows = [[int(r[0]), r[2]] + r[4:] for r in rows]
-        got["faces_mapped"] = name_faces(rows, stepscan.scan(os.path.join(root, f)))
+        scan = stepscan.scan(os.path.join(root, f))
+        got["faces_mapped"] = name_faces(rows, scan)
+        got["units"], got["uncertainty"] = scan["units"], scan["uncertainty"]
         with open(tsv, "w") as fh:
             fh.write(FACE_HEADER + "\n" + "".join("\t".join(str(x) for x in r) + "\n" for r in rows))
         with open(js, "w") as fh:

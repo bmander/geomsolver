@@ -18,11 +18,14 @@
 //! it:
 //!
 //! * `nothing_is_read_wrong`: each file is refused, or read to its solids, each file entity
-//!   read and none twice-counted, and their volume and area within the bar. Holds at every
-//!   commit, the reader refusing everything included.
+//!   read and none twice-counted, and their volume and area within the bar; a file that
+//!   represents no solid (`ref_from` `refuse`: a shell-based surface model, an empty product) is
+//!   refused. Holds at every commit, the reader refusing everything included.
 //! * `nothing_panics`: no read panics (`catch_unwind`); a panic names its file.
-//! * `the_corpus_reads`: every file read, none refused. The stage's finish line: fails until the
-//!   reader is done, and its table is the progress report.
+//! * `the_corpus_reads`: every file read, none refused but those that represent no solid or that
+//!   OCCT and brep-bench's measurer read differently (`disputed`: mostly loops against ISO
+//!   10303-42, which OCCT repairs). The stage's finish line: fails until the reader is done, and
+//!   its table is the progress report.
 //!
 //! ```sh
 //! STEP_CORPUS=/path/to/corpus cargo test --manifest-path rust/Cargo.toml -p gcs-core -- \
@@ -51,8 +54,19 @@ struct Row {
     area: f64,
     bar_volume: f64,
     bar_area: f64,
-    /// Where the reference comes from: `closed` (the case's closed form), `occt`, or `source:…`.
+    /// Where the reference comes from: `closed` (the case's closed form), `mass+occt`, `mass`,
+    /// `occt`, `source:…`; `refuse` for a file that represents no solid; `disputed` for one the
+    /// two readers read differently, where `alt` is the second reading.
     from: String,
+    alt: Option<(f64,f64)>,
+}
+
+impl Row {
+    /// Whether the file represents no solid, so that the reader must refuse it.
+    fn refuse(&self) -> bool { self.from == "refuse" }
+    /// Whether a refusal finishes the file: one that represents no solid, or one the readers
+    /// dispute (its loops against the standard, which a reader may refuse).
+    fn may_refuse(&self) -> bool { self.refuse() || self.from == "disputed" }
 }
 
 fn table() -> Vec<Row> {
@@ -64,13 +78,14 @@ fn table() -> Vec<Row> {
     let (path,sha,solids,faces,edges,vertices) = (col("path"),col("data_sha256"),col("solids"),
         col("step_faces"),col("step_edges"),col("step_vertices"));
     let (v,a,bv,ba,from) = (col("ref_volume"),col("ref_area"),col("bar_volume"),col("bar_area"),col("ref_from"));
+    let (av,aa) = (col("alt_volume"),col("alt_area"));
     lines.filter(|l| !l.is_empty()).map(|l| {
         let f: Vec<&str> = l.split('\t').collect();
         let n = |i: usize| f[i].parse::<usize>().unwrap_or_else(|_| panic!("{}: {:?} is no count",f[path],f[i]));
         let x = |i: usize| f[i].parse::<f64>().unwrap_or(f64::NAN);
         Row { path: f[path].to_string(),data_sha256: f[sha].to_string(),solids: n(solids),
             entities: [n(faces),n(edges),n(vertices)],volume: x(v),area: x(a),bar_volume: x(bv),bar_area: x(ba),
-            from: f[from].to_string() }
+            from: f[from].to_string(),alt: (!f[av].is_empty()).then(|| (x(av),x(aa))) }
     }).collect()
 }
 
@@ -155,11 +170,16 @@ fn rel(got: f64,want: f64) -> f64 { (got-want).abs()/want.abs() }
 /// Why a read is wrong against its row, if it is.
 fn wrong(row: &Row,read: &Outcome) -> Option<String> {
     let Outcome::Read {solids,entities,volume,area} = read else { return None };
+    if row.refuse() { return Some(format!("read {solids} solids from a file that represents none")) }
     if *solids != row.solids { return Some(format!("{solids} solids, the file has {}",row.solids)) }
     if *entities != row.entities {
         return Some(format!("faces, edges, vertices read {entities:?}, the file's solids hold {:?}",row.entities))
     }
     let (dv,da) = (rel(*volume,row.volume),rel(*area,row.area));
+    // a disputed file may be read to either reading
+    if let Some((v,a)) = row.alt {
+        if rel(*volume,v) <= row.bar_volume && rel(*area,a) <= row.bar_area { return None }
+    }
     if !(dv <= row.bar_volume) { return Some(format!("volume {volume:.12e} is {dv:.1e} off {:.12e} ({}), the bar {:.0e}",row.volume,row.from,row.bar_volume)) }
     if !(da <= row.bar_area) { return Some(format!("area {area:.12e} is {da:.1e} off {:.12e} ({}), the bar {:.0e}",row.area,row.from,row.bar_area)) }
     None
@@ -173,7 +193,7 @@ fn report(rows: &[Row],reads: &[Read]) {
         let (word,dv,da,why) = match &r.outcome {
             Outcome::Missing => ("missing","".into(),"".into(),String::new()),
             Outcome::Stale(sha) => ("stale","".into(),"".into(),format!("DATA's sha256 {sha}")),
-            Outcome::Refused(f) => ("refused","".into(),"".into(),format!("{:?} {f}",f.why)),
+            Outcome::Refused(f) => (if row.refuse() { "nosolid" } else if row.may_refuse() { "disputed" } else { "refused" },"".into(),"".into(),format!("{:?} {f}",f.why)),
             Outcome::Panicked(m) => ("PANIC","".into(),"".into(),m.clone()),
             Outcome::Read {volume,area,..} => match wrong(row,&r.outcome) {
                 Some(w) => ("WRONG",format!("{:.1e}",rel(*volume,row.volume)),format!("{:.1e}",rel(*area,row.area)),w),
@@ -227,8 +247,12 @@ fn nothing_panics() {
 fn the_corpus_reads() {
     let Some((rows,reads)) = outcomes() else { return };
     report(rows,reads);
-    let short = rows.iter().zip(reads).filter(|(row,r)| !matches!(r.outcome,Outcome::Read {..})
-        || wrong(row,&r.outcome).is_some()).count();
+    // a file that represents no solid is done when it is refused
+    let short = rows.iter().zip(reads).filter(|(row,r)| match r.outcome {
+        Outcome::Refused(_) => !row.may_refuse(),
+        Outcome::Read {..} => wrong(row,&r.outcome).is_some(),
+        _ => true,
+    }).count();
     assert!(short == 0,"{short} of {} files not read to their reference",rows.len());
 }
 
@@ -289,6 +313,7 @@ fn the_table_is_whole() {
     assert!(rows.len() > 32,"the reference table has {} rows",rows.len());
     for r in &rows {
         assert_eq!(r.data_sha256.len(),64,"{}",r.path);
+        if r.refuse() { continue }
         assert!(r.volume.is_finite() && r.area.is_finite() && r.volume > 0. && r.area > 0.,"{}: no reference",r.path);
         assert!(r.bar_volume > 0. && r.bar_area > 0. && r.bar_volume < 0.05 && r.bar_area < 0.05,"{}: bars {} {}",
             r.path,r.bar_volume,r.bar_area);

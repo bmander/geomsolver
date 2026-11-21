@@ -157,7 +157,7 @@ def scan(path):
     return {"bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest(),
             "data_sha256": data_sha256(raw), "schema": schema, "ap": ap(schema),
             "writer": system, "entities": len(ents), "census": dict(sorted(census.items())),
-            "solids": solids, "units": units(ents), "uncertainty": uncertainty(ents)}
+            "solids": solids, "units": units(ents, text), "uncertainty": uncertainty(ents)}
 
 
 def face_list(ents, solid):
@@ -205,16 +205,18 @@ def surface_kind(kinds):
     return kinds[0].lower() if kinds else "?"
 
 
-def units(ents):
+def units(ents, text=""):
     """The length unit the file's representations name: `mm`, `m`, `inch`… (SI_UNIT's prefix and
     name, or a CONVERSION_BASED_UNIT's name), each one the file names, joined by `,`."""
     seen = []
     for kinds, _, rhs in ents.values():
         if "LENGTH_UNIT" not in kinds:
             continue
-        m = re.search(r"CONVERSION_BASED_UNIT\s*\(\s*'([^']*)'", rhs)
+        m = re.search(r"CONVERSION_BASED_UNIT\s*\(", rhs)
         if m:
-            name = m.group(1).lower() or "conversion"
+            # the strings were emptied for parsing: the unit's name is read from the text
+            named = re.findall(r"CONVERSION_BASED_UNIT\s*\(\s*'([^']*)'", text)
+            name = ",".join(sorted({n.lower() for n in named})) or "conversion"
         else:
             m = re.search(r"SI_UNIT\s*\(\s*(\$|\.(\w+)\.)\s*,\s*\.(\w+)\.", rhs)
             name = ((m.group(2) or "") + m.group(3)).lower() if m else "?"
