@@ -357,7 +357,8 @@ fn lug(off: f64, word: Word) -> String {
 /// Gauss–Legendre.
 fn turned_fill(word: Word, big: f64, theta: &dyn Fn(f64) -> f64) -> f64 {
     let (reach, h): (f64, &dyn Fn(f64) -> (f64, f64)) = match word {
-        Word::Round(r) => (0.5 * PI, &move |t: f64| (r * (1.0 - t.cos()), r * (1.0 - t.sin()) * r * t.sin())),
+        Word::Round(r) => (0.5 * PI,
+            &move |t: f64| (r * (1.0 - t.cos()), r * (1.0 - t.sin()) * r * t.sin())),
         Word::Chamfer(d) => (d, &move |u: f64| (u, d - u)),
     };
     gauss_legendre(60).iter().map(|&(x, w)| {
@@ -511,8 +512,10 @@ impl Standing {
         if let Some(s) = &slivers {
             let bare = Standing { word: None, ..self.clone() }.document();
             let b = solved(&bare);
-            let bare_exact = rounds::built(&b, "part").unwrap_or_else(|why| panic!("part: {why}\n{bare}"));
-            assert!(rounds::slivers(&b, "part", &bare_exact).is_some(), "the round's own sliver: {s}\n{src}");
+            let bare_exact = rounds::built(&b, "part")
+                .unwrap_or_else(|why| panic!("part: {why}\n{bare}"));
+            assert!(rounds::slivers(&b, "part", &bare_exact).is_some(),
+                "the round's own sliver: {s}\n{src}");
         }
         rounds::written(&e, "part", &exact);
         Ok((props::volume(&exact.solid), slivers))
@@ -520,7 +523,8 @@ impl Standing {
 
     /// Built (`built`) to the volume `want`; its sliver warning, where it has one.
     fn holds(&self, want: f64) -> Option<String> {
-        let (got, slivers) = self.built().unwrap_or_else(|why| panic!("part: {why}\n{}", self.document()));
+        let (got, slivers) = self.built()
+            .unwrap_or_else(|why| panic!("part: {why}\n{}", self.document()));
         close(got, want);
         slivers
     }
