@@ -288,6 +288,7 @@ mod scenario_view;
 mod scenarios;
 mod screwed_copies;
 mod screwed_sets;
+mod seam_aslant;
 mod seams;
 mod seated_ball;
 mod sections;

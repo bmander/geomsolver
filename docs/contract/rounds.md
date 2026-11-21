@@ -342,6 +342,35 @@ there a point's distance from either face is its distance from the seam, so the 
   `FlatFill`'s to 1e-8; a pocket's rim rounded and chamfered within the casting, its floor ending
   it square, to the same bars; the foot rounded all round, its other edges' prisms in closed form,
   to 1e-6; a ball short of the seam the side's prism, to 1e-9.
+- **along a straight edge beside a seam crossing its footprint aslant** (#994, fixture 126: a foot
+  standing upright against a drafted side, whose plane goes on into its corner's cone along a
+  generator the foot's edge is not along; or a foot leaning against an upright side going on into
+  its corner's cylinder; `piece::seam_aslant`, `piece::aslant_pieces`): in the face's plane the
+  ball's touch runs along the edge in a line, so it crosses the seam once, where its side of the
+  seam's normal plane changes — linear along the edge. Short of that section the ball touches
+  the plane and the run's prism is the region's; past it the ball touches the next face, the
+  piece beyond (`along_beyond` against the seam's own line); at it the touch is on the seam,
+  where the next face's normal is the plane's, so the ball's centre runs along the edge and the
+  plane of its arc is the section square to the edge: the run is cut off there and the piece
+  beyond starts there (`Beyond::seamed`, `spill::round_beyond`: no strip of the next face at that
+  cap, the touch its vertex on the seam), carried past the other end and cut off by the planes the
+  run ends on, glued to the run on that section (`Piece::Along`'s run, `Partner::Run`). The
+  crossing may lie past the end the run is carried from — then the piece beyond starts there,
+  beyond that end's planes, which cut it, and there is no run — but not past the end the touch goes
+  on past, within the stretch carried past it (refused). Where the crossing is further off than
+  the edge's length and four sections' widths (a seam all but along the edge), the piece beyond
+  runs the edge's whole length as above, with a seam aslant (each cap's strip from where the seam
+  crosses it; `round_beyond` refuses a cap carried past the end that finds the touch back short of
+  the seam rather than build it inside out). Refused by name: a chamfer's flat (its run changes face
+  along a plane crossing its section aslant: no construction yet), from a face no plane, and a
+  piece beyond ending on a curved face. `tests/seam_aslant.rs`: the issue's foot (its side 4.4 to
+  4.7 short of the seam) rounded 10 and 7 (past the seam all along) and 5.4 (crossing partway
+  up), mirrored beside the other corner, and a notch of its shape cut 40 into the box through its
+  height, the rim with the north side rounded 10 and 5.4 within the box, each against a quadrature
+  of `std.rounds.Fill`'s or `Run`'s words to 1e-6; a foot drafted 10° against an upright box, its
+  touch crossing a cylinder's seam partway up (8) and before its foot (14), to the same bar; R4
+  on either, short of the seam, the prism's closed form to 1e-9; the foot chamfered 6 refused by
+  name.
 
 `brep::spill` has **one section model** (#425): every piece beyond is read along the meeting of
 the face it stands on and the wall, in the planes square to it — a ring's circle a meeting like
@@ -387,7 +416,7 @@ round's crossing cut where its closed net is seamed) and the pieces are glued in
 at the run's first edge's middle, as a run with no seam beyond it does, and nothing steers where
 its seam falls. **Refused by name** (`piece::spilled`: "its section reaches across the seam where a face
 goes on tangent into another …", the field reading the region): on both sides of its edge; into
-more than one face; along a seam that is not along a straight edge, or a curved seam beside one;
+more than one face; a curved seam beside a straight edge;
 beside two seams; beside a seam running only part of its edge; past a face it goes on into across
 an edge no seam, or a chain of more than four; round a circle beside a chain whose further seam is
 not about its axis; for a piece beyond (`chain_seam`, a ring's and a traced run's alike) from a face
@@ -569,7 +598,13 @@ meet at a vertex" above).
   crossed the next side, a run went a hundred millimetres on along it and, past the corner where
   that side turns back in, cut a groove along its plane through the plate's top. The lowering
   carries a run no further for them (`piece::ends_beyond`): each is a cut it is kept within (a
-  curved one where it reaches the prism or the ring at all).
+  curved one where it reaches the prism or the ring at all).  An edge that ends only where the face of the
+  run's it bounds goes on tangent across a seam (`BodyFaces::seam_from`, #994: a floor's edge
+  along a drafted side running on round the corner's cone) ends nothing: a seam is no edge, so
+  nor is it the end of one, and no plane square to it there is the run's. Square there, a fill
+  leaning toward the seam at its foot (a foot drafted against an upright side) was cut off at the
+  seam's normal plane all the way up, the field and the piece beyond alike, short of what
+  `std.rounds.Fill` says by its stretch on round the cylinder (`tests/seam_aslant.rs`).
 - **Two runs mirrored at a convex corner meet in the plane halving it** (`assemble::mitred`):
   where two runs' edges, and no third's, end at one vertex no corner's ball stands at, each
   section reaching over the other's edge, and each run is the other's image in the plane halving

@@ -96,7 +96,7 @@ impl Beyond {
             && x.iter().zip(y).all(|(p, q)| near(p.0, q.0) && (p.1 - q.1).abs() <= 1e-9 * size);
         self.ends.iter().zip(&b.ends).all(|(&p, &q)| near(p, q)) && self.section == b.section
             && self.face == b.face && self.chain == b.chain && self.wall == b.wall
-            && match (&self.run, &b.run) { (Some(x), Some(y)) => halves(x, y), (None, None) => true, _ => false }
+            && self.seamed == b.seamed && match (&self.run, &b.run) { (Some(x), Some(y)) => halves(x, y), (None, None) => true, _ => false }
     }
 }
 
@@ -722,6 +722,7 @@ impl Assembly {
                 Across::Round { radius } => spill::Across::Round { radius: w.length(radius) },
             },
             ends: b.ends.map(|p| w.point(p)),
+            seamed: b.seamed,
         }).collect();
         Ok(recipe::Lowered { pieces, corners, rolled, joins: self.joins.clone(), gaps, stratum: None, beyond })
     }
