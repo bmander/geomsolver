@@ -527,6 +527,20 @@ fn face(st: &Setting,sheet: &Sheet,w: &Walked) -> Result<Built,Refusal> {
     let used: BTreeSet<u32> = uses.iter().flatten().flat_map(|&(e,_)| b.edges[e].v).collect();
     // a lone vertex bounds nothing where a loop passes it or it is a pole; a torus bounded by
     // lone vertices alone is the whole torus
+    // (the lone vertices at a sphere's poles, which bound a face holding both, or the whole)
+    let lone: Vec<u32> = w.bounds.iter().filter_map(|x| match *x { Bound::Vertex(_,v) => Some(v as u32),_ => None })
+        .filter(|&v| !used.contains(&v) && pole_at(s,s.inverse(b.vertices[v as usize].p),st.within).is_some()).collect();
+    let whole = |s: &Surface| match s {
+        Surface::Sphere(..) if !lone.is_empty() => {
+            // the other pole the file's own vertex where a lone one or a loop's is there
+            let p = b.vertices[lone[0] as usize].p;
+            let far = s.point({ let [u,v] = s.inverse(p); [u,-v] });
+            let other = lone.get(1).copied().or_else(|| used.iter().copied().find(|&x| distance(b.vertices[x as usize].p,far) <= st.within));
+            whole_sphere(s,p,lone[0],other,reversed,&w.name,st.within)
+        }
+        _ => None,
+    };
+    if uses.is_empty() { if let Some(x) = whole(s) { return Ok(x) } }
     for bound in &w.bounds {
         let Bound::Vertex(lp,v) = *bound else { continue };
         let p = b.vertices[v].p;
@@ -568,6 +582,15 @@ fn face(st: &Setting,sheet: &Sheet,w: &Walked) -> Result<Built,Refusal> {
         }
         loops.push(l);
     }
+    // a sphere's face holding its poles (a lone vertex at one, or both), its loops holes in it:
+    // the whole sphere its outer loop, laid through the file's poles
+    if poles.is_empty() && !lone.is_empty() {
+        if let Some(x) = whole(s) {
+            loops.extend(x.face.loops);
+            laid.extend(x.laid);
+            poles.extend(x.poles);
+        }
+    }
     let mut f = Face {surface:s.clone(),reversed,loops,name:w.name.clone()};
     if std::env::var_os("STEP_READ_DEBUG").is_some() {
         for c in f.loops.iter().flatten() {
@@ -578,15 +601,30 @@ fn face(st: &Setting,sheet: &Sheet,w: &Walked) -> Result<Built,Refusal> {
     }
     // the outer loop first: the one enclosing the most of the face's parameters
     if f.loops.len() > 1 {
-        let areas: Vec<f64> = f.loops.iter().map(|l| b.loop_area(&f,l).abs()).collect();
+        // (a face laying an edge read against the boundary with what it lays, its laid edges and
+        // pole numbered after the boundary's)
+        let with_laid;
+        let (at,mut g) = if laid.is_empty() { (b,f.clone()) } else {
+            let mut x = b.clone();
+            let (e0,p0) = (x.edges.len() as u32,x.vertices.len() as u32);
+            x.edges.extend(laid.iter().cloned().map(|mut e| { for v in &mut e.v { if *v > LAID-16 { *v = p0+(LAID-*v); } } e }));
+            x.vertices.extend(poles.iter().map(|&p| Vertex {p,tol:0.}));
+            let mut g = f.clone();
+            for c in g.loops.iter_mut().flatten() { if c.edge > LAID-16 { c.edge = e0+(LAID-c.edge); } }
+            with_laid = x;
+            (&with_laid,g)
+        };
+        let areas: Vec<f64> = g.loops.iter().map(|l| at.loop_area(&g,l).abs()).collect();
         let outer = (0..areas.len()).max_by(|&i,&j| areas[i].total_cmp(&areas[j])).unwrap_or(0);
         let l = f.loops.remove(outer);
         f.loops.insert(0,l);
+        let l = g.loops.remove(outer);
+        g.loops.insert(0,l);
         // the others moved by whole periods to lie nearest its middle
         let periods = s.periods();
-        let o = span(b,&f,&f.loops[0]);
+        let o = span(at,&g,&g.loops[0]);
         for li in 1..f.loops.len() {
-            let h = span(b,&f,&f.loops[li]);
+            let h = span(at,&g,&g.loops[li]);
             let mut d = [0.;2];
             for k in 0..2 {
                 let Some(p) = periods[k] else { continue };
@@ -616,6 +654,30 @@ fn whole_torus(s: &Surface,p: V,v: u32,reversed: bool,name: &str) -> Built {
         Coedge {edge:LAID,reversed:true,pcurve:line(d,c)},Coedge {edge:LAID-1,reversed:true,pcurve:line(a,d)}];
     if reversed { l = reverse_loop(l); }
     Built {face:Face {surface:s.clone(),reversed,loops:vec![l],name:name.to_string()},laid,poles:Vec::new()}
+}
+
+/// **A whole sphere**, bounded by the vertex at one of its poles alone (Open CASCADE writes one
+/// so), or at both (`other`): the other pole, where the file gives none, and the meridian through
+/// `u = 0` from the one to the other laid, the
+/// meridian walked up one side of the square of the face's parameters and down the other
+/// (`Brep::close_poles` lays the poles' edges between). None where the vertex is no pole.
+fn whole_sphere(s: &Surface,p: V,v: u32,other: Option<u32>,reversed: bool,name: &str,within: f64) -> Option<Built> {
+    let Surface::Sphere(f,r) = *s else { return None };
+    let [_,at] = s.inverse(p);
+    pole_at(s,[0.,at],within)?;
+    use std::f64::consts::FRAC_PI_2;
+    let north = at > 0.;
+    let far_point = s.point([0.,if north { -FRAC_PI_2 } else { FRAC_PI_2 }]);
+    let meridian = Curve::Circle(Frame {o:f.o,x:f.x,y:f.z,z:cross(f.x,f.z)},r);
+    // from the south pole to the north, the laid pole named `LAID` until it is numbered
+    let far = other.unwrap_or(LAID);
+    let ends = if north { [far,v] } else { [v,far] };
+    let edge = Edge {curve:EdgeCurve::Curve(meridian),t:[-FRAC_PI_2,FRAC_PI_2],v:ends,tol:0.};
+    let side = |u: f64| Pcurve::Inverse {a:[u,-FRAC_PI_2],b:[u,FRAC_PI_2]};
+    let mut l = vec![Coedge {edge:LAID,reversed:false,pcurve:side(TAU)},Coedge {edge:LAID,reversed:true,pcurve:side(0.)}];
+    if reversed { l = reverse_loop(l); }
+    let poles = if other.is_some() { vec![] } else { vec![far_point] };
+    Some(Built {face:Face {surface:s.clone(),reversed,loops:vec![l],name:name.to_string()},laid:vec![edge],poles})
 }
 
 /// The entity a check's message names: its first face or edge, by its index in the `Brep`.
