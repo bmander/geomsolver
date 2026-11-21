@@ -91,7 +91,11 @@ pub struct Given {
 /// Every solid `text` gives, in the file's order; refused where any of them is, or where there
 /// is none.
 pub fn read(text: &str) -> Result<Vec<Given>,Refusal> {
-    let file = File::parse(text,&|_| {}).map_err(|m| Refusal::new(Why::Malformed,None,m))?;
+    // (a reference to no entity, or one defined twice, witnessed by the entity that says it)
+    let file = File::parse(text,&|_| {}).map_err(|m| {
+        let named = m.strip_prefix('#').and_then(|r| r.split(' ').next()).and_then(|n| n.parse().ok());
+        Refusal::new(Why::Malformed,named,m)
+    })?;
     let found = context::solids(&file)?;
     if found.is_empty() { return Err(Refusal::new(Why::Empty,None,"the file represents no solid")) }
     found.into_iter().map(|f| {

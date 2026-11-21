@@ -535,7 +535,11 @@ impl Brep {
                     // (or twice the vertex's own, the farthest a point merged into it stood)
                     let at = self.vertices[self.ends(c)[1] as usize].tol;
                     let corner = tol.max(2.*(self.edges[c.edge as usize].tol+self.edges[next.edge as usize].tol)).max(2.*at);
-                    if distance(f.surface.point(a),f.surface.point(b)) > corner || (a[0]-b[0]).abs().max((a[1]-b[1]).abs()) > 1e-3 {
+                    // on the same branch: within a thousandth in parameters, or within what the
+                    // corner's tolerance spans there where that is more (a file's edges standing
+                    // their tolerance off their faces, #993)
+                    let spans = { let (_,su,sv) = f.surface.d1(a); let least = norm(su).min(norm(sv)); if least > 0. { 2.*corner/least } else { 0. } };
+                    if distance(f.surface.point(a),f.surface.point(b)) > corner || (a[0]-b[0]).abs().max((a[1]-b[1]).abs()) > spans.max(1e-3) {
                         if crate::debug() {
                             let kind = |c: &Coedge| self.edges[c.edge as usize].curve.kind();
                             eprintln!("topo: face {fi} breaks between edge {} ({}, tol {:e}) and edge {} ({}, tol {:e}) at vertex {:?} (tol {at:e}): {:?} and {:?} apart {:e}, corner {corner:e}",

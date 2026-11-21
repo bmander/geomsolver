@@ -70,7 +70,7 @@ pub fn solids(file: &File) -> Result<Vec<Found>,Refusal> {
         let items = v.get(1).and_then(Value::list).ok_or_else(|| Refusal::malformed(e.id,"a shape representation without items"))?;
         let at = v.get(2).and_then(Value::reference).ok_or_else(|| Refusal::malformed(e.id,"a shape representation without a context"))?;
         let mut read = None;
-        for solid in items.iter().filter_map(Value::reference).filter(|&i| file.get(i).is("MANIFOLD_SOLID_BREP")) {
+        for solid in items.iter().filter_map(Value::reference).filter(|&i| file.get(i).is("MANIFOLD_SOLID_BREP") || file.get(i).is("BREP_WITH_VOIDS")) {
             let context = match read { Some(c) => c,None => { let c = context(file,at)?; read = Some(c); c } };
             out.push(Found {solid,name:String::new(),context});
         }
