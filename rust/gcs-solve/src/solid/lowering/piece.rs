@@ -346,12 +346,16 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
         };
         built.push(piece(body, edge, fa, fb, within, section, &ends, spill, one, units));
     }
+    // a straight run along `span` from edge `e`'s faces, kept outside `inner` (`run_piece`)
+    let run_from = |e: u32, span: [V; 2], inner: &[Kept], halfway: bool| {
+        let (fa, fb) = ordered(e).expect("a straight edge between two faces");
+        let (fa, fb, section) = in_body_order(fa, fb, section);
+        run_piece(body, span, fa, fb, within, section, &ends, inner, spill, halfway)
+    };
     // pieces of one line a curved face cuts across, which some of the section's lines pass by: one
     // run over them, kept outside it
     for (group, span, inner) in across_cuts(body, &edges, &built, &ends) {
-        let (fa, fb) = ordered(group[0]).expect("a straight edge between two faces");
-        let (fa, fb, section) = in_body_order(fa, fb, section);
-        let whole = run_piece(body, span, fa, fb, within, section, &ends, &inner, spill, one);
+        let whole = run_from(group[0], span, &inner, one);
         for (k, &e) in edges.iter().enumerate() {
             if group.contains(&e) {
                 built[k] = Ok(Vec::new());
@@ -362,12 +366,12 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
     }
     // one no run beyond the face joins: carried to the plane halfway across what the face cuts from
     // its line (`run_piece`'s `halfway`)
-    for (k, &edge) in edges.iter().enumerate() {
-        if one && matches!(built[k], Err(Refused::PassedBy)) {
-            let (fa, fb) = ordered(edge).expect("a straight edge between two faces");
-            let (fa, fb, section) = in_body_order(fa, fb, section);
-            let span = body.segment(edge).expect("a straight edge");
-            built[k] = run_piece(body, span, fa, fb, within, section, &ends, &[], spill, true).map(|p| vec![p]);
+    if one {
+        for (k, &edge) in edges.iter().enumerate() {
+            if matches!(built[k], Err(Refused::PassedBy)) {
+                let span = body.segment(edge).expect("a straight edge");
+                built[k] = run_from(edge, span, &[], true).map(|p| vec![p]);
+            }
         }
     }
     let mut pieces = Vec::new();
@@ -396,9 +400,9 @@ fn nearly_tangent(body: &crate::solid::faces::BodyFaces, edge: u32, ends: &Ends,
     -> Option<String> {
     let faces = body.faces_of(edge);
     for p in [body.along(edge, 0.0), body.along(edge, 1.0)] {
-        for &(by, _, far) in ends.iter() {
-            let (EndBy::Face(c), None) = (by, far) else { continue };
-            if body.end_side(&by, p).0.abs() > 1e-7 * (1.0 + norm(p)) {
+        for end @ &(by, _, _) in ends.iter() {
+            let EndBy::Face(c) = by else { continue };
+            if !stands_at(body, end, p) {
                 continue;
             }
             // the curved face's radius at the corner: a sphere's, or the distance from its axis
@@ -519,7 +523,7 @@ fn across_cuts(body: &crate::solid::faces::BodyFaces, edges: &[u32],
         let on_line = |p: V| norm(cross(sub(p, a0), along)) <= 1e-9 * (1.0 + norm(p) + norm(a0));
         let mut line: Vec<(usize, [f64; 2])> = (0..edges.len()).filter(|&j| !taken[j]).filter_map(|j| {
             let [b0, b1] = body.segment(edges[j])?;
-            (alike(edges[j]) && on_line(b0) && on_line(b1)).then(|| {
+            (on_line(b0) && on_line(b1) && alike(edges[j])).then(|| {
                 let (s0, s1) = (dot(sub(b0, a0), along), dot(sub(b1, a0), along));
                 (j, [s0.min(s1), s0.max(s1)])
             })
@@ -673,7 +677,6 @@ fn ring_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: u
     // round a circle may come back out of it, and the other end may run into the same solid
     // from its other side)
     let (mut from, mut to, mut halves, mut kepts) = (t0, t1, Vec::new(), Vec::new());
-    let mut whole = false;
     // an end whose ball the face going on round a tighter round stops short of it: the ring ends in
     // the standing ball's section, the ball's piece past it to the crease's end the region's too
     let mut besides = Vec::new();
@@ -690,6 +693,9 @@ fn ring_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: u
         }
     }
     if !closed {
+        // the turn between the crease's ends, and the kernel's tolerance about the ring
+        let gap = std::f64::consts::TAU - (t1 - t0);
+        let tol = crate::brep::geom::tolerance_over(1.0 + norm(centre), body.tolerance());
         for (k, p, t) in [(0, p0, t0), (1, p1, t1)] {
             if stopped[k] {
                 continue;
@@ -715,63 +721,59 @@ fn ring_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: u
             // back within every face the run ends on (`resumed`) — past it a point's nearest point
             // of the meeting is off the crease — and the ring is that far round, kept within its
             // ends' faces, whatever of its section they cut off
-            let gap = std::f64::consts::TAU - (t1 - t0);
-            let tol = body.tolerance().max(1e-9 * (1.0 + norm(centre)));
-            let back = resumed(|s| ends.iter().map(|&(by, sign, _)| {
-                sign * body.end_side(&by, add(centre, scale(radial_at(t + way * s), radius))).0
-            }).fold(f64::NEG_INFINITY, f64::max), gap, tol);
-            // (within the boundary's tolerance of the crease's other end, read at it: that end's
-            // own face, which the circle reaches there)
-            let half = 0.5 * if radius * (gap - back) <= 10.0 * tol { gap } else { back };
             // (in several runs, read against the nearest's ends, the meeting is no one circle's
-            // within one set of faces: carried only as far as each end cuts its whole section off)
-            let half = if one { half } else { f64::INFINITY };
-            let mut short = None;
+            // within one set of faces: none, carried only as far as each end cuts its whole section
+            // off)
+            let half = one.then(|| {
+                let at = |s: f64| add(centre, scale(radial_at(t + way * s), radius));
+                let back = resumed(|s| outside_ends(body, ends, at(s)), gap, tol);
+                // (within the boundary's tolerance of the crease's other end, read at it: that
+                // end's own face, which the circle reaches there)
+                0.5 * if radius * (gap - back) <= 10.0 * tol { gap } else { back }
+            });
             // short of it, where every point of the section's hull has crossed a plane at this end
             // (#218's 2: what lies past is cut off, and comes back within only past `half`), or
-            // into a curved face, a quarter of the way through what each spends in its solid
-            let mut reach: Option<f64> = Some(0.0);
+            // into a curved face, a quarter of the way through what each spends in its solid (where
+            // a face does not cut it off, the first such says so)
+            let mut reach: Result<f64, &str> = Ok(0.0);
             // the section's width as a turn at its rim, for `clear_of`
             let rim = |q: V| { let w = sub(q, centre); sub(w, scale(axis, dot(w, axis))) };
             let turn = hull.iter().map(|&q| distance(q, p)).fold(0.0, f64::max)
                 / hull.iter().map(|&q| norm(rim(q))).fold(0.0, f64::max);
             for &(n, d) in &planes {
-                // each point's turn past the plane, from where it first crosses it to where it
-                // comes back
-                let past: Option<Vec<[f64; 2]>> = hull.iter().map(|&q| {
-                    let rim = rim(q);
-                    let (a, b) = (dot(n, rim), way * dot(n, cross(axis, rim)));
-                    over_from(a, b, dot(n, sub(q, rim)) - d)
-                }).collect();
-                let Some(past) = past else {
-                    reach = None;
-                    short = short.or(Some("a stretch of a circle its end does not cut off"));
-                    continue;
-                };
-                let first = past.iter().map(|s| s[0]).fold(f64::INFINITY, f64::min);
-                let last = past.iter().map(|s| s[0]).fold(0.0, f64::max);
-                let back = past.iter().map(|s| s[1]).fold(f64::INFINITY, f64::min);
-                // carried clear of it where it reaches in, short of where any point comes back
-                let to = clear_of(first, last, turn).min(0.5 * (last + back)).max(last);
-                reach = reach.map(|r| r.max(to));
+                reach = reach.and_then(|r| {
+                    // each point's turn past the plane, from where it first crosses it to where it
+                    // comes back
+                    let past: Vec<[f64; 2]> = hull.iter().map(|&q| {
+                        let rim = rim(q);
+                        let (a, b) = (dot(n, rim), way * dot(n, cross(axis, rim)));
+                        over_from(a, b, dot(n, sub(q, rim)) - d)
+                    }).collect::<Option<_>>().ok_or("a stretch of a circle its end does not cut off")?;
+                    let first = past.iter().map(|s| s[0]).fold(f64::INFINITY, f64::min);
+                    let last = past.iter().map(|s| s[0]).fold(0.0, f64::max);
+                    let back = past.iter().map(|s| s[1]).fold(f64::INFINITY, f64::min);
+                    // carried clear of it where it reaches in, short of where any point comes back
+                    Ok(r.max(clear_of(first, last, turn).min(0.5 * (last + back)).max(last)))
+                });
             }
             for kept in &bent {
-                let (mut entry, mut exit) = (0.0_f64, std::f64::consts::TAU);
-                for &q in &hull {
-                    let Some([first, back]) = dwell(|phi| kept.away(turned(q, phi))) else {
-                        (entry, exit) = (1.0, 0.0);
-                        break;
-                    };
-                    entry = entry.max(first);
-                    exit = exit.min(back);
-                }
-                reach = if entry < exit { reach.map(|r| r.max(entry + 0.25 * (exit - entry))) } else { None };
-                short = short.or(reach.is_none().then_some("a stretch of a circle its curved end does not cut off"));
+                reach = reach.and_then(|r| {
+                    // each point's stay in the solid, from where it goes in to where it comes out,
+                    // and what all of them spend in it together
+                    let stays: Option<Vec<[f64; 2]>> =
+                        hull.iter().map(|&q| dwell(|phi| kept.away(turned(q, phi)))).collect();
+                    let (entry, exit) = stays.map(|s| {
+                        (s.iter().map(|s| s[0]).fold(0.0, f64::max),
+                         s.iter().map(|s| s[1]).fold(std::f64::consts::TAU, f64::min))
+                    }).filter(|&(entry, exit)| entry < exit)
+                        .ok_or("a stretch of a circle its curved end does not cut off")?;
+                    Ok(r.max(entry + 0.25 * (exit - entry)))
+                });
             }
-            let reach = match reach {
-                Some(r) => r.min(half),
-                None if half.is_finite() => half,
-                None => return Err(unbuilt(short.unwrap_or("a stretch of a circle its end does not cut off"))),
+            let reach = match (reach, half) {
+                (Ok(r), half) => half.map_or(r, |half| r.min(half)),
+                (Err(_), Some(half)) => half,
+                (Err(why), None) => return Err(unbuilt(why)),
             };
             if k == 0 { from -= reach } else { to += reach }
             halves.extend(planes);
@@ -784,21 +786,20 @@ fn ring_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: u
             halves.extend(planes.into_iter().filter(|&(n, d)| dot(n, centre) - d >= -reach));
             kepts.extend(bent.into_iter().filter(|kept| kept.away(centre) >= -reach));
         }
-        // (carried on from both ends to the middle of what lies between them: a whole turn, begun
-        // at the edge's middle, so its seam stands where nothing it is kept within cuts it)
-        if to - from >= std::f64::consts::TAU - 1e-12 {
-            if !one {
-                return Err(unbuilt("a stretch of a circle carried on round its whole turn"));
-            }
-            whole = true;
-            from = 0.5 * (t0 + t1);
-            to = from + std::f64::consts::TAU;
+    }
+    let mut angle = to - from;
+    // (carried on from both ends to the middle of what lies between them: a whole turn, begun at
+    // the edge's middle, so its seam stands where nothing it is kept within cuts it)
+    if !closed && angle >= std::f64::consts::TAU - 1e-12 {
+        if !one {
+            return Err(unbuilt("a stretch of a circle carried on round its whole turn"));
         }
+        angle = std::f64::consts::TAU;
+        from = 0.5 * (t0 + t1);
     }
     let mut start = section_at(from)?;
     start.within = halves;
     start.kept = kepts;
-    let angle = if whole { std::f64::consts::TAU } else { to - from };
     let mut ring = Ring { section: start, axis_origin: centre, axis, angle, beyond: None };
     if let Some(c) = askew {
         let seams = spill.get(&[fa, fb][c]).expect("the face going on");
@@ -1275,6 +1276,7 @@ fn run_piece(body: &crate::solid::faces::BodyFaces, [p0, p1]: [V; 2], fa: usize,
         }
     }
     let width = outline.iter().map(|&q| distance(q, p0)).fold(0.0, f64::max);
+    let eps = 1e-12 * (1.0 + norm(p0).max(norm(p1)));
     for &(n, d) in &halves {
         let slope = dot(n, along);
         // a face along the run cuts it lengthwise or not at all (`along_run`): no end of it
@@ -1287,15 +1289,10 @@ fn run_piece(body: &crate::solid::faces::BodyFaces, [p0, p1]: [V; 2], fa: usize,
             .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), s| (a.min(s), b.max(s)));
         // where it cuts the prism at all — some line crossing it short of the edge's end, or past
         // it — carried clear past it (`clear_of`)
-        let end = way * if way > 0.0 { length } else { 0.0 };
-        let eps = 1e-12 * (1.0 + norm(p0).max(norm(p1)));
+        let end = if way > 0.0 { length } else { 0.0 };
         if first < end - eps || last > end + eps {
             let to = way * clear_of(first, last, width);
-            if way > 0.0 {
-                run.span[1] = run.span[1].max(to);
-            } else {
-                run.span[0] = run.span[0].min(to);
-            }
+            if way > 0.0 { run.span[1] = run.span[1].max(to) } else { run.span[0] = run.span[0].min(to) }
         }
     }
     // a curved face it ends on (#218's 2), a cylinder or a ball: carried on into it and kept on the
@@ -1308,11 +1305,12 @@ fn run_piece(body: &crate::solid::faces::BodyFaces, [p0, p1]: [V; 2], fa: usize,
     for (forward, bent) in [(false, bent0), (true, bent1)] {
         // each line's crossings, as far along the way it runs on from the edge's start
         let way = if forward { along } else { scale(along, -1.0) };
+        // (the edge's end there, as far along it)
+        let end = if forward { length } else { 0.0 };
         for kept in bent {
             let lines: Vec<Option<[f64; 2]>> = outline.iter().map(|&q| kept.face.crossings(q, way)).collect();
             let to = if kept.inside {
-                let from = if forward { length } else { 0.0 };
-                lines.iter().flatten().map(|l| l[1]).fold(from, f64::max) + 2.0 * width
+                lines.iter().flatten().map(|l| l[1]).fold(end, f64::max) + 2.0 * width
             } else {
                 let deepest = lines.iter().flatten().map(|l| l[0]).fold(f64::NEG_INFINITY, f64::max);
                 if !lines.iter().all(|l| l.is_some_and(|l| deepest <= l[1])) {
@@ -1324,14 +1322,12 @@ fn run_piece(body: &crate::solid::faces::BodyFaces, [p0, p1]: [V; 2], fa: usize,
                     // ends on — past it a point's nearest point of the meeting is off the crease —
                     // square there, and kept outside the solid
                     let p = if forward { p1 } else { p0 };
-                    let out = |s: f64| ends.iter().map(|&(by, sign, _)| sign * body.end_side(&by, add(p, scale(way, s))).0)
-                        .fold(f64::NEG_INFINITY, f64::max);
-                    let tol = body.tolerance().max(1e-9 * (1.0 + norm(p)));
-                    let chord = kept.face.crossings(p, way).map(|[_, b]| b).filter(|&b| b > tol);
-                    let Some(chord) = chord.filter(|&b| out(b + tol) <= tol) else {
+                    let tol = crate::brep::geom::tolerance_over(1.0 + norm(p), body.tolerance());
+                    let back = |b: f64| b > tol && outside_ends(body, ends, add(p, scale(way, b + tol))) <= tol;
+                    let Some(chord) = kept.face.crossings(p, way).map(|[_, b]| b).filter(|&b| back(b)) else {
                         return Err(Refused::PassedBy);
                     };
-                    (if forward { length } else { 0.0 }) + 0.5 * chord
+                    end + 0.5 * chord
                 } else {
                     deepest
                 }
@@ -1380,15 +1376,15 @@ fn run_piece(body: &crate::solid::faces::BodyFaces, [p0, p1]: [V; 2], fa: usize,
             Across::Flat { .. } => unreachable!("a straight seam's normal surface is a plane"),
         };
         let hull = run.hull();
-        run.within = halves.into_iter()
-            .filter(|&(n, d)| hull.iter().any(|&p| dot(n, p) > d + 1e-9 * (1.0 + length))).collect();
+        run.within = halves.into_iter().filter(|&h| along_run(&hull, h, 1e-9 * (1.0 + length)))
+            .collect();
         run.within.push(split);
         return Ok(Piece::Along { run: Some(run), beyond });
     }
     // only those reaching into the prism: a square end is the prism's own
     let hull = run.hull();
-    run.within = halves.into_iter()
-        .filter(|&(n, d)| hull.iter().any(|&p| dot(n, p) > d + 1e-9 * (1.0 + length))).collect();
+    run.within = halves.into_iter().filter(|&h| along_run(&hull, h, 1e-9 * (1.0 + length)))
+        .collect();
     run.flush = flush_only(body, ends, [p0, p1]);
     Ok(Piece::Run(run))
 }
@@ -1418,21 +1414,19 @@ fn clear_of(first: f64, last: f64, width: f64) -> f64 { last.max(first + 1e-3 * 
 /// end; where the Boolean joining the run to its body cannot close that, its refusal says so, in
 /// the faces' names, by how far they are turned, and where.
 fn flush_only(body: &crate::solid::faces::BodyFaces, ends: &Ends, ps: [V; 2]) -> Option<String> {
-    let name = |f: usize| {
-        let path = &body.paths()[f];
-        path.route.iter().chain(std::iter::once(&path.face)).cloned().collect::<Vec<_>>().join(".")
-    };
     for p in ps {
-        let near = |n: V, o: V, by: f64| dot(n, sub(p, o)).abs() <= by * (1.0 + norm(p));
-        for &(by, _, far) in ends {
-            let (EndBy::Face(c), None) = (by, far) else { continue };
-            let Some((n, _)) = body.plane(c).filter(|&(n, o)| near(n, o, 1e-7)) else { continue };
+        // (another face's plane through `p`, as `ends_at` reads the one it ends on, a little wider)
+        let near = |m: V, q: V| dot(m, sub(p, q)).abs() <= 1e-6 * (1.0 + norm(p));
+        for end @ &(by, _, _) in ends {
+            let EndBy::Face(c) = by else { continue };
+            let Some((n, _)) = body.plane(c).filter(|_| stands_at(body, end, p)) else { continue };
             for g in (0..body.paths().len()).filter(|&g| g != c) {
-                let Some((m, _)) = body.plane(g).filter(|&(m, q)| near(m, q, 1e-6)) else { continue };
+                let Some((m, _)) = body.plane(g).filter(|&(m, q)| near(m, q)) else { continue };
                 let turn = norm(cross(n, m));
                 if turn > 1e-12 && turn < 1e-3 && dot(n, m) > 0.0 {
-                    return Some(format!("where `{}` and `{}` are flush only to the drawing's numbers, turned {turn:.1e} \
-                        of a radian from one another at [{:.4}, {:.4}, {:.4}]", name(c), name(g), p[0], p[1], p[2]));
+                    return Some(format!("where {} and {} are flush only to the drawing's numbers, turned \
+                        {turn:.1e} of a radian from one another at [{:.4}, {:.4}, {:.4}]",
+                        body.said(c), body.said(g), p[0], p[1], p[2]));
                 }
             }
         }
@@ -1448,7 +1442,9 @@ fn flush_only(body: &crate::solid::faces::BodyFaces, ends: &Ends, ps: [V; 2]) ->
 /// section or cuts it along its length: whether some point of the section's `hull` stands past it
 /// by more than `eps`.  Where none does it is no cut (the fill on its floor); where one does the
 /// piece is kept within it, a prism or a revolution clipped by a plane along it, exactly.
-fn along_run(hull: &[V], (n, d): (V, f64), eps: f64) -> bool { hull.iter().any(|&q| dot(n, q) > d + eps) }
+pub(super) fn along_run(hull: &[V], (n, d): (V, f64), eps: f64) -> bool {
+    hull.iter().any(|&q| dot(n, q) > d + eps)
+}
 
 /// **The piece beyond a seam along a straight edge, the edge's whole length** (#962): the edge from
 /// `p0` to `p1` between `faces`, face `c` a plane going on tangent across the seam through `s` (its
@@ -1692,10 +1688,20 @@ fn next_face(body: &crate::solid::faces::BodyFaces, seams: &[(u32, usize)])
 /// end of an edge of it: each plane's half-space `n·x <= d` it is kept within, and each cylinder,
 /// cone or ball it is kept within (where that side holds its axis, its centre) or outside of.
 fn ends_at(body: &crate::solid::faces::BodyFaces, ends: &Ends, p: V) -> Result<(Vec<(V, f64)>, Vec<Kept>), String> {
-    let at = |&&(c, _, far): &&(EndBy, f64, Option<V>)| {
-        far.is_none() && body.end_side(&c, p).0.abs() <= 1e-7 * (1.0 + norm(p))
-    };
-    kept_by(body, ends.iter().filter(at))
+    kept_by(body, ends.iter().filter(|end| stands_at(body, end, p)))
+}
+
+/// Whether one of a run's `ends` stands at `p`, one end of an edge of it: read at the edge's own
+/// end (no run-out's `far` one), and through `p`.
+fn stands_at(body: &crate::solid::faces::BodyFaces, &(by, _, far): &(EndBy, f64, Option<V>), p: V)
+    -> bool {
+    far.is_none() && body.end_side(&by, p).0.abs() <= 1e-7 * (1.0 + norm(p))
+}
+
+/// How far `x` stands outside the faces a run ends on (`ends`): the most of their signed
+/// distances, each on the side it keeps.
+fn outside_ends(body: &crate::solid::faces::BodyFaces, ends: &Ends, x: V) -> f64 {
+    ends.iter().map(|&(by, sign, _)| sign * body.end_side(&by, x).0).fold(f64::NEG_INFINITY, f64::max)
 }
 
 /// The faces of a run's `ends` where the edge a run-out at its end `p` runs along ends
@@ -1789,36 +1795,26 @@ fn resumed(out: impl Fn(f64) -> f64, gap: f64, tol: f64) -> f64 {
 }
 
 /// Of `a cos φ + b sin φ + c` over `φ >= 0`, where it first goes over nothing (at once where it
-/// starts over); none where it never does.  `a cos φ + b sin φ` is `A cos(φ − phase)`, rising
-/// through `−c` at `phase − spread` and falling at `phase + spread`: from nothing or less it first
-/// goes over where it rises, never where it falls (#948).  A section's point on the end's plane
+/// starts over) and where it next comes back to nothing after (its falling root, never where it
+/// is always over); none where it never goes over.  `a cos φ + b sin φ` is `A cos(φ − phase)`,
+/// rising through `−c` at `phase − spread` and falling at `phase + spread`: from nothing or less
+/// it first goes over where it rises, never where it falls (#948).  A section's point on the end's plane
 /// (the edge's own end, `a + c` nothing) rises at the start itself, its root read a rounding below
 /// it — a whole turn on, which the falling root came before: the start.
-fn first_over(a: f64, b: f64, c: f64) -> Option<f64> {
+fn over_from(a: f64, b: f64, c: f64) -> Option<[f64; 2]> {
     use std::f64::consts::TAU;
-    if a + c > 0.0 {
-        return Some(0.0);
-    }
     let amplitude = a.dhypot(b);
-    if amplitude <= -c {
+    let starts = a + c > 0.0;
+    if !starts && amplitude <= -c {
         return None;
     }
     let (phase, spread) = (b.datan2(a), (-c / amplitude).dacos());
     let rise = (phase - spread).rem_euclid(TAU);
-    Some(if rise > TAU - 1e-9 { 0.0 } else { rise })
-}
-
-/// Of `a cos φ + b sin φ + c` over `φ >= 0`, where it first goes over nothing (`first_over`) and
-/// where it next comes back to nothing after (its falling root, never where it is always over);
-/// none where it never goes over.
-fn over_from(a: f64, b: f64, c: f64) -> Option<[f64; 2]> {
-    use std::f64::consts::TAU;
-    let rise = first_over(a, b, c)?;
-    let amplitude = a.dhypot(b);
+    let rise = if starts || rise > TAU - 1e-9 { 0.0 } else { rise };
     if amplitude <= c {
         return Some([rise, f64::INFINITY]);
     }
-    let fall = (b.datan2(a) + (-c / amplitude).dacos()).rem_euclid(TAU);
+    let fall = (phase + spread).rem_euclid(TAU);
     Some([rise, if fall < rise { fall + TAU } else { fall }])
 }
 

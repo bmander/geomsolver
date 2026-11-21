@@ -7,8 +7,11 @@
 //! by a plane a hundred-millionth of a millimetre off it, a sliver the Boolean could not classify
 //! (#962's 122: "a run cut off at its end: a piece of `far` (a plane) touches `far` (a plane) …
 //! along no face of either"; drawn a little further off square, "a shell of the arrangement is kept
-//! on one side of a plane (`far`) and dropped on another").  A plane holding the end's section as
-//! the body reads it is the piece's own end (`lowering::piece::holds_end`).
+//! on one side of a plane (`far`) and dropped on another").  The piece is carried clear past the
+//! plane it ends on and cut off there, exactly, at any slant (`lowering::piece::clear_of`); a face
+//! lying along the run cuts it lengthwise or not at all (`along_run`); and where the Boolean
+//! joining it to its body cannot close two faces flush only to the drawing's numbers, its refusal
+//! names them (`flush_only`).
 //!
 //! The family, each drawn whole at DOF 0 and each volume its closed form's to 1e-9: an eye (a
 //! cylinder across the arm) and a block boss, flush with both sides, a hair (a micron, half a
@@ -20,40 +23,18 @@
 //! numbers; the arm's sides turned off square by 1e-8 to 1e-3 of a radian; and #962's 122 as the
 //! issue reduced it.  Each is exported (STEP and STL, read back) with no face thinner than the
 //! export's tolerance.
-use gcs_core::brep::{export, props, sweep::Say};
+use gcs_core::brep::props;
 use std::f64::consts::PI;
 
-use crate::common::rounds::gauss_legendre;
-use crate::common::{at, close, ent, text::{dof, solved}};
+use crate::common::rounds::{self, gauss_legendre, segment, Word};
+use crate::common::{at, close, text::{dof, solved}};
 
 /// The arm: `[0, 60] × [0, 20] × [−5, 5]`, its sides turned by `tilt` (radians) about `x = 30`.
 const LENGTH: f64 = 60.0;
 const WIDTH: f64 = 20.0;
 const HALF: f64 = 5.0;
-
-/// A round or a chamfer, of radius or legs its number.
-#[derive(Clone, Copy, Debug)]
-enum Word {
-    Round(f64),
-    Chamfer(f64),
-}
-
-impl Word {
-    fn text(self) -> String {
-        match self {
-            Word::Round(r) => format!("round(r: {r}mm)"),
-            Word::Chamfer(d) => format!("chamfer(d: {d}mm)"),
-        }
-    }
-
-    /// What it takes or fills along a corner of two planes square to one another, per length.
-    fn square(self) -> f64 {
-        match self {
-            Word::Round(r) => (1.0 - PI / 4.0) * r * r,
-            Word::Chamfer(d) => 0.5 * d * d,
-        }
-    }
-}
+/// The arm's volume, its sides square.
+const WHOLE: f64 = LENGTH * WIDTH * 2.0 * HALF;
 
 /// A boss's section, in the plane square to its axis: an eye of radius `big` about the axis `zc`
 /// above the arm's middle, or a block `2w` wide from `zb` to `zt`.
@@ -159,13 +140,10 @@ impl Arm {
             (Some(w), Boss::Block { .. }) => 4.0 * w.square(),
             (Some(w), Boss::Eye { big, zc }) => [zc - HALF, -HALF - zc].into_iter().map(|c| beside_eye(w, big, c)).sum(),
         };
-        LENGTH * WIDTH * 2.0 * HALF + (section * (self.ends[1] - self.ends[0]) - within * inside) / slant
+        WHOLE + (section * (self.ends[1] - self.ends[0]) - within * inside) / slant
             + fills * inside / slant
     }
 }
-
-/// The area of the disc of `big` past a line `b` from its centre.
-fn segment(big: f64, b: f64) -> f64 { big * big * (b / big).acos() - b * (big * big - b * b).sqrt() }
 
 /// What `word` fills between an eye of radius `big` and a plane its axis stands `c` (negative)
 /// from, on the side away from it: both corners.  A round's in closed form — the quadrilateral of
@@ -205,15 +183,11 @@ fn beside_eye(word: Word, big: f64, c: f64) -> f64 {
 /// thinner than the export's tolerance; its volume.
 fn built(src: &str, name: &str) -> f64 {
     let e = solved(src);
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let body = ent(&e, name).i();
-    let exact = export::exact(&e.sketch, body, None, None, &say).unwrap_or_else(|r| panic!("{name}: {r:?}\n{src}"));
-    if let Some(s) = export::slivers(&e.sketch, body, &exact, None) {
-        panic!("{}\n{src}", s.message);
+    let exact = rounds::built(&e, name).unwrap_or_else(|why| panic!("{name}: {why}\n{src}"));
+    if let Some(s) = rounds::slivers(&e, name, &exact) {
+        panic!("{s}\n{src}");
     }
-    export::step(&exact, name, None, &say).unwrap();
-    let stl = export::stl(&e.sketch, body, &exact, None, &say).unwrap();
-    gcs_core::mesh::stl_shells(&stl).unwrap();
+    rounds::written(&e, name, &exact);
     props::volume(&exact.solid)
 }
 
@@ -326,15 +300,14 @@ fn slot(ends: [f64; 2], rim: Option<Word>, floor: Option<Word>, before: Option<W
 /// running out at its own caps, flush with the arm's sides or past them.
 #[test]
 fn a_slot_open_at_the_arms_sides_is_rounded_along_its_rim_and_floor() {
-    let block = LENGTH * WIDTH * 2.0 * HALF;
     let slot_volume = 10.0 * 4.0 * WIDTH;
     for ends in [[0.0, WIDTH], [-1.0, WIDTH + 1.0], [0.0, WIDTH + 1.0]] {
         for word in [Word::Round(1.5), Word::Chamfer(1.5)] {
             let along = 2.0 * word.square() * WIDTH;
-            close(built(&slot(ends, Some(word), None, None), "part"), block - slot_volume - along);
-            close(built(&slot(ends, None, Some(word), None), "part"), block - slot_volume + along);
-            close(built(&slot(ends, Some(word), Some(word), None), "part"), block - slot_volume);
-            close(built(&slot(ends, None, None, Some(word)), "part"), block - slot_volume + along);
+            close(built(&slot(ends, Some(word), None, None), "part"), WHOLE - slot_volume - along);
+            close(built(&slot(ends, None, Some(word), None), "part"), WHOLE - slot_volume + along);
+            close(built(&slot(ends, Some(word), Some(word), None), "part"), WHOLE - slot_volume);
+            close(built(&slot(ends, None, None, Some(word)), "part"), WHOLE - slot_volume + along);
         }
     }
 }
@@ -357,9 +330,8 @@ fn cutter(ends: [f64; 2], tilt: f64, word: Word) -> String {
 /// 133): turned 1e-8 to 1e-3 of a radian, past the arm's sides; and square, flush with them.
 #[test]
 fn a_cutter_rounded_before_it_is_cut_ends_on_its_own_caps() {
-    let block = LENGTH * WIDTH * 2.0 * HALF;
     for word in [Word::Round(1.5), Word::Chamfer(1.5)] {
-        let want = block - (10.0 * 4.0 - 2.0 * word.square()) * WIDTH;
+        let want = WHOLE - (10.0 * 4.0 - 2.0 * word.square()) * WIDTH;
         close(built(&cutter([0.0, WIDTH], 0.0, word), "part"), want);
         for tilt in [0.0, 1e-8, -1e-7, 1e-6, 1e-4, 1e-3] {
             close(built(&cutter([-1.0, WIDTH + 1.0], tilt, word), "part"), want);
@@ -379,6 +351,22 @@ fn lug(off: f64, word: Word) -> String {
     s
 }
 
+/// What `word` fills beside a round wall of radius `big`, its section turned about the wall's axis:
+/// each point of the section `u` out from the wall, at `ρ = big + u`, through `θ(ρ)`.  The
+/// section's height `u` out from the wall by `t` over `[0, π/2]` where smooth (a round's), by
+/// Gauss–Legendre.
+fn turned_fill(word: Word, big: f64, theta: &dyn Fn(f64) -> f64) -> f64 {
+    let (reach, h): (f64, &dyn Fn(f64) -> (f64, f64)) = match word {
+        Word::Round(r) => (0.5 * PI, &move |t: f64| (r * (1.0 - t.cos()), r * (1.0 - t.sin()) * r * t.sin())),
+        Word::Chamfer(d) => (d, &move |u: f64| (u, d - u)),
+    };
+    gauss_legendre(60).iter().map(|&(x, w)| {
+        let (u, height) = h(0.5 * reach * (1.0 + x));
+        let rho = big + u;
+        0.5 * reach * w * height * rho * theta(rho)
+    }).sum()
+}
+
 /// **A ring ending on a face through its axis only to the drawing's numbers**: a half-round lug
 /// standing on the arm, its flat flush with the arm's side, its arc's centre `off` that side (a
 /// hundred-millionth of a millimetre to a tenth, either way), its root rounded and chamfered.  The
@@ -387,25 +375,14 @@ fn lug(off: f64, word: Word) -> String {
 /// through `π + 2 asin(off / ρ)`, over the arm and the lug (the disc's segment over the flat).
 #[test]
 fn a_ring_ending_on_a_side_through_its_axis_to_the_drawings_numbers_ends_there() {
-    let block = LENGTH * WIDTH * 2.0 * HALF;
-    let nodes = gauss_legendre(60);
     for off in [0.0, 1e-8, -1e-8, 1e-7, 1e-6, -1e-6, 1e-4, 0.1, -0.1] {
         let big = (64.0f64 + off * off).sqrt();
         let standing = 6.0 * segment(big, -off);
         for word in [Word::Round(2.0), Word::Chamfer(2.0)] {
-            // the section's height `u` out from the lug's wall, by `t` over [0, π/2] where smooth
-            let (reach, h): (f64, &dyn Fn(f64) -> (f64, f64)) = match word {
-                Word::Round(r) => (0.5 * PI, &move |t: f64| (r * (1.0 - t.cos()), r * (1.0 - t.sin()) * r * t.sin())),
-                Word::Chamfer(d) => (d, &move |u: f64| (u, d - u)),
-            };
-            let turned: f64 = nodes.iter().map(|&(x, w)| {
-                let (u, height) = h(0.5 * reach * (1.0 + x));
-                let rho = big + u;
-                0.5 * reach * w * height * rho * (PI + 2.0 * (off / rho).asin())
-            }).sum();
+            let turned = turned_fill(word, big, &|rho| PI + 2.0 * (off / rho).asin());
             let src = lug(off, word);
             assert_eq!(dof(&src), 0, "{src}");
-            close(built(&src, "part"), block + standing + turned);
+            close(built(&src, "part"), WHOLE + standing + turned);
         }
     }
 }
@@ -476,39 +453,27 @@ eyel union part
 part.eyel round(r: 3mm) part.far
 ";
 
-/// Solid `name` of `src` built exactly and exported as STEP and STL (each read back); its volume,
-/// and the export's sliver warning where it has one — which `bare` (the same body unrounded) must
-/// have too: a strip the drawing's numbers leave is the body's own, never the round's.
-fn built_beside(src: &str, bare: &str, name: &str) -> (f64, Option<String>) {
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let read = |src: &str| {
-        let e = solved(src);
-        let body = ent(&e, name).i();
-        let exact = export::exact(&e.sketch, body, None, None, &say).unwrap_or_else(|r| panic!("{name}: {r:?}\n{src}"));
-        let slivers = export::slivers(&e.sketch, body, &exact, None).map(|s| s.message);
-        (e, body, exact, slivers)
-    };
-    let (e, body, exact, slivers) = read(src);
-    if let Some(s) = &slivers {
-        assert!(read(bare).3.is_some(), "the round's own sliver: {s}\n{src}");
-    }
-    export::step(&exact, name, None, &say).unwrap();
-    let stl = export::stl(&e.sketch, body, &exact, None, &say).unwrap();
-    gcs_core::mesh::stl_shells(&stl).unwrap();
-    (props::volume(&exact.solid), slivers)
-}
-
 /// The arm `[−50, 50] × [−15, 15] × [0, 10]`, its south side turned `tilt` about its west end, and a
-/// boss standing on its top (`from: 10mm`, its base in the top's plane, as a boss is drawn): a
-/// block `[x0, x1] × [y0, y1]` or a disc of radius 8 about `(0, y0)`, 12 tall; `word` between the
-/// boss's faces named `faces` and the arm's top.
+/// boss standing on its top (`from: 10mm`, its base in the top's plane, as a boss is drawn), 12
+/// tall; `word` between the boss's faces named `faces` and the arm's top.
 #[derive(Clone)]
 struct Standing {
-    block: Option<[f64; 4]>,
-    disc: Option<f64>,
+    boss: Footing,
     tilt: f64,
     faces: &'static str,
     word: Option<Word>,
+}
+
+/// What a `Standing` boss stands on the arm's top as: a block `[x0, x1] × [y0, y1]`, or a disc of
+/// radius 8 about `(0, y0)`.
+#[derive(Clone, Copy)]
+enum Footing {
+    Block([f64; 4]),
+    Disc(f64),
+}
+
+fn standing(boss: Footing, tilt: f64, faces: &'static str, word: Word) -> Standing {
+    Standing { boss, tilt, faces, word: Some(word) }
 }
 
 impl Standing {
@@ -516,12 +481,12 @@ impl Standing {
         let mut s = String::from(HEAD);
         s.push_str(&format!("in std.top {{\n{}", outline("a", "s", "arm_f",
             &[[-50.0, -15.0], [50.0, -15.0 + 100.0 * self.tilt], [50.0, 15.0], [-50.0, 15.0]])));
-        if let Some([x0, x1, y0, y1]) = self.block {
-            s.push_str(&outline("p", "b", "boss_f", &[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]));
-        }
-        if let Some(y0) = self.disc {
-            s.push_str(&format!("  bc := point\n  fix((0, {y0})) bc\n  rim := circle(center: bc) hint(r: 8)\n  \
-                radius(8mm) rim\n  boss_f := face(rim)\n"));
+        match self.boss {
+            Footing::Block([x0, x1, y0, y1]) => {
+                s.push_str(&outline("p", "b", "boss_f", &[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]))
+            }
+            Footing::Disc(y0) => s.push_str(&format!("  bc := point\n  fix((0, {y0})) bc\n  \
+                rim := circle(center: bc) hint(r: 8)\n  radius(8mm) rim\n  boss_f := face(rim)\n")),
         }
         s.push_str("}\narm := solid(std.solids.Prism(arm_f, from: 0mm, to: 10mm))\n\
             boss := solid(std.solids.Prism(boss_f, from: 10mm, to: 22mm))\npart := solid(arm)\nboss union part\n");
@@ -533,18 +498,29 @@ impl Standing {
         s
     }
 
-    /// Why it is not built exactly, where it is not.
-    fn refused(&self) -> Option<String> {
-        let e = solved(&self.document());
-        let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-        export::exact(&e.sketch, ent(&e, "part").i(), None, None, &say).err().map(|r| format!("{r:?}"))
+    /// Built exactly, at DOF 0, and exported as STEP and STL (each read back): its volume, and the
+    /// export's sliver warning where it has one — which the same body unrounded must have too: a
+    /// strip the drawing's numbers leave is the body's own, never the round's.  Or why it is not
+    /// built exactly.
+    fn built(&self) -> Result<(f64, Option<String>), String> {
+        let src = self.document();
+        let e = solved(&src);
+        let exact = rounds::built(&e, "part")?;
+        assert_eq!(dof(&src), 0, "{src}");
+        let slivers = rounds::slivers(&e, "part", &exact);
+        if let Some(s) = &slivers {
+            let bare = Standing { word: None, ..self.clone() }.document();
+            let b = solved(&bare);
+            let bare_exact = rounds::built(&b, "part").unwrap_or_else(|why| panic!("part: {why}\n{bare}"));
+            assert!(rounds::slivers(&b, "part", &bare_exact).is_some(), "the round's own sliver: {s}\n{src}");
+        }
+        rounds::written(&e, "part", &exact);
+        Ok((props::volume(&exact.solid), slivers))
     }
 
+    /// Built (`built`) to the volume `want`; its sliver warning, where it has one.
     fn holds(&self, want: f64) -> Option<String> {
-        let src = self.document();
-        assert_eq!(dof(&src), 0, "{src}");
-        let bare = Standing { word: None, ..self.clone() }.document();
-        let (got, slivers) = built_beside(&src, &bare, "part");
+        let (got, slivers) = self.built().unwrap_or_else(|why| panic!("part: {why}\n{}", self.document()));
         close(got, want);
         slivers
     }
@@ -568,24 +544,24 @@ fn a_boss_standing_on_the_top_past_its_side_is_filled_along_its_sides() {
     for word in [Word::Round(3.0), Word::Chamfer(2.0)] {
         let a = word.square();
         let boss = |y0: f64, y1: f64| 16.0 * 12.0 * (y1 - y0);
-        let block = |y0: f64, y1: f64| Some([-8.0, 8.0, y0, y1]);
+        let block = |y0: f64, y1: f64| Footing::Block([-8.0, 8.0, y0, y1]);
         for (y0, y1) in [(-17.0, 15.0), (-17.0, 17.0), (-15.0, 17.0), (-15.0, 15.0)] {
-            let s = Standing { block: block(y0, y1), disc: None, tilt: 0.0, faces: "boss", word: Some(word) };
+            let s = standing(block(y0, y1), 0.0, "boss", word);
             assert!(s.holds(ARM + boss(y0, y1) + 2.0 * a * 30.0).is_none());
         }
         for hair in [1e-3, 0.05, 0.5] {
             for (y0, y1) in [(-15.0 + hair, 15.0), (-15.0 - hair, 15.0), (-15.0 + hair, 15.0 - hair)] {
-                let s = Standing { block: block(y0, y1), disc: None, tilt: 0.0, faces: "boss.b1 boss.b3", word: Some(word) };
+                let s = standing(block(y0, y1), 0.0, "boss.b1 boss.b3", word);
                 let inside = y1.min(15.0) - y0.max(-15.0);
                 s.holds(ARM + boss(y0, y1) + 2.0 * a * inside);
             }
             // over all its faces: the end's fill along its 16, whole however narrow the shelf of
             // the top it stands on, each run square at the boss's corner (a reflex corner of the
             // fill's: the wedge between the two ends is the set's own, unrounded)
-            let s = Standing { block: block(-15.0 + hair, 15.0), disc: None, tilt: 0.0, faces: "boss", word: Some(word) };
+            let s = standing(block(-15.0 + hair, 15.0), 0.0, "boss", word);
             s.holds(ARM + boss(-15.0 + hair, 15.0) + a * (2.0 * (30.0 - hair) + 16.0));
         }
-        let corner = Standing { block: Some([34.0, 50.0, -15.0, 15.0]), disc: None, tilt: 0.0, faces: "boss", word: Some(word) };
+        let corner = standing(Footing::Block([34.0, 50.0, -15.0, 15.0]), 0.0, "boss", word);
         assert!(corner.holds(ARM + boss(-15.0, 15.0) + a * 30.0).is_none());
     }
 }
@@ -605,21 +581,25 @@ fn a_boss_standing_on_a_side_turned_by_the_drawings_numbers_is_filled_to_it() {
         let a = word.square();
         for tilt in [1e-8, 1e-7, 1e-6, 1e-4, 1e-3, -1e-6] {
             let arm = ARM - 0.5 * 100.0 * 100.0 * tilt * 10.0;
-            let proud = Standing { block: Some([-8.0, 8.0, -17.0, 15.0]), disc: None, tilt, faces: "boss", word: Some(word) };
+            let proud = standing(Footing::Block([-8.0, 8.0, -17.0, 15.0]), tilt, "boss", word);
             proud.holds(arm + 16.0 * 12.0 * 32.0 + a * (60.0 - 100.0 * tilt));
             if tilt > 0.0 {
-                let flush = Standing { block: Some([-8.0, 8.0, -15.0, 15.0]), disc: None, tilt, faces: "boss", word: Some(word) };
-                // turned under a tenth of a micron across the boss, the body reads no strip where
-                // the run's end stands half a nanometre off the boss's: refused, saying so
-                if let Some(why) = flush.refused() {
-                    assert!(tilt < 5e-8, "{why}");
-                    assert!(why.contains("`part`'s round or chamfer `filled`, which ends where `arm.s0` and `boss.b0` are \
-                        flush only to the drawing's numbers, turned 1.0e-8 of a radian from one another"), "{why}");
-                    continue;
+                let flush = standing(Footing::Block([-8.0, 8.0, -15.0, 15.0]), tilt, "boss", word);
+                match flush.built() {
+                    // turned under a tenth of a micron across the boss, the body reads no
+                    // strip where the run's end stands half a nanometre off the boss's:
+                    // refused, saying so
+                    Err(why) => {
+                        assert!(tilt < 5e-8, "{why}");
+                        assert!(why.contains("`part`'s round or chamfer `filled`, which ends where `arm.s0` and `boss.b0` \
+                            are flush only to the drawing's numbers, turned 1.0e-8 of a radian from one another"), "{why}");
+                    }
+                    Ok((got, slivers)) => {
+                        assert!(tilt >= 5e-8);
+                        close(got, arm + 16.0 * 12.0 * 30.0 + a * (60.0 - 100.0 * tilt));
+                        assert_eq!(slivers.is_some(), 42.0 * tilt < 1e-2, "{slivers:?}");
+                    }
                 }
-                assert!(tilt >= 5e-8);
-                let slivers = flush.holds(arm + 16.0 * 12.0 * 30.0 + a * (60.0 - 100.0 * tilt));
-                assert_eq!(slivers.is_some(), 42.0 * tilt < 1e-2, "{slivers:?}");
             }
         }
     }
@@ -633,20 +613,11 @@ fn a_boss_standing_on_a_side_turned_by_the_drawings_numbers_is_filled_to_it() {
 /// `e` the axis's distance from the side.
 #[test]
 fn a_disc_boss_standing_past_the_side_is_filled_round_to_it() {
-    let nodes = gauss_legendre(60);
     for word in [Word::Round(3.0), Word::Chamfer(2.0)] {
         for y0 in [-10.0, -12.0] {
             let e = y0 + 15.0;
-            let (reach, h): (f64, Box<dyn Fn(f64) -> (f64, f64)>) = match word {
-                Word::Round(r) => (0.5 * PI, Box::new(move |t: f64| (r * (1.0 - t.cos()), r * (1.0 - t.sin()) * r * t.sin()))),
-                Word::Chamfer(d) => (d, Box::new(move |u: f64| (u, d - u))),
-            };
-            let turned: f64 = nodes.iter().map(|&(x, w)| {
-                let (u, height) = h(0.5 * reach * (1.0 + x));
-                let rho = 8.0 + u;
-                0.5 * reach * w * height * rho * (2.0 * PI - 2.0 * (e / rho).acos())
-            }).sum();
-            let s = Standing { block: None, disc: Some(y0), tilt: 0.0, faces: "boss", word: Some(word) };
+            let turned = turned_fill(word, 8.0, &|rho| 2.0 * PI - 2.0 * (e / rho).acos());
+            let s = standing(Footing::Disc(y0), 0.0, "boss", word);
             assert!(s.holds(ARM + PI * 64.0 * 12.0 + turned).is_none());
         }
     }

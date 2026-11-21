@@ -13,27 +13,13 @@
 use gcs_core::brep::props;
 use std::f64::consts::PI;
 
-use crate::common::rounds::{exact, exported, gauss_legendre};
+use crate::common::rounds::{disc_band, exact, exported, gauss_legendre, segment, Word};
 use crate::common::{close, text::solved};
 
 /// The disc's thickness: drawn from −12.5 to 12.5.
 const THICK: f64 = 25.0;
 
-/// A round or a chamfer of the rim, of radius or legs its number.
-#[derive(Clone, Copy, Debug)]
-enum Word {
-    Round(f64),
-    Chamfer(f64),
-}
-
 impl Word {
-    fn text(self) -> String {
-        match self {
-            Word::Round(r) => format!("round(r: {r}mm)"),
-            Word::Chamfer(d) => format!("chamfer(d: {d}mm)"),
-        }
-    }
-
     /// `∫₀ᴰ F(g(u)) du` over the depth `u` under the cap, `g` how far in from the side the word
     /// takes at that depth: a chamfer's `d − u`; a round's `r − √(r² − (r − u)²)`, which in
     /// `u = r(1 − sin t)` is `r(1 − cos t)` with `du = r cos t dt`, smooth.
@@ -67,10 +53,6 @@ fn at(angle: f64, x: f64, y: f64) -> [f64; 2] {
     let (s, c) = angle.sin_cos();
     [c * x - s * y, s * x + c * y]
 }
-
-/// The area of the disc of `rho` about the origin less what lies past the line `distance` out at
-/// `angle` (a segment): `ρ² acos(b/ρ) − b√(ρ² − b²)`.
-fn segment(rho: f64, b: f64) -> f64 { rho * rho * (b / rho).acos() - b * (rho * rho - b * b).sqrt() }
 
 /// The area of the disc of `rho` within `half` of a line through its centre, from `from` out along
 /// it: `c√(ρ² − c²) + ρ² asin(c/ρ) − 2c·from`.
@@ -167,7 +149,7 @@ impl Disc {
                     gaps.iter().map(|&gap| if gap > PI {
                         0.5 * (grown * grown - rb * rb) * (c / rb).asin()
                     } else {
-                        0.5 * (strip(grown, c, 0.0) - strip(rb, c, 0.0))
+                        0.25 * (disc_band(grown, c) - disc_band(rb, c))
                     }).sum::<f64>()
                 }).sum::<f64>();
                 let rest = m as f64 * strip(rb, c - g, self.tip + g);
@@ -197,11 +179,15 @@ fn holds(disc: &Disc, cap: &str, word: Word, export: bool) {
     let mut d = disc.clone();
     d.flats.sort_by(|x, y| x.0.rem_euclid(2.0 * PI).total_cmp(&y.0.rem_euclid(2.0 * PI)));
     d.keys.sort_by(|x, y| x.rem_euclid(2.0 * PI).total_cmp(&y.rem_euclid(2.0 * PI)));
-    let src = d.document(cap, word);
-    let e = solved(&src);
+    close(part(&d.document(cap, word), export), d.volume(word));
+}
+
+/// Solid `part` of document `src`, solved with nothing said, built exactly (and exported where
+/// `export`): its volume.
+fn part(src: &str, export: bool) -> f64 {
+    let e = solved(src);
     assert!(e.diags.is_empty(), "{:?}\n{src}", e.diags);
-    let b = if export { exported(&e, "part") } else { exact(&e, "part") };
-    close(props::volume(&b), d.volume(word));
+    props::volume(&if export { exported(&e, "part") } else { exact(&e, "part") })
 }
 
 /// #962's 149's disc: 75 in radius, `n` flats 74.5 out.
@@ -307,9 +293,7 @@ fn common_area(r1: f64, r2: f64, d: f64) -> f64 {
     if d <= (r1 - r2).abs() {
         return PI * r1.min(r2).powi(2);
     }
-    let a1 = ((d * d + r1 * r1 - r2 * r2) / (2.0 * d * r1)).acos();
-    let a2 = ((d * d + r2 * r2 - r1 * r1) / (2.0 * d * r2)).acos();
-    r1 * r1 * a1 + r2 * r2 * a2 - 0.5 * ((-d + r1 + r2) * (d + r1 - r2) * (d - r1 + r2) * (d + r1 + r2)).sqrt()
+    crate::round_lowering::lens(r1, r2, d)
 }
 
 /// The section the rim of `lens` leaves `g` in from the sides: of the common part, the discs
@@ -326,12 +310,9 @@ fn lens_section(ra: f64, rb: f64, xb: f64, common: bool, g: f64) -> f64 {
 
 /// The lens or the union built exactly and held to its closed form.
 fn lens_holds(ra: f64, rb: f64, xb: f64, common: bool, cap: &str, word: Word) {
-    let src = lens(ra, rb, xb, common, cap, word);
-    let e = solved(&src);
-    assert!(e.diags.is_empty(), "{:?}\n{src}", e.diags);
     let whole = lens_section(ra, rb, xb, common, 0.0);
     let want = whole * THICK - word.over_depth(&|g| whole - lens_section(ra, rb, xb, common, g));
-    close(props::volume(&exact(&e, "part")), want);
+    close(part(&lens(ra, rb, xb, common, cap, word), false), want);
 }
 
 /// **A rim ending on another arc's face at a corner** (#962's 125, "a stretch of a circle its
@@ -402,13 +383,11 @@ fn a_drums_foot_filled_round_its_corners_is_built() {
     let (ra, rb) = (20.0, 100.0);
     for (xb, word) in [(-81.0, Word::Round(2.0)), (81.0, Word::Round(3.0)), (-81.0, Word::Chamfer(2.0))] {
         let src = drum(ra, rb, xb, word);
-        let e = solved(&src);
-        assert!(e.diags.is_empty(), "{:?}\n{src}", e.diags);
         let d = xb.abs();
         let base = common_area(ra, rb, d);
         let added = |g: f64| common_area(ra + g, rb, d) + common_area(ra, rb + g, d) - 2.0 * base;
         let want = PI * 70.0 * 70.0 * 10.0 + base * 30.0 + word.over_depth(&added);
-        close(props::volume(&exact(&e, "part")), want);
+        close(part(&src, false), want);
     }
 }
 
@@ -493,12 +472,8 @@ fn filled(length: f64, turn: f64, cut: Option<(Cut, f64)>, r: f64) -> f64 {
 /// The pocket's fill: the part built with it, exactly, held to the part built without it (planes and
 /// cylinders, no round) and the fill's closed form.
 fn pocket_holds(length: f64, turn: f64, cut: Option<(Cut, f64)>, r: f64) {
-    let [with, without] = [Some(Word::Round(r)), None].map(|w| {
-        let src = pocket(length, turn, cut, w);
-        let e = solved(&src);
-        assert!(e.diags.is_empty(), "{:?}\n{src}", e.diags);
-        props::volume(&exact(&e, "part"))
-    });
+    let [with, without] = [Some(Word::Round(r)), None]
+        .map(|w| part(&pocket(length, turn, cut, w), false));
     close(with, without + filled(length, turn, cut, r));
 }
 

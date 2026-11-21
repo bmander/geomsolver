@@ -72,6 +72,37 @@ pub fn square_run(r: f64) -> f64 { (1.0 - PI / 4.0) * r * r }
 /// How far in from each face the centroid of a round's section stands (`square_run`'s).
 pub fn inset(r: f64) -> f64 { (10.0 - 3.0 * PI) / (3.0 * (4.0 - PI)) * r }
 
+/// The area of the disc of radius `rho` past a line `b` from its centre (a segment):
+/// `ρ² acos(b/ρ) − b√(ρ² − b²)`.
+pub fn segment(rho: f64, b: f64) -> f64 {
+    rho * rho * (b / rho).acos() - b * (rho * rho - b * b).sqrt()
+}
+
+/// A round or a chamfer, of radius or legs its number.
+#[derive(Clone, Copy, Debug)]
+pub enum Word {
+    Round(f64),
+    Chamfer(f64),
+}
+
+impl Word {
+    /// As a document writes it.
+    pub fn text(self) -> String {
+        match self {
+            Word::Round(r) => format!("round(r: {r}mm)"),
+            Word::Chamfer(d) => format!("chamfer(d: {d}mm)"),
+        }
+    }
+
+    /// What it takes or fills along a corner of two planes square to one another, per length.
+    pub fn square(self) -> f64 {
+        match self {
+            Word::Round(r) => square_run(r),
+            Word::Chamfer(d) => 0.5 * d * d,
+        }
+    }
+}
+
 /// The section beside a cylinder of radius `big` whose axis lies in a plane, where the ball of
 /// radius `r` touches both: the triangle of the axis, the plane's touch and the ball's centre, less
 /// the ball's sector and the cylinder's.
@@ -96,17 +127,39 @@ pub fn line_beside_circle(w: f64, big: f64, r: f64) -> f64 {
     quad - 0.5 * big * big * angle(q, c) - 0.5 * r * r * angle([0.0, -r], [-c[0], -c[1]])
 }
 
-/// Solid `name` of `e` built, written as STEP and as STL by this kernel (each read back and
-/// checked as `solventc` checks it), and its B-rep.
-pub fn exported(e: &gcs_core::program::Elaborated, name: &str) -> gcs_core::brep::topo::Brep {
+/// Solid `name` of `e` built exactly by this kernel (millimetres), or the export's refusal of it,
+/// as text.
+pub fn built(e: &gcs_core::program::Elaborated, name: &str)
+    -> Result<gcs_core::brep::export::Exact, String> {
     use gcs_core::brep::{export, sweep::Say};
-    let body = super::ent(e, name).i();
     let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let exact = export::exact(&e.sketch, body, None, None, &say)
-        .unwrap_or_else(|r| panic!("{name}: {r:?}"));
-    export::step(&exact, name, None, &say).unwrap();
-    let stl = export::stl(&e.sketch, body, &exact, None, &say).unwrap();
+    export::exact(&e.sketch, super::ent(e, name).i(), None, None, &say)
+        .map_err(|r| format!("{r:?}"))
+}
+
+/// The export's warning of a face of `exact`, solid `name` of `e` built, thinner than its
+/// tolerance, where it has one.
+pub fn slivers(e: &gcs_core::program::Elaborated, name: &str, exact: &gcs_core::brep::export::Exact)
+    -> Option<String> {
+    let body = super::ent(e, name).i();
+    gcs_core::brep::export::slivers(&e.sketch, body, exact, None).map(|s| s.message)
+}
+
+/// `exact`, solid `name` of `e` built, written as STEP and as STL by this kernel (each read back
+/// and checked as `solventc` checks it).
+pub fn written(e: &gcs_core::program::Elaborated, name: &str,
+               exact: &gcs_core::brep::export::Exact) {
+    use gcs_core::brep::{export, sweep::Say};
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    export::step(exact, name, None, &say).unwrap();
+    let stl = export::stl(&e.sketch, super::ent(e, name).i(), exact, None, &say).unwrap();
     gcs_core::mesh::stl_shells(&stl).unwrap();
+}
+
+/// Solid `name` of `e` built, written as STEP and as STL by this kernel (`written`), and its B-rep.
+pub fn exported(e: &gcs_core::program::Elaborated, name: &str) -> gcs_core::brep::topo::Brep {
+    let exact = built(e, name).unwrap_or_else(|why| panic!("{name}: {why}"));
+    written(e, name, &exact);
     exact.solid
 }
 
@@ -116,23 +169,18 @@ pub fn exported_volume(src: &str, name: &str) -> f64 {
     use gcs_core::brep::{export, props, sweep::Say};
     let e = super::text::solved(src);
     assert!(e.diags.is_empty(), "{:?}", e.diags);
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let body = super::ent(&e, name).i();
-    let exact = export::exact(&e.sketch, body, None, None, &say)
-        .unwrap_or_else(|r| panic!("{name}: {r:?}"));
-    if let Some(s) = export::slivers(&e.sketch, body, &exact, None) {
-        panic!("{}", s.message);
+    let exact = built(&e, name).unwrap_or_else(|why| panic!("{name}: {why}"));
+    if let Some(s) = slivers(&e, name, &exact) {
+        panic!("{s}");
     }
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
     export::step(&exact, name, None, &say).unwrap();
     props::volume(&exact.solid)
 }
 
 /// The export's refusal of solid `name` of `e`, as text.
 pub fn refused(e: &gcs_core::program::Elaborated, name: &str) -> String {
-    use gcs_core::brep::{export, sweep::Say};
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    format!("{:?}", export::exact(&e.sketch, super::ent(e, name).i(), None, None, &say).err()
-        .expect("refused"))
+    built(e, name).err().expect("refused")
 }
 
 /// How many of a B-rep's faces lie on each kind of surface.
@@ -668,10 +716,7 @@ pub mod meridian {
 
 /// Solid `name` of `e` built exactly by this kernel (millimetres), refused by name otherwise.
 pub fn exact(e: &gcs_core::program::Elaborated, name: &str) -> gcs_core::brep::topo::Brep {
-    use gcs_core::brep::{export, sweep::Say};
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    export::exact(&e.sketch, super::ent(e, name).i(), None, None, &say)
-        .unwrap_or_else(|r| panic!("{name}: {r:?}")).solid
+    built(e, name).unwrap_or_else(|why| panic!("{name}: {why}")).solid
 }
 
 /// The volume of `b` within the box `lo`–`hi`: `b` kept in common with the box, exactly.

@@ -15,7 +15,7 @@
 use gcs_core::brep::props;
 use std::f64::consts::PI;
 
-use crate::common::rounds::{exact, exported, square_run};
+use crate::common::rounds::{exact, exported, square_run, Word};
 use crate::common::{close, text::solved};
 
 /// A stroke of an outline on the top plane: a line, or an arc about `c` from `s` to `e`, turning
@@ -67,25 +67,12 @@ fn area(o: &Outline) -> f64 {
     }).sum()
 }
 
-/// A rim's section: its area, and how far in from each face its centroid stands.
-#[derive(Clone, Copy)]
-enum Word {
-    Round(f64),
-    Chamfer(f64),
-}
-
 impl Word {
+    /// A rim's section: its area, and how far in from each face its centroid stands.
     fn section(self) -> (f64, f64) {
         match self {
             Word::Round(r) => (square_run(r), (10.0 - 3.0 * PI) / (3.0 * (4.0 - PI)) * r),
             Word::Chamfer(d) => (0.5 * d * d, d / 3.0),
-        }
-    }
-
-    fn text(self) -> String {
-        match self {
-            Word::Round(r) => format!("round(r: {r}mm)"),
-            Word::Chamfer(d) => format!("chamfer(d: {d}mm)"),
         }
     }
 }

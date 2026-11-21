@@ -541,7 +541,7 @@ fn mitred(runs: &mut [Run], corners: &[Corner], size: f64, joins: &mut Vec<[usiz
             else { reach.fold(f64::NEG_INFINITY, f64::max) };
         // (a face it was carried on past no longer reaching it)
         let hull = r.hull();
-        r.within.retain(|&(n, d)| hull.iter().any(|&p| dot(n, p) > d + 1e-9 * size));
+        r.within.retain(|&h| super::piece::along_run(&hull, h, 1e-9 * size));
         r.within.push((m, dot(m, v)));
     }
 }
