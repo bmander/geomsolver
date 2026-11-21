@@ -355,15 +355,20 @@ fn measures(b: &Brep) -> (f64, f64) { (volume(b), b.faces.iter().map(|f| area(b,
 /// a fixed 1e-7 mm; a fit to 5e-5 mm in space took them to 2e-6, 4.8e-7 and 1.2e-4). At a stated
 /// tolerance, no further off than every trim moved by the bar along its face: the area by twice
 /// the bar along the edges' length, the volume by that strip's flux. The grazing cylinders meet at a
-/// few degrees, where a cubic within the bar in space trims each face some twenty bars off.
+/// few degrees, where a cubic within the bar in space trims each face some twenty bars off. The
+/// torus is cut beside its axis: the half torus, cut through it, meets the plane in its meridians
+/// in closed form since #996, and has no traced edge.
 #[test]
 fn the_files_faces_measure_the_solid() {
-    let half_torus = part("unit mm\nuse std\nuse std.solids\nuse std.solids (cut)\nuse std.place (right_of)\n\
+    // cut 3 mm beside its axis: a plane through the axis meets a torus in its meridians, circles
+    // in closed form (#996), and leaves no traced edge to write
+    let cut_torus = part("unit mm\nuse std\nuse std.solids\nuse std.solids (cut)\nuse std.place (right_of)\n\
         in std.front {\n  c := point hint((10, 0))\n  c right_of(d: 10mm) std.origin\n\
         tube := circle(center: c) hint(r: 2)\n  radius(2mm) tube\n}\n\
-        in std.top {\n  shadow := step(u: 0mm, v: -13mm) (south := line) -> step(v: 13mm) (seam := line) ->\n\
-        step(u: -13mm) (north := line) -> step(v: -13mm) (west := line) -> close\n}\n\
-        behind := solid(std.solids.Through(shadow))\n\
+        in std.top {\n  p0 := point\n  p1 := point\n  p2 := point\n  p3 := point\n\
+        fix((3, -13)) p0\n  fix((3, 13)) p1\n  fix((-13, 13)) p2\n  fix((-13, -13)) p3\n\
+        seam := line(p0, p1)\n  north := line(p1, p2)\n  west := line(p2, p3)\n  south := line(p3, p0)\n}\n\
+        behind := solid(std.solids.Through(face(seam, north, west, south)))\n\
         part := solid(std.solids.Revolution(face(tube), about: std.z))\nbehind cut part\n", "part");
     let bored = part("unit mm\nuse std\nuse std.solids\nuse std.solids (cut)\nuse std.sets\nuse std.place (right_of)\n\
         in std.front {\n  ax := point hint((5, 0))\n  ax right_of(d: 5mm) std.origin\n\
@@ -376,7 +381,7 @@ fn the_files_faces_measure_the_solid() {
         q vertical c\n  second := circle(center: c) hint(r: 5)\n  second equal first\n}\n\
         across := solid(std.solids.Prism(face(second), from: -15mm, to: 15mm))\n\
         part := solid(std.solids.Prism(face(first), from: -15mm, to: 15mm))\nacross common part\n", "part");
-    for (what, b) in [("the half torus", &half_torus), ("the ball bored off its centre", &bored), ("the grazing cylinders", &grazing)] {
+    for (what, b) in [("the torus cut beside its axis", &cut_torus), ("the ball bored off its centre", &bored), ("the grazing cylinders", &grazing)] {
         let (v, a) = measures(&as_read(b));
         let (v0, a0) = measures(b);
         eprintln!("{what}: read as the file is, {:.1e} in volume and {:.1e} in area off its own reading", (v - v0).abs() / v0.abs(), (a - a0).abs() / a0);

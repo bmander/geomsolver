@@ -540,3 +540,93 @@ fn a_groin_vault_is_built_exactly() {
     let stl = export::stl(&sk,vault,&exact,None,&say).unwrap();
     gcs_core::mesh::stl_shells(&stl).unwrap();
 }
+
+/// A quarter-turn-style elbow's document: a section of radius `r` about a point `bend` from the
+/// bend axis (the line x = 0, z = `bend`, along y), clipped by a chord on the axis where it reaches
+/// it (`r > bend`, a spindle torus; one arc of 308° at r 20), or whole; turned `turn` degrees; a
+/// leg of radius 20 standing up from where the turn starts and one running on from where it ends,
+/// tangent to it there as a pipe's are. `two` splits the arc at its far point; `ends` places the
+/// arc's ends by hand, with no radius said (the turn's tube then as wide as they put it); `order`
+/// the body's first solid and the two joined to it. `legs` is the two legs alone.
+fn elbow(r: f64,bend: f64,turn: f64,two: bool,ends: Option<f64>,order: [&str;3]) -> String {
+    let h = (r*r-bend*bend).max(0.).sqrt();
+    let section = if r <= bend {
+        format!("  a0 := circle(center: c) hint(r: {r})\n  radius({r}mm) a0\n  prof := face(a0)\n")
+    } else {
+        let y = ends.unwrap_or(h);
+        let mut s = format!("  s := point hint((0, {y}))\n  fix(x == 0mm) s\n  e := point hint((0, {}))\n  fix(x == 0mm) e\n",-y);
+        if ends.is_some() { s += &format!("  fix(y == {y}mm) s\n  fix(y == {}mm) e\n",-y); }
+        if two {
+            s += &format!("  f := point\n  fix(({}, 0)) f\n  a0 := arc(center: c, start: s, end: f)\n  a1 := arc(center: c, start: f, end: e)\n",-bend-r);
+            s += "  ch := line(e, s)\n  prof := face(a0, a1, ch)\n";
+        } else {
+            s += "  a0 := arc(center: c, start: s, end: e)\n";
+            if ends.is_none() { s += &format!("  radius({r}mm) a0\n"); }
+            s += "  ch := line(e, s)\n  prof := face(a0, ch)\n";
+        }
+        s
+    };
+    format!("unit mm\nuse std\nuse std.solids\nuse std.solids (union)\n\
+        bend := plane\nfix(origin == (0mm, 0mm, {bend}mm)) bend\nfix(dir == (1, 0, 0)) bend.u\nfix(dir == (0, 1, 0)) bend.v\n\
+        in bend {{\n  c := point\n  fix(({nb}, 0)) c\n{section}  ax0 := point\n  ax1 := point\n  fix((0, 10)) ax0\n  fix((0, -10)) ax1\n  axis_l := line(ax0, ax1)\n}}\n\
+        elbow := solid(std.solids.Revolution(prof, about: axis_l, from: 0deg, to: {turn}deg))\n\
+        in std.top {{\n  vc := point\n  fix(({nb}, 0)) vc\n  v := circle(center: vc) hint(r: 20)\n  radius(20mm) v\n}}\n\
+        leg_v := solid(std.solids.Prism(face(v), from: {bend}mm, to: {top}mm))\n\
+        out := plane\nfix(origin == (0mm, 0mm, {bend}mm)) out\nfix(dir == (-cos({turn}deg), 0, -sin({turn}deg))) out.u\nfix(dir == (0, 1, 0)) out.v\n\
+        in out {{\n  hc := point\n  fix(({bend}, 0)) hc\n  h := circle(center: hc) hint(r: 20)\n  radius(20mm) h\n}}\n\
+        leg_h := solid(std.solids.Prism(face(h), from: 0mm, to: 40mm))\n\
+        body := solid({})\n{} union body\n{} union body\nlegs := solid(leg_v)\nleg_h union legs\n",
+        order[0],order[1],order[2],nb = -bend,top = bend+42.)
+}
+
+/// **A swept elbow joins its straight legs at their tangent seams** (#996): a section turned about
+/// an axis and two cylinders of its radius whose ends meet the turn's ends tangentially, as a
+/// pipe's do — a ring torus's section whole (r 15 at 18), a horn's touching the axis (r 18), and a
+/// spindle's clipped by a chord on the axis (r 18.3, 20 and 25 at 18: one arc of up to 308°, its
+/// faces reaching the axis at the turn's poles), turned 45°, 90° and 135°, the legs joined either
+/// way round or the elbow first. The body is the turn's volume by Pappus — the clipped disc's
+/// moment about the axis times the angle, in closed form — and the two legs' union, the turn
+/// standing beside both: the same written as one arc or as two split at its far point, valid
+/// each time. A turn's caps stand in planes through its axis, which meet its torus in its
+/// meridians in closed form (the two-arc build took 3.3 s, tracing them), and a cell of the
+/// search beside a spindle's lemon is clear of the face (`ssi::disc_reach`). A tube a thousandth
+/// wider than its legs (the arc's ends placed, no radius said) leaves a crescent of its cap 308°
+/// long and a thousandth wide, whose loop's area settles its sense (`Brep::loop_area`).
+#[test]
+fn a_swept_elbow_joins_its_legs_at_their_tangent_seams() {
+    use std::f64::consts::PI;
+    // the moment about the axis of the disc of radius `r` about `bend` on the near side, clipped
+    // where it crosses the axis: ∫ ρ · 2√(r² − (ρ − bend)²) dρ over ρ ≥ 0
+    let moment = |r: f64,bend: f64| {
+        if r <= bend { return PI*r*r*bend }
+        let f = |t: f64| bend*(t*(r*r-t*t).sqrt()+r*r*(t/r).asin())-2./3.*(r*r-t*t).powf(1.5);
+        f(r)-f(-bend)
+    };
+    let vh = ["leg_v","elbow","leg_h"];
+    let cases: Vec<(f64,f64,bool,Option<f64>,[&str;3])> = vec![
+        (20.,90.,false,None,vh),(20.,90.,true,None,vh),
+        (20.,90.,false,None,["leg_h","elbow","leg_v"]),(20.,90.,false,None,["elbow","leg_v","leg_h"]),
+        (20.,45.,false,None,vh),(20.,135.,false,None,vh),(20.,135.,true,None,vh),
+        (15.,90.,false,None,vh),(18.,90.,false,None,vh),(18.3,90.,false,None,vh),(25.,90.,false,None,vh),
+        (20.,90.,false,Some(8.72),vh),
+    ];
+    let mut one_and_two: Vec<((f64,f64),f64)> = Vec::new();
+    for (r,turn,two,ends,order) in cases {
+        let what = format!("r {r}, {turn}°, {}, ends {ends:?}, {order:?}",if two { "two arcs" } else { "one arc" });
+        let (e,sk) = crate::common::read_solved(&elbow(r,18.,turn,two,ends,order));
+        let exact = |name: &str| {
+            let (out,said) = saying(|say| export::exact(&sk,fixtures::solid(&e,name),None,None,say));
+            out.unwrap_or_else(|why| panic!("{what}: {name}: {why:?}\n{said}"))
+        };
+        let (body,legs) = (exact("body"),exact("legs"));
+        body.solid.check(1e-6).unwrap_or_else(|why| panic!("{what}: {why:?}"));
+        let tube = ends.map_or(r,|y| (18f64*18.+y*y).sqrt());
+        let want = turn.to_radians()*moment(tube,18.)+props::volume(&legs.solid);
+        let got = props::volume(&body.solid);
+        assert!((got-want).abs() <= 1e-8*want,"{what}: {got} against {want} ({:e})",(got-want)/want);
+        if ends.is_none() && order == vh { one_and_two.push(((r,turn),got)); }
+    }
+    for w in one_and_two.windows(2).filter(|w| w[0].0 == w[1].0) {
+        assert!((w[0].1-w[1].1).abs() <= 1e-9*w[0].1,"{:?}: one arc {} against two {}",w[0].0,w[0].1,w[1].1);
+    }
+}

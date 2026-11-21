@@ -711,21 +711,49 @@ impl Brep {
         out
     }
 
-    /// The signed area a loop encloses in its face's parameters (counter-clockwise positive),
-    /// by the trapezoid rule over each use sampled finely enough to settle its sign.
+    /// The signed area a loop encloses in its face's parameters (counter-clockwise positive): each
+    /// curved use sampled at `n` steps and the area read by Simpson's rule on Green's theorem —
+    /// the polygon through the samples, each pair of steps' bulge beyond its chord taken as a
+    /// parabola's, four thirds of the triangle through its middle — then at `2n`, doubled until
+    /// the two agree within the area itself (the finer's error a fifteenth of their difference),
+    /// so its sign is settled however thin the loop. A polygon's own area misses each arc's
+    /// segments, and a crescent between two arcs a hair apart, read so, turned the wrong way (#996:
+    /// a turn's cap a thousandth wider than the leg joined to it, its rim 308° of a circle).
+    /// A straight image is its chord.
     pub fn loop_area(&self,f: &Face,l: &[Coedge]) -> f64 {
-        let mut pts: Vec<Uv> = Vec::new();
-        for c in l {
-            let e = &self.edges[c.edge as usize];
-            // a straight image is its first corner's (the next use's first is its last)
-            let n = if c.pcurve.straight(e,&f.surface) { 1 } else { 32 };
-            let mut ts: Vec<f64> = (0..n).map(|j| e.t[0]+(e.t[1]-e.t[0])*j as f64/n as f64).collect();
-            ts.push(e.t[1]);
-            if c.reversed { ts.reverse(); }
-            for &t in &ts[..ts.len()-1] { pts.push(c.pcurve.at(t,e,&f.surface,&self.vertices)); }
+        // the uses' samples at `n` steps each (a straight one's ends alone), in loop order
+        let sampled = |n: usize| -> Vec<Vec<Uv>> {
+            l.iter().map(|c| {
+                let e = &self.edges[c.edge as usize];
+                let n = if c.pcurve.straight(e,&f.surface) { 1 } else { n };
+                let mut ts: Vec<f64> = (0..=n).map(|j| e.t[0]+(e.t[1]-e.t[0])*j as f64/n as f64).collect();
+                if c.reversed { ts.reverse(); }
+                ts.iter().map(|&t| c.pcurve.at(t,e,&f.surface,&self.vertices)).collect()
+            }).collect()
+        };
+        let cross = |a: Uv,b: Uv| a[0]*b[1]-a[1]*b[0];
+        // Simpson's area from every `stride`th sample: the chords, each gap between one use's last
+        // and the next's first among them, and each pair of steps' parabolic bulge
+        let area = |uses: &[Vec<Uv>],stride: usize| -> f64 {
+            let mut twice = 0.;
+            for (k,pts) in uses.iter().enumerate() {
+                let next = uses[(k+1)%uses.len()][0];
+                twice += cross(*pts.last().unwrap(),next);
+                if pts.len() == 2 { twice += cross(pts[0],pts[1]); continue }
+                for j in (0..pts.len()-1).step_by(2*stride) {
+                    let (a,m,b) = (pts[j],pts[j+stride],pts[j+2*stride]);
+                    twice += cross(a,b)+4./3.*cross([m[0]-a[0],m[1]-a[1]],[b[0]-a[0],b[1]-a[1]]);
+                }
+            }
+            twice/2.
+        };
+        let mut n = 32;
+        loop {
+            let uses = sampled(n);
+            let (coarse,fine) = (area(&uses,2),area(&uses,1));
+            if (fine-coarse).abs() < fine.abs() || n >= 1 << 12 { return fine }
+            n *= 2;
         }
-        let n = pts.len();
-        (0..n).map(|i| { let (a,b) = (pts[i],pts[(i+1)%n]); a[0]*b[1]-a[1]*b[0] }).sum::<f64>()/2.
     }
 
     /// Each edge's tolerance: the largest gap between its curve and each use's pcurve image
