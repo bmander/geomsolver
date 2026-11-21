@@ -33,14 +33,53 @@ staying a set over `distance`; `tests/brep.rs`'s `the_sphere_the_cone_and_the_to
 `props` (volume by Green's theorem), `query`, `ssi` (closed forms, else traced), `boolean` (split, arrange, classify,
 assemble), `mesh` (constrained Delaunay refined to a measured sag), `step` (AP214 with pcurves and
 seam curves), `recipe`.
-**A traced intersection is written as a cubic** (`step::bezier_curve`): no entity of the standard
-writes a `Traced` curve, so the file carries the piecewise Hermite cubic through its points and
-tangents, halved until each piece's quarter points lie within a tenth of `step::FIT` of the curve
-— as its pcurves are (`bezier_pcurve`) — and only where that does not close in, in at most 4096
-pieces, the polyline through it within the writer's tolerance.  A polyline at the default 1e-4 mm
-trims its faces that far off, and a reader measures the faces it trims: brep-bench's half torus,
-a ball bored off its centre and the saddle drums read 1e-6 to 1e-5 off their closed forms, the
-cubic 1e-9.  `tests/face_edits.rs::a_traced_curve_is_written_as_a_cubic`.
+**A traced intersection is written as a cubic, held to the kernel's own bar where no tolerance
+is stated and to the tolerance where one is** (#961, `step::bezier_curve`, `step::hermite_fit`,
+`step::Fit`): no entity of the standard writes a `Traced` curve, so the file carries a piecewise
+Hermite cubic through its points and rates. **A reader measures the faces the file trims**: it puts
+each face's loop where the edge's curve falls on the face, so how far a curve stands off decides
+how far off the reader's volume, area and moments are — a polyline at 1e-4 mm read brep-bench's
+half torus, a ball bored off its centre and the saddle drums 1e-6 to 1e-5 off their closed forms,
+and a cubic fitted to 5e-5 mm in space took the half torus to 2e-6, the lens of two spline balls
+to 7e-6 and the grazing cylinders to 1.2e-4, where the fit before #961 (a piece at every marched
+point, each within 1e-7 mm) read them 1.6e-9, 6e-9 and 6.1e-9 off, and `Fit::Exact` reads them
+3.7e-11, 1.3e-10 and 6.1e-10 off (no brep-bench case graded worse). So `step::write` takes two numbers apart: the uncertainty the file states (`tol`, what a reader may
+take two points to be one within, and the bar of the polyline written where no cubic closes in) and
+how near its fitted curves are held (`Fit`). **No tolerance stated is no licence**: `Fit::Exact`
+holds every fitted curve within `step::EXACT` (a thousandth of `step::FIT`, 1e-9 mm), whatever the
+stated uncertainty (1e-4 mm). **A tolerance stated is one** (`Fit::stated`): the curves within
+half the uncertainty the export states for it (`export::step_accuracy`), and the file is the
+smaller for it. Either bar is held **on the faces the curve trims**: each piece of the cubic is
+kept where, at sixteen points, it stands within the bar of the exact curve at the same parameter
+and its foot on each of the two surfaces stands within the bar of the meeting along that surface —
+where the surfaces meet at an angle `θ`, a point `δ` off the meeting in space has a foot up to
+`δ / sin θ` along the face, so at a grazing meeting the cubic is held nearer in space. Its pcurves
+are fitted alike (`bezier_pcurve`, measured on the surface the file writes against the edge's foot
+there), so the cubic and each pcurve's image stand within twice the bar of each other at every
+parameter, and their ends are the edge's vertices. The pieces are marched along the curve as long
+as the bar allows (a cubic's miss goes as the fourth power of its length, so each is shortened
+where it misses and the next lengthened by the fourth root of the bar over the miss), stopping at
+every break of the curve (a spline's knots); joints where the curve is smooth share their rate and
+are double knots. **A traced curve is written over the length along it** (`Along`), not its own
+parameter: that counts the march's points, and its speed steps at each (each stretch is a parabola
+through a neighbour behind on one side of a point and ahead on the other), so no cubic over several
+points follows it and every piece ended at a point. Over each stretch `s` is the cubic rising by
+the stretch's length (Gauss–Legendre on the curve's speed) at the curve's own speed at either end,
+so the curve in `s` is `C¹` across the points, and the curve and its pcurves are written over it
+alike. **The pieces follow the bar, not the march**: held to 1e-7 mm and cut at every marched point,
+the issue's tube with one cross-hole was 3.3 MB, each of its curves some 3,370 poles, the same at
+every tolerance. Only where the fit does not close in (a piece shortened to `2⁻³⁰` of the edge, 4096
+pieces) is the polyline through the curve written, within the stated uncertainty where no tolerance
+is stated and within the bar where one is. A meeting with a closed form STEP carries — a line, a
+circle, an ellipse, a conic as a rational quadratic — is written so and fitted nowhere (a plane
+cutting a cone in a hyperbola or a parabola is traced yet). `tests/step_curves.rs` (the file read
+back and every traced cubic and pcurve sampled 64 times a knot span: within the bar of the curve, of
+both surfaces and, its feet, of the meeting along each face, at three stated tolerances and none,
+each finer tolerance nearer and in more poles, none nearer than a sixteenth of its bar, for crossing
+cylinders at several places and radii, a ball drilled off its centre, a frustum and a torus drilled;
+the half torus, the ball bored off its centre and the grazing cylinders as the file trims them,
+measured by `props`: within 1e-8 with no tolerance stated, within the bar's strip at one; ellipses
+written exactly), `tests/face_edits.rs::a_traced_curve_is_written_as_a_cubic`.
 **An affine map carries a solid onto its image exactly** (`Brep::mapped`, `affine::Affine`, any
 invertible `p ↦ M p + t`): its topology and pcurves are the solid's own, because every surface's
 and curve's image keeps their parameters. A kind whose image is a kind of its own is written so
@@ -106,6 +145,39 @@ A traced pair is seeded where edges cross faces; between analytic
 surfaces `ssi::unseen` then searches one face for curves no edge reaches (cells proved clear by
 the signed distance's Lipschitz and second-order bounds, else beside a known curve, else seeded),
 refusing what it cannot resolve: an untraced meeting is never read as none (issue #58).
+**What it cannot resolve off either face is none of theirs** (#961, `Located::face_clear`): the
+search keeps to the face's box of parameters, grown past its edges (a cone's past its apex, onto
+the other nappe), and to the box every face on the two surfaces fills, so it reaches where both
+surfaces run on past the faces; a cell down to the leaf whose every point — within its reach of
+its middle, and of that point's foot on the other surface — stands off one of the two faces is
+answered clear and never refused. Off a face means outside it (`face_place`) with every edge of
+its loops (a seam, an apex) farther by its box than the surface's points within that ball reach
+along it (`ssi::disc_reach`, each kind's bound argued by a path in its comment; none where
+the ball crosses a tube or reaches an apex or an axis, nor on a horn or spindle torus):
+a near-contact beside a face's edge is held to it and refused as before, and so is one within
+both faces, and any near-contact of a meeting over boxes (`meeting::meet`), which has no faces.
+A countersink beside a counterbore, whose cone past its apex came within 4e-7 of the wall's
+cylinder run on below the floor, was refused so; `tests/countersink.rs`'s
+`a_countersink_beside_*` hold the part to its closed form, centred by the wall, turned and turned
+over, against a cylinder and a drafted wall's cone; `a_near_contact_within_both_patches_is_still_refused`
+holds the same near-contact, met over boxes that hold it, refused; and
+`a_face_is_clear_only_off_it_and_away_from_its_edges` the rule at a face's edges and a cone's apex;
+`a_surfaces_points_within_a_ball_reach_no_farther_along_it_than_said` holds each bound to seeded
+points and their paths. Clear is read only off the faces, so a refusal there no longer stands in
+for the faces' own meeting: **an edge is a stretch two faces touch along only where it lies in
+both their surfaces** (`boolean`'s stretches, each edge of one operand lying in the other's face
+held to this face's surface too). A round's run cut off by the lobe cylinder it leaves 1e-3 rad
+off tangent (a plate's rim past a reflex corner) has its wall's and end's upright edge on that
+cylinder, which its round face reaches only at the foot, where the two cross at 1e-3 rad: read as
+theirs, the foot's seed was dropped as a touch along it and the march, shallow there, ended 5 µm
+short of it on no edge, the arrangement's shells kept and dropped on either side of the cylinder.
+Before #961 a near-contact past the run's end, off the round face, was refused and the pair read
+from its ridges, which hid it; now the foot is seeded, refused as shallow, and the pair read from
+its ridges for that. `tests/rim_rounds.rs`'s `a_reflex_corner_off_tangent_rounds_its_rim` holds
+the plate rounded 1 and 2, mirrored, to its closed form (`std.rounds`' runs cut off by the faces
+they end on: the lobe's disc run on past the corner and within reach of the side is taken by
+neither), and `a_run_cut_off_by_the_cylinder_it_leaves_off_tangent_is_met_to_its_corner` the run
+cut off alone, turned 1e-3 to 1e-2, rounded 1 to 3 and mirrored.
 **A march that steps across a touch ends at the touch** (#879, `ssi::trace_beside`). Two rounds
 tangent to one face meet in a curve that ends where both touch it, a point where the two surfaces
 touch and their meeting's branches cross (`ssi::touch`); where that point is on a face's own edge
@@ -621,7 +693,15 @@ own, and says where (`Touch`). `complex::two_blocks_meeting_along_an_edge_…`, 
 `TANGENT` (1e-4 rad) of one another are ordered a step in: a fitted surface — a round's net — is
 tangent to the faces it joins only as closely as its fit, some 1e-5, and read to first order that
 error put a round's strip on the wrong side of it, every cell one shell (the round-lowering cases,
-each a Boolean's selection with none falling back). **A2, the meeting** (`brep::meeting`):
+each a Boolean's selection with none falling back). The step is read nearest first (#942 F6):
+sixty-four tolerances in, and ten times farther only while two ways still agree within what a
+tolerance's lean turns a way by there (`4 tol / step`), to at most a hundredth of the least exact
+radius among them or a thousandth of the complex. Read at that farthest step alone, the order was the
+box's: a drum screwed a short lead has rims' ramps thinner than a hundredth folding against the
+cylinders its side sweeps, a step of a thousandth of a box past them swapped a ramp with its
+cylinder, and as the box grew — a twentieth more room, or a slab a hundred times the sweep cut —
+the solid was judged wrong or the slab left whole
+(`swept_closed::a_drum_screwed_a_short_lead_cut_from_a_slab_a_hundred_times_its_sweep_takes_its_sweep`). **A2, the meeting** (`brep::meeting`):
 two surfaces' meeting over boxes of their parameters as branches (each crossing or touching all
 along), singular points (a touch alone, or branches crossing) and coincidence, complete — boundary
 crossings, every critical point of one's distance across the other's parameters (a closed branch
@@ -644,7 +724,33 @@ the same in one place — a point onto a vertex within `tol` (`Pool`, each verte
 farthest point merged into it stood: `topo::Vertex::tol`, which `check` reads an edge's end
 against), a vertex onto an edge and an edge onto an edge within `ON_CURVE` tolerances, a point onto
 a meeting within `on_meeting`, a flat root onto a crossing within `FLAT`, a sliver into its edge —
-applied once, in that order. A non-rational B-spline's heights over a plane are its distances from
+applied once, in that order. **A surface onto a surface** (#961, `meeting::Shared::index_over`,
+`ssi::same_over`): two faces' surfaces standing within `ON_CURVE` tolerances of each other over the
+part of space both faces' boxes hold (their edges' bounds) are one surface of the arrangement,
+whatever angle they lean apart at elsewhere — the reach at which an edge lying along another is
+that edge. `same_over` reads planes by the corners of the region, and cylinders, cones and tori as
+one turned by the lean about a point of its axis (its apex, its centre) and moved, a point within
+the region moving no farther than the lean times its distance from that point, the move and the
+difference of their sizes; a sphere has no axis, and `same` reads two by centre and radius alone.
+A surface swept or turned from a curve (`Extrusion`, `Revolution`), a blend, a sheet, an affine
+image, a family and an offset stay on `same`, parallel to `1e-12`. The face the two pieces become
+is written on the lower operand's surface (the solid's, in a body's Boolean), and the other
+operand's edges and corners laid on it stand off it by no more than the two stood apart there,
+within the reach (`brep_coincident`'s `built` holds every edge of every result to it, and the
+result to `check` at the ten tolerances `combined` checks it to). Every phase asks the one index each face's surface is given (`surface_index`): the
+meetings, a flat root's given curves, and which face of another operand a piece lies on, a piece
+holding a point of such a face read on it before its place in that solid is. Read with `same`'s
+fixed `1e-12` on the angle, two faces meant on one plane and drawn through points rounded to a
+few decimals (`1e-6` to `1e-10` rad apart) were two planes whose meeting was laid along an edge
+both bound, and the complex refused them as coinciding along it, or a piece of one touched the
+other along no face (fixture 115's strips at five, seven and nine decimals);
+`brep_coincident::a_pad_leaning_a_hair_off_a_plate_is_united_with_it`,
+`flush_blocks_overlapping_in_part_are_united`, `coaxial_rods_of_one_radius_leaning_a_hair_are_united`,
+`frustums_of_one_cone_leaning_a_hair_are_united`, `sectors_of_one_torus_leaning_a_hair_are_united`,
+`a_ball_drawn_a_few_tolerances_off_itself_is_one_ball` and
+`fixture_115s_strips_unite_at_every_precision` are the gates (volumes to the closed form, either
+operand first), and `a_pad_leaning_past_the_reach_keeps_its_foot` holds a lean past the reach two
+planes. A non-rational B-spline's heights over a plane are its distances from
 it, so its reading against a plane (`query::spline_plane`) proves a run where a stretch's heights are
 enclosed within half the tolerance (`HeightsWithin`), settled as one meeting: a contact curve running
 in the plane of a torus's seam circle over a stretch read 185 roots a hair apart and was halved past
@@ -781,8 +887,10 @@ its centre — where they were traced and refused as nearly touching
 pieces are ordered by their curvature where they leave a point tangent** (`boolean::pieces_of_face`):
 each half's way out of a node is read a ten-thousandth along its own length, and where two of the
 ways there agree within `TANGENT_TIE` (a thousandth of a radian, what a step along an arc turns its
-chord) they are read again at one length along each — a ten-thousandth of the shortest of those
-tied, each half's chord to its point that far from the node, the part of its way there found by
+chord) they are read again at one length along each — first where a tolerance's lean (`4 tol / δ`)
+turns a way by the tie itself, `δ = 4 tol / TANGENT_TIE`, no more than a quarter of the shortest of
+those tied (#942 F6; nearer the node no reading parts two ways the tie holds as one), and ten times
+on while they still agree — each half's chord to its point that far from the node, the part of its way there found by
 halving (a curve's parameter runs at no one speed: a trace's counts its points, which crowd where it
 sets out, and two probes of its parameter there, extrapolated to that length, once read a way 80
 radians off, #791) — so two arcs touching there part by their
@@ -1033,18 +1141,20 @@ a vertex twice), where the boundary between them runs more than four bars and si
 distance (two loops, or one far round) — and an edge shorter than the bar of no such face; a pole
 is none. Read off the B-rep, it is the same wherever the solid
 stands (`brep_flush::a_sliver_is_found_by_its_boundary_wherever_it_stands`).
-**The recipe is read once** (`recipe::Recipe::read`): every reader — this kernel's build and
-meridian, `section`, the swept cutter and sector, `solid::exact`/`canal`, the native host's
-`Session` — matches a typed `recipe::Node`, never the JSON; a profile stays as written
-(`recipe::Section`, the numbers the native host hands on) until `Profile::of` reads it. A new node
-or field is one arm of `Node::read` and of each match. Every writer writes its points through one
-`recipe::Writer` (millimetres, about the world's origin or `cad::recipe_about`'s). **A kernel error
+**The recipe is typed values, never text** (`recipe::Recipe`, `recipe::Node`): `solid::cad` and
+every node writer build the nodes themselves, and every reader — this kernel's build and meridian,
+`section`, the swept cutter and sector, `solid::exact`/`canal`, the native host's `Session` —
+matches a `Node`; nothing is written as JSON and read back.  A profile stays as written
+(`recipe::Section`, the numbers the native host hands on) until `Profile::of` reads it, and
+`Profile::section` writes one back.  A new node or field is one variant or field and one arm of
+each match.  Every writer writes its points through one `recipe::Writer` (millimetres, about the
+world's origin or `cad::recipe_about`'s), which returns the numbers themselves. **A kernel error
 has a kind** (`brep::KernelError`, `Kind`): `Brep::check`'s edge used as often each way, more than
 once, is `NotManifold` (material touching along it: what `boolean::combined` and the body's
 stratum act on), one used more often one way or never `Open` (a face missing: the kernel's own failure,
 which the stratum never reads as rounds meeting; `brep::an_edge_used_twice_each_way_touches_and_one_used_once_is_open`), a recipe of another kind
 than a route builds (`Recipe::meridian`, `Sectioned`) is `Refused` (its caller builds it
-another way), an unreadable recipe `Recipe`; its message is all it says, and it becomes a `String`
+another way); its message is all it says, and it becomes a `String`
 where a caller outside `brep` wants one. Never match an error's text.
 **This kernel is every export's default** (phase 5): OCCT answers only `--kernel occt` /
 `--stl-backend occt` / `SOLVENT_KERNEL=occt` (the oracle; refused in a build without OCCT), its
@@ -1220,8 +1330,21 @@ A family in bands is never carried rigidly.
 STEP writes a sheet as the net fitted within `step::FIT` (`family_net`, cubic along the edge and
 quintic along `s`: a cubic through 512 rows misses a 3½-turn auger by 1e-6), rails and rims as
 cubics within it.
+**A stretch of a traced or formula curve in a profile is held as near as a surface the kernel
+fits** (`cad::HELD_MM`, which is `step::FIT`, 1e-6 mm; `brep::cubic::fit_held`): the stretch is
+what the solid's face is carried along or turned from, and a reader measures the solid by that
+face, so the bar of what may be refused (`cad::FIT_MM`, 1e-4 mm) is no licence to stand that far
+off — a hyperbola turned, fitted within `FIT_MM` alone, read 1.03e-6 off its closed form where
+brep-bench grades to 1e-6, and within `HELD_MM` reads 1.7e-9 off. The samples are doubled until
+the fit stands within `HELD_MM`; where a doubling no longer brings it four times nearer (a cubic
+through a smooth curve comes sixteen times nearer, so the fit is at the curve's own roughness) or
+its spans pass `cubic::HELD_SPANS`, the nearest fit met within `FIT_MM` stands, and only a curve
+with no fit within `FIT_MM` is refused, as before. `tests/solid_lang.rs`
+(`a_stretch_turned_is_held_as_near_as_a_fitted_surface`, a hyperbola stated by its foci turned, to
+1e-8 of its closed form;
+`a_fit_is_held_where_it_closes_in_and_stands_within_its_tolerance_where_it_does_not`) is the gate.
 Rung 2 is done: `Curve::BSpline` (`brep::nurbs`), `Surface::Extrusion`/`Revolution`, a face's
-stretch of a traced or formula curve (`k from p to q`, `CurveE::trim`, `cad::FIT_MM`), and a
+stretch of a traced or formula curve (`k from p to q`, `CurveE::trim`, `cad::HELD_MM`), and a
 section carried to its own image (`build::ruled`: a drafted prism's offset, a canal's screwed disc;
 `Surface::Blend`, `Curve::Iso` rails, `step::FIT`), each edge joined to the edge it became at equal
 parameter fractions.  Two sections drawn apart are no input to it (#243 L3): what a section becomes

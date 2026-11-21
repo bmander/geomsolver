@@ -372,8 +372,11 @@ pub(super) fn measured_term(
     probes: &mut Probes,
     diags: &mut Vec<Diag>,
 ) {
+    // each said once at its statement, however many times a set's body is read
     let mut refuse = |message: String| {
-        diags.push(Diag::on(Code::E040, st, message))
+        if !diags.iter().any(|d| d.code == Code::E040 && d.span == st.span && d.message == message) {
+            diags.push(Diag::on(Code::E040, st, message))
+        }
     };
     // an integral is a statement of the drawing, never a set's bound (§6.25)
     let Some(cmp) = m.cmp.filter(|_| !m.integrates()) else {
@@ -418,6 +421,14 @@ pub(super) fn measured_term(
                 return refuse("a region's angle is between two faces, read `at:` its point: \
                                `angle(a, b, at: p)`".to_string());
             };
+            // the material's angle at an edge, two faces of one body meeting (#961)
+            if fa.solid != fb.solid {
+                let [a, b] = [&x.args[0], &x.args[1]].map(crate::syntax::ref_text);
+                let message = format!("`{a}` and `{b}` are faces of two solids, and the \
+                                       material's angle is at an edge, where two faces of one body \
+                                       meet");
+                return refuse(message);
+            }
             if free.is_some() {
                 return refuse("a region's angle is bounded by a number stated".to_string());
             }

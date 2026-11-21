@@ -65,7 +65,7 @@ pub(super) fn read_again(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
     diags
 }
 
-/// **A round or a chamfer that selects no edge** (#962, W119): each statement whose blocks over a
+/// **A round or a chamfer that selects no edge** (#962, W120): each statement whose blocks over a
 /// solid's faces paired them by `meets` (`flatten::Unmade`), read where the drawing stands in `sk`
 /// edge by edge (`ListedFaces::meeting`, in the layer each pair was asked in): where no pair it
 /// asked meets in an edge — the faces apart or one of them taken in by the body's other terms, at
@@ -141,7 +141,7 @@ pub(super) fn unmade(sk: &Sketch, map: &SourceMap, said: &[Diag]) -> Vec<Diag> {
                     and no edge".to_string(),
             }
         };
-        out.push(Diag::new(Code::W119, u.at, None,
+        out.push(Diag::new(Code::W120, u.at, None,
             format!("{between}: {why}, so nothing is made over them")));
     }
     out

@@ -31,6 +31,8 @@ mod evaluated;
 pub(crate) mod exact;
 pub use exact::Exact;
 pub(crate) use exact::build as build_exact;
+pub mod unkept;
+pub use unkept::{unkept, Unkept};
 pub(crate) mod field_mesh;
 pub use field_mesh::{FieldMesher, FieldMeshing, FieldProgress, FieldSurface, ExactFaces, ExactEdge, FieldJob, ObjectJob, ObjectState, Supplied, Supplies, field_key, reads_key, FINENESS as FIELD_FINENESS};
 pub use field_mesh::{first_pass as field_first_pass, creases as field_creases};

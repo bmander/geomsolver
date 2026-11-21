@@ -57,7 +57,7 @@ fn a_blind_hole_has_a_concave_floor_edge() {
     let e = fixtures::read_beside(&format!("{BOX}in std.front {{\nc := circle(center: std.origin)\nradius(0.5mm) c\n}}\n\
         drill := solid(std.solids.Prism(face(c), from: -1mm, to: 3mm))\ndrill cut body\n"),Path::new("."),&mut |_,text| text);
     let cad = native::Session::new().unwrap();
-    let solid = cad.construct(&cad::recipe(&e.sketch,e.map.ent_named("body").unwrap().i()).unwrap()).unwrap();
+    let solid = cad.built(&cad::recipe(&e.sketch,e.map.ent_named("body").unwrap().i()).unwrap()).unwrap();
     let rows = boundary(&cad,solid);
     let mut concave = 0;
     for row in &rows {
@@ -86,7 +86,7 @@ drill := solid(std.solids.Prism(face(c), from: -3mm, to: 3mm))
 drill cut body
 " } else { "" });
         let e = fixtures::read_beside(&source,Path::new("."),&mut |_,text| text);
-        let solid = cad.construct(&cad::recipe(&e.sketch,e.map.ent_named("body").unwrap().i()).unwrap()).unwrap();
+        let solid = cad.built(&cad::recipe(&e.sketch,e.map.ent_named("body").unwrap().i()).unwrap()).unwrap();
         let rows = boundary(&cad,solid);
         assert_eq!(rows.len(),if hole { 15 } else { 12 });
         let mut circles = 0;
@@ -150,7 +150,7 @@ tool := solid(std.solids.Revolution(face(ring), about: ax))
 ",Path::new("."),&mut |_,text| text);
     let cad = native::Session::new().unwrap();
     for (e,is_sphere) in [(&sphere,true),(&torus,false)] {
-        let solid = cad.construct(&cad::recipe(&e.sketch,e.map.ent_named("tool").unwrap().i()).unwrap()).unwrap();
+        let solid = cad.built(&cad::recipe(&e.sketch,e.map.ent_named("tool").unwrap().i()).unwrap()).unwrap();
         let rows = boundary(&cad,solid);
         assert_eq!(rows.iter().filter(|r| r[3]&2 != 0).count(),if is_sphere { 2 } else { 0 });
         assert_eq!(rows.iter().filter(|r| r[3]&1 != 0).count(),if is_sphere { 1 } else { 2 });
@@ -178,7 +178,7 @@ fn native_cutter_edges_agree_with_the_independent_source_material() {
     for name in ["pair.tooth.crown","pair.gear_space.body"] {
         let id = e.map.ent_named(name).unwrap().i();
         let field = SpatialField::read(&e.sketch,id,1e-10).unwrap();
-        let solid = cad.construct(&cad::recipe(&e.sketch,id).unwrap()).unwrap();
+        let solid = cad.built(&cad::recipe(&e.sketch,id).unwrap()).unwrap();
         let rows = boundary(&cad,solid);
         let mut checked = 0;
         for row in &rows {
@@ -215,7 +215,7 @@ fn a_sliver_is_sampled_between_its_faces() {
     text += "}\nsliver := solid(std.solids.Prism(face(a, b, c, d, e, f, -> close), from: -10mm, to: 0))\n";
     let e = fixtures::read_beside(&text,Path::new("."),&mut |_,text| text);
     let cad = native::Session::new().unwrap();
-    let solid = cad.construct(&cad::recipe(&e.sketch,e.map.ent_named("sliver").unwrap().i()).unwrap()).unwrap();
+    let solid = cad.built(&cad::recipe(&e.sketch,e.map.ent_named("sliver").unwrap().i()).unwrap()).unwrap();
     let started = std::time::Instant::now();
     let samples = cad.samples(solid,4,12).unwrap();
     eprintln!("{} samples in {:?}: {samples:?}",samples.len(),started.elapsed());

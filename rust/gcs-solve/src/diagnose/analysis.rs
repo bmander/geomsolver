@@ -336,8 +336,11 @@ pub fn reentrant_touching(body: &BodyFaces, faces: &[usize]) -> Vec<Reentrant> {
 
 /// **The sharp re-entrant edges what a requirement names reaches**: a face path's, those touching
 /// its faces (`reentrant_touching`); anything else's — the solid, a point, a line — every one.
-pub fn reentrant_of(body: &BodyFaces, of: &Applied) -> Vec<Reentrant> {
+/// `body` is solid `solid`'s: a face path of another solid names none of its faces, whose numbers
+/// are its own (#961), so it reaches none of its edges.
+pub fn reentrant_of(body: &BodyFaces, solid: usize, of: &Applied) -> Vec<Reentrant> {
     match of {
+        Applied::Face(f) if f.solid as usize != solid => Vec::new(),
         Applied::Face(f) => reentrant_touching(body, &body.faces(f)),
         _ => reentrant(body),
     }
@@ -728,7 +731,7 @@ fn said(sk: &Sketch, sc: &Scenario, frames: crate::beams::Read,
         };
         match BodyFaces::whole(sk, solid) {
             Ok(body) => {
-                for edge in reentrant_of(&body, of) {
+                for edge in reentrant_of(&body, solid, of) {
                     out.push(format!("scenario `{}`: `{}({name})` has no answer: {}",
                                      sc.name, Output::Safety.word(), edge.text()));
                 }

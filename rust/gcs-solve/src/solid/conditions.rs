@@ -91,11 +91,8 @@ impl SetDistance {
         let patches: Option<Vec<crate::model::FaceRef>> = terms.iter()
             .map(|t| on_face(t, sk).filter(|(_, surface)| !surface).map(|(f, _)| f)).collect();
         if let Some(fs) = patches {
-            let readings = fs.iter().map(|f| super::faces::reading(sk, f, read))
-                .collect::<Result<Vec<_>, String>>()?;
-            if readings.iter().any(|r| !Arc::ptr_eq(&r.body, &readings[0].body)) {
-                return Err("the faces a set is on are one body's".to_string());
-            }
+            // its edges or corners there: of one body (#961)
+            let readings = super::faces::one_body(sk, &fs.iter().collect::<Vec<_>>(), read)?;
             let body = readings[0].body.clone();
             return Ok(match readings.as_slice() {
                 [one] => SetDistance::Patch(Arc::new(Reading { body, faces: one.faces.clone(), smooth: one.smooth,
@@ -249,8 +246,8 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, sides_of: &Sides,
     // `σ` grows it into the side the point is on, where the side is that face's convex solid's, so
     // it is that solid's signed distance turned round there and the condition convex — one
     // condition each face
-    let carried = |r: &Reading, (faces, past): (Vec<usize>, bool), sigma: f64| -> Vec<Cond> {
-        faces.into_iter().flat_map(|fi| {
+    let carried = |r: &Reading, past: bool, sigma: f64| -> Vec<Cond> {
+        r.faces.iter().copied().flat_map(|fi| {
             let body = r.body.clone();
             held_as(Arc::new(move |x| {
                 let (s, g) = if past { body.carried_side_grad(fi, x) } else { body.side_grad(fi, x) };
@@ -264,9 +261,6 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, sides_of: &Sides,
         let f = patch(f);
         if sides_of.beyond.contains(&f) { Some(true) } else if within.contains(&f) { Some(false) } else { None }
     };
-    // the faces read face by face where their side is convex toward it: one plane, cylinder,
-    // sphere or cone, or a smooth chain of them bulging toward it
-    let convex_toward = |r: &Reading, beyond: bool| -> Option<(Vec<usize>, bool)> { r.bulging(beyond) };
     match &t.shape {
         // within faces on several surfaces meeting convex: within each surface's side
         RegionShape::FaceSide { face } => {
@@ -274,8 +268,8 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, sides_of: &Sides,
             // within (or outside) a face convex toward the point, or a smooth chain bulging that
             // way: each face's side, a chain's carried on past it
             if t.cmp != Cmp::In && t.hi.is_none() && r.convex_pieces().is_none() {
-                if let Some(faces) = convex_toward(&r, t.cmp == Cmp::Ge) {
-                    return Ok(Some(carried(&r, faces, 1.0)));
+                if let Some(past) = r.bulging(t.cmp == Cmp::Ge) {
+                    return Ok(Some(carried(&r, past, 1.0)));
                 }
             }
             Ok(Some(sides(r, t.cmp == Cmp::Le).into_iter().flat_map(held).collect()))
@@ -308,8 +302,8 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, sides_of: &Sides,
                     // every face meeting at a corner of the offset, and the steps stop on it
                     if t.cmp == Cmp::Ge && c > 0.0 && r.convex_pieces().is_none() {
                         if let Some(beyond) = side_of(f) {
-                            if let Some(faces) = convex_toward(&r, beyond) {
-                                return Ok(Some(carried(&r, faces, if beyond { c } else { -c })));
+                            if let Some(past) = r.bulging(beyond) {
+                                return Ok(Some(carried(&r, past, if beyond { c } else { -c })));
                             }
                         }
                     }
@@ -456,8 +450,9 @@ fn nearest(cs: &[Cond], p: V) -> Option<V> {
             // a · y ≤ b, the condition linearised at x
             (g, dot(g, x) - v, c.eq)
         }));
+        // (every condition just read there keeps within `kept`, inside the final reading's bar)
         if convex && k > 0 && off <= kept {
-            break;
+            return Some(x);
         }
         let y = project(p, &rows, tol)?;
         let step = norm(sub(y, x));

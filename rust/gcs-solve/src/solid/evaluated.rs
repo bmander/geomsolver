@@ -436,6 +436,24 @@ impl EvaluatedSolid {
             unbuilt: why,
         }))
     }
+    /// **What an evaluation of solid `si` is about to mesh from its field, said before it does**
+    /// (#961): where its boundary is its material field's (`sweeps_among`), no surface or exact
+    /// build was supplied for it, and the sketch meshes fields here and now
+    /// (`FieldMeshing::Now`), the `Unbuilt` its evaluation will carry — the refusal that left it
+    /// the field's — so a front end can say it before the refinement's seconds, not after them.
+    /// Asks what the evaluation asks first (validation, the routes' refusals), never the mesh.
+    /// `None` for anything else, a solid that does not validate among it.
+    pub(crate) fn field_ahead(sk: &Sketch, si: usize) -> Option<Unbuilt> {
+        if sk.field_meshing.get() != FieldMeshing::Now || sk.awaits_supply(si) || !super::has_sweep(sk, si) {
+            return None;
+        }
+        if sk.supplied_exact_solid(si).is_some() || sk.supplied_field(si).is_some() {
+            return None;
+        }
+        let operands = validate_at(sk, si, REPORT_UNIT).ok()?;
+        Unbuilt::of(DrawnFrom::Field, super::field_only_reasons(sk, &operands))
+    }
+
     /// A swept solid's boundary is its material field's surface, whatever approximation is asked
     /// for: one a host meshed elsewhere and supplied (`Sketch::supply_field`), none while the
     /// sketch leaves meshing to the host (`FieldMeshing::Deferred`), or meshed here and now to the

@@ -76,8 +76,8 @@ pub(super) trait Names {
     fn stands(&self, name: &str) -> Option<String>;
     fn faces(&self, name: &str) -> Option<Vec<String>>;
     /// Whether two faces, each by what its name stands for, share a point (#625): `None` where
-    /// either is no face a solid lists.
-    fn meets(&self, a: &str, b: &str) -> Option<bool>;
+    /// either is no face a solid lists, and why not where they are faces of two solids (#961).
+    fn meets(&self, a: &str, b: &str) -> Option<Result<bool, String>>;
     /// Whether a face, by what its name stands for, lies `along` the direction `line` stands for
     /// (#763): `None` where it is no face a solid lists, and why not where it cannot be read.
     fn along(&self, along: expr::Along, face: &str, line: &str) -> Option<Result<bool, String>>;
@@ -182,7 +182,7 @@ fn holds(
                 "`{x} meets {y}` asks whether two faces of a solid share a point, and `{}` is \
                  no face: name a face a `repeat … in` runs over",
                 if names.faces(x).is_none() { x } else { y }
-            )))?
+            )))?.map_err(|why| (Code::E103, why))?
         }
         Cond::Along(w, x, y) => {
             let (p, q) = (stands(x)?, stands(y)?);

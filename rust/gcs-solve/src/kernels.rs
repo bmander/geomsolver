@@ -157,9 +157,11 @@ pub enum K {
     LineFractionFree,
     // the mirror in an axis, in space: the half turn about its line
     SymmetricAxis,
+    // two rounds touching at a point of both, their centres and it on one line (#962)
+    TangentCirclesAt,
 }
 
-pub const N_KERNELS: usize = 106;
+pub const N_KERNELS: usize = 107;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -3619,6 +3621,18 @@ fn symmetric_axis_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 3] {
     half_turn(vec3(v, 0), vec3(v, 3), vec3(v, 6), vec3(v, 9))
 }
 
+/// Columns of `tangent_circles_at`: (p, a, b) — a point on two rounds, and their centres (#962).
+/// `(p − a) × (p − b) / |p − b|`: how far the radius of the first to `p` runs along the second's
+/// tangent there, `tangent_arc_line`'s statement with the other round's tangent for the line — a
+/// signed distance, nil where the two centres and `p` are on one line, inside or out.  Degree 1.
+fn tangent_circles_at_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 1] {
+    let (p, a, b) = (vec2(v, 0), vec2(v, 2), vec2(v, 4));
+    let (u, w) = (sub2(p, a), sub2(p, b));
+    let l = dot2(w, w).sqrt();
+    let l = if l.val() > MIN_LINE_LEN { l } else { T::cst(MIN_LINE_LEN) };
+    [(u[0] * w[1] - u[1] * w[0]) / l]
+}
+
 /* -- a point carried by a map (#357) --------------------------------------------------------
  *
  * `q mapped(from -> a, to -> b, third -> c) p`: `q = a + i·(b − a) + j·(c − a)`, with `(i, j)`
@@ -3938,6 +3952,7 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     num_kernel!("line_fraction", line_fraction_rows, n_res: 1, n_par: 9, degree: 0, n_const: 1),
     num_kernel!("line_fraction_free", line_fraction_free_rows, n_res: 1, n_par: 10, degree: 0, n_const: 2),
     num_kernel!("symmetric_axis", symmetric_axis_rows, n_res: 3, n_par: 12, degree: 1, n_const: 0),
+    num_kernel!("tangent_circles_at", tangent_circles_at_rows, n_res: 1, n_par: 6, degree: 1, n_const: 0),
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

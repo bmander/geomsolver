@@ -1491,6 +1491,107 @@ fn a_face_runs_along_the_stretch_of_a_curve_between_two_points_held_on_it() {
     assert!(text.contains("f := face(k from a to b, -> close)"), "{text}");
 }
 
+/// A hyperbola as its foci make it — every point `2a` farther from `far` than from `near`, `q`
+/// going round the circle of radius `2a` about `far` and `p` the point of the ray through it as
+/// far from `q` as from `near` — the foci as far from the centre as the corner of the box of the
+/// asymptotes, its branch from 6 below the waist to 6 above turned about the axis between.
+const HYPERBOLOID: &str = "\
+unit mm
+use std
+use std.solids
+component Hyperbola(near: point, far: point, a: Length, u: Angle) {
+  q := point
+  p := point
+  foci := line(far, near)
+  ray := line(far, q)
+  far distance(2 * a) q
+  foci angle(u) ray
+  p coincident ray
+  line(p, q) equal line(p, near)
+}
+in std.front {
+  o := point
+  fix((0, 0)) o
+  corner := point
+  fix((4, 6)) corner
+  near := point hint((7.2, 0))
+  far := point hint((-7.2, 0))
+  horizontal (span := line(far, near))
+  o midpoint span
+  line(o, near) equal line(o, corner)
+  low := point hint((5.66, -6))
+  high := point hint((5.66, 6))
+  low coincident k hint(t: -25)
+  high coincident k hint(t: 25)
+  fix(y == -6mm) low
+  fix(y == 6mm) high
+  foot := point hint((0, -6))
+  head := point hint((0, 6))
+  horizontal (top := line(high, head))
+  construction centerline spindle := line(head, foot)
+  vertical spindle
+  horizontal (bottom := line(foot, low))
+  fix(x == 0mm) foot
+}
+k := trace(Hyperbola(near, far, a: 4mm).p over u in (-30deg, 30deg))
+s := solid(std.solids.Revolution(face(k from low to high, top, spindle, bottom), about: std.z))
+";
+
+/// A stretch of a traced curve in a profile is held as near as the kernel holds a surface it fits
+/// (`cad::HELD_MM`), not only within `FIT_MM`: the hyperboloid of one sheet of waist 4 and 6 to
+/// each end is `256π`, its side `8π(2√22 + (18/√13) asinh(√13/3))` and its ends `64π`, read here
+/// to 1e-8 where the fit within `FIT_MM` alone read the volume 1e-6 off (brep-bench's
+/// `geometry/hyperboloid`, graded to 1e-6).
+#[test]
+fn a_stretch_turned_is_held_as_near_as_a_fitted_surface() {
+    use std::f64::consts::PI;
+    let e = read(HYPERBOLOID);
+    let mut sk = e.sketch.clone();
+    gcs_core::solve::solve(&mut sk, gcs_core::solve::SolveOpts::default());
+    let root = (0..sk.solids.len()).find(|&i| sk.solids[i].name == "s").unwrap();
+    let recipe = gcs_core::solid::cad::recipe(&sk, root).unwrap();
+    let b = gcs_core::brep::recipe::build(&recipe).unwrap();
+    b.check(1e-9).unwrap();
+    let volume = 256.0 * PI;
+    let k = 13f64.sqrt() / 3.0;
+    let area = 8.0 * PI * (2.0 * 22f64.sqrt() + 18.0 / 13f64.sqrt() * k.asinh()) + 64.0 * PI;
+    let v = gcs_core::brep::props::volume(&b);
+    let a = b.faces.iter().map(|f| gcs_core::brep::props::area(&b, f)).sum::<f64>();
+    assert!((v - volume).abs() <= 1e-8 * volume, "{v} against {volume}");
+    assert!((a - area).abs() <= 1e-8 * area, "{a} against {area}");
+}
+
+/// The fit behind it (`brep::cubic::fit_held`): a smooth stretch is doubled until it stands
+/// within `held`; one whose fit stops closing in — here a curve with a corner in its curvature
+/// every unit, which a cubic follows no faster for more poles than its corners allow — keeps the
+/// nearest fit met within `tol` and is doubled no further for it; and held to `tol` itself it is
+/// `fit_sampled`'s, the first fit within it.
+#[test]
+fn a_fit_is_held_where_it_closes_in_and_stands_within_its_tolerance_where_it_does_not() {
+    use gcs_core::brep::cubic::{fit_held, fit_sampled};
+    let sampled = |f: fn(f64) -> (f64, f64)| move |lo: f64, hi: f64, n: usize| -> Vec<(f64, f64)> {
+        (0..=n).map(|k| f(lo + (hi - lo) * k as f64 / n as f64)).collect()
+    };
+    let smooth = sampled(|u| (4.0 * (1.0 + (u / 6.0) * (u / 6.0)).sqrt(), u));
+    let (loose, _, e0) = fit_sampled(&smooth, (-6.0, 6.0), None, 1e-4).unwrap();
+    let (held, _, e1) = fit_held(&smooth, (-6.0, 6.0), None, 1e-6, 1e-4).unwrap();
+    assert!(e0 <= 1e-4 && e0 > 1e-6, "{e0}");
+    assert!(e1 <= 1e-6, "{e1}");
+    assert!(held.len() > loose.len(), "{} against {}", held.len(), loose.len());
+    // held to its tolerance alone it is the fit it always was
+    let (same, _, e2) = fit_held(&smooth, (-6.0, 6.0), None, 1e-4, 1e-4).unwrap();
+    assert!(same.len() == loose.len() && e2 == e0);
+    // off the grid of every doubling, so no fit puts a knot on a corner
+    let rough = sampled(|u| {
+        let w = (u * 0.7310585786300049).fract() - 0.5;
+        (u, 0.02 * w * w * w.abs())
+    });
+    let (nearest, _, e3) = fit_held(&rough, (0.0, 8.0), None, 1e-9, 1e-3).unwrap();
+    assert!(e3 <= 1e-3 && e3 > 1e-9, "{e3}");
+    assert!(nearest.len() <= gcs_core::brep::cubic::HELD_SPANS + 3, "{}", nearest.len());
+    assert!(fit_held(&rough, (0.0, 8.0), None, 1e-12, 1e-9).is_none());
+}
+
 #[test]
 fn a_curve_in_a_face_is_a_stretch_between_points_held_on_it() {
     refused(&format!("{PARABOLA}f := face(k, -> close)\n"), Code::E080, "name the stretch");

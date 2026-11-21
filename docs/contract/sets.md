@@ -192,7 +192,7 @@ evaluated; coaxial to the fold's own tolerance, 1e-7 of the region's size, a pla
 two lines a solve holds on one axis hold to its acceptance, not to the bit, #283), memoised
 against `solid::reads` (`Caches::meridian`); every evaluator reads it —
 the recipe a `revolve`
-(`recipe::region_profile`, `Profile::to_json`), the field `RevolvedRegion::of_meridian` (also
+(`recipe::region_profile`, `Profile::section`), the field `RevolvedRegion::of_meridian` (also
 `read`, so patches trim by it), facets `region::face_polys` turned by `primitive::revolve`,
 admission `Turns::Line`/`Ball` and `tool()` — its loops `Region::outer_first`, a ball's
 `Region::half_disc`. A set used in a predicate's body is applied under the statement it was
@@ -459,7 +459,12 @@ every edge between them a seam or a crease convex from that side, each face its 
 its side carried on past its patch by its tangent planes (`BodyFaces::carried_side_grad`, the
 signed distance from the convex solid the patch and those planes bound), so the side is their
 common part and a point at least `d` inside it is at least `d` inside each — a pocket's walls
-seen from its air, a boss's from its material.
+seen from its air, a boss's from its material. A torus's patch is so in a chain where it lies on
+the outer half of its tube with that side inside the tube, both its curvatures' centres there (a
+pocket's floor filled round its plan corners, seen from the air; `BodyFaces::outer_half`), never
+alone (its whole surface's side winds round the axis): a ball standing on a run's axis beside
+those stretches was read through the nearest face and the gate refused it
+(`round_onto_round::a_boss_across_a_trays_filled_wall_is_its_closed_form`).
 Read through the nearest face alone, a corner of the offset (an arc's offset closed onto its
 axis, a pocket's corner rounded to its own radius, or past it) is where the nearest face turns,
 and the steps never settled there. **The steps stop at the first point keeping every condition
@@ -536,7 +541,13 @@ face (`ball_sector`; the ball turned about an axis square to the way out of the 
 disc square to it too, so its poles and the meridians its turn is read from stand outside the cone
 and the sector is one face of the sphere — the axis and the seam's start set midway across the
 widest gap between the lines the cuts' planes meet that plane in, read round a quarter turn, so no
-cut passes through a pole or the seam, as an octahedron's would).  `grown::convex_corners_of_any_faces_grown_are_built_exactly` is
+cut passes through a pole or the seam, as an octahedron's would).  A vertex is a corner only where
+its faces' normals are three apart to the body's reading of tangent (`faces::TANGENT`, #962): two
+faces going on from one another across a seam tangent only to the drawing's stated numbers (a lobe
+and a waist a ten-millionth of a radian off) stand no corner, and their prisms meet in the seam's
+section (`rim_seams::a_body_grown_over_stated_seams_stands_no_corner_there`, Steiner's to 1e-9);
+read to a billionth, a corner's sector was cut there and no piece met it.
+`grown::convex_corners_of_any_faces_grown_are_built_exactly` is
 the gate (brep-bench's offset/tetrahedron-grown and an octahedron, to Steiner's).  **A concave
 edge** (two planes along a line) has no wedge: its faces' prisms overlap in a `d × d` column there,
 so each is cut back to the edge's bisector, the plane through it halfway between them

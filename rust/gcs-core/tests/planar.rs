@@ -70,21 +70,23 @@ fn a_profile_listed_out_of_order_is_walked() {
 
 /// A recipe: a ring about z (r 10–20, z 0–5) bounded by a ring about the parallel line through
 /// (3, 0) (r 8–15, z −1–6), that one drawn about z and placed there.
-fn rings() -> gcs_core::json::Json { rings_tilted(0.) }
+fn rings() -> gcs_core::brep::recipe::Recipe { rings_tilted(0.) }
 
 /// `rings`, the second ring's line also turned by `tilt` (radians) about x.
-fn rings_tilted(tilt: f64) -> gcs_core::json::Json {
+fn rings_tilted(tilt: f64) -> gcs_core::brep::recipe::Recipe {
+    use gcs_core::brep::recipe::{Body,Edge,Named,Node,Recipe,Section,Stroke};
     let (c,s) = (tilt.cos(),tilt.sin());
-    let rect = |r0: f64,r1: f64,z0: f64,z1: f64| format!(r#"{{"origin":[0,0,0],"normal":[0,1,0],"loops":[[
-        {{"kind":"line","start":[{r0},0,{z0}],"end":[{r1},0,{z0}]}},{{"kind":"line","start":[{r1},0,{z0}],"end":[{r1},0,{z1}]}},
-        {{"kind":"line","start":[{r1},0,{z1}],"end":[{r0},0,{z1}]}},{{"kind":"line","start":[{r0},0,{z1}],"end":[{r0},0,{z0}]}}]]}}"#);
-    let text = format!(r#"{{"root":4,"nodes":[
-        {{"id":1,"kind":"revolve","name":"a","origin":[0,0,0],"axis":[0,0,1],"angle":{tau},"profile":{a}}},
-        {{"id":2,"kind":"revolve","name":"b","origin":[0,0,0],"axis":[0,0,1],"angle":{tau},"profile":{b}}},
-        {{"id":3,"kind":"placed","name":"b2","source":2,"matrix":[1,0,0,3, 0,{c},{n},0, 0,{s},{c},0]}},
-        {{"id":4,"kind":"body","name":"body","stock":1,"on":[],"cut":[],"bound":[3]}}]}}"#,
-        tau=std::f64::consts::TAU,a=rect(10.,20.,0.,5.),b=rect(8.,15.,-1.,6.),n=-s);
-    gcs_core::json::parse(&text).unwrap()
+    let line = |start: [f64;3],end: [f64;3]| Edge {name:String::new(),shape:Stroke::Line {start,end}};
+    let rect = |r0: f64,r1: f64,z0: f64,z1: f64| Section {origin:[0.;3],normal:[0.,1.,0.],loops:vec![vec![
+        line([r0,0.,z0],[r1,0.,z0]),line([r1,0.,z0],[r1,0.,z1]),line([r1,0.,z1],[r0,0.,z1]),line([r0,0.,z1],[r0,0.,z0])]]};
+    let ring = |profile| Node::Revolve {profile,origin:[0.;3],axis:[0.,0.,1.],angle:std::f64::consts::TAU};
+    let named = |id: i64,name: &str,node| Named {id,name:name.into(),node,said:None};
+    Recipe {root:4,nodes:vec![
+        named(1,"a",ring(rect(10.,20.,0.,5.))),
+        named(2,"b",ring(rect(8.,15.,-1.,6.))),
+        named(3,"b2",Node::Placed {source:2,matrix:[1.,0.,0.,3., 0.,c,-s,0., 0.,s,c,0.]}),
+        named(4,"body",Node::Body(Body {stock:1,bound:vec![3],..Default::default()})),
+    ]}
 }
 
 /// A line parallel only to its rounding, as a solved one is (the cutter of an 18-tooth hypoid
@@ -93,16 +95,16 @@ fn rings_tilted(tilt: f64) -> gcs_core::json::Json {
 #[test]
 fn a_line_parallel_within_the_tolerance_sections_as_parallel() {
     use gcs_core::brep::section::Sectioned;
-    let s = Sectioned::read(&rings_tilted(1e-11)).unwrap();
+    let s = Sectioned::of(&rings_tilted(1e-11)).unwrap();
     close(s.section([1.,0.,0.]).unwrap().area(),5.*(18.-11.),1e-9);
-    let refused = Sectioned::read(&rings_tilted(1e-6)).err().unwrap();
+    let refused = Sectioned::of(&rings_tilted(1e-6)).err().unwrap();
     assert!(refused.to_string().contains("not parallel to the first's"),"{refused}");
 }
 
 #[test]
 fn a_ring_bounded_by_an_offset_ring_sections_exactly() {
     use gcs_core::brep::section::Sectioned;
-    let s = Sectioned::read(&rings()).unwrap();
+    let s = Sectioned::of(&rings()).unwrap();
     // towards the other line's offset: its ring from s = 3 + 8 to 3 + 15, cut by 10–20
     let x = s.section([1.,0.,0.]).unwrap();
     close(x.area(),5.*(18.-11.),1e-9);

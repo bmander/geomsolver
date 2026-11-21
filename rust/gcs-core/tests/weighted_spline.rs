@@ -223,7 +223,7 @@ fn the_case_proves_its_circle_and_turns_a_hemisphere() {
     let v = gcs_core::brep::props::volume(&b);
     let whole = 2.0 / 3.0 * PI * R.powi(3);
     assert!((v - whole).abs() <= 1e-9 * whole, "{v} against {whole}");
-    let text = gcs_core::brep::step::write(&b, "dome", 1e-4).unwrap();
+    let text = gcs_core::brep::step::write(&b, "dome", 1e-4, gcs_core::brep::step::Fit::Exact).unwrap();
     assert!(text.contains("RATIONAL_B_SPLINE_CURVE"));
     gcs_core::brep::step_check::verify(&text, &gcs_core::brep::step_check::Solid::of(&b)).unwrap();
 }

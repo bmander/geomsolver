@@ -12,7 +12,6 @@ use crate::fmath::Det;
 use super::admission::Condition;
 use crate::brep::recipe::{Spine, Writer};
 use crate::brep::swept::canal::{self as kernel, Row, Seen};
-use crate::json::{object, Json};
 use crate::model::{Sketch, SolidDef};
 use crate::motion::Family;
 use crate::vocab::num;
@@ -33,20 +32,16 @@ pub struct Canal {
 
 impl Canal {
     /// The recipe's node, written by `w`.
-    pub fn node(&self, w: &Writer) -> Json {
-        let mut o = object([("kind", "canal".into()), ("centre", w.point(self.centre)),
-            ("radius", w.length(self.radius)), ("face", self.face.clone().into())]);
-        match &self.spine {
+    pub fn node(&self, w: &Writer) -> crate::brep::recipe::Node {
+        use crate::brep::recipe;
+        let spine = match &self.spine {
             &Spine::Screw { origin, axis, angle, advance } => {
                 let mm = |p: V| p.map(|x| x * w.scale);
-                o.set("origin", w.line_origin(mm(origin), axis));
-                o.set("axis", Writer::triple(axis));
-                o.set("angle", angle.into());
-                o.set("advance", w.length(advance));
+                recipe::Spine::Screw { origin: w.line_origin(mm(origin), axis), axis, angle, advance: w.length(advance) }
             }
-            Spine::Tube(walls) => o.set("tube", super::family::json(walls, w)),
-        }
-        o
+            Spine::Tube(walls) => recipe::Spine::Tube(super::family::family(walls, w)),
+        };
+        recipe::Node::Canal { centre: w.point(self.centre), radius: w.length(self.radius), spine, face: self.face.clone() }
     }
 
     /// Whether the tube is fitted: its centre's path one no closed form carries (#684 D).

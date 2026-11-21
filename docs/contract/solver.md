@@ -208,15 +208,33 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   settle-test the surplus motions: step along a null direction, settle, and a motion that walks back
   is `shaky` — out of the DOF, "blocked at second order", never painted under- or over-constrained.
   `numeric_rank` already includes them; nothing adds `shaky` back.  Every guard is inside
-  `witness::screen`: at a solution, a tangency present, removals capped at what the matching cannot
-  account for, at most `SCREEN_MAX`.  A double root's singular value is as small as a real
-  freedom's, so a candidate is recognised only by trying it.
+  `witness::screen`: at a solution, removals capped at what the matching cannot account for (so
+  no solve runs where the numbers see every row the matching does), at most `SCREEN_MAX`.  **No
+  kind of constraint is asked for** (#961): a tangency at its contact is only the double root
+  written as a word.  The ends of an arc of a half turn held with its radius are the circles
+  about the ends touching, and a coordinate held where a circle runs square to it is the circle
+  touching that line; neither carries a tangency, and gated on one the first read `DOF 1` with
+  the radius `over` (`tests/half_turn.rs`, `the_ends_and_a_radius_are_a_double_root`;
+  `the_screen_blocks_no_real_freedom` holds that a theorem's real motions still settle away).
+  What bounds its cost is `cap` and `SCREEN_MAX`, not a kind: at most eight settles from a step
+  beside a solution, and only where the numbers see fewer rows than the matching.  Over the 297
+  documents of `rust/examples/` that elaborate, three tangency-free ones reach it (`altitudes`,
+  `square`, `polygon_chain`, at most eight settles, 0.5 ms to 1.7 ms); a grid of a hundred
+  rectangles each with its fourth right angle stated (800 columns, read by parts) diagnoses in
+  0.4 s either way.
+  A double root's singular value is as small as a real freedom's, so a candidate is recognised
+  only by trying it.
   **The tangent at a point of any path** (#251): `g tangent(at: m) l`, the parser reading `at:`
   as a point unless it is `start`/`end`/`p1`/`p2` — of a spline or a curve the contact's **rate**
   there held along the line, `CKind::Rate` (#365, the one kernel every rate of a contact runs,
   `contact_rate`: `spline_tangent_line`'s direction row over `C′` from the spline's or the curve's
   frame), of a circle or arc `TangentCircleAt` (the
-  `tangent_arc_line` kernel over `[at, centre, line]`), of a line `parallel`. The spline's and
+  `tangent_arc_line` kernel over `[at, centre, line]`), of a line `parallel`; and **two rounds
+  touching at a point of both** (#962), `a tangent(at: p) b`, `TangentCirclesAt`: the
+  `tangent_circles_at` kernel over `[p, a's centre, b's centre]`, `(p − a) × (p − b) / |p − b|`,
+  how far `a`'s radius to `p` runs along `b`'s tangent there — degree 1, nil with the centres and
+  `p` on one line, inside or out (the drawing's branch), regular where `TangentCircleCircle` is a
+  double root once both pass through `p`.  The spline's and
   curve's own `t` is **the contact's**: `Sketch::add` hands it the place of the contact holding
   `m` on `g` (`Constraint::tangent_at`/`holds_on`, `Sketch::holding`), whichever comes first
   (`share_place` re-points an earlier tangent), whatever it arrived carrying, so a graft, JSON and

@@ -424,7 +424,7 @@ fn a_family_is_written_as_step() {
     for (src, name) in [(TWISTED, "duct"), (ELBOW, "body"), (SPRING, "spring")] {
         let e = family(src);
         let x = e.sketch.exact_solid(index(&e, name)).unwrap();
-        let text = gcs_core::brep::step::write(&x.brep, name, 1e-3).unwrap();
+        let text = gcs_core::brep::step::write(&x.brep, name, 1e-3, gcs_core::brep::step::Fit::Exact).unwrap();
         let solid = gcs_core::brep::step_check::Solid::of(&x.brep);
         gcs_core::brep::step_check::verify(&text, &solid).unwrap_or_else(|m| panic!("{name}: {m}"));
     }
@@ -462,7 +462,7 @@ fn a_family_mapped_is_its_image() {
         let back = m.mapped(&a.inverse());
         back.check(1e-9 * back.size()).unwrap_or_else(|k| panic!("{name}: {}", k.msg));
         near(gcs_core::brep::props::volume(&back), whole, 1e-9, name);
-        let text = gcs_core::brep::step::write(&m, name, 1e-3).unwrap();
+        let text = gcs_core::brep::step::write(&m, name, 1e-3, gcs_core::brep::step::Fit::Exact).unwrap();
         gcs_core::brep::step_check::verify(&text, &gcs_core::brep::step_check::Solid::of(&m))
             .unwrap_or_else(|k| panic!("{name}: {k}"));
     }

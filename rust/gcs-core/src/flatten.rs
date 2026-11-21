@@ -456,11 +456,15 @@ pub struct Expansion {
     /// again where it solves (`program::at_solve`) — a seed off its arc's circle builds no face,
     /// where the solve does.
     pub unread: BTreeSet<Span>,
+    /// Every document statement whose `when` asked whether faces of two solids meet (#961),
+    /// once each: for the elaborator to refuse, naming the body that holds both where one does
+    /// (`program::solids::across`).
+    pub across: Vec<Across>,
     /// Whether the walk stopped at `MAX_FLAT`, its statements cut short: no drawing.
     pub overflowed: bool,
 }
 
-/// **A statement whose blocks over a solid's faces may have selected no edge** (#962, W119): a
+/// **A statement whose blocks over a solid's faces may have selected no edge** (#962, W120): a
 /// round's or a chamfer's, whose `when`s read faces and none of whose pairs read where the drawing
 /// stands met in a way that could not be told — to be read edge by edge where it is solved
 /// (`program::at_solve::unmade`), and said there if no two of its faces meet in an edge.
@@ -490,6 +494,15 @@ struct Selecting {
     held: bool,
     failed: bool,
     fixed: bool,
+}
+
+/// **Two faces of two solids a `when … meets …` asked of** (#961): each by its solid's absolute
+/// name and its name from it, and the document's statement that made the block.  An edge is two
+/// faces of one body meeting, so the block is refused, not made.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Across {
+    pub faces: [(String, String); 2],
+    pub at: Span,
 }
 
 /// **Two faces of a solid a `when … meets …` left apart** (#625): the solid by its absolute
@@ -1019,6 +1032,8 @@ struct FaceState {
     wanted: BTreeSet<String>,
     /// See `Expansion::unread`.
     unread: BTreeSet<Span>,
+    /// See `Expansion::across`.
+    across: Vec<Across>,
     /// The document's own statement being walked — its root body's — where a block set aside
     /// was met: what a fault deep in what it expands to is said at (#625).
     at: Span,
@@ -1358,6 +1373,7 @@ impl<'a> Walk<'a> {
             along: self.faces.along,
             directions_wanted: self.faces.wanted,
             unread: self.faces.unread,
+            across: self.faces.across,
             overflowed: self.overflowed,
         }
     }

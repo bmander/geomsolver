@@ -1017,9 +1017,10 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                     eprintln!("solventc: this document has no solid to write");
                     code = 1;
                 } else if !which.is_empty() {
+                    let said = say_ahead(&sk, &which, path);
                     match gcs_core::gltf::checked_glb(&sk, &which, gcs_core::solid::ApproximationPolicy::Mesh) {
                         Ok(bytes) => {
-                            for &i in &which { say_unbuilt(&sk, i, path); }
+                            for &i in &which { say_unbuilt(&sk, i, path, &said); }
                             if let Err(err) = cad::output::write(path, &bytes) {
                                 eprintln!("solventc: {err}"); code = 1;
                             }
@@ -1049,14 +1050,22 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                     colours: &colours,
                     tolerance: tolerance(&sk, opts).ok().flatten(),
                 };
-                match picture::render(seen.as_ref().unwrap_or(&sk), &ask) {
+                // each solid to be meshed from its field said before it is: that refinement is
+                // what a picture of a refused build waits on (#961)
+                let mut said: Vec<String> = Vec::new();
+                let mut ahead = |line: String| {
+                    eprintln!("solventc: {path}: {line}");
+                    said.push(line);
+                };
+                match picture::render(seen.as_ref().unwrap_or(&sk), &ask, &mut ahead) {
                     Ok(drawn) => {
                         // an object that does not evaluate is left out, as the box leaves it, and
                         // said against the picture it is missing from: the picture is written, and
                         // the run fails, since it is not the whole of what was asked (#614); one
                         // drawn from its field or its facets is in the picture, and said against it
                         // as not built, the run not failed: an export of it is refused (#762)
-                        for why in drawn.missing.iter().chain(&drawn.unbuilt).chain(&drawn.slivers) {
+                        let unbuilt = drawn.unbuilt.iter().filter(|u| !said.contains(u));
+                        for why in drawn.missing.iter().chain(unbuilt).chain(&drawn.slivers) {
                             eprintln!("solventc: {path}: {why}");
                         }
                         if !drawn.missing.is_empty() { code = 1; }
@@ -1197,9 +1206,10 @@ fn export(sk: &Sketch, e: &mut Elaborated, s: &Source, opts: &Opts, o: &Output, 
             Ok(i) => {
                 // cut to the *object*, not to the report: a printer resolves a tenth of a
                 // millimetre and a volume is quoted to four digits, and those are not one number
+                let said = say_ahead(sk, &[i], path);
                 match sk.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::Mesh).and_then(|s| s.stl()) {
                     Ok(bytes) => {
-                        say_unbuilt(sk, i, path);
+                        say_unbuilt(sk, i, path, &said);
                         if let Err(err) = cad::output::write(path, &bytes) {
                             eprintln!("solventc: {err}");
                             ok = false;
@@ -1342,11 +1352,31 @@ fn say(s: &Source, off: u32, sev: &str, code: &str, msg: &str) {
 /// A file written from solid `i`'s evaluation (a glTF, a faceted STL) where that is its field's
 /// or its facet term's, not its exact build: said against the file in the core's words (#762).
 /// The evaluation is the one the file was written from, remembered.
-fn say_unbuilt(sk: &Sketch, i: usize, path: &str) {
+fn say_unbuilt(sk: &Sketch, i: usize, path: &str, said: &[String]) {
     let Ok(solid) = sk.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::Mesh) else { return };
     if let Some(u) = solid.unbuilt() {
-        eprintln!("solventc: {path}: {}", gcs_core::report::unbuilt_text(sk, i, u));
+        let line = gcs_core::report::unbuilt_text(sk, i, u);
+        if !said.contains(&line) { eprintln!("solventc: {path}: {line}"); }
     }
+}
+
+/// **Said before a look at solid `i` is made, where it is to be meshed from its field** (#961):
+/// the same line `say_unbuilt` says after (`Sketch::field_meshed_ahead`, `report::unbuilt_text`),
+/// said first, since the refinement it waits on can take the run's time — so a slow look at a
+/// refused build is told from a hang, and its cause known at once.  The lines said, which are
+/// not said again.
+fn say_ahead(sk: &Sketch, which: &[usize], path: &str) -> Vec<String> {
+    let mut said = Vec::new();
+    for &i in which {
+        if let Some(u) = sk.field_meshed_ahead(i) {
+            let line = gcs_core::report::unbuilt_text(sk, i, &u);
+            if !said.contains(&line) {
+                eprintln!("solventc: {path}: {line}");
+                said.push(line);
+            }
+        }
+    }
+    said
 }
 
 /// Beside an exact STL refused, what writes solid `i` from its material field instead, where its

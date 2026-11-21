@@ -96,7 +96,7 @@ pub fn prepare(sk: &Sketch,body: usize,recipe: &StaticRecipe,admission: &Admissi
     }
     let bounds = field.in_model_units().support_bounds().ok().flatten().map(|b| (b.map(|x| x.bounds()[0]),b.map(|x| x.bounds()[1])));
     let started = crate::clock::Instant::now();
-    let read = crate::brep::recipe::Recipe::read(&recipe.recipe).at(Stage::Blank)?;
+    let read = &recipe.recipe;
     let blank = match read.meridian([1.,0.,0.]) {
         Ok((b,..)) => b,
         Err(e) if e.kind == crate::brep::Kind::Refused => read.build().at(Stage::Blank)?,

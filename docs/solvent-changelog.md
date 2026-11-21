@@ -4,15 +4,15 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.224] A round's caps are faces of the body, an edge ends where it ends on no face, every edge**
+**[0.226] A round's caps are faces of the body, an edge ends where it ends on no face, every edge**
 (#962). A fill (a round or a chamfer at a concave edge) cut off by a face it ends on leaves its
 piece's cap there, on that face's surface: those caps are now among the faces a block over the
 body runs over (`part.filled.far`, `near`, a ring's stretch's `start` and `end`), so a round over
 the filled body (`whole := solid(part)`, `round(r: 1.5mm) whole`) rounds the fill's rim where it
-ends on a face, as it rounds that face's own edges; through 0.223 only its `round` (`flat`) was
+ends on a face, as it rounds that face's own edges; through 0.225 only its `round` (`flat`) was
 listed, and the rim stayed sharp. A cut's cap is listed too where the material goes on beyond it
 (an upright's round's foot on the plate a boss stands on). A straight edge that ends on no face
-— its faces going on across seams there — ends square there in `S.ends`: through 0.223 it did
+— its faces going on across seams there — ends square there in `S.ends`: through 0.225 it did
 not end at all, and a corner's ball at its other end rounded on along it past the seam (a
 block's corner beside a filled step carried a groove under the step's high end). The general
 note on a part where edges of both turns meet at a vertex (a step, a pocket, a boss) is written
@@ -23,18 +23,42 @@ lies between (where it was said only by the word's internal name), and where a f
 named by the rounds of several statements written bare, says to name them. A smooth face named in
 pieces whose chains lie apart is read with the chain of the piece nearest the point. Nothing a
 document may write changed.
-
-**[0.223] A round that selects no edge says so, and a face's fault is said at the face** (#962).
+**[0.225] A round that selects no edge says so, and a face's fault is said at the face** (#962).
 A round or a chamfer (either word, either form) over faces that are all the body's but meet in no
 edge of it — nowhere, only at a corner, only along a seam where one runs on tangent into the
-other, all taken in by the body's other terms, or one face alone — is **W119** at its statement,
-naming its operands and why; through 0.222 it made nothing and said nothing. A face with an edge
+other, all taken in by the body's other terms, or one face alone — is **W120** at its statement,
+naming its operands and why; through 0.224 it made nothing and said nothing. A face with an edge
 of no length where the drawing stands (a line whose two points coincide, an arc or a circle of no
 round), or whose loops bound no simple region, is said once at the face (E080), naming the edge
 and its points, and every solid swept from it and every round over those is a note that it is not
-built (N080); through 0.222 it was said at the prism in the kernel's words ("loop 0 has an edge of
+built (N080); through 0.224 it was said at the prism in the kernel's words ("loop 0 has an edge of
 no length") and again at a round over it by each of its pieces. Nothing a document may write
 changed.
+
+**[0.224] A corner round beside an arc, and two rounds tangent at a point** (#962). A chain's
+corner round, `A -> round(r: R) B`, may have an arc the chain declares for either side or both: a
+jamb rounded into an arch, `(jamb := line(s, c)) -> (k := round(r: 12)) (arch := arc(center: o,
+start: c, end: d))`. The round is the circle of radius `R` tangent to both sides inside the
+corner, inside the arc's circle where the walk turns toward its centre and outside where it turns
+away; the corner stays a point on the line and on the arc's circle, and the arc runs from the
+round's end. A round more than a corner an arc turns toward can hold is said after the solve with
+the radius it holds. `a tangent(at: p) b` between two circles or arcs, `p` a point on both, states
+that they touch there (their centres and `p` on one line). Through 0.223 a round beside an arc was
+refused ("a round rounds the corner where two lines meet, and this is an arc", or at an arc
+declared elsewhere "… and `re` is an arc"), and `tangent(at: p)` between two rounds was E040 (no
+relation of those kinds). A round beside an arc declared apart from the chain is still refused,
+now saying to declare it in the chain; a round beside a circle reads "a corner joins lines and
+arcs". Nothing a document wrote before reads differently.
+
+**[0.223] Faces of two solids do not meet** (#961). `a meets b` of faces of two different
+solids is E103 at the document's statement that made the block, which is made for neither: an
+edge is two faces of one body meeting.  So `wall.far round(r: 2mm) plate.near`, `wall` and
+`plate` two solids, is refused — naming the body both are faces of where one is made of both,
+`part.wall.far` and `part.plate.near` where both are unioned into `part`, and otherwise saying a
+`union` makes them one.  `std.rounds`' `round` and `chamfer` ask `a meets b`, in the order the
+faces are written.  Through 0.222 faces of two solids were taken to meet: the round panicked
+reading one solid's face list by the other's face number, or, where the number was in range,
+read some other face of it.
 
 **[0.222] An integral, and the measure words moved to `std.measures`** (#953). `integral(EXPR
 over p in S)` integrates an expression over the point it binds, `S` a solid, a face of one, a beam

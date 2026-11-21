@@ -1147,6 +1147,7 @@ impl<'a> Walk<'a> {
             };
             let wanted = names.wanted.take();
             let unread = names.unread.get();
+            let across = names.across.take();
             drop(names);
             if let Some((pairs, fixed)) = faced {
                 let s = self.faces.selecting.entry(self.faces.at).or_default();
@@ -1173,6 +1174,13 @@ impl<'a> Walk<'a> {
                     self.body(&b.body, scope, &mut sub, path, depth + 1);
                 }
                 Ok(false) => {}
+                // faces of two solids asked whether they meet: said by the elaborator, which
+                // knows the bodies, at the document's statement (#961)
+                Err(_) if let Some(across) = across => {
+                    if !self.faces.across.iter().any(|a| a.at == across.at) {
+                        self.faces.across.push(across);
+                    }
+                }
                 Err((code, message)) => self.once(code, b.head, message),
             }
             return;
@@ -2172,6 +2180,8 @@ struct Asked<'w, 'a> {
     /// Whether the condition read a face at all — compared one with another, or asked whether
     /// two meet or how one lies (#962).
     faced: std::cell::Cell<bool>,
+    /// The first two faces of two solids `meets` was asked of (#961), refused.
+    across: std::cell::RefCell<Option<super::Across>>,
 }
 
 /// The most aliases a walk may have made for `Asked` to hold each answer to the walk's whole table
@@ -2191,6 +2201,7 @@ impl<'w, 'a> Asked<'w, 'a> {
             wanted: Default::default(),
             unread: Default::default(),
             faced: Default::default(),
+            across: Default::default(),
         }
     }
 
@@ -2231,16 +2242,26 @@ impl super::values::Names for Asked<'_, '_> {
         self.ask(name, |r, alias| self.walk.faces_named(r, self.scope, alias))
     }
 
-    /// Faces of one solid by its `Meets`, read where the drawing is seeded; faces of two, or of
-    /// one whose boundary does not say, as meeting.
-    fn meets(&self, a: &str, b: &str) -> Option<bool> {
+    /// Faces of one solid by its `Meets`, read where the drawing is seeded; of one whose boundary
+    /// does not say, as meeting.  Faces of two solids are refused (#961): an edge is where two
+    /// faces of one body meet, and the elaborator says so where it knows which bodies hold both
+    /// (`Across`).
+    fn meets(&self, a: &str, b: &str) -> Option<Result<bool, String>> {
         let ((solid, ra, pa, listed), (other, rb, pb, _)) = (self.face(a)?, self.face(b)?);
         self.faced.set(true);
+        if solid != other {
+            let across = super::Across {
+                faces: [(solid.to_string(), ra.to_string()), (other.to_string(), rb.to_string())],
+                at: self.walk.faces.at,
+            };
+            self.across.borrow_mut().get_or_insert(across);
+            return Some(Err(format!("`{}` and `{}` are not one body",
+                crate::program::public_path(solid), crate::program::public_path(other))));
+        }
         let read = |r| self.reads.borrow_mut().push(r);
-        let Some(layered) = listed.read.as_ref().filter(|_| !self.every.get() && solid == other)
-        else {
+        let Some(layered) = listed.read.as_ref().filter(|_| !self.every.get()) else {
             read(super::FaceRead::Fixed(true));
-            return Some(true);
+            return Some(Ok(true));
         };
         // in the layer the block's use reads the body in (#879): a round's own faces meet
         // where it reads them, whatever a round standing over it has since made of their edge
@@ -2251,7 +2272,7 @@ impl super::values::Names for Asked<'_, '_> {
             self.apart.borrow_mut().push((solid.to_string(), faces.clone(), layer));
         }
         read(super::FaceRead::Meets { solid: solid.to_string(), faces, layer, held: met });
-        Some(met)
+        Some(Ok(met))
     }
 
     /// A face by its solid's `Lays`, read where the drawing is seeded, against a direction drawn

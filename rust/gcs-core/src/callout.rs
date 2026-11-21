@@ -91,6 +91,7 @@ macro_rules! undrawn {
             | CKind::SplineTangentLine
             | CKind::SplineCurvature
             | CKind::TangentCircleAt
+            | CKind::TangentCirclesAt
             // a rate of a contact is a direction, and its distance a velocity, a length a radian
             // of a slot: no figure on any view (#365)
             | CKind::Rate

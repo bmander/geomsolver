@@ -935,3 +935,247 @@ fn two_chamfers_along_traced_edges_spilled_over_one_seam_are_built() {
     assert!((got - want).abs() <= 1e-8 * want, "{got} against {want}");
 }
 
+/// `rounds/foot.sv` (#962): a casting 160 × 100 with corners of 20, drafted 2° from its floor at
+/// z = 0 up to 60 — its south side the plane `y = −50 + z tan 2°`, going on tangent at x = 60 into
+/// the south-east corner's cone about the upright line through (60, −30) — and a foot 30 wide
+/// (y from −70 to −40) and 15 tall standing against that side, its west side at x = 30 and its east
+/// side at `east` (58 in the document); then `rest` in place of its round.
+fn foot(east: f64, rest: &str) -> String {
+    let src = include_str!("../../examples/rounds/foot.sv");
+    let round = "part.foot round(r: 5mm) part.casting\n";
+    assert!(src.contains(round) && src.contains("fix((58, -70)) f1") && src.contains("fix((58, -40)) f2"));
+    src.replace(round, rest).replace("fix((58, -70)) f1", &format!("fix(({east}, -70)) f1"))
+        .replace("fix((58, -40)) f2", &format!("fix(({east}, -40)) f2"))
+}
+
+/// What a round or a flat adds along the foot's east side (at `east`, short of the seam at 60),
+/// worked out from `std.rounds.Fill`'s and `FlatFill`'s own words: in each plane `x = east + t`
+/// along the side, at each height `z` between the floor and the foot's top (the planes the edge
+/// ends on), how far out from the casting the region reaches.  The casting's distance is its
+/// nearest face's — the side's plane short of the seam's normal plane (x = 60), the cone past it.
+/// (`foot_taken` the same within the casting, `Run`'s and `Flat`'s words, between other heights.)
+/// A round's (`ball`): a point is the fill's where no ball of that radius whose centre stands at
+/// least as far from the casting and from the foot reaches it — the nearest centre straight off one
+/// face where it stands far enough from the other, or a point of the curve where both offsets meet
+/// (x = east + ball on the cone grown by the ball, `20 − z tan 2° + ball / cos 2°` about the
+/// corner's axis), found by Newton's steps.  A flat's (`flat`, its legs): where the distances from
+/// the casting and the foot, each over the leg, sum to one or less.  The depth at each point by
+/// bisection, integrated by Gauss–Legendre over `t` (read as the square of the way from the side,
+/// where a ball's section opens as a square root) split where the plane crosses the seam's normal
+/// plane and where the region ends, and over `z`.  Nothing of the core is asked.
+fn foot_fill(east: f64, ball: Option<f64>, flat: Option<f64>) -> f64 {
+    foot_region(east, ball, flat, 1.0, [0.0, 15.0], false)
+}
+
+/// What a round or a flat takes along the east wall (at `east`) of a pocket in the casting's side
+/// between its floor and its ceiling at the heights `zs`: `foot_fill` on the casting's side of its
+/// surface, ending square to its edge at the floor (`foot_region`).
+fn foot_taken(east: f64, ball: Option<f64>, flat: Option<f64>, zs: [f64; 2]) -> f64 {
+    foot_region(east, ball, flat, -1.0, zs, true)
+}
+
+/// `foot_fill` (`sigma` 1) or `foot_taken` (`sigma` −1, every distance from the casting turned
+/// round), between the heights `zs` — or, `square_below`, ending square to the edge at the lower.
+fn foot_region(east: f64, ball: Option<f64>, flat: Option<f64>, sigma: f64, zs: [f64; 2], square_below: bool) -> f64 {
+    let a = 2f64.to_radians();
+    let (st, ct, tt) = (a.sin(), a.cos(), a.tan());
+    // the casting's distance at a point (outward) and its unit normal there
+    let casting = |p: [f64; 3]| -> (f64, [f64; 3]) {
+        if p[0] <= 60.0 {
+            (-(p[1] + 50.0) * ct + p[2] * st, [0.0, -ct, st])
+        } else {
+            let (dx, dy) = (p[0] - 60.0, p[1] + 30.0);
+            let rho = dx.hypot(dy);
+            ((rho - 20.0) * ct + p[2] * st, [ct * dx / rho, ct * dy / rho, st])
+        }
+    };
+    let side = |x: f64, z: f64| {
+        if x <= 60.0 { -50.0 + z * tt } else { -30.0 - ((20.0 - z * tt).powi(2) - (x - 60.0).powi(2)).sqrt() }
+    };
+    let size = ball.or(flat).expect("a round or a flat");
+    let inside = |t: f64, z: f64, y: f64| -> bool {
+        let p = [east + t, y, z];
+        let (dc, nc) = casting(p);
+        let (dc, nc) = (sigma * dc, nc.map(|x| sigma * x));
+        let Some(r) = ball else { return dc / size + t / size <= 1.0 };
+        if dc >= r && t >= r {
+            return false;
+        }
+        let mut best = f64::INFINITY;
+        if dc < r {
+            let c = [0, 1, 2].map(|k| p[k] + (r - dc) * nc[k]);
+            if c[0] - east >= r { best = best.min(r - dc) }
+        }
+        if t < r && sigma * casting([p[0] + (r - t), p[1], p[2]]).0 >= r {
+            best = best.min(r - t);
+        }
+        let x = east + r;
+        // (the side's offset short of the seam's, the cone's past it)
+        let spine = |s: f64| if x <= 60.0 { [x, -50.0 + (s * st - sigma * r) / ct, s] }
+            else { [x, -30.0 - ((20.0 - s * tt + sigma * r / ct).powi(2) - (x - 60.0).powi(2)).sqrt(), s] };
+        let f = |s: f64| gcs_core::space::distance(p, spine(s));
+        let (mut s, h) = (z, 1e-4);
+        for _ in 0..40 {
+            let (d1, d2) = ((f(s + h) - f(s - h)) / (2.0 * h), (f(s + h) - 2.0 * f(s) + f(s - h)) / (h * h));
+            if !(d2 > 0.0) { break }
+            let step = d1 / d2;
+            s -= step;
+            if step.abs() < 1e-13 { break }
+        }
+        best.min(f(s)) >= r
+    };
+    // the depth from the casting out to the region's far side
+    let depth = |t: f64, z: f64| -> f64 {
+        let y0 = side(east + t, z);
+        if !inside(t, z, y0 - sigma * 1e-12) {
+            return 0.0;
+        }
+        bisect(0.0, 3.0 * size, |s| inside(t, z, y0 - sigma * s))
+    };
+    let rule = crate::common::rounds::gauss_legendre(8);
+    let gl = |a: f64, z: f64, n: usize, g: &dyn Fn(f64) -> f64| composite(&rule, a, z, n, g);
+    let across = |z: f64| -> f64 {
+        let reach = bisect(0.0, 2.0 * size, |t| depth(t, z) > 0.0);
+        let mut breaks = vec![0.0, reach];
+        if 60.0 - east > 0.0 && 60.0 - east < reach {
+            breaks.insert(1, 60.0 - east);
+        }
+        // (over `u`, `t = u²`, split where `t` is)
+        breaks.windows(2).map(|w| gl(w[0].sqrt(), w[1].sqrt(), 4, &|u| 2.0 * u * depth(u * u, z))).sum::<f64>()
+    };
+    let slab = gl(zs[0], zs[1], 4, &across);
+    if !square_below {
+        return slab;
+    }
+    // the run ending square to its edge at `zs[0]` (#952: a floor turning back over a run along a side
+    // leaning in, at less than a right angle): below `z = zs[0]` the wedge out to the plane through the
+    // edge's point there square to the edge — at each `t` and `z`, the depth from where that plane
+    // leaves (or the casting's surface) out to the region's far side
+    assert!(sigma < 0.0, "a square end within the casting");
+    let z0 = zs[0];
+    let edge = -50.0 + z0 * tt;
+    let wedge = |t: f64| -> f64 {
+        let from = |z: f64| edge + (z0 - z) / tt - side(east + t, z);
+        let below = |z: f64| from(z) < depth(t, z);
+        if !below(z0 - 1e-12) {
+            return 0.0;
+        }
+        let low = bisect(z0, z0 - 4.0 * size * tt, below);
+        let open = |z: f64| depth(t, z) - from(z).max(0.0);
+        if from(z0) >= 0.0 {
+            return gl(low, z0, 2, &open);
+        }
+        let flush = bisect(z0, low, |z| from(z) < 0.0);
+        gl(low, flush, 2, &open) + gl(flush, z0, 2, &open)
+    };
+    let reach = bisect(0.0, 2.0 * size, |t| depth(t, z0) > 0.0);
+    let mut breaks = vec![0.0, reach];
+    if 60.0 - east > 0.0 && 60.0 - east < reach {
+        breaks.insert(1, 60.0 - east);
+    }
+    slab + breaks.windows(2).map(|w| gl(w[0].sqrt(), w[1].sqrt(), 4, &|u| 2.0 * u * wedge(u * u))).sum::<f64>()
+}
+
+/// The foot (its east side at `east`) with its east side's root treated by `how`, less the foot
+/// bare: what that adds, built exactly.
+fn foot_added(east: f64, how: &str) -> f64 {
+    let e = solved(&foot(east, &format!("part.foot.fe {how} part.casting\n")));
+    let bare = solved(&foot(east, ""));
+    volume(&e, "part") - volume(&bare, "part")
+}
+
+/// **A round beside a seam along its edge into a cone** (#962, fixture 126's feet): the foot's east
+/// side 2 short of the line where the drafted side goes on into its corner's cone, its root rounded
+/// 5 — the ball's centre past the seam's normal plane all the way up, so it touches the cone and
+/// never the side.  The piece is the ball rolled against the cone the edge's whole length, the
+/// side's strip to the seam and the cone's to the touch, carried past the floor and the foot's top
+/// and cut off by them: its fill the quadrature's to a millionth.  So too a ball only a little wider
+/// than the gap, and a foot 3.7 µm short of the seam.
+#[test]
+fn a_round_beside_a_seam_along_its_edge_into_a_cone_is_built() {
+    for (east, r) in [(58.0, 5.0), (58.0, 2.5), (59.9963, 5.0)] {
+        let got = foot_added(east, &format!("round(r: {r}mm)"));
+        let want = foot_fill(east, Some(r), None);
+        assert!((got - want).abs() <= 1e-6 * want, "east {east}, r = {r}: {got} against {want}");
+    }
+}
+
+/// **A flat beside a seam along its edge into a cone** (#962): the foot's root chamfered 5 — its leg
+/// on the side past the seam.  The flat is the side's line short of the seam's normal plane, a
+/// prism kept within it; beyond it the sum of distances from the cone and the foot, sectioned
+/// square to the edge and fitted the edge's whole length, glued to the prism on that plane: its
+/// fill the quadrature's to 1e-8.
+#[test]
+fn a_flat_beside_a_seam_along_its_edge_into_a_cone_is_built() {
+    let got = foot_added(58.0, "chamfer(d: 5mm)");
+    let want = foot_fill(58.0, None, Some(5.0));
+    assert!((got - want).abs() <= 1e-8 * want, "{got} against {want}");
+}
+
+/// A ball short of the seam touches the side alone: the prism of a right angle's round, 15 / cos 2°
+/// long between the floor and the foot's top, to 1e-9.
+#[test]
+fn a_round_short_of_a_seam_along_its_edge_is_the_sides_prism() {
+    let got = foot_added(58.0, "round(r: 1.5mm)");
+    let want = 1.5 * 1.5 * (1.0 - PI / 4.0) * 15.0 / 2f64.to_radians().cos();
+    assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
+}
+
+
+/// **Mirrored and turned** (#962): the foot drawn against the south side beside the south-west
+/// corner, its west side 2 short of that corner's seam at x = −60; and against the east side beside
+/// the south-east corner, its south side 2 short of the seam at y = −30 — each the first's image
+/// across a plane, its fill `foot_fill`'s to a millionth.
+#[test]
+fn a_round_beside_a_seam_along_its_edge_is_built_mirrored_and_turned() {
+    let drawn = ["fix((30, -70)) f0", "fix((58, -70)) f1", "fix((58, -40)) f2", "fix((30, -40)) f3"];
+    let at = |src: String, pts: [(f64, f64); 4]| drawn.iter().zip(pts).enumerate()
+        .fold(src, |s, (k, (was, (x, y)))| s.replace(was, &format!("fix(({x}, {y})) f{k}")));
+    let want = foot_fill(58.0, Some(5.0), None);
+    for (pts, face) in [([(-58.0, -70.0), (-30.0, -70.0), (-30.0, -40.0), (-58.0, -40.0)], "fw"),
+        ([(70.0, -28.0), (100.0, -28.0), (100.0, 0.0), (70.0, 0.0)], "fs")] {
+        let e = solved(&at(foot(58.0, &format!("part.foot.{face} round(r: 5mm) part.casting\n")), pts));
+        let bare = solved(&at(foot(58.0, ""), pts));
+        let got = volume(&e, "part") - volume(&bare, "part");
+        assert!((got - want).abs() <= 1e-6 * want, "{face}: {got} against {want}");
+    }
+}
+
+/// **Convex** (#962): a pocket sunk into the casting's south side (x from 30 to `east`, z from 20 to
+/// 35), its east wall's rim rounded 5 and chamfered 5.  2 short of the seam the ball within the
+/// casting touches its corner's cone the rim's whole length and the flat changes face on the
+/// seam's normal plane; 10 short, both are the side's prisms.  The pocket's floor turns back over
+/// the side leaning in at 88°, so the rim ends square to its edge there (#952): each
+/// `foot_taken`'s to its bar.
+#[test]
+fn a_rim_beside_a_seam_along_its_edge_into_a_cone_is_built() {
+    let pocket = |east: f64, rest: &str| foot(east, rest)
+        .replace("foot := solid(std.solids.Prism(footing, from: 0mm, to: 15mm))",
+            "foot := solid(std.solids.Prism(footing, from: 20mm, to: 35mm))")
+        .replace("foot union part", "foot cut part").replace("use std.solids (union)", "use std.solids (cut)");
+    for east in [50.0, 58.0] {
+        let bare = volume(&solved(&pocket(east, "")), "part");
+        let hows = [("round(r: 5mm)", Some(5.0), None, 1e-6), ("chamfer(d: 5mm)", None, Some(5.0), 1e-8)];
+        for (how, ball, flat, bar) in hows {
+            let got = bare - volume(&solved(&pocket(east, &format!("part.foot.fe {how} part.casting\n"))), "part");
+            let want = foot_taken(east, ball, flat, [20.0, 35.0]);
+            assert!((got - want).abs() <= bar * want, "east {east}, {how}: {got} against {want}");
+        }
+    }
+}
+
+/// **The foot rounded all round** (`rounds/foot.sv` as written, #962): its east side's fill against
+/// the cone (`foot_fill`), its west side's the prism of a right angle's round between the floor and
+/// its top, and its top's the prism of a round in the 92° between the top and the drafted side, 28
+/// long between the foot's sides — the three meeting only along the foot's corners — to a millionth.
+#[test]
+fn a_foot_rounded_beside_a_seam_is_built() {
+    let e = solved(include_str!("../../examples/rounds/foot.sv"));
+    let bare = solved(&foot(58.0, ""));
+    let got = volume(&e, "part") - volume(&bare, "part");
+    let a = 2f64.to_radians();
+    let wedge = PI / 2.0 + a;
+    let top = 25.0 * (1.0 / (wedge / 2.0).tan() - (PI - wedge) / 2.0) * 28.0;
+    let want = foot_fill(58.0, Some(5.0), None) + 25.0 * (1.0 - PI / 4.0) * 15.0 / a.cos() + top;
+    assert!((got - want).abs() <= 1e-6 * want, "{got} against {want}");
+}

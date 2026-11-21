@@ -407,15 +407,15 @@ block := solid(std.solids.Prism(block_f, from: 2mm, to: 8mm))\n\
 post union part\n\
 block union part\n";
 
-/// Each W119 of `src`, solved: the line it is said at, and its words.
+/// Each W120 of `src`, solved: the line it is said at, and its words.
 fn w119(src: &str) -> Vec<(u32, String)> {
     let e = solved(src);
     gcs_core::program::solid_diagnostics(&e.sketch, &e.map, &e.program).iter()
-        .filter(|d| d.code.as_str() == "W119")
+        .filter(|d| d.code.as_str() == "W120")
         .map(|d| (gcs_core::syntax::line_col(src, d.span.lo).0, d.message.clone())).collect()
 }
 
-/// **A round or a chamfer that selects no edge says so** (#962, W119): written over faces that
+/// **A round or a chamfer that selects no edge says so** (#962, W120): written over faces that
 /// are all the body's — no path naming nothing, which is W116 — that meet in no edge of it: apart,
 /// one of them taken in by the body's other terms, only along a seam where one goes on tangent
 /// into the other (no edge: a ball rolled or a flat cut there takes nothing), or one face alone.
@@ -473,7 +473,7 @@ fn a_round_that_selects_an_edge_says_nothing_of_it() {
 }
 
 /// **No round of the library selects nothing** (#962): every document under
-/// `rust/examples/rounds/` rounds or chamfers edges it means to, so W119 says nothing of any — its
+/// `rust/examples/rounds/` rounds or chamfers edges it means to, so W120 says nothing of any — its
 /// rounds over a round's faces, its rims over rounded corners, its blocks picking faces by how
 /// they lie, its corners of three.
 #[test]
