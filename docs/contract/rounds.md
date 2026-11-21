@@ -235,7 +235,29 @@ one way, and the field reads it through its nearest face, which never settles wh
 closes: "its exact construction leaves out what the field reads beside its edge". Reading only
 the chain's convex part from the faces named builds it, but changes the reading of every chain a
 round's section runs beside (a slot's rim beside its ends, a round spilled onto a rim's round),
-and is not taken: a chain read locally is item 1's to say.
+and is not taken. **A chain turning both ways is read about its nearest face** (#994,
+[sets.md](sets.md), `conditions::about_nearest`): the face whose patch is nearest each step, and
+where it bulges toward the ball those going on from it that bulge too, each by its carried side —
+a chain bulging one way is read whole as before, a slot's rim beside its ends included. So **a rim
+over rounded uprights whose outline has a reflex corner** builds (fixture 150, a block with a
+tab; an L): the uprights first, then the rims on `whole := solid(part)`, the rim to the uprights'
+own radius a quarter ball about each convex upright's axis, a torus of `ru + r` about each
+reflex one's fill, the rim wider than the uprights refused naming their radius. Before, the
+outline's sides, rounds and fills were one chain bulging neither way, read through the nearest
+face alone, which never settled on a convex upright's axis however far the reflex corner stood.
+**A fill's cap is a face of its own name**: a reflex upright's fill ends on each rim's plane in a
+cap (`vs.filled.far`), so `whole.part.stock.far round(r) whole` takes the rim along the sides and
+round each convex upright and leaves the arc where the cap meets the fill sharp; the rim all the
+way round names the caps too (`… vs.filled.far round(r) whole`, or every face square to the
+uprights: `repeat a in whole { when a parallel std.x and a parallel std.y { … } }`), or is the
+general note's second statement (`round(r) whole`). Rounded in one statement with the uprights,
+the reflex upright's fill and the rim's two runs each read the sharp body, and the fill and the
+block's uncut corner touch along the upright's line for the run's depth (`Corner`/`CornerFill`
+say a corner of one turn only): refused at the vertex as above. `tests/rim_over_rounds.rs` is
+the gate (a rectangle, an L and the tab, rims of 1, 1.49 and 1.5 over uprights of 1.5, both
+rims, every edge, the fixture's one rim with and without the caps named: each the closed form's
+volume to 1e-9 by Pappus; a rim of 2 refused; one statement refused at the vertex). The two steps
+meeting at a corner are not re-examined under this reading.
 A chamfer's flats are
 no tangent chain, so a second statement chamfers the first one's flat against its own faces
 again: a chamfer of every edge at such a vertex is not said by the words yet, and its refusal says
@@ -937,9 +959,10 @@ standing over a stretch of its loop" above), so it is not refused. Against a pla
 wall's next wall, the obround's far side) the ball stopped touches three faces at once, a corner
 ball, and what lies past it to the crease's end is a corner's cell in part, not the standing
 ball's: still refused here. A
-chain bulging no way is read through its nearest face and left to the gate. **The gate reads each
-edge near its ends and across its section** (`lowering::beside_edges`): besides the field just
-inside the corner a quarter, a half and three quarters along, it reads a fiftieth from each end,
+chain bulging no way is read about its nearest face ([sets.md](sets.md), #994) and left to the
+gate. **The gate reads each edge near its ends and across its section**
+(`lowering::beside_edges`): besides the field just inside the corner a quarter, a half and three
+quarters along, it reads a fiftieth from each end,
 and along the bisector and five ways from along one face to along the other it finds where the
 pieces' boundary crosses and asks that the field read no material a gate's offset past it. A
 prism's faces are meshed in strips the length of its edge, so the agreement's probes stood
