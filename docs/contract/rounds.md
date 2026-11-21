@@ -254,7 +254,7 @@ general note's second statement (`round(r) whole`). Rounded in one statement wit
 the reflex upright's fill and the rim's two runs each read the sharp body, and the fill and the
 block's uncut corner touch along the upright's line for the run's depth (`Corner`/`CornerFill`
 say a corner of one turn only): refused at the vertex as above. `tests/rim_over_rounds.rs` is
-the gate (a rectangle, an L and the tab, rims of 1, 1.4999 and 1.5 over uprights of 1.5, both
+the gate (a rectangle, an L and the tab, rims of 1, 1.49 and 1.5 over uprights of 1.5, both
 rims, every edge, the fixture's one rim with and without the caps named: each the closed form's
 volume to 1e-9 by Pappus; a rim of 2 refused; one statement refused at the vertex). The two steps
 meeting at a corner are not re-examined under this reading.

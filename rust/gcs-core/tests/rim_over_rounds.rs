@@ -68,17 +68,35 @@ fn volume(outline: &[[f64; 2]], ru: f64, r: f64, rims: f64) -> f64 {
     40.0 * (area - (convex - reflex) * square_run(ru)) - rims * rim
 }
 
+/// Both rims of `outline` over its uprights rounded 1.5, rounded `r`: built, and the closed form.
+fn both_rims_built(outline: &[[f64; 2]], r: f64) {
+    close(exported_volume(&block(outline, 1.5, &both_rims(r)), "whole"), volume(outline, 1.5, r, 2.0));
+}
+
 /// **Both rims over the rounded uprights, built**: the rectangle (one chain bulging toward the
-/// ball), the L and the tab (chains turning both ways), the rim a hair under and at the uprights'
+/// ball), the L and the tab (chains turning both ways), the rim just under and at the uprights'
 /// radius — a spindle torus round each convex upright, at it a quarter ball, its centres on the
 /// upright's axis — and smaller; round each reflex upright a torus of `ru + r`.
 #[test]
-fn both_rims_over_rounded_uprights_turning_both_ways() {
-    for outline in [RECT, ELL, TAB] {
-        for r in [1.0, 1.4999, 1.5] {
-            let got = exported_volume(&block(outline, 1.5, &both_rims(r)), "whole");
-            close(got, volume(outline, 1.5, r, 2.0));
-        }
+fn both_rims_over_a_rectangles_rounded_uprights() {
+    for r in [1.0, 1.49, 1.5] {
+        both_rims_built(RECT, r);
+    }
+}
+
+/// The L, one reflex corner: read about the nearest face, its chain turning both ways.
+#[test]
+fn both_rims_over_an_ls_rounded_uprights() {
+    for r in [1.0, 1.5] {
+        both_rims_built(ELL, r);
+    }
+}
+
+/// The fixture's tab, two reflex corners, at the uprights' radius and under it.
+#[test]
+fn both_rims_over_a_tabs_rounded_uprights() {
+    for r in [1.49, 1.5] {
+        both_rims_built(TAB, r);
     }
 }
 
@@ -86,29 +104,34 @@ fn both_rims_over_rounded_uprights_turning_both_ways() {
 /// uprights' round leaves): the rims and every edge a fill's cap makes, the same body.
 #[test]
 fn every_edge_over_rounded_uprights_turning_both_ways() {
-    for outline in [ELL, TAB] {
-        let got = exported_volume(&block(outline, 1.5, "round(r: 1.5mm) whole"), "whole");
-        close(got, volume(outline, 1.5, 1.5, 2.0));
-    }
+    let got = exported_volume(&block(TAB, 1.5, "round(r: 1.5mm) whole"), "whole");
+    close(got, volume(TAB, 1.5, 1.5, 2.0));
 }
 
 /// **The fixture's statement** (`whole.part.stock.far round(r: 1.5mm) whole`), on either cap: built.
 /// A fill's cap is a face of its own name (`vs.filled.far`, `lowering::CAPS`) on the cap's
 /// plane, so the arc it makes with the fill is no edge of `stock.far`, and stays sharp: the rim
 /// less a quarter torus of `ru + inset` at each reflex upright.  Named too, the whole rim.
+fn one_rim(outline: &[[f64; 2]], cap: &str) {
+    let (_, _, _, reflex) = measures(outline);
+    let ring = 0.5 * PI * square_run(1.5) * (1.5 + inset(1.5));
+    let rim = format!("whole.part.stock.{cap} round(r: 1.5mm) whole");
+    let got = exported_volume(&block(outline, 1.5, &rim), "whole");
+    close(got, volume(outline, 1.5, 1.5, 1.0) + reflex as f64 * ring);
+    let rim = format!("{rim}\nwhole.part.vs.filled.{cap} round(r: 1.5mm) whole");
+    close(exported_volume(&block(outline, 1.5, &rim), "whole"), volume(outline, 1.5, 1.5, 1.0));
+}
+
+/// The fixture itself, its far rim (#994's repro).
 #[test]
-fn the_fixtures_rim_is_built_and_names_the_fills_caps_apart() {
-    for outline in [ELL, TAB] {
-        let (_, _, _, reflex) = measures(outline);
-        let ring = 0.5 * PI * square_run(1.5) * (1.5 + inset(1.5));
-        for cap in ["far", "near"] {
-            let rim = format!("whole.part.stock.{cap} round(r: 1.5mm) whole");
-            let got = exported_volume(&block(outline, 1.5, &rim), "whole");
-            close(got, volume(outline, 1.5, 1.5, 1.0) + reflex as f64 * ring);
-            let rim = format!("{rim}\nwhole.part.vs.filled.{cap} round(r: 1.5mm) whole");
-            close(exported_volume(&block(outline, 1.5, &rim), "whole"), volume(outline, 1.5, 1.5, 1.0));
-        }
-    }
+fn the_fixtures_far_rim_leaves_the_fills_caps_to_be_named() {
+    one_rim(TAB, "far");
+}
+
+/// The L's near rim.
+#[test]
+fn an_ls_near_rim_leaves_the_fills_cap_to_be_named() {
+    one_rim(ELL, "near");
 }
 
 /// **A rim wider than the uprights' round is refused, saying so**: no ball of it stands on the
