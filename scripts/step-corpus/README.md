@@ -85,8 +85,17 @@ STEP_CORPUS=/home/user/step-corpus cargo test -j 2 -p gcs-core -- step_corpus:: 
 ```
 
 `STEP_CORPUS_ONLY=cadgenbench/` reads only the files whose path starts so, `STEP_CORPUS_THREADS`
-sets how many at once. Each file is read once for the three tests. Two quick tests run in the
-ordinary suite: the table is whole (`the_table_is_whole`) and the hash is SHA-256.
+sets how many at once. Each file is read once for the three tests (on November 21, 2026, the
+reader refusing every solid, the 3,139 files took 7–20 s on four busy cores). Two quick tests run
+in the ordinary suite: the table is whole (`the_table_is_whole`) and the hash is SHA-256.
+
+What counts as right, per row's `ref_from`: `closed` (the case's closed forms, at the bench's
+grade), `mass+occt`, `mass`, `occt`, `occt?`, `occt!` (a reading's own solid, `table.py` says
+at what bar), `source:…` (a variant: its source's); `refuse` (the file represents no solid — a
+shell-based surface model, an empty product — and must be refused); `disputed` (OCCT and the
+bench's measurer read it differently, mostly loops run against ISO 10303-42 that OCCT repairs:
+either reading or a refusal). A file with no row is not gated: OCCT and the measurer both fail on
+it, or its bar would pass a part in fifty (`table.py` prints each with why).
 
 ## Debugging a file
 
@@ -116,3 +125,17 @@ so the survey's `--faces` listing and the oracle's join on the entity.
   each edge's curve in space put on its faces, not the file's pcurves. On files written to 1e-7
   the two agree to 1e-12; on CADGenBench, written to 0.005–0.02 mm, they differ by up to 2e-4:
   the files themselves are no more precise than that, and the bars say so.
+
+## Found on the way
+
+* OCCT's shape healing changed nothing measurable on any of the 32 CADGenBench files (counts,
+  validity, tolerances, volume and area alike); its translation's own fixes cannot be turned off.
+* brep-bench's measurer (at 7d811e9) reads a `CONVERSION_BASED_UNIT` (inches) as millimetres:
+  an inch file's volume comes out in cubic inches. `table.py` uses it only for files in mm.
+* On cadgenbench/243 the measurer's area is 2.4% off OCCT's (converged to 3e-8): a face it
+  misreads; the table takes OCCT's there (`occt!`).
+* Writers' habits the CADGenBench files (all OCCT 7.8, AP214) do not show: no pcurves at all
+  (brepkit, kentron, vcad), `FACE_OUTER_BOUND` (every writer but OCCT), `VERTEX_LOOP` at a pole and
+  assemblies (`NEXT_ASSEMBLY_USAGE_OCCURRENCE`, OCCT 8), `SHELL_BASED_SURFACE_MODEL`/`OPEN_SHELL`
+  (OCCT 8, no solid), `OFFSET_SURFACE`, `HYPERBOLA`, `PARABOLA`, AP203's approval and security
+  entities, inch units. `brep_bench.py census` counts every kind per source.
