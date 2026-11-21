@@ -132,6 +132,7 @@ mod fillet_definition;
 mod fillet_meridian;
 mod flat_faces;
 mod flush_ends;
+mod flush_rims;
 mod fmath;
 mod followed_frames;
 mod followed_held;

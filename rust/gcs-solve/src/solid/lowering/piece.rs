@@ -136,11 +136,14 @@ fn stands_within(body: &crate::solid::faces::BodyFaces, f: &Faces, groups: [&[us
     // chain bulging toward the ball, `BodyFaces::bulging`) or through its nearest face (any other:
     // a drafted shell's outline turning both ways) — as far as the field reads it (#962): a name in
     // pieces apart, each piece's own chain, read at a point as the one whose piece is nearest it
+    // — each named face with the pieces of its surface (`going_on`): a face the same surface goes
+    // on into is no other face of the chain, the section as far from it as from its own (#994)
     type Alt = (Vec<usize>, Vec<usize>, bool);
+    let surface: [Vec<usize>; 2] = groups.map(|g| super::going_on(body, g).0);
     let chains: Vec<(usize, Vec<Alt>)> = (0..2).filter(|&k| f.faces[k].smooth).map(|k| {
-        (k, body.chains_apart(groups[k]).into_iter().map(|(named, chain)| {
+        (k, body.chains_apart(&surface[k]).into_iter().map(|(named, chain)| {
             let carried = body.bulging(&chain, true, !f.within) == Some(true);
-            (named, chain.into_iter().filter(|g| !groups[k].contains(g)).collect(), carried)
+            (named, chain.into_iter().filter(|g| !surface[k].contains(g)).collect(), carried)
         }).collect())
     }).collect();
     if chains.iter().all(|(_, alts)| alts.iter().all(|(_, others, _)| others.is_empty())) {
@@ -189,7 +192,7 @@ fn stands_within(body: &crate::solid::faces::BodyFaces, f: &Faces, groups: [&[us
             // from its own face
             let need = match section {
                 Section::Round(r) => r,
-                Section::Flat { .. } => groups[*k].iter().map(|&g| body.patch_distance(g, q)).fold(f64::INFINITY, f64::min),
+                Section::Flat { .. } => surface[*k].iter().map(|&g| body.patch_distance(g, q)).fold(f64::INFINITY, f64::min),
             };
             // read as the field reads the centres: off each face's carried side where the chain
             // bulges toward the ball — of the faces it comes too near, the one whose patch is
@@ -203,8 +206,8 @@ fn stands_within(body: &crate::solid::faces::BodyFaces, f: &Faces, groups: [&[us
             } else if *carried {
                 nearest_patch(body, q, others.iter().map(|&g| (g, toward(g, q))).filter(|&(_, d)| d < need - tol))
             } else {
-                let nearest = nearest_patch(body, q, groups[*k].iter().chain(others).map(|&g| (g, 0.0)));
-                nearest.filter(|&(g, _)| !groups[*k].contains(&g)).map(|(g, _)| (g, sigma * body.side(g, q)))
+                let nearest = nearest_patch(body, q, surface[*k].iter().chain(others).map(|&g| (g, 0.0)));
+                nearest.filter(|&(g, _)| !surface[*k].contains(&g)).map(|(g, _)| (g, sigma * body.side(g, q)))
                     .filter(|&(_, d)| d < need - tol)
             };
             let Some((g, d)) = found else { continue };
@@ -840,8 +843,8 @@ fn stops_short(body: &crate::solid::faces::BodyFaces, faces: [usize; 2], within:
     };
     let inner = 0.5 * (span[0] + span[1]);
     for (f, &own) in faces.iter().enumerate() {
-        // the faces `own` goes on into smoothly
-        let chain: Vec<usize> = body.smooth(&[own]).into_iter().filter(|&h| h != own).collect();
+        // the faces `own` goes on into smoothly, its own surface's pieces aside (`going_on`)
+        let chain: Vec<usize> = super::going_on(body, &[own]).1;
         for &g in &chain {
             let Some(off) = closed(g) else { continue };
             // the ball stands within the face going on to its end: nothing stops it
@@ -959,7 +962,7 @@ fn wider(body: &crate::solid::faces::BodyFaces, faces: [usize; 2], section: Sect
     Err(match section {
         // the curved face goes on smooth into others (a pocket's walls): the ball stands against
         // those, and the set rounds the corner itself along the face away from the edge
-        Section::Round(_) if body.smooth(&[curved]).len() > 1 => format!("its ball, of radius {}, is wider \
+        Section::Round(_) if !super::going_on(body, &[curved]).1.is_empty() => format!("its ball, of radius {}, is wider \
             than the {what} it rolls round, of radius {} where the round runs: it touches the faces either side \
             of {face} and never {face} itself, and what no ball reaches runs on along {face} away from the edge, \
             rounding it to the ball's radius, so no round of the edge is made of it", length(size), length(radius)),
