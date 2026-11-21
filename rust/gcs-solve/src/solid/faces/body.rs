@@ -708,6 +708,34 @@ impl BodyFaces {
         faces.iter().any(|&f| norm(sub(self.outward(f, q), n)) < TANGENT)
     }
 
+    /// Whether face `c` stands back to back with one of `faces` at `v` (model units): their
+    /// outward normals there opposite, so `c`'s material lies across that face's surface from its
+    /// own — a flange's underside and the top of a block it stands on that runs out past its edge,
+    /// the two meeting at the point where the block's side crosses the flange's rim.
+    fn back_to_back(&self, c: usize, faces: &[usize], v: V) -> bool {
+        let q = self.q(v);
+        let n = self.outward(c, q);
+        faces.iter().any(|&f| norm(add(self.outward(f, q), n)) < TANGENT)
+    }
+
+    /// Whether face `c`'s surface holds the edge of `run` that ends at vertex `vid` (model units):
+    /// each of nine points along it within `past` of the surface — a plane through a straight
+    /// edge, or square to a circle's axis through the circle.
+    fn lies_along(&self, c: usize, run: &[u32], vid: u32) -> bool {
+        run.iter().filter(|&&e| self.loc.b.edges[e as usize].v.contains(&vid)).any(|&e| {
+            (0..=8).all(|k| {
+                let p = self.along(e, k as f64 / 8.0);
+                self.side(c, p).abs() <= self.past(p)
+            })
+        })
+    }
+
+    /// Whether faces `c` and `f` meet in an edge at vertex `vid`.
+    fn meet_at(&self, c: usize, f: usize, vid: u32) -> bool {
+        self.edges_between(&[c], &[f]).iter()
+            .any(|&e| self.loc.b.edges[e as usize].v.contains(&vid))
+    }
+
     /// Face `fi`'s plane, where it lies in one: its unit normal away from the material and its
     /// frame's origin (model units).
     pub fn plane(&self, fi: usize) -> Option<(V, V)> {
@@ -836,8 +864,10 @@ impl BodyFaces {
     /// material side, `side <= 0`), `-1` outside — so the run is where `σ·side <= 0` for all.
     /// A face going on from one of `faces` tangent at the end (a seam, no corner: an obround's
     /// half circle after its flat side) ends nothing: the round goes on round it, along the edge
-    /// that face meets the other in.  Nor does a face whose surface the run itself goes across, nor
-    /// a plane turning back over its section at a reflex corner (`ends_at`).  And a run carried
+    /// that face meets the other in.  Nor does a face along the run or back to back with one of
+    /// `faces` there (the top of a block a flange stands on, past the flange's edge), nor one whose
+    /// surface the run itself goes across, nor a plane turning back over its section at a reflex
+    /// corner (`ends_at`).  And a run carried
     /// past an end along the edge the face it ends on makes with one of `faces` (a run-out) goes no
     /// further than that edge: where that edge's run ends further on, on the side it runs on, so
     /// does the run.  Each with the end it was read at where it stands elsewhere: none for a face
@@ -938,34 +968,41 @@ impl BodyFaces {
     /// The faces run `run` (between `faces`) ends on at its end `v` (vertex `vid`, `d` the way it
     /// runs from there), each with the side of it the run runs on: every other face there, but
     /// one going on from one of `faces` tangent across a seam (a seam is no edge, and the run
-    /// beyond it is the next one's), and one whose surface the run itself goes across away from
-    /// this end — no side of it holds the run (a plane all but along a lug's rim where a plate's
+    /// beyond it is the next one's); nor one whose surface holds the run's edge there (a plane
+    /// along it, `lies_along`), nor one back to back with one of `faces` there, their outward
+    /// normals opposite (`back_to_back`).  Such a face stands at no distance along the run and
+    /// meets its faces only at the vertex or along the edge's own line past it, so it lies beyond
+    /// the face the run ends on: a flange's underside rounded where a block it stands on runs out
+    /// past its edge, the block's top in the underside's plane past the block's side, which ends
+    /// the run; a boss's underside where it overhangs the side of the part whose top it is filled
+    /// to; a flange's underside where a rib's sloped edge, rounded against the flange's end, starts
+    /// at the flange's edge (#996).  No side of such a face is the run's: kept within it a convex
+    /// run was cut whole or along its length, the section of an edge whose faces it splits lying
+    /// on both sides.  Nor one whose surface the run itself goes across away from this
+    /// end — no side of it holds the run (a plane all but along a lug's rim where a plate's
     /// side runs into it, the arc dipping under the plane and back) — nor a plane the run stands
-    /// outside of turning back over the run's faces (a reflex corner of less than a right angle),
+    /// outside of turning back over a face of the run it meets in an edge there (a reflex corner of
+    /// less than a right angle; a plane meeting that face at the vertex alone makes no corner with
+    /// it: the block's side, crossing the flange's rim below the rounded side of its corner),
     /// whose half-space reaches back over the section from the end, the more the shallower the
     /// turn (a whole side's length at a few degrees): past the end it cuts all of the run, and
-    /// alongside nothing is past the end.  Nor a face **along** the run (#996 item 4): one whose
-    /// surface holds the run's edge at this end — a flange's underside where a rib's sloped edge
-    /// rounded against the flange's end starts at the flange's edge, the plane the edge lies in
-    /// beyond the rib's side; a boss's underside overhanging a part's side, in the plane of the
-    /// floor its fill stands on.  Its patch is past the end, its surface along the edge, so it
-    /// stands at no distance along the run and cuts it nowhere: no side of it is the run's, and
-    /// the section of a convex edge whose faces it splits lies on both.  The run ends there
-    /// square, as at a seam (each where `plain`, `end_faces_as`).
+    /// alongside nothing is past the end.  The run ends there square, as at a seam (each where
+    /// `plain`, `end_faces_as`).
     fn ends_at(&self, run: &[u32], faces: &[usize], v: V, d: V, vid: u32, plain: bool)
         -> Vec<(usize, f64)> {
         let on = along_run(v, d, 1.0);
-        let back = |c: usize| self.plane(c)
-            .is_some_and(|(n, _)| faces.iter().any(|&f| dot(n, self.normal(f, v)) > 1e-9));
-        // the run's edge at this end, and whether a face's surface holds it (neither side past)
-        let here: Vec<u32> = run.iter().copied()
-            .filter(|&e| self.loc.b.edges[e as usize].v.contains(&vid)).collect();
-        let along = |c: usize| !here.is_empty()
-            && !self.goes_across(c, 1.0, &here) && !self.goes_across(c, -1.0, &here);
-        let ends = self.faces_at(vid, faces).into_iter().filter(|&c| !self.continues(c, faces, v));
+        // (turning back over a face of the run it makes a corner with: one it meets at the vertex
+        // alone is no side of that corner)
+        let back = |c: usize| self.plane(c).is_some_and(|(n, _)| {
+            faces.iter().any(|&f| dot(n, self.normal(f, v)) > 1e-9 && self.meet_at(c, f, vid))
+        });
+        let ends = self.faces_at(vid, faces).into_iter().filter(|&c| {
+            let beyond = self.back_to_back(c, faces, v) || self.lies_along(c, run, vid);
+            !(self.continues(c, faces, v) || beyond)
+        });
         ends.filter_map(|c| {
             let sign = if self.side(c, on) <= 0.0 { 1.0 } else { -1.0 };
-            let across = plain && (self.goes_across(c, sign, run) || sign < 0.0 && back(c) || along(c));
+            let across = plain && (self.goes_across(c, sign, run) || sign < 0.0 && back(c));
             (!across).then_some((c, sign))
         }).collect()
     }
