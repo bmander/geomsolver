@@ -1,7 +1,8 @@
 //! Where two surfaces meet, in closed form where it has one: two planes in a line; surfaces of
 //! revolution about one axis (a plane square to it, a cylinder, a cone, a sphere centred on it, a
 //! torus, a spline turned) in circles, found where their meridians cross in one half-plane; a plane and a cylinder
-//! in lines or an ellipse; a plane and a sphere in a circle; parallel cylinders in lines; a
+//! in lines or an ellipse; a plane and a sphere in a circle; parallel cylinders in lines, and two
+//! leaning apart that cross nowhere or rest on one another in no curve (`rods_apart`); a
 //! spline extruded and a plane or a cylinder running its way in lines, and a cone about a line its
 //! way in the spline carried onto the cone (`extruded`). The rest is left to be traced
 //! (`Ssi::Traced`) from seeds, and between analytic surfaces a curve no seed reaches is searched
@@ -734,6 +735,9 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             // turns into about an axis along its own, #721 X6); traced otherwise
             match parallel_touch(a,b,tol) { Some(line) => Ssi::Curves(vec![line]),None => Ssi::Traced }
         }
+        // two rods whose axes lean apart, clear of one another or resting on one another at a
+        // point: no curve (`rods_apart`)
+        (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) if rods_apart(&f,r,&g,s,tol) => Ssi::Curves(vec![]),
         (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) if (r-s).abs() <= tol => {
             // one radius, axes crossing at O: a point as far from both axes has
             // ((p−O)·a₁)² = ((p−O)·a₂)², so the meeting is the first cylinder cut by the two planes
@@ -1059,6 +1063,25 @@ fn radius_at(s: &Surface,h: f64) -> Option<f64> {
         Surface::Cone(_,r,half) => { let (sa,ca) = half.dsin_cos(); (ca > 1e-12).then(|| r+h*sa/ca) }
         _ => None,
     }
+}
+
+/// **Two cylinders whose axes lean apart meet in no curve** where the axes stand at least the sum
+/// of their radii apart, less `tol` (#994): each cylinder bounds a convex rod, and the plane
+/// square to the common normal of the two axes, between them, keeps one rod on each side of it —
+/// a gap between the rods, or, at the sum within `tol`, the one point where both touch that plane
+/// (a rod resting across another, a round's cylinder resting on a blend of another radius where
+/// both are tangent to one face). Their meeting there is that point alone, as a ball's resting on
+/// a plane is (`plane2::Touch::Gap`), and no curve is traced through it. Traced, the search for a
+/// meeting no edge crosses (`unseen`) found a point beside the touch, which the second-order
+/// reading (`boolean`'s `Touches::alone`) takes as a touch alone only where its disc is small
+/// beside both faces, and a trace from it gave nothing: "a cylinder and a cylinder meet at …,
+/// where no edge crosses, in a curve that could not be traced", or "nearly touching"
+/// (`cylinders_touching`). Nearer than that the two cross in a quartic, traced (of one radius
+/// with axes crossing, `intersect`'s two ellipses).
+fn rods_apart(f: &Frame,r: f64,g: &Frame,s: f64,tol: f64) -> bool {
+    let n = cross(f.z,g.z);
+    if !(norm(n) > 1e-12) { return false }
+    dot(sub(g.o,f.o),unit(n)).abs() >= r.abs()+s.abs()-tol
 }
 
 /// **The line two cylinders or cones with parallel axes touch along**, where they do: at two

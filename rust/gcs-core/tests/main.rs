@@ -84,6 +84,7 @@ mod curve_of;
 mod curved_ends;
 mod curvedef;
 mod cut_planes;
+mod cylinders_touching;
 mod decompose;
 mod definitions;
 mod delaunay;

@@ -913,7 +913,18 @@ difference of their radii) touch along the line through those points — a frust
 and the cone its generator turns into about an axis along its own; a ball centred on a torus's
 middle circle with its tube's radius lies in its solid and touches it round the meridian through
 its centre — where they were traced and refused as nearly touching
-(`swept_closed::round_tools_turned_part_of_a_turn_sweep_their_sections_by_pappus`). **A face's
+(`swept_closed::round_tools_turned_part_of_a_turn_sweep_their_sections_by_pappus`). **Two
+cylinders whose axes lean apart and stand the sum of their radii apart meet in no curve** (#994
+item 5, `ssi::rods_apart`): each bounds a convex rod, the plane square to the axes' common normal
+between them keeps one rod on each side, and at the sum within the tolerance the two rest on one
+another at the one point where both touch it — read, as a ball resting on a plane is, as meeting in
+no curve, and never traced; farther apart they are clear in closed form. Traced, the search for a
+meeting no edge crosses found a point beside the touch, the second-order reading took it as a touch
+alone only where its disc is small beside both faces, and the trace from it gave nothing (a blanket
+round over a clevis's top: "a cylinder and a cylinder meet at …, where no edge crosses, in a curve
+that could not be traced"). Nearer, they cross and are traced as before
+(`cylinders_touching`: radii from 1 on 2 to 0.5 on 20 and of one radius, leans from 90° to 1°, whole
+or ending at the touch, each Boolean the rods' own volumes, and sunk a tenth still crossing). **A face's
 pieces are ordered by their curvature where they leave a point tangent** (`boolean::pieces_of_face`):
 each half's way out of a node is read a ten-thousandth along its own length, and where two of the
 ways there agree within `TANGENT_TIE` (a thousandth of a radian, what a step along an arc turns its

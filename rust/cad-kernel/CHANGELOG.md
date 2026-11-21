@@ -8,6 +8,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Two cylinders resting on one another at a point meet in no curve, in closed form** (#994 item
+  5): `ssi::intersect` reads two cylinders whose axes lean apart and stand at least the sum of
+  their radii apart, less the tolerance, as meeting in no curve (`ssi::rods_apart`) — clear of one
+  another, or touching at one point — as a ball resting on a plane is read. They were traced, and
+  the search for a meeting no edge crosses found a point beside the touch that the trace could not
+  follow ("a cylinder and a cylinder meet at …, where no edge crosses, in a curve that could not be
+  traced", or "nearly touching"): a blanket round over a clevis's top. Two crossing are traced as
+  before.
+
 ## [0.20.0] - 2026-11-21
 
 - **A drafted corner where an arc meets a side at an angle is built** (#962 item 8b): `build::offset`
