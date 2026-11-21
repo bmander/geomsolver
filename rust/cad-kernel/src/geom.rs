@@ -1198,7 +1198,9 @@ impl Surface {
     /// The periods in `u` and `v` (none where the parameter is not periodic).
     pub fn periods(&self) -> [Option<f64>;2] {
         match self {
-            Surface::Plane(_) | Surface::Extrusion(..) => [None,None],
+            Surface::Plane(_) => [None,None],
+            // a closed conic swept is closed round it (a file's elliptic cylinder, #993)
+            Surface::Extrusion(_,c) => [c.period(),None],
             // a sharp circle's ring is closed round its meridian too, as a torus is (#780 L2)
             Surface::Revolution(_,c) => [Some(TAU),c.period()],
             Surface::Blend(_,b) => [b.closed.then_some(1.),None],
@@ -1382,9 +1384,18 @@ impl Surface {
             Surface::Affine(m) => m.inverse_near(p,hint),
             // a point's foot on the offset is its foot on the sheet, along the same normal
             Surface::Offset(_,n,d) => continued_foot(n,p,hint).unwrap_or_else(|| offset_foot(n,p,*d)),
-            Surface::BSpline(_,n) => net_newton(n,p,hint)
-                .filter(|&uv| crate::util::space::distance(n.point(uv[0],uv[1]),p) <= 1e-6*(1.+dot(p,p).sqrt()))
-                .unwrap_or_else(|| net_inverse(n,p)),
+            // (off the sheet, the foot by Newton kept where the whole sheet searched finds none
+            // nearer: a file's edge standing off its face by its tolerance, its foot read on the
+            // side of a closed sheet's seam the hint is on, #993)
+            Surface::BSpline(_,n) => match net_newton(n,p,hint) {
+                Some(uv) => {
+                    let (d,scale) = (crate::util::space::distance(n.point(uv[0],uv[1]),p),1.+dot(p,p).sqrt());
+                    if d <= 1e-6*scale { return uv }
+                    let far = net_inverse(n,p);
+                    if crate::util::space::distance(n.point(far[0],far[1]),p) < d-1e-9*scale { far } else { uv }
+                }
+                None => net_inverse(n,p),
+            },
             // from the hint where it settles on the wall near `p`, else the whole wall searched
             Surface::Family(_,w) => {
                 let uv = w.newton(p,hint);

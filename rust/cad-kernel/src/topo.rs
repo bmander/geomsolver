@@ -78,7 +78,7 @@ impl Pcurve {
         match *self {
             Pcurve::Curve(ref c) => { let p = c.point(t); [p[0],p[1]] }
             Pcurve::Line {a,b} => along(a,b,fraction(t,edge)),
-            Pcurve::Inverse {a,b} => inverse_at(a,b,t,edge.point(t,vertices),edge,surface),
+            Pcurve::Inverse {a,b} => inverse_from(a,b,t,edge.point(t,vertices),edge,surface,None,reach(t,edge,vertices)),
         }
     }
     /// `d(u, v)/dt` at `t`.
@@ -108,7 +108,7 @@ impl Pcurve {
     pub fn at_and_derivative_from(&self,t: f64,edge: &Edge,surface: &Surface,vertices: &[Vertex],seed: Option<Uv>) -> (Uv,Uv) {
         match *self {
             Pcurve::Inverse {a,b} => {
-                let uv = inverse_from(a,b,t,edge.point(t,vertices),edge,surface,seed);
+                let uv = inverse_from(a,b,t,edge.point(t,vertices),edge,surface,seed,reach(t,edge,vertices));
                 (uv,inverse_derivative(uv,t,edge,surface))
             }
             _ => self.at_and_derivative(t,edge,surface,vertices),
@@ -145,32 +145,55 @@ fn fraction(t: f64,edge: &Edge) -> f64 { if edge.t[1] > edge.t[0] { (t-edge.t[0]
 /// An inverse curve's parameters at `t` (`Pcurve::Inverse {a, b}`), the edge's point there given as
 /// `x`: `Pcurve::at`, for what reads the edge's curve some other way (`props`, a traced edge read
 /// across planes).
-pub(crate) fn inverse_at(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface) -> Uv { inverse_from(a,b,t,x,edge,surface,None) }
+pub(crate) fn inverse_at(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface) -> Uv { inverse_from(a,b,t,x,edge,surface,None,0.) }
+
+/// How far from a pole an inverse curve's end at `t` is read as on it: its vertex's tolerance
+/// there (a file's curve may pass its vertex at a pole on the pole's far side, #993), none
+/// between its ends.
+fn reach(t: f64,edge: &Edge,vertices: &[Vertex]) -> f64 {
+    match fraction(t,edge) { 0. => vertices[edge.v[0] as usize].tol,1. => vertices[edge.v[1] as usize].tol,_ => 0. }
+}
 
 /// `inverse_at`, the point sought from `seed` where one is given (finite) and not from the line
 /// between the ends, its branch on a periodic surface still the one nearest that line.
-fn inverse_from(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface,seed: Option<Uv>) -> Uv {
+fn inverse_from(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface,seed: Option<Uv>,reach: f64) -> Uv {
     let s = fraction(t,edge);
     let near = along(a,b,s);
     let from = seed.filter(|q| q.iter().all(|x| x.is_finite())).unwrap_or(near);
     let uv = unwrap(surface.inverse_near(x,from),near,surface.periods());
-    if s == 0. || s == 1. { on_pole(surface,uv,near) } else { uv }
+    if s == 0. || s == 1. { on_pole(surface,uv,near,reach) } else { uv }
 }
 
 /// `d(u, v)/dt` of the curve of points of `surface` nearest the edge's, at its point's parameters
 /// `uv`: the edge's tangent by least squares in `[S_u S_v]` there.
 fn inverse_derivative(uv: Uv,t: f64,edge: &Edge,surface: &Surface) -> Uv {
     let EdgeCurve::Curve(c) = &edge.curve else { return [0.;2] };
-    in_parameters(surface,uv,c.tangent(t))
+    let (x,d) = c.d1(t);
+    // a curve standing off its surface (a file's edge within its tolerance of its faces, #993):
+    // its feet run at another rate than its tangent read on the surface (by the surface's
+    // curvature times the gap), so the rate of the feet themselves, by a difference a millionth
+    // of the edge long, toward its inside — where the gap is a file's tolerance, a hundred-thousandth
+    // of the point's distance from the origin or more (a fitted curve's micron is left to its
+    // tangent, which a swept build's measures are read by)
+    if distance(surface.point(uv),x) > 1e-5*(1.+norm(x)) {
+        let h = 1e-6*(edge.t[1]-edge.t[0])*if t+1e-6*(edge.t[1]-edge.t[0]) <= edge.t[1] { 1. } else { -1. };
+        let next = unwrap(surface.inverse_near(c.point(t+h),uv),uv,surface.periods());
+        let rate = [(next[0]-uv[0])/h,(next[1]-uv[1])/h];
+        if rate.iter().all(|r| r.is_finite()) { return rate }
+    }
+    in_parameters(surface,uv,d)
 }
 
 /// `d` in `surface`'s parameters at `uv`: the least-squares `[S_u S_v] x = d` (not finite where the
-/// two derivatives are parallel, a pole's).
+/// two derivatives are parallel and neither vanishes).
 pub(crate) fn in_parameters(surface: &Surface,uv: Uv,d: V) -> Uv {
     let (_,su,sv) = surface.d1(uv);
     let (a11,a12,a22) = (dot(su,su),dot(su,sv),dot(sv,sv));
     let (b1,b2) = (dot(su,d),dot(sv,d));
     let det = a11*a22-a12*a12;
+    // (where one derivative vanishes — a spline's collapsed row, its foot clamped onto it — the
+    // least-squares answer of least norm: along the other alone, #993)
+    if det == 0. && a11+a22 > 0. { return if a11 >= a22 { [b1/a11,0.] } else { [0.,b2/a22] } }
     [(a22*b1-a12*b2)/det,(a11*b2-a12*b1)/det]
 }
 
@@ -186,14 +209,14 @@ pub fn unwrap(mut uv: Uv,near: Uv,periods: [Option<f64>;2]) -> Uv {
 /// it the one point) taken from `near` instead: where an inverse curve ends on a pole, the surface's
 /// inverse of the point says nothing of which value the curve arrives along (a cone's apex reads
 /// `u = 0` whatever the generator), and the end its pcurve is given there does (#797).
-fn on_pole(surface: &Surface,uv: Uv,near: Uv) -> Uv {
+fn on_pole(surface: &Surface,uv: Uv,near: Uv,reach: f64) -> Uv {
     let (mut out,mut p) = (uv,None);
     for k in 0..2 {
         if !((uv[k]-near[k]).abs() > 1e-6) { continue }
         let mut alt = uv;
         alt[k] = near[k];
         let p = *p.get_or_insert_with(|| surface.point(uv));
-        if distance(surface.point(alt),p) <= 1e-9*(1.+norm(p)) { out[k] = near[k]; }
+        if distance(surface.point(alt),p) <= (1e-9*(1.+norm(p))).max(2.*reach) { out[k] = near[k]; }
     }
     out
 }
@@ -367,7 +390,9 @@ impl Brep {
             let into = if end == 0 { 1. } else { -1. };
             // beside the use's own value a little way in, on its branch of the periods
             let inner = c.pcurve.at(e.t[end]+into*1e-3*(e.t[1]-e.t[0]),e,&f.surface,&self.vertices);
-            let limit = leaving_pole(&f.surface,vertex.p,scale(curve.tangent(e.t[end]),into),inner,along)?;
+            // (from the curve's own end, which a vertex read from a file need not be: a step
+            // out from a vertex on the far side of the pole reads the meridian opposite, #993)
+            let limit = leaving_pole(&f.surface,curve.point(e.t[end]),scale(curve.tangent(e.t[end]),into),inner,along)?;
             let mut ends = [*from,*to];
             // (an end already there, to a hair, is kept as it was)
             if (ends[end][along]-limit).abs() <= 1e-9 { return None }
@@ -535,7 +560,11 @@ impl Brep {
                     // (or twice the vertex's own, the farthest a point merged into it stood)
                     let at = self.vertices[self.ends(c)[1] as usize].tol;
                     let corner = tol.max(2.*(self.edges[c.edge as usize].tol+self.edges[next.edge as usize].tol)).max(2.*at);
-                    if distance(f.surface.point(a),f.surface.point(b)) > corner || (a[0]-b[0]).abs().max((a[1]-b[1]).abs()) > 1e-3 {
+                    // on the same branch: within a thousandth in parameters, or within what the
+                    // corner's tolerance spans there where that is more (a file's edges standing
+                    // their tolerance off their faces, #993)
+                    let spans = { let (_,su,sv) = f.surface.d1(a); let least = norm(su).min(norm(sv)); if least > 0. { 2.*corner/least } else { 0. } };
+                    if distance(f.surface.point(a),f.surface.point(b)) > corner || (a[0]-b[0]).abs().max((a[1]-b[1]).abs()) > spans.max(1e-3) {
                         if crate::debug() {
                             let kind = |c: &Coedge| self.edges[c.edge as usize].curve.kind();
                             eprintln!("topo: face {fi} breaks between edge {} ({}, tol {:e}) and edge {} ({}, tol {:e}) at vertex {:?} (tol {at:e}): {:?} and {:?} apart {:e}, corner {corner:e}",
@@ -566,7 +595,7 @@ impl Brep {
                 if settled { continue }
                 let area = self.loop_area(f,l);
                 let ccw = area > 0.;
-                if (li == 0) != (ccw != f.reversed) {
+                if (li == 0) != (ccw != f.reversed) && !self.sliver(f,l,area,tol) {
                     return Err(format!("face {fi} ({}): loop {li} turns the wrong way ({area:e} in its parameters)",f.name).into())
                 }
             }
@@ -709,6 +738,27 @@ impl Brep {
             if roots.len() > 1 { out.push(v.p); }
         }
         out
+    }
+
+    /// **Whether a loop is a sliver its edges' tolerance cannot orient** (#993): the area it
+    /// encloses in its face's parameters (`area`), carried into space at its first corner, no
+    /// more than its length times the largest tolerance among its edges and vertices, or the one
+    /// the check is asked for — a face thinner than its edges stand off their vertices, as a file's
+    /// sloppy edges leave one, which turns whichever way they stray. Never one built exact and
+    /// checked exactly, whose tolerances are nought.
+    fn sliver(&self,f: &Face,l: &[Coedge],area: f64,tol: f64) -> bool {
+        let widest = l.iter().map(|c| { let e = &self.edges[c.edge as usize]; e.v.iter().map(|&v| self.vertices[v as usize].tol).fold(e.tol,f64::max) })
+            .fold(tol,f64::max);
+        if !(widest > 0.) { return false }
+        let Some(c) = l.first() else { return false };
+        let (_,su,sv) = f.surface.d1(self.uv_ends(f,c)[0]);
+        let mut length = 0.;
+        for c in l {
+            let e = &self.edges[c.edge as usize];
+            let pts: Vec<V> = (0..=8).map(|j| e.point(e.t[0]+(e.t[1]-e.t[0])*j as f64/8.,&self.vertices)).collect();
+            length += pts.windows(2).map(|w| distance(w[0],w[1])).sum::<f64>();
+        }
+        area.abs()*norm(crate::util::space::cross(su,sv)) <= length*widest
     }
 
     /// The signed area a loop encloses in its face's parameters (counter-clockwise positive),

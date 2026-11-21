@@ -547,8 +547,20 @@ impl<'a> Closed<'a> {
     }
 }
 
-/// The volume the boundary encloses (negative if it is turned inside out).
-pub fn volume(b: &Brep) -> f64 { fluxes(b).iter().sum::<f64>()/3. }
+/// The volume the boundary encloses (negative if it is turned inside out). A boundary standing
+/// farther from the origin than ten times its size is measured moved to it (by the middle of its
+/// vertices): `X · n` there is the volume's flux plus the far point's, which cancels round the
+/// boundary, and its rounding is the far point's (a millimetre solid a kilometre out read 5e-5
+/// of itself off, #993).
+pub fn volume(b: &Brep) -> f64 {
+    let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
+    for v in &b.vertices { for k in 0..3 { lo[k] = lo[k].min(v.p[k]); hi[k] = hi[k].max(v.p[k]); } }
+    let c: V = std::array::from_fn(|k| 0.5*(lo[k]+hi[k]));
+    let size = (0..3).map(|k| (hi[k]-lo[k]).powi(2)).sum::<f64>().sqrt();
+    if b.vertices.is_empty() || !(norm(c) > 10.*size) { return fluxes(b).iter().sum::<f64>()/3. }
+    let moved = b.moved(&crate::geom::Rigid {r:crate::geom::Rigid::identity().r,t:c.map(|x| -x)});
+    fluxes(&moved).iter().sum::<f64>()/3.
+}
 
 /// Each face's flux `∬ X·n dA` out of the solid, side by side.
 pub fn fluxes(b: &Brep) -> Vec<f64> {
@@ -668,8 +680,10 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
             let mut row: Vec<(f64,f64)> = Vec::new();
             for c in l {
                 let e = &b.edges[c.edge as usize];
-                // a pole's degenerate edge runs along u alone: nothing in dv, but its du counts
-                if matches!(e.curve,EdgeCurve::Degenerate) && (other == 1 || !matches!(c.pcurve,Pcurve::Line {..})) {
+                // a pole's degenerate edge counts by its line in the face's parameters: along `u` (a
+                // sphere's, a cone's) nothing in dv but its du, along `v` (a spline's collapsed row,
+                // #993) its dv, `G` there the face's width up to it
+                if matches!(e.curve,EdgeCurve::Degenerate) && !matches!(c.pcurve,Pcurve::Line {..}) {
                     row.push((0.,0.)); continue
                 }
                 // `G dv` at a point of the edge on the face, given its parameters and their rate
