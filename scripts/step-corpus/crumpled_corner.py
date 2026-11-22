@@ -86,7 +86,7 @@ solid = new("MANIFOLD_SOLID_BREP('',#%d)" % shell)
 body = []
 for i in sorted(keep): body.append('#%d = %s;' % (i, ents[i]))
 for i in sorted(newents): body.append('#%d = %s;' % (i, newents[i]))
-head = ("ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION((''),'2;1');\nFILE_NAME('','',(''),(''),'','','');\nFILE_SCHEMA(('AUTOMOTIVE_DESIGN'));\nENDSEC;\nDATA;\n"
+head = ("ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('a slab under one face (#27487) of #3DBenchy by Daniel Noree, CC0 1.0, as brep-bench holds its STEP (cases/integration/benchy): scripts/step-corpus/crumpled_corner.py'),'2;1');\nFILE_NAME('','',(''),(''),'','','');\nFILE_SCHEMA(('AUTOMOTIVE_DESIGN'));\nENDSEC;\nDATA;\n"
   "#1 = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );\n#2 = ( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) );\n"
   "#3 = UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(1.E-07),#1,'distance_accuracy_value','');\n"
   "#4 = ( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#3)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2)) REPRESENTATION_CONTEXT('','') );\n")

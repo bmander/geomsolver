@@ -1,6 +1,6 @@
 ISO-10303-21;
 HEADER;
-FILE_DESCRIPTION((''),'2;1');
+FILE_DESCRIPTION(('a slab under one face (#27487) of #3DBenchy by Daniel Noree, CC0 1.0, as brep-bench holds its STEP (cases/integration/benchy): scripts/step-corpus/crumpled_corner.py'),'2;1');
 FILE_NAME('','',(''),(''),'','','');
 FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));
 ENDSEC;
