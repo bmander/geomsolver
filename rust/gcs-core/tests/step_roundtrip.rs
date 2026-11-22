@@ -754,7 +754,8 @@ fn bench_cross_check() {
     let col = |n: &str| head.iter().position(|h| *h == n).unwrap();
     let (path,v,a,bv,ba,from) = (col("path"),col("ref_volume"),col("ref_area"),col("bar_volume"),col("bar_area"),col("ref_from"));
     let mut tally: BTreeMap<String,usize> = BTreeMap::new();
-    for l in lines.filter(|l| l.starts_with("brep-bench/cad-kernel/")) {
+    let skip = std::env::var("STEP_ROUNDTRIP_BENCH_SKIP").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
+    for l in lines.filter(|l| l.starts_with("brep-bench/cad-kernel/")).skip(skip) {
         let f: Vec<&str> = l.split('\t').collect();
         let x = |i: usize| f[i].parse::<f64>().unwrap_or(f64::NAN);
         let Ok(text) = std::fs::read_to_string(std::path::Path::new(&root).join(f[path])) else { continue };
@@ -971,3 +972,44 @@ fn one() {
     for (li,l) in rl.loops.iter().enumerate() { for c in l { let pc = match &c.pcurve { Pcurve::Line {..} => "line".to_string(),Pcurve::Inverse {..} => "inverse".into(),Pcurve::Curve(p) => p.kind().into() };
         eprintln!("  read loop {li} edge {} #{} pcurve {pc}",c.edge,given[0].edges[c.edge as usize]); } }
 }
+
+/// Solid `solid` of `example` held to `holds` at the test's tolerance (1e-7, every fit exact).
+fn known(example: &str,solid: &str) {
+    holds(&format!("{example} `{solid}`"),&example_solid(example,solid),&[0]).unwrap_or_else(|e| panic!("{e}"))
+}
+
+#[test]
+#[ignore = "a known defect, reported: a loft's net collapsed to a point keeps a degenerate edge the writer leaves out and the reader does not lay again (no pole of a surface of its own there)"]
+fn a_nets_collapsed_side_reads_back() { known("lofts/pyramid.sv","pyramid") }
+
+#[test]
+#[ignore = "a known defect, reported: sound refuses a use on a surface of revolution whose end it reads on another branch of the pole than its curve (`leaps π along a pole`)"]
+fn a_use_ending_at_a_pole_reads_back() { known("solid_sweeps/coin.sv","slab") }
+
+#[test]
+#[ignore = "a known defect, reported: a loop crossing a closed net's closing line without a seam, which the file's pcurves write as a jump of the net's span, is refused by topology (`loop breaks in parameters`)"]
+fn a_loop_across_a_closed_nets_closing_reads_back() { known("solid_sweeps/helical_groove.sv","block") }
+
+#[test]
+#[ignore = "a known defect, reported: the file states 1e-7 where its fitted curves and nets stand up to `step::FIT` off one another, so the reader measures edges looser than the file says"]
+fn a_lofts_file_states_what_its_fits_hold() { known("solid_elbow.sv","body") }
+
+#[test]
+#[ignore = "a known defect, reported: the file states 1e-7 where the solid's own edges stand 2e-5 off their net, so the reader measures them looser than the file says"]
+fn a_files_uncertainty_covers_the_solids_own() { known("solid_sweeps/creased.sv","block") }
+
+#[test]
+#[ignore = "a known defect, reported: a face family's wall the writer cannot fit within `step::FIT` is refused, so the solid has no file"]
+fn a_family_wall_is_written() { known("lofts/pipe.sv","pipe") }
+
+#[test]
+#[ignore = "a known defect, reported: a pcurve on a toolpath's net no cubic closes in is written as a polyline of millions of points (76 MB here, 3 GB for whole_turn.sv)"]
+fn a_toolpaths_pcurve_is_written_in_few_points() { known("solid_sweeps/short_screw.sv","block") }
+
+#[test]
+#[ignore = "a known defect, reported: the writer does not finish this solid within a minute"]
+fn a_drill_is_written_within_a_minute() { known("twist_drill/drill.sv","drill") }
+
+#[test]
+#[ignore = "a known defect, reported: the solid read, written again, does not finish within a minute (its nets' pcurves refitted from the reader's own)"]
+fn a_solid_read_is_written_again_within_a_minute() { known("solid_sweeps/tight_ball.sv","block") }
