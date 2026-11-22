@@ -389,6 +389,7 @@ mod witness;
 mod word_names;
 mod words_alone;
 mod workspace;
+mod zero_set;
 
 /// Every `tests/*.rs` beside this file is declared above: with `autotests := false` a file
 /// nobody lists is a test nobody runs, silently.
