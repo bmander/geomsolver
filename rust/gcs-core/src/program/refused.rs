@@ -265,11 +265,25 @@ pub(super) fn free_beneath(sk: &Sketch, map: &SourceMap, solid: usize, under: &U
         not the drawing's — state {meant} meant")
 }
 
-/// **A refusal of solid `solid`'s build in the words a reader is given** (#996): `words`, and
-/// what the solid is built from that the drawing leaves free (`free_beneath`), where anything is —
-/// what a front end says of an export it was refused, as `solids` says a refused root.
+/// `Free::with_free` of a drawing asked once: a refusal said alone.
 pub fn with_free(sk: &Sketch, map: &SourceMap, solid: usize, words: String) -> String {
-    words + &free_beneath(sk, map, solid, &Under::read(sk))
+    Free::default().with_free(sk, map, solid, words)
+}
+
+/// **What a drawing leaves free, read once for the refusals a front end says of it** (#996): the
+/// structural reading (`Under`) made the first time a refusal asks, and kept for the rest of the
+/// run — one diagnosis of a copy of the drawing a run, not one an export refused.
+#[derive(Default)]
+pub struct Free(std::cell::OnceCell<Under>);
+
+impl Free {
+    /// **A refusal of solid `solid`'s build in the words a reader is given**: `words`, and what the
+    /// solid is built from that the drawing `sk` leaves free (`free_beneath`), where anything is —
+    /// what a front end says of an export it was refused, as `solids` says a refused root.  `sk`
+    /// is the one drawing every refusal of the run is of.
+    pub fn with_free(&self, sk: &Sketch, map: &SourceMap, solid: usize, words: String) -> String {
+        words + &free_beneath(sk, map, solid, self.0.get_or_init(|| Under::read(sk)))
+    }
 }
 
 /// The numbers the solve could still move, and each part of the drawing's: its numbers and its
