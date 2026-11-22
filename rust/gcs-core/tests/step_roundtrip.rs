@@ -18,7 +18,12 @@
 //!   that entity and no other, the edge on a curve of the kind written running between the
 //!   vertices written, its middle on the edge built within what the writer's fit allows, each
 //!   vertex where it was written; and besides those only what the writer leaves out for a reader
-//!   to lay (`Given` names them 0): a pole's degenerate edge for each `b` holds, and nothing else;
+//!   to lay (`Given` names them 0): a pole's degenerate edge, and nothing else. A degenerate edge
+//!   bounds nothing and has no length, so it is no geometry: where `b` holds one on a face written
+//!   on a surface with no pole at its point (a net's side collapsed to a point, written as the
+//!   plane triangle it is: `pyramid`, `square_to_circle`'s plane corners), it is set aside, and
+//!   the vertices only it ends at; where the surface written has the pole there (a net's collapsed
+//!   row, a cone's apex, a sphere's pole), the reader lays one at its point, and nothing else;
 //! * each face's area and flux (`props::area`, `props::fluxes`) the built face's, and the solid's
 //!   volume and area, within `Bars`: the measure's own noise (1e-9) where every curve and surface
 //!   written is the kernel's own, and where the writer fits one, as far as a fit within its bar
@@ -27,8 +32,7 @@
 //! * `r`, written again, passes `step_check::verify` and reads again to the same solid at the
 //!   bars of an exact solid: a second trip changes nothing more.
 //!
-//! What a solid comes to is an `Outcome`: the same; the same point set read one degenerate edge
-//! short; not written (the writer refused it, which is the writer's say and no reading's); refused
+//! What a solid comes to is an `Outcome`: the same; not written (the writer refused it, which is the writer's say and no reading's); refused
 //! by `context`, by `topology` or by `sound` (for `sound`, the solid `topology` read is held to the
 //! property anyway: the same solid there is a false refusal, a different one a true refusal); read
 //! to a different solid (the worst); same on the first trip and not on the second; a panic; not
@@ -68,9 +72,6 @@ pub enum Outcome {
     Panicked(String),
     /// Not read within `BOUND` (what it was).
     Slow(String),
-    /// The same point set and every written entity read, but the reader lays fewer degenerate
-    /// edges than the solid held (laid, built): which ones it should lay is the convention.
-    Degenerate(usize,usize),
 }
 
 impl Outcome {
@@ -91,13 +92,11 @@ impl Outcome {
             Outcome::Slow(m) if m.starts_with("too large") => "written too large to read".into(),
             Outcome::Slow(m) if m.starts_with("not written") => format!("not written within {BOUND:?}"),
             Outcome::Slow(_) => format!("not read within {BOUND:?}"),
-            Outcome::Degenerate(..) => "same but for degenerate edges".into(),
         }
     }
     pub fn detail(&self) -> String {
         match self {
             Outcome::Same => String::new(),
-            Outcome::Degenerate(l,b) => format!("{l} degenerate edges laid, {b} built"),
             Outcome::NotWritten(m) | Outcome::Different(m) | Outcome::SecondTrip(m) | Outcome::Panicked(m) | Outcome::Slow(m) => m.clone(),
             Outcome::Refused {refusal,unsound,..} => {
                 let mut s = format!("{:?} {refusal}",refusal.why);
@@ -120,8 +119,6 @@ pub struct Found {
     pub loose: Vec<(usize,f64,f64)>,
     /// The vertices read looser than the file states, not at a pole.
     pub loose_vertices: Vec<(usize,f64,f64)>,
-    /// The degenerate edges laid and built, where they differ and nothing else does.
-    pub degenerate: Option<(usize,usize)>,
     /// The uncertainty the file states.
     pub stated: f64,
     /// The most points any one curve of the file is written in (a B-spline's poles).
@@ -331,7 +328,9 @@ fn turned(read: &Surface,written: &Surface) -> bool {
 
 /// **Whether `r`, read from `text`, the file `write` made of `b`, is the same solid** — every
 /// clause but the second trip's (see the file's head) — and what was found on the way: `Err`
-/// says the first clause that fails, with its numbers.
+/// says the first clause that fails, with its numbers. A degenerate edge is compared only where the
+/// surface its face is written on has a pole at its point: elsewhere it is set aside on both sides
+/// with the vertices only it ends at (it bounds nothing and has no length).
 pub fn same(b: &Brep,mb: &Measured,text: &str,given: &Given,fit: Fit,tol: f64,found: &mut Found) -> Result<Measured,String> {
     let r = &given.brep;
     let (s,_) = size(b);
@@ -404,18 +403,37 @@ pub fn same(b: &Brep,mb: &Measured,text: &str,given: &Given,fit: Fit,tol: f64,fo
             if off > bar { return Err(format!("edge #{id} ({}) stands {off:.2e} off the edge built, past {bar:.1e}",oc.kind())) }
         }
     }
-    // (a vertex no edge ends at is the kernel's bookkeeping, which no file writes)
-    let degenerate = b.edges.iter().filter(|e| matches!(e.curve,EdgeCurve::Degenerate)).count();
-    let ended = b.edges.iter().flat_map(|e| e.v).collect::<BTreeSet<_>>().len();
-    // (a degenerate edge the writer leaves out where no pole of the surface lies, a net's side
-    // collapsed to a point, which the reader does not lay again: the point set is the same, its
-    // B-rep one degenerate edge short; noted and measured on)
-    if laid_degenerate != degenerate && r.edges.len()+degenerate == b.edges.len()+laid_degenerate && r.vertices.len() == ended {
-        found.degenerate = Some((laid_degenerate,degenerate));
+    // a degenerate edge bounds nothing and has no length: it is no geometry, and where its face is
+    // written on a surface with no pole at its point (a net's side collapsed to a point, written as
+    // the plane triangle it is) the file has none to give, so it is set aside, and the vertices only
+    // it ends at with it; where the face's surface read has the pole (a net's collapsed row, a
+    // cone's apex, a sphere's pole) the reader lays it, and each built must have one laid at its
+    // point. (A vertex no edge ends at is the kernel's bookkeeping, which no file writes.)
+    let pole = |fi: usize,p: gcs_core::brep::geom::V| {
+        let sf = &r.faces[fi].surface;
+        let uv = sf.inverse(p);
+        let (q,su,sv) = sf.d1(uv);
+        let (a,z) = (gcs_core::space::norm(su),gcs_core::space::norm(sv));
+        distance(q,p) <= 1e-9*s && a.min(z) <= 1e-9*a.max(z)
+    };
+    let kept: Vec<usize> = (0..b.edges.len()).filter(|&ei| !matches!(b.edges[ei].curve,EdgeCurve::Degenerate) || {
+        let p = b.vertices[b.edges[ei].v[0] as usize].p;
+        b.faces.iter().enumerate().any(|(fi,f)| f.loops.iter().flatten().any(|c| c.edge as usize == ei) && pole(fi,p))
+    }).collect();
+    let ended = kept.iter().flat_map(|&ei| b.edges[ei].v).collect::<BTreeSet<_>>().len();
+    let mut poles: Vec<gcs_core::brep::geom::V> = kept.iter().filter(|&&ei| matches!(b.edges[ei].curve,EdgeCurve::Degenerate))
+        .map(|&ei| b.vertices[b.edges[ei].v[0] as usize].p).collect();
+    let degenerate = poles.len();
+    for (i,_) in given.edges.iter().enumerate().filter(|&(i,&id)| id == 0 && matches!(r.edges[i].curve,EdgeCurve::Degenerate)) {
+        let p = r.vertices[r.edges[i].v[0] as usize].p;
+        match poles.iter().position(|&q| distance(p,q) <= 1e-9*s) {
+            Some(k) => { poles.swap_remove(k); }
+            None => return Err(format!("a degenerate edge laid at {p:?}, where the solid built has none its face's surface has a pole for")),
+        }
     }
-    else if laid_degenerate != degenerate || r.edges.len() != b.edges.len() || r.vertices.len() != ended {
-        return Err(format!("{} edges and {} vertices read ({laid_degenerate} degenerate laid), {} and {ended} built ({degenerate} degenerate)",
-            r.edges.len(),r.vertices.len(),b.edges.len()))
+    if laid_degenerate != degenerate || r.edges.len() != kept.len() || r.vertices.len() != ended {
+        return Err(format!("{} edges and {} vertices read ({laid_degenerate} degenerate laid), {} and {ended} built ({degenerate} degenerate \
+            at a pole of the surface its face is written on)",r.edges.len(),r.vertices.len(),kept.len()))
     }
     // the tolerances the reader measures, against the uncertainty the file states
     found.stated = stated;
@@ -601,7 +619,7 @@ fn trip_in(b: &Brep,name: &str,tol: f64,fit: Fit,found: &mut Found) -> Outcome {
     let twice = match stages(&again) { Ok(g) => g,Err((by,refusal,_)) => return Outcome::SecondTrip(format!("refused by {by:?}: {refusal}")) };
     if twice.len() != 1 { return Outcome::SecondTrip(format!("{} solids read again",twice.len())) }
     if let Err(d) = same(r,&mr,&again,&twice[0],fit,tol,&mut Found::default()) { return Outcome::SecondTrip(d) }
-    match found.degenerate { Some((l,b)) => Outcome::Degenerate(l,b),None => Outcome::Same }
+    Outcome::Same
 }
 
 /// **The writer's paths a solid takes** (`step::solid` and what it calls, read by what they branch
@@ -794,7 +812,7 @@ fn census() {
             Outcome::Refused {by,refusal,..} => format!("{by:?} {:?}: {}",refusal.why,generic(&refusal.msg)),
             Outcome::Different(d) | Outcome::SecondTrip(d) => generic(d),
             Outcome::NotWritten(m) | Outcome::Panicked(m) | Outcome::Slow(m) => generic(m),
-            Outcome::Same | Outcome::Degenerate(..) => String::new(),
+            Outcome::Same => String::new(),
         };
         if !cause.is_empty() { *causes.entry(format!("{}: {cause}",outcome.label())).or_default() += 1; }
         by.entry(outcome.label()).or_default().push(who);
@@ -1226,8 +1244,10 @@ fn known(example: &str,solid: &str) {
     holds(&format!("{example} `{solid}`"),&example_solid(example,solid),&[0]).unwrap_or_else(|e| panic!("{e}"))
 }
 
+/// **A loft's side collapsed to a point reads back** (`pyramid`): written as the plane triangle it
+/// is, which has no pole for the degenerate edge the built solid keeps at its apex — no geometry,
+/// set aside on both sides — the file reads to the solid, its faces' measures within their bars.
 #[test]
-#[ignore = "a known defect, reported: a loft's side collapsed to a point is written as a plane, which has no pole for the degenerate edge the solid built keeps; the file reads to the solid's measures, but `same` counts the built solid's degenerate edges"]
 fn a_nets_collapsed_side_reads_back() { known("lofts/pyramid.sv","pyramid") }
 
 #[test]

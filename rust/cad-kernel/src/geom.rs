@@ -1103,11 +1103,21 @@ fn net_newton(n: &super::nurbs::Net,p: V,mut uv: Uv) -> Option<Uv> {
 /// the surface a local foot need not be the nearest); else from the nearest pole's Greville
 /// parameters (the net of a fitted sheet lies close to it); where that does not settle, from the
 /// nearest of a grid across its knot spans.
-fn net_inverse(net: &std::sync::Arc<super::nurbs::Net>,p: V) -> Uv {
+fn net_inverse(net: &std::sync::Arc<super::nurbs::Net>,p: V) -> Uv { net_search(net,p,true) }
+
+/// `net_inverse`, from the thread's last foot on the sheet and keeping this one (`warmed`), or
+/// **cold: a function of the point alone**. A warm start is kept where its foot stands within a
+/// thousandth of the point's size of the nearest span's box — the nearest to that, and no nearer —
+/// so on a sheet coming back within that of itself the foot read depends on what was asked before:
+/// `Surface::inverse_near`, which takes the whole sheet's foot only where it is strictly nearer than
+/// Newton's from its hint, searches cold (benchy's face #27487, its corner crumpled back within
+/// 9.5e-5 of its corner vertex: the vertex read on itself as one edge's end and on the crumple as
+/// the next's start, a loop broken in parameters where the file's is whole).
+fn net_search(net: &std::sync::Arc<super::nurbs::Net>,p: V,warmed: bool) -> Uv {
     let n: &super::nurbs::Net = net;
     let key = n as *const _ as usize;
     let near = 1e-3*(1.+dot(p,p).sqrt());
-    let start = crate::util::warm::get(crate::util::warm::Kind::Net,key);
+    let start = if warmed { crate::util::warm::get(crate::util::warm::Kind::Net,key) } else { None };
     // The spans whose boxes stand nearest (each boxed by its Bézier points, `query::net_index`),
     // found best first by their boxes alone: the surface lies in its spans' boxes, so no foot is
     // nearer than the nearest box, and a foot within `near` of it is the nearest, to `near`.
@@ -1170,7 +1180,7 @@ fn net_inverse(net: &std::sync::Arc<super::nurbs::Net>,p: V) -> Uv {
         match best { Some((_,uv)) => uv,None => net_grid_inverse(n,p) }
     });
     // this sheet's foot first, the rest after it, the oldest dropped
-    crate::util::warm::put(crate::util::warm::Kind::Net,key,uv);
+    if warmed { crate::util::warm::put(crate::util::warm::Kind::Net,key,uv); }
     uv
 }
 
@@ -1529,15 +1539,16 @@ impl Surface {
             Surface::Offset(_,n,d) => continued_foot(n,p,hint).unwrap_or_else(|| offset_foot(n,p,*d)),
             // (off the sheet, the foot by Newton kept where the whole sheet searched finds none
             // nearer: a file's edge standing off its face by its tolerance, its foot read on the
-            // side of a closed sheet's seam the hint is on, #993)
+            // side of a closed sheet's seam the hint is on, #993; the sheet searched cold, so the
+            // foot is a function of the point and the hint alone, `net_search`)
             Surface::BSpline(_,n) => match net_newton(n,p,hint) {
                 Some(uv) => {
                     let (d,scale) = (crate::util::space::distance(n.point(uv[0],uv[1]),p),1.+dot(p,p).sqrt());
                     if d <= 1e-6*scale { return uv }
-                    let far = net_inverse(n,p);
+                    let far = net_search(n,p,false);
                     if crate::util::space::distance(n.point(far[0],far[1]),p) < d-1e-9*scale { far } else { uv }
                 }
-                None => net_inverse(n,p),
+                None => net_search(n,p,false),
             },
             // from the hint where it settles on the wall near `p`, else the whole wall searched
             Surface::Family(_,w) => {

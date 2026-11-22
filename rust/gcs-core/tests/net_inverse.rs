@@ -95,3 +95,39 @@ fn a_balls_net_offset_is_a_ball() {
         }
     }
 }
+
+/// **A point's foot on a sheet, sought near a hint, is the same whatever was sought before**
+/// (`Surface::inverse_near`; benchy's face #27487, #993 stage 1). A sheet folded back on itself, its
+/// two layers 2e-4 apart — as a fitted sheet's crumpled corner comes back within 1e-4 of its own
+/// point — and a point lying on the lower layer, sought from a hint on the upper: Newton's method
+/// settles on the upper, 2e-4 off, and the whole sheet is searched. That search started from the
+/// last foot the thread found and kept it where it lay within a thousandth of the point's size of
+/// the sheet, so the point read 2e-4 off on the upper layer after a point there was asked and on
+/// itself otherwise: benchy's corner vertex, read on itself by one edge's walk and 9.5e-5 off by
+/// the next's, broke its loop in parameters. It reads on itself both ways.
+#[test]
+fn a_points_foot_near_a_hint_does_not_depend_on_what_was_asked_before() {
+    // a U turn in `v` (x out to 2 and back at a height of 2e-4), carried along `y` in `u`
+    let h = 2e-4;
+    let row = |y: f64| vec![[0., y, 0.], [2., y, 0.], [2.5, y, 0.5 * h], [2., y, h], [0., y, h]];
+    let n = Arc::new(Net {du: 1, dv: 2, uknots: vec![0., 0., 1., 1.], vknots: vec![0., 0., 0., 0.4, 0.6, 1., 1., 1.],
+        poles: vec![row(0.), row(1.)], weights: None});
+    n.check().unwrap();
+    let s = Surface::BSpline(Frame::WORLD, n.clone());
+    // the point on the lower layer, the hint above it on the upper
+    let (below, above) = ([0.5, 0.1], [0.5, 0.9]);
+    let (p, q) = (n.point(below[0], below[1]), n.point(above[0], above[1]));
+    assert!(distance(p, q) > 0.5 * h && distance(p, q) < 1.5 * h, "the layers stand {:e} apart", distance(p, q));
+    // sought after the upper layer's own point, its foot the thread's last, and again after the
+    // lower's
+    let up = n.point(0.5, 0.92);
+    let read = s.inverse(up);
+    assert!(distance(n.point(read[0], read[1]), up) <= 1e-12, "the upper layer's point read off it");
+    let warm = s.inverse_near(p, above);
+    let _ = s.inverse(n.point(0.5, 0.08));
+    let after = s.inverse_near(p, above);
+    for (when, uv) in [("after a point on the upper layer", warm), ("after a point on the lower", after)] {
+        let off = distance(n.point(uv[0], uv[1]), p);
+        assert!(off <= 1e-12, "{when}: the point read {off:e} off, at {uv:?}");
+    }
+}
