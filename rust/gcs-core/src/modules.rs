@@ -254,8 +254,8 @@ pub struct Given {
     pub body: Result<Arc<Body>, String>,
 }
 
-/// What a given module's file gives the model.
-pub type Body = crate::brep::topo::Brep;
+/// What a given module's file gives the model: its B-rep and the text's digest.
+pub type Body = crate::model::Given;
 
 /// The digest and what was read, never the text: a file may be megabytes.
 impl std::fmt::Debug for Given {
@@ -306,10 +306,10 @@ fn given(text: String) -> Arc<Given> {
 
 /// The one solid a STEP text gives, or why none: the kernel's refusal as it says it, or how many
 /// solids it gives where it gives several — one given body is one solid.
-fn read(text: &str, _digest: u64) -> Result<Arc<Body>, String> {
+fn read(text: &str, digest: u64) -> Result<Arc<Body>, String> {
     let mut reading = crate::brep::step_read::reading(text).map_err(|r| r.to_string())?;
     match reading.solids.len() {
-        1 => Ok(Arc::new(reading.solids.pop().expect("one solid").brep)),
+        1 => Ok(Arc::new(Body::new(reading.solids.pop().expect("one solid").brep, digest))),
         n => Err(format!("the file gives {n} solids, and a given body is one solid")),
     }
 }

@@ -62,6 +62,7 @@ pub(super) fn check(p: &Program, diags: &mut Vec<Diag>) {
             say(code, span, message);
         }
     }
+    given(p, &mut say);
     // every import, in every file
     let files = std::iter::once(None).chain((0..p.modules.len()).map(Some));
     for file in files {
@@ -126,4 +127,70 @@ pub(super) fn check(p: &Program, diags: &mut Vec<Diag>) {
     crate::modules::localize(p, &mut said);
     said.sort_by_key(|d| d.span.lo);
     diags.append(&mut said);
+}
+
+/// **The given modules, asked of the text** (#993 stage 2): a file the kernel refuses said once,
+/// at the `use` that brought it in (E072), the module's name in front of the kernel's words — or
+/// of how many solids it gives, a given body being one; and a file using one whose path it
+/// defines itself at its top level (E071), which would read two things by one name.
+fn given(p: &Program, say: &mut impl FnMut(Code, Span, String)) {
+    for m in &p.modules {
+        let Some(g) = &m.given else { continue };
+        if let Err(why) = &g.body {
+            say(Code::E072, m.via, format!("`{}`: {why}", m.name));
+        }
+    }
+    let files = std::iter::once(None).chain((0..p.modules.len()).map(Some));
+    for file in files {
+        let own = own_names(p, file);
+        for u in p.use_stmts(file) {
+            let given = p.module_named(&u.name).is_some_and(|k| p.modules[k].given.is_some());
+            let head = u.name.split('.').next().unwrap_or_default();
+            if given && own.contains(head) {
+                say(Code::E071, u.span, format!(
+                    "`{head}` is defined in this file, and `use {}` names the body its file \
+                     gives: one name, two things", u.name));
+            }
+        }
+    }
+}
+
+/// **What a refused given module leaves unsaid** (#993 stage 2): the document's statements that
+/// read the name of a given module whose file the kernel refused — or read a name one of those
+/// declares, and so on — whose every other diagnostic only follows from the refusal, said once at
+/// the `use` (E072).  Their spans; empty where no file was refused.
+pub(super) fn given_unsaid(p: &Program) -> Vec<Span> {
+    let refused: Vec<&str> = p.modules.iter()
+        .filter(|m| m.given.as_ref().is_some_and(|g| g.body.is_err()))
+        .map(|m| m.name.as_str()).collect();
+    if refused.is_empty() {
+        return Vec::new();
+    }
+    // each statement of the document's root, and the names it reads, as the lexer sees them
+    let stmts: Vec<(&crate::syntax::Stmt, Vec<String>)> = p.root().body.iter().map(|st| {
+        let text = p.text().get(st.span.lo as usize..st.span.hi as usize).unwrap_or_default();
+        let read = crate::syntax::name_uses(text).into_iter()
+            .map(|u| u.parts.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>().join("."))
+            .collect();
+        (st, read)
+    }).collect();
+    let reads = |names: &[String], unsaid: &BTreeSet<String>| names.iter().any(|n| {
+        unsaid.iter().any(|u| n == u || n.starts_with(&format!("{u}.")))
+    });
+    let mut unsaid: BTreeSet<String> = refused.iter().map(|n| n.to_string()).collect();
+    let mut out: BTreeSet<usize> = BTreeSet::new();
+    loop {
+        let more: Vec<usize> = (0..stmts.len())
+            .filter(|k| !out.contains(k) && reads(&stmts[*k].1, &unsaid)).collect();
+        if more.is_empty() {
+            break;
+        }
+        for k in more {
+            out.insert(k);
+            if let Some(n) = stmts[k].0.kind.bound_name() {
+                unsaid.insert(n.text.clone());
+            }
+        }
+    }
+    out.into_iter().map(|k| stmts[k].0.span).collect()
 }
