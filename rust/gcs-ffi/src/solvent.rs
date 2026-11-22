@@ -67,14 +67,57 @@ pub unsafe extern "C" fn gcs_module_provided(ptr: *const u8, len: usize) -> i32 
 /// `gcs_module_forget`; a second `set` under one name replaces the first.  Nothing already
 /// elaborated changes: an edit relinks from the texts it has (`program::reparse`), so the table
 /// is read only when a program is read whole.
+///
+/// The text is a Solvent document or an ISO 10303-21 exchange file (#993 stage 2), its bytes read
+/// as `modules::decode` reads a file's: an exchange file's few bytes that are not UTF-8 (Latin-1
+/// in its strings) are taken lossily, as `solventc` takes them.  Any other text that is not UTF-8
+/// is refused, never stored as an empty module: 0, with why in `gcs_last_error`, and whatever was
+/// under the name is forgotten, so a `use` of it is unresolved rather than an older text's.  1
+/// when the text is kept.
 #[no_mangle]
-pub unsafe extern "C" fn gcs_module_set(np: *const u8, nn: usize, tp: *const u8, tn: usize) {
-    guard((), move || {
-        let (name, text) = (as_str(np, nn).to_string(), as_str(tp, tn).to_string());
-        HOST_MODULES.with(|m| {
-            m.borrow_mut().insert(name, text);
-        });
+pub unsafe extern "C" fn gcs_module_set(np: *const u8, nn: usize, tp: *const u8, tn: usize)
+    -> i32 {
+    guard(0, move || {
+        let name = as_str(np, nn).to_string();
+        let bytes = match tp.is_null() || tn == 0 {
+            true => Vec::new(),
+            false => std::slice::from_raw_parts(tp, tn).to_vec(),
+        };
+        match gcs_core::modules::decode(bytes) {
+            Ok(text) => {
+                HOST_MODULES.with(|m| m.borrow_mut().insert(name, text));
+                1
+            }
+            Err(e) => {
+                set_error(format!("module `{name}`: its text is not UTF-8 ({e})"));
+                HOST_MODULES.with(|m| m.borrow_mut().remove(&name));
+                0
+            }
+        }
     })
+}
+
+/// Where a host looks for module `name` used by the document at `source` (a path in the host's
+/// project, `parts/arm.sv`): `["parts/name.sv", "parts/name.step", "parts/name.stp", "name.sv",
+/// …]`, nearest directory first, each a path in the project (`modules::search_paths`, read from
+/// `source` as a drawing's loader reads one).  The first the host has is the module; the library
+/// is asked when it has none.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_module_search_paths(np: *const u8, nn: usize, sp: *const u8, sn: usize)
+    -> *mut u8 {
+    json_out(move || {
+        let (name, source) = (as_str(np, nn), as_str(sp, sn));
+        Json::Arr(gcs_core::modules::search_paths(name, source).iter()
+            .map(|rel| Json::Str(gcs_core::drawing::relative_path(rel, source))).collect())
+    })
+}
+
+/// 1 when a text is an ISO 10303-21 exchange file and not Solvent (`modules::is_step`): a module
+/// that gives a body (#993 stage 2), which a host hands over as it is and never asks for its
+/// `use`s.  The test reads the text's first token only, so a host may ask it of the text's head.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_text_is_step(ptr: *const u8, len: usize) -> i32 {
+    guard(0, move || gcs_core::modules::is_step(as_str(ptr, len)) as i32)
 }
 
 /// Forget every module the host handed over: the next program read links against the library.
@@ -87,10 +130,16 @@ pub extern "C" fn gcs_module_forget() {
 /// with somewhere to fetch from asks this of the document, hands each text over with
 /// `gcs_module_set`, and asks it again of each text it fetched, since a module's own `use`s are
 /// followed too.  A parse error costs nothing here: the `use` lines that did parse are listed.
+/// An exchange file (`modules::is_step`) `use`s nothing, and is told so without being put
+/// through the Solvent parser: it is not Solvent, and it may be megabytes.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_program_uses(ptr: *const u8, len: usize) -> *mut u8 {
     json_out(move || {
-        let (prog, _) = syntax::parse(as_str(ptr, len));
+        let text = as_str(ptr, len);
+        if gcs_core::modules::is_step(text) {
+            return Json::Arr(Vec::new());
+        }
+        let (prog, _) = syntax::parse(text);
         Json::Arr(prog.uses.iter().map(|u| Json::Str(u.name.clone())).collect())
     })
 }
