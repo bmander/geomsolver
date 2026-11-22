@@ -1599,6 +1599,34 @@ found lines 0.075 mm off their edges), otherwise as the cubic within `EXACT`. Ga
 the reader's evaluation of the standard, on its edge within `FIT + 2·EXACT`),
 `a_lemon_is_written_as_a_degenerate_torus`.
 
+**A STEP file never states less than it holds** (#993 stage 1, `step::write_stating`,
+`step::statement`). The uncertainty a file states is the tolerance asked (at least 1e-7) where
+that covers a quarter more than its geometry holds, and otherwise what it holds, rounded up to 1,
+2 or 5 × 10ᵏ (`creased.sv` states 5e-5, a drill 1e-6, an exact solid 1e-7); `export::step`'s
+stage line says when a file states more than was asked. What a file holds is, an edge, its
+distance off each of its faces (measured afresh at 64 points, its curves' knots, halfway between
+them and every point a pcurve's fit reads — not `Edge::tol`, which the kernel lets go stale) with
+the measured misses of its curve, its faces' surfaces and its pcurves, and each vertex's
+tolerance. **A fitted pcurve is held no nearer than its edge stands off its face, and no curve is
+written in more than `3 MOST + 1` points** (`step::MOST`, 4096 pieces): held to `EXACT` where the
+edge stood 1e-7 off its net, a toolpath's pcurve never closed in and fell to a polyline of
+millions of points (a screw's whole turn 3.1 GB and 227 s, now 0.14 s). Past the bound a pcurve
+is left out, a seam's two written both or neither — an edge needs only its curve in space, and
+the reader walks a face without them — and a traced curve's polyline is written within what
+`MOST` points hold, the file stating it. **The representation a curve on a surface prefers is the
+exact one**: `.CURVE_3D.` wherever the curve in space is written as itself, `.PCURVE_Sk.` only
+where that curve is a fit and the `k`-th pcurve is the kernel's own spline in the parameters of a
+surface written exactly. **A face family's wall and its rails, turning at their stations' joints,
+are fitted piece by piece and joined in value** (`step::family_pieces`, `fitted_stretches`): a
+net smooth across the joints stops 1.7e-2 off at its cap of rows. A face on an offset is written
+as `OFFSET_SURFACE` of its sheet's net, so a solid read with one is written again. Gates:
+`step_roundtrip::the_sample_reads_back` (no edge read looser than its file states, no curve past
+`3 MOST + 1` points), `a_lofts_file_states_what_its_fits_hold`,
+`a_files_uncertainty_covers_the_solids_own`, `a_toolpaths_pcurve_is_written_in_few_points`,
+`a_drill_is_written_within_a_minute`, `the_curve_in_space_is_the_master_where_it_is_exact`, and
+in the slow tier `a_family_wall_is_written`, `a_slid_contour_reads_back`,
+`a_solid_read_is_written_again_within_a_minute`.
+
 **A rational net's foot is not stopped by a seam or a pole** (`geom::net_settle`, `pole_newton`):
 a foot Newton's method holds on the domain's edge is sought again across a closed net's seam and
 from beside a collapsed row, and only a strictly nearer foot is taken (a point on a ball's net
