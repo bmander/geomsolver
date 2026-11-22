@@ -599,3 +599,38 @@ fn a_degenerate_torus_is_its_spindle_torus() {
     let wrong = lemon("DEGENERATE_TOROIDAL_SURFACE('',@,5.,3.,.F.)", false);
     refused("a degenerate torus of a ring", &wrong, Why::Malformed, first(&wrong, "DEGENERATE_TOROIDAL_SURFACE"));
 }
+
+/// **A placement's reference direction left unset is the standard's** (ISO 10303-42,
+/// `first_proj_axis`: `[1, 0, 0]`, or `[0, 1, 0]` about an axis along `±x`): a cylinder the kernel
+/// writes along `−x`, every placement about `±x` written again with no reference direction — as
+/// CATIA V5 writes `AXIS2_PLACEMENT_3D('…',#p,#z,$)` — reads to the same cylinder (refused before,
+/// "a placement whose reference direction lies along its axis").
+#[test]
+fn a_placement_without_a_reference_direction_takes_the_standards() {
+    use gcs_core::brep::build::{disc, prism};
+    use gcs_core::brep::step::{write, Fit};
+    let b = prism(&disc([15., 0., 0.], [-1., 0., 0.], 5.), 0., 30.).unwrap();
+    let text = write(&b, "pin", 1e-7, Fit::Exact).unwrap();
+    let line = |n: &str| text.lines().find(|l| l.starts_with(&format!("{n} = "))).unwrap_or_else(|| panic!("no {n}"));
+    let (mut out, mut unset) = (String::new(), 0);
+    for l in text.lines() {
+        let Some(at) = l.find("AXIS2_PLACEMENT_3D(") else { out += l; out.push('\n'); continue };
+        let refs: Vec<&str> = l[at..].trim_end_matches(");").split(',').skip(1).collect();
+        let axis: Vec<f64> = line(refs[1]).split("'',(").nth(1).unwrap().trim_end_matches("));").split(',').map(|x| x.parse().unwrap()).collect();
+        if axis[0].abs() == 1. && axis[1] == 0. && axis[2] == 0. {
+            out += &l.replace(&format!(",{});", refs[2]), ",$);");
+            unset += 1;
+        } else { out += l; }
+        out.push('\n');
+    }
+    assert!(unset >= 3, "the cylinder's and its caps' placements stand about ±x ({unset} found)");
+    // and with each such axis a rounding off `±x`, as CATIA writes `(1.,-2.1862853408E-015,0.)`:
+    // the default `[1, 0, 0]` a hair off the axis, its part square to it still a direction
+    let hair = out.replace("(-1.0,0.0,0.0))", "(-1.,2.1862853408E-015,0.))");
+    assert!(hair != out, "an axis written along -x");
+    for (what, text) in [("along ±x", &out), ("a rounding off ±x", &hair)] {
+        let (v, a) = measures(text).unwrap_or_else(|r| panic!("{what}: refused: {r}"));
+        close(&format!("volume, {what}"), v, PI * 25. * 30., 1e-12);
+        close(&format!("area, {what}"), a, 2. * PI * 5. * 30. + 2. * PI * 25., 1e-12);
+    }
+}

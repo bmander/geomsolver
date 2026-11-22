@@ -436,36 +436,190 @@ fn solids_found_with_names() {
     assert_eq!(solids(&file_of("AUTOMOTIVE_DESIGN","#1=X();\n")),Ok(vec![]));
 }
 
-/// A placed solid is refused, never read as if unplaced, naming what places it: an assembly's
-/// usage occurrence (Open CASCADE's assembly, and a single part it places), a representation
-/// relationship with a transformation, a mapped item, a placement item that is not the identity.
+/// What a file's product structure would say is refused, naming it: an assembly's usage
+/// occurrence (Open CASCADE's assembly, and a single part it places), the solid's representation
+/// placed twice in its product's shape (two mapped items), solids in the shapes of two products,
+/// a placement by a cartesian transformation operator; a solid in no product's shape that a
+/// mapped item or a transformation places elsewhere.
 #[test]
-fn placed_solids_refused() {
+fn product_structure_refused() {
     let r = refused(ASSEMBLY);
     assert_eq!((r.why,r.entity),(Why::Unsupported,Some(376)),"{r}");
     assert!(parse(ASSEMBLY).get(376).is("NEXT_ASSEMBLY_USAGE_OCCURRENCE"));
     let r = refused(PLACED);
     assert_eq!((r.why,r.entity),(Why::Unsupported,Some(372)),"{r}");
+    // the product's shape holds the solid's representation twice, at two places: an instance
+    let r = refused(&part(&[("#8","#8=SHAPE_DEFINITION_REPRESENTATION(#7,#30);")],&lines(&mapped(&["#30=SHAPE_REPRESENTATION('',(#31,#36),#20);"],&["#36=MAPPED_ITEM('',#32,#11);"]))));
+    assert_eq!((r.why,r.entity),(Why::Unsupported,Some(36)),"{r}");
+    assert!(r.msg.contains("placed twice"),"{r}");
+    // two products, each with its solid
+    let r = refused(&part(&[],&["#40=PRODUCT_DEFINITION('design','',#4,#6);","#41=PRODUCT_DEFINITION_SHAPE('','',#40);",
+        "#42=SHAPE_DEFINITION_REPRESENTATION(#41,#43);","#43=ADVANCED_BREP_SHAPE_REPRESENTATION('',(#44),#20);",
+        "#44=MANIFOLD_SOLID_BREP('',#16);"]));
+    assert_eq!((r.why,r.entity),(Why::Unsupported,Some(40)),"{r}");
+    // a mapped item's target a cartesian transformation operator: not read yet
+    let r = refused(&part(&[("#8","#8=SHAPE_DEFINITION_REPRESENTATION(#7,#30);")],&lines(&mapped(&["#33=CARTESIAN_TRANSFORMATION_OPERATOR_3D('','',$,#14,#34,#35,2.,#13);"],&[]))));
+    assert_eq!((r.why,r.entity),(Why::Unsupported,Some(33)),"{r}");
+    // in no product's shape, placed elsewhere by a transformation or a mapped item
     let moved = ["#30=SHAPE_REPRESENTATION('',(#11,#32),#20);","#31=(REPRESENTATION_RELATIONSHIP('','',#10,#30) \
         REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION(#33) SHAPE_REPRESENTATION_RELATIONSHIP());",
         "#32=AXIS2_PLACEMENT_3D('',#34,#13,#14);","#33=ITEM_DEFINED_TRANSFORMATION('','',#11,#32);","#34=CARTESIAN_POINT('',(5.,0.,0.));"];
-    let r = refused(&part(&[],&moved));
+    let r = refused(&part(&[("#8","")],&moved));
     assert_eq!((r.why,r.entity),(Why::Unsupported,Some(31)),"{r}");
     let mapped = ["#30=REPRESENTATION_MAP(#11,#10);","#31=MAPPED_ITEM('',#30,#11);","#32=SHAPE_REPRESENTATION('',(#31),#20);"];
-    let r = refused(&part(&[],&mapped));
+    let r = refused(&part(&[("#8","")],&mapped));
     assert_eq!((r.why,r.entity),(Why::Unsupported,Some(31)),"{r}");
-    let r = refused(&part(&[("#12","#12=CARTESIAN_POINT('',(0.,0.,1.));")],&[]));
-    assert_eq!((r.why,r.entity),(Why::Unsupported,Some(11)),"{r}");
-    let r = refused(&part(&[("#14","#14=DIRECTION('',(0.,1.,0.));")],&[]));
-    assert_eq!((r.why,r.entity),(Why::Unsupported,Some(11)),"{r}");
-    // the identity written with its directions unset, or its reference direction unnormalised, places nothing
-    assert!(solids(&part(&[("#11","#11=AXIS2_PLACEMENT_3D('',#12,$,$);")],&[])).is_ok());
-    assert!(solids(&part(&[("#14","#14=DIRECTION('',(2.,0.,0.));")],&[])).is_ok());
+    // the same, the solid's representation its product's shape: the product's shape is where it is
+    assert_eq!(one_placed(&part(&[],&moved)),None);
+    assert_eq!(one_placed(&part(&[],&mapped)),None);
+}
+
+/// The product's shape `#30` holding a mapped item `#31` of the solid's representation `#10`: its
+/// map `#32` takes the origin `#11` (the identity) onto the target `#33`, at (100, 0, 0) turned a
+/// quarter about `z`.
+const MAPPED: [&str;8] = ["#30=SHAPE_REPRESENTATION('',(#31),#20);","#31=MAPPED_ITEM('',#32,#33);","#32=REPRESENTATION_MAP(#11,#10);",
+    "#33=AXIS2_PLACEMENT_3D('',#34,#13,#35);","#34=CARTESIAN_POINT('',(100.,0.,0.));","#35=DIRECTION('',(0.,1.,0.));",
+    "#37=DIRECTION('',(0.,0.,-1.));","#38=CARTESIAN_POINT('',(10.,0.,0.));"];
+
+/// `MAPPED` with lines replaced by their instance's `#n=` and lines added.
+fn mapped(replace: &[&str],add: &[&str]) -> Vec<String> {
+    let at = |l: &str| l.split('=').next().unwrap().to_string();
+    MAPPED.iter().map(|l| replace.iter().find(|r| at(r) == at(l)).unwrap_or(l).to_string())
+        .chain(add.iter().map(|s| s.to_string())).collect()
+}
+
+/// The one solid's placement in its product's space.
+fn one_placed(text: &str) -> Option<context::Placed> {
+    let s = solids(text).unwrap_or_else(|r| panic!("{r}"));
+    assert_eq!(s.len(),1);
+    s[0].placed
+}
+
+fn moved_like(p: Option<context::Placed>,by: u32,r: [[f64;3];3],t: [f64;3]) {
+    let p = p.expect("the solid should be placed");
+    assert_eq!(p.by,by,"{p:?}");
+    assert!((0..3).all(|i| (0..3).all(|j| (p.motion.r[i][j]-r[i][j]).abs() <= 1e-15) && (p.motion.t[i]-t[i]).abs() <= 1e-12),"{p:?}");
+}
+
+/// **An axis placement among a representation's items places nothing** (ISO 10303-43: a
+/// representation's items share its context's space; an `AXIS2_PLACEMENT_3D` there is a datum, as
+/// most writers put the part's frame, and moves its siblings only where a mapping or a
+/// transformation uses it): off the origin or turned, in the solid's representation or in a
+/// construction representation tied to it, the solid is read where it is.
+#[test]
+fn a_placement_item_places_nothing() {
+    assert_eq!(one_placed(&part(&[("#12","#12=CARTESIAN_POINT('',(0.,0.,1.));")],&[])),None);
+    assert_eq!(one_placed(&part(&[("#14","#14=DIRECTION('',(0.,1.,0.));")],&[])),None);
+    let text = part(&[],&["#30=CONSTRUCTIVE_GEOMETRY_REPRESENTATION('supplemental geometry',(#31),#20);",
+        "#31=AXIS2_PLACEMENT_3D('DRF_ABC',#32,#13,#33);","#32=CARTESIAN_POINT('',(3.,4.,5.));","#33=DIRECTION('',(0.,1.,0.));",
+        "#34=CONSTRUCTIVE_GEOMETRY_REPRESENTATION_RELATIONSHIP('supplemental geometry','',#10,#30);"]);
+    assert_eq!(one_placed(&text),None);
+    let s = context::shapes(&parse(&text)).unwrap();
+    assert_eq!(s.beside.iter().map(|b| (b.entity,b.what)).collect::<Vec<_>>(),[(31,"construction geometry")]);
+}
+
+/// **A solid placed is the solid moved**: a mapped item in its product's shape takes the mapped
+/// representation's origin onto its target (ISO 10303-43's `mapped_item`), a representation
+/// relationship with an item-defined transformation takes `rep_1`'s item onto `rep_2`'s (rep_1 the
+/// placed, as Open CASCADE's assemblies write it), each a rigid motion of two right-handed axes.
+/// The origin is read in the mapped representation's units, the target in the representation
+/// holding the mapped item: a part in centimetres mapped into a product in millimetres is
+/// placed, not scaled. A mapped item in a draughting model presents the shape and places
+/// nothing.
+#[test]
+fn a_mapped_solid_is_moved() {
+    let shape = ("#8","#8=SHAPE_DEFINITION_REPRESENTATION(#7,#30);");
+    let quarter = [[0.,-1.,0.],[1.,0.,0.],[0.,0.,1.]];
+    let s = solids(&part(&[shape],&MAPPED)).unwrap();
+    assert_eq!((s[0].solid,&s[0].name[..],s[0].context.entity),(15,"name one",20));
+    moved_like(s[0].placed,31,quarter,[100.,0.,0.]);
+    // the origin off the identity: what stood on it stands on the target
+    moved_like(one_placed(&part(&[shape],&lines(&mapped(&["#32=REPRESENTATION_MAP(#36,#10);"],
+        &["#36=AXIS2_PLACEMENT_3D('',#38,$,$);"])))),31,quarter,[100.,-10.,0.]);
+    // the mapped representation in centimetres: its origin 1 cm along x
+    moved_like(one_placed(&part(&[shape,("#10","#10=ADVANCED_BREP_SHAPE_REPRESENTATION('',(#11,#15),#40);")],
+        &lines(&mapped(&["#32=REPRESENTATION_MAP(#36,#10);"],&["#36=AXIS2_PLACEMENT_3D('',#39,$,$);","#39=CARTESIAN_POINT('',(1.,0.,0.));",
+        "#40=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#41,#22)) REPRESENTATION_CONTEXT('',''));",
+        "#41=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.CENTI.,.METRE.));"])))),31,quarter,[100.,-10.,0.]);
+    // turned upside down about x: a right-handed frame whose axis is -z and reference x
+    moved_like(one_placed(&part(&[shape],&lines(&mapped(&["#33=AXIS2_PLACEMENT_3D('',#34,#37,#14);"],&[])))),31,
+        [[1.,0.,0.],[0.,-1.,0.],[0.,0.,-1.]],[100.,0.,0.]);
+    // the identity mapped: nothing moves
+    assert_eq!(one_placed(&part(&[shape],&lines(&mapped(&["#33=AXIS2_PLACEMENT_3D('',#12,$,$);"],&[])))),None);
+    // by a representation relationship with a transformation, the product's shape its rep_2
+    let rrwt = ["#30=SHAPE_REPRESENTATION('',(#33),#20);","#31=(REPRESENTATION_RELATIONSHIP('','',#10,#30) \
+        REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION(#36) SHAPE_REPRESENTATION_RELATIONSHIP());",
+        "#33=AXIS2_PLACEMENT_3D('',#34,#13,#35);","#34=CARTESIAN_POINT('',(100.,0.,0.));","#35=DIRECTION('',(0.,1.,0.));",
+        "#36=ITEM_DEFINED_TRANSFORMATION('','',#11,#33);"];
+    moved_like(one_placed(&part(&[shape],&rrwt)),31,quarter,[100.,0.,0.]);
+    // through a shape representation relationship and then the mapped item
+    moved_like(one_placed(&part(&[("#8","#8=SHAPE_DEFINITION_REPRESENTATION(#7,#50);")],&lines(&mapped(&[],
+        &["#50=SHAPE_REPRESENTATION('',(#11),#20);","#51=SHAPE_REPRESENTATION_RELATIONSHIP('','',#30,#50);"])))),31,quarter,[100.,0.,0.]);
+    // a mapped item in a draughting model presents the shape and places nothing
+    let text = part(&[],&lines(&mapped(&["#30=(DRAUGHTING_MODEL() REPRESENTATION('',(#31),#20));"],&[])));
+    assert_eq!(one_placed(&text),None);
+    assert_eq!(context::shapes(&parse(&text)).unwrap().beside.iter().map(|b| (b.entity,b.what)).collect::<Vec<_>>(),
+        [(30,"annotation (a draughting model)")]);
+}
+
+fn lines(v: &[String]) -> Vec<&str> { v.iter().map(String::as_str).collect() }
+
+/// Open CASCADE's drilled block (`drilled_ap214.step`, and in inches `drilled_inch.step`) mapped
+/// into a product's shape in millimetres at (100, 0, 0) turned a quarter about `z`: read, every
+/// vertex is the unmoved reading's moved so, and its volume is the block's.
+#[test]
+fn a_mapped_solid_reads_moved() {
+    use gcs_core::brep::step_read::read;
+    let mapped = |text: &str,context: &str,more: &str| -> String {
+        let at = text.rfind("ENDSEC;").unwrap();
+        format!("{}#500 = SHAPE_REPRESENTATION('',(#501),{context});\n#501 = MAPPED_ITEM('',#502,#503);\n\
+            #502 = REPRESENTATION_MAP(#11,#10);\n#503 = AXIS2_PLACEMENT_3D('',#504,#505,#506);\n#504 = CARTESIAN_POINT('',(100.,0.,0.));\n\
+            #505 = DIRECTION('',(0.,0.,1.));\n#506 = DIRECTION('',(0.,1.,0.));\n{more}{}",
+            &text[..at].replace("#3 = SHAPE_DEFINITION_REPRESENTATION(#4,#10);","#3 = SHAPE_DEFINITION_REPRESENTATION(#4,#500);"),&text[at..])
+    };
+    let mm = "#510 = ( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#511,#434,#435)) REPRESENTATION_CONTEXT('','') );\n\
+        #511 = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) );\n";
+    for (text,moved) in [(DRILLED_AP214,mapped(DRILLED_AP214,"#429","")),(DRILLED_INCH,mapped(DRILLED_INCH,"#510",mm))] {
+        let was = read(text).unwrap_or_else(|r| panic!("{r}"));
+        let now = read(&moved).unwrap_or_else(|r| panic!("{r}"));
+        assert_eq!((was.len(),now.len()),(1,1));
+        let (a,b) = (&was[0].brep,&now[0].brep);
+        assert_eq!(a.vertices.len(),b.vertices.len());
+        for (u,v) in a.vertices.iter().zip(&b.vertices) {
+            let want = [100.-u.p[1],u.p[0],u.p[2]];
+            assert!((0..3).all(|i| (v.p[i]-want[i]).abs() <= 1e-9),"{:?} moved to {:?}",u.p,v.p);
+        }
+        let (va,vb) = (gcs_core::brep::props::volume(a),gcs_core::brep::props::volume(b));
+        assert!((va-vb).abs() <= 1e-9*va && (va-(40.*30.*20.-std::f64::consts::PI*36.*20.)).abs() <= 1e-6*va,"{va} {vb}");
+        assert_eq!(now[0].context,was[0].context,"the solid's context is its own representation's");
+    }
+}
+
+/// **A solid with other geometry beside it is still that solid**, and what was left beside it is
+/// said: a surface model (open, and closed round a volume), a set of curves in a wireframe
+/// representation, construction geometry and annotation, each by its entity, in the file's order;
+/// a shell said with its surface model, not again. A file holding no solid but such things is
+/// refused as before.
+#[test]
+fn beside_the_solid_is_said() {
+    let text = part(&[],&["#30=MANIFOLD_SURFACE_SHAPE_REPRESENTATION('',(#11,#31,#33),#20);","#31=SHELL_BASED_SURFACE_MODEL('Fill.1',(#32));",
+        "#32=OPEN_SHELL('',());","#33=SHELL_BASED_SURFACE_MODEL('',(#16));","#34=SHAPE_REPRESENTATION_RELATIONSHIP('','',#10,#30);",
+        "#35=GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION('',(#36),#20);","#36=GEOMETRIC_CURVE_SET('',());",
+        "#37=SHAPE_REPRESENTATION('',(#32),#20);","#38=CONSTRUCTIVE_GEOMETRY_REPRESENTATION('',(#39),#20);","#39=LINE('',#12,#40);",
+        "#40=VECTOR('',#13,1.);","#41=(DRAUGHTING_MODEL() REPRESENTATION('',(),#20));"]);
+    let s = context::shapes(&parse(&text)).unwrap();
+    assert_eq!(s.solids.iter().map(|f| (f.solid,f.placed)).collect::<Vec<_>>(),[(15,None)]);
+    assert_eq!(s.beside.iter().map(|b| (b.entity,&b.kind[..],b.what)).collect::<Vec<_>>(),[
+        (31,"SHELL_BASED_SURFACE_MODEL","a shell-based surface model"),
+        (33,"SHELL_BASED_SURFACE_MODEL","a shell-based surface model closed round a volume"),
+        (36,"GEOMETRIC_CURVE_SET","a set of curves"),(39,"LINE","construction geometry"),
+        (41,"DRAUGHTING_MODEL+REPRESENTATION","annotation (a draughting model)")]);
+    let r = refused(SHELL);
+    assert_eq!((r.why,r.entity),(Why::Unsupported,Some(15)),"{r}");
 }
 
 /// A file that holds no solid but something else is refused saying what, naming the entity; a
-/// solid in a representation of another kind, or in none, is refused; beside a solid, a body the
-/// reader would leave out is refused.
+/// solid in a representation of another kind, or in none, is refused.
 #[test]
 fn what_is_no_solid_refused() {
     let r = refused(SHELL);
@@ -487,9 +641,8 @@ fn what_is_no_solid_refused() {
     assert_eq!((r.why,r.entity),(Why::Unsupported,Some(10)),"{r}");
     let r = refused(&part(&[],&["#30=MANIFOLD_SOLID_BREP('',#16);"]));
     assert_eq!((r.why,r.entity),(Why::Unsupported,Some(30)),"{r}");
-    let r = refused(&part(&[],&["#30=SHELL_BASED_SURFACE_MODEL('',(#16));"]));
-    assert_eq!((r.why,r.entity),(Why::Unsupported,Some(30)),"{r}");
-    // tessellated geometry beside the solid is a picture of it, and not read
+    // beside the solid, a surface model or tessellated geometry is not read (`beside_the_solid_is_said`)
+    assert!(solids(&part(&[],&["#30=SHELL_BASED_SURFACE_MODEL('',(#16));"])).is_ok());
     assert!(solids(&part(&[],&["#30=TESSELLATED_SHAPE_REPRESENTATION('',(),#20);"])).is_ok());
 }
 

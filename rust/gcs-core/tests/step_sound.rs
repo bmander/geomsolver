@@ -12,7 +12,7 @@ use gcs_core::brep::geom::{Frame,Rigid,Surface,V};
 use gcs_core::brep::nurbs::Net;
 use gcs_core::brep::offset::{shelled,Join,Side};
 use gcs_core::brep::step_read::context::Context;
-use gcs_core::brep::step_read::sound::{sound,Unsound,LOOSE,THIN};
+use gcs_core::brep::step_read::sound::{sound,Unsound,LOOSE};
 use gcs_core::brep::step_read::Why;
 use gcs_core::brep::topo::{reverse_loop,Brep,Coedge,EdgeCurve,Face,Pcurve};
 use crate::brep::{block,poly};
@@ -208,33 +208,144 @@ fn holes_crossing_outside_or_overlapping_are_refused() {
     refused(&inner,Some(holed(&inner,3)),None,"inside another hole");
 }
 
-/// **A loop crossing itself is refused**, the face its witness: a bow tie, and a square whose
-/// corner is pulled across its opposite side. Neither turns one way, so `check` refuses them too;
-/// `sound` is read alone.
-#[test]
-fn a_loop_crossing_itself_is_refused() {
-    let sheet = |pts: &[V]| {
-        let mut b = Brep::default();
-        let vs: Vec<u32> = pts.iter().map(|&p| b.vertex(p)).collect();
-        let n = vs.len();
-        let uses = (0..n).map(|i| {
-            let (a,z) = (pts[i],pts[(i+1)%n]);
-            let d = gcs_core::space::sub(z,a);
-            let l = gcs_core::space::norm(d);
-            let e = b.edge(EdgeCurve::Curve(gcs_core::brep::geom::Curve::Line {p:a,d:gcs_core::space::scale(d,1./l)}),[0.,l],[vs[i],vs[(i+1)%n]]);
-            Coedge {edge:e,reversed:false,pcurve:Pcurve::Line {a:[a[0],a[1]],b:[z[0],z[1]]}}
-        }).collect();
-        b.faces.push(Face {surface:Surface::Plane(Frame::new([0.;3],UP,[1.,0.,0.])),reversed:false,loops:vec![uses],name:String::new()});
-        b
-    };
-    refused(&sheet(&[[0.,0.,0.],[4.,4.,0.],[4.,0.,0.],[0.,4.,0.]]),Some(0),None,"loop 0 crosses itself");
-    refused(&sheet(&[[0.,0.,0.],[4.,0.,0.],[-1.,6.,0.],[0.,4.,0.],[2.,5.,0.]]),Some(0),None,"crosses itself");
-    // a loop touching itself at a point of an edge, away from any vertex: within tolerance
-    refused(&sheet(&[[0.,0.,0.],[4.,0.,0.],[4.,4.,0.],[2.,0.,0.],[0.,4.,0.]]),Some(0),None,"itself");
+/// A sheet of one plane face bounded by the polygon `pts`, each edge's tolerance `tol`.
+fn sheet(pts: &[V],tol: f64) -> Brep {
+    let mut b = Brep::default();
+    let vs: Vec<u32> = pts.iter().map(|&p| b.vertex(p)).collect();
+    let n = vs.len();
+    let uses = (0..n).map(|i| {
+        let (a,z) = (pts[i],pts[(i+1)%n]);
+        let d = gcs_core::space::sub(z,a);
+        let l = gcs_core::space::norm(d);
+        let e = b.edge(EdgeCurve::Curve(gcs_core::brep::geom::Curve::Line {p:a,d:gcs_core::space::scale(d,1./l)}),[0.,l],[vs[i],vs[(i+1)%n]]);
+        b.edges[e as usize].tol = tol;
+        Coedge {edge:e,reversed:false,pcurve:Pcurve::Line {a:[a[0],a[1]],b:[z[0],z[1]]}}
+    }).collect();
+    b.faces.push(Face {surface:Surface::Plane(Frame::new([0.;3],UP,[1.,0.,0.])),reversed:false,loops:vec![uses],name:String::new()});
+    b
 }
 
-/// **A shell inside out, two solids side by side, and a void outside its solid are refused**,
-/// a face of the offending shell the witness; a void inside is sound.
+/// `b`'s faces held sound: whatever `sound` says, it is not of its faces' loops (a sheet bounds
+/// no volume, which is all it may be refused for).
+fn faces_sound(what: &str,b: &Brep) {
+    if let Err(u) = sound(b,&context()) { assert!(u.msg.contains("bounds no volume") || u.msg.contains("inside out"),"{what}: {u:?}") }
+}
+
+/// **A loop crossing itself deeper than its tolerance is refused; one touching itself, or
+/// crossing within its tolerance, is read**, the face the witness: a bow tie, a square whose
+/// corner is pulled across its opposite side, and a loop whose corner is pushed through its
+/// opposite edge by 0.5 are refused; that corner on the edge (a pinch away from any vertex of
+/// it), or pushed through by a tenth of the edges' tolerance, is a tolerant writer's habit and is
+/// read. Neither bow tie turns one way, so `check` refuses them too; `sound` is read alone.
+#[test]
+fn a_loop_crossing_itself_is_refused() {
+    refused(&sheet(&[[0.,0.,0.],[4.,4.,0.],[4.,0.,0.],[0.,4.,0.]],0.),Some(0),None,"loop 0 crosses itself");
+    refused(&sheet(&[[0.,0.,0.],[4.,0.,0.],[-1.,6.,0.],[0.,4.,0.],[2.,5.,0.]],0.),Some(0),None,"crosses itself");
+    let pushed = |d: f64,tol: f64| sheet(&[[0.,0.,0.],[4.,0.,0.],[4.,4.,0.],[2.,-d,0.],[0.,4.,0.]],tol);
+    refused(&pushed(0.5,1e-3),Some(0),None,"crosses itself");
+    faces_sound("a corner on its opposite edge",&pushed(0.,0.));
+    faces_sound("a corner touching its opposite edge within tolerance",&pushed(1e-4,1e-3));
+    faces_sound("a corner through its opposite edge within tolerance",&pushed(-1e-4,1e-3));
+    // a loop doubling back along itself within its tolerance (a pcurve wiggling at a tolerant
+    // edge): the stretch it comes back over is its own neighbourhood
+    faces_sound("a zigzag within tolerance",&sheet(&[[0.,0.,0.],[4.,0.,0.],[4.,4.,0.],[2.,4.,0.],[2.0005,4.,0.],[0.,4.,0.]],1e-3));
+}
+
+/// A band on a cylinder of radius 2 wound round it `turns` times as a helix rising `pitch` a
+/// turn, `width` wide along the axis: its one loop in the cylinder's parameters, its edges lines
+/// there.
+fn band(turns: f64,pitch: f64,width: f64) -> Brep {
+    let mut b = Brep::default();
+    let (u,v) = (TAU*turns,pitch*turns);
+    let at: [[f64;2];4] = [[0.,0.],[u,v],[u,v+width],[0.,width]];
+    let vs: Vec<u32> = at.iter().map(|p| b.vertex([2.*p[0].cos(),2.*p[0].sin(),p[1]])).collect();
+    let uses = (0..4).map(|i| {
+        let (a,z) = (at[i],at[(i+1)%4]);
+        let (p,q) = (b.vertices[vs[i] as usize].p,b.vertices[vs[(i+1)%4] as usize].p);
+        let d = gcs_core::space::sub(q,p);
+        let l = gcs_core::space::norm(d).max(1e-9);
+        let e = b.edge(EdgeCurve::Curve(gcs_core::brep::geom::Curve::Line {p,d:gcs_core::space::scale(d,1./l)}),[0.,l],[vs[i],vs[(i+1)%4]]);
+        Coedge {edge:e,reversed:false,pcurve:Pcurve::Line {a,b:z}}
+    }).collect();
+    b.faces.push(Face {surface:Surface::Cylinder(Frame::new([0.;3],UP,[1.,0.,0.]),2.),reversed:false,loops:vec![uses],name:String::new()});
+    b
+}
+
+/// **A face reaching round its surface more than once is read where it never meets itself a
+/// period along, refused where it does**: a thread's band wound two and a half times round its
+/// cylinder, narrower than its pitch, is read; wider than its pitch, each turn crosses the next.
+#[test]
+fn a_band_wound_round_a_cylinder_overlaps_itself_only_where_its_turns_meet() {
+    faces_sound("a band narrower than its pitch",&band(2.5,4.,1.));
+    refused(&band(2.5,4.,5.),Some(0),None,"crosses");
+}
+
+/// A face on a cylinder of radius 2 bounded by the polygon `at` in its parameters, its edges
+/// lines there; with `seam`, its second and fourth sides one edge used both ways (they must be a
+/// period apart).
+fn on_cylinder(at: &[[f64;2]],seam: bool) -> Brep {
+    let mut b = Brep::default();
+    let n = at.len();
+    let vs: Vec<u32> = at.iter().map(|p| b.vertex([2.*p[0].cos(),2.*p[0].sin(),p[1]])).collect();
+    let mut uses = Vec::new();
+    for i in 0..n {
+        let (a,z) = (at[i],at[(i+1)%n]);
+        if seam && i == 3 {
+            let e = uses.iter().map(|c: &Coedge| c.edge).nth(1).unwrap();
+            uses.push(Coedge {edge:e,reversed:true,pcurve:Pcurve::Line {a:z,b:a}});
+            continue
+        }
+        let (p,q) = (b.vertices[vs[i] as usize].p,b.vertices[vs[(i+1)%n] as usize].p);
+        let d = gcs_core::space::sub(q,p);
+        let l = gcs_core::space::norm(d).max(1e-9);
+        let e = b.edge(EdgeCurve::Curve(gcs_core::brep::geom::Curve::Line {p,d:gcs_core::space::scale(d,1./l)}),[0.,l],[vs[i],vs[(i+1)%n]]);
+        uses.push(Coedge {edge:e,reversed:false,pcurve:Pcurve::Line {a,b:z}});
+    }
+    b.faces.push(Face {surface:Surface::Cylinder(Frame::new([0.;3],UP,[1.,0.,0.]),2.),reversed:false,loops:vec![uses],name:String::new()});
+    b
+}
+
+/// **A loop once round a periodic surface whose seam leans across it is read; one lapped over
+/// itself is refused**: a band whose seam runs a radian round as it rises reaches more than a
+/// period along `u` and meets its image a period along only on its seam; a loop reaching two
+/// radians past a whole turn along its foot overlaps itself.
+#[test]
+fn a_band_whose_seam_leans_is_read() {
+    faces_sound("a band with a leaning seam",&on_cylinder(&[[0.,0.],[TAU,0.],[TAU+1.,1.],[1.,1.]],true));
+    refused(&on_cylinder(&[[0.,0.],[TAU+2.,0.],[TAU+3.,1.],[1.,1.]],false),Some(0),None,"overlap");
+}
+
+/// **A use whose curve in its face's parameters leaps a period is refused**, the face its
+/// witness: an arc of three quarters of a turn on a cylinder, its pcurve the arc inverted onto
+/// the cylinder between ends a quarter turn apart the short way, so that it changes branch half
+/// way (what a reader that took an arc's two ends for the whole of it hands over).
+#[test]
+fn a_use_leaping_a_period_is_refused() {
+    use gcs_core::brep::geom::Curve;
+    let mut b = Brep::default();
+    let frame = Frame::new([0.;3],UP,[1.,0.,0.]);
+    let p = |a: f64,z: f64| [2.*a.cos(),2.*a.sin(),z];
+    let vs = [b.vertex(p(0.,0.)),b.vertex(p(1.5*PI,0.)),b.vertex(p(1.5*PI,1.)),b.vertex(p(0.,1.))];
+    let arc = |z: f64| EdgeCurve::Curve(Curve::Circle(Frame::new([0.,0.,z],UP,[1.,0.,0.]),2.));
+    let line = |a: V,z: V| EdgeCurve::Curve(Curve::Line {p:a,d:gcs_core::space::scale(gcs_core::space::sub(z,a),1./gcs_core::space::distance(a,z))});
+    let e0 = b.edge(arc(0.),[0.,1.5*PI],[vs[0],vs[1]]);
+    let e1 = b.edge(line(p(1.5*PI,0.),p(1.5*PI,1.)),[0.,1.],[vs[1],vs[2]]);
+    let e2 = b.edge(arc(1.),[0.,1.5*PI],[vs[3],vs[2]]);
+    let e3 = b.edge(line(p(0.,1.),p(0.,0.)),[0.,1.],[vs[3],vs[0]]);
+    let loops = vec![vec![
+        Coedge {edge:e0,reversed:false,pcurve:Pcurve::Inverse {a:[0.,0.],b:[-0.5*PI,0.]}},
+        Coedge {edge:e1,reversed:false,pcurve:Pcurve::Line {a:[1.5*PI,0.],b:[1.5*PI,1.]}},
+        Coedge {edge:e2,reversed:true,pcurve:Pcurve::Line {a:[0.,1.],b:[1.5*PI,1.]}},
+        Coedge {edge:e3,reversed:false,pcurve:Pcurve::Line {a:[0.,1.],b:[0.,0.]}},
+    ]];
+    b.faces.push(Face {surface:Surface::Cylinder(frame,2.),reversed:false,loops,name:String::new()});
+    refused(&b,Some(0),None,"a period");
+}
+
+/// **Lumps and voids nested as their senses say are sound, however many; a shell inside out, a
+/// void outside every lump, a lump inside a lump, a void inside a void, and two shells crossing
+/// are refused**, a face of the offending shell the witness. Two blocks apart (a body a cut
+/// parted, which `step::write` writes as one shell's faces) and an island in a cavity are sound.
 #[test]
 fn shells_inside_out_or_apart_are_refused() {
     let cube = block([0.;3],[10.,10.,10.]);
@@ -242,11 +353,11 @@ fn shells_inside_out_or_apart_are_refused() {
     let inverted = flipped(&cube,&all);
     inverted.check(1e-7).unwrap();
     refused(&inverted,Some(0),None,"inside out");
-    // two blocks apart: two solids
+    // two blocks apart: two lumps of one body
     let pair = cube.joined(&block([20.,0.,0.],[25.,5.,5.]));
     pair.check(1e-7).unwrap();
+    is_sound("two blocks apart",&pair);
     let second: Vec<usize> = (cube.faces.len()..pair.faces.len()).collect();
-    refused(&pair,Some(second[0]),None,"a second solid");
     // the small one turned inside out beside the big one: a void outside it
     let beside = flipped(&pair,&second);
     beside.check(1e-7).unwrap();
@@ -254,6 +365,15 @@ fn shells_inside_out_or_apart_are_refused() {
     // inside the big one, the same void is sound
     let within = flipped(&cube.joined(&block([2.,2.,2.],[5.,5.,5.])),&second);
     is_sound("block with a cubic void",&within);
+    // and a block inside that void, an island in a cavity: sound; not turned, a lump in a lump
+    let island = within.joined(&block([3.,3.,3.],[4.,4.,4.]));
+    is_sound("an island in a cavity",&island);
+    refused(&cube.joined(&block([2.,2.,2.],[5.,5.,5.])),Some(6),None,"inside the solid of face 0");
+    // two blocks overlapping: their shells cross
+    let overlapping = cube.joined(&block([5.,5.,5.],[15.,15.,15.]));
+    overlapping.check(1e-7).unwrap();
+    let u = sound(&overlapping,&context()).unwrap_err();
+    assert!(u.msg.contains("crosses the shell"),"{u:?}");
     // the hollowed block's void carried out through its wall
     let hollow = shelled(&block([0.,0.,0.],[10.,8.,6.]),&[],1.,Side::In,Join::Round).unwrap();
     let shells = shells_of(&hollow);
@@ -267,11 +387,14 @@ fn shells_inside_out_or_apart_are_refused() {
     let both = flipped(&hollow,&(0..hollow.faces.len()).collect::<Vec<_>>());
     both.check(1e-7).unwrap();
     let u = sound(&both,&context()).unwrap_err();
-    assert!(u.msg.contains("second solid") || u.msg.contains("outside"),"{u:?}");
+    assert!(u.msg.contains("inside out") || u.msg.contains("outside"),"{u:?}");
     // a void inside a void
     let nest = flipped(&cube.joined(&block([1.,1.,1.],[9.,9.,9.])).joined(&block([3.,3.,3.],[6.,6.,6.])),&(6..18).collect::<Vec<_>>());
     nest.check(1e-7).unwrap();
     refused(&nest,Some(12),None,"inside the void of face 6");
+    // no faces at all: nothing bounded
+    let u = sound(&Brep::default(),&context()).unwrap_err();
+    assert_eq!(u.why,Why::Open,"{u:?}");
 }
 
 /// The faces of `b` by shell, each in order.
@@ -300,7 +423,8 @@ fn shells_of(b: &Brep) -> Vec<Vec<usize>> {
 /// **A vertex or an edge moved off its faces by more than `LOOSE` of the solid is refused**, an
 /// edge through it the witness, its tolerance said against the file's uncertainty; moved by less,
 /// its tolerance measured, it is sound. An edge whose tolerance is not small against its length,
-/// and an edge whose vertices stand within their tolerances, are refused.
+/// and an edge whose vertices stand within their tolerances, are a tolerant writer's habits, and
+/// sound.
 #[test]
 fn tolerances_past_the_geometry_are_refused() {
     let cube = block([0.;3],[10.,10.,10.]);
@@ -329,7 +453,7 @@ fn tolerances_past_the_geometry_are_refused() {
     let u = sound(&lifted,&context()).unwrap_err();
     assert!(u.edge == Some(e) || u.edge.is_some_and(|x| cube.edges[x].v.iter().any(|v| cube.edges[e].v.contains(v))),"{u:?}");
     // a prism with a short edge: its tolerance past half its length, then its ends' tolerances
-    // reaching each other
+    // reaching each other — read, as CADGenBench 246 and 217 are
     let short = prism(&Profile {names:vec![],origin:[0.;3],normal:UP,loops:vec![poly(&[[0.,0.,0.],[50.,0.,0.],[50.,30.,0.],[0.01,30.,0.],[0.,30.,0.]])]},0.,20.).unwrap();
     is_sound("a prism with a short edge",&short);
     let e = (0..short.edges.len()).find(|&e| {
@@ -338,13 +462,10 @@ fn tolerances_past_the_geometry_are_refused() {
     }).unwrap();
     let mut thin = short.clone();
     thin.edges[e].tol = 0.6*0.01;
-    assert!(thin.edges[e].tol > THIN*0.01);
-    refused(&thin,None,Some(e),"not small against its length");
+    sound(&thin,&context()).unwrap();
     let mut near = short.clone();
     for v in short.edges[e].v { near.vertices[v as usize].tol = 0.006; }
-    let u = sound(&near,&context()).unwrap_err();
-    assert!(u.msg.contains("within their tolerances"),"{u:?}");
-    assert!(u.edge.is_some_and(|x| short.edges[x].v == short.edges[e].v),"{u:?}");
+    sound(&near,&context()).unwrap();
 }
 
 /// **A boundary of hundreds of holes is held sound in well under a second**: a plate of 400

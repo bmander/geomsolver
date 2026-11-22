@@ -388,8 +388,9 @@ impl<'f,'a> Geometry<'f,'a> {
     }
     /// An `AXIS2_PLACEMENT_3D` as a right-handed frame (the standard's axes are right-handed by
     /// construction, `y = z × x`): its axis `[0, 0, 1]` and its reference direction the standard's
-    /// default (`[1, 0, 0]`, or `[0, 0, 1]` about that axis) where unset, the reference made
-    /// square to the axis; refused where it lies along the axis.
+    /// default where unset (ISO 10303-42's `first_proj_axis`: `[1, 0, 0]`, or `[0, 1, 0]` about an
+    /// axis along `±x`, CATIA's `AXIS2_PLACEMENT_3D('…',#p,(-1,0,0),$)`), the reference made square
+    /// to the axis; refused where it lies along the axis.
     pub fn placement(&self,from: u32,r: Option<u32>) -> Result<Frame,Refusal> {
         let (r,_,v) = self.of(from,r,&["AXIS2_PLACEMENT_3D"],"a placement")?;
         if v.len() != 4 { return Err(Refusal::malformed(r,"a placement of four parameters expected")) }
@@ -397,7 +398,14 @@ impl<'f,'a> Geometry<'f,'a> {
         let z = match optional(v.get(2),r,"a placement's axis")? { Some(a) => self.direction(r,Some(a))?,None => [0.,0.,1.] };
         let x = match optional(v.get(3),r,"a placement's reference direction")? {
             Some(a) => self.direction(r,Some(a))?,
-            None => if z == [1.,0.,0.] { [0.,0.,1.] } else { [1.,0.,0.] },
+            // (the default's own part square to the axis, however small: an axis a rounding off
+            // `±x` — CATIA's `(1.,-2.1862853408E-015,0.)` — leaves `[1, 0, 0]` a hair off it, and
+            // the standard's projection is still a direction; where the turn starts about such an
+            // axis is all it says)
+            None => {
+                let v = if z[1] == 0. && z[2] == 0. { [0.,1.,0.] } else { [1.,0.,0.] };
+                normalised(sub(v,scale(z,dot(v,z)))).ok_or_else(|| Refusal::malformed(r,"a placement whose axis leaves its reference direction none"))?
+            }
         };
         if !(norm(sub(x,scale(z,dot(x,z)))) > 1e-12) { return Err(Refusal::malformed(r,"a placement whose reference direction lies along its axis")) }
         Ok(Frame::new(o,z,x))
