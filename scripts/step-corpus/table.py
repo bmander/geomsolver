@@ -185,10 +185,23 @@ def account():
         if line.startswith("#") or line.startswith("path\t") or not line.strip():
             continue
         f = line.rstrip("\n").split("\t")
-        if len(f) != 4 or f[1] not in VERDICTS:
-            raise SystemExit(f"{ACCOUNT}: a row is not path, verdict, faces, why: {line!r}")
-        out[f[0]] = (f[1], f[2], f[3])
+        if len(f) not in (4, 5) or f[1] not in VERDICTS or (len(f) == 5 and f[4] not in ("", "occt")):
+            raise SystemExit(f"{ACCOUNT}: a row is not path, verdict, faces, why[, reference]: {line!r}")
+        out[f[0]] = (f[1], f[2], f[3], f[4] if len(f) == 5 else "")
     return out
+
+
+def set_aside(f, o, m, why):
+    """The reference of a file whose account sets the measurer aside (its fifth column `occt`):
+    OCCT's converged reading, at the bars `own` gives `occt!` — where the evidence shows the
+    measurer misreads the file (brepkit's torus grown past its hole: the whole spindle torus,
+    whose oriented flux is apple less lemon, 1973.92, OCCT's reading, where the measurer reads the
+    apple alone, the case's closed form)."""
+    alone = max(ALONE, SLACK * o["tol_edge"] * o["area"] / o["volume"])
+    return (o["volume"], o["area"], "occt!", max(alone, AGREE * o["spread_volume"]),
+            max(alone, AGREE * o["spread_area"]),
+            f"the measurer set aside by the account (it reads {m['volume']!r} {m['area']!r}): {why}"
+            if m and "volume" in m else f"the measurer set aside by the account: {why}")
 
 
 def quad_faces(f, sha):
@@ -356,6 +369,7 @@ def write(outs):
     # sources before their variants
     files.sort(key=lambda f: (f.startswith("variants/"), f))
     known, rows, skipped = {}, [], []
+    acc = account()
     for f in files:
         try:
             o = json.load(open(os.path.join(CORPUS, "oracle", f + ".json")))
@@ -381,6 +395,8 @@ def write(outs):
         except (OSError, ValueError):
             pass
         ref = reference(f, o, m, known, cs)
+        if acc.get(f, ("", "", "", ""))[3] == "occt":
+            ref = set_aside(f, o, m, acc[f][2][:160])
         if ref is not None:
             ref = checked(f, sha, o, m, ref)
         if ref is None:
@@ -416,10 +432,9 @@ def write(outs):
             row["note"] = (row["note"] + "; " if row["note"] else "") + \
                 f"OCCT reads {o['solids']} solids of {o['step_solids']}"
         rows.append(row)
-    acc = account()
     paths = {r["path"] for r in rows}
     for r in rows:
-        v, faces, why = acc.get(r["path"], ("", "", ""))
+        v, faces, why, _ = acc.get(r["path"], ("", "", "", ""))
         r.update(verdict=v, unchecked=faces, account=why)
     for p in sorted(set(acc) - paths):
         print(f"account: {p} has no row of the table")

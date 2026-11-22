@@ -2,7 +2,8 @@
 
 A boundary-representation (B-rep) solid-modelling kernel in Rust. It builds solids from exact
 analytic and NURBS geometry, combines them with Booleans, meshes them to a stated tolerance and
-writes STEP. It has no dependencies, and native and WebAssembly builds produce identical bits.
+reads and writes STEP. It has no dependencies, and native and WebAssembly builds produce identical
+bits.
 
 **Status: extracted, not yet shaped for general use.** The kernel was built inside
 [geomsolver](https://github.com/bmander/geomsolver), a geometric constraint solver, to make
@@ -35,7 +36,14 @@ it to crates.io; what changes in each release is in [CHANGELOG.md](CHANGELOG.md)
   union of its faces' normal sweeps and the tubes and balls between them.
 - **Measures:** exact volume (by Green's theorem over each face) and area.
 - **Meshing:** a constrained Delaunay mesh refined until it is within a measured sag of the surface.
-- **Output:** STEP AP214 with p-curves and seam curves, and STL.
+- **Output:** STEP AP214 with p-curves and seam curves, stating no tighter an uncertainty than
+  the file holds, and STL.
+- **Input:** a manifold solid read from an AP203, AP214 or AP242 advanced B-rep
+  (`step_read::read`), each face on the file's own surface and each edge on its own curve,
+  nothing refitted and nothing healed. A file is read correctly or refused naming the entity at
+  fault (`Refusal`); its units and stated uncertainty are read, its tolerances measured. A
+  solid a mapped item places is read moved; an assembly's product structure is refused, not read
+  yet.
 - **Errors** carry a kind (`NotManifold`, `Open`, `Refused`, …). A caller can act on the kind
   without parsing the message.
 - **Determinism:** the elementary functions are the crate's own (`util::fmath`), so the same input
@@ -79,7 +87,7 @@ assert!((volume(&drilled) - (1000. - 90. * std::f64::consts::PI)).abs() < 1e-6);
 - A public API designed for strangers: builders beside the typed recipe (`recipe::Recipe`), which
   is built in memory and never read from text.
 - Edge fillets and chamfers, offsets of B-spline faces, and a sweep of any section along any path.
-- STEP import.
+- Assemblies read from a STEP file's product structure.
 - The kernel's own test suite moved into the crate, out of geomsolver's.
 
 ## Licence
