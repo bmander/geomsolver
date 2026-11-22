@@ -1035,6 +1035,12 @@ fn k2(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Optio
     let revolved = match super::patches::Revolved::read(tool) {
         Ok(r) => r,
         Err(why @ Unbuilt::Curved {..}) => return match general_built(tool,path,[a,b],bar,tol,blank) {
+            // **a ring, the ring road's** (#942 T1d-ring): a tool of revolution clear of its axis
+            // whose contact the road reads at every instant it is asked (`rings::admits`) is built
+            // on it, judged as every road here is — its own refusal standing where it cannot build
+            // it (brep-bench's ring along a spline, its meridians touched whole); any other keeps
+            // K2's refusal
+            Err(Unbuilt::Curved {..}) if super::rings::admits(tool,path,[a,b]).is_ok() => ring_built(tool,path,[a,b],bar,tol,blank),
             Err(Unbuilt::Curved {..}) => Err(why),
             built => built,
         },
@@ -1184,6 +1190,25 @@ pub fn ring_fitted(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64)
         mark = (crate::util::clock::Instant::now(),super::rings::spent::now());
     };
     let ring = super::rings::Ring::read(tool)?;
+    // **a meridian touched whole over a stretch of the roll is refused by name** (#942 T1d-ring): a
+    // ring carried along a path in a plane its axis lies in (brep-bench's ring along a spline)
+    // touches its top and bottom meridians whole at every instant, and the sweep of each is a sheet
+    // of its own — the groove's floor, 0.4 below either contact curve's tube. The fit enters it
+    // (`rings::Strip`, its sides the tubes' own seams on the meridian, its meetings given), but the
+    // corners at the end poses are not yet arranged: there the ring, the strip, a tube's touching
+    // side and the dipped stretch beyond all touch one another, and arranged so (at 1e-5 as at the
+    // bench's 5.3e-8) the ring where it stops lies on both sides of the tube's rim beside the strip's
+    // corner, and the groove and the block are one cell. Read at the closed class's poses
+    // (`K2_POSES`) before anything is fitted; an instant alone touching one whole (an end pose) is
+    // no sheet
+    let touched: Vec<(f64,f64,usize)> = (0..=K2_POSES).map(|k| a+(b-a)*k as f64/K2_POSES as f64)
+        .map(|t| Ok::<_,Unbuilt>((t,ring.touched_whole(&crate::trajectory::Twist::body(path.at(t)?)))))
+        .filter_map(|r| match r { Ok((t,Some((theta,k)))) => Some(Ok((t,theta,k))),Ok(_) => None,Err(e) => Some(Err(e)) })
+        .collect::<Result<_,_>>()?;
+    if touched.len() >= 2 {
+        let (t,theta,k) = touched[0];
+        return Err(Unbuilt::Curved {at:path.pose(t)?.point(ring.meridian_point(theta,k))})
+    }
     // **the roll cut where the contact changes shape** (#880 T1d, `rings::changes`): a fold pair born
     // or vanishing partway — the tumbling torus turned whole, and thin — each stretch fitted on its
     // own, its rows half the roll's grain clear of the cuts (where the pair has no width; the two rows
