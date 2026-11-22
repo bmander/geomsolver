@@ -651,6 +651,52 @@ fn two_given_edges_of_one_operand_crossing_on_a_face_share_a_vertex() {
     assert_eq!(quarters,4,"the top parted into four by the feet");
 }
 
+/// **A face takes the index of a surface given it is the same as, in any frame** (#880, a kernel
+/// gate with no sweep in it): a torus of radii 2 and ½ about `z`, and a block below the plane
+/// `z = 0.3`, their meeting — the two circles of radii 1.6 and 2.4 there, off the torus's own seams
+/// — given on the same torus written in another frame, its seam turned 0.7 rad about its axis, and
+/// the circles so too. The torus's face is that surface to the tolerance (`ssi::same`), as `Shared::index`
+/// reads a face against a surface given, and phase 0's class of it (`Arrangement::classed`, #994)
+/// takes its index: the meeting laid is the given circles exactly. Taken only where a face was the
+/// given surface exactly, the face was given an index of its own and its meeting searched again —
+/// as the ring road's poses, turned about their own axes, lost the meetings given them: the 80°
+/// tumbling torus judged wrong at one seam position, the full turn refused at every one but its
+/// own (`swept_rings::the_tumbling_torus_is_built_wherever_its_start_poses_seam_stands`).
+#[test]
+fn a_face_takes_the_index_of_a_surface_given_it_is_the_same_as_in_any_frame() {
+    use gcs_core::brep::boolean::{arrangement_given,Given};
+    use gcs_core::brep::geom::{Curve,Frame,Surface};
+    use gcs_core::brep::topo::EdgeCurve;
+    let ring = gcs_core::brep::build::torus([0.;3],[0.,0.,1.],2.,0.5).unwrap();
+    let own = ring.faces.iter().find_map(|f| match &f.surface { Surface::Torus(f,..) => Some(*f),_ => None })
+        .expect("the ring's face a torus");
+    let x = [0.7f64.cos(),0.7f64.sin(),0.];
+    assert!((own.x[0]-x[0]).abs()+(own.x[1]-x[1]).abs() > 0.1,"the given frame another than the face's");
+    let (turned,h) = (Frame::new([0.;3],[0.,0.,1.],x),0.3);
+    let below = block([-4.,-4.,-2.],[4.,4.,h]);
+    let top = below.faces.iter().map(|f| &f.surface)
+        .find(|s| matches!(s,Surface::Plane(_)) && [[0.,0.,h],[1.,1.,h]].iter().all(|&p| s.implicit(p).abs() < 1e-12))
+        .expect("the block's face z = 0.3").clone();
+    let circles: Vec<Curve> = [1.6,2.4].iter().map(|&r| Curve::Circle(Frame::new([0.,0.,h],[0.,0.,1.],x),r)).collect();
+    let given = Given {surfaces:[Surface::Torus(turned,2.,0.5),top],curves:circles.clone(),touches:vec![]};
+    let domain = block([-3.;3],[3.;3]);
+    let complex = arrangement_given(&domain,&[&ring,&below],&[given],1e-9).expect("arranged");
+    for c in &circles {
+        assert!(complex.b.edges.iter().any(|e| matches!(&e.curve,EdgeCurve::Curve(ec) if ec == c)),
+            "the given circle {c:?} laid as given");
+    }
+    // the ring above the plane and below it, the rest of the block in the domain, the domain
+    // above it and the domain under the block: by Pappus, the tube's segment over `z = 0.3` turned about the axis at radius 2
+    let v = volumes(&complex);
+    let tau = std::f64::consts::TAU;
+    let (above,ring) = (tau*2.*(0.25*0.6f64.acos()-0.3*0.4),tau*2.*std::f64::consts::PI*0.25);
+    let (lower,upper) = (36.*2.3,36.*2.7);
+    assert_eq!(v.len(),5,"{v:?}");
+    let mut v = v; v.sort_by(f64::total_cmp);
+    let mut want = [above,ring-above,upper-above,lower-(ring-above),36.]; want.sort_by(f64::total_cmp);
+    for (got,want) in v.iter().zip(want) { close(*got,want,1e-6) }
+}
+
 /// **A sheet tangent to a face at the tolerance is ordered round its rim by a step in** (#942, a
 /// kernel gate with no sweep in it): the sheet `z = a x + x²/2` over `x` in `[0, 1.6]`, a quadratic
 /// B-spline, its rim `x = 0` on the plane `z = 0`, the top of a block below it, and that line given

@@ -31,6 +31,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   whole for that instant alone (the tube's two branches meeting and exchanging its halves), and
   `closed::ring`'s road and `rings::admits` refuse there (`Curved` at the meridian's outer point)
   before anything is fitted.  Probes: `rings::shape_at`, `whole_gap`, `meridian_read`.
+- **A class of faces takes the index of a surface given it is the same as, in any frame** (#880):
+  `meeting::Shared::class` takes the tolerance (breaking) and takes a given surface's index where
+  one of the class's surfaces is `ssi::same` to it, as `Shared::index` reads a face against it —
+  not only where it is that surface exactly — and only an index no other class has taken.  Since
+  0.21.0's phase 0 (`Arrangement::classed`) a ring's pose turned about its own axis lost the
+  meetings given it: the ring road's 80° tumbling torus was judged wrong with its start pose's
+  seam at −2.78, and its full turn refused at every end pose's seam but its own; both build again.
 
 ## [0.21.0] - 2026-11-22
 
