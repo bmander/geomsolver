@@ -14,8 +14,11 @@ body's material nor into a hole. A flush boss standing on the flat side short of
 wall reaching back over the round's section where the flat runs into the half circle, keeps the
 half circle's round off it too: through 0.228 that round took its whole section there and the
 rim was refused ("Move `outer.boss.disc` clear of the seam, or over it"); now it is built. A
-half-space, a solid kept within, a face the chain itself crosses and the chain's own faces stay
-the ends of their own runs alone.
+half-space of the run's own body, a solid kept within, a face the chain itself crosses and the chain's own faces stay the ends of
+their own runs alone; another body's plane wall is the chain's end too. A wall of another body
+turning back over a run at a reflex corner of less than a right angle is now its end, kept on its
+side: through 0.228 the run ended square at the corner and took the boss's material beside it (96
+mm³ at a square boss turned 45°).
 
 ## [NEXT-taper-root]
 

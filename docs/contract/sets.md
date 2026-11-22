@@ -536,10 +536,12 @@ edge of the other turn carries nothing on, and the run ends on it (a deck's corn
 arc running tangent into its side, flush with the block's, the block's side meeting its top in a
 convex edge: the foot's fill kept within the block, not hung past its wall); nor one whose
 surface the run itself goes across (`BodyFaces::goes_across`: no side of it holds the run), nor a
-plane turning back over it at a reflex corner of less than a right angle — the run ends there
-square — and with them where an edge a run-out at that end runs along ends, a face or the plane
+plane of the run's own body turning back over it at a reflex corner of less than a right angle —
+the run ends there square; another body's wall so is its end (`BodyFaces::another_body`, #994) —
+and with them where an edge a run-out at that end runs along ends, a face or the plane
 square to it (`BodyFaces::end_faces`, `faces::EndBy`, #952, [rounds.md](rounds.md)); a closed run
-ends nowhere. Where `S`'s edges are in several runs (`BodyFaces::runs`; a crease a slot cuts
+ends nowhere. A run going on across a seam ends where its smooth chain ends, on each face there
+whose solid it is kept out of or that is another body's (`BodyFaces::chain_ends`, #994). Where `S`'s edges are in several runs (`BodyFaces::runs`; a crease a slot cuts
 across, #881, [0.209]), a point is held to the ends of the run nearest it (`EndRuns`: the run of
 the edge `nearest_edge` names), the run `lowering`'s piece beside it is built along: within every
 run's ends at once is within none where the runs either side of a slot end on its two sides, and

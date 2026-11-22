@@ -332,3 +332,105 @@ fn a_notch_cut_at_the_seam() {
 }
 
 
+
+/// The square boss over the seam turned 0.04 rad, its wall `outer.boss.k3` crossing the half
+/// circle a little off square: the ring ends on it, kept on its side (a plane not through the
+/// ring's axis, carried round past it), and the plate less its rim is the band model's to 1e-9.
+#[test]
+fn a_square_boss_over_the_seam() {
+    let foot = Foot::Square { at: [-372.0, -80.0], h: 15.0, turn: -0.04 };
+    holds(foot, false, Word::Round(10.0));
+    holds(foot, false, Word::Chamfer(6.0));
+}
+
+/// **What the definition gives where the ring's own edge crosses the wall's plane** (a defect held
+/// as it stands, #994): the square over the seam not turned, its wall `x = −387` crossing the half
+/// circle 1.4° off square at `V`.  The half circle's edge comes back across that plane at its far
+/// end (`x = −384.62`), so the plane is no face it ends on (`BodyFaces::goes_across`: no side of
+/// it holds the run), and the ring's region ends where `distance(p, crease) <= distance(p,
+/// meeting)` puts it, at the meridian through `V` — which leans into the boss.  The body less
+/// `taken` then loses the boss's material between the wall and that meridian: at a depth where
+/// the section is `δ` wide, `∫ ρ |θ_wall(ρ) − θ_V| dρ` over `R − δ ≤ ρ ≤ R` in polar about the
+/// half circle's centre, `θ_wall(ρ) = −acos((x_w + L) / ρ)`.  The field and the pieces agree with
+/// that (the gate passes) and both are the band model less that wedge, to 1e-9: 1.149 mm³ at R10.
+/// The shape meant is the band model's — a round never takes another body's material — and a
+/// half-space cannot say it (the plane cuts the ring's far end); the boss's own solid, kept out
+/// of as a boss's cylinder is (`kept_out_of`), would.
+#[test]
+fn a_wall_the_rings_own_edge_crosses_takes_the_bosss_wedge() {
+    let (xw, r) = (-387.0f64, 10.0f64);
+    let theta_v = (-(R * R - (xw + L).powi(2)).sqrt()).atan2(xw + L);
+    let simpson = |f: &dyn Fn(f64) -> f64, a: f64, b: f64, n: usize| {
+        let h = (b - a) / n as f64;
+        h / 3.0 * (0..=n).map(|k| {
+            let w = if k == 0 || k == n { 1.0 } else if k % 2 == 1 { 4.0 } else { 2.0 };
+            w * f(a + k as f64 * h)
+        }).sum::<f64>()
+    };
+    let wedge = |delta: f64| simpson(&|rho: f64| rho * (-((xw + L) / rho).acos() - theta_v).abs(), R - delta, R, 2000);
+    let taken = simpson(&|t: f64| wedge(r - r * t.sin()) * r * t.sin(), 0.0, 0.5 * PI, 400);
+    let foot = Foot::Square { at: [-372.0, -80.0], h: 15.0, turn: 0.0 };
+    let (got, _) = built(foot, false, Word::Round(r));
+    let want = expected(foot, false, Word::Round(r)) - taken;
+    assert!((got - want).abs() <= 1e-9 * want, "{got} against {want} ({taken} taken from the boss)");
+}
+
+/// **Another body's wall turning back over the run is its end** (#994, `BodyFaces::another_body`):
+/// a square boss turned 45° on the flat side, far from the seam, its wall meeting the rim at a
+/// reflex corner of 45°.  A side of the plate's own there is no end — the run ends square — but
+/// the boss's wall is: kept on its side, the round takes nothing of the boss (before, ending
+/// square at the corner, it took 96 mm³ of it).  The chamfer of 6, whose section stays within
+/// the wall's reach (the boss's side corners stand 8.74 in from the rim), is the band model's to
+/// 1e-9.  The round of 10 reaches past those corners, and the wall's plane, a half-space, goes on
+/// past them where the boss does not: the round is kept off it there too, and leaves 0.04 mm³
+/// more than the band model; turned 30°, the corner nearer the rim, 21 mm³ more.  Never less: a
+/// round takes no body's material but its own, and where a half-space cannot say how far the
+/// boss goes, it keeps too much rather than taking the boss's.  The boss's own solid, kept out of
+/// as a cylinder is (`kept_out_of`), is what would say it.
+#[test]
+fn another_bodys_wall_turning_back_over_the_run_ends_it() {
+    let diamond = Foot::Square { at: [-200.0, -80.0], h: 15.0, turn: PI / 4.0 };
+    holds(diamond, false, Word::Chamfer(6.0));
+    let (got, _) = built(diamond, false, Word::Round(10.0));
+    let want = expected(diamond, false, Word::Round(10.0));
+    assert!(got > want && got < want + 0.1, "{got} against {want}");
+    let turned = Foot::Square { at: [-200.0, -80.0], h: 15.0, turn: PI / 6.0 };
+    let (got, _) = built(turned, false, Word::Round(10.0));
+    let want = expected(turned, false, Word::Round(10.0));
+    assert!(got > want + 1.0 && got < want + 30.0, "{got} against {want}");
+}
+
+/// **The refusals that remain** (`lowering::back_over_said`): where a face a run ends on reaches
+/// back over the section at a seam and the chain gone on across it is not kept off it — a
+/// half-space the half circle's own edge crosses (the 45° boss beside the seam: its wall's plane
+/// would cut the half circle's far end), and a solid the run is kept within (a short flat side
+/// ending at a corner on a small convex arc of its own plate, whose cylinder the half circle's
+/// section at the seam stands partly outside).
+#[test]
+fn a_face_reaching_back_over_the_seam_that_keeps_no_chain_is_refused() {
+    let diamond = Foot::Square { at: [-366.0, -80.0], h: 15.0, turn: PI / 4.0 };
+    let why = refusal(&document(diamond, false, Word::Round(10.0)));
+    assert!(why.starts_with("`part`'s round or chamfer `taken`: its round goes on tangent from `outer.flange.s` into \
+        `outer.flange.al` across their seam at [-384.62, -88.74, -131.5]mm, and `outer.boss.k3`, which its run along \
+        `outer.flange.s` ends on, reaches 2.7mm back over the section there"), "{why}");
+    assert!(why.ends_with("Move `outer.boss.k3` clear of the seam, or over it"), "{why}");
+    let src = "use std\nuse std.solids (cut, union)\nuse std.rounds (round)\nin std.top {\n  \
+        o := point\n  fix((0, 20)) o\n  c := point\n  fix((-20, 20)) c\n  d := point\n  fix((0, 0)) d\n  \
+        p := point\n  fix((1, 0)) p\n  k := point\n  fix((-1, -1)) k\n  q := point\n  fix((-1, 1.2360679775)) q\n  \
+        al := arc(center: o, start: c, end: d)\n  s := line(d, p)\n  sm := arc(center: k, start: p, end: q)\n  \
+        t := line(q, c)\n  outline := face(al, s, sm, t)\n}\n\
+        plate := solid(std.solids.Prism(outline, from: 0mm, to: 5mm))\npart := solid(plate)\n\
+        part.plate.near round(r: 1.5mm) part.plate\n";
+    let why = refusal(src);
+    assert!(why.contains("its round goes on tangent from `plate.s` into `plate.al` across their seam")
+        && why.contains("and `plate.sm`, which its run along `plate.s` ends on, reaches 0.46mm back over the section there")
+        && why.ends_with("Move `plate.sm` clear of the seam, or over it"), "{why}");
+}
+
+/// The export's refusal of `part` in document `src`, as it is printed.
+fn refusal(src: &str) -> String {
+    let e = solved(src);
+    let say = gcs_core::brep::sweep::Say { stage: &|_: &str| {}, mark: &|_| {} };
+    let body = crate::common::ent(&e, "part").i();
+    gcs_core::brep::export::exact(&e.sketch, body, None, None, &say).err().expect("refused").message
+}
