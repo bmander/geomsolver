@@ -778,7 +778,15 @@ fn build_by(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank:
             // tool at all
             return match super::planar_solid::swept(tool,path,roll,bar,tol) {
                 Ok(Some(swept)) => cut_blank(swept,blank,tol),
-                Ok(None) => k2(tool,path,roll,bar,tol,blank),
+                // an upright tool of revolution under a motion keeping its plane (#880 T1f): the
+                // region each section's disc sweeps, stacked through the tool's meridian — before
+                // K2's road, which reads no contact touched whole; where it refuses, K2 is asked,
+                // and its refusal stands where K2 refuses too
+                Ok(None) => match super::upright::swept(tool,path,roll,bar,tol) {
+                    Ok(Some(swept)) => cut_blank(swept,blank,tol),
+                    Ok(None) => k2(tool,path,roll,bar,tol,blank),
+                    Err(why) => k2(tool,path,roll,bar,tol,blank).map_err(|_| why),
+                },
                 Err(why) => k2(tool,path,roll,bar,tol,blank).map_err(|k| if matches!(k,Unbuilt::Curved {..}) { why } else { k }),
             }
         }
