@@ -128,7 +128,8 @@ impl Sketch {
                         v.push(EntRef::face(*face as usize));
                         v.push(*axis);
                     }
-                    SolidDef::Body { .. } => {}
+                    // a body a file gives is made of nothing in the drawing
+                    SolidDef::Body { .. } | SolidDef::Given(_) => {}
                     SolidDef::Region { probe, terms } => {
                         v.push(EntRef::point(*probe as usize));
                         v.extend(terms.iter().flat_map(|t| t.shape.entities()));

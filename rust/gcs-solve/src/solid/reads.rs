@@ -349,6 +349,12 @@ fn reads_from(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, t
                     }));
                 }
             }
+            // a body a file gives (#993 stage 2): the digest of its file, in two halves that are
+            // each a whole number an f64 holds exactly (raw bits could be a NaN, never equal)
+            SolidDef::Given(g) => {
+                poses.world();
+                v.extend([16.0, (g.digest() >> 32) as f64, (g.digest() & 0xffff_ffff) as f64]);
+            }
             SolidDef::Prism { face, from, to, draft } => {
                 v.push(0.0);
                 v.push(from.value);

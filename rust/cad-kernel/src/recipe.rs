@@ -15,7 +15,7 @@ type Built = Result<Brep,KernelError>;
 
 mod node;
 mod writer;
-pub use node::{Body,Corner,Edge,Family,FamilyWall,Kept,Lowered,Named,Node,Recipe,Rolled,Run,Section,SewnPiece,Spine,Stroke,Use};
+pub use node::{Body,Corner,Edge,Family,FamilyWall,Given,Kept,Lowered,Named,Node,Recipe,Rolled,Run,Section,SewnPiece,Spine,Stroke,Use};
 pub use writer::Writer;
 
 /// Between a face's solid and its own name while a recipe is built (`build`, `meridian`,
@@ -170,6 +170,8 @@ impl Node {
             Node::Glued(pieces) => glued_node(pieces,built,built_names,floor),
             Node::Lowered(l) => lowered_node(l,built,built_names,floor,strata),
             Node::Family(f) => family_node(f),
+            // a B-rep given whole (#993 stage 2): handed through untouched
+            Node::Given(g) => Ok(crate::topo::Brep::clone(&g.brep)),
             // a profile carried over an interval of a constant twist (#846), from where it begins
             Node::Carried {profile,start,carry} =>
                 Ok(super::build::carried(&Profile::of(profile)?.moved(&Rigid::from_rows(start)),*carry)?),

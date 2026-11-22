@@ -141,7 +141,7 @@ fn reads(n: &crate::brep::recipe::Node) -> Option<Vec<i64>> {
     };
     Some(match n {
         Node::Prism { .. } | Node::Revolve { .. } | Node::Hull { .. } | Node::Sewn { .. }
-        | Node::Canal { .. } | Node::Family(_) | Node::Carried { .. } => Vec::new(),
+        | Node::Canal { .. } | Node::Family(_) | Node::Carried { .. } | Node::Given(_) => Vec::new(),
         Node::Placed { source, .. } => vec![*source],
         Node::Through { uses, .. } => uses.iter().flat_map(|u| u.sources.iter().copied()).collect(),
         Node::Half { sources, .. } => sources.clone(),
