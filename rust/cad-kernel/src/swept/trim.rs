@@ -104,6 +104,9 @@ pub fn trimmed(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Brep],g
 /// point `ACROSS` hairs from it either way, on that face.  Where the face kept beside the edge
 /// holds that point and membership proves it clear of the boundary, the piece kept is mixed; where
 /// a face not kept there holds it and membership reads it as the boundary, its piece was left out.
+/// A point is on a kept face where a face of the solid on its candidate face's own surface holds
+/// it, not where the face kept beside the edge does: one tangent to that candidate along the edge
+/// holds its points across it too.
 /// Either way a meeting the trim was not given parts that point from where its piece was read
 /// (`readings`: each piece's face, the point it was settled at and what it read there), which is
 /// the witness's other point.  None where neither is found (the boundary open for some other
@@ -131,7 +134,20 @@ fn missing_across(out: &Brep,candidates: &[&Brep],read: &dyn Fn(&crate::topo::Fa
                 for side in [-1.,1.] {
                     let q = f.surface.point(f.surface.inverse(add(m,scale(across,side*ACROSS*hair))));
                     if !located[k].face_holds(i,q) { continue }
-                    let on_kept = kept.face_holds(u[0].0,q);
+                    // (kept where a face of the solid on that candidate face's own surface holds it:
+                    // the face kept beside the edge, read alone, holds a point of a candidate face
+                    // tangent to it along the edge — the full turn's start torus, its rim the
+                    // tube's, read as the tube's kept piece, and the refusal named the torus)
+                    let on_kept = out.faces.iter().enumerate().any(|(j,g)| g.surface == f.surface && kept.face_holds(j,q));
+                    if debug() && on_kept && matches!(read(f,q),Some(None)) {
+                        // (the kept face's loops: where its piece is bounded)
+                        let kf = &out.faces[u[0].0];
+                        for (li,l) in kf.loops.iter().enumerate() { for c in l {
+                            let e = &out.edges[c.edge as usize];
+                            eprintln!("trim: the kept face {} loop {li}: edge {} ({}) from {:?} to {:?}, used {}",u[0].0,c.edge,e.curve.kind(),
+                                out.vertices[e.v[0] as usize].p,out.vertices[e.v[1] as usize].p,uses[c.edge as usize].len());
+                        } }
+                    }
                     match read(f,q) {
                         Some(None) if on_kept => return Some(Witness {face:(k,i),at:[read_at((k,i),q,true),q],
                             said:format!("the boundary is open along a {} edge through {m:?}: the {} piece kept beside it (candidate and \
@@ -168,7 +184,7 @@ struct Witness { face: (usize,usize),at: [V;2],said: String }
 /// through itself), with that: a surface's meeting with itself is no meeting two surfaces are given.
 #[allow(clippy::too_many_arguments)]
 fn completed(w: &Witness,candidates: &[&Brep],located: &[crate::query::Located],bounding: &BTreeSet<(usize,usize)>,
-    boxes: &[Vec<(V,V)>],given: &mut Vec<Given>,pairs: &mut BTreeSet<([usize;2],[usize;2])>,hair: f64,tol: f64)
+    boxes: &[Vec<(V,V)>],given: &mut Vec<Given>,pairs: &mut BTreeSet<([usize;2],[usize;2])>,buried: &dyn Fn(V) -> bool,hair: f64,tol: f64)
     -> Result<usize,String> {
     const WALK: usize = 64;
     let (k,i) = w.face;
@@ -212,6 +228,13 @@ fn completed(w: &Witness,candidates: &[&Brep],located: &[crate::query::Located],
                 let x = at(0.5*(t0+t1));
                 if !located[k2].face_holds(g,x) {
                     if debug() { eprintln!("trim: completing from {:?}: face ({k2}, {g})'s surface crosses it at {x:?}, outside the face",w.at) }
+                    continue
+                }
+                // (a crossing the sweep is proved to hold more than a few tolerances deep bounds nothing:
+                // a meeting there is buried, and needs no cut — the full turn's start and end tori, where
+                // their tubes touch among the instants between)
+                if buried(x) {
+                    if debug() { eprintln!("trim: completing from {:?}: face ({k2}, {g}), a {}, crosses it at {x:?}, buried",w.at,sg.kind()) }
                     continue
                 }
                 let key = if [k,i] <= [k2,g] { ([k,i],[k2,g]) } else { ([k2,g],[k,i]) };
@@ -578,7 +601,7 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
         };
         round += 1;
         let gave = if round > ROUNDS { 0 } else {
-            completed(&seen,&candidates,&completing,&bounding,&boxes,&mut given,&mut pairs,hair,tol).map_err(Unbuilt::Failed)?
+            completed(&seen,&candidates,&completing,&bounding,&boxes,&mut given,&mut pairs,&|x| matches!(swept.beyond(x,ON_CURVE*tol),Ok(Some(_))),hair,tol).map_err(Unbuilt::Failed)?
         };
         if debug() || crate::timing() { eprintln!("trim: round {round}: {} curves completed from {:?}",gave,seen.at) }
         if gave == 0 { return Err(Unbuilt::Failed(seen.said)) }

@@ -114,11 +114,14 @@ fn the_cover_s_boundary_traced_from_the_depth_is_the_half_turn_s_double_curve() 
     let near = piece.sheet.windows(2).flat_map(|w| (0..=64).map(move |k| { let f = k as f64/64.; [w[0].0+(w[1].0-w[0].0)*f,w[0].1+(w[1].1-w[0].1)*f] }))
         .map(|q| gcs_core::brep::util::space::distance(at(q[0],q[1]),other)).fold(f64::INFINITY,f64::min);
     assert!(near <= 2.*tol,"the double curve's point {near:e} from the traced seam");
+    // (each partner point beside its own: the sheet's point under it, `Seam::own`)
+    assert_eq!(piece.own.len(),1);
+    assert_eq!(piece.own[0].len(),piece.partner[0].len());
     for (k,&(th,t,sg)) in piece.partner[0].iter().enumerate() {
         let lp = label_at(&ring,&path,th,t,sg).unwrap();
         let c = far_depth(&ring,&path,roll,th,t,lp,tol).unwrap();
         assert!(c.depth.abs() <= tol,"the partner's point {k}: covered {:e} deep",c.depth);
-        assert!((c.at-piece.sheet[k].1).abs() <= 1e-6,"the partner's point {k} covered at {} for its own point's {}",c.at,piece.sheet[k].1);
+        assert!((c.at-piece.own[0][k].1).abs() <= 1e-6,"the partner's point {k} covered at {} for its own point's {}",c.at,piece.own[0][k].1);
     }
 }
 

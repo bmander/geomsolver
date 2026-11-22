@@ -697,20 +697,9 @@ fn a_double_curve_crossing_its_tubes_seam_bounds_a_tail_beside_it_not_the_whole_
     assert_eq!(sheets.len(),2,"one tube a contact curve: {:?}",sheets.iter().map(|s| s.faces.len()).collect::<Vec<_>>());
 }
 
-/// **The full turn gets past its start and end tori** (#942 T1d-tori, the slow tier):
-/// brep-bench's `tumbling-torus-full-turn`, a torus of tube 0.16 turned 0.375 a radian about one
-/// line and back a radian about another over a whole turn. Its trim reads every piece of the tori
-/// at its end poses one way all over — the start torus's rim laid as each edge the tube holds it as
-/// (refused before, a piece of the start torus the boundary on one side of the rim and off it on
-/// the other); its last stretch's tail between a double curve and the tube's seam dropped, and the
-/// curve's end where it meets the end pose one point on both leaves (refused before, a piece of the
-/// end torus read both ways round a chord hung open) — and it is refused only where the two tori's
-/// meeting, found by search, misses an arc between the points they touch at (the end pose the start
-/// turned 0.75π about a line parallel to the torus's axis).
-#[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 40 s: the full turn built to its refusal")]
-fn the_full_turns_tori_are_read_one_way_all_over_and_it_is_refused_where_they_meet() {
-    use gcs_core::brep::swept::closed::ring;
+/// brep-bench's `tumbling-torus-full-turn`: a torus of tube 0.16 turned 0.375 a radian about one line
+/// and back a radian about another over a whole turn, and its tolerance.
+fn full_turn() -> (gcs_core::brep::topo::Brep,Trajectory,[f64;2],f64) {
     use gcs_core::brep::trajectory::Screw;
     let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.16).unwrap();
     let (sl,cl) = 30f64.to_radians().sin_cos();
@@ -719,10 +708,134 @@ fn the_full_turns_tori_are_read_one_way_all_over_and_it_is_refused_where_they_me
     let frame = Trajectory::Twist(Screw {origin:[0.,0.7071*cl,0.7071*sl],axis:[ca,sa*cl,sa*sl],ratio:1.,
         advance:0.});
     let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
-    let roll = [-std::f64::consts::PI,std::f64::consts::PI];
-    let why = format!("{:?}",ring(&tool,&path,roll,0.16/250.,0.16/50_000.).expect_err("refused where the tori meet"));
-    assert!(why.contains("torus piece kept beside it (candidate and face (0, 0))") && why.contains("face (1, 0), a torus")
-        && why.contains("met by search"),"{why}");
+    (tool,path,[-std::f64::consts::PI,std::f64::consts::PI],0.16/50_000.)
+}
+
+/// **The full turn's tube in the middle of the roll is holed where the end torus crosses it** (#942,
+/// the slow tier): the end pose's torus passes through the tube some way into the roll, a closed
+/// trace inside one of its faces that crosses no rim, read through the place the tube's crossing
+/// with itself ends on it (`depth::passed_back`'s partner, covered by the end pose: a seed of
+/// `rings::traces`); the piece about it kept with it as a hole, the trace's inside and what the tube
+/// late in the roll covers beside it dropped. Each hole of each tube's face has an edge on the end
+/// torus, and every edge of it lies on the end torus within the tolerance or on the sweep's boundary
+/// (the tube's crossing with itself: held by no instant deeper than the tolerance, and by one to it).
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 45 s: the full turn entered")]
+fn the_full_turns_tube_is_holed_where_the_end_torus_crosses_it() {
+    use gcs_core::brep::swept::closed::{RingEntered,ring_entered};
+    let (tool,path,roll,tol) = full_turn();
+    let RingEntered {sheets,..} = ring_entered(&tool,&path,roll,tol).unwrap_or_else(|e| panic!("not entered: {e:?}"));
+    let ring = Ring::read(&tool).unwrap();
+    let end = path.pose(roll[1]).unwrap().inverse();
+    let mut holes = 0;
+    for b in &sheets {
+        for f in b.faces.iter().filter(|f| f.loops.len() > 1) {
+            for l in &f.loops[1..] {
+                holes += 1;
+                let mut on_torus = 0;
+                for c in l {
+                    let e = &b.edges[c.edge as usize];
+                    let xs: Vec<[f64;3]> = (0..=8).map(|k| e.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/8.,&b.vertices)).collect();
+                    if xs.iter().all(|&x| ring.signed(end.point(x)).0.abs() <= tol) { on_torus += 1; continue }
+                    for &x in &xs[1..8] {
+                        let d = held(&ring,&path,roll,x,roll[0],0.);
+                        assert!(d.abs() <= tol,"a hole's edge off the end torus on the sweep's boundary at {x:?}: held {d:e}");
+                    }
+                }
+                assert!(on_torus > 0,"a hole bounded by the end torus");
+            }
+        }
+    }
+    assert!(holes > 0,"a tube's face holed by the end torus");
+}
+
+/// **brep-bench's `tumbling-torus-full-turn` is built closed** (#942, the slow tier): its trim reads
+/// every piece of the tori at its end poses one way all over — the start torus's rim laid as each
+/// edge the tube holds it as; its last stretch's tail between a double curve and the tube's seam
+/// dropped, and the curve's end where it meets the end pose one point on both leaves — and the two
+/// tori's meeting is given where it bounds the sweep (`depth::ends_met`); the start rim cut where
+/// the tube late in the roll passes back over it (`boolean`'s `given_crossings`); the tube's crossings
+/// with itself cut in (`depth::passed_back`), and the end torus's closed trace across the tube in the
+/// middle of the roll a hole in its face; the double curve beside its swallowtail point at the cut
+/// 2.2318 joined to it in chords straight in each leaf's parameters, and each leaf's drawing of it,
+/// merged into the other's by the arrangement, keeping its own pcurve carried onto the other
+/// (`boolean`'s `carried_pcurve`) — inverted, it landed on the leaf past the fold, 1.3e-5 off. Its
+/// volume 23.6738854, the peer kernel cadrs's 23.6739; held to the sweep's membership. And each face
+/// is the boundary by the depth: a place well inside it (the grid's place in its parameters farthest
+/// from its loops) is covered by no instant but its own deeper than the tolerance (`depth::cover`,
+/// its own instant the sheet's roll, or the end pose's whose torus it lies on).
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 60 s: the full turn built and held to membership")]
+fn the_full_turn_is_built_closed() {
+    use gcs_core::brep::swept::depth::{Reading,cover};
+    let (tool,path,roll,tol) = full_turn();
+    let built = gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.16/250.,tol).unwrap_or_else(|u| panic!("{u:?}"));
+    built.check(tol).unwrap();
+    let v = gcs_core::brep::props::volume(&built);
+    assert!((v-23.6738854384).abs() < 1e-7,"{v}");
+    crate::swept_closed::agrees_over(&built,&tool,&path,roll);
+    let ring = Ring::read(&tool).unwrap();
+    let located = gcs_core::brep::query::Located::new(&built,tol);
+    let poses = roll.map(|t| path.pose(t).unwrap().inverse());
+    for (fi,f) in built.faces.iter().enumerate() {
+        let edges: Vec<[f64;2]> = f.loops.iter().flatten().flat_map(|c| built.uv_ends(f,c)).collect();
+        let [lo,hi] = located.parameter_box(fi);
+        let n = 64;
+        let uv = (0..=n*n).map(|k| [lo[0]+(hi[0]-lo[0])*(k%(n+1)) as f64/n as f64,lo[1]+(hi[1]-lo[1])*(k/(n+1)) as f64/n as f64])
+            .filter(|&uv| located.holds_parameters(fi,uv))
+            .max_by(|p,q| { let d = |x: [f64;2]| edges.iter().map(|e| (e[0]-x[0]).hypot(e[1]-x[1])).fold(f64::INFINITY,f64::min); d(*p).total_cmp(&d(*q)) })
+            .unwrap_or_else(|| panic!("face {fi}: no place inside it"));
+        let x = f.surface.point(uv);
+        // (a tube's sheet's parameters its roll; a torus the pose whose torus it lies on)
+        let own = if f.name == "sheet" { uv[1] } else if ring.signed(poses[0].point(x)).0.abs() <= tol { roll[0] } else { roll[1] };
+        match cover(&ring,&path,roll,x,own,tol,tol).unwrap() {
+            Reading::Far(c) => assert!(c.depth >= -tol,"face {fi} ({}) covered at {x:?} by the instant {}: {:e} deep",f.name,c.at,-c.depth),
+            Reading::Alone => {}
+            r => panic!("face {fi} ({}) held by its own instant's neighbours at {x:?}: {r:?}",f.name),
+        }
+    }
+}
+
+/// **The full turn's start and end tori meet on the boundary along two short arcs, given** (#942
+/// T1d-tori, `depth::ends_met`; the slow tier): over a whole turn the end pose stands beside the
+/// start and the two tori meet, mostly where the instants between cover one or both — there no cut
+/// is needed — but along two arcs, each some 0.02 long between a corner on a tube's seam with one
+/// pose and a corner on the other pose's rim, both tori are uncovered but by one another: the arc
+/// the trim's search missed ("a meeting no edge crosses"). Read apart from the road by `cover`:
+/// each given arc lies on both tori and, at its middle, neither is covered by any other instant by
+/// more than the tolerance.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 15 s: the full turn entered")]
+fn the_full_turns_end_poses_meet_uncovered_along_two_short_arcs_given() {
+    use gcs_core::brep::swept::closed::{RingEntered,ring_entered};
+    use gcs_core::brep::swept::depth::{Reading,cover};
+    let (tool,path,roll,tol) = full_turn();
+    let RingEntered {ends,given,..} = ring_entered(&tool,&path,roll,tol).unwrap_or_else(|e| panic!("not entered: {e:?}"));
+    let ring = Ring::read(&tool).unwrap();
+    let met: Vec<&gcs_core::brep::boolean::Given> = given.iter()
+        .filter(|g| g.surfaces[0] == ends[0].faces[0].surface && g.surfaces[1] == ends[1].faces[0].surface).collect();
+    assert_eq!(met.len(),1,"one meeting of the two poses given");
+    assert_eq!(met[0].curves.len(),2,"two arcs, one beside each place the tori's core circles cross");
+    let poses = roll.map(|t| path.pose(t).unwrap());
+    for c in &met[0].curves {
+        let gcs_core::brep::geom::Curve::BSpline(b) = c else { panic!("an arc is a spline: {}",c.kind()) };
+        let [t0,t1] = b.domain();
+        let pts: Vec<[f64;3]> = (0..=16).map(|k| c.point(t0+(t1-t0)*k as f64/16.)).collect();
+        let long: f64 = pts.windows(2).map(|w| gcs_core::brep::util::space::distance(w[0],w[1])).sum();
+        assert!(long > 0.01 && long < 0.05,"an arc some 0.02 long: {long}");
+        for &x in &pts {
+            for q in &poses { assert!(ring.signed(q.inverse().point(x)).0.abs() <= tol,"the arc lies on both tori at {x:?}") }
+        }
+        let mid = pts[8];
+        // (a point of the fitted arc stands off either torus by as much as its fit: read so)
+        for &own in &roll {
+            match cover(&ring,&path,roll,mid,own,tol,tol).unwrap() {
+                Reading::Far(cv) => assert!(cv.depth >= -tol,"the pose at {own} uncovered at the arc's middle: {cv:?}"),
+                Reading::Alone => {}
+                r => panic!("the pose at {own} uncovered at the arc's middle: {r:?}"),
+            }
+        }
+    }
 }
 
 /// The least signed distance from the ring posed at an instant of `roll` of the point `p`, over
@@ -921,4 +1034,69 @@ fn the_thin_tumbling_torus_is_built_closed() {
     assert!((v-0.6962402).abs() < 1e-6,"its mesh within 1e-4 encloses {v}");
     assert!((v-0.69630).abs() < 1e-4,"{v} against cadrs's 0.69630");
     crate::swept_closed::agrees_over(&built,&tool,&path,roll);
+
+/// **The full turn's tube passes back over its own start, read off the depth** (#942 T1d-tori,
+/// `depth::passed_back`; the slow tier): over a whole turn the tube late in the roll sweeps across
+/// the tube where it began — no fold pair's crossing, so no double curve the road traces — and the
+/// curve where it does parts what it covers of the early tube from what stays on the boundary. It
+/// leaves the start row at the start rim's crossing with the late tube's trace on the start torus,
+/// `(2.5497, 3.1166, −0.1932)`, and ends where the late tube's covering instant reaches the roll's
+/// end, on the end pose's trace. Read from the start row's change of cover: a run whose own end on
+/// the start row is that point, its partner on the late tube's sheet, and each of its points the
+/// partner's point in space — two sheets at one place.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 40 s: the full turn fitted and its crossings read")]
+fn the_full_turns_tube_passing_back_over_its_start_is_read_from_the_start_row() {
+    use gcs_core::brep::swept::closed::ring_fitted;
+    use gcs_core::brep::swept::depth::{label_at,passed_back,sheet};
+    use gcs_core::space::distance;
+    let (tool,path,roll,tol) = full_turn();
+    let (ring,_,_,curves,_) = ring_fitted(&tool,&path,roll,tol).unwrap_or_else(|e| panic!("not fitted: {e:?}"));
+    let back = passed_back(&ring,&path,roll,&curves,tol).unwrap_or_else(|e| panic!("not read: {e:?}"));
+    assert!(back.len()%2 == 0 && !back.is_empty(),"each run with its partner: {}",back.len());
+    let at = |q: (f64,f64,f64)| sheet(&ring,&path,roll,q.0,q.1,label_at(&ring,&path,q.0,q.1,q.2).unwrap()).unwrap().0;
+    let rim = [2.549694,3.116605,-0.193242];
+    let run = back.chunks(2).find(|r| r[0].iter().any(|&q| q.1 == roll[0] && distance(at(q),rim) <= 1e-5))
+        .unwrap_or_else(|| panic!("no run through the start rim's crossing: {:?}",back.chunks(2).map(|r| (r[0][0],r[0][r[0].len()-1])).collect::<Vec<_>>()));
+    let (own,partner) = (&run[0],&run[1]);
+    assert_eq!(own.len(),partner.len());
+    assert!(partner.iter().all(|q| q.1 > 3.0 && q.1 <= roll[1]),"the partner late in the roll: {partner:?}");
+    assert!(partner.iter().any(|q| q.1 == roll[1]),"its corner on the end pose's row: {partner:?}");
+    // (each point the partner's in space: the two sheets cross there, to the tolerance the seam is
+    // held to and the partner's root is read within)
+    let apart = own.iter().zip(partner).map(|(&p,&q)| distance(at(p),at(q))).fold(0.,f64::max);
+    assert!(apart <= 4.*tol,"the run off its partner by {apart:e}");
+}
+
+/// **A closed chord inside a face's square, with a curve ending on it, is a hole in the piece about
+/// it** (#942, the full turn: the end torus's trace across the tube in the middle of the roll, and
+/// the tube's crossing with itself ending on it; `rings::loops_of_square`). A circle laid inside the
+/// square, a chord across it between two of its points and a chord cutting off a corner: the corner's
+/// triangle, the square about the circle holding it as one hole (its places the circle's, walked
+/// clockwise), and the circle's two halves — their areas the circle's between them, nothing lost.
+#[test]
+fn a_closed_chord_inside_a_faces_square_is_a_hole_in_the_piece_about_it() {
+    use gcs_core::brep::swept::rings::loops_of_square;
+    let (c,r,n) = ([0.5,0.5],0.2,400);
+    let at = |k: usize| { let a = std::f64::consts::FRAC_PI_2+std::f64::consts::TAU*k as f64/n as f64; [c[0]+r*a.cos(),c[1]+r*a.sin()] };
+    let circle: Vec<[f64;2]> = (0..=n).map(|k| at(k%n)).collect();
+    // (the circle's points a quarter and three quarters round: (0.3, 0.5) and (0.7, 0.5))
+    let across: Vec<[f64;2]> = (0..=20).map(|k| [at(n/4)[0]+(at(3*n/4)[0]-at(n/4)[0])*k as f64/20.,0.5]).collect();
+    let corner = vec![[0.,0.1],[0.05,0.05],[0.1,0.]];
+    let pieces = loops_of_square(&[(1,circle),(2,across),(0,corner)]).unwrap();
+    let area = |p: &[[f64;2]]| 0.5*(0..p.len()).map(|i| { let (a,b) = (p[i],p[(i+1)%p.len()]); a[0]*b[1]-b[0]*a[1] }).sum::<f64>();
+    assert_eq!(pieces.len(),4,"the corner, the square about the circle, the circle's halves: {:?}",
+        pieces.iter().map(|p| p.iter().map(|l| area(l)).collect::<Vec<_>>()).collect::<Vec<_>>());
+    let holed: Vec<&Vec<Vec<[f64;2]>>> = pieces.iter().filter(|p| p.len() > 1).collect();
+    assert_eq!(holed.len(),1,"one piece holds a hole");
+    assert_eq!(holed[0].len(),2,"one hole in it");
+    let disc = std::f64::consts::PI*r*r;
+    let hole = &holed[0][1];
+    // (a polygon of 400 sides inscribed in the circle: its area within a ten-thousandth of the disc's)
+    assert!((area(hole)+disc).abs() <= 1e-4*disc,"the hole the circle, walked clockwise: {}",area(hole));
+    assert!(hole.iter().all(|p| ((p[0]-c[0]).hypot(p[1]-c[1])-r).abs() <= 1e-12),"the hole's places the circle's");
+    assert!((area(&holed[0][0])-(1.-0.005)).abs() <= 1e-12,"the square about it less the corner: {}",area(&holed[0][0]));
+    let inner: f64 = pieces.iter().filter(|p| p.len() == 1 && p[0].iter().all(|q| (q[0]-c[0]).hypot(q[1]-c[1]) <= r+1e-12))
+        .map(|p| area(&p[0])).sum();
+    assert!((inner-(-area(hole))).abs() <= 1e-12,"the circle's halves fill the hole: {inner} against {}",-area(hole));
 }

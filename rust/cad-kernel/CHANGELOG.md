@@ -43,6 +43,66 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   `HALF_READ`), the rate in parameters is read by the chord of the curve's own feet either side, as
   where the least squares has no answer (a rate in `v` read −0.997 against the feet's −5e-6). The
   thin tumbling torus's `props::volume` from 0.785 to 0.6975 (its mesh's 0.6963).
+- **brep-bench's `tumbling-torus-full-turn` is built** (#942): 35 faces, volume 23.6738854 (the
+  peer kernel cadrs's 23.6739), its check clean at the call's tolerance, in some 39 s
+  (`swept_rings::the_full_turn_is_built_closed`, held to membership). Two last changes. A double
+  curve joined to its swallowtail point (`swept::rings`'s `joined`) is laid in chords doubled
+  until each leaf's chord straight in its own `(θ, t)` stands at its middle within the tolerance of
+  the curve's own middle: across the kernel each preimage is a parabola, and the leaves' straight
+  chords parted by 3.8e-4. And a piece merged by the arrangement into another edge keeps its own
+  polyline pcurve, carried onto the other's parameter (`boolean`'s `carried_pcurve`), the merge's
+  gap read at either polyline's vertices too; inverted from the other's curve, the full turn's
+  landed on the leaf past the fold, 1.3e-5 off.
+
+- **A trim's refusal names the piece that is mixed, not a face tangent to it** (#942,
+  `swept::trim`'s `missing_across`): a point read across an open edge on a candidate face is on a
+  kept face where a face of the solid on that candidate's own surface holds it. Read against the
+  face kept beside the edge alone, a candidate tangent to it along the edge (the full turn's start
+  torus, its rim the tube's) read as kept, and the refusal named the torus; it now names the early
+  tube's mixed piece.
+
+- **A ring's tube cut where it passes back over itself, and holed where an end pose crosses it
+  inside a face** (#942, the full turn): `swept::closed::ring_entered` now enters
+  `depth::passed_back`'s runs with the fold pairs' double curves. `rings::traces` reads a closed
+  trace inside a face through a place the caller knows — where a curve cut into the face ends on
+  the tool inside it — and a face's pieces among its chords keep a component touching no side as a
+  hole (`rings::loops_of_square`, gated in
+  `swept_rings::a_closed_chord_inside_a_faces_square_is_a_hole_in_the_piece_about_it` and
+  `the_full_turns_tube_is_holed_where_the_end_torus_crosses_it`); a piece touching no side is judged
+  beside its longest chord. A chord cut at one of its own points no longer takes a step of no
+  length there. The full turn's trim is refused next by the check, at a double curve's edge merged
+  across the cut where the contact changes shape. Reading the end rows costs the half turn 60 ms,
+  the 80° torus 26 ms and the thin 1.1 s, where they find nothing (`ring_entered` now marks the
+  road's fit as its own phase: its time had been read as theirs).
+
+- **Where a ring's sheet passes back over itself, read off the depth** (#942 T1d-tori, new
+  `swept::depth::passed_back`, `seams_through`, `Seam::own`): over a whole turn the tube late in the
+  roll sweeps across the tube where it began, a crossing no fold pair's double curve is. Each end row
+  is read for where the far cover changes sign, the cover's boundary traced through there with no
+  search (`zero_set::through`), and the runs an instant inside the roll covers kept, each ended at
+  its corner on an end pose's trace and laid as a double curve is, with its partner
+  (`swept_rings::the_full_turns_tube_passing_back_over_its_start_is_read_from_the_start_row`).
+
+- **Two given curves one operand holds as edges cross on a face of another at a vertex they
+  share** (#942 T1d-tori, `boolean`'s new step `given_crossings`): a sweep's sheet passing back over
+  itself — the full turn's tube, late in the roll, over its own start rim on the start torus — holds
+  both as its own edges, and no phase read an operand's edges against one another, so the rim
+  dangled there and a piece of the torus leaked round it. Both are now cut where their curves cross,
+  to the tolerance (`arrangement::two_given_edges_of_one_operand_crossing_on_a_face_share_a_vertex`).
+  The full turn is refused further on, beside its fold pair's swallowtail point: an open edge of
+  the ring sheet's faces near (3.0803, 2.6830, 1.6896).
+
+- **The tool at the roll's start and at its end met where both bound the sweep** (#942 T1d-tori,
+  new `swept::depth::ends_met`, read by `closed::ring_entered`): over a full turn the end pose's
+  torus stands beside the start's, and most of their meeting is buried; two arcs of it, each some
+  0.02 long, bound the sweep, ending at corners on the tubes' seams with either pose, where the
+  other pose's signed distance changes sign. Those corners are found along the given seams, the
+  meeting is traced through them (`meeting::through`) and settled on both surfaces by alternating
+  feet, and each stretch is given where both poses are uncovered at its
+  middle (`depth::cover`). The trim completes a witness's meeting at no crossing the sweep is proved
+  to hold or leave (`trim::completed`): a buried meeting needs no cut. The full turn's refusal stands
+  where it was, now without the false claim that search missed the tori's meeting
+  (`swept_rings::the_full_turns_end_poses_meet_uncovered_along_two_short_arcs_given`).
 
 - **A far cover is read from the top of its own contact's climb** (#942 T1d-tori,
   `swept::depth::cover`): the end of a point's own contact is where its distance from the tool first

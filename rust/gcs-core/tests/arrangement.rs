@@ -589,3 +589,64 @@ fn a_given_curve_a_face_holds_as_two_edges_is_laid_as_both() {
     assert!(covers(0.) && covers(2.),"the line laid on the block's face over {laid:?}");
     assert!(!covers(1.),"nothing laid where the sheet is notched: {laid:?}");
 }
+
+/// **Two given curves one operand holds as edges cross on a face of another at a vertex they
+/// share** (#942, the full turn's tumbling torus; a kernel gate with no sweep in it): a sheet of two
+/// square faces standing through one another, in the planes `x = 0` and `y = 0`, its feet along the
+/// lines `y` and `x` in the plane `z = 0`, and a block below whose top is that plane, given as each
+/// face's meeting with it. Each foot is an edge of the sheet, laid on the top as that edge (#942
+/// F3); the two cross at the origin, a point of the sheet's two faces and the top that no phase read
+/// — an operand's edges are read against the others' faces, not one another — where the full
+/// turn's tube, passing back over its own start late in the roll, crossed its start rim on the start
+/// torus and the rim dangled there. Both are cut at the origin, and the top is parted into four.
+#[test]
+fn two_given_edges_of_one_operand_crossing_on_a_face_share_a_vertex() {
+    use gcs_core::space::distance;
+    use gcs_core::brep::boolean::{arrangement_given,Given};
+    use gcs_core::brep::geom::{Curve,Frame,Surface};
+    use gcs_core::brep::topo::{Coedge,EdgeCurve,Face,Pcurve};
+    let mut sheet = Brep::default();
+    // a square standing on its foot, the line through the origin along `d`, up to `z = 1`
+    let mut stand = |d: [f64;3],normal: [f64;3]| -> (Surface,Curve) {
+        let foot = Curve::Line {p:[0.;3],d};
+        let corners = [[-1.,0.],[1.,0.],[1.,1.],[-1.,1.]];
+        let at = |[s,z]: [f64;2]| [d[0]*s,d[1]*s,z];
+        let vs: Vec<u32> = corners.iter().map(|&c| sheet.vertex(at(c))).collect();
+        let mut lp = Vec::new();
+        for i in 0..4 {
+            let (a,b) = (corners[i],corners[(i+1)%4]);
+            let (pa,pb) = (at(a),at(b));
+            let (curve,t) = if i == 0 { (foot.clone(),[-1.,1.]) }
+                else { (Curve::Line {p:pa,d:[pb[0]-pa[0],pb[1]-pa[1],pb[2]-pa[2]]},[0.,1.]) };
+            let edge = sheet.edge(EdgeCurve::Curve(curve),t,[vs[i],vs[(i+1)%4]]);
+            lp.push(Coedge {edge,reversed:false,pcurve:Pcurve::Line {a,b}});
+        }
+        let plane = Surface::Plane(Frame::new([0.;3],normal,d));
+        sheet.faces.push(Face {surface:plane.clone(),reversed:false,loops:vec![lp],name:String::new()});
+        (plane,foot)
+    };
+    let (px,fx) = stand([1.,0.,0.],[0.,-1.,0.]);
+    let (py,fy) = stand([0.,1.,0.],[1.,0.,0.]);
+    let below = block([-1.,-1.,-1.],[1.,1.,0.]);
+    let top = below.faces.iter().map(|f| &f.surface)
+        .find(|s| matches!(s,Surface::Plane(_)) && [[0.,0.,0.],[0.5,0.5,0.]].iter().all(|&p| s.implicit(p).abs() < 1e-12))
+        .expect("the block's top z = 0").clone();
+    let given = [Given {surfaces:[px,top.clone()],curves:vec![fx.clone()],touches:vec![]},
+        Given {surfaces:[py,top.clone()],curves:vec![fy.clone()],touches:vec![]}];
+    let domain = block([-2.,-2.,-2.],[2.,2.,2.]);
+    let complex = arrangement_given(&domain,&[&sheet,&below],&given,1e-9).expect("arranged");
+    let origin = complex.b.vertices.iter().map(|v| distance(v.p,[0.;3])).fold(f64::INFINITY,f64::min);
+    assert!(origin <= 1e-12,"the feet's crossing a vertex: {origin:e} off");
+    // each foot cut there: two edges of it, meeting at the origin
+    for foot in [&fx,&fy] {
+        let mut halves: Vec<[f64;2]> = complex.b.edges.iter()
+            .filter(|e| matches!(&e.curve,EdgeCurve::Curve(c) if c == foot))
+            .map(|e| [e.t[0].min(e.t[1]),e.t[0].max(e.t[1])]).collect();
+        halves.sort_by(|a,b| a[0].total_cmp(&b[0]));
+        halves.dedup_by(|a,b| (a[0]-b[0]).abs() <= 1e-12 && (a[1]-b[1]).abs() <= 1e-12);
+        assert!(halves.len() == 2 && halves[0][1].abs() <= 1e-12 && halves[1][0].abs() <= 1e-12,
+            "the foot {foot:?} cut at the origin: {halves:?}");
+    }
+    let quarters = complex.b.faces.iter().filter(|f| f.surface == top).count();
+    assert_eq!(quarters,4,"the top parted into four by the feet");
+}

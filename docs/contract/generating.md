@@ -2230,15 +2230,75 @@ rounding's** (#942 F6), none a number of its own:
   short lead through most of a turn, wrong at a tenth, the tool's size or the extent while the
   complex read tied faces a thousandth of the box in, is right at a twentieth, a tenth and half the
   extent since it reads them nearest first, `brep.md`'s A1.)
-**Not yet built**: the tumbling tori fit, are cut and sewn into one tube a contact curve, and are
-refused past the meetings their sewing settles — the torus turned whole where its two end poses'
-tori meet (#942 T1d-tori: past its start and end tori's pieces, above, the boundary left open along
-the start torus's seam circle beside a piece the end torus crosses): over a full turn the end pose is
+**The tool at the roll's two ends is met where both bound the sweep** (#942 T1d-tori,
+`depth::ends_met`): over a full turn the end pose's tool stands beside the start's and meets it.
+Most of that meeting is buried, one tool or both covered by the instants between (where their tubes
+touch: no cut is needed there). Along two arcs, each some 0.02 long, both are uncovered except by
+one another, and no edge crosses those arcs, so the trim's search missed them. Read under the depth
+(`cover`), an arc on the boundary ends where its cover changes hands, at a corner on a seam the road
+gives on one pose (a tube's trace with it, its rim) where the other pose's signed distance changes
+sign. So the corners are found along the given seams by a certified march (steps no longer than
+the larger of that distance and the tolerance) and kept where neither pose is covered there by more
+than the tolerance. The meeting is traced through each corner (`meeting::through`, within a box about it grown until
+the branch through it reaches another corner on each side where it is uncovered), each point
+settled on both surfaces by alternating feet; a corner whose branch is not read gives nothing (the
+torus turned across a block: a zero-set search there asked four million cells for 30 s). It is cut at the corners, and each
+stretch whose middle neither pose covers is given (gated in
+`swept_rings::the_full_turns_end_poses_meet_uncovered_along_two_short_arcs_given`). A witness's
+missing meeting is completed at no crossing that membership proves the sweep holds or leaves
+(`trim::completed`): there it is buried and bounds nothing. Before this, the full turn's tori were
+given a meeting traced through where their tubes touch, and its trim was refused across the instants
+after the start.
+**The torus turned whole** (#942, built below; the history of its refusals kept): the tumbling tori
+fit, are cut and sewn into one tube a contact curve, and were refused past the meetings their sewing
+settles — where its two end poses' tori meet (#942 T1d-tori: past its start and end tori's pieces,
+above, the boundary left open along the start torus's seam circle beside a piece the end torus
+crosses): over a full turn the end pose is
 the start turned 0.75π about a line parallel to the torus's axis, two congruent tori in one plane
-whose tubes touch at two points beside each place their core circles cross, and their meeting,
-found by search seeded where an edge crosses it, misses an arc between those points that no edge
-crosses (at `(2.356, 2.693, −0.273)`, the surfaces crossing at a sine of 0.6; the touches 0.15 off,
-the sine below 4e-3); the thin one beside the swallowtail point where its fold pair is born
+whose tubes touch at two points beside each place their core circles cross. Their meeting is given
+where it bounds the sweep (above). The start torus's uncovered island at angles (2.745, −0.887)
+lies between the two strands, 0.13–0.16 deep, that the tube near the end (`t` 3.03–3.13) covers,
+bounded by that tube's trace with the start pose, the arc above, and the start pose's rim. That
+trace crosses the rim at `(2.5497, 3.1166, −0.1932)`, both curves edges of the one tube; the
+arrangement now cuts them there (`boolean`'s `given_crossings`, brep.md), where the island's piece
+reached round the rim's end to the start torus's seam. The trim is refused next along the rim
+past that crossing, `(2.5295, 3.0460, −0.1999)`, buried (membership the same 0.05 either way along
+each axis): the tube's piece beside it is kept, mixed — the boundary beyond and what the tube late
+in the roll covers — since the tube's crossing with itself over a whole turn, no fold pair's double
+curve, is not cut into it; it leaves the rim at that crossing, and a seam read from the depth
+(`depth::seams` over the tube's early sheet, seeded there) is what would cut it. That crossing is
+read (`depth::passed_back`): each end row where its far cover changes sign, the cover's boundary
+traced through there with no search (`depth::seams_through`), the runs an instant inside the roll
+covers kept and ended at their corners where the covering instant reaches the roll's end
+(`depth::corner`), each with its partner on the covering sheet, as a double curve is laid
+(`swept_rings::the_full_turns_tube_passing_back_over_its_start_is_read_from_the_start_row`; 29 s,
+nearly all of it one long run). It is entered (`closed::ring_entered`), cut into the stretches
+with the double curves: the start torus closes, and the run on the end tube's row at θ 0.48–1.17
+(covered by the tube at τ ≈ −1.94…−2.09) has its partner end on the end torus's trace across the
+mid-roll tube, a closed curve inside a face. **A closed trace inside a face is read through a place
+the caller knows** (`rings::traces`' seeds): where a curve cut into the face ends inside it on the
+tool, settled onto the zero set and traced round until it closes on it. **A component of a face's
+chords touching no side is a hole** (`rings::with_holes`, `loops_of_square`): the planar graph's
+walks go round each piece with it on their left, so such a component is walked once clockwise
+round its outside, and that walk is given as an inner loop to the least counter-clockwise piece
+holding it; a piece touching no side is judged just left of its longest chord's middle (gated in
+`swept_rings::a_closed_chord_inside_a_faces_square_is_a_hole_in_the_piece_about_it` and
+`the_full_turns_tube_is_holed_where_the_end_torus_crosses_it`: the end torus's loop and the
+partner's chord bound the hole, the loop's inside and what the late tube covers beside it dropped).
+**The full turn is then built** (`swept_rings::the_full_turn_is_built_closed`: 35 faces, volume
+23.6738854, cadrs's 23.6739, held to membership), past two last refusals at the double curve that
+begins at the swallowtail point where the road parts the roll (2.2318). Its join to the point
+(`rings::joined`) is laid in chords doubled until each leaf's chord straight in its own `(θ, t)` —
+what a tube's face draws between two of the curve's points — stands at its middle within the
+tolerance of the curve's own middle: across the kernel each preimage is the parabola `x = −2τ²`
+and the leaves bend opposite ways, so their drawings parted by 3.8e-4 beside the point (3 chords
+then, 24 now). And the stretch below the cut's drawing, merged by the arrangement into the face
+above it, keeps that face's own pcurve carried onto it (`brep.md`, `carried_pcurve`): inverted,
+it landed on the leaf past the fold, 1.3e-5 off at 5/8 of it. (The refusal named the start torus's piece, the tube tangent to it along the rim: a point a hair
+across on the torus read as on the kept tube. A point read across an open edge is now on a kept face
+where a face of the solid on its own candidate's surface holds it, `trim`'s `missing_across`; the
+refusal names the early tube's mixed piece.) The island's read point is uncovered, 0.122 clear
+of the end pose; the thin one beside the swallowtail point where its fold pair is born
 (above: its two tubes' meeting at under a hundredth of a degree was a seed off the other tube, no
 root). (The half turn, refused here where the trim found the boundary open 8e-4 from its
 swallowtail point, is built: its pair parted at the point, below.) A double curve's

@@ -1143,7 +1143,16 @@ pub fn ring_entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Re
         mark = (crate::util::clock::Instant::now(),super::rings::spent::now());
     };
     let (ring,scale,mut fits,curves,cut) = ring_fitted(tool,path,[a,b],tol)?;
+    phase("the road fitted");
     let eps = 0.5*grain(tool,path,[a,b],tol)?;
+    // **where the tube passes back over itself** (#942, the full turn: `depth::passed_back`): each
+    // crossing an instant inside the roll covers, read from the end rows, laid as a double curve is
+    // — the covered sheet's run and its partner on the covering sheet — and cut in with the fold
+    // pairs' double curves
+    let mut curves = curves;
+    let back = super::depth::passed_back(&ring,path,[a,b],&curves,tol)?;
+    curves.extend(back);
+    phase("the tube's crossings with itself read");
     if !curves.is_empty() { for fit in &mut fits { super::rings::cut_along(&ring,path,[a,b],fit,scale,&curves,tol)? } }
     phase("the double curves cut into the stretches");
     if crate::timing() { eprintln!("ring: fitted in {:?}",clock.elapsed()) }
@@ -1171,6 +1180,9 @@ pub fn ring_entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Re
         pieces.extend(s);
         given.extend(g);
     }
+    // (and where the tool at the start meets it at the end uncovered, that meeting: the full turn's)
+    given.extend(super::depth::ends_met(&ring,path,[a,b],[&start,&end],&given,tol)?);
+    phase("the end poses' meeting read");
     let sheets = if fits.len() == 1 { pieces } else {
         // (sewn only along the rows at the cuts: the double curve's chords on its two leaves are
         // one curve in space, and left to the trim)
