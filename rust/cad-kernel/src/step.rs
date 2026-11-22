@@ -240,11 +240,9 @@ pub const FIT: f64 = 1e-6;
 /// where it turns or linear where it runs straight (a blend carried along a line is linear in `v`).
 /// A screw a cubic net cannot follow within `FIT` at the fit's cap (a section carried round many
 /// turns, #243 L6) is fitted quintic along it, as a face family's wall is. Refused where no net
-/// the fit may grow to comes within `FIT`, rather than written further off.
-pub fn blend_net(b: &super::geom::Blend) -> Result<super::nurbs::Net,String> { blend_fit(b).map(|n| n.0) }
-
-/// `blend_net`, and how far the net was measured off the face.
-fn blend_fit(b: &super::geom::Blend) -> Result<(super::nurbs::Net,f64),String> {
+/// the fit may grow to comes within `FIT`, rather than written further off. With how far the net
+/// was measured off the face.
+pub fn blend_net(b: &super::geom::Blend) -> Result<(super::nurbs::Net,f64),String> {
     let (dv,nv) = match b.carry {
         super::geom::Carry::Line {..} => (1,1),
         // a quarter of a turn a span to start with, as a helix wants
@@ -265,11 +263,9 @@ fn blend_fit(b: &super::geom::Blend) -> Result<(super::nurbs::Net,f64),String> {
 /// A face family's wall as the file writes it (#243 L2): the net through it fitted within `FIT` as
 /// a loft face is — cubic along its edge, quintic along the family, whose rails may wind many
 /// times (a cubic through a twisted wall's 512 rows of a three-and-a-half-turn auger misses by
-/// 1e-6) — its `v` the family's running number over its interval.
-pub fn family_net(w: &super::family::Sheet) -> Result<super::nurbs::Net,String> { family_fit(w).map(|n| n.0) }
-
-/// `family_net`, and how far the net was measured off the wall.
-fn family_fit(w: &super::family::Sheet) -> Result<(super::nurbs::Net,f64),String> {
+/// 1e-6) — its `v` the family's running number over its interval. With how far the net was
+/// measured off the wall.
+pub fn family_net(w: &super::family::Sheet) -> Result<(super::nurbs::Net,f64),String> {
     let [a,b] = w.span();
     let pieces = w.stations.spans.len().clamp(4,64);
     let err = match super::nurbs::fit_net(&|u,v| w.d1([u,a+(b-a)*v]).0,3,5,8,pieces,FIT) {
@@ -425,8 +421,8 @@ pub fn face_net(b: &Brep,fi: usize) -> Option<Result<OnNet,String>> {
     });
     let m = match &f.surface {
         Surface::BSpline(_,n) => return Some(Ok(OnNet {net:n.clone(),arcs:[None,None],surface:f.surface.clone(),fit:0.})),
-        Surface::Blend(g,bl) => return Some(net(blend_fit(bl),[None,None],*g)),
-        Surface::Family(g,w) => return Some(net(family_fit(w),[None,None],*g)),
+        Surface::Blend(g,bl) => return Some(net(blend_net(bl),[None,None],*g)),
+        Surface::Family(g,w) => return Some(net(family_net(w),[None,None],*g)),
         Surface::Affine(m) => m,
         _ => return None,
     };
@@ -479,8 +475,8 @@ pub fn face_net(b: &Brep,fi: usize) -> Option<Result<OnNet,String>> {
             ref other => Err(format!("an affine image of an extrusion of a {} has no net to write",other.kind())),
         },
         // (a fitted net's miss carried by the map's greatest stretch)
-        Surface::Blend(_,ref bl) => blend_fit(bl).map(|(n,e)| (mapped(n),[None,None],e*stretch)),
-        Surface::Family(_,ref w) => family_fit(w).map(|(n,e)| (mapped(n),[None,None],e*stretch)),
+        Surface::Blend(_,ref bl) => blend_net(bl).map(|(n,e)| (mapped(n),[None,None],e*stretch)),
+        Surface::Family(_,ref w) => family_net(w).map(|(n,e)| (mapped(n),[None,None],e*stretch)),
         ref other => Err(format!("an affine image of a {} has no net to write",other.kind())),
     };
     Some(built.and_then(|(n,arcs,fit)| net(Ok((n,fit)),arcs,m.frame)))
