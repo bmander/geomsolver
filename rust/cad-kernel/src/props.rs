@@ -164,6 +164,11 @@ impl What<'_> {
 /// `X · (S_u × S_v)`, a field's `F(X) · (S_u × S_v)` or a weighed area's `w(X) |S_u × S_v|`.
 fn integrand(s: &Surface,uv: Uv,what: What) -> f64 {
     let (x,su,sv) = s.d1(uv);
+    integrand_of(x,su,sv,what)
+}
+
+/// `integrand` of the point and the derivatives read.
+fn integrand_of(x: V,su: V,sv: V,what: What) -> f64 {
     match what {
         What::Flux => dot(x,cross(su,sv)),
         What::Area => norm(cross(su,sv)),
@@ -375,6 +380,65 @@ impl<'a> Prefix<'a> {
         }
         self.cols[j] = Some(col);
         exact.unwrap_or(num/den)+self.across(self.us[i],u,v)
+    }
+}
+
+/// **A polynomial net read along one parameter, the other held** (`along` 0: `u` runs, `v` held at
+/// `fixed`): at the held value each row of poles across it makes one pole of the iso curve and of
+/// the sheet's rate across it, so each point read along it is a curve's, `du + 1` poles a span,
+/// where the sheet's is `(du + 1)(dv + 1)` and both bases. `G` along a face's parameter integrates
+/// its spans from the face's middle at every node of every use: on brep-bench's bull-nose carried
+/// along a spline (a 91 × 143 quintic) the area read some twenty million points of the sheet. The
+/// rows are read as the spans asked reach them.
+struct Iso<'a> {
+    net: &'a Net,
+    along: usize,
+    /// The held parameter's span and its basis there (values and rates).
+    span: usize,
+    basis: [Vec<f64>;2],
+    /// Each row across: the iso curve's pole and the rate's across it, once read.
+    rows: Vec<Option<Row>>,
+}
+
+impl<'a> Iso<'a> {
+    fn new(net: &'a Net,along: usize,fixed: f64) -> Iso<'a> {
+        let [du,dv] = net.domain();
+        let (nu,nv) = (net.poles.len(),net.poles[0].len());
+        let (d,knots,count,[a,b]) = if along == 0 { (net.dv,&net.vknots,nv,dv) } else { (net.du,&net.uknots,nu,du) };
+        let (span,basis) = super::nurbs::with_basis(d,knots,count,fixed.clamp(a,b),1,|s,bs| (s,[bs[0][..=d].to_vec(),bs[1][..=d].to_vec()]));
+        Iso {net,along,span,basis,rows:vec![None;if along == 0 { nu } else { nv }]}
+    }
+    fn row(&mut self,i: usize) -> Row {
+        if let Some(r) = self.rows[i] { return r }
+        let n = self.net;
+        let (d,s) = (if self.along == 0 { n.dv } else { n.du },self.span);
+        let (mut x,mut r) = ([0.;3],[0.;3]);
+        for j in 0..=d {
+            let q = if self.along == 0 { n.poles[i][s-d+j] } else { n.poles[s-d+j][i] };
+            for c in 0..3 { x[c] += self.basis[0][j]*q[c]; r[c] += self.basis[1][j]*q[c]; }
+        }
+        self.rows[i] = Some((x,r));
+        (x,r)
+    }
+    /// The sheet's point and `S_u`, `S_v` at `w` along it.
+    fn d1(&mut self,w: f64) -> (V,V,V) {
+        let n = self.net;
+        let [du,dv] = n.domain();
+        let (d,knots,[a,b]) = if self.along == 0 { (n.du,&n.uknots,du) } else { (n.dv,&n.vknots,dv) };
+        let count = self.rows.len();
+        let (s,b0,b1) = super::nurbs::with_basis(d,knots,count,w.clamp(a,b),1,|s,bs| {
+            let mut v0 = [0.;super::nurbs::MAX_DEGREE+1];
+            let mut v1 = [0.;super::nurbs::MAX_DEGREE+1];
+            v0[..=d].copy_from_slice(&bs[0][..=d]);
+            v1[..=d].copy_from_slice(&bs[1][..=d]);
+            (s,v0,v1)
+        });
+        let (mut x,mut dw,mut across) = ([0.;3],[0.;3],[0.;3]);
+        for k in 0..=d {
+            let (q,r) = self.row(s-d+k);
+            for c in 0..3 { x[c] += b0[k]*q[c]; dw[c] += b1[k]*q[c]; across[c] += b0[k]*r[c]; }
+        }
+        if self.along == 0 { (x,dw,across) } else { (x,across,dw) }
     }
 }
 
@@ -850,7 +914,12 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
             if let Some(p) = prefix.as_mut() { return p.big_g(u,v) }
             if let Some(g) = closed.as_ref().and_then(|c| c.at([u,v])) { return g }
             let x = [u,v][along];
-            let mut at_x = |w: f64| if along == 0 { g(w,v) } else { g(u,w) };
+            // (a polynomial net read along its iso curve there, `Iso`)
+            let mut iso = match s { Surface::BSpline(_,n) if !n.is_rational() => Some(Iso::new(n,along,[v,u][along])),_ => None };
+            let mut at_x = |w: f64| match iso.as_mut() {
+                Some(c) => { let (x,su,sv) = c.d1(w); integrand_of(x,su,sv,what) }
+                None => if along == 0 { g(w,v) } else { g(u,w) },
+            };
             let cuts = s.breaks(along,[base,x]);
             if cuts.is_empty() { return if ruled { gauss2(base,x,&mut at_x) } else { gauss(base,x,pieces(x-base,periodic),&mut at_x) } }
             let mut at = vec![base];

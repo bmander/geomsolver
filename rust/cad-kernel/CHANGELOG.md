@@ -8,6 +8,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A polynomial net's `G` is read along its iso curve** (#993 stage 1): away from the flux's
+  table, `props` integrated `G` from a face's middle across every span to each node of every use,
+  each point a two-way evaluation of the sheet; it now reads the net's rows across the held
+  parameter once a node and each point as a curve's (`Iso`), the same values to rounding.
+  brep-bench's bull-nose carried along a spline (a 91 × 143 quintic) had its area read in 13 s,
+  and now in 6.5 s.
+
 - **A net creased at its knots is measured as a smooth one** (#993 stage 1): `props` tabled a
   polynomial net's `G` per `v` span through Chebyshev nodes that include the span's far end, and
   read the net there in the next span, so across a knot of the degree's multiplicity (a net joined
