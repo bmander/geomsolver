@@ -11,7 +11,7 @@
 use crate::util::fmath::Det;
 use super::geom::{Carry,Curve,Frame,Rigid,Surface,V};
 use super::plane2;
-use crate::util::interval::Iv;
+use crate::util::interval::{Iv,Jet};
 use crate::util::space::{add,cross,distance,dot,norm,scale,segment_distance,sub,unit};
 
 /// What two surfaces share.
@@ -1164,43 +1164,24 @@ fn cylinder_loops(a: &Surface,f: &Frame,r: f64,b: &Surface,g: &Frame,s: f64,tol:
         let (bb,dd) = bd(u);
         (u,add(rim(u),scale(z,(-bb+side*dd.max(0.).sqrt())/aa)),2.*dd.max(0.).sqrt()/aa)
     };
-    // D's roots round the turn, each to the last bit
-    const M: usize = 4096;
-    let us: Vec<f64> = (0..=M).map(|j| TAU*j as f64/M as f64).collect();
-    let ds: Vec<f64> = us.iter().map(|&u| bd(u).1).collect();
-    let mut roots: Vec<f64> = Vec::new();
-    let root = |u0: f64,u1: f64| {
-        let below = bd(u0).1 < 0.;
-        let (x,y) = crate::util::roots::bisect(u0,u1,|x,y| 0.5*(x+y),|x,y| { let m = 0.5*(x+y); m != x && m != y },
-            |u| (bd(u).1 < 0.) == below);
-        0.5*(x+y)
-    };
-    for j in 0..M {
-        if (ds[j] >= 0.) != (ds[j+1] >= 0.) { roots.push(root(us[j],us[j+1])); continue }
-        // a dip below nothing narrower than the samples (a neck where the axes pass a hair apart:
-        // `√(2 e / r)` wide): D's least about each sample least among its neighbours, by golden
-        // section, and its two roots either side where it is below nothing
-        let (before,after) = (ds[(j+M-1)%M],ds[j+1]);
-        if !(ds[j] >= 0. && ds[j] <= before && ds[j] <= after) { continue }
-        let (mut lo,mut hi) = (us[j]-TAU/M as f64,us[j+1]);
-        for _ in 0..200 {
-            let (m1,m2) = (lo+(hi-lo)*0.381_966,lo+(hi-lo)*0.618_034);
-            if bd(m1).1 < bd(m2).1 { hi = m2 } else { lo = m1 }
-            if hi-lo <= 1e-15 { break }
-        }
-        let least = 0.5*(lo+hi);
-        if bd(least).1 < 0. {
-            let wrap = |u: f64| u.rem_euclid(TAU);
-            roots.push(wrap(root(us[j]-TAU/M as f64,least)));
-            roots.push(wrap(root(least,us[j+1])));
-        }
-    }
-    roots.sort_by(f64::total_cmp);
-    // one branch from `u0` to `u1`, its points, refined while a chord stands more than a quarter of
-    // the branches' gap at its ends, or an eighth of the radius, long — down to `16 tol`
-    let longest = r/8.;
+    // **Whether D keeps one sign all round**, which is all the graph asks of it: its roots
+    // isolated from enclosures of it (`util::isolate`), so no dip below nothing is missed for
+    // falling between samples, however narrow (a neck where the axes pass a hair apart is
+    // `√(2 e / r)` wide), and a dip to within D's rounding of nothing is a touch, not read
+    // either way
+    use crate::util::isolate::{roots,Formula,Written};
+    let d = Discriminant {k:sub(f.o,g.o),x:f.x,y:f.y,z,w:wz,r,s,aa};
+    let near = |u: f64| d.jet(Jet::at(Iv::point(u))).v.has_zero();
+    let Ok(roots) = roots(&Written(d),[0.,TAU],0.,&near) else { return None };
+    // one branch from `u0` to `u1`, its points, refined while a chord stands longer than a quarter
+    // of the branches' gap at its ends (so a projection between them keeps to its own loop across
+    // a neck) or than `LOOP_CHORD` of the radius — down to a chord within the arrangement's reach
+    // of its ends (`2 ON_CURVE tol`: each of its points within `ON_CURVE tol` of one of them), or
+    // one whose middle the parameter no longer parts from its ends; `None` past `LOOP_POINTS`
+    // points, the meeting traced
+    let (longest,shortest) = (LOOP_CHORD*r,2.*super::tolerant::ON_CURVE*tol);
     // (each point read once, carried with its parameter and gap by the intervals it bounds)
-    let branch = |u0: f64,u1: f64,side: f64| -> Vec<V> {
+    let branch = |u0: f64,u1: f64,side: f64| -> Option<Vec<V>> {
         let n = (((u1-u0)/TAU*64.).ceil() as usize).max(8);
         let mut done: Vec<V> = Vec::new();
         let ends: Vec<(f64,V,f64)> = (0..=n).map(|j| at(u0+(u1-u0)*j as f64/n as f64,side)).collect();
@@ -1208,8 +1189,10 @@ fn cylinder_loops(a: &Surface,f: &Frame,r: f64,b: &Surface,g: &Frame,s: f64,tol:
         while let Some([(x,p,gx),(y,q,gy)]) = stack.pop() {
             let chord = distance(p,q);
             let bar = longest.min(0.25*gx.min(gy).max(0.));
-            if chord > bar && chord > 16.*tol && y-x > 1e-13 && done.len() < 200_000 {
-                let m = at(0.5*(x+y),side);
+            let mid = 0.5*(x+y);
+            if chord > bar && chord > shortest && mid != x && mid != y {
+                if done.len()+stack.len() >= LOOP_POINTS { return None }
+                let m = at(mid,side);
                 stack.push([m,(y,q,gy)]);
                 stack.push([(x,p,gx),m]);
                 continue
@@ -1217,23 +1200,56 @@ fn cylinder_loops(a: &Surface,f: &Frame,r: f64,b: &Surface,g: &Frame,s: f64,tol:
             if done.is_empty() { done.push(p) }
             done.push(q);
         }
-        done
+        Some(done)
     };
     let traced = |pts: Vec<V>| Curve::Traced(std::sync::Arc::new(super::geom::Traced {a:a.clone(),b:b.clone(),pts,closed:true}));
     if roots.is_empty() {
-        if ds[0] < 0. { return Some(Vec::new()) }
+        if bd(0.).1 < 0. { return Some(Vec::new()) }
         // right through: two loops, each a whole turn
-        return Some([1.,-1.].map(|side| {
-            let mut pts = branch(0.,TAU,side);
+        let mut out = Vec::new();
+        for side in [1.,-1.] {
+            let mut pts = branch(0.,TAU,side)?;
             pts.pop();
             let first = pts[0];
             pts.push(first);
-            traced(pts)
-        }).into_iter().collect())
+            out.push(traced(pts));
+        }
+        return Some(out)
     }
     // a loop that turns back where D is nothing (the lesser cutting into the other's side, or a
     // neck the axes' gap closes): traced (`Ssi::Traced`)
     None
+}
+
+/// **A loop's chord, as a share of the lesser radius**: no chord of `crossed_cylinders`' traces is
+/// longer than an eighth of the radius it is a graph round, so it sags no more than `r / 512`
+/// where the loop bends as the cylinder does (`c² / 8 r`), and the parabola `Traced::guess` reads
+/// between its points starts `Traced::project` well inside the one point of both surfaces it
+/// settles at.
+const LOOP_CHORD: f64 = 1./8.;
+
+/// **The most points a loop of `crossed_cylinders` is refined to**: a guard on the work, not a
+/// reading — past it the loop is not given in closed form, and the meeting is traced.
+const LOOP_POINTS: usize = 200_000;
+
+/// `cylinder_loops`' discriminant `D(u) = B² − A C` round the lesser cylinder (`u` its angle),
+/// as one formula over `Num`, so its roots are isolated from its own enclosures
+/// (`util::isolate`).
+#[derive(Clone,Copy)]
+struct Discriminant { k: V,x: V,y: V,z: V,w: V,r: f64,s: f64,aa: f64 }
+
+impl crate::util::isolate::Formula for Discriminant {
+    fn jet<T: crate::util::interval::Num>(&self,u: Jet<T>) -> Jet<T> {
+        let (sn,cs) = u.sin_cos();
+        // `c = rim(u) − g.o`, by its components
+        let c: [Jet<T>;3] = std::array::from_fn(|i|
+            Jet::of(self.k[i])+cs.times(self.r*self.x[i])+sn.times(self.r*self.y[i]));
+        let along = |v: V| c[0].times(v[0])+c[1].times(v[1])+c[2].times(v[2]);
+        let (cw,cz) = (along(self.w),along(self.z));
+        let bb = cz-cw.times(dot(self.z,self.w));
+        let cc = c[0]*c[0]+c[1]*c[1]+c[2]*c[2]-cw*cw-Jet::of(self.s*self.s);
+        bb*bb-cc.times(self.aa)
+    }
 }
 
 /// **A ball meets a cylinder or a torus in no curve** where its centre stands at least its radius

@@ -8,6 +8,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Two cylinders' loops: `D`'s roots isolated, not sampled** (`ssi::cylinder_loops`): whether
+  the discriminant keeps above nothing is read from its enclosures (`util::isolate`) where it was
+  read at 4096 samples and a golden-section search; the loops' chord bounds are named
+  (`LOOP_CHORD`, `2 ON_CURVE tol`, the parameter's own resolution) and a loop past `LOOP_POINTS`
+  points is traced rather than cut off. `spill`'s checks that a section lands on the seam read the
+  arrangement's reach (`ON_CURVE` tolerances) where they read a millionth of the part's size.
+
 - **Faces on one surface are one surface whatever order a Boolean's operands come in** (#994,
   fixture 115's feet and lip at a plate's true edge): an arrangement reads which faces lie on one
   surface face by face before any phase asks (`Arrangement::classed`) — two of one kind joined

@@ -1124,7 +1124,16 @@ closed traces whose points are the graph's, on both surfaces to rounding, no cho
 quarter of the branches' gap at its ends, so a projection between two never crosses a neck to the
 other loop (marched, the trace jumped between the loops at a neck, a cylinder's pieces not closing);
 and where `D` falls below nothing (a loop turning back: the lesser cutting into the other's side, or
-one neck closed by an axes' gap), or the axes lean under `SHALLOW`, traced as before. The gates are
+one neck closed by an axes' gap), or the axes lean under `SHALLOW`, traced as before. **Whether `D`
+keeps above nothing is proved, not sampled**: `D` is one formula over the angle, its roots isolated
+from its own enclosures (`util::isolate`), so a dip below nothing narrower than any sampling (a
+neck `√(2 e / r)` wide where the axes pass `e` apart) is never missed, and a dip to within its
+rounding of nothing is a touch, traced; it was read at 4096 samples and a golden-section search
+about each least one. A loop's chords are no longer than `LOOP_CHORD` (an eighth) of the radius —
+sagging `r / 512` where the loop bends as the cylinder does, so `Traced::project` starts well inside
+its basin — refined no finer than a chord within the arrangement's reach of its ends
+(`2 ON_CURVE tol`) or than the parameter parts, and a loop that would take more than `LOOP_POINTS`
+points is traced, where it was cut off there and given as it stood. The gates are
 `crossed_cylinders`: rods of 6 crossing at 90°, 60° and 30°, radii 0 to `1e-2` apart either way and
 axes `1e-7` to `1e-4` apart, every Boolean either way the closed form's (the strips' parallelogram
 integrated by Gauss–Legendre) to `1e-7` of what they share; and fixture 146's block, obround pocket
