@@ -717,13 +717,37 @@ the section there: … Move `outer.boss.disc` clear of the seam, or over it". No
 over the flat's section, a hole cut there, a square boss beside the seam, and a boss whose wall
 crosses the rim exactly at the seam: each the plate less, at each depth under the top, the band
 its section takes less what of the band the footprint holds, to 1e-9 (`tests/bosses_on_seams.rs`;
-`rim_seams.rs`' slid boss). The refusal (`lowering::back_over_said`) stays for a face reaching
-back that is no such solid — a plane at a slant, or a solid kept within — which no chain end
-cuts the next piece by. A plane wall square to the rim reaches back over no section; one turned
-back over the run at a reflex corner of less than a right angle ends it square (above), so the
-ring past the seam keeps its whole section, and where a corner of such a boss reaches over that
-section the ring takes what of the corner lies in it, the field and the pieces alike: the ball
-turned about the corner, which waits on a set that says it, is what would end it. **A corner too nearly tangent to round** is refused by name before any
+`rim_seams.rs`' slid boss). **Another body's wall is an end however it stands** (#994, `BodyFaces::another_body`): a face
+of a primitive other than every one of the run's faces' (`FacePath::route`, none a round made) —
+a boss unioned on, a cutter's wall — that turns back over the run at a reflex corner of less than
+a right angle is still the run's end, kept on its side, where a side of the run's own body there
+is not (the run ending square, above); and a plane of another body the smooth chain ends on is
+the run's beyond a seam as a solid it is kept out of is. Ending square there, the run went on
+into the boss's material: a square boss turned 45° on the flat side lost 96 mm³ to the round,
+turned 30° 90 mm³. Kept off its wall's plane it takes none; but the plane is a half-space and goes
+on past the boss's corners, so where the section reaches past one (the round of 10 past the 45°
+boss's side corners 8.74 in from the rim; the 30° boss's nearer corner) the round is kept off
+the plane there too and leaves more than the boss does — 0.04 mm³ and 21 mm³ — never less.
+**Still the definition's, and wrong**: a plane the run's own edge goes across is no end
+(`goes_across`), so a square boss over the seam not turned, its wall `x = −387` crossing the half
+circle 1.4° off square while the half circle comes back across that plane at its far end, ends
+the ring nowhere there but at the meridian through the vertex (`distance(p, crease) <=
+distance(p, meeting)`), which leans into the boss: the body less `taken` loses the wedge between
+wall and meridian, 1.149 mm³ at R10 — the field and the pieces alike, held to the integral of that
+wedge to 1e-9 so it cannot move unseen (`a_wall_the_rings_own_edge_crosses_takes_the_bosss_wedge`);
+turned 0.04 so the edge no longer crosses the plane, it is the band model's. What says each of
+these rightly is the boss's own solid kept out of, as a cylinder is: an end condition outside a
+polyhedron (the greatest of its faces' sides) in the field, and a piece cut by the boss's prism
+in the recipe, which neither has yet. **The refusal that remains** (`lowering::back_over_said`)
+is for a face reaching back over the section at a seam that the chain gone on across it is not
+kept off: a half-space the half circle's own edge crosses (the 45° boss beside the seam: "…
+`outer.boss.k3`, which its run along `outer.flange.s` ends on, reaches 2.7mm back over the
+section there: … Move `outer.boss.k3` clear of the seam, or over it"), and a solid kept within (a
+flat side 1 long ending at a corner on a convex arc of radius √5 of its own plate, whose cylinder
+the half circle's section at the seam stands partly outside: "`plate.sm` … reaches 0.46mm back
+… Move `plate.sm` clear of the seam, or over it"); and, in its first wording, a face the run's
+own face runs on tangent into (the tapered band's disc, `tapered_bands.rs`). `tests/bosses_on_seams.rs`
+holds each. **A corner too nearly tangent to round** is refused by name before any
 piece is built (`piece::nearly_tangent`): where a round's edge ends on a curved face (a cylinder,
 a cone or a sphere, of radius `R` at the corner) meeting one of the edge's own faces at a turn `θ`
 past `TANGENT` — a corner, no seam — the ball's surface, tangent to the edge's face, meets the

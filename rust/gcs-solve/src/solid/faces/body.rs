@@ -1206,12 +1206,27 @@ impl BodyFaces {
                 // a side leaves at a corner)
                 let own = self.smooth(faces);
                 return ends.into_iter().filter(|&(c, sign)| {
-                    !own.contains(&c) && self.kept_out_of(c, sign) && !self.goes_across(c, sign, &path)
+                    !own.contains(&c) && (self.kept_out_of(c, sign) || self.another_body(c, faces))
+                        && !self.goes_across(c, sign, &path)
                 }).collect();
             }
             at = wid;
         }
         Vec::new()
+    }
+
+    /// **Whether face `c` is another body's than every one of `faces`** (#994): each a face of a
+    /// primitive the document drew (`FacePath::route`, none a round made, `FacePath::of`), and
+    /// `c`'s another primitive than each of theirs — a boss's wall unioned onto a flange, a cutter's
+    /// wall cut from it, beside the flange's top and side.  A round never takes another body's
+    /// material, so a run ends on such a face, kept on its own side of it, however the face stands:
+    /// one turning back over the run at a reflex corner (`ends_at`) — where a side of the run's own
+    /// body is no end, the run ending square — and a plane the run's smooth chain ends on beyond a
+    /// seam (`chain_ends`).  A body read off a boundary names no primitive: none is another's.
+    fn another_body(&self, c: usize, faces: &[usize]) -> bool {
+        let p = &self.paths[c];
+        let drawn = |q: &FacePath| q.of.is_none() && !q.route.is_empty();
+        drawn(p) && faces.iter().all(|&f| drawn(&self.paths[f]) && self.paths[f].route != p.route)
     }
 
     /// Whether a run kept on the side `sign` of face `c` (`σ·side <= 0`) is kept out of the solid
@@ -1295,7 +1310,10 @@ impl BodyFaces {
         };
         ends.filter_map(|c| {
             let sign = if runs_on(c) <= 0.0 { 1.0 } else { -1.0 };
-            let across = plain && (self.goes_across(c, sign, run) || sign < 0.0 && back(c));
+            // (another body's wall turning back over the run is still its end: square there, the
+            // run went on into that body's material — #994, `another_body`)
+            let across = plain && (self.goes_across(c, sign, run)
+                || sign < 0.0 && back(c) && !self.another_body(c, faces));
             (!across).then_some((c, sign))
         }).collect()
     }
