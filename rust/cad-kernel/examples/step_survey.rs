@@ -71,25 +71,33 @@ fn oracle(root: &str,rel: &str) -> (Result<BTreeMap<u32,f64>,String>,Result<BTre
         }
         Ok(out)
     })();
-    // brep-bench's measurer reads a conversion-based unit as millimetres: an inch file's areas
-    // are square inches (step_corpus::measurer_scale)
-    let scale = json::parse(&std::fs::read_to_string(at(".json")).unwrap_or_default()).ok()
-        .and_then(|j| match j.get("units")?.as_str().split(',').next()? {
-            "mm" | "m" | "cm" | "um" | "km" => Some(1.),
-            "inch" => Some(25.4*25.4),
-            _ => None,
-        });
     let mass = (|| {
-        let scale = scale.ok_or_else(|| "the measurer's unit unknown".to_string())?;
         let text = std::fs::read_to_string(at(".mass.faces.tsv")).map_err(|_| "no measurer face table".to_string())?;
         let mut out = BTreeMap::new();
         for line in text.lines().skip(2) {
             let (e,a) = line.split_once('\t').unwrap_or((line,""));
             let e: u32 = e.parse().unwrap_or(0);
             if e == 0 { return Err(format!("the measurer: {a}")) }
-            if let Ok(a) = a.parse::<f64>() { *out.entry(e).or_insert(0.) += scale*a }
+            if let Ok(a) = a.parse::<f64>() { *out.entry(e).or_insert(0.) += a }
         }
-        Ok(out)
+        // its scale, as step_corpus::measurer_scale reads it: 1 or 25.4² where the median ratio
+        // of the faces both readers measured is so to a part in a hundred (an inch file's areas are square
+        // inches to the measurer), else 1 for a file in millimetres alone
+        let scale = match &occt {
+            Ok(o) if out.iter().any(|(e,m)| *m > 0. && o.get(e).map_or(false,|x| *x > 0.)) => {
+                let mut r: Vec<f64> = out.iter().filter_map(|(e,m)| o.get(e).filter(|x| **x > 0. && *m > 0.).map(|x| m/x)).collect();
+                r.sort_by(f64::total_cmp);
+                let r = r[r.len()/2];
+                [1.,25.4*25.4].into_iter().find(|k| (k*r-1.).abs() < 1e-2)
+                    .ok_or_else(|| format!("the measurer reads the file at {r:.3e} of OCCT's scale"))?
+            }
+            _ => match json::parse(&std::fs::read_to_string(at(".json")).unwrap_or_default()).ok()
+                .and_then(|j| Some(j.get("units")?.as_str() == "mm")) {
+                Some(true) => 1.,
+                _ => return Err("the measurer's scale unknown".to_string()),
+            },
+        };
+        Ok(out.into_iter().map(|(e,a)| (e,scale*a)).collect())
     })();
     (occt,mass)
 }

@@ -119,6 +119,8 @@ pub(crate) struct Face {
     /// and `u` the uncertainty its file states: the area its boundary's slack can sweep, so the
     /// most two readings of a tolerant boundary can differ by.
     pub(crate) slack: f64,
+    /// `Σ tol × length` alone, the uncertainty left out (for the census's measure of the bar).
+    pub(crate) measured: f64,
 }
 
 pub(crate) struct Read { pub(crate) outcome: Outcome,pub(crate) seconds: f64,pub(crate) refs: Refs }
@@ -148,7 +150,8 @@ fn faces_of(given: &[Given]) -> Vec<Face> {
         let u = g.context.uncertainty.unwrap_or(0.);
         b.faces.iter().enumerate().map(move |(k,f)| Face {entity: g.faces.get(k).copied().unwrap_or(0),
             kind: f.surface.kind(),area: area(b,f),
-            slack: f.loops.iter().flatten().map(|c| b.edges[c.edge as usize].tol.max(u)*lengths[c.edge as usize]).sum()})
+            slack: f.loops.iter().flatten().map(|c| b.edges[c.edge as usize].tol.max(u)*lengths[c.edge as usize]).sum(),
+            measured: f.loops.iter().flatten().map(|c| b.edges[c.edge as usize].tol*lengths[c.edge as usize]).sum()})
             .collect::<Vec<_>>()
     }).collect()
 }
@@ -249,10 +252,10 @@ impl Refs {
     pub(crate) fn of(root: &Path,path: &str,sha: &str) -> Refs {
         let at = |x: &str| root.join("oracle").join(format!("{path}{x}"));
         let occt = occt_faces(&at(".json"),&at(".faces.tsv"),sha);
-        let mass = match measurer_scale(&at(".json")) {
-            Ok(k) => mass_faces(&at(".mass.faces.tsv"),sha).map(|m| m.into_iter().map(|(e,a)| (e,k*a)).collect()),
-            Err(e) => Err(e),
-        };
+        let mass = mass_faces(&at(".mass.faces.tsv"),sha).and_then(|m| {
+            let k = measurer_scale(&at(".json"),&occt,&m)?;
+            Ok(m.into_iter().map(|(e,a)| (e,k*a)).collect())
+        });
         Refs {occt,mass}
     }
 }
@@ -284,18 +287,28 @@ fn occt_faces(json: &Path,tsv: &Path,sha: &str) -> Result<BTreeMap<u32,(f64,[f64
     Ok(out)
 }
 
-/// What the measurer's areas are multiplied by to be in mm²: brep-bench's measurer (at 7d811e9)
-/// reads an SI unit of length as it is and a conversion-based one as millimetres, so an inch
-/// file's areas come out in square inches — the same faces, scaled. The file's first unit of
-/// length, as the oracle's scan of its text found it.
-fn measurer_scale(json: &Path) -> Result<f64,String> {
+/// What the measurer's areas are multiplied by to be in mm². brep-bench's measurer (at 7d811e9)
+/// reads a conversion-based unit as millimetres, so an inch file's areas come out in square inches,
+/// and a file of several contexts in another one's unit: the same faces, scaled. The scale is
+/// read off the faces both readers measured, 1 or 25.4² where the median of their ratios is so to
+/// a part in a hundred (a unit, not a fit: the readers agree to 1e-4 on the worst file); where OCCT's faces
+/// are not named, 1 for a file whose only unit of length is the millimetre. Otherwise none, and
+/// the measurer is not used.
+fn measurer_scale(json: &Path,occt: &Result<BTreeMap<u32,(f64,[f64; 3])>,String>,mass: &BTreeMap<u32,f64>) -> Result<f64,String> {
+    if let Ok(o) = occt {
+        // the median of the faces' ratios, so that a face one reader misreads does not move it
+        let mut r: Vec<f64> = mass.iter().filter_map(|(e,m)| o.get(e).filter(|x| x.0 > 0. && *m > 0.).map(|x| m/x.0)).collect();
+        r.sort_by(f64::total_cmp);
+        if let Some(&r) = r.get(r.len()/2) {
+            return [1.,25.4*25.4].into_iter().find(|k| (k*r-1.).abs() < 1e-2)
+                .ok_or_else(|| format!("the measurer reads the file at {r:.3e} of OCCT's scale"))
+        }
+    }
     let text = std::fs::read_to_string(json).map_err(|_| "no OCCT reading".to_string())?;
     let j = gcs_core::json::parse(&text).map_err(|e| format!("OCCT's reading unreadable: {e}"))?;
-    let units = j.get("units").map(|u| u.as_str()).unwrap_or("");
-    match units.split(',').next().unwrap_or("") {
-        "mm" | "m" | "cm" | "um" | "km" => Ok(1.),
-        "inch" => Ok(25.4*25.4),
-        u => Err(format!("the measurer's unit for {u:?} unknown")),
+    match j.get("units").map(|u| u.as_str()).unwrap_or("") {
+        "mm" => Ok(1.),
+        u => Err(format!("the measurer's scale in {u:?} unknown")),
     }
 }
 
@@ -461,7 +474,7 @@ pub(crate) fn report(rows: &[Row],reads: &[Read]) {
 pub(crate) fn face_census(rows: &[Row],reads: &[Read]) {
     let mut why = BTreeMap::<String,usize>::new();
     let (mut files,mut faces,mut uncompared,mut disputed) = (0,0,0,0);
-    let mut dump = String::from("path\tfrom\ttotals\tentity\tkind\tarea\tslack\tocct\tmass\n");
+    let mut dump = String::from("path\tfrom\ttotals\tentity\tkind\tarea\tslack\tocct\tmass\tmeasured\n");
     for (row,r) in rows.iter().zip(reads) {
         let Outcome::Read {faces: ours,..} = &r.outcome else { continue };
         let f = faces_judged(ours,&r.refs);
@@ -473,7 +486,8 @@ pub(crate) fn face_census(rows: &[Row],reads: &[Read]) {
         for x in ours {
             let o = r.refs.occt.as_ref().ok().and_then(|m| m.get(&x.entity)).map_or(String::new(),|o| format!("{:e}",o.0));
             let m = r.refs.mass.as_ref().ok().and_then(|m| m.get(&x.entity)).map_or(String::new(),|m| format!("{m:e}"));
-            dump += &format!("{}\t{}\t{t}\t{}\t{}\t{:e}\t{:e}\t{o}\t{m}\n",row.path,row.from,x.entity,x.kind,x.area,x.slack);
+            dump += &format!("{}\t{}\t{t}\t{}\t{}\t{:e}\t{:e}\t{o}\t{m}\t{:e}\n",row.path,row.from,x.entity,x.kind,x.area,x.slack,
+                x.measured);
         }
     }
     let read = reads.iter().filter(|r| matches!(r.outcome,Outcome::Read {..})).count();
