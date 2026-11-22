@@ -729,7 +729,9 @@ caller's feature size); with a Lipschitz bound alone what it does not clear is a
 traced piece at the feature size, and with none the search is sampled (`Search::sampled`): cells'
 middles pulled onto the zero set, rays from `f`'s critical points. The march steps by arclength in
 space, corrects by Newton along the gradient held to half the step, keeps a step only where its
-chord's quarter points are within the tolerance and undercut by no other branch, and refuses by name
+chord's quarter points, each pulled onto the zero set, moved no farther in space than the tolerance
+(not `|f| / |∇f|`, no measure where a sheet's rates all but coincide) and are undercut by no other
+branch, and refuses by name
 a step under the rounding. Every number is the caller's tolerance or feature size, the rounding's or
 structural (#942 F6). `zero_set::*` are the gates: loops inside a rectangle (one a fiftieth of the
 feature across, two a two-hundredth apart), the union of two discs with its corners at the circles'

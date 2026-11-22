@@ -135,13 +135,19 @@ const CORRECTIONS: usize = 16;
 /// the tolerance resolves (structural, as `ssi::unseen`'s).
 const CAP: usize = 4_000_000;
 
+/// The cube root of the rounding, `ε^⅓ = 2^(−52/3)` (written out, not taken by the platform's
+/// `cbrt`): a central difference's step, as a part of its scale.
+const THIRD_READ: f64 = 6.055454452393343e-6;
+
 /// `f` read with its gradient.
 #[derive(Clone)]
 struct Read<A> { f: f64,grad: [f64;2],at: A }
 
 /// **The one place a gradient is taken by differences**, where the caller gave none: central
-/// differences of `read` a forward difference's step apart (half the digits of the rectangle's
-/// widths, `HALF_READ`), one-sided where a side leaves `read`'s domain.
+/// differences of `read` a step of the cube root of the rounding times the rectangle's widths apart
+/// (the step at which a central difference's truncation and its rounding are alike), one-sided
+/// where a side leaves `read`'s domain. A function solved iteratively reads its own solver's noise
+/// over the step: give its gradient (the envelope theorem's) where there is one.
 fn differenced(read: &dyn Fn(Uv) -> Option<f64>,uv: Uv,step: [f64;2]) -> Option<[f64;2]> {
     let f0 = read(uv)?;
     let d = |k: usize| -> Option<f64> {
@@ -209,7 +215,7 @@ pub fn trace<F: Field>(field: &F,q: &Question) -> Result<Traced<F::At>,String> {
             no less than the tolerance",q.tol,q.feature))
     }
     let r = q.rect;
-    let mut t = Tracer {field,q,step:[HALF_READ*(r[0][1]-r[0][0]),HALF_READ*(r[1][1]-r[1][0])],seeds:Vec::new(),
+    let mut t = Tracer {field,q,step:[THIRD_READ*(r[0][1]-r[0][0]),THIRD_READ*(r[1][1]-r[1][0])],seeds:Vec::new(),
         pieces:Vec::new(),chords:Vec::new(),grid:Grid::new(q.feature),steps:0};
     // the rim's sign changes and touches, then the inner edges'
     let corners = [[r[0][0],r[1][0]],[r[0][1],r[1][0]],[r[0][1],r[1][1]],[r[0][0],r[1][1]]];
@@ -322,16 +328,41 @@ impl<'a,F: Field> Tracer<'a,F> {
     }
 
     /// Whether the chord from `p` to `q` keeps within the tolerance of the branch's zero at its
-    /// quarter points, with no other branch undercutting them by more than the tolerance.
+    /// quarter points, with no other branch undercutting them by more than the tolerance. Each
+    /// point is pulled onto the zero set and how far it moved *in space* read: the first-order
+    /// `|g| / |∇g|` is no measure where the sheet's two rates all but coincide (beside a
+    /// swallowtail, where it read a point 3.6e-5 off as within 3.2e-6), only a reject.
     fn chord(&self,p: Uv,q: Uv,at: &F::At) -> bool {
         let tol = self.q.tol;
+        let long = distance(self.point(p),self.point(q));
         [0.25,0.5,0.75].iter().all(|&s| {
             let x = lerp2(p,q,s);
             if self.outside(x).is_some() { return false }
             let Some(r) = self.along(x,at) else { return false };
             let Some(l) = self.least(x) else { return false };
-            self.off(x,&r) <= tol && !self.undercut(x,&l)
+            if self.off(x,&r) > tol || self.undercut(x,&l) { return false }
+            self.pull(x,&r.at,long).is_some_and(|y| distance(self.point(x),self.point(y)) <= tol)
         })
+    }
+
+    /// `x` pulled onto the branch's zero: by the corrector, else (where the metric is too near
+    /// singular for its step) by Newton along the gradient in the parameters themselves; none where
+    /// neither settles within `limit` in space.
+    fn pull(&self,x: Uv,at: &F::At,limit: f64) -> Option<Uv> {
+        if let Some((y,_)) = self.correct(x,at,limit) { return Some(y) }
+        let mut y = x;
+        let mut at = at.clone();
+        for _ in 0..CORRECTIONS {
+            let r = self.along(y,&at)?;
+            let n = dot2(r.grad,r.grad);
+            if !(n > 0.) { return None }
+            let d = [r.f*r.grad[0]/n,r.f*r.grad[1]/n];
+            y = [y[0]-d[0],y[1]-d[1]];
+            at = r.at;
+            if distance(self.point(x),self.point(y)) > limit { return None }
+            if self.length(y,d) <= self.q.tol*HALF_READ { return Some(y) }
+        }
+        None
     }
 
     /// Whether the least at `uv` stands below nought by more than the tolerance (in space): another
