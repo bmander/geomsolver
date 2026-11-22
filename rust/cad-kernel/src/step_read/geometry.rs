@@ -257,14 +257,9 @@ fn is_clamped(k: &[f64],p: usize,n: usize) -> bool { k[..=p].iter().all(|&x| x =
 
 /// **A B-spline clamped over its domain**: knots put in at its domain's ends until each stands
 /// `p` times, the poles outside dropped — exact (Boehm's insertion: the same curve at the same
-/// parameters, `Net::segment` over a net of two equal columns). One already clamped is itself.
+/// parameters, `BSpline::segment`). One already clamped is itself.
 fn clamped(b: BSpline) -> BSpline {
-    let (p,n) = (b.degree,b.poles.len());
-    if is_clamped(&b.knots,p,n) { return b }
-    let net = Net {du:p,dv:1,uknots:b.knots.clone(),vknots:vec![0.,0.,1.,1.],poles:b.poles.iter().map(|&q| vec![q,q]).collect(),
-        weights:b.weights.as_ref().map(|w| w.iter().map(|&x| vec![x,x]).collect())};
-    let s = net.segment(b.domain(),[0.,1.]);
-    BSpline {degree:p,knots:s.uknots,poles:s.poles.iter().map(|r| r[0]).collect(),weights:s.weights.map(|w| w.iter().map(|r| r[0]).collect())}
+    if is_clamped(&b.knots,b.degree,b.poles.len()) { b } else { b.segment(b.domain()) }
 }
 
 /// **A closed B-spline started again at its parameter `t`** (#993; ISO 10303-42 lets a closed
@@ -281,12 +276,7 @@ pub fn restarted(c: &BSpline,t: f64,within: f64) -> Option<BSpline> {
     // would be divided by)
     let t = c.knots.iter().copied().find(|k| (k-t).abs() <= 1e-9*(z-a)).unwrap_or(t);
     if !(t > a && t < z) || crate::util::space::distance(c.point(a),c.point(z)) > within { return None }
-    let piece = |[x,y]: [f64;2]| {
-        let net = Net {du:p,dv:1,uknots:c.knots.clone(),vknots:vec![0.,0.,1.,1.],poles:c.poles.iter().map(|&q| vec![q,q]).collect(),
-            weights:c.weights.as_ref().map(|w| w.iter().map(|&x| vec![x,x]).collect())};
-        let s = net.segment([x,y],[0.,1.]);
-        (s.uknots,s.poles.iter().map(|r| r[0]).collect::<Vec<V>>(),s.weights.map(|w| w.iter().map(|r| r[0]).collect::<Vec<f64>>()))
-    };
+    let piece = |span: [f64;2]| { let s = c.segment(span); (s.knots,s.poles,s.weights) };
     let (ka,pa,wa) = piece([t,z]);
     let (kb,pb,wb) = piece([a,t]);
     if pa.len() < 2 || pb.len() < 2 || ka.len() != pa.len()+p+1 || kb.len() != pb.len()+p+1 { return None }
@@ -358,12 +348,16 @@ fn hyperbolic(f: &Frame,a: f64,b: f64,[t0,t1]: [f64;2]) -> BSpline {
 fn conic_spline(c: &Curve,from: f64) -> Option<BSpline> {
     Some(match c {
         Curve::Circle(g,r) => arc(g,*r,[from,from+TAU]),
-        Curve::Ellipse(g,a,b) => {
-            let unit = arc(&Frame::WORLD,1.,[from,from+TAU]);
-            BSpline {poles:unit.poles.iter().map(|p| g.at([a*p[0],b*p[1],0.])).collect(),..unit}
-        }
+        Curve::Ellipse(g,a,b) => ellipse_arc(g,*a,*b,[from,from+TAU]),
         _ => return None,
     })
+}
+
+/// An ellipse's rational arc over the angles `span`: the unit circle's (`nurbs::arc`) stretched
+/// by its semi-axes `a` and `b` and placed in its frame `g`.
+fn ellipse_arc(g: &Frame,a: f64,b: f64,span: [f64;2]) -> BSpline {
+    let unit = arc(&Frame::WORLD,1.,span);
+    BSpline {poles:unit.poles.iter().map(|p| g.at([a*p[0],b*p[1],0.])).collect(),..unit}
 }
 
 /// The angle in `[0, 2π)` a whole turn's rational arc from `from` reaches at its parameter `t`
@@ -392,7 +386,7 @@ fn spread(x: impl Iterator<Item=f64>,pad: f64) -> Option<[f64;2]> {
 
 impl<'f,'a> Geometry<'f,'a> {
     /// The kinds `#r` is (a complex entity's parts joined by `+`).
-    pub fn kinds(&self,r: u32) -> String { self.file.get(r).parts.iter().map(|p| p.0).collect::<Vec<_>>().join("+") }
+    pub fn kinds(&self,r: u32) -> String { self.file.get(r).kinds() }
     /// The simple entity of one of `kinds` that `from` refers to as `what`: its number, kind and
     /// parameters; refused naming `from` where it is of another kind.
     pub fn of(&self,from: u32,r: Option<u32>,kinds: &[&str],what: &str) -> Result<(u32,&'a str,&'f [Value<'a>]),Refusal> {
@@ -1197,9 +1191,7 @@ fn crossing_side(f: &Frame,curve: &Curve,points: &[V],size: f64) -> Option<(Fram
     let (t0,t1) = (phi+half,phi+TAU-half);
     let middle = 0.5*(t0+t1);
     let (t0,t1) = if (c+ca*middle.dcos()+cb*middle.dsin())*side > 0. { (t0,t1) } else { (phi-half,phi+half) };
-    let unit = arc(&Frame::WORLD,1.,[t0,t1]);
-    let spline = BSpline {poles:unit.poles.iter().map(|p| g.at([a*p[0],b*p[1],0.])).collect(),..unit};
-    Some((Frame::new(f.o,f.z,scale(f.x,side)),spline))
+    Some((Frame::new(f.o,f.z,scale(f.x,side)),ellipse_arc(&g,a,b,[t0,t1])))
 }
 
 /// **A curve turned once about `f.z` as the rational net that is exactly its surface of

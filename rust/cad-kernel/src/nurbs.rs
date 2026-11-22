@@ -153,6 +153,15 @@ impl BSpline {
     /// The length of the control polygon, a bound on the curve's (a rational one's too: its de
     /// Casteljau steps cut corners).
     pub fn hull_length(&self) -> f64 { self.poles.windows(2).map(|w| crate::util::space::distance(w[0],w[1])).sum() }
+    /// The curve over `[a, b]` (within its domain) alone, exactly: the same points at the same
+    /// parameters, its knots clamped at `a` and `b` (Boehm's insertion, `Net::segment` over a net
+    /// of two equal columns).
+    pub fn segment(&self,span: [f64;2]) -> BSpline {
+        let net = Net {du:self.degree,dv:1,uknots:self.knots.clone(),vknots:vec![0.,0.,1.,1.],poles:self.poles.iter().map(|&q| vec![q,q]).collect(),
+            weights:self.weights.as_ref().map(|w| w.iter().map(|&x| vec![x,x]).collect())};
+        let s = net.segment(span,[0.,1.]);
+        BSpline {degree:self.degree,knots:s.uknots,poles:s.poles.iter().map(|r| r[0]).collect(),weights:s.weights.map(|w| w.iter().map(|r| r[0]).collect())}
+    }
     /// The poles whose basis reaches `[a, b]` (clamped into the domain): their hull holds the curve
     /// there.
     pub fn poles_over(&self,[a,b]: [f64;2]) -> &[V] {
@@ -807,7 +816,7 @@ impl Net {
         }))
     }
     /// The surface over `[u0, u1] × [v0, v1]` (within its domain) alone, exactly: the same points at
-    /// the same parameters, only the net that reaches there.
+    /// the same parameters, only the net that reaches there (`BSpline::segment` is a curve's).
     pub fn segment(&self,[u0,u1]: [f64;2],[v0,v1]: [f64;2]) -> Net {
         let [[a0,a1],[b0,b1]] = self.domain();
         let (u0,u1,v0,v1) = (u0.max(a0),u1.min(a1),v0.max(b0),v1.min(b1));
