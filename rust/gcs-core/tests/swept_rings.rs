@@ -477,7 +477,7 @@ fn groove_counted(cut: &Brep,n: usize,count: Option<f64>) {
     let (_,tool,..) = along_a_spline();
     let runner = runner();
     let solid = gcs_core::brep::swept::member::Solid::new(&tool,0.002,1.).unwrap();
-    let swept = gcs_core::brep::swept::member::Swept {sampled:true,tool:&solid,path:&runner,roll:[0.,1.]};
+    let swept = gcs_core::brep::swept::member::Swept::new(&solid,&runner,[0.,1.]).sampled();
     let body = gcs_core::brep::swept::member::Solid::new(cut,0.002,1.).unwrap();
     let (lo,hi) = ([-2.,-2.,-1.5],[32.,22.,0.]);
     let mut rng = gcs_core::rng::Rng::new(9);
@@ -1176,9 +1176,9 @@ fn thin() -> (Brep,Trajectory,[f64;2],f64) {
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 40 s: the thin tumbling torus fitted and given way")]
 fn a_bridges_end_gives_way_to_a_double_curve_within_the_arrangements_band_of_it() {
-    use gcs_core::brep::swept::closed::ring_fitted;
+    use gcs_core::brep::swept::closed::{RingFitted,ring_fitted};
     let (tool,path,roll,tol) = thin();
-    let (_,_,fits,curves,_) = ring_fitted(&tool,&path,roll,tol).unwrap();
+    let RingFitted {fits,curves,..} = ring_fitted(&tool,&path,roll,tol).unwrap();
     assert_eq!((fits.len(),curves.len()),(3,2),"three stretches, two double curves");
     let given: Vec<Vec<(usize,usize)>> = fits.iter().map(|f| f.ways.iter().map(|w| (w.of.0,w.side)).collect()).collect();
     assert_eq!(given,vec![vec![],vec![(0,0)],vec![(0,0),(1,1)]],"the branches given way, stretch by stretch");
@@ -1189,7 +1189,7 @@ fn a_bridges_end_gives_way_to_a_double_curve_within_the_arrangements_band_of_it(
         assert!(lo <= f.roll[0] && hi >= f.roll[1],"a branch over {:?} given way over {:?}",[lo,hi],f.roll);
     } }
     let (tool,path,roll,tol) = half_turn();
-    let (_,_,fits,_,_) = ring_fitted(&tool,&path,roll,tol).unwrap();
+    let RingFitted {fits,..} = ring_fitted(&tool,&path,roll,tol).unwrap();
     assert!(fits.iter().all(|f| f.ways.is_empty()),"the half turn gives no way");
 }
 
@@ -1243,11 +1243,11 @@ fn the_thin_tumbling_torus_is_built_closed() {
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 40 s: the full turn fitted and its crossings read")]
 fn the_full_turns_tube_passing_back_over_its_start_is_read_from_the_start_row() {
-    use gcs_core::brep::swept::closed::ring_fitted;
+    use gcs_core::brep::swept::closed::{RingFitted,ring_fitted};
     use gcs_core::brep::swept::depth::{label_at,passed_back,sheet};
     use gcs_core::space::distance;
     let (tool,path,roll,tol) = full_turn();
-    let (ring,_,_,curves,_) = ring_fitted(&tool,&path,roll,tol).unwrap_or_else(|e| panic!("not fitted: {e:?}"));
+    let RingFitted {ring,curves,..} = ring_fitted(&tool,&path,roll,tol).unwrap_or_else(|e| panic!("not fitted: {e:?}"));
     let back = passed_back(&ring,&path,roll,&curves,tol).unwrap_or_else(|e| panic!("not read: {e:?}"));
     assert!(back.len()%2 == 0 && !back.is_empty(),"each run with its partner: {}",back.len());
     let at = |q: (f64,f64,f64)| sheet(&ring,&path,roll,q.0,q.1,label_at(&ring,&path,q.0,q.1,q.2).unwrap()).unwrap().0;

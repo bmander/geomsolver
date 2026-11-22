@@ -6,6 +6,7 @@
 //! (`ends`: each double curve's points against the bridges' ends on their own rows; `ratio`: their
 //! `s''` against the pair's least's depth, the level a bridge's end is put at; `sliver`: at each roll, each narrow pair's folds, how far apart, and how deep the sweep holds
 //! the leaf between them — over the roll, and by the instants beside its own)
+use cad_kernel::swept::closed::{RingFitted,ring_fitted};
 use cad_kernel::swept::depth::{Reading,cover,far_depth,label_at,sheet};
 use cad_kernel::trajectory::{Screw,Trajectory};
 
@@ -208,7 +209,7 @@ fn main() {
             // the curve, their angle and roll less the point's, and where the curve's rolls cross the
             // point's own roll (its row, if the roll is parted there)
             let n: usize = args.get(2).map_or(12,|v| v.parse().unwrap());
-            let (_,_,_,curves,_) = cad_kernel::swept::closed::ring_fitted(&tool,&path,roll,tol).unwrap();
+            let RingFitted {curves,..} = ring_fitted(&tool,&path,roll,tol).unwrap();
             for (ci,c) in curves.iter().enumerate() {
                 let at = c.iter().position(|p| p.0.is_nan()).unwrap_or(c.len());
                 for ap in &c[at+1..] {
@@ -251,7 +252,7 @@ fn main() {
             // stands inside the bridge (`ends [band] [x,y,z r]`: each point within `band` tolerances
             // printed, or within `r` of the place `x`)
             let band: f64 = args.get(2).map_or(8.,|v| v.parse().unwrap());
-            let (_,_,_,curves,_) = cad_kernel::swept::closed::ring_fitted(&tool,&path,roll,tol).unwrap();
+            let RingFitted {curves,..} = ring_fitted(&tool,&path,roll,tol).unwrap();
             let tau = std::f64::consts::TAU;
             for (ci,c) in curves.iter().enumerate() {
                 let at = c.iter().position(|p| p.0.is_nan()).unwrap_or(c.len());
@@ -286,7 +287,7 @@ fn main() {
             // level the bridge's end is put at is 1, the swallowtail's normal form puts the curve at 2
             // (`ratio [every]`)
             let every: usize = args.get(2).map_or(25,|v| v.parse().unwrap());
-            let (_,_,_,curves,_) = cad_kernel::swept::closed::ring_fitted(&tool,&path,roll,tol).unwrap();
+            let RingFitted {curves,..} = ring_fitted(&tool,&path,roll,tol).unwrap();
             let tau = std::f64::consts::TAU;
             for (ci,c) in curves.iter().enumerate() {
                 let at = c.iter().position(|p| p.0.is_nan()).unwrap_or(c.len());
@@ -312,7 +313,7 @@ fn main() {
             // each double curve's preimage points: at its angle, the stretch of the roll from it to
             // the fold (`s''` nought) on the side `s''` falls, its far depth's least there and the
             // stretch's length in space
-            let (ring,_,_,curves,_) = cad_kernel::swept::closed::ring_fitted(&tool,&path,roll,tol).unwrap();
+            let RingFitted {ring,curves,..} = ring_fitted(&tool,&path,roll,tol).unwrap();
             for c in &curves {
                 let at = c.iter().position(|p| p.0.is_nan()).unwrap_or(c.len());
                 let apexes = &c[at+1..];
@@ -675,7 +676,7 @@ fn main() {
     }
     let clock = std::time::Instant::now();
     if what == "fit" {
-        let (ring,_,fits,curves,_) = cad_kernel::swept::closed::ring_fitted(&tool,&path,roll,tol).unwrap();
+        let RingFitted {ring,fits,curves,..} = ring_fitted(&tool,&path,roll,tol).unwrap();
         println!("{} stretches {:?}, in {:?}",fits.len(),fits.iter().map(|f| f.roll).collect::<Vec<_>>(),clock.elapsed());
         for c in &curves {
             let at = c.iter().position(|p| p.0.is_nan()).unwrap_or(c.len());
@@ -690,7 +691,7 @@ fn main() {
         }
         return
     }
-    let (ring,_,fits,curves,cut) = cad_kernel::swept::closed::ring_fitted(&tool,&path,roll,tol).unwrap();
+    let RingFitted {ring,fits,curves,cut,..} = ring_fitted(&tool,&path,roll,tol).unwrap();
     println!("{} stretches, {} curves, cut {cut}, in {:?}",fits.len(),curves.len(),clock.elapsed());
     for (ci,c) in curves.iter().enumerate() {
         let at = c.iter().position(|p| p.0.is_nan()).unwrap_or(c.len());

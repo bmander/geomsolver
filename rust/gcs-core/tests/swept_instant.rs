@@ -88,7 +88,7 @@ fn a_balls_contacts_bound_what_it_sweeps() {
     let path = tumble();
     let roll = [0.,1.];
     let solid = Solid::new(&tool,0.001,1.).unwrap();
-    let swept = Swept {sampled:false,tool:&solid,path:&path,roll};
+    let swept = Swept::new(&solid,&path,roll);
     let chart = ring_chart(&face,&path,[0.1,0.9],[-1.2,1.2],9,9,1e-12).unwrap();
     let hair = 20.*solid.sag+1e-4;
     let mut held = 0;

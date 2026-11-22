@@ -52,7 +52,8 @@
 //! one function's zero in one surface's parameters with branches, and `ssi::unseen`'s cell classes
 //! (cleared, beside a known curve, a point pulled onto it) are the search's.
 use crate::geom::{Uv,V};
-use crate::util::fmath::HALF_READ;
+use crate::plane2::{dot,lerp};
+use crate::util::fmath::{HALF_READ,THIRD_READ};
 use crate::util::interval::Iv;
 use crate::util::space::{distance,segment_distance,Grid};
 
@@ -139,10 +140,6 @@ const CORRECTIONS: usize = 16;
 /// the tolerance resolves (structural, as `ssi::unseen`'s).
 const CAP: usize = 4_000_000;
 
-/// The cube root of the rounding, `ε^⅓ = 2^(−52/3)` (written out, not taken by the platform's
-/// `cbrt`): a central difference's step, as a part of its scale.
-const THIRD_READ: f64 = 6.055454452393343e-6;
-
 /// `f` read with its gradient.
 #[derive(Clone)]
 struct Read<A> { f: f64,grad: [f64;2],at: A }
@@ -173,8 +170,14 @@ fn inverse(g: [[f64;2];2]) -> Option<[[f64;2];2]> {
     (det.abs() > 0. && det.is_finite()).then(|| [[g[1][1]/det,-g[0][1]/det],[-g[1][0]/det,g[0][0]/det]])
 }
 fn apply(m: [[f64;2];2],x: [f64;2]) -> [f64;2] { [m[0][0]*x[0]+m[0][1]*x[1],m[1][0]*x[0]+m[1][1]*x[1]] }
-fn dot2(a: [f64;2],b: [f64;2]) -> f64 { a[0]*b[0]+a[1]*b[1] }
-fn lerp2(a: Uv,b: Uv,t: f64) -> Uv { [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t] }
+/// **Newton's step onto a zero in the parameters themselves**, along the gradient: `uv` moved by
+/// `f ∇f / |∇f|²` against it, and that step; none where the gradient is nought.
+pub fn newton(uv: Uv,f: f64,grad: [f64;2]) -> Option<(Uv,[f64;2])> {
+    let n = dot(grad,grad);
+    if !(n > 0.) { return None }
+    let d = [f*grad[0]/n,f*grad[1]/n];
+    Some(([uv[0]-d[0],uv[1]-d[1]],d))
+}
 /// A 2 × 2 system `[a; b] x = r` solved, none where it is singular.
 fn solve2(a: [f64;2],b: [f64;2],r: [f64;2]) -> Option<[f64;2]> {
     let det = a[0]*b[1]-a[1]*b[0];
@@ -277,11 +280,11 @@ impl<'a,F: Field> Tracer<'a,F> {
     }
 
     /// A parameter vector's length in space.
-    fn length(&self,uv: Uv,d: [f64;2]) -> f64 { dot2(d,apply(self.metric(uv),d)).max(0.).sqrt() }
+    fn length(&self,uv: Uv,d: [f64;2]) -> f64 { dot(d,apply(self.metric(uv),d)).max(0.).sqrt() }
 
     /// How fast `grad` changes its function per length in space: `√(∇ᵀ G⁻¹ ∇)`.
     fn slope(&self,uv: Uv,grad: [f64;2]) -> Option<f64> {
-        let s = dot2(grad,apply(inverse(self.metric(uv))?,grad));
+        let s = dot(grad,apply(inverse(self.metric(uv))?,grad));
         (s > 0.).then(|| s.sqrt())
     }
 
@@ -342,7 +345,7 @@ impl<'a,F: Field> Tracer<'a,F> {
         for _ in 0..CORRECTIONS {
             let r = self.along(uv,&at)?;
             let n = apply(inverse(self.metric(uv))?,r.grad);
-            let s = dot2(r.grad,n);
+            let s = dot(r.grad,n);
             if !(s > 0.) { return None }
             let length = r.f.abs()/s.sqrt();
             if length <= self.q.tol*HALF_READ { return Some((uv,r)) }
@@ -364,7 +367,7 @@ impl<'a,F: Field> Tracer<'a,F> {
         let tol = self.q.tol;
         let long = distance(self.point(p),self.point(q));
         [0.25,0.5,0.75].iter().all(|&s| {
-            let x = lerp2(p,q,s);
+            let x = lerp(p,q,s);
             if self.outside(x).is_some() { return false }
             let Some(r) = self.along(x,at) else { return false };
             if self.off(x,&r) > tol { return false }
@@ -383,10 +386,8 @@ impl<'a,F: Field> Tracer<'a,F> {
         let mut at = at.clone();
         for _ in 0..CORRECTIONS {
             let r = self.along(y,&at)?;
-            let n = dot2(r.grad,r.grad);
-            if !(n > 0.) { return None }
-            let d = [r.f*r.grad[0]/n,r.f*r.grad[1]/n];
-            y = [y[0]-d[0],y[1]-d[1]];
+            let (z,d) = newton(y,r.f,r.grad)?;
+            y = z;
             at = r.at;
             if distance(self.point(x),self.point(y)) > limit { return None }
             if self.length(y,d) <= self.q.tol*HALF_READ { return Some(y) }
@@ -430,7 +431,7 @@ impl<'a,F: Field> Tracer<'a,F> {
     /// isolated by the bound along it where there is one, else sampled at the feature size.
     fn segment_seeds(&self,p: Uv,q: Uv) -> Vec<Uv> {
         let mut out = Vec::new();
-        let at = |t: f64| lerp2(p,q,t);
+        let at = |t: f64| lerp(p,q,t);
         let read = |t: f64| self.field.least(at(t)).map(|v| v.f);
         let mut stack = vec![(0.,1.)];
         while let Some((a,b)) = stack.pop() {
@@ -632,13 +633,13 @@ impl<'a,F: Field> Tracer<'a,F> {
             let mut arrived: Option<(Uv,End,Option<usize>)> = None;
             if let Some((_,k)) = best {
                 let x = self.seeds[k].uv;
-                if dot2(apply(self.metric(p),t),[x[0]-p[0],x[1]-p[1]]) > 0. && self.chord(p,x,&cur) {
+                if dot(apply(self.metric(p),t),[x[0]-p[0],x[1]-p[1]]) > 0. && self.chord(p,x,&cur) {
                     arrived = Some((x,self.seeds[k].end,Some(k)));
                 }
             }
             if arrived.is_none() && own && moved > 0. {
                 let d = distance(xp,self.point(start));
-                if d <= h && dot2(apply(self.metric(p),t),[start[0]-p[0],start[1]-p[1]]) > 0. && self.chord(p,start,&cur) {
+                if d <= h && dot(apply(self.metric(p),t),[start[0]-p[0],start[1]-p[1]]) > 0. && self.chord(p,start,&cur) {
                     arrived = Some((start,End::Closed,None));
                 }
             }
@@ -688,7 +689,7 @@ impl<'a,F: Field> Tracer<'a,F> {
                             return Err(format!("the zero set's corner at ({:.9}, {:.9}) leaves along no tangent, not traced",c[0],c[1]))
                         };
                         // along the other branch into where the first stands above nought
-                        let s = if dot2(mine.grad,tc) >= 0. { 1. } else { -1. };
+                        let s = if dot(mine.grad,tc) >= 0. { 1. } else { -1. };
                         t = [tc[0]*s,tc[1]*s];
                         cur = other.at.clone();
                         run = Run {uv:vec![c],at:vec![other.at],start:Some(End::Switch),end:End::Closed};
@@ -702,7 +703,7 @@ impl<'a,F: Field> Tracer<'a,F> {
             }
             if !self.chord(p,q,&cur) { self.halve(&mut h,p,t)?; continue }
             let Some(tq) = self.tangent(q,rq.grad) else { self.halve(&mut h,p,t)?; continue };
-            let s = if dot2(apply(self.metric(q),tq),[q[0]-p[0],q[1]-p[1]]) >= 0. { 1. } else { -1. };
+            let s = if dot(apply(self.metric(q),tq),[q[0]-p[0],q[1]-p[1]]) >= 0. { 1. } else { -1. };
             t = [tq[0]*s,tq[1]*s];
             moved += distance(xp,self.point(q));
             cur = rq.at.clone();
@@ -722,7 +723,7 @@ impl<'a,F: Field> Tracer<'a,F> {
         let s = |x: Uv| self.side(side,x).map(|v| v.0);
         let (sp,sq) = (s(p)?,s(q)?);
         let mut c = if sp > 0. && sq < 0. {
-            lerp2(p,q,crate::util::roots::bracketed_root(|x| s(lerp2(p,q,x)),0.,sp,1.,sq,f64::EPSILON))
+            lerp(p,q,crate::util::roots::bracketed_root(|x| s(lerp(p,q,x)),0.,sp,1.,sq,f64::EPSILON))
         } else { p };
         let mut a = at.clone();
         let mut done = false;
@@ -739,7 +740,7 @@ impl<'a,F: Field> Tracer<'a,F> {
         if !(done || (self.off(c,&r) <= tol && self.slope(c,sg).is_some_and(|k| sv.abs()/k <= tol))) { return None }
         if distance(self.point(p),self.point(c)) > h+tol { return None }
         // the end is on the side, or within the rounding of it; inside every other
-        if !self.chord(p,lerp2(p,c,1.-HALF_READ),at) { return None }
+        if !self.chord(p,lerp(p,c,1.-HALF_READ),at) { return None }
         let x = self.point(c);
         let end = side.end();
         if let Some(k) = self.seeds.iter().position(|s| s.end == end && distance(self.point(s.uv),x) <= 2.*tol) {
@@ -760,8 +761,8 @@ impl<'a,F: Field> Tracer<'a,F> {
         let g = |x: Uv| self.field.along(x,other).map(|v| v.f);
         let (gp,gq) = (g(p)?,g(q)?);
         let mut c = if (gp < 0.) != (gq < 0.) {
-            lerp2(p,q,crate::util::roots::bracketed_root(|x| g(lerp2(p,q,x)),0.,gp,1.,gq,f64::EPSILON))
-        } else { lerp2(p,q,0.5) };
+            lerp(p,q,crate::util::roots::bracketed_root(|x| g(lerp(p,q,x)),0.,gp,1.,gq,f64::EPSILON))
+        } else { lerp(p,q,0.5) };
         let (mut a,mut b) = (mine.clone(),other.clone());
         for _ in 0..CORRECTIONS {
             let ra = self.along(c,&a)?;

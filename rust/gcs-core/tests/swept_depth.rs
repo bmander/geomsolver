@@ -218,7 +218,7 @@ fn the_thin_tori_double_curves_end_at_their_swallowtail_points_and_the_far_cover
     let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
     let roll = [-75f64.to_radians(),75f64.to_radians()];
     let tol = 0.015/50_000.;
-    let (ring,_,_,curves,_) = gcs_core::brep::swept::closed::ring_fitted(&tool,&path,roll,tol).unwrap();
+    let gcs_core::brep::swept::closed::RingFitted {ring,curves,..} = gcs_core::brep::swept::closed::ring_fitted(&tool,&path,roll,tol).unwrap();
     assert_eq!(curves.len(),2,"two fold pairs, two double curves");
     let tau = std::f64::consts::TAU;
     let mut ends = Vec::new();

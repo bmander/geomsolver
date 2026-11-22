@@ -775,7 +775,7 @@ fn fallen(why: Unbuilt) -> Option<Result<Brep,Unbuilt>> {
 /// `out` judged as the closed class judges its builds.
 fn judged(out: Brep,blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> Result<Brep,Unbuilt> {
     let solid = super::member::Solid::new(tool,bar,1.).map_err(Unbuilt::Failed)?;
-    let swept = super::member::Swept {sampled:false,tool:&solid,path,roll};
+    let swept = super::member::Swept::new(&solid,path,roll);
     super::closed::judge(&out,&swept,blank,Some(blank),&[],tol)?;
     Ok(out)
 }

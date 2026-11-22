@@ -30,6 +30,7 @@ use crate::trajectory::Trajectory;
 use crate::util::space::{add,distance,dot,scale};
 use super::closed::Unbuilt;
 use super::depth::Sampled;
+use super::rings::Ring;
 use std::f64::consts::{FRAC_PI_2,PI,TAU};
 use std::sync::Arc;
 
@@ -113,13 +114,11 @@ fn root(g: &dyn Fn(f64) -> f64,guess: f64) -> Option<f64> {
     while w <= PI {
         for s in [guess-w,guess+w] {
             if g(s)*g0 <= 0. {
-                let (mut lo,mut hi) = if s < guess { (s,guess) } else { (guess,s) };
+                let (lo,hi) = if s < guess { (s,guess) } else { (guess,s) };
                 let glo = g(lo);
-                loop {
-                    let mid = 0.5*(lo+hi);
-                    if mid <= lo || mid >= hi { return Some(mid) }
-                    if (g(mid) <= 0.) == (glo <= 0.) { lo = mid } else { hi = mid }
-                }
+                let (lo,hi) = crate::util::roots::bisect(lo,hi,|l,h| 0.5*(l+h),|l,h| { let m = 0.5*(l+h); m > l && m < h },
+                    |m| (g(m) <= 0.) == (glo <= 0.));
+                return Some(0.5*(lo+hi))
             }
         }
         w *= 2.;
@@ -266,7 +265,7 @@ fn kept_end(surf: &Surface,loops: &[(Vec<Side>,[f64;2])],name: &str,tol: f64) ->
     for (sides,mid) in loops {
         // (the loop's area in parameters, read at eight places a side)
         let uv: Vec<[f64;2]> = sides.iter().flat_map(|s| (0..8).map(|i| uv_near(surf,s.at(i as f64/8.),*mid))).collect();
-        let area: f64 = (0..uv.len()).map(|i| { let (p,q) = (uv[i],uv[(i+1)%uv.len()]); p[0]*q[1]-q[0]*p[1] }).sum();
+        let area = crate::planar::signed_area(&uv);
         if !(area.abs() > 0.) { return Err(Unbuilt::Failed("a ring's kept end of no area".into())) }
         let corners: Vec<u32> = sides.iter().map(|s| vertex(&mut out,s.first())).collect();
         let mut lp = Vec::new();
@@ -284,20 +283,16 @@ fn kept_end(surf: &Surface,loops: &[(Vec<Side>,[f64;2])],name: &str,tol: f64) ->
 
 /// **A ring touching a meridian whole, entered by depth** where it is cut from `blank` and its
 /// other whole-touched meridian sweeps clear of it; `None` where no meridian is touched whole at
-/// two of the closed class's poses (`looks`), and refused by name — `Curved` at the place it reads
+/// two of the closed class's poses (`looks` equal steps over the roll, `touched` those of them
+/// touching one whole: `Ring::touched_over`), and refused by name — `Curved` at the place it reads
 /// otherwise — where what is kept is not as the module says: the tool no torus, the contact not two
 /// parallels, a leaf not kept whole or not covered, an end piece not ending where it crosses the
 /// tool, or a kept sheet held from beyond by more than the tolerance anywhere it is read.
 #[allow(clippy::too_many_arguments)]
-pub fn entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],looks: usize,bar: f64,fit: f64,tol: f64,blank: &Brep)
-    -> Result<Option<Entered>,Unbuilt> {
-    let ring = super::rings::Ring::read(tool)?;
+pub(super) fn entered(tool: &Brep,ring: &Ring,touched: &[(f64,f64,usize)],path: &Trajectory,[a,b]: [f64;2],looks: usize,bar: f64,fit: f64,
+    tol: f64,blank: &Brep) -> Result<Option<Entered>,Unbuilt> {
     let clock = crate::util::clock::Instant::now();
     let lap = |what: &str| if crate::timing() { eprintln!("touched: {what} at {:?}",clock.elapsed()) };
-    let touched: Vec<(f64,f64,usize)> = (0..=looks).map(|k| a+(b-a)*k as f64/looks as f64)
-        .map(|t| Ok::<_,Unbuilt>((t,ring.touched_whole(&crate::trajectory::Twist::body(path.at(t)?)))))
-        .filter_map(|r| match r { Ok((t,Some((theta,k)))) => Some(Ok((t,theta,k))),Ok(_) => None,Err(e) => Some(Err(e)) })
-        .collect::<Result<_,_>>()?;
     if touched.len() < 2 { return Ok(None) }
     let refused = |at: V| Unbuilt::Curved {at};
     let (t0,theta,k) = touched[0];
@@ -350,7 +345,7 @@ pub fn entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],looks: usize,bar: f6
             Ok(pose.point(torus.at(al,p)[0]))
         }).collect()
     };
-    let depth = Sampled::new(&ring,path,[a,b],((b-a)/super::closed::grain(tool,path,[a,b],bar)?).ceil().max(1.) as usize)?;
+    let depth = Sampled::new(ring,path,[a,b],((b-a)/super::closed::grain(tool,path,[a,b],bar)?).ceil().max(1.) as usize)?;
     // a place is kept where nothing beyond its own instant holds it by more than the tolerance
     let kept = |x: V,t: f64| depth.cover(x,t).is_none_or(|c| c.depth >= -tol);
     let mid = 0.5*(a+b);
@@ -558,12 +553,9 @@ pub fn entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],looks: usize,bar: f6
         if seam < hi {
             // (the strip's parameter where it crosses the seam: its angle round the tube halved to it)
             let v_of = |t: f64| near(surf.inverse(strip.point(t))[1],on[0]+d*t);
-            let (mut l,mut h) = (0.,1.);
-            loop {
-                let m = 0.5*(l+h);
-                if m <= l || m >= h { break }
-                if (v_of(m)-seam)*(v_of(l)-seam) > 0. { l = m } else { h = m }
-            }
+            let v0 = v_of(0.)-seam;
+            let (l,h) = crate::util::roots::bisect(0.,1.,|l,h| 0.5*(l+h),|l,h| { let m = 0.5*(l+h); m > l && m < h },
+                |m| (v_of(m)-seam)*v0 > 0.);
             let ts = 0.5*(l+h);
             let u_pi = surf.inverse(strip.point(ts))[0];
             loops.push((vec![Side {c:bspline(strip.clone()),t:[0.,ts],forward:true},Side::equator(&surf,[u_pi,u_eq]),
@@ -587,12 +579,10 @@ pub fn entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],looks: usize,bar: f6
             let u_of = |c: &BSpline,t: f64| near(surf.inverse(c.point(t))[0],PI)-PI;
             let reach = |c: &BSpline,u: f64| -> f64 {
                 // (the curve's parameter at `u` round the torus, halved to the rounding)
-                let (mut lo,mut hi) = (0.,FRAC_PI_2);
-                loop {
-                    let m = 0.5*(lo+hi);
-                    if m <= lo || m >= hi { return m }
-                    if (u_of(c,m)-u)*(u_of(c,hi)-u) > 0. { hi = m } else { lo = m }
-                }
+                let u1 = u_of(c,FRAC_PI_2)-u;
+                let (lo,hi) = crate::util::roots::bisect(0.,FRAC_PI_2,|l,h| 0.5*(l+h),|l,h| { let m = 0.5*(l+h); m > l && m < h },
+                    |m| !((u_of(c,m)-u)*u1 > 0.));
+                0.5*(lo+hi)
             };
             let (ur,ux) = (u_of(&rim,FRAC_PI_2),u_of(&cross,FRAC_PI_2));
             let (tr,tx) = if ux.abs() >= ur.abs() { (FRAC_PI_2,reach(&cross,ur)) } else { (reach(&rim,ux),FRAC_PI_2) };

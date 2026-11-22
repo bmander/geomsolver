@@ -30,7 +30,7 @@ const FINEST: f64 = 1e-9;
 const MOST_READS: usize = 1 << 16;
 /// The most stretches `Swept::beyond` reads before it says `None`, the cautious answer: a ball near
 /// the boundary whose proof would take more is left near, and its pairs met.
-pub(super) const BEYOND_READS: usize = 256;
+const BEYOND_READS: usize = 256;
 
 /// A tool read for membership: its boundary meshed, scaled to the trajectory's units, a box
 /// about each triangle, and how far the mesh may stand off the exact boundary (its measured sag,
@@ -228,7 +228,14 @@ impl Ord for Stretch {
 /// A tool carried along a trajectory over a roll: what membership is read of. `sampled` asks for a
 /// path that encloses nothing to be read at its sampled speed (`Swept::speed`) — no proof, and
 /// asked for by name only (`swept::touched`'s entry, #942); otherwise such a path is `Unbounded`.
-pub struct Swept<'a> { pub tool: &'a Solid,pub path: &'a Trajectory,pub roll: [f64;2],pub sampled: bool }
+pub struct Swept<'a> { pub tool: &'a Solid,pub path: &'a Trajectory,pub roll: [f64;2],sampled: bool }
+
+impl<'a> Swept<'a> {
+    /// The tool carried along `path` over `roll`: a path that encloses nothing read as `Unbounded`.
+    pub fn new(tool: &'a Solid,path: &'a Trajectory,roll: [f64;2]) -> Swept<'a> { Swept {tool,path,roll,sampled:false} }
+    /// The same read at its sampled speed where its path encloses nothing (`sampled`).
+    pub fn sampled(self) -> Swept<'a> { Swept {sampled:true,..self} }
+}
 
 impl Swept<'_> {
     /// Whether `x` stands more than `pad` past everything the tool reaches over `roll` along

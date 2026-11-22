@@ -129,7 +129,6 @@ impl<G: Guide> Along<G> {
     /// The curve the frame runs along.
     pub fn guide(&self) -> &G { &self.guide }
 
-
     /// The unit tangent where the curve's derivative is `d`, or why there is none.
     fn tangent(&self,u: f64,d: V3) -> Result<V3,KernelError> {
         normalised(d).ok_or_else(|| KernelError::new(Kind::Failed,format!("{}'s path has no tangent at {u}",self.name)))

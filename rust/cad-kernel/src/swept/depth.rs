@@ -20,7 +20,7 @@
 use super::closed::Unbuilt;
 use super::rings::{Label,Ring};
 use crate::trajectory::{Trajectory,Twist};
-use crate::util::fmath::HALF_READ;
+use crate::util::fmath::{HALF_READ,THIRD_READ};
 
 use crate::trajectory::Pose;
 use crate::util::space::{distance,norm};
@@ -51,6 +51,10 @@ fn depth_at(ring: &Ring,path: &Trajectory,x: V,t: f64) -> Option<(f64,V,usize)> 
     let (d,k) = ring.signed(p);
     Some((d,p,k))
 }
+
+/// The rounding of the depth at the point `x`: the pose's and the distance's few roundings of the
+/// point's place, read at the tool's size.
+fn rounding(ring: &Ring,x: V) -> f64 { 16.*f64::EPSILON*(norm(x)+ring.size) }
 
 /// The golden-section least of `f` over `[lo, hi]`, to the rounding of the roll.
 fn least(f: &dyn Fn(f64) -> f64,mut lo: f64,mut hi: f64) -> f64 {
@@ -83,7 +87,7 @@ pub fn cover(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],x: V,own: f64,off: f64
     // point. Nearer, `d` is nought to its rounding either way)
     // (or, where the point stands off its sheet — a fitted sheet's point, `off` its fit — that:
     // about its own instant `d` is then nought to it)
-    let rounding = (16.*f64::EPSILON*(crate::util::space::norm(x)+ring.size)).max(off);
+    let rounding = rounding(ring,x).max(off);
     // each side's samples: the roll and the depth; none where the side holds the point (its march
     // stopped there, the lower side read whole before the upper is begun)
     let side = |dir: f64| -> Option<Vec<(f64,f64)>> {
@@ -172,9 +176,7 @@ fn on_row(ring: &Ring,(w,pose): &(Twist,Pose),theta: f64,l: Label) -> Option<V> 
 /// The label of the contact at `(θ, t)` nearest the place `σ` round the meridian.
 pub fn label_at(ring: &Ring,path: &Trajectory,theta: f64,t: f64,sigma: f64) -> Option<Label> {
     let w = Twist::body(path.at(t).ok()?);
-    let nf = ring.elements.len() as f64;
-    let apart = |x: f64| { let d = (x-sigma).rem_euclid(nf); d.min(nf-d) };
-    ring.roots(&w,theta.rem_euclid(std::f64::consts::TAU)).into_iter().min_by(|a,b| apart(a.1.sigma).total_cmp(&apart(b.1.sigma))).map(|r| r.0)
+    ring.root_near(&w,theta.rem_euclid(std::f64::consts::TAU),sigma).map(|r| r.0)
 }
 
 /// The far cover's depth at the sheet's point `(θ, t)` on `l` (`cover`): below nought covered by
@@ -304,11 +306,11 @@ pub fn ends_met(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],ends: [&crate::topo
     Ok(out)
 }
 
-/// A given curve's two ends, where it has a span (`corners_along`'s).
+/// A given curve's two ends, where it is a spline's or an iso-curve's span (`query::curve_domain`).
 fn curve_ends(c: &crate::geom::Curve) -> Vec<V> {
-    match c {
-        crate::geom::Curve::BSpline(b) => { let [t0,t1] = b.domain(); vec![c.point(t0),c.point(t1)] }
-        crate::geom::Curve::Iso(..) => vec![c.point(0.),c.point(1.)],
+    use crate::geom::Curve;
+    match (c,crate::query::curve_domain(c)) {
+        (Curve::BSpline(..) | Curve::Iso(..),Some([t0,t1])) => vec![c.point(t0),c.point(t1)],
         _ => Vec::new(),
     }
 }
@@ -318,12 +320,9 @@ fn curve_ends(c: &crate::geom::Curve) -> Vec<V> {
 /// stands clear of nought by more is stepped over), each change halved to the rounding.
 fn corners_along(c: &crate::geom::Curve,g: &dyn Fn(V) -> f64,tol: f64) -> Vec<V> {
     use crate::geom::Curve;
-    let [t0,t1] = match c {
-        Curve::BSpline(b) => b.domain(),
-        Curve::Iso(..) => [0.,1.],
-        Curve::Circle(..) | Curve::Ellipse(..) => [0.,std::f64::consts::TAU],
-        _ => return Vec::new(),
-    };
+    // (over its span: a spline's, an iso-curve's, a conic's turn, `query::curve_domain`)
+    let Some([t0,t1]) = crate::query::curve_domain(c).filter(|_| matches!(c,Curve::BSpline(..) | Curve::Iso(..) | Curve::Circle(..) | Curve::Ellipse(..)))
+        else { return Vec::new() };
     let mut out = Vec::new();
     let (mut t,mut v) = (t0,g(c.point(t0)));
     while t < t1 {
@@ -331,11 +330,8 @@ fn corners_along(c: &crate::geom::Curve,g: &dyn Fn(V) -> f64,tol: f64) -> Vec<V>
         let next = (t+v.abs().max(tol)/speed).min(t1);
         let w = g(c.point(next));
         if v*w < 0. {
-            let (mut lo,mut hi) = (t,next);
-            while lo < 0.5*(lo+hi) && 0.5*(lo+hi) < hi {
-                let m = 0.5*(lo+hi);
-                if g(c.point(m))*v > 0. { lo = m } else { hi = m }
-            }
+            let (lo,hi) = crate::util::roots::bisect(t,next,|l,h| 0.5*(l+h),|l,h| { let m = 0.5*(l+h); m > l && m < h },
+                |m| g(c.point(m))*v > 0.);
             out.push(c.point(0.5*(lo+hi)));
         }
         (t,v) = (next,w);
@@ -430,7 +426,7 @@ impl Covered<'_> {
     /// ring's axis, the instant, and the place round the meridian of the root there nearest it.
     /// `None` at an end of the roll (the pose there is the tool's own face, met by the Boolean) or
     /// where no root stands within the tolerance of the point.
-    pub fn partner(&self,c: &Cover) -> Option<(f64,f64,f64)> {
+    fn partner(&self,c: &Cover) -> Option<(f64,f64,f64)> {
         let [a,b] = self.roll;
         if !(c.at > a && c.at < b) { return None }
         self.preimage(c)
@@ -455,7 +451,7 @@ impl Covered<'_> {
     fn gradient(&self,uv: [f64;2],x: V,at: f64) -> Option<[f64;2]> {
         let pose = self.path.pose(at).ok()?;
         let p = pose.inverse().point(x);
-        let h = f64::EPSILON.powf(1./3.)*self.ring.thickness;
+        let h = THIRD_READ*self.ring.thickness;
         let n = [0,1,2].map(|k| {
             let (mut a,mut b) = (p,p);
             a[k] += h;
@@ -469,7 +465,7 @@ impl Covered<'_> {
     }
 
     /// The place round the meridian of the sheet's own root at `(θ, t)`.
-    pub fn sigma(&self,[th,t]: [f64;2]) -> Option<f64> {
+    fn sigma(&self,[th,t]: [f64;2]) -> Option<f64> {
         let w = Twist::body(self.path.at(t).ok()?);
         Some(self.ring.root(&w,th.rem_euclid(std::f64::consts::TAU),self.label,false)?.sigma)
     }
@@ -508,7 +504,7 @@ impl crate::zero_set::Field for Covered<'_> {
     /// an angle and of the roll apart (where the difference's rounding and its truncation balance).
     /// (each row's twist and pose read once, for the three points on it)
     fn surface(&self,[th,t]: [f64;2]) -> (V,V,V) {
-        let h = f64::EPSILON.powf(1./3.);
+        let h = THIRD_READ;
         let ht = h*(self.roll[1]-self.roll[0]);
         let at = |r: &Option<(Twist,Pose)>,th: f64| r.as_ref().and_then(|r| on_row(self.ring,r,th,self.label)).unwrap_or([f64::NAN;3]);
         let rate = |p: V,q: V,step: f64| crate::util::space::scale(crate::util::space::sub(p,q),0.5/step);
@@ -532,14 +528,6 @@ impl crate::zero_set::Field for Covered<'_> {
 #[derive(Clone,Debug)]
 pub struct Seam { pub sheet: Vec<(f64,f64,f64)>,pub ends: [crate::zero_set::End;2],pub partner: Vec<Vec<(f64,f64,f64)>>,
     pub own: Vec<Vec<(f64,f64,f64)>>,pub corners: Vec<[Option<((f64,f64,f64),(f64,f64,f64))>;2]> }
-
-impl Seam {
-    /// Its curves as the ring road lays a double curve's (`rings::cut_along`): the sheet's, then
-    /// each run of its partner's.
-    pub fn curves(&self) -> Vec<Vec<(f64,f64,f64)>> {
-        std::iter::once(self.sheet.clone()).chain(self.partner.iter().cloned()).filter(|c| c.len() >= 2).collect()
-    }
-}
 
 /// **Where another instant's cover of a ring's sheet begins, traced as seams** (#942, the
 /// depth-based trim): the zero set of the far cover's depth (`Covered`) over the box `rect` of the
@@ -694,7 +682,7 @@ pub fn passed_back(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],known: &[Vec<(f6
                 let Some(x) = sheet(ring,path,[a,b],seed[0],t,l).map(|s| s.0) else { continue };
                 let (traced,chords) = read_known();
                 let on_known = chords.iter().any(|&[p,q]| crate::util::space::segments_distance(x,x,p,q) <= feature);
-                if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
+                if super::rings::ring_debug() {
                     eprintln!("ring: the cover changes on the row at {t} on {l:?} at θ {}{}",seed[0],if on_known { ", a double curve's" } else { "" })
                 }
                 if on_known { continue }
@@ -721,7 +709,7 @@ pub fn passed_back(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],known: &[Vec<(f6
             }
         }
     }
-    if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
+    if super::rings::ring_debug() {
         for c in &out { eprintln!("ring: passed back over itself, a curve of {} from {:?} to {:?}",c.len(),c[0],c[c.len()-1]) }
     }
     Ok(out)
@@ -777,17 +765,14 @@ fn refined(field: &Covered,uv: &[[f64;2]],at: &[Cover]) -> Result<(Vec<[f64;2]>,
         for _ in 0..PULLS {
             let v = field.along(m,&c)?;
             c = v.at;
-            let g = v.grad?;
-            let gg = g[0]*g[0]+g[1]*g[1];
-            if !(gg > 0.) { return None }
-            let step = [v.f*g[0]/gg,v.f*g[1]/gg];
-            m = [m[0]-step[0],m[1]-step[1]];
+            let step;
+            (m,step) = crate::zero_set::newton(m,v.f,v.grad?)?;
             if step[0].abs() <= f64::EPSILON*m[0].abs().max(1.) && step[1].abs() <= f64::EPSILON*m[1].abs().max(1.) { break }
         }
         let v = field.along(m,&c)?;
         let x = field.point(m)?;
         // (settled where what is left of the depth is within the rounding of the point's place)
-        (v.f.abs() <= 16.*f64::EPSILON*(crate::util::space::norm(x)+field.ring.size)).then_some((m,v.at))
+        (v.f.abs() <= rounding(field.ring,x)).then_some((m,v.at))
     };
     let (mut uvs,mut ats) = (vec![uv[0]],vec![at[0]]);
     for k in 1..uv.len() {
@@ -839,13 +824,12 @@ impl<'a> Sampled<'a> {
 
     /// The tool's signed distance at `x` at the instant `t` (`Ring::signed`), and its piece there.
     pub fn signed(&self,x: V,t: f64) -> (f64,usize) {
-        let Ok(p) = self.path.pose(t) else { return (f64::NAN,0) };
-        self.ring.signed(p.inverse().point(x))
+        depth_at(self.ring,self.path,x,t).map_or((f64::NAN,0),|(d,_,k)| (d,k))
     }
 
+    /// What holds `x` at the instant `t` (`depth_at`'s): where no pose is read, nothing, held nowhere.
     fn cover_at(&self,x: V,t: f64) -> Held {
-        let at = self.path.pose(t).map(|p| p.inverse().point(x)).unwrap_or([f64::NAN;3]);
-        let (depth,piece) = self.ring.signed(at);
+        let (depth,at,piece) = depth_at(self.ring,self.path,x,t).unwrap_or((f64::INFINITY,[f64::NAN;3],0));
         Held {t,depth,piece,at}
     }
 
@@ -874,7 +858,7 @@ impl<'a> Sampled<'a> {
             s.dedup_by(|a,b| a.0 == b.0);
         }
         let n = s.len();
-        let rounding = 16.*f64::EPSILON*(norm(x)+self.ring.size);
+        let rounding = rounding(self.ring,x);
         let mut out = Vec::new();
         for i in 0..n {
             let d = s[i].1;
@@ -914,15 +898,9 @@ impl<'a> Sampled<'a> {
         // (a least at nought to the rounding of the depth there — the point's coordinates' digits,
         // the pose carrying it back — is the point's own touch read again beside its instant, the
         // depth that flat there; and an instant touching it exactly from beyond keeps it all the same)
-        let rounding = 16.*f64::EPSILON*(norm(x)+self.ring.size);
+        let rounding = rounding(self.ring,x);
         self.minima_beside(x,Some(t0)).into_iter().filter(|c| c.t != t0 && c.depth.abs() > rounding).min_by(|a,b| a.depth.total_cmp(&b.depth))
     }
-
-    /// The point in space the tool puts its own point `at` at the instant `t`.
-    pub fn placed(&self,at: V,t: f64) -> V { self.path.pose(t).map_or([f64::NAN;3],|p| p.point(at)) }
-
-    /// How far the sample is from the settled least: a check on `minima`.
-    pub fn apart(&self,a: &Held,x: V) -> f64 { distance(self.placed(a.at,a.t),x) }
 }
 
 /// **A point of a seam**: its parameters on the sheet `(e, s)`, the point, its own instant, and what
@@ -942,15 +920,13 @@ impl Sampled<'_> {
     /// `None` where the ends do not read so. The kept end may be held by less than `tol`: a point
     /// held so is on the boundary to the tolerance — the rim beside a whole-touched meridian, where
     /// the tube's buried sliver stands 1e-10 off it, reads so.
-    pub fn edge_on(&self,sheet: &dyn Fn(f64,f64) -> (V,f64),e: f64,[mut kept,mut held]: [f64;2],tol: f64) -> Option<SeamPoint> {
+    pub fn edge_on(&self,sheet: &dyn Fn(f64,f64) -> (V,f64),e: f64,[kept,held]: [f64;2],tol: f64) -> Option<SeamPoint> {
         if self.beyond(sheet(e,kept)) < -tol || self.beyond(sheet(e,held)) >= 0. { return None }
         // (each halving parts the stretch in two; it ends where the points are a quarter of the
         // tolerance apart, or where the parameter no longer halves)
-        while distance(sheet(e,kept).0,sheet(e,held).0) > 0.25*tol {
-            let mid = 0.5*(kept+held);
-            if mid == kept || mid == held { break }
-            if self.beyond(sheet(e,mid)) < 0. { held = mid } else { kept = mid }
-        }
+        let (kept,_) = crate::util::roots::bisect(kept,held,|k,h| 0.5*(k+h),
+            |k,h| { let m = 0.5*(k+h); distance(sheet(e,k).0,sheet(e,h).0) > 0.25*tol && m != k && m != h },
+            |m| !(self.beyond(sheet(e,m)) < 0.));
         let (x,own) = sheet(e,kept);
         let cover = self.cover(x,own).unwrap_or(Held {t:f64::NAN,depth:f64::INFINITY,piece:0,at:[f64::NAN;3]});
         Some(SeamPoint {e,s:kept,x,own,cover})

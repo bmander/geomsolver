@@ -98,7 +98,7 @@ pub fn swept(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64) -> R
     // **judged by its definition before it is returned** (#777 V2), over a box holding it
     let (domain,..) = super::closed::cube_holding(&held,tol)?;
     let solid = Solid::new(tool,bar,1.)?;
-    super::closed::judge(&out,&Swept {sampled:false,tool:&solid,path,roll},&domain,None,&[],tol)?;
+    super::closed::judge(&out,&Swept::new(&solid,path,roll),&domain,None,&[],tol)?;
     Ok(Some(out))
 }
 
