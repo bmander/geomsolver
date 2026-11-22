@@ -163,8 +163,10 @@ placement carries inside the blank; CLI test readers zero the offset.
   to lowering each region once (four times before) and building each body once a state (`whole`
   once, `all` three times: sharp, with the pockets' rounds and with its own), and an
   edit to one plate of two to lowering again only the other's regions.  The 204-face plate of the
-  issue (`--where all.volume`, release `solventc`, a quiet machine) ran 260 s before this and
-  134 s after; its 102-face one 66 s and 36 s.
+  issue (`--where all.volume`, release `solventc`) ran 260 s before this and 134 s after, on a
+  quiet machine, and 76 s once the body's seams were read with the body (131 s without, the least
+  of three each, interleaved, at a load of 3 to 9 on four cores); its 102-face one 66 s, 36 s and
+  33 s.
   **An evaluated solid is keyed on its shape, and a solid that only moved is moved** (#412):
   `Caches::solid` keeps each evaluation against a `solid::ShapeKey` — what `reads` reads (a
   region's term reading each entity it measures by its kind, `reads::entity_reads`: a face by its
