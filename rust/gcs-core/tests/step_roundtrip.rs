@@ -83,6 +83,7 @@ impl Outcome {
             Outcome::Different(_) => "read to a different solid".into(),
             Outcome::SecondTrip(_) => "a second trip differs".into(),
             Outcome::Panicked(_) => "panicked".into(),
+            Outcome::Slow(m) if m.starts_with("too large") => "written too large to read".into(),
             Outcome::Slow(_) => format!("not read within {BOUND:?}"),
             Outcome::Degenerate(..) => "same but for degenerate edges".into(),
         }
@@ -393,6 +394,10 @@ pub fn stages(text: &str) -> Result<Vec<Given>,(Stage,Refusal,Option<Vec<Given>>
 /// the reader's pace, said apart.
 pub const BOUND: Duration = Duration::from_secs(60);
 
+/// The largest file the census reads: 64 MB. The library's largest besides the few past it is
+/// some megabytes; past it, the file itself is the defect (a polyline's millions of points).
+pub const LARGEST: usize = 64<<20;
+
 /// The message of a panic.
 fn said(p: Box<dyn std::any::Any + Send>) -> String {
     p.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| p.downcast_ref::<String>().cloned()).unwrap_or_else(|| "a panic".into())
@@ -413,6 +418,11 @@ fn trip_in(b: &Brep,name: &str,tol: f64,fit: Fit,found: &mut Found) -> Outcome {
     let text = match write(b,name,tol,fit) { Ok(t) => t,Err(e) => return Outcome::NotWritten(e) };
     found.write = started.elapsed();
     say(&format!("written in {:?}, {} bytes; reading",found.write,text.len()));
+    // (a file past `LARGEST` is said so and not read: a reader's time and memory grow with it, and
+    // the census would take hours over a few such)
+    if text.len() > LARGEST {
+        return Outcome::Slow(format!("too large: a file of {} bytes, written in {:.1?}, not read",text.len(),found.write))
+    }
     if let Ok(dir) = std::env::var("STEP_ROUNDTRIP_DUMP") {
         let file: String = name.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
         let _ = std::fs::write(std::path::Path::new(&dir).join(format!("{file}.step")),&text);
