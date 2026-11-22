@@ -68,11 +68,7 @@ fn failing() -> Vec<(String, Vec<String>)> {
     let read = par::map(&jobs, |(name, path, in_lib)| {
         let text = std::fs::read_to_string(path).unwrap();
         let dir = path.parent().unwrap().to_path_buf();
-        let mut beside = |m: &str| -> Option<String> {
-            modules::search_paths(m, name).iter()
-                .find_map(|rel| std::fs::read_to_string(dir.join(rel)).ok())
-                .or_else(|| library::resolve(m))
-        };
+        let mut beside = |m: &str| fixtures::module_beside(&dir, name, m);
         let errs = if *in_lib {
             errors(&text, &mut library::resolve)
         } else {
