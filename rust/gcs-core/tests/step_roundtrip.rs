@@ -407,17 +407,23 @@ pub fn same(b: &Brep,mb: &Measured,text: &str,given: &Given,fit: Fit,tol: f64,fo
     // the plane triangle it is) the file has none to give, so it is set aside, and the vertices only
     // it ends at with it; where the face's surface read has the pole (a net's collapsed row, a
     // cone's apex, a sphere's pole) the reader lays it, and each built must have one laid at its
-    // point. (A vertex no edge ends at is the kernel's bookkeeping, which no file writes.)
-    let pole = |fi: usize,p: gcs_core::brep::geom::V| {
+    // point. (A vertex no edge ends at is the kernel's bookkeeping, which no file writes.) A pole
+    // is where the surface's collapsing parameter sweeps no more than the file's uncertainty, as
+    // the reader reads one (`topo::pole_at`): a tolerant file's vertex stands a hair off the
+    // exact pole (CADGenBench 209's, 2e-13 off a sphere's, its parallel there 1.2e-7 of a
+    // meridian's speed; 238's 1.1e-5 off a net's collapsed row, within its own tolerance), and
+    // is the pole all the same.
+    let pole = |fi: usize,v: &gcs_core::brep::topo::Vertex| {
         let sf = &r.faces[fi].surface;
-        let uv = sf.inverse(p);
+        let uv = sf.inverse(v.p);
         let (q,su,sv) = sf.d1(uv);
         let (a,z) = (gcs_core::space::norm(su),gcs_core::space::norm(sv));
-        distance(q,p) <= 1e-9*s && a.min(z) <= 1e-9*a.max(z)
+        let within = stated.max(v.tol).max(1e-9*s);
+        distance(q,v.p) <= within && (a.min(z) <= 1e-9*a.max(z) || a.min(z)*std::f64::consts::PI <= within)
     };
     let kept: Vec<usize> = (0..b.edges.len()).filter(|&ei| !matches!(b.edges[ei].curve,EdgeCurve::Degenerate) || {
-        let p = b.vertices[b.edges[ei].v[0] as usize].p;
-        b.faces.iter().enumerate().any(|(fi,f)| f.loops.iter().flatten().any(|c| c.edge as usize == ei) && pole(fi,p))
+        let v = &b.vertices[b.edges[ei].v[0] as usize];
+        b.faces.iter().enumerate().any(|(fi,f)| f.loops.iter().flatten().any(|c| c.edge as usize == ei) && pole(fi,v))
     }).collect();
     let ended = kept.iter().flat_map(|&ei| b.edges[ei].v).collect::<BTreeSet<_>>().len();
     let mut poles: Vec<gcs_core::brep::geom::V> = kept.iter().filter(|&&ei| matches!(b.edges[ei].curve,EdgeCurve::Degenerate))

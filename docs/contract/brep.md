@@ -2074,7 +2074,12 @@ whose geometry holds no finite uncertainty, is refused, not followed. Gate:
 nine written by hand — a prism on extrusions of lines, upright and aslant; an extrusion of a
 circle, of a circle aslant read as an ellipse, of an ellipse; a revolution of a line along its
 axis and meeting it, of a circle and of an ellipse beside the axis — each written again, verified,
-and read back the same solid, every face on its original surface; the nine panicked the writer).
+and read back the same solid, every face on its original surface; the nine panicked the writer);
+`step_rewrite::the_corpus_is_written_again` (a tool over `$STEP_CORPUS`): the 32 CADGenBench
+inputs each written again, verified and read back the same, 217's drilled void as a
+`BREP_WITH_VOIDS`. `same` reads a pole as the reader does, where the collapsing parameter
+sweeps no more than the file's uncertainty or the vertex's tolerance (a tolerant vertex a hair off
+a sphere's pole or 1e-5 off a net's collapsed row is that pole).
 
 **A body is written as the solids it is** (#993 stage 2, `step::lumps`). ISO 10303-42 holds a
 `closed_shell` to be a `connected_face_set` (its faces, with their edges and vertices, connected),
