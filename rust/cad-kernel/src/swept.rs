@@ -36,3 +36,4 @@ pub mod pocket;
 pub mod dispatch;
 pub mod raster;
 pub mod pieces;
+pub mod depth;

@@ -210,7 +210,7 @@ impl Ring {
     /// corner's edge the fan's. `strict`: only within the piece's own stretch (half open, so a root
     /// on a join is counted once); otherwise wherever its closed form puts it, as a piece's end
     /// reads it.
-    fn root(&self,w: &Twist,theta: f64,l: Label,strict: bool) -> Option<Root> {
+    pub(crate) fn root(&self,w: &Twist,theta: f64,l: Label,strict: bool) -> Option<Root> {
         spent::ROOTS.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
         let (er,_,ez) = self.axes(theta);
         let n = self.elements.len();
@@ -318,7 +318,7 @@ impl Ring {
     }
 
     /// Every contact in the half-plane at `θ`, in order round the meridian.
-    fn roots(&self,w: &Twist,theta: f64) -> Vec<(Label,Root)> {
+    pub(crate) fn roots(&self,w: &Twist,theta: f64) -> Vec<(Label,Root)> {
         let mut out: Vec<(Label,Root)> = Vec::new();
         for (k,e) in self.elements.iter().enumerate() {
             let branches: &[bool] = match e { Element::Arc {..} => &[true,false],Element::Line {..} => &[true] };
@@ -339,7 +339,7 @@ impl Ring {
     /// `s''`: positive where the tool holds the point at no instant beside (the sheet touching),
     /// negative where it holds it at every one (the sheet's far side of a fold, buried). A fan's
     /// is unbounded: an edge's normals turn through their fan in no length.
-    fn bend(&self,w: &Twist,dw: &Twist,theta: f64,r: &Root) -> f64 {
+    pub(crate) fn bend(&self,w: &Twist,dw: &Twist,theta: f64,r: &Root) -> f64 {
         match r.bend {
             Bend::Fan => f64::INFINITY,
             Bend::Face {km,tm,kp} => {
@@ -364,7 +364,7 @@ enum Bend { Face { km: f64,tm: V,kp: f64 },Fan }
 /// A contact in a half-plane: the point and its outward normal (the tool's coordinates), its place
 /// round the meridian (`k + f` on piece `k`), and how it bends.
 #[derive(Clone,Copy,Debug)]
-struct Root { x: V,n: V,sigma: f64,bend: Bend }
+pub(crate) struct Root { pub(crate) x: V,pub(crate) n: V,pub(crate) sigma: f64,bend: Bend }
 
 /// How the sheet stands at a piece of the contact: touching (`s''` above `KEPT` of its greatest at
 /// the instant, the sweep's boundary where nothing else holds it), the far side of a fold (below
@@ -394,7 +394,7 @@ const KEPT: f64 = 0.1;
 
 /// The twist on the tool at `t` and its rate by `t`, read over `[a, b]` (the rate by differences
 /// within it).
-fn rates(path: &Trajectory,t: f64,[a,b]: [f64;2]) -> Result<(Twist,Twist),Unbuilt> {
+pub(crate) fn rates(path: &Trajectory,t: f64,[a,b]: [f64;2]) -> Result<(Twist,Twist),Unbuilt> {
     let w = |s: f64| -> Result<Twist,Unbuilt> { Ok(Twist::body(path.at(s)?)) };
     let h = 1e-4*(b-a).abs().max(1e-9);
     let w0 = w(t)?;
@@ -1276,7 +1276,7 @@ pub fn on_double_curve(ring: &Ring,path: &Trajectory,curve: &[(f64,f64,f64)],at:
 
 /// The sheet's point at the angle `θ` and roll `t`, the contact's root there nearest the place `σ`
 /// round the meridian, and that root's place.
-fn sheet_at(ring: &Ring,path: &Trajectory,theta: f64,t: f64,sigma: f64) -> Option<(V,f64)> {
+pub(crate) fn sheet_at(ring: &Ring,path: &Trajectory,theta: f64,t: f64,sigma: f64) -> Option<(V,f64)> {
     let w = Twist::body(path.at(t).ok()?);
     let nf = ring.elements.len() as f64;
     let apart = |x: f64| { let d = (x-sigma).rem_euclid(nf); d.min(nf-d) };
