@@ -1830,14 +1830,19 @@ sheet is rolled out: put three times end to end along each parameter it closes i
 multiplicity between, each copy's poles as written: the same points, exactly), each loop set out
 from the middle copy, and walked with the domain's width as its period, the walk's every rule —
 branches, a pole's collapsed parameter (a file curve leaving a pole on the branch that keeps the
-face on the left, a seam's a whole width on), a band's seam between two winding loops laid along
+face on the left; a seam's second use a whole period from its first, which, where the loop came
+round the pole between them along an apex's own closed edge, is that branch itself), a band's seam between two winding loops laid along
 the net's iso-curve (the net cut there by knot insertion, its row), a loop winding round the net's
 collapsed row joined to it along one — as on a cylinder or a sphere. Each face is then read on the
 sheet as the file gives it where its loops, moved by whole widths, lie within its domain, else on
-the window of the rolled sheet over one width — centred on what its loops leave free, or starting
-where they reach right round (a seam written or laid) — the sheet cut where no loop crosses and
-its pieces put end to end, held to the file's at 25 points; its loops' ends within 1e-9 of the
-window's edges are put on them. A face reaching round farther than once is refused naming it. A
+the window of the rolled sheet one width wide — centred on its loops' reach, or starting where
+they reach right round exactly (a seam written or laid); a seam leaning a hair, its uses a hair
+more than a width apart (CADGenBench 217's, by 2.5e-7), split between the window's two edges — the
+sheet cut where no loop crosses and its pieces put end to end, held to the file's at 25 points; its
+loops' ends within 1e-9 of the window's edges are put on them. A face reaching round farther than
+a hair more than once, or a use whose points read on the window leap half its width (a foot past
+an edge read on the far one: 217's band, its window starting at the least its loop reached, was
+measured at half its area), is refused naming it. A
 sheet closed in both parameters whose points are covered twice (an ellipse about its axis turned
 whole, kentron's oblate spheroid) is read on the branch its walk sets out on; on the other the
 face's normal turns, its shell inside out, refused, never read wrong. Not read yet: a closing
