@@ -918,4 +918,22 @@ impl Brep {
         }
         for (v,d) in self.vertices.iter_mut().zip(at_vertex) { v.tol = v.tol.max(d); }
     }
+
+    /// **`measure_tolerances` twice, measured once**: what a second pass changes is only what the
+    /// first pass's vertex tolerances reach — an inverse curve's ends (`Pcurve::Inverse`, which
+    /// takes a pole's other branch within its vertex's tolerance, `reach`) — and a vertex's
+    /// tolerance is read off its edges' curves' ends alone, which no tolerance moves. So the
+    /// vertices' are set first, as the first pass sets them, and the edges measured once against
+    /// them: the same tolerances, every sample read once where the reader's `finish` read each
+    /// twice (`step_read::the_tolerances_settled_are_those_measured_twice`).
+    pub fn settle_tolerances(&mut self) {
+        let mut at_vertex = vec![0_f64;self.vertices.len()];
+        for e in &self.edges {
+            if let EdgeCurve::Curve(c) = &e.curve {
+                for k in 0..2 { at_vertex[e.v[k] as usize] = at_vertex[e.v[k] as usize].max(distance(c.point(e.t[k]),self.vertices[e.v[k] as usize].p)); }
+            }
+        }
+        for (v,d) in self.vertices.iter_mut().zip(at_vertex) { v.tol = v.tol.max(d); }
+        self.measure_tolerances();
+    }
 }
