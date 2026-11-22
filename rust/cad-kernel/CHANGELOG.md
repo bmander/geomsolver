@@ -21,6 +21,17 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   alongside the run (the slope along the toe's own foot) ends nothing.  `holds_ball`'s refusal now
   says the face the ball overflows, the face it ends at, how far that edge stands off the other
   face and how far off the ball touches it.
+- **A boss on a lobe of a plate, of the lobe's radius or a hair off it, builds** (#994, fixture
+  141 of #961): three readings of an arrangement agree with the reach two features are one at.
+  The complex orders faces round an edge a step into each from the face's own point at the edge,
+  not the edge's, which stands within the reach of its faces and not on them
+  (`complex::Complex::new`); a piece narrower than any outline the readings draw — a crescent a few
+  tolerances wide — is read inside off its exact boundary (`boolean`'s `reading::off_halves`), not
+  dropped as having no inside; and two circles in one plane are read touching only where they stand
+  within the tolerance of one another (`query::curve_curve` by `plane2::circles`), not where the
+  chord they share stands within it of the first.  Refused before as "a shell of the arrangement is
+  kept on one side of a cylinder … two of its cells joined round an edge" and "a plane's pieces do
+  not close" at radii a micron apart.
 
 - **Faces on one surface are one surface whatever order a Boolean's operands come in** (#994,
   fixture 115's feet and lip at a plate's true edge): an arrangement reads which faces lie on one

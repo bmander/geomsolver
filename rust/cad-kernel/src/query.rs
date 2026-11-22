@@ -108,14 +108,25 @@ pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Opti
             let n = cross(f1.z,f2.z);
             if norm(n) <= 1e-12 {
                 if dot(sub(f2.o,f1.o),f1.z).abs() > tol { return Some(Vec::new()); }
-                // coplanar: the radical line, then the first circle along it
+                // coplanar: where the two circles meet, judged by how far apart they stand
+                // (`plane2::circles`), not by how far the chord they share stands inside the first
+                // — a lens of two circles crossing at a shallow angle, its chord within the
+                // tolerance of the first, stands twice as far apart across its middle where the
+                // two radii are one: a touch read there was a third root between the two crossings
+                // the circles' surfaces read (#994)
                 let between = sub(f2.o,f1.o);
                 let l = norm(between);
                 if l <= tol { return Some(Vec::new()); }
                 let u = scale(between,1./l);
-                let x = (l*l+r1*r1-r2*r2)/(2.*l);
-                let foot = add(f1.o,scale(u,x));
-                line_circle(foot,cross(f1.z,u),f1.o,f1.z,r1)
+                let v = cross(f1.z,u);
+                match super::plane2::circles(l,r1.abs(),r2.abs(),Touch::Gap(tol)) {
+                    super::plane2::Circles::Same | super::plane2::Circles::Miss => Vec::new(),
+                    super::plane2::Circles::Touch(x) => vec![add(f1.o,scale(u,x))],
+                    super::plane2::Circles::Cross(x,h) => {
+                        let foot = add(f1.o,scale(u,x));
+                        vec![add(foot,scale(v,-h)),add(foot,scale(v,h))]
+                    }
+                }
             } else {
                 // the line the two planes share, then the first circle along it
                 let d = scale(n,1./norm(n));

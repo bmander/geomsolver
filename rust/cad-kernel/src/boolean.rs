@@ -3766,13 +3766,7 @@ mod reading {
         let (d,edge,t) = near?;
         if d <= pool.tol { return None }
         if d > 2.*outline.sag() { return Some(outline.winding(uv) != 0) }
-        let e = &out[edge as usize];
-        if t <= e.t[0] || t >= e.t[1] { return None }
-        Some(cycles.iter().flatten().filter(|u| u.edge == edge).any(|u| {
-            let s = if u.along { (t-e.t[0])/(e.t[1]-e.t[0]) } else { (e.t[1]-t)/(e.t[1]-e.t[0]) };
-            let (a,b) = (at(u,f,out,pool,(s-1e-6).max(0.)),at(u,f,out,pool,(s+1e-6).min(1.)));
-            beside(f,at(u,f,out,pool,s),[b[0]-a[0],b[1]-a[1]],uv)
-        }))
+        side_of(cycles,f,out,pool,edge,t,uv)
     }
 
     /// Whether cycles drawn as `drawn`, to `bar`, hold `(uv, p)` (`judged`), drawn finer while
@@ -3794,7 +3788,98 @@ mod reading {
     /// (`judged`) and given only where it is inside; drawn finer while none is. Then, read alike,
     /// the points off the middles (`ALONG`).
     pub(super) fn inside<'a>(piece: &'a [Vec<Half>],f: &'a Face,out: &'a [WEdge],pool: &'a Pool) -> impl Iterator<Item=Inner>+'a {
-        ALONG.into_iter().flat_map(move |at| along(piece,f,out,pool,at))
+        ALONG.into_iter().flat_map(move |at| along(piece,f,out,pool,at)).chain(off_halves(piece,f,out,pool))
+    }
+
+    /// Where along a half its way into the piece is read (`off_halves`): its middle, then its
+    /// quarters.
+    const OFF: [f64;3] = [0.5,0.25,0.75];
+
+    /// **Points inside a piece read off its exact boundary** (#994): from a point of a half (its
+    /// middle, then its quarters, the longest half first), square to it into the piece, as far as
+    /// the piece holds the way — read by the side of the half nearest each point, exactly
+    /// (`by_nearest`), which needs no outline — and the point halfway across. A band of material
+    /// between two curves a few tolerances apart, narrower than any outline the readings above
+    /// draw can hold (the sag of its chords), has an inside all the same: a boss a micron wider
+    /// than the lobe of a plate it stands on overhangs the plate's top along the lobe in a
+    /// crescent a micron wide, which dropped as having no inside left the boss's wall open along
+    /// it, and the arrangement's shells joined across the hole. A piece narrower than twice the
+    /// pool's tolerance across has none: its edges are merged.
+    fn off_halves<'a>(piece: &'a [Vec<Half>],f: &'a Face,out: &'a [WEdge],pool: &'a Pool) -> impl Iterator<Item=Inner>+'a {
+        let length = |h: &Half| (0..4).map(|k| distance(out[h.edge as usize].point(param(h,out,k as f64/4.),pool),
+            out[h.edge as usize].point(param(h,out,(k+1) as f64/4.),pool))).sum::<f64>();
+        // (off a half whose edge the piece uses once: a seam or a slit, used each way, has the
+        // piece on both its sides, and a loop of nothing else, no area, holds no point)
+        let once = |h: &Half| piece.iter().flatten().filter(|u| u.edge == h.edge).count() == 1;
+        let mut halves: Vec<(f64,&Half)> = piece.iter().flatten().filter(|h| !h.pole && once(h)).map(|h| (length(h),h)).collect();
+        halves.sort_by(|a,b| b.0.total_cmp(&a.0));
+        let reach = 2.*100.*bar(piece,out,pool);
+        halves.into_iter().flat_map(move |(_,h)| OFF.into_iter().filter_map(move |s| across(piece,f,out,pool,h,s,reach)))
+    }
+
+    /// The point halfway across a piece from a fraction `s` along its half `h`, square to it, read
+    /// no farther than `reach` (`off_halves`); `None` where the piece holds no point there.
+    fn across(piece: &[Vec<Half>],f: &Face,out: &[WEdge],pool: &Pool,h: &Half,s: f64,reach: f64) -> Option<Inner> {
+        let q = at(h,f,out,pool,s);
+        let (a,b) = (at(h,f,out,pool,(s-1e-6).max(0.)),at(h,f,out,pool,(s+1e-6).min(1.)));
+        let d = [b[0]-a[0],b[1]-a[1]];
+        let l = d[0].hypot(d[1]);
+        if !(l > 0.) { return None }
+        // the material's side: the half's left, mirrored where the face is reversed (`beside`)
+        let n = if f.reversed { [d[1]/l,-d[0]/l] } else { [-d[1]/l,d[0]/l] };
+        // a length in space as a step in the parameters along `n`
+        let o = f.surface.point(q);
+        let eps = 1e-6*(1.+q[0].abs().max(q[1].abs()));
+        let speed = distance(f.surface.point([q[0]+eps*n[0],q[1]+eps*n[1]]),o)/eps;
+        if !(speed > 0.) { return None }
+        let point = |depth: f64| { let uv = [q[0]+n[0]*depth/speed,q[1]+n[1]*depth/speed]; (uv,f.surface.point(uv)) };
+        let holds = |depth: f64| { let (uv,p) = point(depth); by_nearest(piece,f,out,pool,uv,p) == Some(true) };
+        // out from twice the tolerance, doubling, to the first depth the piece does not hold;
+        // then where it stops holding, between the last it held and that
+        let mut held = 2.*pool.tol;
+        if !holds(held) { return None }
+        let mut past = held;
+        while past < reach {
+            past = (2.*past).min(reach);
+            if !holds(past) { break }
+            held = past;
+        }
+        if held < past {
+            for _ in 0..48 {
+                let m = 0.5*(held+past);
+                if holds(m) { held = m } else { past = m }
+                if past-held <= 0.25*pool.tol { break }
+            }
+        }
+        let (uv,p) = point(0.5*held);
+        (by_nearest(piece,f,out,pool,uv,p) == Some(true)).then_some(Inner(p))
+    }
+
+    /// Where `p`, at `uv` on `f`, stands against cycles of halves by the side of the half nearest
+    /// it alone (`judged` beside its outline): `None` within the pool's tolerance of a half, or
+    /// where the nearest is a vertex.
+    fn by_nearest(cycles: &[Vec<Half>],f: &Face,out: &[WEdge],pool: &Pool,uv: Uv,p: V) -> Option<bool> {
+        let mut near: Option<(f64,u32,f64)> = None;
+        for h in cycles.iter().flatten() {
+            let e = &out[h.edge as usize];
+            let (t,d) = nearest_on(&e.curve,e.t,pool.pts[e.v[0] as usize],p);
+            if near.is_none_or(|(best,_,_)| d < best) { near = Some((d,h.edge,t)); }
+        }
+        let (d,edge,t) = near?;
+        if d <= pool.tol { return None }
+        side_of(cycles,f,out,pool,edge,t,uv)
+    }
+
+    /// Whether `uv` lies on the material's side of edge `edge` at its parameter `t` (any use of it
+    /// by `cycles`: a seam is used once each side); `None` at either end.
+    fn side_of(cycles: &[Vec<Half>],f: &Face,out: &[WEdge],pool: &Pool,edge: u32,t: f64,uv: Uv) -> Option<bool> {
+        let e = &out[edge as usize];
+        if t <= e.t[0] || t >= e.t[1] { return None }
+        Some(cycles.iter().flatten().filter(|u| u.edge == edge).any(|u| {
+            let s = if u.along { (t-e.t[0])/(e.t[1]-e.t[0]) } else { (e.t[1]-t)/(e.t[1]-e.t[0]) };
+            let (a,b) = (at(u,f,out,pool,(s-1e-6).max(0.)),at(u,f,out,pool,(s+1e-6).min(1.)));
+            beside(f,at(u,f,out,pool,s),[b[0]-a[0],b[1]-a[1]],uv)
+        }))
     }
 
     /// The points `at` the way along the spans (`inside`).

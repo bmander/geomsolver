@@ -225,7 +225,13 @@ impl Complex {
             }
             let step = *step.get_or_insert_with(|| (1e-3*b.size().max(tol)).max(64.*tol));
             // each use: its way in at the edge (first order) and a step in (second order), its
-            // normal, read at the edge's point a fraction `at` along it
+            // normal, read at the edge's point a fraction `at` along it — the step from the face's
+            // own point there, not the edge's: an edge lies within the reach of its faces
+            // (`tolerant::ON_CURVE` tolerances: an edge laid on a class of faces one surface lies
+            // on the class's surface, #994), not on them, and a step read from a point standing
+            // that far off the face turns its way by as much as the step is short (a boss a micron
+            // wider than a plate's lobe it is one surface with, its wall read 0.12 rad off its way
+            // sixty-four tolerances in, ordered across the blend it touches)
             let read = |at: f64| -> Result<(V,V,Vec<(f64,f64,usize,V,V,[f64;2])>),String> {
                 let tm = edge.t[0]+(edge.t[1]-edge.t[0])*at;
                 let t = normalised(curve.tangent(tm)).ok_or_else(|| format!("edge {e} has no direction"))?;
@@ -244,7 +250,7 @@ impl Complex {
                     let deep = match in_parameters(&f.surface,uv,d) {
                         Some(x) => {
                             let p = f.surface.point([uv[0]+step*x[0],uv[1]+step*x[1]]);
-                            let q = sub(p,m);
+                            let q = sub(p,f.surface.point(uv));
                             let q = sub(q,scale(t,dot(q,t)));
                             if norm(q) > 0. { dot(q,b2).datan2(dot(q,b1)) } else { angle }
                         }
@@ -310,7 +316,7 @@ impl Complex {
                             let f = &b.faces[uses[e][x.2].0];
                             if let Some(dx) = ways.iter().find(|w| w.0 == x.2).and_then(|w| w.1) {
                                 let p = f.surface.point([x.5[0]+near*dx[0],x.5[1]+near*dx[1]]);
-                                let q = sub(p,m);
+                                let q = sub(p,f.surface.point(x.5));
                                 let q = sub(q,scale(t,dot(q,t)));
                                 if norm(q) > 0. { x.1 = dot(q,b2).datan2(dot(q,b1)) }
                             }
