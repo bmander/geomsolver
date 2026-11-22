@@ -191,17 +191,6 @@ impl Sketch {
         })
     }
 
-    /// **`read` with the drawing held still** (#994, `Caches::held`): for as long as it runs this
-    /// sketch is borrowed shared, so nothing a key reads can change, and each solid's key and each
-    /// body's stratum is worked out once for the whole reading, whoever asks — every region of a
-    /// body rounded all over reads that body's.  Readings nest; the outermost forgets what it held.
-    /// What loops over the solids opens one (`solid_diagnostics`, an elaboration's reading of the
-    /// faces), as does each evaluation and build.
-    pub fn held<T>(&self, read: impl FnOnce() -> T) -> T {
-        let _holding = self.caches.held.open();
-        read()
-    }
-
     /// Validate and evaluate the current pose with an explicit approximation policy.
     /// Different policies coexist; changed geometry/placement discards all old policies.
     pub fn evaluated_solid(

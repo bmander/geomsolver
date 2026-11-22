@@ -106,7 +106,7 @@ pub(super) fn elaborate_in(
         placing,
     };
     // what the pass before built of its solids, each entry keyed by all it read (#994)
-    cx.sk.caches = carried.borrow().carried();
+    cx.sk.caches = std::mem::take(&mut *carried.borrow_mut());
     unit(&mut cx);
     check_text(&mut cx);
     let expansion = expand(&mut cx, refused, named);
@@ -165,8 +165,12 @@ pub(super) fn elaborate_in(
     place_planes(&mut cx, &deferred, &held, settled);
     let made = solids_and_surfaces(&mut cx, &flat, named, faces_settled, pose, &generated,
                                    &held_in_space);
-    // the solids built to name their faces are the next pass's to start from (#994)
-    *carried.borrow_mut() = cx.sk.caches.carried();
+    // the solids built to name their faces are the next pass's to start from (#994): handed over
+    // where this pass ends here, copied where it goes on
+    *carried.borrow_mut() = match &made {
+        Err(_) => std::mem::take(&mut cx.sk.caches),
+        Ok(()) => cx.sk.caches.clone(),
+    }.carried();
     made?;
     expressions(&mut cx, &flat, &on_followed);
     regions_read(&mut cx, &flat, &after_solids);
@@ -938,7 +942,8 @@ fn solids_and_surfaces(
     // meet is read in the layer a round stands in)
     // each read held still (#994): a body's stratum and each solid's key worked out once
     let read: &crate::model::Sketch = sk;
-    let unnamed: Vec<(String, Vec<_>, crate::solid::faces::Layers)> = read.held(|| flat.expansion
+    let holding = read.caches.held.open();
+    let unnamed: Vec<(String, Vec<_>, crate::solid::faces::Layers)> = flat.expansion
         .face_repeats.iter()
         .filter(|abs| !(settled && named.faces.contains_key(*abs)))
         .filter_map(|abs| {
@@ -948,7 +953,8 @@ fn solids_and_surfaces(
         })
         .filter(|(abs, now, layers)| !named.faces.get(abs)
             .is_some_and(|l| &l.paths == now && l.layers.same_uses(layers)))
-        .collect());
+        .collect();
+    drop(holding);
     // and each direction a `when` held a face against and was not given (#763), or was before
     // the faces were cleared to be named at another pose: read with them
     let wanted: BTreeSet<&String> = flat.expansion.directions_wanted.iter().chain(&named.asked)
@@ -960,12 +966,14 @@ fn solids_and_surfaces(
     let stood = !unnamed.is_empty() || !wanted.is_empty();
     let was = if stood { super::stand(sk, map, pose) } else { Vec::new() };
     let stood: &crate::model::Sketch = sk;
-    let unnamed: BTreeMap<String, Listed> = stood.held(|| unnamed.into_iter()
+    let holding = stood.caches.held.open();
+    let unnamed: BTreeMap<String, Listed> = unnamed.into_iter()
         .map(|(abs, paths, layers)| {
             let read = crate::solid::faces::Layered::read(stood, &layers, &paths);
             (abs, Listed { paths, layers, read })
         })
-        .collect());
+        .collect();
+    drop(holding);
     let drawn: Directions = wanted.into_iter().filter_map(|name| {
         Some((name.clone(), super::at_solve::direction(sk, |n| res.of.get(n).copied(), name)?))
     }).collect();

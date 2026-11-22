@@ -62,11 +62,7 @@ pub const NOT_BUILT: &str = "not built: the drawing did not solve";
 pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap, p: &Program) -> Vec<Diag> {
     // every solid's refusal read over one reading held still (#994): each body's stratum and each
     // solid's key worked out once, not once for each region of a body rounded all over
-    sk.held(|| solids_said(sk, map, p))
-}
-
-/// `solid_diagnostics` within its reading.
-fn solids_said(sk: &crate::model::Sketch, map: &SourceMap, p: &Program) -> Vec<Diag> {
+    let _holding = sk.caches.held.open();
     let place = refused::Placing::new(p);
     let mut diags = refused::solids(sk, map, &place);
     let refuse = |e: EntRef, message: String| {

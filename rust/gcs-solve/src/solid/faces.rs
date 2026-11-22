@@ -99,11 +99,10 @@ pub fn stratum(sk: &Sketch, body: usize, on: impl IntoIterator<Item = u32>, cut:
 
 /// The drawing with `readers` taken out of every body's terms: the stratum they read.
 fn without(sk: &Sketch, readers: &BTreeSet<usize>) -> Result<Sketch, String> {
-    let mut out = sk.clone();
     // what it builds of the bodies beneath is the drawing's own (#994): its memos are shared, each
     // entry read only where its solid reads as it does in the drawing — a body's lists of terms
     // are read by every key reaching it, so nothing reached through one changed here is shared
-    out.caches = sk.caches.shared();
+    let mut out = sk.clone_with(sk.caches.shared());
     for (i, s) in out.solids.iter_mut().enumerate() {
         // a reader is none of the stratum: what it stands on is its own
         if readers.contains(&i) {

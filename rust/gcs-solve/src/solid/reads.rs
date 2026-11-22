@@ -12,13 +12,13 @@ use crate::envelope::Motion;
 /// comparison.  Every scalar of every edge of every face the term reaches, each plane's pose,
 /// basis and origin, and every extent.
 pub fn reads(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
-    reads_where(sk, si, unit, &|_| false)
+    reads_where(sk, si, unit, &|_| false, false)
 }
 
 /// What solid `si` reads of its own, following no other solid it names: a region's terms read
 /// apart from the body whose faces they read (`lowering::lowered`, which keys that body apart).
 pub fn reads_own(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
-    reads_where(sk, si, unit, &|_| true)
+    reads_where(sk, si, unit, &|_| true, false)
 }
 
 /// What a key holds for a number it cannot read (a placement whose motion refuses, a motion that
@@ -27,9 +27,11 @@ pub fn reads_own(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
 const UNREAD: f64 = f64::MAX;
 
 /// `reads`, leaving out every solid but `si` that `skip` says (asked only of solids in range) and
-/// what only they reach.
-fn reads_where(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool) -> Vec<f64> {
-    reads_with(sk, si, unit, skip, &mut Poses::World)
+/// what only they reach — and, where `taken`, out of every body's terms as well: what the drawing
+/// with those solids taken out of every body reads (a stratum's, `faces::without`).
+fn reads_where(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, taken: bool)
+    -> Vec<f64> {
+    reads_from(sk, si, unit, skip, taken, &mut Poses::World, Motion::identity())
 }
 
 /// How a walk writes the pose of a plane it reads (#412).
@@ -151,12 +153,12 @@ fn drawn_in(sk: &Sketch, p: usize, plane: Option<u32>) -> bool {
 /// `reads`, each plane's pose written as `poses` says.
 fn reads_with(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, poses: &mut Poses)
     -> Vec<f64> {
-    reads_from(sk, si, unit, skip, poses, Motion::identity())
+    reads_from(sk, si, unit, skip, false, poses, Motion::identity())
 }
 
 /// `reads_with`, solid `si` read under the placement `by`.
-fn reads_from(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, poses: &mut Poses,
-              by: Motion) -> Vec<f64> {
+fn reads_from(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, taken: bool,
+              poses: &mut Poses, by: Motion) -> Vec<f64> {
     let mut v = vec![unit];
     // a flag per solid: a body rounded all over has a term per edge and corner
     let mut seen = vec![false; sk.solids.len()];
@@ -222,7 +224,8 @@ fn reads_from(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, p
                         if let Poses::Relative { to, reach, .. } = poses {
                             let mut own = Poses::Relative { to: *to, rigid: true, reach: *reach,
                                                             by: under };
-                            let read = reads_from(sk, *source as usize, unit, skip, &mut own, under);
+                            let read = reads_from(sk, *source as usize, unit, skip, taken, &mut own,
+                                                  under);
                             let Poses::Relative { rigid, reach: far, .. } = own else {
                                 unreachable!()
                             };
@@ -231,7 +234,7 @@ fn reads_from(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, p
                                     *reach = far;
                                     v.extend(read);
                                 }
-                                false => v.extend(reads_where(sk, *source as usize, unit, skip)),
+                                false => v.extend(reads_where(sk, *source as usize, unit, skip, taken)),
                             }
                             continue;
                         }
@@ -389,12 +392,18 @@ fn reads_from(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, p
                 }
             }
             SolidDef::Body { stock, on, through, bound } => {
-                v.extend([2.0, *stock as f64, on.len() as f64]);
-                v.extend(on.iter().map(|&i| i as f64));
-                v.push(through.len() as f64);
-                v.extend(through.iter().map(|&i| i as f64));
-                v.push(bound.len() as f64);
-                v.extend(bound.iter().map(|&i| i as f64));
+                // a stratum's terms are the body's but those taken out (`taken`, #994): the same
+                // key as the body's where it was drawn without them, as an earlier pass drew it
+                let kept = |list: &[u32]| -> Vec<f64> {
+                    list.iter().filter(|&&o| !(taken && skip(o as usize))).map(|&i| i as f64)
+                        .collect()
+                };
+                v.extend([2.0, *stock as f64]);
+                for list in [on, through, bound] {
+                    let kept = kept(list);
+                    v.push(kept.len() as f64);
+                    v.extend(kept);
+                }
             }
         }
         stack.extend(sol.operands().into_iter().map(|o| (o, under)));
@@ -408,7 +417,7 @@ fn reads_from(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, p
 /// own key holds.
 #[derive(Clone, Debug, Default)]
 pub struct MemoKey {
-    /// Shared, so a key a reading held still remembers (`Sketch::held`) is handed out and compared
+    /// Shared, so a key a reading held still remembers (`Held::open`) is handed out and compared
     /// by identity first: what every region of a body rounded all over asks of that body.
     reads: std::sync::Arc<Vec<f64>>,
     strata: Vec<std::sync::Arc<super::faces::BodyFaces>>,
@@ -427,13 +436,13 @@ impl MemoKey {
         MemoKey { reads: std::sync::Arc::new(reads), strata }
     }
 
-    /// Everything solid `si` reads (`reads`): walked once a reading held still (`Sketch::held`).
+    /// Everything solid `si` reads (`reads`): walked once a reading held still (`Held::open`).
     pub fn of(sk: &Sketch, si: usize) -> MemoKey {
         MemoKey::at(sk, si, 0.0)
     }
 
     /// What solid `si` reads, at the unit it is faceted at (`reads`): walked once a reading held
-    /// still (`Sketch::held`), where every region of a body rounded all over asks it of a key
+    /// still (`Held::open`), where every region of a body rounded all over asks it of a key
     /// that reads the whole body.
     pub fn at(sk: &Sketch, si: usize, unit: f64) -> MemoKey {
         sk.caches.held.key(si, unit, || MemoKey::read(reads(sk, si, unit), Vec::new()))
@@ -445,9 +454,12 @@ impl MemoKey {
     }
 
     /// What solid `si` reads but the solids `skip` says and what only they reach (`reads_where`),
-    /// asked of each it reaches: what a stratum reads (`faces::cached`).
+    /// asked of each it reaches, those taken out of every body's terms too: what a stratum reads
+    /// (`faces::cached`), the drawing with them taken out (`faces::without`) — so a stratum is the
+    /// body read where it was drawn without them, as an earlier pass of the elaboration drew it
+    /// before the rounds over its faces were expanded (#994).
     pub fn except(sk: &Sketch, si: usize, skip: &dyn Fn(usize) -> bool) -> MemoKey {
-        MemoKey::read(reads_where(sk, si, 0.0, skip), Vec::new())
+        MemoKey::read(reads_where(sk, si, 0.0, skip, true), Vec::new())
     }
 
     /// This key and `more`'s as one: what a construction made of several solids reads.

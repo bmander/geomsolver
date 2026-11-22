@@ -125,7 +125,7 @@ pub enum MeshedKey {
     Measure(usize),
 }
 
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Debug)]
 pub struct Sketch {
     pub roles: BTreeMap<EntRef, crate::semantics::GeometryRoles>,
     pub params: Vec<Param>,
@@ -383,6 +383,92 @@ pub struct Sketch {
     /// mesh keys on it too.
     pub shape_epoch: u32,
     pub(crate) next_cid: u32,
+}
+
+/// A copy of a drawing keeps what its original remembers (`Caches`' `Clone`, which says what): a
+/// copy made to read the drawing changed (`solid::faces::without`) is handed its caches instead
+/// (`clone_with`), so none is copied only to be replaced (#994).
+impl Clone for Sketch {
+    fn clone(&self) -> Sketch {
+        self.clone_with(self.caches.clone())
+    }
+}
+
+impl Sketch {
+    /// This drawing copied, remembering into `caches`: every other field as `clone` copies it.
+    pub fn clone_with(&self, caches: Caches) -> Sketch {
+        Sketch {
+            roles: self.roles.clone(),
+            params: self.params.clone(),
+            points: self.points.clone(),
+            lines: self.lines.clone(),
+            circles: self.circles.clone(),
+            axes: self.axes.clone(),
+            zero: self.zero.clone(),
+            arcs: self.arcs.clone(),
+            splines: self.splines.clone(),
+            frames: self.frames.clone(),
+            lifts: self.lifts.clone(),
+            duals: self.duals.clone(),
+            twins: self.twins.clone(),
+            rides: self.rides.clone(),
+            curves: self.curves.clone(),
+            faces: self.faces.clone(),
+            solids: self.solids.clone(),
+            surfaces: self.surfaces.clone(),
+            motions: self.motions.clone(),
+            envelopes: self.envelopes.clone(),
+            meshings: self.meshings.clone(),
+            traced: self.traced.clone(),
+            derived: self.derived.clone(),
+            solid_claims: self.solid_claims.clone(),
+            solid_bearings: self.solid_bearings.clone(),
+            plane_names: self.plane_names.clone(),
+            curve_defs: self.curve_defs.clone(),
+            turns: self.turns.clone(),
+            mirrors: self.mirrors.clone(),
+            rigid: self.rigid.clone(),
+            constraints: self.constraints.clone(),
+            branches: self.branches.clone(),
+            orientations: self.orientations.clone(),
+            placements: self.placements.clone(),
+            free_vars: self.free_vars.clone(),
+            shared: self.shared.clone(),
+            held: self.held.clone(),
+            rates: self.rates.clone(),
+            carried: self.carried.clone(),
+            spline_traced: self.spline_traced.clone(),
+            walked_back: self.walked_back.clone(),
+            reversed: self.reversed.clone(),
+            rounds: self.rounds.clone(),
+            variational: self.variational.clone(),
+            free_dimensions: self.free_dimensions.clone(),
+            declared: self.declared.clone(),
+            parameters: self.parameters.clone(),
+            materials: self.materials.clone(),
+            beams: self.beams.clone(),
+            scenarios: self.scenarios.clone(),
+            measured: self.measured.clone(),
+            panels: self.panels.clone(),
+            meshed: self.meshed.clone(),
+            meshed_at: self.meshed_at.clone(),
+            standing: self.standing.clone(),
+            hidden: self.hidden.clone(),
+            kinds: self.kinds.clone(),
+            shown_anyway: self.shown_anyway.clone(),
+            on_parts: self.on_parts.clone(),
+            cut: self.cut.clone(),
+            distributed: self.distributed.clone(),
+            caches,
+            next_cid: self.next_cid,
+            field_surfaces: self.field_surfaces.clone(),
+            field_meshing: self.field_meshing.clone(),
+            presentation: self.presentation.clone(),
+            units: self.units.clone(),
+            style_epoch: self.style_epoch.clone(),
+            shape_epoch: self.shape_epoch.clone(),
+        }
+    }
 }
 
 /// What a layer above the model keeps on a sketch and the model only carries: cloned with it,

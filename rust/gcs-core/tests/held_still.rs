@@ -83,11 +83,14 @@ fn every_region_of_a_body_rounded_all_over_is_lowered_once_a_run() {
     // the report all read the one lowering (they made the pockets' four times, #994)
     let again: Vec<_> = lowered.iter().filter(|(_, &n)| n > 1).collect();
     assert!(again.is_empty(), "lowered again: {again:?}");
-    // and the body whose faces both rounds read is built once a state of the drawing: in the
-    // first pass, before its pockets' rounds are expanded, and once they are — not again for the
-    // pass that runs the last round over its faces, nor where the drawing solves
-    let built = tally.of(Made::Built, |s| s == "whole");
-    assert!(built.get("whole").is_some_and(|&n| n <= 2), "{built:?}");
+    // and each body is built once for each state of the drawing it is in: `whole` once (its
+    // stratum and the body are one build where nothing else reads them), and `all` once in the
+    // first pass (the plate with its pockets sharp), once with the pockets' rounds (the stratum
+    // its own rounds read, the same in the next pass and where the drawing solves) and once with
+    // its rounds — never again for an asker that reads the same (#994)
+    let built = tally.of(Made::Built, |s| s == "whole" || s == "all");
+    assert_eq!(built.get("whole"), Some(&1), "{built:?}");
+    assert_eq!(built.get("all"), Some(&3), "{built:?}");
 }
 
 /// Two plates, `one` and `two`, each with a pocket, each rounded all over.
