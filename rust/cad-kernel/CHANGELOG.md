@@ -8,6 +8,20 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A run ends on every face beyond a short end face that faces on past it, and a ball too large
+  for its face is said by that face** (#994, fixture 147's vane): `fillet::end_at` follows each
+  edge an end face makes with the run's faces to its other vertex, and a face there that faces on
+  past the end (`fillet::faces_on`, new and public: its outward normal turned more than a degree
+  from square to the run, off its end) and that a closed form reads (`fillet::cuts_off`, new and
+  public: a plane, a cylinder, a cone, a sphere or an affine image) cuts the run off too, kept on
+  its material's side, and its
+  edges are none of the ball's band — a vane's toe cut by a slope `1e-4` over the foot, its upright
+  face shorter than the section, cut its side's rolled round off at that face alone and refused
+  the slope's edge with the side as entering the band ("larger than `vo0` can hold"). One lying
+  alongside the run (the slope along the toe's own foot) ends nothing.  `holds_ball`'s refusal now
+  says the face the ball overflows, the face it ends at, how far that edge stands off the other
+  face and how far off the ball touches it.
+
 - **Faces on one surface are one surface whatever order a Boolean's operands come in** (#994,
   fixture 115's feet and lip at a plate's true edge): an arrangement reads which faces lie on one
   surface face by face before any phase asks (`Arrangement::classed`) — two of one kind joined

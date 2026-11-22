@@ -357,7 +357,11 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
         let Some((fa, fb)) = ordered(edge) else {
             return Err(unbuilt("an edge not between two faces"));
         };
-        built.push(piece(body, edge, fa, fb, within, section, &ends, spill, one, units));
+        let made = piece(body, edge, fa, fb, within, section, &ends, spill, one, units);
+        if let (Section::Round(r), Ok(ps)) = (section, &made) {
+            held(body, &edges, edge, &ends, ps, r, units)?;
+        }
+        built.push(made);
     }
     // pieces of one line a curved face cuts across, which some of the section's lines pass by: one
     // run over them, kept outside it
@@ -388,6 +392,133 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
         pieces.extend(b?);
     }
     Ok(pieces)
+}
+
+/// **A ball no larger than each face holds** (#994), for a run carried along a straight edge or a
+/// ring turned round a circle, as `brep::fillet::holds_ball` is for a ball rolled along any
+/// other: where the ball touches one of its two faces, at sixteen stations along the edge, the
+/// touch lies on the face — or within its tolerance of the face's far boundary, a ball that takes
+/// the whole of it.  A touch past an edge of the face is no refusal where the face across that
+/// edge goes on in its surface (a face in pieces), is a seam (the next piece's, #422), or ends the
+/// run: one it ends on at its own vertices, or one beyond an end face shorter than the section
+/// that faces on past the run's end (`brep::fillet::faces_on`), which cuts it off; nor where the
+/// face reaches as far off the other as the ball touches it somewhere, the ball overflowing it only
+/// in part (a crown past whose rim a large ball's touch runs on, read on its surface as the field
+/// reads it), nor where no face the run ends on meets the other in a corner with an edge of it
+/// lower than the touch (a band tapering to nothing into concave arcs that run out tangent into
+/// the other, its round running out with it).  A strip nowhere that wide, its edges with the faces
+/// the run ends on in corners lower than the touch too, cannot hold the ball: a sliver a slope left
+/// at a vane's toe, an upright face `1e-4` tall whose foot is rounded at 2, the slope running along
+/// the foot above it.  The ball would roll on across its edge against the face beyond (rung 3, as
+/// `holds_ball` refuses an L's inside edge filled wider than its faces), and the round standing
+/// past the strip all along stands past its corners, where it meets the end faces' own rounds in
+/// the air (the solid "touches itself along a line"), so it is refused here, said by the face too
+/// short, how far it reaches, the face it ends at, and how far off the ball touches it.
+#[allow(clippy::too_many_arguments)]
+fn held(body: &crate::solid::faces::BodyFaces, edges: &[u32], edge: u32, ends: &Ends,
+    pieces: &[Piece], r: f64, units: crate::units::Units) -> Result<(), String> {
+    let (brep, mm, _) = body.brep();
+    let faces = body.faces_of(edge).to_vec();
+    // the run's ends, each with the way the run runs from there
+    let run_ends = body.run_ends(edges);
+    let ends_run = |g: usize| ends.iter().any(|&(by, _, far)| match (by, far) {
+        (EndBy::Face(c), None) => c == g,
+        (EndBy::Face(c), Some(_)) => c == g
+            && run_ends.iter().any(|&(v, d, _)| crate::brep::fillet::faces_on(body.normal(g, v), d)),
+        _ => false,
+    });
+    let same = |f: usize, g: usize| brep.faces[f].reversed == brep.faces[g].reversed
+        && crate::brep::ssi::same(&brep.faces[f].surface, &brep.faces[g].surface, body.tolerance() * mm);
+    // the touches at each station: the ends of the section's arc, carried there
+    let arcs = |run: &Run| -> Vec<[V; 2]> {
+        run.strokes.iter().filter_map(|(s, _)| match *s {
+            Stroke::Arc { centre, radius, x, angles: [a0, a1] } => {
+                let frame = crate::brep::geom::Frame::new(centre, run.along, x);
+                let at = |a: f64| { let (s, c) = a.dsin_cos(); frame.at([radius * c, radius * s, 0.0]) };
+                Some([at(a0), at(a1)])
+            }
+            _ => None,
+        }).collect()
+    };
+    let mut touches: Vec<(V, V)> = Vec::new();
+    for k in 1..16 {
+        let q = body.along(edge, k as f64 / 16.0);
+        for p in pieces {
+            match p {
+                Piece::Run(run) => {
+                    let by = scale(run.along, dot(sub(q, run.origin), run.along));
+                    touches.extend(arcs(run).into_iter().flatten().map(|c| (q, add(c, by))));
+                }
+                Piece::Ring(ring) => {
+                    let flat = |w: V| sub(w, scale(ring.axis, dot(w, ring.axis)));
+                    let (Some(u0), Some(uq)) = (normalised(flat(sub(ring.section.origin, ring.axis_origin))),
+                        normalised(flat(sub(q, ring.axis_origin)))) else { continue };
+                    let turn = dot(cross(u0, uq), ring.axis).datan2(dot(u0, uq)).rem_euclid(std::f64::consts::TAU);
+                    if turn > ring.angle {
+                        continue;
+                    }
+                    let rigid = crate::brep::geom::Rigid::turn(ring.axis_origin, ring.axis, turn);
+                    touches.extend(arcs(&ring.section).into_iter().flatten().map(|c| (q, rigid.point(c))));
+                }
+                _ => {}
+            }
+        }
+    }
+    let slack = (10.0 * body.tolerance()).max(1e-9 * r);
+    for (q, c) in touches {
+        let Some(f) = faces.iter().copied().min_by(|&a, &b| body.side(a, c).abs().total_cmp(&body.side(b, c).abs())) else {
+            continue;
+        };
+        let Some(e) = body.off_face(f, c) else { continue };
+        let Some((_, foot, off)) = body.nearest_edge(&[e], c) else { continue };
+        let foot = body.back(foot);
+        if off <= slack || body.seam(e) {
+            continue;
+        }
+        let Some(g) = body.faces_of(e).iter().copied().find(|&g| g != f) else { continue };
+        if same(f, g) || ends_run(g) {
+            continue;
+        }
+        let other = faces.iter().copied().find(|&h| h != f).unwrap_or(f);
+        let (reaches, touched) = (body.side(other, foot).abs(), body.side(other, c).abs());
+        // (a face the ball overflows only somewhere — a crown past whose rim a large ball's touch
+        // runs on the crown's surface — is read on its surface as the field reads it; one nowhere
+        // as far off the other face as the ball touches it is all within the ball's touch, and
+        // cannot hold it)
+        let widest = body.face_edges(f).iter()
+            .flat_map(|&x| (0..=16).map(move |k| body.along(x, k as f64 / 16.0)))
+            .map(|p| body.side(other, p).abs()).fold(0.0, f64::max);
+        if widest >= touched - slack {
+            continue;
+        }
+        // (and a strip: an edge it makes with a face the run ends on in a corner with the other —
+        // other than the face it ends at — standing nowhere as far off the other face as the ball
+        // touches, so the round, standing past the face all along, stands past the corner at that
+        // end too, beside that corner's own round in the air; a band tapering to nothing into a
+        // face it runs out on tangent, the round running out with it, is read on its surface as the
+        // field reads it)
+        // (an end face meeting the other face in a corner, not running out into it tangent)
+        let ends_here = |c: usize| ends.iter().any(|&(by, _, far)| far.is_none() && by == EndBy::Face(c))
+            && body.edges_between(&[c], &[other]).into_iter().any(|x| !body.seam(x));
+        let height = |x: u32| (0..=16).map(|k| body.side(other, body.along(x, k as f64 / 16.0)).abs()).fold(0.0, f64::max);
+        let cornered = body.face_edges(f).iter().any(|&x| {
+            body.faces_of(x).iter().any(|&c| c != g && c != f && ends_here(c)) && height(x) < touched - slack
+        });
+        if !cornered {
+            continue;
+        }
+        let said = |fi: usize| face_said(body, fi, "a face");
+        let n = apart(reaches, touched);
+        let length = |x: f64| crate::units::Dim::LENGTH.number_text(figured(x, n), units);
+        let at = |x: f64| crate::units::Dim::LENGTH.number_text(figured(x, 6), units);
+        return Err(format!("its ball, of radius {}, is larger than {} can hold: {} ends at its edge with {} {} off \
+            {} at [{}, {}, {}], short of where the ball touches it, {} off {}, so no ball of that radius rolls \
+            against it there — it would roll on across that edge against {}. Make {} reach past the ball's touch \
+            (or remove it, where it is a sliver a cut left), or round the edge smaller than {} reaches",
+            length(r), said(f), said(f), said(g), length(reaches), said(other), at(q[0]), at(q[1]), at(q[2]),
+            length(touched), said(other), said(g), said(f), length(reaches)));
+    }
+    Ok(())
 }
 
 /// **A corner too nearly tangent to round** (#962): where a round's edge ends on a curved face (a
