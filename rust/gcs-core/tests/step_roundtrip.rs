@@ -187,10 +187,14 @@ fn surface_fit(b: &Brep,fi: usize) -> f64 {
 /// box stands at most `R` from the origin:
 ///
 /// * the measure's own noise, 1e-9 of `A + L s` (the existing gate's bar where nothing is fitted;
-///   `L s` so a sliver of a face is held to its solid's scale, not its own vanishing area);
+///   `L s` so a sliver of a face is held to its solid's scale, not its own vanishing area), and
+///   for the area of a face on a surface of no closed form, 1e-7 of `A` (its rule is not exact;
+///   its flux's is, and holds it to 1e-9);
 /// * an edge whose written curve stands up to `δ` off the built one moves the face's trim by as
 ///   much along it: `2 δ L` (twice, as a fitted cubic's miss keeps its sign along a piece); and
-///   so does a pcurve the writer fits (`Fit::bar` on the face), which a reader may trim by;
+///   so does a pcurve the writer fits (`Fit::bar` on the face, or `Fit::polyline`'s bar where it
+///   writes a polyline: the stated uncertainty where no tolerance was asked), which a reader may
+///   trim by;
 /// * a surface written within `δₛ` of the built one moves the face along its normal: its area by
 ///   `δₛ ∬ 2H`, held as `20 δₛ A / s` (its radius of curvature no less than a tenth of the solid's
 ///   size; a face curved tighter that fails this is examined, not taken as a defect outright);
@@ -198,7 +202,25 @@ fn surface_fit(b: &Brep,fi: usize) -> f64 {
 /// * the volume's is the fluxes' over 3 plus 1e-9 of it, the total area's the faces' sum.
 pub struct Bars { area: Vec<f64>,flux: Vec<f64>,volume: f64,total: f64 }
 
-fn bars(b: &Brep,m: &Measured,fit: Fit,tol: f64,polylines: &BTreeSet<usize>) -> Bars {
+/// The faces (by index, in the file's order) on whose surface the file writes a pcurve as a
+/// polyline (a degree-one spline): where no cubic closed in, the writer's last resort.
+fn polyline_faces(text: &str) -> BTreeSet<usize> {
+    let lines: BTreeMap<u32,&str> = text.lines().filter_map(|l| {
+        let id = l.strip_prefix('#')?.split(' ').next()?.parse().ok()?;
+        Some((id,l.split_once(" = ")?.1))
+    }).collect();
+    let refs = |l: &str| -> Vec<u32> { l.split('#').skip(1).filter_map(|s| s.split(|c: char| !c.is_ascii_digit()).next()?.parse().ok()).collect() };
+    let surfaces: BTreeSet<u32> = lines.values().filter_map(|l| {
+        let r = refs(l.strip_prefix("PCURVE(")?);
+        let rep = lines.get(r.get(1)?)?;
+        let curve = lines.get(refs(rep).first()?)?;
+        curve.starts_with("B_SPLINE_CURVE_WITH_KNOTS('',1,").then_some(r[0])
+    }).collect();
+    lines.values().filter(|l| l.starts_with("ADVANCED_FACE(")).enumerate()
+        .filter(|(_,l)| refs(l).iter().rev().nth(0).is_some_and(|s| surfaces.contains(s))).map(|(k,_)| k).collect()
+}
+
+fn bars(b: &Brep,m: &Measured,fit: Fit,tol: f64,polylines: &BTreeSet<usize>,polyline_faces: &BTreeSet<usize>) -> Bars {
     let (s,far) = size(b);
     let edges: Vec<f64> = (0..b.edges.len()).map(|ei| edge_fit(b,ei,fit,tol,polylines.contains(&ei))).collect();
     let mut out = Bars {area:Vec::new(),flux:Vec::new(),volume:0.,total:0.};
@@ -212,15 +234,24 @@ fn bars(b: &Brep,m: &Measured,fit: Fit,tol: f64,polylines: &BTreeSet<usize>) -> 
             let exact = match (&c.pcurve,&f.surface) {
                 (Pcurve::Line {..},_) => true,
                 (Pcurve::Curve(pc),_) if matches!(**pc,Curve::BSpline(_)) => true,
-                (_,Surface::Plane(_)) => matches!(curve,Curve::Line {..} | Curve::Circle(..) | Curve::BSpline(_)),
+                // (a circle only where it turns the plane's way: else a fitted cubic)
+                (_,Surface::Plane(pl)) => match curve { Curve::Line {..} | Curve::BSpline(_) => true,
+                    Curve::Circle(cf,_) => gcs_core::space::dot(cf.z,pl.z) > 0.,_ => false },
                 _ => false,
             };
-            if exact { 0. } else { fit.bar() }
+            if exact { 0. } else if polyline_faces.contains(&fi) { fit.bar().max(match fit { Fit::Exact => tol.max(1e-7),_ => fit.bar() }) }
+            else { fit.bar() }
         };
         let de = f.loops.iter().flatten().map(|c| edges[c.edge as usize].max(pcurve(c))).fold(ds,f64::max);
         let (a,l) = (m.area[fi].abs(),m.length[fi]);
-        let ba = 1e-9*(a+l*s)+2.*de*l+20.*ds*a/s;
-        let bf = far*ba+3.*ds*a;
+        // (an area on a surface of no closed form is read by a fixed rule across columns of the
+        // face, `props::by_columns`, not exactly as its flux is on a polynomial sheet: held to
+        // 1e-7 of itself, which solid_sweeps/creased.sv's net needs — read 2.9e-8 off while its
+        // flux, the same trims' measure by an exact rule, agrees to 3e-11)
+        let rule = match f.surface { Surface::Plane(_) | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..)
+            | Surface::Torus(..) => 1e-9,_ => 1e-7 };
+        let ba = rule*a+1e-9*l*s+2.*de*l+20.*ds*a/s;
+        let bf = far*(1e-9*(a+l*s)+2.*de*l+20.*ds*a/s)+3.*ds*a;
         out.area.push(ba);
         out.flux.push(bf);
         out.volume += bf/3.;
@@ -258,7 +289,7 @@ fn polylines(b: &Brep,given: &Given,edge_ids: &[u32]) -> BTreeSet<usize> {
 /// **Whether `r`, read from `text`, the file `write` made of `b`, is the same solid** — every
 /// clause but the second trip's (see the file's head) — and what was found on the way: `Err`
 /// says the first clause that fails, with its numbers.
-pub fn same(b: &Brep,mb: &Measured,text: &str,given: &Given,fit: Fit,tol: f64,found: &mut Found) -> Result<(),String> {
+pub fn same(b: &Brep,mb: &Measured,text: &str,given: &Given,fit: Fit,tol: f64,found: &mut Found) -> Result<Measured,String> {
     let r = &given.brep;
     let (s,_) = size(b);
     // the faces: one for each written, in its order, each from its own ADVANCED_FACE
@@ -350,7 +381,7 @@ pub fn same(b: &Brep,mb: &Measured,text: &str,given: &Given,fit: Fit,tol: f64,fo
     let started = Instant::now();
     let mr = measured(r);
     found.measure += started.elapsed();
-    let bar = bars(b,mb,fit,tol,&polys);
+    let bar = bars(b,mb,fit,tol,&polys,&polyline_faces(text));
     let mut worst: Option<(f64,usize,f64,f64)> = None;
     for fi in 0..b.faces.len() {
         let (da,df) = ((mr.area[fi]-mb.area[fi]).abs(),(mr.flux[fi]-mb.flux[fi]).abs());
@@ -369,7 +400,7 @@ pub fn same(b: &Brep,mb: &Measured,text: &str,given: &Given,fit: Fit,tol: f64,fo
     let (ta,tb) = (mr.area.iter().sum::<f64>(),mb.area.iter().sum::<f64>());
     if !((mr.volume-mb.volume).abs() <= bar.volume) { return Err(format!("volume {:.12e} read, {:.12e} built",mr.volume,mb.volume)) }
     if !((ta-tb).abs() <= bar.total) { return Err(format!("area {ta:.12e} read, {tb:.12e} built")) }
-    Ok(())
+    Ok(mr)
 }
 
 /// `text` read part by part, as `step_read::reading` reads it: the solids, or the part that
@@ -460,14 +491,14 @@ fn trip_in(b: &Brep,name: &str,tol: f64,fit: Fit,found: &mut Found) -> Outcome {
     let given = match read {
         Ok(g) => g,
         Err((by,refusal,unsound)) => {
-            let unsound = unsound.map(|g| if g.len() == 1 { same(b,&mb,&text,&g[0],fit,tol,&mut Found::default()) }
+            let unsound = unsound.map(|g| if g.len() == 1 { same(b,&mb,&text,&g[0],fit,tol,&mut Found::default()).map(|_| ()) }
                 else { Err(format!("{} solids", g.len())) });
             return Outcome::Refused {by,refusal,unsound}
         }
     };
     if given.len() != 1 { return Outcome::Different(format!("{} solids read, one written",given.len())) }
     say("compared; held to the property");
-    if let Err(d) = same(b,&mb,&text,&given[0],fit,tol,found) { return Outcome::Different(d) }
+    let mr = match same(b,&mb,&text,&given[0],fit,tol,found) { Ok(m) => m,Err(d) => return Outcome::Different(d) };
     // the second trip: the solid read, written again, is a file of itself and reads to itself
     say("the second trip");
     let r = &given[0].brep;
@@ -486,7 +517,6 @@ fn trip_in(b: &Brep,name: &str,tol: f64,fit: Fit,found: &mut Found) -> Outcome {
     if let Err(e) = verify(&again,&Solid::of(r)) { return Outcome::SecondTrip(format!("written again, not verified: {e}")) }
     let twice = match stages(&again) { Ok(g) => g,Err((by,refusal,_)) => return Outcome::SecondTrip(format!("refused by {by:?}: {refusal}")) };
     if twice.len() != 1 { return Outcome::SecondTrip(format!("{} solids read again",twice.len())) }
-    let mr = measured(r);
     if let Err(d) = same(r,&mr,&again,&twice[0],fit,tol,&mut Found::default()) { return Outcome::SecondTrip(d) }
     match found.degenerate { Some((l,b)) => Outcome::Degenerate(l,b),None => Outcome::Same }
 }
@@ -739,7 +769,7 @@ fn bench_cross_check() {
                 let again = write(&g.brep,"again",tol,Fit::Exact).map_err(|e| format!("not written again: {e}"))?;
                 let twice = stages(&again).map_err(|(by,r,_)| format!("second trip refused by {by:?}: {r}"))?;
                 let mr = measured(&g.brep);
-                same(&g.brep,&mr,&again,&twice[0],Fit::Exact,tol,&mut Found::default()).map_err(|d| format!("second trip differs: {d}"))?;
+                same(&g.brep,&mr,&again,&twice[0],Fit::Exact,tol,&mut Found::default()).map(|_| ()).map_err(|d| format!("second trip differs: {d}"))?;
             }
             Ok(format!("read (volume {dv:.1e}, area {da:.1e} off)"))
         });
@@ -836,10 +866,11 @@ fn example_solid(example: &str,solid: &str) -> Brep {
     x.brep.clone()
 }
 
-/// **`b` reads back to itself at every tolerance the exports write at** (`tolerances`): the same
-/// solid, twice over, and no edge or vertex the reader measures looser than the file states.
-fn holds(name: &str,b: &Brep) -> Result<(),String> {
-    for (label,tol,fit) in tolerances() {
+/// **`b` reads back to itself at the tolerances `which` of `tolerances()`**: the same solid, twice
+/// over, and no edge or vertex the reader measures looser than the file states.
+fn holds(name: &str,b: &Brep,which: &[usize]) -> Result<(),String> {
+    let all = tolerances();
+    for &(label,tol,fit) in which.iter().map(|&k| &all[k]) {
         let (o,f) = trip(b,name,tol,fit);
         if !matches!(o,Outcome::Same) { return Err(format!("{name} at {label}: {}: {}",o.label(),o.detail())) }
         if let Some(&(i,t,stated)) = f.loose.first().or(f.loose_vertices.first()) {
@@ -848,4 +879,92 @@ fn holds(name: &str,b: &Brep) -> Result<(),String> {
         }
     }
     Ok(())
+}
+
+/// **The sample**: solids of the library that between them, with the kernel's own
+/// (`kernel_solids`), take every path of the writer the census found taken by a solid that reads
+/// back today (`paths`; `the_sample_takes_every_path` holds the list), each cheap to build.
+const SAMPLE: &[(&str,&str)] = &[
+    ("groin_vault.sv","vault"),
+    ("nurbs.sv","dome"),
+    ("solid_spline.sv","vase"),
+    ("solid_spline.sv","cam"),
+    ("rounds/dboss.sv","part"),
+    ("rounds/ledge.sv","part"),
+    ("hydrostatics/punt.sv","immersed"),
+    ("rounds/crotch.sv","tee"),
+    ("rounds/block.sv","block"),
+    ("engine/parts.sv","piston_s.body"),
+    ("pierced_sphere.sv","part"),
+    ("rounds/groove.sv","part"),
+    ("lofts/blade.sv","blade"),
+    ("lofts/tapered.sv","swell"),
+    ("lofts/thread.sv","thread"),
+    ("solid_sweeps/drill.sv","plate"),
+    ("generation/cam_plate.sv","plate"),
+];
+
+/// **Every solid of the sample reads back to itself** (`holds`) at `tolerances()[which]`, four at
+/// once.
+fn sample_holds(which: &[usize]) {
+    let kernel = kernel_solids();
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let failed = std::sync::Mutex::new(Vec::new());
+    // (the library's solids built by the worker that holds them to it: a sketch stays on its thread)
+    std::thread::scope(|s| for _ in 0..4 { s.spawn(|| loop {
+        let k = next.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
+        let started = Instant::now();
+        let (name,b) = match kernel.get(k) {
+            Some((n,b)) => (n.to_string(),b.clone()),
+            None => match SAMPLE.get(k-kernel.len()) { Some(&(e,s)) => (format!("{e} `{s}`"),example_solid(e,s)),None => break },
+        };
+        let built = started.elapsed();
+        if let Err(e) = holds(&name,&b,which) { failed.lock().unwrap().push(e); }
+        eprintln!("{name}: built in {built:.0?}, held in {:.0?}",started.elapsed()-built);
+    }); });
+    let failed = failed.into_inner().unwrap();
+    assert!(failed.is_empty(),"{}",failed.join("\n"));
+}
+
+/// **The sample reads back to itself** at the test's tolerance, 1e-7 with every fit exact.
+#[test]
+fn the_sample_reads_back() { sample_holds(&[0]) }
+
+/// **The sample reads back to itself at the tolerances the exports write at** (`tolerances`:
+/// `solventc --step` and the app with none, 1e-4; at the fabrication tolerance, 5e-4 stated and
+/// the curves within 2.5e-4). Minutes; ignored as a tool.
+#[test]
+#[ignore = "a tool, a minute: the sample at the export tolerances"]
+fn the_sample_reads_back_at_export_tolerances() { sample_holds(&[1,2]) }
+
+/// One solid's worst face laid bare (a tool): `STEP_ROUNDTRIP_ONE=example:solid`,
+/// `STEP_ROUNDTRIP_TOL` an index of `tolerances()`: each face's differences, and the edges of the
+/// worst, built and read.
+#[test]
+#[ignore = "a tool: one solid's faces read against its own"]
+fn one() {
+    let Ok(one) = std::env::var("STEP_ROUNDTRIP_ONE") else { return };
+    let (e,s) = one.split_once(':').unwrap();
+    let b = example_solid(e,s);
+    let which: usize = std::env::var("STEP_ROUNDTRIP_TOL").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let (label,tol,fit) = tolerances()[which];
+    let text = write(&b,"one",tol,fit).unwrap();
+    let given = stages(&text).map_err(|(by,r,_)| format!("{by:?} {r}")).unwrap();
+    let r = &given[0].brep;
+    let (mb,mr) = (measured(&b),measured(r));
+    let worst = std::env::var("STEP_ROUNDTRIP_FACE").ok().and_then(|f| f.parse().ok()).unwrap_or_else(|| (0..b.faces.len()).max_by(|&x,&y| (mr.area[x]-mb.area[x]).abs().total_cmp(&(mr.area[y]-mb.area[y]).abs())).unwrap());
+    eprintln!("{label}: worst face {worst} (#{}), a {}: area {} read, {} built",given[0].faces[worst],b.faces[worst].surface.kind(),mr.area[worst],mb.area[worst]);
+    for (li,l) in b.faces[worst].loops.iter().enumerate() {
+        for c in l {
+            let e = &b.edges[c.edge as usize];
+            let ri = (0..r.edges.len()).find(|&i| given[0].edges[i] != 0 && ids(&text,"EDGE_CURVE").iter().position(|&x| x == given[0].edges[i])
+                == (0..b.edges.len()).filter(|&k| matches!(b.edges[k].curve,EdgeCurve::Curve(_))).position(|k| k == c.edge as usize));
+            let pc = match &c.pcurve { Pcurve::Line {..} => "line".to_string(),Pcurve::Inverse {..} => "inverse".into(),Pcurve::Curve(p) => p.kind().into() };
+            eprintln!("  loop {li} edge {} ({}, pcurve {pc}, t {:?}, tol {:e}) read as {:?}",c.edge,e.curve.kind(),e.t,e.tol,
+                ri.map(|i| (given[0].edges[i],r.edges[i].curve.kind(),r.edges[i].t,r.edges[i].tol)));
+        }
+    }
+    let rl = &given[0].brep.faces[worst];
+    for (li,l) in rl.loops.iter().enumerate() { for c in l { let pc = match &c.pcurve { Pcurve::Line {..} => "line".to_string(),Pcurve::Inverse {..} => "inverse".into(),Pcurve::Curve(p) => p.kind().into() };
+        eprintln!("  read loop {li} edge {} #{} pcurve {pc}",c.edge,given[0].edges[c.edge as usize]); } }
 }
