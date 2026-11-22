@@ -533,13 +533,6 @@ impl Standing {
         s
     }
 
-    /// Why it is not built exactly, where it is not.
-    fn refused(&self) -> Option<String> {
-        let e = solved(&self.document());
-        let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-        export::exact(&e.sketch, ent(&e, "part").i(), None, None, &say).err().map(|r| format!("{r:?}"))
-    }
-
     fn holds(&self, want: f64) -> Option<String> {
         let src = self.document();
         assert_eq!(dof(&src), 0, "{src}");
