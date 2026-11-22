@@ -39,7 +39,7 @@
 //! solid that does not read back today is an ignored test named for its defect.
 use gcs_core::brep::geom::{Curve,Surface};
 use gcs_core::brep::props::{area,fluxes,volume};
-use gcs_core::brep::step::{face_net,write,Fit,FIT};
+use gcs_core::brep::step::{face_net,write,Fit,FIT,MOST};
 use gcs_core::brep::step_check::{verify,Solid};
 use gcs_core::brep::step_read::{context,sound,topology,Given,Refusal,Why};
 use gcs_core::brep::topo::{Brep,EdgeCurve,Pcurve};
@@ -122,6 +122,10 @@ pub struct Found {
     pub loose_vertices: Vec<(usize,f64,f64)>,
     /// The degenerate edges laid and built, where they differ and nothing else does.
     pub degenerate: Option<(usize,usize)>,
+    /// The uncertainty the file states.
+    pub stated: f64,
+    /// The most points any one curve of the file is written in (a B-spline's poles).
+    pub longest: usize,
     pub write: Duration,
     pub read: Duration,
     pub measure: Duration,
@@ -157,15 +161,16 @@ fn size(b: &Brep) -> (f64,f64) {
 }
 
 /// How far the file's curve of `b`'s edge `ei` may stand from the edge built (millimetres): none
-/// where the writer writes it as itself, else the bar it fits it to.
-fn edge_fit(b: &Brep,ei: usize,fit: Fit,tol: f64,polyline: bool) -> f64 {
+/// where the writer writes it as itself, else the bar it fits it to. (`stated` is the uncertainty
+/// the file states, which covers what it holds.)
+fn edge_fit(b: &Brep,ei: usize,fit: Fit,stated: f64,polyline: bool) -> f64 {
     match &b.edges[ei].curve {
         EdgeCurve::Degenerate => 0.,
         EdgeCurve::Curve(c) => match c {
             Curve::Line {..} | Curve::Circle(..) | Curve::Ellipse(..) | Curve::BSpline(_) => 0.,
-            // (the polyline a traced curve is written as where no cubic closes in: its bar the
-            // stated uncertainty where no tolerance was asked, else the fit's)
-            Curve::Traced(_) if polyline => match fit { Fit::Exact => tol.max(1e-7),Fit::Within(_) => fit.bar() },
+            // (the polyline a traced curve is written as where no cubic closes in: within the
+            // uncertainty the file states, which covers it)
+            Curve::Traced(_) if polyline => stated,
             Curve::Traced(_) => fit.bar(),
             _ => FIT,
         },
@@ -197,15 +202,29 @@ fn surface_fit(b: &Brep,fi: usize) -> f64 {
 ///   its flux's is, and holds it to 1e-9);
 /// * an edge whose written curve stands up to `δ` off the built one moves the face's trim by as
 ///   much along it: `2 δ L` (twice, as a fitted cubic's miss keeps its sign along a piece); and
-///   so does a pcurve the writer fits (`Fit::bar` on the face, or `Fit::polyline`'s bar where it
-///   writes a polyline: the stated uncertainty where no tolerance was asked), which a reader may
-///   trim by;
+///   so does a pcurve the writer fits (`Fit::bar` on the face, or the edge's own tolerance where
+///   that is past it, or the uncertainty the file states where it writes a polyline), which a
+///   reader may trim by;
 /// * a surface written within `δₛ` of the built one moves the face along its normal: its area by
 ///   `δₛ ∬ 2H`, held as `20 δₛ A / s` (its radius of curvature no less than a tenth of the solid's
 ///   size; a face curved tighter that fails this is examined, not taken as a defect outright);
 /// * a flux is the area's bar times `R`, and `3 δₛ A` for the surface's move (`div X = 3`);
 /// * the volume's is the fluxes' over 3 plus 1e-9 of it, the total area's the faces' sum.
 pub struct Bars { area: Vec<f64>,flux: Vec<f64>,volume: f64,total: f64 }
+
+/// How far edge `c.edge` stands off face `fi` at its use `c` (as `step::write` measures it, at 64
+/// points, the breaks of its curves and halfway between each two).
+fn standing(b: &Brep,fi: usize,c: &gcs_core::brep::topo::Coedge) -> f64 {
+    let (f,e) = (&b.faces[fi],&b.edges[c.edge as usize]);
+    let EdgeCurve::Curve(curve) = &e.curve else { return 0. };
+    let mut ts: Vec<f64> = (0..=64).map(|k| e.t[0]+(e.t[1]-e.t[0])*k as f64/64.).collect();
+    ts.extend(curve.breaks(e.t));
+    if let Pcurve::Curve(pc) = &c.pcurve { ts.extend(pc.breaks(e.t)); }
+    ts.sort_by(f64::total_cmp);
+    let halves: Vec<f64> = ts.windows(2).map(|w| 0.5*(w[0]+w[1])).collect();
+    ts.extend(halves);
+    ts.iter().map(|&t| distance(f.surface.point(c.pcurve.at(t,e,&f.surface,&b.vertices)),e.point(t,&b.vertices))).fold(0.,f64::max)
+}
 
 /// The faces (by index, in the file's order) on whose surface the file writes a pcurve as a
 /// polyline (a degree-one spline): where no cubic closed in, the writer's last resort.
@@ -225,9 +244,9 @@ fn polyline_faces(text: &str) -> BTreeSet<usize> {
         .filter(|(_,l)| refs(l).iter().rev().nth(0).is_some_and(|s| surfaces.contains(s))).map(|(k,_)| k).collect()
 }
 
-fn bars(b: &Brep,m: &Measured,fit: Fit,tol: f64,polylines: &BTreeSet<usize>,polyline_faces: &BTreeSet<usize>) -> Bars {
+fn bars(b: &Brep,m: &Measured,fit: Fit,stated: f64,polylines: &BTreeSet<usize>,polyline_faces: &BTreeSet<usize>) -> Bars {
     let (s,far) = size(b);
-    let edges: Vec<f64> = (0..b.edges.len()).map(|ei| edge_fit(b,ei,fit,tol,polylines.contains(&ei))).collect();
+    let edges: Vec<f64> = (0..b.edges.len()).map(|ei| edge_fit(b,ei,fit,stated,polylines.contains(&ei))).collect();
     let mut out = Bars {area:Vec::new(),flux:Vec::new(),volume:0.,total:0.};
     for (fi,f) in b.faces.iter().enumerate() {
         let ds = surface_fit(b,fi);
@@ -244,8 +263,9 @@ fn bars(b: &Brep,m: &Measured,fit: Fit,tol: f64,polylines: &BTreeSet<usize>,poly
                     Curve::Circle(cf,_) => gcs_core::space::dot(cf.z,pl.z) > 0.,_ => false },
                 _ => false,
             };
-            if exact { 0. } else if polyline_faces.contains(&fi) { fit.bar().max(match fit { Fit::Exact => tol.max(1e-7),_ => fit.bar() }) }
-            else { fit.bar() }
+            // (a fitted pcurve held no nearer than the edge stands off the face)
+            let bar = fit.bar().max(b.edges[c.edge as usize].tol).max(standing(b,fi,c));
+            if exact { 0. } else if polyline_faces.contains(&fi) { bar.max(stated) } else { bar }
         };
         let de = f.loops.iter().flatten().map(|c| edges[c.edge as usize].max(pcurve(c))).fold(ds,f64::max);
         let (a,l) = (m.area[fi].abs(),m.length[fi]);
@@ -298,6 +318,8 @@ fn polylines(b: &Brep,given: &Given,edge_ids: &[u32]) -> BTreeSet<usize> {
 pub fn same(b: &Brep,mb: &Measured,text: &str,given: &Given,fit: Fit,tol: f64,found: &mut Found) -> Result<Measured,String> {
     let r = &given.brep;
     let (s,_) = size(b);
+    // (what the file states covers what it holds: the bar of what it writes as a polyline)
+    let stated = given.context.uncertainty.unwrap_or(tol).max(tol);
     // the faces: one for each written, in its order, each from its own ADVANCED_FACE
     let face_ids = ids(text,"ADVANCED_FACE");
     if given.faces != face_ids {
@@ -357,7 +379,7 @@ pub fn same(b: &Brep,mb: &Measured,text: &str,given: &Given,fit: Fit,tol: f64,fo
         if ends != built { return Err(format!("edge #{id} read between #{} and #{}, written between #{} and #{}",ends[0],ends[1],built[0],built[1])) }
         let EdgeCurve::Curve(c) = &e.curve else { continue };
         let EdgeCurve::Curve(oc) = &o.curve else { continue };
-        let bar = 2.*edge_fit(b,ei,fit,tol,polys.contains(&ei))+1e-8*s;
+        let bar = 2.*edge_fit(b,ei,fit,stated,polys.contains(&ei))+1e-8*s;
         for k in 1..4 {
             let m = c.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/4.);
             let off = distance(oc.point(oc.inverse(m)),m);
@@ -378,8 +400,34 @@ pub fn same(b: &Brep,mb: &Measured,text: &str,given: &Given,fit: Fit,tol: f64,fo
             r.edges.len(),r.vertices.len(),b.edges.len()))
     }
     // the tolerances the reader measures, against the uncertainty the file states
-    let stated = given.context.uncertainty.unwrap_or(0.);
-    for (i,e) in r.edges.iter().enumerate() { if e.tol > stated*(1.+1e-6) { found.loose.push((i,e.tol,stated)); } }
+    found.stated = stated;
+    for (i,e) in r.edges.iter().enumerate() { if e.tol > stated*(1.+1e-6) {
+        found.loose.push((i,e.tol,stated));
+        if std::env::var_os("STEP_ROUNDTRIP_LOOSE").is_some() {
+            let ends = match &e.curve { EdgeCurve::Curve(c) => (0..2).map(|k| distance(c.point(e.t[k]),r.vertices[e.v[k] as usize].p)).fold(0.,f64::max),_ => 0. };
+            let uses: Vec<String> = r.faces.iter().enumerate().flat_map(|(fi,f)| f.loops.iter().flatten().filter(|c| c.edge as usize == i)
+                .map(move |c| (fi,c))).map(|(fi,c)| format!("face {fi} ({}, pcurve {}): {:.2e}",r.faces[fi].surface.kind(),
+                match &c.pcurve { Pcurve::Line {..} => "line",Pcurve::Inverse {..} => "inverse",Pcurve::Curve(_) => "curve" },standing(r,fi,c))).collect();
+            eprintln!("LOOSE edge {i} #{} ({}) tol {:.3e}: ends {ends:.2e}; {}",given.edges[i],e.curve.kind(),e.tol,uses.join("; "));
+            if let Some(&ei) = edge_of.get(&given.edges[i]) {
+                let o = &b.edges[ei];
+                eprintln!("   read t {:?}, built t {:?}",e.t,o.t);
+                for (fi,f) in r.faces.iter().enumerate() { for c in f.loops.iter().flatten().filter(|c| c.edge as usize == i) {
+                    let mut ts: Vec<f64> = (0..=32).map(|k| e.t[0]+(e.t[1]-e.t[0])*k as f64/32.).collect();
+                    if let Pcurve::Curve(pc) = &c.pcurve { ts.extend(pc.breaks(e.t)); }
+                    if let EdgeCurve::Curve(cc) = &e.curve { ts.extend(cc.breaks(e.t)); }
+                    let worst = ts.into_iter().map(|t| (t,distance(f.surface.point(c.pcurve.at(t,e,&f.surface,&r.vertices)),e.point(t,&r.vertices))))
+                        .fold((0.,0.),|a,x| if x.1 > a.1 { x } else { a });
+                    let pc = c.pcurve.at(worst.0,e,&f.surface,&r.vertices);
+                    let foot = f.surface.inverse(e.point(worst.0,&r.vertices));
+                    eprintln!("   face {fi}: worst at t {} ({:.2e}), pcurve {:?}, foot {:?} ({:.2e} off)",worst.0,worst.1,pc,foot,distance(f.surface.point(foot),e.point(worst.0,&r.vertices)));
+                    let near = |t: f64| distance(f.surface.point(c.pcurve.at(t,e,&f.surface,&r.vertices)),e.point(t,&r.vertices));
+                    eprintln!("      at t-1e-12 {:.2e}, t+1e-12 {:.2e}; pcurve there {:?} {:?}",near(worst.0-1e-12),near(worst.0+1e-12),
+                        c.pcurve.at(worst.0-1e-12,e,&f.surface,&r.vertices),c.pcurve.at(worst.0+1e-12,e,&f.surface,&r.vertices));
+                } }
+            }
+        }
+    } }
     for (i,v) in r.vertices.iter().enumerate() {
         if v.tol > stated*(1.+1e-6) && given.vertices[i] != 0 { found.loose_vertices.push((i,v.tol,stated)); }
     }
@@ -387,7 +435,7 @@ pub fn same(b: &Brep,mb: &Measured,text: &str,given: &Given,fit: Fit,tol: f64,fo
     let started = Instant::now();
     let mr = measured(r);
     found.measure += started.elapsed();
-    let bar = bars(b,mb,fit,tol,&polys,&polyline_faces(text));
+    let bar = bars(b,mb,fit,stated,&polys,&polyline_faces(text));
     let mut worst: Option<(f64,usize,f64,f64)> = None;
     for fi in 0..b.faces.len() {
         let (da,df) = ((mr.area[fi]-mb.area[fi]).abs(),(mr.flux[fi]-mb.flux[fi]).abs());
@@ -425,6 +473,16 @@ pub fn stages(text: &str) -> Result<Vec<Given>,(Stage,Refusal,Option<Vec<Given>>
         out.push(given);
     }
     match refused { Some(r) => Err((Stage::Sound,r,Some(out))),None => Ok(out) }
+}
+
+/// The most poles any one B-spline curve of `text` is written with (`step::MOST` bounds it).
+pub fn longest(text: &str) -> usize {
+    text.lines().filter(|l| l.contains("B_SPLINE_CURVE")).map(|l| {
+        // (its poles are the first list of references)
+        let rest = l.split_once('(').map_or("",|x| x.1);
+        let list = rest.split_once("(#").map_or("",|x| x.1);
+        list.split(')').next().unwrap_or("").split(',').count()
+    }).max().unwrap_or(0)
 }
 
 /// The longest a file the kernel writes may take to read: a minute. The slowest of the library
@@ -466,6 +524,7 @@ fn trip_in(b: &Brep,name: &str,tol: f64,fit: Fit,found: &mut Found) -> Outcome {
         }
     };
     found.write = started.elapsed();
+    found.longest = longest(&text);
     say(&format!("written in {:?}, {} bytes; reading",found.write,text.len()));
     // (a file past `LARGEST` is said so and not read: a reader's time and memory grow with it, and
     // the census would take hours over a few such)
@@ -883,6 +942,7 @@ fn holds(name: &str,b: &Brep,which: &[usize]) -> Result<(),String> {
     for &(label,tol,fit) in which.iter().map(|&k| &all[k]) {
         let (o,f) = trip(b,name,tol,fit);
         if !matches!(o,Outcome::Same) { return Err(format!("{name} at {label}: {}: {}",o.label(),o.detail())) }
+        if f.longest > 3*MOST+1 { return Err(format!("{name} at {label}: a curve written in {} points, past {}",f.longest,3*MOST+1)) }
         if let Some(&(i,t,stated)) = f.loose.first().or(f.loose_vertices.first()) {
             return Err(format!("{name} at {label}: {} edges and {} vertices read looser than the file states (#{i}: {t:.3e} against {stated:e})",
                 f.loose.len(),f.loose_vertices.len()))
@@ -1095,30 +1155,30 @@ fn a_nets_collapsed_side_reads_back() { known("lofts/pyramid.sv","pyramid") }
 #[ignore = "a known defect, reported: sound refuses a use on a surface of revolution whose end it reads on another branch of the pole than its curve (`leaps π along a pole`)"]
 fn a_use_ending_at_a_pole_reads_back() { known("solid_sweeps/coin.sv","slab") }
 
+/// **A loop across a closed net's closing line reads back.**
 #[test]
-#[ignore = "a known defect, reported: a loop crossing a closed net's closing line without a seam, which the file's pcurves write as a jump of the net's span, is refused by topology (`loop breaks in parameters`)"]
 fn a_loop_across_a_closed_nets_closing_reads_back() { known("solid_sweeps/helical_groove.sv","block") }
 
+/// **A loft's file states what its fits hold (its net and rails within `step::FIT`), not the 1e-7 asked.**
 #[test]
-#[ignore = "a known defect, reported: the file states 1e-7 where its fitted curves and nets stand up to `step::FIT` off one another, so the reader measures edges looser than the file says"]
 fn a_lofts_file_states_what_its_fits_hold() { known("solid_elbow.sv","body") }
 
+/// **A file states at least what the solid's own edges stand off their faces (creased's, 2e-5 off its net).**
 #[test]
-#[ignore = "a known defect, reported: the file states 1e-7 where the solid's own edges stand 2e-5 off their net, so the reader measures them looser than the file says"]
 fn a_files_uncertainty_covers_the_solids_own() { known("solid_sweeps/creased.sv","block") }
 
 #[test]
 #[ignore = "a known defect, reported: a face family's wall the writer cannot fit within `step::FIT` is refused, so the solid has no file"]
 fn a_family_wall_is_written() { known("lofts/pipe.sv","pipe") }
 
+/// **A pcurve on a toolpath's net is written in at most `3 MOST + 1` points (it was a polyline of 77 MB), or not at all.**
 #[test]
-#[ignore = "a known defect, reported: a pcurve on a toolpath's net no cubic closes in is written as a polyline of millions of points (76 MB here, 3 GB for whole_turn.sv)"]
 fn a_toolpaths_pcurve_is_written_in_few_points() { known("solid_sweeps/short_screw.sv","block") }
 
+/// **The drill's flutes are written within a minute (their pcurves were polylines of millions of points).**
 #[test]
-#[ignore = "a known defect, reported: the writer does not finish this solid within a minute"]
 fn a_drill_is_written_within_a_minute() { known("twist_drill/drill.sv","drill") }
 
+/// **The solid read, written again, is written within a minute.**
 #[test]
-#[ignore = "a known defect, reported: the solid read, written again, does not finish within a minute (its nets' pcurves refitted from the reader's own)"]
 fn a_solid_read_is_written_again_within_a_minute() { known("solid_sweeps/tight_ball.sv","block") }
