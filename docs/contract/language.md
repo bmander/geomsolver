@@ -409,7 +409,17 @@ Where that statement's blocks ran over a solid's faces, it says what they ran ov
 threes of them meet, or that its boundary does not say which, so every two are taken to) and to
 run it over fewer at once (`blanket::an_expansion_past_its_limit_over_faces_says_what_it_ran_over`);
 the same tally is said to whoever listens as the first such block is expanded
-(`progress::Work::expand`).
+(`progress::Work::expand`).  **And it is refused before it is made** (#994,
+`Walk::projection`): the tally counts the copies its `when`s will hold — each pair that meets
+reached both ways and each three in its six orders, as `std.rounds`' words reach them, or every
+two and three of a body a sweep cuts (`Unread::Field`), whose faces are all taken to meet — and
+after each of the statement's blocks over faces is expanded, the statements its copies have made
+so far, over the copies that held, are projected to that count; past twice `MAX_FLAT` the one
+E103 is said at once, with the projection, how far it got and what to do, and nothing more is
+walked (`blanket::an_expansion_projected_past_its_limit_is_refused_at_once`: refused a few
+thousand statements in).  One projected nearer the limit is walked, and said as above if it
+passes it — a projection off a few copies is no count, and twice the limit is the margin it is
+given.
 
 **`rate(x over s)` and `initially { … }` (§6.5 [0.119], §6.9 [0.116], #339 D2, D3):** both
 reserved (`syntax::words::OPENERS`).  A rate is an **operand** of a relation (`P::operand`,

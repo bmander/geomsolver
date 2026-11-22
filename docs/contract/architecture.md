@@ -257,6 +257,9 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   has reached, a round's region lowered and gated each (`cad::Walk::sets`, #994: `still building
   whole, now at term 120 of 530 of `whole`, 10 s so far`); the elaboration the statement whose
   blocks over faces it is expanding (`expanding `round(r: 1.5mm) whole` over 210 faces …`).
+  That is where a large round's count is said unasked: on a terminal, an elaboration still going
+  past 5 s says it on its line; the report says nothing of it, which is of the drawing and not of
+  the run (#994).
   `solventc --progress` says
   each on stderr when it is done (the same work again, a solid at each pose of a sweep, the first
   time only), and work still going past 5 s is said again, then each time it doubles, so a slow

@@ -490,9 +490,17 @@ patch (the patch's distance); its tangent plane past a seam into a face bulging 
 about the corner; nothing past a seam into any other face (a reflex corner's arc or fill, whose
 tangent plane runs on through the pocket or the tab beyond it), which is nearer and says it; its
 tangent plane past any other edge only where the patch is nearer than the distance, and nothing
-where not. Each is under the distance only where the point is that near a patch of the chain, and
+where not.  A face whose box in space (`BodyFaces::patch_gap`), and every face it goes on into
+across a seam, is farther than twice the distance from the point says nothing without reading its
+patch
+(#994): where the set's point is, a face holding it back is within the distance, so the set is the
+same, and a chain grown with a body (a plate's top and its pockets' caps) is read only near the
+point. Each is under the distance only where the point is that near a patch of the chain, and
 every patch is of the chain's surface, so each says only what the distance from that surface says —
-however the nearest face is read, past the chain's rim too (`BodyFaces::nearest_face`) — and the
+however the nearest face is read, past the chain's rim too (`BodyFaces::nearest_face`, its nearest
+patch found among those whose box in space comes as near, `nearest_patch`, so a chain that grows
+with a body's pockets is measured where the point is, #994; a path's faces, caps taken in, read
+once a body, `BodyFaces::faces`) — and the
 points kept are the same; a chain that is no one sheet (`bulging`, a block's side flush with a
 deck's) is read this way as well; what the conditions add is every wall meeting at a corner of the
 offset in each step, where the closing axis (a floor or a rim rounded to a convex corner's own

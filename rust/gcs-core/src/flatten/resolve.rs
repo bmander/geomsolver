@@ -1402,7 +1402,7 @@ impl<'a> Walk<'a> {
                 Ok(walks) => {
                     let (at, before) = (p.at, self.emitted());
                     self.expand_edges(p, walks, keep.as_deref());
-                    self.projection(at, self.emitted() - before);
+                    self.projection(at, self.emitted().saturating_sub(before));
                     if self.overflowed {
                         break;
                     }
@@ -1415,7 +1415,9 @@ impl<'a> Walk<'a> {
         }
         // an expansion refused before it was made leaves its blocks unexpanded, said once
         if self.overflowed {
-            self.aside.blocks.clear();
+            for p in std::mem::take(&mut self.aside.blocks) {
+                self.take_placeholder(&p);
+            }
             return;
         }
         let alias = self.alias_table();
