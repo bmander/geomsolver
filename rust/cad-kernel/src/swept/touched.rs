@@ -221,6 +221,67 @@ fn sheet(net: &Net,name: &str) -> Result<Brep,Unbuilt> {
 
 fn bspline(b: BSpline) -> Curve { Curve::BSpline(Arc::new(b)) }
 
+/// One side of a kept face's loop: a stretch `t` of a curve, walked along it or against it.
+struct Side { c: Curve,t: [f64;2],forward: bool }
+
+impl Side {
+    /// The meridian of the torus `surf` at `u` round its axis, from the angle `v0` round the tube to
+    /// `v1` (as the curve's parameter, so any branch).
+    fn meridian(surf: &Surface,u: f64,[v0,v1]: [f64;2]) -> Side {
+        let Surface::Torus(f,big,small) = *surf else { unreachable!("a meridian of a torus") };
+        let er = add(scale(f.x,u.cos()),scale(f.y,u.sin()));
+        let ea = add(scale(f.x,-u.sin()),scale(f.y,u.cos()));
+        // (its frame's `y` the torus's axis, so its parameter is the angle round the tube)
+        let c = Curve::Circle(Frame::new(add(f.o,scale(er,big)),scale(ea,-1.),er),small);
+        if v0 <= v1 { Side {c,t:[v0,v1],forward:true} } else { Side {c,t:[v1,v0],forward:false} }
+    }
+    /// The torus's outer equator, `v = 0`, from `u0` round its axis to `u1`.
+    fn equator(surf: &Surface,[u0,u1]: [f64;2]) -> Side {
+        let Surface::Torus(f,big,small) = *surf else { unreachable!("an equator of a torus") };
+        let c = Curve::Circle(f,big+small);
+        if u0 <= u1 { Side {c,t:[u0,u1],forward:true} } else { Side {c,t:[u1,u0],forward:false} }
+    }
+    /// Its point where it starts, walked.
+    fn first(&self) -> V { self.c.point(if self.forward { self.t[0] } else { self.t[1] }) }
+    /// Its point at the fraction `f` of the way, walked.
+    fn at(&self,f: f64) -> V { self.c.point(if self.forward { self.t[0]+(self.t[1]-self.t[0])*f } else { self.t[1]-(self.t[1]-self.t[0])*f }) }
+}
+
+/// The parameters of `p` on `surf`, each the branch nearest `near`'s.
+fn uv_near(surf: &Surface,p: V,near_uv: [f64;2]) -> [f64;2] {
+    let [u,v] = surf.inverse(p);
+    [near(u,near_uv[0]),near(v,near_uv[1])]
+}
+
+/// **The faces of `surf` bounded by `loops`**, one Brep: each loop's sides one after another, each
+/// ending where the next starts, walked counter-clockwise in the surface's parameters — each the
+/// branch nearest the loop's own `(u, v)`, so no face crosses the surface's seams — each use's
+/// parameters its curve's points inverted onto it; corners within `tol` of one another one vertex.
+fn kept_end(surf: &Surface,loops: &[(Vec<Side>,[f64;2])],name: &str,tol: f64) -> Result<Brep,Unbuilt> {
+    use crate::topo::{Coedge,EdgeCurve,Pcurve,reverse_loop};
+    let mut out = Brep::default();
+    let vertex = |out: &mut Brep,p: V| -> u32 {
+        match out.vertices.iter().position(|v| distance(v.p,p) <= tol) { Some(i) => i as u32,None => out.vertex(p) }
+    };
+    for (sides,mid) in loops {
+        // (the loop's area in parameters, read at eight places a side)
+        let uv: Vec<[f64;2]> = sides.iter().flat_map(|s| (0..8).map(|i| uv_near(surf,s.at(i as f64/8.),*mid))).collect();
+        let area: f64 = (0..uv.len()).map(|i| { let (p,q) = (uv[i],uv[(i+1)%uv.len()]); p[0]*q[1]-q[0]*p[1] }).sum();
+        if !(area.abs() > 0.) { return Err(Unbuilt::Failed("a ring's kept end of no area".into())) }
+        let corners: Vec<u32> = sides.iter().map(|s| vertex(&mut out,s.first())).collect();
+        let mut lp = Vec::new();
+        for (i,s) in sides.iter().enumerate() {
+            let (v0,v1) = (corners[i],corners[(i+1)%sides.len()]);
+            let edge = out.edge(EdgeCurve::Curve(s.c.clone()),s.t,if s.forward { [v0,v1] } else { [v1,v0] });
+            let pcurve = Pcurve::Inverse {a:uv_near(surf,s.c.point(s.t[0]),*mid),b:uv_near(surf,s.c.point(s.t[1]),*mid)};
+            lp.push(Coedge {edge,reversed:!s.forward,pcurve});
+        }
+        let lp = if area < 0. { reverse_loop(lp) } else { lp };
+        out.faces.push(crate::topo::Face {surface:surf.clone(),reversed:false,loops:vec![lp],name:name.to_string()});
+    }
+    Ok(out)
+}
+
 /// **A ring touching a meridian whole, entered by depth** where it is cut from `blank` and its
 /// other whole-touched meridian sweeps clear of it; `None` where no meridian is touched whole at
 /// two of the closed class's poses (`looks`), and refused by name — `Curved` at the place it reads
@@ -446,17 +507,104 @@ pub fn entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],looks: usize,bar: f6
         for k in 0..=16 { let x = net.point(u0+(u1-u0)*k as f64/16.,v1); if within(x) { return Err(refused(x)) } }
     }
     lap("the sheets read");
-    // **the tool at either end**, its seam kept away from the rims laid on it
-    let rims: [Vec<V>;2] = [0,1].map(|e| nets.iter().flat_map(|n| {
-        let [[u0,u1],[v0,v1]] = n.domain();
-        let v = if e == 0 { v0 } else { v1 };
-        (0..=8).map(move |i| n.point(u0+(u1-u0)*i as f64/8.,v))
-    }).collect());
-    let ends: [Brep;2] = [0,1].map(|e| -> Result<Brep,Unbuilt> {
-        let pose = path.pose([a,b][e])?;
-        let moved = tool.moved(&crate::geom::Rigid {r:pose.r,t:pose.p});
-        Ok(super::closed::seam_away(moved,pose.point(torus.f.o),pose.vector(torus.f.z),&rims[e]))
-    }).into_iter().collect::<Result<Vec<_>,_>>()?.try_into().map_err(|_| Unbuilt::Failed("no end".into()))?;
+    // **the tool at either end, its kept part alone** (#942, the ring's ends kept): the quadrant on
+    // the side of the meridian where the roll does not go, between the rims of the two branches
+    // there and the strip's, out to the equator's meridian, and beside it a wedge for each end
+    // piece, between its own leaf's rim and its crossing — what the depth leaves of the end pose,
+    // and nothing of the part beyond the meridian the strip leaves tangent to
+    let name = tool.faces[0].name.clone();
+    let mut ends = Vec::new();
+    for (e,end) in [a,b].into_iter().enumerate() {
+        let pose = path.pose(end)?;
+        let f = &torus.f;
+        // (the torus's frame turned so the meridian stands at `u = π`, the surface's seam round its
+        // axis at the far meridian, clear of the blank)
+        let er = add(scale(f.x,theta.cos()),scale(f.y,theta.sin()));
+        let surf = Surface::Torus(Frame::new(pose.point(f.o),pose.vector(f.z),pose.vector(scale(er,-1.))),torus.big,torus.small);
+        let on = on_meridian(end)?;
+        let d = (on[1]-on[0]).rem_euclid(TAU)-if sweep < 0. { TAU } else { 0. };
+        // the quadrant's side: halfway round to the equator, at the strip's middle, kept
+        let k: Vec<bool> = [1.,-1.].iter().map(|&s| kept(pose.point(torus.at(theta+s*0.25*PI,on[0]+0.5*d)[0]),end)).collect();
+        let behind = match (k[0],k[1]) {
+            (true,false) => 1.,(false,true) => -1.,
+            _ => return Err(refused(pose.point(torus.at(theta,on[0]+0.5*d)[0]))),
+        };
+        let last = |n: &Net| if e == 0 { n.column(0) } else { n.column(n.poles[0].len()-1) };
+        let piece = |j: usize| pieces.iter().find(|p| p.0 == e && p.1 == j).map(|p| &p.2);
+        // each branch's rim on the quadrant's side: its leaf's where the leaf is kept there, else
+        // its end piece's (none: the leaf kept beyond the meridian ends in what is buried)
+        let mut rims = Vec::new();
+        for j in 0..2 {
+            let c = if sides[j] == behind { last(&nets[j]) } else {
+                let Some(net) = piece(j) else { return Err(refused(pose.point(torus.at(theta,on[j])[0]))) };
+                net.row(0)
+            };
+            rims.push(c);
+        }
+        if pieces.iter().any(|p| p.0 == e && sides[p.1] == behind) { return Err(refused(pose.point(torus.at(theta,on[0])[0]))) }
+        // the quadrant, split where the strip crosses the surface's own seam round the tube, the
+        // outer equator: each part's parameters within one turn
+        let strip = last(&nets[2]);
+        let u_eq = surf.inverse(rims[1].point(FRAC_PI_2))[0];
+        let eq = [0,1].map(|j| uv_near(&surf,rims[j].point(FRAC_PI_2),[u_eq,on[0]+d*j as f64])[1]);
+        let (lo,hi) = (on[0].min(on[0]+d),on[0].max(on[0]+d));
+        let seam = (lo/TAU).floor()*TAU+TAU;
+        let mut loops: Vec<(Vec<Side>,[f64;2])> = Vec::new();
+        let mid_u = 0.5*(PI+u_eq);
+        if seam < hi {
+            // (the strip's parameter where it crosses the seam: its angle round the tube halved to it)
+            let v_of = |t: f64| near(surf.inverse(strip.point(t))[1],on[0]+d*t);
+            let (mut l,mut h) = (0.,1.);
+            loop {
+                let m = 0.5*(l+h);
+                if m <= l || m >= h { break }
+                if (v_of(m)-seam)*(v_of(l)-seam) > 0. { l = m } else { h = m }
+            }
+            let ts = 0.5*(l+h);
+            let u_pi = surf.inverse(strip.point(ts))[0];
+            loops.push((vec![Side {c:bspline(strip.clone()),t:[0.,ts],forward:true},Side::equator(&surf,[u_pi,u_eq]),
+                Side::meridian(&surf,u_eq,[seam,eq[0]]),Side {c:bspline(rims[0].clone()),t:[0.,FRAC_PI_2],forward:false}],
+                [mid_u,0.5*(on[0]+seam)]));
+            loops.push((vec![Side {c:bspline(strip.clone()),t:[ts,1.],forward:true},Side {c:bspline(rims[1].clone()),t:[0.,FRAC_PI_2],forward:true},
+                Side::meridian(&surf,u_eq,[eq[1],seam]),Side::equator(&surf,[u_eq,u_pi])],[mid_u,0.5*(seam+on[0]+d)]));
+        } else {
+            loops.push((vec![Side {c:bspline(strip.clone()),t:[0.,1.],forward:true},Side {c:bspline(rims[1].clone()),t:[0.,FRAC_PI_2],forward:true},
+                Side::meridian(&surf,u_eq,[eq[1],eq[0]]),Side {c:bspline(rims[0].clone()),t:[0.,FRAC_PI_2],forward:false}],
+                [mid_u,on[0]+0.5*d]));
+        }
+        // the quadrant's far meridian clear of the blank
+        let far = Side::meridian(&surf,u_eq,[eq[1],eq[0]]);
+        for i in 0..=8 { let x = far.at(i as f64/8.); if within(x) { return Err(refused(x)) } }
+        // each end piece's wedge, closed by a meridian where its rim or its crossing reaches the
+        // nearer of the two round the torus
+        for j in 0..2 {
+            let Some(net) = piece(j) else { continue };
+            let (rim,cross) = (last(&nets[j]),net.row(net.poles.len()-1));
+            let u_of = |c: &BSpline,t: f64| near(surf.inverse(c.point(t))[0],PI)-PI;
+            let reach = |c: &BSpline,u: f64| -> f64 {
+                // (the curve's parameter at `u` round the torus, halved to the rounding)
+                let (mut lo,mut hi) = (0.,FRAC_PI_2);
+                loop {
+                    let m = 0.5*(lo+hi);
+                    if m <= lo || m >= hi { return m }
+                    if (u_of(c,m)-u)*(u_of(c,hi)-u) > 0. { hi = m } else { lo = m }
+                }
+            };
+            let (ur,ux) = (u_of(&rim,FRAC_PI_2),u_of(&cross,FRAC_PI_2));
+            let (tr,tx) = if ux.abs() >= ur.abs() { (FRAC_PI_2,reach(&cross,ur)) } else { (reach(&rim,ux),FRAC_PI_2) };
+            let u_c = PI+u_of(&rim,tr);
+            let [vr,vx] = [rim.point(tr),cross.point(tx)].map(|x| near(surf.inverse(x)[1],on[j]));
+            let close = Side::meridian(&surf,u_c,[vr,vx]);
+            for i in 0..=8 { let x = close.at(i as f64/8.); if within(x) { return Err(refused(x)) } }
+            let mid = [PI+0.5*u_of(&rim,tr),on[j]];
+            loops.push((vec![Side {c:bspline(rim),t:[0.,tr],forward:true},close,Side {c:bspline(cross),t:[0.,tx],forward:false}],mid));
+        }
+        // (each loop's parameters within a turn of its own: its `v` taken in [0, 2π) as the
+        // surface reads it)
+        let loops: Vec<(Vec<Side>,[f64;2])> = loops.into_iter().map(|(s,[u,v])| (s,[u,v.rem_euclid(TAU)])).collect();
+        ends.push(kept_end(&surf,&loops,&name,tol)?);
+    }
+    let ends: [Brep;2] = ends.try_into().map_err(|_| Unbuilt::Failed("no end".into()))?;
     let surface = |x: &Brep| x.faces[0].surface.clone();
     let mut sheets = Vec::new();
     for (i,net) in nets.iter().enumerate() { sheets.push(sheet(net,["touched leaf 0","touched leaf 1","touched strip"][i])?) }

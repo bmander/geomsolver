@@ -2416,7 +2416,24 @@ is taken on a quadratic in the angle through nought, each place of it held to th
 fit — where the seam lies there is the bar's question, its points on both faces the tolerance's.
 Every meeting is given: each sheet with the tool at either end in its rim, the strip with each leaf
 in its seam, an end piece with its tool in its rim and its crossing, and touching its leaf and the
-strip at its corner; so the arrangement seeks none between two sheets. Refused by name, `Curved`
+strip at its corner; so the arrangement seeks none between two sheets. **Of the tool at either end
+only what depth keeps is entered** (#942, the ring's ends kept): the quadrant on the side of the
+meridian the roll does not go — between the strip's rim on the meridian, the two branches' rims on
+that side (a kept leaf's, or where the leaf kept is the other one, its end piece's) and the
+meridian at the equator — and beside it, for each end piece, the wedge between its own leaf's rim
+and its crossing, closed by a meridian where the farther of the two reaches the other, clear of
+the blank; the torus's own frame turned so the meridian stands at `u = π`, its seam round the axis
+at the far meridian, and the quadrant parted at the outer equator, the seam round the tube, so no
+face crosses one. The part beyond the meridian beside the strip is not entered: the strip leaves
+its rim tangent to the tool there, and a whole torus put the two on one side of the edge to
+second order, standing 1.3e-9 rad apart at the edge and 6.5e-6 a full step in — ordered only by
+the fitted tie's step to its farthest depth, where they stood 1.3e-8 the other way (with the tie at
+1e-12 the build was `Wrong`). Kept alone, the quadrant leaves the edge on the far side from the
+strip, half a turn apart, and no order rests on a rounding. A branch whose kept leaf ends on the
+side beyond the meridian with no end piece there, or an end piece on the quadrant's side, is
+refused by name. The cells are classified by membership as before; the candidates no longer close
+on themselves, but every place of the sweep's boundary in the blank lies in one of them, so no
+cell straddles it (the judge would refuse one that did). Refused by name, `Curved`
 where it reads so, wherever this is not what depth says (the tool no torus, the far meridian or a
 leaf's equator in the blank, the contact not two parallels, a leaf kept on both sides or neither,
 any kept sheet's place held from beyond by more than the tolerance); with no blank, the road's
