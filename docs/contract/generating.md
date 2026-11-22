@@ -2221,13 +2221,8 @@ found by search seeded where an edge crosses it, misses an arc between those poi
 crosses (at `(2.356, 2.693, −0.273)`, the surfaces crossing at a sine of 0.6; the touches 0.15 off,
 the sine below 4e-3); the thin one beside the swallowtail point where its fold pair is born
 (above: its two tubes' meeting at under a hundredth of a degree was a seed off the other tube, no
-root); the half turn — its double curve built
-from the swallowtail point beside its pair's birth, cut into its three stretches and its tail
-dropped — where the trim finds the boundary open along an edge 8e-4 from the swallowtail point:
-along the kernel through it the sheet moves at the third order, the segment from the point back to
-the cut standing within some 1e-5 of the point's place, and the seam of the bridge between the cut
-and the point crosses it there 1.7e-6 from it (the tolerance 3.2e-6), so a sliver of the kept leaf
-between the double curve and that seam is narrower than the tolerance. A double curve's
+root). (The half turn, refused here where the trim found the boundary open 8e-4 from its
+swallowtail point, is built: its pair parted at the point, below.) A double curve's
 points are placed on a stretch by the seams' angles of the stretch's own net (`rings::cut_along`),
 not by an instant read for each (#942 F4: the turned torus refused in 32 s where it took 106, 74 of
 them reading instants; the thin one in 58 s where it took over forty minutes); what is left is the
@@ -2238,6 +2233,47 @@ trace leaving beside a corner ending at a nearer crossing, a cap both faces of a
 corner dropped, a chord refined by the meeting's own points where its cubic strays — and its tubes
 are arranged with the torus at both ends (#942 T1d-ring, at the bench's tolerance:
 `swept_rings::a_rings_tubes_beside_its_whole_touched_meridians_are_arranged_with_it_at_both_ends`).
+**A boundary read from the depth enters as a seam** (#942, `swept::depth::{Covered,seams,Seam}`):
+`depth::Covered` is the far cover's depth over a ring's sheet in its `(θ, t)` on one contact — not
+defined where the sheet folds away, its neighbours hold it or nothing else covers it — with its
+gradient by the envelope theorem (the tool's normal at the covering instant against the sheet's
+rates; differences at `zero_set`'s half digits read the sheet's root's noise), and `depth::seams`
+traces its zero set over a box with `zero_set::trace` from the caller's seeds (events it knows),
+each piece's chords held to the tolerance in space by pulling every chord's middle onto it (beside a
+swallowtail point the sheet's rates are nearly one way, and a first-order distance through the
+inverse metric took a chord 3.6e-5 off as near), a piece traced twice from a seed dropped, a cell
+left unresolved refused. Each `Seam` carries its sheet's points `(θ, t, σ)` and the covering
+instant's preimages `(θ′, τ, σ′)` where `τ` is inside the roll — `Seam::curves` in the form
+`rings::cut_along` lays a double curve's, so a caller pushes them among the curves cut into the
+stretches. On the half turn it traces the double curve from the cut where the pair is born to where
+the end pose covers it, one piece rim to rim, each partner point covered at its own point's instant
+(`swept_depth::the_cover_s_boundary_traced_from_the_depth_is_the_half_turn_s_double_curve`, 4 s).
+The half turn's refusal was no missing seam: the cut is where the pair's least `s''` passes nought,
+to 3e-7 of the roll; the band its far cover holds deeper than the tolerance before the cut is
+bounded by the double curve; and from its swallowtail point to where it crosses the cut the double
+curve stood 0.2e-6 to 3.03e-6 from the cut's contact in space (the tolerance 3.2e-6), so the
+arrangement cut the cut's edge at the swallowtail point and left edges used four to six times.
+**A fold pair born partway is parted at its swallowtail point, not its birth** (#942 T1d-tori,
+`closed::ring_fitted`, `rings::fitted_unborn`): the birth's row is a construction line, the double
+curve geometry, and the line is moved off it. Where the stretch holding a swallowtail point begins at
+the cut where its pair is born (the stretch before has fewer bridges), the two are fitted as one up to
+the point, the pair read as not yet born — the stretch's pieces those at its start, and an instant
+whose shape is not theirs read with no narrow pair put in, one touching piece across the bridge,
+the folds check passing over the newborn pair's bridge as over any bridge — and the rest as one from
+the point; the row there crosses the double curve only where it ends. The sheet over the bridge is
+the sheet itself, folded back between the folds as a bridge's is, and that sliver lies wholly in the
+tail above the double curve, which the trim drops: at eight rolls between the half turn's birth and
+its point and 64 places across each bridge, every place between the folds (360) is held by a later
+instant (to 2.3e-4 deep) and every place the tail rule keeps is held no deeper than the rounding
+(`swept_depth::the_half_turns_fold_pair_bounds_nothing_the_trim_keeps_before_its_swallowtail_point`).
+The fold itself, held by the instants beside its own, is 4.9e-7 to 1.6e-6 thick there (`depth_probe
+sliver`), under the tolerance. A stretch whose start has another pair as well as the newborn one is
+refused as before (read unborn, both are gone and its shape is not its start's). brep-bench's
+`tumbling-torus-half-turn` is built, checked and judged as the bench calls it: 20 faces, volume
+12.2377154 (cadrs 12.2377), held to membership, 8 s in the test profile
+(`swept_rings::the_half_turn_is_built_closed`). A Monte Carlo count of the definition read 12.198 ±
+0.021, 1.9 of its deviations below.
+
 **A seam's crossing within the tolerance band of the rim is the tube's vertex** (`rings::traces`):
 where a touching piece's rim meets a dipped one's the relative curvature across the rim is nought
 at the vertex, and beside it the tube and the tool stand within the fit's error of one another all
@@ -2300,16 +2336,18 @@ entered it (below); any other tool keeps K2's
 refusal (`swept_patches::a_tool_no_convex_revolution_under_any_motion_is_refused_by_name`'s ring,
 its two meridians square to the motion touched whole, is `Curved` so).
 
-**A ring's sweep read for depth** (#942, the depth trim, `swept::depth`): the sweep is the union of
+**A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
+the reading for a path that encloses nothing, no proof; where the path encloses its motion,
+`depth::cover`'s certified march is the reading): the sweep is the union of
 the tool's poses, so a point lies in it by the least over the roll of the tool's signed distance at
 it (`Ring::signed` at `pose(t)⁻¹ x`), each basin the samples show settled by golden section, and a
 candidate sheet is on the boundary exactly where no instant but the point's own holds it
-(`Depth::cover`: the own basin taken out — the own instant a sample, with samples halving in toward
+(`depth::Sampled::cover`: the own basin taken out — the own instant a sample, with samples halving in toward
 it until the roll reads no difference, so a partner closing on it is parted from it; a least at
 nought to the depth's rounding is the own touch read again). The instant holding a point names the
-tool's point there, so a seam — the edge of what is kept (`Depth::edge_on`, halved to a quarter of
+tool's point there, so a seam — the edge of what is kept (`Sampled::edge_on`, halved to a quarter of
 the tolerance; its kept end may be held by under the tolerance, on the boundary to it), traced as a
-graph over one parameter with its chord sagging within the tolerance (`Depth::seam_over`) — carries
+graph over one parameter with its chord sagging within the tolerance (`Sampled::seam_over`) — carries
 both faces' parameters by construction. On the ring along a spline it reads each tube kept on one
 side of the bottom meridian only (tube 0 in front of θ*, tube 1 behind), the stretch beside θ*
 held by under 1e-7 (the sliver, its fold and B′ within that of one another), the strip's touching
@@ -2327,7 +2365,7 @@ parallel each side, `n · v = 0` solved round the tube at each angle (divided by
 rate by `α` on the meridian itself), and each parallel's sheet folds exactly at the meridian — the
 road's reader labels a stretch 0.008 round it a fold by its `s''` threshold, `s''` being cubic
 there, which put one tube's touching faces on the wrong leaf and its kept leaf's edge 0.0114 off
-the strip's corner. Read for depth (`Depth::cover`, the roll sampled at the bar's grain — a cover
+the strip's corner. Read for depth (`depth::Sampled::cover`, the roll sampled at the bar's grain — a cover
 whose basin is narrower than that can be missed, where a certified march along the roll could not):
 of each parallel's sheet one leaf is kept whole and taken from the meridian (its seam 6.9e-8 off
 the true edge of what is kept, against the bar); the meridian's half between the parallels that

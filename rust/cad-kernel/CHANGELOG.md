@@ -22,6 +22,30 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   minimiser switches branches and at the rim and given inner edges, each piece's ends classified;
   seeded from the boundary, the caller and a halving search that proves cells free or monotone where
   `Field::bound` encloses `f` and its gradient, and says what it only sampled where it does not.
+- **brep-bench's `tumbling-torus-half-turn` is built** (#942 T1d-tori, `swept::rings`,
+  `swept::closed`): a fold pair born partway is parted at its swallowtail point, not its birth. The
+  birth's row is a construction line, and the pair's double curve, which begins at the swallowtail
+  point and runs back below it, stood within the tolerance of that row's contact over 8.6e-4 of it,
+  where the arrangement cut the row's edge at the point and the trim was refused ("loop breaks in
+  parameters"). Where the stretch holding a swallowtail point begins at its pair's birth, it and the
+  stretch before are fitted as one up to the point with the pair read as not yet born (new
+  `rings::fitted_unborn`, `Fitted::unborn`: an instant whose shape is not the stretch's first read
+  with no narrow pair put in, the folds check passing over the newborn pair's bridge as over any
+  bridge), and the rest from the point. The pair's sliver before the point lies wholly in the tail
+  above the double curve, which the trim drops. The half turn: 20 faces, volume 12.2377154 (cadrs
+  12.2377), 5.9 s; `depth_probe` reads `sliver`.
+
+- **A boundary read from the depth enters the ring road as a seam** (#942, `swept::depth`): new
+  `depth::Covered`, the far cover's depth as a `zero_set::Field` over a ring's sheet (its gradient by
+  the envelope theorem), and `depth::seams`, its zero set traced over a box of the sheet's `(θ, t)`
+  from the caller's seeds, each chord's middle pulled onto it and held to the tolerance in space
+  (beside a swallowtail point the sheet's rates are nearly one way and a first-order distance took
+  a chord 3.6e-5 off as near); each `Seam` with the covering instant's preimages, and
+  `Seam::curves` in `rings::cut_along`'s form. On `tumbling-torus-half-turn` it traces the double
+  curve; the half turn's refusal is measured to be no missing seam (its birth cut at `s''` nought to
+  3e-7; the double curve from its swallowtail point to the cut within 3.03e-6 of the cut's contact,
+  the tolerance 3.2e-6). `depth_probe` reads `seams`, `birth`, `near`, `find` and `chord`; the
+  sweep probe reads a dump's `faces`; `SOLVENT_TRIM_DEBUG` says the check's refusal.
 
 - **The full-turn tumbling torus gets past its start and end tori** (#942 T1d-tori, `boolean`,
   `swept::rings`, `swept::closed`), and is refused further on, where the two tori's meeting found

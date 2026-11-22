@@ -29,7 +29,7 @@ use crate::topo::Brep;
 use crate::trajectory::Trajectory;
 use crate::util::space::{add,distance,dot,scale};
 use super::closed::Unbuilt;
-use super::depth::Depth;
+use super::depth::Sampled;
 use std::f64::consts::{FRAC_PI_2,PI,TAU};
 use std::sync::Arc;
 
@@ -289,7 +289,7 @@ pub fn entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],looks: usize,bar: f6
             Ok(pose.point(torus.at(al,p)[0]))
         }).collect()
     };
-    let depth = Depth::new(&ring,path,[a,b],((b-a)/super::closed::grain(tool,path,[a,b],bar)?).ceil().max(1.) as usize)?;
+    let depth = Sampled::new(&ring,path,[a,b],((b-a)/super::closed::grain(tool,path,[a,b],bar)?).ceil().max(1.) as usize)?;
     // a place is kept where nothing beyond its own instant holds it by more than the tolerance
     let kept = |x: V,t: f64| depth.cover(x,t).is_none_or(|c| c.depth >= -tol);
     let mid = 0.5*(a+b);

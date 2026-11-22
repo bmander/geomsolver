@@ -2,7 +2,7 @@
 //! candidate sheet's points read for what holds them (`swept::depth`), printed for measurement.
 //!
 //! `cargo run --release -p cad-kernel --example ring_depth -- bridge|strip|ends|rows`
-use cad_kernel::swept::depth::Depth;
+use cad_kernel::swept::depth::Sampled as Depth;
 use cad_kernel::swept::rings::Ring;
 use cad_kernel::trajectory::Trajectory;
 use std::f64::consts::{FRAC_PI_2,PI};

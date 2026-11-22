@@ -797,6 +797,26 @@ fn the_half_turns_double_curve_is_built_from_the_swallowtail_point_beside_its_bi
     assert!(read >= 8,"{read} places read");
 }
 
+/// **brep-bench's `tumbling-torus-half-turn` is built closed** (#942 T1d-tori), as the bench calls
+/// it: the bar a 250th of the tube, the tolerance a 50 000th. Its fold pair is born at 1.4766 and its
+/// double curve begins at the swallowtail point 0.0073 of the roll later, running back below it
+/// across the birth's row; parted at the birth, that row's contact stood within the tolerance of the
+/// double curve over 8.6e-4 of it (0.2e-6 to 3.03e-6, the tolerance 3.2e-6), the arrangement cut the
+/// row's edge at the point, and the trim was refused ("face 8 loop breaks in parameters", edges used
+/// four to six times). Parted at the swallowtail point instead, the pair read as not yet born before
+/// it (`rings::fitted_unborn`), the row crosses the double curve only where it ends, and the solid
+/// is built, checked and judged: its volume 12.2377154, where cadrs's is 12.2377, held to
+/// membership. (A Monte Carlo count of the definition read 12.198 ± 0.021.)
+#[test]
+fn the_half_turn_is_built_closed() {
+    let (tool,path,roll,tol) = half_turn();
+    let built = gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.16/250.,tol).unwrap_or_else(|u| panic!("{u:?}"));
+    built.check(tol).unwrap();
+    let v = gcs_core::brep::props::volume(&built);
+    assert!((v-12.2377154238).abs() < 1e-7,"{v}");
+    crate::swept_closed::agrees_over(&built,&tool,&path,roll);
+}
+
 /// **A double curve ending on a tube's crossing with the tool is one vertex with it** (#942
 /// T1d-tori): the thin tumbling torus's double curve, where its tube passes back through itself,
 /// ends at the end pose on the tube's rim, which touches the tool there, and on the leaf it passes
