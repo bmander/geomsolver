@@ -17,8 +17,7 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   takes no pair whose preimages have met (nor, built from a swallowtail point, one whose second
   preimage comes back over the angle), and seeks the next pair from the last two where the last
   alone does not settle it. A tube's tail is read above its double curve over the angle round the
-  axis and against the whole curve (`Fitted::tails`), not over a stretch's `u`; a tube's seams are
-  laid as edges between each two of their places, and a trace along a seam is the seam's own edges.
+  axis and against the whole curve (`Fitted::tails`), not over a stretch's `u`.
   `tumbling-torus-half-turn` gets past its double curve beside the birth and is refused, by name,
   where the sheet's kernel through the swallowtail point stands within the tolerance of it and a
   sliver of the leaf is narrower than the tolerance. The `ring_profile` example builds the half turn.

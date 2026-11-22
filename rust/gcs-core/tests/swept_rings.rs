@@ -521,22 +521,3 @@ fn the_half_turns_double_curve_is_built_from_the_swallowtail_point_beside_its_bi
     }
     assert!(read >= 8,"{read} places read");
 }
-
-/// **The half turn's tubes are entered with each seam laid once** (#942 T1d-tori): beside the roll's
-/// end a face's meeting with the tool there runs 3.3e-5 of the roll along the seam it shares with
-/// the face beside, from a place the face beside does not have to the corner. Each seam's edges are
-/// laid between each two of its places, and the trace along it is the seam's own edge: laid as one
-/// edge from its lower place to the far one's, the two faces either side were given one edge for two
-/// stretches of the seam, and the tube's loop broke there. Entered, the sheets are open, every loop
-/// closed.
-#[test]
-fn the_half_turns_tubes_are_entered_with_each_seam_laid_once() {
-    use gcs_core::brep::swept::closed::{RingEntered,ring_entered};
-    let (tool,path,roll,tol) = half_turn();
-    let RingEntered {sheets,cut,..} = ring_entered(&tool,&path,roll,tol).unwrap_or_else(|e| panic!("not entered: {e:?}"));
-    assert!(cut,"the roll is cut where the contact changes shape");
-    assert_eq!(sheets.len(),2,"one tube a contact curve");
-    for (k,s) in sheets.iter().enumerate() {
-        if let Err(e) = s.check(tol) { assert_eq!(e.kind,gcs_core::brep::Kind::Open,"sheet {k}: {}",e.msg) }
-    }
-}

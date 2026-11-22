@@ -2350,28 +2350,6 @@ fn trimmed(net: &Net,roll: [f64;2],mut faces: Vec<Trimmed>,tol: f64) -> Result<(
     let nets: Vec<Net> = (0..pieces).map(|k| net.segment([k as f64,k as f64+1.],roll)).collect();
     let seam_curve: Vec<Curve> = nets.iter().map(|n| Curve::BSpline(Arc::new(n.row(0)))).collect();
     let mut seam_edges: std::collections::BTreeMap<(usize,usize),u32> = std::collections::BTreeMap::new();
-    // the uses of seam `s` from the place `p` to `q` on face `k`'s square: an edge between each two
-    // places of the seam's next one another, each made once and shared by the faces either side —
-    // where one walks it through a place the other does not, it walks the two edges (keyed by its
-    // lower place alone, one edge was laid from its place to the far one's, and the face beside
-    // given it to a nearer place, #942 T1d-tori)
-    #[allow(clippy::too_many_arguments)]
-    fn seam_run(out: &mut Brep,edges: &mut std::collections::BTreeMap<(usize,usize),u32>,
-        vertex: &mut dyn FnMut(&mut Brep,usize,P2) -> Result<u32,Unbuilt>,k: usize,s: usize,p: P2,q: P2,
-        place: &dyn Fn(usize,f64) -> Result<usize,Unbuilt>,seams: &[Vec<f64>],curve: &Curve,u: f64,t_of: &dyn Fn(f64) -> f64)
-        -> Result<Vec<crate::topo::Coedge>,Unbuilt> {
-        use crate::topo::{Coedge,EdgeCurve,Pcurve};
-        let (i0,i1) = (place(s,p[1])?,place(s,q[1])?);
-        let mut run = Vec::new();
-        for i in i0.min(i1)..i0.max(i1) {
-            let (ya,yb) = (seams[s][i],seams[s][i+1]);
-            let (va,vb) = (vertex(out,k,[p[0],ya])?,vertex(out,k,[p[0],yb])?);
-            let edge = *edges.entry((s,i)).or_insert_with(|| out.edge(EdgeCurve::Curve(curve.clone()),[t_of(ya),t_of(yb)],[va,vb]));
-            run.push(Coedge {edge,reversed:i0 > i1,pcurve:Pcurve::Line {a:[u,t_of(ya)],b:[u,t_of(yb)]}});
-        }
-        if i0 > i1 { run.reverse() }
-        Ok(run)
-    }
     let mut cut = Cut {surfaces:Vec::new(),rims:Vec::new(),chords:Vec::new()};
     for ((k,face),piece) in faces.iter().enumerate().zip(nets) {
         let rim: [Curve;2] = [Curve::BSpline(Arc::new(piece.column(0))),Curve::BSpline(Arc::new(piece.column(piece.poles[0].len()-1)))];
@@ -2418,10 +2396,10 @@ fn trimmed(net: &Net,roll: [f64;2],mut faces: Vec<Trimmed>,tol: f64) -> Result<(
                 match w {
                     Walk::Side(s0,s1) => {
                         let (p,q) = (round_square(s0),round_square(s1));
+                        let (vp,vq) = (vertex(&mut out,k,p)?,vertex(&mut out,k,q)?);
                         match s0.floor() as usize {
                             // along a rim: the iso-curve there, from one place to the other
                             side @ (0|2) => {
-                                let (vp,vq) = (vertex(&mut out,k,p)?,vertex(&mut out,k,q)?);
                                 let e = side/2;
                                 let (lo,hi) = if p[0] <= q[0] { ((p,vp),(q,vq)) } else { ((q,vq),(p,vp)) };
                                 let edge = out.edge(EdgeCurve::Curve(rim[e].clone()),[u0+lo.0[0],u0+hi.0[0]],[lo.1,hi.1]);
@@ -2429,34 +2407,21 @@ fn trimmed(net: &Net,roll: [f64;2],mut faces: Vec<Trimmed>,tol: f64) -> Result<(
                                 lp.push(Coedge {edge,reversed:p[0] > q[0],pcurve:Pcurve::Line {a:[u0+lo.0[0],t],b:[u0+hi.0[0],t]}});
                                 rim_kept[e] = true;
                             }
-                            // along a seam: its edges between the two places, shared with the face beside
+                            // along a seam: its edge between the two places, shared with the face beside
                             side => {
-                                let s = if side == 1 { (k+1)%pieces } else { k };
-                                let u = if p[0] <= 0.5 { u0 } else { u1 };
-                                lp.extend(seam_run(&mut out,&mut seam_edges,&mut vertex,k,s,p,q,&place,&seams,&seam_curve[s],u,&t_of)?);
+                                let (s,u) = if side == 1 { ((k+1)%pieces,u1) } else { (k,u0) };
+                                let (lo,hi) = if p[1] <= q[1] { ((p,vp),(q,vq)) } else { ((q,vq),(p,vp)) };
+                                let edge = match seam_edges.entry((s,place(s,lo.0[1])?)) {
+                                    std::collections::btree_map::Entry::Occupied(o) => *o.get(),
+                                    std::collections::btree_map::Entry::Vacant(v) => *v.insert(out.edge(EdgeCurve::Curve(seam_curve[s].clone()),
+                                        [t_of(lo.0[1]),t_of(hi.0[1])],[lo.1,hi.1])),
+                                };
+                                lp.push(Coedge {edge,reversed:p[1] > q[1],pcurve:Pcurve::Line {a:[u,t_of(lo.0[1])],b:[u,t_of(hi.0[1])]}});
                             }
                         }
                     }
                     Walk::Chord(i,forward) => {
                         let (e,pts) = &chords[i];
-                        // (a chord lying along a seam — an end pose's meeting with the sheet along a
-                        // seam a hair from its corner — is the seam, laid once, its edges the ones the
-                        // face beside walks: laid as a chord of its own beside the seam's edge, the
-                        // half turn's two faces either side of the seam were given one edge for two
-                        // stretches of it, #942 T1d-tori)
-                        if let Some(s) = seam_of(k,pts[0][0]).filter(|&s| pts.iter().all(|p| seam_of(k,p[0]) == Some(s))) {
-                            let (p,q) = if forward { (pts[0],pts[pts.len()-1]) } else { (pts[pts.len()-1],pts[0]) };
-                            let u = if p[0] <= 0.5 { u0 } else { u1 };
-                            lp.extend(seam_run(&mut out,&mut seam_edges,&mut vertex,k,s,p,q,&place,&seams,&seam_curve[s],u,&t_of)?);
-                            if *e < 2 && chord_edges[i].is_none() {
-                                if let Some(r) = face.readings.get(*e).and_then(|r| r.as_ref()) {
-                                    let (curve,xs,_) = chord_curve(r,pts,tol)?;
-                                    kept_chords[*e].push((curve,xs));
-                                }
-                                chord_edges[i] = Some(u32::MAX);
-                            }
-                            continue
-                        }
                         let edge = match chord_edges[i] {
                             Some(edge) => edge,
                             None => {

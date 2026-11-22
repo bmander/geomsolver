@@ -2115,11 +2115,14 @@ it stands at its roll, against the whole curve: it is traced a graph over its fi
 not over `u`, which the faces' seams shear as the pieces they share move (the half turn's curve
 between its birth and its swallowtail point ran back over `u`, and the tail beside it was kept), nor
 over the stretch's part of it alone, past whose ends it runs on (a piece of the tail beyond the part
-in the stretch between the cut and the point was kept). **A tube's seam is laid once**: its edges
-run between each two of its places, shared by the faces either side, and a trace of an end pose's
-meeting lying along a seam is the seam's own edges — laid from its lower place to the far one's
-alone, the half turn's two faces either side of a seam 3.3e-5 of the roll from its corner were given
-one edge for two stretches of it, and a loop broke there.
+in the stretch between the cut and the point was kept). *Found, not yet fixed:* a tube's seam edge
+is shared by the faces either side keyed by its lower place alone, so where one face walks the seam
+to a place the other does not have — the half turn's end pose meets its sheet along a seam 3.3e-5 of
+the roll from its corner, a trace of a face's lying along the seam — the two are given one edge for
+two stretches of it, and the stretch's tube enters with a loop broken there. Laid instead as edges
+between each two places, the trace along the seam the seam's own, the ring along a spline's end-pose
+meetings, given as curves of their own, lay along the seam's edges twice and its arrangement did not
+close: the fix gives a trace along a seam as the seam's own curve.
 **Every threshold the roads under any motion read is the tolerance's, a feature size's, or the
 rounding's** (#942 F6), none a number of its own:
 - *the rounding* — a value read by cancellation is nought where half its digits are its rounding's,
@@ -2162,7 +2165,7 @@ refused past the meetings their sewing settles — the torus turned whole where 
 at an end pose reads as the boundary facing behind; the thin one where its two tubes meet at under
 a hundredth of a degree, which the march cannot step along; the half turn — its double curve built
 from the swallowtail point beside its pair's birth, cut into its three stretches and its tail
-dropped — where the trim finds the boundary open along an edge 6.8e-4 from the swallowtail point:
+dropped — where the trim finds the boundary open along an edge 8e-4 from the swallowtail point:
 along the kernel through it the sheet moves at the third order, the segment from the point back to
 the cut standing within some 1e-5 of the point's place, and the seam of the bridge between the cut
 and the point crosses it there 1.7e-6 from it (the tolerance 3.2e-6), so a sliver of the kept leaf
