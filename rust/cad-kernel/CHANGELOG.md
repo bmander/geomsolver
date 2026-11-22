@@ -26,10 +26,7 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 - **How far an edge stands off its face is the boundary's to say** (#993 stage 1): the measure
   `step::write` states a file's uncertainty from is `Brep::standing`, one function for the writer
-  and whatever holds a file to it; `Brep::settle_tolerances` is `measure_tolerances` twice with
-  every sample read once (the vertices' tolerances first, which an inverse curve's ends at a pole
-  are read within), and `BSpline::segment` is a curve's stretch over a span as `Net::segment` is
-  a surface's.
+  and whatever holds a file to it.
 
 - **A foot just past a joint runs at its own rate** (#993 stage 1): `Pcurve::derivative` of an
   inverse curve off its face read the surface's second derivatives as differences a millionth of
@@ -132,6 +129,367 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   sheet's own point where `S_u × S_v` vanished (and a garbage normal where rounding left it a hair
   off nought); it now takes the normal's limit along the collapsed row, so a ball's net offset is
   the ball grown, and its partials there carried from beside it.
+
+- **An end pose's seam stands by a rule, not by rounding** (#942, `swept::closed::seam_away`; the
+  torus-general-position branch's 7bf4d72, re-applied): among the touched angles' gaps, those within
+  `HALF_READ` of a turn of the widest are alike and the first from the frame's own `x` is taken. The
+  full turn builds at sixteen seams (`the_full_turn_is_built_wherever_its_end_poses_seams_stand`), so
+  it is taken: every case builds as before, the thin tumbling torus with 29 faces where it had 28 (a
+  face its seam now crosses parted), its volume the same to 1e-14.
+
+- **A bridge's end gives way to a double curve within the arrangement's band of it** (#942
+  T1d-tori, new `swept::rings::give_way`, `Way`, `fitted_giving_way`, `Fitted::ways`): a narrow
+  pair's bridge ends where `s''` leaves the fold's band, at the depth of its least — a construction
+  line — and a double curve's preimage that starts on the fold at its swallowtail point crosses it as
+  `s''` climbs; where it crosses the sheet's rates are all but one way, and the thin tumbling torus's
+  first curve ran within 8.8e-7 of the end in space (three tolerances) over 9.9e-4 of its length,
+  inside the band (`tolerant::ON_CURVE` tolerances) within which the arrangement takes two curves for
+  one: the strip between was laid as one edge and the check refused a pcurve 8.47e-7 off. Each branch
+  of each double curve (its points between swallowtail points) that comes within that band of the
+  bridge's end nearest it, and spans a stretch's rolls as a graph over the roll, is that end over
+  every stretch it spans: the reader puts the end on the branch's preimage at each roll (a cubic
+  spline of its angle over the roll through the traced points — settled row by row beside the
+  swallowtail point the pair is ill posed, two families 1.5e-6 of an angle apart), the face before
+  the bridge ends on the double curve, and `cut_along` lays that branch as no chord. brep-bench's
+  `tumbling-torus-thin` is built: 28 faces, checked at the call's tolerance, held to membership and
+  agreeing with the sweep's definition at all 20 000 points of its box, its mesh within 1e-5
+  enclosing 0.6962961 (cadrs 0.69630) — and so with the observer's origin moved by one ulp or by
+  1e-6 either way, its mesh's volume the same to 1.2e-6. Each sheet enters with its seams first (new
+  `rings::seams_first`): where the arrangement takes two of a sheet's edges for one it keeps the
+  first and reads the other uses as inverses of it, and the face given way ends on the fold at the
+  swallowtail point, where that inverse is ill posed — with the chord on the other leaf kept
+  instead, the bench's input passed the check by luck and one ulp off it was refused (a pcurve 1.2e-5
+  off, its foot on the leaf folded back). With `boolean::carried_pcurve` (merged from the full turn's
+  branch: a piece merged into another edge carries its own pcurve) every input builds even without
+  the seams first, but the face given way then carries the far leaf's chord as its seam and
+  `props::volume` reads 0.054; with both it reads 0.6963028 (cadrs 0.69630), the same to 1e-9 one ulp
+  off, and the same in every run. The half turn gives no way and is unchanged. `depth_probe` reads
+  `ends` and `ratio`; `ring_profile` reads `nudge`, `fluxes` and the misfits after a build.
+
+- **An inverse pcurve read beside a fold** (`topo`, #942 T1d-tori): a foot carried from the node
+  before (`at_and_derivative_from`, as `props` reads an edge) that stands farther from the edge's
+  point than the edge's own gap is sought again from the line between the pcurve's ends, and the
+  nearer kept — the thin torus's double curve dipping below a swallowtail point's row had its foot
+  carried onto the face's top row and held there by the domain's edge, 1.7e-3 of the roll off; and
+  where the surface's two rates stand one way to half the digits (the square of their sine below
+  `HALF_READ`), the rate in parameters is read by the chord of the curve's own feet either side, as
+  where the least squares has no answer (a rate in `v` read −0.997 against the feet's −5e-6). The
+  thin tumbling torus's `props::volume` from 0.785 to 0.6975 (its mesh's 0.6963).
+- **brep-bench's `tumbling-torus-full-turn` is built** (#942): 35 faces, volume 23.6738854 (the
+  peer kernel cadrs's 23.6739), its check clean at the call's tolerance, in some 39 s
+  (`swept_rings::the_full_turn_is_built_closed`, held to membership). Two last changes. A double
+  curve joined to its swallowtail point (`swept::rings`'s `joined`) is laid in chords doubled
+  until each leaf's chord straight in its own `(θ, t)` stands at its middle within the tolerance of
+  the curve's own middle: across the kernel each preimage is a parabola, and the leaves' straight
+  chords parted by 3.8e-4. And a piece merged by the arrangement into another edge keeps its own
+  polyline pcurve, carried onto the other's parameter (`boolean`'s `carried_pcurve`), the merge's
+  gap read at either polyline's vertices too; inverted from the other's curve, the full turn's
+  landed on the leaf past the fold, 1.3e-5 off. It builds wherever either end torus's seam stands
+  (`swept_rings::the_full_turn_is_built_wherever_its_end_poses_seams_stand`) and with its observer's
+  origin moved by an ulp or by 1e-6 (`ring_profile full-at`).
+
+- **A trim's refusal names the piece that is mixed, not a face tangent to it** (#942,
+  `swept::trim`'s `missing_across`): a point read across an open edge on a candidate face is on a
+  kept face where a face of the solid on that candidate's own surface holds it. Read against the
+  face kept beside the edge alone, a candidate tangent to it along the edge (the full turn's start
+  torus, its rim the tube's) read as kept, and the refusal named the torus; it now names the early
+  tube's mixed piece.
+
+- **A ring's tube cut where it passes back over itself, and holed where an end pose crosses it
+  inside a face** (#942, the full turn): `swept::closed::ring_entered` now enters
+  `depth::passed_back`'s runs with the fold pairs' double curves. `rings::traces` reads a closed
+  trace inside a face through a place the caller knows — where a curve cut into the face ends on
+  the tool inside it — and a face's pieces among its chords keep a component touching no side as a
+  hole (`rings::loops_of_square`, gated in
+  `swept_rings::a_closed_chord_inside_a_faces_square_is_a_hole_in_the_piece_about_it` and
+  `the_full_turns_tube_is_holed_where_the_end_torus_crosses_it`); a piece touching no side is judged
+  beside its longest chord. A chord cut at one of its own points no longer takes a step of no
+  length there. The full turn's trim is refused next by the check, at a double curve's edge merged
+  across the cut where the contact changes shape. Reading the end rows costs the half turn 60 ms,
+  the 80° torus 26 ms and the thin 1.1 s, where they find nothing (`ring_entered` now marks the
+  road's fit as its own phase: its time had been read as theirs).
+
+- **Where a ring's sheet passes back over itself, read off the depth** (#942 T1d-tori, new
+  `swept::depth::passed_back`, `seams_through`, `Seam::own`): over a whole turn the tube late in the
+  roll sweeps across the tube where it began, a crossing no fold pair's double curve is. Each end row
+  is read for where the far cover changes sign, the cover's boundary traced through there with no
+  search (`zero_set::through`), and the runs an instant inside the roll covers kept, each ended at
+  its corner on an end pose's trace and laid as a double curve is, with its partner
+  (`swept_rings::the_full_turns_tube_passing_back_over_its_start_is_read_from_the_start_row`).
+
+- **Two given curves one operand holds as edges cross on a face of another at a vertex they
+  share** (#942 T1d-tori, `boolean`'s new step `given_crossings`): a sweep's sheet passing back over
+  itself — the full turn's tube, late in the roll, over its own start rim on the start torus — holds
+  both as its own edges, and no phase read an operand's edges against one another, so the rim
+  dangled there and a piece of the torus leaked round it. Both are now cut where their curves cross,
+  to the tolerance (`arrangement::two_given_edges_of_one_operand_crossing_on_a_face_share_a_vertex`).
+  The full turn is refused further on, beside its fold pair's swallowtail point: an open edge of
+  the ring sheet's faces near (3.0803, 2.6830, 1.6896).
+
+- **The tool at the roll's start and at its end met where both bound the sweep** (#942 T1d-tori,
+  new `swept::depth::ends_met`, read by `closed::ring_entered`): over a full turn the end pose's
+  torus stands beside the start's, and most of their meeting is buried; two arcs of it, each some
+  0.02 long, bound the sweep, ending at corners on the tubes' seams with either pose, where the
+  other pose's signed distance changes sign. Those corners are found along the given seams, the
+  meeting is traced through them (`meeting::through`) and settled on both surfaces by alternating
+  feet, and each stretch is given where both poses are uncovered at its
+  middle (`depth::cover`). The trim completes a witness's meeting at no crossing the sweep is proved
+  to hold or leave (`trim::completed`): a buried meeting needs no cut. The full turn's refusal stands
+  where it was, now without the false claim that search missed the tori's meeting
+  (`swept_rings::the_full_turns_end_poses_meet_uncovered_along_two_short_arcs_given`).
+
+- **A far cover is read from the top of its own contact's climb** (#942 T1d-tori,
+  `swept::depth::cover`): the end of a point's own contact is where its distance from the tool first
+  falls a rounding below the greatest sample so far, not below the sample before. Where the own
+  contact climbed barely past the rounding and the far instant then fell slowly, no two neighbours
+  stood a rounding apart and the point was read `Alone`: the thin tumbling torus's lens beside its
+  second swallowtail point (climbing to 3.1e-8 against 3e-8, held 2.2e-6 deep 0.018 of the roll
+  on) was kept as boundary where the tail above its row was dropped, and the boundary was left open
+  there. `depth_probe` reads `cover`, `pieces`, `edges`, `rowgap` and `fit t0 t1`, and `face` an
+  offset.
+
+- **A ring touching a meridian whole enters only what depth keeps of the tool at either end**
+  (#942, `swept::touched`): the end poses' tori were entered whole, and beside the strip's rim the
+  part of the torus beyond the meridian stood tangent to the strip to second order — 1.3e-9 rad
+  apart at the edge, 6.5e-6 a full step in — so the build stood on the fitted tie reading them at
+  its farthest depth. Each end is now its kept part: the quadrant behind the meridian between the
+  strip's and the branches' rims and the equator's meridian, and the wedge between each end
+  piece's leaf rim and its crossing, its torus framed so neither seam crosses a face. The bench's
+  ring along a spline builds to the same volume (10696.461766118806 against …784) with the same
+  seventeen faces and no tie left for the fitted tie alone. `complex` says, under
+  `SOLVENT_BREP_DEBUG`, each pair of ways in a fitted surface's tie alone ties. A ring a hair off
+  the symmetric case (its centre moved 1e-9 along the path), still read touched whole within the
+  rounding, is refused `Curved` at the meridian rather than `Failed` in its fit.
+
+- **An edge leaving a point of a known meeting is read there by construction** (#942,
+  `boolean::on_known`): where its end lies on a given curve and it runs on hugging the face within
+  `ON_CURVE` tolerances, that run is the touch at the end, and the search reads only the rest. The
+  ring along a spline, whose kept wedge's rim hugs the end piece from their shared corner, built
+  in 8.7 s with five seconds an end in a refused search; now 3.5 s.
+
+- **An exact surface beside a fitted one is tied round an edge at the tolerance's angle** (#942,
+  `complex::tie_between`): `16 tol / ρ` of the exact surface's least radius, capped at `TANGENT`,
+  as two exact surfaces already were; `TANGENT` now decides only two fitted surfaces' ways.
+
+- **brep-bench's 80° tumbling torus is built at every spelling of its motion** (#942, `complex`):
+  it built only where its observer's origin was (0, 0.5, 0.5) exactly. An end pose's seam stands
+  in the widest gap among angles spaced evenly round it, so rounding chose the gap, and with the
+  start torus's seam crossing its touch just past a corner of the inner tube's pieces, a short edge
+  of the touch had the tube's fitted sheet leaning 2e-4 into the torus at first order, past
+  `TANGENT`, and was ordered so, while the rest of the touch was ordered by a step in the other way:
+  three cells one, refused by the judge. Two ways into faces from an edge that a step in turns the
+  other way round, having stood apart in the edge's order by no more than the tolerance
+  (`g² s / 4 (g − h)`, new `complex::turned_back`), are now a run of tangent ways ordered by the
+  step in. `ring_profile` reads `eighty-at` and `half-at` (a case at any spelling of its motion).
+
+- **brep-bench's `tumbling-torus-half-turn` is built** (#942 T1d-tori, `swept::rings`,
+  `swept::closed`): a fold pair born partway is parted at its swallowtail point, not its birth. The
+  birth's row is a construction line, and the pair's double curve, which begins at the swallowtail
+  point and runs back below it, stood within the tolerance of that row's contact over 8.6e-4 of it,
+  where the arrangement cut the row's edge at the point and the trim was refused ("loop breaks in
+  parameters"). Where the stretch holding a swallowtail point begins at its pair's birth, it and the
+  stretch before are fitted as one up to the point with the pair read as not yet born (new
+  `rings::fitted_unborn`, `Fitted::unborn`: an instant whose shape is not the stretch's first read
+  with the pair nearest the swallowtail point's angle not put in, the folds check passing over the
+  newborn pair's bridge as over any bridge), and the rest from the point. The pair's sliver before
+  the point lies wholly in the tail above the double curve, which the trim drops. The half turn: 20 faces, volume 12.2377154 (cadrs
+  12.2377), 5.9 s; `depth_probe` reads `sliver` and `about`, `ring_profile` `agree`. A double
+  curve's point past a stretch's end ends its line though the point before stood on the end
+  (`rings::cut_along`): the thin torus's second preimage, leaving its swallowtail point's row and
+  crossing it again further on, was laid along the row.
+
+- **A ring touching a meridian whole is cut from a blank, entered by depth** (#942, the depth trim,
+  new `swept::touched`): brep-bench's ring carried along a spline, refused by name until now, is
+  built through `closed::cut_from` (2.8 s, volume 10696.461766). Of each contact parallel's sheet
+  the leaf depth keeps, cut at the meridian; the strip; and at each end the other leaf from its rim
+  to where it crosses the end pose's tool, each its own sheet fitted over its closed form, every
+  meeting given. `member::Swept` gains `sampled`: asked for by this entry alone, a path that
+  encloses nothing is read at its greatest sampled speed rather than refused `Unbounded` (no proof).
+
+- **The zero set of a scalar function over a rectangle of parameters, traced** (#942, new
+  `zero_set`): `trace` follows `f = 0` (a least value `min over s of g` with its minimiser, through
+  the `Field` trait) by arclength in the caller's surface metric, cut at the corners where the
+  minimiser switches branches and at the rim and given inner edges, each piece's ends classified;
+  seeded from the boundary, the caller and a halving search that proves cells free or monotone where
+  `Field::bound` encloses `f` and its gradient, and says what it only sampled where it does not. `through` traces from
+  the caller's seeds alone, completeness not sought.
+
+- **A double curve traced from a row's seed is joined to its swallowtail point; a tube's tail is read
+  from the depth** (#942 T1d-tori, `swept::rings`, `swept::closed`): the swallowtail points are
+  sought in every stretch (`rings::swallowtails`, kept as `Fitted::ends` where the rows also find a
+  seed), and the march toward the pair is joined to its point along the swallowtail's normal form
+  once every point of the join stands within the tolerance on outer leaves (`rings::joined`) —
+  beside the point the two leaves stand within the tolerance of one another over a band, the curve
+  fixed there to the tolerance alone, and the thin torus's march slid onto a fold's inner leaf 2e-3
+  short of its points and cut the roll at false apexes. A place of a tube is tail where an instant
+  other than its own covers it deeper than its fit (`depth::cover`), not where it stands above the
+  curve over its first preimage's angle, which the joined curve turns back over.
+  `tumbling-torus-thin` is refused later, on the row sewn at its first pair's birth, where the
+  second preimage dips below the row and comes back.
+
+- **A boundary read from the depth enters the ring road as a seam** (#942, `swept::depth`): new
+  `depth::Covered`, the far cover's depth as a `zero_set::Field` over a ring's sheet (its gradient by
+  the envelope theorem), and `depth::seams`, its zero set traced over a box of the sheet's `(θ, t)`
+  from the caller's seeds, each chord's middle pulled onto it and held to the tolerance in space
+  (beside a swallowtail point the sheet's rates are nearly one way and a first-order distance took
+  a chord 3.6e-5 off as near); each `Seam` with the covering instant's preimages, and
+  `Seam::curves` in `rings::cut_along`'s form. On `tumbling-torus-half-turn` it traces the double
+  curve; the half turn's refusal is measured to be no missing seam (its birth cut at `s''` nought to
+  3e-7; the double curve from its swallowtail point to the cut within 3.03e-6 of the cut's contact,
+  the tolerance 3.2e-6). `depth_probe` reads `seams`, `birth`, `near`, `find` and `chord`; the
+  sweep probe reads a dump's `faces`; `SOLVENT_TRIM_DEBUG` says the check's refusal.
+
+- **The full-turn tumbling torus gets past its start and end tori** (#942 T1d-tori, `boolean`,
+  `swept::rings`, `swept::closed`), and is refused further on, where the two tori's meeting found
+  by search misses an arc between the two points where they touch. A given curve a face holds as
+  several edges is laid as each of them, not the first alone (the tube's row at the start, cut where
+  the end pose holds the tube beside it, left half the start torus's rim unlaid). Where a
+  double curve lies below a stretch at a place's angle, dipping into the stretch before and coming
+  back, the place above it is tail only where a pose holds it more than the tolerance deep
+  (`Ring::held`, read off the ring's exact signed distance): a tail ends where its curve meets the
+  tool at an end pose, and the places above that tool's chord stand on the boundary. A double curve's end stays where it is and the trace it stands on is
+  cut there: put on the trace's polyline, it stood two tolerances from the same point on the leaf
+  whose rim it is. `rings::entered_at` takes the test of the sweep's inside.
+
+- **A fold pair's double curve is built from its swallowtail point** (#942 T1d-tori,
+  `swept::rings`, `swept::closed`): where a stretch's rows find no pair of a narrow pair's leaves
+  crossing — beside a pair's birth one preimage lies in the stretch before the cut, the other within
+  the bridge — the swallowtail point is found where a fold runs along the kernel of the sheet's
+  rates (`rings::swallowtails`, `Fitted::apexes`), and the curve built outward from it, its first
+  pair from the swallowtail's normal form (`rings::double_curve_from_apex`). A double curve's march
+  takes no pair whose preimages have met (nor, built from a swallowtail point, one whose second
+  preimage comes back over the angle), and seeks the next pair from the last two where the last
+  alone does not settle it. A tube's tail is read above its double curve over the angle round the
+  axis and against the whole curve (`Fitted::tails`), not over a stretch's `u`.
+  `tumbling-torus-half-turn` gets past its double curve beside the birth and is refused, by name,
+  where the sheet's kernel through the swallowtail point stands within the tolerance of it and a
+  sliver of the leaf is narrower than the tolerance. The `ring_profile` example builds the half turn.
+
+- **The thin tumbling torus gets past its shallow refusal and its rim's slit** (#942 T1d-tori,
+  `boolean`, `swept::rings`): a grid seed is a root the bisection reached within the tolerance,
+  and none where the other sheet's signed distance changes sign by a jump — the thin torus's
+  "two tubes meet at 0.00°" was a seed 0.03 (the tube's diameter) off the other tube, its distance
+  read across a net's seam where the inverse leapt to a far corner. A double curve's end inside a
+  face's square, standing on the tube's crossing with the tool, stays where it is — the tube's own
+  vertex, where its other preimage ends on the rim — and the crossing is cut there, not the end
+  put on the crossing's polyline 1e-6 off it, which left the touching rim a slit in the tool's face.
+  `tumbling-torus-thin` is still refused, later: in the trim, beside the swallowtail point where its
+  fold pair is born, among stretches 1.4e-4 of the roll wide whose tail stands within the tolerance
+  of the boundary.
+
+- **A ring touching a meridian whole at every instant is refused by name; its tubes are arranged
+  with it at both ends** (#942 T1d-ring, `swept::rings`, `swept::closed::ring_entered`, `boolean`,
+  `swept::dump`, `trajectory`): brep-bench's ring along a spline, read on the ring road. Along a
+  path in a plane its axis lies in, a torus touches its top and bottom meridians whole at every
+  instant, and the sweep of each is a sheet of its own — the groove's floor — that no contact
+  curve's tube holds; arranged from the tubes alone, the groove and the block beside it were one
+  cell. New `Ring::touched_whole` (and `Ring::meridian_point`); a meridian touched whole at two of
+  the closed class's poses or more is `Curved` there, before anything is fitted. Beside the tube's
+  vertex where a touching piece's rim meets a dipped one's, a seam's crossing whose seam down to the
+  rim stands within the tolerance of the tool is that vertex (the fit's slope across the rim, 2.7e-5,
+  had put one 4e-4 of the roll up the seam, its chord zigzagging 1.1e-5 off both surfaces round a
+  sliver face laid over its neighbour), and a face two chords run into one vertex of is parted as
+  its chords' planar graph. A grid's seed across a sheet's face is kept only on the other face's
+  patch (`boolean::off_patch`, the reading `kept` makes): off it, a sheet's distance along the
+  normal at a foot clamped to its patch has zeros of its own, and a seed 1.0 off the other tube was
+  refused as the two meeting at 0.19°. A trim's dump writes a frame carried along a B-spline
+  (`trajectory::Along`) by its curve, home, frame and name, made again from them (new
+  `Path::along`, `Guide::spline`), which F5's dump refused by name. `closed`/`cut_from` take a ring
+  to the ring road where K2 and the general road refuse it as `Curved` and `rings::admits` reads it
+  (`closed::k2`): the bench's runner, which ended at K2's `Curved` at the torus's rim, is refused by
+  name at the ring's top meridian. Where a contact curve crosses a meridian touched whole, `s''`
+  changes sign without its sheet folding: the bridge's piece on the side clear of the sliver is
+  touching, its rim on the meridian the crossing, and the sliver's piece alone is dipped (a narrow
+  pair's bridge now shares its neighbours' branch). The meridian's touching half is fitted as a sheet
+  of its own between the two tubes' crossings (new `rings::Strip`, `Crossing`, `Fitted::strips`,
+  `Fitted::crossings`, `Ring::touched_near`) and entered with its sides the tubes' own seam curves,
+  its meetings with the ring and the tubes given by construction (`entered` returns the strips after
+  the tubes). Arranged so the groove and the block are still one cell, at the end poses' corners, and
+  the refusal stands.
+
+- **A definite touch is read alone by its own orders, not by the faces' size** (#996 item 3): two
+  faces touching at a point, their meeting there the point alone to second order, were read so only
+  where the touch's radius — where a trace cannot follow them — was under a twentieth of the
+  smaller face; a rim's round on a short side crossing a wide blend's foot was refused ("a cylinder
+  and a cylinder meet … where no edge crosses, in a curve that could not be traced").  Now such a
+  touch is alone where `b`'s distance along `a` grows as its second order says over the whole
+  radius (`ssi::alone_over`), and `meeting::meet`'s search passes the touches it found, which it
+  refused before in the same words.
+
+- **A turn joined to the legs tangent to it, exactly or all but** (#996 item 1): a quarter elbow
+  whose section is clipped where it reaches the bend axis (a spindle torus, its arc up to 308°) and
+  the cylinders standing on its ends build for every tube from a hundredth under the legs' radius to
+  a hundredth over, the tangent one among them, each with the step it has. `ssi::disc_reach` reads
+  a spindle's and a horn's torus away from its other sheet, so a near-contact on the lemon past the
+  turn's arc is clear of its face; `ssi::intersect` meets a plane through a torus's axis in its two
+  meridians in closed form (the turn's caps: 3.3 s of traced marches before); the unseen-meeting
+  search's bounds over a strip are the torus's parallels', which vanish at its poles, and a meeting
+  it finds off either face is not traced; `Brep::loop_area` and a cycle's area in a Boolean are
+  Simpson's rule, doubled until settled (a crescent 308° long and a thousandth wide read the wrong
+  way round); a piece thinner than its outlines is read inside from beside its curved halves, not
+  dropped as a sliver while its sides stay two edges; and an inverse pcurve ending within its edge's
+  tolerance of a pole takes the pole's collapsed parameter from its end, not from the far side of
+  the axis (a union 2.6 times the solid it made). A use within its vertex's or edge's tolerance of
+  a pole is at it wherever the pole is read (`Brep::close_poles`, a half's points in a Boolean), a
+  pole's half runs along the parameter the pole collapses, and two uses of one edge at one place,
+  out and back, are a spur and not a seam: an axle and a slab through the near-miss turn's poles
+  build ("loop 0 breaks in parameters" at the pole before). **A tube all but tangent to another at
+  a seam is on it**: `flush::tubes_flushed` (called by `boolean::combined_written`, as `flushed` is)
+  moves a cylinder whose end circle stands concentric with and in the plane of the other's circle,
+  its radius off by no more than `FLUSH` tolerances, onto that radius, exactly; the issue's
+  document, cored and flanged as the fixture is, and every near-miss of its legs whatever is joined
+  or cut after, build as the tangent turn.
+
+- **One area rule and one pole rule** (#996 cleanup): `topo::green_area` is the Simpson-on-Green
+  routine `Brep::loop_area` and a Boolean's cycles both read, its samples kept as the steps double;
+  `topo::near_pole` the one reading of a point within a tolerance of a pole, at every site that
+  asks. A piece's inside is read with its first bar and its finest outline drawn once, and a
+  meeting's touches read alone (`ssi::alone_over`) only where the search passes them.
+
+- **The bench's cube tumbling 75° is built** (#942 T1d-cube, `swept::general`, `family`, `topo`):
+  a fan's crossing with itself is built from the pinch it is born at — the runs' corner where the
+  sheet's rate across their rim turns over — as the pairs of points of the two runs that meet, each
+  solved by Newton and marched out from the Whitney umbrella's own pairs, not traced toward the
+  pinch, where the trace lost itself on the runs' rim. A wall's foot is found by a bounded
+  Levenberg–Marquardt (`Sheet::newton`); on a run of a fan crossing itself (`Sheet::layered`) its
+  last foot is trusted only where it settles on the point, else the nearest four of a grid are
+  settled and the nearest kept (`Sheet::inverse`), any other wall's as before. An inverse curve
+  on a face takes its feet's chord for its rate where the face is singular. New
+  `nurbs::BSpline::with_knot`; a branch's end carried onto a rail or a pinch bends only its last
+  span. The 15° cube's volume moves by 4e-8 with its crossing built.
+
+- **The cube tumbling 15° is built** (#942 T1d-cube, `swept::general`): a fan's runs are
+  found before the bearers are met, and two fans' branches beside a shared rail are traced on each
+  run's own wall (traced on the whole wall a fan crossing itself folds over, they ran 1e-5 off both
+  walls); any other curve given of a whole wall is cut to what lies on each run's wall, not given
+  whole. The bench's 75° cube now gets through its trim, refused by the solid's check (a loop
+  breaking in its parameters by 6.8e-7 beside a run's end); the 10° and 12° cubes are refused in
+  their trim, with no fan crossing itself.
+
+- **A branch beside a rail ends where the two fans touch** (#942 T1d-cube,
+  `swept::general`): two fans' second branch beside the corner's path they share reaches the path
+  only where the two are tangent, and its trace stopped short there or ran on along the path (the
+  cube tumbling 75°: 3.95e-6 past the corner, at a sine of 7e-7), the branch left hanging in a face
+  as a slit. An end within its meeting's reach of the path is carried to where the walls' normals
+  turn past each other along it, and to the road's corner there, the curve cut at it. New
+  `nurbs::BSpline::segment`, a curve's stretch exactly. The 75° cube is now refused where the 15°
+  one is, the boundary open along a rail edge.
+
+- **A fan that passes back through itself is cut into runs, their crossing given** (#942 T1d-cube,
+  `swept::general`): an edge's fan was one wall over the whole roll, its strips faces of one
+  surface, and where the edge's line passed back through where it stood a while before two faces of
+  one surface crossed — refused by the trim's witness as a meeting of a surface with itself (the
+  bench's cube tumbling 75°, its edge 5's fan). Each two of a bearer's stretches are met as two
+  surfaces, its wall restricted to each (`family::Sheet::restricted`); a fan crossing itself is cut
+  into the fewest runs of stretches that part every two crossing ones, each run its wall restricted
+  to it and a candidate of its own, given the rim it shares with the next, where the runs cross
+  (traced run against run, one curve across a run's stretches), and each meeting of the whole wall
+  restricted to the run (a rail over the run's span). A fan crossing itself nowhere is as it was.
+  The cube tumbling 15° and 75° get past it. A seed on a branch traced already
+  is read within `tolerant::on_meeting`'s reach (two fans meeting shallowly traced one branch twice,
+  4e-7 apart); a dump writes each wall with the number it is shared by, so a trim read back shares
+  its walls as built and replays bit for bit. Gated by `swept_general`'s replays of the 15° and 75°
+  cubes, refused where they are now and replayed alike.
 
 ## [0.20.0] - 2026-11-21
 

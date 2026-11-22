@@ -143,10 +143,10 @@ impl Meridian {
     }
 }
 
-/// The stretches of `[a, b]` where `inside` holds, each end found by bisection between samples that
-/// differ.
-fn stretches(inside: &dyn Fn(f64) -> bool,[a,b]: [f64;2]) -> Vec<[f64;2]> {
-    let ts: Vec<f64> = (0..=SAMPLES).map(|k| a+(b-a)*k as f64/SAMPLES as f64).collect();
+/// The stretches of `[a, b]` where `inside` holds, read at `samples + 1` places, each end found by
+/// bisection between samples that differ.
+pub(super) fn stretches(inside: &dyn Fn(f64) -> bool,[a,b]: [f64;2],samples: usize) -> Vec<[f64;2]> {
+    let ts: Vec<f64> = (0..=samples).map(|k| a+(b-a)*k as f64/samples as f64).collect();
     let ins: Vec<bool> = ts.iter().map(|&t| inside(t)).collect();
     let edge = |lo: f64,hi: f64,lo_in: bool| {
         let (lo,hi) = crate::util::roots::bisect(lo,hi,|x,y| 0.5*(x+y),|x,y| y-x > 1e-15*(1.+x.abs()),|m| inside(m) == lo_in);
@@ -235,7 +235,7 @@ impl Reader<'_> {
     /// E(s)` (point location reads a point a tolerance off an edge as on it, so a bisected end
     /// stands up to that far past the face).
     fn within(&self,k: usize,x: &dyn Fn(f64) -> (V,V),[a,b]: [f64;2]) -> Vec<[f64;2]> {
-        let mut out = stretches(&|t| self.in_face(k,x(t).0),[a,b]);
+        let mut out = stretches(&|t| self.in_face(k,x(t).0),[a,b],SAMPLES);
         for s in out.iter_mut() {
             for end in 0..2 {
                 if s[end] == a || s[end] == b { continue }
@@ -622,7 +622,7 @@ pub fn turned(tool: &Brep,c: V,axis: V,bar: f64,tol: f64) -> Result<Brep,Unbuilt
     let cands = candidates(&reader)?;
     let solid = Solid::new(tool,bar,1.).map_err(Unbuilt::Failed)?;
     let path = Trajectory::Twist(Screw {origin:c,axis:unit(axis),ratio:1.,advance:0.});
-    let swept = Swept {tool:&solid,path:&path,roll:[0.,TAU]};
+    let swept = Swept::new(&solid,&path,[0.,TAU]);
     let near = 1e-7*(1.+size);
     // (2) the arrangement: each candidate's split parameters
     let samples: Vec<Vec<(f64,P)>> = cands.iter().map(|m| m.samples(SAMPLES)).collect();
@@ -646,7 +646,7 @@ pub fn turned(tool: &Brep,c: V,axis: V,bar: f64,tol: f64) -> Result<Brep,Unbuilt
     // the hair under a third of the way to the nearest other candidate (so it stands in the cells
     // beside the piece, however thin), on the tool meshed finer where the mesh's sag leaves a
     // reading unsettled
-    let member = |solid: &Solid,x: V| (Swept {tool:solid,path:&path,roll:[0.,TAU]}).member(x);
+    let member = |solid: &Solid,x: V| Swept::new(solid,&path,[0.,TAU]).member(x);
     let mut finer: Option<Solid> = None;
     let mut shadow = |p: P| -> Result<bool,Unbuilt> {
         let x = g.at([p[0],0.,p[1]]);

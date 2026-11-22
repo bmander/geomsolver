@@ -20,7 +20,7 @@ fn held(file: &str,name: &str) -> (usize,usize) {
     let solid = Solid::new(&tool,0.01,scale).unwrap();
     let path = gcs_core::motion::Family::read(sk,*motion as usize).unwrap().trajectory().unwrap();
     let roll = gcs_core::solid::roll::interval(sk,swept).unwrap();
-    let swept_solid = Swept {tool:&solid,path:&path,roll};
+    let swept_solid = Swept::new(&solid,&path,roll);
     // a box about the tool at sixteen poses of the roll (mm), a fifth wider
     let (lo,hi) = tool.bounds();
     let (mut a,mut b) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);

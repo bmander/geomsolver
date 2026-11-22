@@ -16,23 +16,25 @@ fn tumble() -> Trajectory {
 /// The cube of edge 1.2 about `(3, 0, 2)`.
 fn cube() -> gcs_core::brep::topo::Brep { crate::brep::block([2.4,-0.6,1.4],[3.6,0.6,2.6]) }
 
-/// **A cube tumbling a short way is built closed** by the general road and judged. Not yet at 15°:
-/// on its start pose's face x = 2.4 two cuts the trim lays meet where three of its sheets do, and one
-/// ends 1.5e-4 short of the other there, so the face's pieces do not close (`general`'s module).
+/// **A cube tumbling fifteen degrees either way is built by the general road** (#942 T1d-cube): one
+/// of its fans passes back through itself and is cut into two runs, their crossing given, which
+/// ends at the pinch where it is born on the rim the runs share; that crossing is built from the
+/// pinch (`general::handle`) and the walls' feet read by a bounded Levenberg–Marquardt from the
+/// nearest few of a grid, where a foot once fell on a run's other fold. Held
+/// to membership through its box (a membership count of 40000 points gives 3.463 ± 0.018 against
+/// its 3.4739).
 #[test]
-#[ignore = "T1d: a cut ending 1.5e-4 short of another where three sheets meet"]
-fn a_cube_tumbling_a_little_is_built_by_the_general_road() {
+fn a_cube_tumbling_fifteen_degrees_is_built_by_the_general_road() {
     let cube = cube();
     let roll = [-15f64.to_radians(),15f64.to_radians()];
     let tol = gcs_core::brep::geom::tolerance(cube.size());
     let path = tumble();
-    let (candidates,given) = gcs_core::brep::swept::general::candidates(&cube,&path,roll,tol).unwrap();
-    let size = cube.size();
-    let trim = gcs_core::brep::swept::trim::Trim {resolution:size/32.,hair:(4.*tol).max(1e-6*size),reach:None};
-    let (swept,report) = gcs_core::brep::swept::trim::trimmed(&cube,&path,roll,&candidates,&given,cube.size(),tol,trim).unwrap();
-    eprintln!("{report:?}");
-    swept.check(tol).unwrap();
-    eprintln!("{} faces, volume {}",swept.faces.len(),gcs_core::brep::props::volume(&swept));
+    let built = gcs_core::brep::swept::closed::closed(&cube,&path,roll,cube.size(),tol).unwrap_or_else(|u| panic!("{u:?}"));
+    built.check(tol).unwrap();
+    let v = gcs_core::brep::props::volume(&built);
+    // (to a ten-millionth: where each foot settles beside the pinch moves it by that much)
+    assert!((v-3.473927661217455).abs() <= 1e-7*v,"{v}");
+    crate::swept_closed::agrees_over(&built,&cube,&path,roll);
 }
 
 /// **A cube tumbling two degrees either way is built by the general road through `closed`** (#880
@@ -80,18 +82,26 @@ fn cube_trimming(deg: f64) -> gcs_core::brep::swept::dump::Trimming {
     gcs_core::brep::swept::dump::Trimming {bar:tool.size(),tool,path,roll,candidates,given,tol,trim}
 }
 
-/// The refusal a trim replayed from its dump gives (#942 F5): what `trim.replay()` refused, then the
-/// same trim written (`dump_trim`), read back (`load_trim`) and replayed refusing alike.
+/// What a trim gives (#942 F5): its solid's faces, volume to the bit and report, or its refusal.
+fn outcome(trimming: &gcs_core::brep::swept::dump::Trimming) -> String {
+    match trimming.replay() {
+        Ok((b,report)) => format!("built: {} faces, volume {:e}, {report:?}",b.faces.len(),gcs_core::brep::props::volume(&b)),
+        Err(why) => format!("{why:?}"),
+    }
+}
+
+/// What a trim replayed from its dump gives (#942 F5): what `trim.replay()` gave, then the same
+/// trim written (`dump_trim`), read back (`load_trim`) and replayed giving it alike.
 fn replayed_alike(trimming: &gcs_core::brep::swept::dump::Trimming,name: &str) -> String {
     use gcs_core::brep::swept::dump::{dump_trim,load_trim};
-    let direct = format!("{:?}",trimming.replay().expect_err("the trim refuses"));
+    let direct = outcome(trimming);
     let dir = std::env::temp_dir().join(format!("{name}-{}",std::process::id()));
     let t = trimming;
     dump_trim(&dir,&t.tool,&t.path,t.roll,&t.candidates,&t.given,t.bar,t.tol,t.trim,&direct).unwrap();
     let loaded = load_trim(&dir).unwrap();
     let _ = std::fs::remove_dir_all(&dir);
-    let again = format!("{:?}",loaded.replay().expect_err("the replayed trim refuses"));
-    assert_eq!(again,direct,"replayed from its dump, the trim refuses otherwise");
+    let again = outcome(&loaded);
+    assert_eq!(again,direct,"replayed from its dump, the trim gives otherwise");
     direct
 }
 
@@ -137,27 +147,52 @@ fn the_general_roads_candidates_are_written_and_read_back_whole() {
 }
 
 /// **A refused trim replays from its dump to the same refusal** (#942 F5's gate, fast): the cube
-/// tumbling 15° either way, refused in its trim, gives the same refusal run again from the files.
+/// tumbling 10° either way, refused in its trim, gives the same refusal run again from the files —
+/// every wall written with the number it is shared by, so the walls read back are shared as they
+/// were built (a wall's inverse starts from its last foot: read back apart, the refusal's points
+/// moved in their last digits). The 15° cube replayed its refusal here until #942 T1d-cube built
+/// it; the bench's 75° cube, below, replays one with a fan cut into runs.
 #[test]
 fn a_refused_trim_replays_from_its_dump_to_the_same_refusal() {
-    let why = replayed_alike(&cube_trimming(15.),"cube-15-dump");
-    assert!(why.contains("do not close"),"{why}");
+    let why = replayed_alike(&cube_trimming(10.),"cube-10-dump");
+    assert!(why.contains("a meeting the trim was not given"),"{why}");
 }
 
-/// **The bench's tumbling cube's refused trim replays from its dump alike** (#942 F5's gate): the
-/// cube tumbling 75° either way, its candidates taken 17 s to make, refused in its trim, gives the
-/// same refusal run again from the files in a fraction of that. Refused by name since #942 F2: a
-/// piece of its edge 5's fan read off the boundary at one point and the boundary at another 0.015
-/// away, a meeting it was not given parting them (where it left 28 boundary edges open) — the fan
-/// at later instants passing back through that piece between the two, a meeting of the fan with
-/// itself, which no given meeting of two surfaces lays.
+/// **The bench's tumbling cube's trim replays from its dump alike** (#942 F5's gate): the cube
+/// tumbling 75° either way, its candidates taken some seconds to make, gives the same solid, to the
+/// bit, trimmed again from the files — its fans cut into runs, each a wall restricted to its
+/// stretches, and every wall written with the number it is shared by. Refused by name from #942 F2
+/// until #942 T1d-cube built it.
 #[test]
-#[cfg_attr(not(feature = "slow"),ignore = "slow tier, 40 s: the bench's tumbling cube's candidates made, then its trim twice")]
-fn the_bench_tumbling_cubes_refused_trim_replays_from_its_dump_alike() {
-    let why = replayed_alike(&cube_trimming(75.),"cube-75-dump");
-    // (a piece of one edge's fan read apart, and the fan at later instants passing back through it
-    // between the two points: the meeting missing is the fan's with itself, #942 F2)
-    assert!(why.contains("a meeting the trim was not given parts them") && why.contains("passing back through itself"),"{why}");
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, 50 s: the bench's tumbling cube's candidates made, then its trim twice")]
+fn the_bench_tumbling_cubes_trim_replays_from_its_dump_alike() {
+    let what = replayed_alike(&cube_trimming(75.),"cube-75-dump");
+    assert!(what.starts_with("built: "),"{what}");
+}
+
+/// **The bench's cube tumbling 75° either way is built by the general road** (#942 T1d-cube): two of
+/// its edges' fans pass back through themselves, each cut into runs, and the runs' crossing is built
+/// from the pinch it is born at (`general::handle`), not traced toward it; the walls' feet are read by
+/// a bounded Levenberg–Marquardt from the nearest few of a grid (`family::Sheet::newton`,
+/// `Sheet::inverse`). Held to membership through its box (a count of 40000 points gives 11.029 ±
+/// 0.072 against its 11.0993).
+#[test]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, 35 s: the bench's tumbling cube built and read at points")]
+fn the_bench_cube_tumbling_75_degrees_is_built_by_the_general_road() {
+    let cube = cube();
+    let roll = [-75f64.to_radians(),75f64.to_radians()];
+    let tol = gcs_core::brep::geom::tolerance(cube.size());
+    let path = tumble();
+    let built = gcs_core::brep::swept::closed::closed(&cube,&path,roll,cube.size(),tol).unwrap_or_else(|u| panic!("{u:?}"));
+    built.check(tol).unwrap();
+    let v = gcs_core::brep::props::volume(&built);
+    // (to a ten-millionth: where each foot settles beside the pinches moves it by that much. The
+    // reading's own: an inverse pcurve beside a fold read so that its foot stays on the edge, #942
+    // `topo`, moved it from 11.0993123 by 7.7e-6, the faces and edges alike — the mesh's volume at
+    // sags of 1e-5, 3e-6 and 1e-6 reads 11.0993002, 11.0993144 and 11.0993176, its error falling
+    // with the sag toward 11.099319, and cadrs reads 11.0993194: the earlier reading was off)
+    assert!((v-11.099319755384721).abs() <= 1e-7*v,"{v}");
+    crate::swept_closed::agrees_over(&built,&cube,&path,roll);
 }
 
 /// **A meeting left out of what the trim is given is completed from its witness** (#942 F2's gate):

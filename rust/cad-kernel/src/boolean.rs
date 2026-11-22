@@ -10,7 +10,7 @@ use super::query::{crossings_in,curve_surface_within,Located,Meets,Outline,Place
 use super::ssi::Ssi;
 use super::meeting::Met;
 use super::complex::{Complex,Origin};
-use super::topo::{leaving_pole,pole_at,poleless,reverse_loop,unwrap,Brep,Coedge,Edge,EdgeCurve,Face,Pcurve};
+use super::topo::{leaving_pole,poleless,reverse_loop,unwrap,Brep,Coedge,Edge,EdgeCurve,Face,Pcurve};
 use crate::util::space::{distance,norm,scale};
 use std::cell::Cell;
 use std::collections::BTreeMap;
@@ -542,12 +542,27 @@ pub fn combined_known(solid: &Brep,known: Option<&Known>,operand: &Brep,op: Op,f
 pub fn combined_written(solid: &Brep,known: Option<&Known>,operand: &Brep,op: Op,floor: f64)
     -> Result<(Brep,Known),super::KernelError> {
     let tol = super::geom::tolerance_over(solid.size().max(operand.size()),floor);
+    // a tube all but tangent to the other's at a seam on it (`flush::tubes_flushed`, #996): a solid
+    // so moved is no longer the one its faces' boxes were known for
+    let (tubed_solid,tubed) = super::flush::tubes_flushed(solid,operand,tol);
+    let (solid,known) = match &tubed_solid { Some(s) => (s,None),None => (solid,known) };
+    let operand = tubed.as_ref().unwrap_or(operand);
     let flush = super::flush::flushed(solid,operand,tol);
     combined_at(solid,known,flush.as_ref().unwrap_or(operand),op,tol)
 }
 
+thread_local! {
+    static COMBINED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// **How many Booleans this thread has combined** (`combined`, `combined_known`,
+/// `combined_written`), so far: what a test holds a build's work to (#996: a body's written terms
+/// combined once, not once more for each round that reads them).  A count, never a time.
+pub fn combined_so_far() -> usize { COMBINED.with(|c| c.get()) }
+
 /// `combined_known` at `tol`.
 fn combined_at(solid: &Brep,known: Option<&Known>,operand: &Brep,op: Op,tol: f64) -> Result<(Brep,Known),super::KernelError> {
+    COMBINED.with(|c| c.set(c.get()+1));
     let (mut out,mut known) = boolean_known(solid,known,operand,op,tol)?;
     // material touching itself along a line (two rounds of separate statements meeting where the
     // body they each read leaves them so, #218): each such edge held twice, a solid's boundary
@@ -1142,6 +1157,9 @@ fn arrange_phases<'a>(solids: &[&'a Brep],known: Option<&Known>,given: &[Given],
     // 2a. where three faces of three operands meet at a point no edge passes: two meetings laid
     // on one face, with faces of two other operands, crossing there (#735 A4)
     if arr.solids.0.len() > 2 { arr.triple_points(&meetings)?; }
+    // 2a'. two given curves one operand holds as edges, laid across one face of another, crossing
+    // there: a point of that operand's own two faces and the face, which no phase reads
+    arr.given_crossings(&meetings);
     // 2b. every vertex, either solid's or a crossing's, cuts an edge it lies inside, the faces'
     // meetings among them: two edges running along one another (a shared circle, each solid
     // seamed at its own angle; a meeting traced along an edge already there) then share their
@@ -1163,8 +1181,15 @@ fn arrange_phases<'a>(solids: &[&'a Brep],known: Option<&Known>,given: &[Given],
         if j as usize == i || gone[i] { continue }
         let (EdgeCurve::Curve(ci),EdgeCurve::Curve(cj)) = (&out[i].curve,&out[j as usize].curve) else { continue };
         let t = out[i].t;
-        let apart = (0..=8).map(|k| { let p = ci.point(t[0]+(t[1]-t[0])*k as f64/8.); distance(cj.point(cj.inverse(p)),p) })
-            .fold(0.,f64::max);
+        // (and at each of either polyline's own points: a drawing's points crowd where it bends, beside a
+        // fold where two drawings of one double curve part most — the full turn's 4.1e-6 within a
+        // ten-thousandth of its end, which the eighths read as 7.7e-7)
+        let vertices = |c: &Curve,t: [f64;2]| -> Vec<f64> { match c {
+            Curve::BSpline(b) if b.degree == 1 => b.knots.iter().copied().filter(|&k| k > t[0].min(t[1]) && k < t[0].max(t[1])).collect(),
+            _ => Vec::new() } };
+        let off = |c: &Curve,d: &Curve,s: f64| { let p = c.point(s); distance(d.point(d.inverse(p)),p) };
+        let apart = (0..=8).map(|k| t[0]+(t[1]-t[0])*k as f64/8.).chain(vertices(ci,t)).map(|s| off(ci,cj,s))
+            .chain(vertices(cj,out[j as usize].t).into_iter().map(|s| off(cj,ci,s))).fold(0.,f64::max);
         // (an inverse read onto another branch says nothing of the gap: `same_edge` held it within 8 tol)
         if apart <= 64.*tol { out[j as usize].gap = out[j as usize].gap.max(apart) }
     }
@@ -1238,6 +1263,9 @@ struct Meetings {
     /// a traced meeting dropped as an edge one face has (`along_an_edge`): that edge (working), and
     /// the operand and face it is laid across wherever it lies inside it
     along_edges: Vec<(usize,Side,usize)>,
+    /// a given meeting's curve that is an edge of one operand already (`edges_that_are`): that
+    /// edge (working) and its operand, and the operand and face it is laid across
+    given_along: Vec<(usize,Side,Side,usize)>,
 }
 
 /// Phases 3 and 4: every working edge split where it was cut (`split_edges`), and the pieces that
@@ -1403,9 +1431,9 @@ impl<'a> Arrangement<'a> {
             // that near
             let surface = &solids[other].faces[fi].surface;
             let tol = tol.max(e.tol);
-            let search = || curve_surface_within(c,e.t,surface,tol,boxes[other][fi],pad);
+            let search = |t: [f64;2]| curve_surface_within(c,t,surface,tol,boxes[other][fi],pad);
             let meets = match known {
-                None => search(),
+                None => search(e.t),
                 Some(Met::Same) => Meets::Along,
                 Some(Met::On(curves,touches)) => on_known(c,e.t,curves,touches,surface,tol,search),
             };
@@ -1565,7 +1593,7 @@ impl<'a> Arrangement<'a> {
     /// form, or traced (`traced_meeting`) — cut at the points both faces put on it, its spans
     /// laid as working edges where they lie in both faces.
     fn meetings(&mut self,crossings: &Crossings) -> Result<Meetings,String> {
-        let mut found = Meetings {ssi_edges:Vec::new(),same_pairs:Vec::new(),along_edges:Vec::new()};
+        let mut found = Meetings {ssi_edges:Vec::new(),same_pairs:Vec::new(),along_edges:Vec::new(),given_along:Vec::new()};
         let sides: Vec<Side> = self.solids.all().collect();
         // every two faces of two operands whose boxes meet, the lower operand first
         let mut pairs: Vec<Two> = Vec::new();
@@ -1612,12 +1640,21 @@ impl<'a> Arrangement<'a> {
                     // (#942 F3, identity by construction): a ring's tube cut along its crossing of the
                     // tool where it starts, given that chord as their meeting, has it as an edge
                     // already — laid once, not twice on itself. Its crossings with the meeting's other
-                    // curves are read first, and stay on them
+                    // curves are read first, and stay on them. **Each edge the face holds it as** (#942
+                    // T1d-tori): a tube's row at the start, where the tool posed at the end holds a
+                    // stretch of the tube beside it, is cut there into two edges of one curve with the
+                    // end pose's chord between; the first alone laid, the start torus was parted along
+                    // half its rim, and a piece of it reached round the other half from the side the
+                    // tool trails to the side it leads
                     let (cs,x) = if self.shared.given(ids[0],ids[1]) {
                         let mut kept = (Vec::new(),Vec::new());
                         for (c,xc) in cs.into_iter().zip(x) {
-                            match self.edge_that_is(&c,faces) {
-                                Some((k,e)) => found.along_edges.push((self.working(faces.s[k],e),faces.s[1-k],faces.f[1-k])),
+                            match self.edges_that_are(&c,faces) {
+                                Some((k,es)) => for e in es {
+                                    let we = self.working(faces.s[k],e);
+                                    found.along_edges.push((we,faces.s[1-k],faces.f[1-k]));
+                                    found.given_along.push((we,faces.s[k],faces.s[1-k],faces.f[1-k]));
+                                },
                                 None => { kept.0.push(c); kept.1.push(xc) }
                             }
                         }
@@ -1685,14 +1722,19 @@ impl<'a> Arrangement<'a> {
         Ok(found)
     }
 
-    /// **The edge of either of the two faces whose curve is `c` itself** (#942 F3: identity by
-    /// construction, no tolerance read) — which face's (0 or 1) and the edge, its own solid's.
-    fn edge_that_is(&self,c: &Curve,faces: Two) -> Option<(usize,usize)> {
+    /// **The edges of either of the two faces whose curve is `c` itself** (#942 F3: identity by
+    /// construction, no tolerance read) — which face's (0 or 1) and its edges on `c`, its own
+    /// solid's, each once: a face may hold one curve as several edges, cut where another meeting
+    /// reaches it (#942 T1d-tori).
+    fn edges_that_are(&self,c: &Curve,faces: Two) -> Option<(usize,Vec<usize>)> {
         (0..2).find_map(|k| {
             let sol = self.solids[faces.s[k]];
-            sol.faces[faces.f[k]].loops.iter().flatten()
-                .find(|co| matches!(&sol.edges[co.edge as usize].curve,EdgeCurve::Curve(ec) if ec == c))
-                .map(|co| (k,co.edge as usize))
+            let mut es: Vec<usize> = sol.faces[faces.f[k]].loops.iter().flatten()
+                .filter(|co| matches!(&sol.edges[co.edge as usize].curve,EdgeCurve::Curve(ec) if ec == c))
+                .map(|co| co.edge as usize).collect();
+            es.sort_unstable();
+            es.dedup();
+            (!es.is_empty()).then_some((k,es))
         })
     }
 
@@ -1877,6 +1919,49 @@ impl<'a> Arrangement<'a> {
             }
         }
         Ok(())
+    }
+
+    /// **Where two given curves one operand holds as edges cross on a face of another** (#942: the
+    /// full turn's tumbling torus): a sweep's sheet may pass back over itself, its faces cut along
+    /// the given curves where each meets a pose of the tool, so two of its edges lie on that pose's
+    /// face and cross there — the tube late in the roll over its own start rim. Phase 1 reads an
+    /// operand's edges against the others' faces and never against one another, and `triple_points`
+    /// the meetings laid, so the crossing, a point of three faces (the pose's and the operand's
+    /// two), was cut by nothing: the rim dangled on the pose's face and a piece of it leaked round
+    /// it. Each two such edges laid across one face cross where their curves do, to the tolerance —
+    /// given curves lie on both their surfaces (`Given`), so the three surfaces' Newton, ill-posed
+    /// where two of them touch, is not asked — and both are cut there at a vertex they share. An
+    /// operand's own crossing edges are read here alone where their curves are given: no other
+    /// sound operand's edges cross but at its vertices.
+    fn given_crossings(&mut self,meetings: &Meetings) {
+        let tol = self.tol;
+        // each face's given edges laid across it, with each one's operand
+        let mut on: BTreeMap<(Side,usize),Vec<(usize,Side)>> = BTreeMap::new();
+        for &(we,s,o,face) in &meetings.given_along {
+            let list = on.entry((o,face)).or_default();
+            if !list.contains(&(we,s)) { list.push((we,s)) }
+        }
+        // (a given curve is held to the tolerance, as `triple_points` holds two given meetings)
+        let reach = ON_CURVE*tol;
+        for list in on.values() {
+            for i in 0..list.len() { for j in i+1..list.len() {
+                let ((ei,si),(ej,sj)) = (list[i],list[j]);
+                if si != sj { continue }
+                let (EdgeCurve::Curve(ci),EdgeCurve::Curve(cj)) = (&self.edges[ei].curve,&self.edges[ej].curve) else { continue };
+                let (ti,tj) = (self.edges[ei].t,self.edges[ej].t);
+                if !overlap(&ci.bounds(ti),&cj.bounds(tj),self.pad) || along_one_another(ci,ti,cj,tj,reach) { continue }
+                // (an end of either is a vertex already, which cuts the other where it lies inside
+                // it: step 2b)
+                let ends = [ci.point(ti[0]),ci.point(ti[1]),cj.point(tj[0]),cj.point(tj[1])];
+                let found = super::meeting::crossings(ci,ti,cj,tj,reach);
+                for (t,u,q) in found {
+                    if ends.iter().any(|&e| distance(e,q) <= reach) { continue }
+                    let v = self.pool.at(q);
+                    if !self.cuts[ei].iter().any(|&(_,w)| w == v) { self.cuts[ei].push((t,v)); }
+                    if !self.cuts[ej].iter().any(|&(_,w)| w == v) { self.cuts[ej].push((u,v)); }
+                }
+            } }
+        }
     }
 
     /// **Where two meetings tangent at a crossing cross** (`triple_points`, its three surfaces'
@@ -2177,7 +2262,14 @@ impl<'a> Arrangement<'a> {
                     let at = |t: f64| c.pcurve.at(t,orig,&f.surface,&sol.vertices);
                     let (ua,ub) = (at(ta),at(tb));
                     let merged = (r != piece).then(|| (&split.out[r as usize],flip));
-                    let pcurve = piece_pcurve(&c.pcurve,&f.surface,merged,ua,ub);
+                    // (a piece with a pcurve of its own merged into another edge: that pcurve carried
+                    // onto the other's parameter, where it holds)
+                    let carried = merged.and_then(|(w,_)| carried_pcurve(&c.pcurve,orig,[ta,tb],w,&f.surface,self.tol));
+                    if super::debug() && merged.is_some() && matches!(c.pcurve,Pcurve::Curve(_)) {
+                        eprintln!("pieces: operand {} face {fi} edge {}'s piece merged into {r}: its own pcurve {}",s.0,c.edge,
+                            if carried.is_some() { "carried" } else { "not carried, the edge inverted" })
+                    }
+                    let pcurve = carried.unwrap_or_else(|| piece_pcurve(&c.pcurve,&f.surface,merged,ua,ub));
                     let along = !c.reversed != flip;
                     let (from,to) = if c.reversed { (ub,ua) } else { (ua,ub) };
                     halves.push(Half {edge:r,along,pcurve,from,to,pole:false});
@@ -2282,6 +2374,86 @@ fn closed_domain(c: &Curve,tol: f64) -> Option<[f64;2]> {
     (1..16).any(|k| distance(c.point(lo+(hi-lo)*k as f64/16.),start) > 64.*tol).then_some([lo,hi])
 }
 
+/// **A piece's own curve in its face's parameters carried onto the edge it is merged into** (#942,
+/// the full turn): a double curve's chord on one leaf of a tube, drawn as a polyline through the
+/// places its trace passes with its pcurve through their parameters, is merged with the other leaf's
+/// chord, one curve in space; inverted onto the face from the other's curve, its parameters landed on
+/// the leaf beyond the fold, 1.3e-5 off. So the piece's own pcurve's vertices are carried: each
+/// moved to the other edge's parameter of its nearest point (from the nearest of the other's points
+/// at `PCURVE_CARRIED` places, by Newton's steps along it), and a stretch between two that does not
+/// hold given its middle too — the other's point there, its nearest on the piece — until each holds
+/// or the stretch is the rounding's: beside a fold a leaf's parameters run as the square root of the
+/// length along it, and no curve through places spread evenly along the other holds (the full
+/// turn's beside its swallowtail point, 3.4e-5 off at a thousand of them). Held where the surface
+/// along it stands within a quarter of `tol` of the other's curve, or the gap the arrangement already
+/// lets the other stand off the piece's faces, at each stretch's quarters (its ends the piece's own,
+/// which stand from the other's as far as their vertices let them). None for a piece whose own
+/// pcurve is no polyline, or where it does not hold (the inverse is then read).
+fn carried_pcurve(own: &Pcurve,orig: &Edge,[ta,tb]: [f64;2],w: &WEdge,surface: &Surface,tol: f64) -> Option<Pcurve> {
+    use crate::util::space::{dot,sub};
+    let Pcurve::Curve(pc) = own else { return None };
+    let Curve::BSpline(b) = &**pc else { return None };
+    let (EdgeCurve::Curve(mine),EdgeCurve::Curve(theirs)) = (&orig.curve,&w.curve) else { return None };
+    if b.degree != 1 || b.weights.is_some() { return None }
+    let (lo,hi) = (ta.min(tb),ta.max(tb));
+    // (Newton's steps onto a curve's nearest point to `x` from `s`, within `[l, h]`: a start within
+    // a sample's share converges in a few; the count is the corrector's, past which it does not)
+    let nearest = |c: &Curve,x: V,mut s: f64,[l,h]: [f64;2]| -> f64 {
+        for _ in 0..16 {
+            let (p,d) = c.d1(s);
+            let dd = dot(d,d);
+            if !(dd > 0.) { break }
+            let step = dot(sub(p,x),d)/dd;
+            s = (s-step).clamp(l,h);
+            if step.abs() <= f64::EPSILON*(h-l).max(s.abs()) { break }
+        }
+        s
+    };
+    let n = 8*PCURVE_CARRIED;
+    let ws: Vec<f64> = (0..=n).map(|k| w.t[0]+(w.t[1]-w.t[0])*k as f64/n as f64).collect();
+    let wx: Vec<V> = ws.iter().map(|&t| theirs.point(t)).collect();
+    let foot = |x: V| -> f64 {
+        let k = (0..wx.len()).min_by(|&i,&j| distance(wx[i],x).total_cmp(&distance(wx[j],x))).unwrap_or(0);
+        nearest(theirs,x,ws[k],w.t)
+    };
+    let bar = (0.25*tol).max(w.gap);
+    let place = |s: f64| { let q = pc.point(s); [q[0],q[1],0.] };
+    let mut nodes: Vec<f64> = b.knots[1..b.knots.len()-1].iter().copied().filter(|&k| k > lo && k < hi).collect();
+    nodes.push(lo);
+    nodes.push(hi);
+    let mut placed: Vec<(f64,f64)> = nodes.iter().map(|&s| (foot(mine.point(s)),s)).collect();
+    placed.sort_by(|x,y| x.0.total_cmp(&y.0));
+    placed.dedup_by(|x,y| x.0-y.0 <= f64::EPSILON*(w.t[1]-w.t[0]));
+    if let Some(f) = placed.first_mut() { f.0 = w.t[0] }
+    if let Some(l) = placed.last_mut() { l.0 = w.t[1] }
+    let holds = |p: &[(f64,f64)],k: usize| -> bool {
+        let (t0,t1) = (p[k].0,p[k+1].0);
+        let (u0,u1) = (place(p[k].1),place(p[k+1].1));
+        (1..4).all(|j| {
+            let f = j as f64/4.;
+            let q = [u0[0]+(u1[0]-u0[0])*f,u0[1]+(u1[1]-u0[1])*f];
+            distance(surface.point(q),theirs.point(t0+(t1-t0)*f)) <= bar
+        })
+    };
+    let mut k = 0;
+    while k+1 < placed.len() {
+        if holds(&placed,k) { k += 1; continue }
+        let ((t0,s0),(t1,s1)) = (placed[k],placed[k+1]);
+        let tm = 0.5*(t0+t1);
+        if !(tm > t0 && tm < t1) { return None }
+        placed.insert(k+1,(tm,nearest(mine,theirs.point(tm),0.5*(s0+s1),[lo,hi])));
+    }
+    let ts: Vec<f64> = placed.iter().map(|p| p.0).collect();
+    let uvs: Vec<V> = placed.iter().map(|p| place(p.1)).collect();
+    let curve = crate::nurbs::interpolate(&uvs,&ts,1)?;
+    Some(Pcurve::Curve(std::sync::Arc::new(Curve::BSpline(std::sync::Arc::new(curve)))))
+}
+
+/// How many places along the edge a merged piece is merged into the nearest of its points to each
+/// of the piece's own is first sought among, eight times over (`carried_pcurve`): a start for
+/// Newton's steps, which settle it.
+const PCURVE_CARRIED: usize = 64;
+
 /// The curve in a face's parameters, from `ua` to `ub`, of a piece of one of its edges, whose
 /// own is `own`: the same kind, where the piece stands for itself; where it is `merged` into
 /// another edge (that edge, and whether it runs the other way round), the straight line that
@@ -2351,18 +2523,24 @@ impl<'s,'a> Touches<'s,'a> {
     /// or two branches crossing at it (`ssi::touch`); where none of the branches runs into both
     /// faces the two meet there alone, and nothing is traced through it. A touch with a branch
     /// into both is left to the trace, which refuses it. Each read is kept, as alone or not,
-    /// within its radius.
+    /// within its radius. **A definite touch is alone where its higher orders keep it so over its
+    /// radius** (`ssi::alone_over`, #996 §3), whatever the faces' size: no branch is asked after,
+    /// so no face need reach past it. Branches are asked after twice the radius out, which only
+    /// a touch small beside the smaller face reaches on it.
     fn alone(&mut self,p: V) -> bool {
         let (tol,(sa,sb)) = (self.arr.tol,(self.surfaces[0],self.surfaces[1]));
         let Some(at) = super::ssi::touch_near(sa,sb,p,tol) else { return false };
         let Some(t) = super::ssi::touch(sa,sb,at) else { return false };
-        if t.radius > 0.05*self.least || distance(at,p) > t.radius { return false }
-        let place = |k: usize,d: V| {
-            let s = self.surfaces[k];
-            let q = crate::util::space::add(at,crate::util::space::scale(d,2.*t.radius));
-            self.arr.located[self.faces.s[k]].face_place(self.faces.f[k],s.point(s.inverse(q)))
+        if distance(at,p) > t.radius { return false }
+        let lone = if t.branches.is_empty() { super::ssi::alone_over(sa,sb,&t) } else {
+            if t.radius > 0.05*self.least { return false }
+            let place = |k: usize,d: V| {
+                let s = self.surfaces[k];
+                let q = crate::util::space::add(at,crate::util::space::scale(d,2.*t.radius));
+                self.arr.located[self.faces.s[k]].face_place(self.faces.f[k],s.point(s.inverse(q)))
+            };
+            !t.branches.iter().any(|&d| place(0,d) != Place::Out && place(1,d) != Place::Out)
         };
-        let lone = !t.branches.iter().any(|&d| place(0,d) != Place::Out && place(1,d) != Place::Out);
         if lone { self.arr.say.touch_alone(self.faces,self.surfaces,&t); }
         self.read.push((t,lone));
         lone
@@ -2420,8 +2598,16 @@ fn at_its_ends(meets: Meets,c: &Curve,t: [f64;2],surface: &Surface,tol: f64) -> 
 /// first — a crossing of two curves all but tangent (a rim crossing a path near a fold of its
 /// contact) it settles where the sampled polish misses it — each of its roots taken onto the
 /// crossing nearest it (`onto`); the crossings are the reading alone where it is refused.
+///
+/// **An end on the meeting is read there by construction** (#942, the ring's ends kept): where an
+/// end of the edge lies on one of `curves` — the edge leaving a point the meeting passes through —
+/// and the edge runs on from it within `ON_CURVE` tolerances of the surface, that run is the touch
+/// `at_its_ends` reads at the end, and the search reads only the rest of the edge, past where it
+/// stands off the surface by more. (A ring's kept leaf's rim, an edge of the end pose's wedge,
+/// stood within 1e-7 of the end piece it leaves at its corner over a run the search read boxes
+/// along for five seconds before refusing: the meeting given passes through that corner.)
 fn on_known(c: &Curve,t: [f64;2],curves: &[Curve],touches: &[V],surface: &Surface,tol: f64,
-    search: impl FnOnce() -> Meets) -> Meets {
+    search: impl FnOnce([f64;2]) -> Meets) -> Meets {
     let reach = ON_CURVE*tol;
     let domain = |g: &Curve| super::query::curve_domain(g)
         .unwrap_or(if matches!(g,Curve::Line {..}) { [f64::NEG_INFINITY,f64::INFINITY] } else { [0.,1.] });
@@ -2441,13 +2627,34 @@ fn on_known(c: &Curve,t: [f64;2],curves: &[Curve],touches: &[V],surface: &Surfac
             None => sampled.push(g),
         }
     }
-    let searched = if sampled.is_empty() { None } else {
-        match search() {
+    // each end the meeting passes through, and how far from it the edge hugs the surface: the
+    // first of 64 places on from the end standing off it by more than `reach`, halved back to where
+    // it stands off by `reach`
+    let on_meeting = |x: V| curves.iter().any(|g| { let [g0,g1] = domain(g); distance(g.point(g.inverse(x).clamp(g0,g1)),x) <= reach });
+    let off = |s: f64| surface.implicit(c.point(s)).abs() > reach;
+    let hugged = |end: f64,other: f64| -> Option<f64> {
+        if !on_meeting(c.point(end)) { return None }
+        let k = (1..=64).find(|&k| off(end+(other-end)*k as f64/64.))?;
+        let (near,far) = (end+(other-end)*(k-1) as f64/64.,end+(other-end)*k as f64/64.);
+        Some(crate::util::roots::bisect(near,far,|n,f| 0.5*(n+f),|n,f| { let m = 0.5*(n+f); m != n && m != f },|m| !off(m)).1)
+    };
+    // (a touch where the run is longer than the step a crossing's touch is read across, below)
+    let step = 64.*reach/c.speed().max(1e-300);
+    let hugs = [hugged(t[0],t[1]),hugged(t[1],t[0])];
+    let ends_read: Vec<(f64,bool)> = t.into_iter().zip(hugs)
+        .filter_map(|(e,h)| h.filter(|&h| h != e).map(|h| (e,(h-e).abs() > step))).collect();
+    let rest = [hugs[0].unwrap_or(t[0]),hugs[1].unwrap_or(t[1])];
+    let searched = if sampled.is_empty() { None } else if !(rest[0] < rest[1]) {
+        // (hugging the surface from an end on the meeting the whole way: read at that end alone)
+        Some(Vec::new())
+    } else {
+        match search(rest) {
             Meets::Refused(_) => None,
-            Meets::At(roots) if !roots.is_empty() => Some(roots),
+            Meets::At(roots) if !roots.is_empty() || !ends_read.is_empty() => Some(roots),
             meets => return meets,
         }
     };
+    let searched = searched.map(|mut r| { r.extend(ends_read.iter().copied()); r });
     for g in sampled {
         // (a line no closed form reads against `c` is no stretch `crossings` can sample: its
         // stretch the edge's shadow on it, and as much again either side)
@@ -2459,7 +2666,6 @@ fn on_known(c: &Curve,t: [f64;2],curves: &[Curve],touches: &[V],surface: &Surfac
         } else { domain(g) };
         found.extend(super::meeting::crossings(c,t,g,span,reach).into_iter().map(|(s,..)| s));
     }
-    let step = 64.*reach/c.speed().max(1e-300);
     let mut roots: Vec<(f64,bool)> = Vec::new();
     // (each root's point, and whether a crossing was read already: the two points within `reach`
     // of one another, #942 F6)
@@ -2634,7 +2840,7 @@ impl<'s,'a> FaceCut<'s,'a> {
             let p = c.point(to);
             // (at a pole of the surface its collapsed parameter is set as the edge arrives, and held
             // there, not taken from a node)
-            if let Some(along) = pole_at(&f.surface,uv,(1e-9*(1.+norm(p))).max(tol)) {
+            if let Some(along) = super::topo::near_pole(&f.surface,uv,tol) {
                 // the way from the pole into the edge: back along its curve, toward the middle
                 let into = scale(c.tangent(to),if to > mid { -1. } else { 1. });
                 if let Some(x) = leaving_pole(&f.surface,p,into,before,along) { uv[along] = x; }
@@ -3164,7 +3370,7 @@ fn param(h: &Half,out: &[WEdge],s: f64) -> f64 {
 /// The parameters a fraction `s` of the way along a half.
 fn at(h: &Half,f: &Face,out: &[WEdge],pool: &Pool,s: f64) -> Uv {
     let (e,t) = (&out[h.edge as usize],param(h,out,s));
-    uv_at(h,f,e,t,|| e.point(t,pool))
+    uv_at(h,f,e,pool,t,|| e.point(t,pool))
 }
 
 /// The parameters a fraction `s` of the way along a half, and its point in space.
@@ -3174,16 +3380,16 @@ fn at_point(h: &Half,f: &Face,out: &[WEdge],pool: &Pool,s: f64) -> (Uv,V) { at_p
 fn at_point_near(h: &Half,f: &Face,out: &[WEdge],pool: &Pool,s: f64,seed: Uv) -> (Uv,V) {
     let (e,t) = (&out[h.edge as usize],param(h,out,s));
     let p = e.point(t,pool);
-    (uv_seeded(h,f,e,t,|| p,seed),p)
+    (uv_seeded(h,f,e,pool,t,|| p,seed),p)
 }
 
 /// The parameters of a half at its edge's parameter `t`, whose point in space is `p()` (asked
 /// only where the half's curve in the parameters is the surface's inverse of it).
-fn uv_at(h: &Half,f: &Face,e: &WEdge,t: f64,p: impl FnOnce() -> V) -> Uv { uv_seeded(h,f,e,t,p,[f64::NAN;2]) }
+fn uv_at(h: &Half,f: &Face,e: &WEdge,pool: &Pool,t: f64,p: impl FnOnce() -> V) -> Uv { uv_seeded(h,f,e,pool,t,p,[f64::NAN;2]) }
 
 /// `uv_at`, an inversion read beside `seed` where it is no NaN, else beside the line between the
 /// half's ends' parameters.
-fn uv_seeded(h: &Half,f: &Face,e: &WEdge,t: f64,p: impl FnOnce() -> V,seed: Uv) -> Uv {
+fn uv_seeded(h: &Half,f: &Face,e: &WEdge,pool: &Pool,t: f64,p: impl FnOnce() -> V,seed: Uv) -> Uv {
     let a = if h.along { h.from } else { h.to };
     let b = if h.along { h.to } else { h.from };
     let frac = (t-e.t[0])/(e.t[1]-e.t[0]);
@@ -3204,8 +3410,10 @@ fn uv_seeded(h: &Half,f: &Face,e: &WEdge,t: f64,p: impl FnOnce() -> V,seed: Uv) 
             // leaves to its own choice — a sphere's `u` read there as 0 or 2π, whatever the half
             // arriving runs along: the half's own value there, as its ends record it, #962's 7. A
             // meridian through the pole along the seam's half-plane was drawn from 2π back to π
-            // across the piece, and the piece read as a hole)
-            if let Some(k) = super::topo::pole_at(&f.surface,uv,1e-12*(1.+crate::util::space::norm(p))) { uv[k] = near[k]; }
+            // across the piece, and the piece read as a hole; at it within the edge's gap or its
+            // ends' vertices' tolerance, `topo::near_pole`)
+            let reach = e.gap.max(pool.tols[e.v[0] as usize]).max(pool.tols[e.v[1] as usize]);
+            if let Some(k) = super::topo::near_pole(&f.surface,uv,reach) { uv[k] = near[k]; }
             INVERTED.with(|m| {
                 let mut m = m.borrow_mut();
                 if m.len() >= INVERTED_MOST { m.clear() }
@@ -3232,22 +3440,11 @@ thread_local! {
 /// The face's parameters mirrored where it is reversed, so the material is always on the left.
 fn oriented(f: &Face,uv: Uv) -> Uv { if f.reversed { [-uv[0],uv[1]] } else { uv } }
 
-/// A cycle's signed area in its face's parameters, the material on its left: the trapezoid rule
-/// along each half at 64 points, then twice as many, until two readings agree to a thousandth (or
-/// 4096 a half).
+/// A cycle's signed area in its face's parameters, the material on its left (`topo::green_area`,
+/// each half sampled by the fraction of its way; a straight one by its ends).
 fn fine_area(cycle: &[Half],f: &Face,out: &[WEdge],pool: &Pool) -> f64 {
-    let read = |n: usize| cycle.iter().map(|h| (0..n).map(|k| {
-        let (a,b) = (oriented(f,at(h,f,out,pool,k as f64/n as f64)),oriented(f,at(h,f,out,pool,(k+1) as f64/n as f64)));
-        a[0]*b[1]-a[1]*b[0]
-    }).sum::<f64>()).sum::<f64>()/2.;
-    let (mut n,mut last) = (64,read(64));
-    while n < 4096 {
-        n *= 2;
-        let next = read(n);
-        if (next-last).abs() <= 1e-3*next.abs() { return next }
-        last = next;
-    }
-    last
+    super::topo::green_area(cycle.len(),&|i: usize| matches!(cycle[i].pcurve,Pcurve::Line {..}),
+        &|i: usize,j: usize,n: usize| oriented(f,at(&cycle[i],f,out,pool,j as f64/n as f64)))
 }
 
 /// How near two ways at a node may be (radians, each read a ten-thousandth of its own half's length
@@ -3288,8 +3485,15 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool,tol: f64) -
     }).collect();
     // each half's direction leaving its start and arriving at its end, as lengths, oriented, read a
     // part `s` of its way along it
+    // (a pole's half runs along the parameter the pole collapses, its other held: its ends may
+    // disagree in that one by a node's width, which the pole's vanishing rate along the first made
+    // its whole way in space, a meridian's tied with it at the node, #996)
     let dir_at = |h: &Half,at_start: bool,s: f64| -> f64 {
-        let (p,q) = if at_start { (h.from,at(h,f,out,pool,s)) } else { (h.to,at(h,f,out,pool,1.-s)) };
+        let (p,mut q) = if at_start { (h.from,at(h,f,out,pool,s)) } else { (h.to,at(h,f,out,pool,1.-s)) };
+        if matches!(out[h.edge as usize].curve,EdgeCurve::Degenerate) {
+            let along = if (h.to[0]-h.from[0]).abs() >= (h.to[1]-h.from[1]).abs() { 0 } else { 1 };
+            q[1-along] = p[1-along];
+        }
         let (_,su,sv) = f.surface.d1(p);
         let (ku,kv) = (norm(su).max(1e-12),norm(sv).max(1e-12));
         let (p,q) = (oriented(f,p),oriented(f,q));
@@ -3593,11 +3797,19 @@ mod reading {
         if d > 2.*outline.sag() { return Some(outline.winding(uv) != 0) }
         let e = &out[edge as usize];
         if t <= e.t[0] || t >= e.t[1] { return None }
-        Some(cycles.iter().flatten().filter(|u| u.edge == edge).any(|u| {
+        // each use's place there and way along it; two uses of the edge at one place, walked
+        // either way, are a spur, not a seam (a seam's stand a period apart): between them is no
+        // side, and they say nothing (#996: a cap's crescent whose two sides the tolerance made
+        // one edge, walked out and back, read inside beside it by the use whose side it was)
+        let ways: Vec<(Uv,Uv)> = cycles.iter().flatten().filter(|u| u.edge == edge).map(|u| {
             let s = if u.along { (t-e.t[0])/(e.t[1]-e.t[0]) } else { (e.t[1]-t)/(e.t[1]-e.t[0]) };
             let (a,b) = (at(u,f,out,pool,(s-1e-6).max(0.)),at(u,f,out,pool,(s+1e-6).min(1.)));
-            beside(f,at(u,f,out,pool,s),[b[0]-a[0],b[1]-a[1]],uv)
-        }))
+            (at(u,f,out,pool,s),[b[0]-a[0],b[1]-a[1]])
+        }).collect();
+        let spur = |i: usize| ways.iter().enumerate().any(|(j,w)| j != i
+            && (w.0[0]-ways[i].0[0]).abs() < super::NODE && (w.0[1]-ways[i].0[1]).abs() < super::NODE
+            && w.1[0]*ways[i].1[0]+w.1[1]*ways[i].1[1] < 0.);
+        Some((0..ways.len()).filter(|&i| !spur(i)).any(|i| beside(f,ways[i].0,ways[i].1,uv)))
     }
 
     /// Whether cycles drawn as `drawn`, to `bar`, hold `(uv, p)` (`judged`), drawn finer while
@@ -3619,13 +3831,63 @@ mod reading {
     /// (`judged`) and given only where it is inside; drawn finer while none is. Then, read alike,
     /// the points off the middles (`ALONG`).
     pub(super) fn inside<'a>(piece: &'a [Vec<Half>],f: &'a Face,out: &'a [WEdge],pool: &'a Pool) -> impl Iterator<Item=Inner>+'a {
-        ALONG.into_iter().flat_map(move |at| along(piece,f,out,pool,at))
+        // the first bar, read once, and the finest outline, drawn once for every pass that asks
+        let first = bar(piece,out,pool);
+        let finest: Finest = Default::default();
+        let passes = {
+            let finest = finest.clone();
+            ALONG.into_iter().flat_map(move |at| along(piece,f,out,pool,at,first,finest.clone()))
+        };
+        passes.chain(beside_halves(piece,f,out,pool,first,finest))
     }
 
-    /// The points `at` the way along the spans (`inside`).
-    fn along<'a>(piece: &'a [Vec<Half>],f: &'a Face,out: &'a [WEdge],pool: &'a Pool,at: f64) -> impl Iterator<Item=Inner>+'a {
-        let mut bars = finer(bar(piece,out,pool),pool.tol);
-        let mut round: Option<(Outline,std::vec::IntoIter<Uv>)> = None;
+    /// The finest outline a piece's reading draws (`finer`'s last bar), shared by its passes.
+    type Finest = std::rc::Rc<std::cell::OnceCell<std::rc::Rc<Outline>>>;
+
+    /// The outline of `piece` drawn to `bar`, the finest one `finest` keeps drawn once.
+    fn drawn_to(piece: &[Vec<Half>],f: &Face,out: &[WEdge],pool: &Pool,bar: f64,finest_bar: f64,finest: &Finest) -> std::rc::Rc<Outline> {
+        if bar == finest_bar { finest.get_or_init(|| std::rc::Rc::new(outline(piece,f,out,pool,bar))).clone() }
+        else { std::rc::Rc::new(outline(piece,f,out,pool,bar)) }
+    }
+
+    /// **A strip thinner than any outline it is drawn to has an inside all the same** (#996): from
+    /// the middle of each curved half, steps square to it in the face's parameters, either way,
+    /// from the first bar down to twice the pool's tolerance, each read against the halves
+    /// (`judged`: within twice the outline's sag of them, by the side of the nearest). A piece
+    /// whose two sides stand apart by more than the tolerance — a cap's ring between a turn's rim
+    /// and a leg's 12 tolerances inside it, 308° long — has points read inside it so, where the
+    /// spans of its outlines, drawn to a few ten-thousandths of the piece, had none, and it was
+    /// dropped as a sliver while its two sides stayed two edges: the turn's face left hanging by
+    /// its rim. A piece with no inside even so is a sliver.
+    fn beside_halves<'a>(piece: &'a [Vec<Half>],f: &'a Face,out: &'a [WEdge],pool: &'a Pool,first: f64,finest: Finest) -> impl Iterator<Item=Inner>+'a {
+        let finest_bar = finer(first,pool.tol).last().unwrap_or(first);
+        piece.iter().flatten().filter(|h| matches!(out[h.edge as usize].curve,super::EdgeCurve::Curve(_))).flat_map(move |h| {
+            let finest = finest.clone();
+            let (uv,p) = super::at_point(h,f,out,pool,0.5);
+            let (a,b) = (at(h,f,out,pool,0.5-1e-6),at(h,f,out,pool,0.5+1e-6));
+            let (du,dv) = (b[0]-a[0],b[1]-a[1]);
+            let n = du.hypot(dv);
+            // the square to the half in the parameters, and how far in space a unit of it goes
+            let across = if n > 0. { [-dv/n,du/n] } else { [0.,0.] };
+            let eps = 1e-6*(1.+uv[0].abs().max(uv[1].abs()));
+            let speed = distance(f.surface.point([uv[0]+eps*across[0],uv[1]+eps*across[1]]),p)/eps;
+            // (no step where the parameters move the point nowhere)
+            let last = if speed > 0. { 2.*pool.tol } else { f64::INFINITY };
+            let steps = std::iter::successors(Some(first),|&d| Some(d/2.)).take_while(move |&d| d >= last);
+            steps.flat_map(move |d| [1.,-1.].map(|k| d*k)).filter_map(move |d| {
+                let q = [uv[0]+across[0]*d/speed,uv[1]+across[1]*d/speed];
+                let x = f.surface.point(q);
+                let drawn = drawn_to(piece,f,out,pool,finest_bar,finest_bar,&finest);
+                (judged(piece,&drawn,f,out,pool,q,x) == Some(true)).then_some(Inner(x))
+            }).take(1)
+        })
+    }
+
+    /// The points `at` the way along the spans (`inside`), its outlines drawn from the first bar.
+    fn along<'a>(piece: &'a [Vec<Half>],f: &'a Face,out: &'a [WEdge],pool: &'a Pool,at: f64,first: f64,finest: Finest) -> impl Iterator<Item=Inner>+'a {
+        let finest_bar = finer(first,pool.tol).last().unwrap_or(first);
+        let mut bars = finer(first,pool.tol);
+        let mut round: Option<(std::rc::Rc<Outline>,std::vec::IntoIter<Uv>)> = None;
         let mut any = false;
         std::iter::from_fn(move || loop {
             if let Some((drawn,queue)) = &mut round {
@@ -3635,7 +3897,7 @@ mod reading {
                 }
                 if any { return None }
             }
-            let drawn = outline(piece,f,out,pool,bars.next()?);
+            let drawn = drawn_to(piece,f,out,pool,bars.next()?,finest_bar,&finest);
             let queue = drawn.spans(at).into_iter();
             round = Some((drawn,queue));
         })
@@ -3757,9 +4019,17 @@ pub(crate) fn parameters(b: &Brep,fi: usize,whole: bool) -> [[f64;2];2] {
     [[lo[0],hi[0]],[lo[1],hi[1]]]
 }
 
+/// **Whether `p` stands off a bounded surface's patch**, on its continuation (`kept`'s reading): its
+/// foot on the patch farther than what a patch is read to, a thousand tolerances; planes, quadrics
+/// and tori run on without end, and stand off none. A sheet's or a loft's distance along the normal
+/// at a foot clamped to its patch has zeros of its own past it, which a grid of seeds finds: a ring
+/// along a spline's two tubes, a seed laid 1.0 off the other's patch was traced from and refused as
+/// the two meeting at 0.19° (#942 T1d-ring).
+fn off_patch(s: &super::geom::Surface,p: V,tol: f64) -> bool { s.bounded() && distance(s.point(s.inverse(p)),p) > 1e3*tol }
+
 /// Where a grid across face `fi` of `b`, in its parameters' box, crosses `other`: each grid line's
 /// change of sign in `other`'s implicit found by bisection, then pulled onto both surfaces by the
-/// trace. Seeds for curves no edge crosses.
+/// trace, each kept only on `other`'s patch (`off_patch`). Seeds for curves no edge crosses.
 fn grid_seeds(b: &Brep,fi: usize,other: &super::geom::Surface,tol: f64) -> Vec<V> {
     const N: usize = 24;
     let f = &b.faces[fi];
@@ -3773,11 +4043,19 @@ fn grid_seeds(b: &Brep,fi: usize,other: &super::geom::Surface,tol: f64) -> Vec<V
         let (mut a,mut b,mut fa) = (a,b,fa);
         for _ in 0..40 {
             let m = [(a[0]+b[0])/2.,(a[1]+b[1])/2.];
-            let fm = value(m);
-            if fm.abs() <= tol { a = m; break }
+            let p = f.surface.point(m);
+            let fm = other.implicit(p);
+            // (only on the other's patch, not its continuation, #942 T1d-ring: `off_patch`)
+            if fm.abs() <= tol {
+                if !off_patch(other,p,tol) { seeds.push(p) }
+                return
+            }
             if (fm < 0.) == (fa < 0.) { a = m; fa = fm; } else { b = m; }
         }
-        seeds.push(f.surface.point(a));
+        // **a sign the other's distance changes by a jump is no crossing** (#942 T1d-tori): halved
+        // forty times, a root stands within the tolerance; where the distance does not come to it
+        // the other's nearest foot leapt across, and nothing is seeded (the far side of a thin
+        // tube's sheet, 0.03 off it either side of a seam, was seeded and traced from nothing)
     };
     for i in 0..=N { for j in 0..=N {
         if i < N && (grid[i][j] < 0.) != (grid[i+1][j] < 0.) { root(at(i,j),at(i+1,j),grid[i][j]); }

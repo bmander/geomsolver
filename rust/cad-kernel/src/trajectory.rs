@@ -361,6 +361,10 @@ pub trait Path: Send + Sync + std::fmt::Debug {
         let _ = (lo, hi);
         g.speed_of(b)
     }
+    /// The path's inputs where it is a frame carried along a B-spline (`Along::from`'s: the curve, the
+    /// home, whether the frame is the curve's own, its name) — what a dump writes of it, made again
+    /// from them (#942 T1d-ring). None for any other.
+    fn along(&self) -> Option<(crate::nurbs::BSpline,f64,bool,String)> { None }
 }
 
 /// **What a motion does over a stretch of its parameter, enclosed**: the path's point (a box), the

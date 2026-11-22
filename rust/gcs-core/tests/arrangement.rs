@@ -540,3 +540,191 @@ fn a_rim_touching_a_wall_at_points_given_is_read_there_with_no_search() {
         assert!(off <= 1e-12,"the touch at {p:?} a vertex: {off:e} off");
     }
 }
+
+/// **A given curve a face holds as two edges is laid as both** (#942 T1d-tori, a kernel gate with no
+/// sweep in it): a sheet in the plane `z = 0`, its edge along the line `y = 0` notched between
+/// `x = 0.5` and `x = 1.5`, so that line — one curve — is two of its edges, `x` in `[−1, 0.5]` and
+/// `[1.5, 3]`, and a block below it whose face `y = 0` meets the sheet's plane in that line, given
+/// as their meeting. A given curve that is an edge of either face is that edge, laid once (#942
+/// F3); the face holding it as two, both are laid on the block's face — where the full turn's tube
+/// held the start torus's rim as two edges, the end pose's chord between them, and the first alone
+/// was laid, the torus was parted along half its rim and a piece of it reached round the rest.
+#[test]
+fn a_given_curve_a_face_holds_as_two_edges_is_laid_as_both() {
+    use gcs_core::brep::boolean::{arrangement_given,Given};
+    use gcs_core::brep::geom::{Curve,Frame,Surface};
+    use gcs_core::brep::topo::{Coedge,EdgeCurve,Face,Pcurve};
+    let line = Curve::Line {p:[0.;3],d:[1.,0.,0.]};
+    let mut sheet = Brep::default();
+    let corners = [[-1.,0.],[0.5,0.],[0.5,0.4],[1.5,0.4],[1.5,0.],[3.,0.],[3.,1.],[-1.,1.]];
+    let vs: Vec<u32> = corners.iter().map(|&[x,y]| sheet.vertex([x,y,0.])).collect();
+    let mut lp = Vec::new();
+    for i in 0..corners.len() {
+        let (a,b) = (corners[i],corners[(i+1)%corners.len()]);
+        let len = (b[0]-a[0]).hypot(b[1]-a[1]);
+        // (the two stretches along `y = 0` on the one line, at its own parameter, `x`)
+        let (curve,t) = if a[1] == 0. && b[1] == 0. { (line.clone(),[a[0],b[0]]) }
+            else { (Curve::Line {p:[a[0],a[1],0.],d:[(b[0]-a[0])/len,(b[1]-a[1])/len,0.]},[0.,len]) };
+        let edge = sheet.edge(EdgeCurve::Curve(curve),t,[vs[i],vs[(i+1)%corners.len()]]);
+        lp.push(Coedge {edge,reversed:false,pcurve:Pcurve::Line {a,b}});
+    }
+    let plane = Surface::Plane(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]));
+    sheet.faces.push(Face {surface:plane.clone(),reversed:false,loops:vec![lp],name:String::new()});
+    let below = block([-0.5,-1.,-1.],[2.5,0.,1.]);
+    let wall = below.faces.iter().map(|f| &f.surface)
+        .find(|s| matches!(s,Surface::Plane(_)) && [[0.,0.,0.],[1.,0.,0.5]].iter().all(|&p| s.implicit(p).abs() < 1e-12))
+        .expect("the block's face y = 0").clone();
+    let given = Given {surfaces:[plane,wall.clone()],curves:vec![line.clone()],touches:vec![]};
+    let domain = block([-2.,-2.,-2.],[4.,2.,2.]);
+    let complex = arrangement_given(&domain,&[&sheet,&below],&[given],1e-9).expect("arranged");
+    // the stretches of the line bounding a piece of the block's face
+    let mut laid: Vec<[f64;2]> = Vec::new();
+    for f in complex.b.faces.iter().filter(|f| f.surface == wall) {
+        for c in f.loops.iter().flatten() {
+            let e = &complex.b.edges[c.edge as usize];
+            if matches!(&e.curve,EdgeCurve::Curve(ec) if *ec == line) { laid.push([e.t[0].min(e.t[1]),e.t[0].max(e.t[1])]) }
+        }
+    }
+    let covers = |x: f64| laid.iter().any(|&[a,b]| a < x && x < b);
+    assert!(covers(0.) && covers(2.),"the line laid on the block's face over {laid:?}");
+    assert!(!covers(1.),"nothing laid where the sheet is notched: {laid:?}");
+}
+
+/// **Two given curves one operand holds as edges cross on a face of another at a vertex they
+/// share** (#942, the full turn's tumbling torus; a kernel gate with no sweep in it): a sheet of two
+/// square faces standing through one another, in the planes `x = 0` and `y = 0`, its feet along the
+/// lines `y` and `x` in the plane `z = 0`, and a block below whose top is that plane, given as each
+/// face's meeting with it. Each foot is an edge of the sheet, laid on the top as that edge (#942
+/// F3); the two cross at the origin, a point of the sheet's two faces and the top that no phase read
+/// — an operand's edges are read against the others' faces, not one another — where the full
+/// turn's tube, passing back over its own start late in the roll, crossed its start rim on the start
+/// torus and the rim dangled there. Both are cut at the origin, and the top is parted into four.
+#[test]
+fn two_given_edges_of_one_operand_crossing_on_a_face_share_a_vertex() {
+    use gcs_core::space::distance;
+    use gcs_core::brep::boolean::{arrangement_given,Given};
+    use gcs_core::brep::geom::{Curve,Frame,Surface};
+    use gcs_core::brep::topo::{Coedge,EdgeCurve,Face,Pcurve};
+    let mut sheet = Brep::default();
+    // a square standing on its foot, the line through the origin along `d`, up to `z = 1`
+    let mut stand = |d: [f64;3],normal: [f64;3]| -> (Surface,Curve) {
+        let foot = Curve::Line {p:[0.;3],d};
+        let corners = [[-1.,0.],[1.,0.],[1.,1.],[-1.,1.]];
+        let at = |[s,z]: [f64;2]| [d[0]*s,d[1]*s,z];
+        let vs: Vec<u32> = corners.iter().map(|&c| sheet.vertex(at(c))).collect();
+        let mut lp = Vec::new();
+        for i in 0..4 {
+            let (a,b) = (corners[i],corners[(i+1)%4]);
+            let (pa,pb) = (at(a),at(b));
+            let (curve,t) = if i == 0 { (foot.clone(),[-1.,1.]) }
+                else { (Curve::Line {p:pa,d:[pb[0]-pa[0],pb[1]-pa[1],pb[2]-pa[2]]},[0.,1.]) };
+            let edge = sheet.edge(EdgeCurve::Curve(curve),t,[vs[i],vs[(i+1)%4]]);
+            lp.push(Coedge {edge,reversed:false,pcurve:Pcurve::Line {a,b}});
+        }
+        let plane = Surface::Plane(Frame::new([0.;3],normal,d));
+        sheet.faces.push(Face {surface:plane.clone(),reversed:false,loops:vec![lp],name:String::new()});
+        (plane,foot)
+    };
+    let (px,fx) = stand([1.,0.,0.],[0.,-1.,0.]);
+    let (py,fy) = stand([0.,1.,0.],[1.,0.,0.]);
+    let below = block([-1.,-1.,-1.],[1.,1.,0.]);
+    let top = below.faces.iter().map(|f| &f.surface)
+        .find(|s| matches!(s,Surface::Plane(_)) && [[0.,0.,0.],[0.5,0.5,0.]].iter().all(|&p| s.implicit(p).abs() < 1e-12))
+        .expect("the block's top z = 0").clone();
+    let given = [Given {surfaces:[px,top.clone()],curves:vec![fx.clone()],touches:vec![]},
+        Given {surfaces:[py,top.clone()],curves:vec![fy.clone()],touches:vec![]}];
+    let domain = block([-2.,-2.,-2.],[2.,2.,2.]);
+    let complex = arrangement_given(&domain,&[&sheet,&below],&given,1e-9).expect("arranged");
+    let origin = complex.b.vertices.iter().map(|v| distance(v.p,[0.;3])).fold(f64::INFINITY,f64::min);
+    assert!(origin <= 1e-12,"the feet's crossing a vertex: {origin:e} off");
+    // each foot cut there: two edges of it, meeting at the origin
+    for foot in [&fx,&fy] {
+        let mut halves: Vec<[f64;2]> = complex.b.edges.iter()
+            .filter(|e| matches!(&e.curve,EdgeCurve::Curve(c) if c == foot))
+            .map(|e| [e.t[0].min(e.t[1]),e.t[0].max(e.t[1])]).collect();
+        halves.sort_by(|a,b| a[0].total_cmp(&b[0]));
+        halves.dedup_by(|a,b| (a[0]-b[0]).abs() <= 1e-12 && (a[1]-b[1]).abs() <= 1e-12);
+        assert!(halves.len() == 2 && halves[0][1].abs() <= 1e-12 && halves[1][0].abs() <= 1e-12,
+            "the foot {foot:?} cut at the origin: {halves:?}");
+    }
+    let quarters = complex.b.faces.iter().filter(|f| f.surface == top).count();
+    assert_eq!(quarters,4,"the top parted into four by the feet");
+}
+
+/// **A sheet tangent to a face at the tolerance is ordered round its rim by a step in** (#942, a
+/// kernel gate with no sweep in it): the sheet `z = a x + x²/2` over `x` in `[0, 1.6]`, a quadratic
+/// B-spline, its rim `x = 0` on the plane `z = 0`, the top of a block below it, and that line given
+/// as their meeting. At its rim it leans under the plane by `a = 2e-4` — twice `TANGENT`, past which
+/// a fitted surface's way in was read at first order — and its curvature brings it back across the
+/// plane `2a` along, having stood under it by `a²/2 = 2e-8` at most: at a tolerance of 1e-5 it is
+/// tangent to the plane, and the wedge between them a cell, the region under the sheet. Ordered at
+/// first order, the sheet stood on the block's side of the plane round its rim and the wedge was
+/// one cell with the rest of the space above — as the 80° tumbling torus's sheet, its normal read
+/// 2e-4 off beside a corner of its pieces, was put inside the torus along a short edge of its touch
+/// when the torus's seam crossed the touch there, and three cells were one (brep-bench's
+/// `swept/tumbling-torus` at any spelling but one of its observer's origin).
+#[test]
+fn a_sheet_tangent_to_a_face_at_the_tolerance_is_ordered_round_its_rim_by_a_step_in() {
+    use gcs_core::brep::boolean::{arrangement_given,Given};
+    use gcs_core::brep::geom::{Curve,Surface};
+    use gcs_core::brep::nurbs::Net;
+    let (a,l) = (-2e-4,1.6);
+    let z = |x: f64| a*x+0.5*x*x;
+    // (a quadratic over [0, l] exactly: its middle pole where the tangents at its ends meet)
+    let column = |y: f64| vec![[0.,y,0.],[0.5*l,y,0.5*l*a],[l,y,z(l)]];
+    let net = Net {du:2,dv:1,uknots:vec![0.,0.,0.,1.,1.,1.],vknots:vec![0.,0.,1.,1.],
+        poles:(0..3).map(|i| vec![column(-2.)[i],column(2.)[i]]).collect(),weights:None};
+    let sheet = gcs_core::brep::build::sheet(net).unwrap();
+    let below = block([-2.,-2.,-2.],[2.,2.,0.]);
+    let top = below.faces.iter().map(|f| &f.surface)
+        .find(|s| matches!(s,Surface::Plane(_)) && [[0.,0.,0.],[1.,1.,0.]].iter().all(|&p| s.implicit(p).abs() < 1e-12))
+        .expect("the block's face z = 0").clone();
+    let rim = Curve::Line {p:[0.;3],d:[0.,1.,0.]};
+    let given = Given {surfaces:[top,sheet.faces[0].surface.clone()],curves:vec![rim],touches:vec![]};
+    let domain = block([-1.;3],[1.;3]);
+    let complex = arrangement_given(&domain,&[&below,&sheet],&[given],1e-5).expect("arranged");
+    // the wedge under the sheet over 0 ≤ x ≤ 1, |y| ≤ 1: 2 (1/6 + a/2)
+    let wedge = 2.*(1./6.+0.5*a);
+    let v = volumes(&complex);
+    assert_eq!(v.len(),3,"the block's half, the wedge under the sheet and the rest: {v:?}");
+    for (got,want) in v.iter().zip([wedge,4.-wedge,4.]) { close(*got,want,1e-6) }
+}
+
+/// **An edge leaving a point its face's meeting with another passes through is read there by
+/// construction** (#942, the ring's ends kept; a kernel gate with no sweep in it): the sheet
+/// `(u + v² + k v³, v, u + k v³)` lies in `z = x − y²`, which meets the plane `z = 0` in the parabola
+/// `x = y²`, given; its edge `u = 0` leaves the parabola's point at the origin and stands off the
+/// plane by `k v³` alone — within the meeting's reach of it (`ON_CURVE` tolerances) for a run of
+/// 0.04 of its length. Read against the plane, that run is the touch at the end, and the rest of the
+/// edge is searched past it: the edge meets the plane at its end alone, laid whole, and the plane
+/// parts the box in two with the sheet left in one of them.
+#[test]
+fn an_edge_leaving_a_point_of_a_given_meeting_and_hugging_the_face_is_read_at_its_end() {
+    use gcs_core::brep::boolean::{arrangement_given,Given};
+    use gcs_core::brep::geom::Curve;
+    use gcs_core::brep::nurbs::{BSpline,Net};
+    use gcs_core::brep::topo::EdgeCurve;
+    let (k,c) = (1e-5,0.5);
+    // (the cubic's Bernstein poles in `v`, linear in `u`)
+    let column = |u: f64| -> Vec<[f64;3]> { vec![[u,0.,u],[u,1./3.,u],[u+1./3.,2./3.,u+c/3.],[u+1.+k,1.,u+k+c]] };
+    let net = Net {du:1,dv:3,uknots:vec![0.,0.,1.,1.],vknots:vec![0.,0.,0.,0.,1.,1.,1.,1.],poles:vec![column(0.),column(1.)],weights:None};
+    let rim = net.row(0);
+    let sheet = gcs_core::brep::build::sheet(net).unwrap();
+    // (`z = c y²` over `y` in [−1, 2], quadratic in `y`)
+    let face = gcs_core::brep::build::sheet(Net {du:1,dv:2,uknots:vec![0.,0.,1.,1.],vknots:vec![0.,0.,0.,1.,1.,1.],
+        poles:vec![vec![[-1.,-1.,c],[-1.,0.5,-2.*c],[-1.,2.,4.*c]],vec![[2.,-1.,c],[2.,0.5,-2.*c],[2.,2.,4.*c]]],weights:None}).unwrap();
+    let (a,b) = (-1.,1.4);
+    let parabola = Curve::BSpline(std::sync::Arc::new(BSpline::new(2,vec![0.,0.,0.,1.,1.,1.],
+        vec![[a*a,a,c*a*a],[a*b,0.5*(a+b),c*a*b],[b*b,b,c*b*b]]).unwrap()));
+    let given = Given {surfaces:[face.faces[0].surface.clone(),sheet.faces[0].surface.clone()],curves:vec![parabola],touches:Vec::new()};
+    let domain = block([-0.5,-0.5,-0.5],[1.5,1.2,1.5]);
+    let complex = arrangement_given(&domain,&[&face,&sheet],&[given],1e-7).expect("arranged");
+    // the rim laid whole, from the origin out, cut nowhere along it
+    let laid: Vec<[f64;2]> = complex.b.edges.iter().filter_map(|e| match &e.curve {
+        EdgeCurve::Curve(Curve::BSpline(c)) if **c == rim => Some(e.t),
+        _ => None,
+    }).collect();
+    assert_eq!(laid.len(),1,"the rim laid as {laid:?}");
+    assert!(laid[0][0].abs() < 1e-12 && (laid[0][1]-1.).abs() < 1e-12,"{laid:?}");
+    assert_eq!(complex.cells().unwrap().len(),3);
+}

@@ -1969,6 +1969,40 @@ fn a_picture_of_a_solid_not_built_says_so() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// **A measure of a stand-in says so, first** (#996): `--where` asked of a solid whose exact build
+/// is refused measures its material field's surface, which takes the run's time; the refusal is
+/// said before that refinement starts — ahead of the measures, on one stream — and `--timings`
+/// gives the time to the stand-in, not to a build: `meshed block from its material field, its
+/// exact build refused`.  A block whose shell is too thick for it is refused by rule at once.
+#[test]
+fn a_measure_of_a_solid_not_built_says_so_before_it_is_measured() {
+    let dir = std::env::temp_dir().join(format!("solventc-where-unbuilt-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("block.sv");
+    std::fs::write(&source, "unit mm\nuse std\nuse std.solids (cut, common)\nuse std.rounds (shell)\n\
+        in std.front {\n  b0 := point\n  b1 := point\n  b2 := point\n  b3 := point\n\
+        \x20 fix((0, 0)) b0\n  fix((40, 0)) b1\n  fix((40, 24)) b2\n  fix((0, 24)) b3\n\
+        \x20 (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> \
+        (west := line(b3, b0)) -> close\n  outline := face(south, east, north, west)\n}\n\
+        block := solid(std.solids.Prism(outline, from: -12mm, to: 0))\nshell(t: 7mm) block\n").unwrap();
+    // both streams into one file, in the order written
+    let said = dir.join("said.txt");
+    let file = std::fs::File::create(&said).unwrap();
+    let status = Command::new(env!("CARGO_BIN_EXE_solventc"))
+        .args([source.to_str().unwrap(), "--no-check", "--no-progress", "--where", "block.volume", "--timings"])
+        .stdout(file.try_clone().unwrap()).stderr(file).status().expect("solventc runs");
+    let text = std::fs::read_to_string(&said).unwrap();
+    assert_eq!(status.code(), Some(0), "{text}");
+    let ahead = text.find("solventc: --where: `block` is drawn from its material field, not built: ")
+        .unwrap_or_else(|| panic!("the stand-in said: {text}"));
+    assert!(text[ahead..].contains("no longer than twice the thickness"), "and why: {text}");
+    let measured = text.find("  block.volume = ").unwrap_or_else(|| panic!("measured: {text}"));
+    assert!(ahead < measured, "said before it is measured: {text}");
+    assert_eq!(text.matches("is drawn from its material field").count(), 1, "said once: {text}");
+    assert!(text.contains("meshed block from its material field, its exact build refused"), "{text}");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 /// A post 14 high on a D — an arc of radius 5 closed by a chord — whose arc's rim is rounded to
 /// the post's own radius under a lid tilted 20° (`tilted`): the kernel refuses it (the ball stands
 /// still on a stretch of a loop the D's flat cuts across, #961's refusal).  Else `bracket.sv` with

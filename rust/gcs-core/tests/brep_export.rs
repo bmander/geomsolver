@@ -540,3 +540,240 @@ fn a_groin_vault_is_built_exactly() {
     let stl = export::stl(&sk,vault,&exact,None,&say).unwrap();
     gcs_core::mesh::stl_shells(&stl).unwrap();
 }
+
+/// A quarter-turn-style elbow's document: a section of radius `r` about a point `bend` from the
+/// bend axis (the line x = 0, z = `bend`, along y), clipped by a chord on the axis where it reaches
+/// it (`r > bend`, a spindle torus; one arc of 308° at r 20), or whole; turned `turn` degrees; a
+/// leg of radius 20 standing up from where the turn starts and one running on from where it ends,
+/// tangent to it there as a pipe's are. `two` splits the arc at its far point; `ends` places the
+/// arc's ends by hand, with no radius said (the turn's tube then as wide as they put it); `order`
+/// the body's first solid and the two joined to it. `legs` is the two legs alone.
+fn elbow(r: f64,bend: f64,turn: f64,two: bool,ends: Option<f64>,order: [&str;3]) -> String {
+    let h = (r*r-bend*bend).max(0.).sqrt();
+    let section = if r <= bend {
+        format!("  a0 := circle(center: c) hint(r: {r})\n  radius({r}mm) a0\n  prof := face(a0)\n")
+    } else {
+        let y = ends.unwrap_or(h);
+        let mut s = format!("  s := point hint((0, {y}))\n  fix(x == 0mm) s\n  e := point hint((0, {}))\n  fix(x == 0mm) e\n",-y);
+        if ends.is_some() { s += &format!("  fix(y == {y}mm) s\n  fix(y == {}mm) e\n",-y); }
+        if two {
+            s += &format!("  f := point\n  fix(({}, 0)) f\n  a0 := arc(center: c, start: s, end: f)\n  a1 := arc(center: c, start: f, end: e)\n",-bend-r);
+            s += "  ch := line(e, s)\n  prof := face(a0, a1, ch)\n";
+        } else {
+            s += "  a0 := arc(center: c, start: s, end: e)\n";
+            if ends.is_none() { s += &format!("  radius({r}mm) a0\n"); }
+            s += "  ch := line(e, s)\n  prof := face(a0, ch)\n";
+        }
+        s
+    };
+    format!("unit mm\nuse std\nuse std.solids\nuse std.solids (union)\n\
+        bend := plane\nfix(origin == (0mm, 0mm, {bend}mm)) bend\nfix(dir == (1, 0, 0)) bend.u\nfix(dir == (0, 1, 0)) bend.v\n\
+        in bend {{\n  c := point\n  fix(({nb}, 0)) c\n{section}  ax0 := point\n  ax1 := point\n  fix((0, 10)) ax0\n  fix((0, -10)) ax1\n  axis_l := line(ax0, ax1)\n}}\n\
+        elbow := solid(std.solids.Revolution(prof, about: axis_l, from: 0deg, to: {turn}deg))\n\
+        in std.top {{\n  vc := point\n  fix(({nb}, 0)) vc\n  v := circle(center: vc) hint(r: 20)\n  radius(20mm) v\n}}\n\
+        leg_v := solid(std.solids.Prism(face(v), from: {bend}mm, to: {top}mm))\n\
+        out := plane\nfix(origin == (0mm, 0mm, {bend}mm)) out\nfix(dir == (-cos({turn}deg), 0, -sin({turn}deg))) out.u\nfix(dir == (0, 1, 0)) out.v\n\
+        in out {{\n  hc := point\n  fix(({bend}, 0)) hc\n  h := circle(center: hc) hint(r: 20)\n  radius(20mm) h\n}}\n\
+        leg_h := solid(std.solids.Prism(face(h), from: 0mm, to: 40mm))\n\
+        body := solid({})\n{} union body\n{} union body\nlegs := solid(leg_v)\nleg_h union legs\n",
+        order[0],order[1],order[2],nb = -bend,top = bend+42.)
+}
+
+/// **A swept elbow joins its straight legs at their tangent seams** (#996): a section turned about
+/// an axis and two cylinders of its radius whose ends meet the turn's ends tangentially, as a
+/// pipe's do — a ring torus's section whole (r 15 at 18), a horn's touching the axis (r 18), and a
+/// spindle's clipped by a chord on the axis (r 18.3, 20 and 25 at 18: one arc of up to 308°, its
+/// faces reaching the axis at the turn's poles), turned 45°, 90° and 135°, the legs joined either
+/// way round or the elbow first. The body is the turn's volume by Pappus — the clipped disc's
+/// moment about the axis times the angle, in closed form — and the two legs' union, the turn
+/// standing beside both: the same written as one arc or as two split at its far point, valid
+/// each time. A turn's caps stand in planes through its axis, which meet its torus in its
+/// meridians in closed form (the two-arc build took 3.3 s, tracing them), and a cell of the
+/// search beside a spindle's lemon is clear of the face (`ssi::disc_reach`). A tube a thousandth
+/// wider than its legs (the arc's ends placed, no radius said) leaves a crescent of its cap 308°
+/// long and a thousandth wide, whose loop's area settles its sense (`Brep::loop_area`).
+#[test]
+fn a_swept_elbow_joins_its_legs_at_their_tangent_seams() {
+    let vh = ["leg_v","elbow","leg_h"];
+    let cases: Vec<(f64,f64,bool,Option<f64>,[&str;3])> = vec![
+        (20.,90.,false,None,vh),(20.,90.,true,None,vh),
+        (20.,90.,false,None,["leg_h","elbow","leg_v"]),(20.,90.,false,None,["elbow","leg_v","leg_h"]),
+        (20.,45.,false,None,vh),(20.,135.,false,None,vh),(20.,135.,true,None,vh),
+        (15.,90.,false,None,vh),(18.,90.,false,None,vh),(18.3,90.,false,None,vh),(25.,90.,false,None,vh),
+        (20.,90.,false,Some(8.72),vh),
+    ];
+    let mut one_and_two: Vec<((f64,f64),f64)> = Vec::new();
+    for (r,turn,two,ends,order) in cases {
+        let what = format!("r {r}, {turn}°, {}, ends {ends:?}, {order:?}",if two { "two arcs" } else { "one arc" });
+        let (e,sk) = crate::common::read_solved(&elbow(r,18.,turn,two,ends,order));
+        let (body,legs) = (exact_named(&e,&sk,"body",&what),exact_named(&e,&sk,"legs",&what));
+        body.check(1e-6).unwrap_or_else(|why| panic!("{what}: {why:?}"));
+        let tube = ends.map_or(r,|y| (18f64*18.+y*y).sqrt());
+        let want = turn.to_radians()*moment(tube,18.)+props::volume(&legs);
+        let got = props::volume(&body);
+        assert!((got-want).abs() <= 1e-8*want,"{what}: {got} against {want} ({:e})",(got-want)/want);
+        if ends.is_none() && order == vh { one_and_two.push(((r,turn),got)); }
+    }
+    for w in one_and_two.windows(2).filter(|w| w[0].0 == w[1].0) {
+        assert!((w[0].1-w[1].1).abs() <= 1e-9*w[0].1,"{:?}: one arc {} against two {}",w[0].0,w[0].1,w[1].1);
+    }
+}
+
+/// The elbow of `elbow` with its tube `20 + δ` (the arc's ends placed where that tube crosses the
+/// axis) — or, `hinted`, the issue's own document, its ends' hints alone saying where — its legs of
+/// radius `legs`, and `extra` statements after.
+fn near_miss(delta: f64,hinted: bool,legs: f64,extra: &str) -> String {
+    let tube = 20.+delta;
+    let ends = if hinted { 8.7178 } else { (tube*tube-18.*18.).sqrt() };
+    let src = elbow(20.,18.,90.,false,Some(ends),["leg_v","elbow","leg_h"])
+        .replace("use std.solids (union)","use std.solids (union, cut)")
+        .replace("radius(20mm) v",&format!("radius({legs}mm) v")).replace("radius(20mm) h",&format!("radius({legs}mm) h"));
+    let src = if hinted {
+        src.lines().filter(|l| !l.trim_start().starts_with("fix(y ==")).collect::<Vec<_>>().join("\n")+"\n"
+    } else { src };
+    src+extra
+}
+
+/// The solid `name` of `src` built exactly, checked valid, and its volume and the tolerance's band
+/// over its boundary (`geom::tolerance`, a part in 10⁹ of its size, times its area).
+fn built_near_miss(src: &str,name: &str,what: &str) -> (f64,f64) {
+    let (e,sk) = crate::common::read_solved(src);
+    let solid = exact_named(&e,&sk,name,what);
+    solid.check(1e-6).unwrap_or_else(|why| panic!("{what}: {name}: {why:?}"));
+    let area: f64 = solid.faces.iter().map(|f| props::area(&solid,f)).sum();
+    (props::volume(&solid),gcs_core::brep::geom::tolerance(solid.size())*area)
+}
+
+/// The near-misses a sweep reads: by decades from 1e-8 to a hundredth, and two, three, five and
+/// seven of each of the decades where the tolerance's readings once parted (1e-8 to 1e-6), either
+/// way.
+fn near_misses() -> Vec<f64> {
+    let mut out: Vec<f64> = (-8..=-2).map(|k| 10f64.powi(k)).collect();
+    for k in -8..=-6 { for m in [2.,3.,5.,7.] { out.push(m*10f64.powi(k)); } }
+    out.iter().flat_map(|&d| [d,-d]).collect()
+}
+
+/// The turn's volume by Pappus: the moment about the axis of the disc of radius `r` about 18 from
+/// it, clipped where it crosses the axis, times a quarter turn.
+fn turn_volume(r: f64) -> f64 { std::f64::consts::PI/2.*moment(r,18.) }
+
+/// The moment about the axis of the disc of radius `r` about `bend` from it, on its side and
+/// clipped where it crosses the axis: `∫ ρ · 2√(r² − (ρ − bend)²) dρ` over `ρ ≥ 0` — a turn's
+/// volume per radian by Pappus.
+fn moment(r: f64,bend: f64) -> f64 {
+    if r <= bend { return std::f64::consts::PI*r*r*bend }
+    let f = |t: f64| bend*(t*(r*r-t*t).sqrt()+r*r*(t/r).asin())-2./3.*(r*r-t*t).powf(1.5);
+    f(r)-f(-bend)
+}
+
+/// The solid the document calls `name` built exactly at the export's own tolerance, or the test
+/// fails saying `what` and what the build said.
+fn exact_named(e: &gcs_core::program::Elaborated,sk: &Sketch,name: &str,what: &str) -> gcs_core::brep::topo::Brep {
+    let (out,said) = saying(|say| export::exact(sk,fixtures::solid(e,name),None,None,say));
+    out.unwrap_or_else(|why| panic!("{what}: {name}: {why:?}\n{said}")).solid
+}
+
+/// **A turn a near-miss wider or narrower than its legs is the tangent turn, or built with its
+/// step** (#996): the elbow's tube drawn `20 ± δ` against legs of 20, over `near_misses`, and the
+/// issue's own document (its arc's radius stated by no dimension, its ends' hints putting the tube
+/// 9.2e-7 over the legs). Within a part in a million of the solid's size (`flush::FLUSH` of the
+/// Boolean's tolerance) a leg is moved onto the turn's tube where it stands on it
+/// (`flush::tubes_flushed`), and the solid is the tangent turn and its legs at the tube's radius —
+/// the same solid drawn so, to the tolerance's band; past it the leg stays as drawn and the step is
+/// built: the turn's volume by Pappus and the legs' own union. Each valid. Between a tolerance and a
+/// thousandth the arrangement's readings of the seam had parted, and one near-miss in three was
+/// refused, or (at 1e-7) built 2.6 times too large. At 1e-4, at the reach, either may be read.
+#[test]
+fn a_turn_a_near_miss_off_its_legs_is_the_tangent_turn_or_built_with_its_step() {
+    let mut cases: Vec<(f64,bool)> = near_misses().into_iter().map(|d| (d,false)).collect();
+    cases.push(((18f64*18.+8.7178*8.7178).sqrt()-20.,true));
+    for (delta,hinted) in cases {
+        let what = format!("δ {delta:e}{}",if hinted { ", the issue's document" } else { "" });
+        let tube = 20.+delta;
+        let (got,band) = built_near_miss(&near_miss(delta,hinted,20.,""),"body",&what);
+        // the tangent turn at the tube's radius, its legs drawn so, and its own closed form
+        let tangent = near_miss(delta,hinted,tube,"");
+        let (moved,_) = built_near_miss(&tangent,"body",&what);
+        let (legs_moved,_) = built_near_miss(&tangent,"legs",&what);
+        assert!((moved-turn_volume(tube)-legs_moved).abs() <= band,"{what}: the tangent turn {moved}");
+        let (legs,_) = built_near_miss(&near_miss(delta,hinted,20.,""),"legs",&what);
+        let stepped = turn_volume(tube)+legs;
+        let near = |w: f64| (got-w).abs() <= band;
+        if delta.abs() < 1e-4 { assert!(near(moved),"{what}: {got} against the tangent turn's {moved}") }
+        else if delta.abs() > 1e-4 { assert!(near(stepped),"{what}: {got} against the step's {stepped}") }
+        else { assert!(got >= moved.min(stepped)-band && got <= moved.max(stepped)+band,"{what}: {got}") }
+    }
+}
+
+/// **…and so it is with a solid joined or cut through the turn's poles, or across its bend**
+/// (#996): an axle along the bend axis joined through both poles, a slab cut along a plane through
+/// the axis at 45°, and a bore across the bend, over `near_misses`: a valid solid whose volume is
+/// the same statements' over the tangent turn at the tube's radius within a part in a million (the
+/// legs moved onto it), and past that off the tangent turn's by no more than the step the tube adds.
+/// The fixture's own refusal ("loop 0 breaks in parameters" at a pole, its collapsed parameter
+/// half a turn round) was the slab's at 1e-8 and the turn's alone at −1e-7; "a shell of the
+/// arrangement is kept on one side … and dropped on another" any Boolean's on the issue's
+/// document after the two legs.
+#[test]
+fn a_solid_through_a_near_miss_turns_poles_is_built() {
+    let axle = "in std.front {\n  ac := point\n  fix((0, 18)) ac\n  ak := circle(center: ac) hint(r: 3)\n  \
+        radius(3mm) ak\n}\naxle := solid(std.solids.Prism(face(ak), from: -30mm, to: 30mm))\naxle union body\n";
+    let slab = "wp := plane\nfix(origin == (0mm, 0mm, 18mm)) wp\nfix(dir == (-cos(45deg), 0, -sin(45deg))) wp.u\n\
+        fix(dir == (0, 1, 0)) wp.v\nin wp {\n  w0 := point\n  w1 := point\n  w2 := point\n  w3 := point\n  \
+        fix((-5, -30)) w0\n  fix((60, -30)) w1\n  fix((60, 30)) w2\n  fix((-5, 30)) w3\n  wl0 := line(w0, w1)\n  \
+        wl1 := line(w1, w2)\n  wl2 := line(w2, w3)\n  wl3 := line(w3, w0)\n}\n\
+        slab := solid(std.solids.Prism(face(wl0, wl1, wl2, wl3), from: 0mm, to: 70mm))\nslab cut body\n";
+    let bore = "in std.front {\n  bc := point\n  fix((-12, 6)) bc\n  b := circle(center: bc) hint(r: 5)\n  \
+        radius(5mm) b\n}\nbore := solid(std.solids.Prism(face(b), from: -60mm, to: 60mm))\nbore cut body\n";
+    for extra in [axle,slab,bore] {
+        let (tangent,_) = built_near_miss(&near_miss(0.,false,20.,extra),"body","δ 0");
+        let mut cases: Vec<(f64,bool)> = near_misses().into_iter().map(|d| (d,false)).collect();
+        cases.push(((18f64*18.+8.7178*8.7178).sqrt()-20.,true));
+        for (delta,hinted) in cases {
+            let what = format!("δ {delta:e}{}: {}",if hinted { ", the issue's document" } else { "" },extra.lines().last().unwrap());
+            let (v,band) = built_near_miss(&near_miss(delta,hinted,20.,extra),"body",&what);
+            if delta.abs() < 1e-4 {
+                let (moved,_) = built_near_miss(&near_miss(delta,hinted,20.+delta,extra),"body",&what);
+                assert!((v-moved).abs() <= band,"{what}: {v} against the tangent turn's {moved}");
+            } else {
+                let step = (turn_volume(20.+delta)-turn_volume(20.)).abs();
+                assert!((v-tangent).abs() <= step+band,"{what}: {v} against the tangent turn's {tangent}");
+            }
+        }
+    }
+}
+
+/// **The fixture's shape: the issue's elbow cored by a bent passage, a flange at each end** (#996,
+/// CADGenBench fixture 104, "a bent Ø34 passage over a web"): the issue's document as written, a
+/// square flange 60 × 60 × 6 joined at each leg's end, and cut by a passage of radius 17 that
+/// follows the bend — a quarter turn of a circle about the same axis and two straight runs out
+/// through the flanges. Its volume is the tangent turn's and its legs' at the tube's radius (the
+/// legs moved onto it, `flush::tubes_flushed`), the flanges', less the passage's by Pappus and its
+/// runs' through the solid: closed forms all but the legs' union, which the kernel builds alone.
+#[test]
+fn the_fixtures_elbow_cored_and_flanged_is_built() {
+    use std::f64::consts::PI;
+    let flanges_and_passage = "\
+in std.top {\n  f0 := point\n  f1 := point\n  f2 := point\n  f3 := point\n  fix((-48, -30)) f0\n  fix((12, -30)) f1\n  \
+fix((12, 30)) f2\n  fix((-48, 30)) f3\n  fa := line(f0, f1)\n  fb := line(f1, f2)\n  fc := line(f2, f3)\n  fd := line(f3, f0)\n}\n\
+top_flange := solid(std.solids.Prism(face(fa, fb, fc, fd), from: 60mm, to: 66mm))\n\
+out_flange := plane\nfix(origin == (40mm, 0mm, 0mm)) out_flange\nfix(dir == (0, 1, 0)) out_flange.u\nfix(dir == (0, 0, 1)) out_flange.v\n\
+in out_flange {\n  g0 := point\n  g1 := point\n  g2 := point\n  g3 := point\n  fix((-30, -30)) g0\n  fix((30, -30)) g1\n  \
+fix((30, 30)) g2\n  fix((-30, 30)) g3\n  ga := line(g0, g1)\n  gb := line(g1, g2)\n  gc := line(g2, g3)\n  gd := line(g3, g0)\n}\n\
+side_flange := solid(std.solids.Prism(face(ga, gb, gc, gd), from: 0mm, to: 6mm))\n\
+in bend {\n  pc := point\n  fix((-18, 0)) pc\n  pk := circle(center: pc) hint(r: 17)\n  radius(17mm) pk\n}\n\
+core_turn := solid(std.solids.Revolution(face(pk), about: axis_l, from: 0deg, to: 90deg))\n\
+in std.top {\n  pvc := point\n  fix((-18, 0)) pvc\n  pv := circle(center: pvc) hint(r: 17)\n  radius(17mm) pv\n}\n\
+core_v := solid(std.solids.Prism(face(pv), from: 18mm, to: 80mm))\n\
+in out {\n  phc := point\n  fix((18, 0)) phc\n  ph := circle(center: phc) hint(r: 17)\n  radius(17mm) ph\n}\n\
+core_h := solid(std.solids.Prism(face(ph), from: 0mm, to: 60mm))\n\
+top_flange union body\nside_flange union body\ncore_turn cut body\ncore_v cut body\ncore_h cut body\n";
+    let delta = (18f64*18.+8.7178*8.7178).sqrt()-20.;
+    let tube = 20.+delta;
+    let (v,band) = built_near_miss(&near_miss(delta,true,20.,flanges_and_passage),"body","the fixture");
+    let (legs,_) = built_near_miss(&near_miss(delta,true,tube,""),"legs","the legs at the tube's radius");
+    let r2 = 17f64*17.;
+    let passage = PI*PI/2.*r2*18.+PI*r2*(48.+46.);
+    let want = turn_volume(tube)+legs+2.*60.*60.*6.-passage;
+    assert!((v-want).abs() <= band,"the fixture: {v} against {want} ({:e}, the band {band:e})",v-want);
+}

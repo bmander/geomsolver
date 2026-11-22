@@ -48,6 +48,7 @@ pub mod offset;
 pub mod turned;
 pub mod slid;
 pub mod trochoid;
+pub mod zero_set;
 
 use std::sync::OnceLock;
 
