@@ -251,18 +251,33 @@ as the standard has them and mends nothing) and the shell's edge uses are the ev
 it silently is evidence the file is defective, not that it is sound: its translation turns a loop,
 raises a tolerance and orders a wire with healing off.
 
-At the account's starting commit (fcfa6597) 144 rows were not read right; with CADGenBench 211
-(an unchecked face) the account has 145: 59 `defective` (a loop's sense against its neighbours or
-its face 20; open shells, edges used otherwise than once each way and a non-manifold edge 18; edges
-past `LOOSE` off their faces 11; loops not closed by vertex identity 7 — four of them OCCT's own
-rewrites of a file that reads; a hole crossing its outer bound and a loop crossing itself 2; a
-real written `NaN` 1), 52 `gap`, 4 `assembly`, 17 `nosolid`, 2 `open`, 7 `reference` (the Utah
-teapot, and CADGenBench 211 and 250, whose OCCT-alone faces a third reader has since checked) and 4
-`bar`. Of the 12 `disputed` rows 10 are
-`defective` (OCCT turns a loop the file runs the wrong way, or reaches the closed forms by raising
-its tolerances past the file's slack, and the measurer reads the file as written to another or no
-solid) and 2 are settled for OCCT, whose readings are the closed forms (brepkit's ellipsoid, OCCT's
-torus-grown-past-its-hole: the measurer misreads both), and so are the reader's gaps.
+On the reader as merged at 10a65d6b the account has 103 rows: 63 `defective`, 8 `gap`, 1
+`open`, 4 `assembly`, 17 `nosolid`, 7 `reference` (the Utah teapot's five, CADGenBench 211 and
+250), 3 `bar` (CADGenBench 212, brepkit's saddle-drum-bored and helical-pipe-round-ends, each read
+within what its file determines). The defects: a loop's sense against its neighbours or its face
+20; open shells, edges used otherwise than once each way and a non-manifold edge 18; edges past
+`LOOSE` off their faces 11; loops not closed by vertex identity 7 (four of them OCCT's own
+rewrites of a file that reads); bounds that cross or overlap 4 (brepkit's l-block open at its
+step, whose hole crosses its outer bound, and kentron's three hemispheres shelled outward, whose
+two bounds share an arc of one meridian and end at the pole at two vertices); a face that covers
+itself 2 (OCCT's oblate spheroid, a whole ellipse turned a whole turn and bounded by a vertex
+alone, which covers the spheroid twice facing both ways, its flux nought; springrep's ring pushed
+in past its fold, whose face crosses its extrusion's self-intersection); a real written `NaN` 1.
+
+The `gap`s: OCCT's lemon and spindle torus (one face on the whole surface of a circle turned
+across its axis, the apple and the lemon touching at the poles, which bounds the apple less the
+lemon: its own flux, ±1480.44066, is OCCT's reading) and brepkit's torus grown past its hole (the
+same for a torus, 1973.92088, OCCT's; the measurer reads the apple alone, so the account sets it
+aside: the fifth column `occt`); vcad's block-ridge and slab-half-round (a plane face of no area,
+its loop out along 24 edges and back, joined to the shell by two point edges: it moves no
+measure); benchy; and two files read wrong in the kernel's integration of a face (springrep's
+drum-leaning-across-a-turn #1969 and #2012, OCCT's frustum-screwed-across-ring-sector #1519), where
+OCCT, the measurer and `face_quadrature` by either representation of the edges agree. Of the 145
+rows of the first account (on fcfa6597), 42 files now read right and were dropped: CADGenBench
+217 among them, the `defective` its row said resting on OCCT's `SelfIntersectingWire`, which
+`BRepCheck_Wire::SelfIntersect` shows to be two edges of WIRE #2588 meeting 1.27e-3 mm apart at
+vertex #2591, inside its tolerance 0.0123 and the file's 0.01: a touch within tolerance, the
+reading right with all 364 faces within their bars of both readers.
 
 ## A third reader
 
@@ -285,7 +300,10 @@ whole faces corrected, 52.22639 on the four writers at 1e-7 (next.BREP's 52.2263
 1.03e-7). A face whose one reference is OCCT's alone and in question is `unchecked` until a third
 reader's table holds it; CADGenBench 250's extrusion #21919 (OCCT 1127.33, the kernel 1136.4567,
 the quadrature over the file's own boundary 1136.4566796) and 211's #72139 (OCCT 944.6, the
-quadrature 963.7494) now are, and OCCT's areas of them are set aside. A third reader's faces
+quadrature 963.7494) now are, and OCCT's areas of them are set aside. (`face_quadrature`'s
+"pcurves off their edges" took the nearest of 20,000 samples of the curve in space unrefined
+until 6568eb8a; fixed, 250 #21919 measures 1136.4566795 again, and 211 #72139 963.76 ± 0.11 at
+its default resolution, 963.74963 ± 1.4e-3 at four times it, the table's 963.74945 within that.) A third reader's faces
 correct a row's area and tighten no bar (211 keeps its 8.5e-4).
 
 The 11 face tables of OCCT's the faces agent found OCCT's reading no longer reproduces (kentron's
