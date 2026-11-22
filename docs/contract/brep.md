@@ -1583,3 +1583,123 @@ halves, a void, faces a hair apart, a face missing, four faces along an edge) an
 two discs, every circle begun at another angle and one run at another pace, so each is cut at the
 other's vertex and the dropped halves inverted onto a net and onto the cylinder across its seam)
 are the gate.
+
+## Reading STEP (#993 stage 1)
+
+`step_read::read(text)` gives the manifold solids a STEP file holds, each a `Brep` with the file's
+entity for every face, edge and vertex (`Given`), or a `Refusal {why, entity, msg}` naming the
+entity at fault: **read correctly or refused, never read wrong.** `step_read::reading` gives the
+solids and what the file holds beside them. OCCT is the oracle in tests only.
+
+**A STEP file's syntax is read as Part 21 means it, whatever the cores** (`step_file`). What
+writers write is read: a byte-order mark, comments wherever a token may stand, every kind of line
+end, entities several to a line or one over many, strings holding a statement's punctuation, every
+form of real that has one meaning, typed parameters and user keywords, and the header (`Header`,
+with its schemas' names). The data section is cut into runs at `;`…`#` and each run must parse
+exactly to its end, so a cut inside a string or a comment cannot pass unseen; where any run fails
+the section is parsed again from its start on one core, and that answer, entities or error, is the
+answer. Every error names the instance it is in where there is one, and the line and byte where it
+stopped. What is not read (a SCOPE, a second DATA section, edition 3's sections) is said to be
+unsupported, not malformed. **The parser follows no structure past its bounds**: a list nested
+deeper than `step_file::DEPTH` (64) is refused as malformed — following it would overflow the
+stack, an abort no `catch_unwind` reaches and which stops wasm — so any bytes the reader is given
+return, a refusal or solids. Gates: `step_file::syntax_as_writers_write_it`,
+`line_ends_of_every_kind`, `reals_as_the_grammar_writes_them`, `strings_decode_as_names`,
+`errors_say_where`, `answer_independent_of_runs`, `no_panic_under_fuzz`;
+`step_mutants::syntax_never_panics` (a written file truncated at every 97th byte, 300 seeded
+single-byte substitutions, its lines shuffled, a list nested 100,000 deep, each within 5 s).
+
+**A file's schema, units and uncertainty are read, never assumed** (`step_read::context`). A file
+is read under AP203, AP214 or AP242, named by its FILE_SCHEMA; any other schema is refused naming
+it, because an entity means what its schema says. A unit of length or plane angle is an SI unit
+under any prefix, or a conversion-based unit followed through its factors down to SI, never read
+by its name; a unit that cannot be resolved is refused naming the unit. Every length read is in
+millimetres and every angle in radians. The uncertainty is the context's stated distance accuracy,
+in the unit its own measure names, absent where the file states none: it is reported
+(`Context::uncertainty`), and no check is widened by it. Gates: `step_file::header_and_schema`,
+`units_by_conversion_factor`, `units_unresolved_refused`,
+`step_read::a_files_unit_of_length_scales_what_it_reads`.
+
+**A solid stands in its product's space, and a placed solid is the solid moved.** A solid — a
+MANIFOLD_SOLID_BREP or BREP_WITH_VOIDS — is an item of a representation its product's shape
+definition reaches, and its name is that product's. A representation relationship without a
+transformation shares that space. A mapped item among a representation's items places its map's
+representation by the rigid motion taking the map's origin onto its target; a relationship with an
+item-defined transformation places its first representation in its second. Each axis is read in
+its own representation's units, so a part in inches mapped into a product in millimetres is
+placed, not scaled. The solid is read in its own context and moved exactly (`Brep::moved`). An
+axis placement that is merely an item places nothing (a datum, or the part's frame), and a mapped
+item in a draughting model presents the shape and places nothing. Product structure is refused
+`Unsupported` naming its entity — a usage occurrence, the same representation placed twice,
+solids in two products' shapes, a transformation that is not two axis placements (one that could
+scale or mirror): assemblies are not read from STEP yet. Gates:
+`step_file::solids_found_with_names`, `a_placement_item_places_nothing`, `a_mapped_solid_is_moved`,
+`a_mapped_solid_reads_moved`, `product_structure_refused`.
+
+**What a file holds beside its solids is said, not refused and not hidden**
+(`step_read::reading`, `Beside`): surface models, wireframes, sets of curves, tessellated bodies,
+construction geometry and annotation, each by its entity. `read` is its solids. A file holding no
+solid is refused saying what it holds. Gates: `step_file::beside_the_solid_is_said`,
+`what_is_no_solid_refused`.
+
+**A file's curve or surface is read as the kernel holds the same points, exactly, nothing
+refitted** (`step_read::geometry`). A B-spline's knots are its written ones or those its kind
+implies (uniform, quasi-uniform, piecewise Bézier); knots not clamped are clamped over the domain
+by insertion, and `closed_curve`/`u_closed` are not believed. A parabola's arc is the quadratic
+Bézier over its own parameter and a hyperbola's rational quadratics, each bounded by its edge's
+vertices or its trims. A trimmed curve is its basis, a one-segment composite or an identity
+replica its parent. An offset of a plane, cylinder, cone, sphere or torus is the surface of that
+kind, a spline sheet's is `Surface::Offset`. An extrusion's curve is carried into the plane square
+to its direction (an affine image: the same points). A cone written with a negative radius is the
+cone its formula gives, its origin at the apex (against the standard's `radius >= 0`, read because
+the formula's points and normal are unambiguous for any radius). A placement's reference direction
+left unset is the standard's (`first_proj_axis`: `[1, 0, 0]`, or `[0, 1, 0]` about an axis along
+`±x`). Refused naming the entity: what has no exact form here (an offset curve, a composite of
+several segments, a moved replica, a self-intersecting offset, a line of no length, a conic or
+line whose two halves sweep the same points facing opposite ways where nothing says which), and
+any kind not listed. Gates: `step_kinds::a_b_spline_reads_whatever_says_its_knots`,
+`a_curve_wrapped_is_the_curve_it_wraps`, `a_surface_wrapped_is_the_surface_it_is`,
+`an_offset_of_an_elementary_surface_is_one_of_its_kind`, `a_conic_without_end_is_read_as_its_arc`,
+`a_degenerate_torus_is_its_spindle_torus`,
+`a_placement_without_a_reference_direction_takes_the_standards`.
+
+**A form that waits on its faces is seated on them** (`geometry::Seat`, `Sheet::seated`, called
+once from `topology::solid`). A curve turned off its axis's plane, or a line turned skew to its
+axis, is the exact rational net of its revolution; the net has no period, so its turn starts at
+the file's own seam where a face's seam runs along it, and otherwise runs only over the angles its
+faces take, a quarter of the widest gap past each end (CADGenBench 249 read an edge 217 mm off its
+face where a face crossed the file's `u = 0`). A line meeting its axis is the revolution of the
+half its faces lie on, refused where they lie on both; an open conic in its axis's plane is the
+revolution of its arc bounded by its faces. Gates:
+`step_kinds::a_curve_turned_off_its_axis_plane_is_seated_where_no_face_crosses`,
+`a_line_turned_off_its_axis_plane_sweeps_its_hyperboloid`.
+
+**The corpus says whether a file was read right** (`tests/step_corpus.rs`,
+`scripts/step-corpus/`). Every file of `$STEP_CORPUS` — the 32 CADGenBench inputs, the STEP every
+kernel brep-bench runs here writes for its settled cases, a sample of both written again by OCCT
+under other writers' habits (no pcurves, AP203, AP242, inches), and NIST's public test parts as
+commercial systems exported them — is refused with a witness naming the entity, or read to exactly
+the solids its text holds: each ADVANCED_FACE, EDGE_CURVE and VERTEX_POINT read once
+(`Given.faces`, `edges`, `vertices`; 0 for what the reader lays itself), its volume and area
+within the bar its row of `step_corpus/reference.tsv` states. The reference is the case's closed
+form at the bench's own grade where the file holds the case's solid; otherwise the file read two
+independent ways — OCCT, healing off, its solids only, and only where its adaptive integration has
+converged, and brep-bench's measurer — the bar three times their difference, or, where only one
+reads it, a tenth of the file's largest edge tolerance times its area over its volume. OCCT's own
+measure is no gate where it has not converged (its fixed rule is off by up to 7e-2 on
+CADGenBench). A file that represents no solid must be refused; one the two readers read
+differently may be read either way or refused. `step_corpus::nothing_is_read_wrong` and
+`nothing_panics` hold at every commit; `the_corpus_reads` is the stage's finish line.
+
+**Never wrong on files written wrong** (`tests/step_mutants.rs`, `scripts/step-corpus/mutants.py`).
+Each mutant of the corpus — one edit of a well-formed file: a sense or an orientation flipped, a
+face dropped or listed twice, vertices swapped, a vertex moved, a radius scaled, a direction
+negated, a knot or a weight changed, a pcurve pointed at another surface, the unit or the
+uncertainty changed, a reference retargeted to the wrong type, to nothing, or to itself — is
+refused, or read to OCCT's reading of that same mutant within its row's bar; never read where OCCT
+finds no solid or an inverted one; never a panic; never more than 60 s. Where an edit leaves the
+curves and surfaces whole and only loosens a vertex, the bar is the corpus's own rule at the
+tolerance OCCT's reading ends with, and the unedited solid's measures are accepted too. Gates:
+`step_mutants::no_mutant_is_read_wrong` (over `$STEP_CORPUS/mutants/`),
+`step_mutants::kernel_written_mutants` (333 mutants of six solids the kernel writes, on every
+push).
