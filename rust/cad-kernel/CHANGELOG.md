@@ -19,9 +19,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   never `one`).  Two curves on one surface cross where they come within its reach
   (`query::crossings_in` reads `curve_curve`'s closed forms at `ON_CURVE` tolerances, as it keeps a
   carrier's roots); a vertex on an edge at its end is that end, the two made one
-  (`tolerant::at_end`, new), and the box a vertex is sought on an edge in reaches as far as that
-  rule.  So a plate, a lip and a foot whose pads lie flush in its thickness or abut its edges unite
-  in every order, where some orders were refused ("a plane's pieces do not close", "a piece …
+  (`tolerant::onto_edge` and `tolerant::Onto`, new: the stretch and its ends read from one
+  inverse), and the box a vertex is sought on an edge in reaches as far as that rule.  So a plate,
+  a lip and a foot whose pads lie flush in its thickness or abut its edges unite in every order,
+  where some orders were refused ("a plane's pieces do not close", "a piece …
   touches … along no face", "a shell … kept on one side … and dropped on another") and the rest
   built with a face more or less.
 

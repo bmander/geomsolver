@@ -3033,18 +3033,15 @@ fn on_surface(c: &Curve,span: [f64;2],surface: &Surface,t: f64,tol: f64) -> Opti
 /// Step 2b's vertices: for each working edge, the pooled vertices (none of `gone`) lying inside it,
 /// off its ends, and where along it; each edge boxed by its curve's enclosure, on every core. **The
 /// box reaches as far as the rule it stands for** (#994): a vertex onto an edge within `ON_CURVE`
-/// tolerances (`tolerant::on_stretch`), so the box is padded by that much, never less. Padded by
-/// the boxes' `pad` (4 tolerances) alone, a corner of a strip's pad leaning `1e-6` rad onto
-/// another's, standing 5e-7 off the other's straight edge along the pad — within the rule's reach,
-/// past the box's — was read off a box the edge's curve has no breadth across, and the edge left
-/// whole beside a meeting laid to that corner: the face's pieces did not close. **A vertex on an
-/// edge at its end is that end** (#994, `tolerant::on_stretch`'s own reading of it): each such
-/// vertex and the end it stands within the reach of, beside the cuts, for step 3b to make one
-/// (`collapsed`). Not cutting the edge there, and not making the two one, left two vertices for one
-/// point wherever two operands' faces on one surface placed it apart by more than the pool's reach
-/// and less than the edge's: the corner of a lip's pad on a plate's top, minted once on the pad's
-/// plane and once on the plate's `1.4e-7` higher, one edge ending at each, and the edge laid
-/// between them along the pad's end the other way round a slit no walk closed.
+/// tolerances (`tolerant::on_stretch`), so the box is padded by that much, never less than the
+/// boxes' `pad`: a corner of a strip's pad leaning `1e-6` rad onto another's, standing 5e-7 off
+/// the other's straight edge along the pad, is within the rule's reach of an edge whose curve has
+/// no breadth across, and cuts it. **A vertex on an edge at its end is that end** (#994,
+/// `tolerant::onto_edge`, the rule's own reading of it): each such vertex and the end it stands
+/// within the reach of, beside the cuts, for step 3b to make one (`collapsed`) — one vertex for a
+/// point two operands' faces on one surface place apart by more than the pool's reach and less
+/// than the edge's (the corner of a lip's pad on a plate's top, minted on the pad's plane and on
+/// the plate's `1.4e-7` higher).
 fn vertices_inside(edges: &[WEdge],cuts: &[Vec<(f64,u32)>],pool: &Pool,gone: &std::collections::BTreeSet<u32>,
     pad: f64,tol: f64) -> (Vec<Vec<(f64,u32)>>,Vec<(u32,u32)>) {
     let pad = pad.max(super::tolerant::ON_CURVE*tol);
@@ -3065,9 +3062,10 @@ fn vertices_inside(edges: &[WEdge],cuts: &[Vec<(f64,u32)>],pool: &Pool,gone: &st
             if v == e.v[0] || v == e.v[1] || gone.contains(&v) || cuts[we].iter().any(|&(_,w)| w == v) { continue }
             let p = pool.pts[v as usize];
             if (0..3).any(|k| p[k] < lo[k]-pad || p[k] > hi[k]+pad) { continue }
-            match super::tolerant::on_stretch(c,e.t,p,tol) {
-                Some(t) => cut.push((t,v)),
-                None => if let Some(k) = super::tolerant::at_end(c,e.t,p,tol) { ends.push((v,e.v[k])) },
+            match super::tolerant::onto_edge(c,e.t,p,tol) {
+                Some(super::tolerant::Onto::Stretch(t)) => cut.push((t,v)),
+                Some(super::tolerant::Onto::End(k)) => ends.push((v,e.v[k])),
+                None => {}
             }
         }
         (cut,ends)
