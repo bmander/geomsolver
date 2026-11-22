@@ -1155,7 +1155,12 @@ closed traces whose points are the graph's, on both surfaces to rounding, no cho
 quarter of the branches' gap at its ends, so a projection between two never crosses a neck to the
 other loop (marched, the trace jumped between the loops at a neck, a cylinder's pieces not closing);
 and where `D` falls below nothing (a loop turning back: the lesser cutting into the other's side, or
-one neck closed by an axes' gap), or the axes lean under `SHALLOW`, traced as before. **Whether `D`
+one neck closed by an axes' gap), or the axes lean under `SHALLOW`, traced. **The lean's bound is
+the meeting's, not the closed form's**: the graph keeps within the tolerance of both surfaces down
+to a lean's sine of about `ε (r + s) / tol`, but two rods whose axes cross meet at the lean itself
+where the lesser's normal lies along the plane of both axes (`n_a · n_b = ± cos θ` there), so
+under `SHALLOW` the meeting is as ill-conditioned somewhere as `SHALLOW` bounds every meeting by,
+a trace's included. **Whether `D`
 keeps above nothing is proved, not sampled**: `D` is one formula over the angle, its roots isolated
 from its own enclosures (`util::isolate`), so a dip below nothing narrower than any sampling (a
 neck `√(2 e / r)` wide where the axes pass `e` apart) is never missed, and a dip to within its

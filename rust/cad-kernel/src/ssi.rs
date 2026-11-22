@@ -1161,6 +1161,19 @@ fn least<'s>(a: &'s Surface,b: &'s Surface) -> Option<(f64,[&'s Surface;2],V)> {
 /// * where `D` falls below nothing — a loop turning back, the lesser cutting into the other's side,
 ///   or one neck closed by an axes' gap — and at a lean under `SHALLOW`: `None`, the meeting
 ///   traced (`Ssi::Traced`).
+///
+/// **The lean's bound is the meeting's, not the closed form's.** The graph's own conditioning
+/// is far finer: `h` is read over `A = sin² θ` from `B` and `√D`, each rounded to about
+/// `ε (r + s)` away from a neck, and a point off by `δh` along the lesser's axis stands `δh sin θ`
+/// off the other, so the graph keeps within the tolerance of both down to `sin θ` of about
+/// `ε (r + s) / tol`. What a lean
+/// under `SHALLOW` bounds is the angle the two meet at along their loops: where the lesser's
+/// normal lies along the plane of both axes, it is the lean itself for axes crossing (there
+/// `n_a · n_b = ± cos θ`), so somewhere along the meeting a point within `tol` of both is
+/// `tol / sin θ` off it — the ill-conditioning `SHALLOW` bounds every meeting by, a trace's
+/// included, and a curve given exactly does not take away. The same bound, then, for the same
+/// reason: the meeting is left to the trace, which refuses it where it marches that shallow
+/// ("nearly touching").
 fn crossed_cylinders(a: &Surface,b: &Surface,tol: f64) -> Option<Vec<Curve>> {
     let (&Surface::Cylinder(f,r),&Surface::Cylinder(g,s)) = (a,b) else { return None };
     let (za,zb) = (unit(f.z),unit(g.z));
