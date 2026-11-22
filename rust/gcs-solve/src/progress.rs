@@ -29,6 +29,11 @@ pub enum Kind {
     /// A solid evaluated at an approximation: its boundary, from the B-rep or otherwise
     /// (`Sketch::evaluated_solid`).
     Evaluate,
+    /// A solid's stand-in made where its exact B-rep is not (#996): its material field meshed
+    /// (`EvaluatedSolid::unbuilt`), within the evaluation that asked.
+    Field,
+    /// A solid's stand-in made where its exact B-rep is refused: its facet term's boundary.
+    Facets,
     /// A claim about solids judged, at every pose it is asked at.
     Claim,
     /// A drawing followed along a declared parameter (`follow::followed`).
@@ -59,7 +64,7 @@ impl Kind {
     /// Whether it is work on the drawing's objects — a solid, a claim about solids or a part's
     /// rows — rather than a stage of the run.
     pub fn is_object(self) -> bool {
-        matches!(self, Kind::Build | Kind::Evaluate | Kind::Claim | Kind::Rank)
+        matches!(self, Kind::Build | Kind::Evaluate | Kind::Field | Kind::Facets | Kind::Claim | Kind::Rank)
     }
 }
 
@@ -153,6 +158,16 @@ impl Work {
         Work::of(Kind::Evaluate, sk.solid_name(i), Some(At::Solid(i)))
     }
 
+    /// **Solid `i`'s stand-in made** (#996): its material field meshed (`Kind::Field`) or its
+    /// facet term's boundary read (`Kind::Facets`), where it is not its exact build — `refused` where that is for
+    /// a refusal (a round the kernel does not build), so the time is said to be the stand-in's and
+    /// why, never the build's: `meshing part from its material field, its exact build refused`.
+    pub fn stand_in(sk: &Sketch, i: usize, kind: Kind, refused: bool) -> Work {
+        let from = if kind == Kind::Facets { "its facet term" } else { "its material field" };
+        let why = if refused { ", its exact build refused" } else { "" };
+        Work::of(kind, format!("{} from {from}{why}", sk.solid_name(i)), Some(At::Solid(i)))
+    }
+
     /// A claim judged: `text` is the claim as the report words it (`claim a clear(1mm) b`).
     pub fn claim(text: String, stmt: u32) -> Work {
         Work::of(Kind::Claim, text, Some(At::Stmt(stmt)))
@@ -211,6 +226,8 @@ impl Work {
             Kind::Diagnose => ("diagnosed", "diagnosing"),
             Kind::Build => ("built", "building"),
             Kind::Evaluate => ("evaluated", "evaluating"),
+            Kind::Field => ("meshed", "meshing"),
+            Kind::Facets => ("faceted", "faceting"),
             Kind::Claim => ("judged", "judging"),
             Kind::Follow => ("followed", "following"),
             Kind::Place => ("placed", "placing"),

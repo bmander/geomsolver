@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.228 — November 2026**
+**Specification, Draft 0.229 — November 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -964,8 +964,11 @@ exact boundary of one is not built yet, and an exact export refuses it in those 
 features of the kernel. `A round(r: 2mm) B` rounds every edge where a face of `A` (a face path,
 §6.21) meets a face of `B` by a ball of radius `r`: where the edge is convex the material the
 ball rolled along it cannot reach is cut away, where it is concave what the ball cannot reach
-outside both faces is filled, read off the solved geometry, never said; where three such edges
-meet at a corner, the ball touching all three. `round(r: 2mm) X` is `X round(r: …) X`, every
+outside both faces is filled, read off the solved geometry, never said; **[0.229]** and only what a
+ball rolled along that edge leaves — `std.rounds`' `Run` and `Fill` state `distance(p, rolled) <=
+distance(p, centres) + r`, `rolled` the centres of the balls touching both faces, so a corner the
+faces' smooth surfaces bound far from the edge, which no ball reaches either, is no part of its
+round; where three such edges meet at a corner, the ball touching all three. `round(r: 2mm) X` is `X round(r: …) X`, every
 edge among `X`'s faces. `A chamfer(d: 1mm) B` cuts every such edge by the flat `d` along each
 face, measured from the other face's surface, and `chamfer(d: 1mm) X` every edge among `X`'s.
 Faces that do not meet make nothing, so `block.near round(r: 2mm) block` rounds the near rim
@@ -998,7 +1001,13 @@ material going on beyond, leaves its cap there on that face's surface, a face of
 fill's end on a step's side, `part.filled.far`; an upright's round's foot on a plate), so a round
 over the rounded body rounds the edge the cap makes with the round as it rounds the face's own; at a
 vertex where edges of both turns meet, the edge alone in its turn rounded first and every edge
-then on a solid of what it leaves is the smooth surface every edge rounded means. And which faces meet (`meets`) and how a face lies (`parallel`,
+then on a solid of what it leaves is the smooth surface every edge rounded means. **[0.229]** Such a
+cap lies on the face's own surface with no edge between them, and has grown the face: a reference
+to the face reads it with the caps going on from it across a seam on that surface, so
+`whole.part.stock.far round(r: 1mm) whole` rounds the rim round each fill's arc too (through 0.228
+that arc stayed sharp unless the caps were named); a cap named is itself alone, a face of another
+operand on the same surface keeps its own name, and a face and a cap lying on it are never two
+faces that meet. And which faces meet (`meets`) and how a face lies (`parallel`,
 `perpendicular`) is read in the layer the round that asks stands in, the body that round reads.
 **A round over a rounded body** is a round of a solid of it: `part := solid(box)` is `box` as its
 rounds leave it, the faces they made among `part.box`'s, and `part.box.near round(r: 1mm)
@@ -2377,7 +2386,11 @@ nothing too, and is said (**W120**), with why.
 **Members** **[0.70]**. `S.ends` (where the edge a set is ends, below), `boundary(F.side)` (a face's or a
 set's whole surface), **[0.149]** `F.smooth` (a face's surface carried on across every seam where a
 face of its body goes on from it tangent — the faces named and those, each piece's surface
-beside it, a distance from it or a side of it the one of the piece whose patch is nearest) and
+beside it, a distance from it or a side of it the one of the piece whose patch is nearest;
+**[0.229]** a piece's side carried past its patch by the plane tangent to it only across a seam, and
+past any other edge — a crease, a face cutting the piece across — its own surface's side, pieces of
+one plane that plane's half-space, and at the chain's rim the side of the face going on from the
+rim's ends whose surface's foot lies on it) and
 `A.body` (the solid a face path is of, §9.9) are no names: each is read
 as the member only past a set or a solid, and only where the document declares no name so —
 `h.ends`, where the instance `h` declares a set `ends`, is that set, and `cyl.body`, where `cyl`
@@ -2433,7 +2446,21 @@ the run nearest it, the run a round beside it is along: the runs either side of 
 its two sides, and within every run's ends at once is within none. **[0.226]** A straight run that
 ends on no face — every other face at its end goes on from one of its two across a seam, tangent
 or a piece of the same surface — ends on the plane square to it there: a corner's ball rounds the
-edge no further than the edge runs.
+edge no further than the edge runs. **[0.229]** A face going on tangent from one of the edge's faces
+where the edge ends carries the run on, and ends nothing, only where it meets the other face there
+(or a face that one goes on into across a seam) in an edge of the same turn, along which the round
+goes on (an obround's half circle after its flat side), or is a piece of the surface of the edge's
+own face; any other — a deck's arc running tangent into a side flush with the block's, which meets
+the block's top in the other turn — is a face the run ends on, never the seam it goes on across, and
+an edge a run-out goes along that ends only at such a seam is no end. A run going on across a seam
+ends where its smooth chain ends, on each face there whose solid the chain is kept out of (a boss's
+cylinder it stands outside, a hole's) and on a plane wall of another body, so a round goes into
+neither; a wall of another body turning back over the run at a reflex corner of less than a right
+angle is its end too, kept on its side. And past an end face shorter than the section (a round's
+radius, a flat's longer leg), a run rolled along its edge ends too on every face reached along the
+edges that end face makes with the edge's faces, each no longer than the section, whose outward
+normal turns more than a degree from square to the run, off its end, kept on its material's side;
+a face lying alongside the run ends nothing.
 `outside` is **E040**: past where an edge ends is no region. `edge` and `seam` are element
 keywords (§19), so a set may not be called so.
 
@@ -3361,7 +3388,7 @@ The body is made **once** where `COND` holds and **not at all** where it does no
 
 **[0.91] Identity.** Two names of which one is no number compare by what they stand for: `a == b` holds where both name the same thing — an entity, or a face (§6.21) — reached through every formal and binder (a formal is what its call gave it, a face repeat's binder its face), and `a != b` where they do not. `c in B` holds where what `c` names is one of the faces the face path `B` names (§6.9). These join numbers' comparisons under `and`, `or` and `not` alike, and are decided where the block is elaborated — inside a block over a solid's faces, once the faces are named (§12.8). A number on one side and something drawn on the other is **E103**, as is something drawn under `<`, `<=`, `>` or `>=`, and `in` over what names no faces; a name that stands for nothing is **E101**. `when` is thereby the language's one conditional of statements: a switch is `when flag == 1 { … }`, never a `repeat` over a count of zero or one, which named what it made as copies. **[0.191]** A number that differs by case is one statement, `if(flag == 1, 3mm, 5mm)` (§3.3).
 
-**[0.187] Faces that meet.** `a meets b` holds where `a` and `b` name faces of one solid (a face repeat's binders, §12.8) that share a point of its boundary — an edge or a corner — as the solid is made by the terms that do not read its faces (§6.21), so a face a Boolean ate meets none. It is decided where the block is elaborated, and so first **where the drawing is seeded** (§4.3); **[0.202]** where a pair the condition read apart there meets where the drawing solves, it is decided again **where the drawing solves** — the document elaborated once more, every solid's faces read at the pose that solve reached — so a block is made for faces that meet in the drawing as solved, whatever the seeds of the shapes they belong to, and no seed is a design number (a circle whose radius only `radius(r)` says, a part placed by a mate, a rectangle in a turned frame). Only a solve that settles is read so: a pose a solve stopped at is no answer. A pair still read apart that meets where the drawing then solves left out a copy that would have made something, and is **E080** at the document's statement that made the block, naming the two faces. **[0.223]** Two faces of different solids are **E103**, said once at the document's statement that made the block, and the block is made for neither: an edge is two faces of one body meeting, so a round or a chamfer between a face of `wall` and a face of `plate` that no `union` makes one is no edge of anything, and where a body is made of both (`wall` and `plate` unioned into `part`) the refusal names them through it (`part.wall.far`, `part.plate.near`), the edge the author meant; through 0.222 they were taken to meet, and the round read one solid's faces by the other's numbers (#961). A face a round of the solid made that the faces it reads do not have is taken to meet. A name that is no face is **E103**. It is what lets a word over a body's faces in pairs and threes — `std`'s `round` and `chamfer` (§6.9) — make copies only for faces that touch: a body lists every face of every operand, eaten or not, and its threes are as many as the cube of them.
+**[0.187] Faces that meet.** `a meets b` holds where `a` and `b` name faces of one solid (a face repeat's binders, §12.8) that share a point of its boundary — an edge or a corner — as the solid is made by the terms that do not read its faces (§6.21), so a face a Boolean ate meets none. It is decided where the block is elaborated, and so first **where the drawing is seeded** (§4.3); **[0.202]** where a pair the condition read apart there meets where the drawing solves, it is decided again **where the drawing solves** — the document elaborated once more, every solid's faces read at the pose that solve reached — so a block is made for faces that meet in the drawing as solved, whatever the seeds of the shapes they belong to, and no seed is a design number (a circle whose radius only `radius(r)` says, a part placed by a mate, a rectangle in a turned frame). Only a solve that settles is read so: a pose a solve stopped at is no answer. A pair still read apart that meets where the drawing then solves left out a copy that would have made something, and is **E080** at the document's statement that made the block, naming the two faces. **[0.223]** Two faces of different solids are **E103**, said once at the document's statement that made the block, and the block is made for neither: an edge is two faces of one body meeting, so a round or a chamfer between a face of `wall` and a face of `plate` that no `union` makes one is no edge of anything, and where a body is made of both (`wall` and `plate` unioned into `part`) the refusal names them through it (`part.wall.far`, `part.plate.near`), the edge the author meant; through 0.222 they were taken to meet, and the round read one solid's faces by the other's numbers (#961). A face a round of the solid made that the faces it reads do not have is taken to meet. **[0.229]** A body that builds nothing where the drawing is seeded (a short side between two corner rounds seeded with their ends past each other) has no faces that meet there: `meets` is decided for it where the drawing solves, and where the body is not built there either, the statement is said not built, built on that body; a body a sweep cuts, whose boundary is its field's, still has every two faces taken to meet. A name that is no face is **E103**. It is what lets a word over a body's faces in pairs and threes — `std`'s `round` and `chamfer` (§6.9) — make copies only for faces that touch: a body lists every face of every operand, eaten or not, and its threes are as many as the cube of them.
 
 **[0.204] A face along a direction.** `a parallel l` holds where `a` names a face of a solid (a face repeat's binder, §12.8) whose surface has `l`'s direction in its tangent plane at every point of the face — a plane holding the direction, a cylinder about a line along it, a side swept along it — and `a perpendicular l` where the face lies in a plane square to it: what the relation words say of a plane and an axis (§6.7), asked of a face rather than stated. `l` names a direction drawn: an axis (`std.z`, which in a body standing in a frame is the frame's own, §6.7), a line, from its first point to its second, or a frame's axis. A face in pieces holds where every piece does, and a face a Boolean ate holds nowhere. The surface is read by its kind and exactly — a cone, a sphere or a torus holds `parallel` of no direction, and anything but a plane holds `perpendicular` of none — and a face whose kind does not say (a fitted surface, a blend, a face family's wall), or one a round of the solid made that the faces it reads do not have, is **E103** naming it, as is a name that is no face or no direction drawn. Like `meets` it is decided first **where the drawing is seeded**, and, where a block it decides comes out the other way with its faces and its direction read as the drawing solves, decided again **where the drawing solves** (**[0.202]**'s pose, with `meets`'s), so a line held along an axis but seeded leaning, or a part turned into place by a mate, picks its edges as it would seeded where it stands. A block that still comes out the other way where the drawing then solves made a copy that should not have been made, or left out one that should, and is **E080** at the document's statement that made the block, naming each face read the other way; a face that turns without changing what its block decides is said nothing of. It is how the edges a round takes are picked by their direction, in Solvent, from a body's faces: two faces both `parallel` to `l` meet in lines along it, so a part drawn in plan has its edges in plan picked by `parallel std.z`, and the edges round a post rising from a face by `perpendicular std.z` on that face.
 

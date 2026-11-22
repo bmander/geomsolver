@@ -161,3 +161,74 @@ fn a_solid_whose_round_is_refused_is_drawn_in_bounded_time() {
     let v = solid.volume();
     assert!(v > unrounded && v < unrounded + fill, "{v} against {unrounded} and {fill} more");
 }
+
+/// **The nearest face and edge read by their boxes are the ones every face and edge read gives**
+/// (#996): a field over a body's faces asks, at every step of every query, which of a group of
+/// faces has the nearest patch (`BodyFaces::nearest_patch`) and which edge is nearest
+/// (`nearest_edge`), and each reads only what its box lets come within the best so far.  At points
+/// all round bodies with rounds — a tee's crotch rolled along its saddle, its edges traced; a slab
+/// drilled twice and rounded all over; the bracket whose fill the lowering refuses, its stratum —
+/// each answer is the scan's, to the bit and the first among equals: the face, its distance, the
+/// edge, its point.  Each is read from no warm start (`util::warm::fresh`): a search's start is
+/// the last foot its thread found on that surface, which moves the last bits of what it settles on,
+/// so two reads of one patch are alike only from the same start.
+#[test]
+fn the_nearest_face_and_edge_read_by_their_boxes_are_the_scans() {
+    use gcs_core::brep::util::warm::fresh;
+    use gcs_core::solid::faces::BodyFaces;
+    let bodies: Vec<(gcs_core::program::Elaborated, &str, bool)> = vec![
+        (solved(include_str!("../../examples/rounds/tee.sv")), "tee", true),
+        (solved(include_str!("../../examples/rounds/bores.sv")), "slab", true),
+        (solved(&slotted_bracket(true)), "bracket.body", false),
+    ];
+    let mut rng = gcs_core::rng::Rng::new(996);
+    for (e, name, whole) in &bodies {
+        let i = ent(e, name).i();
+        let body = if *whole { BodyFaces::whole(&e.sketch, i) } else { gcs_core::solid::faces::cached(&e.sketch, i) }
+            .unwrap_or_else(|why| panic!("{name}: {why}"));
+        let (b, _, _) = body.brep();
+        let (lo, hi) = b.bounds();
+        let n = b.faces.len();
+        let all: Vec<usize> = (0..n).collect();
+        let edges: Vec<u32> = (0..b.edges.len() as u32).collect();
+        // the groups a field asks of: every face, every third, and each face with its neighbours
+        let mut groups: Vec<Vec<usize>> = vec![all.clone(), all.iter().copied().step_by(3).collect()];
+        groups.extend((0..n).map(|fi| {
+            let mut g: Vec<usize> = body.face_edges(fi).iter().flat_map(|&e| body.faces_of(e).to_vec()).collect();
+            g.sort_unstable();
+            g.dedup();
+            g
+        }));
+        let patch = |fi: usize, p: [f64; 3]| fresh(|| body.patch_distance(fi, p));
+        let edge = |es: &[u32], p: [f64; 3]| fresh(|| body.nearest_edge(es, p));
+        for k in 0..300 {
+            // within the body's box grown by a fifth each way (millimetres), read in model units
+            let q: [f64; 3] = std::array::from_fn(|a| {
+                let (l, h) = (lo[a], hi[a]);
+                l - 0.2 * (h - l) + 1.4 * (h - l) * rng.uniform(0.0, 1.0)
+            });
+            let p = body.back(q);
+            // a face's patch distance: its foot's where that is on it, else its edges' each read alone
+            for fi in 0..n {
+                let scan = match fresh(|| body.off_face(fi, p)) {
+                    None => patch(fi, p),
+                    Some(_) => body.face_edges(fi).iter().map(|&e| edge(&[e], p).unwrap().2)
+                        .fold(f64::INFINITY, f64::min),
+                };
+                assert_eq!(patch(fi, p).to_bits(), scan.to_bits(), "{name}: face {fi} at {p:?}");
+            }
+            for g in &groups {
+                let scan = g.iter().map(|&fi| (patch(fi, p), fi)).min_by(|a, b| a.0.total_cmp(&b.0));
+                let read = fresh(|| body.nearest_patch(g, p));
+                assert_eq!(read.map(|(d, f)| (d.to_bits(), f)), scan.map(|(d, f)| (d.to_bits(), f)),
+                           "{name}: point {k} {p:?} among {g:?}");
+            }
+            for es in [&edges[..], body.face_edges(k % n)] {
+                let scan = es.iter().map(|&e| edge(&[e], p).unwrap()).min_by(|a, b| a.2.total_cmp(&b.2));
+                let read = edge(es, p);
+                assert_eq!(read.map(|(e, x, d)| (e, x.map(f64::to_bits), d.to_bits())),
+                           scan.map(|(e, x, d)| (e, x.map(f64::to_bits), d.to_bits())), "{name}: point {k} {p:?}");
+            }
+        }
+    }
+}

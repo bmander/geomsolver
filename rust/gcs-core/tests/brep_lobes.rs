@@ -103,8 +103,14 @@ fn a_boss_or_a_bore_on_a_lobe_of_its_own_radius_builds() {
             let said = format!("{what} on lobe {k} of {n}, its radius {dr:e} off and its axis {dc:e}");
             let out = combined_written(&plate,None,&rod,op,0.).unwrap_or_else(|e| panic!("{said}: {e}")).0;
             out.check(10.*tolerance(plate.size().max(rod.size()))).unwrap_or_else(|e| panic!("{said}: {e}"));
-            let reach = gcs_core::brep::tolerant::ON_CURVE*tolerance(plate.size().max(rod.size()));
-            let (want,within) = expected(v0,r,rr,dc,z,op,reach);
+            let tol = tolerance(plate.size().max(rod.size()));
+            let reach = gcs_core::brep::tolerant::ON_CURVE*tol;
+            // (a rod whose end circle lies on the lobe's, concentric, its radius off by no more
+            // than `FLUSH` tolerances, is given the lobe's radius before the two are combined —
+            // #996's `flush::tubes_flushed`: the seam is then the tangent one)
+            let on_lobe = dc == 0. && z.iter().any(|&h| h == 0. || h == 5.);
+            let flushed = on_lobe && dr.abs() > 1e-12*rr && dr.abs() <= gcs_core::brep::flush::FLUSH*tol;
+            let (want,within) = expected(v0,r,if flushed { r } else { rr },dc,z,op,reach);
             let v = volume(&out);
             assert!((v-want).abs() <= within,"{said}: {v} against {want}, within {within:e}");
         } } }

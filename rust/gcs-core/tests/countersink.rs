@@ -554,12 +554,13 @@ fn path_on(s: &Surface, p: V, q: V) -> Vec<V> {
 
 /// **`ssi::disc_reach` holds by every path it is argued by** (#961), whatever the argument: over
 /// each searchable kind — a plane, a sphere, a cylinder, cones from narrow to wide (past 45°, where
-/// the other nappe is nearest), a ring torus with its circle either side of the axis, an
-/// ellipsoid and an elliptic cylinder as images — seeded points `p` of the surface, the largest
-/// ball the bound admits about each and a smaller one, and many points `q` of the surface within
-/// it (the feet of seeded points of the ball, so any sheet within the ball is reached): the path
-/// from `p` to `q` ends at `q` and keeps within the reach given. A spindle or a horn torus, a cone
-/// at its apex and a ball across a cylinder are given none.
+/// the other nappe is nearest), ring, spindle and horn tori with their circle either side of the
+/// axis (a spindle's lemon among its points, #996), an ellipsoid and an elliptic cylinder as
+/// images — seeded points `p` of the surface, the largest ball the bound admits about each and a
+/// smaller one, and many points `q` of the surface within it (the feet of seeded points of the
+/// ball, so any sheet within the ball is reached): the path from `p` to `q` ends at `q` and keeps
+/// within the reach given. A spindle's or a horn's pole, a cone at its apex and a ball across a
+/// cylinder are given none.
 #[test]
 fn a_surfaces_points_within_a_ball_reach_no_farther_along_it_than_said() {
     let tilted = Frame::new([1.0, -2.0, 0.5], [0.3, 0.4, 1.0], [1.0, 0.0, 0.0]);
@@ -575,6 +576,9 @@ fn a_surfaces_points_within_a_ball_reach_no_farther_along_it_than_said() {
         ("a cylinder", Surface::Cylinder(tilted, 4.0), [round, along]),
         ("a ring torus", Surface::Torus(tilted, 6.0, 2.0), [round, round]),
         ("a ring torus drawn across", Surface::Torus(tilted, -5.0, 3.0), [round, round]),
+        ("a spindle torus", Surface::Torus(tilted, 3.0, 5.0), [round, round]),
+        ("a spindle torus drawn across", Surface::Torus(tilted, -1.0, 3.0), [round, round]),
+        ("a horn torus", Surface::Torus(tilted, 2.0, 2.0), [round, round]),
         ("an ellipsoid", mapped(Surface::Sphere(tilted, 3.0)), [round, across]),
         ("an elliptic cylinder", mapped(Surface::Cylinder(tilted, 2.0)), [round, along]),
     ];
@@ -614,11 +618,20 @@ fn a_surfaces_points_within_a_ball_reach_no_farther_along_it_than_said() {
         }
         assert!(asked > 1000, "{what}: {asked} points asked");
     }
-    // where the surface's points within the ball are not one disc about `p`, no reach is said
+    // where the surface's points within the ball are not one disc about `p`, no reach is said: a
+    // spindle's or a horn's sheets meet at its poles on the axis, and beside them
     for (big, minor) in [(1.0, 3.0), (2.0, 2.0), (-1.0, 3.0)] {
         let s = Surface::Torus(tilted, big, minor);
+        // the tube's circle meets the axis where `big + minor cos v = 0`
+        let pole = (-big / minor).acos();
+        for v in [pole, pole + 1e-4, pole - 1e-4] {
+            let p = s.point([0.7, v]);
+            assert_eq!(ssi::disc_reach(&s, p, 1e-3), None, "beside a pole, {big}, {minor}, {v}");
+        }
+        // and a ball wider than a sheet's distance from the other is given none
         let p = s.point([0.7, 0.4]);
-        assert_eq!(ssi::disc_reach(&s, p, 1e-6), None, "a spindle or horn torus, {big}, {minor}");
+        let r = 2.0 * (big.abs() + minor);
+        assert_eq!(ssi::disc_reach(&s, p, r), None, "a ball over both sheets, {big}, {minor}");
     }
     let cone = Surface::Cone(Frame::WORLD, 2.0, f64::to_radians(30.0));
     let apex = [0.0, 0.0, -2.0 / f64::to_radians(30.0).tan()];

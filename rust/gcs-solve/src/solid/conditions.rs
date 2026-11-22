@@ -388,42 +388,6 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, sides_of: &Sides,
                             }
                         }
                     }
-                    // at a distance from it on the side the set holds its point (a ball's centre
-                    // touching a face, `std.rounds`' `rolled`, #994): the side of the face whose
-                    // patch is nearest, signed toward the side held, at that distance — so a
-                    // point on the surface, or a hair within it, steps that way, as the distance's
-                    // size, whose gradient turns over there, does not; on what the surface's offset
-                    // closes onto, where it does (a post's axis within it, a fill's round's
-                    // outside it); and for a chain bulging toward that side, at least that far as
-                    // a ball's centres are read (each face's side carried on past it) and no
-                    // further by the nearest face
-                    if t.cmp == Cmp::In && hi == lo && c > 0.0 {
-                        if let Some(beyond) = side_of(f) {
-                            let off = if beyond { -lo / c } else { lo / c };
-                            if let Some(on) = closed_onto(&r, off) {
-                                return Ok(Some(on));
-                            }
-                            let sigma = if beyond { c } else { -c };
-                            let bulging =
-                                r.convex_pieces().is_none() && r.bulging(beyond).is_some();
-                            let signed = sides(r, false).into_iter().map(move |side| -> Fv {
-                                Arc::new(move |x| {
-                                    let (s, g) = side(x);
-                                    (sigma * s, scale(g, sigma))
-                                })
-                            });
-                            if !bulging {
-                                return Ok(Some(signed.flat_map(held).collect()));
-                            }
-                            let ge = RegionTerm { cmp: Cmp::Ge, hi: None, ..t.clone() };
-                            let mut out =
-                                conditions(sk, &ge, read, sides_of, shell)?.unwrap_or_default();
-                            out.extend(signed.map(|m| {
-                                Cond { f: shift(m, lo + grow, 1.0), eq: false, convex: false }
-                            }));
-                            return Ok(Some(out));
-                        }
-                    }
                     // any other: off the side of the face whose patch is nearest — and, a smooth
                     // chain bulging no one way (a pocket's walls with a reflex corner), off each
                     // face's patch besides (`faces_apart`): what that reading says already, so the
@@ -465,7 +429,7 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, sides_of: &Sides,
             let Target::Set { terms: inner, .. } = edge.as_ref() else {
                 return Err("where an edge ends is read of a set".to_string());
             };
-            let runs = Arc::new(EndRuns::of(&SetDistance::of(sk, inner, read)?)?);
+            let runs = Arc::new(EndRuns::of(&SetDistance::of(sk, inner, read)?, None)?);
             let most = runs.runs.iter().map(|(_, sides)| sides.len()).max().unwrap_or(0);
             Ok(Some((0..most).map(|k| {
                 let runs = runs.clone();
@@ -806,8 +770,8 @@ impl Rest {
 /// side): the region within all of them, `max σ·side`.  A closed run ends nowhere.  Where the
 /// edges are in several runs (#881: a crease a slot cuts across), a point is within the ends of
 /// the run nearest it (`EndRuns`).
-pub fn ends(set: &SetDistance) -> Result<impl Fn(V) -> f64 + Send + Sync, String> {
-    let runs = EndRuns::of(set)?;
+pub fn ends(set: &SetDistance, reach: Option<f64>) -> Result<impl Fn(V) -> f64 + Send + Sync, String> {
+    let runs = EndRuns::of(set, reach)?;
     Ok(move |p: V| {
         runs.nearest(p).iter().map(|&(c, sign)| sign * runs.body.end_side(&c, p).0)
             .fold(f64::NEG_INFINITY, f64::max)
@@ -829,11 +793,11 @@ struct EndRuns {
 }
 
 impl EndRuns {
-    fn of(set: &SetDistance) -> Result<EndRuns, String> {
+    fn of(set: &SetDistance, reach: Option<f64>) -> Result<EndRuns, String> {
         let SetDistance::Edges { body, edges, faces } = set else {
             return Err("where a set ends is read of an edge: a set on two faces".to_string());
         };
-        Ok(EndRuns { body: body.clone(), runs: body.end_runs(edges, faces) })
+        Ok(EndRuns { body: body.clone(), runs: body.end_runs(edges, faces, reach) })
     }
 
     /// The faces the run nearest `p` ends on, and the side it runs on of each (none where the set

@@ -240,3 +240,40 @@ fn a_face_no_solid_is_made_of_is_said_once_for_every_solid_of_it() {
     assert_eq!(lines[1..], [23, 24, 25]);
     assert!(diags[1..].iter().all(|d| d.code == Code::N080 && d.cause == Some(diags[0].span)));
 }
+
+/// A circle about (5, 0) turned about the line x = 0, its radius `held` by a dimension or left to
+/// its hint of 8: either way it crosses the axis, and the turn is refused.
+fn straddling(held: bool) -> String {
+    format!("unit mm\nuse std\nuse std.solids\nin std.front {{\n  c := point\n  fix((5, 0)) c\n\
+        k := circle(center: c) hint(r: 8)\n{}  a0 := point\n  a1 := point\n  fix((0, -20)) a0\n\
+        fix((0, 20)) a1\n  ax := line(a0, a1)\n}}\n\
+        ring := solid(std.solids.Revolution(face(k), about: ax))\n",
+        if held { "  radius(8mm) k\n" } else { "" })
+}
+
+/// **A refusal says what the solid is built from that the drawing leaves free** (#996): the
+/// numbers of what its term is written over that the solve could still move, each named as the
+/// document names it and at the value its hint left it, and the freedom among them — so a near-miss
+/// the drawing never meant (a turn's arc whose radius no dimension states, its ends' hints putting
+/// it a millionth over the legs it meets) is told as the seeds' and not mistaken for the kernel's.
+/// A drawing that holds every number the solid reads is refused in the words alone, and so is an
+/// export refused (`program::with_free`, what a front end says of one).
+#[test]
+fn a_refusal_names_what_the_drawing_leaves_free() {
+    let (free, _) = said(&straddling(false));
+    let [root] = &free[..] else { panic!("{free:#?}") };
+    assert_eq!(root.code, Code::E080);
+    assert_eq!(root.message, "`ring`: the revolution axis crosses the profile; what it is built \
+        from is not all held by the drawing: `k.r` at 8mm stands where its hint left it (1 degree \
+        of freedom), so its shape is the seeds', not the drawing's — state the number meant");
+    let (held, _) = said(&straddling(true));
+    let [root] = &held[..] else { panic!("{held:#?}") };
+    assert_eq!(root.message, "`ring`: the revolution axis crosses the profile");
+    for (is_held, says) in [(false, true), (true, false)] {
+        let mut e = crate::common::build(&straddling(is_held));
+        solve(&mut e.sketch, SolveOpts::default());
+        let ring = e.map.ent_named("ring").unwrap().i();
+        let words = program::with_free(&e.sketch, &e.map, ring, "refused".to_string());
+        assert_eq!(words.contains("`k.r` at 8mm stands where its hint left it"), says, "{words}");
+    }
+}

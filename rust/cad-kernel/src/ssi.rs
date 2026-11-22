@@ -619,6 +619,17 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             if let Some(circle) = tube_along_torus(&cy,r,&t,big,small,tol) => Ssi::Curves(vec![circle]),
         (Surface::Torus(t,big,small),Surface::Torus(u,bog,smell)) if let Some(curves) = tori_touching(a,b,(&t,big,small),(&u,bog,smell),tol) =>
             Ssi::Curves(curves),
+        // a plane through a torus's axis: its meridian either side, two circles of the tube's
+        // radius about the points `±|big|` across the axis — apart on a ring torus, touching on
+        // the axis on a horn, crossing at the poles on a spindle, where each runs on across the
+        // axis into the lemon — as a plane through a cone's axis holds its two generators (a
+        // turn's cap stands in such a plane, #996)
+        (Surface::Plane(pl),Surface::Torus(t,big,small)) | (Surface::Torus(t,big,small),Surface::Plane(pl))
+            if dot(pl.z,t.z).abs() <= 1e-12 && dot(pl.z,sub(t.o,pl.o)).abs() <= tol => {
+            let w = unit(cross(pl.z,t.z));
+            let sides: &[f64] = if big.abs() <= tol { &[0.] } else { &[1.,-1.] };
+            Ssi::Curves(sides.iter().map(|&k| Curve::Circle(Frame::new(add(t.o,scale(w,k*big.abs())),pl.z,w),small.abs())).collect())
+        }
         (Surface::Plane(_),Surface::Sphere(..)) | (Surface::Sphere(..),Surface::Plane(_)) => {
             let (pl,sp) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
             let Surface::Sphere(c,r) = sp else { unreachable!() };
@@ -2338,48 +2349,14 @@ pub(crate) const SHALLOW: f64 = 0.0175;
 /// **Where two surfaces touch at a point**: their meeting there, to second order. Over the plane
 /// they share at `p`, `b`'s signed distance along `a` grows as `½ tᵀ Q t`, `Q` the difference of
 /// their second fundamental forms (`a`'s turned by the sign of their normals' agreement): a
-/// definite `Q` (an elliptic touch) touches at `p` alone, an indefinite one (hyperbolic) meets in
-/// two branches crossing there along its null directions. A touch: those directions (each either
-/// way; none for a definite `Q`), the radius within which the two stand nearer parallel than a
-/// trace can follow (`SHALLOW`), and `Q`'s least size — over which an elliptic touch stands
-/// within `tol` of the other only over the disc of radius `√(2 tol / least)` (`Touch::disc`).
+/// definite `Q` touches at `p` alone, an indefinite one meets in two branches crossing there along
+/// its null directions. A touch: those directions (each either way; none for a definite `Q`), and
+/// the radius within which the two stand nearer parallel than a trace can follow (`SHALLOW`), and
+/// for a definite `Q` its least bend, signed as `b`'s distance grows (nought for an indefinite one).
 /// `None` where `Q` is too near singular to say (the two touch along a curve, or closer than
 /// second order).
 #[derive(Clone,Debug)]
-pub(crate) struct Touch { pub at: V,pub branches: Vec<V>,pub radius: f64,pub least: f64 }
-
-impl Touch {
-    /// **How far from an elliptic touch the two may stand within `tol` of one another, read to
-    /// second order** (#994): the long axis of the ellipse `½ tᵀ Q t ≤ tol`, `√(2 tol / least)` — a
-    /// height, the tolerance, turned into a reach, and nothing else. Beyond eight times it the
-    /// two stand `64 tol` apart where second order holds (`Touches::alone` samples that it does).
-    pub(crate) fn disc(&self,tol: f64) -> f64 { (2.*tol/self.least).sqrt() }
-}
-
-/// **An elliptic touch read as two surfaces resting on one another** (#994): `t` a touch of `a`
-/// and `b` with `Q` definite, `b`'s height over `a` sampled round it at half and the whole of
-/// eight discs (`Touch::disc`) along sixteen ways — of one sign, and at least a tenth of `Q`'s
-/// least size times the square of the reach, where second order puts it at a half: the touch's
-/// reach, eight discs, over which nothing but the point is their meeting at this tolerance.
-/// `None` for an indefinite `Q`, or where a sample says the third-order part bends them across one
-/// another within that reach.
-pub(crate) fn resting(a: &Surface,b: &Surface,t: &Touch,tol: f64) -> Option<f64> {
-    if !t.branches.is_empty() { return None }
-    let reach = 8.*t.disc(tol);
-    let f = Frame::about(t.at,a.gradient(t.at));
-    let mut sign = 0.;
-    for k in 0..16 {
-        let (sn,cs) = (k as f64*std::f64::consts::TAU/16.).dsin_cos();
-        for w in [0.5,1.] {
-            let rho = w*reach;
-            let q = add(t.at,add(scale(f.x,rho*cs),scale(f.y,rho*sn)));
-            let g = b.implicit(a.point(a.inverse(q)));
-            if sign == 0. { sign = g.signum() }
-            if !(g*sign >= 0.1*t.least*rho*rho) { return None }
-        }
-    }
-    Some(reach)
-}
+pub(crate) struct Touch { pub at: V,pub branches: Vec<V>,pub radius: f64,pub bend: f64 }
 
 /// The step two surfaces' derivatives are differenced over, near their finer feature.
 fn difference_step(a: &Surface,b: &Surface) -> f64 { 1e-4*a.feature().min(b.feature()).min(1e6).max(1e-9) }
@@ -2400,8 +2377,10 @@ pub(crate) fn touch(a: &Surface,b: &Surface,p: V) -> Option<Touch> {
     let (big,least) = (mean.abs()+dev,(mean.abs()-dev).abs());
     if !(least > 1e-6*big && big > 0.) { return None }
     let radius = 2.*SHALLOW/least;
+    let definite = q11*q22-q12*q12 > 0.;
+    let bend = if definite { mean.signum()*least } else { 0. };
     // Q(ψ) = mean + B cos 2ψ + C sin 2ψ (B, C its deviation's parts), zero where they cancel
-    let branches = if q11*q22-q12*q12 > 0. { Vec::new() } else {
+    let branches = if definite { Vec::new() } else {
         let phase = (2.*q12).datan2(q11-q22);
         let off = (-mean/dev).clamp(-1.,1.).dacos();
         [phase+off,phase-off].into_iter().flat_map(|w| {
@@ -2410,7 +2389,38 @@ pub(crate) fn touch(a: &Surface,b: &Surface,p: V) -> Option<Touch> {
             [t,scale(t,-1.)]
         }).collect()
     };
-    Some(Touch {at:p,branches,radius,least})
+    Some(Touch {at:p,branches,radius,bend})
+}
+
+/// **Whether a definite touch holds alone over its radius** (#996 §3): `b`'s distance along `a`
+/// grows from its own at the touch — some tolerances either way, where the two are found to touch —
+/// the way `Q` turns it by at least half what `Q` gives it, `¼ λ ρ²` at `ρ` from the touch (`λ` its
+/// least bend), on rings about it from its radius in to a two-hundred-fiftieth of it, each
+/// a seventh of its radius from the next and its points as near — closer than that growth lets the
+/// distance fall between them, which along `a` changes by no more than the sine of the angle the
+/// two meet at, `λ ρ` to second order. So nothing within the radius, where the two stand nearer
+/// parallel than a trace can follow and a search cannot part them, meets but the touch: what its
+/// second order says is what its higher orders keep, however small the faces beside it. Its size
+/// beside the faces is no part of it, and decides nothing (two cylinders crossed and touching, a
+/// rim's round on a short edge and a wide blend whose foot it crosses, touched over 0.28 beside a
+/// face 5.5 across). An indefinite touch, or one whose higher orders turn its distance within the
+/// radius, is not shown to hold alone.
+pub(crate) fn alone_over(a: &Surface,b: &Surface,t: &Touch) -> bool {
+    if t.bend == 0. || !t.branches.is_empty() { return false }
+    let f = Frame::about(t.at,unit(a.gradient(t.at)));
+    let here = b.implicit(t.at);
+    let (inner,mut rho) = (t.radius/256.,t.radius);
+    while rho >= inner {
+        for k in 0..48 {
+            let (sn,cs) = (std::f64::consts::TAU*k as f64/48.).dsin_cos();
+            let q = add(t.at,add(scale(f.x,rho*cs),scale(f.y,rho*sn)));
+            let q = a.point(a.inverse(q));
+            let r = distance(q,t.at);
+            if !(t.bend.signum()*(b.implicit(q)-here) >= 0.25*t.bend.abs()*r*r) { return false }
+        }
+        rho *= 6./7.;
+    }
+    true
 }
 
 /// **The point near `p` where `a` and `b` touch**: on `a`, where `b`'s normal is `a`'s — the
@@ -2828,7 +2838,17 @@ fn derivative_bounds(s: &Surface,[v0,v1]: [f64;2]) -> Option<[f64;5]> {
         Surface::Sphere(_,r) => Some([r;5]),
         // each derivative the preimage's mapped, no longer than its greatest stretch makes it
         Surface::Affine(ref m) => derivative_bounds(&m.of,[v0,v1]).map(|b| b.map(|x| x*m.stretch[1])),
-        Surface::Torus(_,big,r) => Some([big.abs()+r,r,big.abs()+r,r,r]),
+        // `S_u` and `S_uu` are the parallel's radius `|big + r cos v|`, as large as the strip
+        // makes it: no more than its parallels', which shrink to nothing at a spindle's or a horn's
+        // pole (#996: read as the widest parallel's, a strip beside the pole, all one point, was
+        // halved along `u` four million times)
+        Surface::Torus(_,big,r) => {
+            // cos over the strip, enclosed outward (a turn's worth or more: all of [−1, 1])
+            let [lo,hi] = crate::util::interval::Interval::new(v0.min(v1),v0.max(v1))
+                .and_then(|v| v.sin_cos_periodic()).map_or([-1.,1.],|(_,c)| c.bounds());
+            let q = (big+r*lo).abs().max((big+r*hi).abs());
+            Some([q,r.abs(),q,r.abs(),r.abs()])
+        }
         Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)
             | Surface::Offset(..) => None,
     }
@@ -2862,8 +2882,9 @@ fn curvature_bound(s: &Surface,p: V,r: f64) -> Option<f64> {
 /// `r'` such that each point `q` of `s` within `r` of `p` (a point of `s`) is joined to `p` by a
 /// path on `s` that keeps within `r'` of `p` — so a face of `s` holding such a point and not `p`
 /// has boundary within `r'` of `p` (#961). `None` where that is not shown: the ball reaches across
-/// a cylinder or a tube, to a cone's other nappe or apex, or to an axis, or the torus is a horn
-/// or a spindle, whose sheets meet on the axis (`None` is always sound: nothing is read as clear).
+/// a cylinder or a tube, to a cone's other nappe or apex, to an axis, or to a horn or a spindle
+/// torus's other sheet, which meets its own on the axis (`None` is always sound: nothing is read
+/// as clear).
 ///
 /// The bounds, each by a path exhibited (`tests/countersink.rs` holds them to seeded samples):
 /// * a plane: the segment `pq`, within `|pq| ≤ r`.
@@ -2882,11 +2903,19 @@ fn curvature_bound(s: &Surface,p: V,r: f64) -> Option<f64> {
 ///     `d sin θ ≥ d sin 2α` off `p` where `θ < 90°` and `d` (the apex) otherwise — so `q` is on
 ///     `p`'s nappe, on the one generator of it at `q`'s azimuth, which holds `p'`: the segment
 ///     `p'q` is within `max(|pp'|, |pq|) < 1.036 r` of `p` (a ball is convex). Reach `< 2r`.
-///   - a ring torus (`minor < |big|`, a tube that keeps off the axis) of `minor ≥ 2r`: the
-///     meridian half-plane at `q`'s azimuth holds one circle of the tube, through `p'` and `q`,
-///     `|p'q| < 2.036 r` apart; the shorter arc between them stands within its sagitta
+///   - a torus of `minor ≥ 2r`, `p` farther than `r` from the circle of radius `minor` about
+///     the point `|big|` across the axis from its tube's in its meridian half-plane: each
+///     meridian half-plane holds the arcs, on its side of the axis, of two circles of that
+///     radius, about `(±|big|, 0)`; a ring torus's (`minor < |big|`, a tube that keeps off the
+///     axis) second lies wholly across the axis, a spindle's (`minor > |big|`) is its lemon,
+///     which meets the outer sheet at the two poles on the axis, and a horn's touches the first
+///     there. A point's distance from a surface of revolution is its distance in its meridian
+///     half-plane from the meridian, so no point of the other sheet is within `r` of `p`: the
+///     half-plane at `q`'s azimuth holds `p'` and `q` on one circle, `|p'q| < 2.036 r` apart;
+///     the shorter arc between them stands within its sagitta
 ///     `minor − √(minor² − |p'q|²/4) ≤ 2r − √(4r² − 1.036² r²) < 0.29 r` of the chord `p'q`, which
-///     is within `1.036 r` of `p`. Reach `< 1.33 r < 2r`.
+///     is within `1.036 r` of `p`, at `ρ > 0.7 r` (on the sheet's side of the axis). Reach
+///     `< 1.33 r < 2r`.
 /// * an affine image of a preimage surface: a point within `r` of `p` has its preimage within
 ///   `r / σ_min` of `p`'s, joined there by a path within the preimage's reach, which the map
 ///   stretches by at most `σ_max`.
@@ -2903,9 +2932,16 @@ pub fn disc_reach(s: &Surface,p: V,r: f64) -> Option<f64> {
             let d = rho.dhypot(z-apex);
             (2.*r <= rho && 2.*r <= d*(2.*sa*ca).abs().min(1.)).then_some(2.*r)
         }
-        // `big` may be negative (the tube's circle drawn in the opposite half-plane): a ring torus
-        // is one whose tube's radius is less than its circle's, whatever its sign
-        Surface::Torus(_,big,minor) => (minor.abs() < big.abs() && 2.*r <= minor.abs() && 2.*r <= rho).then_some(2.*r),
+        // `big` may be negative (the tube's circle drawn in the opposite half-plane): the two
+        // circles of a meridian half-plane stand about `±|big|` whatever its sign, `p` on the
+        // nearer and the other's sheet (a spindle's lemon, or its outer sheet from the lemon)
+        // kept out of the ball
+        Surface::Torus(_,big,minor) => {
+            let (big,minor) = (big.abs(),minor.abs());
+            let [own,other] = [(rho-big).dhypot(z),(rho+big).dhypot(z)].map(|d| (d-minor).abs());
+            let (near,far) = (own.min(other),own.max(other));
+            (2.*r <= minor && 2.*r <= rho && far > r+near).then_some(2.*r)
+        }
         Surface::Affine(ref m) => {
             let [lo,hi] = m.stretch;
             if !(lo > 0.) { return None }
@@ -3020,7 +3056,13 @@ pub(crate) fn unseen_beside(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &
                 // a meeting beyond the shared box is on neither face; one on a known curve says
                 // nothing of this cell, which is halved
                 if (0..3).any(|k| q[k] < lo[k]-pad || q[k] > hi[k]+pad) { continue }
-                if !near_known(q,spacing) { return Ok(Some(q)) }
+                // nor is one off either face (#996): a curve through it lies outside the faces, or
+                // crosses an edge into them where that edge's crossing seeds it; traced from here —
+                // a turn's tube a ten-thousandth inside the leg it meets, crossing the leg's
+                // cylinder run on past its end in a shallow curve under the seam — it is a march of
+                // a hundred thousand points that no face keeps. The cell is halved, for what else
+                // it holds
+                if !near_known(q,spacing) && !clear(q,16.*tol) { return Ok(Some(q)) }
             }
             if reach <= floor {
                 return Err(format!("a {} and a {} come within {:.1e} of each other at [{:.4}, {:.4}, {:.4}] and no meeting was \

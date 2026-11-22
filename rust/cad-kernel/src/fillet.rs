@@ -263,7 +263,7 @@ fn roll_part(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)],beside: bool) -> Res
             seam_aligned(b,&uses,&sides_faces[k],f,v,add(c,scale(e[k],r)),tol,&names())?;
             Ok(Cut::Section {o:c,keep,reach:4.*r})
         };
-        let (trim,faces) = end_at(b,&uses,&sides_faces,&chain,v,m,tol,&names(),&section)?;
+        let (trim,faces) = end_at(b,&uses,&sides_faces,&chain,v,m,tol,&names(),r,&section)?;
         // the ball's centre over the vertex, `r` from each face
         let t = spine.inverse(onto.project(across(p,m,r)));
         ends.push(Stop {trim,t,faces});
@@ -1695,7 +1695,7 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
             seam_aligned(b,&uses,&sides_faces[k],f,v,legs_at(e,keep)[k],tol,&names)?;
             Ok(Cut::Section {o:e,keep,reach})
         };
-        let (trim,faces) = end_at(b,&uses,&sides_faces,&chain,v,m,tol,&names,&section)?;
+        let (trim,faces) = end_at(b,&uses,&sides_faces,&chain,v,m,tol,&names,legs[0].max(legs[1]),&section)?;
         ends.push(Stop {trim,t:edge.inverse(q),faces});
     }
     let winding = [0,1].map(|k| ends.is_empty() && winds(&strips[k],&loop_pts));
@@ -1884,7 +1884,7 @@ fn coaxial(surfaces: &[Surface;2],tol: f64) -> Option<(V,V)> {
 /// it at — or the run is refused, naming why.
 #[allow(clippy::too_many_arguments)]
 fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2],chain: &[usize],v: u32,m: [V;2],tol: f64,
-    names: &str,section: &dyn Fn(usize,usize,V) -> Result<Cut,String>) -> Result<(Trim,Vec<usize>),String> {
+    names: &str,size: f64,section: &dyn Fn(usize,usize,V) -> Result<Cut,String>) -> Result<(Trim,Vec<usize>),String> {
     let names = || names.to_string();
     let p = b.vertices[v as usize].p;
     let faces: Vec<usize> = (0..b.edges.len()).filter(|&e| b.edges[e].v.contains(&v))
@@ -1940,6 +1940,9 @@ fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2
             let side = |u: &(usize,usize,usize)| sides_faces.iter().flatten().any(|&s| s == u.0);
             if !(uses[e].iter().any(|u| u.0 == f) && uses[e].iter().any(side)) { continue }
             let w = match (reached.contains(&x),reached.contains(&y)) { (true,false) => y,(false,true) => x,_ => continue };
+            // (only along an end face shorter than the section: past one as long the faces beyond
+            // its far end stand out of the section's reach, as the field reads it)
+            if distance(b.vertices[x as usize].p,b.vertices[y as usize].p) > size { continue }
             let q = b.vertices[w as usize].p;
             reached.push(w);
             let there: Vec<usize> = (0..b.edges.len()).filter(|&e| b.edges[e].v.contains(&w))
