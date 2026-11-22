@@ -19,6 +19,36 @@ fn tumbling(centre: [f64;3],hub: f64,tube: f64,ratio: f64,lean: f64,heading: f64
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("face") {
+        // a dumped trim's candidate's face, its parameters `(u, t)` a tube's sheet's: the far cover
+        // over its parameters' box — `.` uncovered, `f` covered less than the tolerance deep, `F`
+        // more, `N` held by its neighbours, `a` alone
+        let t = cad_kernel::swept::dump::load_trim(std::path::Path::new(&args[1])).unwrap();
+        let (ci,fi,n): (usize,usize,usize) = (args[2].parse().unwrap(),args[3].parse().unwrap(),args[4].parse().unwrap());
+        let ring = cad_kernel::swept::rings::Ring::read(&t.tool).unwrap();
+        let b = &t.candidates[ci];
+        let f = &b.faces[fi];
+        let uv: Vec<[f64;2]> = f.loops.iter().flatten().flat_map(|c| b.uv_ends(f,c)).collect();
+        let (lo,hi) = uv.iter().fold(([f64::INFINITY;2],[f64::NEG_INFINITY;2]),|(l,h),p| ([l[0].min(p[0]),l[1].min(p[1])],[h[0].max(p[0]),h[1].max(p[1])]));
+        let (lo,hi) = match args.get(5) { Some(w) => { let w: Vec<f64> = w.split(',').map(|v| v.parse().unwrap()).collect(); ([w[0],w[2]],[w[1],w[3]]) } None => (lo,hi) };
+        println!("face ({ci}, {fi}) {}: u {:?} t {:?}",f.surface.kind(),[lo[0],hi[0]],[lo[1],hi[1]]);
+        let rows = cad_kernel::util::par::indices(n+1,|i| {
+            let v = hi[1]-(hi[1]-lo[1])*i as f64/n as f64;
+            let line: String = (0..=n).map(|j| {
+                let u = lo[0]+(hi[0]-lo[0])*j as f64/n as f64;
+                let x = f.surface.point([u,v]);
+                match cover(&ring,&t.path,t.roll,x,v,t.tol) {
+                    Ok(Reading::Near) => 'N',
+                    Ok(Reading::Far(c)) => if c.depth < -t.tol { 'F' } else if c.depth < 0. { 'f' } else { '.' },
+                    Ok(Reading::Alone) => 'a',
+                    Err(_) => '!',
+                }
+            }).collect();
+            format!("t {v:.6} {line}")
+        });
+        for r in rows { println!("{r}") }
+        return
+    }
     let (tube,(tool,path),half) = match args.first().map(String::as_str) {
         Some("full-turn") => (0.16,tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.),180.),
         Some("half-turn") => (0.16,tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.),90.),
@@ -33,6 +63,11 @@ fn main() {
         "point" => {
             let x: Vec<f64> = args[2].split(',').map(|v| v.parse().unwrap()).collect();
             let x = [x[0],x[1],x[2]];
+            let ts: Vec<f64> = (0..=400_000).map(|j| roll[0]+(roll[1]-roll[0])*j as f64/400_000.).collect();
+            let ds = cad_kernel::swept::depth::depths(&ring,&path,x,&ts);
+            let mut order: Vec<usize> = (1..ds.len()-1).filter(|&j| ds[j] <= ds[j-1] && ds[j] <= ds[j+1]).collect();
+            order.sort_by(|&i,&j| ds[i].total_cmp(&ds[j]));
+            for &j in order.iter().take(4) { println!("a least of the depth {:+.3e} at {:.7}",ds[j],ts[j]) }
             for own in [roll[0],roll[1]] {
                 println!("as a point of the pose at {own}: {:?}",cover(&ring,&path,roll,x,own,tol));
             }
@@ -147,6 +182,14 @@ fn main() {
                 format!("ψ {ps:+.5} {line} least {least:+.2e}")
             });
             for r in rows { println!("{r}") }
+            return
+        }
+        "at" => {
+            // the sheet's point at (θ, t, σ) and its reading
+            let n: Vec<f64> = args[2..5].iter().map(|v| v.parse().unwrap()).collect();
+            let l = label_at(&ring,&path,n[0],n[1],n[2]).unwrap();
+            let (x,bend) = sheet(&ring,&path,roll,n[0],n[1],l).unwrap();
+            println!("{x:?} s'' {bend:+.3e} {l:?}: {:?}",cover(&ring,&path,roll,x,n[1],tol));
             return
         }
         "map" => {
