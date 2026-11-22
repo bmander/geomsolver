@@ -102,6 +102,18 @@ impl Segments {
         (finite && count <= WIDE).then_some((lo,hi))
     }
 
+    /// Segment `j` of crease `k`, from `a` to `b`, listed.
+    pub(super) fn add_segment(&mut self,k: usize,j: usize,a: P,b: P) {
+        match self.spanned(a,b) {
+            None => self.wide.push((k,j)),
+            Some((lo,hi)) => for x in lo[0]..=hi[0] {
+                for y in lo[1]..=hi[1] {
+                    for z in lo[2]..=hi[2] { self.cells.entry([x,y,z]).or_default().push((k,j)); }
+                }
+            },
+        }
+    }
+
     /// Each segment of crease `k`, listed (`remove` with the same points takes them out).
     pub(super) fn add(&mut self,k: usize,c: &Crease) { self.each(k,c,true) }
 

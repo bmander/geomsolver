@@ -478,14 +478,15 @@ impl FieldMesher {
     }
 
     /// Refine to the end: the closed surface, or why there is none.  A step at a time, each said on
-    /// the gauge of the work it is inside (`progress::gauge`: `meshing its material field, final
-    /// pass, 1890 points`), so a listener hears how far it has got; the steps' size
+    /// the gauge of the work it is inside (`progress::gauge`: `final pass, 1890 points`, the work
+    /// itself the stand-in's, `meshing part from its material field, …`, #996), so a listener
+    /// hears how far it has got; the steps' size
     /// changes when it is said, never what is refined (`Progressive::step`).
     pub fn finish(mut self) -> Result<FieldSurface, String> {
         while !self.step(FINISH_STEP)? {
             if crate::progress::listening() {
                 let p = self.progress();
-                crate::progress::gauge(|| format!("meshing its material field, {}, {} points", p.doing(),
+                crate::progress::gauge(|| format!("{}, {} points", p.doing(),
                     p.refine.inserted));
             }
         }

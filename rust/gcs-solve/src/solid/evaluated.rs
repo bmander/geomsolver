@@ -393,7 +393,11 @@ impl EvaluatedSolid {
         if !epsilon.is_finite() || epsilon <= 0.0 {
             return Err("solid scale is not representable".into());
         }
-        let boundary = csg::boundary(&csg, epsilon);
+        let boundary = match &why {
+            Some(_) => crate::progress::during(|| crate::progress::Work::stand_in(sk, si, true, !facets_only()),
+                || csg::boundary(&csg, epsilon)),
+            None => csg::boundary(&csg, epsilon),
+        };
         if boundary
             .iter()
             .any(|p| !p.area().is_finite() || p.pts.iter().flatten().any(|x| !x.is_finite()))
@@ -471,8 +475,10 @@ impl EvaluatedSolid {
             FieldMeshing::Supplied => Err(format!("`{name}`: a swept solid that is no object is built with the object it is of")),
             // the refinement knows no solid, so its refusal is named here, as its setup's is (#614)
             FieldMeshing::Now => {
-                let surface = FieldMesher::new(sk, si)?.finish()
-                    .map_err(|e| format!("`{name}`: {e}"))?;
+                // the time said to be the stand-in's, and why, not the build's (#996)
+                let refused = why.is_some() && !super::cad::contains_sweep(sk, si);
+                let surface = crate::progress::during(|| crate::progress::Work::stand_in(sk, si, false, refused),
+                    || FieldMesher::new(sk, si)?.finish().map_err(|e| format!("`{name}`: {e}")))?;
                 Self::from_surface(sk, si, policy, unit, &surface, why)
             }
         }

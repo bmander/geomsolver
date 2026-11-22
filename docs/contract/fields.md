@@ -154,7 +154,20 @@ segments a grid lists in the point's cell (`graph::Segments`: each segment in ev
 grown by half a step, touches; kept beside the creases as each is traced and split), never of every
 segment traced (#996: asked at every step of every trace, that was quadratic in the creases'
 length: 88% of the samples of a rounded casting's half-hour field mesh); the choice is the one
-reading every segment makes.  Measure with instructions retired
+reading every segment makes.  **A trace that walks back onto its own path ends there** (`End::Looped`,
+#996): handed on to a crease that runs round a loop its start is not on, it never came back
+within a step and a half of its start, and went round again until its 200,000 points ran out —
+over half an hour of exact readings on a casting whose round was refused, where it now ends after
+one lap (the path's segments in a `graph::Segments` of its own, the last few steps left out).
+**A body's faces are read by their boxes** (#996): which of a group of faces has the nearest patch
+(`BodyFaces::nearest_patch`) and which edge is nearest (`nearest_edge`, and a face's own edges in
+`patch_distance`) read only the faces and edges whose boxes (`Located::face_gap`, `edge_gap`,
+less the boundary's tolerance) come within the best so far, nearest box first, and choose what
+reading every one in order chooses — the least, the first among equals; a field over a body's
+faces asks it at every step of every query, and a traced edge is a search to invert
+(`refused_look::the_nearest_face_and_edge_read_by_their_boxes_are_the_scans`, each read from no
+warm start: a search starts from the last foot its thread found on that surface, so two reads of
+one patch agree to the bit only from the same start).  Measure with instructions retired
 (`/usr/bin/time -l`); Spotlight on a fresh target doubles wall-clock noise.
 
 **A static field that searches is read as a sweep is** (#961): a region whose terms are read by a
