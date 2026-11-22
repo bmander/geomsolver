@@ -576,7 +576,9 @@ carrying the run on none: one going on tangent from one of the run's faces acros
 fill's cap flush with a side), there in an edge of the run's own turn, along which the round goes
 on, or that is a piece of the surface of the run's own face there (a floor two cuts leave in two
 pieces) (`BodyFaces::carries_on`, #994) — a face going on tangent that meets them there only in an
-edge of the other turn carries nothing on, and the run ends on it (a deck's corner
+edge of the other turn carries nothing on, and the run ends on it (one meeting them there in no
+edge at all carries it on, as any face going on tangent does: a block's end flush under a flange's
+side, tangent to its corner arc at the vertex alone, #996's `flush_ends`) (a deck's corner
 arc running tangent into its side, flush with the block's, the block's side meeting its top in a
 convex edge: the foot's fill kept within the block, not hung past its wall); nor one whose
 surface the run itself goes across (`BodyFaces::goes_across`: no side of it holds the run), nor one

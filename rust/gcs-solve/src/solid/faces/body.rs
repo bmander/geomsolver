@@ -971,10 +971,12 @@ impl BodyFaces {
     /// turn `turn` (convex: `Some(true)`) on past it: going on tangent from one of them across a
     /// seam there (`tangent_at`) and meeting another of them there in an edge of that turn, along
     /// which the round goes on — an obround's half circle after its flat side (#994).  A face going
-    /// on tangent that meets them there only in an edge of the other turn, or in none, carries
-    /// nothing on — unless it is a piece of the surface of one of the edge's own faces there
-    /// (`own`), along which the run goes on: the run ends on it — a deck's corner arc running tangent into its side, flush
-    /// with the block it stands on, whose side meets the block's top in a convex edge.
+    /// on tangent that meets them there only in an edge of the other turn carries nothing on —
+    /// unless it is a piece of the surface of one of the edge's own faces there (`own`), along
+    /// which the run goes on: the run ends on it — a deck's corner arc running tangent into its
+    /// side, flush with the block it stands on, whose side meets the block's top in a convex edge.
+    /// One meeting them there in no edge at all carries the run on, as `tangent_at` reads any
+    /// face going on tangent (#996).
     fn carries_on(&self, c: usize, faces: &[usize], own: &[usize], turn: Option<bool>, v: V, vid: u32) -> bool {
         if !self.tangent_at(c, faces, v, 1.0) {
             return false;
@@ -991,11 +993,15 @@ impl BodyFaces {
         // (one of them, or a face it goes on into across a seam: a fill's cap flush with a side —
         // in an edge, not the seam it goes on across: a plate a band's foot arc runs tangent into
         // meets the arc in no turn, #994)
+        // — and where it meets none of them there in any edge (a block's end flush under a
+        // flange's side, tangent to the flange's corner arc at the vertex alone, #996), it carries
+        // the run on as any face going on tangent does: it bounds nothing the run reaches
         let going = self.smooth(faces);
-        turn.is_none() || self.edges[c].iter().any(|&e| {
-            self.loc.b.edges[e as usize].v.contains(&vid) && !self.seam(e) && self.convex(e) == turn
+        let meets: Vec<u32> = self.edges[c].iter().copied().filter(|&e| {
+            self.loc.b.edges[e as usize].v.contains(&vid) && !self.seam(e)
                 && self.faces_of(e).iter().any(|g| *g != c && going.contains(g))
-        })
+        }).collect();
+        turn.is_none() || meets.is_empty() || meets.iter().any(|&e| self.convex(e) == turn)
     }
 
     /// Whether face `c`'s surface holds the edge of `run` that ends at vertex `vid`
