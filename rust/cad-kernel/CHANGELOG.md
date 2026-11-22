@@ -19,7 +19,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   with the pair nearest the swallowtail point's angle not put in, the folds check passing over the
   newborn pair's bridge as over any bridge), and the rest from the point. The pair's sliver before
   the point lies wholly in the tail above the double curve, which the trim drops. The half turn: 20 faces, volume 12.2377154 (cadrs
-  12.2377), 5.9 s; `depth_probe` reads `sliver`.
+  12.2377), 5.9 s; `depth_probe` reads `sliver` and `about`, `ring_profile` `agree`. A double
+  curve's point past a stretch's end ends its line though the point before stood on the end
+  (`rings::cut_along`): the thin torus's second preimage, leaving its swallowtail point's row and
+  crossing it again further on, was laid along the row.
 
 - **A double curve traced from a row's seed is joined to its swallowtail point; a tube's tail is read
   from the depth** (#942 T1d-tori, `swept::rings`, `swept::closed`): the swallowtail points are

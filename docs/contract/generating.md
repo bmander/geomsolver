@@ -2294,7 +2294,18 @@ FT|T"). brep-bench's
 `tumbling-torus-half-turn` is built, checked and judged as the bench calls it: 20 faces, volume
 12.2377154 (cadrs 12.2377), held to membership, 8 s in the test profile
 (`swept_rings::the_half_turn_is_built_closed`). A Monte Carlo count of the definition read 12.198 ±
-0.021, 1.9 of its deviations below.
+0.021, 1.9 of its deviations below; read point by point instead (`ring_profile half-turn 90 agree`),
+the solid and the definition (`Swept::member`) differ at 6 of 200 000 points of its box, none
+unsettled, each within 4.7e-5 of the boundary by the ring's own depth, inside the 1e-4 sag of the
+mesh the solid was read by, and both ways. **A double curve's point past a stretch's end ends its
+line** (`rings::cut_along`), though the point before stood on the end: a swallowtail point stands on
+its row, and a preimage leaving the stretch there and coming back across the row further on was
+laid as one line with it, joined along the row — the thin torus's second preimage dips below its
+point's row by up to 4.5e-3 of the roll and crosses it again 0.0316 of an angle along, standing up
+to 2.3e-5 off the row's contact in space between, a lens of the sheet, and the double curve was laid
+on the row's own edge. `tumbling-torus-thin` is now refused at its second swallowtail point, where
+the lens the second curve's dip cuts off below its row is not entered and the dip's edge has one
+face.
 
 **A seam's crossing within the tolerance band of the rim is the tube's vertex** (`rings::traces`):
 where a touching piece's rim meets a dipped one's the relative curvature across the rim is nought
