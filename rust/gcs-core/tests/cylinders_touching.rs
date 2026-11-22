@@ -3,7 +3,8 @@
 //! at …, where no edge crosses, in a curve that could not be traced"). Two rods whose axes stand
 //! the sum of their radii apart touch at one point and meet in no curve; traced, the search for a
 //! meeting no edge crosses found a point beside the touch, and the trace from it gave nothing, or
-//! the march was refused as nearly touching. `ssi::rods_apart` reads them in closed form: every
+//! the march was refused as nearly touching. `ssi::rods_apart` reads them in closed form where
+//! they lean a degree or more apart (less, they touch along a stretch, read as before): every
 //! Boolean of two such rods, at any lean, whole or ending at the touch, is the rods' own volumes
 //! to rounding, and two sunk a tenth into one another still cross.
 use gcs_core::brep::boolean::{boolean,Op};
@@ -40,7 +41,7 @@ fn side(b: &Brep) -> Surface {
 /// The pairs of radii, from a rod on one of twice its size to a round of a millimetre on an R20
 /// blend, and the leans between their axes.
 const RADII: [(f64,f64);4] = [(1.,2.),(1.,20.),(0.5,20.),(3.,3.)];
-const LEANS: [f64;5] = [90.,60.,30.,10.,1.];
+const LEANS: [f64;5] = [90.,60.,30.,10.,2.];
 
 #[test]
 fn rods_resting_on_one_another_or_apart_meet_in_no_curve() {
@@ -58,6 +59,13 @@ fn rods_resting_on_one_another_or_apart_meet_in_no_curve() {
             let (a,b) = rods(r,s,[-3.,3.],[-3.,3.],lean,r+s-1e-2);
             assert_eq!(intersect(&side(&a),&side(&b),TOL),Ssi::Traced,"{r} into {s} at {lean}°");
         }
+    }
+    // leaning less than a degree apart they stand within the tolerance over a stretch a thousand
+    // times the touch's at right angles, and longer as they lean less: a touch along a curve, read
+    // from the meeting's ridges, never as no curve
+    for lean in [0.5,1e-3,3e-5] {
+        let (a,b) = rods(1.,2.,[-3.,3.],[-3.,3.],lean,3.);
+        assert_eq!(intersect(&side(&a),&side(&b),TOL),Ssi::Traced,"{lean}°");
     }
     // one radius, the axes crossing: the two ellipses as before
     let (a,b) = rods(1.,1.,[-3.,3.],[-3.,3.],90.,0.);
@@ -104,5 +112,40 @@ fn rods_sunk_a_little_into_one_another_still_cross() {
             let cut = volume(&boolean(&a,&b,Op::Cut,TOL).unwrap_or_else(|e| panic!("{what}: {e}")));
             assert!((cut-(va-common)).abs() <= 1e-9*(va+vb),"{what}: {cut}");
         }
+    }
+}
+
+/// The same as a document: a rail across the front plane resting on a beam across the side plane,
+/// unioned — on `main` refused with the issue's words — is their two volumes, whole or with the
+/// rail ending at the touch.
+#[test]
+fn a_rail_resting_across_a_beam_is_the_two_rods() {
+    for (r,s,from) in [(1.,20.,-3.),(1.,2.,-3.),(0.5,20.,-3.),(1.,20.,0.)] {
+        let e = crate::common::text::solved(&format!("\
+unit mm
+use std
+use std.solids (union)
+in std.front {{
+  c1 := point
+  fix((0, 0)) c1
+  pin := circle(center: c1) hint(r: {r})
+  radius({r}) pin
+}}
+in std.side {{
+  c2 := point
+  fix((0, {apart})) c2
+  bar := circle(center: c2) hint(r: {s})
+  radius({s}) bar
+}}
+rail := solid(std.solids.Prism(face(pin), from: {from}mm, to: 3mm))
+beam := solid(std.solids.Prism(face(bar), from: -3mm, to: 3mm))
+rail union beam
+",apart = r+s));
+        let what = format!("{r} on {s} from {from}");
+        let x = e.sketch.exact_solid(crate::common::ent(&e,"beam").i()).unwrap_or_else(|m| panic!("{what}: {m}"));
+        x.brep.check(1e-8).unwrap_or_else(|m| panic!("{what}: {m}"));
+        let want = PI*r*r*(3.-from)+PI*s*s*6.;
+        let v = volume(&x.brep);
+        assert!((v-want).abs() <= 1e-9*want,"{what}: {v} against {want}");
     }
 }

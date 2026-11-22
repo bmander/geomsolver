@@ -14,7 +14,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   another, or touching at one point — as a ball resting on a plane is read. They were traced, and
   the search for a meeting no edge crosses found a point beside the touch that the trace could not
   follow ("a cylinder and a cylinder meet at …, where no edge crosses, in a curve that could not be
-  traced", or "nearly touching"): a blanket round over a clevis's top. Two crossing are traced as
+  traced", or "nearly touching"): a blanket round over a clevis's top. Two crossing, or leaning
+  less than a degree apart (where they stand within the tolerance along a stretch), are traced as
   before.
 
 ## [0.20.0] - 2026-11-21

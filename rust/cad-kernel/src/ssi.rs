@@ -1078,9 +1078,17 @@ fn radius_at(s: &Surface,h: f64) -> Option<f64> {
 /// where no edge crosses, in a curve that could not be traced", or "nearly touching"
 /// (`cylinders_touching`). Nearer than that the two cross in a quartic, traced (of one radius
 /// with axes crossing, `intersect`'s two ellipses).
+///
+/// **Only where the axes lean apart by `SHALLOW` or more.** Resting on one another, the two stand
+/// within `tol` over an ellipse about the touch whose long axis is `√(2 tol (r + s)) / sin θ`, `θ`
+/// their lean: at a lean of a degree or more a point at the tolerance's scale, as a ball's on a
+/// plane is, but at a lean of a millionth a stretch the length of the part, along which the two
+/// touch as two parallel rods do along a line, a touch along a curve the meeting's ridges read
+/// (`meeting::marched`) and the faces lying tangent there are laid along, which no curve would
+/// leave out.
 fn rods_apart(f: &Frame,r: f64,g: &Frame,s: f64,tol: f64) -> bool {
-    let n = cross(f.z,g.z);
-    if !(norm(n) > 1e-12) { return false }
+    let n = cross(unit(f.z),unit(g.z));
+    if !(norm(n) >= SHALLOW) { return false }
     dot(sub(g.o,f.o),unit(n)).abs() >= r.abs()+s.abs()-tol
 }
 

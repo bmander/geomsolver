@@ -922,9 +922,13 @@ no curve, and never traced; farther apart they are clear in closed form. Traced,
 meeting no edge crosses found a point beside the touch, the second-order reading took it as a touch
 alone only where its disc is small beside both faces, and the trace from it gave nothing (a blanket
 round over a clevis's top: "a cylinder and a cylinder meet at …, where no edge crosses, in a curve
-that could not be traced"). Nearer, they cross and are traced as before
-(`cylinders_touching`: radii from 1 on 2 to 0.5 on 20 and of one radius, leans from 90° to 1°, whole
-or ending at the touch, each Boolean the rods' own volumes, and sunk a tenth still crossing). **A face's
+that could not be traced"). Only at a lean of `SHALLOW` (a degree) or more: the two stand within
+the tolerance over an ellipse about the touch `√(2 tol (r + s)) / sin θ` long, which at a lean of a
+millionth is the part's length, a touch along a curve the meeting's ridges read
+(`meeting::marched`) and the faces tangent there are laid along. Nearer, they cross and are traced
+as before (`cylinders_touching`: radii from 1 on 2 to 0.5 on 20 and of one radius, leans from 90°
+to 2°, whole or ending at the touch, each Boolean the rods' own volumes; under a degree left to the
+trace; sunk a tenth, still crossing). **A face's
 pieces are ordered by their curvature where they leave a point tangent** (`boolean::pieces_of_face`):
 each half's way out of a node is read a ten-thousandth along its own length, and where two of the
 ways there agree within `TANGENT_TIE` (a thousandth of a radian, what a step along an arc turns its
