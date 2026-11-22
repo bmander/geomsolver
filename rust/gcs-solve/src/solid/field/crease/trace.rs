@@ -113,7 +113,7 @@ pub(super) fn trace<S: CreaseSource + ?Sized>(field: &S,start: P,operands: [Oper
     let mut ends = [End::Budget;2];
     // this trace's own path so far, side by side from the start, by where it lies (#996): a walk
     // back onto it is a loop gone round again
-    let mut own = Segments::new(options.step,0.5*options.step);
+    let mut own = Segments::new(options.step);
     'direction: for (side,sign) in [(0usize,1f64),(1,-1.)] {
         let (mut p,mut ops,mut tangent) = (p0,first,tangent0.map(|x| x*sign/norm(tangent0)));
         let mut step = options.step;
@@ -244,7 +244,7 @@ pub(super) fn trace<S: CreaseSource + ?Sized>(field: &S,start: P,operands: [Oper
 fn looped(own: &Segments,side: usize,path: &[P],start: P,q: P,step: f64) -> Option<P> {
     const RECENT: usize = 4;
     let at = |j: usize| if j == 0 { start } else { path[j-1] };
-    own.near(q).into_iter().filter(|&(k,j)| k == side && j+RECENT < path.len())
+    own.near(q).filter(|&(k,j)| k == side && j+RECENT < path.len())
         .map(|(_,j)| (j,segment_distance(q,at(j),path[j])))
         .filter(|&(_,d)| d < 0.25*step)
         .min_by(|a,b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)))

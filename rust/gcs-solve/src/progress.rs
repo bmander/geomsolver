@@ -155,15 +155,14 @@ impl Work {
         Work::of(Kind::Evaluate, sk.solid_name(i), Some(At::Solid(i)))
     }
 
-    /// **Solid `i`'s stand-in made** (#996): its material field meshed (`facets` false) or its
-    /// facet term's boundary read, where it is not its exact build — `refused` where that is for
+    /// **Solid `i`'s stand-in made** (#996): its material field meshed (`Kind::Field`) or its
+    /// facet term's boundary read (`Kind::Facets`), where it is not its exact build — `refused` where that is for
     /// a refusal (a round the kernel does not build), so the time is said to be the stand-in's and
     /// why, never the build's: `meshing part from its material field, its exact build refused`.
-    pub fn stand_in(sk: &Sketch, i: usize, facets: bool, refused: bool) -> Work {
-        let from = if facets { "its facet term" } else { "its material field" };
+    pub fn stand_in(sk: &Sketch, i: usize, kind: Kind, refused: bool) -> Work {
+        let from = if kind == Kind::Facets { "its facet term" } else { "its material field" };
         let why = if refused { ", its exact build refused" } else { "" };
-        Work::of(if facets { Kind::Facets } else { Kind::Field }, format!("{} from {from}{why}", sk.solid_name(i)),
-            Some(At::Solid(i)))
+        Work::of(kind, format!("{} from {from}{why}", sk.solid_name(i)), Some(At::Solid(i)))
     }
 
     /// A claim judged: `text` is the claim as the report words it (`claim a clear(1mm) b`).

@@ -140,7 +140,7 @@ pub(super) fn creases_under<S: CreaseSource + ?Sized>(field: &S,seeds: &[(P,[Ope
     // the segments traced so far by where they lie, read by every question below of what is near
     // a point (#996): asked of every segment, those questions made tracing quadratic in the creases'
     // length
-    let mut index = Segments::new(options.step,0.5*options.step);
+    let mut index = Segments::new(options.step);
     let near = |out: &[Crease],index: &Segments,p: P,within: f64|
         out.iter().any(|c| c.points.len() == 1 && distance(p,c.points[0]) < within) || index.any_within(out,p,within);
     for &(p,ops) in seeds {

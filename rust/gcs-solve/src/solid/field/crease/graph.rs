@@ -50,7 +50,7 @@ fn junctions(creases: &mut Vec<Crease>,within: f64) {
 /// crease's nearest segment is one of those within reach whenever any is.
 pub(super) fn meets(existing: &[Crease],index: &Segments,q: P,within: f64) -> Option<(usize,P)> {
     debug_assert!(within <= index.reach);
-    let mut candidates = index.near(q);
+    let mut candidates: Vec<(usize,usize)> = index.near(q).collect();
     candidates.sort_unstable();
     for run in candidates.chunk_by(|x,y| x.0 == y.0) {
         let (k,c) = (run[0].0,&existing[run[0].0]);
@@ -84,9 +84,9 @@ pub(super) struct Segments {
 const WIDE: i64 = 64;
 
 impl Segments {
-    /// None yet, in cells of side `cell`, asked about within `reach`.
-    pub(super) fn new(cell: f64,reach: f64) -> Segments {
-        Segments {cell,reach,cells:Default::default(),wide:Vec::new()}
+    /// None yet, in cells of side `cell`, asked about within half of one.
+    pub(super) fn new(cell: f64) -> Segments {
+        Segments {cell,reach:0.5*cell,cells:Default::default(),wide:Vec::new()}
     }
 
     /// The cell `x` lies in.
@@ -102,49 +102,39 @@ impl Segments {
         (finite && count <= WIDE).then_some((lo,hi))
     }
 
-    /// Segment `j` of crease `k`, from `a` to `b`, listed.
-    pub(super) fn add_segment(&mut self,k: usize,j: usize,a: P,b: P) {
-        match self.spanned(a,b) {
-            None => self.wide.push((k,j)),
-            Some((lo,hi)) => for x in lo[0]..=hi[0] {
-                for y in lo[1]..=hi[1] {
-                    for z in lo[2]..=hi[2] { self.cells.entry([x,y,z]).or_default().push((k,j)); }
-                }
-            },
-        }
-    }
-
-    /// Each segment of crease `k`, listed (`remove` with the same points takes them out).
-    pub(super) fn add(&mut self,k: usize,c: &Crease) { self.each(k,c,true) }
-
-    /// Each segment of crease `k` as `c` holds it, taken out.
-    pub(super) fn remove(&mut self,k: usize,c: &Crease) { self.each(k,c,false) }
-
-    fn each(&mut self,k: usize,c: &Crease,add: bool) {
-        let put = |v: &mut Vec<(usize,usize)>,j: usize| if add { v.push((k,j)); } else { v.retain(|&s| s != (k,j)); };
-        for (j,w) in c.points.windows(2).enumerate() {
-            let Some((lo,hi)) = self.spanned(w[0],w[1]) else { put(&mut self.wide,j); continue };
-            for x in lo[0]..=hi[0] {
-                for y in lo[1]..=hi[1] {
-                    for z in lo[2]..=hi[2] { put(self.cells.entry([x,y,z]).or_default(),j); }
-                }
+    /// Each list segment `a`–`b` is filed in, given to `f`.
+    fn filed(&mut self,a: P,b: P,mut f: impl FnMut(&mut Vec<(usize,usize)>)) {
+        let Some((lo,hi)) = self.spanned(a,b) else { return f(&mut self.wide) };
+        for x in lo[0]..=hi[0] {
+            for y in lo[1]..=hi[1] {
+                for z in lo[2]..=hi[2] { f(self.cells.entry([x,y,z]).or_default()); }
             }
         }
     }
 
+    /// Segment `j` of crease `k`, from `a` to `b`, listed.
+    pub(super) fn add_segment(&mut self,k: usize,j: usize,a: P,b: P) { self.filed(a,b,|v| v.push((k,j))); }
+
+    /// Each segment of crease `k`, listed (`remove` with the same points takes them out).
+    pub(super) fn add(&mut self,k: usize,c: &Crease) {
+        for (j,w) in c.points.windows(2).enumerate() { self.add_segment(k,j,w[0],w[1]); }
+    }
+
+    /// Each segment of crease `k` as `c` holds it, taken out.
+    pub(super) fn remove(&mut self,k: usize,c: &Crease) {
+        for (j,w) in c.points.windows(2).enumerate() { self.filed(w[0],w[1],|v| v.retain(|&s| s != (k,j))); }
+    }
+
     /// The segments `(crease, segment)` that may lie within `reach` of `p`, each once, in no order.
-    pub(super) fn near(&self,p: P) -> Vec<(usize,usize)> {
-        let mut out = self.wide.clone();
-        if p.iter().all(|v| v.is_finite()) {
-            if let Some(v) = self.cells.get(&self.at(p)) { out.extend_from_slice(v); }
-        }
-        out
+    pub(super) fn near(&self,p: P) -> impl Iterator<Item = (usize,usize)> + '_ {
+        let cell = if p.iter().all(|v| v.is_finite()) { self.cells.get(&self.at(p)) } else { None };
+        self.wide.iter().chain(cell.into_iter().flatten()).copied()
     }
 
     /// Whether `p` lies within `within` of a segment of `creases` (`within` no more than `reach`).
     pub(super) fn any_within(&self,creases: &[Crease],p: P,within: f64) -> bool {
         debug_assert!(within <= self.reach);
-        self.near(p).into_iter().any(|(k,j)| segment_distance(p,creases[k].points[j],creases[k].points[j+1]) < within)
+        self.near(p).any(|(k,j)| segment_distance(p,creases[k].points[j],creases[k].points[j+1]) < within)
     }
 }
 
