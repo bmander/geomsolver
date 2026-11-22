@@ -1674,6 +1674,40 @@ revolution of its arc bounded by its faces. Gates:
 `step_kinds::a_curve_turned_off_its_axis_plane_is_seated_where_no_face_crosses`,
 `a_line_turned_off_its_axis_plane_sweeps_its_hyperboloid`.
 
+**A tolerant boundary is read as known to within its measured tolerances** (`step_read::sound`,
+run on every solid `topology::solid` builds). Tolerances are measured (`Brep::measure_tolerances`),
+never taken from the file and never widened to pass a check; the file's stated uncertainty is
+reported, not enforced (CADGenBench's own files measure up to nine times what they state). Pieces
+of a face's loops within their tolerances of each other touch and are read — a pcurve wiggling at
+a tolerant edge, a cusp at a corner, two loops pinched at their vertices, an edge used both ways
+through a corner — and so are an edge shorter than its tolerance, two vertices within their
+tolerances (identity is the file's) and a face of no area: these are what a tolerant file means,
+not defects. **A refusal is for a boundary that is not a solid's by more than its tolerances can
+explain.** A crossing is refused where it is transversal at the tolerance's scale: both loops are
+followed out from it to a radius at which every arc end stands farther than the tolerance from
+the other arc, measured in space, and they cross an odd number of times; never within a few
+tolerances of a corner both reach. A loop reaching round its surface more than a period is refused
+only where the face and its images a period along cover a point of the surface twice (a band
+whose seam leans is read). No tolerance may exceed `sound::LOOSE` (1e-3) of the boundary's size:
+past that the reading says nothing (the corpus's right readings stand at or under 4.6e-4, the next
+above at 7e-2). Gates: `step_sound::a_loop_crossing_itself_is_refused`,
+`holes_crossing_outside_or_overlapping_are_refused`, `a_band_whose_seam_leans_is_read`,
+`a_band_wound_round_a_cylinder_overlaps_itself_only_where_its_turns_meet`,
+`tolerances_past_the_geometry_are_refused`, `the_kernels_own_solids_are_sound`.
+
+**A use is one curve in its face's parameters, and the shells nest by their senses**
+(`sound`'s `Drawn::leap`, `shells`). A use whose parameters leap is refused naming its face — by a
+whole period, across a closed sheet's seam, by more than twice its tolerance in space, or along a
+pole's line where a degenerate edge should stand: what is measured over the face's parameters
+would skip the leap (a total within its bar hid faces read 6% to 140% off). A leap within its
+edge's and vertices' tolerance is a corner's slop and is read. Each shell faces out or in as
+points stepped off its largest faces are located against it, its signed volume used only where
+none locates; a lump lies inside nothing or inside a void, a void inside a lump, none crossing
+another; any number of lumps is sound, as `step::write` writes them; a boundary of no faces is
+refused. Whether faces that are not neighbours cross in space is not decided yet. Gates:
+`step_sound::a_use_leaping_a_period_is_refused`, `shells_inside_out_or_apart_are_refused`,
+`step_mutants::an_empty_shell_is_refused`.
+
 **The corpus says whether a file was read right** (`tests/step_corpus.rs`,
 `scripts/step-corpus/`). Every file of `$STEP_CORPUS` — the 32 CADGenBench inputs, the STEP every
 kernel brep-bench runs here writes for its settled cases, a sample of both written again by OCCT
