@@ -1748,6 +1748,26 @@ CADGenBench). A file that represents no solid must be refused; one the two reade
 differently may be read either way or refused. `step_corpus::nothing_is_read_wrong` and
 `nothing_panics` hold at every commit; `the_corpus_reads` is the stage's finish line.
 
+**The corpus holds each face, not only the totals** (`step_corpus::Refs`, `face_bar`,
+`faces_judged`; `scripts/step-corpus/faces.py`). A total within its bar does not show a solid read
+right: a face read at half its area in a part of thousands moves the total by less than a loose
+bar (CADGenBench 214's face #28635, its sheet's whole domain, read 11.27 mm² against 16.82 while
+the file's totals passed). So a file read right in total also has each face, named by its
+ADVANCED_FACE, within its bar of OCCT's area of that face and of brep-bench's measurer's. OCCT's
+faces are named by the shells' order where the kinds agree, else by OCCT's own record of the
+translation (a face it split is the sum of its parts); the measurer's faces are put on their
+surfaces from the edges' curves in space, scaled by the unit read off the faces both readers
+share. The bar is `Σ max(tol, u)·length + 1e-6·area + 1e-9 mm²` over the face's edges — the area a
+tolerant boundary's slack can sweep, at the edge's measured tolerance or the file's stated
+uncertainty, whichever is larger, plus the quadrature's — its constants measured on the corpus
+(the worst agreeing face past its slack stands 9.4e-8 of its area off). Where the two readers
+disagree past the bar the face is disputed and may be read to either; a reader whose faces do not
+sum to the file's area is no reference for any of them; a table missing or of other bytes is said
+and counted, never taken for agreement. The per-face tables (340,000 faces) are read from
+`$STEP_CORPUS/oracle/` at run time, not committed. What the bar cannot see: a thin face's slack
+can approach a tenth of its area. `step_survey --faces [--past-sound]` prints the same judgement a
+face a line. Gates: `step_corpus::nothing_is_read_wrong`, `step_mutants::no_mutant_is_read_wrong`.
+
 **Never wrong on files written wrong** (`tests/step_mutants.rs`, `scripts/step-corpus/mutants.py`).
 Each mutant of the corpus — one edit of a well-formed file: a sense or an orientation flipped, a
 face dropped or listed twice, vertices swapped, a vertex moved, a radius scaled, a direction
