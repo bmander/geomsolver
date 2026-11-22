@@ -564,13 +564,17 @@ than the nearest's; and where the conditions read where a step landed have no po
 chain read through another face a hair inside the body), the step is taken back half way, a few
 times, first. **A set stated as another's terms and more, measured less that one** (`d(p, E) − d(p,
 M)`, `E` within `M`: `std.rounds`' `rolled` within `centres`, [rounds.md](rounds.md); #994,
-`region::general`'s `measured`) is read as the distance from `M`'s point nearest `p` to `E`, at
-least the difference: nothing where that point is of `E` (a ball rolled along the edge), however
-each set's own nearest point is found, and nothing to say where `M`'s is found nowhere. Read as two
-projections, `E`'s a set of no inside — the centres of a ball touching both faces, two points where
-a boss crosses a filled edge — its own steps did not settle under a chain read through its faces'
-own surfaces past their creases (a fill's round cut across by the boss), and half the gate's probes
-of the boss's fill went wrong (`tests/round_onto_round.rs`). **A face standing between the point and
+`region::general`'s `measured`) is read as written, `E`'s nearest point sought from `M`'s point
+nearest `p` (`SetDistance::distance_from`, `conditions::nearest`'s `start`): nothing where that
+point is of `E` (a ball rolled along the edge), and nothing to say where `M`'s is found nowhere.
+Sought from `p` itself, `E` a set of no inside — the centres of a ball touching both faces, two
+points where a boss crosses a filled edge — its steps did not settle under a chain read through its
+faces' own surfaces past their creases (a fill's round cut across by the boss), and half the gate's
+probes of the boss's fill went wrong (`tests/round_onto_round.rs`); from `M`'s point they start on
+the set `E` lies in. (Read instead as the distance from `M`'s point to `E`, an upper bound of the
+difference by the triangle inequality, the field read a smaller set than the definition states.)
+The lowering reads the term by the section it builds (`recognise::rolled_by`: within a rolled
+ball's section the nearest centre is that ball's, the difference nothing). **A face standing between the point and
 the chain's nearest patch is gone round only where it bounds the chain nearer the point than any
 face not of the chain does** (#994, `BodyFaces::nearest_face`): past a band's floor's rim at its
 bowed side, the side bounds the clevis's eye 36 mm off at its far end, its own end and top nearer,

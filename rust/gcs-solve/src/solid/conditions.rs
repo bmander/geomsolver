@@ -86,7 +86,7 @@ impl Conds {
                 return q;
             }
         }
-        let q = nearest(&self.cs, p);
+        let q = nearest(&self.cs, p, p);
         LAST.set(Some((self.id, at, q)));
         q
     }
@@ -300,6 +300,21 @@ impl SetDistance {
                 let v = region.value([x, y]);
                 (if *beyond { -v } else { v }).max(0.0)
             }
+        }
+    }
+
+    /// The distance from the set, its nearest point sought from `start` where it is read as
+    /// conditions (`nearest`'s steps linearised there first): a set within another, from the
+    /// other's point nearest `p` (`std.rounds`' `rolled` within `centres`, #994).
+    pub fn distance_from(&self, p: V, start: V) -> f64 {
+        match self {
+            SetDistance::Conditions(cs) => {
+                nearest(&cs.cs, p, start).map_or(f64::INFINITY, |q| norm(sub(p, q)))
+            }
+            SetDistance::Nearest(each) => {
+                each.iter().map(|s| s.distance_from(p, start)).fold(f64::INFINITY, f64::min)
+            }
+            _ => self.distance(p),
         }
     }
 
@@ -562,8 +577,8 @@ fn closed_onto(r: &Reading, d: f64) -> Option<Vec<Cond>> {
     })
 }
 
-/// The point satisfying every condition nearest `p`: from `p`, each step the nearest point of the
-/// conditions linearised where the last one stood.  Where every condition is convex its
+/// The point satisfying every condition nearest `p`: from `start` (`p` itself, or a point near the
+/// set), each step the nearest point of the conditions linearised where the last one stood.  Where every condition is convex its
 /// linearisation holds all of its points, so a step's point keeping every condition is the
 /// nearest: the steps stop there.  (Their own fixed point is no steadier: a step onto a surface
 /// curved tightly about a point far off — a ball's centres a hair short of closing onto a pocket
@@ -577,16 +592,16 @@ fn closed_onto(r: &Reading, d: f64) -> Option<Vec<Cond>> {
 /// its distance no less than the nearest's: a centre found, never a set read as empty.  And where
 /// the conditions read where a step landed have no point in common, the step is taken back half
 /// way, a few times, before the nearest point stood on is all there is.
-fn nearest(cs: &[Cond], p: V) -> Option<V> {
+fn nearest(cs: &[Cond], p: V, start: V) -> Option<V> {
     let tol = 1e-12 * (1.0 + norm(p));
     let kept = 1e-9 * (1.0 + norm(p));
     let bar = 1e-7 * (1.0 + norm(p));
     let convex = cs.iter().all(|c| c.convex);
-    let mut x = p;
+    let mut x = start;
     let mut rows: Vec<(V, f64, bool)> = Vec::with_capacity(cs.len());
     // the nearest point stood on keeping every condition, and how far
     let mut kept_at: Option<(f64, V)> = None;
-    let (mut last, mut halved) = (p, 0);
+    let (mut last, mut halved) = (start, 0);
     for k in 0..80 {
         rows.clear();
         let mut off: f64 = 0.0;
