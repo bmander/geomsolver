@@ -175,28 +175,40 @@ row is not gated: OCCT and the measurer both fail on it, or its bar would pass a
 (`table.py` prints each with why; 33 at the account's commit).
 
 **The totals' bars are the row's or what the file determines, whichever is wider**
-(`step_corpus::determined`, `bars`). A file whose edges stand off their faces is known only to
-within that slack, and no reading can be held closer to a reference than the file holds its own
-solid: its area no better than the sum of its faces' slacks, `S = Σ_faces Σ max(tol, u)·length`
-(what each face is held to, summed), and its volume no better than that slack swept over the
-solid's reach `R` from the point the flux is taken about, `R·S/3` (the flux `∮ X·n dA/3` moves by
-`|X|/3` for each unit of area the boundary moves; for a move `d` of an unclosed boundary,
-`|d|·|∮ n dA|/3 ≤ |d|·S/3`). Relative: `S/A` and `R·S/(3V)`. `step_survey --moved D` reads each
-solid's volume moved `D` mm along each axis beside the bound: moved 10 mm, CADGenBench 212's volume
-changes by 1.0e-6 (the bound 1.9e-3), 229's by 1.8e-6 (1.1e-3), 201's 3.3e-6 (1.8e-3), 206's
-4.3e-6 (1.9e-3), brepkit's saddle-drum-bored 2.9e-6 (1.5e-5) and helical-pipe-round-ends 1.3e-6
-(1.2e-4), cad-kernel's boxes-cut 1.5e-16 (1.2e-7): the bound holds everywhere and is a worst case,
-5 to 2,000 times what moving the solid shows (the slack's strips are signed and mostly cancel; with
-the measured tolerances alone, `u` left out, 20 to 300 times). On the files written to 1e-7 the
-row's bar is the wider and nothing changes; on the tolerant ones (CADGenBench, the commercial files,
-brepkit's two sweeps) the file's slack is, up to 4.6e-1 in volume on CADGenBench 204 (a thin part,
-`S` 78 mm² over its reach of 81 mm against 4,560 mm³) and 1.3e-2 in area (243). The row's own bar stays the second, tighter
-line: a file read within what it determines but outside its row's bar (the readers agree closer
-than the file's slack, and the reading does not) is `read~` in the report and listed by
-`account`, not failed; at the account's commit: CADGenBench 212 and 229, brepkit's
-saddle-drum-bored and helical-pipe-round-ends. Each face too: a face within its bar where OCCT
-and the measurer agree to a hundredth of it and the reading stands past three times their
-difference is listed (`face_census`, "outside the readers' agreement").
+(`step_corpus::determined`, `bars`), each measured on the reading itself.
+
+* **The volume.** The flux `Φ(o) = ∮ (X − o)·n dA` of a boundary is linear in the point `o` it is
+  taken about: `Φ(o + t) = Φ(o) − t·C`, `C = ∮ n dA` the boundary's *closure vector*, nought for a
+  boundary that closes and not for one whose edges stand off their faces. So moving a solid by `t`
+  changes its volume by exactly `t·C/3`. `step_survey --moved 10` measures `C` (`closure`: the flux
+  about the solid's box's centre and about it moved by the box's diagonal along each axis, three
+  more flux integrations) and prints the change beside `t·C/(3V)`: CADGenBench 212 along x
+  +1.044e-6 and +1.044e-6, y −9.128e-8 and −9.128e-8, z +7.863e-7 and +7.863e-7; 229, brepkit's
+  saddle-drum-bored and helical-pipe-round-ends agree to every digit printed, and cad-kernel's
+  boxes-cut has `|C|` 2.6e-14. Nothing in the file says which point the flux is taken about — its
+  frame's origin is no property of the solid — and over points anywhere in the solid's box the
+  volume takes values `size·|C|/3` apart, `size` the box's diagonal: **the file determines its
+  volume to `size·|C|/(3V)`**, with `K = 1`, the dependence being exact. (The reach from the file's
+  origin, the point every reader here takes, would make the bar depend on where the solid is
+  written; the size does not.) `C` is measured only for a file whose volume is outside its row's
+  own bar, a handful, so the corpus costs what it did; the gate's failure message and the survey
+  print `C`, the size, the row's bar and the bar held to.
+* **The area**: the sum of its faces' own bars (`face_bar`) over its area. It is what the
+  per-face check holds the faces to, summed, so on its own it is no sharper (3.8e-3 on 212, whose
+  readers agree to 1e-5): the per-face check is the sharp one. What the total adds is the faces
+  that check cannot hold: one no reader measured (90 in the corpus), one the reader laid itself
+  (entity 0), a disputed one held to either reading.
+
+An earlier rule held the volume to `R·S/(3V)`, the faces' slacks swept over the reach: a bound
+over every reading with that slack, 5 to 2,000 times what moving the solid shows, 0.46 on
+CADGenBench 204; it is gone. With the closure: 212 is 1.0e-5 off where its file determines
+5.0e-5 (`|C|` 0.55 mm² over 382 mm), 229 5.6e-6 against 4.1e-5 (0.24 mm², 195 mm), saddle-drum-
+bored 2.1e-7 against 8.4e-6, helical-pipe-round-ends 9.2e-7 against 6.2e-6: all four within what
+their files determine, and all four outside their rows' own bars. The row's own bar stays the
+second, tighter line: such a file is `read~` in the report and listed by `account`, not failed.
+Each face too: a face within its bar where OCCT and the measurer agree to a hundredth of it and
+the reading stands past three times their difference is listed (`face_census`, "outside the
+readers' agreement").
 
 ## The account
 
@@ -357,7 +369,7 @@ cargo run -q --release -p cad-kernel --example step_survey -- --faces $STEP_CORP
 cargo run -q --release -p cad-kernel --example step_survey -- --faces --past-sound $STEP_CORPUS/cadgenbench/214/input.step
 python3 -I scripts/step-corpus/oracle.py --faces $STEP_CORPUS/cadgenbench/218/input.step   # OCCT's, per face
 python3 -I scripts/step-corpus/check.py $STEP_CORPUS/brep-bench/brepkit/sweep/duct-elbow.step  # is it a solid's boundary?
-cargo run -q --release -p cad-kernel --example step_survey -- --moved 10 $STEP_CORPUS/cadgenbench/212/input.step
+cargo run -q --release -p cad-kernel --example step_survey -- --moved 10 $STEP_CORPUS/cadgenbench/212/input.step  # its closure
 ```
 
 `--faces` prints, beside each face the reader reads, OCCT's area and the measurer's, the
