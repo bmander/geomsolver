@@ -47,6 +47,10 @@ it has).  It says what it runs over as it starts (`progress::Work::expand`: `` e
 `round(r: 0.5mm) whole` over 10 faces of `whole`, of which 24 pairs meet and 16 threes meet each
 other ``), and the build of the body rounded says which of its terms it has reached on its gauge
 ([architecture.md](architecture.md)).
+A body the seeds do not build (a short side
+between two corner rounds seeded with its ends past each other) is read where the drawing solves,
+never taken as every face meeting every other (#994, [language.md](language.md),
+`tests/short_straights.rs`).
 **Both faces are one body's** (#961, [0.223]): an edge, a corner and the material's angle are
 between faces of one body, so a word over a face of one solid and a face of another is refused
 where `meets` is asked ([language.md](language.md), E103 naming the body both are faces of, the

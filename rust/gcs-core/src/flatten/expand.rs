@@ -1155,6 +1155,7 @@ impl<'a> Walk<'a> {
             };
             let wanted = names.wanted.take();
             let unread = names.unread.get();
+            let unbuilt = names.unbuilt.take();
             let across = names.across.take();
             drop(names);
             if let Some((pairs, fixed)) = faced {
@@ -1173,6 +1174,16 @@ impl<'a> Walk<'a> {
             self.faces.wanted.extend(wanted);
             if unread {
                 self.faces.unread.insert(b.head);
+            }
+            // a solid not built where the drawing stands: read again where it solves, and its
+            // statement not built if it is not built there either (#994)
+            let at = self.faces.at;
+            for (solid, why) in unbuilt {
+                self.faces.unread.insert(at);
+                let u = super::Unbuilt { at, solid, why };
+                if !self.faces.unbuilt.contains(&u) {
+                    self.faces.unbuilt.push(u);
+                }
             }
             match decided {
                 Ok(true) => {
@@ -2329,6 +2340,9 @@ struct Asked<'w, 'a> {
     /// Whether a `when` held a face against a direction of a solid whose boundary was not built
     /// where the drawing stood (#948): its E103 deferred, read again where it solves.
     unread: std::cell::Cell<bool>,
+    /// Each solid `meets` was asked of whose boundary is not built where the drawing stands, and
+    /// why (#994): read again where it solves, and its statement not built if it is not there.
+    unbuilt: std::cell::RefCell<Vec<(String, String)>>,
     /// Whether the condition read a face at all — compared one with another, or asked whether
     /// two meet or how one lies (#962).
     faced: std::cell::Cell<bool>,
@@ -2352,6 +2366,7 @@ impl<'w, 'a> Asked<'w, 'a> {
             reads: Default::default(),
             wanted: Default::default(),
             unread: Default::default(),
+            unbuilt: Default::default(),
             faced: Default::default(),
             across: Default::default(),
         }
@@ -2411,9 +2426,27 @@ impl super::values::Names for Asked<'_, '_> {
                 crate::program::public_path(solid), crate::program::public_path(other))));
         }
         let read = |r| self.reads.borrow_mut().push(r);
-        let Some(layered) = listed.read.as_ref().filter(|_| !self.every.get()) else {
-            read(super::FaceRead::Fixed(true));
-            return Some(Ok(true));
+        let layered = match &listed.read {
+            Ok(layered) if !self.every.get() => layered,
+            // a boundary the seeds do not build says nothing of which faces meet (#994): taken to
+            // meet, every two and three of a body's faces made a copy, and a body of a few dozen
+            // faces ran to `MAX_FLAT`.  None meet: the statement is read again where the drawing
+            // solves, as a face held along a direction is (#948), and where the body is not built
+            // there either, it is not built, as built on that body (`program::refused`)
+            Err(crate::solid::faces::Unread::Unbuilt(why)) if !self.every.get() => {
+                let unbuilt = (solid.to_string(), why.clone());
+                let mut said = self.unbuilt.borrow_mut();
+                if !said.contains(&unbuilt) {
+                    said.push(unbuilt);
+                }
+                read(super::FaceRead::Fixed(false));
+                return Some(Ok(false));
+            }
+            // a body a sweep cuts is its field's, read nowhere: its faces are taken to meet
+            _ => {
+                read(super::FaceRead::Fixed(true));
+                return Some(Ok(true));
+            }
         };
         // in the layer the block's use reads the body in (#879): a round's own faces meet
         // where it reads them, whatever a round standing over it has since made of their edge
@@ -2440,15 +2473,19 @@ impl super::values::Names for Asked<'_, '_> {
                  frame's axis", crate::program::public_path(line)
             )));
         };
-        let Some(layered) = &listed.read else {
+        let layered = match &listed.read {
+            Ok(layered) => layered,
             // a boundary the seeds do not build may be built where the drawing solves: read
             // again there, and said only if it is not built there either (#948)
-            self.unread.set(true);
-            return Some(Err(format!(
-                "`{}`'s faces are not read where they are named: its boundary is not built where \
-                 the drawing stands, seeded or solved (a body cut by a sweep is its field's)",
-                crate::program::public_path(solid)
-            )));
+            Err(_) => {
+                self.unread.set(true);
+                return Some(Err(format!(
+                    "`{}`'s faces are not read where they are named: its boundary is not built \
+                     where the drawing stands, seeded or solved (a body cut by a sweep is its \
+                     field's)",
+                    crate::program::public_path(solid)
+                )));
+            }
         };
         let layer = listed.layers.layer(self.scope.prefix(), &[path]);
         let held = layered.lays(layer).holds(rest, along, d)?;

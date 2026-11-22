@@ -306,6 +306,7 @@ mod sheet;
 mod sheet_rounds;
 mod shell;
 mod shell_examples;
+mod short_straights;
 mod shorthand;
 mod size_measure;
 mod slide;

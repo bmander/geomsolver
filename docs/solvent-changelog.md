@@ -4,6 +4,20 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+## [NEXT-chain-short]
+
+**A body its seeds do not build is read where the drawing solves** (#994). `when a meets b`
+read the faces of a body that builds nothing where the drawing is seeded as every two meeting, so
+`round(r) X` over such a body made a copy for every two and three of its faces: a pocket whose
+corner rounds leave a straight of 0.05 between them, seeded a hair short so the rounds' ends
+passed each other, ran the expansion to `E103: more than 200000 statements` on a plate of three
+such slots. Such a body's faces are now read where the drawing solves, as a face held along a
+direction is (0.204), and the words expand there as they do seeded where it stands; the short
+straight is a face like any other. Where the body is not built where the drawing solves either,
+the round makes no copy and is said not built, built on the body, whose own refusal is the root
+(a straight of none: `` `pocket_f`'s edge `e1` has no length ``), never a count of statements. A
+body a sweep cuts is read nowhere, and its faces still meet.
+
 ## [NEXT-flush-deck]
 
 **A run ends on a face going on tangent that carries no round on** (#994). In `S.ends`, a face

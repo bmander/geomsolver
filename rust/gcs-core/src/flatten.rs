@@ -459,6 +459,12 @@ pub struct Expansion {
     /// again where it solves (`program::at_solve`) — a seed off its arc's circle builds no face,
     /// where the solve does.
     pub unread: BTreeSet<Span>,
+    /// Every document statement whose `when a meets b` read a solid whose boundary is not built
+    /// where the drawing stands (#994), once per statement and solid, with the stratum's reason:
+    /// its spans are in `unread` too, to be read again where the drawing solves, and where it is
+    /// not built there either the statement is not built, said as built on that body
+    /// (`program::refused::solids`), with no copy made for any two or three of its faces.
+    pub unbuilt: Vec<Unbuilt>,
     /// Every document statement whose `when` asked whether faces of two solids meet (#961),
     /// once each: for the elaborator to refuse, naming the body that holds both where one does
     /// (`program::solids::across`).
@@ -1000,14 +1006,27 @@ struct SetState<'a> {
     shells: Vec<developable::EnclosedInfo>,
 }
 
+/// A document statement whose `when a meets b` read a solid not built where the drawing stands
+/// (`Expansion::unbuilt`, #994).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Unbuilt {
+    /// The document's statement.
+    pub at: Span,
+    /// The solid, by its absolute name.
+    pub solid: String,
+    /// Why its boundary is not built (`solid::faces::Unread::Unbuilt`).
+    pub why: String,
+}
+
 /// **A solid's faces as the elaborator names them** (#183 F4): each by the path it is named by
 /// from the solid, and which of them meet (#625, `Meets`) and how each lies (#763, `Lays`), where
-/// its boundary says — in each layer the solid's rounds stand in (`Layers`, `Layered`, #879).
+/// its boundary says — in each layer the solid's rounds stand in (`Layers`, `Layered`, #879) —
+/// and where it does not, why (`Unread`, #994).
 #[derive(Clone, Debug)]
 pub struct Listed {
     pub paths: Vec<crate::solid::faces::FacePath>,
     pub layers: crate::solid::faces::Layers,
-    pub read: Option<crate::solid::faces::Layered>,
+    pub read: Result<crate::solid::faces::Layered, crate::solid::faces::Unread>,
 }
 
 /// **What the elaborator names for the walk off the drawing** (#183 F4, #763): each solid a
@@ -1071,6 +1090,8 @@ struct FaceState {
     wanted: BTreeSet<String>,
     /// See `Expansion::unread`.
     unread: BTreeSet<Span>,
+    /// See `Expansion::unbuilt`.
+    unbuilt: Vec<Unbuilt>,
     /// See `Expansion::across`.
     across: Vec<Across>,
     /// The document's own statement being walked — its root body's — where a block set aside
@@ -1415,6 +1436,7 @@ impl<'a> Walk<'a> {
             along: self.faces.along,
             directions_wanted: self.faces.wanted,
             unread: self.faces.unread,
+            unbuilt: self.faces.unbuilt,
             across: self.faces.across,
             overflowed: self.overflowed,
         }

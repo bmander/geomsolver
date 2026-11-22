@@ -59,7 +59,7 @@ pub(super) fn read_again(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
     }).collect();
     let read: Read = meets.union(&lays).filter_map(|&solid| {
         let e = map.ent_named(solid).filter(|e| e.kind == EntKind::Solid)?;
-        Some((solid, Layered::read(sk, &Layers::of(sk, e.i()), &face_paths(sk, e.i()))?))
+        Some((solid, Layered::read(sk, &Layers::of(sk, e.i()), &face_paths(sk, e.i())).ok()?))
     }).collect();
     let mut diags = apart(map, &read);
     diags.extend(along(sk, map, &read));
