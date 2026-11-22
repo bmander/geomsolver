@@ -224,8 +224,23 @@ kept (a tube a ten-thousandth inside its leg, crossing the leg's cylinder run on
 seconds a build). `brep_export::a_turn_a_near_miss_wider_or_narrower_than_its_legs_is_built_with_its_step`
 (δ = ±1e-8 … ±1e-2 by decades and the issue's document, its radius left to its ends' hints, each
 held to Pappus and the legs' union within the tolerance's band over its boundary) is the gate.
-A further solid cut or joined through the turn's poles at a near-miss of a few tolerances is not
-yet built (a slab cut along a plane through the axis, an axle along it: refused, not wrong).
+**A use ending within its vertex's or its edge's tolerance of a pole is at the pole**, wherever
+the pole is read: an inverse pcurve's end (`topo::on_pole`), the corner a loop is closed at by a
+pole edge (`Brep::close_poles`, half a turn of the collapsed parameter moving a point no farther
+than π times that tolerance), and a half's points in a Boolean's face (`uv_seeded`); and **a pole's
+half runs along the parameter the pole collapses** (`pieces_of_face`'s ways), its ends' other
+parameter disagreeing by a node's width read as no way at all, where the pole's vanishing rate
+along the first had made that disagreement its whole way and tied it with a meridian there. And
+**two uses of one edge at one place, walked out and back, are a spur and not a seam**
+(`reading::judged`): no side lies between them, so a cap's crescent whose two sides the
+tolerance made one edge has no inside and is merged into its edge, where the side of one use had
+read a point outside it as in it. So an axle joined along the bend axis, and a slab cut along a
+plane through it, through the poles of a near-miss turn are built
+(`brep_export::a_solid_through_a_near_miss_turns_poles_is_built`; the fixture's refusal "loop 0
+breaks in parameters" at a pole was the slab's at 1e-8 and the turn's alone at −1e-7). The slab at
+±1e-6, and a bore cut across the bend of the issue's document, are refused yet ("a shell of the
+arrangement is kept on one side … and dropped on another"; at +1e-6 now "edge 3's pcurve is
+1.3e-6 off it" at the pole): not wrong, not built.
 `countersink::a_surfaces_points_within_a_ball_reach_no_farther_along_it_than_said`
 (spindle and horn tori among its surfaces), `brep::a_plane_through_a_toruss_axis_meets_it_in_its_meridians`
 and `brep_export::a_swept_elbow_joins_its_legs_at_their_tangent_seams` (ring, horn and spindle

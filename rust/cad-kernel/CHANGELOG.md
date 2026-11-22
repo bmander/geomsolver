@@ -21,7 +21,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   way round); a piece thinner than its outlines is read inside from beside its curved halves, not
   dropped as a sliver while its sides stay two edges; and an inverse pcurve ending within its edge's
   tolerance of a pole takes the pole's collapsed parameter from its end, not from the far side of
-  the axis (a union 2.6 times the solid it made).
+  the axis (a union 2.6 times the solid it made). A use within its vertex's or edge's tolerance of
+  a pole is at it wherever the pole is read (`Brep::close_poles`, a half's points in a Boolean), a
+  pole's half runs along the parameter the pole collapses, and two uses of one edge at one place,
+  out and back, are a spur and not a seam: an axle and a slab through the near-miss turn's poles
+  build ("loop 0 breaks in parameters" at the pole before).
 
 ## [0.20.0] - 2026-11-21
 

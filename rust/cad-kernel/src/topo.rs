@@ -356,7 +356,12 @@ impl Brep {
         let v = self.ends(&c)[1];
         let f = &self.faces[fi];
         let vertex = self.vertices[v as usize];
-        let within = (1e-9*(1.+norm(vertex.p))).max(vertex.tol);
+        // (a use ending within its vertex's tolerance of the pole, or its edges', stands off the
+        // axis by no more, and half a turn about it moves it by no more than π times that, #996: a
+        // turn's pole and a leg's rim crossing the axis 2e-8 from it, merged, the rim's end read
+        // 2e-8 off the axis, its loop closed there by no pole edge and broken in its parameters)
+        let reach = vertex.tol.max(self.edges[c.edge as usize].tol).max(self.edges[next.edge as usize].tol);
+        let within = (1e-9*(1.+norm(vertex.p))).max(std::f64::consts::PI*reach);
         let a = self.uv_end(f,&c,true);
         let Some(along) = pole_at(&f.surface,a,within) else { return };
         let b = self.uv_end(f,&next,false);

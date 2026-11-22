@@ -3164,7 +3164,7 @@ fn param(h: &Half,out: &[WEdge],s: f64) -> f64 {
 /// The parameters a fraction `s` of the way along a half.
 fn at(h: &Half,f: &Face,out: &[WEdge],pool: &Pool,s: f64) -> Uv {
     let (e,t) = (&out[h.edge as usize],param(h,out,s));
-    uv_at(h,f,e,t,|| e.point(t,pool))
+    uv_at(h,f,e,pool,t,|| e.point(t,pool))
 }
 
 /// The parameters a fraction `s` of the way along a half, and its point in space.
@@ -3174,16 +3174,16 @@ fn at_point(h: &Half,f: &Face,out: &[WEdge],pool: &Pool,s: f64) -> (Uv,V) { at_p
 fn at_point_near(h: &Half,f: &Face,out: &[WEdge],pool: &Pool,s: f64,seed: Uv) -> (Uv,V) {
     let (e,t) = (&out[h.edge as usize],param(h,out,s));
     let p = e.point(t,pool);
-    (uv_seeded(h,f,e,t,|| p,seed),p)
+    (uv_seeded(h,f,e,pool,t,|| p,seed),p)
 }
 
 /// The parameters of a half at its edge's parameter `t`, whose point in space is `p()` (asked
 /// only where the half's curve in the parameters is the surface's inverse of it).
-fn uv_at(h: &Half,f: &Face,e: &WEdge,t: f64,p: impl FnOnce() -> V) -> Uv { uv_seeded(h,f,e,t,p,[f64::NAN;2]) }
+fn uv_at(h: &Half,f: &Face,e: &WEdge,pool: &Pool,t: f64,p: impl FnOnce() -> V) -> Uv { uv_seeded(h,f,e,pool,t,p,[f64::NAN;2]) }
 
 /// `uv_at`, an inversion read beside `seed` where it is no NaN, else beside the line between the
 /// half's ends' parameters.
-fn uv_seeded(h: &Half,f: &Face,e: &WEdge,t: f64,p: impl FnOnce() -> V,seed: Uv) -> Uv {
+fn uv_seeded(h: &Half,f: &Face,e: &WEdge,pool: &Pool,t: f64,p: impl FnOnce() -> V,seed: Uv) -> Uv {
     let a = if h.along { h.from } else { h.to };
     let b = if h.along { h.to } else { h.from };
     let frac = (t-e.t[0])/(e.t[1]-e.t[0]);
@@ -3204,8 +3204,13 @@ fn uv_seeded(h: &Half,f: &Face,e: &WEdge,t: f64,p: impl FnOnce() -> V,seed: Uv) 
             // leaves to its own choice — a sphere's `u` read there as 0 or 2π, whatever the half
             // arriving runs along: the half's own value there, as its ends record it, #962's 7. A
             // meridian through the pole along the seam's half-plane was drawn from 2π back to π
-            // across the piece, and the piece read as a hole)
-            if let Some(k) = super::topo::pole_at(&f.surface,uv,1e-12*(1.+crate::util::space::norm(p))) { uv[k] = near[k]; }
+            // across the piece, and the piece read as a hole; a point within the edge's gap, or
+            // its ends' vertices' tolerance, of the pole is at it, #996: a leg's circle laid for a
+            // turn's rim 1e-8 inside it crosses the axis 2e-8 from the pole its end is merged into,
+            // read there half a turn round, and the corner's piece by a hole)
+            let reach = e.gap.max(pool.tols[e.v[0] as usize]).max(pool.tols[e.v[1] as usize]);
+            let at = (1e-12*(1.+crate::util::space::norm(p))).max(std::f64::consts::PI*reach);
+            if let Some(k) = super::topo::pole_at(&f.surface,uv,at) { uv[k] = near[k]; }
             INVERTED.with(|m| {
                 let mut m = m.borrow_mut();
                 if m.len() >= INVERTED_MOST { m.clear() }
@@ -3299,8 +3304,15 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool,tol: f64) -
     }).collect();
     // each half's direction leaving its start and arriving at its end, as lengths, oriented, read a
     // part `s` of its way along it
+    // (a pole's half runs along the parameter the pole collapses, its other held: its ends may
+    // disagree in that one by a node's width, which the pole's vanishing rate along the first made
+    // its whole way in space, a meridian's tied with it at the node, #996)
     let dir_at = |h: &Half,at_start: bool,s: f64| -> f64 {
-        let (p,q) = if at_start { (h.from,at(h,f,out,pool,s)) } else { (h.to,at(h,f,out,pool,1.-s)) };
+        let (p,mut q) = if at_start { (h.from,at(h,f,out,pool,s)) } else { (h.to,at(h,f,out,pool,1.-s)) };
+        if matches!(out[h.edge as usize].curve,EdgeCurve::Degenerate) {
+            let along = if (h.to[0]-h.from[0]).abs() >= (h.to[1]-h.from[1]).abs() { 0 } else { 1 };
+            q[1-along] = p[1-along];
+        }
         let (_,su,sv) = f.surface.d1(p);
         let (ku,kv) = (norm(su).max(1e-12),norm(sv).max(1e-12));
         let (p,q) = (oriented(f,p),oriented(f,q));
@@ -3604,11 +3616,19 @@ mod reading {
         if d > 2.*outline.sag() { return Some(outline.winding(uv) != 0) }
         let e = &out[edge as usize];
         if t <= e.t[0] || t >= e.t[1] { return None }
-        Some(cycles.iter().flatten().filter(|u| u.edge == edge).any(|u| {
+        // each use's place there and way along it; two uses of the edge at one place, walked
+        // either way, are a spur, not a seam (a seam's stand a period apart): between them is no
+        // side, and they say nothing (#996: a cap's crescent whose two sides the tolerance made
+        // one edge, walked out and back, read inside beside it by the use whose side it was)
+        let ways: Vec<(Uv,Uv)> = cycles.iter().flatten().filter(|u| u.edge == edge).map(|u| {
             let s = if u.along { (t-e.t[0])/(e.t[1]-e.t[0]) } else { (e.t[1]-t)/(e.t[1]-e.t[0]) };
             let (a,b) = (at(u,f,out,pool,(s-1e-6).max(0.)),at(u,f,out,pool,(s+1e-6).min(1.)));
-            beside(f,at(u,f,out,pool,s),[b[0]-a[0],b[1]-a[1]],uv)
-        }))
+            (at(u,f,out,pool,s),[b[0]-a[0],b[1]-a[1]])
+        }).collect();
+        let spur = |i: usize| ways.iter().enumerate().any(|(j,w)| j != i
+            && (w.0[0]-ways[i].0[0]).abs() < super::NODE && (w.0[1]-ways[i].0[1]).abs() < super::NODE
+            && w.1[0]*ways[i].1[0]+w.1[1]*ways[i].1[1] < 0.);
+        Some((0..ways.len()).filter(|&i| !spur(i)).any(|i| beside(f,ways[i].0,ways[i].1,uv)))
     }
 
     /// Whether cycles drawn as `drawn`, to `bar`, hold `(uv, p)` (`judged`), drawn finer while
