@@ -923,11 +923,7 @@ fn pole_seam(s: &Surface,w: &Wound,v: u32,reversed: bool,seam: u32,laid: u32) ->
     }
     let u = w.at[0];
     let (pole,curve) = match *s {
-        Surface::Sphere(f,r) => {
-            let out = add(scale(f.x,u.dcos()),scale(f.y,u.dsin()));
-            (if north { std::f64::consts::FRAC_PI_2 } else { -std::f64::consts::FRAC_PI_2 },
-                Curve::Circle(Frame {o:f.o,x:out,y:f.z,z:cross(out,f.z)},r))
-        }
+        Surface::Sphere(..) => (if north { std::f64::consts::FRAC_PI_2 } else { -std::f64::consts::FRAC_PI_2 },iso(s,0,u)?),
         Surface::Cone(_,r,half) => {
             let apex = -r/half.dsin();
             // the apex lies north (toward +v) of the loop or south of it, as the face holds it
@@ -1238,11 +1234,8 @@ fn face(st: &Setting,sheet: &Sheet,w: &Walked) -> Result<Built,Refusal> {
         let p = b.vertices[v].p;
         if used.contains(&(v as u32)) || pole_at(s,s.inverse(p),st.within).is_some() { continue }
         // (its seams named by the file's edges that are its points, where it writes them so)
-        if uses.is_empty() { if let Surface::Torus(_,big,r) = *s {
-            // (a spindle torus's whole chart holds its lemon inside its apple, the one turned in:
-            // which of them a face bounded by a point alone is, nothing says)
-            if !(big > r) { return Err(Refusal::unsupported(w.entity,"a whole spindle torus bounded by a point alone: whether its face is \
-                the outer part or the inner, nothing says")) }
+        // (a ring torus's: `closed::whole` takes every other bounded by vertices alone)
+        if uses.is_empty() { if let Surface::Torus(..) = s {
             return Ok(Built {names:w.points.clone(),..whole_torus(s,p,v as u32,reversed,&w.name)})
         } }
         return Err(Refusal::unsupported(lp,"a face bounded by a lone vertex that is no pole"))
@@ -1514,7 +1507,9 @@ fn whole_sphere(s: &Surface,p: V,v: u32,other: Option<u32>,reversed: bool,name: 
 /// exactly — laid from the one pole to the other and walked up one side of the domain and down
 /// the other (`Brep::close_poles` lays the poles' edges between), a pole the file gives no vertex
 /// at laid too. `lone`: the file's vertices at poles. None where the sheet closes round neither
-/// parameter, a pole row is no point, or a vertex stands at neither pole.
+/// parameter, a pole row is no point, or a vertex stands at neither pole. Read for a face with loops
+/// as well, its lone vertices at the sheet's poles (`face`): a face of vertices alone is
+/// `closed::whole`'s.
 fn whole_sheet(s: &Surface,lone: &[u32],b: &Brep,reversed: bool,name: &str,within: f64) -> Option<Built> {
     let Surface::BSpline(_,n) = s else { return None };
     let dom = n.domain();
