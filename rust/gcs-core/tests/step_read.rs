@@ -445,17 +445,17 @@ fn a_spheres_curve_a_turn_off_in_v_reads_where_the_face_is() {
 }
 
 /// **An edge standing off its face is read by its feet's own rate** (`topo::inverse_derivative`):
-/// a circle a tenth outside a sphere of radius 5 and tilted to its chart, inverted onto it — the
+/// a circle some tenths outside a sphere of radius 5 and tilted to its chart, inverted onto it — the
 /// rate of its feet in the sphere's parameters is `J⁻¹ (x′·S_u, x′·S_v)`, `J` the metric and the
 /// second derivatives weighed by the gap, which a difference of the feet themselves a millionth
 /// apart agrees with to 1e-6 of it; the tangent read on the surface alone (the gap's term dropped)
-/// is off by the gap over the radius, 2e-2.
+/// is off by about the gap over the radius.
 #[test]
 fn an_edges_feet_off_its_face_run_at_their_own_rate() {
     use gcs_core::brep::geom::{Frame, Surface};
     use gcs_core::brep::topo::{Edge, Pcurve, Vertex};
     let sphere = Surface::Sphere(Frame::new([0.; 3], [0., 0., 1.], [1., 0., 0.]), 5.);
-    let circle = Curve::Circle(Frame::new([0.3, -0.2, 1.], [0.1, 0.2, 1.], [1., 0., -0.1]), 4.9);
+    let circle = Curve::Circle(Frame::new([0.3, -0.2, 2.], [0.1, 0.2, 1.], [1., 0., -0.1]), 4.9);
     let edge = Edge { curve: EdgeCurve::Curve(circle.clone()), t: [0.2, 2.9], v: [0, 1], tol: 0. };
     let vs = [Vertex { p: circle.point(0.2), tol: 0. }, Vertex { p: circle.point(2.9), tol: 0. }];
     let (a, z) = (sphere.inverse(circle.point(0.2)), sphere.inverse(circle.point(2.9)));
