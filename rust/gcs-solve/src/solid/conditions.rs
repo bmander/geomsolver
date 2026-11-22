@@ -163,13 +163,13 @@ fn faces_apart(r: &Reading, c: f64, beyond: bool, d: f64) -> Vec<Fv> {
             // far from its patch and from every face it goes on into, by their boxes, nothing:
             // where the set's point is, a face holding it back is within `d` (#994), so a chain
             // grown with a body is read only where the point is
+            let nothing = (c * d, [0.0; 3]);
             let far = |h: usize| body.patch_gap(h, x) > 2.0 * d;
             if far(fi) && beside.iter().all(|&h| far(h)) {
-                return (c * d, [0.0; 3]);
+                return nothing;
             }
             let (past, (s, g)) = body.carried_past(fi, x);
             let side = (c * sigma * s, scale(g, c * sigma));
-            let nothing = (c * d, [0.0; 3]);
             let Some((e, off, at)) = past else { return (c * s.abs(), scale(g, c * s.signum())) };
             let next = body.faces_of(e).iter().copied().find(|&h| h != fi && chain.contains(&h));
             match next {

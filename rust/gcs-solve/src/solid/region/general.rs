@@ -465,11 +465,11 @@ fn measured(sk: &Sketch, of: &[(crate::model::Target, f64)], sets: &[Option<Resu
     // along the edge), however each set's own nearest point is found, and where `M` is found
     // nowhere, nothing to say
     let mut within: Vec<Option<(usize, usize)>> = vec![None; of.len()];
+    let same = |a: &RegionTerm, b: &RegionTerm| a.shape == b.shape && a.cmp == b.cmp && a.lo == b.lo
+        && a.hi == b.hi && a.grow == b.grow;
     for (i, (ti, ci)) in of.iter().enumerate() {
         for (j, (tj, cj)) in of.iter().enumerate() {
             let (Target::Set { terms: e, .. }, Target::Set { terms: m, .. }) = (ti, tj) else { continue };
-            let same = |a: &RegionTerm, b: &RegionTerm| a.shape == b.shape && a.cmp == b.cmp && a.lo == b.lo
-                && a.hi == b.hi && a.grow == b.grow;
             let holds = e.len() > m.len() && m.iter().all(|t| e.iter().any(|u| same(t, u)));
             if *ci > 0.0 && (ci + cj).abs() <= 1e-12 * ci.abs() && holds && rest[j].is_none()
                 && within.iter().all(|w| w.is_none_or(|(a, b)| a != j && b != i)) {
