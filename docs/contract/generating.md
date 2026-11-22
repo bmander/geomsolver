@@ -2426,14 +2426,18 @@ read −0.997 against its feet's −5e-6) and with the observer's origin one ulp
 it was refused, a pcurve 1.2e-5 off its edge beside the second swallowtail point, its foot found on
 the leaf folded back. Kept so, the seam is the face's own line and the chord's leaf, clear of the
 fold, takes the inverse; all four build and check, their meshes' volumes within 1.2e-6 of one
-another. `props::volume` reads it 0.6975, 0.17% above its mesh's: beside each swallowtail point the
-seam given way grazes the row there in space, the sheet's rates one way, and the lens's edge and a
-short piece of the row merged into the seam are read by inversion onto the fold — the foot carried
-from the node before onto the face's top row and held there (`topo` now seeks it again from the
-line where it stands off the edge), and the rate in parameters solved where the two rates stand one
-way to half the digits (now read by the feet's chord): 0.785 before either, and face 8's flux is
-still 2.8e-3 off its mesh's. The Boolean's 19.5 s is its grid seeds over the two tubes' face pairs:
-the ring road's trim resolution is the tool's size over 32, 0.063, coarser than the tube (0.03), so
+another. With `boolean::carried_pcurve` (the full turn's: a piece merged into another edge carries
+its own pcurve, not the surface's inverse) every input builds without the seams first too, but the
+face given way then carries the far leaf's chord as its seam on its folded corner and
+`props::volume` reads 0.054; the two together read 0.6963028 (cadrs 0.69630), the same to 1e-9 one
+ulp off and in every run (three builds alike to the last digit). The check at the tolerance passed all
+of these: it holds each pcurve's points on the surface, not on which leaf of a fold — a seam carried
+on the far side of the fold is on the surface to the tolerance, and only the face's region in its
+parameters, which the flux reads, is wrong; `agrees_over` and `ring_profile agree` read the mesh,
+which follows the edges in space, and could not see it either. To refuse it the check would have to
+read each loop's chart consistent along it — the area factor's sign on the face's side of each
+pcurve the same as at the loop's other uses. The Boolean's 19.5 s is its grid seeds over the two
+tubes' face pairs: the ring road's trim resolution is the tool's size over 32, 0.063, coarser than the tube (0.03), so
 every near-boundary ball of one tube reaches the other's.
 
 **A seam's crossing within the tolerance band of the rim is the tube's vertex** (`rings::traces`):

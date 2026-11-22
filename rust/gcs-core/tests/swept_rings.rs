@@ -1011,29 +1011,38 @@ fn a_bridges_end_gives_way_to_a_double_curve_within_the_arrangements_band_of_it(
 
 /// **brep-bench's `tumbling-torus-thin` is built closed** (#942 T1d-tori), as the bench calls it.
 /// Its bridges' ends given way to the double curves they grazed (`rings::give_way`), each sheet's
-/// seams first (`rings::seams_first`), the solid is built, checked at the call's tolerance and
-/// judged: 28 faces, held to membership, its mesh within 1e-4 enclosing 0.6962402 (within 1e-5,
-/// 0.6962961; cadrs's volume 0.69630). Read point by point, the solid and the sweep's definition agree
-/// at all 20 000 places of its box (`ring_profile thin 75 agree 20000 2e-5`). So it is built too with
-/// the observer's origin moved by one ulp and by 1e-6 either way (`ring_profile thin 75 nudge ulp`),
-/// its mesh's volume within 1.2e-6 of this one's. (`props::volume` reads it 0.17% high, 0.6975:
-/// beside each swallowtail point the lens's edge and a short piece of a row merged into the seam
-/// given way are read by inversion onto the fold, and the line integral there misses still.)
+/// seams first (`rings::seams_first`) and a piece merged into another edge carrying its own pcurve
+/// (`boolean::carried_pcurve`), the solid is built, checked at the call's tolerance and judged: 28
+/// faces, held to membership, its volume 0.6963028 (cadrs's 0.69630; its mesh within 1e-5,
+/// 0.6962961). Read point by point, the solid and the sweep's definition agree at all 20 000 places
+/// of its box (`ring_profile thin 75 agree 20000 2e-5`). With the observer's origin one ulp off it is
+/// built the same, its volume within 1e-9 (and so at 1e-6 either way, `ring_profile thin 75 nudge
+/// 1e-6`). Without the seams first every input still builds and checks, but the face given way, its
+/// corner on the fold at the swallowtail point, carries the far leaf's chord as its seam, and its
+/// flux reads the volume as 0.054.
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 3 min: the thin tumbling torus built closed")]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 2 min: the thin tumbling torus built closed, and one ulp off")]
 fn the_thin_tumbling_torus_is_built_closed() {
     let (tool,path,roll,tol) = thin();
     let built = gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.015/250.,tol).unwrap_or_else(|u| panic!("{u:?}"));
     built.check(tol).unwrap();
     assert_eq!(built.faces.len(),28);
-    let m = gcs_core::brep::mesh::mesh(&built,1e-4,0.1).unwrap();
-    let v: f64 = m.tris.iter().map(|t| {
-        let [p,q,r] = t.map(|i| m.pts[i as usize]);
-        gcs_core::brep::util::space::dot(p,gcs_core::brep::util::space::cross(q,r))/6.
-    }).sum();
-    assert!((v-0.6962402).abs() < 1e-6,"its mesh within 1e-4 encloses {v}");
-    assert!((v-0.69630).abs() < 1e-4,"{v} against cadrs's 0.69630");
+    let v = gcs_core::brep::props::volume(&built);
+    assert!((v-0.6963027896).abs() < 1e-9,"{v}");
+    assert!((v-0.69630).abs() < 1e-5,"{v} against cadrs's 0.69630");
     crate::swept_closed::agrees_over(&built,&tool,&path,roll);
+    // (the observer's origin one ulp along `y`)
+    use gcs_core::brep::trajectory::Screw;
+    let (sl,cl) = 45f64.to_radians().sin_cos();
+    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.25,advance:0.});
+    let y = f64::from_bits((0.5f64.sqrt()*cl).to_bits()+1);
+    let frame = Trajectory::Twist(Screw {origin:[0.,y,0.5f64.sqrt()*sl],axis:[1.,0.,0.],ratio:1.,advance:0.});
+    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
+    let off = gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.015/250.,tol).unwrap_or_else(|u| panic!("one ulp off: {u:?}"));
+    off.check(tol).unwrap();
+    let w = gcs_core::brep::props::volume(&off);
+    assert!((w-v).abs() < 1e-9,"one ulp off: {w} against {v}");
+}
 
 /// **The full turn's tube passes back over its own start, read off the depth** (#942 T1d-tori,
 /// `depth::passed_back`; the slow tier): over a whole turn the tube late in the roll sweeps across

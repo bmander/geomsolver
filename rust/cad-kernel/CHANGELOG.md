@@ -30,8 +30,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   first and reads the other uses as inverses of it, and the face given way ends on the fold at the
   swallowtail point, where that inverse is ill posed — with the chord on the other leaf kept
   instead, the bench's input passed the check by luck and one ulp off it was refused (a pcurve 1.2e-5
-  off, its foot on the leaf folded back). `props::volume` reads it 0.6975, 0.17% above the mesh's
-  (see `topo` below; 0.785 before). The half turn gives no way and is unchanged. `depth_probe` reads
+  off, its foot on the leaf folded back). With `boolean::carried_pcurve` (merged from the full turn's
+  branch: a piece merged into another edge carries its own pcurve) every input builds even without
+  the seams first, but the face given way then carries the far leaf's chord as its seam and
+  `props::volume` reads 0.054; with both it reads 0.6963028 (cadrs 0.69630), the same to 1e-9 one ulp
+  off, and the same in every run. The half turn gives no way and is unchanged. `depth_probe` reads
   `ends` and `ratio`; `ring_profile` reads `nudge`, `fluxes` and the misfits after a build.
 
 - **An inverse pcurve read beside a fold** (`topo`, #942 T1d-tori): a foot carried from the node
