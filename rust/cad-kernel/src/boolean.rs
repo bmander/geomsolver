@@ -10,7 +10,7 @@ use super::query::{crossings_in,curve_surface_within,Located,Meets,Outline,Place
 use super::ssi::Ssi;
 use super::meeting::Met;
 use super::complex::{Complex,Origin};
-use super::topo::{leaving_pole,pole_at,poleless,reverse_loop,unwrap,Brep,Coedge,Edge,EdgeCurve,Face,Pcurve};
+use super::topo::{leaving_pole,poleless,reverse_loop,unwrap,Brep,Coedge,Edge,EdgeCurve,Face,Pcurve};
 use crate::util::space::{distance,norm,scale};
 use std::cell::Cell;
 use std::collections::BTreeMap;
@@ -2375,19 +2375,15 @@ impl<'s,'a> Touches<'s,'a> {
         let Some(at) = super::ssi::touch_near(sa,sb,p,tol) else { return false };
         let Some(t) = super::ssi::touch(sa,sb,at) else { return false };
         if distance(at,p) > t.radius { return false }
-        if t.branches.is_empty() {
-            let lone = super::ssi::alone_over(sa,sb,&t);
-            if lone { self.arr.say.touch_alone(self.faces,self.surfaces,&t); }
-            self.read.push((t,lone));
-            return lone
-        }
-        if t.radius > 0.05*self.least { return false }
-        let place = |k: usize,d: V| {
-            let s = self.surfaces[k];
-            let q = crate::util::space::add(at,crate::util::space::scale(d,2.*t.radius));
-            self.arr.located[self.faces.s[k]].face_place(self.faces.f[k],s.point(s.inverse(q)))
+        let lone = if t.branches.is_empty() { super::ssi::alone_over(sa,sb,&t) } else {
+            if t.radius > 0.05*self.least { return false }
+            let place = |k: usize,d: V| {
+                let s = self.surfaces[k];
+                let q = crate::util::space::add(at,crate::util::space::scale(d,2.*t.radius));
+                self.arr.located[self.faces.s[k]].face_place(self.faces.f[k],s.point(s.inverse(q)))
+            };
+            !t.branches.iter().any(|&d| place(0,d) != Place::Out && place(1,d) != Place::Out)
         };
-        let lone = !t.branches.iter().any(|&d| place(0,d) != Place::Out && place(1,d) != Place::Out);
         if lone { self.arr.say.touch_alone(self.faces,self.surfaces,&t); }
         self.read.push((t,lone));
         lone
@@ -2659,7 +2655,7 @@ impl<'s,'a> FaceCut<'s,'a> {
             let p = c.point(to);
             // (at a pole of the surface its collapsed parameter is set as the edge arrives, and held
             // there, not taken from a node)
-            if let Some(along) = pole_at(&f.surface,uv,(1e-9*(1.+norm(p))).max(tol)) {
+            if let Some(along) = super::topo::near_pole(&f.surface,uv,tol) {
                 // the way from the pole into the edge: back along its curve, toward the middle
                 let into = scale(c.tangent(to),if to > mid { -1. } else { 1. });
                 if let Some(x) = leaving_pole(&f.surface,p,into,before,along) { uv[along] = x; }
@@ -3229,13 +3225,10 @@ fn uv_seeded(h: &Half,f: &Face,e: &WEdge,pool: &Pool,t: f64,p: impl FnOnce() -> 
             // leaves to its own choice — a sphere's `u` read there as 0 or 2π, whatever the half
             // arriving runs along: the half's own value there, as its ends record it, #962's 7. A
             // meridian through the pole along the seam's half-plane was drawn from 2π back to π
-            // across the piece, and the piece read as a hole; a point within the edge's gap, or
-            // its ends' vertices' tolerance, of the pole is at it, #996: a leg's circle laid for a
-            // turn's rim 1e-8 inside it crosses the axis 2e-8 from the pole its end is merged into,
-            // read there half a turn round, and the corner's piece by a hole)
+            // across the piece, and the piece read as a hole; at it within the edge's gap or its
+            // ends' vertices' tolerance, `topo::near_pole`)
             let reach = e.gap.max(pool.tols[e.v[0] as usize]).max(pool.tols[e.v[1] as usize]);
-            let at = (1e-12*(1.+crate::util::space::norm(p))).max(std::f64::consts::PI*reach);
-            if let Some(k) = super::topo::pole_at(&f.surface,uv,at) { uv[k] = near[k]; }
+            if let Some(k) = super::topo::near_pole(&f.surface,uv,reach) { uv[k] = near[k]; }
             INVERTED.with(|m| {
                 let mut m = m.borrow_mut();
                 if m.len() >= INVERTED_MOST { m.clear() }
@@ -3262,33 +3255,11 @@ thread_local! {
 /// The face's parameters mirrored where it is reversed, so the material is always on the left.
 fn oriented(f: &Face,uv: Uv) -> Uv { if f.reversed { [-uv[0],uv[1]] } else { uv } }
 
-/// A cycle's signed area in its face's parameters, the material on its left: Simpson's rule on
-/// Green's theorem along each half at 64 steps — the chords, each pair of steps' bulge past its
-/// chord taken as a parabola's — then twice as many, until two readings agree to a thousandth (or
-/// 4096 a half). A polygon's area misses each arc's segments by more than a thin strip holds: a cap's
-/// ring between a turn's rim, 308° of one half, and a leg's circle in two halves inside it by a
-/// millionth read the wrong way round and was dropped as a hole (#996; `Brep::loop_area` alike).
+/// A cycle's signed area in its face's parameters, the material on its left (`topo::green_area`,
+/// each half sampled by the fraction of its way; a straight one by its ends).
 fn fine_area(cycle: &[Half],f: &Face,out: &[WEdge],pool: &Pool) -> f64 {
-    let cross = |a: Uv,b: Uv| a[0]*b[1]-a[1]*b[0];
-    let read = |n: usize| {
-        let mut twice = 0.;
-        for h in cycle {
-            let pts: Vec<Uv> = (0..=n).map(|k| oriented(f,at(h,f,out,pool,k as f64/n as f64))).collect();
-            for j in (0..n).step_by(2) {
-                let (a,m,b) = (pts[j],pts[j+1],pts[j+2]);
-                twice += cross(a,b)+4./3.*cross([m[0]-a[0],m[1]-a[1]],[b[0]-a[0],b[1]-a[1]]);
-            }
-        }
-        twice/2.
-    };
-    let (mut n,mut last) = (64,read(64));
-    while n < 4096 {
-        n *= 2;
-        let next = read(n);
-        if (next-last).abs() <= 1e-3*next.abs() { return next }
-        last = next;
-    }
-    last
+    super::topo::green_area(cycle.len(),&|i: usize| matches!(cycle[i].pcurve,Pcurve::Line {..}),
+        &|i: usize,j: usize,n: usize| oriented(f,at(&cycle[i],f,out,pool,j as f64/n as f64)))
 }
 
 /// How near two ways at a node may be (radians, each read a ten-thousandth of its own half's length
@@ -3675,7 +3646,23 @@ mod reading {
     /// (`judged`) and given only where it is inside; drawn finer while none is. Then, read alike,
     /// the points off the middles (`ALONG`).
     pub(super) fn inside<'a>(piece: &'a [Vec<Half>],f: &'a Face,out: &'a [WEdge],pool: &'a Pool) -> impl Iterator<Item=Inner>+'a {
-        ALONG.into_iter().flat_map(move |at| along(piece,f,out,pool,at)).chain(beside_halves(piece,f,out,pool))
+        // the first bar, read once, and the finest outline, drawn once for every pass that asks
+        let first = bar(piece,out,pool);
+        let finest: Finest = Default::default();
+        let passes = {
+            let finest = finest.clone();
+            ALONG.into_iter().flat_map(move |at| along(piece,f,out,pool,at,first,finest.clone()))
+        };
+        passes.chain(beside_halves(piece,f,out,pool,first,finest))
+    }
+
+    /// The finest outline a piece's reading draws (`finer`'s last bar), shared by its passes.
+    type Finest = std::rc::Rc<std::cell::OnceCell<std::rc::Rc<Outline>>>;
+
+    /// The outline of `piece` drawn to `bar`, the finest one `finest` keeps drawn once.
+    fn drawn_to(piece: &[Vec<Half>],f: &Face,out: &[WEdge],pool: &Pool,bar: f64,finest_bar: f64,finest: &Finest) -> std::rc::Rc<Outline> {
+        if bar == finest_bar { finest.get_or_init(|| std::rc::Rc::new(outline(piece,f,out,pool,bar))).clone() }
+        else { std::rc::Rc::new(outline(piece,f,out,pool,bar)) }
     }
 
     /// **A strip thinner than any outline it is drawn to has an inside all the same** (#996): from
@@ -3687,12 +3674,10 @@ mod reading {
     /// spans of its outlines, drawn to a few ten-thousandths of the piece, had none, and it was
     /// dropped as a sliver while its two sides stayed two edges: the turn's face left hanging by
     /// its rim. A piece with no inside even so is a sliver.
-    fn beside_halves<'a>(piece: &'a [Vec<Half>],f: &'a Face,out: &'a [WEdge],pool: &'a Pool) -> impl Iterator<Item=Inner>+'a {
-        let first = bar(piece,out,pool);
-        // (drawn once, the first time a half asks)
-        let drawn: std::rc::Rc<std::cell::OnceCell<Outline>> = Default::default();
+    fn beside_halves<'a>(piece: &'a [Vec<Half>],f: &'a Face,out: &'a [WEdge],pool: &'a Pool,first: f64,finest: Finest) -> impl Iterator<Item=Inner>+'a {
+        let finest_bar = finer(first,pool.tol).last().unwrap_or(first);
         piece.iter().flatten().filter(|h| matches!(out[h.edge as usize].curve,super::EdgeCurve::Curve(_))).flat_map(move |h| {
-            let drawn = drawn.clone();
+            let finest = finest.clone();
             let (uv,p) = super::at_point(h,f,out,pool,0.5);
             let (a,b) = (at(h,f,out,pool,0.5-1e-6),at(h,f,out,pool,0.5+1e-6));
             let (du,dv) = (b[0]-a[0],b[1]-a[1]);
@@ -3701,21 +3686,23 @@ mod reading {
             let across = if n > 0. { [-dv/n,du/n] } else { [0.,0.] };
             let eps = 1e-6*(1.+uv[0].abs().max(uv[1].abs()));
             let speed = distance(f.surface.point([uv[0]+eps*across[0],uv[1]+eps*across[1]]),p)/eps;
-            let steps = std::iter::successors(Some(first),|&d| Some(d/2.)).take_while(move |&d| d >= 2.*pool.tol);
+            // (no step where the parameters move the point nowhere)
+            let last = if speed > 0. { 2.*pool.tol } else { f64::INFINITY };
+            let steps = std::iter::successors(Some(first),|&d| Some(d/2.)).take_while(move |&d| d >= last);
             steps.flat_map(move |d| [1.,-1.].map(|k| d*k)).filter_map(move |d| {
-                if !(speed > 0.) { return None }
                 let q = [uv[0]+across[0]*d/speed,uv[1]+across[1]*d/speed];
                 let x = f.surface.point(q);
-                let drawn = drawn.get_or_init(|| outline(piece,f,out,pool,finer(first,pool.tol).last().unwrap_or(first)));
-                (judged(piece,drawn,f,out,pool,q,x) == Some(true)).then_some(Inner(x))
+                let drawn = drawn_to(piece,f,out,pool,finest_bar,finest_bar,&finest);
+                (judged(piece,&drawn,f,out,pool,q,x) == Some(true)).then_some(Inner(x))
             }).take(1)
         })
     }
 
-    /// The points `at` the way along the spans (`inside`).
-    fn along<'a>(piece: &'a [Vec<Half>],f: &'a Face,out: &'a [WEdge],pool: &'a Pool,at: f64) -> impl Iterator<Item=Inner>+'a {
-        let mut bars = finer(bar(piece,out,pool),pool.tol);
-        let mut round: Option<(Outline,std::vec::IntoIter<Uv>)> = None;
+    /// The points `at` the way along the spans (`inside`), its outlines drawn from the first bar.
+    fn along<'a>(piece: &'a [Vec<Half>],f: &'a Face,out: &'a [WEdge],pool: &'a Pool,at: f64,first: f64,finest: Finest) -> impl Iterator<Item=Inner>+'a {
+        let finest_bar = finer(first,pool.tol).last().unwrap_or(first);
+        let mut bars = finer(first,pool.tol);
+        let mut round: Option<(std::rc::Rc<Outline>,std::vec::IntoIter<Uv>)> = None;
         let mut any = false;
         std::iter::from_fn(move || loop {
             if let Some((drawn,queue)) = &mut round {
@@ -3725,7 +3712,7 @@ mod reading {
                 }
                 if any { return None }
             }
-            let drawn = outline(piece,f,out,pool,bars.next()?);
+            let drawn = drawn_to(piece,f,out,pool,bars.next()?,finest_bar,&finest);
             let queue = drawn.spans(at).into_iter();
             round = Some((drawn,queue));
         })

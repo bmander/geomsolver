@@ -185,20 +185,29 @@ pub fn unwrap(mut uv: Uv,near: Uv,periods: [Option<f64>;2]) -> Uv {
 /// `uv` with a parameter the surface's chart collapses there (a pole's or an apex's: every value of
 /// it the one point) taken from `near` instead: where an inverse curve ends on a pole, the surface's
 /// inverse of the point says nothing of which value the curve arrives along (a cone's apex reads
-/// `u = 0` whatever the generator), and the end its pcurve is given there does (#797). An end
-/// within the edge's tolerance `tol` of the pole is on it: the value moves its point no farther
-/// than twice that (#996: a leg's circle standing for a turn's rim a tolerance outside it ends
-/// across the turn's axis from its pole by as much, and read there was half a turn round).
+/// `u = 0` whatever the generator), and the end its pcurve is given there does (#797) — an end
+/// within the edge's tolerance `tol` of the pole being at it (`near_pole`).
 fn on_pole(surface: &Surface,uv: Uv,near: Uv,tol: f64) -> Uv {
-    let (mut out,mut p) = (uv,None);
-    for k in 0..2 {
-        if !((uv[k]-near[k]).abs() > 1e-6) { continue }
-        let mut alt = uv;
-        alt[k] = near[k];
-        let p = *p.get_or_insert_with(|| surface.point(uv));
-        if distance(surface.point(alt),p) <= (1e-9*(1.+norm(p))).max(2.*tol) { out[k] = near[k]; }
-    }
+    let mut out = uv;
+    if let Some(k) = near_pole(surface,uv,tol) { out[k] = near[k]; }
     out
+}
+
+/// **The parameter the chart of `surface` collapses along where the point at `uv` stands within
+/// `tol` of the pole** (or the apex) in space — never under a part in 10⁹ of its distance from the
+/// origin, the rounding a pole's own point is read to — the one reading of "at a pole" (#996):
+/// an inverse pcurve's end (`on_pole`, the edge's tolerance), the corner a loop is closed at by a
+/// pole edge (`Brep::close_poles`, the vertex's and its edges'), and in a Boolean an edge's end
+/// laid across a face (the arrangement's) and a half's points (its edge's gap and its vertices').
+/// A use ending within that tolerance of a pole stands off the axis by no more, and half a turn of
+/// the collapsed parameter moves it by no more than π times it (`pole_at`'s reach): read on the
+/// surface's own inverse instead, a leg's circle standing for a turn's rim a tolerance outside it,
+/// ending across the turn's axis from its pole by as much, came out half a turn round — the loop
+/// broke in its parameters ("loop 0 breaks in parameters"), its piece read as a hole, or, closed,
+/// enclosed the wrong side (a union 2.6 times the solid).
+pub(crate) fn near_pole(surface: &Surface,uv: Uv,tol: f64) -> Option<usize> {
+    let p = surface.point(uv);
+    pole_at(surface,uv,(std::f64::consts::PI*tol).max(1e-9*(1.+norm(p))))
 }
 
 /// The parameter (0 for `u`, 1 for `v`) the chart of `surface` collapses along at `uv` — the
@@ -232,6 +241,50 @@ pub(crate) fn leaving_pole(surface: &Surface,p: V,d: V,near: Uv,along: usize) ->
     let d = normalised(d)?;
     let out = add(p,scale(d,1e-6*(1.+norm(p))));
     Some(unwrap(surface.inverse_near(out,near),near,surface.periods())[along])
+}
+
+/// **The one rule a closed chain of curves' area in a face's parameters is read by**
+/// (`Brep::loop_area`, a Boolean's cycles' `fine_area`): Green's theorem by Simpson's rule over
+/// `count` uses — each sampled at `n` steps (`sample(use, j, n)`, the `j`th from its start; a
+/// `straight` one by its two ends alone, its chord exact), the chords, the gap from each use's
+/// last point to the next's first among them, and each pair of steps' bulge past its chord taken as a parabola's, four
+/// thirds of the triangle through its middle — read at `n` and, from every other sample, at `n/2`,
+/// `n` doubled from 32 until the two agree to a thousandth (the finer's error a fifteenth of their
+/// difference), or 4096 steps a use. A polygon's own area misses each arc's segments, and a
+/// crescent between two arcs a hair apart — a turn's cap's rim, 308° of one use, and a leg's circle
+/// in two uses inside it — read so, turned the wrong way (#996). The quadrature is kept for every
+/// curve: a line's chord is already exact, and a circle's closed form in a plane's parameters
+/// would ask each pcurve which it is.
+pub(crate) fn green_area(count: usize,straight: &dyn Fn(usize) -> bool,sample: &dyn Fn(usize,usize,usize) -> Uv) -> f64 {
+    let cross = |a: Uv,b: Uv| a[0]*b[1]-a[1]*b[0];
+    let area = |uses: &[Vec<Uv>],stride: usize| -> f64 {
+        let mut twice = 0.;
+        for (k,pts) in uses.iter().enumerate() {
+            let next = uses[(k+1)%uses.len()][0];
+            twice += cross(*pts.last().unwrap(),next);
+            if pts.len() == 2 { twice += cross(pts[0],pts[1]); continue }
+            for j in (0..pts.len()-1).step_by(2*stride) {
+                let (a,m,b) = (pts[j],pts[j+stride],pts[j+2*stride]);
+                twice += cross(a,b)+4./3.*cross([m[0]-a[0],m[1]-a[1]],[b[0]-a[0],b[1]-a[1]]);
+            }
+        }
+        twice/2.
+    };
+    let mut n = 32;
+    // each use's samples, kept as `n` doubles: the new ones read between the old (`j / n` is
+    // `2j / 2n` to the last bit, so the samples are those read afresh)
+    let mut uses: Vec<Vec<Uv>> = (0..count).map(|i| {
+        if straight(i) { vec![sample(i,0,1),sample(i,1,1)] } else { (0..=n).map(|j| sample(i,j,n)).collect() }
+    }).collect();
+    loop {
+        let (coarse,fine) = (area(&uses,2),area(&uses,1));
+        if (fine-coarse).abs() <= 1e-3*fine.abs() || n >= 1 << 12 { return fine }
+        for (i,pts) in uses.iter_mut().enumerate() {
+            if pts.len() == 2 { continue }
+            *pts = (0..=2*n).map(|j| if j%2 == 0 { pts[j/2] } else { sample(i,j,2*n) }).collect();
+        }
+        n *= 2;
+    }
 }
 
 /// One use of an edge by a face's loop: along the edge (`!reversed`) or against it.
@@ -356,14 +409,15 @@ impl Brep {
         let v = self.ends(&c)[1];
         let f = &self.faces[fi];
         let vertex = self.vertices[v as usize];
-        // (a use ending within its vertex's tolerance of the pole, or its edges', stands off the
-        // axis by no more, and half a turn about it moves it by no more than π times that, #996: a
-        // turn's pole and a leg's rim crossing the axis 2e-8 from it, merged, the rim's end read
-        // 2e-8 off the axis, its loop closed there by no pole edge and broken in its parameters)
+        // (at it within its vertex's tolerance or its edges', `near_pole`: a turn's pole and a leg's
+        // rim crossing the axis 2e-8 from it, merged, the rim's end read 2e-8 off the axis, its
+        // loop was closed there by no pole edge)
         let reach = vertex.tol.max(self.edges[c.edge as usize].tol).max(self.edges[next.edge as usize].tol);
+        // (how far half a turn of the collapsed parameter moves a point there: `near_pole`'s reach,
+        // within which two ends on the pole are one place)
         let within = (1e-9*(1.+norm(vertex.p))).max(std::f64::consts::PI*reach);
         let a = self.uv_end(f,&c,true);
-        let Some(along) = pole_at(&f.surface,a,within) else { return };
+        let Some(along) = near_pole(&f.surface,a,reach) else { return };
         let b = self.uv_end(f,&next,false);
         // each use's end there: an inverse's at the value it arrives along, any other's its own
         let arriving = |c: &Coedge,at_end: bool| -> Option<(Pcurve,Uv)> {
@@ -719,49 +773,17 @@ impl Brep {
         out
     }
 
-    /// The signed area a loop encloses in its face's parameters (counter-clockwise positive): each
-    /// curved use sampled at `n` steps and the area read by Simpson's rule on Green's theorem —
-    /// the polygon through the samples, each pair of steps' bulge beyond its chord taken as a
-    /// parabola's, four thirds of the triangle through its middle — then at `2n`, doubled until
-    /// the two agree within the area itself (the finer's error a fifteenth of their difference),
-    /// so its sign is settled however thin the loop. A polygon's own area misses each arc's
-    /// segments, and a crescent between two arcs a hair apart, read so, turned the wrong way (#996:
-    /// a turn's cap a thousandth wider than the leg joined to it, its rim 308° of a circle).
-    /// A straight image is its chord.
+    /// The signed area a loop encloses in its face's parameters (counter-clockwise positive), by
+    /// `green_area` over its uses — a straight image its chord.
     pub fn loop_area(&self,f: &Face,l: &[Coedge]) -> f64 {
-        // the uses' samples at `n` steps each (a straight one's ends alone), in loop order
-        let sampled = |n: usize| -> Vec<Vec<Uv>> {
-            l.iter().map(|c| {
-                let e = &self.edges[c.edge as usize];
-                let n = if c.pcurve.straight(e,&f.surface) { 1 } else { n };
-                let mut ts: Vec<f64> = (0..=n).map(|j| e.t[0]+(e.t[1]-e.t[0])*j as f64/n as f64).collect();
-                if c.reversed { ts.reverse(); }
-                ts.iter().map(|&t| c.pcurve.at(t,e,&f.surface,&self.vertices)).collect()
-            }).collect()
-        };
-        let cross = |a: Uv,b: Uv| a[0]*b[1]-a[1]*b[0];
-        // Simpson's area from every `stride`th sample: the chords, each gap between one use's last
-        // and the next's first among them, and each pair of steps' parabolic bulge
-        let area = |uses: &[Vec<Uv>],stride: usize| -> f64 {
-            let mut twice = 0.;
-            for (k,pts) in uses.iter().enumerate() {
-                let next = uses[(k+1)%uses.len()][0];
-                twice += cross(*pts.last().unwrap(),next);
-                if pts.len() == 2 { twice += cross(pts[0],pts[1]); continue }
-                for j in (0..pts.len()-1).step_by(2*stride) {
-                    let (a,m,b) = (pts[j],pts[j+stride],pts[j+2*stride]);
-                    twice += cross(a,b)+4./3.*cross([m[0]-a[0],m[1]-a[1]],[b[0]-a[0],b[1]-a[1]]);
-                }
-            }
-            twice/2.
-        };
-        let mut n = 32;
-        loop {
-            let uses = sampled(n);
-            let (coarse,fine) = (area(&uses,2),area(&uses,1));
-            if (fine-coarse).abs() < fine.abs() || n >= 1 << 12 { return fine }
-            n *= 2;
-        }
+        let straight = |i: usize| l[i].pcurve.straight(&self.edges[l[i].edge as usize],&f.surface);
+        // the `j`th of `n` steps along the use, from where it starts (an edge walked against from
+        // its last parameter)
+        green_area(l.len(),&straight,&|i: usize,j: usize,n: usize| {
+            let (c,e) = (&l[i],&self.edges[l[i].edge as usize]);
+            let k = if c.reversed { n-j } else { j };
+            c.pcurve.at(e.t[0]+(e.t[1]-e.t[0])*k as f64/n as f64,e,&f.surface,&self.vertices)
+        })
     }
 
     /// Each edge's tolerance: the largest gap between its curve and each use's pcurve image

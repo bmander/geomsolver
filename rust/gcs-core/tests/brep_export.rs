@@ -594,14 +594,6 @@ fn elbow(r: f64,bend: f64,turn: f64,two: bool,ends: Option<f64>,order: [&str;3])
 /// long and a thousandth wide, whose loop's area settles its sense (`Brep::loop_area`).
 #[test]
 fn a_swept_elbow_joins_its_legs_at_their_tangent_seams() {
-    use std::f64::consts::PI;
-    // the moment about the axis of the disc of radius `r` about `bend` on the near side, clipped
-    // where it crosses the axis: ∫ ρ · 2√(r² − (ρ − bend)²) dρ over ρ ≥ 0
-    let moment = |r: f64,bend: f64| {
-        if r <= bend { return PI*r*r*bend }
-        let f = |t: f64| bend*(t*(r*r-t*t).sqrt()+r*r*(t/r).asin())-2./3.*(r*r-t*t).powf(1.5);
-        f(r)-f(-bend)
-    };
     let vh = ["leg_v","elbow","leg_h"];
     let cases: Vec<(f64,f64,bool,Option<f64>,[&str;3])> = vec![
         (20.,90.,false,None,vh),(20.,90.,true,None,vh),
@@ -614,15 +606,11 @@ fn a_swept_elbow_joins_its_legs_at_their_tangent_seams() {
     for (r,turn,two,ends,order) in cases {
         let what = format!("r {r}, {turn}°, {}, ends {ends:?}, {order:?}",if two { "two arcs" } else { "one arc" });
         let (e,sk) = crate::common::read_solved(&elbow(r,18.,turn,two,ends,order));
-        let exact = |name: &str| {
-            let (out,said) = saying(|say| export::exact(&sk,fixtures::solid(&e,name),None,None,say));
-            out.unwrap_or_else(|why| panic!("{what}: {name}: {why:?}\n{said}"))
-        };
-        let (body,legs) = (exact("body"),exact("legs"));
-        body.solid.check(1e-6).unwrap_or_else(|why| panic!("{what}: {why:?}"));
+        let (body,legs) = (exact_named(&e,&sk,"body",&what),exact_named(&e,&sk,"legs",&what));
+        body.check(1e-6).unwrap_or_else(|why| panic!("{what}: {why:?}"));
         let tube = ends.map_or(r,|y| (18f64*18.+y*y).sqrt());
-        let want = turn.to_radians()*moment(tube,18.)+props::volume(&legs.solid);
-        let got = props::volume(&body.solid);
+        let want = turn.to_radians()*moment(tube,18.)+props::volume(&legs);
+        let got = props::volume(&body);
         assert!((got-want).abs() <= 1e-8*want,"{what}: {got} against {want} ({:e})",(got-want)/want);
         if ends.is_none() && order == vh { one_and_two.push(((r,turn),got)); }
     }
@@ -650,8 +638,7 @@ fn near_miss(delta: f64,hinted: bool,legs: f64,extra: &str) -> String {
 /// over its boundary (`geom::tolerance`, a part in 10⁹ of its size, times its area).
 fn built_near_miss(src: &str,name: &str,what: &str) -> (f64,f64) {
     let (e,sk) = crate::common::read_solved(src);
-    let (out,said) = saying(|say| export::exact(&sk,fixtures::solid(&e,name),None,None,say));
-    let solid = out.unwrap_or_else(|why| panic!("{what}: {name}: {why:?}\n{said}")).solid;
+    let solid = exact_named(&e,&sk,name,what);
     solid.check(1e-6).unwrap_or_else(|why| panic!("{what}: {name}: {why:?}"));
     let area: f64 = solid.faces.iter().map(|f| props::area(&solid,f)).sum();
     (props::volume(&solid),gcs_core::brep::geom::tolerance(solid.size())*area)
@@ -668,10 +655,22 @@ fn near_misses() -> Vec<f64> {
 
 /// The turn's volume by Pappus: the moment about the axis of the disc of radius `r` about 18 from
 /// it, clipped where it crosses the axis, times a quarter turn.
-fn turn_volume(r: f64) -> f64 {
-    let bend = 18f64;
+fn turn_volume(r: f64) -> f64 { std::f64::consts::PI/2.*moment(r,18.) }
+
+/// The moment about the axis of the disc of radius `r` about `bend` from it, on its side and
+/// clipped where it crosses the axis: `∫ ρ · 2√(r² − (ρ − bend)²) dρ` over `ρ ≥ 0` — a turn's
+/// volume per radian by Pappus.
+fn moment(r: f64,bend: f64) -> f64 {
+    if r <= bend { return std::f64::consts::PI*r*r*bend }
     let f = |t: f64| bend*(t*(r*r-t*t).sqrt()+r*r*(t/r).asin())-2./3.*(r*r-t*t).powf(1.5);
-    std::f64::consts::PI/2.*(f(r)-f(-bend))
+    f(r)-f(-bend)
+}
+
+/// The solid the document calls `name` built exactly at the export's own tolerance, or the test
+/// fails saying `what` and what the build said.
+fn exact_named(e: &gcs_core::program::Elaborated,sk: &Sketch,name: &str,what: &str) -> gcs_core::brep::topo::Brep {
+    let (out,said) = saying(|say| export::exact(sk,fixtures::solid(e,name),None,None,say));
+    out.unwrap_or_else(|why| panic!("{what}: {name}: {why:?}\n{said}")).solid
 }
 
 /// **A turn a near-miss wider or narrower than its legs is the tangent turn, or built with its
