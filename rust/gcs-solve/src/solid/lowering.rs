@@ -732,16 +732,12 @@ fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> 
     out
 }
 
-/// **The pieces of one surface** (#952): face `fi` and every face going on from it across a seam
-/// on the same surface (`Surf::same`), and from those on — a plate's top in the pieces the union
-/// of its operands left it, each named by its own operand's.  A section stands against a surface,
-/// not the names of its faces: to it they are one face, and a seam between two of them is none it
-/// reaches across.  `fi` first; it alone where its surface is none `Surf` reads.
-pub(crate) fn pieces(body: &super::faces::BodyFaces, fi: usize) -> Vec<usize> {
-    let Some(own) = Surf::of(body, fi) else { return vec![fi] };
-    let same = |g: usize| Surf::of(body, g).is_some_and(|s| s.same(&own));
-    body.across_seams(&[fi], same).into_iter().map(|(g, _)| g).collect()
-}
+/// **The pieces of one surface** (#952, `BodyFaces::pieces`): face `fi` and every face going on
+/// from it across a seam on the same surface (`BodyFaces::same_surface`), and from those on — a
+/// plate's top in the pieces the union of its operands left it, each named by its own operand's.
+/// A section stands against a surface, not the names of its faces: to it they are one face, and a
+/// seam between two of them is none it reaches across.  `fi` first.
+pub(crate) fn pieces(body: &super::faces::BodyFaces, fi: usize) -> Vec<usize> { body.pieces(fi) }
 
 /// **The faces `faces` go on into smoothly, their own surfaces aside** (#994): the pieces of each
 /// one's surface (`pieces`, `faces` first), and every other face of their smooth chain

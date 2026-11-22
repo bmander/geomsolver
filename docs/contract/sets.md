@@ -479,14 +479,24 @@ only, so past a crease or where another face cuts the face across, its whole sur
 tangent there, read the centres of a ball as wide as the end off its axis, the round a few tenths
 short of the ball beside the face (`tests/standing_ends.rs`). `BodyFaces::carried_past` carries the
 tangent plane past a seam only, a seam as near as the nearest edge (a patch's corner where a seam
-and a crease meet) still the one carried past. **Pieces of one plane are its half-space** (#994,
-`BodyFaces::bulging`): a face left in pieces by an operand crossing it (an arm's bottom either side
-of a hub) has no seam between its pieces, but is one plane's side, convex — read as no convex
-side, a projection onto it and a cylinder's offset as thin as a ball standing still alternated and
-failed, and the field read no centre there.  **Faces of the chain on one plane are one
-condition** (#994, `BodyFaces::one_per_plane`): a plane's side carried on past its patch is its
-own, whichever of its faces says it, so a plate's top and the caps the fills of its pockets'
-uprights leave on it, a chain of one face and four for each pocket, is one condition, not one a
+and a crease meet) still the one carried past. **Two faces lie on one surface where their surfaces
+are one and their outward normals one** (#994, `BodyFaces::same_surface`: the kernel's
+`fillet::one_surface`, `ssi::same` at the boundary's tolerance, read once a body, `surface_of`) —
+one rule for the field's pieces of a surface (`BodyFaces::pieces`, `lowering::pieces`), a face going
+on along a piece of a run's own (`carries_on`), the plane's pieces below, the surfaces a reading
+lies on (`Reading::surfaces`), a face the ball stands on (`piece::held`) and the sides the kernel
+rolls a ball on (`fillet`'s `meeting`); five readings of it (normals to `1e-9`, a sample of five
+points an edge, `Surf::same`, `reversed` alike) are gone.  **Pieces of one surface are its convex
+solid** (#994, `BodyFaces::bulging`): a face left in pieces by an operand crossing it (an arm's
+bottom either side of a hub) has no seam between its pieces, but is one surface's side — a plane's
+half-space, a cylinder's, a cone's or a sphere's solid where its face bulges that way (a torus's
+whole side is none) — read as no convex side, a projection onto it and a cylinder's offset as thin
+as a ball standing still alternated and failed, and the field read no centre there.  **Faces of the
+chain on one plane are one condition** (#994, `BodyFaces::one_per_plane`): a plane's side carried on
+past its patch is its own, whichever of its faces says it (a curved surface's carried past a piece
+by its tangent planes is that piece's own, so its pieces each say theirs), so a plate's top and the
+caps the fills of its pockets' uprights leave on it, a chain of one face and four for each pocket,
+is one condition, not one a
 piece — each projection's active rows are chosen among every three (`project`), so a chain
 growing with the body made each reading of a round on that top cost the cube of the body's
 pockets (a plate of nine pockets rounded all over, the pockets' own edges first, built in a
