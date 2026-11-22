@@ -1427,18 +1427,50 @@ fn holds_ball(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usiz
                 let across = uses[e].iter().map(|u| u.0).find(|&f| f != fi).map(|f| b.faces[f].name.as_str());
                 let other = b.faces[sides_faces[o][0]].name.as_str();
                 let figure = |x: f64| crate::util::json::fmt_g(x,6);
+                let quoted = |name: &str| format!("`{name}`");
                 return Err(match (band.deepest(gc,g.t,&skip),across) {
-                    (Some((p,h,near)),Some(g)) => format!("the ball of {names}, of radius {}, is larger than `{}` can \
-                        hold: `{}` ends at its edge with `{g}` {} off `{other}` at [{}, {}, {}], short of where the ball \
-                        touches it, {} off `{other}`: no ball of that radius rolls against it there (make `{}` reach past \
-                        the ball's touch, or round it smaller than it reaches)",figure(r),b.faces[fi].name,b.faces[fi].name,
-                        figure(h),figure(p[0]),figure(p[1]),figure(p[2]),figure(near),b.faces[fi].name),
+                    (Some((p,h,near)),Some(g)) => larger_than_face(&format!("the ball of {names}"),&figure(r),
+                        &quoted(&b.faces[fi].name),&quoted(g),&figure(h),&quoted(other),p.map(figure),&figure(near)),
                     _ => format!("the ball of {names} is larger than `{}` can hold",b.faces[fi].name),
                 });
             }
         }
     }
     Ok(())
+}
+
+/// **What a face too short for its ball is told** (#994): one sentence for the ball rolled
+/// along any run (`holds_ball`) and for a run carried along a line or turned round a circle
+/// (`solid::lowering::piece::held`) — the ball (`ball`, what it is of) and its radius, the face
+/// too short for it, the face across the edge it ends at, how far that edge stands off the other
+/// face and where, and how far off the ball touches it; each figure and name as its caller says
+/// them (the kernel its faces' names and numbers, the lowering the drawing's names and units).
+#[allow(clippy::too_many_arguments)]
+pub fn larger_than_face(ball: &str,radius: &str,face: &str,across: &str,reaches: &str,other: &str,at: [String;3],
+    touched: &str) -> String {
+    let [x,y,z] = at;
+    format!("{ball}, of radius {radius}, is larger than {face} can hold: {face} ends at its edge with {across} \
+        {reaches} off {other} at [{x}, {y}, {z}], short of where the ball touches it, {touched} off {other}, so no \
+        ball of that radius rolls against it there — it would roll on across that edge against {across}. Make {face} \
+        reach past the ball's touch (or remove it, where it is a sliver a cut left), or round the edge smaller than \
+        {face} reaches")
+}
+
+/// **Whether a curve stands as far as `h` off a surface** (#994): the curve `c` over `t`, the
+/// surface `s` (its signed distance `implicit`, either side), exactly — at an end, or where the
+/// curve meets the surface offset by `h` toward either side (`query::curve_surface`): a distance
+/// along a curve that passes `h` between its ends crosses that level, whatever the surface, so
+/// no sample of the curve decides it.  A reading not proved is read as reaching (#814).  What a
+/// face's edges reach off the other face is asked of a ball carried along a run
+/// (`solid::lowering::piece::held`) as `holds_ball` asks it of the band.
+pub fn reaches(c: &Curve,t: [f64;2],s: &Surface,h: f64,tol: f64) -> bool {
+    if [t[0],t[1]].iter().any(|&u| s.implicit(c.point(u)).abs() >= h) { return true }
+    [h,-h].iter().any(|&level| s.offset(level,tol).and_then(Offset::surface).is_some_and(|off| {
+        match super::query::curve_surface(c,t,&off,tol) {
+            super::query::Meets::At(roots) => !roots.is_empty(),
+            super::query::Meets::Along | super::query::Meets::Refused(_) => true,
+        }
+    }))
 }
 
 /// **The crease of a ball's section**: where the run `chain` crosses the plane of the section

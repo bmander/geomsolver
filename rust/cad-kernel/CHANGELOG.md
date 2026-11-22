@@ -8,6 +8,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A face too short for its ball is told one way** (#994): `fillet::larger_than_face`, new, is
+  the sentence the rolled ball's refusal (`holds_ball`) and a lowering's carried one say alike —
+  the face too short, the face across the edge it ends at, how far that edge stands off the other
+  face and where, how far off the ball touches it, and what to do; the rolled ball's refusal now
+  ends "so no ball of that radius rolls against it there — it would roll on across that edge
+  against …. Make … reach past the ball's touch (or remove it, where it is a sliver a cut left), or
+  round the edge smaller than … reaches".  `fillet::reaches`, new: whether a curve stands as far
+  as a height off a surface, read exactly at its ends and where it meets the surface's offsets
+  (`query::curve_surface`), no sample of it.
 - **Faces on one surface are one surface whatever order a Boolean's operands come in** (#994,
   fixture 115's feet and lip at a plate's true edge): an arrangement reads which faces lie on one
   surface face by face before any phase asks (`Arrangement::classed`) — two of one kind joined

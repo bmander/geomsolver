@@ -513,27 +513,23 @@ fn held(body: &crate::solid::faces::BodyFaces, whole: &Touched, edge: u32, ends:
         let other = faces.iter().copied().find(|&h| h != f).unwrap_or(f);
         let (reaches, touched) = (body.side(other, foot).abs(), body.side(other, c).abs());
         // (a face the ball overflows only somewhere — a crown past whose rim a large ball's touch
-        // runs on the crown's surface — is read on its surface as the field reads it; one nowhere
-        // as far off the other face as the ball touches it is all within the ball's touch, and
-        // cannot hold it)
-        // (each edge of the face as far off the other as it reaches, `Touched::heights`)
-        let heights = whole.heights(body, f, other);
-        let widest = heights.iter().copied().fold(0.0, f64::max);
-        if widest >= touched - slack {
+        // runs on the crown's surface — is read on its surface as the field reads it: an edge of it
+        // as far off the other face as the ball touches it, read exactly, `fillet::reaches`; one
+        // nowhere as far off the other face as the ball touches it is all within the ball's touch,
+        // and cannot hold it)
+        if whole.reaching(body, f, other, touched - slack) {
             continue;
         }
-        // (and a strip: an edge it makes with a face the run ends on in a corner with the other —
-        // other than the face it ends at — standing nowhere as far off the other face as the ball
-        // touches, so the round, standing past the face all along, stands past the corner at that
-        // end too, beside that corner's own round in the air; a band tapering to nothing into a
-        // face it runs out on tangent, the round running out with it, is read on its surface as the
-        // field reads it)
+        // (and a strip: an edge it makes — every one lower than the touch — with a face the run
+        // ends on in a corner with the other, other than the face it ends at, so the round,
+        // standing past the face all along, stands past the corner at that end too, beside that
+        // corner's own round in the air; a band tapering to nothing into a face it runs out on
+        // tangent, the round running out with it, is read on its surface as the field reads it)
         // (an end face meeting the other face in a corner, not running out into it tangent)
         let ends_here = |c: usize| ends.iter().any(|&(by, _, far)| far.is_none() && by == EndBy::Face(c))
             && body.edges_between(&[c], &[other]).into_iter().any(|x| !body.seam(x));
-        let cornered = body.face_edges(f).iter().zip(heights.iter()).any(|(&x, &height)| {
-            body.faces_of(x).iter().any(|&c| c != g && c != f && ends_here(c)) && height < touched - slack
-        });
+        let cornered = body.face_edges(f).iter()
+            .any(|&x| body.faces_of(x).iter().any(|&c| c != g && c != f && ends_here(c)));
         if !cornered {
             continue;
         }
@@ -541,29 +537,22 @@ fn held(body: &crate::solid::faces::BodyFaces, whole: &Touched, edge: u32, ends:
         let n = apart(reaches, touched);
         let length = |x: f64| crate::units::Dim::LENGTH.number_text(figured(x, n), units);
         let at = |x: f64| crate::units::Dim::LENGTH.number_text(figured(x, 6), units);
-        return Err(format!("its ball, of radius {}, is larger than {} can hold: {} ends at its edge with {} {} off \
-            {} at [{}, {}, {}], short of where the ball touches it, {} off {}, so no ball of that radius rolls \
-            against it there — it would roll on across that edge against {}. Make {} reach past the ball's touch \
-            (or remove it, where it is a sliver a cut left), or round the edge smaller than {} reaches",
-            length(r), said(f), said(f), said(g), length(reaches), said(other), at(q[0]), at(q[1]), at(q[2]),
-            length(touched), said(other), said(g), said(f), length(reaches)));
+        return Err(crate::brep::fillet::larger_than_face("its ball", &length(r), &said(f), &said(g),
+            &length(reaches), &said(other), q.map(at), &length(touched)));
     }
     Ok(())
 }
 
 /// What `held` reads of a run as a whole, each the first time it is asked: the run's ends, each
-/// with the way the run runs from there (`BodyFaces::run_ends`), and how far off a face each edge
-/// of another reaches — the largest of seventeen samples along it, in the order of the face's
-/// edges — which a touch past an edge asks of the edge's two faces, at every station.
+/// with the way the run runs from there (`BodyFaces::run_ends`).
 struct Touched<'a> {
     edges: &'a [u32],
     run_ends: std::cell::OnceCell<Vec<(V, V, u32)>>,
-    heights: std::cell::RefCell<std::collections::BTreeMap<(usize, usize), std::rc::Rc<[f64]>>>,
 }
 
 impl<'a> Touched<'a> {
     fn of(edges: &'a [u32]) -> Touched<'a> {
-        Touched { edges, run_ends: Default::default(), heights: Default::default() }
+        Touched { edges, run_ends: Default::default() }
     }
 
     /// The run's ends, each with the way the run runs from there.
@@ -571,11 +560,22 @@ impl<'a> Touched<'a> {
         self.run_ends.get_or_init(|| body.run_ends(self.edges))
     }
 
-    /// How far off face `other` each edge of face `f` reaches, in the order of `f`'s edges.
-    fn heights(&self, body: &crate::solid::faces::BodyFaces, f: usize, other: usize) -> std::rc::Rc<[f64]> {
-        self.heights.borrow_mut().entry((f, other)).or_insert_with(|| body.face_edges(f).iter().map(|&x| {
-            (0..=16).map(|k| body.side(other, body.along(x, k as f64 / 16.0)).abs()).fold(0.0, f64::max)
-        }).collect()).clone()
+    /// Whether some edge of face `f` stands as far as `h` (model units) off face `other`'s
+    /// surface, exactly (`brep::fillet::reaches`).
+    fn reaching(&self, body: &crate::solid::faces::BodyFaces, f: usize, other: usize, h: f64) -> bool {
+        let (brep, mm, _) = body.brep();
+        let surface = &brep.faces[other].surface;
+        body.face_edges(f).iter().any(|&x| {
+            let edge = &brep.edges[x as usize];
+            match &edge.curve {
+                crate::brep::topo::EdgeCurve::Curve(c) => {
+                    crate::brep::fillet::reaches(c, edge.t, surface, h * mm, body.tolerance() * mm)
+                }
+                crate::brep::topo::EdgeCurve::Degenerate => {
+                    surface.implicit(brep.vertices[edge.v[0] as usize].p).abs() >= h * mm
+                }
+            }
+        })
     }
 }
 
