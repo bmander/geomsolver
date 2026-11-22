@@ -95,7 +95,7 @@ impl Held {
     }
 
     /// Whether a reading is open.
-    pub fn holding(&self) -> bool {
+    fn holding(&self) -> bool {
         self.depth.get() > 0
     }
 

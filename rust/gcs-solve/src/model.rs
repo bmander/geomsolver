@@ -396,7 +396,7 @@ impl Clone for Sketch {
 
 impl Sketch {
     /// This drawing copied, remembering into `caches`: every other field as `clone` copies it.
-    pub fn clone_with(&self, caches: Caches) -> Sketch {
+    pub(crate) fn clone_with(&self, caches: Caches) -> Sketch {
         Sketch {
             roles: self.roles.clone(),
             params: self.params.clone(),
