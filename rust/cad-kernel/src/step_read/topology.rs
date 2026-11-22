@@ -36,6 +36,7 @@ use super::geometry::{list,logical,Flat,Geometry,Sheet};
 use super::{Given,Refusal,Why};
 use crate::geom::{Curve,Frame,Surface,Uv,V};
 use crate::nurbs::{BSpline,Net};
+use crate::plane2::dist;
 use crate::step_file::{File,Value};
 use crate::topo::{pole_at,poleless as topo_poleless,reverse_loop,unwrap,Brep,Coedge,Edge,EdgeCurve,Face,Pcurve,Vertex};
 use crate::util::space::{add,cross,distance,dot,norm,scale,sub};
@@ -130,13 +131,13 @@ impl Walk<'_,'_,'_> {
                 // a loop of edges each from one vertex to itself along a line of no length (a
                 // torus's two seams written as points, brepkit's): the point it is, a lone vertex,
                 // its edges the seams the reader lays (`Walked::points`)
-                Some(("EDGE_LOOP",lv)) if self.points_only(lv.get(1)).is_some() => {
-                    let (k,named) = self.points_only(lv.get(1)).unwrap_or_default();
-                    let k = self.vertex(lp,Some(k))?;
-                    bounds.push(Bound::Vertex(lp,k));
-                    points.extend(named);
-                }
                 Some(("EDGE_LOOP",lv)) => {
+                    if let Some((k,named)) = self.points_only(lv.get(1)) {
+                        let k = self.vertex(lp,Some(k))?;
+                        bounds.push(Bound::Vertex(lp,k));
+                        points.extend(named);
+                        continue
+                    }
                     let mut uses = Vec::new();
                     for o in list(lv.get(1),lp,"a loop's edges")? { uses.push(self.oriented(lp,o.reference(),0)?); }
                     if uses.is_empty() { return Err(Refusal::malformed(lp,"a loop of no edge")) }
@@ -286,9 +287,8 @@ fn read_edge(g: &Geometry,w: &Written,points: &[V],within: f64) -> Result<Read,R
 /// matching the edge only where a symmetry makes it — a line through a rational arc's
 /// parameters, right at its knots and its spans' middles — is not kept), else none.
 fn file_pcurve(flat: &Flat,e: &Edge,rate: f64,s: &Surface,vs: &[Vertex],near: f64) -> Option<Pcurve> {
-    let period = match &e.curve { EdgeCurve::Curve(c) => c.period(),EdgeCurve::Degenerate => None };
-    let shifts: Vec<f64> = match (period,flat.domain()) {
-        (Some(p),Some([d0,d1])) => vec![((0.5*(e.t[0]+e.t[1])-rate*0.5*(d0+d1))/p).round()*p],
+    let shifts: Vec<f64> = match period_shift(flat,e,rate) {
+        (_,Some(x)) => vec![x],
         (Some(p),None) => vec![0.,p,-p],
         (None,_) => vec![0.],
     };
@@ -339,17 +339,23 @@ fn file_pcurve(flat: &Flat,e: &Edge,rate: f64,s: &Surface,vs: &[Vertex],near: f6
     None
 }
 
+/// The period of an edge's closed curve, and the whole periods of it that carry the file's curve
+/// `flat` (run at `rate` of the edge's parameter) over the edge's middle, where `flat` has a domain.
+fn period_shift(flat: &Flat,e: &Edge,rate: f64) -> (Option<f64>,Option<f64>) {
+    let period = match &e.curve { EdgeCurve::Curve(c) => c.period(),EdgeCurve::Degenerate => None };
+    let shift = match (period,flat.domain()) {
+        (Some(p),Some([d0,d1])) => Some(((0.5*(e.t[0]+e.t[1])-rate*0.5*(d0+d1))/p).round()*p),
+        _ => None,
+    };
+    (period,shift)
+}
+
 /// Where the file's curve `flat` has an edge's point at its parameter `t`, roughly: read at the
 /// file's parameter `t / rate`, moved by whole periods of a closed curve into its domain — a
 /// curve in a face's parameters need not run at its edge's own (a cone's, read across the axis),
 /// but it lies on the branch of the surface its edge does.
 fn roughly(flat: &Flat,e: &Edge,rate: f64,t: f64) -> Uv {
-    let period = match &e.curve { EdgeCurve::Curve(c) => c.period(),EdgeCurve::Degenerate => None };
-    let shift = match (period,flat.domain()) {
-        (Some(p),Some([d0,d1])) => ((0.5*(e.t[0]+e.t[1])-rate*0.5*(d0+d1))/p).round()*p,
-        _ => 0.,
-    };
-    let x = (t-shift)/rate;
+    let x = (t-period_shift(flat,e,rate).1.unwrap_or(0.))/rate;
     flat.at(match flat.domain() { Some([d0,d1]) => x.clamp(d0,d1),None => x })
 }
 
@@ -545,17 +551,19 @@ type Strip = (Vec<f64>,Vec<Vec<V>>,Option<Vec<Vec<f64>>>);
 /// `n`'s knots, poles and weights laid out along `k` as rows.
 fn strip(n: &Net,k: usize) -> Strip {
     if k == 0 { return (n.uknots.clone(),n.poles.clone(),n.weights.clone()) }
-    let t = |r: &Vec<Vec<V>>| (0..r[0].len()).map(|j| r.iter().map(|x| x[j]).collect()).collect::<Vec<Vec<V>>>();
-    let tw = |r: &Vec<Vec<f64>>| (0..r[0].len()).map(|j| r.iter().map(|x| x[j]).collect()).collect::<Vec<Vec<f64>>>();
-    (n.vknots.clone(),t(&n.poles),n.weights.as_ref().map(tw))
+    (n.vknots.clone(),transpose(&n.poles),n.weights.as_deref().map(transpose))
 }
+
+/// The rows `r` as columns.
+fn transpose<T: Copy>(r: &[Vec<T>]) -> Vec<Vec<T>> { (0..r[0].len()).map(|j| r.iter().map(|x| x[j]).collect()).collect() }
+
+/// `x` three times end to end.
+fn thrice<T: Clone>(x: &[T]) -> Vec<T> { x.iter().chain(x).chain(x).cloned().collect() }
 
 /// The net `n` with its knots, poles and weights along `k` those of `x`.
 fn unstrip(n: &Net,k: usize,(knots,poles,weights): Strip) -> Net {
     if k == 0 { return Net {uknots:knots,poles,weights,..n.clone()} }
-    let t = (0..poles[0].len()).map(|i| poles.iter().map(|x| x[i]).collect()).collect();
-    let w = weights.map(|w| (0..w[0].len()).map(|i| w.iter().map(|x| x[i]).collect()).collect());
-    Net {vknots:knots,poles:t,weights:w,..n.clone()}
+    Net {vknots:knots,poles:transpose(&poles),weights:weights.as_deref().map(transpose),..n.clone()}
 }
 
 /// **A closed sheet put three times end to end along `k`** (its domain `[lo, hi]` of width `w`):
@@ -571,9 +579,7 @@ fn rolled(n: &Net,k: usize,w: f64) -> Net {
         out.extend(knots[p+1..knots.len()-1].iter().map(|t| t+d));
     }
     out.push(knots[knots.len()-1]+w);
-    let three = |x: &Vec<Vec<V>>| x.iter().chain(x).chain(x).cloned().collect::<Vec<_>>();
-    let threew = |x: &Vec<Vec<f64>>| x.iter().chain(x).chain(x).cloned().collect::<Vec<_>>();
-    unstrip(n,k,(out,three(&poles),weights.as_ref().map(threew)))
+    unstrip(n,k,(out,thrice(&poles),weights.as_deref().map(thrice)))
 }
 
 /// **The window of a rolled sheet a face is read on**: `n` (rolled) over the span `c_k` along each
@@ -668,7 +674,7 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
                     }
                     if d == [0.;2] { (pc,a,k) } else { (moved(&pc,d),[a[0]+d[0],a[1]+d[1]],k) }
                 }).collect();
-            if let Some(l) = last { found.sort_by(|x,y| distance2(x.1,l).total_cmp(&distance2(y.1,l))); }
+            if let Some(l) = last { found.sort_by(|x,y| dist(x.1,l).total_cmp(&dist(y.1,l))); }
             found.into_iter().next().map(|(pc,a,k)| {
                 // a seam's first use on the side of it the face lies left of
                 let (pc,a) = if seams.contains(&ei) && !placed.contains_key(&ei) && last.is_none() {
@@ -1153,8 +1159,6 @@ fn seam_side(s: &Surface,m: Uv,d: Uv,reversed: bool) -> Uv {
     }
     out
 }
-
-fn distance2(a: Uv,b: Uv) -> f64 { (a[0]-b[0]).dhypot(a[1]-b[1]) }
 
 /// The span of a loop's parameters: each use read at its ends and quarters.
 fn span(b: &Brep,f: &Face,l: &[Coedge]) -> [[f64;2];2] {
