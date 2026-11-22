@@ -1013,6 +1013,13 @@ impl BodyFaces {
                         }
                         for &(u, way, wid) in ends.iter().filter(|&&(_, _, w)| w != vid) {
                             let at = self.ends_at(&other, &[c, f], u, way, wid, true);
+                            // that edge ending only where `f` goes on tangent across a seam, `c`
+                            // going on along the next face (a floor's edge along a drafted side
+                            // running on round its corner's cone, #994): a seam is no edge, so
+                            // nor is it the end of one
+                            if at.is_empty() && self.seam_from(f, wid) {
+                                continue;
+                            }
                             let by: Vec<(EndBy, f64)> = if at.is_empty() {
                                 vec![(EndBy::Square { at: u, out: scale(way, -1.0) }, 1.0)]
                             } else {
@@ -1161,6 +1168,11 @@ impl BodyFaces {
             k += 1;
         }
         out
+    }
+
+    /// Whether face `fi` goes on tangent across a seam (`seam`) at vertex `vid`.
+    fn seam_from(&self, fi: usize, vid: u32) -> bool {
+        self.edges[fi].iter().any(|&e| self.loc.b.edges[e as usize].v.contains(&vid) && self.seam(e))
     }
 
     /// Whether edge `e` is a seam: two faces bound it whose outward normals are one at its middle,

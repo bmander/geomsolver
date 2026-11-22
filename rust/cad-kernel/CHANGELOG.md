@@ -8,6 +8,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A round beyond a seam that starts where its touch crosses the seam** (#994): `spill::Beyond`
+  has a new field `seamed: [bool; 2]` — with `run`, an end where the ball's touch crosses a line
+  seam lying aslant the edge, the piece starting at the section through it (square to the edge,
+  the touch the vertex on the seam, no strip of the next face there) and not carried past it, the
+  edge's own run glued to it there.  `round_beyond` builds it; a cap carried past an edge's end
+  whose touch has come back short of the seam is refused rather than built inside out.
+  `flat_beyond` refuses a seamed end.  Callers constructing `Beyond` must set the field
+  (`[false; 2]` for what was built before).
+
 ## [0.20.0] - 2026-11-21
 
 - **A drafted corner where an arc meets a side at an angle is built** (#962 item 8b): `build::offset`
