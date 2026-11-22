@@ -229,11 +229,7 @@ impl Ring {
                     // axis: `P = U` across, `q = e_z · U`, `Q = ρ_c (e_z × ω)`); where both vanish at
                     // `θ*` each is `2 sin((θ − θ*)/2)` times `(−P₁ sin m + P₂ cos m)`, `m` the half sum,
                     // and the branch roots turn on that, smooth through `θ*`)
-                    let (e1,e2) = (self.axes(0.).0,self.axes(std::f64::consts::FRAC_PI_2).0);
-                    let uc = w.velocity(self.lift(theta,[0.,c[1]]));
-                    let cross_z = cross(ez,w.omega);
-                    let (pp,q,qq) = ([dot(uc,e1),dot(uc,e2)],dot(ez,uc),[c[0]*dot(cross_z,e1),c[0]*dot(cross_z,e2)]);
-                    let size = pp[0].dhypot(pp[1])+q.abs()+qq[0].dhypot(qq[1]);
+                    let (pp,q,qq,size) = self.terms(w,c);
                     // (read so where `A` and `B` are no more than their rounding's half the scale's
                     // digits, and at the nearer of the two angles `A` vanishes at where `B` does too,
                     // #942 F6)
@@ -1481,7 +1477,7 @@ pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],rimmed: 
         let faces: Vec<Trimmed> = crate::util::par::indices(pieces,|k| {
             // a touching piece's rim touches the tool, a dipped stretch's crosses it
             let order = if sides[k] == Side::Touching { 2 } else { 1 };
-            let readings: [Option<Reading>;2] = std::array::from_fn(|e| backs[e].map(|back| Reading {net,ring,back,u:[k as f64,k as f64+1.],
+            let readings: [Option<Reading>;2] = std::array::from_fn(|e| backs[e].map(|back| Reading {net,ring,back,tol,u:[k as f64,k as f64+1.],
                 roll:fit.roll,end:if rimmed[e] { e as f64 } else { f64::NAN },order:if rimmed[e] { order } else { 0 }}));
             let mut chords: Vec<(usize,Vec<P2>)> = Vec::new();
             // (a trace walked from both its ends — its far end matched to no rim crossing, the other
@@ -1551,7 +1547,7 @@ const MET_MOST: usize = 20_000;
 /// end)^order` (the rim's own fitting error taken off), whose sign is the sheet's side of the tool
 /// beside its rim, carried onto the rim itself from just off it. A face none of whose rims lies on
 /// the tool (a stretch of the roll ending at no end pose) is read with `order` 0: `G = F`.
-struct Reading<'a> { net: &'a Net,ring: &'a Ring,back: Pose,u: [f64;2],roll: [f64;2],end: f64,order: i32 }
+struct Reading<'a> { net: &'a Net,ring: &'a Ring,back: Pose,tol: f64,u: [f64;2],roll: [f64;2],end: f64,order: i32 }
 
 impl Reading<'_> {
     /// The face's point at `(x, y)` and its parameters.
@@ -1560,6 +1556,7 @@ impl Reading<'_> {
         (self.net.point(u,t),[u,t])
     }
     fn f(&self,x: f64,y: f64) -> f64 { self.ring.signed(self.back.point(self.at(x,y).0)).0 }
+
     fn g(&self,x: f64,y: f64) -> f64 {
         // (no rim of the face on this tool: read plainly)
         if self.order == 0 { return self.f(x,y) }
@@ -1628,7 +1625,20 @@ fn traces(r: &Reading) -> Vec<Vec<P2>> {
         let ss: Vec<f64> = (0..=MET_RIM).map(|i| if k%2 == 1 { crowd(i) } else { i as f64/MET_RIM as f64 }).collect();
         let vs: Vec<f64> = ss.iter().map(|&s| { let p = rim(s); g(p[0],p[1]) }).collect();
         for i in 0..MET_RIM {
-            if (vs[i] > 0.) != (vs[i+1] > 0.) { ends.push((settle(rim(ss[i]),rim(ss[i+1])),INWARD[k])) }
+            if (vs[i] > 0.) != (vs[i+1] > 0.) {
+                let p = settle(rim(ss[i]),rim(ss[i+1]));
+                // **a seam's crossing beside the rim the tool stands on, the seam between the two on
+                // the tool within the tolerance, is the corner** (#942 T1d-ring): there the tube and
+                // the tool are one within the tolerance all the way, and where along it `G` changes
+                // sign is the fit's error, not the meeting's — beside a corner where a touching
+                // piece's rim meets a dipped one's, the fit's slope across a rim, 2.7e-5, put a
+                // crossing 4e-4 of the roll up the seam, and the chord from it zigzagged off the
+                // tool beside a sliver face. The trace reaching it runs into the tube's own vertex
+                // there (below), as it does where the face's corner is nearer.
+                if k%2 == 1 && r.order > 0 && ss.iter().zip(&vs).filter(|&(&s,_)| (s-ye).abs() <= (p[1]-ye).abs())
+                    .all(|(&s,_)| { let q = rim(s); r.f(q[0],q[1]).abs() <= r.tol }) { continue }
+                ends.push((p,INWARD[k]))
+            }
         }
     }
     let inside = |p: [f64;2]| p[0] >= 0. && p[0] <= 1. && p[1] >= 0. && p[1] <= 1.;
@@ -2146,7 +2156,11 @@ fn trimmed(net: &Net,roll: [f64;2],mut faces: Vec<Trimmed>,tol: f64) -> Result<(
         // (its chords split where they cross or one ends on another: a double curve ending on the
         // tube's meeting with the tool at an end pose, #880 T1d)
         let split = split_chords(&face.chords);
-        let simple = split.len() == face.chords.len() && split.iter().zip(&face.chords).all(|(x,y)| x.1.len() == y.1.len());
+        // (and where two end at one place — at the tube's vertex, each run into it, #942 T1d-ring —
+        // its pieces are the planar graph's too: no way round the square alone tells them apart)
+        let ends: Vec<f64> = face.chords.iter().flat_map(|(_,c)| [perimeter(c[0]),perimeter(c[c.len()-1])]).collect();
+        let shared = ends.iter().enumerate().any(|(i,a)| ends[i+1..].iter().any(|b| (a-b).abs() < ON_SIDE));
+        let simple = !shared && split.len() == face.chords.len() && split.iter().zip(&face.chords).all(|(x,y)| x.1.len() == y.1.len());
         let told = |_: &Unbuilt| if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
             for (e,c) in &face.chords { eprintln!("ring: face {k} unsplit chord of kind {e} from {:?} to {:?}, {} points",c[0],c[c.len()-1],c.len()) }
         };
@@ -2322,6 +2336,37 @@ impl Ring {
             if d < best.0 { best = (d,k,inside) }
         }
         (if best.2 { -best.0 } else { best.0 },best.1)
+    }
+
+    /// **An arc's contact terms under the twist `w`** (`root`'s): `A = P · e_r(θ)` and
+    /// `B = q + Q · e_r(θ)` about the arc's centre `c`, as `(P, q, Q)`, and the scale they are read
+    /// against.
+    fn terms(&self,w: &Twist,c: P2) -> ([f64;2],f64,[f64;2],f64) {
+        let (e1,e2,ez) = (self.axes(0.).0,self.axes(std::f64::consts::FRAC_PI_2).0,self.axes(0.).2);
+        let uc = w.velocity(self.lift(0.,[0.,c[1]]));
+        let cross_z = cross(ez,w.omega);
+        let (pp,q,qq) = ([dot(uc,e1),dot(uc,e2)],dot(ez,uc),[c[0]*dot(cross_z,e1),c[0]*dot(cross_z,e2)]);
+        (pp,q,qq,pp[0].dhypot(pp[1])+q.abs()+qq[0].dhypot(qq[1]))
+    }
+
+    /// The point of the meridian's arc `k` in the half-plane at `θ` farthest from the ring's axis.
+    pub fn meridian_point(&self,theta: f64,k: usize) -> V {
+        let m = match self.elements[k] { Element::Arc {c,r,..} => [c[0]+r,c[1]],Element::Line {a,b} => if a[0] >= b[0] { a } else { b } };
+        self.lift(theta,m)
+    }
+
+    /// **A meridian the instant touches whole** (#942 T1d-ring): the angle `θ*` of the half-plane
+    /// whose arc of the meridian the twist `w` moves along itself all round — `A` and `B` both nought
+    /// there, to their rounding's half the scale's digits (`root`'s reading) — and the arc; none
+    /// where no arc's is.
+    pub fn touched_whole(&self,w: &Twist) -> Option<(f64,usize)> {
+        self.elements.iter().enumerate().find_map(|(k,e)| {
+            let Element::Arc {c,..} = *e else { return None };
+            let (pp,q,qq,size) = self.terms(w,c);
+            let base = (-pp[0]).datan2(pp[1]);
+            [base,base+std::f64::consts::PI].into_iter().find(|&st| { let (ss,cs) = st.dsin_cos(); (q+qq[0]*cs+qq[1]*ss).abs() <= HALF_READ*size })
+                .map(|st| (st.rem_euclid(TAU),k))
+        })
     }
 
     /// **Whether the ring holds the point `x`** (its own coordinates): its `(ρ, z)` within the

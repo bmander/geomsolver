@@ -854,7 +854,11 @@ reading, the candidates with their face families' walls, rails and rims, and the
 `load_trim` reads them back, every candidate and meeting bit for bit
 (`swept_general::the_general_roads_candidates_are_written_and_read_back_whole`), and its replay
 refuses as the build did (`swept_general::a_refused_trim_replays_from_its_dump_to_the_same_refusal`,
-and in the slow tier the bench's tumbling cube).
+and in the slow tier the bench's tumbling cube). A frame carried along a B-spline
+(`trajectory::Along`) is written as its curve exactly, its home, which frame and its name, and made
+again from them (`Path::along`), its poses and rates read back bit for bit
+(`swept_rings::a_frame_carried_along_a_spline_is_written_and_read_back_whole`, #942 T1d-ring);
+any other path read only by evaluating it, a pace and a path of pieces stay refused by name.
 
 **A piece is one verdict all over, or a meeting is missing, and the trim completes it** (#942 F2,
 `trim`'s `sided`, `missing_across` and `completed`): each piece is read at up to eight of its inner
@@ -2128,11 +2132,37 @@ not by an instant read for each (#942 F4: the turned torus refused in 32 s where
 them reading instants; the thin one in 58 s where it took over forty minutes); what is left is the
 shape changes found (6.6 s) and, in the trim's Boolean, its fitted tubes' edges read against their
 faces (693 searches, 81 s of the cores' time). **A ring along a spline** (the whole meridian touched at every instant, `rings::root`
-in closed form there) now closes its sheets — a bridge holding the join its label turns over at, a
+in closed form there) closes its sheets — a bridge holding the join its label turns over at, a
 trace leaving beside a corner ending at a nearer crossing, a cap both faces of a seam trace into one
-corner dropped, a chord refined by the meeting's own points where its cubic strays — and is refused
-in the arrangement: the side circle's band is swept almost twice over, its two halves crossing at
-grazing angles, and two of its faces coincide along an edge.
+corner dropped, a chord refined by the meeting's own points where its cubic strays — and its tubes
+are arranged with the torus at both ends (#942 T1d-ring, at the bench's tolerance:
+`swept_rings::a_rings_tubes_beside_its_whole_touched_meridians_are_arranged_with_it_at_both_ends`).
+**A seam's crossing within the tolerance band of the rim is the tube's vertex** (`rings::traces`):
+where a touching piece's rim meets a dipped one's the relative curvature across the rim is nought
+at the vertex, and beside it the tube and the tool stand within the fit's error of one another all
+along the seam between them; where along it `G` changes sign is the fit's slope across the rim
+(2.7e-5 there), not the meeting's. A crossing of a seam whose seam down to the rim the tool stands
+on stays within the tolerance of the tool (read at the bracketing grid's points, `F` itself, which
+both faces of the seam read alike) is no crossing: the trace reaching it runs into the tube's own
+vertex, as it does where the face's corner is nearer. Found 4e-4 of the roll up the seam, the
+chord traced from it zigzagged 1.1e-5 off both surfaces round a sliver face laid over its
+neighbour ("faces … coincide along it"). Two chords run into one vertex so (the ring's end pose,
+two crossings of the torus converging on its corner) part the face as the planar graph of its
+chords does (`pieces_among`), not round its square alone. **A grid's seed is a root on the other
+face's patch** (`boolean::grid_seeds`, `off_patch`, `kept`'s reading): a sheet's distance along the
+normal at a foot clamped to its patch has zeros of its own past the patch, and a seed laid 1.0 off
+the other tube there was traced from and refused as the two meeting at 0.19°. **Refused by name**:
+along a path in a plane the ring's axis lies in, its top and bottom meridians are touched whole at
+every instant (`Ring::touched_whole`, `root`'s closed form: `A` and `B` nought at one angle), and
+the sweep of each is a sheet of its own — the groove's floor, 1.5 below the path, where the deeper
+contact curve's tube reaches 1.098 — which no contact curve's tube holds: arranged from the tubes
+alone the groove and the block beside it were one cell, and the block came back whole with two
+sheets in it. A meridian touched whole at two of the closed class's poses (`K2_POSES`) or more is
+`Curved` at its farthest point (`ring_entered`, before anything is fitted;
+`swept_rings::a_ring_carried_along_a_spline_touching_its_meridians_whole_is_refused_by_name`); an
+instant alone touching one whole (an end pose) is no sheet. The meridian's own sweep, met with the
+tubes along its crossings with the contact curves and given the tool at either end along the
+meridian there, is what builds it.
 
 **K2's patches: the closed class under any rigid motion (#780 L3, `brep::swept::patches`):** a
 sweep under a motion no constant twist takes, nor a path of pieces (`Trajectory::General`, a frame

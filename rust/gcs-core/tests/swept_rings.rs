@@ -312,6 +312,125 @@ fn a_tubes_chord_given_as_its_meeting_with_the_tool_is_its_own_edge_laid_once() 
     }
 }
 
+/// brep-bench's `ring-carried-along-a-spline` as the kernel takes it: the block (−6, −6, −8)–(36,
+/// 26, 0), the torus about `y` through (0, 0, 0.5) of radii 1.5 and 0.5, its frame carried along a
+/// cubic in the plane `z = 0` (`trajectory::Along`, the rotation-minimising frame) over its whole
+/// parameter, and the tolerance it is built to.
+fn along_a_spline() -> (Brep,Brep,Trajectory,f64) {
+    let block = crate::brep::block([-6.,-6.,-8.],[36.,26.,0.]);
+    let tool = gcs_core::brep::build::torus([0.,0.,0.5],[0.,1.,0.],1.5,0.5).unwrap();
+    let curve = gcs_core::brep::nurbs::BSpline::new(3,vec![0.,0.,0.,0.,1.,1.,1.,1.],
+        vec![[0.,0.,0.],[10.,0.,0.],[20.,20.,0.],[30.,20.,0.]]).unwrap();
+    let path = Trajectory::General(std::sync::Arc::new(gcs_core::brep::trajectory::Along::new(curve).unwrap()));
+    (block,tool,path,1e-5)
+}
+
+/// **A ring carried along a spline touches its top and bottom meridians whole at every instant,
+/// and is refused by name** (#942 T1d-ring): along a path in a plane the torus's axis lies in, the
+/// velocity at each point of the meridian through the path's normal lies in the meridian's own
+/// plane, so `n · v` is nought all round it, at every instant. Each such meridian's sweep is a sheet
+/// of its own — at the bottom, the groove's floor, reaching 1.5 below the path where the deeper of
+/// the two contact curves' tubes reaches 1.098 — which no contact curve's tube holds: built from
+/// the tubes alone, the groove and the block beside it were one cell, and the block came back whole
+/// with two sheets in it. Refused at the first pose, at the top meridian's farthest point, before
+/// anything is fitted.
+#[test]
+fn a_ring_carried_along_a_spline_touching_its_meridians_whole_is_refused_by_name() {
+    let (block,tool,path,tol) = along_a_spline();
+    let ring = Ring::read(&tool).unwrap();
+    // the meridians touched whole at a pose: the top's and the bottom's, θ a quarter turn either way
+    // of the ring's first axis — its frame's `x` along `z` here, so read by the point it lifts
+    let w = gcs_core::brep::trajectory::Twist::body(path.at(0.37).unwrap());
+    let (theta,k) = ring.touched_whole(&w).expect("a meridian touched whole");
+    let top = ring.meridian_point(theta,k);
+    assert!((top[0].abs() < 1e-9 && top[1].abs() < 1e-9) && ((top[2]-2.5).abs() < 1e-9 || (top[2]+1.5).abs() < 1e-9),"{top:?}");
+    match gcs_core::brep::swept::closed::ring_cut_from(&block,&tool,&path,[0.,1.],0.01,tol) {
+        Err(Unbuilt::Curved {at}) => assert!(at[0].abs() < 1e-9 && at[1].abs() < 1e-9 && ((at[2]-2.5).abs() < 1e-9 || (at[2]+1.5).abs() < 1e-9),"{at:?}"),
+        other => panic!("{:?}",other.map(|b| gcs_core::brep::props::volume(&b))),
+    }
+    // a ring pushed in at a lean touches no meridian whole: its push leans to the meridians' planes
+    let lean = 35f64.to_radians();
+    let pushed = Ring::read(&gcs_core::brep::build::torus([0.,0.,4.],[lean.sin(),0.,lean.cos()],3.,1.).unwrap()).unwrap();
+    let slide = gcs_core::brep::trajectory::Screw {origin:[0.,0.,4.],axis:[0.,0.,-1.],ratio:0.,advance:8.};
+    assert!(pushed.touched_whole(&gcs_core::brep::trajectory::Twist::body(Trajectory::Twist(slide).at(1.).unwrap())).is_none());
+}
+
+/// **A frame carried along a spline is written whole** (#942 T1d-ring, `swept::dump`): a trim's
+/// trajectory that is a frame along a B-spline (`trajectory::Along`) — refused by name by F5's dump,
+/// read only by evaluating it — is written as its curve exactly, its home, which frame and its name,
+/// and made again from them, so a trim of a sweep along it is run again apart from the road: read
+/// back, its poses and rates are the frame's bit for bit, and it writes the same text again. A path
+/// read only by evaluating it otherwise stays refused by name.
+#[test]
+fn a_frame_carried_along_a_spline_is_written_and_read_back_whole() {
+    use gcs_core::brep::swept::dump::{dump_trim,load_trim};
+    use gcs_core::brep::swept::trim::Trim;
+    let (_,tool,path,tol) = along_a_spline();
+    let trim = Trim {resolution:0.1,hair:4.*tol,reach:None};
+    let dir = std::env::temp_dir().join(format!("along-dump-{}",std::process::id()));
+    dump_trim(&dir,&tool,&path,[0.,1.],&[],&[],0.01,tol,trim,"a test").unwrap();
+    let text = std::fs::read_to_string(dir.join("trim.json")).unwrap();
+    let loaded = load_trim(&dir).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    for t in [0.,0.123,0.5,0.877,1.] {
+        assert_eq!(format!("{:?}",loaded.path.at(t).unwrap()),format!("{:?}",path.at(t).unwrap()),"at {t}");
+    }
+    dump_trim(&dir,&loaded.tool,&loaded.path,loaded.roll,&[],&[],loaded.bar,loaded.tol,loaded.trim,"a test").unwrap();
+    let again = std::fs::read_to_string(dir.join("trim.json")).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(again,text);
+    // (a caller's own path, read only by evaluating it, is still refused by name)
+    #[derive(Debug)]
+    struct Still;
+    impl gcs_core::brep::trajectory::Path for Still {
+        fn at(&self,_: f64) -> Result<gcs_core::brep::trajectory::Motion,gcs_core::brep::KernelError> {
+            Ok(gcs_core::brep::trajectory::Motion::identity())
+        }
+    }
+    let own = Trajectory::General(std::sync::Arc::new(Still));
+    let refused = dump_trim(&dir,&tool,&own,[0.,1.],&[],&[],0.01,tol,trim,"a test").unwrap_err();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(refused.contains("read only by evaluating it"),"{refused}");
+}
+
+/// **A ring's tubes beside the corners its meridians are touched whole at are arranged with it at
+/// both ends** (#942 T1d-ring, `rings::traces` and `boolean`'s grid of seeds): the ring along a
+/// spline's two contact curves, fitted, entered at both end poses and arranged in the block with
+/// the torus where it starts and where it stops, all at the bench's tolerance. Two things refused
+/// it. Beside the tube's vertex where a touching piece's rim meets a dipped one's, the tube and the
+/// torus stand within the fit's error of one another along the seam between them (the
+/// relative curvature across the rim nought at the vertex), and the fit's slope across the rim,
+/// 2.7e-5, put a crossing of the seam 4e-4 of the roll up it: the chord traced from it zigzagged
+/// 1.1e-5 off both, round a sliver face laid over its neighbour ("faces … coincide along it"). And
+/// a grid of seeds across one tube's face, laid where the other tube's patch's distance changed
+/// sign, found its zeros off the patch, 1.0 away from it, where the distance along a normal at a
+/// foot clamped to the patch has zeros of its own ("meet at 0.19°, nearly touching"). Each chord
+/// given stands within the curve's bar, a quarter of the tolerance, of the torus.
+#[test]
+fn a_rings_tubes_beside_its_whole_touched_meridians_are_arranged_with_it_at_both_ends() {
+    use gcs_core::brep::boolean::arrangement_given;
+    use gcs_core::brep::swept::rings::{entered,fitted,posed};
+    let (block,tool,path,tol) = along_a_spline();
+    let ring = Ring::read(&tool).unwrap();
+    let fit = fitted(&ring,&path,[0.,1.],0.1*tol).unwrap();
+    let ends = [0.,1.].map(|t| posed(&tool,&ring,&path,&fit,t).unwrap());
+    let poses = [0.,1.].map(|t| path.pose(t).unwrap());
+    let (tubes,given) = entered(&fit,&ring,[&ends[0],&ends[1]],poses,tol).unwrap();
+    assert_eq!(tubes.len(),2);
+    for (g,m) in given.iter().enumerate() {
+        let torus = &m.surfaces[0];
+        assert_eq!(torus.kind(),"torus");
+        for c in &m.curves {
+            let off = (0..=64).map(|k| { let gcs_core::brep::geom::Curve::BSpline(b) = c else { return 0. };
+                let [lo,hi] = b.domain(); torus.implicit(c.point(lo+(hi-lo)*k as f64/64.)).abs() }).fold(0.,f64::max);
+            assert!(off <= 0.25*tol,"given {g}: a chord {off:e} off the torus");
+        }
+    }
+    let complex = arrangement_given(&block,&[&ends[0],&ends[1],&tubes[0],&tubes[1]],&given,tol)
+        .unwrap_or_else(|e| panic!("the tubes with the torus at both ends: {e}"));
+    assert!(complex.cells().unwrap().len() >= 2);
+}
+
 /// **The half turn's stretches are sewn across its cut into one tube a contact curve** (#942 F3,
 /// class B on the sheets a sweep makes): brep-bench's `tumbling-torus-half-turn`, a
 /// torus of tube 0.16 turned 0.375 a radian about one line and back a radian about another over

@@ -8,6 +8,26 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A ring touching a meridian whole at every instant is refused by name; its tubes are arranged
+  with it at both ends** (#942 T1d-ring, `swept::rings`, `swept::closed::ring_entered`, `boolean`,
+  `swept::dump`, `trajectory`): brep-bench's ring along a spline, read on the ring road. Along a
+  path in a plane its axis lies in, a torus touches its top and bottom meridians whole at every
+  instant, and the sweep of each is a sheet of its own — the groove's floor — that no contact
+  curve's tube holds; arranged from the tubes alone, the groove and the block beside it were one
+  cell. New `Ring::touched_whole` (and `Ring::meridian_point`); a meridian touched whole at two of
+  the closed class's poses or more is `Curved` there, before anything is fitted. Beside the tube's
+  vertex where a touching piece's rim meets a dipped one's, a seam's crossing whose seam down to the
+  rim stands within the tolerance of the tool is that vertex (the fit's slope across the rim, 2.7e-5,
+  had put one 4e-4 of the roll up the seam, its chord zigzagging 1.1e-5 off both surfaces round a
+  sliver face laid over its neighbour), and a face two chords run into one vertex of is parted as
+  its chords' planar graph. A grid's seed across a sheet's face is kept only on the other face's
+  patch (`boolean::off_patch`, the reading `kept` makes): off it, a sheet's distance along the
+  normal at a foot clamped to its patch has zeros of its own, and a seed 1.0 off the other tube was
+  refused as the two meeting at 0.19°. A trim's dump writes a frame carried along a B-spline
+  (`trajectory::Along`) by its curve, home, frame and name, made again from them (new
+  `Path::along`, `Guide::spline`), which F5's dump refused by name. The bench's own entry,
+  `closed::cut_from`, does not yet take a ring to its road: refused `Curved` by K2 as before.
+
 - **The bench's cube tumbling 75° is built** (#942 T1d-cube, `swept::general`, `family`, `topo`):
   a fan's crossing with itself is built from the pinch it is born at — the runs' corner where the
   sheet's rate across their rim turns over — as the pairs of points of the two runs that meet, each

@@ -3757,9 +3757,17 @@ pub(crate) fn parameters(b: &Brep,fi: usize,whole: bool) -> [[f64;2];2] {
     [[lo[0],hi[0]],[lo[1],hi[1]]]
 }
 
+/// **Whether `p` stands off a bounded surface's patch**, on its continuation (`kept`'s reading): its
+/// foot on the patch farther than what a patch is read to, a thousand tolerances; planes, quadrics
+/// and tori run on without end, and stand off none. A sheet's or a loft's distance along the normal
+/// at a foot clamped to its patch has zeros of its own past it, which a grid of seeds finds: a ring
+/// along a spline's two tubes, a seed laid 1.0 off the other's patch was traced from and refused as
+/// the two meeting at 0.19° (#942 T1d-ring).
+fn off_patch(s: &super::geom::Surface,p: V,tol: f64) -> bool { s.bounded() && distance(s.point(s.inverse(p)),p) > 1e3*tol }
+
 /// Where a grid across face `fi` of `b`, in its parameters' box, crosses `other`: each grid line's
 /// change of sign in `other`'s implicit found by bisection, then pulled onto both surfaces by the
-/// trace. Seeds for curves no edge crosses.
+/// trace, each kept only on `other`'s patch (`off_patch`). Seeds for curves no edge crosses.
 fn grid_seeds(b: &Brep,fi: usize,other: &super::geom::Surface,tol: f64) -> Vec<V> {
     const N: usize = 24;
     let f = &b.faces[fi];
@@ -3777,7 +3785,8 @@ fn grid_seeds(b: &Brep,fi: usize,other: &super::geom::Surface,tol: f64) -> Vec<V
             if fm.abs() <= tol { a = m; break }
             if (fm < 0.) == (fa < 0.) { a = m; fa = fm; } else { b = m; }
         }
-        seeds.push(f.surface.point(a));
+        // (only on the other's patch, not its continuation, #942 T1d-ring: `off_patch`)
+        if !off_patch(other,f.surface.point(a),tol) { seeds.push(f.surface.point(a)) }
     };
     for i in 0..=N { for j in 0..=N {
         if i < N && (grid[i][j] < 0.) != (grid[i+1][j] < 0.) { root(at(i,j),at(i+1,j),grid[i][j]); }
