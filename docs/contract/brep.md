@@ -712,7 +712,32 @@ form found the first time, and a traced meeting traced over the box every face o
 fills, kept, and handed to every later pair of faces on them, which are seeded only off it, so one
 meeting curve bounds every face that uses it, traced or not. `meeting::a_*_meeting_with_every_kind_is_complete` (every pair of the kernel's surface kinds,
 seeded placements, against a dense sampling of one across the other) and the singular-point cases
-are the gates. **A sheet lying in a plane is that plane over its patch** (#780 C4): a B-spline
+are the gates. **The zero set of a scalar function, traced** (#942, `brep::zero_set`): where a
+sheet is trimmed by its depth inside a union of poses rather than by meeting other surfaces, the
+trim is the zero set of `f(u, v) = min over s of g(u, v, s)` over a rectangle of the sheet's
+parameters, and `zero_set::trace` returns it as pieces whose chords keep within the caller's
+tolerance of it in space, each point carrying the minimiser, cut at corners where the minimiser
+switches (`End::Switch`, solved as `g(·, s₁) = g(·, s₂) = 0`) and at the rim and given inner edges
+(fold curves; a touch of one, `f` vanishing to second order, is reached as a seed found there, never
+solved for), or closed. Seeds come from the rim and the edges (sign changes and touches), the
+caller, and a halving search: with `Field::bound` enclosing `f` and its gradient, each cell is
+cleared, shown monotone in a parameter (no closed curve inside; its edges' zeros isolated by the
+bound and seeded), or halved to the tolerance and answered beside a traced piece or returned in
+`Search::unresolved` — so every component is traced but one within the tolerance of another, one in
+an unresolved cell, and a touch of an inner edge between its samples (they are sampled at the
+caller's feature size); with a Lipschitz bound alone what it does not clear is answered beside a
+traced piece at the feature size, and with none the search is sampled (`Search::sampled`): cells'
+middles pulled onto the zero set, rays from `f`'s critical points. The march steps by arclength in
+space, corrects by Newton along the gradient held to half the step, keeps a step only where its
+chord's quarter points, each pulled onto the zero set, moved no farther in space than the tolerance
+(not `|f| / |∇f|`, no measure where a sheet's rates all but coincide) and are undercut by no other
+branch, and refuses by name
+a step under the rounding. Every number is the caller's tolerance or feature size, the rounding's or
+structural (#942 F6). `zero_set::*` are the gates: loops inside a rectangle (one a fiftieth of the
+feature across, two a two-hundredth apart), the union of two discs with its corners at the circles'
+crossings, a parabola touching an inner edge and a cusp ending on one, a curve rim to rim and one
+touching the rim, and a ball's depth swept along a line and round a circle (a stadium, an annulus).
+**A sheet lying in a plane is that plane over its patch** (#780 C4): a B-spline
 surface every pole of which stands within the tolerance of a plane lies within it everywhere (its
 poles' hull), and `ssi::same` reads the two as one — a coincidence, not a touch to trace — so a
 piece of either on a face of the other is one face of the complex naming both; a point is on a
