@@ -20,10 +20,20 @@
 //! without a second coordinate anywhere; `Program::source_at` says which text an offset is in, and
 //! `program::elaborate` shows a module's diagnostic at the `use` that brought the module in, its
 //! own place named in the message.
+//!
+//! **A given module** (#993 stage 2): a text that is an ISO 10303-21 exchange file (`is_step`) is
+//! never parsed as Solvent.  It contributes one thing, the body its file gives, named by the
+//! module's whole path (`flatten::given`).  Its `Module::text` is empty — one byte of the virtual
+//! text, so no later module's spans are pushed past a file of megabytes — and its file, what the
+//! kernel read of it and the text's digest stand beside it (`Module::given`, `Given`), shared:
+//! `relink` hands the same reading on, so an edit never reads the file again, and a fresh link of
+//! a text read before on this thread finds it in a small memo by its digest.
 
 use crate::program::{Code, Diag};
 use crate::syntax::{parse_from, Component, Module, Program, Span, StmtKind};
+use std::cell::RefCell;
 use std::collections::{BTreeSet, VecDeque};
+use std::sync::Arc;
 
 /// The most modules one document may link, transitively — the same kind of bound `MAX_STMTS` is.
 pub const MAX_MODULES: usize = 64;
@@ -47,6 +57,15 @@ pub fn search_paths(name: &str, source: &str) -> Vec<String> {
 pub const MODULE_STMTS: u32 = 1 << 30;
 
 pub fn link(prog: &mut Program, resolve: &mut dyn FnMut(&str) -> Option<String>) -> Vec<Diag> {
+    link_from(prog, resolve, None)
+}
+
+/// `link`, handing on what `like` read of each given module rather than asking for its file.
+fn link_from(
+    prog: &mut Program,
+    resolve: &mut dyn FnMut(&str) -> Option<String>,
+    like: Option<&Program>,
+) -> Vec<Diag> {
     let mut diags = Vec::new();
     // (name, the `use` that asked, the document's `use` this descends from)
     let mut queue: VecDeque<(String, Span, Span)> =
@@ -65,6 +84,13 @@ pub fn link(prog: &mut Program, resolve: &mut dyn FnMut(&str) -> Option<String>)
             ));
             break;
         }
+        // a given module linked before is handed on whole: its file is not asked for again
+        let before = like.and_then(|l| l.modules.iter().find(|m| m.name == name))
+            .and_then(|m| m.given.clone());
+        if let Some(given) = before {
+            push_given(prog, name, via, given);
+            continue;
+        }
         let Some(text) = resolve(&name) else {
             diags.push(Diag::new(
                 Code::E070,
@@ -74,6 +100,10 @@ pub fn link(prog: &mut Program, resolve: &mut dyn FnMut(&str) -> Option<String>)
             ));
             continue;
         };
+        if is_step(&text) {
+            push_given(prog, name, via, given(text));
+            continue;
+        }
         let base = prog.virtual_len();
         // a module's statements are numbered in a range of their own, so they keep their ids
         // when the document grows: a statement appended to the document, then relinked, must not
@@ -131,7 +161,9 @@ pub fn link(prog: &mut Program, resolve: &mut dyn FnMut(&str) -> Option<String>)
             f
         }));
         let previewed = mp.preview.is_some();
-        prog.modules.push(Module { name, text, base, via, root, uses: mp.uses, previewed });
+        prog.modules.push(Module {
+            name, text, base, via, root, uses: mp.uses, previewed, given: None,
+        });
     }
     localize(prog, &mut diags);
     diags
@@ -157,6 +189,127 @@ pub fn localize(p: &Program, diags: &mut [Diag]) {
 /// a re-parse of the same document that must not ask the host again.  A module `like` had not
 /// linked, a `use` the edit itself wrote (`use std.rounds (round)`, the Fillet tool's), comes from
 /// the library compiled into the core, which asks no host either.
+///
+/// A given module is handed on as `like` read it (`Module::given`): its file is neither asked
+/// for nor read again.
 pub fn relink(prog: &mut Program, like: &Program) -> Vec<Diag> {
-    link(prog, &mut |name| like.module_text(name).or_else(|| crate::library::resolve(name)))
+    let mut resolve = |name: &str| like.module_text(name).or_else(|| crate::library::resolve(name));
+    link_from(prog, &mut resolve, Some(like))
+}
+
+/// A given module, linked: an empty text of its own (one byte of the virtual text), no
+/// definitions, no `use`s, and its file's reading beside it.
+fn push_given(prog: &mut Program, name: String, via: Span, given: Arc<Given>) {
+    let base = prog.virtual_len();
+    prog.modules.push(Module {
+        name,
+        text: String::new(),
+        base,
+        via,
+        root: Component::default(),
+        uses: Vec::new(),
+        previewed: false,
+        given: Some(given),
+    });
+}
+
+/// **Whether a module's text is an ISO 10303-21 exchange file** (a STEP file, #993 stage 2): its
+/// first token, after an optional byte-order mark and whitespace, is `ISO-10303-21;`.  The one
+/// test, which a host may ask too (what it found for `use NAME`).
+pub fn is_step(text: &str) -> bool {
+    let t = text.strip_prefix('\u{feff}').unwrap_or(text);
+    t.trim_start().starts_with("ISO-10303-21;")
+}
+
+/// **A digest of a text**, the same on every target (a worker matches builds by it): a hash over
+/// its bytes, little-endian eight at a time, under fixed keys — no seed of the process's, no
+/// dependency.
+pub fn digest(text: &str) -> u64 {
+    const K: u64 = 0x9e37_79b9_7f4a_7c15;
+    const M: u64 = 0xff51_afd7_ed55_8ccd;
+    let b = text.as_bytes();
+    let mut h: u64 = 0x243f_6a88_85a3_08d3 ^ (b.len() as u64).wrapping_mul(K);
+    let mut words = b.chunks_exact(8);
+    for w in &mut words {
+        let mut x = [0u8; 8];
+        x.copy_from_slice(w);
+        h = (h ^ u64::from_le_bytes(x)).wrapping_mul(K);
+        h ^= h >> 29;
+    }
+    let mut x = [0u8; 8];
+    x[..words.remainder().len()].copy_from_slice(words.remainder());
+    h = (h ^ u64::from_le_bytes(x)).wrapping_mul(K);
+    h ^= h >> 32;
+    h = h.wrapping_mul(M);
+    h ^ (h >> 33)
+}
+
+/// **What a given module's file gives** (#993 stage 2): the text as the host gave it (what
+/// `Program::module_text` answers), its digest, and the one solid the kernel read from it — or
+/// why there is none the language reads, in the kernel's words (`Refusal`'s, its entity `#n` in
+/// front) or saying how many solids the file gives.  Shared by every program linked from it.
+pub struct Given {
+    pub text: String,
+    pub digest: u64,
+    pub body: Result<Arc<Body>, String>,
+}
+
+/// What a given module's file gives the model.
+pub type Body = crate::brep::topo::Brep;
+
+/// The digest and what was read, never the text: a file may be megabytes.
+impl std::fmt::Debug for Given {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let read = match &self.body {
+            Ok(_) => "a solid".to_string(),
+            Err(why) => format!("refused: {why}"),
+        };
+        write!(f, "Given {{ digest: {:016x}, bytes: {}, {read} }}", self.digest, self.text.len())
+    }
+}
+
+/// How many files a thread keeps what it read of: a host elaborates a document often, and every
+/// fresh link of it hands the same texts again.
+const READ_KEPT: usize = 4;
+
+thread_local! {
+    /// The files read last on this thread, the latest at the end.
+    static READ: RefCell<Vec<Arc<Given>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// **A STEP text read**, once per thread for as long as it is among the last few read: reading is
+/// unbudgeted, and a file of megabytes takes seconds.  Found by its digest, and the text held to
+/// be the same, so no two files share a reading.
+fn given(text: String) -> Arc<Given> {
+    let digest = digest(&text);
+    let kept = READ.with(|r| {
+        let mut r = r.borrow_mut();
+        let k = r.iter().position(|g| g.digest == digest && g.text == text)?;
+        let g = r.remove(k);
+        r.push(g.clone());
+        Some(g)
+    });
+    if let Some(g) = kept {
+        return g;
+    }
+    let body = read(&text, digest);
+    let g = Arc::new(Given { text, digest, body });
+    READ.with(|r| {
+        let mut r = r.borrow_mut();
+        if r.len() >= READ_KEPT {
+            r.remove(0);
+        }
+        r.push(g.clone());
+    });
+    g
+}
+
+/// The one solid a STEP text gives, or why none: the kernel's refusal as it says it, or how many
+/// solids it gives where it gives several — one given body is one solid.
+fn read(text: &str, _digest: u64) -> Result<Arc<Body>, String> {
+    let mut reading = crate::brep::step_read::reading(text).map_err(|r| r.to_string())?;
+    match reading.solids.len() {
+        1 => Ok(Arc::new(reading.solids.pop().expect("one solid").brep)),
+        n => Err(format!("the file gives {n} solids, and a given body is one solid")),
+    }
 }

@@ -104,6 +104,10 @@ pub struct Module {
     /// Whether the file has a `preview { … }`: a drawing of its own, where the dimensions its
     /// components state are drawn rather than in a document using them (`Constraint::elsewhere`).
     pub previewed: bool,
+    /// **A given module's file and what was read from it** (#993 stage 2, `modules::is_step`):
+    /// `None` for a Solvent module.  A given module's `text` is empty, its `root` and `uses`
+    /// too; its file's text is here, shared with every program linked from it.
+    pub given: Option<std::sync::Arc<crate::modules::Given>>,
 }
 
 impl Program {
@@ -171,9 +175,11 @@ impl Program {
         }
     }
 
-    /// A module's text by name, for a re-parse that links again without asking the host.
+    /// A module's text by name, for a re-parse that links again without asking the host — a
+    /// given module's its file's (#993 stage 2), which a host may ask for.
     pub fn module_text(&self, name: &str) -> Option<String> {
-        self.modules.iter().find(|m| m.name == name).map(|m| m.text.clone())
+        let m = self.modules.iter().find(|m| m.name == name)?;
+        Some(m.given.as_ref().map_or_else(|| m.text.clone(), |g| g.text.clone()))
     }
 
     /// The text this program was last rendered or parsed from.  Every `Span` indexes it.
