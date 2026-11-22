@@ -1102,6 +1102,13 @@ pub fn ring_cut_from(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],ba
 /// `blank`.
 fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
     let [a,b] = [roll[0].min(roll[1]),roll[0].max(roll[1])];
+    // **a ring touching a meridian whole, entered by depth** (#942, the depth trim): its sheets over
+    // exactly what is kept, every meeting given — cut from a blank its far meridian sweeps clear of
+    if let Some(blank) = blank {
+        if let Some(t) = super::touched::entered(tool,path,[a,b],K2_POSES,bar,K2_FIT*tol,tol,blank)? {
+            return candidates(tool,path,[a,b],bar,tol,Some(blank),t.ends,t.sheets,&t.given)
+        }
+    }
     let RingEntered {ends,sheets,given,cut} = ring_entered(tool,path,[a,b],tol)?;
     // **trimmed by membership where the roll is cut** (#880 T1d): its tubes met only where both come
     // near the sweep's boundary (`trim`), as the contact's road meets its sheets — a turned whole

@@ -75,6 +75,20 @@ fn main() {
                 println!("{line}");
             }
         },
+        // tube 0's back leaf near the start: where it is kept, and what holds it beyond (the
+        // instant, and the tool's angle there: below θ* its back leaf, above it its front)
+        "back" => for t in [0.002,0.01,0.02,0.05,0.1,0.15,0.2,0.3] {
+            let p0 = psi0(&path,t,0);
+            let mut line = format!("t {t:.3}:");
+            for k in 0..=24 {
+                let e = 1.25*k as f64/24.;
+                let x = place(-FRAC_PI_2-e,p0,t);
+                let (c,d,ct) = class(x,t);
+                let a = depth.cover(x,t).map_or(f64::NAN,|c| c.at[2].atan2(c.at[0])+FRAC_PI_2);
+                line += &format!(" {e:.2}:{c}{d:+.0e}@{ct:.3}/{a:+.2}");
+            }
+            println!("{line}");
+        },
         // round the bottom meridian's normal circle at a few instants
         "strip" => for t in [0.02,0.25,0.5,0.75,0.98] {
             let p0 = psi0(&path,t,0);
