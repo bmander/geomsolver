@@ -8,6 +8,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Two surfaces resting on one another at a point, their least distance in closed form, are
+  known to meet there alone** (#994): `ssi::meeting_resting`, new, is `intersect` with the point
+  `apart` finds them resting at, which `meeting::Shared::known` gives as their meeting (no curve
+  and that touch), so an edge lying in either is read against it as every known meeting is
+  (`boolean`'s `on_known`), where it was searched and, refused, sampled at 64 points for the touch
+  (`resting_on`, which now reads only pairs whose meeting has no closed form).
+
 - **Two surfaces clear of one another, or resting on one another at a point alone, meet in no
   curve by one rule** (#994): `ssi::apart` reads their least distance in closed form where it has
   one (`ssi::least`: two cylinders leaning apart, a sphere and a plane, cylinder, sphere or torus,

@@ -557,7 +557,18 @@ fn recognised<T>(form: Recognised,found: impl FnOnce() -> Option<T>) -> Option<T
 }
 
 /// Where two surfaces meet (`tol` a length).
-pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
+pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi { meeting_resting(a,b,tol).0 }
+
+/// **`intersect`, and where the two rest on one another at a point alone, that point** (#994,
+/// `apart`): a meeting in no curve that is the whole of it but for the touch, which an edge lying
+/// in either surface meets the other at alone (`meeting::Shared::known`). `None` beside every
+/// other meeting.
+pub fn meeting_resting(a: &Surface,b: &Surface,tol: f64) -> (Ssi,Option<V>) {
+    let mut rest = None;
+    (meeting_of(a,b,tol,&mut rest),rest)
+}
+
+fn meeting_of(a: &Surface,b: &Surface,tol: f64,rest: &mut Option<V>) -> Ssi {
     if let Some(met) = pulled_back(a,b,tol,true) { return met }
     if same(a,b,tol) { return Ssi::Same }
     let (f,g) = (*a.frame(),*b.frame());
@@ -738,7 +749,7 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
         }
         // two surfaces clear of one another, or resting on one another at a point alone, whose
         // least distance has a closed form: no curve (`apart`)
-        _ if apart(a,b,tol) => Ssi::Curves(vec![]),
+        _ if let Some(touch) = apart(a,b,tol) => { *rest = touch; Ssi::Curves(vec![]) }
         // two cylinders whose axes lean apart: of one radius with axes crossing, within the reach of
         // the singular case, two ellipses; else their loops, each point on both (`crossed_cylinders`)
         (Surface::Cylinder(..),Surface::Cylinder(..)) if let Some(curves) = crossed_cylinders(a,b,tol) =>
@@ -1072,11 +1083,13 @@ fn radius_at(s: &Surface,h: f64) -> Option<f64> {
 /// `2 SHALLOW (r + s) / sin² θ` and the rods part only linearly past `(r + s) / sin θ`, slower
 /// than its second order says from `2√2 (r + s) / sin θ` on), a ball a hair off a tube's axis, a
 /// ring all but level on a plane — it is not, and the meeting is read as a touch along a curve.
-fn apart(a: &Surface,b: &Surface,tol: f64) -> bool {
-    let Some((gap,[a,b],p)) = least(a,b) else { return false };
-    if gap > tol { return true }
-    if gap < -tol { return false }
-    touch(a,b,p).is_some_and(|t| alone_over(a,b,&t))
+/// `Some` where they meet in no curve, with the point they rest on one another at where they do
+/// (on the first of `least`'s order, within `tol` of the other); `None` where they are read on.
+fn apart(a: &Surface,b: &Surface,tol: f64) -> Option<Option<V>> {
+    let (gap,[a,b],p) = least(a,b)?;
+    if gap > tol { return Some(None) }
+    if gap < -tol { return None }
+    touch(a,b,p).is_some_and(|t| alone_over(a,b,&t)).then_some(Some(p))
 }
 
 /// **The least distance between two surfaces, in closed form where it has one**: the distance,

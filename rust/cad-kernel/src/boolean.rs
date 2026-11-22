@@ -2535,9 +2535,10 @@ fn at_its_ends(meets: Meets,c: &Curve,t: [f64;2],surface: &Surface,tol: f64) -> 
 /// of its own faces' surfaces, so where one of those touches `surface` at a point and the two
 /// rest on one another there (`ssi::alone_over`: a definite touch, nothing but the point their
 /// meeting within its radius), the edge meets `surface` within that radius only at that point, a
-/// touch. Read where the search over its stretch `t` is refused — a double root it cannot prove,
-/// a blend's seam circle through the point where a round's torus rests on the blend — from the
-/// edge's samples nearest `surface`: each such touch the edge passes through, its parameter, and
+/// touch. Read where the two surfaces' meeting has no closed form — where it has, the touch is
+/// their known meeting (`ssi::meeting_resting`), read by `on_known` — and the search over its
+/// stretch `t` is refused: a double root it cannot prove, a blend's seam circle through the point
+/// where a round's torus rests on the blend. Read from the edge's samples nearest `surface`: each such touch the edge passes through, its parameter, and
 /// the rest of the stretch either side of the reach searched by `search`. `None` where no
 /// such touch is found, or the rest is refused again.
 fn resting_on(c: &Curve,t: [f64;2],own: &[&Surface],surface: &Surface,tol: f64,search: &dyn Fn([f64;2]) -> Meets) -> Option<Meets> {

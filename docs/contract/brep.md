@@ -1190,7 +1190,12 @@ a fraction of `tol` long, which a small `λ` does not let it reach. An indefinit
 against a rod, two vaults' crown) is two branches crossing at the point, which the trace starts
 from, as before. An edge whose search is refused where a surface of its own rests on the other (a
 blend's seam circle through the point where a torus rests on the blend) meets it there alone within
-the touch's radius, shown alone over it (`ssi::alone_over`), a touch, the rest of its stretch searched either side (`boolean::resting_on`). And in
+the touch's radius, shown alone over it (`ssi::alone_over`), a touch, the rest of its stretch searched either side (`boolean::resting_on`).
+Where the two surfaces' least distance has a closed form, the touch `ssi::apart` reads is kept as
+their known meeting — no curve, and that point (`ssi::meeting_resting`, `meeting::Shared::known`) —
+and an edge lying in either is read against it by #990's one rule (`boolean`'s `on_known`): a touch
+where it passes through the point, nothing elsewhere, no sample and no search; `resting_on` reads
+only pairs whose meeting has no closed form (a torus on a blend). And in
 closed form, a ball whose centre stands its radius or more from a cylinder or a torus meets it in no
 curve where its touch is alone, by the one rule above (`ssi::apart`). The gates are
 `resting_touches`: rods across and at 60°, a

@@ -1096,6 +1096,9 @@ pub struct Shared {
     touches: std::collections::BTreeMap<(usize,usize),Vec<V>>,
     /// the pairs given, kept once asked for
     was_given: std::collections::BTreeSet<(usize,usize)>,
+    /// each pair found to meet in no curve but rest on one another at a point alone
+    /// (`ssi::meeting_resting`), in either order: that point (#994)
+    rests: std::collections::BTreeMap<(usize,usize),V>,
     /// each index given a class of faces at once (`class`): two of one kind are apart by
     /// construction, read by no region (#994)
     classed: std::collections::BTreeSet<usize>,
@@ -1173,7 +1176,9 @@ impl Shared {
             return m
         }
         let start = crate::util::clock::Instant::now();
-        let m = if i != j && self.one(i,j,tol) { Ssi::Same } else { intersect(&self.surfaces[i],&self.surfaces[j],tol) };
+        let (m,rest) = if i != j && self.one(i,j,tol) { (Ssi::Same,None) }
+            else { super::ssi::meeting_resting(&self.surfaces[i],&self.surfaces[j],tol) };
+        if let Some(p) = rest { self.rests.insert((i.min(j),i.max(j)),p); }
         // the profile's count of meetings found in closed form and left to a trace (#777 V4)
         crate::util::meter::meeting(self.surfaces[i].kind(),self.surfaces[j].kind(),!matches!(m,Ssi::Traced),start.elapsed());
         self.meetings.insert((i,j),m.clone());
@@ -1216,14 +1221,17 @@ impl Shared {
     }
     /// **What surfaces `i` and `j` are known to meet on** (#990): one surface (`Met::Same`), or the
     /// curves of their meeting given (`give`, with the points they are given to touch at) or found
-    /// in closed form (`meeting`, asked in that order). A closed form meeting in no curve is no
-    /// knowledge of it: it leaves out a point the two touch at. `None` where it is traced, or
-    /// that.
+    /// in closed form (`meeting`, asked in that order), or no curve but the point the two rest on
+    /// one another at alone (`ssi::meeting_resting`: their least distance in closed form within
+    /// the tolerance, and the touch there alone over its radius, #994). Any other closed form
+    /// meeting in no curve is no knowledge of it: it may leave out a point the two touch at.
+    /// `None` where it is traced, or that.
     pub fn known(&mut self,i: usize,j: usize,tol: f64) -> Option<Met> {
         if self.given(i,j) { return Some(Met::On(self.given_curves(i,j),self.given_touches(i,j))) }
         match self.meeting(i,j,tol) {
             Ssi::Same => Some(Met::Same),
             Ssi::Curves(cs) if !cs.is_empty() => Some(Met::On(cs,Vec::new())),
+            Ssi::Curves(_) => self.rests.get(&(i.min(j),i.max(j))).map(|&p| Met::On(Vec::new(),vec![p])),
             _ => None,
         }
     }
