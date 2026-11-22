@@ -32,8 +32,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   resolved at — read over the line alone, a plate's top and a lip's pad turned `1e-3` rad across it
   were one class, and a third operand's meeting with it was laid `3e-4` off the pad. And
   `Arrangement::kept` keeps a span of a meeting lying along a face's boundary within `ON_CURVE`
-  tolerances at every eighth of it, as the vertex-onto-edge rule reads it, where it had dropped it
-  as outside the face and left the other face a slit. Strips turned `1e-5` to `1e-3` rad across a
+  tolerances at every eighth of it, as the vertex-onto-edge rule reads it — unless that edge lies in
+  the other face's surface all along and is laid there as it is — where it had dropped it as
+  outside the face and left the other face a slit. Strips turned `1e-5` to `1e-3` rad across a
   plate's faces, in its thickness or abutting its edges, now unite in every order to their closed
   form, where some orders were refused ("a shell … kept on one side … and dropped on another").
 - **Two cylinders resting on one another at a point meet in no curve, in closed form** (#994 item

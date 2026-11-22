@@ -783,7 +783,10 @@ a plate's top and the raised half of a lip's pad turned `1e-3` rad across it one
 top standing for it — and a foot's meeting with the class was laid on the pad's lowered half `3e-4`
 off it. **A span of a meeting lying along a face's boundary within `ON_CURVE` tolerances, at every
 eighth of it, is on that face** (`Arrangement::kept`): the edge it lies along, as the vertex-onto-edge
-rule reads a point so near, merged into it in step 4, the other face cut along it — read Out of the
+rule reads a point so near, merged into it in step 4, the other face cut along it, where that edge
+does not itself lie in the other face's surface all its stretch (then phase 1 lays it there as it is,
+`Meets::Along`, and the span would be a second edge beside it: `flush_ends`'s side turned `1e-8`
+under a boss) — read Out of the
 face at the tolerance alone it was dropped, and a lip's foot turned `1e-3` rad, crossing the side of
 a foot abutting it a tolerance and a half under that foot's edge, kept the meeting leading up to it
 as a slit, its two sides one shell. `brep_coincident::strips_crossing_a_plates_faces_in_its_thickness_unite_in_every_order`
