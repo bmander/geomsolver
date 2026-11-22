@@ -26,10 +26,11 @@
 // meeting where the body has no edge make nothing); so carried on past each end of the edge and
 // cut off there by the faces it ends on, however they stand.  And only what the ball rolled along
 // the edge leaves — the ball touching both faces (`rolled`: a centre no further from either than
-// its radius) standing no more than its radius further off than the nearest ball within both (#994): a face's smooth chain may run far from
-// the edge and part about a face not of it (a block's floor going on into a blend and the blend
-// into an eye, the blend ended by the block's side the eye stands out past), and the corner it
-// makes there no ball reaches either, but no ball rolled along this edge comes near it.
+// its radius) standing no more than its radius further off than the nearest ball within both
+// (#994): a face's smooth chain may run far from the edge and part about a face not of it (a
+// block's floor going on into a blend and the blend into an eye, the blend ended by the block's
+// side the eye stands out past), and the corner it makes there no ball reaches either, but no ball
+// rolled along this edge comes near it.
 component Run(a: face, b: face, r: Length) symmetric(a, b) := { p |
   p in a.smooth
   p in b.smooth
