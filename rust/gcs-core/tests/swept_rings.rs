@@ -695,8 +695,9 @@ fn the_full_turns_end_poses_meet_uncovered_along_two_short_arcs_given() {
             for q in &poses { assert!(ring.signed(q.inverse().point(x)).0.abs() <= tol,"the arc lies on both tori at {x:?}") }
         }
         let mid = pts[8];
-        for (e,&own) in roll.iter().enumerate() {
-            match cover(&ring,&path,roll,mid,own,if e == 0 { 0. } else { tol },tol).unwrap() {
+        // (a point of the fitted arc stands off either torus by as much as its fit: read so)
+        for &own in &roll {
+            match cover(&ring,&path,roll,mid,own,tol,tol).unwrap() {
                 Reading::Far(cv) => assert!(cv.depth >= -tol,"the pose at {own} uncovered at the arc's middle: {cv:?}"),
                 Reading::Alone => {}
                 r => panic!("the pose at {own} uncovered at the arc's middle: {r:?}"),
