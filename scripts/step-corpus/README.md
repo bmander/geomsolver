@@ -251,28 +251,35 @@ as the standard has them and mends nothing) and the shell's edge uses are the ev
 it silently is evidence the file is defective, not that it is sound: its translation turns a loop,
 raises a tolerance and orders a wire with healing off.
 
-On the reader as merged at 10a65d6b the account has 103 rows: 63 `defective`, 8 `gap`, 1
-`open`, 4 `assembly`, 17 `nosolid`, 7 `reference` (the Utah teapot's five, CADGenBench 211 and
-250), 3 `bar` (CADGenBench 212, brepkit's saddle-drum-bored and helical-pipe-round-ends, each read
-within what its file determines). The defects: a loop's sense against its neighbours or its face
-20; open shells, edges used otherwise than once each way and a non-manifold edge 18; edges past
-`LOOSE` off their faces 11; loops not closed by vertex identity 7 (four of them OCCT's own
-rewrites of a file that reads); bounds that cross or overlap 4 (brepkit's l-block open at its
-step, whose hole crosses its outer bound, and kentron's three hemispheres shelled outward, whose
-two bounds share an arc of one meridian and end at the pole at two vertices); a face that covers
-itself 2 (OCCT's oblate spheroid, a whole ellipse turned a whole turn and bounded by a vertex
-alone, which covers the spheroid twice facing both ways, its flux nought; springrep's ring pushed
-in past its fold, whose face crosses its extrusion's self-intersection); a real written `NaN` 1.
+The account has 99 rows: 68 `defective`, 4 `assembly`, 17 `nosolid`, 7 `reference` (the Utah
+teapot's five, CADGenBench 211 and 250), 3 `bar` (CADGenBench 212, brepkit's saddle-drum-bored
+and helical-pipe-round-ends, each read within what its file determines), and no `gap` and no
+`open`: every file of the corpus is read right or finished by its account. The defects: a loop's
+sense against its neighbours or its face 20; open shells, edges used otherwise than once each way
+and a non-manifold edge 18; edges past `LOOSE` off their faces 11; loops not closed by vertex
+identity 7 (four of them OCCT's own rewrites of a file that reads); bounds that cross or overlap
+4 (brepkit's l-block open at its step, whose hole crosses its outer bound, and kentron's three
+hemispheres shelled outward, whose two bounds share an arc of one meridian and end at the pole at
+two vertices); a face that covers itself 2 (OCCT's oblate spheroid, a whole ellipse turned a whole
+turn and bounded by a vertex alone, which covers the spheroid twice facing both ways, its flux
+nought; springrep's ring pushed in past its fold, whose face crosses its extrusion's
+self-intersection); a whole surface that meets itself 3 (OCCT's lemon and spindle torus, one face
+on the whole surface of a circle turned across its axis, and brepkit's torus grown past its hole,
+the same for a torus: the apple's sheet and the lemon's pass through each other at the poles, a
+self-intersecting face, which the issue names a refusal and ISO 10303-42 5.2.1 no face's domain —
+"The domains of faces and closed shells, if present, are 2-manifolds", a 2-manifold "a
+non-self-intersecting surface"; OCCT reads the region the orientation bounds, the apple less the
+lemon, nobody's case; for brepkit's the measurer reads the apple alone, so the account sets it
+aside: the fifth column `occt`); a face of no area at all 2 (vcad's block-ridge and
+slab-half-round, a plane face whose loop runs out along 24 edges and back, hanging off the shell
+by two point edges: it moves no measure, and it is no 2-manifold); a real written `NaN` 1.
 
-The `gap`s: OCCT's lemon and spindle torus (one face on the whole surface of a circle turned
-across its axis, the apple and the lemon touching at the poles, which bounds the apple less the
-lemon: its own flux, ±1480.44066, is OCCT's reading) and brepkit's torus grown past its hole (the
-same for a torus, 1973.92088, OCCT's; the measurer reads the apple alone, so the account sets it
-aside: the fifth column `occt`); vcad's block-ridge and slab-half-round (a plane face of no area,
-its loop out along 24 edges and back, joined to the shell by two point edges: it moves no
-measure); benchy; and two files read wrong in the kernel's integration of a face (springrep's
-drum-leaning-across-a-turn #1969 and #2012, OCCT's frustum-screwed-across-ring-sector #1519), where
-OCCT, the measurer and `face_quadrature` by either representation of the edges agree. Of the 145
+What were the reader's `gap`s when the account was first refreshed, and how each ended: NIST's
+FTC 11 (`open` then) reads, a torus band joined round the right side of its tube; two files read
+wrong (springrep's drum-leaning-across-a-turn #1969 and #2012, OCCT's
+frustum-screwed-across-ring-sector #1519) were the kernel's integration of a use by ten unchecked
+nodes, and read; benchy, a face that is its crumpled sheet's whole domain, reads bounded by the
+rows its edges lie along. Of the 145
 rows of the first account (on fcfa6597), 42 files now read right and were dropped: CADGenBench
 217 among them, the `defective` its row said resting on OCCT's `SelfIntersectingWire`, which
 `BRepCheck_Wire::SelfIntersect` shows to be two edges of WIRE #2588 meeting 1.27e-3 mm apart at
