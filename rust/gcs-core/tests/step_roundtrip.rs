@@ -1110,6 +1110,31 @@ fn the_sample_reads_back() { sample_holds(&[0]) }
 #[ignore = "a tool, a minute: the sample at the export tolerances"]
 fn the_sample_reads_back_at_export_tolerances() { sample_holds(&[1,2]) }
 
+/// **The file prefers the curve in space wherever it writes it as itself** (ISO 10303-42's
+/// `master_representation`): every `SURFACE_CURVE` and `SEAM_CURVE` of the kernel's own solids
+/// whose curve is a line, a conic or a spline written as the kernel's names `.CURVE_3D.`, and
+/// none names a pcurve unless its curve in space is a fit.
+#[test]
+fn the_curve_in_space_is_the_master_where_it_is_exact() {
+    for (name,b) in kernel_solids() {
+        let text = write(&b,name,1e-7,Fit::Exact).unwrap();
+        let lines: BTreeMap<u32,&str> = text.lines().filter_map(|l| {
+            let id = l.strip_prefix('#')?.split(' ').next()?.parse().ok()?;
+            Some((id,l.split_once(" = ")?.1))
+        }).collect();
+        let mut seen = 0;
+        for l in lines.values() {
+            let Some(rest) = l.strip_prefix("SURFACE_CURVE('',#").or_else(|| l.strip_prefix("SEAM_CURVE('',#")) else { continue };
+            let curve: u32 = rest.split(',').next().unwrap().parse().unwrap();
+            let kind = lines[&curve].split('(').next().unwrap();
+            let exact = ["LINE","CIRCLE","ELLIPSE"].contains(&kind);
+            assert!(l.trim_end_matches(';').ends_with(".CURVE_3D.)") || !exact,"{name}: a {kind} in space, not the master: {l}");
+            seen += 1;
+        }
+        assert!(seen > 0,"{name}: no curve on a surface written");
+    }
+}
+
 /// One solid's worst face laid bare (a tool): `STEP_ROUNDTRIP_ONE=example:solid`,
 /// `STEP_ROUNDTRIP_TOL` an index of `tolerances()`: each face's differences, and the edges of the
 /// worst, built and read.

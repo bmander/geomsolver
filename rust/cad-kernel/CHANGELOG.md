@@ -8,6 +8,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A STEP file prefers the curve in space where that is the exact one** (#993 stage 1): every
+  `SURFACE_CURVE` and `SEAM_CURVE` was written with `master_representation` `.PCURVE_S1.`, which
+  ISO 10303-42 reads as the representation preferred where they differ, though the kernel's
+  pcurves are fitted to its curve in space or read off it.  It is now `.CURVE_3D.`, and
+  `.PCURVE_Sk.` only where the curve in space is a fit and the `k`th pcurve is the kernel's own
+  spline in the parameters of a surface written exactly.
+
 - **A STEP file never states less than it holds** (#993 stage 1): `step::write` stated the
   uncertainty asked (1e-7 in the tests) over a loft's net and rails fitted within `step::FIT`
   (1e-6) and over a solid's own edges standing up to 2e-5 off their faces, so a reader measured 26

@@ -696,10 +696,11 @@ fn bezier_curve(c: &Curve,along: &Along,t: [f64;2],bar: f64) -> Option<(Vec<V>,V
 /// to a thousandth of the edge's own distance chased into pieces of `2⁻³⁰` of the edge (the
 /// drill's flutes, the toolpaths' nets: a rate read just past a joint some six times the feet's
 /// own). With its id, how far its image was measured off the edge's foot (nought where it is
-/// written exactly); `None`, no pcurve written, where neither the cubic nor a polyline of `MOST`
-/// points holds it.
+/// written exactly), and whether it is the kernel's own curve in the face's parameters written as
+/// it is (`Pcurve::Curve`, a spline built there); `None`, no pcurve written, where neither the
+/// cubic nor a polyline of `MOST` points holds it.
 fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,context2: usize,tol: f64,fit: Fit,net: Option<&OnNet>,
-    gap: f64) -> Option<(usize,f64)> {
+    gap: f64) -> Option<(usize,f64,bool)> {
     use super::topo::Pcurve;
     let f = &b.faces[fi];
     let e = &b.edges[u.edge as usize];
@@ -733,6 +734,10 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
     });
     // (held to the edge's own distance off the face where that is past the fit's bar)
     let bar = fit.bar().max(gap);
+    let written = |o: &mut Out,curve: usize| {
+        let rep = o.add(format!("DEFINITIONAL_REPRESENTATION('',(#{curve}),#{context2})"));
+        o.add(format!("PCURVE('',#{surface},#{rep})"))
+    };
     let (curve,miss) = match (&u.pcurve,&f.surface,c) {
         // linear in the edge's parameter: a line through where it is at t = 0
         (Pcurve::Line {..},_,_) | (_,_,_) if affine && (z[0]-a[0]).dhypot(z[1]-a[1]) > 0. => {
@@ -744,7 +749,8 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
             let Curve::BSpline(bs) = &**pc else { unreachable!() };
             let ids: Vec<String> = bs.poles.iter().map(|q| format!("#{}",p2(o,step_uv(&f.surface,[q[0],q[1]])))).collect();
             let knots: Vec<f64> = bs.knots.iter().map(|k| k-shift).collect();
-            (spline(o,bs.degree,&ids,&knots,bs.weights.as_deref()),0.)
+            let own = spline(o,bs.degree,&ids,&knots,bs.weights.as_deref());
+            return Some((written(o,own),0.,true))
         }
         (_,Surface::Plane(pl),Curve::Line {p,d}) => {
             let (l,dl) = (pl.local(*p),pl.dir_local(*d));
@@ -797,8 +803,7 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
             (bspline(o,&ids,&knots),within)
         }
     };
-    let rep = o.add(format!("DEFINITIONAL_REPRESENTATION('',(#{curve}),#{context2})"));
-    Some((o.add(format!("PCURVE('',#{surface},#{rep})")),miss))
+    Some((written(o,curve),miss,false))
 }
 
 /// The solid as a STEP file, `name` its product's: stating the uncertainty `tol` (millimetres, no
@@ -840,8 +845,10 @@ pub fn write_stating(b: &Brep,name: &str,tol: f64,fit: Fit) -> Result<(String,f6
 pub fn statement(tol: f64,held: f64) -> f64 {
     let (asked,held) = (tol.max(LEAST_UNCERTAINTY),1.25*held);
     if !(held > asked) { return asked }
-    let p = 10f64.powi(held.log10().floor() as i32);
-    [1.,2.,5.,10.,20.].into_iter().map(|m| m*p).find(|&x| x >= held).unwrap_or(20.*p)
+    // (a power of ten below one as a quotient, so 5e-6 is written as itself)
+    let k = held.log10().floor() as i32;
+    let at = |m: f64| if k < 0 { m/10f64.powi(-k) } else { m*10f64.powi(k) };
+    [1.,2.,5.,10.,20.].into_iter().map(at).find(|&x| x >= held).unwrap_or(at(20.))
 }
 
 /// **An assembly as STEP's product structure** (AP214): products, each a part with its solid or an
@@ -1116,7 +1123,7 @@ fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<(usize,f64),String> {
         let seam = uses.len() == 2 && uses[0].0 == uses[1].0;
         let before = (o.text.len(),o.next);
         let gaps: Vec<f64> = uses.iter().map(|&(fi,u)| standing(b,fi,u).max(e.tol)).collect();
-        let mut pcurves: Vec<Option<(usize,f64)>> = uses.iter().zip(&gaps)
+        let mut pcurves: Vec<Option<(usize,f64,bool)>> = uses.iter().zip(&gaps)
             .map(|(&(fi,u),&gap)| pcurve(o,b,fi,u,surfaces[fi],context2,tol,fit,nets[fi].as_ref(),gap)).collect();
         // (a seam's two curves are written both or neither: one alone does not say which side of
         // the seam it is)
@@ -1134,8 +1141,19 @@ fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<(usize,f64),String> {
         // (a curve no pcurve is written for is the edge's geometry on its own, a reader putting it
         // on its faces as it does where a file writes none)
         let written: Vec<String> = pcurves.iter().flatten().map(|p| format!("#{}",p.0)).collect();
+        // **the representation the file prefers is the exact one** (ISO 10303-42's
+        // `master_representation`, which a reader takes where the three differ): the curve in
+        // space wherever it is written as itself, and every pcurve but the kernel's own spline in
+        // a face's parameters is fitted to it or read off it; a pcurve only where it is such a
+        // spline, on a surface written exactly, and the curve in space was fitted (a curve built
+        // in a surface's parameters, carried into space and traced or fitted there)
+        let fitted = miss > 0. || !matches!(c,Curve::Line {..} | Curve::Circle(..) | Curve::Ellipse(..) | Curve::BSpline(_));
+        let master = match uses.iter().zip(&pcurves).filter_map(|(&(fi,_),p)| p.map(|p| (fi,p))).position(|(fi,p)| p.2 && sheets[fi] == 0.) {
+            Some(k) if fitted => format!(".PCURVE_S{}.",k+1),
+            _ => ".CURVE_3D.".into(),
+        };
         let geometry = if written.is_empty() { curve } else {
-            o.add(format!("{}('',#{curve},({}),.PCURVE_S1.)",if seam { "SEAM_CURVE" } else { "SURFACE_CURVE" },written.join(",")))
+            o.add(format!("{}('',#{curve},({}),{master})",if seam { "SEAM_CURVE" } else { "SURFACE_CURVE" },written.join(",")))
         };
         Ok(Some(o.add(format!("EDGE_CURVE('',#{},#{},#{geometry},.T.)",vertices[e.v[0] as usize],vertices[e.v[1] as usize]))))
     }).collect::<Result<_,_>>()?;
