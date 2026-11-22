@@ -21,19 +21,21 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   the `Field` trait) by arclength in the caller's surface metric, cut at the corners where the
   minimiser switches branches and at the rim and given inner edges, each piece's ends classified;
   seeded from the boundary, the caller and a halving search that proves cells free or monotone where
-  `Field::bound` encloses `f` and its gradient, and says what it only sampled where it does not.
-- **brep-bench's `tumbling-torus-half-turn` is built** (#942 T1d-tori, `swept::rings`,
-  `swept::closed`): a fold pair born partway is parted at its swallowtail point, not its birth. The
-  birth's row is a construction line, and the pair's double curve, which begins at the swallowtail
-  point and runs back below it, stood within the tolerance of that row's contact over 8.6e-4 of it,
-  where the arrangement cut the row's edge at the point and the trim was refused ("loop breaks in
-  parameters"). Where the stretch holding a swallowtail point begins at its pair's birth, it and the
-  stretch before are fitted as one up to the point with the pair read as not yet born (new
-  `rings::fitted_unborn`, `Fitted::unborn`: an instant whose shape is not the stretch's first read
-  with no narrow pair put in, the folds check passing over the newborn pair's bridge as over any
-  bridge), and the rest from the point. The pair's sliver before the point lies wholly in the tail
-  above the double curve, which the trim drops. The half turn: 20 faces, volume 12.2377154 (cadrs
-  12.2377), 5.9 s; `depth_probe` reads `sliver`.
+  `Field::bound` encloses `f` and its gradient, and says what it only sampled where it does not. `through` traces from
+  the caller's seeds alone, completeness not sought.
+
+- **A double curve traced from a row's seed is joined to its swallowtail point; a tube's tail is read
+  from the depth** (#942 T1d-tori, `swept::rings`, `swept::closed`): the swallowtail points are
+  sought in every stretch (`rings::swallowtails`, kept as `Fitted::ends` where the rows also find a
+  seed), and the march toward the pair is joined to its point along the swallowtail's normal form
+  once every point of the join stands within the tolerance on outer leaves (`rings::joined`) —
+  beside the point the two leaves stand within the tolerance of one another over a band, the curve
+  fixed there to the tolerance alone, and the thin torus's march slid onto a fold's inner leaf 2e-3
+  short of its points and cut the roll at false apexes. A place of a tube is tail where an instant
+  other than its own covers it deeper than its fit (`depth::cover`), not where it stands above the
+  curve over its first preimage's angle, which the joined curve turns back over.
+  `tumbling-torus-thin` is refused later, on the row sewn at its first pair's birth, where the
+  second preimage dips below the row and comes back.
 
 - **A boundary read from the depth enters the ring road as a seam** (#942, `swept::depth`): new
   `depth::Covered`, the far cover's depth as a `zero_set::Field` over a ring's sheet (its gradient by

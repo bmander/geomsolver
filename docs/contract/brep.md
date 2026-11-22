@@ -726,17 +726,19 @@ bound and seeded), or halved to the tolerance and answered beside a traced piece
 `Search::unresolved` — so every component is traced but one within the tolerance of another, one in
 an unresolved cell, and a touch of an inner edge between its samples (they are sampled at the
 caller's feature size); with a Lipschitz bound alone what it does not clear is answered beside a
-traced piece at the feature size, and with none the search is sampled (`Search::sampled`): cells'
+traced piece within the feature size of it, at once, and with none the search is sampled (`Search::sampled`): cells'
 middles pulled onto the zero set, rays from `f`'s critical points. The march steps by arclength in
 space, corrects by Newton along the gradient held to half the step, keeps a step only where its
 chord's quarter points, each pulled onto the zero set, moved no farther in space than the tolerance
 (not `|f| / |∇f|`, no measure where a sheet's rates all but coincide) and are undercut by no other
 branch, and refuses by name
-a step under the rounding. Every number is the caller's tolerance or feature size, the rounding's or
+a step under the rounding. `zero_set::through` traces the pieces through the caller's seeds alone,
+with no boundary seeds and no search, and says so (`Search::sought` false). Every number is the caller's tolerance or feature size, the rounding's or
 structural (#942 F6). `zero_set::*` are the gates: loops inside a rectangle (one a fiftieth of the
 feature across, two a two-hundredth apart), the union of two discs with its corners at the circles'
 crossings, a parabola touching an inner edge and a cusp ending on one, a curve rim to rim and one
-touching the rim, and a ball's depth swept along a line and round a circle (a stadium, an annulus).
+touching the rim, a ball's depth swept along a line and round a circle (a stadium, an annulus), a
+long meeting all but tangent under a Lipschitz bound, and `through` from one seed.
 **A sheet lying in a plane is that plane over its patch** (#780 C4): a B-spline
 surface every pole of which stands within the tolerance of a plane lies within it everywhere (its
 poles' hull), and `ssi::same` reads the two as one — a coincidence, not a touch to trace — so a

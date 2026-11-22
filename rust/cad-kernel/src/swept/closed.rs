@@ -1153,15 +1153,19 @@ pub fn ring_entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Re
     let last = fits.len()-1;
     let mut pieces = Vec::new();
     let mut given = Vec::new();
-    // (whether a pose holds a place of a tube more than the tolerance deep — a sheet on the boundary
-    // stands within its fit of it, a tenth of the tolerance — read where a double curve dips below a
-    // stretch and comes back, the tail between ending where the curve meets the tool at an end pose,
-    // #942 T1d-tori)
-    let inside = |x: V| ring.held(path,[a,b],x,tol);
+    // (whether an instant other than a tube's place's own `t` covers it: its far cover deeper than
+    // the fit the place stands off its sheet by, `depth::cover` — a narrow pair's tail, #942
+    // T1d-tori; read by its sign alone, the thin torus's piece beside its birth that only its own
+    // instant touches, its far cover 1e-12 either side of nought, was dropped)
+    let covered = |x: V,t: f64| match super::depth::cover(&ring,path,[a,b],x,t,K2_FIT*tol,tol) {
+        Ok(super::depth::Reading::Near) => true,
+        Ok(super::depth::Reading::Far(c)) => c.depth < -K2_FIT*tol,
+        _ => false,
+    };
     for (k,fit) in fits.iter().enumerate() {
         // (both end poses read on every stretch: a tube carried on can cross either far from it)
         let at = [Some((&start,poses[0])),Some((&end,poses[1]))];
-        let (s,g) = super::rings::entered_at(fit,&ring,at,[k == 0,k == last],&inside,tol)?;
+        let (s,g) = super::rings::entered_at(fit,&ring,at,[k == 0,k == last],&covered,tol)?;
         if crate::debug() { eprintln!("ring: stretch {k} over {:?}: pieces {}..{}, faces {:?}",fit.roll,pieces.len(),pieces.len()+s.len(),s.iter().map(|b: &Brep| b.faces.len()).collect::<Vec<_>>()) }
         phase(&format!("stretch {k} entered at the end poses"));
         pieces.extend(s);
@@ -1244,17 +1248,19 @@ pub fn ring_fitted(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64)
         if curves.iter().any(|c| super::rings::on_double_curve(&ring,path,c,apex.at,tol)) { continue }
         curves.push(super::rings::double_curve_from_apex(&ring,path,[a,b],apex,tol)?);
     }
+    // (each traced from a row's seed joined to its swallowtail point where a stretch finds both)
+    let ends: Vec<super::rings::Apex> = fits.iter().flat_map(|f| f.ends.clone()).collect();
     for seed in fits.iter().flat_map(|f| f.seeds.clone()) {
         // (a seed on a curve traced already: its point within the tolerance of it, #942 F6)
         if curves.iter().any(|c| super::rings::on_double_curve(&ring,path,c,seed[0],tol)) { continue }
-        curves.push(super::rings::double_curve(&ring,path,[a,b],seed,tol)?);
+        curves.push(super::rings::double_curve(&ring,path,[a,b],seed,&ends,tol)?);
     }
     phase(&format!("{} double curves traced",curves.len()));
     // (and the roll cut again at each swallowtail point, the contact's shape the same either side:
     // there the double curve's two halves meet, one in space, and a face holding both would be glued
     // to itself along the crease — each stretch about it refitted in two)
-    let apexes: Vec<f64> = curves.iter().flat_map(|c| c.iter().skip_while(|p| !p.0.is_nan()).skip(1).map(|p| p.1))
-        .filter(|t| t.is_finite() && *t > a && *t < b).collect();
+    let apexes: Vec<(f64,f64)> = curves.iter().flat_map(|c| c.iter().skip_while(|p| !p.0.is_nan()).skip(1).map(|p| (p.0,p.1)))
+        .filter(|&(_,t)| t.is_finite() && t > a && t < b).collect();
     // **a pair born within a stretch is parted at its swallowtail point, not its birth** (#942
     // T1d-tori): the birth's row is a construction line, and the double curve, which begins at the
     // swallowtail point and runs back below it in the roll, stands within the tolerance of the
@@ -1270,12 +1276,12 @@ pub fn ring_fitted(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64)
     // every place of the bridges between birth and point)
     let bridges = |f: &super::rings::Fitted| f.sides.iter().flatten().filter(|s| **s == super::rings::Side::Fold).count();
     let mut parted = 0;
-    for &t in &apexes {
+    for &(theta,t) in &apexes {
         let Some(k) = fits.iter().position(|f| f.roll[0] < t && f.roll[1] > t) else { continue };
         let [lo,hi] = fits[k].roll;
         if k > 0 && bridges(&fits[k-1]) < bridges(&fits[k]) {
             let from = fits[k-1].roll[0];
-            let before = super::rings::fitted_unborn(&ring,path,[a,b],[from,t],scale,K2_FIT*tol,from)?;
+            let before = super::rings::fitted_unborn(&ring,path,[a,b],[from,t],scale,K2_FIT*tol,from,theta)?;
             let after = super::rings::fitted_over(&ring,path,[a,b],[t,hi],scale,K2_FIT*tol)?;
             if crate::debug() { eprintln!("ring: a pair born at {} parted at its swallowtail point {t} instead",0.5*(fits[k-1].roll[1]+lo)) }
             fits.splice(k-1..=k,[before,after]);

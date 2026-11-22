@@ -602,7 +602,7 @@ fn the_half_turns_stretches_are_sewn_across_its_cut_into_one_tube_a_contact_curv
     let mut pieces = Vec::new();
     for (k,fit) in fits.iter().enumerate() {
         let at = [Some((&start,poses[0])),Some((&end,poses[1]))];
-        pieces.extend(entered_at(fit,&ring,at,[k == 0,k == 1],&|_| false,tol).unwrap().0);
+        pieces.extend(entered_at(fit,&ring,at,[k == 0,k == 1],&|_,_| false,tol).unwrap().0);
     }
     assert_eq!(pieces.len(),4,"two tubes a stretch");
     // and each curve a tube is cut along at an end pose carries, as its pcurve, the places on the

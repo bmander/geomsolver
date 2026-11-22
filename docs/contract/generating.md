@@ -2088,7 +2088,26 @@ the other surface's signed distance is halved until it stands within the toleran
 seeds nothing where it does not come to it — a jump, the other's nearest foot leaping across (the
 thin torus's "two tubes meet at 0.00°" was seeded 0.03, the tube's diameter, off the other tube,
 its distance read across a net's seam where its inverse fell on a far corner of the net).
-**`tumbling-torus-thin`, not yet built**: past both, its trim is refused beside the swallowtail
+**A double curve traced from a row's seed is joined to its swallowtail point** (#942 T1d-tori,
+`rings::joined`, `Fitted::ends`): beside the point the curve's two leaves stand within the
+tolerance of one another over a band (the thin torus's tail covered less than the tolerance deep
+some 2e-3 of the roll about its points), so the curve is fixed there to the tolerance alone; marched
+toward the pair, the thin torus's preimages slid onto a fold's inner leaf 2e-3 short of its points
+(read by `depth::cover`: `s''` below nought, then covered by nothing) and the roll was cut at false
+apexes 1.3e-3 short. The swallowtail points are sought in every stretch, and a pair of the march
+within its parting of one is joined to it along the swallowtail's normal form — along the kernel
+linearly, across it quadratically — where every point of the join stands within the tolerance of
+its partner and on an outer leaf. Every point of both thin curves then agrees with the far cover
+to 1.7e-8 (tolerance 3e-7), and the roll is cut at the true points, 0.8371692 and 1.1404747. Built
+outward from the point instead and stepped by arclength (the pairs `(θ₁, t₁, θ₂, t₂)` continued),
+the march settled among pairs mirrored across the fold, missing one another by the cube of their
+parting, within any residual the tolerance allows. **A tube's tail is read from the depth**: a place
+is tail where an instant other than its own covers it deeper than its fit (`depth::cover`), not above
+the curve over its first preimage's angle, which the joined curve turns back over.
+**`tumbling-torus-thin`, not yet built** (after the join): refused on the row sewn at its first
+pair's birth (near `(3.9578, 1.5333, 1.6132)`, face `(2, 6)` of the dump), beside where the second
+preimage, dipping below the row into the stretch before, comes back across it. Before the join:
+past both, its trim is refused beside the swallowtail
 point where its fold pair is born (near `(3.961, 1.480, 1.663)`). The roll is cut there twice,
 where `changes` sees the pair (0.8356864) and at the double curve's swallowtail point (0.8358228),
 and the double curve's preimage on the tube dips between them to 0.835783, so a stretch 1.4e-4 of
@@ -2267,8 +2286,11 @@ its point and 64 places across each bridge, every place between the folds (360) 
 instant (to 2.3e-4 deep) and every place the tail rule keeps is held no deeper than the rounding
 (`swept_depth::the_half_turns_fold_pair_bounds_nothing_the_trim_keeps_before_its_swallowtail_point`).
 The fold itself, held by the instants beside its own, is 4.9e-7 to 1.6e-6 thick there (`depth_probe
-sliver`), under the tolerance. A stretch whose start has another pair as well as the newborn one is
-refused as before (read unborn, both are gone and its shape is not its start's). brep-bench's
+sliver`), under the tolerance. Read unborn is the newborn pair alone: each curve's pair whose least
+`s''` stands nearest the swallowtail point's angle (`Fitted::unborn` carries it). Every pair read so
+dropped both of the thin and the full turn's second pairs' stretches, which begin past the first's
+point with the first already born, and their curves no longer turned onto the start's ("T|T against
+FT|T"). brep-bench's
 `tumbling-torus-half-turn` is built, checked and judged as the bench calls it: 20 faces, volume
 12.2377154 (cadrs 12.2377), held to membership, 8 s in the test profile
 (`swept_rings::the_half_turn_is_built_closed`). A Monte Carlo count of the definition read 12.198 ±
