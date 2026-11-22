@@ -1584,6 +1584,29 @@ two discs, every circle begun at another angle and one run at another pace, so e
 other's vertex and the dropped halves inverted onto a net and onto the cylinder across its seam)
 are the gate.
 
+**What the file writes is in the standard's parameters** (#993 stage 1, `step::step_uv`,
+`step::turned`): a face's curves in its parameters are written as ISO 10303-42 reads the surface.
+A cone's `v` runs along its axis there, `C + (R + v tan α)(cos u x + sin u y) + v z`, so the
+file's `v` is the kernel's (along the generator, as OCCT's is) times `cos α` — written as the
+kernel's, every pcurve on a cone lay off its edge (a drilled frustum's traced edges by 2.5 mm,
+which OCCT read 1.4e-4 off in volume). A lemon (the kernel's torus of negative major radius, which
+a `toroidal_surface`'s positive lengths forbid) is the `DEGENERATE_TOROIDAL_SURFACE` of major
+radius `−big` with `select_outer` false, its curves at `(u + π, π − v)` and its face's sense
+turned. A curve in a net's parameters is written as a line only where sixteen uneven samples find
+one (eighths of a turn, where an affine torus's arc parameter and its angle agree by symmetry,
+found lines 0.075 mm off their edges), otherwise as the cubic within `EXACT`. Gates:
+`step_parameters::every_pcurve_lies_on_its_edge_at_the_edges_parameter` (each pcurve, read through
+the reader's evaluation of the standard, on its edge within `FIT + 2·EXACT`),
+`a_lemon_is_written_as_a_degenerate_torus`.
+
+**A rational net's foot is not stopped by a seam or a pole** (`geom::net_settle`, `pole_newton`):
+a foot Newton's method holds on the domain's edge is sought again across a closed net's seam and
+from beside a collapsed row, and only a strictly nearer foot is taken (a point on a ball's net
+with poles was read 2.19 off). **A sheet's offset at a pole is the limit of its normal along the
+collapsed row** (`offset_at_pole`): a ball's net offset is the ball grown, an apex's offset the
+circle of its rows' limits. Gates: `net_inverse::a_point_on_a_rational_net_is_read_back_to_itself`,
+`a_balls_net_offset_is_a_ball`.
+
 ## Reading STEP (#993 stage 1)
 
 `step_read::read(text)` gives the manifold solids a STEP file holds, each a `Brep` with the file's

@@ -124,10 +124,15 @@ fn dense(s: &BSpline) -> Vec<f64> {
     k.windows(2).flat_map(|w| (0..64).map(move |i| w[0] + (w[1] - w[0]) * i as f64 / 64.)).chain(k.last().copied()).collect()
 }
 
-/// A face's surface at a pcurve's point, as the file's surface reads it (a cone opening against
-/// its axis is written about the reversed one, its parameters both negated).
+/// A face's surface at a pcurve's point, as the file's surface reads it (a cone's `v` along its
+/// axis, the kernel's along its generator times `cos α`; one opening against its axis written
+/// about the reversed one, its parameters both negated).
 fn on(s: &Surface, q: V) -> V {
-    match s { Surface::Cone(_, _, a) if *a < 0. => s.point([-q[0], -q[1]]), _ => s.point([q[0], q[1]]) }
+    match s {
+        Surface::Cone(_, _, a) if *a < 0. => s.point([-q[0], -q[1] / a.cos()]),
+        Surface::Cone(_, _, a) => s.point([q[0], q[1] / a.cos()]),
+        _ => s.point([q[0], q[1]]),
+    }
 }
 
 /// The foot of `q` on `s`, by Newton along the gradient of its signed distance.

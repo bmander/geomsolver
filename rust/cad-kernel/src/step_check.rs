@@ -24,8 +24,10 @@ const NEAR: f64 = 1e-9;
 pub struct Solid { pub solids: usize,pub shells: usize,pub edges: usize,pub vertices: usize,pub faces: Vec<Face> }
 
 /// A face of it: its surface's kind (`GeomAbs_SurfaceType`'s number), whether the solid reverses
-/// it, whether its surface's placement is left-handed (the writer writes it right-handed, the
-/// face's sense turned), and the surface's numbers (`solvent_cad_brep_summary`).
+/// it, whether the surface the file writes runs against the solid's (`indirect`: a placement
+/// left-handed, which the writer writes right-handed, or a lemon, written as its degenerate torus,
+/// `step::turned` — the face's sense turned either way), and the surface's numbers
+/// (`solvent_cad_brep_summary`; a torus's major radius signed, a lemon's negative).
 #[derive(Debug,Clone,PartialEq)]
 pub struct Face { pub kind: u8,pub reversed: bool,pub indirect: bool,pub numbers: Vec<f64> }
 
@@ -59,7 +61,7 @@ impl Solid {
                 | Surface::Offset(..) => BSPLINE };
             let mut numbers: Vec<f64> = frame.o.iter().chain(&frame.z).chain(&frame.x).copied().collect();
             numbers.extend(scalars);
-            Face {kind,reversed:f.reversed,indirect:false,numbers}
+            Face {kind,reversed:f.reversed,indirect:crate::step::turned(&f.surface),numbers}
         }).collect();
         // a pole's degenerate edge is not written, nor a vertex only it ends at
         let written: Vec<&crate::topo::Edge> = b.edges.iter().filter(|e| matches!(e.curve,EdgeCurve::Curve(_))).collect();
@@ -201,7 +203,7 @@ fn walk(file: &File,breps: &[&Entity],solid: &Solid,whole: bool,lap: &dyn Fn(&st
         }
         let same_sense = face.get(3).and_then(Value::logical).ok_or_else(|| format!("{what}: no sense"))?;
         if same_sense != (expected.reversed == expected.indirect) { return Err(format!("{what}: its sense is {same_sense}, the solid's face \
-            {}{}",if expected.reversed { "reversed" } else { "forward" },if expected.indirect { " on a left-handed placement" } else { "" })) }
+            {}{}",if expected.reversed { "reversed" } else { "forward" },if expected.indirect { " on a surface written against it" } else { "" })) }
         let surface = face.get(2).and_then(Value::reference).ok_or_else(|| format!("{what}: no surface"))?;
         if surface_matches(&|r| file.get(r),surface,expected).map_err(|e| format!("{what}: {e}"))? { splines += 1; }
     }
@@ -518,6 +520,23 @@ fn surface_matches<'a>(get: &dyn Fn(u32) -> &'a Entity<'a>,r: u32,expected: &Fac
         Some("CONICAL_SURFACE") => return elementary("CONICAL_SURFACE",CONE,2),
         Some("SPHERICAL_SURFACE") => return elementary("SPHERICAL_SURFACE",SPHERE,1),
         Some("TOROIDAL_SURFACE") => return elementary("TOROIDAL_SURFACE",TORUS,2),
+        // a spindle torus's part, its major radius under its minor: its apple (`select_outer`) the
+        // torus of that major radius, its lemon the solid's of the major radius negated
+        Some("DEGENERATE_TOROIDAL_SURFACE") => {
+            let Some((_,v)) = e.simple() else { unreachable!() };
+            if expected.kind != TORUS { return Err(format!("#{r} is a DEGENERATE_TOROIDAL_SURFACE, the solid's surface kind {}",expected.kind)) }
+            let outer = v.get(4).and_then(Value::logical).ok_or_else(|| format!("#{r}: no choice of its outer part"))?;
+            let [big,minor] = [2,3].map(|k| v.get(k).and_then(Value::number));
+            let (Some(big),Some(minor)) = (big,minor) else { return Err(format!("#{r}: its radii expected")) };
+            if !(big < minor) { return Err(format!("#{r}: a degenerate torus whose major radius {big} is not under its minor {minor}")) }
+            let place = v.get(1).and_then(Value::reference).ok_or("no placement")?;
+            let (_,p) = match get(place).simple() { Some(p @ ("AXIS2_PLACEMENT_3D",_)) => p,_ => return Err(format!("#{r}'s placement is not an AXIS2_PLACEMENT_3D")) };
+            let mut written = Vec::new();
+            for (k,kind) in [(1,"CARTESIAN_POINT"),(2,"DIRECTION"),(3,"DIRECTION")] { written.extend(triple(p.get(k).and_then(Value::reference),kind)?); }
+            written.extend([if outer { big } else { -big },minor]);
+            compare("DEGENERATE_TOROIDAL_SURFACE",&written,&expected.numbers)?;
+            return Ok(false)
+        }
         _ => {}
     }
     // a B-spline: simple, or complex with its rational weights
