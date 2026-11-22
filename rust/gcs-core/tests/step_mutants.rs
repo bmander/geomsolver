@@ -271,8 +271,6 @@ fn kernel_written_mutants() {
 /// A solid whose shell lists no face is refused: the whole sphere's and the whole torus's one
 /// face dropped from its shell.
 #[test]
-#[ignore = "a known defect, reported (#993 stage 1): a CLOSED_SHELL of no faces is read to a solid \
-    of none, volume and area 0"]
 fn an_empty_shell_is_refused() {
     for (name,b) in solids().into_iter().filter(|(_,b)| b.faces.len() == 1) {
         let text = write(&b,name,1e-7,Fit::Exact).unwrap();

@@ -88,7 +88,7 @@ pub fn sound(b: &Brep,context: &Context) -> Result<(),Unsound> {
     edges(b,context,size)?;
     let faces = crate::util::par::indices(b.faces.len(),|fi| face(b,fi,floor));
     for r in faces { r? }
-    shells(b,floor)
+    shells(b,size,floor)
 }
 
 /// Every index in range and every number finite, so nothing after reads past an array or loops on
@@ -1008,7 +1008,7 @@ fn cones_apart(p: &Piece,i: usize,q: &Piece,k: usize,slop: f64) -> bool {
 /// nearest about each is of the other sense — a lump inside nothing or inside a void, a void
 /// inside a lump — and no two crossing. However many lumps: a cut can part a body, and
 /// `step::write` writes all its lumps in one shell's faces.
-fn shells(b: &Brep,floor: f64) -> Result<(),Unsound> {
+fn shells(b: &Brep,size: f64,floor: f64) -> Result<(),Unsound> {
     use crate::query::Place;
     let nf = b.faces.len();
     let mut root: Vec<usize> = (0..nf).collect();
@@ -1036,7 +1036,7 @@ fn shells(b: &Brep,floor: f64) -> Result<(),Unsound> {
     };
     let located: Vec<crate::query::Located> = if shells.len() == 1 { vec![crate::query::Located::new(b,tol_of(&shells[0]))] }
         else { parts.iter().zip(&shells).map(|(p,s)| crate::query::Located::new(p,tol_of(s))).collect() };
-    let outward: Vec<bool> = shells.iter().zip(&located).map(|(s,l)| facing(b,s,l,tol_of(s))).collect::<Result<_,_>>()?;
+    let outward: Vec<bool> = shells.iter().zip(&located).map(|(s,l)| facing(b,s,l,tol_of(s).max(1e-6*size))).collect::<Result<_,_>>()?;
     if outward.iter().all(|&o| !o) {
         return Err(Unsound::face(shells[0][0],format!("the shell of face {} is inside out: a point just outside each face it is read at lies inside it",shells[0][0])))
     }
@@ -1104,11 +1104,13 @@ fn shells(b: &Brep,floor: f64) -> Result<(),Unsound> {
 /// three read alike and none against) along the face's outward normal, from a point of the face
 /// beside the middle of the edge, located against the shell alone: outside, the shell faces out
 /// (a lump); inside, in (a void, or a boundary inside out). Each step is twice the shell's
-/// greatest tolerance, then eight and thirty-two times, until the point is read off the shell;
+/// greatest tolerance (or a millionth of the boundary's size), then eight, thirty-two and a
+/// hundred and twenty-eight times, until the point is read off the shell;
 /// inward from the edge twice as far again, so that a point beside a concave edge stands in the
 /// wedge outside it. The probes vote, and the shell faces the way most of them say, or is refused
-/// where they tie (a shell facing both ways bounds no volume) or none is read. (A shell's signed
-/// volume would say the same, but its integral over every face costs more than the whole read.)
+/// where they tie (a shell facing both ways bounds no volume). Where none is read, the shell's
+/// signed volume says (what it would say everywhere, but its integral over every face costs more
+/// than the whole read).
 fn facing(b: &Brep,shell: &[usize],located: &crate::query::Located,tau: f64) -> Result<bool,Unsound> {
     use crate::query::Place;
     use crate::util::space::{add,cross,scale};
@@ -1148,7 +1150,7 @@ fn facing(b: &Brep,shell: &[usize],located: &crate::query::Located,tau: f64) -> 
         let (_,su,sv) = f.surface.d1(uv);
         let speed = crate::util::space::norm(add(scale(su,side[0]),scale(sv,side[1])));
         if !(speed > 0.) { continue }
-        for k in 0..3 {
+        for k in 0..4 {
             let h = 2.*tau*4f64.powi(k);
             let d = 2.*h/speed;
             let w = [uv[0]+d*side[0],uv[1]+d*side[1]];
@@ -1167,6 +1169,13 @@ fn facing(b: &Brep,shell: &[usize],located: &crate::query::Located,tau: f64) -> 
     if out > inward { return Ok(true) }
     if inward > out { return Ok(false) }
     let f = shell[0];
-    Err(Unsound::face(f,if out == 0 { format!("the shell of face {f} could not be read facing either way") }
-        else { format!("the shell of face {f} faces both ways ({out} of its faces read outward, as many inward): it bounds no volume") }))
+    if out > 0 { return Err(Unsound::face(f,format!("the shell of face {f} faces both ways ({out} of its faces read outward, as many inward): it bounds no volume"))) }
+    // none read off the shell (a ray along a face, a meeting the queries do not prove): its signed
+    // volume says, its faces' fluxes summed
+    let volume: f64 = shell.iter().map(|&fi| crate::props::terms(b,fi).iter().flatten().map(|t| t.0+t.1).sum::<f64>()).sum::<f64>()/3.;
+    let floor = crate::geom::tolerance(extent(b));
+    if !(volume.abs() > floor*extent(b).powi(2)) {
+        return Err(Unsound::face(f,format!("the shell of face {f} bounds no volume ({volume:e} mm³)")))
+    }
+    Ok(volume > 0.)
 }

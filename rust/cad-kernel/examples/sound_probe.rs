@@ -32,6 +32,11 @@ fn main() {
             } }
             println!("  area over [0,1]^2 {a:.6} ; props {:.6}",cad_kernel::props::area(b,f));
         }
+        {
+            // the face alone held sound: what its loops say (a face alone bounds nothing besides)
+            let alone = cad_kernel::topo::Brep {vertices:b.vertices.clone(),edges:b.edges.clone(),faces:vec![f.clone()]};
+            println!("  alone: {:?}",cad_kernel::step_read::sound::sound(&alone,&g.context).err().map(|u| u.msg));
+        }
         for (li,l) in f.loops.iter().enumerate() {
             println!(" loop {li}");
             for c in l {
