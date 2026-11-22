@@ -191,3 +191,51 @@ fn the_half_turns_fold_pair_bounds_nothing_the_trim_keeps_before_its_swallowtail
     }
     assert!(kept.0 >= 32 && folded >= 8*16,"kept {kept:?}, dropped {dropped:?}, {folded} folded");
 }
+
+/// **The thin torus's double curves, joined to their swallowtail points, are where the far cover
+/// begins** (#942 T1d-tori, `rings::joined`): brep-bench's `tumbling-torus-thin` (a torus of tube
+/// 0.015, its tolerance a 50 000th of that). Each fold pair's double curve is traced from a row's
+/// seed and joined along the swallowtail's normal form to its point, where the two leaves stand
+/// within the tolerance of one another over a band and the march alone slid onto a fold's inner
+/// leaf. The two curves end at their swallowtail points, `(6.159841, 0.8371692)` and `(2.839100,
+/// 1.1404747)` (angles modulo a turn), every point on an outer leaf (`s''` above nought), and every
+/// point's far cover within the tolerance of nought — a double point of the sweep, its other
+/// instant named by the cover. (The point itself stands on the fold, `s''` nought.)
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 30 s: the thin tumbling torus's double curves traced")]
+fn the_thin_tori_double_curves_end_at_their_swallowtail_points_and_the_far_cover_begins_on_them() {
+    use gcs_core::brep::trajectory::Screw;
+    let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.015).unwrap();
+    let (sl,cl) = 45f64.to_radians().sin_cos();
+    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.25,advance:0.});
+    let frame = Trajectory::Twist(Screw {origin:[0.,0.5f64.sqrt()*cl,0.5f64.sqrt()*sl],axis:[1.,0.,0.],
+        ratio:1.,advance:0.});
+    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
+    let roll = [-75f64.to_radians(),75f64.to_radians()];
+    let tol = 0.015/50_000.;
+    let (ring,_,_,curves,_) = gcs_core::brep::swept::closed::ring_fitted(&tool,&path,roll,tol).unwrap();
+    assert_eq!(curves.len(),2,"two fold pairs, two double curves");
+    let tau = std::f64::consts::TAU;
+    let mut ends = Vec::new();
+    for c in &curves {
+        let mark = c.iter().position(|p| p.0.is_nan()).unwrap();
+        let [ap] = c[mark+1..] else { panic!("one swallowtail point on each curve: {:?}",&c[mark+1..]) };
+        assert!(c[..mark].iter().any(|p| p.0 == ap.0 && p.1 == ap.1),"the point {ap:?} on its curve");
+        ends.push((ap.0.rem_euclid(tau),ap.1));
+        for (k,&(th,t,sg)) in c[..mark].iter().enumerate() {
+            // (the point itself, where the two preimages meet, stands on the fold: `s''` nought, and
+            // no far cover)
+            if th == ap.0 && t == ap.1 { continue }
+            let l = label_at(&ring,&path,th,t,sg).unwrap();
+            let (_,bend) = sheet(&ring,&path,roll,th,t,l).unwrap();
+            assert!(bend > 0.,"point {k} ({th}, {t}): s'' {bend}, not an outer leaf");
+            if let Some(cv) = far_depth(&ring,&path,roll,th,t,l,tol) {
+                assert!(cv.depth.abs() <= tol,"point {k} ({th}, {t}): its far cover {:e}",cv.depth);
+            }
+        }
+    }
+    ends.sort_by(|a,b| a.1.total_cmp(&b.1));
+    for (got,want) in ends.iter().zip([(6.159841,0.8371692),(2.839100,1.1404747)]) {
+        assert!((got.0-want.0).abs() < 1e-6 && (got.1-want.1).abs() < 1e-7,"a swallowtail point at {got:?}, for {want:?}");
+    }
+}

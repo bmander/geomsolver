@@ -153,6 +153,48 @@ fn main() {
             println!("{:?}",cover(&ring,&path,roll,x,t,0.,tol));
             return
         }
+        "about" => {
+            // each double curve about each swallowtail point on it: the points within `n` of it along
+            // the curve, their angle and roll less the point's, and where the curve's rolls cross the
+            // point's own roll (its row, if the roll is parted there)
+            let n: usize = args.get(2).map_or(12,|v| v.parse().unwrap());
+            let (_,_,_,curves,_) = cad_kernel::swept::closed::ring_fitted(&tool,&path,roll,tol).unwrap();
+            for (ci,c) in curves.iter().enumerate() {
+                let at = c.iter().position(|p| p.0.is_nan()).unwrap_or(c.len());
+                for ap in &c[at+1..] {
+                    let Some(k) = c[..at].iter().position(|p| p.0 == ap.0 && p.1 == ap.1) else { println!("curve {ci}: the point {ap:?} not on it"); continue };
+                    println!("curve {ci} ({at} points): its point {k} at θ {:.7}, t {:.7}",ap.0,ap.1);
+                    for j in k.saturating_sub(n)..(k+n+1).min(at) {
+                        println!("  {j}: dθ {:+.3e}, dt {:+.3e}",c[j].0-ap.0,c[j].1-ap.1);
+                    }
+                    let crossings: Vec<usize> = (1..at).filter(|&j| (c[j-1].1-ap.1)*(c[j].1-ap.1) < 0.).collect();
+                    println!("  the curve crosses the point's roll between points {crossings:?}");
+                    let space = |q: (f64,f64,f64)| label_at(&ring,&path,q.0,q.1,q.2).and_then(|l| sheet(&ring,&path,roll,q.0,q.1,l)).map(|s| s.0);
+                    println!("  the point in space {:?}",space(*ap));
+                    for &j in &crossings {
+                        for i in j.saturating_sub(3)..(j+3).min(at) { println!("  {i}: dθ {:+.4e}, dt {:+.4e}, at {:?}",c[i].0-ap.0,c[i].1-ap.1,space(c[i])) }
+                    }
+                    // each point of the curve between the swallowtail point and the next crossing of its
+                    // row: how far it stands in space from the row's own contact (the sheet at the
+                    // point's roll, its nearest place settled by golden sections over an angle's
+                    // twentieth about the point's)
+                    let Some(&j) = crossings.iter().min_by_key(|&&j| j.abs_diff(k)) else { continue };
+                    let l = label_at(&ring,&path,ap.0,ap.1,ap.2).unwrap();
+                    let row = |th: f64| sheet(&ring,&path,roll,th,ap.1,l).map_or([f64::NAN;3],|s| s.0);
+                    let (lo,hi) = (k.min(j),k.max(j));
+                    let step = ((hi-lo)/24).max(1);
+                    for i in (lo..=hi).step_by(step) {
+                        let Some(x) = space(c[i]) else { continue };
+                        let f = |th: f64| cad_kernel::util::space::distance(row(th),x);
+                        let (mut a0,mut b0) = (c[i].0-0.05,c[i].0+0.05);
+                        let g = 0.5*(5f64.sqrt()-1.);
+                        for _ in 0..100 { let (x1,x2) = (b0-g*(b0-a0),a0+g*(b0-a0)); if f(x1) < f(x2) { b0 = x2 } else { a0 = x1 } }
+                        println!("  {i}: dt {:+.3e}, {:.3e} from the row's contact{}",c[i].1-ap.1,f(0.5*(a0+b0)),if f(0.5*(a0+b0)) <= tol { " (within the tolerance)" } else { "" });
+                    }
+                }
+            }
+            return
+        }
         "tail" => {
             // each double curve's preimage points: at its angle, the stretch of the roll from it to
             // the fold (`s''` nought) on the side `s''` falls, its far depth's least there and the
