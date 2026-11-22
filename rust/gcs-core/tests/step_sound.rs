@@ -280,6 +280,41 @@ fn a_band_wound_round_a_cylinder_overlaps_itself_only_where_its_turns_meet() {
     refused(&band(2.5,4.,5.),Some(0),None,"crosses");
 }
 
+/// A face on a cylinder of radius 2 bounded by the polygon `at` in its parameters, its edges
+/// lines there; with `seam`, its second and fourth sides one edge used both ways (they must be a
+/// period apart).
+fn on_cylinder(at: &[[f64;2]],seam: bool) -> Brep {
+    let mut b = Brep::default();
+    let n = at.len();
+    let vs: Vec<u32> = at.iter().map(|p| b.vertex([2.*p[0].cos(),2.*p[0].sin(),p[1]])).collect();
+    let mut uses = Vec::new();
+    for i in 0..n {
+        let (a,z) = (at[i],at[(i+1)%n]);
+        if seam && i == 3 {
+            let e = uses.iter().map(|c: &Coedge| c.edge).nth(1).unwrap();
+            uses.push(Coedge {edge:e,reversed:true,pcurve:Pcurve::Line {a:z,b:a}});
+            continue
+        }
+        let (p,q) = (b.vertices[vs[i] as usize].p,b.vertices[vs[(i+1)%n] as usize].p);
+        let d = gcs_core::space::sub(q,p);
+        let l = gcs_core::space::norm(d).max(1e-9);
+        let e = b.edge(EdgeCurve::Curve(gcs_core::brep::geom::Curve::Line {p,d:gcs_core::space::scale(d,1./l)}),[0.,l],[vs[i],vs[(i+1)%n]]);
+        uses.push(Coedge {edge:e,reversed:false,pcurve:Pcurve::Line {a,b:z}});
+    }
+    b.faces.push(Face {surface:Surface::Cylinder(Frame::new([0.;3],UP,[1.,0.,0.]),2.),reversed:false,loops:vec![uses],name:String::new()});
+    b
+}
+
+/// **A loop once round a periodic surface whose seam leans across it is read; one lapped over
+/// itself is refused**: a band whose seam runs a radian round as it rises reaches more than a
+/// period along `u` and meets its image a period along only on its seam; a loop reaching two
+/// radians past a whole turn along its foot overlaps itself.
+#[test]
+fn a_band_whose_seam_leans_is_read() {
+    faces_sound("a band with a leaning seam",&on_cylinder(&[[0.,0.],[TAU,0.],[TAU+1.,1.],[1.,1.]],true));
+    refused(&on_cylinder(&[[0.,0.],[TAU+2.,0.],[TAU+3.,1.],[1.,1.]],false),Some(0),None,"overlaps itself");
+}
+
 /// **A use whose curve in its face's parameters leaps a period is refused**, the face its
 /// witness: an arc of three quarters of a turn on a cylinder, its pcurve the arc inverted onto
 /// the cylinder between ends a quarter turn apart the short way, so that it changes branch half

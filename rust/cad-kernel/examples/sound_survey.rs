@@ -4,7 +4,7 @@
 //! reading's relative errors against its row and whether they are within its bars. So a refusal of
 //! `sound` is seen beside whether the solid it refuses was read right.
 //!
-//!     sound_survey [--reference TABLE] [--no-measure] [--faces] FILE…
+//!     sound_survey [--reference TABLE] [--no-measure | --measure-refused] [--faces] FILE…
 //!
 //! `--faces` lists each solid's faces after its line as `step_survey --faces` does — index, the
 //! ADVANCED_FACE it was read from, surface kind, sense, area — to join with the oracle's.
@@ -27,12 +27,13 @@ fn table(path: &str) -> Vec<(String,Reference)> {
 }
 
 fn main() {
-    let (mut reference,mut measure,mut faces,mut files) = (None,true,false,Vec::new());
+    let (mut reference,mut measure,mut faces,mut refused_only,mut files) = (None,true,false,false,Vec::new());
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
             "--reference" => reference = Some(table(&args.next().expect("--reference names a table"))),
             "--no-measure" => measure = false,
+            "--measure-refused" => refused_only = true,
             "--faces" => faces = true,
             _ => files.push(a),
         }
@@ -52,7 +53,7 @@ fn main() {
         let said: Vec<String> = solids.iter().filter_map(|g| sound::sound(&g.brep,&g.context).err().map(|u| u.refusal(g).to_string())).collect();
         let judged = clock.elapsed();
         let verdict = if said.is_empty() { "sound".to_string() } else { format!("UNSOUND {}",said.join(" | ")) };
-        let measured = if !measure { String::new() } else {
+        let measured = if !measure || (refused_only && said.is_empty()) { String::new() } else {
             let v: f64 = solids.iter().map(|g| volume(&g.brep)).sum();
             let a: f64 = solids.iter().map(|g| g.brep.faces.iter().map(|f| area(&g.brep,f)).sum::<f64>()).sum();
             match row {

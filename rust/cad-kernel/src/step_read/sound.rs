@@ -2,60 +2,48 @@
 //! holds every boundary to: a reader is handed topology it did not build, and must refuse what
 //! closes edge by edge and still bounds no solid.
 //!
-//! `check` holds each loop closed, each pcurve on its edge, each loop turning the way its face's
-//! sense says, every edge used once each way; and it accepts whatever tolerance was measured. What
-//! `sound` holds besides, each refusal witnessed by the face or the edge it is read off:
+//! **A tolerant boundary is known to within its measured tolerances, and that is what such a file
+//! means.** Pieces of it that come within their tolerances of each other, an edge shorter than a
+//! few of its tolerances, two distinct vertices nearer than their tolerances, a face of no area:
+//! the habits of tolerant writers, read (the file says which vertex is which). A refusal is for a
+//! boundary that is no solid's by more than its tolerances explain, each witnessed by the face or
+//! the edge it is read off:
 //!
-//! * **Every tolerance small against the geometry it blurs** (`edges`). An edge's measured
-//!   tolerance under `THIN` of its own length (a tube wider than it is long has no direction of its
-//!   own), and no edge of no length (`geom::tolerance` of the boundary's size, the kernel's own
-//!   floor); an edge's two vertices, and any two vertices of one face, standing farther apart than
-//!   their tolerances reach together (else which corner a point near both is, is the tolerance's
-//!   choice, not the file's); no edge or vertex tolerance past `LOOSE` of the boundary's size (a gap
-//!   that wide is drawn, not tolerated). Each is said against the uncertainty the file states,
-//!   which is never the bar: real files state 1e-7 mm and carry edges 1e-3 mm off their faces.
-//! * **Every face's loops simple and apart, its holes inside its outer loop** (`Drawn`), decided in
-//!   its parameters on the pcurves themselves: each use cut at its curve's breaks into pieces
-//!   whose middles stray from their chords less than a sixteenth of their length, every two
-//!   pieces whose boxes (each grown by twice its sag and its edge's tolerance carried into the
-//!   parameters by the surface's speed) meet read against each other, halved until they are apart,
-//!   cross with room to spare, or stand within the tolerance of each other. Two pieces meeting at a
-//!   corner of the loop (the same vertex, the same place in the parameters: consecutive uses, or a
-//!   loop touching itself or another at a vertex, a kernel's pinch) are apart when each lies in
-//!   a cone about its chord from the corner (half-angle eight times its sag over its length, what a
-//!   parabola's tangents turn through, doubled) and the cones part, or when both lie within the
-//!   corner's reach: its tolerance, or its **tongue** where the two uses leave it tangent (an arc
-//!   tangent to a line at their vertex, the face between them thinner than the tolerance for a
-//!   stretch: `Drawn::tongue`). A crossing is refused; so is a **touch**, two pieces nearer than
-//!   their tolerance away from any corner they share: the tolerant boundary's topology is not
-//!   decided there, and "never read wrong" says an unprovable face is refused (OCCT's own check
-//!   refuses wires intersecting within tolerance away from their vertices). At a corner passed more
-//!   than once, the passages' ways in and out must not interleave round it (a figure of eight
-//!   through a vertex). A loop wider than its surface's period overlaps itself. Holes are placed by
-//!   whole periods beside the outer loop's middle; each hole's point, refined against the loops'
-//!   pieces until its winding is read exactly, must be wound once by the others together, as the
-//!   outer loop winds it — inside the outer loop, inside no other hole. Seams are two uses a period
-//!   apart and poles a degenerate edge's line in the parameters, so neither is a crossing. A face
-//!   whose area in its parameters is provably under its tolerance times its perimeter has none.
-//! * **One solid outside, its voids inside it** (`shells`): the faces' components by shared edges
-//!   are the shells; each shell's signed volume from `props::fluxes`; none of no volume (under the
-//!   floor times the size squared). The shell of greatest positive volume, with every positive
-//!   shell sharing a vertex with it or with one that does (a kernel's solid pinched along a line,
-//!   its edges there held twice by `Brep::unpinched`), is the solid; any other positive shell is a
-//!   second solid, refused; none positive, the boundary is inside out. Each negative shell is a
-//!   void: one of its first eight vertices read off the solid's shells is located against them
-//!   alone (`query::Located::solid_place`, a ray's crossings, exact where the queries prove them):
-//!   inside, or refused; none read off them, its place is undecided and refused. A void inside
-//!   another (their faces' boxes nesting, then located the same way) is refused.
+//! * **No tolerance past `LOOSE` of the boundary's size** (`edges`): a gap that wide is drawn,
+//!   not tolerated, and a reading within it says nothing. Said against the uncertainty the file
+//!   states, which is reported, never the bar.
+//! * **Every face's loops crossing nowhere deeper than their tolerance, its holes inside its outer
+//!   loop** (`Drawn`), decided in its parameters on the pcurves themselves: each use cut at its
+//!   curve's breaks into pieces whose middles stray from their chords less than a sixteenth of
+//!   their length, every two pieces whose boxes (each grown by twice its sag and its edge's
+//!   tolerance carried into the parameters by the surface's greater speed) meet read against
+//!   each other, halved until they are apart, or within the tolerance of each other. Two pieces
+//!   within it touch, which is read; where their chords cross the crossing is followed out along
+//!   both loops (`deep`) and refused only where each arc runs on past the other farther than the
+//!   tolerance, measured in space, and not within a few tolerances of a corner both reach (the
+//!   slop of a tolerant corner, a pinch of two loops at their vertices). Pieces meeting at a
+//!   corner of the loop are apart when they leave it in parting cones, or lie within its reach or
+//!   its **tongue** (`Drawn::tongue`). At a corner passed more than once, the passages' ways in
+//!   and out must not interleave round it (a figure of eight through a vertex), a way shared (an
+//!   edge used both ways, an antenna) reading as one. Holes are placed by whole periods beside
+//!   the outer loop's middle; each hole's point must be wound once by the others together, as the
+//!   outer loop winds it — inside the outer loop, inside no other hole.
+//! * **Every use one curve in its face's parameters** (`Drawn::leap`): a use whose parameters
+//!   leap — by a whole period (an inverse curve changing branch mid-edge), or along a pole's line
+//!   (its end read on another branch of the pole than its curve, where a degenerate edge should
+//!   stand) — is refused: what is measured over the face's parameters would skip the leap. A
+//!   leap no wider than the slop `check` lets a corner's ends stand apart by is read.
+//! * **A face reaching round its surface more than a period overlaps itself only where it meets
+//!   its own image a period along** (`Drawn::turns`): a thread's band, a seam that leans.
+//! * **Lumps and voids nested by their senses** (`shells`): the faces' components by shared
+//!   edges are the shells, each facing out or in as a point stepped off its faces is located
+//!   against it (`facing`); a lump inside nothing or a void, a void inside a lump, none crossing
+//!   another — however many lumps, as a cut parts a body and `step::write` writes them.
 //!
 //! **Not decided**: two faces that are not neighbours crossing each other in space (a global
-//! self-intersection), and a void's shell crossing its outer shell where a vertex of it reads
-//! inside: no face–face intersection is searched. A cheap necessary condition worth holding next:
-//! every face's boxes against the boxes of the faces it shares no edge or vertex with, the pairs
-//! whose boxes meet then read edge against face (`query::curve_surface`) — an edge piercing a face
-//! it does not bound is a crossing, found by the queries the Booleans already prove. The sag
-//! bound a piece is read to is measured at its middle, as `query::Outline` reads its chords, not
-//! proved: a curve that wiggles within a piece more than a parabola would is read as its chord.
+//! self-intersection), and two shells crossing where every vertex of each reads on one side of
+//! the other: no face–face intersection is searched. The sag bound a piece is read to is
+//! measured at its middle, not proved.
 use super::context::Context;
 use super::{Given,Refusal,Why};
 use crate::geom::Uv;
@@ -172,7 +160,6 @@ fn face(b: &Brep,fi: usize,floor: f64) -> Result<(),Unsound> {
     let mut d = Drawn::new(b,fi,floor)?;
     d.passages()?;
     d.crossings(None)?;
-    d.area()?;
     d.holes()?;
     d.turns()
 }
@@ -200,7 +187,6 @@ struct Drawn<'a> {
     loops: Vec<std::ops::Range<usize>>,
     /// Each joint's vertex (`NONE` for a break within a use), and the corner it was merged into.
     joints: Vec<u32>,
-    floor: f64,
     /// The face's greatest speed read, its parameters' scale where a piece reads none.
     fastest: f64,
     steps: usize,
@@ -254,7 +240,7 @@ fn at_uv(fi: usize,what: &str,uv: Uv) -> Unsound { Unsound::face(fi,format!("fac
 impl<'a> Drawn<'a> {
     fn new(b: &'a Brep,fi: usize,floor: f64) -> Result<Drawn<'a>,Unsound> {
         let f = &b.faces[fi];
-        let mut d = Drawn {b,fi,runs:Vec::new(),pieces:Vec::new(),loops:Vec::new(),joints:Vec::new(),floor,fastest:0.,steps:0,corners:Vec::new(),tongues:Default::default(),copies:Vec::new(),rings:Vec::new()};
+        let mut d = Drawn {b,fi,runs:Vec::new(),pieces:Vec::new(),loops:Vec::new(),joints:Vec::new(),fastest:0.,steps:0,corners:Vec::new(),tongues:Default::default(),copies:Vec::new(),rings:Vec::new()};
         let mut centre = [0.;2];
         for (li,l) in f.loops.iter().enumerate() {
             let start = d.pieces.len();
@@ -370,11 +356,17 @@ impl<'a> Drawn<'a> {
         // chord or which no halving flattened: the use may leap there
         if !self.runs[r].straight {
             let periods = self.b.faces[self.fi].surface.periods();
-            for p in &laid {
+            let n = laid.len();
+            for (i,p) in laid.iter().enumerate() {
                 let (d,l) = ([p.p[1][0]-p.p[0][0],p.p[1][1]-p.p[0][1]],p.len());
                 let along = if l > 0. { ((p.mid[0]-p.p[0][0])*d[0]+(p.mid[1]-p.p[0][1])*d[1])/(l*l) } else { 0.5 };
                 let wide = (0..2).any(|k| periods[k].is_some_and(|t| d[k].abs() > t/2.));
-                if !(wide || p.sag > l/16. || !(along > 0.125 && along < 0.875)) { continue }
+                // (and at the use's ends, where an end read on another branch of a pole than its
+                // curve leaps along the pole's line, straight as the piece beside it: the end
+                // against a point a billionth of the way in)
+                let end = |s: f64,from: f64| dist(self.raw_at(r,s),self.raw_at(r,from+(s-from)*(1.-1e-9))) > self.tol(p,p);
+                let ends = (i == 0 && end(p.s[0],p.s[1])) || (i+1 == n && end(p.s[1],p.s[0]));
+                if !(wide || ends || p.sag > l/16. || !(along > 0.125 && along < 0.875)) { continue }
                 if let Some((s,from,to)) = self.leap(p) {
                     let surface = &self.b.faces[self.fi].surface;
                     let (by,tau) = (dist(from,to),self.runs[r].tau);
@@ -515,7 +507,23 @@ impl<'a> Drawn<'a> {
             }
         }
         // each image read against the face itself, never against another image
-        self.crossings(Some(n))
+        self.crossings(Some(n))?;
+        // and, its boundary nowhere crossing the face's, inside it nowhere: each of its runs'
+        // middles wound by the face's loops as the face's inside is, the image overlaps the face
+        // (their boundaries meeting along a stretch, never crossing)
+        let want = if self.b.faces[self.fi].reversed { -1 } else { 1 };
+        let mids: Vec<Uv> = (n..self.pieces.len()).filter(|&i| i+1 == self.pieces.len() || self.pieces[i+1].run != self.pieces[i].run).map(|i| self.pieces[i].mid).collect();
+        for x in mids {
+            let mut w = 0;
+            let mut read = true;
+            for lk in 0..self.loops.len() {
+                match self.winding(lk,x) { Some(k) => w += k,None => { read = false; break } }
+            }
+            if read && w == want {
+                return Err(at_uv(self.fi,"its boundary a period along lies inside it: it overlaps itself",x))
+            }
+        }
+        Ok(())
     }
 
     /// At a corner the boundary passes more than once, the passages' ways in and out not
@@ -546,7 +554,10 @@ impl<'a> Drawn<'a> {
                 for b in &ps[i+1..] {
                     // `b`'s ways on either side of `a`'s chord round the corner
                     let inside = |x: f64| { let (lo,hi) = (a.0.min(a.1),a.0.max(a.1)); x > lo && x < hi };
-                    let apart = [b.0,b.1].iter().all(|&x| x != a.0 && x != a.1);
+                    // (a way shared — an edge used both ways through the corner, an antenna into
+                    // the face — read alike to a millionth of a radian: no interleaving there)
+                    let same = |x: f64,y: f64| { let d = (x-y).rem_euclid(std::f64::consts::TAU); d.min(std::f64::consts::TAU-d) <= 1e-6 };
+                    let apart = [b.0,b.1].iter().all(|&x| !same(x,a.0) && !same(x,a.1));
                     if apart && inside(b.0) != inside(b.1) { return Err(at_uv(self.fi,"its boundary crosses itself at a vertex it passes twice",a.2)) }
                 }
             }
@@ -620,6 +631,11 @@ impl<'a> Drawn<'a> {
                 }
             }
             if shared.is_some() && crosses(&p,&q,m+tol) { self.crossed(&p,&q,tol)? }
+            // (a piece no halving shortens further whose chord is one point in space — a use's
+            // parameters at a pole, where the collapsed one is noise within a hair of it — meets
+            // the other only at that point)
+            let stuck = |x: &Piece| !(x.s[1]-x.s[0] > 1e-12) && self.collapsed(x);
+            if stuck(&p) || stuck(&q) { continue }
             if depth >= DEEPEST {
                 return Err(at_uv(self.fi,&format!("{}: not read apart within {DEEPEST} halvings",self.say("may touch",&p,&q)),p.p[0]))
             }
@@ -632,6 +648,15 @@ impl<'a> Drawn<'a> {
             }
         }
         Ok(())
+    }
+
+    /// Whether piece `p`'s chord in the face's parameters is one point in space, within its
+    /// tolerance: read at its ends, its quarters and its middle.
+    fn collapsed(&self,p: &Piece) -> bool {
+        let surface = &self.b.faces[self.fi].surface;
+        let tau = self.runs[p.run as usize].tau;
+        let o = surface.point(p.p[0]);
+        [0.25,0.5,0.75,1.].iter().all(|&l| distance(surface.point([p.p[0][0]+l*(p.p[1][0]-p.p[0][0]),p.p[0][1]+l*(p.p[1][1]-p.p[0][1])]),o) <= tau)
     }
 
     /// The reach of a corner both pieces' uses run to or from, where both pass within it: the
@@ -711,9 +736,29 @@ impl<'a> Drawn<'a> {
 
     /// Two pieces whose chords cross refused where they cross deeper than their tolerance
     /// (`deep`).
+    /// A crossing within a few tolerances of a vertex both pieces' uses reach (their ends there as
+    /// far apart as `check` lets a corner's ends stand, its vertex's tolerance besides) is the
+    /// corner's slop, not a crossing: a tolerant corner's two uses run a hair past each other.
     fn crossed(&self,p: &Piece,q: &Piece,tol: f64) -> Result<(),Unsound> {
+        let ([a,b],[c,d]) = (p.p,q.p);
+        let (x,y) = (cross(c,d,a),cross(c,d,b));
+        let l = if x != y { x/(x-y) } else { 0.5 };
+        let at = [a[0]+l*(b[0]-a[0]),a[1]+l*(b[1]-a[1])];
+        let speed = p.speed.max(q.speed);
+        for &(j,xp) in &self.corners[p.run as usize] {
+            for &(k,xq) in &self.corners[q.run as usize] {
+                if j == NONE || k == NONE { continue }
+                let (v,w) = (self.joints[j as usize],self.joints[k as usize]);
+                if v == NONE || w == NONE { continue }
+                // (one vertex, or two standing where the loops pinch: within their tolerances)
+                let vt = if speed > 0. { (self.b.vertices[v as usize].tol+if v == w { 0. } else { self.b.vertices[w as usize].tol })/speed } else { 0. };
+                let reach = 4.*(tol+vt);
+                if v != w && dist(xp,xq) > reach { continue }
+                if dist(at,xp).min(dist(at,xq)) <= reach+4.*dist(xp,xq) { return Ok(()) }
+            }
+        }
         match self.deep(p,q,tol) {
-            Some((r,by)) => Err(at_uv(self.fi,&format!("{}: each runs on {by:e} mm past the other within {r:e} of where they cross (in its parameters), more than their tolerance",
+            Some((r,by)) => Err(at_uv(self.fi,&format!("{}: they cross, each running on past the other farther than their tolerance ({by:e} mm) within {r:e} of the crossing in its parameters",
                 self.say("crosses",p,q)),p.p[0])),
             None => Ok(()),
         }
@@ -751,7 +796,11 @@ impl<'a> Drawn<'a> {
             let r_ = r.min(cap);
             let (Some((pa,ma)),Some((pb,mb))) = (self.arc(&x,r_),self.arc(&y,r_)) else { return None };
             let moved = |a: Vec<Uv>,d: Uv| -> Vec<Uv> { a.into_iter().map(|q| [q[0]+d[0],q[1]+d[1]]).collect() };
-            let (pa,pb) = (moved(pa,dx),moved(pb,dy));
+            // (the second arc moved a millionth of the radius aside: both pass through where they
+            // were found to cross, where a count of their segments' crossings would read none,
+            // and a move far within the tolerance changes no crossing of arcs whose ends stand
+            // farther apart than it)
+            let (pa,pb) = (moved(pa,dx),moved(pb,[dy[0]+0.6e-6*r_,dy[1]+0.8e-6*r_]));
             // (how far apart, read in space: a tolerance is a distance there, and a surface's two
             // speeds may differ by any factor)
             let far = tau+ma.max(mb)*speed;
@@ -850,11 +899,7 @@ impl<'a> Drawn<'a> {
             if !reached { return None }
         }
         let [fore,back] = ways;
-        // (the point through `x` left out: it is where the two arcs were found to cross, on both,
-        // where a count of their segments' crossings would read none; the chord past it strays
-        // from it as far as it stands from that chord)
-        if let (Some(&a),Some(&z)) = (back.first(),fore.first()) { sag = sag.max(SAFE*to_segment(o,a,z)); }
-        Some((back.into_iter().rev().chain(fore).collect(),sag))
+        Some((back.into_iter().rev().chain(std::iter::once(o)).chain(fore).collect(),sag))
     }
 
     /// What two pieces do to each other, said of their edges and loops.
@@ -864,29 +909,6 @@ impl<'a> Drawn<'a> {
         let (la,lz) = (lp(p),lp(q));
         if la == lz { format!("loop {la} {what} itself (edges {} and {})",a.c.edge,z.c.edge) }
         else { format!("loop {la} {what} loop {lz} (edges {} and {})",a.c.edge,z.c.edge) }
-    }
-
-    /// A face whose area in its parameters is provably under its tolerance times its perimeter.
-    fn area(&self) -> Result<(),Unsound> {
-        let (mut area,mut err,mut perimeter) = (0.,0.,0.);
-        for r in &self.loops {
-            let ps = &self.pieces[r.clone()];
-            for p in ps {
-                area += (cross([0.;2],p.p[0],p.mid)+cross([0.;2],p.mid,p.p[1]))/2.;
-                err += SAFE*p.sag*p.len();
-                perimeter += p.len();
-            }
-            // the loop's corners closed straight
-            for (k,p) in ps.iter().enumerate() {
-                let q = &ps[(k+1)%ps.len()];
-                area += cross([0.;2],p.p[1],q.p[0])/2.;
-            }
-        }
-        let tol = self.floor/if self.fastest > 0. { self.fastest } else { 1. };
-        if area.abs()+err <= tol*perimeter/2. {
-            return Err(Unsound::face(self.fi,format!("face {} has no area: {area:e} in its parameters, within its tolerance along its boundary",self.fi)))
-        }
-        Ok(())
     }
 
     /// Each hole inside the outer loop and inside no other hole: a point of it wound by the other
@@ -1077,28 +1099,40 @@ fn shells(b: &Brep,floor: f64) -> Result<(),Unsound> {
     Ok(())
 }
 
-/// **Which way a shell faces**: a point stepped off each of up to seven of its faces (those of
-/// the largest boxes, until three read alike and none against) along the face's outward normal, from a point of the face beside the middle
-/// of its longest edge, located against the shell alone: outside, the shell faces out (a lump);
-/// inside, in (a void, or a boundary inside out). Each step is twice the shell's greatest
-/// tolerance, then eight and thirty-two times, until the point is read off the shell; inward from
-/// the edge twice as far again, so that a point beside a concave edge stands in the wedge outside
-/// it. The faces read vote, and the shell faces the way most of them say, or is refused where
-/// they tie (a shell facing both ways bounds no volume) or none is read. (Where a shell's signed
-/// volume would say the same, its integral over every face costs more than the whole read.)
+/// **Which way a shell faces**: a point stepped off its largest faces (up to seven, by their
+/// boxes; at each of two of its longest edges that is neither degenerate nor a seam of it, until
+/// three read alike and none against) along the face's outward normal, from a point of the face
+/// beside the middle of the edge, located against the shell alone: outside, the shell faces out
+/// (a lump); inside, in (a void, or a boundary inside out). Each step is twice the shell's
+/// greatest tolerance, then eight and thirty-two times, until the point is read off the shell;
+/// inward from the edge twice as far again, so that a point beside a concave edge stands in the
+/// wedge outside it. The probes vote, and the shell faces the way most of them say, or is refused
+/// where they tie (a shell facing both ways bounds no volume) or none is read. (A shell's signed
+/// volume would say the same, but its integral over every face costs more than the whole read.)
 fn facing(b: &Brep,shell: &[usize],located: &crate::query::Located,tau: f64) -> Result<bool,Unsound> {
     use crate::query::Place;
     use crate::util::space::{add,cross,scale};
     let mut picks: Vec<(f64,usize)> = shell.iter().map(|&fi| { let (lo,hi) = crate::query::face_box(b,fi); (distance(lo,hi),fi) }).collect();
     picks.sort_by(|a,b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
     let (mut out,mut inward) = (0,0);
-    for &(_,fi) in picks.iter().take(7) {
+    // each of those faces' two longest edges that are neither degenerate nor a seam of it (an
+    // edge the face uses twice may run through a hole of it)
+    let probes: Vec<(usize,&Coedge)> = picks.iter().take(7).flat_map(|&(_,fi)| {
+        let f = &b.faces[fi];
+        let uses = |e: u32| f.loops.iter().flatten().filter(|c| c.edge == e).count();
+        let mut cs: Vec<(f64,&Coedge)> = f.loops.iter().flatten().filter(|c| !matches!(b.edges[c.edge as usize].curve,EdgeCurve::Degenerate) && uses(c.edge) == 1)
+            .map(|c| { let e = &b.edges[c.edge as usize]; (distance(e.point(e.t[0],&b.vertices),e.point((e.t[0]+e.t[1])/2.,&b.vertices)),c) }).collect();
+        cs.sort_by(|x,y| y.0.total_cmp(&x.0));
+        cs.into_iter().take(2).map(move |(_,c)| (fi,c))
+    }).collect();
+    // (a shell of seams and poles alone, a whole sphere: its seams then)
+    let probes: Vec<(usize,&Coedge)> = if !probes.is_empty() { probes } else {
+        picks.iter().take(7).flat_map(|&(_,fi)| b.faces[fi].loops.iter().flatten().filter(|c| !matches!(b.edges[c.edge as usize].curve,EdgeCurve::Degenerate)).take(2).map(move |c| (fi,c))).collect()
+    };
+    for (fi,c) in probes {
         // (three alike and none against settle it)
         if (out >= 3 || inward >= 3) && out.min(inward) == 0 { break }
         let f = &b.faces[fi];
-        // the face's longest edge, at its middle, its way along the use
-        let Some(c) = f.loops.iter().flatten().filter(|c| !matches!(b.edges[c.edge as usize].curve,EdgeCurve::Degenerate))
-            .max_by(|x,y| { let l = |c: &Coedge| { let e = &b.edges[c.edge as usize]; distance(e.point(e.t[0],&b.vertices),e.point((e.t[0]+e.t[1])/2.,&b.vertices)) }; l(x).total_cmp(&l(y)) }) else { continue };
         let e = &b.edges[c.edge as usize];
         let (tm,dt) = ((e.t[0]+e.t[1])/2.,(e.t[1]-e.t[0])*1e-4);
         let at = |t: f64| c.pcurve.at(t,e,&f.surface,&b.vertices);
