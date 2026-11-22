@@ -1953,7 +1953,9 @@ and only where its adaptive integration has converged, and brep-bench's measurer
 both share an error, a third reader's quadrature of the faces in question (`mass+quad`:
 brep-bench's Utah teapot, whose case area is 7.1e-6 under its whole faces' Gauss quadrature from
 the file's own control points, its knob's four patches read low by OCCT, the measurer and the
-kernels whose mean the case takes). **A reading's totals are held to its row's bar or to what the
+kernels whose mean the case takes), and where the account shows one reader misreads the file, the
+other's alone (`account.tsv`'s fifth column, `occt!`: brepkit's torus grown past its hole, a whole
+spindle torus, which the measurer reads as its apple). **A reading's totals are held to its row's bar or to what the
 file determines, whichever is wider** (`determined`, `bars`, `closure`). Its volume: the flux of a
 boundary is linear in the point it is taken about, `Φ(o + t) = Φ(o) − t·C`, `C = ∮ n dA` the
 boundary's closure vector (nought where it closes), so moving the solid by `t` changes its volume
@@ -1968,7 +1970,10 @@ outside its row's own bar (the readers agree closer than the file closes, and it
 entity and the evidence, written into the table by `table.py`): `gap`, the reader's; `defective`,
 no solid's boundary by ISO 10303-42 — a loop not closed by vertex identity, a loop's sense
 against its face or its neighbours, a closed shell using an edge otherwise than once each way,
-bounds that cross, a real written `NaN` — or edges standing off their faces past `sound::LOOSE`
+bounds that cross or overlap, a face that covers itself, crosses its surface's self-intersection
+or has no area at all, a whole surface that meets itself ("the domains of faces and closed shells,
+if present, are 2-manifolds", a 2-manifold "a non-self-intersecting surface"; a horn torus, which
+only touches itself at a point, is read), a real written `NaN` — or edges standing off their faces past `sound::LOOSE`
 of its size, each shown without the kernel's reader (`check.py`: OCCT's analyzer healing off,
 OCCT's projections of each edge's curve onto its faces' surfaces, the text's own loop, use and
 sense checks); `assembly`; `nosolid`; `open`, not settled by the evidence in hand; `reference`
@@ -1986,7 +1991,10 @@ vocabulary and a witness.
 right: a face read at half its area in a part of thousands moves the total by less than a loose
 bar (CADGenBench 214's face #28635, its sheet's whole domain, read 11.27 mm² against 16.82 while
 the file's totals passed). So a file read right in total also has each face, named by its
-ADVANCED_FACE, within its bar of OCCT's area of that face and of brep-bench's measurer's. OCCT's
+ADVANCED_FACE, within its bar of OCCT's area of that face and of brep-bench's measurer's, and,
+where a third reader's quadrature over the file's own boundary has measured it
+(`oracle/<path>.quad.faces.tsv`, `face_quadrature`), of that, a reader past its bar of it set
+aside for that face. OCCT's
 faces are named by the shells' order where the kinds agree, else by OCCT's own record of the
 translation (a face it split is the sum of its parts); the measurer's faces are put on their
 surfaces from the edges' curves in space, scaled by the unit read off the faces both readers
