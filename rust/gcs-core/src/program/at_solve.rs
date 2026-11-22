@@ -117,11 +117,14 @@ fn unmade_held(sk: &Sketch, map: &SourceMap, said: &[Diag]) -> Vec<Diag> {
         // the pairs whose edge the word takes: two faces, one of `A` and one of `B` — what else a
         // `when` asked (a corner's third face against a face of its own side, a face against
         // itself) selects no edge of its own
-        let ina = |f: &str| a.1.iter().any(|g| g == f);
-        let inb = |f: &str| b.1.iter().any(|g| g == f);
+        let ina: BTreeSet<&str> = a.1.iter().map(String::as_str).collect();
+        let inb: BTreeSet<&str> = b.1.iter().map(String::as_str).collect();
         let asked = u.pairs.iter().map(|([x, y], layer)| ([x.as_str(), y.as_str()], *layer));
-        let pairs: Vec<([&str; 2], usize)> = asked.chain(u.pruned.iter().flat_map(|p| p.pairs()))
-            .filter(|([x, y], _)| x != y && (ina(x) && inb(y) || inb(x) && ina(y))).collect();
+        // and those its blocks made no copy of, read apart (#994)
+        let pruned = map.pruned.iter().filter(|p| p.at == u.at).flat_map(|p| p.pairs());
+        let pairs: Vec<([&str; 2], usize)> = asked.chain(pruned)
+            .filter(|([x, y], _)| x != y && (ina.contains(x) && inb.contains(y)
+                || inb.contains(x) && ina.contains(y))).collect();
         let why = if pairs.is_empty() {
             if a.1.iter().chain(&b.1).collect::<BTreeSet<_>>().len() != 1 {
                 continue;

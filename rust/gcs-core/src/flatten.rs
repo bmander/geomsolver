@@ -482,7 +482,9 @@ pub struct Expansion {
 /// **A statement whose blocks over a solid's faces may have selected no edge** (#962, W120): a
 /// round's or a chamfer's, whose `when`s read faces and none of whose pairs read where the drawing
 /// stands met in a way that could not be told — to be read edge by edge where it is solved
-/// (`program::at_solve::unmade`), and said there if no two of its faces meet in an edge.
+/// (`program::at_solve::unmade`), and said there if no two of its faces meet in an edge.  The
+/// pairs its blocks made no copy of, read apart (#994), are pairs too: the `Pruned` at its
+/// statement.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Unmade {
     /// The document's statement that made the blocks.
@@ -495,8 +497,6 @@ pub struct Unmade {
     /// Each pair of faces a `when` asked `meets` of (each by its name from the solid), with the
     /// layer it read them in — none where no `when` paired two (one face, paired with itself).
     pub pairs: Vec<([String; 2], usize)>,
-    /// And the pairs its blocks made no copy of, read apart (#994): pairs too.
-    pub pruned: Vec<Pruned>,
 }
 
 /// What the `when`s under one statement read of faces and made (`Unmade`): the blocks over a
@@ -507,7 +507,6 @@ pub struct Unmade {
 struct Selecting {
     blocks: Vec<(String, Vec<String>, Vec<String>)>,
     pairs: BTreeSet<(String, [String; 2], usize)>,
-    pruned: Vec<Pruned>,
     /// How many copies' `when`s over faces held: made (#994).
     made: usize,
     asked: bool,
@@ -538,10 +537,12 @@ pub struct Apart {
 /// the face each copy calls `v` and a face `y` read before the block, so a face `meets` reads
 /// apart from `y` makes no copy (`Walk::adjacent`) — the pairs the walk would have read apart
 /// and made nothing of, kept as one record of the block rather than one per pair: `face` is `y`
-/// by its name from the solid, `faces` the block's faces (shared by every copy of the block
-/// that lists them alike), and `apart` each one read apart from `y`, by its place in `faces`,
-/// with the layer it was read in.  Read as `Apart`s are, pair by pair (`pairs`), where the
-/// drawing is solved; and by what `Unmade` reads.
+/// by its name from the solid, `faces` the block's faces (one list shared by every block that
+/// lists them alike, `FaceState::lists`), and `apart` each one read apart from `y`, by its place
+/// in `faces`, with the layer it was read in.  Recorded once however many copies of an outer
+/// block read the same pairs (a corner's block, in each copy for a neighbour of `y`).  Read as
+/// `Apart`s are, pair by pair (`pairs`), where the drawing is solved; and with the `Unmade` at
+/// its statement.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Pruned {
     pub solid: String,
@@ -1091,6 +1092,12 @@ struct FaceState {
     apart: BTreeSet<Apart>,
     /// See `Expansion::pruned`.
     pruned: Vec<Pruned>,
+    /// Each list of faces a `Pruned` holds, once, with the order it was first met in (#994):
+    /// what every block listing them alike shares.
+    lists: BTreeMap<std::sync::Arc<[String]>, usize>,
+    /// Each `Pruned` in `pruned` by its statement, solid, face, list (by its order in `lists`)
+    /// and the pairs it read apart: what the same record is not kept twice by.
+    recorded: BTreeSet<(Span, String, String, usize, Vec<(u32, u32)>)>,
     /// What each document statement's blocks over a solid's faces run over, by the statement —
     /// see `Tally`.
     tally: BTreeMap<Span, Tally>,
@@ -1301,13 +1308,15 @@ impl<'a> Walk<'a> {
                 return None;
             }
             let solid = &s.blocks[0].0;
+            let mut pruned = self.faces.pruned.iter().filter(|p| p.at == at).peekable();
+            let none_pruned = pruned.peek().is_none();
             if s.blocks.iter().any(|b| &b.0 != solid) || s.pairs.iter().any(|p| &p.0 != solid)
-                || s.pruned.iter().any(|p| &p.solid != solid) {
+                || pruned.any(|p| &p.solid != solid) {
                 return None;
             }
             // where no `when` paired two, one face, and no copy made
             let faces = || s.blocks.iter().flat_map(|b| &b.2).collect::<BTreeSet<_>>().len();
-            if s.pairs.is_empty() && s.pruned.is_empty() && (s.made > 0 || faces() != 1) {
+            if s.pairs.is_empty() && none_pruned && (s.made > 0 || faces() != 1) {
                 return None;
             }
             Some(Unmade {
@@ -1315,7 +1324,6 @@ impl<'a> Walk<'a> {
                 solid: solid.clone(),
                 blocks: s.blocks.into_iter().map(|(_, rest, listed)| (rest, listed)).collect(),
                 pairs: s.pairs.into_iter().map(|(_, faces, layer)| (faces, layer)).collect(),
-                pruned: s.pruned,
             })
         }).collect()
     }

@@ -1367,15 +1367,15 @@ impl<'a> Walk<'a> {
                     self.faces.tally.insert(p.at, Tally { said, will, made: 0 });
                 }
             }
-            let keep = adjacent.map(|(keep, pruned)| {
-                if let Some(pruned) = pruned {
-                    let s = self.faces.selecting.entry(p.at).or_default();
-                    s.asked = true;
-                    s.pruned.push(pruned.clone());
-                    self.faces.pruned.push(pruned);
+            // the copies it leaves out, by place, and the pairs they would have read apart kept
+            let skip: Vec<u32> = match (adjacent, &over) {
+                (Some((face, apart)), Some(o)) => {
+                    let skip = apart.iter().map(|&(k, _)| k).collect();
+                    self.prune(p.at, &o.solid, face, &o.listed, apart);
+                    skip
                 }
-                keep
-            });
+                _ => Vec::new(),
+            };
             if let Some(o) = over {
                 // a block over a solid's faces names it however they were named: the
                 // elaborator names them again where its solids now give them otherwise ([0.149])
@@ -1398,7 +1398,7 @@ impl<'a> Walk<'a> {
             match walks {
                 Ok(walks) => {
                     let (at, before) = (p.at, self.emitted());
-                    self.expand_edges(p, walks, keep.as_deref());
+                    self.expand_edges(p, walks, &skip);
                     self.projection(at, self.emitted().saturating_sub(before));
                     if self.overflowed {
                         break;
@@ -1514,7 +1514,7 @@ impl<'a> Walk<'a> {
     /// One block over a chain's edges — or several chains' and faces', in step: a copy per link,
     /// made into a vector of their own and spliced in where the walk met the block, so the
     /// statements stand in source order.
-    fn expand_edges(&mut self, p: Pending, walks: Vec<(Vec<Link>, bool)>, keep: Option<&[bool]>) {
+    fn expand_edges(&mut self, p: Pending, walks: Vec<(Vec<Link>, bool)>, skip: &[u32]) {
         let Some(at) = self.take_placeholder(&p) else { return };
         let StmtKind::Block(b) = &p.st.kind else { return };
         let Some(over) = &b.over else { return };
@@ -1570,7 +1570,7 @@ impl<'a> Walk<'a> {
         let edges: Vec<(&Name, &[Link])> =
             vars.iter().zip(&walks).map(|(v, (l, _))| (v, l.as_slice())).collect();
         let n = walks[0].0.len();
-        self.copies(&b, &p.st, &p.scope, &p.path, p.depth, n, &edges, None, keep);
+        self.copies(&b, &p.st, &p.scope, &p.path, p.depth, n, &edges, None, skip);
         let made = std::mem::replace(&mut self.out, outer);
         self.aside.held = 0;
         self.out.splice(at..at, made);

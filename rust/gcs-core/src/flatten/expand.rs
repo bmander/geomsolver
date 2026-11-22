@@ -1278,7 +1278,7 @@ impl<'a> Walk<'a> {
         };
         let edges: Vec<(&Name, &[super::Link])> =
             links.iter().map(|(v, l)| (*v, l.as_slice())).collect();
-        self.copies(b, st, scope, path, depth, n, &edges, items, None);
+        self.copies(b, st, scope, path, depth, n, &edges, items, &[]);
     }
 
     /// Whether the body declares what each copy calls its edge or its item, which would hide it:
@@ -1728,7 +1728,7 @@ impl<'a> Walk<'a> {
         n: usize,
         edges: &[(&Name, &[Link])],
         items: Option<(&Name, &[super::lists::Item])>,
-        keep: Option<&[bool]>,
+        skip: &[u32],
     ) {
         // a block's index and its edge or item binder are names of each copy, and one over a name
         // the enclosing scope already has would read two ways in one body (E002): said once per
@@ -1780,7 +1780,7 @@ impl<'a> Walk<'a> {
         let mut ranges: Vec<(usize, usize)> = Vec::new();
         for k in 0..n {
             // a copy its block's `when` is known to leave out (`adjacent`, #994) is not made
-            if keep.is_some_and(|keep| !keep[k]) {
+            if skip.binary_search(&(k as u32)).is_ok() {
                 continue;
             }
             // each copy a frame of its own — its binder, then what its body defines — over the
@@ -2206,12 +2206,14 @@ impl Walk<'_> {
     /// as every copy is, read off the solid's `Meets` (O(log n) a face): a body's edges and
     /// corners are copied, not every pair and three of its faces.  Its first face is copied
     /// whatever it meets, so a condition that cannot be decided is said as it was.  The rest it
-    /// leaves are kept as the pairs it read apart (`Pruned`), read again where the drawing
-    /// solves as every pair `meets` reads apart is.  `None` where the block is not so, or `y` is
-    /// not read so (no face, of another solid — refused where it is asked — or of a boundary
-    /// that cannot say): every face is copied.
+    /// leaves are `y` by its name from the solid and each face read apart from it, by its place
+    /// in `listed` (ascending) with the layer it was read in: the copies not made, kept as the
+    /// pairs it read apart (`Pruned`, `Walk::prune`), read again where the drawing solves as
+    /// every pair `meets` reads apart is.  `None` where the block is not so, `y` is not read so
+    /// (no face, of another solid — refused where it is asked — or of a boundary that cannot
+    /// say), or every face meets it: every face is copied.
     pub(super) fn adjacent(&self, p: &Pending, solid: &str, listed: &[String])
-        -> Option<(Vec<bool>, Option<super::Pruned>)> {
+        -> Option<(String, Vec<(u32, u32)>)> {
         let StmtKind::Block(b) = &p.st.kind else { return None };
         let over = b.over.as_ref()?;
         let [only] = &b.body[..] else { return None };
@@ -2235,24 +2237,40 @@ impl Walk<'_> {
         // so every copy reads its pair in the layer the first does
         let at = format!("{}0.", super::keys::block(sc.prefix(), p.st.id.0));
         let index = self.faces.index.get(solid)?;
-        let mut keep = vec![true; listed.len()];
         let mut apart = Vec::new();
         for (k, rz) in listed.iter().enumerate().skip(1) {
             let pz = &given.paths[*index.get(rz)?];
             let layer = given.layers.layer(&at, &[py, pz]);
             if !layered.meets(layer).meets(ry, rz) {
-                keep[k] = false;
                 apart.push((k as u32, layer as u32));
             }
         }
-        let pruned = (!apart.is_empty()).then(|| super::Pruned {
-            solid: solid.to_string(),
-            face: ry.to_string(),
-            faces: listed.into(),
-            apart,
-            at: p.at,
-        });
-        Some((keep, pruned))
+        (!apart.is_empty()).then(|| (ry.to_string(), apart))
+    }
+
+    /// **The pairs a block over a solid's faces read apart and made no copy of, kept** (#994):
+    /// `face` and `apart` as `adjacent` gives them, of the block at `at` over `listed` — one
+    /// `Pruned`, its list of faces the one every block listing them alike shares, and none where
+    /// the same is kept already.
+    pub(super) fn prune(&mut self, at: Span, solid: &str, face: String, listed: &[String],
+        apart: Vec<(u32, u32)>) {
+        self.faces.selecting.entry(at).or_default().asked = true;
+        let next = self.faces.lists.len();
+        let (faces, &order) = match self.faces.lists.get_key_value(listed) {
+            Some(found) => found,
+            None => {
+                self.faces.lists.insert(listed.into(), next);
+                self.faces.lists.get_key_value(listed).expect("inserted")
+            }
+        };
+        let faces = faces.clone();
+        let key = (at, solid.to_string(), face, order, apart);
+        if self.faces.recorded.contains(&key) {
+            return;
+        }
+        let (at, solid, face, _, apart) = key.clone();
+        self.faces.recorded.insert(key);
+        self.faces.pruned.push(super::Pruned { solid, face, faces, apart, at });
     }
 }
 
