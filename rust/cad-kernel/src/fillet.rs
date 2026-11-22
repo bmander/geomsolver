@@ -572,7 +572,7 @@ fn dome(b: &Brep,m: &Meeting,k: usize,centre: V,ring: Frame,foot: V,r: f64,tol: 
                     it and `{}` goes on from it at once: no stretch of its dome is cut off there yet",b.faces[f].name,
                     b.faces[g].name));
             }
-            let cuts = at.iter().map(|&g| cut_by(b,g,pv,leaving,tol,names)).collect::<Result<Vec<Cut>,String>>()?;
+            let cuts = at.iter().map(|&g| cut_by(b,g,pv,leaving,names)).collect::<Result<Vec<Cut>,String>>()?;
             cut.push(CutEnd {pv,stop:Stop {trim:Trim {vertex:v,o:pv,cuts},t:0.,faces:at}});
             continue;
         }
@@ -1917,7 +1917,7 @@ fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2
             if !cuts.iter().any(|c| c.same(&cut,tol)) { cuts.push(cut); }
             continue;
         }
-        let cut = cut_by(b,f,p,leaving,tol,&names())?;
+        let cut = cut_by(b,f,p,leaving,&names())?;
         if !cuts.iter().any(|k| k.same(&cut,tol)) { cuts.push(cut); }
     }
     // **an end of several faces** (#994): a face the run ends on shorter than the section is wide
@@ -1971,9 +1971,9 @@ fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2
 }
 
 /// What face `f` of `b`, through `p`, cuts a run off by where the run leaves `p` along `leaving`:
-/// its plane's half-space, or the solid its curved surface bounds, the run kept on its side — or
-/// the run is refused, naming why (`names` the run's two faces).
-fn cut_by(b: &Brep,f: usize,p: V,leaving: V,_tol: f64,names: &str) -> Result<Cut,String> {
+/// its plane's half-space, or the solid its curved surface bounds (the surfaces `cuts_off` lists),
+/// the run kept on its side — or the run is refused, naming why (`names` the run's two faces).
+fn cut_by(b: &Brep,f: usize,p: V,leaving: V,names: &str) -> Result<Cut,String> {
     let face = &b.faces[f];
     let s = dot(leaving,unit(face.surface.gradient(p)));
     if s.abs() < MIN_TURN.dsin() {
@@ -1981,7 +1981,7 @@ fn cut_by(b: &Brep,f: usize,p: V,leaving: V,_tol: f64,names: &str) -> Result<Cut
     }
     Ok(match face.surface {
         Surface::Plane(fr) => Cut::Plane {o:p,keep:if dot(leaving,fr.z) > 0. { fr.z } else { scale(fr.z,-1.) }},
-        Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Affine(..) => Cut::Solid {surface:face.surface.clone(),inside:s < 0.},
+        _ if cuts_off(&face.surface) => Cut::Solid {surface:face.surface.clone(),inside:s < 0.},
         _ => return Err(format!("the fillet of {names} runs out onto `{}` ({}), which cuts nothing off yet",face.name,
             face.surface.kind())),
     })
