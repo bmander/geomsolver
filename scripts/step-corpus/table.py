@@ -77,6 +77,7 @@ REPO = os.path.dirname(os.path.dirname(HERE))
 CORPUS = os.environ.get("STEP_CORPUS", "/home/user/step-corpus")
 COMMITTED = os.path.join(REPO, "rust", "gcs-core", "tests", "step_corpus", "reference.tsv")
 MANIFEST = os.path.join(REPO, "rust", "gcs-core", "tests", "step_corpus", "brep_bench_cases.tsv")
+ACCOUNT = os.path.join(REPO, "rust", "gcs-core", "tests", "step_corpus", "account.tsv")
 MASS = os.path.join(CORPUS, "build", "brep-bench", "harness", "mass", "target", "release", "mass")
 CONVERGED = 1e-6
 AGREE = 3.0
@@ -90,7 +91,10 @@ EXACT = 1e-6
 COLUMNS = ("path bytes data_sha256 source case ap units uncertainty solids step_faces step_edges "
            "step_vertices occt_faces occt_edges seams degenerate occt_vertices voids valid healed "
            "tol_edge occt_volume occt_area occt_spread mass_volume mass_area mass_error ref_volume "
-           "ref_area ref_from bar_volume bar_area note alt_volume alt_area").split()
+           "ref_area ref_from bar_volume bar_area note alt_volume alt_area verdict unchecked "
+           "account").split()
+VERDICTS = ("gap", "open", "defective", "assembly", "nosolid", "disputed", "reference", "bar",
+            "unchecked")
 
 
 def measure(jobs, timeout=120.0):
@@ -159,7 +163,66 @@ def cases():
         if line.startswith("#") or line.startswith("case\t"):
             continue
         f = line.rstrip("\n").split("\t")
-        out[f[0]] = {"volume": float(f[1]), "area": float(f[2]), "tolerance": float(f[3])}
+        out[f[0]] = {"volume": float(f[1]), "area": float(f[2]), "tolerance": float(f[3]),
+                     "measured": [k for k in (f[6] if len(f) > 6 else "").split(",") if k]}
+    return out
+
+
+def account():
+    """The account of the files not read right (`step_corpus/account.tsv`, made by hand from
+    the evidence `check.py` and the readers give): path → (verdict, the faces whose one reference
+    is unchecked, why). Its verdicts: `gap` (the reader's: a sound file another reader reads to
+    the reference), `defective` (not a solid's boundary by ISO 10303-42, or its edges past
+    `sound::LOOSE` off its faces: must be refused), `assembly` (product structure, deferred by the
+    stage), `nosolid`, `disputed` (the readers read it differently; the row says between whom),
+    `reference` and `bar` (the row's reference or bar was corrected, the why says from what),
+    `unchecked` (faces with one reference no second reader has checked), `open` (the evidence in
+    hand does not settle it)."""
+    out = {}
+    if not os.path.exists(ACCOUNT):
+        return out
+    for line in open(ACCOUNT, encoding="utf-8"):
+        if line.startswith("#") or line.startswith("path\t") or not line.strip():
+            continue
+        f = line.rstrip("\n").split("\t")
+        if len(f) != 4 or f[1] not in VERDICTS:
+            raise SystemExit(f"{ACCOUNT}: a row is not path, verdict, faces, why: {line!r}")
+        out[f[0]] = (f[1], f[2], f[3])
+    return out
+
+
+def quad_faces(f, sha):
+    """A third reader's area of some faces of the file at `f` (`oracle/<f>.quad.faces.tsv`,
+    the measurer's columns: its first line `#`, the DATA's SHA-256; then `entity`, `area`): an
+    independent quadrature of each face over the file's own boundary, where the two readers'
+    integrations are in question. None where there is none, or it is of other bytes."""
+    p = os.path.join(CORPUS, "oracle", f + ".quad.faces.tsv")
+    if not os.path.exists(p):
+        return None
+    lines = open(p).read().splitlines()
+    if not lines or lines[0] != f"#\t{sha}":
+        return None
+    out = {}
+    for line in lines[2:]:
+        e, a = line.split("\t")[:2]
+        out[int(e)] = out.get(int(e), 0.0) + float(a)
+    return out
+
+
+def mass_faces(f, sha):
+    p = os.path.join(CORPUS, "oracle", f + ".mass.faces.tsv")
+    if not os.path.exists(p):
+        return None
+    lines = open(p).read().splitlines()
+    if not lines or lines[0] != f"#\t{sha}":
+        return None
+    out = {}
+    for line in lines[2:]:
+        e, a = line.split("\t")[:2]
+        try:
+            out[int(e)] = out.get(int(e), 0.0) + float(a)
+        except ValueError:
+            return None
     return out
 
 
@@ -223,6 +286,12 @@ def reference(path, o, m, known, cs):
             r = readers(o, m)
             judge = r[0] if r else None
             if judge and rel(judge[1], c["volume"]) <= tol and rel(judge[2], c["area"]) <= tol:
+                if c["measured"]:
+                    # the case's value is a measure (kernels' values of their own models, or the
+                    # measurer's of the reference shape), not a closed form: said as such
+                    return (c["volume"], c["area"], "measured", tol, tol,
+                            f"the case's solid, by {judge[0]}; the case's "
+                            f"{' and '.join(c['measured'])} no closed form but a measure")
                 return c["volume"], c["area"], "closed", tol, tol, f"the case's solid, by {judge[0]}"
             v, a, frm, bv, ba = own(o, m)
             if frm == "occt!":
@@ -238,6 +307,27 @@ def reference(path, o, m, known, cs):
             return v, a, frm, bv, ba, why
     v, a, frm, bv, ba = own(o, m)
     return v, a, frm, bv, ba, ""
+
+
+def checked(f, sha, o, m, ref):
+    """`ref` corrected by a third reader's faces where there is one (`quad_faces`): the measurer's
+    area with each face the quadrature measured taken at the quadrature's area, its volume beside
+    OCCT's where OCCT's has converged (`mass+quad`). The two readers can share an error the
+    quadrature shows (brep-bench's Utah teapot: the measurer, OCCT and the kernels whose mean is
+    the case's value all read its knob's four patches low, a pole at each, by 3.7e-4 together)."""
+    q = quad_faces(f, sha)
+    mf = mass_faces(f, sha)
+    if not q or not mf or not (m and "volume" in m) or not all(e in mf for e in q):
+        return ref
+    area = m["area"] + sum(q[e] - mf[e] for e in q)
+    if o["spread_volume"] <= CONVERGED:
+        bv = max(FLOOR, AGREE * rel(m["volume"], o["volume"]))
+    else:
+        bv = ALONE
+    note = (f"the measurer's, its {len(q)} faces {', '.join(f'#{e}' for e in sorted(q))} at "
+            f"the quadrature's ({sum(q[e] - mf[e] for e in q):+.3e} mm²); was {ref[2]} "
+            f"{ref[0]!r} {ref[1]!r} ({ref[5]}), {rel(ref[1], area):.1e} off in area")
+    return (m["volume"], area, "mass+quad", bv, ALONE, note) + tuple(ref[6:])
 
 
 def source_of(path):
@@ -289,6 +379,8 @@ def write(outs):
         except (OSError, ValueError):
             pass
         ref = reference(f, o, m, known, cs)
+        if ref is not None:
+            ref = checked(f, sha, o, m, ref)
         if ref is None:
             skipped.append((f, "its source has no row"))
             continue
@@ -322,6 +414,13 @@ def write(outs):
             row["note"] = (row["note"] + "; " if row["note"] else "") + \
                 f"OCCT reads {o['solids']} solids of {o['step_solids']}"
         rows.append(row)
+    acc = account()
+    paths = {r["path"] for r in rows}
+    for r in rows:
+        v, faces, why = acc.get(r["path"], ("", "", ""))
+        r.update(verdict=v, unchecked=faces, account=why)
+    for p in sorted(set(acc) - paths):
+        print(f"account: {p} has no row of the table")
     rows.sort(key=lambda r: r["path"])
     head = (f"# the STEP corpus's reference (scripts/step-corpus/table.py): {len(rows)} files; "
             f"bars relative; FLOOR {FLOOR:g}, ALONE {ALONE:g}, AGREE {AGREE:g}, "
@@ -377,9 +476,12 @@ def unread(f, o, cs):
     c = cs.get(case) if source.startswith("brep-bench") else None
     if c and rel(m["volume"], c["volume"]) <= c["tolerance"] and \
             rel(m["area"], c["area"]) <= c["tolerance"]:
-        row.update(ref_volume=c["volume"], ref_area=c["area"], ref_from="closed",
+        row.update(ref_volume=c["volume"], ref_area=c["area"],
+                   ref_from="measured" if c["measured"] else "closed",
                    bar_volume=f"{c['tolerance']:.2g}", bar_area=f"{c['tolerance']:.2g}",
-                   note=f"the case's solid, by mass; OCCT: {why}")
+                   note=f"the case's solid, by mass; OCCT: {why}" + (
+                       f"; the case's {' and '.join(c['measured'])} no closed form but a measure"
+                       if c["measured"] else ""))
     else:
         row.update(ref_volume=m["volume"], ref_area=m["area"], ref_from="mass",
                    bar_volume=f"{UNCORROBORATED:.2g}", bar_area=f"{UNCORROBORATED:.2g}",

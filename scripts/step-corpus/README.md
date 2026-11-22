@@ -10,9 +10,10 @@ reference: `rust/gcs-core/tests/step_corpus/`.
 | committed file | what |
 |---|---|
 | `cadgenbench.tsv` | the 32 CADGenBench inputs by id, with their sizes and SHA-256: `fetch.sh` checks every byte against it |
-| `brep_bench_cases.tsv` | brep-bench's settled cases (its commit in the first line): closed forms of volume and area, the tolerance the bench grades at, the centroid where the case gives one |
+| `brep_bench_cases.tsv` | brep-bench's settled cases (its commit in the first line): closed forms of volume and area, the tolerance the bench grades at, the centroid where the case gives one, and `measured`: which of the two the case says is no closed form but a measure (kernels' values that agree, or the bench's measurer's) |
 | `commercial_files.tsv` | the files commercial systems wrote, by path, with their sizes, SHA-256, and the archive and member each is taken from: `fetch.sh` checks every byte against it |
-| `reference.tsv` | a row per file of the corpus: its DATA section's SHA-256, the entities its solids hold, OCCT's reading (healing off, and what healing changed), brep-bench's measurer's, and the reference volume and area with the bar a reading must come within (`table.py` says how each is chosen) |
+| `reference.tsv` | a row per file of the corpus: its DATA section's SHA-256, the entities its solids hold, OCCT's reading (healing off, and what healing changed), brep-bench's measurer's, and the reference volume and area with the bar a reading must come within (`table.py` says how each is chosen); and the account's `verdict`, `unchecked` and `account` columns |
+| `account.tsv` | the account, by hand: each file not read right, its verdict, the faces whose one reference is unchecked, and why, with the witness entity and the evidence (below, "The account"); `table.py` writes it into `reference.tsv` |
 
 ## The corpus
 
@@ -28,6 +29,7 @@ $STEP_CORPUS/
   mutants/manifest.tsv                        each mutant's source, kind, entity and edit
   oracle/<path>.json, .faces.tsv, .mass.json  OCCT's reading, per face, and the bench measurer's
   oracle/<path>.mass.faces.tsv                the bench measurer's area of each face (faces.py)
+  oracle/<path>.quad.faces.tsv                a third reader's area of some faces (teapot.py), same columns
   reference.tsv                               the table, as table.py last wrote it
   build/                                      the bench's copy, the runners' builds, logs
 ```
@@ -53,6 +55,7 @@ python3 -I $S/oracle.py --name                              # OCCT's faces named
 python3 -I $S/table.py measure --jobs 2                     # the bench measurer's
 python3 -I $S/faces.py build                                # the measurer, face by face
 python3 -I $S/faces.py measure --jobs 2                     # its area of each face
+python3 -I $S/teapot.py                                     # the third reader: the teapot's whole faces by quadrature
 python3 -I $S/table.py                                      # reference.tsv, committed and in $STEP_CORPUS
 python3 -I $S/brep_bench.py manifest                        # brep_bench_cases.tsv (on a new bench commit)
 python3 -I $S/brep_bench.py census                          # entity kinds per source
@@ -160,12 +163,122 @@ cores loaded to 12–15 by other builds). Two quick tests run
 in the ordinary suite: the table is whole (`the_table_is_whole`) and the hash is SHA-256.
 
 What counts as right, per row's `ref_from`: `closed` (the case's closed forms, at the bench's
-grade), `mass+occt`, `mass`, `occt`, `occt?`, `occt!` (a reading's own solid, `table.py` says
-at what bar), `source:…` (a variant: its source's); `refuse` (the file represents no solid — a
-shell-based surface model, an empty product — and must be refused); `disputed` (OCCT and the
-bench's measurer read it differently, mostly loops run against ISO 10303-42 that OCCT repairs:
-either reading or a refusal). A file with no row is not gated: OCCT and the measurer both fail on
-it, or its bar would pass a part in fifty (`table.py` prints each with why).
+grade), `measured` (the case's values where the case says they are no closed form but a measure —
+the mean of kernels' values of their own models, or the measurer's of the reference shape — at
+the bench's grade: 264 rows were `closed` before), `mass+occt`, `mass`, `occt`, `occt?`, `occt!` (a
+reading's own solid, `table.py` says at what bar), `mass+quad` (the measurer's, its faces a
+third reader measured taken at that reader's areas: the Utah teapot, below), `source:…` (a
+variant: its source's); `refuse` (the file represents no solid — a shell-based surface model, an
+empty product — and must be refused); `disputed` (OCCT and the bench's measurer read it
+differently: either reading or a refusal, unless the account settles the dispute). A file with no
+row is not gated: OCCT and the measurer both fail on it, or its bar would pass a part in fifty
+(`table.py` prints each with why; 33 at the account's commit).
+
+**The totals' bars are the row's or what the file determines, whichever is wider**
+(`step_corpus::determined`, `bars`). A file whose edges stand off their faces is known only to
+within that slack, and no reading can be held closer to a reference than the file holds its own
+solid: its area no better than the sum of its faces' slacks, `S = Σ_faces Σ max(tol, u)·length`
+(what each face is held to, summed), and its volume no better than that slack swept over the
+solid's reach `R` from the point the flux is taken about, `R·S/3` (the flux `∮ X·n dA/3` moves by
+`|X|/3` for each unit of area the boundary moves; for a move `d` of an unclosed boundary,
+`|d|·|∮ n dA|/3 ≤ |d|·S/3`). Relative: `S/A` and `R·S/(3V)`. `step_survey --moved D` reads each
+solid's volume moved `D` mm along each axis beside the bound: moved 10 mm, CADGenBench 212's volume
+changes by 1.0e-6 (the bound 1.9e-3), 229's by 1.8e-6 (1.1e-3), 201's 3.3e-6 (1.8e-3), 206's
+4.3e-6 (1.9e-3), brepkit's saddle-drum-bored 2.9e-6 (1.5e-5) and helical-pipe-round-ends 1.3e-6
+(1.2e-4), cad-kernel's boxes-cut 1.5e-16 (1.2e-7): the bound holds everywhere and is a worst case,
+5 to 2,000 times what moving the solid shows (the slack's strips are signed and mostly cancel; with
+the measured tolerances alone, `u` left out, 20 to 300 times). On the files written to 1e-7 the
+row's bar is the wider and nothing changes; on the tolerant ones (CADGenBench, the commercial files,
+brepkit's two sweeps) the file's slack is, up to 4.6e-1 in volume on CADGenBench 204 (a thin part,
+`S` 78 mm² over its reach of 81 mm against 4,560 mm³) and 1.3e-2 in area (243). The row's own bar stays the second, tighter
+line: a file read within what it determines but outside its row's bar (the readers agree closer
+than the file's slack, and the reading does not) is `read~` in the report and listed by
+`account`, not failed; at the account's commit: CADGenBench 212 and 229, brepkit's
+saddle-drum-bored and helical-pipe-round-ends. Each face too: a face within its bar where OCCT
+and the measurer agree to a hundredth of it and the reading stands past three times their
+difference is listed (`face_census`, "outside the readers' agreement").
+
+## The account
+
+`the_corpus_reads` passes when every file is read right, or refused and its account says a
+refusal is right. The account is `step_corpus/account.tsv`, a row a file not read right, written
+by hand from evidence anyone can check without the kernel's reader, and `table.py` writes it into
+`reference.tsv`'s `verdict`, `unchecked` and `account` columns:
+
+| verdict | the file | a refusal | a reading |
+|---|---|---|---|
+| `gap` | sound by the standard; another reader reads it to its reference: the reader's gap | short | must be right |
+| `open` | the evidence in hand settles nothing | short | must be right |
+| `defective` | no solid's boundary by ISO 10303-42, or its edges stand off their faces past `sound::LOOSE` of its size | finishes it | short: a defective file read is no pass until its account says what its own geometry holds |
+| `assembly` | product structure (`NEXT_ASSEMBLY_USAGE_OCCURRENCE`), which the stage defers | finishes it | must be right |
+| `nosolid` | holds no solid (`ref_from` `refuse`) | finishes it | wrong |
+| `reference`, `bar` | its row was corrected (the why says from what) | short | must be right |
+| `unchecked` | some faces have one reference no second reader checked (`unchecked` names them) | as its other verdict | a face past its bar of that one alone is said, not failed |
+
+A `disputed` row with no verdict may still be refused; where the account settles the dispute (a
+reader shown to misread), its verdict rules. The evidence, by `check.py FILE` (OCCT with healing
+off, and the text alone):
+
+* **the text**: each EDGE_LOOP walked by vertex identity (ISO 10303-42's `path_head_to_tail`: an
+  edge ending at a VERTEX_POINT the next does not start at, with both points and the distance); each
+  closed shell's edges counted by the direction their uses run (a closed shell uses each once each
+  way); each LINE whose VECTOR has magnitude 0 and the edges on it; a real written `NaN`;
+* **OCCT**: `BRepCheck_Analyzer`'s statuses for every sub-shape not `NoError`, named by the STEP
+  entity OCCT records it was made from; the largest edge and vertex tolerance OCCT's translation
+  set, against the stated uncertainty and `LOOSE` of the size; and `standing_off`: each edge's curve
+  projected at 23 points onto every face's surface it bounds, and its vertices onto it — how far the
+  file's edges stand off, measured on its own curves and surfaces with no tolerance of OCCT's in it.
+
+A planar face's loops' sense about its face normal is computed from the text (the signed area of
+its edges' points in the plane's frame): an outer bound running clockwise bounds an unbounded part
+of its plane, a hole running anticlockwise bounds a second region. Where a face is not planar,
+the measurer's refusal of that same face ("a face whose loops bound no region", since it reads loops
+as the standard has them and mends nothing) and the shell's edge uses are the evidence. OCCT healing
+it silently is evidence the file is defective, not that it is sound: its translation turns a loop,
+raises a tolerance and orders a wire with healing off.
+
+At the account's starting commit (fcfa6597) 144 rows were not read right; with CADGenBench 211
+(an unchecked face) the account has 145: 59 `defective` (a loop's sense against its neighbours or
+its face 20; open shells, edges used otherwise than once each way and a non-manifold edge 18; edges
+past `LOOSE` off their faces 11; loops not closed by vertex identity 7 — four of them OCCT's own
+rewrites of a file that reads; a hole crossing its outer bound and a loop crossing itself 2; a
+real written `NaN` 1), 52 `gap`, 4 `assembly`, 17 `nosolid`, 2 `open`, 5 `reference` (the Utah
+teapot), 4 `bar` and 2 `unchecked` (CADGenBench 211 and 250). Of the 12 `disputed` rows 10 are
+`defective` (OCCT turns a loop the file runs the wrong way, or reaches the closed forms by raising
+its tolerances past the file's slack, and the measurer reads the file as written to another or no
+solid) and 2 are settled for OCCT, whose readings are the closed forms (brepkit's ellipsoid, OCCT's
+torus-grown-past-its-hole: the measurer misreads both), and so are the reader's gaps.
+
+## A third reader
+
+`oracle/<path>.quad.faces.tsv` (the measurer's columns: `#` and the DATA's SHA-256, then `entity`,
+`area`) is an independent quadrature of some faces, made where the two readers' integrations are
+in question. The gate holds a face it measures to it, and to each reader within its bar of it;
+a reader past its bar of it is set aside for that face. `table.py` takes the measurer's area with
+those faces at the quadrature's (`mass+quad`). The first is `teapot.py`: brep-bench's Utah teapot,
+whose case area 52.2260167859 is no closed form but "the mean of [cad-kernel's, OCCT's and
+cadrs's] values"; its rim, bottom, knob and lid rings are cut by nothing, so each of their 16
+bicubic patches is a face over its whole domain, matched in each writer's file to the case's
+patch by its control net and integrated (40-point Gauss–Legendre on 16 × 16 cells of
+`|S_u × S_v|`, numpy only, converged to 1e-16): each knob patch is 0.294363892581, where the
+measurer reads 0.294270388 and OCCT 0.294041293 (a pole at u = 0 each), so the case's value is
+3.73e-4 mm² (7.1e-6) under its whole faces. Five writers' files read through the kernel to
+52.226389… within 1e-9 of one another, and to the quadrature's every whole face to 1.8e-10. The
+18 trimmed faces (the body cut by the spout and the handle, those patches, two planes) need the
+trimming curves and are not integrated here: the teapot's whole area is the measurer's with its
+whole faces corrected, 52.22639 on the four writers at 1e-7 (next.BREP's 52.22636, its file to
+1.03e-7). A face whose one reference is OCCT's alone and in question (CADGenBench 250's
+extrusion #21919: OCCT 1127.33, the kernel 1136.46, a column quadrature over the file's own
+pcurves 1136.457; 211's #72139) is `unchecked` until a third reader's table holds it.
+
+The 11 face tables of OCCT's the faces agent found OCCT's reading no longer reproduces (kentron's
+frustum-screwed-across-ring-sector, next.BREP's ball-segment- and hemisphere-rim-chamfered-to-its-
+center, springrep's ball-tipped-cone-hollowed-past-its-tip and tall-frustum-sealed-below-its-
+opening, vcad's cone-tip-on-face and torus-in-drum, and the partly named brepkit and kentron files)
+are not regenerated: OCCT's reading now holds fewer faces than the files' solids (2 of next.BREP's
+3, a face of area 2e+100 in its old table dropped; 1 of vcad torus-in-drum's 4), so no table it
+makes can name each face; the gate holds those files to the measurer, which measures every face,
+or says why not.
 
 ## Face by face
 
@@ -243,6 +356,8 @@ cargo run -q --release -p cad-kernel --example step_survey -- \
 cargo run -q --release -p cad-kernel --example step_survey -- --faces $STEP_CORPUS/cadgenbench/218/input.step
 cargo run -q --release -p cad-kernel --example step_survey -- --faces --past-sound $STEP_CORPUS/cadgenbench/214/input.step
 python3 -I scripts/step-corpus/oracle.py --faces $STEP_CORPUS/cadgenbench/218/input.step   # OCCT's, per face
+python3 -I scripts/step-corpus/check.py $STEP_CORPUS/brep-bench/brepkit/sweep/duct-elbow.step  # is it a solid's boundary?
+cargo run -q --release -p cad-kernel --example step_survey -- --moved 10 $STEP_CORPUS/cadgenbench/212/input.step
 ```
 
 `--faces` prints, beside each face the reader reads, OCCT's area and the measurer's, the
