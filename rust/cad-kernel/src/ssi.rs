@@ -741,7 +741,7 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
         _ if apart(a,b,tol) => Ssi::Curves(vec![]),
         // two cylinders whose axes lean apart: of one radius with axes crossing, within the reach of
         // the singular case, two ellipses; else their loops, each point on both (`crossed_cylinders`)
-        (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) if let Some(curves) = crossed_cylinders(a,&f,r,b,&g,s,tol) =>
+        (Surface::Cylinder(..),Surface::Cylinder(..)) if let Some(curves) = crossed_cylinders(a,b,tol) =>
             Ssi::Curves(curves),
         (Surface::Plane(pl),Surface::Revolution(rf,c)) | (Surface::Revolution(rf,c),Surface::Plane(pl)) =>
             match plane_quadric(&pl,&rf,&c,tol) { Some(curves) => Ssi::Curves(curves),None => Ssi::Traced },
@@ -1101,11 +1101,9 @@ fn least<'s>(a: &'s Surface,b: &'s Surface) -> Option<(f64,[&'s Surface;2],V)> {
             let n = cross(za,zb);
             if !(norm(n) > 1e-12) { return None }
             let n = unit(n);
-            let w = sub(g.o,f.o);
-            let apart = dot(w,n);
+            let apart = dot(sub(g.o,f.o),n);
             // the foot of the common normal on the first's axis, and its point toward the other
-            let (k,d1,d2) = (dot(za,zb),dot(za,w),dot(zb,w));
-            let foot = add(f.o,scale(za,(d1-k*d2)/(1.-k*k)));
+            let foot = add(f.o,scale(za,axes_feet(f,g)[0]));
             Some((apart.abs()-r-s,[x,y],add(foot,scale(n,r*apart.signum()))))
         }
         (Surface::Sphere(c,r),x @ (Surface::Plane(_) | Surface::Cylinder(..) | Surface::Sphere(..)
@@ -1163,35 +1161,44 @@ fn least<'s>(a: &'s Surface,b: &'s Surface) -> Option<(f64,[&'s Surface;2],V)> {
 /// * where `D` falls below nothing — a loop turning back, the lesser cutting into the other's side,
 ///   or one neck closed by an axes' gap — and at a lean under `SHALLOW`: `None`, the meeting
 ///   traced (`Ssi::Traced`).
-fn crossed_cylinders(a: &Surface,f: &Frame,r: f64,b: &Surface,g: &Frame,s: f64,tol: f64) -> Option<Vec<Curve>> {
+fn crossed_cylinders(a: &Surface,b: &Surface,tol: f64) -> Option<Vec<Curve>> {
+    let (&Surface::Cylinder(f,r),&Surface::Cylinder(g,s)) = (a,b) else { return None };
     let (za,zb) = (unit(f.z),unit(g.z));
     let lean = cross(za,zb);
     if !(norm(lean) >= SHALLOW) { return None }
     let (r,s) = (r.abs(),s.abs());
     // the axes' nearest points, their gap and its middle
-    let w = sub(g.o,f.o);
-    let (k,d1,d2) = (dot(za,zb),dot(za,w),dot(zb,w));
-    let den = 1.-k*k;
-    let (t1,t2) = ((d1-k*d2)/den,(k*d1-d2)/den);
+    let [t1,t2] = axes_feet(&f,&g);
     let (p1,p2) = (add(f.o,scale(za,t1)),add(g.o,scale(zb,t2)));
     if (r-s).abs() <= tol && distance(p1,p2) <= tol {
         let o = scale(add(p1,p2),0.5);
         let mut out = Vec::new();
         for m in [sub(za,zb),add(za,zb)] {
             let m = unit(m);
-            out.extend(plane_cylinder(m,dot(m,o),f,r,tol));
+            out.extend(plane_cylinder(m,dot(m,o),&f,r,tol));
         }
         return Some(out)
     }
     // the graph over the lesser
-    let ((ga,fa,ra),(gb,fb,rb)) = if r <= s { ((a,f,r),(b,g,s)) } else { ((b,g,s),(a,f,r)) };
-    cylinder_loops(ga,fa,ra,gb,fb,rb,tol)
+    if r <= s { cylinder_loops(a,b,tol) } else { cylinder_loops(b,a,tol) }
+}
+
+/// The feet of the common normal of two cylinders' axes (frames `f` and `g`, leaning apart): how
+/// far along each axis, from its frame's origin, it stands.
+fn axes_feet(f: &Frame,g: &Frame) -> [f64;2] {
+    let (za,zb) = (unit(f.z),unit(g.z));
+    let w = sub(g.o,f.o);
+    let (k,d1,d2) = (dot(za,zb),dot(za,w),dot(zb,w));
+    let den = 1.-k*k;
+    [(d1-k*d2)/den,(k*d1-d2)/den]
 }
 
 /// `crossed_cylinders`' loops: the graph of the meeting of cylinder `a` (frame `f`, radius `r`) with
-/// `b` (frame `g`, radius `s`) over the angle round `a`, as closed traces.
-fn cylinder_loops(a: &Surface,f: &Frame,r: f64,b: &Surface,g: &Frame,s: f64,tol: f64) -> Option<Vec<Curve>> {
+/// cylinder `b` (frame `g`, radius `s`) over the angle round `a`, the lesser, as closed traces.
+fn cylinder_loops(a: &Surface,b: &Surface,tol: f64) -> Option<Vec<Curve>> {
     use std::f64::consts::TAU;
+    let (&Surface::Cylinder(f,r),&Surface::Cylinder(g,s)) = (a,b) else { return None };
+    let (r,s) = (r.abs(),s.abs());
     let (z,wz) = (unit(f.z),unit(g.z));
     let aa = 1.-dot(z,wz)*dot(z,wz);
     let rim = |u: f64| { let (sn,cs) = u.dsin_cos(); add(f.o,add(scale(f.x,r*cs),scale(f.y,r*sn))) };
