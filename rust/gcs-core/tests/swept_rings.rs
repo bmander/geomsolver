@@ -312,6 +312,20 @@ fn a_tubes_chord_given_as_its_meeting_with_the_tool_is_its_own_edge_laid_once() 
     }
 }
 
+/// brep-bench's `tumbling-torus-half-turn`: a torus of tube 0.16 turned 0.375 a radian about one
+/// line and back a radian about another over half a turn, its roll and tolerance.
+fn half_turn() -> (Brep,Trajectory,[f64;2],f64) {
+    use gcs_core::brep::trajectory::Screw;
+    let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.16).unwrap();
+    let (sl,cl) = 30f64.to_radians().sin_cos();
+    let (sa,ca) = 20f64.to_radians().sin_cos();
+    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.375,advance:0.});
+    let frame = Trajectory::Twist(Screw {origin:[0.,0.7071*cl,0.7071*sl],axis:[ca,sa*cl,sa*sl],ratio:1.,
+        advance:0.});
+    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
+    (tool,path,[-90f64.to_radians(),90f64.to_radians()],0.16/50_000.)
+}
+
 /// **The half turn's stretches are sewn across its cut into one tube a contact curve** (#942 F3,
 /// class B on the sheets a sweep makes): brep-bench's `tumbling-torus-half-turn`, a
 /// torus of tube 0.16 turned 0.375 a radian about one line and back a radian about another over
@@ -324,16 +338,7 @@ fn a_tubes_chord_given_as_its_meeting_with_the_tool_is_its_own_edge_laid_once() 
 #[test]
 fn the_half_turns_stretches_are_sewn_across_its_cut_into_one_tube_a_contact_curve() {
     use gcs_core::brep::swept::rings::{changes,entered_at,fitted_over,posed};
-    use gcs_core::brep::trajectory::Screw;
-    let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.16).unwrap();
-    let (sl,cl) = 30f64.to_radians().sin_cos();
-    let (sa,ca) = 20f64.to_radians().sin_cos();
-    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.375,advance:0.});
-    let frame = Trajectory::Twist(Screw {origin:[0.,0.7071*cl,0.7071*sl],axis:[ca,sa*cl,sa*sl],ratio:1.,
-        advance:0.});
-    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
-    let [a,b] = [-90f64.to_radians(),90f64.to_radians()];
-    let tol = 0.16/50_000.;
+    let (tool,path,[a,b],tol) = half_turn();
     let ring = Ring::read(&tool).unwrap();
     let (scale,cuts) = changes(&ring,&path,[a,b]).unwrap();
     assert_eq!(cuts.len(),1,"the contact changes shape once: {cuts:?}");
@@ -471,4 +476,75 @@ fn the_full_turns_tori_are_read_one_way_all_over_and_it_is_refused_where_they_me
     let why = format!("{:?}",ring(&tool,&path,roll,0.16/250.,0.16/50_000.).expect_err("refused where the tori meet"));
     assert!(why.contains("torus piece kept beside it (candidate and face (0, 0))") && why.contains("face (1, 0), a torus")
         && why.contains("met by search"),"{why}");
+
+/// The least signed distance from the ring posed at an instant of `roll` of the point `p`, over
+/// the instants at least `apart` from `t` — the ring read at `4096` of them and the least of those
+/// settled by golden sections: below nought where some instant holds `p`.
+fn held(ring: &Ring,path: &Trajectory,roll: [f64;2],p: [f64;3],t: f64,apart: f64) -> f64 {
+    let d = |tau: f64| ring.signed(path.pose(tau).unwrap().inverse().point(p)).0;
+    let n = 4096;
+    let step = (roll[1]-roll[0])/n as f64;
+    let (mut best,mut at) = (f64::INFINITY,roll[0]);
+    for k in 0..=n {
+        let tau = roll[0]+step*k as f64;
+        if (tau-t).abs() >= apart { let v = d(tau); if v < best { (best,at) = (v,tau) } }
+    }
+    let (mut lo,mut hi) = ((at-step).max(roll[0]),(at+step).min(roll[1]));
+    let g = 0.5*(5f64.sqrt()-1.);
+    for _ in 0..80 {
+        let (x1,x2) = (hi-g*(hi-lo),lo+g*(hi-lo));
+        if d(x1) < d(x2) { hi = x2 } else { lo = x1 }
+    }
+    best.min(d(0.5*(lo+hi)))
+}
+
+/// **The half turn's double curve is built from the swallowtail point beside its fold pair's birth**
+/// (#942 T1d-tori): the pair is born at 1.4766, where the contact's least `s''` reaches nought, and
+/// there the fold is tangent to the instant's own contact, no kernel of the sheet's: an ordinary
+/// point of a cuspidal edge. Its double curve begins where the left fold runs along the kernel, 0.0073
+/// of the roll later, and its two preimages run from there, one up to the roll's end and one back
+/// across the cut into the stretch before the birth — where no stretch's net reaches it, and its rows
+/// found no pair. Built outward from that point, and held to what the sweep is apart from the road:
+/// every point of it is held by the ring at another instant only on its boundary (a double point),
+/// and the leaf a little above it in the roll is inside the sweep — the tail — and a little below
+/// it is not.
+#[test]
+fn the_half_turns_double_curve_is_built_from_the_swallowtail_point_beside_its_birth() {
+    use gcs_core::brep::swept::rings::{branch_at,changes,double_curve_from_apex,fitted_over};
+    let (tool,path,[a,b],tol) = half_turn();
+    let ring = Ring::read(&tool).unwrap();
+    let (scale,cuts) = changes(&ring,&path,[a,b]).unwrap();
+    let eps = 1e-9*(b-a);
+    let fits: Vec<_> = [[a,cuts[0]-eps],[cuts[0]+eps,b]].iter().map(|&sp| fitted_over(&ring,&path,[a,b],sp,scale,0.1*tol).unwrap())
+        .collect();
+    assert!(fits.iter().all(|f| f.seeds.is_empty()),"its rows find no pair");
+    assert!(fits[0].apexes.is_empty(),"no swallowtail point before the birth: {:?}",fits[0].apexes);
+    let [apex] = fits[1].apexes[..] else { panic!("one swallowtail point after the birth: {:?}",fits[1].apexes) };
+    let (th0,t0,_) = apex.at;
+    assert!(t0-cuts[0] > 0.007 && t0-cuts[0] < 0.0076,"the point {:e} of the roll after the birth",t0-cuts[0]);
+    // the kernel's way there, `dt/dθ`, −1/2.06 as the fold's slope reaches it
+    assert!((apex.way+0.485).abs() < 2e-3,"the kernel's way {}",apex.way);
+    let curve = double_curve_from_apex(&ring,&path,[a,b],apex,tol).unwrap();
+    let mark = curve.iter().position(|p| p.0.is_nan()).unwrap();
+    let pts = &curve[..mark];
+    let back: Vec<_> = pts.windows(2).enumerate().filter(|(_,w)| w[1].0 <= w[0].0).map(|(i,w)| (i,w[0],w[1])).collect();
+    assert!(back.is_empty(),"a graph over its first preimage's angle: of {} it turns back at {back:?}",pts.len());
+    assert!(pts.iter().any(|p| (p.0-th0).abs() <= 1e-12 && (p.1-t0).abs() <= 1e-12),"the point itself on the curve");
+    let (lo,hi) = pts.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),p| (l.min(p.1),h.max(p.1)));
+    assert!((hi-b).abs() <= 1e-12,"one preimage reaches the roll's end: {hi}");
+    assert!(lo < cuts[0]-0.01,"the other runs back across the cut: {lo}");
+    // a double point at every place along it, and the tail above it: read on the leaf (the contact's
+    // `−` branch) apart from where the two preimages' instants meet, beside the point itself
+    let leaf = |th: f64,t: f64| branch_at(&ring,&path,[a,b],t,false,&[th]).unwrap()[0].1;
+    let mut read = 0;
+    for p in pts.iter().step_by(8).filter(|p| (p.1-t0).abs() > 0.01) {
+        let on = held(&ring,&path,[a,b],leaf(p.0,p.1),p.1,2e-3);
+        assert!(on.abs() <= tol,"at {p:?} the ring at another instant stands {on:e} off it");
+        let delta = 2e-3;
+        if p.1+delta > b || p.1-delta < a { continue }
+        let (above,below) = (held(&ring,&path,[a,b],leaf(p.0,p.1+delta),p.1+delta,2e-3),held(&ring,&path,[a,b],leaf(p.0,p.1-delta),p.1-delta,2e-3));
+        assert!(above < -tol && below > 0.,"at {p:?}: above it {above:e}, below it {below:e}");
+        read += 1;
+    }
+    assert!(read >= 8,"{read} places read");
 }

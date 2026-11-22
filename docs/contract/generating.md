@@ -2090,25 +2090,63 @@ held its row at the start, the rim it touches the start torus along, as two edge
 chord between them where the tool posed at the end holds the tube beside it. The first alone laid,
 the start torus was parted along half its rim, and a piece of it reached round the other half from
 the side the tool trails to the side it leads, refused as read both ways (gated with no sweep by
-`arrangement::a_given_curve_a_face_holds_as_two_edges_is_laid_as_both`). **A double curve that dips below a stretch
-and comes back bounds a tail between** (#942 T1d-tori, `Fitted::tails`, `Ring::held`): a place is
-tail where it lies above a line of a double curve in the stretch (a curve over `u`), and a curve
-that leaves the stretch through its start row and comes back through it further round leaves no
-line over the places between, which lie above it as well — the line read for the tail is carried
-on along the start row there. A tail ends where its curve meets the tool at an end pose, the places
-above that tool's chord standing on the boundary, so a place in such a carried column is tail only
-where a pose holds it more than the tolerance deep (read off the ring's exact signed distance, best
-first over the roll as membership reads; a sheet on the boundary stands within its fit, a tenth of
-the tolerance, of it). The full turn's last stretch kept a face between its double curve and the
-tube's seam, 3e-3 inside the sweep, its crossing of the tool at the end hung open on the seam; the
-column alone dropped the corners above the tool's chord, which stand on the boundary to 1e-8; and a
-probe proved inside taken alone, with no column, dropped a region of the tumbling torus's tube that
-another tube's sweep covers over part of it only, its solid then wrong at a point.
+`arrangement::a_given_curve_a_face_holds_as_two_edges_is_laid_as_both`). **A place above a double curve that lies below the stretch there is tail only where a pose
+holds it** (#942 T1d-tori, `Ring::held`, read with the tail over the angle below): a curve that dips
+into the stretch before and comes back across the tube's seam has every place of the stretch at the
+angles between above it, and a tail ends where its curve meets the tool at an end pose — so such a
+place is tail where a pose holds it more than the tolerance deep (read off the ring's exact signed
+distance, best first over the roll as membership reads; a sheet on the boundary stands within its
+fit, a tenth of the tolerance, of it). The full turn's last stretch kept a face between its double
+curve and the seam, 3e-3 inside the sweep, its crossing of the tool at the end hung open on the
+seam; taken whole, the column dropped the corners above the end pose's chord, which stand on the
+boundary to 1e-8; and a probe proved inside taken alone, with no curve below it, dropped a region of
+the tumbling torus's tube that another tube's sweep covers over part of it only, its solid then
+wrong at a point.
 **A double curve's end stays where it is**
 (`rings::split_chords`): it ends where one leaf reaches the end of the roll, on the tool posed
 there, so on the other leaf's meeting with that tool, which is cut there; put on that trace's
 polyline, the full turn's stood 2.4e-6 inside the end torus, two tolerances from the same point on
 the leaf whose rim it is, and the two never met.
+**A fold pair's double curve is built from its swallowtail point** (#942 T1d-tori,
+`rings::swallowtails`, `rings::double_curve_from_apex`): where a pair is born at an instant its two
+folds are the branches of one curve of `(θ, t)`, `s'' = 0`, tangent at the birth to the instant's own
+contact, whose rate `Σ_θ` is no kernel of the sheet's — so the birth is an ordinary point of a
+cuspidal edge, and no double curve begins there. One begins where a fold runs along the kernel of the
+sheet's rates, `k = (−Σ_θ · Σ_t / |Σ_θ|², 1)` read where `Σ_θ` and `Σ_t` are one way: the swallowtail
+point, where `∇s'' · k` passes nought along a branch (the half turn's left fold 0.0072 of the roll
+after its birth at 1.4766, the kernel's `dθ/dt` −2.06; a coverage of the leaf — each point's least
+signed distance from the ring over the roll — put the double curve's bottom there, and its other
+preimage running back across the cut into the stretch before, to 1.463). The rows' search finds no
+pair there: one preimage lies in the stretch before the cut, which the stretch's net does not reach,
+and beside the point both lie within the bridge. So each branch is read at the stretch's ends and
+halved to the rounding, and the curve built outward from the point: its first pair from the
+swallowtail's normal form — the preimages `(x, ±τ)` along the kernel with `x = −2τ²`, the folds at
+`x = −6τ²` — settled by Newton's method at `θ ∓ s`, `s` halved from half the double curve's greatest
+step until the chord from the point sags within the tolerance; then marched out, the point itself
+on the curve between its preimages. Away from a pair, a pair whose preimages have met or crossed
+within the least step is none (beside the point the march slid onto the pair of no distance every
+point of the sheet is, and ran along the sheet), nor, on a curve built from its swallowtail point,
+one whose second preimage comes back over the angle (beside the half turn's point, where the two
+sheets cross at an angle of the pair's width, the pair settled within its residual 1e-6 of the
+angle back; a curve traced from a row's seed is not yet held so, the turned torus's coming back
+over its angle); and where the last pair alone does not settle the next it is sought from the line
+through the last two, the point the first of them. Not yet in place
+of the rows' seeds, which are traced toward the point as before: beside the thin torus's second
+pair, born 1.2e-3 of the roll before its swallowtail point, the first preimage's angle turns back
+within 2e-4 of it, and the curve, stepped by that angle, is no graph over it there. **The tail is
+above the curve over the angle round the axis**, the place's angle read round the tool's axis where
+it stands at its roll, against the whole curve: it is traced a graph over its first preimage's angle,
+not over `u`, which the faces' seams shear as the pieces they share move (the half turn's curve
+between its birth and its swallowtail point ran back over `u`, and the tail beside it was kept), nor
+over the stretch's part of it alone, past whose ends it runs on (a piece of the tail beyond the part
+in the stretch between the cut and the point was kept). *Found, not yet fixed:* a tube's seam edge
+is shared by the faces either side keyed by its lower place alone, so where one face walks the seam
+to a place the other does not have — the half turn's end pose meets its sheet along a seam 3.3e-5 of
+the roll from its corner, a trace of a face's lying along the seam — the two are given one edge for
+two stretches of it, and the stretch's tube enters with a loop broken there. Laid instead as edges
+between each two places, the trace along the seam the seam's own, the ring along a spline's end-pose
+meetings, given as curves of their own, lay along the seam's edges twice and its arrangement did not
+close: the fix gives a trace along a seam as the seam's own curve.
 **Every threshold the roads under any motion read is the tolerance's, a feature size's, or the
 rounding's** (#942 F6), none a number of its own:
 - *the rounding* — a value read by cancellation is nought where half its digits are its rounding's,
@@ -2129,7 +2167,10 @@ rounding's** (#942 F6), none a number of its own:
   branch, within twice it; two corners at an instant one within the fit's exactness;
 - *the normal form and the trace's step* — a narrow pair's crossing sought from the bridge's ends,
   its preimages within `√3 − 1` of the bridge's half-width past them (`θ³ − 3h²θ` crosses at
-  `±√3 h`); a chord's end within a trace's step (`MET_STEP`) of another chord ends on it, and two
+  `±√3 h`); a double curve's first pair from its swallowtail point either way along the kernel, at
+  half its greatest step and halved by its own chord's sag; a pair whose preimages stand within
+  its least step one point; a swallowtail point's rates read by central differences at `ε^(1/3)` of
+  the angle and of the roll, where their rounding and their truncation balance; a chord's end within a trace's step (`MET_STEP`) of another chord ends on it, and two
   traces whose ends stand that near are one chord;
 - *the structure* — a side of a face's square is straight, its way its own; a halving stops where
   its middle stands between its ends; a face's characteristic line read as far as the face's reach;
@@ -2152,9 +2193,13 @@ whose tubes touch at two points beside each place their core circles cross, and 
 found by search seeded where an edge crosses it, misses an arc between those points that no edge
 crosses (at `(2.356, 2.693, −0.273)`, the surfaces crossing at a sine of 0.6; the touches 0.15 off,
 the sine below 4e-3); the thin one where its two tubes meet at under
-a hundredth of a degree, which the march cannot step along; the half turn where a piece of the leaf
-beside the fold pair's birth is the boundary at one point and not at another, parted by the pair's
-own double curve, which is not traced there. A double curve's
+a hundredth of a degree, which the march cannot step along; the half turn — its double curve built
+from the swallowtail point beside its pair's birth, cut into its three stretches and its tail
+dropped — where the trim finds the boundary open along an edge 8e-4 from the swallowtail point:
+along the kernel through it the sheet moves at the third order, the segment from the point back to
+the cut standing within some 1e-5 of the point's place, and the seam of the bridge between the cut
+and the point crosses it there 1.7e-6 from it (the tolerance 3.2e-6), so a sliver of the kept leaf
+between the double curve and that seam is narrower than the tolerance. A double curve's
 points are placed on a stretch by the seams' angles of the stretch's own net (`rings::cut_along`),
 not by an instant read for each (#942 F4: the turned torus refused in 32 s where it took 106, 74 of
 them reading instants; the thin one in 58 s where it took over forty minutes); what is left is the
