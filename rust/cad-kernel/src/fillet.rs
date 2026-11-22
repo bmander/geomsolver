@@ -327,8 +327,17 @@ fn roll_part(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)],beside: bool) -> Res
         while !past(lo,&ends[0].trim) { lo -= step; if !room(lo,hi) { break } }
         while !past(hi,&ends[1].trim) { hi += step; if !room(lo,hi) { break } }
         if !room(lo,hi) {
-            return Err(format!("the ball of {} cannot roll on past where `{}` and `{}` cut it off",
-                names(),b.faces[ends[0].faces[0]].name,b.faces[ends[1].faces[0]].name));
+            // (one face at both ends — a chord a rim's run starts and ends on — said once: the run
+            // carried on round from both until they meet, no section cut off whole, is the whole
+            // loop of the faces' meeting cut off by it, which is not built yet, #994)
+            let [f,g] = [0,1].map(|j| &b.faces[ends[j].faces[0]].name);
+            return Err(if f == g {
+                format!("the ball of {} cannot roll on past where `{f}` cuts it off at both its ends: carried on round \
+                    from both until they meet, no section of it is cut off whole, and the loop round is not built yet",
+                    names())
+            } else {
+                format!("the ball of {} cannot roll on past where `{f}` and `{g}` cut it off",names())
+            })
         }
         (lo,hi-lo)
     };

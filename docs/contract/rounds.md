@@ -1067,7 +1067,13 @@ across an end of the run, `piece.rs`). Refused, saying which: the meeting coming
 within the faces it ends on elsewhere (a post with a chord each side, its rim two stretches:
 halfway there is no section of a ball standing still), the run going on ending apart from the
 ball's section, a stretch turning half round or more from it, a face cutting across where another
-goes on, and surfaces meeting in no closed curve in closed form. `tests/standing_ends.rs` is the
+goes on, and surfaces meeting in no closed curve in closed form. A ball a hair under the
+cylinder's radius rolls (its centre round a circle of a thousandth about the axis), and where one
+face cuts its run off at both ends (a D's chord) no section carried on round from either is cut off
+whole before they meet: its set is the whole loop's canal cut off by that face, as the still ball's
+is, but the field's nearest centre on so thin a spine is not read yet (its projection alternates),
+so it is refused, saying the face once: "cannot roll on past where `post.flat` cuts it off at both
+its ends". `tests/standing_ends.rs` is the
 gate: the D under lids of 0° to 30°, its chord short of the axis, past it and a hair off it, the
 volume the closed form `∫∫_D (lid − ball)`'s to 1e-9; the chord a cylinder's bite; the arm's end
 half inside a hub whose face is square or skewed either way, past the axis or short of it, the
