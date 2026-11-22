@@ -304,11 +304,18 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64,left_out: &std::collections
                     if let Some(cut) = union(&through_late)? { body = body.combine(cut,BodyWord::Cut).map_err(error)?; }
                     body
                 }
-                // a body a file gives (#993 stage 2): its own exact boundary, read whole
-                SolidDef::Given(_) => {
+                // a body a file gives (#993 stage 2): its own exact boundary, read whole where
+                // the nearest point of every face's surface is a closed form; else refused, never
+                // a field of some other solid
+                SolidDef::Given(g) => {
+                    if let Some(f) = g.brep().faces.iter().find(|f| !f.surface.nearest_foot()) {
+                        return Err(format!("the body its file gives has a face on a {} surface, whose \
+                            nearest point no closed form gives: it is read as no material field",
+                            f.surface.kind()));
+                    }
                     let e = sk.exact_preimage(i)?;
-                    let f = BuiltField::new(&e).ok_or_else(|| format!("`{}`: the body its file \
-                        gives is read as no material field", sk.solid_name(i)))?;
+                    let f = BuiltField::new(&e).ok_or("the body its file gives holds no face, and \
+                        is read as no material field")?;
                     Snapshot::Static(f.into())
                 }
                 SolidDef::Family {..} => return Err("material fields \
