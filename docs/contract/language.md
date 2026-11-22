@@ -1025,10 +1025,12 @@ before ports 0.9 s to 0.4 s.
   std.top { … }`); a read in a definition's body (the document's or a module's, its file `use`ing
   the module), in a `ring`, or under an `in` of a frame that is not one of `std`'s is E106 at the
   read (`Given::unplaced` finds it where a closed body's lookup does not, so nothing else is
-  said), since placing a given body is later work (#993 stage 5).  Its lengths are the file's,
-  carried to the document's unit by the model.  **A file the kernel refuses** is one E072 at the
-  `use`, `` `bracket`: `` and the kernel's words (`Refusal`'s, `#n: …`), or how many solids a
-  file of several gives; its name is still known to the flattener and nothing is declared for
+  said of a definition's body or a frame's; in a `ring` the ring's own E021, the name outside it
+  and not turning with it, is said beside it), since placing a given body is later work (#993
+  stage 5).  Its lengths are the file's, carried to the document's unit by the model.  **A file
+  the kernel refuses** is one E072 at the `use`, `` `bracket`: `` and the kernel's words
+  (`Refusal`'s, `#n: …` where it names an entity), or how many solids a file of several gives;
+  its name is still known to the flattener and nothing is declared for
   it, and whatever else a statement reading it says — or a statement reading a name one of those
   declares, transitively, or a word's body reading it — follows only from the refusal and is left
   unsaid (`program::words::given_unsaid`, applied as `elaborate` returns): one diagnostic.  `tests/given_bodies.rs` is the gate, the stage's own
