@@ -2041,7 +2041,8 @@ impl<'a> Arrangement<'a> {
     /// **A span lying along a face's boundary within the reach a vertex is on an edge by**
     /// (`tolerant::on_stretch`, `ON_CURVE` tolerances, at every eighth of it) **is on that face**
     /// (#994): it is the edge it lies along, which step 4 merges it into, and the other face is cut
-    /// along it. Read Out of the face at the tolerance alone, it was dropped, and the other face kept
+    /// along it — where that edge does not itself lie in the other face's surface all its stretch,
+    /// and so is not laid there as it is (`Meets::Along`), the span a second edge beside it. Read Out of the face at the tolerance alone, it was dropped, and the other face kept
     /// the meeting that led up to it as a slit: a lip's foot turned `1e-3` rad across its pad, its end
     /// within the foot's pad by half a micrometre, crosses the side of a strip abutting it a
     /// tolerance and a half under that strip's foot, and the lip's foot was left one face whose two
@@ -2053,11 +2054,23 @@ impl<'a> Arrangement<'a> {
         for k in 0..2 {
             if places[k] != Place::Out { continue }
             let (s,fi) = (faces.s[k],faces.f[k]);
-            let along = (1..8).all(|j| {
+            let sol = self.solids[s];
+            // (the face's edges the span's middle lies along, and the other face's surface)
+            let near: Vec<u32> = sol.faces[fi].loops.iter().flatten().map(|co| co.edge)
+                .filter(|&e| self.located[s].nearest(e,m).1 <= reach).collect();
+            let along = !near.is_empty() && (1..8).all(|j| {
                 let p = c.point(t[0]+(t[1]-t[0])*j as f64/8.);
-                self.solids[s].faces[fi].loops.iter().flatten().any(|co| self.located[s].nearest(co.edge,p).1 <= reach)
+                sol.faces[fi].loops.iter().flatten().any(|co| self.located[s].nearest(co.edge,p).1 <= reach)
             });
-            if along { places[k] = Place::On }
+            // an edge lying in the other face's surface all its stretch is laid on it as it is
+            // (phase 1's `Meets::Along`): the span beside it would be a second edge a hair off it
+            let other = surfaces[1-k];
+            let laid = near.iter().all(|&e| {
+                let edge = &sol.edges[e as usize];
+                (0..=8).all(|j| { let p = edge.point(edge.t[0]+(edge.t[1]-edge.t[0])*j as f64/8.,&sol.vertices);
+                    distance(other.point(other.inverse(p)),p) <= reach })
+            });
+            if along && !laid { places[k] = Place::On }
         }
         self.say.span(t,v,m,places,&self.pool);
         if places[0] == Place::Out || places[1] == Place::Out { return false }
