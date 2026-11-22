@@ -623,7 +623,7 @@ pub(crate) fn report(rows: &[Row],reads: &[Read]) {
         let (word,dv,da,why) = match &r.outcome {
             Outcome::Missing => ("missing","".into(),"".into(),String::new()),
             Outcome::Stale(sha) => ("stale","".into(),"".into(),format!("DATA's sha256 {sha}")),
-            Outcome::Refused(f) => (standing(row,r).0,"".into(),"".into(),format!("{:?} {f}",f.why)),
+            Outcome::Refused(f) => (match standing(row,r).0 { "refused?" => "refused",c => c },"".into(),"".into(),format!("{:?} {f}",f.why)),
             Outcome::Panicked(m) => ("PANIC","".into(),"".into(),m.clone()),
             Outcome::Hung(s) => ("HUNG","".into(),"".into(),format!("not done in {s} s")),
             Outcome::Read {volume,area,..} => match wrong(row,r) {
