@@ -8,6 +8,7 @@ use bench::bull_nose::*;
 fn main() {
     let (_,tool,mut path,roll,bar,tol) = case(CONTROL);
     if std::env::var_os("RUNNER").is_some() { path = bench::runner() }
+    if std::env::var_os("ALONG").is_some() { path = cad_kernel::trajectory::Trajectory::General(std::sync::Arc::new(cad_kernel::trajectory::Along::new(bench::cubic()).unwrap())) }
     let clock = std::time::Instant::now();
     match cad_kernel::swept::upright::swept(&tool,&path,roll,bar,tol) {
         Ok(Some(b)) => println!("built in {:?}: {} faces, volume {:.10}",clock.elapsed(),b.faces.len(),cad_kernel::props::volume(&b)),

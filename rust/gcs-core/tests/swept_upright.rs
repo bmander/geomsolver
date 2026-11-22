@@ -102,22 +102,70 @@ fn agrees(b: &Brep,control: [[f64;3];4],n: usize) -> (f64,f64) {
     (boxed*f,boxed*(f*(1.-f)/n as f64).sqrt())
 }
 
+/// **The groove read apart from the build**: the stock less, through each height the mill reaches
+/// it, the area of the region the mill's section there sweeps — a disc of the mill's radius there,
+/// its region read by the planar classes (`region::SweptRegion`), each loop's area by its polyline
+/// at `n` and `2n` points a piece, their error (as `1/n²`) taken out by Richardson's step — the
+/// wall through its height and the corner by Gauss–Legendre, four points a panel, over the torus's
+/// angle. No sheet, curve or face of the road's is read.
+fn read_apart(control: [[f64;3];4],panels: usize,n: usize) -> f64 {
+    use gcs_core::brep::swept::region::SweptRegion;
+    let (_,_,path,roll,_,_) = case(control);
+    let area = |r: f64| -> f64 {
+        let disc = gcs_core::brep::build::prism(&gcs_core::brep::build::disc([0.,0.,-1.],[0.,0.,1.],r),0.,1.).unwrap();
+        let standing = gcs_core::brep::swept::subtraction::Prismatic::along(&disc,[0.,0.,1.],1.).unwrap();
+        let setting = standing.setting(-0.5,true,&path,roll).unwrap();
+        let region = SweptRegion::read(setting,[[-40.,-40.],[60.,60.]],false).unwrap();
+        let polygon = |per: usize| -> f64 { (0..region.loops.len()).map(|l| {
+            let q = region.polyline(l,per);
+            (0..q.len()).map(|i| { let (a,b) = (q[i],q[(i+1)%q.len()]); 0.5*(a[0]*b[1]-a[1]*b[0]) }).sum::<f64>()
+        }).sum() };
+        let (coarse,fine) = (polygon(n),polygon(2*n));
+        fine+(fine-coarse)/3.
+    };
+    let gauss = [(-0.8611363115940526,0.3478548451374538),(-0.3399810435848563,0.6521451548625461),
+        (0.3399810435848563,0.6521451548625461),(0.8611363115940526,0.3478548451374538)];
+    let h = std::f64::consts::FRAC_PI_2/panels as f64;
+    let mut corner = 0.;
+    for k in 0..panels {
+        for &(x,w) in &gauss {
+            let th = h*(k as f64+0.5+0.5*x);
+            let cs = th.cos();
+            // (the torus at the angle `θ` from its top: radius `R − c + c cos θ`, height falling
+            // by `c sin θ`, so `dh = c cos θ dθ`)
+            corner += 0.5*h*w*area(RADIUS-CORNER+CORNER*cs)*CORNER*cs;
+        }
+    }
+    let wall = area(RADIUS)*(STOCK_HI[2]-(FOOT[2]+CORNER));
+    let block: f64 = (0..3).map(|k| STOCK_HI[k]-STOCK_LO[k]).product();
+    block-wall-corner
+}
+
 #[test]
 fn the_bull_nose_along_a_looping_spline_is_its_bench_volume() {
+    // **Three readings**: the road's solid 10956.986455809; read apart (`read_apart`, 16 panels,
+    // 2048 and 4096 points a piece) 10956.98645(6); cadrs 10956.942404803 — 4.0e-6 of the volume
+    // below both, its groove 0.044 too large
     let (b,_) = built(CONTROL);
     let v = volume(&b);
-    assert!((v-READ).abs() <= 2e-6,"{v} against the regions' reading {READ}");
+    let apart = read_apart(CONTROL,16,2048);
+    assert!((v-apart).abs() <= 2e-6,"{v} against the regions' reading {apart}");
+    assert!((v-READ).abs() <= 2e-6,"{v} against the regions' reading pinned, {READ}");
     assert!((v-CADRS).abs() <= 1e-5*CADRS,"{v} against cadrs's {CADRS}");
-    // the mesh's own volume, within a tenth of its sag over its area (a pcurve on a fold's wrong
-    // leaf checks and reads its volume far off: both readings held)
-    let sag = 1e-3;
-    let mesh = gcs_core::brep::mesh::mesh(&b,sag,0.1).unwrap();
-    let area: f64 = mesh.tris.iter().map(|t| {
-        let [a,b,c] = t.map(|i| mesh.pts[i as usize]);
-        0.5*gcs_core::space::norm(gcs_core::space::cross(gcs_core::space::sub(b,a),gcs_core::space::sub(c,a)))
-    }).sum();
-    let vm = mesh_volume(&mesh);
-    assert!((vm-v).abs() <= 0.1*sag*area,"the mesh encloses {vm}, the solid {v} (sag {sag} over area {area})");
+    // the mesh's own volume at two sags, each within a tenth of its sag over its area and the finer
+    // the nearer (a pcurve on a fold's wrong leaf checks and reads its volume far off: both
+    // readings held)
+    let mut last = f64::INFINITY;
+    for sag in [1e-3,1e-4] {
+        let mesh = gcs_core::brep::mesh::mesh(&b,sag,0.1).unwrap();
+        let area: f64 = mesh.tris.iter().map(|t| {
+            let [a,b,c] = t.map(|i| mesh.pts[i as usize]);
+            0.5*gcs_core::space::norm(gcs_core::space::cross(gcs_core::space::sub(b,a),gcs_core::space::sub(c,a)))
+        }).sum();
+        let off = (mesh_volume(&mesh)-v).abs();
+        assert!(off <= 0.1*sag*area && off < last,"at a sag of {sag} the mesh stands {off} off the solid's {v} (area {area})");
+        last = off;
+    }
 }
 
 #[test]
