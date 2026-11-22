@@ -24,6 +24,18 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   some orders were refused ("a plane's pieces do not close", "a piece … touches … along no face",
   "a shell … kept on one side … and dropped on another") and the rest built with a face more or
   less.
+- **Faces crossing along the line their boxes share are two surfaces, and a meeting along a
+  face's boundary is kept** (#994, fixture 115's strips past the reach): `Arrangement::classed` reads
+  two faces over what their boxes share and as far past it as a point near both is read onto their
+  meeting at the least sine (`tolerant::on_meeting` at `LEAST_SINE`), so two faces whose boxes share
+  only the line they cross along are one surface only where they lean apart less than a meeting is
+  resolved at — read over the line alone, a plate's top and a lip's pad turned `1e-3` rad across it
+  were one class, and a third operand's meeting with it was laid `3e-4` off the pad. And
+  `Arrangement::kept` keeps a span of a meeting lying along a face's boundary within `ON_CURVE`
+  tolerances at every eighth of it, as the vertex-onto-edge rule reads it, where it had dropped it
+  as outside the face and left the other face a slit. Strips turned `1e-5` to `1e-3` rad across a
+  plate's faces, in its thickness or abutting its edges, now unite in every order to their closed
+  form, where some orders were refused ("a shell … kept on one side … and dropped on another").
 - **Two cylinders resting on one another at a point meet in no curve, in closed form** (#994 item
   5): `ssi::intersect` reads two cylinders whose axes lean apart and stand at least the sum of
   their radii apart, less the tolerance, as meeting in no curve (`ssi::rods_apart`) — clear of one

@@ -774,6 +774,29 @@ united in all six orders and with the strips first: closed, every edge on its fa
 form's volume and as many faces in every order; of 128 such placements, under the rules before, 110
 were refused in some order and 36 built with a face more or fewer in one order than another) and
 `fixture_115s_lip_and_foot_unite_with_the_plate_at_its_true_edge_in_any_order` are the gates.
+**Two faces are read over what their boxes share and as far past it as a point near both is read
+onto their meeting at the least sine** (#994, `Arrangement::classed`, `tolerant::on_meeting` at
+`LEAST_SINE`): two faces whose boxes share only the line they cross along are one surface only where
+they lean apart less than the arrangement resolves a meeting at, and two otherwise, their meeting
+laid. Read over that line alone, any two planes crossing along it within `1e-3` rad were one there —
+a plate's top and the raised half of a lip's pad turned `1e-3` rad across it one class, the plate's
+top standing for it — and a foot's meeting with the class was laid on the pad's lowered half `3e-4`
+off it. **A span of a meeting lying along a face's boundary within `ON_CURVE` tolerances, at every
+eighth of it, is on that face** (`Arrangement::kept`): the edge it lies along, as the vertex-onto-edge
+rule reads a point so near, merged into it in step 4, the other face cut along it — read Out of the
+face at the tolerance alone it was dropped, and a lip's foot turned `1e-3` rad, crossing the side of
+a foot abutting it a tolerance and a half under that foot's edge, kept the meeting leading up to it
+as a slit, its two sides one shell. `brep_coincident::strips_crossing_a_plates_faces_in_its_thickness_unite_in_every_order`
+and `strips_crossing_a_plates_true_edges_unite_in_every_order` (the strips turned `1e-5` to `1e-3` rad
+about their own lengths, united in the six orders and with the strips first: closed, the closed form
+of the turned strips' volume, `Strips::united`, and as many faces in every order) are the gates.
+**Not yet**: strips abutting a plate's two edges whose turns about the middle of the sheet's
+thickness differ put four planes through one point, the plate's corner, two pairs of them crossing
+there at `1e-4` to `1e-3` rad — a vertex minted at one pair's crossing stands `tol / θ` off where
+the other pair's exact line passes, past the `ON_CURVE` reach a closed form's meeting takes a vertex
+onto (`points_on`), and the union is refused in some orders; and strips turned `1e-6` to `1e-4` rad
+across a plate's faces in its thickness, or `1e-6` to `3e-6` abutting its edges, past the reach and
+under `LEAST_SINE`, are refused, or built with a face more, in some or all orders.
 A non-rational B-spline's heights over a plane are its distances from it, so its reading against a plane (`query::spline_plane`) proves a run where a stretch's heights are
 enclosed within half the tolerance (`HeightsWithin`), settled as one meeting: a contact curve running
 in the plane of a torus's seam circle over a stretch read 185 roots a hair apart and was halved past
