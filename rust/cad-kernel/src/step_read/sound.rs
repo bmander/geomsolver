@@ -48,8 +48,10 @@ use super::context::Context;
 use super::{Given,Refusal,Why};
 use crate::geom::Uv;
 use crate::topo::{unwrap,Brep,Coedge,Edge,EdgeCurve,Pcurve};
-use crate::util::space::{distance,dot,norm,sub};
+use crate::util::space::{distance,norm,segment_distance};
 use crate::geom::V;
+use crate::plane2::{self,dist};
+use crate::util::fmath::Det;
 
 /// A boundary that is no solid's: why, the face or the edge of it that witnesses it (by its
 /// index in the `Brep`), and what there is to say.
@@ -200,16 +202,7 @@ struct Drawn<'a> {
     rings: Vec<(u32,u32)>,
 }
 
-/// How far `p` is from the segment `a b` in space.
-fn segment_distance(p: V,a: V,b: V) -> f64 {
-    let d = sub(b,a);
-    let l = dot(d,d);
-    if !(l > 0.) { return distance(p,a) }
-    let t = (dot(sub(p,a),d)/l).clamp(0.,1.);
-    distance(p,[a[0]+t*d[0],a[1]+t*d[1],a[2]+t*d[2]])
-}
-fn dist(a: Uv,b: Uv) -> f64 { (a[0]-b[0]).hypot(a[1]-b[1]) }
-fn cross(o: Uv,a: Uv,b: Uv) -> f64 { (a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]) }
+fn cross(o: Uv,a: Uv,b: Uv) -> f64 { plane2::cross(plane2::sub(a,o),plane2::sub(b,o)) }
 /// How far `p` is from the segment `a b`.
 fn to_segment(p: Uv,a: Uv,b: Uv) -> f64 {
     let d = [b[0]-a[0],b[1]-a[1]];
@@ -577,7 +570,7 @@ impl<'a> Drawn<'a> {
                 // the piece leaving that corner: the next of the loop (its first after its last)
                 let q = &self.pieces[if i+1 == r.end { r.start } else { i+1 }];
                 let x = p.p[1];
-                let way = |r: usize,s: f64,from: Uv| { let y = self.raw_at(r,s); (y[1]-from[1]).atan2(y[0]-from[0]) };
+                let way = |r: usize,s: f64,from: Uv| { let y = self.raw_at(r,s); (y[1]-from[1]).datan2(y[0]-from[0]) };
                 let back = way(p.run as usize,p.s[1]-1e-3*(p.s[1]-p.s[0]),x);
                 let on = way(q.run as usize,q.s[0]+1e-3*(q.s[1]-q.s[0]),q.p[0]);
                 if back.is_finite() && on.is_finite() { by.entry(j).or_default().push((back,on,x)); }
@@ -754,7 +747,7 @@ impl<'a> Drawn<'a> {
         // how far `p` stands from the ray from `o` through `d`
         let ray = |p: Uv,o: Uv,d: Uv| {
             let w = [d[0]-o[0],d[1]-o[1]];
-            let l = w[0].hypot(w[1]);
+            let l = w[0].dhypot(w[1]);
             let q = [p[0]-o[0],p[1]-o[1]];
             let along = q[0]*w[0]+q[1]*w[1];
             if !(l > 0.) || along <= 0. { dist(p,o) } else { (q[0]*w[1]-q[1]*w[0]).abs()/l }
@@ -992,8 +985,9 @@ impl<'a> Drawn<'a> {
         let r = self.loops[lk].clone();
         for i in r.clone() {
             let (a,b) = (self.pieces[i].p[1],self.pieces[if i+1 == r.end { r.start } else { i+1 }].p[0]);
-            if a == b || (above(a) == above(b) && !(to_segment(x,a,b) <= self.tol(&self.pieces[i],&self.pieces[i]))) { continue }
+            if a == b { continue }
             if to_segment(x,a,b) <= self.tol(&self.pieces[i],&self.pieces[i]) { return None }
+            if above(a) == above(b) { continue }
             // where it crosses the level line through `x`
             let u = a[0]+(x[1]-a[1])/(b[1]-a[1])*(b[0]-a[0]);
             if u > x[0] { w += above(b) as i32-above(a) as i32; }
@@ -1029,10 +1023,10 @@ impl Run<'_> {
 /// subtends: then they meet only at the corner.
 fn cones_apart(p: &Piece,i: usize,q: &Piece,k: usize,slop: f64) -> bool {
     let (a,b) = ([p.p[1-i][0]-p.p[i][0],p.p[1-i][1]-p.p[i][1]],[q.p[1-k][0]-q.p[k][0],q.p[1-k][1]-q.p[k][1]]);
-    let (la,lb) = (a[0].hypot(a[1]),b[0].hypot(b[1]));
+    let (la,lb) = (a[0].dhypot(a[1]),b[0].dhypot(b[1]));
     if !(la > 0. && lb > 0.) { return false }
     let half = |s: f64,l: f64| (4.*SAFE*s/l).min(std::f64::consts::PI);
-    let angle = (a[0]*b[1]-a[1]*b[0]).abs().atan2(a[0]*b[0]+a[1]*b[1]);
+    let angle = (a[0]*b[1]-a[1]*b[0]).abs().datan2(a[0]*b[0]+a[1]*b[1]);
     let off = (2.*slop/la.min(lb)).min(std::f64::consts::PI);
     angle > half(p.sag,la)+half(q.sag,lb)+off
 }
@@ -1044,33 +1038,26 @@ fn cones_apart(p: &Piece,i: usize,q: &Piece,k: usize,slop: f64) -> bool {
 /// `step::write` writes all its lumps in one shell's faces.
 fn shells(b: &Brep,size: f64,floor: f64) -> Result<(),Unsound> {
     use crate::query::Place;
-    let nf = b.faces.len();
-    let mut root: Vec<usize> = (0..nf).collect();
-    fn find(r: &mut [usize],mut i: usize) -> usize { while r[i] != i { r[i] = r[r[i]]; i = r[i]; } i }
+    let mut joined = crate::util::union_find::UnionFind::new(b.faces.len());
     let mut user = vec![usize::MAX;b.edges.len()];
     for (fi,f) in b.faces.iter().enumerate() {
         for c in f.loops.iter().flatten() {
             let e = c.edge as usize;
-            if user[e] == usize::MAX { user[e] = fi; continue }
-            let (x,y) = (find(&mut root,fi),find(&mut root,user[e]));
-            if x != y { root[x.max(y)] = x.min(y); }
+            if user[e] == usize::MAX { user[e] = fi } else { joined.union(user[e],fi) }
         }
     }
-    let mut shells: Vec<Vec<usize>> = Vec::new();
-    let mut label = vec![usize::MAX;nf];
-    for fi in 0..nf {
-        let r = find(&mut root,fi);
-        if label[r] == usize::MAX { label[r] = shells.len(); shells.push(Vec::new()); }
-        shells[label[r]].push(fi);
-    }
+    // (numbered as first seen, so the shells stand in the order of their first faces)
+    let (label,n) = joined.labels();
+    let mut shells: Vec<Vec<usize>> = vec![Vec::new();n];
+    for (fi,&l) in label.iter().enumerate() { shells[l].push(fi); }
     let tol_of = |s: &[usize]| s.iter().flat_map(|&f| b.faces[f].loops.iter().flatten()).map(|c| b.edges[c.edge as usize].tol).fold(floor,f64::max);
     // each shell alone, and where a point stands against it
     let parts: Vec<Brep> = if shells.len() == 1 { Vec::new() } else {
-        shells.iter().map(|s| Brep {vertices:b.vertices.clone(),edges:b.edges.clone(),faces:s.iter().map(|&f| b.faces[f].clone()).collect()}.compacted()).collect()
+        shells.iter().map(|s| part(b,s)).collect()
     };
     let located: Vec<crate::query::Located> = if shells.len() == 1 { vec![crate::query::Located::new(b,tol_of(&shells[0]))] }
         else { parts.iter().zip(&shells).map(|(p,s)| crate::query::Located::new(p,tol_of(s))).collect() };
-    let outward: Vec<bool> = shells.iter().zip(&located).map(|(s,l)| facing(b,s,l,tol_of(s).max(1e-6*size))).collect::<Result<_,_>>()?;
+    let outward: Vec<bool> = shells.iter().zip(&located).map(|(s,l)| facing(b,s,l,tol_of(s).max(1e-6*size),size,floor)).collect::<Result<_,_>>()?;
     if outward.iter().all(|&o| !o) {
         return Err(Unsound::face(shells[0][0],format!("the shell of face {} is inside out: a point just outside each face it is read at lies inside it",shells[0][0])))
     }
@@ -1133,6 +1120,26 @@ fn shells(b: &Brep,size: f64,floor: f64) -> Result<(),Unsound> {
     Ok(())
 }
 
+/// The faces `s` of `b` alone, with the edges and vertices they use: `Brep::compacted` of a copy
+/// of `b` holding only those faces (each kept in its order and renumbered), without copying the
+/// rest.
+fn part(b: &Brep,s: &[usize]) -> Brep {
+    let mut used = vec![false;b.edges.len()];
+    for c in s.iter().flat_map(|&f| b.faces[f].loops.iter().flatten()) { used[c.edge as usize] = true; }
+    let mut held = vec![false;b.vertices.len()];
+    for (e,_) in b.edges.iter().zip(&used).filter(|x| *x.1) { for v in e.v { held[v as usize] = true; } }
+    let at = |kept: &[bool]| -> Vec<u32> { let mut k = 0; kept.iter().map(|&x| if x { k += 1; k-1 } else { u32::MAX }).collect() };
+    let (edge_at,vertex_at) = (at(&used),at(&held));
+    let vertices = b.vertices.iter().zip(&held).filter(|x| *x.1).map(|(v,_)| v.clone()).collect();
+    let edges = b.edges.iter().zip(&used).filter(|x| *x.1).map(|(e,_)| Edge {v:e.v.map(|v| vertex_at[v as usize]),..e.clone()}).collect();
+    let faces = s.iter().map(|&f| {
+        let mut f = b.faces[f].clone();
+        for c in f.loops.iter_mut().flatten() { c.edge = edge_at[c.edge as usize]; }
+        f
+    }).collect();
+    Brep {vertices,edges,faces}
+}
+
 /// **Which way a shell faces**: a point stepped off its largest faces (up to seven, by their
 /// boxes; at each of two of its longest edges that is neither degenerate nor a seam of it, until
 /// three read alike and none against) along the face's outward normal, from a point of the face
@@ -1144,7 +1151,7 @@ fn shells(b: &Brep,size: f64,floor: f64) -> Result<(),Unsound> {
 /// wedge outside it. The probes vote, and the shell faces the way most of them say. Where none is
 /// read, or they tie, the shell's signed volume says (what it would say everywhere, but its
 /// integral over every face costs more than the whole read), refused where it is none.
-fn facing(b: &Brep,shell: &[usize],located: &crate::query::Located,tau: f64) -> Result<bool,Unsound> {
+fn facing(b: &Brep,shell: &[usize],located: &crate::query::Located,tau: f64,size: f64,floor: f64) -> Result<bool,Unsound> {
     use crate::query::Place;
     use crate::util::space::{add,cross,scale};
     let mut picks: Vec<(f64,usize)> = shell.iter().map(|&fi| { let (lo,hi) = crate::query::face_box(b,fi); (distance(lo,hi),fi) }).collect();
@@ -1177,7 +1184,7 @@ fn facing(b: &Brep,shell: &[usize],located: &crate::query::Located,tau: f64) -> 
         // the face's inside to the left of its loops' way, or to the right where it is reversed
         let mut side = [-way[1],way[0]];
         if f.reversed { side = [-side[0],-side[1]]; }
-        let l = side[0].hypot(side[1]);
+        let l = side[0].dhypot(side[1]);
         if !(l > 0.) || !uv.iter().all(|x| x.is_finite()) { continue }
         let side = [side[0]/l,side[1]/l];
         let (_,su,sv) = f.surface.d1(uv);
@@ -1207,8 +1214,7 @@ fn facing(b: &Brep,shell: &[usize],located: &crate::query::Located,tau: f64) -> 
     // 217's drilled cavity of three faces read three and three): its signed volume says, its faces'
     // fluxes summed
     let volume: f64 = shell.iter().map(|&fi| crate::props::terms(b,fi).iter().flatten().map(|t| t.0+t.1).sum::<f64>()).sum::<f64>()/3.;
-    let floor = crate::geom::tolerance(extent(b));
-    if !(volume.abs() > floor*extent(b).powi(2)) {
+    if !(volume.abs() > floor*size.powi(2)) {
         return Err(Unsound::face(f,format!("the shell of face {f} bounds no volume ({volume:e} mm³)")))
     }
     Ok(volume > 0.)

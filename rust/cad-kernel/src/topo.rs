@@ -866,6 +866,26 @@ impl Brep {
         (0..n).map(|i| { let (a,b) = (pts[i],pts[(i+1)%n]); a[0]*b[1]-a[1]*b[0] }).sum::<f64>()/2.
     }
 
+    /// **How far an edge stands off a face that uses it** (millimetres): the most its points stand
+    /// from the face's at the use `u` of face `fi`, its curve in the face's parameters, at 64
+    /// points along it and at every break of either curve, and halfway between each two of those
+    /// — its tolerance there as a reader measures one (`measure_tolerances`), measured afresh
+    /// rather than taken from the edge (a solid's tolerances are not kept up to date through every
+    /// operation). What `step::write` states and `tests/step_roundtrip.rs` holds a file to.
+    pub fn standing(&self,fi: usize,u: &Coedge) -> f64 {
+        let (f,e) = (&self.faces[fi],&self.edges[u.edge as usize]);
+        let EdgeCurve::Curve(c) = &e.curve else { return 0. };
+        let mut ts: Vec<f64> = (0..=64).map(|k| e.t[0]+(e.t[1]-e.t[0])*k as f64/64.).collect();
+        ts.extend(c.breaks(e.t));
+        if let Pcurve::Curve(pc) = &u.pcurve { ts.extend(pc.breaks(e.t)); }
+        // (and halfway between each two: an edge may stand off its face at a spike between its
+        // knots, `creased.sv`'s 2e-5 where its knots read 4e-6)
+        ts.sort_by(f64::total_cmp);
+        let halves: Vec<f64> = ts.windows(2).map(|w| 0.5*(w[0]+w[1])).collect();
+        ts.extend(halves);
+        ts.iter().map(|&t| distance(f.surface.point(u.pcurve.at(t,e,&f.surface,&self.vertices)),e.point(t,&self.vertices))).fold(0.,f64::max)
+    }
+
     /// Each edge's tolerance: the largest gap between its curve and each use's pcurve image
     /// (sampled along it, its knots and ends included), and between its curve's ends and its
     /// vertices; and each vertex's, the largest gap between it and the ends of the curves there.
@@ -897,5 +917,23 @@ impl Brep {
             e.tol = gap.max(ends);
         }
         for (v,d) in self.vertices.iter_mut().zip(at_vertex) { v.tol = v.tol.max(d); }
+    }
+
+    /// **`measure_tolerances` twice, measured once**: what a second pass changes is only what the
+    /// first pass's vertex tolerances reach — an inverse curve's ends (`Pcurve::Inverse`, which
+    /// takes a pole's other branch within its vertex's tolerance, `reach`) — and a vertex's
+    /// tolerance is read off its edges' curves' ends alone, which no tolerance moves. So the
+    /// vertices' are set first, as the first pass sets them, and the edges measured once against
+    /// them: the same tolerances, every sample read once where the reader's `finish` read each
+    /// twice (`step_read::the_tolerances_settled_are_those_measured_twice`).
+    pub fn settle_tolerances(&mut self) {
+        let mut at_vertex = vec![0_f64;self.vertices.len()];
+        for e in &self.edges {
+            if let EdgeCurve::Curve(c) = &e.curve {
+                for k in 0..2 { at_vertex[e.v[k] as usize] = at_vertex[e.v[k] as usize].max(distance(c.point(e.t[k]),self.vertices[e.v[k] as usize].p)); }
+            }
+        }
+        for (v,d) in self.vertices.iter_mut().zip(at_vertex) { v.tol = v.tol.max(d); }
+        self.measure_tolerances();
     }
 }

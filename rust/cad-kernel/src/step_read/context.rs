@@ -326,11 +326,7 @@ fn axes(file: &File,p: u32,length: f64) -> Result<Rigid,Refusal> {
         r => normalised(three(r,"DIRECTION")?).ok_or_else(|| Refusal::malformed(p,"a placement's axis of no length"))?,
     };
     let x = match v.get(3) {
-        // (the default's own part square to the axis, however small: `geometry::placement`)
-        Some(Value::Unset) => {
-            let v = if z[1] == 0. && z[2] == 0. { [0.,1.,0.] } else { [1.,0.,0.] };
-            normalised(sub(v,scale(z,dot(v,z)))).ok_or_else(|| Refusal::malformed(p,"a placement whose axis leaves its reference direction none"))?
-        }
+        Some(Value::Unset) => super::geometry::reference(z).ok_or_else(|| Refusal::malformed(p,"a placement whose axis leaves its reference direction none"))?,
         r => three(r,"DIRECTION")?,
     };
     let x = normalised(sub(x,scale(z,dot(x,z)))).filter(|_| norm(cross(x,z)) > 1e-12*norm(x))

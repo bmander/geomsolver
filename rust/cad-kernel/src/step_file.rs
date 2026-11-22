@@ -496,11 +496,6 @@ fn sections(text: &str,runs: usize) -> Parsed<(Header<'_>,Vec<Entity<'_>>)> {
     Ok((header,entities))
 }
 
-/// The data section's entities, a run of them parsed on each core, in the file's order.
-pub fn entities(text: &str) -> Result<Vec<Entity<'_>>,String> {
-    sections(text,crate::util::par::threads()*4).map(|(_,e)| e).map_err(|e| e.located(text).to_string())
-}
-
 /// Where an instance number's entity is in the file's list.
 enum Index { Dense(Vec<u32>),Sparse(Vec<(u32,u32)>) }
 

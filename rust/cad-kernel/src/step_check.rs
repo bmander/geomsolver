@@ -499,17 +499,20 @@ fn surface_matches<'a>(get: &dyn Fn(u32) -> &'a Entity<'a>,r: u32,expected: &Fac
             None => Ok(()),
         }
     };
-    let elementary = |name: &str,kind: u8,scalars: usize| -> Result<bool,String> {
-        let Some((n,v)) = e.simple().filter(|(n,_)| *n == name) else { unreachable!() };
-        if expected.kind != kind { return Err(format!("#{r} is a {n}, the solid's surface kind {}",expected.kind)) }
+    // an elementary surface's placement `v[1]`: its origin, axis and reference direction
+    let placed = |v: &[Value]| -> Result<Vec<f64>,String> {
         let (_,place) = match get(v.get(1).and_then(Value::reference).ok_or("no placement")?).simple() {
             Some(p @ ("AXIS2_PLACEMENT_3D",_)) => p,
             _ => return Err(format!("#{r}'s placement is not an AXIS2_PLACEMENT_3D")),
         };
         let mut written = Vec::new();
-        written.extend(triple(place.get(1).and_then(Value::reference),"CARTESIAN_POINT")?);
-        written.extend(triple(place.get(2).and_then(Value::reference),"DIRECTION")?);
-        written.extend(triple(place.get(3).and_then(Value::reference),"DIRECTION")?);
+        for (k,kind) in [(1,"CARTESIAN_POINT"),(2,"DIRECTION"),(3,"DIRECTION")] { written.extend(triple(place.get(k).and_then(Value::reference),kind)?); }
+        Ok(written)
+    };
+    let elementary = |name: &str,kind: u8,scalars: usize| -> Result<bool,String> {
+        let Some((n,v)) = e.simple().filter(|(n,_)| *n == name) else { unreachable!() };
+        if expected.kind != kind { return Err(format!("#{r} is a {n}, the solid's surface kind {}",expected.kind)) }
+        let mut written = placed(v)?;
         if v.len() != 2+scalars { return Err(format!("#{r}: {} parameters",v.len())) }
         written.extend(reals(&v[2..],n)?);
         compare(n,&written,&expected.numbers)?;
@@ -530,10 +533,7 @@ fn surface_matches<'a>(get: &dyn Fn(u32) -> &'a Entity<'a>,r: u32,expected: &Fac
             let [big,minor] = [2,3].map(|k| v.get(k).and_then(Value::number));
             let (Some(big),Some(minor)) = (big,minor) else { return Err(format!("#{r}: its radii expected")) };
             if !(big < minor) { return Err(format!("#{r}: a degenerate torus whose major radius {big} is not under its minor {minor}")) }
-            let place = v.get(1).and_then(Value::reference).ok_or("no placement")?;
-            let (_,p) = match get(place).simple() { Some(p @ ("AXIS2_PLACEMENT_3D",_)) => p,_ => return Err(format!("#{r}'s placement is not an AXIS2_PLACEMENT_3D")) };
-            let mut written = Vec::new();
-            for (k,kind) in [(1,"CARTESIAN_POINT"),(2,"DIRECTION"),(3,"DIRECTION")] { written.extend(triple(p.get(k).and_then(Value::reference),kind)?); }
+            let mut written = placed(v)?;
             written.extend([if outer { big } else { -big },minor]);
             compare("DEGENERATE_TOROIDAL_SURFACE",&written,&expected.numbers)?;
             return Ok(false)

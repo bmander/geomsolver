@@ -74,7 +74,7 @@ fn checked(a: f64,b: f64,floor: f64,f: &mut dyn FnMut(f64) -> f64) -> f64 {
     let off = (k-ten).abs();
     // (the extension's own error by QUADPACK's estimate, `(200 |K − G|)^1.5` of the size: within
     // the budget, it is read)
-    if off <= within { ten } else if size > 0. && size*(200.*off/size).powf(1.5).min(1.) <= within { k } else { settled(a,b,1,floor,f) }
+    if off <= within { ten } else if size > 0. && size*(200.*off/size).dpowf(1.5).min(1.) <= within { k } else { settled(a,b,1,floor,f) }
 }
 
 /// The two-point Gauss rule over `[a, b]`: exact for a cubic.
@@ -389,7 +389,8 @@ impl<'a> Prefix<'a> {
 /// where the sheet's is `(du + 1)(dv + 1)` and both bases. `G` along a face's parameter integrates
 /// its spans from the face's middle at every node of every use: on brep-bench's bull-nose carried
 /// along a spline (a 91 × 143 quintic) the area read some twenty million points of the sheet. The
-/// rows are read as the spans asked reach them.
+/// rows are read as the spans asked reach them, into a table the caller hands on from one held value
+/// to the next (cleared, not allocated again).
 struct Iso<'a> {
     net: &'a Net,
     along: usize,
@@ -401,12 +402,14 @@ struct Iso<'a> {
 }
 
 impl<'a> Iso<'a> {
-    fn new(net: &'a Net,along: usize,fixed: f64) -> Iso<'a> {
+    fn new(net: &'a Net,along: usize,fixed: f64,mut rows: Vec<Option<Row>>) -> Iso<'a> {
         let [du,dv] = net.domain();
         let (nu,nv) = (net.poles.len(),net.poles[0].len());
         let (d,knots,count,[a,b]) = if along == 0 { (net.dv,&net.vknots,nv,dv) } else { (net.du,&net.uknots,nu,du) };
         let (span,basis) = super::nurbs::with_basis(d,knots,count,fixed.clamp(a,b),1,|s,bs| (s,[bs[0][..=d].to_vec(),bs[1][..=d].to_vec()]));
-        Iso {net,along,span,basis,rows:vec![None;if along == 0 { nu } else { nv }]}
+        rows.clear();
+        rows.resize(if along == 0 { nu } else { nv },None);
+        Iso {net,along,span,basis,rows}
     }
     fn row(&mut self,i: usize) -> Row {
         if let Some(r) = self.rows[i] { return r }
@@ -445,6 +448,13 @@ impl<'a> Iso<'a> {
 /// How far a span of a traced curve's points may turn, chord against chord: each of its chords within
 /// this angle (its cosine) of its first, so within twice it of the span's own chord.
 const SPAN_COS: f64 = 0.9659258262890683;
+
+/// Whether `integrated` reads `crossings` of use `c` on surface `s`: its use's parameters at
+/// sixteenths of its span are then read, where its face's box reads eighths.
+fn sixteenths(c: &super::topo::Coedge,e: &super::topo::Edge,s: &Surface) -> bool {
+    matches!(s,Surface::BSpline(..) | Surface::Torus(..) | Surface::Cone(..)) && !matches!(c.pcurve,Pcurve::Line {..})
+        && !matches!(e.curve,EdgeCurve::Degenerate) && !matches!((&e.curve,&c.pcurve),(EdgeCurve::Curve(Curve::Traced(_)),Pcurve::Inverse {..}))
+}
 
 /// **`∫ f(uv, uv') dt` along a traced edge inverted onto `surface`** (#798), `f` given the edge's
 /// parameters on the face and their rate. Green's integral does not depend on how its curve is
@@ -670,13 +680,15 @@ impl<'a> Closed<'a> {
 /// rule's points need not meet), and cut only where it crosses a net's crease — a knot line of
 /// multiplicity the degree, the net joined in value only — where `g`, and so `G`, *jump* by
 /// `X · (S_u × ΔS_v)`, which no rule settles: in closed form, its parameter affine in the edge's.
-fn crossings(c: &super::topo::Coedge,e: &super::topo::Edge,s: &Surface,vertices: &[super::topo::Vertex]) -> Vec<f64> {
+/// `uvs` are the use's parameters at its sixteenths (`sixteenths`), read by the caller once for
+/// this and for the face's box.
+fn crossings(c: &super::topo::Coedge,e: &super::topo::Edge,s: &Surface,vertices: &[super::topo::Vertex],uvs: &[Uv]) -> Vec<f64> {
     // the values of parameter `k` in `[a, b]` the integrand kinks at
     let kinks = |k: usize,a: f64,b: f64| -> Vec<f64> {
         match *s {
             Surface::BSpline(..) => s.breaks(k,[a,b]),
             Surface::Torus(_,big,r) if k == 1 && big.abs() < r => {
-                let s0 = (-big/r).acos();
+                let s0 = (-big/r).dacos();
                 let tau = std::f64::consts::TAU;
                 let first = ((a+s0)/tau).floor() as i64;
                 let last = ((b+s0)/tau).ceil() as i64;
@@ -713,7 +725,7 @@ fn crossings(c: &super::topo::Coedge,e: &super::topo::Edge,s: &Surface,vertices:
     let n = 16;
     let at = |t: f64| c.pcurve.at(t,e,s,vertices);
     let ts: Vec<f64> = (0..=n).map(|j| e.t[0]+(e.t[1]-e.t[0])*j as f64/n as f64).collect();
-    let uvs: Vec<Uv> = ts.iter().map(|&t| at(t)).collect();
+    if uvs.len() != ts.len() { return vec![] }
     let mut out = Vec::new();
     // (and on a net, where its normal turns over between two points of the use — its area factor
     // `|S_u × S_v|` through nought, a kink: a spindle torus's net crossing its axis, whose rows there
@@ -754,7 +766,7 @@ fn crossings(c: &super::topo::Coedge,e: &super::topo::Edge,s: &Surface,vertices:
 /// `∫_0^x |a + r cos σ| dσ` (`|a| < r`): on `[0, π]` the integral of `a + r cos` up to its root
 /// `s₀ = acos(−a/r)` and back down past it, odd about 0, and `P` a whole turn.
 fn spindle(a: f64,r: f64,x: f64) -> f64 {
-    let s0 = (-a/r).acos();
+    let s0 = (-a/r).dacos();
     let up = |x: f64| a*x+r*x.dsin();
     let h = |x: f64| if x <= s0 { up(x) } else { 2.*up(s0)-up(x) };
     let turns = (x/std::f64::consts::TAU).round();
@@ -832,8 +844,9 @@ pub fn face_moments(b: &Brep,f: &Face,c: V,h: f64,want: [bool;10]) -> [f64;10] {
         &|x| { let t = t(x); t[0]*t[1] },&|x| { let t = t(x); t[0]*t[2] },&|x| { let t = t(x); t[1]*t[2] },
     ];
     let read = |k: usize| integrated(b,f,What::Weighed(weights[k])).iter().flatten().map(|t| t.0+t.1).sum::<f64>();
-    let sense = read(0).signum();
-    std::array::from_fn(|k| if want[k] { sense*read(k) } else { 0. })
+    let area = read(0);
+    let sense = area.signum();
+    std::array::from_fn(|k| if !want[k] { 0. } else if k == 0 { sense*area } else { sense*read(k) })
 }
 
 /// `terms`, of what `what` integrates.
@@ -854,10 +867,15 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
         // (the least ratio of each derivative's length to the other's on the boundary: a sheet's
         // row or column all but collapsed there, a pole in all but name)
         let mut thin = [f64::INFINITY;2];
-        for c in f.loops.iter().flatten() {
+        // (each use's parameters at sixteenths of its span where `crossings` reads them, the
+        // box their even ones, at eighths otherwise: the same parameters)
+        let uvs: Vec<Vec<Vec<Uv>>> = f.loops.iter().map(|l| l.iter().map(|c| {
             let e = &b.edges[c.edge as usize];
-            for j in 0..=8 {
-                let q = c.pcurve.at(e.t[0]+(e.t[1]-e.t[0])*j as f64/8.,e,s,&b.vertices);
+            let n = if sixteenths(c,e,s) { 16 } else { 8 };
+            (0..=n).map(|j| c.pcurve.at(e.t[0]+(e.t[1]-e.t[0])*j as f64/n as f64,e,s,&b.vertices)).collect()
+        }).collect()).collect();
+        for at in uvs.iter().flatten() {
+            for &q in at.iter().step_by(if at.len() == 17 { 2 } else { 1 }) {
                 for k in 0..2 { lo[k] = lo[k].min(q[k]); hi[k] = hi[k].max(q[k]); }
                 folds |= sheet && s.area_factor(q) < ON_FOLD;
                 if matches!(s,Surface::BSpline(..)) {
@@ -910,22 +928,26 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
         let periodic = [pu,pv][along].is_some();
         let closed = if prefix.is_some() || !what.plain() { None } else { Closed::new(s,what.area(),along,base) };
         // ∫ from the base, a stretch at a time between the surface's breaks along it
+        let mut rows: Vec<Option<Row>> = Vec::new();
         let mut big_g = |u: f64,v: f64| {
             if let Some(p) = prefix.as_mut() { return p.big_g(u,v) }
             if let Some(g) = closed.as_ref().and_then(|c| c.at([u,v])) { return g }
             let x = [u,v][along];
             // (a polynomial net read along its iso curve there, `Iso`)
-            let mut iso = match s { Surface::BSpline(_,n) if !n.is_rational() => Some(Iso::new(n,along,[v,u][along])),_ => None };
+            let mut iso = match s { Surface::BSpline(_,n) if !n.is_rational() => Some(Iso::new(n,along,[v,u][along],std::mem::take(&mut rows))),_ => None };
             let mut at_x = |w: f64| match iso.as_mut() {
                 Some(c) => { let (x,su,sv) = c.d1(w); integrand_of(x,su,sv,what) }
                 None => if along == 0 { g(w,v) } else { g(u,w) },
             };
             let cuts = s.breaks(along,[base,x]);
-            if cuts.is_empty() { return if ruled { gauss2(base,x,&mut at_x) } else { gauss(base,x,pieces(x-base,periodic),&mut at_x) } }
-            let mut at = vec![base];
-            if x >= base { at.extend(cuts) } else { at.extend(cuts.into_iter().rev()) }
-            at.push(x);
-            at.windows(2).map(|w| gauss(w[0],w[1],2,&mut at_x)).sum::<f64>()
+            let read = if cuts.is_empty() { if ruled { gauss2(base,x,&mut at_x) } else { gauss(base,x,pieces(x-base,periodic),&mut at_x) } } else {
+                let mut at = vec![base];
+                if x >= base { at.extend(cuts) } else { at.extend(cuts.into_iter().rev()) }
+                at.push(x);
+                at.windows(2).map(|w| gauss(w[0],w[1],2,&mut at_x)).sum::<f64>()
+            };
+            if let Some(c) = iso { rows = c.rows; }
+            read
         };
         // ∬ g du dv = ∮ G dv with G along u, or -∮ G du with G along v
         let (other,sign) = if along == 0 { (1,1.) } else { (0,-1.) };
@@ -943,9 +965,9 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
             (corners.iter().map(|&[u,v]| big_g(u,v).abs()).fold(0.,f64::max)*(hi[other]-lo[other]),size)
         } else { (0.,0.) };
         let floor = |tol: f64| scale*if size > 0. { (1e-4*tol/size).max(1e-13) } else { 1e-13 };
-        for l in &f.loops {
+        for (l,uvs) in f.loops.iter().zip(&uvs) {
             let mut row: Vec<(f64,f64)> = Vec::new();
-            for c in l {
+            for (c,uvs) in l.iter().zip(uvs) {
                 let e = &b.edges[c.edge as usize];
                 // a pole's degenerate edge counts by its line in the face's parameters: along `u` (a
                 // sphere's, a cone's) nothing in dv but its du, along `v` (a spline's collapsed row,
@@ -977,7 +999,7 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
                 // where the edge's curve or its curve in the face's parameters may jump in a derivative
                 let mut breaks = if let EdgeCurve::Curve(c) = &e.curve { c.breaks(e.t) } else { vec![] };
                 if let Pcurve::Curve(p) = &c.pcurve { breaks.extend(p.breaks(e.t)); }
-                breaks.extend(crossings(c,e,s,&b.vertices));
+                breaks.extend(crossings(c,e,s,&b.vertices,uvs));
                 breaks.sort_by(f64::total_cmp);
                 breaks.dedup();
                 let line = if !breaks.is_empty() {
@@ -988,10 +1010,9 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
                     // (ten nodes a stretch, checked: most stretches of a spline ten read to their
                     // last bits, and a file's curve of a hundred knots was read at twice the nodes
                     // it needed; a stretch ten do not read is settled)
-                    let each = 1;
                     // (settled a stretch at a time on a surface with a pole, where a curve passing near
                     // it sweeps half a turn of the collapsed parameter in a hair of a stretch)
-                    if near_pole { cuts.windows(2).map(|w| settled(w[0],w[1],each,floor(e.tol),&mut integrand)).sum() }
+                    if near_pole { cuts.windows(2).map(|w| settled(w[0],w[1],1,floor(e.tol),&mut integrand)).sum() }
                     else { cuts.windows(2).map(|w| checked(w[0],w[1],floor(e.tol),&mut integrand)).sum() }
                 } else { settled(e.t[0],e.t[1],pieces(span,periodic),floor(e.tol),&mut integrand) };
                 row.push((if c.reversed { -line } else { line },0.));
@@ -1014,8 +1035,8 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
                     // (the curve a hair in where it stands farther from the end than its rate
                     // carries it there: a leap; else the end itself, so a smooth end adds nothing,
                     // not even rounding)
-                    let step = (d[0]*h).hypot(d[1]*h);
-                    let gap = (q[0]-end[0]).hypot(q[1]-end[1]);
+                    let step = (d[0]*h).dhypot(d[1]*h);
+                    let gap = (q[0]-end[0]).dhypot(q[1]-end[1]);
                     if q.iter().all(|x| x.is_finite()) && gap.is_finite() && gap > 10.*step.max(1e-12*(1.+end[0].abs()+end[1].abs())) { q } else { end }
                 };
                 let h = 1e-9*(e.t[1]-e.t[0]);
