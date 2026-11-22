@@ -342,6 +342,58 @@ fn a_use_leaping_a_period_is_refused() {
     refused(&b,Some(0),None,"a period");
 }
 
+/// **A use whose feet swing round a pole it ends at is read, and measured as its region**: the
+/// face's region is the use closed across the swing by the chord between its two sides, and a
+/// chord along the pole's line is one point in space — it adds nothing to the region, and the
+/// measures close the use's end so (`props`). An eighth of a ball of radius 2, its spherical
+/// face's meridian arriving at the pole along `u = π/2` but its end read `δ` round from there (a
+/// file's curve's feet swinging round the pole within its tolerance): sound for any `δ` short
+/// of a period — the rule that refused a swing past 1e-3 is gone — and measured to `4π/3` and
+/// `5π` (a whole period's leap is refused: `a_use_leaping_a_period_is_refused`).
+#[test]
+fn a_use_swinging_round_a_pole_it_ends_at_is_read() {
+    use gcs_core::brep::geom::Curve;
+    use gcs_core::brep::props::{area,volume};
+    let eighth = |delta: f64| {
+        let mut b = Brep::default();
+        let o = [0.;3];
+        let (a,bv,n,ov) = (b.vertex([2.,0.,0.]),b.vertex([0.,2.,0.]),b.vertex([0.,0.,2.]),b.vertex(o));
+        let arc = |x: V,y: V| EdgeCurve::Curve(Curve::Circle(Frame::new(o,gcs_core::space::cross(x,y),x),2.));
+        let line = |p: V,q: V| EdgeCurve::Curve(Curve::Line {p,d:gcs_core::space::scale(q,1./gcs_core::space::norm(q))});
+        let e0 = b.edge(arc([1.,0.,0.],[0.,1.,0.]),[0.,0.5*PI],[a,bv]);
+        let e1 = b.edge(arc([0.,1.,0.],[0.,0.,1.]),[0.,0.5*PI],[bv,n]);
+        let e2 = b.edge(arc([1.,0.,0.],[0.,0.,1.]),[0.,0.5*PI],[a,n]);
+        let (oa,ob,on) = (b.edge(line(o,[2.,0.,0.]),[0.,2.],[ov,a]),b.edge(line(o,[0.,2.,0.]),[0.,2.],[ov,bv]),b.edge(line(o,[0.,0.,2.]),[0.,2.],[ov,n]));
+        let ball = Surface::Sphere(Frame::new(o,UP,[1.,0.,0.]),2.);
+        let top = 0.5*PI;
+        let sphere = vec![Coedge {edge:e0,reversed:false,pcurve:Pcurve::Inverse {a:[0.,0.],b:[top,0.]}},
+            Coedge {edge:e1,reversed:false,pcurve:Pcurve::Inverse {a:[top,0.],b:[top+delta,top]}},
+            Coedge {edge:e2,reversed:true,pcurve:Pcurve::Inverse {a:[0.,0.],b:[0.,top]}}];
+        b.faces.push(Face {surface:ball,reversed:false,loops:vec![sphere],name:String::new()});
+        // the three planes, each facing out of the eighth (against its own normal), its uses
+        // read by inverting its edges' ends
+        for (z,x,uses) in [(UP,[1.,0.,0.],vec![(ob,false),(e0,true),(oa,true)]),([1.,0.,0.],[0.,1.,0.],vec![(on,false),(e1,true),(ob,true)]),
+            ([0.,1.,0.],[0.,0.,1.],vec![(oa,false),(e2,false),(on,true)])] {
+            let s = Surface::Plane(Frame::new(o,z,x));
+            let l = uses.into_iter().map(|(e,r): (u32,bool)| {
+                let ed = &b.edges[e as usize];
+                Coedge {edge:e,reversed:r,pcurve:Pcurve::Inverse {a:s.inverse(ed.point(ed.t[0],&b.vertices)),b:s.inverse(ed.point(ed.t[1],&b.vertices))}}
+            }).collect();
+            b.faces.push(Face {surface:s,reversed:true,loops:vec![l],name:String::new()});
+        }
+        b.close_poles();
+        b.measure_tolerances();
+        b
+    };
+    for delta in [0.,1e-3,0.05,1.] {
+        let b = eighth(delta);
+        is_sound(&format!("swung {delta}"),&b);
+        let total: f64 = b.faces.iter().map(|f| area(&b,f)).sum();
+        assert!((volume(&b)-4.*PI/3.).abs() <= 1e-9,"swung {delta}: volume {}",volume(&b));
+        assert!((total-5.*PI).abs() <= 1e-9,"swung {delta}: area {total}");
+    }
+}
+
 /// **Lumps and voids nested as their senses say are sound, however many; a shell inside out, a
 /// void outside every lump, a lump inside a lump, a void inside a void, and two shells crossing
 /// are refused**, a face of the offending shell the witness. Two blocks apart (a body a cut

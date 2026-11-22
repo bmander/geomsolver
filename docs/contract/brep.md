@@ -1734,8 +1734,9 @@ speed along it: a thread's helix of sixteen turns read by chords was no turn at 
 sweeping more than a twelfth of a period halved. The file's curve in the face's parameters is the
 use's pcurve where its image is the edge's — at the edge's own parameter, or as a set within the
 tolerance the edge measures anyway — and never widens a tolerance; otherwise the edge inverted
-between the walk's ends (`Pcurve::Inverse`), refused naming the edge where a point of its walk
-stands half a period from the line between them. A file without pcurves reads the same. The outer
+between the walk's ends (`Pcurve::Inverse`) — where a point of its walk stands half a period from
+the line between them the inverse changes branch mid-edge, which `sound` refuses as a leap of a
+period. A file without pcurves reads the same. The outer
 loop is the one enclosing the most of the face's parameters, never FACE_OUTER_BOUND. A sphere's
 file curve a whole turn off in `v` (OCCT's habit) is moved back. At a pole the collapsed
 parameter's branch keeps the face on the loop's left; a use's end there is its curve's own where
@@ -1757,8 +1758,9 @@ pole, an edge two seams would cut, are refused `Unsupported` naming the entity. 
 (`props::integrated`): where a degenerate edge lies in its loop, or a sheet's row is all but
 collapsed, `G` is nought at the pole, so the value a use arrives along weighs nothing in the
 measure. Its edges' rules are settled stretch by stretch and cut where a pcurve crosses a sheet's
-knot line or an area's turning line; a spindle torus's area is the closed form of
-`∫|R + r cos v|`. A solid farther from the origin than ten times its size is measured moved to its
+knot line or an area's turning line (on a net, where its normal turns over along the use); a
+spindle torus's area is the closed form of `∫|R + r cos v|`. Each use's ends are closed to where
+its curve arrives, a hair in, so the region read is the one `sound` judges. A solid farther from the origin than ten times its size is measured moved to its
 middle (`props::volume`). Gates: `step_read::the_value_a_use_arrives_at_a_pole_along_weighs_nothing`,
 `a_spindle_torus_reads_to_its_closed_form`.
 
@@ -1783,18 +1785,39 @@ above at 7e-2). Gates: `step_sound::a_loop_crossing_itself_is_refused`,
 `a_band_wound_round_a_cylinder_overlaps_itself_only_where_its_turns_meet`,
 `tolerances_past_the_geometry_are_refused`, `the_kernels_own_solids_are_sound`.
 
-**A use is one curve in its face's parameters, and the shells nest by their senses**
-(`sound`'s `Drawn::leap`, `shells`). A use whose parameters leap is refused naming its face — by a
-whole period, across a closed sheet's seam, by more than twice its tolerance in space, or along a
-pole's line where a degenerate edge should stand: what is measured over the face's parameters
-would skip the leap (a total within its bar hid faces read 6% to 140% off). A leap within its
-edge's and vertices' tolerance is a corner's slop and is read. Each shell faces out or in as
-points stepped off its largest faces are located against it, its signed volume used only where
-none locates; a lump lies inside nothing or inside a void, a void inside a lump, none crossing
+**A use is one curve in its face's parameters, its region what its leaps close, and the shells
+nest by their senses** (`sound`'s `Drawn::leap` and `reach`, `shells`). A face's region is its
+uses closed across each leap by the chord between the leap's two sides in the face's parameters
+— `props` closes each use's ends to where its curve arrives so (a hair in, carried back by its
+rate) — and a leap is judged by what that chord does to the region: a chord whose image in space
+keeps within twice the tolerance of the leap's start (`reach`, read at 256 steps with half a
+step's run between) adds or takes only points within that disc, at most `π (2τ)²`, and is read —
+a corner's slop, or a use's feet swinging round a pole it ends at or passes within its tolerance
+of, whatever the swing in parameters (CADGenBench 215, 240, 242 and 247, read face by face within
+every bar). A leap of a whole period, a chord across a closed sheet's seam (reaching round the
+sheet), or ends apart in space past twice the tolerance adds a strip and is refused naming its
+face. A closed spline sheet whose faces' seam is not its domain's end is turned to start there
+(`topology::turned`: the net cut at the seam by knot insertion and its two pieces put end to end,
+the same points), so a band round it is one region (CADGenBench 217). Each shell faces out or in
+as points stepped off its largest faces are located against it, its signed volume used where none
+locates or they tie (217's drilled void of three faces); a lump lies inside nothing or inside a void, a void inside a lump, none crossing
 another; any number of lumps is sound, as `step::write` writes them; a boundary of no faces is
 refused. Whether faces that are not neighbours cross in space is not decided yet. Gates:
-`step_sound::a_use_leaping_a_period_is_refused`, `shells_inside_out_or_apart_are_refused`,
-`step_mutants::an_empty_shell_is_refused`.
+`step_sound::a_use_leaping_a_period_is_refused`, `a_use_swinging_round_a_pole_it_ends_at_is_read`,
+`shells_inside_out_or_apart_are_refused`, `step_mutants::an_empty_shell_is_refused`.
+
+**A face bounded by points alone is the whole of its closed surface** (`topology::whole_sheet`,
+`whole_torus`, `Walk::points_only`). A closed spline sheet collapsed to a point at both ends of
+the parameter it does not close round (an ellipsoid's net), bounded by `VERTEX_LOOP`s at its
+poles, is its whole domain, its seam the net's own end row laid from pole to pole; a loop of edges
+each running from one vertex to itself along a `LINE` of no length (brepkit's torus seams) is that
+point, its edges naming the seams the reader lays for a whole ring torus. A whole spindle torus
+bounded by a point is refused: which of its apple and lemon the face is, nothing says. Measures
+read a net's face cut where its normal turns over along a use (its area factor's kink, a spindle
+torus's net crossing its axis), and an inverse curve's foot held on a sheet's domain edge — the
+edge standing off its face past it — runs along that edge alone (CADGenBench 246's whole-domain
+face read 6.5e-4 over it). Gates: the corpus rows (occt ellipsoid, nurbs-sphere, brepkit torus,
+occt torus-grown-past-its-hole), `step_corpus::nothing_is_read_wrong`.
 
 **The corpus says whether a file was read right, and accounts for every file that is not**
 (`tests/step_corpus.rs`, `scripts/step-corpus/`). Every file of `$STEP_CORPUS` — the 32
