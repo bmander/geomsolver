@@ -8,6 +8,38 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A cone's curves in its parameters are written along its axis, as the standard reads them**
+  (#993 stage 1): ISO 10303-42's `conical_surface` runs `v` along the axis, `C + (R + v tan α)(cos u
+  x + sin u y) + v z`, where the kernel's cone (and OCCT's) runs it along the generator; `step`
+  wrote the kernel's `v`, so every pcurve on a cone lay off its edge (a frustum's by 0.2 mm, a
+  drilled frustum's traced edges by 2.5 mm, which OCCT read 1.4e-4 off in volume).  The file's `v`
+  is now the kernel's times `cos α`.
+
+- **A pcurve in a net's parameters is written as a line only where it is one** (#993 stage 1): an
+  affine image's face is written as its preimage's net, whose parameters reach an angle at the arc
+  parameter, and the test that an edge's curve in them is a line looked only at eighths of a turn,
+  where the two agree by symmetry: a sheared torus's circles were written as lines 0.075 mm off
+  their edges between.  The test reads sixteen uneven fractions, and such a curve is the cubic
+  fitted within `step::EXACT`.
+
+- **A spindle torus's lemon is written as a degenerate torus** (#993 stage 1): a toroidal surface's
+  radii are positive lengths, and the kernel's torus of negative major radius was written as one.
+  It is now `DEGENERATE_TOROIDAL_SURFACE` of major radius `−big` with `select_outer` false, its
+  pcurves in that surface's parameters `(u + π, π − v)` and its face's sense turned with them
+  (`step::turned`; `step_check` reads the degenerate torus and the turned sense).
+
+- **A rational net's foot is not stopped by a seam or a pole** (#993 stage 1): `geom::net_inverse`
+  took the first foot Newton's method settled on from a pole's Greville point, one held on the
+  domain's edge among them, and a warm start held there; a ball's net read a point on it 2.2 off.
+  A foot held on an edge is sought again across a closed net's seam and from beside a collapsed
+  row (`net_settle`), the first foot inside the domain or on the sheet taken, else the nearest;
+  the grid's last resort polishes its eight nearest distinct samples by Newton's method.
+
+- **A sheet's offset at a pole is the pole's offset** (#993 stage 1): `Surface::Offset` returned the
+  sheet's own point where `S_u × S_v` vanished (and a garbage normal where rounding left it a hair
+  off nought); it now takes the normal's limit along the collapsed row, so a ball's net offset is
+  the ball grown, and its partials there carried from beside it.
+
 ## [0.20.0] - 2026-11-21
 
 - **A drafted corner where an arc meets a side at an angle is built** (#962 item 8b): `build::offset`
