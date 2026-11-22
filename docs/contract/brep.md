@@ -1655,13 +1655,12 @@ its length for a traced or fitted curve, a fitted surface's share, and 1e-6 of t
 surface with no closed form, whose area rule is not exact where its flux's is); the solid read,
 written again, passing `step_check::verify` and reading to itself; and no edge read looser than
 the file states. A `Brep` of several lumps or with a void is written to one closed shell and reads
-back as that one solid. Over the library's exact solids (`census`, a tool): 406 the same, none
-read to another solid, none a panic; the rest are named for their defect, most of them the
-writer's — a wall fitted too loosely to be written, a pcurve written as millions of points, a file
-stating 1e-7 over fits held to `FIT`. Gates: `step_roundtrip::the_sample_reads_back` (a sample
-taking every writer path a solid that reads back takes, `PATHS`, at 1e-7),
-`the_sample_reads_back_at_export_tolerances`, `a_nets_collapsed_side_reads_back` (`pyramid`); each
-known defect an ignored test named for it.
+back as that one solid. Over the library's exact solids (`census`, a tool): all 496 the same, no
+edge read looser than its file states, none refused and none a panic. Gates:
+`step_roundtrip::the_sample_reads_back` (a sample taking every writer path a solid that reads back
+takes, `PATHS`, at 1e-7), `the_sample_reads_back_at_export_tolerances`,
+`a_nets_collapsed_side_reads_back` (`pyramid`); a solid that does not read back is an ignored test
+named for its defect, and there is none.
 
 **A STEP file's syntax is read as Part 21 means it, whatever the cores** (`step_file`). What
 writers write is read: a byte-order mark, comments wherever a token may stand, every kind of line
