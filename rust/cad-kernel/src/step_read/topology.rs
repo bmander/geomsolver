@@ -604,7 +604,15 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
                         if let Some(r) = st.rolled.get(&surface) { d = r.home(a); }
                         return if d == [0.;2] { (pc,a,k) } else { (moved(&pc,d),[a[0]+d[0],a[1]+d[1]],k) }
                     };
-                    let d: Uv = std::array::from_fn(|k| wraps[k].map_or(0.,|p| ((l[k]-a[k])/p).round()*p));
+                    let mut d: Uv = std::array::from_fn(|k| wraps[k].map_or(0.,|p| ((l[k]-a[k])/p).round()*p));
+                    // (leaving a pole, where the loop arrived along any value of its collapsed
+                    // parameter: on the branch that keeps the face on the left, a seam's a whole
+                    // period on from where it arrived, `pole_branch`)
+                    if let Some(k) = pole_at(s,l,st.within).filter(|&k| st.rolled.contains_key(&surface) && periods[k].is_some()) {
+                        let inner = pc.at(travel[0]+0.1*(travel[1]-travel[0]),e,s,&b.vertices);
+                        let x = pole_branch(a[k],l[k],periods[k].unwrap_or(1.),k,(inner[1-k]-a[1-k]).signum(),reversed,seams.contains(&ei));
+                        d[k] = x-a[k];
+                    }
                     if d == [0.;2] { (pc,a,k) } else { (moved(&pc,d),[a[0]+d[0],a[1]+d[1]],k) }
                 }).collect();
             if let Some(l) = last { found.sort_by(|x,y| distance2(x.1,l).total_cmp(&distance2(y.1,l))); }
