@@ -120,9 +120,11 @@ impl<A> Piece<A> {
 
 /// What the search for closed curves showed, cell by cell: cleared by the bound, monotone (their
 /// edges seeded), answered beside a traced piece, sampled without a bound, and the cells it could
-/// not resolve.
+/// not resolve. `sought` is false where completeness was not sought at all (`through`): the pieces
+/// are those through the caller's seeds, and nothing is said of the rest.
 #[derive(Clone,Debug,Default)]
-pub struct Search { pub free: usize,pub monotone: usize,pub beside: usize,pub sampled: usize,pub unresolved: Vec<Rect> }
+pub struct Search { pub free: usize,pub monotone: usize,pub beside: usize,pub sampled: usize,pub unresolved: Vec<Rect>,
+    pub sought: bool }
 
 /// The zero set traced, and what its search showed.
 #[derive(Clone,Debug)]
@@ -209,7 +211,15 @@ struct Tracer<'a,F: Field> {
 /// **The zero set of `field` over the question's domain, traced** (see the module): every piece,
 /// and what the search for closed curves showed. Refused, by name, where a march's step falls
 /// under the rounding or a march or search runs past the cap.
-pub fn trace<F: Field>(field: &F,q: &Question) -> Result<Traced<F::At>,String> {
+pub fn trace<F: Field>(field: &F,q: &Question) -> Result<Traced<F::At>,String> { traced(field,q,true) }
+
+/// **The pieces through the caller's seeds alone** (#942): each seed pulled onto the zero set and
+/// marched both ways, ending as `trace`'s pieces do, with no seeds sought on the boundary and no
+/// search for the rest — for a caller that knows where its curves are (a meeting's corners) and
+/// cannot pay for the proof. `Search::sought` is false: nothing is claimed complete.
+pub fn through<F: Field>(field: &F,q: &Question) -> Result<Traced<F::At>,String> { traced(field,q,false) }
+
+fn traced<F: Field>(field: &F,q: &Question,complete: bool) -> Result<Traced<F::At>,String> {
     if !(q.tol > 0. && q.feature >= q.tol) {
         return Err(format!("a zero set traced to a tolerance of {:e} with a feature size of {:e}: the feature must be \
             no less than the tolerance",q.tol,q.feature))
@@ -219,10 +229,10 @@ pub fn trace<F: Field>(field: &F,q: &Question) -> Result<Traced<F::At>,String> {
         pieces:Vec::new(),chords:Vec::new(),grid:Grid::new(q.feature),steps:0};
     // the rim's sign changes and touches, then the inner edges'
     let corners = [[r[0][0],r[1][0]],[r[0][1],r[1][0]],[r[0][1],r[1][1]],[r[0][0],r[1][1]]];
-    for k in 0..4 {
+    for k in (0..4).filter(|_| complete) {
         for uv in t.segment_seeds(corners[k],corners[(k+1)%4]) { t.add_seed(uv,End::Rim); }
     }
-    for (i,e) in q.edges.iter().enumerate() {
+    for (i,e) in q.edges.iter().enumerate().filter(|_| complete) {
         for uv in t.edge_seeds(e) { t.add_seed(uv,End::Edge(i)); }
     }
     for k in 0..t.seeds.len() {
@@ -234,7 +244,7 @@ pub fn trace<F: Field>(field: &F,q: &Question) -> Result<Traced<F::At>,String> {
     for &s in q.seeds {
         if let Some(uv) = t.pulled(s,q.feature) { t.from_seed(uv,None)?; }
     }
-    let search = t.search()?;
+    let search = if complete { Search {sought:true,..t.search()?} } else { Search::default() };
     Ok(Traced {pieces:t.pieces,search})
 }
 
@@ -794,14 +804,16 @@ impl<'a,F: Field> Tracer<'a,F> {
             }
             // what the bound does not settle is answered beside a traced piece: at the tolerance
             // where the caller bounds the gradient too, at the feature size where it bounds `f`
-            // alone or nothing
+            // alone or nothing — within that of a traced piece at once, never refined toward it (a
+            // long meeting near tangency is a band where `f` is all but nought, which a bound of
+            // `f` alone clears only cell by tiny cell)
             let graded = bound.is_some_and(|b| b.grad.is_some());
             let leaf = if graded { tol } else { feature };
             if 2.*reach <= leaf {
-                if self.near_traced(self.point(mid),reach+tol) { out.beside += 1; continue }
+                if self.near_traced(self.point(mid),reach+leaf) { out.beside += 1; continue }
                 if let Some(s) = self.pulled(mid,reach) {
                     self.from_seed(s,None)?;
-                    if self.near_traced(self.point(mid),reach+tol) { out.beside += 1; continue }
+                    if self.near_traced(self.point(mid),reach+leaf) { out.beside += 1; continue }
                 }
                 if bound.is_none() {
                     out.sampled += 1;

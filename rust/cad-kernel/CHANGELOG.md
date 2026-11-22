@@ -13,7 +13,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   the `Field` trait) by arclength in the caller's surface metric, cut at the corners where the
   minimiser switches branches and at the rim and given inner edges, each piece's ends classified;
   seeded from the boundary, the caller and a halving search that proves cells free or monotone where
-  `Field::bound` encloses `f` and its gradient, and says what it only sampled where it does not.
+  `Field::bound` encloses `f` and its gradient, and says what it only sampled where it does not. `through` traces from
+  the caller's seeds alone, completeness not sought.
 
 - **The bench's cube tumbling 75° is built** (#942 T1d-cube, `swept::general`, `family`, `topo`):
   a fan's crossing with itself is built from the pinch it is born at — the runs' corner where the
