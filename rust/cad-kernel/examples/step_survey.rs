@@ -2,17 +2,28 @@
 //! file, tab separated — the file, `read` or `refused`, and the solids' counts and measures or
 //! the refusal.
 //!
-//!     step_survey [--reference TABLE] [--faces] FILE…
+//!     step_survey [--reference TABLE] [--faces] [--oracle CORPUS] [--past-sound] FILE…
 //!
 //! `--reference TABLE` (the STEP corpus's `reference.tsv`, rust/gcs-core/tests/step_corpus/) puts
 //! beside each file its row's reference volume and area, where it comes from, the reading's
 //! relative errors and the bar they are held to (`ok` within it, `OFF` past it); a file is found
 //! in the table by the row whose path ends its own. `--faces` lists each solid's faces after its
 //! line, a line each — index, the ADVANCED_FACE it was read from (`#0` for one the reader laid),
-//! surface kind, `reversed` or `forward`, area — for comparing face by face with the oracle's
-//! (`scripts/step-corpus/oracle.py --faces`, which names the same entities).
+//! surface kind, `reversed` or `forward`, area — and, where the file lies under the corpus
+//! (`--oracle CORPUS`, else `$STEP_CORPUS`) and the oracle has measured its faces
+//! (scripts/step-corpus/faces.py), beside each: `Σ tol·length` of its uses (`slack`, mm²), OCCT's
+//! area and brep-bench's measurer's, the reading's difference from them relative to its area,
+//! the bar `step_corpus::face_bar` holds it to, and `ok`, `OFF` or `disputed` (the readers
+//! disagree past the bar; `ok` within it of either). A face's line says why where a reference is
+//! missing (`-`), and the file's last line counts the faces past their bars. `--past-sound` reads
+//! a file `step_read::sound` refuses once more without it (`topology::solid`, its solids
+//! unplaced) and lists that reading's faces under a `past sound` line: what the reader's own
+//! faces measure, whether or not the boundary was sound.
 use cad_kernel::props::{area,volume};
-use cad_kernel::step_read::read;
+use cad_kernel::step_read::{context,read,topology,Why};
+use cad_kernel::topo::{Brep,EdgeCurve};
+use cad_kernel::util::json;
+use std::collections::BTreeMap;
 
 /// A row of the reference table: volume, area, where they come from, and the bars.
 struct Reference { volume: f64,area: f64,from: String,bar_volume: f64,bar_area: f64 }
@@ -30,15 +41,62 @@ fn table(path: &str) -> Vec<(String,Reference)> {
     }).collect()
 }
 
+/// The bar `step_corpus::face_bar` holds a face's area to (mm²): `TOL × slack + REL × area + ABS`
+/// (the constants are the gate's, rust/gcs-core/tests/step_corpus.rs says why).
+fn face_bar(slack: f64,area: f64) -> f64 { 1.*slack+1e-6*area.abs()+1e-9 }
+
+/// An edge's length, by the chord of 32 pieces of its parameter (a degenerate edge's 0).
+fn length(b: &Brep,e: usize) -> f64 {
+    let edge = &b.edges[e];
+    if matches!(edge.curve,EdgeCurve::Degenerate) { return 0. }
+    let at = |k: usize| edge.point(edge.t[0]+(edge.t[1]-edge.t[0])*k as f64/32.,&b.vertices);
+    (0..32).map(|k| { let (p,q) = (at(k),at(k+1)); ((p[0]-q[0]).powi(2)+(p[1]-q[1]).powi(2)+(p[2]-q[2]).powi(2)).sqrt() }).sum()
+}
+
+/// The oracle's faces of the corpus file `rel`: OCCT's area by entity (or why there is none), and
+/// the measurer's.
+fn oracle(root: &str,rel: &str) -> (Result<BTreeMap<u32,f64>,String>,Result<BTreeMap<u32,f64>,String>) {
+    let at = |x: &str| format!("{root}/oracle/{rel}{x}");
+    let occt = (|| {
+        let j = json::parse(&std::fs::read_to_string(at(".json")).map_err(|_| "no OCCT reading".to_string())?)?;
+        if j.get("error").is_some() { return Err("OCCT failed".to_string()) }
+        let named = j.get("faces_named").map(|n| n.arr().len() == 2 && n.arr()[0].as_i64() == n.arr()[1].as_i64()).unwrap_or(false);
+        if !(named || j.get("faces_mapped").map(|m| m.as_bool()).unwrap_or(false)) { return Err("OCCT's faces not named".into()) }
+        let mut out = BTreeMap::new();
+        for line in std::fs::read_to_string(at(".faces.tsv")).map_err(|_| "no OCCT face table".to_string())?.lines().skip(1) {
+            let f: Vec<&str> = line.split('\t').collect();
+            let e: u32 = f.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+            *out.entry(e).or_insert(0.) += f.get(5).and_then(|s| s.parse::<f64>().ok()).unwrap_or(f64::NAN);
+        }
+        Ok(out)
+    })();
+    let mass = (|| {
+        let text = std::fs::read_to_string(at(".mass.faces.tsv")).map_err(|_| "no measurer face table".to_string())?;
+        let mut out = BTreeMap::new();
+        for line in text.lines().skip(2) {
+            let (e,a) = line.split_once('\t').unwrap_or((line,""));
+            let e: u32 = e.parse().unwrap_or(0);
+            if e == 0 { return Err(format!("the measurer: {a}")) }
+            if let Ok(a) = a.parse::<f64>() { *out.entry(e).or_insert(0.) += a }
+        }
+        Ok(out)
+    })();
+    (occt,mass)
+}
+
 fn main() {
     let mut reference = None;
     let mut faces = false;
+    let mut past_sound = false;
+    let mut corpus = std::env::var("STEP_CORPUS").ok();
     let mut files = Vec::new();
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
             "--reference" => reference = Some(table(&args.next().expect("--reference names a table"))),
             "--faces" => faces = true,
+            "--past-sound" => past_sound = true,
+            "--oracle" => corpus = Some(args.next().expect("--oracle names the corpus")),
             _ => files.push(a),
         }
     }
@@ -46,6 +104,13 @@ fn main() {
         let row = reference.as_ref().and_then(|t| t.iter().filter(|(p,_)| path == *p || path.ends_with(&format!("/{p}")))
             .max_by_key(|(p,_)| p.len()).map(|(_,r)| r));
         let clock = std::time::Instant::now();
+        // the oracle's faces, where the file lies under the corpus
+        let refs = corpus.as_ref().filter(|_| faces).and_then(|root| {
+            let (full,root) = (std::fs::canonicalize(&path).ok()?,std::fs::canonicalize(root).ok()?);
+            let rel = full.strip_prefix(&root).ok()?.to_str()?.to_string();
+            Some(oracle(root.to_str()?,&rel))
+        });
+        let mut off_faces = 0;
         let text = match std::fs::read_to_string(&path) { Ok(t) => t,Err(e) => { println!("{path}\tunreadable\t{e}"); continue } };
         let beside = |v: Option<(f64,f64)>| match (row,v) {
             (None,_) => String::new(),
@@ -56,7 +121,17 @@ fn main() {
                     r.from,r.bar_volume,r.bar_area,if dv <= r.bar_volume && da <= r.bar_area { "ok" } else { "OFF" })
             }
         };
-        match read(&text) {
+        let got = match read(&text) {
+            Err(r) if past_sound && r.why == Why::Unsound => {
+                println!("{path}\trefused\t{:?}\t{r}\t{:.2?}{}",r.why,clock.elapsed(),beside(None));
+                let again = context::parse(&text).and_then(|file| context::solids(&file)?.into_iter()
+                    .map(|f| topology::solid(&file,f)).collect::<Result<Vec<_>,_>>());
+                if again.is_ok() { println!("{path}\tpast sound") }
+                again
+            }
+            got => got,
+        };
+        match got {
             Ok(solids) => {
                 // the file's measures are its solids' together, as the reference's are
                 let v: f64 = solids.iter().map(|g| volume(&g.brep)).sum();
@@ -68,14 +143,37 @@ fn main() {
                     println!("{path}\tread\t#{}\tfaces {}\tedges {}\tvertices {}\tvolume {:.9e}\tarea {:.9e}\t{:.2?}{}",g.entity,b.faces.len(),
                         b.edges.len(),b.vertices.len(),volume(b),ga,clock.elapsed(),if last { beside(Some((v,a))) } else { String::new() });
                     if faces {
+                        let lengths: Vec<f64> = (0..b.edges.len()).map(|e| length(b,e)).collect();
                         for (k,f) in b.faces.iter().enumerate() {
-                            println!("  {k}\t#{}\t{}\t{}\t{:.12e}",g.faces.get(k).copied().unwrap_or(0),f.surface.kind(),
-                                if f.reversed { "reversed" } else { "forward" },area(b,f));
+                            let e = g.faces.get(k).copied().unwrap_or(0);
+                            let a = area(b,f);
+                            let slack: f64 = f.loops.iter().flatten().map(|c| b.edges[c.edge as usize].tol*lengths[c.edge as usize]).sum();
+                            let mut line = format!("  {k}\t#{e}\t{}\t{}\t{a:.12e}",f.surface.kind(),if f.reversed { "reversed" } else { "forward" });
+                            if let Some((occt,mass)) = &refs {
+                                let bar = face_bar(slack,a);
+                                let o = occt.as_ref().ok().and_then(|m| m.get(&e).copied());
+                                let m = mass.as_ref().ok().and_then(|m| m.get(&e).copied());
+                                let d = |r: Option<f64>| r.map_or("-".to_string(),|r| format!("{:+.1e}",(a-r)/a.abs().max(1e-300)));
+                                let off = |r: f64| (a-r).abs() <= bar;
+                                let verdict = match (o,m) {
+                                    (None,None) => "-",
+                                    (Some(r),None) | (None,Some(r)) => if off(r) { "ok" } else { off_faces += 1; "OFF" },
+                                    (Some(x),Some(y)) if (x-y).abs() <= bar => if off(x) && off(y) { "ok" } else { off_faces += 1; "OFF" },
+                                    (Some(x),Some(y)) => if off(x) || off(y) { "disputed" } else { off_faces += 1; "OFF" },
+                                };
+                                line += &format!("\tslack {slack:.1e}\tOCCT {}\t{}\tmeasurer {}\t{}\tbar {bar:.1e}\t{verdict}",
+                                    o.map_or("-".into(),|x| format!("{x:.9e}")),d(o),m.map_or("-".into(),|x| format!("{x:.9e}")),d(m));
+                            }
+                            println!("{line}");
                         }
                     }
                 }
             },
             Err(r) => println!("{path}\trefused\t{:?}\t{r}\t{:.2?}{}",r.why,clock.elapsed(),beside(None)),
+        }
+        if let Some((occt,mass)) = &refs {
+            println!("{path}\tfaces past their bars: {off_faces}{}{}",occt.as_ref().err().map_or(String::new(),|e| format!("\tOCCT: {e}")),
+                mass.as_ref().err().map_or(String::new(),|e| format!("\tmeasurer: {e}")));
         }
     }
 }

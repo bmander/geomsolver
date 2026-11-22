@@ -63,7 +63,7 @@ fn no_mutant_is_read_wrong() {
         let t = tally.entry(kind(row)).or_default();
         match &r.outcome {
             Outcome::Refused(_) => t[0] += 1,
-            Outcome::Read {..} => match wrong(row,&r.outcome) {
+            Outcome::Read {..} => match wrong(row,r) {
                 Some(w) => { t[2] += 1; bad.push(format!("{}: {w} ({})",row.path,row.from)) }
                 None => t[1] += 1,
             },

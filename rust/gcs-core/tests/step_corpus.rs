@@ -35,7 +35,8 @@
 //! `STEP_CORPUS_THREADS` how many at once (the machine's parallelism by default).
 use gcs_core::brep::props::{area,volume};
 use gcs_core::brep::step_read::{read,Given,Refusal};
-use std::collections::BTreeSet;
+use gcs_core::brep::topo::{Brep,EdgeCurve};
+use std::collections::{BTreeMap,BTreeSet};
 use std::path::{Path,PathBuf};
 use std::sync::OnceLock;
 use std::time::{Duration,Instant};
@@ -103,10 +104,21 @@ pub(crate) enum Outcome {
     Panicked(String),
     /// Not done within the time bound (seconds); its thread is left to run.
     Hung(f64),
-    Read { solids: usize,entities: [usize; 3],volume: f64,area: f64 },
+    Read { solids: usize,entities: [usize; 3],volume: f64,area: f64,faces: Vec<Face> },
 }
 
-pub(crate) struct Read { pub(crate) outcome: Outcome,pub(crate) seconds: f64 }
+/// A face read, as the per-face check needs it.
+pub(crate) struct Face {
+    /// The ADVANCED_FACE it was read from (0 for one the reader laid).
+    pub(crate) entity: u32,
+    pub(crate) kind: &'static str,
+    pub(crate) area: f64,
+    /// `Σ tol × length` over its loops' uses (mm²): the area its boundary's measured slack can
+    /// sweep, so the most two readings of a tolerant boundary can differ by.
+    pub(crate) slack: f64,
+}
+
+pub(crate) struct Read { pub(crate) outcome: Outcome,pub(crate) seconds: f64,pub(crate) refs: Refs }
 
 /// The entities `given` read, each once (0, an entity the reader laid itself, not counted).
 fn entities(given: &[Given]) -> [usize; 3] {
@@ -114,6 +126,27 @@ fn entities(given: &[Given]) -> [usize; 3] {
     [distinct(&mut given.iter().flat_map(|g| g.faces.iter().copied())),
         distinct(&mut given.iter().flat_map(|g| g.edges.iter().copied())),
         distinct(&mut given.iter().flat_map(|g| g.vertices.iter().copied()))]
+}
+
+/// An edge's length, by the chord of `CHORDS` pieces of its parameter (a degenerate edge's 0).
+fn length(b: &Brep,e: usize) -> f64 {
+    const CHORDS: usize = 32;
+    let edge = &b.edges[e];
+    if matches!(edge.curve,EdgeCurve::Degenerate) { return 0. }
+    let at = |k: usize| edge.point(edge.t[0]+(edge.t[1]-edge.t[0])*k as f64/CHORDS as f64,&b.vertices);
+    (0..CHORDS).map(|k| { let (p,q) = (at(k),at(k+1)); ((p[0]-q[0]).powi(2)+(p[1]-q[1]).powi(2)+(p[2]-q[2]).powi(2)).sqrt() }).sum()
+}
+
+/// Each face of `given`, its area measured once (the file's area is their sum).
+fn faces_of(given: &[Given]) -> Vec<Face> {
+    given.iter().flat_map(|g| {
+        let b = &g.brep;
+        let lengths: Vec<f64> = (0..b.edges.len()).map(|e| length(b,e)).collect();
+        b.faces.iter().enumerate().map(move |(k,f)| Face {entity: g.faces.get(k).copied().unwrap_or(0),
+            kind: f.surface.kind(),area: area(b,f),
+            slack: f.loops.iter().flatten().map(|c| b.edges[c.edge as usize].tol*lengths[c.edge as usize]).sum()})
+            .collect::<Vec<_>>()
+    }).collect()
 }
 
 fn read_one(root: &Path,row: &Row,bound: Option<Duration>) -> Outcome {
@@ -137,11 +170,11 @@ pub(crate) fn within(text: String,bound: Duration) -> Outcome {
 pub(crate) fn measured(text: &str) -> Outcome {
     let got = std::panic::catch_unwind(|| read(&text).map(|given| {
         let v: f64 = given.iter().map(|g| volume(&g.brep)).sum();
-        let a: f64 = given.iter().map(|g| g.brep.faces.iter().map(|f| area(&g.brep,f)).sum::<f64>()).sum();
-        (given.len(),entities(&given),v,a)
+        let faces = faces_of(&given);
+        (given.len(),entities(&given),v,faces.iter().map(|f| f.area).sum::<f64>(),faces)
     }));
     match got {
-        Ok(Ok((solids,entities,volume,area))) => Outcome::Read {solids,entities,volume,area},
+        Ok(Ok((solids,entities,volume,area,faces))) => Outcome::Read {solids,entities,volume,area,faces},
         Ok(Err(r)) => Outcome::Refused(r),
         Err(p) => Outcome::Panicked(p.downcast_ref::<&str>().map(|s| s.to_string())
             .or_else(|| p.downcast_ref::<String>().cloned()).unwrap_or_else(|| "a panic".into())),
@@ -180,7 +213,9 @@ pub(crate) fn read_table(rows: Vec<Row>,bound: Option<Duration>) -> Option<(Vec<
             let Some(&i) = order.get(k) else { break };
             let start = Instant::now();
             let outcome = read_one(&root,&rows[i],bound);
-            done.lock().unwrap()[i] = Some(Read {outcome,seconds: start.elapsed().as_secs_f64()});
+            let seconds = start.elapsed().as_secs_f64();
+            let refs = match &outcome { Outcome::Read {..} => Refs::of(&root,&rows[i].path,&rows[i].data_sha256),_ => Refs::none() };
+            done.lock().unwrap()[i] = Some(Read {outcome,seconds,refs});
         });
     });
     eprintln!("{} files of {} read in {:.1} s, {threads} at once",rows.len(),root.display(),
@@ -191,45 +226,236 @@ pub(crate) fn read_table(rows: Vec<Row>,bound: Option<Duration>) -> Option<(Vec<
 
 pub(crate) fn rel(got: f64,want: f64) -> f64 { (got-want).abs()/want.abs() }
 
-/// Why a read is wrong against its row, if it is.
-pub(crate) fn wrong(row: &Row,read: &Outcome) -> Option<String> {
-    let Outcome::Read {solids,entities,volume,area} = read else { return None };
-    if row.refuse() { return Some(format!("read {solids} solids, volume {volume:.12e} area {area:.12e}, from a file that represents none")) }
-    if *solids != row.solids { return Some(format!("{solids} solids, the file has {}",row.solids)) }
+// ---- face by face ------------------------------------------------------------------------------
+
+/// What the two readers say of each face of a file, by its ADVANCED_FACE, read from
+/// `$STEP_CORPUS/oracle/` (scripts/step-corpus/faces.py makes it): OCCT's area and centroid
+/// (`<path>.faces.tsv`, a face OCCT split summed, named where `faces_mapped` or `faces_named`
+/// says every face is), and brep-bench's measurer's area (`<path>.mass.faces.tsv`, the faces it
+/// can measure). Each is the reason it is missing where it is: a table absent or of other bytes
+/// is said, never taken for agreement.
+pub(crate) struct Refs {
+    pub(crate) occt: Result<BTreeMap<u32,(f64,[f64; 3])>,String>,
+    pub(crate) mass: Result<BTreeMap<u32,f64>,String>,
+}
+
+impl Refs {
+    pub(crate) fn none() -> Refs { Refs {occt: Err("not read".into()),mass: Err("not read".into())} }
+
+    pub(crate) fn of(root: &Path,path: &str,sha: &str) -> Refs {
+        let at = |x: &str| root.join("oracle").join(format!("{path}{x}"));
+        Refs {occt: occt_faces(&at(".json"),&at(".faces.tsv"),sha),mass: mass_faces(&at(".mass.faces.tsv"),sha)}
+    }
+}
+
+fn occt_faces(json: &Path,tsv: &Path,sha: &str) -> Result<BTreeMap<u32,(f64,[f64; 3])>,String> {
+    let text = std::fs::read_to_string(json).map_err(|_| "no OCCT reading".to_string())?;
+    let j = gcs_core::json::parse(&text).map_err(|e| format!("OCCT's reading unreadable: {e}"))?;
+    if j.get("error").is_some() { return Err("OCCT failed".into()) }
+    if j.get("data_sha256").map(|s| s.as_str()) != Some(sha) { return Err("OCCT's reading is of other bytes".into()) }
+    let named = j.get("faces_named").map(|n| n.arr().len() == 2 && n.arr()[0].as_i64() == n.arr()[1].as_i64())
+        .unwrap_or(false);
+    if !(named || j.get("faces_mapped").map(|m| m.as_bool()).unwrap_or(false)) {
+        return Err("OCCT's faces not named".into())
+    }
+    let text = std::fs::read_to_string(tsv).map_err(|_| "no OCCT face table".to_string())?;
+    let mut out = BTreeMap::<u32,(f64,[f64; 3])>::new();
+    for line in text.lines().skip(1) {
+        let f: Vec<&str> = line.split('\t').collect();
+        let x = |i: usize| f.get(i).and_then(|s| s.parse::<f64>().ok()).unwrap_or(f64::NAN);
+        let e: u32 = f.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+        if e == 0 { return Err("a face OCCT names no entity".into()) }
+        let (a,c) = (x(5),[x(6),x(7),x(8)]);
+        // a face OCCT split: the parts' areas summed, their centroids weighed by them
+        let s = out.entry(e).or_insert((0.,[0.; 3]));
+        let w = s.0+a;
+        s.1 = std::array::from_fn(|k| if w != 0. { (s.1[k]*s.0+c[k]*a)/w } else { c[k] });
+        s.0 = w;
+    }
+    Ok(out)
+}
+
+fn mass_faces(tsv: &Path,sha: &str) -> Result<BTreeMap<u32,f64>,String> {
+    let text = std::fs::read_to_string(tsv).map_err(|_| "no measurer face table".to_string())?;
+    let mut lines = text.lines();
+    if lines.next() != Some(&format!("#\t{sha}")) { return Err("the measurer's faces are of other bytes".into()) }
+    let mut out = BTreeMap::new();
+    for line in lines.skip(1) {
+        let (e,a) = line.split_once('\t').unwrap_or((line,""));
+        let e: u32 = e.parse().unwrap_or(0);
+        if e == 0 { return Err(format!("the measurer: {a}")) }
+        // a face the measurer cannot measure is said by its reason, and not compared
+        if let Ok(a) = a.parse::<f64>() { *out.entry(e).or_insert(0.) += a }
+    }
+    Ok(out)
+}
+
+/// **The bar a face's area is held to** (mm²): `TOL × Σ tol·length + REL × area + ABS`. A
+/// tolerant face's boundary is known to within its edges' measured tolerances, so two readings
+/// of it differ by at most the area those tolerances sweep along its edges, `Σ tol·length`
+/// (`Face::slack`: one reader follows the file's pcurves, the other the edges' curves in space);
+/// `REL` is the integration error of the readers' quadratures, OCCT's adaptive rule asked for
+/// 1e-10 and ours; `ABS` the floor under a face of no area. The constants are measured on the
+/// faces of files read right (scripts/step-corpus/README.md, "Face by face").
+pub(crate) const TOL: f64 = 1.;
+pub(crate) const REL: f64 = 1e-6;
+pub(crate) const ABS: f64 = 1e-9;
+
+pub(crate) fn face_bar(slack: f64,area: f64) -> f64 { TOL*slack+REL*area.abs()+ABS }
+
+/// What the face-by-face check found of a file read.
+#[derive(Default)]
+pub(crate) struct Faces {
+    /// Faces held to a reference, to two that disagree past the bar (`disputed`, read either
+    /// way), and not held to any (no reader measured them).
+    pub(crate) compared: usize,
+    pub(crate) disputed: usize,
+    pub(crate) uncompared: usize,
+    /// Why the file's faces are not compared, where none are.
+    pub(crate) why_not: Option<String>,
+    /// The face farthest from its reference, by its error over its bar, and what it says.
+    pub(crate) worst: Option<(f64,String)>,
+    /// The faces past their bars.
+    pub(crate) wrong: Vec<String>,
+}
+
+/// Each face of `faces` against `refs`: within its bar of the reference the two readers agree
+/// on, or of either where they do not (disputed); faces of one ADVANCED_FACE taken together.
+pub(crate) fn faces_judged(faces: &[Face],refs: &Refs) -> Faces {
+    let mut ours = BTreeMap::<u32,(&str,f64,f64)>::new();
+    for f in faces.iter().filter(|f| f.entity != 0) {
+        let s = ours.entry(f.entity).or_insert((f.kind,0.,0.));
+        s.1 += f.area;
+        s.2 += f.slack;
+    }
+    let mut out = Faces::default();
+    let ids: BTreeSet<u32> = ours.keys().copied().collect();
+    let occt = match &refs.occt {
+        Ok(m) if m.keys().copied().collect::<BTreeSet<_>>() == ids => Ok(m),
+        Ok(_) => Err("OCCT's faces are not the ones read".to_string()),
+        Err(e) => Err(e.clone()),
+    };
+    let mass = refs.mass.as_ref().map_err(|e| e.clone());
+    if let (Err(a),Err(b)) = (&occt,&mass) { out.why_not = Some(format!("{a}; {b}")) }
+    for (e,(kind,area,slack)) in &ours {
+        let o = occt.as_ref().ok().map(|m| m[e].0);
+        let m = mass.as_ref().ok().and_then(|m| m.get(e).copied());
+        let bar = face_bar(*slack,*area);
+        let off = |r: f64| (area-r).abs()/bar;
+        let (err,disputed) = match (o,m) {
+            (None,None) => { out.uncompared += 1; continue }
+            (Some(r),None) | (None,Some(r)) => (off(r),false),
+            (Some(a),Some(b)) if (a-b).abs() <= bar => (off(a).max(off(b)),false),
+            (Some(a),Some(b)) => (off(a).min(off(b)),true),
+        };
+        out.compared += 1;
+        out.disputed += disputed as usize;
+        let say = || format!("face #{e} ({kind}): area {area:.9e}, OCCT {}, measurer {}, bar {bar:.1e} (slack {slack:.1e}){}",
+            o.map_or("-".into(),|x| format!("{x:.9e}")),m.map_or("-".into(),|x| format!("{x:.9e}")),
+            if disputed { ", disputed" } else { "" });
+        if !(err <= 1.) { out.wrong.push(say()) }
+        if out.worst.as_ref().map_or(true,|w| err > w.0) { out.worst = Some((err,say())) }
+    }
+    out
+}
+
+/// Why a read is wrong against its row, if it is: its totals, then each of its faces.
+pub(crate) fn wrong(row: &Row,read: &Read) -> Option<String> {
+    match totals(row,&read.outcome) {
+        Totals::Wrong(w) => Some(w),
+        Totals::Alt => None,
+        Totals::Right => {
+            let Outcome::Read {faces,..} = &read.outcome else { return None };
+            let f = faces_judged(faces,&read.refs);
+            (!f.wrong.is_empty()).then(|| format!("{} of {} faces past their bars: {}",f.wrong.len(),f.compared,
+                f.wrong.iter().take(4).cloned().collect::<Vec<_>>().join("; ")))
+        }
+    }
+}
+
+/// A read's totals against its row.
+pub(crate) enum Totals {
+    Right,
+    /// Right only as the row's second reading (`alt`: a disputed file's measurer's, a mutant's
+    /// unedited source's), whose faces the oracle's tables do not give: its faces are not held.
+    Alt,
+    Wrong(String),
+}
+
+pub(crate) fn totals(row: &Row,read: &Outcome) -> Totals {
+    let Outcome::Read {solids,entities,volume,area,..} = read else { return Totals::Right };
+    if row.refuse() { return Totals::Wrong(format!("read {solids} solids, volume {volume:.12e} area {area:.12e}, from a file that represents none")) }
+    if *solids != row.solids { return Totals::Wrong(format!("{solids} solids, the file has {}",row.solids)) }
     if *entities != row.entities {
-        return Some(format!("faces, edges, vertices read {entities:?}, the file's solids hold {:?}",row.entities))
+        return Totals::Wrong(format!("faces, edges, vertices read {entities:?}, the file's solids hold {:?}",row.entities))
     }
     let (dv,da) = (rel(*volume,row.volume),rel(*area,row.area));
+    if dv <= row.bar_volume && da <= row.bar_area { return Totals::Right }
     // a disputed file may be read to either reading
     if let Some((v,a)) = row.alt {
-        if rel(*volume,v) <= row.bar_volume && rel(*area,a) <= row.bar_area { return None }
+        if rel(*volume,v) <= row.bar_volume && rel(*area,a) <= row.bar_area { return Totals::Alt }
     }
-    if !(dv <= row.bar_volume) { return Some(format!("volume {volume:.12e} is {dv:.1e} off {:.12e} ({}), the bar {:.0e}",row.volume,row.from,row.bar_volume)) }
-    if !(da <= row.bar_area) { return Some(format!("area {area:.12e} is {da:.1e} off {:.12e} ({}), the bar {:.0e}",row.area,row.from,row.bar_area)) }
-    None
+    if !(dv <= row.bar_volume) { return Totals::Wrong(format!("volume {volume:.12e} is {dv:.1e} off {:.12e} ({}), the bar {:.0e}",row.volume,row.from,row.bar_volume)) }
+    Totals::Wrong(format!("area {area:.12e} is {da:.1e} off {:.12e} ({}), the bar {:.0e}",row.area,row.from,row.bar_area))
 }
 
 /// The progress report: a line a file.
 pub(crate) fn report(rows: &[Row],reads: &[Read]) {
     let mut tally = std::collections::BTreeMap::<&str,usize>::new();
-    println!("{:<64} {:<8} {:>9} {:>9} {:>7}  why / witness","file","outcome","dV","dA","s");
+    println!("{:<64} {:<8} {:>9} {:>9} {:>11} {:>8} {:>7}  why / witness; the worst face","file","outcome","dV","dA",
+        "faces","worst","s");
     for (row,r) in rows.iter().zip(reads) {
+        let judged = match &r.outcome { Outcome::Read {faces,..} => Some((faces.len(),faces_judged(faces,&r.refs))),_ => None };
         let (word,dv,da,why) = match &r.outcome {
             Outcome::Missing => ("missing","".into(),"".into(),String::new()),
             Outcome::Stale(sha) => ("stale","".into(),"".into(),format!("DATA's sha256 {sha}")),
             Outcome::Refused(f) => (if row.refuse() { "nosolid" } else if row.may_refuse() { "disputed" } else { "refused" },"".into(),"".into(),format!("{:?} {f}",f.why)),
             Outcome::Panicked(m) => ("PANIC","".into(),"".into(),m.clone()),
             Outcome::Hung(s) => ("HUNG","".into(),"".into(),format!("not done in {s} s")),
-            Outcome::Read {volume,area,..} => match wrong(row,&r.outcome) {
+            Outcome::Read {volume,area,..} => match wrong(row,r) {
                 Some(w) => ("WRONG",format!("{:.1e}",rel(*volume,row.volume)),format!("{:.1e}",rel(*area,row.area)),w),
                 None => ("read",format!("{:.1e}",rel(*volume,row.volume)),format!("{:.1e}",rel(*area,row.area)),String::new()),
             },
         };
         *tally.entry(word).or_default() += 1;
+        let (n,worst,face) = match &judged {
+            Some((n,f)) => (format!("{}/{n}",f.compared),f.worst.as_ref().map_or("".into(),|w| format!("{:.1e}",w.0)),
+                f.worst.as_ref().map_or(f.why_not.clone().unwrap_or_default(),|w| w.1.clone())),
+            None => (String::new(),String::new(),String::new()),
+        };
         let why: String = why.chars().take(110).collect();
-        println!("{:<64} {word:<8} {dv:>9} {da:>9} {:>7.2}  {why}",row.path,r.seconds);
+        let face: String = face.chars().take(160).collect();
+        println!("{:<64} {word:<8} {dv:>9} {da:>9} {n:>11} {worst:>8} {:>7.2}  {why}{}{face}",row.path,r.seconds,
+            if why.is_empty() || face.is_empty() { "" } else { "; " });
     }
     println!("{tally:?}");
+}
+
+/// How many files read were compared face by face, and why the others were not (a tally); every
+/// face of every file read, with its references, to `STEP_CORPUS_FACES_OUT` where it names a file
+/// (the measure the bar's constants are set by).
+pub(crate) fn face_census(rows: &[Row],reads: &[Read]) {
+    let mut why = BTreeMap::<String,usize>::new();
+    let (mut files,mut faces,mut uncompared,mut disputed) = (0,0,0,0);
+    let mut dump = String::from("path\tfrom\ttotals\tentity\tkind\tarea\tslack\tocct\tmass\n");
+    for (row,r) in rows.iter().zip(reads) {
+        let Outcome::Read {faces: ours,..} = &r.outcome else { continue };
+        let f = faces_judged(ours,&r.refs);
+        if f.compared > 0 { files += 1 } else { *why.entry(f.why_not.clone().unwrap_or_else(|| "no face measured".into())).or_default() += 1 }
+        faces += f.compared;
+        uncompared += f.uncompared;
+        disputed += f.disputed;
+        let t = match totals(row,&r.outcome) { Totals::Right => "right",Totals::Alt => "alt",Totals::Wrong(_) => "wrong" };
+        for x in ours {
+            let o = r.refs.occt.as_ref().ok().and_then(|m| m.get(&x.entity)).map_or(String::new(),|o| format!("{:e}",o.0));
+            let m = r.refs.mass.as_ref().ok().and_then(|m| m.get(&x.entity)).map_or(String::new(),|m| format!("{m:e}"));
+            dump += &format!("{}\t{}\t{t}\t{}\t{}\t{:e}\t{:e}\t{o}\t{m}\n",row.path,row.from,x.entity,x.kind,x.area,x.slack);
+        }
+    }
+    let read = reads.iter().filter(|r| matches!(r.outcome,Outcome::Read {..})).count();
+    eprintln!("face by face: {files} of {read} files read compared, {faces} faces ({disputed} disputed), {uncompared} \
+        faces no reader measured; files not compared: {why:?}");
+    if let Ok(out) = std::env::var("STEP_CORPUS_FACES_OUT") { std::fs::write(&out,dump).unwrap_or_else(|e| panic!("{out}: {e}")) }
 }
 
 /// A file missing or stale is said, and is a failure only where the table should describe it.
@@ -248,10 +474,11 @@ fn nothing_is_read_wrong() {
     let missing = reads.iter().filter(|r| matches!(r.outcome,Outcome::Missing)).count();
     if missing > 0 { eprintln!("{missing} files of the table are not in the corpus, and are not read") }
     let mut bad = unread(rows,reads);
-    bad.extend(rows.iter().zip(reads).filter_map(|(row,r)| wrong(row,&r.outcome).map(|w| format!("{}: {w}",row.path))));
+    bad.extend(rows.iter().zip(reads).filter_map(|(row,r)| wrong(row,r).map(|w| format!("{}: {w}",row.path))));
     let refused = reads.iter().filter(|r| matches!(r.outcome,Outcome::Refused(_))).count();
     let read = reads.iter().filter(|r| matches!(r.outcome,Outcome::Read {..})).count();
     eprintln!("{read} read, {refused} refused, {} wrong or stale",bad.len());
+    face_census(rows,reads);
     assert!(bad.is_empty(),"read wrong:\n{}",bad.join("\n"));
 }
 
@@ -275,7 +502,7 @@ fn the_corpus_reads() {
     // a file that represents no solid is done when it is refused
     let short = rows.iter().zip(reads).filter(|(row,r)| match r.outcome {
         Outcome::Refused(_) => !row.may_refuse(),
-        Outcome::Read {..} => wrong(row,&r.outcome).is_some(),
+        Outcome::Read {..} => wrong(row,r).is_some(),
         _ => true,
     }).count();
     assert!(short == 0,"{short} of {} files not read to their reference",rows.len());
