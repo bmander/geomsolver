@@ -65,17 +65,18 @@ pub type Rect = [[f64;2];2];
 #[derive(Clone,Debug)]
 pub struct Value<A> { pub f: f64,pub grad: Option<[f64;2]>,pub at: A }
 
-/// Enclosures over a cell of `f` and of its two partial derivatives (`Iv::ANY` where not known).
-/// Over a part of the cell outside `f`'s domain (beyond an inner edge) the bound may answer as if
-/// `f` had no zero there.
+/// Enclosures over a cell of `f` and of its two partial derivatives: `grad` none where the caller
+/// bounds no gradient at all (a Lipschitz bound), `Iv::ANY` in a part it cannot bound over this
+/// cell (one holding a distance's centre). Over a part of the cell outside `f`'s domain (beyond an
+/// inner edge) the bound may answer as if `f` had no zero there.
 #[derive(Clone,Copy,Debug)]
-pub struct Bound { pub value: Iv,pub grad: [Iv;2] }
+pub struct Bound { pub value: Iv,pub grad: Option<[Iv;2]> }
 
 impl Bound {
     /// The bound of a function Lipschitz in space with constant `l` (a depth, a distance: 1), read
     /// `f` at the cell's middle and every point of the cell within `reach` of it in space.
     pub fn lipschitz(f: f64,l: f64,reach: f64) -> Bound {
-        Bound {value:Iv::point(f)+Iv::new(-l*reach,l*reach),grad:[Iv::ANY,Iv::ANY]}
+        Bound {value:Iv::point(f)+Iv::new(-l*reach,l*reach),grad:None}
     }
 }
 
@@ -381,7 +382,7 @@ impl<'a,F: Field> Tracer<'a,F> {
                 continue
             };
             if !bd.value.has_zero() { continue }
-            let rate = bd.grad[0].times(q[0]-p[0])+bd.grad[1].times(q[1]-p[1]);
+            let rate = bd.grad.map_or(Iv::ANY,|g| g[0].times(q[0]-p[0])+g[1].times(q[1]-p[1]));
             if !rate.has_zero() {
                 // monotone along it: a root exactly where its ends' signs differ
                 let (fa,fb) = (read(a),read(b));
@@ -716,7 +717,7 @@ impl<'a,F: Field> Tracer<'a,F> {
         if self.off(c,&ra) > tol || self.off(c,&rb) > tol { return None }
         if self.outside(c).is_some() || distance(self.point(p),self.point(c)) > h+tol { return None }
         let l = self.least(c)?;
-        if self.undercut(c,&l) { return None }
+        if self.undercut(c,&l) || !self.chord(p,c,mine) { return None }
         Some((c,ra,rb))
     }
 
@@ -749,7 +750,7 @@ impl<'a,F: Field> Tracer<'a,F> {
             let bound = self.field.bound(c);
             if let Some(b) = bound {
                 if !b.value.has_zero() { out.free += 1; continue }
-                if !b.grad[0].has_zero() || !b.grad[1].has_zero() {
+                if b.grad.is_some_and(|g| !g[0].has_zero() || !g[1].has_zero()) {
                     out.monotone += 1;
                     let corners = [[c[0][0],c[1][0]],[c[0][1],c[1][0]],[c[0][1],c[1][1]],[c[0][0],c[1][1]]];
                     for k in 0..4 {
@@ -761,9 +762,9 @@ impl<'a,F: Field> Tracer<'a,F> {
                 }
             }
             // what the bound does not settle is answered beside a traced piece: at the tolerance
-            // where it bounds the gradient too, at the feature size where it bounds `f` alone or
-            // nothing
-            let graded = bound.is_some_and(|b| b.grad[0].0.is_some() || b.grad[1].0.is_some());
+            // where the caller bounds the gradient too, at the feature size where it bounds `f`
+            // alone or nothing
+            let graded = bound.is_some_and(|b| b.grad.is_some());
             let leaf = if graded { tol } else { feature };
             if 2.*reach <= leaf {
                 if self.near_traced(self.point(mid),reach+tol) { out.beside += 1; continue }
