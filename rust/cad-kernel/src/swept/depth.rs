@@ -78,28 +78,33 @@ pub fn cover(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],x: V,own: f64,off: f64
     let most = if speed > 0. { 0.25*ring.thickness/speed } else { b-a };
     let first = HALF_READ*(b-a);
     let d = |t: f64| depth_at(ring,path,x,t).map_or(f64::INFINITY,|r| r.0);
-    // each side's samples: the roll and the depth
-    let side = |dir: f64| -> Vec<(f64,f64)> {
-        let end = if dir > 0. { b } else { a };
-        let mut out = Vec::new();
-        let (mut s,mut step) = (own,first);
-        while (end-s)*dir > 0. {
-            s = if (end-s-dir*step)*dir <= 0. { end } else { s+dir*step };
-            let v = d(s);
-            out.push((s,v));
-            step = (1.25*step).min(most).min(v.abs().max(within)/speed);
-        }
-        out
-    };
-    let (lower,upper) = (side(-1.),side(1.));
     // (a side whose first depth clear of its rounding — the pose's and the distance's few roundings
     // of the point's place, read at the tool's size — is below nought: its neighbours cover the
     // point. Nearer, `d` is nought to its rounding either way)
     // (or, where the point stands off its sheet — a fitted sheet's point, `off` its fit — that:
     // about its own instant `d` is then nought to it)
     let rounding = (16.*f64::EPSILON*(crate::util::space::norm(x)+ring.size)).max(off);
-    let held = |s: &[(f64,f64)]| s.iter().find(|p| p.1.abs() > rounding).is_some_and(|p| p.1 < 0.);
-    if held(&lower) || held(&upper) { return Ok(Reading::Near) }
+    // each side's samples: the roll and the depth; none where the side holds the point (its march
+    // stopped there, the lower side read whole before the upper is begun)
+    let side = |dir: f64| -> Option<Vec<(f64,f64)>> {
+        let end = if dir > 0. { b } else { a };
+        let mut out = Vec::new();
+        let (mut s,mut step) = (own,first);
+        let mut clear = false;
+        while (end-s)*dir > 0. {
+            s = if (end-s-dir*step)*dir <= 0. { end } else { s+dir*step };
+            let v = d(s);
+            out.push((s,v));
+            if !clear && v.abs() > rounding {
+                if v < 0. { return None }
+                clear = true;
+            }
+            step = (1.25*step).min(most).min(v.abs().max(within)/speed);
+        }
+        Some(out)
+    };
+    let Some(lower) = side(-1.) else { return Ok(Reading::Near) };
+    let Some(upper) = side(1.) else { return Ok(Reading::Near) };
     // each side's own contact's end: the greatest sample before `d` first falls a rounding below
     // the greatest so far, settled between its neighbours
     let past = |s: &[(f64,f64)]| -> (usize,Option<f64>) {
@@ -122,7 +127,8 @@ pub fn cover(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],x: V,own: f64,off: f64
     };
     let ((kl,el),(ku,eu)) = (past(&lower),past(&upper));
     // the least sample past each end, settled between its neighbours and within the far stretch
-    let mut best: Option<(f64,f64)> = None;
+    // (each with the tool's reading at its instant where the golden section's was taken: read once)
+    let mut best: Option<(f64,f64,Option<(f64,V,usize)>)> = None;
     for (s,k,e) in [(&lower,kl,el),(&upper,ku,eu)] {
         let Some(e) = e else { continue };
         let Some(i) = (k..s.len()).min_by(|&i,&j| s[i].1.total_cmp(&s[j].1)) else { continue };
@@ -130,12 +136,14 @@ pub fn cover(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],x: V,own: f64,off: f64
         let (p,q) = (ends(i.saturating_sub(1).max(k-1)),if i+1 < s.len() { s[i+1].0 } else { s[i].0 });
         let (l,h) = if p < q { (p,q) } else { (q,p) };
         let t = if h > l { least(&d,l,h) } else { s[i].0 };
-        let v = d(t).min(s[i].1);
-        let t = if d(t) <= s[i].1 { t } else { s[i].0 };
-        if best.is_none_or(|b| v < b.1) { best = Some((t,v)) }
+        let r = depth_at(ring,path,x,t);
+        let dt = r.map_or(f64::INFINITY,|r| r.0);
+        let v = dt.min(s[i].1);
+        let (t,r) = if dt <= s[i].1 { (t,r) } else { (s[i].0,None) };
+        if best.is_none_or(|b| v < b.1) { best = Some((t,v,r)) }
     }
-    let Some((t,_)) = best else { return Ok(Reading::Alone) };
-    let Some((depth,point,piece)) = depth_at(ring,path,x,t) else { return Err(Unbuilt::Failed("a pose not read".into())) };
+    let Some((t,_,r)) = best else { return Ok(Reading::Alone) };
+    let Some((depth,point,piece)) = r.or_else(|| depth_at(ring,path,x,t)) else { return Err(Unbuilt::Failed("a pose not read".into())) };
     Ok(Reading::Far(Cover {depth,at:t,point,piece}))
 }
 
@@ -146,6 +154,19 @@ pub fn sheet(ring: &Ring,path: &Trajectory,whole: [f64;2],theta: f64,t: f64,l: L
     let th = theta.rem_euclid(std::f64::consts::TAU);
     let r = ring.root(&w,th,l,false)?;
     Some((path.pose(t).ok()?.point(r.x),ring.bend(&w,&dw,th,&r)))
+}
+
+/// The twist and the pose at the roll `t`, read once for every point of a sheet's row there
+/// (`sheet`'s, but for its bend): none where either is not read.
+fn row(path: &Trajectory,whole: [f64;2],t: f64) -> Option<(Twist,Pose)> {
+    let (w,_) = super::rings::rates(path,t,whole).ok()?;
+    Some((w,path.pose(t).ok()?))
+}
+
+/// The point of a ring's sheet at `θ` on the contact labelled `l` on the row `(w, pose)` (`row`):
+/// `sheet`'s point.
+fn on_row(ring: &Ring,(w,pose): &(Twist,Pose),theta: f64,l: Label) -> Option<V> {
+    Some(pose.point(ring.root(w,theta.rem_euclid(std::f64::consts::TAU),l,false)?.x))
 }
 
 /// The label of the contact at `(θ, t)` nearest the place `σ` round the meridian.
@@ -187,6 +208,7 @@ pub fn ends_met(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],ends: [&crate::topo
     -> Result<Vec<crate::boolean::Given>,Unbuilt> {
     use crate::util::space::distance;
     let poses = [path.pose(a)?,path.pose(b)?];
+    let inverses = poses.map(|p| p.inverse());
     // (whether the point `x` of the pose at the roll's end `e`, standing off its sheet by as much as
     // `off`, is uncovered: on the boundary as the tolerance reads it)
     let uncovered = |x: V,e: usize,off: f64| match cover(ring,path,[a,b],x,[a,b][e],off,tol)? {
@@ -195,26 +217,37 @@ pub fn ends_met(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],ends: [&crate::topo
         Reading::Far(c) => Ok(c.depth >= -tol),
     };
     let mut out = Vec::new();
+    // (each given curve's corners against the pose at the end `e` depend on the curve and `e` alone:
+    // read once for every pair of faces, by its place in `given` — each with whether it is on the
+    // boundary, read the first time it is asked)
+    let mut along: std::collections::BTreeMap<(usize,usize,usize),Vec<(V,Option<bool>)>> = std::collections::BTreeMap::new();
     for fs in &ends[0].faces { for fe in &ends[1].faces {
         // the corners: where the other pose's signed distance changes sign along a seam of either
         // face (a seam of the start pose's against the end pose, of the end pose's against the start)
         let mut corners: Vec<V> = Vec::new();
-        for gv in given {
+        for (gi,gv) in given.iter().enumerate() {
             let Some(e) = [&fs.surface,&fe.surface].iter().position(|s| gv.surfaces.iter().any(|t| t == *s)) else { continue };
-            let other = |x: V| ring.signed(poses[1-e].inverse().point(x)).0;
-            for c in &gv.curves { for x in corners_along(c,&other,tol) {
-                // (a corner within twice the tolerance of an end of a given curve — where a seam passes
-                // from one face of a tube to the next, its two curves' shared end — is that end: the
-                // arc then ends at the vertex the seams meet at, by construction)
-                let x = given.iter().flat_map(|h| h.curves.iter()).flat_map(curve_ends)
-                    .filter(|&y| distance(x,y) <= 2.*tol).min_by(|p,q| distance(x,*p).total_cmp(&distance(x,*q))).unwrap_or(x);
-                // (two corners within twice the tolerance are one place)
-                if corners.iter().any(|&y| distance(x,y) <= 2.*tol) { continue }
-                // (a corner of an arc on the boundary is on it: neither pose covered there by more than
-                // the tolerance, nor held by its neighbours)
-                if !(uncovered(x,0,0.)? && uncovered(x,1,tol)?) { continue }
-                corners.push(x);
-            } }
+            let other = |x: V| ring.signed(inverses[1-e].point(x)).0;
+            for (ci,c) in gv.curves.iter().enumerate() {
+                let found = along.entry((gi,ci,e)).or_insert_with(|| corners_along(c,&other,tol).into_iter().map(|x| {
+                    // (a corner within twice the tolerance of an end of a given curve — where a seam passes
+                    // from one face of a tube to the next, its two curves' shared end — is that end: the
+                    // arc then ends at the vertex the seams meet at, by construction)
+                    let x = given.iter().flat_map(|h| h.curves.iter()).flat_map(curve_ends)
+                        .filter(|&y| distance(x,y) <= 2.*tol).min_by(|p,q| distance(x,*p).total_cmp(&distance(x,*q))).unwrap_or(x);
+                    (x,None)
+                }).collect());
+                for (x,on) in found.iter_mut() {
+                    let x = *x;
+                    // (two corners within twice the tolerance are one place)
+                    if corners.iter().any(|&y| distance(x,y) <= 2.*tol) { continue }
+                    // (a corner of an arc on the boundary is on it: neither pose covered there by more than
+                    // the tolerance, nor held by its neighbours)
+                    let on = match on { Some(o) => *o,None => *on.insert(uncovered(x,0,0.)? && uncovered(x,1,tol)?) };
+                    if !on { continue }
+                    corners.push(x);
+                }
+            }
         }
         if corners.len() < 2 { continue }
         // the meeting traced through each corner (`meeting::through`, the kernel's one fallback) within
@@ -473,12 +506,18 @@ impl crate::zero_set::Field for Covered<'_> {
 
     /// The sheet's point and its two rates, by central differences a cube root of the rounding of
     /// an angle and of the roll apart (where the difference's rounding and its truncation balance).
+    /// (each row's twist and pose read once, for the three points on it)
     fn surface(&self,[th,t]: [f64;2]) -> (V,V,V) {
         let h = f64::EPSILON.powf(1./3.);
         let ht = h*(self.roll[1]-self.roll[0]);
-        let at = |th: f64,t: f64| sheet(self.ring,self.path,self.roll,th,t,self.label).map_or([f64::NAN;3],|s| s.0);
+        let at = |r: &Option<(Twist,Pose)>,th: f64| r.as_ref().and_then(|r| on_row(self.ring,r,th,self.label)).unwrap_or([f64::NAN;3]);
         let rate = |p: V,q: V,step: f64| crate::util::space::scale(crate::util::space::sub(p,q),0.5/step);
-        (at(th,t),rate(at(th+h,t),at(th-h,t),h),rate(at(th,t+ht),at(th,t-ht),ht))
+        let (own,later,earlier) = (row(self.path,self.roll,t),row(self.path,self.roll,t+ht),row(self.path,self.roll,t-ht));
+        (at(&own,th),rate(at(&own,th+h),at(&own,th-h),h),rate(at(&later,th),at(&earlier,th),ht))
+    }
+
+    fn place(&self,[th,t]: [f64;2]) -> V {
+        row(self.path,self.roll,t).and_then(|r| on_row(self.ring,&r,th,self.label)).unwrap_or([f64::NAN;3])
     }
 }
 
@@ -538,6 +577,8 @@ pub fn seams_through(ring: &Ring,path: &Trajectory,roll: [f64;2],label: Label,re
 /// (`refined`), with its places round the meridian and its partner, each once.
 fn seamed(field: &Covered,traced: &crate::zero_set::Traced<Cover>,within: f64,feature: f64) -> Result<Vec<Seam>,Unbuilt> {
     let mut out = Vec::new();
+    // (each seam's sheet's points in space, in step with `out`)
+    let mut places: Vec<Vec<Option<V>>> = Vec::new();
     for p in &traced.pieces {
         let (uvs,ats) = refined(field,&p.uv,&p.at)?;
         let mut sheet = Vec::with_capacity(uvs.len());
@@ -551,12 +592,13 @@ fn seamed(field: &Covered,traced: &crate::zero_set::Traced<Cover>,within: f64,fe
         let mut partner: Vec<Vec<(f64,f64,f64)>> = Vec::new();
         let mut own: Vec<Vec<(f64,f64,f64)>> = Vec::new();
         let mut corners = Vec::new();
+        let partners: Vec<Option<(f64,f64,f64)>> = ats.iter().map(|c| field.partner(c)).collect();
         let mut j = 0;
         while j < ats.len() {
-            if field.partner(&ats[j]).is_none() { j += 1; continue }
+            if partners[j].is_none() { j += 1; continue }
             let mut k = j;
-            while k+1 < ats.len() && field.partner(&ats[k+1]).is_some() { k += 1 }
-            let run: Vec<((f64,f64,f64),(f64,f64,f64))> = (j..=k).filter_map(|i| Some((sheet[i],field.partner(&ats[i])?))).collect();
+            while k+1 < ats.len() && partners[k+1].is_some() { k += 1 }
+            let run: Vec<((f64,f64,f64),(f64,f64,f64))> = (j..=k).filter_map(|i| Some((sheet[i],partners[i]?))).collect();
             if run.len() >= 2 {
                 own.push(run.iter().map(|r| r.0).collect());
                 partner.push(run.iter().map(|r| r.1).collect());
@@ -570,16 +612,18 @@ fn seamed(field: &Covered,traced: &crate::zero_set::Traced<Cover>,within: f64,fe
         // the feature of the earlier's points, the spacing below which the trace tells nothing
         // apart. Two traces of one curve beside a swallowtail point stand some 1e-5 apart between
         // their points: along the kernel of the sheet's rates a chord's sagitta is not its depth's)
-        let on = |q: (f64,f64,f64)| field.point([q.0,q.1]);
-        let close = |a: (f64,f64,f64),b: (f64,f64,f64),r: f64| on(a).zip(on(b)).is_some_and(|(x,y)| crate::util::space::distance(x,y) <= r);
-        let near = |a: &Seam| {
-            let (n,m) = (sheet.len(),a.sheet.len());
-            let ends = (close(sheet[0],a.sheet[0],2.*within) && close(sheet[n-1],a.sheet[m-1],2.*within))
-                || (close(sheet[0],a.sheet[m-1],2.*within) && close(sheet[n-1],a.sheet[0],2.*within));
-            ends && sheet.iter().all(|&q| a.sheet.iter().any(|&r| close(q,r,feature)))
+        // (each point's place read once)
+        let xs: Vec<Option<V>> = sheet.iter().map(|q| field.point([q.0,q.1])).collect();
+        let close = |x: Option<V>,y: Option<V>,r: f64| x.zip(y).is_some_and(|(x,y)| crate::util::space::distance(x,y) <= r);
+        let near = |ys: &Vec<Option<V>>| {
+            let (n,m) = (xs.len(),ys.len());
+            let ends = (close(xs[0],ys[0],2.*within) && close(xs[n-1],ys[m-1],2.*within))
+                || (close(xs[0],ys[m-1],2.*within) && close(xs[n-1],ys[0],2.*within));
+            ends && xs.iter().all(|&x| ys.iter().any(|&y| close(x,y,feature)))
         };
-        if out.iter().any(near) { continue }
+        if places.iter().any(near) { continue }
         out.push(Seam {sheet,ends:p.ends,partner,own,corners});
+        places.push(xs);
     }
     Ok(out)
 }
@@ -619,10 +663,18 @@ pub fn passed_back(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],known: &[Vec<(f6
         let l = label_at(ring,path,q.0,q.1,q.2)?;
         Some(sheet(ring,path,[a,b],q.0,q.1,l)?.0)
     };
-    let traced: Vec<V> = known.iter().flatten().filter(|q| !q.0.is_nan()).filter_map(|&q| point(q)).collect();
-    // (each double curve's chords in space, a swallowtail point's marker parting them)
-    let chords: Vec<[V;2]> = known.iter().flat_map(|c| c.windows(2).filter_map(|w| Some([point(w[0])?,point(w[1])?]))).collect();
+    // (each read once, on the first seed: the points traced, and each double curve's chords in space,
+    // a swallowtail point's marker parting them)
+    let known_read = std::cell::OnceCell::new();
+    let read_known = || known_read.get_or_init(|| {
+        let xs: Vec<Vec<Option<V>>> = known.iter().map(|c| c.iter().map(|&q| point(q)).collect()).collect();
+        let traced: Vec<V> = known.iter().flatten().zip(xs.iter().flatten()).filter(|(q,_)| !q.0.is_nan()).filter_map(|(_,&x)| x).collect();
+        let chords: Vec<[V;2]> = xs.iter().flat_map(|c| c.windows(2).filter_map(|w| Some([w[0]?,w[1]?]))).collect();
+        (traced,chords)
+    });
     let mut out: Vec<Vec<(f64,f64,f64)>> = Vec::new();
+    // (the places of `out`'s points, in step with it)
+    let mut laid: Vec<V> = Vec::new();
     for t in [a,b] {
         // each angle's touching roots on the row, and their far cover's depth
         let w = Twist::body(path.at(t)?);
@@ -640,6 +692,7 @@ pub fn passed_back(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],known: &[Vec<(f6
                 // the seed, within half the angles' spacing of it along the row, no farther from its
                 // chords than the feature)
                 let Some(x) = sheet(ring,path,[a,b],seed[0],t,l).map(|s| s.0) else { continue };
+                let (traced,chords) = read_known();
                 let on_known = chords.iter().any(|&[p,q]| crate::util::space::segments_distance(x,x,p,q) <= feature);
                 if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
                     eprintln!("ring: the cover changes on the row at {t} on {l:?} at θ {}{}",seed[0],if on_known { ", a double curve's" } else { "" })
@@ -653,16 +706,16 @@ pub fn passed_back(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],known: &[Vec<(f6
                         let (mut own,mut partner) = (own.clone(),partner.clone());
                         if let Some((o,p)) = ends[0] { own.insert(0,o); partner.insert(0,p) }
                         if let Some((o,p)) = ends[1] { own.push(o); partner.push(p) }
-                        let (own,partner) = (&own,&partner);
-                        let again = |c: &Vec<(f64,f64,f64)>| c.iter().all(|&q| point(q).is_some_and(|x|
-                            traced.iter().any(|&y| distance(x,y) <= feature)));
-                        if again(own) { continue }
+                        let xs: Vec<Option<V>> = own.iter().map(|&q| point(q)).collect();
+                        let again = |ys: &[V]| xs.iter().all(|x| x.is_some_and(|x| ys.iter().any(|&y| distance(x,y) <= feature)));
+                        if again(traced) { continue }
                         // (a run found from two seeds is laid once: every point of it within the
                         // feature of one laid)
-                        let laid: Vec<V> = out.iter().flatten().filter_map(|&q| point(q)).collect();
-                        if own.iter().all(|&q| point(q).is_some_and(|x| laid.iter().any(|&y| distance(x,y) <= feature))) { continue }
-                        out.push(own.clone());
-                        out.push(partner.clone());
+                        if again(&laid) { continue }
+                        laid.extend(xs.into_iter().flatten());
+                        laid.extend(partner.iter().filter_map(|&q| point(q)));
+                        out.push(own);
+                        out.push(partner);
                     }
                 }
             }

@@ -91,6 +91,8 @@ pub trait Field {
     fn along(&self,uv: Uv,from: &Self::At) -> Option<Value<Self::At>>;
     /// The surface's point at `uv` and its two partial derivatives: the metric lengths are read in.
     fn surface(&self,uv: Uv) -> (V,V,V);
+    /// The surface's point at `uv` alone, `surface`'s first, where the caller reads it for less.
+    fn place(&self,uv: Uv) -> V { self.surface(uv).0 }
     /// Enclosures of `f` and its gradient over `cell`, where the caller has them.
     fn bound(&self,_cell: Rect) -> Option<Bound> { None }
 }
@@ -206,6 +208,9 @@ struct Tracer<'a,F: Field> {
     chords: Vec<(V,V)>,
     grid: Grid,
     steps: usize,
+    /// the surface last read and where: the point, the metric and the tangent are read at one place
+    /// back to back
+    last: std::cell::Cell<Option<(Uv,(V,V,V))>>,
 }
 
 /// **The zero set of `field` over the question's domain, traced** (see the module): every piece,
@@ -226,7 +231,7 @@ fn traced<F: Field>(field: &F,q: &Question,complete: bool) -> Result<Traced<F::A
     }
     let r = q.rect;
     let mut t = Tracer {field,q,step:[THIRD_READ*(r[0][1]-r[0][0]),THIRD_READ*(r[1][1]-r[1][0])],seeds:Vec::new(),
-        pieces:Vec::new(),chords:Vec::new(),grid:Grid::new(q.feature),steps:0};
+        pieces:Vec::new(),chords:Vec::new(),grid:Grid::new(q.feature),steps:0,last:std::cell::Cell::new(None)};
     // the rim's sign changes and touches, then the inner edges'
     let corners = [[r[0][0],r[1][0]],[r[0][1],r[1][0]],[r[0][1],r[1][1]],[r[0][0],r[1][1]]];
     for k in (0..4).filter(|_| complete) {
@@ -249,11 +254,24 @@ fn traced<F: Field>(field: &F,q: &Question,complete: bool) -> Result<Traced<F::A
 }
 
 impl<'a,F: Field> Tracer<'a,F> {
-    fn point(&self,uv: Uv) -> V { self.field.surface(uv).0 }
+    /// The surface at `uv`, the last read kept (the same place reads the same).
+    fn surface(&self,uv: Uv) -> (V,V,V) {
+        if let Some(s) = self.kept(uv) { return s }
+        let s = self.field.surface(uv);
+        self.last.set(Some((uv,s)));
+        s
+    }
+
+    /// The surface last read, where it was read at `uv` to the bit.
+    fn kept(&self,uv: Uv) -> Option<(V,V,V)> {
+        self.last.get().filter(|(at,_)| at.map(f64::to_bits) == uv.map(f64::to_bits)).map(|(_,s)| s)
+    }
+
+    fn point(&self,uv: Uv) -> V { self.kept(uv).map_or_else(|| self.field.place(uv),|s| s.0) }
 
     /// The first fundamental form at `uv`.
     fn metric(&self,uv: Uv) -> [[f64;2];2] {
-        let (_,su,sv) = self.field.surface(uv);
+        let (_,su,sv) = self.surface(uv);
         let d = crate::util::space::dot;
         [[d(su,su),d(su,sv)],[d(su,sv),d(sv,sv)]]
     }
@@ -349,9 +367,10 @@ impl<'a,F: Field> Tracer<'a,F> {
             let x = lerp2(p,q,s);
             if self.outside(x).is_some() { return false }
             let Some(r) = self.along(x,at) else { return false };
-            let Some(l) = self.least(x) else { return false };
-            if self.off(x,&r) > tol || self.undercut(x,&l) { return false }
-            self.pull(x,&r.at,long).is_some_and(|y| distance(self.point(x),self.point(y)) <= tol)
+            if self.off(x,&r) > tol { return false }
+            let pulled = self.pull(x,&r.at,long).is_some_and(|y| distance(self.point(x),self.point(y)) <= tol);
+            // (the least, the dearest read, last: a chord the branch rejects pays nothing for it)
+            pulled && self.least(x).is_some_and(|l| !self.undercut(x,&l))
         })
     }
 
