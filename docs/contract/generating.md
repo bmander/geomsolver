@@ -2101,8 +2101,12 @@ swallowtail's normal form — the preimages `(x, ±τ)` along the kernel with `x
 step until the chord from the point sags within the tolerance; then marched out, the point itself
 on the curve between its preimages. Away from a pair, a pair whose preimages have met or crossed
 within the least step is none (beside the point the march slid onto the pair of no distance every
-point of the sheet is, and ran along the sheet), and where the last pair alone does not settle the
-next it is sought from the line through the last two, the point the first of them. Not yet in place
+point of the sheet is, and ran along the sheet), nor, on a curve built from its swallowtail point,
+one whose second preimage comes back over the angle (beside the half turn's point, where the two
+sheets cross at an angle of the pair's width, the pair settled within its residual 1e-6 of the
+angle back; a curve traced from a row's seed is not yet held so, the turned torus's coming back
+over its angle); and where the last pair alone does not settle the next it is sought from the line
+through the last two, the point the first of them. Not yet in place
 of the rows' seeds, which are traced toward the point as before: beside the thin torus's second
 pair, born 1.2e-3 of the roll before its swallowtail point, the first preimage's angle turns back
 within 2e-4 of it, and the curve, stepped by that angle, is no graph over it there. **The tail is

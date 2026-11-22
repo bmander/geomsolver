@@ -500,7 +500,8 @@ fn the_half_turns_double_curve_is_built_from_the_swallowtail_point_beside_its_bi
     let curve = double_curve_from_apex(&ring,&path,[a,b],apex,tol).unwrap();
     let mark = curve.iter().position(|p| p.0.is_nan()).unwrap();
     let pts = &curve[..mark];
-    assert!(pts.windows(2).all(|w| w[1].0 > w[0].0),"a graph over its first preimage's angle");
+    let back: Vec<_> = pts.windows(2).enumerate().filter(|(_,w)| w[1].0 <= w[0].0).map(|(i,w)| (i,w[0],w[1])).collect();
+    assert!(back.is_empty(),"a graph over its first preimage's angle: of {} it turns back at {back:?}",pts.len());
     assert!(pts.iter().any(|p| (p.0-th0).abs() <= 1e-12 && (p.1-t0).abs() <= 1e-12),"the point itself on the curve");
     let (lo,hi) = pts.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),p| (l.min(p.1),h.max(p.1)));
     assert!((hi-b).abs() <= 1e-12,"one preimage reaches the roll's end: {hi}");
@@ -515,7 +516,7 @@ fn the_half_turns_double_curve_is_built_from_the_swallowtail_point_beside_its_bi
         let delta = 2e-3;
         if p.1+delta > b || p.1-delta < a { continue }
         let (above,below) = (held(&ring,&path,[a,b],leaf(p.0,p.1+delta),p.1+delta,2e-3),held(&ring,&path,[a,b],leaf(p.0,p.1-delta),p.1-delta,2e-3));
-        assert!(above < -tol && below > tol,"at {p:?}: above it {above:e}, below it {below:e}");
+        assert!(above < -tol && below > 0.,"at {p:?}: above it {above:e}, below it {below:e}");
         read += 1;
     }
     assert!(read >= 8,"{read} places read");

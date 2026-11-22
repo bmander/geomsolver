@@ -1397,9 +1397,14 @@ fn traced(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],seed: [(f64,f64,f64);2],a
             // step, one point to the tolerance — is none: the pair of no distance every point of the
             // sheet is, which the march from beside a swallowtail point slid onto and ran along, the
             // thin torus's, #942 T1d-tori; where the preimages meet the step halves, and the curve
-            // stops short of a far swallowtail point)
+            // stops short of a far swallowtail point. Nor, built from a swallowtail point, is one
+            // whose second preimage comes back: beside the half turn's, where the two sheets cross
+            // at an angle of the pair's width, the pair settled within its residual 1e-6 of the
+            // angle back, and once with both preimages on one side. A curve traced from a row's
+            // seed is not yet held so: the turned torus's second preimage comes back over its
+            // angle, and held so its trim was refused sooner)
             let reach = |at: f64| -> Option<([f64;3],f64,f64)> {
-                let apart = |r: &([f64;3],f64,f64)| dir == toward || (r.0[1]-at)*toward > least;
+                let apart = |r: &([f64;3],f64,f64)| dir == toward || (r.0[1]-at)*toward > least && (apex.is_none() || (r.0[1]-z[1])*toward > 0.);
                 settle(at,z,sg1,sg2).filter(apart).or_else(|| {
                     let (tp,zp) = prev?;
                     let f = (at-th)/(th-tp);

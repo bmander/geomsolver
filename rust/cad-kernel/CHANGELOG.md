@@ -14,7 +14,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   the bridge — the swallowtail point is found where a fold runs along the kernel of the sheet's
   rates (`rings::swallowtails`, `Fitted::apexes`), and the curve built outward from it, its first
   pair from the swallowtail's normal form (`rings::double_curve_from_apex`). A double curve's march
-  takes no pair whose preimages have met, and seeks the next pair from the last two where the last
+  takes no pair whose preimages have met (nor, built from a swallowtail point, one whose second
+  preimage comes back over the angle), and seeks the next pair from the last two where the last
   alone does not settle it. A tube's tail is read above its double curve over the angle round the
   axis and against the whole curve (`Fitted::tails`), not over a stretch's `u`; a tube's seams are
   laid as edges between each two of their places, and a trace along a seam is the seam's own edges.
