@@ -496,6 +496,8 @@ struct Selecting {
     blocks: Vec<(String, Vec<String>, Vec<String>)>,
     pairs: BTreeSet<(String, [String; 2], usize)>,
     pruned: Vec<Pruned>,
+    /// How many copies' `when`s over faces held: made (#994).
+    made: usize,
     asked: bool,
     held: bool,
     unsure: bool,
@@ -1057,6 +1059,10 @@ struct FaceState {
     /// those faces meet (`Walk::tally`, #994): said as the first is expanded, and in the one E103
     /// where its expansion passes the limit.
     tally: BTreeMap<Span, String>,
+    /// For each such statement, how many copies its `when`s over faces will hold as its faces
+    /// meet (`Walk::tally`), and the statements its blocks over faces have made so far: what an
+    /// expansion is projected to by, to be refused before it is made (#994).
+    projected: BTreeMap<Span, (usize, usize)>,
     /// Each solid's faces in `given` by name from the solid, to their place in its paths: what
     /// a `when` looks a face up by, as often as it is asked (#994).
     index: BTreeMap<String, BTreeMap<String, usize>>,

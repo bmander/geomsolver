@@ -1361,10 +1361,13 @@ impl<'a> Walk<'a> {
             // and what a statement's blocks over faces run over said, as the first is expanded
             if let (Ok(_), Some(o)) = (&walks, &over) {
                 if !o.listed.is_empty() && !self.faces.tally.contains_key(&p.at) {
-                    let said = self.tally(&p, &o.solid, &o.listed);
+                    let (said, made) = self.tally(&p, &o.solid, &o.listed);
                     crate::progress::during(|| crate::progress::Work::expand(said.clone()), || ());
                     crate::progress::gauge(|| format!("expanding {said}"));
                     self.faces.tally.insert(p.at, said);
+                    if let Some(made) = made {
+                        self.faces.projected.insert(p.at, (made, 0));
+                    }
                 }
             }
             let keep = adjacent.map(|(keep, pruned)| {
@@ -1396,12 +1399,24 @@ impl<'a> Walk<'a> {
                 }
             }
             match walks {
-                Ok(walks) => self.expand_edges(p, walks, keep.as_deref()),
+                Ok(walks) => {
+                    let (at, before) = (p.at, self.emitted());
+                    self.expand_edges(p, walks, keep.as_deref());
+                    self.projection(at, self.emitted() - before);
+                    if self.overflowed {
+                        break;
+                    }
+                }
                 Err((span, m)) => {
                     self.take_placeholder(&p);
                     self.err(Code::E080, span, m);
                 }
             }
+        }
+        // an expansion refused before it was made leaves its blocks unexpanded, said once
+        if self.overflowed {
+            self.aside.blocks.clear();
+            return;
         }
         let alias = self.alias_table();
         for p in std::mem::take(&mut self.aside.blocks) {
@@ -1437,6 +1452,34 @@ impl<'a> Walk<'a> {
                 }
             }
         }
+    }
+
+    /// **An expansion refused before it is made** (#994): a statement whose blocks over a solid's
+    /// faces have made `more` statements more, of the copies whose `when` held so far, projected
+    /// to the copies its tally says will hold (`Walk::tally`, each pair both ways, each three in
+    /// its six orders): where that comes to more than twice `MAX_FLAT` — no expansion a copy's
+    /// share of the first ones misjudges by so much is cut short — the one E103 is said at once,
+    /// with how far it got and what to do, and nothing more is walked (`overflowed`).  One that
+    /// projects nearer the limit is walked, and said as any past it is.
+    fn projection(&mut self, at: Span, more: usize) {
+        let Some((will, made)) = self.faces.projected.get_mut(&at) else { return };
+        *made += more;
+        let (will, made) = (*will, *made);
+        let held = self.faces.selecting.get(&at).map_or(0, |s| s.made);
+        if self.overflowed || held == 0 || will <= held {
+            return;
+        }
+        let projected = made * will / held;
+        if projected <= 2 * MAX_FLAT {
+            return;
+        }
+        self.overflowed = true;
+        let t = &self.faces.tally[&at];
+        let m = format!("{t}, would make about {projected} statements, more than {MAX_FLAT} \
+            (its first {held} copies made {made}): the drawing is cut short, and nothing of it is \
+            built — run it over fewer faces at once: a feature's (`round(r: …) part.pocket`), or \
+            two faces' (`A round(r: …) B`)");
+        self.err(Code::E103, at, m);
     }
 
     /// Each name a list written in place gives its copies (#882) that names nothing, said at the

@@ -123,3 +123,55 @@ fn an_expansion_past_its_limit_over_faces_says_what_it_ran_over() {
     assert_eq!(e.diags[0].span.lo as usize, src.find("repeat a in whole").unwrap());
     assert!(e.sketch.points.is_empty(), "{} points built", e.sketch.points.len());
 }
+
+/// A block 40 × 20 × 10 on the top plane, `whole`, one corner an arc of 5 about `(35, 20)` going
+/// on from its side, its end `d` held at `(35, 25)` and seeded at `seed`, and `round` after it.
+fn arced(seed: &str, round: &str) -> String {
+    format!("unit mm\nuse std\nuse std.solids (cut, union)\nuse std.rounds (round)\nin std.top {{\n\
+        a := point\nb := point\nc := point\no := point\nd := point hint(({seed}))\n\
+        fix((0, 0)) a\nfix((40, 0)) b\nfix((40, 20)) c\nfix((35, 20)) o\nfix((35, 25)) d\n\
+        l1 := line(a, b)\nl2 := line(b, c)\nk := arc(center: o, start: c, end: d)\nl3 := line(d, a)\n\
+        outline := face(l1, l2, k, l3)\n}}\n\
+        plate := solid(std.solids.Prism(outline, from: 0mm, to: 10mm))\nwhole := solid(plate)\n{round}")
+}
+
+/// **A body not built where the drawing is seeded is read where it solves** (#994, fixture
+/// 142): an arc's end seeded off its circle leaves the outline's loop open at the seeds, so the
+/// boundary there says nothing of which faces meet.  Every two of them were taken to meet, so a
+/// round paired and threed them all — 44 faces passed the expansion's limit.  Now `meets` is
+/// read again where the drawing solves, as a face held along a direction is (#948): the same
+/// round, the same solids, as the body seeded where it stands.
+#[test]
+fn a_body_the_seeds_do_not_build_is_rounded_where_the_drawing_solves() {
+    let (off, made) = expanded(&arced("31, 28", "round(r: 1mm) whole\n"));
+    let (on, built) = expanded(&arced("35, 25", "round(r: 1mm) whole\n"));
+    assert!(off.iter().any(|s| s.contains("is not built where the drawing stands")), "{off:?}");
+    let counted = on.last().expect("said").clone();
+    assert!(counted.contains("of which"), "{on:?}");
+    assert_eq!(off.last(), Some(&counted), "{off:?}");
+    assert_eq!(made, built);
+}
+
+/// **An expansion that will pass the limit is refused before it is made** (#994): a block over a
+/// prism's faces copying two thousand points for each pair that meets is projected, from its
+/// first copies, to the copies its tally says will hold, and refused at once — a few thousand
+/// statements in, not two hundred thousand — naming the statement, what it runs over and what to
+/// do; nothing is built.
+#[test]
+fn an_expansion_projected_past_its_limit_is_refused_at_once() {
+    let src = polygon(20, "repeat a in whole {\n  repeat b in whole {\n    when b != a and a meets b \
+                           {\n      repeat 2000 as i {\n        q := point hint((i, 0))\n      }\n    \
+                           }\n  }\n}\n");
+    let (e, d) = read(&src);
+    assert_eq!(d.len(), 1, "{d:?}");
+    let want = "E103: `repeat a in whole { …` over 22 faces of `whole`, of which 60 pairs meet and 40 \
+                threes meet each other, would make about ";
+    assert!(d[0].starts_with(want), "{d:?}");
+    // how far it got: the first copies' statements, nowhere near the limit
+    let made: usize = d[0].split(" copies made ").nth(1).and_then(|r| r.split(')').next())
+        .and_then(|n| n.parse().ok()).expect("how far it got");
+    assert!(made < 20_000, "{made} statements made before it was refused");
+    assert!(d[0].contains("run it over fewer faces at once"), "{d:?}");
+    assert_eq!(e.diags[0].span.lo as usize, src.find("repeat a in whole").unwrap());
+    assert!(e.sketch.points.is_empty(), "{} points built", e.sketch.points.len());
+}
