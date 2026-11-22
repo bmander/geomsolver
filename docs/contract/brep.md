@@ -853,7 +853,16 @@ the tolerance over the sine of its surfaces' angle — does not apply, and at a 
 surfaces are tangent it cut two given curves at a near miss far from where they meet. So too
 wherever a given meeting's reach is asked: their crossing is kept where the two curves cross, with
 no Newton on the three surfaces (singular where all three are tangent, it slid 3e-3 along the
-valley); a vertex is taken onto a given curve only within `ON_CURVE` tolerances (`points_on`: two
+valley). **Two given curves one operand holds as edges cross on a face of another at a vertex they
+share** (#942, `Arrangement::given_crossings`, `Meetings::given_along`): a sweep's sheet passing back
+over itself holds two given curves as its own edges, each laid across a pose's face as that edge
+(#942 F3); phase 1 reads an operand's edges against the other operands' faces, never against one
+another, and `triple_points` reads only the meetings laid, so their crossing, a point of the pose's
+face and the sheet's two, was cut by nothing — the full turn's start rim dangled on the start torus
+where the tube, late in the roll, passes over it, and a piece leaked round it. Each two such edges
+of one operand laid across one face are cut where their curves cross, to the tolerance
+(`arrangement::two_given_edges_of_one_operand_crossing_on_a_face_share_a_vertex`); only given
+curves are read so, since a sound operand's edges cross nowhere but at its vertices. A vertex is taken onto a given curve only within `ON_CURVE` tolerances (`points_on`: two
 sheets meeting smoothly along their shared rail, the sine of their angle nought, took a vertex 3e-3
 off it). **An edge is read against a known meeting by one rule** (#990, `Arrangement::known`,
 `meeting::Shared::known`, `on_known`): it lies in each of its own faces' surfaces, so it meets

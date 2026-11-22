@@ -1142,6 +1142,9 @@ fn arrange_phases<'a>(solids: &[&'a Brep],known: Option<&Known>,given: &[Given],
     // 2a. where three faces of three operands meet at a point no edge passes: two meetings laid
     // on one face, with faces of two other operands, crossing there (#735 A4)
     if arr.solids.0.len() > 2 { arr.triple_points(&meetings)?; }
+    // 2a'. two given curves one operand holds as edges, laid across one face of another, crossing
+    // there: a point of that operand's own two faces and the face, which no phase reads
+    arr.given_crossings(&meetings);
     // 2b. every vertex, either solid's or a crossing's, cuts an edge it lies inside, the faces'
     // meetings among them: two edges running along one another (a shared circle, each solid
     // seamed at its own angle; a meeting traced along an edge already there) then share their
@@ -1238,6 +1241,9 @@ struct Meetings {
     /// a traced meeting dropped as an edge one face has (`along_an_edge`): that edge (working), and
     /// the operand and face it is laid across wherever it lies inside it
     along_edges: Vec<(usize,Side,usize)>,
+    /// a given meeting's curve that is an edge of one operand already (`edges_that_are`): that
+    /// edge (working) and its operand, and the operand and face it is laid across
+    given_along: Vec<(usize,Side,Side,usize)>,
 }
 
 /// Phases 3 and 4: every working edge split where it was cut (`split_edges`), and the pieces that
@@ -1565,7 +1571,7 @@ impl<'a> Arrangement<'a> {
     /// form, or traced (`traced_meeting`) — cut at the points both faces put on it, its spans
     /// laid as working edges where they lie in both faces.
     fn meetings(&mut self,crossings: &Crossings) -> Result<Meetings,String> {
-        let mut found = Meetings {ssi_edges:Vec::new(),same_pairs:Vec::new(),along_edges:Vec::new()};
+        let mut found = Meetings {ssi_edges:Vec::new(),same_pairs:Vec::new(),along_edges:Vec::new(),given_along:Vec::new()};
         let sides: Vec<Side> = self.solids.all().collect();
         // every two faces of two operands whose boxes meet, the lower operand first
         let mut pairs: Vec<Two> = Vec::new();
@@ -1623,7 +1629,9 @@ impl<'a> Arrangement<'a> {
                         for (c,xc) in cs.into_iter().zip(x) {
                             match self.edges_that_are(&c,faces) {
                                 Some((k,es)) => for e in es {
-                                    found.along_edges.push((self.working(faces.s[k],e),faces.s[1-k],faces.f[1-k]))
+                                    let we = self.working(faces.s[k],e);
+                                    found.along_edges.push((we,faces.s[1-k],faces.f[1-k]));
+                                    found.given_along.push((we,faces.s[k],faces.s[1-k],faces.f[1-k]));
                                 },
                                 None => { kept.0.push(c); kept.1.push(xc) }
                             }
@@ -1889,6 +1897,49 @@ impl<'a> Arrangement<'a> {
             }
         }
         Ok(())
+    }
+
+    /// **Where two given curves one operand holds as edges cross on a face of another** (#942: the
+    /// full turn's tumbling torus): a sweep's sheet may pass back over itself, its faces cut along
+    /// the given curves where each meets a pose of the tool, so two of its edges lie on that pose's
+    /// face and cross there — the tube late in the roll over its own start rim. Phase 1 reads an
+    /// operand's edges against the others' faces and never against one another, and `triple_points`
+    /// the meetings laid, so the crossing, a point of three faces (the pose's and the operand's
+    /// two), was cut by nothing: the rim dangled on the pose's face and a piece of it leaked round
+    /// it. Each two such edges laid across one face cross where their curves do, to the tolerance —
+    /// given curves lie on both their surfaces (`Given`), so the three surfaces' Newton, ill-posed
+    /// where two of them touch, is not asked — and both are cut there at a vertex they share. An
+    /// operand's own crossing edges are read here alone where their curves are given: no other
+    /// sound operand's edges cross but at its vertices.
+    fn given_crossings(&mut self,meetings: &Meetings) {
+        let tol = self.tol;
+        // each face's given edges laid across it, with each one's operand
+        let mut on: BTreeMap<(Side,usize),Vec<(usize,Side)>> = BTreeMap::new();
+        for &(we,s,o,face) in &meetings.given_along {
+            let list = on.entry((o,face)).or_default();
+            if !list.contains(&(we,s)) { list.push((we,s)) }
+        }
+        // (a given curve is held to the tolerance, as `triple_points` holds two given meetings)
+        let reach = ON_CURVE*tol;
+        for list in on.values() {
+            for i in 0..list.len() { for j in i+1..list.len() {
+                let ((ei,si),(ej,sj)) = (list[i],list[j]);
+                if si != sj { continue }
+                let (EdgeCurve::Curve(ci),EdgeCurve::Curve(cj)) = (&self.edges[ei].curve,&self.edges[ej].curve) else { continue };
+                let (ti,tj) = (self.edges[ei].t,self.edges[ej].t);
+                if !overlap(&ci.bounds(ti),&cj.bounds(tj),self.pad) || along_one_another(ci,ti,cj,tj,reach) { continue }
+                // (an end of either is a vertex already, which cuts the other where it lies inside
+                // it: step 2b)
+                let ends = [ci.point(ti[0]),ci.point(ti[1]),cj.point(tj[0]),cj.point(tj[1])];
+                let found = super::meeting::crossings(ci,ti,cj,tj,reach);
+                for (t,u,q) in found {
+                    if ends.iter().any(|&e| distance(e,q) <= reach) { continue }
+                    let v = self.pool.at(q);
+                    if !self.cuts[ei].iter().any(|&(_,w)| w == v) { self.cuts[ei].push((t,v)); }
+                    if !self.cuts[ej].iter().any(|&(_,w)| w == v) { self.cuts[ej].push((u,v)); }
+                }
+            } }
+        }
     }
 
     /// **Where two meetings tangent at a crossing cross** (`triple_points`, its three surfaces'

@@ -8,6 +8,14 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Two given curves one operand holds as edges cross on a face of another at a vertex they
+  share** (#942 T1d-tori, `boolean`'s new step `given_crossings`): a sweep's sheet passing back over
+  itself — the full turn's tube, late in the roll, over its own start rim on the start torus — holds
+  both as its own edges, and no phase read an operand's edges against one another, so the rim
+  dangled there and a piece of the torus leaked round it. Both are now cut where their curves cross,
+  to the tolerance (`arrangement::two_given_edges_of_one_operand_crossing_on_a_face_share_a_vertex`).
+  The full turn is refused further on, in a knot of the ring sheet's faces near (3.084, 2.652, 1.743).
+
 - **The tool at the roll's start and at its end met where both bound the sweep** (#942 T1d-tori,
   new `swept::depth::ends_met`, read by `closed::ring_entered`): over a full turn the end pose's
   torus stands beside the start's, and most of their meeting is buried; two arcs of it, each some
