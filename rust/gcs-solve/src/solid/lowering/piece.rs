@@ -373,7 +373,8 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
         }).collect();
     }
     let all: Vec<usize> = ga.iter().chain(gb).copied().collect();
-    let ends = body.end_faces(&edges, &all, Some(section.size()));
+    // (every edge carried: no face beyond an end face is read, so no reach is given)
+    let ends = body.end_faces(&edges, &all, None);
     // (the set's edges one run: a point is read against the meeting within that run's ends alone,
     // so where it comes back past an end is the set's own extent there; in several runs each point
     // is read against the ends of the run nearest it, #881)
@@ -385,7 +386,6 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
             return Err(why);
         }
     }
-    let touched = Touched::of(&edges);
     let mut built = Vec::new();
     for &edge in &edges {
         let Some((fa, fb)) = ordered(edge) else {
@@ -393,7 +393,7 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
         };
         let made = piece(body, edge, fa, fb, within, section, &ends, spill, one, units, chains);
         if let (Section::Round(r), Ok(ps)) = (section, &made) {
-            held(body, &touched, edge, &ends, ps, r, units)?;
+            held(body, edge, &ends, ps, r, units)?;
         }
         built.push(made);
     }
@@ -434,9 +434,9 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
 /// touch lies on the face — or within its tolerance of the face's far boundary, a ball that takes
 /// the whole of it.  A touch past an edge of the face is no refusal where the face across that
 /// edge goes on in its surface (a face in pieces), is a seam (the next piece's, #422), or ends the
-/// run: one it ends on at its own vertices, or one beyond an end face shorter than the section
-/// that faces on past the run's end (`brep::fillet::faces_on`), which cuts it off; nor where the
-/// face reaches as far off the other as the ball touches it somewhere, the ball overflowing it only
+/// run: one of `ends` (`BodyFaces::end_faces`: at its own vertices, or where a run-out along them
+/// or its smooth chain ends), which the run's pieces are kept within, so it cuts the touch off;
+/// nor where the face reaches as far off the other as the ball touches it somewhere, the ball overflowing it only
 /// in part (a crown past whose rim a large ball's touch runs on, read on its surface as the field
 /// reads it), nor where no face the run ends on meets the other in a corner with an edge of it
 /// lower than the touch (a band tapering to nothing into concave arcs that run out tangent into
@@ -448,15 +448,10 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
 /// past the strip all along stands past its corners, where it meets the end faces' own rounds in
 /// the air (the solid "touches itself along a line"), so it is refused here, said by the face too
 /// short, how far it reaches, the face it ends at, and how far off the ball touches it.
-fn held(body: &crate::solid::faces::BodyFaces, whole: &Touched, edge: u32, ends: &Ends,
+fn held(body: &crate::solid::faces::BodyFaces, edge: u32, ends: &Ends,
     pieces: &[Piece], r: f64, units: crate::units::Units) -> Result<(), String> {
     let faces = body.faces_of(edge).to_vec();
-    let ends_run = |g: usize| ends.iter().any(|&(by, _, far)| match (by, far) {
-        (EndBy::Face(c), None) => c == g,
-        (EndBy::Face(c), Some(_)) => c == g
-            && whole.run_ends(body).iter().any(|&(v, d, _)| crate::brep::fillet::faces_on(body.normal(g, v), d)),
-        _ => false,
-    });
+    let ends_run = |g: usize| ends.iter().any(|&(by, _, _)| by == EndBy::Face(g));
     // the touches at each station: the ends of the section's arc, carried there
     let mut touches: Vec<(V, V)> = Vec::new();
     for k in 1..16 {
@@ -517,7 +512,7 @@ fn held(body: &crate::solid::faces::BodyFaces, whole: &Touched, edge: u32, ends:
         // read on its surface as the field reads it: an edge of it as far off the other face as the
         // ball touches it, read exactly, `fillet::reaches`; one nowhere as far off the other face as
         // the ball touches it is all within the ball's touch, and cannot hold it)
-        if whole.reaching(body, f, other, touched - slack) {
+        if reaching(body, f, other, touched - slack) {
             continue;
         }
         let said = |fi: usize| face_said(body, fi, "a face");
@@ -530,40 +525,22 @@ fn held(body: &crate::solid::faces::BodyFaces, whole: &Touched, edge: u32, ends:
     Ok(())
 }
 
-/// What `held` reads of a run as a whole, each the first time it is asked: the run's ends, each
-/// with the way the run runs from there (`BodyFaces::run_ends`).
-struct Touched<'a> {
-    edges: &'a [u32],
-    run_ends: std::cell::OnceCell<Vec<(V, V, u32)>>,
-}
-
-impl<'a> Touched<'a> {
-    fn of(edges: &'a [u32]) -> Touched<'a> {
-        Touched { edges, run_ends: Default::default() }
-    }
-
-    /// The run's ends, each with the way the run runs from there.
-    fn run_ends(&self, body: &crate::solid::faces::BodyFaces) -> &[(V, V, u32)] {
-        self.run_ends.get_or_init(|| body.run_ends(self.edges))
-    }
-
-    /// Whether some edge of face `f` stands as far as `h` (model units) off face `other`'s
-    /// surface, exactly (`brep::fillet::reaches`).
-    fn reaching(&self, body: &crate::solid::faces::BodyFaces, f: usize, other: usize, h: f64) -> bool {
-        let (brep, mm, _) = body.brep();
-        let surface = &brep.faces[other].surface;
-        body.face_edges(f).iter().any(|&x| {
-            let edge = &brep.edges[x as usize];
-            match &edge.curve {
-                crate::brep::topo::EdgeCurve::Curve(c) => {
-                    crate::brep::fillet::reaches(c, edge.t, surface, h * mm, body.tolerance() * mm)
-                }
-                crate::brep::topo::EdgeCurve::Degenerate => {
-                    surface.implicit(brep.vertices[edge.v[0] as usize].p).abs() >= h * mm
-                }
+/// Whether some edge of face `f` stands as far as `h` (model units) off face `other`'s surface,
+/// exactly (`brep::fillet::reaches`).
+fn reaching(body: &crate::solid::faces::BodyFaces, f: usize, other: usize, h: f64) -> bool {
+    let (brep, mm, _) = body.brep();
+    let surface = &brep.faces[other].surface;
+    body.face_edges(f).iter().any(|&x| {
+        let edge = &brep.edges[x as usize];
+        match &edge.curve {
+            crate::brep::topo::EdgeCurve::Curve(c) => {
+                crate::brep::fillet::reaches(c, edge.t, surface, h * mm, body.tolerance() * mm)
             }
-        })
-    }
+            crate::brep::topo::EdgeCurve::Degenerate => {
+                surface.implicit(brep.vertices[edge.v[0] as usize].p).abs() >= h * mm
+            }
+        }
+    })
 }
 
 /// **A corner too nearly tangent to round or chamfer** (#962, #994): where a round's edge ends on a

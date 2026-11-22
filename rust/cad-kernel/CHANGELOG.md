@@ -13,7 +13,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   (`query::curve_surface`) and read at one point of each piece, within by more than
   `tolerant::on_meeting` at the faces' turn, where it was read at 511 samples; a reading not
   proved refuses.  The bar `dome` and `dome_cut` read a point on a still ball's section, seam or
-  meeting by is named once (`standing_bar`).
+  meeting by is named once (`standing_bar`).  `fillet::faces_on` is private (its one user outside
+  the file, the lowering's `held`, reads the faces `end_faces` decided).
 
 - **A face's outward gradient** (`topo::Face::outward_gradient`, new): its surface's `gradient`
   turned where the face is the reversed side — what a run's end faces are read by (`end_at`,
@@ -148,7 +149,7 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   edge an end face makes with the run's faces to its other vertex — only where that edge is no
   longer than the section's size (a round's radius, a flat's longer leg), so the faces past the far
   end of an end face as long as the run's whole end (a hub's side an arm's round ends on) do not
-  end it — and a face there that faces on past the end (`fillet::faces_on`, new and public: its
+  end it — and a face there that faces on past the end (`fillet::faces_on`: its
   outward normal turned more than a degree from square to the run, off its end) and that a closed
   form reads (`fillet::cuts_off`: a plane, a cylinder, a cone, a sphere or an
   affine image) cuts the run off too, kept on its material's side, and its edges are none of the

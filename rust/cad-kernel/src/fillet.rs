@@ -2020,7 +2020,7 @@ fn cut_by(b: &Brep,f: usize,p: V,leaving: V,names: &str) -> Result<Cut,String> {
 /// the run, the way off the end (`leaving` is the way into the run). One lying alongside the run
 /// (a slope over a sliver of a vane's toe, along the toe's foot) is no end of it but the face beyond
 /// the one it rolls on, which must hold the ball (`holds_ball`, the lowering's `held`).
-pub fn faces_on(out: V,leaving: V) -> bool { dot(unit(out),leaving) < -MIN_TURN.dsin() }
+fn faces_on(out: V,leaving: V) -> bool { dot(unit(out),leaving) < -MIN_TURN.dsin() }
 
 /// **The faces at vertex `v` of `b` besides `sides`**, each once, in order: `by[e]` the faces edge
 /// `e` bounds.
