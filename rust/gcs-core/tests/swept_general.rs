@@ -186,8 +186,12 @@ fn the_bench_cube_tumbling_75_degrees_is_built_by_the_general_road() {
     let built = gcs_core::brep::swept::closed::closed(&cube,&path,roll,cube.size(),tol).unwrap_or_else(|u| panic!("{u:?}"));
     built.check(tol).unwrap();
     let v = gcs_core::brep::props::volume(&built);
-    // (to a ten-millionth: where each foot settles beside the pinches moves it by that much)
-    assert!((v-11.099312297902353).abs() <= 1e-7*v,"{v}");
+    // (to a ten-millionth: where each foot settles beside the pinches moves it by that much. The
+    // reading's own: an inverse pcurve beside a fold read so that its foot stays on the edge, #942
+    // `topo`, moved it from 11.0993123 by 7.7e-6, the faces and edges alike — the mesh's volume at
+    // sags of 1e-5, 3e-6 and 1e-6 reads 11.0993002, 11.0993144 and 11.0993176, its error falling
+    // with the sag toward 11.099319, and cadrs reads 11.0993194: the earlier reading was off)
+    assert!((v-11.099319755384721).abs() <= 1e-7*v,"{v}");
     crate::swept_closed::agrees_over(&built,&cube,&path,roll);
 }
 

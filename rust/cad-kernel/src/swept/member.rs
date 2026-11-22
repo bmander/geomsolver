@@ -22,6 +22,8 @@ use crate::util::space::{closest_on_triangle,cross,distance,dot,lerp,norm,sub};
 
 type V = [f64;3];
 
+/// The steps a path that encloses nothing is read at for its speed (`Swept::speed`): `closed::grain`'s.
+const SAMPLED: usize = 4096;
 /// The least stretch of the roll the bound halves to, as a part of the roll.
 const FINEST: f64 = 1e-9;
 /// The most stretches one point's test reads.
@@ -223,8 +225,17 @@ impl Ord for Stretch {
     fn cmp(&self,o: &Stretch) -> std::cmp::Ordering { o.key.total_cmp(&self.key).then(o.order.cmp(&self.order)) }
 }
 
-/// A tool carried along a trajectory over a roll: what membership is read of.
-pub struct Swept<'a> { pub tool: &'a Solid,pub path: &'a Trajectory,pub roll: [f64;2] }
+/// A tool carried along a trajectory over a roll: what membership is read of. `sampled` asks for a
+/// path that encloses nothing to be read at its sampled speed (`Swept::speed`) — no proof, and
+/// asked for by name only (`swept::touched`'s entry, #942); otherwise such a path is `Unbounded`.
+pub struct Swept<'a> { pub tool: &'a Solid,pub path: &'a Trajectory,pub roll: [f64;2],sampled: bool }
+
+impl<'a> Swept<'a> {
+    /// The tool carried along `path` over `roll`: a path that encloses nothing read as `Unbounded`.
+    pub fn new(tool: &'a Solid,path: &'a Trajectory,roll: [f64;2]) -> Swept<'a> { Swept {tool,path,roll,sampled:false} }
+    /// The same read at its sampled speed where its path encloses nothing (`sampled`).
+    pub fn sampled(self) -> Swept<'a> { Swept {sampled:true,..self} }
+}
 
 impl Swept<'_> {
     /// Whether `x` stands more than `pad` past everything the tool reaches over `roll` along
@@ -245,6 +256,28 @@ impl Swept<'_> {
         (0..3).any(|k| x[k] < l[k]-pad || x[k] > h[k]+pad)
     }
 
+    /// **How fast `x` carried back moves over the roll**: the trajectory's bound
+    /// (`Trajectory::inverse_point_speed_bound`) where it encloses its motion; where it is a path
+    /// read only by evaluating it (`Trajectory::General` whose `Path` gives no `stretch`, the bench's
+    /// runner's frame along its spline) and `sampled` is asked, the greatest of the carried point's own speed —
+    /// `|v(M(t)⁻¹ x)|`, the frame's velocity there — over `SAMPLED` equal steps of the roll. That is
+    /// no bound: membership along such a path is read as the depth trim reads it (#942), certain
+    /// only as far as the path's speed does not rise between two steps past the greatest read.
+    fn speed(&self,x: V,domain: Interval) -> Result<f64,Unsettled> {
+        if let Ok(s) = self.path.inverse_point_speed_bound(x,domain) { return Ok(s) }
+        let (true,Trajectory::General(p)) = (self.sampled,self.path) else { return Err(Unsettled::Unbounded) };
+        if p.stretch(domain.bounds()[0],domain.bounds()[1]).is_some() { return Err(Unsettled::Unbounded) }
+        let [a,b] = domain.bounds();
+        let mut most = 0f64;
+        for k in 0..=SAMPLED {
+            let t = a+(b-a)*k as f64/SAMPLED as f64;
+            let m = p.at(t).map_err(|e| Unsettled::Unread(e.msg))?;
+            let q = p.pose(t).map_err(|e| Unsettled::Unread(e.msg))?.inverse().point(x);
+            most = most.max(norm(m.velocity(q)));
+        }
+        if most.is_finite() { Ok(most) } else { Err(Unsettled::Unbounded) }
+    }
+
     /// **Whether `x` is in the swept solid**, or why that is not settled (`Unsettled`). A path of
     /// pieces (K1) is read piece by piece over the stretch of the roll each holds, the sweep of a
     /// path its pieces' sweeps united: a member of any is one, and it is settled out only where every
@@ -256,7 +289,7 @@ impl Swept<'_> {
             for piece in pieces.pieces() {
                 let (lo,hi) = (piece.over[0].max(a),piece.over[1].min(b));
                 if !(hi > lo) || self.clear_of(&piece.path,[lo,hi],x,0.) { continue }
-                match (Swept {tool:self.tool,path:&piece.path,roll:[lo,hi]}).member(x) {
+                match (Swept {sampled:self.sampled,tool:self.tool,path:&piece.path,roll:[lo,hi]}).member(x) {
                     Ok(true) => return Ok(true),
                     Ok(false) => {}
                     Err(e) => { unsettled.get_or_insert(e); }
@@ -266,7 +299,7 @@ impl Swept<'_> {
         }
         let [a,b] = self.roll;
         let domain = Interval::new(a.min(b),a.max(b)).map_err(|_| Unsettled::Unbounded)?;
-        let speed = self.path.inverse_point_speed_bound(x,domain).map_err(|_| Unsettled::Unbounded)?;
+        let speed = self.speed(x,domain)?;
         let sag = self.tool.sag;
         let finest = FINEST*(b-a).abs().max(1e-300);
         // **best first** (#810): each stretch keyed by the least signed distance its parent's
@@ -315,7 +348,7 @@ impl Swept<'_> {
             for piece in pieces.pieces() {
                 let (lo,hi) = (piece.over[0].max(a),piece.over[1].min(b));
                 if !(hi > lo) || self.clear_of(&piece.path,[lo,hi],x,r) { continue }
-                match (Swept {tool:self.tool,path:&piece.path,roll:[lo,hi]}).beyond(x,r)? {
+                match (Swept {sampled:self.sampled,tool:self.tool,path:&piece.path,roll:[lo,hi]}).beyond(x,r)? {
                     Some(true) => return Ok(Some(true)),
                     Some(false) => {}
                     None => out = None,
@@ -325,7 +358,7 @@ impl Swept<'_> {
         }
         let [a,b] = self.roll;
         let domain = Interval::new(a.min(b),a.max(b)).map_err(|_| Unsettled::Unbounded)?;
-        let speed = self.path.inverse_point_speed_bound(x,domain).map_err(|_| Unsettled::Unbounded)?;
+        let speed = self.speed(x,domain)?;
         let sag = self.tool.sag;
         let mut frontier = std::collections::BinaryHeap::new();
         let mut pushed = 0u64;

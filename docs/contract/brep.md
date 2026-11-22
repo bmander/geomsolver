@@ -804,7 +804,14 @@ own, and says where (`Touch`). `complex::two_blocks_meeting_along_an_edge_…`, 
 `TANGENT` (1e-4 rad) of one another are ordered a step in: a fitted surface — a round's net — is
 tangent to the faces it joins only as closely as its fit, some 1e-5, and read to first order that
 error put a round's strip on the wrong side of it, every cell one shell (the round-lowering cases,
-each a Boolean's selection with none falling back). The step is read nearest first (#942 F6):
+each a Boolean's selection with none falling back). `TANGENT` decides two fitted surfaces' ways
+alone, and caps the rest (`complex::tie_between`): where either surface is exact, the tie is what
+an edge's point read off its face within `8 tol` turns that exact surface's normal by, twice,
+`16 tol / ρ` at its least radius (the smaller of two) — so an exact face and a fitted one leaving
+an edge a millionth apart are ordered as they leave it, not on the fitted tie (#942, the ring's
+ends kept: with it, and with `TANGENT` itself at 1e-12, the fast suite and the slow tiers of the
+arrangement, the kernel and the sweeps stand; `SOLVENT_BREP_DEBUG` names each pair the fitted tie
+alone would still tie). The step is read nearest first (#942 F6):
 sixty-four tolerances in, and ten times farther only while two ways still agree within what a
 tolerance's lean turns a way by there (`4 tol / step`), to at most a hundredth of the least exact
 radius among them or a thousandth of the complex. Read at that farthest step alone, the order was the
@@ -812,7 +819,20 @@ box's: a drum screwed a short lead has rims' ramps thinner than a hundredth fold
 cylinders its side sweeps, a step of a thousandth of a box past them swapped a ramp with its
 cylinder, and as the box grew — a twentieth more room, or a slab a hundred times the sweep cut —
 the solid was judged wrong or the slab left whole
-(`swept_closed::a_drum_screwed_a_short_lead_cut_from_a_slab_a_hundred_times_its_sweep_takes_its_sweep`). **A2, the meeting** (`brep::meeting`):
+(`swept_closed::a_drum_screwed_a_short_lead_cut_from_a_slab_a_hundred_times_its_sweep_takes_its_sweep`).
+**Two ways in that a step in turns the other way round are one way where they stood apart by no
+more than the tolerance** (#942, `complex::turned_back`): `g` apart at the edge and `h` the other
+way a step `s` in, their curvatures `2 (g − h) / s` apart across it bring them back across one
+another having stood apart in the edge's order by `g² s / 4 (g − h)` at most, and within a
+tolerance that order is none the complex holds — they are ordered as a run of tangent ways, a step
+in, however far apart they leave the edge. Past `TANGENT` alone, a fitted sheet leaning 2e-4 into
+a ring at first order beside a corner of its pieces, and 3e-6 along the rest of its touch, was put
+inside the ring along a short edge of the touch and outside it along the next, three cells one:
+brep-bench's 80° tumbling torus refused at every spelling of its motion but one, the one that stood
+the ring's seam elsewhere (the pair stood apart by 2e-9).
+`arrangement::a_sheet_tangent_to_a_face_at_the_tolerance_is_ordered_round_its_rim_by_a_step_in`
+(a quadratic sheet leaning 2e-4 under a plane at its rim, the wedge under it a cell) and
+`swept_rings::the_tumbling_torus_is_built_at_every_spelling_of_its_motion` are the gates. **A2, the meeting** (`brep::meeting`):
 two surfaces' meeting over boxes of their parameters as branches (each crossing or touching all
 along), singular points (a touch alone, or branches crossing) and coincidence, complete — boundary
 crossings, every critical point of one's distance across the other's parameters (a closed branch
@@ -823,7 +843,34 @@ form found the first time, and a traced meeting traced over the box every face o
 fills, kept, and handed to every later pair of faces on them, which are seeded only off it, so one
 meeting curve bounds every face that uses it, traced or not. `meeting::a_*_meeting_with_every_kind_is_complete` (every pair of the kernel's surface kinds,
 seeded placements, against a dense sampling of one across the other) and the singular-point cases
-are the gates. **A sheet lying in a plane is that plane over its patch** (#780 C4): a B-spline
+are the gates. **The zero set of a scalar function, traced** (#942, `brep::zero_set`): where a
+sheet is trimmed by its depth inside a union of poses rather than by meeting other surfaces, the
+trim is the zero set of `f(u, v) = min over s of g(u, v, s)` over a rectangle of the sheet's
+parameters, and `zero_set::trace` returns it as pieces whose chords keep within the caller's
+tolerance of it in space, each point carrying the minimiser, cut at corners where the minimiser
+switches (`End::Switch`, solved as `g(·, s₁) = g(·, s₂) = 0`) and at the rim and given inner edges
+(fold curves; a touch of one, `f` vanishing to second order, is reached as a seed found there, never
+solved for), or closed. Seeds come from the rim and the edges (sign changes and touches), the
+caller, and a halving search: with `Field::bound` enclosing `f` and its gradient, each cell is
+cleared, shown monotone in a parameter (no closed curve inside; its edges' zeros isolated by the
+bound and seeded), or halved to the tolerance and answered beside a traced piece or returned in
+`Search::unresolved` — so every component is traced but one within the tolerance of another, one in
+an unresolved cell, and a touch of an inner edge between its samples (they are sampled at the
+caller's feature size); with a Lipschitz bound alone what it does not clear is answered beside a
+traced piece within the feature size of it, at once, and with none the search is sampled (`Search::sampled`): cells'
+middles pulled onto the zero set, rays from `f`'s critical points. The march steps by arclength in
+space, corrects by Newton along the gradient held to half the step, keeps a step only where its
+chord's quarter points, each pulled onto the zero set, moved no farther in space than the tolerance
+(not `|f| / |∇f|`, no measure where a sheet's rates all but coincide) and are undercut by no other
+branch, and refuses by name
+a step under the rounding. `zero_set::through` traces the pieces through the caller's seeds alone,
+with no boundary seeds and no search, and says so (`Search::sought` false). Every number is the caller's tolerance or feature size, the rounding's or
+structural (#942 F6). `zero_set::*` are the gates: loops inside a rectangle (one a fiftieth of the
+feature across, two a two-hundredth apart), the union of two discs with its corners at the circles'
+crossings, a parabola touching an inner edge and a cusp ending on one, a curve rim to rim and one
+touching the rim, a ball's depth swept along a line and round a circle (a stadium, an annulus), a
+long meeting all but tangent under a Lipschitz bound, and `through` from one seed.
+**A sheet lying in a plane is that plane over its patch** (#780 C4): a B-spline
 surface every pole of which stands within the tolerance of a plane lies within it everywhere (its
 poles' hull), and `ssi::same` reads the two as one — a coincidence, not a touch to trace — so a
 piece of either on a face of the other is one face of the complex naming both; a point is on a
@@ -941,7 +988,27 @@ the tolerance over the sine of its surfaces' angle — does not apply, and at a 
 surfaces are tangent it cut two given curves at a near miss far from where they meet. So too
 wherever a given meeting's reach is asked: their crossing is kept where the two curves cross, with
 no Newton on the three surfaces (singular where all three are tangent, it slid 3e-3 along the
-valley); a vertex is taken onto a given curve only within `ON_CURVE` tolerances (`points_on`: two
+valley). **Two given curves one operand holds as edges cross on a face of another at a vertex they
+share** (#942, `Arrangement::given_crossings`, `Meetings::given_along`): a sweep's sheet passing back
+over itself holds two given curves as its own edges, each laid across a pose's face as that edge
+(#942 F3); phase 1 reads an operand's edges against the other operands' faces, never against one
+another, and `triple_points` reads only the meetings laid, so their crossing, a point of the pose's
+face and the sheet's two, was cut by nothing — the full turn's start rim dangled on the start torus
+where the tube, late in the roll, passes over it, and a piece leaked round it. Each two such edges
+of one operand laid across one face are cut where their curves cross, to the tolerance
+(`arrangement::two_given_edges_of_one_operand_crossing_on_a_face_share_a_vertex`); only given
+curves are read so, since a sound operand's edges cross nowhere but at its vertices. **A piece
+merged into another edge keeps its own pcurve, carried** (#942, `carried_pcurve`): where an
+operand's edge has a polyline pcurve of its own (a double curve's chord on one leaf of a sweep's
+sheet, drawn through the places its trace passes) and is merged into another's (the other leaf's
+drawing, one curve in space), its pcurve's vertices are moved to the other's parameter of their
+nearest points, a stretch that does not hold given its middle until it does; inverted onto the face
+from the other's curve, the full turn's landed on the leaf past the fold, 1.3e-5 off. It holds where
+the surface along it stands within a quarter of the tolerance of the other's curve, or the merge's
+gap, at each stretch's quarters; else the inverse is read as before. The merge's gap is read at the
+eighths of the piece and at each vertex of either polyline (they crowd where a drawing bends: the
+full turn's two drawings part by 4.1e-6 within a ten-thousandth of an end, which the eighths read
+as 7.7e-7). A vertex is taken onto a given curve only within `ON_CURVE` tolerances (`points_on`: two
 sheets meeting smoothly along their shared rail, the sine of their angle nought, took a vertex 3e-3
 off it). **An edge is read against a known meeting by one rule** (#990, `Arrangement::known`,
 `meeting::Shared::known`, `on_known`): it lies in each of its own faces' surfaces, so it meets
@@ -960,7 +1027,18 @@ tolerance. Where a crossing is only sampled (`meeting::crossings`) the search is
 each of its roots taken onto the crossing nearest it (a crossing of two curves all but tangent — a
 rim crossing a path near a fold of its contact — the search settles where the sampled polish
 misses it), or read off the crossings alone where the search is refused (a swept sheet's rail
-leaves the tool posed at its end tangent to it). A closed form meeting in no curve is no knowledge
+leaves the tool posed at its end tangent to it). **An end on the meeting is read there by
+construction** (#942, the ring's ends kept): where an end of the edge lies on one of the known
+curves and the edge runs on from it within `ON_CURVE` tolerances of the surface, that run is the
+touch `at_its_ends` would read at the end — read there, and the search reads only the rest of the
+edge, from where it first stands off by more (a transversal crossing at the end is no touch: its
+run is shorter than the step a touch is read across). A ring's kept leaf's rim, an edge of the end
+pose's wedge, stood within 1e-7 of the end piece it leaves at their shared corner, and the search
+read boxes along that run for five seconds an end before refusing; the ring along a spline is
+built in 3.5 s where it took 8.7
+(`arrangement::an_edge_leaving_a_point_of_a_given_meeting_and_hugging_the_face_is_read_at_its_end`,
+an edge `k v³` off a curved face from a point of the parabola given as their meeting: 0.11 s of
+search before, 0.03 after). A closed form meeting in no curve is no knowledge
 of it: it leaves out a point the two touch at, which the edge may pass
 (`a_cap_in_a_plane_a_torus_touches_round_a_circle_meets_it_on_that_circle`). So a drum's rim,
 touching a channel's walls at two points, is read with nothing given off its top's meeting with

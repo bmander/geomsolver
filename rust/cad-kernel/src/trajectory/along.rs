@@ -41,6 +41,9 @@ pub trait Guide: Send+Sync+std::fmt::Debug {
     fn domain(&self) -> [f64;2];
     fn jet(&self,u: f64,third: bool) -> Result<[V3;4],KernelError>;
     fn derivative_bounds(&self) -> Option<[f64;2]>;
+    /// The curve as the kernel's B-spline, where it is one: what a dump writes of it (#942
+    /// T1d-ring); none for a caller's own path, read only by evaluating it.
+    fn spline(&self) -> Option<&BSpline> { None }
 }
 
 impl Guide for BSpline {
@@ -54,6 +57,7 @@ impl Guide for BSpline {
         Ok([x,d,dd,ddd])
     }
     fn derivative_bounds(&self) -> Option<[f64;2]> { BSpline::derivative_bounds(self) }
+    fn spline(&self) -> Option<&BSpline> { Some(self) }
 }
 
 /// **A frame carried along a curve** (the module's): the curve, the frame's name in what it says,
@@ -205,5 +209,9 @@ impl<G: Guide> Path for Along<G> {
         let [lo,hi] = self.guide.domain();
         if a <= lo && b >= hi { return self.whole }
         self.enclosed(a.max(lo),b.min(hi))
+    }
+
+    fn along(&self) -> Option<(BSpline,f64,bool,String)> {
+        Some((self.guide.spline()?.clone(),self.home,self.frenet,self.name.clone()))
     }
 }

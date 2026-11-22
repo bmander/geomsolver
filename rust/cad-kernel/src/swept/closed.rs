@@ -792,7 +792,7 @@ fn build_by(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank:
     // only the candidates that carry some of the boundary: membership differing on their two sides
     // somewhere over the box (a candidate is kept where a point of it cannot be settled)
     let solid = Solid::new(tool,bar,1.)?;
-    let swept = Swept {tool:&solid,path,roll:whole_roll};
+    let swept = Swept::new(&solid,path,whole_roll);
     // (each candidate's place among those carried, which a touch names it by)
     let carrying: Vec<(usize,Cutter)> = cutters.iter().enumerate().filter(|(_,(_,sites))| carries(&swept,sites,domain.half))
         .map(|(i,&(c,_))| (i,c)).collect();
@@ -1035,6 +1035,12 @@ fn k2(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Optio
     let revolved = match super::patches::Revolved::read(tool) {
         Ok(r) => r,
         Err(why @ Unbuilt::Curved {..}) => return match general_built(tool,path,[a,b],bar,tol,blank) {
+            // **a ring, the ring road's** (#942 T1d-ring): a tool of revolution clear of its axis
+            // whose contact the road reads at every instant it is asked (`rings::admits`) is built
+            // on it, judged as every road here is — its own refusal standing where it cannot build
+            // it (brep-bench's ring along a spline, its meridians touched whole); any other keeps
+            // K2's refusal
+            Err(Unbuilt::Curved {..}) if super::rings::admits(tool,path,[a,b]).is_ok() => ring_built(tool,path,[a,b],bar,tol,blank),
             Err(Unbuilt::Curved {..}) => Err(why),
             built => built,
         },
@@ -1045,7 +1051,7 @@ fn k2(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Optio
     let ends = [a,b].map(|t| super::patches::posed(tool,&revolved,path,&fit,t));
     let [start,end] = [ends[0].clone()?,ends[1].clone()?];
     let (sheet,given) = super::patches::entered(&fit,&revolved,[&start,&end])?;
-    candidates(tool,path,[a,b],bar,tol,blank,[start,end],vec![sheet],&given)
+    candidates(tool,path,[a,b],bar,tol,blank,[start,end],vec![sheet],&given,false)
 }
 
 /// **A polyhedral tool under a motion no constant twist takes, built closed** (`swept::general`,
@@ -1096,7 +1102,32 @@ pub fn ring_cut_from(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],ba
 /// `blank`.
 fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
     let [a,b] = [roll[0].min(roll[1]),roll[0].max(roll[1])];
-    let RingEntered {ends,sheets,given,cut} = ring_entered(tool,path,[a,b],tol)?;
+    let ring = super::rings::Ring::read(tool)?;
+    // (the closed class's poses touching a meridian whole, read once for both roads)
+    let touched = ring.touched_over(path,[a,b],K2_POSES)?;
+    // **a ring touching a meridian whole, entered by depth** (#942, the depth trim): its sheets over
+    // exactly what is kept, every meeting given — cut from a blank its far meridian sweeps clear of
+    if let Some(blank) = blank {
+        if let Some(t) = super::touched::entered(tool,&ring,&touched,path,[a,b],K2_POSES,bar,K2_FIT*tol,tol,blank)? {
+            // (its cells read for membership at the path's sampled speed where it encloses nothing:
+            // the bench's runner's frame, read only by evaluating it — no proof, `Swept::speed`)
+            return candidates(tool,path,[a,b],bar,tol,Some(blank),t.ends,t.sheets,&t.given,true)
+        }
+    }
+    entered_built(tool,path,[a,b],bar,tol,blank,entered_from(tool,path,[a,b],tol,ring,&touched)?)
+}
+
+/// **A ring's sweep built from what its road entered** (`ring_entered`), as `ring` builds it: so a
+/// probe or a gate may change what was entered — turn an end pose about its own axis, the same
+/// solid with its seam elsewhere (#942) — and build the rest as the road does.
+pub fn ring_from(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,entered: RingEntered) -> Result<Brep,Unbuilt> {
+    entered_built(tool,path,[roll[0].min(roll[1]),roll[0].max(roll[1])],bar,tol,None,entered)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn entered_built(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>,entered: RingEntered)
+    -> Result<Brep,Unbuilt> {
+    let RingEntered {ends,sheets,given,cut} = entered;
     // **trimmed by membership where the roll is cut** (#880 T1d): its tubes met only where both come
     // near the sweep's boundary (`trim`), as the contact's road meets its sheets — a turned whole
     // ring's two tubes cross at under a degree inside the sweep, which the arrangement meets and
@@ -1106,7 +1137,7 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
         let swept = trimmed_or_dumped(tool,path,[a,b],&candidates,&given,bar,tol,road_trim(tool,tol))?;
         return cut_blank(swept,blank,tol)
     }
-    candidates(tool,path,[a,b],bar,tol,blank,ends,sheets,&given)
+    candidates(tool,path,[a,b],bar,tol,blank,ends,sheets,&given,false)
 }
 
 /// **What a ring's road enters** (`ring_entered`): the tool posed where the roll starts and where it
@@ -1120,71 +1151,72 @@ pub struct RingEntered { pub ends: [Brep;2],pub sheets: Vec<Brep>,pub given: Vec
 /// curve traced and cut into the stretches it passes, the tubes entered at the end poses and sewn
 /// across the cuts.
 pub fn ring_entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Result<RingEntered,Unbuilt> {
-    let clock = crate::util::clock::Instant::now();
-    // (each step's time and what it read, where `SOLVENT_BREP_TIME` is set: #942 F4)
-    let mut mark = (crate::util::clock::Instant::now(),super::rings::spent::now());
-    let mut phase = |what: &str| if crate::timing() {
-        eprintln!("ring: {what} in {:?}; {}",mark.0.elapsed(),super::rings::spent::since(mark.1));
-        mark = (crate::util::clock::Instant::now(),super::rings::spent::now());
-    };
     let ring = super::rings::Ring::read(tool)?;
-    // **the roll cut where the contact changes shape** (#880 T1d, `rings::changes`): a fold pair born
-    // or vanishing partway — the tumbling torus turned whole, and thin — each stretch fitted on its
-    // own, its rows half the roll's grain clear of the cuts (where the pair has no width; the two rows
-    // either side of a cut so within the tolerance of one another, #942 F6), and the tubes of every
-    // stretch sewn across them into one candidate per tube
-    let (scale,cuts) = super::rings::changes(&ring,path,[a,b])?;
-    let eps = 0.5*grain(tool,path,[a,b],tol)?;
-    let bounds: Vec<f64> = std::iter::once(a).chain(cuts.iter().copied()).chain(std::iter::once(b)).collect();
-    let stretches: Vec<[f64;2]> = bounds.windows(2).enumerate().map(|(k,w)| {
-        [if k == 0 { w[0] } else { w[0]+eps },if k+2 == bounds.len() { w[1] } else { w[1]-eps }]
-    }).collect();
-    if crate::debug() && !cuts.is_empty() { eprintln!("ring: the contact changes shape at {cuts:?}") }
-    phase(&format!("the roll cut where the contact changes shape, {} cuts,",cuts.len()));
-    let mut fits: Vec<super::rings::Fitted> = stretches.iter().map(|&sp| super::rings::fitted_over(&ring,path,[a,b],sp,scale,K2_FIT*tol))
-        .collect::<Result<_,_>>()?;
-    phase(&format!("{} stretches fitted",fits.len()));
-    // **each fold pair's double curve** (#880 T1d, `rings::double_curve`): traced over the whole roll
-    // from where a stretch first finds the outer leaves crossing, once a pair, and cut into every
-    // stretch it passes (`rings::cut_along`), its tail dropped there
-    let mut curves: Vec<Vec<(f64,f64,f64)>> = Vec::new();
-    for seed in fits.iter().flat_map(|f| f.seeds.clone()) {
-        // (a seed on a curve traced already: its point within the tolerance of it, #942 F6)
-        if curves.iter().any(|c| super::rings::on_double_curve(&ring,path,c,seed[0],tol)) { continue }
-        curves.push(super::rings::double_curve(&ring,path,[a,b],seed,tol)?);
+    let touched = ring.touched_over(path,[a,b],K2_POSES)?;
+    entered_from(tool,path,[a,b],tol,ring,&touched)
+}
+
+/// **Each step of a ring's road, timed** where `SOLVENT_BREP_TIME` is set (#942 F4): the time since
+/// the road began, and each step's time and what it read.
+struct Phases { start: crate::util::clock::Instant,mark: (crate::util::clock::Instant,[u64;3]) }
+
+impl Phases {
+    fn new() -> Phases {
+        Phases {start:crate::util::clock::Instant::now(),mark:(crate::util::clock::Instant::now(),super::rings::spent::now())}
     }
-    phase(&format!("{} double curves traced",curves.len()));
-    // (and the roll cut again at each swallowtail point, the contact's shape the same either side:
-    // there the double curve's two halves meet, one in space, and a face holding both would be glued
-    // to itself along the crease — each stretch about it refitted in two)
-    let apexes: Vec<f64> = curves.iter().flat_map(|c| c.iter().skip_while(|p| !p.0.is_nan()).skip(1).map(|p| p.1))
-        .filter(|t| t.is_finite() && *t > a && *t < b).collect();
-    for &t in &apexes {
-        let Some(k) = fits.iter().position(|f| f.roll[0] < t && f.roll[1] > t) else { continue };
-        let [lo,hi] = fits[k].roll;
-        let parts = [[lo,t],[t,hi]].map(|sp| super::rings::fitted_over(&ring,path,[a,b],sp,scale,K2_FIT*tol));
-        let [p0,p1] = parts;
-        fits.splice(k..=k,[p0?,p1?]);
+    /// The step `what` said done, with its time and what it read.
+    fn said(&mut self,what: &str) {
+        if !crate::timing() { return }
+        eprintln!("ring: {what} in {:?}; {}",self.mark.0.elapsed(),super::rings::spent::since(self.mark.1));
+        self.mark = (crate::util::clock::Instant::now(),super::rings::spent::now());
     }
-    phase(&format!("{} stretches refitted about swallowtail points",2*apexes.len()));
+}
+
+/// `ring_entered` from the ring read and the closed class's poses touching a meridian whole
+/// (`Ring::touched_over`).
+fn entered_from(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64,ring: super::rings::Ring,touched: &[(f64,f64,usize)])
+    -> Result<RingEntered,Unbuilt> {
+    let mut phase = Phases::new();
+    let RingFitted {ring,scale,mut fits,curves,cut,eps} = fitted_from(tool,path,[a,b],tol,ring,touched)?;
+    phase.said("the road fitted");
+    // **where the tube passes back over itself** (#942, the full turn: `depth::passed_back`): each
+    // crossing an instant inside the roll covers, read from the end rows, laid as a double curve is
+    // — the covered sheet's run and its partner on the covering sheet — and cut in with the fold
+    // pairs' double curves
+    let mut curves = curves;
+    let back = super::depth::passed_back(&ring,path,[a,b],&curves,tol)?;
+    curves.extend(back);
+    phase.said("the tube's crossings with itself read");
     if !curves.is_empty() { for fit in &mut fits { super::rings::cut_along(&ring,path,[a,b],fit,scale,&curves,tol)? } }
-    phase("the double curves cut into the stretches");
-    if crate::timing() { eprintln!("ring: fitted in {:?}",clock.elapsed()) }
+    phase.said("the double curves cut into the stretches");
+    if crate::timing() { eprintln!("ring: fitted in {:?}",phase.start.elapsed()) }
     crate::util::meter::go_on()?;
     let [start,end] = [super::rings::posed(tool,&ring,path,&fits[0],a)?,super::rings::posed(tool,&ring,path,&fits[fits.len()-1],b)?];
     let poses = [path.pose(a)?,path.pose(b)?];
     let last = fits.len()-1;
     let mut pieces = Vec::new();
     let mut given = Vec::new();
+    // (whether an instant other than a tube's place's own `t` covers it: its far cover deeper than
+    // the fit the place stands off its sheet by, `depth::cover` — a narrow pair's tail, #942
+    // T1d-tori; read by its sign alone, the thin torus's piece beside its birth that only its own
+    // instant touches, its far cover 1e-12 either side of nought, was dropped)
+    let covered = |x: V,t: f64| match super::depth::cover(&ring,path,[a,b],x,t,K2_FIT*tol,tol) {
+        Ok(super::depth::Reading::Near) => true,
+        Ok(super::depth::Reading::Far(c)) => c.depth < -K2_FIT*tol,
+        _ => false,
+    };
     for (k,fit) in fits.iter().enumerate() {
         // (both end poses read on every stretch: a tube carried on can cross either far from it)
         let at = [Some((&start,poses[0])),Some((&end,poses[1]))];
-        let (s,g) = super::rings::entered_at(fit,&ring,at,[k == 0,k == last],tol)?;
+        let (s,g) = super::rings::entered_at(fit,&ring,at,[k == 0,k == last],&covered,tol)?;
         if crate::debug() { eprintln!("ring: stretch {k} over {:?}: pieces {}..{}, faces {:?}",fit.roll,pieces.len(),pieces.len()+s.len(),s.iter().map(|b: &Brep| b.faces.len()).collect::<Vec<_>>()) }
-        phase(&format!("stretch {k} entered at the end poses"));
+        phase.said(&format!("stretch {k} entered at the end poses"));
         pieces.extend(s);
         given.extend(g);
     }
+    // (and where the tool at the start meets it at the end uncovered, that meeting: the full turn's)
+    given.extend(super::depth::ends_met(&ring,path,[a,b],[&start,&end],&given,tol)?);
+    phase.said("the end poses' meeting read");
     let sheets = if fits.len() == 1 { pieces } else {
         // (sewn only along the rows at the cuts: the double curve's chords on its two leaves are
         // one curve in space, and left to the trim)
@@ -1199,16 +1231,164 @@ pub fn ring_entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Re
         }
         parts
     };
-    phase("the stretches sewn");
-    if crate::timing() { eprintln!("ring: entered in {:?}",clock.elapsed()) }
-    Ok(RingEntered {ends:[start,end],sheets,given,cut:!cuts.is_empty()})
+    phase.said("the stretches sewn");
+    // (each sheet's seams before its chords: where the arrangement takes two for one it keeps the
+    // first, and a seam given way to a double curve is its face's own line, `rings::seams_first`)
+    let sheets: Vec<Brep> = sheets.into_iter().map(super::rings::seams_first).collect();
+    if crate::timing() { eprintln!("ring: entered in {:?}",phase.start.elapsed()) }
+    Ok(RingEntered {ends:[start,end],sheets,given,cut})
+}
+
+/// **A ring's road before it is cut** (`ring_fitted`, `ring_entered`'s first steps, read alone by
+/// the depth probe, #942): the ring, the scale `s''` is read against, each stretch of the roll
+/// fitted (refitted about each swallowtail point), each fold pair's double curve traced over the
+/// whole roll, whether the roll was cut where the contact changes shape, and the stretches' rows'
+/// clearance of the cuts there (half the roll's grain).
+pub struct RingFitted { pub ring: super::rings::Ring,pub scale: f64,pub fits: Vec<super::rings::Fitted>,pub curves: Vec<Vec<(f64,f64,f64)>>,
+    pub cut: bool,pub eps: f64 }
+
+/// **A ring's road before it is cut** (`RingFitted`).
+pub fn ring_fitted(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Result<RingFitted,Unbuilt> {
+    let ring = super::rings::Ring::read(tool)?;
+    let touched = ring.touched_over(path,[a,b],K2_POSES)?;
+    fitted_from(tool,path,[a,b],tol,ring,&touched)
+}
+
+/// `ring_fitted` from the ring read and the closed class's poses touching a meridian whole
+/// (`Ring::touched_over`).
+fn fitted_from(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64,ring: super::rings::Ring,touched: &[(f64,f64,usize)])
+    -> Result<RingFitted,Unbuilt> {
+    let mut phase = Phases::new();
+    // **a meridian touched whole over a stretch of the roll is refused by name** (#942 T1d-ring): a
+    // ring carried along a path in a plane its axis lies in (brep-bench's ring along a spline)
+    // touches its top and bottom meridians whole at every instant, and the sweep of each is a sheet
+    // of its own — the groove's floor, 0.4 below either contact curve's tube. The fit enters it
+    // (`rings::Strip`, its sides the tubes' own seams on the meridian, its meetings given), but the
+    // corners at the end poses are not yet arranged: there the ring, the strip, a tube's touching
+    // side and the dipped stretch beyond all touch one another, and arranged so (at 1e-5 as at the
+    // bench's 5.3e-8) the ring where it stops lies on both sides of the tube's rim beside the strip's
+    // corner, and the groove and the block are one cell. Read at the closed class's poses
+    // (`K2_POSES`, `touched`) before anything is fitted; an instant alone touching one whole (an end
+    // pose) is no sheet
+    if touched.len() >= 2 {
+        let (t,theta,k) = touched[0];
+        return Err(Unbuilt::Curved {at:path.pose(t)?.point(ring.meridian_point(theta,k))})
+    }
+    // **the roll cut where the contact changes shape** (#880 T1d, `rings::changes`): a fold pair born
+    // or vanishing partway — the tumbling torus turned whole, and thin — each stretch fitted on its
+    // own, its rows half the roll's grain clear of the cuts (where the pair has no width; the two rows
+    // either side of a cut so within the tolerance of one another, #942 F6), and the tubes of every
+    // stretch sewn across them into one candidate per tube
+    let (scale,cuts) = super::rings::changes(&ring,path,[a,b])?;
+    let eps = 0.5*grain(tool,path,[a,b],tol)?;
+    let bounds: Vec<f64> = std::iter::once(a).chain(cuts.iter().copied()).chain(std::iter::once(b)).collect();
+    let stretches: Vec<[f64;2]> = bounds.windows(2).enumerate().map(|(k,w)| {
+        [if k == 0 { w[0] } else { w[0]+eps },if k+2 == bounds.len() { w[1] } else { w[1]-eps }]
+    }).collect();
+    if crate::debug() && !cuts.is_empty() { eprintln!("ring: the contact changes shape at {cuts:?}") }
+    phase.said(&format!("the roll cut where the contact changes shape, {} cuts,",cuts.len()));
+    let mut fits: Vec<super::rings::Fitted> = stretches.iter().map(|&sp| super::rings::fitted_over(&ring,path,[a,b],sp,scale,K2_FIT*tol))
+        .collect::<Result<_,_>>()?;
+    phase.said(&format!("{} stretches fitted",fits.len()));
+    // **each fold pair's double curve** (#880 T1d, `rings::double_curve`): traced over the whole roll
+    // from where a stretch first finds the outer leaves crossing, once a pair, and cut into every
+    // stretch it passes (`rings::cut_along`), its tail dropped there
+    let mut curves: Vec<Vec<(f64,f64,f64)>> = Vec::new();
+    // (each built outward from its swallowtail point where a stretch finds one, #942 T1d-tori — a
+    // seed on a curve so built is no other)
+    for apex in fits.iter().flat_map(|f| f.apexes.clone()) {
+        if curves.iter().any(|c| super::rings::on_double_curve(&ring,path,c,apex.at,tol)) { continue }
+        curves.push(super::rings::double_curve_from_apex(&ring,path,[a,b],apex,tol)?);
+    }
+    // (each traced from a row's seed joined to its swallowtail point where a stretch finds both)
+    let ends: Vec<super::rings::Apex> = fits.iter().flat_map(|f| f.ends.clone()).collect();
+    for seed in fits.iter().flat_map(|f| f.seeds.clone()) {
+        // (a seed on a curve traced already: its point within the tolerance of it, #942 F6)
+        if curves.iter().any(|c| super::rings::on_double_curve(&ring,path,c,seed[0],tol)) { continue }
+        curves.push(super::rings::double_curve(&ring,path,[a,b],seed,&ends,tol)?);
+    }
+    phase.said(&format!("{} double curves traced",curves.len()));
+    // (and the roll cut again at each swallowtail point, the contact's shape the same either side:
+    // there the double curve's two halves meet, one in space, and a face holding both would be glued
+    // to itself along the crease — each stretch about it refitted in two)
+    let apexes: Vec<(f64,f64)> = curves.iter().flat_map(|c| c.iter().skip_while(|p| !p.0.is_nan()).skip(1).map(|p| (p.0,p.1)))
+        .filter(|&(_,t)| t.is_finite() && t > a && t < b).collect();
+    // **a pair born within a stretch is parted at its swallowtail point, not its birth** (#942
+    // T1d-tori): the birth's row is a construction line, and the double curve, which begins at the
+    // swallowtail point and runs back below it in the roll, stands within the tolerance of the
+    // birth's contact for a stretch of it (the half turn's 0.2e-6 to 3.03e-6 from the point down to
+    // where it crosses that row, over 8.6e-4 of it; the tolerance 3.2e-6), which no arrangement parts
+    // a face along. So where the stretch holding the point begins at the cut where its pair is born —
+    // the stretch before has fewer bridges — the two are one stretch up to the point, fitted with the
+    // pair read as not yet born (`rings::fitted_unborn`), and the rest one from it: the row there
+    // crosses the double curve only where it ends. Between the birth and the point the pair's sliver
+    // — the sheet folded back between its folds — lies wholly above the double curve, in the tail a
+    // later instant holds (the half turn's to 2.3e-4 deep), and the tail rule drops it: entered as
+    // one touching piece, it bounds nothing kept (gated in `swept_depth`, the sweep's depth read at
+    // every place of the bridges between birth and point)
+    let bridges = |f: &super::rings::Fitted| f.sides.iter().flatten().filter(|s| **s == super::rings::Side::Fold).count();
+    let mut parted = 0;
+    for &(theta,t) in &apexes {
+        let Some(k) = fits.iter().position(|f| f.roll[0] < t && f.roll[1] > t) else { continue };
+        let [lo,hi] = fits[k].roll;
+        if k > 0 && bridges(&fits[k-1]) < bridges(&fits[k]) {
+            let from = fits[k-1].roll[0];
+            let before = super::rings::fitted_unborn(&ring,path,[a,b],[from,t],scale,K2_FIT*tol,from,theta)?;
+            let after = super::rings::fitted_over(&ring,path,[a,b],[t,hi],scale,K2_FIT*tol)?;
+            if crate::debug() { eprintln!("ring: a pair born at {} parted at its swallowtail point {t} instead",0.5*(fits[k-1].roll[1]+lo)) }
+            fits.splice(k-1..=k,[before,after]);
+        } else {
+            let parts = [[lo,t],[t,hi]].map(|sp| super::rings::fitted_over(&ring,path,[a,b],sp,scale,K2_FIT*tol));
+            let [p0,p1] = parts;
+            fits.splice(k..=k,[p0?,p1?]);
+        }
+        parted += 1;
+    }
+    phase.said(&format!("{parted} stretches parted at swallowtail points"));
+    // **a bridge's end gives way to a double curve within the arrangement's band of it** (#942
+    // T1d-tori, `rings::give_way`): the end is a construction line, the double curve geometry, so
+    // over a stretch where a preimage comes within the band the face ends on the preimage itself —
+    // read once over every stretch, and again with the branches that gave way anywhere, so a branch
+    // is the end over every stretch it spans and the rows sewn across meet
+    // (each stretch's reader built once, in the first pass, and read again in the second; the curves'
+    // points read once for both)
+    let points = std::cell::OnceCell::new();
+    let mut giving = Vec::with_capacity(fits.len());
+    let mut ways = Vec::with_capacity(fits.len());
+    for f in &fits {
+        let mut g = super::rings::Giving::new(&ring,path,[a,b],f,scale)?;
+        ways.push(super::rings::give_way(&mut g,f,&curves,&points,&[],tol)?);
+        giving.push(g);
+    }
+    let mut given: Vec<(usize,usize)> = ways.iter().flatten().map(|w| (w.of.0,branch_of(&curves[w.of.0],w.of.1[0]))).collect();
+    given.sort_unstable();
+    given.dedup();
+    if !given.is_empty() {
+        ways = fits.iter().zip(&mut giving).map(|(f,g)| super::rings::give_way(g,f,&curves,&points,&given,tol)).collect::<Result<_,_>>()?;
+    }
+    drop(giving);
+    for (fit,ways) in fits.iter_mut().zip(ways) {
+        if ways.is_empty() { continue }
+        *fit = super::rings::fitted_giving_way(&ring,path,[a,b],fit,scale,K2_FIT*tol,ways)?;
+    }
+    phase.said(&format!("{} branches give bridges' ends way",given.len()));
+    Ok(RingFitted {ring,scale,fits,curves,cut:!cuts.is_empty(),eps})
+}
+
+/// The first point of the branch of the double curve `curve` (`rings::double_curve`'s points, its
+/// swallowtail points after the marker) holding its point `k`: the curve parted at its swallowtail
+/// points (`rings::give_way`'s branches).
+fn branch_of(curve: &[(f64,f64,f64)],k: usize) -> usize {
+    let mark = curve.iter().position(|p| p.0.is_nan()).unwrap_or(curve.len());
+    curve[(mark+1).min(curve.len())..].iter().filter_map(|ap| curve[..mark].iter().position(|p| p.0 == ap.0 && p.1 == ap.1))
+        .filter(|&i| i <= k).max().unwrap_or(0)
 }
 
 /// K2's build from its candidates: the tool at each end pose and the sheets, their meetings
 /// `given`, a box holding the sweep (or the blank) split by them at once and classified.
 #[allow(clippy::too_many_arguments)]
 fn candidates(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>,[start,end]: [Brep;2],sheets: Vec<Brep>,
-    given: &[crate::boolean::Given]) -> Result<Brep,Unbuilt> {
+    given: &[crate::boolean::Given],sampled: bool) -> Result<Brep,Unbuilt> {
     // a box holding the sweep: the tool's box at poses over the roll
     let corners = corners_of(tool.bounds());
     let mut points: Vec<V> = Vec::new();
@@ -1221,7 +1401,8 @@ fn candidates(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],bar: f64,tol: f64,bla
     let within = blank.unwrap_or(&domain);
     let solids: Vec<Brep> = [start,end].into_iter().chain(sheets).collect();
     let solid = Solid::new(tool,bar,1.)?;
-    let swept = Swept {tool:&solid,path,roll:[a,b]};
+    let swept = Swept::new(&solid,path,[a,b]);
+    let swept = if sampled { swept.sampled() } else { swept };
     arranged_or_dumped(within,None,&clear_of(&solids,within,tol),given,&swept,blank,tol)
 }
 
@@ -1269,6 +1450,7 @@ fn arranged(within: &Brep,reach: Option<&Brep>,refs: &[&Brep],given: &[crate::bo
     if crate::timing() { eprintln!("closed: {} cells classified in {:?}",cells,clock.elapsed()) }
     if blank.is_none() && !keep.iter().any(|&k| k) { return Err(Unbuilt::Failed("no cell of the arrangement is swept".into())) }
     let out = crate::boolean::selection(&complex,&|c| keep[c])?;
+    if crate::timing() { eprintln!("closed: selected in {:?}",clock.elapsed()) }
     if let Err(e) = out.check(tol) {
         if crate::debug() {
             // each face's loops, where the check failed: their areas and their reach in parameters
@@ -1284,7 +1466,9 @@ fn arranged(within: &Brep,reach: Option<&Brep>,refs: &[&Brep],given: &[crate::bo
         return Err(e.into())
     }
     // **judged by its definition before it is returned** (#777 V2): never returned built wrong
+    if crate::timing() { eprintln!("closed: checked in {:?}",clock.elapsed()) }
     judge(&out,swept,within,blank,&witnesses,tol)?;
+    if crate::timing() { eprintln!("closed: judged in {:?}",clock.elapsed()) }
     Ok(out)
 }
 
@@ -1327,7 +1511,17 @@ pub fn judge(built: &Brep,swept: &Swept,domain: &Brep,blank: Option<&Brep>,witne
         };
         (held != should).then_some((p,held))
     });
-    if let Some((at,held)) = readings.into_iter().flatten().next() { return Err(Unbuilt::Wrong {at,held}) }
+    if let Some((at,held)) = readings.into_iter().flatten().next() {
+        if crate::debug() {
+            // how deep the sweep holds it (sampled finely over the roll) and how far the solid's boundary is
+            let [a,b] = swept.roll;
+            let d = (0..=100_000).map(|k| a+(b-a)*k as f64/1e5).filter_map(|t| swept.path.pose(t).ok())
+                .map(|pose| swept.tool.signed_distance(pose.inverse().point(at))).fold(f64::INFINITY,f64::min);
+            let body = super::member::Solid::new(built,1e-4,1.).ok().map(|s| s.signed_distance(at));
+            eprintln!("judge: at {at:?} the solid holds it {held}, membership says otherwise: the sweep's depth there {d:e}, the solid's distance {body:?}")
+        }
+        return Err(Unbuilt::Wrong {at,held})
+    }
     // each face turned the way its solid lies: a hair out along its outward normal the solid's own
     // point location reads out, a hair in reads in (a face turned against its neighbours places
     // points as the right one does, but its volume is off: the ring's sweep came out at 3.38 of
@@ -1344,7 +1538,10 @@ pub fn judge(built: &Brep,swept: &Swept,domain: &Brep,blank: Option<&Brep>,witne
         let (outside,inside) = (add(p,scale(n,hair)),sub(p,scale(n,hair)));
         (solid.solid_place(outside) == Place::In && solid.solid_place(inside) == Place::Out).then_some(inside)
     });
-    if let Some(at) = turned.into_iter().flatten().next() { return Err(Unbuilt::Wrong {at,held:false}) }
+    if let Some(at) = turned.into_iter().flatten().next() {
+        if crate::debug() { eprintln!("judge: a face turned against its solid, read a hair ({hair:e}) in at {at:?}") }
+        return Err(Unbuilt::Wrong {at,held:false})
+    }
     // turned inside out: every point it seems to hold, it leaves out
     if crate::props::volume(built) < 0. {
         let inside = points.iter().copied().find(|&p| solid.solid_place(p) == Place::In)
@@ -1535,15 +1732,26 @@ pub(crate) fn contour_solid(halves: &[crate::slid::Slid;2],[h0,h1]: [f64;2]) -> 
 /// the widest gap between the angles round the axis at which they stand, where it is laid at
 /// nothing given (a touch's line along a candidate's seam is an edge lying along a touch, which no
 /// arrangement holds by rounding). Left as it is where nothing is touched beside its axis.
+///
+/// Gaps within a rounding of the widest — `HALF_READ` of a turn, a gap being the difference of two
+/// angles read at a turn's scale — are alike, and the first of them by angle from the frame's own
+/// `x` is taken: the touched points stand evenly round the ring where its contact winds round it,
+/// every gap alike within 1e-14, and the widest by rounding stood the seam anywhere among them
+/// as the input moved by an ulp (#942: brep-bench's 80° torus, its seam, faces and dumps another
+/// for each spelling of its motion).
 pub(super) fn seam_away(solid: Brep,o: V,axis: V,touched: &[V]) -> Brep {
+    use std::f64::consts::TAU;
     let f = Frame::about(o,axis);
-    let angles: Vec<f64> = touched.iter().filter_map(|&p| {
+    let mut angles: Vec<f64> = touched.iter().filter_map(|&p| {
         let l = f.local(p);
-        (l[0].dhypot(l[1]) > 1e-9*(1.+norm(sub(p,o)))).then(|| l[1].datan2(l[0]))
+        (l[0].dhypot(l[1]) > 1e-9*(1.+norm(sub(p,o)))).then(|| l[1].datan2(l[0]).rem_euclid(TAU))
     }).collect();
     if angles.is_empty() { return solid }
-    let (at,gap) = super::sector::widest(angles.into_iter(),std::f64::consts::TAU);
-    solid.moved(&crate::geom::Rigid::turn(o,axis,at+0.5*gap))
+    angles.sort_by(f64::total_cmp);
+    let gap = |k: usize| if k+1 < angles.len() { angles[k+1]-angles[k] } else { angles[0]+TAU-angles[k] };
+    let widest = (0..angles.len()).map(gap).fold(0.,f64::max);
+    let k = (0..angles.len()).find(|&k| gap(k) >= widest-crate::util::fmath::HALF_READ*TAU).unwrap_or(0);
+    solid.moved(&crate::geom::Rigid::turn(o,axis,angles[k]+0.5*gap(k)))
 }
 
 /// A solid's face named `sheet` alone, its other faces left off: an open sheet the arrangement takes

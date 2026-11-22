@@ -39,6 +39,26 @@ fn main() {
                 for n in c.on.iter().take(8) { println!("  candidate {} face {} ({} {}) off {:e}",n.candidate,n.face,n.kind,n.name,n.off) }
             }
         }
+        "given" => {
+            // each curve of the given meetings `a` and `b`: its ends, and the nearest the two come
+            let (a,b): (usize,usize) = (args[2].parse().unwrap(),args[3].parse().unwrap());
+            let pts = |c: &cad_kernel::geom::Curve| -> Vec<[f64;3]> { match c {
+                cad_kernel::geom::Curve::BSpline(s) => { let [t0,t1] = s.domain(); (0..=4000).map(|k| c.point(t0+(t1-t0)*k as f64/4000.)).collect() }
+                _ => Vec::new() } };
+            for g in [a,b] { for c in &t.given[g].curves { let p = pts(c); if let (Some(f),Some(l)) = (p.first(),p.last()) { println!("given {g}: a {} from {f:?} to {l:?}",c.kind()) } } }
+            let mut best = (f64::INFINITY,[0.;3]);
+            for c in &t.given[a].curves { for d in &t.given[b].curves { let (p,q) = (pts(c),pts(d));
+                for x in &p { for y in &q { let e = cad_kernel::util::space::distance(*x,*y); if e < best.0 { best = (e,*x) } } } } }
+            println!("nearest {:.3e} at {:?}",best.0,best.1);
+            // (refined: alternating feet on the two curves from there)
+            for c in &t.given[a].curves { for d in &t.given[b].curves {
+                let mut x = c.point(c.inverse(best.1));
+                for _ in 0..200 { let y = d.point(d.inverse(x)); x = c.point(c.inverse(y)); }
+                let y = d.point(d.inverse(x));
+                let e = cad_kernel::util::space::distance(x,y);
+                if e < 1e-2 { println!("refined {e:.3e} at {x:?}") }
+            } }
+        }
         "through" => {
             let p = v3(args.get(2).map_or("",String::as_str));
             let within = args.get(3).map_or(1e-6,|r| r.parse().expect("a distance"));
@@ -46,6 +66,27 @@ fn main() {
             for n in &near.faces { println!("face: candidate {} face {} ({} {}) off {:e}",n.candidate,n.face,n.kind,n.name,n.off) }
             for (c,e,kind,d) in &near.edges { println!("edge: candidate {c} edge {e} ({kind}) {d:e} away") }
             for (g,[a,b],kind,d) in &near.given { println!("given {g} ({a} × {b}): a {kind} {d:e} away") }
+        }
+        "faces" => {
+            // each candidate's check, and the loops of its faces with an edge within `within` of `p`:
+            // each use's edge, its ends in space and in the face's parameters
+            let p = v3(args.get(2).map_or("",String::as_str));
+            let within = args.get(3).map_or(1e-3,|r| r.parse().expect("a distance"));
+            for (k,b) in t.candidates.iter().enumerate() {
+                println!("candidate {k}: {} faces, check {:?}",b.faces.len(),b.check(t.tol));
+                for (i,f) in b.faces.iter().enumerate() {
+                    let near = f.loops.iter().flatten().any(|c| { let e = &b.edges[c.edge as usize];
+                        matches!(&e.curve,cad_kernel::topo::EdgeCurve::Curve(cv) if (0..=64).any(|j| cad_kernel::util::space::distance(cv.point(e.t[0]+(e.t[1]-e.t[0])*j as f64/64.),p) <= within)) });
+                    if !near { continue }
+                    println!("  face {i} ({}):",f.surface.kind());
+                    for (li,l) in f.loops.iter().enumerate() { for c in l {
+                        let e = &b.edges[c.edge as usize];
+                        let ends = [c.pcurve.at(e.t[0],e,&f.surface,&b.vertices),c.pcurve.at(e.t[1],e,&f.surface,&b.vertices)];
+                        let (a,z) = (b.vertices[e.v[0] as usize].p,b.vertices[e.v[1] as usize].p);
+                        println!("    loop {li} edge {} reversed {} over {:?}: {a:.6?} to {z:.6?}, in the face {ends:.6?}",c.edge,c.reversed,e.t);
+                    } }
+                }
+            }
         }
         _ => { eprintln!("{usage}"); std::process::exit(2) }
     }
