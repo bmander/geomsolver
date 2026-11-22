@@ -150,7 +150,8 @@ placement carries inside the blank; CLI test readers zero the offset.
   `tests/held_still.rs` holds a run of a plate whose pockets are rounded and then rounded all over
   to lowering each region once (four times before) and building the body once a state, and an
   edit to one plate of two to lowering again only the other's regions.  The 204-face plate of the
-  issue ran 244 s on a release `solventc` before this, 117 s after.
+  issue (`--where all.volume`, release `solventc`, a quiet machine) ran 260 s before this and
+  134 s after; its 102-face one 66 s and 36 s.
   **An evaluated solid is keyed on its shape, and a solid that only moved is moved** (#412):
   `Caches::solid` keeps each evaluation against a `solid::ShapeKey` — what `reads` reads (a
   region's term reading each entity it measures by its kind, `reads::entity_reads`: a face by its
