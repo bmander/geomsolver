@@ -496,10 +496,10 @@ pub(crate) fn has_sweep(sk: &Sketch, si: usize) -> bool {
     if sk.awaits_supply(si) {
         return false;
     }
+    let _holding = sk.caches.held.open();
     // asked before every evaluation of the solid, a remembered one too (`Sketch::evaluated_solid`'s
     // slot), and it reads every operand's route: a body rounded all over is a region for each
     // edge and corner, each reading the body's stratum.  Remembered against what the solid reads
-    let _holding = sk.caches.held.open();
     sk.caches.swept.get_or(si, MemoKey::of(sk, si),
         || validate_at(sk, si, REPORT_UNIT).map(|ops| sweeps_among(sk, &ops)).unwrap_or(false))
 }
