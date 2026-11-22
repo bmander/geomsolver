@@ -1396,7 +1396,8 @@ impl<'a> Arrangement<'a> {
         // — the edge is read against them by one rule (`known`, `on_known`).
         let known: Vec<Option<Met>> = asked.iter().map(|&(s,other,i,fi,..)| self.known(s,&bounded[s][i],other,fi)).collect();
         let (solids,boxes) = (&self.solids,&self.boxes);
-        let read = crate::util::par::map_in_order(&asked.iter().zip(&known).collect::<Vec<_>>(),|&(&(_,other,_,fi,e,c),known)| {
+        let bounded = &bounded;
+        let read = crate::util::par::map_in_order(&asked.iter().zip(&known).collect::<Vec<_>>(),|&(&(s,other,i,fi,e,c),known)| {
             let started = crate::util::clock::Instant::now();
             // an edge measured off its surfaces by more than the tolerance (a fitted contact's
             // `tol`, `Brep::measure_tolerances`) is read at its own: it lies in a face it is
@@ -1408,6 +1409,15 @@ impl<'a> Arrangement<'a> {
                 None => search(),
                 Some(Met::Same) => Meets::Along,
                 Some(Met::On(curves,touches)) => on_known(c,e.t,curves,touches,surface,tol,search),
+            };
+            // a reading refused where a surface of the edge's own rests on the other's
+            let meets = match meets {
+                Meets::Refused(r) => {
+                    let own: Vec<&Surface> = bounded[s][i].iter().map(|&h| &solids[s].faces[h].surface).collect();
+                    resting_on(c,e.t,&own,surface,tol,&|t| curve_surface_within(c,t,surface,tol,boxes[other][fi],pad))
+                        .unwrap_or(Meets::Refused(r))
+                }
+                meets => meets,
             };
             let meets = at_its_ends(meets,c,e.t,surface,tol);
             (meets,started.elapsed().as_secs_f64())
@@ -2316,8 +2326,8 @@ struct Touches<'s,'a> {
     spread: f64,
     /// the smaller face's size, which a touch read alone is small beside
     least: f64,
-    /// the touches read, as they alone are met there or not, each within its radius
-    read: Vec<(super::ssi::Touch,bool)>,
+    /// the touches read, as they alone are met there or not, each with the reach it is known over
+    read: Vec<(super::ssi::Touch,bool,f64)>,
 }
 
 impl<'s,'a> Touches<'s,'a> {
@@ -2348,23 +2358,48 @@ impl<'s,'a> Touches<'s,'a> {
     fn touching(&self,p: V) -> bool { self.shallow(p) && self.on_contact(p) }
 
     /// **Where the two touch at a point**: to second order their meeting there is the point alone,
-    /// or two branches crossing at it (`ssi::touch`); where none of the branches runs into both
-    /// faces the two meet there alone, and nothing is traced through it. A touch with a branch
-    /// into both is left to the trace, which refuses it. Each read is kept, as alone or not,
-    /// within its radius.
+    /// or two branches crossing at it (`ssi::touch`).
+    ///
+    /// **An elliptic touch is a meeting in no curve** (#994): where `Q` is definite the two stand
+    /// on either side of their common tangent plane about the point, apart by `½ tᵀ Q t`, so within
+    /// `tol` of one another only over its disc (`Touch::disc`), and that point is all they share —
+    /// a round of 1 resting on a blend of 20, both tangent to the face they round into, at any lean,
+    /// whatever their kinds. Known as such out to eight discs, where second order puts them `64 tol`
+    /// apart, which is sampled round the point at half and the whole of that reach (`ssi::resting`:
+    /// a third-order part that would make them cross there refuses it). Only a reach under a twentieth of the
+    /// smaller face: a longer one, `Q` all but singular, is a touch along a curve at the tolerance's
+    /// scale, which the meeting's ridges read (`meeting::marched`). Read before by the radius within
+    /// which they stand nearer parallel than a trace follows (`2 SHALLOW / least`, 0.7 for that
+    /// round), and refused past a twentieth of the face, the search's point beside the touch was
+    /// read as a curve no trace followed: "a cylinder and a torus meet at …, where no edge crosses,
+    /// in a curve that could not be traced".
+    ///
+    /// Where `Q` is indefinite and none of its branches runs into both faces, the two meet there
+    /// alone as well, and nothing is traced through it; a touch with a branch into both is left to
+    /// the trace, which starts from it along each. Each read is kept, as alone or not, with the
+    /// reach it is known over.
     fn alone(&mut self,p: V) -> bool {
         let (tol,(sa,sb)) = (self.arr.tol,(self.surfaces[0],self.surfaces[1]));
         let Some(at) = super::ssi::touch_near(sa,sb,p,tol) else { return false };
         let Some(t) = super::ssi::touch(sa,sb,at) else { return false };
+        if t.branches.is_empty() {
+            let Some(reach) = super::ssi::resting(sa,sb,&t,tol) else { return false };
+            if reach > 0.05*self.least || distance(at,p) > t.radius { return false }
+            self.arr.say.touch_alone(self.faces,self.surfaces,&t);
+            let near = distance(at,p) <= reach;
+            self.read.push((t,true,reach));
+            return near
+        }
         if t.radius > 0.05*self.least || distance(at,p) > t.radius { return false }
         let place = |k: usize,d: V| {
             let s = self.surfaces[k];
-            let q = crate::util::space::add(at,crate::util::space::scale(d,2.*t.radius));
+            let q = crate::util::space::add(at,scale(d,2.*t.radius));
             self.arr.located[self.faces.s[k]].face_place(self.faces.f[k],s.point(s.inverse(q)))
         };
         let lone = !t.branches.iter().any(|&d| place(0,d) != Place::Out && place(1,d) != Place::Out);
         if lone { self.arr.say.touch_alone(self.faces,self.surfaces,&t); }
-        self.read.push((t,lone));
+        let radius = t.radius;
+        self.read.push((t,lone,radius));
         lone
     }
 
@@ -2382,8 +2417,10 @@ impl<'s,'a> Touches<'s,'a> {
     /// where they touch beside an edge they touch along, or outside a face — the cheapest asked
     /// first.
     fn beside(&mut self,p: V) -> bool {
-        let known = self.read.iter().find(|(t,_)| distance(t.at,p) <= t.radius).map(|&(_,lone)| lone);
-        known == Some(true) || self.shallow(p) && (self.on_contact(p) || self.outside(p) || known.is_none() && self.alone(p))
+        let known = self.read.iter().find(|(t,_,reach)| distance(t.at,p) <= *reach).map(|&(_,lone,_)| lone);
+        // (beyond an elliptic touch's reach but within its radius, read already: not beside it)
+        let read = known.is_some() || self.read.iter().any(|(t,..)| t.branches.is_empty() && distance(t.at,p) <= t.radius);
+        known == Some(true) || self.shallow(p) && (self.on_contact(p) || self.outside(p) || !read && self.alone(p))
     }
 }
 
@@ -2406,6 +2443,54 @@ fn at_its_ends(meets: Meets,c: &Curve,t: [f64;2],surface: &Surface,tol: f64) -> 
         if !out.iter().any(|r| r.0 == s) { out.push((s,touch)) }
     }
     Meets::At(out)
+}
+
+/// **An edge through where a surface of its own rests on the other** (#994): an edge lies in each
+/// of its own faces' surfaces, so where one of those touches `surface` at a point and the two
+/// rest on one another there (`ssi::resting`: an elliptic touch, nothing but the point their
+/// meeting within its reach), the edge meets `surface` within that reach only at that point, a
+/// touch. Read where the search over its stretch `t` is refused — a double root it cannot prove,
+/// a blend's seam circle through the point where a round's torus rests on the blend — from the
+/// edge's samples nearest `surface`: each such touch the edge passes through, its parameter, and
+/// the rest of the stretch either side of the reach searched as before (`search`). `None` where no
+/// such touch is found, or the rest is refused again.
+fn resting_on(c: &Curve,t: [f64;2],own: &[&Surface],surface: &Surface,tol: f64,search: &dyn Fn([f64;2]) -> Meets) -> Option<Meets> {
+    const N: usize = 64;
+    let at = |k: usize| t[0]+(t[1]-t[0])*k as f64/N as f64;
+    let off: Vec<f64> = (0..=N).map(|k| surface.implicit(c.point(at(k))).abs()).collect();
+    // the touches the edge passes through: from each sample nearest the surface among its neighbours
+    let mut touches: Vec<(f64,f64)> = Vec::new();
+    for k in 0..=N {
+        if !(k == 0 || off[k] <= off[k-1]) || !(k == N || off[k] <= off[k+1]) { continue }
+        for &own in own {
+            let Some(p) = super::ssi::touch_near(own,surface,c.point(at(k)),tol) else { continue };
+            let Some(touch) = super::ssi::touch(own,surface,p) else { continue };
+            let Some(reach) = super::ssi::resting(own,surface,&touch,tol) else { continue };
+            let x = c.inverse(p);
+            let x = match c.period() { Some(period) => around(x,t[0],period),None => x };
+            if !(t[0] <= x && x <= t[1]) || distance(c.point(x),p) > ON_CURVE*tol { continue }
+            // along the edge, the stretch within the reach
+            let half = reach/c.speed().max(1e-300);
+            if !touches.iter().any(|&(y,_)| (y-x).abs() <= half) { touches.push((x,half)) }
+        }
+    }
+    if touches.is_empty() { return None }
+    touches.sort_by(|a,b| a.0.total_cmp(&b.0));
+    let mut roots: Vec<(f64,bool)> = Vec::new();
+    let mut from = t[0];
+    for &(x,half) in touches.iter().chain([&(f64::INFINITY,0.)]) {
+        let to = if x.is_finite() { (x-half).max(t[0]) } else { t[1] };
+        if to > from {
+            match search([from,to]) {
+                Meets::At(r) => roots.extend(r),
+                Meets::Along | Meets::Refused(_) => return None,
+            }
+        }
+        if !x.is_finite() { break }
+        roots.push((x,true));
+        from = (x+half).min(t[1]);
+    }
+    Some(Meets::At(roots))
 }
 
 /// **Where an edge meets a surface it is known to meet on** (#990, `crossings`): along it where

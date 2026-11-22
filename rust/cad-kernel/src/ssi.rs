@@ -738,6 +738,8 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
         // two rods whose axes lean apart, clear of one another or resting on one another at a
         // point: no curve (`rods_apart`)
         (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) if rods_apart(&f,r,&g,s,tol) => Ssi::Curves(vec![]),
+        // a ball clear of a cylinder or a torus, or resting on it at a point: no curve (`ball_clear`)
+        (Surface::Sphere(c,r),ref x) | (ref x,Surface::Sphere(c,r)) if ball_clear(c.o,r,x,tol) => Ssi::Curves(vec![]),
         (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) if (r-s).abs() <= tol => {
             // one radius, axes crossing at O: a point as far from both axes has
             // ((p−O)·a₁)² = ((p−O)·a₂)², so the meeting is the first cylinder cut by the two planes
@@ -1090,6 +1092,25 @@ fn rods_apart(f: &Frame,r: f64,g: &Frame,s: f64,tol: f64) -> bool {
     let n = cross(unit(f.z),unit(g.z));
     if !(norm(n) >= SHALLOW) { return false }
     dot(sub(g.o,f.o),unit(n)).abs() >= r.abs()+s.abs()-tol
+}
+
+/// **A ball meets a cylinder or a torus in no curve** where its centre stands at least its radius
+/// from it, less `tol` (#994): their signed distances (`Surface::implicit`, `ρ − r` and
+/// `√((ρ − R)² + z²) − r`) change by no more than the distance moved and are nothing on the
+/// surface, so no point of the surface is nearer the centre than the distance read there, and the
+/// ball touches it at most where its sphere reaches that far — a point, but where the centre stands
+/// on the cylinder's axis, the torus's axis or its core circle (each read before, in circles about
+/// the axis or `ball_in_tube`), where it is a circle. Off those by more than `tol`, the touch is
+/// one point, or none: a ball resting on a ring, a cylinder, beside or inside it.
+fn ball_clear(c: V,r: f64,x: &Surface,tol: f64) -> bool {
+    let [lx,ly,lz] = x.frame().local(c);
+    let rho = lx.dhypot(ly);
+    let off = match *x {
+        Surface::Cylinder(..) => rho > tol,
+        Surface::Torus(_,big,_) => rho > tol && (rho-big).dhypot(lz) > tol,
+        _ => false,
+    };
+    off && x.implicit(c).abs() >= r.abs()-tol
 }
 
 /// **The line two cylinders or cones with parallel axes touch along**, where they do: at two
@@ -2185,13 +2206,48 @@ pub(crate) const SHALLOW: f64 = 0.0175;
 /// **Where two surfaces touch at a point**: their meeting there, to second order. Over the plane
 /// they share at `p`, `b`'s signed distance along `a` grows as `½ tᵀ Q t`, `Q` the difference of
 /// their second fundamental forms (`a`'s turned by the sign of their normals' agreement): a
-/// definite `Q` touches at `p` alone, an indefinite one meets in two branches crossing there along
-/// its null directions. A touch: those directions (each either way; none for a definite `Q`), and
-/// the radius within which the two stand nearer parallel than a trace can follow (`SHALLOW`).
+/// definite `Q` (an elliptic touch) touches at `p` alone, an indefinite one (hyperbolic) meets in
+/// two branches crossing there along its null directions. A touch: those directions (each either
+/// way; none for a definite `Q`), the radius within which the two stand nearer parallel than a
+/// trace can follow (`SHALLOW`), and `Q`'s least size — over which an elliptic touch stands
+/// within `tol` of the other only over the disc of radius `√(2 tol / least)` (`Touch::disc`).
 /// `None` where `Q` is too near singular to say (the two touch along a curve, or closer than
 /// second order).
 #[derive(Clone,Debug)]
-pub(crate) struct Touch { pub at: V,pub branches: Vec<V>,pub radius: f64 }
+pub(crate) struct Touch { pub at: V,pub branches: Vec<V>,pub radius: f64,pub least: f64 }
+
+impl Touch {
+    /// **How far from an elliptic touch the two may stand within `tol` of one another, read to
+    /// second order** (#994): the long axis of the ellipse `½ tᵀ Q t ≤ tol`, `√(2 tol / least)` — a
+    /// height, the tolerance, turned into a reach, and nothing else. Beyond eight times it the
+    /// two stand `64 tol` apart where second order holds (`Touches::alone` samples that it does).
+    pub(crate) fn disc(&self,tol: f64) -> f64 { (2.*tol/self.least).sqrt() }
+}
+
+/// **An elliptic touch read as two surfaces resting on one another** (#994): `t` a touch of `a`
+/// and `b` with `Q` definite, `b`'s height over `a` sampled round it at half and the whole of
+/// eight discs (`Touch::disc`) along sixteen ways — of one sign, and at least a tenth of `Q`'s
+/// least size times the square of the reach, where second order puts it at a half: the touch's
+/// reach, eight discs, over which nothing but the point is their meeting at this tolerance.
+/// `None` for an indefinite `Q`, or where a sample says the third-order part bends them across one
+/// another within that reach.
+pub(crate) fn resting(a: &Surface,b: &Surface,t: &Touch,tol: f64) -> Option<f64> {
+    if !t.branches.is_empty() { return None }
+    let reach = 8.*t.disc(tol);
+    let f = Frame::about(t.at,a.gradient(t.at));
+    let mut sign = 0.;
+    for k in 0..16 {
+        let (sn,cs) = (k as f64*std::f64::consts::TAU/16.).dsin_cos();
+        for w in [0.5,1.] {
+            let rho = w*reach;
+            let q = add(t.at,add(scale(f.x,rho*cs),scale(f.y,rho*sn)));
+            let g = b.implicit(a.point(a.inverse(q)));
+            if sign == 0. { sign = g.signum() }
+            if !(g*sign >= 0.1*t.least*rho*rho) { return None }
+        }
+    }
+    Some(reach)
+}
 
 /// The step two surfaces' derivatives are differenced over, near their finer feature.
 fn difference_step(a: &Surface,b: &Surface) -> f64 { 1e-4*a.feature().min(b.feature()).min(1e6).max(1e-9) }
@@ -2222,34 +2278,47 @@ pub(crate) fn touch(a: &Surface,b: &Surface,p: V) -> Option<Touch> {
             [t,scale(t,-1.)]
         }).collect()
     };
-    Some(Touch {at:p,branches,radius})
+    Some(Touch {at:p,branches,radius,least})
 }
 
-/// **The point near `p` where `a` and `b` touch**: on `a`, where `b`'s signed distance along it is
-/// stationary — their normals parallel there — by Newton over `a`'s tangent plane, its
-/// derivatives by differences; `None` where that does not settle, or settles off `b` (the two pass
-/// apart or cross there, and do not touch). Settled is a step a thousandth of `tol`, or one within
-/// a tenth of it that no longer shrinks: the differences' rounding moves the point by as much (two
-/// vaults' crown at a `tol` of 1e-9 cycled through steps of 1.3e-11).
+/// **The point near `p` where `a` and `b` touch**: on `a`, where `b`'s normal is `a`'s — the
+/// critical point of `b`'s signed distance along `a` — by Newton over `a`'s tangent plane on the
+/// difference of their unit normals, read from their exact gradients (its Jacobian, `Q`, by
+/// differences of them); `None` where that does not settle, or settles off `b` (the two pass
+/// apart or cross there, and do not touch).
+///
+/// **Settled by height, not by place** (#994): near a touch the slope is linear in the offset, so
+/// Newton converges quadratically in it, but where the two curve nearly alike along one way (`Q`'s
+/// least size `λ` small: a round of 1 resting on a blend of 20) the place is fixed along that way
+/// only to the slope's rounding over `λ`, and a step bound of a fraction of `tol` is not one every
+/// touch reaches. What the touch is for is the height `b` stands over `a` there, which a step `δ`
+/// along the slope `g` changes by `½ |g · δ|`: settled once that is a thousandth of `tol`, or the
+/// step itself is. (Read before from `b`'s signed distance by differences, the slope carried
+/// that distance's rounding over the step; read here from both exact gradients.)
 pub(crate) fn touch_near(a: &Surface,b: &Surface,p: V,tol: f64) -> Option<V> {
     let on_a = |q: V| a.point(a.inverse(q));
     let h = difference_step(a,b);
     let mut x = on_a(p);
-    let mut last = f64::INFINITY;
     for _ in 0..32 {
         let f = Frame::about(x,a.gradient(x));
-        let g = |s: f64,t: f64| b.implicit(on_a(add(x,add(scale(f.x,s),scale(f.y,t)))));
-        let (g0,[sp,sm,tp,tm]) = (g(0.,0.),[g(h,0.),g(-h,0.),g(0.,h),g(0.,-h)]);
-        let (gs,gt) = ((sp-sm)/(2.*h),(tp-tm)/(2.*h));
-        let (gss,gtt) = ((sp-2.*g0+sm)/(h*h),(tp-2.*g0+tm)/(h*h));
-        let gst = (g(h,h)-g(h,-h)-g(-h,h)+g(-h,-h))/(4.*h*h);
-        let det = gss*gtt-gst*gst;
+        // b's unit normal less a's (turned to agree with it) at a point of a near x, along a's
+        // tangent plane at x: nothing where the two are parallel
+        let agree = dot(a.gradient(x),b.gradient(x)).signum();
+        let slope = |s: f64,t: f64| {
+            let q = on_a(add(x,add(scale(f.x,s),scale(f.y,t))));
+            let n = sub(unit(b.gradient(q)),scale(unit(a.gradient(q)),agree));
+            [dot(n,f.x),dot(n,f.y)]
+        };
+        let g = slope(0.,0.);
+        let ([sp,sm],[tp,tm]) = ([slope(h,0.),slope(-h,0.)],[slope(0.,h),slope(0.,-h)]);
+        let j = [[(sp[0]-sm[0])/(2.*h),(tp[0]-tm[0])/(2.*h)],[(sp[1]-sm[1])/(2.*h),(tp[1]-tm[1])/(2.*h)]];
+        let det = j[0][0]*j[1][1]-j[0][1]*j[1][0];
         if !(det.abs() > 0.) { return None }
-        let (ds,dt) = ((-gs*gtt+gt*gst)/det,(-gt*gss+gs*gst)/det);
+        let (ds,dt) = ((-g[0]*j[1][1]+g[1]*j[0][1])/det,(-g[1]*j[0][0]+g[0]*j[1][0])/det);
         x = on_a(add(x,add(scale(f.x,ds),scale(f.y,dt))));
-        let step = ds.dhypot(dt);
-        if step <= 1e-3*tol || step <= 0.1*tol && step >= 0.5*last { return (b.implicit(x).abs() <= 8.*tol).then_some(x) }
-        last = step;
+        let (step,rise) = (ds.dhypot(dt),0.5*(g[0]*ds+g[1]*dt).abs());
+        if !step.is_finite() { return None }
+        if step <= 1e-3*tol || rise <= 1e-3*tol { return (b.implicit(x).abs() <= 8.*tol).then_some(x) }
     }
     None
 }

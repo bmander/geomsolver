@@ -272,6 +272,7 @@ mod regular;
 mod regular_cost;
 mod relation_words;
 mod renderer;
+mod resting_touches;
 mod revolve;
 mod revolved_regions;
 mod rigid_solids;
