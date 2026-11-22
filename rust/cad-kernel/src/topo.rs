@@ -162,9 +162,10 @@ fn inverse_from(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface,seed: Opti
     let mut uv = unwrap(surface.inverse_near(x,from),near,surface.periods());
     if from != near {
         let off = |uv: Uv| crate::util::space::distance(surface.point(uv),x);
-        if off(uv) > edge.tol {
+        let carried = off(uv);
+        if carried > edge.tol {
             let again = unwrap(surface.inverse_near(x,near),near,surface.periods());
-            if off(again) < off(uv) { uv = again }
+            if off(again) < carried { uv = again }
         }
     }
     if s == 0. || s == 1. { on_pole(surface,uv,near,edge.tol) } else { uv }
@@ -179,8 +180,10 @@ fn inverse_from(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface,seed: Opti
 /// crossing with itself is born gave the solid's volume as NaN).
 fn inverse_derivative(uv: Uv,t: f64,edge: &Edge,surface: &Surface) -> Uv {
     let EdgeCurve::Curve(c) = &edge.curve else { return [0.;2] };
-    let d = in_parameters(surface,uv,c.tangent(t));
-    if d.iter().all(|x| x.is_finite()) && !folded(surface,uv) { return d }
+    // (the two rates read once, for the solve and its fold)
+    let (_,su,sv) = surface.d1(uv);
+    let d = solved(su,sv,c.tangent(t));
+    if d.iter().all(|x| x.is_finite()) && !folded(su,sv) { return d }
     let h = 1e-3*(edge.t[1]-edge.t[0]);
     let (lo,hi) = ((t-h).max(edge.t[0]),(t+h).min(edge.t[1]));
     if !(hi > lo) { return [0.;2] }
@@ -188,13 +191,12 @@ fn inverse_derivative(uv: Uv,t: f64,edge: &Edge,surface: &Surface) -> Uv {
     [(b[0]-a[0])/(hi-lo),(b[1]-a[1])/(hi-lo)]
 }
 
-/// **Whether `surface`'s two rates at `uv` stand one way to half the digits** (`HALF_READ`): the
-/// square of the sine between them — the least squares' determinant over the product of its
-/// diagonal — below the part of its scale a value read by cancellation keeps unread, so the solve
-/// in parameters loses half its digits (#942 T1d-tori: beside a swept sheet's swallowtail point,
+/// **Whether a surface's two rates `su`, `sv` at a place stand one way to half the digits**
+/// (`HALF_READ`): the square of the sine between them — the least squares' determinant over the
+/// product of its diagonal — below the part of its scale a value read by cancellation keeps unread,
+/// so the solve in parameters loses half its digits (#942 T1d-tori: beside a swept sheet's swallowtail point,
 /// the sine 7.5e-5, an edge's rate in `v` read −0.997 against its feet's −5e-6).
-fn folded(surface: &Surface,uv: Uv) -> bool {
-    let (_,su,sv) = surface.d1(uv);
+fn folded(su: V,sv: V) -> bool {
     let (a11,a12,a22) = (dot(su,su),dot(su,sv),dot(sv,sv));
     a11*a22-a12*a12 <= crate::util::fmath::HALF_READ*a11*a22
 }
@@ -203,6 +205,11 @@ fn folded(surface: &Surface,uv: Uv) -> bool {
 /// two derivatives are parallel, a pole's).
 pub(crate) fn in_parameters(surface: &Surface,uv: Uv,d: V) -> Uv {
     let (_,su,sv) = surface.d1(uv);
+    solved(su,sv,d)
+}
+
+/// `d` in the parameters whose rates are `su`, `sv`: `in_parameters`' least squares.
+fn solved(su: V,sv: V,d: V) -> Uv {
     let (a11,a12,a22) = (dot(su,su),dot(su,sv),dot(sv,sv));
     let (b1,b2) = (dot(su,d),dot(sv,d));
     let det = a11*a22-a12*a12;
