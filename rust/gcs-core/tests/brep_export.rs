@@ -630,3 +630,102 @@ fn a_swept_elbow_joins_its_legs_at_their_tangent_seams() {
         assert!((w[0].1-w[1].1).abs() <= 1e-9*w[0].1,"{:?}: one arc {} against two {}",w[0].0,w[0].1,w[1].1);
     }
 }
+
+/// **A turn a near-miss wider or narrower than its legs is built with its step** (#996): the
+/// elbow's tube drawn `20 ± δ` against legs of 20, its arc's ends placed where that tube crosses
+/// the axis, for δ from a hundredth down by decades to 1e-8 (under the Boolean's tolerance, about
+/// 8e-8 here) either way, and the issue's own document — its arc's radius stated by no dimension,
+/// its ends' hints putting the tube 9.2e-7 over the legs. Each is a valid solid whose volume is the
+/// turn's by Pappus and the legs' union, the turn beside both: a step of δ round each seam, a cap's
+/// crescent 308° long between the turn's rim and the leg's, built as the solid it is. Between a
+/// tolerance and a thousandth the arrangement had read the crescent as having no inside, or its
+/// loop's area the wrong way round, and dropped it, the turn's face left hanging by its rim
+/// (`reading::inside`, `fine_area`); at a tolerance the leg's circle standing for the turn's rim
+/// ended across the axis from its pole, read half a turn round (`topo::on_pole`), and the union
+/// was 2.6 times the solid.
+#[test]
+fn a_turn_a_near_miss_wider_or_narrower_than_its_legs_is_built_with_its_step() {
+    use std::f64::consts::PI;
+    let moment = |r: f64| {
+        let bend = 18f64;
+        let f = |t: f64| bend*(t*(r*r-t*t).sqrt()+r*r*(t/r).asin())-2./3.*(r*r-t*t).powf(1.5);
+        f(r)-f(-bend)
+    };
+    let vh = ["leg_v","elbow","leg_h"];
+    let mut cases: Vec<(String,f64)> = Vec::new();
+    for k in -8..=-2 {
+        for sign in [1.,-1.] {
+            let tube = 20.+sign*10f64.powi(k);
+            cases.push((elbow(20.,18.,90.,false,Some((tube*tube-18.*18.).sqrt()),vh),tube));
+        }
+    }
+    // the issue's document: its ends' hints alone, no radius said (one freedom, the seeds')
+    let hinted = elbow(20.,18.,90.,false,Some(8.7178),vh).lines()
+        .filter(|l| !l.trim_start().starts_with("fix(y ==")).collect::<Vec<_>>().join("\n")+"\n";
+    cases.push((hinted,(18f64*18.+8.7178*8.7178).sqrt()));
+    for (src,tube) in cases {
+        let (e,sk) = crate::common::read_solved(&src);
+        let exact = |name: &str| {
+            let (out,said) = saying(|say| export::exact(&sk,fixtures::solid(&e,name),None,None,say));
+            out.unwrap_or_else(|why| panic!("tube {tube}: {name}: {why:?}\n{said}"))
+        };
+        let (body,legs) = (exact("body"),exact("legs"));
+        body.solid.check(1e-6).unwrap_or_else(|why| panic!("tube {tube}: {why:?}"));
+        let want = PI/2.*moment(tube)+props::volume(&legs.solid);
+        let got = props::volume(&body.solid);
+        // to the Boolean's tolerance over the solid's boundary: a step a tolerance high is a
+        // tolerance's band of it (`geom::tolerance`, a part in 10⁹ of the solid's size)
+        let area: f64 = body.solid.faces.iter().map(|f| props::area(&body.solid,f)).sum();
+        let band = gcs_core::brep::geom::tolerance(body.solid.size())*area;
+        assert!((got-want).abs() <= band,"tube {tube}: {got} against {want} ({:e}, the band {band:e})",got-want);
+    }
+}
+
+/// **…and so it is with a solid joined or cut through the turn's poles** (#996): an axle along the
+/// bend axis joined through both poles, and a slab cut along a plane through the axis at 45°, over
+/// the near-misses of `a_turn_a_near_miss_…`: a valid solid, its volume off the tangent turn's by no
+/// more than the step it adds and the tolerance's band. The fixture's own refusal ("loop 0 breaks
+/// in parameters" at a pole, its collapsed parameter half a turn round) was the slab's at 1e-8 and
+/// the turn's alone at −1e-7: a use ending within its vertex's or edge's tolerance of a pole is at
+/// it (`Brep::close_poles`, `topo::on_pole`, a half's points in a Boolean), a pole's half runs
+/// along the parameter it collapses (`pieces_of_face`'s ways), and a cap's crescent whose sides the
+/// tolerance made one edge, walked out and back, has no inside (`reading::judged`: a spur, not a
+/// seam). The slab at ±1e-6 is not yet built.
+#[test]
+fn a_solid_through_a_near_miss_turns_poles_is_built() {
+    use std::f64::consts::PI;
+    let moment = |r: f64| {
+        let bend = 18f64;
+        let f = |t: f64| bend*(t*(r*r-t*t).sqrt()+r*r*(t/r).asin())-2./3.*(r*r-t*t).powf(1.5);
+        f(r)-f(-bend)
+    };
+    let axle = "in std.front {\n  ac := point\n  fix((0, 18)) ac\n  ak := circle(center: ac) hint(r: 3)\n  \
+        radius(3mm) ak\n}\naxle := solid(std.solids.Prism(face(ak), from: -30mm, to: 30mm))\naxle union body\n";
+    let slab = "wp := plane\nfix(origin == (0mm, 0mm, 18mm)) wp\nfix(dir == (-cos(45deg), 0, -sin(45deg))) wp.u\n\
+        fix(dir == (0, 1, 0)) wp.v\nin wp {\n  w0 := point\n  w1 := point\n  w2 := point\n  w3 := point\n  \
+        fix((-5, -30)) w0\n  fix((60, -30)) w1\n  fix((60, 30)) w2\n  fix((-5, 30)) w3\n  wl0 := line(w0, w1)\n  \
+        wl1 := line(w1, w2)\n  wl2 := line(w2, w3)\n  wl3 := line(w3, w0)\n}\n\
+        slab := solid(std.solids.Prism(face(wl0, wl1, wl2, wl3), from: 0mm, to: 70mm))\nslab cut body\n";
+    let vh = ["leg_v","elbow","leg_h"];
+    let built = |delta: f64,extra: &str| {
+        let tube = 20.+delta;
+        let src = elbow(20.,18.,90.,false,Some((tube*tube-18.*18.).sqrt()),vh)
+            .replace("use std.solids (union)","use std.solids (union, cut)")+extra;
+        let (e,sk) = crate::common::read_solved(&src);
+        let (out,said) = saying(|say| export::exact(&sk,fixtures::solid(&e,"body"),None,None,say));
+        let body = out.unwrap_or_else(|why| panic!("δ {delta:e}: {why:?}\n{said}")).solid;
+        body.check(1e-6).unwrap_or_else(|why| panic!("δ {delta:e}: {why:?}"));
+        let area: f64 = body.faces.iter().map(|f| props::area(&body,f)).sum();
+        (props::volume(&body),gcs_core::brep::geom::tolerance(body.size())*area)
+    };
+    let deltas = |k: std::ops::RangeInclusive<i32>| k.flat_map(|k| [1.,-1.].map(|s| s*10f64.powi(k))).collect::<Vec<_>>();
+    for (extra,deltas) in [(axle,deltas(-8..=-2)),(slab,deltas(-8..=-7)),(slab,deltas(-5..=-2))] {
+        let (tangent,_) = built(0.,extra);
+        for delta in deltas {
+            let (v,band) = built(delta,extra);
+            // the step: the turn's volume grown by the tube's, all of it at most
+            let step = PI/2.*(moment(20.+delta)-moment(20.)).abs();
+            assert!((v-tangent).abs() <= step+band,"δ {delta:e}: {v} against the tangent turn's {tangent}");
+        }
+    }
+}

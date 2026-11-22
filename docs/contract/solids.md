@@ -658,6 +658,21 @@ placement carries inside the blank; CLI test readers zero the offset.
   body's rounds built on that, and no solid was a root — every piece of a round written straight
   over a refused operand said the refusal again; a name the solid itself goes by leads nowhere,
   and a statement a root is said at says nothing more.
+  **A refusal says what the solid is built from that the drawing leaves free** (#996,
+  `refused::free_beneath`): a root's E080, and an export refused (`program::with_free`, what
+  `solventc` says of one), go on to name each number of what the solid's term is written over
+  (`Sketch::children`, read through, each entity's own numbers) that the solve could still move
+  (`Diagnosis::under_params`, read structurally, once, only where a solid is refused), as the
+  document names it and at the value its hint left it, and the freedom among them — "…; what it is
+  built from is not all held by the drawing: `k.r` at 8mm stands where its hint left it (1 degree
+  of freedom), so its shape is the seeds', not the drawing's — state the number meant".  A note on
+  the refusal, not a warning on every solid: a drawing left free on purpose (a crank's angle, a
+  slider) builds what its seeds put, and the solve's report says its DOF; where a solid is
+  refused, its numbers being the seeds' is the first thing to know (the issue's elbow: its arc's
+  radius no dimension stated, its ends' hints putting the tube 9.2e-7 over the legs, refused as a
+  kernel fault while the reporter read the arc's span for a cause).  A drawing that holds every
+  number the solid reads is refused in the words alone.
+  `refused_once::a_refusal_names_what_the_drawing_leaves_free` is the gate.
   `refused_once::an_edge_of_no_length_is_said_once_at_its_face`,
   `a_face_no_solid_is_made_of_is_said_once_for_every_solid_of_it` and
   `a_round_straight_over_an_unbuildable_operand_is_said_once` are the gates.

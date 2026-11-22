@@ -198,7 +198,50 @@ elbow and its two legs 3.3 s, now some 20 ms. **A loop's area in its face's para
 Simpson's** (`Brep::loop_area`): each curved use sampled, each pair of steps' bulge past its chord
 taken as a parabola's, the steps doubled until two readings agree within the area: a crescent
 between a turn's cap's rim and a leg's a thousandth inside it, 308° long, read as a polygon's area
-turned the wrong way. `countersink::a_surfaces_points_within_a_ball_reach_no_farther_along_it_than_said`
+turned the wrong way. **A turn a near-miss off its legs is built with its step** (#996): a tube `δ` wider or narrower
+than the leg tangent to it leaves a cap's crescent `δ` wide between the turn's rim and the leg's,
+a step round the seam, and the solid with it is built, from `δ` a hundredth down to under the
+tolerance, either way — no rule merges a tube into a cylinder it all but touches, and none is
+needed: each reading the arrangement makes of the near-miss agrees with the others. **A piece
+thinner than any outline it is drawn to has an inside all the same** (`boolean`'s
+`reading::inside`): where the spans of its outlines, drawn down to a few ten-thousandths of the
+piece, hold no point, steps square to each curved half from its middle, down to twice the
+tolerance, are read against the halves by the side of the nearest, and a piece whose sides stand
+apart by more than the tolerance is kept; only one with no inside so is a sliver merged into its
+edge. Read by its outlines alone, the crescent between a turn's rim and a leg's twelve
+tolerances inside it was dropped while its two sides stayed two edges, and the turn's face hung by
+its rim ("a shell of the arrangement is kept on one side of a plane and dropped on another"). **A
+cycle's area in a Boolean is Simpson's** (`fine_area`, as `Brep::loop_area`): a polygon's misses
+each arc's segments by more than such a crescent holds, and its sense came out the wrong way, the
+crescent dropped as a hole. **An inverse pcurve ending within its edge's tolerance of a pole is at
+it** (`topo::on_pole`): the leg's circle standing for the turn's rim a tolerance outside it ends
+across the axis from the pole by as much, and read there its collapsed parameter came out half a
+turn round — the loop broke in the parameters, or, closed, enclosed the wrong side (a union 2.6
+times the solid). **A meeting the unseen search finds off either face is not traced**
+(`ssi::unseen_beside`): a curve through it lies outside the faces or crosses an edge into them,
+where that edge's crossing seeds it, and traced it was a march of a hundred thousand points no face
+kept (a tube a ten-thousandth inside its leg, crossing the leg's cylinder run on under the seam,
+seconds a build). `brep_export::a_turn_a_near_miss_wider_or_narrower_than_its_legs_is_built_with_its_step`
+(δ = ±1e-8 … ±1e-2 by decades and the issue's document, its radius left to its ends' hints, each
+held to Pappus and the legs' union within the tolerance's band over its boundary) is the gate.
+**A use ending within its vertex's or its edge's tolerance of a pole is at the pole**, wherever
+the pole is read: an inverse pcurve's end (`topo::on_pole`), the corner a loop is closed at by a
+pole edge (`Brep::close_poles`, half a turn of the collapsed parameter moving a point no farther
+than π times that tolerance), and a half's points in a Boolean's face (`uv_seeded`); and **a pole's
+half runs along the parameter the pole collapses** (`pieces_of_face`'s ways), its ends' other
+parameter disagreeing by a node's width read as no way at all, where the pole's vanishing rate
+along the first had made that disagreement its whole way and tied it with a meridian there. And
+**two uses of one edge at one place, walked out and back, are a spur and not a seam**
+(`reading::judged`): no side lies between them, so a cap's crescent whose two sides the
+tolerance made one edge has no inside and is merged into its edge, where the side of one use had
+read a point outside it as in it. So an axle joined along the bend axis, and a slab cut along a
+plane through it, through the poles of a near-miss turn are built
+(`brep_export::a_solid_through_a_near_miss_turns_poles_is_built`; the fixture's refusal "loop 0
+breaks in parameters" at a pole was the slab's at 1e-8 and the turn's alone at −1e-7). The slab at
+±1e-6, and a bore cut across the bend of the issue's document, are refused yet ("a shell of the
+arrangement is kept on one side … and dropped on another"; at +1e-6 now "edge 3's pcurve is
+1.3e-6 off it" at the pole): not wrong, not built.
+`countersink::a_surfaces_points_within_a_ball_reach_no_farther_along_it_than_said`
 (spindle and horn tori among its surfaces), `brep::a_plane_through_a_toruss_axis_meets_it_in_its_meridians`
 and `brep_export::a_swept_elbow_joins_its_legs_at_their_tangent_seams` (ring, horn and spindle
 sections, turns of 45° to 135°, one arc or two, the legs either way round or the turn first, and

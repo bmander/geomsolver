@@ -1423,7 +1423,8 @@ fn refused(s: &Source,sk: &Sketch,e: &mut gcs_core::program::Elaborated,solid: u
         .unwrap_or_default();
     // placed by the words as the core wrote them, then said as the document reads them
     let words = cause.map_or(refusal.message.as_str(),|(_,_,from)| &refusal.message[from..]);
-    let message = gcs_core::vocab::public_words(words);
+    // and what the solid is built from that the drawing leaves free, in the core's words (#996)
+    let message = gcs_core::program::with_free(sk,&e.map,solid,gcs_core::vocab::public_words(words));
     let d = gcs_core::program::Diag::new(gcs_core::program::Code::E080,span,stmt,message);
     let again = |said: &gcs_core::program::Diag| said.code == d.code && said.span == d.span
         && said.message == d.message;

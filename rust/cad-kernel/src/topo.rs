@@ -154,7 +154,7 @@ fn inverse_from(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface,seed: Opti
     let near = along(a,b,s);
     let from = seed.filter(|q| q.iter().all(|x| x.is_finite())).unwrap_or(near);
     let uv = unwrap(surface.inverse_near(x,from),near,surface.periods());
-    if s == 0. || s == 1. { on_pole(surface,uv,near) } else { uv }
+    if s == 0. || s == 1. { on_pole(surface,uv,near,edge.tol) } else { uv }
 }
 
 /// `d(u, v)/dt` of the curve of points of `surface` nearest the edge's, at its point's parameters
@@ -185,15 +185,18 @@ pub fn unwrap(mut uv: Uv,near: Uv,periods: [Option<f64>;2]) -> Uv {
 /// `uv` with a parameter the surface's chart collapses there (a pole's or an apex's: every value of
 /// it the one point) taken from `near` instead: where an inverse curve ends on a pole, the surface's
 /// inverse of the point says nothing of which value the curve arrives along (a cone's apex reads
-/// `u = 0` whatever the generator), and the end its pcurve is given there does (#797).
-fn on_pole(surface: &Surface,uv: Uv,near: Uv) -> Uv {
+/// `u = 0` whatever the generator), and the end its pcurve is given there does (#797). An end
+/// within the edge's tolerance `tol` of the pole is on it: the value moves its point no farther
+/// than twice that (#996: a leg's circle standing for a turn's rim a tolerance outside it ends
+/// across the turn's axis from its pole by as much, and read there was half a turn round).
+fn on_pole(surface: &Surface,uv: Uv,near: Uv,tol: f64) -> Uv {
     let (mut out,mut p) = (uv,None);
     for k in 0..2 {
         if !((uv[k]-near[k]).abs() > 1e-6) { continue }
         let mut alt = uv;
         alt[k] = near[k];
         let p = *p.get_or_insert_with(|| surface.point(uv));
-        if distance(surface.point(alt),p) <= 1e-9*(1.+norm(p)) { out[k] = near[k]; }
+        if distance(surface.point(alt),p) <= (1e-9*(1.+norm(p))).max(2.*tol) { out[k] = near[k]; }
     }
     out
 }
@@ -353,7 +356,12 @@ impl Brep {
         let v = self.ends(&c)[1];
         let f = &self.faces[fi];
         let vertex = self.vertices[v as usize];
-        let within = (1e-9*(1.+norm(vertex.p))).max(vertex.tol);
+        // (a use ending within its vertex's tolerance of the pole, or its edges', stands off the
+        // axis by no more, and half a turn about it moves it by no more than π times that, #996: a
+        // turn's pole and a leg's rim crossing the axis 2e-8 from it, merged, the rim's end read
+        // 2e-8 off the axis, its loop closed there by no pole edge and broken in its parameters)
+        let reach = vertex.tol.max(self.edges[c.edge as usize].tol).max(self.edges[next.edge as usize].tol);
+        let within = (1e-9*(1.+norm(vertex.p))).max(std::f64::consts::PI*reach);
         let a = self.uv_end(f,&c,true);
         let Some(along) = pole_at(&f.surface,a,within) else { return };
         let b = self.uv_end(f,&next,false);
