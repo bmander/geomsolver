@@ -88,12 +88,16 @@ fn sides(r: Reading, split: bool) -> Vec<Fv> {
 /// steps from one wall's to the other's, never onto both (`nearest`).  Each face reads:
 /// - where the point's foot lies on its patch, its surface's side, the patch's distance;
 /// - past a seam into a face of the chain bulging toward the ball on its own (`BodyFaces::bulges`:
-///   a wall into a pocket's corner arc, the arc into the next wall), its side carried on by its
-///   tangent plane there (`BodyFaces::carried_past`, turned by `beyond` toward the side the point
-///   is on) where the point is nearer that face than `d` — the chain read as a convex one is about
-///   the corner, so the step sees the wall beyond the arc as well as the one the point is nearest — and
-///   nothing (`d`, no gradient) where it is not: the next face is no further from the point than
-///   this one's patch, so it says all this one would;
+///   a wall into a pocket's corner arc, the arc into the next wall), the plane tangent to that
+///   next face where the seam's point nearest the point is (`BodyFaces::tangent_side`, turned by
+///   `beyond` toward the side the point is on), where the point is nearer that face than `d` —
+///   the chain read as a convex one is about the corner, so the step sees the wall beyond the arc
+///   as well as the one the point is nearest; the next face's plane, not this one's, as they are
+///   one where the seam is tangent, and where it is tangent only to the drawing's numbers (a turn
+///   of a hair, #994's `rim_seams`) it is the side of the face the point stands beyond, so it
+///   reads `d` where that face's patch does, and a centre on its offset is kept however its
+///   distance rounds — and nothing (`d`, no gradient) where the point is not nearer than `d`: the
+///   next face is no further from the point than this one's patch, so it says all this one would;
 /// - past a seam into any other face of the chain (a reflex corner's arc or fill, whose tangent
 ///   plane runs on through the pocket or the tab beyond it), nothing: that face is nearer, and
 ///   says it;
@@ -116,12 +120,18 @@ fn faces_apart(r: &Reading, c: f64, beyond: bool, d: f64) -> Vec<Fv> {
             let (past, (s, g)) = body.carried_past(fi, x);
             let side = (c * sigma * s, scale(g, c * sigma));
             let nothing = (c * d, [0.0; 3]);
-            let Some((e, off)) = past else { return (c * s.abs(), scale(g, c * s.signum())) };
+            let Some((e, off, at)) = past else { return (c * s.abs(), scale(g, c * s.signum())) };
             let next = body.faces_of(e).iter().copied().find(|&h| h != fi && chain.contains(&h));
             match next {
                 Some(h) if body.seam(e) => {
-                    let near = toward.contains(&h) && body.patch_distance(h, x) < d;
-                    if near { side } else { nothing }
+                    if !toward.contains(&h) || body.patch_distance(h, x) >= d {
+                        return nothing;
+                    }
+                    // the next face's tangent plane there: this one's, where the seam is tangent,
+                    // and where it is tangent only to the drawing's numbers (a turn of a hair), the
+                    // side of the face the point stands beyond
+                    let (s, g) = body.tangent_side(h, at, x);
+                    (c * sigma * s, scale(g, c * sigma))
                 }
                 _ => if off < d { side } else { nothing },
             }

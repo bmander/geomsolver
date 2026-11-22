@@ -561,9 +561,10 @@ impl BodyFaces {
     }
 
     /// `carried_side_grad` read past the patch whatever the surface (a plane's too), with the edge
-    /// of the face it is carried on past and the distance from the patch (model units): `None`
-    /// and the surface's own side where `p`'s foot on it lies on the face.
-    pub fn carried_past(&self, fi: usize, p: V) -> (Option<(u32, f64)>, (f64, V)) {
+    /// of the face it is carried on past, the distance from the patch (model units) and the point
+    /// of the edge it is carried past (the boundary's millimetres): `None` and the surface's own
+    /// side where `p`'s foot on it lies on the face.
+    pub fn carried_past(&self, fi: usize, p: V) -> (Option<(u32, f64, V)>, (f64, V)) {
         let q = self.q(p);
         let f = &self.loc.b.faces[fi];
         let foot = f.surface.point(f.surface.inverse(q));
@@ -573,8 +574,14 @@ impl BodyFaces {
         let Some((e, at, d)) = self.nearest_edge(&self.edges[fi], p) else {
             return (None, self.side_grad(fi, p));
         };
+        (Some((e, d, at)), self.tangent_side(fi, at, p))
+    }
+
+    /// The side of the plane tangent to face `fi`'s surface at `at` (the boundary's millimetres),
+    /// and its gradient, at `p` (model units).
+    pub fn tangent_side(&self, fi: usize, at: V, p: V) -> (f64, V) {
         let n = self.outward(fi, at);
-        (Some((e, d)), (dot(n, sub(q, at)) / self.mm, n))
+        (dot(n, sub(self.q(p), at)) / self.mm, n)
     }
 
     /// **Faces whose side is convex toward a point** (#962), within them or (`beyond`) outside them:
