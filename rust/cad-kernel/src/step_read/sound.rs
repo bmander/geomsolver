@@ -50,6 +50,8 @@ use crate::geom::Uv;
 use crate::topo::{unwrap,Brep,Coedge,Edge,EdgeCurve,Pcurve};
 use crate::util::space::{distance,norm,segment_distance};
 use crate::geom::V;
+use crate::plane2::{self,dist};
+use crate::util::fmath::Det;
 
 /// A boundary that is no solid's: why, the face or the edge of it that witnesses it (by its
 /// index in the `Brep`), and what there is to say.
@@ -200,8 +202,7 @@ struct Drawn<'a> {
     rings: Vec<(u32,u32)>,
 }
 
-fn dist(a: Uv,b: Uv) -> f64 { (a[0]-b[0]).hypot(a[1]-b[1]) }
-fn cross(o: Uv,a: Uv,b: Uv) -> f64 { (a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]) }
+fn cross(o: Uv,a: Uv,b: Uv) -> f64 { plane2::cross(plane2::sub(a,o),plane2::sub(b,o)) }
 /// How far `p` is from the segment `a b`.
 fn to_segment(p: Uv,a: Uv,b: Uv) -> f64 {
     let d = [b[0]-a[0],b[1]-a[1]];
@@ -569,7 +570,7 @@ impl<'a> Drawn<'a> {
                 // the piece leaving that corner: the next of the loop (its first after its last)
                 let q = &self.pieces[if i+1 == r.end { r.start } else { i+1 }];
                 let x = p.p[1];
-                let way = |r: usize,s: f64,from: Uv| { let y = self.raw_at(r,s); (y[1]-from[1]).atan2(y[0]-from[0]) };
+                let way = |r: usize,s: f64,from: Uv| { let y = self.raw_at(r,s); (y[1]-from[1]).datan2(y[0]-from[0]) };
                 let back = way(p.run as usize,p.s[1]-1e-3*(p.s[1]-p.s[0]),x);
                 let on = way(q.run as usize,q.s[0]+1e-3*(q.s[1]-q.s[0]),q.p[0]);
                 if back.is_finite() && on.is_finite() { by.entry(j).or_default().push((back,on,x)); }
@@ -746,7 +747,7 @@ impl<'a> Drawn<'a> {
         // how far `p` stands from the ray from `o` through `d`
         let ray = |p: Uv,o: Uv,d: Uv| {
             let w = [d[0]-o[0],d[1]-o[1]];
-            let l = w[0].hypot(w[1]);
+            let l = w[0].dhypot(w[1]);
             let q = [p[0]-o[0],p[1]-o[1]];
             let along = q[0]*w[0]+q[1]*w[1];
             if !(l > 0.) || along <= 0. { dist(p,o) } else { (q[0]*w[1]-q[1]*w[0]).abs()/l }
@@ -1022,10 +1023,10 @@ impl Run<'_> {
 /// subtends: then they meet only at the corner.
 fn cones_apart(p: &Piece,i: usize,q: &Piece,k: usize,slop: f64) -> bool {
     let (a,b) = ([p.p[1-i][0]-p.p[i][0],p.p[1-i][1]-p.p[i][1]],[q.p[1-k][0]-q.p[k][0],q.p[1-k][1]-q.p[k][1]]);
-    let (la,lb) = (a[0].hypot(a[1]),b[0].hypot(b[1]));
+    let (la,lb) = (a[0].dhypot(a[1]),b[0].dhypot(b[1]));
     if !(la > 0. && lb > 0.) { return false }
     let half = |s: f64,l: f64| (4.*SAFE*s/l).min(std::f64::consts::PI);
-    let angle = (a[0]*b[1]-a[1]*b[0]).abs().atan2(a[0]*b[0]+a[1]*b[1]);
+    let angle = (a[0]*b[1]-a[1]*b[0]).abs().datan2(a[0]*b[0]+a[1]*b[1]);
     let off = (2.*slop/la.min(lb)).min(std::f64::consts::PI);
     angle > half(p.sag,la)+half(q.sag,lb)+off
 }
@@ -1183,7 +1184,7 @@ fn facing(b: &Brep,shell: &[usize],located: &crate::query::Located,tau: f64,size
         // the face's inside to the left of its loops' way, or to the right where it is reversed
         let mut side = [-way[1],way[0]];
         if f.reversed { side = [-side[0],-side[1]]; }
-        let l = side[0].hypot(side[1]);
+        let l = side[0].dhypot(side[1]);
         if !(l > 0.) || !uv.iter().all(|x| x.is_finite()) { continue }
         let side = [side[0]/l,side[1]/l];
         let (_,su,sv) = f.surface.d1(uv);

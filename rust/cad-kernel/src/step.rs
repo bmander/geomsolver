@@ -929,7 +929,7 @@ pub fn statement(tol: f64,held: f64) -> f64 {
     let (asked,held) = (tol.max(LEAST_UNCERTAINTY),1.25*held);
     if !(held > asked) { return asked }
     // (a power of ten below one as a quotient, so 5e-6 is written as itself)
-    let k = held.log10().floor() as i32;
+    let k = held.dlog10().floor() as i32;
     let at = |m: f64| if k < 0 { m/10f64.powi(-k) } else { m*10f64.powi(k) };
     [1.,2.,5.,10.,20.].into_iter().map(at).find(|&x| x >= held).unwrap_or(at(20.))
 }

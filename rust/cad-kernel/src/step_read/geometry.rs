@@ -1192,7 +1192,7 @@ fn crossing_side(f: &Frame,curve: &Curve,points: &[V],size: f64) -> Option<(Fram
     let (c,ca,cb) = (dot(sub(g.o,f.o),f.x),a*dot(g.x,f.x),b*dot(g.y,f.x));
     let big = ca.dhypot(cb);
     if !(c.abs() < big) { return None }
-    let (phi,half) = (cb.datan2(ca),(-c/big).clamp(-1.,1.).acos());
+    let (phi,half) = (cb.datan2(ca),(-c/big).clamp(-1.,1.).dacos());
     // the arc from the one crossing on to the other whose middle lies on the faces' side
     let (t0,t1) = (phi+half,phi+TAU-half);
     let middle = 0.5*(t0+t1);

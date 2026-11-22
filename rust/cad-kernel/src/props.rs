@@ -74,7 +74,7 @@ fn checked(a: f64,b: f64,floor: f64,f: &mut dyn FnMut(f64) -> f64) -> f64 {
     let off = (k-ten).abs();
     // (the extension's own error by QUADPACK's estimate, `(200 |K − G|)^1.5` of the size: within
     // the budget, it is read)
-    if off <= within { ten } else if size > 0. && size*(200.*off/size).powf(1.5).min(1.) <= within { k } else { settled(a,b,1,floor,f) }
+    if off <= within { ten } else if size > 0. && size*(200.*off/size).dpowf(1.5).min(1.) <= within { k } else { settled(a,b,1,floor,f) }
 }
 
 /// The two-point Gauss rule over `[a, b]`: exact for a cubic.
@@ -676,7 +676,7 @@ fn crossings(c: &super::topo::Coedge,e: &super::topo::Edge,s: &Surface,vertices:
         match *s {
             Surface::BSpline(..) => s.breaks(k,[a,b]),
             Surface::Torus(_,big,r) if k == 1 && big.abs() < r => {
-                let s0 = (-big/r).acos();
+                let s0 = (-big/r).dacos();
                 let tau = std::f64::consts::TAU;
                 let first = ((a+s0)/tau).floor() as i64;
                 let last = ((b+s0)/tau).ceil() as i64;
@@ -754,7 +754,7 @@ fn crossings(c: &super::topo::Coedge,e: &super::topo::Edge,s: &Surface,vertices:
 /// `∫_0^x |a + r cos σ| dσ` (`|a| < r`): on `[0, π]` the integral of `a + r cos` up to its root
 /// `s₀ = acos(−a/r)` and back down past it, odd about 0, and `P` a whole turn.
 fn spindle(a: f64,r: f64,x: f64) -> f64 {
-    let s0 = (-a/r).acos();
+    let s0 = (-a/r).dacos();
     let up = |x: f64| a*x+r*x.dsin();
     let h = |x: f64| if x <= s0 { up(x) } else { 2.*up(s0)-up(x) };
     let turns = (x/std::f64::consts::TAU).round();
@@ -1014,8 +1014,8 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
                     // (the curve a hair in where it stands farther from the end than its rate
                     // carries it there: a leap; else the end itself, so a smooth end adds nothing,
                     // not even rounding)
-                    let step = (d[0]*h).hypot(d[1]*h);
-                    let gap = (q[0]-end[0]).hypot(q[1]-end[1]);
+                    let step = (d[0]*h).dhypot(d[1]*h);
+                    let gap = (q[0]-end[0]).dhypot(q[1]-end[1]);
                     if q.iter().all(|x| x.is_finite()) && gap.is_finite() && gap > 10.*step.max(1e-12*(1.+end[0].abs()+end[1].abs())) { q } else { end }
                 };
                 let h = 1e-9*(e.t[1]-e.t[0]);
