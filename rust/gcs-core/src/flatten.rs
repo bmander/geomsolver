@@ -1068,6 +1068,18 @@ impl Named {
 /// the faces, each once a walk has wanted it (`Expansion::directions_wanted`).
 pub type Directions = BTreeMap<String, [f64; 3]>;
 
+/// **What a document statement's blocks over a solid's faces run over** (#994): what is said of
+/// it (`Walk::tally`) — how many faces, and how many of them meet — as the first is expanded,
+/// and in the one E103 where its expansion passes the limit; how many copies its `when`s over
+/// faces will hold as its faces meet, where its boundary says or its field's is taken to; and
+/// the statements its blocks over faces have made so far.  What an expansion is projected to
+/// by, to be refused before it is made (`Walk::projection`).
+struct Tally {
+    said: String,
+    will: Option<usize>,
+    made: usize,
+}
+
 /// The solids' faces read as sets, and the blocks over them (`Walk::faces`).
 #[derive(Default)]
 struct FaceState {
@@ -1079,14 +1091,9 @@ struct FaceState {
     apart: BTreeSet<Apart>,
     /// See `Expansion::pruned`.
     pruned: Vec<Pruned>,
-    /// What each document statement's blocks over a solid's faces run over, and how many of
-    /// those faces meet (`Walk::tally`, #994): said as the first is expanded, and in the one E103
-    /// where its expansion passes the limit.
-    tally: BTreeMap<Span, String>,
-    /// For each such statement, how many copies its `when`s over faces will hold as its faces
-    /// meet (`Walk::tally`), and the statements its blocks over faces have made so far: what an
-    /// expansion is projected to by, to be refused before it is made (#994).
-    projected: BTreeMap<Span, (usize, usize)>,
+    /// What each document statement's blocks over a solid's faces run over, by the statement —
+    /// see `Tally`.
+    tally: BTreeMap<Span, Tally>,
     /// Each solid's faces in `given` by name from the solid, to their place in its paths: what
     /// a `when` looks a face up by, as often as it is asked (#994).
     index: BTreeMap<String, BTreeMap<String, usize>>,

@@ -1361,13 +1361,10 @@ impl<'a> Walk<'a> {
             // and what a statement's blocks over faces run over said, as the first is expanded
             if let (Ok(_), Some(o)) = (&walks, &over) {
                 if !o.listed.is_empty() && !self.faces.tally.contains_key(&p.at) {
-                    let (said, made) = self.tally(&p, &o.solid, &o.listed);
+                    let (said, will) = self.tally(&p, &o.solid, &o.listed);
                     crate::progress::during(|| crate::progress::Work::expand(said.clone()), || ());
                     crate::progress::gauge(|| format!("expanding {said}"));
-                    self.faces.tally.insert(p.at, said);
-                    if let Some(made) = made {
-                        self.faces.projected.insert(p.at, (made, 0));
-                    }
+                    self.faces.tally.insert(p.at, Tally { said, will, made: 0 });
                 }
             }
             let keep = adjacent.map(|(keep, pruned)| {
@@ -1464,7 +1461,9 @@ impl<'a> Walk<'a> {
     /// with how far it got and what to do, and nothing more is walked (`overflowed`).  One that
     /// projects nearer the limit is walked, and said as any past it is.
     fn projection(&mut self, at: Span, more: usize) {
-        let Some((will, made)) = self.faces.projected.get_mut(&at) else { return };
+        let Some(Tally { will: Some(will), made, .. }) = self.faces.tally.get_mut(&at) else {
+            return;
+        };
         *made += more;
         let (will, made) = (*will, *made);
         let held = self.faces.selecting.get(&at).map_or(0, |s| s.made);
@@ -1476,7 +1475,7 @@ impl<'a> Walk<'a> {
             return;
         }
         self.overflowed = true;
-        let t = &self.faces.tally[&at];
+        let t = &self.faces.tally[&at].said;
         let m = format!("{t}, would make about {projected} statements, more than {MAX_FLAT} \
             (its first {held} copies made {made}): the drawing is cut short, and nothing of it is \
             built — {FEWER_FACES}");

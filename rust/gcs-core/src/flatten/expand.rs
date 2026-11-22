@@ -162,7 +162,7 @@ impl<'a> Walk<'a> {
                     // and, where it was expanding blocks over a solid's faces, what they ran
                     // over and what to do (#994)
                     let (from, todo) = match self.faces.tally.get(&at) {
-                        Some(t) => (format!(", from {t}"), format!(" — {FEWER_FACES}")),
+                        Some(t) => (format!(", from {}", t.said), format!(" — {FEWER_FACES}")),
                         None => (String::new(), String::new()),
                     };
                     self.err(Code::E103, at, format!(
