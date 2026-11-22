@@ -356,6 +356,8 @@ cargo run -q --release -p cad-kernel --example step_survey -- \
 cargo run -q --release -p cad-kernel --example step_survey -- --faces $STEP_CORPUS/cadgenbench/218/input.step
 cargo run -q --release -p cad-kernel --example step_survey -- --faces --past-sound $STEP_CORPUS/cadgenbench/214/input.step
 python3 -I scripts/step-corpus/oracle.py --faces $STEP_CORPUS/cadgenbench/218/input.step   # OCCT's, per face
+python3 -I scripts/step-corpus/check.py $STEP_CORPUS/brep-bench/brepkit/sweep/duct-elbow.step  # is it a solid's boundary?
+cargo run -q --release -p cad-kernel --example step_survey -- --moved 10 $STEP_CORPUS/cadgenbench/212/input.step
 ```
 
 `--faces` prints, beside each face the reader reads, OCCT's area and the measurer's, the
