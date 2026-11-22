@@ -2032,7 +2032,8 @@ pub fn others_at(b: &Brep,by: &[Vec<usize>],sides: &[usize],v: u32) -> Vec<usize
 /// **Whether face `g` of `b` goes on from a side of a run at `p`**: its normal there one with
 /// either side's, `m[k]` (`tangent`) — a face going on tangent from a side, or back to back with
 /// one; any other face at a run's end cuts across it (`end_at`, `dome`'s `dome_cut`).  The field
-/// reads its pieces' ends by the same test, so the two agree on which end is cut off.
+/// reads a rolled run's ends and a standing ball's by this test (`BodyFaces::cutting`), so the
+/// two agree on which end is cut off.
 pub fn goes_on(b: &Brep,g: usize,p: V,m: [V;2]) -> bool {
     let n = unit(b.faces[g].surface.gradient(p));
     (0..2).any(|k| tangent(m[k],n))

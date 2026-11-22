@@ -531,9 +531,7 @@ impl BodyFaces {
 
     /// Face `fi`'s outward unit normal at `q` (millimetres), pointing away from the material.
     fn outward(&self, fi: usize, q: V) -> V {
-        let f = &self.loc.b.faces[fi];
-        let g = f.surface.gradient(q);
-        if f.reversed { scale(g, -1.0) } else { g }
+        self.loc.b.faces[fi].outward_gradient(q)
     }
 
     /// The signed distance from face `fi`'s surface, positive away from the material (model
@@ -1207,12 +1205,13 @@ impl BodyFaces {
     }
 
     /// **Whether faces `f` and `g` lie on one surface the same way out** (#994): the kernel's
-    /// `fillet::one_surface` at the boundary's tolerance — their surfaces one (`ssi::same`) and
-    /// their outward normals one — read once for the body (`surface_of`).  What the field reads as
-    /// one surface (a plane's pieces one condition, `one_per_plane`; pieces of one surface its
-    /// convex solid, `bulging`; a face going on along a piece of the run's own, `carries_on`; a
-    /// surface's pieces, `pieces`), what the lowering does (`piece::held`) and what the kernel
-    /// rolls a ball on (`fillet`'s sides) are this.
+    /// `fillet::one_surface` at the boundary's tolerance — their surfaces one by the rule a
+    /// Boolean joins faces by (`tolerant::one_surface`, over the faces' boxes) and their outward
+    /// normals one — read once for the body (`surface_of`).  What the field reads as one surface
+    /// (a plane's pieces one condition, `one_per_plane`; pieces of one surface its convex solid,
+    /// `bulging`; a face going on along a piece of the run's own, `carries_on`; a surface's
+    /// pieces, `pieces`), what the lowering does (`piece::held`) and what the kernel rolls a ball
+    /// on (`fillet`'s sides) are this.
     pub fn same_surface(&self, f: usize, g: usize) -> bool {
         self.surface_of(f) == self.surface_of(g)
     }
@@ -1223,11 +1222,8 @@ impl BodyFaces {
             let b = &self.loc.b;
             let mut firsts: Vec<usize> = Vec::new();
             (0..b.faces.len()).map(|fi| {
-                let kind = std::mem::discriminant(&b.faces[fi].surface);
-                let found = firsts.iter().copied().find(|&g| {
-                    std::mem::discriminant(&b.faces[g].surface) == kind
-                        && crate::brep::fillet::one_surface(b, g, fi, self.loc.tol)
-                });
+                let found = firsts.iter().copied()
+                    .find(|&g| crate::brep::fillet::one_surface(b, g, fi, self.loc.tol));
                 found.unwrap_or_else(|| { firsts.push(fi); fi })
             }).collect()
         })[fi]
