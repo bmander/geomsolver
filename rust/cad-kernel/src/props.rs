@@ -389,7 +389,8 @@ impl<'a> Prefix<'a> {
 /// where the sheet's is `(du + 1)(dv + 1)` and both bases. `G` along a face's parameter integrates
 /// its spans from the face's middle at every node of every use: on brep-bench's bull-nose carried
 /// along a spline (a 91 × 143 quintic) the area read some twenty million points of the sheet. The
-/// rows are read as the spans asked reach them.
+/// rows are read as the spans asked reach them, into a table the caller hands on from one held value
+/// to the next (cleared, not allocated again).
 struct Iso<'a> {
     net: &'a Net,
     along: usize,
@@ -401,12 +402,14 @@ struct Iso<'a> {
 }
 
 impl<'a> Iso<'a> {
-    fn new(net: &'a Net,along: usize,fixed: f64) -> Iso<'a> {
+    fn new(net: &'a Net,along: usize,fixed: f64,mut rows: Vec<Option<Row>>) -> Iso<'a> {
         let [du,dv] = net.domain();
         let (nu,nv) = (net.poles.len(),net.poles[0].len());
         let (d,knots,count,[a,b]) = if along == 0 { (net.dv,&net.vknots,nv,dv) } else { (net.du,&net.uknots,nu,du) };
         let (span,basis) = super::nurbs::with_basis(d,knots,count,fixed.clamp(a,b),1,|s,bs| (s,[bs[0][..=d].to_vec(),bs[1][..=d].to_vec()]));
-        Iso {net,along,span,basis,rows:vec![None;if along == 0 { nu } else { nv }]}
+        rows.clear();
+        rows.resize(if along == 0 { nu } else { nv },None);
+        Iso {net,along,span,basis,rows}
     }
     fn row(&mut self,i: usize) -> Row {
         if let Some(r) = self.rows[i] { return r }
@@ -911,22 +914,26 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
         let periodic = [pu,pv][along].is_some();
         let closed = if prefix.is_some() || !what.plain() { None } else { Closed::new(s,what.area(),along,base) };
         // ∫ from the base, a stretch at a time between the surface's breaks along it
+        let mut rows: Vec<Option<Row>> = Vec::new();
         let mut big_g = |u: f64,v: f64| {
             if let Some(p) = prefix.as_mut() { return p.big_g(u,v) }
             if let Some(g) = closed.as_ref().and_then(|c| c.at([u,v])) { return g }
             let x = [u,v][along];
             // (a polynomial net read along its iso curve there, `Iso`)
-            let mut iso = match s { Surface::BSpline(_,n) if !n.is_rational() => Some(Iso::new(n,along,[v,u][along])),_ => None };
+            let mut iso = match s { Surface::BSpline(_,n) if !n.is_rational() => Some(Iso::new(n,along,[v,u][along],std::mem::take(&mut rows))),_ => None };
             let mut at_x = |w: f64| match iso.as_mut() {
                 Some(c) => { let (x,su,sv) = c.d1(w); integrand_of(x,su,sv,what) }
                 None => if along == 0 { g(w,v) } else { g(u,w) },
             };
             let cuts = s.breaks(along,[base,x]);
-            if cuts.is_empty() { return if ruled { gauss2(base,x,&mut at_x) } else { gauss(base,x,pieces(x-base,periodic),&mut at_x) } }
-            let mut at = vec![base];
-            if x >= base { at.extend(cuts) } else { at.extend(cuts.into_iter().rev()) }
-            at.push(x);
-            at.windows(2).map(|w| gauss(w[0],w[1],2,&mut at_x)).sum::<f64>()
+            let read = if cuts.is_empty() { if ruled { gauss2(base,x,&mut at_x) } else { gauss(base,x,pieces(x-base,periodic),&mut at_x) } } else {
+                let mut at = vec![base];
+                if x >= base { at.extend(cuts) } else { at.extend(cuts.into_iter().rev()) }
+                at.push(x);
+                at.windows(2).map(|w| gauss(w[0],w[1],2,&mut at_x)).sum::<f64>()
+            };
+            if let Some(c) = iso { rows = c.rows; }
+            read
         };
         // ∬ g du dv = ∮ G dv with G along u, or -∮ G du with G along v
         let (other,sign) = if along == 0 { (1,1.) } else { (0,-1.) };
