@@ -597,7 +597,9 @@ impl BodyFaces {
     /// Face `fi`'s side carried on past its patch by its tangent planes, and its gradient at `p`
     /// (model units): its surface's signed distance where `p`'s foot on it lies on the face, else
     /// the signed distance from the plane tangent to the surface at the point of the face's edges
-    /// nearest `p`.  Where the face bulges toward a side (a plane, or a cylinder, a sphere or a cone
+    /// nearest `p` where that edge is a seam, and from its own surface past any other edge (a
+    /// crease, a face cutting across it: its side is its surface's, carried on only across seams,
+    /// #994).  Where the face bulges toward a side (a plane, or a cylinder, a sphere or a cone
     /// with that side inside it), this is the signed distance from the convex solid its patch and
     /// those planes bound on that side — so past a seam where it goes on tangent into a face like
     /// it, the next face's own side, and over a smooth chain of them their sides together say the
@@ -624,6 +626,19 @@ impl BodyFaces {
         let Some((e, at, d)) = self.nearest_edge(&self.edges[fi], p) else {
             return (None, self.side_grad(fi, p));
         };
+        // past a seam, the plane tangent there, which the next face goes on from; past any other
+        // edge — a crease, or where a face cuts across it — the face's own surface, as its side is
+        // (#994: a cylinder carried past where a hub's side cuts across it by the plane tangent
+        // there read a still ball's centres off its axis).  A seam as near as the nearest edge (a
+        // corner of the patch where a seam and a crease meet, nearest a point beyond both) is
+        // the one carried past
+        if !self.seam(e) {
+            let seams: Vec<u32> = self.edges[fi].iter().copied().filter(|&x| self.seam(x)).collect();
+            return match self.nearest_edge(&seams, p) {
+                Some((s, at, ds)) if ds <= d + 1e-9 * (1.0 + d) => (Some((s, ds, at)), self.tangent_side(fi, at, p)),
+                _ => (Some((e, d, at)), self.side_grad(fi, p)),
+            };
+        }
         (Some((e, d, at)), self.tangent_side(fi, at, p))
     }
 
@@ -661,6 +676,12 @@ impl BodyFaces {
             return None;
         }
         if let [_] = faces {
+            return Some(false);
+        }
+        // pieces of one plane (a face a crossing operand leaves in pieces, the lid an arm's bottom
+        // is, either side of a hub): that plane's half-space, its own side whichever piece says it
+        // (`one_per_plane`), convex with no seam between them (#994)
+        if faces.iter().all(|&fi| self.plane(fi).is_some()) && self.one_per_plane(faces).len() == 1 {
             return Some(false);
         }
         let mut seams = false;

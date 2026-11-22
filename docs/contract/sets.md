@@ -459,10 +459,19 @@ every edge between them a seam or a crease convex from that side, and each face'
 every other's convex solid — one sheet (#994: a block's side flush with a deck's whose corner arc
 runs tangent into it is no sheet, the arc carried down through the block by its tangent planes
 where the block's side stands flat) — each face its own condition,
-its side carried on past its patch by its tangent planes (`BodyFaces::carried_side_grad`, the
-signed distance from the convex solid the patch and those planes bound), so the side is their
+its side carried on past its patch by its tangent planes at its seams (`BodyFaces::carried_side_grad`,
+the signed distance from the convex solid the patch and those planes bound), so the side is their
 common part and a point at least `d` inside it is at least `d` inside each — a pocket's walls
-seen from its air, a boss's from its material.  **Faces of the chain on one plane are one
+seen from its air, a boss's from its material. **Past any edge but a seam a face's side is its own
+surface's** (#994): `F.smooth` is `F`'s side carried on across seams only, so past a crease or
+where another face cuts the face across, its whole surface's side goes on — an arm's rounded end
+half inside a hub, its cylinder carried past the hub's face by the plane tangent there, read the
+centres of a ball as wide as the end off its axis, the round a few tenths short of the ball beside
+the face (`tests/standing_ends.rs`). **Pieces of one plane are its half-space** (#994,
+`BodyFaces::bulging`): a face left in pieces by an operand crossing it (an arm's bottom either side
+of a hub) has no seam between its pieces, but is one plane's side, convex — read as no convex
+side, a projection onto it and a cylinder's offset as thin as a ball standing still alternated and
+failed, and the field read no centre there.  **Faces of the chain on one plane are one
 condition** (#994, `BodyFaces::one_per_plane`): a plane's side carried on past its patch is its
 own, whichever of its faces says it, so a plate's top and the caps the fills of its pockets'
 uprights leave on it, a chain of one face and four for each pocket, is one condition, not one a
