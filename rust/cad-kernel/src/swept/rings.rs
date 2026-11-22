@@ -1855,7 +1855,7 @@ pub fn posed(tool: &Brep,ring: &Ring,path: &Trajectory,fit: &Fitted,t: f64) -> R
 /// on the tool's faces holding it — and the curves a face is cut along — each on the face it lies on
 /// — all lie on the tool, and are each face's whole meeting with it, given.
 pub fn entered(fit: &Fitted,ring: &Ring,ends: [&Brep;2],poses: [Pose;2],tol: f64) -> Result<(Vec<Brep>,Vec<Given>),Unbuilt> {
-    entered_at(fit,ring,[Some((ends[0],poses[0])),Some((ends[1],poses[1]))],[true,true],&|_| false,tol)
+    entered_at(fit,ring,[Some((ends[0],poses[0])),Some((ends[1],poses[1]))],[true,true],&|_,_| false,tol)
 }
 
 /// `entered`, where an end of the fit's stretch of the roll may be no end of the roll (`rimmed`
@@ -1865,7 +1865,7 @@ pub fn entered(fit: &Fitted,ring: &Ring,ends: [&Brep;2],poses: [Pose;2],tol: f64
 /// tube carried on past where the roll's end pose stands — the thin torus, its double curve ending
 /// where one leaf's partner reaches the end of the roll, on that pose's tool, partway along another
 /// stretch.
-pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],rimmed: [bool;2],inside: &(dyn Fn(V) -> bool+Sync),tol: f64)
+pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],rimmed: [bool;2],covered: &(dyn Fn(V,f64) -> bool+Sync),tol: f64)
     -> Result<(Vec<Brep>,Vec<Given>),Unbuilt> {
     let mut sheets = Vec::new();
     let mut surfaces: Vec<Vec<crate::geom::Surface>> = Vec::new();
@@ -1904,34 +1904,14 @@ pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],rimmed: 
             }
             if run.len() >= 2 { cuts_of[face].push(run) }
         }
-        // whether `(u, t)` is in a narrow pair's tail: above its double curve, a curve over the angle
-        // round the axis its first preimage is stepped by (#942 T1d-tori: read over `u`, which the
-        // seams shear — the face's share of a piece linear in the angle at each roll, the piece's
-        // ends moving — the half turn's curve beside its swallowtail point ran back over `u` and the
-        // tail beside it was kept), the place's angle read round the tool's axis where it stands at
-        // its roll, and brought within half a turn of the curve's middle (a curve crossing the tube's
-        // seam is continuous along it, #942 F6)
-        // (and where the curve lies below the stretch at that angle, dipping into the stretch before
-        // and coming back across the tube's seam, the place is tail only where a pose holds it,
-        // `inside`, #942 T1d-tori: a tail ends where its curve meets the tool at an end pose, and
-        // the full turn's places above that tool's chord, past the curve's end there, stand on the
-        // boundary to 1e-8, while a face between the curve and the seam stood 3e-3 inside)
-        let tail = |u: f64,t: f64| -> bool {
-            if tails.is_empty() { return false }
-            let Ok(pose) = fit.path.pose(t) else { return false };
-            let x = net.point(u,t);
-            let l = ring.frame.local(pose.inverse().point(x));
-            let th = l[1].datan2(l[0]);
-            tails.iter().any(|line| {
-                let mid = 0.5*(line[0][0]+line[line.len()-1][0]);
-                let th = mid+(th-mid+std::f64::consts::PI).rem_euclid(TAU)-std::f64::consts::PI;
-                let i = line.partition_point(|p| p[0] < th);
-                if i == 0 || i == line.len() { return false }
-                let ([a0,t0],[a1,t1]) = (line[i-1],line[i]);
-                let at = if a1 == a0 { t0 } else { t0+(t1-t0)*(th-a0)/(a1-a0) };
-                t > at && (at >= a || inside(x))
-            })
-        };
+        // whether `(u, t)` is in a narrow pair's tail: where an instant other than its own covers
+        // the place (`covered`, the depth-based trim's reading, #942 T1d-tori). Read as above the
+        // double curve over the angle round the axis its first preimage is stepped by, the thin
+        // torus's curve joined to its swallowtail point, whose first preimage's angle turns back
+        // within 2e-4 of the point, held a piece beside it as tail that only its own instant
+        // touches; and the full turn's places above the curve where it dips below the stretch and
+        // comes back stood on the boundary to 1e-8, past the curve's end on an end pose's tool
+        let tail = |u: f64,t: f64| -> bool { !tails.is_empty() && covered(net.point(u,t),t) };
         let holding: Vec<Vec<usize>> = on.iter().map(|&o| match o {
             On::Face(e) => vec![ring.faces[e]],
             On::Edge(e) => vec![ring.faces[e],ring.faces[(e+1)%n]],

@@ -8,6 +8,19 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A double curve traced from a row's seed is joined to its swallowtail point; a tube's tail is read
+  from the depth** (#942 T1d-tori, `swept::rings`, `swept::closed`): the swallowtail points are
+  sought in every stretch (`rings::swallowtails`, kept as `Fitted::ends` where the rows also find a
+  seed), and the march toward the pair is joined to its point along the swallowtail's normal form
+  once every point of the join stands within the tolerance on outer leaves (`rings::joined`) —
+  beside the point the two leaves stand within the tolerance of one another over a band, the curve
+  fixed there to the tolerance alone, and the thin torus's march slid onto a fold's inner leaf 2e-3
+  short of its points and cut the roll at false apexes. A place of a tube is tail where an instant
+  other than its own covers it deeper than its fit (`depth::cover`), not where it stands above the
+  curve over its first preimage's angle, which the joined curve turns back over.
+  `tumbling-torus-thin` is refused later, on the row sewn at its first pair's birth, where the
+  second preimage dips below the row and comes back.
+
 - **The full-turn tumbling torus gets past its start and end tori** (#942 T1d-tori, `boolean`,
   `swept::rings`, `swept::closed`), and is refused further on, where the two tori's meeting found
   by search misses an arc between the two points where they touch. A given curve a face holds as
