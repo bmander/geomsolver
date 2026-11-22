@@ -130,8 +130,7 @@ pub(super) fn recognised<'a>(sk: &Sketch, terms: &'a [RegionTerm]) -> Option<(Fa
                 // section — its radius the bound's, held to the section's below
                 [(Target::Set { terms: x, .. }, cx), (Target::Set { terms: y, .. }, cy)]
                     if (cx + cy).abs() <= 1e-12 * cx.abs()
-                        && rolled_by(sk, t, x, y, *cx, &faces).is_some() => {
-                    let r = rolled_by(sk, t, x, y, *cx, &faces).expect("read");
+                        && let Some(r) = rolled_by(sk, t, x, y, *cx, &faces) => {
                     if rolled.is_some_and(|q: f64| q != r) {
                         return None;
                     }
