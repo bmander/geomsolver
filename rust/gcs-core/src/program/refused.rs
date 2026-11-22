@@ -214,6 +214,95 @@ enum Root {
     Face(usize),
 }
 
+/// **What a refused solid is built from that the drawing leaves free** (#996): the numbers of the
+/// entities its term is written over (`Sketch::children`, read through, and each one's own
+/// numbers, `Sketch::own_params`) that the solve could still move — `Diagnosis::under_params`,
+/// read structurally — each named as the document names its entity and with the value its seed
+/// left it at, and the freedoms of the parts of the drawing they are in. Nothing where every number
+/// the solid reads is held. A solid refused over a near-miss the drawing never meant (a turn's tube
+/// a millionth wider than the legs tangent to it, its arc's radius said by no dimension and left
+/// where its ends' hints put it) is so told why its numbers are what they are.
+pub(super) fn free_beneath(sk: &Sketch, map: &SourceMap, solid: usize, under: &Under) -> String {
+    let mut seen = BTreeSet::new();
+    let mut stack = vec![EntRef::solid(solid)];
+    let mut named: Vec<(String, f64)> = Vec::new();
+    let mut params = BTreeSet::new();
+    while let Some(e) = stack.pop() {
+        if !seen.insert(e) {
+            continue;
+        }
+        stack.extend(sk.children(e));
+        let free: Vec<u32> = sk.own_params(e).into_iter().filter(|q| under.params.contains(q)).collect();
+        if free.is_empty() {
+            continue;
+        }
+        let Some(name) = map.name_of(e) else { continue };
+        // each number by its scalar's name, paired as `report::positions_where` pairs them
+        let all = sk.entity_params(e);
+        let names = sk.scalar_names(e, &crate::vocab::public_path(name)).filter(|n| n.len() == all.len());
+        for q in free {
+            let said = names.as_ref().and_then(|n| all.iter().position(|&p| p == q).map(|k| n[k].clone()))
+                .unwrap_or_else(|| name.clone());
+            if params.insert(q) {
+                named.push((said, sk.params[q as usize].value));
+            }
+        }
+    }
+    if named.is_empty() {
+        return String::new();
+    }
+    named.sort_by(|a, b| a.0.cmp(&b.0));
+    let unit = sk.units.name();
+    let list: Vec<String> = named.iter().map(|(n, v)| format!("`{n}` at {}{unit}", crate::json::fmt_g(*v, 10))).collect();
+    let freedom: i64 = under.components.iter().filter(|(ps, _)| ps.iter().any(|q| params.contains(q))).map(|(_, d)| *d).sum();
+    let list = crate::vocab::all_of(&list);
+    let (stand, hints, them, meant) = if named.len() == 1 { ("stands", "its hint", "it", "the number") }
+        else { ("stand", "their hints", "them", "the numbers") };
+    let degrees = if freedom == 1 { "degree" } else { "degrees" };
+    let among = if named.len() == 1 { "" } else { " among them" };
+    format!("; what it is built from is not all held by the drawing: {list} {stand} where \
+        {hints} left {them} ({freedom} {degrees} of freedom{among}), so its shape is the seeds', \
+        not the drawing's — state {meant} meant")
+}
+
+/// `Free::with_free` of a drawing asked once: a refusal said alone.
+pub fn with_free(sk: &Sketch, map: &SourceMap, solid: usize, words: String) -> String {
+    Free::default().with_free(sk, map, solid, words)
+}
+
+/// **What a drawing leaves free, read once for the refusals a front end says of it** (#996): the
+/// structural reading (`Under`) made the first time a refusal asks, and kept for the rest of the
+/// run — one diagnosis of a copy of the drawing a run, not one an export refused.
+#[derive(Default)]
+pub struct Free(std::cell::OnceCell<Under>);
+
+impl Free {
+    /// **A refusal of solid `solid`'s build in the words a reader is given**: `words`, and what the
+    /// solid is built from that the drawing `sk` leaves free (`free_beneath`), where anything is —
+    /// what a front end says of an export it was refused, as `solids` says a refused root.  `sk`
+    /// is the one drawing every refusal of the run is of.
+    pub fn with_free(&self, sk: &Sketch, map: &SourceMap, solid: usize, words: String) -> String {
+        words + &free_beneath(sk, map, solid, self.0.get_or_init(|| Under::read(sk)))
+    }
+}
+
+/// The numbers the solve could still move, and each part of the drawing's: its numbers and its
+/// freedom (`free_beneath`), read structurally, once, only where a solid is refused.
+pub(super) struct Under {
+    params: BTreeSet<u32>,
+    components: Vec<(Vec<u32>, i64)>,
+}
+
+impl Under {
+    pub(super) fn read(sk: &Sketch) -> Under {
+        let opts = crate::diagnose::DiagnoseOptions { numeric: Some(false), conflicts: Some(false),
+            solid_claims: false, refusals: false, ..crate::diagnose::DiagnoseOptions::default() };
+        let d = crate::diagnose::diagnose(&mut sk.clone(), opts);
+        Under { params: d.under_params.iter().copied().collect(),
+                components: d.components.iter().map(|c| (c.params.clone(), c.dof)).collect() }
+    }
+}
+
 /// **A face's fault in the document's words** (#962): the face, the edge of no length by its name
 /// and its ends' (a line's two points, which coincide or how far apart they are), or why its loops
 /// bound no region — and that no solid can be made of it.
@@ -264,6 +353,8 @@ pub(super) fn solids(sk: &Sketch, map: &SourceMap, place: &Placing) -> Vec<Diag>
         })
         .collect();
     let key = |i: usize| faulted.get(&i).map_or(Root::Solid(i), |&(f, _)| Root::Face(f));
+    // what the solve leaves free, read only once a root is refused
+    let under_read = std::cell::OnceCell::new();
     let mut roots: BTreeMap<Root, Diag> = BTreeMap::new();
     // each statement not built, by where it is said
     let mut unbuilt: BTreeMap<Span, Unbuilt> = BTreeMap::new();
@@ -279,8 +370,10 @@ pub(super) fn solids(sk: &Sketch, map: &SourceMap, place: &Placing) -> Vec<Diag>
             // the face's fault, at the face, once; the solid swept from it is not built
             let face = place.site(map.site_of(EntRef::new(crate::model::EntKind::Face, *f)));
             let (span, stmt) = if face.1.is_some() { face } else { at };
-            roots.entry(Root::Face(*f)).or_insert_with(||
-                Diag::new(Code::E080, span, stmt, face_said(sk, map, *f, fault)));
+            roots.entry(Root::Face(*f)).or_insert_with(|| {
+                let free = free_beneath(sk, map, i, under_read.get_or_init(|| Under::read(sk)));
+                Diag::new(Code::E080, span, stmt, format!("{}{free}", face_said(sk, map, *f, fault)))
+            });
             // (a stock split off its body has no statement of its own: the body's says it)
             if at.1.is_some() && span != at.0 {
                 note(at, &[], vec![i]);
@@ -289,8 +382,9 @@ pub(super) fn solids(sk: &Sketch, map: &SourceMap, place: &Placing) -> Vec<Diag>
             // a solid with no root below it (refused solids built on one another all round) is
             // said in its own words as well, as the document reads it: a key a kernel or a shared
             // name put in it, its path
+            let free = free_beneath(sk, map, i, under_read.get_or_init(|| Under::read(sk)));
             roots.insert(Root::Solid(i),
-                         Diag::new(Code::E080, at.0, at.1, crate::vocab::public_words(message)));
+                         Diag::new(Code::E080, at.0, at.1, format!("{}{free}", crate::vocab::public_words(message))));
         } else {
             note(at, &causes.on[i], under);
         }

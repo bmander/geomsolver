@@ -459,7 +459,16 @@ every edge between them a seam or a crease convex from that side, each face its 
 its side carried on past its patch by its tangent planes (`BodyFaces::carried_side_grad`, the
 signed distance from the convex solid the patch and those planes bound), so the side is their
 common part and a point at least `d` inside it is at least `d` inside each — a pocket's walls
-seen from its air, a boss's from its material. A torus's patch is so in a chain where it lies on
+seen from its air, a boss's from its material. **And every face of the chain within each other's
+side carried on** (#996's fifth item), read over each edge of the chain's faces once, against each
+face of the chain but those it bounds: a plane's side in closed form over a line or a circle (as
+`BodyFaces::goes_across` reads it), any other face's carried side at nine points of the edge, past
+by more than the body's own `past` (ten times its tolerance): convex at every
+seam and crease between its faces, a chain may still turn the other way along a face's own
+outline — a top in two flush pieces, the flange's rim rounded and the block's side meeting the
+flange's at a reflex corner of the top — where one face's carried side cuts off another's patch
+and no convex solid is theirs: it bulges no way, and is read through the nearest face
+(`rim_rounds::a_run_beside_a_chain_turning_back_along_its_outline_is_built`). A torus's patch is so in a chain where it lies on
 the outer half of its tube with that side inside the tube, both its curvatures' centres there (a
 pocket's floor filled round its plan corners, seen from the air; `BodyFaces::outer_half`), never
 alone (its whole surface's side winds round the axis): a ball standing on a run's axis beside
@@ -479,7 +488,8 @@ patches of the faces `M` is on the surfaces of is read as `d(p, E) − d(p, rest
 nearest point when off `E`, and where `E`'s run ends), the same points with a negative inside.
 `ends` is `max σ·side` over the faces at each end of the run (σ the side it runs on), a face
 carrying one of the run's on across a tangent seam none (`BodyFaces::continues`), nor one whose
-surface the run itself goes across (`BodyFaces::goes_across`: no side of it holds the run), nor a
+surface the run itself goes across (`BodyFaces::goes_across`: no side of it holds the run), nor one
+whose surface holds the run's edge there (a face along the run, its patch past the end, #996), nor a
 plane turning back over it at a reflex corner of less than a right angle — the run ends there
 square — and with them where an edge a run-out at that end runs along ends, a face or the plane
 square to it (`BodyFaces::end_faces`, `faces::EndBy`, #952, [rounds.md](rounds.md)); a closed run

@@ -51,10 +51,96 @@ pub fn node_named(n: &Node,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
     Ok(n.built(built,built_names,floor)?)
 }
 
+/// **A body's written terms built** (#996): its stock, plus everything on it, minus everything
+/// that cuts it, within everything that bounds it — the stratum its late terms (a round's fills
+/// and cuts) and a lowered region's rolled runs read (#183 F6) — with what its last Boolean knows
+/// of its faces (`boolean::Known`), so the late terms go on from it as they would have.
+#[derive(Clone,Debug)]
+pub struct Stratum { solid: Brep,known: Option<super::boolean::Known> }
+
+/// **A stratum one build made, offered to another** (#996): the stratum, the terms it is made of,
+/// and a digest of the B-reps it was made from (`made_of`), read once, as it leaves its build.
+#[derive(Clone,Debug)]
+pub struct Offered { stratum: std::sync::Arc<Stratum>,key: StratumKey,made_of: u64 }
+
+/// A `fmt::Write` that hashes what is written to it, so a value's `Debug` text is digested as it is
+/// written and never held.
+struct Hashing<'h>(&'h mut std::collections::hash_map::DefaultHasher);
+
+impl std::fmt::Write for Hashing<'_> {
+    fn write_str(&mut self,s: &str) -> std::fmt::Result {
+        std::hash::Hasher::write(self.0,s.as_bytes());
+        Ok(())
+    }
+}
+
+/// What body `n`'s written terms are made of, built as `built` holds them: a digest of every
+/// operand's B-rep (its `Debug` text, which writes each number so it reads back exactly, hashed as
+/// it is written), in the order the terms take them — so a stratum one build made is known for
+/// another's only where it is made of the same B-reps, whatever ids name them.  Read only where a
+/// stratum leaves its build (`offered`) or is offered to one (`known_stratum`).
+pub fn made_of(n: &Body,built: &BTreeMap<i64,Brep>) -> u64 {
+    use std::fmt::Write;
+    use std::hash::{Hash,Hasher};
+    // SipHash under fixed keys: the same digest on every run and every core
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for (k,id) in std::iter::once(&n.stock).chain(n.on.iter().chain(&n.cut).chain(&n.bound)).enumerate() {
+        (k,id).hash(&mut h);
+        let _ = write!(Hashing(&mut h),"{:?}",built.get(id));
+    }
+    h.finish()
+}
+
+/// **A stratum another build made, known for this one's** (#996): `offered`, the written terms of a
+/// body another build made (a round's reading of the body, `solid::faces`), left in `strata` for
+/// body `n`, built to `floor` from B-reps whose digest is `made_of` (this build's, `made_of`),
+/// where it is that body's — the same terms, of the same B-reps, to the same floor — so the body's
+/// late terms go on from it rather than make it again.  Whether it was.
+pub fn known_stratum(strata: &mut Strata,n: &Body,floor: f64,made_of: u64,offered: &Offered) -> bool {
+    let key = StratumKey::of(n,floor);
+    if offered.key != key || offered.made_of != made_of { return false }
+    strata.insert(key,offered.stratum.clone());
+    true
+}
+
+/// Body `n`'s written terms as `strata` holds them, built to `floor` from `built`, offered to
+/// another build (`known_stratum`): its digest read here, once.
+pub fn offered(strata: &Strata,n: &Body,built: &BTreeMap<i64,Brep>,floor: f64) -> Option<Offered> {
+    let key = StratumKey::of(n,floor);
+    let stratum = strata.get(&key)?.clone();
+    Some(Offered {stratum,key,made_of:made_of(n,built)})
+}
+
+/// The written terms a body's stratum is made of, as one recipe's nodes name them, and the floor
+/// its Booleans were made to: within one build, where each id is one node built, the whole of what
+/// the stratum is made from.
+#[derive(Clone,Debug,PartialEq,Eq,PartialOrd,Ord)]
+pub struct StratumKey { stock: i64,on: Vec<i64>,cut: Vec<i64>,bound: Vec<i64>,floor: u64 }
+
+impl StratumKey {
+    /// Body `n`'s, built to `floor` (mm).
+    pub fn of(n: &Body,floor: f64) -> StratumKey {
+        StratumKey {stock:n.stock,on:n.on.clone(),cut:n.cut.clone(),bound:n.bound.clone(),floor:floor.to_bits()}
+    }
+}
+
+/// **The strata one build has made** (#996), by what each is made of: a body's written terms are
+/// built once for the build, however many of its rounds roll a ball against them and whether its
+/// own late terms go on from them — not once a round and once more for the body.  Only a body with
+/// late terms, a lowered region's stratum, or one a build is asked to offer (`written`) is kept.
+pub type Strata = BTreeMap<StratumKey,std::sync::Arc<Stratum>>;
+
 impl Node {
     /// The node built from the nodes before it (`built`, named by `built_names` in what it says),
     /// its Booleans' tolerance never under `floor` (mm) (`node_named`).
     pub fn built(&self,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Built {
+        self.built_among(built,built_names,floor,&mut Strata::new())
+    }
+
+    /// `built`, a body's written terms read from `strata` where that build has made them, and
+    /// left there where this one makes them: every node of one build handed the same `strata`.
+    pub fn built_among(&self,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64,
+                       strata: &mut Strata) -> Built {
         match self {
             Node::Prism {profile,from,to,draft} => Ok(drafted(&Profile::of(profile)?,*from,*to,draft.unwrap_or(0.))?),
             Node::Revolve {profile,origin,axis,angle} => Ok(revolve(&Profile::of(profile)?,*origin,*axis,*angle)?),
@@ -71,7 +157,7 @@ impl Node {
                 Ok(source.moved(&Rigid::from_rows(matrix)))
             }
             Node::Through {profile,uses} => through_node(profile,uses,built),
-            Node::Body(b) => body(b,built,built_names,floor),
+            Node::Body(b) => body(b,built,built_names,floor,strata),
             // a ball swept (`solid::canal`, #238): the tube about its centre's path, a screw's or
             // one no closed form carries (#684 D), its disc a face family's wall
             Node::Canal {centre,radius,spine,face} => match spine {
@@ -82,7 +168,7 @@ impl Node {
             Node::Region(pieces) => region_node(pieces,built,built_names,floor),
             Node::Grown {body,pieces} => grown_node(*body,pieces,built,built_names,floor),
             Node::Glued(pieces) => glued_node(pieces,built,built_names,floor),
-            Node::Lowered(l) => lowered_node(l,built,built_names,floor),
+            Node::Lowered(l) => lowered_node(l,built,built_names,floor,strata),
             Node::Family(f) => family_node(f),
             // a profile carried over an interval of a constant twist (#846), from where it begins
             Node::Carried {profile,start,carry} =>
@@ -243,7 +329,8 @@ fn glued_node(pieces: &[Node],built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<
 /// revolution, each corner the ball's patch built where it stands, each rolled run the ball rolled
 /// along it; those joined (a run ending in the section a corner's cell begins in, meeting nowhere
 /// else) glued there, never intersected; the chains unioned (`chained`).
-fn lowered_node(n: &Lowered,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Built {
+fn lowered_node(n: &Lowered,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64,
+                strata: &mut Strata) -> Built {
     let mut pieces = n.pieces.iter().map(|piece| lowered_run(piece,built,built_names,floor)).collect::<Result<Vec<_>,_>>()?;
     for c in &n.corners {
         let (vertex,centre,radius) = (c.vertex,c.centre,c.radius);
@@ -255,10 +342,11 @@ fn lowered_node(n: &Lowered,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i6
     // but the late ones make it (the stratum), each piece the material it adds or takes
     let first_rolled = pieces.len();
     if !n.rolled.is_empty() {
-        let stratum = body(n.stratum.as_ref().ok_or("recipe: no `stratum`")?,built,built_names,floor)?;
+        let stratum = written(n.stratum.as_ref().ok_or("recipe: no `stratum`")?,built,built_names,floor,strata)?;
+        let stratum = &stratum.solid;
         let tol = tolerance_over(stratum.size(),floor);
         for k in &n.rolled {
-            pieces.push(rolled_run(k,&stratum,tol,floor)?);
+            pieces.push(rolled_run(k,stratum,tol,floor)?);
         }
     }
     // a ring's section beyond a seam's normal surface (#422), fitted: glued to its ring as a rolled
@@ -396,13 +484,46 @@ fn beside(a: &Brep,b: &Brep,floor: f64) -> Built {
 /// A body: the stock, plus everything on it, minus everything that cuts it, within everything that
 /// bounds it — in that order, as the native host combines them; then what reads the faces that
 /// makes (a round's fills, then its cuts: the stratum, #183 F6), where `n` lists them.
-fn body(n: &Body,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Built {
+fn body(n: &Body,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64,strata: &mut Strata) -> Built {
+    // a body nothing goes on from is built straight into its own B-rep, kept nowhere
+    if n.on_late.is_empty() && n.cut_late.is_empty() && !strata.contains_key(&StratumKey::of(n,floor)) {
+        let mut solid = built.get(&n.stock).ok_or("recipe: `stock` not built before its user")?.clone();
+        combined_sets(n,false,&mut solid,&mut None,built,built_names,floor)?;
+        return Ok(solid)
+    }
+    let stratum = written(n,built,built_names,floor,strata)?;
+    let (mut solid,mut known) = (stratum.solid.clone(),stratum.known.clone());
+    combined_sets(n,true,&mut solid,&mut known,built,built_names,floor)?;
+    Ok(solid)
+}
+
+/// Body `n`'s written terms built (`Stratum`): `strata`'s where this build has made them, else made
+/// and left there.  A failure is said each time it is asked, as it was made.  What a build asked to
+/// offer a body's stratum (`solid::exact`) builds it by.
+pub fn written(n: &Body,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64,strata: &mut Strata)
+    -> Result<std::sync::Arc<Stratum>,KernelError> {
+    let key = StratumKey::of(n,floor);
+    if let Some(s) = strata.get(&key) { return Ok(s.clone()) }
     let mut solid = built.get(&n.stock).ok_or("recipe: `stock` not built before its user")?.clone();
     // what each step knows of the faces it hands the next (`boolean::Known`, #589)
     let mut known: Option<super::boolean::Known> = None;
-    for ((key,list),op) in n.sets().into_iter().zip([Op::Union,Op::Cut,Op::Common,Op::Union,Op::Cut]) {
-        // the late sets (fills, then cuts) are what reads the faces the rest make
-        let written = !key.ends_with("_late");
+    combined_sets(n,false,&mut solid,&mut known,built,built_names,floor)?;
+    let stratum = std::sync::Arc::new(Stratum {solid,known});
+    strata.insert(key,stratum.clone());
+    Ok(stratum)
+}
+
+/// Body `n`'s written sets (stock on, cut, bound), or its late ones (`late_sets`: what reads the
+/// faces the rest make, fills then cuts), combined with `solid` in turn, `known` handed from each
+/// step to the next.
+fn combined_sets(n: &Body,late_sets: bool,solid: &mut Brep,known: &mut Option<super::boolean::Known>,
+                 built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Result<(),KernelError> {
+    let sets = n.sets();
+    let (sets,ops) = if late_sets { (&sets[3..],&[Op::Union,Op::Cut][..]) } else { (&sets[..3],&[Op::Union,Op::Cut,Op::Common][..]) };
+    // the rounds and chamfers applied so far, for where one leaves the body touching itself
+    let mut late: Vec<&Brep> = Vec::new();
+    for (&(key,list),&op) in sets.iter().zip(ops) {
+        let written = !late_sets;
         for x in list {
             let operand = built.get(x).ok_or(format!("recipe: an operand not built before its body"))?;
             // (as a failure calls it, `Named::called`)
@@ -410,7 +531,7 @@ fn body(n: &Body,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,f
             // a written operand's end all but flush with a face of the body is on it (#836); what
             // reads the faces is built on them already
             let combine = if written { super::boolean::combined_written } else { super::boolean::combined_known };
-            let (s,k) = combine(&solid,known.as_ref(),operand,op,floor).map_err(|e| {
+            let (s,k) = combine(solid,known.as_ref(),operand,op,floor).map_err(|e| {
                 // **what the stratum leaves**: each round or chamfer is read off the body as the
                 // terms before them leave it, never off another, so two of separate statements
                 // meeting at a vertex (a fill and a run of other radii) or across a corner a fill
@@ -426,10 +547,61 @@ fn body(n: &Body,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,f
                     _ => e.saying(|e| format!("{key} {name}: {e}")),
                 }
             })?;
-            (solid,known) = (s,Some(k));
+            if !written {
+                if let Some(why) = touching_alone(solid,&s,&late) {
+                    return Err(KernelError::new(Kind::NotManifold,if name.is_empty() { format!("{key}: {why}") }
+                        else { format!("{key} {name}: {why}") }));
+                }
+                late.push(operand);
+            }
+            (*solid,*known) = (s,Some(k));
         }
     }
-    Ok(solid)
+    Ok(())
+}
+
+/// **A round or a chamfer leaves no body touching itself alone** (#996 item 4): where `after`, the
+/// body `before` with a round or a chamfer applied, touches itself along a line (`Brep::self_touching`:
+/// the Boolean holds such a line twice, `Brep::unpinched`, read to the tolerance the export reads
+/// it to and each edge's own) that this one made, and no round or chamfer applied before it
+/// (`late`) has a part in that line, the line is between this one's material and the body's own:
+/// no reading of rounds of separate statements against each other makes it (#218, which the export
+/// says at the vertex), and no manifold solid is that, so it is refused here, at the statement,
+/// rather than built and handed on to a `--where`, a later Boolean or round, or an export.  What
+/// it says.  Read by provenance: the faces of the line's two edges by their names (`NAMED`, which
+/// the Booleans keep) — the line is this one's where one of them is named as none of `before`'s
+/// faces is (a body that touches itself already is the statement's that made it so), and an
+/// earlier one's where one is named as a face of it, or where the line lies within or on an earlier
+/// one's own solid (`Located::solid_place` at its middle): a cut whose faces alone bound the line
+/// pinches what it takes between them, and what it pinches is a fill's where the line stands in
+/// that fill (a pocket's rim rounded beside its corners' fills).  Cheap: the lines are a pass over
+/// the edges, only a line's own faces are asked, and an earlier term only where they say nothing.
+fn touching_alone(before: &Brep,after: &Brep,late: &[&Brep]) -> Option<String> {
+    use std::collections::BTreeSet;
+    use super::query::{Located,Place};
+    let tol = 1e-9*after.size().max(1.);
+    let lines = after.self_touching_edges(tol);
+    if lines.is_empty() { return None }
+    fn names(b: &Brep) -> BTreeSet<&str> { b.faces.iter().map(|f| f.name.as_str()).collect() }
+    let had = names(before);
+    let earlier: BTreeSet<&str> = late.iter().flat_map(|&b| names(b)).collect();
+    // the names of the faces at the line, its two edges' faces
+    let at = |es: [u32;2]| -> Vec<&str> {
+        after.faces.iter().filter(|f| f.loops.iter().flatten().any(|c| es.contains(&c.edge)))
+            .map(|f| f.name.as_str()).collect()
+    };
+    let alone = |&[e,f]: &[u32;2]| {
+        let named = at([e,f]);
+        if !named.iter().any(|n| !had.contains(n)) || named.iter().any(|n| earlier.contains(n)) { return false }
+        let edge = &after.edges[e as usize];
+        let middle = edge.point(0.5*(edge.t[0]+edge.t[1]),&after.vertices);
+        !late.iter().any(|&o| Located::new(o,tol).solid_place(middle) != Place::Out)
+    };
+    let [e,_] = lines.into_iter().find(alone)?;
+    let [a,b] = after.edges[e as usize].v.map(|v| after.vertices[v as usize].p);
+    Some(format!("it leaves the solid touching itself along a line from [{:.4}, {:.4}, {:.4}] to [{:.4}, {:.4}, {:.4}] mm, \
+        where its material, read off the body as its other terms leave it, meets the body's own and no other round or \
+        chamfer: no manifold solid is that, and the round or chamfer is not built so",a[0],a[1],a[2],b[0],b[1],b[2]))
 }
 
 /// The recipe's root, built, each face named by its node (`NAMED`): a primitive's by the node's
@@ -446,8 +618,10 @@ impl Recipe {
         let mut routes: BTreeMap<i64,(&str,BTreeMap<String,String>)> = BTreeMap::new();
         // each node's name, for what a body built of it says
         let names: BTreeMap<i64,String> = self.nodes.iter().map(|n| (n.id,n.called())).collect();
+        // a body's written terms built once, whichever of its nodes reads them first (#996)
+        let mut strata = Strata::new();
         for named @ Named {id,name,node,..} in &self.nodes {
-            let mut b = node.built(&built,&names,0.).map_err(|e| e.saying(|e| format!("{}: {e}",named.called())))?;
+            let mut b = node.built_among(&built,&names,0.,&mut strata).map_err(|e| e.saying(|e| format!("{}: {e}",named.called())))?;
             let mut own = BTreeMap::new();
             match node {
                 Node::Lowered(_) => {}

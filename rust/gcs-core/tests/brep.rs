@@ -408,6 +408,49 @@ fn curved_faces_sewn_across_curves_parametrised_apart() {
     }
 }
 
+/// **A plane through a torus's axis meets it in its meridian either side** (#996): two circles of
+/// the tube's radius about the points `±|big|` across the axis, in closed form — apart on a ring
+/// torus, touching on the axis on a horn, crossing at the poles on a spindle, where each runs on
+/// across the axis into the lemon — each point of them on the plane and on the torus as its
+/// parameters reach it (a spindle's lemon is its circle drawn across the axis, `Surface::inverse`'s
+/// `across`), and every point of the torus in the plane on one of them. A plane leaning off the
+/// axis, or beside it, is not one.
+#[test]
+fn a_plane_through_a_toruss_axis_meets_it_in_its_meridians() {
+    use gcs_core::brep::geom::Surface;
+    use gcs_core::brep::ssi::{intersect,Ssi};
+    use gcs_core::space::{add,cross,distance,scale,unit};
+    let axis = [0.2,-0.3,0.93];
+    let frame = Frame::new([1.,2.,-1.],axis,[1.,0.,0.]);
+    let across = unit(cross(axis,[0.,1.,0.]));
+    let through = Surface::Plane(Frame::new([1.,2.,-1.],across,axis));
+    let on = |s: &Surface,p: V| distance(s.point(s.inverse(p)),p);
+    for (big,minor) in [(3.,1.),(-3.,1.),(2.,2.),(1.8,2.),(-1.8,2.),(0.5,4.)] {
+        let torus = Surface::Torus(frame,big,minor);
+        let Ssi::Curves(cs) = intersect(&through,&torus,1e-9) else { panic!("{big}, {minor}: traced") };
+        assert_eq!(cs.len(),2,"{big}, {minor}: {cs:?}");
+        for c in &cs {
+            for t in (0..64).map(|i| i as f64*TAU/64.) {
+                let p = c.point(t);
+                assert!(through.implicit(p).abs() < 1e-9 && on(&torus,p) < 1e-9,"{big}, {minor}: {c:?} at {t}");
+            }
+        }
+        // the torus's own points in the plane: the meridians at its azimuths either side
+        for (u,v) in (0..8).flat_map(|i| (0..16).map(move |j| (i as f64*TAU/8.,j as f64*TAU/16.))) {
+            let p = torus.point([u,v]);
+            if through.implicit(p).abs() > 1e-12 { continue }
+            assert!(cs.iter().any(|c| distance(c.point(c.inverse(p)),p) < 1e-9),"{big}, {minor}: {p:?} on none");
+        }
+    }
+    let torus = Surface::Torus(frame,1.8,2.);
+    let leaning = Surface::Plane(Frame::new([1.,2.,-1.],unit(add(across,scale(axis,0.1))),axis));
+    let beside = Surface::Plane(Frame::new(add([1.,2.,-1.],scale(across,0.5)),across,axis));
+    for plane in [leaning,beside] {
+        assert!(!matches!(intersect(&plane,&torus,1e-9),Ssi::Curves(cs) if cs.len() == 2
+            && cs.iter().all(|c| matches!(c,gcs_core::brep::geom::Curve::Circle(_,r) if *r == 2.))),"{plane:?}");
+    }
+}
+
 /// The sphere as an operand: the hemisphere a block keeps of it, its poles off the cutting plane.
 #[test]
 fn a_sphere_cut_by_a_plane_is_its_half() {
