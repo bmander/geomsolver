@@ -1769,7 +1769,14 @@ use's pcurve where its image is the edge's — at the edge's own parameter, or a
 tolerance the edge measures anyway — and never widens a tolerance; otherwise the edge inverted
 between the walk's ends (`Pcurve::Inverse`) — where a point of its walk stands half a period from
 the line between them the inverse changes branch mid-edge, which `sound` refuses as a leap of a
-period. A file without pcurves reads the same. The outer
+period. A file without pcurves reads the same. **A point's foot on a spline sheet near a hint is
+a function of the point and the hint alone** (`Surface::inverse_near`, `geom::net_search`): where
+Newton's method from the hint settles off the sheet, the whole sheet is searched cold for a nearer
+foot — not from the thread's last foot, which the search keeps wherever it stands within a
+thousandth of the point's size of the sheet — so a walk's end and its pcurve's end read the same
+point the same (benchy's face #27487, its corner crumpled back within 9.5e-5 of its corner vertex:
+the vertex read on the corner as one edge's end and on the crumple as the next's start, a loop
+broken in parameters where the file's is whole). The outer
 loop is the one enclosing the most of the face's parameters, never FACE_OUTER_BOUND. A sphere's
 file curve a whole turn off in `v` (OCCT's habit) is moved back. At a pole the collapsed
 parameter's branch keeps the face on the loop's left; a use's end there is its curve's own where
@@ -1785,7 +1792,8 @@ pole, an edge two seams would cut, are refused `Unsupported` naming the entity. 
 `a_band_written_with_no_seam_reads_to_its_closed_form`,
 `a_spheres_curve_a_turn_off_in_v_reads_where_the_face_is`,
 `a_lens_whose_circle_passes_a_pole_reads_to_its_closed_form`,
-`an_edges_feet_off_its_face_run_at_their_own_rate`.
+`an_edges_feet_off_its_face_run_at_their_own_rate`,
+`net_inverse::a_points_foot_near_a_hint_does_not_depend_on_what_was_asked_before`.
 
 **A tolerant edge is read by its 3D curve, whatever its file names its master**
 (`topology::file_pcurve`). A `SURFACE_CURVE`'s `master_representation` (ISO 10303-42: the
