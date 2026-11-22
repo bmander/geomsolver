@@ -81,6 +81,20 @@ pub enum Stroke {
     Conic { a: V, m: V, b: V, w: f64 },
 }
 
+impl Stroke {
+    /// Where it starts and ends, an arc's in the plane square to `along` (the section's).
+    fn ends(&self, along: V) -> [V; 2] {
+        match *self {
+            Stroke::Line { from, to } => [from, to],
+            Stroke::Arc { centre, radius, x, angles } => {
+                let frame = crate::brep::geom::Frame::new(centre, along, x);
+                angles.map(|a| { let (s, c) = a.dsin_cos(); frame.at([radius * c, radius * s, 0.0]) })
+            }
+            Stroke::Conic { a, b, .. } => [a, b],
+        }
+    }
+}
+
 /// A section swept along a straight edge (model units): the section in the plane through `origin`
 /// (the edge's first end) square to the unit `along`, its loop `strokes` (each named, the name of
 /// the face it sweeps), carried over the stretch `span` of the edge (`0` its origin; the edge, or
@@ -298,15 +312,22 @@ impl Run {
     /// arc's or conic's with the point its tangents there meet (each lies within those three).
     fn section_hull(&self) -> Vec<V> {
         self.strokes.iter().flat_map(|(s, _)| match *s {
-            Stroke::Line { from, to } => vec![from, to],
             Stroke::Arc { centre, radius, x, angles: [a0, a1] } => {
                 let frame = crate::brep::geom::Frame::new(centre, self.along, x);
-                let at = |a: f64, k: f64| { let (s, c) = a.dsin_cos(); frame.at([k * c, k * s, 0.0]) };
                 let apex = radius / (0.5 * (a1 - a0)).dcos().max(1e-3);
-                vec![at(a0, radius), at(a1, radius), at(0.5 * (a0 + a1), apex)]
+                let (sin, cos) = (0.5 * (a0 + a1)).dsin_cos();
+                let [e0, e1] = s.ends(self.along);
+                vec![e0, e1, frame.at([apex * cos, apex * sin, 0.0])]
             }
-            Stroke::Conic { a, m, b, .. } => vec![a, m, b],
+            Stroke::Conic { m, .. } => { let [a, b] = s.ends(self.along); vec![a, m, b] }
+            Stroke::Line { .. } => s.ends(self.along).to_vec(),
         }).collect()
+    }
+
+    /// The ends of each arc of the section: where a round's ball touches its faces.
+    fn arc_ends(&self) -> Vec<V> {
+        self.strokes.iter().filter(|(s, _)| matches!(s, Stroke::Arc { .. }))
+            .flat_map(|(s, _)| s.ends(self.along)).collect()
     }
 
     /// Where its stretch ends, `k` 0 or 1.
