@@ -2167,11 +2167,12 @@ pub(crate) const SHALLOW: f64 = 0.0175;
 /// their second fundamental forms (`a`'s turned by the sign of their normals' agreement): a
 /// definite `Q` touches at `p` alone, an indefinite one meets in two branches crossing there along
 /// its null directions. A touch: those directions (each either way; none for a definite `Q`), and
-/// the radius within which the two stand nearer parallel than a trace can follow (`SHALLOW`).
+/// the radius within which the two stand nearer parallel than a trace can follow (`SHALLOW`), and
+/// for a definite `Q` its least bend, signed as `b`'s distance grows (nought for an indefinite one).
 /// `None` where `Q` is too near singular to say (the two touch along a curve, or closer than
 /// second order).
 #[derive(Clone,Debug)]
-pub(crate) struct Touch { pub at: V,pub branches: Vec<V>,pub radius: f64 }
+pub(crate) struct Touch { pub at: V,pub branches: Vec<V>,pub radius: f64,pub bend: f64 }
 
 /// The step two surfaces' derivatives are differenced over, near their finer feature.
 fn difference_step(a: &Surface,b: &Surface) -> f64 { 1e-4*a.feature().min(b.feature()).min(1e6).max(1e-9) }
@@ -2192,8 +2193,10 @@ pub(crate) fn touch(a: &Surface,b: &Surface,p: V) -> Option<Touch> {
     let (big,least) = (mean.abs()+dev,(mean.abs()-dev).abs());
     if !(least > 1e-6*big && big > 0.) { return None }
     let radius = 2.*SHALLOW/least;
+    let definite = q11*q22-q12*q12 > 0.;
+    let bend = if definite { mean.signum()*least } else { 0. };
     // Q(ψ) = mean + B cos 2ψ + C sin 2ψ (B, C its deviation's parts), zero where they cancel
-    let branches = if q11*q22-q12*q12 > 0. { Vec::new() } else {
+    let branches = if definite { Vec::new() } else {
         let phase = (2.*q12).datan2(q11-q22);
         let off = (-mean/dev).clamp(-1.,1.).dacos();
         [phase+off,phase-off].into_iter().flat_map(|w| {
@@ -2202,7 +2205,38 @@ pub(crate) fn touch(a: &Surface,b: &Surface,p: V) -> Option<Touch> {
             [t,scale(t,-1.)]
         }).collect()
     };
-    Some(Touch {at:p,branches,radius})
+    Some(Touch {at:p,branches,radius,bend})
+}
+
+/// **Whether a definite touch holds alone over its radius** (#996 §3): `b`'s distance along `a`
+/// grows from its own at the touch — some tolerances either way, where the two are found to touch —
+/// the way `Q` turns it by at least half what `Q` gives it, `¼ λ ρ²` at `ρ` from the touch (`λ` its
+/// least bend), on rings about it from its radius in to a two-hundred-fiftieth of it, each
+/// a seventh of its radius from the next and its points as near — closer than that growth lets the
+/// distance fall between them, which along `a` changes by no more than the sine of the angle the
+/// two meet at, `λ ρ` to second order. So nothing within the radius, where the two stand nearer
+/// parallel than a trace can follow and a search cannot part them, meets but the touch: what its
+/// second order says is what its higher orders keep, however small the faces beside it. Its size
+/// beside the faces is no part of it, and decides nothing (two cylinders crossed and touching, a
+/// rim's round on a short edge and a wide blend whose foot it crosses, touched over 0.28 beside a
+/// face 5.5 across). An indefinite touch, or one whose higher orders turn its distance within the
+/// radius, is not shown to hold alone.
+pub(crate) fn alone_over(a: &Surface,b: &Surface,t: &Touch) -> bool {
+    if t.bend == 0. || !t.branches.is_empty() { return false }
+    let f = Frame::about(t.at,unit(a.gradient(t.at)));
+    let here = b.implicit(t.at);
+    let (inner,mut rho) = (t.radius/256.,t.radius);
+    while rho >= inner {
+        for k in 0..48 {
+            let (sn,cs) = (std::f64::consts::TAU*k as f64/48.).dsin_cos();
+            let q = add(t.at,add(scale(f.x,rho*cs),scale(f.y,rho*sn)));
+            let q = a.point(a.inverse(q));
+            let r = distance(q,t.at);
+            if !(t.bend.signum()*(b.implicit(q)-here) >= 0.25*t.bend.abs()*r*r) { return false }
+        }
+        rho *= 6./7.;
+    }
+    true
 }
 
 /// **The point near `p` where `a` and `b` touch**: on `a`, where `b`'s signed distance along it is

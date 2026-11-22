@@ -537,3 +537,100 @@ fn a_run_beside_a_chain_turning_back_along_its_outline_is_built() {
         close(nested, rimmed - 60.0 * square_run(1.0));
     }
 }
+
+/// The necked plate of #996 §3: its outline's corners, the lug's centre and radius.
+const NECK: [[f64; 2]; 8] = [[-40.0, -30.0], [40.0, -30.0], [40.0, 20.0], [11.0, 30.0], [9.9, 37.0],
+                             [-3.5, 37.0], [-4.3, 33.0], [-40.0, 20.0]];
+const LUG: ([f64; 2], f64) = ([3.2, 39.7], 7.5);
+
+/// The plate whose top narrows into a neck, 13.2 thick, a lug's circle over the neck's end joined
+/// to it and blended 8 where they meet (where `lug`), and its far rim rounded `r` (where `r > 0`),
+/// that statement before the blend's where `rim_first`; mirrored across the y axis where asked.
+fn necked_plate(r: f64, lug: bool, rim_first: bool, mirrored: bool) -> String {
+    let x = |x: f64| if mirrored { 0.0 - x } else { x };
+    let mut s = String::from("unit mm\nuse std\nuse std.solids\nuse std.solids (union)\nuse std.rounds (round)\n\
+                              in std.top {\n");
+    for (i, p) in NECK.iter().enumerate() {
+        s += &format!("  p{i} := point\n  fix(({:?}, {:?})) p{i}\n", x(p[0]), p[1]);
+    }
+    let mut order: Vec<String> = (0..8).map(|i| format!("p{i}")).collect();
+    if mirrored { order.reverse() }
+    s += &format!("  plate_f := face({}, -> close)\n  lc := point\n  fix(({:?}, {:?})) lc\n  \
+                   lug_c := circle(center: lc) hint(r: {:?})\n  radius({:?}mm) lug_c\n}}\n\
+                   plate := solid(std.solids.Prism(plate_f, from: 0mm, to: 13.2mm))\n",
+                  order.join(", "), x(LUG.0[0]), LUG.0[1], LUG.1, LUG.1);
+    s += "lug := solid(std.solids.Prism(face(lug_c), from: 0mm, to: 13.2mm))\npart := solid(plate)\n";
+    let rim = if r > 0.0 { format!("rim := part.plate.far round(r: {r}mm) part.plate\n") } else { String::new() };
+    if !lug { return s + &rim }
+    s += "lug union part\n";
+    let blend = "blend := part.lug.lug_c round(r: 8mm) part.plate\n";
+    if rim_first { s + &rim + blend } else { s + blend + &rim }
+}
+
+/// What the necked plate's rim, rounded `r`, takes inside the lug's circle: each line of the
+/// section along `p3p4`, `p4p5` and `p5p6` — `s = r (1 − cos φ)` in from the side and
+/// `r (1 − sin φ)` high — from the bisector of the corner it leaves to that of the corner it comes
+/// to (`p3`'s, far from the lug, no matter), within the circle, integrated over the section.
+fn necked_rim_in_the_lug(r: f64) -> f64 {
+    let v = NECK;
+    let cot_half = |i: usize| {
+        let (a, b, q) = (v[i - 1], v[i], v[i + 1]);
+        let (u, w) = ([b[0] - a[0], b[1] - a[1]], [q[0] - b[0], q[1] - b[1]]);
+        let turn = (u[0] * w[1] - u[1] * w[0]).atan2(u[0] * w[0] + u[1] * w[1]);
+        1.0 / ((PI - turn) / 2.0).tan()
+    };
+    let (c, big) = LUG;
+    let inside = |s: f64| (3..6).map(|k| {
+        let (a, b) = (v[k], v[k + 1]);
+        let l = (b[0] - a[0]).hypot(b[1] - a[1]);
+        let u = [(b[0] - a[0]) / l, (b[1] - a[1]) / l];
+        let p = [a[0] - s * u[1], a[1] + s * u[0]];
+        let (from, to) = (if k == 3 { f64::NEG_INFINITY } else { s * cot_half(k) }, l - s * cot_half(k + 1));
+        let f = [p[0] - c[0], p[1] - c[1]];
+        let h = f[0] * u[0] + f[1] * u[1];
+        let d = h * h - (f[0] * f[0] + f[1] * f[1] - big * big);
+        if d <= 0.0 { return 0.0 }
+        (to.min(-h + d.sqrt()) - from.max(-h - d.sqrt())).max(0.0)
+    }).sum::<f64>();
+    let nodes = crate::common::rounds::gauss_legendre(16);
+    let panels = 200;
+    let h = PI / 2.0 / panels as f64;
+    (0..panels).map(|j| {
+        let m = (j as f64 + 0.5) * h;
+        nodes.iter().map(|&(x, w)| {
+            let phi = m + 0.5 * h * x;
+            0.5 * w * h * r * (1.0 - phi.sin()) * inside(r * (1.0 - phi.cos())) * r * phi.sin()
+        }).sum::<f64>()
+    }).sum()
+}
+
+/// **A rim's round crossing the foot of a blend it does not round** (#996 §3): the necked plate's
+/// far rim rounded `r` beside the lug blended 8 into its neck. The round's run along the neck's
+/// short side `p5p6` and the blend's cylinder touch at a point where the blend's foot crosses the
+/// round's tangent line on the side — a definite touch, `2 SHALLOW · 8` across, more than a
+/// twentieth of the run's face — once refused as "a cylinder and a cylinder meet … where no edge crosses, in a curve
+/// that could not be traced" (`Touches::alone`: a definite touch is alone by its own orders,
+/// `ssi::alone_over`, not by the faces' size). The rim's runs end on the lug's cylinder, kept
+/// outside it, as on the plate alone before the lug: so the part is the plate, lug and blend less
+/// what the rim takes of the plate alone, but for what of that the lug's circle holds
+/// (`necked_rim_in_the_lug`), to 1e-9 — rounded 1, 2 and 3, the rim written after the blend, before
+/// it, and after it mirrored. (Blended 16 or more, the blend's foot past the side's end `p6`, the part is
+/// refused at its export as touching itself at `p6`: not held here.)
+#[test]
+fn a_rims_round_crossing_the_foot_of_a_lugs_blend_is_built() {
+    let volume = |src: String| {
+        let e = solved(&src);
+        assert!(e.diags.is_empty(), "{:?}", e.diags);
+        props::volume(&exported(&e, "part"))
+    };
+    let blended = volume(necked_plate(0.0, true, false, false));
+    let plate = volume(necked_plate(0.0, false, false, false));
+    for r in [1.0, 2.0, 3.0] {
+        let taken = plate - volume(necked_plate(r, false, false, false)) - necked_rim_in_the_lug(r);
+        for (rim_first, mirrored) in [(false, false), (true, false), (false, true)] {
+            let got = volume(necked_plate(r, true, rim_first, mirrored));
+            assert!((got - (blended - taken)).abs() <= 1e-9 * blended,
+                    "r {r}, rim first {rim_first}, mirrored {mirrored}: {got} against {}", blended - taken);
+        }
+    }
+}

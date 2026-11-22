@@ -219,6 +219,32 @@ its end wherever along the curve it was read; read at the far end and set down a
 it stood after the points it comes before, and the stretch from the last of them round to it was
 not laid. `tests/rim_rounds.rs` is the gate (a rim's run crossing a corner's round at a box's sharp
 corner, on either cap, to one volume).
+**A definite touch is alone by its own orders, not by the faces' size** (#996 §3,
+`Touches::alone`, `ssi::alone_over`). Where two faces touch at a point and `ssi::touch`'s `Q` is
+definite, nothing within its radius `2 SHALLOW / λ` (`λ` its least bend) — where a trace cannot
+follow the two and the search for unseen meetings cannot part them — meets but the point, so long
+as the higher orders keep what the second says: `b`'s distance along `a` grows from its own at
+the touch the way `Q` turns it, by at least `¼ λ ρ²`, on rings about the touch from its radius in
+to a 256th of it, its samples closer than that growth lets the distance fall between them. From
+its own: the two are found to touch within some tolerances of nought, and a loop they cross in
+within that (a side turned `3e-4` off a lobe, 5e-7 inside the round's torus over 7e-3) is the
+touch (`rim_seams::a_corner_too_nearly_tangent_to_round_is_said_by_its_faces`, built at `3e-4`). Shown, the touch is read alone and the
+search passes it, however small the faces beside it — an arrangement's (`Touches::alone`), and
+`meeting::meet_with`'s past the touches its critical set found, which before found each again,
+traced nothing from it and refused the meeting; not shown, it is not. Before, a touch was
+read alone only where its radius was under a twentieth of the smaller face — a rule for the
+crossing touch, whose branches are asked after twice the radius out on both faces, and kept for
+it — so a rim's round on a short side, a cylinder crossed square with a wide blend's cylinder at
+the point where the blend's foot crosses the round's tangent line (`2 SHALLOW · 8 = 0.28` beside a
+face 5.5 across), was refused: "a cylinder and a cylinder meet … where no edge crosses, in a curve
+that could not be traced" (CADGenBench fixtures 104 and 122). Gates:
+`touch_curves::a_rims_round_crossing_a_blends_foot_touches_it_at_a_point_alone` (the round's bar cut
+from a wall going on into a blend 8 to 40, rounded 1 to 3, the touch on its face's edge and inside
+it, turned and mirrored, to the closed form at 1e-9),
+`meeting::a_cylinder_laid_across_a_surface_from_outside_touches_it_at_one_point_alone` (a cylinder
+laid across a cylinder, a cone, a ball and a torus, crossed 90° to 25°) and
+`rim_rounds::a_rims_round_crossing_the_foot_of_a_lugs_blend_is_built` (the issue's plate, rounded 1
+to 3, either order, mirrored, to its accounted volume).
 **A traced meeting is one curve, on both surfaces, keeping its turns** (`ssi::trace_beside`,
 #684 E). A march ending at a patch's edge or a touch drops the points crowding that end (within a
 quarter of its step `h0`) only while the chord from the point kept before them to the end passes
