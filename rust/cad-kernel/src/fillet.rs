@@ -2099,8 +2099,7 @@ pub fn one_surface(b: &Brep,f: usize,g: usize,tol: f64) -> bool {
         ed @ super::topo::Edge { curve: EdgeCurve::Curve(cv),.. } => Some(cv.point(0.5*(ed.t[0]+ed.t[1]))),
         _ => None,
     }).unwrap_or_else(|| a.surface.point([0.,0.]));
-    let out = |x: &Face| scale(x.surface.gradient(at),if x.reversed { -1. } else { 1. });
-    dot(out(a),out(c)) > 0.
+    dot(a.outward_gradient(at),c.outward_gradient(at)) > 0.
 }
 
 /// **Whether two unit normals `n` and `m` are one either way**, `1 - |n·m|` within 1e-9: the test
