@@ -2198,6 +2198,26 @@ it — the bench's ring along a spline, built by its runner through `cut_from`, 
 refusal (`swept_patches::a_tool_no_convex_revolution_under_any_motion_is_refused_by_name`'s ring,
 its two meridians square to the motion touched whole, is `Curved` so).
 
+**A ring's sweep read for depth** (#942, the depth trim, `swept::depth`): the sweep is the union of
+the tool's poses, so a point lies in it by the least over the roll of the tool's signed distance at
+it (`Ring::signed` at `pose(t)⁻¹ x`), each basin the samples show settled by golden section, and a
+candidate sheet is on the boundary exactly where no instant but the point's own holds it
+(`Depth::cover`: the own basin taken out — the own instant a sample, with samples halving in toward
+it until the roll reads no difference, so a partner closing on it is parted from it; a least at
+nought to the depth's rounding is the own touch read again). The instant holding a point names the
+tool's point there, so a seam — the edge of what is kept (`Depth::edge_on`, halved to a quarter of
+the tolerance; its kept end may be held by under the tolerance, on the boundary to it), traced as a
+graph over one parameter with its chord sagging within the tolerance (`Depth::seam_over`) — carries
+both faces' parameters by construction. On the ring along a spline it reads each tube kept on one
+side of the bottom meridian only (tube 0 in front of θ*, tube 1 behind), the stretch beside θ*
+held by under 1e-7 (the sliver, its fold and B′ within that of one another), the strip's touching
+half held by no other basin at all, and the start pose keeping, besides the quadrant behind θ*
+below the rim, a wedge in front of θ* beside the rim, held from beyond by tube 0 at an instant 0.12
+of its angle on, its width falling to nought at the corner — the corner one point all five pieces
+meet at (`swept_depth::a_rings_kept_pieces_bound_its_sweep_by_depth`,
+`swept_depth::the_start_wedges_seam_is_traced_into_its_corner_with_its_partner`). Not yet entered:
+the road still arranges whole tubes there and refuses by name.
+
 **K2's patches: the closed class under any rigid motion (#780 L3, `brep::swept::patches`):** a
 sweep under a motion no constant twist takes, nor a path of pieces (`Trajectory::General`, a frame
 along a path #398; a `Relative`), is built on the closed class's one arrangement
