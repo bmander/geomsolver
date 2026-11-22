@@ -1025,7 +1025,11 @@ the patch going off the rim the other), the nearest of the chain's faces that fa
 foot lies on it — gone round so only where it bounds that face nearer the point than any face not of
 the chain does ([sets.md](sets.md): a clevis's bowed side bounds the eye 36 mm off) — and in that
 face's plane as a point just past it where the region holds its point outside it, just within where
-within (`nearest_face`'s `held`, from the region's own `in` and `not in` terms, `region::general`; a
+within (`nearest_face`'s `held`, from the region's own `in` and `not in` terms, `region::general`:
+the chain's reading there is its limit from the side the region holds the point on — that face's
+own term is nothing on its plane and decides nothing there, so the chain's must, and read from
+neither side the gate's probes of a fill's leg along the band's side, which lie in that plane,
+disagreed in four of `tests/tapered_bands.rs`' cases; a
 band's side on a plate, #994 item 2d, below; a casting's floor its drafted side leans over stands
 between nothing); and it is read face by face as one convex solid only where each face's patch lies
 within every other's (`BodyFaces::bulging`: the arc's tangent planes carried down through the block
