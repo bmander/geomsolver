@@ -333,6 +333,7 @@ mod step_kinds;
 mod step_mutants;
 mod step_parameters;
 mod step_read;
+mod step_roundtrip;
 mod step_sound;
 mod stock;
 mod style;
