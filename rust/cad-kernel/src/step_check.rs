@@ -2,13 +2,15 @@
 //! kernel's reader (docs/native-speed-plan.md, phase 6). The solid is a valid closed solid already
 //! (the construction checked it); what is left to know is that the file says it. So the file is
 //! parsed here, a run of entities on each core: every entity must parse and every `#` reference
-//! resolve; the solid's topology is walked from the shape representation down (solids, shells,
+//! resolve; the solid's topology is walked from the shape representation down (solids — one a
+//! lump, a lump with voids a `BREP_WITH_VOIDS` whose voids are closed shells turned — shells,
 //! faces, loops, oriented edges, edges, vertices), every edge used exactly twice by the closed
-//! shell's faces, each count the solid's (`solvent_cad_brep_summary`) and no entity of those kinds
-//! left out of the walk; the units are millimetres and radians; and each face, in the closed
-//! shell's order, is on a surface of the solid's face's kind — with an elementary surface's
-//! placement, radii and angle, and a B-spline's degrees, knots, multiplicities, poles and weights,
-//! within `NEAR` of the solid's. It is not a check that a reader would rebuild the same solid (that
+//! shells' faces, each count the solid's (`solvent_cad_brep_summary`) and no entity of those kinds
+//! left out of the walk; the units are millimetres and radians; and each face, in the shells'
+//! order, of the solid's face's sense (a void's shell's turned back) and on a surface of its kind
+//! — with an elementary surface's placement, radii and angle, a B-spline's degrees, knots,
+//! multiplicities, poles and weights, a swept surface's axis or direction and its curve's numbers,
+//! and an offset's distance and basis, within `NEAR` of the solid's. It is not a check that a reader would rebuild the same solid (that
 //! is `--verify-step full`, the kernel's own read-back); it is a check that the file carries this
 //! solid's topology and surfaces, entity for entity, as the writer was given them.
 use std::collections::{BTreeMap,BTreeSet};
@@ -44,15 +46,36 @@ const OFFSET: u8 = 9;
 
 impl Solid {
     /// The solid a STEP file of the core's own B-rep must describe (`crate::step`): its
-    /// counts, and each face's surface as that writer writes it.
+    /// counts (a solid a lump, a shell its outer one and each void's: `step::lumps`), and each
+    /// face, in the order the writer writes them, its surface as that writer writes it.
     pub fn of(b: &crate::topo::Brep) -> Solid {
         use crate::{geom::Surface,topo::EdgeCurve};
-        let faces = b.faces.iter().enumerate().map(|(fi,f)| {
+        // (in the order the writer writes them: each lump's outer shell's faces, then its voids';
+        // a solid the writer refuses, whose file is never verified, in its own order)
+        let lumps = crate::step::lumps(b).unwrap_or_else(|_| vec![crate::step::Lump {outer:(0..b.faces.len()).collect(),voids:Vec::new()}]);
+        let faces = lumps.iter().flat_map(crate::step::Lump::faces).map(|fi| (fi,&b.faces[fi])).map(|(fi,f)| {
             // a sheet, a loft's face, a family's wall and an affine image are written as nets (one
             // the writer could not fit was refused there, and has no numbers here)
             if let Some(net) = crate::step::face_net(b,fi) {
                 let numbers = net.map(|n| crate::step::net_numbers(&n.net)).unwrap_or_default();
                 return Face {kind:BSPLINE,reversed:f.reversed,indirect:false,numbers}
+            }
+            // a swept surface: its axis or direction, and its curve's numbers (`swept`)
+            match &f.surface {
+                Surface::Revolution(g,c) => {
+                    let numbers = g.o.iter().chain(&g.z).copied().chain(curve_numbers(c)).collect();
+                    return Face {kind:REVOLUTION,reversed:f.reversed,indirect:false,numbers}
+                }
+                Surface::Extrusion(g,c) => {
+                    let numbers = g.z.iter().copied().chain([1.]).chain(curve_numbers(c)).collect();
+                    return Face {kind:EXTRUSION,reversed:f.reversed,indirect:false,numbers}
+                }
+                // a sheet's offset (read from a file): its distance, and its basis net's numbers
+                Surface::Offset(_,n,d) => {
+                    let numbers = [*d].into_iter().chain(crate::step::net_numbers(n)).collect();
+                    return Face {kind:OFFSET,reversed:f.reversed,indirect:false,numbers}
+                }
+                _ => {}
             }
             let (frame,scalars) = crate::step::written(&f.surface);
             let kind = match f.surface { Surface::Plane(_) => PLANE,Surface::Cylinder(..) => CYLINDER,
@@ -68,7 +91,7 @@ impl Solid {
         let written: Vec<&crate::topo::Edge> = b.edges.iter().filter(|e| matches!(e.curve,EdgeCurve::Curve(_))).collect();
         let mut used = vec![false;b.vertices.len()];
         for e in &written { for v in e.v { used[v as usize] = true; } }
-        Solid {solids:1,shells:1,edges:written.len(),vertices:used.iter().filter(|&&u| u).count(),faces}
+        Solid {solids:lumps.len(),shells:lumps.iter().map(|l| 1+l.voids.len()).sum(),edges:written.len(),vertices:used.iter().filter(|&&u| u).count(),faces}
     }
     /// Read the kernel's summary.
     pub fn read(summary: &[f64]) -> Result<Solid,String> {
@@ -86,6 +109,37 @@ impl Solid {
         }
         if faces.len() != n(summary[3]) { return Err(bad()) }
         Ok(Solid {solids:n(summary[1]),shells:n(summary[2]),edges:n(summary[4]),vertices:n(summary[5]),faces})
+    }
+}
+
+/// The numbers of the curve a swept surface sweeps as `crate::step`'s writer writes it (#993
+/// stage 2), first a code: `0` a line, its point, its unit direction and its vector's length; `1` a
+/// circle, its placement (origin, axis, reference direction) and radius; `2` an ellipse, the same
+/// and its two semi-axes; `3` a B-spline, its degree, its poles' and distinct knots' counts,
+/// whether rational, its poles, its knots' multiplicities and values, and its weights; `4` a curve
+/// the writer fits a B-spline to (a turned contact's meridian, a slid contour), whose numbers are
+/// the fit's and not compared; `5` any other, which the writer refuses.
+fn curve_numbers(c: &crate::geom::Curve) -> Vec<f64> {
+    use crate::geom::Curve;
+    let frame = |f: &crate::geom::Frame| f.o.iter().chain(&f.z).chain(&f.x).copied().collect::<Vec<f64>>();
+    if c.exact_span().is_some() { return vec![4.] }
+    match c {
+        Curve::Line {p,d} => {
+            let l = crate::util::space::norm(*d);
+            [0.].into_iter().chain(*p).chain(d.map(|x| x/l)).chain([l]).collect()
+        }
+        Curve::Circle(f,r) => [1.].into_iter().chain(frame(f)).chain([*r]).collect(),
+        Curve::Ellipse(f,a,b) => [2.].into_iter().chain(frame(f)).chain([*a,*b]).collect(),
+        Curve::BSpline(b) => {
+            let k = crate::nurbs::distinct(&b.knots);
+            let mut out = vec![3.,b.degree as f64,b.poles.len() as f64,k.len() as f64,if b.weights.is_some() { 1. } else { 0. }];
+            out.extend(b.poles.iter().flatten());
+            out.extend(k.iter().map(|k| k.1 as f64));
+            out.extend(k.iter().map(|k| k.0));
+            if let Some(w) = &b.weights { out.extend(w); }
+            out
+        }
+        _ => vec![5.],
     }
 }
 
@@ -128,12 +182,12 @@ pub fn verify(text: &str,solid: &Solid) -> Result<Verified,String> {
     let lap = |what: &str| if debug { eprintln!("step check: {what} {:?}",clock.elapsed()) };
     let file = read(text,&lap)?;
     // the topology, from the shape representation down
-    let breps = file.all("MANIFOLD_SOLID_BREP");
+    let breps = solids(&file);
     let represented: BTreeSet<u32> = file.entities.iter().filter(|e| e.is("ADVANCED_BREP_SHAPE_REPRESENTATION"))
         .flat_map(|e| e.part("ADVANCED_BREP_SHAPE_REPRESENTATION").and_then(|v| v.get(1)).and_then(Value::list).unwrap_or(&[])
             .iter().filter_map(Value::reference).collect::<Vec<_>>()).collect();
     let shells_in_file = file.count("CLOSED_SHELL")+file.count("OPEN_SHELL");
-    if breps.len() != solid.solids || shells_in_file != solid.shells || file.count("MANIFOLD_SOLID_BREP") != breps.len() {
+    if breps.len() != solid.solids || shells_in_file != solid.shells || file.count("MANIFOLD_SOLID_BREP")+file.count("BREP_WITH_VOIDS") != breps.len() {
         return Err(format!("the file has {} solids and {shells_in_file} shells, the solid {} and {}",breps.len(),solid.solids,solid.shells));
     }
     for b in &breps {
@@ -144,19 +198,44 @@ pub fn verify(text: &str,solid: &Solid) -> Result<Verified,String> {
     Ok(Verified {entities:file.entities.len(),faces:walked.faces,edges:walked.edges.len(),vertices:walked.vertices.len(),splines:walked.splines})
 }
 
-/// Walk the solids `breps` from their closed shells down against `solid`: each face, in the
+/// A file's solids, simple entities, in its order: each a `MANIFOLD_SOLID_BREP` or a
+/// `BREP_WITH_VOIDS`.
+fn solids<'a,'b>(file: &'b File<'a>) -> Vec<&'b Entity<'a>> {
+    file.entities.iter().filter(|e| e.simple().is_some_and(|(n,_)| n == "MANIFOLD_SOLID_BREP" || n == "BREP_WITH_VOIDS")).collect()
+}
+
+/// Walk the solids `breps` from their closed shells down against `solid`: each solid's outer
+/// closed shell, and a `BREP_WITH_VOIDS`'s voids, each an `ORIENTED_CLOSED_SHELL` of a closed
+/// shell turned (`.F.`: written facing out of its void, as a solid of it would); each face, in the
 /// shells' order, bounded by loops of oriented edges or a pole's vertex, of the solid face's sense
-/// and on its surface; every edge used twice; as many edges and vertices as the solid. `whole`
-/// where they are the file's only solids, so the file has no face, edge or vertex the walk leaves
-/// out.
+/// (a void's turned back) and on its surface; every edge used twice; as many edges and vertices as
+/// the solid. `whole` where they are the file's only solids, so the file has no face, edge or
+/// vertex the walk leaves out.
 fn walk(file: &File,breps: &[&Entity],solid: &Solid,whole: bool,lap: &dyn Fn(&str)) -> Result<Walked,String> {
     let count = |name: &str| if whole { Some(file.count(name)) } else { None };
-    let mut faces: Vec<u32> = Vec::new();
+    // each face, and whether the shell it is listed in is turned (a void's)
+    let mut faces: Vec<(u32,bool)> = Vec::new();
+    let mut listed = |shell: Option<u32>,turned: bool,what: &str| -> Result<(),String> {
+        let (_,shell) = file.of(shell,&["CLOSED_SHELL"],what)?;
+        for f in shell.get(1).and_then(Value::list).ok_or("a closed shell without faces")? {
+            faces.push((f.reference().ok_or("a shell's face is not a reference")?,turned));
+        }
+        Ok(())
+    };
     for b in breps {
-        let (_,shell) = file.of(b.simple().unwrap().1.get(1).and_then(Value::reference),&["CLOSED_SHELL"],&format!("the solid #{}",b.id))?;
-        faces.extend(shell.get(1).and_then(Value::list).ok_or("a closed shell without faces")?.iter().map(|f| f.reference().ok_or("a shell's face is not a reference"))
-            .collect::<Result<Vec<_>,_>>()?);
+        let (kind,v) = b.simple().ok_or_else(|| format!("the solid #{} is a complex entity",b.id))?;
+        let what = format!("the solid #{}",b.id);
+        listed(v.get(1).and_then(Value::reference),false,&what)?;
+        if kind != "BREP_WITH_VOIDS" { continue }
+        let voids = v.get(2).and_then(Value::list).filter(|l| !l.is_empty()).ok_or_else(|| format!("{what}: a solid with voids lists none"))?;
+        for void in voids {
+            let (_,o) = file.of(void.reference(),&["ORIENTED_CLOSED_SHELL"],&what)?;
+            if o.get(3).and_then(Value::logical) != Some(false) { return Err(format!("{what}: a void's oriented shell not turned (.F.)")) }
+            listed(o.get(2).and_then(Value::reference),true,&what)?;
+        }
     }
+    let turned: Vec<bool> = faces.iter().map(|f| f.1).collect();
+    let faces: Vec<u32> = faces.into_iter().map(|f| f.0).collect();
     if faces.len() != solid.faces.len() || count("ADVANCED_FACE").is_some_and(|n| n != faces.len()) {
         return Err(format!("the file's shells list {} faces of its {} faces, the solid has {}",faces.len(),file.count("ADVANCED_FACE"),solid.faces.len()));
     }
@@ -203,8 +282,9 @@ fn walk(file: &File,breps: &[&Entity],solid: &Solid,whole: bool,lap: &dyn Fn(&st
             }
         }
         let same_sense = face.get(3).and_then(Value::logical).ok_or_else(|| format!("{what}: no sense"))?;
-        if same_sense != (expected.reversed == expected.indirect) { return Err(format!("{what}: its sense is {same_sense}, the solid's face \
-            {}{}",if expected.reversed { "reversed" } else { "forward" },if expected.indirect { " on a surface written against it" } else { "" })) }
+        if (same_sense != turned[k]) != (expected.reversed == expected.indirect) { return Err(format!("{what}: its sense is {same_sense}{}, the solid's face \
+            {}{}",if turned[k] { " in a void's shell turned" } else { "" },if expected.reversed { "reversed" } else { "forward" },
+            if expected.indirect { " on a surface written against it" } else { "" })) }
         let surface = face.get(2).and_then(Value::reference).ok_or_else(|| format!("{what}: no surface"))?;
         if surface_matches(&|r| file.get(r),surface,expected).map_err(|e| format!("{what}: {e}"))? { splines += 1; }
     }
@@ -275,7 +355,7 @@ pub fn verify_assembly(text: &str,s: &Structure) -> Result<Verified,String> {
             .iter().filter_map(Value::reference).collect();
         (defined[k],reps[k],contexts[k]) = (definition,rep,values.get(2).and_then(Value::reference));
         let Some(solid) = solid else { continue };
-        let breps: Vec<&Entity> = items[k].iter().map(|&r| file.get(r)).filter(|e| e.simple().is_some_and(|(n,_)| n == "MANIFOLD_SOLID_BREP")).collect();
+        let breps: Vec<&Entity> = items[k].iter().map(|&r| file.get(r)).filter(|e| e.simple().is_some_and(|(n,_)| n == "MANIFOLD_SOLID_BREP" || n == "BREP_WITH_VOIDS")).collect();
         if breps.len() != solid.solids { return Err(format!("{what}: its representation has {} solids, the part {}",breps.len(),solid.solids)) }
         walked.push(walk(&file,&breps,solid,false,&|_| {}).map_err(|e| format!("{what}: {e}"))?);
         solids += breps.len();
@@ -286,7 +366,8 @@ pub fn verify_assembly(text: &str,s: &Structure) -> Result<Verified,String> {
     let (faces,splines,edge_uses,vertex_uses) = (sum(&|w| w.faces),sum(&|w| w.splines),sum(&|w| w.edges.len()),sum(&|w| w.vertices.len()));
     let edges: BTreeSet<u32> = walked.iter().flat_map(|w| w.edges.iter().copied()).collect();
     let vertices: BTreeSet<u32> = walked.iter().flat_map(|w| w.vertices.iter().copied()).collect();
-    if solids != file.count("MANIFOLD_SOLID_BREP") { return Err(format!("the file has {} solids, its parts {solids}",file.count("MANIFOLD_SOLID_BREP"))) }
+    let in_file = file.count("MANIFOLD_SOLID_BREP")+file.count("BREP_WITH_VOIDS");
+    if solids != in_file { return Err(format!("the file has {in_file} solids, its parts {solids}")) }
     if faces != file.count("ADVANCED_FACE") { return Err(format!("the file has {} faces, its parts {faces}",file.count("ADVANCED_FACE"))) }
     if edge_uses != edges.len() || edges.len() != file.count("EDGE_CURVE") {
         return Err(format!("the file has {} edges, its parts {edge_uses} ({} apart)",file.count("EDGE_CURVE"),edges.len()))
@@ -449,7 +530,7 @@ pub fn colours(text: &str) -> Result<Vec<(String,[f64;3])>,String> {
         let Some(("ADVANCED_BREP_SHAPE_REPRESENTATION",values)) = file.get(rep).simple() else { continue };
         let mut colour: Option<[f64;3]> = None;
         for r in values.get(1).and_then(Value::list).unwrap_or(&[]).iter().filter_map(Value::reference) {
-            if !file.get(r).is("MANIFOLD_SOLID_BREP") { continue }
+            if !(file.get(r).is("MANIFOLD_SOLID_BREP") || file.get(r).is("BREP_WITH_VOIDS")) { continue }
             match styled.get(&r).map_or(&[][..],|v| &v[..]) {
                 [] => {}
                 [(_,c)] if colour.is_none_or(|k| k == *c) => colour = Some(*c),
@@ -472,6 +553,63 @@ fn placement(file: &File,r: u32,what: &str) -> Result<[f64;9],String> {
         for (j,x) in xyz.iter().enumerate() { out[3*k+j] = x.number().ok_or_else(|| format!("{what}: a {kind}'s number expected"))?; }
     }
     Ok(out)
+}
+
+/// The numbers of the curve `r` a swept surface sweeps, as `curve_numbers` lays a solid's out: a
+/// line, a circle, an ellipse or a B-spline (simple, or the complex entity with its weights).
+fn swept_curve<'a>(get: &dyn Fn(u32) -> &'a Entity<'a>,r: Option<u32>) -> Result<Vec<f64>,String> {
+    let r = r.ok_or("a swept surface's curve: a reference expected")?;
+    let number = |v: Option<&Value>,what: &str| v.and_then(Value::number).ok_or_else(|| format!("#{r}: {what} expected"));
+    let numbers = |v: Option<&Value>,what: &str| -> Result<Vec<f64>,String> {
+        v.and_then(Value::list).ok_or_else(|| format!("#{r}: {what} expected"))?.iter().map(|x| x.number().ok_or_else(|| format!("#{r}: {what}: a number expected"))).collect()
+    };
+    let triple = |at: Option<u32>,kind: &str| -> Result<Vec<f64>,String> {
+        let at = at.ok_or_else(|| format!("#{r}: a {kind} reference expected"))?;
+        match get(at).simple() {
+            Some((n,v)) if n == kind => numbers(v.get(1),"three coordinates").and_then(|x| if x.len() == 3 { Ok(x) } else { Err(format!("#{at}: not three coordinates")) }),
+            _ => Err(format!("#{at} is not a {kind}")),
+        }
+    };
+    let placed = |at: Option<&Value>| -> Result<Vec<f64>,String> {
+        let at = at.and_then(Value::reference).ok_or_else(|| format!("#{r}: no placement"))?;
+        let Some(("AXIS2_PLACEMENT_3D",p)) = get(at).simple() else { return Err(format!("#{r}'s placement #{at} is not an AXIS2_PLACEMENT_3D")) };
+        let mut out = triple(p.get(1).and_then(Value::reference),"CARTESIAN_POINT")?;
+        out.extend(triple(p.get(2).and_then(Value::reference),"DIRECTION")?);
+        out.extend(triple(p.get(3).and_then(Value::reference),"DIRECTION")?);
+        Ok(out)
+    };
+    // a B-spline's degree, poles, multiplicities and knots, and weights
+    let spline = |curve: &[Value],knots: &[Value],weights: Option<&[Value]>| -> Result<Vec<f64>,String> {
+        let degree = curve.first().and_then(Value::int).ok_or_else(|| format!("#{r}: a degree expected"))?;
+        let poles = curve.get(1).and_then(Value::list).ok_or_else(|| format!("#{r}: no poles"))?;
+        let (mults,values) = (numbers(knots.first(),"multiplicities")?,numbers(knots.get(1),"knots")?);
+        let mut out = vec![3.,degree as f64,poles.len() as f64,values.len() as f64,if weights.is_some() { 1. } else { 0. }];
+        for p in poles { out.extend(triple(p.reference(),"CARTESIAN_POINT")?); }
+        out.extend(mults);
+        out.extend(values);
+        if let Some(w) = weights { out.extend(numbers(w.first(),"weights")?); }
+        Ok(out)
+    };
+    let e = get(r);
+    match e.simple() {
+        Some(("LINE",v)) => {
+            let at = v.get(2).and_then(Value::reference).ok_or_else(|| format!("#{r}: no vector"))?;
+            let Some(("VECTOR",w)) = get(at).simple() else { return Err(format!("#{r}'s #{at} is not a VECTOR")) };
+            let mut out = vec![0.];
+            out.extend(triple(v.get(1).and_then(Value::reference),"CARTESIAN_POINT")?);
+            out.extend(triple(w.get(1).and_then(Value::reference),"DIRECTION")?);
+            out.push(number(w.get(2),"a vector's length")?);
+            Ok(out)
+        }
+        Some(("CIRCLE",v)) => Ok([1.].into_iter().chain(placed(v.get(1))?).chain([number(v.get(2),"a radius")?]).collect()),
+        Some(("ELLIPSE",v)) => Ok([2.].into_iter().chain(placed(v.get(1))?).chain([number(v.get(2),"a semi-axis")?,number(v.get(3),"a semi-axis")?]).collect()),
+        Some(("B_SPLINE_CURVE_WITH_KNOTS",v)) if v.len() == 9 => spline(&v[1..6],&v[6..8],None),
+        None => match (e.part("B_SPLINE_CURVE"),e.part("B_SPLINE_CURVE_WITH_KNOTS")) {
+            (Some(c),Some(k)) if c.len() == 5 && k.len() == 3 => spline(c,&k[..2],e.part("RATIONAL_B_SPLINE_CURVE")),
+            _ => Err(format!("#{r} is a complex entity that is not a B-spline curve")),
+        },
+        _ => Err(format!("#{r}, a swept surface's curve, is {}, not a line, a conic or a B-spline",e.kinds())),
+    }
 }
 
 /// Whether the surface `r` is the solid's face's `expected`: an error where it is not, and
@@ -543,10 +681,35 @@ fn surface_matches<'a>(get: &dyn Fn(u32) -> &'a Entity<'a>,r: u32,expected: &Fac
     // a B-spline: simple, or complex with its rational weights
     let (surface,knots,weights) = match e.simple() {
         Some(("B_SPLINE_SURFACE_WITH_KNOTS",v)) if v.len() == 13 => (&v[1..8],&v[8..12],None),
-        Some(_) => {
-            let name = e.parts[0].0;
+        Some((name,v)) => {
             let kind = match name { "SURFACE_OF_REVOLUTION" => REVOLUTION,"SURFACE_OF_LINEAR_EXTRUSION" => EXTRUSION,"OFFSET_SURFACE" => OFFSET,"BEZIER_SURFACE" => 5,_ => 10 };
             if kind != expected.kind { return Err(format!("#{r} is a {name}, the solid's surface kind {}",expected.kind)) }
+            // a swept surface: its axis (a revolution's point and direction) or its vector (an
+            // extrusion's direction and length), and its curve, against the solid's (`Solid::of`);
+            // a summary that gives none (OCCT's) is held to the kind alone
+            if (kind == REVOLUTION || kind == EXTRUSION) && !expected.numbers.is_empty() {
+                let (axis,parts) = if kind == REVOLUTION { ("AXIS1_PLACEMENT",["CARTESIAN_POINT","DIRECTION"]) } else { ("VECTOR",["DIRECTION",""]) };
+                let at = v.get(2).and_then(Value::reference).ok_or_else(|| format!("#{r}: no {axis}"))?;
+                let Some((_,a)) = get(at).simple().filter(|(n,_)| *n == axis) else { return Err(format!("#{r}'s #{at} is not an {axis}")) };
+                let mut written: Vec<f64> = triple(a.get(1).and_then(Value::reference),parts[0])?.to_vec();
+                if kind == REVOLUTION { written.extend(triple(a.get(2).and_then(Value::reference),parts[1])?); }
+                else { written.push(a.get(2).and_then(Value::number).ok_or_else(|| format!("#{at}: a vector's length expected"))?); }
+                let head = written.len();
+                compare(name,&written,expected.numbers.get(..head).unwrap_or(&expected.numbers))?;
+                let curve = swept_curve(get,v.get(1).and_then(Value::reference))?;
+                let solid = &expected.numbers[head..];
+                // (a curve the writer fits: a B-spline, its numbers the fit's)
+                if solid.first() == Some(&4.) {
+                    if curve.first() != Some(&3.) { return Err(format!("#{r}: its curve is not a B-spline, the solid's a curve the writer fits")) }
+                } else { compare(&format!("{name}'s curve"),&curve,solid)?; }
+            }
+            // an offset: its distance, and its basis the solid's net
+            if kind == OFFSET && !expected.numbers.is_empty() {
+                compare(name,&[v.get(2).and_then(Value::number).ok_or_else(|| format!("#{r}: an offset's distance expected"))?],&expected.numbers[..1])?;
+                let basis = v.get(1).and_then(Value::reference).ok_or_else(|| format!("#{r}: no basis"))?;
+                let net = Face {kind:BSPLINE,reversed:false,indirect:false,numbers:expected.numbers[1..].to_vec()};
+                surface_matches(get,basis,&net).map_err(|e| format!("#{r}'s basis: {e}"))?;
+            }
             return Ok(false);
         }
         None => match (e.part("B_SPLINE_SURFACE"),e.part("B_SPLINE_SURFACE_WITH_KNOTS")) {
