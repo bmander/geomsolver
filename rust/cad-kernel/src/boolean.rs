@@ -1612,12 +1612,19 @@ impl<'a> Arrangement<'a> {
                     // (#942 F3, identity by construction): a ring's tube cut along its crossing of the
                     // tool where it starts, given that chord as their meeting, has it as an edge
                     // already — laid once, not twice on itself. Its crossings with the meeting's other
-                    // curves are read first, and stay on them
+                    // curves are read first, and stay on them. **Each edge the face holds it as** (#942
+                    // T1d-tori): a tube's row at the start, where the tool posed at the end holds a
+                    // stretch of the tube beside it, is cut there into two edges of one curve with the
+                    // end pose's chord between; the first alone laid, the start torus was parted along
+                    // half its rim, and a piece of it reached round the other half from the side the
+                    // tool trails to the side it leads
                     let (cs,x) = if self.shared.given(ids[0],ids[1]) {
                         let mut kept = (Vec::new(),Vec::new());
                         for (c,xc) in cs.into_iter().zip(x) {
-                            match self.edge_that_is(&c,faces) {
-                                Some((k,e)) => found.along_edges.push((self.working(faces.s[k],e),faces.s[1-k],faces.f[1-k])),
+                            match self.edges_that_are(&c,faces) {
+                                Some((k,es)) => for e in es {
+                                    found.along_edges.push((self.working(faces.s[k],e),faces.s[1-k],faces.f[1-k]))
+                                },
                                 None => { kept.0.push(c); kept.1.push(xc) }
                             }
                         }
@@ -1685,14 +1692,19 @@ impl<'a> Arrangement<'a> {
         Ok(found)
     }
 
-    /// **The edge of either of the two faces whose curve is `c` itself** (#942 F3: identity by
-    /// construction, no tolerance read) — which face's (0 or 1) and the edge, its own solid's.
-    fn edge_that_is(&self,c: &Curve,faces: Two) -> Option<(usize,usize)> {
+    /// **The edges of either of the two faces whose curve is `c` itself** (#942 F3: identity by
+    /// construction, no tolerance read) — which face's (0 or 1) and its edges on `c`, its own
+    /// solid's, each once: a face may hold one curve as several edges, cut where another meeting
+    /// reaches it (#942 T1d-tori).
+    fn edges_that_are(&self,c: &Curve,faces: Two) -> Option<(usize,Vec<usize>)> {
         (0..2).find_map(|k| {
             let sol = self.solids[faces.s[k]];
-            sol.faces[faces.f[k]].loops.iter().flatten()
-                .find(|co| matches!(&sol.edges[co.edge as usize].curve,EdgeCurve::Curve(ec) if ec == c))
-                .map(|co| (k,co.edge as usize))
+            let mut es: Vec<usize> = sol.faces[faces.f[k]].loops.iter().flatten()
+                .filter(|co| matches!(&sol.edges[co.edge as usize].curve,EdgeCurve::Curve(ec) if ec == c))
+                .map(|co| co.edge as usize).collect();
+            es.sort_unstable();
+            es.dedup();
+            (!es.is_empty()).then_some((k,es))
         })
     }
 
@@ -3782,11 +3794,17 @@ fn grid_seeds(b: &Brep,fi: usize,other: &super::geom::Surface,tol: f64) -> Vec<V
         for _ in 0..40 {
             let m = [(a[0]+b[0])/2.,(a[1]+b[1])/2.];
             let fm = value(m);
-            if fm.abs() <= tol { a = m; break }
+            // (only on the other's patch, not its continuation, #942 T1d-ring: `off_patch`)
+            if fm.abs() <= tol {
+                if !off_patch(other,f.surface.point(m),tol) { seeds.push(f.surface.point(m)) }
+                return
+            }
             if (fm < 0.) == (fa < 0.) { a = m; fa = fm; } else { b = m; }
         }
-        // (only on the other's patch, not its continuation, #942 T1d-ring: `off_patch`)
-        if !off_patch(other,f.surface.point(a),tol) { seeds.push(f.surface.point(a)) }
+        // **a sign the other's distance changes by a jump is no crossing** (#942 T1d-tori): halved
+        // forty times, a root stands within the tolerance; where the distance does not come to it
+        // the other's nearest foot leapt across, and nothing is seeded (the far side of a thin
+        // tube's sheet, 0.03 off it either side of a seam, was seeded and traced from nothing)
     };
     for i in 0..=N { for j in 0..=N {
         if i < N && (grid[i][j] < 0.) != (grid[i+1][j] < 0.) { root(at(i,j),at(i+1,j),grid[i][j]); }
