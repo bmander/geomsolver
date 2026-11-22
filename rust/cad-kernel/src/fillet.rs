@@ -1887,9 +1887,16 @@ fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2
     names: &str,size: f64,section: &dyn Fn(usize,usize,V) -> Result<Cut,String>) -> Result<(Trim,Vec<usize>),String> {
     let names = || names.to_string();
     let p = b.vertices[v as usize].p;
-    let faces: Vec<usize> = (0..b.edges.len()).filter(|&e| b.edges[e].v.contains(&v))
-        .flat_map(|e| uses[e].iter().map(|u| u.0)).filter(|f| !sides_faces.iter().any(|s| s.contains(f)))
-        .collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+    // the edges at each vertex, and the faces besides the sides at one
+    let mut at_vertex: Vec<Vec<usize>> = vec![Vec::new();b.vertices.len()];
+    for (e,ed) in b.edges.iter().enumerate() {
+        at_vertex[ed.v[0] as usize].push(e);
+        if ed.v[1] != ed.v[0] { at_vertex[ed.v[1] as usize].push(e); }
+    }
+    let others_at = |w: u32| -> Vec<usize> { at_vertex[w as usize].iter()
+        .flat_map(|&e| uses[e].iter().map(|u| u.0)).filter(|f| !sides_faces.iter().any(|s| s.contains(f)))
+        .collect::<std::collections::BTreeSet<_>>().into_iter().collect() };
+    let faces: Vec<usize> = others_at(v);
     if faces.is_empty() { return Err(format!("the run of {} ends where nothing meets it",names())) }
     // the run's way leaving the vertex, along its edge
     let e = &b.edges[*chain.iter().find(|&&e| b.edges[e].v.contains(&v)).unwrap()];
@@ -1934,20 +1941,20 @@ fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2
     while k < ending.len() {
         let f = ending[k];
         k += 1;
-        for e in 0..b.edges.len() {
+        // (its own edges, in order)
+        let own: std::collections::BTreeSet<usize> =
+            b.faces[f].loops.iter().flatten().map(|c| c.edge as usize).collect();
+        for e in own {
             let [x,y] = b.edges[e].v;
             let side = |u: &(usize,usize,usize)| sides_faces.iter().flatten().any(|&s| s == u.0);
-            if !(uses[e].iter().any(|u| u.0 == f) && uses[e].iter().any(side)) { continue }
+            if !uses[e].iter().any(side) { continue }
             let w = match (reached.contains(&x),reached.contains(&y)) { (true,false) => y,(false,true) => x,_ => continue };
             // (only along an end face shorter than the section: past one as long the faces beyond
             // its far end stand out of the section's reach, as the field reads it)
             if distance(b.vertices[x as usize].p,b.vertices[y as usize].p) > size { continue }
             let q = b.vertices[w as usize].p;
             reached.push(w);
-            let there: Vec<usize> = (0..b.edges.len()).filter(|&e| b.edges[e].v.contains(&w))
-                .flat_map(|e| uses[e].iter().map(|u| u.0)).filter(|g| !sides_faces.iter().any(|s| s.contains(g)))
-                .collect::<std::collections::BTreeSet<_>>().into_iter().collect();
-            for g in there {
+            for g in others_at(w) {
                 let face = &b.faces[g];
                 let out = scale(face.surface.gradient(q),if face.reversed { -1. } else { 1. });
                 if ending.contains(&g) || !faces_on(out,leaving) { continue }
