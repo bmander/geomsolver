@@ -48,7 +48,7 @@ use super::context::Context;
 use super::{Given,Refusal,Why};
 use crate::geom::Uv;
 use crate::topo::{unwrap,Brep,Coedge,Edge,EdgeCurve,Pcurve};
-use crate::util::space::{distance,dot,norm,sub};
+use crate::util::space::{distance,norm,segment_distance};
 use crate::geom::V;
 
 /// A boundary that is no solid's: why, the face or the edge of it that witnesses it (by its
@@ -200,14 +200,6 @@ struct Drawn<'a> {
     rings: Vec<(u32,u32)>,
 }
 
-/// How far `p` is from the segment `a b` in space.
-fn segment_distance(p: V,a: V,b: V) -> f64 {
-    let d = sub(b,a);
-    let l = dot(d,d);
-    if !(l > 0.) { return distance(p,a) }
-    let t = (dot(sub(p,a),d)/l).clamp(0.,1.);
-    distance(p,[a[0]+t*d[0],a[1]+t*d[1],a[2]+t*d[2]])
-}
 fn dist(a: Uv,b: Uv) -> f64 { (a[0]-b[0]).hypot(a[1]-b[1]) }
 fn cross(o: Uv,a: Uv,b: Uv) -> f64 { (a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]) }
 /// How far `p` is from the segment `a b`.
