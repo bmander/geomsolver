@@ -385,7 +385,7 @@ fn main() {
             }
             return
         }
-        "seams" => {
+        "seams" | "seams-through" => {
             // the cover's boundary over the box [θ0, θ1] × [t0, t1] of the sheet on the label at σ,
             // seeded at (θs, ts), its feature in space: each piece and its partner, each partner point's
             // own cover read back (a double curve's: covered at its partner's instant)
@@ -397,7 +397,8 @@ fn main() {
             for _ in 0..100 { let _ = cover(&ring,&path,roll,x,ts,0.,tol); }
             println!("a cover in {:?}",clock.elapsed()/100);
             let clock = std::time::Instant::now();
-            let s = cad_kernel::swept::depth::seams(&ring,&path,roll,l,[[th0,th1],[t0,t1]],&[[ths,ts]],tol,feature);
+            let s = if what == "seams" { cad_kernel::swept::depth::seams(&ring,&path,roll,l,[[th0,th1],[t0,t1]],&[[ths,ts]],tol,feature) }
+                else { cad_kernel::swept::depth::seams_through(&ring,&path,roll,l,[[th0,th1],[t0,t1]],&[[ths,ts]],tol,feature) };
             println!("in {:?}",clock.elapsed());
             let s = s.unwrap();
             if s.len() >= 2 {

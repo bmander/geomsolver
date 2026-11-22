@@ -8,6 +8,16 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Where a ring's sheet passes back over itself, read off the depth** (#942 T1d-tori, new
+  `swept::depth::passed_back`, `seams_through`, `Seam::own`): over a whole turn the tube late in the
+  roll sweeps across the tube where it began, a crossing no fold pair's double curve is. Each end row
+  is read for where the far cover changes sign, the cover's boundary traced through there with no
+  search (`zero_set::through`), and the runs an instant inside the roll covers kept, each ended at
+  its corner on an end pose's trace and laid as a double curve is, with its partner
+  (`swept_rings::the_full_turns_tube_passing_back_over_its_start_is_read_from_the_start_row`). Not
+  yet entered by the road: one of the full turn's runs ends on a closed trace inside a face, which
+  `rings::traces` does not read.
+
 - **Two given curves one operand holds as edges cross on a face of another at a vertex they
   share** (#942 T1d-tori, `boolean`'s new step `given_crossings`): a sweep's sheet passing back over
   itself — the full turn's tube, late in the roll, over its own start rim on the start torus — holds

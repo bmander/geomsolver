@@ -2707,7 +2707,13 @@ fn pieces_among(chords: &[(usize,Vec<P2>)]) -> Result<Vec<Vec<Walk>>,Unbuilt> {
                 let turn = |a: f64| (into-a).rem_euclid(std::f64::consts::TAU);
                 let Some(&(_,next,to)) = out[at].iter().filter(|o| key(&o.1) != key(&match w { Walk::Chord(i,f) => Walk::Chord(i,!f),x => x }))
                     .min_by(|x,y| { let (a,b) = (turn(x.0),turn(y.0)); (if a <= 1e-12 { std::f64::consts::TAU } else { a }).total_cmp(&(if b <= 1e-12 { std::f64::consts::TAU } else { b })) })
-                    else { return Err(Unbuilt::Failed("a ring's sheet's face's piece ends at a place with no way on".into())) };
+                    else {
+                        if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
+                            eprintln!("ring: a face's piece ends at {:?} with no way on; its chords:",nodes[at]);
+                            for (k,c) in chords { eprintln!("ring:   kind {k}, {} points from {:?} to {:?}",c.len(),c[0],c[c.len()-1]) }
+                        }
+                        return Err(Unbuilt::Failed("a ring's sheet's face's piece ends at a place with no way on".into()))
+                    };
                 if key(&next) == key(&first) { break }
                 (w,at) = (next,to);
             }

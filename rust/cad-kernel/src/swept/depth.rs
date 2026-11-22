@@ -382,6 +382,12 @@ impl Covered<'_> {
     pub fn partner(&self,c: &Cover) -> Option<(f64,f64,f64)> {
         let [a,b] = self.roll;
         if !(c.at > a && c.at < b) { return None }
+        self.preimage(c)
+    }
+
+    /// The covering instant's preimage on the ring's sheet, `partner`'s, at an end of the roll too:
+    /// there the end pose's row.
+    fn preimage(&self,c: &Cover) -> Option<(f64,f64,f64)> {
         let l = self.ring.frame.local(c.point);
         let th = l[1].atan2(l[0]).rem_euclid(std::f64::consts::TAU);
         let w = Twist::body(self.path.at(c.at).ok()?);
@@ -462,9 +468,11 @@ impl crate::zero_set::Field for Covered<'_> {
 /// instant's cover of a sheet begins — its points on the sheet `(θ, t, σ)`, how its two ends end
 /// (`zero_set::End`), and its partner: the covering instant's preimages `(θ', τ, σ')`, run by run
 /// where the covering instant lies inside the roll (where it is an end of the roll the partner is
-/// the tool's own face posed there, which the Boolean meets).
+/// the tool's own face posed there, which the Boolean meets) — and the sheet's own points under each
+/// run of the partner, point for point (`own`).
 #[derive(Clone,Debug)]
-pub struct Seam { pub sheet: Vec<(f64,f64,f64)>,pub ends: [crate::zero_set::End;2],pub partner: Vec<Vec<(f64,f64,f64)>> }
+pub struct Seam { pub sheet: Vec<(f64,f64,f64)>,pub ends: [crate::zero_set::End;2],pub partner: Vec<Vec<(f64,f64,f64)>>,
+    pub own: Vec<Vec<(f64,f64,f64)>> }
 
 impl Seam {
     /// Its curves as the ring road lays a double curve's (`rings::cut_along`): the sheet's, then
@@ -490,22 +498,52 @@ pub fn seams(ring: &Ring,path: &Trajectory,roll: [f64;2],label: Label,rect: crat
     if let Some(cell) = traced.search.unresolved.first() {
         return Err(Unbuilt::Failed(format!("the cover's boundary on a sheet: the cell {cell:?} of its (θ, t) not resolved")))
     }
+    seamed(&field,&traced,within,feature)
+}
+
+/// **`seams` through the caller's seeds alone** (#942, `zero_set::through`): each seed pulled onto
+/// the cover's boundary and marched both ways, with no search for the rest — for a caller that knows
+/// where its seams leave a row (the full turn's tube where it passes back over its own start) and
+/// cannot pay for the proof over the whole sheet. Nothing is claimed complete.
+#[allow(clippy::too_many_arguments)]
+pub fn seams_through(ring: &Ring,path: &Trajectory,roll: [f64;2],label: Label,rect: crate::zero_set::Rect,seeds: &[[f64;2]],within: f64,feature: f64)
+    -> Result<Vec<Seam>,Unbuilt> {
+    let field = Covered {ring,path,roll,label,within};
+    let q = crate::zero_set::Question {rect,edges:&[],seeds,tol:within,feature};
+    let traced = crate::zero_set::through(&field,&q).map_err(|why| Unbuilt::Failed(format!("the cover's boundary on a sheet: {why}")))?;
+    seamed(&field,&traced,within,feature)
+}
+
+/// The pieces traced of the cover's boundary as seams: each held to the tolerance in space
+/// (`refined`), with its places round the meridian and its partner, each once.
+fn seamed(field: &Covered,traced: &crate::zero_set::Traced<Cover>,within: f64,feature: f64) -> Result<Vec<Seam>,Unbuilt> {
     let mut out = Vec::new();
     for p in &traced.pieces {
-        let (uvs,ats) = refined(&field,&p.uv,&p.at)?;
+        let (uvs,ats) = refined(field,&p.uv,&p.at)?;
         let mut sheet = Vec::with_capacity(uvs.len());
         for &uv in &uvs {
             let Some(sg) = field.sigma(uv) else { return Err(Unbuilt::Failed(format!("the cover's boundary at {uv:?}: no root of the sheet"))) };
             sheet.push((uv[0],uv[1],sg));
         }
-        let mut partner: Vec<Vec<(f64,f64,f64)>> = vec![Vec::new()];
-        for c in &ats {
-            match field.partner(c) {
-                Some(q) => partner.last_mut().unwrap().push(q),
-                None => if !partner.last().unwrap().is_empty() { partner.push(Vec::new()) },
+        // (each run of points a covering instant inside the roll holds; where it passes to an end
+        // pose's cover, its corner there — the point whose covering instant reaches that end, where
+        // the covering sheet's row at the end crosses the seam — put on it, with its partner)
+        let mut partner: Vec<Vec<(f64,f64,f64)>> = Vec::new();
+        let mut own: Vec<Vec<(f64,f64,f64)>> = Vec::new();
+        let mut j = 0;
+        while j < ats.len() {
+            if field.partner(&ats[j]).is_none() { j += 1; continue }
+            let mut k = j;
+            while k+1 < ats.len() && field.partner(&ats[k+1]).is_some() { k += 1 }
+            let mut run: Vec<((f64,f64,f64),(f64,f64,f64))> = (j..=k).filter_map(|i| Some((sheet[i],field.partner(&ats[i])?))).collect();
+            if j > 0 { if let Some(c) = corner(field,uvs[j-1],uvs[j],&ats[j],within) { run.insert(0,c) } }
+            if k+1 < ats.len() { if let Some(c) = corner(field,uvs[k+1],uvs[k],&ats[k],within) { run.push(c) } }
+            if run.len() >= 2 {
+                own.push(run.iter().map(|r| r.0).collect());
+                partner.push(run.iter().map(|r| r.1).collect());
             }
+            j = k+1;
         }
-        partner.retain(|r| r.len() >= 2);
         // (a piece traced again from a seed on one already traced: its ends those of the earlier
         // within twice the tolerance — each within it of the one end — and every point of it within
         // the feature of the earlier's points, the spacing below which the trace tells nothing
@@ -520,9 +558,125 @@ pub fn seams(ring: &Ring,path: &Trajectory,roll: [f64;2],label: Label,rect: crat
             ends && sheet.iter().all(|&q| a.sheet.iter().any(|&r| close(q,r,feature)))
         };
         if out.iter().any(near) { continue }
-        out.push(Seam {sheet,ends:p.ends,partner});
+        out.push(Seam {sheet,ends:p.ends,partner,own});
     }
     Ok(out)
+}
+
+/// **Where a ring's sheet passes back over itself, as the ring road lays a double curve** (#942
+/// T1d-tori, the full turn): over a whole turn the tube late in the roll sweeps back across the tube
+/// where it began, and their crossing — no fold pair's, so no double curve the road traces — parts
+/// what the late tube covers of the early one from what stays on the boundary. Without it the early
+/// tube's piece beside the start pose's rim held both, and was kept. Such a crossing leaves a sheet
+/// at a row of the roll's end, where another instant's cover of the row begins: each row (`t` at
+/// either end of the roll, every contact's root on it touching) read for its far cover (`far_depth`)
+/// at angles no farther apart round the ring than the cover's feature — a quarter of the ring's
+/// thickness, the stretch of the roll `cover` steps by — and wherever the depth changes sign between
+/// two, the cover's boundary traced through there over the sheet (`seams_through`). Of each seam only
+/// the runs a covering instant inside the roll holds are a crossing of the sheet with itself: where
+/// the end pose covers, its trace with the sheet is the meeting the end pose is given already
+/// (`rings::entered_at`). Each run is laid as a double curve is — the covered sheet's points, then
+/// the covering instant's preimages (`Seam::own`, `Seam::partner`) — unless it is a double curve
+/// the road traced (`known`: every point within the feature of one of its points, the spacing below
+/// which a trace tells nothing apart). Where its cover passes to an end pose, a run ends at its
+/// corner on that pose's trace (`corner`). **Not yet entered by the road**: cut into the stretches
+/// with the double curves (`rings::cut_along`), the full turn's run through the start rim closes
+/// the start torus, but another, on the end tube's row at θ 0.48–1.17 covered by the tube at
+/// τ ≈ −1.94…−2.09, has its partner end on the end torus's trace across that tube, a closed curve
+/// inside a face, which `rings::traces` does not read; and a face's walk holds no piece with a hole.
+pub fn passed_back(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],known: &[Vec<(f64,f64,f64)>],tol: f64)
+    -> Result<Vec<Vec<(f64,f64,f64)>>,Unbuilt> {
+    use crate::util::space::distance;
+    use std::f64::consts::{PI,TAU};
+    let feature = 0.25*ring.thickness;
+    // (the angles round the ring each row is read at: its points stand within the ring's size of
+    // the axis, so these are no farther apart along it than the feature)
+    let n = (TAU*ring.size/feature).ceil().max(1.) as usize;
+    let angles: Vec<f64> = (0..n).map(|k| TAU*k as f64/n as f64).collect();
+    // (the double curves' points in space, each on the root its place round the meridian names)
+    let point = |q: (f64,f64,f64)| -> Option<V> {
+        let l = label_at(ring,path,q.0,q.1,q.2)?;
+        Some(sheet(ring,path,[a,b],q.0,q.1,l)?.0)
+    };
+    let traced: Vec<V> = known.iter().flatten().filter(|q| !q.0.is_nan()).filter_map(|&q| point(q)).collect();
+    // (each double curve's chords in space, a swallowtail point's marker parting them)
+    let chords: Vec<[V;2]> = known.iter().flat_map(|c| c.windows(2).filter_map(|w| Some([point(w[0])?,point(w[1])?]))).collect();
+    let mut out: Vec<Vec<(f64,f64,f64)>> = Vec::new();
+    for t in [a,b] {
+        // each angle's touching roots on the row, and their far cover's depth
+        let w = Twist::body(path.at(t)?);
+        let read: Vec<Vec<(Label,f64)>> = crate::util::par::map(&angles,|&th| ring.roots(&w,th).into_iter()
+            .filter_map(|(l,_)| Some((l,far_depth(ring,path,[a,b],th,t,l,tol)?.depth))).collect());
+        let labels: std::collections::BTreeSet<Label> = read.iter().flatten().map(|r| r.0).collect();
+        for l in labels {
+            let depth = |k: usize| read[k%n].iter().find(|r| r.0 == l).map(|r| r.1);
+            let seeds: Vec<[f64;2]> = (0..n).filter_map(|k| match (depth(k),depth(k+1)) {
+                (Some(x),Some(y)) if (x < 0.) != (y < 0.) => Some([angles[k]+0.5*TAU/n as f64,t]),
+                _ => None,
+            }).collect();
+            for seed in seeds {
+                // (where a double curve the road traced crosses the row, the change is that curve's:
+                // the seed, within half the angles' spacing of it along the row, no farther from its
+                // chords than the feature)
+                let Some(x) = sheet(ring,path,[a,b],seed[0],t,l).map(|s| s.0) else { continue };
+                let on_known = chords.iter().any(|&[p,q]| crate::util::space::segments_distance(x,x,p,q) <= feature);
+                if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
+                    eprintln!("ring: the cover changes on the row at {t} on {l:?} at θ {}{}",seed[0],if on_known { ", a double curve's" } else { "" })
+                }
+                if on_known { continue }
+                // (round the ring a half turn either way from the seed, over the whole roll)
+                let rect = [[seed[0]-PI,seed[0]+PI],[a,b]];
+                for seam in seams_through(ring,path,[a,b],l,rect,&[seed],tol,feature)? {
+                    for (own,partner) in seam.own.iter().zip(&seam.partner) {
+                        let again = |c: &Vec<(f64,f64,f64)>| c.iter().all(|&q| point(q).is_some_and(|x|
+                            traced.iter().any(|&y| distance(x,y) <= feature)));
+                        if again(own) { continue }
+                        // (a run found from two seeds is laid once: every point of it within the
+                        // feature of one laid)
+                        let laid: Vec<V> = out.iter().flatten().filter_map(|&q| point(q)).collect();
+                        if own.iter().all(|&q| point(q).is_some_and(|x| laid.iter().any(|&y| distance(x,y) <= feature))) { continue }
+                        out.push(own.clone());
+                        out.push(partner.clone());
+                    }
+                }
+            }
+        }
+    }
+    if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
+        for c in &out { eprintln!("ring: passed back over itself, a curve of {} from {:?} to {:?}",c.len(),c[0],c[c.len()-1]) }
+    }
+    Ok(out)
+}
+
+/// **Where a seam's cover passes from an instant inside the roll to an end pose** (`seamed`): on
+/// the chord from `out`, a point an end pose covers, to `inside`, one the instant `from` covers,
+/// halved — each middle read along `from`'s branch of the cover (`Covered::along`), its least at an
+/// end of the roll on `out`'s side — until the two stand within the tolerance in space. There the
+/// covering instant is the end's, its preimage the covering sheet's row at that end: the point on
+/// `inside`'s side and that preimage, or `None` where the chord holds no such change.
+fn corner(field: &Covered,out: [f64;2],inside: [f64;2],from: &Cover,within: f64) -> Option<((f64,f64,f64),(f64,f64,f64))> {
+    use crate::zero_set::Field;
+    // (an instant is the end's where the tool's point at the place moves within the tolerance
+    // between them: the least's search settles some 1e-9 of the roll short of the end it is at)
+    let [a,b] = field.roll;
+    let speed = field.path.inverse_point_speed_bound(field.point(out)?,crate::util::interval::Interval::new(a,b).ok()?).ok()?;
+    let at_end = |c: &Cover| (c.at-a).min(b-c.at)*speed <= within;
+    let (mut p,mut q) = (out,inside);
+    let mut c = *from;
+    if !at_end(&field.along(p,from)?.at) { return None }
+    // (each halving takes the chord nearer the corner; the count is the rounding's, past which a
+    // middle is one of its ends)
+    for _ in 0..64 {
+        if crate::util::space::distance(field.point(p)?,field.point(q)?) <= within { break }
+        let m = [0.5*(p[0]+q[0]),0.5*(p[1]+q[1])];
+        let v = field.along(m,&c)?;
+        if at_end(&v.at) { p = m } else { q = m; c = v.at }
+    }
+    let r = field.preimage(&c)?;
+    // (the preimage on the end's row itself: the covering sheet's edge there)
+    let r = (if c.at-a < b-c.at { a } else { b },r);
+    let r = (r.1.0,if (r.1.1-a).abs() < (r.1.1-b).abs() { a } else { b },r.1.2);
+    Some(((q[0],q[1],field.sigma(q)?),r))
 }
 
 /// Newton's steps a point is pulled onto the zero set by: one started within a chord's sagitta

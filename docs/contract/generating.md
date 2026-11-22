@@ -2265,7 +2265,19 @@ past that crossing, `(2.5295, 3.0460, −0.1999)`, buried (membership the same 0
 each axis): the tube's piece beside it is kept, mixed — the boundary beyond and what the tube late
 in the roll covers — since the tube's crossing with itself over a whole turn, no fold pair's double
 curve, is not cut into it; it leaves the rim at that crossing, and a seam read from the depth
-(`depth::seams` over the tube's early sheet, seeded there) is what would cut it. (The refusal names
+(`depth::seams` over the tube's early sheet, seeded there) is what would cut it. That crossing is
+read (`depth::passed_back`): each end row where its far cover changes sign, the cover's boundary
+traced through there with no search (`depth::seams_through`), the runs an instant inside the roll
+covers kept and ended at their corners where the covering instant reaches the roll's end
+(`depth::corner`), each with its partner on the covering sheet, as a double curve is laid
+(`swept_rings::the_full_turns_tube_passing_back_over_its_start_is_read_from_the_start_row`; 29 s,
+nearly all of it one long run). It is not yet entered: cut into the stretches with the double
+curves, the start torus closes and the end torus is refused next, at `(1.5930, 2.4883, −0.6496)`,
+its pieces' edges used three times about `(1.4737, 2.0732, −0.7994)`, and only with the run on the
+end tube's row at θ 0.48–1.17 (covered by the tube at τ ≈ −1.94…−2.09) left out — that run's
+partner ends on the end torus's trace across the mid-roll tube, a closed curve inside a face that
+`rings::traces` does not read (the meeting the trim's first round completes), and a face's walk
+(`pieces_of_square`) holds no piece with a hole. (The refusal names
 the start torus's piece: the tube is tangent to it along the rim, so the torus's point a hair across
 reads as on the kept tube.) The island's read point is uncovered, 0.122 clear
 of the end pose; the thin one beside the swallowtail point where its fold pair is born

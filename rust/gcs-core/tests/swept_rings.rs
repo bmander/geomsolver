@@ -834,3 +834,36 @@ fn a_double_curve_ending_on_a_tubes_crossing_with_the_tool_is_one_vertex_with_it
         assert!(d <= tol || d > 10.*tol,"two of the tubes' vertices on the tool {d:e} apart: {p:?} and {q:?}");
     } }
 }
+
+/// **The full turn's tube passes back over its own start, read off the depth** (#942 T1d-tori,
+/// `depth::passed_back`; the slow tier): over a whole turn the tube late in the roll sweeps across
+/// the tube where it began — no fold pair's crossing, so no double curve the road traces — and the
+/// curve where it does parts what it covers of the early tube from what stays on the boundary. It
+/// leaves the start row at the start rim's crossing with the late tube's trace on the start torus,
+/// `(2.5497, 3.1166, −0.1932)`, and ends where the late tube's covering instant reaches the roll's
+/// end, on the end pose's trace. Read from the start row's change of cover: a run whose own end on
+/// the start row is that point, its partner on the late tube's sheet, and each of its points the
+/// partner's point in space — two sheets at one place.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 40 s: the full turn fitted and its crossings read")]
+fn the_full_turns_tube_passing_back_over_its_start_is_read_from_the_start_row() {
+    use gcs_core::brep::swept::closed::ring_fitted;
+    use gcs_core::brep::swept::depth::{label_at,passed_back,sheet};
+    use gcs_core::space::distance;
+    let (tool,path,roll,tol) = full_turn();
+    let (ring,_,_,curves,_) = ring_fitted(&tool,&path,roll,tol).unwrap_or_else(|e| panic!("not fitted: {e:?}"));
+    let back = passed_back(&ring,&path,roll,&curves,tol).unwrap_or_else(|e| panic!("not read: {e:?}"));
+    assert!(back.len()%2 == 0 && !back.is_empty(),"each run with its partner: {}",back.len());
+    let at = |q: (f64,f64,f64)| sheet(&ring,&path,roll,q.0,q.1,label_at(&ring,&path,q.0,q.1,q.2).unwrap()).unwrap().0;
+    let rim = [2.549694,3.116605,-0.193242];
+    let run = back.chunks(2).find(|r| r[0].iter().any(|&q| q.1 == roll[0] && distance(at(q),rim) <= 1e-5))
+        .unwrap_or_else(|| panic!("no run through the start rim's crossing: {:?}",back.chunks(2).map(|r| (r[0][0],r[0][r[0].len()-1])).collect::<Vec<_>>()));
+    let (own,partner) = (&run[0],&run[1]);
+    assert_eq!(own.len(),partner.len());
+    assert!(partner.iter().all(|q| q.1 > 3.0 && q.1 <= roll[1]),"the partner late in the roll: {partner:?}");
+    assert!(partner.iter().any(|q| q.1 == roll[1]),"its corner on the end pose's row: {partner:?}");
+    // (each point the partner's in space: the two sheets cross there, to the tolerance the seam is
+    // held to and the partner's root is read within)
+    let apart = own.iter().zip(partner).map(|(&p,&q)| distance(at(p),at(q))).fold(0.,f64::max);
+    assert!(apart <= 4.*tol,"the run off its partner by {apart:e}");
+}
