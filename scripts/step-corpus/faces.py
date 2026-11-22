@@ -31,6 +31,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -83,14 +84,18 @@ def measure(jobs, only, timeout=900.0):
 
     def reap():
         for item in list(running):
-            p, f, sha, start = item
+            p, f, sha, start, sink = item
             killed = p.poll() is None and time.time() - start > timeout
             if killed:
                 p.kill()
             if p.poll() is None:
                 continue
             running.remove(item)
-            out, err = p.communicate()
+            # its answer through a file: a pipe fills at 64 kB and the measurer waits on it
+            _, err = p.communicate()
+            sink.seek(0)
+            out = sink.read().decode("utf-8", "replace")
+            sink.close()
             got = None
             for line in reversed(out.strip().splitlines()):
                 try:
@@ -110,10 +115,11 @@ def measure(jobs, only, timeout=900.0):
         while len(running) >= jobs:
             reap()
             time.sleep(0.02)
-        p = subprocess.Popen([MASS, os.path.join(CORPUS, f)], stdout=subprocess.PIPE,
+        sink = tempfile.TemporaryFile()
+        p = subprocess.Popen([MASS, os.path.join(CORPUS, f)], stdout=sink,
                              stderr=subprocess.PIPE, text=True,
                              env={**os.environ, "MASS_THREADS": "1", "MASS_FACES": "1"})
-        running.append((p, f, sha, time.time()))
+        running.append((p, f, sha, time.time(), sink))
     while running:
         reap()
         time.sleep(0.02)

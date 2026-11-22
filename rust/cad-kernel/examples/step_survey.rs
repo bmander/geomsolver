@@ -11,7 +11,8 @@
 //! line, a line each — index, the ADVANCED_FACE it was read from (`#0` for one the reader laid),
 //! surface kind, `reversed` or `forward`, area — and, where the file lies under the corpus
 //! (`--oracle CORPUS`, else `$STEP_CORPUS`) and the oracle has measured its faces
-//! (scripts/step-corpus/faces.py), beside each: `Σ tol·length` of its uses (`slack`, mm²), OCCT's
+//! (scripts/step-corpus/faces.py), beside each: `Σ max(tol, u)·length` of its uses, `u` the
+//! file's stated uncertainty (`slack`, mm²), OCCT's
 //! area and brep-bench's measurer's, the reading's difference from them relative to its area,
 //! the bar `step_corpus::face_bar` holds it to, and `ok`, `OFF` or `disputed` (the readers
 //! disagree past the bar; `ok` within it of either). A face's line says why where a reference is
@@ -147,7 +148,8 @@ fn main() {
                         for (k,f) in b.faces.iter().enumerate() {
                             let e = g.faces.get(k).copied().unwrap_or(0);
                             let a = area(b,f);
-                            let slack: f64 = f.loops.iter().flatten().map(|c| b.edges[c.edge as usize].tol*lengths[c.edge as usize]).sum();
+                            let u = g.context.uncertainty.unwrap_or(0.);
+                            let slack: f64 = f.loops.iter().flatten().map(|c| b.edges[c.edge as usize].tol.max(u)*lengths[c.edge as usize]).sum();
                             let mut line = format!("  {k}\t#{e}\t{}\t{}\t{a:.12e}",f.surface.kind(),if f.reversed { "reversed" } else { "forward" });
                             if let Some((occt,mass)) = &refs {
                                 let bar = face_bar(slack,a);

@@ -113,8 +113,9 @@ pub(crate) struct Face {
     pub(crate) entity: u32,
     pub(crate) kind: &'static str,
     pub(crate) area: f64,
-    /// `Σ tol × length` over its loops' uses (mm²): the area its boundary's measured slack can
-    /// sweep, so the most two readings of a tolerant boundary can differ by.
+    /// `Σ max(tol, u) × length` over its loops' uses (mm²), `tol` the edge's measured tolerance
+    /// and `u` the uncertainty its file states: the area its boundary's slack can sweep, so the
+    /// most two readings of a tolerant boundary can differ by.
     pub(crate) slack: f64,
 }
 
@@ -142,9 +143,10 @@ fn faces_of(given: &[Given]) -> Vec<Face> {
     given.iter().flat_map(|g| {
         let b = &g.brep;
         let lengths: Vec<f64> = (0..b.edges.len()).map(|e| length(b,e)).collect();
+        let u = g.context.uncertainty.unwrap_or(0.);
         b.faces.iter().enumerate().map(move |(k,f)| Face {entity: g.faces.get(k).copied().unwrap_or(0),
             kind: f.surface.kind(),area: area(b,f),
-            slack: f.loops.iter().flatten().map(|c| b.edges[c.edge as usize].tol*lengths[c.edge as usize]).sum()})
+            slack: f.loops.iter().flatten().map(|c| b.edges[c.edge as usize].tol.max(u)*lengths[c.edge as usize]).sum()})
             .collect::<Vec<_>>()
     }).collect()
 }
