@@ -120,9 +120,11 @@ impl<A> Piece<A> {
 
 /// What the search for closed curves showed, cell by cell: cleared by the bound, monotone (their
 /// edges seeded), answered beside a traced piece, sampled without a bound, and the cells it could
-/// not resolve.
+/// not resolve. `sought` is false where completeness was not sought at all (`through`): the pieces
+/// are those through the caller's seeds, and nothing is said of the rest.
 #[derive(Clone,Debug,Default)]
-pub struct Search { pub free: usize,pub monotone: usize,pub beside: usize,pub sampled: usize,pub unresolved: Vec<Rect> }
+pub struct Search { pub free: usize,pub monotone: usize,pub beside: usize,pub sampled: usize,pub unresolved: Vec<Rect>,
+    pub sought: bool }
 
 /// The zero set traced, and what its search showed.
 #[derive(Clone,Debug)]
@@ -135,13 +137,19 @@ const CORRECTIONS: usize = 16;
 /// the tolerance resolves (structural, as `ssi::unseen`'s).
 const CAP: usize = 4_000_000;
 
+/// The cube root of the rounding, `ε^⅓ = 2^(−52/3)` (written out, not taken by the platform's
+/// `cbrt`): a central difference's step, as a part of its scale.
+const THIRD_READ: f64 = 6.055454452393343e-6;
+
 /// `f` read with its gradient.
 #[derive(Clone)]
 struct Read<A> { f: f64,grad: [f64;2],at: A }
 
 /// **The one place a gradient is taken by differences**, where the caller gave none: central
-/// differences of `read` a forward difference's step apart (half the digits of the rectangle's
-/// widths, `HALF_READ`), one-sided where a side leaves `read`'s domain.
+/// differences of `read` a step of the cube root of the rounding times the rectangle's widths apart
+/// (the step at which a central difference's truncation and its rounding are alike), one-sided
+/// where a side leaves `read`'s domain. A function solved iteratively reads its own solver's noise
+/// over the step: give its gradient (the envelope theorem's) where there is one.
 fn differenced(read: &dyn Fn(Uv) -> Option<f64>,uv: Uv,step: [f64;2]) -> Option<[f64;2]> {
     let f0 = read(uv)?;
     let d = |k: usize| -> Option<f64> {
@@ -203,20 +211,28 @@ struct Tracer<'a,F: Field> {
 /// **The zero set of `field` over the question's domain, traced** (see the module): every piece,
 /// and what the search for closed curves showed. Refused, by name, where a march's step falls
 /// under the rounding or a march or search runs past the cap.
-pub fn trace<F: Field>(field: &F,q: &Question) -> Result<Traced<F::At>,String> {
+pub fn trace<F: Field>(field: &F,q: &Question) -> Result<Traced<F::At>,String> { traced(field,q,true) }
+
+/// **The pieces through the caller's seeds alone** (#942): each seed pulled onto the zero set and
+/// marched both ways, ending as `trace`'s pieces do, with no seeds sought on the boundary and no
+/// search for the rest — for a caller that knows where its curves are (a meeting's corners) and
+/// cannot pay for the proof. `Search::sought` is false: nothing is claimed complete.
+pub fn through<F: Field>(field: &F,q: &Question) -> Result<Traced<F::At>,String> { traced(field,q,false) }
+
+fn traced<F: Field>(field: &F,q: &Question,complete: bool) -> Result<Traced<F::At>,String> {
     if !(q.tol > 0. && q.feature >= q.tol) {
         return Err(format!("a zero set traced to a tolerance of {:e} with a feature size of {:e}: the feature must be \
             no less than the tolerance",q.tol,q.feature))
     }
     let r = q.rect;
-    let mut t = Tracer {field,q,step:[HALF_READ*(r[0][1]-r[0][0]),HALF_READ*(r[1][1]-r[1][0])],seeds:Vec::new(),
+    let mut t = Tracer {field,q,step:[THIRD_READ*(r[0][1]-r[0][0]),THIRD_READ*(r[1][1]-r[1][0])],seeds:Vec::new(),
         pieces:Vec::new(),chords:Vec::new(),grid:Grid::new(q.feature),steps:0};
     // the rim's sign changes and touches, then the inner edges'
     let corners = [[r[0][0],r[1][0]],[r[0][1],r[1][0]],[r[0][1],r[1][1]],[r[0][0],r[1][1]]];
-    for k in 0..4 {
+    for k in (0..4).filter(|_| complete) {
         for uv in t.segment_seeds(corners[k],corners[(k+1)%4]) { t.add_seed(uv,End::Rim); }
     }
-    for (i,e) in q.edges.iter().enumerate() {
+    for (i,e) in q.edges.iter().enumerate().filter(|_| complete) {
         for uv in t.edge_seeds(e) { t.add_seed(uv,End::Edge(i)); }
     }
     for k in 0..t.seeds.len() {
@@ -228,7 +244,7 @@ pub fn trace<F: Field>(field: &F,q: &Question) -> Result<Traced<F::At>,String> {
     for &s in q.seeds {
         if let Some(uv) = t.pulled(s,q.feature) { t.from_seed(uv,None)?; }
     }
-    let search = t.search()?;
+    let search = if complete { Search {sought:true,..t.search()?} } else { Search::default() };
     Ok(Traced {pieces:t.pieces,search})
 }
 
@@ -322,16 +338,41 @@ impl<'a,F: Field> Tracer<'a,F> {
     }
 
     /// Whether the chord from `p` to `q` keeps within the tolerance of the branch's zero at its
-    /// quarter points, with no other branch undercutting them by more than the tolerance.
+    /// quarter points, with no other branch undercutting them by more than the tolerance. Each
+    /// point is pulled onto the zero set and how far it moved *in space* read: the first-order
+    /// `|g| / |∇g|` is no measure where the sheet's two rates all but coincide (beside a
+    /// swallowtail, where it read a point 3.6e-5 off as within 3.2e-6), only a reject.
     fn chord(&self,p: Uv,q: Uv,at: &F::At) -> bool {
         let tol = self.q.tol;
+        let long = distance(self.point(p),self.point(q));
         [0.25,0.5,0.75].iter().all(|&s| {
             let x = lerp2(p,q,s);
             if self.outside(x).is_some() { return false }
             let Some(r) = self.along(x,at) else { return false };
             let Some(l) = self.least(x) else { return false };
-            self.off(x,&r) <= tol && !self.undercut(x,&l)
+            if self.off(x,&r) > tol || self.undercut(x,&l) { return false }
+            self.pull(x,&r.at,long).is_some_and(|y| distance(self.point(x),self.point(y)) <= tol)
         })
+    }
+
+    /// `x` pulled onto the branch's zero: by the corrector, else (where the metric is too near
+    /// singular for its step) by Newton along the gradient in the parameters themselves; none where
+    /// neither settles within `limit` in space.
+    fn pull(&self,x: Uv,at: &F::At,limit: f64) -> Option<Uv> {
+        if let Some((y,_)) = self.correct(x,at,limit) { return Some(y) }
+        let mut y = x;
+        let mut at = at.clone();
+        for _ in 0..CORRECTIONS {
+            let r = self.along(y,&at)?;
+            let n = dot2(r.grad,r.grad);
+            if !(n > 0.) { return None }
+            let d = [r.f*r.grad[0]/n,r.f*r.grad[1]/n];
+            y = [y[0]-d[0],y[1]-d[1]];
+            at = r.at;
+            if distance(self.point(x),self.point(y)) > limit { return None }
+            if self.length(y,d) <= self.q.tol*HALF_READ { return Some(y) }
+        }
+        None
     }
 
     /// Whether the least at `uv` stands below nought by more than the tolerance (in space): another
@@ -763,14 +804,16 @@ impl<'a,F: Field> Tracer<'a,F> {
             }
             // what the bound does not settle is answered beside a traced piece: at the tolerance
             // where the caller bounds the gradient too, at the feature size where it bounds `f`
-            // alone or nothing
+            // alone or nothing — within that of a traced piece at once, never refined toward it (a
+            // long meeting near tangency is a band where `f` is all but nought, which a bound of
+            // `f` alone clears only cell by tiny cell)
             let graded = bound.is_some_and(|b| b.grad.is_some());
             let leaf = if graded { tol } else { feature };
             if 2.*reach <= leaf {
-                if self.near_traced(self.point(mid),reach+tol) { out.beside += 1; continue }
+                if self.near_traced(self.point(mid),reach+leaf) { out.beside += 1; continue }
                 if let Some(s) = self.pulled(mid,reach) {
                     self.from_seed(s,None)?;
-                    if self.near_traced(self.point(mid),reach+tol) { out.beside += 1; continue }
+                    if self.near_traced(self.point(mid),reach+leaf) { out.beside += 1; continue }
                 }
                 if bound.is_none() {
                     out.sampled += 1;

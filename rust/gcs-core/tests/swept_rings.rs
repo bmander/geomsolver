@@ -538,7 +538,7 @@ fn the_half_turns_stretches_are_sewn_across_its_cut_into_one_tube_a_contact_curv
     let mut pieces = Vec::new();
     for (k,fit) in fits.iter().enumerate() {
         let at = [Some((&start,poses[0])),Some((&end,poses[1]))];
-        pieces.extend(entered_at(fit,&ring,at,[k == 0,k == 1],&|_| false,tol).unwrap().0);
+        pieces.extend(entered_at(fit,&ring,at,[k == 0,k == 1],&|_,_| false,tol).unwrap().0);
     }
     assert_eq!(pieces.len(),4,"two tubes a stretch");
     // and each curve a tube is cut along at an end pose carries, as its pcurve, the places on the
@@ -652,16 +652,20 @@ fn full_turn() -> (gcs_core::brep::topo::Brep,Trajectory,[f64;2],f64) {
 /// each edge the tube holds it as; its last stretch's tail between a double curve and the tube's
 /// seam dropped, and the curve's end where it meets the end pose one point on both leaves — and the
 /// two tori's meeting is given where it bounds the sweep (`depth::ends_met`), the crossings of a
-/// witness the sweep buries completed by nothing. It is refused where the start torus's piece kept
-/// about the uncovered island between the two strands the tubes near the end cover reaches the
-/// start torus's seam through what the instants after the start hold.
+/// witness the sweep buries completed by nothing; and the start rim, where the tube late in the
+/// roll passes back over it on the start torus, cut there (`boolean`'s `given_crossings`), so no
+/// piece of the start torus reaches round it to its seam. It is refused along the start rim past
+/// that crossing, (2.5295, 3.0460, −0.1999): the rim is buried there, and the tube's piece beside
+/// it is kept, holding both the boundary beyond and what the tube late in the roll covers — the
+/// tube's crossing with itself, which no fold pair's double curve is, is not yet cut into it. (Its
+/// tangent to the start torus along the rim, the refusal reads the torus's point across as on it.)
 #[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 50 s: the full turn built to its refusal")]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 25 s: the full turn built to its refusal")]
 fn the_full_turns_tori_are_read_one_way_all_over_and_it_is_refused_where_they_meet() {
     use gcs_core::brep::swept::closed::ring;
     let (tool,path,roll,tol) = full_turn();
-    let why = format!("{:?}",ring(&tool,&path,roll,0.16/250.,tol).expect_err("refused beside the start torus's seam"));
-    assert!(why.contains("torus piece kept beside it (candidate and face (0, 0))") && why.contains("circle edge"),"{why}");
+    let why = format!("{:?}",ring(&tool,&path,roll,0.16/250.,tol).expect_err("refused along the start rim"));
+    assert!(why.contains("open along a bspline edge") && why.contains("(candidate and face (0, 0))"),"{why}");
 }
 
 /// **The full turn's start and end tori meet on the boundary along two short arcs, given** (#942
@@ -776,6 +780,26 @@ fn the_half_turns_double_curve_is_built_from_the_swallowtail_point_beside_its_bi
         read += 1;
     }
     assert!(read >= 8,"{read} places read");
+}
+
+/// **brep-bench's `tumbling-torus-half-turn` is built closed** (#942 T1d-tori), as the bench calls
+/// it: the bar a 250th of the tube, the tolerance a 50 000th. Its fold pair is born at 1.4766 and its
+/// double curve begins at the swallowtail point 0.0073 of the roll later, running back below it
+/// across the birth's row; parted at the birth, that row's contact stood within the tolerance of the
+/// double curve over 8.6e-4 of it (0.2e-6 to 3.03e-6, the tolerance 3.2e-6), the arrangement cut the
+/// row's edge at the point, and the trim was refused ("face 8 loop breaks in parameters", edges used
+/// four to six times). Parted at the swallowtail point instead, the pair read as not yet born before
+/// it (`rings::fitted_unborn`), the row crosses the double curve only where it ends, and the solid
+/// is built, checked and judged: its volume 12.2377154, where cadrs's is 12.2377, held to
+/// membership. (A Monte Carlo count of the definition read 12.198 ± 0.021.)
+#[test]
+fn the_half_turn_is_built_closed() {
+    let (tool,path,roll,tol) = half_turn();
+    let built = gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.16/250.,tol).unwrap_or_else(|u| panic!("{u:?}"));
+    built.check(tol).unwrap();
+    let v = gcs_core::brep::props::volume(&built);
+    assert!((v-12.2377154238).abs() < 1e-7,"{v}");
+    crate::swept_closed::agrees_over(&built,&tool,&path,roll);
 }
 
 /// **A double curve ending on a tube's crossing with the tool is one vertex with it** (#942

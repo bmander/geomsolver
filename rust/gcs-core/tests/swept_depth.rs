@@ -3,8 +3,8 @@
 //! against the instants outside its own contact, a point of the tool at an end pose against the
 //! instants after (before) it.
 
-use gcs_core::brep::swept::depth::{Reading,cover,label_at,sheet};
-use gcs_core::brep::swept::rings::Ring;
+use gcs_core::brep::swept::depth::{Reading,cover,depths,far_depth,label_at,seams,sheet};
+use gcs_core::brep::swept::rings::{Ring,Side,pieces_at};
 use gcs_core::brep::topo::Brep;
 use gcs_core::brep::trajectory::{Screw,Trajectory};
 
@@ -87,4 +87,107 @@ fn where_the_full_turns_end_poses_touch_both_are_buried() {
     assert!(matches!(cover(&ring,&path,roll,end,roll[1],0.,tol).unwrap(),Reading::Near),"the end pose at the touch");
     let equator = at(roll[0],1.760338,-0.000259);
     assert!(matches!(cover(&ring,&path,roll,equator,roll[0],0.,tol).unwrap(),Reading::Near),"the start pose's equator");
+}
+
+/// **The cover's boundary traced from the depth is the double curve** (#942, `depth::seams`): over
+/// a box of the half turn's sheet beside the swallowtail point, from the cut where its fold pair is
+/// born down to where the end pose covers it, the zero set of the far cover's depth traced from one
+/// point of the double curve — one piece, rim to rim, through the double curve's other point there
+/// (to the tolerance), its partner's preimages each covered at the instant of its own point: both
+/// faces' parameters of the seam come from the depth, with no meeting of surfaces.
+#[test]
+fn the_cover_s_boundary_traced_from_the_depth_is_the_half_turn_s_double_curve() {
+    let (tool,path,roll,tol) = tumbling(90.);
+    let ring = Ring::read(&tool).unwrap();
+    let seed = [6.4444197,1.4623041];
+    let l = label_at(&ring,&path,seed[0],seed[1],0.4051).unwrap();
+    // (the feature a quarter of the tube's thickness, the step `cover` marches by)
+    let s = seams(&ring,&path,roll,l,[[6.40,6.447],[1.455,1.476]],&[seed],tol,0.04).unwrap();
+    assert_eq!(s.len(),1,"{s:?}");
+    let piece = &s[0];
+    assert!(piece.sheet.len() >= 2 && piece.partner.len() == 1,"{piece:?}");
+    let at = |th: f64,t: f64| sheet(&ring,&path,roll,th,t,l).unwrap().0;
+    // (the double curve's other point in the box, `rings::double_curve_from_apex`'s to seven places)
+    let other = at(6.4065157,1.4640931);
+    let near = piece.sheet.windows(2).flat_map(|w| (0..=64).map(move |k| { let f = k as f64/64.; [w[0].0+(w[1].0-w[0].0)*f,w[0].1+(w[1].1-w[0].1)*f] }))
+        .map(|q| gcs_core::brep::util::space::distance(at(q[0],q[1]),other)).fold(f64::INFINITY,f64::min);
+    assert!(near <= 2.*tol,"the double curve's point {near:e} from the traced seam");
+    for (k,&(th,t,sg)) in piece.partner[0].iter().enumerate() {
+        let lp = label_at(&ring,&path,th,t,sg).unwrap();
+        let c = far_depth(&ring,&path,roll,th,t,lp,tol).unwrap();
+        assert!(c.depth.abs() <= tol,"the partner's point {k}: covered {:e} deep",c.depth);
+        assert!((c.at-piece.sheet[k].1).abs() <= 1e-6,"the partner's point {k} covered at {} for its own point's {}",c.at,piece.sheet[k].1);
+    }
+}
+
+/// **A fold pair born before its swallowtail point bounds nothing the trim keeps** (#942,
+/// `rings::fitted_unborn`): the half turn's fold pair is born at 1.4766 and its double curve begins
+/// at the swallowtail point 0.0073 of the roll later. The road parts the roll at the point and
+/// enters the sheet before it as though the pair were not yet born: one touching piece across the
+/// bridge, where between the folds the sheet lies folded back, trimmed only by the tail above the
+/// double curve (over the angle round the axis, `Fitted::tails`). Read at eight rolls across that
+/// stretch and 64 places across each bridge, the sweep's depth at each (the tool's least signed
+/// distance over the roll — the instants beside its own read a hundred-thousandth of the roll apart,
+/// the rest at 4096, the least settled by golden sections): every place between the folds (360) is
+/// tail, held by a later instant (to 2.3e-4 deep), and every place the tail rule keeps (61) is held
+/// no deeper than the tolerance (to the rounding: on the boundary). So the trim drops the whole of
+/// the pair's sliver before the point, and keeps only the boundary.
+#[test]
+fn the_half_turns_fold_pair_bounds_nothing_the_trim_keeps_before_its_swallowtail_point() {
+    use gcs_core::brep::swept::rings::{changes,double_curve_from_apex,fitted_over};
+    let (tool,path,roll,tol) = tumbling(90.);
+    let [a,b] = roll;
+    let ring = Ring::read(&tool).unwrap();
+    let (scale,cuts) = changes(&ring,&path,roll).unwrap();
+    let birth = cuts[0];
+    let fit = fitted_over(&ring,&path,roll,[birth+1e-9*(b-a),b],scale,0.1*tol).unwrap();
+    let [apex] = fit.apexes[..] else { panic!("one swallowtail point: {:?}",fit.apexes) };
+    let curve = double_curve_from_apex(&ring,&path,roll,apex,tol).unwrap();
+    let line: Vec<[f64;2]> = curve.iter().take_while(|p| !p.0.is_nan()).map(|p| [p.0,p.1]).collect();
+    // (above the curve at the place's angle, brought within half a turn of the curve's middle)
+    let above = |th: f64,t: f64| {
+        let mid = 0.5*(line[0][0]+line[line.len()-1][0]);
+        let th = mid+(th-mid+std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)-std::f64::consts::PI;
+        let i = line.partition_point(|p| p[0] < th);
+        if i == 0 || i == line.len() { return false }
+        let ([a0,t0],[a1,t1]) = (line[i-1],line[i]);
+        t > t0+(t1-t0)*(th-a0)/(a1-a0)
+    };
+    let held = |x: [f64;3],t: f64| {
+        let d = |tau: f64| depths(&ring,&path,x,&[tau])[0];
+        let fine = 1e-5*(b-a);
+        let ts: Vec<f64> = (-2000..=2000).map(|k| t+fine*k as f64).chain((0..=4096).map(|k| a+(b-a)*k as f64/4096.))
+            .filter(|&s| s >= a && s <= b).collect();
+        let ds = depths(&ring,&path,x,&ts);
+        let k = (0..ts.len()).min_by(|&i,&j| ds[i].total_cmp(&ds[j])).unwrap();
+        let step = if k <= 4000 { fine } else { (b-a)/4096. };
+        let (mut lo,mut hi) = ((ts[k]-step).max(a),(ts[k]+step).min(b));
+        let g = 0.5*(5f64.sqrt()-1.);
+        for _ in 0..80 { let (x1,x2) = (hi-g*(hi-lo),lo+g*(hi-lo)); if d(x1) < d(x2) { hi = x2 } else { lo = x1 } }
+        ds[k].min(d(0.5*(lo+hi)))
+    };
+    let (mut kept,mut dropped,mut folded) = ((0,0f64),(0,0f64),0);
+    for k in 1..=8 {
+        let t = birth+(apex.at.1-birth)*k as f64/8.;
+        for c in pieces_at(&ring,&path,[t,b],t).unwrap() {
+            for (from,to,l,side) in c {
+                if side != Side::Fold { continue }
+                for j in 0..=64 {
+                    let th = from+(to-from)*j as f64/64.;
+                    let Some((x,bend)) = sheet(&ring,&path,roll,th,t,l) else { continue };
+                    let depth = held(x,t);
+                    if bend < 0. { folded += 1 }
+                    assert!(bend >= 0. || above(th,t),"at ({th}, {t}): the fold's far side kept");
+                    if above(th,t) {
+                        assert!(depth < 0.,"at ({th}, {t}): dropped as tail, held {depth:e} deep");
+                        dropped = (dropped.0+1,dropped.1.min(depth));
+                    } else {
+                        assert!(depth >= -tol,"at ({th}, {t}): kept, held {depth:e} deep");
+                        kept = (kept.0+1,kept.1.min(depth));
+                    }
+                }
+            }
+        }
+    }
+    assert!(kept.0 >= 32 && folded >= 8*16,"kept {kept:?}, dropped {dropped:?}, {folded} folded");
 }

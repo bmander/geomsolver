@@ -435,16 +435,21 @@ impl Ring {
     /// **The contact at the instant `w` (its rate `dw`)**: each closed curve's pieces, in order
     /// along it, each join settled in `θ` to rounding. `Err` with a point of the tool where the
     /// number of contacts changes round the axis.
-    fn instant(&self,w: Twist,dw: Twist,scale: Option<f64>) -> Result<Instant,V> {
+    fn instant(&self,w: Twist,dw: Twist,scale: Option<f64>) -> Result<Instant,V> { self.instant_born(w,dw,scale,None) }
+
+    /// `instant`, where `unborn` names an angle round the axis with each curve's narrow pair nearest
+    /// it not put in (`Reader::unborn`, the swallowtail point of a pair born since): read so, the pair
+    /// is the touching pieces either side of it, as a dip of `s''` that folds nowhere is.
+    fn instant_born(&self,w: Twist,dw: Twist,scale: Option<f64>,unborn: Option<f64>) -> Result<Instant,V> {
         let clock = crate::util::clock::Instant::now();
-        let out = self.instant_read(w,dw,scale);
+        let out = self.instant_read(w,dw,scale,unborn);
         spent::INSTANTS.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
         spent::INSTANT_NANOS.fetch_add(clock.elapsed().as_nanos() as u64,std::sync::atomic::Ordering::Relaxed);
         out
     }
 
-    /// `instant`, uncounted.
-    fn instant_read(&self,w: Twist,dw: Twist,scale: Option<f64>) -> Result<Instant,V> {
+    /// `instant_born`, uncounted.
+    fn instant_read(&self,w: Twist,dw: Twist,scale: Option<f64>,unborn: Option<f64>) -> Result<Instant,V> {
         let thetas: Vec<f64> = (0..AROUND).map(|i| TAU*i as f64/AROUND as f64).collect();
         let read: Vec<Vec<(Label,Root)>> = thetas.iter().map(|&th| self.roots(&w,th)).collect();
         let m = read[0].len();
@@ -562,6 +567,11 @@ impl Ring {
                         if i == first { break }
                     }
                 }
+            }
+            // (the pair nearest the angle `unborn` names read as not yet born)
+            if let Some(th) = unborn {
+                let apart = |x: f64| { let d = (x-th).rem_euclid(TAU); d.min(TAU-d) };
+                if let Some(k) = (0..narrow.len()).min_by(|&i,&j| apart(narrow[i].3).total_cmp(&apart(narrow[j].3))) { narrow.remove(k); }
             }
             let mut joins: Vec<(f64,Kind)> = Vec::new();
             for i in 0..s {
@@ -746,10 +756,18 @@ pub struct Fitted { pub nets: Vec<Net>,pub on: Vec<Vec<On>>,pub sides: Vec<Vec<S
     /// The swallowtail points of each narrow pair's folds in this stretch (#942 T1d-tori,
     /// `swallowtails`): each double curve built outward from its own (`double_curve_from_apex`).
     pub apexes: Vec<Apex>,
+    /// The swallowtail points of the narrow pairs whose leaves the rows find crossing in this
+    /// stretch (#942 T1d-tori): the double curve traced from the rows' seed toward the pair is
+    /// joined to its own (`double_curve`).
+    pub ends: Vec<Apex>,
     /// Per net, where it crosses a meridian the instants touch whole (#942 T1d-ring).
     pub crossings: Vec<Vec<Crossing>>,
     /// Each meridian touched whole over the stretch, its touching half's sheet (`Strip`).
-    pub strips: Vec<Strip> }
+    pub strips: Vec<Strip>,
+    /// Where the stretch was fitted with a fold pair born within it read as not yet born
+    /// (`fitted_unborn`): the end of the stretch its pieces are matched to, which has no such pair,
+    /// and the pair's swallowtail point's angle round the axis.
+    pub unborn: Option<(f64,f64)> }
 
 /// **A swallowtail point of a ring's sheet** (#942 T1d-tori): where a fold's way along the tube is
 /// the way the sheet does not move — the kernel of its rates `Σ_θ, Σ_t` tangent to the fold — and its
@@ -798,6 +816,13 @@ struct Reader<'a> {
     whole: [f64;2],
     /// The scale `s''` is read against at every instant: its greatest at the first.
     scale: f64,
+    /// Where a fold pair the first instant does not have is read as not yet born (`fitted_unborn`):
+    /// its swallowtail point's angle round the axis, an instant whose shape is not the first's read
+    /// again with each curve's pair nearest it not put in.
+    unborn: Option<f64>,
+    /// Where reading unborn, each roll's narrow pairs as the instant read whole has them: their
+    /// labels and angles (`newborn`).
+    born: std::sync::Mutex<std::collections::BTreeMap<u64,Vec<(Label,[f64;2])>>>,
     cache: std::sync::Mutex<std::collections::BTreeMap<u64,Read>>,
 }
 
@@ -807,12 +832,20 @@ impl<'a> Reader<'a> {
         Reader::within(ring,path,roll,roll,roll[0],scale)
     }
 
+    /// The reader a stretch is fitted by (`Fitted::unborn`): its curves matched to those at its
+    /// middle, or at the end `unborn` names with the pair born since read as not yet born.
+    fn of(ring: &'a Ring,path: &'a Trajectory,whole: [f64;2],[a,b]: [f64;2],scale: f64,unborn: Option<(f64,f64)>) -> Result<Reader<'a>,Unbuilt> {
+        let mut r = Reader::within(ring,path,whole,[a,b],unborn.map_or(0.5*(a+b),|u| u.0),scale)?;
+        r.unborn = unborn.map(|u| u.1);
+        Ok(r)
+    }
+
     /// The reader over `roll`, `s''` read against `scale`, its curves matched to those at `first`.
     fn within(ring: &'a Ring,path: &'a Trajectory,whole: [f64;2],roll: [f64;2],first: f64,scale: f64) -> Result<Reader<'a>,Unbuilt> {
         let (w,dw) = rates(path,first,whole)?;
         let pose = path.pose(first)?;
         let i = ring.instant(w,dw,Some(scale)).map_err(|at| Unbuilt::Curved {at:pose.point(at)})?;
-        Ok(Reader {ring,path,roll,first:i.curves,whole,scale,cache:Default::default()})
+        Ok(Reader {ring,path,roll,first:i.curves,whole,scale,unborn:None,born:Default::default(),cache:Default::default()})
     }
 
     /// The instant at `t`, its curves matched to the first instant's: each first curve by the one
@@ -822,7 +855,10 @@ impl<'a> Reader<'a> {
         if let Some(r) = self.cache.lock().unwrap().get(&t.to_bits()) { return Ok(r.clone()) }
         let (w,dw) = rates(self.path,t,self.whole)?;
         let pose = self.path.pose(t)?;
-        let i = self.ring.instant(w,dw,Some(self.scale)).map_err(|at| Unbuilt::Curved {at:pose.point(at)})?;
+        let mut i = self.ring.instant(w,dw,Some(self.scale)).map_err(|at| Unbuilt::Curved {at:pose.point(at)})?;
+        if self.unborn.is_some() && !same_shape(&self.first,&i.curves) {
+            i = self.ring.instant_born(w,dw,Some(self.scale),self.unborn).map_err(|at| Unbuilt::Curved {at:pose.point(at)})?;
+        }
         let refused = |c: &[Piece]| Unbuilt::Curved {at:pose.point(self.ring.root(&w,c[0].from.rem_euclid(TAU),c[0].label,false)
             .map_or(self.ring.centre,|r| r.x))};
         if std::env::var_os("SOLVENT_RING_DEBUG").is_some() && !same_shape(&self.first,&i.curves) {
@@ -856,6 +892,36 @@ impl<'a> Reader<'a> {
         let r = Read {instant:i,pose,curves};
         self.cache.lock().unwrap().insert(t.to_bits(),r.clone());
         Ok(r)
+    }
+
+    /// **Whether the run's point at `u`, `t` lies on a fold pair read as not yet born** (`unborn`):
+    /// within the bridge the instant read whole puts in there, on the piece's own label. Its sheet
+    /// folds there as a bridge's does, and the fold lies in the tail its double curve cuts off
+    /// (`fitted_unborn`): read for folds no more than a bridge is.
+    fn newborn(&self,run: &Run,faces: &[Face],u: f64,t: f64) -> bool {
+        let Some(apex) = self.unborn else { return false };
+        let Ok(r) = self.read(t) else { return false };
+        let known = self.born.lock().unwrap().get(&t.to_bits()).cloned();
+        let bridges = match known {
+            Some(b) => b,
+            None => {
+                let Ok((w,dw)) = rates(self.path,t,self.whole) else { return false };
+                let Ok(born) = self.ring.instant(w,dw,Some(self.scale)) else { return false };
+                // (each curve's bridge nearest the swallowtail point's angle, as the unborn read drops)
+                let apart = |p: &Piece| { let d = (0.5*(p.from+p.to)-apex).rem_euclid(TAU); d.min(TAU-d) };
+                let b: Vec<(Label,[f64;2])> = if same_shape(&self.first,&born.curves) { Vec::new() } else {
+                    born.curves.iter().filter_map(|c| (0..c.len()).filter(|&i| narrow(c,i)).min_by(|&i,&j| apart(&c[i]).total_cmp(&apart(&c[j])))
+                        .map(|i| (c[i].label,[c[i].from.rem_euclid(TAU),c[i].to.rem_euclid(TAU)]))).collect()
+                };
+                self.born.lock().unwrap().insert(t.to_bits(),b.clone());
+                b
+            }
+        };
+        let k = (u.floor().max(0.) as usize).min(faces.len()-1);
+        let Face {piece,share,of} = faces[k];
+        let p = r.curves[run.curve][run.pieces[piece]];
+        let th = (p.from+(p.to-p.from)*(share as f64+(u-k as f64))/of as f64).rem_euclid(TAU);
+        bridges.iter().any(|&(l,[from,to])| l == p.label && if from <= to { th >= from && th <= to } else { th >= from || th <= to })
     }
 
     /// The point of the run `run` at `u` along it, at `t`: face `⌊u⌋` (`faces`, each a piece of
@@ -906,8 +972,8 @@ impl<'a> Reader<'a> {
     /// below a billionth of its rates' (a fold the pieces were not cut at, `Folded`). A sheet squeezed
     /// thin where `s''` dips toward nought and rises again is regular, and kept (#880 T1d: the tumbling
     /// torus, 1.8e-4 of its rates just before a fold pair is born there).
-    fn folds(&self,net: &Net,us: &[f64],ts: &[f64],bridged: &dyn Fn(f64) -> bool) -> Result<(),Unbuilt> {
-        let read: Vec<Vec<Option<(V,V,f64)>>> = ts.iter().map(|&t| us.iter().map(|&u| (!bridged(u)).then(|| {
+    fn folds(&self,net: &Net,us: &[f64],ts: &[f64],bridged: &dyn Fn(f64,f64) -> bool) -> Result<(),Unbuilt> {
+        let read: Vec<Vec<Option<(V,V,f64)>>> = ts.iter().map(|&t| us.iter().map(|&u| (!bridged(u,t)).then(|| {
             let (x,du,dt) = net.d1(u,t);
             (x,cross(du,dt),norm(du)*norm(dt))
         })).collect()).collect();
@@ -970,7 +1036,24 @@ pub fn fitted(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Result<F
 /// roll's, so a fold's band is the same in every stretch), the curves matched to those at the
 /// stretch's middle.
 pub fn fitted_over(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],scale: f64,tol: f64) -> Result<Fitted,Unbuilt> {
-    let reader = Reader::within(ring,path,whole,[a,b],0.5*(a+b),scale)?;
+    fitted_as(ring,path,whole,[a,b],scale,tol,None)
+}
+
+/// **`fitted_over` with the fold pairs born within the stretch read as not yet born** (#942
+/// T1d-tori): its pieces those at the end `from` (the end before the birth), and an instant whose
+/// shape is not theirs read with the pair nearest the swallowtail point's angle `apex` not put in
+/// (each curve's: a pair born before the stretch began is put in as ever) — its bridge and the
+/// touching pieces either side one touching piece across its sliver. The road fits so the stretch
+/// from before a pair's birth to its swallowtail point (`closed::ring_fitted`), where its double
+/// curve begins: the pair's sliver over it lies above the double curve, in the tail its cut drops,
+/// and bounds nothing.
+pub fn fitted_unborn(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],scale: f64,tol: f64,from: f64,apex: f64) -> Result<Fitted,Unbuilt> {
+    fitted_as(ring,path,whole,[a,b],scale,tol,Some((from,apex)))
+}
+
+/// `fitted_over` and `fitted_unborn`.
+fn fitted_as(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],scale: f64,tol: f64,unborn: Option<(f64,f64)>) -> Result<Fitted,Unbuilt> {
+    let reader = Reader::of(ring,path,whole,[a,b],scale,unborn)?;
     let runs = runs(&reader.first);
     if runs.is_empty() { return Err(Unbuilt::Failed("no contact of the ring touches its sweep's boundary".into())) }
     let mut nets = Vec::new();
@@ -979,6 +1062,7 @@ pub fn fitted_over(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],s
     let mut doubles = Vec::new();
     let mut seeds = Vec::new();
     let mut apexes = Vec::new();
+    let mut ends = Vec::new();
     let mut crossings = Vec::new();
     for run in &runs {
         let per = LEAST_CLOSED.div_ceil(run.pieces.len()).max(PER);
@@ -1040,10 +1124,11 @@ pub fn fitted_over(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],s
             let missed_t: Vec<bool> = err_t.iter().map(|&x| x > tol).collect();
             // a bridge's points, or on the join of one
             let bridge = |k: usize| reader.first[run.curve][run.pieces[faces[k%pieces].piece]].side == Side::Fold;
-            let bridged = |u: f64| {
+            let bridged = |u: f64,t: f64| {
                 // (the loop closing at `pieces`: the piece after its last join the first)
                 let k = (u.floor().max(0.) as usize)%pieces;
                 bridge(k) || (u-u.round()).abs() <= 1e-9 && bridge((u.round() as usize+pieces-1)%pieces)
+                    || reader.newborn(run,&faces,u,t)
             };
             if !missed_u.iter().flatten().any(|&m| m) && !missed_t.contains(&true) { reader.folds(&net,&us,&ts,&bridged)?; break net }
             let refined_u: Vec<Vec<f64>> = fractions.iter().zip(&missed_u).map(|(fr,m)| halved(fr,m)).collect();
@@ -1135,15 +1220,13 @@ pub fn fitted_over(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],s
             if std::env::var_os("SOLVENT_RING_DEBUG").is_some() { eprintln!("ring: a narrow pair's leaves first cross at {seed:?}") }
             // (and where the rows find none — the crossing's other preimage in the stretch before
             // a pair's birth, or within its bridge — the swallowtail point its double curve is built
-            // from, where its folds meet the sheet's kernel within the stretch, #942 T1d-tori. Not
-            // yet in place of the rows' seed: beside the thin torus's second pair, born 1.2e-3 of the
-            // roll before its swallowtail point, the first preimage's angle turns back within 2e-4 of
-            // the point, and the curve, stepped by it, is no graph over it there)
-            if seed.is_none() {
-                let st = swallowtails(&reader,run,f.piece,[a,b])?;
-                if std::env::var_os("SOLVENT_RING_DEBUG").is_some() { eprintln!("ring: a narrow pair's swallowtail points over {:?}: {st:?}",[a,b]) }
-                apexes.extend(st);
-            }
+            // from, where its folds meet the sheet's kernel within the stretch, #942 T1d-tori; and
+            // where they do, the pair's swallowtail point all the same, the curve traced from the
+            // seed joined to it: beside the thin torus's points the first preimage's angle turns back
+            // within 2e-4, and built from the point, stepped by that angle, the curve went no further)
+            let st = swallowtails(&reader,run,f.piece,[a,b])?;
+            if std::env::var_os("SOLVENT_RING_DEBUG").is_some() { eprintln!("ring: a narrow pair's swallowtail points over {:?}: {st:?}",[a,b]) }
+            if seed.is_none() { apexes.extend(st) } else { ends.extend(st) }
             found.extend(seed);
         }
         if crate::timing() { eprintln!("ring: curve {} over {:?}: its narrow pairs' crossings sought in {:?}; {}",run.curve,[a,b],seed_clock.elapsed(),spent::since(seed_before)) }
@@ -1165,7 +1248,7 @@ pub fn fitted_over(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],s
     }
     let tails = vec![Vec::new();doubles.len()];
     let strips = strips(ring,path,[a,b],&nets,&crossings,tol)?;
-    Ok(Fitted {nets,on,sides,roll:[a,b],doubles,tails,path:path.clone(),seeds,apexes,crossings,strips})
+    Ok(Fitted {nets,on,sides,roll:[a,b],doubles,tails,path:path.clone(),seeds,apexes,ends,crossings,strips,unborn})
 }
 
 impl Ring {
@@ -1465,8 +1548,8 @@ pub(crate) fn sheet_at(ring: &Ring,path: &Trajectory,theta: f64,t: f64,sigma: f6
 /// what lies above it is the swallowtail's tail, inside the sweep. After a NaN marker, its
 /// swallowtail points: the pair's birth, and where the way away stops short of the roll with its
 /// preimages all but met, the pair's end too — the curve then a loop, closed through it.
-pub fn double_curve(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],seed: [(f64,f64,f64);2],tol: f64) -> Result<Vec<(f64,f64,f64)>,Unbuilt> {
-    traced(ring,path,[a,b],seed,None,tol)
+pub fn double_curve(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],seed: [(f64,f64,f64);2],ends: &[Apex],tol: f64) -> Result<Vec<(f64,f64,f64)>,Unbuilt> {
+    traced(ring,path,[a,b],seed,None,ends,tol)
 }
 
 /// **The three unknowns `t₁, θ₂, t₂` of a double curve's pair settled at `θ₁`**, from `z`, by
@@ -1526,12 +1609,64 @@ pub fn double_curve_from_apex(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],apex:
     if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
         eprintln!("ring: a double curve built from its swallowtail point {:?}, its first pair {seed:?}",apex.at)
     }
-    traced(ring,path,[a,b],seed,Some(apex.at),tol)
+    traced(ring,path,[a,b],seed,Some(apex.at),&[],tol)
+}
+
+/// **A double curve's pair joined to its swallowtail point** (#942 T1d-tori): beside the point the
+/// curve's two leaves stand within the tolerance of one another over a band — the region the
+/// curve bounds is covered there less than the tolerance deep (the thin torus's, some 2e-3 of the
+/// roll about its points) — so the curve is fixed there to the tolerance alone, and neither a march
+/// toward the point nor one out from it settles on it: toward it, the thin torus's preimages slid
+/// onto a fold's inner leaf 2e-3 short of its point and ran on along it. So the pair `pair`, traced
+/// from far, is joined to the point `apex` along the swallowtail's normal form — each preimage's
+/// offset from the point along the sheet's kernel `k = (1, dt/dθ)` taken linearly and across it
+/// quadratically (`(x, ±τ)` with `x = −2τ²`) — once it stands within the pair's parting of the point
+/// (the normal form's `τ` within its `2τ`) and every point of the join, its two leaves' points at
+/// each fraction, stands within the tolerance of the other and on an outer leaf (`s''` above
+/// nought); its points from the pair toward the point, each chord of the join no longer in space
+/// than the double curve's own step allows (`√(8 tol r)`, the chord the tube's bend sags the
+/// tolerance), the point itself not among them, and the point its angle unwrapped as the pair's.
+/// `None` where it does not hold.
+fn joined(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],pair: [(f64,f64,f64);2],apex: &Apex,tol: f64) -> Option<((f64,f64,f64),Vec<[(f64,f64,f64);2]>)> {
+    let (tha,ta,sa) = apex.at;
+    // the offsets in `(θ, t)` from the point, the angle taken beside it — and the point's angle
+    // unwrapped as the curve's is
+    let off = |(th,t,_): (f64,f64,f64)| [(th-tha+std::f64::consts::PI).rem_euclid(TAU)-std::f64::consts::PI,t-ta];
+    let [d1,d2] = pair.map(off);
+    let tha = pair[0].0-d1[0];
+    if d1[0].hypot(d1[1]) > (d2[0]-d1[0]).hypot(d2[1]-d1[1]) { return None }
+    let kn = 1f64.hypot(apex.way);
+    let (k,n) = ([1./kn,apex.way/kn],[-apex.way/kn,1./kn]);
+    let parts = |d: [f64;2]| (d[0]*k[0]+d[1]*k[1],d[0]*n[0]+d[1]*n[1]);
+    let (p1,p2) = (parts(d1),parts(d2));
+    let at = |(al,be): (f64,f64),f: f64,sg: f64| (tha+f*al*k[0]+f*f*be*n[0],ta+f*al*k[1]+f*f*be*n[1],sa+f*(sg-sa));
+    // (as many chords as the double curve's longest step takes of the join's length in space,
+    // each read at its middle too)
+    let (x,_) = sheet_at(ring,path,pair[0].0,pair[0].1,pair[0].2)?;
+    let (xa,_) = sheet_at(ring,path,tha,ta,sa)?;
+    let chords = (crate::util::space::distance(x,xa)/(8.*tol*ring.thickness).sqrt()).ceil().max(1.) as usize;
+    let outer = |(th,t,sg): (f64,f64,f64)| -> Option<V> {
+        let (w,dw) = rates(path,t,[a,b]).ok()?;
+        let th = th.rem_euclid(TAU);
+        let nf = ring.elements.len() as f64;
+        let apart = |x: f64| { let d = (x-sg).rem_euclid(nf); d.min(nf-d) };
+        let (_,r) = ring.roots(&w,th).into_iter().min_by(|x,y| apart(x.1.sigma).total_cmp(&apart(y.1.sigma)))?;
+        (ring.bend(&w,&dw,th,&r) > 0.).then(|| path.pose(t).ok().map(|m| m.point(r.x)))?
+    };
+    let mut out = Vec::new();
+    for j in (1..2*chords).rev() {
+        let f = j as f64/(2*chords) as f64;
+        let (q1,q2) = (at(p1,f,pair[0].2),at(p2,f,pair[1].2));
+        let (y1,y2) = (outer(q1)?,outer(q2)?);
+        if crate::util::space::distance(y1,y2) > tol { return None }
+        if j%2 == 0 { out.push([q1,q2]) }
+    }
+    Some(((tha,ta,sa),out))
 }
 
 /// `double_curve` from `seed`, toward the pair unless it is built from its swallowtail point
 /// `apex`, which then stands between the seed's two preimages.
-fn traced(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],seed: [(f64,f64,f64);2],apex: Option<(f64,f64,f64)>,tol: f64)
+fn traced(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],seed: [(f64,f64,f64);2],apex: Option<(f64,f64,f64)>,ends: &[Apex],tol: f64)
     -> Result<Vec<(f64,f64,f64)>,Unbuilt> {
     let failed = || Unbuilt::Failed("a ring's sheet's double curve about a fold pair not traced".into());
     // (stepped round the axis, as the angle its first preimage moves, by as much as the angle over
@@ -1552,6 +1687,7 @@ fn traced(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],seed: [(f64,f64,f64);2],a
     // a loop through two swallowtail points, #880 T1d's thin torus)
     let mut short = false;
     let mut stopped_at = most;
+    let mut joined_at: Option<(f64,f64,f64)> = None;
     for (dir,out) in [(toward,&mut near),(-toward,&mut far)] {
         // (from a swallowtail point, away alone)
         if apex.is_some() && dir == toward { continue }
@@ -1563,6 +1699,15 @@ fn traced(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],seed: [(f64,f64,f64);2],a
         let mut prev: Option<(f64,[f64;3])> = apex.filter(|_| dir != toward).map(|p| (p.0,[p.1,p.0,p.1]));
         let mut step = most;
         for _ in 0..200_000 {
+            // (toward the pair, joined to a swallowtail point `ends` names where the join holds)
+            if dir == toward {
+                let here = [(th,z[0],sg1),(z[1],z[2],sg2)];
+                if let Some((e,join)) = ends.iter().find_map(|e| joined(ring,path,[a,b],here,e,tol)) {
+                    out.extend(join);
+                    joined_at = Some(e);
+                    break
+                }
+            }
             let next = th+dir*step;
             // (away from the pair, a pair whose preimages have met or crossed — nearer than the least
             // step, one point to the tolerance — is none: the pair of no distance every point of the
@@ -1632,11 +1777,13 @@ fn traced(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],seed: [(f64,f64,f64);2],a
     let second: Vec<(f64,f64,f64)> = near.iter().rev().map(|p| p[1]).chain(std::iter::once((th2,t2,s2))).chain(far.iter().map(|p| p[1])).collect();
     // (the second taken from where it passes the first's last angle: the step that found the
     // preimages met stood a hair past the swallowtail point)
+    // (not where it is joined to its swallowtail point: the join ends at the point itself)
     let last = first.last().map_or(f64::NAN,|p| p.0);
-    let second: Vec<(f64,f64,f64)> = second.into_iter().skip_while(|p| (p.0-last)*toward <= 0.).collect();
+    let second: Vec<(f64,f64,f64)> = second.into_iter().skip_while(|p| joined_at.is_none() && (p.0-last)*toward <= 0.).collect();
     let at = first.len();
-    // (the swallowtail point: between the two leaves' preimages — the one it was built from in the
-    // curve itself — put at the end of the list)
+    // (the swallowtail point: between the two leaves' preimages — the one it was built from or
+    // joined to in the curve itself — put at the end of the list)
+    let apex = apex.or(joined_at);
     let mut out: Vec<(f64,f64,f64)> = first.into_iter().chain(apex).chain(second).collect();
     let ap = if let Some(p) = apex { p } else if at > 0 && at < out.len() { let (p,q) = (out[at-1],out[at]); (0.5*(p.0+q.0),0.5*(p.1+q.1),p.2) }
         else { out[at.min(out.len()-1)] };
@@ -1662,7 +1809,7 @@ fn traced(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],seed: [(f64,f64,f64);2],a
 /// angle, its point within `tol` of the tube's fitted net — with where it crosses the stretch's ends.
 pub fn cut_along(ring: &Ring,path: &Trajectory,whole: [f64;2],fit: &mut Fitted,scale: f64,curves: &[Vec<(f64,f64,f64)>],tol: f64) -> Result<(),Unbuilt> {
     let [a,b] = fit.roll;
-    let reader = Reader::within(ring,path,whole,[a,b],0.5*(a+b),scale)?;
+    let reader = Reader::of(ring,path,whole,[a,b],scale,fit.unborn)?;
     let runs = runs(&reader.first);
     for (ri,run) in runs.iter().enumerate() {
         let per = LEAST_CLOSED.div_ceil(run.pieces.len()).max(PER);
@@ -1788,7 +1935,7 @@ pub fn posed(tool: &Brep,ring: &Ring,path: &Trajectory,fit: &Fitted,t: f64) -> R
 /// on the tool's faces holding it — and the curves a face is cut along — each on the face it lies on
 /// — all lie on the tool, and are each face's whole meeting with it, given.
 pub fn entered(fit: &Fitted,ring: &Ring,ends: [&Brep;2],poses: [Pose;2],tol: f64) -> Result<(Vec<Brep>,Vec<Given>),Unbuilt> {
-    entered_at(fit,ring,[Some((ends[0],poses[0])),Some((ends[1],poses[1]))],[true,true],&|_| false,tol)
+    entered_at(fit,ring,[Some((ends[0],poses[0])),Some((ends[1],poses[1]))],[true,true],&|_,_| false,tol)
 }
 
 /// `entered`, where an end of the fit's stretch of the roll may be no end of the roll (`rimmed`
@@ -1798,7 +1945,7 @@ pub fn entered(fit: &Fitted,ring: &Ring,ends: [&Brep;2],poses: [Pose;2],tol: f64
 /// tube carried on past where the roll's end pose stands — the thin torus, its double curve ending
 /// where one leaf's partner reaches the end of the roll, on that pose's tool, partway along another
 /// stretch.
-pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],rimmed: [bool;2],inside: &(dyn Fn(V) -> bool+Sync),tol: f64)
+pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],rimmed: [bool;2],covered: &(dyn Fn(V,f64) -> bool+Sync),tol: f64)
     -> Result<(Vec<Brep>,Vec<Given>),Unbuilt> {
     let mut sheets = Vec::new();
     let mut surfaces: Vec<Vec<crate::geom::Surface>> = Vec::new();
@@ -1837,34 +1984,14 @@ pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],rimmed: 
             }
             if run.len() >= 2 { cuts_of[face].push(run) }
         }
-        // whether `(u, t)` is in a narrow pair's tail: above its double curve, a curve over the angle
-        // round the axis its first preimage is stepped by (#942 T1d-tori: read over `u`, which the
-        // seams shear — the face's share of a piece linear in the angle at each roll, the piece's
-        // ends moving — the half turn's curve beside its swallowtail point ran back over `u` and the
-        // tail beside it was kept), the place's angle read round the tool's axis where it stands at
-        // its roll, and brought within half a turn of the curve's middle (a curve crossing the tube's
-        // seam is continuous along it, #942 F6)
-        // (and where the curve lies below the stretch at that angle, dipping into the stretch before
-        // and coming back across the tube's seam, the place is tail only where a pose holds it,
-        // `inside`, #942 T1d-tori: a tail ends where its curve meets the tool at an end pose, and
-        // the full turn's places above that tool's chord, past the curve's end there, stand on the
-        // boundary to 1e-8, while a face between the curve and the seam stood 3e-3 inside)
-        let tail = |u: f64,t: f64| -> bool {
-            if tails.is_empty() { return false }
-            let Ok(pose) = fit.path.pose(t) else { return false };
-            let x = net.point(u,t);
-            let l = ring.frame.local(pose.inverse().point(x));
-            let th = l[1].datan2(l[0]);
-            tails.iter().any(|line| {
-                let mid = 0.5*(line[0][0]+line[line.len()-1][0]);
-                let th = mid+(th-mid+std::f64::consts::PI).rem_euclid(TAU)-std::f64::consts::PI;
-                let i = line.partition_point(|p| p[0] < th);
-                if i == 0 || i == line.len() { return false }
-                let ([a0,t0],[a1,t1]) = (line[i-1],line[i]);
-                let at = if a1 == a0 { t0 } else { t0+(t1-t0)*(th-a0)/(a1-a0) };
-                t > at && (at >= a || inside(x))
-            })
-        };
+        // whether `(u, t)` is in a narrow pair's tail: where an instant other than its own covers
+        // the place (`covered`, the depth-based trim's reading, #942 T1d-tori). Read as above the
+        // double curve over the angle round the axis its first preimage is stepped by, the thin
+        // torus's curve joined to its swallowtail point, whose first preimage's angle turns back
+        // within 2e-4 of the point, held a piece beside it as tail that only its own instant
+        // touches; and the full turn's places above the curve where it dips below the stretch and
+        // comes back stood on the boundary to 1e-8, past the curve's end on an end pose's tool
+        let tail = |u: f64,t: f64| -> bool { !tails.is_empty() && covered(net.point(u,t),t) };
         let holding: Vec<Vec<usize>> = on.iter().map(|&o| match o {
             On::Face(e) => vec![ring.faces[e]],
             On::Edge(e) => vec![ring.faces[e],ring.faces[(e+1)%n]],

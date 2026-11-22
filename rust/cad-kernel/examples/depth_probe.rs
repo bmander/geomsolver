@@ -2,7 +2,9 @@
 //! ring road traces read under `swept::depth::cover` — its points' far depth, the instant that covers
 //! them against the partner's — and the far cover read about each swallowtail point.
 //!
-//! `cargo run --release -p cad-kernel --example depth_probe -- full-turn|half-turn|thin [curves|apex|map θ0 θ1 t0 t1 n|point x,y,z]`
+//! `cargo run --release -p cad-kernel --example depth_probe -- full-turn|half-turn|thin [curves|apex|map θ0 θ1 t0 t1 n|point x,y,z|sliver t…]`
+//! (`sliver`: at each roll, each narrow pair's folds, how far apart, and how deep the sweep holds
+//! the leaf between them — over the roll, and by the instants beside its own)
 use cad_kernel::swept::depth::{Reading,cover,far_depth,label_at,sheet};
 use cad_kernel::trajectory::{Screw,Trajectory};
 
@@ -81,6 +83,62 @@ fn main() {
             for &j in order.iter().take(4) { println!("a least of the depth {:+.3e} at {:.7}",ds[j],ts[j]) }
             for own in [roll[0],roll[1]] {
                 println!("as a point of the pose at {own}: {:?}",cover(&ring,&path,roll,x,own,0.,tol));
+            }
+            return
+        }
+        "sliver" => {
+            // at each roll given, each narrow pair's bridge: its angles, and the pair's sliver — the
+            // angles between its folds (`s''` below nought), the folds' distance apart in space, and
+            // how far the leaf between them stands from the chord joining them
+            for t in args[2..].iter().map(|v| v.parse::<f64>().unwrap()) {
+                let pieces = cad_kernel::swept::rings::pieces_at(&ring,&path,[t,roll[1]],t).unwrap();
+                for (ci,c) in pieces.iter().enumerate() {
+                    for &(from,to,l,side) in c {
+                        if side != cad_kernel::swept::rings::Side::Fold { continue }
+                        let n = 4000;
+                        let pts: Vec<(f64,[f64;3],f64)> = (0..=n).filter_map(|k| {
+                            let th = from+(to-from)*k as f64/n as f64;
+                            sheet(&ring,&path,roll,th,t,l).map(|(x,b)| (th,x,b))
+                        }).collect();
+                        let neg: Vec<&(f64,[f64;3],f64)> = pts.iter().filter(|p| p.2 < 0.).collect();
+                        let (Some(f0),Some(f1)) = (neg.first(),neg.last()) else { println!("t {t}: curve {ci} bridge [{from:.6}, {to:.6}], no fold"); continue };
+                        let chord = cad_kernel::util::space::sub(f1.1,f0.1);
+                        let len = cad_kernel::util::space::norm(chord);
+                        let off = neg.iter().map(|p| {
+                            let d = cad_kernel::util::space::sub(p.1,f0.1);
+                            let along = if len > 0. { cad_kernel::util::space::dot(d,chord)/len } else { 0. };
+                            (cad_kernel::util::space::dot(d,d)-along*along).max(0.).sqrt()
+                        }).fold(0f64,f64::max);
+                        println!("t {t}: curve {ci} bridge [{from:.6}, {to:.6}]; folds at {:.7} and {:.7} ({:.2e} apart), {:.3e} apart in space, the leaf {off:.3e} off their chord",
+                            f0.0,f1.0,f1.0-f0.0,len);
+                        // the sweep's depth at the leaf's points between the folds: the least over
+                        // the roll of the tool's signed distance (its own instant nought), read at
+                        // a twenty-thousandth of it about the instant and settled by golden sections
+                        let held = |x: [f64;3]| {
+                            let d = |tau: f64| cad_kernel::swept::depth::depths(&ring,&path,x,&[tau])[0];
+                            let n = 20_000;
+                            let ts: Vec<f64> = (0..=n).map(|k| roll[0]+(roll[1]-roll[0])*k as f64/n as f64).collect();
+                            let ds = cad_kernel::swept::depth::depths(&ring,&path,x,&ts);
+                            let k = (0..=n).min_by(|&i,&j| ds[i].total_cmp(&ds[j])).unwrap();
+                            let (mut lo,mut hi) = (ts[k.saturating_sub(1)],ts[(k+1).min(n)]);
+                            let g = 0.5*(5f64.sqrt()-1.);
+                            for _ in 0..80 { let (x1,x2) = (hi-g*(hi-lo),lo+g*(hi-lo)); if d(x1) < d(x2) { hi = x2 } else { lo = x1 } }
+                            let m = 0.5*(lo+hi);
+                            (d(m).min(ds[k]),m)
+                        };
+                        let deepest = neg.iter().step_by((neg.len()/16).max(1)).map(|p| { let (h,at) = held(p.1); (h,p.0,at) })
+                            .min_by(|a,b| a.0.total_cmp(&b.0)).unwrap();
+                        println!("    between the folds held {:.3e} deep at its deepest (θ {:.6}, by the pose at {:.7})",deepest.0,deepest.1,deepest.2);
+                        // and by the instants beside its own alone, within a hundredth of the roll
+                        // of it: the fold's own thickness
+                        let near = |x: [f64;3]| {
+                            let ts: Vec<f64> = (0..=4000).map(|k| t-0.01+0.02*k as f64/4000.).collect();
+                            cad_kernel::swept::depth::depths(&ring,&path,x,&ts).into_iter().fold(f64::INFINITY,f64::min)
+                        };
+                        let thick = neg.iter().map(|p| (near(p.1),p.0)).min_by(|a,b| a.0.total_cmp(&b.0)).unwrap();
+                        println!("    held by its neighbours {:.3e} deep at its deepest (θ {:.6})",thick.0,thick.1);
+                    }
+                }
             }
             return
         }
@@ -263,6 +321,151 @@ fn main() {
             println!("{x:?}: {:?}",cover(&ring,&path,roll,x,roll[end],0.,tol));
             return
         }
+        "birth" => {
+            // a fold pair's birth over `[t0, t1]`: the least `s''` over the angles `[θ0, θ1]` on the
+            // label at the window's middle and the place `σ`, read at `n` angles and settled by
+            // golden sections about the least, halved in the roll to where it passes nought
+            let n: Vec<f64> = args[2..8].iter().map(|v| v.parse().unwrap()).collect();
+            let (th0,th1,t0,t1,sg,k) = (n[0],n[1],n[2],n[3],n[4],n[5] as usize);
+            let l = label_at(&ring,&path,0.5*(th0+th1),0.5*(t0+t1),sg).unwrap();
+            let low = |t: f64| -> (f64,f64) {
+                let s = |th: f64| sheet(&ring,&path,roll,th,t,l).map_or(f64::INFINITY,|s| s.1);
+                let j = (0..=k).min_by(|&i,&j| s(th0+(th1-th0)*i as f64/k as f64).total_cmp(&s(th0+(th1-th0)*j as f64/k as f64))).unwrap();
+                let (mut lo,mut hi) = (th0+(th1-th0)*(j.max(1)-1) as f64/k as f64,th0+(th1-th0)*(j+1).min(k) as f64/k as f64);
+                let g = 0.5*(5f64.sqrt()-1.);
+                for _ in 0..80 { let (x1,x2) = (hi-g*(hi-lo),lo+g*(hi-lo)); if s(x1) < s(x2) { hi = x2 } else { lo = x1 } }
+                (0.5*(lo+hi),s(0.5*(lo+hi)))
+            };
+            for j in 0..=10 { let t = t0+(t1-t0)*j as f64/10.; let (th,v) = low(t); println!("t {t:.8}: least s'' {v:+.3e} at θ {th:.7}") }
+            let (mut lo,mut hi) = (t0,t1);
+            if (low(lo).1 < 0.) != (low(hi).1 < 0.) {
+                for _ in 0..60 { let m = 0.5*(lo+hi); if (low(m).1 < 0.) == (low(lo).1 < 0.) { lo = m } else { hi = m } }
+                println!("least s'' passes nought at t {:.9}, θ {:.7}",0.5*(lo+hi),low(0.5*(lo+hi)).0);
+            }
+            return
+        }
+        "find" => {
+            // the sheet's (θ, t, label) nearest `x` over t ∈ [t0, t1]: a grid, then a finer one about it
+            let x: Vec<f64> = args[2].split(',').map(|v| v.parse().unwrap()).collect();
+            let x = [x[0],x[1],x[2]];
+            let (mut t0,mut t1): (f64,f64) = (args[3].parse().unwrap(),args[4].parse().unwrap());
+            let nf = ring.elements.len() as f64;
+            let (mut th0,mut th1) = (0.,std::f64::consts::TAU);
+            let mut best;
+            for _ in 0..4 {
+                let rows = cad_kernel::util::par::indices(201,|j| {
+                    let t = t0+(t1-t0)*j as f64/200.;
+                    let mut b = (f64::INFINITY,0.,0.,None);
+                    for i in 0..=400 { let th = th0+(th1-th0)*i as f64/400.;
+                        for k in 0..8 { if let Some(l) = label_at(&ring,&path,th,t,nf*k as f64/8.) { if let Some(s) = sheet(&ring,&path,roll,th,t,l) {
+                            let d = cad_kernel::util::space::distance(s.0,x); if d < b.0 { b = (d,th,t,Some(l)) } } } } }
+                    b
+                });
+                best = rows.into_iter().min_by(|a,b| a.0.total_cmp(&b.0)).unwrap();
+                let (dth,dt) = ((th1-th0)/40.,(t1-t0)/20.);
+                (th0,th1,t0,t1) = (best.1-dth,best.1+dth,best.2-dt,best.2+dt);
+                println!("{best:?}");
+            }
+            return
+        }
+        "near" => {
+            // each sheet point (θ, t) of the list (on the label at σ), its distance in space from the
+            // contact at the roll `tc` over angles [θ0, θ1], and where along it
+            let n: Vec<f64> = args[2..6].iter().map(|v| v.parse().unwrap()).collect();
+            let (tc,th0,th1,sg) = (n[0],n[1],n[2],n[3]);
+            for pair in args[6..].iter() {
+                let q: Vec<f64> = pair.split(',').map(|v| v.parse().unwrap()).collect();
+                let l = label_at(&ring,&path,q[0],q[1],sg).unwrap();
+                let x = sheet(&ring,&path,roll,q[0],q[1],l).unwrap().0;
+                let lc = label_at(&ring,&path,0.5*(th0+th1),tc,sg).unwrap();
+                let mut best = (f64::INFINITY,0.);
+                for i in 0..=200_000 { let a = th0+(th1-th0)*i as f64/200_000.;
+                    if let Some(s) = sheet(&ring,&path,roll,a,tc,lc) { let d = cad_kernel::util::space::distance(s.0,x); if d < best.0 { best = (d,a) } } }
+                println!("θ {:.7} t {:.7}: {:.3e} from the contact at θ {:.7}",q[0],q[1],best.0,best.1);
+            }
+            return
+        }
+        "seams" => {
+            // the cover's boundary over the box [θ0, θ1] × [t0, t1] of the sheet on the label at σ,
+            // seeded at (θs, ts), its feature in space: each piece and its partner, each partner point's
+            // own cover read back (a double curve's: covered at its partner's instant)
+            let n: Vec<f64> = args[2..10].iter().map(|v| v.parse().unwrap()).collect();
+            let (th0,th1,t0,t1,ths,ts,sg,feature) = (n[0],n[1],n[2],n[3],n[4],n[5],n[6],n[7]);
+            let l = label_at(&ring,&path,ths,ts,sg).unwrap();
+            let clock = std::time::Instant::now();
+            let x = sheet(&ring,&path,roll,ths,ts,l).unwrap().0;
+            for _ in 0..100 { let _ = cover(&ring,&path,roll,x,ts,0.,tol); }
+            println!("a cover in {:?}",clock.elapsed()/100);
+            let clock = std::time::Instant::now();
+            let s = cad_kernel::swept::depth::seams(&ring,&path,roll,l,[[th0,th1],[t0,t1]],&[[ths,ts]],tol,feature);
+            println!("in {:?}",clock.elapsed());
+            let s = s.unwrap();
+            if s.len() >= 2 {
+                let on = |q: (f64,f64,f64)| sheet(&ring,&path,roll,q.0,q.1,l).unwrap().0;
+                for &q in &s[1].sheet {
+                    let x = on(q);
+                    let d = s[0].sheet.windows(2).flat_map(|w| (0..=64).map(move |k| { let f = k as f64/64.; (w[0].0+(w[1].0-w[0].0)*f,w[0].1+(w[1].1-w[0].1)*f,0.) }))
+                        .map(|y| cad_kernel::util::space::distance(x,on(y))).fold(f64::INFINITY,f64::min);
+                    println!("  {q:?}: {d:.2e} from the first piece; far depth {:?}",far_depth(&ring,&path,roll,q.0,q.1,l,tol).map(|c| c.depth));
+                }
+            }
+            for p in s {
+                println!("piece of {} from {:?} to {:?}, ends {:?}",p.sheet.len(),p.sheet[0],p.sheet[p.sheet.len()-1],p.ends); for q in &p.sheet { println!("    {q:?} far {:?}",far_depth(&ring,&path,roll,q.0,q.1,l,tol).map(|c| (c.depth,c.at))) }
+                for r in &p.partner {
+                    let mut worst = 0f64;
+                    for (k,&(th,t,sg)) in r.iter().enumerate() {
+                        let lp = label_at(&ring,&path,th,t,sg).unwrap();
+                        if let Some(c) = far_depth(&ring,&path,roll,th,t,lp,tol) { worst = worst.max((c.at-p.sheet[k.min(p.sheet.len()-1)].1).abs().min(1.)) }
+                    }
+                    println!("  partner of {} from {:?} to {:?}; its cover's instant off the sheet's by at most {worst:.2e}",r.len(),r[0],r[r.len()-1]);
+                }
+            }
+            return
+        }
+        "chord" => {
+            // `Covered` read along the chord from (θa, ta) to (θb, tb) on the label at σ: the least and
+            // the branch of the cover at the first point continued, at nine points
+            use cad_kernel::zero_set::Field;
+            let n: Vec<f64> = args[2..7].iter().map(|v| v.parse().unwrap()).collect();
+            let l = label_at(&ring,&path,n[0],n[1],n[4]).unwrap();
+            let field = cad_kernel::swept::depth::Covered {ring:&ring,path:&path,roll,label:l,within:tol};
+            let from = field.least([n[0],n[1]]).unwrap().at;
+            for k in 0..=8 {
+                let f = k as f64/8.;
+                let uv = [n[0]+(n[2]-n[0])*f,n[1]+(n[3]-n[1])*f];
+                let (a,b) = (field.least(uv).map(|v| (v.f,v.at.at)),field.along(uv,&from).map(|v| (v.f,v.at.at)));
+                println!("{f:.3}: least {a:?}, along {b:?}");
+                if k == 4 {
+                    let g = field.along(uv,&from).unwrap().grad;
+                    let hh = 1e-6;
+                    let fd = [(field.along([uv[0]+hh,uv[1]],&from).unwrap().f-field.along([uv[0]-hh,uv[1]],&from).unwrap().f)/(2.*hh),
+                        (field.along([uv[0],uv[1]+hh],&from).unwrap().f-field.along([uv[0],uv[1]-hh],&from).unwrap().f)/(2.*hh)];
+                    let (_,su,sv) = field.surface(uv);
+                    println!("   gradient {g:?}, by differences {fd:?}, rates {su:?} {sv:?}");
+                }
+            }
+            return
+        }
+        "birth-rows" => {
+            // the label whose sheet at (θ, t) passes nearest `x`, and along the roll over [t0, t1]
+            // (n steps) the least `s''` over the angles [θ0, θ1] on it; the shape's cuts
+            let n: Vec<f64> = args[2..9].iter().map(|v| v.parse().unwrap()).collect();
+            let x: Vec<f64> = args[9].split(',').map(|v| v.parse().unwrap()).collect();
+            let (th,t,th0,th1,t0,t1,k) = (n[0],n[1],n[2],n[3],n[4],n[5],n[6] as usize);
+            let nf = ring.elements.len() as f64;
+            let l = (0..64).filter_map(|i| label_at(&ring,&path,th,t,nf*i as f64/64.)).filter_map(|l| sheet(&ring,&path,roll,th,t,l).map(|s| (l,cad_kernel::util::space::distance(s.0,[x[0],x[1],x[2]]))))
+                .min_by(|a,b| a.1.total_cmp(&b.1)).unwrap();
+            println!("label {:?} at {:.3e}",l.0,l.1);
+            let (scale,cuts) = cad_kernel::swept::rings::changes(&ring,&path,roll).unwrap();
+            println!("scale {scale:.4e}, cuts {cuts:?}");
+            for j in 0..=k {
+                let t = t0+(t1-t0)*j as f64/k as f64;
+                let (mut best,mut at) = (f64::INFINITY,th0);
+                for i in 0..=4000 { let a = th0+(th1-th0)*i as f64/4000.; if let Some(s) = sheet(&ring,&path,roll,a,t,l.0) { if s.1 < best { best = s.1; at = a } } }
+                println!("t {t:.6}: least s'' {best:+.4e} at θ {at:.6}");
+            }
+            return
+        }
         "at" => {
             // the sheet's point at (θ, t, σ) and its reading
             let n: Vec<f64> = args[2..5].iter().map(|v| v.parse().unwrap()).collect();
@@ -293,6 +496,15 @@ fn main() {
         _ => {}
     }
     let clock = std::time::Instant::now();
+    if what == "fit" {
+        let (_,_,fits,curves,_) = cad_kernel::swept::closed::ring_fitted(&tool,&path,roll,tol).unwrap();
+        println!("{} stretches {:?}, in {:?}",fits.len(),fits.iter().map(|f| f.roll).collect::<Vec<_>>(),clock.elapsed());
+        for c in &curves {
+            let at = c.iter().position(|p| p.0.is_nan()).unwrap_or(c.len());
+            println!("a curve of {at} points from {:?} to {:?}, swallowtail points {:?}",c[0],c[at-1],&c[at+1..]);
+        }
+        return
+    }
     let (ring,_,fits,curves,cut) = cad_kernel::swept::closed::ring_fitted(&tool,&path,roll,tol).unwrap();
     println!("{} stretches, {} curves, cut {cut}, in {:?}",fits.len(),curves.len(),clock.elapsed());
     for (ci,c) in curves.iter().enumerate() {
