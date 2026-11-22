@@ -2455,11 +2455,12 @@ impl super::values::Names for Asked<'_, '_> {
         let read = |r| self.reads.borrow_mut().push(r);
         let layered = match &listed.read {
             Ok(layered) if !self.every.get() => layered,
-            // a boundary the seeds do not build says nothing of which faces meet (#994): taken to
-            // meet, every two and three of a body's faces made a copy, and a body of a few dozen
-            // faces ran to `MAX_FLAT`.  None meet: the statement is read again where the drawing
-            // solves, as a face held along a direction is (#948), and where the body is not built
-            // there either, it is not built, as built on that body (`program::refused`)
+            // a boundary the seeds do not build says nothing of which faces meet (#994), and taken
+            // to meet, every two and three of a body's faces would make a copy, a body of a few
+            // dozen faces running to `MAX_FLAT`.  None meet: the statement is read again where
+            // the drawing solves, as a face held along a direction is (#948), and where the body
+            // is not built there either, it is not built, as built on that body
+            // (`program::refused`)
             Err(crate::solid::faces::Unread::Unbuilt(why)) if !self.every.get() => {
                 let unbuilt = (solid.to_string(), why.clone());
                 let mut said = self.unbuilt.borrow_mut();
