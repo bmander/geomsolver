@@ -1614,6 +1614,22 @@ entity for every face, edge and vertex (`Given`), or a `Refusal {why, entity, ms
 entity at fault: **read correctly or refused, never read wrong.** `step_read::reading` gives the
 solids and what the file holds beside them. OCCT is the oracle in tests only.
 
+**Every file the kernel writes reads back to the same solid**, stated as one property
+(`step_roundtrip::same`): every written face, edge and vertex read once from its own entity, of
+its kind and sense, each edge between its written vertices; nothing laid but the poles' degenerate
+edges and their vertices; each face's area and flux, the volume and the area within what the
+writer's own fits allow (`Bars`: rounding where a curve is written as itself, twice the fit times
+its length for a traced or fitted curve, a fitted surface's share, and 1e-6 of the area on a
+surface with no closed form, whose area rule is not exact where its flux's is); the solid read,
+written again, passing `step_check::verify` and reading to itself; and no edge read looser than
+the file states. A `Brep` of several lumps or with a void is written to one closed shell and reads
+back as that one solid. Over the library's exact solids (`census`, a tool): 406 the same, none
+read to another solid, none a panic; the rest are named for their defect, most of them the
+writer's — a wall fitted too loosely to be written, a pcurve written as millions of points, a file
+stating 1e-7 over fits held to `FIT`. Gates: `step_roundtrip::the_sample_reads_back` (a sample
+taking every writer path a solid that reads back takes, `PATHS`, at 1e-7),
+`the_sample_reads_back_at_export_tolerances`; each known defect an ignored test named for it.
+
 **A STEP file's syntax is read as Part 21 means it, whatever the cores** (`step_file`). What
 writers write is read: a byte-order mark, comments wherever a token may stand, every kind of line
 end, entities several to a line or one over many, strings holding a statement's punctuation, every
@@ -1803,22 +1819,49 @@ edge standing off its face past it — runs along that edge alone (CADGenBench 2
 face read 6.5e-4 over it). Gates: the corpus rows (occt ellipsoid, nurbs-sphere, brepkit torus,
 occt torus-grown-past-its-hole), `step_corpus::nothing_is_read_wrong`.
 
-**The corpus says whether a file was read right** (`tests/step_corpus.rs`,
-`scripts/step-corpus/`). Every file of `$STEP_CORPUS` — the 32 CADGenBench inputs, the STEP every
-kernel brep-bench runs here writes for its settled cases, a sample of both written again by OCCT
-under other writers' habits (no pcurves, AP203, AP242, inches), and NIST's public test parts as
-commercial systems exported them — is refused with a witness naming the entity, or read to exactly
-the solids its text holds: each ADVANCED_FACE, EDGE_CURVE and VERTEX_POINT read once
-(`Given.faces`, `edges`, `vertices`; 0 for what the reader lays itself), its volume and area
-within the bar its row of `step_corpus/reference.tsv` states. The reference is the case's closed
-form at the bench's own grade where the file holds the case's solid; otherwise the file read two
-independent ways — OCCT, healing off, its solids only, and only where its adaptive integration has
-converged, and brep-bench's measurer — the bar three times their difference, or, where only one
-reads it, a tenth of the file's largest edge tolerance times its area over its volume. OCCT's own
-measure is no gate where it has not converged (its fixed rule is off by up to 7e-2 on
-CADGenBench). A file that represents no solid must be refused; one the two readers read
-differently may be read either way or refused. `step_corpus::nothing_is_read_wrong` and
-`nothing_panics` hold at every commit; `the_corpus_reads` is the stage's finish line.
+**The corpus says whether a file was read right, and accounts for every file that is not**
+(`tests/step_corpus.rs`, `scripts/step-corpus/`). Every file of `$STEP_CORPUS` — the 32
+CADGenBench inputs, the STEP every kernel brep-bench runs here writes for its settled cases, a
+sample of both written again by OCCT under other writers' habits (no pcurves, AP203, AP242,
+inches), and NIST's public test parts as commercial systems exported them — is refused with a
+witness naming the entity, or read to exactly the solids its text holds: each ADVANCED_FACE,
+EDGE_CURVE and VERTEX_POINT read once (`Given.faces`, `edges`, `vertices`; 0 for what the reader
+lays itself), its volume and area within their bars of its row of `step_corpus/reference.tsv`.
+The reference is the case's closed form at the bench's own grade where the file holds the case's
+solid and the case states one (`closed`); a case's value that is a measure — the mean of
+kernels' values of their own models, or the measurer's of the reference shape — is said to be one
+(`measured`). Otherwise the file read two independent ways — OCCT, healing off, its solids only,
+and only where its adaptive integration has converged, and brep-bench's measurer — and, where
+both share an error, a third reader's quadrature of the faces in question (`mass+quad`:
+brep-bench's Utah teapot, whose case area is 7.1e-6 under its whole faces' Gauss quadrature from
+the file's own control points, its knob's four patches read low by OCCT, the measurer and the
+kernels whose mean the case takes). **A reading's totals are held to its row's bar or to what the
+file determines, whichever is wider** (`determined`, `bars`, `closure`). Its volume: the flux of a
+boundary is linear in the point it is taken about, `Φ(o + t) = Φ(o) − t·C`, `C = ∮ n dA` the
+boundary's closure vector (nought where it closes), so moving the solid by `t` changes its volume
+by exactly `t·C/3` (CADGenBench 212 moved 10 mm: +1.044e-6, `t·C/(3V)` +1.044e-6); nothing in the
+file fixes that point, and over points in the solid's box the volume spans `size·|C|/3`, so the
+file determines it to `size·|C|/(3V)`, `size` the box's diagonal, measured only where the volume
+is outside the row's bar. Its area: the sum of its faces' own bars, which holds the faces the
+per-face check cannot (unmeasured, laid by the reader, disputed). A reading within that but
+outside its row's own bar (the readers agree closer than the file closes, and it does not) is said
+(`read~`), not failed, and so is a face within its bar but outside the two readers' agreement.
+**Every file not read right has an account** (`step_corpus/account.tsv`, a verdict, a witness
+entity and the evidence, written into the table by `table.py`): `gap`, the reader's; `defective`,
+no solid's boundary by ISO 10303-42 — a loop not closed by vertex identity, a loop's sense
+against its face or its neighbours, a closed shell using an edge otherwise than once each way,
+bounds that cross, a real written `NaN` — or edges standing off their faces past `sound::LOOSE`
+of its size, each shown without the kernel's reader (`check.py`: OCCT's analyzer healing off,
+OCCT's projections of each edge's curve onto its faces' surfaces, the text's own loop, use and
+sense checks); `assembly`; `nosolid`; `open`, not settled by the evidence in hand; `reference`
+and `bar`, a row corrected; `unchecked`, faces whose one reference no second reader has checked,
+a face past its bar of it said and not failed until a third reader's table holds it. A file that
+represents no solid, an assembly, or a defective file is finished by its refusal, and a defective
+file read is no pass until its account says what its own geometry holds; a dispute the account
+settles (a reader shown to misread) is no excuse. `step_corpus::nothing_is_read_wrong` and
+`nothing_panics` hold at every commit; `the_corpus_reads` is the stage's finish line, its table
+the account by source and verdict; `the_table_is_whole` holds every account to a verdict of the
+vocabulary and a witness.
 
 **The corpus holds each face, not only the totals** (`step_corpus::Refs`, `face_bar`,
 `faces_judged`; `scripts/step-corpus/faces.py`). A total within its bar does not show a solid read

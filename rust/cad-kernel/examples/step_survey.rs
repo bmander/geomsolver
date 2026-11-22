@@ -23,14 +23,14 @@
 //! line: what the reader's own faces measure, whether or not the boundary was sound.
 //!
 //! Each file read also says what it determines of its totals, as the corpus gate holds them
-//! (`step_corpus::determined`): `S`, the sum over its faces of `Σ max(tol, u)·length`, its reach
-//! `R` from the point its volume's flux is taken about, and the relative bars `S/A` and `R·S/(3V)`.
-//! `--moved D` reads each solid's volume again moved by `D` mm along each axis
-//! (`props::volume` on `Brep::moved`): a boundary whose edges stand off their faces does not
-//! close, and its volume moves with it by `|D|·|∮ n dA|/3`, which the slack bounds by `|D|·S/3`.
+//! (`step_corpus::determined`): its area to the sum of its faces' own bars, and, where its volume
+//! is outside its row's bar (or with `--moved`), its volume to `size·|C|/(3V)`, `C = ∮ n dA` its
+//! boundary's closure vector, with the row's bars and the ones it is held to. `--moved D` reads
+//! each solid's volume again moved by `D` mm along each axis (`props::volume` on `Brep::moved`):
+//! a boundary that does not close moves its volume by exactly `D·C/3`, printed beside it.
 //! Where a third reader measured the faces (`<path>.quad.faces.tsv`, scripts/step-corpus/
 //! teapot.py), `--faces` gives its area too, and a face is held to it as the gate holds it.
-use cad_kernel::props::{area,volume};
+use cad_kernel::props::{area,fluxes,volume};
 use cad_kernel::step_read::{context,read,topology,Why};
 use cad_kernel::geom::Rigid;
 use cad_kernel::topo::{Brep,EdgeCurve};
@@ -57,20 +57,21 @@ fn table(path: &str) -> Vec<(String,Reference)> {
 /// ABS` (the constants are the gate's, rust/gcs-core/tests/step_corpus.rs says why).
 fn face_bar(slack: f64,area: f64) -> f64 { 1.*slack+1e-6*area.abs()+1e-9 }
 
-/// How far `b`'s vertices and edges reach from the point `props::volume` takes its flux about
-/// (as `step_corpus::reach`: the origin, or the vertices' box's centre more than ten diagonals
-/// away).
-fn reach(b: &Brep) -> f64 {
-    let (mut lo,mut hi) = ([f64::INFINITY; 3],[f64::NEG_INFINITY; 3]);
-    for v in &b.vertices { for k in 0..3 { lo[k] = lo[k].min(v.p[k]); hi[k] = hi[k].max(v.p[k]) } }
-    if b.vertices.is_empty() { return 0. }
-    let c: [f64; 3] = std::array::from_fn(|k| 0.5*(lo[k]+hi[k]));
+/// The closure vector `C = ∮ n dA` of `solids` (mm²; nought for boundaries that close) and their
+/// size, the diagonal of the box of their vertices and edges: each solid's flux taken about the
+/// box's centre, and again moved by the size along each axis.
+fn closure(solids: &[&Brep]) -> ([f64; 3],f64) {
+    let pts: Vec<[f64; 3]> = solids.iter().flat_map(|b| b.vertices.iter().map(|v| v.p).chain(b.edges.iter()
+        .filter(|e| !matches!(e.curve,EdgeCurve::Degenerate))
+        .flat_map(move |e| (0..=8).map(move |k| e.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/8.,&b.vertices))))).collect();
+    if pts.is_empty() { return ([0.; 3],0.) }
+    let lo: [f64; 3] = std::array::from_fn(|k| pts.iter().map(|p| p[k]).fold(f64::INFINITY,f64::min));
+    let hi: [f64; 3] = std::array::from_fn(|k| pts.iter().map(|p| p[k]).fold(f64::NEG_INFINITY,f64::max));
     let size = (0..3).map(|k| (hi[k]-lo[k]).powi(2)).sum::<f64>().sqrt();
-    let o = if (c[0]*c[0]+c[1]*c[1]+c[2]*c[2]).sqrt() > 10.*size { c } else { [0.; 3] };
-    let far = |p: [f64; 3]| ((p[0]-o[0]).powi(2)+(p[1]-o[1]).powi(2)+(p[2]-o[2]).powi(2)).sqrt();
-    let on_edges = b.edges.iter().filter(|e| !matches!(e.curve,EdgeCurve::Degenerate))
-        .flat_map(|e| (0..=8).map(move |k| e.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/8.,&b.vertices)));
-    b.vertices.iter().map(|v| far(v.p)).chain(on_edges.map(far)).fold(0.,f64::max)
+    let flux = |t: [f64; 3]| -> f64 { solids.iter().map(|b| fluxes(&b.moved(&Rigid {r:Rigid::identity().r,t})).iter().sum::<f64>()).sum() };
+    let c: [f64; 3] = std::array::from_fn(|k| -0.5*(lo[k]+hi[k]));
+    let at = flux(c);
+    (std::array::from_fn(|k| { let mut t = c; t[k] += size; (flux(t)-at)/size }),size)
 }
 
 /// An edge's length, by the chord of 32 pieces of its parameter (a degenerate edge's 0).
@@ -190,24 +191,34 @@ fn main() {
                 // the file's measures are its solids' together, as the reference's are
                 let v: f64 = solids.iter().map(|g| volume(&g.brep)).sum();
                 let a: f64 = solids.iter().map(|g| g.brep.faces.iter().map(|f| area(&g.brep,f)).sum::<f64>()).sum();
-                // what the file determines of its totals (step_corpus::determined)
-                let slack = |stated: bool| -> f64 { solids.iter().map(|g| {
+                // what the file determines of its totals (step_corpus::determined): the area to its
+                // faces' own bars summed; the volume to its closure over its size, measured where the
+                // volume is outside its row's bar (or with --moved)
+                let fb: f64 = solids.iter().map(|g| {
                     let b = &g.brep;
-                    let u = if stated { g.context.uncertainty.unwrap_or(0.) } else { 0. };
+                    let u = g.context.uncertainty.unwrap_or(0.);
                     let lengths: Vec<f64> = (0..b.edges.len()).map(|e| length(b,e)).collect();
-                    b.faces.iter().flat_map(|f| f.loops.iter().flatten()).map(|c| b.edges[c.edge as usize].tol.max(u)*lengths[c.edge as usize])
-                        .sum::<f64>()
-                }).sum() };
-                let (s,sm) = (slack(true),slack(false));
-                let r = solids.iter().map(|g| reach(&g.brep)).fold(0.,f64::max);
-                println!("{path}\tdetermines\tS {s:.3e} mm²\tR {r:.4e} mm\tarea to {:.1e}\tvolume to {:.1e}\tmeasured tolerances alone: S {sm:.3e}, area to {:.1e}, volume to {:.1e}",
-                    s/a.abs(),r*s/(3.*v.abs()),sm/a.abs(),r*sm/(3.*v.abs()));
+                    b.faces.iter().map(|f| face_bar(f.loops.iter().flatten().map(|c| b.edges[c.edge as usize].tol.max(u)
+                        *lengths[c.edge as usize]).sum(),area(b,f))).sum::<f64>()
+                }).sum();
+                let outside = row.map_or(false,|r| !((v-r.volume).abs()/r.volume.abs() <= r.bar_volume));
+                if outside || moved.is_some() {
+                    let (c,size) = closure(&solids.iter().map(|g| &g.brep).collect::<Vec<_>>());
+                    let n = (c[0]*c[0]+c[1]*c[1]+c[2]*c[2]).sqrt();
+                    println!("{path}\tdetermines\tarea to {:.1e} (its faces' bars, {fb:.3e} mm²)\tvolume to {:.1e}: closure C [{:.4e}, {:.4e}, {:.4e}] mm², |C| {n:.4e}, size {size:.4e} mm{}",
+                        fb/a.abs(),size*n/(3.*v.abs()),c[0],c[1],c[2],
+                        row.map_or(String::new(),|r| format!("\trow's bars {:.1e} {:.1e}, held to {:.1e} {:.1e}",r.bar_volume,r.bar_area,
+                            r.bar_volume.max(size*n/(3.*v.abs())),r.bar_area.max(fb/a.abs()))));
+                } else {
+                    println!("{path}\tdetermines\tarea to {:.1e} (its faces' bars, {fb:.3e} mm²)",fb/a.abs());
+                }
                 if let Some(d) = moved {
+                    let (c,_) = closure(&solids.iter().map(|g| &g.brep).collect::<Vec<_>>());
                     for k in 0..3 {
                         let t: [f64; 3] = std::array::from_fn(|j| if j == k { d } else { 0. });
                         let w: f64 = solids.iter().map(|g| volume(&g.brep.moved(&Rigid {r:Rigid::identity().r,t}))).sum();
-                        println!("{path}\tmoved {d} mm along {}\tvolume {w:.12e}\tchanged {:.2e} (relative)\tthe slack bounds |D|·S/(3V) = {:.2e}, the measured tolerances' {:.2e}",
-                            ["x","y","z"][k],(w-v).abs()/v.abs(),d.abs()*s/(3.*v.abs()),d.abs()*sm/(3.*v.abs()));
+                        println!("{path}\tmoved {d} mm along {}\tvolume {w:.12e}\tchanged {:+.3e} (relative)\td·C/(3V) {:+.3e}",
+                            ["x","y","z"][k],(w-v)/v.abs(),d*c[k]/(3.*v.abs()));
                     }
                 }
                 for (i,g) in solids.iter().enumerate() {

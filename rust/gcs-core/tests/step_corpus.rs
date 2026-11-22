@@ -32,8 +32,9 @@
 //!   and its table is the progress report, with the account by source and verdict (`account`).
 //!
 //! A read's totals are held to its row's bar or to what the file determines, whichever is wider
-//! (`determined`, `bars`): its area to the sum of its faces' slacks, its volume to that swept
-//! over its reach. Where the readers agree closer than that and the reading does not, it is said
+//! (`determined`, `bars`): its area to the sum of its faces' own bars, its volume to its
+//! boundary's closure over its size, `size·|C|/(3V)` (measured only where the volume is outside
+//! the row's bar). Where the readers agree closer than that and the reading does not, it is said
 //! (`read~`), not failed.
 //!
 //! ```sh
@@ -43,7 +44,8 @@
 //! `STEP_CORPUS_ONLY=cadgenbench/2` reads only the files whose path starts so (several prefixes
 //! separated by commas);
 //! `STEP_CORPUS_THREADS` how many at once (the machine's parallelism by default).
-use gcs_core::brep::props::{area,volume};
+use gcs_core::brep::geom::Rigid;
+use gcs_core::brep::props::{area,fluxes,volume};
 use gcs_core::brep::step_read::{read,Given,Refusal};
 use gcs_core::brep::topo::{Brep,EdgeCurve};
 use std::collections::{BTreeMap,BTreeSet};
@@ -129,10 +131,10 @@ pub(crate) enum Outcome {
     Panicked(String),
     /// Not done within the time bound (seconds); its thread is left to run.
     Hung(f64),
-    /// `reach`: the farthest the solid's vertices and edges stand from the point its volume's flux
-    /// is taken about (`props::volume`: the origin, or the solid's centre where it lies more than
-    /// ten sizes away), what an unclosed boundary's slack is swept over (`determined`).
-    Read { solids: usize,entities: [usize; 3],volume: f64,area: f64,faces: Vec<Face>,reach: f64 },
+    /// `closure`: the boundary's closure vector `C = ∮ n dA` (mm²) and the solids' size (the
+    /// diagonal of the box of their vertices and edges), measured only for a file whose volume is
+    /// outside its row's own bar (`closure`, `determined`).
+    Read { solids: usize,entities: [usize; 3],volume: f64,area: f64,faces: Vec<Face>,closure: Option<([f64; 3],f64)> },
 }
 
 /// A face read, as the per-face check needs it.
@@ -168,21 +170,29 @@ fn length(b: &Brep,e: usize) -> f64 {
     (0..CHORDS).map(|k| { let (p,q) = (at(k),at(k+1)); ((p[0]-q[0]).powi(2)+(p[1]-q[1]).powi(2)+(p[2]-q[2]).powi(2)).sqrt() }).sum()
 }
 
-/// How far `b`'s vertices and edges (each at `CHORDS` points) reach from the point
-/// `props::volume` takes its flux about: the origin, or the centre of the vertices' box where that
-/// lies more than ten of the box's diagonals away.
-fn reach(b: &Brep) -> f64 {
+/// **The closure vector of `solids`**, `C = ∮ n dA` over their faces (mm²; nought for a boundary
+/// that closes), and their size, the diagonal of the box of their vertices and their edges at
+/// `CHORDS` points each. The flux `Φ(o) = ∮ (X − o)·n dA` is linear in the point `o` it is taken
+/// about, `Φ(o + t) = Φ(o) − t·C`, so `C·e_k` is the flux about the box's centre less the flux
+/// about it moved by the size along `e_k`, over the size: exact, three more flux integrations.
+/// Moving a solid by `t` changes its volume by `t·C/3` (CADGenBench 212 moved 10 mm along x:
+/// +1.044e-6 measured, `t·C/(3V)` +1.044e-6).
+fn closure(solids: &[&Brep]) -> ([f64; 3],f64) {
     const CHORDS: usize = 8;
-    let (mut lo,mut hi) = ([f64::INFINITY; 3],[f64::NEG_INFINITY; 3]);
-    for v in &b.vertices { for k in 0..3 { lo[k] = lo[k].min(v.p[k]); hi[k] = hi[k].max(v.p[k]) } }
-    if b.vertices.is_empty() { return 0. }
-    let c: [f64; 3] = std::array::from_fn(|k| 0.5*(lo[k]+hi[k]));
+    let pts: Vec<[f64; 3]> = solids.iter().flat_map(|b| b.vertices.iter().map(|v| v.p).chain(b.edges.iter()
+        .filter(|e| !matches!(e.curve,EdgeCurve::Degenerate))
+        .flat_map(move |e| (0..=CHORDS).map(move |k| e.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/CHORDS as f64,&b.vertices)))))
+        .collect();
+    if pts.is_empty() { return ([0.; 3],0.) }
+    let lo: [f64; 3] = std::array::from_fn(|k| pts.iter().map(|p| p[k]).fold(f64::INFINITY,f64::min));
+    let hi: [f64; 3] = std::array::from_fn(|k| pts.iter().map(|p| p[k]).fold(f64::NEG_INFINITY,f64::max));
     let size = (0..3).map(|k| (hi[k]-lo[k]).powi(2)).sum::<f64>().sqrt();
-    let o = if (c[0]*c[0]+c[1]*c[1]+c[2]*c[2]).sqrt() > 10.*size { c } else { [0.; 3] };
-    let far = |p: [f64; 3]| ((p[0]-o[0]).powi(2)+(p[1]-o[1]).powi(2)+(p[2]-o[2]).powi(2)).sqrt();
-    let on_edges = b.edges.iter().filter(|e| !matches!(e.curve,EdgeCurve::Degenerate)).flat_map(|e|
-        (0..=CHORDS).map(move |k| e.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/CHORDS as f64,&b.vertices)));
-    b.vertices.iter().map(|v| far(v.p)).chain(on_edges.map(far)).fold(0.,f64::max)
+    let flux = |t: [f64; 3]| -> f64 {
+        solids.iter().map(|b| fluxes(&b.moved(&Rigid {r: Rigid::identity().r,t})).iter().sum::<f64>()).sum()
+    };
+    let c: [f64; 3] = std::array::from_fn(|k| -0.5*(lo[k]+hi[k]));
+    let at = flux(c);
+    (std::array::from_fn(|k| { let mut t = c; t[k] += size; (flux(t)-at)/size }),size)
 }
 
 /// Each face of `given`, its area measured once (the file's area is their sum).
@@ -205,27 +215,40 @@ fn read_one(root: &Path,row: &Row,bound: Option<Duration>) -> Outcome {
     let sha = hex(&sha256(&bytes[data..]));
     if sha != row.data_sha256 { return Outcome::Stale(sha) }
     let text = String::from_utf8_lossy(&bytes).into_owned();
-    match bound { Some(bound) => within(text,bound),None => measured(&text) }
+    // the volume's reference, its row's own bar and its second reading: a reading outside them
+    // has its closure measured
+    let want = (!row.refuse()).then(|| Want {volume: row.volume,bar: row.bar_volume,alt: row.alt.map(|a| a.0)});
+    match bound { Some(bound) => within_against(text,bound,want),None => measured_against(&text,want) }
 }
+
+/// A row's volume and its own bar (and a second reading), which a reading outside of has its
+/// closure measured (`closure`): only a handful of files, so the corpus costs what it did.
+#[derive(Clone,Copy)]
+pub(crate) struct Want { volume: f64,bar: f64,alt: Option<f64> }
 
 /// `measured` on a thread of its own, waited on no longer than `bound`: `Hung` past it (the
 /// thread left to run).
-pub(crate) fn within(text: String,bound: Duration) -> Outcome {
+pub(crate) fn within(text: String,bound: Duration) -> Outcome { within_against(text,bound,None) }
+
+fn within_against(text: String,bound: Duration,want: Option<Want>) -> Outcome {
     let (tx,rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || { let _ = tx.send(measured(&text)); });
+    std::thread::spawn(move || { let _ = tx.send(measured_against(&text,want)); });
     rx.recv_timeout(bound).unwrap_or(Outcome::Hung(bound.as_secs_f64()))
 }
 
 /// The solids `text` reads to, measured; a refusal, or the panic's message.
-pub(crate) fn measured(text: &str) -> Outcome {
+pub(crate) fn measured(text: &str) -> Outcome { measured_against(text,None) }
+
+fn measured_against(text: &str,want: Option<Want>) -> Outcome {
     let got = std::panic::catch_unwind(|| read(&text).map(|given| {
         let v: f64 = given.iter().map(|g| volume(&g.brep)).sum();
         let faces = faces_of(&given);
-        let r = given.iter().map(|g| reach(&g.brep)).fold(0.,f64::max);
-        (given.len(),entities(&given),v,faces.iter().map(|f| f.area).sum::<f64>(),faces,r)
+        let outside = want.map_or(false,|w| !(rel(v,w.volume) <= w.bar || w.alt.map_or(false,|a| rel(v,a) <= w.bar)));
+        let c = outside.then(|| closure(&given.iter().map(|g| &g.brep).collect::<Vec<_>>()));
+        (given.len(),entities(&given),v,faces.iter().map(|f| f.area).sum::<f64>(),faces,c)
     }));
     match got {
-        Ok(Ok((solids,entities,volume,area,faces,reach))) => Outcome::Read {solids,entities,volume,area,faces,reach},
+        Ok(Ok((solids,entities,volume,area,faces,closure))) => Outcome::Read {solids,entities,volume,area,faces,closure},
         Ok(Err(r)) => Outcome::Refused(r),
         Err(p) => Outcome::Panicked(p.downcast_ref::<&str>().map(|s| s.to_string())
             .or_else(|| p.downcast_ref::<String>().cloned()).unwrap_or_else(|| "a panic".into())),
@@ -532,17 +555,23 @@ pub(crate) enum Totals {
     Wrong(String),
 }
 
-/// **What a file determines of its totals** (relative), from its reading's own slack: its area no
-/// better than the sum of its faces' slacks, `S = Σ_faces Σ max(tol, u)·length` (each face's
-/// boundary is known to within it, `face_bar`), and its volume no better than that slack swept
-/// over the solid's reach `R` from the point the flux is taken about, `R·S/3`: the flux `∮ X·n dA/3`
-/// moves by `|X|/3` for each unit of area the slack moves, and a boundary whose edges stand off
-/// their faces does not close, so its volume moves with that point by `|d|·|∮ n dA|/3 ≤ |d|·S/3`
-/// for a move `d` (CADGenBench 212 moved 10 mm: 1.0e-6). `(S/A, R·S/(3V))`.
+/// **What a file determines of its totals** (relative), measured on the reading itself. Its
+/// volume: the flux `∮ X·n dA/3` of a boundary that does not close depends on the point it is
+/// taken about, by exactly `t·C/3` for a move `t` (`closure`), and nothing in the file says which
+/// point: its frame's origin is no property of the solid. Over points anywhere in the solid's box
+/// the volume takes values `size·|C|/3` apart, so the file determines it to `size·|C|/(3V)` — the
+/// one the readers here take (the file's origin) is one such choice, and their volumes all lie
+/// within it of one another only where they bound the same region. `K = 1`: the dependence is
+/// exact, so the bar is no estimate needing a margin. Measured only for a file whose volume is
+/// outside its row's own bar (none else needs it); 0 where it was not. Its area: the sum of its
+/// faces' own bars (`face_bar`) over the area — what the faces are each held to, summed, so that
+/// the total adds the faces the per-face check cannot hold (one no reader measured, one the reader
+/// laid itself, a disputed one held to either reading). `(volume, area)`.
 pub(crate) fn determined(read: &Outcome) -> (f64,f64) {
-    let Outcome::Read {volume,area,faces,reach,..} = read else { return (0.,0.) };
-    let s: f64 = faces.iter().map(|f| f.slack).sum();
-    (reach*s/(3.*volume.abs()),s/area.abs())
+    let Outcome::Read {volume,area,faces,closure,..} = read else { return (0.,0.) };
+    let bars: f64 = faces.iter().map(|f| face_bar(f.slack,f.area)).sum();
+    let v = closure.map_or(0.,|(c,size)| size*(c[0]*c[0]+c[1]*c[1]+c[2]*c[2]).sqrt()/(3.*volume.abs()));
+    (v,bars/area.abs())
 }
 
 /// The bars a read's totals are held to: the row's (its reference's own error — the case's grade,
@@ -568,7 +597,12 @@ pub(crate) fn totals(row: &Row,read: &Outcome) -> Totals {
     if let Some((v,a)) = row.alt {
         if rel(*volume,v) <= bv && rel(*area,a) <= ba { return Totals::Alt }
     }
-    if !(dv <= bv) { return Totals::Wrong(format!("volume {volume:.12e} is {dv:.1e} off {:.12e} ({}), the bar {bv:.1e}",row.volume,row.from)) }
+    if !(dv <= bv) {
+        let c = match read { Outcome::Read {closure: Some((c,size)),..} => format!(", its closure C [{:.3e}, {:.3e}, {:.3e}] mm² \
+            over a size of {size:.4e} mm",c[0],c[1],c[2]),_ => String::new() };
+        return Totals::Wrong(format!("volume {volume:.12e} is {dv:.1e} off {:.12e} ({}), the bar {bv:.1e} (its row's {:.1e}, what the \
+            file determines {:.1e}{c})",row.volume,row.from,row.bar_volume,determined(read).0))
+    }
     Totals::Wrong(format!("area {area:.12e} is {da:.1e} off {:.12e} ({}), the bar {ba:.1e}",row.area,row.from))
 }
 
@@ -663,7 +697,9 @@ pub(crate) fn account(rows: &[Row],reads: &[Read]) {
             class = "read~";
             let (dv,da) = determined(&r.outcome);
             if let Outcome::Read {volume,area,..} = &r.outcome {
-                loose.push(format!("{}: dV {:.1e} dA {:.1e}, its row's bars {:.0e} {:.0e} ({}), the file's slack {dv:.1e} {da:.1e}",
+                let c = match &r.outcome { Outcome::Read {closure: Some((c,size)),..} =>
+                    format!(", closure C [{:.3e}, {:.3e}, {:.3e}] mm² over {size:.4e} mm",c[0],c[1],c[2]),_ => String::new() };
+                loose.push(format!("{}: dV {:.1e} dA {:.1e}, its row's bars {:.0e} {:.0e} ({}), what the file determines {dv:.1e} {da:.1e}{c}",
                     row.path,rel(*volume,row.volume),rel(*area,row.area),row.bar_volume,row.bar_area,row.from))
             }
         }
