@@ -488,7 +488,7 @@ flat the same with a line for the arc, `fillet::flat_along` (`crotch.sv`); `Beyo
 or a traced run's section past a seam's normal surface, against the chain's next face, glued to the
 edge's own piece there — "Against the smooth surface" above); the recipe's
 `"rolled"` rolled against
-the body's stratum, rebuilt from the `"stratum"` terms `cad.rs` writes beside it, the gate's
+the body's stratum, from the `"stratum"` terms `cad.rs` writes beside it, the gate's
 against `BodyFaces::brep` brought back by `BodyFaces::back`); no pieces where the faces never meet
 or an edge turns the other way. **The gate**: the
 pieces' B-rep held to the region's own field (`agreement`, by area; empty only where the field
@@ -1130,6 +1130,22 @@ stratum's key (`faces::cached`) asks only the solids its walk reaches whether th
 and whether a body's boundary is the field's (`solid::has_sweep`, asked before every evaluation, a
 remembered one too) is remembered against `reads` (`Caches::swept`).
 `tests/conrod.rs` is the gate.
+
+**A body's written terms are built once** (#996): its stock, unions, cuts and commons — the
+stratum its rounds read — are combined once for the drawing, and every build that needs them goes
+on from them: the body's own, whose late terms (a round's fills and cuts) are combined onto them
+with what the last Boolean knew of their faces (`brep::recipe::Stratum`, `boolean::Known`), and
+each round's `"lowered"` node, whose rolled runs roll against them.  Within one build the kernel
+keeps them by the terms they are made of (`recipe::Strata`, `StratumKey`: the ids, one node each,
+and the floor; `Node::built_among`); across builds, the stratum the rounds' reading made
+(`faces::cached`, `BodyFaces::stratum`, `exact::build_stratum`) is handed to a build only where it
+is made of the very B-reps that build made (`recipe::known_stratum`: the terms, the floor and a
+digest of every operand's `Debug` text, which writes each number to read back exactly;
+`faces::stratum_made` never builds).  Built again for the body and for each round that rolls,
+a round on a body of many terms cost the body's Booleans again, and a part's dozen rounds as many
+builds of it.  `tests/strata.rs` is the gate
+(`the_booleans_a_round_adds_do_not_grow_with_the_body_it_rounds`: counted by
+`boolean::combined_so_far`, this thread's, never timed).
 
 **Draft (§6.9, 0.80, #245):** `solid(std.solids.Drafted(f, from:, to:, draft: θ))` ([0.199], #737;
 through 0.198 `draft:` beside a prism's labels), or the same set written by hand — recognised by its

@@ -1310,7 +1310,21 @@ fn wanted(
     // report builds nothing unasked, so the JSON costs what it costs, and `--where` asks in both
     let asked = |n: &str| names.iter().any(|q| under(n, q) || under(q, n));
     gcs_core::brep::export::supply_exact_where(sk, &|i| asked(&sk.solids[i].name));
+    // a body measured from its material field or its facet term, its exact build refused, is said
+    // so (#996): first where its field is to be meshed, which can take the run's time, and after
+    // where its facets are read — never a measure given as the build's that is not
+    let measured: Vec<usize> = (0..sk.solids.len())
+        .filter(|&i| names.iter().any(|q| solid_under(sk, i, q) || under(q, &sk.solids[i].name)
+            || under(q, &sk.solid_name(i)))).collect();
+    let said = say_ahead(sk, &measured, "--where");
     let all = report::positions_where(sk, map, &asked);
+    for &i in &measured {
+        let Some(Ok(solid)) = sk.built_solid(i, gcs_core::solid::ApproximationPolicy::Report) else { continue };
+        if let Some(u) = solid.unbuilt() {
+            let line = gcs_core::report::unbuilt_text(sk, i, u);
+            if !said.contains(&line) { eprintln!("solventc: --where: {line}"); }
+        }
+    }
     if names.is_empty() {
         return all;
     }
