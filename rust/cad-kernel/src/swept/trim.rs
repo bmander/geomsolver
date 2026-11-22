@@ -104,6 +104,9 @@ pub fn trimmed(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Brep],g
 /// point `ACROSS` hairs from it either way, on that face.  Where the face kept beside the edge
 /// holds that point and membership proves it clear of the boundary, the piece kept is mixed; where
 /// a face not kept there holds it and membership reads it as the boundary, its piece was left out.
+/// A point is on a kept face where a face of the solid on its candidate face's own surface holds
+/// it, not where the face kept beside the edge does: one tangent to that candidate along the edge
+/// holds its points across it too.
 /// Either way a meeting the trim was not given parts that point from where its piece was read
 /// (`readings`: each piece's face, the point it was settled at and what it read there), which is
 /// the witness's other point.  None where neither is found (the boundary open for some other
@@ -131,7 +134,11 @@ fn missing_across(out: &Brep,candidates: &[&Brep],read: &dyn Fn(&crate::topo::Fa
                 for side in [-1.,1.] {
                     let q = f.surface.point(f.surface.inverse(add(m,scale(across,side*ACROSS*hair))));
                     if !located[k].face_holds(i,q) { continue }
-                    let on_kept = kept.face_holds(u[0].0,q);
+                    // (kept where a face of the solid on that candidate face's own surface holds it:
+                    // the face kept beside the edge, read alone, holds a point of a candidate face
+                    // tangent to it along the edge — the full turn's start torus, its rim the
+                    // tube's, read as the tube's kept piece, and the refusal named the torus)
+                    let on_kept = out.faces.iter().enumerate().any(|(j,g)| g.surface == f.surface && kept.face_holds(j,q));
                     if debug() && on_kept && matches!(read(f,q),Some(None)) {
                         // (the kept face's loops: where its piece is bounded)
                         let kf = &out.faces[u[0].0];

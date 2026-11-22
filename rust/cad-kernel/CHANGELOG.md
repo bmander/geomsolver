@@ -8,6 +8,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A trim's refusal names the piece that is mixed, not a face tangent to it** (#942,
+  `swept::trim`'s `missing_across`): a point read across an open edge on a candidate face is on a
+  kept face where a face of the solid on that candidate's own surface holds it. Read against the
+  face kept beside the edge alone, a candidate tangent to it along the edge (the full turn's start
+  torus, its rim the tube's) read as kept, and the refusal named the torus; it now names the early
+  tube's mixed piece.
+
 - **A ring's tube cut where it passes back over itself, and holed where an end pose crosses it
   inside a face** (#942, the full turn): `swept::closed::ring_entered` now enters
   `depth::passed_back`'s runs with the fold pairs' double curves. `rings::traces` reads a closed

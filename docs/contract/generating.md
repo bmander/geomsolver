@@ -2289,9 +2289,10 @@ at the cut where the contact changes shape (the roll 2.2318), merged from the st
 cut into the face above it, is inverted onto that face on the leaf past the fold, 1.3e-5 off at 5/8
 of it; the two stretches' drawings of the one curve part by 3.8e-4 along it there, both on the
 boundary to 7e-9 (carrying the face's own pcurve onto the merged edge, by its nearest points, held
-everywhere but beside that end). (The refusal names
-the start torus's piece: the tube is tangent to it along the rim, so the torus's point a hair across
-reads as on the kept tube.) The island's read point is uncovered, 0.122 clear
+everywhere but beside that end). (The refusal named the start torus's piece, the tube tangent to it along the rim: a point a hair
+across on the torus read as on the kept tube. A point read across an open edge is now on a kept face
+where a face of the solid on its own candidate's surface holds it, `trim`'s `missing_across`; the
+refusal names the early tube's mixed piece.) The island's read point is uncovered, 0.122 clear
 of the end pose; the thin one beside the swallowtail point where its fold pair is born
 (above: its two tubes' meeting at under a hundredth of a degree was a seed off the other tube, no
 root). (The half turn, refused here where the trim found the boundary open 8e-4 from its
