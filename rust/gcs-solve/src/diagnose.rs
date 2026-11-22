@@ -695,11 +695,7 @@ fn components(m: &Matched) -> Vec<Component> {
 fn standing_warnings(sk: &Sketch, refusals: bool) -> Vec<String> {
     // every solid read over one reading held still (#994): a body's stratum and each solid's key
     // once, not once for each region of a body rounded all over
-    sk.held(|| warnings_held(sk, refusals))
-}
-
-/// `standing_warnings` within its reading.
-fn warnings_held(sk: &Sketch, refusals: bool) -> Vec<String> {
+    let _holding = sk.caches.held.open();
     let mut warnings: Vec<String> = crate::model::overruns(sk);
     if refusals {
         for (i, s) in sk.solids.iter().enumerate() {

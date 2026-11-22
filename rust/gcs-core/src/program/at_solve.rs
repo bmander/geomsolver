@@ -41,7 +41,7 @@ pub(super) fn at_solve(e: &mut Elaborated) -> Stood {
     let again = unread || !read_again(&sk, &e.map).is_empty();
     // what reading the solids where the drawing solves built is the drawing's to start from: each
     // entry is keyed by everything it read, and that pose is where a front end solves it (#994)
-    e.sketch.caches = sk.caches.carried();
+    e.sketch.caches = std::mem::take(&mut sk.caches).carried();
     if !again {
         return Stood::new();
     }
@@ -51,11 +51,8 @@ pub(super) fn at_solve(e: &mut Elaborated) -> Stood {
 /// Both checks where the drawing stands in `sk`, each solid they name read once: which of its
 /// faces meet where a pair was read of it, how each lies where a face was read along a direction.
 pub(super) fn read_again(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
-    sk.held(|| read_held(sk, map))
-}
-
-/// `read_again` within a reading held still (#994).
-fn read_held(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
+    // each solid read once over one reading held still (#994)
+    let _holding = sk.caches.held.open();
     let reads = map.along.iter().flat_map(|w| &w.reads);
     let meets: BTreeSet<&str> = map.apart.iter().map(|a| a.solid.as_str())
         .chain(map.pruned.iter().map(|p| p.solid.as_str()))
@@ -85,12 +82,9 @@ fn read_held(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
 /// naming what it looked at and why.  Never where a pair meets in an edge, where the boundary
 /// cannot say of a face, nor at a statement `said` already (`read_again`'s E080).
 pub(super) fn unmade(sk: &Sketch, map: &SourceMap, said: &[Diag]) -> Vec<Diag> {
-    sk.held(|| unmade_held(sk, map, said))
-}
-
-/// `unmade` within a reading held still (#994).
-fn unmade_held(sk: &Sketch, map: &SourceMap, said: &[Diag]) -> Vec<Diag> {
     use crate::solid::faces::{FacePath, ListedFaces, Meeting};
+    // each solid read once over one reading held still (#994)
+    let _holding = sk.caches.held.open();
     // each solid's layers and faces read once, and each of its layers' listed faces once
     let mut bodies: BTreeMap<usize, (Layers, Vec<FacePath>)> = BTreeMap::new();
     let mut listed: BTreeMap<(usize, usize), Option<ListedFaces>> = BTreeMap::new();

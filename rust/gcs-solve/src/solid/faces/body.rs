@@ -74,6 +74,14 @@ pub struct BodyFaces {
     /// Each face's shell, and how many: the faces reached from it across their edges numbered
     /// alike, from 0 in the order the faces come — a body in several pieces is several shells.
     shells: (Vec<usize>, usize),
+    /// Whether each edge is a seam (`seam`): two faces bound it whose outward normals are one at
+    /// its middle.  A function of the boundary alone, read once (#994): every walk across seams
+    /// (`smooth`, `lowering::pieces`, `chains_apart`) asks it of every edge it meets, and a body
+    /// rounded all over is walked so by every region of every edge and corner.
+    seams: Vec<bool>,
+    /// Each face's smooth chain (`smooth`), numbered as `shells` numbers shells: the faces
+    /// reached from it across seams.
+    chains: Vec<usize>,
     /// The faces each path read so far names, caps taken in (`faces`): a face's reading is
     /// asked by every round over it, and a top with the caps of a plate's pockets is a walk over
     /// every one of their edges (#994).
@@ -192,8 +200,22 @@ impl BodyFaces {
         }
         let shells = joined.labels();
         let caps = vec![false; loc.b.faces.len()];
-        BodyFaces { loc, mm, origin, paths, caps, convex: Vec::new(), edges, bounding, reach,
-                    shells, named: Default::default(), stratum: None }
+        let mut faces = BodyFaces { loc, mm, origin, paths, caps, convex: Vec::new(), edges,
+            bounding, reach, shells, seams: Vec::new(), chains: Vec::new(),
+            named: Default::default(), stratum: None };
+        // each edge's seam read once, and the smooth chains they join (turning every face's
+        // outward side, as `inverted` does, turns both of a seam's normals: the same seams)
+        faces.seams = (0..faces.loc.b.edges.len() as u32).map(|e| faces.seam_at(e)).collect();
+        let mut smooth = crate::graph::UnionFind::new(faces.edges.len());
+        for (e, by) in faces.bounding.iter().enumerate() {
+            if faces.seams[e] {
+                for w in by.windows(2) {
+                    smooth.union(w[0], w[1]);
+                }
+            }
+        }
+        faces.chains = smooth.labels().0;
+        faces
     }
 
     /// The same boundary bounding what lies outside it: every face's outward side turned, so each
@@ -428,7 +450,16 @@ impl BodyFaces {
             return named;
         }
         let given = named.len();
+        let mut met = vec![false; self.edges.len()];
+        for &fi in &named {
+            met[fi] = true;
+        }
         let mut out = named;
+        // each face's pieces of its surface (`lowering::pieces`), walked only where a cap goes on
+        // from it across a seam, and once a surface: a cap reached is a piece of the surface it
+        // was reached on, whose pieces are its own (#994)
+        let mut surface: Vec<Option<usize>> = vec![None; out.len()];
+        let mut pieces: Vec<BTreeSet<usize>> = Vec::new();
         let mut k = 0;
         while k < out.len() {
             let fi = out[k];
@@ -437,11 +468,19 @@ impl BodyFaces {
             if self.caps[fi] && k <= given {
                 continue;
             }
-            let pieces = crate::solid::lowering::pieces(self, fi);
-            for &e in &self.edges[fi] {
+            for &e in self.edges[fi].iter().filter(|&&e| self.seams[e as usize]) {
                 for &g in self.faces_of(e) {
-                    if self.caps[g] && !out.contains(&g) && self.seam(e) && pieces.contains(&g) {
+                    if !self.caps[g] || met[g] {
+                        continue;
+                    }
+                    let s = *surface[k - 1].get_or_insert_with(|| {
+                        pieces.push(crate::solid::lowering::pieces(self, fi).into_iter().collect());
+                        pieces.len() - 1
+                    });
+                    if pieces[s].contains(&g) {
+                        met[g] = true;
                         out.push(g);
+                        surface.push(Some(s));
                     }
                 }
             }
@@ -553,8 +592,8 @@ impl BodyFaces {
             Place::On if rim => {}
             _ => return None,
         }
-        self.edges[fi].iter().map(|&e| (self.loc.nearest(e, foot).1, e))
-            .min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, e)| e)
+        // the nearest edge to the foot, the first among equals, read where its box comes near
+        self.nearest_of_edges(&self.edges[fi], foot).map(|(e, _)| e)
     }
 
     /// The edges two groups of faces share: where a face of `a` meets a face of `b`.
@@ -662,7 +701,11 @@ impl BodyFaces {
         if self.loc.face_place(fi, foot) != Place::Out {
             return (None, self.side_grad(fi, p));
         }
-        let Some((e, at, d)) = self.nearest_edge(&self.edges[fi], p) else {
+        let (nearest, seam) = self.nearest_and_seam(fi, q);
+        let read = |(e, (t, d)): (u32, (f64, f64))| {
+            (e, self.loc.b.edges[e as usize].point(t, &self.loc.b.vertices), d / self.mm)
+        };
+        let Some((e, at, d)) = nearest.map(read) else {
             return (None, self.side_grad(fi, p));
         };
         // past a seam, the plane tangent there, which the next face goes on from; past any other
@@ -672,13 +715,59 @@ impl BodyFaces {
         // corner of the patch where a seam and a crease meet, nearest a point beyond both) is
         // the one carried past
         if !self.seam(e) {
-            let seams: Vec<u32> = self.edges[fi].iter().copied().filter(|&x| self.seam(x)).collect();
-            return match self.nearest_edge(&seams, p) {
+            return match seam.map(read) {
                 Some((s, at, ds)) if ds <= d + 1e-9 * (1.0 + d) => (Some((s, ds, at)), self.tangent_side(fi, at, p)),
                 _ => (Some((e, d, at)), self.side_grad(fi, p)),
             };
         }
         (Some((e, d, at)), self.tangent_side(fi, at, p))
+    }
+
+    /// **Of face `fi`'s edges, the nearest `q` (millimetres) and the nearest seam** (`seam`), each
+    /// as `nearest_of_edges` reads it of those edges — the least, the first among equals, each
+    /// edge read where its box comes within the best so far of either — in one pass (#994).
+    #[allow(clippy::type_complexity)]
+    fn nearest_and_seam(&self, fi: usize, q: V)
+        -> (Option<(u32, (f64, f64))>, Option<(u32, (f64, f64))>) {
+        let es = &self.edges[fi];
+        let mut order: Vec<(f64, usize)> = (0..es.len()).map(|k| {
+            // (a point no box orders: every edge read, as the scan reads them)
+            let gap = if q.iter().all(|x| x.is_finite()) {
+                self.loc.edge_gap(es[k], q) - self.loc.tol
+            } else {
+                f64::NEG_INFINITY
+            };
+            (gap, k)
+        }).collect();
+        order.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        let better = |d: f64, k: usize, b: &Option<(usize, (f64, f64))>| {
+            b.is_none_or(|(j, (_, e))| d.total_cmp(&e).then(k.cmp(&j)).is_lt())
+        };
+        let (mut all, mut seam): (Option<(usize, (f64, f64))>, Option<(usize, (f64, f64))>) =
+            (None, None);
+        // the seams not read yet: past the nearest edge, only they are read on
+        let mut seams = es.iter().filter(|&&e| self.seams[e as usize]).count();
+        for (gap, k) in order {
+            let past = |b: &Option<(usize, (f64, f64))>| b.is_some_and(|(_, (_, d))| gap > d);
+            if past(&all) && (seams == 0 || past(&seam)) {
+                break;
+            }
+            let is_seam = self.seams[es[k] as usize];
+            if past(&all) && !is_seam {
+                continue;
+            }
+            let (t, d) = self.loc.nearest(es[k], q);
+            if better(d, k, &all) {
+                all = Some((k, (t, d)));
+            }
+            if is_seam {
+                seams -= 1;
+                if better(d, k, &seam) {
+                    seam = Some((k, (t, d)));
+                }
+            }
+        }
+        (all.map(|(k, r)| (es[k], r)), seam.map(|(k, r)| (es[k], r)))
     }
 
     /// The side of the plane tangent to face `fi`'s surface at `at` (the boundary's millimetres),
@@ -814,15 +903,11 @@ impl BodyFaces {
     pub fn chains_apart(&self, named: &[usize]) -> Vec<(Vec<usize>, Vec<usize>)> {
         let mut out: Vec<(Vec<usize>, Vec<usize>)> = Vec::new();
         for &fi in named {
-            let chain = self.smooth(&[fi]);
-            match out.iter_mut().find(|(_, c)| c.iter().any(|g| chain.contains(g))) {
-                Some((own, c)) => {
-                    own.push(fi);
-                    for g in chain {
-                        if !c.contains(&g) { c.push(g) }
-                    }
-                }
-                None => out.push((vec![fi], chain)),
+            // one chain is every face of one smooth chain (`chains`): a face of a chain met
+            // already adds none to it
+            match out.iter_mut().find(|(own, _)| self.chains[own[0]] == self.chains[fi]) {
+                Some((own, _)) => own.push(fi),
+                None => out.push((vec![fi], self.smooth(&[fi]))),
             }
         }
         out
@@ -854,10 +939,18 @@ impl BodyFaces {
     pub fn nearest_face(&self, fs: &[usize], p: V, held: &[(usize, bool)]) -> Option<usize> {
         let (_, fi) = self.nearest_patch(fs, p)?;
         let rim = |e: &u32| self.faces_of(*e).iter().any(|g| !fs.contains(g));
-        let Some(e) = self.off_face(fi, p).filter(rim) else {
+        // the point's foot on the face's surface, and the edge nearest it where it lies off the
+        // face or on its boundary (`off_face`, `foot_past`), each read once (#994)
+        let f = &self.loc.b.faces[fi];
+        let foot = f.surface.point(f.surface.inverse(self.q(p)));
+        let place = self.loc.face_place(fi, foot);
+        let nearest = (place != Place::In).then(|| self.nearest_of_edges(&self.edges[fi], foot))
+            .flatten().map(|(e, _)| e);
+        let off = nearest.filter(|_| place == Place::Out);
+        let Some(e) = off.filter(rim) else {
             // (on the rim to a face the point is held outside of or within, in that face's plane:
             // read just past it, or just within it)
-            let on = self.foot_past(fi, p, true).filter(rim).and_then(|e| self.faces_of(e).iter().find_map(|&c| {
+            let on = nearest.filter(rim).and_then(|e| self.faces_of(e).iter().find_map(|&c| {
                 let &(_, beyond) = held.iter().find(|&&(h, _)| h == c)?;
                 (self.side(c, p).abs() <= self.past(p)).then_some((c, if beyond { 1.0 } else { -1.0 }))
             }));
@@ -871,8 +964,6 @@ impl BodyFaces {
         let at_end = |g: usize| self.edges[g].iter().any(|&x| self.loc.b.edges[x as usize].v.iter().any(|w| ends.contains(w)));
         // (a face the rim is to standing between: the point past its surface one way, the patch
         // going off the rim — from the foot back to the rim's nearest point — the other)
-        let f = &self.loc.b.faces[fi];
-        let foot = f.surface.point(f.surface.inverse(self.q(p)));
         let edge = &self.loc.b.edges[e as usize];
         let on_rim = edge.point(self.loc.nearest(e, foot).0, &self.loc.b.vertices);
         let back = sub(self.back(on_rim), self.back(foot));
@@ -1612,12 +1703,18 @@ impl BodyFaces {
     /// way through a chain to one of its faces (`lowering::piece::reached`) are this walk.
     pub fn across_seams(&self, from: &[usize], keep: impl Fn(usize) -> bool) -> Vec<(usize, Option<usize>)> {
         let mut out: Vec<(usize, Option<usize>)> = from.iter().map(|&fi| (fi, None)).collect();
+        // each face met once, told at once: a chain round a plate's pockets is most of the body
+        let mut met = vec![false; self.edges.len()];
+        for &fi in from {
+            met[fi] = true;
+        }
         let mut k = 0;
         while k < out.len() {
             let fi = out[k].0;
-            for &e in &self.edges[fi] {
+            for &e in self.edges[fi].iter().filter(|&&e| self.seams[e as usize]) {
                 for &g in self.faces_of(e) {
-                    if !out.iter().any(|&(h, _)| h == g) && self.seam(e) && keep(g) {
+                    if !met[g] && keep(g) {
+                        met[g] = true;
                         out.push((g, Some(k)));
                     }
                 }
@@ -1633,8 +1730,11 @@ impl BodyFaces {
     }
 
     /// Whether edge `e` is a seam: two faces bound it whose outward normals are one at its middle,
-    /// so they meet tangent there and it is no edge.
-    pub fn seam(&self, e: u32) -> bool {
+    /// so they meet tangent there and it is no edge.  Read once for the body (`seams`).
+    pub fn seam(&self, e: u32) -> bool { self.seams[e as usize] }
+
+    /// `seam`, read off the boundary.
+    fn seam_at(&self, e: u32) -> bool {
         let [x, y] = *self.faces_of(e) else { return false };
         let edge = &self.loc.b.edges[e as usize];
         let at = edge.point(0.5 * (edge.t[0] + edge.t[1]), &self.loc.b.vertices);

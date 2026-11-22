@@ -128,27 +128,40 @@ placement carries inside the blank; CLI test readers zero the offset.
   entry read, so an entry is right for any drawing whose solid reads as the one it was made in,
   and three readers that once each made their own read one memo: the copy a body's stratum is
   read from (`faces::without`: the body with what reads its faces taken out) shares the drawing's
-  per-solid memos (`Caches::shared`, `Memo::shared`) rather than copying them, so the bodies
+  per-solid memos (`Caches::shared`, `Memo::shared`; the copy is made with them, `Sketch::
+  clone_with`, never copied to be replaced) rather than copying them, so the bodies
   beneath it — every other round, each region lowered and gated — are built for the drawing and
   not for a copy dropped once the stratum is read (a body's lists of terms are in every key that
-  reaches it, so nothing reached through a body it changed is shared); each pass of the
-  elaboration starts from the one before's solids (`Caches::carried`, every per-solid memo — the
+  reaches it, so nothing reached through a body it changed is shared — and a stratum's own key,
+  `MemoKey::except`, reads the body's lists with what reads its faces taken out, as the copy has
+  them, so a stratum is the body an earlier pass drew before its rounds were expanded); each pass
+  of the
+  elaboration starts from the one before's solids (`Caches::carried`, handed over: every
+  per-solid memo — the
   rest is keyed by curve or name and read afresh), so a pass drawing the document again to run a
   block over the faces the one before built builds none of what it built alike; and the reading
   where the drawing solves (`at_solve`) leaves the drawing what it made there.  **A reading held
-  still** (`Sketch::held`, `Caches::held`): while a reader holds the sketch shared nothing a key
+  still** (`let _holding = sk.caches.held.open();`, `Caches::held`): while a reader holds the
+  sketch shared nothing a key
   reads can change, so each solid's key (`MemoKey::at`, shared by `Arc` and compared by identity
   first) and each body's stratum (`faces::cached`) is worked out once for the reading, not once
   for every region of a body rounded all over, whose every key walks the body; readings nest,
   the outermost forgets what it held, and a clone holds nothing.  An evaluation, a build, a
   validation and a refusal open one, as do the loops over every solid (`solid_diagnostics`, the
   diagnosis's refusals, the elaboration's reading of the faces it names, `at_solve`'s readings).
-  A swept body supplied to a report asks what is wanted before whether it is swept
+  **What is the body's alone is read with the body**: whether each edge is a seam
+  (`BodyFaces::seams`) and each face's smooth chain (`chains`), read once as the boundary is
+  located, so a walk across seams (`smooth`, `across_seams`, `lowering::pieces`, `with_caps`) is
+  as long as the chain it walks and `chains_apart` groups by chain — every region over a body
+  rounded all over walked it again, the normals of every edge read each time, and the field
+  read the chains at every region (the diagnosis of the 204-face plate grew as the cube of its
+  faces).  A swept body supplied to a report asks what is wanted before whether it is swept
   (`brep::export::supply_exact_where`): the second validates the solid, which for every region
   of a body rounded all over lowered and gated it, each under a reading of its own.  What was
   made is told to whoever listens (`progress::Made`: a body built, a region lowered), so
   `tests/held_still.rs` holds a run of a plate whose pockets are rounded and then rounded all over
-  to lowering each region once (four times before) and building the body once a state, and an
+  to lowering each region once (four times before) and building each body once a state (`whole`
+  once, `all` three times: sharp, with the pockets' rounds and with its own), and an
   edit to one plate of two to lowering again only the other's regions.  The 204-face plate of the
   issue (`--where all.volume`, release `solventc`, a quiet machine) ran 260 s before this and
   134 s after; its 102-face one 66 s and 36 s.

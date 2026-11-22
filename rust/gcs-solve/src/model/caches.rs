@@ -45,10 +45,10 @@ pub(crate) fn cap_zoom<V>(cache: &mut BTreeMap<(usize, (u8, u64)), V>, i: usize)
     }
 }
 
-/// **What a reading of the drawing held still remembers** (`Sketch::held`, #994): for as long as
-/// a reader holds the sketch shared and has said so, nothing any key reads can change — every
-/// number, entity and solid it walks is a plain field, written only through `&mut Sketch`, which
-/// that borrow excludes — so the key of each solid (`MemoKey::at`) and each body's stratum
+/// **What a reading of the drawing held still remembers** (#994): for as long as a reader holds
+/// the sketch shared and has said so (`open`), nothing any key reads can change — every number,
+/// entity and solid it walks is a plain field, written only through `&mut Sketch`, which that
+/// borrow excludes — so the key of each solid (`MemoKey::at`) and each body's stratum
 /// (`faces::cached`) is worked out once for the reading and handed back by identity to every
 /// later asker, rather than walked again by each: a body rounded all over is asked both by every
 /// region of every edge and corner, each walk as long as the body.  Forgotten when the outermost
@@ -61,11 +61,8 @@ pub struct Held {
     /// Each solid's key, by solid and the bits of the unit it was read at.
     keys: RefCell<BTreeMap<(usize, u64), crate::solid::MemoKey>>,
     /// Each body's stratum (`faces::cached`), by body.
-    #[allow(clippy::type_complexity)]
     strata: RefCell<BTreeMap<usize, Result<std::sync::Arc<crate::solid::faces::BodyFaces>,
                                             String>>>,
-    /// How many keys were walked while held (`Held::walked`): what a test counts.
-    walked: std::cell::Cell<usize>,
 }
 
 impl Clone for Held {
@@ -75,7 +72,7 @@ impl Clone for Held {
 }
 
 /// Ends a reading held still, however the reading ended: the outermost forgets what it held.
-pub(crate) struct Holding<'a>(&'a Held);
+pub struct Holding<'a>(&'a Held);
 
 impl Drop for Holding<'_> {
     fn drop(&mut self) {
@@ -89,8 +86,10 @@ impl Drop for Holding<'_> {
 }
 
 impl Held {
-    /// Open a reading; it ends when what is returned is dropped.
-    pub(crate) fn open(&self) -> Holding<'_> {
+    /// **Hold the drawing still** for as long as what is returned lives: what loops over the
+    /// solids opens one (`let _holding = sk.caches.held.open();`), as does each evaluation, build,
+    /// validation and refusal.  Readings nest; the outermost forgets what it held.
+    pub fn open(&self) -> Holding<'_> {
         self.depth.set(self.depth.get() + 1);
         Holding(self)
     }
@@ -100,42 +99,32 @@ impl Held {
         self.depth.get() > 0
     }
 
-    /// Solid `si`'s key at `unit`: the one held, else `walk`'s, held where a reading is open.
-    pub(crate) fn key(&self, si: usize, unit: f64, walk: impl FnOnce() -> crate::solid::MemoKey)
-        -> crate::solid::MemoKey {
+    /// What `held` holds for `k`, else `make`'s, held where a reading is open.  `make` may ask
+    /// for more: nothing is borrowed while it runs.
+    fn of<K: Ord, V: Clone>(&self, held: &RefCell<BTreeMap<K, V>>, k: K, make: impl FnOnce() -> V)
+        -> V {
         if !self.holding() {
-            return walk();
+            return make();
         }
-        if let Some(k) = self.keys.borrow().get(&(si, unit.to_bits())) {
-            return k.clone();
+        if let Some(v) = held.borrow().get(&k) {
+            return v.clone();
         }
-        let k = walk();
-        self.walked.set(self.walked.get() + 1);
-        self.keys.borrow_mut().insert((si, unit.to_bits()), k.clone());
-        k
+        let v = make();
+        held.borrow_mut().insert(k, v.clone());
+        v
     }
 
-    /// Body `body`'s stratum: the one held, else `read`'s, held where a reading is open.  `read`
-    /// may ask for other bodies' strata: nothing is borrowed while it runs.
-    #[allow(clippy::type_complexity)]
+    /// Solid `si`'s key at `unit`: the one held, else `walk`'s.
+    pub(crate) fn key(&self, si: usize, unit: f64, walk: impl FnOnce() -> crate::solid::MemoKey)
+        -> crate::solid::MemoKey {
+        self.of(&self.keys, (si, unit.to_bits()), walk)
+    }
+
+    /// Body `body`'s stratum: the one held, else `read`'s.
     pub(crate) fn stratum(&self, body: usize,
         read: impl FnOnce() -> Result<std::sync::Arc<crate::solid::faces::BodyFaces>, String>)
         -> Result<std::sync::Arc<crate::solid::faces::BodyFaces>, String> {
-        if !self.holding() {
-            return read();
-        }
-        if let Some(s) = self.strata.borrow().get(&body) {
-            return s.clone();
-        }
-        let s = read();
-        self.walked.set(self.walked.get() + 1);
-        self.strata.borrow_mut().insert(body, s.clone());
-        s
-    }
-
-    /// How many keys and strata were worked out while held, since the sketch was made.
-    pub fn walked(&self) -> usize {
-        self.walked.get()
+        self.of(&self.strata, body, read)
     }
 }
 
@@ -291,7 +280,7 @@ pub struct Caches {
     /// and it is a walk of every object's reads.
     #[allow(clippy::type_complexity)]
     pub objects_side: RefCell<Option<(Vec<f64>, [usize; 2], Vec<usize>, Option<f64>)>>,
-    /// What a reading held still remembers (`Sketch::held`, #994): never copied by a clone, and
+    /// What a reading held still remembers (`Held::open`, #994): never copied by a clone, and
     /// not cleared by `clear`, which a reading may call while it is open; it forgets when the
     /// reading ends.
     pub held: Held,
@@ -304,15 +293,18 @@ impl Caches {
     /// whole document again to run a block over the faces this one built, builds none of the
     /// bodies it builds alike again.  The rest (polylines, marches, the objects' box) is left
     /// behind: they are keyed by curve or by name, and a drawing made again reads them afresh.
-    pub fn carried(&self) -> Caches {
-        let carried = self.clone();
-        carried.polyline.borrow_mut().clear();
-        carried.followed.borrow_mut().clear();
-        carried.tracks.borrow_mut().clear();
-        carried.traced3.borrow_mut().clear();
-        carried.generated.borrow_mut().clear();
-        carried.objects_side.borrow_mut().take();
-        carried
+    /// Taken, not copied: the drawing it is taken from is done with.
+    pub fn carried(self) -> Caches {
+        Caches {
+            polyline: Default::default(),
+            followed: Default::default(),
+            tracks: Default::default(),
+            traced3: Default::default(),
+            generated: Default::default(),
+            objects_side: Default::default(),
+            held: Held::default(),
+            ..self
+        }
     }
 
     /// **What a copy of the drawing changed only in what some solids read remembers into**
@@ -324,12 +316,17 @@ impl Caches {
     /// for the drawing itself, not for a copy dropped once the stratum is read.
     pub fn shared(&self) -> Caches {
         Caches {
+            polyline: self.polyline.clone(),
+            solid: self.solid.clone(),
+            placed: self.placed.clone(),
+            placed_exact: self.placed_exact.clone(),
             exact: self.exact.shared(),
             swept_exact: self.swept_exact.shared(),
             swept: self.swept.shared(),
             meridian: self.meridian.shared(),
             general: self.general.shared(),
             lowering: self.lowering.shared(),
+            gated: self.gated.clone(),
             bounded: self.bounded.shared(),
             carried: self.carried.shared(),
             grown: self.grown.shared(),
@@ -344,7 +341,12 @@ impl Caches {
             family: self.family.shared(),
             sheet: self.sheet.shared(),
             shell: self.shell.shared(),
-            ..self.clone()
+            followed: self.followed.clone(),
+            traced3: self.traced3.clone(),
+            generated: self.generated.clone(),
+            tracks: self.tracks.clone(),
+            objects_side: self.objects_side.clone(),
+            held: Held::default(),
         }
     }
 
