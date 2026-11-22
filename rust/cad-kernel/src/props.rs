@@ -866,16 +866,19 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
             // its curve a hair in from it on the branch it arrives along (its feet swinging round
             // the pole it passes within its tolerance of); the rule above reads the curve inside,
             // so the chord between the two is the face's boundary there (`sound`'s `Drawn::leap`
-            // reads the region it closes). A hair in, carried back to the end by the curve's rate,
-            // so a smooth end adds nothing
+            // reads the region it closes)
             let ends: Vec<[Uv;4]> = l.iter().map(|c| {
                 let e = &b.edges[c.edge as usize];
                 let (a,z) = (c.pcurve.at(e.t[0],e,s,&b.vertices),c.pcurve.at(e.t[1],e,s,&b.vertices));
                 let inside = |t: f64,end: Uv,h: f64| {
                     if !matches!(c.pcurve,Pcurve::Inverse {..}) { return end }
                     let (q,d) = c.pcurve.at_and_derivative(t+h,e,s,&b.vertices);
-                    let back = [q[0]-h*d[0],q[1]-h*d[1]];
-                    if back.iter().all(|x| x.is_finite()) { back } else if q.iter().all(|x| x.is_finite()) { q } else { end }
+                    // (the curve a hair in where it stands farther from the end than its rate
+                    // carries it there: a leap; else the end itself, so a smooth end adds nothing,
+                    // not even rounding)
+                    let step = (d[0]*h).hypot(d[1]*h);
+                    let gap = (q[0]-end[0]).hypot(q[1]-end[1]);
+                    if q.iter().all(|x| x.is_finite()) && gap.is_finite() && gap > 10.*step.max(1e-12*(1.+end[0].abs()+end[1].abs())) { q } else { end }
                 };
                 let h = 1e-9*(e.t[1]-e.t[0]);
                 let (ai,zi) = (inside(e.t[0],a,h),inside(e.t[1],z,-h));
