@@ -21,6 +21,52 @@ fn tumbling(centre: [f64;3],hub: f64,tube: f64,ratio: f64,lean: f64,heading: f64
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("edges") {
+        // a dumped candidate's edges with an end within `r` of `x` (`edges <dump> c x,y,z r`): each
+        // edge's ends, its kind, and every use — the face, and the use's ends in its parameters
+        let d = cad_kernel::swept::dump::load_trim(std::path::Path::new(&args[1])).unwrap();
+        let b = &d.candidates[args[2].parse::<usize>().unwrap()];
+        let x: Vec<f64> = args[3].split(',').map(|v| v.parse().unwrap()).collect();
+        let r: f64 = args[4].parse().unwrap();
+        let uses = b.uses();
+        for (ei,e) in b.edges.iter().enumerate() {
+            let p = e.v.map(|v| b.vertices[v as usize].p);
+            if !p.iter().any(|p| cad_kernel::util::space::distance(*p,[x[0],x[1],x[2]]) <= r) { continue }
+            println!("edge {ei} vertices {:?} at {:?}",e.v,p);
+            for &(fi,li,ci) in &uses[ei] {
+                let f = &b.faces[fi];
+                println!("  face {fi} loop {li}: {:?}",b.uv_ends(f,&f.loops[li][ci]));
+            }
+        }
+        return
+    }
+    if args.first().map(String::as_str) == Some("rowgap") {
+        // two dumped faces' iso-curves at the roll `t` (`rowgap <dump> c f c g t n`): at `n` places
+        // along the first face's `u` span, how far its point stands from the second's iso-curve
+        // (its nearest by a grid and golden sections over the second's `u` span)
+        let d = cad_kernel::swept::dump::load_trim(std::path::Path::new(&args[1])).unwrap();
+        let p: Vec<usize> = args[2..6].iter().map(|v| v.parse().unwrap()).collect();
+        let (t,n): (f64,usize) = (args[6].parse().unwrap(),args[7].parse().unwrap());
+        let span = |c: usize,f: usize| {
+            let b = &d.candidates[c];
+            let f = &b.faces[f];
+            let uv: Vec<[f64;2]> = f.loops.iter().flatten().flat_map(|e| b.uv_ends(f,e)).collect();
+            (uv.iter().map(|q| q[0]).fold(f64::INFINITY,f64::min),uv.iter().map(|q| q[0]).fold(f64::NEG_INFINITY,f64::max))
+        };
+        let (fa,fb) = (&d.candidates[p[0]].faces[p[1]].surface,&d.candidates[p[2]].faces[p[3]].surface);
+        let ((a0,a1),(b0,b1)) = (span(p[0],p[1]),span(p[2],p[3]));
+        for i in 0..=n {
+            let u = a0+(a1-a0)*i as f64/n as f64;
+            let x = fa.point([u,t]);
+            let g = |v: f64| cad_kernel::util::space::distance(fb.point([v,t]),x);
+            let k = (0..=2000).min_by(|&i,&j| g(b0+(b1-b0)*i as f64/2000.).total_cmp(&g(b0+(b1-b0)*j as f64/2000.))).unwrap();
+            let (mut lo,mut hi) = (b0+(b1-b0)*(k.max(1)-1) as f64/2000.,b0+(b1-b0)*(k+1).min(2000) as f64/2000.);
+            let gr = 0.5*(5f64.sqrt()-1.);
+            for _ in 0..100 { let (x1,x2) = (hi-gr*(hi-lo),lo+gr*(hi-lo)); if g(x1) < g(x2) { hi = x2 } else { lo = x1 } }
+            println!("u {u:.6} {x:.7?}: {:.3e} from the other's at {:.6}",g(0.5*(lo+hi)),0.5*(lo+hi));
+        }
+        return
+    }
     if args.first().map(String::as_str) == Some("face") {
         // a dumped trim's candidate's face, its parameters `(u, t)` a tube's sheet's: the far cover
         // over its parameters' box — `.` uncovered, `f` covered less than the tolerance deep, `F`
@@ -45,12 +91,15 @@ fn main() {
             } }
             println!("nearest {best:?}");
         }
+        // (the point standing off its sheet by `off`: the tolerance unless given, `closed`'s tail
+        // rule reading the fit's, a tenth of it)
+        let off: f64 = args.get(7).map_or(t.tol,|v| v.parse().unwrap());
         let rows = cad_kernel::util::par::indices(n+1,|i| {
             let v = hi[1]-(hi[1]-lo[1])*i as f64/n as f64;
             let line: String = (0..=n).map(|j| {
                 let u = lo[0]+(hi[0]-lo[0])*j as f64/n as f64;
                 let x = f.surface.point([u,v]);
-                match cover(&ring,&t.path,t.roll,x,v,t.tol,t.tol) {
+                match cover(&ring,&t.path,t.roll,x,v,off,t.tol) {
                     Ok(Reading::Near) => 'N',
                     Ok(Reading::Far(c)) => if c.depth < -t.tol { 'F' } else if c.depth < 0. { 'f' } else { '.' },
                     Ok(Reading::Alone) => 'a',
@@ -440,6 +489,28 @@ fn main() {
             }
             return
         }
+        "pieces" => {
+            // each curve's pieces at the roll `t`: their angles, labels and sides
+            let t: f64 = args[2].parse().unwrap();
+            for (ci,c) in cad_kernel::swept::rings::pieces_at(&ring,&path,[t,roll[1]],t).unwrap().iter().enumerate() {
+                for p in c { println!("curve {ci}: [{:.7}, {:.7}] {:?} {:?}",p.0,p.1,p.2,p.3) }
+            }
+            return
+        }
+        "cover" => {
+            // a point `x` of a sheet at its own roll `t` read by `cover` standing off it by `off`,
+            // and the depth along the roll about `t` (`… cover x,y,z t off [half-width] [n]`)
+            let x: Vec<f64> = args[2].split(',').map(|v| v.parse().unwrap()).collect();
+            let x = [x[0],x[1],x[2]];
+            let (t,off): (f64,f64) = (args[3].parse().unwrap(),args[4].parse().unwrap());
+            println!("{:?}",cover(&ring,&path,roll,x,t,off,tol));
+            if let Some(w) = args.get(5).map(|v| v.parse::<f64>().unwrap()) {
+                let n: usize = args.get(6).map_or(40,|v| v.parse().unwrap());
+                let ts: Vec<f64> = (0..=n).map(|k| t-w+2.*w*k as f64/n as f64).collect();
+                for (s,d) in ts.iter().zip(cad_kernel::swept::depth::depths(&ring,&path,x,&ts)) { println!("{s:.8} {d:+.4e}") }
+            }
+            return
+        }
         "at" => {
             // the sheet's point at (θ, t, σ) and its reading
             let n: Vec<f64> = args[2..5].iter().map(|v| v.parse().unwrap()).collect();
@@ -471,11 +542,18 @@ fn main() {
     }
     let clock = std::time::Instant::now();
     if what == "fit" {
-        let (_,_,fits,curves,_) = cad_kernel::swept::closed::ring_fitted(&tool,&path,roll,tol).unwrap();
+        let (ring,_,fits,curves,_) = cad_kernel::swept::closed::ring_fitted(&tool,&path,roll,tol).unwrap();
         println!("{} stretches {:?}, in {:?}",fits.len(),fits.iter().map(|f| f.roll).collect::<Vec<_>>(),clock.elapsed());
         for c in &curves {
             let at = c.iter().position(|p| p.0.is_nan()).unwrap_or(c.len());
             println!("a curve of {at} points from {:?} to {:?}, swallowtail points {:?}",c[0],c[at-1],&c[at+1..]);
+            // (`fit t0 t1`: its points whose roll is within the window, and how each bends)
+            if let (Some(t0),Some(t1)) = (args.get(2).and_then(|v| v.parse::<f64>().ok()),args.get(3).and_then(|v| v.parse::<f64>().ok())) {
+                for (k,&(th,t,sg)) in c[..at].iter().enumerate().filter(|p| p.1.1 >= t0 && p.1.1 <= t1) {
+                    let s = label_at(&ring,&path,th,t,sg).and_then(|l| sheet(&ring,&path,roll,th,t,l));
+                    println!("  {k}: θ {th:.7} t {t:.7} σ {sg:.5}: {:?}",s.map(|(x,b)| (x,b)));
+                }
+            }
         }
         return
     }

@@ -100,13 +100,25 @@ pub fn cover(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],x: V,own: f64,off: f64
     let rounding = (16.*f64::EPSILON*(crate::util::space::norm(x)+ring.size)).max(off);
     let held = |s: &[(f64,f64)]| s.iter().find(|p| p.1.abs() > rounding).is_some_and(|p| p.1 < 0.);
     if held(&lower) || held(&upper) { return Ok(Reading::Near) }
-    // each side's own contact's end: the first sample past which `d` falls
+    // each side's own contact's end: the greatest sample before `d` first falls a rounding below
+    // the greatest so far, settled between its neighbours
     let past = |s: &[(f64,f64)]| -> (usize,Option<f64>) {
-        // (a fall within the rounding is no fall: about its own instant `d` is nought to it)
-        let Some(k) = (1..s.len()).find(|&k| s[k-1].1 > rounding && s[k].1 < s[k-1].1-rounding) else { return (s.len(),None) };
-        let lo = if k >= 2 { s[k-2].0 } else { own };
-        let (l,h) = if lo < s[k].0 { (lo,s[k].0) } else { (s[k].0,lo) };
-        (k,Some(least(&|t| -d(t),l,h)))
+        // (a fall within the rounding is no fall: about its own instant `d` is nought to it. Read
+        // against the greatest sample so far, not the one before: where the own contact climbs
+        // barely past the rounding and the far instant then falls slowly, no two neighbours stand a
+        // rounding apart — the thin torus's lens beside its second swallowtail point climbed to
+        // 3.1e-8 against a rounding of 3e-8, fell in steps of 1e-8, and was read `Alone` where an
+        // instant 0.018 of the roll on held it 2.2e-6 deep)
+        let mut top = 0;
+        let fell = (1..s.len()).any(|k| {
+            if s[k-1].1 > s[top].1 { top = k-1 }
+            s[top].1 > rounding && s[k].1 < s[top].1-rounding
+        });
+        if !fell { return (s.len(),None) }
+        let lo = if top >= 1 { s[top-1].0 } else { own };
+        let hi = s[top+1].0;
+        let (l,h) = if lo < hi { (lo,hi) } else { (hi,lo) };
+        (top+1,Some(least(&|t| -d(t),l,h)))
     };
     let ((kl,el),(ku,eu)) = (past(&lower),past(&upper));
     // the least sample past each end, settled between its neighbours and within the far stretch
