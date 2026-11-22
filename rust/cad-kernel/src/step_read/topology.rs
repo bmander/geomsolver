@@ -238,6 +238,7 @@ fn read_edge(g: &Geometry,w: &Written,points: &[V],within: f64) -> Result<Read,R
         }
         _ => (g.edge_curve(r,Some(w.geometry),ends)?,Vec::new()),
     };
+    let (curve,pcurves) = closed::restarted(curve,pcurves,w,points,within);
     // laid along its curve: from its first vertex where it runs along, else its last
     let v = if w.same_sense { w.ends } else { [w.ends[1],w.ends[0]] };
     let t = parameters(&curve.curve,[points[v[0]],points[v[1]]],v[0] == v[1],r,within)?;

@@ -3,7 +3,7 @@
 //! `points_placed`); a file's curve in the parameters of a spline sheet that closes, written past
 //! its domain (`onto_net`).
 use super::{iso,moved,Bound,Built,Read,Setting,Walked,Written,LAID};
-use super::super::geometry::Geometry;
+use super::super::geometry::{Flat,Geometry,Spatial};
 use super::super::Refusal;
 use crate::geom::{Curve,Frame,Rigid,Surface,Uv,V};
 use crate::topo::{reverse_loop,Brep,Coedge,Edge,EdgeCurve,Face,Pcurve,Vertex};
@@ -311,4 +311,22 @@ fn torus_like(st: &Setting,s: &Surface,w: &Walked,vs: &[(u32,usize,V)],d: [[f64;
     let mut laid = la;
     laid.extend(lb);
     Ok(Built {face:Face {surface:s.clone(),reversed:w.reversed,loops:vec![l],name:w.name.clone()},laid,poles,cuts:Vec::new()})
+}
+
+/// **A closed edge on a closed spline whose vertex stands off its ends** (#993): the spline
+/// started again at the vertex (`geometry::restarted`, the same points), so the edge runs once
+/// round it from its vertex to its vertex; its curves in faces' parameters, over the file's
+/// parameter of it, no longer read (the edge inverted onto its faces instead). Any other edge as
+/// it is.
+pub(super) fn restarted(curve: Spatial,pcurves: Vec<(u32,Flat)>,w: &Written,points: &[V],within: f64) -> (Spatial,Vec<(u32,Flat)>) {
+    let Curve::BSpline(b) = &curve.curve else { return (curve,pcurves) };
+    let p = points[w.ends[0]];
+    let [a,_] = b.domain();
+    if w.ends[0] != w.ends[1] || distance(b.point(a),p) <= within { return (curve,pcurves) }
+    let t = b.nearest(p);
+    if distance(b.point(t),p) > within { return (curve,pcurves) }
+    match super::super::geometry::restarted(b,t,within) {
+        Some(c) => (Spatial {curve:Curve::BSpline(Arc::new(c)),rate:curve.rate},Vec::new()),
+        None => (curve,pcurves),
+    }
 }

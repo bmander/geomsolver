@@ -267,6 +267,45 @@ fn clamped(b: BSpline) -> BSpline {
     BSpline {degree:p,knots:s.uknots,poles:s.poles.iter().map(|r| r[0]).collect(),weights:s.weights.map(|w| w.iter().map(|r| r[0]).collect())}
 }
 
+/// **A closed B-spline started again at its parameter `t`** (#993; ISO 10303-42 lets a closed
+/// edge's vertex stand anywhere on its closed curve): its stretch from `t` to its end and then its
+/// stretch from its start to `t`, each the same curve at the same parameters (`clamped`'s
+/// insertion), the second's parameter carried on past the first's end and its weights scaled to
+/// meet the first's at the join (a rational curve's points are its homogeneous poles' over any
+/// common factor) — the same closed set of points, run the same way, now from `t` over
+/// `[t, t + (b − a)]`, a knot of multiplicity `p` at the join. None where `t` is not inside its
+/// domain or it does not close (its ends one within `within`).
+pub fn restarted(c: &BSpline,t: f64,within: f64) -> Option<BSpline> {
+    let ([a,z],p) = (c.domain(),c.degree);
+    // (a vertex read at a knot to its last bits is at the knot: a stretch of no length beside it
+    // would be divided by)
+    let t = c.knots.iter().copied().find(|k| (k-t).abs() <= 1e-9*(z-a)).unwrap_or(t);
+    if !(t > a && t < z) || crate::util::space::distance(c.point(a),c.point(z)) > within { return None }
+    let piece = |[x,y]: [f64;2]| {
+        let net = Net {du:p,dv:1,uknots:c.knots.clone(),vknots:vec![0.,0.,1.,1.],poles:c.poles.iter().map(|&q| vec![q,q]).collect(),
+            weights:c.weights.as_ref().map(|w| w.iter().map(|&x| vec![x,x]).collect())};
+        let s = net.segment([x,y],[0.,1.]);
+        (s.uknots,s.poles.iter().map(|r| r[0]).collect::<Vec<V>>(),s.weights.map(|w| w.iter().map(|r| r[0]).collect::<Vec<f64>>()))
+    };
+    let (ka,pa,wa) = piece([t,z]);
+    let (kb,pb,wb) = piece([a,t]);
+    if pa.len() < 2 || pb.len() < 2 || ka.len() != pa.len()+p+1 || kb.len() != pb.len()+p+1 { return None }
+    let mut knots = ka[..ka.len()-1].to_vec();
+    knots.extend(kb[p+1..].iter().map(|k| k+(z-a)));
+    let mut poles = pa;
+    poles.extend(&pb[1..]);
+    let weights = match (wa,wb) {
+        (Some(mut wa),Some(wb)) => {
+            let f = wa[wa.len()-1]/wb[0];
+            wa.extend(wb[1..].iter().map(|w| w*f));
+            Some(wa)
+        }
+        (None,None) => None,
+        _ => return None,
+    };
+    Some(BSpline {degree:p,knots,poles,weights})
+}
+
 /// A curve read the other way round, `C(−t)` (a B-spline's `C(a + b − t)`): a line's direction
 /// turned, a conic's frame turned over its `x`, a spline's poles and knots reversed.
 fn reversed(c: &Curve) -> Option<Curve> {
