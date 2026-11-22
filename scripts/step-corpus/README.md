@@ -193,7 +193,9 @@ row is not gated: OCCT and the measurer both fail on it, or its bar would pass a
   written; the size does not.) `C` is measured only for a file whose volume is outside its row's
   own bar, a handful, so the corpus costs what it did; the gate's failure message and the survey
   print `C`, the size, the row's bar and the bar held to.
-* **The area**: the sum of its faces' own bars (`face_bar`) over its area. It is what the
+* **The area**: the sum of its faces' own bars (`face_bar`) over its area (wider than a row's
+  1e-6 on nearly every file by the bars' own `REL`, 1e-6, which is why almost every row's area
+  bar is listed as widened, by a part in a million). It is what the
   per-face check holds the faces to, summed, so on its own it is no sharper (3.8e-3 on 212, whose
   readers agree to 1e-5): the per-face check is the sharp one. What the total adds is the faces
   that check cannot hold: one no reader measured (90 in the corpus), one the reader laid itself
@@ -254,8 +256,9 @@ At the account's starting commit (fcfa6597) 144 rows were not read right; with C
 its face 20; open shells, edges used otherwise than once each way and a non-manifold edge 18; edges
 past `LOOSE` off their faces 11; loops not closed by vertex identity 7 — four of them OCCT's own
 rewrites of a file that reads; a hole crossing its outer bound and a loop crossing itself 2; a
-real written `NaN` 1), 52 `gap`, 4 `assembly`, 17 `nosolid`, 2 `open`, 5 `reference` (the Utah
-teapot), 4 `bar` and 2 `unchecked` (CADGenBench 211 and 250). Of the 12 `disputed` rows 10 are
+real written `NaN` 1), 52 `gap`, 4 `assembly`, 17 `nosolid`, 2 `open`, 7 `reference` (the Utah
+teapot, and CADGenBench 211 and 250, whose OCCT-alone faces a third reader has since checked) and 4
+`bar`. Of the 12 `disputed` rows 10 are
 `defective` (OCCT turns a loop the file runs the wrong way, or reaches the closed forms by raising
 its tolerances past the file's slack, and the measurer reads the file as written to another or no
 solid) and 2 are settled for OCCT, whose readings are the closed forms (brepkit's ellipsoid, OCCT's
@@ -279,9 +282,11 @@ measurer reads 0.294270388 and OCCT 0.294041293 (a pole at u = 0 each), so the c
 18 trimmed faces (the body cut by the spout and the handle, those patches, two planes) need the
 trimming curves and are not integrated here: the teapot's whole area is the measurer's with its
 whole faces corrected, 52.22639 on the four writers at 1e-7 (next.BREP's 52.22636, its file to
-1.03e-7). A face whose one reference is OCCT's alone and in question (CADGenBench 250's
-extrusion #21919: OCCT 1127.33, the kernel 1136.46, a column quadrature over the file's own
-pcurves 1136.457; 211's #72139) is `unchecked` until a third reader's table holds it.
+1.03e-7). A face whose one reference is OCCT's alone and in question is `unchecked` until a third
+reader's table holds it; CADGenBench 250's extrusion #21919 (OCCT 1127.33, the kernel 1136.4567,
+the quadrature over the file's own boundary 1136.4566796) and 211's #72139 (OCCT 944.6, the
+quadrature 963.7494) now are, and OCCT's areas of them are set aside. A third reader's faces
+correct a row's area and tighten no bar (211 keeps its 8.5e-4).
 
 The 11 face tables of OCCT's the faces agent found OCCT's reading no longer reproduces (kentron's
 frustum-screwed-across-ring-sector, next.BREP's ball-segment- and hemisphere-rim-chamfered-to-its-
