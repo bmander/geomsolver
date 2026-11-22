@@ -605,7 +605,7 @@ fn a_given_curve_a_face_holds_as_two_edges_is_laid_as_both() {
 #[test]
 fn a_sheet_tangent_to_a_face_at_the_tolerance_is_ordered_round_its_rim_by_a_step_in() {
     use gcs_core::brep::boolean::{arrangement_given,Given};
-    use gcs_core::brep::geom::{Curve,Frame,Surface};
+    use gcs_core::brep::geom::{Curve,Surface};
     use gcs_core::brep::nurbs::Net;
     let (a,l) = (-2e-4,1.6);
     let z = |x: f64| a*x+0.5*x*x;

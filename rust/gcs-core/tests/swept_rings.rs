@@ -246,6 +246,48 @@ fn the_tumbling_torus_is_built_at_every_spelling_of_its_motion() {
     }
 }
 
+/// **The tumbling torus is built wherever its start pose's seam stands** (#942; the slow tier,
+/// about a minute): the torus where the roll starts turned about its own axis — the same solid —
+/// so its seam meridian stands at an angle of its own choosing (the seam vertex's, round the axis
+/// from `Frame::about`'s `x`), and the rest built as the ring road builds it (`closed::ring_from`).
+/// Between about −2.745 and −2.684 the seam crossed the start torus's touch just past a corner of
+/// the inner tube's pieces, and the short edge of the touch between them had the tube's fitted
+/// sheet leaning 2e-4 into the torus at first order while the rest leant 3e-6: ordered at first
+/// order there and by a step in along the rest, the two ways round, three cells were one and the
+/// build was refused (`complex::turned_back`). Built at angles before, across and after that
+/// window, each checked at the tolerance, its volume the one made apart within 1e-4 and the
+/// first's within the tolerance's worth, the solid's area times the tolerance (measured 4e-10
+/// apart).
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about a minute: the tumbling torus built at five seams")]
+fn the_tumbling_torus_is_built_wherever_its_start_poses_seam_stands() {
+    use gcs_core::brep::geom::{Frame,Rigid,Surface};
+    use gcs_core::brep::swept::closed::{ring_entered,ring_from};
+    use gcs_core::brep::trajectory::Screw;
+    let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.5).unwrap();
+    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.25,advance:0.});
+    let frame = Trajectory::Twist(Screw {origin:[0.,0.5,0.5],axis:[1.,0.,0.],ratio:1.,advance:0.});
+    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
+    let roll = [-75f64.to_radians(),75f64.to_radians()];
+    let mut first = None;
+    for seam in [-2.78,-2.73,-2.71,-2.69,-2.65] {
+        let mut entered = ring_entered(&tool,&path,roll,1e-5).unwrap();
+        let start = &entered.ends[0];
+        let Surface::Torus(f,..) = &start.faces[0].surface else { panic!("the start pose a torus") };
+        let about = Frame::about(f.o,f.z);
+        let l = about.local(start.vertices[0].p);
+        let turned = start.moved(&Rigid::turn(f.o,f.z,seam-l[1].atan2(l[0])));
+        entered.ends[0] = turned;
+        let built = ring_from(&tool,&path,roll,0.002,1e-5,entered).unwrap_or_else(|u| panic!("its seam at {seam}: {u:?}"));
+        built.check(1e-5).unwrap_or_else(|e| panic!("its seam at {seam}: {e:?}"));
+        let v = gcs_core::brep::props::volume(&built);
+        assert!((v-25.2750727653).abs() < 1e-4,"its seam at {seam}: {v}");
+        let worth = 1e-5*built.faces.iter().map(|f| gcs_core::brep::props::area(&built,f)).sum::<f64>();
+        let v0 = *first.get_or_insert(v);
+        assert!((v-v0).abs() <= worth,"its seam at {seam}: {v} against {v0}");
+    }
+}
+
 /// The closed polygon through `points` (in a plane), as a profile.
 pub(crate) fn polygon(points: &[[f64;3]]) -> gcs_core::brep::build::Profile {
     use gcs_core::brep::build::{Profile,ProfileEdge};

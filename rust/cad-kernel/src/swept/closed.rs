@@ -1111,7 +1111,20 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
             return candidates(tool,path,[a,b],bar,tol,Some(blank),t.ends,t.sheets,&t.given,true)
         }
     }
-    let RingEntered {ends,sheets,given,cut} = ring_entered(tool,path,[a,b],tol)?;
+    entered_built(tool,path,[a,b],bar,tol,blank,ring_entered(tool,path,[a,b],tol)?)
+}
+
+/// **A ring's sweep built from what its road entered** (`ring_entered`), as `ring` builds it: so a
+/// probe or a gate may change what was entered — turn an end pose about its own axis, the same
+/// solid with its seam elsewhere (#942) — and build the rest as the road does.
+pub fn ring_from(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,entered: RingEntered) -> Result<Brep,Unbuilt> {
+    entered_built(tool,path,[roll[0].min(roll[1]),roll[0].max(roll[1])],bar,tol,None,entered)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn entered_built(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>,entered: RingEntered)
+    -> Result<Brep,Unbuilt> {
+    let RingEntered {ends,sheets,given,cut} = entered;
     // **trimmed by membership where the roll is cut** (#880 T1d): its tubes met only where both come
     // near the sweep's boundary (`trim`), as the contact's road meets its sheets — a turned whole
     // ring's two tubes cross at under a degree inside the sweep, which the arrangement meets and
@@ -1643,15 +1656,26 @@ pub(crate) fn contour_solid(halves: &[crate::slid::Slid;2],[h0,h1]: [f64;2]) -> 
 /// the widest gap between the angles round the axis at which they stand, where it is laid at
 /// nothing given (a touch's line along a candidate's seam is an edge lying along a touch, which no
 /// arrangement holds by rounding). Left as it is where nothing is touched beside its axis.
+///
+/// Gaps within a rounding of the widest — `HALF_READ` of a turn, a gap being the difference of two
+/// angles read at a turn's scale — are alike, and the first of them by angle from the frame's own
+/// `x` is taken: the touched points stand evenly round the ring where its contact winds round it,
+/// every gap alike within 1e-14, and the widest by rounding stood the seam anywhere among them
+/// as the input moved by an ulp (#942: brep-bench's 80° torus, its seam, faces and dumps another
+/// for each spelling of its motion).
 pub(super) fn seam_away(solid: Brep,o: V,axis: V,touched: &[V]) -> Brep {
+    use std::f64::consts::TAU;
     let f = Frame::about(o,axis);
-    let angles: Vec<f64> = touched.iter().filter_map(|&p| {
+    let mut angles: Vec<f64> = touched.iter().filter_map(|&p| {
         let l = f.local(p);
-        (l[0].dhypot(l[1]) > 1e-9*(1.+norm(sub(p,o)))).then(|| l[1].datan2(l[0]))
+        (l[0].dhypot(l[1]) > 1e-9*(1.+norm(sub(p,o)))).then(|| l[1].datan2(l[0]).rem_euclid(TAU))
     }).collect();
     if angles.is_empty() { return solid }
-    let (at,gap) = super::sector::widest(angles.into_iter(),std::f64::consts::TAU);
-    solid.moved(&crate::geom::Rigid::turn(o,axis,at+0.5*gap))
+    angles.sort_by(f64::total_cmp);
+    let gap = |k: usize| if k+1 < angles.len() { angles[k+1]-angles[k] } else { angles[0]+TAU-angles[k] };
+    let widest = (0..angles.len()).map(gap).fold(0.,f64::max);
+    let k = (0..angles.len()).find(|&k| gap(k) >= widest-crate::util::fmath::HALF_READ*TAU).unwrap_or(0);
+    solid.moved(&crate::geom::Rigid::turn(o,axis,angles[k]+0.5*gap(k)))
 }
 
 /// A solid's face named `sheet` alone, its other faces left off: an open sheet the arrangement takes
