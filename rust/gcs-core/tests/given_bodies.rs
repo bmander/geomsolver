@@ -256,6 +256,14 @@ fn a_given_body_is_never_extended() {
         assert!(d.message.contains(&format!("`part := solid(bracket)`, then `drill {word} \
                                               part`")), "{}", d.message);
     }
+    // and the primitive the words are written in, said of it outside it
+    for set in ["bracket and { p | p not in drill }", "bracket or { p | p in drill }"] {
+        let src = format!("{DRILL}{set}\n");
+        let (_, diags) = read(&src);
+        assert_eq!(diags.len(), 1, "{set}: {diags:?}");
+        assert_eq!(diags[0].code, Code::E080, "{set}: {diags:?}");
+        assert!(diags[0].message.contains("`part := solid(bracket)`"), "{}", diags[0].message);
+    }
 }
 
 /// `use bracket (x)` names nothing the module defines, and a file's own name over the module's
