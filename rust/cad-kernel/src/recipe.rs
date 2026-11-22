@@ -566,6 +566,7 @@ fn touching_alone(before: &Brep,after: &Brep,late: &[&Brep]) -> Option<String> {
         let named = at(es);
         named.iter().any(|n| !had.contains(n)) && !named.iter().any(|n| earlier.contains(n))
     };
+    for l in &lines { eprintln!("DEBUG line {:?} at {:?} had {:?} earlier {:?}", l, at(*l), had, earlier); }
     let [e,_] = lines.into_iter().find(alone)?;
     let [a,b] = after.edges[e as usize].v.map(|v| after.vertices[v as usize].p);
     Some(format!("it leaves the solid touching itself along a line from [{:.4}, {:.4}, {:.4}] to [{:.4}, {:.4}, {:.4}] mm, \
