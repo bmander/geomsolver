@@ -121,8 +121,8 @@ pub(super) fn build(body: &crate::solid::faces::BodyFaces, f: &Faces, section: S
 /// how near.  A flat the same: each point of its section nearer its own face than any other of
 /// the chain's (where its section was built against the chain beside the edge, #422, the chain's
 /// nearest piece is its own, and that is the chain's to say).  A face is its surface in the pieces
-/// flush faces leave it (`super::pieces`, #952): a piece of its own surface is never a face it goes
-/// on into (#996's fifth item).  Checked at the ends of a straight edge (the centres within a convex chain are a
+/// flush faces leave it (`BodyFaces::pieces`, #952): a piece of its own surface is never a face it
+/// goes on into (#996's fifth item).  Checked at the ends of a straight edge (the centres within a convex chain are a
 /// convex set, so the ends hold the whole run) and round a ring at sixteen turns of its own.  A
 /// chain no side of which is convex toward the ball is read through its nearest face by the
 /// field, and left to the gate.
@@ -137,13 +137,7 @@ fn stands_within(body: &crate::solid::faces::BodyFaces, f: &Faces, groups: [&[us
     let sigma = if f.within { -1.0 } else { 1.0 };
     // each face's surface in the pieces flush faces leave it (#952, `pieces`): the section stands
     // against the surface, so a piece of it is the face's own, never one it goes on into
-    let surfaces: [Vec<usize>; 2] = std::array::from_fn(|k| {
-        let mut own: Vec<usize> = Vec::new();
-        for g in groups[k].iter().flat_map(|&fi| super::pieces(body, fi)) {
-            if !own.contains(&g) { own.push(g) }
-        }
-        own
-    });
+    let surfaces: [Vec<usize>; 2] = std::array::from_fn(|k| super::own_pieces(body, groups[k]));
     // each smooth face's chain, the others of it, and whether the field reads it face by face (a
     // chain bulging toward the ball, `BodyFaces::bulging`) or through its nearest face (any other:
     // a drafted shell's outline turning both ways) — as far as the field reads it (#962): a name in
@@ -463,7 +457,6 @@ fn held(body: &crate::solid::faces::BodyFaces, whole: &Touched, edge: u32, ends:
             && whole.run_ends(body).iter().any(|&(v, d, _)| crate::brep::fillet::faces_on(body.normal(g, v), d)),
         _ => false,
     });
-    let same = |f: usize, g: usize| body.same_surface(f, g);
     // the touches at each station: the ends of the section's arc, carried there
     let mut touches: Vec<(V, V)> = Vec::new();
     for k in 1..16 {
@@ -501,30 +494,30 @@ fn held(body: &crate::solid::faces::BodyFaces, whole: &Touched, edge: u32, ends:
             continue;
         }
         let Some(g) = body.faces_of(e).iter().copied().find(|&g| g != f) else { continue };
-        if same(f, g) || ends_run(g) {
+        if body.same_surface(f, g) || ends_run(g) {
             continue;
         }
         let other = faces.iter().copied().find(|&h| h != f).unwrap_or(f);
-        let (reaches, touched) = (body.side(other, foot).abs(), body.side(other, c).abs());
-        // (a face the ball overflows only somewhere — a crown past whose rim a large ball's touch
-        // runs on the crown's surface — is read on its surface as the field reads it: an edge of it
-        // as far off the other face as the ball touches it, read exactly, `fillet::reaches`; one
-        // nowhere as far off the other face as the ball touches it is all within the ball's touch,
-        // and cannot hold it)
-        if whole.reaching(body, f, other, touched - slack) {
-            continue;
-        }
-        // (and a strip: an edge it makes — every one lower than the touch — with a face the run
-        // ends on in a corner with the other, other than the face it ends at, so the round,
-        // standing past the face all along, stands past the corner at that end too, beside that
-        // corner's own round in the air; a band tapering to nothing into a face it runs out on
-        // tangent, the round running out with it, is read on its surface as the field reads it)
+        // (a strip: an edge it makes with a face the run ends on in a corner with the other, other
+        // than the face it ends at, so the round, standing past the face all along, stands past the
+        // corner at that end too, beside that corner's own round in the air; a band tapering to
+        // nothing into a face it runs out on tangent, the round running out with it, is read on its
+        // surface as the field reads it — the cheap test, read first)
         // (an end face meeting the other face in a corner, not running out into it tangent)
         let ends_here = |c: usize| ends.iter().any(|&(by, _, far)| far.is_none() && by == EndBy::Face(c))
             && body.edges_between(&[c], &[other]).into_iter().any(|x| !body.seam(x));
         let cornered = body.face_edges(f).iter()
             .any(|&x| body.faces_of(x).iter().any(|&c| c != g && c != f && ends_here(c)));
         if !cornered {
+            continue;
+        }
+        let (reaches, touched) = (body.side(other, foot).abs(), body.side(other, c).abs());
+        // (and every edge of the strip lower than the touch: a face the ball overflows only
+        // somewhere — a crown past whose rim a large ball's touch runs on the crown's surface — is
+        // read on its surface as the field reads it: an edge of it as far off the other face as the
+        // ball touches it, read exactly, `fillet::reaches`; one nowhere as far off the other face as
+        // the ball touches it is all within the ball's touch, and cannot hold it)
+        if whole.reaching(body, f, other, touched - slack) {
             continue;
         }
         let said = |fi: usize| face_said(body, fi, "a face");
@@ -1759,7 +1752,7 @@ enum Beside {
 /// the unit `along`, `length` long), so it crosses that line where its side of the seam's normal
 /// plane changes, at `−m·(touch − q) / (m·along)` along the edge (`aslant_pieces`, `m` that
 /// plane's normal): a line along the edge is the one it never crosses — the crossing at infinity,
-/// the slope `m·along` nought — which the run reads beside it all along (`seam_along`: its pieces
+/// the slope `m·along` nought — which the run reads beside it all along (`whole_along`: its pieces
 /// running the whole edge).  Nought to the bar by which the pieces are one line: the line leaves
 /// the edge's section by no more over the edge's length than a billionth of the edge's place.
 /// Else it crosses aslant (a drafted side's plane going on into its corner's cone along a
@@ -1972,8 +1965,8 @@ fn chain_from<S>(body: &crate::solid::faces::BodyFaces, own: usize, first: (S, u
             return Err(spilled("past the faces it goes on into (a chain of more than four)"));
         }
         // (each surface's pieces one face: `pieces`)
-        let beyond = super::pieces(body, h);
-        let across: Vec<(u32, usize)> = body.edges_between(&super::pieces(body, g), &beyond)
+        let beyond = body.pieces(h);
+        let across: Vec<(u32, usize)> = body.edges_between(&body.pieces(g), &beyond)
             .into_iter().filter_map(|e| {
                 body.faces_of(e).iter().copied().find(|f| beyond.contains(f)).map(|f| (e, f))
             }).collect();
@@ -1988,25 +1981,24 @@ fn chain_from<S>(body: &crate::solid::faces::BodyFaces, own: usize, first: (S, u
 /// pieces of one surface are one face (`pieces`): of `g`'s, the footprint on any is on it, and
 /// one of `prev`'s is no face it goes on into.
 fn onto(body: &crate::solid::faces::BodyFaces, prev: usize, g: usize, foot: V) -> Result<Option<usize>, String> {
-    let surface = super::pieces(body, g);
+    let surface = body.pieces(g);
     let Some(e) = super::off_pieces(body, &surface, foot) else { return Ok(None) };
     match body.faces_of(e).iter().copied().find(|h| !surface.contains(h)) {
-        Some(h) if !super::pieces(body, prev).contains(&h) && body.seam(e) => Ok(Some(h)),
+        Some(h) if !body.pieces(prev).contains(&h) && body.seam(e) => Ok(Some(h)),
         _ => Err(spilled("past the face it goes on into, across an edge no seam")),
     }
 }
 
 /// The seam along a straight edge (from `p0` along the unit `along`, `length` long) where a face
 /// goes on into the next its section reaches (`seams`, its pieces, each with that face): its point
-/// in the section through `p0` — every piece of it one line along the edge (`seam_line`,
-/// `crosses_nowhere`), running the whole edge — and that face.
+/// in the section through `p0` — `seam_beside`'s seam along the edge, running the whole edge — and
+/// that face; refused where the seam crosses the edge aslant.
 fn seam_along(body: &crate::solid::faces::BodyFaces, seams: &[(u32, usize)], p0: V, along: V, length: f64)
     -> Result<(V, usize), String> {
-    let (q, d, g, _) = seam_line(body, seams, p0, along, length)?;
-    if !crosses_nowhere(d, p0, along, length) {
-        return Err(spilled("along a seam that is not along its edge"));
+    match seam_beside(body, seams, p0, along, length)? {
+        Beside::Along(x) => Ok(x),
+        Beside::Aslant(_) => Err(spilled("along a seam that is not along its edge")),
     }
-    whole_along(body, seams, (q, g), p0, along, length)
 }
 
 /// A seam's line along a straight edge (a point `q` of it, and the face beyond) as `seam_along`
@@ -2072,7 +2064,7 @@ enum Round {
 fn next_face(body: &crate::solid::faces::BodyFaces, seams: &[(u32, usize)])
     -> Result<usize, String> {
     let g = seams.first().ok_or_else(|| spilled("into a face it meets in no edge"))?.1;
-    let surface = super::pieces(body, g);
+    let surface = body.pieces(g);
     if seams.iter().any(|&(_, h)| !surface.contains(&h)) {
         return Err(spilled("into more than one face"));
     }

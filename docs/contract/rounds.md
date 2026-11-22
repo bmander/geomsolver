@@ -316,7 +316,7 @@ steps in the plane square to the edge at points along it). A seam beyond the foo
 it (`rounds/spill.sv` with a boss of 19.5, its leg short of the seam: built as the ring alone), nor
 is one the edge runs into at its end (a slot's side into its half circle: the table's own going on
 into the next piece). **Nor is a seam between two pieces of one surface** (#952,
-`lowering::pieces`, `BodyFaces::pieces`: faces going on across seams on the same surface the same
+`BodyFaces::pieces`: faces going on across seams on the same surface the same
 way out, `BodyFaces::same_surface` — the kernel's `ssi::same` at the boundary's tolerance, the rule
 a ball's sides are read by, [sets.md](sets.md)): a plate's top in the pieces a union of its operands
 leaves it, each named by its own operand, is one plane to the section, which stands against the
@@ -1342,7 +1342,7 @@ reads before anything named the corner), or one turning back along a face's outl
 top flush with a flange's whose rim is rounded, the block's side meeting the flange's at a reflex
 corner: the round's carried side cut off the block's top, and the ball on the block's side was
 refused as standing 30 past the flange's round, #996's fifth item). **A face is its surface in
-the pieces flush faces leave it** (`lowering::pieces`, as the table reads it, #952): a piece of
+the pieces flush faces leave it** (`BodyFaces::pieces`, as the table reads it, #952): a piece of
 the face's own surface is never a face it goes on into, so a flat reaching past the edge between
 two pieces lands on its own face (a hole's chamfer under a post over a plate's edge, both
 bottoms one plane, refused as coming within 0 of the post's piece, #994's first item; the same
@@ -1351,7 +1351,7 @@ on two pieces of one cylinder: `rim_rounds::a_hole_over_flush_pieces_of_a_plane_
 between (its middle first, so the wall across is named, not the arc it ends on), a ring at
 sixteen turns of its own. A flat's points each nearest its own face's patch of the chain's
 (`distance(p, b.smooth)` reads patches), not its carried side. **The chain is read past the
-pieces of each face's own surface** (#994, #996's fifth item: `lowering::pieces`, #952):
+pieces of each face's own surface** (#994, #996's fifth item: `lowering::own_pieces`, #952):
 a face the same surface goes on into across a seam is no other face of the chain, and a flat's
 point is measured from the nearest of those pieces. A hole through a post whose foot is flush
 with its plate's bottom, the post across the plate's edge, has its bottom rim on `stock.far` and
