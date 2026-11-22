@@ -50,19 +50,20 @@ other ``), and the build of the body rounded says which of its terms it has reac
 A body the seeds do not build (a short side
 between two corner rounds seeded with its ends past each other) is read where the drawing solves,
 never taken as every face meeting every other (#994, [language.md](language.md),
-`tests/short_straights.rs`).
-**Both faces are one body's** (#961, [0.223]): an edge, a corner and the material's angle are
-between faces of one body, so a word over a face of one solid and a face of another is refused
-where `meets` is asked ([language.md](language.md), E103 naming the body both are faces of, the
-spelling meant), and nothing below the walk reads one body's face numbers in another's lists:
-`angle(a, b, at: p)` over faces of two solids is E040 where it is stated (`program::regions`), and
-the field's readers of two or more faces' edges and corners — `RegionShape::Angle`
-(`region::general`) and a set on their patches (`conditions::SetDistance::of`) — read them through
-`solid::faces::one_body`, which refuses faces of two solids by name (`not_one_body`), so a model
-handed to the solver without the language is refused there and never panics nor rounds the wrong
-face.  `BodyFaces::faces` reads a reference's path alone: each of its callers holds the reference
-to be of that body (`reading`; the lowering, whose `recognise` takes faces of one solid; a shell's
-kept faces; a scenario's faces, `analysis::reentrant_of` given the solid). `tests/one_body.rs`.
+`tests/short_straights.rs`); a body a sweep cuts, whose boundary is its field's, still is, and its
+round still makes a copy for every two and three of its faces. **Both faces are one body's** (#961,
+[0.223]): an edge, a corner and the material's angle are between faces of one body, so a word over a
+face of one solid and a face of another is refused where `meets` is asked
+([language.md](language.md), E103 naming the body both are faces of, the spelling meant), and
+nothing below the walk reads one body's face numbers in another's lists: `angle(a, b, at: p)` over
+faces of two solids is E040 where it is stated (`program::regions`), and the field's readers of two
+or more faces' edges and corners — `RegionShape::Angle` (`region::general`) and a set on their
+patches (`conditions::SetDistance::of`) — read them through `solid::faces::one_body`, which refuses
+faces of two solids by name (`not_one_body`), so a model handed to the solver without the language
+is refused there and never panics nor rounds the wrong face. `BodyFaces::faces` reads a reference's
+path alone: each of its callers holds the reference to be of that body (`reading`; the lowering,
+whose `recognise` takes faces of one solid; a shell's kept faces; a scenario's faces,
+`analysis::reentrant_of` given the solid). `tests/one_body.rs`.
 
 **A round or a chamfer that selects no edge says so** (#962, [0.225]): the words take an edge
 where `b meets a` and nowhere else, and take it whichever way it turns (`Run` and `Fill`, `Flat`
@@ -272,15 +273,15 @@ post's foot flush with a plate's bottom, #952) keeps its own name: only a round'
 its face. Two names sharing a patch — the face and a cap on it — meet where the rest of each does
 (`meets::apart`): a face does not meet itself, so the face and its cap are never paired, nor
 taken for two faces of a corner; the cap named beside the face (or every edge, `round(r) whole`)
-reaches the arc twice, one set of points, the same body. Where the body has no cap (a stratum beneath
-its rounds; `part` itself, before `solid(part)`) nothing changes. Rounded in one statement with
-the uprights, the reflex upright's fill and the rim's two runs each read the sharp body, and the fill and the
-block's uncut corner touch along the upright's line for the run's depth (`Corner`/`CornerFill`
-say a corner of one turn only): refused at the vertex as above. `tests/rim_over_rounds.rs` is
-the gate (a rectangle, an L and the tab, rims of 1, 1.49 and 1.5 over uprights of 1.5, both
-rims, every edge, the fixture's one rim alone and with the caps named, the L's rim chamfered, a
-cap rounded alone against its fill: each the closed form's volume to 1e-9 by Pappus; a rim of 2
-refused; one statement refused at the vertex). The two steps
+reaches the arc twice, one set of points, the same body. Where the body has no cap (a stratum
+beneath its rounds; `part` itself, before `solid(part)`) nothing changes. Rounded in one statement
+with the uprights, the reflex upright's fill and the rim's two runs each read the sharp body, and
+the fill and the block's uncut corner touch along the upright's line for the run's depth
+(`Corner`/`CornerFill` say a corner of one turn only): refused at the vertex as above.
+`tests/rim_over_rounds.rs` is the gate (a rectangle, an L and the tab, rims of 1, 1.49 and 1.5 over
+uprights of 1.5, both rims, every edge, the fixture's one rim alone and with the caps named, the L's
+rim chamfered, a cap rounded alone against its fill: each the closed form's volume to 1e-9 by
+Pappus; a rim of 2 refused; one statement refused at the vertex). The two steps
 meeting at a corner are not re-examined under this reading.
 A chamfer's flats are
 no tangent chain, so a second statement chamfers the first one's flat against its own faces
@@ -644,8 +645,8 @@ meet at a vertex" above).
   crossed the next side, a run went a hundred millimetres on along it and, past the corner where
   that side turns back in, cut a groove along its plane through the plate's top. The lowering
   carries a run no further for them (`piece::ends_beyond`): each is a cut it is kept within (a
-  curved one where it reaches the prism or the ring at all).  An edge that ends only where the face of the
-  run's it bounds goes on tangent across a seam (`BodyFaces::seam_from`, #994: a floor's edge
+  curved one where it reaches the prism or the ring at all). An edge that ends only where the face
+  of the run's it bounds goes on tangent across a seam (`BodyFaces::seam_from`, #994: a floor's edge
   along a drafted side running on round the corner's cone) ends nothing: a seam is no edge, so
   nor is it the end of one, and no plane square to it there is the run's. Square there, a fill
   leaning toward the seam at its foot (a foot drafted against an upright side) was cut off at the
@@ -689,10 +690,10 @@ no face there"). Each join at a seam carries how far apart its two sections stan
 whole, as at a rolled piece's fitted cap; and `boolean::glued` takes two plane faces as one
 surface where each's corners lie within its tolerance of the other's plane. `std.rounds.Grown`
 reads a vertex's faces by the same rule (`solid::grown`: two normals one to `TANGENT` are no
-corner, so no ball's sector is cut at a seam; [sets.md](sets.md)). **A run ends where its smooth chain
-ends** (#994, #962's 127: `BodyFaces::chain_ends`): a run that ends on no face at a seam, where a
-face going on tangent from one of its own carries it on — an obround's half circle into its flat
-side — goes on along the next edge of its smooth chain (the one edge there of the same turn, no
+corner, so no ball's sector is cut at a seam; [sets.md](sets.md)). **A run ends where its smooth
+chain ends** (#994, #962's 127: `BodyFaces::chain_ends`): a run that ends on no face at a seam,
+where a face going on tangent from one of its own carries it on — an obround's half circle into its
+flat side — goes on along the next edge of its smooth chain (the one edge there of the same turn, no
 seam, between faces each its own or going on tangent from one of them there), and on, until the
 chain ends on faces. Each of those whose solid the chain is kept out of (`kept_out_of`: a boss's
 cylinder it stands outside, a hole's, a cone's or a ball's) is the run's too, on the same side,
@@ -708,30 +709,30 @@ back across it (a side 2e-6 off the lobe it leaves, whose plane cut the arc befo
 reaches 2mm back over the section there"), and nor is a face some edge of the run or of the chain
 between goes across (`goes_across`), nor one of the chain's own faces (`smooth`: a chain round a
 loop comes back to the lobe the run goes on into the other way, where a side leaves that lobe at a
-corner 2e-6 off its tangent — `rim_seams.rs`' nearly tangent corner). Before, the ring was its region's whole, the boss reaching
-back over its section, and refused: "`part`'s round or chamfer `taken`: its round goes on tangent
-from `outer.flange.s` into `outer.flange.al` across their seam at [-384.62, -88.74, -131.5]mm,
-and `outer.boss.disc`, which its run along `outer.flange.s` ends on, reaches 0.035mm back over
-the section there: … Move `outer.boss.disc` clear of the seam, or over it". Now the boss at
-−339.17 (the fixture's own) and −341 builds, and so does a boss over the half circle reaching back
-over the flat's section, a hole cut there, a square boss beside the seam, and a boss whose wall
-crosses the rim exactly at the seam: each the plate less, at each depth under the top, the band
-its section takes less what of the band the footprint holds, to 1e-9 (`tests/bosses_on_seams.rs`;
-`rim_seams.rs`' slid boss). **Another body's wall is an end however it stands** (#994, `BodyFaces::another_body`): a face
-of a primitive other than every one of the run's faces' (`FacePath::route`, none a round made) —
-a boss unioned on, a cutter's wall — that turns back over the run at a reflex corner of less than
-a right angle is still the run's end, kept on its side, where a side of the run's own body there
-is not (the run ending square, above); and a plane of another body the smooth chain ends on is
-the run's beyond a seam as a solid it is kept out of is. Ending square there, the run went on
-into the boss's material: a square boss turned 45° on the flat side lost 96 mm³ to the round,
-turned 30° 90 mm³. Kept off its wall's plane it takes none; but the plane is a half-space and goes
-on past the boss's corners, so where the section reaches past one (the round of 10 past the 45°
-boss's side corners 8.74 in from the rim; the 30° boss's nearer corner) the round is kept off
-the plane there too and leaves more than the boss does — 0.04 mm³ and 21 mm³ — never less.
-**Still the definition's, and wrong**: a plane the run's own edge goes across is no end
-(`goes_across`), so a square boss over the seam not turned, its wall `x = −387` crossing the half
-circle 1.4° off square while the half circle comes back across that plane at its far end, ends
-the ring nowhere there but at the meridian through the vertex (`distance(p, crease) <=
+corner 2e-6 off its tangent — `rim_seams.rs`' nearly tangent corner). Before, the ring was its
+region's whole, the boss reaching back over its section, and refused: "`part`'s round or chamfer
+`taken`: its round goes on tangent from `outer.flange.s` into `outer.flange.al` across their seam at
+[-384.62, -88.74, -131.5]mm, and `outer.boss.disc`, which its run along `outer.flange.s` ends on,
+reaches 0.035mm back over the section there: … Move `outer.boss.disc` clear of the seam, or over
+it". Now the boss at −339.17 (the fixture's own) and −341 builds, and so does a boss over the half
+circle reaching back over the flat's section, a hole cut there, a square boss beside the seam, and a
+boss whose wall crosses the rim exactly at the seam: each the plate less, at each depth under the
+top, the band its section takes less what of the band the footprint holds, to 1e-9
+(`tests/bosses_on_seams.rs`; `rim_seams.rs`' slid boss). **Another body's wall is an end however it
+stands** (#994, `BodyFaces::another_body`): a face of a primitive other than every one of the run's
+faces' (`FacePath::route`, none a round made) — a boss unioned on, a cutter's wall — that turns back
+over the run at a reflex corner of less than a right angle is still the run's end, kept on its side,
+where a side of the run's own body there is not (the run ending square, above); and a plane of
+another body the smooth chain ends on is the run's beyond a seam as a solid it is kept out of is.
+Ending square there, the run went on into the boss's material: a square boss turned 45° on the flat
+side lost 96 mm³ to the round, turned 30° 90 mm³. Kept off its wall's plane it takes none; but the
+plane is a half-space and goes on past the boss's corners, so where the section reaches past one
+(the round of 10 past the 45° boss's side corners 8.74 in from the rim; the 30° boss's nearer
+corner) the round is kept off the plane there too and leaves more than the boss does — 0.04 mm³ and
+21 mm³ — never less. **Still the definition's, and wrong**: a plane the run's own edge goes across
+is no end (`goes_across`), so a square boss over the seam not turned, its wall `x = −387` crossing
+the half circle 1.4° off square while the half circle comes back across that plane at its far end,
+ends the ring nowhere there but at the meridian through the vertex (`distance(p, crease) <=
 distance(p, meeting)`), which leans into the boss: the body less `taken` loses the wedge between
 wall and meridian, 1.149 mm³ at R10 — the field and the pieces alike, held to the integral of that
 wedge to 1e-9 so it cannot move unseen (`a_wall_the_rings_own_edge_crosses_takes_the_bosss_wedge`);
@@ -745,19 +746,20 @@ kept off: a half-space the half circle's own edge crosses (the 45° boss beside 
 section there: … Move `outer.boss.k3` clear of the seam, or over it"), and a solid kept within (a
 flat side 1 long ending at a corner on a convex arc of radius √5 of its own plate, whose cylinder
 the half circle's section at the seam stands partly outside: "`plate.sm` … reaches 0.46mm back
-… Move `plate.sm` clear of the seam, or over it"); and, in its first wording, a face the run's
-own face runs on tangent into (the tapered band's disc, `tapered_bands.rs`). `tests/bosses_on_seams.rs`
-holds each. **A corner too nearly tangent to round** is refused by name before any
-piece is built (`piece::nearly_tangent`): where a round's edge ends on a curved face (a cylinder,
-a cone or a sphere, of radius `R` at the corner) meeting one of the edge's own faces at a turn `θ`
-past `TANGENT` — a corner, no seam — the ball's surface, tangent to the edge's face, meets the
-curved face at the corner and again `2R sin θ` on round it, where the face's plane comes back
-across that surface. The kernel reads a point within its tolerance of two surfaces meeting at `θ`
-as on their meeting as far as `ON_CURVE tol / sin θ` off it (`tolerant::on_meeting`), so it tells
-the two meetings apart only where `sin² θ > ON_CURVE tol / R`, `tol` a billionth of the body's
-diagonal: short of that its Booleans read one meeting for two ("a cylinder's pieces do not close",
-a step's side turned `1e-5` off its lobe of 12, a teardrop whose tangent points are stated to three
-places). Said by the two faces, the turn, the bound, the witness, and the remedy: state the
+… Move `plate.sm` clear of the seam, or over it"); and, in words of its own (`back_over_in`), a
+face the run's own face runs on tangent into, which no one moves (the tapered band's disc,
+`tapered_bands.rs`: "… A smaller round, or a longer `band.a3`, keeps `disc.eo` clear of the
+seam", below). `tests/bosses_on_seams.rs` holds each. **A corner too nearly tangent to round** is
+refused by name before any piece is built (`piece::nearly_tangent`): where a round's edge ends on a
+curved face (a cylinder, a cone or a sphere, of radius `R` at the corner) meeting one of the edge's
+own faces at a turn `θ` past `TANGENT` — a corner, no seam — the ball's surface, tangent to the
+edge's face, meets the curved face at the corner and again `2R sin θ` on round it, where the face's
+plane comes back across that surface. The kernel reads a point within its tolerance of two surfaces
+meeting at `θ` as on their meeting as far as `ON_CURVE tol / sin θ` off it (`tolerant::on_meeting`),
+so it tells the two meetings apart only where `sin² θ > ON_CURVE tol / R`, `tol` a billionth of the
+body's diagonal: short of that its Booleans read one meeting for two ("a cylinder's pieces do not
+close", a step's side turned `1e-5` off its lobe of 12, a teardrop whose tangent points are stated
+to three places). Said by the two faces, the turn, the bound, the witness, and the remedy: state the
 tangency (`a tangent b`, a chain's `-> tangent` joint) rather than coordinates rounded off it, or
 make the corner wider than the bound — "`k3` and `k2` meet at a turn of 1e-05 rad at [0,
 0.00012, 10]mm: not tangent, so their edge is a corner and no seam a round goes on across, and too
@@ -776,14 +778,18 @@ concave arc (the step's arc of 8) is built.
 Still refused otherwise: the same reflex corner at a round of 0.5 between `3e-4` and `1e-3` ("a
 run cut off at a curved end: a shell of the arrangement …"), and a convex corner a few millionths
 to a few hundredths of a radian off tangent by #962's item 3's refusals ("a stretch of a circle
-its end does not cut off", "a run its curved end does not cut off"). `tests/rim_seams.rs` is the
-gate (the step at every line length down to none and every radius to past its concave arc's,
-plates of four, six and twelve alternating arcs, each stated to the micron, mirrored and turned,
-round and chamfer, either cap; seams `1e-8` to `5e-7` off tangent; `step.sv` as drawn, with the
-stack's mitre at the frame's corners; the boss slid along the rim through the seam, built either
-side of the section and refused over it, by its faces; the step's side turned `2e-6` to `2e-4` off
-its lobe refused by its faces, round and chamfer, and `5e-7`, `3e-4` and `1e-3` built; each volume
-the closed form's to 1e-9, a boss's chord by quadrature, and the plates grown 1 by Steiner's).
+its end does not cut off", "a run its curved end does not cut off"). **Not yet** (#994): on a drum
+of lobes and waists a corner `1e-3` to `1e-2` rad off tangent — past the bound, short of where
+`lobe_runs` builds it — is refused in the kernel's words, round and chamfer alike: a cylinder
+crosses a round's torus ring nearly tangent there, and a lens `8e-6` mm across is left past the
+seam. `tests/rim_seams.rs` is the gate (the step at every line length down to none and every radius
+to past its concave arc's, plates of four, six and twelve alternating arcs, each stated to the
+micron, mirrored and turned, round and chamfer, either cap; seams `1e-8` to `5e-7` off tangent;
+`step.sv` as drawn, with the stack's mitre at the frame's corners; the boss slid along the rim
+through the seam, built either side of the section and refused over it, by its faces; the step's
+side turned `2e-6` to `2e-4` off its lobe refused by its faces, round and chamfer, and `5e-7`,
+`3e-4` and `1e-3` built; each volume the closed form's to 1e-9, a boss's chord by quadrature, and
+the plates grown 1 by Steiner's).
 
 **Where a run's end does not cut its section off** (#962 item 3: a disc's rim chamfered past its
 flats, a rim ending on another arc's face, a channel's fill broken by a hole). `std.rounds` says a
@@ -942,15 +948,17 @@ top beside its rim the wall said within, and a fill ran along the wall's top edg
 none does, a hole a foot's union cuts in a casting's side, the nearest face's as before) — or, where
 the face the rim is to stands between the point and that patch (the point past its surface one way,
 the patch going off the rim the other), the nearest of the chain's faces that face bounds too whose
-foot lies on it, and in that face's plane as a point just past it where the region holds its
-point outside it, just within where within (`nearest_face`'s `held`, from the region's own `in`
-and `not in` terms, `region::general`; a band's side on a plate, #994 item 2d, below; a casting's
-floor its drafted side leans over stands between nothing); and it is read face by face as one convex solid only where each face's patch lies
+foot lies on it — gone round so only where it bounds that face nearer the point than any face not of
+the chain does ([sets.md](sets.md): a clevis's bowed side bounds the eye 36 mm off) — and in that
+face's plane as a point just past it where the region holds its point outside it, just within where
+within (`nearest_face`'s `held`, from the region's own `in` and `not in` terms, `region::general`; a
+band's side on a plate, #994 item 2d, below; a casting's floor its drafted side leans over stands
+between nothing); and it is read face by face as one convex solid only where each face's patch lies
 within every other's (`BodyFaces::bulging`: the arc's tangent planes carried down through the block
 where its side stands flat, so no ball stood within the block's rim beside the deck). The mirrored
 case is the block's top rim along the flush side rounded: its run ends on the deck's arc, kept
-outside it, and nothing is cut from under the deck's foot — that arc tangent to the run's own face is
-no corner, so `piece::nearly_tangent` does not refuse it. `tests/flush_decks.rs` is the gate (the
+outside it, and nothing is cut from under the deck's foot — that arc tangent to the run's own face
+is no corner, so `piece::nearly_tangent` does not refuse it. `tests/flush_decks.rs` is the gate (the
 deck's corner square, an arc of 15, 2 and 1 tangent to the side and one of 15 meeting it at an
 angle, its foot filled 2 and 1; the block's rim along the flush side rounded 2 and 1 against each
 tangent arc and the square corner; each volume the closed form's to 1e-9 by Gauss–Legendre,
@@ -971,19 +979,19 @@ straight edge between two planes, the floor's along the band's end 45 mm off, to
 for its own, and the construction, rightly, did not (the gate never probes there; the comparison
 over the whole body found it, 8 to 10 points in 3600). Both now say also `distance(p, rolled) <=
 distance(p, centres) + r`, `rolled` the centres of the ball touching both faces (the centres' own
-terms and `c distance(<= r)` from each face, read from the nearest centre, [sets.md](sets.md)): the point's
-nearest rolled ball stands no more than a radius further off than its nearest ball of all. Every
-point a rolled ball leaves has its nearest centre on that ball's spine (the difference nothing),
-whatever the faces' angle, and a pocket elsewhere has the spine across the body (`lowering`'s
-recogniser reads the term with the section's radius, `recognise::rolled_by`; the construction is
-unchanged). `Corner` and `CornerFill` are not changed: their region is read about their vertex.
-`tests/resting_touches.rs` holds the clevis bowed in 1, 3 and 6, rounded 1 and 2, and a straight
-band whose eye stands 2 out past its side (the configuration alone: 8 and 10 points wrong without
-`rolled`), field and kernel over the whole body. The centres' projection there also never settled
-and the set was read as empty ([sets.md](sets.md), `conditions::nearest`). Still not the kernel's,
-with nothing refused: where the eye's end lies within the band rather than past its side — a
-straight band, the eye's end 5.8 inside it, rounded 2 (18 points of 4000, 28 without `rolled`), and
-the clevis bowed out 3 rounded 1 (16) — the fill where the floor meets the eye's end and the run
+terms and `c distance(<= r)` from each face, read from the nearest centre, [sets.md](sets.md)): the
+point's nearest rolled ball stands no more than a radius further off than its nearest ball of all.
+Every point a rolled ball leaves has its nearest centre on that ball's spine (the difference
+nothing), whatever the faces' angle, and a pocket elsewhere has the spine across the body
+(`lowering`'s recogniser reads the term with the section's radius, `recognise::rolled_by`; the
+construction is unchanged). `Corner` and `CornerFill` are not changed: their region is read about
+their vertex. `tests/resting_touches.rs` holds the clevis bowed in 1, 3 and 6, rounded 1 and 2, and
+a straight band whose eye stands 2 out past its side (the configuration alone: 8 and 10 points wrong
+without `rolled`), field and kernel over the whole body. The centres' projection there also never
+settled and the set was read as empty ([sets.md](sets.md), `conditions::nearest`). Still not the
+kernel's, with nothing refused: where the eye's end lies within the band rather than past its side —
+a straight band, the eye's end 5.8 inside it, rounded 2 (18 points of 4000, 28 without `rolled`),
+and the clevis bowed out 3 rounded 1 (16) — the fill where the floor meets the eye's end and the run
 along the far side read pockets at the eye's end whose nearest centre the projection does not find
 (a local nearest, the chain read through the eye's cylinder at its end). Refused: bowed out 3 and
 rounded 2, "disagrees with the field" at the far side's run; bowed out 1, "its ball, of radius 1mm,
@@ -1010,8 +1018,8 @@ with its bulging neighbours did, the foot arc bulging toward the air with the pl
 stood beside the band. Two readings at the chain's rim were wrong (`BodyFaces::nearest_face`):
 beside the band, past the rim where its top meets its side, the top's side was read, within, where
 the plate the side rises from is the surface; and in the side's own plane, where the gate probes a
-round's leg, the face nearest — the top for a fill's leg, the disc beside the band for the band's own
-top edge's — where the region holds its point outside the side (a fill) or within it (the band's
+round's leg, the face nearest — the top for a fill's leg, the disc beside the band for the band's
+own top edge's — where the region holds its point outside the side (a fill) or within it (the band's
 own round) and reads it just past or just within. On a disc the gate's refusal was #994's own, "its
 exact construction leaves out what the field reads beside its edge", at a fill over the band's
 height: the fill stands beside the band past its top, as the set says (the ball against the side's
@@ -1067,7 +1075,11 @@ meridian; at a corner however slight that face is an end face, and `crease.ends`
 its side of it, so the crescent is cut away — which face ends the run flips at the seam, and with
 it the volume. Between the body's reading of tangent and the kernel's bound the corner is refused by
 name ("too nearly tangent a corner …"); past the bound the jump is the drawing's, a tangency stated
-off by more than the kernel reads as one.
+off by more than the kernel reads as one. **Open, a question of the definition**: a round ending at
+a convex corner barely off tangent is, by `crease.ends`, carried on along the arc's continuation
+for as much as a quarter turn past the seam (a tail a tangent seam does not have), so what it takes
+jumps between a tangent seam and a barely creased one; whether `std.rounds`' words should say that
+is not settled, and the construction follows the words either way.
 
 **A ball as wide as its cylinder** (brep-bench's fillet/cylinder-rim-to-dome): an offset by a
 radius that takes a surface's radius to nothing is what the surface is drawn about, never nothing
@@ -1133,12 +1145,12 @@ rings ending where its stretch does, its part beside a run to its own and to tha
 unioned; where the piece is in two, its other end's section is the next run's in part, and those
 are unioned. Refused, saying which: both ends' runs stopping short, or both running on (not
 built yet); an end on a face cutting across the stretch where a face also goes on from it (below
-for one cutting across alone); a ball a hair under the fill's radius (its centre's spindle so short no section is
-carried past where the seams cut the rolled run off, `cannot roll on past`, or off the fill's
-axis its contact crossing the seam in another section, `seam_aligned`: the rolled canal between
-the two runs' last sections, divided as above, is not built yet); the chamfer (`no stretch of a
-flat closing to a point is cut off yet`); and a ball wider than the fill, which never touches its
-face — what none reaches runs along the fill without end, as up a pocket's corner — saying both:
+for one cutting across alone); a ball a hair under the fill's radius (its centre's spindle so short
+no section is carried past where the seams cut the rolled run off, `cannot roll on past`, or off the
+fill's axis its contact crossing the seam in another section, `seam_aligned`: the rolled canal
+between the two runs' last sections, divided as above, is not built yet); the chamfer (`no stretch
+of a flat closing to a point is cut off yet`); and a ball wider than the fill, which never touches
+its face — what none reaches runs along the fill without end, as up a pocket's corner — saying both:
 `… of radius 2.1, is larger than `…round` can hold, curved round it to a radius of 2`. The convex
 twin, a boss across an edge rounded convex, is an ordinary ball rolled against the round's
 cylinder (its offset never closes), built where the contacts stand on the seams. A tray's pocket
@@ -1272,24 +1284,23 @@ wall's next wall, the obround's far side) the ball stopped touches three faces a
 ball, and what lies past it to the crease's end is a corner's cell in part, not the standing
 ball's: still refused here. A
 chain bulging no way is read through its nearest face and face by face besides
-([sets.md](sets.md), #994) and left to the gate. **The gate reads each edge near its ends and across its section**
-(`lowering::beside_edges`): besides the field just inside the corner a quarter, a half and three
-quarters along, it reads a fiftieth from each end,
-and along the bisector and five ways from along one face to along the other it finds where the
-pieces' boundary crosses and asks that the field read no material a gate's offset past it. A
-prism's faces are meshed in strips the length of its edge, so the agreement's probes stood
-nowhere near the ends, and the wall alone built a prism the gate never saw was short of the set;
-it now refuses it even where `stands_within` would not. `tests/tight_corners.rs` is the gate
-(the wall alone rounded 4 and 5 and chamfered 5, the closed forms; rounded and chamfered 8
-refused naming `pocket.e3`; the obround 10 wide rounded 4.9999 and 5, its two half balls, refused
-at 5.0001 naming `pocket.e2`; a round pocket and a round boss at 4.9 to 5, refused at 5.0001 and 6;
-a shell 200 × 150 with corners of 25 drafted 2° over 325 — 13.651 at its rim — rounded 13, 13.6
-and 13.7 and chamfered 13 and 13.6, each the closed form's volume (its sections integrated, the
-rim's by Pappus) to 1e-9, refused rounded 20 and chamfered 13.7 naming 13.7 and 13.65 where the
-round runs; fixture 126 refused naming 13.7 against 20). Rounded 13.7, over the rim's radius, the
-drafted corner still holds the ball: its centre stands a radius below the top, where the corner
-has widened by `r tan 2°`, and short of the axis; `wider` refuses where the centre itself passes
-the axis, and says the radius at the rim, where the round runs.
+([sets.md](sets.md), #994) and left to the gate. **The gate reads each edge near its ends and across
+its section** (`lowering::beside_edges`): besides the field just inside the corner a quarter, a half
+and three quarters along, it reads a fiftieth from each end, and along the bisector and five ways
+from along one face to along the other it finds where the pieces' boundary crosses and asks that the
+field read no material a gate's offset past it. A prism's faces are meshed in strips the length of
+its edge, so the agreement's probes stood nowhere near the ends, and the wall alone built a prism
+the gate never saw was short of the set; it now refuses it even where `stands_within` would not.
+`tests/tight_corners.rs` is the gate (the wall alone rounded 4 and 5 and chamfered 5, the closed
+forms; rounded and chamfered 8 refused naming `pocket.e3`; the obround 10 wide rounded 4.9999 and 5,
+its two half balls, refused at 5.0001 naming `pocket.e2`; a round pocket and a round boss at 4.9 to
+5, refused at 5.0001 and 6; a shell 200 × 150 with corners of 25 drafted 2° over 325 — 13.651 at its
+rim — rounded 13, 13.6 and 13.7 and chamfered 13 and 13.6, each the closed form's volume (its
+sections integrated, the rim's by Pappus) to 1e-9, refused rounded 20 and chamfered 13.7 naming 13.7
+and 13.65 where the round runs; fixture 126 refused naming 13.7 against 20). Rounded 13.7, over the
+rim's radius, the drafted corner still holds the ball: its centre stands a radius below the top,
+where the corner has widened by `r tan 2°`, and short of the axis; `wider` refuses where the centre
+itself passes the axis, and says the radius at the rim, where the round runs.
 
 **A ball that takes the whole of a face** (brep-bench's fillet/slab-half-round,
 l-block-inside-consumed, hole-waist, sliver-strip, boss-s-curve): the band a ball's contact
@@ -1334,8 +1345,9 @@ section's size (a round's radius, a flat's longer leg: the lowering's `Section::
 `region::general::section_size`, the kernel's `end_at`'s `size`), is followed to its other vertex
 — walked along edges of any length, an arm's round ending on a hub's side took the hub's far
 faces and the arm's own other side for ends, and the fill along a rod's shank the small end's
-cylinder 100 mm off, where the dome and the fill have none (`standing_ends`, `conrod`, #994) — and a face there whose outward normal turns more than a degree from square to the
-run, off its end (`brep::fillet::faces_on`), cuts the run off too, kept on its material's side —
+cylinder 100 mm off, where the dome and the fill have none (`standing_ends`, `conrod`, #994) — and a
+face there whose outward normal turns more than a degree from square to the run, off its end
+(`brep::fillet::faces_on`), cuts the run off too, kept on its material's side —
 one rule, read by the kernel (`fillet::end_at`, the face's edges none of the ball's band) and by
 the field (`BodyFaces::end_faces`'s `beyond_end`, a rolled run's alone) — a face no closed form
 reads (a sheet) cutting nothing there yet (`fillet::cuts_off`). A vane's side rounded
@@ -1352,15 +1364,15 @@ corner at an end of the run does (a band tapering to nothing between its edges, 
 out with it, its ends' arcs running out tangent into the disc) (`lowering::piece::held`, as
 `holds_ball` for a rolled one). A strip nowhere that wide, its edges with the faces the run ends
 on in a corner with the other face lower than the touch too, holds no ball: the round standing
-past it all along stands past those corners, beside the corners' own rounds in the air. Refused by that face, the face it ends at, how far that edge stands off the other face and
-how far off the ball touches it, and what to do — the toe's foot rounded at 2
-under a face `h` tall is "its ball, of radius 2mm, is larger than `blade.vane.close1` can hold:
-`blade.vane.close1` ends at its edge with `blade.wedge.close2` 0.0001mm off `disc.close2` …, short
-of where the ball touches it, 2mm off", where it built pieces touching one another along a line in
-the air past the toe, or (rolled) named the vane's side. `holds_ball` says the same of a rolled
-ball (an L's inside edge at 7.5: "`floor` ends at its edge with `end` 7 off `wall` …, 7.5 off").
-Under the arrangement's reach the sliver is no face: the slope within it of the foot comes down
-onto it, and the round builds as with none
+past it all along stands past those corners, beside the corners' own rounds in the air. Refused by
+that face, the face it ends at, how far that edge stands off the other face and how far off the ball
+touches it, and what to do — the toe's foot rounded at 2 under a face `h` tall is "its ball, of
+radius 2mm, is larger than `blade.vane.close1` can hold: `blade.vane.close1` ends at its edge with
+`blade.wedge.close2` 0.0001mm off `disc.close2` …, short of where the ball touches it, 2mm off",
+where it built pieces touching one another along a line in the air past the toe, or (rolled) named
+the vane's side. `holds_ball` says the same of a rolled ball (an L's inside edge at 7.5: "`floor`
+ends at its edge with `end` 7 off `wall` …, 7.5 off"). Under the arrangement's reach the sliver is
+no face: the slope within it of the foot comes down onto it, and the round builds as with none
 (`sphere_rounds::a_vanes_side_rounded_runs_out_past_a_sliver_at_its_toe`, the closed form's on a
 flat disc, built on the crown and with arc sides;
 `a_sliver_at_a_vanes_toe_is_named_as_the_face_too_short_for_the_ball`, from `1e-4` to a quarter
