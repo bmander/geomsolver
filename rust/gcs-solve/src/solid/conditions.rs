@@ -144,6 +144,12 @@ fn sides(r: Reading, split: bool) -> Vec<Fv> {
 /// A face far from the point holds with no gradient, no row of a step's program (`nearest`), so a
 /// step chooses among the faces near the point.  Empty for one face, and for chains apart.
 fn faces_apart(r: &Reading, c: f64, beyond: bool, d: f64) -> Vec<Fv> {
+    /// How far a face of the chain is read from the point, in the distance held (`d`): a face whose
+    /// box is farther says nothing without reading its patch.  Within `d` alone is all the set
+    /// needs, but a face whose foot lies on its patch a little past `d` gives a row that holds
+    /// where the step stands and keeps the next step from landing past it; twice `d` is the reach
+    /// the gate holds (`docs/contract/sets.md`, "Not yet one rule").
+    const SEEN: f64 = 2.0;
     if !r.smooth || r.faces.len() < 2 || !r.chains.is_empty() {
         return Vec::new();
     }
@@ -160,11 +166,11 @@ fn faces_apart(r: &Reading, c: f64, beyond: bool, d: f64) -> Vec<Fv> {
             .flat_map(|&e| r.body.faces_of(e).to_vec()).filter(|&h| h != fi && chain.contains(&h))
             .collect();
         Arc::new(move |x| {
-            // far from its patch and from every face it goes on into, by their boxes, nothing:
-            // where the set's point is, a face holding it back is within `d` (#994), so a chain
-            // grown with a body is read only where the point is
+            // far from its patch and from every face it goes on into, by their boxes (`SEEN` times
+            // `d`), nothing: where the set's point is, a face holding it back is within `d` (#994),
+            // so a chain grown with a body is read only where the point is
             let nothing = (c * d, [0.0; 3]);
-            let far = |h: usize| body.patch_gap(h, x) > 2.0 * d;
+            let far = |h: usize| body.patch_gap(h, x) > SEEN * d;
             if far(fi) && beside.iter().all(|&h| far(h)) {
                 return nothing;
             }

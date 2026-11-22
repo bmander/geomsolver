@@ -542,7 +542,19 @@ sheet (`bulging`, a block's side flush with a deck's) is read this way as well; 
 add is every wall meeting at a corner of the offset in each step, where the closing axis (a floor or
 a rim rounded to a convex corner's own radius) is met as a corner of conditions, as in a convex
 chain. A condition holding with no gradient is no row of the step's program (`nearest`), so a step
-chooses among the faces near the point, not the whole chain. Read about the nearest face alone —
+chooses among the faces near the point, not the whole chain. **Not yet one rule** (#994, the
+second review's altitude 9): how far is "near" is `faces_apart`'s `SEEN`, twice the distance on the
+face's box, a reach and no bound the set states. The set needs only the faces within the distance,
+and every reading past the box test says nothing past it but one: a face whose foot lies on its
+patch says its own distance, a holding row, however far. Read as nothing past the distance there
+too, and the box test at the distance (one rule, the set's), four `tests/round_onto_round.rs`
+cases are refused by the gate ("`filled[0]` … leaves out what the field reads beside its edge",
+the boss across a filled edge or a tray's filled wall): the step lands past a face whose row it no
+longer sees. The box test at the distance alone, the foot's row kept, passes `round_onto_round`
+(the rest of the suite not run), but is no rule either — which faces keep a row then depends on
+their boxes' shapes. What a step needs is the faces within the distance of where it can land, a
+reach the projection would have to bound from its own step; until then the reach stays `SEEN`.
+Read about the nearest face alone —
 that face and its bulging neighbours, slots changing with the face — a 56° corner as tight as the
 ball was still refused by the gate (`tests/tight_corners.rs`, six walls): which walls a step sees
 there hangs on which face the step stands nearest. A chain that bulges one way is read whole, as
