@@ -19,7 +19,7 @@
 //! * `syntax_never_panics`: a kernel-written file truncated at every 97th byte, with seeded
 //!   single-byte substitutions and with its lines shuffled, read without a panic, each within
 //!   `QUICK`. What it returns is not judged.
-use crate::step_corpus::{measured,read_table,report,table_at,unread,within,wrong,Outcome,Read,Row};
+use crate::step_corpus::{face_census,measured,read_table,report,table_at,unread,within,wrong,Outcome,Read,Row};
 use gcs_core::brep::boolean::{combined,Op};
 use gcs_core::brep::build::{cone,disc,prism,sphere,square,torus};
 use gcs_core::brep::props::{area,volume};
@@ -75,6 +75,7 @@ fn no_mutant_is_read_wrong() {
     }
     println!("{:<20} {:>8} {:>8} {:>6} {:>6} {:>5} {:>8}","mutation","refused","read","WRONG","PANIC","HUNG","missing");
     for (k,t) in &tally { println!("{k:<20} {:>8} {:>8} {:>6} {:>6} {:>5} {:>8}",t[0],t[1],t[2],t[3],t[4],t[5]) }
+    face_census(rows,reads);
     assert!(bad.is_empty(),"{} mutants read wrong, panicked on or hung:\n{}",bad.len(),bad.join("\n"));
 }
 

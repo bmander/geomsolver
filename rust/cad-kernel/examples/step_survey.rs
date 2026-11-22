@@ -17,10 +17,10 @@
 //! the bar `step_corpus::face_bar` holds it to, and `ok`, `OFF` or `disputed` (the readers
 //! disagree past the bar; `ok` within it of either). A face's line says why where a reference is
 //! missing (`-`), and the file's last line counts the faces past their bars and gives each
-//! reader's faces' sum (the gate holds no face to a reader whose sum is not the file's area). `--past-sound` reads
-//! a file `step_read::sound` refuses once more without it (`topology::solid`, its solids
-//! unplaced) and lists that reading's faces under a `past sound` line: what the reader's own
-//! faces measure, whether or not the boundary was sound.
+//! reader's faces' sum (the gate holds no face to a reader whose sum is not the file's area).
+//! `--past-sound` reads a file `step_read::sound` refuses once more without it
+//! (`topology::solid`, its solids unplaced) and lists that reading's faces under a `past sound`
+//! line: what the reader's own faces measure, whether or not the boundary was sound.
 use cad_kernel::props::{area,volume};
 use cad_kernel::step_read::{context,read,topology,Why};
 use cad_kernel::topo::{Brep,EdgeCurve};
@@ -43,8 +43,8 @@ fn table(path: &str) -> Vec<(String,Reference)> {
     }).collect()
 }
 
-/// The bar `step_corpus::face_bar` holds a face's area to (mm²): `TOL × slack + REL × area + ABS`
-/// (the constants are the gate's, rust/gcs-core/tests/step_corpus.rs says why).
+/// The bar `step_corpus::face_bar` holds a face's area to (mm²): `TOL × slack + REL × area +
+/// ABS` (the constants are the gate's, rust/gcs-core/tests/step_corpus.rs says why).
 fn face_bar(slack: f64,area: f64) -> f64 { 1.*slack+1e-6*area.abs()+1e-9 }
 
 /// An edge's length, by the chord of 32 pieces of its parameter (a degenerate edge's 0).

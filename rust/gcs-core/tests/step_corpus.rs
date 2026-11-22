@@ -20,8 +20,8 @@
 //! * `nothing_is_read_wrong`: each file is refused, or read to its solids, each file entity
 //!   read and none twice-counted, and their volume and area within the bar, and each face's area
 //!   within its own bar of OCCT's and brep-bench's measurer's readings of that face (`Refs`,
-//!   `face_bar`, `faces_judged`: a total within its bar does not show a solid read right); a file that
-//!   represents no solid (`ref_from` `refuse`: a shell-based surface model, an empty product) is
+//!   `face_bar`, `faces_judged`: a total within its bar does not show a solid read right); a
+//!   file that represents no solid (`ref_from` `refuse`: a shell-based surface model, an empty product) is
 //!   refused. Holds at every commit, the reader refusing everything included.
 //! * `nothing_panics`: no read panics (`catch_unwind`); a panic names its file.
 //! * `the_corpus_reads`: every file read, none refused but those that represent no solid or that
