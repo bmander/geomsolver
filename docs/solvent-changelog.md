@@ -4,6 +4,18 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+## [NEXT-taper-root]
+
+**A band tapering to nothing is filleted and rounded to its toes** (#994). A fill at the foot of a
+band whose top runs on tangent into the plate it stands on ends square at the toe, where the
+crease's line only touches the top, kept outside it — refused through 0.228 ("a run its curved end
+does not cut off") — and on a disc it no longer leaves out what the field reads. A face's `.smooth`
+gone on into the band's top is read beside the band by the plate (or disc) the band's side rises
+from, where the side stands between the point and the top: the top's side, within, was read there,
+and in the side's own plane; and a smooth chain turning both ways is read about a face with the
+faces going on from it only where they are one sheet, so the band's concave foot no longer carries
+its tangent plane through the air over the plate.
+
 ## [NEXT-flush-deck]
 
 **A run ends on a face going on tangent that carries no round on** (#994). In `S.ends`, a face

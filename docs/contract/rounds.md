@@ -827,7 +827,13 @@ the point, but where that is a point of the chain's rim — an edge to a face it
 surface ending there — by the surface going on from the rim's ends: the nearest face of the chain at
 either end of that edge whose surface's foot lies on it (`BodyFaces::nearest_face`: over the block's
 top beside its rim the wall said within, and a fill ran along the wall's top edge in the air; where
-none does, a hole a foot's union cuts in a casting's side, the nearest face's as before); and it is read face by face as one convex solid only where each face's patch lies
+none does, a hole a foot's union cuts in a casting's side, the nearest face's as before) — or, where
+the face the rim is to stands between the point and that patch (the point past its surface one way,
+the patch going off the rim the other), the nearest of the chain's faces that face bounds too whose
+foot lies on it, and in that face's plane, where the region holds its point outside it, as a point
+just past it (`nearest_face`'s `outside`, from the region's own `not in` terms, `region::general`;
+a band's side on a plate, #994 item 2d, below; a casting's floor its drafted side leans over stands
+between nothing); and it is read face by face as one convex solid only where each face's patch lies
 within every other's (`BodyFaces::bulging`: the arc's tangent planes carried down through the block
 where its side stands flat, so no ball stood within the block's rim beside the deck). The mirrored
 case is the block's top rim along the flush side rounded: its run ends on the deck's arc, kept
@@ -840,6 +846,38 @@ exported with no sliver). Still refused, by its faces: a chamfer at the deck's a
 from `b.smooth` is read from its patches (`distance(p, b.smooth)`), the block's side the nearer
 beside its rim ("its flat, reaching 1.5mm from `dck.k3`, comes within 1.28mm of `base.j3`, which
 `dck.k3` goes on into smoothly").
+
+**A band tapering to nothing on a plate** (#994 item 2d, fixture 142). A band unioned onto a plate's
+face (or a disc's) thins to nothing at its ends, its top coming down onto the plate; the fill where
+the band's side meets the plate runs along the side's foot and ends on the top, cut off there and
+kept outside it (`crease.ends`): its section is clipped by the top progressively until nothing is
+left. Where the top meets the plate at an angle (a circular segment, a wedge) that was built. Where
+it runs on tangent into the plate (concave arcs off the plate up into a convex crown) the crease's
+own line only touches the top's cylinder at the toe, so no chord is cut from it: the meeting comes
+back at once and the run ends square at the toe, kept outside the cylinder — `run_piece`'s
+`halfway` with the chord nothing (where the line's crossing is none or within the tolerance and it
+stands square to the face's normal there, `faces::TANGENT`), which refused it before ("a run its
+curved end does not cut off"); about a disc the ring's own `resumed` meridian already did. The
+plate's smooth chain goes on tangent into the band's top (`plate.near.smooth` holds the foot arcs
+and the crown), and three readings of it were wrong there, all the field's
+([sets.md](sets.md)): about the plate the foot arc was read as bulging with it, its tangent plane
+at its top carried through the air over the plate's far side, so no ball centre stood beside the
+band (`BodyFaces::bulging_about`, now only faces of one sheet with it, `one_sheet`); beside the
+band, past the rim where its top meets its side, the top's side was read, within, where the plate
+the side rises from is the surface; and in the side's own plane, where the gate probes the fill's
+leg, the top's side again. On a disc the gate's refusal was #994's own, "its exact construction
+leaves out what the field reads beside its edge", at a fill over the band's height: the fill stands
+beside the band past its top, as the set says (the ball against the side's whole plane). The band's
+own top edge rounded runs toe to toe along the crown and the foot arcs, the chain's offset swept,
+ending square at each toe, where the face it would end on is the plane behind a reflex corner
+(`end_faces`): its section there reaches under the toe into the plate. `tests/tapered_bands.rs` is
+the gate (the tangent band in three proportions filleted 1, 3 and 8 against heights of 11 to 14,
+one side and both; on a disc 2, 3 and 8 against 4.9; a segment and a wedge under and over their
+heights; the top edge rounded 1 to 8; each volume the closed form's to 1e-9, exported with no
+sliver). Still refused, by its faces: the band's top edge rounded where it stands on the disc, whose
+foot arcs are short, the disc the run along a foot arc ends on reaching back over the seam into the
+crown (#962 item 2's "Move `disc.eo` clear of the seam, or over it"); at a radius of 1 that piece is
+refused by the gate instead ("its exact construction disagrees with the field").
 
 **A ball as wide as its cylinder** (brep-bench's fillet/cylinder-rim-to-dome): an offset by a
 radius that takes a surface's radius to nothing is what the surface is drawn about, never nothing

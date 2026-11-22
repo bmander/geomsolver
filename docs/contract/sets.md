@@ -476,7 +476,12 @@ runs through the tab). At least a distance off it, within it or outside it, is r
 about the face whose patch is nearest: where that face bulges toward the point, it and each face
 going on from it across a seam that bulges too, each its own condition by its side carried on —
 the chain there is convex, and the corner of their offsets (a rim rounded to the uprights' own
-radius, its centres closing onto each convex upright's axis) is met as a corner of conditions;
+radius, its centres closing onto each convex upright's axis) is met as a corner of conditions —
+each going on from it only where the two are one sheet, each's patch within the other's convex
+solid (`BodyFaces::one_sheet`, as `bulging` asks of a whole chain): a band's concave foot running
+tangent off a plate bulges toward the air too, but carried on past its top by its tangent plane
+there it cuts through the air over the plate's far side, and no ball centre stood beside the band
+(#994 item 2d, `tests/tapered_bands.rs`);
 where it does not (a fill seen from its material), its own side's distance, as before. Each slot
 is a condition, the `k`th the `k`th face read there, holding everywhere where fewer are; none is
 held convex, so the steps run to their fixed point. A chain that bulges one way is read whole,
