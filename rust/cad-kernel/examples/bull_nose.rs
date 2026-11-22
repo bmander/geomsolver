@@ -26,6 +26,36 @@ fn main() {
             let kinds: Vec<&str> = b.faces.iter().map(|f| f.surface.kind()).collect();
             println!("built in {built:?}: volume {:.9}, check {:?}, faces {kinds:?}",
                 cad_kernel::props::volume(&b),b.check(tol).err());
+            if std::env::var_os("RUNNER").is_some() {
+                let c = std::time::Instant::now();
+                let a: f64 = b.faces.iter().map(|f| cad_kernel::props::area(&b,f)).sum();
+                let ta = c.elapsed();
+                let c = std::time::Instant::now();
+                let v = cad_kernel::props::volume(&b);
+                let tv = c.elapsed();
+                let c = std::time::Instant::now();
+                let ok = b.check(tol).is_ok();
+                let tc = c.elapsed();
+                let c = std::time::Instant::now();
+                let m = cad_kernel::mesh::mesh(&b,1e-3*b.size(),0.1).map(|m| m.tris.len());
+                let tm = c.elapsed();
+                let c = std::time::Instant::now();
+                let st = cad_kernel::step::write(&b,"bull-nose",tol,cad_kernel::step::Fit::Exact).map(|s| s.len());
+                let ts = c.elapsed();
+                println!("build {built:?}, area {a:.6} {ta:?}, volume {v:.9} {tv:?}, check {ok} {tc:?}, mesh {m:?} {tm:?}, step {st:?} {ts:?}");
+            }
+            if std::env::var_os("AREAS").is_some() {
+                for (fi,f) in b.faces.iter().enumerate() {
+                    let c = std::time::Instant::now();
+                    let a = cad_kernel::props::area(&b,f);
+                    let net = match &f.surface { cad_kernel::geom::Surface::BSpline(_,n) => format!("net {}x{}",n.poles.len(),n.poles[0].len()),_ => String::new() };
+                    let spans: Vec<String> = f.loops.iter().flatten().map(|c| { let e = &b.edges[c.edge as usize];
+                        let k = match &e.curve { cad_kernel::topo::EdgeCurve::Curve(cad_kernel::geom::Curve::BSpline(s)) => s.poles.len(),_ => 0 };
+                        let p = match &c.pcurve { cad_kernel::topo::Pcurve::Curve(c) => match &**c { cad_kernel::geom::Curve::BSpline(s) => format!("/{}",s.poles.len()),_ => "/c".into() },cad_kernel::topo::Pcurve::Inverse {..} => "/inv".into(),_ => "/l".into() };
+                        format!("{k}{p}") }).collect();
+                    println!("face {fi} {} {net}: area {a:.4} in {:?}; edges {spans:?}",f.surface.kind(),c.elapsed());
+                }
+            }
             if let Ok(fi) = std::env::var("FACE") {
                 let fi: usize = fi.parse().unwrap();
                 let f = &b.faces[fi];

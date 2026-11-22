@@ -895,20 +895,24 @@ const MOST_FIT: usize = 4096;
 
 /// **A curve through `f` over `[0, 1]`**, interpolated at evenly spaced parameters doubled until
 /// it holds `f` within `fit` halfway between them and at their quarters.
-fn fitted_curve(f: &dyn Fn(f64) -> V,fit: f64) -> Result<BSpline,Unbuilt> {
+fn fitted_curve(f: &dyn Fn(f64) -> V,fit: f64) -> Result<BSpline,Unbuilt> { fitted_within(f,fit,MOST_FIT) }
+
+/// How many spans a double curve's run is fitted on before it is halved.
+const FEW_SPANS: usize = 64;
+
+/// `fitted_curve` on at most `most` spans.
+fn fitted_within(f: &dyn Fn(f64) -> V,fit: f64,most: usize) -> Result<BSpline,Unbuilt> {
     let mut n = 8;
     loop {
         let ts: Vec<f64> = (0..=n).map(|i| i as f64/n as f64).collect();
         let pts: Vec<V> = ts.iter().map(|&t| f(t)).collect();
+        // (a point that could not be read is no point to fit through)
+        if pts.iter().flatten().any(|x| !x.is_finite()) { return Err(Unbuilt::Failed("a curve could not be read".into())) }
         let b = crate::nurbs::interpolate(&pts,&ts,DEGREE).ok_or_else(|| Unbuilt::Failed("a curve could not be interpolated".into()))?;
         let worst = (0..n).flat_map(|i| [0.25,0.5,0.75].map(|q| (i as f64+q)/n as f64))
-            .map(|t| crate::util::space::distance(b.point(t),f(t))).fold(0.,f64::max);
+            .map(|t| crate::util::space::distance(b.point(t),f(t))).fold(0.,|m: f64,d| if d.is_nan() { f64::INFINITY } else { m.max(d) });
         if worst <= fit { return Ok(b) }
-        if debug() && n >= 512 {
-            let w = (0..n).flat_map(|i| [0.25,0.5,0.75].map(|q| (i as f64+q)/n as f64)).map(|t| (crate::util::space::distance(b.point(t),f(t)),t)).fold((0.,0.),|a,b| if b.0 > a.0 { b } else { a });
-            eprintln!("fit at {n}: worst {:e} at {} ({:?})",w.0,w.1,f(w.1));
-        }
-        if n >= MOST_FIT { return Err(Unbuilt::Failed(format!("a curve fits within {fit:e} only to {worst:e}"))) }
+        if n >= most { return Err(Unbuilt::Failed(format!("a curve fits within {fit:e} only to {worst:e}"))) }
         n *= 2;
     }
 }
@@ -1002,9 +1006,10 @@ impl Stand<'_> {
             if w[along].abs() < 0.5*crate::util::space::norm(w) && m != along { cuts.push((from,along)); from = j-1; along = m }
         }
         cuts.push((from,along));
-        let mut out = Vec::new();
-        for (c,&(i0,i)) in cuts.iter().enumerate() {
-            let i1 = cuts.get(c+1).map_or(n-1,|&(j,_)| j);
+        // each run fitted whole where a few dozen spans hold it, else halved at its middle traced
+        // point (a run whose coordinate's chart turns just past its end, the apex of an island,
+        // took 2048 spans whole, and every face it bounds read its area for seven seconds)
+        let fit_run = |i0: usize,i1: usize,i: usize,most: usize| -> Result<(Arc<Curve>,[Arc<Curve>;2]),Unbuilt> {
             let (a,b) = (pts[i0][i],pts[i1][i]);
             let settled = |s: f64| -> X {
                 if s <= 0. { pts[i0] } else if s >= 1. { pts[i1] } else {
@@ -1018,11 +1023,22 @@ impl Stand<'_> {
                     self.settle(k,t.pair,pred,row,v).unwrap_or([f64::NAN;3])
                 }
             };
-            let curve = fitted_curve(&|s| { let x = settled(s); self.point(k,t.pair.a,x[0],x[2]) },FIT*self.tol)?;
+            let curve = fitted_within(&|s| { let x = settled(s); self.point(k,t.pair.a,x[0],x[2]) },FIT*self.tol,most)?;
             // each sheet's own place along it, on the same parameter (its pcurve)
-            let place = |j: usize| fitted_curve(&|s| { let x = settled(s); [x[j],x[2],0.] },FIT*self.tol/(1.+self.scale));
-            let pc = [Arc::new(Curve::BSpline(Arc::new(place(0)?))),Arc::new(Curve::BSpline(Arc::new(place(1)?)))];
-            out.push((Arc::new(Curve::BSpline(Arc::new(curve))),pc,i1+shift));
+            let place = |j: usize| fitted_within(&|s| { let x = settled(s); [x[j],x[2],0.] },FIT*self.tol/(1.+self.scale),most);
+            Ok((Arc::new(Curve::BSpline(Arc::new(curve))),[Arc::new(Curve::BSpline(Arc::new(place(0)?))),Arc::new(Curve::BSpline(Arc::new(place(1)?)))]))
+        };
+        let mut out = Vec::new();
+        for (c,&(i0,i)) in cuts.iter().enumerate() {
+            let i1 = cuts.get(c+1).map_or(n-1,|&(j,_)| j);
+            let mut todo = vec![(i0,i1)];
+            while let Some((j0,j1)) = todo.pop() {
+                match fit_run(j0,j1,i,FEW_SPANS) {
+                    Ok((curve,pc)) => out.push((curve,pc,j1+shift)),
+                    Err(_) if j1-j0 >= 2 => { let m = (j0+j1)/2; todo.push((m,j1)); todo.push((j0,m)) }
+                    Err(_) => { let (curve,pc) = fit_run(j0,j1,i,MOST_FIT)?; out.push((curve,pc,j1+shift)) }
+                }
+            }
         }
         if let Some(b) = into(1) { out.push(self.birth_piece(k,b,true,all.len()-1)?) }
         Ok(out)

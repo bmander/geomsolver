@@ -2787,7 +2787,13 @@ loop, refused at a coarse sag and ran on past fifteen minutes at a fine one) and
 places' area. A net grows each way by its own misses (a wall, linear along `σ`, keeps 8 rows). A double curve is laid in pieces, each where one coordinate of `(p₁, p₂, σ)` the curve leans
 at least 30° off its plane, read with that coordinate its parameter — settled on the plane where it
 has its value, the implicit function's own smooth chart; projected across a polyline's chords the
-curve's rate jumped at each, and across a spline the read was only as smooth as the spline. Caps
+curve's rate jumped at each, and across a spline the read was only as smooth as the spline. A
+piece is fitted whole where 64 spans hold it, else halved at its middle traced point: a piece whose
+coordinate's chart turns just past its end (the island's apex) took 2048 spans whole, and each face it
+bounds read its area in 6.9 s (`props::area`; 0.55 s halved — brep-bench's runner, its build, area,
+volume, check, mesh and STEP, 17.3 s then and 4.9 s now). Every curve and sheet is fitted within a
+tenth of the tolerance, as K2's and `planar_solid`'s are: a shared edge then stands within a fifth of
+it of both faces it bounds. Caps
 are the regions at their height; the faces sewn (`sew::sewn`), the solid judged (`closed::judge`)
 and cut from the blank. **Built**: brep-bench's bull nose along a looping spline through the bench's
 own call (`swept_upright::the_bull_nose_along_a_looping_spline_is_its_bench_volume`: 24 faces,
@@ -2800,7 +2806,20 @@ its mesh's volume within a tenth of its sag over its area (+0.036 at a sag of 1e
 (`…_agrees_with_its_definition`: 20 000 points), its closed sweep with membership
 (`the_bull_nose_s_closed_sweep_agrees_with_membership`), and built again with a pole moved by an
 ulp (the same volume to the digit) and by 1e-6 (within 3e-9), the births then parted
-(`the_bull_nose_builds_with_its_poles_moved`, slow tier).
+(`the_bull_nose_builds_with_its_poles_moved`, slow tier). **Its edges, under the same path**: a
+motion turning about the plane's normal is read (the mill carried by `trajectory::Along`, the frame
+along a cubic turning with its tangent: 10 faces, 1036.41 for the closed sweep), but a path that
+encloses nothing — read only by evaluating, as brep-bench's runner frame is — is refused by the
+region's reading itself (`region::Keep::outside`: a point is kept outside the section between two
+grid poses by the point's speed bound, `Trajectory::inverse_point_speed_bound`, which only a path's
+own enclosure, `Path::stretch`, gives; with none, no stretch is kept and the loop is the box's, "reaches
+past the box held about it", as `planar_solid` refuses a disc prism under the same frame). A meridian
+meeting its axis other than in a flat end (a ball end, a pointed taper) is not read: the region of a
+disc of no radius is the path, no region, and the end's sheet closes to a point. Under the looping
+path the ball end then goes to K2 and is refused `Curved` at its flat top (touched whole); the pointed
+taper is read by `planar_solid` and refused by its own judge (`Wrong`, nothing returned); a concave
+meridian is refused `Curved` by K2's reading of the tool; a flat step is a prism's slabs, built by
+`planar_solid`.
 
 **The generating class's reading is the kernel's (#721 F2c):** a tool point's contact chart under
 the trajectory, its form read once of the trajectory's structure (`brep::swept::generating::Form`:

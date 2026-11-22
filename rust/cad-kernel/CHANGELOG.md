@@ -20,7 +20,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   sides fitted as nets with their pcurves, ends the tool's own faces posed, caps the regions; the
   faces sewn and judged. The closed class asks it before K2, whose pencil reads no contact
   touched whole (a flat bottom under a translation). brep-bench's bull nose along a looping
-  spline builds through `closed::cut_from` (10956.98646, 2.5 s). `region::SweptRegion::held`
+  spline builds through `closed::cut_from` (10956.98646, 2.3 s; with its area, volume, check, mesh
+  and STEP 4.9 s — a double curve's run is halved where 64 spans do not hold it, where one fitted
+  whole on 2048 spans read its faces' area in 6.9 s each). `region::SweptRegion::held`
   (new) says which candidates are edges held at an end pose; `planar_solid::holding` is
   `pub(super)`.
 
