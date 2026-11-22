@@ -304,9 +304,12 @@ pub fn elaborate(p: &Program) -> Elaborated {
                     e.diags.extend(faults);
                 }
                 // what follows only from a given file refused is said at its `use` alone
-                let unsaid = words::given_unsaid(p);
+                let (unsaid, names) = words::given_unsaid(p);
                 e.diags.retain(|d| d.code == Code::E072
-                    || !unsaid.iter().any(|s| s.lo <= d.span.lo && d.span.hi <= s.hi));
+                    || !unsaid.iter().any(|s| s.lo <= d.span.lo && d.span.hi <= s.hi)
+                    // and where a word's body read it, said at that word's `use`
+                    && !(d.code == Code::E101 && names.iter()
+                        .any(|n| d.message.ends_with(&format!("no such entity: `{n}`")))));
                 return e;
             }
             Err(Again::Refused(more)) => refused.extend(more),

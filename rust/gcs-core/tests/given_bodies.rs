@@ -178,8 +178,19 @@ fn the_body_is_read_by_the_modules_path_and_only_where_read() {
     assert_eq!(e.sketch.solids.len(), 2, "{:?}", e.sketch.solids);
     assert!(matches!(e.sketch.solids[solid(&e, "bracket")].def,
                      gcs_core::model::SolidDef::Given(_)));
-    assert_eq!(gcs_core::model::objects(&e.sketch), vec![solid(&e, "part")]);
+    let part = solid(&e, "part");
+    assert_eq!(gcs_core::model::objects(&e.sketch), vec![part]);
     assert!(close(volume(&e, "part"), drilled_volume()), "{}", volume(&e, "part"));
+    // one object wherever objects are read: the workspace, the cut list, an assembly's export
+    assert_eq!(gcs_core::overview::shown_objects(&e.sketch), vec![part]);
+    let cut = gcs_core::stock::cut_list(&e.sketch).unwrap();
+    assert_eq!(cut.len(), 1);
+    assert_eq!(cut[0].objects, vec!["part".to_string()]);
+    let say = gcs_core::brep::sweep::Say { stage: &|_: &str| {}, mark: &|_| {} };
+    let a = gcs_core::brep::export::assembly(&e.sketch, &[part], "drawing", None, &|_| None, &say,
+                                             &mut |_, _| {})
+        .unwrap_or_else(|(i, m)| panic!("{i}: {m}"));
+    assert_eq!(a.products.iter().filter(|p| p.solid.is_some()).count(), 1);
     // by its whole path, where a module under a directory is used
     let e = solved("unit mm\nuse vendor.bracket\npart := solid(vendor.bracket)\n");
     assert!(close(volume(&e, "part"), drilled_volume()));
@@ -203,10 +214,10 @@ fn a_given_body_is_a_set() {
     let v = gcs_core::diagnose::judge_solids(&e.sketch);
     assert_eq!(v.len(), 2);
     assert!(v.iter().all(|v| v.holds() != Some(false)), "{v:?}");
-    // a pin within the material, and one through the block's top and out of it
+    // a pin within the material, and one above the block
     let pins = |from: i32, to: i32| DRILL.replace("from: -30mm, to: 30mm",
         &format!("from: {from}mm, to: {to}mm"));
-    for (from, to, holds) in [(5, 15, true), (5, 25, false)] {
+    for (from, to, holds) in [(5, 15, true), (25, 35, false)] {
         let e = solved(&(pins(from, to) + "claim every q in drill: q in bracket\n"));
         let v = gcs_core::diagnose::judge_solids(&e.sketch);
         assert_eq!(v[0].holds(), Some(holds), "{from}..{to}: {v:?}");
@@ -300,12 +311,15 @@ fn a_given_body_stands_in_the_documents_space() {
 /// in inches gives the same block.
 #[test]
 fn a_given_body_is_measured_in_the_documents_unit() {
+    // the volume the model measures, in the document's unit
+    let measured = |e: &Elaborated| e.sketch
+        .evaluated_solid(solid(e, "part"), gcs_core::solid::ApproximationPolicy::Report)
+        .unwrap_or_else(|m| panic!("{m}")).volume();
     let e = solved("unit in\nuse bracket\npart := solid(bracket)\n");
     let inch3 = 25.4f64.powi(3);
-    assert!(close(volume(&e, "part"), drilled_volume() / inch3), "{}", volume(&e, "part"));
+    assert!(close(measured(&e), drilled_volume() / inch3), "{}", measured(&e));
     let e = solved("unit mm\nuse inch\npart := solid(inch)\n");
-    assert!((volume(&e, "part") - drilled_volume()).abs() < 1e-6 * drilled_volume(),
-            "{}", volume(&e, "part"));
+    assert!((measured(&e) - drilled_volume()).abs() < 1e-6 * drilled_volume(), "{}", measured(&e));
 }
 
 /// A file of several solids is refused at the `use`, saying how many; a read of a refused

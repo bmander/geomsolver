@@ -158,13 +158,14 @@ fn given(p: &Program, say: &mut impl FnMut(Code, Span, String)) {
 /// **What a refused given module leaves unsaid** (#993 stage 2): the document's statements that
 /// read the name of a given module whose file the kernel refused — or read a name one of those
 /// declares, and so on — whose every other diagnostic only follows from the refusal, said once at
-/// the `use` (E072).  Their spans; empty where no file was refused.
-pub(super) fn given_unsaid(p: &Program) -> Vec<Span> {
+/// the `use` (E072).  Their spans, and the names refused or declared by them; empty where no
+/// file was refused.
+pub(super) fn given_unsaid(p: &Program) -> (Vec<Span>, BTreeSet<String>) {
     let refused: Vec<&str> = p.modules.iter()
         .filter(|m| m.given.as_ref().is_some_and(|g| g.body.is_err()))
         .map(|m| m.name.as_str()).collect();
     if refused.is_empty() {
-        return Vec::new();
+        return Default::default();
     }
     // each statement of the document's root, and the names it reads, as the lexer sees them
     let stmts: Vec<(&crate::syntax::Stmt, Vec<String>)> = p.root().body.iter().map(|st| {
@@ -192,5 +193,5 @@ pub(super) fn given_unsaid(p: &Program) -> Vec<Span> {
             }
         }
     }
-    out.into_iter().map(|k| stmts[k].0.span).collect()
+    (out.into_iter().map(|k| stmts[k].0.span).collect(), unsaid)
 }

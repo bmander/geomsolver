@@ -1028,8 +1028,10 @@ before ports 0.9 s to 0.4 s.
   said), since placing a given body is later work (#993 stage 5).  Its lengths are the file's,
   carried to the document's unit by the model.  **A file the kernel refuses** is one E072 at the
   `use`, `` `bracket`: `` and the kernel's words (`Refusal`'s, `#n: …`), or how many solids a
-  file of several gives; its name is still known, so a read says nothing more and nothing is
-  declared.  `tests/given_bodies.rs` is the gate, the stage's own
+  file of several gives; its name is still known to the flattener and nothing is declared for
+  it, and whatever else a statement reading it says — or a statement reading a name one of those
+  declares, transitively, or a word's body reading it — follows only from the refusal and is left
+  unsaid (`program::words::given_unsaid`, applied as `elaborate` returns): one diagnostic.  `tests/given_bodies.rs` is the gate, the stage's own
   (`a_document_naming_a_file_exports_the_same_solid`) among it.
 - **`port` is retired** (issue #47, item 1).  Everything an instance makes is reached by its dotted
   name (`five.s[0].p1`).  The **computed point** is `p := point(x: xexpr, y: yexpr)`
