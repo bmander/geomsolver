@@ -3,7 +3,7 @@
 //! against the instants outside its own contact, a point of the tool at an end pose against the
 //! instants after (before) it.
 
-use gcs_core::brep::swept::depth::{Reading,cover,label_at,sheet};
+use gcs_core::brep::swept::depth::{Reading,cover,far_depth,label_at,seams,sheet};
 use gcs_core::brep::swept::rings::Ring;
 use gcs_core::brep::topo::Brep;
 use gcs_core::brep::trajectory::{Screw,Trajectory};
@@ -87,4 +87,35 @@ fn where_the_full_turns_end_poses_touch_both_are_buried() {
     assert!(matches!(cover(&ring,&path,roll,end,roll[1],0.,tol).unwrap(),Reading::Near),"the end pose at the touch");
     let equator = at(roll[0],1.760338,-0.000259);
     assert!(matches!(cover(&ring,&path,roll,equator,roll[0],0.,tol).unwrap(),Reading::Near),"the start pose's equator");
+}
+
+/// **The cover's boundary traced from the depth is the double curve** (#942, `depth::seams`): over
+/// a box of the half turn's sheet beside the swallowtail point, from the cut where its fold pair is
+/// born down to where the end pose covers it, the zero set of the far cover's depth traced from one
+/// point of the double curve — one piece, rim to rim, through the double curve's other point there
+/// (to the tolerance), its partner's preimages each covered at the instant of its own point: both
+/// faces' parameters of the seam come from the depth, with no meeting of surfaces.
+#[test]
+fn the_cover_s_boundary_traced_from_the_depth_is_the_half_turn_s_double_curve() {
+    let (tool,path,roll,tol) = tumbling(90.);
+    let ring = Ring::read(&tool).unwrap();
+    let seed = [6.4444197,1.4623041];
+    let l = label_at(&ring,&path,seed[0],seed[1],0.4051).unwrap();
+    // (the feature a quarter of the tube's thickness, the step `cover` marches by)
+    let s = seams(&ring,&path,roll,l,[[6.40,6.447],[1.455,1.476]],&[seed],tol,0.04).unwrap();
+    assert_eq!(s.len(),1,"{s:?}");
+    let piece = &s[0];
+    assert!(piece.sheet.len() >= 2 && piece.partner.len() == 1,"{piece:?}");
+    let at = |th: f64,t: f64| sheet(&ring,&path,roll,th,t,l).unwrap().0;
+    // (the double curve's other point in the box, `rings::double_curve_from_apex`'s to seven places)
+    let other = at(6.4065157,1.4640931);
+    let near = piece.sheet.windows(2).flat_map(|w| (0..=64).map(move |k| { let f = k as f64/64.; [w[0].0+(w[1].0-w[0].0)*f,w[0].1+(w[1].1-w[0].1)*f] }))
+        .map(|q| gcs_core::brep::util::space::distance(at(q[0],q[1]),other)).fold(f64::INFINITY,f64::min);
+    assert!(near <= 2.*tol,"the double curve's point {near:e} from the traced seam");
+    for (k,&(th,t,sg)) in piece.partner[0].iter().enumerate() {
+        let lp = label_at(&ring,&path,th,t,sg).unwrap();
+        let c = far_depth(&ring,&path,roll,th,t,lp,tol).unwrap();
+        assert!(c.depth.abs() <= tol,"the partner's point {k}: covered {:e} deep",c.depth);
+        assert!((c.at-piece.sheet[k].1).abs() <= 1e-6,"the partner's point {k} covered at {} for its own point's {}",c.at,piece.sheet[k].1);
+    }
 }

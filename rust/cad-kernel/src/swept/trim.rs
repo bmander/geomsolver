@@ -562,6 +562,7 @@ pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Bre
             Ok(out) => match out.check(tol) {
                 Ok(()) => break out,
                 Err(why) => {
+                    if debug() { eprintln!("trim: the check refused: {why}"); narrate_open(&out,tol) }
                     let readings = readings.lock().unwrap().clone();
                     let across = missing_across(&out,&candidates,&|f,p| match verdict(f,p) {
                         Ok(None) if !matches!(swept.beyond(p,CLEAR*hair),Ok(Some(_))) => None,

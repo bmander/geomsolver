@@ -2238,6 +2238,27 @@ trace leaving beside a corner ending at a nearer crossing, a cap both faces of a
 corner dropped, a chord refined by the meeting's own points where its cubic strays — and its tubes
 are arranged with the torus at both ends (#942 T1d-ring, at the bench's tolerance:
 `swept_rings::a_rings_tubes_beside_its_whole_touched_meridians_are_arranged_with_it_at_both_ends`).
+**A boundary read from the depth enters as a seam** (#942, `swept::depth::{Covered,seams,Seam}`):
+`depth::Covered` is the far cover's depth over a ring's sheet in its `(θ, t)` on one contact — not
+defined where the sheet folds away, its neighbours hold it or nothing else covers it — with its
+gradient by the envelope theorem (the tool's normal at the covering instant against the sheet's
+rates; differences at `zero_set`'s half digits read the sheet's root's noise), and `depth::seams`
+traces its zero set over a box with `zero_set::trace` from the caller's seeds (events it knows),
+each piece's chords held to the tolerance in space by pulling every chord's middle onto it (beside a
+swallowtail point the sheet's rates are nearly one way, and a first-order distance through the
+inverse metric took a chord 3.6e-5 off as near), a piece traced twice from a seed dropped, a cell
+left unresolved refused. Each `Seam` carries its sheet's points `(θ, t, σ)` and the covering
+instant's preimages `(θ′, τ, σ′)` where `τ` is inside the roll — `Seam::curves` in the form
+`rings::cut_along` lays a double curve's, so a caller pushes them among the curves cut into the
+stretches. On the half turn it traces the double curve from the cut where the pair is born to where
+the end pose covers it, one piece rim to rim, each partner point covered at its own point's instant
+(`swept_depth::the_cover_s_boundary_traced_from_the_depth_is_the_half_turn_s_double_curve`, 4 s).
+The half turn's refusal is no missing seam: the cut is where the pair's least `s''` passes nought,
+to 3e-7 of the roll; the band its far cover holds deeper than the tolerance before the cut is
+bounded by the double curve; and from its swallowtail point to where it crosses the cut the double
+curve stands 0.2e-6 to 3.03e-6 from the cut's contact in space (the tolerance 3.2e-6), so the
+arrangement cuts the cut's edge at the swallowtail point and leaves edges used four to six times.
+
 **A seam's crossing within the tolerance band of the rim is the tube's vertex** (`rings::traces`):
 where a touching piece's rim meets a dipped one's the relative curvature across the rim is nought
 at the vertex, and beside it the tube and the tool stand within the fit's error of one another all
