@@ -936,7 +936,51 @@ difference of their radii) touch along the line through those points — a frust
 and the cone its generator turns into about an axis along its own; a ball centred on a torus's
 middle circle with its tube's radius lies in its solid and touches it round the meridian through
 its centre — where they were traced and refused as nearly touching
-(`swept_closed::round_tools_turned_part_of_a_turn_sweep_their_sections_by_pappus`). **A face's
+(`swept_closed::round_tools_turned_part_of_a_turn_sweep_their_sections_by_pappus`). **Two
+cylinders whose axes lean apart and stand the sum of their radii apart meet in no curve** (#994
+item 5, `ssi::rods_apart`): each bounds a convex rod, the plane square to the axes' common normal
+between them keeps one rod on each side, and at the sum within the tolerance the two rest on one
+another at the one point where both touch it — read, as a ball resting on a plane is, as meeting in
+no curve, and never traced; farther apart they are clear in closed form. Traced, the search for a
+meeting no edge crosses found a point beside the touch, the second-order reading took it as a touch
+alone only where its disc is small beside both faces, and the trace from it gave nothing (a blanket
+round over a clevis's top: "a cylinder and a cylinder meet at …, where no edge crosses, in a curve
+that could not be traced"). Only at a lean of `SHALLOW` (a degree) or more: the two stand within
+the tolerance over an ellipse about the touch `√(2 tol (r + s)) / sin θ` long, which at a lean of a
+millionth is the part's length, a touch along a curve the meeting's ridges read
+(`meeting::marched`) and the faces tangent there are laid along. Nearer, they cross and are traced
+as before (`cylinders_touching`: radii from 1 on 2 to 0.5 on 20 and of one radius, leans from 90°
+to 2°, whole or ending at the touch, each Boolean the rods' own volumes; under a degree left to the
+trace; sunk a tenth, still crossing). **Two surfaces resting on one another at a point meet
+there alone, whatever their kinds** (#994 item 5): where their relative curvature `Q` at a touch
+is definite (an elliptic touch), they stand on either side of their common tangent plane, within
+the tolerance of one another only over its disc `√(2 tol / λ)` (`λ` its least size, `Touch::disc`),
+and that point is their whole meeting out to eight discs — sampled round the point at half and the
+whole of that reach along sixteen ways (`ssi::resting`, which a third-order part bending them
+across refuses). `Touches::alone` knows such a touch over that reach, not over the radius within
+which they stand nearer parallel than a trace follows (`2 SHALLOW / λ`, 0.7 for a round of 1 on a
+blend of 20), and refuses it only where the reach passes a twentieth of the smaller face (`Q` all
+but singular: a touch along a curve at this tolerance, the ridges' reading). `ssi::touch_near`
+finds the point by Newton on the difference of the two exact unit normals over one surface's
+tangent plane, settled by the height a step changes (a thousandth of `tol`), not by a step a
+fraction of `tol` long, which a small `λ` does not let it reach. An indefinite `Q` (a saddle against
+a rod, two vaults' crown) is two branches crossing at the point, which the trace starts from, as
+before. An edge whose search is refused where a surface of its own rests on the other (a blend's
+seam circle through the point where a torus rests on the blend) meets it there alone within the
+reach, a touch, the rest of its stretch searched either side (`boolean::resting_on`). And in closed
+form, a ball whose centre stands its radius or more from a cylinder or a torus — their signed
+distances change by no more than the distance moved — meets it in no curve, off their axes and the
+torus's core circle (`ssi::ball_clear`). The gates are `resting_touches`: rods across and at 60°, a
+ring and a ball resting on an R20 cylinder, an R20 torus and a frustum's side, every Boolean either
+way the operands' own volumes (read the old way, six of the twelve refused: "nearly touching",
+"a cylinder's pieces do not close", a seam circle "not proved"); the same sunk a tenth still
+crossing; a rod resting on a torus's inner equator crossing through its touch (refused before:
+"a shell of the arrangement is kept on one side of a cylinder and dropped on another"); and as
+documents a hoop resting on a beam (on `main`: "a cylinder and a torus meet at …, where no edge
+crosses, in a curve that could not be traced"), and the clevis of fixture 122's class, a band bowed in under its eye, the eye blended
+into the top by R20 and every edge of the top rounded — the bowed side's round a torus resting on
+the blend where the blend leaves the top — built and its boundary the field's about that touch.
+**A face's
 pieces are ordered by their curvature where they leave a point tangent** (`boolean::pieces_of_face`):
 each half's way out of a node is read a ten-thousandth along its own length, and where two of the
 ways there agree within `TANGENT_TIE` (a thousandth of a radian, what a step along an arc turns its
