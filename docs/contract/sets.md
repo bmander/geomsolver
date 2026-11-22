@@ -576,9 +576,13 @@ than the nearest's; and where the conditions read where a step landed have no po
 chain read through another face a hair inside the body), the step is taken back half way, a few
 times, first. **A set stated as another's terms and more, measured less that one** (`d(p, E) − d(p,
 M)`, `E` within `M`: `std.rounds`' `rolled` within `centres`, [rounds.md](rounds.md); #994,
-`region::general`'s `measured`) is read as written, `E`'s nearest point sought from `M`'s point
-nearest `p` (`SetDistance::distance_from`, `conditions::nearest`'s `start`): nothing where that
-point is of `E` (a ball rolled along the edge), and nothing to say where `M`'s is found nowhere.
+`region::general`'s `measured`) is read as written, `d(p, E)` the distance to the nearer `p` of
+two points of `E` found: its point nearest `p` sought from `M`'s point nearest `p`
+(`SetDistance::distance_from`, `conditions::nearest`'s `start`), and its point nearest that point of
+`M` — each a point of `E`, so `d(p, E)` at most, the second found where steps toward a far `p` do
+not settle (`E` a point, the centre of a ball a round pocket's floor closes onto: sought from `p`
+alone, half `tests/tight_corners.rs`'s probes read `E` as empty). So nothing where `M`'s point is
+of `E` (a ball rolled along the edge), and nothing to say where `M`'s is found nowhere.
 Sought from `p` itself, `E` a set of no inside — the centres of a ball touching both faces, two
 points where a boss crosses a filled edge — its steps did not settle under a chain read through its
 faces' own surfaces past their creases (a fill's round cut across by the boss), and half the gate's

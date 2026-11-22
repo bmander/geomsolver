@@ -311,11 +311,15 @@ impl SetDistance {
 
     /// The distance from the set, its nearest point sought from `start` where it is read as
     /// conditions (`nearest`'s steps linearised there first): a set within another, from the
-    /// other's point nearest `p` (`std.rounds`' `rolled` within `centres`, #994).
+    /// other's point nearest `p` (`std.rounds`' `rolled` within `centres`, #994).  Of two points of
+    /// the set found, the nearer `p`: that one, and the set's point nearest `start` — each a point
+    /// of the set, so no nearer than the set's nearest, and the second found where steps toward a
+    /// far `p` do not settle (a set of no inside, a ball's centre where it closes onto a point).
     pub fn distance_from(&self, p: V, start: V) -> f64 {
         match self {
             SetDistance::Conditions(cs) => {
-                nearest(&cs.cs, p, start).map_or(f64::INFINITY, |q| norm(sub(p, q)))
+                let found = [nearest(&cs.cs, p, start), cs.nearest(start)];
+                found.into_iter().flatten().map(|q| norm(sub(p, q))).fold(f64::INFINITY, f64::min)
             }
             SetDistance::Nearest(each) => {
                 each.iter().map(|s| s.distance_from(p, start)).fold(f64::INFINITY, f64::min)
