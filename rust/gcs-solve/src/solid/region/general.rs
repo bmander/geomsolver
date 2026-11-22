@@ -103,17 +103,19 @@ fn field_of(sk: &Sketch, name: &str, terms: &[RegionTerm], bounded: bool,
             }
             RegionShape::FaceSide { ref face } => {
                 let mut r = crate::solid::faces::reading(sk, face, read).map_err(named)?;
-                // a smooth chain's rim to a face the region holds its point outside of: a point in
-                // that face's plane reads the chain as one just past it (`BodyFaces::nearest_face`)
+                // a smooth chain's rim to a face the region holds its point outside of or within: a
+                // point in that face's plane reads the chain as one just past it or just within it
+                // (`BodyFaces::nearest_face`)
                 if r.smooth {
                     for u in terms {
                         let RegionShape::FaceSide { face: f } = &u.shape else { continue };
-                        if u.cmp != Cmp::Ge || f.solid != face.solid {
+                        if u.cmp == Cmp::In || u.hi.is_some() || f.solid != face.solid {
                             continue;
                         }
                         let o = crate::solid::faces::reading(sk, f, read).map_err(named)?;
-                        let new: Vec<usize> = o.faces.into_iter().filter(|g| !r.faces.contains(g)).collect();
-                        r.outside.extend(new);
+                        let new: Vec<(usize, bool)> = o.faces.into_iter().filter(|g| !r.faces.contains(g))
+                            .map(|g| (g, u.cmp == Cmp::Ge)).collect();
+                        r.held.extend(new);
                     }
                 }
                 if let Some((n, d)) = r.half_space() {

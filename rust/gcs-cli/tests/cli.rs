@@ -2176,3 +2176,56 @@ fn solid_picks_a_blocks_copy_by_its_index() {
             && said.contains("`box.planet[2].body`") && !said.contains('#'), "{said}");
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+/// **A solid asked about whose build is refused says why** (#994): `--where part` over a band
+/// rounded where the disc it stands on reaches back over its seams printed "the source names
+/// nothing there", though the source names `part`; it prints the refusal, the core's words.
+#[test]
+fn a_refused_solid_asked_about_says_its_refusal() {
+    let dir = std::env::temp_dir().join(format!("solventc-refused-where-{}",std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("band.sv");
+    std::fs::write(&source,"\
+unit mm
+use std
+use std.solids
+use std.solids (union)
+use std.rounds (round)
+in std.front {
+  o := point
+  fix((0.000000000000000, 0.000000000000000)) o
+  A := point
+  fix((-19.283628290596180, 22.981333293569339)) A
+  B := point
+  fix((19.283628290596180, 22.981333293569339)) B
+  ca := point
+  fix((-28.925442435894272, 34.471999940354010)) ca
+  cb := point
+  fix((28.925442435894272, 34.471999940354010)) cb
+  ct := point
+  fix((0.000000000000000, 15.000000000000000)) ct
+  t1 := point
+  fix((-16.482214527277044, 26.095480423620984)) t1
+  t2 := point
+  fix((16.482214527277044, 26.095480423620984)) t2
+  eo := circle(center: o) hint(r: 30)
+  fix(r == 30mm) eo
+  a1 := arc(center: ca, start: A, end: t1) hint(r: 15.0)
+  a2 := arc(center: ct, start: t2, end: t1) hint(r: 19.868897341174694)
+  a3 := arc(center: cb, start: t2, end: B) hint(r: 15.0)
+  k := line(A, B)
+  sg := face(k, a3, a2, a1)
+}
+disc := solid(std.solids.Prism(face(eo), from: -20mm, to: 20mm))
+band := solid(std.solids.Prism(sg, from: -10mm, to: 10mm))
+part := solid(disc)
+band union part
+part.band.near round(r: 2mm) part.band
+").unwrap();
+    let out = run(&[source.to_str().unwrap(),"--where","part.volume"]);
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(!said.contains("names nothing there"),"{said}");
+    assert!(said.contains("  where part.volume: `part` is not built: ") && said.contains("back over the section there"),
+        "{said}");
+    std::fs::remove_dir_all(dir).unwrap();
+}

@@ -5,15 +5,13 @@
 //! outside its surface, `crease.ends`): the fillet's section is clipped by the top progressively
 //! until nothing of it is left, and where the top runs on tangent into the plate the crease's own
 //! line only touches it, so the run ends square at the toe (`run_piece`'s `halfway`, the chord
-//! nothing).  Three readings of the plate's smooth chain (`plate.near.smooth` goes on tangent into
-//! the band's top) were wrong there: about the plate the band's concave foot was read as bulging
-//! with it, its tangent plane at its top carried through the air over the plate's far side, so no
-//! ball centre stood beside the band at all (`BodyFaces::bulging_about` now asks the two to be
-//! one sheet, `one_sheet`); beside the band, past the rim where its top meets its side, the top's
-//! side was read, within, where the plate (or the disc) the side rises from is the surface there
-//! (`BodyFaces::nearest_face`'s step); and in the side's own plane, where the gate probes a fill's
-//! leg, the top's side again — read now as a point just past the side the region holds its point
-//! outside of.
+//! nothing).  The plate's smooth chain goes on tangent into the band's top, and its reading at the
+//! chain's rim was wrong (`BodyFaces::nearest_face`): beside the band, past the rim where its top
+//! meets its side, the top's side was read, within, where the plate (or the disc) the side rises
+//! from is the surface; and in the side's own plane, where the gate probes a round's leg, the
+//! nearest face's — read now as the region holds its point, just past the side or just within.
+//! The band's own top edge rounded ends at each toe on the plate and is kept over it (`crease.ends`,
+//! `BodyFaces::ends_at`), where it was cut on square into the plate under the toe.
 //!
 //! The family, each drawn whole at DOF 0, exported (STEP and STL, read back) with no face thinner
 //! than the export's tolerance, and its volume the closed form's to 1e-9: a band whose top runs on
@@ -22,8 +20,8 @@
 //! on a disc, filleted under and over its height (a ring about the disc's axis, the fill standing
 //! beside the band past its top where the radius is the larger); a band whose top meets the plate
 //! at an angle, a circular segment and a wedge, under and over their heights; and the band's own
-//! edges along its top rounded.  The convex round of the band on the disc, whose foot arcs are
-//! short, is still refused where the disc reaches back over the seam to its top.
+//! top edge rounded, on the plate and on the disc.  On the disc a round over what the band's
+//! thickness at its seams allows is refused, by its faces and what is true to do.
 use gcs_core::brep::{export, props, sweep::Say};
 use std::f64::consts::PI;
 
@@ -139,11 +137,29 @@ fn lens_fill(rho: f64, r: f64) -> f64 { fill(r, r, |t| 60.0 - 2.0 * (2.0 * rho *
 
 /// The tapered band's top edge along one side rounded `r`: the section's line `t` in from the top,
 /// along the top's offset by `t` — the concave arcs' at `ρ + t`, the convex one's at `R − t` —
-/// from toe to toe, square there (a toe's normal plane through the concave arc's axis).
+/// kept over the plate: on each concave arc's offset from the crown down to where it meets the
+/// plate, `acos(ρ / (ρ + t))` short of the toe's turn.
 fn lens_round(rho: f64, big: f64, r: f64) -> f64 {
     let (z0, tx, tz) = lens_numbers(rho, big);
     let (foot, crown) = (((30.0 - tx) / rho).asin(), 2.0 * tx.atan2(tz - z0));
-    over(r, |t| width(r, t) * (2.0 * (rho + t) * foot + (big - t) * crown))
+    over(r, |t| width(r, t) * (2.0 * (rho + t) * (foot - (rho / (rho + t)).acos()).max(0.0) + (big - t) * crown))
+}
+
+/// The wedge's slope edge along one side rounded `r`: the section's line `t` in from the slope,
+/// from where it meets the plate to the wedge's end `x = 30` (none deeper than the slope's drop
+/// along its length, `60 sin α`).
+fn wedge_round(h: f64, r: f64) -> f64 {
+    let a = h.atan2(60.0);
+    over(r.min(60.0 * a.sin()), |t| width(r, t) * (60.0 - t / a.sin()) / a.cos())
+}
+
+/// The segment's arc edge along one side rounded `r`: the ring's section, its line `t` in from the
+/// arc at `q = R − t` from the axis, turned over the plate, `2 acos(c / q)` (`c` the axis's depth
+/// under the plate's face; none deeper than the segment's height).
+fn segment_round(h: f64, r: f64) -> f64 {
+    let big = (900.0 + h * h) / (2.0 * h);
+    let c = big - h;
+    over(r.min(h), |t| { let q = big - t; width(r, t) * 2.0 * q * (c / q).min(1.0).acos() })
 }
 
 /// The disc's band's foot filled `r`: the ring's section, its line `t` out from the disc turned
@@ -172,6 +188,26 @@ fn disc_bare(alpha: f64, rho: f64, z0: f64) -> f64 {
     let band = shoelace - 2.0 * seg(rho, dist(toe, t)) + seg(big, dist(t, [-t[0], t[1]]));
     let under = seg(30.0, 2.0 * toe[0].abs());
     PI * 900.0 * 40.0 + 20.0 * (band - under)
+}
+
+/// The disc's band's top edge along one side rounded `r`, short of the seams: the crown's run
+/// whole, its section's line `t` in along the crown's offset at `R − t`; each foot arc's along its
+/// offset at `ρ + t` about its centre `C`, from the seam (the way from `C` to the crown's centre)
+/// to where it meets the disc's circle — turned back from the toe (the way from `C` to the disc's
+/// centre) by `acos(((ρ + t)² + |C|² − 30²) / (2 (ρ + t) |C|))`.
+fn disc_round(alpha: f64, rho: f64, z0: f64, r: f64) -> f64 {
+    let (_, ca, t1, big) = disc_numbers(alpha, rho, z0);
+    let crown = 2.0 * (-t1[0]).atan2(t1[1] - z0);
+    let reach = (ca[0] * ca[0] + ca[1] * ca[1]).sqrt();
+    // the foot arc's whole turn: between the ways from its centre to the disc's and the crown's
+    let way = |p: [f64; 2]| [p[0] - ca[0], p[1] - ca[1]];
+    let (u, v) = (way([0.0, 0.0]), way([0.0, z0]));
+    let foot = ((u[0] * v[0] + u[1] * v[1]) / (reach * (v[0] * v[0] + v[1] * v[1]).sqrt())).acos();
+    over(r, |t| {
+        let q = rho + t;
+        let back = ((q * q + reach * reach - 900.0) / (2.0 * q * reach)).min(1.0).acos();
+        width(r, t) * ((big - t) * crown + 2.0 * q * (foot - back))
+    })
 }
 
 /// Solid `name` of `src` built exactly, exported as STEP and STL (each read back), no face of it
@@ -250,24 +286,60 @@ fn a_root_fillet_ends_where_a_band_meets_its_plate_at_an_angle() {
 }
 
 /// **The band's own edges rounded after the union** (#994: "fails the same way"; the crown's run
-/// over 8 disagreed with the field): along its top, from toe to toe, the chain's offset swept,
-/// ending square at each toe — the plate it would end on is the plane behind a reflex corner
-/// (`BodyFaces::end_faces`), so its section there reaches under the toe into the plate.
+/// over 8 disagreed with the field): along its top, from toe to toe, the chain's offset swept, cut
+/// off at the plate each toe ends on and kept over it (`crease.ends`) — the plate is no plane
+/// turning back over the run's faces, which stand wholly on its outside, so it bounds the run
+/// (`BodyFaces::ends_at`); ended square at the toe, the run cut a groove into the plate under it.
 #[test]
-fn a_tapered_bands_top_edge_is_rounded_toe_to_toe() {
+fn a_tapered_bands_top_edge_is_rounded_to_its_toes_and_no_further() {
     for (rho, big, r) in [(20.0, 20.0, 1.0), (20.0, 20.0, 3.0), (20.0, 20.0, 8.0), (10.0, 30.0, 2.0), (40.0, 10.0, 2.0)] {
         let src = lens(rho, big, &format!("part.band.near round(r: {r}mm) part.band"));
         close(built(&src, "part"), bare(lens_area(rho, big)) - lens_round(rho, big, r));
     }
 }
 
-/// Where the band stands on the disc its foot arcs are short, and the round along its top, going on
-/// tangent from a foot arc into the crown, ends on the disc within a section of the seam: still
-/// refused, by its faces and what to do.
+/// The same where the top meets the plate at an angle: the wedge's slope and the segment's arc
+/// rounded under and over the band's height, each cut off at the plate.
+#[test]
+fn a_bands_top_edge_meeting_its_plate_at_an_angle_is_kept_over_it() {
+    for (h, r) in [(2.0, 1.0), (2.0, 8.0), (6.0, 1.0), (6.0, 8.0)] {
+        let src = wedge(h, &format!("part.band.near round(r: {r}mm) part.band.k2"));
+        close(built(&src, "part"), bare(30.0 * h) - wedge_round(h, r));
+    }
+    for (h, r) in [(2.0f64, 1.0), (2.0, 10.0), (8.0, 3.0), (8.0, 10.0)] {
+        let big = (900.0 + h * h) / (2.0 * h);
+        let area = big * big * (30.0 / big).asin() - 30.0 * (big - h);
+        let src = segment(h, &format!("part.band.near round(r: {r}mm) part.band.k1"));
+        close(built(&src, "part"), bare(area) - segment_round(h, r));
+    }
+}
+
+/// **The band's top edge where it stands on the disc**: its foot arcs are short, the band at their
+/// seams with the crown only 0.86 off the disc.  A round under what that allows (0.5 and 0.9) is
+/// built: the crown's run whole and each foot arc's ring cut off at the disc and kept outside it,
+/// each line of its section `t` in turned from the seam to where the foot arc's offset meets the
+/// disc's circle.
+#[test]
+fn a_tapered_bands_top_edge_on_a_disc_is_rounded_short_of_its_seams() {
+    for r in [0.5, 0.9] {
+        let src = disc_band(40.0, 15.0, 15.0, &format!("part.band.near round(r: {r}mm) part.band"));
+        close(built(&src, "part"), disc_bare(40.0, 15.0, 15.0) - disc_round(40.0, 15.0, 15.0, r));
+    }
+}
+
+/// Over it the disc, which each foot arc runs on tangent into and its run ends on, reaches back over
+/// the section the foot arc's round shares with the crown's at their seam: refused, by its faces, by
+/// how far the seam stands off the disc, and by what is true to do — the disc cannot be moved
+/// (#994: "Move `disc.eo` clear of the seam" said of a face the band stands on).  At 1 the gate
+/// refused the crown's run before ("disagrees with the field"): the field read a point in the band's
+/// side's plane, where the gate probes the round's leg, by the disc beside the band, not the crown.
 #[test]
 fn a_tapered_bands_top_edge_on_a_disc_is_refused_where_the_disc_reaches_over_its_seam() {
-    let src = disc_band(40.0, 15.0, 15.0, "part.band.near round(r: 2mm) part.band");
-    let why = crate::common::rounds::refused(&solved(&src), "part");
-    assert!(why.contains("into `band.a2` across their seam") && why.contains("`disc.eo`, which its run along")
-        && why.contains("back over the section there"), "{why}");
+    for r in [1.0, 2.0] {
+        let src = disc_band(40.0, 15.0, 15.0, &format!("part.band.near round(r: {r}mm) part.band"));
+        let why = crate::common::rounds::refused(&solved(&src), "part");
+        assert!(why.contains("into `band.a2` across their seam") && why.contains("`band.a3` runs on tangent into `disc.eo`")
+            && why.contains("the seam stands 0.86mm off `disc.eo`") && why.contains("A smaller round, or a longer `band.a3`")
+            && !why.contains("Move"), "{why}");
+    }
 }
