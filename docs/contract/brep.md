@@ -1908,7 +1908,12 @@ refused. Whether faces that are not neighbours cross in space is not decided yet
 
 **A face bounded by vertices alone is the whole of a surface that closes**
 (`topology/closed.rs::whole`, called once from `topology::face`; a sphere and a ring torus keep
-`whole_sphere` and `whole_torus`). ISO 10303-42 lets a face's bounds be `VERTEX_LOOP`s. Whether
+`whole_sphere` and `whole_torus`). **A ring torus is one whose hole is wider than a millionth of its
+radius** (`topo::poleless`): narrower, it is a horn torus to every tolerance a pole is read at
+(`pole_at`), its middle a pole the reader closes a corner at with the pole's degenerate edge and
+`close_poles` mends, whichever way the platform's `sin` rounded the radius it was built with
+(`step_roundtrip::a_use_ending_at_a_horn_toruss_pole_a_bit_open_reads_back`).
+ISO 10303-42 lets a face's bounds be `VERTEX_LOOP`s. Whether
 the surface closes is read from the surface — its points at a parameter's two ends agreeing, or
 its period — never from the file's `u_closed`, and the face is laid in one of two shapes: closed
 round one parameter with both end rows of the other collapsed to points (a spheroid's net, a

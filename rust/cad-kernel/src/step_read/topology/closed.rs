@@ -124,7 +124,11 @@ fn pinched(s: &Surface,k: usize,[lo,hi]: [f64;2],other: [f64;2],within: f64) -> 
 /// a sphere's and a ring torus's (read as before).
 pub(super) fn whole(st: &Setting,s: &Surface,w: &Walked) -> Option<Result<Built,Refusal>> {
     let lone: Vec<(u32,usize)> = w.bounds.iter().map(|b| match *b { Bound::Vertex(lp,v) => Some((lp,v)),Bound::Edges(_) => None }).collect::<Option<_>>()?;
-    match *s { Surface::Sphere(..) => return None,Surface::Torus(_,big,small) if big > small.abs() => return None,_ => {} }
+    match *s {
+        Surface::Sphere(..) => return None,
+        Surface::Torus(..) if crate::topo::poleless(s) => return None,
+        _ => {}
+    }
     Some(whole_face(st,s,w,&lone))
 }
 

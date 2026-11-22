@@ -300,11 +300,15 @@ pub(crate) fn cusp(surface: &Surface,uv: Uv,along: usize) -> bool {
 }
 
 /// Whether `surface` is one no chart of which collapses anywhere, so it has no pole: a plane, a
-/// cylinder, an extrusion, a ring torus.
+/// cylinder, an extrusion, a ring torus — one whose hole is wider than a millionth of its radius.
+/// A ring torus narrower in the hole is a horn torus to every tolerance a pole is read at
+/// (`pole_at`), so its middle is read as a pole: a horn torus built where the platform's `sin`
+/// rounds a bit lower is one (coin's slab on CI, its minor radius 1.9999999999999998 of 2,
+/// `step_roundtrip::a_use_ending_at_a_horn_toruss_pole_a_bit_open_reads_back`).
 pub(crate) fn poleless(surface: &Surface) -> bool {
     match *surface {
         Surface::Plane(_) | Surface::Cylinder(..) | Surface::Extrusion(..) => true,
-        Surface::Torus(_,big,small) => big > small.abs(),
+        Surface::Torus(_,big,small) => big-small.abs() > 1e-6*big,
         _ => false,
     }
 }

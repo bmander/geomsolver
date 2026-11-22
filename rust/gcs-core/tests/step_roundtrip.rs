@@ -568,14 +568,6 @@ fn trip_in(b: &Brep,name: &str,tol: f64,fit: Fit,found: &mut Found) -> Outcome {
         let file: String = name.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
         let _ = std::fs::write(std::path::Path::new(&dir).join(format!("{file}.step")),&text);
     }
-    // (temporary, #999's CI: the written file's points near the coin's cusp and its edges, printed
-    // where the test fails)
-    if std::env::var("GITHUB_ACTIONS").is_ok() && name.contains("coin") {
-        let near = |l: &str| l.contains("CARTESIAN_POINT") && l.split(|c| c == '(' || c == ',' || c == ')').filter_map(|x| x.trim().parse::<f64>().ok())
-            .collect::<Vec<_>>().iter().take(2).all(|x| x.abs() < 0.05);
-        for l in text.lines().filter(|l| near(l) || l.contains("EDGE_CURVE") || l.contains("VERTEX_POINT") || l.contains("TOROIDAL")
-            || l.contains("AXIS2") || l.contains("DIRECTION") || l.contains("SURFACE_CURVE") || l.contains("ADVANCED_FACE") || l.contains("B_SPLINE_CURVE")) { eprintln!("CI {l}"); }
-    }
     let started = Instant::now();
     // (read on a thread of its own, waited on no longer than `BOUND`: one past it is said slow, its
     // thread left to run)
@@ -1256,6 +1248,28 @@ fn a_nets_collapsed_side_reads_back() { known("lofts/pyramid.sv","pyramid") }
 
 #[test]
 fn a_use_ending_at_a_pole_reads_back() { known("solid_sweeps/coin.sv","slab") }
+
+/// **A use ending at a horn torus's middle reads back where the torus is a bit open** (#993, CI):
+/// the slab's horn torus built where the platform's `sin` rounds a bit lower, its minor radius
+/// 1.9999999999999998 of 2, is a ring torus whose hole is 2e-16 wide — a pole to every tolerance
+/// (`topo::poleless`), so its uses' corner there is closed by the pole's degenerate edge as the
+/// horn torus's is, not left without one as a ring's.
+#[test]
+fn a_use_ending_at_a_horn_toruss_pole_a_bit_open_reads_back() {
+    let mut b = example_solid("solid_sweeps/coin.sv","slab");
+    let mut opened = 0;
+    for f in &mut b.faces {
+        let Surface::Torus(_,big,small) = &mut f.surface else { continue };
+        // (a horn torus, or one a bit open already where this platform built it so)
+        if (*big-*small).abs() <= 1e-12*(*big) {
+            *small = f64::from_bits(big.to_bits()-1);
+            opened += 1;
+        }
+    }
+    assert_eq!(opened,1,"the slab has one horn torus");
+    let name = "solid_sweeps/coin.sv `slab`, its horn torus a bit open";
+    holds(name,&b,&[0]).unwrap_or_else(|e| panic!("{e}"))
+}
 
 /// **A loop across a closed net's closing line reads back** (`helical_groove`'s block, refused as
 /// a loop breaking in parameters while its pcurves were held to 1e-9 against feet standing 1e-7

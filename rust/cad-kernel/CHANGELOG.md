@@ -18,6 +18,12 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   the boundary read is held sound (`step_read::sound`) before it is given. Every file `step`
   writes reads back to the same solid.
 
+- **A torus whose hole is a hair wide has a pole** (#993 stage 1): `topo::poleless` called any
+  torus whose major radius passes its minor poleless, so a horn torus built a bit open (its minor
+  radius one bit under its major, as a platform whose `sin` rounds lower builds one) had its pole's
+  degenerate edge left unlaid by the reader and `close_poles`, though `pole_at` reads a pole there.
+  A ring torus is now one whose hole is wider than a millionth of its radius.
+
 - **How far an edge stands off its face is the boundary's to say** (#993 stage 1): the measure
   `step::write` states a file's uncertainty from is `Brep::standing`, one function for the writer
   and whatever holds a file to it; `Brep::settle_tolerances` is `measure_tolerances` twice with
