@@ -845,10 +845,13 @@ square to the fills. **Two faces flush only to the drawing's numbers where a run
 where they cannot be built (`piece::flush_only`, `Run::flush`, carried into what the failure calls
 the round, `cad.rs`): a boss's end drawn flush with a side the solve leaves turned 1e-8 from it
 leaves a strip of the boss's underside half a nanometre wide that the body, under its tolerance,
-reads as none, while the fill is cut exactly at the side — and the Boolean joining them cannot close
-the boss's wall half a nanometre past the fill's end: "`part`'s round or chamfer `filled`, which
-ends where `arm.s0` and `boss.b0` are flush only to the drawing's numbers, turned 1.0e-8 of a radian
-from one another at […]: a plane's pieces do not close". Turned 1e-7 to 1e-4 the body keeps the
+reads as none, while the fill is cut exactly at the side — and the Boolean joining them could not
+close the boss's wall half a nanometre past the fill's end: "`part`'s round or chamfer `filled`,
+which ends where `arm.s0` and `boss.b0` are flush only to the drawing's numbers, turned 1.0e-8 of a
+radian from one another at […]: a plane's pieces do not close". Since #994 the fill's end's corner,
+a vertex on the boss's edge within the arrangement's reach of its end, is that end
+(`tolerant::at_end`), and the round builds, its volume the closed form's; the naming stands for
+what is still refused there. Turned 1e-7 to 1e-4 the body keeps the
 strip (4.2 nm to 4.2 µm), which the export warns of with or without the round, and the round builds
 beside it; at 1e-3 the strip is 42 µm and nothing is warned of. A boss short of the side by a hair,
 rounded over its faces, leaves a strip of the top as wide as the hair between the side and its end's

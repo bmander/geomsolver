@@ -596,9 +596,12 @@ fn a_boss_standing_on_the_top_past_its_side_is_filled_along_its_sides() {
 /// it by `(x + 50)·tilt` — a strip of its underside 4.2 nm to 58 µm wide, the body's own, which
 /// the export warns of with or without the round — and each fill along a side is cut off by the
 /// side's plane at its slant: their lengths at their sections' centroids sum to `60 − 100 tilt`.
-/// Turned 1e-8, the body reads no strip (half a nanometre, under its tolerance), and the Boolean
-/// joining the fill, cut exactly at the side, to it cannot close the boss's wall half a nanometre
-/// past the fill's end: refused, naming the two faces flush only to the drawing's numbers.
+/// Turned 1e-8, the body reads no strip (half a nanometre, under its tolerance), and the fill, cut
+/// exactly at the side, ends half a nanometre short of the boss's wall: that end's corner a vertex
+/// on the boss's edge within the reach of its end, and so that end (#994, `tolerant::at_end`), the
+/// fill joined to the boss there — where the two were two vertices, and the Boolean could not
+/// close the boss's wall past the fill's end: refused, naming the two faces flush only to the
+/// drawing's numbers.
 #[test]
 fn a_boss_standing_on_a_side_turned_by_the_drawings_numbers_is_filled_to_it() {
     for word in [Word::Round(3.0), Word::Chamfer(2.0)] {
@@ -609,17 +612,9 @@ fn a_boss_standing_on_a_side_turned_by_the_drawings_numbers_is_filled_to_it() {
             proud.holds(arm + 16.0 * 12.0 * 32.0 + a * (60.0 - 100.0 * tilt));
             if tilt > 0.0 {
                 let flush = Standing { block: Some([-8.0, 8.0, -15.0, 15.0]), disc: None, tilt, faces: "boss", word: Some(word) };
-                // turned under a tenth of a micron across the boss, the body reads no strip where
-                // the run's end stands half a nanometre off the boss's: refused, saying so
-                if let Some(why) = flush.refused() {
-                    assert!(tilt < 5e-8, "{why}");
-                    assert!(why.contains("`part`'s round or chamfer `filled`, which ends where `arm.s0` and `boss.b0` are \
-                        flush only to the drawing's numbers, turned 1.0e-8 of a radian from one another"), "{why}");
-                    continue;
-                }
-                assert!(tilt >= 5e-8);
                 let slivers = flush.holds(arm + 16.0 * 12.0 * 30.0 + a * (60.0 - 100.0 * tilt));
-                assert_eq!(slivers.is_some(), 42.0 * tilt < 1e-2, "{slivers:?}");
+                // (turned under a tenth of a micron across the boss, the body reads no strip)
+                assert_eq!(slivers.is_some(), 5e-8 <= tilt && 42.0 * tilt < 1e-2, "{tilt}: {slivers:?}");
             }
         }
     }

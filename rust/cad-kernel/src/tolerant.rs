@@ -14,9 +14,13 @@
 //!   `8 tol` of each other over the part of space both faces' boxes hold are one surface, whatever
 //!   angle they lean apart at elsewhere — so two faces bounded by one edge and leaving it one way
 //!   are one face of the complex, and a piece lying on the other's face is on it (its partner,
-//!   read before its place in the other solid);
+//!   read before its place in the other solid); read face by face for every two faces of an
+//!   arrangement before any phase asks, each class of faces so joined one surface whatever order
+//!   they come in (`boolean`'s `Arrangement::classed`, #994), and two curves on it crossing where
+//!   they come within that reach (`query::crossings_in`);
 //! - **a vertex onto an edge** (`on_stretch`): within `8 tol` of the edge's curve inside its stretch
-//!   and clear of its ends by as much: the edge is cut there;
+//!   and clear of its ends by as much: the edge is cut there; within `8 tol` of an end, it is that
+//!   end (`at_end`), the two one vertex (#994);
 //! - **a point onto a meeting** (`on_meeting`): within `8 tol / sin θ` of the curve two surfaces
 //!   meet in at an angle `θ` — a point within `tol` of both stands that far off their meeting;
 //! - **a root met flatly onto a crossing** (`FLAT`): a root of an edge's distance from a surface
@@ -73,6 +77,17 @@ pub fn on_stretch(c: &Curve,t: [f64;2],p: V,tol: f64) -> Option<f64> {
     // a vertex at the edge's end in all but the pool's labelling is its end
     let near = |q: V| distance(q,p) <= ON_CURVE*tol;
     (s > t[0] && s < t[1] && near(c.point(s)) && !near(c.point(t[0])) && !near(c.point(t[1]))).then_some(s)
+}
+
+/// **Which end of a curve's stretch `t` a point `p` stands at, as `on_stretch` reads it** (#994):
+/// within `ON_CURVE tol` of that end and of the curve there — the vertex `on_stretch` does not cut
+/// the edge at, being its end in all but the pool's labelling. `None` where it stands at neither.
+pub fn at_end(c: &Curve,t: [f64;2],p: V,tol: f64) -> Option<usize> {
+    let near = |q: V| distance(q,p) <= ON_CURVE*tol;
+    let mut s = c.inverse(p);
+    if let Some(period) = c.period() { s = around(s,t[0],period); }
+    if !near(c.point(s.clamp(t[0],t[1]))) { return None }
+    (0..2).find(|&k| near(c.point(t[k])))
 }
 
 /// **An edge onto an edge** (the fifth rule): the piece of `a` over its stretch `ta`, between the
