@@ -1,12 +1,12 @@
 //! What a closed surface asks of a face's reading: a face bounded by vertices alone, the whole of
-//! its surface (`whole`); an edge that is a point (`point_edge`, `points_dropped`,
-//! `points_placed`); a file's curve in the parameters of a spline sheet that closes, written past
-//! its domain (`onto_net`).
-use super::{iso,moved,Bound,Built,Read,Setting,Walked,Written,LAID};
-use super::super::geometry::{Flat,Geometry,Spatial};
+//! its surface (`whole`); a closed edge whose vertex stands off its closed spline's ends
+//! (`restarted`); a file's curve in the parameters of a spline sheet that closes, written past its
+//! domain (`onto_net`).
+use super::{iso,moved,Bound,Built,Setting,Walked,Written,LAID};
+use super::super::geometry::{Flat,Spatial};
 use super::super::Refusal;
 use crate::geom::{Curve,Frame,Rigid,Surface,Uv,V};
-use crate::topo::{reverse_loop,Brep,Coedge,Edge,EdgeCurve,Face,Pcurve,Vertex};
+use crate::topo::{reverse_loop,Coedge,Edge,EdgeCurve,Face,Pcurve,Vertex};
 use crate::util::space::{add,distance,norm,scale};
 use std::sync::Arc;
 
@@ -41,66 +41,6 @@ pub(super) fn onto_net(pc: Pcurve,e: &Edge,s: &Surface,vs: &[Vertex]) -> Option<
         d[k] = shift;
     }
     Some(if d == [0.;2] { pc } else { moved(&pc,d) })
-}
-
-/// **An edge that is a point** (#993): its two vertices one entity, its curve a line of no length
-/// (`Geometry::point_line`) standing at that vertex within `within` — brepkit's and vcad's habit
-/// for a torus's seams and an edge of no length. Read as the kernel's degenerate edge there, a
-/// point (`EdgeCurve::Degenerate`); none for any other edge, whose line of no length between two
-/// vertices, or away from its vertex, is refused as malformed where its curve is read.
-pub(super) fn point_edge(g: &Geometry,w: &Written,points: &[V],within: f64) -> Result<Option<Read>,Refusal> {
-    if w.ends[0] != w.ends[1] { return Ok(None) }
-    let Some(p) = g.point_line(w.geometry)? else { return Ok(None) };
-    if distance(p,points[w.ends[0]]) > within { return Ok(None) }
-    let v = w.ends[0] as u32;
-    Ok(Some(Read {entity:w.entity,edge:Edge {curve:EdgeCurve::Degenerate,t:[0.,1.],v:[v,v],tol:0.},flip:false,rate:1.,pcurves:Vec::new()}))
-}
-
-/// **The uses of edges that are points, taken out of their loops** (`point_edge`): a loop's
-/// corner at a point is no turn of it, and a loop of such uses alone is the vertex they stand at,
-/// a vertex loop (which `whole` reads). Each face and the edges it used so, to be laid back as
-/// points at the vertex (`points_placed`).
-pub(super) fn points_dropped(faces: &mut [Walked],reads: &[Read]) -> Vec<(usize,usize)> {
-    let mut out = Vec::new();
-    for (fi,f) in faces.iter_mut().enumerate() {
-        for bound in &mut f.bounds {
-            let Bound::Edges(uses) = bound else { continue };
-            let point = |e: usize| matches!(reads[e].edge.curve,EdgeCurve::Degenerate);
-            if !uses.iter().any(|u| point(u.edge)) { continue }
-            for u in uses.iter().filter(|u| point(u.edge)) { if !out.contains(&(fi,u.edge)) { out.push((fi,u.edge)); } }
-            let v = reads[uses[0].edge].edge.v[0] as usize;
-            uses.retain(|u| !point(u.edge));
-            if uses.is_empty() { *bound = Bound::Vertex(f.entity,v); }
-        }
-    }
-    out
-}
-
-/// **The edges that are points laid back** where their faces' loops reach their vertex: each a
-/// degenerate use at the first corner there, from the one use's end to the next's start (a pole's
-/// edge, which `Brep::close_poles` then runs along the pole, where the corner is one) — the file's
-/// edge in the first face using it, a copy of it, the same entity, in each other (a degenerate edge
-/// is used once). Refused naming the edge where a face's loops reach its vertex nowhere.
-pub(super) fn points_placed(b: &mut Brep,edges: &mut Vec<u32>,dropped: &[(usize,usize)]) -> Result<(),Refusal> {
-    let mut placed: Vec<usize> = Vec::new();
-    for &(fi,e) in dropped {
-        let entity = edges[e];
-        let v = b.edges[e].v[0];
-        let f = &b.faces[fi];
-        let Some((li,k)) = f.loops.iter().enumerate().find_map(|(li,l)| (0..l.len()).find(|&k| b.ends(&l[k])[1] == v).map(|k| (li,k))) else {
-            return Err(Refusal::unsupported(entity,"an edge that is a point, at a vertex its face's other bounds do not reach: not read"))
-        };
-        let l = &f.loops[li];
-        let (a,z) = (b.uv_ends(f,&l[k])[1],b.uv_ends(f,&l[(k+1)%l.len()])[0]);
-        let id = if placed.contains(&e) {
-            b.edges.push(Edge {curve:EdgeCurve::Degenerate,t:[0.,1.],v:[v,v],tol:0.});
-            if edges.len() < b.edges.len()-1 { edges.resize(b.edges.len()-1,0); }
-            edges.push(entity);
-            b.edges.len()-1
-        } else { placed.push(e); e };
-        b.faces[fi].loops[li].insert(k+1,Coedge {edge:id as u32,reversed:false,pcurve:Pcurve::Line {a,b:z}});
-    }
-    Ok(())
 }
 
 /// The curve of `s` along which its parameter `c` is `x`, its own parameter the other of the
@@ -279,7 +219,7 @@ fn sphere_like(st: &Setting,s: &Surface,w: &Walked,vs: &[(u32,usize,V)],c: usize
     l.extend(laid.iter().enumerate().rev().map(|(j,e)| Coedge {edge:LAID-j as u32,reversed:true,pcurve:line(back,e)}));
     debug_assert!(n > 0);
     if w.reversed { l = reverse_loop(l); }
-    Ok(Built {face:Face {surface:s.clone(),reversed:w.reversed,loops:vec![l],name:w.name.clone()},laid,poles,cuts:Vec::new()})
+    Ok(Built {face:Face {surface:s.clone(),reversed:w.reversed,loops:vec![l],name:w.name.clone()},laid,poles,cuts:Vec::new(),names:w.points.clone()})
 }
 
 fn torus_like(st: &Setting,s: &Surface,w: &Walked,vs: &[(u32,usize,V)],d: [[f64;2];2]) -> Result<Built,Refusal> {
@@ -310,7 +250,7 @@ fn torus_like(st: &Setting,s: &Surface,w: &Walked,vs: &[(u32,usize,V)],d: [[f64;
     if w.reversed { l = reverse_loop(l); }
     let mut laid = la;
     laid.extend(lb);
-    Ok(Built {face:Face {surface:s.clone(),reversed:w.reversed,loops:vec![l],name:w.name.clone()},laid,poles,cuts:Vec::new()})
+    Ok(Built {face:Face {surface:s.clone(),reversed:w.reversed,loops:vec![l],name:w.name.clone()},laid,poles,cuts:Vec::new(),names:w.points.clone()})
 }
 
 /// **A closed edge on a closed spline whose vertex stands off its ends** (#993): the spline
