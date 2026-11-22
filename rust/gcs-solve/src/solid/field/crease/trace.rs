@@ -3,7 +3,7 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::{Crease,CreaseOptions,CreaseSource,End,LEAST_DIHEDRAL,OperandId,Reading,P};
-use super::graph::meets;
+use super::graph::{meets,Segments};
 use crate::space::{dot,cross,norm,distance,lerp};
 use crate::roots::{bisect,newton_onto};
 
@@ -98,8 +98,9 @@ fn takeover<S: CreaseSource + ?Sized>(field: &S,p: P,ops: [OperandId;2],q: P,opt
 /// its end where it is near one, which joins the two into one chain of curves, and otherwise at the
 /// nearest point of it, which `creases` then splits the other at. Without it a crease one trace left
 /// early and another seed started again is traced twice over the stretch they share.
-pub(super) fn trace<S: CreaseSource + ?Sized>(field: &S,start: P,operands: [OperandId;2],options: &CreaseOptions,existing: &[Crease])
-    -> Option<Crease> {
+/// `index` holds `existing`'s segments (`Segments`).
+pub(super) fn trace<S: CreaseSource + ?Sized>(field: &S,start: P,operands: [OperandId;2],options: &CreaseOptions,existing: &[Crease],
+                                              index: &Segments) -> Option<Crease> {
     let mut first = operands;
     let (p0,ra,rb) = pin(field,start,&mut first,options.tolerance,options.step)?;
     if !on_crease(field,p0,&first,options.tolerance) { return None; }
@@ -203,7 +204,7 @@ pub(super) fn trace<S: CreaseSource + ?Sized>(field: &S,start: P,operands: [Oper
                 ends = [End::Closed;2];
                 break 'direction;
             }
-            if let Some((k,x)) = meets(existing,q,0.25*options.step) {
+            if let Some((k,x)) = meets(existing,index,q,0.25*options.step) {
                 halves[side].push(x);
                 break End::Met(k);
             }

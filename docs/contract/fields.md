@@ -148,7 +148,13 @@ facet distance. Readings, never claims; creases and admission read
 exactly. Sweep readings are one `RollSearch` (`swept.rs`) under a `Goal`; clones share
 `SweepCaches`; keys and locks in `field/memo.rs` (immutable). Root finders are `crate::roots`. A
 body's cuts are one union (`document.rs`, `Spread` lower bounds); `MaterialField::symmetries` /
-`crease::creases_under` trace each crease once. Measure with instructions retired
+`crease::creases_under` trace each crease once.  What is near a point of a trace — the crease it
+walks onto (`graph::meets`), a seed already on one, an image already there — is asked of the
+segments a grid lists in the point's cell (`graph::Segments`: each segment in every cell its box,
+grown by half a step, touches; kept beside the creases as each is traced and split), never of every
+segment traced (#996: asked at every step of every trace, that was quadratic in the creases'
+length: 88% of the samples of a rounded casting's half-hour field mesh); the choice is the one
+reading every segment makes.  Measure with instructions retired
 (`/usr/bin/time -l`); Spotlight on a fresh target doubles wall-clock noise.
 
 **A static field that searches is read as a sweep is** (#961): a region whose terms are read by a

@@ -47,6 +47,10 @@ pub struct BodyFaces {
     /// Each face's shell, and how many: the faces reached from it across their edges numbered
     /// alike, from 0 in the order the faces come — a body in several pieces is several shells.
     shells: (Vec<usize>, usize),
+    /// The written terms of the body as its build made them, where it was built so (#996): what
+    /// the body's own build goes on from to make its rounds (`solid::exact`), rather than make
+    /// the stratum again.
+    stratum: Option<std::sync::Arc<crate::brep::recipe::Stratum>>,
 }
 
 impl BodyFaces {
@@ -79,18 +83,23 @@ impl BodyFaces {
         // each face named by its document path (`pocket.near`), as `solid::exact` names them —
         // a swept body's by its blank's primitives and the cutter's faces its cuts left (#212)
         let swept = crate::solid::cad::contains_sweep(from, body);
-        let ex = if swept {
-            crate::solid::exact::swept(from, body)
+        let (ex, stratum) = if swept {
+            crate::solid::exact::swept(from, body).map(|e| (e, None))
         } else if remembered {
-            from.exact_preimage(body).map(|e| (*e).clone())
+            from.exact_preimage(body).map(|e| ((*e).clone(), None))
         } else {
-            crate::solid::exact::build(from, body)
+            crate::solid::exact::build_stratum(from, body)
         }.map_err(|e| format!("`{name}`'s faces: {e}"))?;
         let routes = crate::solid::document::operand_paths(from, body);
         let paths = ex.named.iter().map(|(of, face)| {
             FacePath::new(routes.get(of).map_or(of.as_str(), String::as_str), face)
         }).collect();
-        Ok(BodyFaces::of(ex, paths))
+        Ok(BodyFaces { stratum, ..BodyFaces::of(ex, paths) })
+    }
+
+    /// The written terms of the body as its build made them (`stratum`), where it was built so.
+    pub(crate) fn stratum(&self) -> Option<&std::sync::Arc<crate::brep::recipe::Stratum>> {
+        self.stratum.as_ref()
     }
 
     /// An exact boundary's faces, each named by its path beside it (none: a boundary read whole,
@@ -139,7 +148,7 @@ impl BodyFaces {
             }
         }
         let shells = joined.labels();
-        BodyFaces { loc, mm, origin, paths, convex: Vec::new(), edges, bounding, reach, shells }
+        BodyFaces { loc, mm, origin, paths, convex: Vec::new(), edges, bounding, reach, shells, stratum: None }
     }
 
     /// The same boundary bounding what lies outside it: every face's outward side turned, so each

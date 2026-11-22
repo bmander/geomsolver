@@ -546,8 +546,18 @@ pub fn combined_written(solid: &Brep,known: Option<&Known>,operand: &Brep,op: Op
     combined_at(solid,known,flush.as_ref().unwrap_or(operand),op,tol)
 }
 
+thread_local! {
+    static COMBINED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// **How many Booleans this thread has combined** (`combined`, `combined_known`,
+/// `combined_written`), so far: what a test holds a build's work to (#996: a body's written terms
+/// combined once, not once more for each round that reads them).  A count, never a time.
+pub fn combined_so_far() -> usize { COMBINED.with(|c| c.get()) }
+
 /// `combined_known` at `tol`.
 fn combined_at(solid: &Brep,known: Option<&Known>,operand: &Brep,op: Op,tol: f64) -> Result<(Brep,Known),super::KernelError> {
+    COMBINED.with(|c| c.set(c.get()+1));
     let (mut out,mut known) = boolean_known(solid,known,operand,op,tol)?;
     // material touching itself along a line (two rounds of separate statements meeting where the
     // body they each read leaves them so, #218): each such edge held twice, a solid's boundary
