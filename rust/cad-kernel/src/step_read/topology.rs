@@ -276,6 +276,25 @@ fn file_pcurve(flat: &Flat,e: &Edge,rate: f64,s: &Surface,vs: &[Vertex],near: f6
             d <= near || d <= s.foot_from(p,q).map(|f| distance(s.point(f),p)).filter(|&x| x <= d).unwrap_or(0.)+near
         });
         if on { return Some(pc) }
+        // else where its image is the edge's all the same, run at another parameter (a writer's
+        // curve fitted to its edge's points as a set, its parameter within the writer's tolerance
+        // of the edge's): each of its points as near the edge's curve as the edge's point there is
+        // to the surface, within `near`, and the edge's own point there within the tolerance the
+        // edge measures whatever its curve in this face — the farthest it stands from the surface
+        // or its ends from its vertices — so that keeping it widens no tolerance
+        let EdgeCurve::Curve(c) = &e.curve else { continue };
+        let at: Vec<(V,V,f64)> = [0.,0.07,0.19,0.31,0.43,0.5,0.61,0.73,0.89,1.].iter().map(|&j| {
+            let t = e.t[0]+(e.t[1]-e.t[0])*j;
+            let (q,p) = (pc.at(t,e,s,vs),e.point(t,vs));
+            // (the edge's point's own foot, sought from the file's curve's point and found
+            // globally where that does not settle on the surface by it: a curve run at another
+            // parameter seeds Newton off the foot, which may settle on another)
+            (s.point(q),p,distance(s.point(s.inverse_near(p,q)),p))
+        }).collect();
+        let ends = (0..2).map(|k| distance(c.point(e.t[k]),vs[e.v[k] as usize].p)).fold(0.,f64::max);
+        let measured = at.iter().map(|x| x.2).fold(ends,f64::max);
+        let image = measured.is_finite() && at.iter().all(|&(y,p,gap)| distance(y,p) <= measured+near && distance(y,c.point(c.inverse(y))) <= gap+near);
+        if image { return Some(pc) }
     }
     None
 }
@@ -311,7 +330,9 @@ fn track(s: &Surface,e: &Edge,vs: &[Vertex],travel: [f64;2],from: Uv,n: usize,wi
     let mut all = vec![(0.,from)];
     let pole = pole_at(s,from,within);
     let foot = |f: f64,near: Uv| unwrap(s.inverse_near(e.point(travel[0]+(travel[1]-travel[0])*f,vs),near),near,periods);
-    let sweeps = |a: Uv,b: Uv| (0..2).find(|&k| periods[k].is_some_and(|p| (b[k]-a[k]).abs() > p/12.));
+    // (a point at a pole, or a step from one, sweeps nothing: its collapsed parameter is free)
+    let sweeps = |a: Uv,b: Uv| (0..2).find(|&k| periods[k].is_some_and(|p| (b[k]-a[k]).abs() > p/12.)
+        && pole_at(s,a,within) != Some(k) && pole_at(s,b,within) != Some(k));
     for j in 1..=n {
         let (f0,f1) = ((j-1) as f64/n as f64,j as f64/n as f64);
         let at = out[j-1];
@@ -515,18 +536,27 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
                     }
                 }
                 // the edge's inverse read on the branch nearest the line between its ends
-                // (`Pcurve::Inverse`): that is the walk's own only where the walk keeps within
-                // five twelfths of a period of the line — a curve winding unevenly round a pole,
-                // sweeping its half turn at one end of a whole one, does not, and is refused
+                // (`Pcurve::Inverse`): that is the walk's own only where every point of the walk
+                // keeps within half a period of the line. Between two points read a step apart the
+                // walk moves less than a twelfth of a period, so the farthest it stands from the
+                // line there is the nearer's distance and its step and the line's; across a jump at
+                // the pole, resolved to a hair, the two sides' own. A curve winding unevenly round a
+                // pole — sweeping its half turn at one end of a whole one — does not keep within,
+                // and is refused
                 let off = [a[0]-walked[0][0],a[1]-walked[0][1]];
-                for &(f,q) in &read {
-                    if pole_at(s,q,st.within).is_some() { continue }
-                    let line = [a[0]+(z[0]-a[0])*f,a[1]+(z[1]-a[1])*f];
-                    if let Some(k) = (0..2).find(|&k| periods[k].is_some_and(|p| (q[k]+off[k]-line[k]).abs() > p*5./12.)) {
-                        return Err(Refusal::unsupported(st.reads[ei].entity,format!("an edge whose curve sweeps round its face's pole \
-                            so unevenly that its parameters {} stand {:.3} from the line between its ends, past the five twelfths of \
-                            a period a curve inverted between its ends is read within",["u","v"][k],(q[k]+off[k]-line[k]).abs())))
-                    }
+                let dev = |f: f64,q: Uv,k: usize| (q[k]+off[k]-(a[k]+(z[k]-a[k])*f)).abs();
+                for w in read.windows(2) {
+                    let ((f0,q0),(f1,q1)) = (w[0],w[1]);
+                    if pole_at(s,q0,st.within).is_some() || pole_at(s,q1,st.within).is_some() { continue }
+                    let Some((k,far)) = (0..2).filter_map(|k| periods[k].map(|p| (k,p))).find_map(|(k,p)| {
+                        let step = (q1[k]-q0[k]).abs();
+                        let far = if step > p/12. { dev(f0,q0,k).max(dev(f1,q1,k)) }
+                            else { dev(f0,q0,k).min(dev(f1,q1,k))+step+(z[k]-a[k]).abs()*(f1-f0) };
+                        (far >= 0.5*p).then_some((k,far))
+                    }) else { continue };
+                    return Err(Refusal::unsupported(st.reads[ei].entity,format!("an edge whose curve sweeps round its face's pole \
+                        so unevenly that its parameter {} stands {far:.3} from the line between its ends, past the half period a \
+                        curve inverted between its ends is read within",["u","v"][k])))
                 }
                 let (ea,eb) = if rev { (z,a) } else { (a,z) };
                 (Pcurve::Inverse {a:ea,b:eb},a,z)

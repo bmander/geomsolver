@@ -165,23 +165,35 @@ fn inverse_from(a: Uv,b: Uv,t: f64,x: V,edge: &Edge,surface: &Surface,seed: Opti
 }
 
 /// `d(u, v)/dt` of the curve of points of `surface` nearest the edge's, at its point's parameters
-/// `uv`: the edge's tangent by least squares in `[S_u S_v]` there.
+/// `uv`: the rate of the foot itself. The foot holds `(S − x)·S_u = (S − x)·S_v = 0`; differentiated
+/// along the edge, `J (du, dv)/dt = (x′·S_u, x′·S_v)` with `J = [S_i·S_j + (S − x)·S_ij]` — the
+/// metric, and the surface's second derivatives weighed by the gap `S − x`. On the surface (an
+/// edge built exact, a gap within a billionth of the point's size) the gap's term is nought and
+/// the rate is the edge's tangent by least squares in `[S_u S_v]` (`in_parameters`); off it (a
+/// file's edge within its tolerance of its faces, #993) the feet run at another rate, which the
+/// gap's term gives, its second derivatives the differences of the exact first a millionth of a
+/// parameter apart (their error weighed by the gap, some 1e-12 of the rate) — smooth along the
+/// edge, as a difference of the feet themselves was not (a rule settling on it refined it to its
+/// noise).
 fn inverse_derivative(uv: Uv,t: f64,edge: &Edge,surface: &Surface) -> Uv {
     let EdgeCurve::Curve(c) = &edge.curve else { return [0.;2] };
     let (x,d) = c.d1(t);
-    // a curve standing off its surface (a file's edge within its tolerance of its faces, #993):
-    // its feet run at another rate than its tangent read on the surface (by the surface's
-    // curvature times the gap), so the rate of the feet themselves, by a difference a millionth
-    // of the edge long, toward its inside — where the gap is a file's tolerance, a hundred-thousandth
-    // of the point's distance from the origin or more (a fitted curve's micron is left to its
-    // tangent, which a swept build's measures are read by)
-    if distance(surface.point(uv),x) > 1e-5*(1.+norm(x)) {
-        let h = 1e-6*(edge.t[1]-edge.t[0])*if t+1e-6*(edge.t[1]-edge.t[0]) <= edge.t[1] { 1. } else { -1. };
-        let next = unwrap(surface.inverse_near(c.point(t+h),uv),uv,surface.periods());
-        let rate = [(next[0]-uv[0])/h,(next[1]-uv[1])/h];
-        if rate.iter().all(|r| r.is_finite()) { return rate }
-    }
-    in_parameters(surface,uv,d)
+    let (p,su,sv) = surface.d1(uv);
+    let gap = sub(p,x);
+    if !(norm(gap) > 1e-9*(1.+norm(x))) { return in_parameters(surface,uv,d) }
+    let h = |k: usize| 1e-6*(1.+uv[k].abs());
+    let at = |k: usize,s: f64| { let mut q = uv; q[k] += s; let (_,a,b) = surface.d1(q); (a,b) };
+    let (hu,hv) = (h(0),h(1));
+    let ((up_u,_),(dn_u,_)) = (at(0,hu),at(0,-hu));
+    let ((up_vu,up_v),(dn_vu,dn_v)) = (at(1,hv),at(1,-hv));
+    let suu = scale(sub(up_u,dn_u),0.5/hu);
+    let svv = scale(sub(up_v,dn_v),0.5/hv);
+    let suv = scale(sub(up_vu,dn_vu),0.5/hv);
+    let (a11,a12,a22) = (dot(su,su)+dot(gap,suu),dot(su,sv)+dot(gap,suv),dot(sv,sv)+dot(gap,svv));
+    let (b1,b2) = (dot(su,d),dot(sv,d));
+    let det = a11*a22-a12*a12;
+    let rate = [(a22*b1-a12*b2)/det,(a11*b2-a12*b1)/det];
+    if det != 0. && rate.iter().all(|r| r.is_finite()) { rate } else { in_parameters(surface,uv,d) }
 }
 
 /// `d` in `surface`'s parameters at `uv`: the least-squares `[S_u S_v] x = d` (not finite where the

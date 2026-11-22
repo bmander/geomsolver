@@ -284,10 +284,11 @@ fn lens(inside: f64) -> (String, f64, f64) {
 /// smaller ball's circle sweeps half a turn of its chart's `u` in a hair of its span either side
 /// of its vertex, which a fixed rule over its knots misses; the faces are integrated along the
 /// parameter a pole collapses (`props`), settled a stretch at a time, and read to `1e-9`. **The
-/// same circle through the pole itself, its vertex a micron past it, is refused naming the edge**:
-/// its `u` jumps half a turn a micron from its end of a whole turn, the way that keeps the face on
-/// its left (`track`), so that no point of it lies near the line between its ends that the
-/// kernel's inverse curve reads its branch by.
+/// same circle through the pole itself, its vertex a micron past it**, has its `u` jump half a turn
+/// there, the way that keeps the face on its left (`track`): every point of its walk within half a
+/// turn of the line between its ends, which the kernel's inverse curve reads its branch by, it
+/// reads to its closed form (its area to `1e-7`, the integrand's corner at the pole read by the
+/// adaptive rule) — a walk not within that is refused naming the edge.
 #[test]
 fn a_lens_whose_circle_passes_a_pole_reads_to_its_closed_form() {
     for inside in [1e-3, 1e-6] {
@@ -297,8 +298,16 @@ fn a_lens_whose_circle_passes_a_pole_reads_to_its_closed_form() {
         close(&format!("{inside}: the lens's volume"), volume(b), v, 1e-9);
         close(&format!("{inside}: the lens's area"), total_area(b), a, 1e-9);
     }
-    let r = read(&lens(0.).0).map(|_| ()).expect_err("a circle through the pole");
-    assert_eq!((r.why, r.entity), (Why::Unsupported, Some(34)), "{r}");
+    // through the pole itself: the walk's jump there the way that keeps the face on the left, the
+    // inverse's branch the walk's (within half a turn of the line between its ends) — read by the
+    // topology to the closed form; whether a loop touching itself at the pole is sound is `sound`'s
+    let (text, v, a) = lens(0.);
+    let file = gcs_core::brep::step_read::context::parse(&text).unwrap();
+    let found = gcs_core::brep::step_read::context::solids(&file).unwrap().remove(0);
+    let g = gcs_core::brep::step_read::topology::solid(&file, found).unwrap_or_else(|r| panic!("through the pole: {r:?}"));
+    close("through the pole: the lens's volume", volume(&g.brep), v, 1e-9);
+    close("through the pole: the lens's area", total_area(&g.brep), a, 1e-7);
+    if let Ok(given) = read(&text) { close("through the pole: read", volume(&given[0].brep), v, 1e-9); }
 }
 
 /// **The value a use arrives at a pole along weighs nothing** (`props`): a ball's faces integrated
