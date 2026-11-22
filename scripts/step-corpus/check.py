@@ -281,10 +281,13 @@ def standing_off(shape, edges, name):
         vert_off = 0.0
         curve = BRep_Tool.Curve_s(edge, 0.0, 0.0)
         if curve is not None:
+            ends = (c.Value(t0), c.Value(t1))
             for v in (TopExp.FirstVertex_s(edge), TopExp.LastVertex_s(edge)):
-                pr = GeomAPI_ProjectPointOnCurve(BRep_Tool.Pnt_s(v), curve)
-                if pr.NbPoints() > 0:
-                    vert_off = max(vert_off, pr.LowerDistance())
+                p = BRep_Tool.Pnt_s(v)
+                # the nearest of its feet and the curve's two ends (a foot is a square one only)
+                pr = GeomAPI_ProjectPointOnCurve(p, curve)
+                d = min([p.Distance(q) for q in ends] + ([pr.LowerDistance()] if pr.NbPoints() else []))
+                vert_off = max(vert_off, d)
         worst.append((max(face_off, vert_off), face_off, vert_off, name(edge)))
     worst.sort(reverse=True)
     return [{"edge": w[3], "faces": w[1], "vertices": w[2]} for w in worst[:3]]

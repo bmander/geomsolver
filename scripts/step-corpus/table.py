@@ -93,7 +93,8 @@ COLUMNS = ("path bytes data_sha256 source case ap units uncertainty solids step_
            "tol_edge occt_volume occt_area occt_spread mass_volume mass_area mass_error ref_volume "
            "ref_area ref_from bar_volume bar_area note alt_volume alt_area verdict unchecked "
            "account").split()
-VERDICTS = ("gap", "defective", "assembly", "nosolid", "disputed", "reference", "bar", "unchecked")
+VERDICTS = ("gap", "open", "defective", "assembly", "nosolid", "disputed", "reference", "bar",
+            "unchecked")
 
 
 def measure(jobs, timeout=120.0):
@@ -175,7 +176,8 @@ def account():
     `sound::LOOSE` off its faces: must be refused), `assembly` (product structure, deferred by the
     stage), `nosolid`, `disputed` (the readers read it differently; the row says between whom),
     `reference` and `bar` (the row's reference or bar was corrected, the why says from what),
-    `unchecked` (faces with one reference no second reader has checked)."""
+    `unchecked` (faces with one reference no second reader has checked), `open` (the evidence in
+    hand does not settle it)."""
     out = {}
     if not os.path.exists(ACCOUNT):
         return out

@@ -2,7 +2,7 @@
 //! file, tab separated — the file, `read` or `refused`, and the solids' counts and measures or
 //! the refusal.
 //!
-//!     step_survey [--reference TABLE] [--faces] [--oracle CORPUS] [--past-sound] FILE…
+//!     step_survey [--reference TABLE] [--faces] [--oracle CORPUS] [--past-sound] [--moved D] FILE…
 //!
 //! `--reference TABLE` (the STEP corpus's `reference.tsv`, rust/gcs-core/tests/step_corpus/) puts
 //! beside each file its row's reference volume and area, where it comes from, the reading's
@@ -21,8 +21,18 @@
 //! `--past-sound` reads a file `step_read::sound` refuses once more without it
 //! (`topology::solid`, its solids unplaced) and lists that reading's faces under a `past sound`
 //! line: what the reader's own faces measure, whether or not the boundary was sound.
+//!
+//! Each file read also says what it determines of its totals, as the corpus gate holds them
+//! (`step_corpus::determined`): `S`, the sum over its faces of `Σ max(tol, u)·length`, its reach
+//! `R` from the point its volume's flux is taken about, and the relative bars `S/A` and `R·S/(3V)`.
+//! `--moved D` reads each solid's volume again moved by `D` mm along each axis
+//! (`props::volume` on `Brep::moved`): a boundary whose edges stand off their faces does not
+//! close, and its volume moves with it by `|D|·|∮ n dA|/3`, which the slack bounds by `|D|·S/3`.
+//! Where a third reader measured the faces (`<path>.quad.faces.tsv`, scripts/step-corpus/
+//! teapot.py), `--faces` gives its area too, and a face is held to it as the gate holds it.
 use cad_kernel::props::{area,volume};
 use cad_kernel::step_read::{context,read,topology,Why};
+use cad_kernel::geom::Rigid;
 use cad_kernel::topo::{Brep,EdgeCurve};
 use cad_kernel::util::json;
 use std::collections::BTreeMap;
@@ -47,12 +57,34 @@ fn table(path: &str) -> Vec<(String,Reference)> {
 /// ABS` (the constants are the gate's, rust/gcs-core/tests/step_corpus.rs says why).
 fn face_bar(slack: f64,area: f64) -> f64 { 1.*slack+1e-6*area.abs()+1e-9 }
 
+/// How far `b`'s vertices and edges reach from the point `props::volume` takes its flux about
+/// (as `step_corpus::reach`: the origin, or the vertices' box's centre more than ten diagonals
+/// away).
+fn reach(b: &Brep) -> f64 {
+    let (mut lo,mut hi) = ([f64::INFINITY; 3],[f64::NEG_INFINITY; 3]);
+    for v in &b.vertices { for k in 0..3 { lo[k] = lo[k].min(v.p[k]); hi[k] = hi[k].max(v.p[k]) } }
+    if b.vertices.is_empty() { return 0. }
+    let c: [f64; 3] = std::array::from_fn(|k| 0.5*(lo[k]+hi[k]));
+    let size = (0..3).map(|k| (hi[k]-lo[k]).powi(2)).sum::<f64>().sqrt();
+    let o = if (c[0]*c[0]+c[1]*c[1]+c[2]*c[2]).sqrt() > 10.*size { c } else { [0.; 3] };
+    let far = |p: [f64; 3]| ((p[0]-o[0]).powi(2)+(p[1]-o[1]).powi(2)+(p[2]-o[2]).powi(2)).sqrt();
+    let on_edges = b.edges.iter().filter(|e| !matches!(e.curve,EdgeCurve::Degenerate))
+        .flat_map(|e| (0..=8).map(move |k| e.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/8.,&b.vertices)));
+    b.vertices.iter().map(|v| far(v.p)).chain(on_edges.map(far)).fold(0.,f64::max)
+}
+
 /// An edge's length, by the chord of 32 pieces of its parameter (a degenerate edge's 0).
 fn length(b: &Brep,e: usize) -> f64 {
     let edge = &b.edges[e];
     if matches!(edge.curve,EdgeCurve::Degenerate) { return 0. }
     let at = |k: usize| edge.point(edge.t[0]+(edge.t[1]-edge.t[0])*k as f64/32.,&b.vertices);
     (0..32).map(|k| { let (p,q) = (at(k),at(k+1)); ((p[0]-q[0]).powi(2)+(p[1]-q[1]).powi(2)+(p[2]-q[2]).powi(2)).sqrt() }).sum()
+}
+
+/// A third reader's faces of the corpus file `rel` (`<rel>.quad.faces.tsv`), where there are any.
+fn quad(root: &str,rel: &str) -> BTreeMap<u32,f64> {
+    let text = std::fs::read_to_string(format!("{root}/oracle/{rel}.quad.faces.tsv")).unwrap_or_default();
+    text.lines().skip(2).filter_map(|l| { let (e,a) = l.split_once('\t')?; Some((e.parse().ok()?,a.parse().ok()?)) }).collect()
 }
 
 /// The oracle's faces of the corpus file `rel`: OCCT's area by entity (or why there is none), and
@@ -107,6 +139,7 @@ fn main() {
     let mut reference = None;
     let mut faces = false;
     let mut past_sound = false;
+    let mut moved: Option<f64> = None;
     let mut corpus = std::env::var("STEP_CORPUS").ok();
     let mut files = Vec::new();
     let mut args = std::env::args().skip(1);
@@ -115,6 +148,7 @@ fn main() {
             "--reference" => reference = Some(table(&args.next().expect("--reference names a table"))),
             "--faces" => faces = true,
             "--past-sound" => past_sound = true,
+            "--moved" => moved = Some(args.next().and_then(|d| d.parse().ok()).expect("--moved takes a length (mm)")),
             "--oracle" => corpus = Some(args.next().expect("--oracle names the corpus")),
             _ => files.push(a),
         }
@@ -127,7 +161,8 @@ fn main() {
         let refs = corpus.as_ref().filter(|_| faces).and_then(|root| {
             let (full,root) = (std::fs::canonicalize(&path).ok()?,std::fs::canonicalize(root).ok()?);
             let rel = full.strip_prefix(&root).ok()?.to_str()?.to_string();
-            Some(oracle(root.to_str()?,&rel))
+            let (o,m) = oracle(root.to_str()?,&rel);
+            Some((o,m,quad(root.to_str()?,&rel)))
         });
         let mut off_faces = 0;
         let text = match std::fs::read_to_string(&path) { Ok(t) => t,Err(e) => { println!("{path}\tunreadable\t{e}"); continue } };
@@ -155,6 +190,26 @@ fn main() {
                 // the file's measures are its solids' together, as the reference's are
                 let v: f64 = solids.iter().map(|g| volume(&g.brep)).sum();
                 let a: f64 = solids.iter().map(|g| g.brep.faces.iter().map(|f| area(&g.brep,f)).sum::<f64>()).sum();
+                // what the file determines of its totals (step_corpus::determined)
+                let slack = |stated: bool| -> f64 { solids.iter().map(|g| {
+                    let b = &g.brep;
+                    let u = if stated { g.context.uncertainty.unwrap_or(0.) } else { 0. };
+                    let lengths: Vec<f64> = (0..b.edges.len()).map(|e| length(b,e)).collect();
+                    b.faces.iter().flat_map(|f| f.loops.iter().flatten()).map(|c| b.edges[c.edge as usize].tol.max(u)*lengths[c.edge as usize])
+                        .sum::<f64>()
+                }).sum() };
+                let (s,sm) = (slack(true),slack(false));
+                let r = solids.iter().map(|g| reach(&g.brep)).fold(0.,f64::max);
+                println!("{path}\tdetermines\tS {s:.3e} mm²\tR {r:.4e} mm\tarea to {:.1e}\tvolume to {:.1e}\tmeasured tolerances alone: S {sm:.3e}, area to {:.1e}, volume to {:.1e}",
+                    s/a.abs(),r*s/(3.*v.abs()),sm/a.abs(),r*sm/(3.*v.abs()));
+                if let Some(d) = moved {
+                    for k in 0..3 {
+                        let t: [f64; 3] = std::array::from_fn(|j| if j == k { d } else { 0. });
+                        let w: f64 = solids.iter().map(|g| volume(&g.brep.moved(&Rigid {r:Rigid::identity().r,t}))).sum();
+                        println!("{path}\tmoved {d} mm along {}\tvolume {w:.12e}\tchanged {:.2e} (relative)\tthe slack bounds |D|·S/(3V) = {:.2e}, the measured tolerances' {:.2e}",
+                            ["x","y","z"][k],(w-v).abs()/v.abs(),d.abs()*s/(3.*v.abs()),d.abs()*sm/(3.*v.abs()));
+                    }
+                }
                 for (i,g) in solids.iter().enumerate() {
                     let b = &g.brep;
                     let ga: f64 = b.faces.iter().map(|f| area(b,f)).sum();
@@ -169,20 +224,25 @@ fn main() {
                             let u = g.context.uncertainty.unwrap_or(0.);
                             let slack: f64 = f.loops.iter().flatten().map(|c| b.edges[c.edge as usize].tol.max(u)*lengths[c.edge as usize]).sum();
                             let mut line = format!("  {k}\t#{e}\t{}\t{}\t{a:.12e}",f.surface.kind(),if f.reversed { "reversed" } else { "forward" });
-                            if let Some((occt,mass)) = &refs {
+                            if let Some((occt,mass,quad)) = &refs {
                                 let bar = face_bar(slack,a);
                                 let o = occt.as_ref().ok().and_then(|m| m.get(&e).copied());
                                 let m = mass.as_ref().ok().and_then(|m| m.get(&e).copied());
+                                let q = quad.get(&e).copied();
                                 let d = |r: Option<f64>| r.map_or("-".to_string(),|r| format!("{:+.1e}",(a-r)/a.abs().max(1e-300)));
                                 let off = |r: f64| (a-r).abs() <= bar;
-                                let verdict = match (o,m) {
-                                    (None,None) => "-",
-                                    (Some(r),None) | (None,Some(r)) => if off(r) { "ok" } else { off_faces += 1; "OFF" },
-                                    (Some(x),Some(y)) if (x-y).abs() <= bar => if off(x) && off(y) { "ok" } else { off_faces += 1; "OFF" },
-                                    (Some(x),Some(y)) => if off(x) || off(y) { "disputed" } else { off_faces += 1; "OFF" },
+                                let verdict = match (q,o,m) {
+                                    // the quadrature checks the readers: one past its bar of it is set aside
+                                    (Some(q),o,m) => if off(q) && [o,m].into_iter().flatten().filter(|r| (r-q).abs() <= bar).all(off) { "ok" }
+                                        else { off_faces += 1; "OFF" },
+                                    (None,None,None) => "-",
+                                    (None,Some(r),None) | (None,None,Some(r)) => if off(r) { "ok" } else { off_faces += 1; "OFF" },
+                                    (None,Some(x),Some(y)) if (x-y).abs() <= bar => if off(x) && off(y) { "ok" } else { off_faces += 1; "OFF" },
+                                    (None,Some(x),Some(y)) => if off(x) || off(y) { "disputed" } else { off_faces += 1; "OFF" },
                                 };
-                                line += &format!("\tslack {slack:.1e}\tOCCT {}\t{}\tmeasurer {}\t{}\tbar {bar:.1e}\t{verdict}",
-                                    o.map_or("-".into(),|x| format!("{x:.9e}")),d(o),m.map_or("-".into(),|x| format!("{x:.9e}")),d(m));
+                                line += &format!("\tslack {slack:.1e}\tOCCT {}\t{}\tmeasurer {}\t{}{}\tbar {bar:.1e}\t{verdict}",
+                                    o.map_or("-".into(),|x| format!("{x:.9e}")),d(o),m.map_or("-".into(),|x| format!("{x:.9e}")),d(m),
+                                    q.map_or(String::new(),|x| format!("\tquadrature {x:.12e}\t{}",d(Some(x)))));
                             }
                             println!("{line}");
                         }
@@ -191,7 +251,7 @@ fn main() {
             },
             Err(r) => println!("{path}\trefused\t{:?}\t{r}\t{:.2?}{}",r.why,clock.elapsed(),beside(None)),
         }
-        if let Some((occt,mass)) = &refs {
+        if let Some((occt,mass,_)) = &refs {
             // what each reader's faces sum to: one whose sum is not the file's area has misread a
             // face somewhere, and the gate does not hold faces to it (step_corpus::Refs::of)
             let sum = |m: &BTreeMap<u32,f64>| format!("{:.9e} over {} faces",m.values().sum::<f64>(),m.len());
