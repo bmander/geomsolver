@@ -351,11 +351,12 @@ is one `when` asking, among the conditions it joins by `and`, `v meets y` — `v
 calls its face, `y` a face of the same solid read before the block (a round's `b` against `a`, a
 corner's `c` against `a`) — makes nothing of a face `meets` reads apart from `y`, whatever else it
 asks; so the walk copies only the faces meeting `y` (`Walk::adjacent`, read off `Meets`, each copy
-under its own index as before), and its first face whatever it meets, so a condition that cannot
-be decided is said as it was.  The pairs it leaves are kept as one record of the block
-(`flatten::Pruned`: `y`, the block's faces, and the place and layer of each read apart), read
-where the drawing solves as every `Apart` is (`at_solve::read_again`) and by W120
-(`at_solve::unmade`) — every one as if its other conditions held, so a face newly meeting `y` there
+under its own index as every copy is), and its first face whatever it meets, so a condition that
+cannot be decided is said as it was.  The pairs it leaves are kept as one record of the block
+(`flatten::Pruned`: `y`, the block's faces, and the place and layer of each read apart), and
+every reader takes the `Apart`s and these as one list of the pairs read apart
+(`flatten::read_apart`, `SourceMap::read_apart`): read where the drawing solves
+(`at_solve::read_again`) and by W120 (`at_solve::unmade`, `Walk::unmade`) — every one as if its other conditions held, so a face newly meeting `y` there
 elaborates at that pose, though another condition would have left it out too.  Not where `y` is
 no face, is of another solid (refused where it is asked) or of a boundary that cannot say: every
 face is copied.  A `when` looks a face up by its name (`FaceState::index`; `c in B` by `Names::

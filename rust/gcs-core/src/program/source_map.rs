@@ -55,7 +55,7 @@ pub struct SourceMap {
     /// be read again where it is solved (`program::meets`).
     pub(crate) apart: Vec<crate::flatten::Apart>,
     /// Every block over a solid's faces that copied only the faces meeting one (#994), with the
-    /// pairs it read apart: read again where it is solved as `apart` is.
+    /// pairs it read apart: read with `apart`, pair by pair (`read_apart`).
     pub(crate) pruned: Vec<crate::flatten::Pruned>,
     /// Every statement whose blocks over a solid's faces may have selected no edge (#962), to be
     /// read edge by edge where the drawing is solved (`program::at_solve::unmade`, W120).
@@ -114,6 +114,13 @@ pub enum Made {
 impl SourceMap {
     pub fn ent_named(&self, n: &str) -> Option<EntRef> {
         self.by_name.get(n).copied()
+    }
+
+    /// Every pair of faces read apart where the drawing is seeded, `apart`'s and `pruned`'s
+    /// alike (`flatten::read_apart`): the statement, the solid, the faces and their layer.
+    pub(crate) fn read_apart(&self)
+        -> impl Iterator<Item = (crate::syntax::Span, &str, [&str; 2], usize)> + '_ {
+        crate::flatten::read_apart(&self.apart, &self.pruned)
     }
 
     /// Every entity named under `prefix` — what one use of a set made (§6.21).
