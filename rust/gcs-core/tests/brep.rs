@@ -573,9 +573,17 @@ fn surfaces_meet_in_curves_on_both() {
             }
         }
     }
-    // perpendicular cylinders of two radii, or of one with axes passing apart, have no closed form
+    // perpendicular cylinders of one radius with axes passing apart (one loop, turning back at a
+    // neck) are traced; of two radii, the lesser right through the other, they meet in two loops,
+    // the graph over the lesser's angle, every point on both (#994, `ssi::crossed_cylinders`)
     assert_eq!(intersect(&Surface::Cylinder(f([0.,0.,0.],z,x),2.),&Surface::Cylinder(f([0.,0.5,0.],x,y),2.),1e-9),Ssi::Traced);
-    assert_eq!(intersect(&Surface::Cylinder(f([0.,0.,0.],z,x),2.),&Surface::Cylinder(f([0.,0.,0.],x,y),1.),1e-9),Ssi::Traced);
+    let (big,small) = (Surface::Cylinder(f([0.,0.,0.],z,x),2.),Surface::Cylinder(f([0.,0.,0.],x,y),1.));
+    let Ssi::Curves(loops) = intersect(&big,&small,1e-9) else { panic!("crossed cylinders of two radii: traced") };
+    assert_eq!(loops.len(),2);
+    for c in &loops {
+        let Curve::Traced(t) = c else { panic!("{c:?}") };
+        assert!(t.closed && t.pts.iter().all(|&p| big.implicit(p).abs() < 1e-12 && small.implicit(p).abs() < 1e-12));
+    }
     // the same surface, written from another frame
     assert_eq!(intersect(&Surface::Cylinder(f([0.,0.,0.],z,x),2.),&Surface::Cylinder(f([0.,0.,7.],scale3(z,-1.),y),2.),1e-9),Ssi::Same);
     assert_eq!(intersect(&Surface::Plane(f([1.,2.,3.],z,x)),&Surface::Plane(f([5.,-2.,3.],scale3(z,-1.),y)),1e-9),Ssi::Same);
@@ -660,7 +668,8 @@ pub(crate) fn block(lo: V,hi: V) -> gcs_core::brep::topo::Brep {
     let p = Profile {names:vec![],origin:[0.,0.,0.],normal:XY,loops:vec![poly(&[[lo[0],lo[1],0.],[hi[0],lo[1],0.],[hi[0],hi[1],0.],[lo[0],hi[1],0.]])]};
     prism(&p,lo[2],hi[2]).unwrap()
 }
-fn rod(c: V,r: f64,z: [f64;2]) -> gcs_core::brep::topo::Brep {
+/// An upright rod of radius `r` about `(c[0], c[1])`, over the heights `z`.
+pub(crate) fn rod(c: V,r: f64,z: [f64;2]) -> gcs_core::brep::topo::Brep {
     prism(&Profile {names:vec![],origin:[0.,0.,0.],normal:XY,loops:vec![vec![arc([c[0],c[1],0.],r,XY,[1.,0.,0.],None)]]},z[0],z[1]).unwrap()
 }
 fn ball(c: V,r: f64) -> gcs_core::brep::topo::Brep {
@@ -2510,7 +2519,8 @@ fn a_slabs_top_rounded_from_both_edges_to_half_its_width_is_a_half_cylinder() {
 /// **A round as wide as both faces beside it** (brep-bench's fillet/l-block-inside-consumed): an
 /// L's inside edge filled 7, the ball touching both faces at their far edges, takes both: a quarter
 /// cylinder meeting the faces past them square, `10 (100 − 49π/4)` and `460 + 21π/2`. A ball of
-/// 7.5 would touch past them, and is refused.
+/// 7.5 would touch past them, and is refused by the face it overflows: where that face ends, 7
+/// off the other, against the ball's touch 7.5 off it (#994).
 #[test]
 fn an_l_blocks_inside_edge_filled_as_wide_as_its_faces_takes_both() {
     use crate::common::close;
@@ -2523,7 +2533,11 @@ fn an_l_blocks_inside_edge_filled_as_wide_as_its_faces_takes_both() {
     close(volume(&filled),10.*(100.-49.*PI/4.));
     close(total_area(&filled),460.+21.*PI/2.);
     assert!(filled.faces.iter().all(|f| f.name != "floor" && f.name != "wall"),"the faces it fills are gone");
-    too_large(rounded(&l,&[[3.,5.,3.]],7.5));
+    // (said by the face too short for it, where it ends, and how far off the ball touches it, #994)
+    let why = rounded(&l,&[[3.,5.,3.]],7.5).unwrap_err();
+    assert!(why.contains("of radius 7.5, is larger than `floor` can hold: `floor` ends at its edge with `end` 7 off `wall`")
+        || why.contains("of radius 7.5, is larger than `wall` can hold: `wall` ends at its edge with `top` 7 off `floor`"),"{why}");
+    assert!(why.contains("short of where the ball touches it, 7.5 off"),"{why}");
 }
 
 /// **A hole's rims rounded to meet at its waist** (brep-bench's fillet/hole-waist): a plate 2 thick

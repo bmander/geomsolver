@@ -470,6 +470,7 @@ fn in_facet(f: &Facet, x: [f64; 3]) -> Hit {
 /// Validate solved geometry, not the hint that existed before the constraint solve.
 /// Exporters and diagnostics share this check, including every operand of a body.
 pub fn validate(sk: &Sketch, si: usize) -> Result<(), String> {
+    let _holding = sk.caches.held.open();
     validate_at(sk, si, REPORT_UNIT).map(|_| ())
 }
 
@@ -477,6 +478,7 @@ pub fn validate(sk: &Sketch, si: usize) -> Result<(), String> {
 /// drawn by its material field alone — its field's, said at the sweep's statement and in a solved
 /// document as in any other (#588).
 pub fn refusal(sk: &Sketch, si: usize) -> Result<(), String> {
+    let _holding = sk.caches.held.open();
     validate(sk, si)?;
     let s = &sk.solids[si];
     let SolidDef::Swept { source, .. } = s.def else { return Ok(()) };
@@ -494,6 +496,7 @@ pub(crate) fn has_sweep(sk: &Sketch, si: usize) -> bool {
     if sk.awaits_supply(si) {
         return false;
     }
+    let _holding = sk.caches.held.open();
     // asked before every evaluation of the solid, a remembered one too (`Sketch::evaluated_solid`'s
     // slot), and it reads every operand's route: a body rounded all over is a region for each
     // edge and corner, each reading the body's stratum.  Remembered against what the solid reads

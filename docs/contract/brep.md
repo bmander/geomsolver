@@ -373,7 +373,20 @@ boundary that way is refused naming its face and the other's it touches. A piece
 point at all, its outline drawn as fine as it goes, has no inside: the sliver a surface touching
 the other solid only along an edge of it cuts off (a hyperboloid along the ruling a face of the
 other holds, #721 X6). It bounds nothing and is dropped; whether what is left closes is the
-result's check (`swept_closed::a_block_leaning_to_the_axis_turned_part_of_a_turn_is_its_slices_swept`). A fixed polygon of a
+result's check
+(`swept_closed::a_block_leaning_to_the_axis_turned_part_of_a_turn_is_its_slices_swept`). **A piece
+narrower than any outline the readings draw has an inside all the same** (#994, merged with #996:
+one reading, the strip's above, `reading::beside_halves`): a band a few tolerances wide between two
+curves is narrower than the sag of any outline, and dropped as having no inside it left a hole — a
+boss a micron wider than the plate's lobe it stands on overhangs the plate's top along the lobe in a
+crescent that wide, and the boss's wall stood open along it ("a plane's pieces do not close", "a
+shell … kept on one side … and dropped on another"); #994 read it off the exact boundary from the
+halves' middles and quarters (`off_halves`), #996 by steps square to each curved half read against
+the halves, and the one kept is #996's (`brep_lobes` and `bosses_on_seams` hold the lobe's). **Two circles in one plane meet as far apart as they stand** (`query::curve_curve`,
+`plane2::circles`), not as the chord they share stands inside the first: that is half as deep where
+their radii are one, so a lens twice the reach deep read as a touch between the two crossings the
+cylinders through the circles meet in, a third vertex on the edge
+(`brep_lobes::two_circles_overlapping_a_few_tolerances_cross_twice`). A fixed polygon of a
 circle once cut its chords short by more than a narrow strip beside it is wide, and read the strip
 at the hole next to it (a turned rim's chamfer
 from 32 out, `round_lowering::a_wide_turned_rim_is_chamfered_and_rounded_exactly`).
@@ -820,6 +833,15 @@ cylinders its side sweeps, a step of a thousandth of a box past them swapped a r
 cylinder, and as the box grew — a twentieth more room, or a slab a hundred times the sweep cut —
 the solid was judged wrong or the slab left whole
 (`swept_closed::a_drum_screwed_a_short_lead_cut_from_a_slab_a_hundred_times_its_sweep_takes_its_sweep`).
+**The step is read from the face's own point at the edge, not the edge's** (#994): an edge lies
+within the reach of its faces (`ON_CURVE` tolerances), not on them — a meeting laid on a class of
+faces one surface lies on the class's surface — and a step sixty-four tolerances long read from a
+point standing eight off the face turns its way by an eighth of a radian: a boss a micron wider
+than the lobe of a plate it stood on, its wall one surface with the lobe's, was read 0.12 rad off
+its way where it touched the blend beside the lobe, ordered across it, and two cells joined
+(`brep_lobes::a_boss_or_a_bore_on_a_lobe_of_its_own_radius_builds`: radii `1e-8` to `1e-4` off,
+the axis within the reach of the lobe's). **Not yet**: a boss of the lobe's radius whose axis
+stands `1e-6` to `1e-5` off the lobe's is refused.
 **Two ways in that a step in turns the other way round are one way where they stood apart by no
 more than the tolerance** (#942, `complex::turned_back`): `g` apart at the edge and `h` the other
 way a step `s` in, their curvatures `2 (g − h) / s` apart across it bring them back across one
@@ -908,9 +930,79 @@ other along no face (fixture 115's strips at five, seven and nine decimals);
 `a_ball_drawn_a_few_tolerances_off_itself_is_one_ball` and
 `fixture_115s_strips_unite_at_every_precision` are the gates (volumes to the closed form, either
 operand first), and `a_pad_leaning_past_the_reach_keeps_its_foot` holds a lean past the reach two
-planes. A non-rational B-spline's heights over a plane are its distances from
-it, so its reading against a plane (`query::spline_plane`) proves a run where a stretch's heights are
-enclosed within half the tolerance (`HeightsWithin`), settled as one meeting: a contact curve running
+planes. **Which faces are on one surface is read face by face, before any phase asks, and the answer
+is the same whatever order the faces come in** (#994, `Arrangement::classed`): every two faces of
+one kind not clear of the other operands are joined where `same` or `same_over` over their two boxes
+holds, each class of faces so joined given one index (`meeting::Shared::class`; two classes of one
+kind are never one), and the surface standing for it is one every face of the class stands within
+the reach of over its own box, the lowest operand's first. Joined one face at a time onto the first
+index whose surface was the same over the box the faces before it filled, a class took whichever
+face was asked first for its surface: a foot's pad leaning `1e-7` rad about its own length, read
+first, stood for the plate's top along the whole of a lip's pad — `1e-5` off at its far end — and
+the plate's other face on that very plane was a surface of its own. **The rules an arrangement reads
+two features as one by agree on the reach** (`tolerant`): two curves on one surface cross where they
+come within `ON_CURVE` tolerances, inside both stretches by as much (`query::crossings_in`:
+`curve_curve`'s closed forms read at that reach in every test they make, each a test of two curves
+coming within it of one another; two cuts of screwed sheets and a carrier's roots kept on the other
+curve within it, inside its stretch by it, the carrier's roots and whether two sheets, screws or
+planes are one read to the tolerance), so an edge of a face leaning within the reach crosses the edges of the
+face it lies on, where read to the tolerance it lay across the face as a slit; a vertex standing on
+an edge within the reach of its end is that end, the two made one in step 3b (`tolerant::at_end`,
+`collapsed`), where it was neither cut at nor joined and one point was two vertices; and the box a
+vertex is sought on an edge in is padded by that reach.
+`brep_coincident::strips_in_a_plates_thickness_at_its_true_edge_unite_in_every_order` and
+`strips_abutting_a_plates_true_edges_unite_in_every_order` (a plate, a lip and a foot bent from
+sheet, their pads in the plate's thickness or abutting its edges, each leaning within the reach,
+united in all six orders and with the strips first: closed, every edge on its faces, the closed
+form's volume and as many faces in every order; of 128 such placements, under the rules before, 110
+were refused in some order and 36 built with a face more or fewer in one order than another) and
+`fixture_115s_lip_and_foot_unite_with_the_plate_at_its_true_edge_in_any_order` are the gates.
+**Two faces are read over what their boxes share and as far past it as a point near both is read
+onto their meeting at the least sine** (#994, `Arrangement::classed`, `tolerant::on_meeting` at
+`LEAST_SINE`): two faces whose boxes share only the line they cross along are one surface only where
+they lean apart less than the arrangement resolves a meeting at, and two otherwise, their meeting
+laid. Read over that line alone, any two planes crossing along it within `1e-3` rad were one there —
+a plate's top and the raised half of a lip's pad turned `1e-3` rad across it one class, the plate's
+top standing for it — and a foot's meeting with the class was laid on the pad's lowered half `3e-4`
+off it. **That reading is the one rule of a surface onto a surface, and what reads a Boolean's result
+reads it too** (#994, `tolerant::one_surface`): `classed` joins two faces by it, and two faces of one
+body are one surface the same way out to a ball's sides and to the field (`fillet::one_surface`,
+`BodyFaces::same_surface`) by it over their own boxes — each face a Boolean keeps carries its own
+operand's surface, which may lean off the class's within the reach, so read as the same surface to
+the tolerance alone (`ssi::same`, axes parallel to `1e-12`) two pieces of a plate's top the union
+made one surface were two to the ball rolled along them and to the field after it
+(`faces_a_union_made_one_surface_are_one_surface_after_it`). Not yet read by it: `Shared::one` (two indices of two kinds, a
+sheet lying in a plane, or not given a class) and `Surfaces::one` for a face a trim met with nothing
+read over what the boxes share without the reach past it, and two faces whose boxes share nothing as
+not one; routing them through `tolerant::one_surface` moves what a Boolean reads, and was not tried. **A span of a meeting lying along a face's boundary within `ON_CURVE` tolerances, at every
+eighth of it, is on that face** (`tolerant::along_boundary`, a rule of tolerant topology beside
+its siblings, read by `Arrangement::kept`): the edge it lies along, as the vertex-onto-edge rule
+reads a point so near, merged into it in step 4, the other face cut along it, where phase 1 did not
+lay that edge in the other face as it is (`Meets::Along`, kept as `Crossings::along_face`, which
+`kept` looks up — then the span would be a second edge beside it: `flush_ends`'s side turned `1e-8`
+under a boss) — read Out of the face at the tolerance alone it was dropped, and a lip's foot turned
+`1e-3` rad, crossing the side of a foot abutting it a tolerance and a half under that foot's edge,
+kept the meeting leading up to it as a slit, its two sides one shell. Whether phase 1 laid the edge
+was read again from nine samples of it against the other surface at the reach, and disagreed with
+phase 1's own answer, read at the tolerance or the edge's own and through the faces' classes: in
+`brep_coincident`'s strips at a plate's true edge 116 spans along an edge phase 1 had laid were
+read as beside one it had not, and in `composed_rounds`' round beside a seam into a cone two the
+other way (merged in step 4 all the same: the strips' 804 Booleans the same faces, edges and volume
+to the last bit either way, the round's fill the same to the last bit).
+`brep_coincident::strips_crossing_a_plates_faces_in_its_thickness_unite_in_every_order` and
+`strips_crossing_a_plates_true_edges_unite_in_every_order` (the strips turned `1e-5` to `1e-3` rad
+about their own lengths, united in the six orders and with the strips first: closed, the closed form
+of the turned strips' volume, `Strips::united`, and as many faces in every order) are the gates.
+**Not yet**: strips abutting a plate's two edges whose turns about the middle of the sheet's
+thickness differ put four planes through one point, the plate's corner, two pairs of them crossing
+there at `1e-4` to `1e-3` rad — a vertex minted at one pair's crossing stands `tol / θ` off where
+the other pair's exact line passes, past the `ON_CURVE` reach a closed form's meeting takes a vertex
+onto (`points_on`), and the union is refused in some orders; and strips turned `1e-6` to `1e-4` rad
+across a plate's faces in its thickness, or `1e-6` to `3e-6` abutting its edges, past the reach and
+under `LEAST_SINE`, are refused, or built with a face more, in some or all orders.
+A non-rational B-spline's heights over a plane are its distances from it, so its reading against a
+plane (`query::spline_plane`) proves a run where a stretch's heights are enclosed within half the
+tolerance (`HeightsWithin`), settled as one meeting: a contact curve running
 in the plane of a torus's seam circle over a stretch read 185 roots a hair apart and was halved past
 any search's boxes (#880 Q1b). The crossing a flat root goes onto is one of its edge's own cuts, or
 one found beside the edge (`Crossings::beside`): where an edge of the other operand lying along a
@@ -1102,7 +1194,114 @@ difference of their radii) touch along the line through those points — a frust
 and the cone its generator turns into about an axis along its own; a ball centred on a torus's
 middle circle with its tube's radius lies in its solid and touches it round the meridian through
 its centre — where they were traced and refused as nearly touching
-(`swept_closed::round_tools_turned_part_of_a_turn_sweep_their_sections_by_pappus`). **A face's
+(`swept_closed::round_tools_turned_part_of_a_turn_sweep_their_sections_by_pappus`). **Two
+surfaces clear of one another, or resting on one another at a point alone, meet in no curve — one
+rule, whatever their kinds** (#994 item 5, `ssi::apart`): where their least distance, signed (less
+than nothing where they cross by so much), is more than the tolerance they are clear; within it
+either way they meet at most about the pair of points it is reached at, and the touch there is
+their whole meeting where it is alone by the very rule an arrangement reads a resting touch by
+(`ssi::touch` definite, and `ssi::alone_over` over its radius, below) — read, as a ball resting on
+a plane is, as meeting in no curve, and never traced. What is kind by kind is only the closed form
+of the least distance and where it is reached (`ssi::least`): two cylinders whose axes lean apart,
+the axes' gap less both radii (each bounds a convex rod, and the plane square to their common
+normal between them keeps one on each side); a sphere and a plane, a cylinder, a sphere or a torus,
+whose signed distance is the distance itself, that distance from the centre less the radius (it
+changes by no more than the distance moved, so nothing of the surface is nearer the centre); a
+plane and a torus, the core circle's least height less the tube's radius. Traced, the search for a
+meeting no edge crosses found a point beside the touch, the second-order reading took it as a touch
+alone only where its disc is small beside both faces, and the trace from it gave nothing (a blanket
+round over a clevis's top: "a cylinder and a cylinder meet at …, where no edge crosses, in a curve
+that could not be traced"). **How far a near-touch may spread is derived, not borrowed**: the two
+stand within the tolerance over an ellipse about the touch `√(2 tol / λ)` long (`λ` the least size
+of their relative curvature: for rods leaning `θ`, `sin² θ / (r + s)`, the ellipse
+`√(2 tol (r + s)) / sin θ`), which at a lean of a millionth is the part's length, a touch along a
+curve the meeting's ridges read (`meeting::marched`) and the faces tangent there are laid along.
+`alone_over` holds the touch's distance to its second order out to its radius `2 SHALLOW / λ`, and
+two rods part only linearly past `(r + s) / sin θ` — slower than the second order says from
+`2√2 (r + s) / sin θ` on — so they rest alone exactly where `sin θ ≥ SHALLOW / √2` (0.71°),
+whatever their radii; where `λ` is too small beside the larger curvature to read (`touch`'s `1e-6`)
+there is no point touch at all. Before, two rods were read by a rule of their own, at a lean of
+`SHALLOW` (a degree, the sine below which a trace is ill-conditioned) or more, and a ball by one of
+its own, against a cylinder or a torus off their axes and core circle by more than the tolerance —
+so a ball `2 tol` off a tube's axis, within the tolerance of it round the whole circle, met it in no
+curve. Nearer, or sunk in, they cross and are traced as before (`cylinders_touching`: radii from 1
+on 2 to 0.5 on 20 and of one radius, leans from 90° to 2°, whole or ending at the touch, each
+Boolean the rods' own volumes; 0.5° and under left to the trace; sunk a tenth, still crossing;
+`resting_touches::a_ring_resting_aslant_on_a_plane_meets_it_in_no_curve`, a ring leaning 15° to
+60° on a plane or under it — resting, within the tolerance either way, and clear — in no curve,
+where it was traced, sunk a hundredth traced, all but level never no curve;
+`a_ring_resting_aslant_on_a_plate_is_its_own_volume_under_every_boolean`, built before by the
+general method and now in closed form; and
+`a_ball_a_hair_off_a_tubes_axis_is_never_read_as_meeting_it_in_no_curve`). **Two cylinders whose
+axes lean apart meet in a graph over the
+lesser's angle** (#994, fixture 146; `ssi::crossed_cylinders`, `cylinder_loops`): its point at angle
+`u` round the lesser is on the other where a quadratic in the height along the lesser's axis holds,
+whose roots `h± = (−B ± √D) / A` are the two branches. Three bands, for axes crossing (or passing a
+hair apart) at radii equal or nearly, whose two loops come within `2 √(2 r δ)` at two necks: the
+radii's difference `δ` and the axes' gap both within the tolerance — the singular case, the two
+ellipses crossing at the necks, as before, and no wider (a plane through the necks, a pocket's floor
+through a groove's axis, meets the two cylinders in curves that past the tolerance miss one another
+by `δ`); past it, where `D` keeps above nothing all round (the lesser right through the other), two
+closed traces whose points are the graph's, on both surfaces to rounding, no chord longer than a
+quarter of the branches' gap at its ends, so a projection between two never crosses a neck to the
+other loop (marched, the trace jumped between the loops at a neck, a cylinder's pieces not closing);
+and where `D` falls below nothing (a loop turning back: the lesser cutting into the other's side, or
+one neck closed by an axes' gap), or the axes lean under `SHALLOW`, traced. **The lean's bound is
+the meeting's, not the closed form's**: the graph keeps within the tolerance of both surfaces down
+to a lean's sine of about `ε (r + s) / tol`, but two rods whose axes cross meet at the lean itself
+where the lesser's normal lies along the plane of both axes (`n_a · n_b = ± cos θ` there), so
+under `SHALLOW` the meeting is as ill-conditioned somewhere as `SHALLOW` bounds every meeting by,
+a trace's included. **Whether `D`
+keeps above nothing is proved, not sampled**: `D` is one formula over the angle, its roots isolated
+from its own enclosures (`util::isolate`), so a dip below nothing narrower than any sampling (a
+neck `√(2 e / r)` wide where the axes pass `e` apart) is never missed, and a dip to within its
+rounding of nothing is a touch, traced; it was read at 4096 samples and a golden-section search
+about each least one. A loop's chords are no longer than `LOOP_CHORD` (an eighth) of the radius —
+sagging `r / 512` where the loop bends as the cylinder does, so `Traced::project` starts well inside
+its basin — refined no finer than a chord within the arrangement's reach of its ends
+(`2 ON_CURVE tol`) or than the parameter parts, and a loop that would take more than `LOOP_POINTS`
+points is traced, where it was cut off there and given as it stood. The gates are
+`crossed_cylinders`: rods of 6 crossing at 90°, 60° and 30°, radii 0 to `1e-2` apart either way and
+axes `1e-7` to `1e-4` apart, every Boolean either way the closed form's (the strips' parallelogram
+integrated by Gauss–Legendre) to `1e-7` of what they share; and fixture 146's block, obround pocket
+and groove in its floor through the ends' axes, its radius a micron to a tenth off or its axis a
+tenth aside, in three orders, to its own closed form to `1e-10`. Still refused: radii `1.5e-7` to
+`5e-7` apart (a tolerance to four), where the groove stands that far through or short of the
+pocket's sides and floor edges — a sliver of the side no deeper than a few tolerances between lines
+`2 √(2 r δ)` apart, which the arrangement cannot place — and rods of one radius with axes a hair
+apart (one loop turning back at a neck, traced and refused: "a shell of the arrangement is kept on
+one side of a cylinder and dropped on another"). **Two surfaces resting on one another at a point
+meet there alone, whatever their kinds** (#994 item 5): a definite touch (an elliptic one, its
+relative curvature `Q` definite) is read alone by the one rule above, merged with #996's §3
+(`ssi::alone_over`, over the touch's radius, whatever the faces' size); #994 read it over eight
+discs `√(2 tol / λ)` (`ssi::resting`), refused past a twentieth of the smaller face, and that
+reading is gone. `ssi::touch_near` finds the point by Newton on the difference of the two exact unit normals over one
+surface's tangent plane, settled by the height a step changes (a thousandth of `tol`), not by a step
+a fraction of `tol` long, which a small `λ` does not let it reach. An indefinite `Q` (a saddle
+against a rod, two vaults' crown) is two branches crossing at the point, which the trace starts
+from, as before. An edge whose search is refused where a surface of its own rests on the other (a
+blend's seam circle through the point where a torus rests on the blend) meets it there alone within
+the touch's radius, shown alone over it (`ssi::alone_over`), a touch, the rest of its stretch searched either side (`boolean::resting_on`).
+Where the two surfaces' least distance has a closed form, the touch `ssi::apart` reads is kept as
+their known meeting — no curve, and that point (`ssi::meeting_resting`, `meeting::Shared::known`) —
+and an edge lying in either is read against it by #990's one rule (`boolean`'s `on_known`): a touch
+where it passes through the point, nothing elsewhere, no sample and no search; `resting_on` reads
+only pairs whose meeting has no closed form (a torus on a blend). And in
+closed form, a ball whose centre stands its radius or more from a cylinder or a torus meets it in no
+curve where its touch is alone, by the one rule above (`ssi::apart`). The gates are
+`resting_touches`: rods across and at 60°, a
+ring and a ball resting on an R20 cylinder, an R20 torus and a frustum's side, every Boolean either
+way the operands' own volumes (read the old way, six of the twelve refused: "nearly touching",
+"a cylinder's pieces do not close", a seam circle "not proved"); the same sunk a tenth still
+crossing; a rod resting on a torus's inner equator crossing through its touch (refused before:
+"a shell of the arrangement is kept on one side of a cylinder and dropped on another"); and as
+documents a hoop resting on a beam (on `main`: "a cylinder and a torus meet at …, where no edge
+crosses, in a curve that could not be traced"), and the clevis of fixture 122's class, a band
+bowed in under its eye, the eye blended into the top by R20 and every edge of the top rounded — the
+bowed side's round a torus resting on the blend where the blend leaves the top — built and its
+boundary the field's about that touch. **Not yet**: a shallow crossing, not a touch — a rod sunk
+`0.01` into a frustum's side at 30° — is still traced and refused as nearly touching.
+**A face's
 pieces are ordered by their curvature where they leave a point tangent** (`boolean::pieces_of_face`):
 each half's way out of a node is read a ten-thousandth along its own length, and where two of the
 ways there agree within `TANGENT_TIE` (a thousandth of a radian, what a step along an arc turns its

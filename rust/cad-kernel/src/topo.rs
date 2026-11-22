@@ -450,6 +450,11 @@ impl Face {
         let n = self.surface.normal(self.surface.inverse(p))?;
         Some(if self.reversed { n.map(|x| -x) } else { n })
     }
+    /// The face's outward gradient at `p`: its surface's `gradient` (of `implicit`, read anywhere,
+    /// not only on the surface), turned where the face is the reversed side.
+    pub fn outward_gradient(&self,p: V) -> V {
+        scale(self.surface.gradient(p),if self.reversed { -1. } else { 1. })
+    }
     /// The edges this face uses twice, once each side: its seams, which bound nothing.
     pub fn seams(&self) -> std::collections::BTreeSet<u32> {
         let mut seen = std::collections::BTreeSet::new();

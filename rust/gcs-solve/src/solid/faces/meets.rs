@@ -30,8 +30,12 @@ impl Meets {
         let corners: Vec<BTreeSet<u32>> = (0..read.brep().0.faces.len())
             .map(|fi| read.edges_of(fi).iter().flat_map(|&e| read.ends(e)).collect())
             .collect();
-        let touch = |a: &[usize], b: &[usize]| a.iter()
-            .any(|&i| b.iter().any(|&j| i == j || !corners[i].is_disjoint(&corners[j])));
+        // (two names sharing a patch — a face and a cap lying on it, `BodyFaces::with_caps` —
+        // meet where the rest of each does: a face does not meet itself)
+        let touch = |a: &[usize], b: &[usize]| {
+            let (a, b) = apart(a, b);
+            a.iter().any(|&i| b.iter().any(|&j| !corners[i].is_disjoint(&corners[j])))
+        };
         let faces = listed.faces.iter().map(|(text, own)| {
             let meets = own.as_ref().map(|own| listed.faces.iter()
                 .filter(|(_, other)| other.as_ref().is_some_and(|other| touch(own, other)))
@@ -39,6 +43,12 @@ impl Meets {
             (text.clone(), meets)
         }).collect();
         Meets { faces }
+    }
+
+    /// The faces face `a` (by its name from the solid) shares a point with, itself among them:
+    /// `None` where it is a face the boundary cannot say of, or is not listed.
+    pub fn neighbours(&self, a: &str) -> Option<&BTreeSet<String>> {
+        self.faces.get(a)?.as_ref()
     }
 
     /// Whether faces `a` and `b` (each by its name from the solid) share a point: where either
@@ -49,6 +59,12 @@ impl Meets {
             _ => true,
         }
     }
+}
+
+/// The patches of `a` not `b`'s, and of `b` not `a`'s: where two names share patches (a face
+/// with the caps lying on it and a cap named alone, #994), what each holds beside the other.
+fn apart(a: &[usize], b: &[usize]) -> (Vec<usize>, Vec<usize>) {
+    (a.iter().copied().filter(|i| !b.contains(i)).collect(), b.iter().copied().filter(|j| !a.contains(j)).collect())
 }
 
 /// **How two listed faces of a body meet** (#962), worst first: what a round or a chamfer
@@ -76,7 +92,8 @@ impl ListedFaces {
 
     /// How faces `a` and `b` meet (`Meeting`); `None` where the boundary cannot say of either.
     pub fn meeting(&self, a: &str, b: &str) -> Option<Meeting> {
-        let (x, y) = (self.own(a)?, self.own(b)?);
+        let (x, y) = apart(self.own(a)?, self.own(b)?);
+        let (x, y) = (&x[..], &y[..]);
         let read = &self.read;
         let edges = read.edges_between(x, y);
         if !edges.is_empty() {

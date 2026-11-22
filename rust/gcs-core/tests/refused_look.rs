@@ -9,17 +9,21 @@ use gcs_core::solid::{ApproximationPolicy, DrawnFrom, MaterialField, Query, Reso
 
 use crate::common::{ent, text::solved};
 
-/// A post 14 high on a D — an arc of radius 5 about the origin closed by a chord at `x = 3` —
-/// cut by a lid tilted 20° about the y axis through (0, 0, 10), its rim along the arc `round`ed:
-/// to 5, the post's own radius, the ball stands still on the axis and the meeting is a stretch of
-/// the top's loop ending where the chord's face cuts across it, which the kernel refuses
-/// (`fillet::standing`, "no stretch of its dome is carried past and cut off by a face yet"); to 2,
-/// it rolls, and its end against the chord is refused instead.
+/// A post 14 high on a disc of radius 5 about the origin with a chord each side at `x = ±3` (its
+/// rim two arcs), cut by a lid tilted 20° about the y axis through (0, 0, 10), its rim along the
+/// arcs `round`ed: to 5, the post's own radius, the ball stands still on the axis and each arc's
+/// meeting is a stretch of the top's loop ending where the chords' faces cut across it, and past
+/// one stretch the meeting comes back within both chords at the other, which the kernel refuses
+/// (`fillet::dome_cut`, "halfway there is no section of a ball standing still"; with one chord, the
+/// whole dome the chord cuts is built since #994: `standing_ends`); to 2, it rolls, and its end
+/// against a chord is refused instead.
 fn tilted_d_post(round: &str) -> String {
     format!("unit mm\nuse std\nuse std.solids (cut, union, common)\nuse std.rounds (round)\n\
         in std.top {{\n  o := point\n  fix((0, 0)) o\n  a := point\n  fix((3, -4)) a\n  b := point\n\
-        \x20 fix((3, 4)) b\n  side := arc(center: o, start: b, end: a) hint(r: 5)\n  flat := line(a, b)\n}}\n\
-        post := solid(std.solids.Prism(face(side, flat), from: 0mm, to: 14mm))\n\
+        \x20 fix((3, 4)) b\n  c := point\n  fix((-3, 4)) c\n  d := point\n  fix((-3, -4)) d\n  \
+        side := arc(center: o, start: b, end: c) hint(r: 5)\n  back := line(c, d)\n  \
+        other := arc(center: o, start: d, end: a) hint(r: 5)\n  flat := line(a, b)\n}}\n\
+        post := solid(std.solids.Prism(face(side, back, other, flat), from: 0mm, to: 14mm))\n\
         across := axis hint(dir: (0, 1, 0))\nacross parallel std.y\n\
         u := axis hint(dir: (0.94, 0, -0.34))\nu perpendicular across\nu angle(20deg, about: std.y) std.x\n\
         slant := plane(u: u, v: across)\nfix(origin == (0mm, 0mm, 10mm)) slant\n\
@@ -35,7 +39,7 @@ fn tilted_d_post(round: &str) -> String {
 /// its section reaches past — into the slot between them, where neither run's end is the other's —
 /// refused by the lowering itself, before the kernel is asked ("a run its curved end does not cut
 /// off", `round_lowering::a_refused_rounds_piece_is_said_at_its_round`).  `round` false leaves the
-/// fill out.  (The same D as `tilted_d_post` square-topped, its arc's rim rounded to the post's
+/// fill out.  (`tilted_d_post` with one chord, square-topped, its arc's rim rounded to the post's
 /// radius, was refused here as "a stretch of a circle its end does not cut off"; its ring is now
 /// carried round to the middle of the flat and built, #962 item 3:
 /// `curved_ends::a_ds_rim_rounded_to_its_radius_is_a_dome_its_flat_cuts`.)
@@ -69,7 +73,7 @@ fn lattice(lo: [f64; 3], hi: [f64; 3], n: usize) -> Vec<[f64; 3]> {
 /// say, and nor does a solid with no round.
 #[test]
 fn a_refused_round_is_said_before_its_field_is_meshed() {
-    let kernels = "stands still, and their meeting ends where `post.flat` cuts across it";
+    let kernels = "their meeting comes back within the faces it ends on past it";
     let lowerings = "a run its curved end does not cut off";
     for (src, solid, why) in [(tilted_d_post("round(r: 5mm)"), "drum", kernels),
                               (slotted_bracket(true), "bracket.body", lowerings)] {

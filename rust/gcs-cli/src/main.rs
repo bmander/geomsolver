@@ -924,7 +924,14 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             let rows = wanted(&sk, &e.map, std::slice::from_ref(q));
             let values = values_wanted(&e, std::slice::from_ref(q));
             if rows.is_empty() && values.is_empty() {
-                println!("  where {q}: the source names nothing there");
+                // a solid asked about whose build is refused: its refusal, in the core's words
+                let refused = report::solids_refused_where(&sk, &e.map, &|n| under(n, q) || under(q, n));
+                if refused.is_empty() {
+                    println!("  where {q}: the source names nothing there");
+                }
+                for why in refused {
+                    println!("  where {q}: {why}");
+                }
             }
             for (n, v) in rows {
                 // a position is one of an entity's own numbers, which is `SpecKind::Scalar`

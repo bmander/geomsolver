@@ -17,7 +17,7 @@ use gcs_core::brep::props;
 use std::f64::consts::PI;
 
 use crate::common::close;
-use crate::common::rounds::{crown_ball, crown_section, exported, gauss_legendre, kinds, meridian_fill, rolled_over, V};
+use crate::common::rounds::{crown_ball, crown_section, exported, gauss_legendre, kinds, meridian_fill, refused, rolled_over, square_run, V};
 use crate::common::text::{dof, solved};
 
 /// A disc of radius 100 whose crown is a sphere of radius `big` about (0, 0, `zc`) — over the
@@ -337,7 +337,7 @@ fn a_vane_on_a_flat_disc_leaves_no_sliver() {
         disc := solid(std.solids.Revolution(section, about: std.z))\n{}", &src[cut..]);
     let b = exported(&solved(&flat), "part");
     let r = 2.0;
-    close(props::volume(&b), PI * 1e4 * 3.0 + 70.0 * 4.0 * 28.0 + (1.0 - PI / 4.0) * r * r * 2.0 * (70.0 + 4.0));
+    close(props::volume(&b), PI * 1e4 * 3.0 + 70.0 * 4.0 * 28.0 + square_run(r) * 2.0 * (70.0 + 4.0));
     assert_eq!(gcs_core::brep::sliver::slivers(&b, 1e-3).len(), 0);
 }
 
@@ -523,4 +523,127 @@ fn a_boss_on_a_spherical_pocket_floor() {
         2.0 * PI * meridian_fill(8.0, 1.0, 300.0, 304.0, false, false, Some(r), 0.0), 1e-9);
     let rolled = rolled_round([20.0, 0.0], 6.0, 1.0, [0.0, 0.0, 304.0], 300.0, false, r);
     holds(&pocket(20.0, 6.0), dished + over([20.0, 0.0], 6.0), rolled, 1e-6);
+}
+
+/// The base a toe stands on: the issue's crown, or a flat disc at z = 3.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Base { Crown, Flat }
+
+/// The vane's sides: planes `y = ±2`, or cylinders of 298 and 302 about (90, −300) upright.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Sides { Flat, Arc }
+
+/// A vane from x = 20 to 90 standing on `base`, its toe at x = 90 cut by a slope falling 5/6 in x
+/// that passes `h` over the base at (90, 0): the toe's upright end face `h` tall there (fixture
+/// 147's vane, #994) — on the crown `h` at the middle and 2.5 µm more at its sides, where the crown
+/// falls away. Its foot rounded `r` all round, or (`side`) along its first side alone.
+fn toe_document(base: Base, sides: Sides, h: f64, r: f64, side: bool) -> String {
+    let z0 = match base { Base::Crown => crown(90.0), Base::Flat => 3.0 };
+    let zt = z0 + h;
+    let q = 5.0 / 6.0;
+    let head = match base {
+        Base::Crown => disc(issue_big(), -797.0, 3.0),
+        Base::Flat => "unit mm\nuse std\nuse std.solids\nuse std.solids (union, cut)\nuse std.rounds (round, chamfer)\n\
+            in std.front {\n  o := point\n  fix((0, 0)) o\n  r := point\n  fix((100, 0)) r\n  t := point\n  fix((100, 3)) t\n\
+            top := point\n  fix((0, 3)) top\n  section := face(o, r, t, top, -> close)\n}\n\
+            disc := solid(std.solids.Revolution(section, about: std.z))\n".to_string(),
+    };
+    let p = |name: &str, (x, y): (f64, f64)| format!("  {name} := point\n  fix(({x:.12}, {y:.12})) {name}\n");
+    let vane = match sides {
+        Sides::Flat => format!("in std.top {{\n{}{}{}{}  vf := face(a, b, d, e, -> close)\n}}\n",
+            p("a", (20.0, -2.0)), p("b", (90.0, -2.0)), p("d", (90.0, 2.0)), p("e", (20.0, 2.0))),
+        Sides::Arc => {
+            let on = |rad: f64, x: f64| (x, -300.0 + (rad * rad - (x - 90.0).powi(2)).sqrt());
+            format!("in std.top {{\n  k := point\n  fix((90, -300)) k\n{}{}{}{}  inner := arc(center: k, start: i1, end: i0)\n\
+                outer := arc(center: k, start: q1, end: q0)\n  s0 := line(i0, q0)\n  s1 := line(i1, q1)\n\
+                vf := face(inner, s0, outer, s1)\n}}\n",
+                p("i0", on(298.0, 20.0)), p("i1", on(298.0, 90.0)), p("q0", on(302.0, 20.0)), p("q1", on(302.0, 90.0)))
+        }
+    };
+    format!("{head}{vane}vane := solid(std.solids.Prism(vf, from: 1mm, to: 31mm))\n\
+        in std.front {{\n{}{}{}  wf := face(w0, w1, w2, -> close)\n}}\n\
+        wedge := solid(std.solids.Prism(wf, from: -10mm, to: 10mm))\nblade := solid(vane)\nwedge cut blade\n\
+        part := solid(disc)\nblade union part\npart.blade{} round(r: {r}mm) part.disc\n",
+        p("w0", (40.0, zt + 50.0 * q)), p("w1", (100.0, zt + 50.0 * q)), p("w2", (100.0, zt - 10.0 * q)),
+        match (side, sides) { (false, _) => "", (true, Sides::Flat) => ".vane.close0", (true, Sides::Arc) => ".vane.inner" })
+}
+
+/// The volume of `toe_document`'s vane on the flat disc, flat sided, its first side's foot alone
+/// rounded `r`: the disc, the vane under its slope `H(x) = h + 5/6 (90 − x)` over the disc (28
+/// tall where the slope is over its top), and the run along the side, carried between the planes
+/// of its heel and its toe (the faces at its vertices: `BodyFaces::end_faces` reads no face beyond
+/// a carried run's end face up that face), the corner's section `(1 − π/4) r²` along its 70.
+fn toe_side_volume(h: f64, r: f64) -> f64 {
+    let q = 5.0 / 6.0;
+    let rise = |x: f64| h + q * (90.0 - x);
+    let at = |t: f64| 90.0 - (t - h) / q;
+    PI * 1e4 * 3.0 + 4.0 * 28.0 * (at(28.0) - 20.0) + quad([at(28.0), 90.0], &|x| 4.0 * rise(x))
+        + square_run(r) * 70.0
+}
+
+/// **A vane's side rounded where a slope left a sliver at its toe runs out past it** (#994,
+/// fixture 147): the toe's upright face, from 1e-4 to 1 tall, is shorter than the section. A ball
+/// rolled along the side — on the crown — was refused as larger than the vane's side can hold, the
+/// slope's edge with the side entering its band past an end that read the toe's face alone: the
+/// slope beyond the toe's face faces on past the run's end, so it cuts the rolled run off too
+/// (`brep::fillet::end_at`, and the field's `BodyFaces::end_faces` alike), and each builds, flat
+/// sided and arc sided. On the flat disc the run is carried, and builds kept within its ends'
+/// planes, the closed form's.
+#[test]
+fn a_vanes_side_rounded_runs_out_past_a_sliver_at_its_toe() {
+    for h in [1e-4, 1e-2, 0.1, 1.0] {
+        let b = exported(&solved(&toe_document(Base::Flat, Sides::Flat, h, 2.0, true)), "part");
+        close(props::volume(&b), toe_side_volume(h, 2.0));
+    }
+    for (base, sides) in [(Base::Crown, Sides::Flat), (Base::Crown, Sides::Arc), (Base::Flat, Sides::Arc)] {
+        for h in [1e-4, 1e-2, 0.1] {
+            let b = exported(&solved(&toe_document(base, sides, h, 2.0, true)), "part");
+            assert!(props::volume(&b) > 0.0, "{base:?} {sides:?} {h}");
+        }
+    }
+}
+
+/// **A sliver at a vane's toe is named as the face too short for the ball** (#994, fixture 147):
+/// the vane's foot rounded all round, the toe's face `h` tall — from 1e-4, far above the kernel's
+/// reach, to a quarter of the ball — cannot hold the ball rolled along its foot, which touches it 2 up: the
+/// ball would roll on across its edge onto the slope (rung 3). Refused by that face, how far it
+/// reaches, the slope it ends at and how far off the ball touches it (`piece::held`), where it was
+/// refused as larger than the vane's *side* could hold (rolled), or built as pieces touching one
+/// another along a line in the air past the toe (carried).
+#[test]
+fn a_sliver_at_a_vanes_toe_is_named_as_the_face_too_short_for_the_ball() {
+    for base in [Base::Flat, Base::Crown] {
+        for sides in [Sides::Flat, Sides::Arc] {
+            for h in [1e-4, 1e-2, 0.5] {
+                let why = refused(&solved(&toe_document(base, sides, h, 2.0, false)), "part");
+                let toe = if sides == Sides::Flat { "close1" } else { "s1" };
+                for said in [format!("its ball, of radius 2mm, is larger than `blade.vane.{toe}` can hold"),
+                    format!("`blade.vane.{toe}` ends at its edge with `blade.wedge.close2`"),
+                    "short of where the ball touches it".to_string()] {
+                    assert!(why.contains(&said), "{base:?} {sides:?} {h}: {why}");
+                }
+                if base == Base::Flat {
+                    assert!(why.contains(&format!("with `blade.wedge.close2` {h}mm off `disc.close2`")), "{h}: {why}");
+                    assert!(why.contains("2mm off `disc.close2`"), "{h}: {why}");
+                }
+            }
+        }
+    }
+}
+
+/// **A sliver under the kernel's reach at a vane's toe is no face** (#994): on the flat disc, the
+/// slope passing `1e-7` or `1e-6` over the foot at the toe — within the arrangement's reach of the
+/// disc's top — leaves no upright face there: the cut's slope comes down onto the foot, the vane's
+/// foot rounded all round builds with the faces of the slope meeting the disc, and as it does with
+/// the slope through the foot itself.
+#[test]
+fn a_sliver_under_the_reach_at_a_vanes_toe_is_no_face() {
+    for sides in [Sides::Flat, Sides::Arc] {
+        let flush = exported(&solved(&toe_document(Base::Flat, sides, 0.0, 2.0, false)), "part");
+        for h in [1e-7, 1e-6] {
+            let b = exported(&solved(&toe_document(Base::Flat, sides, h, 2.0, false)), "part");
+            assert_eq!(b.faces.len(), flush.faces.len(), "{sides:?} {h}");
+            assert!((props::volume(&b) - props::volume(&flush)).abs() <= 1e-3, "{sides:?} {h}");
+        }
+    }
 }

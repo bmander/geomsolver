@@ -450,7 +450,7 @@ fn post_on_plate(x: f64, word: Option<&str>) -> String {
 /// stands over the plate's edge, the hole's bottom rim runs over the plate's piece of the bottom
 /// and the post's, and the flat of the run along one piece reaches past the edge between them onto
 /// the other — the same plane, so a piece of the face's own surface, never a face it goes on into
-/// (`piece::stands_within` reading each face's surface in its pieces, `lowering::pieces`).  Each
+/// (`piece::stands_within` reading each face's surface in its pieces, `BodyFaces::pieces`).  Each
 /// spot of the post, the hole inside the plate, crossing its edge either way and outside it: the
 /// two rims' chamfers and rounds take what Pappus's theorem says, their sections turned about the
 /// hole's axis.

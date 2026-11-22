@@ -130,6 +130,205 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   off nought); it now takes the normal's limit along the collapsed row, so a ball's net offset is
   the ball grown, and its partials there carried from beside it.
 
+- **Whether a standing ball's meeting comes back within the faces it ends on, read exactly**
+  (#994, `fillet::dome_cut`): the meeting over the gap is split where it meets each end's surface
+  (`query::curve_surface`) and read at one point of each piece, within by more than
+  `tolerant::on_meeting` at the faces' turn, where it was read at 511 samples; a reading not
+  proved refuses.  The bar `dome` and `dome_cut` read a point on a still ball's section, seam or
+  meeting by is named once (`standing_bar`).  `fillet::faces_on` is private (its one user outside
+  the file, the lowering's `held`, reads the faces `end_faces` decided).
+
+- **A face's outward gradient** (`topo::Face::outward_gradient`, new): its surface's `gradient`
+  turned where the face is the reversed side — what a run's end faces are read by (`end_at`,
+  `beyond_end`), written once.  `fillet::meeting` builds the faces each edge bounds once for a
+  run (`end_at` and `dome` take it), and `dome` reads the face going on from either side by
+  `goes_on`.  The results are the same to the last bit.
+
+- **One rule of a surface onto a surface, before a Boolean and after it** (#994):
+  `tolerant::one_surface`, new, is the reading `Arrangement::classed` joins faces into one surface
+  by (within `ON_CURVE` tolerances over what the faces' boxes share and as far past it as
+  `on_meeting` at `LEAST_SINE`; the same to the tolerance where they share nothing), and
+  `fillet::one_surface` reads two faces of a body by it over their boxes, where it read them by
+  `ssi::same` to the tolerance: faces a union made one surface, each kept on its own operand's
+  surface leaning a hair off the others', are one side to a ball and one surface to the field.
+
+- **Two curves on one surface cross within the reach in every reading of `query::crossings_in`**
+  (#994): `curve_curve` is read at the reach in every test it makes (its doc says each is a test
+  of two curves coming within it of one another); two cuts of screwed sheets and a carrier's
+  roots are kept where they lie within the reach of the other curve inside its stretch by as
+  much, where the stretch was read by the tolerance; whether two sheets, screws or planes are
+  one, and a carrier's roots, are still read to the tolerance.
+
+- **Two surfaces resting on one another at a point, their least distance in closed form, are
+  known to meet there alone** (#994): `ssi::meeting_resting`, new, is `intersect` with the point
+  `apart` finds them resting at, which `meeting::Shared::known` gives as their meeting (no curve
+  and that touch), so an edge lying in either is read against it as every known meeting is
+  (`boolean`'s `on_known`), where it was searched and, refused, sampled at 64 points for the touch
+  (`resting_on`, which now reads only pairs whose meeting has no closed form).
+
+- **Two surfaces clear of one another, or resting on one another at a point alone, meet in no
+  curve by one rule** (#994): `ssi::apart` reads their least distance in closed form where it has
+  one (`ssi::least`: two cylinders leaning apart, a sphere and a plane, cylinder, sphere or torus,
+  and — new — a plane and a torus), and where it is within the tolerance asks the touch there the
+  question an arrangement asks a resting touch (`ssi::touch` definite, `ssi::alone_over`),
+  replacing `ssi::rods_apart` and `ssi::ball_clear` (below), each a rule of its own: the rods'
+  lean bound, borrowed from `SHALLOW`, now follows from the touch's own radius (`sin θ ≥
+  SHALLOW / √2`), and a ball a hair off a tube's axis — within the tolerance of it round a whole
+  circle — is no longer read as meeting it in no curve. A ring resting aslant on a plane meets it
+  in no curve in closed form, where it was traced. The plane–sphere arm `intersect` never reached
+  (the two meet about the sphere's own axis) is gone.
+
+- **A span of a meeting along a face's boundary is a rule of tolerant topology**
+  (`tolerant::along_boundary`, new), and whether the edge it lies along was laid
+  in the other face is phase 1's answer (`Meets::Along`), looked up, where it was read again from
+  samples at the reach and disagreed with it (116 spans in `brep_coincident`'s strips, two in
+  `composed_rounds`, the results the same to the last bit).
+
+- **Two cylinders' loops: `D`'s roots isolated, not sampled** (`ssi::cylinder_loops`): whether
+  the discriminant keeps above nothing is read from its enclosures (`util::isolate`) where it was
+  read at 4096 samples and a golden-section search; the loops' chord bounds are named
+  (`LOOP_CHORD`, `2 ON_CURVE tol`, the parameter's own resolution) and a loop past `LOOP_POINTS`
+  points is traced rather than cut off. `spill`'s checks that a section lands on the seam read the
+  arrangement's reach (`ON_CURVE` tolerances) where they read a millionth of the part's size.
+
+- **A run's end read by one walk, and its sides by one rule** (#994): new `fillet::beyond_end`
+  (the faces beyond a run's end face shorter than the section that cut it off too, with the vertex
+  each is reached at), `fillet::others_at` (the faces at a vertex besides a run's sides),
+  `fillet::goes_on` (a face going on from a side, `tangent` to either side's normal) and
+  `fillet::one_surface` (two faces of a body on one surface the same way out: `ssi::same` and
+  their outward normals one) — what `end_at`, `dome` and `meeting` read, now public so a reader of
+  the same boundary reads the same ends.  `meeting`'s sides compare outward normals, not the
+  `reversed` flags: two faces of one plane whose frames point opposite ways and whose flags differ
+  face the same way and are one side.
+
+
+- **A face too short for its ball is told one way** (#994): `fillet::larger_than_face`, new, is
+  the sentence the rolled ball's refusal (`holds_ball`) and a lowering's carried one say alike —
+  the face too short, the face across the edge it ends at, how far that edge stands off the other
+  face and where, how far off the ball touches it, and what to do; the rolled ball's refusal now
+  ends "so no ball of that radius rolls against it there — it would roll on across that edge
+  against …. Make … reach past the ball's touch (or remove it, where it is a sliver a cut left), or
+  round the edge smaller than … reaches".  `fillet::reaches`, new: whether a curve stands as far
+  as a height off a surface, read exactly at its ends and where it meets the surface's offsets
+  (`query::curve_surface`), no sample of it.
+- **Faces on one surface are one surface whatever order a Boolean's operands come in** (#994,
+  fixture 115's feet and lip at a plate's true edge): an arrangement reads which faces lie on one
+  surface face by face before any phase asks (`Arrangement::classed`) — two of one kind joined
+  where `ssi::same_over` holds over their two boxes, a class every face so joined, standing for it
+  a surface every face of it lies within the reach of — where it had joined each face onto the
+  first surface given an index over the box the faces before it filled, so a pad leaning `1e-7`
+  rad read first stood for the plate's top along its whole length and the plate's other face on
+  that plane was a surface of its own.  New: `meeting::Shared::class` (two classes of one kind are
+  never `one`).  Two curves on one surface cross where they come within its reach
+  (`query::crossings_in` reads `curve_curve`'s closed forms at `ON_CURVE` tolerances, as it keeps a
+  carrier's roots); a vertex on an edge at its end is that end, the two made one
+  (`tolerant::onto_edge` and `tolerant::Onto`, new: the stretch and its ends read from one
+  inverse), and the box a vertex is sought on an edge in reaches as far as that rule.  So a plate,
+  a lip and a foot whose pads lie flush in its thickness or abut its edges unite in every order,
+  where some orders were refused ("a plane's pieces do not close", "a piece …
+  touches … along no face", "a shell … kept on one side … and dropped on another") and the rest
+  built with a face more or less.
+
+- **Faces crossing along the line their boxes share are two surfaces, and a meeting along a
+  face's boundary is kept** (#994, fixture 115's strips past the reach): `Arrangement::classed`
+  reads two faces over what their boxes share and as far past it as a point near both is read onto
+  their meeting at the least sine (`tolerant::on_meeting` at `LEAST_SINE`), so two faces whose
+  boxes share only the line they cross along are one surface only where they lean apart less than
+  a meeting is resolved at — read over the line alone, a plate's top and a lip's pad turned `1e-3`
+  rad across it were one class, and a third operand's meeting with it was laid `3e-4` off the pad.
+  And `Arrangement::kept` keeps a span of a meeting lying along a face's boundary within
+  `ON_CURVE` tolerances at every eighth of it, as the vertex-onto-edge rule reads it — unless that
+  edge lies in the other face's surface all along and is laid there as it is — where it had
+  dropped it as outside the face and left the other face a slit.  Strips turned `1e-5` to `1e-3`
+  rad across a plate's faces, in its thickness or abutting its edges, now unite in every order to
+  their closed form, where some orders were refused ("a shell … kept on one side … and dropped on
+  another").
+
+- **A boss on a lobe of a plate, of the lobe's radius or a hair off it, builds** (#994, fixture
+  141 of #961): three readings of an arrangement agree with the reach two features are one at.
+  The complex orders faces round an edge a step into each from the face's own point at the edge,
+  not the edge's, which stands within the reach of its faces and not on them
+  (`complex::Complex::new`); a piece narrower than any outline the readings draw — a crescent a few
+  tolerances wide — is read inside all the same (merged with #996: by the one reading of a strip
+  thinner than its outline, `reading::beside_halves`, below), not dropped as having no inside; and two circles in one plane are read touching only where they
+  stand within the tolerance of one another (`query::curve_curve` by `plane2::circles`), not where
+  the chord they share stands within it of the first.  Refused before as "a shell of the
+  arrangement is kept on one side of a cylinder … two of its cells joined round an edge" and "a
+  plane's pieces do not close" at radii a micron apart.
+
+- **Two cylinders resting on one another at a point meet in no curve, in closed form** (#994 item
+  5): `ssi::intersect` reads two cylinders whose axes lean apart and stand at least the sum of
+  their radii apart, less the tolerance, as meeting in no curve (`ssi::rods_apart`) — clear of one
+  another, or touching at one point — as a ball resting on a plane is read.  They were traced, and
+  the search for a meeting no edge crosses found a point beside the touch that the trace could not
+  follow ("a cylinder and a cylinder meet at …, where no edge crosses, in a curve that could not be
+  traced", or "nearly touching"): a blanket round over a clevis's top.  Two crossing, or leaning
+  less than a degree apart (where they stand within the tolerance along a stretch), are traced as
+  before.
+
+- **Two surfaces resting on one another at a point meet there alone, whatever their kinds** (#994
+  item 5): a definite touch (the relative curvature `Q` definite) is read alone whatever the
+  faces' size — merged with #996's item 3, by its one rule, `ssi::alone_over` over the touch's
+  radius (below); the second-order reach `8 √(2 tol / λ)` this entry first read it by
+  (`ssi::resting`) is gone.  `ssi::touch_near` is Newton on the difference of the two exact unit normals,
+  settled by the height a step changes, and finds a touch whose `λ` is small.  An edge refused
+  where a surface of its own rests on the other is read as touching it there, alone over the
+  touch's radius (`boolean::resting_on`).  A ball standing its radius or more from a cylinder or a torus meets it
+  in no curve, in closed form (`ssi::ball_clear`).  A cylinder, a torus, a ball resting on a
+  cylinder, a torus or a cone at a point was refused ("a cylinder and a torus meet at …, where no
+  edge crosses, in a curve that could not be traced", "nearly touching", "pieces do not close").
+  No public API changes.
+
+- **Two cylinders whose axes lean apart meet in closed-form loops** (#994, fixture 146): where the
+  lesser goes right through the other, `ssi::intersect` gives the meeting as two closed traces
+  whose points are the graph of the meeting over the lesser's angle (`ssi::crossed_cylinders`,
+  `cylinder_loops`), sampled so no projection between two crosses a neck to the other loop — no
+  march.  The two ellipses of one radius and crossing axes are kept within the tolerance, the
+  axes' gap now read by the axes' nearest points.  A loop turning back, or a lean under `SHALLOW`,
+  is traced as before.  Rods of radius 6 a micron apart crossing were refused ("a cylinder's
+  pieces do not close").
+
+- **A run ends on every face beyond a short end face that faces on past it, and a ball too large
+  for its face is said by that face** (#994, fixture 147's vane): `fillet::end_at` follows each
+  edge an end face makes with the run's faces to its other vertex — only where that edge is no
+  longer than the section's size (a round's radius, a flat's longer leg), so the faces past the far
+  end of an end face as long as the run's whole end (a hub's side an arm's round ends on) do not
+  end it — and a face there that faces on past the end (`fillet::faces_on`: its
+  outward normal turned more than a degree from square to the run, off its end) and that a closed
+  form reads (`fillet::cuts_off`: a plane, a cylinder, a cone, a sphere or an
+  affine image) cuts the run off too, kept on its material's side, and its edges are none of the
+  ball's band — a vane's toe cut by a slope `1e-4` over the foot, its upright face shorter than
+  the section, cut its side's rolled round off at that face alone and refused the slope's edge with
+  the side as entering the band ("larger than `vo0` can hold").  One lying alongside the run (the
+  slope along the toe's own foot) ends nothing.  `holds_ball`'s refusal now says the face the ball
+  overflows, the face it ends at, how far that edge stands off the other face and how far off the
+  ball touches it.
+
+- **Whether a face goes on tangent from a run's side is one public test** (#994):
+  `fillet::tangent(n, m)`, new and public — two unit normals one either way, `1 - |n·m|` within
+  `1e-9` — is what `end_at` reads an end face going on by and what a standing ball's dome reads
+  an end no face goes on from by, so a caller predicting either reads it the same way.
+
+- **A standing ball's dome carried past an end a face cuts across** (#994): `fillet::roll`, where
+  the ball stands still over a stretch of its loop and the stretch ends where a face cuts across
+  it (a lid's chord, a hub's side across an arm's rounded end), no longer refuses ("no stretch of
+  its dome is carried past and cut off by a face yet").  The dome goes on round past that end as
+  far as the faces' meeting stays out of the faces it ends on: round the whole loop (the meeting
+  in closed form, the whole loop's hemisphere) where both ends are cut across, half round from
+  the other end's section where a face goes on tangent there — then cut off by every face at the
+  cut end (a plane's half-space, a curved face's solid).  Refused by name where the meeting comes
+  back within those faces elsewhere, where the run going on ends apart from the ball's section,
+  or where the surfaces meet in no closed curve in closed form.  No public API changes.
+
+- **A round beyond a seam that starts where its touch crosses the seam** (#994): `spill::Beyond`
+  has a new field `seamed: [bool; 2]` — with `run`, an end where the ball's touch crosses a line
+  seam lying aslant the edge, the piece starting at the section through it (square to the edge,
+  the touch the vertex on the seam, no strip of the next face there) and not carried past it, the
+  edge's own run glued to it there.  `round_beyond` builds it; a cap carried past an edge's end
+  whose touch has come back short of the seam is refused rather than built inside out.
+  `flat_beyond` refuses a seamed end.  **Breaking** for code building `Beyond` as a literal: set
+  the field (`[false; 2]` for what was built before).
+
 - **An end pose's seam stands by a rule, not by rounding** (#942, `swept::closed::seam_away`; the
   torus-general-position branch's 7bf4d72, re-applied): among the touched angles' gaps, those within
   `HALF_READ` of a turn of the widest are alike and the first from the frame's own `x` is taken. The

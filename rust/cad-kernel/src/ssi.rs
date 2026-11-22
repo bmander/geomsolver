@@ -1,16 +1,17 @@
 //! Where two surfaces meet, in closed form where it has one: two planes in a line; surfaces of
 //! revolution about one axis (a plane square to it, a cylinder, a cone, a sphere centred on it, a
 //! torus, a spline turned) in circles, found where their meridians cross in one half-plane; a plane and a cylinder
-//! in lines or an ellipse; a plane and a sphere in a circle; parallel cylinders in lines; a
-//! spline extruded and a plane or a cylinder running its way in lines, and a cone about a line its
-//! way in the spline carried onto the cone (`extruded`). The rest is left to be traced
-//! (`Ssi::Traced`) from seeds, and between analytic surfaces a curve no seed reaches is searched
-//! for (`unseen`).
+//! in lines or an ellipse; a plane and a sphere in a circle; parallel cylinders in lines; any two
+//! whose least distance has a closed form, clear of one another or resting on one another at a
+//! point alone, in no curve (`apart`); a spline extruded and a plane or a cylinder running its way
+//! in lines, and a cone about a line its way in the spline carried onto the cone (`extruded`). The
+//! rest is left to be traced (`Ssi::Traced`) from seeds, and between analytic surfaces a curve no
+//! seed reaches is searched for (`unseen`).
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use super::geom::{Carry,Curve,Frame,Rigid,Surface,V};
 use super::plane2;
-use crate::util::interval::Iv;
+use crate::util::interval::{Iv,Jet};
 use crate::util::space::{add,cross,distance,dot,norm,scale,segment_distance,sub,unit};
 
 /// What two surfaces share.
@@ -556,7 +557,18 @@ fn recognised<T>(form: Recognised,found: impl FnOnce() -> Option<T>) -> Option<T
 }
 
 /// Where two surfaces meet (`tol` a length).
-pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
+pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi { meeting_resting(a,b,tol).0 }
+
+/// **`intersect`, and where the two rest on one another at a point alone, that point** (#994,
+/// `apart`): a meeting in no curve that is the whole of it but for the touch, which an edge lying
+/// in either surface meets the other at alone (`meeting::Shared::known`). `None` beside every
+/// other meeting.
+pub fn meeting_resting(a: &Surface,b: &Surface,tol: f64) -> (Ssi,Option<V>) {
+    let mut rest = None;
+    (meeting_of(a,b,tol,&mut rest),rest)
+}
+
+fn meeting_of(a: &Surface,b: &Surface,tol: f64,rest: &mut Option<V>) -> Ssi {
     if let Some(met) = pulled_back(a,b,tol,true) { return met }
     if same(a,b,tol) { return Ssi::Same }
     let (f,g) = (*a.frame(),*b.frame());
@@ -628,16 +640,6 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             let w = unit(cross(pl.z,t.z));
             let sides: &[f64] = if big.abs() <= tol { &[0.] } else { &[1.,-1.] };
             Ssi::Curves(sides.iter().map(|&k| Curve::Circle(Frame::new(add(t.o,scale(w,k*big.abs())),pl.z,w),small.abs())).collect())
-        }
-        (Surface::Plane(_),Surface::Sphere(..)) | (Surface::Sphere(..),Surface::Plane(_)) => {
-            let (pl,sp) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
-            let Surface::Sphere(c,r) = sp else { unreachable!() };
-            let dist = dot(pl.z,sub(c.o,pl.o));
-            // touching at a point, by the gap (the circle's radius is its square root)
-            let plane2::Chord::Cross(rho) = plane2::chord(dist,r,plane2::Touch::Gap(tol)) else {
-                return Ssi::Curves(vec![])
-            };
-            Ssi::Curves(vec![Curve::Circle(Frame::new(sub(c.o,scale(pl.z,dist)),pl.z,pl.x),rho)])
         }
         (Surface::Plane(_),Surface::Cone(..)) | (Surface::Cone(..),Surface::Plane(_)) => {
             let (pl,co) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
@@ -745,20 +747,13 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             // turns into about an axis along its own, #721 X6); traced otherwise
             match parallel_touch(a,b,tol) { Some(line) => Ssi::Curves(vec![line]),None => Ssi::Traced }
         }
-        (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) if (r-s).abs() <= tol => {
-            // one radius, axes crossing at O: a point as far from both axes has
-            // ((p−O)·a₁)² = ((p−O)·a₂)², so the meeting is the first cylinder cut by the two planes
-            // through O square to a₁ − a₂ and a₁ + a₂: two ellipses, crossing where both touch
-            let axis = |c: &Frame| Curve::Line {p:c.o,d:c.z};
-            let all = [f64::NEG_INFINITY,f64::INFINITY];
-            let Some(&[(_,o)]) = super::query::curve_curve(&axis(&f),all,&axis(&g),all,tol).as_deref() else { return Ssi::Traced };
-            let mut out = Vec::new();
-            for m in [sub(f.z,g.z),add(f.z,g.z)] {
-                let m = unit(m);
-                out.extend(plane_cylinder(m,dot(m,o),&f,r,tol));
-            }
-            Ssi::Curves(out)
-        }
+        // two surfaces clear of one another, or resting on one another at a point alone, whose
+        // least distance has a closed form: no curve (`apart`)
+        _ if let Some(touch) = apart(a,b,tol) => { *rest = touch; Ssi::Curves(vec![]) }
+        // two cylinders whose axes lean apart: of one radius with axes crossing, within the reach of
+        // the singular case, two ellipses; else their loops, each point on both (`crossed_cylinders`)
+        (Surface::Cylinder(..),Surface::Cylinder(..)) if let Some(curves) = crossed_cylinders(a,b,tol) =>
+            Ssi::Curves(curves),
         (Surface::Plane(pl),Surface::Revolution(rf,c)) | (Surface::Revolution(rf,c),Surface::Plane(pl)) =>
             match plane_quadric(&pl,&rf,&c,tol) { Some(curves) => Ssi::Curves(curves),None => Ssi::Traced },
         (Surface::Blend(..),_) | (_,Surface::Blend(..)) => match screwed_meeting(a,b,tol) {
@@ -1069,6 +1064,268 @@ fn radius_at(s: &Surface,h: f64) -> Option<f64> {
         Surface::Cylinder(_,r) => Some(r.abs()),
         Surface::Cone(_,r,half) => { let (sa,ca) = half.dsin_cos(); (ca > 1e-12).then(|| r+h*sa/ca) }
         _ => None,
+    }
+}
+
+/// **Two surfaces meet in no curve where they stand clear of one another, or rest on one another
+/// at a point alone** (#994): where their least distance — signed, less than nothing where they
+/// cross — is more than `tol`, they are clear; within `tol` either way, they meet at most about
+/// the pair of points it is reached at, and the touch there is their whole meeting where it is
+/// alone by the one rule an arrangement reads a resting touch by (`touch` definite, and
+/// `alone_over`: its higher orders keep it so over the radius within which the two stand nearer
+/// parallel than a trace can follow); past `tol` into one another they cross, and are read on.
+/// What decides is the geometry any two surfaces have — their least distance, and how the set
+/// within the tolerance of the touch spreads — read at the point a closed form of that distance
+/// gives (`least`), the one thing that is kind by kind. So a rod resting across another, a ball
+/// on a cylinder or a torus or inside either, and a ring resting on a plane aslant meet in no
+/// curve and are never traced; and where the set within `tol` of the touch reaches out along a
+/// stretch — two rods leaning under `SHALLOW / √2` (at a lean `θ` the touch's radius is
+/// `2 SHALLOW (r + s) / sin² θ` and the rods part only linearly past `(r + s) / sin θ`, slower
+/// than its second order says from `2√2 (r + s) / sin θ` on), a ball a hair off a tube's axis, a
+/// ring all but level on a plane — it is not, and the meeting is read as a touch along a curve.
+/// `Some` where they meet in no curve, with the point they rest on one another at where they do
+/// (on the first of `least`'s order, within `tol` of the other); `None` where they are read on.
+fn apart(a: &Surface,b: &Surface,tol: f64) -> Option<Option<V>> {
+    let (gap,[a,b],p) = least(a,b)?;
+    if gap > tol { return Some(None) }
+    if gap < -tol { return None }
+    touch(a,b,p).is_some_and(|t| alone_over(a,b,&t)).then_some(Some(p))
+}
+
+/// **The least distance between two surfaces, in closed form where it has one**: the distance,
+/// less than nothing where they cross by so much, the two in the order it is read (`[a, b]`), and
+/// the point of `a` it is reached at. Two cylinders whose axes lean apart: the axes' gap less both
+/// radii, at the foot of their common normal on the lesser — each bounds a convex rod, and the
+/// plane square to that normal between them keeps one on each side. A sphere and a surface whose
+/// signed distance (`Surface::implicit`) is the distance itself — a plane, a cylinder, a sphere,
+/// a torus — that distance from the centre, unsigned, less the radius, at its foot on the surface:
+/// a signed distance changes by no more than the distance moved and is nothing on the surface, so
+/// no point of the surface is nearer the centre than it says. A plane and a torus: the core
+/// circle's least height over the plane less the tube's radius, below its lowest point — none
+/// where the core circle crosses the plane. `None` for any other pair. (A ball reaching past the
+/// surface is less than nothing apart by how far it reaches, whether or not the surface crosses its
+/// sphere: a torus inside a ball may lie wholly within it, and is read on.)
+fn least<'s>(a: &'s Surface,b: &'s Surface) -> Option<(f64,[&'s Surface;2],V)> {
+    match (a,b) {
+        (Surface::Cylinder(f,r),Surface::Cylinder(g,s)) => {
+            let ((x,f,r),(y,g,s)) = if r.abs() <= s.abs() { ((a,f,r.abs()),(b,g,s.abs())) }
+                else { ((b,g,s.abs()),(a,f,r.abs())) };
+            let (za,zb) = (unit(f.z),unit(g.z));
+            let n = cross(za,zb);
+            if !(norm(n) > 1e-12) { return None }
+            let n = unit(n);
+            let apart = dot(sub(g.o,f.o),n);
+            // the foot of the common normal on the first's axis, and its point toward the other
+            let foot = add(f.o,scale(za,axes_feet(f,g)[0]));
+            Some((apart.abs()-r-s,[x,y],add(foot,scale(n,r*apart.signum()))))
+        }
+        (Surface::Sphere(c,r),x @ (Surface::Plane(_) | Surface::Cylinder(..) | Surface::Sphere(..)
+            | Surface::Torus(..)))
+            | (x @ (Surface::Plane(_) | Surface::Cylinder(..) | Surface::Torus(..)),Surface::Sphere(c,r)) => {
+            let ball = if std::ptr::eq(x,a) { b } else { a };
+            let d = x.implicit(c.o);
+            Some((d.abs()-r.abs(),[x,ball],sub(c.o,scale(unit(x.gradient(c.o)),d))))
+        }
+        (Surface::Plane(pl),Surface::Torus(t,big,small))
+            | (Surface::Torus(t,big,small),Surface::Plane(pl)) => {
+            let plane = if matches!(a,Surface::Plane(_)) { a } else { b };
+            let torus = if std::ptr::eq(plane,a) { b } else { a };
+            let n = unit(pl.z);
+            let z = unit(t.z);
+            let level = dot(n,sub(t.o,pl.o));
+            let across = sub(n,scale(z,dot(n,z)));
+            let reach = big.abs()*norm(across);
+            if !(level.abs() > reach) { return None }
+            // the core circle's point nearest the plane, and the plane's point under it
+            let low = if norm(across) > 0. { sub(t.o,scale(unit(across),big.abs()*level.signum())) }
+                else { t.o };
+            let under = sub(low,scale(n,dot(n,sub(low,pl.o))));
+            Some((level.abs()-reach-small.abs(),[plane,torus],under))
+        }
+        _ => None,
+    }
+}
+
+/// **Where two cylinders whose axes lean apart meet, in closed form** (#994, fixture 146): the
+/// curve is a graph over the angle `u` round the one of lesser radius, `r`. Its point at `u`,
+/// `p = o + r (cos u x + sin u y) + h z` (its frame `o, x, y, z`), is on the other, of radius `s`
+/// about the line through `q` along `w`, where `|c + h z|² − ((c + h z) · w)² = s²`, `c = p − h z − q`:
+/// a quadratic `A h² + 2 B h + C = 0`, `A = 1 − (z · w)²` (the lean's sine squared), whose roots
+/// `h± = (−B ± √D) / A`, `D = B² − A C`, are the two branches. Where `D` keeps above nothing all
+/// round, the lesser goes right through the other: two loops, `h+` and `h−`, each a whole turn.
+/// Where it falls below, each stretch of `u` between its roots is one loop, `h+` out and `h−`
+/// back, joined where `D` is nothing (where the curve turns back in `u`).
+///
+/// **Three bands** for axes crossing, or passing a hair apart, at radii equal or nearly (the
+/// Steinmetz case and those beside it). The two loops then come within `2 √(2 r δ)` of each other
+/// at two necks, `δ` the radii's difference, where the surfaces stand `δ` apart:
+/// * `δ` and the axes' gap within the tolerance: the singular case, the meeting the two ellipses
+///   crossing at the necks — the first cylinder cut by the planes through the axes' crossing
+///   square to `z − w` and `z + w` — exact for one radius and crossing axes, within `δ` of the
+///   other surface else. Not wider: a plane through the necks (a pocket's floor through a
+///   groove's axis) meets each cylinder in curves that, past the tolerance, miss one another by
+///   `δ`, and ellipses meeting at a neck there would join them;
+/// * past that, where `D` keeps above nothing (the lesser right through the other), the two loops
+///   however near their necks, never the ellipses: each a closed trace (`Traced`) whose points are
+///   the graph's — on both surfaces to rounding — sampled densely enough that a chord is no longer
+///   than a quarter of the branches' gap at its ends, so that the trace's projection between them
+///   (`Traced::at`) lands on its own branch and not on the other loop across a neck, which a
+///   march does not keep to (the loops `2.7e-3` apart at a neck for radii of 6 a micron apart);
+/// * where `D` falls below nothing — a loop turning back, the lesser cutting into the other's side,
+///   or one neck closed by an axes' gap — and at a lean under `SHALLOW`: `None`, the meeting
+///   traced (`Ssi::Traced`).
+///
+/// **The lean's bound is the meeting's, not the closed form's.** The graph's own conditioning
+/// is far finer: `h` is read over `A = sin² θ` from `B` and `√D`, each rounded to about
+/// `ε (r + s)` away from a neck, and a point off by `δh` along the lesser's axis stands `δh sin θ`
+/// off the other, so the graph keeps within the tolerance of both down to `sin θ` of about
+/// `ε (r + s) / tol`. What a lean
+/// under `SHALLOW` bounds is the angle the two meet at along their loops: where the lesser's
+/// normal lies along the plane of both axes, it is the lean itself for axes crossing (there
+/// `n_a · n_b = ± cos θ`), so somewhere along the meeting a point within `tol` of both is
+/// `tol / sin θ` off it — the ill-conditioning `SHALLOW` bounds every meeting by, a trace's
+/// included, and a curve given exactly does not take away. The same bound, then, for the same
+/// reason: the meeting is left to the trace, which refuses it where it marches that shallow
+/// ("nearly touching").
+fn crossed_cylinders(a: &Surface,b: &Surface,tol: f64) -> Option<Vec<Curve>> {
+    let (&Surface::Cylinder(f,r),&Surface::Cylinder(g,s)) = (a,b) else { return None };
+    let (za,zb) = (unit(f.z),unit(g.z));
+    let lean = cross(za,zb);
+    if !(norm(lean) >= SHALLOW) { return None }
+    let (r,s) = (r.abs(),s.abs());
+    // the axes' nearest points, their gap and its middle
+    let [t1,t2] = axes_feet(&f,&g);
+    let (p1,p2) = (add(f.o,scale(za,t1)),add(g.o,scale(zb,t2)));
+    if (r-s).abs() <= tol && distance(p1,p2) <= tol {
+        let o = scale(add(p1,p2),0.5);
+        let mut out = Vec::new();
+        for m in [sub(za,zb),add(za,zb)] {
+            let m = unit(m);
+            out.extend(plane_cylinder(m,dot(m,o),&f,r,tol));
+        }
+        return Some(out)
+    }
+    // the graph over the lesser
+    if r <= s { cylinder_loops(a,b,tol) } else { cylinder_loops(b,a,tol) }
+}
+
+/// The feet of the common normal of two cylinders' axes (frames `f` and `g`, leaning apart): how
+/// far along each axis, from its frame's origin, it stands.
+fn axes_feet(f: &Frame,g: &Frame) -> [f64;2] {
+    let (za,zb) = (unit(f.z),unit(g.z));
+    let w = sub(g.o,f.o);
+    let (k,d1,d2) = (dot(za,zb),dot(za,w),dot(zb,w));
+    let den = 1.-k*k;
+    [(d1-k*d2)/den,(k*d1-d2)/den]
+}
+
+/// `crossed_cylinders`' loops: the graph of the meeting of cylinder `a` (frame `f`, radius `r`) with
+/// cylinder `b` (frame `g`, radius `s`) over the angle round `a`, the lesser, as closed traces.
+fn cylinder_loops(a: &Surface,b: &Surface,tol: f64) -> Option<Vec<Curve>> {
+    use std::f64::consts::TAU;
+    let (&Surface::Cylinder(f,r),&Surface::Cylinder(g,s)) = (a,b) else { return None };
+    let (r,s) = (r.abs(),s.abs());
+    let (z,wz) = (unit(f.z),unit(g.z));
+    let aa = 1.-dot(z,wz)*dot(z,wz);
+    let rim = |u: f64| { let (sn,cs) = u.dsin_cos(); add(f.o,add(scale(f.x,r*cs),scale(f.y,r*sn))) };
+    // B and D at u, the discriminant read as one product less another
+    let bd = |u: f64| {
+        let c = sub(rim(u),g.o);
+        let (cw,cz) = (dot(c,wz),dot(c,z));
+        let bb = cz-cw*dot(z,wz);
+        let cc = dot(c,c)-cw*cw-s*s;
+        (bb,bb*bb-aa*cc)
+    };
+    // the branch's point at u, and the gap between the branches there
+    let at = |u: f64,side: f64| -> (f64,V,f64) {
+        let (bb,dd) = bd(u);
+        (u,add(rim(u),scale(z,(-bb+side*dd.max(0.).sqrt())/aa)),2.*dd.max(0.).sqrt()/aa)
+    };
+    // **Whether D keeps one sign all round**, which is all the graph asks of it: its roots
+    // isolated from enclosures of it (`util::isolate`), so no dip below nothing is missed for
+    // falling between samples, however narrow (a neck where the axes pass a hair apart is
+    // `√(2 e / r)` wide), and a dip to within D's rounding of nothing is a touch, not read
+    // either way
+    use crate::util::isolate::{roots,Formula,Written};
+    let d = Discriminant {k:sub(f.o,g.o),x:f.x,y:f.y,z,w:wz,r,s,aa};
+    let near = |u: f64| d.jet(Jet::at(Iv::point(u))).v.has_zero();
+    let Ok(roots) = roots(&Written(d),[0.,TAU],0.,&near) else { return None };
+    // one branch from `u0` to `u1`, its points, refined while a chord stands longer than a quarter
+    // of the branches' gap at its ends (so a projection between them keeps to its own loop across
+    // a neck) or than `LOOP_CHORD` of the radius — down to a chord within the arrangement's reach
+    // of its ends (`2 ON_CURVE tol`: each of its points within `ON_CURVE tol` of one of them), or
+    // one whose middle the parameter no longer parts from its ends; `None` past `LOOP_POINTS`
+    // points, the meeting traced
+    let (longest,shortest) = (LOOP_CHORD*r,2.*super::tolerant::ON_CURVE*tol);
+    // (each point read once, carried with its parameter and gap by the intervals it bounds)
+    let branch = |u0: f64,u1: f64,side: f64| -> Option<Vec<V>> {
+        let n = (((u1-u0)/TAU*64.).ceil() as usize).max(8);
+        let mut done: Vec<V> = Vec::new();
+        let ends: Vec<(f64,V,f64)> = (0..=n).map(|j| at(u0+(u1-u0)*j as f64/n as f64,side)).collect();
+        let mut stack: Vec<[(f64,V,f64);2]> = (0..n).rev().map(|j| [ends[j],ends[j+1]]).collect();
+        while let Some([(x,p,gx),(y,q,gy)]) = stack.pop() {
+            let chord = distance(p,q);
+            let bar = longest.min(0.25*gx.min(gy).max(0.));
+            let mid = 0.5*(x+y);
+            if chord > bar && chord > shortest && mid != x && mid != y {
+                if done.len()+stack.len() >= LOOP_POINTS { return None }
+                let m = at(mid,side);
+                stack.push([m,(y,q,gy)]);
+                stack.push([(x,p,gx),m]);
+                continue
+            }
+            if done.is_empty() { done.push(p) }
+            done.push(q);
+        }
+        Some(done)
+    };
+    let traced = |pts: Vec<V>| Curve::Traced(std::sync::Arc::new(super::geom::Traced {a:a.clone(),b:b.clone(),pts,closed:true}));
+    if roots.is_empty() {
+        if bd(0.).1 < 0. { return Some(Vec::new()) }
+        // right through: two loops, each a whole turn
+        let mut out = Vec::new();
+        for side in [1.,-1.] {
+            let mut pts = branch(0.,TAU,side)?;
+            pts.pop();
+            let first = pts[0];
+            pts.push(first);
+            out.push(traced(pts));
+        }
+        return Some(out)
+    }
+    // a loop that turns back where D is nothing (the lesser cutting into the other's side, or a
+    // neck the axes' gap closes): traced (`Ssi::Traced`)
+    None
+}
+
+/// **A loop's chord, as a share of the lesser radius**: no chord of `crossed_cylinders`' traces is
+/// longer than an eighth of the radius it is a graph round, so it sags no more than `r / 512`
+/// where the loop bends as the cylinder does (`c² / 8 r`), and the parabola `Traced::guess` reads
+/// between its points starts `Traced::project` well inside the one point of both surfaces it
+/// settles at.
+const LOOP_CHORD: f64 = 1./8.;
+
+/// **The most points a loop of `crossed_cylinders` is refined to**: a guard on the work, not a
+/// reading — past it the loop is not given in closed form, and the meeting is traced.
+const LOOP_POINTS: usize = 200_000;
+
+/// `cylinder_loops`' discriminant `D(u) = B² − A C` round the lesser cylinder (`u` its angle),
+/// as one formula over `Num`, so its roots are isolated from its own enclosures
+/// (`util::isolate`).
+#[derive(Clone,Copy)]
+struct Discriminant { k: V,x: V,y: V,z: V,w: V,r: f64,s: f64,aa: f64 }
+
+impl crate::util::isolate::Formula for Discriminant {
+    fn jet<T: crate::util::interval::Num>(&self,u: Jet<T>) -> Jet<T> {
+        let (sn,cs) = u.sin_cos();
+        // `c = rim(u) − g.o`, by its components
+        let c: [Jet<T>;3] = std::array::from_fn(|i|
+            Jet::of(self.k[i])+cs.times(self.r*self.x[i])+sn.times(self.r*self.y[i]));
+        let along = |v: V| c[0].times(v[0])+c[1].times(v[1])+c[2].times(v[2]);
+        let (cw,cz) = (along(self.w),along(self.z));
+        let bb = cz-cw.times(dot(self.z,self.w));
+        let cc = c[0]*c[0]+c[1]*c[1]+c[2]*c[2]-cw*cw-Jet::of(self.s*self.s);
+        bb*bb-cc.times(self.aa)
     }
 }
 
@@ -2239,31 +2496,44 @@ pub(crate) fn alone_over(a: &Surface,b: &Surface,t: &Touch) -> bool {
     true
 }
 
-/// **The point near `p` where `a` and `b` touch**: on `a`, where `b`'s signed distance along it is
-/// stationary — their normals parallel there — by Newton over `a`'s tangent plane, its
-/// derivatives by differences; `None` where that does not settle, or settles off `b` (the two pass
-/// apart or cross there, and do not touch). Settled is a step a thousandth of `tol`, or one within
-/// a tenth of it that no longer shrinks: the differences' rounding moves the point by as much (two
-/// vaults' crown at a `tol` of 1e-9 cycled through steps of 1.3e-11).
+/// **The point near `p` where `a` and `b` touch**: on `a`, where `b`'s normal is `a`'s — the
+/// critical point of `b`'s signed distance along `a` — by Newton over `a`'s tangent plane on the
+/// difference of their unit normals, read from their exact gradients (its Jacobian, `Q`, by
+/// differences of them); `None` where that does not settle, or settles off `b` (the two pass
+/// apart or cross there, and do not touch).
+///
+/// **Settled by height, not by place** (#994): near a touch the slope is linear in the offset, so
+/// Newton converges quadratically in it, but where the two curve nearly alike along one way (`Q`'s
+/// least size `λ` small: a round of 1 resting on a blend of 20) the place is fixed along that way
+/// only to the slope's rounding over `λ`, and a step bound of a fraction of `tol` is not one every
+/// touch reaches. What the touch is for is the height `b` stands over `a` there, which a step `δ`
+/// along the slope `g` changes by `½ |g · δ|`: settled once that is a thousandth of `tol`, or the
+/// step itself is. The slope is read from both exact gradients, not from `b`'s signed distance by
+/// differences, whose rounding it would carry over the step.
 pub(crate) fn touch_near(a: &Surface,b: &Surface,p: V,tol: f64) -> Option<V> {
     let on_a = |q: V| a.point(a.inverse(q));
     let h = difference_step(a,b);
     let mut x = on_a(p);
-    let mut last = f64::INFINITY;
     for _ in 0..32 {
         let f = Frame::about(x,a.gradient(x));
-        let g = |s: f64,t: f64| b.implicit(on_a(add(x,add(scale(f.x,s),scale(f.y,t)))));
-        let (g0,[sp,sm,tp,tm]) = (g(0.,0.),[g(h,0.),g(-h,0.),g(0.,h),g(0.,-h)]);
-        let (gs,gt) = ((sp-sm)/(2.*h),(tp-tm)/(2.*h));
-        let (gss,gtt) = ((sp-2.*g0+sm)/(h*h),(tp-2.*g0+tm)/(h*h));
-        let gst = (g(h,h)-g(h,-h)-g(-h,h)+g(-h,-h))/(4.*h*h);
-        let det = gss*gtt-gst*gst;
+        // b's unit normal less a's (turned to agree with it) at a point of a near x, along a's
+        // tangent plane at x: nothing where the two are parallel
+        let agree = dot(a.gradient(x),b.gradient(x)).signum();
+        let slope = |s: f64,t: f64| {
+            let q = on_a(add(x,add(scale(f.x,s),scale(f.y,t))));
+            let n = sub(unit(b.gradient(q)),scale(unit(a.gradient(q)),agree));
+            [dot(n,f.x),dot(n,f.y)]
+        };
+        let g = slope(0.,0.);
+        let ([sp,sm],[tp,tm]) = ([slope(h,0.),slope(-h,0.)],[slope(0.,h),slope(0.,-h)]);
+        let j = [[(sp[0]-sm[0])/(2.*h),(tp[0]-tm[0])/(2.*h)],[(sp[1]-sm[1])/(2.*h),(tp[1]-tm[1])/(2.*h)]];
+        let det = j[0][0]*j[1][1]-j[0][1]*j[1][0];
         if !(det.abs() > 0.) { return None }
-        let (ds,dt) = ((-gs*gtt+gt*gst)/det,(-gt*gss+gs*gst)/det);
+        let (ds,dt) = ((-g[0]*j[1][1]+g[1]*j[0][1])/det,(-g[1]*j[0][0]+g[0]*j[1][0])/det);
         x = on_a(add(x,add(scale(f.x,ds),scale(f.y,dt))));
-        let step = ds.dhypot(dt);
-        if step <= 1e-3*tol || step <= 0.1*tol && step >= 0.5*last { return (b.implicit(x).abs() <= 8.*tol).then_some(x) }
-        last = step;
+        let (step,rise) = (ds.dhypot(dt),0.5*(g[0]*ds+g[1]*dt).abs());
+        if !step.is_finite() { return None }
+        if step <= 1e-3*tol || rise <= 1e-3*tol { return (b.implicit(x).abs() <= 8.*tol).then_some(x) }
     }
     None
 }

@@ -4,6 +4,136 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.229] Where a round ends, what a face and a round's ball are, and a round over a whole body
+walked by its edges** (#994). The CADGenBench fixtures re-run on v0.1.28 found rounds whose exact
+construction left out what their words say, a regression where two faces lie on one plane, and
+rounds over whole bodies that never finished. `S.ends` ends a run where its words always meant it
+to, a reference to a face reads the caps lying on it, `std.rounds`' `Run` and `Fill` say one
+bound more, `when a meets b` reads a body its seeds do not build where the drawing solves, and a
+round over a whole body walks its edges and says what it runs over. Documents that were refused
+or built short of their words now build; one that built by luck, a chamfer at a corner too nearly
+tangent, is refused by name.
+
+**A run ends on a face going on tangent that carries no round on.** In `S.ends`, a face going on
+tangent from one of an edge's faces where the edge ends was no end of it, the round taken to go on
+round it; it now ends nothing only where it meets the edge's other face there (or a face that one
+goes on into across a seam, a fill's cap flush with a side) in an edge of the same turn, along
+which the round goes on (an obround's half circle after its flat side), or is a piece of the
+surface of the edge's own face there (a floor two cuts leave in two pieces) — never in the seam it
+goes on across. Any other is a face the run ends on. A deck's corner arc running tangent into its
+side, flush with the block it stands on, ends its foot's fill on the block's side — kept within
+the block, thinning to nothing — where through 0.228 the fill hung past the wall over air, and the
+block's rim rounded along that side ends on the deck's arc, kept outside it. A band whose top
+comes down tangent onto the plate it stands on has its fill end square at each toe, kept outside
+the top (refused through 0.228, "a run its curved end does not cut off"), and its own top edge
+rounded end on the plate at each toe, kept over it, where through 0.228 it was cut on square into
+the plate under the toe. And an edge a run-out goes along that ends only where its face goes on
+tangent across a seam is no end — a seam is no edge — so a fill leaning toward a seam at its foot
+is no longer cut off at the seam's normal plane, and a round whose section crosses a seam aslant
+its edge (a foot against a drafted side short of the corner's cone) builds, where through 0.228 it
+was refused ("along a seam that is not along its edge"); a chamfer there is refused by name.
+
+**A run ends where its smooth chain ends, and on another body's wall.** In `S.ends`, a run going on
+tangent across a seam into the next edge of its chain ended nowhere there; it now ends on each face
+the chain ends on further along whose solid the chain is kept out of — a boss's cylinder it stands
+outside, a hole's — and on a plane wall of another body there, so a round never goes into another
+body's material nor into a hole. A flush boss standing on an obround's flat side short of the seam,
+its wall reaching back over the round's section where the flat runs into the half circle, keeps
+the half circle's round off it too: through 0.228 that round took its whole section there and the
+rim was refused ("Move `outer.boss.disc` clear of the seam, or over it"). A half-space of the run's
+own body, a solid it is kept within, a face the chain itself crosses and the chain's own faces stay
+the ends of their own runs alone, and where such a face reaches back over the section at the seam
+the round is still refused in those words. A wall of another body (a boss unioned on, a cutter's)
+turning back over a run at a reflex corner of less than a right angle is now its end, kept on its
+side, where a face of the run's own body there is not: through 0.228 the run ended square at the
+corner and took the boss's material beside it (96 mm³ at a square boss turned 45°). Its plane goes
+on past the boss's corners, so where the section reaches past one the round keeps a little more
+than the boss does, never less; and where the run's own edge crosses the wall's plane (a square
+boss over the seam, not turned) the words still end the ring at the meridian and take a wedge of
+the boss — the boss's solid kept out of, as a cylinder's is, would say both rightly, and is not
+written yet.
+
+**An end of several faces.** In `S.ends`, a run rolled along an edge ended on the faces at its
+vertex alone. Past an end face shorter than the section, it now ends too on every face reached
+along the edges that end face makes with the run's faces, each edge no longer than the section's
+size (a round's radius, a flat's longer leg), that faces on past the end — its outward normal
+turned more than a degree from square to the run — kept on its material's side; a face lying
+alongside the run ends nothing, and an edge longer than the section is followed nowhere. A vane's
+toe cut by a slope a hair over the crown leaves an upright face far shorter than the round's ball:
+the side's round now ends on the slope beyond it and builds, where through 0.228 it was refused as
+larger than the vane's side can hold. A face too short for the ball it would hold (the toe's own
+foot rounded with the sides) is refused naming it, the face it ends at and how far off the ball
+touches it.
+
+**A face takes in the caps lying on it.** Where a fill (or any round or chamfer the lowering
+builds) ends flush on a face of the body, its cap (`part.vs.filled.far`) lies on that face's own
+surface with no edge between them, and a reference to the face now reads it with those caps: on a
+solid of a body whose reflex uprights are filled, `whole.part.stock.far round(r) whole` rounds the
+rim all the way round, the arc where each fill meets the top too. Through 0.228 that arc was left
+sharp, silently, unless the caps were named as well. A cap named alone is still itself, a face of
+another operand on the same surface keeps its own name, and a face and a cap lying on it are never
+paired as two faces that meet.
+
+**A round is what its rolled ball leaves, not a pocket a chain leaves elsewhere.** `std.rounds`'
+`Run` and `Fill` also say `distance(p, rolled) <= distance(p, centres) + r`, `rolled` the centres'
+own terms and `c distance(<= r) boundary(a.smooth)`, and the same of `b` — the centres of the balls
+touching both faces: the point's nearest rolled ball stands no more than a radius further off than
+its nearest ball of all. A face's smooth chain parting about a face not of it — a floor going on
+into a blend and the blend into an eye, the blend ended by a side the eye stands out past — bounds
+a corner no ball reaches, and through 0.228 a round of an edge 45 mm away read it as its own. Every
+point a rolled ball leaves keeps the new bound with nothing to spare, so nothing built before
+changes: a set stated as another's terms and more, measured less that one, is read from the
+other's nearest point.
+
+**A face's smooth side past its patch.** `F.smooth`'s side, read past a piece's patch, is carried
+on by the plane tangent to it only across a seam; past any other edge — a crease, or a face cutting
+the piece across — it is the piece's own surface's side, as `F.smooth` goes on across seams only.
+Pieces of one plane (a face an operand crossing it leaves in two) are that plane's half-space.
+Where the point's nearest piece is at the chain's rim, the side is read from the face going on from
+the rim's ends whose surface's foot lies on it. So a rim rounded to its cylinder's own radius,
+whose ball stands still where a face cuts across the stretch (an arm's rounded end half inside a
+hub, a D-shaped post's rim under a tilted lid), builds: its dome carried past that end and cut off
+by the face, where through 0.228 it was refused ("no stretch of its dome is carried past and cut
+off by a face yet"). A ball a hair under its cylinder's radius cut off at both its ends by one face
+is refused naming the face once.
+
+**A section reaching onto another piece of its face's surface stands on that face.** A hole through
+a post whose foot is flush with its plate's bottom, the post across the plate's edge, has its rim
+on two faces of one plane, one each operand's: its chamfer's flat, reaching past their seam onto
+the other piece, was refused through 0.228 as coming within nothing of it, and builds again, as it
+did before #962. A chamfer at a corner too nearly tangent for the kernel to tell its two meetings
+apart is refused as a round there is, naming the two faces, the turn and the bound ("too nearly
+tangent a corner for this kernel to chamfer at 2mm against …"), where it was refused in the
+kernel's words or built as the drawing happened to turn.
+
+**A body its seeds do not build is read where the drawing solves.** `when a meets b` read the faces
+of a body that builds nothing where the drawing is seeded as every two meeting, so `round(r) X`
+over such a body made a copy for every two and three of its faces: a pocket whose corner rounds
+leave a straight of 0.05 between them, seeded a hair short so the rounds' ends passed each other,
+ran the expansion to `E103: more than 200000 statements` on a plate of three such slots. Such a
+body's faces are now read where the drawing solves, as a face held along a direction is (0.204),
+and the words expand there as they do seeded where it stands; the short straight is a face like any
+other. Where the body is not built where the drawing solves either, the round makes no copy and is
+said not built, built on the body, whose own refusal is the root (a straight of none: ``
+`pocket_f`'s edge `e1` has no length ``), never a count of statements. A body a sweep cuts is read
+nowhere, and its faces still meet.
+
+**A round over a whole body walks its edges, and says so.** A block over a solid's faces whose
+`when` asks `v meets y` of a face read before it copies only the faces meeting `y`: `round(r: …) X`
+walks a copy for each face, each pair of faces that meets and each three, its edges and corners,
+where it walked one for every pair and every three paired with an edge — a body of a hundred faces
+took minutes, and one whose boundary cannot say which faces meet passed the expansion's limit.
+Nothing it makes changes. The first such block of a statement is said to whoever listens with what
+it runs over (`` expanded `round(r: 0.5mm) whole` over 10 faces of `whole`, of which 24 pairs meet
+and 16 threes meet each other ``, `solventc --progress`), and an expansion past the limit says it
+in its E103 with what to do, "run it over fewer faces at once", rather than only where in
+`std.rounds` it had got to. A chain of faces on one plane (a top and the caps its pockets' fills
+leave on it) is one condition of a set, so a round on that top no longer costs the cube of the
+pockets. An expansion over faces projected, from its first copies, past twice the limit is refused
+at once, naming the statement, what it runs over, the projection and how far it got (`` E103:
+`repeat a in whole { …` over 22 faces of `whole`, of which 60 pairs meet and 40 threes meet each
+other, would make about … ``).
+
 **[0.228] A drafted corner where an arc meets a side at an angle** (#962). `std.solids.Drafted`
 of a face whose arc meets a line or another arc at an angle, not tangent, is built: the corner
 moves where the moved sides meet, along the conic the side's plane and the arc's cone (or two
