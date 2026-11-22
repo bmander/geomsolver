@@ -16,7 +16,8 @@
 //! area and brep-bench's measurer's, the reading's difference from them relative to its area,
 //! the bar `step_corpus::face_bar` holds it to, and `ok`, `OFF` or `disputed` (the readers
 //! disagree past the bar; `ok` within it of either). A face's line says why where a reference is
-//! missing (`-`), and the file's last line counts the faces past their bars. `--past-sound` reads
+//! missing (`-`), and the file's last line counts the faces past their bars and gives each
+//! reader's faces' sum (the gate holds no face to a reader whose sum is not the file's area). `--past-sound` reads
 //! a file `step_read::sound` refuses once more without it (`topology::solid`, its solids
 //! unplaced) and lists that reading's faces under a `past sound` line: what the reader's own
 //! faces measure, whether or not the boundary was sound.
@@ -191,8 +192,11 @@ fn main() {
             Err(r) => println!("{path}\trefused\t{:?}\t{r}\t{:.2?}{}",r.why,clock.elapsed(),beside(None)),
         }
         if let Some((occt,mass)) = &refs {
-            println!("{path}\tfaces past their bars: {off_faces}{}{}",occt.as_ref().err().map_or(String::new(),|e| format!("\tOCCT: {e}")),
-                mass.as_ref().err().map_or(String::new(),|e| format!("\tmeasurer: {e}")));
+            // what each reader's faces sum to: one whose sum is not the file's area has misread a
+            // face somewhere, and the gate does not hold faces to it (step_corpus::Refs::of)
+            let sum = |m: &BTreeMap<u32,f64>| format!("{:.9e} over {} faces",m.values().sum::<f64>(),m.len());
+            println!("{path}\tfaces past their bars: {off_faces}\tOCCT: {}\tmeasurer: {}",
+                occt.as_ref().map_or_else(|e| e.clone(),sum),mass.as_ref().map_or_else(|e| e.clone(),sum));
         }
     }
 }

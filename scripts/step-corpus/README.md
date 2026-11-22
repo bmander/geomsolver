@@ -183,16 +183,22 @@ test runs (the 340,000 faces' table is 30 MB, not worth committing):
   patched (`mass-faces.patch`) to print what it already sums, each face's area as ISO 10303-42
   reads its loops, put on the face from the edges' curves in space and never from the file's
   pcurves, and to measure the faces after one it cannot (it says that face's reason). It reads a
-  conversion-based unit as millimetres, so an inch file's areas are square inches: the gate
-  scales them by 25.4² (`measurer_scale`).
+  conversion-based unit as millimetres, so an inch file's areas are square inches, and a file of
+  several contexts in another context's unit: the gate reads the scale off the median ratio of
+  the faces both readers measure, 1 or 25.4² where it is so to a part in a hundred, and else
+  sets the measurer aside (`measurer_scale`; a file OCCT's faces do not join, 1 where its only
+  unit is the millimetre).
 
 A face's bar is **`TOL × Σ max(tol, u)·length + REL × area + ABS`**, the sum over its loops'
 uses, `tol` the edge's measured tolerance and `u` the file's stated uncertainty (`face_bar`,
 `Face::slack`). A tolerant boundary is known only to within its edges' slack, and two readings of
 it — one by the file's pcurves (OCCT, the kernel), one by the curves in space (the measurer) —
 sweep at most that slack along each edge between them: `TOL = 1` is that bound, not a fit. The
-writer states its pcurves only to `u`, which the kernel's measured `tol` (of its own pcurves) does
-not see, so `max`. `REL = 1e-6` is the readers' quadrature: on the 115,054 faces of the files the
+writer states its curves only to `u`, and the two readers show it: on the files written to 0.005–
+0.02 mm the measured `tol` alone (`K × Σ tol·length`) would flag 17 files whose faces OCCT and
+the measurer themselves read apart by more than it (CADGenBench 206's torus #58555: OCCT
+24.5749, the measurer 24.5610, the kernel 24.5694, measured slack 0.001, `u`'s 1.3), and twice or
+four times it still 16 and 13; with `max(tol, u)` four, all of them 229's face below. `REL = 1e-6` is the readers' quadrature: on the 115,054 faces of the files the
 totals pass, past their slack the worst agreeing face stands at 9.4e-8 of its area (kentron's
 helical pipe), so 1e-6 leaves ten; `ABS = 1e-9` mm² a face of no area. Measured on the corpus
 (November 22, 2026), `TOL` = 1 and 0.5 flag the same five files, 0.25 eleven (CADGenBench 204,

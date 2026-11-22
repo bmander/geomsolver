@@ -221,7 +221,7 @@ pub(crate) fn read_table(rows: Vec<Row>,bound: Option<Duration>) -> Option<(Vec<
             let start = Instant::now();
             let outcome = read_one(&root,&rows[i],bound);
             let seconds = start.elapsed().as_secs_f64();
-            let refs = match &outcome { Outcome::Read {..} => Refs::of(&root,&rows[i].path,&rows[i].data_sha256),_ => Refs::none() };
+            let refs = match &outcome { Outcome::Read {..} => Refs::of(&root,&rows[i]),_ => Refs::none() };
             done.lock().unwrap()[i] = Some(Read {outcome,seconds,refs});
         });
     });
@@ -249,12 +249,25 @@ pub(crate) struct Refs {
 impl Refs {
     pub(crate) fn none() -> Refs { Refs {occt: Err("not read".into()),mass: Err("not read".into())} }
 
-    pub(crate) fn of(root: &Path,path: &str,sha: &str) -> Refs {
+    /// The faces of `row`'s file. A reader whose faces sum to an area that is not the file's —
+    /// outside the row's bar of its reference, or of its second reading — has misread a face
+    /// somewhere, and is no reference for any (OCCT reads `balls-meeting-through-a-pole`'s two
+    /// spheres each a quarter of themselves); the measurer is held to that only where it measured
+    /// every face.
+    pub(crate) fn of(root: &Path,row: &Row) -> Refs {
+        let (path,sha) = (&row.path,&row.data_sha256);
         let at = |x: &str| root.join("oracle").join(format!("{path}{x}"));
-        let occt = occt_faces(&at(".json"),&at(".faces.tsv"),sha);
+        let file = |a: f64| rel(a,row.area) <= row.bar_area || row.alt.map_or(false,|(_,b)| rel(a,b) <= row.bar_area);
+        let occt = occt_faces(&at(".json"),&at(".faces.tsv"),sha).and_then(|o| {
+            let a: f64 = o.values().map(|x| x.0).sum();
+            if file(a) { Ok(o) } else { Err(format!("OCCT's faces sum to {a:.9e}, {:.1e} off the file's area",rel(a,row.area))) }
+        });
         let mass = mass_faces(&at(".mass.faces.tsv"),sha).and_then(|m| {
-            let k = measurer_scale(&at(".json"),&occt,&m)?;
-            Ok(m.into_iter().map(|(e,a)| (e,k*a)).collect())
+            let k = measurer_scale(&at(".json"),&occt,&m,row)?;
+            let m: BTreeMap<u32,f64> = m.into_iter().map(|(e,a)| (e,k*a)).collect();
+            let a: f64 = m.values().sum();
+            if m.len() < row.entities[0] || file(a) { Ok(m) }
+            else { Err(format!("the measurer's faces sum to {a:.9e}, {:.1e} off the file's area",rel(a,row.area))) }
         });
         Refs {occt,mass}
     }
@@ -291,18 +304,24 @@ fn occt_faces(json: &Path,tsv: &Path,sha: &str) -> Result<BTreeMap<u32,(f64,[f64
 /// reads a conversion-based unit as millimetres, so an inch file's areas come out in square inches,
 /// and a file of several contexts in another one's unit: the same faces, scaled. The scale is
 /// read off the faces both readers measured, 1 or 25.4² where the median of their ratios is so to
-/// a part in a hundred (a unit, not a fit: the readers agree to 1e-4 on the worst file); where OCCT's faces
-/// are not named, 1 for a file whose only unit of length is the millimetre. Otherwise none, and
-/// the measurer is not used.
-fn measurer_scale(json: &Path,occt: &Result<BTreeMap<u32,(f64,[f64; 3])>,String>,mass: &BTreeMap<u32,f64>) -> Result<f64,String> {
+/// a part in a hundred (a unit, not a fit: the readers agree to 1e-4 on the worst file); where
+/// OCCT's faces are no reference, off the measurer's whole against the row's reference area where
+/// it measured every face, and else 1 for a file whose only unit of length is the millimetre.
+/// Otherwise none, and the measurer is not used.
+fn measurer_scale(json: &Path,occt: &Result<BTreeMap<u32,(f64,[f64; 3])>,String>,mass: &BTreeMap<u32,f64>,row: &Row)
+    -> Result<f64,String> {
+    let unit = |r: f64| [1.,25.4*25.4].into_iter().find(|k| (k*r-1.).abs() < 1e-2);
     if let Ok(o) = occt {
         // the median of the faces' ratios, so that a face one reader misreads does not move it
         let mut r: Vec<f64> = mass.iter().filter_map(|(e,m)| o.get(e).filter(|x| x.0 > 0. && *m > 0.).map(|x| m/x.0)).collect();
         r.sort_by(f64::total_cmp);
         if let Some(&r) = r.get(r.len()/2) {
-            return [1.,25.4*25.4].into_iter().find(|k| (k*r-1.).abs() < 1e-2)
-                .ok_or_else(|| format!("the measurer reads the file at {r:.3e} of OCCT's scale"))
+            return unit(r).ok_or_else(|| format!("the measurer reads the file at {r:.3e} of OCCT's scale"))
         }
+    }
+    if mass.len() == row.entities[0] && row.area > 0. {
+        let r = mass.values().sum::<f64>()/row.area;
+        if let Some(k) = unit(r) { return Ok(k) }
     }
     let text = std::fs::read_to_string(json).map_err(|_| "no OCCT reading".to_string())?;
     let j = gcs_core::json::parse(&text).map_err(|e| format!("OCCT's reading unreadable: {e}"))?;
