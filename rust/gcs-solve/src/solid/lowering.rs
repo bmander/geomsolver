@@ -588,8 +588,9 @@ fn back_over_in(sk: &Sketch, body: &super::faces::BodyFaces, rounded: &[usize], 
     // a face the run's own face runs on into tangent, which no one moves: the run's face shorter
     // than the round reaches — a band's foot arc tapering onto the disc it stands on (#994)
     if body.smooth(&[own]).contains(&e) {
+        let side = body.side(e, at).abs();
         let off = crate::units::Dim::LENGTH.number_text(
-            crate::json::fmt_g(body.side(e, at).abs(), 2).parse().unwrap_or(body.side(e, at).abs()), sk.units);
+            crate::json::fmt_g(side, 2).parse().unwrap_or(side), sk.units);
         return format!("its round goes on tangent from {} into {} across their seam at {witness}, and {} runs on \
             tangent into {}, which its run along {} ends on: the seam stands {off} off {}, nearer than the round's \
             section reaches, so {} reaches {depth} back over the section there, the round along {} ends nowhere \

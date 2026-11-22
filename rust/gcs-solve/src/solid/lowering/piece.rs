@@ -388,13 +388,11 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
     // so where it comes back past an end is the set's own extent there; in several runs each point
     // is read against the ends of the run nearest it, #881)
     let one = body.runs(&edges).len() == 1;
-    {
-        // the kernel's tolerance over the body (`geom::tolerance` of its box's diagonal)
-        let tol = { let (lo, hi) = body.bounds(); crate::brep::geom::tolerance(distance(lo, hi)) };
-        for &edge in edges.iter().filter(|&&e| body.convex(e) == Some(within)) {
-            if let Some(why) = nearly_tangent(body, edge, &ends, section, tol, units.name()) {
-                return Err(why);
-            }
+    // the kernel's tolerance over the body (`geom::tolerance` of its box's diagonal)
+    let tol = { let (lo, hi) = body.bounds(); crate::brep::geom::tolerance(distance(lo, hi)) };
+    for &edge in edges.iter().filter(|&&e| body.convex(e) == Some(within)) {
+        if let Some(why) = nearly_tangent(body, edge, &ends, section, tol, units.name()) {
+            return Err(why);
         }
     }
     let touched = Touched::of(&edges);
@@ -1103,6 +1101,8 @@ fn stops_short(body: &crate::solid::faces::BodyFaces, faces: [usize; 2], within:
         }
     }
     None
+}
+
 /// The faces each face goes on into smoothly, its own surface's pieces aside (`super::going_on`):
 /// asked of a run's two faces at each end of every edge (`stops_short`), read once a face over a
 /// region's build.
@@ -1114,8 +1114,6 @@ impl Chains {
     fn of(&self, body: &crate::solid::faces::BodyFaces, fi: usize) -> std::rc::Rc<[usize]> {
         self.0.borrow_mut().entry(fi).or_insert_with(|| super::going_on(body, &[fi]).1.into()).clone()
     }
-}
-
 }
 
 /// `x` to `n` significant figures.
@@ -1389,8 +1387,7 @@ fn chain_seam(body: &crate::solid::faces::BodyFaces, p: usize, seams: &[(u32, us
         (Some([q0, q1]), _, Some(t @ Surf::Cylinder { axis, .. }))
             if norm(cross(axis, sub(q1, q0))) <= 1e-9 * distance(q0, q1) => {
             let d = normalised(sub(q1, q0)).ok_or("a seam of no length")?;
-            let m = normalised(cross(d, n)).ok_or("a seam along the plane's normal")?;
-            let m = if dot(m, sub(at, q0)) > 0.0 { scale(m, -1.0) } else { m };
+            let m = seam_normal(d, n, q0, at)?;
             (Seam::Line(q0, d), Surf::Plane { origin: q0, normal: m }, t)
         }
         (_, Some((o, axis, r, _)), Some(t @ Surf::Torus { axis: ta, .. }))
@@ -1685,6 +1682,14 @@ fn flush_only(body: &crate::solid::faces::BodyFaces, ends: &Ends, ps: [V; 2]) ->
     None
 }
 
+/// The unit normal of the plane through a seam along `way` on a plane of normal `n` that holds
+/// that normal — the seam's normal plane — turned so the side of the seam's point `on` that
+/// `inside` is on is negative.
+fn seam_normal(way: V, n: V, on: V, inside: V) -> Result<V, String> {
+    let m = normalised(cross(way, n)).ok_or("a seam along the plane's normal")?;
+    Ok(if dot(m, sub(inside, on)) > 0.0 { scale(m, -1.0) } else { m })
+}
+
 /// **The piece beyond a seam along a straight edge, the edge's whole length** (#962): the edge from
 /// `p0` to `p1` between `faces`, face `c` a plane going on tangent across the seam through `s` (its
 /// point in the section through `p0`, a line along the edge) into face `g`, which no line along the
@@ -1710,8 +1715,7 @@ fn along_beyond(body: &crate::solid::faces::BodyFaces, [p0, p1]: [V; 2], edge: [
         .ok_or_else(|| spilled("into a face neither a plane, a cylinder, a cone nor a sphere"))?;
     // the seam's normal plane, negative on the edge's side
     let mid = scale(add(p0, p1), 0.5);
-    let m = normalised(cross(way, n)).ok_or("a seam along the plane's normal")?;
-    let m = if dot(m, sub(mid, s)) > 0.0 { scale(m, -1.0) } else { m };
+    let m = seam_normal(way, n, s, mid)?;
     let split = Surf::Plane { origin: s, normal: m };
     // where the section reaches on the next face, along the edge (short of its ends, where the face
     // may end with it): on it, past the seam's normal plane
@@ -1814,9 +1818,7 @@ fn aslant_pieces(body: &crate::solid::faces::BodyFaces, [p0, p1]: [V; 2], faces:
     // the touch on the plane in the section through `p0`, and the seam's normal plane, the edge's
     // side of it negative
     let touch = sub(centre, scale(toward(n, within), r));
-    let m = normalised(cross(d, n)).ok_or("a seam along the plane's normal")?;
-    let mid = scale(add(p0, p1), 0.5);
-    let m = if dot(m, sub(mid, q)) > 0.0 { scale(m, -1.0) } else { m };
+    let m = seam_normal(d, n, q, scale(add(p0, p1), 0.5))?;
     let slope = dot(m, along);
     let crossing = -dot(m, sub(touch, q)) / slope;
     let eps = 1e-9 * (1.0 + length + norm(p0));

@@ -552,5 +552,5 @@ fn section_size(sk: &Sketch, terms: &[RegionTerm]) -> Option<f64> {
             }
             _ => None,
         }
-    }).fold(None, |a: Option<f64>, b| Some(a.map_or(b, |a| a.max(b))))
+    }).reduce(f64::max)
 }
