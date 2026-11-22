@@ -2366,10 +2366,15 @@ read −0.997 against its feet's −5e-6) and with the observer's origin one ulp
 it was refused, a pcurve 1.2e-5 off its edge beside the second swallowtail point, its foot found on
 the leaf folded back. Kept so, the seam is the face's own line and the chord's leaf, clear of the
 fold, takes the inverse; all four build and check, their meshes' volumes within 1.2e-6 of one
-another. `props::volume` does not read this solid (0.785, where the mesh reads 0.6962): beside each
-swallowtail point the seam given way grazes the row there in space, the sheet's rates one way, and a
-short piece of the row merged into it is read by inversion onto the fold, its line integral missing
-by up to 0.22 of a face's flux.
+another. `props::volume` reads it 0.6975, 0.17% above its mesh's: beside each swallowtail point the
+seam given way grazes the row there in space, the sheet's rates one way, and the lens's edge and a
+short piece of the row merged into the seam are read by inversion onto the fold — the foot carried
+from the node before onto the face's top row and held there (`topo` now seeks it again from the
+line where it stands off the edge), and the rate in parameters solved where the two rates stand one
+way to half the digits (now read by the feet's chord): 0.785 before either, and face 8's flux is
+still 2.8e-3 off its mesh's. The Boolean's 19.5 s is its grid seeds over the two tubes' face pairs:
+the ring road's trim resolution is the tool's size over 32, 0.063, coarser than the tube (0.03), so
+every near-boundary ball of one tube reaches the other's.
 
 **A seam's crossing within the tolerance band of the rim is the tube's vertex** (`rings::traces`):
 where a touching piece's rim meets a dipped one's the relative curvature across the rim is nought

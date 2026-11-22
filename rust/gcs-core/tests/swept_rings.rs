@@ -903,9 +903,9 @@ fn a_bridges_end_gives_way_to_a_double_curve_within_the_arrangements_band_of_it(
 /// 0.6962961; cadrs's volume 0.69630). Read point by point, the solid and the sweep's definition agree
 /// at all 20 000 places of its box (`ring_profile thin 75 agree 20000 2e-5`). So it is built too with
 /// the observer's origin moved by one ulp and by 1e-6 either way (`ring_profile thin 75 nudge ulp`),
-/// its mesh's volume within 1.2e-6 of this one's. (`props::volume` does not read it: beside each
-/// swallowtail point a short piece of a row merged into the seam given way is read by inversion onto
-/// the fold, and its line integral there misses — 0.785 where the mesh's is 0.6962.)
+/// its mesh's volume within 1.2e-6 of this one's. (`props::volume` reads it 0.17% high, 0.6975:
+/// beside each swallowtail point the lens's edge and a short piece of a row merged into the seam
+/// given way are read by inversion onto the fold, and the line integral there misses still.)
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 3 min: the thin tumbling torus built closed")]
 fn the_thin_tumbling_torus_is_built_closed() {

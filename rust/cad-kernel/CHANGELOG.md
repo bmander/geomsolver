@@ -30,10 +30,19 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   first and reads the other uses as inverses of it, and the face given way ends on the fold at the
   swallowtail point, where that inverse is ill posed — with the chord on the other leaf kept
   instead, the bench's input passed the check by luck and one ulp off it was refused (a pcurve 1.2e-5
-  off, its foot on the leaf folded back). `props::volume` does not read this solid (0.785 where the
-  mesh reads 0.6962): beside each swallowtail point a short piece of a row merged into the seam is
-  read by inversion onto the fold. The half turn gives no way and is unchanged. `depth_probe` reads
+  off, its foot on the leaf folded back). `props::volume` reads it 0.6975, 0.17% above the mesh's
+  (see `topo` below; 0.785 before). The half turn gives no way and is unchanged. `depth_probe` reads
   `ends` and `ratio`; `ring_profile` reads `nudge`, `fluxes` and the misfits after a build.
+
+- **An inverse pcurve read beside a fold** (`topo`, #942 T1d-tori): a foot carried from the node
+  before (`at_and_derivative_from`, as `props` reads an edge) that stands farther from the edge's
+  point than the edge's own gap is sought again from the line between the pcurve's ends, and the
+  nearer kept — the thin torus's double curve dipping below a swallowtail point's row had its foot
+  carried onto the face's top row and held there by the domain's edge, 1.7e-3 of the roll off; and
+  where the surface's two rates stand one way to half the digits (the square of their sine below
+  `HALF_READ`), the rate in parameters is read by the chord of the curve's own feet either side, as
+  where the least squares has no answer (a rate in `v` read −0.997 against the feet's −5e-6). The
+  thin tumbling torus's `props::volume` from 0.785 to 0.6975 (its mesh's 0.6963).
 
 - **A far cover is read from the top of its own contact's climb** (#942 T1d-tori,
   `swept::depth::cover`): the end of a point's own contact is where its distance from the tool first
