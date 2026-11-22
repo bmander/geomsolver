@@ -893,6 +893,42 @@ fn the_full_turn_is_built_closed() {
     }
 }
 
+/// **The full turn is built wherever its end poses' seams stand** (#942; the slow tier): each end
+/// pose's torus turned about its own axis — the same solid — so its seam meridian stands at an angle
+/// of its own choosing (the seam vertex's, round the axis from `Frame::about`'s `x`), and the rest
+/// built as the ring road builds it (`closed::ring_from`): each checked at the tolerance, its volume
+/// the built one's within the tolerance's worth (the solid's area times the tolerance).
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, some minutes: the full turn built at many seams")]
+fn the_full_turn_is_built_wherever_its_end_poses_seams_stand() {
+    use gcs_core::brep::geom::{Frame,Rigid,Surface};
+    use gcs_core::brep::swept::closed::{RingEntered,ring_entered,ring_from};
+    let (tool,path,roll,tol) = full_turn();
+    let once = ring_entered(&tool,&path,roll,tol).unwrap();
+    let mut failed = Vec::new();
+    for end in 0..2 {
+        for k in 0..8 {
+            let seam = -std::f64::consts::PI+std::f64::consts::TAU*(k as f64+0.5)/8.;
+            let mut entered = RingEntered {ends:once.ends.clone(),sheets:once.sheets.clone(),given:once.given.clone(),cut:once.cut};
+            let pose = &entered.ends[end];
+            let Surface::Torus(f,..) = &pose.faces[0].surface else { panic!("an end pose a torus") };
+            let about = Frame::about(f.o,f.z);
+            let l = about.local(pose.vertices[0].p);
+            entered.ends[end] = pose.moved(&Rigid::turn(f.o,f.z,seam-l[1].atan2(l[0])));
+            match ring_from(&tool,&path,roll,0.16/250.,tol,entered) {
+                Ok(built) => {
+                    let v = gcs_core::brep::props::volume(&built);
+                    let worth = tol*built.faces.iter().map(|f| gcs_core::brep::props::area(&built,f)).sum::<f64>();
+                    if let Err(e) = built.check(tol) { failed.push(format!("end {end} seam {seam:.3}: {e:?}")) }
+                    else if (v-23.6738854384).abs() > worth { failed.push(format!("end {end} seam {seam:.3}: volume {v}")) }
+                }
+                Err(u) => failed.push(format!("end {end} seam {seam:.3}: {u:?}")),
+            }
+        }
+    }
+    assert!(failed.is_empty(),"{}",failed.join("\n"));
+}
+
 /// **The full turn's start and end tori meet on the boundary along two short arcs, given** (#942
 /// T1d-tori, `depth::ends_met`; the slow tier): over a whole turn the end pose stands beside the
 /// start and the two tori meet, mostly where the instants between cover one or both — there no cut
