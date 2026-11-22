@@ -701,7 +701,20 @@ box's: a drum screwed a short lead has rims' ramps thinner than a hundredth fold
 cylinders its side sweeps, a step of a thousandth of a box past them swapped a ramp with its
 cylinder, and as the box grew — a twentieth more room, or a slab a hundred times the sweep cut —
 the solid was judged wrong or the slab left whole
-(`swept_closed::a_drum_screwed_a_short_lead_cut_from_a_slab_a_hundred_times_its_sweep_takes_its_sweep`). **A2, the meeting** (`brep::meeting`):
+(`swept_closed::a_drum_screwed_a_short_lead_cut_from_a_slab_a_hundred_times_its_sweep_takes_its_sweep`).
+**Two ways in that a step in turns the other way round are one way where they stood apart by no
+more than the tolerance** (#942, `complex::turned_back`): `g` apart at the edge and `h` the other
+way a step `s` in, their curvatures `2 (g − h) / s` apart across it bring them back across one
+another having stood apart in the edge's order by `g² s / 4 (g − h)` at most, and within a
+tolerance that order is none the complex holds — they are ordered as a run of tangent ways, a step
+in, however far apart they leave the edge. Past `TANGENT` alone, a fitted sheet leaning 2e-4 into
+a ring at first order beside a corner of its pieces, and 3e-6 along the rest of its touch, was put
+inside the ring along a short edge of the touch and outside it along the next, three cells one:
+brep-bench's 80° tumbling torus refused at every spelling of its motion but one, the one that stood
+the ring's seam elsewhere (the pair stood apart by 2e-9).
+`arrangement::a_sheet_tangent_to_a_face_at_the_tolerance_is_ordered_round_its_rim_by_a_step_in`
+(a quadratic sheet leaning 2e-4 under a plane at its rim, the wedge under it a cell) and
+`swept_rings::the_tumbling_torus_is_built_at_every_spelling_of_its_motion` are the gates. **A2, the meeting** (`brep::meeting`):
 two surfaces' meeting over boxes of their parameters as branches (each crossing or touching all
 along), singular points (a touch alone, or branches crossing) and coincidence, complete — boundary
 crossings, every critical point of one's distance across the other's parameters (a closed branch

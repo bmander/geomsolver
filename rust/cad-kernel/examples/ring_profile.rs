@@ -7,6 +7,11 @@
 //! `trajectory::Along`, the bench's sibling ring cases' bar and tolerance); `bench-spline` the same
 //! case exactly as the bench's runner builds it (`closed::cut_from`, its own frame).
 //!
+//! `eighty-gate` is brep-bench's 80° torus at its observer's origin (0, 0.5, 0.5) exactly, `eighty`
+//! at that origin as `√½ (0, cos 45°, sin 45°)`, an ulp off; `eighty-at oy oz ay az ratio roll` at
+//! any spelling of its observer's origin, its axis `(1, ay, az)`, its own ratio and its roll's end in
+//! degrees; `half-at ulps|add y z` the half turn, its observer's origin moved.
+//!
 //! `cargo run --release -p cad-kernel --example ring_profile -- full-turn|half-turn|thin [roll end, degrees] | spline | bench-spline`
 use cad_kernel::trajectory::{Screw,Trajectory};
 
@@ -43,13 +48,35 @@ fn main() {
             let frame = Trajectory::Twist(Screw {origin:[0.,0.5,0.5],axis:[1.,0.,0.],ratio:1.,advance:0.});
             (0.5,(tool,Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)}),75.)
         }
+        // (`eighty-at oy oz ay az ratio roll`: the gate's spelling with its observer's origin, axis,
+        // own ratio and roll's half given)
+        Some("eighty-at") => {
+            let x: Vec<f64> = args[1..7].iter().map(|a| a.parse().expect("a number")).collect();
+            let tool = cad_kernel::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.5).unwrap();
+            let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:x[4],advance:0.});
+            let axis = cad_kernel::util::space::normalised([1.,x[2],x[3]]).unwrap();
+            let frame = Trajectory::Twist(Screw {origin:[0.,x[0],x[1]],axis,ratio:1.,advance:0.});
+            (0.5,(tool,Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)}),x[5])
+        }
+        // (`half-at ulps|add y z`: the half turn, its observer's origin moved by `y` and `z` ulps,
+        // or by `y` and `z`)
+        Some("half-at") => {
+            let (y,z): (f64,f64) = (args[2].parse().expect("a number"),args[3].parse().expect("a number"));
+            let moved = |x: f64,by: f64| if args[1] == "ulps" { f64::from_bits((x.to_bits() as i64+by as i64) as u64) } else { x+by };
+            let (sl,cl) = 30f64.to_radians().sin_cos();
+            let (sa,ca) = 20f64.to_radians().sin_cos();
+            let tool = cad_kernel::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.16).unwrap();
+            let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.375,advance:0.});
+            let frame = Trajectory::Twist(Screw {origin:[0.,moved(0.7071*cl,y),moved(0.7071*sl,z)],axis:[ca,sa*cl,sa*sl],ratio:1.,advance:0.});
+            (0.16,(tool,Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)}),90.)
+        }
         _ => { eprintln!("ring_profile full-turn|half-turn|thin [roll end, degrees] | spline | bench-spline"); std::process::exit(2) }
     };
-    let end: f64 = args.get(1).map_or(half,|e| e.parse().expect("degrees"));
+    let end: f64 = if args[0] == "eighty-at" || args[0] == "half-at" { half } else { args.get(1).map_or(half,|e| e.parse().expect("degrees")) };
     let roll = [-half.to_radians(),end.to_radians()];
     if std::env::var_os("SOLVENT_BREP_TIME").is_none() { std::env::set_var("SOLVENT_BREP_TIME","1") }
     let clock = std::time::Instant::now();
-    let eighty = matches!(args.first().map(String::as_str),Some("eighty" | "eighty-gate"));
+    let eighty = matches!(args.first().map(String::as_str),Some("eighty" | "eighty-gate" | "eighty-at"));
     let (bar,mut tol) = if eighty { (0.002,1e-5) } else { (tube/250.,tube/50000.) };
     // (`… size-tol`: built to the modelling tolerance of the tool's size instead)
     if args.iter().any(|a| a == "size-tol") { tol = cad_kernel::geom::tolerance(tool.size()) }

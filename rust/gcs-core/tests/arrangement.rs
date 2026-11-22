@@ -650,3 +650,42 @@ fn two_given_edges_of_one_operand_crossing_on_a_face_share_a_vertex() {
     let quarters = complex.b.faces.iter().filter(|f| f.surface == top).count();
     assert_eq!(quarters,4,"the top parted into four by the feet");
 }
+
+/// **A sheet tangent to a face at the tolerance is ordered round its rim by a step in** (#942, a
+/// kernel gate with no sweep in it): the sheet `z = a x + x²/2` over `x` in `[0, 1.6]`, a quadratic
+/// B-spline, its rim `x = 0` on the plane `z = 0`, the top of a block below it, and that line given
+/// as their meeting. At its rim it leans under the plane by `a = 2e-4` — twice `TANGENT`, past which
+/// a fitted surface's way in was read at first order — and its curvature brings it back across the
+/// plane `2a` along, having stood under it by `a²/2 = 2e-8` at most: at a tolerance of 1e-5 it is
+/// tangent to the plane, and the wedge between them a cell, the region under the sheet. Ordered at
+/// first order, the sheet stood on the block's side of the plane round its rim and the wedge was
+/// one cell with the rest of the space above — as the 80° tumbling torus's sheet, its normal read
+/// 2e-4 off beside a corner of its pieces, was put inside the torus along a short edge of its touch
+/// when the torus's seam crossed the touch there, and three cells were one (brep-bench's
+/// `swept/tumbling-torus` at any spelling but one of its observer's origin).
+#[test]
+fn a_sheet_tangent_to_a_face_at_the_tolerance_is_ordered_round_its_rim_by_a_step_in() {
+    use gcs_core::brep::boolean::{arrangement_given,Given};
+    use gcs_core::brep::geom::{Curve,Surface};
+    use gcs_core::brep::nurbs::Net;
+    let (a,l) = (-2e-4,1.6);
+    let z = |x: f64| a*x+0.5*x*x;
+    // (a quadratic over [0, l] exactly: its middle pole where the tangents at its ends meet)
+    let column = |y: f64| vec![[0.,y,0.],[0.5*l,y,0.5*l*a],[l,y,z(l)]];
+    let net = Net {du:2,dv:1,uknots:vec![0.,0.,0.,1.,1.,1.],vknots:vec![0.,0.,1.,1.],
+        poles:(0..3).map(|i| vec![column(-2.)[i],column(2.)[i]]).collect(),weights:None};
+    let sheet = gcs_core::brep::build::sheet(net).unwrap();
+    let below = block([-2.,-2.,-2.],[2.,2.,0.]);
+    let top = below.faces.iter().map(|f| &f.surface)
+        .find(|s| matches!(s,Surface::Plane(_)) && [[0.,0.,0.],[1.,1.,0.]].iter().all(|&p| s.implicit(p).abs() < 1e-12))
+        .expect("the block's face z = 0").clone();
+    let rim = Curve::Line {p:[0.;3],d:[0.,1.,0.]};
+    let given = Given {surfaces:[top,sheet.faces[0].surface.clone()],curves:vec![rim],touches:vec![]};
+    let domain = block([-1.;3],[1.;3]);
+    let complex = arrangement_given(&domain,&[&below,&sheet],&[given],1e-5).expect("arranged");
+    // the wedge under the sheet over 0 ≤ x ≤ 1, |y| ≤ 1: 2 (1/6 + a/2)
+    let wedge = 2.*(1./6.+0.5*a);
+    let v = volumes(&complex);
+    assert_eq!(v.len(),3,"the block's half, the wedge under the sheet and the rest: {v:?}");
+    for (got,want) in v.iter().zip([wedge,4.-wedge,4.]) { close(*got,want,1e-6) }
+}
