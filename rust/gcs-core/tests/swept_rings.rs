@@ -772,7 +772,10 @@ fn the_full_turn_is_built_closed() {
     let built = gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.16/250.,tol).unwrap_or_else(|u| panic!("{u:?}"));
     built.check(tol).unwrap();
     let v = gcs_core::brep::props::volume(&built);
-    assert!((v-23.6738854384).abs() < 1e-7,"{v}");
+    // (23.6738854384 with its bridges' ends where `s''` leaves the fold's band; given way to its
+    // double curves, `rings::give_way`, the faces end on the curves themselves and it reads 1.8e-7
+    // less, 7.6e-9 of itself, under its tolerance)
+    assert!((v-23.6738852579).abs() < 1e-7,"{v}");
     crate::swept_closed::agrees_over(&built,&tool,&path,roll);
     let ring = Ring::read(&tool).unwrap();
     let located = gcs_core::brep::query::Located::new(&built,tol);
