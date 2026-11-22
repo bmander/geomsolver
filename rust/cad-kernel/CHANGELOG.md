@@ -8,6 +8,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.21.0] - 2026-11-22
+
 - **An edge is read against what its faces are known to meet, by one rule** (#990): an edge lies in
   each of its own faces' surfaces, so it meets another surface only where one of those faces meets
   it.  New `meeting::Met` (the two surfaces are one, or meet on these curves and touch at these
