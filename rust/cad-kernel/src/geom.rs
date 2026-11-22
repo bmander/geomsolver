@@ -974,17 +974,61 @@ fn offset_foot(n: &std::sync::Arc<super::nurbs::Net>,p: V,d: f64) -> Uv {
 
 /// `S + d N`, and its partials by Weingarten's equations, `S_u + d N_u` and `S_v + d N_v`, `N_u` the
 /// part of `n_u / |n|` square to `N` (`n = S_u × S_v`, `n_u = S_uu × S_v + S_u × S_uv`), read on the
-/// sheet's continuation. Where the normal is not defined (a pole), the sheet's point and partials.
+/// sheet's continuation. Where the normal is not defined, at a pole (`offset_at_pole`), its limit.
 fn offset_d1(n: &super::nurbs::Net,d: f64,[u,v]: Uv) -> (V,V,V) {
     let [x,xu,xv,xuu,xuv,xvv] = n.d2_continued(u,v);
     let raw = cross(xu,xv);
     let len = norm(raw);
-    if len == 0. { return (x,xu,xv) }
+    let reach = norm(xu)+norm(xv);
+    if !(len > 1e-12*reach*reach) { return offset_at_pole(n,d,[u,v],[x,xu,xv,xuv]) }
     let nn = scale(raw,1./len);
     let turn = |nd: V| { let w = scale(nd,1./len); sub(w,scale(nn,dot(nn,w))) };
     let nu = turn(add(cross(xuu,xv),cross(xu,xuv)));
     let nv = turn(add(cross(xuv,xv),cross(xu,xvv)));
     (add(x,scale(nn,d)),add(xu,scale(nu,d)),add(xv,scale(nv,d)))
+}
+
+/// **A sheet's offset at a pole** — a row of its net collapsed to a point, where `S_u × S_v` vanishes:
+/// `S + d N`, `N` the limit of the normal along the row approaching it. Where `S_u` vanishes along
+/// the row `v = v₀`, `S_u ≈ (v − v₀) S_uv` beside it, so the normal there is `S_uv × S_v` turned by
+/// the side of the row the sheet lies on (`S_u × S_uv` where `S_v` vanishes along `u = u₀`). A ball's
+/// pole has one limit, its axis, and the offset closes on its own pole; a cone's apex has one along
+/// each row (the normals about the apex differ), and the offset there is the circle of those —
+/// the offset's own row is no pole, as the offset of an apex is not a point. Its partials are
+/// the offset's a hair (a hundred-thousandth of the domain) and two hairs inside, carried linearly
+/// to the pole (`O(h²)`: the Weingarten partials are not defined there). Where the limit is not of
+/// the first order either (`S_uv` along the row as well), the sheet's point and partials, as
+/// before.
+fn offset_at_pole(n: &super::nurbs::Net,d: f64,[u,v]: Uv,[x,xu,xv,xuv]: [V;4]) -> (V,V,V) {
+    let [[u0,u1],[v0,v1]] = n.domain();
+    // which rate vanishes, and the side of the row the sheet lies on (the domain's nearer end)
+    let along_u = norm(xu) <= norm(xv);
+    let (inward,limit) = if along_u {
+        let s = if v-v0 <= v1-v { 1. } else { -1. };
+        ([0.,s*(v1-v0)],scale(cross(xuv,xv),s))
+    } else {
+        let s = if u-u0 <= u1-u { 1. } else { -1. };
+        ([s*(u1-u0),0.],scale(cross(xu,xuv),s))
+    };
+    let Some(nn) = crate::util::space::normalised(limit) else { return (x,xu,xv) };
+    let h = 1e-5;
+    let beside = |k: f64| {
+        let [_,b,c,dd,e,f] = n.d2_continued(u+k*h*inward[0],v+k*h*inward[1]);
+        let raw = cross(b,c);
+        let len = norm(raw);
+        let reach = norm(b)+norm(c);
+        if !(len > 1e-12*reach*reach) { return None }
+        let nb = scale(raw,1./len);
+        let turn = |nd: V| { let w = scale(nd,1./len); sub(w,scale(nb,dot(nb,w))) };
+        let nu = turn(add(cross(dd,c),cross(b,e)));
+        let nv = turn(add(cross(e,c),cross(b,f)));
+        Some((add(b,scale(nu,d)),add(c,scale(nv,d))))
+    };
+    let (pu,pv) = match (beside(1.),beside(2.)) {
+        (Some((au,av)),Some((bu,bv))) => (sub(scale(au,2.),bu),sub(scale(av,2.),bv)),
+        _ => (xu,xv),
+    };
+    (add(x,scale(nn,d)),pu,pv)
 }
 
 /// A sheet's net carried by `m`, its poles moved.
@@ -1096,9 +1140,8 @@ fn net_inverse(net: &std::sync::Arc<super::nurbs::Net>,p: V) -> Uv {
             net_newton(n,p,[0.5*(su[0]+su[1]),0.5*(sv[0]+sv[1])]).map(foot)
         }).min_by(|a,b| a.0.total_cmp(&b.0)).filter(|&(d,_)| d <= least+near).map(|(_,uv)| uv)
     };
-    // a rational sheet has no index: its last foot taken where it lies on the sheet
-    let warm = || start.filter(|_| n.weights.is_some()).and_then(|s| net_newton(n,p,s))
-        .filter(|&uv| crate::util::space::distance(n.point(uv[0],uv[1]),p) <= near);
+    // a rational sheet has no index: the foot from its last one taken where it is near the sheet
+    let warm = || start.filter(|_| n.weights.is_some()).and_then(|s| net_settle(n,p,s)).filter(|&(d,_)| d <= near).map(|(_,uv)| uv);
     let uv = warm().or_else(indexed).unwrap_or_else(|| {
         let greville = |k: &[f64],d: usize,i: usize| k[i+1..=i+d].iter().sum::<f64>()/d as f64;
         // from the nearest poles' Greville points, the nearest first, then the grid
@@ -1111,26 +1154,126 @@ fn net_inverse(net: &std::sync::Arc<super::nurbs::Net>,p: V) -> Uv {
                 nearest.sort_by(|a,b| a.0.total_cmp(&b.0));
             }
         } }
-        nearest.iter().filter(|c| c.0.is_finite())
-            .find_map(|&(_,at)| net_newton(n,p,[greville(&n.uknots,n.du,at.0),greville(&n.vknots,n.dv,at.1)]))
-            .unwrap_or_else(|| net_grid_inverse(n,p))
+        // the first foot from them inside the domain, or on the sheet; else the nearest of those
+        // held on its edge (a point beyond it); the grid's where none settles. (The first foot
+        // settled was taken, one held on the domain's edge among them, Newton's method stopped
+        // there by a seam or a pole: a ball's net read a point on it 2.2 off.)
+        let [[u0,u1],[v0,v1]] = n.domain();
+        let inside = |uv: Uv| uv[0] > u0 && uv[0] < u1 && uv[1] > v0 && uv[1] < v1;
+        let on = 1e-10*(1.+dot(p,p).sqrt());
+        let mut best: Option<(f64,Uv)> = None;
+        for &(_,at) in nearest.iter().filter(|c| c.0.is_finite()) {
+            let Some((d,uv)) = net_settle(n,p,[greville(&n.uknots,n.du,at.0),greville(&n.vknots,n.dv,at.1)]) else { continue };
+            if best.is_none_or(|b| d < b.0) { best = Some((d,uv)); }
+            if d <= on || inside(uv) { break }
+        }
+        match best { Some((_,uv)) => uv,None => net_grid_inverse(n,p) }
     });
     // this sheet's foot first, the rest after it, the oldest dropped
     crate::util::warm::put(crate::util::warm::Kind::Net,key,uv);
     uv
 }
 
-/// `net_inverse` by the nearest of a grid across the knot spans, then Gauss–Newton.
+/// **Newton's foot of `p` on a sheet from `uv`, not stopped by its domain's edge where the sheet goes
+/// on past it** (`net_newton`, and its distance): a foot held on an edge across which a closed net
+/// joins itself (a whole turn's seam) is sought again from the edge it joins, and one held on a row
+/// collapsed to a point (a pole) again from a hair inside that row at four places round it, kept
+/// off the row (`pole_newton`) — the nearest foot taken. Newton's method held there returned the
+/// edge's foot of a point lying on the sheet just across the seam, or beside the pole: a ball's net
+/// read a point by its pole 2.2 off. (A strictly nearer foot only: a point on the seam keeps the
+/// side Newton's method found it on.)
+fn net_settle(n: &super::nurbs::Net,p: V,start: Uv) -> Option<(f64,Uv)> {
+    let gap = |uv: Uv| crate::util::space::distance(n.point(uv[0],uv[1]),p);
+    let uv = net_newton(n,p,start)?;
+    let d = gap(uv);
+    let scale = 1.+dot(p,p).sqrt();
+    if d <= 1e-12*scale { return Some((d,uv)) }
+    let [[u0,u1],[v0,v1]] = n.domain();
+    let same = |a: V,b: V| crate::util::space::distance(a,b) <= 1e-12*(1.+norm(a));
+    let mut starts: Vec<Uv> = Vec::new();
+    let mut poles: Vec<(usize,f64,Uv)> = Vec::new();
+    for (k,[a,z]) in [[u0,u1],[v0,v1]].into_iter().enumerate() {
+        let at = uv[k];
+        if at != a && at != z { continue }
+        let other = if at == a { z } else { a };
+        let with = |x: f64,y: f64| if k == 0 { [x,y] } else { [y,x] };
+        let along = uv[1-k];
+        // the seam: the edge `other` stands where this one does
+        if same(n.point(with(at,along)[0],with(at,along)[1]),n.point(with(other,along)[0],with(other,along)[1])) {
+            starts.push(with(other,along));
+        }
+    }
+    let foot = n.point(uv[0],uv[1]);
+    for (k,[a,z]) in [[u0,u1],[v0,v1]].into_iter().enumerate() {
+        // a row along the other parameter at this one's edge, collapsed to a point, the foot by it
+        // (on it, or stuck beside it: the rate along the row vanishing there)
+        let (o0,o1) = if k == 0 { (v0,v1) } else { (u0,u1) };
+        let with = |x: f64,y: f64| if k == 0 { [x,y] } else { [y,x] };
+        for at in [a,z] {
+            let q = |y: f64| { let w = with(at,y); n.point(w[0],w[1]) };
+            let pole = q(o0);
+            if !(same(pole,q(o1)) && same(pole,q(0.5*(o0+o1)))) { continue }
+            if !(crate::util::space::distance(foot,pole) <= 1e3*d) { continue }
+            let inward = if at == a { 1e-3*(z-a) } else { -1e-3*(z-a) };
+            for j in 0..4 { poles.push((k,at,with(at+inward,o0+(o1-o0)*(j as f64+0.5)/4.))); }
+        }
+    }
+    let mut best = (d,uv);
+    for s in starts { if let Some(w) = net_newton(n,p,s) { let e = gap(w); if e < best.0 { best = (e,w); } } }
+    for (k,at,s) in poles { let w = pole_newton(n,p,s,k,at); let e = gap(w); if e < best.0 { best = (e,w); } }
+    Some(best)
+}
+
+/// Gauss–Newton for a sheet's foot of `p` beside a pole, the row of parameter `k` at `at`
+/// collapsed: a step that would cross the row goes halfway to it instead, so the foot is never
+/// held on the row, where the rate along it vanishes and no step moves the other parameter.
+fn pole_newton(n: &super::nurbs::Net,p: V,mut uv: Uv,k: usize,at: f64) -> Uv {
+    let [[u0,u1],[v0,v1]] = n.domain();
+    let ([lo,hi],size) = ([[u0,u1],[v0,v1]][1-k],1.+(u1-u0).abs().max((v1-v0).abs()));
+    let on = 1e-13*(1.+dot(p,p).sqrt());
+    for _ in 0..60 {
+        let (x,xu,xv) = n.d1(uv[0],uv[1]);
+        let e = sub(x,p);
+        if norm(e) <= on { break }
+        let (a11,a12,a22) = (dot(xu,xu),dot(xu,xv),dot(xv,xv));
+        let (b1,b2) = (dot(xu,e),dot(xv,e));
+        let det = a11*a22-a12*a12;
+        if !(det > 0.) { break }
+        let step = [(a22*b1-a12*b2)/det,(a11*b2-a12*b1)/det];
+        let mut next = [uv[0]-step[0],uv[1]-step[1]];
+        if (next[k]-at)*(uv[k]-at) <= 0. { next[k] = 0.5*(uv[k]+at); }
+        next[1-k] = next[1-k].clamp(lo,hi);
+        let moved = (next[0]-uv[0]).abs().max((next[1]-uv[1]).abs());
+        uv = next;
+        if moved <= 1e-16*size { break }
+    }
+    uv
+}
+
+/// `net_inverse` by the nearest of a grid across the knot spans: Newton's method (`net_newton`) from
+/// the eight nearest samples standing at distinct points (a row of poles, collapsed to one point,
+/// counted once: the samples nearest a point by a pole were all the pole, where no foot moves), the
+/// nearest foot it settles on taken; else Gauss–Newton from the nearest sample.
 fn net_grid_inverse(n: &super::nurbs::Net,p: V) -> Uv {
     let [[u0,u1],[v0,v1]] = n.domain();
     // a sample or two per span, at least sixteen a side and at most sixty-four
     let (su,sv) = ((n.poles.len()-n.du).clamp(16,64),(n.poles[0].len()-n.dv).clamp(16,64));
-    let mut best = (f64::INFINITY,[u0,v0]);
+    let mut samples: Vec<(f64,Uv,V)> = Vec::with_capacity((su+1)*(sv+1));
     for i in 0..=su { for j in 0..=sv {
         let uv = [u0+(u1-u0)*i as f64/su as f64,v0+(v1-v0)*j as f64/sv as f64];
-        let d = crate::util::space::distance(n.point(uv[0],uv[1]),p);
-        if d < best.0 { best = (d,uv); }
+        let q = n.point(uv[0],uv[1]);
+        samples.push((crate::util::space::distance(q,p),uv,q));
     } }
+    samples.sort_by(|a,b| a.0.total_cmp(&b.0));
+    let mut starts: Vec<(f64,Uv,V)> = Vec::new();
+    for s in &samples {
+        if starts.len() == 8 { break }
+        if starts.iter().all(|t| crate::util::space::distance(t.2,s.2) > 1e-12*(1.+norm(s.2))) { starts.push(*s); }
+    }
+    let settled = starts.iter().filter_map(|s| net_newton(n,p,s.1))
+        .map(|uv| (crate::util::space::distance(n.point(uv[0],uv[1]),p),uv)).min_by(|a,b| a.0.total_cmp(&b.0));
+    let best = (samples[0].0,samples[0].1);
+    if let Some((d,uv)) = settled { if d <= best.0 { return uv } }
     let mut uv = best.1;
     for _ in 0..30 {
         let (x,xu,xv) = n.d1(uv[0],uv[1]);

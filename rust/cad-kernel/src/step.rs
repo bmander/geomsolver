@@ -65,6 +65,14 @@ impl Out {
                 self.add(format!("CONICAL_SURFACE('',#{p},{},{})",real(r),real(a.abs())))
             }
             Surface::Sphere(f,r) => { let a = self.placement(&f); self.add(format!("SPHERICAL_SURFACE('',#{a},{})",real(r))) }
+            // a toroidal surface's radii are positive lengths: the kernel's torus of negative major
+            // radius, a spindle torus's lemon, is the standard's degenerate torus of major radius
+            // `−big` whose inner part it is (`select_outer` false), its parameters `(u + π, π − v)`
+            // and its normal turned (`step_uv`, `turned`)
+            Surface::Torus(f,big,r) if big < 0. => {
+                let a = self.placement(&f);
+                self.add(format!("DEGENERATE_TOROIDAL_SURFACE('',#{a},{},{},.F.)",real(-big),real(r)))
+            }
             Surface::Torus(f,big,r) => {
                 let a = self.placement(&f);
                 self.add(format!("TOROIDAL_SURFACE('',#{a},{},{})",real(big),real(r)))
@@ -252,11 +260,27 @@ pub fn written(s: &Surface) -> (Frame,Vec<f64>) {
     }
 }
 
-/// A face's parameters as STEP's surface reads them: the same, but on a cone written about its
-/// reversed axis, where both run the other way (an affine image's are its net's, `OnNet::uv`).
+/// **A face's parameters as STEP's surface reads them** (ISO 10303-42): the same, but on a cone.
+/// The kernel's cone runs `v` along its generator (OCCT's `Geom_ConicalSurface`); the standard's
+/// `conical_surface` runs it along the axis, `C + (R + v tan α)(cos u x + sin u y) + v z`, so the
+/// file's `v` is the kernel's times `cos α` — and on a cone written about its reversed axis both
+/// run the other way. Each is a scaling, so a line, a spline's poles and a fitted cubic's are
+/// carried exactly. (An affine image's parameters are its net's, `OnNet::uv`.)
+/// A lemon (a torus of negative major radius `−B`) is written as the degenerate torus of major
+/// radius `B`, whose point at `(u + π, π − v)` is the kernel's at `(u, v)`.
 fn step_uv(s: &Surface,uv: super::geom::Uv) -> [f64;2] {
-    match s { Surface::Cone(_,_,a) if *a < 0. => [-uv[0],-uv[1]],_ => uv }
+    use std::f64::consts::PI;
+    match *s {
+        Surface::Cone(_,_,a) => { let c = a.dcos(); if a < 0. { [-uv[0],-uv[1]*c] } else { [uv[0],uv[1]*c] } }
+        Surface::Torus(_,big,_) if big < 0. => [uv[0]+PI,PI-uv[1]],
+        _ => uv,
+    }
 }
+
+/// **Whether the surface the file writes for `s` runs against it**: its normal `S_u × S_v` the
+/// kernel's turned, so a face on it is written with its sense turned — a lemon's degenerate torus,
+/// whose `v` runs the other way (`step_uv`).
+pub fn turned(s: &Surface) -> bool { matches!(*s,Surface::Torus(_,big,_) if big < 0.) }
 
 /// **A face STEP writes as a B-spline net** (`face_net`): a sheet as its own, a loft's or a family
 /// wall's as the net fitted to it, and an affine image (STEP has no image of a surface) as its
@@ -646,9 +670,12 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
     let shift = match c { Curve::Circle(..) | Curve::Ellipse(..) => (e.t[0]/std::f64::consts::TAU).floor()*std::f64::consts::TAU,_ => 0. };
     // the parameter the edge's curve is written over (a traced curve's chords, `Along`)
     let along = Along::of(c);
-    // affine in the edge's parameter (a coaxial circle on a cylinder, a line along its axis)
-    let affine = along.chords.is_none() && (1..8).all(|k| {
-        let s = k as f64/8.;
+    // affine in the edge's parameter (a coaxial circle on a cylinder, a line along its axis),
+    // read at sixteen fractions spread unevenly: at the eighths of a turn a net's arc parameter
+    // equals the angle by symmetry, and a line read only there was written for a sheared torus's
+    // circles 0.075 mm off between them
+    let affine = along.chords.is_none() && (0..16).all(|k| {
+        let s = (k as f64+0.381966)/16.;
         let q = at(e.t[0]+(e.t[1]-e.t[0])*s);
         (q[0]-(a[0]+s*(z[0]-a[0]))).abs().max((q[1]-(a[1]+s*(z[1]-a[1]))).abs()) <= 1e-12*(1.+a[0].abs().max(a[1].abs()))
     });
@@ -975,7 +1002,10 @@ fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<usize,String> {
             let lp = o.add(format!("EDGE_LOOP('',({}))",uses.join(",")));
             bounds.push(format!("#{}",o.add(format!("{}('',#{lp},.T.)",if li == 0 { "FACE_OUTER_BOUND" } else { "FACE_BOUND" }))));
         }
-        faces.push(format!("#{}",o.add(format!("ADVANCED_FACE('',({}),#{surface},{})",bounds.join(","),if f.reversed { ".F." } else { ".T." }))));
+        // against its surface where the solid reverses it, or where the file's surface runs against
+        // the kernel's (`turned`), not both
+        let against = f.reversed != turned(&f.surface);
+        faces.push(format!("#{}",o.add(format!("ADVANCED_FACE('',({}),#{surface},{})",bounds.join(","),if against { ".F." } else { ".T." }))));
     }
     let shell = o.add(format!("CLOSED_SHELL('',({}))",faces.join(",")));
     Ok(o.add(format!("MANIFOLD_SOLID_BREP('',#{shell})")))
