@@ -16,8 +16,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   parameters"). Where the stretch holding a swallowtail point begins at its pair's birth, it and the
   stretch before are fitted as one up to the point with the pair read as not yet born (new
   `rings::fitted_unborn`, `Fitted::unborn`: an instant whose shape is not the stretch's first read
-  with no narrow pair put in, the folds check passing over the newborn pair's bridge as over any
-  bridge), and the rest from the point. The pair's sliver before the point lies wholly in the tail
+  with the pair nearest the swallowtail point's angle not put in, the folds check passing over the
+  newborn pair's bridge as over any bridge), and the rest from the point. The pair's sliver before the point lies wholly in the tail
   above the double curve, which the trim drops. The half turn: 20 faces, volume 12.2377154 (cadrs
   12.2377), 5.9 s; `depth_probe` reads `sliver`.
 

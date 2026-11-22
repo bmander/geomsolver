@@ -2267,8 +2267,11 @@ its point and 64 places across each bridge, every place between the folds (360) 
 instant (to 2.3e-4 deep) and every place the tail rule keeps is held no deeper than the rounding
 (`swept_depth::the_half_turns_fold_pair_bounds_nothing_the_trim_keeps_before_its_swallowtail_point`).
 The fold itself, held by the instants beside its own, is 4.9e-7 to 1.6e-6 thick there (`depth_probe
-sliver`), under the tolerance. A stretch whose start has another pair as well as the newborn one is
-refused as before (read unborn, both are gone and its shape is not its start's). brep-bench's
+sliver`), under the tolerance. Read unborn is the newborn pair alone: each curve's pair whose least
+`s''` stands nearest the swallowtail point's angle (`Fitted::unborn` carries it). Every pair read so
+dropped both of the thin and the full turn's second pairs' stretches, which begin past the first's
+point with the first already born, and their curves no longer turned onto the start's ("T|T against
+FT|T"). brep-bench's
 `tumbling-torus-half-turn` is built, checked and judged as the bench calls it: 20 faces, volume
 12.2377154 (cadrs 12.2377), held to membership, 8 s in the test profile
 (`swept_rings::the_half_turn_is_built_closed`). A Monte Carlo count of the definition read 12.198 ±

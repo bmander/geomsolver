@@ -435,20 +435,21 @@ impl Ring {
     /// **The contact at the instant `w` (its rate `dw`)**: each closed curve's pieces, in order
     /// along it, each join settled in `θ` to rounding. `Err` with a point of the tool where the
     /// number of contacts changes round the axis.
-    fn instant(&self,w: Twist,dw: Twist,scale: Option<f64>) -> Result<Instant,V> { self.instant_born(w,dw,scale,true) }
+    fn instant(&self,w: Twist,dw: Twist,scale: Option<f64>) -> Result<Instant,V> { self.instant_born(w,dw,scale,None) }
 
-    /// `instant`, its narrow pairs put in only where `born` (`Reader::unborn`): read so, a pair is
-    /// the touching pieces either side of it, as a dip of `s''` that folds nowhere is.
-    fn instant_born(&self,w: Twist,dw: Twist,scale: Option<f64>,born: bool) -> Result<Instant,V> {
+    /// `instant`, where `unborn` names an angle round the axis with each curve's narrow pair nearest
+    /// it not put in (`Reader::unborn`, the swallowtail point of a pair born since): read so, the pair
+    /// is the touching pieces either side of it, as a dip of `s''` that folds nowhere is.
+    fn instant_born(&self,w: Twist,dw: Twist,scale: Option<f64>,unborn: Option<f64>) -> Result<Instant,V> {
         let clock = crate::util::clock::Instant::now();
-        let out = self.instant_read(w,dw,scale,born);
+        let out = self.instant_read(w,dw,scale,unborn);
         spent::INSTANTS.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
         spent::INSTANT_NANOS.fetch_add(clock.elapsed().as_nanos() as u64,std::sync::atomic::Ordering::Relaxed);
         out
     }
 
     /// `instant_born`, uncounted.
-    fn instant_read(&self,w: Twist,dw: Twist,scale: Option<f64>,born: bool) -> Result<Instant,V> {
+    fn instant_read(&self,w: Twist,dw: Twist,scale: Option<f64>,unborn: Option<f64>) -> Result<Instant,V> {
         let thetas: Vec<f64> = (0..AROUND).map(|i| TAU*i as f64/AROUND as f64).collect();
         let read: Vec<Vec<(Label,Root)>> = thetas.iter().map(|&th| self.roots(&w,th)).collect();
         let m = read[0].len();
@@ -551,7 +552,7 @@ impl Ring {
                                 // read alike, #942 F6)
                                 let mid = 0.5*(lo+hi);
                                 let least = best.min(value(mid));
-                                if born && least < -HALF_READ*scale_bend { narrow.push(([first,last],near.clone(),sign,mid,least)) }
+                                if least < -HALF_READ*scale_bend { narrow.push(([first,last],near.clone(),sign,mid,least)) }
                                 least < -HALF_READ*scale_bend
                             };
                             // (a dip that folds nowhere is the stretches' about it; and a pair narrower
@@ -566,6 +567,11 @@ impl Ring {
                         if i == first { break }
                     }
                 }
+            }
+            // (the pair nearest the angle `unborn` names read as not yet born)
+            if let Some(th) = unborn {
+                let apart = |x: f64| { let d = (x-th).rem_euclid(TAU); d.min(TAU-d) };
+                if let Some(k) = (0..narrow.len()).min_by(|&i,&j| apart(narrow[i].3).total_cmp(&apart(narrow[j].3))) { narrow.remove(k); }
             }
             let mut joins: Vec<(f64,Kind)> = Vec::new();
             for i in 0..s {
@@ -755,8 +761,9 @@ pub struct Fitted { pub nets: Vec<Net>,pub on: Vec<Vec<On>>,pub sides: Vec<Vec<S
     /// Each meridian touched whole over the stretch, its touching half's sheet (`Strip`).
     pub strips: Vec<Strip>,
     /// Where the stretch was fitted with a fold pair born within it read as not yet born
-    /// (`fitted_unborn`): the end of the stretch its pieces are matched to, which has no such pair.
-    pub unborn: Option<f64> }
+    /// (`fitted_unborn`): the end of the stretch its pieces are matched to, which has no such pair,
+    /// and the pair's swallowtail point's angle round the axis.
+    pub unborn: Option<(f64,f64)> }
 
 /// **A swallowtail point of a ring's sheet** (#942 T1d-tori): where a fold's way along the tube is
 /// the way the sheet does not move — the kernel of its rates `Σ_θ, Σ_t` tangent to the fold — and its
@@ -805,9 +812,10 @@ struct Reader<'a> {
     whole: [f64;2],
     /// The scale `s''` is read against at every instant: its greatest at the first.
     scale: f64,
-    /// Whether a fold pair the first instant does not have is read as not yet born (`fitted_unborn`):
-    /// an instant whose shape is not the first's read again with no narrow pair put in.
-    unborn: bool,
+    /// Where a fold pair the first instant does not have is read as not yet born (`fitted_unborn`):
+    /// its swallowtail point's angle round the axis, an instant whose shape is not the first's read
+    /// again with each curve's pair nearest it not put in.
+    unborn: Option<f64>,
     /// Where reading unborn, each roll's narrow pairs as the instant read whole has them: their
     /// labels and angles (`newborn`).
     born: std::sync::Mutex<std::collections::BTreeMap<u64,Vec<(Label,[f64;2])>>>,
@@ -821,10 +829,10 @@ impl<'a> Reader<'a> {
     }
 
     /// The reader a stretch is fitted by (`Fitted::unborn`): its curves matched to those at its
-    /// middle, or at the end `unborn` names with any pair born since read as not yet born.
-    fn of(ring: &'a Ring,path: &'a Trajectory,whole: [f64;2],[a,b]: [f64;2],scale: f64,unborn: Option<f64>) -> Result<Reader<'a>,Unbuilt> {
-        let mut r = Reader::within(ring,path,whole,[a,b],unborn.unwrap_or(0.5*(a+b)),scale)?;
-        r.unborn = unborn.is_some();
+    /// middle, or at the end `unborn` names with the pair born since read as not yet born.
+    fn of(ring: &'a Ring,path: &'a Trajectory,whole: [f64;2],[a,b]: [f64;2],scale: f64,unborn: Option<(f64,f64)>) -> Result<Reader<'a>,Unbuilt> {
+        let mut r = Reader::within(ring,path,whole,[a,b],unborn.map_or(0.5*(a+b),|u| u.0),scale)?;
+        r.unborn = unborn.map(|u| u.1);
         Ok(r)
     }
 
@@ -833,7 +841,7 @@ impl<'a> Reader<'a> {
         let (w,dw) = rates(path,first,whole)?;
         let pose = path.pose(first)?;
         let i = ring.instant(w,dw,Some(scale)).map_err(|at| Unbuilt::Curved {at:pose.point(at)})?;
-        Ok(Reader {ring,path,roll,first:i.curves,whole,scale,unborn:false,born:Default::default(),cache:Default::default()})
+        Ok(Reader {ring,path,roll,first:i.curves,whole,scale,unborn:None,born:Default::default(),cache:Default::default()})
     }
 
     /// The instant at `t`, its curves matched to the first instant's: each first curve by the one
@@ -844,8 +852,8 @@ impl<'a> Reader<'a> {
         let (w,dw) = rates(self.path,t,self.whole)?;
         let pose = self.path.pose(t)?;
         let mut i = self.ring.instant(w,dw,Some(self.scale)).map_err(|at| Unbuilt::Curved {at:pose.point(at)})?;
-        if self.unborn && !same_shape(&self.first,&i.curves) {
-            i = self.ring.instant_born(w,dw,Some(self.scale),false).map_err(|at| Unbuilt::Curved {at:pose.point(at)})?;
+        if self.unborn.is_some() && !same_shape(&self.first,&i.curves) {
+            i = self.ring.instant_born(w,dw,Some(self.scale),self.unborn).map_err(|at| Unbuilt::Curved {at:pose.point(at)})?;
         }
         let refused = |c: &[Piece]| Unbuilt::Curved {at:pose.point(self.ring.root(&w,c[0].from.rem_euclid(TAU),c[0].label,false)
             .map_or(self.ring.centre,|r| r.x))};
@@ -887,7 +895,7 @@ impl<'a> Reader<'a> {
     /// folds there as a bridge's does, and the fold lies in the tail its double curve cuts off
     /// (`fitted_unborn`): read for folds no more than a bridge is.
     fn newborn(&self,run: &Run,faces: &[Face],u: f64,t: f64) -> bool {
-        if !self.unborn { return false }
+        let Some(apex) = self.unborn else { return false };
         let Ok(r) = self.read(t) else { return false };
         let known = self.born.lock().unwrap().get(&t.to_bits()).cloned();
         let bridges = match known {
@@ -895,9 +903,11 @@ impl<'a> Reader<'a> {
             None => {
                 let Ok((w,dw)) = rates(self.path,t,self.whole) else { return false };
                 let Ok(born) = self.ring.instant(w,dw,Some(self.scale)) else { return false };
+                // (each curve's bridge nearest the swallowtail point's angle, as the unborn read drops)
+                let apart = |p: &Piece| { let d = (0.5*(p.from+p.to)-apex).rem_euclid(TAU); d.min(TAU-d) };
                 let b: Vec<(Label,[f64;2])> = if same_shape(&self.first,&born.curves) { Vec::new() } else {
-                    born.curves.iter().flat_map(|c| (0..c.len()).filter(|&i| narrow(c,i))
-                        .map(|i| (c[i].label,[c[i].from.rem_euclid(TAU),c[i].to.rem_euclid(TAU)])).collect::<Vec<_>>()).collect()
+                    born.curves.iter().filter_map(|c| (0..c.len()).filter(|&i| narrow(c,i)).min_by(|&i,&j| apart(&c[i]).total_cmp(&apart(&c[j])))
+                        .map(|i| (c[i].label,[c[i].from.rem_euclid(TAU),c[i].to.rem_euclid(TAU)]))).collect()
                 };
                 self.born.lock().unwrap().insert(t.to_bits(),b.clone());
                 b
@@ -1027,16 +1037,18 @@ pub fn fitted_over(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],s
 
 /// **`fitted_over` with the fold pairs born within the stretch read as not yet born** (#942
 /// T1d-tori): its pieces those at the end `from` (the end before the birth), and an instant whose
-/// shape is not theirs read with no narrow pair put in — the pair's bridge and the touching pieces
-/// either side one touching piece across its sliver. The road fits so the stretch from before a
-/// pair's birth to its swallowtail point (`closed::ring_fitted`), where its double curve begins: the
-/// pair's sliver over it lies above the double curve, in the tail its cut drops, and bounds nothing.
-pub fn fitted_unborn(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],scale: f64,tol: f64,from: f64) -> Result<Fitted,Unbuilt> {
-    fitted_as(ring,path,whole,[a,b],scale,tol,Some(from))
+/// shape is not theirs read with the pair nearest the swallowtail point's angle `apex` not put in
+/// (each curve's: a pair born before the stretch began is put in as ever) — its bridge and the
+/// touching pieces either side one touching piece across its sliver. The road fits so the stretch
+/// from before a pair's birth to its swallowtail point (`closed::ring_fitted`), where its double
+/// curve begins: the pair's sliver over it lies above the double curve, in the tail its cut drops,
+/// and bounds nothing.
+pub fn fitted_unborn(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],scale: f64,tol: f64,from: f64,apex: f64) -> Result<Fitted,Unbuilt> {
+    fitted_as(ring,path,whole,[a,b],scale,tol,Some((from,apex)))
 }
 
 /// `fitted_over` and `fitted_unborn`.
-fn fitted_as(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],scale: f64,tol: f64,unborn: Option<f64>) -> Result<Fitted,Unbuilt> {
+fn fitted_as(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],scale: f64,tol: f64,unborn: Option<(f64,f64)>) -> Result<Fitted,Unbuilt> {
     let reader = Reader::of(ring,path,whole,[a,b],scale,unborn)?;
     let runs = runs(&reader.first);
     if runs.is_empty() { return Err(Unbuilt::Failed("no contact of the ring touches its sweep's boundary".into())) }
