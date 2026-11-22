@@ -27,11 +27,16 @@
 //! * `r`, written again, passes `step_check::verify` and reads again to the same solid at the
 //!   bars of an exact solid: a second trip changes nothing more.
 //!
-//! What a solid comes to is an `Outcome`: the same; not written (the writer refused it, which is
-//! the writer's say and no reading's); refused by `context`, by `topology` or by `sound` (for
-//! `sound`, the solid `topology` read is held to the property anyway: the same solid there is a
-//! false refusal, a different one a true refusal); read to a different solid (the worst); same
-//! on the first trip and not on the second; a panic.
+//! What a solid comes to is an `Outcome`: the same; the same point set read one degenerate edge
+//! short; not written (the writer refused it, which is the writer's say and no reading's); refused
+//! by `context`, by `topology` or by `sound` (for `sound`, the solid `topology` read is held to the
+//! property anyway: the same solid there is a false refusal, a different one a true refusal); read
+//! to a different solid (the worst); same on the first trip and not on the second; a panic; not
+//! written or not read within `BOUND`, or written past `LARGEST`.
+//!
+//! On every push `the_sample_reads_back` holds the property over the kernel's own solids and a
+//! sample of the library's that takes every writer path a solid reading back today takes; each
+//! solid that does not read back today is an ignored test named for its defect.
 use gcs_core::brep::geom::{Curve,Surface};
 use gcs_core::brep::props::{area,fluxes,volume};
 use gcs_core::brep::step::{face_net,write,Fit,FIT};
@@ -887,23 +892,119 @@ fn holds(name: &str,b: &Brep,which: &[usize]) -> Result<(),String> {
 
 /// **The sample**: solids of the library that between them, with the kernel's own
 /// (`kernel_solids`), take every path of the writer the census found taken by a solid that reads
-/// back today (`paths`; `the_sample_takes_every_path` holds the list), each cheap to build.
+/// back today and builds in a second or two (`PATHS`, which `the_sample_reads_back` holds it to).
+/// The writer's paths (`paths`) the sample takes: every one the census found taken by a solid that
+/// reads back today and builds in a second or two, and those the kernel's own solids take besides
+/// (affine images, a blend along a line, a void, several shells). The census's paths the sample
+/// leaves to the known defects and to the census alone are named in each known defect's test and
+/// in the stage's report.
+const PATHS: &[&str] = &[
+    "edge closed: bspline",
+    "edge closed: circle",
+    "edge closed: ellipse",
+    "edge closed: traced",
+    "edge curve written: CIRCLE",
+    "edge curve written: ELLIPSE",
+    "edge curve written: LINE",
+    "edge curve written: rational spline",
+    "edge curve written: spline of degree 1",
+    "edge curve written: spline of degree 2",
+    "edge curve written: spline of degree 3",
+    "edge: bspline",
+    "edge: bspline, rational",
+    "edge: circle",
+    "edge: degenerate (a pole's)",
+    "edge: ellipse",
+    "edge: iso",
+    "edge: line",
+    "edge: rail",
+    "edge: traced",
+    "face of several loops",
+    "face reversed",
+    "kernel pcurve: inverse on a blend",
+    "kernel pcurve: inverse on a bspline",
+    "kernel pcurve: inverse on a cone",
+    "kernel pcurve: inverse on a cylinder",
+    "kernel pcurve: inverse on a extrusion",
+    "kernel pcurve: inverse on a plane",
+    "kernel pcurve: inverse on a sphere",
+    "kernel pcurve: inverse on a torus",
+    "kernel pcurve: line on a affine",
+    "kernel pcurve: line on a bspline",
+    "kernel pcurve: line on a cone",
+    "kernel pcurve: line on a cylinder",
+    "kernel pcurve: line on a extrusion",
+    "kernel pcurve: line on a family",
+    "kernel pcurve: line on a plane",
+    "kernel pcurve: line on a revolution",
+    "kernel pcurve: line on a sphere",
+    "kernel pcurve: line on a torus",
+    "pcurve written: CIRCLE on a PLANE",
+    "pcurve written: LINE on a B_SPLINE_SURFACE rational",
+    "pcurve written: LINE on a B_SPLINE_SURFACE_WITH_KNOTS",
+    "pcurve written: LINE on a CONICAL_SURFACE",
+    "pcurve written: LINE on a CYLINDRICAL_SURFACE",
+    "pcurve written: LINE on a PLANE",
+    "pcurve written: LINE on a SPHERICAL_SURFACE",
+    "pcurve written: LINE on a SURFACE_OF_LINEAR_EXTRUSION",
+    "pcurve written: LINE on a SURFACE_OF_REVOLUTION",
+    "pcurve written: LINE on a TOROIDAL_SURFACE",
+    "pcurve written: rational spline on a PLANE",
+    "pcurve written: spline of degree 2 on a PLANE",
+    "pcurve written: spline of degree 3 on a B_SPLINE_SURFACE rational",
+    "pcurve written: spline of degree 3 on a CONICAL_SURFACE",
+    "pcurve written: spline of degree 3 on a CYLINDRICAL_SURFACE",
+    "pcurve written: spline of degree 3 on a PLANE",
+    "pcurve written: spline of degree 3 on a SPHERICAL_SURFACE",
+    "pcurve written: spline of degree 3 on a SURFACE_OF_LINEAR_EXTRUSION",
+    "pcurve written: spline of degree 3 on a TOROIDAL_SURFACE",
+    "seam on a affine",
+    "seam on a bspline",
+    "seam on a cone",
+    "seam on a cylinder",
+    "seam on a family",
+    "seam on a revolution",
+    "seam on a sphere",
+    "seam on a torus",
+    "several shells",
+    "surface: affine image of a cone opening against its axis",
+    "surface: affine image of a cylinder",
+    "surface: affine image of a extrusion of a bspline",
+    "surface: affine image of a sphere",
+    "surface: affine image of a torus",
+    "surface: blend along a screw",
+    "surface: cone opening against its axis",
+    "surface: cone opening along its axis",
+    "surface: cylinder",
+    "surface: extrusion of a bspline",
+    "surface: extrusion of a bspline, rational",
+    "surface: family",
+    "surface: net",
+    "surface: plane",
+    "surface: revolution of a bspline",
+    "surface: revolution of a bspline, rational",
+    "surface: sphere",
+    "surface: torus",
+    "swept curve written: rational spline",
+    "swept curve written: spline of degree 3",
+];
+
 const SAMPLE: &[(&str,&str)] = &[
+    ("lofts/thread.sv","thread"),
+    ("lofts/tapered.sv","swell"),
+    ("rounds/crotch.sv","tee"),
+    ("hydrostatics/punt.sv","immersed"),
     ("groin_vault.sv","vault"),
     ("nurbs.sv","dome"),
     ("solid_spline.sv","vase"),
     ("solid_spline.sv","cam"),
     ("rounds/dboss.sv","part"),
     ("rounds/ledge.sv","part"),
-    ("hydrostatics/punt.sv","immersed"),
-    ("rounds/crotch.sv","tee"),
     ("rounds/block.sv","block"),
     ("engine/parts.sv","piston_s.body"),
     ("pierced_sphere.sv","part"),
     ("rounds/groove.sv","part"),
     ("lofts/blade.sv","blade"),
-    ("lofts/tapered.sv","swell"),
-    ("lofts/thread.sv","thread"),
     ("solid_sweeps/drill.sv","plate"),
     ("generation/cam_plate.sv","plate"),
 ];
@@ -914,20 +1015,27 @@ fn sample_holds(which: &[usize]) {
     let kernel = kernel_solids();
     let next = std::sync::atomic::AtomicUsize::new(0);
     let failed = std::sync::Mutex::new(Vec::new());
+    let taken = std::sync::Mutex::new(BTreeSet::new());
     // (the library's solids built by the worker that holds them to it: a sketch stays on its thread)
     std::thread::scope(|s| for _ in 0..4 { s.spawn(|| loop {
         let k = next.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
         let started = Instant::now();
-        let (name,b) = match kernel.get(k) {
-            Some((n,b)) => (n.to_string(),b.clone()),
-            None => match SAMPLE.get(k-kernel.len()) { Some(&(e,s)) => (format!("{e} `{s}`"),example_solid(e,s)),None => break },
+        // (the library's first, the slowest among them, so the kernel's fill in behind)
+        let (name,b) = match SAMPLE.get(k) {
+            Some(&(e,s)) => (format!("{e} `{s}`"),example_solid(e,s)),
+            None => match kernel.get(k-SAMPLE.len()) { Some((n,b)) => (n.to_string(),b.clone()),None => break },
         };
         let built = started.elapsed();
         if let Err(e) = holds(&name,&b,which) { failed.lock().unwrap().push(e); }
+        if let Ok(text) = write(&b,&name,1e-7,Fit::Exact) { taken.lock().unwrap().extend(paths(&b,&text)); }
         eprintln!("{name}: built in {built:.0?}, held in {:.0?}",started.elapsed()-built);
     }); });
     let failed = failed.into_inner().unwrap();
     assert!(failed.is_empty(),"{}",failed.join("\n"));
+    let taken = taken.into_inner().unwrap();
+    let missed: Vec<&&str> = PATHS.iter().filter(|p| !taken.contains(**p)).collect();
+    assert!(missed.is_empty(),"the sample no longer takes the writer's paths {missed:?}");
+    for p in &taken { if !PATHS.contains(&p.as_str()) { eprintln!("a path the sample takes beyond `PATHS`: {p}"); } }
 }
 
 /// **The sample reads back to itself** at the test's tolerance, 1e-7 with every fit exact.
