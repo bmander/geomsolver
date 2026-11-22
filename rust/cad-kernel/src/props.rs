@@ -832,8 +832,9 @@ pub fn face_moments(b: &Brep,f: &Face,c: V,h: f64,want: [bool;10]) -> [f64;10] {
         &|x| { let t = t(x); t[0]*t[1] },&|x| { let t = t(x); t[0]*t[2] },&|x| { let t = t(x); t[1]*t[2] },
     ];
     let read = |k: usize| integrated(b,f,What::Weighed(weights[k])).iter().flatten().map(|t| t.0+t.1).sum::<f64>();
-    let sense = read(0).signum();
-    std::array::from_fn(|k| if want[k] { sense*read(k) } else { 0. })
+    let area = read(0);
+    let sense = area.signum();
+    std::array::from_fn(|k| if !want[k] { 0. } else if k == 0 { sense*area } else { sense*read(k) })
 }
 
 /// `terms`, of what `what` integrates.
@@ -988,10 +989,9 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
                     // (ten nodes a stretch, checked: most stretches of a spline ten read to their
                     // last bits, and a file's curve of a hundred knots was read at twice the nodes
                     // it needed; a stretch ten do not read is settled)
-                    let each = 1;
                     // (settled a stretch at a time on a surface with a pole, where a curve passing near
                     // it sweeps half a turn of the collapsed parameter in a hair of a stretch)
-                    if near_pole { cuts.windows(2).map(|w| settled(w[0],w[1],each,floor(e.tol),&mut integrand)).sum() }
+                    if near_pole { cuts.windows(2).map(|w| settled(w[0],w[1],1,floor(e.tol),&mut integrand)).sum() }
                     else { cuts.windows(2).map(|w| checked(w[0],w[1],floor(e.tol),&mut integrand)).sum() }
                 } else { settled(e.t[0],e.t[1],pieces(span,periodic),floor(e.tol),&mut integrand) };
                 row.push((if c.reversed { -line } else { line },0.));
