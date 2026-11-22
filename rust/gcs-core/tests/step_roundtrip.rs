@@ -568,6 +568,14 @@ fn trip_in(b: &Brep,name: &str,tol: f64,fit: Fit,found: &mut Found) -> Outcome {
         let file: String = name.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
         let _ = std::fs::write(std::path::Path::new(&dir).join(format!("{file}.step")),&text);
     }
+    // (temporary, #999's CI: the written file's points near the coin's cusp and its edges, printed
+    // where the test fails)
+    if std::env::var("GITHUB_ACTIONS").is_ok() && name.contains("coin") {
+        let near = |l: &str| l.contains("CARTESIAN_POINT") && l.split(|c| c == '(' || c == ',' || c == ')').filter_map(|x| x.trim().parse::<f64>().ok())
+            .collect::<Vec<_>>().iter().take(2).all(|x| x.abs() < 0.05);
+        for l in text.lines().filter(|l| near(l) || l.contains("EDGE_CURVE") || l.contains("VERTEX_POINT") || l.contains("TOROIDAL")
+            || l.contains("AXIS2") || l.contains("DIRECTION") || l.contains("SURFACE_CURVE") || l.contains("ADVANCED_FACE") || l.contains("B_SPLINE_CURVE")) { eprintln!("CI {l}"); }
+    }
     let started = Instant::now();
     // (read on a thread of its own, waited on no longer than `BOUND`: one past it is said slow, its
     // thread left to run)
