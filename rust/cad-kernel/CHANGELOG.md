@@ -278,6 +278,45 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   the tubes). Arranged so the groove and the block are still one cell, at the end poses' corners, and
   the refusal stands.
 
+- **A definite touch is read alone by its own orders, not by the faces' size** (#996 item 3): two
+  faces touching at a point, their meeting there the point alone to second order, were read so only
+  where the touch's radius — where a trace cannot follow them — was under a twentieth of the
+  smaller face; a rim's round on a short side crossing a wide blend's foot was refused ("a cylinder
+  and a cylinder meet … where no edge crosses, in a curve that could not be traced").  Now such a
+  touch is alone where `b`'s distance along `a` grows as its second order says over the whole
+  radius (`ssi::alone_over`), and `meeting::meet`'s search passes the touches it found, which it
+  refused before in the same words.
+
+- **A turn joined to the legs tangent to it, exactly or all but** (#996 item 1): a quarter elbow
+  whose section is clipped where it reaches the bend axis (a spindle torus, its arc up to 308°) and
+  the cylinders standing on its ends build for every tube from a hundredth under the legs' radius to
+  a hundredth over, the tangent one among them, each with the step it has. `ssi::disc_reach` reads
+  a spindle's and a horn's torus away from its other sheet, so a near-contact on the lemon past the
+  turn's arc is clear of its face; `ssi::intersect` meets a plane through a torus's axis in its two
+  meridians in closed form (the turn's caps: 3.3 s of traced marches before); the unseen-meeting
+  search's bounds over a strip are the torus's parallels', which vanish at its poles, and a meeting
+  it finds off either face is not traced; `Brep::loop_area` and a cycle's area in a Boolean are
+  Simpson's rule, doubled until settled (a crescent 308° long and a thousandth wide read the wrong
+  way round); a piece thinner than its outlines is read inside from beside its curved halves, not
+  dropped as a sliver while its sides stay two edges; and an inverse pcurve ending within its edge's
+  tolerance of a pole takes the pole's collapsed parameter from its end, not from the far side of
+  the axis (a union 2.6 times the solid it made). A use within its vertex's or edge's tolerance of
+  a pole is at it wherever the pole is read (`Brep::close_poles`, a half's points in a Boolean), a
+  pole's half runs along the parameter the pole collapses, and two uses of one edge at one place,
+  out and back, are a spur and not a seam: an axle and a slab through the near-miss turn's poles
+  build ("loop 0 breaks in parameters" at the pole before). **A tube all but tangent to another at
+  a seam is on it**: `flush::tubes_flushed` (called by `boolean::combined_written`, as `flushed` is)
+  moves a cylinder whose end circle stands concentric with and in the plane of the other's circle,
+  its radius off by no more than `FLUSH` tolerances, onto that radius, exactly; the issue's
+  document, cored and flanged as the fixture is, and every near-miss of its legs whatever is joined
+  or cut after, build as the tangent turn.
+
+- **One area rule and one pole rule** (#996 cleanup): `topo::green_area` is the Simpson-on-Green
+  routine `Brep::loop_area` and a Boolean's cycles both read, its samples kept as the steps double;
+  `topo::near_pole` the one reading of a point within a tolerance of a pole, at every site that
+  asks. A piece's inside is read with its first bar and its finest outline drawn once, and a
+  meeting's touches read alone (`ssi::alone_over`) only where the search passes them.
+
 - **The bench's cube tumbling 75° is built** (#942 T1d-cube, `swept::general`, `family`, `topo`):
   a fan's crossing with itself is built from the pinch it is born at — the runs' corner where the
   sheet's rate across their rim turns over — as the pairs of points of the two runs that meet, each
@@ -322,6 +361,7 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   4e-7 apart); a dump writes each wall with the number it is shared by, so a trim read back shares
   its walls as built and replays bit for bit. Gated by `swept_general`'s replays of the 15° and 75°
   cubes, refused where they are now and replayed alike.
+
 ## [0.20.0] - 2026-11-21
 
 - **A drafted corner where an arc meets a side at an angle is built** (#962 item 8b): `build::offset`

@@ -307,6 +307,40 @@ fn bench_rounded() {
              sk.solids.len(), median(again));
 }
 
+/// **A casting built a rung at a time** (`rounds/casting.sv`, #996): the part as drawn, with its
+/// cored hole cut round the pipe, and with each of its six rounds more — each rung elaborated,
+/// solved and its part evaluated afresh, with the Booleans that took (`combined_so_far`, a count
+/// to read beside the time).  A round adds its own Booleans and not the body's again.
+fn bench_casting() {
+    println!("\n== a casting built a rung at a time (rounds/casting.sv): ms and Booleans ==");
+    let text = include_str!("../../../examples/rounds/casting.sv");
+    let (head, rounds) = text.split_once("// the rounds, one a statement\n").expect("the rounds");
+    let (plain, _) = head.split_once("// the cored hole").expect("the cored hole");
+    let rounds: Vec<&str> = rounds.lines().filter(|l| !l.trim().is_empty()).collect();
+    let mut rungs = vec![("as drawn".to_string(), plain.to_string()), ("cored".to_string(), head.to_string())];
+    for k in 1..=rounds.len() {
+        rungs.push((format!("{k} round(s)"), format!("{head}{}\n", rounds[..k].join("\n"))));
+    }
+    for (name, src) in rungs {
+        let (prog, errs, _) = gcs_core::library::parse_linked(&src);
+        assert!(errs.is_empty(), "{errs:?}");
+        let before = gcs_core::brep::boolean::combined_so_far();
+        let t0 = Instant::now();
+        let mut sk = gcs_core::program::elaborate(&prog).sketch;
+        gcs_core::solve::solve(&mut sk, Default::default());
+        let part = sk.solids.iter().position(|s| s.name == "part").expect("the part");
+        let solid = sk.evaluated_solid(part, gcs_core::solid::ApproximationPolicy::Report);
+        let t = ms(t0);
+        let booleans = gcs_core::brep::boolean::combined_so_far() - before;
+        let said = match &solid {
+            Ok(s) if s.unbuilt().is_some() => "not built exactly",
+            Ok(_) => "built",
+            Err(_) => "refused",
+        };
+        println!("{name:<12} {t:9.1} ms | {booleans:4} Booleans | {said}");
+    }
+}
+
 /// **A solid read in three dimensions, a level at a time** (`engine/conrod.sv`'s `fired`, #510):
 /// the engine's connecting rod filled (77,648 TET10 at its own size), solved by CG over its
 /// corners, and read progressively (`report::Levels`) — each level's time from the start, and the
@@ -397,6 +431,7 @@ fn main() {
     if std::env::args().nth(1).as_deref() == Some("meshing") { bench_meshing(); return; }
     if std::env::args().nth(1).as_deref() == Some("scrub") { bench_scrub(); return; }
     if std::env::args().nth(1).as_deref() == Some("rounded") { bench_rounded(); return; }
+    if std::env::args().nth(1).as_deref() == Some("casting") { bench_casting(); return; }
     if std::env::args().nth(1).as_deref() == Some("analysis") { bench_analysis(); return; }
     if std::env::args().nth(1).as_deref() == Some("bites") { bench_bites(); return; }
     if std::env::args().nth(1).as_deref() == Some("delaunay") { bench_delaunay(std::env::args().nth(2).as_deref()); return; }
@@ -478,6 +513,7 @@ fn main() {
     bench_meshing();
     bench_scrub();
     bench_rounded();
+    bench_casting();
     bench_bites();
     bench_delaunay(None);
     bench_analysis();

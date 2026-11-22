@@ -77,12 +77,20 @@ impl Exact {
 /// Solid `si`'s exact B-rep, or why this kernel does not build it (no length unit, a sweep, a
 /// recipe node it refuses) — a caller then evaluates the facet term instead.
 pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
+    Ok(build_stratum(sk, si, false)?.0)
+}
+
+/// `build`, and — where `offer` and its root is a body — that body's written terms as it built
+/// them, offered (`recipe::Offered`): the stratum the body's rounds read, which its own build then
+/// goes on from (#996).  Only the reading of a body with rounds offers one.
+pub(crate) fn build_stratum(sk: &Sketch, si: usize, offer: bool)
+    -> Result<(Exact, Option<crate::brep::recipe::Offered>), String> {
     let mm = cad::millimetres(sk);
     let origin = frame_origin(sk, si, REPORT_UNIT);
     let recipe = cad::recipe_about(sk, si, origin.map(|x| x * mm))?;
-    let (mut built, leading) = nodes(sk, si, &recipe, origin, None)?;
+    let (mut built, leading, stratum) = nodes(sk, si, &recipe, origin, None, offer)?;
     let brep = built.remove(&recipe.root).ok_or("recipe: no root")?;
-    Ok(named(brep, mm, origin, leading))
+    Ok((named(brep, mm, origin, leading), stratum))
 }
 
 /// **Solid `si`'s written terms, built where it is** (#961): the nodes its root body's stock,
@@ -113,7 +121,7 @@ pub(crate) fn operands(sk: &Sketch, si: usize) -> Result<(Recipe, BTreeMap<i64, 
     }
     let wanted =
         wanted.unwrap_or_else(|| of.keys().copied().filter(|&id| id != recipe.root).collect());
-    let (built, _) = nodes(sk, si, &recipe, origin, Some(&wanted))?;
+    let (built, _, _) = nodes(sk, si, &recipe, origin, Some(&wanted), false)?;
     Ok((recipe, built))
 }
 
@@ -149,10 +157,13 @@ fn reads(n: &crate::brep::recipe::Node) -> Option<Vec<i64>> {
 }
 
 /// `recipe`'s nodes built about `origin` (model units) for solid `si` — those of `only` where it
-/// says (the root then not among them), else every one — and the faces whose facets lead.
+/// says (the root then not among them), else every one — the faces whose facets lead, and the
+/// root body's written terms offered (`recipe::Offered`), where `offer` and the root is a body.
+#[allow(clippy::type_complexity)]
 fn nodes(sk: &Sketch, si: usize, recipe: &Recipe, origin: [f64; 3],
-         only: Option<&BTreeSet<i64>>)
-    -> Result<(BTreeMap<i64, Brep>, BTreeSet<String>), String> {
+         only: Option<&BTreeSet<i64>>, offer: bool)
+    -> Result<(BTreeMap<i64, Brep>, BTreeSet<String>, Option<crate::brep::recipe::Offered>), String> {
+    use crate::brep::recipe::{self as recipe_, Node};
     let mm = cad::millimetres(sk);
     // the rounding of coordinates read where the solid stands, before the shift: a few units in
     // the last place of the largest
@@ -161,6 +172,10 @@ fn nodes(sk: &Sketch, si: usize, recipe: &Recipe, origin: [f64; 3],
     let mut leading = BTreeSet::new();
     // each node as what a body built of it says calls it
     let names: BTreeMap<i64, String> = recipe.nodes.iter().map(|n| (n.id, n.called())).collect();
+    // a body's written terms built once, however many of its rounds roll against them (#996)
+    let mut strata = recipe_::Strata::new();
+    // the root body, where the root is one, to offer its stratum once it is built
+    let mut root: Option<&recipe_::Body> = None;
     for n in &recipe.nodes {
         let id = n.id;
         if only.is_some_and(|w| !w.contains(&id) || id == recipe.root) {
@@ -189,7 +204,34 @@ fn nodes(sk: &Sketch, si: usize, recipe: &Recipe, origin: [f64; 3],
             leading.extend(x.leading.iter().cloned());
             continue;
         }
-        let mut b = n.node.built(&built, &names, floor)?;
+        // the stratum a body's rounds read, made once for the drawing (`faces::cached`), is what
+        // the body goes on from to make them and what a round rolls a ball against, wherever it is
+        // made of what this build made (#996): never made again for the body, nor for each round
+        let stratum = match &n.node {
+            Node::Body(body) if id == recipe.root => {
+                root = Some(body);
+                (!(body.on_late.is_empty() && body.cut_late.is_empty())).then(|| (body, vec![si]))
+            }
+            Node::Lowered(l) => l.stratum.as_ref().map(|body| (body, super::faces::bodies_read(sk, id as usize))),
+            _ => None,
+        };
+        if let Some((body, of)) = stratum {
+            // what this build made it of, read once, and only where a stratum is offered
+            let mut made_of = None;
+            for o in of {
+                let Some(offered) = super::faces::stratum_made(sk, o) else { continue };
+                let made_of = *made_of.get_or_insert_with(|| recipe_::made_of(body, &built));
+                if recipe_::known_stratum(&mut strata, body, floor, made_of, &offered) {
+                    break;
+                }
+            }
+        }
+        // a stratum to offer is kept as it is made (a body with no late terms is otherwise built
+        // straight into its own B-rep)
+        if let (true, Some(body)) = (offer && id == recipe.root, root) {
+            recipe_::written(body, &built, &names, floor, &mut strata)?;
+        }
+        let mut b = n.node.built_among(&built, &names, floor, &mut strata)?;
         let sol = &sk.solids[id as usize];
         match &sol.def {
             SolidDef::Placed { source, .. } => {
@@ -220,7 +262,8 @@ fn nodes(sk: &Sketch, si: usize, recipe: &Recipe, origin: [f64; 3],
         }
         built.insert(id, b);
     }
-    Ok((built, leading))
+    let offered = root.filter(|_| offer).and_then(|body| recipe_::offered(&strata, body, &built, floor));
+    Ok((built, leading, offered))
 }
 
 /// A B-rep whose faces a build named in two halves (`brep::recipe::NAMED`: a recipe's, a swept body's), as an

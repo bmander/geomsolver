@@ -13,7 +13,7 @@
 use gcs_core::brep::{export, props, sweep::Say};
 use std::f64::consts::PI;
 
-use crate::common::rounds::{exported_volume, inset, refused, square_run};
+use crate::common::rounds::{exported, exported_volume, inset, refused, square_run};
 use crate::common::{close, ent, text::solved};
 
 /// A prism `long` long of a profile all of whose corners are right angles — `convex` of them
@@ -409,4 +409,140 @@ fn every_edge_in_one_statement_names_the_vertex_of_both_turns() {
     for said in at.iter().chain(&["A chamfer of every edge at such a vertex is not said by the words yet"]) {
         assert!(why.contains(said), "{said}: {why}");
     }
+}
+
+/// A flange plate 80 × 68 × 10 on a rib `rib` (its `y` extent) drawn in the front plane, whose
+/// edge leaves the flange's end edge at `(−40, 0)` down to `(x1, −deep)` — `x1` past `−40` a slope
+/// under the flange, short of it an overhang — the flange's end and the slope met by `word`;
+/// `mirror` draws it all reflected across `x = 0` (the flange's other end).
+fn ribbed(x1: f64, deep: f64, rib: [f64; 2], word: &str, mirror: bool) -> String {
+    let s = if mirror { -1.0 } else { 1.0 };
+    let mut pts = [[-40.0, 0.0], [x1, -deep], [40.0, -deep], [40.0, 0.0]].map(|[u, v]| [s * u, v]);
+    let mut names = ["slope", "base", "back", "top"];
+    if mirror {
+        pts.reverse();
+        names = ["back", "base", "slope", "top"];
+    }
+    let points: String = pts.iter().enumerate()
+        .map(|(i, [u, v])| format!("  w{i} := point\n  fix(({u}, {v})) w{i}\n")).collect();
+    let lines: String = (0..4).map(|i| format!("  {} := line(w{i}, w{})\n", names[i], (i + 1) % 4)).collect();
+    format!("unit mm\nuse std\nuse std.solids\nuse std.solids (union)\nuse std.rounds (round, chamfer)\n\
+        in std.top {{\n  a := point\n  b := point\n  c := point\n  d := point\n  fix((-40, -34)) a\n\
+        \x20 fix((40, -34)) b\n  fix((40, 34)) c\n  fix((-40, 34)) d\n  s0 := line(a, b)\n  s1 := line(b, c)\n\
+        \x20 s2 := line(c, d)\n  s3 := line(d, a)\n  outline := face(s0, s1, s2, s3)\n}}\n\
+        flange := solid(std.solids.Prism(outline, from: 0mm, to: 10mm))\n\
+        in std.front {{\n{points}{lines}  wf := face(slope, base, back, top)\n}}\n\
+        rib := solid(std.solids.Prism(wf, from: {}mm, to: {}mm))\npart := solid(flange)\nrib union part\n\
+        sqend := part.flange.{} {word} part.rib.slope\n", rib[0], rib[1], if mirror { "s1" } else { "s3" })
+}
+
+/// **A round whose edge ends where its faces' neighbours meet in an edge of the other turn**
+/// (#996 item 4): a rib's sloped edge starting at a flange's end edge, the corner between the
+/// flange's end and the slope rounded or chamfered.  At each end of that edge the flange's
+/// underside meets the rib's side in a concave edge, and the underside's plane holds the rounded
+/// edge itself, past its end: it stands at no distance along the run and ends none of it, so the
+/// run ends square on the rib's side, its section whole — the flange's corner above the
+/// underside taken with the rib's below, a cap a few hundredths wide left on the side's plane
+/// where the flange goes on.  Read as a cut along the run (the underside's material side), the
+/// rib's part of the section was left and the flange's taken, and the two touched along a line
+/// at each end (convex), or the fill was halved (an overhang, concave).  The slope at 10° to 80°
+/// off the end's plane, overhanging 30° and 60° (a fill); round and chamfer; the round 6 and 12,
+/// as wide as the rib is thick; the rib flush with the flange's side, so one end is ordinary;
+/// mirrored: each the prism's closed form to 1e-9 and exported with no line or point it touches
+/// itself at.
+#[test]
+fn a_round_ending_where_a_rib_meets_a_flange_ends_square_on_the_ribs_side() {
+    // the flange, and the rib's trapezoid `deep` down from x = −40 to `x1` and up to x = 40
+    let body = |x1: f64, deep: f64, wide: f64| 80.0 * 68.0 * 10.0 + 0.5 * (80.0 + 40.0 - x1) * deep * wide;
+    // the section a round of `r` takes or fills at a corner of `t` on its side, and a chamfer of
+    // legs `d` each measured from the other face
+    let round = |t: f64, r: f64| r * r * (1.0 / (0.5 * t).tan() - 0.5 * (PI - t));
+    let flat = |t: f64, d: f64| 0.5 * d * d / t.sin();
+    let mut cases: Vec<(f64, f64, [f64; 2], &str, bool, f64)> = Vec::new();
+    for deg in [10.0_f64, 30.0, 45.0, 60.0, 80.0, -30.0, -60.0] {
+        let a = deg.to_radians();
+        let deep = if deg > 0.0 { (70.0 / a.tan()).min(60.0) } else { 60.0 };
+        let x1 = -40.0 + deep * a.tan();
+        // the material's angle at a slope, the void's at an overhang: each `π − |a|`
+        let (t, sign) = (PI - a.abs(), if deg > 0.0 { -1.0 } else { 1.0 });
+        cases.push((x1, deep, [-6.0, 6.0], "round(r: 1mm)", false, body(x1, deep, 12.0) + sign * 12.0 * round(t, 1.0)));
+        cases.push((x1, deep, [-6.0, 6.0], "chamfer(d: 1mm)", false, body(x1, deep, 12.0) + sign * 12.0 * flat(t, 1.0)));
+    }
+    // the issue's: the slope from (−40, 0) to (0, −60)
+    let t = PI - (2.0_f64 / 3.0).atan();
+    for (rib, wide) in [([-6.0, 6.0], 12.0), ([-6.0, 34.0], 40.0), ([-34.0, 6.0], 40.0)] {
+        cases.push((0.0, 60.0, rib, "round(r: 1mm)", false, body(0.0, 60.0, wide) - wide * round(t, 1.0)));
+    }
+    for r in [6.0, 12.0] {
+        cases.push((0.0, 60.0, [-6.0, 6.0], if r == 6.0 { "round(r: 6mm)" } else { "round(r: 12mm)" }, false,
+            body(0.0, 60.0, 12.0) - 12.0 * round(t, r)));
+    }
+    for word in ["round(r: 1mm)", "chamfer(d: 1mm)"] {
+        let taken = if word.starts_with("round") { round(t, 1.0) } else { flat(t, 1.0) };
+        cases.push((0.0, 60.0, [-6.0, 6.0], word, true, body(0.0, 60.0, 12.0) - 12.0 * taken));
+    }
+    // built and written as STEP, touching itself nowhere (at 10° the cap above the underside is
+    // the set's own, 3.8 µm wide, which the export warns of and writes)
+    for (x1, deep, rib, word, mirror, want) in cases {
+        let case = format!("{word} to ({x1}, -{deep}) over {rib:?}{}", if mirror { " mirrored" } else { "" });
+        eprintln!("{case}");
+        let e = solved(&ribbed(x1, deep, rib, word, mirror));
+        assert!(e.diags.is_empty(), "{:?}", e.diags);
+        let solid = exported(&e, "part");
+        assert!(solid.self_touching(1e-9).is_empty() && solid.pinches().is_empty(), "{case}");
+        let got = props::volume(&solid);
+        eprintln!("{case}: {got:.9} against {want:.9}");
+        close(got, want);
+    }
+}
+
+/// A recipe of a square plate 2 × 2 × 1 with a quarter cut from it by the body's own statement
+/// (`written`, none where empty) and quarters taken by rounds or chamfers (`late`, in order), each
+/// a box over `[x0, x1] × [y0, y1]` through the plate's thickness; the late terms said as a round.
+fn quartered(written: &[[f64; 4]], late: &[[f64; 4]]) -> gcs_core::brep::recipe::Recipe {
+    use gcs_core::brep::recipe::{Body, Edge, Named, Node, Recipe, Section, Stroke};
+    let square = |[x0, x1, y0, y1]: [f64; 4]| {
+        let p = [[x0, y0, 0.0], [x1, y0, 0.0], [x1, y1, 0.0], [x0, y1, 0.0]];
+        let edges = (0..4).map(|k| Edge { name: format!("s{k}"), shape: Stroke::Line { start: p[k], end: p[(k + 1) % 4] } });
+        Node::Prism { profile: Section { origin: [0.0; 3], normal: [0.0, 0.0, 1.0], loops: vec![edges.collect()] },
+            from: -0.5, to: 1.5, draft: None }
+    };
+    let mut nodes = vec![Named { id: 0, name: "plate".into(), said: None, node: match square([0.0, 2.0, 0.0, 2.0]) {
+        Node::Prism { profile, .. } => Node::Prism { profile, from: 0.0, to: 1.0, draft: None },
+        _ => unreachable!(),
+    } }];
+    let mut body = Body { stock: 0, ..Default::default() };
+    for (k, &q) in written.iter().chain(late).enumerate() {
+        let id = 1 + k as i64;
+        let late = k >= written.len();
+        nodes.push(Named { id, name: format!("q{k}"), node: square(q),
+            said: late.then(|| format!("`part`'s round or chamfer `r{k}.taken`")) });
+        if late { body.cut_late.push(id) } else { body.cut.push(id) }
+    }
+    let root = 1 + (written.len() + late.len()) as i64;
+    nodes.push(Named { id: root, name: "part".into(), said: None, node: Node::Body(body) });
+    Recipe { root, nodes }
+}
+
+/// **No round or chamfer leaves the body touching itself alone** (#996 item 4): a round whose
+/// material, read off the body, meets only the body's own along a line — here a late term taking
+/// the quarter of a plate diagonal to one the body's own cut took, so the two quarters left touch
+/// along the plate's middle line — is refused where it is applied, by its name and the line, not
+/// built and handed on to a `--where`, a later round or an export.  Two rounds whose materials
+/// meet so (the two quarters taken by two late terms, as rounds of separate statements reading
+/// the body before each other at a vertex of both turns) are built still, the line held twice,
+/// and said by the export.
+#[test]
+fn a_round_alone_touching_the_body_along_a_line_is_refused_by_its_name() {
+    let (a, b) = ([1.0, 3.0, -1.0, 1.0], [-1.0, 1.0, 1.0, 3.0]);
+    let why = gcs_core::brep::recipe::build(&quartered(&[a], &[b])).expect_err("a round alone touching the body");
+    assert!(why.contains("`part`'s round or chamfer `r1.taken`") && why.contains("touching itself along a line")
+        && why.contains("[1.0000, 1.0000,"), "{why}");
+    let built = gcs_core::brep::recipe::build(&quartered(&[], &[a, b])).expect("two rounds meeting");
+    assert!(!built.self_touching(1e-9).is_empty());
+    close(props::volume(&built), 2.0);
+    // the body's own cuts alone leave what they leave, and a late term touching nothing new builds
+    assert!(gcs_core::brep::recipe::build(&quartered(&[a, b], &[])).is_ok());
+    let clear = gcs_core::brep::recipe::build(&quartered(&[a], &[[-1.0, 0.5, 1.5, 3.0]])).expect("a round clear of the line");
+    assert!(clear.self_touching(1e-9).is_empty());
 }

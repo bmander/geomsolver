@@ -13,7 +13,7 @@
 use super::boolean::overlap;
 use super::geom::{include,widen,Box3,Curve,Frame,Rigid,Surface,EMPTY,V};
 use super::topo::{Brep,EdgeCurve,Face,Pcurve};
-use crate::util::space::{add,cross,dot,norm,scale,sub};
+use crate::util::space::{add,cross,distance,dot,norm,scale,sub};
 use std::collections::{BTreeMap,BTreeSet};
 
 /// How many of a Boolean's tolerances (`geom::tolerance_over`, a part in 10⁹ of the solids' size)
@@ -148,6 +148,127 @@ fn moved_along(b: &Brep,group: &[usize],delta: V,tol: f64) -> Option<Brep> {
                 Pcurve::Curve(_) if own.contains(&c.edge) => Pcurve::Inverse {a,b:z},
                 _ => Pcurve::Line {a,b:z},
             };
+        }
+    }
+    Some(out)
+}
+
+/// **A tube all but tangent to another at a seam is on it** (#996): the solid and the operand of
+/// a body's Boolean, where a cylinder of one ends in a circle concentric with and in the plane of a
+/// circle of the other — a leg standing on a turn's cap, the turn's tube a hair wider or narrower
+/// than the leg — whose radii differ at all but by no more than `FLUSH` of the Boolean's
+/// tolerances (a part in a million of their size, as an end all but flush with a plane is,
+/// `flushed`), with that cylinder moved onto the other's radius: exactly, the cylinder's surface, its circles
+/// and its seam carried out or in square to its axis, its ends' planes left where they are. The
+/// operand's cylinders first, onto any circle of the solid's; then the solid's, onto a circle of
+/// the operand's that is no cylinder's (a turn's rim). Between the tolerance and that reach the
+/// arrangement's readings of the seam — a point onto a vertex within the tolerance, a vertex onto
+/// an edge and an edge onto an edge within eight of it, a strip's inside, a pole's parameter —
+/// part the two circles in one place and take them for one in another, and the solid came out
+/// refused one way or another for one near-miss in three; moved onto it, the seam is the tangent
+/// one, which every reading agrees on. A cylinder whose ends meet anything but planes square to
+/// its axis, or whose circles ask for two radii, is left as drawn. `None` for each left whole.
+pub fn tubes_flushed(solid: &Brep,operand: &Brep,tol: f64) -> (Option<Brep>,Option<Brep>) {
+    let reach = FLUSH*tol;
+    // each circle edge of a boundary: its centre, its normal, its radius, and whether a cylinder
+    // of the boundary is bounded by it
+    let circles = |b: &Brep| -> Vec<(V,V,f64,bool)> {
+        b.edges.iter().enumerate().filter_map(|(ei,e)| match &e.curve {
+            EdgeCurve::Curve(Curve::Circle(f,r)) => {
+                let on_tube = b.faces.iter().any(|g| matches!(g.surface,Surface::Cylinder(..))
+                    && g.loops.iter().flatten().any(|c| c.edge as usize == ei));
+                Some((f.o,f.z,r.abs(),on_tube))
+            }
+            _ => None,
+        }).collect()
+    };
+    // the radius a cylinder face of `b` is asked to take by `others`' circles, where every ask agrees
+    let asked = |b: &Brep,fi: usize,others: &[(V,V,f64,bool)],tubes_too: bool| -> Option<f64> {
+        let Surface::Cylinder(g,r) = b.faces[fi].surface else { return None };
+        let mut want: Option<f64> = None;
+        for c in b.faces[fi].loops.iter().flatten() {
+            let EdgeCurve::Curve(Curve::Circle(f,_)) = &b.edges[c.edge as usize].curve else { continue };
+            for &(o,n,rr,tube) in others {
+                if tube && !tubes_too { continue }
+                if norm(cross(n,g.z)) > ALONG || distance(o,f.o) > tol { continue }
+                // (two circles of one radius to the last bits are one already; one a hair apart,
+                // however little, has poles and crossings a hair apart that the readings split)
+                let d = (rr-r.abs()).abs();
+                if !(d > 1e-12*rr && d <= reach) { continue }
+                match want {
+                    None => want = Some(rr),
+                    Some(w) if (w-rr).abs() <= tol => {}
+                    Some(_) => return None,
+                }
+            }
+        }
+        want
+    };
+    let mut moved_operand: Option<Brep> = None;
+    let theirs = circles(solid);
+    for fi in 0..operand.faces.len() {
+        let b = moved_operand.as_ref().unwrap_or(operand);
+        let Some(r) = asked(b,fi,&theirs,true) else { continue };
+        if let Some(m) = reradiused(b,fi,r,tol) { moved_operand = Some(m); }
+    }
+    let mut moved_solid: Option<Brep> = None;
+    let theirs = circles(moved_operand.as_ref().unwrap_or(operand));
+    for fi in 0..solid.faces.len() {
+        let b = moved_solid.as_ref().unwrap_or(solid);
+        let Some(r) = asked(b,fi,&theirs,false) else { continue };
+        if let Some(m) = reradiused(b,fi,r,tol) { moved_solid = Some(m); }
+    }
+    (moved_solid,moved_operand)
+}
+
+/// `b` with its cylinder face `fi` of radius `r`: the surface, its circles about its axis and its
+/// seam lines along it carried square to the axis, their vertices with them, the planes square to
+/// the axis its edges bound read anew; `None` where an edge of the face is anything else, a face
+/// beside it is no such plane, or another edge reaches one of its vertices.
+fn reradiused(b: &Brep,fi: usize,r: f64,tol: f64) -> Option<Brep> {
+    let Surface::Cylinder(g,old) = b.faces[fi].surface else { return None };
+    let k = r/old.abs();
+    let on_axis = |p: V| add(g.o,scale(g.z,dot(sub(p,g.o),g.z)));
+    let carried = |p: V| { let a = on_axis(p); add(a,scale(sub(p,a),k)) };
+    let own: BTreeSet<u32> = b.faces[fi].loops.iter().flatten().map(|c| c.edge).collect();
+    for &e in &own {
+        match &b.edges[e as usize].curve {
+            EdgeCurve::Curve(Curve::Circle(f,_)) if norm(cross(f.z,g.z)) <= ALONG && distance(on_axis(f.o),f.o) <= tol => {}
+            EdgeCurve::Curve(Curve::Line {d,..}) if norm(cross(*d,g.z)) <= ALONG*norm(*d) => {}
+            _ => return None,
+        }
+    }
+    let corners: BTreeSet<u32> = own.iter().flat_map(|&e| b.edges[e as usize].v).collect();
+    if b.edges.iter().enumerate().any(|(ei,e)| !own.contains(&(ei as u32)) && e.v.iter().any(|v| corners.contains(v))) { return None }
+    let beside: Vec<usize> = (0..b.faces.len()).filter(|&h| h != fi && b.faces[h].loops.iter().flatten().any(|c| own.contains(&c.edge))).collect();
+    for &h in &beside {
+        match b.faces[h].surface {
+            Surface::Plane(p) if norm(cross(p.z,g.z)) <= ALONG => {}
+            _ => return None,
+        }
+    }
+    let mut out = b.clone();
+    out.faces[fi].surface = Surface::Cylinder(g,old.signum()*r);
+    for &e in &own {
+        let edge = &mut out.edges[e as usize];
+        edge.curve = match &b.edges[e as usize].curve {
+            EdgeCurve::Curve(Curve::Circle(f,rr)) => EdgeCurve::Curve(Curve::Circle(*f,rr*k)),
+            EdgeCurve::Curve(Curve::Line {p,d}) => EdgeCurve::Curve(Curve::Line {p:carried(*p),d:*d}),
+            other => other.clone(),
+        };
+    }
+    for &v in &corners { out.vertices[v as usize].p = carried(b.vertices[v as usize].p); }
+    // each plane's uses of the edges carried: the plane's own coordinates of their ends
+    for &h in &beside {
+        let Surface::Plane(p) = out.faces[h].surface else { continue };
+        let uv = |x: V| { let l = p.local(x); [l[0],l[1]] };
+        let edges = out.edges.clone();
+        let vertices = out.vertices.clone();
+        for c in out.faces[h].loops.iter_mut().flatten() {
+            if !own.contains(&c.edge) { continue }
+            let e = &edges[c.edge as usize];
+            let ends = [0,1].map(|j| uv(e.point(e.t[j],&vertices)));
+            c.pcurve = Pcurve::Inverse {a:ends[0],b:ends[1]};
         }
     }
     Some(out)

@@ -16,12 +16,12 @@
 //! missed, which is marching's known limit (its remedy, loop detection, is not attempted).
 use super::{MaterialField,Query,Reading,Symmetry};
 pub use super::OperandId;
-use crate::space::{distance,segment_distance};
+use crate::space::distance;
 mod graph;
 mod trace;
 pub use graph::features;
 use trace::{pin,trace};
-use graph::split;
+use graph::{split,Segments};
 
 type P = [f64;3];
 
@@ -94,6 +94,10 @@ pub enum End {
     Budget,
     /// It walked onto crease `n` of those already traced, at a point of it.
     Met(usize),
+    /// It walked back onto its own path, at a point of it (#996): a crease it was handed on to
+    /// runs round a loop its start is not on, and following it further would go round again until
+    /// the point budget ran out.
+    Looped,
 }
 
 /// About how many of a first pass's vertices a symmetry is checked at (`MaterialField::symmetries`).
@@ -133,29 +137,40 @@ pub fn creases<S: CreaseSource + ?Sized>(field: &S,seeds: &[(P,[OperandId;2])],o
 pub(super) fn creases_under<S: CreaseSource + ?Sized>(field: &S,seeds: &[(P,[OperandId;2])],options: &CreaseOptions,maps: &[Symmetry])
     -> Vec<Crease> {
     let mut out: Vec<Crease> = Vec::new();
-    let near = |out: &[Crease],p: P,within: f64| out.iter().any(|c| c.points.len() == 1 && distance(p,c.points[0]) < within
-        || c.points.windows(2).any(|w| segment_distance(p,w[0],w[1]) < within));
+    // the segments traced so far by where they lie, read by every question below of what is near
+    // a point (#996): asked of every segment, those questions made tracing quadratic in the creases'
+    // length
+    let mut index = Segments::new(options.step);
+    let near = |out: &[Crease],index: &Segments,p: P,within: f64|
+        out.iter().any(|c| c.points.len() == 1 && distance(p,c.points[0]) < within) || index.any_within(out,p,within);
     for &(p,ops) in seeds {
         // a seed on a crease already traced needs no pinning
-        if near(&out,p,0.5*options.step) { continue; }
+        if near(&out,&index,p,0.5*options.step) { continue; }
         let Some((q,..)) = pin(field,p,&mut ops.clone(),options.tolerance,options.step) else { continue };
-        if near(&out,q,0.25*options.step) { continue; }
-        let Some(c) = trace(field,q,ops,options,&out) else { continue };
+        if near(&out,&index,q,0.25*options.step) { continue; }
+        let Some(c) = trace(field,q,ops,options,&out,&index) else { continue };
         if c.points.len() < 2 { continue; }
         // A trace that ended on another crease's middle splits that crease there, so the two share
         // a corner rather than one ending beside the other.
         for (e,at) in [(c.ends[0],c.points[0]),(c.ends[1],*c.points.last().unwrap())] {
-            if let End::Met(k) = e { split(&mut out,k,at); }
+            if let End::Met(k) = e {
+                let n = out.len();
+                index.remove(k,&out[k]);
+                split(&mut out,k,at);
+                index.add(k,&out[k]);
+                if out.len() > n { index.add(n,&out[n]); }
+            }
         }
         // (an image keeps the original's operands and ends, a `Met` naming the crease it met)
         let images: Vec<Crease> = maps.iter().map(|m| Crease {points:c.points.iter().map(|&x| m.apply(x)).collect(),..c.clone()}).collect();
+        index.add(out.len(),&c);
         out.push(c);
         // An image lying on a crease already there (a crease its own image: a ring about the axis)
         // is not added again; T-junctions an image makes are `junctions`' to resolve.
         for image in images {
             let n = image.points.len();
-            let there = [n/4,n/2,3*n/4].iter().all(|&k| near(&out,image.points[k],0.25*options.step));
-            if !there { out.push(image); }
+            let there = [n/4,n/2,3*n/4].iter().all(|&k| near(&out,&index,image.points[k],0.25*options.step));
+            if !there { index.add(out.len(),&image); out.push(image); }
         }
     }
     out

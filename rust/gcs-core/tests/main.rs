@@ -327,6 +327,7 @@ mod step;
 mod step_assembly;
 mod step_curves;
 mod stock;
+mod strata;
 mod style;
 mod sundial;
 mod surface_contact;

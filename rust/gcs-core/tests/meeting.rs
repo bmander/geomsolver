@@ -408,3 +408,47 @@ fn two_surfaces_crossing_at_a_fiftieth_of_a_degree_are_met_in_their_closed_form(
     let gap = angles.windows(2).map(|w| w[1]-w[0]).fold(TAU-(angles[angles.len()-1]-angles[0]),f64::max);
     assert!(gap <= 0.05,"the circle not whole: a gap of {gap} rad");
 }
+
+/// **A cylinder touching a quadric or a torus from outside, its axis crossing the other's
+/// straight ways, touches it at one point alone** (#996 §3): the meeting a rim's round has with a
+/// blend whose foot it crosses. A cylinder of each radius 0.5, 2 and 8 laid on a cylinder, a
+/// cone, a ball and a torus at a point of its outside, its axis along the other's parallel there
+/// (square across a cylinder's or a cone's rulings, the rim's round on the blend) and turned 30°
+/// and 60° from it: no branch, and one touch, at that point — the search for what no seed reaches
+/// passing it (`meeting::meet_with`, `ssi::alone_over`), which found it, traced nothing from it and
+/// refused the meeting, "a cylinder and a cone meet at … in a curve that could not be traced".
+#[test]
+fn a_cylinder_laid_across_a_surface_from_outside_touches_it_at_one_point_alone() {
+    let mut failed: Vec<String> = Vec::new();
+    let others: Vec<(&str,Surface,[[f64;2];2],[f64;2])> = vec![
+        ("a cylinder",Surface::Cylinder(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),8.),[[0.,TAU],[-6.,6.]],[0.3,0.5]),
+        ("a cone",Surface::Cone(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),4.,0.3),[[0.,TAU],[-3.,3.]],[0.3,0.5]),
+        ("a ball",Surface::Sphere(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),6.),[[0.,TAU],[-1.5,1.5]],[0.3,0.2]),
+        ("a torus",Surface::Torus(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),10.,3.),[[0.,TAU],[0.,TAU]],[0.3,0.1]),
+    ];
+    for (what,b,db,uv) in &others {
+        let q = b.point(*uv);
+        let n = unit(b.gradient(q));
+        // the other's parallel there
+        let (_,su,_) = b.d1(*uv);
+        let e1 = unit(su);
+        let e2 = cross(n,e1);
+        for r in [0.5,2.,8.] { for turn in [0f64,30.,60.] {
+            let (sn,cs) = turn.to_radians().sin_cos();
+            let axis = [e1[0]*cs+e2[0]*sn,e1[1]*cs+e2[1]*sn,e1[2]*cs+e2[2]*sn];
+            let o = [q[0]+r*n[0],q[1]+r*n[1],q[2]+r*n[2]];
+            let a = Surface::Cylinder(Frame::new(o,axis,cross(axis,n)),r);
+            let case = format!("radius {r} on {what}, turned {turn}°");
+            match meet(&a,[[0.,TAU],[-3.,3.]],b,*db,1e-7) {
+                Err(e) => failed.push(format!("{case}: {e}")),
+                Ok(m) => {
+                    let touches: Vec<V> = m.singular.iter().filter(|s| s.kind == Singular::Touch).map(|s| s.at).collect();
+                    if !m.branches.is_empty() || touches.len() != 1 || distance(touches[0],q) > 1e-6 {
+                        failed.push(format!("{case}: {} branches, touches {touches:?}, not one at {q:?}",m.branches.len()))
+                    }
+                }
+            }
+        } }
+    }
+    assert!(failed.is_empty(),"{}",failed.join("\n"));
+}
