@@ -1,0 +1,102 @@
+Only in mass: Cargo.lock
+diff -ru '--exclude=target' mass.orig/src/main.rs mass/src/main.rs
+--- mass.orig/src/main.rs	2026-11-22 01:45:05.516010001 +0000
++++ mass/src/main.rs	2026-11-22 01:52:06.286380671 +0000
+@@ -208,6 +208,20 @@
+     sense: bool,
+ }
+ 
++/// Whether each face is measured and said on its own (MASS_FACES): a face that cannot be measured
++/// is said with its reason, and the faces after it are measured all the same.
++fn each_face() -> bool {
++    std::env::var_os("MASS_FACES").is_some()
++}
++
++/// Why a face could not be measured, in a word.
++fn why(e: &Err) -> String {
++    match e {
++        Err::Unsupported(s) | Err::Invalid(s) => s.clone(),
++        Err::Py(k, s) | Err::Uncaught(k, s) => format!("{}: {}", k, s),
++    }
++}
++
+ /// The centre of gravity and the inertia tensor about it, of unit density, from a solid's
+ /// volume and its first and second moments about `origin` (harness/stl.py's `about_centroid`).
+ fn about_centroid(
+@@ -298,7 +312,7 @@
+         let mut out = Vec::with_capacity(n);
+         for (s, loops, same) in jobs {
+             let got = Face::measure(s, loops, same, centre, scale, out.len(), &failed);
+-            let stop = got.is_err();
++            let stop = got.is_err() && !each_face();
+             out.push(Some(got));
+             if stop {
+                 break;
+@@ -354,6 +368,7 @@
+     let (mut centre, mut scale) = bounding(&m)?;
+     // each face's loops on its surface first
+     let mut found: Vec<Found> = Vec::with_capacity(faces.len());
++    let mut unmeasured = Vec::new();
+     for (f, sense) in &faces {
+         let fa = m.one(f)?;
+         let (s, same);
+@@ -384,7 +399,14 @@
+         } else {
+             return unsupported(format!("a face {}", fa.named()));
+         }
+-        let loops = face_loops(&m, f, &s, scale).map_err(|e| of_face(e, f))?;
++        let loops = match face_loops(&m, f, &s, scale) {
++            Ok(loops) => loops,
++            Err(e) if each_face() => {
++                unmeasured.push(Json::List(vec![Json::Str(f.str()), Json::Str(why(&e))]));
++                continue;
++            }
++            Err(e) => return Err(of_face(e, f)),
++        };
+         found.push(Found {
+             f: f.clone(),
+             s,
+@@ -427,13 +449,29 @@
+     let mut totals = [[0.0; NM]; 3];
+     let mut failed: [Option<String>; 3] = [None, None, None];
+     let mut by_seam = false;
++    // each face's own area as the standard reads its loops (MASS_FACES): a second reader's,
++    // face by face, for the STEP corpus of geomsolver's reader
++    let mut each = Vec::new();
+     for ((f, sense), got) in names.iter().zip(measured) {
+         let (standard, other, seamed) = match got {
+             Some(Ok(parts)) => parts,
++            Some(Err(e)) if each_face() => {
++                each.push(Json::List(vec![Json::Str(f.str()), Json::Str(why(&e))]));
++                failed[0].get_or_insert_with(|| format!("face #{}: {}", f.str(), why(&e)));
++                continue;
++            }
+             Some(Err(e)) => return Err(of_face(e, f)),
++            None if each_face() => continue,
+             None => unreachable!("a face left unmeasured before any failed"),
+         };
+         let sign = if *sense { 1.0 } else { -1.0 };
++        each.push(Json::List(vec![
++            Json::Str(f.str()),
++            match &standard {
++                Ok(part) => Json::Num(part[1]),
++                Err(why) => Json::Str(why.clone()),
++            },
++        ]));
+         let other = other.unwrap_or_else(|| standard.clone());
+         by_seam |= seamed.is_some();
+         let seamed = seamed.unwrap_or_else(|| standard.clone());
+@@ -456,6 +494,13 @@
+     }
+     let nfaces = faces.len();
+     let mut out = props(&totals[0], failed[0].as_ref(), centre, nsolids, nfaces);
++    if each_face() {
++        if !unmeasured.is_empty() {
++            out = vec![("error", Json::Str("cannot measure: a face's loops".into()))];
++        }
++        each.extend(unmeasured);
++        out.push(("face_areas", Json::List(each)));
++    }
+     if against {
+         out.push((
+             "by_surface",
