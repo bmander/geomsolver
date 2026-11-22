@@ -191,11 +191,23 @@ impl Sketch {
         })
     }
 
+    /// **`read` with the drawing held still** (#994, `Caches::held`): for as long as it runs this
+    /// sketch is borrowed shared, so nothing a key reads can change, and each solid's key and each
+    /// body's stratum is worked out once for the whole reading, whoever asks — every region of a
+    /// body rounded all over reads that body's.  Readings nest; the outermost forgets what it held.
+    /// What loops over the solids opens one (`solid_diagnostics`, an elaboration's reading of the
+    /// faces), as does each evaluation and build.
+    pub fn held<T>(&self, read: impl FnOnce() -> T) -> T {
+        let _holding = self.caches.held.open();
+        read()
+    }
+
     /// Validate and evaluate the current pose with an explicit approximation policy.
     /// Different policies coexist; changed geometry/placement discards all old policies.
     pub fn evaluated_solid(
         &self, i: usize, policy: crate::solid::ApproximationPolicy,
     ) -> Result<std::rc::Rc<crate::solid::EvaluatedSolid>, String> {
+        let _holding = self.caches.held.open();
         let (policy, slot) = self.solid_slot(i, policy);
         // one of a binding's solids its representative's evaluation placed (#566); a refusal of
         // the representative's is asked of this one, so it names its own solid — and a mirrored
@@ -240,6 +252,7 @@ impl Sketch {
     /// every frame.
     pub fn built_solid(&self, i: usize, policy: crate::solid::ApproximationPolicy)
         -> Option<Result<std::rc::Rc<crate::solid::EvaluatedSolid>, String>> {
+        let _holding = self.caches.held.open();
         let (policy, slot) = self.solid_slot(i, policy);
         // one of a binding's placed copies is built wherever its representative is (#566), a
         // mirrored one wherever its own is (#578)
@@ -320,6 +333,7 @@ impl Sketch {
     /// `exact_solid` (`mirrored`) or `exact_preimage`.
     fn exact_placed(&self, i: usize, mirrored: bool)
         -> Result<std::rc::Rc<crate::solid::Exact>, String> {
+        let _holding = self.caches.held.open();
         for b in self.bound(i).into_iter().flat_map(|b| b.tried(i)) {
             // an unmirrored solid's preimage is the solid itself
             let mirrored = mirrored && b.mirror.is_some();

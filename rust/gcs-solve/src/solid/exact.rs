@@ -77,6 +77,8 @@ impl Exact {
 /// Solid `si`'s exact B-rep, or why this kernel does not build it (no length unit, a sweep, a
 /// recipe node it refuses) — a caller then evaluates the facet term instead.
 pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
+    let _holding = sk.caches.held.open();
+    crate::progress::made(crate::progress::Made::Built, || sk.solids[si].name.clone());
     let mm = cad::millimetres(sk);
     let origin = frame_origin(sk, si, REPORT_UNIT);
     let recipe = cad::recipe_about(sk, si, origin.map(|x| x * mm))?;

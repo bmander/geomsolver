@@ -25,7 +25,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// that pose (`elaborate`, `stand`).  Empty where nothing was read so, where the solve
 /// does not settle — a pose it stopped at is no answer to read faces at (#571) — or where every
 /// condition comes out there as it did: the elaboration stands as it is.
-pub(super) fn at_solve(e: &Elaborated) -> Stood {
+pub(super) fn at_solve(e: &mut Elaborated) -> Stood {
     // a solid a `when` could not read where the drawing is seeded is read again where it solves,
     // though that pass refused the block (#948), where such refusals are all it refused
     let unread = !e.map.unread.is_empty()
@@ -35,9 +35,14 @@ pub(super) fn at_solve(e: &Elaborated) -> Stood {
         return Stood::new();
     }
     let mut sk = e.sketch.clone();
-    if !crate::solve::solve(&mut sk, crate::solve::SolveOpts::default()).settled()
-        || !unread && read_again(&sk, &e.map).is_empty()
-    {
+    if !crate::solve::solve(&mut sk, crate::solve::SolveOpts::default()).settled() {
+        return Stood::new();
+    }
+    let again = unread || !read_again(&sk, &e.map).is_empty();
+    // what reading the solids where the drawing solves built is the drawing's to start from: each
+    // entry is keyed by everything it read, and that pose is where a front end solves it (#994)
+    e.sketch.caches = sk.caches.carried();
+    if !again {
         return Stood::new();
     }
     e.map.keys().map(|(k, x)| (k.clone(), own_values(&sk, x))).collect()
@@ -46,6 +51,11 @@ pub(super) fn at_solve(e: &Elaborated) -> Stood {
 /// Both checks where the drawing stands in `sk`, each solid they name read once: which of its
 /// faces meet where a pair was read of it, how each lies where a face was read along a direction.
 pub(super) fn read_again(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
+    sk.held(|| read_held(sk, map))
+}
+
+/// `read_again` within a reading held still (#994).
+fn read_held(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
     let reads = map.along.iter().flat_map(|w| &w.reads);
     let meets: BTreeSet<&str> = map.apart.iter().map(|a| a.solid.as_str())
         .chain(map.pruned.iter().map(|p| p.solid.as_str()))
@@ -75,6 +85,11 @@ pub(super) fn read_again(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
 /// naming what it looked at and why.  Never where a pair meets in an edge, where the boundary
 /// cannot say of a face, nor at a statement `said` already (`read_again`'s E080).
 pub(super) fn unmade(sk: &Sketch, map: &SourceMap, said: &[Diag]) -> Vec<Diag> {
+    sk.held(|| unmade_held(sk, map, said))
+}
+
+/// `unmade` within a reading held still (#994).
+fn unmade_held(sk: &Sketch, map: &SourceMap, said: &[Diag]) -> Vec<Diag> {
     use crate::solid::faces::{FacePath, ListedFaces, Meeting};
     // each solid's layers and faces read once, and each of its layers' listed faces once
     let mut bodies: BTreeMap<usize, (Layers, Vec<FacePath>)> = BTreeMap::new();

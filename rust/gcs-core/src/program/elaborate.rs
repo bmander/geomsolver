@@ -91,6 +91,7 @@ pub(super) fn elaborate_in(
     faces_settled: bool,
     pose: &super::Stood,
     placing: &views::PlaceMemo,
+    carried: &std::cell::RefCell<crate::model::Caches>,
 ) -> Result<Elaborated, Again> {
     let mut cx = Elab {
         doc: p,
@@ -104,6 +105,8 @@ pub(super) fn elaborate_in(
         witnesses: BTreeMap::new(),
         placing,
     };
+    // what the pass before built of its solids, each entry keyed by all it read (#994)
+    cx.sk.caches = carried.borrow().carried();
     unit(&mut cx);
     check_text(&mut cx);
     let expansion = expand(&mut cx, refused, named);
@@ -160,7 +163,11 @@ pub(super) fn elaborate_in(
     super::rounds::rounds(&mut cx, &flat.body, &deferred, &held);
     twins(&mut cx, &flat);
     place_planes(&mut cx, &deferred, &held, settled);
-    solids_and_surfaces(&mut cx, &flat, named, faces_settled, pose, &generated, &held_in_space)?;
+    let made = solids_and_surfaces(&mut cx, &flat, named, faces_settled, pose, &generated,
+                                   &held_in_space);
+    // the solids built to name their faces are the next pass's to start from (#994)
+    *carried.borrow_mut() = cx.sk.caches.carried();
+    made?;
     expressions(&mut cx, &flat, &on_followed);
     regions_read(&mut cx, &flat, &after_solids);
     // what nothing seeded, once every seed is in: the seeds say no side of it (#904 A13)
@@ -929,17 +936,19 @@ fn solids_and_surfaces(
     // the faces of the solids a block runs over, named for the next pass (#183 F4)
     // (named again too where its rounds have come to stand in other layers, #879: which faces
     // meet is read in the layer a round stands in)
-    let unnamed: Vec<(String, Vec<_>, crate::solid::faces::Layers)> = flat.expansion
+    // each read held still (#994): a body's stratum and each solid's key worked out once
+    let read: &crate::model::Sketch = sk;
+    let unnamed: Vec<(String, Vec<_>, crate::solid::faces::Layers)> = read.held(|| flat.expansion
         .face_repeats.iter()
         .filter(|abs| !(settled && named.faces.contains_key(*abs)))
         .filter_map(|abs| {
-            res.of.get(abs).filter(|e| e.kind == EntKind::Solid && e.i() < sk.solids.len())
-                .map(|e| (abs.clone(), crate::solid::faces::face_paths(sk, e.i()),
-                          crate::solid::faces::Layers::of(sk, e.i())))
+            res.of.get(abs).filter(|e| e.kind == EntKind::Solid && e.i() < read.solids.len())
+                .map(|e| (abs.clone(), crate::solid::faces::face_paths(read, e.i()),
+                          crate::solid::faces::Layers::of(read, e.i())))
         })
         .filter(|(abs, now, layers)| !named.faces.get(abs)
             .is_some_and(|l| &l.paths == now && l.layers.same_uses(layers)))
-        .collect();
+        .collect());
     // and each direction a `when` held a face against and was not given (#763), or was before
     // the faces were cleared to be named at another pose: read with them
     let wanted: BTreeSet<&String> = flat.expansion.directions_wanted.iter().chain(&named.asked)
@@ -950,12 +959,13 @@ fn solids_and_surfaces(
     // again where it is solved (`program::at_solve`)
     let stood = !unnamed.is_empty() || !wanted.is_empty();
     let was = if stood { super::stand(sk, map, pose) } else { Vec::new() };
-    let unnamed: BTreeMap<String, Listed> = unnamed.into_iter()
+    let stood: &crate::model::Sketch = sk;
+    let unnamed: BTreeMap<String, Listed> = stood.held(|| unnamed.into_iter()
         .map(|(abs, paths, layers)| {
-            let read = crate::solid::faces::Layered::read(sk, &layers, &paths);
+            let read = crate::solid::faces::Layered::read(stood, &layers, &paths);
             (abs, Listed { paths, layers, read })
         })
-        .collect();
+        .collect());
     let drawn: Directions = wanted.into_iter().filter_map(|name| {
         Some((name.clone(), super::at_solve::direction(sk, |n| res.of.get(n).copied(), name)?))
     }).collect();

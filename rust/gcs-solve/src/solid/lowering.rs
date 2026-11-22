@@ -507,6 +507,7 @@ pub fn lowered(sk: &Sketch, solid: usize) -> Option<Result<Rc<Vec<Piece>>, Strin
     };
     let key = super::MemoKey::own(sk, solid, vec![body.clone()]);
     Some(sk.caches.lowering.get_or(solid, key, || {
+        crate::progress::made(crate::progress::Made::Lowered, || sk.solids[solid].name.clone());
         let spill = seams_beside(&body, &faces, section);
         piece::build(&body, &faces, section, &spill, sk.units)
     }.and_then(|pieces| {

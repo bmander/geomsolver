@@ -45,6 +45,100 @@ pub(crate) fn cap_zoom<V>(cache: &mut BTreeMap<(usize, (u8, u64)), V>, i: usize)
     }
 }
 
+/// **What a reading of the drawing held still remembers** (`Sketch::held`, #994): for as long as
+/// a reader holds the sketch shared and has said so, nothing any key reads can change — every
+/// number, entity and solid it walks is a plain field, written only through `&mut Sketch`, which
+/// that borrow excludes — so the key of each solid (`MemoKey::at`) and each body's stratum
+/// (`faces::cached`) is worked out once for the reading and handed back by identity to every
+/// later asker, rather than walked again by each: a body rounded all over is asked both by every
+/// region of every edge and corner, each walk as long as the body.  Forgotten when the outermost
+/// reading ends, and never copied: a clone (one a reading changes to read a stratum, `without`)
+/// starts with nothing held, and is held still by none.
+#[derive(Debug, Default)]
+pub struct Held {
+    /// How many readings are open, one within another.
+    depth: std::cell::Cell<usize>,
+    /// Each solid's key, by solid and the bits of the unit it was read at.
+    keys: RefCell<BTreeMap<(usize, u64), crate::solid::MemoKey>>,
+    /// Each body's stratum (`faces::cached`), by body.
+    #[allow(clippy::type_complexity)]
+    strata: RefCell<BTreeMap<usize, Result<std::sync::Arc<crate::solid::faces::BodyFaces>,
+                                            String>>>,
+    /// How many keys were walked while held (`Held::walked`): what a test counts.
+    walked: std::cell::Cell<usize>,
+}
+
+impl Clone for Held {
+    fn clone(&self) -> Held {
+        Held::default()
+    }
+}
+
+/// Ends a reading held still, however the reading ended: the outermost forgets what it held.
+pub(crate) struct Holding<'a>(&'a Held);
+
+impl Drop for Holding<'_> {
+    fn drop(&mut self) {
+        let depth = self.0.depth.get().saturating_sub(1);
+        self.0.depth.set(depth);
+        if depth == 0 {
+            self.0.keys.borrow_mut().clear();
+            self.0.strata.borrow_mut().clear();
+        }
+    }
+}
+
+impl Held {
+    /// Open a reading; it ends when what is returned is dropped.
+    pub(crate) fn open(&self) -> Holding<'_> {
+        self.depth.set(self.depth.get() + 1);
+        Holding(self)
+    }
+
+    /// Whether a reading is open.
+    pub fn holding(&self) -> bool {
+        self.depth.get() > 0
+    }
+
+    /// Solid `si`'s key at `unit`: the one held, else `walk`'s, held where a reading is open.
+    pub(crate) fn key(&self, si: usize, unit: f64, walk: impl FnOnce() -> crate::solid::MemoKey)
+        -> crate::solid::MemoKey {
+        if !self.holding() {
+            return walk();
+        }
+        if let Some(k) = self.keys.borrow().get(&(si, unit.to_bits())) {
+            return k.clone();
+        }
+        let k = walk();
+        self.walked.set(self.walked.get() + 1);
+        self.keys.borrow_mut().insert((si, unit.to_bits()), k.clone());
+        k
+    }
+
+    /// Body `body`'s stratum: the one held, else `read`'s, held where a reading is open.  `read`
+    /// may ask for other bodies' strata: nothing is borrowed while it runs.
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn stratum(&self, body: usize,
+        read: impl FnOnce() -> Result<std::sync::Arc<crate::solid::faces::BodyFaces>, String>)
+        -> Result<std::sync::Arc<crate::solid::faces::BodyFaces>, String> {
+        if !self.holding() {
+            return read();
+        }
+        if let Some(s) = self.strata.borrow().get(&body) {
+            return s.clone();
+        }
+        let s = read();
+        self.walked.set(self.walked.get() + 1);
+        self.strata.borrow_mut().insert(body, s.clone());
+        s
+    }
+
+    /// How many keys and strata were worked out while held, since the sketch was made.
+    pub fn walked(&self) -> usize {
+        self.walked.get()
+    }
+}
+
 /// **The sketch's memos**: each result remembered against everything it was worked out from, so
 /// a miss works out what a hit remembers and none of it is state — a drawing reads the same with
 /// every one empty (`clear`). Interior, so `&Sketch` readers share them.
@@ -55,12 +149,14 @@ pub(crate) fn cap_zoom<V>(cache: &mut BTreeMap<(usize, (u8, u64)), V>, i: usize)
 /// polylines, the rolls and the regions in general position), and the two then remember apart —
 /// what the clone works out never reaches the original. A clone made to read the drawing changed
 /// a little reads every operand it did not change from these: `Sketch::preview_body` joining
-/// tools to a copy, and the stratum a body's rounds read (`solid::faces::without`), which takes
-/// their own terms out of a copy and builds what is left from the original's exact solids. A
+/// tools to a copy. The stratum a body's rounds read (`solid::faces::without`), which takes their
+/// own terms out of a copy, shares the per-solid memos instead (`shared`, #994): what it builds
+/// of the bodies beneath is the drawing's own, every other round's regions among it. A
 /// clone made to solve (`views::place`'s part, `System::recharted`'s, a claim's sweep) copies
 /// entries it never reads; cheap where nothing has been evaluated yet, as during elaboration.
 /// Every key is what its entry read — numbers by value, a stratum by identity (`solid::MemoKey`)
-/// — so an entry a clone keeps is read only where its drawing still reads as it did.
+/// — so an entry a clone keeps, or one a sharing copy or an earlier drawing of the same document
+/// made (`carried`), is read only where its drawing still reads as it did.
 ///
 /// Not here: the surfaces a host supplies for swept solids (`Sketch::field_surfaces`), which no
 /// miss works out again, and where swept solids are meshed (`Sketch::field_meshing`), a setting.
@@ -195,9 +291,63 @@ pub struct Caches {
     /// and it is a walk of every object's reads.
     #[allow(clippy::type_complexity)]
     pub objects_side: RefCell<Option<(Vec<f64>, [usize; 2], Vec<usize>, Option<f64>)>>,
+    /// What a reading held still remembers (`Sketch::held`, #994): never copied by a clone, and
+    /// not cleared by `clear`, which a reading may call while it is open; it forgets when the
+    /// reading ends.
+    pub held: Held,
 }
 
 impl Caches {
+    /// **What a drawing of the same document made again starts from** (#994): every solid's
+    /// memo, each entry still keyed by everything it read, so the next drawing reads one only
+    /// where its own solid reads as this one's did — an elaboration's next pass, which draws the
+    /// whole document again to run a block over the faces this one built, builds none of the
+    /// bodies it builds alike again.  The rest (polylines, marches, the objects' box) is left
+    /// behind: they are keyed by curve or by name, and a drawing made again reads them afresh.
+    pub fn carried(&self) -> Caches {
+        let carried = self.clone();
+        carried.polyline.borrow_mut().clear();
+        carried.followed.borrow_mut().clear();
+        carried.tracks.borrow_mut().clear();
+        carried.traced3.borrow_mut().clear();
+        carried.generated.borrow_mut().clear();
+        carried.objects_side.borrow_mut().take();
+        carried
+    }
+
+    /// **What a copy of the drawing changed only in what some solids read remembers into**
+    /// (#994): every solid's memo this one's own (`Memo::shared`), the rest copied as a clone
+    /// copies them.  An entry is keyed by everything its solid reads, so the copy reads one this
+    /// drawing made only where its solid reads as it does here, and this drawing one the copy made
+    /// likewise: the stratum a body's rounds read (`faces::without`, the body with its rounds
+    /// taken out) builds the bodies beneath it — every other round, each lowered and gated —
+    /// for the drawing itself, not for a copy dropped once the stratum is read.
+    pub fn shared(&self) -> Caches {
+        Caches {
+            exact: self.exact.shared(),
+            swept_exact: self.swept_exact.shared(),
+            swept: self.swept.shared(),
+            meridian: self.meridian.shared(),
+            general: self.general.shared(),
+            lowering: self.lowering.shared(),
+            bounded: self.bounded.shared(),
+            carried: self.carried.shared(),
+            grown: self.grown.shared(),
+            shelled: self.shelled.shared(),
+            canal: self.canal.shared(),
+            tool: self.tool.shared(),
+            roll: self.roll.shared(),
+            paced: self.paced.shared(),
+            faces: self.faces.shared(),
+            whole: self.whole.shared(),
+            built: self.built.shared(),
+            family: self.family.shared(),
+            sheet: self.sheet.shared(),
+            shell: self.shell.shared(),
+            ..self.clone()
+        }
+    }
+
     /// Forget everything remembered: the next reader of each works it out again.
     pub fn clear(&self) {
         self.polyline.borrow_mut().clear();
