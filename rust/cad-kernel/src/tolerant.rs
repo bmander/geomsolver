@@ -23,6 +23,11 @@
 //!   end (`onto_edge`), the two one vertex (#994);
 //! - **a point onto a meeting** (`on_meeting`): within `8 tol / sin θ` of the curve two surfaces
 //!   meet in at an angle `θ` — a point within `tol` of both stands that far off their meeting;
+//! - **a span onto a boundary** (`along_boundary`): a span of a meeting standing within `8 tol` of
+//!   a face's boundary at every eighth of it lies along that boundary, and is on the face — the
+//!   edge it lies along, which an edge onto an edge merges it into, unless phase 1 laid that edge
+//!   in the other face's surface as it is (`boolean`'s `kept`, #994): one edge, never a second a
+//!   hair beside it;
 //! - **a root met flatly onto a crossing** (`FLAT`): a root of an edge's distance from a surface
 //!   known only as the stretch within `16 tol` of it is the crossing found exactly inside that
 //!   stretch;
@@ -112,6 +117,22 @@ pub fn same_edge(a: &Curve,ta: [f64;2],va: [u32;2],b: &Curve,tb: [f64;2],vb: [u3
     if t < tb[0]-1e-9 || t > tb[1]+1e-9 || distance(b.point(t),mid) > ON_CURVE*tol { return None }
     Some(if va[0] != va[1] { va[0] == vb[0] } else { dot(a.tangent(ma),b.tangent(t)) > 0. })
 }
+
+/// **A span along a boundary** (#994): the stretch `t` of a curve two faces meet in lies along a
+/// face's boundary where it stands within `ON_CURVE tol` of it (`off`, a point's distance from
+/// the nearest of the boundary's edges) at every `ALONG`th of its stretch — the reach at which a
+/// vertex is on an edge (`on_stretch`), read along the span. Unlike an edge onto an edge
+/// (`same_edge`), whose two pieces share their vertices and so are read at the middle alone, the
+/// span shares none with the edge it lies along (its ends are where the meeting crosses others),
+/// and a span crossing the boundary near its middle is not one lying along it: so it is read along
+/// its stretch.
+pub fn along_boundary(c: &Curve,t: [f64;2],tol: f64,off: impl Fn(V) -> f64) -> bool {
+    (1..ALONG).all(|j| off(c.point(t[0]+(t[1]-t[0])*j as f64/ALONG as f64)) <= ON_CURVE*tol)
+}
+
+/// The parts a span is read at along its stretch, for whether it lies along a boundary
+/// (`along_boundary`): at its every eighth.
+pub const ALONG: usize = 8;
 
 /// **Points merged where they come within the tolerance of one another** (the first rule), each
 /// vertex keeping how far the farthest point merged into it stood (its tolerance).

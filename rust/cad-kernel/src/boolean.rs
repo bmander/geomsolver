@@ -1755,7 +1755,7 @@ impl<'a> Arrangement<'a> {
                 self.say.points_on(&c,&ts,&self.pool);
                 for (t,v) in spans {
                     if (t[1]-t[0])*c.speed() <= self.tol || (v[0] == v[1] && !closed) { continue }
-                    if !self.kept(&c,t,v,faces,surfaces) { continue }
+                    if !self.kept(&c,t,v,faces,surfaces,crossings) { continue }
                     // **a span of a traced meeting lying along edges either face has already is
                     // those edges** (#735 A2, over a span and a chain of edges): a trace runs on past
                     // the faces, so the whole curve lies along no edge, and a face may hold its stretch
@@ -2044,39 +2044,32 @@ impl<'a> Arrangement<'a> {
 
     /// Whether the span `t` of curve `c`, from vertex `v[0]` to `v[1]`, is kept as an edge where
     /// two faces meet: its middle in both and on each surface's patch, whether the two cross or touch.
-    /// **A span lying along a face's boundary within the reach a vertex is on an edge by**
-    /// (`tolerant::on_stretch`, `ON_CURVE` tolerances, at every eighth of it) **is on that face**
-    /// (#994): it is the edge it lies along, which step 4 merges it into, and the other face is cut
-    /// along it — where that edge does not itself lie in the other face's surface all its stretch,
-    /// and so is not laid there as it is (`Meets::Along`), the span a second edge beside it. So the
-    /// other face is cut through, not left with the meeting leading up to it as a slit: a lip's
-    /// foot turned `1e-3` rad across its pad, its end within the foot's pad by half a micrometre,
-    /// crossing the side of a strip abutting it a tolerance and a half under that strip's foot, is
-    /// cut along that side, its two sides two shells.
-    fn kept(&self,c: &Curve,t: [f64;2],v: [u32;2],faces: Two,surfaces: [&Surface;2]) -> bool {
+    /// **A span lying along a face's boundary is on that face** (`tolerant::along_boundary`, #994):
+    /// it is the edge it lies along, which step 4 merges it into, and the other face is cut along
+    /// it — where that edge does not itself lie in the other face's surface, which phase 1 read
+    /// (`Meets::Along`, `Crossings::along_face`) and lays there as it is, the span a second edge
+    /// beside it. So the other face is cut through, not left with the meeting leading up to it as a
+    /// slit: a lip's foot turned `1e-3` rad across its pad, its end within the foot's pad by half a
+    /// micrometre, crossing the side of a strip abutting it a tolerance and a half under that
+    /// strip's foot, is cut along that side, its two sides two shells.
+    fn kept(&self,c: &Curve,t: [f64;2],v: [u32;2],faces: Two,surfaces: [&Surface;2],
+        crossings: &Crossings) -> bool {
         let m = c.point((t[0]+t[1])/2.);
         let mut places = [0,1].map(|k| self.located[faces.s[k]].face_place(faces.f[k],m));
         let reach = ON_CURVE*self.tol;
         for k in 0..2 {
             if places[k] != Place::Out { continue }
             let (s,fi) = (faces.s[k],faces.f[k]);
-            let sol = self.solids[s];
-            // (the face's edges the span's middle lies along, and the other face's surface)
-            let near: Vec<u32> = sol.faces[fi].loops.iter().flatten().map(|co| co.edge)
-                .filter(|&e| self.located[s].nearest(e,m).1 <= reach).collect();
-            let along = !near.is_empty() && (1..8).all(|j| {
-                let p = c.point(t[0]+(t[1]-t[0])*j as f64/8.);
-                sol.faces[fi].loops.iter().flatten().any(|co| self.located[s].nearest(co.edge,p).1 <= reach)
-            });
-            // an edge lying in the other face's surface all its stretch is laid on it as it is
-            // (phase 1's `Meets::Along`): the span beside it would be a second edge a hair off it
-            let other = surfaces[1-k];
-            let laid = || near.iter().all(|&e| {
-                let edge = &sol.edges[e as usize];
-                (0..=8).all(|j| { let p = edge.point(edge.t[0]+(edge.t[1]-edge.t[0])*j as f64/8.,&sol.vertices);
-                    distance(other.point(other.inverse(p)),p) <= reach })
-            });
-            if along && !laid() { places[k] = Place::On }
+            let boundary = || self.solids[s].faces[fi].loops.iter().flatten().map(|co| co.edge);
+            let off = |p: V| boundary().map(|e| self.located[s].nearest(e,p).1)
+                .fold(f64::INFINITY,f64::min);
+            if !super::tolerant::along_boundary(c,t,self.tol,off) { continue }
+            // an edge it lies along that phase 1 laid in the other face as it is: the span is that
+            // edge, already laid
+            let (other,of) = (faces.s[1-k],faces.f[1-k]);
+            let laid = boundary().filter(|&e| self.located[s].nearest(e,m).1 <= reach)
+                .all(|e| crossings.along_face[other][of].contains(&self.working(s,e as usize)));
+            if !laid { places[k] = Place::On }
         }
         self.say.span(t,v,m,places,&self.pool);
         if places[0] == Place::Out || places[1] == Place::Out { return false }

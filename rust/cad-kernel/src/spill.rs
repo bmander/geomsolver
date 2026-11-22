@@ -24,6 +24,7 @@ use crate::util::fmath::Det;
 use super::fillet::{column, crossing_plane, face_out};
 use super::geom::{Curve, Frame, Surface, Traced, V};
 use super::nurbs::{fit_curve, fit_net};
+use super::tolerant::ON_CURVE;
 use super::topo::{Brep, EdgeCurve};
 use crate::util::space::{add, cross, distance, dot, norm, scale, sub, unit};
 use std::sync::Arc;
@@ -397,10 +398,13 @@ pub fn flat_beyond(b: &Beyond, tol: f64) -> Result<Brep, String> {
         }
         p
     };
+    // each end of the leg is the seam's point there, read again from the leg: the two are one
+    // vertex, so they agree within the reach a vertex is on a curve by (`tolerant::ON_CURVE`) —
+    // to rounding, where the sections are right — or the piece is refused
     if !along {
         for (k, &end) in q.iter().enumerate() {
             let leg = frame_at(k as f64).1[0];
-            if distance(leg, end) > 1e-6 * (size + norm(end)) {
+            if distance(leg, end) > ON_CURVE * tol {
                 return Err(format!("the leg on the chain's next face misses the seam where the flat crosses it ({:.2e} off)",
                     distance(leg, end)));
             }
@@ -614,11 +618,12 @@ pub fn round_beyond(b: &Beyond, tol: f64) -> Result<(Brep, Vec<(V, V)>), String>
     let size = r + distance(q[0], q[1]);
     // (which end starts where the touch crosses the seam, in the order the stretch runs)
     let seamed = if secs.flipped { [seamed[1], seamed[0]] } else { seamed };
+    // (the ball's touch at each end is the seam's point there, within the reach, as the leg's is)
     if !along {
         for (k, &end) in q.iter().enumerate() {
             let (c, [et, _]) = frame_at(k as f64);
             let touch = add(c, scale(et, r));
-            if distance(touch, end) > 1e-6 * (size + norm(end)) {
+            if distance(touch, end) > ON_CURVE * tol {
                 return Err(format!("the ball beyond the seam misses the seam at its end ({:.2e} off)", distance(touch, end)));
             }
         }
@@ -649,12 +654,13 @@ pub fn round_beyond(b: &Beyond, tol: f64) -> Result<(Brep, Vec<(V, V)>), String>
         let [Some(a), Some(z)] = at else {
             return Err("a piece the length of an edge beside a seam no line along it".into());
         };
-        // an end where the touch crosses the seam (#994): the touch itself, on the seam
+        // an end where the touch crosses the seam (#994): the touch itself, on the seam within the
+        // reach a vertex is on a curve by
         let mut at = [a, z];
         for k in (0..2).filter(|&k| seamed[k]) {
             let (c, [et, _]) = frame_at(k as f64);
             let touch = add(c, scale(et, r));
-            if distance(touch, at[k]) > 1e-6 * (size + norm(touch)) {
+            if distance(touch, at[k]) > ON_CURVE * tol {
                 return Err(format!("the ball beyond the seam misses the seam where it starts ({:.2e} off)",
                     distance(touch, at[k])));
             }

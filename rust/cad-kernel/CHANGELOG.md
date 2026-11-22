@@ -8,6 +8,31 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Two surfaces clear of one another, or resting on one another at a point alone, meet in no
+  curve by one rule** (#994): `ssi::apart` reads their least distance in closed form where it has
+  one (`ssi::least`: two cylinders leaning apart, a sphere and a plane, cylinder, sphere or torus,
+  and — new — a plane and a torus), and where it is within the tolerance asks the touch there the
+  question an arrangement asks a resting touch (`ssi::touch` definite, `ssi::alone_over`),
+  replacing `ssi::rods_apart` and `ssi::ball_clear` (below), each a rule of its own: the rods'
+  lean bound, borrowed from `SHALLOW`, now follows from the touch's own radius (`sin θ ≥
+  SHALLOW / √2`), and a ball a hair off a tube's axis — within the tolerance of it round a whole
+  circle — is no longer read as meeting it in no curve. A ring resting aslant on a plane meets it
+  in no curve in closed form, where it was traced. The plane–sphere arm `intersect` never reached
+  (the two meet about the sphere's own axis) is gone.
+
+- **A span of a meeting along a face's boundary is a rule of tolerant topology**
+  (`tolerant::along_boundary`, `tolerant::ALONG`, new), and whether the edge it lies along was laid
+  in the other face is phase 1's answer (`Meets::Along`), looked up, where it was read again from
+  samples at the reach and disagreed with it (116 spans in `brep_coincident`'s strips, two in
+  `composed_rounds`, the results the same to the last bit).
+
+- **Two cylinders' loops: `D`'s roots isolated, not sampled** (`ssi::cylinder_loops`): whether
+  the discriminant keeps above nothing is read from its enclosures (`util::isolate`) where it was
+  read at 4096 samples and a golden-section search; the loops' chord bounds are named
+  (`LOOP_CHORD`, `2 ON_CURVE tol`, the parameter's own resolution) and a loop past `LOOP_POINTS`
+  points is traced rather than cut off. `spill`'s checks that a section lands on the seam read the
+  arrangement's reach (`ON_CURVE` tolerances) where they read a millionth of the part's size.
+
 - **Faces on one surface are one surface whatever order a Boolean's operands come in** (#994,
   fixture 115's feet and lip at a plate's true edge): an arrangement reads which faces lie on one
   surface face by face before any phase asks (`Arrangement::classed`) — two of one kind joined
