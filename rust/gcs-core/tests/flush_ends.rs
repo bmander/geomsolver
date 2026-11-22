@@ -558,8 +558,8 @@ const ARM: f64 = 100.0 * 30.0 * 10.0;
 /// **A block boss standing on the arm's top, past its side** (its base in the top's plane, as a
 /// boss is drawn): where it overhangs the arm's side its underside is a face the fill along its
 /// sides ends on, lying along the run in the plane of the floor the fill stands on.  A face along a
-/// run cuts it lengthwise or not at all; here the fill lies on the side it keeps (`along_run`), so
-/// it is no cut, and the fill ends on the side, square.  Proud of one side, of both, flush with
+/// run is no face it ends on (`BodyFaces::lies_along`), so it is no cut, and the fill ends on the
+/// side, square.  Proud of one side, of both, flush with
 /// one and proud of the other, flush with both; a hair (1 µm, 50 µm, half a millimetre) short of
 /// flush or proud, rounded along its sides alone, the flush one their limit; rounded over all its
 /// faces short of flush, its end's fill mitred with the sides' at its corners; standing at the
