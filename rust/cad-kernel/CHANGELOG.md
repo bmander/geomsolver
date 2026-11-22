@@ -50,7 +50,26 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   with the pair nearest the swallowtail point's angle not put in, the folds check passing over the
   newborn pair's bridge as over any bridge), and the rest from the point. The pair's sliver before
   the point lies wholly in the tail above the double curve, which the trim drops. The half turn: 20 faces, volume 12.2377154 (cadrs
-  12.2377), 5.9 s; `depth_probe` reads `sliver`.
+  12.2377), 5.9 s; `depth_probe` reads `sliver` and `about`, `ring_profile` `agree`. A double
+  curve's point past a stretch's end ends its line though the point before stood on the end
+  (`rings::cut_along`): the thin torus's second preimage, leaving its swallowtail point's row and
+  crossing it again further on, was laid along the row.
+
+- **A ring touching a meridian whole is cut from a blank, entered by depth** (#942, the depth trim,
+  new `swept::touched`): brep-bench's ring carried along a spline, refused by name until now, is
+  built through `closed::cut_from` (2.8 s, volume 10696.461766). Of each contact parallel's sheet
+  the leaf depth keeps, cut at the meridian; the strip; and at each end the other leaf from its rim
+  to where it crosses the end pose's tool, each its own sheet fitted over its closed form, every
+  meeting given. `member::Swept` gains `sampled`: asked for by this entry alone, a path that
+  encloses nothing is read at its greatest sampled speed rather than refused `Unbounded` (no proof).
+
+- **The zero set of a scalar function over a rectangle of parameters, traced** (#942, new
+  `zero_set`): `trace` follows `f = 0` (a least value `min over s of g` with its minimiser, through
+  the `Field` trait) by arclength in the caller's surface metric, cut at the corners where the
+  minimiser switches branches and at the rim and given inner edges, each piece's ends classified;
+  seeded from the boundary, the caller and a halving search that proves cells free or monotone where
+  `Field::bound` encloses `f` and its gradient, and says what it only sampled where it does not. `through` traces from
+  the caller's seeds alone, completeness not sought.
 
 - **A double curve traced from a row's seed is joined to its swallowtail point; a tube's tail is read
   from the depth** (#942 T1d-tori, `swept::rings`, `swept::closed`): the swallowtail points are
@@ -144,14 +163,6 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   its meetings with the ring and the tubes given by construction (`entered` returns the strips after
   the tubes). Arranged so the groove and the block are still one cell, at the end poses' corners, and
   the refusal stands.
-
-- **The zero set of a scalar function over a rectangle of parameters, traced** (#942, new
-  `zero_set`): `trace` follows `f = 0` (a least value `min over s of g` with its minimiser, through
-  the `Field` trait) by arclength in the caller's surface metric, cut at the corners where the
-  minimiser switches branches and at the rim and given inner edges, each piece's ends classified;
-  seeded from the boundary, the caller and a halving search that proves cells free or monotone where
-  `Field::bound` encloses `f` and its gradient, and says what it only sampled where it does not. `through` traces from
-  the caller's seeds alone, completeness not sought.
 
 - **The bench's cube tumbling 75° is built** (#942 T1d-cube, `swept::general`, `family`, `topo`):
   a fan's crossing with itself is built from the pinch it is born at — the runs' corner where the

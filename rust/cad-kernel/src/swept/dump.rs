@@ -513,7 +513,7 @@ impl Trimming {
         use super::member::{Solid,Swept};
         use crate::util::space::{add,scale};
         let solid = Solid::new(&self.tool,self.bar,1.)?;
-        let swept = Swept {tool:&solid,path:&self.path,roll:self.roll};
+        let swept = Swept {sampled:false,tool:&solid,path:&self.path,roll:self.roll};
         let point = |s: f64| add(at,scale(dir,s));
         let read = |s: f64| swept.member(point(s)).ok();
         let steps = steps.max(1);

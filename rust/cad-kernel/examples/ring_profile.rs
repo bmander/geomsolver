@@ -33,13 +33,33 @@ fn main() {
         Some("full-turn") => (0.16,tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.),180.),
         Some("half-turn") => (0.16,tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.),90.),
         Some("thin") => (0.015,tumbling([3.,0.,2.],2.,0.015,0.25,45.,0.,0.5f64.sqrt(),1.),75.),
+        // (brep-bench's 80° `tumbling-torus`, as it spells it: about the line through (0, 0.5, 0.5)
+        // along x, built at a bar of 0.002 and a tolerance of 1e-5)
+        Some("eighty") => (0.5,tumbling([3.,0.,2.],2.,0.5,0.25,45.,0.,0.5f64.sqrt(),1.),75.),
+        // (the gate's own spelling: the observer's origin (0, 0.5, 0.5) and its axis `x` exactly)
+        Some("eighty-gate") => {
+            let tool = cad_kernel::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.5).unwrap();
+            let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.25,advance:0.});
+            let frame = Trajectory::Twist(Screw {origin:[0.,0.5,0.5],axis:[1.,0.,0.],ratio:1.,advance:0.});
+            (0.5,(tool,Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)}),75.)
+        }
         _ => { eprintln!("ring_profile full-turn|half-turn|thin [roll end, degrees] | spline | bench-spline"); std::process::exit(2) }
     };
     let end: f64 = args.get(1).map_or(half,|e| e.parse().expect("degrees"));
     let roll = [-half.to_radians(),end.to_radians()];
     if std::env::var_os("SOLVENT_BREP_TIME").is_none() { std::env::set_var("SOLVENT_BREP_TIME","1") }
     let clock = std::time::Instant::now();
-    let built = cad_kernel::swept::closed::ring(&tool,&path,roll,tube/250.,tube/50000.);
+    let eighty = matches!(args.first().map(String::as_str),Some("eighty" | "eighty-gate"));
+    let (bar,mut tol) = if eighty { (0.002,1e-5) } else { (tube/250.,tube/50000.) };
+    // (`… size-tol`: built to the modelling tolerance of the tool's size instead)
+    if args.iter().any(|a| a == "size-tol") { tol = cad_kernel::geom::tolerance(tool.size()) }
+    eprintln!("bar {bar:e}, tolerance {tol:e}");
+    let built = cad_kernel::swept::closed::ring(&tool,&path,roll,bar,tol);
+    // the check the bench's runner makes: at the modelling tolerance of the solid's size
+    if let Ok(b) = &built {
+        let size_tol = cad_kernel::geom::tolerance(b.size());
+        println!("checked at the size's tolerance {size_tol:e}: {:?}",b.check(size_tol));
+    }
     match &built {
         Ok(b) => println!("built: {} faces, volume {}, in {:?}",b.faces.len(),cad_kernel::props::volume(b),clock.elapsed()),
         Err(e) => println!("refused: {e:?}, in {:?}",clock.elapsed()),
@@ -59,7 +79,7 @@ fn agree(built: &cad_kernel::topo::Brep,tool: &cad_kernel::topo::Brep,path: &Tra
     let clock = std::time::Instant::now();
     let body = Solid::new(built,sag,1.).unwrap();
     let solid = Solid::new(tool,0.002,1.).unwrap();
-    let swept = Swept {tool:&solid,path,roll};
+    let swept = Swept {sampled:false,tool:&solid,path,roll};
     let ring = cad_kernel::swept::rings::Ring::read(tool).unwrap();
     let (lo,hi) = built.bounds();
     let mut rng = cad_kernel::util::rng::Rng::new(7);

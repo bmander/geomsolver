@@ -792,7 +792,7 @@ fn build_by(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank:
     // only the candidates that carry some of the boundary: membership differing on their two sides
     // somewhere over the box (a candidate is kept where a point of it cannot be settled)
     let solid = Solid::new(tool,bar,1.)?;
-    let swept = Swept {tool:&solid,path,roll:whole_roll};
+    let swept = Swept {sampled:false,tool:&solid,path,roll:whole_roll};
     // (each candidate's place among those carried, which a touch names it by)
     let carrying: Vec<(usize,Cutter)> = cutters.iter().enumerate().filter(|(_,(_,sites))| carries(&swept,sites,domain.half))
         .map(|(i,&(c,_))| (i,c)).collect();
@@ -1051,7 +1051,7 @@ fn k2(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Optio
     let ends = [a,b].map(|t| super::patches::posed(tool,&revolved,path,&fit,t));
     let [start,end] = [ends[0].clone()?,ends[1].clone()?];
     let (sheet,given) = super::patches::entered(&fit,&revolved,[&start,&end])?;
-    candidates(tool,path,[a,b],bar,tol,blank,[start,end],vec![sheet],&given)
+    candidates(tool,path,[a,b],bar,tol,blank,[start,end],vec![sheet],&given,false)
 }
 
 /// **A polyhedral tool under a motion no constant twist takes, built closed** (`swept::general`,
@@ -1102,6 +1102,15 @@ pub fn ring_cut_from(blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2],ba
 /// `blank`.
 fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>) -> Result<Brep,Unbuilt> {
     let [a,b] = [roll[0].min(roll[1]),roll[0].max(roll[1])];
+    // **a ring touching a meridian whole, entered by depth** (#942, the depth trim): its sheets over
+    // exactly what is kept, every meeting given — cut from a blank its far meridian sweeps clear of
+    if let Some(blank) = blank {
+        if let Some(t) = super::touched::entered(tool,path,[a,b],K2_POSES,bar,K2_FIT*tol,tol,blank)? {
+            // (its cells read for membership at the path's sampled speed where it encloses nothing:
+            // the bench's runner's frame, read only by evaluating it — no proof, `Swept::speed`)
+            return candidates(tool,path,[a,b],bar,tol,Some(blank),t.ends,t.sheets,&t.given,true)
+        }
+    }
     let RingEntered {ends,sheets,given,cut} = ring_entered(tool,path,[a,b],tol)?;
     // **trimmed by membership where the roll is cut** (#880 T1d): its tubes met only where both come
     // near the sweep's boundary (`trim`), as the contact's road meets its sheets — a turned whole
@@ -1112,7 +1121,7 @@ fn ring_built(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blan
         let swept = trimmed_or_dumped(tool,path,[a,b],&candidates,&given,bar,tol,road_trim(tool,tol))?;
         return cut_blank(swept,blank,tol)
     }
-    candidates(tool,path,[a,b],bar,tol,blank,ends,sheets,&given)
+    candidates(tool,path,[a,b],bar,tol,blank,ends,sheets,&given,false)
 }
 
 /// **What a ring's road enters** (`ring_entered`): the tool posed where the roll starts and where it
@@ -1294,7 +1303,7 @@ pub fn ring_fitted(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64)
 /// `given`, a box holding the sweep (or the blank) split by them at once and classified.
 #[allow(clippy::too_many_arguments)]
 fn candidates(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],bar: f64,tol: f64,blank: Option<&Brep>,[start,end]: [Brep;2],sheets: Vec<Brep>,
-    given: &[crate::boolean::Given]) -> Result<Brep,Unbuilt> {
+    given: &[crate::boolean::Given],sampled: bool) -> Result<Brep,Unbuilt> {
     // a box holding the sweep: the tool's box at poses over the roll
     let corners = corners_of(tool.bounds());
     let mut points: Vec<V> = Vec::new();
@@ -1307,7 +1316,7 @@ fn candidates(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],bar: f64,tol: f64,bla
     let within = blank.unwrap_or(&domain);
     let solids: Vec<Brep> = [start,end].into_iter().chain(sheets).collect();
     let solid = Solid::new(tool,bar,1.)?;
-    let swept = Swept {tool:&solid,path,roll:[a,b]};
+    let swept = Swept {sampled,tool:&solid,path,roll:[a,b]};
     arranged_or_dumped(within,None,&clear_of(&solids,within,tol),given,&swept,blank,tol)
 }
 
@@ -1355,6 +1364,7 @@ fn arranged(within: &Brep,reach: Option<&Brep>,refs: &[&Brep],given: &[crate::bo
     if crate::timing() { eprintln!("closed: {} cells classified in {:?}",cells,clock.elapsed()) }
     if blank.is_none() && !keep.iter().any(|&k| k) { return Err(Unbuilt::Failed("no cell of the arrangement is swept".into())) }
     let out = crate::boolean::selection(&complex,&|c| keep[c])?;
+    if crate::timing() { eprintln!("closed: selected in {:?}",clock.elapsed()) }
     if let Err(e) = out.check(tol) {
         if crate::debug() {
             // each face's loops, where the check failed: their areas and their reach in parameters
@@ -1370,7 +1380,9 @@ fn arranged(within: &Brep,reach: Option<&Brep>,refs: &[&Brep],given: &[crate::bo
         return Err(e.into())
     }
     // **judged by its definition before it is returned** (#777 V2): never returned built wrong
+    if crate::timing() { eprintln!("closed: checked in {:?}",clock.elapsed()) }
     judge(&out,swept,within,blank,&witnesses,tol)?;
+    if crate::timing() { eprintln!("closed: judged in {:?}",clock.elapsed()) }
     Ok(out)
 }
 
@@ -1413,7 +1425,17 @@ pub fn judge(built: &Brep,swept: &Swept,domain: &Brep,blank: Option<&Brep>,witne
         };
         (held != should).then_some((p,held))
     });
-    if let Some((at,held)) = readings.into_iter().flatten().next() { return Err(Unbuilt::Wrong {at,held}) }
+    if let Some((at,held)) = readings.into_iter().flatten().next() {
+        if crate::debug() {
+            // how deep the sweep holds it (sampled finely over the roll) and how far the solid's boundary is
+            let [a,b] = swept.roll;
+            let d = (0..=100_000).map(|k| a+(b-a)*k as f64/1e5).filter_map(|t| swept.path.pose(t).ok())
+                .map(|pose| swept.tool.signed_distance(pose.inverse().point(at))).fold(f64::INFINITY,f64::min);
+            let body = super::member::Solid::new(built,1e-4,1.).ok().map(|s| s.signed_distance(at));
+            eprintln!("judge: at {at:?} the solid holds it {held}, membership says otherwise: the sweep's depth there {d:e}, the solid's distance {body:?}")
+        }
+        return Err(Unbuilt::Wrong {at,held})
+    }
     // each face turned the way its solid lies: a hair out along its outward normal the solid's own
     // point location reads out, a hair in reads in (a face turned against its neighbours places
     // points as the right one does, but its volume is off: the ring's sweep came out at 3.38 of
@@ -1430,7 +1452,10 @@ pub fn judge(built: &Brep,swept: &Swept,domain: &Brep,blank: Option<&Brep>,witne
         let (outside,inside) = (add(p,scale(n,hair)),sub(p,scale(n,hair)));
         (solid.solid_place(outside) == Place::In && solid.solid_place(inside) == Place::Out).then_some(inside)
     });
-    if let Some(at) = turned.into_iter().flatten().next() { return Err(Unbuilt::Wrong {at,held:false}) }
+    if let Some(at) = turned.into_iter().flatten().next() {
+        if crate::debug() { eprintln!("judge: a face turned against its solid, read a hair ({hair:e}) in at {at:?}") }
+        return Err(Unbuilt::Wrong {at,held:false})
+    }
     // turned inside out: every point it seems to hold, it leaves out
     if crate::props::volume(built) < 0. {
         let inside = points.iter().copied().find(|&p| solid.solid_place(p) == Place::In)

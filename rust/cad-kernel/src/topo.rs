@@ -512,6 +512,46 @@ impl Brep {
         Brep {vertices,edges,faces:self.faces}
     }
 
+    /// **Every place `check` would refuse at `tol`, and by how much** (#942): each vertex off an
+    /// edge's curve, each corner where a loop's two pcurves part in space, and each pcurve off its
+    /// edge (the most of its nine readings) — read to the end, not the first; each `(what, the
+    /// measure, the tolerance it is held to)`. What the edges' and vertices' own tolerances allow
+    /// is said beside it, as `check` allows it.
+    pub fn misfits(&self,tol: f64) -> Vec<(String,f64,f64)> {
+        let mut out = Vec::new();
+        for (i,e) in self.edges.iter().enumerate() {
+            if let EdgeCurve::Curve(c) = &e.curve {
+                for k in 0..2 {
+                    let v = &self.vertices[e.v[k] as usize];
+                    let d = distance(c.point(e.t[k]),v.p);
+                    let held = tol.max(e.tol).max(v.tol);
+                    if d > held { out.push((format!("edge {i} ({}): its {} vertex {:?} off its curve",c.kind(),["first","last"][k],v.p),d,held)) }
+                }
+            }
+        }
+        for (fi,f) in self.faces.iter().enumerate() {
+            for l in &f.loops {
+                for (k,c) in l.iter().enumerate() {
+                    let next = &l[(k+1)%l.len()];
+                    let (a,b) = (self.uv_ends(f,c)[1],self.uv_ends(f,next)[0]);
+                    let at = self.vertices[self.ends(c)[1] as usize].tol;
+                    let corner = tol.max(2.*(self.edges[c.edge as usize].tol+self.edges[next.edge as usize].tol)).max(2.*at);
+                    let d = distance(f.surface.point(a),f.surface.point(b));
+                    if d > corner { out.push((format!("face {fi} ({}): its loop parts between edges {} and {} at {:?}",f.surface.kind(),c.edge,next.edge,
+                        self.vertices[self.ends(c)[1] as usize].p),d,corner)) }
+                    let e = &self.edges[c.edge as usize];
+                    if matches!(e.curve,EdgeCurve::Degenerate) { continue }
+                    let most = (0..=8).map(|j| {
+                        let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/8.;
+                        distance(f.surface.point(c.pcurve.at(t,e,&f.surface,&self.vertices)),e.point(t,&self.vertices))
+                    }).fold(0f64,f64::max);
+                    if most > tol.max(e.tol) { out.push((format!("face {fi} ({}): edge {} ({})'s pcurve off it",f.surface.kind(),c.edge,e.curve.kind()),most,tol.max(e.tol))) }
+                }
+            }
+        }
+        out
+    }
+
     /// `check`, each face `settled` marks (one carried whole from a solid checked before, #589)
     /// read for its loops' ends and its edges' uses alone: its geometry is what was checked.
     pub fn check_settled(&self,tol: f64,settled: &[bool]) -> Result<(),super::KernelError> {

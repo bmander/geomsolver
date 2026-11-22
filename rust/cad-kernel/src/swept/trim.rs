@@ -330,7 +330,7 @@ struct Ball { c: V,r: f64 }
 pub(crate) fn trim(tool: &Brep,path: &Trajectory,roll: [f64;2],candidates: &[Brep],given: &[Given],bar: f64,tol: f64,trim: Trim)
     -> Result<(Brep,Report),Unbuilt> {
     let solid = Solid::new(tool,bar,1.)?;
-    let swept = Swept {tool:&solid,path,roll};
+    let swept = Swept {sampled:false,tool:&solid,path,roll};
     if crate::timing() { eprintln!("trim: the tool meshed for membership: {} triangles, sag {:.2e}",solid.triangles(),solid.sag) }
     let mut report = Report {faces:candidates.iter().map(|c| c.faces.len()).sum(),..Report::default()};
     // (the reach: a ball reaches it where it comes within its radius of the box; a point is past it

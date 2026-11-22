@@ -622,7 +622,7 @@ pub fn turned(tool: &Brep,c: V,axis: V,bar: f64,tol: f64) -> Result<Brep,Unbuilt
     let cands = candidates(&reader)?;
     let solid = Solid::new(tool,bar,1.).map_err(Unbuilt::Failed)?;
     let path = Trajectory::Twist(Screw {origin:c,axis:unit(axis),ratio:1.,advance:0.});
-    let swept = Swept {tool:&solid,path:&path,roll:[0.,TAU]};
+    let swept = Swept {sampled:false,tool:&solid,path:&path,roll:[0.,TAU]};
     let near = 1e-7*(1.+size);
     // (2) the arrangement: each candidate's split parameters
     let samples: Vec<Vec<(f64,P)>> = cands.iter().map(|m| m.samples(SAMPLES)).collect();
@@ -646,7 +646,7 @@ pub fn turned(tool: &Brep,c: V,axis: V,bar: f64,tol: f64) -> Result<Brep,Unbuilt
     // the hair under a third of the way to the nearest other candidate (so it stands in the cells
     // beside the piece, however thin), on the tool meshed finer where the mesh's sag leaves a
     // reading unsettled
-    let member = |solid: &Solid,x: V| (Swept {tool:solid,path:&path,roll:[0.,TAU]}).member(x);
+    let member = |solid: &Solid,x: V| (Swept {sampled:false,tool:solid,path:&path,roll:[0.,TAU]}).member(x);
     let mut finer: Option<Solid> = None;
     let mut shadow = |p: P| -> Result<bool,Unbuilt> {
         let x = g.at([p[0],0.,p[1]]);

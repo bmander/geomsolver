@@ -1878,6 +1878,12 @@ pub fn cut_along(ring: &Ring,path: &Trajectory,whole: [f64;2],fit: &mut Fitted,s
                     }
                 }
                 if inside { if let Some(u) = u_of((th,t,sg))? { laid(&mut line,u,t) } }
+                // (and any point past an end ends the line, though the one before stood on that end:
+                // a swallowtail point on its row is such a point, and a preimage leaving there and
+                // coming back across the row further on was joined to it along the row, the double
+                // curve laid on the row's own edge — the thin torus's second preimage, 0.0316 of an
+                // angle along, #942 T1d-tori)
+                else if line.len() >= 2 { out.push(std::mem::take(&mut line)) } else { line.clear() }
             }
             if line.len() >= 2 { out.push(line) }
             // (the whole curve where any of it is cut into this tube here)
