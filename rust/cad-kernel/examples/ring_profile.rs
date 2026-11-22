@@ -11,6 +11,10 @@
 //! at that origin as `√½ (0, cos 45°, sin 45°)`, an ulp off; `eighty-at oy oz ay az ratio roll` at
 //! any spelling of its observer's origin, its axis `(1, ay, az)`, its own ratio and its roll's end in
 //! degrees; `half-at ulps|add y z` the half turn, its observer's origin moved.
+//! After a build: the check at the size's tolerance and the call's, and `Brep::misfits` at the size's;
+//! `nudge d|ulp` moves the tumbling tori's observer's origin along `y` before (an input a hair off
+//! the bench's); `fluxes sag` reads each face's flux against its mesh's and the volume off the mesh;
+//! `agree n sag` holds the solid to the sweep's definition point by point.
 //!
 //! `cargo run --release -p cad-kernel --example ring_profile -- full-turn|half-turn|thin [roll end, degrees] | spline | bench-spline`
 use cad_kernel::trajectory::{Screw,Trajectory};
@@ -26,7 +30,14 @@ fn tumbling(centre: [f64;3],hub: f64,tube: f64,ratio: f64,lean: f64,heading: f64
     let (sl,cl) = lean.to_radians().sin_cos();
     let (sa,ca) = heading.to_radians().sin_cos();
     let own = Trajectory::Twist(Screw {origin:[hub,0.,0.],axis:[0.,0.,1.],ratio,advance:0.});
-    let frame = Trajectory::Twist(Screw {origin:[0.,height*cl,height*sl],axis:[ca,sa*cl,sa*sl],ratio:observer,advance:0.});
+    // (`… nudge d`: the observer's origin moved by `d` along `y`, or by one ulp where `d` is `ulp`)
+    let args: Vec<String> = std::env::args().collect();
+    let mut origin = [0.,height*cl,height*sl];
+    if let Some(i) = args.iter().position(|a| a == "nudge") {
+        origin[1] = if args[i+1] == "ulp" { f64::from_bits(origin[1].to_bits()+1) } else { origin[1]+args[i+1].parse::<f64>().unwrap() };
+        eprintln!("the observer's origin moved to {origin:?}");
+    }
+    let frame = Trajectory::Twist(Screw {origin,axis:[ca,sa*cl,sa*sl],ratio:observer,advance:0.});
     (tool,Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)})
 }
 
@@ -86,10 +97,100 @@ fn main() {
     if let Ok(b) = &built {
         let size_tol = cad_kernel::geom::tolerance(b.size());
         println!("checked at the size's tolerance {size_tol:e}: {:?}",b.check(size_tol));
+        println!("checked at the call's {tol:e}: {:?}",b.check(tol));
+        let misfits = b.misfits(size_tol);
+        println!("{} misfits at the size's tolerance",misfits.len());
+        for (what,d,held) in &misfits { println!("  {d:.3e} (held to {held:.2e}, {:.1}×): {what}",d/held) }
     }
     match &built {
         Ok(b) => println!("built: {} faces, volume {}, in {:?}",b.faces.len(),cad_kernel::props::volume(b),clock.elapsed()),
         Err(e) => println!("refused: {e:?}, in {:?}",clock.elapsed()),
+    }
+    // `… fluxes sag`: each face's flux, and the solid's volume read off its mesh within `sag` (each
+    // triangle's signed tetrahedron from the origin)
+    if let (Ok(b),Some(i)) = (&built,args.iter().position(|a| a == "fluxes")) {
+        let sag: f64 = args[i+1].parse().unwrap();
+        let m = cad_kernel::mesh::mesh(b,sag,0.1).unwrap();
+        let mut by_mesh = vec![0.;b.faces.len()];
+        for (t,&f) in m.tris.iter().zip(&m.of) { let [p,q,r] = t.map(|i| m.pts[i as usize]);
+            by_mesh[f as usize] += cad_kernel::util::space::dot(p,cad_kernel::util::space::cross(q,r))/2. }
+        for (fi,f) in cad_kernel::props::fluxes(b).iter().enumerate() {
+            println!("face {fi} ({}): flux {f:+.6e}, by the mesh {:+.6e}, apart {:+.2e}",b.faces[fi].surface.kind(),by_mesh[fi],f-by_mesh[fi])
+        }
+        let v: f64 = m.tris.iter().map(|t| { let [p,q,r] = t.map(|i| m.pts[i as usize]);
+            cad_kernel::util::space::dot(p,cad_kernel::util::space::cross(q,r))/6. }).sum();
+        println!("the mesh within {sag:e}: {} triangles, volume {v}",m.tris.len());
+        // (each face read apart from its mesh by more than the sag's share: its loops term by term)
+        for fi in 0..b.faces.len() {
+            let f = &b.faces[fi];
+            let flux: f64 = cad_kernel::props::terms(b,fi).iter().flatten().map(|t| t.0+t.1).sum();
+            if (flux-by_mesh[fi]).abs() <= 1e-3*by_mesh[fi].abs().max(1e-3) { continue }
+            println!("face {fi}: {:?}",f.surface.kind());
+            // (its parameters' box read whole by a product Gauss rule, ten nodes a span each way: a
+            // face whose loop is its box has that flux)
+            let uv: Vec<[f64;2]> = f.loops.iter().flatten().flat_map(|c| b.uv_ends(f,c)).collect();
+            let (lo,hi) = ([0,1].map(|k| uv.iter().map(|q| q[k]).fold(f64::INFINITY,f64::min)),[0,1].map(|k| uv.iter().map(|q| q[k]).fold(f64::NEG_INFINITY,f64::max)));
+            let cuts = |k: usize| { let mut x = vec![lo[k]]; x.extend(f.surface.breaks(k,[lo[k],hi[k]])); x.push(hi[k]); x };
+            let (cu,cv) = (cuts(0),cuts(1));
+            let (xs,ws) = ([-0.9739065285171717,-0.8650633666889845,-0.6794095682990244,-0.4333953941292472,-0.1488743389816312,
+                0.1488743389816312,0.4333953941292472,0.6794095682990244,0.8650633666889845,0.9739065285171717],
+                [0.0666713443086881,0.1494513491505806,0.2190863625159820,0.2692667193099963,0.2955242247147529,
+                0.2955242247147529,0.2692667193099963,0.2190863625159820,0.1494513491505806,0.0666713443086881]);
+            let mut sum = 0.;
+            for w in cu.windows(2) { for z in cv.windows(2) { for i in 0..10 { for j in 0..10 {
+                let (u,v) = (0.5*(w[0]+w[1])+0.5*(w[1]-w[0])*xs[i],0.5*(z[0]+z[1])+0.5*(z[1]-z[0])*xs[j]);
+                let (x,su,sv) = f.surface.d1([u,v]);
+                sum += ws[i]*ws[j]*0.25*(w[1]-w[0])*(z[1]-z[0])*cad_kernel::util::space::dot(x,cad_kernel::util::space::cross(su,sv));
+            } } } }
+            println!("  its box {lo:?}..{hi:?} ({} by {} spans) read whole: {sum:+.6e}",cu.len()-1,cv.len()-1);
+            // (and each side's ∫ G dv, G from the box's middle u: ∫∫ from there to the side)
+            let mid = 0.5*(lo[0]+hi[0]);
+            for side in [lo[0],hi[0]] {
+                let mut x = vec![mid];
+                let (p,q) = (mid.min(side),mid.max(side));
+                x.extend(f.surface.breaks(0,[p,q]));
+                x.push(q);
+                if side < mid { x.reverse(); x[0] = mid; *x.last_mut().unwrap() = side; }
+                let split = std::env::var("SPLIT_V").ok().and_then(|v| v.parse::<f64>().ok());
+                let mut part = 0.;
+                let mut sum = 0.;
+                for w in x.windows(2) { for z in cv.windows(2) { for i in 0..10 { for j in 0..10 {
+                    let (u,v) = (0.5*(w[0]+w[1])+0.5*(w[1]-w[0])*xs[i],0.5*(z[0]+z[1])+0.5*(z[1]-z[0])*xs[j]);
+                    let (x,su,sv) = f.surface.d1([u,v]);
+                    let y = ws[i]*ws[j]*0.25*(w[1]-w[0])*(z[1]-z[0])*cad_kernel::util::space::dot(x,cad_kernel::util::space::cross(su,sv));
+                    sum += y;
+                    if split.is_some_and(|sv| v < sv) { part += y }
+                } } } }
+                println!("  ∫ G dv up the side u = {side}, G from u = {mid}: {sum:+.6e} (below the split {part:+.6e})");
+            }
+            for (li,(l,t)) in f.loops.iter().zip(cad_kernel::props::terms(b,fi)).enumerate() {
+                for (c,t) in l.iter().zip(t) {
+                    let e = &b.edges[c.edge as usize];
+                    let pc = format!("{:?}",c.pcurve);
+                    println!("  loop {li} edge {} ({}) reversed {}: {:?}, terms {:+.4e} {:+.4e}; pcurve {}",c.edge,e.curve.kind(),c.reversed,b.uv_ends(f,c),t.0,t.1,
+                        &pc[..pc.len().min(60)]);
+                    // (an inverse pcurve read at 40 places from the line between its ends, and carried
+                    // along from the place before as `props` reads it)
+                    if matches!(c.pcurve,cad_kernel::topo::Pcurve::Inverse {..}) {
+                        let mut last: Option<(f64,[f64;2],[f64;2])> = None;
+                        for k in 0..=40 {
+                            let t = e.t[0]+(e.t[1]-e.t[0])*k as f64/40.;
+                            let plain = c.pcurve.at(t,e,&f.surface,&b.vertices);
+                            let seed = last.map(|(t0,uv,d)| [uv[0]+d[0]*(t-t0),uv[1]+d[1]*(t-t0)]);
+                            let (uv,d) = c.pcurve.at_and_derivative_from(t,e,&f.surface,&b.vertices,seed);
+                            last = Some((t,uv,d));
+                            if (uv[0]-plain[0]).abs()+(uv[1]-plain[1]).abs() > 1e-6 { println!("    at {k}: from the line {plain:?}, carried {uv:?} (seed {seed:?}, rate {d:?})") }
+                            let h = 1e-4*(e.t[1]-e.t[0]);
+                            let (p0,p1) = (c.pcurve.at((t-h).max(e.t[0]),e,&f.surface,&b.vertices),c.pcurve.at((t+h).min(e.t[1]),e,&f.surface,&b.vertices));
+                            let w = (t+h).min(e.t[1])-(t-h).max(e.t[0]);
+                            let (_,su,sv) = f.surface.d1(plain);
+                            let sin = cad_kernel::util::space::norm(cad_kernel::util::space::cross(su,sv))/(cad_kernel::util::space::norm(su)*cad_kernel::util::space::norm(sv));
+                            if k%4 == 0 { println!("    at {k}: rate {d:?}, the feet's chord [{:.4e}, {:.4e}], sin {sin:.3e}",(p1[0]-p0[0])/w,(p1[1]-p0[1])/w) }
+                        }
+                    }
+                }
+            }
+        }
     }
     // `… agree n sag`: n points of the built solid's box classified both ways, by the solid (its mesh
     // within `sag`, by its winding number) and by the sweep's definition (`Swept::member`), and each

@@ -2383,13 +2383,63 @@ point, the dip read to 1.1370). The thin's folds are thicker than the tolerance,
 turn's — held by the instants beside their own 6.3e-7 to 1.4e-6 deep at the first pair, 2.5e-7 to
 8.1e-7 at the second, from an eighth of the way from birth to point up to it (`depth_probe
 sliver`), against 3e-7 — but lie wholly in that tail, held by the neighbours (`Near`) or by a later
-instant, so a pair read unborn still bounds nothing kept. `tumbling-torus-thin` is now refused at
-the check: beside the first swallowtail point the bridge's end — a construction line, where the
-contact's `s''` leaves the band a fold is read in — grazes the first double curve, which runs within
-8.8e-7 of it (three tolerances) over 9.9e-4 of its length before crossing it at (3.96004, 1.50408,
-1.64131), so the double curve's point on the row (3.96007, 1.50335, 1.64197) stands within the
-arrangement's band (eight tolerances) of that seam; the arrangement laid the strip of the bridge's
-face between the two as one edge on both faces, a pcurve 8.47e-7 off it.
+instant, so a pair read unborn still bounds nothing kept.
+
+**A bridge's end gives way to a double curve within the arrangement's band of it** (#942 T1d-tori,
+`rings::give_way`): the end is a construction line — where the contact's `s''` leaves the band a
+fold is read in, at the depth of the pair's least — and the double curve is geometry, so where a
+preimage comes within the arrangement's band of an end (`tolerant::ON_CURVE` tolerances, within
+which it takes two curves for one), the end is not put there: over the stretch it is the preimage
+itself, the face before the bridge ending on the double curve and the bridge beginning there, one
+seam by construction, laid as no chord (`cut_along`). A preimage beside its swallowtail point starts
+on the fold (`s''` nought) and crosses the end as `s''` climbs past the least's depth — the thin
+torus's first curve's first preimage reads `s''` at 0.08 of that depth by its point, crosses it 0.036
+of the roll above (at (3.96004, 1.50408, 1.64131)) and stands at three times it where the roll ends,
+the normal form's 2 between; where it crosses, the sheet's rates all but one way, it ran within
+8.8e-7 of the end in space (three tolerances) over 9.9e-4 of its length, its row vertex (3.96007,
+1.50335, 1.64197) inside the band of that seam, and the arrangement laid the strip of the bridge's
+face between the two as one edge on both faces, a pcurve 8.47e-7 off it. Each branch of each curve
+(its points between swallowtail points) is read over each stretch: its points there one run that
+only climbs or only falls in the roll, beside the bridge's end nearest its middle point, its
+nearness each point's distance from that end's polyline. A branch within the band that spans the
+stretch is the end over it, and over every other stretch it spans, so the rows the stretches are
+sewn along meet; one not spanning the stretch gives no way. The end is read on the branch as a cubic
+spline of its angle over the roll through the traced points (settled row by row beside the
+swallowtail point the pair is ill posed — two families 1.5e-6 of an angle apart 6e-4 of the roll
+above the thin's first point, the end zig-zagging 2e-6 in space, which no fit closes — and read
+straight between points 5e-4 of the roll apart, the angle's second derivative 130 there, it misses
+by 4e-6). On the thin the first curve's branch gives the first pair's bridge's start way over both
+stretches above its point, and the second's rising branch (crossing the end 0.03 above its point)
+the second pair's bridge's end over the last; the branches clear of every end (3.6 to 18 times the
+depth) give none, nor does the half turn's
+(`swept_rings::a_bridges_end_gives_way_to_a_double_curve_within_the_arrangements_band_of_it`). The
+half turn's birth row and the thin's site A (a preimage laid along a row) are the rule's other form
+— the construction line moved clear rather than put on the curve — applied to rows by hand: a row is
+where a stretch's fit begins, not a seam a face's end can be moved along, so the half turn's is moved
+to the swallowtail point, where it meets the curve only at its end, and a line leaving a stretch at
+its row ends there. `give_way` reads bridges' ends alone; the rows keep those handlings.
+`tumbling-torus-thin` is built: 28 faces, checked at the call's tolerance and judged, held to
+membership, the solid and the sweep's definition agreeing at all 20 000 points of its box
+(`ring_profile thin 75 agree 20000 2e-5`), its mesh within 1e-5 enclosing 0.6962961 (cadrs 0.69630;
+`swept_rings::the_thin_tumbling_torus_is_built_closed` holds its mesh within 1e-4 at 0.6962402),
+about two minutes in release, 19.5 s of it the Boolean (18.3 s its grid seeds). **A sheet enters with
+its seams first** (`rings::seams_first`): where the arrangement takes two of a sheet's edges for one
+it keeps the first (`boolean::merged`) and reads every other use as the surface's inverse of it, and
+the face given way ends on the fold at the swallowtail point, where that inverse is ill posed. With
+the chord on the other leaf kept, the bench's input passed the check by luck (its seam's rate in `v`
+read −0.997 against its feet's −5e-6) and with the observer's origin one ulp off, or 1e-6 either way,
+it was refused, a pcurve 1.2e-5 off its edge beside the second swallowtail point, its foot found on
+the leaf folded back. Kept so, the seam is the face's own line and the chord's leaf, clear of the
+fold, takes the inverse; all four build and check, their meshes' volumes within 1.2e-6 of one
+another. `props::volume` reads it 0.6975, 0.17% above its mesh's: beside each swallowtail point the
+seam given way grazes the row there in space, the sheet's rates one way, and the lens's edge and a
+short piece of the row merged into the seam are read by inversion onto the fold — the foot carried
+from the node before onto the face's top row and held there (`topo` now seeks it again from the
+line where it stands off the edge), and the rate in parameters solved where the two rates stand one
+way to half the digits (now read by the feet's chord): 0.785 before either, and face 8's flux is
+still 2.8e-3 off its mesh's. The Boolean's 19.5 s is its grid seeds over the two tubes' face pairs:
+the ring road's trim resolution is the tool's size over 32, 0.063, coarser than the tube (0.03), so
+every near-boundary ball of one tube reaches the other's.
 
 **A seam's crossing within the tolerance band of the rim is the tube's vertex** (`rings::traces`):
 where a touching piece's rim meets a dipped one's the relative curvature across the rim is nought

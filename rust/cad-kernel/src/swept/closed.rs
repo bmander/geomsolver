@@ -1211,6 +1211,9 @@ pub fn ring_entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Re
         parts
     };
     phase("the stretches sewn");
+    // (each sheet's seams before its chords: where the arrangement takes two for one it keeps the
+    // first, and a seam given way to a double curve is its face's own line, `rings::seams_first`)
+    let sheets: Vec<Brep> = sheets.into_iter().map(super::rings::seams_first).collect();
     if crate::timing() { eprintln!("ring: entered in {:?}",clock.elapsed()) }
     Ok(RingEntered {ends:[start,end],sheets,given,cut})
 }
@@ -1318,7 +1321,34 @@ pub fn ring_fitted(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64)
         parted += 1;
     }
     phase(&format!("{parted} stretches parted at swallowtail points"));
+    // **a bridge's end gives way to a double curve within the arrangement's band of it** (#942
+    // T1d-tori, `rings::give_way`): the end is a construction line, the double curve geometry, so
+    // over a stretch where a preimage comes within the band the face ends on the preimage itself —
+    // read once over every stretch, and again with the branches that gave way anywhere, so a branch
+    // is the end over every stretch it spans and the rows sewn across meet
+    let read = |given: &[(usize,usize)]| -> Result<Vec<Vec<super::rings::Way>>,Unbuilt> {
+        fits.iter().map(|f| super::rings::give_way(&ring,path,[a,b],f,scale,&curves,given,tol)).collect()
+    };
+    let mut ways = read(&[])?;
+    let mut given: Vec<(usize,usize)> = ways.iter().flatten().map(|w| (w.of.0,branch_of(&curves[w.of.0],w.of.1[0]))).collect();
+    given.sort_unstable();
+    given.dedup();
+    if !given.is_empty() { ways = read(&given)? }
+    for (fit,ways) in fits.iter_mut().zip(ways) {
+        if ways.is_empty() { continue }
+        *fit = super::rings::fitted_giving_way(&ring,path,[a,b],fit,scale,K2_FIT*tol,ways)?;
+    }
+    phase(&format!("{} branches give bridges' ends way",given.len()));
     Ok((ring,scale,fits,curves,!cuts.is_empty()))
+}
+
+/// The first point of the branch of the double curve `curve` (`rings::double_curve`'s points, its
+/// swallowtail points after the marker) holding its point `k`: the curve parted at its swallowtail
+/// points (`rings::give_way`'s branches).
+fn branch_of(curve: &[(f64,f64,f64)],k: usize) -> usize {
+    let mark = curve.iter().position(|p| p.0.is_nan()).unwrap_or(curve.len());
+    curve[(mark+1).min(curve.len())..].iter().filter_map(|ap| curve[..mark].iter().position(|p| p.0 == ap.0 && p.1 == ap.1))
+        .filter(|&i| i <= k).max().unwrap_or(0)
 }
 
 /// K2's build from its candidates: the tool at each end pose and the sheets, their meetings
