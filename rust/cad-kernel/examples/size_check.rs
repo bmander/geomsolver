@@ -2,7 +2,7 @@
 //! gate builds it, then every place `Brep::check` would refuse at `geom::tolerance(size)` listed with
 //! by how much (`Brep::misfits`) — what the bench's runner reads as validity.
 //!
-//! `cargo run --release -p cad-kernel --example size_check -- half-turn|eighty|across`
+//! `cargo run --release -p cad-kernel --example size_check -- half-turn|full-turn|eighty|across`
 use cad_kernel::trajectory::{Screw,Trajectory};
 
 fn tumbling(tube: f64,ratio: f64,lean: f64,heading: f64,height: f64) -> (cad_kernel::topo::Brep,Trajectory) {
@@ -22,6 +22,10 @@ fn main() {
             let (tool,path) = tumbling(0.16,0.375,30.,20.,0.7071);
             cad_kernel::swept::closed::ring(&tool,&path,[-90f64.to_radians(),90f64.to_radians()],0.16/250.,0.16/50000.)
         }
+        "full-turn" => {
+            let (tool,path) = tumbling(0.16,0.375,30.,20.,0.7071);
+            cad_kernel::swept::closed::ring(&tool,&path,[-180f64.to_radians(),180f64.to_radians()],0.16/250.,0.16/50000.)
+        }
         "eighty" => {
             let tool = cad_kernel::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.5).unwrap();
             let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.25,advance:0.});
@@ -36,7 +40,7 @@ fn main() {
             let path = Trajectory::Twist(Screw {origin:[0.,0.,0.],axis:[0.,0.,1.],ratio:1.,advance:0.});
             cad_kernel::swept::closed::ring_cut_from(&block,&cutter,&path,[-140f64.to_radians(),140f64.to_radians()],0.01,1e-5)
         }
-        _ => { eprintln!("size_check half-turn|eighty|across"); std::process::exit(2) }
+        _ => { eprintln!("size_check half-turn|full-turn|eighty|across"); std::process::exit(2) }
     };
     let b = match built { Ok(b) => b,Err(e) => { println!("refused: {e:?}"); return } };
     let size_tol = cad_kernel::geom::tolerance(b.size());
