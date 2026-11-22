@@ -1027,6 +1027,7 @@ fn face(st: &Setting,sheet: &Sheet,w: &Walked) -> Result<Built,Refusal> {
             let other = lone.get(1).copied().or_else(|| used.iter().copied().find(|&x| distance(b.vertices[x as usize].p,far) <= st.within));
             whole_sphere(s,p,lone[0],other,reversed,&w.name,st.within)
         }
+        Surface::BSpline(..) if !lone.is_empty() => whole_sheet(s,&lone,b,reversed,&w.name,st.within),
         _ => None,
     };
     if uses.is_empty() { if let Some(x) = whole(s) { return Ok(x) } }
@@ -1203,6 +1204,49 @@ fn whole_sphere(s: &Surface,p: V,v: u32,other: Option<u32>,reversed: bool,name: 
     if reversed { l = reverse_loop(l); }
     let poles = if other.is_some() { vec![] } else { vec![far_point] };
     Some(Built {face:Face {surface:s.clone(),reversed,loops:vec![l],name:name.to_string()},laid:vec![edge],poles,cuts:Vec::new()})
+}
+
+/// **A whole closed spline sheet**, bounded by the vertices at its poles alone (a net closed round
+/// one parameter and collapsed to a point at both ends of the other: an ellipsoid's, a spheroid's,
+/// a lemon's, which ISO 10303-42 lets a face bound by `VERTEX_LOOP`s): the sheet's whole domain,
+/// its seam — the iso-curve at the start of the parameter it closes round, the net's own end row,
+/// exactly — laid from the one pole to the other and walked up one side of the domain and down
+/// the other (`Brep::close_poles` lays the poles' edges between), a pole the file gives no vertex
+/// at laid too. `lone`: the file's vertices at poles. None where the sheet closes round neither
+/// parameter, a pole row is no point, or a vertex stands at neither pole.
+fn whole_sheet(s: &Surface,lone: &[u32],b: &Brep,reversed: bool,name: &str,within: f64) -> Option<Built> {
+    let Surface::BSpline(_,n) = s else { return None };
+    let dom = n.domain();
+    for c in 0..2 {
+        let o = 1-c;
+        let at = |x: f64,y: f64| { let mut q = [0.;2]; q[c] = x; q[o] = y; q };
+        let ([c0,c1],[o0,o1]) = (dom[c],dom[o]);
+        // closed round `c`, its rows at `o`'s two ends each one point (its poles)
+        let closed = (0..=8).all(|j| { let y = o0+(o1-o0)*j as f64/8.; let p = s.point(at(c0,y)); distance(p,s.point(at(c1,y))) <= 1e-7*(1.+norm(p)) });
+        let pole = |y: f64| (0..=8).all(|j| distance(s.point(at(c0+(c1-c0)*j as f64/8.,y)),s.point(at(c0,y))) <= within);
+        if !(closed && pole(o0) && pole(o1)) { continue }
+        let ends = [s.point(at(c0,o0)),s.point(at(c0,o1))];
+        // each lone vertex at one of the two poles
+        let mut given = [None;2];
+        for &v in lone {
+            let p = b.vertices[v as usize].p;
+            let k = (0..2).find(|&k| distance(p,ends[k]) <= within.max(1e-7*(1.+norm(p))))?;
+            given[k] = Some(v);
+        }
+        let poles: Vec<V> = (0..2).filter(|&k| given[k].is_none()).map(|k| ends[k]).collect();
+        let mut laid_at = LAID;
+        let v: [u32;2] = std::array::from_fn(|k| given[k].unwrap_or_else(|| { let x = laid_at; laid_at -= 1; x }));
+        let seam = if c == 0 { n.row(0) } else { n.column(0) };
+        let edge = Edge {curve:EdgeCurve::Curve(Curve::BSpline(Arc::new(seam))),t:[o0,o1],v,tol:0.};
+        let line = |x: f64| Pcurve::Line {a:at(x,o0),b:at(x,o1)};
+        // counter-clockwise round the domain: up `o` at the end of `c` and down it at the start where
+        // `c` is `u`, the other way where `c` is `v`
+        let mut l = if c == 0 { vec![Coedge {edge:LAID,reversed:false,pcurve:line(c1)},Coedge {edge:LAID,reversed:true,pcurve:line(c0)}] }
+            else { vec![Coedge {edge:LAID,reversed:false,pcurve:line(c0)},Coedge {edge:LAID,reversed:true,pcurve:line(c1)}] };
+        if reversed { l = reverse_loop(l); }
+        return Some(Built {face:Face {surface:s.clone(),reversed,loops:vec![l],name:name.to_string()},laid:vec![edge],poles,cuts:Vec::new()})
+    }
+    None
 }
 
 /// The entity a check's message names: its first face or edge, by its index in the `Brep`.
