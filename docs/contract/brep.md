@@ -1812,6 +1812,29 @@ than its face's is a curve of no face of the edge's. Gates:
 `step_kinds::a_tolerant_edge_is_read_by_its_3d_curve_whatever_its_master`,
 `a_master_pcurve_on_another_surface_is_set_aside`; `step_corpus::nothing_is_read_wrong`.
 
+**A net creased at its knots is measured as a smooth one** (`props::Prefix::rows`): each `v`
+span's column of `G` reads the net's rows at its nodes, its far end too, through that span's own
+knots and poles. A B-spline read at a knot takes the next span, and across a knot of the degree's
+multiplicity — where a net is joined in value only and `S_v` jumps — that node tabled `G` from the
+wrong patch: a face family's wall, written piece by piece between its stations, read its flux
+2.8e-5 off while its area, which takes no table, stayed right. A line in a face's parameters is
+cut, in closed form, where it crosses such a crease, since `G` jumps there. **A stretch of a use
+is read by ten nodes only where they read it** (`props::checked`): each stretch between breaks is
+checked by the rule's 21-point Kronrod extension and kept, to the bit, where the two agree to
+rounding; otherwise the extension is kept within its estimated error, or the stretch is settled.
+An edge one of whose knots stood 1.5e-9 past its start had its half turn on a rational net read by
+ten points, a face's area 3.8e-5 off (brep-bench's frustum screwed across a ring sector, and drum
+leaning across a turn, the corpus's last two files read wrong). **An inverse curve's rate reads
+second derivatives on its foot's side of a joint** (`topo::second`): a net's own in the span
+holding the foot, any other surface's differences taken on one side of a break within their step.
+**A polynomial net's `G` away from the flux's table is read along its iso curve** (`props::Iso`),
+the rows across the held parameter read once per node, the same values to rounding (a 91×143
+quintic's area in half the time). Gates:
+`step_roundtrip::a_net_creased_at_its_stations_is_measured`,
+`rational::a_rational_arcs_stretch_is_read_to_its_closed_form` (a 340° band of two rational arcs,
+1e-8 off under the ten nodes alone), `step_read::a_foot_just_past_a_joint_runs_at_its_own_rate`,
+`step_corpus::nothing_is_read_wrong`.
+
 **A face reaching a pole is integrated along the parameter the pole collapses**
 (`props::integrated`): where a degenerate edge lies in its loop, or a sheet's row is all but
 collapsed, `G` is nought at the pole, so the value a use arrives along weighs nothing in the

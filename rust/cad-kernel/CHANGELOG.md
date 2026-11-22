@@ -8,6 +8,16 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The kernel reads STEP** (#993 stage 1, `step_read::read`, `step_read::reading`, `step_file`):
+  a manifold solid of an AP203, AP214 or AP242 advanced B-rep is read into a `Brep`, each face on
+  the file's own surface and each edge on its own curve, nothing refitted and nothing healed, each
+  face, edge and vertex naming its entity (`Given`). A file is read correctly or refused with a
+  `Refusal {why, entity, msg}` naming the entity at fault; an open shell, a face that crosses
+  itself, an unsupported surface and an assembly's product structure are refusals. Units and the
+  stated uncertainty are read (`step_read::context`), tolerances measured and never widened, and
+  the boundary read is held sound (`step_read::sound`) before it is given. Every file `step`
+  writes reads back to the same solid.
+
 - **A foot just past a joint runs at its own rate** (#993 stage 1): `Pcurve::derivative` of an
   inverse curve off its face read the surface's second derivatives as differences a millionth of
   a parameter apart, which straddle a knot within that and read its two sides' mean (a foot a
