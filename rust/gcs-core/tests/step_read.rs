@@ -471,3 +471,127 @@ fn an_edges_feet_off_its_face_run_at_their_own_rate() {
         assert!((d[0] - fd[0]).hypot(d[1] - fd[1]) <= 1e-6 * size, "{t}: {d:?} against the feet's {fd:?}");
     }
 }
+
+/// A rational net written as `#14`, its poles `#200` on: `rows` of `(point, weight)` along `u`,
+/// each a column along `v`, of degrees `du`, `dv` over the knots written with their multiplicities.
+fn net(rows: &[Vec<(V, f64)>], (du, dv): (usize, usize), uk: (&str, &str), vk: (&str, &str)) -> String {
+    let mut out = String::new();
+    let (mut id, mut grid, mut weights) = (200, Vec::new(), Vec::new());
+    for row in rows {
+        let (mut ids, mut ws) = (Vec::new(), Vec::new());
+        for &(p, w) in row {
+            out += &format!("#{id} = CARTESIAN_POINT('',{});\n", triple(p));
+            ids.push(format!("#{id}"));
+            ws.push(real(w));
+            id += 1;
+        }
+        grid.push(format!("({})", ids.join(",")));
+        weights.push(format!("({})", ws.join(",")));
+    }
+    out + &format!("#14 = ( BOUNDED_SURFACE() B_SPLINE_SURFACE({du},{dv},({}),.UNSPECIFIED.,.F.,.F.,.F.) \
+        B_SPLINE_SURFACE_WITH_KNOTS(({}),({}),({}),({}),.UNSPECIFIED.) GEOMETRIC_REPRESENTATION_ITEM() \
+        RATIONAL_B_SPLINE_SURFACE(({})) REPRESENTATION_ITEM('') SURFACE() );\n",
+        grid.join(","), uk.0, vk.0, uk.1, vk.1, weights.join(","))
+}
+
+/// A unit circle round `z` as a rational net's nine poles, a quarter turn a span, its first at the
+/// angle `from`: each a point in the plane and its weight.
+fn ring(from: f64) -> Vec<([f64; 2], f64)> {
+    (0..9).map(|k| {
+        let (a, corner) = (from + k as f64 * std::f64::consts::FRAC_PI_4, k % 2 == 1);
+        let r = if corner { std::f64::consts::SQRT_2 } else { 1. };
+        ([r * a.cos(), r * a.sin()], if corner { FRAC_1_SQRT_2 } else { 1. })
+    }).collect()
+}
+
+const RING_KNOTS: (&str, &str) = ("3,2,2,2,3", "0.,0.25,0.5,0.75,1.");
+
+/// The cylinder of radius 5 from `z = 0` to `3` as the rational net of its circle swept up `z`, the
+/// net closing on itself round the axis at the angle `from` (its first and last rows one line).
+fn cylinder_net(from: f64) -> String {
+    let rows: Vec<Vec<(V, f64)>> = ring(from).iter().map(|&(p, w)| vec![([5. * p[0], 5. * p[1], 0.], w), ([5. * p[0], 5. * p[1], 3.], w)]).collect();
+    net(&rows, (2, 1), RING_KNOTS, ("2,2", "0.,1."))
+}
+
+/// The sphere of radius 5 about the origin as the rational net of its meridian turned round `z`,
+/// closing on itself at the angle `from`, its rows at `v`'s two ends its poles.
+fn sphere_net(from: f64) -> String {
+    let h = FRAC_1_SQRT_2;
+    let meridian = [([0., -5.], 1.), ([5., -5.], h), ([5., 0.], 1.), ([5., 5.], h), ([0., 5.], 1.)];
+    let rows: Vec<Vec<(V, f64)>> = ring(from).iter().map(|&(p, w)| meridian.iter().map(|&(m, wm)| ([m[0] * p[0], m[0] * p[1], m[1]], w * wm)).collect()).collect();
+    net(&rows, (2, 2), RING_KNOTS, ("3,2,3", "0.,0.5,1."))
+}
+
+/// Half a drum on a closed net — the cylinder of radius 5 from `z = 0` to `3` (`cylinder_net`)
+/// where `x ≥ 0`, cut by the plane `x = 0` — its side running from the angle `−π/2` to `π/2`: across
+/// the net's closing line where that is at the angle `from` between them, with no seam.
+fn half_drum(from: f64) -> String {
+    file(&format!("{}\
+        #20 = CARTESIAN_POINT('',(0.,0.,3.));\n#21 = AXIS2_PLACEMENT_3D('',#20,#11,#12);\n#22 = PLANE('',#21);\n#23 = PLANE('',#13);\n\
+        #24 = DIRECTION('',(-1.,0.,0.));\n#25 = DIRECTION('',(0.,1.,0.));\n#26 = AXIS2_PLACEMENT_3D('',#10,#24,#25);\n#27 = PLANE('',#26);\n\
+        #30 = CIRCLE('',#21,5.);\n#34 = CIRCLE('',#13,5.);\n\
+        #60 = CARTESIAN_POINT('',(0.,-5.,0.));\n#61 = VERTEX_POINT('',#60);\n#62 = CARTESIAN_POINT('',(0.,5.,0.));\n#63 = VERTEX_POINT('',#62);\n\
+        #64 = CARTESIAN_POINT('',(0.,5.,3.));\n#65 = VERTEX_POINT('',#64);\n#66 = CARTESIAN_POINT('',(0.,-5.,3.));\n#67 = VERTEX_POINT('',#66);\n\
+        #68 = VECTOR('',#11,1.);\n#69 = DIRECTION('',(0.,-1.,0.));\n#70 = VECTOR('',#69,1.);\n\
+        #71 = LINE('',#62,#68);\n#72 = LINE('',#60,#68);\n#73 = LINE('',#62,#70);\n#74 = LINE('',#64,#70);\n\
+        #81 = EDGE_CURVE('',#61,#63,#34,.T.);\n#82 = EDGE_CURVE('',#63,#65,#71,.T.);\n#83 = EDGE_CURVE('',#67,#65,#30,.T.);\n\
+        #84 = EDGE_CURVE('',#61,#67,#72,.T.);\n#85 = EDGE_CURVE('',#63,#61,#73,.T.);\n#86 = EDGE_CURVE('',#65,#67,#74,.T.);\n\
+        #90 = ORIENTED_EDGE('',*,*,#81,.T.);\n#91 = ORIENTED_EDGE('',*,*,#82,.T.);\n#92 = ORIENTED_EDGE('',*,*,#83,.F.);\n\
+        #93 = ORIENTED_EDGE('',*,*,#84,.F.);\n#94 = EDGE_LOOP('',(#90,#91,#92,#93));\n#95 = FACE_BOUND('',#94,.T.);\n\
+        #96 = ADVANCED_FACE('',(#95),#14,.T.);\n\
+        #100 = ORIENTED_EDGE('',*,*,#82,.F.);\n#101 = ORIENTED_EDGE('',*,*,#85,.T.);\n#102 = ORIENTED_EDGE('',*,*,#84,.T.);\n\
+        #103 = ORIENTED_EDGE('',*,*,#86,.F.);\n#104 = EDGE_LOOP('',(#100,#101,#102,#103));\n#105 = FACE_BOUND('',#104,.T.);\n\
+        #106 = ADVANCED_FACE('',(#105),#27,.T.);\n\
+        #110 = ORIENTED_EDGE('',*,*,#83,.T.);\n#111 = ORIENTED_EDGE('',*,*,#86,.T.);\n#112 = EDGE_LOOP('',(#110,#111));\n\
+        #113 = FACE_BOUND('',#112,.T.);\n#114 = ADVANCED_FACE('',(#113),#22,.T.);\n\
+        #120 = ORIENTED_EDGE('',*,*,#81,.F.);\n#121 = ORIENTED_EDGE('',*,*,#85,.F.);\n#122 = EDGE_LOOP('',(#120,#121));\n\
+        #123 = FACE_BOUND('',#122,.T.);\n#124 = ADVANCED_FACE('',(#123),#23,.F.);\n\
+        #50 = CLOSED_SHELL('',(#96,#106,#114,#124));\n#51 = MANIFOLD_SOLID_BREP('',#50);\n", cylinder_net(from)))
+}
+
+/// **A spline sheet closed on itself is periodic, whatever its form, and a loop on it is walked as
+/// on any periodic surface** (`topology::Rolled`): a net whose two end rows are one curve, met
+/// smoothly, has no period in the kernel, so a face crossing its closing line was no one region in
+/// its parameters (a leap of the domain's width, a break, an edge read off its face). Rolled out
+/// and walked, each face is read on the window of the net its loops lie in — the net cut where no
+/// loop crosses, the same points. Half a drum whose side crosses its net's closing line with no
+/// seam (kentron's lens, brepkit's ellipsoids), a drum whose side is bounded by two circles with
+/// no seam and whose vertices stand off the closing line (the seam laid on the net between them),
+/// and a ball's cap whose circle winds round the net's pole off its closing line (the seam laid to
+/// the pole), read to their closed forms wherever the closing line stands; each file's entities
+/// read once.
+#[test]
+fn a_face_across_a_closed_nets_closing_line_reads_to_its_closed_form() {
+    use std::f64::consts::PI;
+    for from in [0., 0.3, -1.2, PI / 2., 2.5] {
+        let given = read(&half_drum(from)).unwrap_or_else(|r| panic!("half a drum, closing at {from}: {r:?}"));
+        let b = &given[0].brep;
+        close(&format!("half a drum, closing at {from}: volume"), volume(b), PI * 25. * 3. / 2., 1e-9);
+        close(&format!("half a drum, closing at {from}: area"), total_area(b), 15. * PI + 30. + 25. * PI, 1e-9);
+        assert_eq!(given[0].edges.iter().filter(|&&e| e == 0).count(), 0, "half a drum, closing at {from}: nothing laid");
+    }
+    for (from, at) in [(1., 0.5 * PI), (0.3, 2.), (0., 0.)] {
+        let text = drum(at).replace("#14 = CYLINDRICAL_SURFACE('',#13,5.);\n", &cylinder_net(from));
+        let given = read(&text).unwrap_or_else(|r| panic!("a drum, closing at {from}, its top's vertex at {at}: {r:?}"));
+        let b = &given[0].brep;
+        close(&format!("a drum, closing at {from}: volume"), volume(b), PI * 25. * 3., 1e-9);
+        close(&format!("a drum, closing at {from}: area"), total_area(b), 2. * PI * 5. * 3. + 2. * PI * 25., 1e-9);
+        let named: std::collections::BTreeSet<u32> = given[0].edges.iter().copied().filter(|&e| e != 0).collect();
+        assert_eq!(named.into_iter().collect::<Vec<_>>(), vec![33, 37], "a drum, closing at {from}: the file's edges");
+    }
+    for (from, at) in [(1., 0.), (0., 0.), (-2.5, 0.7)] {
+        let (c, s) = (4. * f64::cos(at), 4. * f64::sin(at));
+        let text = file(&format!("{}#20 = CARTESIAN_POINT('',(0.,0.,3.));\n\
+            #21 = AXIS2_PLACEMENT_3D('',#20,#11,#12);\n#22 = PLANE('',#21);\n#30 = CIRCLE('',#21,4.);\n\
+            #31 = CARTESIAN_POINT('',({},{},3.));\n#32 = VERTEX_POINT('',#31);\n#33 = EDGE_CURVE('',#32,#32,#30,.T.);\n\
+            #40 = ORIENTED_EDGE('',*,*,#33,.T.);\n#41 = EDGE_LOOP('',(#40));\n#42 = FACE_BOUND('',#41,.T.);\n\
+            #43 = ADVANCED_FACE('',(#42),#14,.T.);\n#44 = ORIENTED_EDGE('',*,*,#33,.F.);\n#45 = EDGE_LOOP('',(#44));\n\
+            #46 = FACE_BOUND('',#45,.T.);\n#47 = ADVANCED_FACE('',(#46),#22,.F.);\n#50 = CLOSED_SHELL('',(#43,#47));\n\
+            #51 = MANIFOLD_SOLID_BREP('',#50);\n", sphere_net(from), real(c), real(s)));
+        let given = read(&text).unwrap_or_else(|r| panic!("a cap, closing at {from}: {r:?}"));
+        let b = &given[0].brep;
+        let (r, h) = (5., 2.);
+        close(&format!("a cap, closing at {from}: volume"), volume(b), PI * h * h * (3. * r - h) / 3., 1e-9);
+        close(&format!("a cap, closing at {from}: area"), total_area(b), PI * (2. * r * h + 16.), 1e-9);
+    }
+}
