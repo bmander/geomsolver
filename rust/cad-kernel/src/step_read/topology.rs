@@ -585,16 +585,19 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
                 // top): its collapsed parameter jumps there, which no one inverse curve reads — the
                 // edge cut at the pole (`Cut`), each piece its own inverse to the pole on its own
                 // branch, and
-                // the pole's degenerate edge between them laid by `close_poles`; the way the jump
-                // goes, the one that closes the loop
-                let crossing = (1..read.len().saturating_sub(1)).find_map(|i| {
+                // the pole's degenerate edge between them laid by `close_poles`; the jump the way
+                // that keeps the face on the left (`pole_branch`), unless that leaves the loop a
+                // whole turn from where it began (a seam to the pole lying along the curve itself,
+                // the face a sliver there): then the way that closes it
+                let crossings: Vec<_> = (1..read.len().saturating_sub(1)).filter_map(|i| {
                     let (f,q) = read[i];
                     let k = pole_at(s,q,st.within)?;
                     let p = periods[k]?;
                     let (before,after) = (read[..i].iter().rev().find(|x| pole_at(s,x.1,st.within).is_none())?,
                         read[i+1..].iter().find(|x| pole_at(s,x.1,st.within).is_none())?);
                     (f > 0. && f < 1. && (after.1[k]-before.1[k]).abs() > p/12.).then_some((f,q,k,p,before.1,after.1))
-                });
+                }).collect();
+                let crossing = crossings.first().copied();
                 if let Some((f,q,k,p,before,after)) = crossing {
                     let EdgeCurve::Curve(curve) = &e.curve else { unreachable!("a walked edge has a curve") };
                     let pole = s.point(q);
@@ -602,12 +605,15 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
                     if !(t > e.t[0] && t < e.t[1]) || distance(curve.point(t),pole) > st.within {
                         return Err(Refusal::unsupported(st.reads[ei].entity,"an edge crossing its face's pole at none of its points: not read"))
                     }
+                    let inward = (after[1-k]-q[1-k]).signum();
+                    let x = pole_branch(after[k]+off[k],before[k]+off[k],p,k,inward,reversed,false);
                     let (mut m1,mut m2) = (q,q);
                     m1[k] = before[k]+off[k];
-                    m2[k] = after[k]+off[k];
+                    m2[k] = x;
                     m1[1-k] += off[1-k];
                     m2[1-k] += off[1-k];
-                    let z2 = z;
+                    let mut z2 = z;
+                    z2[k] += x-(after[k]+off[k]);
                     // the pieces in the loop's order: to the pole, and from it; the edge keeps its
                     // first piece along its curve, the far one is laid
                     let (to,from_pole) = if rev {
@@ -1013,13 +1019,13 @@ fn face(st: &Setting,sheet: &Sheet,w: &Walked) -> Result<Built,Refusal> {
     }
     // a sphere's face holding its poles (a lone vertex at one, or both), its loops holes in it:
     // the whole sphere its outer loop, laid through the file's poles
-    if poles.is_empty() && !lone.is_empty() {
+    if poles.is_empty() && laid.is_empty() && !lone.is_empty() {
         if let Some(x) = whole(s) {
             loops.extend(x.face.loops);
             laid.extend(x.laid);
             poles.extend(x.poles);
         }
-    } else if poles.is_empty() && matches!(s,Surface::Sphere(..)) {
+    } else if poles.is_empty() && laid.is_empty() && matches!(s,Surface::Sphere(..)) {
         // a sphere's face whose every loop turns as a hole does (a ball less a cap, written with no
         // seam): the whole sphere its outer loop, both poles laid
         let g = Face {surface:s.clone(),reversed,loops:loops.clone(),name:String::new()};
