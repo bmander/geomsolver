@@ -963,8 +963,8 @@ Pieces that share a section are glued there (`assemble`: a standing ball's piece
 rings ending where its stretch does, its part beside a run to its own and to that run), never
 unioned; where the piece is in two, its other end's section is the next run's in part, and those
 are unioned. Refused, saying which: both ends' runs stopping short, or both running on (not
-built yet); an end on a face cutting across the stretch (the dome is not carried past and cut
-off yet); a ball a hair under the fill's radius (its centre's spindle so short no section is
+built yet); an end on a face cutting across the stretch where a face also goes on from it (below
+for one cutting across alone); a ball a hair under the fill's radius (its centre's spindle so short no section is
 carried past where the seams cut the rolled run off, `cannot roll on past`, or off the fill's
 axis its contact crossing the seam in another section, `seam_aligned`: the rolled canal between
 the two runs' last sections, divided as above, is not built yet); the chamfer (`no stretch of a
@@ -983,6 +983,36 @@ its fill, the boss beyond them, the floor's ring turned between the balls less w
 the fill, at each ball the cell of the floor, the wall and the boss less the ball and the fill,
 the wall's runs; a flat boss skewed 20°, the field drawing the kernel's boundary point by point;
 each refusal above; the convex twin built), each exported to STEP and STL.
+
+**A standing ball's stretch ending where a face cuts across it** (#994, fixture 133: R10 along an
+arm's bottom edges where a hub's face crosses its rounded end; a D-shaped post's rim under a
+tilted lid, its chord crossing it). The set is carried past that end and kept on the face's side,
+read against the faces' meeting only where its nearest point of that meeting is on the crease, as
+any run's is (`crease.ends`, above: halfway to where the meeting comes back within the faces it
+ends on). Every section of a still ball holds its centre and its foot, so none is cut off whole by
+a face the centre stands within: the dome goes on round until the meeting comes back, and
+`fillet::dome_cut` builds it where that is the crease's other end — the meeting past the crease
+stays out of every face it ends on (a cut end's faces, a tangent end's plane square to the crease).
+Both ends cut across: the whole loop's dome, the two surfaces' meeting in closed form its loop
+(`fillet::hemisphere`, the one `standing` builds), cut off by the faces at both ends (a plane's
+half-space, a curved face's solid, `trimmed`). One end where a face goes on tangent from the
+curved face, its vertex in the ball's section there: from that section half round to where its
+plane crosses the meeting again — the dome's piece between two sections in one plane, which is the
+whole loop's on that plane's side (`dome_piece`, the stretch run on along the meeting to there, the
+patch's poles kept off the ring's side and the side kept) — cut off by the faces at the cut end. The
+face cutting across may cut that section too, so it is the run going on's only in part: such a
+piece is unioned with the runs at its ends, not glued (`Rolled::stands` false where a face cuts
+across an end of the run, `piece.rs`). Refused, saying which: the meeting coming back
+within the faces it ends on elsewhere (a post with a chord each side, its rim two stretches:
+halfway there is no section of a ball standing still), the run going on ending apart from the
+ball's section, a stretch turning half round or more from it, a face cutting across where another
+goes on, and surfaces meeting in no closed curve in closed form. `tests/standing_ends.rs` is the
+gate: the D under lids of 0° to 30°, its chord short of the axis, past it and a hair off it, the
+volume the closed form `∫∫_D (lid − ball)`'s to 1e-9; the chord a cylinder's bite; the arm's end
+half inside a hub whose face is square or skewed either way, past the axis or short of it, the
+volume the plain part's less `∫∫ (bottom − ball)` over the plan the round keeps (in closed form,
+and by quadrature over exact inner integrals); its bottom edges all rounded; the field drawing the
+kernel's boundary on each kind; and each refusal.
 
 **A ball as wide as a corner** (#962, `rounds/corner.sv`): a pocket's floor rounded where its
 plan corners are arcs of radius `R`, or a boss's top rim, or a round pocket's or a round boss's

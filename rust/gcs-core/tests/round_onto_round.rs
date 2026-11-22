@@ -261,7 +261,8 @@ fn a_ball_wider_than_the_fill_is_refused_saying_both_radii() {
 /// round a spindle so short no section is carried past where the seams cut it off, on the fill's
 /// axis and off it; the chamfer, whose flat closes the boss's side to a point over a stretch; and a
 /// boss standing over the frame's end, the fill's meeting with it ending on the end's face, which
-/// cuts across it.
+/// cuts across it, while the floor's run at its other end stops short of the ball's section (#994:
+/// the dome cut across is built only where that end's vertex stands in its section).
 #[test]
 fn a_round_onto_a_round_not_built_yet_is_refused_saying_why() {
     let why = refused(&framed(&round_boss(12.0, -20.0, 6.0), 2.0, "round(r: 1.999mm)"));
@@ -271,7 +272,8 @@ fn a_round_onto_a_round_not_built_yet_is_refused_saying_why() {
     let why = refused(&framed(&round_boss(12.0, -20.0, 6.0), 2.0, "chamfer(d: 2mm)"));
     assert!(why.contains("no stretch of a flat closing to a point is cut off yet"), "{why}");
     let why = refused(&framed(&round_boss(13.0, 5.5, 6.0), 2.0, "round(r: 2mm)"));
-    assert!(why.contains("cuts across it: no stretch of its dome is carried past and cut off by a face yet"), "{why}");
+    assert!(why.contains("cuts across it: the run going on along `frame.floor` at its other end ends apart from its \
+        section there: not built yet"), "{why}");
 }
 
 /// **The convex twin**: a boss across an edge rounded convex (`taken`), whose face's offset away
