@@ -17,7 +17,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   chords parted by 3.8e-4. And a piece merged by the arrangement into another edge keeps its own
   polyline pcurve, carried onto the other's parameter (`boolean`'s `carried_pcurve`), the merge's
   gap read at either polyline's vertices too; inverted from the other's curve, the full turn's
-  landed on the leaf past the fold, 1.3e-5 off.
+  landed on the leaf past the fold, 1.3e-5 off. It builds wherever either end torus's seam stands
+  (`swept_rings::the_full_turn_is_built_wherever_its_end_poses_seams_stand`) and with its observer's
+  origin moved by an ulp or by 1e-6 (`ring_profile full-at`).
 
 - **A trim's refusal names the piece that is mixed, not a face tangent to it** (#942,
   `swept::trim`'s `missing_across`): a point read across an open edge on a candidate face is on a

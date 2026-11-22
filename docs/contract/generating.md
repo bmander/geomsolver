@@ -2294,7 +2294,12 @@ tolerance of the curve's own middle: across the kernel each preimage is the para
 and the leaves bend opposite ways, so their drawings parted by 3.8e-4 beside the point (3 chords
 then, 24 now). And the stretch below the cut's drawing, merged by the arrangement into the face
 above it, keeps that face's own pcurve carried onto it (`brep.md`, `carried_pcurve`): inverted,
-it landed on the leaf past the fold, 1.3e-5 off at 5/8 of it. (The refusal named the start torus's piece, the tube tangent to it along the rim: a point a hair
+it landed on the leaf past the fold, 1.3e-5 off at 5/8 of it. It is built wherever either end
+pose's seam stands (`swept_rings::the_full_turn_is_built_wherever_its_end_poses_seams_stand`: each
+torus turned to eight seams, each built, checked and its volume the one within the tolerance's
+worth), and with its observer's origin moved by an ulp (the volume within 3e-9) or by 1e-6
+(`ring_profile full-at`); each face's deepest inner place is covered by no other instant beyond the
+tolerance (`the_full_turn_is_built_closed`). (The refusal named the start torus's piece, the tube tangent to it along the rim: a point a hair
 across on the torus read as on the kept tube. A point read across an open edge is now on a kept face
 where a face of the solid on its own candidate's surface holds it, `trim`'s `missing_across`; the
 refusal names the early tube's mixed piece.) The island's read point is uncovered, 0.122 clear
