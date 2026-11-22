@@ -75,6 +75,12 @@ pub const MAX_DEPTH: usize = 32;
 /// write; running out of memory is not the answer it should get.
 pub const MAX_FLAT: usize = 200_000;
 
+/// What the E103 of an expansion past `MAX_FLAT` from blocks over a solid's faces says to do
+/// (#994): `Walk::body`'s, said where the limit is reached, and `Walk::projection`'s, said
+/// before it is.
+const FEWER_FACES: &str = "run it over fewer faces at once: a feature's (`round(r: …) \
+    part.pocket`), or two faces' (`A round(r: …) B`)";
+
 /// What a `next` or a `prev` means where a statement stands.
 #[derive(Clone)]
 struct Cyc {

@@ -162,10 +162,8 @@ impl<'a> Walk<'a> {
                     // and, where it was expanding blocks over a solid's faces, what they ran
                     // over and what to do (#994)
                     let (from, todo) = match self.faces.tally.get(&at) {
-                        Some(t) => (format!(", from {t}"), " — run it over fewer faces at once: \
-                            a feature's (`round(r: …) part.pocket`), or two faces' (`A round(r: …) \
-                            B`)"),
-                        None => (String::new(), ""),
+                        Some(t) => (format!(", from {t}"), format!(" — {FEWER_FACES}")),
+                        None => (String::new(), String::new()),
                     };
                     self.err(Code::E103, at, format!(
                         "more than {MAX_FLAT} statements once expanded{within}{from}: the drawing \

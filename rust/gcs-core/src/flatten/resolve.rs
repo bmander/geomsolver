@@ -1479,8 +1479,7 @@ impl<'a> Walk<'a> {
         let t = &self.faces.tally[&at];
         let m = format!("{t}, would make about {projected} statements, more than {MAX_FLAT} \
             (its first {held} copies made {made}): the drawing is cut short, and nothing of it is \
-            built — run it over fewer faces at once: a feature's (`round(r: …) part.pocket`), or \
-            two faces' (`A round(r: …) B`)");
+            built — {FEWER_FACES}");
         self.err(Code::E103, at, m);
     }
 
