@@ -33,6 +33,16 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   points is traced rather than cut off. `spill`'s checks that a section lands on the seam read the
   arrangement's reach (`ON_CURVE` tolerances) where they read a millionth of the part's size.
 
+- **A run's end read by one walk, and its sides by one rule** (#994): new `fillet::beyond_end`
+  (the faces beyond a run's end face shorter than the section that cut it off too, with the vertex
+  each is reached at), `fillet::others_at` (the faces at a vertex besides a run's sides),
+  `fillet::goes_on` (a face going on from a side, `tangent` to either side's normal) and
+  `fillet::one_surface` (two faces of a body on one surface the same way out: `ssi::same` and
+  their outward normals one) — what `end_at`, `dome` and `meeting` read, now public so a reader of
+  the same boundary reads the same ends.  `meeting`'s sides compare outward normals, not the
+  `reversed` flags: two faces of one plane whose frames point opposite ways and whose flags differ
+  face the same way and are one side.
+
 - **Faces on one surface are one surface whatever order a Boolean's operands come in** (#994,
   fixture 115's feet and lip at a plate's true edge): an arrangement reads which faces lie on one
   surface face by face before any phase asks (`Arrangement::classed`) — two of one kind joined

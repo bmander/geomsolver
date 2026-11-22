@@ -316,11 +316,12 @@ steps in the plane square to the edge at points along it). A seam beyond the foo
 it (`rounds/spill.sv` with a boss of 19.5, its leg short of the seam: built as the ring alone), nor
 is one the edge runs into at its end (a slot's side into its half circle: the table's own going on
 into the next piece). **Nor is a seam between two pieces of one surface** (#952,
-`lowering::pieces`: faces going on across seams on the same surface, `Surf::same` — a plane's
-normal one and its origins in it, a cylinder's, a cone's or a torus's axis one line, a ball's
-centre one point, to a billionth): a plate's top in the pieces a union of its operands leaves it,
-each named by its own operand, is one plane to the section, which stands against the surface and
-not the names of its faces. Its footprint is read off the pieces together (`lowering::off_pieces`),
+`lowering::pieces`, `BodyFaces::pieces`: faces going on across seams on the same surface the same
+way out, `BodyFaces::same_surface` — the kernel's `ssi::same` at the boundary's tolerance, the rule
+a ball's sides are read by, [sets.md](sets.md)): a plate's top in the pieces a union of its operands
+leaves it, each named by its own operand, is one plane to the section, which stands against the
+surface and not the names of its faces. Its footprint is read off the pieces together
+(`lowering::off_pieces`),
 the seams it reaches are those where they go on into another surface, and a chain's next face,
 where it lands and what lies past it are read the same way (`piece::onto`, `piece::next_face`).
 A lobed flange drawn as a disc, a sector and lobes unioned, its upright edges rounded and its top
@@ -697,8 +698,9 @@ where a face going on tangent from one of its own carries it on — an obround's
 flat side — goes on along the next edge of its smooth chain (the one edge there of the same turn, no
 seam, between faces each its own or going on tangent from one of them there), and on, until the
 chain ends on faces. Each of those whose solid the chain is kept out of (`kept_out_of`: a boss's
-cylinder it stands outside, a hole's, a cone's or a ball's) is the run's too, on the same side,
-read at the seam (`end_faces`' `Some(v)`): a round never goes into another body's material nor
+cylinder it stands outside, a hole's, a cone's or a ball's — the solid `BodyFaces::level` reads its
+surface as, the side it is kept on away from the material's within it) is the run's too, on the same
+side, read at the seam (`end_faces`' `Some(v)`): a round never goes into another body's material nor
 into a hole, so a flush boss the run along the flat ends on, its wall reaching back over the
 section where the flat runs tangent into the half circle, keeps the half circle's ring off it too —
 in the field (`conditions::ends`, every end side of the region's run) and in the ring's piece,
@@ -1023,7 +1025,11 @@ the patch going off the rim the other), the nearest of the chain's faces that fa
 foot lies on it — gone round so only where it bounds that face nearer the point than any face not of
 the chain does ([sets.md](sets.md): a clevis's bowed side bounds the eye 36 mm off) — and in that
 face's plane as a point just past it where the region holds its point outside it, just within where
-within (`nearest_face`'s `held`, from the region's own `in` and `not in` terms, `region::general`; a
+within (`nearest_face`'s `held`, from the region's own `in` and `not in` terms, `region::general`:
+the chain's reading there is its limit from the side the region holds the point on — that face's
+own term is nothing on its plane and decides nothing there, so the chain's must, and read from
+neither side the gate's probes of a fill's leg along the band's side, which lie in that plane,
+disagreed in four of `tests/tapered_bands.rs`' cases; a
 band's side on a plate, #994 item 2d, below; a casting's floor its drafted side leans over stands
 between nothing); and it is read face by face as one convex solid only where each face's patch lies
 within every other's (`BodyFaces::bulging`: the arc's tangent planes carried down through the block
@@ -1431,9 +1437,15 @@ faces and the arm's own other side for ends, and the fill along a rod's shank th
 cylinder 100 mm off, where the dome and the fill have none (`standing_ends`, `conrod`, #994) — and a
 face there whose outward normal turns more than a degree from square to the run, off its end
 (`brep::fillet::faces_on`), cuts the run off too, kept on its material's side —
-one rule, read by the kernel (`fillet::end_at`, the face's edges none of the ball's band) and by
-the field (`BodyFaces::end_faces`'s `beyond_end`, a rolled run's alone) — a face no closed form
-reads (a sheet) cutting nothing there yet (`fillet::cuts_off`). A vane's side rounded
+one walk, the kernel's (`fillet::beyond_end`, from the end faces going on from neither side,
+`fillet::goes_on`), which the construction cuts the run by (`fillet::end_at`, the face's edges none
+of the ball's band) and the field reads on the body's own boundary (`BodyFaces::end_faces`'s
+`beyond_end`, a rolled run's alone; its sides every face on the surfaces of the run's two,
+`BodyFaces::same_surface`), so the two cannot disagree on which faces end a run — a face no closed
+form reads (a sheet) cutting nothing there yet (`fillet::cuts_off`).  Whether a face cuts across a
+standing ball's end is one test too (`fillet::goes_on`; the field's `BodyFaces::cut_across`, which
+`lowering::piece::run` reads to tell a dome glued to the runs going on from one carried past and
+cut off, `dome_cut`). A vane's side rounded
 there on the crown was refused as "larger than `vo0` can hold": the slope's edge with the side
 entered the band past an end that read the toe's face alone. A carried run (a line, a coaxial
 circle) is still cut by the faces at its vertices and where a run-out along them ends, and goes on

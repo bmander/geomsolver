@@ -87,9 +87,8 @@ fn meeting<'b>(b: &'b Brep,at: V,tol: f64) -> Result<Meeting<'b>,String> {
     }
     // each side: every face on its surface, the same way out (a face split at its seam is one
     // face to the ball)
-    let on = |f: &Face| (0..b.faces.len()).filter(|&g| b.faces[g].reversed == f.reversed
-        && super::ssi::same(&b.faces[g].surface,&f.surface,tol)).collect::<Vec<usize>>();
-    let sides_faces = [on(face_a),on(face_b)];
+    let on = |f: usize| (0..b.faces.len()).filter(|&g| one_surface(b,f,g,tol)).collect::<Vec<usize>>();
+    let sides_faces = [on(fa),on(fb)];
     // the run: the edges between these two sides reached from this one through their vertices,
     // closing on itself or ending at two vertices
     let between: Vec<usize> = (0..b.edges.len()).filter(|&e| match uses[e].as_slice() {
@@ -562,11 +561,10 @@ fn dome(b: &Brep,m: &Meeting,k: usize,centre: V,ring: Frame,foot: V,r: f64,tol: 
         // the faces there besides the stretch's two: each goes on tangent from one of them, or
         // every one cuts across it (`dome_cut`)
         let mk = [0,1].map(|j| scale(unit(surfaces[j].gradient(pv)),sides[j]));
-        let at: Vec<usize> = (0..b.edges.len()).filter(|&x| b.edges[x].v.contains(&v))
-            .flat_map(|x| uses[x].iter().map(|u| u.0)).filter(|f| !sides_faces.iter().any(|s| s.contains(f)))
-            .collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+        let by: Vec<Vec<usize>> = uses.iter().map(|u| u.iter().map(|x| x.0).collect()).collect();
+        let at: Vec<usize> = others_at(b,&by,&sides_faces.concat(),v);
         let tangent_to = |f: usize,j: usize| tangent(mk[j],unit(b.faces[f].surface.gradient(pv)));
-        if let Some(&f) = at.iter().find(|&&f| !tangent_to(f,0) && !tangent_to(f,1)) {
+        if let Some(&f) = at.iter().find(|&&f| !goes_on(b,f,pv,mk)) {
             if let Some(&g) = at.iter().find(|&&g| tangent_to(g,0) || tangent_to(g,1)) {
                 return Err(format!("the ball between {names} stands still, and their meeting ends where `{}` cuts across \
                     it and `{}` goes on from it at once: no stretch of its dome is cut off there yet",b.faces[f].name,
@@ -1887,16 +1885,9 @@ fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2
     names: &str,size: f64,section: &dyn Fn(usize,usize,V) -> Result<Cut,String>) -> Result<(Trim,Vec<usize>),String> {
     let names = || names.to_string();
     let p = b.vertices[v as usize].p;
-    // the edges at each vertex, and the faces besides the sides at one
-    let mut at_vertex: Vec<Vec<usize>> = vec![Vec::new();b.vertices.len()];
-    for (e,ed) in b.edges.iter().enumerate() {
-        at_vertex[ed.v[0] as usize].push(e);
-        if ed.v[1] != ed.v[0] { at_vertex[ed.v[1] as usize].push(e); }
-    }
-    let others_at = |w: u32| -> Vec<usize> { at_vertex[w as usize].iter()
-        .flat_map(|&e| uses[e].iter().map(|u| u.0)).filter(|f| !sides_faces.iter().any(|s| s.contains(f)))
-        .collect::<std::collections::BTreeSet<_>>().into_iter().collect() };
-    let faces: Vec<usize> = others_at(v);
+    let sides: Vec<usize> = sides_faces.iter().flatten().copied().collect();
+    let by: Vec<Vec<usize>> = uses.iter().map(|u| u.iter().map(|x| x.0).collect()).collect();
+    let faces: Vec<usize> = others_at(b,&by,&sides,v);
     if faces.is_empty() { return Err(format!("the run of {} ends where nothing meets it",names())) }
     // the run's way leaving the vertex, along its edge
     let e = &b.edges[*chain.iter().find(|&&e| b.edges[e].v.contains(&v)).unwrap()];
@@ -1905,7 +1896,7 @@ fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2
     // the two faces' own other pieces alone, meeting the run at an angle: a drafted side crossing
     // its parting plane (#245), where the run turns and the canal each side would meet the other's
     // in a mitre
-    let along = |g: usize| { let n = unit(b.faces[g].surface.gradient(p)); (0..2).any(|k| tangent(m[k],n)) };
+    let along = |g: usize| goes_on(b,g,p,m);
     let side_named = |g: usize| sides_faces.iter().flatten().any(|&s| b.faces[s].name == b.faces[g].name);
     let turning: Vec<usize> = faces.iter().copied().filter(|&g| !along(g)).collect();
     if !turning.is_empty() && turning.iter().all(|&g| side_named(g)) {
@@ -1915,8 +1906,7 @@ fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2
     // each surface the faces there lie on, once: a plane, or a curved face's solid
     let mut cuts: Vec<Cut> = Vec::new();
     for &f in &faces {
-        let face = &b.faces[f];
-        let n = unit(face.surface.gradient(p));
+        let n = unit(b.faces[f].surface.gradient(p));
         // a face one side runs on into smoothly (a chain of traced and straight edges): the run
         // ends at the section the caller makes there, the next piece taking on from it
         if let Some(k) = (0..2).find(|&k| tangent(m[k],n)) {
@@ -1927,50 +1917,18 @@ fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2
         let cut = cut_by(b,f,p,leaving,&names())?;
         if !cuts.iter().any(|k| k.same(&cut,tol)) { cuts.push(cut); }
     }
-    // **an end of several faces** (#994): a face the run ends on shorter than the section is wide
-    // (a vane's toe cut by a slope a hair over the foot, leaving an upright end face 1e-4 tall)
-    // gives way, along its edge with a side, to the face beyond it, which cuts the section too —
-    // as it does the run where it stands at the vertex itself. Each edge an end face makes with a
-    // side, from a vertex of the end reached so far, is followed to its other vertex, and every
-    // face there besides the sides that faces on past the end (`faces_on`) cuts the run off, kept
-    // on its material's side — as `BodyFaces::end_faces` reads the field's end.
-    let mut ending: Vec<usize> = faces.iter().copied().filter(|&f| !along(f)).collect();
+    // **an end of several faces** (#994, `beyond_end`): past an end face shorter than the section,
+    // each face beyond it facing on past the end cuts the run off too, kept on its material's side
     let mut beyond: Vec<usize> = Vec::new();
-    let mut reached: Vec<u32> = vec![v];
-    let mut k = 0;
-    while k < ending.len() {
-        let f = ending[k];
-        k += 1;
-        // (its own edges, in order)
-        let own: std::collections::BTreeSet<usize> =
-            b.faces[f].loops.iter().flatten().map(|c| c.edge as usize).collect();
-        for e in own {
-            let [x,y] = b.edges[e].v;
-            let side = |u: &(usize,usize,usize)| sides_faces.iter().flatten().any(|&s| s == u.0);
-            if !uses[e].iter().any(side) { continue }
-            let w = match (reached.contains(&x),reached.contains(&y)) { (true,false) => y,(false,true) => x,_ => continue };
-            // (only along an end face shorter than the section: past one as long the faces beyond
-            // its far end stand out of the section's reach, as the field reads it)
-            if distance(b.vertices[x as usize].p,b.vertices[y as usize].p) > size { continue }
-            let q = b.vertices[w as usize].p;
-            reached.push(w);
-            for g in others_at(w) {
-                let face = &b.faces[g];
-                let out = scale(face.surface.gradient(q),if face.reversed { -1. } else { 1. });
-                if ending.contains(&g) || !faces_on(out,leaving) { continue }
-                // (facing on past the end, it holds the run behind it: on its material's side)
-                // (one no closed form reads, a sheet's, cuts nothing off beyond an end face, as the
-                // field reads it: `cuts_off`)
-                let cut = match face.surface {
-                    Surface::Plane(_) => Cut::Plane {o:q,keep:scale(unit(out),-1.)},
-                    _ if cuts_off(&face.surface) => Cut::Solid {surface:face.surface.clone(),inside:!face.reversed},
-                    _ => continue,
-                };
-                if !cuts.iter().any(|c| c.same(&cut,tol)) { cuts.push(cut); }
-                ending.push(g);
-                beyond.push(g);
-            }
-        }
+    for (g,w) in beyond_end(b,&by,&sides,v,m,leaving,size) {
+        let (face,q) = (&b.faces[g],b.vertices[w as usize].p);
+        let out = scale(face.surface.gradient(q),if face.reversed { -1. } else { 1. });
+        let cut = match face.surface {
+            Surface::Plane(_) => Cut::Plane {o:q,keep:scale(unit(out),-1.)},
+            _ => Cut::Solid {surface:face.surface.clone(),inside:!face.reversed},
+        };
+        if !cuts.iter().any(|c| c.same(&cut,tol)) { cuts.push(cut); }
+        beyond.push(g);
     }
     let faces = faces.into_iter().chain(beyond).collect();
     Ok((Trim {vertex:v,o:p,cuts},faces))
@@ -2000,6 +1958,82 @@ fn cut_by(b: &Brep,f: usize,p: V,leaving: V,names: &str) -> Result<Cut,String> {
 /// (a slope over a sliver of a vane's toe, along the toe's foot) is no end of it but the face beyond
 /// the one it rolls on, which must hold the ball (`holds_ball`, the lowering's `held`).
 pub fn faces_on(out: V,leaving: V) -> bool { dot(unit(out),leaving) < -MIN_TURN.dsin() }
+
+/// **The faces at vertex `v` of `b` besides `sides`**, each once, in order: `by[e]` the faces edge
+/// `e` bounds.
+pub fn others_at(b: &Brep,by: &[Vec<usize>],sides: &[usize],v: u32) -> Vec<usize> {
+    b.edges.iter().enumerate().filter(|(_,ed)| ed.v.contains(&v)).flat_map(|(e,_)| by[e].iter().copied())
+        .filter(|f| !sides.contains(f)).collect::<std::collections::BTreeSet<_>>().into_iter().collect()
+}
+
+/// **Whether face `g` of `b` goes on from a side of a run at `p`**: its normal there one with
+/// either side's, `m[k]` (`tangent`) — a face going on tangent from a side, or back to back with
+/// one; any other face at a run's end cuts across it (`end_at`, `dome`'s `dome_cut`).  The field
+/// reads its pieces' ends by the same test, so the two agree on which end is cut off.
+pub fn goes_on(b: &Brep,g: usize,p: V,m: [V;2]) -> bool {
+    let n = unit(b.faces[g].surface.gradient(p));
+    (0..2).any(|k| tangent(m[k],n))
+}
+
+/// **The faces beyond a run's end** (#994): of a run between the faces `sides` ending at vertex
+/// `v` (`m` its two sides' normals there, `leaving` its way into the run from `v`, `by[e]` the faces
+/// edge `e` bounds), its end faces are those at `v` besides the sides that go on from neither
+/// (`goes_on`). Each edge an end face makes with a side, no longer than `size` (the section's: past
+/// an end face as long the faces beyond its far end stand out of the section's reach — a hub's
+/// side a rounded arm ends on), from a vertex of the end reached so far, is followed to its other
+/// vertex, and every face there besides the sides that faces on past the end (`faces_on`), and
+/// that a closed form reads (`cuts_off`), ends the run too — a slope over a sliver a cut left at a
+/// vane's toe — holding the run on its material's side, behind it.  Each such face, with the
+/// vertex it was reached at, in the order met.  One rule for the construction (`end_at`'s cuts)
+/// and the field (`BodyFaces::end_faces`), so the two cannot disagree on which faces end a run.
+pub fn beyond_end(b: &Brep,by: &[Vec<usize>],sides: &[usize],v: u32,m: [V;2],leaving: V,size: f64)
+    -> Vec<(usize,u32)> {
+    let p = b.vertices[v as usize].p;
+    let mut ending: Vec<usize> = others_at(b,by,sides,v).into_iter().filter(|&f| !goes_on(b,f,p,m)).collect();
+    let (mut reached,mut beyond): (Vec<u32>,Vec<(usize,u32)>) = (vec![v],Vec::new());
+    let mut k = 0;
+    while k < ending.len() {
+        let f = ending[k];
+        k += 1;
+        // (its own edges, in order)
+        let own: std::collections::BTreeSet<usize> =
+            b.faces[f].loops.iter().flatten().map(|c| c.edge as usize).collect();
+        for e in own {
+            let [x,y] = b.edges[e].v;
+            if !by[e].iter().any(|g| sides.contains(g)) { continue }
+            let w = match (reached.contains(&x),reached.contains(&y)) { (true,false) => y,(false,true) => x,_ => continue };
+            if distance(b.vertices[x as usize].p,b.vertices[y as usize].p) > size { continue }
+            let q = b.vertices[w as usize].p;
+            reached.push(w);
+            for g in others_at(b,by,sides,w) {
+                let face = &b.faces[g];
+                let out = scale(face.surface.gradient(q),if face.reversed { -1. } else { 1. });
+                if ending.contains(&g) || !faces_on(out,leaving) || !cuts_off(&face.surface) { continue }
+                ending.push(g);
+                beyond.push((g,w));
+            }
+        }
+    }
+    beyond
+}
+
+/// **Whether faces `f` and `g` of `b` lie on one surface the same way out** (#994): their surfaces
+/// one (`ssi::same`, to `tol`) and their outward normals one where `f` lies — a face split at its
+/// seam, a plate's top in the pieces a union of its operands leaves it, each its own face of the
+/// one surface.  What a ball rolls on (`meeting`'s sides) and what the field reads as one surface
+/// (`BodyFaces::same_surface`) are this.
+pub fn one_surface(b: &Brep,f: usize,g: usize,tol: f64) -> bool {
+    let (a,c) = (&b.faces[f],&b.faces[g]);
+    if f == g { return true }
+    if !super::ssi::same(&a.surface,&c.surface,tol) { return false }
+    // (a point of `f`: its first edge's middle, else its surface's origin of parameters)
+    let at = a.loops.iter().flatten().find_map(|co| match &b.edges[co.edge as usize] {
+        ed @ super::topo::Edge { curve: EdgeCurve::Curve(cv),.. } => Some(cv.point(0.5*(ed.t[0]+ed.t[1]))),
+        _ => None,
+    }).unwrap_or_else(|| a.surface.point([0.,0.]));
+    let out = |x: &Face| scale(x.surface.gradient(at),if x.reversed { -1. } else { 1. });
+    dot(out(a),out(c)) > 0.
+}
 
 /// **Whether two unit normals `n` and `m` are one either way**, `1 - |n·m|` within 1e-9: a face
 /// tangent to a run's side where it ends goes on from it (`end_at`), and a ball standing still

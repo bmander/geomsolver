@@ -360,11 +360,7 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
                     // next run's in part, and the two are unioned
                     let tight = |g: &usize| body.cylinder(*g).map(|c| c.2).or_else(|| body.torus(*g).map(|t| t.3))
                         .is_some_and(|radius| (radius - r).abs() <= 1e-9 * (r + norm(at)));
-                    let own: Vec<usize> = ga.iter().chain(gb).copied().collect();
-                    let crossed = run_ends.iter().any(|&(p, _, v)| body.faces_at(v, &own).into_iter().any(|f| {
-                        let n = body.normal(f, p);
-                        own.iter().all(|&g| 1.0 - dot(n, body.normal(g, p)).abs() > 1e-9)
-                    }));
+                    let crossed = run_ends.iter().any(|&(_, _, v)| body.cut_across(&run, v));
                     let stands = ga.iter().chain(gb).any(tight) && !crossed;
                     Rolled { at, r, flat: None, ends, cuts: Vec::new(), kept: Vec::new(), wedge: Vec::new(),
                         beyond: None, beside: None, stands }
@@ -460,7 +456,6 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
 /// short, how far it reaches, the face it ends at, and how far off the ball touches it.
 fn held(body: &crate::solid::faces::BodyFaces, whole: &Touched, edge: u32, ends: &Ends,
     pieces: &[Piece], r: f64, units: crate::units::Units) -> Result<(), String> {
-    let (brep, mm, _) = body.brep();
     let faces = body.faces_of(edge).to_vec();
     let ends_run = |g: usize| ends.iter().any(|&(by, _, far)| match (by, far) {
         (EndBy::Face(c), None) => c == g,
@@ -468,8 +463,7 @@ fn held(body: &crate::solid::faces::BodyFaces, whole: &Touched, edge: u32, ends:
             && whole.run_ends(body).iter().any(|&(v, d, _)| crate::brep::fillet::faces_on(body.normal(g, v), d)),
         _ => false,
     });
-    let same = |f: usize, g: usize| brep.faces[f].reversed == brep.faces[g].reversed
-        && crate::brep::ssi::same(&brep.faces[f].surface, &brep.faces[g].surface, body.tolerance() * mm);
+    let same = |f: usize, g: usize| body.same_surface(f, g);
     // the touches at each station: the ends of the section's arc, carried there
     let mut touches: Vec<(V, V)> = Vec::new();
     for k in 1..16 {
