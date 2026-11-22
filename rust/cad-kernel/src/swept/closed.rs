@@ -1326,14 +1326,23 @@ pub fn ring_fitted(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64)
     // over a stretch where a preimage comes within the band the face ends on the preimage itself —
     // read once over every stretch, and again with the branches that gave way anywhere, so a branch
     // is the end over every stretch it spans and the rows sewn across meet
-    let read = |given: &[(usize,usize)]| -> Result<Vec<Vec<super::rings::Way>>,Unbuilt> {
-        fits.iter().map(|f| super::rings::give_way(&ring,path,[a,b],f,scale,&curves,given,tol)).collect()
-    };
-    let mut ways = read(&[])?;
+    // (each stretch's reader built once, in the first pass, and read again in the second; the curves'
+    // points read once for both)
+    let points = std::cell::OnceCell::new();
+    let mut giving = Vec::with_capacity(fits.len());
+    let mut ways = Vec::with_capacity(fits.len());
+    for f in &fits {
+        let mut g = super::rings::Giving::new(&ring,path,[a,b],f,scale)?;
+        ways.push(super::rings::give_way(&mut g,f,&curves,&points,&[],tol)?);
+        giving.push(g);
+    }
     let mut given: Vec<(usize,usize)> = ways.iter().flatten().map(|w| (w.of.0,branch_of(&curves[w.of.0],w.of.1[0]))).collect();
     given.sort_unstable();
     given.dedup();
-    if !given.is_empty() { ways = read(&given)? }
+    if !given.is_empty() {
+        ways = fits.iter().zip(&mut giving).map(|(f,g)| super::rings::give_way(g,f,&curves,&points,&given,tol)).collect::<Result<_,_>>()?;
+    }
+    drop(giving);
     for (fit,ways) in fits.iter_mut().zip(ways) {
         if ways.is_empty() { continue }
         *fit = super::rings::fitted_giving_way(&ring,path,[a,b],fit,scale,K2_FIT*tol,ways)?;

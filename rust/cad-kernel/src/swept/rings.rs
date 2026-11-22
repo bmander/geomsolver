@@ -2026,14 +2026,18 @@ pub fn cut_along(ring: &Ring,path: &Trajectory,whole: [f64;2],fit: &mut Fitted,s
 /// the whole stretch and gives no way (said where `SOLVENT_RING_DEBUG` is set); a branch that gives
 /// way in one stretch is read in every stretch it spans beside the same end, the end continuous
 /// across the rows they are sewn along.
-pub fn give_way(ring: &Ring,path: &Trajectory,whole: [f64;2],fit: &Fitted,scale: f64,curves: &[Vec<(f64,f64,f64)>],given: &[(usize,usize)],tol: f64)
-    -> Result<Vec<Way>,Unbuilt> {
+///
+/// `giving` is the stretch's reader and bridges (`Giving::new`) and `points` each curve's points in
+/// space (`curve_points`), each read once for every pass.
+pub fn give_way(giving: &mut Giving,fit: &Fitted,curves: &[Vec<(f64,f64,f64)>],points: &std::cell::OnceCell<Vec<Vec<Option<V>>>>,
+    given: &[(usize,usize)],tol: f64) -> Result<Vec<Way>,Unbuilt> {
     use crate::util::space::{distance,segment_distance};
     let [a,b] = fit.roll;
-    let reader = Reader::of(ring,path,whole,[a,b],scale,fit.unborn)?;
-    let bridges: Vec<(usize,usize)> = runs(&reader.first).iter()
-        .flat_map(|r| r.pieces.iter().filter(|&&j| narrow(&reader.first[r.curve],j)).map(move |&j| (r.curve,j))).collect();
+    let Giving {reader,bridges,near: nearness} = giving;
+    let (reader,bridges) = (&*reader,&*bridges);
+    let ring = reader.ring;
     if bridges.is_empty() { return Ok(Vec::new()) }
+    let points = points.get_or_init(|| curve_points(ring,reader.path,curves));
     let band = crate::tolerant::ON_CURVE*tol;
     let debug = std::env::var_os("SOLVENT_RING_DEBUG").is_some();
     // a bridge's end in space at the roll `t`
@@ -2052,7 +2056,7 @@ pub fn give_way(ring: &Ring,path: &Trajectory,whole: [f64;2],fit: &Fitted,scale:
         let mut parts: Vec<usize> = full[(mark+1).min(full.len())..].iter().filter_map(|ap| curve.iter().position(|p| p.0 == ap.0 && p.1 == ap.1)).collect();
         parts.sort_unstable();
         let bounds: Vec<usize> = std::iter::once(0).chain(parts).chain(std::iter::once(curve.len()-1)).collect();
-        let points: Vec<Option<V>> = curve.iter().map(|&(th,t,sg)| sheet_at(ring,path,th,t,sg).map(|x| x.0)).collect();
+        let points = &points[ci];
         for w in bounds.windows(2) {
             let (lo,hi) = (w[0],w[1]);
             if hi <= lo { continue }
@@ -2069,16 +2073,24 @@ pub fn give_way(ring: &Ring,path: &Trajectory,whole: [f64;2],fit: &Fitted,scale:
             let m = inside[inside.len()/2];
             let Some(xm) = points[m] else { continue };
             let mut best: Option<(f64,(usize,usize),usize)> = None;
-            for &br in &bridges { for side in 0..2 {
+            for &br in bridges { for side in 0..2 {
                 if let Some(y) = end(br,side,curve[m].1)? { let d = distance(xm,y); if best.is_none_or(|e| d < e.0) { best = Some((d,br,side)) } }
             } }
             let Some((_,br,side)) = best else { continue };
             let known = given.contains(&(ci,lo));
             if !known {
-                // how near the end it comes: each point's distance from the end's polyline
-                let ys: Vec<V> = inside.iter().map(|&k| end(br,side,curve[k].1)).collect::<Result<Vec<_>,_>>()?.into_iter().flatten().collect();
-                let near = inside.iter().filter_map(|&k| points[k])
-                    .map(|x| ys.windows(2).map(|s| segment_distance(x,s[0],s[1])).fold(f64::INFINITY,f64::min)).fold(f64::INFINITY,f64::min);
+                // how near the end it comes: each point's distance from the end's polyline (no
+                // branch given changes it: read in the first pass, kept for the next)
+                let near = match nearness.get(&(ci,lo)) {
+                    Some(&n) => n,
+                    None => {
+                        let ys: Vec<V> = inside.iter().map(|&k| end(br,side,curve[k].1)).collect::<Result<Vec<_>,_>>()?.into_iter().flatten().collect();
+                        let n = inside.iter().filter_map(|&k| points[k])
+                            .map(|x| ys.windows(2).map(|s| segment_distance(x,s[0],s[1])).fold(f64::INFINITY,f64::min)).fold(f64::INFINITY,f64::min);
+                        nearness.insert((ci,lo),n);
+                        n
+                    }
+                };
                 if debug { eprintln!("ring: curve {ci}'s branch {lo}..{hi} over {:?} beside bridge {br:?}'s end {side}: {near:.3e} from it at its nearest",[a,b]) }
                 if !(near <= band) { continue }
             }
@@ -2094,6 +2106,31 @@ pub fn give_way(ring: &Ring,path: &Trajectory,whole: [f64;2],fit: &Fitted,scale:
         }
     }
     Ok(ways)
+}
+
+/// **A stretch's reader and its bridges, for `give_way`** (#942 T1d-tori): built once and read in
+/// each of its passes (`closed::ring_fitted` reads every stretch, then again with the branches that
+/// gave way anywhere) — each roll's instant read once, and each branch's nearness to the end beside
+/// it, which no branch given changes, once.
+pub struct Giving<'a> { reader: Reader<'a>,bridges: Vec<(usize,usize)>,near: std::collections::BTreeMap<(usize,usize),f64> }
+
+impl<'a> Giving<'a> {
+    /// The reader `fit` is read by, and its bridges: each narrow pair of its first instant.
+    pub fn new(ring: &'a Ring,path: &'a Trajectory,whole: [f64;2],fit: &Fitted,scale: f64) -> Result<Giving<'a>,Unbuilt> {
+        let reader = Reader::of(ring,path,whole,fit.roll,scale,fit.unborn)?;
+        let bridges: Vec<(usize,usize)> = runs(&reader.first).iter()
+            .flat_map(|r| r.pieces.iter().filter(|&&j| narrow(&reader.first[r.curve],j)).map(move |&j| (r.curve,j))).collect();
+        Ok(Giving {reader,bridges,near:Default::default()})
+    }
+}
+
+/// Each double curve's points in space (`rings::double_curve`'s, up to its marker), on the sheet
+/// its place round the meridian names (`give_way`'s).
+pub fn curve_points(ring: &Ring,path: &Trajectory,curves: &[Vec<(f64,f64,f64)>]) -> Vec<Vec<Option<V>>> {
+    curves.iter().map(|full| {
+        let mark = full.iter().position(|p| p.0.is_nan()).unwrap_or(full.len());
+        full[..mark].iter().map(|&(th,t,sg)| sheet_at(ring,path,th,t,sg).map(|x| x.0)).collect()
+    }).collect()
 }
 
 /// **A sheet with its seams first** (#942 T1d-tori): each edge every use of which is a straight
