@@ -123,3 +123,27 @@ fn an_expansion_past_its_limit_over_faces_says_what_it_ran_over() {
     assert_eq!(e.diags[0].span.lo as usize, src.find("repeat a in whole").unwrap());
     assert!(e.sketch.points.is_empty(), "{} points built", e.sketch.points.len());
 }
+
+/// **An expansion that will pass the limit is refused before it is made** (#994): a block over a
+/// prism's faces copying two thousand points for each pair that meets is projected, from its
+/// first copies, to the copies its tally says will hold, and refused at once — a few thousand
+/// statements in, not two hundred thousand — naming the statement, what it runs over and what to
+/// do; nothing is built.
+#[test]
+fn an_expansion_projected_past_its_limit_is_refused_at_once() {
+    let src = polygon(20, "repeat a in whole {\n  repeat b in whole {\n    when b != a and a meets b \
+                           {\n      repeat 2000 as i {\n        q := point hint((i, 0))\n      }\n    \
+                           }\n  }\n}\n");
+    let (e, d) = read(&src);
+    assert_eq!(d.len(), 1, "{d:?}");
+    let want = "E103: `repeat a in whole { …` over 22 faces of `whole`, of which 60 pairs meet and 40 \
+                threes meet each other, would make about ";
+    assert!(d[0].starts_with(want), "{d:?}");
+    // how far it got: the first copies' statements, nowhere near the limit
+    let made: usize = d[0].split(" copies made ").nth(1).and_then(|r| r.split(')').next())
+        .and_then(|n| n.parse().ok()).expect("how far it got");
+    assert!(made < 20_000, "{made} statements made before it was refused");
+    assert!(d[0].contains("run it over fewer faces at once"), "{d:?}");
+    assert_eq!(e.diags[0].span.lo as usize, src.find("repeat a in whole").unwrap());
+    assert!(e.sketch.points.is_empty(), "{} points built", e.sketch.points.len());
+}

@@ -4,6 +4,19 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+## [NEXT-taper-root]
+
+**A band tapering to nothing is filleted and rounded to its toes** (#994). A fill at the foot of a
+band whose top runs on tangent into the plate it stands on ends square at the toe, where the
+crease's line only touches the top, kept outside it — refused through 0.228 ("a run its curved end
+does not cut off") — and on a disc it no longer leaves out what the field reads. A face's `.smooth`
+gone on into the band's top is read beside the band by the plate (or disc) the band's side rises
+from, where the side stands between the point and the top, and in the side's own plane as the
+region holds its point: just past it, or just within. The band's own top edge rounded ends on the
+plate at each toe and is kept over it, as `S.ends` says — through 0.228 it was cut on square into
+the plate under the toe — and a face going on tangent from a run's face carries the round on only
+where it meets the run's other face in an edge of the round's turn, never in the seam itself.
+
 ## [NEXT-chain-short]
 
 **A body its seeds do not build is read where the drawing solves** (#994). `when a meets b`
@@ -57,7 +70,8 @@ faces of `whole`, of which 24 pairs meet and 16 threes meet each other ``, `solv
 and an expansion past the limit says it in its E103 with what to do, rather than only where in
 `std.rounds` it had got to.  A chain of faces on one plane (a top and the caps its pockets'
 fills leave on it) is one condition of a set, so a round on that top no longer costs the cube of
-the pockets.
+the pockets.  An expansion over faces projected, from its first copies, past twice the limit is
+refused at once, naming the statement, what it runs over and how far it got.
 
 **[0.228] A drafted corner where an arc meets a side at an angle** (#962). `std.solids.Drafted`
 of a face whose arc meets a line or another arc at an angle, not tangent, is built: the corner

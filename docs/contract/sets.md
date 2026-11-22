@@ -485,14 +485,28 @@ tab, its every upright rounded, seen from its material — sides, convex rounds 
 corners' fills in one chain bulging neither way, so no face's side carried past its patch is the
 chain's (a block's side carried on past a tab's fill runs through the tab). Besides the nearest
 face's side, each face of the chain is a condition: its side where the point's foot lies on its
-patch (the patch's distance); its tangent plane past a seam into a face bulging toward the point
-(`BodyFaces::bulges`) where that face is nearer than the distance — the chain read as a convex one
-about the corner; nothing past a seam into any other face (a reflex corner's arc or fill, whose
+patch (the patch's distance); past a seam into a face bulging toward the point
+(`BodyFaces::bulges`) where that face is nearer than the distance, the plane tangent to that next
+face at the seam (`BodyFaces::tangent_side`) — the chain read as a convex one about the corner. The
+next face's plane, not this one's: they are one where the seam is tangent, but at a seam tangent
+only to the drawing's numbers (a turn of 1e-7 rad, `rim_seams`) this one's plane, carried 13 mm
+along the next face, read a ball's centre on that face's offset 1.35e-6 under the distance once
+the face's own distance rounded a hair under it, past `nearest`'s bar: no centre, material read
+where the construction has none ("leaves out what the field reads beside its edge"); nothing
+past a seam into any other face (a reflex corner's arc or fill, whose
 tangent plane runs on through the pocket or the tab beyond it), which is nearer and says it; its
 tangent plane past any other edge only where the patch is nearer than the distance, and nothing
-where not. Each is under the distance only where the point is that near a patch of the chain, and
+where not.  A face whose box in space (`BodyFaces::patch_gap`), and every face it goes on into
+across a seam, is farther than twice the distance from the point says nothing without reading its
+patch
+(#994): where the set's point is, a face holding it back is within the distance, so the set is the
+same, and a chain grown with a body (a plate's top and its pockets' caps) is read only near the
+point. Each is under the distance only where the point is that near a patch of the chain, and
 every patch is of the chain's surface, so each says only what the distance from that surface says —
-however the nearest face is read, past the chain's rim too (`BodyFaces::nearest_face`) — and the
+however the nearest face is read, past the chain's rim too (`BodyFaces::nearest_face`, its nearest
+patch found among those whose box in space comes as near, `nearest_patch`, so a chain that grows
+with a body's pockets is measured where the point is, #994; a path's faces, caps taken in, read
+once a body, `BodyFaces::faces`) — and the
 points kept are the same; a chain that is no one sheet (`bulging`, a block's side flush with a
 deck's) is read this way as well; what the conditions add is every wall meeting at a corner of the
 offset in each step, where the closing axis (a floor or a rim rounded to a convex corner's own
@@ -501,8 +515,8 @@ is no row of the step's program (`nearest`), so a step chooses among the faces n
 the whole chain. Read about the nearest face alone — that face and its bulging neighbours, slots
 changing with the face — a 56° corner as tight as the ball was still refused by the gate
 (`tests/tight_corners.rs`, six walls): which walls a step sees there hangs on which face the step
-stands nearest. A chain that bulges one way is read whole, as above. `tests/tight_corners.rs` and
-`tests/rim_over_rounds.rs` are the gate. **The steps stop at the first point keeping every condition
+stands nearest. A chain that bulges one way is read whole, as above. `tests/tight_corners.rs`,
+`tests/rim_over_rounds.rs` and `tests/rim_seams.rs` are the gate. **The steps stop at the first point keeping every condition
 where every condition is convex** (`Cond::convex`: a plane's side, a face's carried side held
 toward its solid): each step's linearisation then holds the whole set, so a point of it is the
 nearest; their own fixed point is not steady where a surface curves tightly about a point far

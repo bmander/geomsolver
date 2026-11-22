@@ -750,8 +750,31 @@ other along no face (fixture 115's strips at five, seven and nine decimals);
 `a_ball_drawn_a_few_tolerances_off_itself_is_one_ball` and
 `fixture_115s_strips_unite_at_every_precision` are the gates (volumes to the closed form, either
 operand first), and `a_pad_leaning_past_the_reach_keeps_its_foot` holds a lean past the reach two
-planes. A non-rational B-spline's heights over a plane are its distances from
-it, so its reading against a plane (`query::spline_plane`) proves a run where a stretch's heights are
+planes. **Which faces are on one surface is read face by face, before any phase asks, and the answer
+is the same whatever order the faces come in** (#994, `Arrangement::classed`): every two faces of
+one kind not clear of the other operands are joined where `same` or `same_over` over their two boxes
+holds, each class of faces so joined given one index (`meeting::Shared::class`; two classes of one
+kind are never one), and the surface standing for it is one every face of the class stands within
+the reach of over its own box, the lowest operand's first. Joined one face at a time onto the first
+index whose surface was the same over the box the faces before it filled, a class took whichever
+face was asked first for its surface: a foot's pad leaning `1e-7` rad about its own length, read
+first, stood for the plate's top along the whole of a lip's pad — `1e-5` off at its far end — and
+the plate's other face on that very plane was a surface of its own. **The rules an arrangement reads
+two features as one by agree on the reach** (`tolerant`): two curves on one surface cross where they
+come within `ON_CURVE` tolerances (`query::crossings_in` reads `curve_curve`'s closed forms so, as
+it keeps a carrier's roots), so an edge of a face leaning within the reach crosses the edges of the
+face it lies on, where read to the tolerance it lay across the face as a slit; a vertex standing on
+an edge within the reach of its end is that end, the two made one in step 3b (`tolerant::at_end`,
+`collapsed`), where it was neither cut at nor joined and one point was two vertices; and the box a
+vertex is sought on an edge in is padded by that reach.
+`brep_coincident::strips_in_a_plates_thickness_at_its_true_edge_unite_in_every_order` and
+`strips_abutting_a_plates_true_edges_unite_in_every_order` (a plate, a lip and a foot bent from
+sheet, their pads in the plate's thickness or abutting its edges, each leaning within the reach,
+united in all six orders and with the strips first: closed, every edge on its faces, the closed
+form's volume and as many faces in every order; of 128 such placements, under the rules before, 110
+were refused in some order and 36 built with a face more or fewer in one order than another) and
+`fixture_115s_lip_and_foot_unite_with_the_plate_at_its_true_edge_in_any_order` are the gates.
+A non-rational B-spline's heights over a plane are its distances from it, so its reading against a plane (`query::spline_plane`) proves a run where a stretch's heights are
 enclosed within half the tolerance (`HeightsWithin`), settled as one meeting: a contact curve running
 in the plane of a torus's seam circle over a stretch read 185 roots a hair apart and was halved past
 any search's boxes (#880 Q1b). The crossing a flat root goes onto is one of its edge's own cuts, or

@@ -366,6 +366,7 @@ mod symmetric;
 mod tangent_at;
 mod tape;
 mod taylor;
+mod tapered_bands;
 mod tight_corners;
 mod timeline;
 mod topology;
