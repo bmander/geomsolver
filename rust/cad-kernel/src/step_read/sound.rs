@@ -38,7 +38,8 @@
 //! * **Lumps and voids nested by their senses** (`shells`): the faces' components by shared
 //!   edges are the shells, each facing out or in as a point stepped off its faces is located
 //!   against it (`facing`); a lump inside nothing or a void, a void inside a lump, none crossing
-//!   another — however many lumps, as a cut parts a body and `step::write` writes them.
+//!   another — however many lumps, as a cut parts a body (`step::write` writes each its own solid,
+//!   by this nesting: `nesting`).
 //!
 //! **Not decided**: two faces that are not neighbours crossing each other in space (a global
 //! self-intersection), and two shells crossing where every vertex of each reads on one side of
@@ -90,7 +91,23 @@ pub fn sound(b: &Brep,context: &Context) -> Result<(),Unsound> {
     edges(b,context,size)?;
     let faces = crate::util::par::indices(b.faces.len(),|fi| face(b,fi,floor));
     for r in faces { r? }
-    shells(b,size,floor)
+    shells(b,size,floor).map(|_| ())
+}
+
+/// **How a boundary's shells nest** (`shells`): its faces' components by the edges they share, in
+/// the order of their first faces; whether each faces out (a lump) or in (a void); and the shell
+/// nearest about each, where one is — a void's the lump it lies in, a lump's the void it lies in.
+#[derive(Clone,Debug)]
+pub struct Nesting { pub shells: Vec<Vec<usize>>,pub outward: Vec<bool>,pub about: Vec<Option<usize>> }
+
+/// The nesting of `b`'s shells (`Nesting`), each judged as `sound` judges it: refused where a shell
+/// faces neither way, a void lies outside every lump or inside another void, a lump inside a lump,
+/// or two shells cross.
+pub fn nesting(b: &Brep) -> Result<Nesting,Unsound> {
+    if b.faces.is_empty() { return Err(Unsound {why:Why::Open,face:None,edge:None,msg:"the boundary has no faces: it bounds nothing".into()}) }
+    indexed(b)?;
+    let size = extent(b);
+    shells(b,size,crate::geom::tolerance(size))
 }
 
 /// Every index in range and every number finite, so nothing after reads past an array or loops on
@@ -1034,9 +1051,9 @@ fn cones_apart(p: &Piece,i: usize,q: &Piece,k: usize,slop: f64) -> bool {
 /// The faces' components by the edges they share, each a shell: each facing one way, out or in
 /// (`facing`); the outward ones (lumps) and the inward ones (voids) nested so that the shell
 /// nearest about each is of the other sense — a lump inside nothing or inside a void, a void
-/// inside a lump — and no two crossing. However many lumps: a cut can part a body, and
-/// `step::write` writes all its lumps in one shell's faces.
-fn shells(b: &Brep,size: f64,floor: f64) -> Result<(),Unsound> {
+/// inside a lump — and no two crossing. However many lumps: a cut can part a body, and a file
+/// written before #993 stage 2 put all its lumps in one shell's faces.
+fn shells(b: &Brep,size: f64,floor: f64) -> Result<Nesting,Unsound> {
     use crate::query::Place;
     let mut joined = crate::util::union_find::UnionFind::new(b.faces.len());
     let mut user = vec![usize::MAX;b.edges.len()];
@@ -1061,7 +1078,7 @@ fn shells(b: &Brep,size: f64,floor: f64) -> Result<(),Unsound> {
     if outward.iter().all(|&o| !o) {
         return Err(Unsound::face(shells[0][0],format!("the shell of face {} is inside out: a point just outside each face it is read at lies inside it",shells[0][0])))
     }
-    if shells.len() == 1 { return Ok(()) }
+    if shells.len() == 1 { return Ok(Nesting {shells,outward,about:vec![None]}) }
     let vertices_of = |k: usize| -> Vec<u32> {
         let mut vs: Vec<u32> = shells[k].iter().flat_map(|&f| b.faces[f].loops.iter().flatten()).flat_map(|c| b.edges[c.edge as usize].v).collect();
         vs.sort_unstable();
@@ -1104,10 +1121,12 @@ fn shells(b: &Brep,size: f64,floor: f64) -> Result<(),Unsound> {
             }
         }
     }
+    let mut abouts = Vec::with_capacity(shells.len());
     for x in 0..shells.len() {
         // the shell nearest about `x`: the one of those it lies inside that lies inside all the
         // others
         let about = inside[x].iter().copied().find(|&y| inside[x].iter().all(|&z| z == y || inside[y].contains(&z)));
+        abouts.push(about);
         let (f,sense) = (shells[x][0],outward[x]);
         match (sense,about) {
             (true,None) => {}
@@ -1117,7 +1136,7 @@ fn shells(b: &Brep,size: f64,floor: f64) -> Result<(),Unsound> {
             (false,Some(y)) => return Err(Unsound::face(f,format!("the void of face {f} lies inside the void of face {}",shells[y][0]))),
         }
     }
-    Ok(())
+    Ok(Nesting {shells,outward,about:abouts})
 }
 
 /// The faces `s` of `b` alone, with the edges and vertices they use: `Brep::compacted` of a copy

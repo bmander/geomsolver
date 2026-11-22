@@ -3,17 +3,15 @@
 //! of the example library (`census`, a tool of minutes) and a sample of them chosen to cover every
 //! path of the writer (`the_sample_reads_back`, on every push).
 //!
-//! **The same solid.** `step::write` writes a `Brep` as one `MANIFOLD_SOLID_BREP` on one
-//! `CLOSED_SHELL` holding every face, whatever its lumps and voids (a `Brep` is a bag of faces; the
-//! writer says nothing of which shell bounds which): so a body of several lumps, or with a void,
-//! is one solid of the file whose one shell is several closed ones, and "the same" is that one
-//! solid, its volume the lumps' sum less the voids. For `b` and `text = write(b, …)`, `r` the one
-//! solid `read(text)` gives is the same solid when:
+//! **The same solid.** `step::write` writes a `Brep` as one solid a lump (`step::lumps`), a lump
+//! with voids a `BREP_WITH_VOIDS`, its faces lump by lump (its outer shell's, then its voids');
+//! "the same" is the solids read joined back into one (`joined`), its volume the lumps' sum less
+//! the voids, and `b`'s faces taken in the order written (`written_order`). For `b` and
+//! `text = write(b, …)`, `r` the solids `read(text)` gives, joined, is the same solid when:
 //!
 //! * a face for each face `b` wrote, in its order, read from the `ADVANCED_FACE` written for it,
 //!   on a surface of the kind written and of the same sense (`step_check::Solid`), its numbers
-//!   the written ones to 1e-12 (a swept surface's frame is the reader's own, its curve compared
-//!   through its edges);
+//!   the written ones to 1e-12 (a swept surface's axis or direction and its curve's among them);
 //! * an edge for each `EDGE_CURVE` written and a vertex for each `VERTEX_POINT`, each read from
 //!   that entity and no other, the edge on a curve of the kind written running between the
 //!   vertices written, its middle on the edge built within what the writer's fit allows, each
@@ -90,10 +88,6 @@ impl Outcome {
         match self {
             Outcome::Same => "same".into(),
             Outcome::NotWritten(_) => "not written".into(),
-            // (the writer puts every face of a body of several lumps on one shell of one solid,
-            // which `sound` refuses as a second solid: the file's defect, not the reader's)
-            Outcome::Refused {by,refusal,unsound:Some(Ok(()))} if refusal.msg.contains("a second solid") =>
-                format!("refused by {by:?}: several lumps written as one shell (read without it: the same solid)"),
             Outcome::Refused {by,unsound:Some(Ok(())),..} => format!("refused by {by:?}, falsely (read without it: the same solid)"),
             Outcome::Refused {by,unsound:Some(Err(_)),..} => format!("refused by {by:?}, truly (read without it: a different solid)"),
             Outcome::Refused {by,..} => format!("refused by {by:?}"),
@@ -329,6 +323,15 @@ fn turned(read: &Surface,written: &Surface) -> bool {
 /// surface its face is written on has a pole at its point: elsewhere it is set aside on both sides
 /// with the vertices only it ends at (it bounds nothing and has no length).
 pub fn same(b: &Brep,mb: &Measured,text: &str,given: &Given,fit: Fit,tol: f64,found: &mut Found) -> Result<Measured,String> {
+    // (`b`'s faces in the order the file writes them: each lump's outer shell's, then its voids')
+    let order = written_order(b);
+    let (pb,pm);
+    let (b,mb) = if order.iter().enumerate().all(|(k,&f)| k == f) { (b,mb) } else {
+        pb = Brep {vertices:b.vertices.clone(),edges:b.edges.clone(),faces:order.iter().map(|&f| b.faces[f].clone()).collect()};
+        pm = Measured {area:order.iter().map(|&f| mb.area[f]).collect(),flux:order.iter().map(|&f| mb.flux[f]).collect(),
+            length:order.iter().map(|&f| mb.length[f]).collect(),volume:mb.volume};
+        (&pb,&pm)
+    };
     let r = &given.brep;
     let (s,_) = size(b);
     // (what the file states covers what it holds: the bar of what it writes as a polyline)
@@ -344,7 +347,6 @@ pub fn same(b: &Brep,mb: &Measured,text: &str,given: &Given,fit: Fit,tol: f64,fo
         if (x.kind,x.reversed) != (y.kind,y.reversed) {
             return Err(format!("face {k} (#{}) read of kind {} reversed {}, written {} reversed {}",face_ids[k],x.kind,x.reversed,y.kind,y.reversed))
         }
-        if x.kind == 7 || x.kind == 8 { continue }
         if (x.numbers.len() != y.numbers.len()
             || x.numbers.iter().zip(&y.numbers).any(|(p,q)| (p-q).abs() > 1e-12*q.abs().max(1.)))
             && !matches!(face_net(b,k),Some(Ok(w)) if turned(&r.faces[k].surface,&w.surface)) {
@@ -405,17 +407,23 @@ pub fn same(b: &Brep,mb: &Measured,text: &str,given: &Given,fit: Fit,tol: f64,fo
     // the plane triangle it is) the file has none to give, so it is set aside, and the vertices only
     // it ends at with it; where the face's surface read has the pole (a net's collapsed row, a
     // cone's apex, a sphere's pole) the reader lays it, and each built must have one laid at its
-    // point. (A vertex no edge ends at is the kernel's bookkeeping, which no file writes.)
-    let pole = |fi: usize,p: gcs_core::brep::geom::V| {
+    // point. (A vertex no edge ends at is the kernel's bookkeeping, which no file writes.) A pole
+    // is where the surface's collapsing parameter sweeps no more than the file's uncertainty, as
+    // the reader reads one (`topo::pole_at`): a tolerant file's vertex stands a hair off the
+    // exact pole (CADGenBench 209's, 2e-13 off a sphere's, its parallel there 1.2e-7 of a
+    // meridian's speed; 238's 1.1e-5 off a net's collapsed row, within its own tolerance), and
+    // is the pole all the same.
+    let pole = |fi: usize,v: &gcs_core::brep::topo::Vertex| {
         let sf = &r.faces[fi].surface;
-        let uv = sf.inverse(p);
+        let uv = sf.inverse(v.p);
         let (q,su,sv) = sf.d1(uv);
         let (a,z) = (gcs_core::space::norm(su),gcs_core::space::norm(sv));
-        distance(q,p) <= 1e-9*s && a.min(z) <= 1e-9*a.max(z)
+        let within = stated.max(v.tol).max(1e-9*s);
+        distance(q,v.p) <= within && (a.min(z) <= 1e-9*a.max(z) || a.min(z)*std::f64::consts::PI <= within)
     };
     let kept: Vec<usize> = (0..b.edges.len()).filter(|&ei| !matches!(b.edges[ei].curve,EdgeCurve::Degenerate) || {
-        let p = b.vertices[b.edges[ei].v[0] as usize].p;
-        b.faces.iter().enumerate().any(|(fi,f)| f.loops.iter().flatten().any(|c| c.edge as usize == ei) && pole(fi,p))
+        let v = &b.vertices[b.edges[ei].v[0] as usize];
+        b.faces.iter().enumerate().any(|(fi,f)| f.loops.iter().flatten().any(|c| c.edge as usize == ei) && pole(fi,v))
     }).collect();
     let ended = kept.iter().flat_map(|&ei| b.edges[ei].v).collect::<BTreeSet<_>>().len();
     let mut poles: Vec<gcs_core::brep::geom::V> = kept.iter().filter(|&&ei| matches!(b.edges[ei].curve,EdgeCurve::Degenerate))
@@ -508,6 +516,30 @@ pub fn stages(text: &str) -> Result<Vec<Given>,(Stage,Refusal,Option<Vec<Given>>
     match refused { Some(r) => Err((Stage::Sound,r,Some(out))),None => Ok(out) }
 }
 
+/// The order `step::write` writes `b`'s faces in (`step::lumps`): each lump's outer shell's faces,
+/// then its voids'.
+pub fn written_order(b: &Brep) -> Vec<usize> {
+    gcs_core::brep::step::lumps(b).map(|l| l.iter().flat_map(gcs_core::brep::step::Lump::faces).collect()).unwrap_or_else(|_| (0..b.faces.len()).collect())
+}
+
+/// How many solids `step::write` writes `b` as: one a lump (`step::lumps`).
+fn given_lumps(b: &Brep) -> usize { gcs_core::brep::step::lumps(b).map_or(1,|l| l.len()) }
+
+/// **The solids a file gives, as the one solid they bound together** (`Brep::join`, each one's
+/// faces, edges and vertices after the last's, the entities they were read from beside them): a
+/// body of several lumps is written one solid a lump (`step::write`), and read so.
+pub fn joined(solids: Vec<Given>) -> Given {
+    let mut solids = solids.into_iter();
+    let mut out = solids.next().expect("a reading gives a solid");
+    for g in solids {
+        out.brep.join(&g.brep);
+        out.faces.extend(g.faces);
+        out.edges.extend(g.edges);
+        out.vertices.extend(g.vertices);
+    }
+    out
+}
+
 /// The most poles any one B-spline curve of `text` is written with (`step::MOST` bounds it).
 pub fn longest(text: &str) -> usize {
     text.lines().filter(|l| l.contains("B_SPLINE_CURVE")).map(|l| {
@@ -589,17 +621,20 @@ fn trip_in(b: &Brep,name: &str,tol: f64,fit: Fit,found: &mut Found) -> Outcome {
     let given = match read {
         Ok(g) => g,
         Err((by,refusal,unsound)) => {
-            let unsound = unsound.map(|g| if g.len() == 1 { same(b,&mb,&text,&g[0],fit,tol,&mut Found::default()).map(|_| ()) }
-                else { Err(format!("{} solids", g.len())) });
+            let unsound = unsound.map(|g| same(b,&mb,&text,&joined(g),fit,tol,&mut Found::default()).map(|_| ()));
             return Outcome::Refused {by,refusal,unsound}
         }
     };
-    if given.len() != 1 { return Outcome::Different(format!("{} solids read, one written",given.len())) }
+    // (a body of several lumps is written one solid a lump, and read as several: their faces,
+    // edges and vertices together the body's)
+    let lumps = given_lumps(b);
+    if given.len() != lumps { return Outcome::Different(format!("{} solids read, {lumps} written",given.len())) }
+    let given = joined(given);
     say("compared; held to the property");
-    let mr = match same(b,&mb,&text,&given[0],fit,tol,found) { Ok(m) => m,Err(d) => return Outcome::Different(d) };
+    let mr = match same(b,&mb,&text,&given,fit,tol,found) { Ok(m) => m,Err(d) => return Outcome::Different(d) };
     // the second trip: the solid read, written again, is a file of itself and reads to itself
     say("the second trip");
-    let r = &given[0].brep;
+    let r = &given.brep;
     let again = {
         let (tx,rx) = std::sync::mpsc::channel();
         let (owned,called) = (r.clone(),name.to_string());
@@ -614,8 +649,8 @@ fn trip_in(b: &Brep,name: &str,tol: f64,fit: Fit,found: &mut Found) -> Outcome {
     if again.len() > LARGEST { return Outcome::SecondTrip(format!("written again too large: {} bytes, {} the first time",again.len(),text.len())) }
     if let Err(e) = verify(&again,&Solid::of(r)) { return Outcome::SecondTrip(format!("written again, not verified: {e}")) }
     let twice = match stages(&again) { Ok(g) => g,Err((by,refusal,_)) => return Outcome::SecondTrip(format!("refused by {by:?}: {refusal}")) };
-    if twice.len() != 1 { return Outcome::SecondTrip(format!("{} solids read again",twice.len())) }
-    if let Err(d) = same(r,&mr,&again,&twice[0],fit,tol,&mut Found::default()) { return Outcome::SecondTrip(d) }
+    if twice.len() != given_lumps(r) { return Outcome::SecondTrip(format!("{} solids read again",twice.len())) }
+    if let Err(d) = same(r,&mr,&again,&joined(twice),fit,tol,&mut Found::default()) { return Outcome::SecondTrip(d) }
     Outcome::Same
 }
 
@@ -870,7 +905,7 @@ fn bench_cross_check() {
                 let again = write(&g.brep,"again",tol,Fit::Exact).map_err(|e| format!("not written again: {e}"))?;
                 let twice = stages(&again).map_err(|(by,r,_)| format!("second trip refused by {by:?}: {r}"))?;
                 let mr = measured(&g.brep);
-                same(&g.brep,&mr,&again,&twice[0],Fit::Exact,tol,&mut Found::default()).map(|_| ()).map_err(|d| format!("second trip differs: {d}"))?;
+                same(&g.brep,&mr,&again,&joined(twice),Fit::Exact,tol,&mut Found::default()).map(|_| ()).map_err(|d| format!("second trip differs: {d}"))?;
             }
             Ok(format!("read (volume {dv:.1e}, area {da:.1e} off)"))
         });
@@ -900,7 +935,7 @@ fn an_offset_read_is_written_again() {
             let again = write(&g.brep,"again",tol,Fit::Exact).unwrap_or_else(|e| panic!("{file}: not written again: {e}"));
             verify(&again,&Solid::of(&g.brep)).unwrap_or_else(|e| panic!("{file}: written again, not verified: {e}"));
             let twice = stages(&again).unwrap_or_else(|(by,r,_)| panic!("{file}: read again, refused by {by:?}: {r}"));
-            same(&g.brep,&measured(&g.brep),&again,&twice[0],Fit::Exact,tol,&mut Found::default()).unwrap_or_else(|d| panic!("{file}: {d}"));
+            same(&g.brep,&measured(&g.brep),&again,&joined(twice),Fit::Exact,tol,&mut Found::default()).unwrap_or_else(|d| panic!("{file}: {d}"));
         }
         eprintln!("{file}: {} solids, {offsets} faces on offsets, each written again and read to itself",given.len());
     }

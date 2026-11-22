@@ -8,6 +8,23 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The kernel writes every solid its reader reads** (#993 stage 2): a face on a surface swept or
+  turned from a line, a circle or an ellipse (`Surface::Extrusion`, `Surface::Revolution`, as a
+  reading makes them) is written as STEP's own `SURFACE_OF_LINEAR_EXTRUSION` or
+  `SURFACE_OF_REVOLUTION` of that curve, exactly; `step::write` panicked on one. A curve no entity
+  writes is refused with a reason, and a `Brep` whose indices leave its arrays, or whose geometry
+  is not finite, is refused rather than followed. `step_check::verify` holds a swept surface's
+  axis or direction and its curve, and an offset's distance and basis, to the solid's.
+
+- **A body of several lumps, or with a void, is written as the solids it is** (#993 stage 2,
+  `step::lumps`): a `Brep`'s shells (its faces' components) are nested as the reader judges them
+  (`step_read::sound::nesting`), each lump written as its own `MANIFOLD_SOLID_BREP` among the
+  representation's items, a lump with voids as a `BREP_WITH_VOIDS` whose voids are
+  `ORIENTED_CLOSED_SHELL`s turned (`.F.`). Every shell went into one `CLOSED_SHELL`, which ISO
+  10303-42 holds to be a connected face set. `write_assembly` writes a part so, and
+  `step_check` verifies the structure written: each solid, its shells and each face's sense in
+  its shell.
+
 - **The kernel reads STEP** (#993 stage 1, `step_read::read`, `step_read::reading`, `step_file`):
   a manifold solid of an AP203, AP214 or AP242 advanced B-rep is read into a `Brep`, each face on
   the file's own surface and each edge on its own curve, nothing refitted and nothing healed, each

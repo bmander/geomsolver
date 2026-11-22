@@ -2042,13 +2042,68 @@ writer's own fits allow (`Bars`: rounding where a curve is written as itself, tw
 its length for a traced or fitted curve, a fitted surface's share, and 1e-6 of the area on a
 surface with no closed form, whose area rule is not exact where its flux's is); the solid read,
 written again, passing `step_check::verify` and reading to itself; and no edge read looser than
-the file states. A `Brep` of several lumps or with a void is written to one closed shell and reads
-back as that one solid. Over the library's exact solids (`census`, a tool): all 496 the same, no
+the file states. A `Brep` of several lumps or with a void is written as the solids it is (below)
+and its solids read are joined back into one (`step_roundtrip::joined`). Over the library's exact solids (`census`, a tool): all 496 the same, no
 edge read looser than its file states, none refused and none a panic. Gates:
 `step_roundtrip::the_sample_reads_back` (a sample taking every writer path a solid that reads back
 takes, `PATHS`, at 1e-7), `the_sample_reads_back_at_export_tolerances`,
 `a_nets_collapsed_side_reads_back` (`pyramid`); a solid that does not read back is an ignored test
 named for its defect, and there is none.
+
+**The kernel writes every solid its reader reads** (#993 stage 2): a body a file gives is
+exported again, so `step::write` and `step_check` are handed B-reps the kernel did not build, and
+write each exactly or refuse it with a reason — never a panic, which aborts the wasm build. **A
+surface swept or turned from a line, a circle or an ellipse** (`Surface::Extrusion`,
+`Surface::Revolution`, which a reading makes of a file's `SURFACE_OF_LINEAR_EXTRUSION` or
+`SURFACE_OF_REVOLUTION`, a cone's nappe turned from its line) **is written as STEP's own entity
+over that curve** (`Out::swept`): the standard's two sweep any curve over its own parameter, as the
+kernel's do — the extrusion `C(u) + v V`, the revolution the curve turned by `u` — so the face's
+parameters are the file's and its pcurves are written in them unchanged, a line's vector its own
+`d` (unit direction and length) so its parameter is the line's. It is not written as the exact
+rational net: the net would replace the file's surface by another form of it, its parameters the
+arc's and not the angle's, and a second reading would give a net where the first gave a
+revolution. A curve no entity of the standard writes is refused (a turned contact's meridian and a
+slid contour keep their fitted cubic, #780, #805). `step_check::verify` holds a swept surface's
+axis (a revolution's point and direction) or vector (an extrusion's direction and length) and
+its curve — a line's point, direction and length, a conic's placement and radii, a spline's
+degree, poles, knots and weights — to the solid's (`Solid::of`, a curve the writer fits checked
+for a spline alone), and an offset's distance and basis net; `step_roundtrip::same` compares
+those numbers too, as it does every other surface's. A `Brep` whose indices leave its arrays, or
+whose geometry holds no finite uncertainty, is refused, not followed. Gate:
+`step_rewrite::every_solid_read_is_written_again` (every checked-in file the reader reads, and
+nine written by hand — a prism on extrusions of lines, upright and aslant; an extrusion of a
+circle, of a circle aslant read as an ellipse, of an ellipse; a revolution of a line along its
+axis and meeting it, of a circle and of an ellipse beside the axis — each written again, verified,
+and read back the same solid, every face on its original surface; the nine panicked the writer);
+`step_rewrite::the_corpus_is_written_again` (a tool over `$STEP_CORPUS`): the 32 CADGenBench
+inputs each written again, verified and read back the same, 217's drilled void as a
+`BREP_WITH_VOIDS`. `same` reads a pole as the reader does, where the collapsing parameter
+sweeps no more than the file's uncertainty or the vertex's tolerance (a tolerant vertex a hair off
+a sphere's pole or 1e-5 off a net's collapsed row is that pole).
+
+**A body is written as the solids it is** (#993 stage 2, `step::lumps`). ISO 10303-42 holds a
+`closed_shell` to be a `connected_face_set` (its faces, with their edges and vertices, connected),
+a `manifold_solid_brep` to be bounded by one outer closed shell, and a `brep_with_voids`'s voids
+to be closed shells inside it, apart from it and each other: so a `Brep` whose faces fall into
+several components by the edges they share is no one closed shell, and one written so (every face
+in one `CLOSED_SHELL`, as `step::write` did) does not conform, and what a reader makes of it is
+that reader's guess. Its
+shells are nested as the reader judges them (`step_read::sound::nesting`, one rule for both: each
+faces out, a lump, or in, a void, a void inside the lump nearest about it), and each lump is
+written as its own `MANIFOLD_SOLID_BREP` among the representation's items (as the reader reads
+several solids in one product's shape), a lump with voids as a `BREP_WITH_VOIDS` whose voids are
+`ORIENTED_CLOSED_SHELL`s of orientation `.F.` (as OCCT writes them and the reader reads them):
+each void's closed shell faces out of its void, a closed shell of its own, every face's sense and
+loops turned, and the oriented shell turns it back. A lump inside a void is a solid of its own.
+The faces are written lump by lump, its outer shell's then its voids', each in the `Brep`'s
+order; one shell is one solid whatever it faces, as before. Shells that nest as no solid's do
+are refused at the write. `write_assembly` writes a part so (each of its solids styled), and
+`step_check::verify` walks what was written: as many solids and shells as the lumps say, each
+void an oriented shell turned, each face's sense in its solid (its shell's turn undone) the
+solid's. Gate: `step_rewrite::lumps_and_voids_are_written_as_the_solids_they_are` (a block with a
+void holding an island, a block with two spherical voids, two blocks apart: their solids, voids
+and turned shells counted, verified, and read back the same body twice over), and OCCT's
+`void_ap214.step` in `every_solid_read_is_written_again`.
 
 **A STEP file's syntax is read as Part 21 means it, whatever the cores** (`step_file`). What
 writers write is read: a byte-order mark, comments wherever a token may stand, every kind of line
@@ -2289,8 +2344,8 @@ closed on itself is read on the window of the sheet its loops lie in (below), so
 one region (CADGenBench 217). Each shell faces out or in as points stepped off its largest faces are
 located against it, its signed volume used where none locates or they tie (217's drilled void of
 three faces); a lump lies inside nothing or inside a void, a void inside a lump, none crossing
-another; any number of lumps is sound, as `step::write` writes them; a boundary of no faces is
-refused. Whether faces that are not neighbours cross in space is not decided yet. Gates:
+another; any number of lumps is sound, in one shell's faces as files written before #993 stage 2
+put them; a boundary of no faces is refused. Whether faces that are not neighbours cross in space is not decided yet. Gates:
 `step_sound::a_use_leaping_a_period_is_refused`, `a_use_swinging_round_a_pole_it_ends_at_is_read`,
 `shells_inside_out_or_apart_are_refused`, `step_mutants::an_empty_shell_is_refused`.
 

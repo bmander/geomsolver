@@ -37,7 +37,8 @@ it to crates.io; what changes in each release is in [CHANGELOG.md](CHANGELOG.md)
 - **Measures:** exact volume (by Green's theorem over each face) and area.
 - **Meshing:** a constrained Delaunay mesh refined until it is within a measured sag of the surface.
 - **Output:** STEP AP214 with p-curves and seam curves, stating no tighter an uncertainty than
-  the file holds, and STL.
+  the file holds, each lump of a body its own solid and a void a `BREP_WITH_VOIDS`'s shell, and
+  STL. Every solid the reader reads is written again, each face on its own surface.
 - **Input:** a manifold solid read from an AP203, AP214 or AP242 advanced B-rep
   (`step_read::read`), each face on the file's own surface and each edge on its own curve,
   nothing refitted and nothing healed. A file is read correctly or refused naming the entity at

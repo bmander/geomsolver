@@ -1,6 +1,8 @@
 //! A B-rep written as STEP (ISO 10303-21, AP214's advanced B-rep): the product and units a
-//! reader expects (millimetres, radians), a manifold solid on one closed shell, its faces on
-//! their exact surfaces and its edges on their exact curves; a traced curve written as the cubic
+//! reader expects (millimetres, radians), a manifold solid on one closed shell for each lump of
+//! the body (`lumps`), its voids a `BREP_WITH_VOIDS`'s, its faces on their exact surfaces (a
+//! surface swept or turned from a line, a conic or a spline as STEP's own) and its edges on their
+//! exact curves; a traced curve written as the cubic
 //! within `Fit::bar` of it, in as few pieces as that allows; every edge's curve in each face
 //! that uses it (its pcurve, a seam's two) written beside it, so a reader need not project its
 //! own, where it can be in at most `3 MOST + 1` points; a pole's degenerate edge left out of its
@@ -84,8 +86,10 @@ impl Out {
                 let a = self.placement(&f);
                 self.add(format!("TOROIDAL_SURFACE('',#{a},{},{})",real(big),real(r)))
             }
+            // (written above, or as its face's net: `solid` writes a face here only where
+            // `face_net` gives none, and it gives one for each of these)
             Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)
-                | Surface::Affine(..) => unreachable!("written above, or as its face's net (`face_net`)"),
+                | Surface::Affine(..) => return Err(format!("a {} written as no net",s.kind())),
             // a sheet's offset read from a file (`OFFSET_SURFACE` of a net), written so again:
             // `S + d N`, `N` the unit `S_u × S_v`, as the standard's and the reader's
             Surface::Offset(_,ref n,d) => {
@@ -115,16 +119,36 @@ impl Out {
             net.du,net.dv,rows.join(","),list(&uk,&|k| k.1.to_string()),list(&vk,&|k| k.1.to_string()),
             list(&uk,&|k| real(k.0)),list(&vk,&|k| real(k.0))))
     }
-    /// The curve a swept surface sweeps (a B-spline, as a profile gives one), and how far the
-    /// file's stands off it.
+    /// **The curve a swept surface sweeps, written as itself** (#993 stage 2), and how far the
+    /// file's stands off it: a B-spline (as a profile gives one), and a line, a circle or an
+    /// ellipse (as a file read gives one: `SURFACE_OF_LINEAR_EXTRUSION` and
+    /// `SURFACE_OF_REVOLUTION` take any curve, and sweep it over its own parameter as the kernel's
+    /// `Extrusion` and `Revolution` do, so the face's parameters are the file's and its pcurves are
+    /// written in them unchanged); refused for any other curve, which no reading or construction
+    /// sweeps.
     fn swept(&mut self,c: &Curve) -> Result<(usize,f64),String> {
         // a curve read exactly in a frame (a turned contact's meridian, #780 C3; a slid torus's
         // contour, #805), which no entity of the standard writes: the cubic through it over its
         // span, fitted within `FIT`, its knots its own parameters
         if let Some(span) = c.exact_span() { return fitted(self,c,span,whose(c)) }
-        let Curve::BSpline(b) = c else { unreachable!("a swept surface's curve is a profile's B-spline") };
-        let ids: Vec<String> = b.poles.iter().map(|&p| format!("#{}",self.point(p))).collect();
-        Ok((spline(self,b.degree,&ids,&b.knots,b.weights.as_deref()),0.))
+        Ok((match c {
+            Curve::BSpline(b) => {
+                let ids: Vec<String> = b.poles.iter().map(|&p| format!("#{}",self.point(p))).collect();
+                spline(self,b.degree,&ids,&b.knots,b.weights.as_deref())
+            }
+            // (its vector the line's own `d`, a unit direction and its length, so its parameter is
+            // the line's: `p + t d`)
+            Curve::Line {p,d} => {
+                let l = norm(*d);
+                if !(l > 0. && l.is_finite()) { return Err("a swept surface's line has no direction".into()) }
+                let (p,d) = (self.point(*p),self.direction(scale(*d,1./l)));
+                let v = self.add(format!("VECTOR('',#{d},{})",real(l)));
+                self.add(format!("LINE('',#{p},#{v})"))
+            }
+            Curve::Circle(f,r) => { let a = self.placement(f); self.add(format!("CIRCLE('',#{a},{})",real(*r))) }
+            Curve::Ellipse(f,a,b) => { let p = self.placement(f); self.add(format!("ELLIPSE('',#{p},{},{})",real(*a),real(*b))) }
+            other => return Err(format!("a surface swept or turned from a {} curve has no entity of the standard to write it",other.kind())),
+        },0.))
     }
 }
 
@@ -908,10 +932,11 @@ pub fn write_stating(b: &Brep,name: &str,tol: f64,fit: Fit) -> Result<(String,f6
     let name = name.replace('\'',"''");
     let (_,shape) = product(&mut o,&name,context,pctx,&mut None);
     let gctx = geometric(&mut o);
-    let (solid,held) = solid(&mut o,b,tol,fit)?;
+    let (solids,held) = solid(&mut o,b,tol,fit)?;
     let origin = o.placement(&Frame::WORLD);
-    let rep = o.add(format!("ADVANCED_BREP_SHAPE_REPRESENTATION('',(#{origin},#{solid}),#{gctx})"));
+    let rep = o.add(format!("ADVANCED_BREP_SHAPE_REPRESENTATION('',({}),#{gctx})",items(origin,&solids)));
     o.add(format!("SHAPE_DEFINITION_REPRESENTATION(#{shape},#{rep})"));
+    if !held.is_finite() { return Err("the solid's geometry is not finite: no uncertainty covers it".into()) }
     let stated = statement(tol,held);
     gctx.state(&mut o,stated);
     Ok((file(&name,&o.text),stated))
@@ -1007,10 +1032,10 @@ pub fn write_assembly(a: &Assembly,name: &str,tol: f64,fit: Fit) -> Result<Strin
         let origin = o.placement(&Frame::WORLD);
         let rep = match &p.solid {
             Some(b) => {
-                let (solid,most) = solid(&mut o,b,tol,fit)?;
+                let (solids,most) = solid(&mut o,b,tol,fit)?;
                 held = held.max(most);
-                if let Some(c) = p.colour { coloured.push((solid,c)); }
-                o.add(format!("ADVANCED_BREP_SHAPE_REPRESENTATION('',(#{origin},#{solid}),#{gctx})"))
+                if let Some(c) = p.colour { coloured.extend(solids.iter().map(|&s| (s,c))); }
+                o.add(format!("ADVANCED_BREP_SHAPE_REPRESENTATION('',({}),#{gctx})",items(origin,&solids)))
             }
             None => {
                 let uses: Vec<(&Usage,usize)> = a.uses.iter().filter(|u| u.parent == k).map(|u| (u,o.placement(&u.placement))).collect();
@@ -1050,8 +1075,14 @@ pub fn write_assembly(a: &Assembly,name: &str,tol: f64,fit: Fit) -> Result<Strin
     if !styled.is_empty() {
         o.add(format!("MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION('',({}),#{gctx})",styled.join(",")));
     }
+    if !held.is_finite() { return Err("a part's geometry is not finite: no uncertainty covers it".into()) }
     gctx.state(&mut o,statement(tol,held));
     Ok(file(&name.replace('\'',"''"),&o.text))
+}
+
+/// A shape representation's items: its axes, and its solids.
+fn items(origin: usize,solids: &[usize]) -> String {
+    std::iter::once(origin).chain(solids.iter().copied()).map(|i| format!("#{i}")).collect::<Vec<_>>().join(",")
 }
 
 /// The application a file's products are defined in (AP214's), its context's id.
@@ -1104,9 +1135,53 @@ fn file(name: &str,data: &str) -> String {
         FILE_SCHEMA(('AUTOMOTIVE_DESIGN {{ 1 0 10303 214 1 1 1 1 }}'));\nENDSEC;\nDATA;\n{data}ENDSEC;\nEND-ISO-10303-21;\n")
 }
 
-/// The solid's topology and geometry, bottom up, to its manifold solid: its id, and the most
-/// anything written stands off what it stands for (`held`).
-fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<(usize,f64),String> {
+/// **A lump of a solid as the file writes it** (`lumps`): the faces of its outer shell, and of each
+/// of its voids' shells, by their indices in the `Brep`, each in its order there.
+#[derive(Clone,Debug,PartialEq)]
+pub struct Lump { pub outer: Vec<usize>,pub voids: Vec<Vec<usize>> }
+
+/// **The lumps a `Brep` is written as** (#993 stage 2). ISO 10303-42 holds a `closed_shell` to be
+/// a connected face set (its faces, edges and vertices together connected), a
+/// `manifold_solid_brep` to be bounded by one outer closed shell, and a void to be an inner
+/// shell of a `brep_with_voids`, disjoint from the others and inside its outer shell: so a
+/// `Brep` of several shells (its faces' components by the edges they share) is not one closed
+/// shell. Its shells are nested as a reader judges them (`step_read::sound::nesting`: each facing
+/// out, a lump, or in, a void; a void inside a lump), each lump written as one solid with its voids
+/// — the voids each the void nearest inside it — and the lumps in the order of their first faces.
+/// A `Brep` of one shell is one lump whatever it faces (nothing is decided that a reader does not
+/// decide itself). Refused, never written as one shell, where its shells nest as no solid's do.
+pub fn lumps(b: &Brep) -> Result<Vec<Lump>,String> {
+    let mut joined = crate::util::union_find::UnionFind::new(b.faces.len());
+    let mut user = vec![usize::MAX;b.edges.len()];
+    for (fi,f) in b.faces.iter().enumerate() {
+        for c in f.loops.iter().flatten() {
+            let Some(u) = user.get_mut(c.edge as usize) else { return Err(format!("face {fi} uses no edge of the solid")) };
+            if *u == usize::MAX { *u = fi } else { joined.union(*u,fi) }
+        }
+    }
+    if joined.labels().1 <= 1 { return Ok(vec![Lump {outer:(0..b.faces.len()).collect(),voids:Vec::new()}]) }
+    let n = super::step_read::sound::nesting(b).map_err(|u| format!("its shells nest as no solid's do: {}",u.msg))?;
+    Ok((0..n.shells.len()).filter(|&x| n.outward[x]).map(|x| Lump {outer:n.shells[x].clone(),
+        voids:(0..n.shells.len()).filter(|&y| !n.outward[y] && n.about[y] == Some(x)).map(|y| n.shells[y].clone()).collect()}).collect())
+}
+
+impl Lump {
+    /// Its faces in the order the file writes them: its outer shell's, then each void's.
+    pub fn faces(&self) -> impl Iterator<Item = usize> + '_ { self.outer.iter().chain(self.voids.iter().flatten()).copied() }
+}
+
+/// The solid's topology and geometry, bottom up, to its manifold solids (one a lump, `lumps`, its
+/// voids a `BREP_WITH_VOIDS`'s): their ids, and the most anything written stands off what it
+/// stands for (`held`).
+fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<(Vec<usize>,f64),String> {
+    // (every index in range: a `Brep` handed in from outside the kernel's own construction — read
+    // from a file, from JSON — is refused, not followed past its arrays)
+    let (nv,ne) = (b.vertices.len(),b.edges.len());
+    if let Some(ei) = b.edges.iter().position(|e| e.v.iter().any(|&v| v as usize >= nv)) { return Err(format!("edge {ei} ends on no vertex of the solid")) }
+    if let Some(fi) = b.faces.iter().position(|f| f.loops.iter().flatten().any(|c| c.edge as usize >= ne)) {
+        return Err(format!("face {fi} uses no edge of the solid"))
+    }
+    let lumps = lumps(b)?;
     // the topology, bottom up
     // only the vertices a written edge ends at (a pole's degenerate edge is not written)
     let mut wanted = vec![false;b.vertices.len()];
@@ -1216,15 +1291,25 @@ fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<(usize,f64),String> {
         };
         Ok(Some(o.add(format!("EDGE_CURVE('',#{},#{},#{geometry},.T.)",vertices[e.v[0] as usize],vertices[e.v[1] as usize]))))
     }).collect::<Result<_,_>>()?;
-    let mut faces = Vec::new();
-    for (fi,f) in b.faces.iter().enumerate() {
+    // each face, in its lump's order (its outer shell's faces, then each void's), turned where it
+    // bounds a void — its sense and its loops: a void's closed shell is written facing out of the
+    // void, a closed shell of its own as a solid of it would be, and its oriented shell (`.F.`)
+    // turns it back, so each face's sense in the solid is the kernel's
+    let mut faces = vec![String::new();b.faces.len()];
+    let voided: Vec<bool> = { let mut v = vec![false;b.faces.len()]; for l in &lumps { for &fi in l.voids.iter().flatten() { v[fi] = true; } } v };
+    for fi in lumps.iter().flat_map(Lump::faces) {
+        let f = &b.faces[fi];
         let surface = surfaces[fi];
         let mut bounds = Vec::new();
         for (li,l) in f.loops.iter().enumerate() {
             let mut uses: Vec<String> = Vec::new();
-            for c in l {
+            // (a void's face, its sense turned in its shell, has its loops run the other way with
+            // it: each its uses in the reverse order, each turned)
+            let turn = voided[fi];
+            let ordered: Box<dyn Iterator<Item = &super::topo::Coedge>> = if turn { Box::new(l.iter().rev()) } else { Box::new(l.iter()) };
+            for c in ordered {
                 let Some(e) = edges[c.edge as usize] else { continue };
-                uses.push(format!("#{}",o.add(format!("ORIENTED_EDGE('',*,*,#{e},{})",if c.reversed { ".F." } else { ".T." }))));
+                uses.push(format!("#{}",o.add(format!("ORIENTED_EDGE('',*,*,#{e},{})",if c.reversed != turn { ".F." } else { ".T." }))));
             }
             if uses.is_empty() { continue }
             let lp = o.add(format!("EDGE_LOOP('',({}))",uses.join(",")));
@@ -1232,9 +1317,15 @@ fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<(usize,f64),String> {
         }
         // against its surface where the solid reverses it, or where the file's surface runs against
         // the kernel's (`turned`), not both
-        let against = f.reversed != turned(&f.surface);
-        faces.push(format!("#{}",o.add(format!("ADVANCED_FACE('',({}),#{surface},{})",bounds.join(","),if against { ".F." } else { ".T." }))));
+        let against = (f.reversed != turned(&f.surface)) != voided[fi];
+        faces[fi] = format!("#{}",o.add(format!("ADVANCED_FACE('',({}),#{surface},{})",bounds.join(","),if against { ".F." } else { ".T." })));
     }
-    let shell = o.add(format!("CLOSED_SHELL('',({}))",faces.join(",")));
-    Ok((o.add(format!("MANIFOLD_SOLID_BREP('',#{shell})")),held))
+    let shell = |o: &mut Out,s: &[usize]| o.add(format!("CLOSED_SHELL('',({}))",s.iter().map(|&fi| faces[fi].as_str()).collect::<Vec<_>>().join(",")));
+    let solids = lumps.iter().map(|l| {
+        let outer = shell(o,&l.outer);
+        if l.voids.is_empty() { return o.add(format!("MANIFOLD_SOLID_BREP('',#{outer})")) }
+        let voids: Vec<String> = l.voids.iter().map(|v| { let s = shell(o,v); format!("#{}",o.add(format!("ORIENTED_CLOSED_SHELL('',*,#{s},.F.)"))) }).collect();
+        o.add(format!("BREP_WITH_VOIDS('',#{outer},({}))",voids.join(",")))
+    }).collect();
+    Ok((solids,held))
 }
