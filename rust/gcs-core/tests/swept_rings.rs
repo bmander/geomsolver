@@ -444,3 +444,31 @@ fn a_double_curve_crossing_its_tubes_seam_bounds_a_tail_beside_it_not_the_whole_
     assert!(cut,"the roll is cut where the contact changes shape");
     assert_eq!(sheets.len(),2,"one tube a contact curve: {:?}",sheets.iter().map(|s| s.faces.len()).collect::<Vec<_>>());
 }
+
+/// **The full turn gets past its start and end tori** (#942 T1d-tori, the slow tier):
+/// brep-bench's `tumbling-torus-full-turn`, a torus of tube 0.16 turned 0.375 a radian about one
+/// line and back a radian about another over a whole turn. Its trim reads every piece of the tori
+/// at its end poses one way all over — the start torus's rim laid as each edge the tube holds it as
+/// (refused before, a piece of the start torus the boundary on one side of the rim and off it on
+/// the other); its last stretch's tail between a double curve and the tube's seam dropped, and the
+/// curve's end where it meets the end pose one point on both leaves (refused before, a piece of the
+/// end torus read both ways round a chord hung open) — and it is refused only where the two tori's
+/// meeting, found by search, misses an arc between the points they touch at (the end pose the start
+/// turned 0.75π about a line parallel to the torus's axis).
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 40 s: the full turn built to its refusal")]
+fn the_full_turns_tori_are_read_one_way_all_over_and_it_is_refused_where_they_meet() {
+    use gcs_core::brep::swept::closed::ring;
+    use gcs_core::brep::trajectory::Screw;
+    let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.16).unwrap();
+    let (sl,cl) = 30f64.to_radians().sin_cos();
+    let (sa,ca) = 20f64.to_radians().sin_cos();
+    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.375,advance:0.});
+    let frame = Trajectory::Twist(Screw {origin:[0.,0.7071*cl,0.7071*sl],axis:[ca,sa*cl,sa*sl],ratio:1.,
+        advance:0.});
+    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
+    let roll = [-std::f64::consts::PI,std::f64::consts::PI];
+    let why = format!("{:?}",ring(&tool,&path,roll,0.16/250.,0.16/50_000.).expect_err("refused where the tori meet"));
+    assert!(why.contains("torus piece kept beside it (candidate and face (0, 0))") && why.contains("face (1, 0), a torus")
+        && why.contains("met by search"),"{why}");
+}

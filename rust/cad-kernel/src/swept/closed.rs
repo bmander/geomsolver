@@ -1176,9 +1176,10 @@ pub fn ring_entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Re
     let last = fits.len()-1;
     let mut pieces = Vec::new();
     let mut given = Vec::new();
-    // (a place of a tube proved inside the sweep by more than the tolerance — a sheet on the boundary
-    // stands within its fit of it, a tenth of the tolerance — bounds nothing, and is dropped with the
-    // tails, #942 T1d-tori)
+    // (whether a pose holds a place of a tube more than the tolerance deep — a sheet on the boundary
+    // stands within its fit of it, a tenth of the tolerance — read where a double curve dips below a
+    // stretch and comes back, the tail between ending where the curve meets the tool at an end pose,
+    // #942 T1d-tori)
     let inside = |x: V| ring.held(path,[a,b],x,tol);
     for (k,fit) in fits.iter().enumerate() {
         // (both end poses read on every stretch: a tube carried on can cross either far from it)

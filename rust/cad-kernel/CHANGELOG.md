@@ -8,6 +8,18 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The full-turn tumbling torus gets past its start and end tori** (#942 T1d-tori, `boolean`,
+  `swept::rings`, `swept::closed`), and is refused further on, where the two tori's meeting found
+  by search misses an arc between the two points where they touch. A given curve a face holds as
+  several edges is laid as each of them, not the first alone (the tube's row at the start, cut where
+  the end pose holds the tube beside it, left half the start torus's rim unlaid). A double curve
+  that leaves a stretch through its start row and comes back through it bounds a tail between, at
+  places a pose holds more than the tolerance deep (`Fitted::tails`, `Ring::held`, read off the
+  ring's exact signed distance): a face between a double curve and the tube's seam, 3e-3 deep, was
+  kept. A double curve's end stays where it is and the trace it stands on is
+  cut there: put on the trace's polyline, it stood two tolerances from the same point on the leaf
+  whose rim it is. `rings::entered_at` takes the test of the sweep's inside.
+
 - **The bench's cube tumbling 75° is built** (#942 T1d-cube, `swept::general`, `family`, `topo`):
   a fan's crossing with itself is built from the pinch it is born at — the runs' corner where the
   sheet's rate across their rim turns over — as the pairs of points of the two runs that meet, each

@@ -2083,6 +2083,32 @@ face's square, within `ON_SIDE` — bounds nothing and is no chord; one along a 
 lying on the tool (#942 F6: the near-orthogonal tori's, two points 2.4e-13 apart on the rim where a
 crossing ends, put two chords' ends at one place; `swept_rings::a_trace_of_no_length_bounds_nothing`),
 nor is one its ends' places put at one place when they are snapped to the seams.
+**A given curve a face holds as several edges is laid as each** (#942 T1d-tori, `boolean`'s
+`edges_that_are`): F3's class B rule lays a given curve that is a face's own edge as that edge, and
+a face may hold one curve as several, cut where another meeting reaches it — the full turn's tube
+held its row at the start, the rim it touches the start torus along, as two edges, the end pose's
+chord between them where the tool posed at the end holds the tube beside it. The first alone laid,
+the start torus was parted along half its rim, and a piece of it reached round the other half from
+the side the tool trails to the side it leads, refused as read both ways (gated with no sweep by
+`arrangement::a_given_curve_a_face_holds_as_two_edges_is_laid_as_both`). **A double curve that dips below a stretch
+and comes back bounds a tail between** (#942 T1d-tori, `Fitted::tails`, `Ring::held`): a place is
+tail where it lies above a line of a double curve in the stretch (a curve over `u`), and a curve
+that leaves the stretch through its start row and comes back through it further round leaves no
+line over the places between, which lie above it as well — the line read for the tail is carried
+on along the start row there. A tail ends where its curve meets the tool at an end pose, the places
+above that tool's chord standing on the boundary, so a place in such a carried column is tail only
+where a pose holds it more than the tolerance deep (read off the ring's exact signed distance, best
+first over the roll as membership reads; a sheet on the boundary stands within its fit, a tenth of
+the tolerance, of it). The full turn's last stretch kept a face between its double curve and the
+tube's seam, 3e-3 inside the sweep, its crossing of the tool at the end hung open on the seam; the
+column alone dropped the corners above the tool's chord, which stand on the boundary to 1e-8; and a
+probe proved inside taken alone, with no column, dropped a region of the tumbling torus's tube that
+another tube's sweep covers over part of it only, its solid then wrong at a point.
+**A double curve's end stays where it is**
+(`rings::split_chords`): it ends where one leaf reaches the end of the roll, on the tool posed
+there, so on the other leaf's meeting with that tool, which is cut there; put on that trace's
+polyline, the full turn's stood 2.4e-6 inside the end torus, two tolerances from the same point on
+the leaf whose rim it is, and the two never met.
 **Every threshold the roads under any motion read is the tolerance's, a feature size's, or the
 rounding's** (#942 F6), none a number of its own:
 - *the rounding* — a value read by cancellation is nought where half its digits are its rounding's,
@@ -2118,8 +2144,14 @@ rounding's** (#942 F6), none a number of its own:
   complex read tied faces a thousandth of the box in, is right at a twentieth, a tenth and half the
   extent since it reads them nearest first, `brep.md`'s A1.)
 **Not yet built**: the tumbling tori fit, are cut and sewn into one tube a contact curve, and are
-refused past the meetings their sewing settles — the torus turned whole where a piece of the torus
-at an end pose reads as the boundary facing behind; the thin one where its two tubes meet at under
+refused past the meetings their sewing settles — the torus turned whole where its two end poses'
+tori meet (#942 T1d-tori: past its start and end tori's pieces, above, the boundary left open along
+the start torus's seam circle beside a piece the end torus crosses): over a full turn the end pose is
+the start turned 0.75π about a line parallel to the torus's axis, two congruent tori in one plane
+whose tubes touch at two points beside each place their core circles cross, and their meeting,
+found by search seeded where an edge crosses it, misses an arc between those points that no edge
+crosses (at `(2.356, 2.693, −0.273)`, the surfaces crossing at a sine of 0.6; the touches 0.15 off,
+the sine below 4e-3); the thin one where its two tubes meet at under
 a hundredth of a degree, which the march cannot step along; the half turn where a piece of the leaf
 beside the fold pair's birth is the boundary at one point and not at another, parted by the pair's
 own double curve, which is not traced there. A double curve's

@@ -707,6 +707,11 @@ pub struct Fitted { pub nets: Vec<Net>,pub on: Vec<Vec<On>>,pub sides: Vec<Vec<S
     /// its `u` continuous along the line — unwrapped across the seam where the tube's faces close
     /// round, read modulo their number (#942 F6).
     pub doubles: Vec<Vec<Vec<[f64;2]>>>,
+    /// Per net, the same lines read for the tail above them, each carried on along the stretch's
+    /// start row where its curve leaves the stretch through it and comes back through it further
+    /// round, `u` running on: the curve lies below the stretch there, and the places of the stretch
+    /// between stand above it (#942 T1d-tori).
+    pub tails: Vec<Vec<Vec<[f64;2]>>>,
     /// Where each narrow pair's outer leaves are first found crossing in this stretch: the two
     /// preimages as angles round the axis, rolls and places round the meridian (`double_curve`).
     pub seeds: Vec<[(f64,f64,f64);2]> }
@@ -1078,7 +1083,8 @@ pub fn fitted_over(ring: &Ring,path: &Trajectory,whole: [f64;2],[a,b]: [f64;2],s
         on.push(faces.iter().map(|f| reader.first[run.curve][run.pieces[f.piece]].label.on).collect());
         sides.push(faces.iter().map(|f| reader.first[run.curve][run.pieces[f.piece]].side).collect());
     }
-    Ok(Fitted {nets,on,sides,roll:[a,b],doubles,seeds})
+    let tails = doubles.clone();
+    Ok(Fitted {nets,on,sides,roll:[a,b],doubles,tails,seeds})
 }
 
 /// Whether two instants' contacts are of one shape: as many curves, each of `b`'s turning onto one
@@ -1339,11 +1345,16 @@ pub fn cut_along(ring: &Ring,path: &Trajectory,whole: [f64;2],fit: &mut Fitted,s
             line.push([u,t]);
         };
         let mut out = Vec::new();
+        let mut tails = Vec::new();
         for full in curves {
             // (the curve, and its swallowtail points after the marker)
             let mark = full.iter().position(|p| p.0.is_nan()).unwrap_or(full.len());
             let curve = &full[..mark];
             let mut line: Vec<[f64;2]> = Vec::new();
+            // (the line read for the tail, and whether the curve last left the stretch through its
+            // start row, where the tail line runs on along it to where the curve comes back)
+            let mut tail: Vec<[f64;2]> = Vec::new();
+            let mut below = false;
             for w in 0..curve.len() {
                 let (th,t,sg) = curve[w];
                 let inside = t >= a && t <= b;
@@ -1354,19 +1365,31 @@ pub fn cut_along(ring: &Ring,path: &Trajectory,whole: [f64;2],fit: &mut Fitted,s
                     for edge in [a,b] {
                         if (t0-edge)*(t-edge) < 0. {
                             let f = (edge-t0)/(t-t0);
-                            if let Some(u) = u_of((th0+(th-th0)*f,edge,if f < 0.5 { sg0 } else { sg }))? { laid(&mut line,u,edge) }
+                            if inside && !(below && edge == a) {
+                                if tail.len() >= 2 { tails.push(std::mem::take(&mut tail)) } else { tail.clear() }
+                            }
+                            below = !inside && edge == a;
+                            if let Some(u) = u_of((th0+(th-th0)*f,edge,if f < 0.5 { sg0 } else { sg }))? {
+                                laid(&mut line,u,edge);
+                                laid(&mut tail,u,edge);
+                            }
                             if !inside && line.len() >= 2 { out.push(std::mem::take(&mut line)) } else if !inside { line.clear() }
+                            if !inside && !below {
+                                if tail.len() >= 2 { tails.push(std::mem::take(&mut tail)) } else { tail.clear() }
+                            }
                         }
                     }
                 }
-                if inside { if let Some(u) = u_of((th,t,sg))? { laid(&mut line,u,t) } }
+                if inside { if let Some(u) = u_of((th,t,sg))? { laid(&mut line,u,t); laid(&mut tail,u,t) } }
             }
             if line.len() >= 2 { out.push(line) }
+            if tail.len() >= 2 { tails.push(tail) }
         }
         if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
             for l in &out { eprintln!("ring: cut over {:?}, tube {ri}: a line of {} from {:?} to {:?}",[a,b],l.len(),l[0],l[l.len()-1]) }
         }
         fit.doubles[ri] = out;
+        fit.tails[ri] = tails;
     }
     Ok(())
 }
@@ -1431,7 +1454,7 @@ pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],rimmed: 
     let n = ring.elements.len();
     // each end pose carrying a point in space back into the tool where it stands there
     let backs = at.map(|x| x.map(|(_,p)| p.inverse()));
-    for (((net,on),sides),doubles) in fit.nets.iter().zip(&fit.on).zip(&fit.sides).zip(&fit.doubles) {
+    for ((((net,on),sides),doubles),tails) in fit.nets.iter().zip(&fit.on).zip(&fit.sides).zip(&fit.doubles).zip(&fit.tails) {
         let pieces = on.len();
         let [a,b] = fit.roll;
         let y_of = |t: f64| (t-a)/(b-a);
@@ -1466,7 +1489,7 @@ pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],rimmed: 
         // `u` continuous along it: read wrapped, a curve crossing the tube's seam ran from one end of
         // the tube to the other and made all of it tail — the thin tumbling torus's middle stretch,
         // its tube left a sliver beside its start, #942 F6)
-        let tail = |u: f64,t: f64| doubles.iter().any(|line| {
+        let above = |lines: &Vec<Vec<[f64;2]>>,u: f64,t: f64| lines.iter().any(|line| {
             let mid = 0.5*(line[0][0]+line[line.len()-1][0]);
             let u = mid+(u-mid+0.5*pieces as f64).rem_euclid(pieces as f64)-0.5*pieces as f64;
             let i = line.partition_point(|p| p[0] < u);
@@ -1475,6 +1498,11 @@ pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],rimmed: 
             let at = if u1 == u0 { t0 } else { t0+(t1-t0)*(u-u0)/(u1-u0) };
             t > at
         });
+        let tail = |u: f64,t: f64| above(doubles,u,t);
+        // (and above a line carried on along the start row where its curve dips below the stretch —
+        // tail only up to where the curve meets the tool at an end pose, so taken where a pose is
+        // proved to hold the place, `inside`, #942 T1d-tori)
+        let carried = |u: f64,t: f64| above(tails,u,t);
         let holding: Vec<Vec<usize>> = on.iter().map(|&o| match o {
             On::Face(e) => vec![ring.faces[e]],
             On::Edge(e) => vec![ring.faces[e],ring.faces[(e+1)%n]],
@@ -1502,16 +1530,15 @@ pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],rimmed: 
                 if !again { chords.push((e,c)) }
             }
             chords.extend(cuts_of[k].iter().map(|c| (2,c.clone())));
-            // (and a place proved inside the sweep, `inside`, bounds nothing whatever the double curves
-            // say of it, #942 T1d-tori: a tail is what lies above its double curve up to where that
-            // curve meets the tool at an end pose, and where the curve dips into the stretch before
-            // and comes back across the tube's seam, above it is no stretch of it — the full turn's
-            // last stretch, a face between the curve and the seam, 3e-3 deep, kept, its crossing
-            // of the tool where it stops hung open at the seam, and the end pose's torus a piece the
-            // boundary on one side of it and off it on the other)
+            // (a place above a double curve that dips below the stretch and comes back through its
+            // start row is tail where a pose holds it, #942 T1d-tori: above it, between the two lines
+            // it leaves in the stretch, is no line of it — the full turn's last stretch kept a face
+            // between its curve and the tube's seam 3e-3 inside the sweep, its crossing of the tool
+            // where it stops hung open at the seam — and a tail ends where its curve meets the tool
+            // at an end pose, the places above the tool's chord there standing on the boundary)
             let tail: Box<dyn Fn(P2) -> bool+Sync+Send+'_> = Box::new(move |[x,y]: P2| {
                 let (u,t) = (k as f64+x,a+(b-a)*y);
-                tail(u,t) || inside(net.point(u,t))
+                tail(u,t) || carried(u,t) && inside(net.point(u,t))
             });
             Trimmed {readings,chords,tail}
         });
