@@ -8,6 +8,18 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The thin tumbling torus gets past its shallow refusal and its rim's slit** (#942 T1d-tori,
+  `boolean`, `swept::rings`): a grid seed is a root the bisection reached within the tolerance,
+  and none where the other sheet's signed distance changes sign by a jump — the thin torus's
+  "two tubes meet at 0.00°" was a seed 0.03 (the tube's diameter) off the other tube, its distance
+  read across a net's seam where the inverse leapt to a far corner. A double curve's end inside a
+  face's square, standing on the tube's crossing with the tool, stays where it is — the tube's own
+  vertex, where its other preimage ends on the rim — and the crossing is cut there, not the end
+  put on the crossing's polyline 1e-6 off it, which left the touching rim a slit in the tool's face.
+  `tumbling-torus-thin` is still refused, later: in the trim, beside the swallowtail point where its
+  fold pair is born, among stretches 1.4e-4 of the roll wide whose tail stands within the tolerance
+  of the boundary.
+
 - **The bench's cube tumbling 75° is built** (#942 T1d-cube, `swept::general`, `family`, `topo`):
   a fan's crossing with itself is built from the pinch it is born at — the runs' corner where the
   sheet's rate across their rim turns over — as the pairs of points of the two runs that meet, each

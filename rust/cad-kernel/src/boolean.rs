@@ -3769,15 +3769,18 @@ fn grid_seeds(b: &Brep,fi: usize,other: &super::geom::Surface,tol: f64) -> Vec<V
     let value = |uv: Uv| other.implicit(f.surface.point(uv));
     let grid: Vec<Vec<f64>> = (0..=N).map(|i| (0..=N).map(|j| value(at(i,j))).collect()).collect();
     let mut seeds = Vec::new();
+    // **a sign the other's distance changes by a jump is no crossing** (#942 T1d-tori): halved
+    // forty times, a root stands within the tolerance; where the distance does not come to it the
+    // other's nearest foot leapt across, and nothing is seeded (the far side of a thin tube's
+    // sheet, 0.03 off it either side of a seam, was seeded and traced from where nothing meets)
     let mut root = |a: Uv,b: Uv,fa: f64| {
         let (mut a,mut b,mut fa) = (a,b,fa);
         for _ in 0..40 {
             let m = [(a[0]+b[0])/2.,(a[1]+b[1])/2.];
             let fm = value(m);
-            if fm.abs() <= tol { a = m; break }
+            if fm.abs() <= tol { seeds.push(f.surface.point(m)); return }
             if (fm < 0.) == (fa < 0.) { a = m; fa = fm; } else { b = m; }
         }
-        seeds.push(f.surface.point(a));
     };
     for i in 0..=N { for j in 0..=N {
         if i < N && (grid[i][j] < 0.) != (grid[i+1][j] < 0.) { root(at(i,j),at(i+1,j),grid[i][j]); }

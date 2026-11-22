@@ -2070,6 +2070,29 @@ two candidates where it is one
 (`swept_rings::a_double_curve_crossing_its_tubes_seam_bounds_a_tail_beside_it_not_the_whole_tube`,
 slow tier). `closed::ring_entered` is what the road enters before it trims: the tool posed at either
 end, the sheets sewn, their meetings given.
+**A double curve's end inside a face is the tube's own vertex** (#942 T1d-tori,
+`rings::split_chords`, by construction): where a double curve's preimage reaches the roll's end on
+one leaf, at the rim touching the tool, its other preimage ends where the leaf it passes through
+crosses the tool — a chord ending on another inside the face's square. That end stays where it is
+and the crossing is cut at it; a trace's end, placed only to its step, is put on the chord it ends
+on, as before. Put on the crossing's polyline instead, the thin torus's double curve ended 1e-6
+(3.5 tolerances) from the rim's corner it is, two vertices of the tube on the tool, and the
+touching rim lay in the tool's face as a slit, its piece read as the boundary on one side and
+buried on the other (`swept_rings::a_double_curve_ending_on_a_tubes_crossing_with_the_tool_is_one_vertex_with_it`,
+slow tier). **A grid seed is a root** (`boolean::grid_seeds`): each grid line's change of sign in
+the other surface's signed distance is halved until it stands within the tolerance of nought, and
+seeds nothing where it does not come to it — a jump, the other's nearest foot leaping across (the
+thin torus's "two tubes meet at 0.00°" was seeded 0.03, the tube's diameter, off the other tube,
+its distance read across a net's seam where its inverse fell on a far corner of the net).
+**`tumbling-torus-thin`, not yet built**: past both, its trim is refused beside the swallowtail
+point where its fold pair is born (near `(3.961, 1.480, 1.663)`). The roll is cut there twice,
+where `changes` sees the pair (0.8356864) and at the double curve's swallowtail point (0.8358228),
+and the double curve's preimage on the tube dips between them to 0.835783, so a stretch 1.4e-4 of
+the roll wide holds a chord of it; the tail it bounds stands within the tolerance of the boundary
+(the sweep's depth there 2.5e-8 to 2.5e-7, the tolerance 3e-7), so membership reads the pieces
+there, a ten-thousandth wide, both ways. Which of the three is the swallowtail point is the
+question left: the fold pair's birth, its double curve's lowest point and the meeting of its
+preimages are one point of the sheet.
 A curve a tube is cut along where it crosses the tool at an end pose carries, as its pcurve, the
 places on the face it was traced through and the meeting's own point settled between each two, each
 at the curve's own parameter there — the coarsest cubic through every so many whose image holds the
