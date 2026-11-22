@@ -8,6 +8,21 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A turn joined to the legs tangent to it, exactly or all but** (#996 item 1): a quarter elbow
+  whose section is clipped where it reaches the bend axis (a spindle torus, its arc up to 308°) and
+  the cylinders standing on its ends build for every tube from a hundredth under the legs' radius to
+  a hundredth over, the tangent one among them, each with the step it has. `ssi::disc_reach` reads
+  a spindle's and a horn's torus away from its other sheet, so a near-contact on the lemon past the
+  turn's arc is clear of its face; `ssi::intersect` meets a plane through a torus's axis in its two
+  meridians in closed form (the turn's caps: 3.3 s of traced marches before); the unseen-meeting
+  search's bounds over a strip are the torus's parallels', which vanish at its poles, and a meeting
+  it finds off either face is not traced; `Brep::loop_area` and a cycle's area in a Boolean are
+  Simpson's rule, doubled until settled (a crescent 308° long and a thousandth wide read the wrong
+  way round); a piece thinner than its outlines is read inside from beside its curved halves, not
+  dropped as a sliver while its sides stay two edges; and an inverse pcurve ending within its edge's
+  tolerance of a pole takes the pole's collapsed parameter from its end, not from the far side of
+  the axis (a union 2.6 times the solid it made).
+
 ## [0.20.0] - 2026-11-21
 
 - **A drafted corner where an arc meets a side at an angle is built** (#962 item 8b): `build::offset`

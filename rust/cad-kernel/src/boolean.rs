@@ -3232,14 +3232,25 @@ thread_local! {
 /// The face's parameters mirrored where it is reversed, so the material is always on the left.
 fn oriented(f: &Face,uv: Uv) -> Uv { if f.reversed { [-uv[0],uv[1]] } else { uv } }
 
-/// A cycle's signed area in its face's parameters, the material on its left: the trapezoid rule
-/// along each half at 64 points, then twice as many, until two readings agree to a thousandth (or
-/// 4096 a half).
+/// A cycle's signed area in its face's parameters, the material on its left: Simpson's rule on
+/// Green's theorem along each half at 64 steps — the chords, each pair of steps' bulge past its
+/// chord taken as a parabola's — then twice as many, until two readings agree to a thousandth (or
+/// 4096 a half). A polygon's area misses each arc's segments by more than a thin strip holds: a cap's
+/// ring between a turn's rim, 308° of one half, and a leg's circle in two halves inside it by a
+/// millionth read the wrong way round and was dropped as a hole (#996; `Brep::loop_area` alike).
 fn fine_area(cycle: &[Half],f: &Face,out: &[WEdge],pool: &Pool) -> f64 {
-    let read = |n: usize| cycle.iter().map(|h| (0..n).map(|k| {
-        let (a,b) = (oriented(f,at(h,f,out,pool,k as f64/n as f64)),oriented(f,at(h,f,out,pool,(k+1) as f64/n as f64)));
-        a[0]*b[1]-a[1]*b[0]
-    }).sum::<f64>()).sum::<f64>()/2.;
+    let cross = |a: Uv,b: Uv| a[0]*b[1]-a[1]*b[0];
+    let read = |n: usize| {
+        let mut twice = 0.;
+        for h in cycle {
+            let pts: Vec<Uv> = (0..=n).map(|k| oriented(f,at(h,f,out,pool,k as f64/n as f64))).collect();
+            for j in (0..n).step_by(2) {
+                let (a,m,b) = (pts[j],pts[j+1],pts[j+2]);
+                twice += cross(a,b)+4./3.*cross([m[0]-a[0],m[1]-a[1]],[b[0]-a[0],b[1]-a[1]]);
+            }
+        }
+        twice/2.
+    };
     let (mut n,mut last) = (64,read(64));
     while n < 4096 {
         n *= 2;
@@ -3619,7 +3630,41 @@ mod reading {
     /// (`judged`) and given only where it is inside; drawn finer while none is. Then, read alike,
     /// the points off the middles (`ALONG`).
     pub(super) fn inside<'a>(piece: &'a [Vec<Half>],f: &'a Face,out: &'a [WEdge],pool: &'a Pool) -> impl Iterator<Item=Inner>+'a {
-        ALONG.into_iter().flat_map(move |at| along(piece,f,out,pool,at))
+        ALONG.into_iter().flat_map(move |at| along(piece,f,out,pool,at)).chain(beside_halves(piece,f,out,pool))
+    }
+
+    /// **A strip thinner than any outline it is drawn to has an inside all the same** (#996): from
+    /// the middle of each curved half, steps square to it in the face's parameters, either way,
+    /// from the first bar down to twice the pool's tolerance, each read against the halves
+    /// (`judged`: within twice the outline's sag of them, by the side of the nearest). A piece
+    /// whose two sides stand apart by more than the tolerance — a cap's ring between a turn's rim
+    /// and a leg's 12 tolerances inside it, 308° long — has points read inside it so, where the
+    /// spans of its outlines, drawn to a few ten-thousandths of the piece, had none, and it was
+    /// dropped as a sliver while its two sides stayed two edges: the turn's face left hanging by
+    /// its rim. A piece with no inside even so is a sliver.
+    fn beside_halves<'a>(piece: &'a [Vec<Half>],f: &'a Face,out: &'a [WEdge],pool: &'a Pool) -> impl Iterator<Item=Inner>+'a {
+        let first = bar(piece,out,pool);
+        // (drawn once, the first time a half asks)
+        let drawn: std::rc::Rc<std::cell::OnceCell<Outline>> = Default::default();
+        piece.iter().flatten().filter(|h| matches!(out[h.edge as usize].curve,super::EdgeCurve::Curve(_))).flat_map(move |h| {
+            let drawn = drawn.clone();
+            let (uv,p) = super::at_point(h,f,out,pool,0.5);
+            let (a,b) = (at(h,f,out,pool,0.5-1e-6),at(h,f,out,pool,0.5+1e-6));
+            let (du,dv) = (b[0]-a[0],b[1]-a[1]);
+            let n = du.hypot(dv);
+            // the square to the half in the parameters, and how far in space a unit of it goes
+            let across = if n > 0. { [-dv/n,du/n] } else { [0.,0.] };
+            let eps = 1e-6*(1.+uv[0].abs().max(uv[1].abs()));
+            let speed = distance(f.surface.point([uv[0]+eps*across[0],uv[1]+eps*across[1]]),p)/eps;
+            let steps = std::iter::successors(Some(first),|&d| Some(d/2.)).take_while(move |&d| d >= 2.*pool.tol);
+            steps.flat_map(move |d| [1.,-1.].map(|k| d*k)).filter_map(move |d| {
+                if !(speed > 0.) { return None }
+                let q = [uv[0]+across[0]*d/speed,uv[1]+across[1]*d/speed];
+                let x = f.surface.point(q);
+                let drawn = drawn.get_or_init(|| outline(piece,f,out,pool,finer(first,pool.tol).last().unwrap_or(first)));
+                (judged(piece,drawn,f,out,pool,q,x) == Some(true)).then_some(Inner(x))
+            }).take(1)
+        })
     }
 
     /// The points `at` the way along the spans (`inside`).

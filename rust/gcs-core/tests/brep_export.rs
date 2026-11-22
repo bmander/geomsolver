@@ -630,3 +630,53 @@ fn a_swept_elbow_joins_its_legs_at_their_tangent_seams() {
         assert!((w[0].1-w[1].1).abs() <= 1e-9*w[0].1,"{:?}: one arc {} against two {}",w[0].0,w[0].1,w[1].1);
     }
 }
+
+/// **A turn a near-miss wider or narrower than its legs is built with its step** (#996): the
+/// elbow's tube drawn `20 ± δ` against legs of 20, its arc's ends placed where that tube crosses
+/// the axis, for δ from a hundredth down by decades to 1e-8 (under the Boolean's tolerance, about
+/// 8e-8 here) either way, and the issue's own document — its arc's radius stated by no dimension,
+/// its ends' hints putting the tube 9.2e-7 over the legs. Each is a valid solid whose volume is the
+/// turn's by Pappus and the legs' union, the turn beside both: a step of δ round each seam, a cap's
+/// crescent 308° long between the turn's rim and the leg's, built as the solid it is. Between a
+/// tolerance and a thousandth the arrangement had read the crescent as having no inside, or its
+/// loop's area the wrong way round, and dropped it, the turn's face left hanging by its rim
+/// (`reading::inside`, `fine_area`); at a tolerance the leg's circle standing for the turn's rim
+/// ended across the axis from its pole, read half a turn round (`topo::on_pole`), and the union
+/// was 2.6 times the solid.
+#[test]
+fn a_turn_a_near_miss_wider_or_narrower_than_its_legs_is_built_with_its_step() {
+    use std::f64::consts::PI;
+    let moment = |r: f64| {
+        let bend = 18f64;
+        let f = |t: f64| bend*(t*(r*r-t*t).sqrt()+r*r*(t/r).asin())-2./3.*(r*r-t*t).powf(1.5);
+        f(r)-f(-bend)
+    };
+    let vh = ["leg_v","elbow","leg_h"];
+    let mut cases: Vec<(String,f64)> = Vec::new();
+    for k in -8..=-2 {
+        for sign in [1.,-1.] {
+            let tube = 20.+sign*10f64.powi(k);
+            cases.push((elbow(20.,18.,90.,false,Some((tube*tube-18.*18.).sqrt()),vh),tube));
+        }
+    }
+    // the issue's document: its ends' hints alone, no radius said (one freedom, the seeds')
+    let hinted = elbow(20.,18.,90.,false,Some(8.7178),vh).lines()
+        .filter(|l| !l.trim_start().starts_with("fix(y ==")).collect::<Vec<_>>().join("\n")+"\n";
+    cases.push((hinted,(18f64*18.+8.7178*8.7178).sqrt()));
+    for (src,tube) in cases {
+        let (e,sk) = crate::common::read_solved(&src);
+        let exact = |name: &str| {
+            let (out,said) = saying(|say| export::exact(&sk,fixtures::solid(&e,name),None,None,say));
+            out.unwrap_or_else(|why| panic!("tube {tube}: {name}: {why:?}\n{said}"))
+        };
+        let (body,legs) = (exact("body"),exact("legs"));
+        body.solid.check(1e-6).unwrap_or_else(|why| panic!("tube {tube}: {why:?}"));
+        let want = PI/2.*moment(tube)+props::volume(&legs.solid);
+        let got = props::volume(&body.solid);
+        // to the Boolean's tolerance over the solid's boundary: a step a tolerance high is a
+        // tolerance's band of it (`geom::tolerance`, a part in 10⁹ of the solid's size)
+        let area: f64 = body.solid.faces.iter().map(|f| props::area(&body.solid,f)).sum();
+        let band = gcs_core::brep::geom::tolerance(body.solid.size())*area;
+        assert!((got-want).abs() <= band,"tube {tube}: {got} against {want} ({:e}, the band {band:e})",got-want);
+    }
+}

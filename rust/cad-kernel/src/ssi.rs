@@ -2839,7 +2839,13 @@ pub(crate) fn unseen_beside(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &
                 // a meeting beyond the shared box is on neither face; one on a known curve says
                 // nothing of this cell, which is halved
                 if (0..3).any(|k| q[k] < lo[k]-pad || q[k] > hi[k]+pad) { continue }
-                if !near_known(q,spacing) { return Ok(Some(q)) }
+                // nor is one off either face (#996): a curve through it lies outside the faces, or
+                // crosses an edge into them where that edge's crossing seeds it; traced from here —
+                // a turn's tube a ten-thousandth inside the leg it meets, crossing the leg's
+                // cylinder run on past its end in a shallow curve under the seam — it is a march of
+                // a hundred thousand points that no face keeps. The cell is halved, for what else
+                // it holds
+                if !near_known(q,spacing) && !clear(q,16.*tol) { return Ok(Some(q)) }
             }
             if reach <= floor {
                 return Err(format!("a {} and a {} come within {:.1e} of each other at [{:.4}, {:.4}, {:.4}] and no meeting was \
