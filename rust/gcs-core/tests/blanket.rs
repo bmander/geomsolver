@@ -9,6 +9,7 @@ use std::rc::Rc;
 use gcs_core::progress::{self, Kind, Listener, Work};
 
 use crate::common::lenient::read;
+use crate::common::rounds::pocketed;
 
 /// A prism 10 thick whose outline is a regular polygon of `n` sides, radius 50, as `whole`, and
 /// `round` after it.
@@ -22,30 +23,6 @@ fn polygon(n: usize, round: &str) -> String {
     let vs: Vec<String> = (0..n).map(|k| format!("v{k}")).collect();
     s += &format!("}}\nplate := solid(std.solids.Prism(face({}, -> close), from: 0mm, to: 10mm))\n\
                    whole := solid(plate)\n", vs.join(", "));
-    s + round
-}
-
-/// A plate 10 thick on the top plane as `whole`, `pockets` square pockets 6 wide and 4 deep cut
-/// from it on a grid 10 apart, and `round` after it.
-fn pocketed(pockets: usize, round: &str) -> String {
-    let cols = (pockets as f64).sqrt().ceil().max(1.0) as usize;
-    let rows = pockets.div_ceil(cols).max(1);
-    let (w, h) = (10 * cols + 4, 10 * rows + 4);
-    let mut s = format!("unit mm\nuse std\nuse std.solids (cut, union)\nuse std.rounds (round)\n\
-        in std.top {{\na := point\nb := point\nc := point\nd := point\nfix((0, 0)) a\n\
-        fix(({w}, 0)) b\nfix(({w}, {h})) c\nfix((0, {h})) d\n");
-    for k in 0..pockets {
-        let (x, y) = (4 + 10 * (k % cols), 4 + 10 * (k / cols));
-        s += &format!("q{k}a := point\nq{k}b := point\nq{k}c := point\nq{k}d := point\n\
-            fix(({x}, {y})) q{k}a\nfix(({}, {y})) q{k}b\nfix(({}, {})) q{k}c\nfix(({x}, {})) q{k}d\n",
-            x + 6, x + 6, y + 6, y + 6);
-    }
-    s += "}\nplate := solid(std.solids.Prism(face(a, b, c, d, -> close), from: 0mm, to: 10mm))\n\
-          whole := solid(plate)\n";
-    for k in 0..pockets {
-        s += &format!("pk{k} := solid(std.solids.Prism(face(q{k}a, q{k}b, q{k}c, q{k}d, -> close), \
-                       from: 6mm, to: 11mm))\npk{k} cut whole\n");
-    }
     s + round
 }
 

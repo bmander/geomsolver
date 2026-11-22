@@ -15,7 +15,7 @@
 //! is concave.
 use gcs_core::brep::props;
 
-use crate::common::rounds::{exact, exported};
+use crate::common::rounds::{exact, exported, refusal};
 use crate::common::{close, text::solved};
 use crate::rim_seams::{area, document, lobed, moved, stated, taken, Outline, Seg, Word};
 
@@ -160,15 +160,6 @@ fn creased(theta: f64, way: f64) -> Outline {
     o
 }
 
-/// The refusal of document `src`'s plate, as text.
-fn refused(src: &str) -> String {
-    let e = solved(src);
-    assert!(e.diags.is_empty(), "{:?}\n{src}", e.diags);
-    let say = gcs_core::brep::sweep::Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let body = crate::common::ent(&e, "plate").i();
-    gcs_core::brep::export::exact(&e.sketch, body, None, None, &say).err().expect("refused").message
-}
-
 /// **A chamfer at a corner too nearly tangent, said as a round's is** (#994): the drum's seams a
 /// stated tangency rounded off by `2e-6` to `5e-5` rad, under the kernel's bound (`0.00035` rad on
 /// the drum, `0.00048` on the disc it bores): the chamfer's piece has a strip of the edge's own
@@ -190,13 +181,15 @@ fn a_chamfer_at_a_corner_too_nearly_tangent_is_said_by_its_faces() {
              bored(&o, "near", word, "plate.hole.k1")]
         };
         for src in cases {
-            let refusal = refused(&src);
+            let e = solved(&src);
+            assert!(e.diags.is_empty(), "{:?}\n{src}", e.diags);
+            let why = refusal(&e, "plate");
             let turned = format!("meet at a turn of {} rad", gcs_core::json::fmt_g(theta, 2));
-            assert!(refusal.contains(&turned), "{refusal}");
+            assert!(why.contains(&turned), "{why}");
             let said = "too nearly tangent a corner for this kernel to chamfer at 2mm against";
-            assert!(refusal.contains(said), "{refusal}");
-            assert!(refusal.contains("rad or more is built). State the tangency"), "{refusal}");
-            assert!(!refusal.contains("arrangement") && !refusal.contains("pieces"), "{refusal}");
+            assert!(why.contains(said), "{why}");
+            assert!(why.contains("rad or more is built). State the tangency"), "{why}");
+            assert!(!why.contains("arrangement") && !why.contains("pieces"), "{why}");
         }
     }
     for way in [1.0, -1.0] {

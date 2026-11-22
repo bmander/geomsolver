@@ -22,11 +22,10 @@
 //! at an angle, a circular segment and a wedge, under and over their heights; and the band's own
 //! top edge rounded, on the plate and on the disc.  On the disc a round over what the band's
 //! thickness at its seams allows is refused, by its faces and what is true to do.
-use gcs_core::brep::{export, props, sweep::Say};
 use std::f64::consts::PI;
 
-use crate::common::rounds::gauss_legendre;
-use crate::common::{close, ent, text::{dof, solved}};
+use crate::common::rounds::{built_whole, gauss_legendre};
+use crate::common::{close, text::solved};
 
 const HEAD: &str = "unit mm\nuse std\nuse std.solids\nuse std.solids (union)\nuse std.rounds (round)\n";
 
@@ -210,23 +209,6 @@ fn disc_round(alpha: f64, rho: f64, z0: f64, r: f64) -> f64 {
     })
 }
 
-/// Solid `name` of `src` built exactly, exported as STEP and STL (each read back), no face of it
-/// thinner than the export's tolerance; its volume.
-fn built(src: &str, name: &str) -> f64 {
-    assert_eq!(dof(src), 0, "{src}");
-    let e = solved(src);
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let body = ent(&e, name).i();
-    let exact = export::exact(&e.sketch, body, None, None, &say).unwrap_or_else(|r| panic!("{name}: {r:?}\n{src}"));
-    if let Some(s) = export::slivers(&e.sketch, body, &exact, None) {
-        panic!("{}\n{src}", s.message);
-    }
-    export::step(&exact, name, None, &say).unwrap();
-    let stl = export::stl(&e.sketch, body, &exact, None, &say).unwrap();
-    gcs_core::mesh::stl_shells(&stl).unwrap();
-    props::volume(&exact.solid)
-}
-
 /// **The fixture's root fillet** where the band's top runs on tangent into the plate (#994: "its
 /// exact construction leaves out what the field reads beside its edge" at the taper, and before
 /// that "a run its curved end does not cut off"): three proportions of foot and crown, filleted
@@ -236,7 +218,7 @@ fn a_root_fillet_runs_out_where_a_band_tapers_tangent_into_its_plate() {
     for (rho, big) in [(20.0, 20.0), (40.0, 10.0), (10.0, 30.0)] {
         for r in [1.0, 3.0, 8.0] {
             let src = lens(rho, big, &format!("part.plate.near round(r: {r}mm) part.band.near"));
-            close(built(&src, "part"), bare(lens_area(rho, big)) + lens_fill(rho, r));
+            close(built_whole(&src, "part"), bare(lens_area(rho, big)) + lens_fill(rho, r));
         }
     }
 }
@@ -246,7 +228,7 @@ fn a_root_fillet_runs_out_where_a_band_tapers_tangent_into_its_plate() {
 fn a_tapered_bands_feet_are_filled_on_both_sides() {
     for r in [1.0, 8.0] {
         let src = lens(20.0, 20.0, &format!("part.plate.near round(r: {r}mm) part.band"));
-        close(built(&src, "part"), bare(lens_area(20.0, 20.0)) + 2.0 * lens_fill(20.0, r));
+        close(built_whole(&src, "part"), bare(lens_area(20.0, 20.0)) + 2.0 * lens_fill(20.0, r));
     }
 }
 
@@ -258,7 +240,7 @@ fn a_tapered_bands_feet_are_filled_on_both_sides() {
 fn a_root_fillet_runs_out_where_a_band_tapers_tangent_into_a_disc() {
     for r in [2.0, 3.0, 8.0] {
         let src = disc_band(40.0, 15.0, 15.0, &format!("part.disc.eo round(r: {r}mm) part.band.near"));
-        close(built(&src, "part"), disc_bare(40.0, 15.0, 15.0) + disc_fill(40.0, 15.0, r));
+        close(built_whole(&src, "part"), disc_bare(40.0, 15.0, 15.0) + disc_fill(40.0, 15.0, r));
     }
 }
 
@@ -274,13 +256,13 @@ fn a_root_fillet_ends_where_a_band_meets_its_plate_at_an_angle() {
         for r in [1.0, 3.0, 10.0] {
             let src = segment(h, &format!("part.plate.near round(r: {r}mm) part.band.near"));
             let along = |t: f64| 2.0 * (big * big - (c + t).powi(2)).max(0.0).sqrt();
-            close(built(&src, "part"), bare(area) + fill(r, h, along));
+            close(built_whole(&src, "part"), bare(area) + fill(r, h, along));
         }
     }
     for h in [2.0, 6.0] {
         for r in [1.0, 3.0, 8.0] {
             let src = wedge(h, &format!("part.plate.near round(r: {r}mm) part.band.near"));
-            close(built(&src, "part"), bare(30.0 * h) + fill(r, h, |t| 60.0 * (1.0 - t / h)));
+            close(built_whole(&src, "part"), bare(30.0 * h) + fill(r, h, |t| 60.0 * (1.0 - t / h)));
         }
     }
 }
@@ -294,7 +276,7 @@ fn a_root_fillet_ends_where_a_band_meets_its_plate_at_an_angle() {
 fn a_tapered_bands_top_edge_is_rounded_to_its_toes_and_no_further() {
     for (rho, big, r) in [(20.0, 20.0, 1.0), (20.0, 20.0, 3.0), (20.0, 20.0, 8.0), (10.0, 30.0, 2.0), (40.0, 10.0, 2.0)] {
         let src = lens(rho, big, &format!("part.band.near round(r: {r}mm) part.band"));
-        close(built(&src, "part"), bare(lens_area(rho, big)) - lens_round(rho, big, r));
+        close(built_whole(&src, "part"), bare(lens_area(rho, big)) - lens_round(rho, big, r));
     }
 }
 
@@ -304,13 +286,13 @@ fn a_tapered_bands_top_edge_is_rounded_to_its_toes_and_no_further() {
 fn a_bands_top_edge_meeting_its_plate_at_an_angle_is_kept_over_it() {
     for (h, r) in [(2.0, 1.0), (2.0, 8.0), (6.0, 1.0), (6.0, 8.0)] {
         let src = wedge(h, &format!("part.band.near round(r: {r}mm) part.band.k2"));
-        close(built(&src, "part"), bare(30.0 * h) - wedge_round(h, r));
+        close(built_whole(&src, "part"), bare(30.0 * h) - wedge_round(h, r));
     }
     for (h, r) in [(2.0f64, 1.0), (2.0, 10.0), (8.0, 3.0), (8.0, 10.0)] {
         let big = (900.0 + h * h) / (2.0 * h);
         let area = big * big * (30.0 / big).asin() - 30.0 * (big - h);
         let src = segment(h, &format!("part.band.near round(r: {r}mm) part.band.k1"));
-        close(built(&src, "part"), bare(area) - segment_round(h, r));
+        close(built_whole(&src, "part"), bare(area) - segment_round(h, r));
     }
 }
 
@@ -323,7 +305,7 @@ fn a_bands_top_edge_meeting_its_plate_at_an_angle_is_kept_over_it() {
 fn a_tapered_bands_top_edge_on_a_disc_is_rounded_short_of_its_seams() {
     for r in [0.5, 0.9] {
         let src = disc_band(40.0, 15.0, 15.0, &format!("part.band.near round(r: {r}mm) part.band"));
-        close(built(&src, "part"), disc_bare(40.0, 15.0, 15.0) - disc_round(40.0, 15.0, 15.0, r));
+        close(built_whole(&src, "part"), disc_bare(40.0, 15.0, 15.0) - disc_round(40.0, 15.0, 15.0, r));
     }
 }
 

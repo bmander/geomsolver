@@ -9,12 +9,12 @@
 //! seam (`Beyond::seamed`) — or past it all along, the ball against the cone the edge's whole
 //! length.  Each held to a quadrature of `std.rounds.Fill`'s own words, slice by slice, to a
 //! millionth; one whose ball stays short of the seam to the prism's closed form.
-use gcs_core::brep::{export, props, sweep::Say};
+use gcs_core::brep::props;
 use gcs_core::program::Elaborated;
 use std::f64::consts::PI;
 
-use crate::common::{ent, text::solved};
-use crate::common::rounds::gauss_legendre;
+use crate::common::text::solved;
+use crate::common::rounds::{dot, exact, gauss_legendre, refusal};
 
 /// The box (`draft` degrees, or upright where it is nought, 200 square and 100 tall about the top
 /// plane's origin, its corners R25) and a foot 40 tall unioned onto it, its corners `foot` in turn
@@ -54,12 +54,7 @@ const FOOT: [(f64, f64); 4] = [(-20.0, 95.0), (71.2, 95.0), (55.0, 190.0), (-5.0
 const MIRRORED: [(f64, f64); 4] = [(-71.2, 95.0), (20.0, 95.0), (5.0, 190.0), (-55.0, 190.0)];
 
 /// Solid `name` of `e` built exactly, and its volume.
-fn volume(e: &Elaborated, name: &str) -> f64 {
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let exact = export::exact(&e.sketch, ent(e, name).i(), None, None, &say)
-        .unwrap_or_else(|r| panic!("{name}: {r:?}"));
-    props::volume(&exact.solid)
-}
+fn volume(e: &Elaborated, name: &str) -> f64 { props::volume(&exact(e, name)) }
 
 /// What `round(r)` of the foot's side `side` against the box adds, built exactly.
 fn added(draft: f64, foot: [(f64, f64); 4], foot_draft: f64, side: &str, r: f64) -> f64 {
@@ -90,8 +85,6 @@ fn bisect(mut lo: f64, mut hi: f64, holds: impl Fn(f64) -> bool) -> f64 {
     }
     0.5 * (lo + hi)
 }
-
-fn dot(a: [f64; 3], b: [f64; 3]) -> f64 { a[0] * b[0] + a[1] * b[1] + a[2] * b[2] }
 
 /// What a round of `r` adds where the foot's side from `p` to `q` (the foot on its left, drafted
 /// `foot_draft` degrees) meets the box's north side (drafted `draft`), beside its north-east corner
@@ -327,7 +320,6 @@ fn a_rim_across_a_seam_aslant_its_edge_is_built() {
 #[test]
 fn a_chamfer_across_a_seam_aslant_its_edge_is_refused_by_name() {
     let e = solved(&part(2.0, FOOT, 0.0, "body.foot.f1 chamfer(d: 6mm) body.box\n"));
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let refused = export::exact(&e.sketch, ent(&e, "body").i(), None, None, &say).err().expect("refused");
-    assert!(refused.message.contains("a chamfer's flat beside a seam crossing its footprint aslant"), "{refused:?}");
+    let why = refusal(&e, "body");
+    assert!(why.contains("a chamfer's flat beside a seam crossing its footprint aslant"), "{why}");
 }

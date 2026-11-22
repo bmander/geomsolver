@@ -18,7 +18,7 @@
 use gcs_core::brep::props;
 use std::f64::consts::PI;
 
-use crate::common::rounds::exported;
+use crate::common::rounds::{exported, refusal};
 use crate::common::text::solved;
 
 /// The flange's half length between its half circles' centres, their centres' `y`, their radius
@@ -409,7 +409,7 @@ fn another_bodys_wall_turning_back_over_the_run_ends_it() {
 #[test]
 fn a_face_reaching_back_over_the_seam_that_keeps_no_chain_is_refused() {
     let diamond = Foot::Square { at: [-366.0, -80.0], h: 15.0, turn: PI / 4.0 };
-    let why = refusal(&document(diamond, false, Word::Round(10.0)));
+    let why = refusal(&solved(&document(diamond, false, Word::Round(10.0))), "part");
     assert!(why.starts_with("`part`'s round or chamfer `taken`: its round goes on tangent from `outer.flange.s` into \
         `outer.flange.al` across their seam at [-384.62, -88.74, -131.5]mm, and `outer.boss.k3`, which its run along \
         `outer.flange.s` ends on, reaches 2.7mm back over the section there"), "{why}");
@@ -421,16 +421,8 @@ fn a_face_reaching_back_over_the_seam_that_keeps_no_chain_is_refused() {
         t := line(q, c)\n  outline := face(al, s, sm, t)\n}\n\
         plate := solid(std.solids.Prism(outline, from: 0mm, to: 5mm))\npart := solid(plate)\n\
         part.plate.near round(r: 1.5mm) part.plate\n";
-    let why = refusal(src);
+    let why = refusal(&solved(src), "part");
     assert!(why.contains("its round goes on tangent from `plate.s` into `plate.al` across their seam")
         && why.contains("and `plate.sm`, which its run along `plate.s` ends on, reaches 0.46mm back over the section there")
         && why.ends_with("Move `plate.sm` clear of the seam, or over it"), "{why}");
-}
-
-/// The export's refusal of `part` in document `src`, as it is printed.
-fn refusal(src: &str) -> String {
-    let e = solved(src);
-    let say = gcs_core::brep::sweep::Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let body = crate::common::ent(&e, "part").i();
-    gcs_core::brep::export::exact(&e.sketch, body, None, None, &say).err().expect("refused").message
 }

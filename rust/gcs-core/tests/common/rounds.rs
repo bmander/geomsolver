@@ -127,6 +127,38 @@ pub fn exported_volume(src: &str, name: &str) -> f64 {
     props::volume(&exact.solid)
 }
 
+/// Document `src` solved, and its solid `name` built exactly and exported: its STEP written, its
+/// STL written and read back, and no face of it thinner than the export's tolerance.  Its volume.
+pub fn built(src: &str, name: &str) -> f64 {
+    use gcs_core::brep::{export, props, sweep::Say};
+    let e = super::text::solved(src);
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    let body = super::ent(&e, name).i();
+    let exact = export::exact(&e.sketch, body, None, None, &say)
+        .unwrap_or_else(|r| panic!("{name}: {r:?}\n{src}"));
+    if let Some(s) = export::slivers(&e.sketch, body, &exact, None) {
+        panic!("{}\n{src}", s.message);
+    }
+    export::step(&exact, name, None, &say).unwrap();
+    let stl = export::stl(&e.sketch, body, &exact, None, &say).unwrap();
+    gcs_core::mesh::stl_shells(&stl).unwrap();
+    props::volume(&exact.solid)
+}
+
+/// `built`, of a document drawn whole: one that leaves no freedom.
+pub fn built_whole(src: &str, name: &str) -> f64 {
+    assert_eq!(super::text::dof(src), 0, "{src}");
+    built(src, name)
+}
+
+/// The export's refusal of solid `name` of `e`, as it is printed.
+pub fn refusal(e: &gcs_core::program::Elaborated, name: &str) -> String {
+    use gcs_core::brep::{export, sweep::Say};
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    export::exact(&e.sketch, super::ent(e, name).i(), None, None, &say).err().expect("refused")
+        .message
+}
+
 /// The export's refusal of solid `name` of `e`, as text.
 pub fn refused(e: &gcs_core::program::Elaborated, name: &str) -> String {
     use gcs_core::brep::{export, sweep::Say};
@@ -839,4 +871,29 @@ pub fn field_is_the_kernels(e: &gcs_core::program::Elaborated, name: &str, lo: V
     assert!(on * 20 <= read.len(), "{name}: the field reads its boundary {on} times of {}",
             read.len());
     read.len()
+}
+
+/// A plate 10 thick on the top plane as `whole`, `pockets` square pockets 6 wide and 4 deep cut
+/// from it on a grid 10 apart (as near square as their count allows), and `round` after it: the
+/// documents #994 timed a round over a whole body by.
+pub fn pocketed(pockets: usize, round: &str) -> String {
+    let cols = (pockets as f64).sqrt().ceil().max(1.0) as usize;
+    let rows = pockets.div_ceil(cols).max(1);
+    let (w, h) = (10 * cols + 4, 10 * rows + 4);
+    let mut s = format!("unit mm\nuse std\nuse std.solids (cut, union)\nuse std.rounds (round)\n\
+        in std.top {{\na := point\nb := point\nc := point\nd := point\nfix((0, 0)) a\n\
+        fix(({w}, 0)) b\nfix(({w}, {h})) c\nfix((0, {h})) d\n");
+    for k in 0..pockets {
+        let (x, y) = (4 + 10 * (k % cols), 4 + 10 * (k / cols));
+        s += &format!("q{k}a := point\nq{k}b := point\nq{k}c := point\nq{k}d := point\n\
+            fix(({x}, {y})) q{k}a\nfix(({}, {y})) q{k}b\nfix(({}, {})) q{k}c\nfix(({x}, {})) q{k}d\n",
+            x + 6, x + 6, y + 6, y + 6);
+    }
+    s += "}\nplate := solid(std.solids.Prism(face(a, b, c, d, -> close), from: 0mm, to: 10mm))\n\
+          whole := solid(plate)\n";
+    for k in 0..pockets {
+        s += &format!("pk{k} := solid(std.solids.Prism(face(q{k}a, q{k}b, q{k}c, q{k}d, -> close), \
+                       from: 6mm, to: 11mm))\npk{k} cut whole\n");
+    }
+    s + round
 }

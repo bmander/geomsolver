@@ -25,7 +25,7 @@
 use gcs_core::brep::{export, props, sweep::Say};
 use std::f64::consts::PI;
 
-use crate::common::rounds::gauss_legendre;
+use crate::common::rounds::{built, built_whole, gauss_legendre};
 use crate::common::{at, close, ent, text::{dof, solved}};
 
 /// The arm: `[0, 60] × [0, 20] × [−5, 5]`, its sides turned by `tilt` (radians) about `x = 30`.
@@ -203,26 +203,9 @@ fn beside_eye(word: Word, big: f64, c: f64) -> f64 {
     }
 }
 
-/// Solid `name` of `src` built exactly, exported as STEP and STL (each read back), no face of it
-/// thinner than the export's tolerance; its volume.
-fn built(src: &str, name: &str) -> f64 {
-    let e = solved(src);
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let body = ent(&e, name).i();
-    let exact = export::exact(&e.sketch, body, None, None, &say).unwrap_or_else(|r| panic!("{name}: {r:?}\n{src}"));
-    if let Some(s) = export::slivers(&e.sketch, body, &exact, None) {
-        panic!("{}\n{src}", s.message);
-    }
-    export::step(&exact, name, None, &say).unwrap();
-    let stl = export::stl(&e.sketch, body, &exact, None, &say).unwrap();
-    gcs_core::mesh::stl_shells(&stl).unwrap();
-    props::volume(&exact.solid)
-}
-
 fn holds(a: &Arm) -> f64 {
     let src = a.document();
-    assert_eq!(dof(&src), 0, "{src}");
-    let got = built(&src, "part");
+    let got = built_whole(&src, "part");
     close(got, a.volume());
     got
 }

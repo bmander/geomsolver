@@ -14,6 +14,7 @@ use gcs_core::solid::ApproximationPolicy;
 use gcs_core::solve::{solve, SolveOpts};
 
 use crate::common::lenient::read;
+use crate::common::rounds;
 
 /// What was made of each solid, by what and the solid's name, and how many times.
 #[derive(Default)]
@@ -35,30 +36,14 @@ impl Tally {
     }
 }
 
-/// A plate as `whole` with `pockets` square pockets cut in its top, each pocket's own edges
-/// rounded, then the whole rounded over as `all` — the documents the issue timed.
+/// A plate as `whole` with `pockets` square pockets cut in its top (`rounds::pocketed`), each
+/// pocket's own edges rounded, then the whole rounded over as `all`.
 fn pocketed(pockets: usize) -> String {
-    let mut s = String::from("unit mm\nuse std\nuse std.solids (cut, union)\n\
-                              use std.rounds (round)\nin std.top {\n");
-    let w = 10 * pockets + 4;
-    s += &format!("a := point\nb := point\nc := point\nd := point\nfix((0, 0)) a\n\
-                   fix(({w}, 0)) b\nfix(({w}, 14)) c\nfix((0, 14)) d\n");
+    let mut round = String::new();
     for k in 0..pockets {
-        let x = 4 + 10 * k;
-        s += &format!("q{k}a := point\nq{k}b := point\nq{k}c := point\nq{k}d := point\n\
-                       fix(({x}, 4)) q{k}a\nfix(({}, 4)) q{k}b\nfix(({}, 10)) q{k}c\n\
-                       fix(({x}, 10)) q{k}d\n", x + 6, x + 6);
+        round += &format!("p{k} := round(r: 0.5mm) whole.pk{k}\n");
     }
-    s += "}\nplate := solid(std.solids.Prism(face(a, b, c, d, -> close), from: 0mm, to: 10mm))\n\
-          whole := solid(plate)\n";
-    for k in 0..pockets {
-        s += &format!("pk{k} := solid(std.solids.Prism(face(q{k}a, q{k}b, q{k}c, q{k}d, -> close), \
-                       from: 6mm, to: 11mm))\npk{k} cut whole\n");
-    }
-    for k in 0..pockets {
-        s += &format!("p{k} := round(r: 0.5mm) whole.pk{k}\n");
-    }
-    s + "all := solid(whole)\nr := round(r: 0.5mm) all\n"
+    rounds::pocketed(pockets, &(round + "all := solid(whole)\nr := round(r: 0.5mm) all\n"))
 }
 
 /// `sk`'s solid called `name`, evaluated as a report reads it: its volume.

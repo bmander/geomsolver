@@ -20,11 +20,10 @@
 //! and an arc of 15 meeting it at an angle; its foot filled 2 and 1; the block's rim along the flush
 //! side rounded 2 and 1.  Each is exported (STEP and STL, read back) with no face thinner than the
 //! export's tolerance.  A chamfer at the deck's arc is still refused, by the faces it is of.
-use gcs_core::brep::{export, props, sweep::Say};
 use std::f64::consts::PI;
 
-use crate::common::rounds::{gauss_legendre, refused};
-use crate::common::{close, ent, text::{dof, solved}};
+use crate::common::rounds::{built_whole, gauss_legendre, refused, square_run};
+use crate::common::{close, text::solved};
 
 /// The block `[0, 80] × [0, 60] × [0, 20]` and the deck on it, 20 to 30: its outline from
 /// `(0, 10)` along `y = 10` to `(60, 10)`, up to `(60, 50)`, back along `y = 50` to `(c, 50)`, round
@@ -66,9 +65,6 @@ fn bare(big: f64, c: f64) -> f64 {
     96000.0 + 10.0 * outline
 }
 
-/// A straight run's section: the square `r` on a side less the quarter disc of the ball.
-fn run(r: f64) -> f64 { (1.0 - PI / 4.0) * r * r }
-
 /// What the foot's fill adds round the deck's arc of `big` about `x = c`: each point of its section
 /// at `ρ` from the arc's axis turned from the arc's start, a quarter turn back from the side, to
 /// where `x = c + ρ cos θ` meets the side — `π/2 − acos(c/ρ)` — kept within the block.  Over the
@@ -86,7 +82,7 @@ fn ring(big: f64, c: f64, r: f64) -> f64 {
 /// flush side), and the ring round the arc (square, the deck's corner turns along `k2` to the side).
 fn filled(big: f64, c: f64, r: f64) -> f64 {
     let along = 60.0 + 40.0 + (60.0 - c);
-    bare(big, c) + along * run(r) + if big > 0.0 { ring(big, c, r) } else { 0.0 }
+    bare(big, c) + along * square_run(r) + if big > 0.0 { ring(big, c, r) } else { 0.0 }
 }
 
 /// The block's rim along its flush side rounded `r`, the arc of `big` tangent to that side: the run
@@ -112,24 +108,7 @@ fn rimmed(big: f64, r: f64) -> f64 {
     } else {
         0.0
     };
-    bare(big, big) - 10.0 * run(r) - under - past
-}
-
-/// Solid `name` of `src` built exactly, exported as STEP and STL (each read back), no face of it
-/// thinner than the export's tolerance; its volume.
-fn built(src: &str, name: &str) -> f64 {
-    assert_eq!(dof(src), 0, "{src}");
-    let e = solved(src);
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let body = ent(&e, name).i();
-    let exact = export::exact(&e.sketch, body, None, None, &say).unwrap_or_else(|r| panic!("{name}: {r:?}\n{src}"));
-    if let Some(s) = export::slivers(&e.sketch, body, &exact, None) {
-        panic!("{}\n{src}", s.message);
-    }
-    export::step(&exact, name, None, &say).unwrap();
-    let stl = export::stl(&e.sketch, body, &exact, None, &say).unwrap();
-    gcs_core::mesh::stl_shells(&stl).unwrap();
-    props::volume(&exact.solid)
+    bare(big, big) - 10.0 * square_run(r) - under - past
 }
 
 /// **The deck's foot filled where its corner arc runs tangent into its flush side** (#994's repro,
@@ -141,7 +120,7 @@ fn a_decks_foot_is_filled_to_where_its_arc_runs_tangent_into_its_flush_side() {
     for big in [0.0, 15.0, 2.0, 1.0] {
         for r in [2.0, 1.0] {
             let src = deck(big, big, &format!("step := part.base.near round(r: {r}mm) part.dck"));
-            close(built(&src, "part"), filled(big, big, r));
+            close(built_whole(&src, "part"), filled(big, big, r));
         }
     }
 }
@@ -152,7 +131,7 @@ fn a_decks_foot_is_filled_to_where_its_arc_runs_tangent_into_its_flush_side() {
 fn a_decks_foot_is_filled_to_where_its_arc_meets_its_flush_side_at_an_angle() {
     for r in [2.0, 1.0] {
         let src = deck(15.0, 10.0, &format!("part.base.near round(r: {r}mm) part.dck"));
-        close(built(&src, "part"), filled(15.0, 10.0, r));
+        close(built_whole(&src, "part"), filled(15.0, 10.0, r));
     }
 }
 
@@ -164,12 +143,12 @@ fn a_blocks_rim_along_its_flush_side_runs_out_against_the_decks_arc() {
     for big in [15.0, 2.0, 1.0] {
         for r in [2.0, 1.0] {
             let src = deck(big, big, &format!("part.base.near round(r: {r}mm) part.base.j3"));
-            close(built(&src, "part"), rimmed(big, r));
+            close(built_whole(&src, "part"), rimmed(big, r));
         }
     }
     for r in [2.0, 1.0] {
         let src = deck(0.0, 0.0, &format!("part.base.near round(r: {r}mm) part.base.j3"));
-        close(built(&src, "part"), bare(0.0, 0.0) - 20.0 * run(r));
+        close(built_whole(&src, "part"), bare(0.0, 0.0) - 20.0 * square_run(r));
     }
 }
 

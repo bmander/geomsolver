@@ -15,7 +15,7 @@
 use gcs_core::brep::props;
 use std::f64::consts::PI;
 
-use crate::common::rounds::{exact, exported, square_run};
+use crate::common::rounds::{exact, exported, refusal, square_run};
 use crate::common::{close, text::solved};
 
 /// A stroke of an outline on the top plane: a line, or an arc about `c` from `s` to `e`, turning
@@ -440,14 +440,6 @@ fn a_flush_boss_slid_through_the_seam_stops_the_round() {
     }
 }
 
-/// The export's refusal of solid `name` of document `src`, as text.
-fn refused(src: &str, name: &str) -> String {
-    let e = solved(src);
-    let say = gcs_core::brep::sweep::Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let body = crate::common::ent(&e, name).i();
-    gcs_core::brep::export::exact(&e.sketch, body, None, None, &say).err().expect("refused").message
-}
-
 /// Whether solid `name` of document `src` is built exactly.
 fn builds(src: &str, name: &str) -> bool {
     let e = solved(src);
@@ -470,7 +462,7 @@ fn a_corner_too_nearly_tangent_to_round_is_said_by_its_faces() {
     let round = |eps: f64, r: f64| document(&creased_at(eps, 0.0), "near", Word::Round(r));
     assert!(builds(&round(5e-7, 2.0), "plate"));
     for (eps, turn) in [(2e-6, "2e-06"), (1e-5, "1e-05"), (1e-4, "0.0001"), (2e-4, "0.0002")] {
-        let refusal = refused(&round(eps, 2.0), "plate");
+        let refusal = refusal(&solved(&round(eps, 2.0)), "plate");
         // (the witness, the lobe's end, to the tenth of a micron under the kernel's tolerance)
         let at = |x: f64| gcs_core::json::fmt_g((x / 1e-7).round() * 1e-7, 6);
         let said = format!("`k3` and `k2` meet at a turn of {turn} rad at [{}, {}, 10]mm: not tangent, so their \
@@ -486,7 +478,7 @@ fn a_corner_too_nearly_tangent_to_round_is_said_by_its_faces() {
             assert!(builds(&round(eps, r), "plate"), "{eps} at {r}");
         }
     }
-    let refusal = refused(&document(&creased_at(1e-5, 0.0), "near", Word::Chamfer(1.5)), "plate");
+    let refusal = refusal(&solved(&document(&creased_at(1e-5, 0.0), "near", Word::Chamfer(1.5))), "plate");
     assert!(refusal.contains("`k3` and `k2` meet at a turn of 1e-05 rad"), "{refusal}");
     assert!(refusal.contains("too nearly tangent a corner for this kernel to chamfer at 1.5mm against `k2`'s \
                               radius of 12mm"), "{refusal}");
