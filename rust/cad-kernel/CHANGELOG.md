@@ -45,8 +45,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   The complex orders faces round an edge a step into each from the face's own point at the edge,
   not the edge's, which stands within the reach of its faces and not on them
   (`complex::Complex::new`); a piece narrower than any outline the readings draw — a crescent a few
-  tolerances wide — is read inside off its exact boundary (`boolean`'s `reading::off_halves`), not
-  dropped as having no inside; and two circles in one plane are read touching only where they
+  tolerances wide — is read inside all the same (merged with #996: by the one reading of a strip
+  thinner than its outline, `reading::beside_halves`, below), not dropped as having no inside; and two circles in one plane are read touching only where they
   stand within the tolerance of one another (`query::curve_curve` by `plane2::circles`), not where
   the chord they share stands within it of the first.  Refused before as "a shell of the
   arrangement is kept on one side of a cylinder … two of its cells joined round an edge" and "a
@@ -63,14 +63,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   before.
 
 - **Two surfaces resting on one another at a point meet there alone, whatever their kinds** (#994
-  item 5): `boolean`'s second-order reading of a touch knows an elliptic one (the relative
-  curvature `Q` definite) over the reach the tolerance sets, eight times `√(2 tol / λ)` (the
-  crate's `ssi::Touch::disc`, sampled round the point by `ssi::resting`), rather than refusing it
-  where the radius within which they stand nearer parallel than a trace follows was not small
-  beside the faces.  `ssi::touch_near` is Newton on the difference of the two exact unit normals,
+  item 5): a definite touch (the relative curvature `Q` definite) is read alone whatever the
+  faces' size — merged with #996's item 3, by its one rule, `ssi::alone_over` over the touch's
+  radius (below); the second-order reach `8 √(2 tol / λ)` this entry first read it by
+  (`ssi::resting`) is gone.  `ssi::touch_near` is Newton on the difference of the two exact unit normals,
   settled by the height a step changes, and finds a touch whose `λ` is small.  An edge refused
-  where a surface of its own rests on the other is read as touching it there
-  (`boolean::resting_on`).  A ball standing its radius or more from a cylinder or a torus meets it
+  where a surface of its own rests on the other is read as touching it there, alone over the
+  touch's radius (`boolean::resting_on`).  A ball standing its radius or more from a cylinder or a torus meets it
   in no curve, in closed form (`ssi::ball_clear`).  A cylinder, a torus, a ball resting on a
   cylinder, a torus or a cone at a point was refused ("a cylinder and a torus meet at …, where no
   edge crosses, in a curve that could not be traced", "nearly touching", "pieces do not close").
@@ -120,6 +119,90 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   whose touch has come back short of the seam is refused rather than built inside out.
   `flat_beyond` refuses a seamed end.  **Breaking** for code building `Beyond` as a literal: set
   the field (`[false; 2]` for what was built before).
+
+- **A definite touch is read alone by its own orders, not by the faces' size** (#996 item 3): two
+  faces touching at a point, their meeting there the point alone to second order, were read so only
+  where the touch's radius — where a trace cannot follow them — was under a twentieth of the
+  smaller face; a rim's round on a short side crossing a wide blend's foot was refused ("a cylinder
+  and a cylinder meet … where no edge crosses, in a curve that could not be traced").  Now such a
+  touch is alone where `b`'s distance along `a` grows as its second order says over the whole
+  radius (`ssi::alone_over`), and `meeting::meet`'s search passes the touches it found, which it
+  refused before in the same words.
+
+- **A turn joined to the legs tangent to it, exactly or all but** (#996 item 1): a quarter elbow
+  whose section is clipped where it reaches the bend axis (a spindle torus, its arc up to 308°) and
+  the cylinders standing on its ends build for every tube from a hundredth under the legs' radius to
+  a hundredth over, the tangent one among them, each with the step it has. `ssi::disc_reach` reads
+  a spindle's and a horn's torus away from its other sheet, so a near-contact on the lemon past the
+  turn's arc is clear of its face; `ssi::intersect` meets a plane through a torus's axis in its two
+  meridians in closed form (the turn's caps: 3.3 s of traced marches before); the unseen-meeting
+  search's bounds over a strip are the torus's parallels', which vanish at its poles, and a meeting
+  it finds off either face is not traced; `Brep::loop_area` and a cycle's area in a Boolean are
+  Simpson's rule, doubled until settled (a crescent 308° long and a thousandth wide read the wrong
+  way round); a piece thinner than its outlines is read inside from beside its curved halves, not
+  dropped as a sliver while its sides stay two edges; and an inverse pcurve ending within its edge's
+  tolerance of a pole takes the pole's collapsed parameter from its end, not from the far side of
+  the axis (a union 2.6 times the solid it made). A use within its vertex's or edge's tolerance of
+  a pole is at it wherever the pole is read (`Brep::close_poles`, a half's points in a Boolean), a
+  pole's half runs along the parameter the pole collapses, and two uses of one edge at one place,
+  out and back, are a spur and not a seam: an axle and a slab through the near-miss turn's poles
+  build ("loop 0 breaks in parameters" at the pole before). **A tube all but tangent to another at
+  a seam is on it**: `flush::tubes_flushed` (called by `boolean::combined_written`, as `flushed` is)
+  moves a cylinder whose end circle stands concentric with and in the plane of the other's circle,
+  its radius off by no more than `FLUSH` tolerances, onto that radius, exactly; the issue's
+  document, cored and flanged as the fixture is, and every near-miss of its legs whatever is joined
+  or cut after, build as the tangent turn.
+
+- **One area rule and one pole rule** (#996 cleanup): `topo::green_area` is the Simpson-on-Green
+  routine `Brep::loop_area` and a Boolean's cycles both read, its samples kept as the steps double;
+  `topo::near_pole` the one reading of a point within a tolerance of a pole, at every site that
+  asks. A piece's inside is read with its first bar and its finest outline drawn once, and a
+  meeting's touches read alone (`ssi::alone_over`) only where the search passes them.
+
+- **The bench's cube tumbling 75° is built** (#942 T1d-cube, `swept::general`, `family`, `topo`):
+  a fan's crossing with itself is built from the pinch it is born at — the runs' corner where the
+  sheet's rate across their rim turns over — as the pairs of points of the two runs that meet, each
+  solved by Newton and marched out from the Whitney umbrella's own pairs, not traced toward the
+  pinch, where the trace lost itself on the runs' rim. A wall's foot is found by a bounded
+  Levenberg–Marquardt (`Sheet::newton`); on a run of a fan crossing itself (`Sheet::layered`) its
+  last foot is trusted only where it settles on the point, else the nearest four of a grid are
+  settled and the nearest kept (`Sheet::inverse`), any other wall's as before. An inverse curve
+  on a face takes its feet's chord for its rate where the face is singular. New
+  `nurbs::BSpline::with_knot`; a branch's end carried onto a rail or a pinch bends only its last
+  span. The 15° cube's volume moves by 4e-8 with its crossing built.
+
+- **The cube tumbling 15° is built** (#942 T1d-cube, `swept::general`): a fan's runs are
+  found before the bearers are met, and two fans' branches beside a shared rail are traced on each
+  run's own wall (traced on the whole wall a fan crossing itself folds over, they ran 1e-5 off both
+  walls); any other curve given of a whole wall is cut to what lies on each run's wall, not given
+  whole. The bench's 75° cube now gets through its trim, refused by the solid's check (a loop
+  breaking in its parameters by 6.8e-7 beside a run's end); the 10° and 12° cubes are refused in
+  their trim, with no fan crossing itself.
+
+- **A branch beside a rail ends where the two fans touch** (#942 T1d-cube,
+  `swept::general`): two fans' second branch beside the corner's path they share reaches the path
+  only where the two are tangent, and its trace stopped short there or ran on along the path (the
+  cube tumbling 75°: 3.95e-6 past the corner, at a sine of 7e-7), the branch left hanging in a face
+  as a slit. An end within its meeting's reach of the path is carried to where the walls' normals
+  turn past each other along it, and to the road's corner there, the curve cut at it. New
+  `nurbs::BSpline::segment`, a curve's stretch exactly. The 75° cube is now refused where the 15°
+  one is, the boundary open along a rail edge.
+
+- **A fan that passes back through itself is cut into runs, their crossing given** (#942 T1d-cube,
+  `swept::general`): an edge's fan was one wall over the whole roll, its strips faces of one
+  surface, and where the edge's line passed back through where it stood a while before two faces of
+  one surface crossed — refused by the trim's witness as a meeting of a surface with itself (the
+  bench's cube tumbling 75°, its edge 5's fan). Each two of a bearer's stretches are met as two
+  surfaces, its wall restricted to each (`family::Sheet::restricted`); a fan crossing itself is cut
+  into the fewest runs of stretches that part every two crossing ones, each run its wall restricted
+  to it and a candidate of its own, given the rim it shares with the next, where the runs cross
+  (traced run against run, one curve across a run's stretches), and each meeting of the whole wall
+  restricted to the run (a rail over the run's span). A fan crossing itself nowhere is as it was.
+  The cube tumbling 15° and 75° get past it. A seed on a branch traced already
+  is read within `tolerant::on_meeting`'s reach (two fans meeting shallowly traced one branch twice,
+  4e-7 apart); a dump writes each wall with the number it is shared by, so a trim read back shares
+  its walls as built and replays bit for bit. Gated by `swept_general`'s replays of the 15° and 75°
+  cubes, refused where they are now and replayed alike.
 
 ## [0.20.0] - 2026-11-21
 

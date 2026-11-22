@@ -984,11 +984,13 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             }
         }
     };
+    // what the drawing leaves free, read once for every export it refuses (#996)
+    let free = gcs_core::program::Free::default();
     for o in exports {
         let written = match &o.writes {
             Writes::Assembly(path) => assembly(&sk, &mut e, s, opts, path, opts.solid(&o.own), &colours,
-                                               seen.as_ref(), solved),
-            _ => export(&sk, &mut e, s, opts, o, seen.as_ref(), solved),
+                                               seen.as_ref(), solved, &free),
+            _ => export(&sk, &mut e, s, opts, o, seen.as_ref(), solved, &free),
         };
         if !written {
             code = 1;
@@ -1130,8 +1132,9 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
 /// written, each refusal said in the core's words and recorded at the solid's statement; whether
 /// all of it was.  `seen`, where the run draws pictures, is the sketch they read, given what it
 /// built.
+#[allow(clippy::too_many_arguments)]
 fn export(sk: &Sketch, e: &mut Elaborated, s: &Source, opts: &Opts, o: &Output, seen: Option<&Sketch>,
-          solved: bool) -> bool {
+          solved: bool, free: &gcs_core::program::Free) -> bool {
     let Writes::Export { stl, step } = &o.writes else { return true };
     let (mut stl, mut step, solid) = (stl.clone(), step.clone(), opts.solid(&o.own));
     let mut ok = true;
@@ -1156,7 +1159,7 @@ fn export(sk: &Sketch, e: &mut Elaborated, s: &Source, opts: &Opts, o: &Output, 
             let mut b = cad::Body::read(sk,i);
             if b.swept() && !native {
                 if let Err(refusal) = b.admit(sk) {
-                    refused(s,sk,e,i,refusal);
+                    refused(s,sk,e,i,refusal,free);
                     if exact_stl { say_field_read(sk,i); }
                     ok = false;
                     stl = None;
@@ -1169,7 +1172,7 @@ fn export(sk: &Sketch, e: &mut Elaborated, s: &Source, opts: &Opts, o: &Output, 
     if let Some(path) = stl.clone().filter(|_| opts.refine && solved) {
         match pick_solid(sk,solid) {
             Ok(i) => if let Err(refusal) = cad::field_mesh::export_refine(sk,i,&path) {
-                refused(s,sk,e,i,refusal);
+                refused(s,sk,e,i,refusal,free);
                 ok = false;
             },
             Err(m) => { eprintln!("solventc: {m}"); ok = false; }
@@ -1198,7 +1201,7 @@ fn export(sk: &Sketch, e: &mut Elaborated, s: &Source, opts: &Opts, o: &Output, 
                     Ok(t) => if let Err(refusal) = cad::export(sk,&body,step.as_deref(),stl.as_deref().filter(|_| native_stl),t,seen) {
                         // refused admission, nothing is written (the mesh backend's STL included)
                         if refusal.stage == cad::Stage::Admission { stl = None; }
-                        refused(s,sk,e,i,refusal);
+                        refused(s,sk,e,i,refusal,free);
                         if exact_stl { say_field_read(sk,i); }
                         ok = false;
                     },
@@ -1317,7 +1320,22 @@ fn wanted(
     // report builds nothing unasked, so the JSON costs what it costs, and `--where` asks in both
     let asked = |n: &str| names.iter().any(|q| under(n, q) || under(q, n));
     gcs_core::brep::export::supply_exact_where(sk, &|i| asked(&sk.solids[i].name));
+    // a body measured from its material field or its facet term, its exact build refused, is said
+    // so (#996): first where its field is to be meshed, which can take the run's time, and after
+    // where its facets are read — never a measure given as the build's that is not
+    let measured: Vec<usize> = (0..sk.solids.len())
+        .filter(|&i| asked(&sk.solids[i].name) || asked(&sk.solid_name(i))).collect();
+    let said = say_ahead(sk, &measured, "--where");
     let all = report::positions_where(sk, map, &asked);
+    for &i in &measured {
+        match sk.built_solid(i, gcs_core::solid::ApproximationPolicy::Report) {
+            Some(Ok(solid)) => say_drawn_from(sk, i, &solid, "--where", &said),
+            // a stand-in that could not be made either measures nothing: why, rather than a name
+            // the source seems not to hold (#996)
+            Some(Err(why)) if sk.field_meshed_ahead(i).is_some() => eprintln!("solventc: --where: {why}"),
+            _ => {}
+        }
+    }
     if names.is_empty() {
         return all;
     }
@@ -1360,7 +1378,13 @@ fn say(s: &Source, off: u32, sev: &str, code: &str, msg: &str) {
 /// or its facet term's, not its exact build: said against the file in the core's words (#762).
 /// The evaluation is the one the file was written from, remembered.
 fn say_unbuilt(sk: &Sketch, i: usize, path: &str, said: &[String]) {
-    let Ok(solid) = sk.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::Mesh) else { return };
+    if let Ok(solid) = sk.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::Mesh) {
+        say_drawn_from(sk, i, &solid, path, said);
+    }
+}
+
+/// `say_unbuilt` of the evaluation `solid` of solid `i`, the one read.
+fn say_drawn_from(sk: &Sketch, i: usize, solid: &gcs_core::solid::EvaluatedSolid, path: &str, said: &[String]) {
     if let Some(u) = solid.unbuilt() {
         let line = gcs_core::report::unbuilt_text(sk, i, u);
         if !said.contains(&line) { eprintln!("solventc: {path}: {line}"); }
@@ -1407,7 +1431,8 @@ fn severity(s: Severity) -> &'static str {
 /// (a round's piece at its round, #881: `file:line:col`, as every diagnostic), else at the
 /// solid's own statement.  Placed, it says its cause's words alone, once: every solid built on a
 /// round the kernel refused reaches it, and each would say it again (#948).
-fn refused(s: &Source,sk: &Sketch,e: &mut gcs_core::program::Elaborated,solid: usize,refusal: gcs_core::solid::export::ExportRefusal) {
+fn refused(s: &Source,sk: &Sketch,e: &mut gcs_core::program::Elaborated,solid: usize,refusal: gcs_core::solid::export::ExportRefusal,
+           free: &gcs_core::program::Free) {
     cad::progress::refused(refusal.stage);
     let cause = gcs_core::program::refusal_cause(sk,&e.map,&e.program,&refusal.message);
     let (span,stmt) = cause.map(|(span,stmt,_)| (span,stmt))
@@ -1416,7 +1441,8 @@ fn refused(s: &Source,sk: &Sketch,e: &mut gcs_core::program::Elaborated,solid: u
         .unwrap_or_default();
     // placed by the words as the core wrote them, then said as the document reads them
     let words = cause.map_or(refusal.message.as_str(),|(_,_,from)| &refusal.message[from..]);
-    let message = gcs_core::vocab::public_words(words);
+    // and what the solid is built from that the drawing leaves free, in the core's words (#996)
+    let message = free.with_free(sk,&e.map,solid,gcs_core::vocab::public_words(words));
     let d = gcs_core::program::Diag::new(gcs_core::program::Code::E080,span,stmt,message);
     let again = |said: &gcs_core::program::Diag| said.code == d.code && said.span == d.span
         && said.message == d.message;
@@ -1551,8 +1577,10 @@ fn tolerance(sk: &Sketch,opts: &Opts) -> Result<Option<gcs_core::solid::export::
 /// `--step-assembly PATH` (`cad::brep::export_assembly`): the objects under `solid`, else every
 /// object, as one assembly named for the document; whether it was written. A refusal is said in
 /// the core's words and, where one solid's build refused, recorded at its statement.
+#[allow(clippy::too_many_arguments)]
 fn assembly(sk: &Sketch, e: &mut Elaborated, s: &Source, opts: &Opts, path: &str, solid: Option<&str>,
-            colours: &std::collections::BTreeMap<usize, [u8; 3]>, seen: Option<&Sketch>, solved: bool) -> bool {
+            colours: &std::collections::BTreeMap<usize, [u8; 3]>, seen: Option<&Sketch>, solved: bool,
+            free: &gcs_core::program::Free) -> bool {
     let fail = |e: &mut Elaborated, message: String| {
         eprintln!("solventc: {message}");
         e.diags.push(gcs_core::program::Diag::new(gcs_core::program::Code::E080,
@@ -1583,7 +1611,7 @@ fn assembly(sk: &Sketch, e: &mut Elaborated, s: &Source, opts: &Opts, path: &str
     match cad::brep::export_assembly(sk, &objects, &name, path, t,
         &|i| colours.get(&i).map(|&c| gcs_core::colours::unit(c)), seen) {
         Ok(()) => true,
-        Err((Some(i), refusal)) => { refused(s, sk, e, i, refusal); false }
+        Err((Some(i), refusal)) => { refused(s, sk, e, i, refusal, free); false }
         Err((None, refusal)) => {
             cad::progress::refused(refusal.stage);
             fail(e, refusal.to_string())

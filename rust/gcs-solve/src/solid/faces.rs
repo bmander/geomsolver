@@ -316,12 +316,35 @@ pub fn cached(sk: &Sketch, body: usize) -> Result<std::sync::Arc<BodyFaces>, Str
     sk.caches.faces.get_or(body, key, || BodyFaces::read(sk, body).map(std::sync::Arc::new))
 }
 
+/// **The stratum of `body` as its rounds' reading made it** (#996): the written terms of the body
+/// `cached` built, where it has built them for the drawing as it stands — never built here.  What
+/// the body's own build goes on from (`solid::exact`), where it is made of the same B-reps.
+pub(crate) fn stratum_made(sk: &Sketch, body: usize)
+    -> Option<crate::brep::recipe::Offered> {
+    let key = super::MemoKey::except(sk, body, &|s| reads_faces_of(sk, s, body));
+    sk.caches.faces.get(body, &key)?.ok()?.stratum().cloned()
+}
+
 /// The strata of the bodies whose faces region terms `terms` read (`cached`'s, each body once, in
 /// order): what a reading of them is keyed on beside its own numbers (`MemoKey::own`).
 pub fn strata(sk: &Sketch, terms: &[RegionTerm]) -> Result<Vec<std::sync::Arc<BodyFaces>>, String> {
+    terms_bodies(terms).iter().map(|&b| cached(sk, b)).collect()
+}
+
+/// The solids region terms `terms` read, each once, in order.
+fn terms_bodies(terms: &[RegionTerm]) -> Vec<usize> {
     let mut bodies: Vec<usize> = terms.iter().flat_map(|t| t.shape.entities())
         .filter(|e| e.kind == crate::model::EntKind::Solid).map(|e| e.i()).collect();
     bodies.sort_unstable();
     bodies.dedup();
-    bodies.iter().map(|&b| cached(sk, b)).collect()
+    bodies
+}
+
+/// The solids region solid `i`'s terms read (none for a solid of another kind), each once, in
+/// order: the bodies whose stratum it may be built against (`stratum_made`).
+pub(crate) fn bodies_read(sk: &Sketch, i: usize) -> Vec<usize> {
+    match sk.solids.get(i).map(|s| &s.def) {
+        Some(SolidDef::Region { terms, .. }) => terms_bodies(terms),
+        _ => Vec::new(),
+    }
 }

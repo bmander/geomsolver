@@ -462,7 +462,17 @@ where the block's side stands flat) — each face its own condition,
 its side carried on past its patch by its tangent planes at its seams
 (`BodyFaces::carried_side_grad`, the signed distance from the convex solid the patch and those
 planes bound), so the side is their common part and a point at least `d` inside it is at least `d`
-inside each — a pocket's walls seen from its air, a boss's from its material. **Past any edge but a
+inside each — a pocket's walls seen from its air, a boss's from its material. **And every face of
+the chain within each other's side carried on** (#996's fifth item), read over each edge of the
+chain's faces once, against each face of the chain but those it bounds: a plane's side in closed
+form over a line or a circle (as `BodyFaces::goes_across` reads it), any other face's carried side
+at nine points of the edge, past by more than the body's own `past` (ten times its tolerance):
+convex at every seam and crease between its faces, a chain may still turn the other way along a
+face's own outline — a top in two flush pieces, the flange's rim rounded and the block's side
+meeting the flange's at a reflex corner of the top — where one face's carried side cuts off
+another's patch and no convex solid is theirs: it bulges no way, and is read through the nearest
+face (`rim_rounds::a_run_beside_a_chain_turning_back_along_its_outline_is_built`). This is the one
+sheet above, one reading of it (#994's and #996's, `BodyFaces::bulging`). **Past any edge but a
 seam a face's side is its own surface's** (#994): `F.smooth` is `F`'s side carried on across seams
 only, so past a crease or where another face cuts the face across, its whole surface's side goes on
 — an arm's rounded end half inside a hub, its cylinder carried past the hub's face by the plane
@@ -562,15 +572,17 @@ of the faces `M` is on the surfaces of is read as `d(p, E) − d(p, rest)` (`Res
 nearest point when off `E`, and where `E`'s run ends), the same points with a negative inside.
 `ends` is `max σ·side` over the faces at each end of the run (σ the side it runs on), a face
 carrying the run on none: one going on tangent from one of the run's faces across a seam
-(`BodyFaces::continues`) that meets another of them, or a face one goes on into across a seam (a
+(`BodyFaces::tangent_at`) that meets another of them, or a face one goes on into across a seam (a
 fill's cap flush with a side), there in an edge of the run's own turn, along which the round goes
 on, or that is a piece of the surface of the run's own face there (a floor two cuts leave in two
 pieces) (`BodyFaces::carries_on`, #994) — a face going on tangent that meets them there only in an
 edge of the other turn carries nothing on, and the run ends on it (a deck's corner
 arc running tangent into its side, flush with the block's, the block's side meeting its top in a
 convex edge: the foot's fill kept within the block, not hung past its wall); nor one whose
-surface the run itself goes across (`BodyFaces::goes_across`: no side of it holds the run), nor a
-plane of the run's own body turning back over it at a reflex corner of less than a right angle —
+surface the run itself goes across (`BodyFaces::goes_across`: no side of it holds the run), nor one
+whose surface holds the run's edge there (a face along the run, its patch past the end, #996), nor
+one back to back with one of the run's faces there (#996), nor a plane of the run's own body turning back over it at a reflex corner of less than a right angle,
+meeting a face of the run in an edge there (one met at the vertex alone makes no corner, #996) —
 the run ends there square; another body's wall so is its end (`BodyFaces::another_body`, #994) —
 and with them where an edge a run-out at that end runs along ends, a face or the plane
 square to it (`BodyFaces::end_faces`, `faces::EndBy`, #952, [rounds.md](rounds.md)); a closed run

@@ -192,6 +192,9 @@ pub struct Sheet {
     boxes: Vec<Box3>,
     /// Whether the wall comes back to itself along `s` (`ring`): `s` periodic over its interval.
     ring: bool,
+    /// Whether the wall may pass within a grid's step of itself (`layered`): a run of a fan that
+    /// passes back through itself, whose feet `inverse` seeks with care.
+    layered: bool,
 }
 
 
@@ -210,7 +213,7 @@ impl Sheet {
         if !ok || nodes.len() != 6*stations.spans.len() || nodes.iter().any(|n| n.len() != len || n.iter().any(|x| !x.is_finite())) {
             return Err(format!("a face family's {} wall has numbers of the wrong count",run.kind()))
         }
-        Ok(Sheet {run,stations,nodes,closed,boxes:Vec::new(),ring:false}.boxed())
+        Ok(Sheet {run,stations,nodes,closed,boxes:Vec::new(),ring:false,layered:false}.boxed())
     }
     /// The sheet with its pieces' boxes read off its numbers.
     fn boxed(mut self) -> Sheet {
@@ -220,9 +223,30 @@ impl Sheet {
     /// Whole-circle walls run round once: `u` periodic with period 1.
     pub fn period(&self) -> Option<f64> { self.closed.then_some(1.) }
     /// A ring's wall runs round its interval: `s` periodic with the interval's length.
+    /// The same wall marked as one that may pass within a grid's step of itself (#942 T1d-cube: a
+    /// run of a fan that passes back through itself, `swept::general::crossed`), its feet sought
+    /// with care (`inverse`).
+    pub fn layered(self) -> Sheet { Sheet {layered:true,..self} }
+    /// Whether the wall is marked as one that may pass within a grid's step of itself.
+    pub fn is_layered(&self) -> bool { self.layered }
     pub fn ring_period(&self) -> Option<f64> { let [a,b] = self.span(); self.ring.then_some(b-a) }
     /// The interval the wall runs over.
     pub fn span(&self) -> [f64;2] { self.stations.span() }
+    /// **The wall over a stretch of its interval** (#942 T1d-cube): its pieces over `[s0, s1]`, the
+    /// first and last cut short there, each still the polynomial through its own six nodes — the
+    /// same wall there to the rounding, and a surface of its own: an edge's fan that passes back
+    /// through itself is two of them where it crosses, whose meeting can be read and given.
+    pub fn restricted(&self,[s0,s1]: [f64;2]) -> Result<Sheet,String> {
+        let st = &self.stations;
+        let js: Vec<usize> = (0..st.spans.len()).filter(|&j| st.spans[j][1] > s0 && st.spans[j][0] < s1).collect();
+        let (Some(&first),Some(&last)) = (js.first(),js.last()) else { return Err("a wall restricted to a stretch it does not run over".into()) };
+        let mut spans: Vec<[f64;2]> = st.spans[first..=last].to_vec();
+        spans[0][0] = s0;
+        let n = spans.len();
+        spans[n-1][1] = s1;
+        let stations = Stations::new(spans,st.at[first..=last].to_vec())?;
+        Sheet::new(self.run.clone(),Arc::new(stations),self.nodes[6*first..6*last+6].to_vec(),self.closed)
+    }
     /// `s` within the interval: a ring's carried round into it, any other's as it is.
     fn within(&self,s: f64) -> f64 { let [a,b] = self.span(); if self.ring { a+(s-a).rem_euclid(b-a) } else { s } }
     /// `s` after a step: a ring's carried round into the interval, any other's held to it.
@@ -263,7 +287,7 @@ impl Sheet {
     /// The wall over the pieces `js` alone, read over `stations` (`Stations::band`'s of them).
     fn band(&self,stations: Arc<Stations>,js: std::ops::Range<usize>) -> Sheet {
         let nodes = self.nodes[6*js.start..6*js.end].to_vec();
-        Sheet {run:self.run.clone(),stations,nodes,closed:self.closed,boxes:Vec::new(),ring:false}.boxed()
+        Sheet {run:self.run.clone(),stations,nodes,closed:self.closed,boxes:Vec::new(),ring:false,layered:false}.boxed()
     }
     /// `∂S/∂s` at `(u, s)` as piece `j` reads it: at a joint, from either side of it.
     fn rate_in(&self,j: usize,[u,s]: Uv) -> V {
@@ -292,54 +316,125 @@ impl Sheet {
     /// A rim: the edge at station `s`, `C`, `C'` and `C''` in `u`.
     pub fn rim(&self,u: f64,s: f64) -> (V,V,V) { self.at(&self.numbers(s),u) }
     /// The point of the wall nearest `p`: Gauss–Newton from the last foot this thread found on it
-    /// where that settles near `p` (a mesh asks of one corner after the next); else from the
-    /// nearest of a grid — `u` in sixteenths, `s` at each piece's ends and quarters — read piece by
-    /// piece nearest box first, none past the nearest point found (a piece keeps within its box),
-    /// `s` held to the interval and `u` too unless the wall runs round.
+    /// where that settles on `p` itself, to the rounding (a mesh asks of one corner after the next);
+    /// else from the nearest of a grid — `u` in sixteenths, `s` at each piece's ends and quarters —
+    /// read piece by piece nearest box first, none past the nearest point found (a piece keeps
+    /// within its box), `s` held to the interval and `u` too unless the wall runs round, and the
+    /// nearer of that and where the last foot settled kept. (A foot from the last one settling
+    /// near `p` but not on it says nothing of a nearer one: #942 T1d-cube, a fan of the cube
+    /// tumbling 75° passing within 5e-3 of itself, a point lying on one layer took its foot on the
+    /// other, its normal 150° off, and a piece of the boundary was kept facing the wrong way.)
     pub fn inverse(&self,p: V) -> Uv {
         let key = self as *const Sheet as usize;
-        let near = 1e-3*(1.+dot(p,p).sqrt());
-        let warm = crate::util::warm::get(crate::util::warm::Kind::Wall,key).map(|f| self.newton(p,f))
-            .filter(|&uv| distance(self.d1(uv).0,p) <= near);
-        let uv = warm.unwrap_or_else(|| {
-            let reach = |b: &Box3| { let gap: V = std::array::from_fn(|i| (b.0[i]-p[i]).max(p[i]-b.1[i]).max(0.)); norm(gap)*(1.-1e-12) };
-            let mut order: Vec<(f64,usize)> = self.boxes.iter().enumerate().map(|(j,b)| (reach(b),j)).collect();
-            order.sort_by(|x,y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
-            let mut best = (f64::INFINITY,[0.;2]);
-            for (bound,j) in order {
-                if bound > best.0 { break }
-                let sp = self.stations.spans[j];
-                for k in 0..=4 {
-                    let s = sp[0]+(sp[1]-sp[0])*k as f64/4.;
-                    let n = &self.numbers(s);
-                    for i in 0..=16 {
-                        let u = i as f64/16.;
-                        let d = distance(self.at(n,u).0,p);
-                        if d < best.0 { best = (d,[u,s]); }
-                    }
-                }
+        let scale = 1.+dot(p,p).sqrt();
+        // (a layered wall's last foot trusted only where it settles on `p` itself, its search from
+        // the nearest four of the grid; any other's where it settles near `p`, from the nearest one)
+        let (on,starts) = if self.layered { (crate::util::fmath::HALF_READ*scale,4) } else { (1e-3*scale,1) };
+        let warm = crate::util::warm::get(crate::util::warm::Kind::Wall,key).map(|f| self.settled(p,f));
+        let (uv,_) = match warm {
+            Some((uv,d)) if d <= on => (uv,d),
+            _ => {
+                let found = self.searched(p,warm.map_or(f64::INFINITY,|w| w.1),starts);
+                match warm { Some(w) if w.1 < found.1 => w,_ => found }
             }
-            self.newton(p,best.1)
-        });
+        };
         crate::util::warm::put(crate::util::warm::Kind::Wall,key,uv);
         uv
     }
-    /// Gauss–Newton for the parameters of the wall's point nearest `p`, from `uv`.
-    pub fn newton(&self,p: V,mut uv: Uv) -> Uv {
+    /// `inverse`'s search: the nearest `starts` of the grid, read no farther than `within` (where
+    /// a foot that near is in hand), each settled and the nearest kept. (A wall passing within a
+    /// grid's step of itself — a fan's fold — has its nearest grid point on the other layer, #942
+    /// T1d-cube.)
+    fn searched(&self,p: V,within: f64,starts: usize) -> (Uv,f64) {
+        let reach = |b: &Box3| { let gap: V = std::array::from_fn(|i| (b.0[i]-p[i]).max(p[i]-b.1[i]).max(0.)); norm(gap)*(1.-1e-12) };
+        let mut order: Vec<(f64,usize)> = self.boxes.iter().enumerate().map(|(j,b)| (reach(b),j)).collect();
+        order.sort_by(|x,y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
+        // each start: its distance and its parameters
+        let mut best: Vec<(f64,Uv)> = Vec::new();
+        let worst = |best: &Vec<(f64,Uv)>| if best.len() == starts { best[starts-1].0 } else { f64::INFINITY };
+        for (bound,j) in order {
+            if bound > worst(&best).min(within) { break }
+            let sp = self.stations.spans[j];
+            for k in 0..=4 {
+                let s = sp[0]+(sp[1]-sp[0])*k as f64/4.;
+                let n = &self.numbers(s);
+                for i in 0..=16 {
+                    let u = i as f64/16.;
+                    let d = distance(self.at(n,u).0,p);
+                    if d < worst(&best) {
+                        let at = best.partition_point(|x| x.0 <= d);
+                        best.insert(at,(d,[u,s]));
+                        best.truncate(starts);
+                    }
+                }
+            }
+        }
+        // (every start settled, the nearest kept: a point on a fan's double curve has a foot on each
+        // layer at nought, and which of them a search takes is to be the same however it is asked)
+        best.iter().map(|&(_,uv)| self.settled(p,uv)).fold(([0.;2],f64::INFINITY),|a,b| if b.1 < a.1 { b } else { a })
+    }
+    /// `newton`, and how far its point stands from `p`.
+    fn settled(&self,p: V,uv: Uv) -> (Uv,f64) { let uv = self.newton(p,uv); (uv,distance(self.d1(uv).0,p)) }
+    /// **The parameters of the wall's point nearest `p`, from `uv`** — Levenberg–Marquardt over the
+    /// wall's domain: each step solves `(JᵀJ + μ diag JᵀJ) δ = −Jᵀe`, `J = [Sᵤ Sₛ]`, and is taken
+    /// only where it comes nearer `p`, `μ` falling by three where it does and rising fourfold where
+    /// it does not; a step leaving the domain is held at its bound and the other parameter stepped
+    /// alone along it (projected: the foot on a rim or a rail is that curve's nearest point). With
+    /// `μ` small it is Gauss–Newton, as quick where the wall is well read; it stops at a foot, the
+    /// offset square to both rates to their rounding, or where a step taken moves the parameters by
+    /// no more than their rounding.
+    ///
+    /// (#942 T1d-cube: beside a fan's pinch its two derivatives all but parallel, a full Gauss–Newton
+    /// step from beside the foot ran along the direction the wall barely moves in, past a run's end,
+    /// and was held on its rim — 1.4e-6 off a point of the fan's double curve lying on the wall, and
+    /// 6.6e-7 off a vertex, both stepped together and clamped — and faces' loops broke.)
+    pub fn newton(&self,p: V,uv: Uv) -> Uv {
         let [a,b] = self.span();
-        for _ in 0..30 {
-            let (x,su,ss) = self.d1(uv);
-            let e = sub(x,p);
+        let bound = |u: f64| if self.closed { u } else { u.clamp(0.,1.) };
+        let mut uv = [bound(uv[0]),self.held(uv[1])];
+        let (x,mut su,mut ss) = self.d1(uv);
+        let mut e = sub(x,p);
+        let mut off = dot(e,e);
+        let mut mu = 1e-3;
+        'steps: for _ in 0..60 {
+            if !(off > 0.) { break }
             let (a11,a12,a22) = (dot(su,su),dot(su,ss),dot(ss,ss));
             let (b1,b2) = (dot(su,e),dot(ss,e));
-            let det = a11*a22-a12*a12;
-            if !(det.abs() > 0.) { break }
-            let (du,ds) = ((a22*b1-a12*b2)/det,(a11*b2-a12*b1)/det);
-            let mut next = [uv[0]-du,self.held(uv[1]-ds)];
-            if !self.closed { next[0] = next[0].clamp(0.,1.); }
-            let moved = (next[0]-uv[0]).abs().max((next[1]-uv[1]).abs()/(b-a));
-            uv = next;
-            if moved < 1e-15 { break }
+            // (a foot already: `p`'s offset square to both rates, to their rounding — no step comes
+            // nearer, and each refused one is a reading of the wall)
+            let level = crate::util::fmath::HALF_READ*crate::util::fmath::HALF_READ*off;
+            if b1*b1 <= level*a11 && b2*b2 <= level*a22 { break }
+            for _ in 0..24 {
+                let (h11,h22) = (a11*(1.+mu),a22*(1.+mu));
+                let det = h11*h22-a12*a12;
+                if !(det > 0.) { mu *= 4.; continue }
+                let (du,ds) = ((h22*b1-a12*b2)/det,(h11*b2-a12*b1)/det);
+                let (u_free,s_free) = (uv[0]-du,uv[1]-ds);
+                let (u_held,s_held) = (bound(u_free),self.held(s_free));
+                let next = match (u_held != u_free,s_held != s_free) {
+                    // `s` held at its bound: `u` alone along the rim there
+                    (false,true) if h11 > 0. => [bound(uv[0]-b1/h11),s_held],
+                    // `u` held at its bound: `s` alone along the rail there
+                    (true,false) if h22 > 0. => [u_held,self.held(uv[1]-b2/h22)],
+                    _ => [u_held,s_held],
+                };
+                // (a step that moves nothing: a larger `μ` moves less still)
+                let moved = (next[0]-uv[0]).abs().max((next[1]-uv[1]).abs()/(b-a));
+                if !(moved > 0.) { break 'steps }
+                let (nx,nsu,nss) = self.d1(next);
+                let ne = sub(nx,p);
+                if dot(ne,ne) < off {
+                    (uv,su,ss,e,off) = (next,nsu,nss,ne,dot(ne,ne));
+                    mu = (mu/3.).max(1e-12);
+                    // (settled where a step taken moves the parameters by their rounding — not where
+                    // a refused one, `μ` grown, moves them little: that one was damped, not done,
+                    // and the ball along a spline was cut on a foot left short of its own)
+                    if moved < 1e-15 { break 'steps }
+                    continue 'steps
+                }
+                mu *= 4.;
+            }
+            break
         }
         if self.closed { uv[0] = uv[0].rem_euclid(1.); }
         uv

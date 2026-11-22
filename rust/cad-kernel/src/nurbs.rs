@@ -86,6 +86,35 @@ impl BSpline {
     }
     /// Where the curve is defined.
     pub fn domain(&self) -> [f64;2] { [self.knots[self.degree],self.knots[self.poles.len()]] }
+    /// The same curve with the knot `t` put in once (`insert`, Boehm): one more pole, so a change of
+    /// the poles at either end reaches no farther in than the span `t` bounds. Unchanged where `t`
+    /// is not strictly inside the domain.
+    pub fn with_knot(&self,t: f64) -> BSpline {
+        let [lo,hi] = self.domain();
+        if !(t > lo && t < hi) { return self.clone() }
+        let (mut knots,mut h) = (self.knots.clone(),self.lifted());
+        insert(&mut knots,&mut h,self.degree,t);
+        self.dropped(knots,h)
+    }
+    /// The curve over `[a, b]` (within its domain) alone, exactly (`segment`): the same points at
+    /// the same parameters, clamped there; a rational one's in homogeneous coordinates.
+    pub fn segment(&self,[a,b]: [f64;2]) -> BSpline {
+        let [lo,hi] = self.domain();
+        let (knots,h) = segment(&self.knots,&self.lifted(),self.degree,a.max(lo),b.min(hi));
+        self.dropped(knots,h)
+    }
+    /// Its poles as rows of one homogeneous point, `(w x, w y, w z, w)` (`w` 1 unless rational):
+    /// what `insert` and `segment` combine.
+    fn lifted(&self) -> Vec<Vec<[f64;4]>> {
+        let w = |i: usize| self.weights.as_ref().map_or(1.,|w| w[i]);
+        self.poles.iter().enumerate().map(|(i,q)| { let w = w(i); vec![[w*q[0],w*q[1],w*q[2],w]] }).collect()
+    }
+    /// A curve of its degree and kind from `knots` and `lifted` rows.
+    fn dropped(&self,knots: Vec<f64>,h: Vec<Vec<[f64;4]>>) -> BSpline {
+        let poles = h.iter().map(|r| [r[0][0]/r[0][3],r[0][1]/r[0][3],r[0][2]/r[0][3]]).collect();
+        let weights = self.weights.is_some().then(|| h.iter().map(|r| r[0][3]).collect());
+        BSpline {degree:self.degree,knots,poles,weights}
+    }
     /// The distinct knots strictly inside `[a, b]`, where the curve's third derivative may jump.
     pub fn breaks(&self,[a,b]: [f64;2]) -> Vec<f64> {
         let mut out: Vec<f64> = self.knots.iter().copied().filter(|&k| k > a && k < b).collect();
