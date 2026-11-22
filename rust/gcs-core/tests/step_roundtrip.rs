@@ -209,20 +209,6 @@ fn surface_fit(b: &Brep,fi: usize) -> f64 {
 /// * the volume's is the fluxes' over 3 plus 1e-9 of it, the total area's the faces' sum.
 pub struct Bars { area: Vec<f64>,flux: Vec<f64>,volume: f64,total: f64 }
 
-/// How far edge `c.edge` stands off face `fi` at its use `c` (as `step::write` measures it, at 64
-/// points, the breaks of its curves and halfway between each two).
-fn standing(b: &Brep,fi: usize,c: &gcs_core::brep::topo::Coedge) -> f64 {
-    let (f,e) = (&b.faces[fi],&b.edges[c.edge as usize]);
-    let EdgeCurve::Curve(curve) = &e.curve else { return 0. };
-    let mut ts: Vec<f64> = (0..=64).map(|k| e.t[0]+(e.t[1]-e.t[0])*k as f64/64.).collect();
-    ts.extend(curve.breaks(e.t));
-    if let Pcurve::Curve(pc) = &c.pcurve { ts.extend(pc.breaks(e.t)); }
-    ts.sort_by(f64::total_cmp);
-    let halves: Vec<f64> = ts.windows(2).map(|w| 0.5*(w[0]+w[1])).collect();
-    ts.extend(halves);
-    ts.iter().map(|&t| distance(f.surface.point(c.pcurve.at(t,e,&f.surface,&b.vertices)),e.point(t,&b.vertices))).fold(0.,f64::max)
-}
-
 /// The faces (by index, in the file's order) on whose surface the file writes a pcurve as a
 /// polyline (a degree-one spline): where no cubic closed in, the writer's last resort.
 fn polyline_faces(text: &str) -> BTreeSet<usize> {
@@ -261,7 +247,7 @@ fn bars(b: &Brep,m: &Measured,fit: Fit,stated: f64,polylines: &BTreeSet<usize>,p
                 _ => false,
             };
             // (a fitted pcurve held no nearer than the edge stands off the face)
-            let bar = fit.bar().max(b.edges[c.edge as usize].tol).max(standing(b,fi,c));
+            let bar = fit.bar().max(b.edges[c.edge as usize].tol).max(b.standing(fi,c));
             if exact { 0. } else if polyline_faces.contains(&fi) { bar.max(stated) } else { bar }
         };
         let de = f.loops.iter().flatten().map(|c| edges[c.edge as usize].max(pcurve(c))).fold(ds,f64::max);
@@ -443,7 +429,7 @@ pub fn same(b: &Brep,mb: &Measured,text: &str,given: &Given,fit: Fit,tol: f64,fo
             let ends = match &e.curve { EdgeCurve::Curve(c) => (0..2).map(|k| distance(c.point(e.t[k]),r.vertices[e.v[k] as usize].p)).fold(0.,f64::max),_ => 0. };
             let uses: Vec<String> = r.faces.iter().enumerate().flat_map(|(fi,f)| f.loops.iter().flatten().filter(|c| c.edge as usize == i)
                 .map(move |c| (fi,c))).map(|(fi,c)| format!("face {fi} ({}, pcurve {}): {:.2e}",r.faces[fi].surface.kind(),
-                match &c.pcurve { Pcurve::Line {..} => "line",Pcurve::Inverse {..} => "inverse",Pcurve::Curve(_) => "curve" },standing(r,fi,c))).collect();
+                match &c.pcurve { Pcurve::Line {..} => "line",Pcurve::Inverse {..} => "inverse",Pcurve::Curve(_) => "curve" },r.standing(fi,c))).collect();
             eprintln!("LOOSE edge {i} #{} ({}) tol {:.3e}: ends {ends:.2e}; {}",given.edges[i],e.curve.kind(),e.tol,uses.join("; "));
             if let Some(&ei) = edge_of.get(&given.edges[i]) {
                 let o = &b.edges[ei];

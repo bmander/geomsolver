@@ -1104,26 +1104,6 @@ fn file(name: &str,data: &str) -> String {
         FILE_SCHEMA(('AUTOMOTIVE_DESIGN {{ 1 0 10303 214 1 1 1 1 }}'));\nENDSEC;\nDATA;\n{data}ENDSEC;\nEND-ISO-10303-21;\n")
 }
 
-/// **How far an edge stands off a face that uses it** (millimetres): the most its points stand
-/// from the face's at the use's curve in its parameters, at 64 points along it and at every
-/// break of either curve, and halfway between each two of those — its tolerance there as a reader
-/// measures one
-/// (`Brep::measure_tolerances`), measured afresh rather than taken from the edge (a solid's
-/// tolerances are not kept up to date through every operation).
-fn standing(b: &Brep,fi: usize,u: &super::topo::Coedge) -> f64 {
-    let (f,e) = (&b.faces[fi],&b.edges[u.edge as usize]);
-    let EdgeCurve::Curve(c) = &e.curve else { return 0. };
-    let mut ts: Vec<f64> = (0..=64).map(|k| e.t[0]+(e.t[1]-e.t[0])*k as f64/64.).collect();
-    ts.extend(c.breaks(e.t));
-    if let super::topo::Pcurve::Curve(pc) = &u.pcurve { ts.extend(pc.breaks(e.t)); }
-    // (and halfway between each two: an edge may stand off its face at a spike between its knots,
-    // `creased.sv`'s 2e-5 where its knots read 4e-6)
-    ts.sort_by(f64::total_cmp);
-    let halves: Vec<f64> = ts.windows(2).map(|w| 0.5*(w[0]+w[1])).collect();
-    ts.extend(halves);
-    ts.iter().map(|&t| distance(f.surface.point(u.pcurve.at(t,e,&f.surface,&b.vertices)),e.point(t,&b.vertices))).fold(0.,f64::max)
-}
-
 /// The solid's topology and geometry, bottom up, to its manifold solid: its id, and the most
 /// anything written stands off what it stands for (`held`).
 fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<(usize,f64),String> {
@@ -1201,7 +1181,7 @@ fn solid(o: &mut Out,b: &Brep,tol: f64,fit: Fit) -> Result<(usize,f64),String> {
             .flat_map(|(fi,f)| f.loops.iter().flatten().filter(|c| c.edge as usize == ei).map(move |c| (fi,c))).collect();
         let seam = uses.len() == 2 && uses[0].0 == uses[1].0;
         let before = (o.text.len(),o.next);
-        let gaps: Vec<f64> = uses.iter().map(|&(fi,u)| standing(b,fi,u).max(e.tol)).collect();
+        let gaps: Vec<f64> = uses.iter().map(|&(fi,u)| b.standing(fi,u).max(e.tol)).collect();
         let mut pcurves: Vec<Option<(usize,f64,bool)>> = uses.iter().zip(&gaps)
             .map(|(&(fi,u),&gap)| pcurve(o,b,fi,u,surfaces[fi],context2,tol,fit,nets[fi].as_ref(),gap)).collect();
         // (a seam's two curves are written both or neither: one alone does not say which side of

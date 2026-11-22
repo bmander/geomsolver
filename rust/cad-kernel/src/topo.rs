@@ -866,6 +866,26 @@ impl Brep {
         (0..n).map(|i| { let (a,b) = (pts[i],pts[(i+1)%n]); a[0]*b[1]-a[1]*b[0] }).sum::<f64>()/2.
     }
 
+    /// **How far an edge stands off a face that uses it** (millimetres): the most its points stand
+    /// from the face's at the use `u` of face `fi`, its curve in the face's parameters, at 64
+    /// points along it and at every break of either curve, and halfway between each two of those
+    /// — its tolerance there as a reader measures one (`measure_tolerances`), measured afresh
+    /// rather than taken from the edge (a solid's tolerances are not kept up to date through every
+    /// operation). What `step::write` states and `tests/step_roundtrip.rs` holds a file to.
+    pub fn standing(&self,fi: usize,u: &Coedge) -> f64 {
+        let (f,e) = (&self.faces[fi],&self.edges[u.edge as usize]);
+        let EdgeCurve::Curve(c) = &e.curve else { return 0. };
+        let mut ts: Vec<f64> = (0..=64).map(|k| e.t[0]+(e.t[1]-e.t[0])*k as f64/64.).collect();
+        ts.extend(c.breaks(e.t));
+        if let Pcurve::Curve(pc) = &u.pcurve { ts.extend(pc.breaks(e.t)); }
+        // (and halfway between each two: an edge may stand off its face at a spike between its
+        // knots, `creased.sv`'s 2e-5 where its knots read 4e-6)
+        ts.sort_by(f64::total_cmp);
+        let halves: Vec<f64> = ts.windows(2).map(|w| 0.5*(w[0]+w[1])).collect();
+        ts.extend(halves);
+        ts.iter().map(|&t| distance(f.surface.point(u.pcurve.at(t,e,&f.surface,&self.vertices)),e.point(t,&self.vertices))).fold(0.,f64::max)
+    }
+
     /// Each edge's tolerance: the largest gap between its curve and each use's pcurve image
     /// (sampled along it, its knots and ends included), and between its curve's ends and its
     /// vertices; and each vertex's, the largest gap between it and the ends of the curves there.
