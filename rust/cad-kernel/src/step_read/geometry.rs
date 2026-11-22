@@ -453,6 +453,19 @@ impl<'f,'a> Geometry<'f,'a> {
         Ok(axis(1,[1.,0.,0.])? && axis(2,[0.,1.,0.])? && (v.len() <= 5+k || axis(5,[0.,0.,1.])?) && norm(origin) <= 1e-12 && unit)
     }
 
+    /// **The point a line of no length is** (#993): a `LINE` whose `VECTOR` has magnitude 0 is no
+    /// curve an edge runs along, but it is a point exactly, its own; none for any other curve (a
+    /// curve on a surface, `SURFACE_CURVE` or `SEAM_CURVE`, read through to its curve in space).
+    pub fn point_line(&self,r: u32) -> Result<Option<V>,Refusal> {
+        let r = match self.file.get(r).simple() {
+            Some(("SURFACE_CURVE" | "SEAM_CURVE",v)) => match v.get(1).and_then(Value::reference) { Some(c) => c,None => return Ok(None) },
+            _ => r,
+        };
+        let Some(("LINE",v)) = self.file.get(r).simple() else { return Ok(None) };
+        let (_,m) = self.vector(r,v.get(2).and_then(Value::reference),false)?;
+        if m != 0. { return Ok(None) }
+        Ok(Some(self.point(r,v.get(1).and_then(Value::reference))?))
+    }
     /// A curve in space.
     pub fn curve(&self,from: u32,r: Option<u32>) -> Result<Spatial,Refusal> { self.curve_in(from,r,None,0) }
     /// An edge's curve, `ends` its vertices' points: as `curve`, a curve without end (a parabola,
@@ -1045,15 +1058,19 @@ impl Sheet {
         let Some(seat) = &self.seat else { return Ok(self.clone()) };
         if points.is_empty() { return Ok(self.clone()) }
         let s = &self.surface;
-        // (a parameter's seam kept where a face's seam runs along it, the file's: every point of
-        // the seam at an end of the parameter's span `ends`, `param` the point's parameter)
-        let along_seam = |param: &dyn Fn(V) -> f64,[a,b]: [f64;2]| seams.iter().any(|seam| seam.iter().all(|&p| {
-            let x = param(p);
-            (x-a).abs().min((b-x).abs()) <= 1e-6*(b-a)
-        }));
-        let gap = |param: &dyn Fn(V) -> f64,ends: [f64;2],angle: &dyn Fn(f64) -> f64|
-            if along_seam(param,ends) { None } else { widest_gap(points.iter().map(|&p| angle(param(p))).collect()) };
-        let domain = match s { Surface::BSpline(_,n) | Surface::Offset(_,n,_) => n.domain(),_ => [[0.,TAU];2] };
+        // (a parameter's seam put where a face's seam runs along it, the file's: every point of
+        // the seam at one angle of the parameter — `param` the point's parameter, `angle` its
+        // angle — wherever the file put it, at its own `u = 0` or not; springrep turns its curve
+        // with the seam half a turn round. That angle a gap of no width, the turn a whole one from
+        // it; else the widest gap the points leave)
+        let gap = |param: &dyn Fn(V) -> f64,angle: &dyn Fn(f64) -> f64| {
+            let along = seams.iter().find_map(|seam| {
+                let a: Vec<f64> = seam.iter().map(|&p| angle(param(p))).collect();
+                let first = *a.first()?;
+                a.iter().all(|&x| { let d = (x-first).rem_euclid(TAU); d.min(TAU-d) <= 1e-6*TAU }).then_some((first,0.))
+            });
+            along.or_else(|| widest_gap(points.iter().map(|&p| angle(param(p))).collect()))
+        };
         let turn = |g: Option<(f64,f64)>| g.map_or([0.,TAU],|(a,w)| [a+0.75*w,a+TAU+0.25*w]);
         let middle = |g: Option<(f64,f64)>| g.map_or(0.,|(a,w)| (a+0.5*w).rem_euclid(TAU));
         let conic = |c: &Curve| matches!(c,Curve::Circle(..) | Curve::Ellipse(..));
@@ -1066,12 +1083,12 @@ impl Sheet {
         let (turn,from,span) = match &**seat {
             Seat::Crossing {..} => unreachable!("seated above"),
             Seat::Turned {curve,..} => {
-                let u = turn(gap(&|p| s.inverse(p)[0],domain[0],&|x| angle_at(x,0.)));
-                (u,if conic(curve) { middle(gap(&|p| s.inverse(p)[1],domain[1],&|x| angle_at(x,0.))) } else { 0. },[-1.,1.])
+                let u = turn(gap(&|p| s.inverse(p)[0],&|x| angle_at(x,0.)));
+                (u,if conic(curve) { middle(gap(&|p| s.inverse(p)[1],&|x| angle_at(x,0.))) } else { 0. },[-1.,1.])
             }
             Seat::Swept {f,curve,..} => {
                 let along = |p: V| dot(sub(p,f.o),f.z);
-                let u = if conic(curve) { middle(gap(&|p| curve.inverse(sub(p,scale(f.z,along(p)))).rem_euclid(TAU),[0.,TAU],&|x| x)) } else { 0. };
+                let u = if conic(curve) { middle(gap(&|p| curve.inverse(sub(p,scale(f.z,along(p)))).rem_euclid(TAU),&|x| x)) } else { 0. };
                 ([0.,TAU],u,spread(points.iter().map(|&p| along(p)),1e-6*(1.+size)).unwrap_or([-1.,1.]))
             }
             Seat::Throat {f,p,d} => {
@@ -1080,7 +1097,7 @@ impl Sheet {
                 let t = |q: V| dot(sub(q,*p),f.z)/dot(*d,f.z);
                 let bearing = |q: V| { let l = f.local(q); l[1].datan2(l[0]) };
                 let u = |q: V| (bearing(q)-bearing(add(*p,scale(*d,t(q))))).rem_euclid(TAU);
-                (turn(gap(&u,[0.,TAU],&|x| x)),0.,spread(points.iter().map(|&q| t(q)),1e-6*(1.+size)).unwrap_or([-1.,1.]))
+                (turn(gap(&u,&|x| x)),0.,spread(points.iter().map(|&q| t(q)),1e-6*(1.+size)).unwrap_or([-1.,1.]))
             }
             Seat::Meridian {f,conic} => {
                 // each point carried round the axis into the half-plane, read on the arc; its

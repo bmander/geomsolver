@@ -29,6 +29,7 @@
 //! and the boundary checked (`Brep::check`), a failure refused naming the face or edge it names.
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
+mod closed;
 use super::context::Found;
 use super::geometry::{list,logical,Flat,Geometry,Sheet};
 use super::{Given,Refusal,Why};
@@ -211,6 +212,7 @@ fn parameters(c: &Curve,p: [V;2],one: bool,entity: u32,within: f64) -> Result<[f
 
 /// An edge read: its curve, its vertices' parameters on it, and its curves in faces' parameters.
 fn read_edge(g: &Geometry,w: &Written,points: &[V],within: f64) -> Result<Read,Refusal> {
+    if let Some(x) = closed::point_edge(g,w,points,within)? { return Ok(x) }
     let r = w.entity;
     // (a curve without end, a parabola's, read as its arc between the edge's vertices)
     let ends = [points[w.ends[0]],points[w.ends[1]]];
@@ -268,6 +270,7 @@ fn file_pcurve(flat: &Flat,e: &Edge,rate: f64,s: &Surface,vs: &[Vertex],near: f6
             Flat::Curve(c) if rate == 1. => Pcurve::Curve(Arc::new(c.clone())),
             Flat::Curve(_) => return None,
         };
+        let Some(pc) = closed::onto_net(pc,e,s,vs) else { continue };
         // as near the edge as the surface is, within `near` (a file's edge may stand its
         // tolerance off its faces, and its curve in each lies under it)
         let on = [0.,0.07,0.19,0.31,0.43,0.5,0.61,0.73,0.89,1.].iter().all(|&j| {
@@ -921,6 +924,7 @@ const LAID: u32 = u32::MAX;
 fn face(st: &Setting,sheet: &Sheet,w: &Walked) -> Result<Built,Refusal> {
     let b = st.b;
     let s = &sheet.surface;
+    if let Some(x) = closed::whole(st,s,w) { return x }
     let reversed = w.reversed;
     let uses: Vec<Vec<(usize,bool)>> = w.bounds.iter().filter_map(|bound| match bound {
         Bound::Edges(u) => Some(u.iter().map(|u| (u.edge,!u.along != st.reads[u.edge].flip)).collect()),
@@ -1161,6 +1165,7 @@ pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
     let within = (1e-9*size).max(uncertainty);
     let reads = crate::util::par::indices(w.written.len(),|i| read_edge(&g,&w.written[i],&points,within.max(1e-7*size)))
         .into_iter().collect::<Result<Vec<_>,_>>()?;
+    let dropped = closed::points_dropped(&mut faces,&reads);
     let mut b = Brep {vertices:points.iter().map(|&p| Vertex {p,tol:0.}).collect(),edges:reads.iter().map(|r| r.edge.clone()).collect(),faces:Vec::new()};
     // the surfaces, each read once
     let ids: Vec<u32> = faces.iter().map(|f| f.surface).collect::<BTreeSet<_>>().into_iter().collect();
@@ -1231,6 +1236,7 @@ pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
         b.edges[c.edge].v[1] = c.vertex;
         laid_of.push((c.edge,c.laid as usize));
     }
+    closed::points_placed(&mut b,&mut edges,&dropped)?;
     // a vertex at a pole stands as far off it as half a turn of the collapsed parameter moves
     // there: what `close_poles` reads the pole within
     let pole = 1e-7*(1.+size);
