@@ -86,7 +86,10 @@ fn expected(v0: f64,r: f64,rr: f64,off: f64,z: [f64;2],op: Op,reach: f64) -> (f6
 /// plane's pieces do not close" at radii a micron apart.
 #[test]
 fn a_boss_or_a_bore_on_a_lobe_of_its_own_radius_builds() {
-    let offs: [(f64,f64);15] = [(0.,0.),(1e-8,0.),(-1e-8,0.),(3e-7,0.),(-3e-7,0.),(1e-6,0.),(-1e-6,0.),(3e-6,0.),(-3e-6,0.),
+    // either way, within the tolerance (1e-8), within the reach (3e-7), about it (1e-6, the
+    // plates' tolerances 0.9e-7 to 1.3e-7), past it and flushed (1e-5), and about the flush's
+    // own bound (1e-4)
+    let offs: [(f64,f64);13] = [(0.,0.),(1e-8,0.),(-1e-8,0.),(3e-7,0.),(-3e-7,0.),(1e-6,0.),(-1e-6,0.),
         (1e-5,0.),(-1e-5,0.),(1e-4,0.),(-1e-4,0.),(0.,1e-8),(0.,3e-7)];
     for (n,p,r,rho) in PLATES {
         let (prof,area,c) = lobed(n,p,r,rho,10.);

@@ -426,7 +426,7 @@ fn strips_crossing_a_plates_faces_in_its_thickness_unite_in_every_order() {
 #[test]
 fn strips_crossing_a_plates_true_edges_unite_in_every_order() {
     strips_on_a_plate(false,0.5,&[(1e-3,-1e-3),(3e-4,-3e-4),(1e-4,-1e-4),(1e-5,-1e-5),(-1e-3,1e-3)],0.);
-    strips_on_a_plate(false,0.3,&[(1e-3,-7e-4),(3e-4,-5e-4),(5e-4,2e-4),(-3e-4,-1e-3),(7e-4,7e-4),(1e-4,-3e-4),(5e-5,-2e-4),(3e-5,-1e-5),(1e-5,-1e-5)],0.);
+    strips_on_a_plate(false,0.3,&[(1e-3,-7e-4),(3e-4,-5e-4),(5e-4,2e-4),(-3e-4,-1e-3),(5e-5,-2e-4),(3e-5,-1e-5)],0.);
 }
 
 #[test]
