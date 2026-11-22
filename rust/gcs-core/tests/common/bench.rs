@@ -39,12 +39,15 @@ pub fn thin() -> (Brep,Trajectory,[f64;2],f64) {
 /// (2, 0, 0), seen from a frame turning by `observer` a radian about the line through
 /// (0, h cos 45°, h sin 45°), `h` 0.7071, along (cos 20°, sin 20° cos 45°, sin 20° sin 45°), over
 /// ±100°, at the bench's tolerance, a 50 000th of the tube.
-pub fn crossed(observer: f64) -> (Brep,Trajectory,[f64;2],f64) {
+pub fn crossed(observer: f64) -> (Brep,Trajectory,[f64;2],f64) { crossed_moved(observer,|o| o) }
+
+/// `crossed` with its observer's origin `(0, h cos 45°, h sin 45°)` as `moved` gives it back.
+pub fn crossed_moved(observer: f64,moved: impl FnOnce([f64;3]) -> [f64;3]) -> (Brep,Trajectory,[f64;2],f64) {
     let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.22).unwrap();
     let (sl,cl) = 45f64.to_radians().sin_cos();
     let (sa,ca) = 20f64.to_radians().sin_cos();
     let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.7,advance:0.});
-    let frame = Trajectory::Twist(Screw {origin:[0.,0.7071*cl,0.7071*sl],axis:[ca,sa*cl,sa*sl],
+    let frame = Trajectory::Twist(Screw {origin:moved([0.,0.7071*cl,0.7071*sl]),axis:[ca,sa*cl,sa*sl],
         ratio:observer,advance:0.});
     let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
     (tool,path,[-100f64.to_radians(),100f64.to_radians()],0.22/50_000.)

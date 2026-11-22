@@ -2536,7 +2536,15 @@ keeping its label is the same one, and its place round the meridian decides only
 changes. Followed by its place alone, the crossed tori's contact beside such a meridian — `ψ`
 turning half a turn within a 256th of a turn of the angle — was taken for the other branch and the
 instant refused (forward at 1.32689, reverse at 0.47042: the bench's `Curved` before the road
-began), or read as one curve round twice.
+began), or read as one curve round twice; the reverse's near miss (`B` within 7e-4 of the scale
+over 0.44–0.52, never through nought) reads the same changes with the observer's origin moved by an
+ulp or a millionth (`swept_rings::the_crossed_tori_are_read_at_every_roll_by_their_contacts_labels`,
+slow tier). The cases already built read alike: none touches a meridian whole for an instant. **Not
+built either side of the instant yet**: the forward is built over the roll up to 72° (40 faces,
+checked at the call's tolerance) and refused `Folded` at 74.5°, its rows 0.026 short of the instant
+already bending too sharply; the reverse is refused before its near miss and before its first fold
+pair is born (`Wrong` at a roll's end of 5°, a face's boundary through its own point at 6.5°,
+`Folded` from 24°), refusals of the trim and the arrangement of their own.
 
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,

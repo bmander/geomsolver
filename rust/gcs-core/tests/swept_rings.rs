@@ -10,7 +10,7 @@ use gcs_core::brep::swept::rings::{Corner,Ring,Side,admits,contacts};
 use gcs_core::brep::topo::Brep;
 use gcs_core::brep::trajectory::Trajectory;
 use gcs_core::model::SolidDef;
-use crate::common::bench::{Runner,crossed,cubic,runner,thin,tumbling};
+use crate::common::bench::{Runner,crossed,crossed_moved,cubic,runner,thin,tumbling};
 
 /// The sweep `name` of `text` as the kernel takes it: its tool's B-rep, its trajectory and its roll.
 fn sweep(text: &str,name: &str) -> (Brep,Trajectory,[f64;2]) {
@@ -1250,16 +1250,44 @@ fn a_meridian_touched_whole_for_an_instant_is_found_exactly_and_refused_by_name(
         }
         assert!(matches!(admits(&tool,&path,roll),Err(Unbuilt::Curved {..})));
     }
-    // (the contact read at every roll the shape changes are sought at: the forward's fold pairs born
-    // and dying, its curves keeping their kinds through the meridian touched whole)
+    // (and no case already built touches a meridian whole for an instant)
+    for (tool,path,roll,_) in [tumbling(90.),tumbling(180.),thin()] {
+        assert!(Ring::read(&tool).unwrap().touched_once(&path,roll).unwrap().is_empty());
+    }
+}
+
+/// **The crossed tori are read at every roll by their contacts' labels** (#880 T1f, `Ring::instant`;
+/// the slow tier): each instant's contact followed from angle to angle by its label. Read by its
+/// place round the meridian alone, the crossed tori's contact, its `ψ` turning half a turn within a
+/// 256th of a turn beside a meridian all but touched whole, was taken for the other branch and the
+/// instant refused (the forward at 1.32689, the reverse at 0.47042: the bench's `Curved` before the
+/// road began). The forward's fold pairs are born and die at the four rolls below, its curves keeping
+/// their kinds through the meridian touched whole at 1.3264280599. In the reverse, over 0.44–0.52
+/// of its roll, a meridian is all but touched whole (`B` at `A`'s nought within 7e-4 of the terms'
+/// scale, never through it), the contact's `ψ` turning half a turn within a few thousandths of an
+/// angle. Read by its label, each instant's contact is read at every roll the shape changes are
+/// sought at, and the changes — a fold pair born and vanishing about the near miss — stand where
+/// they stood with the observer's origin moved by an ulp along `y` (to 1e-9) and by a millionth (to
+/// 1e-4, what the move moves them); the meridian touched whole at 0.9003349192 stays one instant,
+/// moved as little.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 2 min: four rolls of 4096 instants")]
+fn the_crossed_tori_are_read_at_every_roll_by_their_contacts_labels() {
+    use gcs_core::brep::swept::rings;
     let (tool,path,roll,_) = crossed(1.);
     let ring = Ring::read(&tool).unwrap();
     let (_,cuts) = rings::changes(&ring,&path,roll).unwrap_or_else(|u| panic!("{u:?}"));
     let known = [0.257430212274,0.612894065505,1.224039779171,1.383259823825];
     assert_eq!(cuts.len(),known.len(),"{cuts:?}");
     for (c,k) in cuts.iter().zip(known) { assert!((c-k).abs() < 1e-9,"{cuts:?}") }
-    // (and no case already built touches a meridian whole for an instant)
-    for (tool,path,roll,_) in [tumbling(90.),tumbling(180.),thin()] {
-        assert!(Ring::read(&tool).unwrap().touched_once(&path,roll).unwrap().is_empty());
+    let known = [0.102140087076,0.105978753943,0.442232830369,0.483358523288,1.329460825143];
+    for (by,within) in [(0.,1e-9),(f64::NAN,1e-9),(1e-6,1e-4)] {
+        let (tool,path,roll,_) = crossed_moved(-1.,|mut o| { o[1] = if by.is_nan() { f64::from_bits(o[1].to_bits()+1) } else { o[1]+by }; o });
+        let ring = Ring::read(&tool).unwrap();
+        let (_,cuts) = rings::changes(&ring,&path,roll).unwrap_or_else(|u| panic!("moved {by}: {u:?}"));
+        assert_eq!(cuts.len(),known.len(),"moved {by}: {cuts:?}");
+        for (c,k) in cuts.iter().zip(known) { assert!((c-k).abs() < within,"moved {by}: {cuts:?}") }
+        let once = ring.touched_once(&path,roll).unwrap();
+        assert!(once.len() == 1 && (once[0].0-0.900334919170).abs() < within.max(1e-11),"moved {by}: {once:?}");
     }
 }
