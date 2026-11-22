@@ -8,6 +8,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A run ends past a short end face only along an edge no longer than its section** (#994):
+  `fillet::end_at` walks an end face's edges with the run's faces only where the edge is no longer
+  than the section's size (a round's radius, a flat's longer leg), so the faces past the far end
+  of an end face as long as the run's whole end (a hub's side an arm's round ends on) do not end it.
 - **Two cylinders whose axes lean apart meet in closed-form loops** (#994, fixture 146): new
   `ssi::crossed_cylinders`/`cylinder_loops`. Where the lesser goes right through the other, the
   meeting is two closed traces whose points are the graph of the meeting over the lesser's angle,

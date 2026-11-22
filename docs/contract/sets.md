@@ -540,16 +540,16 @@ beyond the blend's end holding a centre back only near it. The set was then read
 distance past every number, so `Run` read every point there as one no ball covers. A point stood on
 that keeps every condition is of the set, and its distance no less than the nearest's; and where
 the conditions read where a step landed have no point in common (a chain read through another face
-a hair inside the body), the step is taken back half way, a few times, first. **At a distance from
-a surface on the side the set holds its point** (`c not in a.smooth; c distance(r)
-boundary(a.smooth)`, `std.rounds`' `rolled`, [rounds.md](rounds.md)) the reading is the nearest
-face's side signed toward the side held, not the distance's size, whose gradient turns over on the
-surface (a step from a point on it, or a hair within it, went to the other side and the program had
-no point); what the surface's offset closes onto where it does, as the centres' own bound reads it
-(`closed_onto`: a post's axis within it, a fill's round's outside it); and for a chain bulging
-toward that side, the centres' own conditions (each face's side carried on past it) with the nearest
-face's signed side at most the distance — the offset of a fill's floor, round and wall, which a
-nearest face alone stepped round without settling (`tests/round_onto_round.rs`). **A face
+a hair inside the body), the step is taken back half way, a few times, first. **A set stated as another's terms
+and more, measured less that one** (`d(p, E) − d(p, M)`, `E` within `M`: `std.rounds`' `rolled`
+within `centres`, [rounds.md](rounds.md); #994, `region::general`'s `measured`) is read as the
+distance from `M`'s point nearest `p` to `E`, at least the difference: nothing where that point is
+of `E` (a ball rolled along the edge), however each set's own nearest point is found, and nothing
+to say where `M`'s is found nowhere. Read as two projections, `E`'s a set of no inside — the
+centres of a ball touching both faces, two points where a boss crosses a filled edge — its own
+steps did not settle under a chain read through its faces' own surfaces past their creases (a
+fill's round cut across by the boss), and half the gate's probes of the boss's fill went wrong
+(`tests/round_onto_round.rs`). **A face
 standing between the point and the chain's nearest patch is gone round only where it bounds the
 chain nearer the point than any face not of the chain does** (#994, `BodyFaces::nearest_face`):
 past a band's floor's rim at its bowed side, the side bounds the clevis's eye 36 mm off at its far

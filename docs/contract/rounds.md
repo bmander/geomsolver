@@ -970,7 +970,8 @@ sides that no ball covers, within the run's ends and nearest the crease of the f
 straight edge between two planes, the floor's along the band's end 45 mm off, took the blend's end
 for its own, and the construction, rightly, did not (the gate never probes there; the comparison
 over the whole body found it, 8 to 10 points in 3600). Both now say also `distance(p, rolled) <=
-distance(p, centres) + r`, `rolled` the centres of the ball touching both faces: the point's
+distance(p, centres) + r`, `rolled` the centres of the ball touching both faces (the centres' own
+terms and `c distance(<= r)` from each face, read from the nearest centre, [sets.md](sets.md)): the point's
 nearest rolled ball stands no more than a radius further off than its nearest ball of all. Every
 point a rolled ball leaves has its nearest centre on that ball's spine (the difference nothing),
 whatever the faces' angle, and a pocket elsewhere has the spine across the body (`lowering`'s
@@ -1328,8 +1329,12 @@ on a plate, Pappus; `sphere_rounds::a_vane_whose_sides_are_about_another_axis_ro
 **An end of several faces, and a face too short for its ball** (#994, fixture 147: a vane's toe
 cut by a slope `1e-4` over the crown, its upright face a sliver). A ball rolled along a run ends on
 the faces at its vertex, and, past an end face shorter than the section, on every face beyond it
-that faces on past the end: each edge an end face makes with the run's faces is followed to its
-other vertex, and a face there whose outward normal turns more than a degree from square to the
+that faces on past the end: each edge an end face makes with the run's faces, no longer than the
+section's size (a round's radius, a flat's longer leg: the lowering's `Section::size`, the field's
+`region::general::section_size`, the kernel's `end_at`'s `size`), is followed to its other vertex
+— walked along edges of any length, an arm's round ending on a hub's side took the hub's far
+faces and the arm's own other side for ends, and the fill along a rod's shank the small end's
+cylinder 100 mm off, where the dome and the fill have none (`standing_ends`, `conrod`, #994) — and a face there whose outward normal turns more than a degree from square to the
 run, off its end (`brep::fillet::faces_on`), cuts the run off too, kept on its material's side —
 one rule, read by the kernel (`fillet::end_at`, the face's edges none of the ball's band) and by
 the field (`BodyFaces::end_faces`'s `beyond_end`, a rolled run's alone) — a face no closed form
