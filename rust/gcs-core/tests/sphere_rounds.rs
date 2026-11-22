@@ -17,7 +17,7 @@ use gcs_core::brep::props;
 use std::f64::consts::PI;
 
 use crate::common::close;
-use crate::common::rounds::{crown_ball, crown_section, exported, gauss_legendre, kinds, meridian_fill, refused, rolled_over, V};
+use crate::common::rounds::{crown_ball, crown_section, exported, gauss_legendre, kinds, meridian_fill, refused, rolled_over, square_run, V};
 use crate::common::text::{dof, solved};
 
 /// A disc of radius 100 whose crown is a sphere of radius `big` about (0, 0, `zc`) — over the
@@ -337,7 +337,7 @@ fn a_vane_on_a_flat_disc_leaves_no_sliver() {
         disc := solid(std.solids.Revolution(section, about: std.z))\n{}", &src[cut..]);
     let b = exported(&solved(&flat), "part");
     let r = 2.0;
-    close(props::volume(&b), PI * 1e4 * 3.0 + 70.0 * 4.0 * 28.0 + (1.0 - PI / 4.0) * r * r * 2.0 * (70.0 + 4.0));
+    close(props::volume(&b), PI * 1e4 * 3.0 + 70.0 * 4.0 * 28.0 + square_run(r) * 2.0 * (70.0 + 4.0));
     assert_eq!(gcs_core::brep::sliver::slivers(&b, 1e-3).len(), 0);
 }
 
@@ -578,7 +578,7 @@ fn toe_side_volume(h: f64, r: f64) -> f64 {
     let rise = |x: f64| h + q * (90.0 - x);
     let at = |t: f64| 90.0 - (t - h) / q;
     PI * 1e4 * 3.0 + 4.0 * 28.0 * (at(28.0) - 20.0) + quad([at(28.0), 90.0], &|x| 4.0 * rise(x))
-        + (1.0 - PI / 4.0) * r * r * 70.0
+        + square_run(r) * 70.0
 }
 
 /// **A vane's side rounded where a slope left a sliver at its toe runs out past it** (#994,

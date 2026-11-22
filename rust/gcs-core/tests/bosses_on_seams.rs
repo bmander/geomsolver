@@ -18,7 +18,7 @@
 use gcs_core::brep::props;
 use std::f64::consts::PI;
 
-use crate::common::rounds::{exported, refusal};
+use crate::common::rounds::{exported, refusal, square_run};
 use crate::common::text::solved;
 
 /// The flange's half length between its half circles' centres, their centres' `y`, their radius
@@ -243,7 +243,7 @@ fn the_computation_is_the_closed_form_clear_of_the_seam() {
     let (r, rb, below): (f64, f64, f64) = (10.0, 46.76, 20.84);
     let obround = 4.0 * L * R + PI * R * R;
     let segment = rb * rb * (below / rb).acos() - below * (rb * rb - below * below).sqrt();
-    let a = (1.0 - PI / 4.0) * r * r;
+    let a = square_run(r);
     let inset = (10.0 - 3.0 * PI) / (3.0 * (4.0 - PI)) * r;
     let chord = |t: f64| {
         let u = r * (1.0 - t.cos());

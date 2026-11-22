@@ -18,7 +18,7 @@ use gcs_core::brep::props::volume;
 use gcs_core::brep::topo::Brep;
 use std::f64::consts::PI;
 
-use crate::common::rounds::gauss_legendre;
+use crate::common::rounds::{composite,gauss_legendre};
 use crate::cylinders_touching::TOL;
 
 /// A rod of radius `r` about the line through `c` along `d` (unit), `half` either side.
@@ -29,16 +29,6 @@ fn rod(c: V,d: V,r: f64,half: f64) -> Brep {
     prism(&Profile {names:vec![],origin:c,normal:d,loops:vec![vec![circle]]},-half,half).unwrap()
 }
 
-/// `∫ f` over `[a, b]` by Gauss–Legendre, eight points on each of `n` panels.
-fn gauss(a: f64,b: f64,n: usize,f: impl Fn(f64) -> f64) -> f64 {
-    let rule = gauss_legendre(8);
-    let h = (b-a)/n as f64;
-    (0..n).map(|k| {
-        let m = a+h*(k as f64+0.5);
-        rule.iter().map(|&(x,w)| w*f(m+0.5*h*x)).sum::<f64>()*0.5*h
-    }).sum()
-}
-
 /// What two infinite rods share: radii `r` and `s`, axes leaning `theta` apart with a gap `e`
 /// along their common normal.
 fn shared(r: f64,s: f64,theta: f64,e: f64) -> f64 {
@@ -47,7 +37,7 @@ fn shared(r: f64,s: f64,theta: f64,e: f64) -> f64 {
     // own panels' ends
     let lo = ((e-s)/r).clamp(-1.,1.).asin();
     let hi = ((e+s)/r).clamp(-1.,1.).asin();
-    4./theta.sin()*gauss(lo,hi,400,|phi| strip(r*phi.sin())*r*phi.cos())
+    4./theta.sin()*composite(&gauss_legendre(8),lo,hi,400,&|phi| strip(r*phi.sin())*r*phi.cos())
 }
 
 /// The rods: radius 6 along x, and `6 + dr` turned `theta` from it about z, lifted `e`.
@@ -129,7 +119,7 @@ fn a_groove_in_a_pockets_floor_through_its_ends_axes() {
             prism(&Profile {names:vec![],origin:[0.;3],normal:[1.,0.,0.],loops:vec![vec![circle]]},-1.,101.).unwrap()
         };
         let (lo,hi) = (24f64.max(30.+dy-rho),36f64.min(30.+dy+rho));
-        let shared = gauss(-PI/2.,PI/2.,400,|phi| {
+        let shared = composite(&gauss_legendre(8),-PI/2.,PI/2.,400,&|phi| {
             // y over the stretch where both are, by y = m + h sin φ
             let (m,h) = (0.5*(lo+hi),0.5*(hi-lo));
             let y = m+h*phi.sin();
