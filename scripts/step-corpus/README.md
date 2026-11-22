@@ -154,7 +154,9 @@ STEP_CORPUS=/home/user/step-corpus cargo test -j 2 -p gcs-core -- step_corpus:: 
 
 `STEP_CORPUS_ONLY=cadgenbench/` reads only the files whose path starts so, `STEP_CORPUS_THREADS`
 sets how many at once. Each file is read once for the three tests (on November 21, 2026, the
-reader refusing every solid, the 3,139 files took 7–20 s on four busy cores). Two quick tests run
+reader refusing every solid, the 3,139 files took 7–20 s on four busy cores; on November 22,
+reading 3,013 of 3,177 and each face's area measured once, 18–22 minutes three at once on four
+cores loaded to 12–15 by other builds). Two quick tests run
 in the ordinary suite: the table is whole (`the_table_is_whole`) and the hash is SHA-256.
 
 What counts as right, per row's `ref_from`: `closed` (the case's closed forms, at the bench's
@@ -198,22 +200,31 @@ writer states its curves only to `u`, and the two readers show it: on the files 
 0.02 mm the measured `tol` alone (`K × Σ tol·length`) would flag 17 files whose faces OCCT and
 the measurer themselves read apart by more than it (CADGenBench 206's torus #58555: OCCT
 24.5749, the measurer 24.5610, the kernel 24.5694, measured slack 0.001, `u`'s 1.3), and twice or
-four times it still 16 and 13; with `max(tol, u)` four, all of them 229's face below. `REL = 1e-6` is the readers' quadrature: on the 115,054 faces of the files the
-totals pass, past their slack the worst agreeing face stands at 9.4e-8 of its area (kentron's
-helical pipe), so 1e-6 leaves ten; `ABS = 1e-9` mm² a face of no area. Measured on the corpus
-(November 22, 2026), `TOL` = 1 and 0.5 flag the same five files, 0.25 eleven (CADGenBench 204,
-209 and 246's faces by OCCT alone, within their slack), 0.1 sixteen; `REL` = 1e-7 the same five,
-1e-8 nine. The five are the four variants of CADGenBench 229, whose face #14114 the kernel reads
-1.8% under both readers (229 itself fails in total), and an inch variant OCCT misreads (below).
+four times it still 16 and 13; with `max(tol, u)` four, all of them 229's face below.
+
+`REL = 1e-6` is the readers' quadrature: on the 116,298 faces of the files the totals pass,
+past their slack the worst face agreeing with a reader stands at 9.4e-8 of its area (kentron's
+helical pipe), so 1e-6 leaves ten; `ABS = 1e-9` mm² a face of no area. Measured on the whole
+corpus at the merged tree (November 22, 2026): `TOL` = 1 and 0.5 flag the same four files,
+0.25 nine (CADGenBench 204 and 246's faces by OCCT alone, within their slack), 0.1 eighteen;
+`REL` = 1e-7 the same four, 1e-8 seven. The four are the variants of CADGenBench 229, whose face
+#14114 the kernel reads 1.8% under both readers (229 itself fails in total).
+
+A reader is no reference for any face of a file whose faces it sums to an area that is not the
+file's (outside the row's bar of its reference or its second reading): it has misread a face
+somewhere, and OCCT reads each sphere of `balls-meeting-through-a-pole` as a quarter of itself.
+The measurer is held to that only where it measured every face.
 
 Where the two readers both measure a face, the reading must be within its bar of each where they
-agree within it, and of either where they do not (`disputed`, as a file is: 370 faces, mostly an
-extrusion or B-spline face of a brep-bench file OCCT measures 4% off its closed form, as on
-cad-kernel's `peanut-prism`). Where one alone does, of that one. A face neither measures is not
-compared and is counted. A file whose OCCT faces are not the file's (OCCT drops a void's shell,
-reads fewer faces) is held to the measurer alone; one with neither table, or tables of other
-bytes than the file's (the first line of `.mass.faces.tsv` is its DATA's SHA-256, the JSON's
-`data_sha256` OCCT's), is not compared and said: never taken for agreement. A file read right in
+agree within it, and of either where they do not (`disputed`, as a file is: 137 faces, among
+them an extrusion face of `peanut-prism` OCCT measures 4% off its closed form). Where one alone
+does, of that one. A face neither measures is not compared and is counted. A file whose OCCT
+faces are not the file's (OCCT drops a void's shell, reads fewer faces) is held to the measurer
+alone; one with neither table, or tables of other bytes than the file's (the first line of
+`.mass.faces.tsv` is its DATA's SHA-256, the JSON's `data_sha256` OCCT's), is not compared and
+said: never taken for agreement. `nothing_is_read_wrong` prints the count of files compared face
+by face and of those not, with why (on the merged tree: all 3,013 files read, 121,924 faces, 137
+of them disputed, none unmeasured; 132 mutants read, 700 faces). A file read right in
 total only as its row's second reading (`alt`: a disputed file's measurer's, a mutant's unedited
 source's) is not held face by face, the oracle's faces being the first reading's.
 
