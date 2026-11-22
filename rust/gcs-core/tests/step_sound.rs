@@ -312,7 +312,7 @@ fn on_cylinder(at: &[[f64;2]],seam: bool) -> Brep {
 #[test]
 fn a_band_whose_seam_leans_is_read() {
     faces_sound("a band with a leaning seam",&on_cylinder(&[[0.,0.],[TAU,0.],[TAU+1.,1.],[1.,1.]],true));
-    refused(&on_cylinder(&[[0.,0.],[TAU+2.,0.],[TAU+3.,1.],[1.,1.]],false),Some(0),None,"overlaps itself");
+    refused(&on_cylinder(&[[0.,0.],[TAU+2.,0.],[TAU+3.,1.],[1.,1.]],false),Some(0),None,"overlap");
 }
 
 /// **A use whose curve in its face's parameters leaps a period is refused**, the face its

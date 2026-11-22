@@ -369,17 +369,25 @@ impl<'a> Drawn<'a> {
                 if !(wide || ends || p.sag > l/16. || !(along > 0.125 && along < 0.875)) { continue }
                 if let Some((s,from,to)) = self.leap(p) {
                     let surface = &self.b.faces[self.fi].surface;
-                    let (by,tau) = (dist(from,to),self.runs[r].tau);
+                    // (the edge's tolerance and its vertices': a use's end is read at its
+                    // vertex, which may stand off its curve by the vertex's tolerance)
+                    let e = self.runs[r].e;
+                    let (by,tau) = (dist(from,to),self.runs[r].tau+e.v.iter().map(|&v| self.b.vertices[v as usize].tol).fold(0.,f64::max));
                     let apart = distance(surface.point(from),surface.point(to));
                     let period = (0..2).find(|&k| periods[k].is_some_and(|t| ((to[k]-from[k]).abs()/t-1.).abs() < 1e-3));
                     // how far the surface's greater speed carries the leap, and whether it
                     // collapses there (a pole, a spline sheet's collapsed row)
-                    let (mut fast,mut least) = (0f64,f64::INFINITY);
+                    // the surface's greater speed and its least (the Jacobian's least singular
+                    // value) across the leap, and whether it collapses there (a pole, a spline
+                    // sheet's collapsed row)
+                    let (mut fast,mut slow,mut least) = (0f64,0f64,f64::INFINITY);
                     for x in [from,[(from[0]+to[0])/2.,(from[1]+to[1])/2.],to] {
                         let (_,su,sv) = surface.d1(x);
                         let f = norm(su).max(norm(sv));
+                        let a = norm(crate::util::space::cross(su,sv));
                         fast = fast.max(f);
-                        least = least.min(norm(crate::util::space::cross(su,sv))/(f*f));
+                        slow = slow.max(a/f);
+                        least = least.min(a/(f*f));
                     }
                     let how = if let Some(k) = period { format!("a period of its {}",["u","v"][k]) }
                         else if apart > 2.*tau { format!("{apart:e} mm in space, past twice its tolerance") }
@@ -387,7 +395,11 @@ impl<'a> Drawn<'a> {
                         // `check` lets a corner's two ends stand apart: a tolerant corner's slop)
                         else if by <= 1e-3_f64.max(2.*tau/fast) { continue }
                         else if least <= 1e-3 { "along a pole, one point in space: the use's end read on another branch of the pole than its curve".to_string() }
-                        else { format!("{apart:e} mm in space but {:e} as the surface's greater speed carries it",by*fast) };
+                        // (where the surface is regular, a leap its least speed carries no
+                        // farther than twice the tolerance is that slop too, read across a
+                        // surface faster one way than the other)
+                        else if by*slow <= 2.*tau { continue }
+                        else { format!("{apart:e} mm in space, its ends {by:e} apart in the parameters of a surface that meets itself there: across a closed sheet's seam") };
                     return Err(at_uv(self.fi,&format!("edge {}'s curve in its parameters leaps {by:e} ({how}) at {s:.6} of its use's way: it is no one curve there",
                         self.runs[r].c.edge),from))
                 }
@@ -508,19 +520,34 @@ impl<'a> Drawn<'a> {
         }
         // each image read against the face itself, never against another image
         self.crossings(Some(n))?;
-        // and, its boundary nowhere crossing the face's, inside it nowhere: each of its runs'
-        // middles wound by the face's loops as the face's inside is, the image overlaps the face
-        // (their boundaries meeting along a stretch, never crossing)
+        // and, its boundary nowhere crossing the face's, covering no point of the surface
+        // twice: beside each run's middle, of the face and of each image, the face's loops and
+        // all their images together wind a point as the face's inside is wound once, or not at
+        // all (a hole across the seam is wound -1 a period along, where the face's outer loop
+        // winds the same point of the surface +1); else two of them overlap, their boundaries
+        // meeting along a stretch, never crossing
         let want = if self.b.faces[self.fi].reversed { -1 } else { 1 };
-        let mids: Vec<Uv> = (n..self.pieces.len()).filter(|&i| i+1 == self.pieces.len() || self.pieces[i+1].run != self.pieces[i].run).map(|i| self.pieces[i].mid).collect();
-        for x in mids {
-            let mut w = 0;
-            let mut read = true;
-            for lk in 0..self.loops.len() {
-                match self.winding(lk,x) { Some(k) => w += k,None => { read = false; break } }
-            }
-            if read && w == want {
-                return Err(at_uv(self.fi,"its boundary a period along lies inside it: it overlaps itself",x))
+        let all: Vec<Uv> = std::iter::once([0.;2]).chain(shifts.iter().flat_map(|d| [*d,[-d[0],-d[1]]])).collect();
+        let beside: Vec<(Uv,Uv)> = (0..self.pieces.len()).filter(|&i| i+1 == self.pieces.len() || self.pieces[i+1].run != self.pieces[i].run).map(|i| {
+            let p = &self.pieces[i];
+            let (d,l) = ([p.p[1][0]-p.p[0][0],p.p[1][1]-p.p[0][1]],p.len());
+            let e = 4.*self.tol(p,p)+SAFE*p.sag;
+            let nrm = if l > 0. { [-d[1]/l*e,d[0]/l*e] } else { [0.;2] };
+            (p.mid,nrm)
+        }).collect();
+        for (x,nrm) in beside {
+            for y in [[x[0]+nrm[0],x[1]+nrm[1]],[x[0]-nrm[0],x[1]-nrm[1]]] {
+                let mut w = 0;
+                let mut read = true;
+                'shifts: for d in &all {
+                    let z = [y[0]-d[0],y[1]-d[1]];
+                    for lk in 0..self.loops.len() {
+                        match self.winding(lk,z) { Some(k) => w += k,None => { read = false; break 'shifts } }
+                    }
+                }
+                if read && w != 0 && w != want {
+                    return Err(at_uv(self.fi,&format!("it covers a point of its surface {} times: its turns a period apart overlap",w.abs()),y))
+                }
             }
         }
         Ok(())
