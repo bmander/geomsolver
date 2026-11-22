@@ -1238,8 +1238,6 @@ struct Arrangement<'a> {
     say: Narration,
     /// Which two faces are met (a trim's, `trimmed`): every two whose boxes meet where none.
     meet: Option<Meet<'a>>,
-    /// each sheet's face's grid of seeds (`FaceGrid`), read once for every face it meets
-    grids: std::sync::Mutex<BTreeMap<(Side,usize),std::sync::Arc<FaceGrid>>>,
 }
 
 /// Phase 1's findings: every edge against every face of the other solid.
@@ -1311,12 +1309,7 @@ impl<'a> Arrangement<'a> {
         let reach = Sides::new(n,|s| boxes[s].iter().fold(super::geom::EMPTY,|mut r,b| { super::geom::widen(&mut r,*b); r }));
         let clear = Sides::new(n,|s| boxes[s].iter().map(|bx| solids.all().all(|o| o == s || !overlap(bx,&reach[o],pad))).collect::<Vec<_>>());
         Arrangement {solids,located,pool,edges,cuts,first_edge,boxes,reach,clear,tol,pad,
-            shared:Default::default(),surface_of:BTreeMap::new(),say:Narration::new(),meet:None,grids:Default::default()}
-    }
-
-    /// Operand `s`'s face `fi`'s grid of seeds (`FaceGrid`), read the first time it is asked.
-    fn grid_of(&self,s: Side,fi: usize) -> std::sync::Arc<FaceGrid> {
-        self.grids.lock().unwrap().entry((s,fi)).or_insert_with(|| std::sync::Arc::new(FaceGrid::new(self.solids[s],fi))).clone()
+            shared:Default::default(),surface_of:BTreeMap::new(),say:Narration::new(),meet:None}
     }
 
     /// **The index of operand `s`'s face `fi`'s surface among the arrangement's** (`meeting::Shared`,
@@ -2133,8 +2126,8 @@ impl<'a> Arrangement<'a> {
         seeds.retain(|&p| !touches.touching(p) && !on_known(p));
         let started = crate::util::clock::Instant::now();
         // a sheet's or a face family's wall: no closed form says where a meeting may lie
-        let grid = if sb.sheet() { grid_seeds(b,fb,&self.grid_of(ob,fb),sa,tol) }
-            else if sa.sheet() { grid_seeds(a,fa,&self.grid_of(oa,fa),sb,tol) } else { Vec::new() };
+        let grid = if sb.sheet() { grid_seeds(b,fb,sa,tol) }
+            else if sa.sheet() { grid_seeds(a,fa,sb,tol) } else { Vec::new() };
         self.say.seeded(started.elapsed().as_secs_f64());
         // (only where both faces may be: a seed beyond their shared box traces nothing on them)
         seeds.extend(grid.into_iter().filter(|p| (0..3).all(|k| p[k] >= lo[k]-pad && p[k] <= hi[k]+pad))
@@ -2642,18 +2635,15 @@ fn on_known(c: &Curve,t: [f64;2],curves: &[Curve],touches: &[V],surface: &Surfac
     let hugged = |end: f64,other: f64| -> Option<f64> {
         if !on_meeting(c.point(end)) { return None }
         let k = (1..=64).find(|&k| off(end+(other-end)*k as f64/64.))?;
-        let (mut near,mut far) = (end+(other-end)*(k-1) as f64/64.,end+(other-end)*k as f64/64.);
-        loop {
-            let m = 0.5*(near+far);
-            if m == near || m == far { break Some(far) }
-            if off(m) { far = m } else { near = m }
-        }
+        let (near,far) = (end+(other-end)*(k-1) as f64/64.,end+(other-end)*k as f64/64.);
+        Some(crate::util::roots::bisect(near,far,|n,f| 0.5*(n+f),|n,f| { let m = 0.5*(n+f); m != n && m != f },|m| !off(m)).1)
     };
     // (a touch where the run is longer than the step a crossing's touch is read across, below)
     let step = 64.*reach/c.speed().max(1e-300);
-    let ends_read: Vec<(f64,bool)> = [(t[0],t[1]),(t[1],t[0])].into_iter()
-        .filter_map(|(e,o)| hugged(e,o).filter(|&h| h != e).map(|h| (e,(h-e).abs() > step))).collect();
-    let rest = [hugged(t[0],t[1]).unwrap_or(t[0]),hugged(t[1],t[0]).unwrap_or(t[1])];
+    let hugs = [hugged(t[0],t[1]),hugged(t[1],t[0])];
+    let ends_read: Vec<(f64,bool)> = t.into_iter().zip(hugs)
+        .filter_map(|(e,h)| h.filter(|&h| h != e).map(|h| (e,(h-e).abs() > step))).collect();
+    let rest = [hugs[0].unwrap_or(t[0]),hugs[1].unwrap_or(t[1])];
     let searched = if sampled.is_empty() { None } else if !(rest[0] < rest[1]) {
         // (hugging the surface from an end on the meeting the whole way: read at that end alone)
         Some(Vec::new())
@@ -4040,10 +4030,14 @@ fn off_patch(s: &super::geom::Surface,p: V,tol: f64) -> bool { s.bounded() && di
 /// Where a grid across face `fi` of `b`, in its parameters' box, crosses `other`: each grid line's
 /// change of sign in `other`'s implicit found by bisection, then pulled onto both surfaces by the
 /// trace, each kept only on `other`'s patch (`off_patch`). Seeds for curves no edge crosses.
-fn grid_seeds(b: &Brep,fi: usize,face: &FaceGrid,other: &super::geom::Surface,tol: f64) -> Vec<V> {
+fn grid_seeds(b: &Brep,fi: usize,other: &super::geom::Surface,tol: f64) -> Vec<V> {
+    const N: usize = 24;
     let f = &b.faces[fi];
-    let at = |i: usize,j: usize| face.at(i,j);
-    let grid: Vec<Vec<f64>> = face.points.iter().map(|row| row.iter().map(|&p| other.implicit(p)).collect()).collect();
+    let [[lo0,hi0],[lo1,hi1]] = parameters(b,fi,false);
+    let (lo,hi) = ([lo0,lo1],[hi0,hi1]);
+    let at = |i: usize,j: usize| [lo[0]+(hi[0]-lo[0])*i as f64/N as f64,lo[1]+(hi[1]-lo[1])*j as f64/N as f64];
+    let value = |uv: Uv| other.implicit(f.surface.point(uv));
+    let grid: Vec<Vec<f64>> = (0..=N).map(|i| (0..=N).map(|j| value(at(i,j))).collect()).collect();
     let mut seeds = Vec::new();
     let mut root = |a: Uv,b: Uv,fa: f64| {
         let (mut a,mut b,mut fa) = (a,b,fa);
@@ -4063,34 +4057,11 @@ fn grid_seeds(b: &Brep,fi: usize,face: &FaceGrid,other: &super::geom::Surface,to
         // the other's nearest foot leapt across, and nothing is seeded (the far side of a thin
         // tube's sheet, 0.03 off it either side of a seam, was seeded and traced from nothing)
     };
-    for i in 0..=GRID { for j in 0..=GRID {
-        if i < GRID && (grid[i][j] < 0.) != (grid[i+1][j] < 0.) { root(at(i,j),at(i+1,j),grid[i][j]); }
-        if j < GRID && (grid[i][j] < 0.) != (grid[i][j+1] < 0.) { root(at(i,j),at(i,j+1),grid[i][j]); }
+    for i in 0..=N { for j in 0..=N {
+        if i < N && (grid[i][j] < 0.) != (grid[i+1][j] < 0.) { root(at(i,j),at(i+1,j),grid[i][j]); }
+        if j < N && (grid[i][j] < 0.) != (grid[i][j+1] < 0.) { root(at(i,j),at(i,j+1),grid[i][j]); }
     } }
     seeds
-}
-
-/// How many spans a face's grid of seeds (`grid_seeds`) has each way.
-const GRID: usize = 24;
-
-/// **A face's grid of seeds** (`grid_seeds`): its parameters' box and the face's points at the
-/// grid's nodes, the same whatever surface it is read against.
-struct FaceGrid { lo: Uv,hi: Uv,points: Vec<Vec<V>> }
-
-impl FaceGrid {
-    fn new(b: &Brep,fi: usize) -> FaceGrid {
-        let [[lo0,hi0],[lo1,hi1]] = parameters(b,fi,false);
-        let (lo,hi) = ([lo0,lo1],[hi0,hi1]);
-        let mut g = FaceGrid {lo,hi,points:Vec::new()};
-        g.points = (0..=GRID).map(|i| (0..=GRID).map(|j| b.faces[fi].surface.point(g.at(i,j))).collect()).collect();
-        g
-    }
-
-    /// The grid's node `(i, j)` in the face's parameters.
-    fn at(&self,i: usize,j: usize) -> Uv {
-        let (lo,hi) = (self.lo,self.hi);
-        [lo[0]+(hi[0]-lo[0])*i as f64/GRID as f64,lo[1]+(hi[1]-lo[1])*j as f64/GRID as f64]
-    }
 }
 
 /// How many box pairs `separated_nets` reads before it leaves two sheets to the ordinary reader.

@@ -605,39 +605,29 @@ impl Brep {
         Brep {vertices,edges,faces:self.faces}
     }
 
-    /// **Every place `check` would refuse at `tol`, and by how much** (#942): each vertex off an
-    /// edge's curve, each corner where a loop's two pcurves part in space, and each pcurve off its
-    /// edge (the most of its nine readings) — read to the end, not the first; each `(what, the
-    /// measure, the tolerance it is held to)`. What the edges' and vertices' own tolerances allow
-    /// is said beside it, as `check` allows it.
+    /// **Every place `check` would refuse at `tol` by its measures, and by how much** (#942): each
+    /// vertex off an edge's curve (`vertex_off`), each corner where a loop's two pcurves part
+    /// (`corner_apart`), and each pcurve off its edge (`pcurve_readings`, the most of its readings) —
+    /// read to the end, not the first; each `(what, the measure, the tolerance it is held to)`. What
+    /// the edges' and vertices' own tolerances allow is said beside it, as `check` allows it.
     pub fn misfits(&self,tol: f64) -> Vec<(String,f64,f64)> {
         let mut out = Vec::new();
         for (i,e) in self.edges.iter().enumerate() {
-            if let EdgeCurve::Curve(c) = &e.curve {
-                for k in 0..2 {
-                    let v = &self.vertices[e.v[k] as usize];
-                    let d = distance(c.point(e.t[k]),v.p);
-                    let held = tol.max(e.tol).max(v.tol);
-                    if d > held { out.push((format!("edge {i} ({}): its {} vertex {:?} off its curve",c.kind(),["first","last"][k],v.p),d,held)) }
-                }
+            for k in 0..2 {
+                let Some((d,held)) = self.vertex_off(e,k,tol) else { continue };
+                if d > held { out.push((format!("edge {i} ({}): its {} vertex {:?} off its curve",e.curve.kind(),["first","last"][k],
+                    self.vertices[e.v[k] as usize].p),d,held)) }
             }
         }
         for (fi,f) in self.faces.iter().enumerate() {
             for l in &f.loops {
                 for (k,c) in l.iter().enumerate() {
                     let next = &l[(k+1)%l.len()];
-                    let (a,b) = (self.uv_ends(f,c)[1],self.uv_ends(f,next)[0]);
-                    let at = self.vertices[self.ends(c)[1] as usize].tol;
-                    let corner = tol.max(2.*(self.edges[c.edge as usize].tol+self.edges[next.edge as usize].tol)).max(2.*at);
-                    let d = distance(f.surface.point(a),f.surface.point(b));
-                    if d > corner { out.push((format!("face {fi} ({}): its loop parts between edges {} and {} at {:?}",f.surface.kind(),c.edge,next.edge,
+                    let (_,d,corner,parted) = self.corner_apart(f,c,next,tol);
+                    if parted { out.push((format!("face {fi} ({}): its loop parts between edges {} and {} at {:?}",f.surface.kind(),c.edge,next.edge,
                         self.vertices[self.ends(c)[1] as usize].p),d,corner)) }
                     let e = &self.edges[c.edge as usize];
-                    if matches!(e.curve,EdgeCurve::Degenerate) { continue }
-                    let most = (0..=8).map(|j| {
-                        let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/8.;
-                        distance(f.surface.point(c.pcurve.at(t,e,&f.surface,&self.vertices)),e.point(t,&self.vertices))
-                    }).fold(0f64,f64::max);
+                    let most = self.pcurve_readings(f,c).map(|(_,on,of)| distance(on,of)).fold(0f64,f64::max);
                     if most > tol.max(e.tol) { out.push((format!("face {fi} ({}): edge {} ({})'s pcurve off it",f.surface.kind(),c.edge,e.curve.kind()),most,tol.max(e.tol))) }
                 }
             }
@@ -645,16 +635,51 @@ impl Brep {
         out
     }
 
+    /// **Edge `e`'s vertex at its end `k` off its curve** (`check`'s measure): how far, and the
+    /// most it may be at `tol` — the edge's and the vertex's own tolerances allowing more. None for
+    /// a degenerate edge.
+    fn vertex_off(&self,e: &Edge,k: usize,tol: f64) -> Option<(f64,f64)> {
+        let EdgeCurve::Curve(c) = &e.curve else { return None };
+        let v = &self.vertices[e.v[k] as usize];
+        Some((distance(c.point(e.t[k]),v.p),tol.max(e.tol).max(v.tol)))
+    }
+
+    /// **Where use `c` of a loop of face `f` meets the next, `next`** (`check`'s measure): the two
+    /// pcurves' ends there, how far apart they put the corner in space, the most that may be at
+    /// `tol`, and whether they part — farther apart than that, or on another branch of the
+    /// surface's periods. Each pcurve's end stands within twice its edge's tolerance of the vertex
+    /// (its image to the curve, the curve's end to the vertex), so two ends within twice the sum (or
+    /// twice the vertex's own, the farthest a point merged into it stood).
+    fn corner_apart(&self,f: &Face,c: &Coedge,next: &Coedge,tol: f64) -> ([Uv;2],f64,f64,bool) {
+        let (a,b) = (self.uv_ends(f,c)[1],self.uv_ends(f,next)[0]);
+        let at = self.vertices[self.ends(c)[1] as usize].tol;
+        let corner = tol.max(2.*(self.edges[c.edge as usize].tol+self.edges[next.edge as usize].tol)).max(2.*at);
+        let d = distance(f.surface.point(a),f.surface.point(b));
+        ([a,b],d,corner,d > corner || (a[0]-b[0]).abs().max((a[1]-b[1]).abs()) > 1e-3)
+    }
+
+    /// **Use `c` of face `f` read against its edge** (`check`'s measure): at the edge's eighths, each
+    /// with the pcurve's point and the edge's — a line on a plane, straight in its parameters, at
+    /// its ends alone, where it is off it most.
+    fn pcurve_readings<'b>(&'b self,f: &'b Face,c: &'b Coedge) -> impl Iterator<Item = (usize,V,V)>+'b {
+        let e = &self.edges[c.edge as usize];
+        let flat = matches!((&f.surface,&e.curve),(Surface::Plane(_),EdgeCurve::Curve(Curve::Line {..})))
+            && c.pcurve.straight(e,&f.surface);
+        (0..=8).filter(move |&j| !flat || j%8 == 0).map(move |j| {
+            let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/8.;
+            (j,f.surface.point(c.pcurve.at(t,e,&f.surface,&self.vertices)),e.point(t,&self.vertices))
+        })
+    }
+
     /// `check`, each face `settled` marks (one carried whole from a solid checked before, #589)
     /// read for its loops' ends and its edges' uses alone: its geometry is what was checked.
     pub fn check_settled(&self,tol: f64,settled: &[bool]) -> Result<(),super::KernelError> {
         let mut uses = vec![(0usize,0usize);self.edges.len()];
         for (i,e) in self.edges.iter().enumerate() {
-            if let EdgeCurve::Curve(c) = &e.curve {
+            if let EdgeCurve::Curve(_) = &e.curve {
                 for k in 0..2 {
-                    let v = &self.vertices[e.v[k] as usize];
-                    let d = distance(c.point(e.t[k]),v.p);
-                    if d > tol.max(e.tol).max(v.tol) { return Err(format!("edge {i}: its {} vertex is {d:e} off its curve",["first","last"][k]).into()) }
+                    let Some((d,held)) = self.vertex_off(e,k,tol) else { continue };
+                    if d > held { return Err(format!("edge {i}: its {} vertex is {d:e} off its curve",["first","last"][k]).into()) }
                 }
                 if !(e.t[1] > e.t[0]) { return Err(format!("edge {i}: its parameters do not increase").into()) }
             }
@@ -673,14 +698,10 @@ impl Brep {
                     if c.reversed { u.1 += 1 } else { u.0 += 1 }
                     if settled { continue }
                     // the same place, reached on the same branch of the surface's periods
-                    let (a,b) = (self.uv_ends(f,c)[1],self.uv_ends(f,next)[0]);
-                    // each pcurve's end within twice its edge's tolerance of the vertex (its image to the
-                    // curve, the curve's end to the vertex), so two ends within twice the sum
-                    // (or twice the vertex's own, the farthest a point merged into it stood)
-                    let at = self.vertices[self.ends(c)[1] as usize].tol;
-                    let corner = tol.max(2.*(self.edges[c.edge as usize].tol+self.edges[next.edge as usize].tol)).max(2.*at);
-                    if distance(f.surface.point(a),f.surface.point(b)) > corner || (a[0]-b[0]).abs().max((a[1]-b[1]).abs()) > 1e-3 {
+                    let ([a,b],_,corner,parted) = self.corner_apart(f,c,next,tol);
+                    if parted {
                         if crate::debug() {
+                            let at = self.vertices[self.ends(c)[1] as usize].tol;
                             let kind = |c: &Coedge| self.edges[c.edge as usize].curve.kind();
                             eprintln!("topo: face {fi} breaks between edge {} ({}, tol {:e}) and edge {} ({}, tol {:e}) at vertex {:?} (tol {at:e}): {:?} and {:?} apart {:e}, corner {corner:e}",
                                 c.edge,kind(c),self.edges[c.edge as usize].tol,next.edge,kind(next),self.edges[next.edge as usize].tol,self.vertices[self.ends(c)[1] as usize].p,
@@ -702,12 +723,7 @@ impl Brep {
                         return Err(format!("face {fi} ({}): loop {li} breaks in parameters after use {k}: {a:?} to {b:?}",f.name).into())
                     }
                     let e = &self.edges[c.edge as usize];
-                    // a line on a plane, straight in its parameters, is off it most at an end
-                    let flat = matches!((&f.surface,&e.curve),(Surface::Plane(_),EdgeCurve::Curve(Curve::Line {..})))
-                        && c.pcurve.straight(e,&f.surface);
-                    for j in (0..=8).filter(|&j| !flat || j%8 == 0) {
-                        let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/8.;
-                        let (on,of) = (f.surface.point(c.pcurve.at(t,e,&f.surface,&self.vertices)),e.point(t,&self.vertices));
+                    for (j,on,of) in self.pcurve_readings(f,c) {
                         let d = distance(on,of);
                         if d > tol.max(e.tol) {
                             let kind = e.curve.kind();

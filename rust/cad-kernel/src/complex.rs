@@ -299,22 +299,6 @@ impl Complex {
                 let g = (y.0-x.0).rem_euclid(TAU);
                 g <= tie_between(radii[x.2],radii[y.2],tol) || turned_back(g,wrapped(y.1-x.1),step,tol)
             };
-            if super::debug() {
-                // the pairs a fitted surface's tie (`TANGENT`) ties and `turned_back` does not:
-                // ordered by a step in on that tie alone (#942, the ring's ends kept), with the
-                // tolerance's tie at the exact radius beside it where one is exact
-                for i in 0..k {
-                    let (x,y) = (&round[i],&round[(i+1)%k]);
-                    let g = (y.0-x.0).rem_euclid(TAU);
-                    let h = wrapped(y.1-x.1);
-                    let (rx,ry) = (radii[x.2],radii[y.2]);
-                    if (rx.is_none() || ry.is_none()) && g <= TANGENT && !turned_back(g,h,step,tol) {
-                        let exact = rx.or(ry).map(|r| tie_between(Some(r),Some(r),tol));
-                        eprintln!("complex: edge {e} near {m:?} ties faces {} ({}) and {} ({}) by the fitted tie: {g:e} apart, {h:e} a step in; the exact tie {exact:?}",
-                            uses[e][x.2].0,b.faces[uses[e][x.2].0].surface.kind(),uses[e][y.2].0,b.faces[uses[e][y.2].0].surface.kind());
-                    }
-                }
-            }
             let Some(s) = (0..k).find(|&i| !tied(&round[i],&round[(i+1)%k])) else {
                 return Err(format!("edge {e} near {m:?}: every face round it is tangent to every other"))
             };
