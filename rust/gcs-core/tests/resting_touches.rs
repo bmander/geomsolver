@@ -150,12 +150,9 @@ fn a_ball_clear_of_a_cylinder_or_a_torus_meets_it_in_no_curve() {
 /// **The document**: a hoop resting on a beam — a torus of tube `m` and radius `big` turned from
 /// the front plane, its top circle crossing the beam's lowest line, a cylinder of 20 across the
 /// side plane — unioned (on `main`: "a cylinder and a torus meet at …, where no edge crosses, in a
-/// curve that could not be traced"), is the two volumes; and the clevis of fixture 122's class, an
-/// eye on a band's end blended into the band's top by an R20 round, the band's far side an arc, and
-/// every edge of the top rounded — the round along the arc a torus resting on the blend where the
-/// blend leaves the top — built, exported, and its boundary the field's.
+/// curve that could not be traced"), is the two volumes.
 #[test]
-fn a_hoop_on_a_beam_and_a_rim_round_on_a_blend_are_built() {
+fn a_hoop_on_a_beam_is_built() {
     for (big,m) in [(3.,0.5),(8.,1.),(2.,0.25)] {
         let e = crate::common::text::solved(&format!("\
 unit mm
@@ -189,15 +186,23 @@ hoop union beam
         let v = volume(&x.brep);
         assert!((v-want).abs() <= 1e-9*want,"{what}: {v} against {want}");
     }
-    for (r,bow) in [(1.,-3.),(2.,-3.),(1.,-1.),(2.,-1.)] {
+}
+
+/// **The clevis of fixture 122's class**: an eye on a band's end blended into the band's top by an
+/// R20 round, the band's far side an arc bowed in under the eye, which stands out past it, and every
+/// edge of the top rounded `r` — the round along the arc a torus resting on the blend where the
+/// blend leaves the top — built, exported, and its boundary the field's over the whole body (#994:
+/// the floor's chain goes on into the blend and the blend into the eye, and parts about the side
+/// that ends the blend; the corner it leaves there no ball reaches, and the round of the band's end
+/// 45 mm off read it as its own, which the construction does not build — `std.rounds`' `rolled`).
+fn rim_round_on_a_blend(bow: f64) {
+    for r in [1.,2.] {
         let e = crate::common::text::solved(&clevis(r,bow));
         let what = format!("the clevis bowed {bow} rounded {r}");
         let b = crate::common::rounds::exported(&e,"whole");
-        // (about where the arc's round rests on the blend, `x` up to 42: past it, under the eye
-        // standing out beyond the bowed side, the field and the kernel part a hair's width apart,
-        // a separate matter of the blend's end)
-        let read = crate::common::rounds::field_is_the_kernels(&e,"whole",[25.,-60.,-15.],[42.,-30.,15.],0.2,3000);
-        assert!(read > 500,"{what}: {read} points read");
+        let read = crate::common::rounds::field_is_the_kernels(&e,"whole",[-5.,-60.,-15.],[70.,-30.,15.],
+                                                               0.2,2000);
+        assert!(read > 1000,"{what}: {read} points read");
         // the round takes from the blended band, and less than the rim's whole square would
         let before = volume(&crate::common::rounds::exported(&e,"part"));
         let taken = before-volume(&b);
@@ -205,15 +210,47 @@ hoop union beam
     }
 }
 
+#[test]
+fn a_rim_round_on_a_blend_bowed_in_by_1_is_the_fields() { rim_round_on_a_blend(-1.) }
+
+#[test]
+fn a_rim_round_on_a_blend_bowed_in_by_3_is_the_fields() { rim_round_on_a_blend(-3.) }
+
+#[test]
+fn a_rim_round_on_a_blend_bowed_in_by_6_is_the_fields() { rim_round_on_a_blend(-6.) }
+
+/// **The configuration alone** (#994): a straight band, the eye standing 2 out past its far side,
+/// so the blend at the band's floor is ended by that side and the eye goes on past it — the floor's
+/// chain parts about the side — and the floor's every edge rounded: field and kernel over the whole
+/// body, and the round takes what the floor's rim's square would less the eye's stretch at most.
+#[test]
+fn a_rim_round_beside_a_blend_an_eye_stands_out_past_is_the_fields() {
+    for r in [1.,2.] {
+        let e = crate::common::text::solved(&clevis_to(r,0.,52.));
+        let what = format!("the straight band rounded {r}");
+        let b = crate::common::rounds::exported(&e,"whole");
+        let read = crate::common::rounds::field_is_the_kernels(&e,"whole",[-5.,-60.,-15.],[70.,-30.,15.],
+                                                               0.2,2000);
+        assert!(read > 1000,"{what}: {read} points read");
+        let taken = volume(&crate::common::rounds::exported(&e,"part"))-volume(&b);
+        assert!(taken > 0. && taken < (1.-PI/4.)*r*r*2.*(55.75+13.7),"{what}: {taken}");
+    }
+}
+
 /// The clevis: a band 55.75 long whose far side (`y = −50`) bows in by 3, an eye of 12.5 across it
 /// at its end, the eye blended into the band's top by a round of 20, and the top's every edge
 /// rounded by `r`.
-fn clevis(r: f64,bow: f64) -> String {
+fn clevis(r: f64,bow: f64) -> String { clevis_to(r,bow,50.) }
+
+/// The same, the eye reaching to `y = −reach`, and the far side straight where `bow` is nothing.
+fn clevis_to(r: f64,bow: f64,reach: f64) -> String {
     // the far side's arc from (0, −50) to (55.75, −50), its sagitta `bow` out of the band (into it
     // where it is less than nothing)
     let (l,h) = (55.75f64,bow.abs());
     let big = (h*h+l*l/4.)/(2.*h);
     let (y,sense) = if bow < 0. { (-50.-(big-h),"cw") } else { (-50.+(big-h),"ccw") };
+    let side = if bow == 0. { "line(a, b)".to_string() }
+               else { format!("arc(center: k, start: a, end: b, sense: {sense})") };
     format!("\
 unit mm
 use std
@@ -230,7 +267,7 @@ in std.top {{
   fix((0, -36.3)) d
   k := point
   fix(({x}, {y:.9})) k
-  e1 := arc(center: k, start: a, end: b, sense: {sense})
+  e1 := {side}
   e2 := line(b, c)
   e3 := line(c, d)
   e4 := line(d, a)
@@ -243,11 +280,11 @@ in std.front {{
   radius(12.5) eo
 }}
 plate := solid(std.solids.Prism(band, from: -5mm, to: 5mm))
-eye := solid(std.solids.Prism(face(eo), from: 36.3mm, to: 50mm))
+eye := solid(std.solids.Prism(face(eo), from: 36.3mm, to: {reach}mm))
 eye union plate
 part := solid(plate)
 blend := part.plate.eye.eo round(r: 20mm) part.plate.far
 whole := solid(part)
 whole.part.plate.far round(r: {r}mm) whole
-",x = l/2.)
+",x = l/2.,y = if bow == 0. { -60. } else { y })
 }

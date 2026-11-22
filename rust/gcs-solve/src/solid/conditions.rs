@@ -14,7 +14,7 @@
 //!   on past its patch at a convex corner.
 use super::faces::{along_run, BodyFaces, Reading};
 use crate::model::{RegionShape, RegionTerm, Sketch, Target};
-use crate::space::{dot, norm, scale, sub};
+use crate::space::{add, dot, norm, scale, sub};
 use crate::vocab::Cmp;
 use std::sync::Arc;
 
@@ -388,6 +388,42 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, sides_of: &Sides,
                             }
                         }
                     }
+                    // at a distance from it on the side the set holds its point (a ball's centre
+                    // touching a face, `std.rounds`' `rolled`, #994): the side of the face whose
+                    // patch is nearest, signed toward the side held, at that distance — so a
+                    // point on the surface, or a hair within it, steps that way, as the distance's
+                    // size, whose gradient turns over there, does not; on what the surface's offset
+                    // closes onto, where it does (a post's axis within it, a fill's round's
+                    // outside it); and for a chain bulging toward that side, at least that far as
+                    // a ball's centres are read (each face's side carried on past it) and no
+                    // further by the nearest face
+                    if t.cmp == Cmp::In && hi == lo && c > 0.0 {
+                        if let Some(beyond) = side_of(f) {
+                            let off = if beyond { -lo / c } else { lo / c };
+                            if let Some(on) = closed_onto(&r, off) {
+                                return Ok(Some(on));
+                            }
+                            let sigma = if beyond { c } else { -c };
+                            let bulging =
+                                r.convex_pieces().is_none() && r.bulging(beyond).is_some();
+                            let signed = sides(r, false).into_iter().map(move |side| -> Fv {
+                                Arc::new(move |x| {
+                                    let (s, g) = side(x);
+                                    (sigma * s, scale(g, sigma))
+                                })
+                            });
+                            if !bulging {
+                                return Ok(Some(signed.flat_map(held).collect()));
+                            }
+                            let ge = RegionTerm { cmp: Cmp::Ge, hi: None, ..t.clone() };
+                            let mut out =
+                                conditions(sk, &ge, read, sides_of, shell)?.unwrap_or_default();
+                            out.extend(signed.map(|m| {
+                                Cond { f: shift(m, lo + grow, 1.0), eq: false, convex: false }
+                            }));
+                            return Ok(Some(out));
+                        }
+                    }
                     // any other: off the side of the face whose patch is nearest — and, a smooth
                     // chain bulging no one way (a pocket's walls with a reflex corner), off each
                     // face's patch besides (`faces_apart`): what that reading says already, so the
@@ -530,13 +566,25 @@ fn closed_onto(r: &Reading, d: f64) -> Option<Vec<Cond>> {
 /// nearest: the steps stop there.  (Their own fixed point is no steadier: a step onto a surface
 /// curved tightly about a point far off — a ball's centres a hair short of closing onto a pocket
 /// corner's axis, seen from the corner — moves along it by the distance over the radius times any
-/// error in where the last step stood, and the steps wander round it.)
+/// error in where the last step stood, and the steps wander round it.)  Where the steps do not
+/// settle, the nearest point they stood on that keeps every condition (#994): a condition holding
+/// with no gradient is no row of a step (`faces_apart`'s face whose patch the point is not near),
+/// so a step from a point keeping it, its row gone, can land back where it fails, and the two
+/// alternate — a ball's centres about a blend ended by a side an eye stands out past, its patch
+/// beyond the blend's end holding a centre back only near it.  Such a point is of the set, and
+/// its distance no less than the nearest's: a centre found, never a set read as empty.  And where
+/// the conditions read where a step landed have no point in common, the step is taken back half
+/// way, a few times, before the nearest point stood on is all there is.
 fn nearest(cs: &[Cond], p: V) -> Option<V> {
     let tol = 1e-12 * (1.0 + norm(p));
     let kept = 1e-9 * (1.0 + norm(p));
+    let bar = 1e-7 * (1.0 + norm(p));
     let convex = cs.iter().all(|c| c.convex);
     let mut x = p;
     let mut rows: Vec<(V, f64, bool)> = Vec::with_capacity(cs.len());
+    // the nearest point stood on keeping every condition, and how far
+    let mut kept_at: Option<(f64, V)> = None;
+    let (mut last, mut halved) = (p, 0);
     for k in 0..80 {
         rows.clear();
         let mut off: f64 = 0.0;
@@ -552,19 +600,36 @@ fn nearest(cs: &[Cond], p: V) -> Option<V> {
         if convex && k > 0 && off <= kept {
             return Some(x);
         }
-        let y = project(p, &rows, tol)?;
+        if k > 0 && off <= bar {
+            let d = norm(sub(x, p));
+            if kept_at.is_none_or(|(e, _)| d < e) {
+                kept_at = Some((d, x));
+            }
+        }
+        // (where the conditions read where a step landed have no point in common — it stood
+        // where a chain is read through another face, a hair inside a body its patches are of —
+        // back half way toward where the last step stood, a few times)
+        let Some(y) = project(p, &rows, tol) else {
+            if halved < 8 && k > 0 {
+                halved += 1;
+                x = scale(add(x, last), 0.5);
+                continue;
+            }
+            return kept_at.map(|(_, y)| y);
+        };
         let step = norm(sub(y, x));
+        last = x;
         x = y;
         if step <= tol {
             break;
         }
     }
-    // only a point that keeps every condition
+    // only a point that keeps every condition: where the steps ended, or the nearest stood on
     let off = cs.iter().map(|c| {
         let v = (c.f)(x).0;
         if c.eq { v.abs() } else { v.max(0.0) }
     }).fold(0.0, f64::max);
-    (off <= 1e-7 * (1.0 + norm(p))).then_some(x)
+    if off <= bar { Some(x) } else { kept_at.map(|(_, y)| y) }
 }
 
 /// The nearest point to `p` of `{y : a·y ≤ b}` (`= b` where marked), at most three rows active:

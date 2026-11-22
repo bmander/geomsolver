@@ -4,6 +4,18 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+## [NEXT-clevis-gate]
+
+**A round is what its rolled ball leaves, not a pocket a chain leaves elsewhere** (#994).
+`std.rounds`' `Run` and `Fill` also say `distance(p, rolled) <= distance(p, centres) + r`, `rolled`
+the centres of the ball touching both faces (`c distance(r) boundary(a.smooth)`): the point's
+nearest rolled ball stands no more than a radius further off than its nearest ball of all. A
+face's smooth chain parting about a face not of it — a floor going on into a blend and the blend
+into an eye, the blend ended by a side the eye stands out past — bounds a corner no ball reaches,
+and through 0.228 a round of an edge 45 mm away read it as its own. Every point a rolled ball
+leaves keeps the new bound with nothing to spare; a point at a distance from a surface on the side
+a set holds its point is read by that side's signed distance.
+
 ## [NEXT-taper-root]
 
 **A band tapering to nothing is filleted and rounded to its toes** (#994). A fill at the foot of a

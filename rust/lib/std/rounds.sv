@@ -24,16 +24,24 @@
 // points within both faces' sides that no such ball within both covers; only where the point's
 // nearest point of the faces' meeting, short of where the edge ends, is on the edge (so surfaces
 // meeting where the body has no edge make nothing); so carried on past each end of the edge and
-// cut off there by the faces it ends on, however they stand.
+// cut off there by the faces it ends on, however they stand.  And only what the ball rolled along
+// the edge leaves — the ball touching both faces (`rolled`) standing no more than its radius
+// further off than the nearest ball within both (#994): a face's smooth chain may run far from
+// the edge and part about a face not of it (a block's floor going on into a blend and the blend
+// into an eye, the blend ended by the block's side the eye stands out past), and the corner it
+// makes there no ball reaches either, but no ball rolled along this edge comes near it.
 component Run(a: face, b: face, r: Length) symmetric(a, b) := { p |
   p in a.smooth
   p in b.smooth
   angle(a, b, at: p) <= 180deg
   centres := { c | c in a.smooth; c distance(>= r) boundary(a.smooth); c in b.smooth
                c distance(>= r) boundary(b.smooth) }
+  rolled := { c | c in a.smooth; c distance(r) boundary(a.smooth); c in b.smooth
+              c distance(r) boundary(b.smooth) }
   crease := { q | q in a; q in b }
   meeting := { q | q in boundary(a.side); q in boundary(b.side); q in crease.ends }
   distance(p, centres) >= r
+  distance(p, rolled) <= distance(p, centres) + r
   distance(p, crease) <= distance(p, meeting)
   p in crease.ends
 }
@@ -46,9 +54,12 @@ component Fill(a: face, b: face, r: Length) symmetric(a, b) := { p |
   angle(a, b, at: p) >= 180deg
   centres := { c | c not in a.smooth; c distance(>= r) boundary(a.smooth); c not in b.smooth
                c distance(>= r) boundary(b.smooth) }
+  rolled := { c | c not in a.smooth; c distance(r) boundary(a.smooth); c not in b.smooth
+              c distance(r) boundary(b.smooth) }
   crease := { q | q in a; q in b }
   meeting := { q | q in boundary(a.side); q in boundary(b.side); q in crease.ends }
   distance(p, centres) >= r
+  distance(p, rolled) <= distance(p, centres) + r
   distance(p, crease) <= distance(p, meeting)
   p in crease.ends
 }

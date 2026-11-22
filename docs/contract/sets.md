@@ -523,7 +523,31 @@ nearest; their own fixed point is not steady where a surface curves tightly abou
 off — a ball's centres a hair short of closing onto a corner's axis, seen from the corner, moved
 along it by the distance over the radius times any error in where the last step stood. A QP's
 active rows are chosen among every inequality, not the first ten (`project`).
-`tests/tight_corners.rs` is the gate. `d(p, E) <= d(p, M)` with `E` on the
+`tests/tight_corners.rs` is the gate. **Where the steps do not settle, the nearest point stood on
+that keeps every condition** (#994, `conditions::nearest`): a condition holding with no gradient is
+no row of a step, so a step from a point keeping it can land back where it fails, and the two
+alternate — a ball's centres beside a blend ended by a side an eye stands out past, the eye's patch
+beyond the blend's end holding a centre back only near it. The set was then read as empty, its
+distance past every number, so `Run` read every point there as one no ball covers. A point stood on
+that keeps every condition is of the set, and its distance no less than the nearest's; and where
+the conditions read where a step landed have no point in common (a chain read through another face
+a hair inside the body), the step is taken back half way, a few times, first. **At a distance from
+a surface on the side the set holds its point** (`c not in a.smooth; c distance(r)
+boundary(a.smooth)`, `std.rounds`' `rolled`, [rounds.md](rounds.md)) the reading is the nearest
+face's side signed toward the side held, not the distance's size, whose gradient turns over on the
+surface (a step from a point on it, or a hair within it, went to the other side and the program had
+no point); what the surface's offset closes onto where it does, as the centres' own bound reads it
+(`closed_onto`: a post's axis within it, a fill's round's outside it); and for a chain bulging
+toward that side, the centres' own conditions (each face's side carried on past it) with the nearest
+face's signed side at most the distance — the offset of a fill's floor, round and wall, which a
+nearest face alone stepped round without settling (`tests/round_onto_round.rs`). **A face
+standing between the point and the chain's nearest patch is gone round only where it bounds the
+chain nearer the point than any face not of the chain does** (#994, `BodyFaces::nearest_face`):
+past a band's floor's rim at its bowed side, the side bounds the clevis's eye 36 mm off at its far
+end, its own end and top nearer, so the floor's plane is read there, not the eye's cylinder, whose
+side, 36 off where the field is a hair past nothing, kept the gate's probe of the run's tangent line
+from being withdrawn ("disagrees with the field", `tests/resting_touches.rs`); a band's side on its
+plate bounds only faces of the chain, and reads as before (`tests/tapered_bands.rs`). `d(p, E) <= d(p, M)` with `E` on the
 patches of the faces `M` is on the surfaces of is read as `d(p, E) − d(p, rest)` (`Rest`: `M`'s
 nearest point when off `E`, and where `E`'s run ends), the same points with a negative inside.
 `ends` is `max σ·side` over the faces at each end of the run (σ the side it runs on), a face
