@@ -30,7 +30,8 @@
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 mod closed;
-use super::context::Found;
+use super::context::{Context,Found};
+use super::sound::Unsound;
 use super::geometry::{list,logical,Flat,Geometry,Sheet};
 use super::{Given,Refusal,Why};
 use crate::geom::{Curve,Frame,Surface,Uv,V};
@@ -1615,11 +1616,12 @@ fn meet(b: &Brep,f: &Face,g: &Face,e: usize) -> Option<bool> {
 /// sides of it, as they must with any neighbour they meet tangent (`meet`) — which leaves each group
 /// of them two readings, one the other turned — and of those the one the solid is sound with
 /// (`sound`: its shells facing out, a void in) is taken. Refused naming the face where both are, or
-/// where no reading of a group meets its neighbours.
+/// where no reading of a group meets its neighbours. Beside the faces taken, the last group's
+/// reading as `judge` finished and judged it, which is those faces (none where no face is doubled).
 fn twice(st: &Setting,other: &Setting,sheets: &BTreeMap<u32,Sheet>,faces: &[Walked],built: Vec<Built>,
-    finish: &dyn Fn(Vec<Built>) -> Result<Given,Refusal>,context: &super::context::Context) -> Result<Vec<Built>,Refusal> {
+    judge: &dyn Fn(Vec<Built>) -> Judged) -> Result<(Vec<Built>,Option<Judged>),Refusal> {
     let amb: Vec<usize> = (0..faces.len()).filter(|&i| doubled(st,&sheets[&faces[i].surface],&faces[i])).collect();
-    if amb.is_empty() { return Ok(built) }
+    if amb.is_empty() { return Ok((built,None)) }
     let b = st.b;
     // each read on the half of the sheet its first foot is on, and on the other
     let on: [BTreeMap<usize,Built>;2] = [st,other].map(|x| amb.iter().filter_map(|&i| face(x,&sheets[&faces[i].surface],&faces[i]).ok().map(|f| (i,f))).collect());
@@ -1642,6 +1644,8 @@ fn twice(st: &Setting,other: &Setting,sheets: &BTreeMap<u32,Sheet>,faces: &[Walk
     }
     let mut chosen: BTreeMap<usize,u8> = amb.iter().map(|&i| (i,0)).collect();
     let groups: BTreeSet<usize> = group.values().copied().collect();
+    // (the last group's reading taken, finished and judged: the faces handed back, as they are)
+    let mut last = None;
     for g in groups {
         let members: Vec<usize> = amb.iter().copied().filter(|i| group[i] == g).collect();
         // the group's two readings: from each reading of its first face, its others set by meeting
@@ -1683,7 +1687,8 @@ fn twice(st: &Setting,other: &Setting,sheets: &BTreeMap<u32,Sheet>,faces: &[Walk
                 None => built[i].clone(),
             }).collect()
         };
-        let sound: Vec<bool> = options.iter().map(|pick| finish(with(pick)).is_ok_and(|x| super::sound::sound(&x.brep,context).is_ok())).collect();
+        let judged: Vec<Judged> = options.iter().map(|pick| judge(with(pick))).collect();
+        let sound: Vec<bool> = judged.iter().map(|x| matches!(x,Ok((_,Ok(()))))).collect();
         match (options.len(),&sound[..]) {
             (0,_) => return Err(Refusal::unsupported(entity,"a face on a surface covering its points twice, read on neither of them meeting its \
                 neighbours as a solid's faces do: not read")),
@@ -1692,10 +1697,11 @@ fn twice(st: &Setting,other: &Setting,sheets: &BTreeMap<u32,Sheet>,faces: &[Walk
             _ => {
                 let k = sound.iter().position(|&x| x).unwrap_or(0);
                 for (&i,&o) in &options[k] { chosen.insert(i,o); }
+                last = judged.into_iter().nth(k);
             }
         }
     }
-    Ok((0..faces.len()).map(|i| chosen.get(&i).and_then(|&o| on[o as usize].get(&i).cloned()).unwrap_or_else(|| built[i].clone())).collect())
+    Ok(((0..faces.len()).map(|i| chosen.get(&i).and_then(|&o| on[o as usize].get(&i).cloned()).unwrap_or_else(|| built[i].clone())).collect(),last))
 }
 
 /// **A use of an edge lying along a row of its sheet's domain from end to end, read on that row**:
@@ -1779,29 +1785,47 @@ fn rows(b: &Brep,f: &Face,tau: f64) -> Option<Face> {
 }
 
 /// The solid `found` names, read; refused naming the entity that could not be.
-pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> { read_solid(file,found,&[]) }
+pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
+    let (p,built,judged) = prepare(file,&found)?;
+    match judged { Some(j) => j.map(|(g,_)| g),None => p.finish(built) }
+}
 
 /// **The solid `found` names, read and sound** (`sound`), or refused. Where `sound` refuses a face
-/// read by its edges' nearest feet, the solid is read again with that face's uses along its
-/// sheet's domain's rows laid on them (`rows`), and taken where that is sound — again for the next
-/// face it then refuses, up to eight; else the first refusal stands. A face sound as first read is
-/// never read again.
+/// read by its edges' nearest feet, that face's uses along its sheet's domain's rows are laid on
+/// them (`rows`), the rest of the solid as read, and the solid taken where that is sound — again
+/// for the next face it then refuses, up to eight; else the first refusal stands. A face sound as
+/// first read is never read again.
 pub fn sound_solid(file: &File,found: &Found) -> Result<Given,Refusal> {
-    let given = solid(file,found.clone())?;
-    let face = |u: &super::sound::Unsound,g: &Given| u.face.or_else(|| u.edge.and_then(|e| g.brep.faces.iter().position(|f| f.loops.iter().flatten().any(|c| c.edge as usize == e))));
-    let u = match super::sound::sound(&given.brep,&given.context) { Ok(()) => return Ok(given),Err(u) => u };
+    let (p,mut built,judged) = prepare(file,found)?;
+    let (given,verdict) = match judged { Some(j) => j?,None => p.judge(built.clone())? };
+    let face = |u: &Unsound,g: &Given| u.face.or_else(|| u.edge.and_then(|e| g.brep.faces.iter().position(|f| f.loops.iter().flatten().any(|c| c.edge as usize == e))));
+    let u = match verdict { Ok(()) => return Ok(given),Err(u) => u };
     let refusal = u.refusal(&given);
     let (mut rowed,mut at) = (Vec::new(),face(&u,&given));
     while let Some(fi) = at.filter(|f| !rowed.contains(f) && rowed.len() < 8) {
         rowed.push(fi);
-        let Ok(g) = read_solid(file,found.clone(),&rowed) else { break };
-        match super::sound::sound(&g.brep,&g.context) { Ok(()) => return Ok(g),Err(u) => at = face(&u,&g) }
+        let Some(f) = built.get(fi).and_then(|x| rows(&p.b,&x.face,p.far())) else { break };
+        built[fi].face = f;
+        let Ok((g,verdict)) = p.judge(built.clone()) else { break };
+        match verdict { Ok(()) => return Ok(g),Err(u) => at = face(&u,&g) }
     }
     Err(refusal)
 }
 
-/// `solid`, the faces `rowed` read on their sheets' rows (`rows`).
-fn read_solid(file: &File,found: Found,rowed: &[usize]) -> Result<Given,Refusal> {
+/// A solid finished (`Prepared::finish`) and judged (`sound`).
+type Judged = Result<(Given,Result<(),Unsound>),Refusal>;
+
+/// **A solid read up to its finish** (`prepare`): the boundary of the file's edges and vertices
+/// read, the entities its edges, vertices and faces were read from, the solid's own, its product's
+/// name and context, and the solid's size, the file's uncertainty and the tolerance its boundary
+/// is checked to.
+struct Prepared { b: Brep,edges: Vec<u32>,vertices: Vec<u32>,faces: Vec<u32>,entity: u32,name: String,context: Context,size: f64,
+    uncertainty: f64,within: f64 }
+
+/// The solid `found` names walked, its edges and surfaces read and its faces built (`face`, and
+/// `twice` where a face lies on a sheet covering its points twice); beside them, where `twice`
+/// already finished and judged the faces it hands back, that.
+fn prepare(file: &File,found: &Found) -> Result<(Prepared,Vec<Built>,Option<Judged>),Refusal> {
     let g = Geometry {file,context:found.context};
     let mut w = Walk {g:&g,edges:BTreeMap::new(),written:Vec::new(),vertices:BTreeMap::new(),points:Vec::new()};
     let mut faces = Vec::new();
@@ -1872,17 +1896,35 @@ fn read_solid(file: &File,found: Found,rowed: &[usize]) -> Result<Given,Refusal>
         rolls.insert(id,Rolled {sheet:s.surface.clone(),widths});
         (id,Sheet {surface,..s})
     }).collect();
-    let setting = |other: Option<bool>| Setting {b:&b,reads:&reads,within:1e-7*(1.+size),near:uncertainty.min(1e-6*size).max(1e-12*size),rolled:&rolls,other};
+    let p = Prepared {b,edges:w.written.iter().map(|x| x.entity).collect(),vertices:w.points.clone(),faces:faces.iter().map(|f| f.entity).collect(),
+        entity:r,name:found.name.clone(),context:found.context,size,uncertainty,within};
+    let setting = |other: Option<bool>| Setting {b:&p.b,reads:&reads,within:1e-7*(1.+size),near:uncertainty.min(1e-6*size).max(1e-12*size),rolled:&rolls,other};
     let built = {
         let st = setting(None);
         crate::util::par::indices(faces.len(),|i| face(&st,&sheets[&faces[i].surface],&faces[i])).into_iter().collect::<Result<Vec<_>,_>>()?
     };
-    // the solid of the faces built: the edges a seam cuts cut, the poles closed, the tolerances
-    // measured, and the boundary checked
-    let finish = |built: Vec<Built>| -> Result<Given,Refusal> {
-        let mut b = b.clone();
-        let mut edges: Vec<u32> = w.written.iter().map(|x| x.entity).collect();
-        let mut vertices = w.points.clone();
+    let (built,judged) = twice(&setting(Some(false)),&setting(Some(true)),&sheets,&faces,built,&|x| p.judge(x))?;
+    Ok((p,built,judged))
+}
+
+impl Prepared {
+    /// The farthest an edge may stand off its faces or its vertices: a hundred times the file's
+    /// uncertainty and a thousandth of the solid's size.
+    fn far(&self) -> f64 { (100.*self.uncertainty).max(1e-3*self.size) }
+
+    /// The faces `built` finished and judged sound or not (`sound`).
+    fn judge(&self,built: Vec<Built>) -> Judged {
+        let given = self.finish(built)?;
+        let verdict = super::sound::sound(&given.brep,&given.context);
+        Ok((given,verdict))
+    }
+
+    /// The solid of the faces built: the edges a seam cuts cut, the poles closed, the tolerances
+    /// measured, and the boundary checked.
+    fn finish(&self,built: Vec<Built>) -> Result<Given,Refusal> {
+        let mut b = self.b.clone();
+        let mut edges: Vec<u32> = self.edges.clone();
+        let mut vertices = self.vertices.clone();
         let mut cuts: Vec<(usize,Cut)> = Vec::new();
         let mut named: Vec<(usize,u32)> = Vec::new();
         for (fi,mut x) in built.into_iter().enumerate() {
@@ -1900,7 +1942,7 @@ fn read_solid(file: &File,found: Found,rowed: &[usize]) -> Result<Given,Refusal>
         let mut laid_of: Vec<(usize,usize)> = Vec::new();
         for &(fi,c) in &cuts {
             if laid_of.iter().any(|&(e,_)| e == c.edge) {
-                return Err(Refusal::unsupported(w.written[c.edge].entity,"an edge two bands' seams meet: not read"))
+                return Err(Refusal::unsupported(self.edges[c.edge],"an edge two bands' seams meet: not read"))
             }
             let whole = b.edges[c.edge].clone();
             for (gi,g) in b.faces.iter_mut().enumerate() {
@@ -1923,7 +1965,7 @@ fn read_solid(file: &File,found: Found,rowed: &[usize]) -> Result<Given,Refusal>
         }
         // a vertex at a pole stands as far off it as half a turn of the collapsed parameter moves
         // there: what `close_poles` reads the pole within
-        let pole = 1e-7*(1.+size);
+        let pole = 1e-7*(1.+self.size);
         let mut at_poles = Vec::new();
         for f in &b.faces {
             for c in f.loops.iter().flatten() {
@@ -1954,28 +1996,21 @@ fn read_solid(file: &File,found: Found,rowed: &[usize]) -> Result<Given,Refusal>
         for &(e,l) in &laid_of { edges[l] = edges[e]; }
         // (a seam laid where the file writes it as a point, named by that edge)
         for &(k,e) in &named { if let Some(x) = edges.get_mut(k) { *x = e; } }
-        let given = Given {name:found.name.clone(),entity:r,brep:b,context:found.context,faces:faces.iter().map(|f| f.entity).collect(),edges,vertices};
+        let given = Given {name:self.name.clone(),entity:self.entity,brep:b,context:self.context,faces:self.faces.clone(),edges,vertices};
         // an edge standing off its faces (or its vertices off it) farther than a hundred times the
         // file's uncertainty and a thousandth of the solid's size is no edge of theirs read right — a
         // loop's foot clamped at a closed sheet's seam it crosses, a curve the file gives that is not
         // its face's: refused, not measured into a tolerance
-        let far = (100.*uncertainty).max(1e-3*size);
+        let far = self.far();
         if let Some((i,e)) = given.brep.edges.iter().enumerate().find(|(_,e)| e.tol > far) {
-            return Err(Refusal::new(Why::Unsound,Some(given.edges[i]).filter(|&x| x != 0).or(Some(r)),
+            return Err(Refusal::new(Why::Unsound,Some(given.edges[i]).filter(|&x| x != 0).or(Some(self.entity)),
                 format!("an edge stands {:.3e} mm off its faces or its vertices, past the {far:.3e} mm the reader accepts",e.tol)))
         }
-        if let Err(e) = given.brep.check(within) {
+        if let Err(e) = given.brep.check(self.within) {
             let why = match e.kind { crate::Kind::Open => Why::Open,crate::Kind::NotManifold => Why::NotManifold,_ => Why::Unsound };
-            let entity = witness(&e.msg,&given).or(Some(r));
+            let entity = witness(&e.msg,&given).or(Some(self.entity));
             return Err(Refusal::new(why,entity,e.msg))
         }
         Ok(given)
-    };
-    let mut built = twice(&setting(Some(false)),&setting(Some(true)),&sheets,&faces,built,&finish,&found.context)?;
-    for &fi in rowed {
-        let face = built.get(fi).and_then(|x| rows(&b,&x.face,(100.*uncertainty).max(1e-3*size)))
-            .ok_or_else(|| Refusal::unsupported(faces.get(fi).map_or(r,|f| f.entity),"a face with no use along its sheet's rows read otherwise"))?;
-        built[fi].face = face;
     }
-    finish(built)
 }
