@@ -1158,6 +1158,9 @@ pub fn ring_entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Re
         pieces.extend(s);
         given.extend(g);
     }
+    // (and where the tool at the start meets it at the end uncovered, that meeting: the full turn's)
+    given.extend(super::depth::ends_met(&ring,path,[a,b],[&start,&end],&given,tol)?);
+    phase("the end poses' meeting read");
     let sheets = if fits.len() == 1 { pieces } else {
         // (sewn only along the rows at the cuts: the double curve's chords on its two leaves are
         // one curve in space, and left to the trim)

@@ -150,3 +150,201 @@ pub fn far_depth(ring: &Ring,path: &Trajectory,roll: [f64;2],theta: f64,t: f64,l
 pub fn depths(ring: &Ring,path: &Trajectory,x: V,ts: &[f64]) -> Vec<f64> {
     ts.iter().map(|&t| depth_at(ring,path,x,t).map_or(f64::NAN,|r| r.0)).collect()
 }
+
+/// **Where the tool at the roll's start meets the tool at its end on the boundary** (#942
+/// T1d-tori, the full turn): over a whole turn the end pose stands beside the start, and the two
+/// tools meet. Most of that meeting is buried — one of the two, or both, covered there by the
+/// instants between (a tangent touch where their tubes cross among them: no cut is needed there) —
+/// but an arc of it may bound the sweep, both tools uncovered beside it but by one another: the full
+/// turn's, 0.027 long between the start pose's rim and its cut by the tube near the end, which no
+/// edge crosses and the trim's search did not find. Such an arc ends where its cover changes hands,
+/// at a corner on another seam of the start pose's face (a tube's trace with it, a rim), each
+/// given: so the corners are found where the end pose's signed distance changes sign along the
+/// curves `given` lays on a face of either pose (`corners`), the meeting traced as the zero set of
+/// that distance over the start pose's face (`zero_set::trace`) from them, cut at them, and each
+/// piece between two corners given where both tools are uncovered at its middle (`cover`, the end
+/// pose's point standing off its sheet by the trace's tolerance). Nothing where the poses do not
+/// meet uncovered.
+pub fn ends_met(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],ends: [&crate::topo::Brep;2],given: &[crate::boolean::Given],tol: f64)
+    -> Result<Vec<crate::boolean::Given>,Unbuilt> {
+    use crate::util::space::distance;
+    let poses = [path.pose(a)?,path.pose(b)?];
+    // (the end pose's signed distance, read off the ring exactly)
+    let g = |x: V| ring.signed(poses[1].inverse().point(x)).0;
+    // (whether the point `x` of the pose at the roll's end `e`, standing off its sheet by as much as
+    // `off`, is uncovered: on the boundary as the tolerance reads it)
+    let uncovered = |x: V,e: usize,off: f64| match cover(ring,path,[a,b],x,[a,b][e],off,tol)? {
+        Reading::Near => Ok::<bool,Unbuilt>(false),
+        Reading::Alone => Ok(true),
+        Reading::Far(c) => Ok(c.depth >= -tol),
+    };
+    let mut out = Vec::new();
+    for fs in &ends[0].faces { for fe in &ends[1].faces {
+        // the corners: where the other pose's signed distance changes sign along a seam of either
+        // face (a seam of the start pose's against the end pose, of the end pose's against the start)
+        let mut corners: Vec<V> = Vec::new();
+        for gv in given {
+            let Some(e) = [&fs.surface,&fe.surface].iter().position(|s| gv.surfaces.iter().any(|t| t == *s)) else { continue };
+            let other = |x: V| ring.signed(poses[1-e].inverse().point(x)).0;
+            for c in &gv.curves { for x in corners_along(c,&other,tol) {
+                // (two corners within twice the tolerance are one place)
+                if corners.iter().any(|&y| distance(x,y) <= 2.*tol) { continue }
+                // (a corner of an arc on the boundary is on it: neither pose covered there by more than
+                // the tolerance, nor held by its neighbours)
+                if !(uncovered(x,0,0.)? && uncovered(x,1,tol)?) { continue }
+                corners.push(x);
+            } }
+        }
+        if crate::timing() { eprintln!("ring: the end poses' corners {corners:?}") }
+        if corners.len() < 2 { continue }
+        let s = &fs.surface;
+        let at: Vec<crate::geom::Uv> = corners.iter().map(|&x| s.inverse(x)).collect();
+        // the meeting over a window of the start face's parameters about each corner, grown from the
+        // nearest other corner's distance till the piece through it reaches another corner both ways
+        // or the window is the face's whole square
+        let whole = face_rect(ends[0],fs);
+        let field = Met {s,g:&g};
+        let mut arcs: Vec<Vec<V>> = Vec::new();
+        for (i,c) in at.iter().enumerate() {
+            let near = at.iter().enumerate().filter(|&(j,_)| j != i).map(|(_,p)| (p[0]-c[0]).abs().max((p[1]-c[1]).abs()))
+                .fold(f64::INFINITY,f64::min);
+            let mut grow = near.max(HALF_READ);
+            loop {
+                let rect: crate::zero_set::Rect = std::array::from_fn(|k| [(c[k]-grow).max(whole[k][0]),(c[k]+grow).min(whole[k][1])]);
+                let traced = crate::zero_set::trace(&field,&crate::zero_set::Question {rect,edges:&[],seeds:&[*c],tol,feature:ring.thickness})
+                    .map_err(|e| Unbuilt::Failed(format!("the tool's meeting with itself at the roll's ends not traced: {e}")))?;
+                let (found,open) = between_corners(&traced.pieces,s,&corners,corners[i],tol);
+                let open = open.iter().map(|xs| Ok::<bool,Unbuilt>(uncovered(xs[xs.len()/2],0,0.)? && uncovered(xs[xs.len()/2],1,tol)?))
+                    .collect::<Result<Vec<bool>,_>>()?.into_iter().any(|o| o);
+                if !open || rect == whole {
+                    for xs in found {
+                        // (each arc once: traced from either of its corners)
+                        let (p,q) = (xs[0],xs[xs.len()-1]);
+                        if arcs.iter().any(|y| distance(y[0],q) <= tol && distance(y[y.len()-1],p) <= tol
+                            || distance(y[0],p) <= tol && distance(y[y.len()-1],q) <= tol) { continue }
+                        arcs.push(xs);
+                    }
+                    break
+                }
+                grow *= 2.;
+            }
+        }
+        let mut curves = Vec::new();
+        for xs in arcs {
+            let mid = xs[xs.len()/2];
+            if !(uncovered(mid,0,0.)? && uncovered(mid,1,tol)?) { continue }
+            if crate::timing() { eprintln!("ring: the end poses meet uncovered from {:?} to {:?}, {} points",xs[0],xs[xs.len()-1],xs.len()) }
+            curves.push(super::rings::curve_through(xs,tol)?.0);
+        }
+        if !curves.is_empty() { out.push(crate::boolean::Given {surfaces:[fs.surface.clone(),fe.surface.clone()],curves,touches:Vec::new()}) }
+    } }
+    Ok(out)
+}
+
+/// The square of a face's parameters its loops span.
+fn face_rect(b: &crate::topo::Brep,f: &crate::topo::Face) -> crate::zero_set::Rect {
+    let uv: Vec<crate::geom::Uv> = f.loops.iter().flatten().flat_map(|c| b.uv_ends(f,c)).collect();
+    std::array::from_fn(|k| [uv.iter().map(|p| p[k]).fold(f64::INFINITY,f64::min),uv.iter().map(|p| p[k]).fold(f64::NEG_INFINITY,f64::max)])
+}
+
+/// Where `g` (1-Lipschitz in space) changes sign along the curve `c`: marched over its span, each
+/// step no longer in space than the larger of `|g|` and the tolerance (so no stretch where `g`
+/// stands clear of nought by more is stepped over), each change halved to the rounding.
+fn corners_along(c: &crate::geom::Curve,g: &dyn Fn(V) -> f64,tol: f64) -> Vec<V> {
+    use crate::geom::Curve;
+    let [t0,t1] = match c {
+        Curve::BSpline(b) => b.domain(),
+        Curve::Iso(..) => [0.,1.],
+        Curve::Circle(..) | Curve::Ellipse(..) => [0.,std::f64::consts::TAU],
+        _ => return Vec::new(),
+    };
+    let mut out = Vec::new();
+    let (mut t,mut v) = (t0,g(c.point(t0)));
+    while t < t1 {
+        let speed = crate::util::space::norm(c.tangent(t)).max(f64::MIN_POSITIVE);
+        let next = (t+v.abs().max(tol)/speed).min(t1);
+        let w = g(c.point(next));
+        if v*w < 0. {
+            let (mut lo,mut hi) = (t,next);
+            while lo < 0.5*(lo+hi) && 0.5*(lo+hi) < hi {
+                let m = 0.5*(lo+hi);
+                if g(c.point(m))*v > 0. { lo = m } else { hi = m }
+            }
+            out.push(c.point(0.5*(lo+hi)));
+        }
+        (t,v) = (next,w);
+    }
+    out
+}
+
+/// The end pose's signed distance over the start pose's face, as the zero-set tracer reads it: its
+/// gradient by central differences at the rounding's third root of the place (where their rounding
+/// and their truncation balance), and bounded over a cell as a 1-Lipschitz function in space over
+/// the cell's reach from its middle (the partials' lengths there, half again for their change over
+/// the cell — a face of the tool, so curved no more than its own feature).
+struct Met<'a> { s: &'a crate::geom::Surface,g: &'a dyn Fn(V) -> f64 }
+
+impl crate::zero_set::Field for Met<'_> {
+    type At = ();
+    fn least(&self,uv: crate::geom::Uv) -> Option<crate::zero_set::Value<()>> {
+        use crate::util::space::{add,scale,sub,norm};
+        let (x,su,sv) = self.s.d1(uv);
+        let h = f64::EPSILON.cbrt()*(1.+norm(x));
+        let d = |e: V| { let n = norm(e).max(f64::MIN_POSITIVE); ((self.g)(add(x,scale(e,h/n)))-(self.g)(sub(x,scale(e,h/n))))/(2.*h)*n };
+        Some(crate::zero_set::Value {f:(self.g)(x),grad:Some([d(su),d(sv)]),at:()})
+    }
+    fn along(&self,uv: crate::geom::Uv,_: &()) -> Option<crate::zero_set::Value<()>> { self.least(uv) }
+    fn surface(&self,uv: crate::geom::Uv) -> (V,V,V) { self.s.d1(uv) }
+    fn bound(&self,c: crate::zero_set::Rect) -> Option<crate::zero_set::Bound> {
+        let m = [0.5*(c[0][0]+c[0][1]),0.5*(c[1][0]+c[1][1])];
+        let (x,su,sv) = self.s.d1(m);
+        let n = crate::util::space::norm;
+        let reach = 0.75*(n(su)*(c[0][1]-c[0][0])+n(sv)*(c[1][1]-c[1][0]));
+        Some(crate::zero_set::Bound::lipschitz((self.g)(x),1.,reach))
+    }
+}
+
+/// The traced pieces through the corner `from` cut at the corners (each corner placed at its nearest
+/// point of the piece it lies on, within twice the tolerance): each stretch between two corners, its
+/// points in space and the corners its ends; and each stretch from `from` to the window's rim
+/// (the window grown where one is on the boundary).
+fn between_corners(pieces: &[crate::zero_set::Piece<()>],s: &crate::geom::Surface,corners: &[V],from: V,tol: f64) -> (Vec<Vec<V>>,Vec<Vec<V>>) {
+    use crate::util::space::distance;
+    let mut arcs = Vec::new();
+    let mut open = Vec::new();
+    for p in pieces {
+        let xs: Vec<V> = p.uv.iter().map(|&u| s.point(u)).collect();
+        // (each corner on the piece: the index of its nearest point)
+        // (each corner on the piece: the index of the chord it lies on, within twice the tolerance —
+        // the chord's to the zero set and the corner's to its seam — and its place along the chord)
+        let mut cuts: Vec<(usize,f64,V)> = corners.iter().filter_map(|&c| {
+            let (i,d) = xs.windows(2).enumerate().map(|(i,w)| (i,crate::util::space::segment_distance(c,w[0],w[1])))
+                .min_by(|a,b| a.1.total_cmp(&b.1))?;
+            let along = distance(c,xs[i]);
+            (d <= 2.*tol).then_some((i,along,c))
+        }).collect();
+        cuts.sort_by(|a,b| (a.0,a.1).partial_cmp(&(b.0,b.1)).unwrap());
+        if !cuts.iter().any(|c| c.2 == from) { continue }
+        // (from `from`, the first or the last corner, to the window's rim: a stretch not yet ended)
+        let k = cuts.iter().position(|c| c.2 == from).unwrap();
+        if k == 0 && p.ends[0] == crate::zero_set::End::Rim { let c = cuts[0]; open.push([&[c.2],&xs[..=c.0]].concat()) }
+        if k+1 == cuts.len() && p.ends[1] == crate::zero_set::End::Rim { let c = cuts[k]; open.push([&[c.2],&xs[c.0+1..]].concat()) }
+        // (a stretch between two corners on the chords `i` and `j`: the corners and the points between)
+        let stretch = |i: usize,ci: V,j: usize,cj: V| -> Vec<V> {
+            let mut arc = vec![ci];
+            if j > i { arc.extend(xs[i+1..=j].iter().copied()) } else if j < i { arc.extend(xs[i+1..xs.len()-1].iter().chain(&xs[..=j]).copied()) }
+            arc.push(cj);
+            arc
+        };
+        for w in cuts.windows(2) { arcs.push(stretch(w[0].0,w[0].2,w[1].0,w[1].2)) }
+        // (a closed piece: the stretch from its last corner round to its first)
+        if p.closed() && cuts.len() >= 2 {
+            let (l,f) = (cuts[cuts.len()-1],cuts[0]);
+            arcs.push(stretch(l.0,l.2,f.0,f.2));
+        }
+    }
+    // (a stretch of no length — every point within twice the tolerance of its first — bounds nothing:
+    // two corners that are one place, #942 F6)
+    arcs.retain(|a| a.iter().any(|&x| distance(x,a[0]) > 2.*tol));
+    (arcs,open)
+}

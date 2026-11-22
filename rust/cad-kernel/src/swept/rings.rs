@@ -2339,7 +2339,7 @@ fn polished(r: &Reading,p: P2) -> P2 {
 }
 
 /// The cubic through points `xs` by chord length (`chord_curve`'s), and the points.
-fn curve_through(xs: Vec<V>,tol: f64) -> Result<(Curve,Vec<V>),Unbuilt> {
+pub(crate) fn curve_through(xs: Vec<V>,tol: f64) -> Result<(Curve,Vec<V>),Unbuilt> {
     let mut params = vec![0.];
     for w in xs.windows(2) { params.push(params.last().unwrap()+norm(crate::util::space::sub(w[1],w[0])).max(1e-300)) }
     let length = *params.last().unwrap();

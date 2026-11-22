@@ -161,7 +161,8 @@ fn main() {
         }
         "pose" => {
             // the tool at the start (`0`) or end (`1`) pose: a window of its torus's angles about the
-            // point nearest `x`, each place's reading as a point of that pose
+            // point nearest `x`, each place's reading as a point of that pose (`E` covered by the other end's
+            // pose itself, `o` within the tolerance of nought)
             let end: usize = args[2].parse().unwrap();
             let x: Vec<f64> = args[3].split(',').map(|v| v.parse().unwrap()).collect();
             let (half_width,n): (f64,usize) = (args[4].parse().unwrap(),args[5].parse().unwrap());
@@ -185,7 +186,7 @@ fn main() {
                     let ph = phi-half_width+2.*half_width*j as f64/n as f64;
                     match cover(&ring,&path,roll,at(ph,ps),own,0.,tol) {
                         Ok(Reading::Near) => 'N',
-                        Ok(Reading::Far(cv)) => { least = least.min(cv.depth); if cv.depth < -tol { 'F' } else { '.' } }
+                        Ok(Reading::Far(cv)) => { least = least.min(cv.depth); if cv.depth < -tol { if (cv.at-roll[1-end]).abs() == 0. { 'E' } else { 'F' } } else if cv.depth < tol { 'o' } else { '.' } }
                         Ok(Reading::Alone) => 'a',
                         Err(_) => '!',
                     }
@@ -193,6 +194,62 @@ fn main() {
                 format!("ψ {ps:+.5} {line} least {least:+.2e}")
             });
             for r in rows { println!("{r}") }
+            return
+        }
+        "meet" => {
+            // the tool posed at the start's meeting with the tool posed at the end: the zero set of the
+            // end pose's signed distance over the start pose's face (`zero_set::trace`), each piece's
+            // ends and, along it, each point's reading as a point of either pose (`.` uncovered, `o`
+            // within the tolerance, `F` covered, `N` held by its neighbours)
+            use cad_kernel::zero_set::{Bound,Field,Question,Value,trace};
+            let poses = [path.pose(roll[0]).unwrap(),path.pose(roll[1]).unwrap()];
+            let start = tool.moved(&cad_kernel::geom::Rigid {r:poses[0].r,t:poses[0].p});
+            let f = &start.faces[0];
+            let uv: Vec<[f64;2]> = f.loops.iter().flatten().flat_map(|c| start.uv_ends(f,c)).collect();
+            let (lo,hi) = uv.iter().fold(([f64::INFINITY;2],[f64::NEG_INFINITY;2]),|(l,h),p| ([l[0].min(p[0]),l[1].min(p[1])],[h[0].max(p[0]),h[1].max(p[1])]));
+            // (or a window of half-width `w` about the point `x` of the face)
+            let (lo,hi) = match (args.get(2),args.get(3)) {
+                (Some(x),Some(w)) => {
+                    let x: Vec<f64> = x.split(',').map(|v| v.parse().unwrap()).collect();
+                    let w: f64 = w.parse().unwrap();
+                    let c = f.surface.inverse([x[0],x[1],x[2]]);
+                    ([c[0]-w,c[1]-w],[c[0]+w,c[1]+w])
+                }
+                _ => (lo,hi),
+            };
+            struct G<'a> { s: &'a cad_kernel::geom::Surface,ring: &'a cad_kernel::swept::rings::Ring,back: cad_kernel::trajectory::Pose }
+            impl Field for G<'_> {
+                type At = ();
+                fn least(&self,uv: [f64;2]) -> Option<Value<()>> {
+                    let (x,su,sv) = self.s.d1(uv);
+                    let h = 1e-7;
+                    let g = |x: [f64;3]| self.ring.signed(self.back.inverse().point(x)).0;
+                    let d = |e: [f64;3]| (g(cad_kernel::util::space::add(x,cad_kernel::util::space::scale(e,h)))-g(cad_kernel::util::space::sub(x,cad_kernel::util::space::scale(e,h))))/(2.*h);
+                    Some(Value {f:g(x),grad:Some([d(su),d(sv)]),at:()})
+                }
+                fn along(&self,uv: [f64;2],_: &()) -> Option<Value<()>> { self.least(uv) }
+                fn surface(&self,uv: [f64;2]) -> ([f64;3],[f64;3],[f64;3]) { self.s.d1(uv) }
+                fn bound(&self,c: [[f64;2];2]) -> Option<Bound> {
+                    let m = [0.5*(c[0][0]+c[0][1]),0.5*(c[1][0]+c[1][1])];
+                    let (_,su,sv) = self.s.d1(m);
+                    let n = cad_kernel::util::space::norm;
+                    let reach = 0.5*(1.5*n(su)*(c[0][1]-c[0][0])+1.5*n(sv)*(c[1][1]-c[1][0]));
+                    Some(Bound::lipschitz(self.least(m)?.f,1.,reach))
+                }
+            }
+            let field = G {s:&f.surface,ring:&ring,back:poses[1]};
+            let clock = std::time::Instant::now();
+            let traced = trace(&field,&Question {rect:[[lo[0],hi[0]],[lo[1],hi[1]]],edges:&[],seeds:&[],tol,feature:tube}).unwrap();
+            println!("{} pieces in {:?}; search {:?}",traced.pieces.len(),clock.elapsed(),traced.search);
+            for (i,p) in traced.pieces.iter().enumerate() {
+                let len: f64 = p.uv.windows(2).map(|w| cad_kernel::util::space::distance(f.surface.point(w[0]),f.surface.point(w[1]))).sum();
+                let k = p.uv.len().div_ceil(80).max(1);
+                let read = |e: usize,x: [f64;3]| match cover(&ring,&path,roll,x,roll[e],0.,tol) {
+                    Ok(Reading::Near) => 'N',Ok(Reading::Far(c)) => if c.depth < -tol { 'F' } else if c.depth < tol { 'o' } else { '.' },Ok(Reading::Alone) => 'a',Err(_) => '!' };
+                let line = |e: usize| -> String { p.uv.iter().step_by(k).map(|&u| read(e,f.surface.point(u))).collect() };
+                println!("piece {i}: {} points, {len:.4} long, ends {:?}, from {:?} to {:?}",p.uv.len(),p.ends,f.surface.point(p.uv[0]),f.surface.point(p.uv[p.uv.len()-1]));
+                println!("  start {}\n  end   {}",line(0),line(1));
+            }
             return
         }
         "torus" => {
