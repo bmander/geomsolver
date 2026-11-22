@@ -8,7 +8,8 @@
 //! * `no_mutant_is_read_wrong` (`#[ignore]`d: the mutants are made from the corpus outside the
 //!   repository, `$STEP_CORPUS/mutants/`, by scripts/step-corpus/mutants.py): every mutant of the
 //!   table `step_mutants/mutants.tsv` refused, or read to OCCT's reading of that mutant within its
-//!   row's bar (`step_corpus`'s own judgement, `wrong`); a mutant OCCT reads to no solid (an open
+//!   row's bar (`step_corpus`'s own judgement, `wrong`, face by face too where the oracle has
+//!   the mutant's faces); a mutant OCCT reads to no solid (an open
 //!   or inverted shell, a crash, a hang) or to an invalid one whose measures moved is refused. No
 //!   read panics or takes more than `BOUND`.
 //! * `kernel_written_mutants`: the same property over files the kernel writes (`step::write`)

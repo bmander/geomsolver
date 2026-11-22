@@ -18,7 +18,9 @@
 //! it:
 //!
 //! * `nothing_is_read_wrong`: each file is refused, or read to its solids, each file entity
-//!   read and none twice-counted, and their volume and area within the bar; a file that
+//!   read and none twice-counted, and their volume and area within the bar, and each face's area
+//!   within its own bar of OCCT's and brep-bench's measurer's readings of that face (`Refs`,
+//!   `face_bar`, `faces_judged`: a total within its bar does not show a solid read right); a file that
 //!   represents no solid (`ref_from` `refuse`: a shell-based surface model, an empty product) is
 //!   refused. Holds at every commit, the reader refusing everything included.
 //! * `nothing_panics`: no read panics (`catch_unwind`); a panic names its file.
@@ -246,7 +248,12 @@ impl Refs {
 
     pub(crate) fn of(root: &Path,path: &str,sha: &str) -> Refs {
         let at = |x: &str| root.join("oracle").join(format!("{path}{x}"));
-        Refs {occt: occt_faces(&at(".json"),&at(".faces.tsv"),sha),mass: mass_faces(&at(".mass.faces.tsv"),sha)}
+        let occt = occt_faces(&at(".json"),&at(".faces.tsv"),sha);
+        let mass = match measurer_scale(&at(".json")) {
+            Ok(k) => mass_faces(&at(".mass.faces.tsv"),sha).map(|m| m.into_iter().map(|(e,a)| (e,k*a)).collect()),
+            Err(e) => Err(e),
+        };
+        Refs {occt,mass}
     }
 }
 
@@ -275,6 +282,21 @@ fn occt_faces(json: &Path,tsv: &Path,sha: &str) -> Result<BTreeMap<u32,(f64,[f64
         s.0 = w;
     }
     Ok(out)
+}
+
+/// What the measurer's areas are multiplied by to be in mm²: brep-bench's measurer (at 7d811e9)
+/// reads an SI unit of length as it is and a conversion-based one as millimetres, so an inch
+/// file's areas come out in square inches — the same faces, scaled. The file's first unit of
+/// length, as the oracle's scan of its text found it.
+fn measurer_scale(json: &Path) -> Result<f64,String> {
+    let text = std::fs::read_to_string(json).map_err(|_| "no OCCT reading".to_string())?;
+    let j = gcs_core::json::parse(&text).map_err(|e| format!("OCCT's reading unreadable: {e}"))?;
+    let units = j.get("units").map(|u| u.as_str()).unwrap_or("");
+    match units.split(',').next().unwrap_or("") {
+        "mm" | "m" | "cm" | "um" | "km" => Ok(1.),
+        "inch" => Ok(25.4*25.4),
+        u => Err(format!("the measurer's unit for {u:?} unknown")),
+    }
 }
 
 fn mass_faces(tsv: &Path,sha: &str) -> Result<BTreeMap<u32,f64>,String> {

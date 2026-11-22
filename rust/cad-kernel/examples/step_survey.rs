@@ -71,14 +71,23 @@ fn oracle(root: &str,rel: &str) -> (Result<BTreeMap<u32,f64>,String>,Result<BTre
         }
         Ok(out)
     })();
+    // brep-bench's measurer reads a conversion-based unit as millimetres: an inch file's areas
+    // are square inches (step_corpus::measurer_scale)
+    let scale = json::parse(&std::fs::read_to_string(at(".json")).unwrap_or_default()).ok()
+        .and_then(|j| match j.get("units")?.as_str().split(',').next()? {
+            "mm" | "m" | "cm" | "um" | "km" => Some(1.),
+            "inch" => Some(25.4*25.4),
+            _ => None,
+        });
     let mass = (|| {
+        let scale = scale.ok_or_else(|| "the measurer's unit unknown".to_string())?;
         let text = std::fs::read_to_string(at(".mass.faces.tsv")).map_err(|_| "no measurer face table".to_string())?;
         let mut out = BTreeMap::new();
         for line in text.lines().skip(2) {
             let (e,a) = line.split_once('\t').unwrap_or((line,""));
             let e: u32 = e.parse().unwrap_or(0);
             if e == 0 { return Err(format!("the measurer: {a}")) }
-            if let Ok(a) = a.parse::<f64>() { *out.entry(e).or_insert(0.) += a }
+            if let Ok(a) = a.parse::<f64>() { *out.entry(e).or_insert(0.) += scale*a }
         }
         Ok(out)
     })();
