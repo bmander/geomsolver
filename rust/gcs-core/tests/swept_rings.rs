@@ -1210,7 +1210,10 @@ fn the_thin_tumbling_torus_is_built_closed() {
     let (tool,path,roll,tol) = thin();
     let built = gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.015/250.,tol).unwrap_or_else(|u| panic!("{u:?}"));
     built.check(tol).unwrap();
-    assert_eq!(built.faces.len(),28);
+    // (29 faces with the end poses' seams where `closed::seam_away` stands them by its rule — the
+    // first of the widest gaps alike, from the frame's own `x` — one face more than where the
+    // widest by rounding stood it, 28: a face the seam crosses parted, the volume the same to 1e-14)
+    assert_eq!(built.faces.len(),29);
     let v = gcs_core::brep::props::volume(&built);
     assert!((v-0.6963027896).abs() < 1e-9,"{v}");
     assert!((v-0.69630).abs() < 1e-5,"{v} against cadrs's 0.69630");

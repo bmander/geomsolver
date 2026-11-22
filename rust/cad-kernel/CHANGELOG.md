@@ -8,6 +8,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **An end pose's seam stands by a rule, not by rounding** (#942, `swept::closed::seam_away`; the
+  torus-general-position branch's 7bf4d72, re-applied): among the touched angles' gaps, those within
+  `HALF_READ` of a turn of the widest are alike and the first from the frame's own `x` is taken. The
+  full turn builds at sixteen seams (`the_full_turn_is_built_wherever_its_end_poses_seams_stand`), so
+  it is taken: every case builds as before, the thin tumbling torus with 29 faces where it had 28 (a
+  face its seam now crosses parted), its volume the same to 1e-14.
+
 - **A bridge's end gives way to a double curve within the arrangement's band of it** (#942
   T1d-tori, new `swept::rings::give_way`, `Way`, `fitted_giving_way`, `Fitted::ways`): a narrow
   pair's bridge ends where `s''` leaves the fold's band, at the depth of its least — a construction
