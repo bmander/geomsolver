@@ -785,6 +785,11 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
             last = Some([l[0]+d[0],l[1]+d[1]]);
         }
     }
+    if std::env::var("SEAMFACE").ok().and_then(|x| x.parse::<u32>().ok()) == Some(face) {
+        let f = Face {surface:s.clone(),reversed,loops:vec![],name:String::new()};
+        for c in &out { let e = &b.edges[c.edge as usize]; eprintln!("FACE use edge #{} rev {} {:?} kind {}",st.reads.get(c.edge as usize).map_or(0,|r| r.entity),c.reversed,b.uv_ends(&f,c),match c.pcurve { Pcurve::Line {..} => "line",Pcurve::Inverse {..} => "inverse",_ => "curve" }); let _ = e; }
+        if let Surface::BSpline(_,n) = s { eprintln!("FACE dom {:?} closes {:?} periods {periods:?}",n.domain(),closes(s)); }
+    }
     // round to where it began, on the same branch, or round a whole period of `u`
     let mut wound = None;
     if let (Some(l),Some((a,p))) = (last,first) {
@@ -1229,7 +1234,7 @@ fn face(st: &Setting,sheet: &Sheet,w: &Walked) -> Result<Built,Refusal> {
     // which has no period)
     let periods = match st.rolled.get(&w.surface) {
         Some(r) => {
-            f.surface = unrolled(st.b,&mut f,r,periods,&laid,&poles).ok_or_else(|| Refusal::unsupported(w.entity,
+            f.surface = unrolled(st.b,&mut f,r,periods,&laid,&poles,&cuts).ok_or_else(|| Refusal::unsupported(w.entity,
                 "a face reaching round its closed spline sheet farther than once, or a sheet the reader cannot cut where none of its loops crosses: not read"))?;
             [None;2]
         }
@@ -1278,13 +1283,15 @@ fn face(st: &Setting,sheet: &Sheet,w: &Walked) -> Result<Built,Refusal> {
 /// widths the face leaves free, or, where its loops reach right round (a seam the file writes, or
 /// one laid between two winding loops or to a pole), at their start. None where a loop reaches
 /// round farther than once.
-fn unrolled(b: &Brep,f: &mut Face,r: &Rolled,periods: [Option<f64>;2],laid: &[Edge],poles: &[V]) -> Option<Surface> {
+fn unrolled(b: &Brep,f: &mut Face,r: &Rolled,periods: [Option<f64>;2],laid: &[Edge],poles: &[V],cuts: &[Cut]) -> Option<Surface> {
     let s = f.surface.clone();
     let (frame,n,offset) = match &s { Surface::BSpline(fr,n) => (*fr,n,None),Surface::Offset(fr,n,d) => (*fr,n,Some(*d)),_ => return None };
     let dom = match &r.sheet { Surface::BSpline(_,m) | Surface::Offset(_,m,_) => m.domain(),_ => return None };
-    // (the face's own and the laid edges and vertices, as `face` reads its outer loop with them)
+    // (the face's own and the laid edges and vertices, as `face` reads its outer loop with them, a
+    // file's edge a seam laid cuts read to the cut)
     let with: Option<(Brep,Face)> = (!laid.is_empty() || !poles.is_empty()).then(|| {
         let mut x = b.clone();
+        for c in cuts { x.edges[c.edge].t[1] = c.t; }
         let (e0,p0) = (x.edges.len() as u32,x.vertices.len() as u32);
         x.edges.extend(laid.iter().cloned().map(|mut e| { for v in &mut e.v { if *v > LAID-16 { *v = p0+(LAID-*v); } } e }));
         x.vertices.extend(poles.iter().map(|&p| Vertex {p,tol:0.}));
@@ -1340,6 +1347,14 @@ fn unrolled(b: &Brep,f: &mut Face,r: &Rolled,periods: [Option<f64>;2],laid: &[Ed
         cut[k] = Some(if mx-mn >= w*(1.-1e-9) { mn } else { 0.5*(mn+mx)-0.5*w });
     }
     if d != [0.;2] { for c in f.loops.iter_mut().flatten() { c.pcurve = moved(&c.pcurve,d); } }
+    // (a walk's ends within rounding of the window's edges put on them, as the sheet's own domain
+    // held them where the walk was clamped into it: a corner a hair past both edges read 1e-3 mm²
+    // off a whole torus's net)
+    let range: [[f64;2];2] = std::array::from_fn(|k| match (cut[k],r.widths[k]) { (Some(x),Some(w)) => [x,x+w],_ => dom[k] });
+    let snap = |mut q: Uv| { for k in 0..2 { let [lo,hi] = range[k]; for e in [lo,hi] { if (q[k]-e).abs() <= 1e-9*(hi-lo) { q[k] = e; } } } q };
+    for c in f.loops.iter_mut().flatten() {
+        if let Pcurve::Inverse {a,b} | Pcurve::Line {a,b} = &mut c.pcurve { *a = snap(*a); *b = snap(*b); }
+    }
     if cut == [None;2] { return Some(r.sheet.clone()) }
     window(n,frame,offset,cut,dom,&r.sheet)
 }
