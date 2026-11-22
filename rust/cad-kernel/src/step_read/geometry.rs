@@ -34,7 +34,7 @@ use super::Refusal;
 use crate::geom::{Curve,Frame,Surface,V};
 use crate::nurbs::{arc,BSpline,Net};
 use crate::step_file::{File,Value};
-use crate::util::space::{add,cross,dot,norm,normalised,scale,sub};
+use crate::util::space::{add,cross,distance,dot,norm,normalised,scale,sub};
 use std::f64::consts::TAU;
 use std::sync::Arc;
 
@@ -57,6 +57,15 @@ pub struct Spatial { pub curve: Curve,pub rate: f64 }
 /// provisional one, and `seated` gives the form.
 #[derive(Clone,Debug)]
 pub struct Sheet { pub surface: Surface,pub scale: [f64;2],pub seat: Option<Arc<Seat>> }
+
+/// **The scale of a sheet whose parameters are no scaling of the file's** (a revolution or a sweep
+/// held as a rational net, its arcs' parameters meeting the file's angles only at their knots, its
+/// seams put where its faces leave room): a file's curve in its faces' parameters is not read
+/// through it (`Flat::scaled`), the edge inverted onto the sheet instead. A curve read through it
+/// at a parameter off the net's domain was taken for on it where the net, clamped, held its point
+/// at the domain's edge and its foot there too (springrep's coin turned about a line through its
+/// rim read an edge 3.55 mm off its face).
+pub const UNMAPPED: [f64;2] = [f64::NAN;2];
 
 /// **A surface whose kernel form waits on where its faces lie**: one held as a net, which has no
 /// period, whose seams are put where no face of it crosses them, or one swept from a curve without
@@ -86,6 +95,12 @@ pub enum Seat {
     /// in the half-plane of `f.x` — the one half it has there, or where it crosses the axis the
     /// half the file's curves in its faces' parameters lie on — bounded by its faces.
     Meridian { f: Frame,conic: Open },
+    /// A closed conic in a plane holding the axis `f.z`, crossing it, turned about it: the
+    /// revolution of its arc between two crossings on the side of the axis its faces lie on (the
+    /// arc's points `f.at([±ρ, 0, h])`, the sign `f.x`'s or the other), its normal the file's at
+    /// every point; where its faces lie on both sides or on neither, the whole conic turned once
+    /// as a net from the file's start (`turned`), each point of it on one sheet or the other.
+    Crossing { f: Frame,curve: Curve },
 }
 
 /// **A conic that runs without end**, in its frame `g`: a parabola `F (u² x + 2u y)`, a hyperbola
@@ -143,6 +158,7 @@ impl Flat {
     /// The same curve with its parameters scaled by `s`, the file's to the kernel's (its own
     /// parameter kept): none for a conic scaled unevenly.
     pub fn scaled(&self,s: [f64;2]) -> Option<Flat> {
+        if !s.iter().all(|x| x.is_finite()) { return None }
         let p = |q: V| [q[0]*s[0],q[1]*s[1],0.];
         Some(match self {
             Flat::Line {p:o,d} => Flat::Line {p:[o[0]*s[0],o[1]*s[1]],d:[d[0]*s[0],d[1]*s[1]]},
@@ -249,6 +265,45 @@ fn clamped(b: BSpline) -> BSpline {
         weights:b.weights.as_ref().map(|w| w.iter().map(|&x| vec![x,x]).collect())};
     let s = net.segment(b.domain(),[0.,1.]);
     BSpline {degree:p,knots:s.uknots,poles:s.poles.iter().map(|r| r[0]).collect(),weights:s.weights.map(|w| w.iter().map(|r| r[0]).collect())}
+}
+
+/// **A closed B-spline started again at its parameter `t`** (#993; ISO 10303-42 lets a closed
+/// edge's vertex stand anywhere on its closed curve): its stretch from `t` to its end and then its
+/// stretch from its start to `t`, each the same curve at the same parameters (`clamped`'s
+/// insertion), the second's parameter carried on past the first's end and its weights scaled to
+/// meet the first's at the join (a rational curve's points are its homogeneous poles' over any
+/// common factor) — the same closed set of points, run the same way, now from `t` over
+/// `[t, t + (b − a)]`, a knot of multiplicity `p` at the join. None where `t` is not inside its
+/// domain or it does not close (its ends one within `within`).
+pub fn restarted(c: &BSpline,t: f64,within: f64) -> Option<BSpline> {
+    let ([a,z],p) = (c.domain(),c.degree);
+    // (a vertex read at a knot to its last bits is at the knot: a stretch of no length beside it
+    // would be divided by)
+    let t = c.knots.iter().copied().find(|k| (k-t).abs() <= 1e-9*(z-a)).unwrap_or(t);
+    if !(t > a && t < z) || crate::util::space::distance(c.point(a),c.point(z)) > within { return None }
+    let piece = |[x,y]: [f64;2]| {
+        let net = Net {du:p,dv:1,uknots:c.knots.clone(),vknots:vec![0.,0.,1.,1.],poles:c.poles.iter().map(|&q| vec![q,q]).collect(),
+            weights:c.weights.as_ref().map(|w| w.iter().map(|&x| vec![x,x]).collect())};
+        let s = net.segment([x,y],[0.,1.]);
+        (s.uknots,s.poles.iter().map(|r| r[0]).collect::<Vec<V>>(),s.weights.map(|w| w.iter().map(|r| r[0]).collect::<Vec<f64>>()))
+    };
+    let (ka,pa,wa) = piece([t,z]);
+    let (kb,pb,wb) = piece([a,t]);
+    if pa.len() < 2 || pb.len() < 2 || ka.len() != pa.len()+p+1 || kb.len() != pb.len()+p+1 { return None }
+    let mut knots = ka[..ka.len()-1].to_vec();
+    knots.extend(kb[p+1..].iter().map(|k| k+(z-a)));
+    let mut poles = pa;
+    poles.extend(&pb[1..]);
+    let weights = match (wa,wb) {
+        (Some(mut wa),Some(wb)) => {
+            let f = wa[wa.len()-1]/wb[0];
+            wa.extend(wb[1..].iter().map(|w| w*f));
+            Some(wa)
+        }
+        (None,None) => None,
+        _ => return None,
+    };
+    Some(BSpline {degree:p,knots,poles,weights})
 }
 
 /// A curve read the other way round, `C(−t)` (a B-spline's `C(a + b − t)`): a line's direction
@@ -437,6 +492,19 @@ impl<'f,'a> Geometry<'f,'a> {
         Ok(axis(1,[1.,0.,0.])? && axis(2,[0.,1.,0.])? && (v.len() <= 5+k || axis(5,[0.,0.,1.])?) && norm(origin) <= 1e-12 && unit)
     }
 
+    /// **The point a line of no length is** (#993): a `LINE` whose `VECTOR` has magnitude 0 is no
+    /// curve an edge runs along, but it is a point exactly, its own; none for any other curve (a
+    /// curve on a surface, `SURFACE_CURVE` or `SEAM_CURVE`, read through to its curve in space).
+    pub fn point_line(&self,r: u32) -> Result<Option<V>,Refusal> {
+        let r = match self.file.get(r).simple() {
+            Some(("SURFACE_CURVE" | "SEAM_CURVE",v)) => match v.get(1).and_then(Value::reference) { Some(c) => c,None => return Ok(None) },
+            _ => r,
+        };
+        let Some(("LINE",v)) = self.file.get(r).simple() else { return Ok(None) };
+        let (_,m) = self.vector(r,v.get(2).and_then(Value::reference),false)?;
+        if m != 0. { return Ok(None) }
+        Ok(Some(self.point(r,v.get(1).and_then(Value::reference))?))
+    }
     /// A curve in space.
     pub fn curve(&self,from: u32,r: Option<u32>) -> Result<Spatial,Refusal> { self.curve_in(from,r,None,0) }
     /// An edge's curve, `ends` its vertices' points: as `curve`, a curve without end (a parabola,
@@ -833,14 +901,19 @@ impl<'f,'a> Geometry<'f,'a> {
         if points.iter().all(|&p| { let l = f.local(p); l[1].abs() <= within && l[0] >= -within }) {
             return Ok(Sheet {surface:Surface::Revolution(f,Arc::new(swept.curve)),scale:[self.context.angle,swept.rate],seat:None})
         }
-        // a curve crossing the axis in a plane of it (a circle about a point of the axis, turned to
-        // a sphere): its halves turn to the same points facing opposite ways, the file's own
-        // parameters saying which a face is on — its net kept as the file's, whole turns from where
-        // its parameters start, never seated
+        // a closed conic crossing the axis in a plane of it (a lemon's circle, a ball swung across
+        // its own centre line): the revolution of its arc on the side its faces lie on (`Seat::Crossing`)
+        if points.iter().all(|&p| f.local(p)[1].abs() <= within) && matches!(swept.curve,Curve::Circle(..) | Curve::Ellipse(..)) {
+            let mut sheet = Seat::Crossing {f,curve:swept.curve}.sheet(r)?;
+            sheet.scale = UNMAPPED;
+            return Ok(sheet)
+        }
+        // any other curve crossing the axis in a plane of it: its net kept as the file's, whole
+        // turns from where its parameters start, never seated
         if points.iter().all(|&p| f.local(p)[1].abs() <= within) {
             let net = turned(&f,&swept.curve,[0.,TAU],0.).ok_or_else(|| Refusal::unsupported(r,"a revolution of a curve the reader cannot make a net of"))?;
             net.check().map_err(|m| Refusal::malformed(r,m))?;
-            return Ok(Sheet {surface:Surface::BSpline(Frame::WORLD,Arc::new(net)),scale:[1.,1.],seat:None})
+            return Ok(Sheet {surface:Surface::BSpline(Frame::WORLD,Arc::new(net)),scale:UNMAPPED,seat:None})
         }
         // a curve leaving the axis's plane: the rational net that is its revolution exactly
         Seat::Turned {f,curve:swept.curve,offset:0.}.sheet(r)
@@ -898,6 +971,7 @@ impl<'f,'a> Geometry<'f,'a> {
             return match &**seat {
                 Seat::Turned {f,curve,offset} => Seat::Turned {f:*f,curve:curve.clone(),offset:offset+d}.sheet(r),
                 Seat::Swept {f,curve,offset} => Seat::Swept {f:*f,curve:curve.clone(),offset:offset+d}.sheet(r),
+                Seat::Crossing {..} => Err(Refusal::unsupported(r,"an offset of a conic turned across its axis: not read yet")),
                 _ => Err(Refusal::unsupported(r,"an offset of a line turned off its axis's plane, which the kernel holds no form of")),
             }
         }
@@ -1001,6 +1075,7 @@ impl Seat {
                 off(turned(f,&Curve::BSpline(Arc::new(line)),turn,0.)?,0.)
             }
             Seat::Meridian {f,conic} => Surface::Revolution(*f,Arc::new(Curve::BSpline(Arc::new(conic.arc(span))))),
+            Seat::Crossing {f,curve} => off(turned(f,curve,[0.,TAU],0.)?,0.),
             Seat::Nappe {apex,z,p,d} => {
                 let side = if span[1] < 0. { -1. } else { 1. };
                 let x = scale(sub(*d,scale(*z,dot(*d,*z))),side);
@@ -1022,27 +1097,37 @@ impl Sheet {
         let Some(seat) = &self.seat else { return Ok(self.clone()) };
         if points.is_empty() { return Ok(self.clone()) }
         let s = &self.surface;
-        // (a parameter's seam kept where a face's seam runs along it, the file's: every point of
-        // the seam at an end of the parameter's span `ends`, `param` the point's parameter)
-        let along_seam = |param: &dyn Fn(V) -> f64,[a,b]: [f64;2]| seams.iter().any(|seam| seam.iter().all(|&p| {
-            let x = param(p);
-            (x-a).abs().min((b-x).abs()) <= 1e-6*(b-a)
-        }));
-        let gap = |param: &dyn Fn(V) -> f64,ends: [f64;2],angle: &dyn Fn(f64) -> f64|
-            if along_seam(param,ends) { None } else { widest_gap(points.iter().map(|&p| angle(param(p))).collect()) };
-        let domain = match s { Surface::BSpline(_,n) | Surface::Offset(_,n,_) => n.domain(),_ => [[0.,TAU];2] };
+        // (a parameter's seam put where a face's seam runs along it, the file's: every point of
+        // the seam at one angle of the parameter — `param` the point's parameter, `angle` its
+        // angle — wherever the file put it, at its own `u = 0` or not; springrep turns its curve
+        // with the seam half a turn round. That angle a gap of no width, the turn a whole one from
+        // it; else the widest gap the points leave)
+        let gap = |param: &dyn Fn(V) -> f64,angle: &dyn Fn(f64) -> f64| {
+            let along = seams.iter().find_map(|seam| {
+                let a: Vec<f64> = seam.iter().map(|&p| angle(param(p))).collect();
+                let first = *a.first()?;
+                a.iter().all(|&x| { let d = (x-first).rem_euclid(TAU); d.min(TAU-d) <= 1e-6*TAU }).then_some((first,0.))
+            });
+            along.or_else(|| widest_gap(points.iter().map(|&p| angle(param(p))).collect()))
+        };
         let turn = |g: Option<(f64,f64)>| g.map_or([0.,TAU],|(a,w)| [a+0.75*w,a+TAU+0.25*w]);
         let middle = |g: Option<(f64,f64)>| g.map_or(0.,|(a,w)| (a+0.5*w).rem_euclid(TAU));
         let conic = |c: &Curve| matches!(c,Curve::Circle(..) | Curve::Ellipse(..));
         let size = points.iter().map(|&p| norm(p)).fold(0.,f64::max);
+        if let Seat::Crossing {f,curve} = &**seat {
+            let scale = 1.+points.iter().map(|&p| norm(sub(p,f.o))).fold(0.,f64::max);
+            let Some(arc) = crossing_side(f,curve,points,scale) else { return Ok(Sheet {seat:None,..self.clone()}) };
+            return Ok(Sheet {surface:Surface::Revolution(arc.0,Arc::new(Curve::BSpline(Arc::new(arc.1)))),scale:UNMAPPED,seat:None})
+        }
         let (turn,from,span) = match &**seat {
+            Seat::Crossing {..} => unreachable!("seated above"),
             Seat::Turned {curve,..} => {
-                let u = turn(gap(&|p| s.inverse(p)[0],domain[0],&|x| angle_at(x,0.)));
-                (u,if conic(curve) { middle(gap(&|p| s.inverse(p)[1],domain[1],&|x| angle_at(x,0.))) } else { 0. },[-1.,1.])
+                let u = turn(gap(&|p| s.inverse(p)[0],&|x| angle_at(x,0.)));
+                (u,if conic(curve) { middle(gap(&|p| s.inverse(p)[1],&|x| angle_at(x,0.))) } else { 0. },[-1.,1.])
             }
             Seat::Swept {f,curve,..} => {
                 let along = |p: V| dot(sub(p,f.o),f.z);
-                let u = if conic(curve) { middle(gap(&|p| curve.inverse(sub(p,scale(f.z,along(p)))).rem_euclid(TAU),[0.,TAU],&|x| x)) } else { 0. };
+                let u = if conic(curve) { middle(gap(&|p| curve.inverse(sub(p,scale(f.z,along(p)))).rem_euclid(TAU),&|x| x)) } else { 0. };
                 ([0.,TAU],u,spread(points.iter().map(|&p| along(p)),1e-6*(1.+size)).unwrap_or([-1.,1.]))
             }
             Seat::Throat {f,p,d} => {
@@ -1051,7 +1136,7 @@ impl Sheet {
                 let t = |q: V| dot(sub(q,*p),f.z)/dot(*d,f.z);
                 let bearing = |q: V| { let l = f.local(q); l[1].datan2(l[0]) };
                 let u = |q: V| (bearing(q)-bearing(add(*p,scale(*d,t(q))))).rem_euclid(TAU);
-                (turn(gap(&u,[0.,TAU],&|x| x)),0.,spread(points.iter().map(|&q| t(q)),1e-6*(1.+size)).unwrap_or([-1.,1.]))
+                (turn(gap(&u,&|x| x)),0.,spread(points.iter().map(|&q| t(q)),1e-6*(1.+size)).unwrap_or([-1.,1.]))
             }
             Seat::Meridian {f,conic} => {
                 // each point carried round the axis into the half-plane, read on the arc; its
@@ -1074,8 +1159,47 @@ impl Sheet {
         };
         let surface = seat.surface(turn,from,span).ok_or_else(|| Refusal::unsupported(r,"a surface swept or turned from a curve the reader cannot make a net of"))?;
         if let Surface::BSpline(_,n) | Surface::Offset(_,n,_) = &surface { n.check().map_err(|m| Refusal::malformed(r,m))?; }
-        Ok(Sheet {surface,scale:self.scale,seat:None})
+        // (a net's parameters are its rational arc's and its conic spline's, from where its seams
+        // were put: no scaling of the file's, whose curves in its faces' parameters lie elsewhere)
+        let scale = match &**seat { Seat::Turned {..} | Seat::Swept {..} | Seat::Throat {..} => UNMAPPED,_ => self.scale };
+        Ok(Sheet {surface,scale,seat:None})
     }
+}
+
+/// **The arc of a closed conic crossing the axis `f.z` in a plane of it that its faces lie on**
+/// (`Seat::Crossing`), and the frame it is turned in: each of `points` carried round the axis into
+/// the conic's plane, `ρ` from the axis at its height, on the conic at `+ρ` along `f.x` or at `−ρ`
+/// (whichever stands nearer it, by more than a millionth of `size` and ten times the other),
+/// points on the axis saying nothing. Its arc between its two crossings on that side, exactly (a
+/// circle's `nurbs::arc`, an ellipse's the unit arc stretched), run the way the conic runs, so the
+/// revolution's normal is the file's; turned in the frame whose `x` points to that side. None
+/// where the points lie on both sides or on neither, or the conic does not cross the axis.
+fn crossing_side(f: &Frame,curve: &Curve,points: &[V],size: f64) -> Option<(Frame,BSpline)> {
+    let (g,a,b) = match *curve { Curve::Circle(g,r) => (g,r,r),Curve::Ellipse(g,a,b) => (g,a,b),_ => return None };
+    let mut side = 0.;
+    for &p in points {
+        let l = f.local(p);
+        let rho = l[0].dhypot(l[1]);
+        if rho <= 1e-6*size { continue }
+        let off = |s: f64| { let q = f.at([s*rho,0.,l[2]]); distance(q,curve.point(curve.inverse(q))) };
+        let (dp,dm) = (off(1.),off(-1.));
+        let s = if dp+1e-6*size <= dm && 10.*dp <= dm { 1. } else if dm+1e-6*size <= dp && 10.*dm <= dp { -1. } else { continue };
+        if side != 0. && side != s { return None }
+        side = s;
+    }
+    if side == 0. { return None }
+    // its signed reach along `f.x` at its angle `t`: `C + A cos t + B sin t`, nought at two angles
+    let (c,ca,cb) = (dot(sub(g.o,f.o),f.x),a*dot(g.x,f.x),b*dot(g.y,f.x));
+    let big = ca.dhypot(cb);
+    if !(c.abs() < big) { return None }
+    let (phi,half) = (cb.datan2(ca),(-c/big).clamp(-1.,1.).acos());
+    // the arc from the one crossing on to the other whose middle lies on the faces' side
+    let (t0,t1) = (phi+half,phi+TAU-half);
+    let middle = 0.5*(t0+t1);
+    let (t0,t1) = if (c+ca*middle.dcos()+cb*middle.dsin())*side > 0. { (t0,t1) } else { (phi-half,phi+half) };
+    let unit = arc(&Frame::WORLD,1.,[t0,t1]);
+    let spline = BSpline {poles:unit.poles.iter().map(|p| g.at([a*p[0],b*p[1],0.])).collect(),..unit};
+    Some((Frame::new(f.o,f.z,scale(f.x,side)),spline))
 }
 
 /// **A curve turned once about `f.z` as the rational net that is exactly its surface of

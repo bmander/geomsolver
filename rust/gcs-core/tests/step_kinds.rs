@@ -634,3 +634,180 @@ fn a_placement_without_a_reference_direction_takes_the_standards() {
         close(&format!("area, {what}"), a, 2. * PI * 5. * 30. + 2. * PI * 25., 1e-12);
     }
 }
+
+/// A rational B-spline curve of degree 2 through `poles` weighed `weights`, its knots `knots`
+/// with multiplicities `mults`: the complex entity a writer writes.
+fn rational_curve(e: &mut Ents, poles: &[V], weights: &[f64], mults: &[usize], knots: &[f64]) -> u32 {
+    let p: Vec<String> = poles.iter().map(|&q| format!("#{}", e.point(q))).collect();
+    let m: Vec<String> = mults.iter().map(|m| m.to_string()).collect();
+    e.add(format!("( BOUNDED_CURVE() B_SPLINE_CURVE(2,({}),.UNSPECIFIED.,.F.,.F.) B_SPLINE_CURVE_WITH_KNOTS(({}),({}),.UNSPECIFIED.) \
+        CURVE() GEOMETRIC_REPRESENTATION_ITEM() RATIONAL_B_SPLINE_CURVE(({})) REPRESENTATION_ITEM('') )",
+        p.join(","), m.join(","), reals(knots), reals(weights)))
+}
+
+/// The half ellipse `(a cos v, 0, c sin v)`, `v` from `−π/2` to `π/2`, as two rational quadratics:
+/// its poles and weights.
+fn half_ellipse(a: f64, c: f64) -> (Vec<V>, Vec<f64>) {
+    let w = FRAC_PI_4.cos();
+    (vec![[0., 0., -c], [a, 0., -c], [a, 0., 0.], [a, 0., c], [0., 0., c]], vec![1., w, 1., w, 1.])
+}
+
+/// The volume and area of the spheroid of equatorial radius `a` and polar `c` (`c > a`).
+fn spheroid(a: f64, c: f64) -> (f64, f64) {
+    let e = (1. - a * a / (c * c)).sqrt();
+    (4. / 3. * PI * a * a * c, TAU * a * a * (1. + c / (a * e) * e.asin()))
+}
+
+/// **A face bounded by vertices alone is the whole of a surface that closes** (ISO 10303-42 lets a
+/// face's bounds be `VERTEX_LOOP`s; Open CASCADE writes an ellipsoid, a revolved spheroid and a
+/// torus of revolution so): a spheroid as the rational net of its half ellipse turned (closed
+/// round `u`, its rows at the ends of `v` its poles), bounded by its south pole alone; the same
+/// spheroid as a revolution of that half ellipse, bounded by its north pole; a ring torus as a
+/// revolution of a circle, bounded by a vertex on its outer equator — each read to its closed form.
+/// A circle turned across its axis, whose whole is the apple and the lemon of a spindle torus
+/// touching at its poles, is refused naming the face (no face of a manifold solid); a vertex on the
+/// net off both its poles and its seam is refused naming its bound.
+#[test]
+fn a_face_bounded_by_vertices_alone_is_the_whole_of_a_surface_that_closes() {
+    let (a, c) = (3., 5.);
+    let (meridian, mw) = half_ellipse(a, c);
+    let lone = |e: &mut Ents, p: V, surface: u32| -> u32 {
+        let v = e.vertex(p);
+        let l = e.add(format!("VERTEX_LOOP('',#{v})"));
+        let b = e.add(format!("FACE_BOUND('',#{l},.T.)"));
+        e.add(format!("ADVANCED_FACE('',(#{b}),#{surface},.T.)"))
+    };
+    // the net: a whole turn's rational circle (four quarters) times the half ellipse
+    let w = FRAC_PI_4.cos();
+    let round: [(f64, f64, f64); 9] = [(1., 0., 1.), (1., 1., w), (0., 1., 1.), (-1., 1., w), (-1., 0., 1.), (-1., -1., w), (0., -1., 1.), (1., -1., w), (1., 0., 1.)];
+    let net = |at: V| -> String {
+        let mut e = Ents::new();
+        let rows: Vec<String> = round.iter().map(|&(x, y, _)| {
+            let r: Vec<String> = meridian.iter().map(|q| format!("#{}", e.point([q[0] * x, q[0] * y, q[2]]))).collect();
+            format!("({})", r.join(","))
+        }).collect();
+        let weights: Vec<String> = round.iter().map(|&(_, _, wu)| format!("({})", reals(&mw.iter().map(|wv| wu * wv).collect::<Vec<_>>()))).collect();
+        let s = e.add(format!("( BOUNDED_SURFACE() B_SPLINE_SURFACE(2,2,({}),.UNSPECIFIED.,.T.,.F.,.F.) \
+            B_SPLINE_SURFACE_WITH_KNOTS((3,2,2,2,3),(3,2,3),(0.,0.25,0.5,0.75,1.),(0.,0.5,1.),.UNSPECIFIED.) \
+            GEOMETRIC_REPRESENTATION_ITEM() RATIONAL_B_SPLINE_SURFACE(({})) REPRESENTATION_ITEM('') SURFACE() )",
+            rows.join(","), weights.join(",")));
+        let f = lone(&mut e, at, s);
+        e.file(&[f])
+    };
+    let (v, ar) = spheroid(a, c);
+    reads("a spheroid's net bounded by its south pole", &net([0., 0., -c]), v, ar, 1e-9);
+    let off = net([-a, 0., 0.]);
+    refused("a vertex off the net's poles and seam", &off, Why::Unsupported, first(&off, "VERTEX_LOOP"));
+    let revolution = |curve: &dyn Fn(&mut Ents) -> u32, at: V| -> String {
+        let mut e = Ents::new();
+        let k = curve(&mut e);
+        let (o, z) = (e.point([0.; 3]), e.dir([0., 0., 1.]));
+        let axis = e.add(format!("AXIS1_PLACEMENT('',#{o},#{z})"));
+        let s = e.add(format!("SURFACE_OF_REVOLUTION('',#{k},#{axis})"));
+        let f = lone(&mut e, at, s);
+        e.file(&[f])
+    };
+    let spheroid_turned = revolution(&|e| rational_curve(e, &meridian, &mw, &[3, 2, 3], &[0., 0.5, 1.]), [0., 0., c]);
+    reads("a spheroid turned, bounded by its north pole", &spheroid_turned, v, ar, 1e-9);
+    let (big, r) = (10., 2.);
+    let ring = revolution(&|e| e.circle([big, 0., 0.], [0., -1., 0.], [1., 0., 0.], r), [big + r, 0., 0.]);
+    reads("a ring torus turned, bounded by a vertex on its outer equator", &ring, TAU * PI * big * r * r, TAU * TAU * big * r, 1e-9);
+    let apple = revolution(&|e| e.circle([-3., 0., 0.], [0., -1., 0.], [0.6, 0., -0.8], 5.), [0., 0., 4.]);
+    refused("a circle turned across its axis, whole", &apple, Why::Unsupported, first(&apple, "ADVANCED_FACE"));
+}
+
+/// **An edge from a vertex to itself on a line of no length is that point** (brepkit and vcad
+/// write a torus's seams so): a torus whose loop is two such edges each way round is the whole
+/// torus, read to its closed form with both edges the file's, each the kernel's degenerate edge
+/// there. A line of no length between two vertices, or standing off its one, is refused, malformed,
+/// naming the line.
+#[test]
+fn an_edge_that_is_a_point_reads_as_one() {
+    // (`apart`: one edge from the vertex to a second at `(8, 0, 0)`, the loop out along it and back)
+    let torus = |apart: bool, at: V| -> String {
+        let mut e = Ents::new();
+        let v = e.vertex([12., 0., 0.]);
+        let s = e.place([0.; 3], [0., 0., 1.], [1., 0., 0.]);
+        let s = e.add(format!("TOROIDAL_SURFACE('',#{s},10.,2.)"));
+        let f = if apart {
+            let w = e.vertex([8., 0., 0.]);
+            let l = e.line(at, [1., 0., 0.], 0.);
+            let x = e.edge(v, w, l, true);
+            e.face(&[(x, true), (x, false)], false, s, true)
+        } else {
+            let l1 = e.line(at, [1., 0., 0.], 0.);
+            let e1 = e.edge(v, v, l1, true);
+            let l2 = e.line(at, [0., 1., 0.], 0.);
+            let e2 = e.edge(v, v, l2, true);
+            e.face(&[(e1, true), (e2, true), (e1, false), (e2, false)], false, s, true)
+        };
+        e.file(&[f])
+    };
+    let whole = torus(false, [12., 0., 0.]);
+    reads("a torus bounded by two edges that are its vertex", &whole, TAU * PI * 10. * 4., TAU * TAU * 20., 1e-9);
+    let given = read(&whole).unwrap();
+    let mut named: Vec<u32> = given[0].edges.iter().copied().filter(|&x| x != 0).collect();
+    named.sort_unstable();
+    named.dedup();
+    assert_eq!(named.len(), 2, "both edges the file's: {:?}", given[0].edges);
+    let apart = torus(true, [12., 0., 0.]);
+    refused("a line of no length between two vertices", &apart, Why::Malformed, first(&apart, "LINE"));
+    let off = torus(false, [12., 0., 1.]);
+    refused("a line of no length off its vertex", &off, Why::Malformed, first(&off, "LINE"));
+}
+
+/// **A closed conic turned across its axis is the revolution of its arc on the side its faces lie**
+/// (springrep's lemon, a ball swung across its own centre line): the circle of radius 5 about
+/// `(−3, 0, 0)` in the plane `y = 0`, turned about `z`, crosses the axis at `z = ±4`; a face bounded
+/// by its seam along the arc from the south crossing to the north on the axis's `+x` side is the
+/// lemon, `π ∫ ρ²` and `2π ∫ ρ √(1 + ρ′²)`, one along the other arc the apple, the lemon's and the
+/// whole circle's by Pappus — each read to its closed form (the turned net of the whole circle read
+/// the lemon's seam 8 mm off it).
+#[test]
+fn a_conic_turned_across_its_axis_is_its_arc_on_its_faces_side() {
+    let file = |lemon: bool| -> String {
+        let mut e = Ents::new();
+        let (s, n) = (e.vertex([0., 0., -4.]), e.vertex([0., 0., 4.]));
+        let k = e.circle([-3., 0., 0.], [0., -1., 0.], [0.6, 0., -0.8], 5.);
+        let (o, z) = (e.point([0.; 3]), e.dir([0., 0., 1.]));
+        let axis = e.add(format!("AXIS1_PLACEMENT('',#{o},#{z})"));
+        let surface = e.add(format!("SURFACE_OF_REVOLUTION('',#{k},#{axis})"));
+        let c = e.circle([-3., 0., 0.], [0., -1., 0.], [0.6, 0., -0.8], 5.);
+        let m = if lemon { e.edge(s, n, c, true) } else { e.edge(n, s, c, true) };
+        let f = e.face(&[(m, false), (m, true)], false, surface, lemon);
+        e.file(&[f])
+    };
+    let root = |z: f64| (25. - z * z).sqrt();
+    let (v, a) = turned_measures(&|z| root(z) - 3., &|z| -z / root(z), -4., 4.);
+    reads("the lemon", &file(true), v, a, 1e-9);
+    // (Pappus's theorem over the whole circle, its radius from the axis signed: the apple less the
+    // lemon, `2π² R r²` and `4π² R r`)
+    reads("the apple", &file(false), TAU * PI * 3. * 25. + v, TAU * TAU * 15. + a, 1e-9);
+}
+
+/// **A closed edge's vertex may stand anywhere on its closed curve** (ISO 10303-42; springrep's
+/// offset hole): a cylinder whose two circles are closed rational B-splines starting at `+x`, each
+/// bounded by a vertex at `+y`, its seam the line between them, reads to its closed form — each
+/// spline started again at its vertex, the same points.
+#[test]
+fn a_closed_edge_on_a_spline_runs_round_from_its_vertex() {
+    let (r, h) = (4., 7.);
+    let w = FRAC_PI_4.cos();
+    let ring = |z: f64| -> Vec<V> { [(1., 0.), (1., 1.), (0., 1.), (-1., 1.), (-1., 0.), (-1., -1.), (0., -1.), (1., -1.), (1., 0.)].iter().map(|&(x, y)| [r * x, r * y, z]).collect() };
+    let weights = [1., w, 1., w, 1., w, 1., w, 1.];
+    let mut e = Ents::new();
+    let (b, t) = (e.vertex([0., r, 0.]), e.vertex([0., r, h]));
+    let cb = rational_curve(&mut e, &ring(0.), &weights, &[3, 2, 2, 2, 3], &[0., 0.25, 0.5, 0.75, 1.]);
+    let ct = rational_curve(&mut e, &ring(h), &weights, &[3, 2, 2, 2, 3], &[0., 0.25, 0.5, 0.75, 1.]);
+    let (eb, et) = (e.edge(b, b, cb, true), e.edge(t, t, ct, true));
+    let seam = segment(&mut e, [0., r, 0.], [0., r, h]);
+    let es = e.edge(b, t, seam, true);
+    let side = e.place([0.; 3], [0., 0., 1.], [1., 0., 0.]);
+    let side = e.add(format!("CYLINDRICAL_SURFACE('',#{side},{})", real(r)));
+    let bottom = e.plane([0.; 3], [0., 0., 1.], [1., 0., 0.]);
+    let top = e.plane([0., 0., h], [0., 0., 1.], [1., 0., 0.]);
+    let faces = [e.face(&[(eb, false)], false, bottom, false), e.face(&[(et, true)], false, top, true),
+        e.face(&[(eb, true), (es, true), (et, false), (es, false)], false, side, true)];
+    let text = e.file(&faces);
+    reads("a cylinder whose circles start off their vertices", &text, PI * r * r * h, TAU * r * r + TAU * r * h, 1e-9);
+}

@@ -29,6 +29,7 @@
 //! and the boundary checked (`Brep::check`), a failure refused naming the face or edge it names.
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
+mod closed;
 use super::context::Found;
 use super::geometry::{list,logical,Flat,Geometry,Sheet};
 use super::{Given,Refusal,Why};
@@ -162,7 +163,8 @@ impl Walk<'_,'_,'_> {
         Ok(Walked {entity:r,surface,reversed:!same_sense != turned,name,bounds,points})
     }
     /// **A loop of points alone**: where every edge of the loop `uses` runs from one vertex to
-    /// itself along a `LINE` whose vector has no length (each edge a point, the loop the point), that
+    /// itself along a `LINE` whose vector has no length standing at that vertex
+    /// (`Geometry::point_line`; each edge a point, the loop the point), that
     /// vertex and the edges, each once, in the loop's order; none otherwise.
     fn points_only(&self,uses: Option<&Value>) -> Option<(u32,Vec<u32>)> {
         let (mut at,mut named) = (None,Vec::new());
@@ -175,9 +177,11 @@ impl Walk<'_,'_,'_> {
             at = Some(a);
             let mut c = ev.get(3)?.reference()?;
             if let Some(("SURFACE_CURVE" | "SEAM_CURVE",cv)) = self.g.file.get(c).simple() { c = cv.get(1)?.reference()?; }
-            let Some(("LINE",lv)) = self.g.file.get(c).simple() else { return None };
-            let Some(("VECTOR",vv)) = self.g.file.get(lv.get(2)?.reference()?).simple() else { return None };
-            if vv.get(2)?.number()? != 0. { return None }
+            // (a point at its vertex, to the file's uncertainty: one off it is no point of the loop's)
+            let p = self.g.point_line(c).ok()??;
+            let Some(("VERTEX_POINT",av)) = self.g.file.get(a).simple() else { return None };
+            let q = self.g.point(a,av.get(1)?.reference()).ok()?;
+            if distance(p,q) > self.g.context.uncertainty.unwrap_or(0.).max(1e-9*(1.+norm(q))) { return None }
             if !named.contains(&e) { named.push(e); }
         }
         Some((at?,named))
@@ -267,6 +271,7 @@ fn read_edge(g: &Geometry,w: &Written,points: &[V],within: f64) -> Result<Read,R
         }
         _ => (g.edge_curve(r,Some(w.geometry),ends)?,Vec::new()),
     };
+    let (curve,pcurves) = closed::restarted(curve,pcurves,w,points,within);
     // laid along its curve: from its first vertex where it runs along, else its last
     let v = if w.same_sense { w.ends } else { [w.ends[1],w.ends[0]] };
     let t = parameters(&curve.curve,[points[v[0]],points[v[1]]],v[0] == v[1],r,within)?;
@@ -299,6 +304,7 @@ fn file_pcurve(flat: &Flat,e: &Edge,rate: f64,s: &Surface,vs: &[Vertex],near: f6
             Flat::Curve(c) if rate == 1. => Pcurve::Curve(Arc::new(c.clone())),
             Flat::Curve(_) => return None,
         };
+        let Some(pc) = closed::onto_net(pc,e,s,vs) else { continue };
         // as near the edge as the surface is, within `near` (a file's edge may stand its
         // tolerance off its faces, and its curve in each lies under it)
         let on = [0.,0.07,0.19,0.31,0.43,0.5,0.61,0.73,0.89,1.].iter().all(|&j| {
@@ -1091,6 +1097,7 @@ fn face(st: &Setting,sheet: &Sheet,w: &Walked) -> Result<Built,Refusal> {
     let periods = st.periods(w.surface,s);
     // (a closed sheet rolled out: the sheet the file gives, where a face is its whole)
     let given = st.rolled.get(&w.surface).map_or(s,|r| &r.sheet);
+    if let Some(x) = closed::whole(st,given,w) { return x }
     let reversed = w.reversed;
     let uses: Vec<Vec<(usize,bool)>> = w.bounds.iter().filter_map(|bound| match bound {
         Bound::Edges(u) => Some(u.iter().map(|u| (u.edge,!u.along != st.reads[u.edge].flip)).collect()),
