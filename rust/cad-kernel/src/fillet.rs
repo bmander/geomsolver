@@ -41,10 +41,11 @@ pub struct Rolled {
 /// The run of `b`'s edges nearest `at` between two faces, as a ball rolled along it or a flat cut
 /// along it reads it: the faces either side (each with every face on its surface the same way
 /// out), the run's edges (closing on itself, or ending at the two vertices `stops`), the uses of
-/// every edge, the edge's middle `p` and the directions into each face from there, whether the edge is concave, and the way each surface is offset toward the region
+/// every edge and the faces each bounds (`by`), the edge's middle `p` and the directions into each face from there, whether the edge is concave, and the way each surface is offset toward the region
 /// (`sides`).
 struct Meeting<'b> {
     uses: Vec<Vec<(usize,usize,usize)>>,
+    by: Vec<Vec<usize>>,
     faces: [&'b Face;2],
     sides_faces: [Vec<usize>;2],
     chain: Vec<usize>,
@@ -139,7 +140,8 @@ fn meeting<'b>(b: &'b Brep,at: V,tol: f64) -> Result<Meeting<'b>,String> {
     let side = |f: &Face| { let out = if f.reversed { -1. } else { 1. }; if concave { out } else { -out } };
     let sides = [side(face_a),side(face_b)];
     let surfaces = [face_a.surface.clone(),face_b.surface.clone()];
-    Ok(Meeting {uses,faces:[face_a,face_b],sides_faces,chain,stops,p,into:[da,db],theta,concave,
+    let by: Vec<Vec<usize>> = uses.iter().map(|u| u.iter().map(|x| x.0).collect()).collect();
+    Ok(Meeting {uses,by,faces:[face_a,face_b],sides_faces,chain,stops,p,into:[da,db],theta,concave,
         sides,surfaces,names:names()})
 }
 
@@ -216,7 +218,7 @@ fn roll_part(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)],beside: bool) -> Res
     if let Some((o,z)) = coaxial(&m.surfaces,tol).filter(|_| m.stops.is_empty()) {
         return revolved(b,&m,&onto,o,z,r,tol,wedge)
     }
-    let Meeting {uses,faces:[face_a,face_b],sides_faces,chain,stops,p,into:[da,db],theta,concave,sides,surfaces,
+    let Meeting {uses,by,faces:[face_a,face_b],sides_faces,chain,stops,p,into:[da,db],theta,concave,sides,surfaces,
         names,..} = m;
     let names = || names.clone();
     // the spine: the offsets' meeting through the ball's centre in the corner at `p`
@@ -262,7 +264,7 @@ fn roll_part(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)],beside: bool) -> Res
             seam_aligned(b,&uses,&sides_faces[k],f,v,add(c,scale(e[k],r)),tol,&names())?;
             Ok(Cut::Section {o:c,keep,reach:4.*r})
         };
-        let (trim,faces) = end_at(b,&uses,&sides_faces,&chain,v,m,tol,&names(),r,&section)?;
+        let (trim,faces) = end_at(b,&by,&sides_faces,&chain,v,m,tol,&names(),r,&section)?;
         // the ball's centre over the vertex, `r` from each face
         let t = spine.inverse(onto.project(across(p,m,r)));
         ends.push(Stop {trim,t,faces});
@@ -542,7 +544,7 @@ fn hemisphere(mut out: Brep,edge_of: &[usize],m: &Meeting,k: usize,ring: Frame,r
 #[allow(clippy::too_many_arguments)]
 fn dome(b: &Brep,m: &Meeting,k: usize,centre: V,ring: Frame,foot: V,r: f64,tol: f64,wedge: &[(V,V)],
     beside: bool) -> Result<Rolled,String> {
-    let Meeting {uses,sides_faces,chain,stops,p,concave,sides,surfaces,names,..} = m;
+    let Meeting {uses,by,sides_faces,chain,stops,p,concave,sides,surfaces,names,..} = m;
     let axis = ring.z;
     let touch = add(centre,scale(foot,r));
     let turn_of = |d: V| { let l = ring.dir_local(d); l[1].datan2(l[0]) };
@@ -553,6 +555,7 @@ fn dome(b: &Brep,m: &Meeting,k: usize,centre: V,ring: Frame,foot: V,r: f64,tol: 
     // stands
     let mut ends: Vec<DomeEnd> = Vec::new();
     let mut cut: Vec<CutEnd> = Vec::new();
+    let both = sides_faces.concat();
     for &v in stops {
         let pv = b.vertices[v as usize].p;
         let e = &b.edges[*chain.iter().find(|&&e| b.edges[e].v.contains(&v)).ok_or("a stretch's end on no edge")?];
@@ -561,11 +564,9 @@ fn dome(b: &Brep,m: &Meeting,k: usize,centre: V,ring: Frame,foot: V,r: f64,tol: 
         // the faces there besides the stretch's two: each goes on tangent from one of them, or
         // every one cuts across it (`dome_cut`)
         let mk = [0,1].map(|j| scale(unit(surfaces[j].gradient(pv)),sides[j]));
-        let by: Vec<Vec<usize>> = uses.iter().map(|u| u.iter().map(|x| x.0).collect()).collect();
-        let at: Vec<usize> = others_at(b,&by,&sides_faces.concat(),v);
-        let tangent_to = |f: usize,j: usize| tangent(mk[j],unit(b.faces[f].surface.gradient(pv)));
+        let at: Vec<usize> = others_at(b,by,&both,v);
         if let Some(&f) = at.iter().find(|&&f| !goes_on(b,f,pv,mk)) {
-            if let Some(&g) = at.iter().find(|&&g| tangent_to(g,0) || tangent_to(g,1)) {
+            if let Some(&g) = at.iter().find(|&&g| goes_on(b,g,pv,mk)) {
                 return Err(format!("the ball between {names} stands still, and their meeting ends where `{}` cuts across \
                     it and `{}` goes on from it at once: no stretch of its dome is cut off there yet",b.faces[f].name,
                     b.faces[g].name));
@@ -574,7 +575,7 @@ fn dome(b: &Brep,m: &Meeting,k: usize,centre: V,ring: Frame,foot: V,r: f64,tol: 
             cut.push(CutEnd {pv,stop:Stop {trim:Trim {vertex:v,o:pv,cuts},t:0.,faces:at}});
             continue;
         }
-        let Some(&going) = at.iter().find(|&&f| tangent_to(f,k)) else {
+        let Some(&going) = at.iter().find(|&&f| tangent(mk[k],unit(b.faces[f].surface.gradient(pv)))) else {
             return Err(format!("the ball between {names} stands still, and their meeting ends where no face goes on from \
                 `{}`",b.faces[sides_faces[k][0]].name));
         };
@@ -1626,7 +1627,7 @@ impl<'a> Band<'a> {
 /// the face inside the loop. Between two planes the flat is a plane, and about one axis
 /// (`coaxial`) it is the section's triangle turned: both exact, no net fitted.
 pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Result<Brep,String> {
-    let Meeting {uses,faces:[face_a,face_b],sides_faces,chain,stops,p,sides,surfaces,concave,names,..} = meeting(b,at,tol)?;
+    let Meeting {uses,by,faces:[face_a,face_b],sides_faces,chain,stops,p,sides,surfaces,concave,names,..} = meeting(b,at,tol)?;
     // which face is `a`
     let swap = on_a.is_some_and(|q| surfaces[1].implicit(q).abs() < surfaces[0].implicit(q).abs());
     let legs = if swap { [legs[1],legs[0]] } else { legs };
@@ -1725,7 +1726,7 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
             seam_aligned(b,&uses,&sides_faces[k],f,v,legs_at(e,keep)[k],tol,&names)?;
             Ok(Cut::Section {o:e,keep,reach})
         };
-        let (trim,faces) = end_at(b,&uses,&sides_faces,&chain,v,m,tol,&names,legs[0].max(legs[1]),&section)?;
+        let (trim,faces) = end_at(b,&by,&sides_faces,&chain,v,m,tol,&names,legs[0].max(legs[1]),&section)?;
         ends.push(Stop {trim,t:edge.inverse(q),faces});
     }
     let winding = [0,1].map(|k| ends.is_empty() && winds(&strips[k],&loop_pts));
@@ -1913,13 +1914,12 @@ fn coaxial(surfaces: &[Surface;2],tol: f64) -> Option<(V,V)> {
 /// (`m[k]` the way from face `k` toward the region there), what `section(k, face, leaving)` cuts
 /// it at — or the run is refused, naming why.
 #[allow(clippy::too_many_arguments)]
-fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2],chain: &[usize],v: u32,m: [V;2],tol: f64,
+fn end_at(b: &Brep,by: &[Vec<usize>],sides_faces: &[Vec<usize>;2],chain: &[usize],v: u32,m: [V;2],tol: f64,
     names: &str,size: f64,section: &dyn Fn(usize,usize,V) -> Result<Cut,String>) -> Result<(Trim,Vec<usize>),String> {
     let names = || names.to_string();
     let p = b.vertices[v as usize].p;
     let sides: Vec<usize> = sides_faces.iter().flatten().copied().collect();
-    let by: Vec<Vec<usize>> = uses.iter().map(|u| u.iter().map(|x| x.0).collect()).collect();
-    let faces: Vec<usize> = others_at(b,&by,&sides,v);
+    let faces: Vec<usize> = others_at(b,by,&sides,v);
     if faces.is_empty() { return Err(format!("the run of {} ends where nothing meets it",names())) }
     // the run's way leaving the vertex, along its edge
     let e = &b.edges[*chain.iter().find(|&&e| b.edges[e].v.contains(&v)).unwrap()];
@@ -1952,9 +1952,9 @@ fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2
     // **an end of several faces** (#994, `beyond_end`): past an end face shorter than the section,
     // each face beyond it facing on past the end cuts the run off too, kept on its material's side
     let mut beyond: Vec<usize> = Vec::new();
-    for (g,w) in beyond_end(b,&by,&sides,v,m,leaving,size) {
+    for (g,w) in beyond_end(b,by,&sides,v,m,leaving,size) {
         let (face,q) = (&b.faces[g],b.vertices[w as usize].p);
-        let out = scale(face.surface.gradient(q),if face.reversed { -1. } else { 1. });
+        let out = face.outward_gradient(q);
         let cut = match face.surface {
             Surface::Plane(_) => Cut::Plane {o:q,keep:scale(unit(out),-1.)},
             _ => Cut::Solid {surface:face.surface.clone(),inside:!face.reversed},
@@ -2039,7 +2039,7 @@ pub fn beyond_end(b: &Brep,by: &[Vec<usize>],sides: &[usize],v: u32,m: [V;2],lea
             reached.push(w);
             for g in others_at(b,by,sides,w) {
                 let face = &b.faces[g];
-                let out = scale(face.surface.gradient(q),if face.reversed { -1. } else { 1. });
+                let out = face.outward_gradient(q);
                 if ending.contains(&g) || !faces_on(out,leaving) || !cuts_off(&face.surface) { continue }
                 ending.push(g);
                 beyond.push((g,w));
@@ -2067,16 +2067,14 @@ pub fn one_surface(b: &Brep,f: usize,g: usize,tol: f64) -> bool {
     dot(out(a),out(c)) > 0.
 }
 
-/// **Whether two unit normals `n` and `m` are one either way**, `1 - |n·m|` within 1e-9: a face
-/// tangent to a run's side where it ends goes on from it (`end_at`), and a ball standing still
-/// whose end no face goes on from is cut off there (`dome`'s `dome_cut`). The field reads its
-/// pieces' ends by the same test, so the two agree on which end is cut off.
-pub fn tangent(n: V,m: V) -> bool { 1.-dot(n,m).abs() <= 1e-9 }
+/// **Whether two unit normals `n` and `m` are one either way**, `1 - |n·m|` within 1e-9: the test
+/// `goes_on` reads at a run's end, and `dome` the face going on from its side `k` by.
+fn tangent(n: V,m: V) -> bool { 1.-dot(n,m).abs() <= 1e-9 }
 
 /// Whether a face on `s` beyond a run's end face cuts the run off (`faces_on`): a plane's
 /// half-space, or a cylinder's, a cone's or a sphere's solid (an affine image's too); a sheet's
 /// or any other surface read by no closed form cuts nothing there yet.
-pub fn cuts_off(s: &Surface) -> bool {
+fn cuts_off(s: &Surface) -> bool {
     matches!(s,Surface::Plane(_) | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Affine(..))
 }
 
