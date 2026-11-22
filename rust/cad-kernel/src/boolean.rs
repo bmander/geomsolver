@@ -2038,9 +2038,27 @@ impl<'a> Arrangement<'a> {
 
     /// Whether the span `t` of curve `c`, from vertex `v[0]` to `v[1]`, is kept as an edge where
     /// two faces meet: its middle in both and on each surface's patch, whether the two cross or touch.
+    /// **A span lying along a face's boundary within the reach a vertex is on an edge by**
+    /// (`tolerant::on_stretch`, `ON_CURVE` tolerances, at every eighth of it) **is on that face**
+    /// (#994): it is the edge it lies along, which step 4 merges it into, and the other face is cut
+    /// along it. Read Out of the face at the tolerance alone, it was dropped, and the other face kept
+    /// the meeting that led up to it as a slit: a lip's foot turned `1e-3` rad across its pad, its end
+    /// within the foot's pad by half a micrometre, crosses the side of a strip abutting it a
+    /// tolerance and a half under that strip's foot, and the lip's foot was left one face whose two
+    /// sides were one shell — refused as kept on one side of a plane and dropped on another.
     fn kept(&self,c: &Curve,t: [f64;2],v: [u32;2],faces: Two,surfaces: [&Surface;2]) -> bool {
         let m = c.point((t[0]+t[1])/2.);
-        let places = [0,1].map(|k| self.located[faces.s[k]].face_place(faces.f[k],m));
+        let mut places = [0,1].map(|k| self.located[faces.s[k]].face_place(faces.f[k],m));
+        let reach = ON_CURVE*self.tol;
+        for k in 0..2 {
+            if places[k] != Place::Out { continue }
+            let (s,fi) = (faces.s[k],faces.f[k]);
+            let along = (1..8).all(|j| {
+                let p = c.point(t[0]+(t[1]-t[0])*j as f64/8.);
+                self.solids[s].faces[fi].loops.iter().flatten().any(|co| self.located[s].nearest(co.edge,p).1 <= reach)
+            });
+            if along { places[k] = Place::On }
+        }
         self.say.span(t,v,m,places,&self.pool);
         if places[0] == Place::Out || places[1] == Place::Out { return false }
         // on each surface's patch, not only its extension: a surface over a curve's domain (a
