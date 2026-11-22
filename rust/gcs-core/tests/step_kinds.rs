@@ -624,7 +624,13 @@ fn a_placement_without_a_reference_direction_takes_the_standards() {
         out.push('\n');
     }
     assert!(unset >= 3, "the cylinder's and its caps' placements stand about ±x ({unset} found)");
-    let (v, a) = measures(&out).unwrap_or_else(|r| panic!("refused: {r}"));
-    close("volume", v, PI * 25. * 30., 1e-12);
-    close("area", a, 2. * PI * 5. * 30. + 2. * PI * 25., 1e-12);
+    // and with each such axis a rounding off `±x`, as CATIA writes `(1.,-2.1862853408E-015,0.)`:
+    // the default `[1, 0, 0]` a hair off the axis, its part square to it still a direction
+    let hair = out.replace("(-1.0,0.0,0.0))", "(-1.,2.1862853408E-015,0.))");
+    assert!(hair != out, "an axis written along -x");
+    for (what, text) in [("along ±x", &out), ("a rounding off ±x", &hair)] {
+        let (v, a) = measures(text).unwrap_or_else(|r| panic!("{what}: refused: {r}"));
+        close(&format!("volume, {what}"), v, PI * 25. * 30., 1e-12);
+        close(&format!("area, {what}"), a, 2. * PI * 5. * 30. + 2. * PI * 25., 1e-12);
+    }
 }

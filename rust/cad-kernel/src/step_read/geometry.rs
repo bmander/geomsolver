@@ -398,7 +398,14 @@ impl<'f,'a> Geometry<'f,'a> {
         let z = match optional(v.get(2),r,"a placement's axis")? { Some(a) => self.direction(r,Some(a))?,None => [0.,0.,1.] };
         let x = match optional(v.get(3),r,"a placement's reference direction")? {
             Some(a) => self.direction(r,Some(a))?,
-            None => if z[1] == 0. && z[2] == 0. { [0.,1.,0.] } else { [1.,0.,0.] },
+            // (the default's own part square to the axis, however small: an axis a rounding off
+            // `±x` — CATIA's `(1.,-2.1862853408E-015,0.)` — leaves `[1, 0, 0]` a hair off it, and
+            // the standard's projection is still a direction; where the turn starts about such an
+            // axis is all it says)
+            None => {
+                let v = if z[1] == 0. && z[2] == 0. { [0.,1.,0.] } else { [1.,0.,0.] };
+                normalised(sub(v,scale(z,dot(v,z)))).ok_or_else(|| Refusal::malformed(r,"a placement whose axis leaves its reference direction none"))?
+            }
         };
         if !(norm(sub(x,scale(z,dot(x,z)))) > 1e-12) { return Err(Refusal::malformed(r,"a placement whose reference direction lies along its axis")) }
         Ok(Frame::new(o,z,x))
