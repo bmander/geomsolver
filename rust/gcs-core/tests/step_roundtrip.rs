@@ -471,7 +471,18 @@ fn trip_in(b: &Brep,name: &str,tol: f64,fit: Fit,found: &mut Found) -> Outcome {
     // the second trip: the solid read, written again, is a file of itself and reads to itself
     say("the second trip");
     let r = &given[0].brep;
-    let again = match write(r,name,tol,fit) { Ok(t) => t,Err(e) => return Outcome::SecondTrip(format!("not written again: {e}")) };
+    let again = {
+        let (tx,rx) = std::sync::mpsc::channel();
+        let (owned,called) = (r.clone(),name.to_string());
+        std::thread::spawn(move || { let _ = tx.send(std::panic::catch_unwind(|| write(&owned,&called,tol,fit))); });
+        match rx.recv_timeout(BOUND) {
+            Ok(Ok(Ok(t))) => t,
+            Ok(Ok(Err(e))) => return Outcome::SecondTrip(format!("not written again: {e}")),
+            Ok(Err(p)) => return Outcome::Panicked(format!("writing again: {}",said(p))),
+            Err(_) => return Outcome::SecondTrip(format!("not written again within {BOUND:?}")),
+        }
+    };
+    if again.len() > LARGEST { return Outcome::SecondTrip(format!("written again too large: {} bytes, {} the first time",again.len(),text.len())) }
     if let Err(e) = verify(&again,&Solid::of(r)) { return Outcome::SecondTrip(format!("written again, not verified: {e}")) }
     let twice = match stages(&again) { Ok(g) => g,Err((by,refusal,_)) => return Outcome::SecondTrip(format!("refused by {by:?}: {refusal}")) };
     if twice.len() != 1 { return Outcome::SecondTrip(format!("{} solids read again",twice.len())) }
@@ -568,14 +579,15 @@ pub fn paths(b: &Brep,text: &str) -> BTreeSet<String> {
 /// solved, and each object whose exact B-rep is built and checked (`sound_census`'s walk; a
 /// swept body skipped where `swept` is `Some(true)`, only swept ones taken where `Some(false)`). Those not built are counted in `unbuilt`.
 pub fn library(only: Option<&str>,swept: Option<bool>,unbuilt: &mut Vec<String>,each: &mut dyn FnMut(&str,&str,Brep,Duration)) {
-    for (name,e) in fixtures::examples() {
+    for name in fixtures::example_names() {
         if only.is_some_and(|o| !name.contains(o)) { continue }
         if std::env::var("STEP_ROUNDTRIP_FROM").is_ok_and(|f| name.as_str() < f.as_str()) { continue }
         if std::env::var("STEP_ROUNDTRIP_UPTO").is_ok_and(|f| name.as_str() >= f.as_str()) { continue }
         if std::env::var("STEP_ROUNDTRIP_SKIP").is_ok_and(|f| f.split(',').any(|x| name.contains(x))) {
             unbuilt.push(format!("{name}: skipped")); continue
         }
-        let Some(e) = e else { continue };
+        if std::env::var("STEP_ROUNDTRIP_UPTO").is_ok_and(|f| name.as_str() >= f.as_str()) { continue }
+        let Some(e) = fixtures::example(&name) else { continue };
         if !e.ok() { continue }
         eprintln!("EXAMPLE {name}");
         let started = Instant::now();
