@@ -185,6 +185,44 @@ fn main() {
                 println!("{name} at t {t}: inward {:+.3e}, on {:+.3e}, outward {:+.3e}",least(add(x,sc(n,-h))),least(x),least(add(x,sc(n,h))));
             }
         },
+        // the start wedge's seam traced into its corner at a tolerance (`TOL`, the bench's by default)
+        "seam" => {
+            let tol: f64 = std::env::var("TOL").ok().and_then(|s| s.parse().ok()).unwrap_or(5.3e-8);
+            let p0 = psi0(&path,0.,0);
+            let pose = path.pose(0.).unwrap();
+            let sheet = |e: f64,s: f64| (pose.point(local(-FRAC_PI_2+e,p0+s)),0.);
+            let clock = std::time::Instant::now();
+            let seam = depth.seam_over(&sheet,[0.3,(tol*20.).min(2.5e-4)],&|_| [0.,-0.3],tol);
+            match seam {
+                Ok(s) => { println!("{} points in {:?}; worst depth {:.1e}",s.len(),clock.elapsed(),s.iter().map(|p| p.cover.depth.abs()).fold(0.,f64::max));
+                    for p in s.iter().step_by((s.len()/8).max(1)).chain(s.last()) { println!("  e {:+.6} ψ−ψ0 {:+.7} partner t {:.6} depth {:.1e}",p.e,p.s,p.cover.t,p.cover.depth) } }
+                Err(e) => println!("refused: {e:?}"),
+            }
+        },
+        "edges" => {
+            let p0 = psi0(&path,0.,0);
+            let pose = path.pose(0.).unwrap();
+            let sheet = |e: f64,s: f64| (pose.point(local(-FRAC_PI_2+e,p0+s)),0.);
+            for e in [0.3,0.2,0.1,0.05,0.02,0.01,0.005,0.002,0.001,3e-4,1e-4] {
+                println!("e {e}: {:?}",depth.edge_on(&sheet,e,[0.,-0.3],1e-5).map(|p| (p.s,p.cover.t,p.cover.depth)));
+            }
+        },
+        "covers" => {
+            let p0 = psi0(&path,0.,0);
+            let x = path.pose(0.).unwrap().point(local(-FRAC_PI_2+0.05,p0-0.005));
+            let clock = std::time::Instant::now();
+            for _ in 0..100 { let _ = depth.cover(x,0.); }
+            println!("100 covers {:?}; minima {}",clock.elapsed(),depth.minima(x).len());
+        },
+        "rim" => {
+            let p0 = psi0(&path,0.,0);
+            let pose = path.pose(0.).unwrap();
+            for e in [0.02,0.015,0.01,0.007,0.005,0.003,0.002,0.001,3e-4] {
+                let x = pose.point(local(-FRAC_PI_2+e,p0));
+                let x2 = pose.point(local(-FRAC_PI_2+e,p0-0.3));
+                println!("e {e}: rim {:?}; far {:?}",depth.cover(x,0.),depth.cover(x2,0.).map(|c| c.depth));
+            }
+        },
         "time" => {
             let clock = std::time::Instant::now();
             let x = place(-FRAC_PI_2,psi0(&path,0.5,0)+4.71,0.5);
