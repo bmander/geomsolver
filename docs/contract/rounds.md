@@ -763,8 +763,16 @@ make the corner wider than the bound — "`k3` and `k2` meet at a turn of 1e-05 
 0.00012, 10]mm: not tangent, so their edge is a corner and no seam a round goes on across, and too
 nearly tangent a corner for this kernel to round at 2mm against `k2`'s radius of 12mm …". The
 bound is the kernel's: on the step, `2.9e-4` rad; at `3e-4` and `1e-3` the corner is built at
-rounds of 2 and 5. A chamfer's flat crosses the edge's face, and is built at any turn the
-sweep reached; a reflex corner of a line into a concave arc (the step's arc of 8) is built too.
+rounds of 2 and 5. A chamfer is refused in the same band by the same words, "too nearly tangent
+a corner for this kernel to chamfer at 1.5mm against `k2`'s radius of 12mm …" (#994): its flat
+crosses the edge's face, but its piece holds a strip of that face, which the curved face meets at
+the corner and again `2R sin θ` on, the two meetings the kernel cannot tell apart — since the
+arrangement reads two curves on one surface as crossing within its reach (`query::crossings_in`),
+a drum's waist chamfered to lobes `2e-6` to `1e-4` rad off tangent was refused by the kernel's words
+("a run cut off at a curved end: a shell of the arrangement is kept on one side of a cylinder"), or
+built, as the drum was turned (`piece::nearly_tangent` over every section, `lobe_runs`'s
+`a_chamfer_at_a_corner_too_nearly_tangent_is_said_by_its_faces`). A reflex corner of a line into a
+concave arc (the step's arc of 8) is built.
 Still refused otherwise: the same reflex corner at a round of 0.5 between `3e-4` and `1e-3` ("a
 run cut off at a curved end: a shell of the arrangement …"), and a convex corner a few millionths
 to a few hundredths of a radian off tangent by #962's item 3's refusals ("a stretch of a circle
@@ -774,8 +782,8 @@ plates of four, six and twelve alternating arcs, each stated to the micron, mirr
 round and chamfer, either cap; seams `1e-8` to `5e-7` off tangent; `step.sv` as drawn, with the
 stack's mitre at the frame's corners; the boss slid along the rim through the seam, built either
 side of the section and refused over it, by its faces; the step's side turned `2e-6` to `2e-4` off
-its lobe refused by its faces, and `5e-7`, `3e-4` and `1e-3` built; each volume the closed form's
-to 1e-9, a boss's chord by quadrature, and the plates grown 1 by Steiner's).
+its lobe refused by its faces, round and chamfer, and `5e-7`, `3e-4` and `1e-3` built; each volume
+the closed form's to 1e-9, a boss's chord by quadrature, and the plates grown 1 by Steiner's).
 
 **Where a run's end does not cut its section off** (#962 item 3: a disc's rim chamfered past its
 flats, a rim ending on another arc's face, a channel's fill broken by a hole). `std.rounds` says a
@@ -1002,6 +1010,32 @@ and both; on a disc 2, 3 and 8 against 4.9; a segment and a wedge under and over
 top edge rounded 1 to 8 on the tangent band, the wedge's slope and the segment's arc under and over
 their heights, and 0.5 and 0.9 on the disc; each volume the closed form's to 1e-9, exported with no
 sliver; 1 and 2 on the disc refused by name).
+
+**A round or a chamfer along one arc of a chain of tangent arcs** (#994 item 5, fixture 125: R5
+along one lobe of a drum of convex lobes of 90 joined by concave waists, R3 along its bore's edge).
+At the run's ends its wall goes on tangent into the next arc's, which meets the cap in an edge of
+the run's own turn: it carries the run on (`BodyFaces::carries_on`), so the run ends on no face
+there and no curved end is cut at all. What bounds it is the meeting alone (`distance(p, crease)
+<= distance(p, meeting)`, the meeting the whole circle the cap and the arc's cylinder meet in):
+past the meridian through the seam a point's nearest point of it is off the crease, so the
+stretch ends square in that meridian — through both arcs' axes — and is the ring's sector
+exactly, Pappus over the arc's angle, convex or concave, on the rim or on a bore's edge. This is
+the abrupt end #962 saw at the waists, and it is the definition's own shape. `tests/lobe_runs.rs`
+is the gate (a lobe alone and a waist alone, round 5 and 3 and chamfer 2, either cap, drums of
+four and of six arcs stated to the micron, mirrored and turned; the same arcs as a bore's edge;
+the whole rim and the whole bore as before; each volume the closed form's to 1e-9, two exported).
+The fixture's "a run cut off at a curved end: a piece of nothing cut off at a curved face" was not
+reproduced on any such drum, before #994's changes or after, nor on a run along a short arc (a
+twentieth of the round's radius to three times it) between two arcs meeting it tangent or at
+corners either way, or one of each: a cut at a curved end is asked only where a seam is a corner,
+and there it removes a crescent of the run, not nothing. **What a seam a hair off tangent takes
+is the definition's**: at a tangent seam the next arc's face carries the run on and ends nothing,
+so the stretch keeps the crescent of its ring the next arc's cylinder holds, square at the seam's
+meridian; at a corner however slight that face is an end face, and `crease.ends` keeps the run on
+its side of it, so the crescent is cut away — which face ends the run flips at the seam, and with
+it the volume. Between the body's reading of tangent and the kernel's bound the corner is refused by
+name ("too nearly tangent a corner …"); past the bound the jump is the drawing's, a tangency stated
+off by more than the kernel reads as one.
 
 **A ball as wide as its cylinder** (brep-bench's fillet/cylinder-rim-to-dome): an offset by a
 radius that takes a surface's radius to nothing is what the surface is drawn about, never nothing

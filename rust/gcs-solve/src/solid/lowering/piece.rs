@@ -343,11 +343,11 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
     // so where it comes back past an end is the set's own extent there; in several runs each point
     // is read against the ends of the run nearest it, #881)
     let one = body.runs(&edges).len() == 1;
-    if let Section::Round(r) = section {
+    {
         // the kernel's tolerance over the body (`geom::tolerance` of its box's diagonal)
         let tol = { let (lo, hi) = body.bounds(); crate::brep::geom::tolerance(distance(lo, hi)) };
         for &edge in edges.iter().filter(|&&e| body.convex(e) == Some(within)) {
-            if let Some(why) = nearly_tangent(body, edge, &ends, r, tol, units.name()) {
+            if let Some(why) = nearly_tangent(body, edge, &ends, section, tol, units.name()) {
                 return Err(why);
             }
         }
@@ -521,23 +521,27 @@ fn held(body: &crate::solid::faces::BodyFaces, edges: &[u32], edge: u32, ends: &
     Ok(())
 }
 
-/// **A corner too nearly tangent to round** (#962): where a round's edge ends on a curved face (a
-/// cylinder, a cone or a sphere, `R` its radius there) that meets one of the edge's own faces at a
-/// turn `θ` past the body's reading of tangent (`faces::TANGENT`) — so a corner, and no seam the
-/// round goes on across — the ball's surface, tangent to the edge's face, meets the curved face at
-/// the corner and again `2R sin θ` on round it, where the face's plane comes back across its
-/// surface.  The kernel reads a point within its tolerance `tol` of two surfaces meeting at `θ` as
-/// on their meeting as far as `ON_CURVE tol / sin θ` off it (`brep::tolerant::on_meeting`), so it
-/// tells the two meetings apart only where `2R sin θ` is more than twice that: `sin² θ > ON_CURVE
-/// tol / R`.  Short of it the pieces' Booleans read one meeting where there are two and leave a
-/// face that does not close ("a cylinder's pieces do not close"; #962's 117 stepped plate with its
-/// side turned `1e-5` to `2e-4` off the lobe it leaves, a teardrop's tangents stated to three
-/// places).  A chamfer's flat crosses the edge's face, no tangent to it, and is built.  Said by the
-/// two faces, the turn, the bound, and what is true to do: state the tangency, or make the corner
-/// one.  `tol` is the kernel's over the body (`geom::tolerance` of its box's diagonal), and the
-/// bound the kernel's own (`tolerant::least_sine_apart`).
-fn nearly_tangent(body: &crate::solid::faces::BodyFaces, edge: u32, ends: &Ends, r: f64, tol: f64, unit: &str)
-    -> Option<String> {
+/// **A corner too nearly tangent to round or chamfer** (#962, #994): where a round's edge ends on a
+/// curved face (a cylinder, a cone or a sphere, `R` its radius there) that meets one of the edge's
+/// own faces at a turn `θ` past the body's reading of tangent (`faces::TANGENT`) — so a corner, and
+/// no seam the round goes on across — the ball's surface, tangent to the edge's face, meets the
+/// curved face at the corner and again `2R sin θ` on round it, where the face's plane comes back
+/// across its surface.  The kernel reads a point within its tolerance `tol` of two surfaces meeting
+/// at `θ` as on their meeting as far as `ON_CURVE tol / sin θ` off it
+/// (`brep::tolerant::on_meeting`), so it tells the two meetings apart only where `2R sin θ` is more
+/// than twice that: `sin² θ > ON_CURVE tol / R`.  Short of it the pieces' Booleans read one meeting
+/// where there are two and leave a face that does not close ("a cylinder's pieces do not close";
+/// #962's 117 stepped plate with its side turned `1e-5` to `2e-4` off the lobe it leaves, a
+/// teardrop's tangents stated to three places).  A chamfer's piece is the same there (#994): its
+/// flat crosses the edge's face, but the piece's own strip of that face meets the curved face at
+/// the corner and again `2R sin θ` on, the two meetings the kernel cannot tell apart (a drum's
+/// waist chamfered to lobes `2e-6` to `1e-4` off tangent: "a shell of the arrangement is kept on
+/// one side of a cylinder"), so it is refused by the same bound and words, `to chamfer at`.  Said
+/// by the two faces, the turn, the bound, and what is true to do: state the tangency, or make the
+/// corner one.  `tol` is the kernel's over the body (`geom::tolerance` of its box's diagonal), and
+/// the bound the kernel's own (`tolerant::least_sine_apart`).
+fn nearly_tangent(body: &crate::solid::faces::BodyFaces, edge: u32, ends: &Ends, section: Section,
+    tol: f64, unit: &str) -> Option<String> {
     let faces = body.faces_of(edge);
     for p in [body.along(edge, 0.0), body.along(edge, 1.0)] {
         for &(by, _, far) in ends.iter() {
@@ -568,13 +572,22 @@ fn nearly_tangent(body: &crate::solid::faces::BodyFaces, edge: u32, ends: &Ends,
             // (the witness to the power of ten under the kernel's tolerance)
             let grid = 10f64.powi(tol.max(1e-12).log10().floor() as i32);
             let fig6 = |x: f64| crate::json::fmt_g((x / grid).round() * grid, 6);
+            // (a round's ball, or a chamfer's piece along the edge's own face, meets the curved
+            // face at the corner and again on round it)
+            let (verb, size, noun) = match section {
+                Section::Round(r) => ("round", fig(r), "the round"),
+                Section::Flat { la, lb } if la == lb => ("chamfer", fig(la), "the chamfer"),
+                Section::Flat { la, lb } => {
+                    ("chamfer", format!("{} by {}", fig(la), fig(lb)), "the chamfer")
+                }
+            };
             return Some(format!("{} and {} meet at a turn of {} rad at [{}, {}, {}]{unit}: not tangent, so their \
                 edge is a corner and no seam a round goes on across, and too nearly tangent a corner for this \
-                kernel to round at {}{unit} against {}'s radius of {}{unit} — the round meets {} again {}{unit} on round it, \
-                closer than the kernel tells two meetings apart at that turn (a turn of {} rad or more is \
-                built). State the tangency ({} tangent {}, or a chain's `-> tangent` joint) rather than \
+                kernel to {verb} at {size}{unit} against {}'s radius of {}{unit} — {noun} meets {} again {}{unit} \
+                on round it, closer than the kernel tells two meetings apart at that turn (a turn of {} rad or \
+                more is built). State the tangency ({} tangent {}, or a chain's `-> tangent` joint) rather than \
                 coordinates rounded off it, or make it a corner of more than {} rad",
-                name(own), name(c), fig(turn), fig6(p[0]), fig6(p[1]), fig6(p[2]), fig(r), name(c), fig(radius),
+                name(own), name(c), fig(turn), fig6(p[0]), fig6(p[1]), fig6(p[2]), name(c), fig(radius),
                 name(c), fig(2.0 * radius * turn.dsin()), fig(bound), name(own), name(c), fig(bound)));
         }
     }
