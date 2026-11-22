@@ -26,7 +26,7 @@ import { drawingActive, pickDrawingFolder, renderDrawing, showDrawing } from './
 import { currentConstraint, pdiags, ped, ppanel, ppanelState, psplit, view } from './shell.js';
 import { download, toast } from './ui.js';
 import { loaded, loading, painted } from './loading.js';
-import { ProjectExplorer, projectFile, sourceFile } from './project-explorer.js';
+import { ProjectExplorer, givenFile, projectFile, sourceFile } from './project-explorer.js';
 
 /** The box somebody types in.  `app/editor.ts` owns the two layers and the colouring; this module
  *  owns what the text *means* — which document it came from and what applying it does. */
@@ -370,18 +370,23 @@ export function refreshProgram(): void {
   programName.hidden = directory === undefined;
   programName.textContent = activeFile;
   const imported = !project && activeFile !== '';
-  ptext.readOnly = imported;
+  const file = project ? undefined : files.find((f) => f.name === activeFile);
+  // an exchange file is named, never put in the editor (`givenNotice`)
+  const path = project ? activeFile : file?.path ?? '';
+  const given = path !== '' && givenFile(path);
+  ptext.readOnly = imported || given;
   compileButton.disabled = imported;
   ptext.setAttribute('aria-label', project ? activeFile
-    : activeFile ? modules.pathOf(activeFile) : 'Main drawing source');
+    : activeFile ? file?.path ?? modules.pathOf(activeFile) : 'Main drawing source');
   markStatement();              // the pick may have moved even where the text has not
   if (typed) {
     ppanel.classList.add('dirty');
     ppanelState.textContent = ' — edited, ⌘↵ to apply';
     return;
   }
-  const text = project ? project.files[activeFile]
-    : files.find((f) => f.name === activeFile)?.text ?? view.source;
+  const text = given ? givenNotice(path, project ? project.files[activeFile] : file!.text)
+    : project ? project.files[activeFile]
+    : file?.text ?? view.source;
   if (text === shown) return;
   shown = text;
   const quiet = imported || drawingActive() || showingText();
@@ -392,8 +397,21 @@ export function refreshProgram(): void {
   ped.setText(text, quiet ? [] : marks());
   markSelected();               // the new text let go of the names the old one lit
   ppanel.classList.remove('dirty');
-  ppanelState.textContent = imported ? ' — imported file, read only' : '';
+  ppanelState.textContent = imported ? ' — imported file, read only'
+    : given ? ' — exchange file, read only' : '';
   showDiags(quiet ? [] : view.doc.diagnostics);
+}
+
+/** What the panel shows for an exchange file of the project (#993 stage 2) in place of its text:
+ *  it is not Solvent and may be megabytes, so it is named and measured, and left to the `use`
+ *  that reads its body.  Saving it still saves the file as it came. */
+function givenNotice(path: string, text: string): string {
+  const stem = path.slice(path.lastIndexOf('/') + 1).replace(/\.(?:step|stp)$/, '');
+  const kb = text.length / 1024;   // its geometry is ASCII: characters are near enough bytes
+  const size = kb < 1024 ? `${Math.ceil(kb)} KB` : `${(kb / 1024).toFixed(1)} MB`;
+  return `// ${path}: an ISO 10303-21 exchange file, ${size}.\n`
+    + `// A model beside it reads the body it gives with \`use ${stem}\`;\n`
+    + '// its text is not shown here.\n';
 }
 
 /** Apply what is in the box.  One undo entry, one solve, one diagnosis — like every other edit.
@@ -684,6 +702,7 @@ export function bindProgramPanel(): void {
   filePicker.addEventListener('change', () => void chooseFile(filePicker.value));
   ptext.addEventListener('input', () => {
     if (!project && activeFile) return;
+    if (givenFile(activeFile)) return;
     if (showingText()) {
       project!.files[activeFile] = shown = ptext.value;
       ped.repaint();

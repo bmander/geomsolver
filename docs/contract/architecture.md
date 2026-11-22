@@ -108,7 +108,15 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   report carries (a motion's `movingParams`).  **A `use` resolves against what the host handed over,
   then the library**: `gcs_module_set` is the browser's "beside the document" — `core/modules.ts`
   asks `gcs_program_uses`, fetches each through the app and hands it over, transitively; linking
-  stays the core's (`modules::link`, in the CLI's order).  The dev server serves `rust/examples/` as
+  stays the core's (`modules::link`, in the CLI's order).  Which paths a `use` is looked for at is
+  the core's answer too (`gcs_module_search_paths`, `modules::search_paths`), and so is whether a
+  text is an exchange file that gives a body (`gcs_text_is_step`, asked of the text's head): the
+  binding never asks the `use`s of one, which is not Solvent and may be megabytes, and
+  `gcs_program_uses` answers `[]` for one without parsing it.  `gcs_module_set` takes an exchange
+  file's bytes as `modules::decode` reads them, lossily where its strings are not UTF-8, and
+  refuses any other text that is not UTF-8 with 0 and `gcs_last_error`, never storing an empty
+  module (`host_modules.rs`; `core.test.ts`, "an exchange file is handed over as it came and never
+  asked for its uses").  The dev server serves `rust/examples/` as
   `examples/…` and `app/remote.ts` asks it first (edits show on refresh, no wasm rebuild), else the
   compiled-in copy is read.  **File ▸ Open GitHub project gathers texts and nothing more**:
   `app/github.ts` reads a repository's (or a folder's) project files — the tree from GitHub's API,
@@ -120,7 +128,17 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   to its drawing and a page opened on one opens it.
 * **CLI** (`rust/gcs-cli/`): `solventc` parses, elaborates, solves, diagnoses and reports on a
   document, and resolves modules (`engine/parts.sv` beside the document or an ancestor, then
-  `library::MODULES`). It **invents no wording**: a per-document line is `diagnose::summary`, a
+  `library::MODULES`).  **Every host looks for a module in one order** (#993 stage 2):
+  `NAME.sv`, then `NAME.step`, then `NAME.stp` in each directory, the document's own first and
+  then its ancestors, nearest first, then the library (`modules::search_paths`,
+  `module_search.rs`) — in one directory the Solvent document wins, and a nearer exchange file
+  wins over a farther document (`a_use_is_looked_for_as_sv_then_step_then_stp_nearest_first`).
+  The CLI, a drawing's loader, the `fixtures` crate and the examples' gates read a module file's
+  bytes through `modules::decode`: UTF-8 as it stands, an exchange file lossily (its geometry is
+  ASCII; real files carry Latin-1 in their strings), anything else refused.  The first candidate
+  that is a file is the module: one that does not read is said on stderr beside its path and
+  resolves nothing (E070 at the `use`), rather than a farther file or the library's copy standing
+  in for it (`a_module_file_is_read_lossily_if_an_exchange_file_and_said_if_it_does_not_read`). It **invents no wording**: a per-document line is `diagnose::summary`, a
   culprit is `io::describe_with` (`SourceMap` names, never `P0`; the app uses `gcs_elab_describe`),
   `--json` is `report::*_json`.
   **Where a name landed is part of the report**: `report::positions` zips `EntKind::scalar_names`

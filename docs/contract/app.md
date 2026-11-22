@@ -537,6 +537,15 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   acts on (Compile, Isolate/Show all).  The outline reads its tree only while shown
   (`OutlinePane.show`).  Turning from the program applies a draft as a blur does; a way to
   source (`goToSource`) and a file picked in the project's tree turn the panel to the program.
+  **A project's exchange files are its files too** (#993 stage 2): `.step`/`.stp` beside the
+  sources is read by every gatherer — a folder picked, a GitHub project (`github.test.ts`), the
+  examples from the dev server and the packed `sources.json` (`project-explorer.ts::projectFile`)
+  — so a model's `use bracket` reads the body `bracket.step` gives, in the order every host looks
+  (architecture.md, the CLI), and the page carries its text to the core and the workers unread.
+  The tree lists one (`givenFile`, a mark of its own) and the panel, picked, names it and its
+  size read-only in place of its text (`program.ts::givenNotice`): it is not Solvent, and it may
+  be megabytes, so neither the editor nor the parser is given it.  Saving it saves its text as it
+  was read.
   On a narrow screen the panel is a drawer above the footer: the head's chevron folds it, and
   choosing a pane opens it (`bindDrawer`).  A component selected names itself in the
   status line (`describeEntity`) and brings up one floating window listing the constraints that
