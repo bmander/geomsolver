@@ -32,6 +32,7 @@ fn main() {
     let clock = std::time::Instant::now();
     match cad_kernel::swept::closed::cut_from(&block,&tool,&path,[0.,1.],0.005,tol) {
         Ok(b) => {
+            let built = clock.elapsed();
             let kinds: Vec<&str> = b.faces.iter().map(|f| f.surface.kind()).collect();
             if std::env::var_os("FACES").is_some() {
                 let uses = b.uses();
@@ -45,7 +46,24 @@ fn main() {
                     }
                 }
             }
-            println!("built in {:?}: volume {:.6}, check {:?}, faces {kinds:?}",clock.elapsed(),cad_kernel::props::volume(&b),b.check(tol).err());
+            let c = std::time::Instant::now();
+            let v = cad_kernel::props::volume(&b);
+            eprintln!("volume {v} in {:?}",c.elapsed());
+            let c = std::time::Instant::now();
+            let a: f64 = b.faces.iter().map(|f| cad_kernel::props::area(&b,f)).sum();
+            eprintln!("area {a} in {:?}",c.elapsed());
+            for f in &b.faces {
+                let c = std::time::Instant::now();
+                let x = cad_kernel::props::area(&b,f);
+                if c.elapsed().as_millis() > 50 { eprintln!("  {} area {x} in {:?}",f.surface.kind(),c.elapsed()) }
+            }
+            let c = std::time::Instant::now();
+            let ok = b.check(tol).is_ok();
+            eprintln!("check {ok} in {:?}",c.elapsed());
+            let c = std::time::Instant::now();
+            let st = cad_kernel::step::write(&b,"ring",tol,cad_kernel::step::Fit::Exact).map(|s| s.len());
+            eprintln!("step {st:?} in {:?}",c.elapsed());
+            println!("built in {built:?}: volume {:.6}, check {:?}, faces {kinds:?}",cad_kernel::props::volume(&b),b.check(tol).err());
         }
         Err(e) => println!("refused in {:?}: {e:?}",clock.elapsed()),
     }

@@ -1314,6 +1314,7 @@ fn arranged(within: &Brep,reach: Option<&Brep>,refs: &[&Brep],given: &[crate::bo
     if crate::timing() { eprintln!("closed: {} cells classified in {:?}",cells,clock.elapsed()) }
     if blank.is_none() && !keep.iter().any(|&k| k) { return Err(Unbuilt::Failed("no cell of the arrangement is swept".into())) }
     let out = crate::boolean::selection(&complex,&|c| keep[c])?;
+    if crate::timing() { eprintln!("closed: selected in {:?}",clock.elapsed()) }
     if let Err(e) = out.check(tol) {
         if crate::debug() {
             // each face's loops, where the check failed: their areas and their reach in parameters
@@ -1329,7 +1330,9 @@ fn arranged(within: &Brep,reach: Option<&Brep>,refs: &[&Brep],given: &[crate::bo
         return Err(e.into())
     }
     // **judged by its definition before it is returned** (#777 V2): never returned built wrong
+    if crate::timing() { eprintln!("closed: checked in {:?}",clock.elapsed()) }
     judge(&out,swept,within,blank,&witnesses,tol)?;
+    if crate::timing() { eprintln!("closed: judged in {:?}",clock.elapsed()) }
     Ok(out)
 }
 

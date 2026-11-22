@@ -143,8 +143,13 @@ fn parallels(torus: &Torus,m: &crate::trajectory::Motion,theta: f64) -> Option<[
 /// The angle nearest `p` of those `q` stands for, a whole number of turns apart.
 fn near(q: f64,p: f64) -> f64 { p+(q-p+PI).rem_euclid(TAU)-PI }
 
+/// The degree each sheet is fitted in either way: quintic, so a sheet held to a tenth of the
+/// tolerance needs a few spans where a cubic needed hundreds (the leaves' 112 × 227 nodes), and
+/// whatever reads it span by span (area, its export) reads that many fewer.
+const DEGREE: usize = 5;
+
 /// **A closed form fitted over a rectangle** of parameters: interpolated at the nodes `us` × `vs`
-/// (cubic each way, rows along `v` then their poles along `u`), read again halfway between nodes
+/// (`DEGREE` each way, rows along `v` then their poles along `u`), read again halfway between nodes
 /// and each stretch whose middle stands off the closed form by more than `fit` halved, until none
 /// does. `column(v, us)` gives the points at one `v` — the instant the expensive part of a point.
 /// Several closed forms sharing one `vs` (a leaf and the strip it meets, their seams one curve)
@@ -163,10 +168,10 @@ fn fitted(columns: &[&dyn Fn(f64,&[f64]) -> Result<Vec<V>,Unbuilt>],us: &mut [Ve
             let (uu,vv) = (mids(u),mids(vs));
             let grid: Vec<Vec<V>> = vv.iter().map(|&v| column(v,&uu)).collect::<Result<_,_>>()?;
             // the nodes' points, row by row along `v`
-            let rows: Vec<BSpline> = (0..u.len()).map(|i| crate::nurbs::interpolate(&(0..vs.len()).map(|j| grid[2*j][2*i]).collect::<Vec<_>>(),vs,3))
+            let rows: Vec<BSpline> = (0..u.len()).map(|i| crate::nurbs::interpolate(&(0..vs.len()).map(|j| grid[2*j][2*i]).collect::<Vec<_>>(),vs,DEGREE))
                 .collect::<Option<_>>().ok_or_else(|| Unbuilt::Failed("a ring's touched sheet not interpolated".into()))?;
             let nv = rows[0].poles.len();
-            let cols: Vec<BSpline> = (0..nv).map(|j| crate::nurbs::interpolate(&rows.iter().map(|r| r.poles[j]).collect::<Vec<_>>(),u,3))
+            let cols: Vec<BSpline> = (0..nv).map(|j| crate::nurbs::interpolate(&rows.iter().map(|r| r.poles[j]).collect::<Vec<_>>(),u,DEGREE))
                 .collect::<Option<_>>().ok_or_else(|| Unbuilt::Failed("a ring's touched sheet not interpolated".into()))?;
             let poles: Vec<Vec<V>> = (0..cols[0].poles.len()).map(|i| cols.iter().map(|c| c.poles[i]).collect()).collect();
             let net = Net {du:cols[0].degree,dv:rows[0].degree,uknots:cols[0].knots.clone(),vknots:rows[0].knots.clone(),poles,weights:None};
