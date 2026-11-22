@@ -854,7 +854,11 @@ reading, the candidates with their face families' walls, rails and rims, and the
 `load_trim` reads them back, every candidate and meeting bit for bit
 (`swept_general::the_general_roads_candidates_are_written_and_read_back_whole`), and its replay
 refuses as the build did (`swept_general::a_refused_trim_replays_from_its_dump_to_the_same_refusal`,
-and in the slow tier the bench's tumbling cube).
+and in the slow tier the bench's tumbling cube). A frame carried along a B-spline
+(`trajectory::Along`) is written as its curve exactly, its home, which frame and its name, and made
+again from them (`Path::along`), its poses and rates read back bit for bit
+(`swept_rings::a_frame_carried_along_a_spline_is_written_and_read_back_whole`, #942 T1d-ring);
+any other path read only by evaluating it, a pace and a path of pieces stay refused by name.
 
 **A piece is one verdict all over, or a meeting is missing, and the trim completes it** (#942 F2,
 `trim`'s `sided`, `missing_across` and `completed`): each piece is read at up to eight of its inner
@@ -2215,8 +2219,9 @@ the start turned 0.75π about a line parallel to the torus's axis, two congruent
 whose tubes touch at two points beside each place their core circles cross, and their meeting,
 found by search seeded where an edge crosses it, misses an arc between those points that no edge
 crosses (at `(2.356, 2.693, −0.273)`, the surfaces crossing at a sine of 0.6; the touches 0.15 off,
-the sine below 4e-3); the thin one where its two tubes meet at under
-a hundredth of a degree, which the march cannot step along; the half turn — its double curve built
+the sine below 4e-3); the thin one beside the swallowtail point where its fold pair is born
+(above: its two tubes' meeting at under a hundredth of a degree was a seed off the other tube, no
+root); the half turn — its double curve built
 from the swallowtail point beside its pair's birth, cut into its three stretches and its tail
 dropped — where the trim finds the boundary open along an edge 8e-4 from the swallowtail point:
 along the kernel through it the sheet moves at the third order, the segment from the point back to
@@ -2228,11 +2233,71 @@ not by an instant read for each (#942 F4: the turned torus refused in 32 s where
 them reading instants; the thin one in 58 s where it took over forty minutes); what is left is the
 shape changes found (6.6 s) and, in the trim's Boolean, its fitted tubes' edges read against their
 faces (693 searches, 81 s of the cores' time). **A ring along a spline** (the whole meridian touched at every instant, `rings::root`
-in closed form there) now closes its sheets — a bridge holding the join its label turns over at, a
+in closed form there) closes its sheets — a bridge holding the join its label turns over at, a
 trace leaving beside a corner ending at a nearer crossing, a cap both faces of a seam trace into one
-corner dropped, a chord refined by the meeting's own points where its cubic strays — and is refused
-in the arrangement: the side circle's band is swept almost twice over, its two halves crossing at
-grazing angles, and two of its faces coincide along an edge.
+corner dropped, a chord refined by the meeting's own points where its cubic strays — and its tubes
+are arranged with the torus at both ends (#942 T1d-ring, at the bench's tolerance:
+`swept_rings::a_rings_tubes_beside_its_whole_touched_meridians_are_arranged_with_it_at_both_ends`).
+**A seam's crossing within the tolerance band of the rim is the tube's vertex** (`rings::traces`):
+where a touching piece's rim meets a dipped one's the relative curvature across the rim is nought
+at the vertex, and beside it the tube and the tool stand within the fit's error of one another all
+along the seam between them; where along it `G` changes sign is the fit's slope across the rim
+(2.7e-5 there), not the meeting's. A crossing of a seam whose seam down to the rim the tool stands
+on stays within the tolerance of the tool (read at the bracketing grid's points, `F` itself, which
+both faces of the seam read alike) is no crossing: the trace reaching it runs into the tube's own
+vertex, as it does where the face's corner is nearer. Found 4e-4 of the roll up the seam, the
+chord traced from it zigzagged 1.1e-5 off both surfaces round a sliver face laid over its
+neighbour ("faces … coincide along it"). Two chords run into one vertex so (the ring's end pose,
+two crossings of the torus converging on its corner) part the face as the planar graph of its
+chords does (`pieces_among`), not round its square alone. **A grid's seed is a root on the other
+face's patch** (`boolean::grid_seeds`, `off_patch`, `kept`'s reading): a sheet's distance along the
+normal at a foot clamped to its patch has zeros of its own past the patch, and a seed laid 1.0 off
+the other tube there was traced from and refused as the two meeting at 0.19°. **Refused by name**:
+along a path in a plane the ring's axis lies in, its top and bottom meridians are touched whole at
+every instant (`Ring::touched_whole`, `root`'s closed form: `A` and `B` nought at one angle), and
+the sweep of each is a sheet of its own — the groove's floor, 1.5 below the path, where the deeper
+contact curve's tube reaches 1.098 — which no contact curve's tube holds: arranged from the tubes
+alone the groove and the block beside it were one cell, and the block came back whole with two
+sheets in it. A meridian touched whole at two of the closed class's poses (`K2_POSES`) or more is
+`Curved` at its farthest point (`ring_entered`, before anything is fitted;
+`swept_rings::a_ring_carried_along_a_spline_touching_its_meridians_whole_is_refused_by_name`); an
+instant alone touching one whole (an end pose) is no sheet. **What builds it, measured**: along this path the contact
+is exact — the two parallels `ψ₀(t)`, `ψ₀ + π` (`s cos ψ + ωR sin ψ = 0`) and the two meridians
+`θ* = ±π/2` — and on a meridian `s''` changes sign exactly where a parallel crosses it, as it does on
+the parallel there, without its sheet folding: the parallel is touching on one side of the crossing
+right up to the meridian (`A`), and on the other a buried sliver runs out to a true fold `d_F` past it
+(0.0017 to 0.012 of a turn over the roll), past which the far leaf `B'` lies over the meridian's
+canal, crossing it at 0.03° and standing up to 5.8e-8 above it until `2 d_F` (`d_c = 2 d_F` to three
+digits: the section is a parabola through the crossing). So the bridge's old ends lay on the canal
+only to 1e-10 – 1e-8 and parted from it near the roll's ends; the crossing itself lies on it to the
+rounding. **The touching side is the sheet** (`rings`' reader, #942 T1d-ring): of a bridge holding
+the join where the label turns over, the piece on the side clear of the sliver's least is touching,
+its rim on the meridian the crossing, and the sliver's piece alone is dipped (`narrow` now asks a
+narrow pair's bridge to share its neighbours' branch). **The meridian's touching half is a sheet of
+its own** (`rings::Strip`, `fitted`'s `strips`): the arc between the two tubes' crossings on the
+side where its `s''` stands above nought, read at each roll (`Ring::touched_near`, the arc's roots a
+hair off the meridian, as the tubes read their seams), fitted as a tube is, its sides the tubes'
+seams within the fits
+(`swept_rings::a_whole_touched_meridians_touching_half_is_a_sheet_between_the_tubes_seams`). Entered
+(`rings::strip_entered`), its sides are the tubes' very seam curves, and what it meets is given by
+construction: the ring at either end in its rim, each tube's touching face in the seam, its dipped
+face in the seam and its far seam (the sliver's far side, on the strip within 2e-9), the leaf beyond
+in the far seam, every other face of the tube nothing; a far seam leaving the strip across its rim is
+cut there, and where it ends on the strip the dipped face's rim on the ring closes the strip's
+corner. **Not yet**: arranged so, the bench's case fits in 11 s and arranges in 41 s, and the
+groove and the block are still one cell, at 1e-5 as at 5.3e-8: at the end poses the ring where it
+stops lies on both sides of a tube's rim beside the strip's corner (its face's loop walking the
+touching rim, the dipped one and the leaf's out and back), where the ring, the strip, the tube's
+touching side and its dipped one all touch one another, and a far seam's crossing of the strip's rim
+3e-5 off the corner is taken for the corner by the reach of a meeting so shallow. The refusal stands
+before anything is fitted. **A ring is the ring road's under any motion
+K2 and the general road refuse it** (#942 T1d-ring, `closed::k2`): a tool of revolution clear of its
+axis whose contact the road reads at the instants `rings::admits` asks is built on the ring road
+from `closed`/`cut_from`, judged as every road is, its own refusal standing where it cannot build
+it — the bench's ring along a spline, built by its runner through `cut_from`, ended at K2's
+`Curved` at the torus's rim, and is refused by name at its top meridian; any other tool keeps K2's
+refusal (`swept_patches::a_tool_no_convex_revolution_under_any_motion_is_refused_by_name`'s ring,
+its two meridians square to the motion touched whole, is `Curved` so).
 
 **K2's patches: the closed class under any rigid motion (#780 L3, `brep::swept::patches`):** a
 sweep under a motion no constant twist takes, nor a path of pieces (`Trajectory::General`, a frame
