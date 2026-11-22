@@ -50,6 +50,10 @@ pub struct BodyFaces {
     /// Each face's shell, and how many: the faces reached from it across their edges numbered
     /// alike, from 0 in the order the faces come — a body in several pieces is several shells.
     shells: (Vec<usize>, usize),
+    /// The faces each path read so far names, caps taken in (`faces`): a face's reading is
+    /// asked by every round over it, and a top with the caps of a plate's pockets is a walk over
+    /// every one of their edges (#994).
+    named: std::sync::Mutex<std::collections::BTreeMap<Vec<String>, Vec<usize>>>,
 }
 
 impl BodyFaces {
@@ -153,7 +157,8 @@ impl BodyFaces {
         }
         let shells = joined.labels();
         let caps = vec![false; loc.b.faces.len()];
-        BodyFaces { loc, mm, origin, paths, caps, convex: Vec::new(), edges, bounding, reach, shells }
+        BodyFaces { loc, mm, origin, paths, caps, convex: Vec::new(), edges, bounding, reach,
+                    shells, named: Default::default() }
     }
 
     /// The same boundary bounding what lies outside it: every face's outward side turned, so each
@@ -363,7 +368,15 @@ impl BodyFaces {
     /// the caller holds `f` to be a face of the solid this body is (`reading`, `one_body`), since
     /// another solid's path may name some other face here (#961).
     pub fn faces(&self, f: &FaceRef) -> Vec<usize> {
-        self.with_caps((0..self.paths.len()).filter(|&i| self.paths[i].matches(&f.path)).collect())
+        if let Some(fs) = self.named.lock().ok().and_then(|m| m.get(&f.path).cloned()) {
+            return fs;
+        }
+        let fs = (0..self.paths.len()).filter(|&i| self.paths[i].matches(&f.path)).collect();
+        let fs = self.with_caps(fs);
+        if let Ok(mut m) = self.named.lock() {
+            m.insert(f.path.clone(), fs.clone());
+        }
+        fs
     }
 
     /// **A face with the caps lying on it** (#994): faces `named` (each by its name, in the
@@ -445,6 +458,43 @@ impl BodyFaces {
         }
         self.edges[fi].iter().map(|&e| self.loc.nearest(e, q).1).fold(f64::INFINITY, f64::min)
             / self.mm
+    }
+
+    /// How far `p` is from face `fi`'s box in space (`Located::face_box`, which holds its patch;
+    /// model units): no farther than the patch, and nothing where `p` is within the box.
+    pub fn patch_gap(&self, fi: usize, p: V) -> f64 {
+        let q = self.q(p);
+        let (lo, hi) = self.loc.face_box(fi);
+        norm(std::array::from_fn(|k| (lo[k] - q[k]).max(q[k] - hi[k]).max(0.0))) / self.mm
+    }
+
+    /// **The patch of `fs` nearest `p`** (#994), and how far (model units): the first in `fs` of
+    /// those nearest, as a scan of every one reads it — but measured only where its box in space
+    /// (`Located::face_box`, which holds the patch) comes no farther than the nearest found so
+    /// far, taking the patches by how far their boxes are.  A face's chain or its caps grow with
+    /// a body's features (the top of a plate of pockets goes on into four caps a pocket); a point
+    /// measures the few near it, not all of them.  `None` where `fs` is empty.
+    pub fn nearest_patch(&self, fs: &[usize], p: V) -> Option<(f64, usize)> {
+        if let [fi] = fs {
+            return Some((self.patch_distance(*fi, p), *fi));
+        }
+        let gap = |fi: usize| self.patch_gap(fi, p);
+        let mut order: Vec<(f64, usize)> =
+            fs.iter().enumerate().map(|(k, &fi)| (gap(fi), k)).collect();
+        order.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        // (a hair past the nearest, so a patch as near is still measured and the first kept)
+        let slack = 1e-9 * (1.0 + norm(p));
+        let mut best: Option<(f64, usize)> = None;
+        for (low, k) in order {
+            if best.is_some_and(|(d, _)| low > d + slack) {
+                break;
+            }
+            let d = self.patch_distance(fs[k], p);
+            if best.is_none_or(|(e, j)| d < e || d == e && k < j) {
+                best = Some((d, k));
+            }
+        }
+        best.map(|(d, k)| (d, fs[k]))
     }
 
     /// Where `p`'s foot on face `fi`'s surface lies off the face: the edge of the face nearest it
@@ -701,8 +751,7 @@ impl BodyFaces {
     /// lie apart (`chains_apart`), the chain of the piece nearest `p`.
     pub fn nearest_named<'a, T>(&self, p: V, alts: &'a [T], named: impl Fn(&T) -> &[usize])
         -> Option<&'a T> {
-        let near = |fs: &[usize]| fs.iter().map(|&fi| self.patch_distance(fi, p))
-            .fold(f64::INFINITY, f64::min);
+        let near = |fs: &[usize]| self.nearest_patch(fs, p).map_or(f64::INFINITY, |(d, _)| d);
         alts.iter().map(|a| (near(named(a)), a)).min_by(|x, y| x.0.total_cmp(&y.0)).map(|(_, a)| a)
     }
 
@@ -721,7 +770,7 @@ impl BodyFaces {
     /// one just past that face or just within it, as the set holds it: the gate's probes of a
     /// fill's leg, or of a round's on a band's side, lie on it.  `None` where `fs` is empty.
     pub fn nearest_face(&self, fs: &[usize], p: V, held: &[(usize, bool)]) -> Option<usize> {
-        let (_, fi) = fs.iter().map(|&fi| (self.patch_distance(fi, p), fi)).min_by(|a, b| a.0.total_cmp(&b.0))?;
+        let (_, fi) = self.nearest_patch(fs, p)?;
         let rim = |e: &u32| self.faces_of(*e).iter().any(|g| !fs.contains(g));
         let Some(e) = self.off_face(fi, p).filter(rim) else {
             // (on the rim to a face the point is held outside of or within, in that face's plane:
@@ -1393,9 +1442,10 @@ impl Reading {
         if self.smooth && surface {
             return self.side(p).abs();
         }
-        self.faces.iter().map(|&fi| {
-            if surface { self.body.side(fi, p).abs() } else { self.body.patch_distance(fi, p) }
-        }).fold(f64::INFINITY, f64::min)
+        if !surface {
+            return self.body.nearest_patch(&self.faces, p).map_or(f64::INFINITY, |(d, _)| d);
+        }
+        self.faces.iter().map(|&fi| self.body.side(fi, p).abs()).fold(f64::INFINITY, f64::min)
     }
 
     /// Where the faces' side reaches `v`, read surface by surface (`BodyFaces::level`): the one

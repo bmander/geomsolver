@@ -70,7 +70,8 @@ faces of `whole`, of which 24 pairs meet and 16 threes meet each other ``, `solv
 and an expansion past the limit says it in its E103 with what to do, rather than only where in
 `std.rounds` it had got to.  A chain of faces on one plane (a top and the caps its pockets'
 fills leave on it) is one condition of a set, so a round on that top no longer costs the cube of
-the pockets.
+the pockets.  An expansion over faces projected, from its first copies, past twice the limit is
+refused at once, naming the statement, what it runs over and how far it got.
 
 **[0.228] A drafted corner where an arc meets a side at an angle** (#962). `std.solids.Drafted`
 of a face whose arc meets a line or another arc at an angle, not tangent, is built: the corner

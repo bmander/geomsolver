@@ -110,13 +110,25 @@ fn faces_apart(r: &Reading, c: f64, beyond: bool, d: f64) -> Vec<Fv> {
         return Vec::new();
     }
     let sigma = if beyond { 1.0 } else { -1.0 };
-    let chain = Arc::new(r.faces.clone());
+    // (looked up, not scanned, as each face's condition is read: a chain grows with a body, #994)
+    let chain: Arc<std::collections::BTreeSet<usize>> = Arc::new(r.faces.iter().copied().collect());
     // the faces of the chain each bulging toward the ball on its own
-    let toward: Arc<Vec<usize>> =
+    let toward: Arc<std::collections::BTreeSet<usize>> =
         Arc::new(r.faces.iter().copied().filter(|&g| r.body.bulges(g, beyond, true)).collect());
     r.faces.iter().map(|&fi| {
         let (body, chain, toward) = (r.body.clone(), chain.clone(), toward.clone());
+        // the faces it goes on into across a seam, which a point near them reads through it
+        let beside: Vec<usize> = r.body.edges_of(fi).iter().filter(|&&e| r.body.seam(e))
+            .flat_map(|&e| r.body.faces_of(e).to_vec()).filter(|&h| h != fi && chain.contains(&h))
+            .collect();
         Arc::new(move |x| {
+            // far from its patch and from every face it goes on into, by their boxes, nothing:
+            // where the set's point is, a face holding it back is within `d` (#994), so a chain
+            // grown with a body is read only where the point is
+            let far = |h: usize| body.patch_gap(h, x) > 2.0 * d;
+            if far(fi) && beside.iter().all(|&h| far(h)) {
+                return (c * d, [0.0; 3]);
+            }
             let (past, (s, g)) = body.carried_past(fi, x);
             let side = (c * sigma * s, scale(g, c * sigma));
             let nothing = (c * d, [0.0; 3]);
