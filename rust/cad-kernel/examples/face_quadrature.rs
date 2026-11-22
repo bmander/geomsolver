@@ -8,7 +8,15 @@
 //! in space. The error estimate is the change from half as many strips and half as many polygon
 //! points; derivatives are central differences.
 //!
-//!     face_quadrature [--write CORPUS] FILE ENTITY…
+//!     face_quadrature [--write CORPUS] [--master] FILE ENTITY…
+//!
+//! With `--master`, each edge bounds the face by its master representation (ISO 10303-42
+//! `surface_curve.master_representation`) rather than by this face's pcurve: where the master is
+//! the 3D curve, or a pcurve on another surface, each point of the use's polygon is moved to the
+//! foot on this face's surface of the point of the master's image nearest it (sought from the
+//! pcurve's own point; the master's image in space sampled at 20,000 points and refined); where it
+//! is this face's pcurve, the pcurve as it is. A `--master` reading is the region the file says the
+//! face is, and is never written (`--write` takes the pcurves' region alone).
 //!
 //! With `--write`, each face measured to a part in 1e5 of its area, its file's curves in its
 //! parameters within a thousandth of its size (the square root of its area) of its edges, is put
@@ -237,7 +245,7 @@ impl<'f,'a> Reader<'f,'a> {
 }
 
 /// The face's loops as polygons in its parameters (radians and millimetres), `n` points an edge.
-fn loops(rd: &Reader,face: u32,surface: u32,s: &Surf,n: usize,worst: &mut (f64,f64)) -> Result<Vec<Vec<[f64;2]>>,String> {
+fn loops(rd: &Reader,face: u32,surface: u32,s: &Surf,n: usize,worst: &mut (f64,f64),master: bool) -> Result<Vec<Vec<[f64;2]>>,String> {
     let (_,fv) = rd.ent(face);
     let ang = rd.g.context.angle;
     let l = rd.len();
@@ -276,7 +284,9 @@ fn loops(rd: &Reader,face: u32,surface: u32,s: &Surf,n: usize,worst: &mut (f64,f
             let (gk,gv) = rd.ent(gc);
             if !matches!(gk,"SURFACE_CURVE" | "SEAM_CURVE") { return Err(format!("edge #{ec}'s curve is {gk}: no curve in the face's parameters")) }
             let mut cands = Vec::new();
-            for pc in gv[2].list().unwrap() {
+            // (the master: none for the 3D curve, else the place of its pcurve)
+            let named = match gv.get(3).and_then(Value::word) { Some("PCURVE_S1") => Some(0),Some("PCURVE_S2") => Some(1),_ => None };
+            for (at,pc) in gv[2].list().unwrap().iter().enumerate() {
                 let (pk,pv) = rd.ent(pc.reference().unwrap());
                 if pk != "PCURVE" || pv[1].reference() != Some(surface) { continue }
                 let (_,dv) = rd.ent(pv[2].reference().unwrap());
@@ -338,8 +348,20 @@ fn loops(rd: &Reader,face: u32,surface: u32,s: &Surf,n: usize,worst: &mut (f64,f
                         let at3 = |t: f64| k.at(t);
                         let range3: [f64;2] = match &k { Crv::Spline(sp) => sp.domain(),Crv::Circle(..) | Crv::Ellipse(..) => [0.,tau],
                             Crv::Line(..) => { let t = 4.*(1.+(0..3).map(|i| a[i].abs().max(z[i].abs())).fold(0.,f64::max)); [-t,t] } };
-                        let near3 = |p: V| -> f64 { let m = 20000; (0..=m).map(|j| range3[0]+(range3[1]-range3[0])*j as f64/m as f64)
-                            .min_by(|x,y| dist(at3(*x),p).total_cmp(&dist(at3(*y),p))).unwrap() };
+                        // (the nearest of 20,000 samples, refined: a sample's own spacing, a
+                        // part in 20,000 of a long curve's domain, cut the polyline short of its
+                        // vertex and read a pcurve exact to 1e-13 as 5e-4 off its edge)
+                        let near3 = |p: V| -> f64 {
+                            let (m,h0) = (20000,(range3[1]-range3[0])/20000.);
+                            let mut x = (0..=m).map(|j| range3[0]+h0*j as f64).min_by(|x,y| dist(at3(*x),p).total_cmp(&dist(at3(*y),p))).unwrap();
+                            let mut h = h0;
+                            for _ in 0..300 {
+                                let (dl,dr,d0) = (dist(at3(x-h),p),dist(at3(x+h),p),dist(at3(x),p));
+                                if dl < d0 && x-h >= range3[0] { x -= h } else if dr < d0 && x+h <= range3[1] { x += h } else { h *= 0.5 }
+                                if h < 1e-15*(1.+x.abs()) { break }
+                            }
+                            x
+                        };
                         let (mut sa,mut sz) = (near3(a),near3(z));
                         match (&k,closed) {
                             (Crv::Circle(..) | Crv::Ellipse(..),_) => if same { while sz <= sa+1e-12 { sz += tau; } } else { while sz >= sa-1e-12 { sz -= tau; } },
@@ -357,6 +379,7 @@ fn loops(rd: &Reader,face: u32,surface: u32,s: &Surf,n: usize,worst: &mut (f64,f
                 if std::env::var("FQ_DEBUG").is_ok() { eprintln!("  edge #{ec} along {along} same {same}: {:?} -> {:?}, image off its curve {off:.2e}, ends off their vertices {ends:.2e}",pts[0],pts[n]); }
                 worst.0 = worst.0.max(off);
                 worst.1 = worst.1.max(ends);
+                let pts = if master && named != Some(at) { mastered(rd,gv,named,s,pts,a,z)? } else { pts };
                 cands.push(pts);
             }
             if cands.is_empty() { return Err(format!("edge #{ec} has no curve in the face's parameters")) }
@@ -385,6 +408,72 @@ fn loops(rd: &Reader,face: u32,surface: u32,s: &Surf,n: usize,worst: &mut (f64,f
         out.push(poly);
     }
     Ok(out)
+}
+
+/// **A use's polygon moved onto its master** (`--master`): each point `q` of `pts` (on `s`) to
+/// the foot on `s`, sought from `q` by Gauss–Newton, of the point of the master's image nearest
+/// `s(q)` — the 3D curve where `named` is none, else the image on its own surface of the pcurve
+/// in the place `named` of the surface curve `gv` (`a`, `z` the edge's vertices, bounding a line).
+fn mastered(rd: &Reader,gv: &[Value],named: Option<usize>,s: &Surf,pts: Vec<[f64;2]>,a: V,z: V) -> Result<Vec<[f64;2]>,String> {
+    let tau = std::f64::consts::TAU;
+    let span = 4.*(1.+(0..3).map(|k| a[k].abs().max(z[k].abs())).fold(0.,f64::max));
+    // the master's image in space and its parameter's range
+    let (image,range): (Box<dyn Fn(f64) -> V>,[f64;2]) = match named {
+        None => {
+            let k = rd.curve(gv[1].reference().unwrap())?;
+            let r = match &k { Crv::Spline(sp) => sp.domain(),Crv::Circle(..) | Crv::Ellipse(..) => [0.,tau],Crv::Line(..) => [-span,span] };
+            (Box::new(move |t| k.at(t)),r)
+        }
+        Some(i) => {
+            let (_,pv) = rd.ent(gv[2].list().unwrap()[i].reference().unwrap());
+            let other = pv[1].reference().unwrap();
+            let o = rd.surface(other)?;
+            let (_,dv) = rd.ent(pv[2].reference().unwrap());
+            let c = rd.flat(dv[1].list().unwrap()[0].reference().unwrap())?;
+            let (ang,l) = (rd.g.context.angle,rd.len());
+            let unit: [f64;2] = match rd.ent(other).0 {
+                "PLANE" => [l,l],
+                "CYLINDRICAL_SURFACE" | "CONICAL_SURFACE" => [ang,l],
+                "SPHERICAL_SURFACE" | "TOROIDAL_SURFACE" => [ang,ang],
+                "SURFACE_OF_REVOLUTION" => [ang,1.],
+                _ => [1.,1.],
+            };
+            let r = match &c { Crv::Spline(sp) => sp.domain(),Crv::Circle(..) | Crv::Ellipse(..) => [0.,tau],Crv::Line(..) => [-span/l,span/l] };
+            (Box::new(move |t| { let q = c.at(t); o.at(q[0]*unit[0],q[1]*unit[1]) }),r)
+        }
+    };
+    let m = 20000;
+    let samples: Vec<(f64,V)> = (0..=m).map(|j| { let t = range[0]+(range[1]-range[0])*j as f64/m as f64; (t,image(t)) }).collect();
+    let nearest = |p: V| -> V {
+        let (mut x,_) = samples.iter().map(|&(t,q)| (t,dist(q,p))).min_by(|a,b| a.1.total_cmp(&b.1)).unwrap();
+        let mut h = (range[1]-range[0])/m as f64;
+        for _ in 0..300 {
+            let (dl,dr,d0) = (dist(image(x-h),p),dist(image(x+h),p),dist(image(x),p));
+            if dl < d0 { x -= h } else if dr < d0 { x += h } else { h *= 0.5 }
+            if h < 1e-15*(1.+x.abs()) { break }
+        }
+        image(x)
+    };
+    Ok(pts.into_iter().map(|q| {
+        let target = nearest(s.at(q[0],q[1]));
+        // (the foot: Gauss–Newton on |S(u, v) − target|², derivatives by central differences)
+        let mut uv = q;
+        for _ in 0..30 {
+            let h = [1e-7*(1.+uv[0].abs()),1e-7*(1.+uv[1].abs())];
+            let p = s.at(uv[0],uv[1]);
+            let su = sc(sub(s.at(uv[0]+h[0],uv[1]),s.at(uv[0]-h[0],uv[1])),0.5/h[0]);
+            let sv = sc(sub(s.at(uv[0],uv[1]+h[1]),s.at(uv[0],uv[1]-h[1])),0.5/h[1]);
+            let r = sub(target,p);
+            let dot = |a: V,b: V| a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+            let (a11,a12,a22,b1,b2) = (dot(su,su),dot(su,sv),dot(sv,sv),dot(su,r),dot(sv,r));
+            let det = a11*a22-a12*a12;
+            if !(det.abs() > 0.) { break }
+            let d = [(b1*a22-b2*a12)/det,(a11*b2-a12*b1)/det];
+            uv = [uv[0]+d[0],uv[1]+d[1]];
+            if d[0].abs() <= 1e-14*(1.+uv[0].abs()) && d[1].abs() <= 1e-14*(1.+uv[1].abs()) { break }
+        }
+        uv
+    }).collect())
 }
 
 /// `∬` of the area's and the flux's integrands over the region the polygons wind round, by
@@ -493,6 +582,9 @@ fn sha256(data: &[u8]) -> String {
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let write = if args.first().map(String::as_str) == Some("--write") { args.remove(0); Some(args.remove(0)) } else { None };
+    let master = args.first().map(String::as_str) == Some("--master");
+    if master { args.remove(0); }
+    let write = write.filter(|_| !master);
     let mut written: Vec<(u32,f64)> = Vec::new();
     let text = std::fs::read_to_string(&args[0]).expect("a file");
     let file = context::parse(&text).expect("a STEP file");
@@ -504,7 +596,7 @@ fn main() {
         let surface = fv[2].reference().unwrap();
         let s = match rd.surface(surface) { Ok(s) => s,Err(e) => { println!("#{face}\tnot measured: {e}"); continue } };
         let mut worst = (0f64,0f64);
-        let mut read = |n: usize,strips: usize| -> Result<(f64,f64),String> { Ok(columns(&s,&loops(&rd,face,surface,&s,n,&mut worst)?,strips)) };
+        let mut read = |n: usize,strips: usize| -> Result<(f64,f64),String> { Ok(columns(&s,&loops(&rd,face,surface,&s,n,&mut worst,master)?,strips)) };
         // (`FQ_STRIPS` columns across `u`, the polygons `FQ_POINTS` an edge: the estimate is the
         // change from half of each)
         let strips: usize = std::env::var("FQ_STRIPS").ok().and_then(|x| x.parse().ok()).unwrap_or(400);

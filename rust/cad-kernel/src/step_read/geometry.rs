@@ -505,6 +505,21 @@ impl<'f,'a> Geometry<'f,'a> {
         if m != 0. { return Ok(None) }
         Ok(Some(self.point(r,v.get(1).and_then(Value::reference))?))
     }
+    /// **Which of a curve on a surface's representations is the edge** (ISO 10303-42
+    /// `surface_curve.master_representation`, the representation preferred where they differ, a
+    /// tolerant file's 3D curve and pcurves differing by up to its tolerance): none for
+    /// `.CURVE_3D.`, else the place in `associated_geometry` of the pcurve it names (`.PCURVE_S1.`
+    /// the first, `.PCURVE_S2.` the second). `v` is a `SURFACE_CURVE`'s, `SEAM_CURVE`'s or
+    /// `INTERSECTION_CURVE`'s parameters (#`r`); any other word, or none, is malformed: the
+    /// attribute is not optional.
+    pub fn master(&self,r: u32,v: &[Value]) -> Result<Option<usize>,Refusal> {
+        match v.get(3).and_then(Value::word) {
+            Some("CURVE_3D") => Ok(None),
+            Some("PCURVE_S1") => Ok(Some(0)),
+            Some("PCURVE_S2") => Ok(Some(1)),
+            _ => Err(Refusal::malformed(r,"a curve on a surface's master representation: .CURVE_3D., .PCURVE_S1. or .PCURVE_S2. expected")),
+        }
+    }
     /// A curve in space.
     pub fn curve(&self,from: u32,r: Option<u32>) -> Result<Spatial,Refusal> { self.curve_in(from,r,None,0) }
     /// An edge's curve, `ends` its vertices' points: as `curve`, a curve without end (a parabola,

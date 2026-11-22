@@ -62,7 +62,7 @@ struct Written { entity: u32,ends: [usize;2],geometry: u32,same_sense: bool }
 /// An edge read: its entity, the kernel's, whether it runs against the file's (its vertices taken the other
 /// way round), the kernel's parameter per the file's along its curve, and its curves in faces'
 /// parameters as the file writes them, by the surface's entity.
-struct Read { entity: u32,edge: Edge,flip: bool,rate: f64,pcurves: Vec<(u32,Flat)> }
+struct Read { entity: u32,edge: Edge,flip: bool,rate: f64,pcurves: Vec<(u32,Flat)>,master: Option<usize> }
 
 /// The topology walked from a solid down, each edge and vertex numbered once by its entity.
 struct Walk<'g,'f,'a> {
@@ -249,11 +249,13 @@ fn read_edge(g: &Geometry,w: &Written,points: &[V],within: f64) -> Result<Read,R
     let r = w.entity;
     // (a curve without end, a parabola's, read as its arc between the edge's vertices)
     let ends = [points[w.ends[0]],points[w.ends[1]]];
+    let mut master = None;
     let (curve,pcurves) = match g.file.get(w.geometry).simple() {
         Some(("SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE",v)) => {
             let curve = g.edge_curve(w.geometry,v.get(1).and_then(Value::reference),ends)?;
+            let named = g.master(w.geometry,v)?;
             let mut pcurves = Vec::new();
-            for a in list(v.get(2),w.geometry,"a curve's curves on its surfaces")? {
+            for (at,a) in list(v.get(2),w.geometry,"a curve's curves on its surfaces")?.iter().enumerate() {
                 let Some(a) = a.reference() else { return Err(Refusal::malformed(w.geometry,"a curve on a surface: a reference expected")) };
                 // (a surface it lies on, named without a curve of its own, says nothing more)
                 let Some(("PCURVE",pv)) = g.file.get(a).simple() else { continue };
@@ -261,7 +263,7 @@ fn read_edge(g: &Geometry,w: &Written,points: &[V],within: f64) -> Result<Read,R
                 let (d,_,dv) = g.of(a,pv.get(2).and_then(Value::reference),&["DEFINITIONAL_REPRESENTATION"],"a pcurve's curve")?;
                 let item = list(dv.get(1),d,"a representation's items")?.first().and_then(Value::reference);
                 match g.flat(d,item) {
-                    Ok(f) => pcurves.push((surface,f)),
+                    Ok(f) => { if named == Some(at) { master = Some(pcurves.len()); } pcurves.push((surface,f)) }
                     // a curve in a face's parameters the reader has no form of is not needed
                     Err(e) if e.why == Why::Unsupported => {}
                     Err(e) => return Err(e),
@@ -272,26 +274,66 @@ fn read_edge(g: &Geometry,w: &Written,points: &[V],within: f64) -> Result<Read,R
         _ => (g.edge_curve(r,Some(w.geometry),ends)?,Vec::new()),
     };
     let (curve,pcurves) = closed::restarted(curve,pcurves,w,points,within);
+    let master = master.filter(|&m| m < pcurves.len());
     // laid along its curve: from its first vertex where it runs along, else its last
     let v = if w.same_sense { w.ends } else { [w.ends[1],w.ends[0]] };
     let t = parameters(&curve.curve,[points[v[0]],points[v[1]]],v[0] == v[1],r,within)?;
-    Ok(Read {entity:r,edge:Edge {curve:EdgeCurve::Curve(curve.curve),t,v:[v[0] as u32,v[1] as u32],tol:0.},flip:!w.same_sense,rate:curve.rate,pcurves})
+    Ok(Read {entity:r,edge:Edge {curve:EdgeCurve::Curve(curve.curve),t,v:[v[0] as u32,v[1] as u32],tol:0.},flip:!w.same_sense,rate:curve.rate,pcurves,master})
 }
 
-/// The file's curve of an edge in a spline face's parameters as the kernel's pcurve, read over
-/// the kernel's parameter of the edge (`rate` of the file's, and moved by whole periods of a
-/// closed curve to where its domain says): kept where its image lies as near the edge as the
-/// surface does, within `near`, at its ends and eight points between, spaced unevenly (a curve
-/// matching the edge only where a symmetry makes it — a line through a rational arc's
-/// parameters, right at its knots and its spans' middles — is not kept), else none.
-fn file_pcurve(flat: &Flat,e: &Edge,rate: f64,s: &Surface,vs: &[Vertex],near: f64) -> Option<Pcurve> {
+/// **How a file's curve in a face's parameters stands to its edge** (`file_pcurve`): `Plain`
+/// where the edge's master is its 3D curve; `Master(τ)` where it is the pcurve the file names its
+/// master, whose image stands `τ` at most from the edge's 3D curve at the edge's parameter and from
+/// its vertices at its ends (`shown`); `Beside(τ)` for the edge's other pcurves then.
+#[derive(Clone,Copy,Debug,PartialEq)]
+enum Held { Plain,Master(f64),Beside(f64) }
+
+/// The ten fractions of an edge a file's curve is read against it at, spaced unevenly (a curve
+/// matching the edge only where a symmetry makes it — a line through a rational arc's parameters,
+/// right at its knots and its spans' middles — is not kept).
+const AT: [f64;10] = [0.,0.07,0.19,0.31,0.43,0.5,0.61,0.73,0.89,1.];
+
+/// **A spline curve in a face's parameters run from vertex to vertex over the edge's parameter**
+/// (`Held::Master`, `Held::Beside`): its knots moved by the one affine map taking the parameters
+/// of its points nearest the edge's vertices (in space, its image on `s` read through `turned`)
+/// to the edge's ends — the same points, its parameter the edge's at both ends (a writer's pcurve
+/// over a domain of its own, CADGenBench's [0, 1] against its edges' lengths). None for a line, a
+/// conic, a closed edge, or a curve whose nearest points run against the edge.
+fn ends_matched(flat: &Flat,e: &Edge,s: &Surface,vs: &[Vertex],turned: Option<&Turned>) -> Option<Pcurve> {
+    let Flat::Curve(Curve::BSpline(b)) = flat else { return None };
+    if e.v[0] == e.v[1] { return None }
+    let [a,z] = b.domain();
+    let image = |t: f64| { let q = b.point(t); let q = [q[0],q[1]]; s.point(turned.map_or(q,|w| w.of(q))) };
+    let nearest = |p: V| -> f64 {
+        let n = 256;
+        let mut x = (0..=n).map(|j| a+(z-a)*j as f64/n as f64).min_by(|x,y| distance(image(*x),p).total_cmp(&distance(image(*y),p))).unwrap_or(a);
+        let mut h = (z-a)/n as f64;
+        for _ in 0..200 {
+            let (dl,dr,d0) = (distance(image(x-h),p),distance(image(x+h),p),distance(image(x),p));
+            if dl < d0 && x-h >= a { x -= h } else if dr < d0 && x+h <= z { x += h } else { h *= 0.5 }
+            if h <= 1e-15*(1.+x.abs()) { break }
+        }
+        x
+    };
+    let (p0,p1) = (nearest(vs[e.v[0] as usize].p),nearest(vs[e.v[1] as usize].p));
+    if !(p1 > p0) || !(e.t[1] > e.t[0]) { return None }
+    let m = (e.t[1]-e.t[0])/(p1-p0);
+    let knots = b.knots.iter().map(|k| e.t[0]+(k-p0)*m).collect();
+    Some(Pcurve::Curve(Arc::new(Curve::BSpline(Arc::new(BSpline {knots,..(**b).clone()})))))
+}
+
+/// The file's curve `flat` of an edge in a face's parameters as the kernel's pcurves it may be,
+/// read over the kernel's parameter of the edge (`rate` of the file's, and moved by whole periods
+/// of a closed curve to where its domain says, or each of three where it has none), each put onto
+/// a closed net's domain (`closed::onto_net`).
+fn candidates(flat: &Flat,e: &Edge,rate: f64,s: &Surface,vs: &[Vertex]) -> Vec<Pcurve> {
     let period = match &e.curve { EdgeCurve::Curve(c) => c.period(),EdgeCurve::Degenerate => None };
     let shifts: Vec<f64> = match (period,flat.domain()) {
         (Some(p),Some([d0,d1])) => vec![((0.5*(e.t[0]+e.t[1])-rate*0.5*(d0+d1))/p).round()*p],
         (Some(p),None) => vec![0.,p,-p],
         (None,_) => vec![0.],
     };
-    for shift in shifts {
+    shifts.into_iter().filter_map(|shift| {
         let pc = match flat {
             Flat::Line {p,d} => {
                 let at = |t: f64| { let x = (t-shift)/rate; [p[0]+x*d[0],p[1]+x*d[1]] };
@@ -304,10 +346,79 @@ fn file_pcurve(flat: &Flat,e: &Edge,rate: f64,s: &Surface,vs: &[Vertex],near: f6
             Flat::Curve(c) if rate == 1. => Pcurve::Curve(Arc::new(c.clone())),
             Flat::Curve(_) => return None,
         };
-        let Some(pc) = closed::onto_net(pc,e,s,vs) else { continue };
+        closed::onto_net(pc,e,s,vs)
+    }).collect()
+}
+
+/// **How far a pcurve's image stands from its edge**: the farthest of its points at `AT` from the
+/// edge's 3D curve's at the same parameter, and of its ends from the edge's vertices (its points'
+/// parameters read through `turned`, the sheet's seam moved, where it is); infinite where any is
+/// not finite.
+fn gap(pc: &Pcurve,e: &Edge,s: &Surface,vs: &[Vertex],turned: Option<&Turned>) -> f64 {
+    let image = |t: f64| { let q = pc.at(t,e,s,vs); s.point(turned.map_or(q,|w| w.of(q))) };
+    let mut d = (0..2).map(|k| distance(image(e.t[k]),vs[e.v[k] as usize].p)).fold(0.,f64::max);
+    for j in AT {
+        let t = e.t[0]+(e.t[1]-e.t[0])*j;
+        d = d.max(distance(image(t),e.point(t,vs)));
+    }
+    if d.is_finite() { d } else { f64::INFINITY }
+}
+
+/// **The edge a pcurve master shows** (`Held::Master`): where the file names a pcurve the edge's
+/// master and a face using the edge lies on that pcurve's surface, how far the pcurve's image
+/// stands from the edge's 3D curve at the edge's parameter and from its vertices at its ends
+/// (`gap`, over `candidates` and `ends_matched`, the nearest) — what the edge's tolerance,
+/// measured, will then be. None where the master is its 3D curve or bounds no face of the edge;
+/// where that reading stands more than twice as far as the image does from the 3D curve as a set,
+/// within `near` (the pcurve runs at another parameter than the edge's, by more than its own gap,
+/// and the kernel's pcurve, read at the edge's parameter, would hold it only with a tolerance
+/// wider than the representations differ: it is then read as any other pcurve); or where it stands
+/// farther than `loose` (`sound::LOOSE` of the solid's size, past which a reading says nothing): a
+/// curve that far from the edge's other geometry is another curve — on another surface, between
+/// other ends, as a file's error makes it — and the edge is read by its 3D curve as where its
+/// master is that.
+fn shown(r: &Read,e: &Edge,on: &BTreeSet<u32>,sheets: &BTreeMap<u32,Sheet>,turned: &BTreeMap<u32,Turned>,vs: &[Vertex],near: f64,loose: f64) -> Option<f64> {
+    let (id,flat) = r.pcurves.get(r.master?)?;
+    if !on.contains(id) { return None }
+    let EdgeCurve::Curve(c) = &e.curve else { return None };
+    let sheet = sheets.get(id)?;
+    let f = flat.scaled(sheet.scale)?;
+    let (s,w) = (&sheet.surface,turned.get(id));
+    let mut all = candidates(&f,e,r.rate,s,vs);
+    all.extend(ends_matched(&f,e,s,vs,w));
+    let (d,set) = all.iter().map(|pc| {
+        let set = AT.iter().map(|&j| {
+            let q = pc.at(e.t[0]+(e.t[1]-e.t[0])*j,e,s,vs);
+            let y = s.point(w.map_or(q,|w| w.of(q)));
+            distance(y,c.point(c.inverse(y)))
+        }).fold(0.,f64::max);
+        (gap(pc,e,s,vs,w),set)
+    }).min_by(|x,y| x.0.total_cmp(&y.0))?;
+    if std::env::var_os("STEP_MASTER_DEBUG").is_some() { eprintln!("master\t#{}\t{d:.3e}\tset {set:.3e}\tloose {loose:.3e}\tsurface #{id}",r.entity); }
+    (d <= 2.*set+near && d <= loose).then_some(d)
+}
+
+/// The file's curve of an edge in a face's parameters as the kernel's pcurve (`candidates`), or
+/// none. **The master is the edge** (`Held`): the pcurve the file names its master is kept where
+/// its image stands from the edge as the edge's master shows (`τ`, `shown`) within `near` — the
+/// face on its surface bounded by the file's curve itself, its difference from the 3D curve what
+/// the edge's tolerance measures. Any other is kept where its image lies as near the edge as the
+/// surface does, within `near` (and, beside a pcurve master, `τ` more: the edge's tolerance is
+/// that already), at `AT`, else where its image is the edge's as a set; else none, and the edge is
+/// inverted onto the face.
+fn file_pcurve(flat: &Flat,e: &Edge,rate: f64,s: &Surface,vs: &[Vertex],near: f64,held: Held,turned: Option<&Turned>) -> Option<Pcurve> {
+    let near = match held {
+        Held::Master(tau) => return candidates(flat,e,rate,s,vs).into_iter().chain(ends_matched(flat,e,s,vs,turned))
+            .find(|pc| gap(pc,e,s,vs,turned) <= tau*(1.+1e-9)+near),
+        Held::Beside(tau) => near+tau,
+        Held::Plain => near,
+    };
+    let mut all = candidates(flat,e,rate,s,vs);
+    if held != Held::Plain { all.extend(ends_matched(flat,e,s,vs,turned)); }
+    for pc in all {
         // as near the edge as the surface is, within `near` (a file's edge may stand its
         // tolerance off its faces, and its curve in each lies under it)
-        let on = [0.,0.07,0.19,0.31,0.43,0.5,0.61,0.73,0.89,1.].iter().all(|&j| {
+        let on = AT.iter().all(|&j| {
             let t = e.t[0]+(e.t[1]-e.t[0])*j;
             let (q,p) = (pc.at(t,e,s,vs),e.point(t,vs));
             let d = distance(s.point(q),p);
@@ -322,7 +433,7 @@ fn file_pcurve(flat: &Flat,e: &Edge,rate: f64,s: &Surface,vs: &[Vertex],near: f6
         // edge measures whatever its curve in this face — the farthest it stands from the surface
         // or its ends from its vertices — so that keeping it widens no tolerance
         let EdgeCurve::Curve(c) = &e.curve else { continue };
-        let at: Vec<(V,V,f64)> = [0.,0.07,0.19,0.31,0.43,0.5,0.61,0.73,0.89,1.].iter().map(|&j| {
+        let at: Vec<(V,V,f64)> = AT.iter().map(|&j| {
             let t = e.t[0]+(e.t[1]-e.t[0])*j;
             let (q,p) = (pc.at(t,e,s,vs),e.point(t,vs));
             // (the edge's point's own foot, sought from the file's curve's point and found
@@ -445,7 +556,7 @@ fn moved(pc: &Pcurve,d: Uv) -> Pcurve {
 
 /// What a face is read in: the edges and vertices read, the tolerances a point is taken to stand
 /// at a pole within and a file's curve to lie on its edge within.
-struct Setting<'r> { b: &'r Brep,reads: &'r [Read],within: f64,near: f64,turned: &'r BTreeMap<u32,Turned> }
+struct Setting<'r> { b: &'r Brep,reads: &'r [Read],within: f64,near: f64,turned: &'r BTreeMap<u32,Turned>,shown: &'r [Option<f64>] }
 
 /// A closed spline sheet's domain turned to start at its faces' seam (`turned`): the parameter `k`
 /// it closes in, where its domain now starts (`at`, the file's seam) and its width: a file's curve
@@ -544,10 +655,16 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
         let free = spline || topo_poleless(s) || [begin,end].iter().all(|&p| pole_at(s,s.inverse(p),st.within).is_none());
         let given = if free {
             // (a seam's other use took the other of its two)
-            let mine: Vec<&Flat> = st.reads[ei].pcurves.iter().filter(|(id,_)| *id == surface).map(|(_,f)| f).collect();
+            // (each held as the edge's master names it: `Held`)
+            let held = |i: usize| match (st.shown[ei],st.reads[ei].master) {
+                (Some(tau),Some(m)) => if i == m { Held::Master(tau) } else { Held::Beside(tau) },
+                _ => Held::Plain,
+            };
+            let mine: Vec<(&Flat,Held)> = st.reads[ei].pcurves.iter().enumerate().filter(|(_,(id,_))| *id == surface).map(|(i,(_,f))| (f,held(i))).collect();
             let other = taken.get(&ei).copied().filter(|_| mine.len() > 1);
             let mut found: Vec<(Pcurve,Uv,usize)> = mine.iter().enumerate().filter(|&(k,_)| Some(k) != other)
-                .filter_map(|(k,f)| Some((f.scaled(sheet.scale)?,k))).filter_map(|(f,k)| Some((file_pcurve(&f,e,st.reads[ei].rate,s,&b.vertices,st.near)?,k)))
+                .filter_map(|(k,(f,h))| Some((f.scaled(sheet.scale)?,*h,k)))
+                .filter_map(|(f,h,k)| Some((file_pcurve(&f,e,st.reads[ei].rate,s,&b.vertices,st.near,h,st.turned.get(&surface))?,k)))
                 .map(|(pc,k)| {
                     // (on a spline sheet closed round a parameter, a curve a whole span outside its
                     // domain — a writer's of a periodic sheet — moved by the span into it)
@@ -1362,8 +1479,15 @@ pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
             None => (id,s),
         }
     }).collect();
+    // an edge whose master is a pcurve, how far that stands from its 3D curve (`shown`)
+    let near = uncertainty.min(1e-6*size).max(1e-12*size);
+    let mut on: Vec<BTreeSet<u32>> = vec![BTreeSet::new();reads.len()];
+    for f in &faces {
+        for bound in &f.bounds { if let Bound::Edges(uses) = bound { for u in uses { on[u.edge].insert(f.surface); } } }
+    }
+    let shown: Vec<Option<f64>> = crate::util::par::indices(reads.len(),|i| shown(&reads[i],&b.edges[i],&on[i],&sheets,&turns,&b.vertices,near,super::sound::LOOSE*size));
     let built = {
-        let st = Setting {b:&b,reads:&reads,within:1e-7*(1.+size),near:uncertainty.min(1e-6*size).max(1e-12*size),turned:&turns};
+        let st = Setting {b:&b,reads:&reads,within:1e-7*(1.+size),near,turned:&turns,shown:&shown};
         crate::util::par::indices(faces.len(),|i| face(&st,&sheets[&faces[i].surface],&faces[i])).into_iter().collect::<Result<Vec<_>,_>>()?
     };
     let mut edges: Vec<u32> = w.written.iter().map(|x| x.entity).collect();
