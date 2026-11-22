@@ -72,7 +72,7 @@ fn agree(built: &cad_kernel::topo::Brep,tool: &cad_kernel::topo::Brep,path: &Tra
     let clock = std::time::Instant::now();
     let body = Solid::new(built,sag,1.).unwrap();
     let solid = Solid::new(tool,0.002,1.).unwrap();
-    let swept = Swept {tool:&solid,path,roll};
+    let swept = Swept {sampled:false,tool:&solid,path,roll};
     let ring = cad_kernel::swept::rings::Ring::read(tool).unwrap();
     let (lo,hi) = built.bounds();
     let mut rng = cad_kernel::util::rng::Rng::new(7);
