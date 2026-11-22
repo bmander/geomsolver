@@ -33,7 +33,11 @@ fn tumbling(centre: [f64;3],hub: f64,tube: f64,ratio: f64,lean: f64,heading: f64
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().map(String::as_str) == Some("spline") { return along_a_spline() }
-    if args.first().map(String::as_str) == Some("bench-spline") { return as_the_bench_runs_it() }
+    if args.first().map(String::as_str) == Some("bench-spline") { return as_the_bench_runs_it(None) }
+    if args.first().map(String::as_str) == Some("bench-spline-at") {
+        let by: f64 = args[3].parse().expect("a number");
+        return as_the_bench_runs_it(Some((args[1].clone(),args[2] == "ulps",by)))
+    }
     let (tube,(tool,path),half) = match args.first().map(String::as_str) {
         Some("full-turn") => (0.16,tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.),180.),
         Some("half-turn") => (0.16,tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.),90.),
@@ -187,17 +191,26 @@ impl cad_kernel::trajectory::Path for Runner {
 
 /// brep-bench's runner exactly: `closed::cut_from`, its own frame, a bar of 0.005, the tolerance
 /// of the larger of the block and the torus.
-fn as_the_bench_runs_it() {
+fn as_the_bench_runs_it(moved: Option<(String,bool,f64)>) {
     use cad_kernel::nurbs::BSpline;
-    let stock = cad_kernel::build::block([-6.,-6.,-8.],[36.,26.,0.]).unwrap();
-    let ring = cad_kernel::build::torus([0.,0.,0.5],[0.,1.,0.],1.5,0.5).unwrap();
-    let curve = BSpline::new(3,vec![0.,0.,0.,0.,1.,1.,1.,1.],vec![[0.,0.,0.],[10.,0.,0.],[20.,20.,0.],[30.,20.,0.]]).unwrap();
+    // (`bench-spline-at <input> ulps|add <by>`: one input moved — a control point's coordinate
+    // `p1x` … `p3y`, the ring's `major`, `minor`, its centre's `cx` `cy` `cz`, the block's `top`, the
+    // roll's `t0` or `t1`)
+    let m = |name: &str,x: f64| match &moved {
+        Some((n,ulps,by)) if n == name => if *ulps { f64::from_bits((x.to_bits() as i64+*by as i64) as u64) } else { x+by },
+        _ => x,
+    };
+    let stock = cad_kernel::build::block([-6.,-6.,-8.],[36.,26.,m("top",0.)]).unwrap();
+    let ring = cad_kernel::build::torus([m("cx",0.),m("cy",0.),m("cz",0.5)],[0.,1.,0.],m("major",1.5),m("minor",0.5)).unwrap();
+    let curve = BSpline::new(3,vec![0.,0.,0.,0.,1.,1.,1.,1.],vec![[0.,0.,0.],[m("p1x",10.),m("p1y",0.),0.],[m("p2x",20.),m("p2y",20.),0.],
+        [m("p3x",30.),m("p3y",20.),0.]]).unwrap();
     let path = Trajectory::General(std::sync::Arc::new(Runner(curve)));
+    let roll = [m("t0",0.),m("t1",1.)];
     let tol = cad_kernel::geom::tolerance(stock.size().max(ring.size()));
     if std::env::var_os("SOLVENT_BREP_TIME").is_none() { std::env::set_var("SOLVENT_BREP_TIME","1") }
     let clock = std::time::Instant::now();
     eprintln!("tolerance {tol:e}");
-    match cad_kernel::swept::closed::cut_from(&stock,&ring,&path,[0.,1.],0.005,tol) {
+    match cad_kernel::swept::closed::cut_from(&stock,&ring,&path,roll,0.005,tol) {
         Ok(b) => println!("built: {} faces, volume {}, in {:?}",b.faces.len(),cad_kernel::props::volume(&b),clock.elapsed()),
         Err(e) => println!("refused: {e:?}, in {:?}",clock.elapsed()),
     }
