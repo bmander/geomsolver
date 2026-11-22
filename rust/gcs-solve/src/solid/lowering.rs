@@ -749,13 +749,13 @@ pub(crate) fn pieces(body: &super::faces::BodyFaces, fi: usize) -> Vec<usize> {
 /// far from the surface as from `faces`' own patch, and a plate's bottom flush with a post's,
 /// each named by its own operand, is one plane to whatever stands against either.
 pub(crate) fn going_on(body: &super::faces::BodyFaces, faces: &[usize]) -> (Vec<usize>, Vec<usize>) {
-    let mut own: Vec<usize> = Vec::new();
+    let (mut own, mut seen) = (Vec::new(), std::collections::BTreeSet::new());
     for g in faces.iter().flat_map(|&fi| pieces(body, fi)) {
-        if !own.contains(&g) {
+        if seen.insert(g) {
             own.push(g);
         }
     }
-    let beyond = body.smooth(&own).into_iter().filter(|g| !own.contains(g)).collect();
+    let beyond = body.smooth(&own).into_iter().filter(|g| !seen.contains(g)).collect();
     (own, beyond)
 }
 

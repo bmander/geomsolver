@@ -45,8 +45,9 @@ pub(super) fn build(body: &crate::solid::faces::BodyFaces, f: &Faces, section: S
         groups.push(fs);
     }
     let mut pieces = Vec::new();
+    let chains = Chains::default();
     for &[i, j] in f.pairs() {
-        let ps = run(body, &groups[i], &groups[j], f.within, section, spill, units)?;
+        let ps = run(body, &groups[i], &groups[j], f.within, section, spill, units, &chains)?;
         if f.faces.len() == 2 {
             stands_within(body, f, [&groups[i], &groups[j]], section, &ps, spill, units)?;
         }
@@ -322,8 +323,9 @@ fn corner_at(body: &crate::solid::faces::BodyFaces, ids: &[usize], vertex: V, wi
 /// The run along the edges where the faces `ga` (a reference's) meet the faces `gb`: a piece per
 /// edge, each where the edge turns the side the region asks (`within`, convex) — none where they
 /// meet in none — and all within where the run of them ends, as the field reads it.
+#[allow(clippy::too_many_arguments)]
 fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within: bool, section: Section, spill: &Spill,
-    units: crate::units::Units) -> Result<Vec<Piece>, String> {
+    units: crate::units::Units, chains: &Chains) -> Result<Vec<Piece>, String> {
     let edges = body.edges_between(ga, gb);
     // an edge's two faces, `ga`'s first; none where it is not between two
     let ordered = |e: u32| match *body.faces_of(e) {
@@ -401,7 +403,7 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
         let Some((fa, fb)) = ordered(edge) else {
             return Err(unbuilt("an edge not between two faces"));
         };
-        let made = piece(body, edge, fa, fb, within, section, &ends, spill, one, units);
+        let made = piece(body, edge, fa, fb, within, section, &ends, spill, one, units, chains);
         if let (Section::Round(r), Ok(ps)) = (section, &made) {
             held(body, &touched, edge, &ends, ps, r, units)?;
         }
@@ -784,7 +786,8 @@ fn across_cuts(body: &crate::solid::faces::BodyFaces, edges: &[u32],
 /// other way from the side the region asks (`within`, convex).
 #[allow(clippy::too_many_arguments)]
 fn piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within: bool, section: Section,
-    ends: &Ends, spill: &Spill, one: bool, units: crate::units::Units) -> Result<Vec<Piece>, Refused> {
+    ends: &Ends, spill: &Spill, one: bool, units: crate::units::Units, chains: &Chains)
+    -> Result<Vec<Piece>, Refused> {
     // the faces in the body's order, so two regions over one edge build one run
     let (fa, fb, section) = in_body_order(fa, fb, section);
     // the gate: an edge turning the other way, or none (faces meeting tangent), holds nowhere
@@ -793,7 +796,7 @@ fn piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: usize,
     }
     // (`run` rolls a circle whose faces are not all about its axis)
     if body.circle(edge).is_some() {
-        return Ok(ring_piece(body, edge, fa, fb, within, section, ends, spill, one, units)?);
+        return Ok(ring_piece(body, edge, fa, fb, within, section, ends, spill, one, units, chains)?);
     }
     let Some(span) = body.segment(edge) else { return Err(unbuilt("a curved edge").into()) };
     let mut built = run_piece(body, span, fa, fb, within, section, ends, &[], spill, false)?;
@@ -807,7 +810,8 @@ fn piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: usize,
             for (k, p) in [(0, span[0]), (1, span[1])] {
                 let at = |s: f64| Some(add(centre, scale(along, s)));
                 let crease = |s: f64| add(span[0], scale(along, s));
-                if let Some((s, beside)) = stops_short(body, [fa, fb], within, r, &at, &crease, [0.0, length], k, p) {
+                let span = [0.0, length];
+                if let Some((s, beside)) = stops_short(body, [fa, fb], within, r, &at, &crease, span, k, p, chains) {
                     run.span[k] = s;
                     run.release(p, size);
                     besides.push(beside);
@@ -824,7 +828,7 @@ fn piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: usize,
 /// whose own run goes on from the same section.
 #[allow(clippy::too_many_arguments)]
 fn ring_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within: bool,
-    section: Section, ends: &Ends, spill: &Spill, one: bool, units: crate::units::Units)
+    section: Section, ends: &Ends, spill: &Spill, one: bool, units: crate::units::Units, chains: &Chains)
     -> Result<Vec<Piece>, String> {
     let (centre, axis, radius, x) = body.circle(edge).expect("a circle's edge");
     let closed = body.closed(edge);
@@ -899,7 +903,8 @@ fn ring_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: u
         let centre_at = |t: f64| section_at(t).ok().and_then(|s| s.centre());
         for (k, p) in [(0, p0), (1, p1)] {
             let crease = |t: f64| add(centre, scale(radial_at(t), radius));
-            if let Some((t, beside)) = stops_short(body, [fa, fb], within, r, &centre_at, &crease, [t0, t1], k, p) {
+            if let Some((t, beside)) = stops_short(body, [fa, fb], within, r, &centre_at, &crease, [t0, t1], k, p,
+                chains) {
                 if k == 0 { from = t } else { to = t }
                 stopped[k] = true;
                 besides.push(beside);
@@ -1035,8 +1040,8 @@ fn ring_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: u
 /// stands within its faces to the end.
 #[allow(clippy::too_many_arguments)]
 fn stops_short(body: &crate::solid::faces::BodyFaces, faces: [usize; 2], within: bool, r: f64,
-    centre_at: &dyn Fn(f64) -> Option<V>, crease_at: &dyn Fn(f64) -> V, span: [f64; 2], k: usize, vertex: V)
-    -> Option<(f64, Piece)> {
+    centre_at: &dyn Fn(f64) -> Option<V>, crease_at: &dyn Fn(f64) -> V, span: [f64; 2], k: usize, vertex: V,
+    chains: &Chains) -> Option<(f64, Piece)> {
     let sigma = if within { -1.0 } else { 1.0 };
     let size = r + norm(vertex);
     let tol = 1e-9 * size;
@@ -1056,8 +1061,8 @@ fn stops_short(body: &crate::solid::faces::BodyFaces, faces: [usize; 2], within:
     let inner = 0.5 * (span[0] + span[1]);
     for (f, &own) in faces.iter().enumerate() {
         // the faces `own` goes on into smoothly, its own surface's pieces aside (`going_on`)
-        let chain: Vec<usize> = super::going_on(body, &[own]).1;
-        for &g in &chain {
+        let chain = chains.of(body, own);
+        for &g in chain.iter() {
             let Some(off) = closed(g) else { continue };
             // the ball stands within the face going on to its end: nothing stops it
             let past = |s: f64| centre_at(s).map(|c| sigma * body.carried_side_grad(g, c).0 - r);
@@ -1098,6 +1103,19 @@ fn stops_short(body: &crate::solid::faces::BodyFaces, faces: [usize; 2], within:
         }
     }
     None
+/// The faces each face goes on into smoothly, its own surface's pieces aside (`super::going_on`):
+/// asked of a run's two faces at each end of every edge (`stops_short`), read once a face over a
+/// region's build.
+#[derive(Default)]
+struct Chains(std::cell::RefCell<std::collections::BTreeMap<usize, std::rc::Rc<[usize]>>>);
+
+impl Chains {
+    /// The faces face `fi` goes on into smoothly.
+    fn of(&self, body: &crate::solid::faces::BodyFaces, fi: usize) -> std::rc::Rc<[usize]> {
+        self.0.borrow_mut().entry(fi).or_insert_with(|| super::going_on(body, &[fi]).1.into()).clone()
+    }
+}
+
 }
 
 /// `x` to `n` significant figures.
