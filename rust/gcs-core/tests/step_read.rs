@@ -472,6 +472,46 @@ fn an_edges_feet_off_its_face_run_at_their_own_rate() {
     }
 }
 
+/// **A foot just past a joint runs at its own rate** (`topo::inverse_derivative`'s second
+/// derivatives on the foot's side of the joint): a quadratic net of two spans meeting at `u = 0.5`
+/// with a slope only (its second derivative jumps there), a line two tenths inside its valley
+/// inverted onto it — a foot a millionth of a parameter either side of the knot runs at its own
+/// side's rate (0.69 before it, 0.99 past it), which a difference of the feet on that side agrees
+/// with; differences straddling the knot read the two sides' mean there (0.92 past it, 0.75 before).
+#[test]
+fn a_foot_just_past_a_joint_runs_at_its_own_rate() {
+    use gcs_core::brep::geom::{Frame, Surface};
+    use gcs_core::brep::nurbs::Net;
+    use gcs_core::brep::topo::{Edge, Pcurve, Vertex};
+    let col = |x: f64, z: f64| vec![[x, 0., z], [x, 1., z]];
+    let net = Net { du: 2, dv: 1, uknots: vec![0., 0., 0., 0.5, 1., 1., 1.], vknots: vec![0., 0., 1., 1.],
+        poles: vec![col(0., 0.), col(0.6, 0.), col(1.4, 0.4), col(2., 1.6)], weights: None };
+    let s = Surface::BSpline(Frame::WORLD, Arc::new(net));
+    let (p0, p1) = ([0.5, 0.1, 0.3], [1.6, 0.9, 0.5]);
+    let line = Curve::Line { p: p0, d: [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]] };
+    let edge = Edge { curve: EdgeCurve::Curve(line), t: [0., 1.], v: [0, 1], tol: 0. };
+    let vs = [Vertex { p: p0, tol: 0. }, Vertex { p: p1, tol: 0. }];
+    let pc = Pcurve::Inverse { a: s.inverse(p0), b: s.inverse(p1) };
+    // where the feet cross the knot
+    let (mut lo, mut hi) = (0., 1.);
+    for _ in 0..80 {
+        let m = 0.5 * (lo + hi);
+        if pc.at(m, &edge, &s, &vs)[0] < 0.5 { lo = m } else { hi = m }
+    }
+    for (off, rate) in [(-1e-6, 0.6906), (1e-6, 0.9897)] {
+        let t = hi + off;
+        let uv = pc.at(t, &edge, &s, &vs);
+        assert!((uv[0] - 0.5).abs() < 1.5e-6 && (uv[0] - 0.5) * off > 0., "{off}: the foot at {uv:?}");
+        let d = pc.derivative(t, &edge, &s, &vs);
+        // the feet's difference, on the foot's side
+        let h = 1e-9 * off.signum();
+        let q = pc.at(t + h, &edge, &s, &vs);
+        let fd = [(q[0] - uv[0]) / h, (q[1] - uv[1]) / h];
+        assert!((d[0] - fd[0]).hypot(d[1] - fd[1]) <= 1e-5, "{off}: {d:?} against the feet's {fd:?}");
+        assert!((d[0] - rate).abs() < 1e-3, "{off}: {d:?} against {rate}");
+    }
+}
+
 /// A rational net written as `#14`, its poles `#200` on: `rows` of `(point, weight)` along `u`,
 /// each a column along `v`, of degrees `du`, `dv` over the knots written with their multiplicities.
 fn net(rows: &[Vec<(V, f64)>], (du, dv): (usize, usize), uk: (&str, &str), vk: (&str, &str)) -> String {

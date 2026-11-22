@@ -181,14 +181,7 @@ fn inverse_derivative(uv: Uv,t: f64,edge: &Edge,surface: &Surface) -> Uv {
     let (p,su,sv) = surface.d1(uv);
     let gap = sub(p,x);
     if !(norm(gap) > 1e-9*(1.+norm(x))) { return in_parameters(surface,uv,d) }
-    let h = |k: usize| 1e-6*(1.+uv[k].abs());
-    let at = |k: usize,s: f64| { let mut q = uv; q[k] += s; let (_,a,b) = surface.d1(q); (a,b) };
-    let (hu,hv) = (h(0),h(1));
-    let ((up_u,_),(dn_u,_)) = (at(0,hu),at(0,-hu));
-    let ((up_vu,up_v),(dn_vu,dn_v)) = (at(1,hv),at(1,-hv));
-    let suu = scale(sub(up_u,dn_u),0.5/hu);
-    let svv = scale(sub(up_v,dn_v),0.5/hv);
-    let suv = scale(sub(up_vu,dn_vu),0.5/hv);
+    let (suu,suv,svv) = second(surface,uv);
     let (a11,a12,a22) = (dot(su,su)+dot(gap,suu),dot(su,sv)+dot(gap,suv),dot(sv,sv)+dot(gap,svv));
     let (b1,b2) = (dot(su,d),dot(sv,d));
     // a foot held on a spline sheet's domain edge, the nearest point of the sheet past it (an edge
@@ -211,6 +204,33 @@ fn inverse_derivative(uv: Uv,t: f64,edge: &Edge,surface: &Surface) -> Uv {
     let det = a11*a22-a12*a12;
     let rate = [(a22*b1-a12*b2)/det,(a11*b2-a12*b1)/det];
     if det != 0. && rate.iter().all(|r| r.is_finite()) { rate } else { in_parameters(surface,uv,d) }
+}
+
+/// `S_uu`, `S_uv`, `S_vv` at `uv`, on the side of a joint `uv` lies (a spline sheet's knot line,
+/// a face family's station, where the second derivatives jump, or the first): a polynomial or
+/// rational net's own, in its span holding `uv`; elsewhere the differences of the exact first
+/// derivatives a millionth of a parameter apart, taken on one side where a break of the surface
+/// lies within that. Differences across a joint read the two sides' mean — or, across a crease,
+/// its jump over two millionths — and the rate of a foot a millionth past a quadratic net's knot
+/// was read 0.92 where the feet run at 0.99 (`step_read::a_foot_just_past_a_joint_runs_at_its_own_rate`).
+fn second(surface: &Surface,uv: Uv) -> (V,V,V) {
+    if let Surface::BSpline(_,n) = surface { let [_,_,_,suu,suv,svv] = n.d2(uv[0],uv[1]); return (suu,suv,svv) }
+    let at = |k: usize,s: f64| { let mut q = uv; q[k] += s; let (_,a,b) = surface.d1(q); (a,b) };
+    // along `k`: the rates of `(S_u, S_v)`, by a central difference, or a one-sided one on `uv`'s
+    // side of a break within it
+    let rate = |k: usize| -> (V,V) {
+        let h = 1e-6*(1.+uv[k].abs());
+        let (lo,hi) = match surface.breaks(k,[uv[k]-h,uv[k]+h]).first() {
+            Some(&b) if uv[k] >= b => (0.,h),
+            Some(_) => (-h,0.),
+            None => (-h,h),
+        };
+        let ((ua,va),(ub,vb)) = (at(k,lo),at(k,hi));
+        let w = 1./(hi-lo);
+        (scale(sub(ub,ua),w),scale(sub(vb,va),w))
+    };
+    let ((suu,_),(suv,svv)) = (rate(0),rate(1));
+    (suu,suv,svv)
 }
 
 /// `d` in `surface`'s parameters at `uv`: the least-squares `[S_u S_v] x = d` (not finite where the

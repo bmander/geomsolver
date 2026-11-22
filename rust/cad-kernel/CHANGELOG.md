@@ -8,6 +8,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A foot just past a joint runs at its own rate** (#993 stage 1): `Pcurve::derivative` of an
+  inverse curve off its face read the surface's second derivatives as differences a millionth of
+  a parameter apart, which straddle a knot within that and read its two sides' mean (a foot a
+  millionth past a quadratic net's knot ran at 0.92 where its feet run at 0.99). A net's second
+  derivatives are its own, in the span holding the foot; any other surface's differences are
+  taken on the foot's side of a break within them.
+
 - **A polynomial net's `G` is read along its iso curve** (#993 stage 1): away from the flux's
   table, `props` integrated `G` from a face's middle across every span to each node of every use,
   each point a two-way evaluation of the sheet; it now reads the net's rows across the held
