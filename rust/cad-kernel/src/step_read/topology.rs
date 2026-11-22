@@ -703,13 +703,11 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
                     }
                 }
                 let [mut a,mut m,mut z] = [walked[0],walked[steps/2],walked[steps]];
-                if std::env::var("SEAMDBG").is_ok() { eprintln!("use {ei} rev {rev} from {from:?} a {a:?} m {m:?} z {z:?} last {last:?} pole {:?}",pole_at(s,from,st.within)); }
                 placed.insert(ei,m);
                 // leaving a pole after another use: on the branch that keeps the face on the left
                 if let (Some(l),Some(k)) = (last,pole_at(s,from,st.within)) {
                     if let Some(p) = periods[k] {
                         let x = pole_branch(a[k],l[k],p,k,(m[1-k]-a[1-k]).signum(),reversed,seams.contains(&ei));
-                        if std::env::var("SEAMDBG").is_ok() { eprintln!("pole leave a {a:?} m {m:?} z {z:?} last {l:?} x {x}"); }
                         let d = x-a[k];
                         for q in [&mut a,&mut m,&mut z] { q[k] += d; }
                     }
@@ -785,11 +783,6 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
             for co in &mut out[c.past..] { co.pcurve = moved(&co.pcurve,d); }
             last = Some([l[0]+d[0],l[1]+d[1]]);
         }
-    }
-    if std::env::var("SEAMFACE").ok().and_then(|x| x.parse::<u32>().ok()) == Some(face) {
-        let f = Face {surface:s.clone(),reversed,loops:vec![],name:String::new()};
-        for c in &out { let e = &b.edges[c.edge as usize]; eprintln!("FACE use edge #{} rev {} {:?} kind {}",st.reads.get(c.edge as usize).map_or(0,|r| r.entity),c.reversed,b.uv_ends(&f,c),match c.pcurve { Pcurve::Line {..} => "line",Pcurve::Inverse {..} => "inverse",_ => "curve" }); let _ = e; }
-        if let Surface::BSpline(_,n) = s { eprintln!("FACE dom {:?} closes {:?} periods {periods:?}",n.domain(),closes(s)); }
     }
     // round to where it began, on the same branch, or round a whole period of `u`
     let mut wound = None;
@@ -1311,7 +1304,6 @@ fn unrolled(b: &Brep,f: &mut Face,r: &Rolled,periods: [Option<f64>;2],laid: &[Ed
                 let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/16.;
                 let q = c.pcurve.at(t,e,&g.surface,&at.vertices);
                 let q = match c.pcurve { Pcurve::Inverse {a,b} => unwrap(q,[a[0]+(b[0]-a[0])*j as f64/16.,a[1]+(b[1]-a[1])*j as f64/16.],periods),_ => q };
-                if std::env::var("SEAMDBG").is_ok() { eprintln!("   use {} j {j} {:?} {:?}",c.edge,q,c.pcurve); }
                 for k in 0..2 { reach[k][0] = reach[k][0].min(q[k]); reach[k][1] = reach[k][1].max(q[k]); }
             }
         }
@@ -1339,7 +1331,6 @@ fn unrolled(b: &Brep,f: &mut Face,r: &Rolled,periods: [Option<f64>;2],laid: &[Ed
         let Some(w) = r.widths[k] else { continue };
         let [lo,hi] = dom[k];
         let [mn,mx] = reach[k];
-        if std::env::var("SEAMDBG").is_ok() { eprintln!("unrolled k {k} w {w} dom {:?} reach {mn} {mx}",dom[k]); }
         if !(mx-mn <= w*(1.+1e-6)) { return None }
         // (the middle of its reach within the sheet's own domain)
         d[k] = -((0.5*(mn+mx)-lo)/w).floor()*w;
