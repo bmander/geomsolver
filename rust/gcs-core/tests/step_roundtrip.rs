@@ -718,6 +718,9 @@ fn kernel_solids() -> Vec<(&'static str,Brep)> {
     let round = gcs_core::brep::fillet::roll(&boxed,[2.,2.,1.5],0.5,1e-9).unwrap();
     let rounded = combined(&boxed,&round.piece,if round.concave { Op::Union } else { Op::Cut },0.).unwrap();
     let hollow = combined(&prism(&square([0.,0.,0.],Z,5.),0.,10.).unwrap(),&sphere([0.,0.,5.],Z,2.).unwrap(),Op::Cut,0.).unwrap();
+    let slab = gcs_core::brep::build::block([-5.,-5.,-5.],[5.,5.,0.]).unwrap()
+        .moved(&gcs_core::brep::geom::Rigid::turn([0.;3],[1.,0.,0.],0.5));
+    let aslant = combined(&cone([0.,0.,-3.],Z,1.,1.,6.).unwrap(),&slab,Op::Common,0.).unwrap();
     let two = block.joined(&prism(&square([20.,0.,0.],Z,2.),0.,3.).unwrap());
     vec![
         ("block drilled",combined(&block,&pin,Op::Cut,0.).unwrap()),
@@ -736,6 +739,7 @@ fn kernel_solids() -> Vec<(&'static str,Brep)> {
         ("sheared extruded spline",prism(&lobe,0.,1.).unwrap().mapped(&shear)),
         ("rounded box",rounded),
         ("block with a spherical void",hollow),
+        ("cylinder cut aslant",aslant),
         ("two blocks",two),
     ]
 }
