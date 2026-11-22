@@ -530,9 +530,17 @@ fn surfaces_meet_in_curves_on_both() {
             }
         }
     }
-    // perpendicular cylinders of two radii, or of one with axes passing apart, have no closed form
+    // perpendicular cylinders of one radius with axes passing apart (one loop, turning back at a
+    // neck) are traced; of two radii, the lesser right through the other, they meet in two loops,
+    // the graph over the lesser's angle, every point on both (#994, `ssi::crossed_cylinders`)
     assert_eq!(intersect(&Surface::Cylinder(f([0.,0.,0.],z,x),2.),&Surface::Cylinder(f([0.,0.5,0.],x,y),2.),1e-9),Ssi::Traced);
-    assert_eq!(intersect(&Surface::Cylinder(f([0.,0.,0.],z,x),2.),&Surface::Cylinder(f([0.,0.,0.],x,y),1.),1e-9),Ssi::Traced);
+    let (big,small) = (Surface::Cylinder(f([0.,0.,0.],z,x),2.),Surface::Cylinder(f([0.,0.,0.],x,y),1.));
+    let Ssi::Curves(loops) = intersect(&big,&small,1e-9) else { panic!("crossed cylinders of two radii: traced") };
+    assert_eq!(loops.len(),2);
+    for c in &loops {
+        let Curve::Traced(t) = c else { panic!("{c:?}") };
+        assert!(t.closed && t.pts.iter().all(|&p| big.implicit(p).abs() < 1e-12 && small.implicit(p).abs() < 1e-12));
+    }
     // the same surface, written from another frame
     assert_eq!(intersect(&Surface::Cylinder(f([0.,0.,0.],z,x),2.),&Surface::Cylinder(f([0.,0.,7.],scale3(z,-1.),y),2.),1e-9),Ssi::Same);
     assert_eq!(intersect(&Surface::Plane(f([1.,2.,3.],z,x)),&Surface::Plane(f([5.,-2.,3.],scale3(z,-1.),y)),1e-9),Ssi::Same);

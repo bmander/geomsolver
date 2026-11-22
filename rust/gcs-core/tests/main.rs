@@ -86,6 +86,7 @@ mod curve_membership;
 mod curve_of;
 mod curved_ends;
 mod curvedef;
+mod crossed_cylinders;
 mod cut_planes;
 mod cylinders_touching;
 mod decompose;

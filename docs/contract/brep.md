@@ -970,7 +970,30 @@ millionth is the part's length, a touch along a curve the meeting's ridges read
 (`meeting::marched`) and the faces tangent there are laid along. Nearer, they cross and are traced
 as before (`cylinders_touching`: radii from 1 on 2 to 0.5 on 20 and of one radius, leans from 90°
 to 2°, whole or ending at the touch, each Boolean the rods' own volumes; under a degree left to the
-trace; sunk a tenth, still crossing). **Two surfaces resting on one another at a point meet
+trace; sunk a tenth, still crossing). **Two cylinders whose axes lean apart meet in a graph over the lesser's angle**
+(#994, fixture 146; `ssi::crossed_cylinders`, `cylinder_loops`): its point at angle `u` round the
+lesser is on the other where a quadratic in the height along the lesser's axis holds, whose roots
+`h± = (−B ± √D) / A` are the two branches. Three bands, for axes crossing (or passing a hair apart)
+at radii equal or nearly, whose two loops come within `2 √(2 r δ)` at two necks: the radii's
+difference `δ` and the axes' gap both within the tolerance — the singular case, the two ellipses
+crossing at the necks, as before, and no wider (a plane through the necks, a pocket's floor through
+a groove's axis, meets the two cylinders in curves that past the tolerance miss one another by `δ`);
+past it, where `D` keeps above nothing all round (the lesser right through the other), two closed
+traces whose points are the graph's, on both surfaces to rounding, no chord longer than a quarter of
+the branches' gap at its ends, so a projection between two never crosses a neck to the other loop
+(marched, the trace jumped between the loops at a neck, a cylinder's pieces not closing); and where
+`D` falls below nothing (a loop turning back: the lesser cutting into the other's side, or one neck
+closed by an axes' gap), or the axes lean under `SHALLOW`, traced as before. The gates are
+`crossed_cylinders`: rods of 6 crossing at 90°, 60° and 30°, radii 0 to `1e-2` apart either way and
+axes `1e-7` to `1e-4` apart, every Boolean either way the closed form's (the strips' parallelogram
+integrated by Gauss–Legendre) to `1e-7` of what they share; and fixture 146's block, obround pocket
+and groove in its floor through the ends' axes, its radius a micron to a tenth off or its axis a
+tenth aside, in three orders, to its own closed form to `1e-10`. Still refused: radii `1.5e-7` to
+`5e-7` apart (a tolerance to four), where the groove stands that far through or short of the
+pocket's sides and floor edges — a sliver of the side no deeper than a few tolerances between lines
+`2 √(2 r δ)` apart, which the arrangement cannot place — and rods of one radius with axes a hair
+apart (one loop turning back at a neck, traced and refused: "a shell of the arrangement is kept on
+one side of a cylinder and dropped on another"). **Two surfaces resting on one another at a point meet
 there alone, whatever their kinds** (#994 item 5): where their relative curvature `Q` at a touch
 is definite (an elliptic touch), they stand on either side of their common tangent plane, within
 the tolerance of one another only over its disc `√(2 tol / λ)` (`λ` its least size, `Touch::disc`),
