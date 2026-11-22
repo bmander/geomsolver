@@ -2544,7 +2544,11 @@ built either side of the instant yet**: the forward is built over the roll up to
 checked at the call's tolerance) and refused `Folded` at 74.5°, its rows 0.026 short of the instant
 already bending too sharply; the reverse is refused before its near miss and before its first fold
 pair is born (`Wrong` at a roll's end of 5°, a face's boundary through its own point at 6.5°,
-`Folded` from 24°), refusals of the trim and the arrangement of their own.
+`Folded` from 24°), refusals of the trim and the arrangement of their own: the meridian touched
+whole (0.9003) lies outside those rolls. At 5° (one stretch, each tube in four faces, 12 s) the
+arrangement finds three cells and keeps only the start pose's torus (a cell of 5 faces); the cell of
+37 faces the tubes bound is classified out, and the judge's witness (2.4408, −1.0338, 2.1265) lies
+0.058 deep in the sweep (the tool at roll −0.0707 holds it) and 2.95 from the solid kept.
 **The collar about a meridian touched whole for an instant** (#880 T1f, `rings::Collar`): where the
 Jacobian of `(A, B)` by `(θ, t)` is regular at the instant (forward det −1.06, reverse 0.37),
 `(A, B)(θ, t) = ρ (−sin ψ, cos ψ)` is solved for `(θ, t)` by Newton's method given `(ψ, ρ)` and the
