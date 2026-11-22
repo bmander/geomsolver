@@ -8,6 +8,17 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+## [0.21.0] - 2026-11-22
+
+- **An edge is read against what its faces are known to meet, by one rule** (#990): an edge lies in
+  each of its own faces' surfaces, so it meets another surface only where one of those faces meets
+  it.  New `meeting::Met` (the two surfaces are one, or meet on these curves and touch at these
+  points) and `meeting::Shared::known`, what an edge's faces are known to meet another surface on,
+  given (#880 Q1b) or in closed form (#962 item 7).  The arrangement reads an edge against those
+  meetings in closed form where both are lines or circles, tangencies among the crossings with no
+  search, in place of the given meetings' own path and a search a double root refused.  A vane
+  filled into a spherical crown builds with its four torus stretches (198988.300 mm³, 22 faces).
+
 - **Whether a standing ball's meeting comes back within the faces it ends on, read exactly**
   (#994, `fillet::dome_cut`): the meeting over the gap is split where it meets each end's surface
   (`query::curve_surface`) and read at one point of each piece, within by more than
