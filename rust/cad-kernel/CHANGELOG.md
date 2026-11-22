@@ -21,6 +21,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   the symmetric case (its centre moved 1e-9 along the path), still read touched whole within the
   rounding, is refused `Curved` at the meridian rather than `Failed` in its fit.
 
+- **An exact surface beside a fitted one is tied round an edge at the tolerance's angle** (#942,
+  `complex::tie_between`): `16 tol / ρ` of the exact surface's least radius, capped at `TANGENT`,
+  as two exact surfaces already were; `TANGENT` now decides only two fitted surfaces' ways.
+
 - **brep-bench's 80° tumbling torus is built at every spelling of its motion** (#942, `complex`):
   it built only where its observer's origin was (0, 0.5, 0.5) exactly. An end pose's seam stands
   in the widest gap among angles spaced evenly round it, so rounding chose the gap, and with the

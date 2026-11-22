@@ -693,7 +693,14 @@ own, and says where (`Touch`). `complex::two_blocks_meeting_along_an_edge_…`, 
 `TANGENT` (1e-4 rad) of one another are ordered a step in: a fitted surface — a round's net — is
 tangent to the faces it joins only as closely as its fit, some 1e-5, and read to first order that
 error put a round's strip on the wrong side of it, every cell one shell (the round-lowering cases,
-each a Boolean's selection with none falling back). The step is read nearest first (#942 F6):
+each a Boolean's selection with none falling back). `TANGENT` decides two fitted surfaces' ways
+alone, and caps the rest (`complex::tie_between`): where either surface is exact, the tie is what
+an edge's point read off its face within `8 tol` turns that exact surface's normal by, twice,
+`16 tol / ρ` at its least radius (the smaller of two) — so an exact face and a fitted one leaving
+an edge a millionth apart are ordered as they leave it, not on the fitted tie (#942, the ring's
+ends kept: with it, and with `TANGENT` itself at 1e-12, the fast suite and the slow tiers of the
+arrangement, the kernel and the sweeps stand; `SOLVENT_BREP_DEBUG` names each pair the fitted tie
+alone would still tie). The step is read nearest first (#942 F6):
 sixty-four tolerances in, and ten times farther only while two ways still agree within what a
 tolerance's lean turns a way by there (`4 tol / step`), to at most a hundredth of the least exact
 radius among them or a thousandth of the complex. Read at that farthest step alone, the order was the

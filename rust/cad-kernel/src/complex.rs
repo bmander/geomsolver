@@ -72,13 +72,16 @@ fn exact_radius(s: &Surface) -> Option<f64> {
 }
 
 /// How close two ways in may stand and still be one way, to be ordered by a step in: `TANGENT`
-/// where either surface is read approximately (its normal off by as much as its fit), else twice
+/// where both surfaces are read approximately (each normal off by as much as its fit), else twice
 /// what an edge's point read off its face within `8 tol` (`sew`'s, `tolerant`'s) turns an exact
-/// normal by at the smaller radius, `16 tol / ρ`, and no more than `TANGENT` — so two exact faces
-/// leaving an edge a millionth apart are ordered as they leave it, not by a step in.
+/// normal by at the smaller exact radius, `16 tol / ρ`, and no more than `TANGENT` — so two faces
+/// leaving an edge a millionth apart, one of them exact, are ordered as they leave it, not by a step
+/// in (#942: with an exact surface beside a fitted one tied so, and `TANGENT` itself at 1e-12, the
+/// fast suite and every slow tier of the arrangement, the kernel and the sweeps stand).
 fn tie_between(a: Option<f64>,b: Option<f64>,tol: f64) -> f64 {
     match (a,b) {
         (Some(a),Some(b)) => (16.*tol/a.min(b)).clamp(1e-12,TANGENT),
+        (Some(a),None) | (None,Some(a)) => (16.*tol/a).clamp(1e-12,TANGENT),
         _ => TANGENT,
     }
 }
