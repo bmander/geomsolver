@@ -189,6 +189,7 @@ mod linalg;
 mod lines;
 mod lists;
 mod drawn_cauchy;
+mod lobe_runs;
 mod loft;
 mod loft_examples;
 mod make_component;

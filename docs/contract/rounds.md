@@ -900,6 +900,24 @@ from `b.smooth` is read from its patches (`distance(p, b.smooth)`), the block's 
 beside its rim ("its flat, reaching 1.5mm from `dck.k3`, comes within 1.28mm of `base.j3`, which
 `dck.k3` goes on into smoothly").
 
+**A round or a chamfer along one arc of a chain of tangent arcs** (#994 item 5, fixture 125: R5
+along one lobe of a drum of convex lobes of 90 joined by concave waists, R3 along its bore's edge).
+At the run's ends its wall goes on tangent into the next arc's, which meets the cap in an edge of
+the run's own turn: it carries the run on (`BodyFaces::carries_on`), so the run ends on no face
+there and no curved end is cut at all. What bounds it is the meeting alone (`distance(p, crease)
+<= distance(p, meeting)`, the meeting the whole circle the cap and the arc's cylinder meet in):
+past the meridian through the seam a point's nearest point of it is off the crease, so the
+stretch ends square in that meridian — through both arcs' axes — and is the ring's sector
+exactly, Pappus over the arc's angle, convex or concave, on the rim or on a bore's edge. This is
+the abrupt end #962 saw at the waists, and it is the definition's own shape. `tests/lobe_runs.rs`
+is the gate (a lobe alone and a waist alone, round 5 and 3 and chamfer 2, either cap, drums of
+four and of six arcs stated to the micron, mirrored and turned; the same arcs as a bore's edge;
+the whole rim and the whole bore as before; each volume the closed form's to 1e-9, two exported).
+The fixture's "a run cut off at a curved end: a piece of nothing cut off at a curved face" was not
+reproduced on any such drum, before #994's changes or after: a cut at a curved end is asked only
+where a seam is a corner (a stated tangency a few hundred-thousandths to hundredths of a radian
+off), and there it removes a crescent of the run, not nothing.
+
 **A ball as wide as its cylinder** (brep-bench's fillet/cylinder-rim-to-dome): an offset by a
 radius that takes a surface's radius to nothing is what the surface is drawn about, never nothing
 (`Surface::offset` → `Offset`: a cylinder's axis, a sphere's centre, a torus's middle circle; `None`

@@ -21,7 +21,7 @@ use crate::common::{close, text::solved};
 /// A stroke of an outline on the top plane: a line, or an arc about `c` from `s` to `e`, turning
 /// counter-clockwise or not.
 #[derive(Clone, Copy, Debug)]
-enum Seg {
+pub(crate) enum Seg {
     Line([f64; 2], [f64; 2]),
     Arc { c: [f64; 2], s: [f64; 2], e: [f64; 2], ccw: bool },
 }
@@ -44,7 +44,7 @@ impl Seg {
     }
 
     /// Its sweep about its centre, signed counter-clockwise (an arc's).
-    fn sweep(&self) -> f64 {
+    pub(crate) fn sweep(&self) -> f64 {
         let Seg::Arc { c, s, e, ccw } = *self else { return 0.0 };
         let (a0, a1) = ((s[1] - c[1]).atan2(s[0] - c[0]), (e[1] - c[1]).atan2(e[0] - c[0]));
         let turn = (a1 - a0).rem_euclid(2.0 * PI);
@@ -53,11 +53,11 @@ impl Seg {
 }
 
 /// An outline: its strokes end to end, each the last one's end on.
-type Outline = Vec<Seg>;
+pub(crate) type Outline = Vec<Seg>;
 
 /// The outline's area, signed (counter-clockwise positive): Green's `½∮(x dy − y dx)`, a line's
 /// `½(x₀y₁ − x₁y₀)`, an arc's `½(R²φ + cₓ(e_y − s_y) − c_y(eₓ − sₓ))`.
-fn area(o: &Outline) -> f64 {
+pub(crate) fn area(o: &Outline) -> f64 {
     o.iter().map(|g| match *g {
         Seg::Line(a, b) => 0.5 * (a[0] * b[1] - b[0] * a[1]),
         Seg::Arc { c, s, e, .. } => {
@@ -69,20 +69,20 @@ fn area(o: &Outline) -> f64 {
 
 /// A rim's section: its area, and how far in from each face its centroid stands.
 #[derive(Clone, Copy)]
-enum Word {
+pub(crate) enum Word {
     Round(f64),
     Chamfer(f64),
 }
 
 impl Word {
-    fn section(self) -> (f64, f64) {
+    pub(crate) fn section(self) -> (f64, f64) {
         match self {
             Word::Round(r) => (square_run(r), (10.0 - 3.0 * PI) / (3.0 * (4.0 - PI)) * r),
             Word::Chamfer(d) => (0.5 * d * d, d / 3.0),
         }
     }
 
-    fn text(self) -> String {
+    pub(crate) fn text(self) -> String {
         match self {
             Word::Round(r) => format!("round(r: {r}mm)"),
             Word::Chamfer(d) => format!("chamfer(d: {d}mm)"),
@@ -93,7 +93,7 @@ impl Word {
 /// What the rim takes, the outline tangent all the way round: the section along each line, and
 /// round each arc its centroid turned about the arc's axis (Pappus) — `R − inset` where the arc
 /// is convex (it turns the way the outline does), `R + inset` where it is concave.
-fn taken(o: &Outline, word: Word) -> f64 {
+pub(crate) fn taken(o: &Outline, word: Word) -> f64 {
     let (a, inset) = word.section();
     let way = area(o).signum();
     a * o.iter().map(|g| match *g {
@@ -112,7 +112,7 @@ fn taken(o: &Outline, word: Word) -> f64 {
 /// chord runs more along y, else its y) and the other where the arc's ends are as far from it,
 /// as the solve puts it — so each seam is tangent to the numbers, a ten-millionth of a turn or so
 /// off, as #962's 132 and 142 were drawn.
-fn stated(o: &Outline) -> Outline {
+pub(crate) fn stated(o: &Outline) -> Outline {
     let grid = |x: f64| (x * 1e6).round() / 1e6;
     let at = |p: [f64; 2]| [grid(p[0]), grid(p[1])];
     o.iter().map(|g| match *g {
@@ -137,7 +137,7 @@ fn stated(o: &Outline) -> Outline {
 /// The plate drawn on the top plane through outline `o`, 10 thick, and its rim on `cap` (`near`,
 /// z = 10, or `far`, z = 0) taken by `word`: every end fixed, and each arc's centre by the
 /// coordinate `stated` rounds.
-fn document(o: &Outline, cap: &str, word: Word) -> String {
+pub(crate) fn document(o: &Outline, cap: &str, word: Word) -> String {
     let mut body = String::new();
     let mut names = Vec::new();
     let point = |body: &mut String, name: &str, p: [f64; 2]| {
@@ -223,7 +223,7 @@ fn step(r1: f64, length: f64) -> Outline {
 
 /// Outline `o` mirrored across the y axis and turned by `turn` about the origin, each stroke in
 /// the order it is met going round the same way as before (mirrored, the other way).
-fn moved(o: &Outline, mirror: bool, turn: f64) -> Outline {
+pub(crate) fn moved(o: &Outline, mirror: bool, turn: f64) -> Outline {
     let (s, c) = turn.sin_cos();
     let f = move |p: [f64; 2]| {
         let x = if mirror { -p[0] } else { p[0] };
@@ -256,7 +256,7 @@ fn a_step_of_tangent_arcs_and_a_line_is_rimmed_whole() {
 /// Lobes of `rl` about `n` centres `d` from the origin, the first on the x axis, and between each
 /// two a concave waist of `rw` tangent to both, its centre on the bisector between them: `2n`
 /// arcs, every seam tangent.
-fn lobed(n: usize, d: f64, rl: f64, rw: f64) -> Outline {
+pub(crate) fn lobed(n: usize, d: f64, rl: f64, rw: f64) -> Outline {
     let half = PI / n as f64;
     // the waist's centre: `rl + rw` from both lobes' on the bisector
     let e = d * half.cos() + ((rl + rw).powi(2) - (d * half.sin()).powi(2)).sqrt();
