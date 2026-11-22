@@ -1451,6 +1451,34 @@ fn a_net_segmented_is_the_same_surface() {
     }
 }
 
+/// A curve cut to a stretch is the same curve there (`BSpline::segment`): the same point and
+/// derivative at the same parameter, for a stretch across spans, one at the domain's start, and
+/// a rational curve's.
+#[test]
+fn a_curve_segmented_is_the_same_curve() {
+    use gcs_core::brep::nurbs::BSpline;
+    let knots = vec![0.,0.,0.,0.,0.3,0.45,0.7,1.,1.,1.,1.];
+    let poles: Vec<V> = (0..7).map(|i| { let x = i as f64; [x+0.3*x.sin(),-0.2*x*x,(2.*x).cos()] }).collect();
+    let plain = BSpline::new(3,knots.clone(),poles.clone()).unwrap();
+    let weights: Vec<f64> = (0..7).map(|i| 1.+0.4*(i as f64).sin().abs()).collect();
+    let rational = BSpline::rational(3,knots,poles,weights).unwrap();
+    for b in [&plain,&rational] {
+        for d in [[0.1,0.7],[0.,0.4],[0.3,0.45],[0.52,1.]] {
+            let cut = b.segment(d);
+            assert_eq!(cut.domain(),d);
+            assert_eq!(cut.is_rational(),b.is_rational());
+            for i in 0..=12 {
+                let t = d[0]+(d[1]-d[0])*i as f64/12.;
+                let (x,y) = (b.d1(t),cut.d1(t));
+                for (p,q) in [(x.0,y.0),(x.1,y.1)] {
+                    assert!((0..3).all(|c| (p[c]-q[c]).abs() <= 1e-10),"{d:?} at {t}: {p:?} against {q:?}");
+                }
+            }
+            assert!(cut.poles.len() <= b.poles.len()+3);
+        }
+    }
+}
+
 /// A net carried on past its domain (`Net::extended`) is its own polynomials continued: a net cut
 /// short within its end span and carried back out to where it was cut is the uncut net there, at
 /// either end and along either parameter — over the cut's domain the same surface as the cut.

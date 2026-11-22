@@ -47,6 +47,51 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   asks. A piece's inside is read with its first bar and its finest outline drawn once, and a
   meeting's touches read alone (`ssi::alone_over`) only where the search passes them.
 
+- **The bench's cube tumbling 75° is built** (#942 T1d-cube, `swept::general`, `family`, `topo`):
+  a fan's crossing with itself is built from the pinch it is born at — the runs' corner where the
+  sheet's rate across their rim turns over — as the pairs of points of the two runs that meet, each
+  solved by Newton and marched out from the Whitney umbrella's own pairs, not traced toward the
+  pinch, where the trace lost itself on the runs' rim. A wall's foot is found by a bounded
+  Levenberg–Marquardt (`Sheet::newton`); on a run of a fan crossing itself (`Sheet::layered`) its
+  last foot is trusted only where it settles on the point, else the nearest four of a grid are
+  settled and the nearest kept (`Sheet::inverse`), any other wall's as before. An inverse curve
+  on a face takes its feet's chord for its rate where the face is singular. New
+  `nurbs::BSpline::with_knot`; a branch's end carried onto a rail or a pinch bends only its last
+  span. The 15° cube's volume moves by 4e-8 with its crossing built.
+
+- **The cube tumbling 15° is built** (#942 T1d-cube, `swept::general`): a fan's runs are
+  found before the bearers are met, and two fans' branches beside a shared rail are traced on each
+  run's own wall (traced on the whole wall a fan crossing itself folds over, they ran 1e-5 off both
+  walls); any other curve given of a whole wall is cut to what lies on each run's wall, not given
+  whole. The bench's 75° cube now gets through its trim, refused by the solid's check (a loop
+  breaking in its parameters by 6.8e-7 beside a run's end); the 10° and 12° cubes are refused in
+  their trim, with no fan crossing itself.
+
+- **A branch beside a rail ends where the two fans touch** (#942 T1d-cube,
+  `swept::general`): two fans' second branch beside the corner's path they share reaches the path
+  only where the two are tangent, and its trace stopped short there or ran on along the path (the
+  cube tumbling 75°: 3.95e-6 past the corner, at a sine of 7e-7), the branch left hanging in a face
+  as a slit. An end within its meeting's reach of the path is carried to where the walls' normals
+  turn past each other along it, and to the road's corner there, the curve cut at it. New
+  `nurbs::BSpline::segment`, a curve's stretch exactly. The 75° cube is now refused where the 15°
+  one is, the boundary open along a rail edge.
+
+- **A fan that passes back through itself is cut into runs, their crossing given** (#942 T1d-cube,
+  `swept::general`): an edge's fan was one wall over the whole roll, its strips faces of one
+  surface, and where the edge's line passed back through where it stood a while before two faces of
+  one surface crossed — refused by the trim's witness as a meeting of a surface with itself (the
+  bench's cube tumbling 75°, its edge 5's fan). Each two of a bearer's stretches are met as two
+  surfaces, its wall restricted to each (`family::Sheet::restricted`); a fan crossing itself is cut
+  into the fewest runs of stretches that part every two crossing ones, each run its wall restricted
+  to it and a candidate of its own, given the rim it shares with the next, where the runs cross
+  (traced run against run, one curve across a run's stretches), and each meeting of the whole wall
+  restricted to the run (a rail over the run's span). A fan crossing itself nowhere is as it was.
+  The cube tumbling 15° and 75° get past it. A seed on a branch traced already
+  is read within `tolerant::on_meeting`'s reach (two fans meeting shallowly traced one branch twice,
+  4e-7 apart); a dump writes each wall with the number it is shared by, so a trim read back shares
+  its walls as built and replays bit for bit. Gated by `swept_general`'s replays of the 15° and 75°
+  cubes, refused where they are now and replayed alike.
+
 ## [0.20.0] - 2026-11-21
 
 - **A drafted corner where an arc meets a side at an angle is built** (#962 item 8b): `build::offset`
