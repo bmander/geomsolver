@@ -946,14 +946,14 @@ fn a_band_round_a_torus_is_the_part_its_bounds_keep_left() {
 fn doubled(cuts: &[f64], profile: &[f64], sense: &[bool]) -> String {
     let mut e = Ents::new();
     let (bottom, top) = (e.vertex([0., 0., -3.]), e.vertex([0., 0., 3.]));
-    let mut meridian = |e: &mut Ents, phi: f64| {
+    let meridian = |e: &mut Ents, phi: f64| {
         let (x, z) = ([phi.cos(), phi.sin(), 0.], [phi.sin(), -phi.cos(), 0.]);
         let a = e.place([0.; 3], z, x);
         let c = e.add(format!("ELLIPSE('',#{a},6.,3.)"));
         e.edge(bottom, top, c, true)
     };
     let edges: Vec<u32> = if cuts.is_empty() { vec![meridian(&mut e, 0.)] } else { cuts.iter().map(|&phi| meridian(&mut e, phi)).collect() };
-    let mut surface = |e: &mut Ents, sx: f64| {
+    let surface = |e: &mut Ents, sx: f64| {
         let a = e.place([0.; 3], [0., -1., 0.], [sx, 0., 0.]);
         let c = e.add(format!("ELLIPSE('',#{a},6.,3.)"));
         let (o, z) = (e.point([0.; 3]), e.dir([0., 0., 1.]));
@@ -1001,4 +1001,73 @@ fn a_face_on_a_sheet_covering_its_points_twice_is_the_one_the_solid_needs() {
             close(&format!("{what}: the rest"), area(b, &b.faces[1]), (1. - share) * s, 1e-9);
         }
     }
+}
+
+/// **A face whose edges lie along its sheet's domain's rows is bounded by those rows** (benchy's
+/// face #27487, and a slab under it: `step_kinds/crumpled_corner.step`, written by
+/// `scripts/step-corpus/crumpled_corner.py` from that face of brep-bench's reference benchy, CC0 —
+/// the face, the face moved 0.5 along `d` and turned, and a wall under each edge, its curve extruded
+/// along `d`). The face is its spline sheet's whole domain, its edges standing up to 4.4e-3 off the
+/// domain's rows where the sheet's corner is crumpled — its normal turning over within 0.06 of `u`
+/// and 0.0012 of `v` of it — and within 1e-4 of the crumple: read by their nearest feet, the edges'
+/// curves in the face's parameters leap into the crumple and back (refused, the leap reaching
+/// 4.4e-3 past twice the 4.3e-4 the feet stand). Read on the rows (`topology::rows`, where `sound`
+/// refuses the face read by its feet), each face of it is its sheet's whole domain, its area that of
+/// the domain to within what its edges' tolerances sweep, those tolerances measured against the rows
+/// (some 4.4e-3), and the slab's volume `0.5 ∫ (S_u × S_v)·d` over the domain to within that times
+/// its depth.
+#[test]
+fn a_face_whose_edges_lie_along_its_sheets_rows_is_bounded_by_them() {
+    use gcs_core::brep::geom::Surface;
+    use gcs_core::brep::topo::EdgeCurve;
+    let text = include_str!("step_kinds/crumpled_corner.step");
+    let given = read(text).unwrap_or_else(|r| panic!("refused: {r}"));
+    let g = &given[0];
+    let b = &g.brep;
+    // the walls' direction and depth, as the file writes them (the face moved along `−d`, its
+    // outward normal along `d`)
+    let (d, h) = ([0.2349313278993924, 0.0117731940709603, -0.9719406684941194], 0.5);
+    let length = |e: usize| {
+        let e = &b.edges[e];
+        if matches!(e.curve, EdgeCurve::Degenerate) { return 0. }
+        (0..256).map(|k| {
+            let t = |k: usize| e.t[0] + (e.t[1] - e.t[0]) * k as f64 / 256.;
+            norm(sub(e.point(t(k + 1), &b.vertices), e.point(t(k), &b.vertices)))
+        }).sum::<f64>()
+    };
+    // Gauss–Legendre on 8 points, over each of the sheet's knot spans
+    let (x8, w8) = ([0.1834346424956498, 0.5255324099163290, 0.7966664774136267, 0.9602898564975363],
+        [0.3626837833783620, 0.3137066458778873, 0.2223810344533745, 0.1012285362903763]);
+    let nodes: Vec<(f64, f64)> = (0..4).flat_map(|k| [(-x8[k], w8[k]), (x8[k], w8[k])]).collect();
+    let mut nets = 0;
+    let mut flux = 0.;
+    for (fi, f) in b.faces.iter().enumerate() {
+        let Surface::BSpline(_, n) = &f.surface else { continue };
+        nets += 1;
+        let spans = |k: &[f64]| { let mut s: Vec<f64> = k.to_vec(); s.dedup(); s };
+        let (us, vs) = (spans(&n.uknots), spans(&n.vknots));
+        let (mut whole, mut along) = (0., 0.);
+        for u in us.windows(2) { for v in vs.windows(2) {
+            for &(a, wa) in &nodes { for &(c, wc) in &nodes {
+                let uv = [0.5 * (u[0] + u[1]) + 0.5 * (u[1] - u[0]) * a, 0.5 * (v[0] + v[1]) + 0.5 * (v[1] - v[0]) * c];
+                let (_, su, sv) = f.surface.d1(uv);
+                let w = 0.25 * (u[1] - u[0]) * (v[1] - v[0]) * wa * wc;
+                whole += w * norm(cross(su, sv));
+                along += w * dot(cross(su, sv), d) * if f.reversed { -1. } else { 1. };
+            } }
+        } }
+        let edges: std::collections::BTreeSet<usize> = f.loops.iter().flatten().map(|c| c.edge as usize).collect();
+        let bar: f64 = edges.iter().map(|&e| b.edges[e].tol * length(e)).sum::<f64>() + 1e-9;
+        let got = area(b, f);
+        assert!((got - whole).abs() <= bar, "face {fi} (#{}): {got} read, its domain {whole} (bar {bar:e})", g.faces[fi]);
+        // the edges along the crumpled corner, measured against the rows
+        let worst = edges.iter().map(|&e| b.edges[e].tol).fold(0., f64::max);
+        assert!(worst > 4e-3 && worst < 5e-3, "face {fi}: its loosest edge measured {worst:e}");
+        if g.faces[fi] == 27487 { flux = along; }
+    }
+    assert_eq!(nets, 2);
+    let fi = g.faces.iter().position(|&x| x == 27487).unwrap();
+    let edges: std::collections::BTreeSet<usize> = b.faces[fi].loops.iter().flatten().map(|c| c.edge as usize).collect();
+    let bar: f64 = edges.iter().map(|&e| b.edges[e].tol * length(e)).sum::<f64>() * h;
+    close("the slab's volume", volume(b), h * flux, bar / (h * flux).abs());
 }

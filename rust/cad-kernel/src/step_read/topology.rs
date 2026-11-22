@@ -1617,9 +1617,9 @@ fn meet(b: &Brep,f: &Face,g: &Face,e: usize) -> Option<bool> {
 /// (`sound`: its shells facing out, a void in) is taken. Refused naming the face where both are, or
 /// where no reading of a group meets its neighbours.
 fn twice(st: &Setting,other: &Setting,sheets: &BTreeMap<u32,Sheet>,faces: &[Walked],built: Vec<Built>,
-    finish: &dyn Fn(Vec<Built>) -> Result<Given,Refusal>,context: &super::context::Context) -> Result<Given,Refusal> {
+    finish: &dyn Fn(Vec<Built>) -> Result<Given,Refusal>,context: &super::context::Context) -> Result<Vec<Built>,Refusal> {
     let amb: Vec<usize> = (0..faces.len()).filter(|&i| doubled(st,&sheets[&faces[i].surface],&faces[i])).collect();
-    if amb.is_empty() { return finish(built) }
+    if amb.is_empty() { return Ok(built) }
     let b = st.b;
     // each read on the half of the sheet its first foot is on, and on the other
     let on: [BTreeMap<usize,Built>;2] = [st,other].map(|x| amb.iter().filter_map(|&i| face(x,&sheets[&faces[i].surface],&faces[i]).ok().map(|f| (i,f))).collect());
@@ -1695,11 +1695,113 @@ fn twice(st: &Setting,other: &Setting,sheets: &BTreeMap<u32,Sheet>,faces: &[Walk
             }
         }
     }
-    finish((0..faces.len()).map(|i| chosen.get(&i).and_then(|&o| on[o as usize].get(&i).cloned()).unwrap_or_else(|| built[i].clone())).collect())
+    Ok((0..faces.len()).map(|i| chosen.get(&i).and_then(|&o| on[o as usize].get(&i).cloned()).unwrap_or_else(|| built[i].clone())).collect())
+}
+
+/// **A use of an edge lying along a row of its sheet's domain from end to end, read on that row**:
+/// the row `k` (the parameter held) at `at`, the other parameter's feet `y` of the edge's points
+/// at its parameters `t`, each within `tau` of the row's point there and running one way. None
+/// where any stands farther, or where they turn back.
+fn along_row(f: &Face,e: &Edge,vs: &[Vertex],k: usize,at: f64,tau: f64) -> Option<(Vec<f64>,Vec<f64>,f64)> {
+    let Surface::BSpline(_,n) = &f.surface else { return None };
+    let [a,z] = n.domain()[1-k];
+    let with = |y: f64| if k == 0 { [at,y] } else { [y,at] };
+    // (a row collapsed to a point is a pole's, no row an edge lies along)
+    if distance(f.surface.point(with(a)),f.surface.point(with(z))) <= tau && distance(f.surface.point(with(a)),f.surface.point(with(0.5*(a+z)))) <= tau { return None }
+    let foot = |p: V,y0: f64| -> (f64,f64) {
+        let mut y = y0;
+        for _ in 0..60 {
+            let (x,su,sv) = f.surface.d1(with(y));
+            let d = if k == 0 { sv } else { su };
+            let g = dot(sub(x,p),d)/dot(d,d);
+            if !g.is_finite() { break }
+            let next = (y-g).clamp(a,z);
+            if (next-y).abs() <= 1e-15*(1.+(z-a).abs()) { y = next; break }
+            y = next;
+        }
+        (y,distance(f.surface.point(with(y)),p))
+    };
+    const N: usize = 64;
+    let ts: Vec<f64> = (0..=N).map(|j| e.t[0]+(e.t[1]-e.t[0])*j as f64/N as f64).collect();
+    let p0 = e.point(ts[0],vs);
+    let y0 = (0..=256).map(|j| a+(z-a)*j as f64/256.).min_by(|&x,&y| distance(f.surface.point(with(x)),p0).total_cmp(&distance(f.surface.point(with(y)),p0)))?;
+    let (mut ys,mut worst) = (Vec::with_capacity(N+1),0f64);
+    let mut y = y0;
+    for &t in &ts {
+        let (x,d) = foot(e.point(t,vs),y);
+        if !(d <= tau) { return None }
+        worst = worst.max(d);
+        ys.push(x);
+        y = x;
+    }
+    let up = ys[N] >= ys[0];
+    if ys.windows(2).any(|w| if up { w[1] < w[0] } else { w[1] > w[0] }) || (ys[N]-ys[0]).abs() <= 1e-12*(z-a) { return None }
+    Some((ts,ys,worst))
+}
+
+/// **A face whose uses lie along its sheet's domain's rows, read on them** (`solid`, where `sound`
+/// refuses the face read by its edges' nearest feet): each use of a file's edge lying along a row of
+/// the face's spline sheet at its domain's edge (`along_row`, within `tau`), its pcurve along that
+/// row — a line where the row's feet run linear in the edge's parameter, else through the feet at
+/// 65 of its parameters — the rest as read. The foot of an edge is where its face is: a sheet
+/// folding back under itself near its domain's edge (benchy's #27487, its corner crumpled, its
+/// normal turning over) holds points nearer the edge than the row the face ends at, and read by
+/// them the edge's curve in the face's parameters leaps into the fold and back. Its tolerance is
+/// then measured against the row, as any edge's is. None where no use lies along a row, or none
+/// reads otherwise there.
+fn rows(b: &Brep,f: &Face,tau: f64) -> Option<Face> {
+    let Surface::BSpline(_,n) = &f.surface else { return None };
+    let dom = n.domain();
+    let mut g = f.clone();
+    let mut changed = false;
+    for c in g.loops.iter_mut().flatten() {
+        let Some(e) = b.edges.get(c.edge as usize) else { continue };
+        if !matches!(e.curve,EdgeCurve::Curve(_)) { continue }
+        let best = (0..2).flat_map(|k| dom[k].map(|at| (k,at))).filter_map(|(k,at)| along_row(f,e,&b.vertices,k,at,tau).map(|x| (k,at,x)))
+            .min_by(|x,y| x.2.2.total_cmp(&y.2.2));
+        let Some((k,at,(ts,ys,_))) = best else { continue };
+        let uv = |y: f64| if k == 0 { [at,y] } else { [y,at] };
+        // (a use read on the row already stays as it is)
+        if (0..=8).all(|j| { let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/8.; (c.pcurve.at(t,e,&f.surface,&b.vertices)[k]-at).abs() <= 1e-9*(1.+at.abs()) }) { continue }
+        let m = ys.len()-1;
+        let linear = (0..=m).all(|j| (ys[j]-(ys[0]+(ys[m]-ys[0])*j as f64/m as f64)).abs() <= 1e-9*(dom[1-k][1]-dom[1-k][0]));
+        c.pcurve = if linear { Pcurve::Line {a:uv(ys[0]),b:uv(ys[m])} } else {
+            let mut knots = vec![ts[0]];
+            knots.extend(&ts);
+            knots.push(ts[m]);
+            let poles = ys.iter().map(|&y| { let q = uv(y); [q[0],q[1],0.] }).collect();
+            let Ok(polyline) = BSpline::new(1,knots,poles) else { continue };
+            Pcurve::Curve(Arc::new(Curve::BSpline(Arc::new(polyline))))
+        };
+        changed = true;
+    }
+    changed.then_some(g)
 }
 
 /// The solid `found` names, read; refused naming the entity that could not be.
-pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
+pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> { read_solid(file,found,&[]) }
+
+/// **The solid `found` names, read and sound** (`sound`), or refused. Where `sound` refuses a face
+/// read by its edges' nearest feet, the solid is read again with that face's uses along its
+/// sheet's domain's rows laid on them (`rows`), and taken where that is sound — again for the next
+/// face it then refuses, up to eight; else the first refusal stands. A face sound as first read is
+/// never read again.
+pub fn sound_solid(file: &File,found: &Found) -> Result<Given,Refusal> {
+    let given = solid(file,found.clone())?;
+    let face = |u: &super::sound::Unsound,g: &Given| u.face.or_else(|| u.edge.and_then(|e| g.brep.faces.iter().position(|f| f.loops.iter().flatten().any(|c| c.edge as usize == e))));
+    let u = match super::sound::sound(&given.brep,&given.context) { Ok(()) => return Ok(given),Err(u) => u };
+    let refusal = u.refusal(&given);
+    let (mut rowed,mut at) = (Vec::new(),face(&u,&given));
+    while let Some(fi) = at.filter(|f| !rowed.contains(f) && rowed.len() < 8) {
+        rowed.push(fi);
+        let Ok(g) = read_solid(file,found.clone(),&rowed) else { break };
+        match super::sound::sound(&g.brep,&g.context) { Ok(()) => return Ok(g),Err(u) => at = face(&u,&g) }
+    }
+    Err(refusal)
+}
+
+/// `solid`, the faces `rowed` read on their sheets' rows (`rows`).
+fn read_solid(file: &File,found: Found,rowed: &[usize]) -> Result<Given,Refusal> {
     let g = Geometry {file,context:found.context};
     let mut w = Walk {g:&g,edges:BTreeMap::new(),written:Vec::new(),vertices:BTreeMap::new(),points:Vec::new()};
     let mut faces = Vec::new();
@@ -1869,5 +1971,11 @@ pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
         }
         Ok(given)
     };
-    twice(&setting(Some(false)),&setting(Some(true)),&sheets,&faces,built,&finish,&found.context)
+    let mut built = twice(&setting(Some(false)),&setting(Some(true)),&sheets,&faces,built,&finish,&found.context)?;
+    for &fi in rowed {
+        let face = built.get(fi).and_then(|x| rows(&b,&x.face,(100.*uncertainty).max(1e-3*size)))
+            .ok_or_else(|| Refusal::unsupported(faces.get(fi).map_or(r,|f| f.entity),"a face with no use along its sheet's rows read otherwise"))?;
+        built[fi].face = face;
+    }
+    finish(built)
 }
