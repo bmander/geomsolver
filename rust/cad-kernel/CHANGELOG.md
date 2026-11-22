@@ -8,6 +8,46 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A face on an offset surface is written as one** (#993 stage 1): `step` refused a solid with a
+  face on `Surface::Offset`, which only a reading makes (an `OFFSET_SURFACE` of a net), so such a
+  solid read could not be written again.  It is written as the `OFFSET_SURFACE` of its net at its
+  distance, as it was read.
+
+- **A face family's wall and rail that turn at their stations' joints are written** (#993 stage
+  1): a family's numbers are a polynomial through six stations a piece, two pieces meeting in value
+  only, and `step` fitted its wall and rails smooth across the joints, which no net closes in on
+  (`lofts/pipe.sv`'s tube 1.7e-2 mm off at the fit's cap, refused).  Where the smooth fit misses
+  `step::FIT`, the wall is fitted piece by piece on one grid along its edge and the rail stretch
+  by stretch between its breaks, joined with a knot of the degree's multiplicity.
+
+- **A STEP file prefers the curve in space where that is the exact one** (#993 stage 1): every
+  `SURFACE_CURVE` and `SEAM_CURVE` was written with `master_representation` `.PCURVE_S1.`, which
+  ISO 10303-42 reads as the representation preferred where they differ, though the kernel's
+  pcurves are fitted to its curve in space or read off it.  It is now `.CURVE_3D.`, and
+  `.PCURVE_Sk.` only where the curve in space is a fit and the `k`th pcurve is the kernel's own
+  spline in the parameters of a surface written exactly.
+
+- **A STEP file never states less than it holds** (#993 stage 1): `step::write` stated the
+  uncertainty asked (1e-7 in the tests) over a loft's net and rails fitted within `step::FIT`
+  (1e-6) and over a solid's own edges standing up to 2e-5 off their faces, so a reader measured 26
+  of the library's solids looser than their files said.  The file now states the tolerance asked
+  where it covers a quarter more than its geometry holds, and else what it holds, up to the next
+  of 1, 2 and 5 times a power of ten — each edge's distance off its faces measured afresh at 64
+  points, its knots and halfway between, plus its curve's, its faces' and its pcurves' measured
+  misses, and each vertex's tolerance.  `step::write_stating` returns that uncertainty with the
+  text (`write` is it without), and the export says so where it is past the one asked.
+
+- **No curve of a STEP file is written in more than `3 MOST + 1` points** (`step::MOST`, 4096
+  pieces; #993 stage 1): where no cubic closed in on an edge's curve in a toolpath's net, the
+  writer fell back to a polyline within the stated uncertainty, one pcurve of 2.5 million points
+  (a 257 MB file for `capped_thread`, 3.1 GB for `whole_turn`, a drill not written in a minute).
+  A pcurve no cubic and no polyline of `MOST` points holds is now left out (a reader puts the edge
+  on the face itself, as where a file writes none; a seam's two are written both or neither), and
+  a traced curve's polyline is written within the bar `MOST` points hold, which the file states.
+  A fitted pcurve is held no nearer the edge's foot than the edge stands off the face: the cubic
+  held to 1e-9 against an edge standing 1e-7 off chased a rate read wrongly just past a joint into
+  pieces of `2⁻³⁰` of the edge.
+
 - **A cone's curves in its parameters are written along its axis, as the standard reads them**
   (#993 stage 1): ISO 10303-42's `conical_surface` runs `v` along the axis, `C + (R + v tan α)(cos u
   x + sin u y) + v z`, where the kernel's cone (and OCCT's) runs it along the generator; `step`
