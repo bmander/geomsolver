@@ -1353,7 +1353,12 @@ fn run_piece(body: &crate::solid::faces::BodyFaces, [p0, p1]: [V; 2], fa: usize,
                     let out = |s: f64| ends.iter().map(|&(by, sign, _)| sign * body.end_side(&by, add(p, scale(way, s))).0)
                         .fold(f64::NEG_INFINITY, f64::max);
                     let tol = body.tolerance().max(1e-9 * (1.0 + norm(p)));
-                    let chord = kept.face.crossings(p, way).map(|[_, b]| b).filter(|&b| b > tol);
+                    // (where the edge's line touches the face at the end — a face closing down onto
+                    // the crease tangent, a band tapering to nothing — it never goes in: the
+                    // meeting comes back at once, and the run ends square there)
+                    let touches = (dot(kept.face.gradient(p), way).abs() < crate::solid::faces::TANGENT)
+                        .then_some(0.0);
+                    let chord = kept.face.crossings(p, way).map(|[_, b]| b).filter(|&b| b > tol).or(touches);
                     let Some(chord) = chord.filter(|&b| out(b + tol) <= tol) else {
                         return Err(Refused::PassedBy);
                     };

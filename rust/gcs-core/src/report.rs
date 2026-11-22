@@ -985,6 +985,27 @@ pub fn positions_where(sk: &Sketch, map: &crate::program::SourceMap, asked: &dyn
     published(out)
 }
 
+/// **A solid asked about that is not built, said** (#994): for each solid `asked` takes one of the
+/// names of whose evaluation is refused, the name and what refuses it — where `positions_where`
+/// reads no measure of it, so a reader asking for `part.volume` is told why there is none rather
+/// than that nothing is named there.
+pub fn solids_refused_where(sk: &Sketch, map: &crate::program::SourceMap, asked: &dyn Fn(&str) -> bool)
+    -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for (&e, names) in &map.names {
+        if e.kind != crate::model::EntKind::Solid {
+            continue;
+        }
+        let Some(n) = names.iter().find(|n| asked(n)) else { continue };
+        if let Err(why) = sk.evaluated_solid(e.i(), crate::solid::ApproximationPolicy::Report) {
+            let n = crate::program::public_path(n);
+            let said = format!("`{n}` is not built: {why}");
+            out.push((n, said));
+        }
+    }
+    out
+}
+
 /// **The names a reader is told, as a reader writes them** (#940): a copy of a repeated block,
 /// which the elaborator keys by its statement (`#53.0.c0.x`), by the path a reference writes
 /// (`c0[0].x`, `public_path`), so a report survives a line moved above it.  Where two copies come

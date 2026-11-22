@@ -146,7 +146,7 @@ impl<'a> Walk<'a> {
             }
             // said once, at the document's statement that expands to them (#625): every body
             // the walk is in stops here, and what is made of so much is no drawing
-            if self.emitted() >= MAX_FLAT {
+            if self.emitted() >= MAX_FLAT || self.overflowed {
                 if !self.overflowed {
                     self.overflowed = true;
                     let at = self.faces.at;
@@ -1162,6 +1162,7 @@ impl<'a> Walk<'a> {
                 let s = self.faces.selecting.entry(self.faces.at).or_default();
                 s.asked = true;
                 s.held |= matches!(decided, Ok(true));
+                s.made += usize::from(matches!(decided, Ok(true)));
                 s.unsure |= decided.is_err() || fixed;
                 s.pairs.extend(pairs);
             }
@@ -2265,7 +2266,8 @@ impl Walk<'_> {
     /// corners `std.rounds`' words copy — or that its boundary does not say, so every two are
     /// taken to meet.  Said to whoever listens (`progress::Work::expand`), and in the E103 of an
     /// expansion past its limit.
-    pub(super) fn tally(&self, p: &Pending, solid: &str, listed: &[String]) -> String {
+    pub(super) fn tally(&self, p: &Pending, solid: &str, listed: &[String])
+        -> (String, Option<usize>) {
         // the statement's first line, as written
         let text = self.prog.span_text(p.at).unwrap_or("").trim();
         let text = match text.split_once('\n') {
@@ -2288,9 +2290,16 @@ impl Walk<'_> {
             Some(m.neighbours(f)?.iter().filter_map(|g| place.get(g.as_str()).copied()).collect())
         }).collect());
         let Some(near) = near else {
-            return format!("{head}, whose boundary does not say which of them meet where the \
-                drawing is seeded (a body cut by a sweep is its field's), so every two are taken \
-                to");
+            let field = self.faces.given.get(solid)
+                .is_some_and(|g| matches!(g.read, Err(crate::solid::faces::Unread::Field)));
+            return if field {
+                // every two and every three: each ordered as a word reaches it
+                (format!("{head}, whose boundary is its field's (a sweep cuts it), so which of \
+                    them meet is not read and every two are taken to"), Some(n * (n - 1) * (n - 1)))
+            } else {
+                (format!("{head}, whose boundary is not built where the drawing stands, so which \
+                    of them meet is read where it solves"), None)
+            };
         };
         let mut pairs = 0;
         let mut threes = 0;
@@ -2304,8 +2313,11 @@ impl Walk<'_> {
             1 => format!("1 {one}"),
             k => format!("{k} {many}"),
         };
-        format!("{head}, of which {} and {} meet each other",
-                count(pairs, "pair meets", "pairs meet"), count(threes, "three", "threes"))
+        // each pair reached both ways, each three in its six orders, as `std.rounds`' words reach
+        // them: the copies whose `when` will hold
+        (format!("{head}, of which {} and {} meet each other",
+                 count(pairs, "pair meets", "pairs meet"), count(threes, "three", "threes")),
+         Some(2 * pairs + 6 * threes))
     }
 }
 

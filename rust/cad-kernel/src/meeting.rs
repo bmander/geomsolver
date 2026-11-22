@@ -1088,6 +1088,9 @@ pub struct Shared {
     touches: std::collections::BTreeMap<(usize,usize),Vec<V>>,
     /// the pairs given, kept once asked for
     was_given: std::collections::BTreeSet<(usize,usize)>,
+    /// each index given a class of faces at once (`class`): two of one kind are apart by
+    /// construction, read by no region (#994)
+    classed: std::collections::BTreeSet<usize>,
 }
 
 impl Shared {
@@ -1115,12 +1118,37 @@ impl Shared {
         mine.push(self.surfaces.len()-1);
         self.surfaces.len()-1
     }
+    /// **The index of a class of faces one surface**, drawn by the caller face by face (#994,
+    /// `boolean`'s `Arrangement::classed`): `rep`, the surface standing for the class, over
+    /// `region`, the box its faces fill — the index of a surface given before (`give`) that one of
+    /// `members` (the class's surfaces, `rep` among them) is exactly, else a new one — never an
+    /// index another surface is read the same as over a region, which would join what the caller
+    /// parted.
+    pub fn class(&mut self,rep: &Surface,members: &[&Surface],region: super::geom::Box3) -> usize {
+        let mine = self.of_kind.entry(rep.kind()).or_default();
+        let i = match mine.iter().copied().find(|&i| members.iter().any(|m| self.surfaces[i] == **m)) {
+            Some(i) => { super::geom::widen(&mut self.regions[i],region); i }
+            None => {
+                self.surfaces.push(rep.clone());
+                self.regions.push(region);
+                mine.push(self.surfaces.len()-1);
+                self.surfaces.len()-1
+            }
+        };
+        self.classed.insert(i);
+        i
+    }
     /// **Whether surfaces `i` and `j` are one** (#961): one index, or one over the part of space
     /// the faces given each fill (`ssi::same_over`, within `ON_CURVE` tolerances) — two of two
     /// kinds, which `index_over` keeps apart, a sheet lying in a plane. Their meeting is then
     /// `Ssi::Same`, and a piece on a face of the one is on the other's (`boolean`'s `Surfaces::one`).
+    /// Two indices each given a class of faces of one kind (`class`) are one only where they are
+    /// one index: the classes were drawn apart face by face, and a reading over the regions they
+    /// fill would join what no two of their faces are.
     pub fn one(&self,i: usize,j: usize,tol: f64) -> bool {
         if i == j { return true }
+        let classed = self.classed.contains(&i) && self.classed.contains(&j);
+        if classed && self.surfaces[i].kind() == self.surfaces[j].kind() { return false }
         let shared = common(self.regions[i],self.regions[j],tol);
         (0..3).all(|k| shared.0[k] <= shared.1[k])
             && super::ssi::same_over(&self.surfaces[i],&self.surfaces[j],super::tolerant::ON_CURVE*tol,shared)

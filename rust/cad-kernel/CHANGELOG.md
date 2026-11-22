@@ -18,6 +18,44 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   cut end (a plane's half-space, a curved face's solid).  Refused by name where the meeting comes
   back within those faces elsewhere, where the run going on ends apart from the ball's section,
   or where the surfaces meet in no closed curve in closed form.  No public API changes.
+- **Faces on one surface are one surface whatever order a Boolean's operands come in** (#994,
+  fixture 115's feet and lip at a plate's true edge): an arrangement reads which faces lie on one
+  surface face by face before any phase asks (`Arrangement::classed`) — two of one kind joined
+  where `ssi::same_over` holds over their two boxes, a class every face so joined, standing for it
+  a surface every face of it lies within the reach of — where it had joined each face onto the
+  first surface given an index over the box the faces before it filled, so a pad leaning `1e-7`
+  rad read first stood for the plate's top along its whole length and the plate's other face on
+  that plane was a surface of its own.  New: `meeting::Shared::class` (two classes of one kind are
+  never `one`).  Two curves on one surface cross where they come within its reach
+  (`query::crossings_in` reads `curve_curve`'s closed forms at `ON_CURVE` tolerances, as it keeps a
+  carrier's roots); a vertex on an edge at its end is that end, the two made one (`tolerant::at_end`,
+  new), and the box a vertex is sought on an edge in reaches as far as that rule.  So a plate, a
+  lip and a foot whose pads lie flush in its thickness or abut its edges unite in every order, where
+  some orders were refused ("a plane's pieces do not close", "a piece … touches … along no face",
+  "a shell … kept on one side … and dropped on another") and the rest built with a face more or
+  less.
+- **Two cylinders resting on one another at a point meet in no curve, in closed form** (#994 item
+  5): `ssi::intersect` reads two cylinders whose axes lean apart and stand at least the sum of
+  their radii apart, less the tolerance, as meeting in no curve (`ssi::rods_apart`) — clear of one
+  another, or touching at one point — as a ball resting on a plane is read. They were traced, and
+  the search for a meeting no edge crosses found a point beside the touch that the trace could not
+  follow ("a cylinder and a cylinder meet at …, where no edge crosses, in a curve that could not be
+  traced", or "nearly touching"): a blanket round over a clevis's top. Two crossing, or leaning
+  less than a degree apart (where they stand within the tolerance along a stretch), are traced as
+  before.
+
+- **Two surfaces resting on one another at a point meet there alone, whatever their kinds** (#994
+  item 5): `boolean`'s second-order reading of a touch knows an elliptic one (the relative
+  curvature `Q` definite) over the reach the tolerance sets, eight times `√(2 tol / λ)` — new
+  `ssi::Touch::least`, `Touch::disc` and `ssi::resting`, which samples the two apart round it —
+  rather than refusing it where the radius within which they stand nearer parallel than a trace
+  follows was not small beside the faces. `ssi::touch_near` is Newton on the difference of the two
+  exact unit normals, settled by the height a step changes, and finds a touch whose `λ` is small.
+  An edge refused where a surface of its own rests on the other is read as touching it there
+  (`boolean::resting_on`). A ball standing its radius or more from a cylinder or a torus meets it
+  in no curve, in closed form (`ssi::ball_clear`). A cylinder, a torus, a ball resting on a
+  cylinder, a torus or a cone at a point was refused ("a cylinder and a torus meet at …, where no
+  edge crosses, in a curve that could not be traced", "nearly touching", "pieces do not close").
 
 - **A round beyond a seam that starts where its touch crosses the seam** (#994): `spill::Beyond`
   has a new field `seamed: [bool; 2]` — with `run`, an end where the ball's touch crosses a line

@@ -557,6 +557,19 @@ fn back_over_in(sk: &Sketch, body: &super::faces::BodyFaces, b: &BackOver) -> St
     let (Some((f, g)), Some(e)) = (seam, end) else { return back_over_unnamed(sk, b) };
     let (own, next) = if body.edges_between(&[e], &[g]).is_empty() { (f, g) } else { (g, f) };
     let (witness, depth) = back_over_numbers(sk, b);
+    // a face the run's own face runs on into tangent, which no one moves: the run's face shorter
+    // than the round reaches — a band's foot arc tapering onto the disc it stands on (#994)
+    if body.smooth(&[own]).contains(&e) {
+        let off = crate::units::Dim::LENGTH.number_text(
+            crate::json::fmt_g(body.side(e, at).abs(), 2).parse().unwrap_or(body.side(e, at).abs()), sk.units);
+        return format!("its round goes on tangent from {} into {} across their seam at {witness}, and {} runs on \
+            tangent into {}, which its run along {} ends on: the seam stands {off} off {}, nearer than the round's \
+            section reaches, so {} reaches {depth} back over the section there, the round along {} ends nowhere \
+            there and keeps that section whole, and the two meet in no one section: no exact construction is made \
+            of that yet. A smaller round, or a longer {}, keeps {} clear of the seam",
+            body.said(own), body.said(next), body.said(own), body.said(e), body.said(own), body.said(e),
+            body.said(e), body.said(next), body.said(own), body.said(e));
+    }
     format!("its round goes on tangent from {} into {} across their seam at {witness}, and {}, which its run \
         along {} ends on, reaches {depth} back over the section there: the round along {} ends nowhere there and \
         keeps that section whole, so the two meet in no one section, and no exact construction is made of that \

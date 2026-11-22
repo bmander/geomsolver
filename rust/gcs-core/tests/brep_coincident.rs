@@ -239,6 +239,98 @@ fn surfaces_leaning_apart_are_one_over_a_region_within_the_tolerance() {
     assert!(!same_over(&ring(0.),&fat,tol,round),"a tube twice the tolerance fatter: two");
 }
 
+/// A strip bent from a sheet of thickness 1 (fixture 115's feet and lip, #994): drawn in the plane
+/// through `o` along `u` and `v` (`v` up the sheet's thickness), a pad from `c` to `c + 1` along
+/// `u` (its end at `c + 1`), bent at `c` through `turn` round an inner radius of 3 and an outer of
+/// 4 centred at `(c, 4)`, then a leg `leg` long; swept `from` `to` along `u × v`.
+fn strip(o: V,u: V,v: V,c: f64,turn: f64,leg: f64,from: f64,to: f64) -> Brep {
+    use gcs_core::space::cross;
+    let n = cross(u,v);
+    let at = |a: f64,b: f64| -> V { std::array::from_fn(|k| o[k]+u[k]*a+v[k]*b) };
+    let start = 1.5*PI-turn;
+    let bend = |r: f64| (c+r*start.cos(),4.+r*start.sin());
+    let ((i0,i1),(o0,o1)) = (bend(3.),bend(4.));
+    let (du,dv) = (start.sin(),-start.cos());
+    let line = |a: (f64,f64),b: (f64,f64)| ProfileEdge::Line {a:at(a.0,a.1),b:at(b.0,b.1)};
+    let arc = |r: f64| ProfileEdge::Arc {frame:Frame::new(at(c,4.),n,u),r,span:Some([start,1.5*PI])};
+    let edges = vec![line((c+1.,1.),(c,1.)),arc(3.),line((i0,i1),(i0+leg*du,i1+leg*dv)),
+        line((i0+leg*du,i1+leg*dv),(o0+leg*du,o1+leg*dv)),line((o0+leg*du,o1+leg*dv),(o0,o1)),arc(4.),
+        line((c,0.),(c+1.,0.)),line((c+1.,0.),(c+1.,1.))];
+    prism(&Profile {names:vec![],origin:at(c,0.),normal:n,loops:vec![edges]},from,to).unwrap()
+}
+
+/// The section of `strip`: its pad, its bend and its leg.
+fn section(turn: f64,leg: f64) -> f64 { 1.+3.5*turn+leg }
+
+/// **A plate, a lip along its edge and a foot at its corner united in every order are one solid**
+/// (#994, fixture 115 at its true edge): the plate and two bent strips whose pads lie in the
+/// plate's thickness — their tops and feet on its top and foot, overlapping it and each other — or
+/// abut its edges, each strip drawn leaning a hair (up to `7e-7` rad across its pad, `2e-9` along
+/// it, as a bend solved through points rounded to a few decimals leans it), within the
+/// arrangement's reach of the plate over the pad. United in each of the six orders, and with the
+/// two strips united first, they are one solid: closed, every edge on its faces (`built`), its
+/// volume the closed form of the three less what they share, and its faces as many whatever the
+/// order. Read one surface at a time, the faces on the plate's top and foot took whichever came
+/// first for their surface (`Arrangement::classed`), and the edges two such faces' corners were
+/// minted on stood apart by more than the pool's reach (`tolerant::at_end`) and crossed by more
+/// than the tolerance (`query::crossings_in`): "a plane's pieces do not close", "a piece … touches
+/// … along no face", a shell kept and dropped — in some orders, and in others the solid, its faces
+/// one more or less.
+fn strips_on_a_plate(overlapping: bool) {
+    let t: V = [-49.8088,-48.6,-2.67665];
+    let w = |p: V| -> V { std::array::from_fn(|k| p[k]+t[k]) };
+    let (x0,y0,x1,y1) = (19.6/13.,36.6/13.,1249.2/13.,1227./13.);
+    let plate = block(w([x0,y0,0.]),w([x1,y1,1.]));
+    let (up,ux,uy) = ([0.,0.,1.],[1.,0.,0.],[0.,1.,0.]);
+    // (each strip, where it leans about, its volume, and the volume the three share)
+    let (lip,lip_at,foot,foot_at,strips,shared) = if overlapping {
+        // the lip's pad over the plate's edge along x, the foot's over its edge along y, and the
+        // two over one another at the corner, every pad in the plate's thickness
+        let (c,d) = (34./13.,17./13.);
+        let lip = strip(w([x0,0.,0.]),uy,up,c,0.5*PI,11.98462,0.,x1-x0);
+        let foot = strip(w([0.,2.7,0.]),ux,up,d,0.25*PI,13.79264,-(31.8-2.7),0.);
+        let (lx,fy) = (c+1.-y0,d+1.-x0);
+        let lf = fy*(c+1.-2.7);
+        (lip,w([0.5*(x0+x1),c+0.5,0.5]),foot,w([d+0.5,17.,0.5]),
+            section(0.5*PI,11.98462)*(x1-x0)+section(0.25*PI,13.79264)*29.1,lx*(x1-x0)+fy*(31.8-y0)+lf-fy*lx)
+    } else {
+        // the lip's pad abutting the plate's edge along x and running on past its corner, the
+        // foot's abutting its edge along y, its side in the plane of the lip's pad's end
+        let lip = strip(w([x0-1.,0.,0.]),uy,up,y0-1.,0.5*PI,12.,0.,x1-x0+1.);
+        let foot = strip(w([0.,y0,0.]),ux,up,x0-1.,0.25*PI,14.,-30.,0.);
+        (lip,w([0.5*(x0+x1),y0-0.5,0.5]),foot,w([x0-0.5,y0+15.,0.5]),
+            section(0.5*PI,12.)*(x1-x0+1.)+section(0.25*PI,14.)*30.,0.)
+    };
+    let exact = (x1-x0)*(y1-y0)+strips-shared;
+    for (lean_lip,lean_foot) in [(0.,0.),(1e-7,5e-7),(5e-7,-7e-7),(-7e-7,1e-7)] {
+        let lip = lip.moved(&Rigid::turn(lip_at,ux,lean_lip)).moved(&Rigid::turn(lip_at,uy,2e-9));
+        let foot = foot.moved(&Rigid::turn(foot_at,uy,lean_foot));
+        let what = format!("the lip leaning {lean_lip:e}, the foot {lean_foot:e}");
+        let three = [("plate",&plate),("lip",&lip),("foot",&foot)];
+        // (the volume as far as the faces read on one surface stand apart over the plate, and the
+        // same in every order to rounding)
+        let within = moved_by(&plate,&lip,2.*(x1-x0)*(y1-y0));
+        let (mut faces,mut first): (Option<usize>,Option<f64>) = (None,None);
+        for order in [[0,1,2],[0,2,1],[1,0,2],[1,2,0],[2,0,1],[2,1,0]] {
+            let [a,b,c] = order.map(|k| three[k]);
+            for nested in [false,true] {
+                let what = if nested { format!("{what}: {} ∪ ({} ∪ {})",a.0,b.0,c.0) } else { format!("{what}: {} ∪ {} ∪ {}",a.0,b.0,c.0) };
+                let u = if nested { built(a.1,&built(b.1,c.1,Op::Union,&what),Op::Union,&what) }
+                    else { built(&built(a.1,b.1,Op::Union,&what),c.1,Op::Union,&what) };
+                close(volume(&u),exact,within,&what);
+                close(volume(&u),*first.get_or_insert(volume(&u)),1e-6,&format!("{what}: the same volume in every order"));
+                assert_eq!(u.faces.len(),*faces.get_or_insert(u.faces.len()),"{what}: as many faces in every order");
+            }
+        }
+    }
+}
+
+#[test]
+fn strips_in_a_plates_thickness_at_its_true_edge_unite_in_every_order() { strips_on_a_plate(true) }
+
+#[test]
+fn strips_abutting_a_plates_true_edges_unite_in_every_order() { strips_on_a_plate(false) }
+
 /// Fixture 115's fragment (#961): two folded strips whose pads overlap, flush, at a corner, and a
 /// plate beside them, every coordinate written to `places` decimals — the pads' faces meant to
 /// coincide leaning `1e-6` rad apart at five decimals (a bend's radius solved through a point fixed
@@ -294,6 +386,68 @@ fn fixture_115s_strips_unite_at_every_precision() {
     }
     let v = part(FRAGMENT);
     close(v,exact,0.5e-5*area,"the issue's fragment");
+}
+
+/// Fixture 115 at its true edge (#994) as a document: a plate drawn in `std.top`, a lip bent up
+/// along its edge drawn in `std.side` and a foot bent off at its corner drawn in `std.front`, the
+/// strips' pads in the plate's thickness — over its edge, and over one another at its corner —
+/// every point fixed where it is meant, written to `places` decimals, far from the origin (the
+/// fixture's `(-49.8088, -48.6, -2.67665)`); each bend's centre and the ends it starts from fixed,
+/// the ends it reaches seeded, as a bend is drawn. `order` unites the three.
+fn at_true_edge(places: usize,order: &str) -> String {
+    let t = [-49.8088,-48.6,-2.67665];
+    let f = |x: f64| format!("{x:.places$}");
+    let (x0,y0,x1,y1) = (19.6/13.,36.6/13.,1249.2/13.,1227./13.);
+    // a strip's section in its plane, `(a, b)` its coordinates offset by `at`
+    let section = |name: &str,at: [f64;2],c: f64,turn: f64,leg: f64| -> String {
+        let s = 1.5*PI-turn;
+        let (du,dv) = (s.sin(),-s.cos());
+        let pt = |p: &str,a: f64,b: f64,fixed: bool| if fixed { format!("  {name}{p} := point\n  fix(({}, {})) {name}{p}\n",f(at[0]+a),f(at[1]+b)) }
+            else { format!("  {name}{p} := point hint(({}, {}))\n",f(at[0]+a),f(at[1]+b)) };
+        let (i,q) = ((c+3.*s.cos(),4.+3.*s.sin()),(c+4.*s.cos(),4.+4.*s.sin()));
+        let edges = [("t","line({n}e1, {n}b1)"),("ai","arc(center: {n}o, start: {n}i, end: {n}b1)"),("li","line({n}i, {n}i2)"),
+            ("c","line({n}i2, {n}q2)"),("lo","line({n}q2, {n}q)"),("ao","arc(center: {n}o, start: {n}q, end: {n}b0)"),
+            ("b","line({n}b0, {n}e0)"),("e","line({n}e0, {n}e1)")];
+        [pt("e1",c+1.,1.,true),pt("b1",c,1.,true),pt("b0",c,0.,true),pt("e0",c+1.,0.,true),pt("o",c,4.,true),
+            pt("i",i.0,i.1,false),pt("q",q.0,q.1,false),pt("i2",i.0+leg*du,i.1+leg*dv,true),pt("q2",q.0+leg*du,q.1+leg*dv,true),
+            edges.iter().map(|(e,def)| format!("  {name}{e} := {}\n",def.replace("{n}",name))).collect(),
+            format!("  {name} := face({})\n",edges.iter().map(|(e,_)| format!("{name}{e}")).collect::<Vec<_>>().join(", "))].concat()
+    };
+    let corner = |p: &str,x: f64,y: f64| format!("  {p} := point\n  fix(({}, {})) {p}\n",f(t[0]+x),f(t[1]+y));
+    format!("use std\nuse std.solids (cut, union)\nin std.top {{\n{}{}{}{}  sheet := face(a1, a2, a3, a4, -> close)\n}}\n\
+        in std.side {{\n{}}}\nin std.front {{\n{}}}\n\
+        plate := solid(std.solids.Prism(sheet, from: {}mm, to: {}mm))\npart := solid(plate)\n\
+        lip_lo := solid(std.solids.Prism(lip, from: {}mm, to: {}mm))\n\
+        foot_lo := solid(std.solids.Prism(foot, from: {}mm, to: {}mm))\n{order}",
+        corner("a1",x0,y0),corner("a2",x1,y0),corner("a3",x1,y1),corner("a4",x0,y1),
+        section("lip",[t[1],t[2]],34./13.,0.5*PI,11.98462),section("foot",[t[0],t[2]],17./13.,0.25*PI,13.79264),
+        f(t[2]),f(t[2]+1.),f(t[0]+x0),f(t[0]+x1),f(-(t[1]+31.8)),f(-(t[1]+2.7)))
+}
+
+/// **Fixture 115's lip and foot unite with the plate at its true edge, whichever is joined first**
+/// (#994): the document `at_true_edge` draws, the strips each united into the part, the foot into
+/// the lip first and the lip into the part, and the lip into the foot first — where joined straight
+/// onto the plate the fixture's part was refused ("`foot_lo`: a plane's pieces do not close") and
+/// joined through the lip it built. Each order builds closed at five and nine decimals, its volume
+/// the closed form's (`strips_on_a_plate`'s: the three less what they share) within what rounding
+/// the coordinates moves it by.
+#[test]
+fn fixture_115s_lip_and_foot_unite_with_the_plate_at_its_true_edge_in_any_order() {
+    let (x0,y0,x1,y1) = (19.6/13.,36.6/13.,1249.2/13.,1227./13.);
+    let (c,d) = (34./13.,17./13.);
+    let strips = section(0.5*PI,11.98462)*(x1-x0)+section(0.25*PI,13.79264)*29.1;
+    let (lx,fy) = (c+1.-y0,d+1.-x0);
+    let exact = (x1-x0)*(y1-y0)+strips-(lx*(x1-x0)+fy*(31.8-y0)+fy*(c+1.-2.7)-fy*lx);
+    let area = 2.*((x1-x0)*(y1-y0)+strips);
+    for order in ["lip_lo union part\nfoot_lo union part\n","foot_lo union part\nlip_lo union part\n",
+        "foot_lo union lip_lo\nlip_lo union part\n","lip_lo union foot_lo\nfoot_lo union part\n"] {
+        for places in [5,9] {
+            let e = crate::common::text::solved(&at_true_edge(places,order));
+            let x = e.sketch.exact_solid(crate::common::ent(&e,"part").i()).unwrap_or_else(|m| panic!("{places} places, {order:?}: {m}"));
+            x.brep.check(1e-6).unwrap_or_else(|m| panic!("{places} places, {order:?}: {m}"));
+            close(volume(&x.brep),exact,0.5*10f64.powi(-(places as i32))*area+1e-6,&format!("{places} places, {order:?}"));
+        }
+    }
 }
 
 /// Fixture 115's fragment as issue #961 gives it, from delta debugging: five decimals, some points
@@ -367,3 +521,4 @@ tab_lo := solid(std.solids.Prism(f66, from: -31.8mm, to: -2.7mm))
 flange_lo union part
 tab_lo union part
 ";
+
