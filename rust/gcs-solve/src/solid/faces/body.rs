@@ -42,12 +42,29 @@ fn nearest_by_gap<T>(n: usize, gap: Option<&dyn Fn(usize) -> f64>, read: impl Fn
     best
 }
 
+/// How many faces' feet a thread remembers (`BodyFaces::foot_of`), each in the slot its number
+/// gives.
+const FEET_KEPT: usize = 16;
+
+thread_local! {
+    /// The feet last read on this thread: of which body (`BodyFaces::id`) and face, from which
+    /// point (its bits), and the foot with its place.
+    static FEET: std::cell::RefCell<[Option<(u64, usize, [u64; 3], (V, Place))>; FEET_KEPT]> =
+        const { std::cell::RefCell::new([None; FEET_KEPT]) };
+}
+
 /// What a run of edges ends on (`BodyFaces::end_faces`): a face of the boundary, or a plane
 /// square to an edge where its run ends on none, its unit normal `out` pointing past that end.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum EndBy {
     Face(usize),
     Square { at: V, out: V },
+}
+
+/// A number no other `BodyFaces` has.
+fn next_id() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 /// A body's exact boundary, located, in millimetres (`mm` of them a model unit).
@@ -92,6 +109,8 @@ pub struct BodyFaces {
     /// the body's own build goes on from to make its rounds (`solid::exact`), rather than make
     /// the stratum again.
     stratum: Option<crate::brep::recipe::Offered>,
+    /// A number of its own, by which the feet read of it are remembered (`foot_of`).
+    id: u64,
 }
 
 impl BodyFaces {
@@ -209,7 +228,7 @@ impl BodyFaces {
         let caps = vec![false; loc.b.faces.len()];
         BodyFaces { loc, mm, origin, paths, caps, convex: Vec::new(), edges, bounding, reach,
             shells, seams: Vec::new(), chains: Vec::new(), surfaces: Default::default(),
-            named: Default::default(), stratum: None }
+            named: Default::default(), stratum: None, id: next_id() }
     }
 
     /// Each edge's seam read once, and the smooth chains they join.
@@ -542,11 +561,23 @@ impl BodyFaces {
         (d, foot, place)
     }
 
-    /// The foot of `q` (millimetres) on face `fi`'s surface, and where it lies on the face.
+    /// The foot of `q` (millimetres) on face `fi`'s surface, and where it lies on the face: a
+    /// step of a projection reads it of a face from one point several times (the chain's side,
+    /// each face's own, `conditions::faces_apart`), so the last few on each thread are remembered
+    /// against the body, the face and the point, bit for bit (`FEET`).
     fn foot_of(&self, fi: usize, q: V) -> (V, Place) {
+        let at = q.map(f64::to_bits);
+        let slot = fi % FEET_KEPT;
+        if let Some((id, f, from, read)) = FEET.with_borrow(|feet| feet[slot]) {
+            if id == self.id && f == fi && from == at {
+                return read;
+            }
+        }
         let f = &self.loc.b.faces[fi];
         let foot = f.surface.point(f.surface.inverse(q));
-        (foot, self.loc.face_place(fi, foot))
+        let read = (foot, self.loc.face_place(fi, foot));
+        FEET.with_borrow_mut(|feet| feet[slot] = Some((self.id, fi, at, read)));
+        read
     }
 
     /// The edge of face `fi` nearest a foot on its surface (millimetres), the first among equals,
