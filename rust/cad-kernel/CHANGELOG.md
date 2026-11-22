@@ -13,8 +13,8 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   built through `closed::cut_from` (3.6 s, volume 10696.461766). Of each contact parallel's sheet
   the leaf depth keeps, cut at the meridian; the strip; and at each end the other leaf from its rim
   to where it crosses the end pose's tool, each its own sheet fitted over its closed form, every
-  meeting given. `member::Swept` reads a path that encloses nothing at its greatest sampled speed
-  rather than refusing it `Unbounded`.
+  meeting given. `member::Swept` gains `sampled`: asked for by this entry alone, a path that
+  encloses nothing is read at its greatest sampled speed rather than refused `Unbounded` (no proof).
 
 - **The zero set of a scalar function over a rectangle of parameters, traced** (#942, new
   `zero_set`): `trace` follows `f = 0` (a least value `min over s of g` with its minimiser, through

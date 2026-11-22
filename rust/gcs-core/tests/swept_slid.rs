@@ -481,7 +481,7 @@ fn membership_reads_the_deepest_pose_first() {
     // on the top at the middle pose
     let p = add(scale(d,0.5),[0.76,0.28,3.]);
     assert!(mill.swept(d,p));
-    assert_eq!((Swept {tool:&solid,path:&path,roll:[0.,1.]}).member(p),Ok(true));
+    assert_eq!((Swept {sampled:false,tool:&solid,path:&path,roll:[0.,1.]}).member(p),Ok(true));
 }
 
 /// **A round meeting its neighbour in a sharp rim at a lean builds through its fan** (#810's

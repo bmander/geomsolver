@@ -33,6 +33,18 @@ fn main() {
     match cad_kernel::swept::closed::cut_from(&block,&tool,&path,[0.,1.],0.005,tol) {
         Ok(b) => {
             let kinds: Vec<&str> = b.faces.iter().map(|f| f.surface.kind()).collect();
+            if std::env::var_os("FACES").is_some() {
+                let uses = b.uses();
+                for (fi,f) in b.faces.iter().enumerate().filter(|(_,f)| f.surface.kind() == "torus") {
+                    println!("face {fi} ({}): area {:.6}",f.name,cad_kernel::props::area(&b,f));
+                    for co in f.loops.iter().flatten() {
+                        let e = &b.edges[co.edge as usize];
+                        let [p,q] = e.t.map(|t| e.point(t,&b.vertices));
+                        let other: Vec<String> = uses[co.edge as usize].iter().filter(|u| u.0 != fi).map(|u| format!("{} {}",u.0,b.faces[u.0].surface.kind())).collect();
+                        println!("  edge {} ({}): {:.4?} .. {:.4?}, beside {other:?}",co.edge,e.curve.kind(),p,q);
+                    }
+                }
+            }
             println!("built in {:?}: volume {:.6}, check {:?}, faces {kinds:?}",clock.elapsed(),cad_kernel::props::volume(&b),b.check(tol).err());
         }
         Err(e) => println!("refused in {:?}: {e:?}",clock.elapsed()),

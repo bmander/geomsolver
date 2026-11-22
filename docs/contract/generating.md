@@ -2349,17 +2349,30 @@ strip at its corner; so the arrangement seeks none between two sheets. Refused b
 where it reads so, wherever this is not what depth says (the tool no torus, the far meridian or a
 leaf's equator in the blank, the contact not two parallels, a leaf kept on both sides or neither,
 any kept sheet's place held from beyond by more than the tolerance); with no blank, the road's
-refusal at a meridian touched whole stands. The bench's ring along a spline, its runner's frame,
+refusal at a meridian touched whole stands. **To serve `closed::ring`** (no blank, the box its
+domain) the same construction needs the far meridian too: its strip, entered as the near one's
+(which half nothing beyond holds read there on its own); each leaf over the whole half turn from
+one meridian to the other rather than to its equator, which leaf is kept read near each meridian
+— the leaf kept beside one may be held beside the other, and the seam where it changes is then a
+cover's edge across the leaf, which no leaf is cut along yet; and the end pieces bounded where
+they reach either meridian. Not entered: `ring` keeps its refusal
+(`swept_rings::a_ring_carried_along_a_spline_touching_its_meridians_whole_is_cut_from_a_block`
+asserts it). The bench's ring along a spline, its runner's frame,
 a bar of 0.005 and the tolerance of its size: built in 3.6 s (entered in 2.7 s, arranged in
 0.6 s), closed, volume 10696.461766 (the peer kernel's 10696.4618), five B-spline faces and the
-block's six planes, membership agreeing at seeded points over the groove and its volume counted
-by forty thousand of them within three standard errors
+block's six planes, membership (sampled, above) agreeing at seeded points over the groove and its volume counted
+by forty thousand of them within three standard errors (56.49 ± 1.28 against 55.54)
 (`swept_rings::a_ring_carried_along_a_spline_touching_its_meridians_whole_is_cut_from_a_block`,
 `swept_rings::the_rings_groove_counted_is_the_blocks_volume_less_the_cuts`). **Membership along a
 path that encloses nothing** (`Trajectory::General` whose `Path` gives no `stretch`, as the bench's
-runner's does) is read at the carried point's greatest sampled speed, `|v(M(t)⁻¹ x)|` over 4096
-equal steps, in place of a bound (`member::Swept::speed`): no proof, as the depth trim's own
-reading is none.
+runner's does — it gives poses alone, and nothing bounds their rates) stays `Unbounded` for every
+reader of `member::Swept`, and is read at the carried point's greatest sampled speed,
+`|v(M(t)⁻¹ x)|` over 4096 equal steps, only where it is asked for by name (`Swept::sampled`, set
+by this entry alone for its cells and its judge): no proof, as the depth trim's own reading is
+none, and the gate's membership agreement is read so. The end pose's kept quadrant comes out as
+two faces either side of the torus's own seam parallel (`ψ = 0`, its outer equator, which runs
+through the quadrant and which turning the seam round the axis cannot move): six torus faces where
+the peer kernel has four.
 
 **K2's patches: the closed class under any rigid motion (#780 L3, `brep::swept::patches`):** a
 sweep under a motion no constant twist takes, nor a path of pieces (`Trajectory::General`, a frame

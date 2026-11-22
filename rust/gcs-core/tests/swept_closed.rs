@@ -29,7 +29,7 @@ pub(crate) fn agrees(built: &Brep,tool: &Brep,path: &Trajectory) { agrees_over(b
 /// `agrees` over the roll `roll`.
 pub(crate) fn agrees_over(built: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2]) {
     let (solid,body) = (Solid::new(tool,0.002,1.).unwrap(),Solid::new(built,0.002,1.).unwrap());
-    let swept = Swept {tool:&solid,path,roll};
+    let swept = Swept {sampled:false,tool:&solid,path,roll};
     let (lo,hi) = built.bounds();
     let mut rng = gcs_core::rng::Rng::new(6);
     let mut held = 0;
@@ -562,7 +562,7 @@ fn agrees_cut(built: &Brep,blank: &Brep,tool: &Brep,path: &Trajectory) { agrees_
 /// `agrees_cut` over the roll `roll`.
 fn agrees_cut_over(built: &Brep,blank: &Brep,tool: &Brep,path: &Trajectory,roll: [f64;2]) {
     let (solid,body,stock) = (Solid::new(tool,0.002,1.).unwrap(),Solid::new(built,0.002,1.).unwrap(),Solid::new(blank,0.002,1.).unwrap());
-    let swept = Swept {tool:&solid,path,roll};
+    let swept = Swept {sampled:false,tool:&solid,path,roll};
     let (lo,hi) = blank.bounds();
     let mut rng = gcs_core::rng::Rng::new(9);
     let mut held = 0;
@@ -760,7 +760,7 @@ fn a_toolpath_of_a_slide_and_a_turn_is_its_pieces_sweeps_united() {
     assert!((volume(&built)-expected).abs() <= 1e-9*expected,"{} against {expected}",volume(&built));
     // membership over the whole path, at seeded points of the built solid's box
     let (solid,body) = (Solid::new(&tool,0.002,1.).unwrap(),Solid::new(&built,0.002,1.).unwrap());
-    let swept = Swept {tool:&solid,path:&path,roll:[0.,2.]};
+    let swept = Swept {sampled:false,tool:&solid,path:&path,roll:[0.,2.]};
     let (lo,hi) = built.bounds();
     let mut rng = gcs_core::rng::Rng::new(9);
     let mut held = 0;
@@ -1811,7 +1811,7 @@ fn a_solid_built_wrong_is_refused_at_a_witness() {
     let path = Trajectory::Twist(Screw {origin:[0.;3],axis:[0.,0.,1.],ratio:1.5,advance:TAU*0.5*1.5});
     let built = closed(&tool,&path,[0.,1.],0.002,1e-6).unwrap();
     let solid = Solid::new(&tool,0.002,1.).unwrap();
-    let swept = Swept {tool:&solid,path:&path,roll:[0.,1.]};
+    let swept = Swept {sampled:false,tool:&solid,path:&path,roll:[0.,1.]};
     let domain = box_about(&built);
     assert_eq!(judge(&built,&swept,&domain,None,&[],1e-6),Ok(()));
     let refused = |b: &Brep,blank: Option<&Brep>,swept: &Swept,domain: &Brep,what: &str| match judge(b,swept,domain,blank,&[],1e-6) {
@@ -1830,7 +1830,7 @@ fn a_solid_built_wrong_is_refused_at_a_witness() {
     let slide = slide([3.,0.,0.]);
     let cut = cut_from(&blank,&bar,&slide,[0.,1.],0.002,1e-6).unwrap();
     let bar_solid = Solid::new(&bar,0.002,1.).unwrap();
-    let bar_swept = Swept {tool:&bar_solid,path:&slide,roll:[0.,1.]};
+    let bar_swept = Swept {sampled:false,tool:&bar_solid,path:&slide,roll:[0.,1.]};
     assert_eq!(judge(&cut,&bar_swept,&blank,Some(&blank),&[],1e-6),Ok(()));
     let over = combined(&cut,&block([1.5,0.2,0.8],[4.5,1.8,1.6]),Op::Cut,1e-6).unwrap();
     assert!(volume(&over) < volume(&cut)-0.5);

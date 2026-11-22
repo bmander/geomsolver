@@ -380,7 +380,7 @@ fn groove_counted(cut: &Brep,n: usize,count: Option<f64>) {
     let (_,tool,..) = along_a_spline();
     let runner = runner();
     let solid = gcs_core::brep::swept::member::Solid::new(&tool,0.002,1.).unwrap();
-    let swept = gcs_core::brep::swept::member::Swept {tool:&solid,path:&runner,roll:[0.,1.]};
+    let swept = gcs_core::brep::swept::member::Swept {sampled:true,tool:&solid,path:&runner,roll:[0.,1.]};
     let body = gcs_core::brep::swept::member::Solid::new(cut,0.002,1.).unwrap();
     let (lo,hi) = ([-2.,-2.,-1.5],[32.,22.,0.]);
     let mut rng = gcs_core::rng::Rng::new(9);
