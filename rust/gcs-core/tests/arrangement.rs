@@ -540,3 +540,52 @@ fn a_rim_touching_a_wall_at_points_given_is_read_there_with_no_search() {
         assert!(off <= 1e-12,"the touch at {p:?} a vertex: {off:e} off");
     }
 }
+
+/// **A given curve a face holds as two edges is laid as both** (#942 T1d-tori, a kernel gate with no
+/// sweep in it): a sheet in the plane `z = 0`, its edge along the line `y = 0` notched between
+/// `x = 0.5` and `x = 1.5`, so that line — one curve — is two of its edges, `x` in `[−1, 0.5]` and
+/// `[1.5, 3]`, and a block below it whose face `y = 0` meets the sheet's plane in that line, given
+/// as their meeting. A given curve that is an edge of either face is that edge, laid once (#942
+/// F3); the face holding it as two, both are laid on the block's face — where the full turn's tube
+/// held the start torus's rim as two edges, the end pose's chord between them, and the first alone
+/// was laid, the torus was parted along half its rim and a piece of it reached round the rest.
+#[test]
+fn a_given_curve_a_face_holds_as_two_edges_is_laid_as_both() {
+    use gcs_core::brep::boolean::{arrangement_given,Given};
+    use gcs_core::brep::geom::{Curve,Frame,Surface};
+    use gcs_core::brep::topo::{Coedge,EdgeCurve,Face,Pcurve};
+    let line = Curve::Line {p:[0.;3],d:[1.,0.,0.]};
+    let mut sheet = Brep::default();
+    let corners = [[-1.,0.],[0.5,0.],[0.5,0.4],[1.5,0.4],[1.5,0.],[3.,0.],[3.,1.],[-1.,1.]];
+    let vs: Vec<u32> = corners.iter().map(|&[x,y]| sheet.vertex([x,y,0.])).collect();
+    let mut lp = Vec::new();
+    for i in 0..corners.len() {
+        let (a,b) = (corners[i],corners[(i+1)%corners.len()]);
+        let len = (b[0]-a[0]).hypot(b[1]-a[1]);
+        // (the two stretches along `y = 0` on the one line, at its own parameter, `x`)
+        let (curve,t) = if a[1] == 0. && b[1] == 0. { (line.clone(),[a[0],b[0]]) }
+            else { (Curve::Line {p:[a[0],a[1],0.],d:[(b[0]-a[0])/len,(b[1]-a[1])/len,0.]},[0.,len]) };
+        let edge = sheet.edge(EdgeCurve::Curve(curve),t,[vs[i],vs[(i+1)%corners.len()]]);
+        lp.push(Coedge {edge,reversed:false,pcurve:Pcurve::Line {a,b}});
+    }
+    let plane = Surface::Plane(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]));
+    sheet.faces.push(Face {surface:plane.clone(),reversed:false,loops:vec![lp],name:String::new()});
+    let below = block([-0.5,-1.,-1.],[2.5,0.,1.]);
+    let wall = below.faces.iter().map(|f| &f.surface)
+        .find(|s| matches!(s,Surface::Plane(_)) && [[0.,0.,0.],[1.,0.,0.5]].iter().all(|&p| s.implicit(p).abs() < 1e-12))
+        .expect("the block's face y = 0").clone();
+    let given = Given {surfaces:[plane,wall.clone()],curves:vec![line.clone()],touches:vec![]};
+    let domain = block([-2.,-2.,-2.],[4.,2.,2.]);
+    let complex = arrangement_given(&domain,&[&sheet,&below],&[given],1e-9).expect("arranged");
+    // the stretches of the line bounding a piece of the block's face
+    let mut laid: Vec<[f64;2]> = Vec::new();
+    for f in complex.b.faces.iter().filter(|f| f.surface == wall) {
+        for c in f.loops.iter().flatten() {
+            let e = &complex.b.edges[c.edge as usize];
+            if matches!(&e.curve,EdgeCurve::Curve(ec) if *ec == line) { laid.push([e.t[0].min(e.t[1]),e.t[0].max(e.t[1])]) }
+        }
+    }
+    let covers = |x: f64| laid.iter().any(|&[a,b]| a < x && x < b);
+    assert!(covers(0.) && covers(2.),"the line laid on the block's face over {laid:?}");
+    assert!(!covers(1.),"nothing laid where the sheet is notched: {laid:?}");
+}

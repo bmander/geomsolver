@@ -28,7 +28,7 @@ const FINEST: f64 = 1e-9;
 const MOST_READS: usize = 1 << 16;
 /// The most stretches `Swept::beyond` reads before it says `None`, the cautious answer: a ball near
 /// the boundary whose proof would take more is left near, and its pairs met.
-const BEYOND_READS: usize = 256;
+pub(super) const BEYOND_READS: usize = 256;
 
 /// A tool read for membership: its boundary meshed, scaled to the trajectory's units, a box
 /// about each triangle, and how far the mesh may stand off the exact boundary (its measured sag,

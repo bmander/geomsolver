@@ -1173,6 +1173,12 @@ pub fn ring_entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Re
     // from where a stretch first finds the outer leaves crossing, once a pair, and cut into every
     // stretch it passes (`rings::cut_along`), its tail dropped there
     let mut curves: Vec<Vec<(f64,f64,f64)>> = Vec::new();
+    // (each built outward from its swallowtail point where a stretch finds one, #942 T1d-tori — a
+    // seed on a curve so built is no other)
+    for apex in fits.iter().flat_map(|f| f.apexes.clone()) {
+        if curves.iter().any(|c| super::rings::on_double_curve(&ring,path,c,apex.at,tol)) { continue }
+        curves.push(super::rings::double_curve_from_apex(&ring,path,[a,b],apex,tol)?);
+    }
     for seed in fits.iter().flat_map(|f| f.seeds.clone()) {
         // (a seed on a curve traced already: its point within the tolerance of it, #942 F6)
         if curves.iter().any(|c| super::rings::on_double_curve(&ring,path,c,seed[0],tol)) { continue }
@@ -1201,10 +1207,15 @@ pub fn ring_entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Re
     let last = fits.len()-1;
     let mut pieces = Vec::new();
     let mut given = Vec::new();
+    // (whether a pose holds a place of a tube more than the tolerance deep — a sheet on the boundary
+    // stands within its fit of it, a tenth of the tolerance — read where a double curve dips below a
+    // stretch and comes back, the tail between ending where the curve meets the tool at an end pose,
+    // #942 T1d-tori)
+    let inside = |x: V| ring.held(path,[a,b],x,tol);
     for (k,fit) in fits.iter().enumerate() {
         // (both end poses read on every stretch: a tube carried on can cross either far from it)
         let at = [Some((&start,poses[0])),Some((&end,poses[1]))];
-        let (s,g) = super::rings::entered_at(fit,&ring,at,[k == 0,k == last],tol)?;
+        let (s,g) = super::rings::entered_at(fit,&ring,at,[k == 0,k == last],&inside,tol)?;
         if crate::debug() { eprintln!("ring: stretch {k} over {:?}: pieces {}..{}, faces {:?}",fit.roll,pieces.len(),pieces.len()+s.len(),s.iter().map(|b: &Brep| b.faces.len()).collect::<Vec<_>>()) }
         phase(&format!("stretch {k} entered at the end poses"));
         pieces.extend(s);

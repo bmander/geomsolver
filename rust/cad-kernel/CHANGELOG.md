@@ -8,6 +8,44 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The full-turn tumbling torus gets past its start and end tori** (#942 T1d-tori, `boolean`,
+  `swept::rings`, `swept::closed`), and is refused further on, where the two tori's meeting found
+  by search misses an arc between the two points where they touch. A given curve a face holds as
+  several edges is laid as each of them, not the first alone (the tube's row at the start, cut where
+  the end pose holds the tube beside it, left half the start torus's rim unlaid). Where a
+  double curve lies below a stretch at a place's angle, dipping into the stretch before and coming
+  back, the place above it is tail only where a pose holds it more than the tolerance deep
+  (`Ring::held`, read off the ring's exact signed distance): a tail ends where its curve meets the
+  tool at an end pose, and the places above that tool's chord stand on the boundary. A double curve's end stays where it is and the trace it stands on is
+  cut there: put on the trace's polyline, it stood two tolerances from the same point on the leaf
+  whose rim it is. `rings::entered_at` takes the test of the sweep's inside.
+
+- **A fold pair's double curve is built from its swallowtail point** (#942 T1d-tori,
+  `swept::rings`, `swept::closed`): where a stretch's rows find no pair of a narrow pair's leaves
+  crossing — beside a pair's birth one preimage lies in the stretch before the cut, the other within
+  the bridge — the swallowtail point is found where a fold runs along the kernel of the sheet's
+  rates (`rings::swallowtails`, `Fitted::apexes`), and the curve built outward from it, its first
+  pair from the swallowtail's normal form (`rings::double_curve_from_apex`). A double curve's march
+  takes no pair whose preimages have met (nor, built from a swallowtail point, one whose second
+  preimage comes back over the angle), and seeks the next pair from the last two where the last
+  alone does not settle it. A tube's tail is read above its double curve over the angle round the
+  axis and against the whole curve (`Fitted::tails`), not over a stretch's `u`.
+  `tumbling-torus-half-turn` gets past its double curve beside the birth and is refused, by name,
+  where the sheet's kernel through the swallowtail point stands within the tolerance of it and a
+  sliver of the leaf is narrower than the tolerance. The `ring_profile` example builds the half turn.
+
+- **The thin tumbling torus gets past its shallow refusal and its rim's slit** (#942 T1d-tori,
+  `boolean`, `swept::rings`): a grid seed is a root the bisection reached within the tolerance,
+  and none where the other sheet's signed distance changes sign by a jump — the thin torus's
+  "two tubes meet at 0.00°" was a seed 0.03 (the tube's diameter) off the other tube, its distance
+  read across a net's seam where the inverse leapt to a far corner. A double curve's end inside a
+  face's square, standing on the tube's crossing with the tool, stays where it is — the tube's own
+  vertex, where its other preimage ends on the rim — and the crossing is cut there, not the end
+  put on the crossing's polyline 1e-6 off it, which left the touching rim a slit in the tool's face.
+  `tumbling-torus-thin` is still refused, later: in the trim, beside the swallowtail point where its
+  fold pair is born, among stretches 1.4e-4 of the roll wide whose tail stands within the tolerance
+  of the boundary.
+
 - **A ring touching a meridian whole at every instant is refused by name; its tubes are arranged
   with it at both ends** (#942 T1d-ring, `swept::rings`, `swept::closed::ring_entered`, `boolean`,
   `swept::dump`, `trajectory`): brep-bench's ring along a spline, read on the ring road. Along a
