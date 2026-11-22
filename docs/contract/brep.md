@@ -1796,9 +1796,8 @@ a corner's slop, or a use's feet swinging round a pole it ends at or passes with
 of, whatever the swing in parameters (CADGenBench 215, 240, 242 and 247, read face by face within
 every bar). A leap of a whole period, a chord across a closed sheet's seam (reaching round the
 sheet), or ends apart in space past twice the tolerance adds a strip and is refused naming its
-face. A closed spline sheet whose faces' seam is not its domain's end is turned to start there
-(`topology::turned`: the net cut at the seam by knot insertion and its two pieces put end to end,
-the same points), so a band round it is one region (CADGenBench 217). Each shell faces out or in
+face. A face on a spline sheet closed on itself is read on the window of the sheet its loops lie
+in (below), so a band round it is one region (CADGenBench 217). Each shell faces out or in
 as points stepped off its largest faces are located against it, its signed volume used where none
 locates or they tie (217's drilled void of three faces); a lump lies inside nothing or inside a void, a void inside a lump, none crossing
 another; any number of lumps is sound, as `step::write` writes them; a boundary of no faces is
@@ -1818,6 +1817,42 @@ torus's net crossing its axis), and an inverse curve's foot held on a sheet's do
 edge standing off its face past it — runs along that edge alone (CADGenBench 246's whole-domain
 face read 6.5e-4 over it). Gates: the corpus rows (occt ellipsoid, nurbs-sphere, brepkit torus,
 occt torus-grown-past-its-hole), `step_corpus::nothing_is_read_wrong`.
+
+**A surface closed on itself is periodic whether or not its form has a period, and a loop on it is
+walked as on any periodic surface** (`topology::Rolled`, `closes`, `rolled`, `unrolled`, `window`).
+A B-spline sheet (or its offset) whose rows at a parameter's two ends are one curve, to 1e-7 of its
+size, and whose derivative across them keeps its direction to a thousandth of a radian (a pole's
+row, nought, asks none; a writer's fitted net closes with its tangents 4e-5 apart) closes along
+that parameter, read off its own points and tangents and never off the file's `u_closed`. The
+kernel's net holds no period, so a loop crossing the closing line was no one curve in its face's
+parameters — a leap of the domain's width, a break, an edge read millimetres off its face. Such a
+sheet is rolled out: put three times end to end along each parameter it closes in (knots of full
+multiplicity between, each copy's poles as written: the same points, exactly), each loop set out
+from the middle copy, and walked with the domain's width as its period, the walk's every rule —
+branches, a pole's collapsed parameter (a file curve leaving a pole on the branch that keeps the
+face on the left, a seam's a whole width on), a band's seam between two winding loops laid along
+the net's iso-curve (the net cut there by knot insertion, its row), a loop winding round the net's
+collapsed row joined to it along one — as on a cylinder or a sphere. Each face is then read on the
+sheet as the file gives it where its loops, moved by whole widths, lie within its domain, else on
+the window of the rolled sheet over one width — centred on what its loops leave free, or starting
+where they reach right round (a seam written or laid) — the sheet cut where no loop crosses and
+its pieces put end to end, held to the file's at 25 points; its loops' ends within 1e-9 of the
+window's edges are put on them. A face reaching round farther than once is refused naming it. A
+sheet closed in both parameters whose points are covered twice (an ellipse about its axis turned
+whole, kentron's oblate spheroid) is read on the branch its walk sets out on; on the other the
+face's normal turns, its shell inside out, refused, never read wrong. Not read yet: a closing
+line that is a crease past a thousandth of a radian (no period: a loop across it leaps, refused);
+an extrusion or a revolution of a closed spline curve, which `Curve::period` gives none, is not
+rolled. A sheet crossing itself is no closed sheet: springrep's ring pushed in past its fold
+extrudes a profile through itself (`C(1.9013)` and `C(6.2019)` one point), and face #10191's loop
+runs up the line where the sheet meets itself and leaves it on the other sheet, a leap `sound`
+refuses rightly (read past it, the face is 15% over). Gates: `step_read::a_face_across_a_closed_nets_closing_line_reads_to_its_closed_form`
+(half a drum across its net's closing line with no seam, a drum on a net with no seam whose
+vertices stand off the closing line, a ball's cap round the net's pole off it, each wherever the
+closing line stands), `step_roundtrip::the_sample_reads_back` (the round trip takes a closed net
+turned, the same points at every parameter to 1e-12, for the surface written), and the corpus
+rows (brepkit ellipsoid and ellipsoid-half, kentron and springrep oblate spheroid and lens of two
+nurbs balls, springrep v-wheel turned round a rod and bull nose carried along a spline).
 
 **The corpus says whether a file was read right, and accounts for every file that is not**
 (`tests/step_corpus.rs`, `scripts/step-corpus/`). Every file of `$STEP_CORPUS` — the 32

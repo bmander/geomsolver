@@ -427,6 +427,21 @@ fn pole_branch(x: f64,arrived: f64,p: f64,k: usize,inward: f64,reversed: bool,se
     arrived+along*gap
 }
 
+/// **`pole_branch` for a use that may be a seam's**: `seam` none for a use of no seam, else the value
+/// of the collapsed parameter its other use took (none where that is not walked yet). A seam's
+/// second use is a whole period from its first, on the face's left: where the branch that keeps
+/// the face on the left is not where the first lies — the loop having come round the pole between
+/// them, along an edge at the pole of its own (a cone's apex written as a closed edge) — that
+/// branch, else a whole period on (`pole_branch`'s seam).
+fn seam_branch(x: f64,arrived: f64,p: f64,k: usize,inward: f64,reversed: bool,seam: Option<Option<f64>>) -> f64 {
+    let plain = pole_branch(x,arrived,p,k,inward,reversed,false);
+    match seam {
+        None => plain,
+        Some(Some(o)) if (plain-o).abs() > 1e-6*p => plain,
+        Some(_) => pole_branch(x,arrived,p,k,inward,reversed,true),
+    }
+}
+
 /// `pc` moved by `d` in its face's parameters.
 fn moved(pc: &Pcurve,d: Uv) -> Pcurve {
     let m = |a: &Uv| [a[0]+d[0],a[1]+d[1]];
@@ -532,13 +547,13 @@ fn rolled(n: &Net,k: usize,w: f64) -> Net {
     unstrip(n,k,(out,three(&poles),weights.as_ref().map(threew)))
 }
 
-/// **The window of a rolled sheet a face is read on**: `n` (rolled) over `[c_k, c_k + w_k]` along
-/// each parameter `k` given one, its original domain `dom` along the others — the closed sheet cut
+/// **The window of a rolled sheet a face is read on**: `n` (rolled) over the span `c_k` along each
+/// parameter `k` given one (a width, or a hair more), its original domain `dom` along the others — the closed sheet cut
 /// at `c_k` and its two pieces put end to end, the same points at the same parameters (knots put
 /// in, never moved), now starting where no loop of the face crosses. Held to `sheet`, the sheet as
 /// the file gives it, at points either side of the cut.
-fn window(n: &Net,frame: Frame,offset: Option<f64>,c: [Option<f64>;2],dom: [[f64;2];2],sheet: &Surface) -> Option<Surface> {
-    let range: [[f64;2];2] = std::array::from_fn(|k| match c[k] { Some(x) => [x,x+dom[k][1]-dom[k][0]],None => dom[k] });
+fn window(n: &Net,frame: Frame,offset: Option<f64>,c: [Option<[f64;2]>;2],dom: [[f64;2];2],sheet: &Surface) -> Option<Surface> {
+    let range: [[f64;2];2] = std::array::from_fn(|k| c[k].unwrap_or(dom[k]));
     let net = n.segment(range[0],range[1]);
     net.check().ok()?;
     let surface = match offset { Some(d) => Surface::Offset(frame,Arc::new(net),d),None => Surface::BSpline(frame,Arc::new(net)) };
@@ -617,7 +632,8 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
                     // period on from where it arrived, `pole_branch`)
                     if let Some(k) = pole_at(s,l,st.within).filter(|&k| st.rolled.contains_key(&surface) && periods[k].is_some()) {
                         let inner = pc.at(travel[0]+0.1*(travel[1]-travel[0]),e,s,&b.vertices);
-                        let x = pole_branch(a[k],l[k],periods[k].unwrap_or(1.),k,(inner[1-k]-a[1-k]).signum(),reversed,seams.contains(&ei));
+                        let x = seam_branch(a[k],l[k],periods[k].unwrap_or(1.),k,(inner[1-k]-a[1-k]).signum(),reversed,
+                            seams.contains(&ei).then(|| placed.get(&ei).map(|o| o[k])));
                         d[k] = x-a[k];
                     }
                     if d == [0.;2] { (pc,a,k) } else { (moved(&pc,d),[a[0]+d[0],a[1]+d[1]],k) }
@@ -703,11 +719,12 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
                     }
                 }
                 let [mut a,mut m,mut z] = [walked[0],walked[steps/2],walked[steps]];
-                placed.insert(ei,m);
+                let before = placed.insert(ei,m);
                 // leaving a pole after another use: on the branch that keeps the face on the left
                 if let (Some(l),Some(k)) = (last,pole_at(s,from,st.within)) {
                     if let Some(p) = periods[k] {
-                        let x = pole_branch(a[k],l[k],p,k,(m[1-k]-a[1-k]).signum(),reversed,seams.contains(&ei));
+                        let inward = (m[1-k]-a[1-k]).signum();
+                        let x = seam_branch(a[k],l[k],p,k,inward,reversed,seams.contains(&ei).then_some(before).map(|o| o.map(|o| o[k])));
                         let d = x-a[k];
                         for q in [&mut a,&mut m,&mut z] { q[k] += d; }
                     }
@@ -1229,7 +1246,8 @@ fn face(st: &Setting,sheet: &Sheet,w: &Walked) -> Result<Built,Refusal> {
     let periods = match st.rolled.get(&w.surface) {
         Some(r) => {
             f.surface = unrolled(st.b,&mut f,r,periods,&laid,&poles,&cuts).ok_or_else(|| Refusal::unsupported(w.entity,
-                "a face reaching round its closed spline sheet farther than once, or a sheet the reader cannot cut where none of its loops crosses: not read"))?;
+                "a face reaching round its closed spline sheet farther than once, or one the reader cannot read on a window of the sheet one \
+                width wide without a use leaping it: not read"))?;
             [None;2]
         }
         None => periods,
@@ -1325,30 +1343,46 @@ fn unrolled(b: &Brep,f: &mut Face,r: &Rolled,periods: [Option<f64>;2],laid: &[Ed
         }
         if d != [0.;2] { for c in &mut f.loops[li] { c.pcurve = moved(&c.pcurve,d); } }
     }
-    let mut d = [0.;2];
-    let mut cut = [None;2];
+    let (mut d,mut cut,mut over) = ([0.;2],[None;2],[0.;2]);
     for k in 0..2 {
         let Some(w) = r.widths[k] else { continue };
         let [lo,hi] = dom[k];
         let [mn,mx] = reach[k];
+        over[k] = (mx-mn-w).max(0.);
         if !(mx-mn <= w*(1.+1e-6)) { return None }
         // (the middle of its reach within the sheet's own domain)
         d[k] = -((0.5*(mn+mx)-lo)/w).floor()*w;
         let (mn,mx) = (mn+d[k],mx+d[k]);
         if mn >= lo-1e-9*w && mx <= hi+1e-9*w { continue }
-        cut[k] = Some(if mx-mn >= w*(1.-1e-9) { mn } else { 0.5*(mn+mx)-0.5*w });
+        // (centred on the loops' reach: where that is a hair more than a width — a file's seam
+        // leaning, its two uses not one width apart, CADGenBench 217's by 2.5e-7 — the hair split
+        // between the window's two edges, so that a foot a hair past one is still read on it)
+        cut[k] = Some(if mx-mn >= w*(1.-1e-9) && mx-mn <= w*(1.+1e-9) { [mn,mn+w] } else { [0.5*(mn+mx)-0.5*w,0.5*(mn+mx)+0.5*w] });
     }
     if d != [0.;2] { for c in f.loops.iter_mut().flatten() { c.pcurve = moved(&c.pcurve,d); } }
     // (a walk's ends within rounding of the window's edges put on them, as the sheet's own domain
     // held them where the walk was clamped into it: a corner a hair past both edges read 1e-3 mm²
     // off a whole torus's net)
-    let range: [[f64;2];2] = std::array::from_fn(|k| match (cut[k],r.widths[k]) { (Some(x),Some(w)) => [x,x+w],_ => dom[k] });
+    let range: [[f64;2];2] = std::array::from_fn(|k| cut[k].unwrap_or(dom[k]));
     let snap = |mut q: Uv| { for k in 0..2 { let [lo,hi] = range[k]; for e in [lo,hi] { if (q[k]-e).abs() <= 1e-9*(hi-lo) { q[k] = e; } } } q };
     for c in f.loops.iter_mut().flatten() {
         if let Pcurve::Inverse {a,b} | Pcurve::Line {a,b} = &mut c.pcurve { *a = snap(*a); *b = snap(*b); }
     }
     if cut == [None;2] { return Some(r.sheet.clone()) }
-    window(n,frame,offset,cut,dom,&r.sheet)
+    let surface = window(n,frame,offset,cut,dom,&r.sheet)?;
+    // (each use read on the window as its measures read it, at 33 points, running on without a
+    // jump of half the window: a foot a hair past an edge read on the far one leaps the width and
+    // its band is measured half — refused rather than measured so)
+    let whole = (0..2).all(|k| {
+        let Some(w) = r.widths[k] else { return true };
+        f.loops.iter().flatten().all(|c| {
+            let i = if c.edge > LAID-16 { b.edges.len()+(LAID-c.edge) as usize } else { c.edge as usize };
+            let Some(e) = at.edges.get(i) else { return false };
+            let q: Vec<Uv> = (0..=32).map(|j| c.pcurve.at(e.t[0]+(e.t[1]-e.t[0])*j as f64/32.,e,&surface,&at.vertices)).collect();
+            q.windows(2).all(|x| (x[1][k]-x[0][k]).abs() < 0.5*w)
+        })
+    });
+    whole.then_some(surface)
 }
 
 /// **A whole torus**, bounded by the vertex at `p` alone (Open CASCADE writes one so): its two
