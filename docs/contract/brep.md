@@ -1803,10 +1803,11 @@ than its face's is a curve of no face of the edge's. Gates:
 (`props::integrated`): where a degenerate edge lies in its loop, or a sheet's row is all but
 collapsed, `G` is nought at the pole, so the value a use arrives along weighs nothing in the
 measure. Its edges' rules are settled stretch by stretch and cut where a pcurve crosses a sheet's
-knot line or an area's turning line (on a net, where its normal turns over along the use); a
-spindle torus's area is the closed form of `∫|R + r cos v|`. Each use's ends are closed to where
-its curve arrives, a hair in, so the region read is the one `sound` judges. A solid farther from the origin than ten times its size is measured moved to its
-middle (`props::volume`). Gates: `step_read::the_value_a_use_arrives_at_a_pole_along_weighs_nothing`,
+knot line or an area's turning line (on a net, where its normal turns over along the use); a spindle
+torus's area is the closed form of `∫|R + r cos v|`. Each use's ends are closed to where its curve
+arrives, a hair in, so the region read is the one `sound` judges. A solid farther from the origin
+than ten times its size is measured moved to its middle (`props::volume`). Gates:
+`step_read::the_value_a_use_arrives_at_a_pole_along_weighs_nothing`,
 `a_spindle_torus_reads_to_its_closed_form`.
 
 **A tolerant boundary is read as known to within its measured tolerances** (`step_read::sound`,
@@ -1830,21 +1831,21 @@ above at 7e-2). Gates: `step_sound::a_loop_crossing_itself_is_refused`,
 `a_band_wound_round_a_cylinder_overlaps_itself_only_where_its_turns_meet`,
 `tolerances_past_the_geometry_are_refused`, `the_kernels_own_solids_are_sound`.
 
-**A use is one curve in its face's parameters, its region what its leaps close, and the shells
-nest by their senses** (`sound`'s `Drawn::leap` and `reach`, `shells`). A face's region is its
-uses closed across each leap by the chord between the leap's two sides in the face's parameters
-— `props` closes each use's ends to where its curve arrives so (a hair in, carried back by its
-rate) — and a leap is judged by what that chord does to the region: a chord whose image in space
-keeps within twice the tolerance of the leap's start (`reach`, read at 256 steps with half a
-step's run between) adds or takes only points within that disc, at most `π (2τ)²`, and is read —
-a corner's slop, or a use's feet swinging round a pole it ends at or passes within its tolerance
-of, whatever the swing in parameters (CADGenBench 215, 240, 242 and 247, read face by face within
-every bar). A leap of a whole period, a chord across a closed sheet's seam (reaching round the
-sheet), or ends apart in space past twice the tolerance adds a strip and is refused naming its
-face. A face on a spline sheet closed on itself is read on the window of the sheet its loops lie
-in (below), so a band round it is one region (CADGenBench 217). Each shell faces out or in
-as points stepped off its largest faces are located against it, its signed volume used where none
-locates or they tie (217's drilled void of three faces); a lump lies inside nothing or inside a void, a void inside a lump, none crossing
+**A use is one curve in its face's parameters, its region what its leaps close, and the shells nest
+by their senses** (`sound`'s `Drawn::leap` and `reach`, `shells`). A face's region is its uses
+closed across each leap by the chord between the leap's two sides in the face's parameters — `props`
+closes each use's ends to where its curve arrives so (a hair in, carried back by its rate) — and a
+leap is judged by what that chord does to the region: a chord whose image in space keeps within
+twice the tolerance of the leap's start (`reach`, read at 256 steps with half a step's run between)
+adds or takes only points within that disc, at most `π (2τ)²`, and is read — a corner's slop, or a
+use's feet swinging round a pole it ends at or passes within its tolerance of, whatever the swing in
+parameters (CADGenBench 215, 240, 242 and 247, read face by face within every bar). A leap of a
+whole period, a chord across a closed sheet's seam (reaching round the sheet), or ends apart in
+space past twice the tolerance adds a strip and is refused naming its face. A face on a spline sheet
+closed on itself is read on the window of the sheet its loops lie in (below), so a band round it is
+one region (CADGenBench 217). Each shell faces out or in as points stepped off its largest faces are
+located against it, its signed volume used where none locates or they tie (217's drilled void of
+three faces); a lump lies inside nothing or inside a void, a void inside a lump, none crossing
 another; any number of lumps is sound, as `step::write` writes them; a boundary of no faces is
 refused. Whether faces that are not neighbours cross in space is not decided yet. Gates:
 `step_sound::a_use_leaping_a_period_is_refused`, `a_use_swinging_round_a_pole_it_ends_at_is_read`,
@@ -1900,42 +1901,42 @@ bull-nose-carried-along-a-spline, v-wheel-turned-once-round-rod).
 walked as on any periodic surface** (`topology::Rolled`, `closes`, `rolled`, `unrolled`, `window`).
 A B-spline sheet (or its offset) whose rows at a parameter's two ends are one curve, to 1e-7 of its
 size, and whose derivative across them keeps its direction to a thousandth of a radian (a pole's
-row, nought, asks none; a writer's fitted net closes with its tangents 4e-5 apart) closes along
-that parameter, read off its own points and tangents and never off the file's `u_closed`. The
-kernel's net holds no period, so a loop crossing the closing line was no one curve in its face's
-parameters — a leap of the domain's width, a break, an edge read millimetres off its face. Such a
-sheet is rolled out: put three times end to end along each parameter it closes in (knots of full
-multiplicity between, each copy's poles as written: the same points, exactly), each loop set out
-from the middle copy, and walked with the domain's width as its period, the walk's every rule —
-branches, a pole's collapsed parameter (a file curve leaving a pole on the branch that keeps the
-face on the left; a seam's second use a whole period from its first, which, where the loop came
-round the pole between them along an apex's own closed edge, is that branch itself), a band's seam between two winding loops laid along
-the net's iso-curve (the net cut there by knot insertion, its row), a loop winding round the net's
-collapsed row joined to it along one — as on a cylinder or a sphere. Each face is then read on the
-sheet as the file gives it where its loops, moved by whole widths, lie within its domain, else on
-the window of the rolled sheet one width wide — centred on its loops' reach, or starting where
-they reach right round exactly (a seam written or laid); a seam leaning a hair, its uses a hair
-more than a width apart (CADGenBench 217's, by 2.5e-7), split between the window's two edges — the
-sheet cut where no loop crosses and its pieces put end to end, held to the file's at 25 points; its
-loops' ends within 1e-9 of the window's edges are put on them. A face reaching round farther than
-a hair more than once, or a use whose points read on the window leap half its width (a foot past
-an edge read on the far one: 217's band, its window starting at the least its loop reached, was
-measured at half its area), is refused naming it. A
-sheet closed in both parameters whose points are covered twice (an ellipse about its axis turned
-whole, kentron's oblate spheroid) is read on the branch its walk sets out on; on the other the
-face's normal turns, its shell inside out, refused, never read wrong. Not read yet: a closing
-line that is a crease past a thousandth of a radian (no period: a loop across it leaps, refused);
-an extrusion or a revolution of a closed spline curve, which `Curve::period` gives none, is not
-rolled. A sheet crossing itself is no closed sheet: springrep's ring pushed in past its fold
-extrudes a profile through itself (`C(1.9013)` and `C(6.2019)` one point), and face #10191's loop
-runs up the line where the sheet meets itself and leaves it on the other sheet, a leap `sound`
-refuses rightly (read past it, the face is 15% over). Gates: `step_read::a_face_across_a_closed_nets_closing_line_reads_to_its_closed_form`
-(half a drum across its net's closing line with no seam, a drum on a net with no seam whose
-vertices stand off the closing line, a ball's cap round the net's pole off it, each wherever the
-closing line stands), `step_roundtrip::the_sample_reads_back` (the round trip takes a closed net
-turned, the same points at every parameter to 1e-12, for the surface written), and the corpus
-rows (brepkit ellipsoid and ellipsoid-half, kentron and springrep oblate spheroid and lens of two
-nurbs balls, springrep v-wheel turned round a rod and bull nose carried along a spline).
+row, nought, asks none; a writer's fitted net closes with its tangents 4e-5 apart) closes along that
+parameter, read off its own points and tangents and never off the file's `u_closed`. The kernel's
+net holds no period, so a loop crossing the closing line was no one curve in its face's parameters —
+a leap of the domain's width, a break, an edge read millimetres off its face. Such a sheet is rolled
+out: put three times end to end along each parameter it closes in (knots of full multiplicity
+between, each copy's poles as written: the same points, exactly), each loop set out from the middle
+copy, and walked with the domain's width as its period, the walk's every rule — branches, a pole's
+collapsed parameter (a file curve leaving a pole on the branch that keeps the face on the left; a
+seam's second use a whole period from its first, which, where the loop came round the pole between
+them along an apex's own closed edge, is that branch itself), a band's seam between two winding
+loops laid along the net's iso-curve (the net cut there by knot insertion, its row), a loop winding
+round the net's collapsed row joined to it along one — as on a cylinder or a sphere. Each face is
+then read on the sheet as the file gives it where its loops, moved by whole widths, lie within its
+domain, else on the window of the rolled sheet one width wide — centred on its loops' reach, or
+starting where they reach right round exactly (a seam written or laid); a seam leaning a hair, its
+uses a hair more than a width apart (CADGenBench 217's, by 2.5e-7), split between the window's two
+edges — the sheet cut where no loop crosses and its pieces put end to end, held to the file's at 25
+points; its loops' ends within 1e-9 of the window's edges are put on them. A face reaching round
+farther than a hair more than once, or a use whose points read on the window leap half its width (a
+foot past an edge read on the far one: 217's band, its window starting at the least its loop
+reached, was measured at half its area), is refused naming it. A sheet closed in both parameters
+whose points are covered twice (an ellipse about its axis turned whole, kentron's oblate spheroid)
+is read on the branch its walk sets out on; on the other the face's normal turns, its shell inside
+out, refused, never read wrong. Not read yet: a closing line that is a crease past a thousandth of a
+radian (no period: a loop across it leaps, refused); an extrusion or a revolution of a closed spline
+curve, which `Curve::period` gives none, is not rolled. A sheet crossing itself is no closed sheet:
+springrep's ring pushed in past its fold extrudes a profile through itself (`C(1.9013)` and
+`C(6.2019)` one point), and face #10191's loop runs up the line where the sheet meets itself and
+leaves it on the other sheet, a leap `sound` refuses rightly (read past it, the face is 15% over).
+Gates: `step_read::a_face_across_a_closed_nets_closing_line_reads_to_its_closed_form` (half a drum
+across its net's closing line with no seam, a drum on a net with no seam whose vertices stand off
+the closing line, a ball's cap round the net's pole off it, each wherever the closing line stands),
+`step_roundtrip::the_sample_reads_back` (the round trip takes a closed net turned, the same points
+at every parameter to 1e-12, for the surface written), and the corpus rows (brepkit ellipsoid and
+ellipsoid-half, kentron and springrep oblate spheroid and lens of two nurbs balls, springrep v-wheel
+turned round a rod and bull nose carried along a spline).
 
 **The corpus says whether a file was read right, and accounts for every file that is not**
 (`tests/step_corpus.rs`, `scripts/step-corpus/`). Every file of `$STEP_CORPUS` — the 32 CADGenBench
