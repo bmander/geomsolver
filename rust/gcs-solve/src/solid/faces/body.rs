@@ -11,7 +11,8 @@ use std::collections::BTreeSet;
 use std::f64::consts::PI;
 use super::{cached, readers_of, without, FacePath};
 
-/// Two faces' outward normals nearer than this at a point meet tangent there: no edge.
+/// Two faces' outward normals nearer than this at a point meet tangent there: no edge.  (A rolled
+/// run's end faces are the kernel's, by `fillet::goes_on`: `ends_at`'s `cutting`.)
 pub(crate) const TANGENT: f64 = 1e-6;
 
 /// A point just along a run from its end `v`, `d` the way it runs from there (`by` −1: just past
@@ -1377,8 +1378,8 @@ impl BodyFaces {
 
     /// `end_faces`, the rules of a run's own ends (`goes_across`, a reflex corner's plane, where a
     /// run-out ends) read only where the lowering builds its runs and rings by them, every edge of
-    /// the set `plain` (`carried`): a ball rolled along a traced run is cut where it ends by the
-    /// kernel's own reading of the faces there (`fillet::end_at`).
+    /// the set `plain` (`carried`): a ball rolled along a traced run ends on the faces the kernel
+    /// cuts it by (`fillet::end_at`), read by the kernel's own rule (`ends_at`'s `cutting`).
     fn end_faces_as(&self, es: &[u32], faces: &[usize], plain: bool, reach: Option<f64>)
         -> Vec<(EndBy, f64, Option<V>)> {
         let mut sides: Vec<(EndBy, f64, Option<V>)> = Vec::new();
@@ -1579,17 +1580,24 @@ impl BodyFaces {
     }
 
     /// **Whether a face cuts across run `run`'s end at vertex `vid`**, as the kernel reads it
-    /// (`brep::fillet::goes_on`, `dome`'s `dome_cut`): a face there, on neither of the surfaces of
-    /// the faces of its edge there (`run_sides`), going on from neither.  A ball standing still is
+    /// (`cutting`; `brep::fillet::goes_on`, `dome`'s `dome_cut`).  A ball standing still is
     /// glued to the runs going on at such an end only where no face cuts across it; else its dome
     /// is carried past and cut off there (`lowering::piece::run`), the kernel's reading of the
     /// same end.
-    pub fn cut_across(&self, run: &[u32], vid: u32) -> bool {
-        let Some((sides, m)) = self.run_sides(run, vid) else { return false };
+    pub fn cut_across(&self, run: &[u32], vid: u32) -> bool { !self.cutting(run, vid).is_empty() }
+
+    /// **The faces cutting across run `run`'s end at vertex `vid`, as the kernel reads them**
+    /// (`brep::fillet::end_at`'s end faces, `beyond_end`'s start): each face there besides the
+    /// run's sides (`run_sides`, `fillet::others_at`) going on from neither — its normal one with
+    /// neither side's either way, `1 − |n·m|` over a billionth (`fillet::goes_on`).  Where a rolled
+    /// run ends (`ends_at`), and whether a standing ball's end is cut across (`cut_across`): one
+    /// reading, the kernel's.  None where no edge of the run ends there between two faces.
+    fn cutting(&self, run: &[u32], vid: u32) -> Vec<usize> {
+        let Some((sides, m)) = self.run_sides(run, vid) else { return Vec::new() };
         let b = &self.loc.b;
         let p = b.vertices[vid as usize].p;
         crate::brep::fillet::others_at(b, &self.bounding, &sides, vid).into_iter()
-            .any(|f| !crate::brep::fillet::goes_on(b, f, p, m))
+            .filter(|&f| !crate::brep::fillet::goes_on(b, f, p, m)).collect()
     }
 
     /// A run's sides at its end `vid`, as the kernel reads them (`fillet`'s `meeting`): every face
@@ -1654,7 +1662,10 @@ impl BodyFaces {
     /// outside, bounds the run along its length, and the round of the band's top edge is kept
     /// over the plate, not cut on square into it (#994).  The side a face is run on is read a step
     /// along the run's tangent — or, where that lies in the face and the run's curved edge bends
-    /// away outside it (a foot arc leaving the plate tangent), at the edge's middle.
+    /// away outside it (a foot arc leaving the plate tangent), at the edge's middle.  A run that is
+    /// not `plain` (a ball rolled along a traced run) ends on the faces the kernel's `end_at` cuts
+    /// it by, by its rule (`cutting`: tangent where `1 − |n·m|` is within a billionth), not this
+    /// one's (`TANGENT`), so the field and the construction read one set of end faces (#994).
     fn ends_at(&self, run: &[u32], faces: &[usize], v: V, d: V, vid: u32, plain: bool)
         -> Vec<(usize, f64)> {
         let on = along_run(v, d, 1.0);
@@ -1668,11 +1679,16 @@ impl BodyFaces {
                 && faces.iter().any(|&f| f != c && behind(c, f))
         });
         // (no end: a face carrying the run on across a seam (`carries_on`, #994), one back to back
-        // with one of the run's faces there, or one whose surface holds the run's edge (#996))
-        let ends = self.faces_at(vid, faces).into_iter().filter(|&c| {
-            !(self.carries_on(c, faces, run, v, vid) || self.tangent_at(c, faces, v, -1.0)
-                || self.lies_along(c, run, vid))
-        });
+        // with one of the run's faces there, or one whose surface holds the run's edge (#996); a
+        // rolled run's ends the kernel's own, `cutting`)
+        let ends: Vec<usize> = if plain {
+            self.faces_at(vid, faces).into_iter().filter(|&c| {
+                !(self.carries_on(c, faces, run, v, vid) || self.tangent_at(c, faces, v, -1.0)
+                    || self.lies_along(c, run, vid))
+            }).collect()
+        } else {
+            self.cutting(run, vid)
+        };
         // (the side of `c` the run runs on: read a step along its tangent — or, where that lies in
         // `c` and the run's edge, curved, leaves it tangent and bends away outside it (a band's
         // foot arc off the plate it tapers onto, #994), outside: the edge's middle says so where
@@ -1683,7 +1699,7 @@ impl BodyFaces {
             Some(m) if self.side(c, on).abs() <= self.past(on) && self.side(c, m) > self.past(m) => self.side(c, m),
             _ => self.side(c, on),
         };
-        ends.filter_map(|c| {
+        ends.into_iter().filter_map(|c| {
             let sign = if runs_on(c) <= 0.0 { 1.0 } else { -1.0 };
             // (another body's wall turning back over the run is still its end: square there, the
             // run went on into that body's material — #994, `another_body`)
