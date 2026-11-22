@@ -869,6 +869,9 @@ fn the_full_turn_is_built_closed() {
     let built = gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.16/250.,tol).unwrap_or_else(|u| panic!("{u:?}"));
     built.check(tol).unwrap();
     let v = gcs_core::brep::props::volume(&built);
+    // (23.6738854384 with its bridges' ends where `s''` leaves the fold's band; given way to its
+    // double curves, `rings::give_way`, the faces end on the curves themselves and it reads 1.8e-7
+    // less, 7.6e-9 of itself, under its tolerance)
     assert!((v-23.6738852579).abs() < 1e-7,"{v}");
     crate::swept_closed::agrees_over(&built,&tool,&path,roll);
     let ring = Ring::read(&tool).unwrap();
@@ -1096,6 +1099,87 @@ fn a_double_curve_ending_on_a_tubes_crossing_with_the_tool_is_one_vertex_with_it
     } }
 }
 
+/// brep-bench's `tumbling-torus-thin`: a torus of tube 0.015 turned a quarter of a radian about the
+/// vertical line through (2, 0, 0) and back a radian about the line through (0, h cos 45°, h sin 45°)
+/// along `x`, `h` √½, over ±75°, at the bench's tolerance, a 50 000th of the tube.
+fn thin() -> (Brep,Trajectory,[f64;2],f64) {
+    use gcs_core::brep::trajectory::Screw;
+    let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.015).unwrap();
+    let (sl,cl) = 45f64.to_radians().sin_cos();
+    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.25,advance:0.});
+    let frame = Trajectory::Twist(Screw {origin:[0.,0.5f64.sqrt()*cl,0.5f64.sqrt()*sl],axis:[1.,0.,0.],
+        ratio:1.,advance:0.});
+    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
+    (tool,path,[-75f64.to_radians(),75f64.to_radians()],0.015/50_000.)
+}
+
+/// **A bridge's end gives way to a double curve within the arrangement's band of it** (#942
+/// T1d-tori, `rings::give_way`): the thin tumbling torus's first double curve's first preimage
+/// starts on the fold at its swallowtail point (`s''` nought), crosses the bridge's end — where `s''`
+/// is the depth of the pair's least — 0.036 of the roll above it and stands at three times that
+/// depth where the roll ends; where it crosses, the sheet's rates all but one way, it runs within
+/// 8.8e-7 of the end in space (three tolerances) over 9.9e-4 of its length, inside the band
+/// (`tolerant::ON_CURVE`, eight) within which the arrangement takes two curves for one, and the
+/// check refused the strip between them laid as one edge. So that branch is the bridge's start over
+/// both stretches it spans, from its point to the roll's end, and the second curve's branch rising
+/// from its point (crossing the end 0.03 above it) the end of the second pair's bridge over the
+/// last; the branches clear of every end (the first curve's other preimage, at 3.6 to 18 times the
+/// depth) give none. The half turn's give none: its double curve stands clear of its bridge's ends.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 40 s: the thin tumbling torus fitted and given way")]
+fn a_bridges_end_gives_way_to_a_double_curve_within_the_arrangements_band_of_it() {
+    use gcs_core::brep::swept::closed::ring_fitted;
+    let (tool,path,roll,tol) = thin();
+    let (_,_,fits,curves,_) = ring_fitted(&tool,&path,roll,tol).unwrap();
+    assert_eq!((fits.len(),curves.len()),(3,2),"three stretches, two double curves");
+    let given: Vec<Vec<(usize,usize)>> = fits.iter().map(|f| f.ways.iter().map(|w| (w.of.0,w.side)).collect()).collect();
+    assert_eq!(given,vec![vec![],vec![(0,0)],vec![(0,0),(1,1)]],"the branches given way, stretch by stretch");
+    // each way's branch spans its stretch, and starts on the stretch's first row where it starts at
+    // its swallowtail point
+    for f in &fits { for w in &f.ways {
+        let (lo,hi) = w.branch.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),p| (l.min(p.1),h.max(p.1)));
+        assert!(lo <= f.roll[0] && hi >= f.roll[1],"a branch over {:?} given way over {:?}",[lo,hi],f.roll);
+    } }
+    let (tool,path,roll,tol) = half_turn();
+    let (_,_,fits,_,_) = ring_fitted(&tool,&path,roll,tol).unwrap();
+    assert!(fits.iter().all(|f| f.ways.is_empty()),"the half turn gives no way");
+}
+
+/// **brep-bench's `tumbling-torus-thin` is built closed** (#942 T1d-tori), as the bench calls it.
+/// Its bridges' ends given way to the double curves they grazed (`rings::give_way`), each sheet's
+/// seams first (`rings::seams_first`) and a piece merged into another edge carrying its own pcurve
+/// (`boolean::carried_pcurve`), the solid is built, checked at the call's tolerance and judged: 28
+/// faces, held to membership, its volume 0.6963028 (cadrs's 0.69630; its mesh within 1e-5,
+/// 0.6962961). Read point by point, the solid and the sweep's definition agree at all 20 000 places
+/// of its box (`ring_profile thin 75 agree 20000 2e-5`). With the observer's origin one ulp off it is
+/// built the same, its volume within 1e-9 (and so at 1e-6 either way, `ring_profile thin 75 nudge
+/// 1e-6`). Without the seams first every input still builds and checks, but the face given way, its
+/// corner on the fold at the swallowtail point, carries the far leaf's chord as its seam, and its
+/// flux reads the volume as 0.054.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 2 min: the thin tumbling torus built closed, and one ulp off")]
+fn the_thin_tumbling_torus_is_built_closed() {
+    let (tool,path,roll,tol) = thin();
+    let built = gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.015/250.,tol).unwrap_or_else(|u| panic!("{u:?}"));
+    built.check(tol).unwrap();
+    assert_eq!(built.faces.len(),28);
+    let v = gcs_core::brep::props::volume(&built);
+    assert!((v-0.6963027896).abs() < 1e-9,"{v}");
+    assert!((v-0.69630).abs() < 1e-5,"{v} against cadrs's 0.69630");
+    crate::swept_closed::agrees_over(&built,&tool,&path,roll);
+    // (the observer's origin one ulp along `y`)
+    use gcs_core::brep::trajectory::Screw;
+    let (sl,cl) = 45f64.to_radians().sin_cos();
+    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.25,advance:0.});
+    let y = f64::from_bits((0.5f64.sqrt()*cl).to_bits()+1);
+    let frame = Trajectory::Twist(Screw {origin:[0.,y,0.5f64.sqrt()*sl],axis:[1.,0.,0.],ratio:1.,advance:0.});
+    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
+    let off = gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.015/250.,tol).unwrap_or_else(|u| panic!("one ulp off: {u:?}"));
+    off.check(tol).unwrap();
+    let w = gcs_core::brep::props::volume(&off);
+    assert!((w-v).abs() < 1e-9,"one ulp off: {w} against {v}");
+}
+
 /// **The full turn's tube passes back over its own start, read off the depth** (#942 T1d-tori,
 /// `depth::passed_back`; the slow tier): over a whole turn the tube late in the roll sweeps across
 /// the tube where it began — no fold pair's crossing, so no double curve the road traces — and the
@@ -1160,77 +1244,4 @@ fn a_closed_chord_inside_a_faces_square_is_a_hole_in_the_piece_about_it() {
     let inner: f64 = pieces.iter().filter(|p| p.len() == 1 && p[0].iter().all(|q| (q[0]-c[0]).hypot(q[1]-c[1]) <= r+1e-12))
         .map(|p| area(&p[0])).sum();
     assert!((inner-(-area(hole))).abs() <= 1e-12,"the circle's halves fill the hole: {inner} against {}",-area(hole));
-}
-
-/// brep-bench's `tumbling-torus-thin`: a torus of tube 0.015 turned a quarter of a radian about the
-/// vertical line through (2, 0, 0) and back a radian about the line through (0, h cos 45°, h sin 45°)
-/// along `x`, `h` √½, over ±75°, at the bench's tolerance, a 50 000th of the tube.
-fn thin() -> (Brep,Trajectory,[f64;2],f64) {
-    use gcs_core::brep::trajectory::Screw;
-    let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.015).unwrap();
-    let (sl,cl) = 45f64.to_radians().sin_cos();
-    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.25,advance:0.});
-    let frame = Trajectory::Twist(Screw {origin:[0.,0.5f64.sqrt()*cl,0.5f64.sqrt()*sl],axis:[1.,0.,0.],
-        ratio:1.,advance:0.});
-    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
-    (tool,path,[-75f64.to_radians(),75f64.to_radians()],0.015/50_000.)
-}
-
-/// **A bridge's end gives way to a double curve within the arrangement's band of it** (#942
-/// T1d-tori, `rings::give_way`): the thin tumbling torus's first double curve's first preimage
-/// starts on the fold at its swallowtail point (`s''` nought), crosses the bridge's end — where `s''`
-/// is the depth of the pair's least — 0.036 of the roll above it and stands at three times that
-/// depth where the roll ends; where it crosses, the sheet's rates all but one way, it runs within
-/// 8.8e-7 of the end in space (three tolerances) over 9.9e-4 of its length, inside the band
-/// (`tolerant::ON_CURVE`, eight) within which the arrangement takes two curves for one, and the
-/// check refused the strip between them laid as one edge. So that branch is the bridge's start over
-/// both stretches it spans, from its point to the roll's end, and the second curve's branch rising
-/// from its point (crossing the end 0.03 above it) the end of the second pair's bridge over the
-/// last; the branches clear of every end (the first curve's other preimage, at 3.6 to 18 times the
-/// depth) give none. The half turn's give none: its double curve stands clear of its bridge's ends.
-#[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 40 s: the thin tumbling torus fitted and given way")]
-fn a_bridges_end_gives_way_to_a_double_curve_within_the_arrangements_band_of_it() {
-    use gcs_core::brep::swept::closed::ring_fitted;
-    let (tool,path,roll,tol) = thin();
-    let (_,_,fits,curves,_) = ring_fitted(&tool,&path,roll,tol).unwrap();
-    assert_eq!((fits.len(),curves.len()),(3,2),"three stretches, two double curves");
-    let given: Vec<Vec<(usize,usize)>> = fits.iter().map(|f| f.ways.iter().map(|w| (w.of.0,w.side)).collect()).collect();
-    assert_eq!(given,vec![vec![],vec![(0,0)],vec![(0,0),(1,1)]],"the branches given way, stretch by stretch");
-    // each way's branch spans its stretch, and starts on the stretch's first row where it starts at
-    // its swallowtail point
-    for f in &fits { for w in &f.ways {
-        let (lo,hi) = w.branch.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),p| (l.min(p.1),h.max(p.1)));
-        assert!(lo <= f.roll[0] && hi >= f.roll[1],"a branch over {:?} given way over {:?}",[lo,hi],f.roll);
-    } }
-    let (tool,path,roll,tol) = half_turn();
-    let (_,_,fits,_,_) = ring_fitted(&tool,&path,roll,tol).unwrap();
-    assert!(fits.iter().all(|f| f.ways.is_empty()),"the half turn gives no way");
-}
-
-/// **brep-bench's `tumbling-torus-thin` is built closed** (#942 T1d-tori), as the bench calls it.
-/// Its bridges' ends given way to the double curves they grazed (`rings::give_way`), each sheet's
-/// seams first (`rings::seams_first`), the solid is built, checked at the call's tolerance and
-/// judged: 28 faces, held to membership, its mesh within 1e-4 enclosing 0.6962402 (within 1e-5,
-/// 0.6962961; cadrs's volume 0.69630). Read point by point, the solid and the sweep's definition agree
-/// at all 20 000 places of its box (`ring_profile thin 75 agree 20000 2e-5`). So it is built too with
-/// the observer's origin moved by one ulp and by 1e-6 either way (`ring_profile thin 75 nudge ulp`),
-/// its mesh's volume within 1.2e-6 of this one's. (`props::volume` reads it 0.17% high, 0.6975:
-/// beside each swallowtail point the lens's edge and a short piece of a row merged into the seam
-/// given way are read by inversion onto the fold, and the line integral there misses still.)
-#[test]
-#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 3 min: the thin tumbling torus built closed")]
-fn the_thin_tumbling_torus_is_built_closed() {
-    let (tool,path,roll,tol) = thin();
-    let built = gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.015/250.,tol).unwrap_or_else(|u| panic!("{u:?}"));
-    built.check(tol).unwrap();
-    assert_eq!(built.faces.len(),28);
-    let m = gcs_core::brep::mesh::mesh(&built,1e-4,0.1).unwrap();
-    let v: f64 = m.tris.iter().map(|t| {
-        let [p,q,r] = t.map(|i| m.pts[i as usize]);
-        gcs_core::brep::util::space::dot(p,gcs_core::brep::util::space::cross(q,r))/6.
-    }).sum();
-    assert!((v-0.6962402).abs() < 1e-6,"its mesh within 1e-4 encloses {v}");
-    assert!((v-0.69630).abs() < 1e-4,"{v} against cadrs's 0.69630");
-    crate::swept_closed::agrees_over(&built,&tool,&path,roll);
 }
