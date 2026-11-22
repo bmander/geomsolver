@@ -8,7 +8,7 @@
 //! annulus's outlines), `f = min over t of |P − c(t)| − r`, the nearest thing to the real callers.
 //! Each asserts every returned point's and chord middle's distance in space from the true zero set,
 //! the count and the ends of the pieces, and the corners' places.
-use gcs_core::brep::zero_set::{trace,Bound,Edge,End,Field,Piece,Question,Rect,Traced,Value};
+use gcs_core::brep::zero_set::{through,trace,Bound,Edge,End,Field,Piece,Question,Rect,Traced,Value};
 use gcs_core::fmath::Det;
 use gcs_core::interval::{Iv,Num};
 
@@ -527,4 +527,59 @@ fn a_wedge_pinching_to_a_cusp_at_the_rectangles_corner() {
         let dist = |uv: Uv| graph_distance(uv,&|x| x*x,[0.,1.]).min(graph_distance(uv,&|x| 2.*x*x,[0.,1.]));
         for uv in &p.uv { assert!(dist(*uv) <= TOL) }
     }
+}
+
+/// Two curves `δ` either side of `v = 0.2 sin 2u`: `f = (v − h)² − δ²`, a long meeting all but
+/// tangent, `f` under `δ²` across a band far wider than the curves are apart.
+fn near_tangent(delta: f64) -> Mapped {
+    let h = |u: f64| 0.2*(2.*u).dsin();
+    let f = move |uv: Uv| { let d = uv[1]-h(uv[0]); (d*d-delta*delta,[-2.*d*0.4*(2.*uv[0]).dcos(),2.*d]) };
+    Mapped {
+        f: Box::new(f),
+        map: Box::new(flat),
+        // Lipschitz alone: `|∇f| = 2|d| |(−h′, 1)| ≤ 2 · 1.2 · 1.08` over the rectangle
+        bound: Some(Box::new(move |c: Rect| {
+            let mid = [(c[0][0]+c[0][1])/2.,(c[1][0]+c[1][1])/2.];
+            let reach = (c[0][1]-c[0][0]).dhypot(c[1][1]-c[1][0])/2.;
+            Bound::lipschitz(f(mid).0,2.6,reach)
+        })),
+    }
+}
+
+#[test]
+fn a_long_meeting_all_but_tangent_is_answered_beside_under_a_lipschitz_bound() {
+    // what a bound of `f` alone cannot clear within the feature of a traced piece is answered
+    // beside it at once, not refined toward the curves cell by tiny cell (which took this band
+    // twenty times as long, and a full-turn torus's longer one past the search's cap)
+    let delta = 1e-4;
+    let m = near_tangent(delta);
+    let t = trace(&m,&question([[-1.,1.],[-1.,1.]],TOL,0.1)).unwrap();
+    assert_eq!(t.pieces.len(),2,"{:?}",t.pieces.iter().map(|p| p.ends).collect::<Vec<_>>());
+    assert!(t.pieces.iter().all(|p| p.ends == [End::Rim,End::Rim]));
+    assert!(t.search.sought && t.search.beside > 0 && t.search.unresolved.is_empty(),"{:?}",t.search);
+    let h = |u: f64| 0.2*(2.*u).dsin();
+    for p in &t.pieces {
+        let sign = if p.uv[1][1] > h(p.uv[1][0]) { 1. } else { -1. };
+        for uv in &p.uv {
+            assert!(graph_distance(*uv,&|x| h(x)+sign*delta,[-1.,1.]) <= TOL);
+        }
+    }
+}
+
+#[test]
+fn the_pieces_through_a_callers_seeds_alone() {
+    // `through`: one seed beside the upper curve, the upper curve alone, completeness not sought
+    let delta = 1e-4;
+    let m = near_tangent(delta);
+    let seeds = [[0.3,0.2*(0.6f64).dsin()+delta]];
+    let q = Question {rect:[[-1.,1.],[-1.,1.]],edges:&[],seeds:&seeds,tol:TOL,feature:0.1};
+    let t = through(&m,&q).unwrap();
+    assert!(!t.search.sought);
+    assert_eq!(t.pieces.len(),1);
+    assert_eq!(t.pieces[0].ends,[End::Rim,End::Rim]);
+    let p = &t.pieces[0];
+    assert!(p.uv.iter().all(|uv| uv[1] > 0.2*(2.*uv[0]).dsin()),"the seed's curve alone");
+    let mut xs = [p.uv[0][0],p.uv[p.uv.len()-1][0]];
+    xs.sort_by(f64::total_cmp);
+    assert_eq!(xs,[-1.,1.]);
 }
