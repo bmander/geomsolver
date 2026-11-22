@@ -8,6 +8,17 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **brep-bench's 80° tumbling torus is built at every spelling of its motion** (#942, `complex`):
+  it built only where its observer's origin was (0, 0.5, 0.5) exactly. An end pose's seam stands
+  in the widest gap among angles spaced evenly round it, so rounding chose the gap, and with the
+  start torus's seam crossing its touch just past a corner of the inner tube's pieces, a short edge
+  of the touch had the tube's fitted sheet leaning 2e-4 into the torus at first order, past
+  `TANGENT`, and was ordered so, while the rest of the touch was ordered by a step in the other way:
+  three cells one, refused by the judge. Two ways into faces from an edge that a step in turns the
+  other way round, having stood apart in the edge's order by no more than the tolerance
+  (`g² s / 4 (g − h)`, new `complex::turned_back`), are now a run of tangent ways ordered by the
+  step in. `ring_profile` reads `eighty-at` and `half-at` (a case at any spelling of its motion).
+
 - **brep-bench's `tumbling-torus-half-turn` is built** (#942 T1d-tori, `swept::rings`,
   `swept::closed`): a fold pair born partway is parted at its swallowtail point, not its birth. The
   birth's row is a construction line, and the pair's double curve, which begins at the swallowtail
