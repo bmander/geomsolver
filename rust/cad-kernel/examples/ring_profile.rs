@@ -36,13 +36,20 @@ fn main() {
         // (brep-bench's 80° `tumbling-torus`, as it spells it: about the line through (0, 0.5, 0.5)
         // along x, built at a bar of 0.002 and a tolerance of 1e-5)
         Some("eighty") => (0.5,tumbling([3.,0.,2.],2.,0.5,0.25,45.,0.,0.5f64.sqrt(),1.),75.),
+        // (the gate's own spelling: the observer's origin (0, 0.5, 0.5) and its axis `x` exactly)
+        Some("eighty-gate") => {
+            let tool = cad_kernel::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.5).unwrap();
+            let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.25,advance:0.});
+            let frame = Trajectory::Twist(Screw {origin:[0.,0.5,0.5],axis:[1.,0.,0.],ratio:1.,advance:0.});
+            (0.5,(tool,Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)}),75.)
+        }
         _ => { eprintln!("ring_profile full-turn|half-turn|thin [roll end, degrees] | spline | bench-spline"); std::process::exit(2) }
     };
     let end: f64 = args.get(1).map_or(half,|e| e.parse().expect("degrees"));
     let roll = [-half.to_radians(),end.to_radians()];
     if std::env::var_os("SOLVENT_BREP_TIME").is_none() { std::env::set_var("SOLVENT_BREP_TIME","1") }
     let clock = std::time::Instant::now();
-    let eighty = args.first().map(String::as_str) == Some("eighty");
+    let eighty = matches!(args.first().map(String::as_str),Some("eighty" | "eighty-gate"));
     let (bar,mut tol) = if eighty { (0.002,1e-5) } else { (tube/250.,tube/50000.) };
     // (`… size-tol`: built to the modelling tolerance of the tool's size instead)
     if args.iter().any(|a| a == "size-tol") { tol = cad_kernel::geom::tolerance(tool.size()) }

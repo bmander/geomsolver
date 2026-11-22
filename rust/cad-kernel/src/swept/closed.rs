@@ -1422,7 +1422,17 @@ pub fn judge(built: &Brep,swept: &Swept,domain: &Brep,blank: Option<&Brep>,witne
         };
         (held != should).then_some((p,held))
     });
-    if let Some((at,held)) = readings.into_iter().flatten().next() { return Err(Unbuilt::Wrong {at,held}) }
+    if let Some((at,held)) = readings.into_iter().flatten().next() {
+        if crate::debug() {
+            // how deep the sweep holds it (sampled finely over the roll) and how far the solid's boundary is
+            let [a,b] = swept.roll;
+            let d = (0..=100_000).map(|k| a+(b-a)*k as f64/1e5).filter_map(|t| swept.path.pose(t).ok())
+                .map(|pose| swept.tool.signed_distance(pose.inverse().point(at))).fold(f64::INFINITY,f64::min);
+            let body = super::member::Solid::new(built,1e-4,1.).ok().map(|s| s.signed_distance(at));
+            eprintln!("judge: at {at:?} the solid holds it {held}, membership says otherwise: the sweep's depth there {d:e}, the solid's distance {body:?}")
+        }
+        return Err(Unbuilt::Wrong {at,held})
+    }
     // each face turned the way its solid lies: a hair out along its outward normal the solid's own
     // point location reads out, a hair in reads in (a face turned against its neighbours places
     // points as the right one does, but its volume is off: the ring's sweep came out at 3.38 of
@@ -1439,7 +1449,10 @@ pub fn judge(built: &Brep,swept: &Swept,domain: &Brep,blank: Option<&Brep>,witne
         let (outside,inside) = (add(p,scale(n,hair)),sub(p,scale(n,hair)));
         (solid.solid_place(outside) == Place::In && solid.solid_place(inside) == Place::Out).then_some(inside)
     });
-    if let Some(at) = turned.into_iter().flatten().next() { return Err(Unbuilt::Wrong {at,held:false}) }
+    if let Some(at) = turned.into_iter().flatten().next() {
+        if crate::debug() { eprintln!("judge: a face turned against its solid, read a hair ({hair:e}) in at {at:?}") }
+        return Err(Unbuilt::Wrong {at,held:false})
+    }
     // turned inside out: every point it seems to hold, it leaves out
     if crate::props::volume(built) < 0. {
         let inside = points.iter().copied().find(|&p| solid.solid_place(p) == Place::In)
