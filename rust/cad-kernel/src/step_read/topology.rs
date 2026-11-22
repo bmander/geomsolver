@@ -574,21 +574,26 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
             let Some(period) = periods[k] else { continue };
             if pole == Some(k) || pole_at(s,l,st.within) == Some(k) { continue }
             if (l[k]-a[k]).abs() > 0.5*period {
-                if k == 0 && matches!(s,Surface::Sphere(..) | Surface::Cone(..)) && (l[1]-a[1]).abs() <= 1e-3 {
-                    wound = Some(Wound {at:a,turn:l[0]-a[0]});
+                // round once along `k` and back to where it began along the other: wound, for
+                // `face` to join to a pole or to another loop by a seam it lays
+                let closes = periods[1-k].map_or(true,|q| (l[1-k]-a[1-k]).abs() <= 0.5*q) && (l[1-k]-a[1-k]).abs() <= 1e-3
+                    && ((l[k]-a[k]).abs()-period).abs() <= 1e-3*period;
+                if wound.is_none() && closes {
+                    wound = Some(Wound {at:a,k,turn:l[k]-a[k]});
                     continue
                 }
-                return Err(Refusal::unsupported(face,format!("a face whose bound winds round its surface's period with no seam, at {p:?}: \
-                    a face whole round its surface without a seam edge is not read yet")))
+                return Err(Refusal::unsupported(face,format!("a face whose bound winds round its surface's periods otherwise than \
+                    once round one of them, at {p:?}: not read")))
             }
         }
     }
     Ok((out,wound))
 }
 
-/// A loop winding once round a sphere's or a cone's axis: where it begins in the face's
-/// parameters, and how far round it comes (a whole turn, either way).
-struct Wound { at: Uv,turn: f64 }
+/// A loop winding once round its surface's period along parameter `k` (a sphere's or a cone's axis
+/// for `u`): where it begins in the face's parameters, and how far round it comes (a whole period,
+/// either way).
+struct Wound { at: Uv,k: usize,turn: f64 }
 
 /// **The seam a loop winding round a pole is joined to it along** (a face holding a sphere's pole
 /// or a cone's apex inside it, which a file writes with no seam): the meridian (a sphere's) or
@@ -627,6 +632,153 @@ fn pole_seam(s: &Surface,w: &Wound,v: u32,reversed: bool,laid: u32) -> Option<(V
     // up from where the loop came round to, and down to where it began
     let seam = LAID;
     Some((point,edge,[Coedge {edge:seam,reversed:!up,pcurve:along(u+w.turn)},Coedge {edge:seam,reversed:up,pcurve:along(u)}]))
+}
+
+/// The curve of `s` along which its parameter `k` is `x` — a cylinder's or a cone's generator, a
+/// sphere's meridian, a torus's tube circle or its circle round the axis — whose own parameter
+/// is the other of the surface's at each point; none on any other surface. Held to the surface
+/// at three points.
+fn iso(s: &Surface,k: usize,x: f64) -> Option<Curve> {
+    let out = |f: &Frame,u: f64| add(scale(f.x,u.dcos()),scale(f.y,u.dsin()));
+    let c = match (s,k) {
+        (&Surface::Cylinder(f,_),0) => Curve::Line {p:s.point([x,0.]),d:f.z},
+        (Surface::Cone(..),0) => Curve::Line {p:s.point([x,0.]),d:crate::util::space::normalised(sub(s.point([x,1.]),s.point([x,0.])))?},
+        (&Surface::Sphere(f,r),0) => { let o = out(&f,x); Curve::Circle(Frame {o:f.o,x:o,y:f.z,z:cross(o,f.z)},r) }
+        (&Surface::Torus(f,big,r),0) => { let o = out(&f,x); Curve::Circle(Frame {o:add(f.o,scale(o,big)),x:o,y:f.z,z:cross(o,f.z)},r) }
+        (&Surface::Torus(f,big,r),1) => Curve::Circle(Frame {o:add(f.o,scale(f.z,r*x.dsin())),..f},big+r*x.dcos()),
+        _ => return None,
+    };
+    let at = |y: f64| if k == 0 { [x,y] } else { [y,x] };
+    let scale_of = 1.+norm(s.point(at(0.)));
+    [-0.7,0.,1.3].iter().all(|&y| distance(c.point(y),s.point(at(y))) <= 1e-12*scale_of).then_some(c)
+}
+
+/// A use's pcurve cut at its edge's parameter `t`, where it reads `m`: the pieces over `[t₀, t]`
+/// and `[t, t₁]` — a line's and an inverse curve's between their ends and `m`, a curve of its own
+/// read at the edge's parameter as it is, both.
+fn cut_pcurve(pc: &Pcurve,m: Uv) -> (Pcurve,Pcurve) {
+    match *pc {
+        Pcurve::Line {a,b} => (Pcurve::Line {a,b:m},Pcurve::Line {a:m,b}),
+        Pcurve::Inverse {a,b} => (Pcurve::Inverse {a,b:m},Pcurve::Inverse {a:m,b}),
+        Pcurve::Curve(_) => (pc.clone(),pc.clone()),
+    }
+}
+
+/// An edge of the file cut where a seam the reader lays meets it: the edge, the parameter, and
+/// the vertex and the edge laid there (by the placeholders `face` names them with) — the edge
+/// keeping `[t₀, t]`, the laid one `[t, t₁]` on the same curve, both the file's one entity.
+#[derive(Clone,Copy)]
+struct Cut { edge: usize,t: f64,vertex: u32,laid: u32 }
+
+/// A band joined: its loop, the edges laid (the seam, and the far piece of a cut edge), the vertex
+/// laid (where the seam meets a cut edge) and the cut.
+struct Joined { lp: Vec<Coedge>,laid: Vec<Edge>,vertex: Option<V>,cut: Option<Cut> }
+
+/// **The seam a band is joined along** (a face bounded by two loops each winding once round its
+/// surface's period, opposite ways, which a file writes with no seam between them): the curve of
+/// the surface at one value of the period (`iso`) from a vertex of the one loop to the other — to
+/// a vertex of it standing at that value where one does (the first such pair, each loop taken from
+/// its own first use on), else to the point of an edge of it at that value, the edge cut there
+/// (`Cut`) and a vertex laid — the seam crossing none of the face's `others` (its holes: their span
+/// in the period holds not the seam's value between the loops). The two loops are joined into one
+/// along it: the first from its vertex round, up the seam on the far side of its turn, the second
+/// round from the seam's other end, and back down the seam. None where no such seam is. The edges
+/// laid are named `laid` down, the vertex `pole`.
+fn band(st: &Setting,s: &Surface,reversed: bool,(la,wa,ua): (&[Coedge],Option<&Wound>,&[(usize,bool)]),
+    (lb,wb,ub): (&[Coedge],Option<&Wound>,&[(usize,bool)]),others: &[&[Coedge]],laid: u32,pole: u32) -> Option<Joined> {
+    let (wa,wb) = (wa?,wb?);
+    let k = wa.k;
+    let p = s.periods()[k]?;
+    if wb.k != k || (wa.turn+wb.turn).abs() > 1e-6*p { return None }
+    let b = st.b;
+    let f = Face {surface:s.clone(),reversed,loops:vec![],name:String::new()};
+    // each loop's vertices, where its uses start, at their parameters on its walk
+    let starts = |l: &[Coedge],u: &[(usize,bool)]| -> Vec<(usize,u32,Uv)> {
+        l.iter().zip(u).enumerate().map(|(i,(c,&(e,rev)))| (i,b.edges[e].v[rev as usize],b.uv_ends(&f,c)[0])).collect()
+    };
+    let (sa,sb) = (starts(la,ua),starts(lb,ub));
+    let spans: Vec<[[f64;2];2]> = others.iter().map(|l| span(b,&f,l)).collect();
+    let clear = |x: f64,ya: f64,yb: f64| {
+        let (lo,hi) = (ya.min(yb),ya.max(yb));
+        (ya-yb).abs() > 1e-12 && !spans.iter().any(|h| {
+            let x = x+((0.5*(h[k][0]+h[k][1])-x)/p).round()*p;
+            h[1-k][1] > lo && h[1-k][0] < hi && h[k][0] <= x && x <= h[k][1]
+        })
+    };
+    // the loops taken from a use on, each use after on the branch its walk left it moved by `d`,
+    // those before a turn on
+    let from = |l: &[Coedge],i: usize,turn: f64,d: f64| -> Vec<Coedge> {
+        let (mut dd,mut late) = ([0.;2],[0.;2]);
+        dd[k] = d;
+        late[k] = d+turn;
+        l[i..].iter().map(|c| Coedge {pcurve:moved(&c.pcurve,dd),..c.clone()})
+            .chain(l[..i].iter().map(|c| Coedge {pcurve:moved(&c.pcurve,late),..c.clone()})).collect()
+    };
+    // the seam from `qa` (the first loop's vertex `va`) to `y` along the other parameter, at
+    // vertex `vb`, and the loop joined round the second loop's uses `second`
+    let join = |qa: Uv,va: u32,y: f64,vb: u32,first: Vec<Coedge>,second: Vec<Coedge>| -> Option<(Vec<Coedge>,Edge)> {
+        let curve = iso(s,k,qa[k])?;
+        let ya = qa[1-k];
+        let (up,t) = if ya < y { (true,[ya,y]) } else { (false,[y,ya]) };
+        let edge = Edge {curve:EdgeCurve::Curve(curve),t,v:if up { [va,vb] } else { [vb,va] },tol:0.};
+        let along = |x: f64| { let (mut a,mut z) = (qa,qa); a[k] = x; z[k] = x; a[1-k] = t[0]; z[1-k] = t[1]; Pcurve::Inverse {a,b:z} };
+        let mut out = first;
+        out.push(Coedge {edge:laid,reversed:!up,pcurve:along(qa[k]+wa.turn)});
+        out.extend(second);
+        out.push(Coedge {edge:laid,reversed:up,pcurve:along(qa[k])});
+        Some((out,edge))
+    };
+    for &(ia,va,qa) in &sa {
+        for &(ib,vb,qb) in &sb {
+            // one value of the period, to the reader's pole tolerance in space
+            let mut at = qa;
+            at[1-k] = qb[1-k];
+            if distance(s.point(at),b.vertices[vb as usize].p) > st.within.max(b.vertices[vb as usize].tol) { continue }
+            if !clear(qa[k],qa[1-k],qb[1-k]) { continue }
+            let second = from(lb,ib,wb.turn,((qa[k]+wa.turn-qb[k])/p).round()*p);
+            let (lp,edge) = join(qa,va,qb[1-k],vb,from(la,ia,wa.turn,0.),second)?;
+            return Some(Joined {lp,laid:vec![edge],vertex:None,cut:None})
+        }
+    }
+    // no vertex of the second at the value of one of the first's: the edge of the second the
+    // first's vertex's value falls on, cut there
+    for &(ia,va,qa) in &sa {
+        for (j,c) in lb.iter().enumerate() {
+            let (ei,rev) = ub[j];
+            let e = &b.edges[ei];
+            let EdgeCurve::Curve(_) = &e.curve else { continue };
+            let g = |t: f64| c.pcurve.at(t,e,s,&b.vertices);
+            let (g0,g1) = (g(e.t[0]),g(e.t[1]));
+            let x = qa[k]+((0.5*(g0[k]+g1[k])-qa[k])/p).round()*p;
+            if !((x-g0[k])*(x-g1[k]) < 0.) { continue }
+            let (mut lo,mut hi) = (e.t[0],e.t[1]);
+            for _ in 0..80 {
+                let mid = 0.5*(lo+hi);
+                if (g(mid)[k] < x) == (g0[k] < x) { lo = mid } else { hi = mid }
+                if hi-lo <= 1e-15*(1.+hi.abs()) { break }
+            }
+            let t = 0.5*(lo+hi);
+            if !(t > e.t[0] && t < e.t[1]) { continue }
+            let m = g(t);
+            if !clear(qa[k],qa[1-k],m[1-k]) { continue }
+            // the use's pieces before and after the cut along the loop; the far piece laid
+            let (near,far) = cut_pcurve(&c.pcurve,m);
+            let (piece0,piece1) = (Coedge {edge:ei as u32,reversed:rev,pcurve:near},Coedge {edge:laid-1,reversed:rev,pcurve:far});
+            let (before,after) = if rev { (piece1,piece0) } else { (piece0,piece1) };
+            let d = ((qa[k]+wa.turn-m[k])/p).round()*p;
+            let (mut dd,mut late) = ([0.;2],[0.;2]);
+            dd[k] = d;
+            late[k] = d+wb.turn;
+            let mut second = vec![Coedge {pcurve:moved(&after.pcurve,dd),..after}];
+            second.extend(from(lb,j+1,0.,d).into_iter().take(lb.len()-j-1));
+            second.extend(lb[..j].iter().map(|c| Coedge {pcurve:moved(&c.pcurve,late),..c.clone()}));
+            second.push(Coedge {pcurve:moved(&before.pcurve,late),..before});
+            let Some((lp,edge)) = join(qa,va,m[1-k],pole,from(la,ia,wa.turn,0.),second) else { continue };
+            let piece = Edge {curve:e.curve.clone(),t:[t,e.t[1]],v:[pole,e.v[1]],tol:0.};
+            return Some(Joined {lp,laid:vec![edge,piece],vertex:Some(e.point(t,&b.vertices)),cut:Some(Cut {edge:ei,t,vertex:pole,laid:laid-1})})
+        }
+    }
+    None
 }
 
 /// **The side of a closed spline sheet's seam a use runs along**: where `m`, a use's middle, lies
@@ -668,9 +820,10 @@ fn span(b: &Brep,f: &Face,l: &[Coedge]) -> [[f64;2];2] {
     out
 }
 
-/// A face built, the edges it lays (a whole torus's seams, a pole's seam), which its loops name
-/// from `LAID` down, and the vertices it lays (a pole), which those edges name so.
-struct Built { face: Face,laid: Vec<Edge>,poles: Vec<V> }
+/// A face built, the edges it lays (a whole torus's seams, a pole's seam, a band's seam and the
+/// far piece of an edge it cuts), which its loops name from `LAID` down, the vertices it lays (a
+/// pole, a seam's end on a cut edge), which those edges name so, and the file's edges it cuts.
+struct Built { face: Face,laid: Vec<Edge>,poles: Vec<V>,cuts: Vec<Cut> }
 
 const LAID: u32 = u32::MAX;
 
@@ -724,18 +877,34 @@ fn face(st: &Setting,sheet: &Sheet,w: &Walked) -> Result<Built,Refusal> {
     }).collect();
     let (mut taken,mut placed) = (BTreeMap::new(),BTreeMap::new());
     let walked = uses.iter().map(|l| walk_loop(st,sheet,w.surface,l,reversed,&seams,w.entity,&mut taken,&mut placed)).collect::<Result<Vec<_>,_>>()?;
-    // a loop winding round a pole the face holds is joined to it by a seam laid (one loop alone:
-    // two winding bound a band, which wants a seam between them)
+    // a loop winding round a pole the face holds is joined to it by a seam laid; two winding
+    // opposite ways round one period bound a band, joined by a seam laid between them (`band`)
     let (mut laid,mut poles) = (Vec::new(),Vec::new());
-    if walked.iter().filter(|x| x.1.is_some()).count() > 1 {
-        return Err(Refusal::unsupported(w.entity,"a face between two bounds winding round its surface, with no seam: not read yet"))
+    let mut walked = walked;
+    let wound: Vec<usize> = (0..walked.len()).filter(|&i| walked[i].1.is_some()).collect();
+    let mut cuts = Vec::new();
+    if wound.len() == 2 {
+        let (i,j) = (wound[0],wound[1]);
+        let others: Vec<&[Coedge]> = (0..walked.len()).filter(|&x| x != i && x != j).map(|x| &walked[x].0[..]).collect();
+        let joined = band(st,s,reversed,(&walked[i].0,walked[i].1.as_ref(),&uses[i]),(&walked[j].0,walked[j].1.as_ref(),&uses[j]),&others,
+            LAID-laid.len() as u32,LAID-poles.len() as u32).ok_or_else(|| Refusal::unsupported(w.entity,"a face between two bounds \
+            winding round its surface, with no seam, where no seam can be laid between them crossing no other bound: not read"))?;
+        laid.extend(joined.laid);
+        poles.extend(joined.vertex);
+        cuts.extend(joined.cut);
+        walked[i] = (joined.lp,None);
+        walked.remove(j);
+    } else if wound.len() > 2 {
+        return Err(Refusal::unsupported(w.entity,"a face between more than two bounds winding round its surface, with no seam: not read"))
     }
+    let uses: Vec<Vec<(usize,bool)>> = uses.into_iter().enumerate().filter(|&(x,_)| wound.len() != 2 || x != wound[1]).map(|(_,u)| u).collect();
     let mut loops = Vec::new();
     for ((mut l,wound),u) in walked.into_iter().zip(&uses) {
         if let Some(x) = wound {
             let v = b.edges[u[0].0].v[u[0].1 as usize];
-            let Some((p,e,uses)) = pole_seam(s,&x,v,reversed,LAID) else {
-                return Err(Refusal::unsupported(w.entity,"a face whose bound winds round its surface's period with no seam: not read yet"))
+            let Some((p,e,uses)) = pole_seam(s,&x,v,reversed,LAID).filter(|_| x.k == 0) else {
+                return Err(Refusal::unsupported(w.entity,"a face whose bound winds round its surface's period with no seam and no pole \
+                    inside it: not read"))
             };
             // (the edge laid names the pole laid as `LAID`, patched where it is numbered)
             laid.push(e);
@@ -801,7 +970,7 @@ fn face(st: &Setting,sheet: &Sheet,w: &Walked) -> Result<Built,Refusal> {
             if d != [0.;2] { for c in &mut f.loops[li] { c.pcurve = moved(&c.pcurve,d); } }
         }
     }
-    Ok(Built {face:f,laid,poles})
+    Ok(Built {face:f,laid,poles,cuts})
 }
 
 /// **A whole torus**, bounded by the vertex at `p` alone (Open CASCADE writes one so): its two
@@ -821,7 +990,7 @@ fn whole_torus(s: &Surface,p: V,v: u32,reversed: bool,name: &str) -> Built {
     let mut l = vec![Coedge {edge:LAID,reversed:false,pcurve:line(a,bu)},Coedge {edge:LAID-1,reversed:false,pcurve:line(bu,c)},
         Coedge {edge:LAID,reversed:true,pcurve:line(d,c)},Coedge {edge:LAID-1,reversed:true,pcurve:line(a,d)}];
     if reversed { l = reverse_loop(l); }
-    Built {face:Face {surface:s.clone(),reversed,loops:vec![l],name:name.to_string()},laid,poles:Vec::new()}
+    Built {face:Face {surface:s.clone(),reversed,loops:vec![l],name:name.to_string()},laid,poles:Vec::new(),cuts:Vec::new()}
 }
 
 /// **A whole sphere**, bounded by the vertex at one of its poles alone (Open CASCADE writes one
@@ -845,7 +1014,7 @@ fn whole_sphere(s: &Surface,p: V,v: u32,other: Option<u32>,reversed: bool,name: 
     let mut l = vec![Coedge {edge:LAID,reversed:false,pcurve:side(TAU)},Coedge {edge:LAID,reversed:true,pcurve:side(0.)}];
     if reversed { l = reverse_loop(l); }
     let poles = if other.is_some() { vec![] } else { vec![far_point] };
-    Some(Built {face:Face {surface:s.clone(),reversed,loops:vec![l],name:name.to_string()},laid:vec![edge],poles})
+    Some(Built {face:Face {surface:s.clone(),reversed,loops:vec![l],name:name.to_string()},laid:vec![edge],poles,cuts:Vec::new()})
 }
 
 /// The entity a check's message names: its first face or edge, by its index in the `Brep`.
@@ -899,13 +1068,41 @@ pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
     };
     let mut edges: Vec<u32> = w.written.iter().map(|x| x.entity).collect();
     let mut vertices = w.points.clone();
-    for mut x in built {
+    let mut cuts: Vec<(usize,Cut)> = Vec::new();
+    for (fi,mut x) in built.into_iter().enumerate() {
         let (at,pole) = (b.edges.len() as u32,b.vertices.len() as u32);
         for c in x.face.loops.iter_mut().flatten() { if c.edge > LAID-16 { c.edge = at+(LAID-c.edge); } }
         for e in &mut x.laid { for v in &mut e.v { if *v > LAID-16 { *v = pole+(LAID-*v); } } }
+        cuts.extend(x.cuts.iter().map(|c| (fi,Cut {vertex:pole+(LAID-c.vertex),laid:at+(LAID-c.laid),..*c})));
         b.edges.extend(x.laid.drain(..));
         for p in x.poles { b.vertices.push(Vertex {p,tol:0.}); vertices.push(0); }
         b.faces.push(x.face);
+    }
+    // a file's edge a band's seam meets, cut there: the edge keeps its first piece, its far piece
+    // laid on its curve, and every other face's use of it walked along both
+    let mut laid_of: Vec<(usize,usize)> = Vec::new();
+    for &(fi,c) in &cuts {
+        if laid_of.iter().any(|&(e,_)| e == c.edge) {
+            return Err(Refusal::unsupported(w.written[c.edge].entity,"an edge two bands' seams meet: not read"))
+        }
+        let whole = b.edges[c.edge].clone();
+        for (gi,g) in b.faces.iter_mut().enumerate() {
+            if gi == fi { continue }
+            for l in &mut g.loops {
+                let mut out = Vec::with_capacity(l.len()+1);
+                for co in l.drain(..) {
+                    if co.edge as usize != c.edge { out.push(co); continue }
+                    let m = co.pcurve.at(c.t,&whole,&g.surface,&b.vertices);
+                    let (near,far) = cut_pcurve(&co.pcurve,m);
+                    let (a,z) = (Coedge {edge:c.edge as u32,reversed:co.reversed,pcurve:near},Coedge {edge:c.laid,reversed:co.reversed,pcurve:far});
+                    if co.reversed { out.push(z); out.push(a); } else { out.push(a); out.push(z); }
+                }
+                *l = out;
+            }
+        }
+        b.edges[c.edge].t[1] = c.t;
+        b.edges[c.edge].v[1] = c.vertex;
+        laid_of.push((c.edge,c.laid as usize));
     }
     // a vertex at a pole stands as far off it as half a turn of the collapsed parameter moves
     // there: what `close_poles` reads the pole within
@@ -936,6 +1133,8 @@ pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
     // the next: the gap measured is held to a billionth more)
     for e in &mut b.edges { e.tol *= 1.+1e-9; }
     edges.resize(b.edges.len(),0);
+    // (a cut edge's far piece the file's one entity)
+    for &(e,l) in &laid_of { edges[l] = edges[e]; }
     let given = Given {name:found.name,entity:r,brep:b,context:found.context,faces:faces.iter().map(|f| f.entity).collect(),edges,vertices};
     // an edge standing off its faces (or its vertices off it) farther than a hundred times the
     // file's uncertainty and a thousandth of the solid's size is no edge of theirs read right — a

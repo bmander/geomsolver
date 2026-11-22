@@ -214,20 +214,66 @@ fn a_cap_written_with_no_seam_reads_to_its_closed_form() {
     close("the cap's area", total_area(b), std::f64::consts::PI * (2. * r * h + 16.), 1e-9);
     // the seam and the pole it laid named by no entity of the file's
     assert_eq!(given[0].edges.iter().filter(|&&e| e == 0).count(), b.edges.len() - 1);
-    // a cylinder's band between two circles, no seam between them: not read yet, said so
-    let band = file("#14 = CYLINDRICAL_SURFACE('',#13,5.);\n#20 = CARTESIAN_POINT('',(0.,0.,3.));\n\
+}
+
+/// A cylinder of radius 5 from `z = 0` to `3` written as Parasolid-family writers write it: its
+/// side bounded by its two circles and no seam, each circle's vertex where `at` puts it (the
+/// angle round the axis of the top's, the bottom's at 0).
+fn drum(at: f64) -> String {
+    let (c, s) = (5. * at.cos(), 5. * at.sin());
+    file(&format!("#14 = CYLINDRICAL_SURFACE('',#13,5.);\n#20 = CARTESIAN_POINT('',(0.,0.,3.));\n\
         #21 = AXIS2_PLACEMENT_3D('',#20,#11,#12);\n#22 = PLANE('',#21);\n#23 = PLANE('',#13);\n\
         #30 = CIRCLE('',#21,5.);\n#34 = CIRCLE('',#13,5.);\n\
-        #31 = CARTESIAN_POINT('',(5.,0.,3.));\n#32 = VERTEX_POINT('',#31);\n#33 = EDGE_CURVE('',#32,#32,#30,.T.);\n\
+        #31 = CARTESIAN_POINT('',({},{},3.));\n#32 = VERTEX_POINT('',#31);\n#33 = EDGE_CURVE('',#32,#32,#30,.T.);\n\
         #35 = CARTESIAN_POINT('',(5.,0.,0.));\n#36 = VERTEX_POINT('',#35);\n#37 = EDGE_CURVE('',#36,#36,#34,.T.);\n\
         #40 = ORIENTED_EDGE('',*,*,#33,.F.);\n#41 = EDGE_LOOP('',(#40));\n#42 = FACE_BOUND('',#41,.T.);\n\
         #38 = ORIENTED_EDGE('',*,*,#37,.T.);\n#39 = EDGE_LOOP('',(#38));\n#48 = FACE_BOUND('',#39,.T.);\n\
         #43 = ADVANCED_FACE('',(#42,#48),#14,.T.);\n#44 = ORIENTED_EDGE('',*,*,#33,.T.);\n#45 = EDGE_LOOP('',(#44));\n\
         #46 = FACE_BOUND('',#45,.T.);\n#47 = ADVANCED_FACE('',(#46),#22,.T.);\n#54 = ORIENTED_EDGE('',*,*,#37,.F.);\n\
         #55 = EDGE_LOOP('',(#54));\n#56 = FACE_BOUND('',#55,.T.);\n#57 = ADVANCED_FACE('',(#56),#23,.F.);\n\
-        #50 = CLOSED_SHELL('',(#43,#47,#57));\n#51 = MANIFOLD_SOLID_BREP('',#50);\n");
-    let r = read(&band).map(|_| ()).expect_err("a band with no seam");
-    assert_eq!((r.why, r.entity), (Why::Unsupported, Some(43)), "{r}");
+        #50 = CLOSED_SHELL('',(#43,#47,#57));\n#51 = MANIFOLD_SOLID_BREP('',#50);\n", real(c), real(s)))
+}
+
+/// **A band between two loops winding round a period with no seam is joined by a seam the reader
+/// lays** (the commonest habit of Parasolid-family writers): along the surface at one value of the
+/// period, from a vertex of the one loop to a vertex of the other standing there, or — the
+/// vertices a quarter turn apart — to the point of the other's edge there, that edge cut into two
+/// pieces of its one entity. A drum reads to `π r² h` and `2π r h + 2π r²` either way, every
+/// entity of the file read once and the seam named by none; a torus's sector between two tube
+/// circles (its band round `v`, the seam laid round the axis) to `π² R r² / 2` and `π² R r + 2π r²`.
+#[test]
+fn a_band_written_with_no_seam_reads_to_its_closed_form() {
+    let pi = std::f64::consts::PI;
+    for at in [0., 0.5 * pi] {
+        let given = read(&drum(at)).unwrap_or_else(|r| panic!("{at}: {r:?}"));
+        let (g, b) = (&given[0], &given[0].brep);
+        close(&format!("{at}: the drum's volume"), volume(b), pi * 25. * 3., 1e-9);
+        close(&format!("{at}: the drum's area"), total_area(b), 2. * pi * 5. * 3. + 2. * pi * 25., 1e-9);
+        let named: std::collections::BTreeSet<u32> = g.edges.iter().copied().filter(|&e| e != 0).collect();
+        assert_eq!(named.into_iter().collect::<Vec<_>>(), vec![33, 37], "{at}: the file's edges");
+        assert_eq!(g.edges.iter().filter(|&&e| e == 0).count(), 1, "{at}: the seam laid");
+    }
+    // a quarter of a torus of radii 4 and 1 round the axis, cut by the planes `y = 0` and `x = 0`
+    let sector = file("#14 = TOROIDAL_SURFACE('',#13,4.,1.);\n\
+        #20 = CARTESIAN_POINT('',(4.,0.,0.));\n#21 = DIRECTION('',(0.,-1.,0.));\n#22 = AXIS2_PLACEMENT_3D('',#20,#21,#12);\n\
+        #23 = CIRCLE('',#22,1.);\n#24 = PLANE('',#22);\n#25 = CARTESIAN_POINT('',(5.,0.,0.));\n#26 = VERTEX_POINT('',#25);\n\
+        #27 = EDGE_CURVE('',#26,#26,#23,.T.);\n\
+        #30 = CARTESIAN_POINT('',(0.,4.,0.));\n#31 = DIRECTION('',(1.,0.,0.));\n#32 = DIRECTION('',(0.,1.,0.));\n\
+        #33 = AXIS2_PLACEMENT_3D('',#30,#31,#32);\n#34 = CIRCLE('',#33,1.);\n#35 = PLANE('',#33);\n\
+        #36 = CARTESIAN_POINT('',(0.,5.,0.));\n#37 = VERTEX_POINT('',#36);\n#38 = EDGE_CURVE('',#37,#37,#34,.T.);\n\
+        #40 = ORIENTED_EDGE('',*,*,#27,.F.);\n#41 = EDGE_LOOP('',(#40));\n#42 = FACE_BOUND('',#41,.T.);\n\
+        #43 = ORIENTED_EDGE('',*,*,#38,.T.);\n#44 = EDGE_LOOP('',(#43));\n#45 = FACE_BOUND('',#44,.T.);\n\
+        #46 = ADVANCED_FACE('',(#42,#45),#14,.T.);\n\
+        #53 = ORIENTED_EDGE('',*,*,#27,.T.);\n#54 = EDGE_LOOP('',(#53));\n#55 = FACE_BOUND('',#54,.T.);\n\
+        #56 = ADVANCED_FACE('',(#55),#24,.T.);\n\
+        #57 = ORIENTED_EDGE('',*,*,#38,.F.);\n#58 = EDGE_LOOP('',(#57));\n#59 = FACE_BOUND('',#58,.T.);\n\
+        #60 = ADVANCED_FACE('',(#59),#35,.F.);\n\
+        #50 = CLOSED_SHELL('',(#46,#56,#60));\n#51 = MANIFOLD_SOLID_BREP('',#50);\n");
+    let given = read(&sector).unwrap_or_else(|r| panic!("the torus's sector: {r:?}"));
+    let b = &given[0].brep;
+    close("the sector's volume", volume(b).abs(), pi * pi * 4. / 2., 1e-9);
+    close("the sector's area", total_area(b), pi * pi * 4. + 2. * pi, 1e-9);
+    assert!(volume(b) > 0., "the sector turned inside out");
 }
 
 /// `x` written as STEP writes a real: always with its point.
