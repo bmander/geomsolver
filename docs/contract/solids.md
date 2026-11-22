@@ -151,7 +151,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   diagnosis's refusals, the elaboration's reading of the faces it names, `at_solve`'s readings).
   **What is the body's alone is read with the body**: whether each edge is a seam
   (`BodyFaces::seams`) and each face's smooth chain (`chains`), read once as the boundary is
-  located, so a walk across seams (`smooth`, `across_seams`, `lowering::pieces`, `with_caps`) is
+  located, so a walk across seams (`smooth`, `across_seams`, `pieces`, `with_caps`) is
   as long as the chain it walks and `chains_apart` groups by chain — every region over a body
   rounded all over walked it again, the normals of every edge read each time, and the field
   read the chains at every region (the diagnosis of the 204-face plate grew as the cube of its

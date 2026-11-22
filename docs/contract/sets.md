@@ -482,7 +482,7 @@ tangent plane past a seam only, a seam as near as the nearest edge (a patch's co
 and a crease meet) still the one carried past. **Two faces lie on one surface where their surfaces
 are one and their outward normals one** (#994, `BodyFaces::same_surface`: the kernel's
 `fillet::one_surface`, `ssi::same` at the boundary's tolerance, read once a body, `surface_of`) —
-one rule for the field's pieces of a surface (`BodyFaces::pieces`, `lowering::pieces`), a face going
+one rule for the field's pieces of a surface (`BodyFaces::pieces`), a face going
 on along a piece of a run's own (`carries_on`), the plane's pieces below, the surfaces a reading
 lies on (`Reading::surfaces`), a face the ball stands on (`piece::held`) and the sides the kernel
 rolls a ball on (`fillet`'s `meeting`); five readings of it (normals to `1e-9`, a sample of five
