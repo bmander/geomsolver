@@ -316,7 +316,7 @@ steps in the plane square to the edge at points along it). A seam beyond the foo
 it (`rounds/spill.sv` with a boss of 19.5, its leg short of the seam: built as the ring alone), nor
 is one the edge runs into at its end (a slot's side into its half circle: the table's own going on
 into the next piece). **Nor is a seam between two pieces of one surface** (#952,
-`lowering::pieces`, `BodyFaces::pieces`: faces going on across seams on the same surface the same
+`BodyFaces::pieces`: faces going on across seams on the same surface the same
 way out, `BodyFaces::same_surface` — the kernel's `ssi::same` at the boundary's tolerance, the rule
 a ball's sides are read by, [sets.md](sets.md)): a plate's top in the pieces a union of its operands
 leaves it, each named by its own operand, is one plane to the section, which stands against the
@@ -1257,6 +1257,20 @@ ends on). Every section of a still ball holds its centre and its foot, so none i
 a face the centre stands within: the dome goes on round until the meeting comes back, and
 `fillet::dome_cut` builds it where that is the crease's other end — the meeting past the crease
 stays out of every face it ends on (a cut end's faces, a tangent end's plane square to the crease).
+That is read exactly, as `fillet::reaches` reads an edge's height: the meeting over the gap split
+where it meets each of those surfaces (`query::curve_surface`), each one's side the same between,
+and read at one point of each piece; within by more than `tolerant::on_meeting` at the faces' turn
+(a point of the meeting that far off it is still one of it, the vertex at each end of the gap
+among them); a reading not proved is read as coming back (#814). **Not yet** (#994): how far off
+a still ball's section, seam or meeting a point may stand and be on it (`fillet::standing_bar`,
+one bar for `dome`'s reading of its ends and `dome_cut`'s) is a thousand tolerances scaled by the
+point's distance from the origin, not derived from `ON_CURVE` or `on_meeting`. Over the rounds
+modules (38, 620 tests) every one of its 619 decisions stands at least 10³ tolerances from it
+either way — a vertex in its section, a touch on its seam within 10⁻⁸ of a tolerance, one out of
+its section 3·10⁵ off — so `ON_CURVE tol` would decide them alike; but the same bar is written
+at six more places of the standing and dome constructions (`standing`, `dome_split`,
+`dome_short`, `revolved`), each against its own scale, and deriving it is one change over all of
+them, with a case a hair off a section to hold it.
 Both ends cut across: the whole loop's dome, the two surfaces' meeting in closed form its loop
 (`fillet::hemisphere`, the one `standing` builds), cut off by the faces at both ends (a plane's
 half-space, a curved face's solid, `trimmed`). One end where a face goes on tangent from the
@@ -1342,7 +1356,7 @@ reads before anything named the corner), or one turning back along a face's outl
 top flush with a flange's whose rim is rounded, the block's side meeting the flange's at a reflex
 corner: the round's carried side cut off the block's top, and the ball on the block's side was
 refused as standing 30 past the flange's round, #996's fifth item). **A face is its surface in
-the pieces flush faces leave it** (`lowering::pieces`, as the table reads it, #952): a piece of
+the pieces flush faces leave it** (`BodyFaces::pieces`, as the table reads it, #952): a piece of
 the face's own surface is never a face it goes on into, so a flat reaching past the edge between
 two pieces lands on its own face (a hole's chamfer under a post over a plate's edge, both
 bottoms one plane, refused as coming within 0 of the post's piece, #994's first item; the same
@@ -1351,7 +1365,7 @@ on two pieces of one cylinder: `rim_rounds::a_hole_over_flush_pieces_of_a_plane_
 between (its middle first, so the wall across is named, not the arc it ends on), a ring at
 sixteen turns of its own. A flat's points each nearest its own face's patch of the chain's
 (`distance(p, b.smooth)` reads patches), not its carried side. **The chain is read past the
-pieces of each face's own surface** (#994, #996's fifth item: `lowering::pieces`, #952):
+pieces of each face's own surface** (#994, #996's fifth item: `lowering::own_pieces`, #952):
 a face the same surface goes on into across a seam is no other face of the chain, and a flat's
 point is measured from the nearest of those pieces. A hole through a post whose foot is flush
 with its plate's bottom, the post across the plate's edge, has its bottom rim on `stock.far` and
@@ -1458,10 +1472,12 @@ under the slope to its toe's face. A face lying alongside the run (the slope alo
 foot) ends nothing: it is the face beyond the one the ball rolls on, and **the ball must stand on
 its face** — at sixteen stations along a carried run or ring its touch lies on the face, within
 its tolerance of its far boundary at most, or past an edge to a face of its surface, a seam, or a
-face that ends the run, or the face reaches as far off the other face as the touch somewhere (a
-crown whose rim a large ball's touch passes, read on its surface as the field reads it; an edge's
-reach read exactly, at its ends and where it meets the other surface's offset by the touch's
-height, `brep::fillet::reaches`, not sampled), or its
+face that ends the run (one of `BodyFaces::end_faces`', at the run's own vertices or where a
+run-out along them or its smooth chain ends: the run's pieces are kept within every one, so each
+cuts the touch off — what the field decided, read and not derived again), or the face reaches as
+far off the other face as the touch somewhere (a crown whose rim a large ball's touch passes, read
+on its surface as the field reads it; an edge's reach read exactly, at its ends and where it meets
+the other surface's offset by the touch's height, `brep::fillet::reaches`, not sampled), or its
 corner at an end of the run does (a band tapering to nothing between its edges, its round running
 out with it, its ends' arcs running out tangent into the disc) (`lowering::piece::held`, as
 `holds_ball` for a rolled one). A strip nowhere that wide, its edges with the faces the run ends

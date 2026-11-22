@@ -8,6 +8,20 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Whether a standing ball's meeting comes back within the faces it ends on, read exactly**
+  (#994, `fillet::dome_cut`): the meeting over the gap is split where it meets each end's surface
+  (`query::curve_surface`) and read at one point of each piece, within by more than
+  `tolerant::on_meeting` at the faces' turn, where it was read at 511 samples; a reading not
+  proved refuses.  The bar `dome` and `dome_cut` read a point on a still ball's section, seam or
+  meeting by is named once (`standing_bar`).  `fillet::faces_on` is private (its one user outside
+  the file, the lowering's `held`, reads the faces `end_faces` decided).
+
+- **A face's outward gradient** (`topo::Face::outward_gradient`, new): its surface's `gradient`
+  turned where the face is the reversed side — what a run's end faces are read by (`end_at`,
+  `beyond_end`), written once.  `fillet::meeting` builds the faces each edge bounds once for a
+  run (`end_at` and `dome` take it), and `dome` reads the face going on from either side by
+  `goes_on`.  The results are the same to the last bit.
+
 - **Two surfaces clear of one another, or resting on one another at a point alone, meet in no
   curve by one rule** (#994): `ssi::apart` reads their least distance in closed form where it has
   one (`ssi::least`: two cylinders leaning apart, a sphere and a plane, cylinder, sphere or torus,
@@ -135,9 +149,9 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   edge an end face makes with the run's faces to its other vertex — only where that edge is no
   longer than the section's size (a round's radius, a flat's longer leg), so the faces past the far
   end of an end face as long as the run's whole end (a hub's side an arm's round ends on) do not
-  end it — and a face there that faces on past the end (`fillet::faces_on`, new and public: its
+  end it — and a face there that faces on past the end (`fillet::faces_on`: its
   outward normal turned more than a degree from square to the run, off its end) and that a closed
-  form reads (`fillet::cuts_off`, new and public: a plane, a cylinder, a cone, a sphere or an
+  form reads (`fillet::cuts_off`: a plane, a cylinder, a cone, a sphere or an
   affine image) cuts the run off too, kept on its material's side, and its edges are none of the
   ball's band — a vane's toe cut by a slope `1e-4` over the foot, its upright face shorter than
   the section, cut its side's rolled round off at that face alone and refused the slope's edge with

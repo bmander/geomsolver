@@ -589,8 +589,7 @@ fn back_over_in(sk: &Sketch, body: &super::faces::BodyFaces, rounded: &[usize], 
     // than the round reaches — a band's foot arc tapering onto the disc it stands on (#994)
     if body.smooth(&[own]).contains(&e) {
         let side = body.side(e, at).abs();
-        let off = crate::units::Dim::LENGTH.number_text(
-            crate::json::fmt_g(side, 2).parse().unwrap_or(side), sk.units);
+        let off = length_said(side, sk.units);
         return format!("its round goes on tangent from {} into {} across their seam at {witness}, and {} runs on \
             tangent into {}, which its run along {} ends on: the seam stands {off} off {}, nearer than the round's \
             section reaches, so {} reaches {depth} back over the section there, the round along {} ends nowhere \
@@ -613,6 +612,11 @@ pub(super) fn point_said(p: V, units: crate::units::Units) -> String {
     format!("[{}, {}, {}]{}", figures(p[0]), figures(p[1]), figures(p[2]), units.name())
 }
 
+/// A length as a refusal says it: to two figures, in the document's unit (`0.12mm`).
+fn length_said(x: f64, units: crate::units::Units) -> String {
+    crate::units::Dim::LENGTH.number_text(crate::json::fmt_g(x, 2).parse().unwrap_or(x), units)
+}
+
 /// `back_over_said` where the faces are not to be named: the seam's point and the depth.
 fn back_over_unnamed(sk: &Sketch, b: &BackOver) -> String {
     let (witness, depth) = back_over_numbers(sk, b);
@@ -625,8 +629,7 @@ fn back_over_unnamed(sk: &Sketch, b: &BackOver) -> String {
 /// unit, the depth a length to two.
 fn back_over_numbers(sk: &Sketch, b: &BackOver) -> (String, String) {
     let witness = point_said(b.at, sk.units);
-    let depth = crate::units::Dim::LENGTH.number_text(crate::json::fmt_g(b.depth, 2).parse().unwrap_or(b.depth), sk.units);
-    (witness, depth)
+    (witness, length_said(b.depth, sk.units))
 }
 
 /// **The face a recognised region leaves on its body, by the name its construction gives it**
@@ -664,10 +667,10 @@ pub(crate) type Spill = std::collections::BTreeMap<usize, Vec<(u32, usize)>>;
 /// over the face between its edge and its footprint, nearest the face's own surface.  A seam the
 /// edge runs into at its end (a slot's side going on into its end's half circle) is the table's
 /// own rule, a run going on into the next piece, and is none of it either.  Nor is a seam between
-/// two pieces of one surface (`pieces`: a plate's top in the pieces the union of its operands left
-/// it, #952): the section stands against the surface, not the faces it is named by, so its
-/// footprint lands past such a seam onto the same surface, and the seam it reaches is the one
-/// where that surface's pieces go on into another.
+/// two pieces of one surface (`BodyFaces::pieces`: a plate's top in the pieces the union of its
+/// operands left it, #952): the section stands against the surface, not the faces it is named by,
+/// so its footprint lands past such a seam onto the same surface, and the seam it reaches is the
+/// one where that surface's pieces go on into another.
 fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Spill {
     let groups: Vec<Vec<usize>> = f.faces.iter().map(|r| body.faces(r)).collect();
     let mut out = Spill::new();
@@ -694,7 +697,7 @@ fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> 
                 continue;
             }
             let (fk, fo) = if groups[k].contains(&x) { (x, y) } else { (y, x) };
-            let surface = surfaces.entry(fk).or_insert_with(|| pieces(body, fk));
+            let surface = surfaces.entry(fk).or_insert_with(|| body.pieces(fk));
             for s in 0..=SEAM_SAMPLES {
                 let p = body.along(e, s as f64 / SEAM_SAMPLES as f64);
                 let Some(q) = footprint(body, fk, fo, p, f.within, section, k) else { continue };
@@ -732,33 +735,34 @@ fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> 
     out
 }
 
-/// **The pieces of one surface** (#952, `BodyFaces::pieces`): face `fi` and every face going on
-/// from it across a seam on the same surface (`BodyFaces::same_surface`), and from those on — a
-/// plate's top in the pieces the union of its operands left it, each named by its own operand's.
-/// A section stands against a surface, not the names of its faces: to it they are one face, and a
-/// seam between two of them is none it reaches across.  `fi` first.
-pub(crate) fn pieces(body: &super::faces::BodyFaces, fi: usize) -> Vec<usize> { body.pieces(fi) }
+/// **The pieces of the surfaces of `faces`** (#952, `BodyFaces::pieces`), each once, in the order
+/// met (`faces` first).  A section stands against a surface, not the names of its faces: to it
+/// they are one face, and a seam between two of them is none it reaches across.
+pub(crate) fn own_pieces(body: &super::faces::BodyFaces, faces: &[usize]) -> Vec<usize> {
+    let (mut own, mut seen) = (Vec::new(), std::collections::BTreeSet::new());
+    for g in faces.iter().flat_map(|&fi| body.pieces(fi)) {
+        if seen.insert(g) {
+            own.push(g);
+        }
+    }
+    own
+}
 
 /// **The faces `faces` go on into smoothly, their own surfaces aside** (#994): the pieces of each
-/// one's surface (`pieces`, `faces` first), and every other face of their smooth chain
+/// one's surface (`own_pieces`), and every other face of their smooth chain
 /// (`BodyFaces::smooth`) — the faces a section standing against them can come to across a seam.
 /// A piece of the same surface is none of those: a flat's point or a ball's centre over it is as
 /// far from the surface as from `faces`' own patch, and a plate's bottom flush with a post's,
 /// each named by its own operand, is one plane to whatever stands against either.
 pub(crate) fn going_on(body: &super::faces::BodyFaces, faces: &[usize]) -> (Vec<usize>, Vec<usize>) {
-    let (mut own, mut seen) = (Vec::new(), std::collections::BTreeSet::new());
-    for g in faces.iter().flat_map(|&fi| pieces(body, fi)) {
-        if seen.insert(g) {
-            own.push(g);
-        }
-    }
-    let beyond = body.smooth(&own).into_iter().filter(|g| !seen.contains(g)).collect();
+    let own = own_pieces(body, faces);
+    let beyond = body.smooth(&own).into_iter().filter(|g| !own.contains(g)).collect();
     (own, beyond)
 }
 
-/// Where `q` (on the surface of `faces`, the pieces of one: `pieces`) lies off them all: the edge
-/// of theirs nearest it that is no edge between two of them (`None` where it lies on one) — one
-/// face's own `off_face`.
+/// Where `q` (on the surface of `faces`, the pieces of one: `BodyFaces::pieces`) lies off them
+/// all: the edge of theirs nearest it that is no edge between two of them (`None` where it lies on
+/// one) — one face's own `off_face`.
 pub(crate) fn off_pieces(body: &super::faces::BodyFaces, faces: &[usize], q: V) -> Option<u32> {
     if let [fi] = faces {
         return body.off_face(*fi, q);
