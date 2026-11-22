@@ -320,14 +320,16 @@ def checked(f, sha, o, m, ref):
     if not q or not mf or not (m and "volume" in m) or not all(e in mf for e in q):
         return ref
     area = m["area"] + sum(q[e] - mf[e] for e in q)
-    if o["spread_volume"] <= CONVERGED:
-        bv = max(FLOOR, AGREE * rel(m["volume"], o["volume"]))
+    # the volume and the bars are the row's as they were: a quadrature of faces corrects an area,
+    # and tightens no bar (CADGenBench 211's `mass` row keeps its 8.5e-4)
+    if o["spread_volume"] <= CONVERGED and ref[2] in ("closed", "measured"):
+        v, bv = m["volume"], max(FLOOR, AGREE * rel(m["volume"], o["volume"]), ref[3])
     else:
-        bv = ALONE
-    note = (f"the measurer's, its {len(q)} faces {', '.join(f'#{e}' for e in sorted(q))} at "
+        v, bv = ref[0], ref[3]
+    note = (f"the measurer's area, its {len(q)} faces {', '.join(f'#{e}' for e in sorted(q))} at "
             f"the quadrature's ({sum(q[e] - mf[e] for e in q):+.3e} mm²); was {ref[2]} "
             f"{ref[0]!r} {ref[1]!r} ({ref[5]}), {rel(ref[1], area):.1e} off in area")
-    return (m["volume"], area, "mass+quad", bv, ALONE, note) + tuple(ref[6:])
+    return (v, area, "mass+quad", bv, max(ALONE, ref[4]), note) + tuple(ref[6:])
 
 
 def source_of(path):
