@@ -393,7 +393,7 @@ there a point's distance from either face is its distance from the seam, so the 
 - **along a straight edge beside a seam crossing its footprint aslant** (#994, fixture 126: a foot
   standing upright against a drafted side, whose plane goes on into its corner's cone along a
   generator the foot's edge is not along; or a foot leaning against an upright side going on into
-  its corner's cylinder; `piece::seam_aslant`, `piece::aslant_pieces`): in the face's plane the
+  its corner's cylinder; `piece::seam_beside`, `piece::aslant_pieces`): in the face's plane the
   ball's touch runs along the edge in a line, so it crosses the seam once, where its side of the
   seam's normal plane changes — linear along the edge. Short of that section the ball touches
   the plane and the run's prism is the region's; past it the ball touches the next face, the
@@ -405,9 +405,13 @@ there a point's distance from either face is its distance from the seam, so the 
   run ends on, glued to the run on that section (`Piece::Along`'s run, `Partner::Run`). The
   crossing may lie past the end the run is carried from — then the piece beyond starts there,
   beyond that end's planes, which cut it, and there is no run — but not past the end the touch goes
-  on past, within the stretch carried past it (refused). Where the crossing is further off than
-  the edge's length and four sections' widths (a seam all but along the edge), the piece beyond
-  runs the edge's whole length as above, with a seam aslant (each cap's strip from where the seam
+  on past, within the stretch carried past it (refused). The seam is read once
+  (`piece::seam_beside`, its pieces one line, `seam_line`), and its crossing decides: at infinity
+  — the line leaving the edge's section by no more over its length than a billionth of its place
+  (`crosses_nowhere`) — the seam is along the edge, as above; where the crossing lies short of
+  where the seam's pieces begin along the edge (a seam all but along it, crossed only off the
+  body), the touch is past the seam wherever there is one and the piece beyond runs the edge's
+  whole length as above, with a seam aslant (each cap's strip from where the seam
   crosses it; `round_beyond` refuses a cap carried past the end that finds the touch back short of
   the seam rather than build it inside out). Refused by name: a chamfer's flat (its run changes face
   along a plane crossing its section aslant: no construction yet), from a face no plane, and a
@@ -1454,7 +1458,9 @@ foot) ends nothing: it is the face beyond the one the ball rolls on, and **the b
 its face** — at sixteen stations along a carried run or ring its touch lies on the face, within
 its tolerance of its far boundary at most, or past an edge to a face of its surface, a seam, or a
 face that ends the run, or the face reaches as far off the other face as the touch somewhere (a
-crown whose rim a large ball's touch passes, read on its surface as the field reads it), or its
+crown whose rim a large ball's touch passes, read on its surface as the field reads it; an edge's
+reach read exactly, at its ends and where it meets the other surface's offset by the touch's
+height, `brep::fillet::reaches`, not sampled), or its
 corner at an end of the run does (a band tapering to nothing between its edges, its round running
 out with it, its ends' arcs running out tangent into the disc) (`lowering::piece::held`, as
 `holds_ball` for a rolled one). A strip nowhere that wide, its edges with the faces the run ends
@@ -1465,8 +1471,20 @@ touches it, and what to do — the toe's foot rounded at 2 under a face `h` tall
 radius 2mm, is larger than `blade.vane.close1` can hold: `blade.vane.close1` ends at its edge with
 `blade.wedge.close2` 0.0001mm off `disc.close2` …, short of where the ball touches it, 2mm off",
 where it built pieces touching one another along a line in the air past the toe, or (rolled) named
-the vane's side. `holds_ball` says the same of a rolled ball (an L's inside edge at 7.5: "`floor`
-ends at its edge with `end` 7 off `wall` …, 7.5 off"). Under the arrangement's reach the sliver is
+the vane's side. `holds_ball` says the same of a rolled ball in the same sentence, built once
+(`brep::fillet::larger_than_face`; an L's inside edge at 7.5: "`floor` ends at its edge with `end` 7
+off `wall` …, 7.5 off"). **Not yet one rule** (#994): the two ask different things of the face.
+The kernel's rolled piece refuses wherever an edge of the face enters the strip its ball sweeps
+(`Band::enters`), the face's far boundary reached excepted; the carried run refuses only where its
+touch lies past an edge, no edge of the face reaches as far off the other face as the touch, and
+an end of the face meets the other in a corner. By `std.rounds` neither is the set's: `Run` and
+`Fill` stand the ball against the faces' smooth surfaces, which go on past a patch, so the set is
+defined either way, and what each refuses is what its own construction cannot build — the rolled
+strip a face of the piece on the face's surface, the carried run's pieces meeting the corners'
+rounds in the air past a strip. Asked of the carried run, the kernel's rule would refuse what it
+builds to its closed form (`tapered_bands`: a band tapering to its toes rounded over its height,
+its touch past the band's top near each toe); asked of the rolled one, the field's would let a
+rolled strip cross a face's edge. Under the arrangement's reach the sliver is
 no face: the slope within it of the foot comes down onto it, and the round builds as with none
 (`sphere_rounds::a_vanes_side_rounded_runs_out_past_a_sliver_at_its_toe`, the closed form's on a
 flat disc, built on the crown and with arc sides;

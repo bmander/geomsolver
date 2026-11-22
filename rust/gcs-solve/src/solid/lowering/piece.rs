@@ -507,27 +507,23 @@ fn held(body: &crate::solid::faces::BodyFaces, whole: &Touched, edge: u32, ends:
         let other = faces.iter().copied().find(|&h| h != f).unwrap_or(f);
         let (reaches, touched) = (body.side(other, foot).abs(), body.side(other, c).abs());
         // (a face the ball overflows only somewhere — a crown past whose rim a large ball's touch
-        // runs on the crown's surface — is read on its surface as the field reads it; one nowhere
-        // as far off the other face as the ball touches it is all within the ball's touch, and
-        // cannot hold it)
-        // (each edge of the face as far off the other as it reaches, `Touched::heights`)
-        let heights = whole.heights(body, f, other);
-        let widest = heights.iter().copied().fold(0.0, f64::max);
-        if widest >= touched - slack {
+        // runs on the crown's surface — is read on its surface as the field reads it: an edge of it
+        // as far off the other face as the ball touches it, read exactly, `fillet::reaches`; one
+        // nowhere as far off the other face as the ball touches it is all within the ball's touch,
+        // and cannot hold it)
+        if whole.reaching(body, f, other, touched - slack) {
             continue;
         }
-        // (and a strip: an edge it makes with a face the run ends on in a corner with the other —
-        // other than the face it ends at — standing nowhere as far off the other face as the ball
-        // touches, so the round, standing past the face all along, stands past the corner at that
-        // end too, beside that corner's own round in the air; a band tapering to nothing into a
-        // face it runs out on tangent, the round running out with it, is read on its surface as the
-        // field reads it)
+        // (and a strip: an edge it makes — every one lower than the touch — with a face the run
+        // ends on in a corner with the other, other than the face it ends at, so the round,
+        // standing past the face all along, stands past the corner at that end too, beside that
+        // corner's own round in the air; a band tapering to nothing into a face it runs out on
+        // tangent, the round running out with it, is read on its surface as the field reads it)
         // (an end face meeting the other face in a corner, not running out into it tangent)
         let ends_here = |c: usize| ends.iter().any(|&(by, _, far)| far.is_none() && by == EndBy::Face(c))
             && body.edges_between(&[c], &[other]).into_iter().any(|x| !body.seam(x));
-        let cornered = body.face_edges(f).iter().zip(heights.iter()).any(|(&x, &height)| {
-            body.faces_of(x).iter().any(|&c| c != g && c != f && ends_here(c)) && height < touched - slack
-        });
+        let cornered = body.face_edges(f).iter()
+            .any(|&x| body.faces_of(x).iter().any(|&c| c != g && c != f && ends_here(c)));
         if !cornered {
             continue;
         }
@@ -535,29 +531,22 @@ fn held(body: &crate::solid::faces::BodyFaces, whole: &Touched, edge: u32, ends:
         let n = apart(reaches, touched);
         let length = |x: f64| crate::units::Dim::LENGTH.number_text(figured(x, n), units);
         let at = |x: f64| crate::units::Dim::LENGTH.number_text(figured(x, 6), units);
-        return Err(format!("its ball, of radius {}, is larger than {} can hold: {} ends at its edge with {} {} off \
-            {} at [{}, {}, {}], short of where the ball touches it, {} off {}, so no ball of that radius rolls \
-            against it there — it would roll on across that edge against {}. Make {} reach past the ball's touch \
-            (or remove it, where it is a sliver a cut left), or round the edge smaller than {} reaches",
-            length(r), said(f), said(f), said(g), length(reaches), said(other), at(q[0]), at(q[1]), at(q[2]),
-            length(touched), said(other), said(g), said(f), length(reaches)));
+        return Err(crate::brep::fillet::larger_than_face("its ball", &length(r), &said(f), &said(g),
+            &length(reaches), &said(other), q.map(at), &length(touched)));
     }
     Ok(())
 }
 
 /// What `held` reads of a run as a whole, each the first time it is asked: the run's ends, each
-/// with the way the run runs from there (`BodyFaces::run_ends`), and how far off a face each edge
-/// of another reaches — the largest of seventeen samples along it, in the order of the face's
-/// edges — which a touch past an edge asks of the edge's two faces, at every station.
+/// with the way the run runs from there (`BodyFaces::run_ends`).
 struct Touched<'a> {
     edges: &'a [u32],
     run_ends: std::cell::OnceCell<Vec<(V, V, u32)>>,
-    heights: std::cell::RefCell<std::collections::BTreeMap<(usize, usize), std::rc::Rc<[f64]>>>,
 }
 
 impl<'a> Touched<'a> {
     fn of(edges: &'a [u32]) -> Touched<'a> {
-        Touched { edges, run_ends: Default::default(), heights: Default::default() }
+        Touched { edges, run_ends: Default::default() }
     }
 
     /// The run's ends, each with the way the run runs from there.
@@ -565,11 +554,22 @@ impl<'a> Touched<'a> {
         self.run_ends.get_or_init(|| body.run_ends(self.edges))
     }
 
-    /// How far off face `other` each edge of face `f` reaches, in the order of `f`'s edges.
-    fn heights(&self, body: &crate::solid::faces::BodyFaces, f: usize, other: usize) -> std::rc::Rc<[f64]> {
-        self.heights.borrow_mut().entry((f, other)).or_insert_with(|| body.face_edges(f).iter().map(|&x| {
-            (0..=16).map(|k| body.side(other, body.along(x, k as f64 / 16.0)).abs()).fold(0.0, f64::max)
-        }).collect()).clone()
+    /// Whether some edge of face `f` stands as far as `h` (model units) off face `other`'s
+    /// surface, exactly (`brep::fillet::reaches`).
+    fn reaching(&self, body: &crate::solid::faces::BodyFaces, f: usize, other: usize, h: f64) -> bool {
+        let (brep, mm, _) = body.brep();
+        let surface = &brep.faces[other].surface;
+        body.face_edges(f).iter().any(|&x| {
+            let edge = &brep.edges[x as usize];
+            match &edge.curve {
+                crate::brep::topo::EdgeCurve::Curve(c) => {
+                    crate::brep::fillet::reaches(c, edge.t, surface, h * mm, body.tolerance() * mm)
+                }
+                crate::brep::topo::EdgeCurve::Degenerate => {
+                    surface.implicit(brep.vertices[edge.v[0] as usize].p).abs() >= h * mm
+                }
+            }
+        })
     }
 }
 
@@ -1447,10 +1447,8 @@ fn run_piece(body: &crate::solid::faces::BodyFaces, [p0, p1]: [V; 2], fa: usize,
     // beyond a plane or a cylinder along it too, the section against the chain all along
     // — or a line crossing the edge's footprint aslant (#994), the section against the chain only past
     // where the touch crosses it (`aslant`)
-    let beside = [fa, fb].map(|fi| spill.get(&fi).map(|seams| match seam_aslant(body, seams, along)? {
-        Some(line) => Ok(Beside::Aslant(line)),
-        None => seam_along(body, seams, p0, along, length).map(Beside::Along),
-    }).transpose());
+    let beside = [fa, fb].map(|fi| spill.get(&fi).map(|seams| seam_beside(body, seams, p0, along, length))
+        .transpose());
     let (chain, aslant) = match chained(beside)? {
         Some((c, Beside::Along(first))) => (Some((c, first)), None),
         Some((c, Beside::Aslant(line))) => (None, Some((c, line))),
@@ -1748,34 +1746,61 @@ fn along_beyond(body: &crate::solid::faces::BodyFaces, [p0, p1]: [V; 2], edge: [
 
 /// A seam beside a straight edge as its run reads it (#422): along the edge (its point in the
 /// section through the edge's start, and the face beyond), or a line crossing it aslant (#994: a
-/// point of it, its unit direction, and the face beyond).
+/// point of it, its unit direction, the face beyond, and the stretch of the edge's line its pieces
+/// stand beside, from the edge's start).
 enum Beside {
     Along((V, usize)),
-    Aslant((V, V, usize)),
+    Aslant((V, V, usize, [f64; 2])),
 }
 
-/// **A seam crossing a straight edge's footprint aslant** (#994): where the pieces of the seam the
-/// section reaches (`seams`, each with the face going on across it) are all one straight line, and
-/// that line is not along the edge (unit `along`) — a drafted side's plane going on into its corner's
-/// cone along a generator, and a foot's upright side meeting the side; a foot's leaning side
-/// meeting an upright one going on into its corner's cylinder — that line (a point and its unit
-/// direction) and the face beyond.  None where a piece is no line, or the line is along the edge
-/// (`seam_along` reads those).
-fn seam_aslant(body: &crate::solid::faces::BodyFaces, seams: &[(u32, usize)], along: V)
-    -> Result<Option<(V, V, usize)>, String> {
-    let Some(lines) = seams.iter().map(|&(s, _)| body.segment(s)).collect::<Option<Vec<[V; 2]>>>() else {
-        return Ok(None);
-    };
-    let Some(&[q0, q1]) = lines.first() else { return Ok(None) };
-    let d = normalised(sub(q1, q0)).ok_or("a seam of no length")?;
-    if norm(cross(d, along)) <= 1e-9 {
-        return Ok(None);
+/// **The seam beside a straight edge, read once** (#422, #994): the pieces of the seam the section
+/// reaches (`seams`, each with the face going on across it) one straight line, its point `q` and
+/// unit direction `d`.  In the face's plane the ball's touch runs along the edge (from `p0` along
+/// the unit `along`, `length` long), so it crosses that line where its side of the seam's normal
+/// plane changes, at `−m·(touch − q) / (m·along)` along the edge (`aslant_pieces`, `m` that
+/// plane's normal): a line along the edge is the one it never crosses — the crossing at infinity,
+/// the slope `m·along` nought — which the run reads beside it all along (`seam_along`: its pieces
+/// running the whole edge).  Nought to the bar by which the pieces are one line: the line leaves
+/// the edge's section by no more over the edge's length than a billionth of the edge's place.
+/// Else it crosses aslant (a drafted side's plane going on into its corner's cone along a
+/// generator, and a foot's upright side meeting the side; a foot's leaning side meeting an upright
+/// one going on into its corner's cylinder): the line, the face beyond, and the stretch of the
+/// edge's line beside the seam's pieces.  Refused where a piece is no line, or the pieces are two
+/// lines.
+fn seam_beside(body: &crate::solid::faces::BodyFaces, seams: &[(u32, usize)], p0: V, along: V, length: f64)
+    -> Result<Beside, String> {
+    let (q, d, g, cover) = seam_line(body, seams, p0, along, length)?;
+    if crosses_nowhere(d, p0, along, length) {
+        return whole_along(body, seams, (q, g), p0, along, length).map(Beside::Along);
     }
-    let size = 1.0 + norm(q0) + distance(q0, q1);
+    Ok(Beside::Aslant((q, d, g, cover)))
+}
+
+/// Whether a seam's line, its unit direction `d`, is along the edge from `p0` along the unit
+/// `along`, `length` long — the touch's crossing of it at infinity (`seam_beside`).
+fn crosses_nowhere(d: V, p0: V, along: V, length: f64) -> bool {
+    norm(cross(d, along)) * length <= 1e-9 * (length + norm(p0))
+}
+
+/// The pieces of a seam beside a straight edge (`seams`, each with the face going on across it,
+/// the edge from `p0` along the unit `along`, `length` long) as one line: a point of it, its unit
+/// direction, the face beyond, and the stretch of the edge's line the pieces stand beside (from
+/// `p0`, the least and the most).  Refused where a piece is no line, or the pieces are two lines:
+/// each within a billionth of the edge's place of the first's line.
+fn seam_line(body: &crate::solid::faces::BodyFaces, seams: &[(u32, usize)], p0: V, along: V, length: f64)
+    -> Result<(V, V, usize, [f64; 2]), String> {
+    let g = next_face(body, seams)?;
+    let lines = seams.iter().map(|&(s, _)| body.segment(s)).collect::<Option<Vec<[V; 2]>>>()
+        .ok_or_else(|| spilled("beside a straight edge along a curved seam"))?;
+    let &[q0, q1] = lines.first().ok_or_else(|| spilled("into a face it meets in no edge"))?;
+    let d = normalised(sub(q1, q0)).ok_or("a seam of no length")?;
+    let size = length + norm(p0) + distance(q0, q1);
     if !lines.iter().flatten().all(|&q| norm(cross(sub(q, q0), d)) <= 1e-9 * size) {
         return Err(spilled("beside two seams"));
     }
-    Ok(Some((q0, d, next_face(body, seams)?)))
+    let cover = lines.iter().flatten().map(|&q| dot(sub(q, p0), along))
+        .fold([f64::INFINITY, f64::NEG_INFINITY], |[a, b], t| [a.min(t), b.max(t)]);
+    Ok((q0, d, g, cover))
 }
 
 /// **A round beside a seam crossing its edge's footprint aslant** (#994, fixture 126: a foot
@@ -1793,16 +1818,18 @@ fn seam_aslant(body: &crate::solid::faces::BodyFaces, seams: &[(u32, usize)], al
 /// `round_beyond`) starts there (`Beyond::seamed`), carried past the other end and cut off by the
 /// planes the run is kept within there, glued to the run on the section (`Piece::Along`).  The
 /// crossing may lie past the end the run is carried from: the piece beyond starts there, cut off by
-/// that end's planes, and there is no run; where it is further off than the edge's length and four
-/// sections' widths (a seam all but along the edge) the piece beyond runs the edge's whole length,
-/// carried past both ends.  Where it lies past where the run is carried to, the run is the whole of
-/// it (`None`: the caller's piece).  Refused by name: a chamfer's flat, a face no plane, a crossing
-/// past the end the touch goes on past, within the stretch carried past it, and a curved face the
-/// piece beyond ends on.
+/// that end's planes, and there is no run; where it lies short of where the seam's pieces begin
+/// (`cover`, the stretch of the edge's line beside them: a seam all but along the edge, its line
+/// crossed only far off), the touch is past the seam wherever there is one, and the piece beyond
+/// runs the edge's whole length, carried past both ends — the limit as the crossing goes off to
+/// infinity, which a seam along the edge is (`seam_beside`).  Where it lies past where the run is
+/// carried to, the run is the whole of it (`None`: the caller's piece).  Refused by name: a
+/// chamfer's flat, a face no plane, a crossing past the end the touch goes on past, within the
+/// stretch carried past it, and a curved face the piece beyond ends on.
 #[allow(clippy::too_many_arguments)]
 fn aslant_pieces(body: &crate::solid::faces::BodyFaces, [p0, p1]: [V; 2], faces: [usize; 2], c: usize,
-    (q, d, g): (V, V, usize), within: bool, section: Section, run: &mut Run, halves: &[(V, f64)], ends: &Ends)
-    -> Result<Option<Piece>, String> {
+    (q, d, g, cover): (V, V, usize, [f64; 2]), within: bool, section: Section, run: &mut Run, halves: &[(V, f64)],
+    ends: &Ends) -> Result<Option<Piece>, String> {
     let Section::Round(r) = section else {
         return Err(spilled("along a straight edge, a chamfer's flat beside a seam crossing its footprint aslant"));
     };
@@ -1830,10 +1857,12 @@ fn aslant_pieces(body: &crate::solid::faces::BodyFaces, [p0, p1]: [V; 2], faces:
         return Err(spilled("where its ball's touch crosses a seam aslant its edge past the edge's end, in the stretch its \
             run is carried past it"));
     }
-    let width = run.section_hull().into_iter().map(|p| distance(p, run.origin)).fold(r, f64::max);
-    if ahead(crossing) < ahead(short) - length - 4.0 * width {
-        // past the seam all along and far beyond the edge's end (a seam all but along the edge): the
-        // piece beyond the edge's whole length, carried past both ends
+    // where the seam begins, the way the touch goes on past it
+    let begins = if forward { cover[0] } else { cover[1] };
+    if ahead(crossing) < ahead(begins) - eps {
+        // past the seam wherever the seam is — the touch crossing its line only where no piece of
+        // it stands, short of where it begins: the piece beyond the edge's whole length, carried
+        // past both ends
         if !run.kept.is_empty() {
             return Err(spilled("beside a seam crossing its edge aslant, its run ending on a curved face"));
         }
@@ -1969,26 +1998,26 @@ fn onto(body: &crate::solid::faces::BodyFaces, prev: usize, g: usize, foot: V) -
 
 /// The seam along a straight edge (from `p0` along the unit `along`, `length` long) where a face
 /// goes on into the next its section reaches (`seams`, its pieces, each with that face): its point
-/// in the section through `p0` — every piece of it a line along the edge, one line, running the
-/// whole edge — and that face.
+/// in the section through `p0` — every piece of it one line along the edge (`seam_line`,
+/// `crosses_nowhere`), running the whole edge — and that face.
 fn seam_along(body: &crate::solid::faces::BodyFaces, seams: &[(u32, usize)], p0: V, along: V, length: f64)
     -> Result<(V, usize), String> {
-    let g = next_face(body, seams)?;
-    let size = length + norm(p0);
-    let (mut at, mut cover): (Option<V>, Vec<[f64; 2]>) = (None, Vec::new());
-    for &(s, _) in seams {
-        let Some([q0, q1]) = body.segment(s) else { return Err(spilled("beside a straight edge along a curved seam")) };
-        if norm(cross(normalised(sub(q1, q0)).unwrap_or([0.0; 3]), along)) > 1e-9 {
-            return Err(spilled("along a seam that is not along its edge"));
-        }
-        let foot = add(q0, scale(along, dot(sub(p0, q0), along)));
-        if at.is_some_and(|a| distance(a, foot) > 1e-9 * size) {
-            return Err(spilled("beside two seams"));
-        }
-        at = Some(foot);
-        let (a, b) = (dot(sub(q0, p0), along), dot(sub(q1, p0), along));
-        cover.push([a.min(b), a.max(b)]);
+    let (q, d, g, _) = seam_line(body, seams, p0, along, length)?;
+    if !crosses_nowhere(d, p0, along, length) {
+        return Err(spilled("along a seam that is not along its edge"));
     }
+    whole_along(body, seams, (q, g), p0, along, length)
+}
+
+/// A seam's line along a straight edge (a point `q` of it, and the face beyond) as `seam_along`
+/// gives it, where its pieces (`seams`) run the edge's whole length.
+fn whole_along(body: &crate::solid::faces::BodyFaces, seams: &[(u32, usize)], (q, g): (V, usize), p0: V, along: V,
+    length: f64) -> Result<(V, usize), String> {
+    let size = length + norm(p0);
+    let mut cover: Vec<[f64; 2]> = seams.iter().filter_map(|&(s, _)| body.segment(s)).map(|[q0, q1]| {
+        let (a, b) = (dot(sub(q0, p0), along), dot(sub(q1, p0), along));
+        [a.min(b), a.max(b)]
+    }).collect();
     cover.sort_by(|x, y| x[0].total_cmp(&y[0]));
     let mut reach = 0.0;
     for [a, b] in cover {
@@ -2000,7 +2029,7 @@ fn seam_along(body: &crate::solid::faces::BodyFaces, seams: &[(u32, usize)], p0:
     if reach < length - 1e-9 * size {
         return Err(spilled("beside a seam that runs only part of its edge"));
     }
-    Ok((at.expect("a seam"), g))
+    Ok((add(q, scale(along, dot(sub(p0, q), along))), g))
 }
 
 /// The seam round a circle (about `centre` on the unit `axis`) where a face goes on into the next
