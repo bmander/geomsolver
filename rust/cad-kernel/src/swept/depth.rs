@@ -469,10 +469,12 @@ impl crate::zero_set::Field for Covered<'_> {
 /// (`zero_set::End`), and its partner: the covering instant's preimages `(θ', τ, σ')`, run by run
 /// where the covering instant lies inside the roll (where it is an end of the roll the partner is
 /// the tool's own face posed there, which the Boolean meets) — and the sheet's own points under each
-/// run of the partner, point for point (`own`).
+/// run of the partner, point for point (`own`); and where a run's cover passes on to an end pose,
+/// its corner there before its first point and after its last, with its partner on that end's row
+/// (`corners`: held to the tolerance in space, not traced).
 #[derive(Clone,Debug)]
 pub struct Seam { pub sheet: Vec<(f64,f64,f64)>,pub ends: [crate::zero_set::End;2],pub partner: Vec<Vec<(f64,f64,f64)>>,
-    pub own: Vec<Vec<(f64,f64,f64)>> }
+    pub own: Vec<Vec<(f64,f64,f64)>>,pub corners: Vec<[Option<((f64,f64,f64),(f64,f64,f64))>;2]> }
 
 impl Seam {
     /// Its curves as the ring road lays a double curve's (`rings::cut_along`): the sheet's, then
@@ -530,17 +532,18 @@ fn seamed(field: &Covered,traced: &crate::zero_set::Traced<Cover>,within: f64,fe
         // the covering sheet's row at the end crosses the seam — put on it, with its partner)
         let mut partner: Vec<Vec<(f64,f64,f64)>> = Vec::new();
         let mut own: Vec<Vec<(f64,f64,f64)>> = Vec::new();
+        let mut corners = Vec::new();
         let mut j = 0;
         while j < ats.len() {
             if field.partner(&ats[j]).is_none() { j += 1; continue }
             let mut k = j;
             while k+1 < ats.len() && field.partner(&ats[k+1]).is_some() { k += 1 }
-            let mut run: Vec<((f64,f64,f64),(f64,f64,f64))> = (j..=k).filter_map(|i| Some((sheet[i],field.partner(&ats[i])?))).collect();
-            if j > 0 { if let Some(c) = corner(field,uvs[j-1],uvs[j],&ats[j],within) { run.insert(0,c) } }
-            if k+1 < ats.len() { if let Some(c) = corner(field,uvs[k+1],uvs[k],&ats[k],within) { run.push(c) } }
+            let run: Vec<((f64,f64,f64),(f64,f64,f64))> = (j..=k).filter_map(|i| Some((sheet[i],field.partner(&ats[i])?))).collect();
             if run.len() >= 2 {
                 own.push(run.iter().map(|r| r.0).collect());
                 partner.push(run.iter().map(|r| r.1).collect());
+                corners.push([if j > 0 { corner(field,uvs[j-1],uvs[j],&ats[j]) } else { None },
+                    if k+1 < ats.len() { corner(field,uvs[k+1],uvs[k],&ats[k]) } else { None }]);
             }
             j = k+1;
         }
@@ -558,7 +561,7 @@ fn seamed(field: &Covered,traced: &crate::zero_set::Traced<Cover>,within: f64,fe
             ends && sheet.iter().all(|&q| a.sheet.iter().any(|&r| close(q,r,feature)))
         };
         if out.iter().any(near) { continue }
-        out.push(Seam {sheet,ends:p.ends,partner,own});
+        out.push(Seam {sheet,ends:p.ends,partner,own,corners});
     }
     Ok(out)
 }
@@ -627,7 +630,12 @@ pub fn passed_back(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],known: &[Vec<(f6
                 // (round the ring a half turn either way from the seed, over the whole roll)
                 let rect = [[seed[0]-PI,seed[0]+PI],[a,b]];
                 for seam in seams_through(ring,path,[a,b],l,rect,&[seed],tol,feature)? {
-                    for (own,partner) in seam.own.iter().zip(&seam.partner) {
+                    for ((own,partner),ends) in seam.own.iter().zip(&seam.partner).zip(&seam.corners) {
+                        // (with its corners, where its cover passes on to an end pose)
+                        let (mut own,mut partner) = (own.clone(),partner.clone());
+                        if let Some((o,p)) = ends[0] { own.insert(0,o); partner.insert(0,p) }
+                        if let Some((o,p)) = ends[1] { own.push(o); partner.push(p) }
+                        let (own,partner) = (&own,&partner);
                         let again = |c: &Vec<(f64,f64,f64)>| c.iter().all(|&q| point(q).is_some_and(|x|
                             traced.iter().any(|&y| distance(x,y) <= feature)));
                         if again(own) { continue }
@@ -651,24 +659,23 @@ pub fn passed_back(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],known: &[Vec<(f6
 /// **Where a seam's cover passes from an instant inside the roll to an end pose** (`seamed`): on
 /// the chord from `out`, a point an end pose covers, to `inside`, one the instant `from` covers,
 /// halved — each middle read along `from`'s branch of the cover (`Covered::along`), its least at an
-/// end of the roll on `out`'s side — until the two stand within the tolerance in space. There the
-/// covering instant is the end's, its preimage the covering sheet's row at that end: the point on
+/// end of the roll on `out`'s side — to the rounding. There the covering instant is the end's, its preimage the covering sheet's row at that end: the point on
 /// `inside`'s side and that preimage, or `None` where the chord holds no such change.
-fn corner(field: &Covered,out: [f64;2],inside: [f64;2],from: &Cover,within: f64) -> Option<((f64,f64,f64),(f64,f64,f64))> {
+fn corner(field: &Covered,out: [f64;2],inside: [f64;2],from: &Cover) -> Option<((f64,f64,f64),(f64,f64,f64))> {
     use crate::zero_set::Field;
     // (an instant is the end's where the tool's point at the place moves within the tolerance
     // between them: the least's search settles some 1e-9 of the roll short of the end it is at)
     let [a,b] = field.roll;
     let speed = field.path.inverse_point_speed_bound(field.point(out)?,crate::util::interval::Interval::new(a,b).ok()?).ok()?;
-    let at_end = |c: &Cover| (c.at-a).min(b-c.at)*speed <= within;
+    let at_end = |c: &Cover| (c.at-a).min(b-c.at)*speed <= field.within;
     let (mut p,mut q) = (out,inside);
     let mut c = *from;
     if !at_end(&field.along(p,from)?.at) { return None }
-    // (each halving takes the chord nearer the corner; the count is the rounding's, past which a
-    // middle is one of its ends)
+    // (each halving takes the chord nearer the corner, to the rounding: the count is its, past which
+    // a middle is one of its ends)
     for _ in 0..64 {
-        if crate::util::space::distance(field.point(p)?,field.point(q)?) <= within { break }
         let m = [0.5*(p[0]+q[0]),0.5*(p[1]+q[1])];
+        if m == p || m == q { break }
         let v = field.along(m,&c)?;
         if at_end(&v.at) { p = m } else { q = m; c = v.at }
     }
