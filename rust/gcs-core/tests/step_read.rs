@@ -414,3 +414,32 @@ fn an_empty_shell_is_refused_naming_it() {
     let r = read(&file("#50 = CLOSED_SHELL('',());\n#51 = MANIFOLD_SOLID_BREP('',#50);\n")).map(|_| ()).expect_err("an empty shell");
     assert_eq!((r.why, r.entity), (Why::Empty, Some(50)), "{r}");
 }
+
+/// **A sphere's curve in its face's parameters lying a whole turn of `v` off is read where the
+/// face's `v` is** (Open CASCADE writes some so): the sphere's points are its formula's at every
+/// whole turn of `v`, its chart's half turn the face's. A ball's cap bounded by two half circles,
+/// each with its line in the sphere's parameters, the second's a turn below the face, reads to
+/// the cap, `π h² (3R − h) / 3` and `2πRh + π r²`.
+#[test]
+fn a_spheres_curve_a_turn_off_in_v_reads_where_the_face_is() {
+    let v = (3f64 / 5.).asin();
+    let text = file(&format!("#14 = SPHERICAL_SURFACE('',#13,5.);\n#20 = CARTESIAN_POINT('',(0.,0.,3.));\n\
+        #21 = AXIS2_PLACEMENT_3D('',#20,#11,#12);\n#22 = PLANE('',#21);\n#30 = CIRCLE('',#21,4.);\n\
+        #31 = CARTESIAN_POINT('',(4.,0.,3.));\n#32 = VERTEX_POINT('',#31);\n#24 = CARTESIAN_POINT('',(-4.,0.,3.));\n\
+        #25 = VERTEX_POINT('',#24);\n#60 = DIRECTION('',(1.,0.));\n#61 = VECTOR('',#60,1.);\n\
+        #62 = CARTESIAN_POINT('',(0.,{}));\n#63 = LINE('',#62,#61);\n#64 = DEFINITIONAL_REPRESENTATION('',(#63),#4);\n\
+        #65 = PCURVE('',#14,#64);\n#66 = SURFACE_CURVE('',#30,(#65),.PCURVE_S1.);\n\
+        #67 = CARTESIAN_POINT('',({},{}));\n#68 = LINE('',#67,#61);\n#69 = DEFINITIONAL_REPRESENTATION('',(#68),#4);\n\
+        #70 = PCURVE('',#14,#69);\n#71 = SURFACE_CURVE('',#30,(#70),.PCURVE_S1.);\n\
+        #33 = EDGE_CURVE('',#32,#25,#66,.T.);\n#34 = EDGE_CURVE('',#25,#32,#71,.T.);\n\
+        #40 = ORIENTED_EDGE('',*,*,#33,.T.);\n#41 = ORIENTED_EDGE('',*,*,#34,.T.);\n#35 = EDGE_LOOP('',(#40,#41));\n\
+        #42 = FACE_BOUND('',#35,.T.);\n#43 = ADVANCED_FACE('',(#42),#14,.T.);\n#44 = ORIENTED_EDGE('',*,*,#34,.F.);\n\
+        #36 = ORIENTED_EDGE('',*,*,#33,.F.);\n#45 = EDGE_LOOP('',(#44,#36));\n\
+        #46 = FACE_BOUND('',#45,.T.);\n#47 = ADVANCED_FACE('',(#46),#22,.F.);\n#50 = CLOSED_SHELL('',(#43,#47));\n\
+        #51 = MANIFOLD_SOLID_BREP('',#50);\n", real(v), real(0.), real(v - TAU)));
+    let given = read(&text).unwrap_or_else(|r| panic!("{r:?}"));
+    let b = &given[0].brep;
+    let (r, h) = (5., 2.);
+    close("the cap's volume", volume(b), std::f64::consts::PI * h * h * (3. * r - h) / 3., 1e-9);
+    close("the cap's area", total_area(b), std::f64::consts::PI * (2. * r * h + 16.), 1e-9);
+}

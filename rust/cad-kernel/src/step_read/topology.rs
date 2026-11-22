@@ -459,8 +459,14 @@ fn walk_loop(st: &Setting,sheet: &Sheet,surface: u32,uses: &[(usize,bool)],rever
                         _ => pc,
                     };
                     let a = pc.at(travel[0],e,s,&b.vertices);
-                    let Some(l) = last else { return (pc,a,k) };
-                    let d: Uv = std::array::from_fn(|k| periods[k].map_or(0.,|p| ((l[k]-a[k])/p).round()*p));
+                    // (a sphere's `v` is held to its half turn, but its points are the formula's of
+                    // every whole turn of it on, where a writer's curve may lie: moved back there)
+                    let wraps: [Option<f64>;2] = match s { Surface::Sphere(..) => [periods[0],Some(TAU)],_ => periods };
+                    let Some(l) = last else {
+                        let d = wraps[1].filter(|_| periods[1].is_none()).map_or(0.,|p| -(a[1]/p).round()*p);
+                        return if d == 0. { (pc,a,k) } else { (moved(&pc,[0.,d]),[a[0],a[1]+d],k) }
+                    };
+                    let d: Uv = std::array::from_fn(|k| wraps[k].map_or(0.,|p| ((l[k]-a[k])/p).round()*p));
                     if d == [0.;2] { (pc,a,k) } else { (moved(&pc,d),[a[0]+d[0],a[1]+d[1]],k) }
                 }).collect();
             if let Some(l) = last { found.sort_by(|x,y| distance2(x.1,l).total_cmp(&distance2(y.1,l))); }
