@@ -8,6 +8,12 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A span of a meeting along a face's boundary is a rule of tolerant topology**
+  (`tolerant::along_boundary`, `tolerant::ALONG`, new), and whether the edge it lies along was laid
+  in the other face is phase 1's answer (`Meets::Along`), looked up, where it was read again from
+  samples at the reach and disagreed with it (116 spans in `brep_coincident`'s strips, two in
+  `composed_rounds`, the results the same to the last bit).
+
 - **Two cylinders' loops: `D`'s roots isolated, not sampled** (`ssi::cylinder_loops`): whether
   the discriminant keeps above nothing is read from its enclosures (`util::isolate`) where it was
   read at 4096 samples and a golden-section search; the loops' chord bounds are named

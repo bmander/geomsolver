@@ -915,13 +915,20 @@ laid. Read over that line alone, any two planes crossing along it within `1e-3` 
 a plate's top and the raised half of a lip's pad turned `1e-3` rad across it one class, the plate's
 top standing for it — and a foot's meeting with the class was laid on the pad's lowered half `3e-4`
 off it. **A span of a meeting lying along a face's boundary within `ON_CURVE` tolerances, at every
-eighth of it, is on that face** (`Arrangement::kept`): the edge it lies along, as the
-vertex-onto-edge rule reads a point so near, merged into it in step 4, the other face cut along it,
-where that edge does not itself lie in the other face's surface all its stretch (then phase 1 lays
-it there as it is, `Meets::Along`, and the span would be a second edge beside it: `flush_ends`'s
-side turned `1e-8` under a boss) — read Out of the face at the tolerance alone it was dropped, and a
-lip's foot turned `1e-3` rad, crossing the side of a foot abutting it a tolerance and a half under
-that foot's edge, kept the meeting leading up to it as a slit, its two sides one shell.
+eighth of it, is on that face** (`tolerant::along_boundary`, a rule of tolerant topology beside
+its siblings, read by `Arrangement::kept`): the edge it lies along, as the vertex-onto-edge rule
+reads a point so near, merged into it in step 4, the other face cut along it, where phase 1 did not
+lay that edge in the other face as it is (`Meets::Along`, kept as `Crossings::along_face`, which
+`kept` looks up — then the span would be a second edge beside it: `flush_ends`'s side turned `1e-8`
+under a boss) — read Out of the face at the tolerance alone it was dropped, and a lip's foot turned
+`1e-3` rad, crossing the side of a foot abutting it a tolerance and a half under that foot's edge,
+kept the meeting leading up to it as a slit, its two sides one shell. Whether phase 1 laid the edge
+was read again from nine samples of it against the other surface at the reach, and disagreed with
+phase 1's own answer, read at the tolerance or the edge's own and through the faces' classes: in
+`brep_coincident`'s strips at a plate's true edge 116 spans along an edge phase 1 had laid were
+read as beside one it had not, and in `composed_rounds`' round beside a seam into a cone two the
+other way (merged in step 4 all the same: the strips' 804 Booleans the same faces, edges and volume
+to the last bit either way, the round's fill the same to the last bit).
 `brep_coincident::strips_crossing_a_plates_faces_in_its_thickness_unite_in_every_order` and
 `strips_crossing_a_plates_true_edges_unite_in_every_order` (the strips turned `1e-5` to `1e-3` rad
 about their own lengths, united in the six orders and with the strips first: closed, the closed form
