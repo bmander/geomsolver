@@ -362,6 +362,15 @@ no face, is of another solid (refused where it is asked) or of a boundary that c
 face is copied.  A `when` looks a face up by its name (`FaceState::index`; `c in B` by `Names::
 among`), not through every face listed.  So a body's round walks its edges and corners, not
 every pair and three of its faces: `tests/blanket.rs`.
+**Not yet one rule:** the copies are decided before they are made for this one shape of block
+alone (`std.rounds`' words are all of it); any other block a `when` gates — two statements, a
+`when` nested in a `when`, `meets` under `or`, a corner's second `meets` — makes every copy and
+reads each `meets` in it.  Deciding every `meets` conjunct before the copy moves what a pair read
+apart is kept as: one a made copy's `when` reads apart is an `Apart` only where it alone left the
+block out, and named as the `when` asked it (`c meets b`: `c`, then `b`); one never copied is a
+`Pruned` pair whatever else the `when` asks, named `y` first.  So E080 at such a statement would
+name another pair first, or one the other way round, and a pair another condition left out would
+be read again where the drawing solves — a language-visible change, to be made with its version.
 `std.rounds`' `round` and `chamfer` pair
 only faces that meet and round only threes that meet pairwise; `tests/meets.rs` is the gate (the
 block's 24 pairs and 48 corners, #625's four turned spokes against two crossed bars; #761's pin
