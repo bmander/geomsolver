@@ -136,13 +136,49 @@ fn whose(c: &Curve) -> &'static str {
 /// refused naming `whose` it is.
 fn fitted(o: &mut Out,c: &Curve,[t0,t1]: [f64;2],whose: &str) -> Result<(usize,f64),String> {
     let (fit,miss) = match super::nurbs::fit_curve(&|f| c.point(t0+(t1-t0)*f),3,8,FIT) {
-        Some((fit,err)) if err <= FIT => (fit,err),
-        Some((_,err)) => return Err(format!("{whose} {} is fitted no nearer than {err:.3e} mm, past the file's {FIT:e}",c.kind())),
+        Some((mut fit,err)) if err <= FIT => { for k in &mut fit.knots { *k = t0+(t1-t0)**k; } (fit,err) }
+        // (a curve that turns at its breaks — a family's rail at its stations' joints — fitted
+        // stretch by stretch between them, the stretches joined in value)
+        Some((_,err)) => match fitted_stretches(c,[t0,t1]) {
+            Some((fit,miss)) if miss <= FIT => (fit,miss),
+            _ => return Err(format!("{whose} {} is fitted no nearer than {err:.3e} mm, past the file's {FIT:e}",c.kind())),
+        },
         None => return Err(format!("{whose} {} could not be fitted (it is degenerate)",c.kind())),
     };
-    let knots: Vec<f64> = fit.knots.iter().map(|k| t0+(t1-t0)*k).collect();
     let ids: Vec<String> = fit.poles.iter().map(|&p| format!("#{}",o.point(p))).collect();
-    Ok((spline(o,fit.degree,&ids,&knots,None),miss))
+    Ok((spline(o,fit.degree,&ids,&fit.knots,None),miss))
+}
+
+/// `c` over `[t0, t1]` as cubics fitted between its breaks (`Curve::breaks`), joined where they
+/// meet with a triple knot (each stretch's end its point there), its knots the curve's own
+/// parameters; and the most any stretch misses by. `None` where it has no break inside.
+fn fitted_stretches(c: &Curve,[t0,t1]: [f64;2]) -> Option<(super::nurbs::BSpline,f64)> {
+    let mut stops: Vec<f64> = c.breaks([t0,t1]).into_iter().filter(|&k| k > t0 && k < t1).collect();
+    if stops.is_empty() { return None }
+    stops.sort_by(f64::total_cmp);
+    stops.dedup();
+    stops.insert(0,t0);
+    stops.push(t1);
+    let mut joined: Option<super::nurbs::BSpline> = None;
+    let mut most = 0f64;
+    for w in stops.windows(2) {
+        let (a,z) = (w[0],w[1]);
+        let (mut fit,err) = super::nurbs::fit_curve(&|f| c.point(a+(z-a)*f),3,4,FIT)?;
+        most = most.max(err);
+        for k in &mut fit.knots { *k = a+(z-a)**k; }
+        joined = Some(match joined {
+            None => fit,
+            Some(mut all) => {
+                if all.degree != fit.degree { return None }
+                let p = all.degree;
+                all.knots.pop();
+                all.knots.extend_from_slice(&fit.knots[p+1..]);
+                all.poles.extend_from_slice(&fit.poles[1..]);
+                all
+            }
+        });
+    }
+    joined.map(|j| (j,most))
 }
 
 /// A B-spline of `degree` through the poles `ids` over the full knot vector `knots` (written as
@@ -231,13 +267,55 @@ pub fn family_net(w: &super::family::Sheet) -> Result<super::nurbs::Net,String> 
 fn family_fit(w: &super::family::Sheet) -> Result<(super::nurbs::Net,f64),String> {
     let [a,b] = w.span();
     let pieces = w.stations.spans.len().clamp(4,64);
-    match super::nurbs::fit_net(&|u,v| w.d1([u,a+(b-a)*v]).0,3,5,8,pieces,FIT) {
+    let err = match super::nurbs::fit_net(&|u,v| w.d1([u,a+(b-a)*v]).0,3,5,8,pieces,FIT) {
         Some((mut net,err)) if err <= FIT => {
             for k in &mut net.vknots { *k = a+(b-a)**k; }
-            Ok((net,err))
+            return Ok((net,err))
         }
-        Some((_,err)) => Err(format!("a face family's wall is fitted no nearer than {err:.3e} mm to its surface, past the file's {FIT:e}")),
-        None => Err("a face family's wall could not be fitted (its surface is degenerate)".into()),
+        Some((_,err)) => err,
+        None => return Err("a face family's wall could not be fitted (its surface is degenerate)".into()),
+    };
+    // (a wall whose stations' polynomials meet at an angle, its piece by piece)
+    if let Some(fit) = family_pieces(w).filter(|f| f.1 <= FIT) { return Ok(fit) }
+    Err(format!("a face family's wall is fitted no nearer than {err:.3e} mm to its surface, past the file's {FIT:e}"))
+}
+
+/// **A face family's wall fitted piece by piece** of its stations (#993 stage 1): each piece's
+/// numbers are a polynomial of the running number through its six stations, and two pieces meet
+/// only in value, so where the wall turns at a joint no net smooth across it comes within `FIT`
+/// (`lofts/pipe.sv`'s tube along a path of straight runs and arcs, 1.7e-2 mm at the fit's cap of
+/// 512 rows). Each piece is fitted over its own stretch on one grid along the edge, and the nets
+/// joined at its ends with a knot of the degree's multiplicity (the joint's row, the same points
+/// interpolated the same way, is each net's end), the grid doubled both ways until every piece is
+/// within `FIT` or past 1024 columns and 64 rows a piece. With the most any piece misses by.
+fn family_pieces(w: &super::family::Sheet) -> Option<(super::nurbs::Net,f64)> {
+    use super::nurbs::{fit_net,Net};
+    let spans = &w.stations.spans;
+    let (mut nu,mut nv) = (8,5);
+    loop {
+        let mut joined: Option<Net> = None;
+        let mut most = 0f64;
+        for (j,sp) in spans.iter().enumerate() {
+            // (each piece from where the last one ended, so the joint is one number)
+            let a = if j == 0 { sp[0] } else { spans[j-1][1] };
+            let (mut net,err) = fit_net(&|u,v| w.d1([u,a+(sp[1]-a)*v]).0,3,5,nu,nv,f64::INFINITY)?;
+            most = most.max(err);
+            for k in &mut net.vknots { *k = a+(sp[1]-a)**k; }
+            joined = Some(match joined {
+                None => net,
+                Some(mut all) => {
+                    if all.du != net.du || all.dv != net.dv || all.uknots != net.uknots { return None }
+                    let p = all.dv;
+                    all.vknots.pop();
+                    all.vknots.extend_from_slice(&net.vknots[p+1..]);
+                    for (col,more) in all.poles.iter_mut().zip(&net.poles) { col.extend_from_slice(&more[1..]); }
+                    all
+                }
+            });
+        }
+        if most <= FIT || (nu >= 1024 && nv >= 64) { return joined.map(|n| (n,most)) }
+        nu = (2*nu).min(1024);
+        nv = (2*nv).min(64);
     }
 }
 

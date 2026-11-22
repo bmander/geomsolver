@@ -8,6 +8,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A face family's wall and rail that turn at their stations' joints are written** (#993 stage
+  1): a family's numbers are a polynomial through six stations a piece, two pieces meeting in value
+  only, and `step` fitted its wall and rails smooth across the joints, which no net closes in on
+  (`lofts/pipe.sv`'s tube 1.7e-2 mm off at the fit's cap, refused).  Where the smooth fit misses
+  `step::FIT`, the wall is fitted piece by piece on one grid along its edge and the rail stretch
+  by stretch between its breaks, joined with a knot of the degree's multiplicity.
+
 - **A STEP file prefers the curve in space where that is the exact one** (#993 stage 1): every
   `SURFACE_CURVE` and `SEAM_CURVE` was written with `master_representation` `.PCURVE_S1.`, which
   ISO 10303-42 reads as the representation preferred where they differ, though the kernel's

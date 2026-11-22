@@ -1180,23 +1180,31 @@ fn a_nets_collapsed_side_reads_back() { known("lofts/pyramid.sv","pyramid") }
 #[ignore = "a known defect, reported: sound refuses a use on a surface of revolution whose end it reads on another branch of the pole than its curve (`leaps π along a pole`)"]
 fn a_use_ending_at_a_pole_reads_back() { known("solid_sweeps/coin.sv","slab") }
 
-/// **A loop across a closed net's closing line reads back.**
+/// **A loop across a closed net's closing line reads back** (`helical_groove`'s block, refused as
+/// a loop breaking in parameters while its pcurves were held to 1e-9 against feet standing 1e-7
+/// off; read since a pcurve is held to its edge's own distance off the face).
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, 19 s: a groove's nets read twice")]
 fn a_loop_across_a_closed_nets_closing_reads_back() { known("solid_sweeps/helical_groove.sv","block") }
 
-/// **A loft's file states what its fits hold (its net and rails within `step::FIT`), not the 1e-7 asked.**
+/// **A loft's file states what its fits hold** (its net and rails within `step::FIT`), not the
+/// 1e-7 asked.
 #[test]
 fn a_lofts_file_states_what_its_fits_hold() { known("solid_elbow.sv","body") }
 
-/// **A file states at least what the solid's own edges stand off their faces (creased's, 2e-5 off its net).**
+/// **A file states at least what the solid's own edges stand off their faces** (creased's, 2e-5
+/// off its net between its knots).
 #[test]
 fn a_files_uncertainty_covers_the_solids_own() { known("solid_sweeps/creased.sv","block") }
 
+/// **A face family's wall turning at its stations' joints is written** (`lofts/pipe.sv`'s tube,
+/// refused while its net was fitted smooth across them, 1.7e-2 mm off at the fit's cap).
 #[test]
-#[ignore = "a known defect, reported: a face family's wall the writer cannot fit within `step::FIT` is refused, so the solid has no file"]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, 13 s: a tube's walls fitted piece by piece")]
 fn a_family_wall_is_written() { known("lofts/pipe.sv","pipe") }
 
-/// **A pcurve on a toolpath's net is written in at most `3 MOST + 1` points (it was a polyline of 77 MB), or not at all.**
+/// **A pcurve on a toolpath's net is written in at most `3 MOST + 1` points** (it was a polyline
+/// of 77 MB), or not at all.
 #[test]
 fn a_toolpaths_pcurve_is_written_in_few_points() { known("solid_sweeps/short_screw.sv","block") }
 
@@ -1206,4 +1214,5 @@ fn a_drill_is_written_within_a_minute() { known("twist_drill/drill.sv","drill") 
 
 /// **The solid read, written again, is written within a minute.**
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, 16 s: a ball's toolpath written twice")]
 fn a_solid_read_is_written_again_within_a_minute() { known("solid_sweeps/tight_ball.sv","block") }
