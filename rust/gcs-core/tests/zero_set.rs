@@ -417,3 +417,114 @@ fn a_ball_moved_round_a_circle_leaves_an_annulus() {
     assert!((radii[0]-(big-r)).abs() <= TOL && (radii[1]-(big+r)).abs() <= TOL,"{radii:?}");
     for p in &t.pieces { assert!((turns(p,s,[0.,0.]).abs()-1.).abs() < 1e-9) }
 }
+
+/// A function of the parameters on a surface given by its map: the callers' shapes, where the
+/// parameters and space part ways.
+struct Mapped {
+    f: Box<dyn Fn(Uv) -> (f64,[f64;2])>,
+    map: Box<dyn Fn(Uv) -> ([f64;3],[f64;3],[f64;3])>,
+    bound: Option<Box<dyn Fn(Rect) -> Bound>>,
+}
+
+impl Field for Mapped {
+    type At = At;
+    fn least(&self,uv: Uv) -> Option<Value<At>> { let (f,g) = (self.f)(uv); Some(Value {f,grad:Some(g),at:(0,0.)}) }
+    fn along(&self,uv: Uv,_: &At) -> Option<Value<At>> { self.least(uv) }
+    fn surface(&self,uv: Uv) -> ([f64;3],[f64;3],[f64;3]) { (self.map)(uv) }
+    fn bound(&self,cell: Rect) -> Option<Bound> { self.bound.as_ref().map(|b| b(cell)) }
+}
+
+fn flat(uv: Uv) -> ([f64;3],[f64;3],[f64;3]) { ([uv[0],uv[1],0.],[1.,0.,0.],[0.,1.,0.]) }
+
+#[test]
+fn a_zero_ill_placed_in_the_parameter_is_placed_in_space() {
+    // the plane `x = u³`, `y = v`: across `u = 0` the surface barely moves with `u`, so the line
+    // `x = 0.2 y + 0.01` crossing there has a depth cubic in `u` — a part in a million of `f` over
+    // a hundredth of the parameter — and is judged in space, not chased in the parameter
+    let m = Mapped {
+        f: Box::new(|uv| (uv[0].powi(3)-0.2*uv[1]-0.01,[3.*uv[0]*uv[0],-0.2])),
+        map: Box::new(|uv| ([uv[0].powi(3),uv[1],0.],[3.*uv[0]*uv[0],0.,0.],[0.,1.,0.])),
+        bound: Some(Box::new(|c: Rect| {
+            let (u,v) = (Iv::new(c[0][0],c[0][1]),Iv::new(c[1][0],c[1][1]));
+            Bound {value:u*u*u-v.times(0.2)-k(0.01),grad:Some([sq(u).times(3.),k(-0.2)])}
+        })),
+    };
+    let t = trace(&m,&question([[-0.5,0.5],[-0.5,0.5]],TOL,0.1)).unwrap();
+    assert_eq!(t.pieces.len(),1,"{:?}",t.pieces.iter().map(|p| p.ends).collect::<Vec<_>>());
+    assert_eq!(t.pieces[0].ends,[End::Rim,End::Rim]);
+    // in space every point, and every chord's middle mapped, is on the line
+    let off = |uv: Uv| (uv[0].powi(3)-0.2*uv[1]-0.01).abs()/(1.04f64).sqrt();
+    for w in t.pieces[0].uv.windows(2) {
+        assert!(off(w[0]) <= TOL);
+        // the chord in space between the two points' images
+        let (a,b) = ([w[0][0].powi(3),w[0][1]],[w[1][0].powi(3),w[1][1]]);
+        let mid = [(a[0]+b[0])/2.,(a[1]+b[1])/2.];
+        assert!((mid[0]-0.2*mid[1]-0.01).abs()/(1.04f64).sqrt() <= TOL);
+    }
+    // it crosses the parameter's flat place
+    assert!(t.pieces[0].uv.windows(2).any(|w| (w[0][0] < 0.) != (w[1][0] < 0.) || w[0][0] == 0.));
+}
+
+#[test]
+fn two_branches_closing_on_a_fold_apex_end_there_and_do_not_wander() {
+    // `f = (v − u²)(v − 4u²)` over `v ≥ 0` (the fold, an inner edge): two curves tangent to the fold
+    // at the apex, the field between them `3u⁴` deep — under the tolerance long before the apex.
+    // Four pieces, each from the rim to the apex, ended on the edge
+    let m = Mapped {
+        f: Box::new(|uv| {
+            let (a,b) = (uv[1]-uv[0]*uv[0],uv[1]-4.*uv[0]*uv[0]);
+            (a*b,[-2.*uv[0]*b-8.*uv[0]*a,a+b])
+        }),
+        map: Box::new(flat),
+        bound: Some(Box::new(|c: Rect| {
+            let (u,v) = (Iv::new(c[0][0],c[0][1]),Iv::new(c[1][0],c[1][1]));
+            let (a,b) = (v-sq(u),v-sq(u).times(4.));
+            Bound {value:a*b,grad:Some([u.times(-2.)*b-u.times(8.)*a,a+b])}
+        })),
+    };
+    let at = |t: f64| [-0.5+t,0.];
+    let side = |uv: Uv| uv[1];
+    let edges = [Edge {at:&at,side:&side}];
+    let q = Question {rect:[[-0.5,0.5],[-0.2,0.5]],edges:&edges,seeds:&[],tol:TOL,feature:0.1};
+    let t = trace(&m,&q).unwrap();
+    assert_eq!(t.pieces.len(),4,"{:?}",t.pieces.iter().map(|p| (p.ends,p.uv[0],p.uv[p.uv.len()-1])).collect::<Vec<_>>());
+    for p in &t.pieces {
+        let mut ends = p.ends;
+        ends.sort_by_key(|e| matches!(e,End::Edge(_)));
+        assert_eq!(ends,[End::Rim,End::Edge(0)]);
+        let apex = if p.ends[0] == End::Edge(0) { p.uv[0] } else { p.uv[p.uv.len()-1] };
+        assert!(apex[0].dhypot(apex[1]) <= TOL,"the apex at {apex:?}");
+        // one curve along each piece: the rim end tells which, and no point strays to the other
+        // farther than the tolerance
+        let rim = if p.ends[0] == End::Rim { p.uv[0] } else { p.uv[p.uv.len()-1] };
+        let c = if (rim[1]-rim[0]*rim[0]).abs() < (rim[1]-4.*rim[0]*rim[0]).abs() { 1. } else { 4. };
+        for uv in &p.uv { assert!(graph_distance(*uv,&|x| c*x*x,[-0.5,0.5]) <= TOL,"{uv:?} off y = {c} x²"); }
+    }
+}
+
+#[test]
+fn a_wedge_pinching_to_a_cusp_at_the_rectangles_corner() {
+    // `f = (v − u²)(v − 2u²)` over `[0, 1]²`: a wedge between two curves leaving the corner tangent
+    // to `v = 0`, its far curve ending exactly at the corner. Two pieces, rim to the corner
+    let m = Mapped {
+        f: Box::new(|uv| {
+            let (a,b) = (uv[1]-uv[0]*uv[0],uv[1]-2.*uv[0]*uv[0]);
+            (a*b,[-2.*uv[0]*b-4.*uv[0]*a,a+b])
+        }),
+        map: Box::new(flat),
+        bound: Some(Box::new(|c: Rect| {
+            let (u,v) = (Iv::new(c[0][0],c[0][1]),Iv::new(c[1][0],c[1][1]));
+            let (a,b) = (v-sq(u),v-sq(u).times(2.));
+            Bound {value:a*b,grad:Some([u.times(-2.)*b-u.times(4.)*a,a+b])}
+        })),
+    };
+    let t = trace(&m,&question([[0.,1.],[0.,1.]],TOL,0.1)).unwrap();
+    assert_eq!(t.pieces.len(),2,"{:?}",t.pieces.iter().map(|p| (p.ends,p.uv[0],p.uv[p.uv.len()-1])).collect::<Vec<_>>());
+    for p in &t.pieces {
+        assert_eq!(p.ends,[End::Rim,End::Rim]);
+        let ends = [p.uv[0],p.uv[p.uv.len()-1]];
+        assert!(ends.iter().any(|e| e[0].dhypot(e[1]) <= TOL),"no end at the corner: {ends:?}");
+        let dist = |uv: Uv| graph_distance(uv,&|x| x*x,[0.,1.]).min(graph_distance(uv,&|x| 2.*x*x,[0.,1.]));
+        for uv in &p.uv { assert!(dist(*uv) <= TOL) }
+    }
+}
