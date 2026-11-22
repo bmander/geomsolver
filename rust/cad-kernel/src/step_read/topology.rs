@@ -1987,10 +1987,9 @@ impl Prepared {
         }
         for (v,d) in at_poles { b.vertices[v].tol = b.vertices[v].tol.max(d); }
         b.close_poles();
-        // (twice: a vertex's tolerance, measured, is how far an inverse curve's end reads as on a pole
-        // there, which the edges' tolerances are then measured with)
-        b.measure_tolerances();
-        b.measure_tolerances();
+        // (the vertices' first: a vertex's tolerance, measured, is how far an inverse curve's end reads
+        // as on a pole there, which the edges' tolerances are then measured with)
+        b.settle_tolerances();
         // (a foot searched for on a spline reads the last bits of a gap differently from one reading to
         // the next: the gap measured is held to a billionth more)
         for e in &mut b.edges { e.tol *= 1.+1e-9; }

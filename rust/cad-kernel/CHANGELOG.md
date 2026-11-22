@@ -18,6 +18,13 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   the boundary read is held sound (`step_read::sound`) before it is given. Every file `step`
   writes reads back to the same solid.
 
+- **How far an edge stands off its face is the boundary's to say** (#993 stage 1): the measure
+  `step::write` states a file's uncertainty from is `Brep::standing`, one function for the writer
+  and whatever holds a file to it; `Brep::settle_tolerances` is `measure_tolerances` twice with
+  every sample read once (the vertices' tolerances first, which an inverse curve's ends at a pole
+  are read within), and `BSpline::segment` is a curve's stretch over a span as `Net::segment` is
+  a surface's.
+
 - **A foot just past a joint runs at its own rate** (#993 stage 1): `Pcurve::derivative` of an
   inverse curve off its face read the surface's second derivatives as differences a millionth of
   a parameter apart, which straddle a knot within that and read its two sides' mean (a foot a
