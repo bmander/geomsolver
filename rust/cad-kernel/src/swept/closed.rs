@@ -1664,18 +1664,14 @@ pub(crate) fn contour_solid(halves: &[crate::slid::Slid;2],[h0,h1]: [f64;2]) -> 
 /// as the input moved by an ulp (#942: brep-bench's 80° torus, its seam, faces and dumps another
 /// for each spelling of its motion).
 pub(super) fn seam_away(solid: Brep,o: V,axis: V,touched: &[V]) -> Brep {
-    use std::f64::consts::TAU;
     let f = Frame::about(o,axis);
-    let mut angles: Vec<f64> = touched.iter().filter_map(|&p| {
+    let angles: Vec<f64> = touched.iter().filter_map(|&p| {
         let l = f.local(p);
-        (l[0].dhypot(l[1]) > 1e-9*(1.+norm(sub(p,o)))).then(|| l[1].datan2(l[0]).rem_euclid(TAU))
+        (l[0].dhypot(l[1]) > 1e-9*(1.+norm(sub(p,o)))).then(|| l[1].datan2(l[0]))
     }).collect();
     if angles.is_empty() { return solid }
-    angles.sort_by(f64::total_cmp);
-    let gap = |k: usize| if k+1 < angles.len() { angles[k+1]-angles[k] } else { angles[0]+TAU-angles[k] };
-    let widest = (0..angles.len()).map(gap).fold(0.,f64::max);
-    let k = (0..angles.len()).find(|&k| gap(k) >= widest-crate::util::fmath::HALF_READ*TAU).unwrap_or(0);
-    solid.moved(&crate::geom::Rigid::turn(o,axis,angles[k]+0.5*gap(k)))
+    let (at,gap) = super::sector::widest(angles.into_iter(),std::f64::consts::TAU);
+    solid.moved(&crate::geom::Rigid::turn(o,axis,at+0.5*gap))
 }
 
 /// A solid's face named `sheet` alone, its other faces left off: an open sheet the arrangement takes
