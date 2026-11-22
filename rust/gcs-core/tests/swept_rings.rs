@@ -476,6 +476,7 @@ fn the_full_turns_tori_are_read_one_way_all_over_and_it_is_refused_where_they_me
     let why = format!("{:?}",ring(&tool,&path,roll,0.16/250.,0.16/50_000.).expect_err("refused where the tori meet"));
     assert!(why.contains("torus piece kept beside it (candidate and face (0, 0))") && why.contains("face (1, 0), a torus")
         && why.contains("met by search"),"{why}");
+}
 
 /// The least signed distance from the ring posed at an instant of `roll` of the point `p`, over
 /// the instants at least `apart` from `t` — the ring read at `4096` of them and the least of those
