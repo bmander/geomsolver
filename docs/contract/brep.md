@@ -1697,6 +1697,55 @@ revolution of its arc bounded by its faces. Gates:
 `step_kinds::a_curve_turned_off_its_axis_plane_is_seated_where_no_face_crosses`,
 `a_line_turned_off_its_axis_plane_sweeps_its_hyperboloid`.
 
+**A STEP file's topology is read to the solid it writes, identity the file's**
+(`step_read::topology`). Each VERTEX_POINT, EDGE_CURVE and ADVANCED_FACE is read once by its `#n`,
+and a vertex or edge shared by reference is shared in the `Brep`; nothing is merged by proximity,
+and what the reader lays (a pole's edge, a seam, the far piece of an edge cut at a pole) names no
+entity or the file's one. Each edge's ends are the points of its curve nearest its vertices, an
+arc running counter-clockwise from its first to its second and a closed edge a whole turn; an edge
+running against its curve is laid along it with its vertices swapped and every use turned. A loop
+whose edges do not meet at the same vertex entity is malformed (the schema's `edge_loop` rule); a
+shell of no face is refused `Empty` naming it; an edge farther off its faces or vertices than
+max(100 × the stated uncertainty, 1e-3 × the solid's size) is refused naming the edge; a boundary
+`Brep::check` refuses is Open, NotManifold or Unsound naming the face or edge the check names.
+Gates: `step_read::every_solid_the_kernel_writes_reads_back_to_itself`,
+`what_is_not_read_is_refused_naming_the_entity`, `an_empty_shell_is_refused_naming_it`.
+
+**A face's parameters are walked round each loop, and a walk keeps its branch**
+(`topology::walk_loop`, `track`). Each use starts where the last ended, its points read on the
+branch nearest the last, in as many steps as its curve turns round a period (by the surface's
+speed along it: a thread's helix of sixteen turns read by chords was no turn at all), a step
+sweeping more than a twelfth of a period halved. The file's curve in the face's parameters is the
+use's pcurve where its image is the edge's — at the edge's own parameter, or as a set within the
+tolerance the edge measures anyway — and never widens a tolerance; otherwise the edge inverted
+between the walk's ends (`Pcurve::Inverse`), refused naming the edge where a point of its walk
+stands half a period from the line between them. A file without pcurves reads the same. The outer
+loop is the one enclosing the most of the face's parameters, never FACE_OUTER_BOUND. A sphere's
+file curve a whole turn off in `v` (OCCT's habit) is moved back. At a pole the collapsed
+parameter's branch keeps the face on the loop's left; a use's end there is its curve's own where
+its tangent and its feet agree, else its foot a hundredth of its span in; an edge crossing its
+face's pole between its ends is cut there, `close_poles` laying the pole's edge. **A seam the file
+does not write is laid**: a loop winding once round a pole is joined to it by a meridian or a
+generator; two loops winding a period opposite ways (a cylinder between two circles, Parasolid's
+habit) by a seam at one value of the period, vertex to vertex where one stands there, else cutting
+the other's edge, and crossing no other loop of the face; a whole torus or sphere bounded by lone
+vertices gets its seams. A band where no seam can be laid, a loop that both winds and crosses its
+pole, an edge two seams would cut, are refused `Unsupported` naming the entity. Gates:
+`step_read::a_cap_written_with_no_seam_reads_to_its_closed_form`,
+`a_band_written_with_no_seam_reads_to_its_closed_form`,
+`a_spheres_curve_a_turn_off_in_v_reads_where_the_face_is`,
+`a_lens_whose_circle_passes_a_pole_reads_to_its_closed_form`,
+`an_edges_feet_off_its_face_run_at_their_own_rate`.
+
+**A face reaching a pole is integrated along the parameter the pole collapses**
+(`props::integrated`): where a degenerate edge lies in its loop, or a sheet's row is all but
+collapsed, `G` is nought at the pole, so the value a use arrives along weighs nothing in the
+measure. Its edges' rules are settled stretch by stretch and cut where a pcurve crosses a sheet's
+knot line or an area's turning line; a spindle torus's area is the closed form of
+`∫|R + r cos v|`. A solid farther from the origin than ten times its size is measured moved to its
+middle (`props::volume`). Gates: `step_read::the_value_a_use_arrives_at_a_pole_along_weighs_nothing`,
+`a_spindle_torus_reads_to_its_closed_form`.
+
 **A tolerant boundary is read as known to within its measured tolerances** (`step_read::sound`,
 run on every solid `topology::solid` builds). Tolerances are measured (`Brep::measure_tolerances`),
 never taken from the file and never widened to pass a check; the file's stated uncertainty is
