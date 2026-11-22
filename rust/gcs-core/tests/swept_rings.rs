@@ -348,6 +348,29 @@ fn a_ring_carried_along_a_spline_touching_its_meridians_whole_is_refused_by_name
         Err(Unbuilt::Curved {at}) => assert!(at[0].abs() < 1e-9 && at[1].abs() < 1e-9 && ((at[2]-2.5).abs() < 1e-9 || (at[2]+1.5).abs() < 1e-9),"{at:?}"),
         other => panic!("{:?}",other.map(|b| gcs_core::brep::props::volume(&b))),
     }
+    // and as the bench's runner builds it: `closed::cut_from` (K2 refusing a torus, the general road
+    // too, the ring road admitting it), the runner's own frame, a bar of 0.005, the tolerance of its
+    // size — refused so at once, where it ended at K2's `Curved` at the torus's rim
+    #[derive(Debug)]
+    struct Runner(gcs_core::brep::nurbs::BSpline);
+    impl gcs_core::brep::trajectory::Path for Runner {
+        fn at(&self,t: f64) -> Result<gcs_core::brep::trajectory::Motion,gcs_core::brep::KernelError> {
+            let (point,d,dd) = self.0.d2(t);
+            let speed2 = d[0]*d[0]+d[1]*d[1];
+            let (c,s) = (d[0]/speed2.sqrt(),d[1]/speed2.sqrt());
+            let turning = (d[0]*dd[1]-d[1]*dd[0])/speed2;
+            let r = [[c,-s,0.],[s,c,0.],[0.,0.,1.]];
+            let dr = [[-s*turning,-c*turning,0.],[c*turning,-s*turning,0.],[0.;3]];
+            Ok(gcs_core::brep::trajectory::Motion::of_parts(r,dr,point,d))
+        }
+    }
+    let curve = gcs_core::brep::nurbs::BSpline::new(3,vec![0.,0.,0.,0.,1.,1.,1.,1.],vec![[0.,0.,0.],[10.,0.,0.],[20.,20.,0.],[30.,20.,0.]]).unwrap();
+    let runner = Trajectory::General(std::sync::Arc::new(Runner(curve)));
+    let size = block.size().max(tool.size());
+    match gcs_core::brep::swept::closed::cut_from(&block,&tool,&runner,[0.,1.],0.005,gcs_core::brep::geom::tolerance(size)) {
+        Err(Unbuilt::Curved {at}) => assert!(at[0].abs() < 1e-9 && at[1].abs() < 1e-9 && ((at[2]-2.5).abs() < 1e-9 || (at[2]+1.5).abs() < 1e-9),"{at:?}"),
+        other => panic!("{:?}",other.map(|b| gcs_core::brep::props::volume(&b))),
+    }
     // a ring pushed in at a lean touches no meridian whole: its push leans to the meridians' planes
     let lean = 35f64.to_radians();
     let pushed = Ring::read(&gcs_core::brep::build::torus([0.,0.,4.],[lean.sin(),0.,lean.cos()],3.,1.).unwrap()).unwrap();

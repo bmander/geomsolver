@@ -1035,6 +1035,12 @@ fn k2(tool: &Brep,path: &Trajectory,roll: [f64;2],bar: f64,tol: f64,blank: Optio
     let revolved = match super::patches::Revolved::read(tool) {
         Ok(r) => r,
         Err(why @ Unbuilt::Curved {..}) => return match general_built(tool,path,[a,b],bar,tol,blank) {
+            // **a ring, the ring road's** (#942 T1d-ring): a tool of revolution clear of its axis
+            // whose contact the road reads at every instant it is asked (`rings::admits`) is built
+            // on it, judged as every road here is — its own refusal standing where it cannot build
+            // it (brep-bench's ring along a spline, its meridians touched whole); any other keeps
+            // K2's refusal
+            Err(Unbuilt::Curved {..}) if super::rings::admits(tool,path,[a,b]).is_ok() => ring_built(tool,path,[a,b],bar,tol,blank),
             Err(Unbuilt::Curved {..}) => Err(why),
             built => built,
         },

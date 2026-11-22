@@ -25,8 +25,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   normal at a foot clamped to its patch has zeros of its own, and a seed 1.0 off the other tube was
   refused as the two meeting at 0.19°. A trim's dump writes a frame carried along a B-spline
   (`trajectory::Along`) by its curve, home, frame and name, made again from them (new
-  `Path::along`, `Guide::spline`), which F5's dump refused by name. The bench's own entry,
-  `closed::cut_from`, does not yet take a ring to its road: refused `Curved` by K2 as before.
+  `Path::along`, `Guide::spline`), which F5's dump refused by name. `closed`/`cut_from` take a ring
+  to the ring road where K2 and the general road refuse it as `Curved` and `rings::admits` reads it
+  (`closed::k2`): the bench's runner, which ended at K2's `Curved` at the torus's rim, is refused by
+  name at the ring's top meridian.
 
 - **The bench's cube tumbling 75° is built** (#942 T1d-cube, `swept::general`, `family`, `topo`):
   a fan's crossing with itself is built from the pinch it is born at — the runs' corner where the

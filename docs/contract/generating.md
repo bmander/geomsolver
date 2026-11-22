@@ -2160,9 +2160,24 @@ alone the groove and the block beside it were one cell, and the block came back 
 sheets in it. A meridian touched whole at two of the closed class's poses (`K2_POSES`) or more is
 `Curved` at its farthest point (`ring_entered`, before anything is fitted;
 `swept_rings::a_ring_carried_along_a_spline_touching_its_meridians_whole_is_refused_by_name`); an
-instant alone touching one whole (an end pose) is no sheet. The meridian's own sweep, met with the
-tubes along its crossings with the contact curves and given the tool at either end along the
-meridian there, is what builds it.
+instant alone touching one whole (an end pose) is no sheet. **What builds it, measured**: a meridian
+touched whole is a circle whose `n · v` is nought all round, so it is the great circle square to
+its centre's velocity of the ball of its radius about its centre, and its sweep is that ball's tube
+(`canal::tube`: the bottom meridian's, a pipe of radius 0.5 about the path a unit below it); entered
+as a candidate, flat at its ends inside the ring where it starts and stops, its rims given there,
+it is arranged, but the arrangement seeks its meeting with the tubes' walls from no seed — at each
+instant the pipe and a tube both pass through the point where the meridian crosses the contact
+curve, both tangent to the ring there, so they touch along that point's path, which no search
+proves and the road must give (a 40 × 40 grid finds the pipe meeting the wall on its patch, its
+feet 1e-10 to 1e-8 off) — and the groove still leaks into the block; at the bench's own tolerance
+(5.3e-8) the fits are two hundred times finer besides. **A ring is the ring road's under any motion
+K2 and the general road refuse it** (#942 T1d-ring, `closed::k2`): a tool of revolution clear of its
+axis whose contact the road reads at the instants `rings::admits` asks is built on the ring road
+from `closed`/`cut_from`, judged as every road is, its own refusal standing where it cannot build
+it — the bench's ring along a spline, built by its runner through `cut_from`, ended at K2's
+`Curved` at the torus's rim, and is refused by name at its top meridian; any other tool keeps K2's
+refusal (`swept_patches::a_tool_no_convex_revolution_under_any_motion_is_refused_by_name`'s ring,
+its two meridians square to the motion touched whole, is `Curved` so).
 
 **K2's patches: the closed class under any rigid motion (#780 L3, `brep::swept::patches`):** a
 sweep under a motion no constant twist takes, nor a path of pieces (`Trajectory::General`, a frame

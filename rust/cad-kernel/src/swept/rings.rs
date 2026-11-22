@@ -88,8 +88,11 @@
 //!
 //! **Built**: the tumbling torus (`swept_tumble.sv`) closed and judged, its volume the definition's
 //! to within its reading off the fitted sheets (`tests/swept_rings.rs`, slow tier). The road is not
-//! yet a class the dispatch admits: `closed::ring` builds it alone, and `closed::ring_cut_from` cut
-//! from a blank (a ring pushed into a block at a lean, a torus turned across one). A ring of several
+//! yet a class the kernel's dispatch admits: `closed::ring` builds it alone, `closed::ring_cut_from`
+//! cut from a blank (a ring pushed into a block at a lean, a torus turned across one), and `closed`'s
+//! own build takes a ring there where K2 and the general road refuse it (#942 T1d-ring, `k2`). A
+//! meridian touched whole over the roll — a ring carried in a plane its axis lies in — sweeps a sheet
+//! no contact curve's tube holds, and is refused by name (`closed::ring_entered`). A ring of several
 //! faces whose sheet crosses the tool at an end pose across two of them is refused by name: the
 //! crossing is not yet cut where it passes from face to face.
 #[allow(unused_imports)]
