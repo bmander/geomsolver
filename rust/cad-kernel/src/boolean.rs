@@ -1320,6 +1320,16 @@ impl<'a> Arrangement<'a> {
     /// built in another (fixture 115's feet and lip united with the plate at its true edge). Where
     /// no face of a class stands for all its faces (a chain of faces each within reach of the next,
     /// leaning apart past it end to end), the first face of the lowest operand stands for it.
+    /// **The part of space two faces are read over reaches as far past what their boxes share as a
+    /// point near both is read onto their meeting at the least sine** (`tolerant::on_meeting` at
+    /// `LEAST_SINE`, #994): two faces whose boxes share no more than the line they cross along are
+    /// one surface only where they lean apart less than the arrangement resolves a meeting at, and
+    /// otherwise two, their meeting laid. Read over that line alone, any two planes crossing along
+    /// it within `1e-3` rad were one there: a plate's top and the raised half of a lip's pad turned
+    /// `1e-3` rad across it, one face of the lip from the other half lying under the top, were one
+    /// class, the plate's top standing for it, and a foot's meeting with the class was laid on the
+    /// lowered half `3e-4` off it — refused as a shell kept on one side of a plane and dropped on
+    /// another, where joined the other way round the three built.
     fn classed(&mut self) {
         let reach = super::tolerant::ON_CURVE*self.tol;
         let mut faces: Vec<(Side,usize,Box3)> = Vec::new();
@@ -1338,7 +1348,11 @@ impl<'a> Arrangement<'a> {
                 if a.kind() != b.kind() || root(&mut of,i) == root(&mut of,j) { continue }
                 let region = super::meeting::common(faces[i].2,faces[j].2,self.tol);
                 let near = (0..3).all(|k| region.0[k] <= region.1[k]);
-                if a == b || if near { super::ssi::same_over(a,b,reach,region) } else { super::ssi::same(a,b,self.tol) } {
+                // (read as far past the part of space the two boxes share as a point near both is
+                // read onto their meeting at the least sine)
+                let past = super::tolerant::on_meeting(self.tol,0.);
+                let around = (region.0.map(|x| x-past),region.1.map(|x| x+past));
+                if a == b || if near { super::ssi::same_over(a,b,reach,around) } else { super::ssi::same(a,b,self.tol) } {
                     let (ri,rj) = (root(&mut of,i),root(&mut of,j));
                     of[ri.max(rj)] = ri.min(rj);
                 }
@@ -2024,9 +2038,40 @@ impl<'a> Arrangement<'a> {
 
     /// Whether the span `t` of curve `c`, from vertex `v[0]` to `v[1]`, is kept as an edge where
     /// two faces meet: its middle in both and on each surface's patch, whether the two cross or touch.
+    /// **A span lying along a face's boundary within the reach a vertex is on an edge by**
+    /// (`tolerant::on_stretch`, `ON_CURVE` tolerances, at every eighth of it) **is on that face**
+    /// (#994): it is the edge it lies along, which step 4 merges it into, and the other face is cut
+    /// along it — where that edge does not itself lie in the other face's surface all its stretch,
+    /// and so is not laid there as it is (`Meets::Along`), the span a second edge beside it. Read Out of the face at the tolerance alone, it was dropped, and the other face kept
+    /// the meeting that led up to it as a slit: a lip's foot turned `1e-3` rad across its pad, its end
+    /// within the foot's pad by half a micrometre, crosses the side of a strip abutting it a
+    /// tolerance and a half under that strip's foot, and the lip's foot was left one face whose two
+    /// sides were one shell — refused as kept on one side of a plane and dropped on another.
     fn kept(&self,c: &Curve,t: [f64;2],v: [u32;2],faces: Two,surfaces: [&Surface;2]) -> bool {
         let m = c.point((t[0]+t[1])/2.);
-        let places = [0,1].map(|k| self.located[faces.s[k]].face_place(faces.f[k],m));
+        let mut places = [0,1].map(|k| self.located[faces.s[k]].face_place(faces.f[k],m));
+        let reach = ON_CURVE*self.tol;
+        for k in 0..2 {
+            if places[k] != Place::Out { continue }
+            let (s,fi) = (faces.s[k],faces.f[k]);
+            let sol = self.solids[s];
+            // (the face's edges the span's middle lies along, and the other face's surface)
+            let near: Vec<u32> = sol.faces[fi].loops.iter().flatten().map(|co| co.edge)
+                .filter(|&e| self.located[s].nearest(e,m).1 <= reach).collect();
+            let along = !near.is_empty() && (1..8).all(|j| {
+                let p = c.point(t[0]+(t[1]-t[0])*j as f64/8.);
+                sol.faces[fi].loops.iter().flatten().any(|co| self.located[s].nearest(co.edge,p).1 <= reach)
+            });
+            // an edge lying in the other face's surface all its stretch is laid on it as it is
+            // (phase 1's `Meets::Along`): the span beside it would be a second edge a hair off it
+            let other = surfaces[1-k];
+            let laid = near.iter().all(|&e| {
+                let edge = &sol.edges[e as usize];
+                (0..=8).all(|j| { let p = edge.point(edge.t[0]+(edge.t[1]-edge.t[0])*j as f64/8.,&sol.vertices);
+                    distance(other.point(other.inverse(p)),p) <= reach })
+            });
+            if along && !laid { places[k] = Place::On }
+        }
         self.say.span(t,v,m,places,&self.pool);
         if places[0] == Place::Out || places[1] == Place::Out { return false }
         // on each surface's patch, not only its extension: a surface over a curve's domain (a
