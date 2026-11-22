@@ -18,27 +18,22 @@
 //!
 //! `cargo run --release -p cad-kernel --example ring_profile -- full-turn|half-turn|thin [roll end, degrees] | spline | bench-spline`
 use cad_kernel::trajectory::{Screw,Trajectory};
+#[path = "support/bench.rs"]
+mod bench;
 
-/// brep-bench's tumbling torus: a torus of major radius one about `centre`, its axis `z`, turned by
-/// `ratio · t` about the vertical line through `(hub, 0, 0)`, seen from a frame turning by
-/// `observer · t` about the line through `(0, h cos ℓ, h sin ℓ)` along
-/// `(cos α, sin α cos ℓ, sin α sin ℓ)`.
+/// brep-bench's tumbling torus (`bench::tumbling`), its observer's origin moved by `… nudge d`.
 #[allow(clippy::too_many_arguments)]
 fn tumbling(centre: [f64;3],hub: f64,tube: f64,ratio: f64,lean: f64,heading: f64,height: f64,observer: f64)
     -> (cad_kernel::topo::Brep,Trajectory) {
-    let tool = cad_kernel::build::torus(centre,[0.,0.,1.],1.,tube).unwrap();
-    let (sl,cl) = lean.to_radians().sin_cos();
-    let (sa,ca) = heading.to_radians().sin_cos();
-    let own = Trajectory::Twist(Screw {origin:[hub,0.,0.],axis:[0.,0.,1.],ratio,advance:0.});
-    // (`… nudge d`: the observer's origin moved by `d` along `y`, or by one ulp where `d` is `ulp`)
-    let args: Vec<String> = std::env::args().collect();
-    let mut origin = [0.,height*cl,height*sl];
-    if let Some(i) = args.iter().position(|a| a == "nudge") {
-        origin[1] = if args[i+1] == "ulp" { f64::from_bits(origin[1].to_bits()+1) } else { origin[1]+args[i+1].parse::<f64>().unwrap() };
-        eprintln!("the observer's origin moved to {origin:?}");
-    }
-    let frame = Trajectory::Twist(Screw {origin,axis:[ca,sa*cl,sa*sl],ratio:observer,advance:0.});
-    (tool,Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)})
+    bench::tumbling_moved(centre,hub,tube,ratio,lean,heading,height,observer,|mut origin| {
+        // (`… nudge d`: the observer's origin moved by `d` along `y`, or by one ulp where `d` is `ulp`)
+        let args: Vec<String> = std::env::args().collect();
+        if let Some(i) = args.iter().position(|a| a == "nudge") {
+            origin[1] = if args[i+1] == "ulp" { f64::from_bits(origin[1].to_bits()+1) } else { origin[1]+args[i+1].parse::<f64>().unwrap() };
+            eprintln!("the observer's origin moved to {origin:?}");
+        }
+        origin
+    })
 }
 
 fn main() {
@@ -78,12 +73,9 @@ fn main() {
         Some("half-at" | "full-at") => {
             let (y,z): (f64,f64) = (args[2].parse().expect("a number"),args[3].parse().expect("a number"));
             let moved = |x: f64,by: f64| if args[1] == "ulps" { f64::from_bits((x.to_bits() as i64+by as i64) as u64) } else { x+by };
-            let (sl,cl) = 30f64.to_radians().sin_cos();
-            let (sa,ca) = 20f64.to_radians().sin_cos();
-            let tool = cad_kernel::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.16).unwrap();
-            let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.375,advance:0.});
-            let frame = Trajectory::Twist(Screw {origin:[0.,moved(0.7071*cl,y),moved(0.7071*sl,z)],axis:[ca,sa*cl,sa*sl],ratio:1.,advance:0.});
-            (0.16,(tool,Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)}),if args[0] == "full-at" { 180. } else { 90. })
+            let tumbled = bench::tumbling_moved([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.,
+                |o| [o[0],moved(o[1],y),moved(o[2],z)]);
+            (0.16,tumbled,if args[0] == "full-at" { 180. } else { 90. })
         }
         _ => { eprintln!("ring_profile full-turn|half-turn|thin [roll end, degrees] | spline | bench-spline"); std::process::exit(2) }
     };
@@ -262,31 +254,15 @@ fn agree(built: &cad_kernel::topo::Brep,tool: &cad_kernel::topo::Brep,path: &Tra
 /// (0, 0, 0.5), its frame carried along a cubic in the plane `z = 0` (`trajectory::Along`, the
 /// rotation-minimising frame), cut from the block (−6, −6, −8)–(36, 26, 0).
 fn along_a_spline() {
-    use cad_kernel::nurbs::BSpline;
     let block = cad_kernel::build::block([-6.,-6.,-8.],[36.,26.,0.]).unwrap();
     let tool = cad_kernel::build::torus([0.,0.,0.5],[0.,1.,0.],1.5,0.5).unwrap();
-    let curve = BSpline::new(3,vec![0.,0.,0.,0.,1.,1.,1.,1.],vec![[0.,0.,0.],[10.,0.,0.],[20.,20.,0.],[30.,20.,0.]]).unwrap();
-    let path = Trajectory::General(std::sync::Arc::new(cad_kernel::trajectory::Along::new(curve).unwrap()));
+    let along = cad_kernel::trajectory::Along::new(bench::cubic()).unwrap();
+    let path = Trajectory::General(std::sync::Arc::new(along));
     if std::env::var_os("SOLVENT_BREP_TIME").is_none() { std::env::set_var("SOLVENT_BREP_TIME","1") }
     let clock = std::time::Instant::now();
     match cad_kernel::swept::closed::ring_cut_from(&block,&tool,&path,[0.,1.],0.01,1e-5) {
         Ok(b) => println!("built: {} faces, volume {}, in {:?}",b.faces.len(),cad_kernel::props::volume(&b),clock.elapsed()),
         Err(e) => println!("refused: {e:?}, in {:?}",clock.elapsed()),
-    }
-}
-
-/// The frame brep-bench's runner carries the ring by: its `x` along the curve's tangent, its `z` up.
-#[derive(Debug)]
-struct Runner(cad_kernel::nurbs::BSpline);
-impl cad_kernel::trajectory::Path for Runner {
-    fn at(&self,t: f64) -> Result<cad_kernel::trajectory::Motion,cad_kernel::KernelError> {
-        let (point,d,dd) = self.0.d2(t);
-        let speed2 = d[0]*d[0]+d[1]*d[1];
-        let (c,s) = (d[0]/speed2.sqrt(),d[1]/speed2.sqrt());
-        let turning = (d[0]*dd[1]-d[1]*dd[0])/speed2;
-        let r = [[c,-s,0.],[s,c,0.],[0.,0.,1.]];
-        let dr = [[-s*turning,-c*turning,0.],[c*turning,-s*turning,0.],[0.;3]];
-        Ok(cad_kernel::trajectory::Motion::of_parts(r,dr,point,d))
     }
 }
 
@@ -305,7 +281,7 @@ fn as_the_bench_runs_it(moved: Option<(String,bool,f64)>) {
     let ring = cad_kernel::build::torus([m("cx",0.),m("cy",0.),m("cz",0.5)],[0.,1.,0.],m("major",1.5),m("minor",0.5)).unwrap();
     let curve = BSpline::new(3,vec![0.,0.,0.,0.,1.,1.,1.,1.],vec![[0.,0.,0.],[m("p1x",10.),m("p1y",0.),0.],[m("p2x",20.),m("p2y",20.),0.],
         [m("p3x",30.),m("p3y",20.),0.]]).unwrap();
-    let path = Trajectory::General(std::sync::Arc::new(Runner(curve)));
+    let path = Trajectory::General(std::sync::Arc::new(bench::Runner(curve)));
     let roll = [m("t0",0.),m("t1",1.)];
     let tol = cad_kernel::geom::tolerance(stock.size().max(ring.size()));
     if std::env::var_os("SOLVENT_BREP_TIME").is_none() { std::env::set_var("SOLVENT_BREP_TIME","1") }

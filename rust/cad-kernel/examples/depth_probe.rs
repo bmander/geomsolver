@@ -8,18 +8,9 @@
 //! the leaf between them — over the roll, and by the instants beside its own)
 use cad_kernel::swept::closed::{RingFitted,ring_fitted};
 use cad_kernel::swept::depth::{Reading,cover,far_depth,label_at,sheet};
-use cad_kernel::trajectory::{Screw,Trajectory};
-
-#[allow(clippy::too_many_arguments)]
-fn tumbling(centre: [f64;3],hub: f64,tube: f64,ratio: f64,lean: f64,heading: f64,height: f64,observer: f64)
-    -> (cad_kernel::topo::Brep,Trajectory) {
-    let tool = cad_kernel::build::torus(centre,[0.,0.,1.],1.,tube).unwrap();
-    let (sl,cl) = lean.to_radians().sin_cos();
-    let (sa,ca) = heading.to_radians().sin_cos();
-    let own = Trajectory::Twist(Screw {origin:[hub,0.,0.],axis:[0.,0.,1.],ratio,advance:0.});
-    let frame = Trajectory::Twist(Screw {origin:[0.,height*cl,height*sl],axis:[ca,sa*cl,sa*sl],ratio:observer,advance:0.});
-    (tool,Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)})
-}
+use bench::tumbling;
+#[path = "support/bench.rs"]
+mod bench;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();

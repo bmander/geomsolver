@@ -10,6 +10,7 @@ use gcs_core::brep::swept::rings::{Corner,Ring,Side,admits,contacts};
 use gcs_core::brep::topo::Brep;
 use gcs_core::brep::trajectory::Trajectory;
 use gcs_core::model::SolidDef;
+use crate::common::bench::{Runner,cubic,runner,thin,tumbling};
 
 /// The sweep `name` of `text` as the kernel takes it: its tool's B-rep, its trajectory and its roll.
 fn sweep(text: &str,name: &str) -> (Brep,Trajectory,[f64;2]) {
@@ -409,20 +410,6 @@ fn a_tubes_chord_given_as_its_meeting_with_the_tool_is_its_own_edge_laid_once() 
     }
 }
 
-/// brep-bench's `tumbling-torus-half-turn`: a torus of tube 0.16 turned 0.375 a radian about one
-/// line and back a radian about another over half a turn, its roll and tolerance.
-fn half_turn() -> (Brep,Trajectory,[f64;2],f64) {
-    use gcs_core::brep::trajectory::Screw;
-    let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.16).unwrap();
-    let (sl,cl) = 30f64.to_radians().sin_cos();
-    let (sa,ca) = 20f64.to_radians().sin_cos();
-    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.375,advance:0.});
-    let frame = Trajectory::Twist(Screw {origin:[0.,0.7071*cl,0.7071*sl],axis:[ca,sa*cl,sa*sl],ratio:1.,
-        advance:0.});
-    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
-    (tool,path,[-90f64.to_radians(),90f64.to_radians()],0.16/50_000.)
-}
-
 /// brep-bench's `ring-carried-along-a-spline` as the kernel takes it: the block (−6, −6, −8)–(36,
 /// 26, 0), the torus about `y` through (0, 0, 0.5) of radii 1.5 and 0.5, its frame carried along a
 /// cubic in the plane `z = 0` (`trajectory::Along`, the rotation-minimising frame) over its whole
@@ -430,30 +417,9 @@ fn half_turn() -> (Brep,Trajectory,[f64;2],f64) {
 fn along_a_spline() -> (Brep,Brep,Trajectory,f64) {
     let block = crate::brep::block([-6.,-6.,-8.],[36.,26.,0.]);
     let tool = gcs_core::brep::build::torus([0.,0.,0.5],[0.,1.,0.],1.5,0.5).unwrap();
-    let curve = gcs_core::brep::nurbs::BSpline::new(3,vec![0.,0.,0.,0.,1.,1.,1.,1.],
-        vec![[0.,0.,0.],[10.,0.,0.],[20.,20.,0.],[30.,20.,0.]]).unwrap();
-    let path = Trajectory::General(std::sync::Arc::new(gcs_core::brep::trajectory::Along::new(curve).unwrap()));
+    let along = gcs_core::brep::trajectory::Along::new(cubic()).unwrap();
+    let path = Trajectory::General(std::sync::Arc::new(along));
     (block,tool,path,1e-5)
-}
-
-/// The bench runner's frame along its cubic: its `x` along the curve's tangent, its `z` up; a path
-/// read only by evaluating it.
-fn runner() -> Trajectory {
-    #[derive(Debug)]
-    struct Runner(gcs_core::brep::nurbs::BSpline);
-    impl gcs_core::brep::trajectory::Path for Runner {
-        fn at(&self,t: f64) -> Result<gcs_core::brep::trajectory::Motion,gcs_core::brep::KernelError> {
-            let (point,d,dd) = self.0.d2(t);
-            let speed2 = d[0]*d[0]+d[1]*d[1];
-            let (c,s) = (d[0]/speed2.sqrt(),d[1]/speed2.sqrt());
-            let turning = (d[0]*dd[1]-d[1]*dd[0])/speed2;
-            let r = [[c,-s,0.],[s,c,0.],[0.,0.,1.]];
-            let dr = [[-s*turning,-c*turning,0.],[c*turning,-s*turning,0.],[0.;3]];
-            Ok(gcs_core::brep::trajectory::Motion::of_parts(r,dr,point,d))
-        }
-    }
-    let curve = gcs_core::brep::nurbs::BSpline::new(3,vec![0.,0.,0.,0.,1.,1.,1.,1.],vec![[0.,0.,0.],[10.,0.,0.],[20.,20.,0.],[30.,20.,0.]]).unwrap();
-    Trajectory::General(std::sync::Arc::new(Runner(curve)))
 }
 
 /// The bench's ring along a spline as its runner builds it: `closed::cut_from`, the runner's own
@@ -527,7 +493,7 @@ fn the_rings_groove_counted_is_the_blocks_volume_less_the_cuts() {
 /// cut's. Without a blank to cut from it is still refused by name, at a meridian touched whole.
 #[test]
 fn a_ring_carried_along_a_spline_touching_its_meridians_whole_is_cut_from_a_block() {
-    let (block,tool,path,_) = along_a_spline();
+    let (_,tool,path,_) = along_a_spline();
     let ring = Ring::read(&tool).unwrap();
     // the meridians touched whole at a pose: the top's and the bottom's, θ a quarter turn either way
     // of the ring's first axis — its frame's `x` along `z` here, so read by the point it lifts
@@ -574,19 +540,6 @@ fn the_ring_along_a_spline_builds_at_its_inputs_moved_by_an_ulp_and_a_millionth(
         let m = |n: &str,v: f64| if n == name { x } else { v };
         let block = crate::brep::block([-6.,-6.,-8.],[36.,26.,m("top",0.)]);
         let tool = gcs_core::brep::build::torus([0.,0.,m("cz",0.5)],[0.,1.,0.],m("major",1.5),m("minor",0.5)).unwrap();
-        #[derive(Debug)]
-        struct Runner(BSpline);
-        impl gcs_core::brep::trajectory::Path for Runner {
-            fn at(&self,t: f64) -> Result<gcs_core::brep::trajectory::Motion,gcs_core::brep::KernelError> {
-                let (point,d,dd) = self.0.d2(t);
-                let speed2 = d[0]*d[0]+d[1]*d[1];
-                let (c,s) = (d[0]/speed2.sqrt(),d[1]/speed2.sqrt());
-                let turning = (d[0]*dd[1]-d[1]*dd[0])/speed2;
-                let r = [[c,-s,0.],[s,c,0.],[0.,0.,1.]];
-                let dr = [[-s*turning,-c*turning,0.],[c*turning,-s*turning,0.],[0.;3]];
-                Ok(gcs_core::brep::trajectory::Motion::of_parts(r,dr,point,d))
-            }
-        }
         let curve = BSpline::new(3,vec![0.,0.,0.,0.,1.,1.,1.,1.],vec![[0.,0.,0.],[10.,m("p1y",0.),0.],[20.,m("p2y",20.),0.],
             [m("p3x",30.),20.,0.]]).unwrap();
         let path = Trajectory::General(std::sync::Arc::new(Runner(curve)));
@@ -730,7 +683,7 @@ fn a_whole_touched_meridians_touching_half_is_a_sheet_between_the_tubes_seams() 
 #[test]
 fn the_half_turns_stretches_are_sewn_across_its_cut_into_one_tube_a_contact_curve() {
     use gcs_core::brep::swept::rings::{changes,entered_at,fitted_over,posed};
-    let (tool,path,[a,b],tol) = half_turn();
+    let (tool,path,[a,b],tol) = tumbling(90.);
     let ring = Ring::read(&tool).unwrap();
     let (scale,cuts) = changes(&ring,&path,[a,b]).unwrap();
     assert_eq!(cuts.len(),1,"the contact changes shape once: {cuts:?}");
@@ -828,32 +781,11 @@ fn a_trace_of_no_length_bounds_nothing() {
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 20 s: the thin tumbling torus entered and sewn")]
 fn a_double_curve_crossing_its_tubes_seam_bounds_a_tail_beside_it_not_the_whole_tube() {
     use gcs_core::brep::swept::closed::{RingEntered,ring_entered};
-    use gcs_core::brep::trajectory::Screw;
-    let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.015).unwrap();
-    let (sl,cl) = 45f64.to_radians().sin_cos();
-    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.25,advance:0.});
-    let frame = Trajectory::Twist(Screw {origin:[0.,0.5f64.sqrt()*cl,0.5f64.sqrt()*sl],axis:[1.,0.,0.],
-        ratio:1.,advance:0.});
-    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
-    let roll = [-75f64.to_radians(),75f64.to_radians()];
-    let RingEntered {sheets,cut,..} = ring_entered(&tool,&path,roll,0.015/50_000.)
+    let (tool,path,roll,tol) = thin();
+    let RingEntered {sheets,cut,..} = ring_entered(&tool,&path,roll,tol)
         .unwrap_or_else(|e| panic!("not entered: {e:?}"));
     assert!(cut,"the roll is cut where the contact changes shape");
     assert_eq!(sheets.len(),2,"one tube a contact curve: {:?}",sheets.iter().map(|s| s.faces.len()).collect::<Vec<_>>());
-}
-
-/// brep-bench's `tumbling-torus-full-turn`: a torus of tube 0.16 turned 0.375 a radian about one line
-/// and back a radian about another over a whole turn, and its tolerance.
-fn full_turn() -> (gcs_core::brep::topo::Brep,Trajectory,[f64;2],f64) {
-    use gcs_core::brep::trajectory::Screw;
-    let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.16).unwrap();
-    let (sl,cl) = 30f64.to_radians().sin_cos();
-    let (sa,ca) = 20f64.to_radians().sin_cos();
-    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.375,advance:0.});
-    let frame = Trajectory::Twist(Screw {origin:[0.,0.7071*cl,0.7071*sl],axis:[ca,sa*cl,sa*sl],ratio:1.,
-        advance:0.});
-    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
-    (tool,path,[-std::f64::consts::PI,std::f64::consts::PI],0.16/50_000.)
 }
 
 /// **The full turn's tube in the middle of the roll is holed where the end torus crosses it** (#942,
@@ -868,7 +800,7 @@ fn full_turn() -> (gcs_core::brep::topo::Brep,Trajectory,[f64;2],f64) {
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 45 s: the full turn entered")]
 fn the_full_turns_tube_is_holed_where_the_end_torus_crosses_it() {
     use gcs_core::brep::swept::closed::{RingEntered,ring_entered};
-    let (tool,path,roll,tol) = full_turn();
+    let (tool,path,roll,tol) = tumbling(180.);
     let RingEntered {sheets,..} = ring_entered(&tool,&path,roll,tol).unwrap_or_else(|e| panic!("not entered: {e:?}"));
     let ring = Ring::read(&tool).unwrap();
     let end = path.pose(roll[1]).unwrap().inverse();
@@ -913,7 +845,7 @@ fn the_full_turns_tube_is_holed_where_the_end_torus_crosses_it() {
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 60 s: the full turn built and held to membership")]
 fn the_full_turn_is_built_closed() {
     use gcs_core::brep::swept::depth::{Reading,cover};
-    let (tool,path,roll,tol) = full_turn();
+    let (tool,path,roll,tol) = tumbling(180.);
     let built = gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.16/250.,tol).unwrap_or_else(|u| panic!("{u:?}"));
     built.check(tol).unwrap();
     let v = gcs_core::brep::props::volume(&built);
@@ -954,7 +886,7 @@ fn the_full_turn_is_built_closed() {
 fn the_full_turn_is_built_wherever_its_end_poses_seams_stand() {
     use gcs_core::brep::geom::{Frame,Rigid,Surface};
     use gcs_core::brep::swept::closed::{RingEntered,ring_entered,ring_from};
-    let (tool,path,roll,tol) = full_turn();
+    let (tool,path,roll,tol) = tumbling(180.);
     let once = ring_entered(&tool,&path,roll,tol).unwrap();
     let mut failed = Vec::new();
     for end in 0..2 {
@@ -993,7 +925,7 @@ fn the_full_turn_is_built_wherever_its_end_poses_seams_stand() {
 fn the_full_turns_end_poses_meet_uncovered_along_two_short_arcs_given() {
     use gcs_core::brep::swept::closed::{RingEntered,ring_entered};
     use gcs_core::brep::swept::depth::{Reading,cover};
-    let (tool,path,roll,tol) = full_turn();
+    let (tool,path,roll,tol) = tumbling(180.);
     let RingEntered {ends,given,..} = ring_entered(&tool,&path,roll,tol).unwrap_or_else(|e| panic!("not entered: {e:?}"));
     let ring = Ring::read(&tool).unwrap();
     let met: Vec<&gcs_core::brep::boolean::Given> = given.iter()
@@ -1056,7 +988,7 @@ fn held(ring: &Ring,path: &Trajectory,roll: [f64;2],p: [f64;3],t: f64,apart: f64
 #[test]
 fn the_half_turns_double_curve_is_built_from_the_swallowtail_point_beside_its_birth() {
     use gcs_core::brep::swept::rings::{branch_at,changes,double_curve_from_apex,fitted_over};
-    let (tool,path,[a,b],tol) = half_turn();
+    let (tool,path,[a,b],tol) = tumbling(90.);
     let ring = Ring::read(&tool).unwrap();
     let (scale,cuts) = changes(&ring,&path,[a,b]).unwrap();
     let eps = 1e-9*(b-a);
@@ -1106,7 +1038,7 @@ fn the_half_turns_double_curve_is_built_from_the_swallowtail_point_beside_its_bi
 /// membership. (A Monte Carlo count of the definition read 12.198 ± 0.021.)
 #[test]
 fn the_half_turn_is_built_closed() {
-    let (tool,path,roll,tol) = half_turn();
+    let (tool,path,roll,tol) = tumbling(90.);
     let built = gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.16/250.,tol).unwrap_or_else(|u| panic!("{u:?}"));
     built.check(tol).unwrap();
     let v = gcs_core::brep::props::volume(&built);
@@ -1127,16 +1059,8 @@ fn the_half_turn_is_built_closed() {
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 20 s: the thin tumbling torus entered and sewn")]
 fn a_double_curve_ending_on_a_tubes_crossing_with_the_tool_is_one_vertex_with_it() {
     use gcs_core::brep::swept::closed::{RingEntered,ring_entered};
-    use gcs_core::brep::trajectory::Screw;
     use gcs_core::brep::util::space::distance;
-    let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.015).unwrap();
-    let (sl,cl) = 45f64.to_radians().sin_cos();
-    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.25,advance:0.});
-    let frame = Trajectory::Twist(Screw {origin:[0.,0.5f64.sqrt()*cl,0.5f64.sqrt()*sl],axis:[1.,0.,0.],
-        ratio:1.,advance:0.});
-    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
-    let roll = [-75f64.to_radians(),75f64.to_radians()];
-    let tol = 0.015/50_000.;
+    let (tool,path,roll,tol) = thin();
     let RingEntered {ends,sheets,..} = ring_entered(&tool,&path,roll,tol).unwrap_or_else(|e| panic!("not entered: {e:?}"));
     let stop = &ends[1].faces[0].surface;
     let on: Vec<[f64;3]> = sheets.iter().flat_map(|s| s.vertices.iter().map(|v| v.p)).filter(|&p| stop.implicit(p).abs() <= tol).collect();
@@ -1145,20 +1069,6 @@ fn a_double_curve_ending_on_a_tubes_crossing_with_the_tool_is_one_vertex_with_it
         let d = distance(p,q);
         assert!(d <= tol || d > 10.*tol,"two of the tubes' vertices on the tool {d:e} apart: {p:?} and {q:?}");
     } }
-}
-
-/// brep-bench's `tumbling-torus-thin`: a torus of tube 0.015 turned a quarter of a radian about the
-/// vertical line through (2, 0, 0) and back a radian about the line through (0, h cos 45°, h sin 45°)
-/// along `x`, `h` √½, over ±75°, at the bench's tolerance, a 50 000th of the tube.
-fn thin() -> (Brep,Trajectory,[f64;2],f64) {
-    use gcs_core::brep::trajectory::Screw;
-    let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.015).unwrap();
-    let (sl,cl) = 45f64.to_radians().sin_cos();
-    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.25,advance:0.});
-    let frame = Trajectory::Twist(Screw {origin:[0.,0.5f64.sqrt()*cl,0.5f64.sqrt()*sl],axis:[1.,0.,0.],
-        ratio:1.,advance:0.});
-    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
-    (tool,path,[-75f64.to_radians(),75f64.to_radians()],0.015/50_000.)
 }
 
 /// **A bridge's end gives way to a double curve within the arrangement's band of it** (#942
@@ -1188,7 +1098,7 @@ fn a_bridges_end_gives_way_to_a_double_curve_within_the_arrangements_band_of_it(
         let (lo,hi) = w.branch.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),p| (l.min(p.1),h.max(p.1)));
         assert!(lo <= f.roll[0] && hi >= f.roll[1],"a branch over {:?} given way over {:?}",[lo,hi],f.roll);
     } }
-    let (tool,path,roll,tol) = half_turn();
+    let (tool,path,roll,tol) = tumbling(90.);
     let RingFitted {fits,..} = ring_fitted(&tool,&path,roll,tol).unwrap();
     assert!(fits.iter().all(|f| f.ways.is_empty()),"the half turn gives no way");
 }
@@ -1246,7 +1156,7 @@ fn the_full_turns_tube_passing_back_over_its_start_is_read_from_the_start_row() 
     use gcs_core::brep::swept::closed::{RingFitted,ring_fitted};
     use gcs_core::brep::swept::depth::{label_at,passed_back,sheet};
     use gcs_core::space::distance;
-    let (tool,path,roll,tol) = full_turn();
+    let (tool,path,roll,tol) = tumbling(180.);
     let RingFitted {ring,curves,..} = ring_fitted(&tool,&path,roll,tol).unwrap_or_else(|e| panic!("not fitted: {e:?}"));
     let back = passed_back(&ring,&path,roll,&curves,tol).unwrap_or_else(|e| panic!("not read: {e:?}"));
     assert!(back.len()%2 == 0 && !back.is_empty(),"each run with its partner: {}",back.len());

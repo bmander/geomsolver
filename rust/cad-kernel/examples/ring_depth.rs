@@ -5,32 +5,18 @@
 use cad_kernel::swept::depth::Sampled as Depth;
 use cad_kernel::swept::rings::Ring;
 use cad_kernel::trajectory::Trajectory;
+use cad_kernel::util::space::{add,dot,scale};
 use std::f64::consts::{FRAC_PI_2,PI};
-
-#[derive(Debug)]
-struct Runner(cad_kernel::nurbs::BSpline);
-impl cad_kernel::trajectory::Path for Runner {
-    fn at(&self,t: f64) -> Result<cad_kernel::trajectory::Motion,cad_kernel::KernelError> {
-        let (point,d,dd) = self.0.d2(t);
-        let speed2 = d[0]*d[0]+d[1]*d[1];
-        let (c,s) = (d[0]/speed2.sqrt(),d[1]/speed2.sqrt());
-        let turning = (d[0]*dd[1]-d[1]*dd[0])/speed2;
-        let r = [[c,-s,0.],[s,c,0.],[0.,0.,1.]];
-        let dr = [[-s*turning,-c*turning,0.],[c*turning,-s*turning,0.],[0.;3]];
-        Ok(cad_kernel::trajectory::Motion::of_parts(r,dr,point,d))
-    }
-}
+#[path = "support/bench.rs"]
+mod bench;
 
 type V = [f64;3];
-fn add(a: V,b: V) -> V { [a[0]+b[0],a[1]+b[1],a[2]+b[2]] }
-fn sc(a: V,k: f64) -> V { [a[0]*k,a[1]*k,a[2]*k] }
-fn dot(a: V,b: V) -> f64 { a[0]*b[0]+a[1]*b[1]+a[2]*b[2] }
 
 /// The torus's point in its own coordinates at `α` round its axis (`y`; 0 along `x`, −π/2 its
 /// bottom) and `ψ` round its tube (0 outward, π/2 along `y`).
 fn local(alpha: f64,psi: f64) -> V {
     let er = [alpha.cos(),0.,alpha.sin()];
-    add(add([0.,0.,0.5],sc(er,1.5)),add(sc(er,0.5*psi.cos()),[0.,0.5*psi.sin(),0.]))
+    add(add([0.,0.,0.5],scale(er,1.5)),add(scale(er,0.5*psi.cos()),[0.,0.5*psi.sin(),0.]))
 }
 
 /// The contact parallel's `ψ₀` at the instant `t` (the branch `j` half a turn on): `n · v = 0` on
@@ -46,8 +32,7 @@ fn psi0(path: &Trajectory,t: f64,j: usize) -> f64 {
 fn main() {
     let tool = cad_kernel::build::torus([0.,0.,0.5],[0.,1.,0.],1.5,0.5).unwrap();
     let ring = Ring::read(&tool).unwrap();
-    let curve = cad_kernel::nurbs::BSpline::new(3,vec![0.,0.,0.,0.,1.,1.,1.,1.],vec![[0.,0.,0.],[10.,0.,0.],[20.,20.,0.],[30.,20.,0.]]).unwrap();
-    let path = Trajectory::General(std::sync::Arc::new(Runner(curve)));
+    let path = bench::runner();
     let n: usize = std::env::var("N").ok().and_then(|s| s.parse().ok()).unwrap_or(4000);
     let depth = Depth::new(&ring,&path,[0.,1.],n).unwrap();
     let mode = std::env::args().nth(1).unwrap_or_default();
@@ -185,7 +170,7 @@ fn main() {
         // the whole roll's depth a hair either side of points of each kept piece, along its normal
         "sides" => {
             let least = |x: V| depth.minima(x).iter().map(|c| c.depth).fold(f64::INFINITY,f64::min);
-            let normal = |alpha: f64,psi: f64,t: f64| path.pose(t).unwrap().vector(add(sc([alpha.cos(),0.,alpha.sin()],psi.cos()),[0.,psi.sin(),0.]));
+            let normal = |alpha: f64,psi: f64,t: f64| path.pose(t).unwrap().vector(add(scale([alpha.cos(),0.,alpha.sin()],psi.cos()),[0.,psi.sin(),0.]));
             let h = 1e-6;
             let mut cases: Vec<(&str,f64,f64,f64)> = vec![("Q1",-FRAC_PI_2-0.05,psi0(&path,0.,0)+1.,0.),("W",-FRAC_PI_2+0.1,psi0(&path,0.,0)-0.005,0.),
                 ("W far",-FRAC_PI_2+0.6,psi0(&path,0.,0)-0.03,0.)];
@@ -196,7 +181,7 @@ fn main() {
             }
             for (name,a,p,t) in cases {
                 let (x,n) = (place(a,p,t),normal(a,p,t));
-                println!("{name} at t {t}: inward {:+.3e}, on {:+.3e}, outward {:+.3e}",least(add(x,sc(n,-h))),least(x),least(add(x,sc(n,h))));
+                println!("{name} at t {t}: inward {:+.3e}, on {:+.3e}, outward {:+.3e}",least(add(x,scale(n,-h))),least(x),least(add(x,scale(n,h))));
             }
         },
         // the start wedge's seam traced into its corner at a tolerance (`TOL`, the bench's by default)

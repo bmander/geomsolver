@@ -6,23 +6,10 @@
 use gcs_core::brep::swept::depth::{Reading,cover,depths,far_depth,label_at,seams,sheet};
 use gcs_core::brep::swept::depth::Sampled;
 use gcs_core::brep::swept::rings::{Ring,Side,pieces_at};
+use gcs_core::brep::trajectory::Trajectory;
+use gcs_core::brep::util::space::{add,distance,dot,scale};
 use std::f64::consts::{FRAC_PI_2,PI};
-use gcs_core::brep::topo::Brep;
-use gcs_core::brep::trajectory::{Screw,Trajectory};
-
-/// brep-bench's tumbling torus turned 0.375 a radian about one line and back a radian about
-/// another (`half` the roll each way, in degrees): the half turn's (90) and the full turn's (180),
-/// its tool, motion, roll and tolerance.
-fn tumbling(half: f64) -> (Brep,Trajectory,[f64;2],f64) {
-    let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.16).unwrap();
-    let (sl,cl) = 30f64.to_radians().sin_cos();
-    let (sa,ca) = 20f64.to_radians().sin_cos();
-    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.375,advance:0.});
-    let frame = Trajectory::Twist(Screw {origin:[0.,0.7071*cl,0.7071*sl],axis:[ca,sa*cl,sa*sl],ratio:1.,
-        advance:0.});
-    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
-    (tool,path,[-half.to_radians(),half.to_radians()],0.16/50_000.)
-}
+use crate::common::bench::{runner,thin,tumbling};
 
 /// The far cover of the half turn's sheet at `(θ, t)`, on the contact nearest the place `σ` round
 /// the meridian.
@@ -85,7 +72,7 @@ fn where_the_full_turns_end_poses_touch_both_are_buried() {
     }
     let end = at(roll[1],-2.355278,-1.567330);
     // (the angles to six places: the two points within a few millionths of one another)
-    assert!(gcs_core::brep::util::space::distance(start,end) < 1e-5,"the poses touch: {start:?} {end:?}");
+    assert!(distance(start,end) < 1e-5,"the poses touch: {start:?} {end:?}");
     assert!(matches!(cover(&ring,&path,roll,end,roll[1],0.,tol).unwrap(),Reading::Near),"the end pose at the touch");
     let equator = at(roll[0],1.760338,-0.000259);
     assert!(matches!(cover(&ring,&path,roll,equator,roll[0],0.,tol).unwrap(),Reading::Near),"the start pose's equator");
@@ -112,7 +99,7 @@ fn the_cover_s_boundary_traced_from_the_depth_is_the_half_turn_s_double_curve() 
     // (the double curve's other point in the box, `rings::double_curve_from_apex`'s to seven places)
     let other = at(6.4065157,1.4640931);
     let near = piece.sheet.windows(2).flat_map(|w| (0..=64).map(move |k| { let f = k as f64/64.; [w[0].0+(w[1].0-w[0].0)*f,w[0].1+(w[1].1-w[0].1)*f] }))
-        .map(|q| gcs_core::brep::util::space::distance(at(q[0],q[1]),other)).fold(f64::INFINITY,f64::min);
+        .map(|q| distance(at(q[0],q[1]),other)).fold(f64::INFINITY,f64::min);
     assert!(near <= 2.*tol,"the double curve's point {near:e} from the traced seam");
     // (each partner point beside its own: the sheet's point under it, `Seam::own`)
     assert_eq!(piece.own.len(),1);
@@ -209,15 +196,7 @@ fn the_half_turns_fold_pair_bounds_nothing_the_trim_keeps_before_its_swallowtail
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 30 s: the thin tumbling torus's double curves traced")]
 fn the_thin_tori_double_curves_end_at_their_swallowtail_points_and_the_far_cover_begins_on_them() {
-    use gcs_core::brep::trajectory::Screw;
-    let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.015).unwrap();
-    let (sl,cl) = 45f64.to_radians().sin_cos();
-    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.25,advance:0.});
-    let frame = Trajectory::Twist(Screw {origin:[0.,0.5f64.sqrt()*cl,0.5f64.sqrt()*sl],axis:[1.,0.,0.],
-        ratio:1.,advance:0.});
-    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
-    let roll = [-75f64.to_radians(),75f64.to_radians()];
-    let tol = 0.015/50_000.;
+    let (tool,path,roll,tol) = thin();
     let gcs_core::brep::swept::closed::RingFitted {ring,curves,..} = gcs_core::brep::swept::closed::ring_fitted(&tool,&path,roll,tol).unwrap();
     assert_eq!(curves.len(),2,"two fold pairs, two double curves");
     let tau = std::f64::consts::TAU;
@@ -256,15 +235,7 @@ fn the_thin_tori_double_curves_end_at_their_swallowtail_points_and_the_far_cover
 /// was kept where the tail above the row was dropped.
 #[test]
 fn a_far_cover_past_an_own_contact_that_barely_climbs_is_read_from_its_climbs_top() {
-    use gcs_core::brep::trajectory::Screw;
-    let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.015).unwrap();
-    let (sl,cl) = 45f64.to_radians().sin_cos();
-    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.25,advance:0.});
-    let frame = Trajectory::Twist(Screw {origin:[0.,0.5f64.sqrt()*cl,0.5f64.sqrt()*sl],axis:[1.,0.,0.],
-        ratio:1.,advance:0.});
-    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
-    let roll = [-75f64.to_radians(),75f64.to_radians()];
-    let tol = 0.015/50_000.;
+    let (tool,path,roll,tol) = thin();
     let ring = Ring::read(&tool).unwrap();
     let (x,t) = ([1.972716153444042,1.791053032761949,1.3022206590889487],1.1401698);
     // (the climb's top within a few roundings of the fit's tenth of the tolerance it stands off by)
@@ -281,40 +252,19 @@ fn a_far_cover_past_an_own_contact_that_barely_climbs_is_read_from_its_climbs_to
 
 type V = [f64;3];
 
-/// The frame brep-bench's runner carries the ring by: its `x` along the curve's tangent, its `z` up.
-#[derive(Debug)]
-struct Runner(gcs_core::brep::nurbs::BSpline);
-impl gcs_core::brep::trajectory::Path for Runner {
-    fn at(&self,t: f64) -> Result<gcs_core::brep::trajectory::Motion,gcs_core::brep::KernelError> {
-        let (point,d,dd) = self.0.d2(t);
-        let speed2 = d[0]*d[0]+d[1]*d[1];
-        let (c,s) = (d[0]/speed2.sqrt(),d[1]/speed2.sqrt());
-        let turning = (d[0]*dd[1]-d[1]*dd[0])/speed2;
-        let r = [[c,-s,0.],[s,c,0.],[0.,0.,1.]];
-        let dr = [[-s*turning,-c*turning,0.],[c*turning,-s*turning,0.],[0.;3]];
-        Ok(gcs_core::brep::trajectory::Motion::of_parts(r,dr,point,d))
-    }
-}
-
 /// The torus of radii 1.5 and 0.5 about `y` through (0, 0, 0.5), read as a ring, and the runner's
 /// frame along the bench's cubic.
 fn ring_along() -> (Ring,Trajectory) {
     let tool = gcs_core::brep::build::torus([0.,0.,0.5],[0.,1.,0.],1.5,0.5).unwrap();
-    let curve = gcs_core::brep::nurbs::BSpline::new(3,vec![0.,0.,0.,0.,1.,1.,1.,1.],
-        vec![[0.,0.,0.],[10.,0.,0.],[20.,20.,0.],[30.,20.,0.]]).unwrap();
-    (Ring::read(&tool).unwrap(),Trajectory::General(std::sync::Arc::new(Runner(curve))))
+    (Ring::read(&tool).unwrap(),runner())
 }
-
-fn add(a: V,b: V) -> V { [a[0]+b[0],a[1]+b[1],a[2]+b[2]] }
-fn sc(a: V,k: f64) -> V { [a[0]*k,a[1]*k,a[2]*k] }
-fn dot(a: V,b: V) -> f64 { a[0]*b[0]+a[1]*b[1]+a[2]*b[2] }
 
 /// The torus's point in its own coordinates at `α` round its axis (−π/2 its bottom meridian, θ*)
 /// and `ψ` round its tube (0 away from the axis), and its normal there.
 fn local(alpha: f64,psi: f64) -> (V,V) {
     let er = [alpha.cos(),0.,alpha.sin()];
-    let n = add(sc(er,psi.cos()),[0.,psi.sin(),0.]);
-    (add(add([0.,0.,0.5],sc(er,1.5)),sc(n,0.5)),n)
+    let n = add(scale(er,psi.cos()),[0.,psi.sin(),0.]);
+    (add(add([0.,0.,0.5],scale(er,1.5)),scale(n,0.5)),n)
 }
 
 /// The contact parallel's `ψ₀` at the instant `t`, branch `j` half a turn on: `n · v = 0` on the
@@ -345,7 +295,7 @@ fn a_rings_kept_pieces_bound_its_sweep_by_depth() {
     }
     for (a,p,t) in cases {
         let (x,n) = place(a,p,t);
-        let (inward,on,outward) = (least(add(x,sc(n,-h))),least(x),least(add(x,sc(n,h))));
+        let (inward,on,outward) = (least(add(x,scale(n,-h))),least(x),least(add(x,scale(n,h))));
         assert!((inward+h).abs() < 1e-9 && on.abs() < 1e-12 && (outward-h).abs() < 1e-9,"α {a} ψ {p} t {t}: {inward} {on} {outward}");
     }
     for t in [0.1,0.5,0.9] {
@@ -396,5 +346,5 @@ fn the_start_wedges_seam_is_traced_into_its_corner_with_its_partner() {
     // the wedge narrowing to its corner: at the last point under the tolerance across
     let last = seam.last().unwrap();
     let rim = pose.point(local(-FRAC_PI_2+last.e,p0).0);
-    assert!(gcs_core::brep::util::space::distance(rim,last.x) <= 2.*tol,"{last:?}");
+    assert!(distance(rim,last.x) <= 2.*tol,"{last:?}");
 }

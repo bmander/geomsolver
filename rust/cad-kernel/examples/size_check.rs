@@ -4,26 +4,19 @@
 //!
 //! `cargo run --release -p cad-kernel --example size_check -- half-turn|full-turn|eighty|across`
 use cad_kernel::trajectory::{Screw,Trajectory};
-
-fn tumbling(tube: f64,ratio: f64,lean: f64,heading: f64,height: f64) -> (cad_kernel::topo::Brep,Trajectory) {
-    let tool = cad_kernel::build::torus([3.,0.,2.],[0.,0.,1.],1.,tube).unwrap();
-    let (sl,cl) = lean.to_radians().sin_cos();
-    let (sa,ca) = heading.to_radians().sin_cos();
-    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio,advance:0.});
-    let frame = Trajectory::Twist(Screw {origin:[0.,height*cl,height*sl],axis:[ca,sa*cl,sa*sl],ratio:1.,advance:0.});
-    (tool,Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)})
-}
+#[path = "support/bench.rs"]
+mod bench;
 
 fn main() {
     let case = std::env::args().nth(1).unwrap_or_default();
     let clock = std::time::Instant::now();
     let built = match case.as_str() {
         "half-turn" => {
-            let (tool,path) = tumbling(0.16,0.375,30.,20.,0.7071);
+            let (tool,path) = bench::tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.);
             cad_kernel::swept::closed::ring(&tool,&path,[-90f64.to_radians(),90f64.to_radians()],0.16/250.,0.16/50000.)
         }
         "full-turn" => {
-            let (tool,path) = tumbling(0.16,0.375,30.,20.,0.7071);
+            let (tool,path) = bench::tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.);
             cad_kernel::swept::closed::ring(&tool,&path,[-180f64.to_radians(),180f64.to_radians()],0.16/250.,0.16/50000.)
         }
         "eighty" => {

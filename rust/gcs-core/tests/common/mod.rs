@@ -8,9 +8,11 @@
 //! Beside them, by what they read a document as: `text` (`read` and solved), `parsed`
 //! (`common::parse`, a link diagnostic left to the elaboration), `linked` (a host's parse, the
 //! elaboration unchecked), `lenient` (every diagnostic returned rather than asserted) and
-//! `gestures` (the edit tests' harness); and `rounds`, the closed forms rounds are held to.
+//! `gestures` (the edit tests' harness); `rounds`, the closed forms rounds are held to; and
+//! `bench`, brep-bench's swept cases the swept tests read.
 #![allow(dead_code)]
 
+pub mod bench;
 pub mod gestures;
 pub mod lenient;
 pub mod linked;
