@@ -187,6 +187,11 @@ pub fn ends_met(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],ends: [&crate::topo
             let Some(e) = [&fs.surface,&fe.surface].iter().position(|s| gv.surfaces.iter().any(|t| t == *s)) else { continue };
             let other = |x: V| ring.signed(poses[1-e].inverse().point(x)).0;
             for c in &gv.curves { for x in corners_along(c,&other,tol) {
+                // (a corner within twice the tolerance of an end of a given curve — where a seam passes
+                // from one face of a tube to the next, its two curves' shared end — is that end: the
+                // arc then ends at the vertex the seams meet at, by construction)
+                let x = given.iter().flat_map(|h| h.curves.iter()).flat_map(curve_ends)
+                    .filter(|&y| distance(x,y) <= 2.*tol).min_by(|p,q| distance(x,*p).total_cmp(&distance(x,*q))).unwrap_or(x);
                 // (two corners within twice the tolerance are one place)
                 if corners.iter().any(|&y| distance(x,y) <= 2.*tol) { continue }
                 // (a corner of an arc on the boundary is on it: neither pose covered there by more than
@@ -239,6 +244,15 @@ pub fn ends_met(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],ends: [&crate::topo
         if !curves.is_empty() { out.push(crate::boolean::Given {surfaces:[fs.surface.clone(),fe.surface.clone()],curves,touches:Vec::new()}) }
     } }
     Ok(out)
+}
+
+/// A given curve's two ends, where it has a span (`corners_along`'s).
+fn curve_ends(c: &crate::geom::Curve) -> Vec<V> {
+    match c {
+        crate::geom::Curve::BSpline(b) => { let [t0,t1] = b.domain(); vec![c.point(t0),c.point(t1)] }
+        crate::geom::Curve::Iso(..) => vec![c.point(0.),c.point(1.)],
+        _ => Vec::new(),
+    }
 }
 
 /// The square of a face's parameters its loops span.
