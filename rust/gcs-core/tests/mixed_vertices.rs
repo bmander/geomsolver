@@ -13,7 +13,7 @@
 use gcs_core::brep::{export, props, sweep::Say};
 use std::f64::consts::PI;
 
-use crate::common::rounds::{exported_volume, inset, refused, square_run};
+use crate::common::rounds::{exported, exported_volume, inset, refused, square_run};
 use crate::common::{close, ent, text::solved};
 
 /// A prism `long` long of a profile all of whose corners are right angles — `convex` of them
@@ -483,16 +483,15 @@ fn a_round_ending_where_a_rib_meets_a_flange_ends_square_on_the_ribs_side() {
     }
     // built and written as STEP, touching itself nowhere (at 10° the cap above the underside is
     // the set's own, 3.8 µm wide, which the export warns of and writes)
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
     for (x1, deep, rib, word, mirror, want) in cases {
+        let case = format!("{word} to ({x1}, -{deep}) over {rib:?}{}", if mirror { " mirrored" } else { "" });
+        eprintln!("{case}");
         let e = solved(&ribbed(x1, deep, rib, word, mirror));
         assert!(e.diags.is_empty(), "{:?}", e.diags);
-        let exact = export::exact(&e.sketch, ent(&e, "part").i(), None, None, &say)
-            .unwrap_or_else(|r| panic!("{word} to ({x1}, -{deep}) over {rib:?}, mirrored {mirror}: {r:?}"));
-        assert!(exact.solid.self_touching(1e-9).is_empty() && exact.solid.pinches().is_empty());
-        export::step(&exact, "part", None, &say).unwrap();
-        let got = props::volume(&exact.solid);
-        eprintln!("{word} to ({x1}, -{deep}) over {rib:?}{}: {got:.9} against {want:.9}", if mirror { " mirrored" } else { "" });
+        let solid = exported(&e, "part");
+        assert!(solid.self_touching(1e-9).is_empty() && solid.pinches().is_empty(), "{case}");
+        let got = props::volume(&solid);
+        eprintln!("{case}: {got:.9} against {want:.9}");
         close(got, want);
     }
 }

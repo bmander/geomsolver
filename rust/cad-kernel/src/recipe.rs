@@ -537,32 +537,37 @@ fn combined_sets(n: &Body,which: std::ops::Range<usize>,solid: &mut Brep,known: 
 }
 
 /// **A round or a chamfer leaves no body touching itself alone** (#996 item 4): where `after`, the
-/// body `before` with a round or a chamfer applied, touches itself along a line it did not
-/// before (`Brep::self_touching`: the Boolean holds such a line twice, `Brep::unpinched`), and no
-/// round or chamfer applied before it (`late`) has a face through that line, the line is between
-/// this one's material and the body's own: no reading of rounds of separate statements against
-/// each other makes it (#218, which the export says at the vertex), and no manifold solid is
-/// that, so it is refused here, at the statement, rather than built and handed on to a `--where`,
-/// a later Boolean or round, or an export.  What it says.  Read only where the line is new, so a
-/// body that touches itself already is the statement's that made it so.  Cheap: the lines are a
-/// pass over the edges, and an earlier piece's surfaces are asked only at a new line's middle.
+/// body `before` with a round or a chamfer applied, touches itself along a line (`Brep::self_touching`:
+/// the Boolean holds such a line twice, `Brep::unpinched`, read to the tolerance the export reads
+/// it to and each edge's own) that this one made, and no round or chamfer applied before it
+/// (`late`) made a face at that line, the line is between this one's material and the body's own:
+/// no reading of rounds of separate statements against each other makes it (#218, which the export
+/// says at the vertex), and no manifold solid is that, so it is refused here, at the statement,
+/// rather than built and handed on to a `--where`, a later Boolean or round, or an export.  What
+/// it says.  Read by provenance, the faces of the line's two edges by their names (`NAMED`, which
+/// the Booleans keep): the line is this one's where one of them is named as none of `before`'s
+/// faces is (a body that touches itself already is the statement's that made it so), and an
+/// earlier one's where one is named as a face of it.  Cheap: the lines are a pass over the edges,
+/// and only a line's own faces are asked.
 fn touching_alone(before: &Brep,after: &Brep,late: &[&Brep]) -> Option<String> {
-    use crate::util::space::{distance,scale,add};
+    use std::collections::BTreeSet;
     let tol = 1e-9*after.size().max(1.);
-    let lines = after.self_touching(tol);
+    let lines = after.self_touching_edges(tol);
     if lines.is_empty() { return None }
-    let had = before.self_touching(tol);
-    let same = |[a,b]: [V;2],[c,d]: [V;2]| distance(a,c).max(distance(b,d)) <= 1e3*tol
-        || distance(a,d).max(distance(b,c)) <= 1e3*tol;
-    // through a face of `b` (its surface there, within its box)
-    let through = |b: &Brep,p: V| {
-        let (lo,hi) = b.bounds();
-        let near = 1e3*tol;
-        (0..3).all(|k| p[k] >= lo[k]-near && p[k] <= hi[k]+near)
-            && b.faces.iter().any(|f| distance(f.surface.point(f.surface.inverse(p)),p) <= near)
+    fn names(b: &Brep) -> BTreeSet<&str> { b.faces.iter().map(|f| f.name.as_str()).collect() }
+    let had = names(before);
+    let earlier: BTreeSet<&str> = late.iter().flat_map(|&b| names(b)).collect();
+    // the names of the faces at the line, its two edges' faces
+    let at = |es: [u32;2]| -> Vec<&str> {
+        after.faces.iter().filter(|f| f.loops.iter().flatten().any(|c| es.contains(&c.edge)))
+            .map(|f| f.name.as_str()).collect()
     };
-    let [a,b] = lines.into_iter().find(|&l| !had.iter().any(|&h| same(l,h))
-        && !late.iter().any(|&o| through(o,scale(add(l[0],l[1]),0.5))))?;
+    let alone = |&es: &[u32;2]| {
+        let named = at(es);
+        named.iter().any(|n| !had.contains(n)) && !named.iter().any(|n| earlier.contains(n))
+    };
+    let [e,_] = lines.into_iter().find(alone)?;
+    let [a,b] = after.edges[e as usize].v.map(|v| after.vertices[v as usize].p);
     Some(format!("it leaves the solid touching itself along a line from [{:.4}, {:.4}, {:.4}] to [{:.4}, {:.4}, {:.4}] mm, \
         where its material, read off the body as its other terms leave it, meets the body's own and no other round or \
         chamfer: no manifold solid is that, and the round or chamfer is not built so",a[0],a[1],a[2],b[0],b[1],b[2]))

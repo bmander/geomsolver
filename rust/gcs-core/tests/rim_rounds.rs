@@ -618,11 +618,7 @@ fn necked_rim_in_the_lug(r: f64) -> f64 {
 /// refused at its export as touching itself at `p6`: not held here.)
 #[test]
 fn a_rims_round_crossing_the_foot_of_a_lugs_blend_is_built() {
-    let volume = |src: String| {
-        let e = solved(&src);
-        assert!(e.diags.is_empty(), "{:?}", e.diags);
-        props::volume(&exported(&e, "part"))
-    };
+    let volume = |src: String| exported_volume(&src, "part");
     let blended = volume(necked_plate(0.0, true, false, false));
     let plate = volume(necked_plate(0.0, false, false, false));
     for r in [1.0, 2.0, 3.0] {

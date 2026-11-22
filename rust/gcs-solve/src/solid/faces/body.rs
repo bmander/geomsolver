@@ -646,15 +646,26 @@ impl BodyFaces {
         // carried on bound the chain's convex solid only where every face of it lies within each
         // other's side carried on past its patch; elsewhere the carried side of one cuts off
         // another face's patch, and the chain bulges no way
+        // — read over each edge of the chain's faces once, against each face of the chain but
+        // those of its own: a plane's side in closed form over a line or a circle (`plane_past`),
+        // any other face's carried side at nine points of the edge, read once for every face; past
+        // by more than `past`, the length the body reads a point past a face by
         let sigma = if beyond { -1.0 } else { 1.0 };
-        let tol = TANGENT * (1.0 + self.loc.b.size() / self.mm);
+        let mut edges: BTreeSet<u32> = BTreeSet::new();
         for &fi in faces {
-            for &g in faces.iter().filter(|&&g| g != fi) {
-                for &e in &self.edges[g] {
-                    let out = |k: usize| sigma * self.carried_side_grad(fi, self.along(e, k as f64 / 8.0)).0 > tol;
-                    if (0..=8).any(out) {
-                        return None;
-                    }
+            edges.extend(self.edges[fi].iter().copied());
+        }
+        for e in edges {
+            let own = self.faces_of(e);
+            let mut points: Option<Vec<V>> = None;
+            for &fi in faces.iter().filter(|&&fi| faces.iter().any(|&g| g != fi && own.contains(&g))) {
+                let out = match self.plane_past(fi, sigma, e) {
+                    Some(out) => out,
+                    None => points.get_or_insert_with(|| (0..=8).map(|k| self.along(e, k as f64 / 8.0)).collect())
+                        .iter().any(|&p| sigma * self.carried_side_grad(fi, p).0 > self.past(p)),
+                };
+                if out {
+                    return None;
                 }
             }
         }
@@ -765,34 +776,39 @@ impl BodyFaces {
         }).collect()
     }
 
-    /// Whether face `c` carries one of `faces` on across a seam at `v` (model units): their
-    /// outward normals there one, so they meet tangent and the edge between them is none.
-    fn continues(&self, c: usize, faces: &[usize], v: V) -> bool {
+    /// Whether face `c` meets one of `faces` tangent at `v` (model units): their outward normals
+    /// there one (`turn` 1: `c` carries that face on across a seam, and the edge between them is
+    /// none) or opposite (`turn` -1: back to back, `c`'s material across that face's surface from
+    /// its own — a flange's underside and the top of a block it stands on that runs out past its
+    /// edge, the two meeting at the point where the block's side crosses the flange's rim).
+    fn tangent_at(&self, c: usize, faces: &[usize], v: V, turn: f64) -> bool {
         let q = self.q(v);
-        let n = self.outward(c, q);
+        let n = scale(self.outward(c, q), turn);
         faces.iter().any(|&f| norm(sub(self.outward(f, q), n)) < TANGENT)
     }
 
-    /// Whether face `c` stands back to back with one of `faces` at `v` (model units): their
-    /// outward normals there opposite, so `c`'s material lies across that face's surface from its
-    /// own — a flange's underside and the top of a block it stands on that runs out past its edge,
-    /// the two meeting at the point where the block's side crosses the flange's rim.
-    fn back_to_back(&self, c: usize, faces: &[usize], v: V) -> bool {
-        let q = self.q(v);
-        let n = self.outward(c, q);
-        faces.iter().any(|&f| norm(add(self.outward(f, q), n)) < TANGENT)
+    /// Whether face `c`'s surface holds the edge of `run` that ends at vertex `vid`
+    /// (`holds_edge`).
+    fn lies_along(&self, c: usize, run: &[u32], vid: u32) -> bool {
+        run.iter().filter(|&&e| self.loc.b.edges[e as usize].v.contains(&vid)).any(|&e| self.holds_edge(c, e))
     }
 
-    /// Whether face `c`'s surface holds the edge of `run` that ends at vertex `vid` (model units):
-    /// each of nine points along it within `past` of the surface — a plane through a straight
-    /// edge, or square to a circle's axis through the circle.
-    fn lies_along(&self, c: usize, run: &[u32], vid: u32) -> bool {
-        run.iter().filter(|&&e| self.loc.b.edges[e as usize].v.contains(&vid)).any(|&e| {
-            (0..=8).all(|k| {
-                let p = self.along(e, k as f64 / 8.0);
-                self.side(c, p).abs() <= self.past(p)
-            })
-        })
+    /// **Whether face `c`'s surface holds edge `e`**: no point of the edge past it either way by
+    /// more than `past` (`goes_across`) — in closed form for a plane against a line (`plane_holds`)
+    /// or a circle (a plane square to its axis through it), the edge sampled against any other.
+    fn holds_edge(&self, c: usize, e: u32) -> bool {
+        if let (Some((n, o)), Some(ends)) = (self.plane(c), self.segment(e)) {
+            return self.plane_holds((n, dot(n, o)), ends);
+        }
+        !self.goes_across(c, 1.0, &[e]) && !self.goes_across(c, -1.0, &[e])
+    }
+
+    /// Whether the plane `n·x = d` (`n` a unit normal, model units) holds the straight edge
+    /// between `ends`: each end within `past` of it, so every point between is.  `holds_edge`'s
+    /// closed form for a plane against a line, read where only the plane is in hand (a run's
+    /// piece, `lowering::piece::run_piece`): a plane along the run stands at no distance along it.
+    pub(crate) fn plane_holds(&self, (n, d): (V, f64), ends: [V; 2]) -> bool {
+        ends.iter().all(|&p| (dot(n, p) - d).abs() <= self.past(p))
     }
 
     /// Whether faces `c` and `f` meet in an edge at vertex `vid`.
@@ -1033,9 +1049,9 @@ impl BodyFaces {
     /// The faces run `run` (between `faces`) ends on at its end `v` (vertex `vid`, `d` the way it
     /// runs from there), each with the side of it the run runs on: every other face there, but
     /// one going on from one of `faces` tangent across a seam (a seam is no edge, and the run
-    /// beyond it is the next one's); nor one whose surface holds the run's edge there (a plane
-    /// along it, `lies_along`), nor one back to back with one of `faces` there, their outward
-    /// normals opposite (`back_to_back`).  Such a face stands at no distance along the run and
+    /// beyond it is the next one's, `tangent_at`); nor one whose surface holds the run's edge there
+    /// (a plane along it, `lies_along`), nor one back to back with one of `faces` there, their
+    /// outward normals opposite (`tangent_at` turned).  Such a face stands at no distance along the run and
     /// meets its faces only at the vertex or along the edge's own line past it, so it lies beyond
     /// the face the run ends on: a flange's underside rounded where a block it stands on runs out
     /// past its edge, the block's top in the underside's plane past the block's side, which ends
@@ -1062,7 +1078,7 @@ impl BodyFaces {
             faces.iter().any(|&f| dot(n, self.normal(f, v)) > 1e-9 && self.meet_at(c, f, vid))
         });
         let ends = self.faces_at(vid, faces).into_iter().filter(|&c| {
-            !(self.continues(c, faces, v) || self.back_to_back(c, faces, v) || self.lies_along(c, run, vid))
+            !(self.tangent_at(c, faces, v, 1.0) || self.tangent_at(c, faces, v, -1.0) || self.lies_along(c, run, vid))
         });
         ends.filter_map(|c| {
             let sign = if self.side(c, on) <= 0.0 { 1.0 } else { -1.0 };
@@ -1095,28 +1111,38 @@ impl BodyFaces {
     }
 
     /// Whether some point of edges `es` stands outside face `c`'s surface on the side `sign`
-    /// keeps (`sign · side > 0`), by more than the boundary's tolerance: exactly for a plane
-    /// against a line or a circle, at 64 points of an edge otherwise.
+    /// keeps (`sign · side > 0`), by more than `past`: exactly for a plane against a line or a
+    /// circle (`plane_past`), at 64 points of an edge otherwise.
     fn goes_across(&self, c: usize, sign: f64, es: &[u32]) -> bool {
-        let out = |p: V| sign * self.side(c, p) > self.past(p);
-        es.iter().any(|&e| {
-            let edge = &self.loc.b.edges[e as usize];
-            match (self.plane(c), &edge.curve) {
-                (Some(_), EdgeCurve::Curve(crate::brep::geom::Curve::Line { .. })) => {
-                    out(self.along(e, 0.0)) || out(self.along(e, 1.0))
-                }
-                (Some((n, _)), EdgeCurve::Curve(crate::brep::geom::Curve::Circle(f, _))) => {
-                    // `side` along a circle is `side(centre) + r (a cos t + b sin t)`: at its
-                    // ends, and where it is greatest the way `sign` reads it, if within them
-                    let (t0, t1) = (edge.t[0].min(edge.t[1]), edge.t[0].max(edge.t[1]));
-                    let peak = (sign * dot(n, f.y)).datan2(sign * dot(n, f.x));
-                    let turn = (peak - t0).rem_euclid(2.0 * PI);
-                    let at = |t: f64| self.back(edge.point(t, &self.loc.b.vertices));
-                    out(at(t0)) || out(at(t1)) || (t0 + turn <= t1 && out(at(t0 + turn)))
-                }
-                _ => (0..=64).any(|k| out(self.along(e, k as f64 / 64.0))),
+        es.iter().any(|&e| self.plane_past(c, sign, e)
+            .unwrap_or_else(|| (0..=64).any(|k| self.beyond(c, sign, self.along(e, k as f64 / 64.0)))))
+    }
+
+    /// Whether `p` stands past face `c`'s surface on the side `sign` keeps, by more than `past`.
+    fn beyond(&self, c: usize, sign: f64, p: V) -> bool { sign * self.side(c, p) > self.past(p) }
+
+    /// Whether some point of edge `e` stands past face `c`'s surface on the side `sign` keeps
+    /// (`beyond`), in closed form where `c` is a plane and `e` a line or a circle; `None` for any
+    /// other, to be read at points of the edge.
+    fn plane_past(&self, c: usize, sign: f64, e: u32) -> Option<bool> {
+        let (n, _) = self.plane(c)?;
+        let edge = &self.loc.b.edges[e as usize];
+        let out = |p: V| self.beyond(c, sign, p);
+        match &edge.curve {
+            EdgeCurve::Curve(crate::brep::geom::Curve::Line { .. }) => {
+                Some(out(self.along(e, 0.0)) || out(self.along(e, 1.0)))
             }
-        })
+            EdgeCurve::Curve(crate::brep::geom::Curve::Circle(f, _)) => {
+                // `side` along a circle is `side(centre) + r (a cos t + b sin t)`: at its
+                // ends, and where it is greatest the way `sign` reads it, if within them
+                let (t0, t1) = (edge.t[0].min(edge.t[1]), edge.t[0].max(edge.t[1]));
+                let peak = (sign * dot(n, f.y)).datan2(sign * dot(n, f.x));
+                let turn = (peak - t0).rem_euclid(2.0 * PI);
+                let at = |t: f64| self.back(edge.point(t, &self.loc.b.vertices));
+                Some(out(at(t0)) || out(at(t1)) || (t0 + turn <= t1 && out(at(t0 + turn))))
+            }
+            _ => None,
+        }
     }
 
     /// Edges `es` (between `faces`) in runs (`runs`), each with where it ends (`end_faces`): a
@@ -1133,17 +1159,28 @@ impl BodyFaces {
 
     /// `faces` and every face going on from one of them tangent across a seam, and from those
     /// on (`F.smooth`, [0.149]): an edge two of the boundary's faces bound, where their outward
-    /// normals are one at its middle, is no edge but a seam.  In the faces' order, then as met.
+    /// normals are one at its middle, is no edge but a seam.  In the faces' order, then as met
+    /// (`across_seams`).
     pub fn smooth(&self, faces: &[usize]) -> Vec<usize> {
-        let mut out = faces.to_vec();
+        self.across_seams(faces, |_| true).into_iter().map(|(fi, _)| fi).collect()
+    }
+
+    /// **The walk across seams**: `from`, then every face `keep` holds going on from one of them
+    /// tangent across a seam (`seam`), and from those on — breadth first, in `from`'s order and
+    /// then as met, each edge of a face in its order and each face of an edge in its — each face
+    /// once, with the place in the walk of the face it was reached from (`None` for one of
+    /// `from`).  A smooth chain (`smooth`), the pieces of one surface (`lowering::pieces`) and the
+    /// way through a chain to one of its faces (`lowering::piece::reached`) are this walk.
+    pub fn across_seams(&self, from: &[usize], keep: impl Fn(usize) -> bool) -> Vec<(usize, Option<usize>)> {
+        let mut out: Vec<(usize, Option<usize>)> = from.iter().map(|&fi| (fi, None)).collect();
         let mut k = 0;
         while k < out.len() {
-            let fi = out[k];
+            let fi = out[k].0;
             for &e in &self.edges[fi] {
-                let [x, y] = *self.faces_of(e) else { continue };
-                let other = if x == fi { y } else { x };
-                if other != fi && !out.contains(&other) && self.seam(e) {
-                    out.push(other);
+                for &g in self.faces_of(e) {
+                    if !out.iter().any(|&(h, _)| h == g) && self.seam(e) && keep(g) {
+                        out.push((g, Some(k)));
+                    }
                 }
             }
             k += 1;

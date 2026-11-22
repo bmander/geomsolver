@@ -671,6 +671,14 @@ impl Brep {
     /// Where the solid touches itself along a line (`unpinched`): two edges between the same
     /// vertices along one curve, within `tol` at their middles; each line's ends.
     pub fn self_touching(&self,tol: f64) -> Vec<[V;2]> {
+        self.self_touching_edges(tol).into_iter()
+            .map(|[e,_]| self.edges[e as usize].v.map(|v| self.vertices[v as usize].p)).collect()
+    }
+
+    /// `self_touching`'s lines by their edges: each edge with another between the same vertices
+    /// after it whose middle is its own, within `tol` or either edge's tolerance — the first such —
+    /// in the edges' order.
+    pub fn self_touching_edges(&self,tol: f64) -> Vec<[u32;2]> {
         // the edges between each pair of vertices, then each against the ones after it there
         let mut between: std::collections::BTreeMap<[u32;2],Vec<usize>> = Default::default();
         for (i,e) in self.edges.iter().enumerate() {
@@ -684,13 +692,13 @@ impl Brep {
             let mids: Vec<V> = list.iter().map(|&i| mid(&self.edges[i])).collect();
             for (j,&i) in list.iter().enumerate() {
                 let a = &self.edges[i];
-                let twin = (j+1..list.len()).any(|k| distance(mids[j],mids[k]) <= tol.max(a.tol).max(self.edges[list[k]].tol));
-                if twin { out.push((i,a.v.map(|v| self.vertices[v as usize].p))); }
+                let twin = (j+1..list.len()).find(|&k| distance(mids[j],mids[k]) <= tol.max(a.tol).max(self.edges[list[k]].tol));
+                if let Some(k) = twin { out.push([i as u32,list[k] as u32]); }
             }
         }
         // in the edges' order, as found before
-        out.sort_by_key(|&(i,_)| i);
-        out.into_iter().map(|(_,p)| p).collect()
+        out.sort_by_key(|&[i,_]| i);
+        out
     }
 
     /// Where the solid pinches: vertices whose faces fall into more than one fan — joined round

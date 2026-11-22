@@ -12,7 +12,7 @@ use gcs_core::brep::nurbs::{BSpline,Net};
 use gcs_core::brep::props::{area,volume};
 use gcs_core::brep::topo::Brep;
 use gcs_core::space::{cross,distance,dot,norm,unit};
-use std::f64::consts::TAU;
+use std::f64::consts::{FRAC_PI_4,TAU};
 use std::sync::Arc;
 
 const R: f64 = 15.;
@@ -383,8 +383,8 @@ fn a_rims_round_crossing_a_blends_foot_touches_it_at_a_point_alone() {
             let what = format!("blend {big}, round {r}, run {run} to {past}, turned {turn}{}",if mirrored { ", mirrored" } else { "" });
             let (body,bar) = wall_blend_and_rim(big,run,height,r,past,turn,mirrored);
             let (w,shelf,beyond) = (10.,6.,4.);
-            let section = w*(run+big+shelf)+(big+beyond)*shelf+big*big*(1.-PI_4);
-            let taken = r*r*(1.-PI_4)*(run+past);
+            let section = w*(run+big+shelf)+(big+beyond)*shelf+big*big*(1.-FRAC_PI_4);
+            let taken = r*r*(1.-FRAC_PI_4)*(run+past);
             match combined(&body,&bar,Op::Cut,0.) {
                 Err(e) => failed.push(format!("{what}: {}",e.msg)),
                 Ok(cut) => {
@@ -398,4 +398,3 @@ fn a_rims_round_crossing_a_blends_foot_touches_it_at_a_point_alone() {
     assert!(failed.is_empty(),"{}",failed.join("\n"));
 }
 
-const PI_4: f64 = std::f64::consts::FRAC_PI_4;

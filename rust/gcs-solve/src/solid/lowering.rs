@@ -561,6 +561,13 @@ fn back_over_in(sk: &Sketch, body: &super::faces::BodyFaces, rounded: &[usize], 
         body.said(own), body.said(next), body.said(e), body.said(own), body.said(next), body.said(e))
 }
 
+/// A point as a refusal says it: each coordinate to six figures, in the document's unit
+/// (`[-30, -15, 18]mm`).
+pub(super) fn point_said(p: V, units: crate::units::Units) -> String {
+    let figures = |x: f64| crate::json::fmt_g(x, 6);
+    format!("[{}, {}, {}]{}", figures(p[0]), figures(p[1]), figures(p[2]), units.name())
+}
+
 /// `back_over_said` where the faces are not to be named: the seam's point and the depth.
 fn back_over_unnamed(sk: &Sketch, b: &BackOver) -> String {
     let (witness, depth) = back_over_numbers(sk, b);
@@ -572,8 +579,7 @@ fn back_over_unnamed(sk: &Sketch, b: &BackOver) -> String {
 /// A back-over's seam point and depth as the document says them: the point to six figures in its
 /// unit, the depth a length to two.
 fn back_over_numbers(sk: &Sketch, b: &BackOver) -> (String, String) {
-    let figures = |x: f64| crate::json::fmt_g(x, 6);
-    let witness = format!("[{}, {}, {}]{}", figures(b.at[0]), figures(b.at[1]), figures(b.at[2]), sk.units.name());
+    let witness = point_said(b.at, sk.units);
     let depth = crate::units::Dim::LENGTH.number_text(crate::json::fmt_g(b.depth, 2).parse().unwrap_or(b.depth), sk.units);
     (witness, depth)
 }
@@ -692,20 +698,8 @@ fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> 
 /// reaches across.  `fi` first; it alone where its surface is none `Surf` reads.
 pub(crate) fn pieces(body: &super::faces::BodyFaces, fi: usize) -> Vec<usize> {
     let Some(own) = Surf::of(body, fi) else { return vec![fi] };
-    let mut out = vec![fi];
-    let mut k = 0;
-    while k < out.len() {
-        for &e in body.edges_of(out[k]) {
-            for &g in body.faces_of(e) {
-                let same = || Surf::of(body, g).is_some_and(|s| s.same(&own));
-                if !out.contains(&g) && body.seam(e) && same() {
-                    out.push(g);
-                }
-            }
-        }
-        k += 1;
-    }
-    out
+    let same = |g: usize| Surf::of(body, g).is_some_and(|s| s.same(&own));
+    body.across_seams(&[fi], same).into_iter().map(|(g, _)| g).collect()
 }
 
 /// Where `q` (on the surface of `faces`, the pieces of one: `pieces`) lies off them all: the edge

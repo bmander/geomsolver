@@ -761,14 +761,20 @@ side, its underside lies along the fill along the boss's sides, in the plane of 
 stands on; a ring's stretch round a disc boss so overhanging meets that underside too, a plane
 square to its axis; where the rib's slope starts at the flange's edge, the flange's underside is a
 face at each end of the round, in the plane the rounded edge itself lies in, meeting the rib's side
-there in a concave edge. A face whose surface holds the run's edge at its end
-(`BodyFaces::lies_along`, nine points of the edge on it), or one back to back there with a face of
-the run, their outward normals opposite (`back_to_back`), meets the run's faces at the vertex alone
-or along the edge's own line past it: it stands at no distance along the run, no side of it is the
-run's (the section of an edge whose faces it splits lies on both), and it lies beyond the face the
-run does end on. `BodyFaces::end_faces` reads it as no end at all, for the field (`crease.ends`)
-and the lowering alike: the run ends on the faces that cross its edge (the part's side, the rib's
-side), or square where there are none. Read as an end — kept within its half-space, the side the
+there in a concave edge. A face whose surface holds the run's edge at its end, or one back to back
+there with a face of the run, their outward normals opposite (`BodyFaces::tangent_at` turned, the
+seam's own test with one sign), meets the run's faces at the vertex alone or along the edge's own
+line past it: it stands at no distance along the run, no side of it is the run's (the section of an
+edge whose faces it splits lies on both), and it lies beyond the face the run does end on. **Holds
+is one rule with one owner** (`BodyFaces::holds_edge`): no point of the edge past the surface either
+way by more than the body's `past` (ten times its tolerance), read as `goes_across` reads a run
+crossing a face — in closed form for a plane against a line (its two ends, `plane_holds`) or a
+circle (its ends and the extremes of `side(centre) + r (a cos t + b sin t)`), the edge sampled at
+65 points against any other surface. `BodyFaces::end_faces` reads such a face as no end at all, for
+the field (`crease.ends`) and the lowering alike, and a run's piece reads the same rule of the
+planes its ends give it (`piece::run_piece` skips a plane `plane_holds` says holds the run, no
+other): the run ends on the faces that cross its edge (the part's side, the rib's side), or square
+where there are none. Read as an end — kept within its half-space, the side the
 run's own edge leaves ambiguous — it cut a convex run whole or along its length:
 - a flange's underside rounded where a block under it crosses its corner's arc, the block's top
   beyond its side in the underside's plane, made the ring a piece of nothing ("a run cut off at its
@@ -795,14 +801,19 @@ with the flange's side either way, mirrored, each the prism's closed form to 1e-
 whole) are the gate.
 **No round or chamfer leaves the body touching itself alone** (#996 item 4,
 `recipe::touching_alone`): where applying one of a body's late terms leaves it touching itself
-along a line it did not before (the Boolean holds such a line twice, `Brep::unpinched`) and no
-round or chamfer applied before it has a face through that line, the line is between that one's
-material and the body's own, which no reading of separate rounds against each other makes; it is
-refused there, by the round's name and the line, before anything — a `--where`, a later Boolean
-or round, an export — reads the body. Rounds whose materials meet so (#218, a vertex of both turns
-rounded in one statement) are built still and said by the export at the vertex. The check is a
-pass over the result's edges after each late term, and asks the earlier terms' surfaces only at a
-new line's middle; `tests/mixed_vertices.rs`
+along a line (the Boolean holds such a line twice, `Brep::unpinched`; read as the export reads it,
+`Brep::self_touching_edges` to its tolerance and each edge's own) that this term made, and no round
+or chamfer applied before it made a face at that line, the line is between that one's material and
+the body's own, which no reading of separate rounds against each other makes; it is refused there,
+by the round's name and the line, before anything — a `--where`, a later Boolean or round, an
+export — reads the body. Rounds whose materials meet so (#218, a vertex of both turns rounded in one
+statement) are built still and said by the export at the vertex. **Whose line it is is read by
+provenance**, never by where surfaces pass: the faces of the line's two edges, by the names the
+recipe gives each operand's faces and the Booleans keep (`recipe::NAMED`) — this term's where one of
+them is named as no face of the body before it is (a body touching itself already is the statement's
+that made it so), an earlier late term's where one is named as a face of that term. The check is a
+pass over the result's edges after each late term, and asks only a line's own faces;
+`tests/mixed_vertices.rs`
 (`a_round_alone_touching_the_body_along_a_line_is_refused_by_its_name`: a plate's quarter taken by
 a late term diagonal to one its own cut took, refused by the round's name and the line; the two
 quarters taken by two late terms built, the line held twice) is the gate.

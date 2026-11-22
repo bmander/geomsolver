@@ -460,7 +460,10 @@ its side carried on past its patch by its tangent planes (`BodyFaces::carried_si
 signed distance from the convex solid the patch and those planes bound), so the side is their
 common part and a point at least `d` inside it is at least `d` inside each — a pocket's walls
 seen from its air, a boss's from its material. **And every face of the chain within each other's
-side carried on** (#996's fifth item), read at points along each face's edges: convex at every
+side carried on** (#996's fifth item), read over each edge of the chain's faces once, against each
+face of the chain but those it bounds: a plane's side in closed form over a line or a circle (as
+`BodyFaces::goes_across` reads it), any other face's carried side at nine points of the edge, past
+by more than the body's own `past` (ten times its tolerance): convex at every
 seam and crease between its faces, a chain may still turn the other way along a face's own
 outline — a top in two flush pieces, the flange's rim rounded and the block's side meeting the
 flange's at a reflex corner of the top — where one face's carried side cuts off another's patch

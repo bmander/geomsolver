@@ -676,6 +676,14 @@ const FLANGE: &str = "unit mm\nuse std\nuse std.solids (union)\nuse std.rounds (
 /// The plate's volume.
 const PLATE: f64 = (80.0 * 68.0 - 4.0 * (1.0 - PI / 4.0) * 100.0) * 10.0;
 
+/// Solid `name`, the outline through `points` drawn in the front plane (`outline`: its points
+/// `{name}0…`, its lines `{name}s0…`, its face `{name}f`) and stood over `[y0, y1]` — the front
+/// plane's normal is −y: from −y1 to −y0, its `near` at y0 and `far` at y1.
+fn drawn_front(name: &str, points: &[[f64; 2]], [y0, y1]: [f64; 2]) -> String {
+    format!("in std.front {{\n{}}}\n{name} := solid(std.solids.Prism({name}f, from: {}mm, to: {}mm))\n",
+        outline(name, &format!("{name}s"), &format!("{name}f"), points), -y1, -y0)
+}
+
 /// A box under the plate: `[x0, x1] × [y0, y1] × [−60, 0]`, its top past the plate's side `x = 40`
 /// falling `fall` by its far end (a plane through that side's foot).
 #[derive(Clone, Copy, Debug)]
@@ -692,16 +700,7 @@ impl Under {
         if self.fall != 0.0 {
             points.push([40.0, 0.0]);
         }
-        let mut s = String::from("in std.front {\n");
-        for (k, p) in points.iter().enumerate() {
-            s.push_str(&format!("  {name}{k} := point\n  fix(({}, {})) {name}{k}\n", p[0], p[1]));
-        }
-        let names: Vec<String> = (0..points.len()).map(|k| format!("{name}{k}")).collect();
-        // the front plane's normal is −y: from −y1 to −y0, its `near` at y0 and `far` at y1
-        s.push_str(&format!("  {name}f := face({}, -> close)\n}}\n\
-            {name} := solid(std.solids.Prism({name}f, from: {}mm, to: {}mm))\n",
-            names.join(", "), -self.y[1], -self.y[0]));
-        s
+        drawn_front(name, &points, self.y)
     }
 
     /// Its plan's area across x, times its depth along y.
@@ -848,14 +847,7 @@ fn the_issues_flange_is_rimmed_where_its_bodies_end_flush() {
         0.5 * (0..5).map(cross).sum::<f64>().abs()
     };
     let (rib, block) = (pentagon(-40.0), pentagon(0.0));
-    let drawn = |name: &str, p: [[f64; 2]; 5], y: [f64; 2]| {
-        let mut s = String::from("in std.front {\n");
-        for (k, q) in p.iter().enumerate() {
-            s.push_str(&format!("  {name}{k} := point\n  fix(({}, {})) {name}{k}\n", q[0], q[1]));
-        }
-        s + &format!("  {name}f := face({name}0, {name}1, {name}2, {name}3, {name}4, -> close)\n\
-            }}\n{name} := solid(std.solids.Prism({name}f, from: {}mm, to: {}mm))\n", -y[1], -y[0])
-    };
+    let drawn = |name: &str, p: [[f64; 2]; 5], y: [f64; 2]| drawn_front(name, &p, y);
     for word in [Word::Round(1.0), Word::Chamfer(1.0)] {
         let src = format!("{FLANGE}{}{}part := solid(flange)\nrib union part\nblock union part\n\
             part.flange.far {} part.flange\n", drawn("rib", rib, [-6.0, 6.0]),
