@@ -415,9 +415,11 @@ fn flange_and_boss_less_rim() -> f64 {
 /// boss's cylinder.  Clear of the section where the side runs tangent into the half circle (the
 /// boss at −300 and −335), the closed form's to 1e-9; the boss over the seam itself (−343, −360,
 /// −380), the side's stretch and the seam gone, built.  Between (−339.17, #962's own, and −341),
-/// the boss's side reaches back across that section, which the half circle's ring — its region
-/// ending nowhere there — keeps whole: refused, saying where, and naming no plane of the round's
-/// own construction (before, "two pieces joined at a section share no face there").
+/// the boss's side reaches back across that section, and the half circle's ring — its chain going
+/// on across the seam into the side's stretch, which ends on the boss — is kept outside the boss
+/// with it (`BodyFaces::chain_ends`, #994): built, the two glued at a section the boss cuts alike
+/// (refused before, "Move `outer.boss.disc` clear of the seam, or over it"; its volumes are held
+/// in `tests/bosses_on_seams.rs`).
 #[test]
 fn a_flush_boss_slid_through_the_seam_stops_the_round() {
     let built = |x: f64| {
@@ -428,22 +430,13 @@ fn a_flush_boss_slid_through_the_seam_stops_the_round() {
     for x in [-300.0, -335.0] {
         close(built(x), flange_and_boss_less_rim());
     }
+    // (the boss reaching back over the seam's section takes from the half circle's ring too: less
+    // than the closed form clear of it, which takes the ring whole)
+    for x in [-339.17, -341.0] {
+        assert!(built(x) > flange_and_boss_less_rim(), "{x}");
+    }
     for x in [-343.0, -360.0, -380.0] {
         built(x);
-    }
-    // how far the boss's side stands over the section at the seam: its radius less the distance
-    // from its axis to the section's corner on the top, the round's 10 in from the side
-    let over = |x: f64| 46.76 - (x + 384.62f64).hypot(-88.74 + 10.0 + 67.9);
-    for (x, depth) in [(-339.17, "0.035mm"), (-341.0, "1.8mm")] {
-        assert_eq!(gcs_core::json::fmt_g(over(x), 2) + "mm", depth);
-        let refusal = refused(&flange_and_boss(x), "part");
-        let said = format!("`part`'s round or chamfer `taken`: its round goes on tangent from `outer.flange.s` into \
-                            `outer.flange.al` across their seam at [-384.62, -88.74, -131.5]mm, and \
-                            `outer.boss.disc`, which its run along `outer.flange.s` ends on, reaches {depth} back \
-                            over the section there");
-        assert!(refusal.starts_with(&said), "{x}: {refusal}");
-        assert!(refusal.ends_with("Move `outer.boss.disc` clear of the seam, or over it"), "{refusal}");
-        assert!(!refusal.contains("`start`") && !refusal.contains("`end`"), "{refusal}");
     }
 }
 

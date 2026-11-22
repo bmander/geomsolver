@@ -4,6 +4,19 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+## [NEXT-boss-on-seam]
+
+**A run ends where its smooth chain ends** (#994, #962's 127). In `S.ends`, a run going on tangent
+across a seam into the next edge of its chain (an obround's half circle into its flat side) ended
+nowhere there; it now ends on each face the chain ends on further along whose solid the chain is
+kept out of — a boss's cylinder it stands outside, a hole's — so a round never goes into another
+body's material nor into a hole. A flush boss standing on the flat side short of the seam, its
+wall reaching back over the round's section where the flat runs into the half circle, keeps the
+half circle's round off it too: through 0.228 that round took its whole section there and the
+rim was refused ("Move `outer.boss.disc` clear of the seam, or over it"); now it is built. A
+half-space, a solid kept within, a face the chain itself crosses and the chain's own faces stay
+the ends of their own runs alone.
+
 ## [NEXT-taper-root]
 
 **A band tapering to nothing is filleted and rounded to its toes** (#994). A fill at the foot of a

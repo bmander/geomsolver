@@ -689,23 +689,41 @@ no face there"). Each join at a seam carries how far apart its two sections stan
 whole, as at a rolled piece's fitted cap; and `boolean::glued` takes two plane faces as one
 surface where each's corners lie within its tolerance of the other's plane. `std.rounds.Grown`
 reads a vertex's faces by the same rule (`solid::grown`: two normals one to `TANGENT` are no
-corner, so no ball's sector is cut at a seam; [sets.md](sets.md)). **A face a run ends on reaching
-back across a seam** is refused by name: a flush boss whose side one end of a run along an
-obround's flat stands on, kept outside it, reaching back over the section where the flat runs
-tangent into the half circle. The half circle's ring is its own region's, whose run ends nowhere
-there, so nothing cuts it: the shape is the ring's whole section beside the run's cut short, and
-where the boss crosses the ball's arc there, the run's round and the ring's, tangent along that
-arc, meet it in one point — not one face to glue, and neither unioned nor cut from the two glued
-by this kernel yet (its search for where the boss's meeting with the run's round meets the ring's
-torus, at a point where it only touches it, does not end). It is said by the faces it is of
-(`lowering::back_over_said`, off the body: the seam's two faces those whose normals at its point
-are one to `TANGENT`, the face reaching back the one on the end's surface nearest it, the run's
-own face the one of the two that face meets in an edge), how far, the seam's point as the witness,
-and what is true to do: "`part`'s round or chamfer `taken`: its round goes on tangent from
-`outer.flange.s` into `outer.flange.al` across their seam at [-384.62, -88.74, -131.5]mm, and
-`outer.boss.disc`, which its run along `outer.flange.s` ends on, reaches 0.035mm back over the
-section there: … Move `outer.boss.disc` clear of the seam, or over it" — #962's 127; its boss at
-−335 or −343 is built. **A corner too nearly tangent to round** is refused by name before any
+corner, so no ball's sector is cut at a seam; [sets.md](sets.md)). **A run ends where its smooth chain
+ends** (#994, #962's 127: `BodyFaces::chain_ends`): a run that ends on no face at a seam, where a
+face going on tangent from one of its own carries it on — an obround's half circle into its flat
+side — goes on along the next edge of its smooth chain (the one edge there of the same turn, no
+seam, between faces each its own or going on tangent from one of them there), and on, until the
+chain ends on faces. Each of those whose solid the chain is kept out of (`kept_out_of`: a boss's
+cylinder it stands outside, a hole's, a cone's or a ball's) is the run's too, on the same side,
+read at the seam (`end_faces`' `Some(v)`): a round never goes into another body's material nor
+into a hole, so a flush boss the run along the flat ends on, its wall reaching back over the
+section where the flat runs tangent into the half circle, keeps the half circle's ring off it too —
+in the field (`conditions::ends`, every end side of the region's run) and in the ring's piece,
+kept outside that solid where it reaches the ring (`piece::ring_piece`'s seam end, `ends_beyond`),
+so the run and the ring are cut alike at the section they are glued at and share its face
+(`assemble::across` finds nothing reaching back). A half-space, or a solid the chain is kept
+within, stays its own run's end alone: it reaches as far as its surface goes, round the chain and
+back across it (a side 2e-6 off the lobe it leaves, whose plane cut the arc before the lobe, "…
+reaches 2mm back over the section there"), and nor is a face some edge of the run or of the chain
+between goes across (`goes_across`), nor one of the chain's own faces (`smooth`: a chain round a
+loop comes back to the lobe the run goes on into the other way, where a side leaves that lobe at a
+corner 2e-6 off its tangent — `rim_seams.rs`' nearly tangent corner). Before, the ring was its region's whole, the boss reaching
+back over its section, and refused: "`part`'s round or chamfer `taken`: its round goes on tangent
+from `outer.flange.s` into `outer.flange.al` across their seam at [-384.62, -88.74, -131.5]mm,
+and `outer.boss.disc`, which its run along `outer.flange.s` ends on, reaches 0.035mm back over
+the section there: … Move `outer.boss.disc` clear of the seam, or over it". Now the boss at
+−339.17 (the fixture's own) and −341 builds, and so does a boss over the half circle reaching back
+over the flat's section, a hole cut there, a square boss beside the seam, and a boss whose wall
+crosses the rim exactly at the seam: each the plate less, at each depth under the top, the band
+its section takes less what of the band the footprint holds, to 1e-9 (`tests/bosses_on_seams.rs`;
+`rim_seams.rs`' slid boss). The refusal (`lowering::back_over_said`) stays for a face reaching
+back that is no such solid — a plane at a slant, or a solid kept within — which no chain end
+cuts the next piece by. A plane wall square to the rim reaches back over no section; one turned
+back over the run at a reflex corner of less than a right angle ends it square (above), so the
+ring past the seam keeps its whole section, and where a corner of such a boss reaches over that
+section the ring takes what of the corner lies in it, the field and the pieces alike: the ball
+turned about the corner, which waits on a set that says it, is what would end it. **A corner too nearly tangent to round** is refused by name before any
 piece is built (`piece::nearly_tangent`): where a round's edge ends on a curved face (a cylinder,
 a cone or a sphere, of radius `R` at the corner) meeting one of the edge's own faces at a turn `θ`
 past `TANGENT` — a corner, no seam — the ball's surface, tangent to the edge's face, meets the

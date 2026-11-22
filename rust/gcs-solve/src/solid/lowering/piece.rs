@@ -712,6 +712,13 @@ fn ring_piece(body: &crate::solid::faces::BodyFaces, edge: u32, fa: usize, fb: u
             let (planes, bent) = ends_at(body, ends, p)?;
             let planes: Vec<(V, f64)> = planes.into_iter().filter(|h| !meridian(h)).collect();
             if planes.is_empty() && bent.is_empty() {
+                // an end at a seam, where the chain the ring goes on into ends on a face reaching
+                // back over it (`BodyFaces::chain_ends`): the stretch ends at the seam's meridian,
+                // carried no further, and kept within that face where it reaches the ring (#994)
+                let (planes, bent) = ends_beyond(body, ends, p)?;
+                let reach = section_at(t)?.section_hull().iter().map(|&q| distance(q, centre)).fold(0.0, f64::max);
+                halves.extend(planes.into_iter().filter(|&(n, d)| dot(n, centre) - d >= -reach));
+                kepts.extend(bent.into_iter().filter(|kept| kept.away(centre) >= -reach));
                 continue;
             }
             let way = if k == 0 { -1.0 } else { 1.0 };
