@@ -340,6 +340,55 @@ pub enum SolidDef {
     /// link `k`'s while the running number is in `(k, k + 1)`, its own running number the place
     /// on that link's run.  Empty for a family over one path.
     Family { face: u32, station: Vec<EntRef>, over: super::Running, legs: Vec<FamilyLeg> },
+    /// **A body a file gives** (#993 stage 2): a B-rep the kernel read (`brep::step_read`),
+    /// exact and untouched, its faces in the file's order.  It is made of nothing in the drawing.
+    Given(std::sync::Arc<Given>),
+}
+
+/// **A body a file gives** (#993 stage 2): the B-rep `brep::step_read` read, in millimetres and
+/// radians about the world origin, and a digest of the file's text — the same on every target,
+/// so a memo keys on it rather than on the B-rep.  Its faces' names are its own: face `k` is
+/// named `GIVEN_FACE` and `k` (`Given::face_name`), a name no written path can reach, and the
+/// file's (`ADVANCED_FACE`'s, the file's vocabulary, usually empty or shared) are dropped —
+/// equal names would merge faces in a mesh and drop the edges between them.  Face `k` of the
+/// solid is face `k` of the read B-rep.
+pub struct Given {
+    brep: std::sync::Arc<crate::brep::topo::Brep>,
+    digest: u64,
+}
+
+/// What a given body's face names start with: `#` opens no name a document can write.
+pub const GIVEN_FACE: &str = "#given.";
+
+impl Given {
+    /// `brep` as `brep::step_read` gives it: millimetres and radians, about the world origin.
+    /// `digest` is a digest of the file's text, the same on every target.
+    pub fn new(mut brep: crate::brep::topo::Brep, digest: u64) -> Given {
+        for (k, f) in brep.faces.iter_mut().enumerate() {
+            f.name = Given::face_name(k);
+        }
+        Given { brep: std::sync::Arc::new(brep), digest }
+    }
+
+    /// The name `Given::new` gives face `k`.
+    pub fn face_name(k: usize) -> String {
+        format!("{GIVEN_FACE}{k}")
+    }
+
+    pub fn brep(&self) -> &std::sync::Arc<crate::brep::topo::Brep> {
+        &self.brep
+    }
+
+    pub fn digest(&self) -> u64 {
+        self.digest
+    }
+}
+
+/// The digest and the B-rep's size, never its every face: a read B-rep may be megabytes.
+impl std::fmt::Debug for Given {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "Given {{ digest: {:016x}, faces: {} }}", self.digest, self.brep.faces.len())
+    }
 }
 
 /// One leg of a face family over a chain (#243 L4): the face its station sweeps, its running
@@ -749,7 +798,9 @@ impl SolidE {
         match &self.def {
             SolidDef::Placed { source, .. } | SolidDef::Swept { source, .. } => vec![*source],
             SolidDef::Prism { .. } | SolidDef::Revolve { .. } | SolidDef::Through { .. }
-                | SolidDef::Region { .. } | SolidDef::Family { .. } => Vec::new(),
+                | SolidDef::Region { .. } | SolidDef::Family { .. } | SolidDef::Given(_) => {
+                Vec::new()
+            }
             SolidDef::Body { stock, on, through, bound } => {
                 let mut v = vec![*stock];
                 v.extend(on.iter().copied());
@@ -779,7 +830,7 @@ impl SolidE {
             SolidDef::Prism { face, .. } | SolidDef::Revolve { face, .. } | SolidDef::Through { face, .. } => Some(*face),
             // a family's face is its station's, at one station of many: no profile to sweep
             SolidDef::Body { .. } | SolidDef::Placed { .. } | SolidDef::Swept { .. }
-                | SolidDef::Region { .. } | SolidDef::Family { .. } => None,
+                | SolidDef::Region { .. } | SolidDef::Family { .. } | SolidDef::Given(_) => None,
         }
     }
 }
@@ -937,6 +988,7 @@ impl SolidDef {
                 over: over.clone(),
                 legs: legs.iter().map(|l| l.remapped(map)).collect::<Option<_>>()?,
             },
+            SolidDef::Given(g) => SolidDef::Given(g.clone()),
         })
     }
 }

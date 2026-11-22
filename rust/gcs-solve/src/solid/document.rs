@@ -572,7 +572,7 @@ fn build(
             }
             SolidDef::Body { .. } | SolidDef::Placed { .. }
                 | SolidDef::Swept { .. } | SolidDef::Region { .. }
-                | SolidDef::Family { .. } => unreachable!(),
+                | SolidDef::Family { .. } | SolidDef::Given(_) => unreachable!(),
         };
         let Some(p) = built else { return Term::Empty };
         prims.push(p);

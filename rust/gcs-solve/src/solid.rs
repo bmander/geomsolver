@@ -612,6 +612,8 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
                 continue;
             }
             SolidDef::Body { .. } => { pending.extend(s.operands().into_iter().rev().map(|o| (o as usize, false))); continue; }
+            // a body a file gives was held sound as it was read (`brep::step_read`)
+            SolidDef::Given(_) => continue,
             // its terms on one axis, bounded all round: what its meridian says; else in general
             // position, bounded all round
             SolidDef::Region { .. } => {

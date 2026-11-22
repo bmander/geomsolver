@@ -106,6 +106,7 @@ fn kinds(sk: &Sketch,i: usize) -> std::collections::BTreeSet<String> {
                 out.extend(terms.iter().map(|t| format!("region term {}",variant(&t.shape))));
             }
             SolidDef::Family {legs,..} => { out.insert(if legs.is_empty() { "face family" } else { "face family, chained" }.into()); }
+            SolidDef::Given(_) => { out.insert("given".into()); }
         }
     }
     if sk.is_swept(i) {
