@@ -26,6 +26,20 @@ use std::collections::BTreeMap;
 
 const TAU: f64 = std::f64::consts::TAU;
 
+/// **Whether two ways in, the second `g` on from the first at the edge and `h` on a step `step`
+/// in, are tangent at the tolerance**: where the step in turns them the other way round, they
+/// leave the edge in one order and their curvatures, `Δκ = 2 (g − h) / step` apart across it,
+/// bring them back across one another `2 g / Δκ` along, having stood apart in the edge's order by
+/// `g² / 2Δκ` at most. Within a tolerance that order is no order the complex can hold, and the two
+/// are ordered as faces tangent along the edge are, by a step in (#942: a fitted sheet tangent to
+/// a ring along its touch, its normal read 2e-4 off beside a corner of its pieces — twice
+/// `TANGENT` — and 3e-6 off along the rest of the touch, was put on one side of the ring along a
+/// short edge and on the other beyond it, three cells one; the two stood apart in that order by
+/// 2e-9 at most).
+fn turned_back(g: f64,h: f64,step: f64,tol: f64) -> bool {
+    g > 0. && h < 0. && g*g*step <= 4.*tol*(g-h)
+}
+
 /// Two ways into faces from an edge closer than this (radians) are read again a step into each
 /// face, where their surfaces' curvatures part them (faces tangent along the edge). Not the
 /// rounding of an exact tangency alone: a fitted surface — a round's net, tangent to the faces it
@@ -58,13 +72,16 @@ fn exact_radius(s: &Surface) -> Option<f64> {
 }
 
 /// How close two ways in may stand and still be one way, to be ordered by a step in: `TANGENT`
-/// where either surface is read approximately (its normal off by as much as its fit), else twice
+/// where both surfaces are read approximately (each normal off by as much as its fit), else twice
 /// what an edge's point read off its face within `8 tol` (`sew`'s, `tolerant`'s) turns an exact
-/// normal by at the smaller radius, `16 tol / ρ`, and no more than `TANGENT` — so two exact faces
-/// leaving an edge a millionth apart are ordered as they leave it, not by a step in.
+/// normal by at the smaller exact radius, `16 tol / ρ`, and no more than `TANGENT` — so two faces
+/// leaving an edge a millionth apart, one of them exact, are ordered as they leave it, not by a step
+/// in (#942: with an exact surface beside a fitted one tied so, and `TANGENT` itself at 1e-12, the
+/// fast suite and every slow tier of the arrangement, the kernel and the sweeps stand).
 fn tie_between(a: Option<f64>,b: Option<f64>,tol: f64) -> f64 {
     match (a,b) {
         (Some(a),Some(b)) => (16.*tol/a.min(b)).clamp(1e-12,TANGENT),
+        (Some(a),None) | (None,Some(a)) => (16.*tol/a).clamp(1e-12,TANGENT),
         _ => TANGENT,
     }
 }
@@ -281,9 +298,14 @@ impl Complex {
             // way a step in
             let k = round.len();
             let radii: Vec<Option<f64>> = uses[e].iter().map(|&(fi,..)| exact_radius(&b.faces[fi].surface)).collect();
-            let tie = |i: usize,j: usize| tie_between(radii[i],radii[j],tol);
-            let gap = |r: &[(f64,f64,usize,V,V,[f64;2])],i: usize| { let g = r[(i+1)%k].0-r[i].0; if i+1 == k { g+TAU } else { g } };
-            let Some(s) = (0..k).find(|&i| gap(&round,i) > tie(round[i].2,round[(i+1)%k].2)) else {
+            // two ways in, the second the next on from the first round the edge, are one way where
+            // they stand within `tie_between`, or where they are tangent at the tolerance
+            // (`turned_back`); the gap read on round the edge, so the wrap's is the rest of a turn
+            let tied = |x: &(f64,f64,usize,V,V,[f64;2]),y: &(f64,f64,usize,V,V,[f64;2])| {
+                let g = (y.0-x.0).rem_euclid(TAU);
+                g <= tie_between(radii[x.2],radii[y.2],tol) || turned_back(g,wrapped(y.1-x.1),step,tol)
+            };
+            let Some(s) = (0..k).find(|&i| !tied(&round[i],&round[(i+1)%k])) else {
                 return Err(format!("edge {e} near {m:?}: every face round it is tangent to every other"))
             };
             // start after a gap wider than `TANGENT`, so no run is cut by the wrap
@@ -291,7 +313,7 @@ impl Complex {
             let mut i = 0;
             while i < k {
                 let mut j = i+1;
-                while j < k && wrapped(round[j].0-round[j-1].0).abs() <= tie(round[j-1].2,round[j].2) { j += 1; }
+                while j < k && tied(&round[j-1],&round[j]) { j += 1; }
                 if j-i > 1 {
                     let base = round[i].0;
                     let run = &mut round[i..j];

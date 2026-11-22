@@ -22,6 +22,8 @@ pub fn cross(a: P,b: P) -> f64 { a[0]*b[1]-a[1]*b[0] }
 /// The length, by `hypot`.
 pub fn norm(a: P) -> f64 { a[0].dhypot(a[1]) }
 pub fn dist(a: P,b: P) -> f64 { norm(sub(a,b)) }
+/// The point the fraction `t` of the way from `a` to `b` (`space::lerp`'s, in the plane).
+pub fn lerp(a: P,b: P,t: f64) -> P { [a[0]+t*(b[0]-a[0]),a[1]+t*(b[1]-a[1])] }
 /// The unit vector along `a`, as `a × (1 / |a|)` (NaN for a zero vector).
 pub fn unit(a: P) -> P { scale(a,1./norm(a)) }
 /// `a` turned a quarter counter-clockwise.

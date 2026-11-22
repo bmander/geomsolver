@@ -29,6 +29,8 @@ pub mod planar_solid;
 pub mod instant;
 pub mod patches;
 pub mod rings;
+pub mod depth;
+mod touched;
 pub mod dump;
 pub mod read;
 pub mod subtraction;

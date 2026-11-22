@@ -17,6 +17,11 @@ use std::f64::consts::{FRAC_PI_2,FRAC_PI_4,PI};
 /// read off terms that are not.
 pub const HALF_READ: f64 = 1.4901161193847656e-8;
 
+/// **The cube root of the rounding**, `ε^⅓ = 2^(−52/3)` (written out, not taken by the platform's
+/// `cbrt` or `powf`): a central difference's step, as a part of its scale — where the difference's
+/// truncation and its rounding are alike.
+pub const THIRD_READ: f64 = 6.055454452393343e-6;
+
 fn hi(x: f64) -> u32 { (x.to_bits() >> 32) as u32 }
 fn lo(x: f64) -> u32 { x.to_bits() as u32 }
 fn with_hi(x: f64,h: u32) -> f64 { f64::from_bits(((h as u64) << 32) | (x.to_bits() & 0xffff_ffff)) }

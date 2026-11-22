@@ -363,6 +363,7 @@ mod swept_loci;
 mod swept_member;
 mod swept_patches;
 mod swept_rings;
+mod swept_depth;
 mod surfaces;
 mod swept_faces;
 mod swept_over_parameters;
@@ -404,6 +405,7 @@ mod witness;
 mod word_names;
 mod words_alone;
 mod workspace;
+mod zero_set;
 
 /// Every `tests/*.rs` beside this file is declared above: with `autotests := false` a file
 /// nobody lists is a test nobody runs, silently.

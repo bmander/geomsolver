@@ -435,9 +435,11 @@ fn rscrew(j: &Json) -> Result<crate::trajectory::Screw,String> {
     Ok(crate::trajectory::Screw {origin:rv3(field(j,"origin")?),axis:rv3(field(j,"axis")?),ratio:num(j,"ratio")?,advance:num(j,"advance")?})
 }
 
-/// **A trajectory by its structure** (#942 F5): a constant twist, one seen from another, and a twist
-/// placed at a pose — what it is made of exactly. A path of pieces (its joins checked to a tolerance
-/// not kept), a pace and a path read only by evaluating them are refused by name.
+/// **A trajectory by its structure** (#942 F5): a constant twist, one seen from another, a twist
+/// placed at a pose, and a frame carried along a B-spline (#942 T1d-ring: its curve exactly, its
+/// home, which frame and its name, the grid it is integrated over made again from them) — what it is
+/// made of exactly. A path of pieces (its joins checked to a tolerance not kept), a pace and any
+/// other path read only by evaluating it are refused by name.
 fn trajectory(t: &crate::trajectory::Trajectory) -> Result<Json,String> {
     use crate::trajectory::Trajectory;
     Ok(match t {
@@ -447,7 +449,13 @@ fn trajectory(t: &crate::trajectory::Trajectory) -> Result<Json,String> {
             ("r",Json::Arr(at.r.iter().map(|row| reals(row)).collect())),("p",v3(at.p))]),
         Trajectory::Pieces(_) => return Err("sweep dump: a path of pieces is not written".into()),
         Trajectory::Paced {..} => return Err("sweep dump: a paced path is not written".into()),
-        Trajectory::General(p) => return Err(format!("sweep dump: a path read only by evaluating it ({p:?}) is not written")),
+        // (a frame carried along a B-spline by its curve and the frame's inputs, made again as it
+        // was, #942 T1d-ring; any other path read only by evaluating it is refused)
+        Trajectory::General(p) => match p.along() {
+            Some((curve,home,frenet,name)) =>
+                object([("kind","along".into()),("curve",bspline(&curve)),("home",home.into()),("frenet",frenet.into()),("name",name.into())]),
+            None => return Err(format!("sweep dump: a path read only by evaluating it ({p:?}) is not written")),
+        },
     })
 }
 fn rtrajectory(j: &Json) -> Result<crate::trajectory::Trajectory,String> {
@@ -459,6 +467,12 @@ fn rtrajectory(j: &Json) -> Result<crate::trajectory::Trajectory,String> {
             let rows = field(j,"r")?.arr();
             let r = std::array::from_fn(|k| { let x = rreals(&rows[k]); [x[0],x[1],x[2]] });
             Trajectory::Placed {twist:rscrew(field(j,"twist")?)?,at:Pose {r,p:rv3(field(j,"p")?)}}
+        }
+        "along" => {
+            use crate::trajectory::Along;
+            let along = Along::from(rbspline(field(j,"curve")?)?,num(j,"home")?,field(j,"frenet")?.as_bool(),field(j,"name")?.as_str())
+                .map_err(|e| format!("sweep dump: a frame along a curve not made again: {}",e.msg))?;
+            Trajectory::General(Arc::new(along))
         }
         k => return Err(format!("sweep dump: a trajectory of kind `{k}`")),
     })
@@ -499,7 +513,7 @@ impl Trimming {
         use super::member::{Solid,Swept};
         use crate::util::space::{add,scale};
         let solid = Solid::new(&self.tool,self.bar,1.)?;
-        let swept = Swept {tool:&solid,path:&self.path,roll:self.roll};
+        let swept = Swept::new(&solid,&self.path,self.roll);
         let point = |s: f64| add(at,scale(dir,s));
         let read = |s: f64| swept.member(point(s)).ok();
         let steps = steps.max(1);
