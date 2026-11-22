@@ -112,8 +112,8 @@ pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Opti
                 // (`plane2::circles`), not by how far the chord they share stands inside the first
                 // — a lens of two circles crossing at a shallow angle, its chord within the
                 // tolerance of the first, stands twice as far apart across its middle where the
-                // two radii are one: a touch read there was a third root between the two crossings
-                // the circles' surfaces read (#994)
+                // two radii are one, and a touch read by the chord would be a third root between
+                // the two crossings the circles' surfaces read (#994)
                 let between = sub(f2.o,f1.o);
                 let l = norm(between);
                 if l <= tol { return Some(Vec::new()); }
@@ -269,8 +269,8 @@ fn screwed_crossings(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Op
 /// surfaces are one surface within (`tolerant`) — so the closed forms are read to it too. Two
 /// lines on one plane of an arrangement, each an edge of a face drawn on it through rounded points
 /// (a strip's pad leaning `1e-6` rad onto a plate's foot), stand up to that far apart where they
-/// cross; read to the tolerance alone, their crossing was none, the one edge laid across the
-/// other's face as a slit, and the face's cell joined to the outside round it.
+/// cross, and cross there: read to the tolerance alone, they would cross nowhere, the one edge
+/// laid across the other's face as a slit.
 pub fn crossings_in(surface: &Surface,a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Result<Option<Vec<(f64,V)>>,Refusal> {
     use crate::util::space::cross;
     if let Some(found) = curve_curve(a,ta,b,tb,super::tolerant::ON_CURVE*tol) { return Ok(Some(found)) }

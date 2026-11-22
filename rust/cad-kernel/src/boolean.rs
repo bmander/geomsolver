@@ -1348,7 +1348,7 @@ impl<'a> Arrangement<'a> {
         let surface = |k: usize| &self.solids[faces[k].0].faces[faces[k].1].surface;
         // (read as far past the part of space the two boxes share as a point near both is read
         // onto their meeting at the least sine)
-        let past = super::tolerant::on_meeting(self.tol,0.);
+        let past = super::tolerant::on_meeting(self.tol,super::tolerant::LEAST_SINE);
         // each class rooted at its lowest face, the lower root kept where two are joined
         let mut of = crate::util::union_find::UnionFind::new(faces.len());
         for i in 0..faces.len() {
@@ -2538,7 +2538,7 @@ fn at_its_ends(meets: Meets,c: &Curve,t: [f64;2],surface: &Surface,tol: f64) -> 
 /// touch. Read where the search over its stretch `t` is refused — a double root it cannot prove,
 /// a blend's seam circle through the point where a round's torus rests on the blend — from the
 /// edge's samples nearest `surface`: each such touch the edge passes through, its parameter, and
-/// the rest of the stretch either side of the reach searched as before (`search`). `None` where no
+/// the rest of the stretch either side of the reach searched by `search`. `None` where no
 /// such touch is found, or the rest is refused again.
 fn resting_on(c: &Curve,t: [f64;2],own: &[&Surface],surface: &Surface,tol: f64,search: &dyn Fn([f64;2]) -> Meets) -> Option<Meets> {
     const N: usize = 64;
@@ -2552,12 +2552,11 @@ fn resting_on(c: &Curve,t: [f64;2],own: &[&Surface],surface: &Surface,tol: f64,s
             let Some(p) = super::ssi::touch_near(own,surface,c.point(at(k)),tol) else { continue };
             let Some(touch) = super::ssi::touch(own,surface,p) else { continue };
             if !super::ssi::alone_over(own,surface,&touch) { continue }
-            let reach = touch.radius;
             let x = c.inverse(p);
             let x = match c.period() { Some(period) => around(x,t[0],period),None => x };
             if !(t[0] <= x && x <= t[1]) || distance(c.point(x),p) > ON_CURVE*tol { continue }
             // along the edge, the stretch within the reach
-            let half = reach/c.speed().max(1e-300);
+            let half = touch.radius/c.speed().max(1e-300);
             if !touches.iter().any(|&(y,_)| (y-x).abs() <= half) { touches.push((x,half)) }
         }
     }
