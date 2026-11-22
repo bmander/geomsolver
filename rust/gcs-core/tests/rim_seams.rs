@@ -469,8 +469,9 @@ fn builds(src: &str, name: &str) -> bool {
 /// is over `ON_CURVE tol / R` (here `2.9e-4` rad: `tol` a billionth of the plate's diagonal of
 /// 124.5): at `2e-6`, `1e-5`, `1e-4` and `2e-4` refused, naming the side `k3` and the lobe `k2`, the
 /// turn, the bound, and the remedy (before, "a cylinder's pieces do not close"); at `3e-4` and
-/// `1e-3` built as a corner, at a round of 2 and of 5.  A chamfer's flat crosses the side, and is
-/// built at `1e-5`; so is the side turned off the concave arc of 8 it runs into.
+/// `1e-3` built as a corner, at a round of 2 and of 5.  A chamfer is refused at `1e-5` by the same
+/// bound and words (#994: its piece's strip of the side meets the lobe twice as the round does);
+/// the side turned off the concave arc of 8 it runs into is built.
 #[test]
 fn a_corner_too_nearly_tangent_to_round_is_said_by_its_faces() {
     let round = |eps: f64, r: f64| document(&creased_at(eps, 0.0), "near", Word::Round(r));
@@ -492,7 +493,10 @@ fn a_corner_too_nearly_tangent_to_round_is_said_by_its_faces() {
             assert!(builds(&round(eps, r), "plate"), "{eps} at {r}");
         }
     }
-    assert!(builds(&document(&creased_at(1e-5, 0.0), "near", Word::Chamfer(1.5)), "plate"));
+    let refusal = refused(&document(&creased_at(1e-5, 0.0), "near", Word::Chamfer(1.5)), "plate");
+    assert!(refusal.contains("`k3` and `k2` meet at a turn of 1e-05 rad"), "{refusal}");
+    assert!(refusal.contains("too nearly tangent a corner for this kernel to chamfer at 1.5mm against `k2`'s \
+                              radius of 12mm"), "{refusal}");
     assert!(builds(&document(&creased_at(0.0, 1e-5), "near", Word::Round(2.0)), "plate"));
 }
 
