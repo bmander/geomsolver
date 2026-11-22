@@ -929,7 +929,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                 if refused.is_empty() {
                     println!("  where {q}: the source names nothing there");
                 }
-                for (_, why) in refused {
+                for why in refused {
                     println!("  where {q}: {why}");
                 }
             }

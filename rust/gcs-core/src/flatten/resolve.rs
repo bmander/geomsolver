@@ -1361,24 +1361,21 @@ impl<'a> Walk<'a> {
             // and what a statement's blocks over faces run over said, as the first is expanded
             if let (Ok(_), Some(o)) = (&walks, &over) {
                 if !o.listed.is_empty() && !self.faces.tally.contains_key(&p.at) {
-                    let (said, made) = self.tally(&p, &o.solid, &o.listed);
+                    let (said, will) = self.tally(&p, &o.solid, &o.listed);
                     crate::progress::during(|| crate::progress::Work::expand(said.clone()), || ());
                     crate::progress::gauge(|| format!("expanding {said}"));
-                    self.faces.tally.insert(p.at, said);
-                    if let Some(made) = made {
-                        self.faces.projected.insert(p.at, (made, 0));
-                    }
+                    self.faces.tally.insert(p.at, Tally { said, will, made: 0 });
                 }
             }
-            let keep = adjacent.map(|(keep, pruned)| {
-                if let Some(pruned) = pruned {
-                    let s = self.faces.selecting.entry(p.at).or_default();
-                    s.asked = true;
-                    s.pruned.push(pruned.clone());
-                    self.faces.pruned.push(pruned);
+            // the copies it leaves out, by place, and the pairs they would have read apart kept
+            let skip: Vec<u32> = match (adjacent, &over) {
+                (Some((face, apart)), Some(o)) => {
+                    let skip = apart.iter().map(|&(k, _)| k).collect();
+                    self.prune(p.at, &o.solid, face, &o.listed, apart);
+                    skip
                 }
-                keep
-            });
+                _ => Vec::new(),
+            };
             if let Some(o) = over {
                 // a block over a solid's faces names it however they were named: the
                 // elaborator names them again where its solids now give them otherwise ([0.149])
@@ -1401,7 +1398,7 @@ impl<'a> Walk<'a> {
             match walks {
                 Ok(walks) => {
                     let (at, before) = (p.at, self.emitted());
-                    self.expand_edges(p, walks, keep.as_deref());
+                    self.expand_edges(p, walks, &skip);
                     self.projection(at, self.emitted().saturating_sub(before));
                     if self.overflowed {
                         break;
@@ -1464,7 +1461,9 @@ impl<'a> Walk<'a> {
     /// with how far it got and what to do, and nothing more is walked (`overflowed`).  One that
     /// projects nearer the limit is walked, and said as any past it is.
     fn projection(&mut self, at: Span, more: usize) {
-        let Some((will, made)) = self.faces.projected.get_mut(&at) else { return };
+        let Some(Tally { will: Some(will), made, .. }) = self.faces.tally.get_mut(&at) else {
+            return;
+        };
         *made += more;
         let (will, made) = (*will, *made);
         let held = self.faces.selecting.get(&at).map_or(0, |s| s.made);
@@ -1476,11 +1475,10 @@ impl<'a> Walk<'a> {
             return;
         }
         self.overflowed = true;
-        let t = &self.faces.tally[&at];
+        let t = &self.faces.tally[&at].said;
         let m = format!("{t}, would make about {projected} statements, more than {MAX_FLAT} \
             (its first {held} copies made {made}): the drawing is cut short, and nothing of it is \
-            built — run it over fewer faces at once: a feature's (`round(r: …) part.pocket`), or \
-            two faces' (`A round(r: …) B`)");
+            built — {FEWER_FACES}");
         self.err(Code::E103, at, m);
     }
 
@@ -1516,7 +1514,7 @@ impl<'a> Walk<'a> {
     /// One block over a chain's edges — or several chains' and faces', in step: a copy per link,
     /// made into a vector of their own and spliced in where the walk met the block, so the
     /// statements stand in source order.
-    fn expand_edges(&mut self, p: Pending, walks: Vec<(Vec<Link>, bool)>, keep: Option<&[bool]>) {
+    fn expand_edges(&mut self, p: Pending, walks: Vec<(Vec<Link>, bool)>, skip: &[u32]) {
         let Some(at) = self.take_placeholder(&p) else { return };
         let StmtKind::Block(b) = &p.st.kind else { return };
         let Some(over) = &b.over else { return };
@@ -1572,7 +1570,7 @@ impl<'a> Walk<'a> {
         let edges: Vec<(&Name, &[Link])> =
             vars.iter().zip(&walks).map(|(v, (l, _))| (v, l.as_slice())).collect();
         let n = walks[0].0.len();
-        self.copies(&b, &p.st, &p.scope, &p.path, p.depth, n, &edges, None, keep);
+        self.copies(&b, &p.st, &p.scope, &p.path, p.depth, n, &edges, None, skip);
         let made = std::mem::replace(&mut self.out, outer);
         self.aside.held = 0;
         self.out.splice(at..at, made);
