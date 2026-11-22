@@ -1968,15 +1968,16 @@ impl Prepared {
         let pole = 1e-7*(1.+self.size);
         let mut at_poles = Vec::new();
         for f in &b.faces {
-            for c in f.loops.iter().flatten() {
-                let ends = b.uv_ends(f,c);
-                for (k,uv) in ends.into_iter().enumerate() {
+            // (each use's ends and their vertices, read once)
+            let ends: Vec<([Uv;2],[u32;2])> = f.loops.iter().flatten().map(|c| (b.uv_ends(f,c),b.ends(c))).collect();
+            for &(uvs,vs) in &ends {
+                for (k,uv) in uvs.into_iter().enumerate() {
                     let Some(along) = pole_at(&f.surface,uv,pole) else { continue };
                     let (_,su,sv) = f.surface.d1(uv);
                     // (and as far as twice the farthest the uses' ends there stand from it, so two
                     // of them are one point of it)
-                    let v = b.ends(c)[k] as usize;
-                    let off = f.loops.iter().flatten().flat_map(|d| { let e = b.uv_ends(f,d); let w = b.ends(d); [(w[0],e[0]),(w[1],e[1])] })
+                    let v = vs[k] as usize;
+                    let off = ends.iter().flat_map(|&(e,w)| [(w[0],e[0]),(w[1],e[1])])
                         .filter(|&(w,_)| w as usize == v).map(|(_,uv)| distance(f.surface.point(uv),b.vertices[v].p)).fold(0.,f64::max);
                     at_poles.push((v,(std::f64::consts::PI*norm([su,sv][along])).max(2.*off)*(1.+1e-9)));
                 }
