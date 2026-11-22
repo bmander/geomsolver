@@ -439,9 +439,9 @@ impl Brep {
                 Some(t) if (t-feet).abs() <= 1e-6 => t,
                 None => feet,
                 // (neither to be trusted — a file's curve standing off its face near the pole,
-                // its feet swinging round it within the gap — the end the use was given: a
-                // reader's, from its curve a step in)
-                Some(_) => return None,
+                // its feet swinging round it within the gap — its foot a hundredth of its span
+                // in, where the gap is small beside the pole's distance on the files read)
+                Some(_) => x(1e-2),
             };
             if !limit.is_finite() { return None }
             let mut ends = [*from,*to];

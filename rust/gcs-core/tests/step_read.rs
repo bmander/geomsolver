@@ -443,3 +443,31 @@ fn a_spheres_curve_a_turn_off_in_v_reads_where_the_face_is() {
     close("the cap's volume", volume(b), std::f64::consts::PI * h * h * (3. * r - h) / 3., 1e-9);
     close("the cap's area", total_area(b), std::f64::consts::PI * (2. * r * h + 16.), 1e-9);
 }
+
+/// **An edge standing off its face is read by its feet's own rate** (`topo::inverse_derivative`):
+/// a circle a tenth outside a sphere of radius 5 and tilted to its chart, inverted onto it — the
+/// rate of its feet in the sphere's parameters is `J⁻¹ (x′·S_u, x′·S_v)`, `J` the metric and the
+/// second derivatives weighed by the gap, which a difference of the feet themselves a millionth
+/// apart agrees with to 1e-6 of it; the tangent read on the surface alone (the gap's term dropped)
+/// is off by the gap over the radius, 2e-2.
+#[test]
+fn an_edges_feet_off_its_face_run_at_their_own_rate() {
+    use gcs_core::brep::geom::{Frame, Surface};
+    use gcs_core::brep::topo::{Edge, Pcurve, Vertex};
+    let sphere = Surface::Sphere(Frame::new([0.; 3], [0., 0., 1.], [1., 0., 0.]), 5.);
+    let circle = Curve::Circle(Frame::new([0.3, -0.2, 1.], [0.1, 0.2, 1.], [1., 0., -0.1]), 4.9);
+    let edge = Edge { curve: EdgeCurve::Curve(circle.clone()), t: [0.2, 2.9], v: [0, 1], tol: 0. };
+    let vs = [Vertex { p: circle.point(0.2), tol: 0. }, Vertex { p: circle.point(2.9), tol: 0. }];
+    let (a, z) = (sphere.inverse(circle.point(0.2)), sphere.inverse(circle.point(2.9)));
+    let pc = Pcurve::Inverse { a, b: z };
+    for t in [0.5, 1.3, 2.1] {
+        let gap = gcs_core::space::distance(sphere.point(pc.at(t, &edge, &sphere, &vs)), circle.point(t));
+        assert!(gap > 1e-2, "{t}: the circle stands off the sphere ({gap})");
+        let d = pc.derivative(t, &edge, &sphere, &vs);
+        let h = 1e-6;
+        let (p, q) = (pc.at(t - h, &edge, &sphere, &vs), pc.at(t + h, &edge, &sphere, &vs));
+        let fd = [(q[0] - p[0]) / (2. * h), (q[1] - p[1]) / (2. * h)];
+        let size = d[0].hypot(d[1]);
+        assert!((d[0] - fd[0]).hypot(d[1] - fd[1]) <= 1e-6 * size, "{t}: {d:?} against the feet's {fd:?}");
+    }
+}
