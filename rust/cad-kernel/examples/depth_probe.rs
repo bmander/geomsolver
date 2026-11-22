@@ -195,6 +195,17 @@ fn main() {
             for r in rows { println!("{r}") }
             return
         }
+        "torus" => {
+            // the tool at the start (`0`) or end (`1`) pose at its torus's angles `(φ, ψ)`: the place
+            // and its reading as a point of that pose
+            let end: usize = args[2].parse().unwrap();
+            let (phi,psi): (f64,f64) = (args[3].parse().unwrap(),args[4].parse().unwrap());
+            let pose = path.pose(roll[end]).unwrap();
+            let r = 1.+tube*psi.cos();
+            let x = pose.point([3.+r*phi.cos(),r*phi.sin(),2.+tube*psi.sin()]);
+            println!("{x:?}: {:?}",cover(&ring,&path,roll,x,roll[end],0.,tol));
+            return
+        }
         "at" => {
             // the sheet's point at (θ, t, σ) and its reading
             let n: Vec<f64> = args[2..5].iter().map(|v| v.parse().unwrap()).collect();
