@@ -631,74 +631,92 @@ fn a_swept_elbow_joins_its_legs_at_their_tangent_seams() {
     }
 }
 
-/// **A turn a near-miss wider or narrower than its legs is built with its step** (#996): the
-/// elbow's tube drawn `20 ± δ` against legs of 20, its arc's ends placed where that tube crosses
-/// the axis, for δ from a hundredth down by decades to 1e-8 (under the Boolean's tolerance, about
-/// 8e-8 here) either way, and the issue's own document — its arc's radius stated by no dimension,
-/// its ends' hints putting the tube 9.2e-7 over the legs. Each is a valid solid whose volume is the
-/// turn's by Pappus and the legs' union, the turn beside both: a step of δ round each seam, a cap's
-/// crescent 308° long between the turn's rim and the leg's, built as the solid it is. Between a
-/// tolerance and a thousandth the arrangement had read the crescent as having no inside, or its
-/// loop's area the wrong way round, and dropped it, the turn's face left hanging by its rim
-/// (`reading::inside`, `fine_area`); at a tolerance the leg's circle standing for the turn's rim
-/// ended across the axis from its pole, read half a turn round (`topo::on_pole`), and the union
-/// was 2.6 times the solid.
+/// The elbow of `elbow` with its tube `20 + δ` (the arc's ends placed where that tube crosses the
+/// axis) — or, `hinted`, the issue's own document, its ends' hints alone saying where — its legs of
+/// radius `legs`, and `extra` statements after.
+fn near_miss(delta: f64,hinted: bool,legs: f64,extra: &str) -> String {
+    let tube = 20.+delta;
+    let ends = if hinted { 8.7178 } else { (tube*tube-18.*18.).sqrt() };
+    let src = elbow(20.,18.,90.,false,Some(ends),["leg_v","elbow","leg_h"])
+        .replace("use std.solids (union)","use std.solids (union, cut)")
+        .replace("radius(20mm) v",&format!("radius({legs}mm) v")).replace("radius(20mm) h",&format!("radius({legs}mm) h"));
+    let src = if hinted {
+        src.lines().filter(|l| !l.trim_start().starts_with("fix(y ==")).collect::<Vec<_>>().join("\n")+"\n"
+    } else { src };
+    src+extra
+}
+
+/// The solid `name` of `src` built exactly, checked valid, and its volume and the tolerance's band
+/// over its boundary (`geom::tolerance`, a part in 10⁹ of its size, times its area).
+fn built_near_miss(src: &str,name: &str,what: &str) -> (f64,f64) {
+    let (e,sk) = crate::common::read_solved(src);
+    let (out,said) = saying(|say| export::exact(&sk,fixtures::solid(&e,name),None,None,say));
+    let solid = out.unwrap_or_else(|why| panic!("{what}: {name}: {why:?}\n{said}")).solid;
+    solid.check(1e-6).unwrap_or_else(|why| panic!("{what}: {name}: {why:?}"));
+    let area: f64 = solid.faces.iter().map(|f| props::area(&solid,f)).sum();
+    (props::volume(&solid),gcs_core::brep::geom::tolerance(solid.size())*area)
+}
+
+/// The near-misses a sweep reads: by decades from 1e-8 to a hundredth, and two, three, five and
+/// seven of each of the decades where the tolerance's readings once parted (1e-8 to 1e-6), either
+/// way.
+fn near_misses() -> Vec<f64> {
+    let mut out: Vec<f64> = (-8..=-2).map(|k| 10f64.powi(k)).collect();
+    for k in -8..=-6 { for m in [2.,3.,5.,7.] { out.push(m*10f64.powi(k)); } }
+    out.iter().flat_map(|&d| [d,-d]).collect()
+}
+
+/// The turn's volume by Pappus: the moment about the axis of the disc of radius `r` about 18 from
+/// it, clipped where it crosses the axis, times a quarter turn.
+fn turn_volume(r: f64) -> f64 {
+    let bend = 18f64;
+    let f = |t: f64| bend*(t*(r*r-t*t).sqrt()+r*r*(t/r).asin())-2./3.*(r*r-t*t).powf(1.5);
+    std::f64::consts::PI/2.*(f(r)-f(-bend))
+}
+
+/// **A turn a near-miss wider or narrower than its legs is the tangent turn, or built with its
+/// step** (#996): the elbow's tube drawn `20 ± δ` against legs of 20, over `near_misses`, and the
+/// issue's own document (its arc's radius stated by no dimension, its ends' hints putting the tube
+/// 9.2e-7 over the legs). Within a part in a million of the solid's size (`flush::FLUSH` of the
+/// Boolean's tolerance) a leg is moved onto the turn's tube where it stands on it
+/// (`flush::tubes_flushed`), and the solid is the tangent turn and its legs at the tube's radius —
+/// the same solid drawn so, to the tolerance's band; past it the leg stays as drawn and the step is
+/// built: the turn's volume by Pappus and the legs' own union. Each valid. Between a tolerance and a
+/// thousandth the arrangement's readings of the seam had parted, and one near-miss in three was
+/// refused, or (at 1e-7) built 2.6 times too large. At 1e-4, at the reach, either may be read.
 #[test]
-fn a_turn_a_near_miss_wider_or_narrower_than_its_legs_is_built_with_its_step() {
-    use std::f64::consts::PI;
-    let moment = |r: f64| {
-        let bend = 18f64;
-        let f = |t: f64| bend*(t*(r*r-t*t).sqrt()+r*r*(t/r).asin())-2./3.*(r*r-t*t).powf(1.5);
-        f(r)-f(-bend)
-    };
-    let vh = ["leg_v","elbow","leg_h"];
-    let mut cases: Vec<(String,f64)> = Vec::new();
-    for k in -8..=-2 {
-        for sign in [1.,-1.] {
-            let tube = 20.+sign*10f64.powi(k);
-            cases.push((elbow(20.,18.,90.,false,Some((tube*tube-18.*18.).sqrt()),vh),tube));
-        }
-    }
-    // the issue's document: its ends' hints alone, no radius said (one freedom, the seeds')
-    let hinted = elbow(20.,18.,90.,false,Some(8.7178),vh).lines()
-        .filter(|l| !l.trim_start().starts_with("fix(y ==")).collect::<Vec<_>>().join("\n")+"\n";
-    cases.push((hinted,(18f64*18.+8.7178*8.7178).sqrt()));
-    for (src,tube) in cases {
-        let (e,sk) = crate::common::read_solved(&src);
-        let exact = |name: &str| {
-            let (out,said) = saying(|say| export::exact(&sk,fixtures::solid(&e,name),None,None,say));
-            out.unwrap_or_else(|why| panic!("tube {tube}: {name}: {why:?}\n{said}"))
-        };
-        let (body,legs) = (exact("body"),exact("legs"));
-        body.solid.check(1e-6).unwrap_or_else(|why| panic!("tube {tube}: {why:?}"));
-        let want = PI/2.*moment(tube)+props::volume(&legs.solid);
-        let got = props::volume(&body.solid);
-        // to the Boolean's tolerance over the solid's boundary: a step a tolerance high is a
-        // tolerance's band of it (`geom::tolerance`, a part in 10⁹ of the solid's size)
-        let area: f64 = body.solid.faces.iter().map(|f| props::area(&body.solid,f)).sum();
-        let band = gcs_core::brep::geom::tolerance(body.solid.size())*area;
-        assert!((got-want).abs() <= band,"tube {tube}: {got} against {want} ({:e}, the band {band:e})",got-want);
+fn a_turn_a_near_miss_off_its_legs_is_the_tangent_turn_or_built_with_its_step() {
+    let mut cases: Vec<(f64,bool)> = near_misses().into_iter().map(|d| (d,false)).collect();
+    cases.push(((18f64*18.+8.7178*8.7178).sqrt()-20.,true));
+    for (delta,hinted) in cases {
+        let what = format!("δ {delta:e}{}",if hinted { ", the issue's document" } else { "" });
+        let tube = 20.+delta;
+        let (got,band) = built_near_miss(&near_miss(delta,hinted,20.,""),"body",&what);
+        // the tangent turn at the tube's radius, its legs drawn so, and its own closed form
+        let tangent = near_miss(delta,hinted,tube,"");
+        let (moved,_) = built_near_miss(&tangent,"body",&what);
+        let (legs_moved,_) = built_near_miss(&tangent,"legs",&what);
+        assert!((moved-turn_volume(tube)-legs_moved).abs() <= band,"{what}: the tangent turn {moved}");
+        let (legs,_) = built_near_miss(&near_miss(delta,hinted,20.,""),"legs",&what);
+        let stepped = turn_volume(tube)+legs;
+        let near = |w: f64| (got-w).abs() <= band;
+        if delta.abs() < 1e-4 { assert!(near(moved),"{what}: {got} against the tangent turn's {moved}") }
+        else if delta.abs() > 1e-4 { assert!(near(stepped),"{what}: {got} against the step's {stepped}") }
+        else { assert!(got >= moved.min(stepped)-band && got <= moved.max(stepped)+band,"{what}: {got}") }
     }
 }
 
-/// **…and so it is with a solid joined or cut through the turn's poles** (#996): an axle along the
-/// bend axis joined through both poles, and a slab cut along a plane through the axis at 45°, over
-/// the near-misses of `a_turn_a_near_miss_…`: a valid solid, its volume off the tangent turn's by no
-/// more than the step it adds and the tolerance's band. The fixture's own refusal ("loop 0 breaks
-/// in parameters" at a pole, its collapsed parameter half a turn round) was the slab's at 1e-8 and
-/// the turn's alone at −1e-7: a use ending within its vertex's or edge's tolerance of a pole is at
-/// it (`Brep::close_poles`, `topo::on_pole`, a half's points in a Boolean), a pole's half runs
-/// along the parameter it collapses (`pieces_of_face`'s ways), and a cap's crescent whose sides the
-/// tolerance made one edge, walked out and back, has no inside (`reading::judged`: a spur, not a
-/// seam). The slab at ±1e-6 is not yet built.
+/// **…and so it is with a solid joined or cut through the turn's poles, or across its bend**
+/// (#996): an axle along the bend axis joined through both poles, a slab cut along a plane through
+/// the axis at 45°, and a bore across the bend, over `near_misses`: a valid solid whose volume is
+/// the same statements' over the tangent turn at the tube's radius within a part in a million (the
+/// legs moved onto it), and past that off the tangent turn's by no more than the step the tube adds.
+/// The fixture's own refusal ("loop 0 breaks in parameters" at a pole, its collapsed parameter
+/// half a turn round) was the slab's at 1e-8 and the turn's alone at −1e-7; "a shell of the
+/// arrangement is kept on one side … and dropped on another" any Boolean's on the issue's
+/// document after the two legs.
 #[test]
 fn a_solid_through_a_near_miss_turns_poles_is_built() {
-    use std::f64::consts::PI;
-    let moment = |r: f64| {
-        let bend = 18f64;
-        let f = |t: f64| bend*(t*(r*r-t*t).sqrt()+r*r*(t/r).asin())-2./3.*(r*r-t*t).powf(1.5);
-        f(r)-f(-bend)
-    };
     let axle = "in std.front {\n  ac := point\n  fix((0, 18)) ac\n  ak := circle(center: ac) hint(r: 3)\n  \
         radius(3mm) ak\n}\naxle := solid(std.solids.Prism(face(ak), from: -30mm, to: 30mm))\naxle union body\n";
     let slab = "wp := plane\nfix(origin == (0mm, 0mm, 18mm)) wp\nfix(dir == (-cos(45deg), 0, -sin(45deg))) wp.u\n\
@@ -706,26 +724,57 @@ fn a_solid_through_a_near_miss_turns_poles_is_built() {
         fix((-5, -30)) w0\n  fix((60, -30)) w1\n  fix((60, 30)) w2\n  fix((-5, 30)) w3\n  wl0 := line(w0, w1)\n  \
         wl1 := line(w1, w2)\n  wl2 := line(w2, w3)\n  wl3 := line(w3, w0)\n}\n\
         slab := solid(std.solids.Prism(face(wl0, wl1, wl2, wl3), from: 0mm, to: 70mm))\nslab cut body\n";
-    let vh = ["leg_v","elbow","leg_h"];
-    let built = |delta: f64,extra: &str| {
-        let tube = 20.+delta;
-        let src = elbow(20.,18.,90.,false,Some((tube*tube-18.*18.).sqrt()),vh)
-            .replace("use std.solids (union)","use std.solids (union, cut)")+extra;
-        let (e,sk) = crate::common::read_solved(&src);
-        let (out,said) = saying(|say| export::exact(&sk,fixtures::solid(&e,"body"),None,None,say));
-        let body = out.unwrap_or_else(|why| panic!("δ {delta:e}: {why:?}\n{said}")).solid;
-        body.check(1e-6).unwrap_or_else(|why| panic!("δ {delta:e}: {why:?}"));
-        let area: f64 = body.faces.iter().map(|f| props::area(&body,f)).sum();
-        (props::volume(&body),gcs_core::brep::geom::tolerance(body.size())*area)
-    };
-    let deltas = |k: std::ops::RangeInclusive<i32>| k.flat_map(|k| [1.,-1.].map(|s| s*10f64.powi(k))).collect::<Vec<_>>();
-    for (extra,deltas) in [(axle,deltas(-8..=-2)),(slab,deltas(-8..=-7)),(slab,deltas(-5..=-2))] {
-        let (tangent,_) = built(0.,extra);
-        for delta in deltas {
-            let (v,band) = built(delta,extra);
-            // the step: the turn's volume grown by the tube's, all of it at most
-            let step = PI/2.*(moment(20.+delta)-moment(20.)).abs();
-            assert!((v-tangent).abs() <= step+band,"δ {delta:e}: {v} against the tangent turn's {tangent}");
+    let bore = "in std.front {\n  bc := point\n  fix((-12, 6)) bc\n  b := circle(center: bc) hint(r: 5)\n  \
+        radius(5mm) b\n}\nbore := solid(std.solids.Prism(face(b), from: -60mm, to: 60mm))\nbore cut body\n";
+    for extra in [axle,slab,bore] {
+        let (tangent,_) = built_near_miss(&near_miss(0.,false,20.,extra),"body","δ 0");
+        let mut cases: Vec<(f64,bool)> = near_misses().into_iter().map(|d| (d,false)).collect();
+        cases.push(((18f64*18.+8.7178*8.7178).sqrt()-20.,true));
+        for (delta,hinted) in cases {
+            let what = format!("δ {delta:e}{}: {}",if hinted { ", the issue's document" } else { "" },extra.lines().last().unwrap());
+            let (v,band) = built_near_miss(&near_miss(delta,hinted,20.,extra),"body",&what);
+            if delta.abs() < 1e-4 {
+                let (moved,_) = built_near_miss(&near_miss(delta,hinted,20.+delta,extra),"body",&what);
+                assert!((v-moved).abs() <= band,"{what}: {v} against the tangent turn's {moved}");
+            } else {
+                let step = (turn_volume(20.+delta)-turn_volume(20.)).abs();
+                assert!((v-tangent).abs() <= step+band,"{what}: {v} against the tangent turn's {tangent}");
+            }
         }
     }
+}
+
+/// **The fixture's shape: the issue's elbow cored by a bent passage, a flange at each end** (#996,
+/// CADGenBench fixture 104, "a bent Ø34 passage over a web"): the issue's document as written, a
+/// square flange 60 × 60 × 6 joined at each leg's end, and cut by a passage of radius 17 that
+/// follows the bend — a quarter turn of a circle about the same axis and two straight runs out
+/// through the flanges. Its volume is the tangent turn's and its legs' at the tube's radius (the
+/// legs moved onto it, `flush::tubes_flushed`), the flanges', less the passage's by Pappus and its
+/// runs' through the solid: closed forms all but the legs' union, which the kernel builds alone.
+#[test]
+fn the_fixtures_elbow_cored_and_flanged_is_built() {
+    use std::f64::consts::PI;
+    let flanges_and_passage = "\
+in std.top {\n  f0 := point\n  f1 := point\n  f2 := point\n  f3 := point\n  fix((-48, -30)) f0\n  fix((12, -30)) f1\n  \
+fix((12, 30)) f2\n  fix((-48, 30)) f3\n  fa := line(f0, f1)\n  fb := line(f1, f2)\n  fc := line(f2, f3)\n  fd := line(f3, f0)\n}\n\
+top_flange := solid(std.solids.Prism(face(fa, fb, fc, fd), from: 60mm, to: 66mm))\n\
+out_flange := plane\nfix(origin == (40mm, 0mm, 0mm)) out_flange\nfix(dir == (0, 1, 0)) out_flange.u\nfix(dir == (0, 0, 1)) out_flange.v\n\
+in out_flange {\n  g0 := point\n  g1 := point\n  g2 := point\n  g3 := point\n  fix((-30, -30)) g0\n  fix((30, -30)) g1\n  \
+fix((30, 30)) g2\n  fix((-30, 30)) g3\n  ga := line(g0, g1)\n  gb := line(g1, g2)\n  gc := line(g2, g3)\n  gd := line(g3, g0)\n}\n\
+side_flange := solid(std.solids.Prism(face(ga, gb, gc, gd), from: 0mm, to: 6mm))\n\
+in bend {\n  pc := point\n  fix((-18, 0)) pc\n  pk := circle(center: pc) hint(r: 17)\n  radius(17mm) pk\n}\n\
+core_turn := solid(std.solids.Revolution(face(pk), about: axis_l, from: 0deg, to: 90deg))\n\
+in std.top {\n  pvc := point\n  fix((-18, 0)) pvc\n  pv := circle(center: pvc) hint(r: 17)\n  radius(17mm) pv\n}\n\
+core_v := solid(std.solids.Prism(face(pv), from: 18mm, to: 80mm))\n\
+in out {\n  phc := point\n  fix((18, 0)) phc\n  ph := circle(center: phc) hint(r: 17)\n  radius(17mm) ph\n}\n\
+core_h := solid(std.solids.Prism(face(ph), from: 0mm, to: 60mm))\n\
+top_flange union body\nside_flange union body\ncore_turn cut body\ncore_v cut body\ncore_h cut body\n";
+    let delta = (18f64*18.+8.7178*8.7178).sqrt()-20.;
+    let tube = 20.+delta;
+    let (v,band) = built_near_miss(&near_miss(delta,true,20.,flanges_and_passage),"body","the fixture");
+    let (legs,_) = built_near_miss(&near_miss(delta,true,tube,""),"legs","the legs at the tube's radius");
+    let r2 = 17f64*17.;
+    let passage = PI*PI/2.*r2*18.+PI*r2*(48.+46.);
+    let want = turn_volume(tube)+legs+2.*60.*60.*6.-passage;
+    assert!((v-want).abs() <= band,"the fixture: {v} against {want} ({:e}, the band {band:e})",v-want);
 }

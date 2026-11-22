@@ -198,11 +198,25 @@ elbow and its two legs 3.3 s, now some 20 ms. **A loop's area in its face's para
 Simpson's** (`Brep::loop_area`): each curved use sampled, each pair of steps' bulge past its chord
 taken as a parabola's, the steps doubled until two readings agree within the area: a crescent
 between a turn's cap's rim and a leg's a thousandth inside it, 308° long, read as a polygon's area
-turned the wrong way. **A turn a near-miss off its legs is built with its step** (#996): a tube `δ` wider or narrower
-than the leg tangent to it leaves a cap's crescent `δ` wide between the turn's rim and the leg's,
-a step round the seam, and the solid with it is built, from `δ` a hundredth down to under the
-tolerance, either way — no rule merges a tube into a cylinder it all but touches, and none is
-needed: each reading the arrangement makes of the near-miss agrees with the others. **A piece
+turned the wrong way. **A tube all but tangent to another at a seam is on it** (#996, `flush::tubes_flushed`, the
+tube's sibling of an end all but flush with a plane): before a body's operand is combined with the
+solid (`boolean::combined_written`), a cylinder of either whose end circle stands concentric with
+and in the plane of a circle of the other — a leg on a turn's cap — with radii differing at all but
+by no more than `FLUSH` of the Boolean's tolerances (a part in a million of their size) is moved
+onto the other's radius, exactly: its surface, its circles and its seam carried square to its
+axis, its ends' planes where they were (the operand's cylinders first, onto any circle of the
+solid's; then the solid's, onto a circle of the operand's no cylinder bounds — a turn's rim). A
+cylinder whose ends meet anything but planes square to its axis, or whose circles ask for two
+radii, is left as drawn. So a turn a near-miss off its legs within that reach is the tangent turn,
+its legs at its tube's radius, whichever order the three are written in and whatever is joined
+or cut after; past it, its tube leaves a cap's crescent `δ` wide between the turn's rim and the
+leg's, a step round the seam, built as the solid it is. Within the reach the arrangement's readings
+of the seam parted — a point onto a vertex within the tolerance, a vertex onto an edge and an edge
+onto an edge within eight, the turn's poles and the legs' crossings of its axis 2.3δ apart — and
+one near-miss in three, joined to the legs or to anything after, was refused ("a shell of the
+arrangement is kept on one side … and dropped on another", "a plane's pieces do not close",
+"edge 3's pcurve is 1.3e-6 off it") or, at 1e-7, built 2.6 times too large. The readings below make
+the step itself sound where the tube is past the reach. **A piece
 thinner than any outline it is drawn to has an inside all the same** (`boolean`'s
 `reading::inside`): where the spans of its outlines, drawn down to a few ten-thousandths of the
 piece, hold no point, steps square to each curved half from its middle, down to twice the
@@ -221,9 +235,12 @@ times the solid). **A meeting the unseen search finds off either face is not tra
 (`ssi::unseen_beside`): a curve through it lies outside the faces or crosses an edge into them,
 where that edge's crossing seeds it, and traced it was a march of a hundred thousand points no face
 kept (a tube a ten-thousandth inside its leg, crossing the leg's cylinder run on under the seam,
-seconds a build). `brep_export::a_turn_a_near_miss_wider_or_narrower_than_its_legs_is_built_with_its_step`
-(δ = ±1e-8 … ±1e-2 by decades and the issue's document, its radius left to its ends' hints, each
-held to Pappus and the legs' union within the tolerance's band over its boundary) is the gate.
+seconds a build). `brep_export::a_turn_a_near_miss_off_its_legs_is_the_tangent_turn_or_built_with_its_step`
+(δ either way by decades from 1e-8 to 1e-2, two, three, five and seven of each decade from 1e-8 to
+1e-6, and the issue's document, its radius left to its ends' hints: the tangent turn at the tube's
+radius within the reach, the step past it, each to its closed form within the tolerance's band
+over its boundary) and `the_fixtures_elbow_cored_and_flanged_is_built` (the issue's document cored
+by a bent passage of radius 17 and flanged at each end, to its closed form) are the gate.
 **A use ending within its vertex's or its edge's tolerance of a pole is at the pole**, wherever
 the pole is read: an inverse pcurve's end (`topo::on_pole`), the corner a loop is closed at by a
 pole edge (`Brep::close_poles`, half a turn of the collapsed parameter moving a point no farther
@@ -234,13 +251,10 @@ along the first had made that disagreement its whole way and tied it with a meri
 **two uses of one edge at one place, walked out and back, are a spur and not a seam**
 (`reading::judged`): no side lies between them, so a cap's crescent whose two sides the
 tolerance made one edge has no inside and is merged into its edge, where the side of one use had
-read a point outside it as in it. So an axle joined along the bend axis, and a slab cut along a
-plane through it, through the poles of a near-miss turn are built
+read a point outside it as in it. So an axle joined along the bend axis and a slab cut along a plane through it, through the
+turn's poles, and a bore across its bend are built over every near-miss
 (`brep_export::a_solid_through_a_near_miss_turns_poles_is_built`; the fixture's refusal "loop 0
-breaks in parameters" at a pole was the slab's at 1e-8 and the turn's alone at −1e-7). The slab at
-±1e-6, and a bore cut across the bend of the issue's document, are refused yet ("a shell of the
-arrangement is kept on one side … and dropped on another"; at +1e-6 now "edge 3's pcurve is
-1.3e-6 off it" at the pole): not wrong, not built.
+breaks in parameters" at a pole was the slab's at 1e-8 and the turn's alone at −1e-7).
 `countersink::a_surfaces_points_within_a_ball_reach_no_farther_along_it_than_said`
 (spindle and horn tori among its surfaces), `brep::a_plane_through_a_toruss_axis_meets_it_in_its_meridians`
 and `brep_export::a_swept_elbow_joins_its_legs_at_their_tangent_seams` (ring, horn and spindle
