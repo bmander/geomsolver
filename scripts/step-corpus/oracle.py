@@ -59,7 +59,7 @@ def corpus():
     return os.environ.get("STEP_CORPUS", "/home/user/step-corpus")
 
 
-def read(path, healing):
+def read(path, healing, reader=False):
     from OCP.IFSelect import IFSelect_RetDone
     from OCP.Interface import Interface_Static
     from OCP.STEPControl import STEPControl_Reader
@@ -71,7 +71,86 @@ def read(path, healing):
     shape = r.OneShape()
     if shape.IsNull():
         raise RuntimeError("OCCT reads no shape")
-    return solids_of(shape)
+    return (solids_of(shape), r) if reader else solids_of(shape)
+
+
+def face_entities(path):
+    """Each of OCCT's faces (healing off, in `topology`'s order) with the ADVANCED_FACE it was
+    translated from, by OCCT's own record of the translation (`EntityFromShapeResult`): a list of
+    `(kind, entity)`, the entity 0 where OCCT records none. The file's model numbers its
+    entities in the order the DATA section lists them, which `stepscan` keeps; a face of a
+    translation that split one entity's face names that entity on each part."""
+    from OCP.TopAbs import TopAbs_FACE
+    from OCP.TopExp import TopExp
+    from OCP.TopTools import TopTools_IndexedMapOfShape
+    from OCP.TopoDS import TopoDS
+    shape, r = read(path, healing=False, reader=True)
+    tr, model = r.WS().TransferReader(), r.StepModel()
+    labels = list(stepscan.entities(path))
+    if model.NbEntities() != len(labels):
+        raise RuntimeError(f"OCCT's model holds {model.NbEntities()} entities, the text "
+                           f"{len(labels)}")
+    # an entity's wrapper is the same Python object however it is reached (pybind11 keeps one
+    # per C++ object while it lives), so the model's entities, kept, name what the map returns
+    keep, number = [], {}
+    for n in range(1, model.NbEntities() + 1):
+        v = model.Value(n)
+        keep.append(v)
+        if v.DynamicType().Name() in ("StepShape_AdvancedFace", "StepShape_FaceSurface"):
+            number[id(v)] = labels[n - 1]
+    m = TopTools_IndexedMapOfShape()
+    TopExp.MapShapes_s(shape, TopAbs_FACE, m)
+    out = []
+    for i in range(1, m.Extent() + 1):
+        f = TopoDS.Face_s(m.FindKey(i))
+        e = tr.EntityFromShapeResult(f, 1)
+        out.append((kind_of(f), number.get(id(e), 0) if e is not None else 0))
+    return out
+
+
+NAMED_AT_MOST = 5000
+
+
+def name_by_transfer(root, files):
+    """The faces table of each of `files` (paths under `root`) named again by OCCT's record of
+    its translation (`face_entities`), where the order of the shells' faces did not name them:
+    the `entity` column rewritten and `faces_named` (how many faces named, of how many) put in
+    the JSON. A file whose face table OCCT's reading now does not reproduce (a count or a kind
+    differs) is said and left as it is."""
+    for f in files:
+        js, tsv = (os.path.join(root, "oracle", f + x) for x in (".json", ".faces.tsv"))
+        if not (os.path.exists(js) and os.path.exists(tsv)):
+            continue
+        got = json.load(open(js))
+        if "error" in got:
+            continue
+        lines = open(tsv).read().splitlines()
+        rows = [line.split("\t") for line in lines[1:]]
+        if got.get("faces_named") or got.get("faces_mapped"):
+            continue
+        if len(rows) > NAMED_AT_MOST:
+            # OCCT finds a shape's entity by a walk of its whole record, once per face
+            print(f"{f}\tnot named: {len(rows)} faces, past {NAMED_AT_MOST}", flush=True)
+            continue
+        try:
+            named = face_entities(os.path.join(root, f))
+        except Exception as e:  # noqa: BLE001 - OCCT's failure is said, not raised
+            print(f"{f}\tnot named: {e}", flush=True)
+            continue
+        if len(named) != len(rows) or any(k != r[2] for (k, _), r in zip(named, rows)):
+            print(f"{f}\tnot named: OCCT's reading has {len(named)} faces, its table "
+                  f"{len(rows)}, or their kinds differ", flush=True)
+            continue
+        scan = stepscan.scan(os.path.join(root, f))
+        kind = {e: k for s in scan["solids"] for e, k in s["face_list"]}
+        for r, (_, e) in zip(rows, named):
+            r[1], r[3] = str(e), kind.get(e, "?")
+        with open(tsv, "w") as fh:
+            fh.write(FACE_HEADER + "\n" + "".join("\t".join(r) + "\n" for r in rows))
+        got["faces_named"] = [sum(1 for _, e in named if e), len(named)]
+        with open(js, "w") as fh:
+            json.dump(got, fh, indent=1, sort_keys=True)
+        print(f"{f}\tnamed {got['faces_named'][0]} of {len(named)}", flush=True)
 
 
 def solids_of(shape):
@@ -296,6 +375,14 @@ def faces_tsv(rows):
         for r in rows)
 
 
+def mutant_files(root):
+    """Every mutant of the corpus, by its path under `root`, in order."""
+    out = []
+    for d, _, fs in os.walk(os.path.join(root, "mutants")):
+        out += [os.path.relpath(os.path.join(d, f), root) for f in fs if f.endswith(".step")]
+    return sorted(out)
+
+
 def corpus_files(root):
     """Every STEP file of the corpus, by its path under `root`, in order."""
     out = []
@@ -376,6 +463,13 @@ def main():
             fh.write(faces_tsv(rows))
         with open(into + ".json", "w") as fh:
             json.dump(got, fh, indent=1, sort_keys=True)
+        return
+    if args[:1] == ["--name"]:
+        # paths under the corpus, or prefixes of them: every file whose faces did not map
+        root = corpus()
+        files = [f for f in corpus_files(root) + mutant_files(root)
+                 if any(f.startswith(a) for a in args[1:] or [""])]
+        name_by_transfer(root, files)
         return
     if args[:1] == ["--remap"]:
         remap(corpus())

@@ -27,6 +27,7 @@ $STEP_CORPUS/
   mutants/<kind>/<source>.<k>.step            corpus files each broken by one edit (below)
   mutants/manifest.tsv                        each mutant's source, kind, entity and edit
   oracle/<path>.json, .faces.tsv, .mass.json  OCCT's reading, per face, and the bench measurer's
+  oracle/<path>.mass.faces.tsv                the bench measurer's area of each face (faces.py)
   reference.tsv                               the table, as table.py last wrote it
   build/                                      the bench's copy, the runners' builds, logs
 ```
@@ -48,7 +49,10 @@ python3 -I $S/brep_bench.py references                      # the reference shap
 python3 -I $S/variants.py --jobs 2                          # the habits, over the sample
 python3 -I $S/oracle.py --corpus --jobs 2                   # OCCT's reading of every file
 python3 -I $S/oracle.py --remap                             # faces named again (after a stepscan change)
+python3 -I $S/oracle.py --name                              # OCCT's faces named where order does not
 python3 -I $S/table.py measure --jobs 2                     # the bench measurer's
+python3 -I $S/faces.py build                                # the measurer, face by face
+python3 -I $S/faces.py measure --jobs 2                     # its area of each face
 python3 -I $S/table.py                                      # reference.tsv, committed and in $STEP_CORPUS
 python3 -I $S/brep_bench.py manifest                        # brep_bench_cases.tsv (on a new bench commit)
 python3 -I $S/brep_bench.py census                          # entity kinds per source
@@ -133,11 +137,15 @@ outside the repository; the ordinary suite neither needs it nor runs them):
 
 * `step_corpus::nothing_is_read_wrong` — each file refused, or read to as many solids as it
   holds, every ADVANCED_FACE, EDGE_CURVE and VERTEX_POINT read and none twice, the volume and the
-  area within the row's bar of its reference. Must pass at every commit.
+  area within the row's bar of its reference, and **each face's area within its own bar of the
+  oracle's readings of that face** (below). Must pass at every commit. It prints how many files
+  read were compared face by face, how many faces (and how many disputed), and why any file was
+  not.
 * `step_corpus::nothing_panics` — no read panics; a panic names its file.
 * `step_corpus::the_corpus_reads` — every file read to its reference, none refused: the stage's
   finish line, failing until the reader is done. Its table (file, outcome, volume and area
-  errors, seconds, the refusal's witness) is the progress report.
+  errors, faces compared of those read, the worst face's error over its bar, seconds, the
+  refusal's witness or the face past its bar, then the worst face) is the progress report.
 
 ```sh
 cd rust
@@ -146,7 +154,9 @@ STEP_CORPUS=/home/user/step-corpus cargo test -j 2 -p gcs-core -- step_corpus:: 
 
 `STEP_CORPUS_ONLY=cadgenbench/` reads only the files whose path starts so, `STEP_CORPUS_THREADS`
 sets how many at once. Each file is read once for the three tests (on November 21, 2026, the
-reader refusing every solid, the 3,139 files took 7–20 s on four busy cores). Two quick tests run
+reader refusing every solid, the 3,139 files took 7–20 s on four busy cores; on November 22,
+reading 3,013 of 3,177 and each face's area measured once, 18–22 minutes three at once on four
+cores loaded to 12–15 by other builds). Two quick tests run
 in the ordinary suite: the table is whole (`the_table_is_whole`) and the hash is SHA-256.
 
 What counts as right, per row's `ref_from`: `closed` (the case's closed forms, at the bench's
@@ -157,6 +167,73 @@ bench's measurer read it differently, mostly loops run against ISO 10303-42 that
 either reading or a refusal). A file with no row is not gated: OCCT and the measurer both fail on
 it, or its bar would pass a part in fifty (`table.py` prints each with why).
 
+## Face by face
+
+A total within its bar does not show a solid read right: a face wrong by half its area in a part
+of hundreds of faces moves the total by less than a loose bar (CADGenBench 214's face #28635,
+the whole domain of its sheet, 16.8 mm², read as 11.3). So the gate holds every face, by its
+ADVANCED_FACE, to two readers' area of the same face, read from `$STEP_CORPUS/oracle/` when the
+test runs (the 340,000 faces' table is 30 MB, not worth committing):
+
+* **OCCT's**, `<path>.faces.tsv` (`oracle.py`, `BRepGProp` at the adaptive rule's 1e-10, healing
+  off), named by the order of the shells' faces where OCCT keeps it and the surface kinds agree
+  face by face (`faces_mapped`), else by OCCT's own record of the translation (`oracle.py --name`:
+  `EntityFromShapeResult` of each face, `faces_named`; a face OCCT split names its entity on each
+  part, and the parts are summed). Not named past 5,000 faces (OCCT walks its whole record per
+  face): vcad's five tessellated pipes.
+* **brep-bench's measurer's**, `<path>.mass.faces.tsv` (`faces.py`): the bench's `harness/mass`
+  patched (`mass-faces.patch`) to print what it already sums, each face's area as ISO 10303-42
+  reads its loops, put on the face from the edges' curves in space and never from the file's
+  pcurves, and to measure the faces after one it cannot (it says that face's reason). It reads a
+  conversion-based unit as millimetres, so an inch file's areas are square inches, and a file of
+  several contexts in another context's unit: the gate reads the scale off the median ratio of
+  the faces both readers measure, 1 or 25.4² where it is so to a part in a hundred, and else
+  sets the measurer aside (`measurer_scale`; a file OCCT's faces do not join, 1 where its only
+  unit is the millimetre).
+
+A face's bar is **`TOL × Σ max(tol, u)·length + REL × area + ABS`**, the sum over its loops'
+uses, `tol` the edge's measured tolerance and `u` the file's stated uncertainty (`face_bar`,
+`Face::slack`). A tolerant boundary is known only to within its edges' slack, and two readings of
+it — one by the file's pcurves (OCCT, the kernel), one by the curves in space (the measurer) —
+sweep at most that slack along each edge between them: `TOL = 1` is that bound, not a fit. The
+writer states its curves only to `u`, and the two readers show it: on the files written to 0.005–
+0.02 mm the measured `tol` alone (`K × Σ tol·length`) would flag 17 files whose faces OCCT and
+the measurer themselves read apart by more than it (CADGenBench 206's torus #58555: OCCT
+24.5749, the measurer 24.5610, the kernel 24.5694, measured slack 0.001, `u`'s 1.3), and twice or
+four times it still 16 and 13; with `max(tol, u)` four, all of them 229's face below.
+
+`REL = 1e-6` is the readers' quadrature: on the 116,298 faces of the files the totals pass,
+past their slack the worst face agreeing with a reader stands at 9.4e-8 of its area (kentron's
+helical pipe), so 1e-6 leaves ten; `ABS = 1e-9` mm² a face of no area. Measured on the whole
+corpus at the merged tree (November 22, 2026): `TOL` = 1 and 0.5 flag the same four files,
+0.25 nine (CADGenBench 204 and 246's faces by OCCT alone, within their slack), 0.1 eighteen;
+`REL` = 1e-7 the same four, 1e-8 seven. The four are the variants of CADGenBench 229, whose face
+#14114 the kernel reads 1.8% under both readers (229 itself fails in total).
+
+A reader is no reference for any face of a file whose faces it sums to an area that is not the
+file's (outside the row's bar of its reference or its second reading): it has misread a face
+somewhere, and OCCT reads each sphere of `balls-meeting-through-a-pole` as a quarter of itself.
+The measurer is held to that only where it measured every face.
+
+Where the two readers both measure a face, the reading must be within its bar of each where they
+agree within it, and of either where they do not (`disputed`, as a file is: 137 faces, among
+them an extrusion face of `peanut-prism` OCCT measures 4% off its closed form). Where one alone
+does, of that one. A face neither measures is not compared and is counted. A file whose OCCT
+faces are not the file's (OCCT drops a void's shell, reads fewer faces) is held to the measurer
+alone; one with neither table, or tables of other bytes than the file's (the first line of
+`.mass.faces.tsv` is its DATA's SHA-256, the JSON's `data_sha256` OCCT's), is not compared and
+said: never taken for agreement. `nothing_is_read_wrong` prints the count of files compared face
+by face and of those not, with why (on the merged tree: all 3,013 files read, 121,924 faces, 137
+of them disputed, none unmeasured; 132 mutants read, 700 faces). A file read right in
+total only as its row's second reading (`alt`: a disputed file's measurer's, a mutant's unedited
+source's) is not held face by face, the oracle's faces being the first reading's.
+
+No centroid is compared. A face is bounded by its file's edges, which the reader takes as they
+are, so a face in the wrong place with its right area would need its loops read on a different
+part of its surface with the same area: a wrong branch of a period puts the same points in the
+same place, and a wrong side of a loop changes the area. It would cost three more integrations a
+face, the area's cost thrice.
+
 ## Debugging a file
 
 ```sh
@@ -164,12 +241,15 @@ cd rust
 cargo run -q --release -p cad-kernel --example step_survey -- \
     --reference gcs-core/tests/step_corpus/reference.tsv $STEP_CORPUS/cadgenbench/218/input.step
 cargo run -q --release -p cad-kernel --example step_survey -- --faces $STEP_CORPUS/cadgenbench/218/input.step
+cargo run -q --release -p cad-kernel --example step_survey -- --faces --past-sound $STEP_CORPUS/cadgenbench/214/input.step
 python3 -I scripts/step-corpus/oracle.py --faces $STEP_CORPUS/cadgenbench/218/input.step   # OCCT's, per face
 ```
 
-The oracle's per-face table names each face's ADVANCED_FACE (OCCT keeps a shell's order of faces;
-`faces_mapped` in the JSON says whether the surface kinds of the two lists agreed, face by face),
-so the survey's `--faces` listing and the oracle's join on the entity.
+`--faces` prints, beside each face the reader reads, OCCT's area and the measurer's, the
+reading's relative difference from each, the face's slack and bar, and `ok`, `OFF` or `disputed`,
+as the gate judges it, wherever the file lies under `$STEP_CORPUS` (or `--oracle CORPUS`);
+`--past-sound` reads a file `sound` refuses once more without it and lists that reading's faces,
+so a refusal can be checked face by face.
 
 ## What OCCT's reading is, and is not
 

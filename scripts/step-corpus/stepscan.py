@@ -116,6 +116,16 @@ def ap(schema):
     return schema or "?"
 
 
+def entities(path):
+    """The DATA section's entity labels, in the order its instances are listed (the order a
+    reader's model numbers them in)."""
+    text = open(path, "rb").read().decode("latin-1")
+    for st in statements(text):
+        m = ENTITY.match(st.strip())
+        if m:
+            yield int(m.group(1))
+
+
 def scan(path):
     raw = open(path, "rb").read()
     text = raw.decode("latin-1")
