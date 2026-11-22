@@ -2335,7 +2335,7 @@ nothing beyond holds is the strip; and at each end of the roll the other leaf, w
 outside every instant from its rim on the end pose's tool, is kept up to where it crosses that tool
 again (read as a graph over the angle: the crossing's partner is the end pose itself, measured at
 t = 0.01 – 0.05, so that curve is also the edge of the wedge the end pose keeps). Each is its own
-sheet over its closed form, fitted to `K2_FIT` of the tolerance: a leaf over the angle from the
+sheet over its closed form, fitted quintic to `K2_FIT` of the tolerance: a leaf over the angle from the
 meridian to its equator and the roll, the strip over the fraction round the half and the roll —
 the leaves and the strip on one set of instants, so the strip's sides are the leaves' seams — and
 an end piece over the fraction from its rim to its crossing and the angle, its corner one point.
@@ -2358,8 +2358,9 @@ cover's edge across the leaf, which no leaf is cut along yet; and the end pieces
 they reach either meridian. Not entered: `ring` keeps its refusal
 (`swept_rings::a_ring_carried_along_a_spline_touching_its_meridians_whole_is_cut_from_a_block`
 asserts it). The bench's ring along a spline, its runner's frame,
-a bar of 0.005 and the tolerance of its size: built in 3.6 s (entered in 2.7 s, arranged in
-0.6 s), closed, volume 10696.461766 (the peer kernel's 10696.4618), five B-spline faces and the
+a bar of 0.005 and the tolerance of its size: built in 2.8 s (entered in 1.2 s, arranged and
+judged in 1.5 s; its sheets quintic, so a reading span by span — its area, 2.8 s — has a few
+spans to read where the cubic fit gave hundreds), closed, volume 10696.461766 (the peer kernel's 10696.4618), five B-spline faces and the
 block's six planes, membership (sampled, above) agreeing at seeded points over the groove and its volume counted
 by forty thousand of them within three standard errors (56.49 ± 1.28 against 55.54)
 (`swept_rings::a_ring_carried_along_a_spline_touching_its_meridians_whole_is_cut_from_a_block`,

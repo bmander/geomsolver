@@ -10,7 +10,7 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 - **A ring touching a meridian whole is cut from a blank, entered by depth** (#942, the depth trim,
   new `swept::touched`): brep-bench's ring carried along a spline, refused by name until now, is
-  built through `closed::cut_from` (3.6 s, volume 10696.461766). Of each contact parallel's sheet
+  built through `closed::cut_from` (2.8 s, volume 10696.461766). Of each contact parallel's sheet
   the leaf depth keeps, cut at the meridian; the strip; and at each end the other leaf from its rim
   to where it crosses the end pose's tool, each its own sheet fitted over its closed form, every
   meeting given. `member::Swept` gains `sampled`: asked for by this entry alone, a path that
