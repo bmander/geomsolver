@@ -286,8 +286,10 @@ def manifest():
     commit = open(os.path.join(BENCH, "COMMIT")).read().strip()
     with open(MANIFEST, "w") as f:
         f.write(f"# brep-bench {commit}: each settled case's closed forms (its header's values) "
-                f"and the relative tolerance the bench grades at (its own, else {EXACT:g})\n")
-        f.write("case\tvolume\tarea\ttolerance\tcentroid\treference\n")
+                f"and the relative tolerance the bench grades at (its own, else {EXACT:g}); "
+                f"`measured`, which of them the case says are no closed form but a measure "
+                f"(kernels' values, or the bench's measurer's)\n")
+        f.write("case\tvolume\tarea\ttolerance\tcentroid\treference\tmeasured\n")
         for c in cases():
             if not c["settled"]:
                 continue
@@ -295,8 +297,18 @@ def manifest():
             centroid = ",".join(repr(float(x)) for x in m["centroid"]["value"]) \
                 if "centroid" in m else ""
             f.write(f"{c['id']}\t{float(m['volume']['value'])!r}\t{float(m['area']['value'])!r}\t"
-                    f"{float(m.get('tolerance', EXACT))!r}\t{centroid}\t{m.get('reference', '')}\n")
+                    f"{float(m.get('tolerance', EXACT))!r}\t{centroid}\t{m.get('reference', '')}\t"
+                    f"{','.join(k for k in ('volume', 'area') if measured(m[k]))}\n")
     print(f"{MANIFEST}: {sum(1 for c in cases() if c['settled'])} settled cases")
+
+
+def measured(entry):
+    """Whether a case's value is a measure and not a closed form, by what its `exact` says: "no
+    closed form" (the mean of kernels' values that agree, each measuring its own model of the
+    case) anywhere in it (a sum part closed and part measured is measured), or the reference
+    shape's own reading by the bench's measurer ("as the harness reads it")."""
+    text = str(entry.get("exact", "")).lower()
+    return "no closed form" in text or "as the harness reads" in text
 
 
 def census():

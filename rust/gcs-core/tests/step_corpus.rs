@@ -24,16 +24,24 @@
 //!   file that represents no solid (`ref_from` `refuse`: a shell-based surface model, an empty product) is
 //!   refused. Holds at every commit, the reader refusing everything included.
 //! * `nothing_panics`: no read panics (`catch_unwind`); a panic names its file.
-//! * `the_corpus_reads`: every file read, none refused but those that represent no solid or that
+//! * `the_corpus_reads`: every file read, none refused but those that represent no solid, that
 //!   OCCT and brep-bench's measurer read differently (`disputed`: mostly loops against ISO
-//!   10303-42, which OCCT repairs). The stage's finish line: fails until the reader is done, and
-//!   its table is the progress report.
+//!   10303-42, which OCCT repairs), or whose account (`step_corpus/account.tsv`, a verdict, a
+//!   witness and the evidence a file) says the file is no solid's boundary (`defective`, which
+//!   must be refused) or an assembly. The stage's finish line: fails until the reader is done,
+//!   and its table is the progress report, with the account by source and verdict (`account`).
+//!
+//! A read's totals are held to its row's bar or to what the file determines, whichever is wider
+//! (`determined`, `bars`): its area to the sum of its faces' slacks, its volume to that swept
+//! over its reach. Where the readers agree closer than that and the reading does not, it is said
+//! (`read~`), not failed.
 //!
 //! ```sh
 //! STEP_CORPUS=/path/to/corpus cargo test --manifest-path rust/Cargo.toml -p gcs-core -- \
 //!     step_corpus:: --ignored --nocapture
 //! ```
-//! `STEP_CORPUS_ONLY=cadgenbench/2` reads only the files whose path starts so;
+//! `STEP_CORPUS_ONLY=cadgenbench/2` reads only the files whose path starts so (several prefixes
+//! separated by commas);
 //! `STEP_CORPUS_THREADS` how many at once (the machine's parallelism by default).
 use gcs_core::brep::props::{area,volume};
 use gcs_core::brep::step_read::{read,Given,Refusal};
@@ -62,14 +70,23 @@ pub(crate) struct Row {
     /// two readers read differently, where `alt` is the second reading.
     pub(crate) from: String,
     alt: Option<(f64,f64)>,
+    /// The account of a file not read right (`step_corpus/account.tsv`, written into the table by
+    /// `table.py`): `gap` (the reader's: a sound file another reader reads to the reference),
+    /// `defective` (not a solid's boundary by ISO 10303-42, or its edges past `sound::LOOSE` off
+    /// its faces: must be refused), `assembly` (product structure, deferred by the stage),
+    /// `nosolid`, `disputed`, `reference` or `bar` (the row corrected), `unchecked`, `open` (not
+    /// settled by the evidence in hand); empty for a file the reader must simply read right.
+    pub(crate) verdict: String,
+    /// Faces whose one reference no second reader has checked (OCCT's integration in question,
+    /// the measurer unable): a face past its bar of that one alone is said, not failed.
+    pub(crate) unchecked: BTreeSet<u32>,
+    /// Why, with the witness entity and the evidence (`scripts/step-corpus/check.py`).
+    pub(crate) account: String,
 }
 
 impl Row {
     /// Whether the file represents no solid, so that the reader must refuse it.
     pub(crate) fn refuse(&self) -> bool { self.from == "refuse" }
-    /// Whether a refusal finishes the file: one that represents no solid, or one the readers
-    /// dispute (its loops against the standard, which a reader may refuse).
-    pub(crate) fn may_refuse(&self) -> bool { self.refuse() || self.from == "disputed" }
 }
 
 fn table() -> Vec<Row> {
@@ -86,13 +103,19 @@ pub(crate) fn table_at(path: &str) -> Vec<Row> {
         col("step_faces"),col("step_edges"),col("step_vertices"));
     let (v,a,bv,ba,from) = (col("ref_volume"),col("ref_area"),col("bar_volume"),col("bar_area"),col("ref_from"));
     let (av,aa) = (col("alt_volume"),col("alt_area"));
+    // the account's columns, which a mutant's table has not
+    let opt = |name: &str| head.iter().position(|h| *h == name);
+    let (verdict,unchecked,account) = (opt("verdict"),opt("unchecked"),opt("account"));
     lines.filter(|l| !l.is_empty()).map(|l| {
         let f: Vec<&str> = l.split('\t').collect();
         let n = |i: usize| f[i].parse::<usize>().unwrap_or_else(|_| panic!("{}: {:?} is no count",f[path],f[i]));
         let x = |i: usize| f[i].parse::<f64>().unwrap_or(f64::NAN);
+        let s = |i: Option<usize>| i.and_then(|i| f.get(i)).map_or(String::new(),|s| s.to_string());
         Row { path: f[path].to_string(),data_sha256: f[sha].to_string(),solids: n(solids),
             entities: [n(faces),n(edges),n(vertices)],volume: x(v),area: x(a),bar_volume: x(bv),bar_area: x(ba),
-            from: f[from].to_string(),alt: (!f[av].is_empty()).then(|| (x(av),x(aa))) }
+            from: f[from].to_string(),alt: (!f[av].is_empty()).then(|| (x(av),x(aa))),verdict: s(verdict),
+            unchecked: s(unchecked).split(',').filter_map(|e| e.trim().trim_start_matches('#').parse().ok()).collect(),
+            account: s(account) }
     }).collect()
 }
 
@@ -106,7 +129,10 @@ pub(crate) enum Outcome {
     Panicked(String),
     /// Not done within the time bound (seconds); its thread is left to run.
     Hung(f64),
-    Read { solids: usize,entities: [usize; 3],volume: f64,area: f64,faces: Vec<Face> },
+    /// `reach`: the farthest the solid's vertices and edges stand from the point its volume's flux
+    /// is taken about (`props::volume`: the origin, or the solid's centre where it lies more than
+    /// ten sizes away), what an unclosed boundary's slack is swept over (`determined`).
+    Read { solids: usize,entities: [usize; 3],volume: f64,area: f64,faces: Vec<Face>,reach: f64 },
 }
 
 /// A face read, as the per-face check needs it.
@@ -140,6 +166,23 @@ fn length(b: &Brep,e: usize) -> f64 {
     if matches!(edge.curve,EdgeCurve::Degenerate) { return 0. }
     let at = |k: usize| edge.point(edge.t[0]+(edge.t[1]-edge.t[0])*k as f64/CHORDS as f64,&b.vertices);
     (0..CHORDS).map(|k| { let (p,q) = (at(k),at(k+1)); ((p[0]-q[0]).powi(2)+(p[1]-q[1]).powi(2)+(p[2]-q[2]).powi(2)).sqrt() }).sum()
+}
+
+/// How far `b`'s vertices and edges (each at `CHORDS` points) reach from the point
+/// `props::volume` takes its flux about: the origin, or the centre of the vertices' box where that
+/// lies more than ten of the box's diagonals away.
+fn reach(b: &Brep) -> f64 {
+    const CHORDS: usize = 8;
+    let (mut lo,mut hi) = ([f64::INFINITY; 3],[f64::NEG_INFINITY; 3]);
+    for v in &b.vertices { for k in 0..3 { lo[k] = lo[k].min(v.p[k]); hi[k] = hi[k].max(v.p[k]) } }
+    if b.vertices.is_empty() { return 0. }
+    let c: [f64; 3] = std::array::from_fn(|k| 0.5*(lo[k]+hi[k]));
+    let size = (0..3).map(|k| (hi[k]-lo[k]).powi(2)).sum::<f64>().sqrt();
+    let o = if (c[0]*c[0]+c[1]*c[1]+c[2]*c[2]).sqrt() > 10.*size { c } else { [0.; 3] };
+    let far = |p: [f64; 3]| ((p[0]-o[0]).powi(2)+(p[1]-o[1]).powi(2)+(p[2]-o[2]).powi(2)).sqrt();
+    let on_edges = b.edges.iter().filter(|e| !matches!(e.curve,EdgeCurve::Degenerate)).flat_map(|e|
+        (0..=CHORDS).map(move |k| e.point(e.t[0]+(e.t[1]-e.t[0])*k as f64/CHORDS as f64,&b.vertices)));
+    b.vertices.iter().map(|v| far(v.p)).chain(on_edges.map(far)).fold(0.,f64::max)
 }
 
 /// Each face of `given`, its area measured once (the file's area is their sum).
@@ -178,10 +221,11 @@ pub(crate) fn measured(text: &str) -> Outcome {
     let got = std::panic::catch_unwind(|| read(&text).map(|given| {
         let v: f64 = given.iter().map(|g| volume(&g.brep)).sum();
         let faces = faces_of(&given);
-        (given.len(),entities(&given),v,faces.iter().map(|f| f.area).sum::<f64>(),faces)
+        let r = given.iter().map(|g| reach(&g.brep)).fold(0.,f64::max);
+        (given.len(),entities(&given),v,faces.iter().map(|f| f.area).sum::<f64>(),faces,r)
     }));
     match got {
-        Ok(Ok((solids,entities,volume,area,faces))) => Outcome::Read {solids,entities,volume,area,faces},
+        Ok(Ok((solids,entities,volume,area,faces,reach))) => Outcome::Read {solids,entities,volume,area,faces,reach},
         Ok(Err(r)) => Outcome::Refused(r),
         Err(p) => Outcome::Panicked(p.downcast_ref::<&str>().map(|s| s.to_string())
             .or_else(|| p.downcast_ref::<String>().cloned()).unwrap_or_else(|| "a panic".into())),
@@ -204,8 +248,10 @@ pub(crate) fn read_table(rows: Vec<Row>,bound: Option<Duration>) -> Option<(Vec<
         return None
     };
     let root = PathBuf::from(root);
+    // several prefixes, each a path's start, separated by commas (no corpus path holds one)
     let only = std::env::var("STEP_CORPUS_ONLY").unwrap_or_default();
-    let rows: Vec<Row> = rows.into_iter().filter(|r| r.path.starts_with(&only)).collect();
+    let only: Vec<&str> = only.split(',').collect();
+    let rows: Vec<Row> = rows.into_iter().filter(|r| only.iter().any(|o| r.path.starts_with(o))).collect();
     let mut order: Vec<usize> = (0..rows.len()).collect();
     let size = |i: usize| std::fs::metadata(root.join(&rows[i].path)).map(|m| m.len()).unwrap_or(0);
     order.sort_by_key(|&i| std::cmp::Reverse(size(i)));
@@ -241,13 +287,23 @@ pub(crate) fn rel(got: f64,want: f64) -> f64 { (got-want).abs()/want.abs() }
 /// says every face is), and brep-bench's measurer's area (`<path>.mass.faces.tsv`, the faces it
 /// can measure). Each is the reason it is missing where it is: a table absent or of other bytes
 /// is said, never taken for agreement.
+///
+/// A third reader's areas (`<path>.quad.faces.tsv`, the measurer's columns), where there is one:
+/// an independent quadrature of some faces over the file's own boundary, made where the two
+/// readers' integrations are in question (scripts/step-corpus/teapot.py for brep-bench's Utah
+/// teapot, whose knob all three of OCCT, the measurer and the case's kernels read low). A face it
+/// measures is held to it, and to each reader within its bar of it; a reader past its bar of it
+/// is set aside for that face.
 pub(crate) struct Refs {
     pub(crate) occt: Result<BTreeMap<u32,(f64,[f64; 3])>,String>,
     pub(crate) mass: Result<BTreeMap<u32,f64>,String>,
+    pub(crate) quad: Result<BTreeMap<u32,f64>,String>,
 }
 
 impl Refs {
-    pub(crate) fn none() -> Refs { Refs {occt: Err("not read".into()),mass: Err("not read".into())} }
+    pub(crate) fn none() -> Refs {
+        Refs {occt: Err("not read".into()),mass: Err("not read".into()),quad: Err("not read".into())}
+    }
 
     /// The faces of `row`'s file. A reader whose faces sum to an area that is not the file's —
     /// outside the row's bar of its reference, or of its second reading — has misread a face
@@ -269,7 +325,8 @@ impl Refs {
             if m.len() < row.entities[0] || file(a) { Ok(m) }
             else { Err(format!("the measurer's faces sum to {a:.9e}, {:.1e} off the file's area",rel(a,row.area))) }
         });
-        Refs {occt,mass}
+        let quad = mass_faces(&at(".quad.faces.tsv"),sha).map_err(|_| "no quadrature".to_string());
+        Refs {occt,mass,quad}
     }
 }
 
@@ -356,6 +413,9 @@ fn mass_faces(tsv: &Path,sha: &str) -> Result<BTreeMap<u32,f64>,String> {
 pub(crate) const TOL: f64 = 1.;
 pub(crate) const REL: f64 = 1e-6;
 pub(crate) const ABS: f64 = 1e-9;
+/// How many times the two readers' difference a reading may stand from them and still be said to
+/// be within their agreement (the totals' `AGREE` of scripts/step-corpus/table.py).
+pub(crate) const AGREE: f64 = 3.;
 
 pub(crate) fn face_bar(slack: f64,area: f64) -> f64 { TOL*slack+REL*area.abs()+ABS }
 
@@ -367,6 +427,18 @@ pub(crate) struct Faces {
     pub(crate) compared: usize,
     pub(crate) disputed: usize,
     pub(crate) uncompared: usize,
+    /// Faces held to the third reader's quadrature (`Refs::quad`), and how many readers' areas of
+    /// them it set aside (past their bars of it).
+    pub(crate) checked: usize,
+    pub(crate) set_aside: usize,
+    /// Faces whose one reference is unchecked (`Row::unchecked`), and those of them past their
+    /// bars of it: said, not failed, until a third reader measures them.
+    pub(crate) unchecked: usize,
+    pub(crate) unchecked_off: Vec<String>,
+    /// Faces within their bars, but where the two readers agree far closer than the slack (to a
+    /// hundredth of the bar) and the reading stands farther from them than `AGREE` times their
+    /// difference and the quadrature's `REL`: the second, tighter line, said and not failed.
+    pub(crate) outside_agreement: Vec<String>,
     /// Why the file's faces are not compared, where none are.
     pub(crate) why_not: Option<String>,
     /// The face farthest from its reference, by its error over its bar, and what it says.
@@ -376,8 +448,11 @@ pub(crate) struct Faces {
 }
 
 /// Each face of `faces` against `refs`: within its bar of the reference the two readers agree
-/// on, or of either where they do not (disputed); faces of one ADVANCED_FACE taken together.
-pub(crate) fn faces_judged(faces: &[Face],refs: &Refs) -> Faces {
+/// on, or of either where they do not (disputed); where the third reader measured it, within its
+/// bar of that and of each reader within its bar of that, the others set aside; faces of one
+/// ADVANCED_FACE taken together. A face of `unchecked` held to one reader alone and past its bar
+/// of it is said (`Faces::unchecked_off`), not counted wrong.
+pub(crate) fn faces_judged(faces: &[Face],refs: &Refs,unchecked: &BTreeSet<u32>) -> Faces {
     let mut ours = BTreeMap::<u32,(&str,f64,f64)>::new();
     for f in faces.iter().filter(|f| f.entity != 0) {
         let s = ours.entry(f.entity).or_insert((f.kind,0.,0.));
@@ -392,24 +467,43 @@ pub(crate) fn faces_judged(faces: &[Face],refs: &Refs) -> Faces {
         Err(e) => Err(e.clone()),
     };
     let mass = refs.mass.as_ref().map_err(|e| e.clone());
-    if let (Err(a),Err(b)) = (&occt,&mass) { out.why_not = Some(format!("{a}; {b}")) }
+    let quad = refs.quad.as_ref().ok();
+    if let (Err(a),Err(b),None) = (&occt,&mass,quad) { out.why_not = Some(format!("{a}; {b}")) }
     for (e,(kind,area,slack)) in &ours {
         let o = occt.as_ref().ok().map(|m| m[e].0);
         let m = mass.as_ref().ok().and_then(|m| m.get(e).copied());
+        let q = quad.and_then(|m| m.get(e).copied());
         let bar = face_bar(*slack,*area);
         let off = |r: f64| (area-r).abs()/bar;
-        let (err,disputed) = match (o,m) {
-            (None,None) => { out.uncompared += 1; continue }
-            (Some(r),None) | (None,Some(r)) => (off(r),false),
-            (Some(a),Some(b)) if (a-b).abs() <= bar => (off(a).max(off(b)),false),
-            (Some(a),Some(b)) => (off(a).min(off(b)),true),
+        let (err,disputed,alone) = match (q,o,m) {
+            (Some(q),o,m) => {
+                // the quadrature checks the readers: one past its bar of it is set aside
+                let agree: Vec<f64> = [o,m].into_iter().flatten().filter(|r| (r-q).abs() <= bar).collect();
+                out.checked += 1;
+                out.set_aside += o.into_iter().chain(m).count()-agree.len();
+                (agree.into_iter().map(off).fold(off(q),f64::max),false,false)
+            }
+            (None,None,None) => { out.uncompared += 1; continue }
+            (None,Some(r),None) | (None,None,Some(r)) => (off(r),false,true),
+            (None,Some(a),Some(b)) if (a-b).abs() <= bar => (off(a).max(off(b)),false,false),
+            (None,Some(a),Some(b)) => (off(a).min(off(b)),true,false),
         };
         out.compared += 1;
         out.disputed += disputed as usize;
-        let say = || format!("face #{e} ({kind}): area {area:.9e}, OCCT {}, measurer {}, bar {bar:.1e} (slack {slack:.1e}){}",
+        let open = alone && unchecked.contains(e);
+        out.unchecked += unchecked.contains(e) as usize;
+        let say = || format!("face #{e} ({kind}): area {area:.9e}, OCCT {}, measurer {}{}, bar {bar:.1e} (slack {slack:.1e}){}",
             o.map_or("-".into(),|x| format!("{x:.9e}")),m.map_or("-".into(),|x| format!("{x:.9e}")),
-            if disputed { ", disputed" } else { "" });
-        if !(err <= 1.) { out.wrong.push(say()) }
+            q.map_or(String::new(),|x| format!(", quadrature {x:.9e}")),
+            if disputed { ", disputed" } else if open { ", its one reference unchecked" } else { "" });
+        if !(err <= 1.) { if open { out.unchecked_off.push(say()) } else { out.wrong.push(say()) } }
+        else if let (None,Some(a),Some(b)) = (q,o,m) {
+            let (mid,apart) = (0.5*(a+b),(a-b).abs());
+            if apart <= 0.01*bar && (area-mid).abs() > (AGREE*apart).max(REL*area.abs()) {
+                out.outside_agreement.push(format!("{}, {:.1e} of its bar off the readers, who agree to {:.1e} of it",say(),
+                    (area-mid).abs()/bar,apart/bar))
+            }
+        }
         if out.worst.as_ref().map_or(true,|w| err > w.0) { out.worst = Some((err,say())) }
     }
     out
@@ -422,7 +516,7 @@ pub(crate) fn wrong(row: &Row,read: &Read) -> Option<String> {
         Totals::Alt => None,
         Totals::Right => {
             let Outcome::Read {faces,..} = &read.outcome else { return None };
-            let f = faces_judged(faces,&read.refs);
+            let f = faces_judged(faces,&read.refs,&row.unchecked);
             (!f.wrong.is_empty()).then(|| format!("{} of {} faces past their bars: {}",f.wrong.len(),f.compared,
                 f.wrong.iter().take(4).cloned().collect::<Vec<_>>().join("; ")))
         }
@@ -438,6 +532,28 @@ pub(crate) enum Totals {
     Wrong(String),
 }
 
+/// **What a file determines of its totals** (relative), from its reading's own slack: its area no
+/// better than the sum of its faces' slacks, `S = Σ_faces Σ max(tol, u)·length` (each face's
+/// boundary is known to within it, `face_bar`), and its volume no better than that slack swept
+/// over the solid's reach `R` from the point the flux is taken about, `R·S/3`: the flux `∮ X·n dA/3`
+/// moves by `|X|/3` for each unit of area the slack moves, and a boundary whose edges stand off
+/// their faces does not close, so its volume moves with that point by `|d|·|∮ n dA|/3 ≤ |d|·S/3`
+/// for a move `d` (CADGenBench 212 moved 10 mm: 1.0e-6). `(S/A, R·S/(3V))`.
+pub(crate) fn determined(read: &Outcome) -> (f64,f64) {
+    let Outcome::Read {volume,area,faces,reach,..} = read else { return (0.,0.) };
+    let s: f64 = faces.iter().map(|f| f.slack).sum();
+    (reach*s/(3.*volume.abs()),s/area.abs())
+}
+
+/// The bars a read's totals are held to: the row's (its reference's own error — the case's grade,
+/// three times the two readers' difference, one reader's — floored as `table.py` says), or what
+/// the file determines (`determined`) where that is wider: a reading cannot be held closer to a
+/// reference than the file holds its own solid. `(volume, area)`.
+pub(crate) fn bars(row: &Row,read: &Outcome) -> (f64,f64) {
+    let (dv,da) = determined(read);
+    (row.bar_volume.max(dv),row.bar_area.max(da))
+}
+
 pub(crate) fn totals(row: &Row,read: &Outcome) -> Totals {
     let Outcome::Read {solids,entities,volume,area,..} = read else { return Totals::Right };
     if row.refuse() { return Totals::Wrong(format!("read {solids} solids, volume {volume:.12e} area {area:.12e}, from a file that represents none")) }
@@ -445,14 +561,56 @@ pub(crate) fn totals(row: &Row,read: &Outcome) -> Totals {
     if *entities != row.entities {
         return Totals::Wrong(format!("faces, edges, vertices read {entities:?}, the file's solids hold {:?}",row.entities))
     }
+    let (bv,ba) = bars(row,read);
     let (dv,da) = (rel(*volume,row.volume),rel(*area,row.area));
-    if dv <= row.bar_volume && da <= row.bar_area { return Totals::Right }
+    if dv <= bv && da <= ba { return Totals::Right }
     // a disputed file may be read to either reading
     if let Some((v,a)) = row.alt {
-        if rel(*volume,v) <= row.bar_volume && rel(*area,a) <= row.bar_area { return Totals::Alt }
+        if rel(*volume,v) <= bv && rel(*area,a) <= ba { return Totals::Alt }
     }
-    if !(dv <= row.bar_volume) { return Totals::Wrong(format!("volume {volume:.12e} is {dv:.1e} off {:.12e} ({}), the bar {:.0e}",row.volume,row.from,row.bar_volume)) }
-    Totals::Wrong(format!("area {area:.12e} is {da:.1e} off {:.12e} ({}), the bar {:.0e}",row.area,row.from,row.bar_area))
+    if !(dv <= bv) { return Totals::Wrong(format!("volume {volume:.12e} is {dv:.1e} off {:.12e} ({}), the bar {bv:.1e}",row.volume,row.from)) }
+    Totals::Wrong(format!("area {area:.12e} is {da:.1e} off {:.12e} ({}), the bar {ba:.1e}",row.area,row.from))
+}
+
+/// Whether a read right is also within its row's own bar (the readers' agreement, or the case's
+/// grade), not only within what the file determines: the second, tighter line, said and not
+/// failed (two readers agreeing far inside the file's slack may share a convention its writer
+/// meant, pcurves over curves).
+pub(crate) fn agreed(row: &Row,read: &Outcome) -> bool {
+    let Outcome::Read {volume,area,..} = read else { return true };
+    let within = |v: f64,a: f64| rel(*volume,v) <= row.bar_volume && rel(*area,a) <= row.bar_area;
+    within(row.volume,row.area) || row.alt.map_or(false,|(v,a)| within(v,a))
+}
+
+/// Where a file stands against its account: its class in the progress report, and whether it
+/// keeps the stage from its finish (`the_corpus_reads`).
+pub(crate) fn standing(row: &Row,r: &Read) -> (&'static str,bool) {
+    // the account first: a dispute it settled (a reader shown to misread) is no excuse
+    let gap = row.verdict == "gap";
+    match &r.outcome {
+        Outcome::Refused(_) if row.refuse() => ("nosolid",false),
+        Outcome::Refused(_) if row.verdict == "defective" => ("defective",false),
+        Outcome::Refused(_) if row.verdict == "assembly" => ("assembly",false),
+        Outcome::Refused(_) if gap => ("gap",true),
+        Outcome::Refused(_) if row.verdict == "open" => ("open",true),
+        Outcome::Refused(_) if row.from == "disputed" => ("disputed",false),
+        Outcome::Refused(_) => ("refused?",true),
+        Outcome::Read {..} if wrong(row,r).is_some() => (if gap { "gap" } else if row.verdict == "open" { "open" } else { "WRONG?" },true),
+        // a file the account says is no solid's boundary is finished by its refusal: a reading
+        // of it is no pass until the account says what the file's own geometry holds
+        Outcome::Read {..} if row.verdict == "defective" => ("read defective",true),
+        Outcome::Read {..} => ("read",false),
+        Outcome::Panicked(_) => ("PANIC",true),
+        Outcome::Hung(_) => ("HUNG",true),
+        Outcome::Missing | Outcome::Stale(_) => ("missing",true),
+    }
+}
+
+/// The source a corpus path is of: `cadgenbench`, `brep-bench/<kernel>`, `commercial/<source>`,
+/// `variants/<habit>`.
+fn source(path: &str) -> String {
+    let p: Vec<&str> = path.split('/').collect();
+    if p[0] == "cadgenbench" || p.len() < 2 { p[0].to_string() } else { format!("{}/{}",p[0],p[1]) }
 }
 
 /// The progress report: a line a file.
@@ -461,16 +619,18 @@ pub(crate) fn report(rows: &[Row],reads: &[Read]) {
     println!("{:<64} {:<8} {:>9} {:>9} {:>11} {:>8} {:>7}  why / witness; the worst face","file","outcome","dV","dA",
         "faces","worst","s");
     for (row,r) in rows.iter().zip(reads) {
-        let judged = match &r.outcome { Outcome::Read {faces,..} => Some((faces.len(),faces_judged(faces,&r.refs))),_ => None };
+        let judged = match &r.outcome { Outcome::Read {faces,..} => Some((faces.len(),faces_judged(faces,&r.refs,&row.unchecked))),_ => None };
         let (word,dv,da,why) = match &r.outcome {
             Outcome::Missing => ("missing","".into(),"".into(),String::new()),
             Outcome::Stale(sha) => ("stale","".into(),"".into(),format!("DATA's sha256 {sha}")),
-            Outcome::Refused(f) => (if row.refuse() { "nosolid" } else if row.may_refuse() { "disputed" } else { "refused" },"".into(),"".into(),format!("{:?} {f}",f.why)),
+            Outcome::Refused(f) => (match standing(row,r).0 { "refused?" => "refused",c => c },"".into(),"".into(),format!("{:?} {f}",f.why)),
             Outcome::Panicked(m) => ("PANIC","".into(),"".into(),m.clone()),
             Outcome::Hung(s) => ("HUNG","".into(),"".into(),format!("not done in {s} s")),
             Outcome::Read {volume,area,..} => match wrong(row,r) {
                 Some(w) => ("WRONG",format!("{:.1e}",rel(*volume,row.volume)),format!("{:.1e}",rel(*area,row.area)),w),
-                None => ("read",format!("{:.1e}",rel(*volume,row.volume)),format!("{:.1e}",rel(*area,row.area)),String::new()),
+                // `~` marks a read within what the file determines but outside its row's own bar
+                None => (if row.verdict == "defective" { "read def" } else if agreed(row,&r.outcome) { "read" } else { "read~" },
+                    format!("{:.1e}",rel(*volume,row.volume)),format!("{:.1e}",rel(*area,row.area)),String::new()),
             },
         };
         *tally.entry(word).or_default() += 1;
@@ -481,10 +641,65 @@ pub(crate) fn report(rows: &[Row],reads: &[Read]) {
         };
         let why: String = why.chars().take(110).collect();
         let face: String = face.chars().take(160).collect();
-        println!("{:<64} {word:<8} {dv:>9} {da:>9} {n:>11} {worst:>8} {:>7.2}  {why}{}{face}",row.path,r.seconds,
+        let account = if row.verdict.is_empty() { String::new() }
+            else { format!("  [{}: {}]",row.verdict,row.account.chars().take(140).collect::<String>()) };
+        println!("{:<64} {word:<8} {dv:>9} {da:>9} {n:>11} {worst:>8} {:>7.2}  {why}{}{face}{account}",row.path,r.seconds,
             if why.is_empty() || face.is_empty() { "" } else { "; " });
     }
     println!("{tally:?}");
+}
+
+/// The account, by source and by where each file stands (`standing`): what reads, what is refused
+/// and why that finishes it or not, the files read within what they determine but outside their
+/// rows' own bars (`read~`: the readers agree closer than the file's slack, and the reading does
+/// not), and every file the account leaves unexplained.
+pub(crate) fn account(rows: &[Row],reads: &[Read]) {
+    let mut by = BTreeMap::<String,BTreeMap<&str,usize>>::new();
+    let mut classes = BTreeSet::<&str>::new();
+    let mut loose = Vec::new();
+    for (row,r) in rows.iter().zip(reads) {
+        let (mut class,_) = standing(row,r);
+        if class == "read" && !agreed(row,&r.outcome) {
+            class = "read~";
+            let (dv,da) = determined(&r.outcome);
+            if let Outcome::Read {volume,area,..} = &r.outcome {
+                loose.push(format!("{}: dV {:.1e} dA {:.1e}, its row's bars {:.0e} {:.0e} ({}), the file's slack {dv:.1e} {da:.1e}",
+                    row.path,rel(*volume,row.volume),rel(*area,row.area),row.bar_volume,row.bar_area,row.from))
+            }
+        }
+        classes.insert(class);
+        *by.entry(source(&row.path)).or_default().entry(class).or_default() += 1;
+    }
+    let classes: Vec<&str> = classes.into_iter().collect();
+    print!("{:<26}","source");
+    for c in &classes { print!(" {c:>14}") }
+    println!();
+    let mut total = BTreeMap::<&str,usize>::new();
+    for (s,t) in &by {
+        print!("{s:<26}");
+        for c in &classes {
+            let n = t.get(c).copied().unwrap_or(0);
+            *total.entry(c).or_default() += n;
+            print!(" {:>14}",if n > 0 { n.to_string() } else { String::new() });
+        }
+        println!();
+    }
+    print!("{:<26}","all");
+    for c in &classes { print!(" {:>14}",total[c]) }
+    println!();
+    // every row whose bars what the file determines widens, before and after
+    let wide: Vec<String> = rows.iter().zip(reads).filter_map(|(row,r)| {
+        let (bv,ba) = bars(row,&r.outcome);
+        (bv > row.bar_volume || ba > row.bar_area).then(|| format!("{}: volume {:.1e} -> {bv:.1e}, area {:.1e} -> {ba:.1e}",
+            row.path,row.bar_volume,row.bar_area))
+    }).collect();
+    println!("bars widened to what the file determines ({}):",wide.len());
+    for w in &wide { println!("  {w}") }
+    println!("read within what the file determines, outside its row's own bar ({}):",loose.len());
+    for l in &loose { println!("  {l}") }
+    let unexplained: Vec<&str> = rows.iter().zip(reads).filter(|(row,r)| matches!(standing(row,r).0,"refused?" | "WRONG?"))
+        .map(|(row,_)| row.path.as_str()).collect();
+    println!("refused or wrong with no account ({}): {}",unexplained.len(),unexplained.join(" "));
 }
 
 /// How many files read were compared face by face, and why the others were not (a tally); every
@@ -493,10 +708,16 @@ pub(crate) fn report(rows: &[Row],reads: &[Read]) {
 pub(crate) fn face_census(rows: &[Row],reads: &[Read]) {
     let mut why = BTreeMap::<String,usize>::new();
     let (mut files,mut faces,mut uncompared,mut disputed) = (0,0,0,0);
+    let (mut checked,mut set_aside,mut unchecked,mut open,mut apart) = (0,0,0,Vec::new(),Vec::new());
     let mut dump = String::from("path\tfrom\ttotals\tentity\tkind\tarea\tslack\tocct\tmass\tmeasured\n");
     for (row,r) in rows.iter().zip(reads) {
         let Outcome::Read {faces: ours,..} = &r.outcome else { continue };
-        let f = faces_judged(ours,&r.refs);
+        let f = faces_judged(ours,&r.refs,&row.unchecked);
+        checked += f.checked;
+        set_aside += f.set_aside;
+        unchecked += f.unchecked;
+        for o in &f.unchecked_off { open.push(format!("{}: {o}",row.path)) }
+        for o in &f.outside_agreement { apart.push(format!("{}: {o}",row.path)) }
         if f.compared > 0 { files += 1 } else { *why.entry(f.why_not.clone().unwrap_or_else(|| "no face measured".into())).or_default() += 1 }
         faces += f.compared;
         uncompared += f.uncompared;
@@ -512,6 +733,12 @@ pub(crate) fn face_census(rows: &[Row],reads: &[Read]) {
     let read = reads.iter().filter(|r| matches!(r.outcome,Outcome::Read {..})).count();
     eprintln!("face by face: {files} of {read} files read compared, {faces} faces ({disputed} disputed), {uncompared} \
         faces no reader measured; files not compared: {why:?}");
+    eprintln!("{checked} faces held to a third reader's quadrature ({set_aside} readers' areas of them set aside past \
+        their bars); {unchecked} faces with one unchecked reference, {} of them past their bars of it, not failed:",open.len());
+    for o in &open { eprintln!("  {o}") }
+    eprintln!("{} faces within their bars but outside the readers' agreement (they agree to a hundredth of the bar, the \
+        reading is farther than {AGREE} times their difference and the quadrature's):",apart.len());
+    for o in &apart { eprintln!("  {o}") }
     if let Ok(out) = std::env::var("STEP_CORPUS_FACES_OUT") { std::fs::write(&out,dump).unwrap_or_else(|e| panic!("{out}: {e}")) }
 }
 
@@ -556,12 +783,11 @@ fn nothing_panics() {
 fn the_corpus_reads() {
     let Some((rows,reads)) = outcomes() else { return };
     report(rows,reads);
-    // a file that represents no solid is done when it is refused
-    let short = rows.iter().zip(reads).filter(|(row,r)| match r.outcome {
-        Outcome::Refused(_) => !row.may_refuse(),
-        Outcome::Read {..} => wrong(row,r).is_some(),
-        _ => true,
-    }).count();
+    account(rows,reads);
+    // a file is finished when it is read right, or refused and its account says a refusal is
+    // right: it represents no solid, the readers dispute it, its boundary is no solid's
+    // (`defective`), or it is an assembly; the reader's gaps are not finished
+    let short = rows.iter().zip(reads).filter(|(row,r)| standing(row,r).1).count();
     assert!(short == 0,"{short} of {} files not read to their reference",rows.len());
 }
 
@@ -627,5 +853,12 @@ fn the_table_is_whole() {
         assert!(r.bar_volume > 0. && r.bar_area > 0. && r.bar_volume < 0.05 && r.bar_area < 0.05,"{}: bars {} {}",
             r.path,r.bar_volume,r.bar_area);
         assert!(r.solids >= 1 && r.entities[0] > 0,"{}: {:?}",r.path,r.entities);
+    }
+    // every account a verdict of the vocabulary, and one that excuses a file a witness and a why
+    for r in &rows {
+        assert!(["","gap","open","defective","assembly","nosolid","disputed","reference","bar","unchecked"].contains(&r.verdict.as_str()),
+            "{}: verdict {:?}",r.path,r.verdict);
+        if !r.verdict.is_empty() { assert!(r.account.contains('#') && r.account.len() > 20,"{}: an account with no witness",r.path) }
+        assert!(r.verdict != "unchecked" || !r.unchecked.is_empty(),"{}: unchecked, but no face named",r.path);
     }
 }
