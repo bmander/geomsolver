@@ -471,8 +471,9 @@ impl Rolled {
 /// **The parameters along which a spline sheet closes on itself** — a surface periodic whatever its
 /// form, which the kernel's net holds no period of: along `k`, its rows at the domain's two ends one
 /// curve, to the rounding of its size, and its derivative across them one direction where it is
-/// not nought (a pole's), so the sheet runs on smoothly round the closing line (a crease there
-/// is no period: not rolled). Read off the surface's own points and tangents, never the file's
+/// not nought (a pole's), to a thousandth of a radian — a writer's fitted net closes with its
+/// tangents some 4e-5 apart (`solid_sweeps/helical_groove.sv`'s block) — so the sheet runs on
+/// round the closing line (a crease there is no period: not rolled). Read off the surface's own points and tangents, never the file's
 /// `u_closed`. The width of the domain along each, none along the others.
 fn closes(s: &Surface) -> [Option<f64>;2] {
     let n = match s { Surface::BSpline(_,n) | Surface::Offset(_,n,_) => n,_ => return [None;2] };
@@ -488,7 +489,7 @@ fn closes(s: &Surface) -> [Option<f64>;2] {
             if distance(p,q) > 1e-7*size { return false }
             let (lp,lq) = (norm(dp),norm(dq));
             // (a pole's row: its derivative along it nought, which no direction is asked of)
-            lp <= 1e-9*size || lq <= 1e-9*size || norm(cross(dp,dq)) <= 1e-6*lp*lq && crate::util::space::dot(dp,dq) > 0.
+            lp <= 1e-9*size || lq <= 1e-9*size || norm(cross(dp,dq)) <= 1e-3*lp*lq && crate::util::space::dot(dp,dq) > 0.
         });
         smooth.then_some(hi-lo)
     })

@@ -292,6 +292,23 @@ fn polylines(b: &Brep,given: &Given,edge_ids: &[u32]) -> BTreeSet<usize> {
     }).collect()
 }
 
+/// **Whether the net `read` is the net `written` turned** (`step_read::topology`'s window of a
+/// sheet closed on itself, which a face across its closing line is read on): the written sheet cut
+/// where no loop crosses and its two pieces put end to end — the same points at every parameter, a
+/// whole width of the domain along each it closes in from where it is read, to 1e-12 of the
+/// sheet's size, at a grid of 33 by 33. Nothing else: any other net read is other numbers.
+fn turned(read: &Surface,written: &Surface) -> bool {
+    let (Surface::BSpline(_,n),Surface::BSpline(_,m)) = (read,written) else { return false };
+    let (dr,dw) = (n.domain(),m.domain());
+    let size = 1.+m.poles.iter().flatten().map(|p| gcs_core::space::norm(*p)).fold(0.,f64::max);
+    (0..2).all(|k| ((dr[k][1]-dr[k][0])-(dw[k][1]-dw[k][0])).abs() <= 1e-12*(dw[k][1]-dw[k][0]))
+        && (0..=32).all(|i| (0..=32).all(|j| {
+            let q = [dr[0][0]+(dr[0][1]-dr[0][0])*i as f64/32.,dr[1][0]+(dr[1][1]-dr[1][0])*j as f64/32.];
+            let back: [f64;2] = std::array::from_fn(|k| { let [lo,hi] = dw[k]; let x = lo+(q[k]-lo).rem_euclid(hi-lo); if q[k] == dr[k][1] && x == lo { hi } else { x } });
+            distance(read.point(q),written.point(back)) <= 1e-12*size
+        }))
+}
+
 /// **Whether `r`, read from `text`, the file `write` made of `b`, is the same solid** — every
 /// clause but the second trip's (see the file's head) — and what was found on the way: `Err`
 /// says the first clause that fails, with its numbers.
@@ -310,8 +327,9 @@ pub fn same(b: &Brep,mb: &Measured,text: &str,given: &Given,fit: Fit,tol: f64,fo
             return Err(format!("face {k} (#{}) read of kind {} reversed {}, written {} reversed {}",face_ids[k],x.kind,x.reversed,y.kind,y.reversed))
         }
         if x.kind == 7 || x.kind == 8 { continue }
-        if x.numbers.len() != y.numbers.len()
-            || x.numbers.iter().zip(&y.numbers).any(|(p,q)| (p-q).abs() > 1e-12*q.abs().max(1.)) {
+        if (x.numbers.len() != y.numbers.len()
+            || x.numbers.iter().zip(&y.numbers).any(|(p,q)| (p-q).abs() > 1e-12*q.abs().max(1.)))
+            && !matches!(face_net(b,k),Some(Ok(w)) if turned(&r.faces[k].surface,&w.surface)) {
             let worst = x.numbers.iter().zip(&y.numbers).map(|(p,q)| (p-q).abs()/q.abs().max(1.)).fold(0.,f64::max);
             return Err(format!("face {k} (#{})'s surface read with other numbers ({} of them, {} written; worst {worst:.2e})",
                 face_ids[k],x.numbers.len(),y.numbers.len()))
@@ -1088,14 +1106,14 @@ fn known(example: &str,solid: &str) {
 }
 
 #[test]
-#[ignore = "a known defect, reported: a loft's net collapsed to a point keeps a degenerate edge the writer leaves out and the reader does not lay again (no pole of a surface of its own there)"]
+#[ignore = "a known defect, reported: a loft's side collapsed to a point is written as a plane, which has no pole for the degenerate edge the solid built keeps; the file reads to the solid's measures, but `same` counts the built solid's degenerate edges"]
 fn a_nets_collapsed_side_reads_back() { known("lofts/pyramid.sv","pyramid") }
 
 #[test]
 fn a_use_ending_at_a_pole_reads_back() { known("solid_sweeps/coin.sv","slab") }
 
 #[test]
-#[ignore = "a known defect, reported: a loop crossing a closed net's closing line without a seam, which the file's pcurves write as a jump of the net's span, is refused by topology (`loop breaks in parameters`)"]
+#[ignore = "a known defect, reported: the loop across the closed net's closing line now reads (the net rolled out, the face on the net turned), but the writer's curves in its nets' parameters stand up to 1.75e-7 off their edges where the file states 1e-7 (the edges themselves 3e-9 off), so three edges read looser than the file says"]
 fn a_loop_across_a_closed_nets_closing_reads_back() { known("solid_sweeps/helical_groove.sv","block") }
 
 #[test]
@@ -1121,3 +1139,4 @@ fn a_drill_is_written_within_a_minute() { known("twist_drill/drill.sv","drill") 
 #[test]
 #[ignore = "a known defect, reported: the solid read, written again, does not finish within a minute (its nets' pcurves refitted from the reader's own)"]
 fn a_solid_read_is_written_again_within_a_minute() { known("solid_sweeps/tight_ball.sv","block") }
+
