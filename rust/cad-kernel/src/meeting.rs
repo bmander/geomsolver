@@ -1121,9 +1121,13 @@ impl Shared {
                 _ => super::ssi::same(&self.surfaces[i],s,tol),
             }));
         if let Some(i) = found { super::geom::widen(&mut self.regions[i],region); return i }
+        self.push(s,region)
+    }
+    /// A new index, for `s` over `region`, among its kind's.
+    fn push(&mut self,s: &Surface,region: super::geom::Box3) -> usize {
         self.surfaces.push(s.clone());
         self.regions.push(region);
-        mine.push(self.surfaces.len()-1);
+        self.of_kind.entry(s.kind()).or_default().push(self.surfaces.len()-1);
         self.surfaces.len()-1
     }
     /// **The index of a class of faces one surface**, drawn by the caller face by face (#994,
@@ -1136,12 +1140,7 @@ impl Shared {
         let mine = self.of_kind.entry(rep.kind()).or_default();
         let i = match mine.iter().copied().find(|&i| members.iter().any(|m| self.surfaces[i] == **m)) {
             Some(i) => { super::geom::widen(&mut self.regions[i],region); i }
-            None => {
-                self.surfaces.push(rep.clone());
-                self.regions.push(region);
-                mine.push(self.surfaces.len()-1);
-                self.surfaces.len()-1
-            }
+            None => self.push(rep,region),
         };
         self.classed.insert(i);
         i

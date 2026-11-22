@@ -19,9 +19,10 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   never `one`).  Two curves on one surface cross where they come within its reach
   (`query::crossings_in` reads `curve_curve`'s closed forms at `ON_CURVE` tolerances, as it keeps a
   carrier's roots); a vertex on an edge at its end is that end, the two made one
-  (`tolerant::at_end`, new), and the box a vertex is sought on an edge in reaches as far as that
-  rule.  So a plate, a lip and a foot whose pads lie flush in its thickness or abut its edges unite
-  in every order, where some orders were refused ("a plane's pieces do not close", "a piece …
+  (`tolerant::onto_edge` and `tolerant::Onto`, new: the stretch and its ends read from one
+  inverse), and the box a vertex is sought on an edge in reaches as far as that rule.  So a plate,
+  a lip and a foot whose pads lie flush in its thickness or abut its edges unite in every order,
+  where some orders were refused ("a plane's pieces do not close", "a piece …
   touches … along no face", "a shell … kept on one side … and dropped on another") and the rest
   built with a face more or less.
 
@@ -99,6 +100,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   slope along the toe's own foot) ends nothing.  `holds_ball`'s refusal now says the face the ball
   overflows, the face it ends at, how far that edge stands off the other face and how far off the
   ball touches it.
+
+- **Whether a face goes on tangent from a run's side is one public test** (#994):
+  `fillet::tangent(n, m)`, new and public — two unit normals one either way, `1 - |n·m|` within
+  `1e-9` — is what `end_at` reads an end face going on by and what a standing ball's dome reads
+  an end no face goes on from by, so a caller predicting either reads it the same way.
 
 - **A standing ball's dome carried past an end a face cuts across** (#994): `fillet::roll`, where
   the ball stands still over a stretch of its loop and the stretch ends where a face cuts across

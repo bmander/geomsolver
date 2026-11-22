@@ -1074,13 +1074,9 @@ fn radius_at(s: &Surface,h: f64) -> Option<f64> {
 /// a gap between the rods, or, at the sum within `tol`, the one point where both touch that plane
 /// (a rod resting across another, a round's cylinder resting on a blend of another radius where
 /// both are tangent to one face). Their meeting there is that point alone, as a ball's resting on
-/// a plane is (`plane2::Touch::Gap`), and no curve is traced through it. Traced, the search for a
-/// meeting no edge crosses (`unseen`) found a point beside the touch, which the second-order
-/// reading (`boolean`'s `Touches::alone`) takes as a touch alone only where its disc is small
-/// beside both faces, and a trace from it gave nothing: "a cylinder and a cylinder meet at …,
-/// where no edge crosses, in a curve that could not be traced", or "nearly touching"
-/// (`cylinders_touching`). Nearer than that the two cross in a quartic, traced (of one radius
-/// with axes crossing, `intersect`'s two ellipses).
+/// a plane is (`plane2::Touch::Gap`), and no curve is traced through it — no trace can follow a
+/// meeting that is one point (`cylinders_touching`). Nearer than that the two cross in a quartic
+/// (`crossed_cylinders`; of one radius with axes crossing, `intersect`'s two ellipses).
 ///
 /// **Only where the axes lean apart by `SHALLOW` or more.** Resting on one another, the two stand
 /// within `tol` over an ellipse about the touch whose long axis is `√(2 tol (r + s)) / sin θ`, `θ`
@@ -1118,11 +1114,11 @@ fn rods_apart(f: &Frame,r: f64,g: &Frame,s: f64,tol: f64) -> bool {
 ///   however near their necks, never the ellipses: each a closed trace (`Traced`) whose points are
 ///   the graph's — on both surfaces to rounding — sampled densely enough that a chord is no longer
 ///   than a quarter of the branches' gap at its ends, so that the trace's projection between them
-///   (`Traced::at`) lands on its own branch and not on the other loop across a neck. Marched, the
-///   trace jumped from one loop to the other at a neck (`2.7e-3` apart for radii of 6 a micron
-///   apart), its polyline 1e-2 off the surfaces, and a cylinder's pieces did not close;
+///   (`Traced::at`) lands on its own branch and not on the other loop across a neck, which a
+///   march does not keep to (the loops `2.7e-3` apart at a neck for radii of 6 a micron apart);
 /// * where `D` falls below nothing — a loop turning back, the lesser cutting into the other's side,
-///   or one neck closed by an axes' gap — and at a lean under `SHALLOW`: traced, as before.
+///   or one neck closed by an axes' gap — and at a lean under `SHALLOW`: `None`, the meeting
+///   traced (`Ssi::Traced`).
 fn crossed_cylinders(a: &Surface,f: &Frame,r: f64,b: &Surface,g: &Frame,s: f64,tol: f64) -> Option<Vec<Curve>> {
     let (za,zb) = (unit(f.z),unit(g.z));
     let lean = cross(za,zb);
@@ -1163,9 +1159,11 @@ fn cylinder_loops(a: &Surface,f: &Frame,r: f64,b: &Surface,g: &Frame,s: f64,tol:
         let cc = dot(c,c)-cw*cw-s*s;
         (bb,bb*bb-aa*cc)
     };
-    let at = |u: f64,side: f64| { let (bb,dd) = bd(u); add(rim(u),scale(z,(-bb+side*dd.max(0.).sqrt())/aa)) };
-    // the gap between the branches at u
-    let gap = |u: f64| 2.*bd(u).1.max(0.).sqrt()/aa;
+    // the branch's point at u, and the gap between the branches there
+    let at = |u: f64,side: f64| -> (f64,V,f64) {
+        let (bb,dd) = bd(u);
+        (u,add(rim(u),scale(z,(-bb+side*dd.max(0.).sqrt())/aa)),2.*dd.max(0.).sqrt()/aa)
+    };
     // D's roots round the turn, each to the last bit
     const M: usize = 4096;
     let us: Vec<f64> = (0..=M).map(|j| TAU*j as f64/M as f64).collect();
@@ -1201,24 +1199,25 @@ fn cylinder_loops(a: &Surface,f: &Frame,r: f64,b: &Surface,g: &Frame,s: f64,tol:
     // one branch from `u0` to `u1`, its points, refined while a chord stands more than a quarter of
     // the branches' gap at its ends, or an eighth of the radius, long — down to `16 tol`
     let longest = r/8.;
+    // (each point read once, carried with its parameter and gap by the intervals it bounds)
     let branch = |u0: f64,u1: f64,side: f64| -> Vec<V> {
         let n = (((u1-u0)/TAU*64.).ceil() as usize).max(8);
-        let mut done: Vec<(f64,V)> = Vec::new();
-        let mut stack: Vec<(f64,f64)> = (0..n).rev().map(|j| (u0+(u1-u0)*j as f64/n as f64,u0+(u1-u0)*(j+1) as f64/n as f64)).collect();
-        while let Some((x,y)) = stack.pop() {
-            let (p,q) = (at(x,side),at(y,side));
+        let mut done: Vec<V> = Vec::new();
+        let ends: Vec<(f64,V,f64)> = (0..=n).map(|j| at(u0+(u1-u0)*j as f64/n as f64,side)).collect();
+        let mut stack: Vec<[(f64,V,f64);2]> = (0..n).rev().map(|j| [ends[j],ends[j+1]]).collect();
+        while let Some([(x,p,gx),(y,q,gy)]) = stack.pop() {
             let chord = distance(p,q);
-            let bar = longest.min(0.25*gap(x).min(gap(y)).max(0.));
+            let bar = longest.min(0.25*gx.min(gy).max(0.));
             if chord > bar && chord > 16.*tol && y-x > 1e-13 && done.len() < 200_000 {
-                let m = 0.5*(x+y);
-                stack.push((m,y));
-                stack.push((x,m));
+                let m = at(0.5*(x+y),side);
+                stack.push([m,(y,q,gy)]);
+                stack.push([(x,p,gx),m]);
                 continue
             }
-            if done.is_empty() { done.push((x,p)) }
-            done.push((y,q));
+            if done.is_empty() { done.push(p) }
+            done.push(q);
         }
-        done.into_iter().map(|(_,p)| p).collect()
+        done
     };
     let traced = |pts: Vec<V>| Curve::Traced(std::sync::Arc::new(super::geom::Traced {a:a.clone(),b:b.clone(),pts,closed:true}));
     if roots.is_empty() {
@@ -1233,7 +1232,7 @@ fn cylinder_loops(a: &Surface,f: &Frame,r: f64,b: &Surface,g: &Frame,s: f64,tol:
         }).into_iter().collect())
     }
     // a loop that turns back where D is nothing (the lesser cutting into the other's side, or a
-    // neck the axes' gap closes): traced, as before
+    // neck the axes' gap closes): traced (`Ssi::Traced`)
     None
 }
 
@@ -2435,8 +2434,8 @@ pub(crate) fn alone_over(a: &Surface,b: &Surface,t: &Touch) -> bool {
 /// only to the slope's rounding over `λ`, and a step bound of a fraction of `tol` is not one every
 /// touch reaches. What the touch is for is the height `b` stands over `a` there, which a step `δ`
 /// along the slope `g` changes by `½ |g · δ|`: settled once that is a thousandth of `tol`, or the
-/// step itself is. (Read before from `b`'s signed distance by differences, the slope carried
-/// that distance's rounding over the step; read here from both exact gradients.)
+/// step itself is. The slope is read from both exact gradients, not from `b`'s signed distance by
+/// differences, whose rounding it would carry over the step.
 pub(crate) fn touch_near(a: &Surface,b: &Surface,p: V,tol: f64) -> Option<V> {
     let on_a = |q: V| a.point(a.inverse(q));
     let h = difference_step(a,b);

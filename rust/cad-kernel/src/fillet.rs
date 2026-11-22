@@ -565,14 +565,14 @@ fn dome(b: &Brep,m: &Meeting,k: usize,centre: V,ring: Frame,foot: V,r: f64,tol: 
         let at: Vec<usize> = (0..b.edges.len()).filter(|&x| b.edges[x].v.contains(&v))
             .flat_map(|x| uses[x].iter().map(|u| u.0)).filter(|f| !sides_faces.iter().any(|s| s.contains(f)))
             .collect::<std::collections::BTreeSet<_>>().into_iter().collect();
-        let tangent_to = |f: usize,j: usize| { let n = unit(b.faces[f].surface.gradient(pv)); 1.-dot(mk[j],n).abs() <= 1e-9 };
+        let tangent_to = |f: usize,j: usize| tangent(mk[j],unit(b.faces[f].surface.gradient(pv)));
         if let Some(&f) = at.iter().find(|&&f| !tangent_to(f,0) && !tangent_to(f,1)) {
             if let Some(&g) = at.iter().find(|&&g| tangent_to(g,0) || tangent_to(g,1)) {
                 return Err(format!("the ball between {names} stands still, and their meeting ends where `{}` cuts across \
                     it and `{}` goes on from it at once: no stretch of its dome is cut off there yet",b.faces[f].name,
                     b.faces[g].name));
             }
-            let cuts = at.iter().map(|&g| cut_by(b,g,pv,leaving,tol,names)).collect::<Result<Vec<Cut>,String>>()?;
+            let cuts = at.iter().map(|&g| cut_by(b,g,pv,leaving,names)).collect::<Result<Vec<Cut>,String>>()?;
             cut.push(CutEnd {pv,stop:Stop {trim:Trim {vertex:v,o:pv,cuts},t:0.,faces:at}});
             continue;
         }
@@ -1426,7 +1426,7 @@ fn holds_ball(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usiz
                 // band, how far that edge stands off the other face, and how far the ball touches)
                 let across = uses[e].iter().map(|u| u.0).find(|&f| f != fi).map(|f| b.faces[f].name.as_str());
                 let other = b.faces[sides_faces[o][0]].name.as_str();
-                let figure = |x: f64| { let p = 10f64.powi(6-x.abs().max(1e-300).log10().ceil() as i32); (x*p).round()/p };
+                let figure = |x: f64| crate::util::json::fmt_g(x,6);
                 return Err(match (band.deepest(gc,g.t,&skip),across) {
                     (Some((p,h,near)),Some(g)) => format!("the ball of {names}, of radius {}, is larger than `{}` can \
                         hold: `{}` ends at its edge with `{g}` {} off `{other}` at [{}, {}, {}], short of where the ball \
@@ -1887,9 +1887,16 @@ fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2
     names: &str,size: f64,section: &dyn Fn(usize,usize,V) -> Result<Cut,String>) -> Result<(Trim,Vec<usize>),String> {
     let names = || names.to_string();
     let p = b.vertices[v as usize].p;
-    let faces: Vec<usize> = (0..b.edges.len()).filter(|&e| b.edges[e].v.contains(&v))
-        .flat_map(|e| uses[e].iter().map(|u| u.0)).filter(|f| !sides_faces.iter().any(|s| s.contains(f)))
-        .collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+    // the edges at each vertex, and the faces besides the sides at one
+    let mut at_vertex: Vec<Vec<usize>> = vec![Vec::new();b.vertices.len()];
+    for (e,ed) in b.edges.iter().enumerate() {
+        at_vertex[ed.v[0] as usize].push(e);
+        if ed.v[1] != ed.v[0] { at_vertex[ed.v[1] as usize].push(e); }
+    }
+    let others_at = |w: u32| -> Vec<usize> { at_vertex[w as usize].iter()
+        .flat_map(|&e| uses[e].iter().map(|u| u.0)).filter(|f| !sides_faces.iter().any(|s| s.contains(f)))
+        .collect::<std::collections::BTreeSet<_>>().into_iter().collect() };
+    let faces: Vec<usize> = others_at(v);
     if faces.is_empty() { return Err(format!("the run of {} ends where nothing meets it",names())) }
     // the run's way leaving the vertex, along its edge
     let e = &b.edges[*chain.iter().find(|&&e| b.edges[e].v.contains(&v)).unwrap()];
@@ -1898,9 +1905,9 @@ fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2
     // the two faces' own other pieces alone, meeting the run at an angle: a drafted side crossing
     // its parting plane (#245), where the run turns and the canal each side would meet the other's
     // in a mitre
-    let smooth = |g: usize| { let n = unit(b.faces[g].surface.gradient(p)); (0..2).any(|k| 1.-dot(m[k],n).abs() <= 1e-9) };
+    let along = |g: usize| { let n = unit(b.faces[g].surface.gradient(p)); (0..2).any(|k| tangent(m[k],n)) };
     let side_named = |g: usize| sides_faces.iter().flatten().any(|&s| b.faces[s].name == b.faces[g].name);
-    let turning: Vec<usize> = faces.iter().copied().filter(|&g| !smooth(g)).collect();
+    let turning: Vec<usize> = faces.iter().copied().filter(|&g| !along(g)).collect();
     if !turning.is_empty() && turning.iter().all(|&g| side_named(g)) {
         return Err(format!("the fillet of {} turns where each face's pieces meet (as a drafted side's do at its parting \
             plane): two canals meeting in a mitre are rung 3",names()));
@@ -1912,12 +1919,12 @@ fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2
         let n = unit(face.surface.gradient(p));
         // a face one side runs on into smoothly (a chain of traced and straight edges): the run
         // ends at the section the caller makes there, the next piece taking on from it
-        if let Some(k) = (0..2).find(|&k| 1.-dot(m[k],n).abs() <= 1e-9) {
+        if let Some(k) = (0..2).find(|&k| tangent(m[k],n)) {
             let cut = section(k,f,leaving)?;
             if !cuts.iter().any(|c| c.same(&cut,tol)) { cuts.push(cut); }
             continue;
         }
-        let cut = cut_by(b,f,p,leaving,tol,&names())?;
+        let cut = cut_by(b,f,p,leaving,&names())?;
         if !cuts.iter().any(|k| k.same(&cut,tol)) { cuts.push(cut); }
     }
     // **an end of several faces** (#994): a face the run ends on shorter than the section is wide
@@ -1927,7 +1934,6 @@ fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2
     // side, from a vertex of the end reached so far, is followed to its other vertex, and every
     // face there besides the sides that faces on past the end (`faces_on`) cuts the run off, kept
     // on its material's side — as `BodyFaces::end_faces` reads the field's end.
-    let along = |f: usize| (0..2).any(|k| 1.-dot(m[k],unit(b.faces[f].surface.gradient(p))).abs() <= 1e-9);
     let mut ending: Vec<usize> = faces.iter().copied().filter(|&f| !along(f)).collect();
     let mut beyond: Vec<usize> = Vec::new();
     let mut reached: Vec<u32> = vec![v];
@@ -1935,20 +1941,20 @@ fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2
     while k < ending.len() {
         let f = ending[k];
         k += 1;
-        for e in 0..b.edges.len() {
+        // (its own edges, in order)
+        let own: std::collections::BTreeSet<usize> =
+            b.faces[f].loops.iter().flatten().map(|c| c.edge as usize).collect();
+        for e in own {
             let [x,y] = b.edges[e].v;
             let side = |u: &(usize,usize,usize)| sides_faces.iter().flatten().any(|&s| s == u.0);
-            if !(uses[e].iter().any(|u| u.0 == f) && uses[e].iter().any(side)) { continue }
+            if !uses[e].iter().any(side) { continue }
             let w = match (reached.contains(&x),reached.contains(&y)) { (true,false) => y,(false,true) => x,_ => continue };
             // (only along an end face shorter than the section: past one as long the faces beyond
             // its far end stand out of the section's reach, as the field reads it)
             if distance(b.vertices[x as usize].p,b.vertices[y as usize].p) > size { continue }
             let q = b.vertices[w as usize].p;
             reached.push(w);
-            let there: Vec<usize> = (0..b.edges.len()).filter(|&e| b.edges[e].v.contains(&w))
-                .flat_map(|e| uses[e].iter().map(|u| u.0)).filter(|g| !sides_faces.iter().any(|s| s.contains(g)))
-                .collect::<std::collections::BTreeSet<_>>().into_iter().collect();
-            for g in there {
+            for g in others_at(w) {
                 let face = &b.faces[g];
                 let out = scale(face.surface.gradient(q),if face.reversed { -1. } else { 1. });
                 if ending.contains(&g) || !faces_on(out,leaving) { continue }
@@ -1971,9 +1977,9 @@ fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2
 }
 
 /// What face `f` of `b`, through `p`, cuts a run off by where the run leaves `p` along `leaving`:
-/// its plane's half-space, or the solid its curved surface bounds, the run kept on its side — or
-/// the run is refused, naming why (`names` the run's two faces).
-fn cut_by(b: &Brep,f: usize,p: V,leaving: V,_tol: f64,names: &str) -> Result<Cut,String> {
+/// its plane's half-space, or the solid its curved surface bounds (the surfaces `cuts_off` lists),
+/// the run kept on its side — or the run is refused, naming why (`names` the run's two faces).
+fn cut_by(b: &Brep,f: usize,p: V,leaving: V,names: &str) -> Result<Cut,String> {
     let face = &b.faces[f];
     let s = dot(leaving,unit(face.surface.gradient(p)));
     if s.abs() < MIN_TURN.dsin() {
@@ -1981,7 +1987,7 @@ fn cut_by(b: &Brep,f: usize,p: V,leaving: V,_tol: f64,names: &str) -> Result<Cut
     }
     Ok(match face.surface {
         Surface::Plane(fr) => Cut::Plane {o:p,keep:if dot(leaving,fr.z) > 0. { fr.z } else { scale(fr.z,-1.) }},
-        Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Affine(..) => Cut::Solid {surface:face.surface.clone(),inside:s < 0.},
+        _ if cuts_off(&face.surface) => Cut::Solid {surface:face.surface.clone(),inside:s < 0.},
         _ => return Err(format!("the fillet of {names} runs out onto `{}` ({}), which cuts nothing off yet",face.name,
             face.surface.kind())),
     })
@@ -1994,6 +2000,12 @@ fn cut_by(b: &Brep,f: usize,p: V,leaving: V,_tol: f64,names: &str) -> Result<Cut
 /// (a slope over a sliver of a vane's toe, along the toe's foot) is no end of it but the face beyond
 /// the one it rolls on, which must hold the ball (`holds_ball`, the lowering's `held`).
 pub fn faces_on(out: V,leaving: V) -> bool { dot(unit(out),leaving) < -MIN_TURN.dsin() }
+
+/// **Whether two unit normals `n` and `m` are one either way**, `1 - |n·m|` within 1e-9: a face
+/// tangent to a run's side where it ends goes on from it (`end_at`), and a ball standing still
+/// whose end no face goes on from is cut off there (`dome`'s `dome_cut`). The field reads its
+/// pieces' ends by the same test, so the two agree on which end is cut off.
+pub fn tangent(n: V,m: V) -> bool { 1.-dot(n,m).abs() <= 1e-9 }
 
 /// Whether a face on `s` beyond a run's end face cuts the run off (`faces_on`): a plane's
 /// half-space, or a cylinder's, a cone's or a sphere's solid (an affine image's too); a sheet's

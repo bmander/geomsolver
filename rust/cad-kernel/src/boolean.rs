@@ -1324,27 +1324,18 @@ impl<'a> Arrangement<'a> {
     /// face so joined to another of it, whatever order the faces are read in. Each class is given
     /// one index (`Shared::class`), standing for it a surface every face of it stands within the
     /// reach of over its own box — the first such of the lowest operand's, else of the next — so a
-    /// meeting laid on any face of the class lies on that face. A class read one surface at a time,
-    /// each face onto the first surface given an index over the box the faces before it fill
-    /// (`Shared::index_over`), took the surface of whichever face was read first for the class's: a
-    /// strip's pad leaning `1e-7` rad about its own length onto a plate, read first, was one with a
-    /// face of the plate along the pad and stood that face's whole length — `1e-5` off at its far
-    /// end, past the reach — for the class, so the plate's other face on the very same plane was a
-    /// surface of its own, which the pad's foot lay on and was not one with: refused as a piece
-    /// touching a face along none, or its pieces not closing, as the operands came in one order and
-    /// built in another (fixture 115's feet and lip united with the plate at its true edge). Where
-    /// no face of a class stands for all its faces (a chain of faces each within reach of the next,
-    /// leaning apart past it end to end), the first face of the lowest operand stands for it.
+    /// meeting laid on any face of the class lies on that face, whichever operand comes first: a
+    /// strip's pad leaning `1e-7` rad onto a plate is one class with every face of the plate on
+    /// that plane (fixture 115's feet and lip at the plate's true edge). Where no face of a class
+    /// stands for all its faces (a chain of faces each within reach of the next, leaning apart past
+    /// it end to end), the first face of the lowest operand stands for it.
     /// **The part of space two faces are read over reaches as far past what their boxes share as a
     /// point near both is read onto their meeting at the least sine** (`tolerant::on_meeting` at
     /// `LEAST_SINE`, #994): two faces whose boxes share no more than the line they cross along are
     /// one surface only where they lean apart less than the arrangement resolves a meeting at, and
-    /// otherwise two, their meeting laid. Read over that line alone, any two planes crossing along
-    /// it within `1e-3` rad were one there: a plate's top and the raised half of a lip's pad turned
-    /// `1e-3` rad across it, one face of the lip from the other half lying under the top, were one
-    /// class, the plate's top standing for it, and a foot's meeting with the class was laid on the
-    /// lowered half `3e-4` off it — refused as a shell kept on one side of a plane and dropped on
-    /// another, where joined the other way round the three built.
+    /// otherwise two, their meeting laid: a plate's top and the raised half of a lip's pad turned
+    /// `1e-3` rad across the line they share are two, and a foot's meeting with each is laid on
+    /// that face.
     fn classed(&mut self) {
         let reach = super::tolerant::ON_CURVE*self.tol;
         let mut faces: Vec<(Side,usize,Box3)> = Vec::new();
@@ -1355,27 +1346,27 @@ impl<'a> Arrangement<'a> {
             }
         }
         let surface = |k: usize| &self.solids[faces[k].0].faces[faces[k].1].surface;
-        fn root(of: &mut [usize],i: usize) -> usize { let mut r = i; while of[r] != r { r = of[r]; } of[i] = r; r }
-        let mut of: Vec<usize> = (0..faces.len()).collect();
+        // (read as far past the part of space the two boxes share as a point near both is read
+        // onto their meeting at the least sine)
+        let past = super::tolerant::on_meeting(self.tol,0.);
+        // each class rooted at its lowest face, the lower root kept where two are joined
+        let mut of = crate::util::union_find::UnionFind::new(faces.len());
         for i in 0..faces.len() {
             for j in i+1..faces.len() {
                 let (a,b) = (surface(i),surface(j));
-                if a.kind() != b.kind() || root(&mut of,i) == root(&mut of,j) { continue }
+                if a.kind() != b.kind() || of.find(i) == of.find(j) { continue }
                 let region = super::meeting::common(faces[i].2,faces[j].2,self.tol);
                 let near = (0..3).all(|k| region.0[k] <= region.1[k]);
-                // (read as far past the part of space the two boxes share as a point near both is
-                // read onto their meeting at the least sine)
-                let past = super::tolerant::on_meeting(self.tol,0.);
                 let around = (region.0.map(|x| x-past),region.1.map(|x| x+past));
                 if a == b || if near { super::ssi::same_over(a,b,reach,around) } else { super::ssi::same(a,b,self.tol) } {
-                    let (ri,rj) = (root(&mut of,i),root(&mut of,j));
-                    of[ri.max(rj)] = ri.min(rj);
+                    let (ri,rj) = (of.find(i),of.find(j));
+                    of.union(ri.min(rj),ri.max(rj));
                 }
             }
         }
         // each class's faces, in order of the lowest operand's lowest face
         let mut classes: BTreeMap<usize,Vec<usize>> = BTreeMap::new();
-        for i in 0..faces.len() { let r = root(&mut of,i); classes.entry(r).or_default().push(i); }
+        for i in 0..faces.len() { let r = of.find(i); classes.entry(r).or_default().push(i); }
         for members in classes.values() {
             let holds = |r: usize| members.iter().all(|&m| m == r
                 || super::ssi::same_over(surface(r),surface(m),reach,faces[m].2));
@@ -2057,11 +2048,11 @@ impl<'a> Arrangement<'a> {
     /// (`tolerant::on_stretch`, `ON_CURVE` tolerances, at every eighth of it) **is on that face**
     /// (#994): it is the edge it lies along, which step 4 merges it into, and the other face is cut
     /// along it — where that edge does not itself lie in the other face's surface all its stretch,
-    /// and so is not laid there as it is (`Meets::Along`), the span a second edge beside it. Read Out of the face at the tolerance alone, it was dropped, and the other face kept
-    /// the meeting that led up to it as a slit: a lip's foot turned `1e-3` rad across its pad, its end
-    /// within the foot's pad by half a micrometre, crosses the side of a strip abutting it a
-    /// tolerance and a half under that strip's foot, and the lip's foot was left one face whose two
-    /// sides were one shell — refused as kept on one side of a plane and dropped on another.
+    /// and so is not laid there as it is (`Meets::Along`), the span a second edge beside it. So the
+    /// other face is cut through, not left with the meeting leading up to it as a slit: a lip's
+    /// foot turned `1e-3` rad across its pad, its end within the foot's pad by half a micrometre,
+    /// crossing the side of a strip abutting it a tolerance and a half under that strip's foot, is
+    /// cut along that side, its two sides two shells.
     fn kept(&self,c: &Curve,t: [f64;2],v: [u32;2],faces: Two,surfaces: [&Surface;2]) -> bool {
         let m = c.point((t[0]+t[1])/2.);
         let mut places = [0,1].map(|k| self.located[faces.s[k]].face_place(faces.f[k],m));
@@ -2080,12 +2071,12 @@ impl<'a> Arrangement<'a> {
             // an edge lying in the other face's surface all its stretch is laid on it as it is
             // (phase 1's `Meets::Along`): the span beside it would be a second edge a hair off it
             let other = surfaces[1-k];
-            let laid = near.iter().all(|&e| {
+            let laid = || near.iter().all(|&e| {
                 let edge = &sol.edges[e as usize];
                 (0..=8).all(|j| { let p = edge.point(edge.t[0]+(edge.t[1]-edge.t[0])*j as f64/8.,&sol.vertices);
                     distance(other.point(other.inverse(p)),p) <= reach })
             });
-            if along && !laid { places[k] = Place::On }
+            if along && !laid() { places[k] = Place::On }
         }
         self.say.span(t,v,m,places,&self.pool);
         if places[0] == Place::Out || places[1] == Place::Out { return false }
@@ -2449,8 +2440,8 @@ struct Touches<'s,'a> {
     spread: f64,
     /// the smaller face's size, which a touch read alone is small beside
     least: f64,
-    /// the touches read, as they alone are met there or not, each with the reach it is known over
-    read: Vec<(super::ssi::Touch,bool,f64)>,
+    /// the touches read, as they alone are met there or not, each known over its radius
+    read: Vec<(super::ssi::Touch,bool)>,
 }
 
 impl<'s,'a> Touches<'s,'a> {
@@ -2503,8 +2494,7 @@ impl<'s,'a> Touches<'s,'a> {
             !t.branches.iter().any(|&d| place(0,d) != Place::Out && place(1,d) != Place::Out)
         };
         if lone { self.arr.say.touch_alone(self.faces,self.surfaces,&t); }
-        let radius = t.radius;
-        self.read.push((t,lone,radius));
+        self.read.push((t,lone));
         lone
     }
 
@@ -2522,10 +2512,8 @@ impl<'s,'a> Touches<'s,'a> {
     /// where they touch beside an edge they touch along, or outside a face — the cheapest asked
     /// first.
     fn beside(&mut self,p: V) -> bool {
-        let known = self.read.iter().find(|(t,_,reach)| distance(t.at,p) <= *reach).map(|&(_,lone,_)| lone);
-        // (beyond an elliptic touch's reach but within its radius, read already: not beside it)
-        let read = known.is_some() || self.read.iter().any(|(t,..)| t.branches.is_empty() && distance(t.at,p) <= t.radius);
-        known == Some(true) || self.shallow(p) && (self.on_contact(p) || self.outside(p) || !read && self.alone(p))
+        let known = self.read.iter().find(|(t,_)| distance(t.at,p) <= t.radius).map(|&(_,lone)| lone);
+        known == Some(true) || self.shallow(p) && (self.on_contact(p) || self.outside(p) || known.is_none() && self.alone(p))
     }
 }
 
@@ -3045,18 +3033,15 @@ fn on_surface(c: &Curve,span: [f64;2],surface: &Surface,t: f64,tol: f64) -> Opti
 /// Step 2b's vertices: for each working edge, the pooled vertices (none of `gone`) lying inside it,
 /// off its ends, and where along it; each edge boxed by its curve's enclosure, on every core. **The
 /// box reaches as far as the rule it stands for** (#994): a vertex onto an edge within `ON_CURVE`
-/// tolerances (`tolerant::on_stretch`), so the box is padded by that much, never less. Padded by
-/// the boxes' `pad` (4 tolerances) alone, a corner of a strip's pad leaning `1e-6` rad onto
-/// another's, standing 5e-7 off the other's straight edge along the pad — within the rule's reach,
-/// past the box's — was read off a box the edge's curve has no breadth across, and the edge left
-/// whole beside a meeting laid to that corner: the face's pieces did not close. **A vertex on an
-/// edge at its end is that end** (#994, `tolerant::on_stretch`'s own reading of it): each such
-/// vertex and the end it stands within the reach of, beside the cuts, for step 3b to make one
-/// (`collapsed`). Not cutting the edge there, and not making the two one, left two vertices for one
-/// point wherever two operands' faces on one surface placed it apart by more than the pool's reach
-/// and less than the edge's: the corner of a lip's pad on a plate's top, minted once on the pad's
-/// plane and once on the plate's `1.4e-7` higher, one edge ending at each, and the edge laid
-/// between them along the pad's end the other way round a slit no walk closed.
+/// tolerances (`tolerant::on_stretch`), so the box is padded by that much, never less than the
+/// boxes' `pad`: a corner of a strip's pad leaning `1e-6` rad onto another's, standing 5e-7 off
+/// the other's straight edge along the pad, is within the rule's reach of an edge whose curve has
+/// no breadth across, and cuts it. **A vertex on an edge at its end is that end** (#994,
+/// `tolerant::onto_edge`, the rule's own reading of it): each such vertex and the end it stands
+/// within the reach of, beside the cuts, for step 3b to make one (`collapsed`) — one vertex for a
+/// point two operands' faces on one surface place apart by more than the pool's reach and less
+/// than the edge's (the corner of a lip's pad on a plate's top, minted on the pad's plane and on
+/// the plate's `1.4e-7` higher).
 fn vertices_inside(edges: &[WEdge],cuts: &[Vec<(f64,u32)>],pool: &Pool,gone: &std::collections::BTreeSet<u32>,
     pad: f64,tol: f64) -> (Vec<Vec<(f64,u32)>>,Vec<(u32,u32)>) {
     let pad = pad.max(super::tolerant::ON_CURVE*tol);
@@ -3077,9 +3062,10 @@ fn vertices_inside(edges: &[WEdge],cuts: &[Vec<(f64,u32)>],pool: &Pool,gone: &st
             if v == e.v[0] || v == e.v[1] || gone.contains(&v) || cuts[we].iter().any(|&(_,w)| w == v) { continue }
             let p = pool.pts[v as usize];
             if (0..3).any(|k| p[k] < lo[k]-pad || p[k] > hi[k]+pad) { continue }
-            match super::tolerant::on_stretch(c,e.t,p,tol) {
-                Some(t) => cut.push((t,v)),
-                None => if let Some(k) = super::tolerant::at_end(c,e.t,p,tol) { ends.push((v,e.v[k])) },
+            match super::tolerant::onto_edge(c,e.t,p,tol) {
+                Some(super::tolerant::Onto::Stretch(t)) => cut.push((t,v)),
+                Some(super::tolerant::Onto::End(k)) => ends.push((v,e.v[k])),
+                None => {}
             }
         }
         (cut,ends)
