@@ -628,3 +628,42 @@ fn a_sheet_tangent_to_a_face_at_the_tolerance_is_ordered_round_its_rim_by_a_step
     assert_eq!(v.len(),3,"the block's half, the wedge under the sheet and the rest: {v:?}");
     for (got,want) in v.iter().zip([wedge,4.-wedge,4.]) { close(*got,want,1e-6) }
 }
+
+/// **An edge leaving a point its face's meeting with another passes through is read there by
+/// construction** (#942, the ring's ends kept; a kernel gate with no sweep in it): the sheet
+/// `(u + v² + k v³, v, u + k v³)` lies in `z = x − y²`, which meets the plane `z = 0` in the parabola
+/// `x = y²`, given; its edge `u = 0` leaves the parabola's point at the origin and stands off the
+/// plane by `k v³` alone — within the meeting's reach of it (`ON_CURVE` tolerances) for a run of
+/// 0.04 of its length. Read against the plane, that run is the touch at the end, and the rest of the
+/// edge is searched past it: the edge meets the plane at its end alone, laid whole, and the plane
+/// parts the box in two with the sheet left in one of them.
+#[test]
+fn an_edge_leaving_a_point_of_a_given_meeting_and_hugging_the_face_is_read_at_its_end() {
+    use gcs_core::brep::boolean::{arrangement_given,Given};
+    use gcs_core::brep::geom::Curve;
+    use gcs_core::brep::nurbs::{BSpline,Net};
+    use gcs_core::brep::topo::EdgeCurve;
+    let (k,c) = (1e-5,0.5);
+    // (the cubic's Bernstein poles in `v`, linear in `u`)
+    let column = |u: f64| -> Vec<[f64;3]> { vec![[u,0.,u],[u,1./3.,u],[u+1./3.,2./3.,u+c/3.],[u+1.+k,1.,u+k+c]] };
+    let net = Net {du:1,dv:3,uknots:vec![0.,0.,1.,1.],vknots:vec![0.,0.,0.,0.,1.,1.,1.,1.],poles:vec![column(0.),column(1.)],weights:None};
+    let rim = net.row(0);
+    let sheet = gcs_core::brep::build::sheet(net).unwrap();
+    // (`z = c y²` over `y` in [−1, 2], quadratic in `y`)
+    let face = gcs_core::brep::build::sheet(Net {du:1,dv:2,uknots:vec![0.,0.,1.,1.],vknots:vec![0.,0.,0.,1.,1.,1.],
+        poles:vec![vec![[-1.,-1.,c],[-1.,0.5,-2.*c],[-1.,2.,4.*c]],vec![[2.,-1.,c],[2.,0.5,-2.*c],[2.,2.,4.*c]]],weights:None}).unwrap();
+    let (a,b) = (-1.,1.4);
+    let parabola = Curve::BSpline(std::sync::Arc::new(BSpline::new(2,vec![0.,0.,0.,1.,1.,1.],
+        vec![[a*a,a,c*a*a],[a*b,0.5*(a+b),c*a*b],[b*b,b,c*b*b]]).unwrap()));
+    let given = Given {surfaces:[face.faces[0].surface.clone(),sheet.faces[0].surface.clone()],curves:vec![parabola],touches:Vec::new()};
+    let domain = block([-0.5,-0.5,-0.5],[1.5,1.2,1.5]);
+    let complex = arrangement_given(&domain,&[&face,&sheet],&[given],1e-7).expect("arranged");
+    // the rim laid whole, from the origin out, cut nowhere along it
+    let laid: Vec<[f64;2]> = complex.b.edges.iter().filter_map(|e| match &e.curve {
+        EdgeCurve::Curve(Curve::BSpline(c)) if **c == rim => Some(e.t),
+        _ => None,
+    }).collect();
+    assert_eq!(laid.len(),1,"the rim laid as {laid:?}");
+    assert!(laid[0][0].abs() < 1e-12 && (laid[0][1]-1.).abs() < 1e-12,"{laid:?}");
+    assert_eq!(complex.cells().unwrap().len(),3);
+}

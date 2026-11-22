@@ -1403,9 +1403,9 @@ impl<'a> Arrangement<'a> {
             // that near
             let surface = &solids[other].faces[fi].surface;
             let tol = tol.max(e.tol);
-            let search = || curve_surface_within(c,e.t,surface,tol,boxes[other][fi],pad);
+            let search = |t: [f64;2]| curve_surface_within(c,t,surface,tol,boxes[other][fi],pad);
             let meets = match known {
-                None => search(),
+                None => search(e.t),
                 Some(Met::Same) => Meets::Along,
                 Some(Met::On(curves,touches)) => on_known(c,e.t,curves,touches,surface,tol,search),
             };
@@ -2432,8 +2432,16 @@ fn at_its_ends(meets: Meets,c: &Curve,t: [f64;2],surface: &Surface,tol: f64) -> 
 /// first — a crossing of two curves all but tangent (a rim crossing a path near a fold of its
 /// contact) it settles where the sampled polish misses it — each of its roots taken onto the
 /// crossing nearest it (`onto`); the crossings are the reading alone where it is refused.
+///
+/// **An end on the meeting is read there by construction** (#942, the ring's ends kept): where an
+/// end of the edge lies on one of `curves` — the edge leaving a point the meeting passes through —
+/// and the edge runs on from it within `ON_CURVE` tolerances of the surface, that run is the touch
+/// `at_its_ends` reads at the end, and the search reads only the rest of the edge, past where it
+/// stands off the surface by more. (A ring's kept leaf's rim, an edge of the end pose's wedge,
+/// stood within 1e-7 of the end piece it leaves at its corner over a run the search read boxes
+/// along for five seconds before refusing: the meeting given passes through that corner.)
 fn on_known(c: &Curve,t: [f64;2],curves: &[Curve],touches: &[V],surface: &Surface,tol: f64,
-    search: impl FnOnce() -> Meets) -> Meets {
+    search: impl FnOnce([f64;2]) -> Meets) -> Meets {
     let reach = ON_CURVE*tol;
     let domain = |g: &Curve| super::query::curve_domain(g)
         .unwrap_or(if matches!(g,Curve::Line {..}) { [f64::NEG_INFINITY,f64::INFINITY] } else { [0.,1.] });
@@ -2453,13 +2461,37 @@ fn on_known(c: &Curve,t: [f64;2],curves: &[Curve],touches: &[V],surface: &Surfac
             None => sampled.push(g),
         }
     }
-    let searched = if sampled.is_empty() { None } else {
-        match search() {
+    // each end the meeting passes through, and how far from it the edge hugs the surface: the
+    // first of 64 places on from the end standing off it by more than `reach`, halved back to where
+    // it stands off by `reach`
+    let on_meeting = |x: V| curves.iter().any(|g| { let [g0,g1] = domain(g); distance(g.point(g.inverse(x).clamp(g0,g1)),x) <= reach });
+    let off = |s: f64| surface.implicit(c.point(s)).abs() > reach;
+    let hugged = |end: f64,other: f64| -> Option<f64> {
+        if !on_meeting(c.point(end)) { return None }
+        let k = (1..=64).find(|&k| off(end+(other-end)*k as f64/64.))?;
+        let (mut near,mut far) = (end+(other-end)*(k-1) as f64/64.,end+(other-end)*k as f64/64.);
+        loop {
+            let m = 0.5*(near+far);
+            if m == near || m == far { break Some(far) }
+            if off(m) { far = m } else { near = m }
+        }
+    };
+    // (a touch where the run is longer than the step a crossing's touch is read across, below)
+    let step = 64.*reach/c.speed().max(1e-300);
+    let ends_read: Vec<(f64,bool)> = [(t[0],t[1]),(t[1],t[0])].into_iter()
+        .filter_map(|(e,o)| hugged(e,o).filter(|&h| h != e).map(|h| (e,(h-e).abs() > step))).collect();
+    let rest = [hugged(t[0],t[1]).unwrap_or(t[0]),hugged(t[1],t[0]).unwrap_or(t[1])];
+    let searched = if sampled.is_empty() { None } else if !(rest[0] < rest[1]) {
+        // (hugging the surface from an end on the meeting the whole way: read at that end alone)
+        Some(Vec::new())
+    } else {
+        match search(rest) {
             Meets::Refused(_) => None,
-            Meets::At(roots) if !roots.is_empty() => Some(roots),
+            Meets::At(roots) if !roots.is_empty() || !ends_read.is_empty() => Some(roots),
             meets => return meets,
         }
     };
+    let searched = searched.map(|mut r| { r.extend(ends_read.iter().copied()); r });
     for g in sampled {
         // (a line no closed form reads against `c` is no stretch `crossings` can sample: its
         // stretch the edge's shadow on it, and as much again either side)
@@ -2471,7 +2503,6 @@ fn on_known(c: &Curve,t: [f64;2],curves: &[Curve],touches: &[V],surface: &Surfac
         } else { domain(g) };
         found.extend(super::meeting::crossings(c,t,g,span,reach).into_iter().map(|(s,..)| s));
     }
-    let step = 64.*reach/c.speed().max(1e-300);
     let mut roots: Vec<(f64,bool)> = Vec::new();
     // (each root's point, and whether a crossing was read already: the two points within `reach`
     // of one another, #942 F6)

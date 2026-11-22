@@ -21,6 +21,12 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   the symmetric case (its centre moved 1e-9 along the path), still read touched whole within the
   rounding, is refused `Curved` at the meridian rather than `Failed` in its fit.
 
+- **An edge leaving a point of a known meeting is read there by construction** (#942,
+  `boolean::on_known`): where its end lies on a given curve and it runs on hugging the face within
+  `ON_CURVE` tolerances, that run is the touch at the end, and the search reads only the rest. The
+  ring along a spline, whose kept wedge's rim hugs the end piece from their shared corner, built
+  in 8.7 s with five seconds an end in a refused search; now 3.5 s.
+
 - **An exact surface beside a fitted one is tied round an edge at the tolerance's angle** (#942,
   `complex::tie_between`): `16 tol / ρ` of the exact surface's least radius, capped at `TANGENT`,
   as two exact surfaces already were; `TANGENT` now decides only two fitted surfaces' ways.

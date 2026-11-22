@@ -896,7 +896,18 @@ tolerance. Where a crossing is only sampled (`meeting::crossings`) the search is
 each of its roots taken onto the crossing nearest it (a crossing of two curves all but tangent — a
 rim crossing a path near a fold of its contact — the search settles where the sampled polish
 misses it), or read off the crossings alone where the search is refused (a swept sheet's rail
-leaves the tool posed at its end tangent to it). A closed form meeting in no curve is no knowledge
+leaves the tool posed at its end tangent to it). **An end on the meeting is read there by
+construction** (#942, the ring's ends kept): where an end of the edge lies on one of the known
+curves and the edge runs on from it within `ON_CURVE` tolerances of the surface, that run is the
+touch `at_its_ends` would read at the end — read there, and the search reads only the rest of the
+edge, from where it first stands off by more (a transversal crossing at the end is no touch: its
+run is shorter than the step a touch is read across). A ring's kept leaf's rim, an edge of the end
+pose's wedge, stood within 1e-7 of the end piece it leaves at their shared corner, and the search
+read boxes along that run for five seconds an end before refusing; the ring along a spline is
+built in 3.5 s where it took 8.7
+(`arrangement::an_edge_leaving_a_point_of_a_given_meeting_and_hugging_the_face_is_read_at_its_end`,
+an edge `k v³` off a curved face from a point of the parabola given as their meeting: 0.11 s of
+search before, 0.03 after). A closed form meeting in no curve is no knowledge
 of it: it leaves out a point the two touch at, which the edge may pass
 (`a_cap_in_a_plane_a_torus_touches_round_a_circle_meets_it_on_that_circle`). So a drum's rim,
 touching a channel's walls at two points, is read with nothing given off its top's meeting with
