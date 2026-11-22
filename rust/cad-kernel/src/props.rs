@@ -158,6 +158,9 @@ impl What<'_> {
     fn area(self) -> bool { matches!(self,What::Area) }
     /// Whether it is the flux of `X` or the area, which have closed forms and tables.
     fn plain(self) -> bool { matches!(self,What::Flux | What::Area) }
+    /// Whether it reads the area factor `|S_u × S_v|`, which kinks where the normal turns over (the
+    /// area, weighed or not); a flux reads `S_u × S_v` itself, smooth there.
+    fn absolute(self) -> bool { matches!(self,What::Area | What::Weighed(_)) }
 }
 
 /// The integrand of a face's measure at `uv`: the area's `|S_u × S_v|`, the flux's
@@ -682,7 +685,8 @@ impl<'a> Closed<'a> {
 /// `X · (S_u × ΔS_v)`, which no rule settles: in closed form, its parameter affine in the edge's.
 /// `uvs` are the use's parameters at its sixteenths (`sixteenths`), read by the caller once for
 /// this and for the face's box.
-fn crossings(c: &super::topo::Coedge,e: &super::topo::Edge,s: &Surface,vertices: &[super::topo::Vertex],uvs: &[Uv]) -> Vec<f64> {
+fn crossings(c: &super::topo::Coedge,e: &super::topo::Edge,s: &Surface,vertices: &[super::topo::Vertex],uvs: &[Uv],
+    absolute: bool) -> Vec<f64> {
     // the values of parameter `k` in `[a, b]` the integrand kinks at
     let kinks = |k: usize,a: f64,b: f64| -> Vec<f64> {
         match *s {
@@ -729,8 +733,11 @@ fn crossings(c: &super::topo::Coedge,e: &super::topo::Edge,s: &Surface,vertices:
     let mut out = Vec::new();
     // (and on a net, where its normal turns over between two points of the use — its area factor
     // `|S_u × S_v|` through nought, a kink: a spindle torus's net crossing its axis, whose rows there
-    // are no knots)
-    if let Surface::BSpline(..) = s {
+    // are no knots — for an integrand that reads the area factor alone (`absolute`): a flux reads
+    // `S_u × S_v`, smooth there, and cut where a swept sheet folds along a use, its normal turning
+    // at noise, the cuts fell on noise — the ring along a spline cut from a block read 6e-4 over
+    // the peer kernel's volume, `swept_rings::a_ring_carried_along_a_spline_touching_its_meridians_whole_is_cut_from_a_block`)
+    if let (Surface::BSpline(..),true) = (s,absolute) {
         let normal = |uv: Uv| { let (_,su,sv) = s.d1(uv); cross(su,sv) };
         let ns: Vec<V> = uvs.iter().map(|&q| normal(q)).collect();
         for j in 0..n {
@@ -999,7 +1006,7 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
                 // where the edge's curve or its curve in the face's parameters may jump in a derivative
                 let mut breaks = if let EdgeCurve::Curve(c) = &e.curve { c.breaks(e.t) } else { vec![] };
                 if let Pcurve::Curve(p) = &c.pcurve { breaks.extend(p.breaks(e.t)); }
-                breaks.extend(crossings(c,e,s,&b.vertices,uvs));
+                breaks.extend(crossings(c,e,s,&b.vertices,uvs,what.absolute()));
                 breaks.sort_by(f64::total_cmp);
                 breaks.dedup();
                 let line = if !breaks.is_empty() {
