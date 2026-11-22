@@ -37,6 +37,46 @@ pub(crate) fn gauss(a: f64,b: f64,pieces: usize,f: &mut dyn FnMut(f64) -> f64) -
     sum*h/2.
 }
 
+/// The Kronrod nodes of `GAUSS` (its 21-point extension, exact for a polynomial of degree 31):
+/// the eleven it adds, with their weights, and the weights it gives `GAUSS`'s ten (in its order).
+const KRONROD: [(f64,f64);11] = [
+    (-0.9956571630258081,0.011694638867371874),(-0.9301574913557082,0.054755896574351996),
+    (-0.7808177265864169,0.09312545458369760),(-0.5627571346686047,0.12349197626206585),
+    (-0.2943928627014602,0.14277593857706008),(0.,0.1494455540029169),
+    (0.2943928627014602,0.14277593857706008),(0.5627571346686047,0.12349197626206585),
+    (0.7808177265864169,0.09312545458369760),(0.9301574913557082,0.054755896574351996),
+    (0.9956571630258081,0.011694638867371874),
+];
+const KRONROD_GAUSS: [f64;10] = [
+    0.032558162307964727,0.07503967481091995,0.10938715880229764,0.13470921731147333,
+    0.14773910490133849,0.14773910490133849,0.13470921731147333,0.10938715880229764,
+    0.07503967481091995,0.032558162307964727,
+];
+
+/// **One stretch of a use between its breaks, checked**: the ten-point rule (`gauss` on one
+/// piece), kept where its 21-point Kronrod extension, which reuses its nodes, agrees with it to a
+/// part in 1e-13 of `∫|f|` or within `floor`; else the extension, where its own error as QUADPACK
+/// estimates it is within that; otherwise the stretch `settled`. Ten nodes read most
+/// stretches of a spline to their last bits, and those read as they always were, to the bit; but a
+/// stretch is not one polynomial of a degree ten read — `G` along a curve, an area's `|S_u × S_v|`,
+/// a rational sheet — and unchecked, a file's edge one knot of whose curve stood a hair past its
+/// start had its whole half turn about a rational net read by ten, a face's area 3.8e-5 off
+/// (brep-bench's frustum screwed across a ring sector, its drum leaning across a turn 1.7e-6).
+fn checked(a: f64,b: f64,floor: f64,f: &mut dyn FnMut(f64) -> f64) -> f64 {
+    let (mid,h) = ((a+b)/2.,(b-a)/2.);
+    let mut at = Vec::with_capacity(GAUSS.len());
+    let ten = gauss(a,b,1,&mut |t| { let y = f(t); at.push(y); y });
+    let (mut k,mut size) = (0.,0.);
+    for (&y,&w) in at.iter().zip(&KRONROD_GAUSS) { k += w*y; size += w*y.abs(); }
+    for &(x,w) in &KRONROD { let y = f(mid+x*h); k += w*y; size += w*y.abs(); }
+    let (k,size) = (k*h,size*h.abs());
+    let within = (1e-13*size).max(floor);
+    let off = (k-ten).abs();
+    // (the extension's own error by QUADPACK's estimate, `(200 |K − G|)^1.5` of the size: within
+    // the budget, it is read)
+    if off <= within { ten } else if size > 0. && size*(200.*off/size).powf(1.5).min(1.) <= within { k } else { settled(a,b,1,floor,f) }
+}
+
 /// The two-point Gauss rule over `[a, b]`: exact for a cubic.
 fn gauss2(a: f64,b: f64,mut f: impl FnMut(f64) -> f64) -> f64 {
     let (m,h) = ((a+b)/2.,(b-a)/2.);
@@ -269,13 +309,19 @@ impl<'a> Prefix<'a> {
         Prefix {net,us,vs,ru:rule((3*net.du).div_ceil(2)+1),nodes,base,cols}
     }
     fn g(&self,u: f64,v: f64) -> f64 { let (x,su,sv) = self.net.d1(u,v); dot(x,cross(su,sv)) }
-    /// The net's rows read at `v` (`Row`).
-    fn rows(&self,v: f64) -> Vec<Row> {
+    /// The net's rows read at `v` (`Row`) by the patch of the `v` span starting at `from` — at that
+    /// span's far end too, which a B-spline read there takes from the next span: across a knot of
+    /// multiplicity `dv` (a net joined in value only, creased) `S_v` jumps, and a column's end node
+    /// read so tabled `G` from the wrong side, a family's bar 2.8e-5 off its flux.
+    fn rows(&self,v: f64,from: f64) -> Vec<Row> {
         let n = self.net;
         let ([v0,v1],nv) = (n.domain()[1],n.poles[0].len());
-        super::nurbs::with_basis(n.dv,&n.vknots,nv,v.clamp(v0,v1),1,|sv,bv| n.poles.iter().map(|row| {
+        // the span's own knots and poles alone: every `v` is read in its one span
+        let s = super::nurbs::span(n.dv,&n.vknots,nv,from);
+        let knots = &n.vknots[s-n.dv..=s+n.dv+1];
+        super::nurbs::with_basis(n.dv,knots,n.dv+1,v.clamp(v0,v1),1,|sv,bv| n.poles.iter().map(|row| {
             let (mut x,mut d) = ([0.;3],[0.;3]);
-            for j in 0..=n.dv { let q = row[sv-n.dv+j]; for c in 0..3 { x[c] += bv[0][j]*q[c]; d[c] += bv[1][j]*q[c]; } }
+            for j in 0..=n.dv { let q = row[s+sv-2*n.dv+j]; for c in 0..3 { x[c] += bv[0][j]*q[c]; d[c] += bv[1][j]*q[c]; } }
             (x,d)
         }).collect())
     }
@@ -302,7 +348,7 @@ impl<'a> Prefix<'a> {
         let (v0,v1) = (self.vs[j],self.vs[j+1]);
         let at = |x: f64| (v0+v1)/2.+x*(v1-v0)/2.;
         let (base,n) = (self.base,self.us.len());
-        let mut col = self.cols[j].take().unwrap_or_else(|| Column {rows:self.nodes.iter().map(|&x| self.rows(at(x))).collect(),
+        let mut col = self.cols[j].take().unwrap_or_else(|| Column {rows:self.nodes.iter().map(|&x| self.rows(at(x),v0)).collect(),
             g:vec![vec![0.;n];self.nodes.len()],lo:base,hi:base});
         // filled out to knot `i`, a span at a time
         while col.hi < i {
@@ -555,8 +601,11 @@ impl<'a> Closed<'a> {
 /// a spindle torus's `R + r cos v = 0`, a cone's apex. A rule across a kink converges as a rule
 /// across a kink does: the adaptive one refining it to its last bits (most of a commercial file's
 /// measuring), a fixed one some 1e-5 off (a spindle torus's seam read across `v`). Each crossing
-/// bisected between the use's points at sixteenths of its span, to a billionth of it. None on a
-/// pcurve that is a line (crossing once at a fraction the rule's points need not meet).
+/// bisected between the use's points at sixteenths of its span, to a billionth of it. A pcurve
+/// that is a line is settled whole, through the kinks (crossing each once, at a fraction the
+/// rule's points need not meet), and cut only where it crosses a net's crease — a knot line of
+/// multiplicity the degree, the net joined in value only — where `g`, and so `G`, *jump* by
+/// `X · (S_u × ΔS_v)`, which no rule settles: in closed form, its parameter affine in the edge's.
 fn crossings(c: &super::topo::Coedge,e: &super::topo::Edge,s: &Surface,vertices: &[super::topo::Vertex]) -> Vec<f64> {
     // the values of parameter `k` in `[a, b]` the integrand kinks at
     let kinks = |k: usize,a: f64,b: f64| -> Vec<f64> {
@@ -576,7 +625,27 @@ fn crossings(c: &super::topo::Coedge,e: &super::topo::Edge,s: &Surface,vertices:
             _ => vec![],
         }
     };
-    if matches!(c.pcurve,Pcurve::Line {..}) || !matches!(s,Surface::BSpline(..) | Surface::Torus(..) | Surface::Cone(..)) { return vec![] }
+    if !matches!(s,Surface::BSpline(..) | Surface::Torus(..) | Surface::Cone(..)) { return vec![] }
+    if let Pcurve::Line {a,b} = c.pcurve {
+        // a line where it crosses a net's crease, in closed form (its parameter affine in the
+        // edge's): a knot of multiplicity its degree or more, the net joined in value only there,
+        // across which `G` jumps
+        let Surface::BSpline(_,n) = s else { return vec![] };
+        let [t0,t1] = e.t;
+        let mut out = Vec::new();
+        for (k,(knots,d)) in [(&n.uknots,n.du),(&n.vknots,n.dv)].into_iter().enumerate() {
+            if !(a[k] != b[k]) { continue }
+            let (lo,hi) = (a[k].min(b[k]),a[k].max(b[k]));
+            let mut i = 0;
+            while i < knots.len() {
+                let j = knots[i..].iter().take_while(|&&x| x == knots[i]).count();
+                let x = knots[i];
+                if j >= d && x > lo && x < hi { out.push(t0+(x-a[k])/(b[k]-a[k])*(t1-t0)) }
+                i += j;
+            }
+        }
+        return out
+    }
     let n = 16;
     let at = |t: f64| c.pcurve.at(t,e,s,vertices);
     let ts: Vec<f64> = (0..=n).map(|j| e.t[0]+(e.t[1]-e.t[0])*j as f64/n as f64).collect();
@@ -847,14 +916,14 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
                     let mut cuts = vec![e.t[0]];
                     cuts.extend(breaks);
                     cuts.push(e.t[1]);
-                    // (ten nodes a stretch: a stretch of a spline is a polynomial or a quotient of
-                    // two, which ten read to its last bits, and a file's curve of a hundred knots
-                    // was read at twice the nodes it needed)
+                    // (ten nodes a stretch, checked: most stretches of a spline ten read to their
+                    // last bits, and a file's curve of a hundred knots was read at twice the nodes
+                    // it needed; a stretch ten do not read is settled)
                     let each = 1;
                     // (settled a stretch at a time on a surface with a pole, where a curve passing near
                     // it sweeps half a turn of the collapsed parameter in a hair of a stretch)
                     if near_pole { cuts.windows(2).map(|w| settled(w[0],w[1],each,floor(e.tol),&mut integrand)).sum() }
-                    else { cuts.windows(2).map(|w| gauss(w[0],w[1],each,&mut integrand)).sum() }
+                    else { cuts.windows(2).map(|w| checked(w[0],w[1],floor(e.tol),&mut integrand)).sum() }
                 } else { settled(e.t[0],e.t[1],pieces(span,periodic),floor(e.tol),&mut integrand) };
                 row.push((if c.reversed { -line } else { line },0.));
             }

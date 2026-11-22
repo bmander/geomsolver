@@ -8,6 +8,22 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A net creased at its knots is measured as a smooth one** (#993 stage 1): `props` tabled a
+  polynomial net's `G` per `v` span through Chebyshev nodes that include the span's far end, and
+  read the net there in the next span, so across a knot of the degree's multiplicity (a net joined
+  in value only, where `S_v` jumps) a column was tabled from the wrong side: a face family's wall
+  written piece by piece between its stations read its flux 2.8e-5 off (`paths/bent_pipe.sv`'s
+  bar).  Each column's rows are read in its own span.  A pcurve that is a line is also cut where
+  it crosses such a crease, in closed form, where `G` jumps.
+
+- **A stretch of a use is read by ten nodes only where they read it** (#993 stage 1): `props`
+  read each stretch of an edge between its breaks by one ten-point Gauss rule, unchecked, so an
+  edge whose curve had a knot a hair past its start had its whole half turn about a rational net
+  read by ten points (brep-bench's frustum screwed across a ring sector, one face's area 3.8e-5
+  off; its drum leaning across a turn, two 1.7e-6).  Each stretch is checked by the rule's 21-point
+  Kronrod extension, which reuses its nodes: kept where they agree to rounding (to the bit as
+  before), the extension where its own error estimate is within the budget, else settled.
+
 - **A face on an offset surface is written as one** (#993 stage 1): `step` refused a solid with a
   face on `Surface::Offset`, which only a reading makes (an `OFFSET_SURFACE` of a net), so such a
   solid read could not be written again.  It is written as the `OFFSET_SURFACE` of its net at its
