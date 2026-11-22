@@ -668,9 +668,9 @@ pub(crate) type Spill = std::collections::BTreeMap<usize, Vec<(u32, usize)>>;
 /// edge runs into at its end (a slot's side going on into its end's half circle) is the table's
 /// own rule, a run going on into the next piece, and is none of it either.  Nor is a seam between
 /// two pieces of one surface (`BodyFaces::pieces`: a plate's top in the pieces the union of its
-/// operands left it, #952): the section stands against the surface, not the faces it is named by, so its
-/// footprint lands past such a seam onto the same surface, and the seam it reaches is the one
-/// where that surface's pieces go on into another.
+/// operands left it, #952): the section stands against the surface, not the faces it is named by,
+/// so its footprint lands past such a seam onto the same surface, and the seam it reaches is the
+/// one where that surface's pieces go on into another.
 fn seams_beside(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Spill {
     let groups: Vec<Vec<usize>> = f.faces.iter().map(|r| body.faces(r)).collect();
     let mut out = Spill::new();

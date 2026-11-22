@@ -436,9 +436,9 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
 /// edge goes on in its surface (a face in pieces), is a seam (the next piece's, #422), or ends the
 /// run: one of `ends` (`BodyFaces::end_faces`: at its own vertices, or where a run-out along them
 /// or its smooth chain ends), which the run's pieces are kept within, so it cuts the touch off;
-/// nor where the face reaches as far off the other as the ball touches it somewhere, the ball overflowing it only
-/// in part (a crown past whose rim a large ball's touch runs on, read on its surface as the field
-/// reads it), nor where no face the run ends on meets the other in a corner with an edge of it
+/// nor where the face reaches as far off the other as the ball touches it somewhere, the ball
+/// overflowing it only in part (a crown past whose rim a large ball's touch runs on, read on its
+/// surface as the field reads it), nor where no face the run ends on meets the other in a corner with an edge of it
 /// lower than the touch (a band tapering to nothing into concave arcs that run out tangent into
 /// the other, its round running out with it).  A strip nowhere that wide, its edges with the faces
 /// the run ends on in corners lower than the touch too, cannot hold the ball: a sliver a slope left

@@ -1474,10 +1474,10 @@ its face** — at sixteen stations along a carried run or ring its touch lies on
 its tolerance of its far boundary at most, or past an edge to a face of its surface, a seam, or a
 face that ends the run (one of `BodyFaces::end_faces`', at the run's own vertices or where a
 run-out along them or its smooth chain ends: the run's pieces are kept within every one, so each
-cuts the touch off — what the field decided, read and not derived again), or the face reaches as far off the other face as the touch somewhere (a
-crown whose rim a large ball's touch passes, read on its surface as the field reads it; an edge's
-reach read exactly, at its ends and where it meets the other surface's offset by the touch's
-height, `brep::fillet::reaches`, not sampled), or its
+cuts the touch off — what the field decided, read and not derived again), or the face reaches as
+far off the other face as the touch somewhere (a crown whose rim a large ball's touch passes, read
+on its surface as the field reads it; an edge's reach read exactly, at its ends and where it meets
+the other surface's offset by the touch's height, `brep::fillet::reaches`, not sampled), or its
 corner at an end of the run does (a band tapering to nothing between its edges, its round running
 out with it, its ends' arcs running out tangent into the disc) (`lowering::piece::held`, as
 `holds_ball` for a rolled one). A strip nowhere that wide, its edges with the faces the run ends
