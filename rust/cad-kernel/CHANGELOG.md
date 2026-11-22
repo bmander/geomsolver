@@ -8,6 +8,46 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The kernel reads STEP** (#993 stage 1, `step_read::read`, `step_read::reading`, `step_file`):
+  a manifold solid of an AP203, AP214 or AP242 advanced B-rep is read into a `Brep`, each face on
+  the file's own surface and each edge on its own curve, nothing refitted and nothing healed, each
+  face, edge and vertex naming its entity (`Given`). A file is read correctly or refused with a
+  `Refusal {why, entity, msg}` naming the entity at fault; an open shell, a face that crosses
+  itself, an unsupported surface and an assembly's product structure are refusals. Units and the
+  stated uncertainty are read (`step_read::context`), tolerances measured and never widened, and
+  the boundary read is held sound (`step_read::sound`) before it is given. Every file `step`
+  writes reads back to the same solid.
+
+- **A foot just past a joint runs at its own rate** (#993 stage 1): `Pcurve::derivative` of an
+  inverse curve off its face read the surface's second derivatives as differences a millionth of
+  a parameter apart, which straddle a knot within that and read its two sides' mean (a foot a
+  millionth past a quadratic net's knot ran at 0.92 where its feet run at 0.99). A net's second
+  derivatives are its own, in the span holding the foot; any other surface's differences are
+  taken on the foot's side of a break within them.
+
+- **A polynomial net's `G` is read along its iso curve** (#993 stage 1): away from the flux's
+  table, `props` integrated `G` from a face's middle across every span to each node of every use,
+  each point a two-way evaluation of the sheet; it now reads the net's rows across the held
+  parameter once a node and each point as a curve's (`Iso`), the same values to rounding.
+  brep-bench's bull-nose carried along a spline (a 91 × 143 quintic) had its area read in 13 s,
+  and now in 6.5 s.
+
+- **A net creased at its knots is measured as a smooth one** (#993 stage 1): `props` tabled a
+  polynomial net's `G` per `v` span through Chebyshev nodes that include the span's far end, and
+  read the net there in the next span, so across a knot of the degree's multiplicity (a net joined
+  in value only, where `S_v` jumps) a column was tabled from the wrong side: a face family's wall
+  written piece by piece between its stations read its flux 2.8e-5 off (`paths/bent_pipe.sv`'s
+  bar).  Each column's rows are read in its own span.  A pcurve that is a line is also cut where
+  it crosses such a crease, in closed form, where `G` jumps.
+
+- **A stretch of a use is read by ten nodes only where they read it** (#993 stage 1): `props`
+  read each stretch of an edge between its breaks by one ten-point Gauss rule, unchecked, so an
+  edge whose curve had a knot a hair past its start had its whole half turn about a rational net
+  read by ten points (brep-bench's frustum screwed across a ring sector, one face's area 3.8e-5
+  off; its drum leaning across a turn, two 1.7e-6).  Each stretch is checked by the rule's 21-point
+  Kronrod extension, which reuses its nodes: kept where they agree to rounding (to the bit as
+  before), the extension where its own error estimate is within the budget, else settled.
+
 - **A face on an offset surface is written as one** (#993 stage 1): `step` refused a solid with a
   face on `Surface::Offset`, which only a reading makes (an `OFFSET_SURFACE` of a net), so such a
   solid read could not be written again.  It is written as the `OFFSET_SURFACE` of its net at its
