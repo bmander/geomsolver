@@ -12,7 +12,7 @@
 use std::f64::consts::PI;
 
 use crate::common::lenient::read;
-use crate::common::rounds::exported;
+use crate::common::rounds::{exported, square_run};
 use crate::common::{close, text::solved};
 use gcs_core::brep::props;
 
@@ -42,7 +42,7 @@ fn slot(width: f64, seed: f64, word: &str) -> String {
 /// corner — or less a rim chamfer of `d` (`None` with `d`), its triangle along and round so.
 fn volume(width: f64, floor: Option<f64>, d: f64) -> f64 {
     let big = 1.5;
-    let area = 20.0 * width - 4.0 * big * big * (1.0 - PI / 4.0);
+    let area = 20.0 * width - 4.0 * square_run(big);
     let walls = 2.0 * (20.0 - 2.0 * big) + 2.0 * (width - 2.0 * big);
     let turn = PI / 2.0;
     let plate = 60.0 * 40.0 * 20.0 - 10.0 * area;
@@ -50,7 +50,7 @@ fn volume(width: f64, floor: Option<f64>, d: f64) -> f64 {
         Some(r) => {
             let a = big - r;
             let corner = turn * (r * (big * big - a * a) / 2.0 - a * PI * r * r / 4.0 - r * r * r / 3.0);
-            plate + (1.0 - PI / 4.0) * r * r * walls + 4.0 * corner
+            plate + square_run(r) * walls + 4.0 * corner
         }
         None => plate - d * d / 2.0 * walls - 4.0 * turn * d * d / 2.0 * (big + d / 3.0),
     }

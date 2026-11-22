@@ -96,53 +96,48 @@ pub fn line_beside_circle(w: f64, big: f64, r: f64) -> f64 {
     quad - 0.5 * big * big * angle(q, c) - 0.5 * r * r * angle([0.0, -r], [-c[0], -c[1]])
 }
 
-/// Solid `name` of `e` built, written as STEP and as STL by this kernel (each read back and
-/// checked as `solventc` checks it), and its B-rep.
-pub fn exported(e: &gcs_core::program::Elaborated, name: &str) -> gcs_core::brep::topo::Brep {
+/// Solid `name` of `e` built exactly and its STEP written; with `whole`, no face of it thinner
+/// than the export's tolerance; with `stl`, its STL written and read back (each checked as
+/// `solventc` checks it).  `then` follows the message of any panic.
+fn export_checked(e: &gcs_core::program::Elaborated, name: &str, whole: bool, stl: bool,
+                  then: &str) -> gcs_core::brep::export::Exact {
     use gcs_core::brep::{export, sweep::Say};
     let body = super::ent(e, name).i();
     let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
     let exact = export::exact(&e.sketch, body, None, None, &say)
-        .unwrap_or_else(|r| panic!("{name}: {r:?}"));
+        .unwrap_or_else(|r| panic!("{name}: {r:?}{then}"));
+    if whole {
+        if let Some(s) = export::slivers(&e.sketch, body, &exact, None) {
+            panic!("{}{then}", s.message);
+        }
+    }
     export::step(&exact, name, None, &say).unwrap();
-    let stl = export::stl(&e.sketch, body, &exact, None, &say).unwrap();
-    gcs_core::mesh::stl_shells(&stl).unwrap();
-    exact.solid
+    if stl {
+        let stl = export::stl(&e.sketch, body, &exact, None, &say).unwrap();
+        gcs_core::mesh::stl_shells(&stl).unwrap();
+    }
+    exact
+}
+
+/// Solid `name` of `e` built, written as STEP and as STL by this kernel (each read back and
+/// checked as `solventc` checks it), and its B-rep.
+pub fn exported(e: &gcs_core::program::Elaborated, name: &str) -> gcs_core::brep::topo::Brep {
+    export_checked(e, name, false, true, "").solid
 }
 
 /// Document `src` solved with nothing said, and its solid `name` built exactly and exported: its
 /// STEP written, and no face of it thinner than the export's tolerance.  Its volume.
 pub fn exported_volume(src: &str, name: &str) -> f64 {
-    use gcs_core::brep::{export, props, sweep::Say};
     let e = super::text::solved(src);
     assert!(e.diags.is_empty(), "{:?}", e.diags);
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let body = super::ent(&e, name).i();
-    let exact = export::exact(&e.sketch, body, None, None, &say)
-        .unwrap_or_else(|r| panic!("{name}: {r:?}"));
-    if let Some(s) = export::slivers(&e.sketch, body, &exact, None) {
-        panic!("{}", s.message);
-    }
-    export::step(&exact, name, None, &say).unwrap();
-    props::volume(&exact.solid)
+    gcs_core::brep::props::volume(&export_checked(&e, name, true, false, "").solid)
 }
 
 /// Document `src` solved, and its solid `name` built exactly and exported: its STEP written, its
 /// STL written and read back, and no face of it thinner than the export's tolerance.  Its volume.
 pub fn built(src: &str, name: &str) -> f64 {
-    use gcs_core::brep::{export, props, sweep::Say};
     let e = super::text::solved(src);
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let body = super::ent(&e, name).i();
-    let exact = export::exact(&e.sketch, body, None, None, &say)
-        .unwrap_or_else(|r| panic!("{name}: {r:?}\n{src}"));
-    if let Some(s) = export::slivers(&e.sketch, body, &exact, None) {
-        panic!("{}\n{src}", s.message);
-    }
-    export::step(&exact, name, None, &say).unwrap();
-    let stl = export::stl(&e.sketch, body, &exact, None, &say).unwrap();
-    gcs_core::mesh::stl_shells(&stl).unwrap();
-    props::volume(&exact.solid)
+    gcs_core::brep::props::volume(&export_checked(&e, name, true, true, &format!("\n{src}")).solid)
 }
 
 /// `built`, of a document drawn whole: one that leaves no freedom.
@@ -151,20 +146,22 @@ pub fn built_whole(src: &str, name: &str) -> f64 {
     built(src, name)
 }
 
-/// The export's refusal of solid `name` of `e`, as it is printed.
-pub fn refusal(e: &gcs_core::program::Elaborated, name: &str) -> String {
+/// The export's refusal of solid `name` of `e`.
+fn refusal_of(e: &gcs_core::program::Elaborated, name: &str) 
+    -> gcs_core::solid::export::ExportRefusal {
     use gcs_core::brep::{export, sweep::Say};
     let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
     export::exact(&e.sketch, super::ent(e, name).i(), None, None, &say).err().expect("refused")
-        .message
+}
+
+/// The export's refusal of solid `name` of `e`, as it is printed.
+pub fn refusal(e: &gcs_core::program::Elaborated, name: &str) -> String {
+    refusal_of(e, name).message
 }
 
 /// The export's refusal of solid `name` of `e`, as text.
 pub fn refused(e: &gcs_core::program::Elaborated, name: &str) -> String {
-    use gcs_core::brep::{export, sweep::Say};
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    format!("{:?}", export::exact(&e.sketch, super::ent(e, name).i(), None, None, &say).err()
-        .expect("refused"))
+    format!("{:?}", refusal_of(e, name))
 }
 
 /// How many of a B-rep's faces lie on each kind of surface.
@@ -605,6 +602,23 @@ pub fn gauss_legendre(n: usize) -> Vec<(f64, f64)> {
     }).collect()
 }
 
+/// `∫ g` over `[a, z]` by the Gauss–Legendre `rule` (`gauss_legendre`) on `n` equal stretches.
+pub fn composite(rule: &[(f64, f64)], a: f64, z: f64, n: usize, g: &dyn Fn(f64) -> f64) -> f64 {
+    (0..n).map(|j| {
+        let (lo, hi) = (a + (z - a) * j as f64 / n as f64, a + (z - a) * (j + 1) as f64 / n as f64);
+        rule.iter().map(|&(x, w)| 0.5 * (hi - lo) * w * g(0.5 * (lo + hi) + 0.5 * (hi - lo) * x)).sum::<f64>()
+    }).sum()
+}
+
+/// Where `below` turns false between `lo` (where it holds) and `hi`, by bisection.
+pub fn bisect(mut lo: f64, mut hi: f64, below: impl Fn(f64) -> bool) -> f64 {
+    for _ in 0..64 {
+        let m = 0.5 * (lo + hi);
+        if below(m) { lo = m } else { hi = m }
+    }
+    0.5 * (lo + hi)
+}
+
 /// The stack's tee crotch chamfered: the main pipe of radius `big` about x, a branch of radius
 /// `small` about z standing on it, the flat of legs `leg` where they meet (outside both).
 pub fn tee_flat(big: f64, small: f64, leg: f64) -> f64 {
@@ -798,6 +812,11 @@ pub fn exact(e: &gcs_core::program::Elaborated, name: &str) -> gcs_core::brep::t
     let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
     export::exact(&e.sketch, super::ent(e, name).i(), None, None, &say)
         .unwrap_or_else(|r| panic!("{name}: {r:?}")).solid
+}
+
+/// Solid `name` of `e` built exactly, and its volume.
+pub fn volume(e: &gcs_core::program::Elaborated, name: &str) -> f64 {
+    gcs_core::brep::props::volume(&exact(e, name))
 }
 
 /// The volume of `b` within the box `lo`–`hi`: `b` kept in common with the box, exactly.

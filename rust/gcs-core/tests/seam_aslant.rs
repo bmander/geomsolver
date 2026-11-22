@@ -9,12 +9,10 @@
 //! seam (`Beyond::seamed`) — or past it all along, the ball against the cone the edge's whole
 //! length.  Each held to a quadrature of `std.rounds.Fill`'s own words, slice by slice, to a
 //! millionth; one whose ball stays short of the seam to the prism's closed form.
-use gcs_core::brep::props;
-use gcs_core::program::Elaborated;
 use std::f64::consts::PI;
 
 use crate::common::text::solved;
-use crate::common::rounds::{dot, exact, gauss_legendre, refusal};
+use crate::common::rounds::{bisect, dot, gauss_legendre, refusal, square_run, volume};
 
 /// The box (`draft` degrees, or upright where it is nought, 200 square and 100 tall about the top
 /// plane's origin, its corners R25) and a foot 40 tall unioned onto it, its corners `foot` in turn
@@ -53,9 +51,6 @@ const FOOT: [(f64, f64); 4] = [(-20.0, 95.0), (71.2, 95.0), (55.0, 190.0), (-5.0
 /// The same foot mirrored across x = 0, beside the north-west corner: its side `f3`.
 const MIRRORED: [(f64, f64); 4] = [(-71.2, 95.0), (20.0, 95.0), (5.0, 190.0), (-55.0, 190.0)];
 
-/// Solid `name` of `e` built exactly, and its volume.
-fn volume(e: &Elaborated, name: &str) -> f64 { props::volume(&exact(e, name)) }
-
 /// What `round(r)` of the foot's side `side` against the box adds, built exactly.
 fn added(draft: f64, foot: [(f64, f64); 4], foot_draft: f64, side: &str, r: f64) -> f64 {
     let e = solved(&part(draft, foot, foot_draft, &format!("body.foot.{side} round(r: {r}mm) body.box\n")));
@@ -75,15 +70,6 @@ fn integral(a: f64, z: f64, n: usize, g: &dyn Fn(f64) -> f64) -> f64 {
             0.5 * w * (hi - lo) * 0.5 * PI * (PI * s).sin() * g(t)
         }).sum::<f64>()
     }).sum()
-}
-
-/// Where `holds` turns false between `lo` (where it holds) and `hi`, by bisection.
-fn bisect(mut lo: f64, mut hi: f64, holds: impl Fn(f64) -> bool) -> f64 {
-    for _ in 0..64 {
-        let m = 0.5 * (lo + hi);
-        if holds(m) { lo = m } else { hi = m }
-    }
-    0.5 * (lo + hi)
 }
 
 /// What a round of `r` adds where the foot's side from `p` to `q` (the foot on its left, drafted
@@ -291,7 +277,7 @@ fn a_round_across_a_seam_aslant_its_edge_into_a_cylinder_is_built() {
         assert!((got - want).abs() <= 1e-6 * want, "r = {r}: {got} against {want}");
     }
     let got = added(0.0, LEANING, 10.0, "f1", 4.0);
-    let want = 16.0 * (1.0 - PI / 4.0) * 40.0 / 10f64.to_radians().cos();
+    let want = square_run(4.0) * 40.0 / 10f64.to_radians().cos();
     assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
 }
 

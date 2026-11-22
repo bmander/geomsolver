@@ -30,7 +30,7 @@ pub(super) fn at_solve(e: &mut Elaborated) -> Stood {
     // though that pass refused the block (#948), where such refusals are all it refused
     let unread = !e.map.unread.is_empty()
         && e.errors().all(|d| d.code == Code::E103 && e.map.unread.contains(&d.span));
-    let read = !(e.map.apart.is_empty() && e.map.pruned.is_empty() && e.map.along.is_empty());
+    let read = e.map.read_apart().next().is_some() || !e.map.along.is_empty();
     if !unread && (!read || !e.ok()) {
         return Stood::new();
     }
@@ -54,8 +54,7 @@ pub(super) fn read_again(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
     // each solid read once over one reading held still (#994)
     let _holding = sk.caches.held.open();
     let reads = map.along.iter().flat_map(|w| &w.reads);
-    let meets: BTreeSet<&str> = map.apart.iter().map(|a| a.solid.as_str())
-        .chain(map.pruned.iter().map(|p| p.solid.as_str()))
+    let meets: BTreeSet<&str> = map.read_apart().map(|(_, solid, ..)| solid)
         .chain(reads.clone().filter_map(|r| match r {
             FaceRead::Meets { solid, .. } => Some(solid.as_str()),
             _ => None,
@@ -114,9 +113,11 @@ pub(super) fn unmade(sk: &Sketch, map: &SourceMap, said: &[Diag]) -> Vec<Diag> {
         let ina: BTreeSet<&str> = a.1.iter().map(String::as_str).collect();
         let inb: BTreeSet<&str> = b.1.iter().map(String::as_str).collect();
         let asked = u.pairs.iter().map(|([x, y], layer)| ([x.as_str(), y.as_str()], *layer));
-        // and those its blocks made no copy of, read apart (#994)
-        let pruned = map.pruned.iter().filter(|p| p.at == u.at).flat_map(|p| p.pairs());
-        let pairs: Vec<([&str; 2], usize)> = asked.chain(pruned)
+        // and every pair read apart at the statement: those a `when` read apart are among the
+        // pairs asked, those its blocks made no copy of are not (#994)
+        let apart = map.read_apart().filter(|&(at, solid, ..)| at == u.at && solid == u.solid)
+            .map(|(_, _, faces, layer)| (faces, layer));
+        let pairs: Vec<([&str; 2], usize)> = asked.chain(apart)
             .filter(|([x, y], _)| x != y && (ina.contains(x) && inb.contains(y)
                 || inb.contains(x) && ina.contains(y))).collect();
         let why = if pairs.is_empty() {
@@ -168,12 +169,7 @@ type Read<'m> = BTreeMap<&'m str, Layered>;
 fn apart(map: &SourceMap, read: &Read) -> Vec<Diag> {
     // each pair once, whichever way round it was asked
     let mut said = BTreeSet::new();
-    // every pair read apart: one by one, and those a block made no copy of (#994)
-    let each = map.apart.iter().map(|a| (a.at, a.solid.as_str(), [a.faces[0].as_str(),
-                                         a.faces[1].as_str()], a.layer))
-        .chain(map.pruned.iter()
-            .flat_map(|p| p.pairs().map(|(f, l)| (p.at, p.solid.as_str(), f, l))));
-    let met = each.filter(|&(at, solid, [x, y], layer)| {
+    let met = map.read_apart().filter(|&(at, solid, [x, y], layer)| {
         said.insert((at, solid, x.min(y), x.max(y)))
             && read.get(solid).is_some_and(|r| r.meets(layer).meets(x, y))
     });

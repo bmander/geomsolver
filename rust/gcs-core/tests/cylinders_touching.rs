@@ -8,21 +8,14 @@
 //! Boolean of two such rods, at any lean, whole or ending at the touch, is the rods' own volumes
 //! to rounding, and two sunk a tenth into one another still cross.
 use gcs_core::brep::boolean::{boolean,Op};
-use gcs_core::brep::build::{prism,Profile,ProfileEdge};
-use gcs_core::brep::geom::{Frame,Rigid,Surface,V};
+use gcs_core::brep::geom::{Rigid,Surface};
 use gcs_core::brep::props::volume;
 use gcs_core::brep::topo::Brep;
 use std::f64::consts::PI;
+use crate::brep::rod;
 
 /// The Booleans' tolerance in the tests of surfaces meeting (`crossed_cylinders`, `resting_touches`).
 pub(crate) const TOL: f64 = 1e-9;
-
-/// A rod of radius `r` about the z axis over `z`, carried by `m`.
-fn rod(r: f64,z: [f64;2],m: &Rigid) -> Brep {
-    let xy: V = [0.,0.,1.];
-    let circle = ProfileEdge::Arc {frame:Frame::new([0.;3],xy,[1.,0.,0.]),r,span:None};
-    prism(&Profile {names:vec![],origin:[0.;3],normal:xy,loops:vec![vec![circle]]},z[0],z[1]).unwrap().moved(m)
-}
 
 /// The rod of radius `r` along x over `along`, and the rod of radius `s` over `across` along the
 /// direction turned `lean` from x about z, lifted `apart` above it: they rest on one another at
@@ -32,7 +25,8 @@ fn rods(r: f64,s: f64,along: [f64;2],across: [f64;2],lean: f64,apart: f64) -> (B
     let to_y = Rigid::turn([0.;3],[1.,0.,0.],-PI/2.);
     let leaned = Rigid::turn([0.;3],[0.,0.,1.],(lean-90.).to_radians());
     let lifted = Rigid {t:[0.,0.,apart],..Rigid::identity()};
-    (rod(r,along,&to_x),rod(s,across,&to_y).moved(&leaned).moved(&lifted))
+    (rod([0.;3],r,along).moved(&to_x),
+     rod([0.;3],s,across).moved(&to_y).moved(&leaned).moved(&lifted))
 }
 
 fn side(b: &Brep) -> Surface {

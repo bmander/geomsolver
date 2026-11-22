@@ -540,9 +540,9 @@ pub struct Apart {
 /// by its name from the solid, `faces` the block's faces (one list shared by every block that
 /// lists them alike, `FaceState::lists`), and `apart` each one read apart from `y`, by its place
 /// in `faces`, with the layer it was read in.  Recorded once however many copies of an outer
-/// block read the same pairs (a corner's block, in each copy for a neighbour of `y`).  Read as
-/// `Apart`s are, pair by pair (`pairs`), where the drawing is solved; and with the `Unmade` at
-/// its statement.
+/// block read the same pairs (a corner's block, in each copy for a neighbour of `y`).  Read with
+/// the `Apart`s, pair by pair (`read_apart`), where the drawing is solved; and with the `Unmade`
+/// at its statement.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Pruned {
     pub solid: String,
@@ -558,6 +558,20 @@ impl Pruned {
         self.apart.iter().map(|&(k, layer)| ([self.face.as_str(), self.faces[k as usize].as_str()],
                                              layer as usize))
     }
+}
+
+/// **Every pair of faces read apart where the drawing is seeded** (#625, #994): each a `when`
+/// read apart that alone left its block out (`Apart`), then each a block made no copy of
+/// (`Pruned::pairs`) — with the document's statement that made the block, the solid by its
+/// absolute name, the two faces by their names from it and the layer they were read in.  One
+/// list, however the walk kept a pair, for whatever reads them again where the drawing solves.
+pub fn read_apart<'a>(apart: impl IntoIterator<Item = &'a Apart>, pruned: &'a [Pruned])
+    -> impl Iterator<Item = (Span, &'a str, [&'a str; 2], usize)> {
+    apart.into_iter()
+        .map(|a| (a.at, a.solid.as_str(), [a.faces[0].as_str(), a.faces[1].as_str()], a.layer))
+        .chain(pruned.iter().flat_map(|p| {
+            p.pairs().map(move |(faces, layer)| (p.at, p.solid.as_str(), faces, layer))
+        }))
 }
 
 /// **A face a `when … parallel …` or `… perpendicular …` read** (#763): the solid by its absolute
@@ -1308,15 +1322,18 @@ impl<'a> Walk<'a> {
                 return None;
             }
             let solid = &s.blocks[0].0;
-            let mut pruned = self.faces.pruned.iter().filter(|p| p.at == at).peekable();
-            let none_pruned = pruned.peek().is_none();
+            // the pairs read apart at the statement: those a `when` read are among the pairs
+            // it asked, those its blocks made no copy of are not (#994)
+            let mut apart = read_apart(&self.faces.apart, &self.faces.pruned)
+                .filter(|&(of, ..)| of == at).peekable();
+            let none_apart = apart.peek().is_none();
             if s.blocks.iter().any(|b| &b.0 != solid) || s.pairs.iter().any(|p| &p.0 != solid)
-                || pruned.any(|p| &p.solid != solid) {
+                || apart.any(|(_, of, ..)| of != solid) {
                 return None;
             }
             // where no `when` paired two, one face, and no copy made
             let faces = || s.blocks.iter().flat_map(|b| &b.2).collect::<BTreeSet<_>>().len();
-            if s.pairs.is_empty() && none_pruned && (s.made > 0 || faces() != 1) {
+            if s.pairs.is_empty() && none_apart && (s.made > 0 || faces() != 1) {
                 return None;
             }
             Some(Unmade {
