@@ -328,6 +328,8 @@ mod step_assembly;
 mod step_corpus;
 mod step_curves;
 mod step_file;
+mod step_kinds;
+mod step_mutants;
 mod step_read;
 mod step_sound;
 mod stock;

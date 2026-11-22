@@ -212,9 +212,11 @@ fn parameters(c: &Curve,p: [V;2],one: bool,entity: u32,within: f64) -> Result<[f
 /// An edge read: its curve, its vertices' parameters on it, and its curves in faces' parameters.
 fn read_edge(g: &Geometry,w: &Written,points: &[V],within: f64) -> Result<Read,Refusal> {
     let r = w.entity;
+    // (a curve without end, a parabola's, read as its arc between the edge's vertices)
+    let ends = [points[w.ends[0]],points[w.ends[1]]];
     let (curve,pcurves) = match g.file.get(w.geometry).simple() {
         Some(("SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE",v)) => {
-            let curve = g.curve(w.geometry,v.get(1).and_then(Value::reference))?;
+            let curve = g.edge_curve(w.geometry,v.get(1).and_then(Value::reference),ends)?;
             let mut pcurves = Vec::new();
             for a in list(v.get(2),w.geometry,"a curve's curves on its surfaces")? {
                 let Some(a) = a.reference() else { return Err(Refusal::malformed(w.geometry,"a curve on a surface: a reference expected")) };
@@ -232,7 +234,7 @@ fn read_edge(g: &Geometry,w: &Written,points: &[V],within: f64) -> Result<Read,R
             }
             (curve,pcurves)
         }
-        _ => (g.curve(r,Some(w.geometry))?,Vec::new()),
+        _ => (g.edge_curve(r,Some(w.geometry),ends)?,Vec::new()),
     };
     // laid along its curve: from its first vertex where it runs along, else its last
     let v = if w.same_sense { w.ends } else { [w.ends[1],w.ends[0]] };
@@ -1068,6 +1070,29 @@ pub fn solid(file: &File,found: Found) -> Result<Given,Refusal> {
     let ids: Vec<u32> = faces.iter().map(|f| f.surface).collect::<BTreeSet<_>>().into_iter().collect();
     let sheets: BTreeMap<u32,Sheet> = ids.iter().copied().zip(crate::util::par::indices(ids.len(),|i| g.surface(ids[i],Some(ids[i])))
         .into_iter().collect::<Result<Vec<_>,_>>()?).collect();
+    // a surface whose form waits on where its faces lie (a revolution held as a net, its seams put
+    // where no face crosses them; a line or a parabola turned, bounded past its faces): seated on its
+    // faces' edges and lone vertices, a seam's points apart (`geometry::Sheet::seated`)
+    let sheets: BTreeMap<u32,Sheet> = sheets.into_iter().map(|(id,s)| {
+        if s.seat.is_none() { return Ok((id,s)) }
+        let (mut on,mut seams) = (Vec::new(),Vec::new());
+        for f in faces.iter().filter(|f| f.surface == id) {
+            let mut count: BTreeMap<usize,usize> = BTreeMap::new();
+            for bound in &f.bounds {
+                match bound {
+                    Bound::Edges(uses) => for u in uses { *count.entry(u.edge).or_default() += 1; },
+                    Bound::Vertex(_,v) => on.push(b.vertices[*v].p),
+                }
+            }
+            for (&e,&n) in &count {
+                let e = &b.edges[e];
+                let at: Vec<V> = (0..=8).map(|j| e.point(e.t[0]+(e.t[1]-e.t[0])*j as f64/8.,&b.vertices)).collect();
+                on.extend(&at);
+                if n > 1 { seams.push(at); }
+            }
+        }
+        Ok((id,s.seated(id,&on,&seams)?))
+    }).collect::<Result<_,Refusal>>()?;
     let built = {
         let st = Setting {b:&b,reads:&reads,within:1e-7*(1.+size),near:uncertainty.min(1e-6*size).max(1e-12*size)};
         crate::util::par::indices(faces.len(),|i| face(&st,&sheets[&faces[i].surface],&faces[i])).into_iter().collect::<Result<Vec<_>,_>>()?

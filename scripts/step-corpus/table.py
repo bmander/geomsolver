@@ -249,6 +249,8 @@ def source_of(path):
     if parts[0] == "variants":
         s, c = source_of("/".join(parts[2:]))
         return "variants/" + parts[1], c
+    if parts[0] == "commercial":
+        return "commercial/" + parts[1], parts[-1].rsplit(".", 1)[0]
     return parts[0], ""
 
 

@@ -157,9 +157,9 @@ fn a_files_unit_of_length_scales_what_it_reads() {
 fn what_is_not_read_is_refused_naming_the_entity() {
     let (_, text) = drilled();
     let refused = |t: &str| -> Refusal { read(t).map(|_| ()).expect_err("refused") };
-    // a plane become an offset surface
+    // a plane become a surface swept along a curve with a fixed reference
     let (plane, line) = first(&text, "PLANE");
-    let offset = line.replace("PLANE('',", "OFFSET_SURFACE('',").replace(");", ",1.,.F.);");
+    let offset = line.replace("PLANE('',", "FIXED_REFERENCE_SWEPT_SURFACE('',").replace(");", ",$,$);");
     let r = refused(&text.replace(&line, &offset));
     assert_eq!((r.why, r.entity), (Why::Unsupported, Some(plane)), "{r}");
     // the shell less its first face: open, at an edge of that face

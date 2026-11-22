@@ -22,21 +22,40 @@
 //! **Which solids.** A `MANIFOLD_SOLID_BREP` or a `BREP_WITH_VOIDS` that is an item of an
 //! `ADVANCED_BREP_SHAPE_REPRESENTATION` or of a plain `SHAPE_REPRESENTATION`, simple or complex; a
 //! solid in a representation of another kind is refused naming the representation, and a solid
-//! in none is refused. Its name is its product's, walked from the `SHAPE_DEFINITION_REPRESENTATION`
-//! of its representation — or of one a `SHAPE_REPRESENTATION_RELATIONSHIP` without a
-//! transformation ties it to — through `PRODUCT_DEFINITION_SHAPE`, `PRODUCT_DEFINITION` and
-//! `PRODUCT_DEFINITION_FORMATION` to the `PRODUCT`. **A placed solid is refused, never read as if
-//! unplaced** (assemblies wait until a single body reads, #993): a file with an assembly's usage
-//! occurrence, a representation relationship with a transformation or a mapped item reaching the
-//! solid's representation, or an `AXIS2_PLACEMENT_3D` item of it (or of a representation tied to
-//! it) that is not the identity, is refused `Unsupported` naming that entity. A file that holds
-//! no solid but a shell, a surface model, a faceted B-rep, wireframe or tessellated geometry is
-//! refused saying what it holds, naming the entity; beside a solid, a surface model or a faceted
-//! B-rep (a body the reader would leave out) is refused, and tessellated or wireframe geometry (a
-//! picture of a body, or construction) is not read.
+//! in none is refused.
+//!
+//! **Where it stands.** A solid stands in its product's space, the space of the representation the
+//! product's `SHAPE_DEFINITION_REPRESENTATION` names (through its `PRODUCT_DEFINITION_SHAPE`), and
+//! its name is that product's. From that representation the reader walks (ISO 10303-43): a
+//! representation relationship without a transformation shares the space; a `MAPPED_ITEM` among
+//! a representation's items places its map's representation by the rigid motion taking the map's
+//! origin onto the item's target; a `REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION` places its
+//! `rep_1` in its `rep_2` by the motion taking its `ITEM_DEFINED_TRANSFORMATION`'s first item onto
+//! its second (rep_1 the placed, as the standard's rule on the items and Open CASCADE's
+//! assemblies have it). Each axis is read in its own representation's units, so a part in inches
+//! mapped into a product in millimetres is placed, not scaled; two `AXIS2_PLACEMENT_3D`s are
+//! right-handed, so the motion is proper. A solid so placed is read in its own representation's
+//! context and moved (`Found::placed`, `Brep::moved`): exact. What places nothing: an
+//! `AXIS2_PLACEMENT_3D` that is merely an item of a representation (a datum, the part's frame: a
+//! representation's items share its context's space), and a mapped item in a `DRAUGHTING_MODEL`
+//! (the shape presented in a view of its annotation). Refused `Unsupported`, naming the entity, as
+//! product structure, which is not read yet: an assembly's usage occurrence anywhere in the file;
+//! a solid placed twice in its product's shape (an instance used more than once); solids in the
+//! shapes of two products; a transformation by anything but two axis placements (a cartesian
+//! transformation operator, which may scale or mirror). A solid in no product's shape is read in
+//! its representation's space, named through a shape definition of a representation tied to it,
+//! unless a mapped item or a transformation places it somewhere, which is refused.
+//!
+//! **What is beside.** A file that holds no solid but a shell, a surface model, a faceted B-rep,
+//! wireframe or tessellated geometry is refused saying what it holds, naming the entity. Beside a
+//! solid, what the reader does not give (surface models, wireframes, sets of curves, tessellated
+//! bodies, construction geometry, annotation) is said, each by its entity (`Beside`), never
+//! refused and never hidden.
 use std::collections::{BTreeMap,BTreeSet};
 use super::{Refusal,Why};
+use crate::geom::{Rigid,V};
 use crate::step_file::{Entity,File,Value};
+use crate::util::space::{cross,dot,norm,normalised,scale,sub};
 
 /// A representation's context: what the file's numbers measure.
 #[derive(Clone,Copy,Debug,PartialEq)]
@@ -53,9 +72,10 @@ pub struct Context {
 }
 
 /// A solid a file represents: its entity (a `MANIFOLD_SOLID_BREP` or a `BREP_WITH_VOIDS`), its
-/// product's name (empty where the file gives none), and its representation's context.
+/// product's name (empty where the file gives none), its representation's context, and where its
+/// product's shape places it (none where its representation's space is its product's).
 #[derive(Clone,Debug,PartialEq)]
-pub struct Found { pub solid: u32,pub name: String,pub context: Context }
+pub struct Found { pub solid: u32,pub name: String,pub context: Context,pub placed: Option<Placed> }
 
 /// The application protocols a file is read under.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
@@ -244,31 +264,96 @@ const HELD: [(&str,&str);20] = [
     ("GEOMETRIC_SET","a geometric set"),("POLY_LOOP","polygons"),
 ];
 
-/// The bodies that, beside a solid, the reader would leave out.
-const BESIDE: [&str;2] = ["SHELL_BASED_SURFACE_MODEL","FACETED_BREP"];
+/// The items that, held by a representation beside the solids, are a body or a set of geometry
+/// the reader does not give, and what each is.
+const BODIES: [(&str,&str);14] = [
+    ("SHELL_BASED_SURFACE_MODEL","a shell-based surface model"),("FACETED_BREP","a faceted B-rep"),
+    ("EDGE_BASED_WIREFRAME_MODEL","an edge-based wireframe"),("SHELL_BASED_WIREFRAME_MODEL","a shell-based wireframe"),
+    ("GEOMETRIC_CURVE_SET","a set of curves"),("GEOMETRIC_SET","a geometric set"),
+    ("TESSELLATED_SOLID","a tessellated solid"),("TESSELLATED_SHELL","a tessellated shell"),
+    ("TESSELLATED_SURFACE_SET","a tessellated surface set"),("TRIANGULATED_SURFACE_SET","a triangulated surface set"),
+    ("COMPLEX_TRIANGULATED_SURFACE_SET","a triangulated surface set"),("TRIANGULATED_FACE","a triangulated face"),
+    ("OPEN_SHELL","an open shell"),("CLOSED_SHELL","a closed shell in no solid"),
+];
 
 fn is_solid(e: &Entity) -> bool { e.is("MANIFOLD_SOLID_BREP") || e.is("BREP_WITH_VOIDS") }
 
-/// Whether the placement `#p` is no `AXIS2_PLACEMENT_3D`, or is the identity: at the origin,
-/// its axis `z` (or unset) and its reference direction `x` (or unset, or along `z` off `x`'s
-/// plane by nothing).
-fn identity(file: &File,p: u32) -> bool {
-    let Some(("AXIS2_PLACEMENT_3D",v)) = file.get(p).simple() else { return true };
-    let numbers = |r: Option<&Value>,kind: &str| -> Option<Vec<f64>> {
-        let r = r?.reference()?;
-        let (_,w) = file.of(Some(r),&[kind],"").ok()?;
-        w.get(1)?.list()?.iter().map(Value::number).collect()
+/// A presentation of a product's shape (its annotation, a view of it), which places nothing in it.
+fn is_presentation(e: &Entity) -> bool { e.is("DRAUGHTING_MODEL") }
+
+/// A solid placed in its product's space: the entity that moves it last on the way from the
+/// product's shape representation (a `MAPPED_ITEM`, or a `REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION`),
+/// and the rigid motion, in millimetres, taking the solid's representation into the product's.
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub struct Placed { pub by: u32,pub motion: Rigid }
+
+/// What a file holds beside the solids read, which the reader does not give: the entity, its kind
+/// (a complex entity's parts joined by `+`) and what it is. A body or a set of geometry held by a
+/// representation (a surface model, a wireframe, a set of curves, tessellated geometry), each
+/// item of a `CONSTRUCTIVE_GEOMETRY_REPRESENTATION` (construction geometry: datums, curves,
+/// surfaces), and each `DRAUGHTING_MODEL` (annotation, the product's manufacturing information
+/// presented), once each, in the file's order.
+#[derive(Clone,Debug,PartialEq)]
+pub struct Beside { pub entity: u32,pub kind: String,pub what: &'static str }
+
+/// What a file represents: its solids, and what it holds beside them (`Beside`).
+#[derive(Clone,Debug,PartialEq)]
+pub struct Shapes { pub solids: Vec<Found>,pub beside: Vec<Beside> }
+
+/// The axes `#p`, a representation item in a context `length` millimetres to its unit, as the
+/// rigid motion taking the world's axes onto it; an `AXIS2_PLACEMENT_3D` as ISO 10303-42 builds
+/// it (its axis `z` where unset, its reference direction `x` made square to the axis, or `y`
+/// where unset and the axis lies along `x`), right-handed. Any other item (a cartesian
+/// transformation operator) is refused naming it.
+fn axes(file: &File,p: u32,length: f64) -> Result<Rigid,Refusal> {
+    let e = file.get(p);
+    let Some(("AXIS2_PLACEMENT_3D",v)) = e.simple() else {
+        return Err(Refusal::unsupported(p,format!("a placement by a {}, which the reader does not read yet \
+            (an AXIS2_PLACEMENT_3D is)",e.kinds())))
     };
-    let unit = |d: Vec<f64>| { let n = d.iter().map(|x| x*x).sum::<f64>().sqrt(); (n > 0.).then(|| d.iter().map(|x| x/n).collect::<Vec<_>>()) };
-    let near = |a: &[f64],b: [f64;3]| a.len() == 3 && a.iter().zip(b).all(|(x,y)| (x-y).abs() <= 1e-12);
-    let Some(o) = numbers(v.get(1),"CARTESIAN_POINT") else { return false };
-    if !(o.len() == 3 && o.iter().all(|x| x.abs() <= 1e-12)) { return false }
-    let z = match v.get(2) { Some(Value::Unset) => Some(vec![0.,0.,1.]),r => numbers(r,"DIRECTION").and_then(unit) };
-    let x = match v.get(3) { Some(Value::Unset) => Some(vec![1.,0.,0.]),r => numbers(r,"DIRECTION").and_then(unit) };
-    match (z,x) {
-        (Some(z),Some(x)) if near(&z,[0.,0.,1.]) => near(&x,[1.,0.,0.]) || (x[1].abs() <= 1e-12 && x[0] > 0.),
-        _ => false,
-    }
+    let three = |r: Option<&Value>,kind: &str| -> Result<V,Refusal> {
+        let r = r.and_then(Value::reference).ok_or_else(|| Refusal::malformed(p,format!("a placement whose {kind} is no reference")))?;
+        let (_,w) = file.of(Some(r),&[kind],"a placement's").map_err(|m| Refusal::malformed(p,m))?;
+        let c = w.get(1).and_then(Value::list).and_then(|l| l.iter().map(Value::number).collect::<Option<Vec<f64>>>());
+        match c.as_deref() {
+            Some(&[x,y,z]) if [x,y,z].iter().all(|x| x.is_finite()) => Ok([x,y,z]),
+            _ => Err(Refusal::malformed(r,"three finite coordinates expected")),
+        }
+    };
+    let o = three(v.get(1),"CARTESIAN_POINT")?.map(|x| x*length);
+    let z = match v.get(2) {
+        Some(Value::Unset) => [0.,0.,1.],
+        r => normalised(three(r,"DIRECTION")?).ok_or_else(|| Refusal::malformed(p,"a placement's axis of no length"))?,
+    };
+    let x = match v.get(3) {
+        // (the default's own part square to the axis, however small: `geometry::placement`)
+        Some(Value::Unset) => {
+            let v = if z[1] == 0. && z[2] == 0. { [0.,1.,0.] } else { [1.,0.,0.] };
+            normalised(sub(v,scale(z,dot(v,z)))).ok_or_else(|| Refusal::malformed(p,"a placement whose axis leaves its reference direction none"))?
+        }
+        r => three(r,"DIRECTION")?,
+    };
+    let x = normalised(sub(x,scale(z,dot(x,z)))).filter(|_| norm(cross(x,z)) > 1e-12*norm(x))
+        .ok_or_else(|| Refusal::malformed(p,"a placement whose reference direction lies along its axis"))?;
+    let y = cross(z,x);
+    Ok(Rigid {r:[[x[0],y[0],z[0]],[x[1],y[1],z[1]],[x[2],y[2],z[2]]],t:o})
+}
+
+/// Whether two motions are one (to a part in 1e12, the frames being the file's unit vectors).
+fn same(a: &Rigid,b: &Rigid) -> bool {
+    let scale = 1.+norm(a.t).max(norm(b.t));
+    (0..3).all(|i| (0..3).all(|j| (a.r[i][j]-b.r[i][j]).abs() <= 1e-12) && (a.t[i]-b.t[i]).abs() <= 1e-12*scale)
+}
+
+/// Whether `#pd` is a product's definition.
+fn is_definition(e: &Entity) -> bool { params(e,&["PRODUCT_DEFINITION","PRODUCT_DEFINITION_WITH_ASSOCIATED_DOCUMENTS"]).is_some() }
+
+/// The name of the product `#pd` defines, where the chain to it is whole.
+fn defined_name(file: &File,pd: u32) -> Option<String> {
+    let at = |e: &Entity,kinds: &[&str],k: usize| params(e,kinds)?.get(k)?.reference();
+    let pdf = at(file.get(pd),&["PRODUCT_DEFINITION","PRODUCT_DEFINITION_WITH_ASSOCIATED_DOCUMENTS"],2)?;
+    let p = at(file.get(pdf),&["PRODUCT_DEFINITION_FORMATION","PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE"],2)?;
+    params(file.get(p),&["PRODUCT"])?.get(1)?.name()
 }
 
 /// The product's name a shape definition representation `#sdr` is of, where the chain to it is
@@ -277,14 +362,54 @@ fn product_name(file: &File,sdr: u32) -> Option<String> {
     let at = |e: &Entity,kinds: &[&str],k: usize| params(e,kinds)?.get(k)?.reference();
     let pds = at(file.get(sdr),&["SHAPE_DEFINITION_REPRESENTATION","PROPERTY_DEFINITION_REPRESENTATION"],0)?;
     let pd = at(file.get(pds),&["PRODUCT_DEFINITION_SHAPE","PROPERTY_DEFINITION"],2)?;
-    let pdf = at(file.get(pd),&["PRODUCT_DEFINITION","PRODUCT_DEFINITION_WITH_ASSOCIATED_DOCUMENTS"],2)?;
-    let p = at(file.get(pdf),&["PRODUCT_DEFINITION_FORMATION","PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE"],2)?;
-    params(file.get(p),&["PRODUCT"])?.get(1)?.name()
+    defined_name(file,pd)
+}
+
+/// A representation reached from a product's shape: the product's definition, the motion taking
+/// it into the product's space (or why that motion cannot be read), and the entity that moved
+/// it last.
+#[derive(Clone)]
+struct Reached { product: u32,motion: Result<Rigid,Refusal>,by: Option<u32> }
+
+/// What the file holds beside the solids `solids` (`Beside`).
+fn beside(file: &File,solids: &BTreeSet<u32>) -> Vec<Beside> {
+    // the shells of a surface model or a solid are said with it
+    let mut bodied: BTreeSet<u32> = BTreeSet::new();
+    for e in &file.entities {
+        if let Some(v) = params(e,&["SHELL_BASED_SURFACE_MODEL"]) { v.iter().filter_map(Value::list).flatten().filter_map(Value::reference).for_each(|s| { bodied.insert(s); }); }
+        if solids.contains(&e.id) { let mut add = |s| { bodied.insert(s); }; e.parts.iter().flat_map(|p| &p.1).for_each(|v| v.references(&mut add)); }
+    }
+    let mut out: BTreeMap<u32,Beside> = BTreeMap::new();
+    for e in &file.entities {
+        if is_presentation(e) {
+            out.entry(e.id).or_insert(Beside {entity:e.id,kind:e.kinds(),what:"annotation (a draughting model)"});
+            continue
+        }
+        let Some((items,_)) = representation(e) else { continue };
+        let construction = e.is("CONSTRUCTIVE_GEOMETRY_REPRESENTATION");
+        for i in items.iter().filter_map(Value::reference).filter(|i| !solids.contains(i) && !bodied.contains(i)) {
+            let item = file.get(i);
+            let what = match BODIES.iter().find(|(k,_)| item.is(k)) {
+                _ if construction => "construction geometry",
+                Some(("SHELL_BASED_SURFACE_MODEL",_)) if params(item,&["SHELL_BASED_SURFACE_MODEL"]).and_then(|v| v.get(1)).and_then(Value::list)
+                    .is_some_and(|l| l.iter().filter_map(Value::reference).any(|s| file.get(s).is("CLOSED_SHELL"))) =>
+                    "a shell-based surface model closed round a volume",
+                Some((_,w)) => w,
+                None => continue,
+            };
+            out.entry(i).or_insert(Beside {entity:i,kind:item.kinds(),what});
+        }
+    }
+    out.into_values().collect()
 }
 
 /// Every solid the file represents, in the file's order (see the module's account of which are
 /// read and which refused).
-pub fn solids(file: &File) -> Result<Vec<Found>,Refusal> {
+pub fn solids(file: &File) -> Result<Vec<Found>,Refusal> { shapes(file).map(|s| s.solids) }
+
+/// Every solid the file represents, in the file's order, each placed in its product's space,
+/// and what the file holds beside them (see the module's account).
+pub fn shapes(file: &File) -> Result<Shapes,Refusal> {
     schema(file)?;
     if let Some(e) = file.entities.iter().find(|e| USAGES.iter().any(|k| e.is(k))) {
         return Err(Refusal::unsupported(e.id,format!("an assembly's component ({}): assemblies are not read yet",e.kinds())))
@@ -297,42 +422,100 @@ pub fn solids(file: &File) -> Result<Vec<Found>,Refusal> {
                 return Err(Refusal::unsupported(e.id,format!("the file holds {what} ({kind}) and no solid")))
             }
         }
-        return Ok(Vec::new())
-    }
-    for kind in BESIDE {
-        if let Some(e) = file.entities.iter().find(|e| e.is(kind)) {
-            return Err(Refusal::unsupported(e.id,format!("beside its solids the file holds a body the reader does not read ({kind})")))
-        }
+        return Ok(Shapes {solids:Vec::new(),beside:Vec::new()})
     }
     // the representations, relationships, maps and shape definitions, in one pass
     let mut holders: BTreeMap<u32,Vec<u32>> = BTreeMap::new();
     let mut ties: BTreeMap<u32,Vec<u32>> = BTreeMap::new();
-    let mut moved: Vec<(u32,u32,u32)> = Vec::new();
-    let mut maps: BTreeMap<u32,Vec<u32>> = BTreeMap::new();
-    let mut mapped: BTreeMap<u32,Vec<u32>> = BTreeMap::new();
+    // (relationship, rep_1, rep_2, its transformation)
+    let mut moved: Vec<(u32,u32,u32,Option<u32>)> = Vec::new();
+    // a map's origin and mapped representation, by the map
+    let mut maps: BTreeMap<u32,(Option<u32>,Option<u32>)> = BTreeMap::new();
+    // the mapped items a representation holds: (item, map, target), by the representation
+    let mut mapping: BTreeMap<u32,Vec<(u32,Option<u32>,Option<u32>)>> = BTreeMap::new();
     let mut defined: BTreeMap<u32,Vec<u32>> = BTreeMap::new();
+    // the products' shapes: (product definition, representation), in the file's order
+    let mut products: Vec<(u32,u32)> = Vec::new();
     for e in &file.entities {
         if let Some((items,_)) = representation(e) {
-            for i in items.iter().filter_map(Value::reference).filter(|i| solids.contains(i)) { holders.entry(i).or_default().push(e.id); }
+            for i in items.iter().filter_map(Value::reference) {
+                if solids.contains(&i) { holders.entry(i).or_default().push(e.id); }
+                if !is_presentation(e) {
+                    if let Some(v) = params(file.get(i),&["MAPPED_ITEM"]) {
+                        mapping.entry(e.id).or_default().push((i,v.get(1).and_then(Value::reference),v.get(2).and_then(Value::reference)));
+                    }
+                }
+            }
         }
         if let Some(v) = e.parts.iter().find(|(n,v)| n.ends_with("REPRESENTATION_RELATIONSHIP") && v.len() == 4).map(|(_,v)| v) {
             if let (Some(a),Some(b)) = (v[2].reference(),v[3].reference()) {
-                if e.is("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION") { moved.push((e.id,a,b)); }
-                else { ties.entry(a).or_default().push(b); ties.entry(b).or_default().push(a); }
+                if let Some(t) = e.part("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION") {
+                    moved.push((e.id,a,b,t.first().and_then(Value::reference)));
+                } else if !e.is("MECHANICAL_DESIGN_AND_DRAUGHTING_RELATIONSHIP") && ![a,b].iter().any(|&r| is_presentation(file.get(r))) {
+                    ties.entry(a).or_default().push(b); ties.entry(b).or_default().push(a);
+                }
             }
         }
-        if let Some(v) = params(e,&["REPRESENTATION_MAP"]) {
-            if let Some(r) = v.get(1).and_then(Value::reference) { maps.entry(r).or_default().push(e.id); }
-        }
-        if let Some(v) = params(e,&["MAPPED_ITEM"]) {
-            if let Some(m) = v.get(1).and_then(Value::reference) { mapped.entry(m).or_default().push(e.id); }
-        }
+        if let Some(v) = params(e,&["REPRESENTATION_MAP"]) { maps.insert(e.id,(v.first().and_then(Value::reference),v.get(1).and_then(Value::reference))); }
         if let Some(v) = params(e,&["SHAPE_DEFINITION_REPRESENTATION"]) {
-            if let Some(r) = v.get(1).and_then(Value::reference) { defined.entry(r).or_default().push(e.id); }
+            if let Some(r) = v.get(1).and_then(Value::reference) {
+                defined.entry(r).or_default().push(e.id);
+                let pd = v.first().and_then(Value::reference).and_then(|d| params(file.get(d),&["PRODUCT_DEFINITION_SHAPE"])?.get(2)?.reference());
+                if let Some(pd) = pd.filter(|&pd| is_definition(file.get(pd))) { products.push((pd,r)); }
+            }
+        }
+    }
+    let mut contexts: BTreeMap<u32,Result<Context,Refusal>> = BTreeMap::new();
+    let mut length = |rep: u32| -> Result<f64,Refusal> {
+        let at = file.find(rep).and_then(representation).ok_or_else(|| Refusal::malformed(rep,"a representation expected"))?.1;
+        contexts.entry(at).or_insert_with(|| self::context(file,at)).clone().map(|c| c.length)
+    };
+    // each representation reached from a product's shape, with the motion taking it there: through
+    // a relationship without a transformation (the same space), into a mapped item's representation
+    // (its origin taken onto its target), into a transformed relationship's rep_1 from its rep_2
+    // (its first item taken onto its second); never from a presentation
+    let mut reached: BTreeMap<u32,Vec<Reached>> = BTreeMap::new();
+    let mut budget = 64*(file.entities.len()+64);
+    for &(pd,start) in &products {
+        let mut stack: Vec<(u32,Reached,usize)> = vec![(start,Reached {product:pd,motion:Ok(Rigid::identity()),by:None},0)];
+        while let Some((rep,at,depth)) = stack.pop() {
+            let here = reached.entry(rep).or_default();
+            if here.iter().any(|h| h.product == pd && match (&h.motion,&at.motion) { (Ok(a),Ok(b)) => same(a,b),(a,b) => a == b }) { continue }
+            here.push(at.clone());
+            budget = budget.saturating_sub(1);
+            if depth > 64 || budget == 0 {
+                return Err(Refusal::malformed(at.by.unwrap_or(rep),"representations placed in one another without end"))
+            }
+            for &t in ties.get(&rep).into_iter().flatten() { stack.push((t,at.clone(),depth+1)); }
+            let then = |by: u32,step: Result<Rigid,Refusal>| Reached {product:pd,by:Some(by),motion:match (&at.motion,step) {
+                (Ok(m),Ok(s)) => Ok(s.then(m)),(Err(e),_) => Err(e.clone()),(_,Err(e)) => Err(e),
+            }};
+            for &(item,map,target) in mapping.get(&rep).into_iter().flatten() {
+                let Some(&(Some(origin),Some(source))) = map.and_then(|m| maps.get(&m)) else {
+                    return Err(Refusal::malformed(item,"a mapped item whose source is no representation map"))
+                };
+                let Some(target) = target else { return Err(Refusal::malformed(item,"a mapped item without its target")) };
+                let step = (|| Ok(axes(file,origin,length(source)?)?.inverse().then(&axes(file,target,length(rep)?)?)))();
+                stack.push((source,then(item,step),depth+1));
+            }
+            for &(rel,one,_,op) in moved.iter().filter(|m| m.2 == rep) {
+                let step = (|| {
+                    let op = op.ok_or_else(|| Refusal::malformed(rel,"a relationship with a transformation without one"))?;
+                    let Some(("ITEM_DEFINED_TRANSFORMATION",v)) = file.get(op).simple() else {
+                        return Err(Refusal::unsupported(op,format!("a transformation by a {}, which the reader does not read yet \
+                            (an ITEM_DEFINED_TRANSFORMATION is)",file.get(op).kinds())))
+                    };
+                    let (Some(a),Some(b)) = (v.get(2).and_then(Value::reference),v.get(3).and_then(Value::reference))
+                        else { return Err(Refusal::malformed(op,"a transformation without its two items")) };
+                    Ok(axes(file,a,length(one)?)?.inverse().then(&axes(file,b,length(rep)?)?))
+                })();
+                stack.push((one,then(rel,step),depth+1));
+            }
         }
     }
     let mut contexts: BTreeMap<u32,Context> = BTreeMap::new();
     let mut out = Vec::new();
+    let mut product: Option<u32> = None;
     for &solid in &order {
         let reps = holders.get(&solid).map(Vec::as_slice).unwrap_or(&[]);
         if reps.is_empty() { return Err(Refusal::unsupported(solid,"a solid that is an item of no shape representation")) }
@@ -351,29 +534,49 @@ pub fn solids(file: &File) -> Result<Vec<Found>,Refusal> {
                 _ => {}
             }
         }
-        // the representations tied to the solid's without a transformation, nearest first
-        let mut tied: Vec<u32> = reps.to_vec();
-        let mut seen: BTreeSet<u32> = tied.iter().copied().collect();
-        let mut k = 0;
-        while k < tied.len() {
-            for &t in ties.get(&tied[k]).map(Vec::as_slice).unwrap_or(&[]) { if seen.insert(t) { tied.push(t); } }
-            k += 1;
-        }
-        if let Some(&(r,_,_)) = moved.iter().find(|(_,a,b)| seen.contains(a) || seen.contains(b)) {
-            return Err(Refusal::unsupported(r,format!("a transformation places the solid #{solid}'s representation: placed solids are not read yet")))
-        }
-        for &rep in &tied {
-            if let Some(&m) = maps.get(&rep).into_iter().flatten().flat_map(|m| mapped.get(m)).flatten().next() {
-                return Err(Refusal::unsupported(m,format!("a mapped item places the solid #{solid}'s representation (#{rep}): placed solids are not read yet")))
+        let ways: Vec<&Reached> = reps.iter().flat_map(|r| reached.get(r)).flatten().collect();
+        let (name,placed) = if let Some(first) = ways.first() {
+            // the solid in its product's shape, placed one way
+            if let Some(other) = ways.iter().find(|w| w.product != first.product).map(|w| w.product)
+                .or_else(|| product.filter(|&p| p != first.product)) {
+                return Err(Refusal::unsupported(other.max(first.product),format!("the solid #{solid} is in the shapes of two products \
+                    (#{} and #{}): several products in one file are product structure, which is not read yet",
+                    other.min(first.product),other.max(first.product))))
             }
-            if let Some((items,_)) = file.find(rep).and_then(representation) {
-                if let Some(p) = items.iter().filter_map(Value::reference).find(|&p| !identity(file,p)) {
-                    return Err(Refusal::unsupported(p,format!("a placement other than the identity in the solid #{solid}'s representation (#{rep}): placed solids are not read yet")))
+            product = Some(first.product);
+            let motion = first.motion.clone()?;
+            for w in &ways[1..] {
+                if !same(&w.motion.clone()?,&motion) {
+                    let said = |b: Option<u32>| b.map_or("the shape itself".to_string(),|b| format!("#{b}"));
+                    let by = [w.by,first.by].into_iter().flatten().max().unwrap_or(solid);
+                    return Err(Refusal::unsupported(by,format!("the solid #{solid}'s representation is placed twice in its product's shape \
+                        (by {} and {}): a shape used more than once is product structure, which is not read yet",said(first.by),said(w.by))))
                 }
             }
-        }
-        let name = tied.iter().flat_map(|r| defined.get(r)).flatten().find_map(|&sdr| product_name(file,sdr)).unwrap_or_default();
-        out.push(Found {solid,name,context:context.unwrap()});
+            let placed = (!same(&motion,&Rigid::identity())).then(|| Placed {by:ways.iter().find_map(|w| w.by).unwrap_or(solid),motion});
+            (defined_name(file,first.product).unwrap_or_default(),placed)
+        } else {
+            // in no product's shape: read where its representation puts it, unless something places it
+            let mut tied: Vec<u32> = reps.to_vec();
+            let mut seen: BTreeSet<u32> = tied.iter().copied().collect();
+            let mut k = 0;
+            while k < tied.len() {
+                for &t in ties.get(&tied[k]).map(Vec::as_slice).unwrap_or(&[]) { if seen.insert(t) { tied.push(t); } }
+                k += 1;
+            }
+            if let Some(&(r,..)) = moved.iter().find(|m| seen.contains(&m.1)) {
+                return Err(Refusal::unsupported(r,format!("a transformation places the solid #{solid}'s representation in a representation \
+                    of no product's shape: placed solids outside a product are not read")))
+            }
+            for (_,items) in &mapping {
+                if let Some(&(m,..)) = items.iter().find(|(_,map,_)| map.and_then(|m| maps.get(&m)).and_then(|s| s.1).is_some_and(|s| seen.contains(&s))) {
+                    return Err(Refusal::unsupported(m,format!("a mapped item places the solid #{solid}'s representation in a representation \
+                        of no product's shape: placed solids outside a product are not read")))
+                }
+            }
+            (tied.iter().flat_map(|r| defined.get(r)).flatten().find_map(|&sdr| product_name(file,sdr)).unwrap_or_default(),None)
+        };
+        out.push(Found {solid,name,context:context.unwrap(),placed});
     }
-    Ok(out)
+    Ok(Shapes {solids:out,beside:beside(file,&solids)})
 }

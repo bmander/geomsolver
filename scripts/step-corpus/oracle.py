@@ -71,7 +71,27 @@ def read(path, healing):
     shape = r.OneShape()
     if shape.IsNull():
         raise RuntimeError("OCCT reads no shape")
-    return shape
+    return solids_of(shape)
+
+
+def solids_of(shape):
+    """The solids of what OCCT read, as one compound, where there are any: what else a file holds
+    beside them (construction surfaces, wireframe) is no part of their volume or area, and
+    `BRepGProp` measured over the whole would count its faces' areas and their open "volumes".
+    The shape as read where it holds no solid."""
+    from OCP.BRep import BRep_Builder
+    from OCP.TopAbs import TopAbs_SOLID
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS_Compound
+    x = TopExp_Explorer(shape, TopAbs_SOLID)
+    if not x.More():
+        return shape
+    c, b = TopoDS_Compound(), BRep_Builder()
+    b.MakeCompound(c)
+    while x.More():
+        b.Add(c, x.Current())
+        x.Next()
+    return c
 
 
 def kind_of(face):
@@ -221,6 +241,7 @@ def oracle(path, faces=False):
     if rel(ha, a) > 1e-12:
         changed["area"] = rel(ha, a)
     out["healed"] = changed
+    out["healed_volume"], out["healed_area"] = hv, ha
     out["healed_valid"] = h["valid"]
     out["healed_tol_length"] = h["tol_length"]
     if faces:
@@ -278,19 +299,20 @@ def faces_tsv(rows):
 def corpus_files(root):
     """Every STEP file of the corpus, by its path under `root`, in order."""
     out = []
-    for sub in ("cadgenbench", "brep-bench", "variants"):
+    for sub in ("cadgenbench", "brep-bench", "variants", "commercial"):
         for d, _, fs in os.walk(os.path.join(root, sub)):
             for f in fs:
-                if f.endswith(".step"):
+                if f.endswith(".step") or f.endswith(".stp"):
                     out.append(os.path.relpath(os.path.join(d, f), root))
     return sorted(out)
 
 
-def run_corpus(root, jobs, timeout, only):
-    """Each file of the corpus not yet read (or changed since), read in a process of its own (a
-    file OCCT hangs on is given `timeout` seconds), into `oracle/<path>.json` and its faces into
-    `oracle/<path>.faces.tsv`."""
-    files = [f for f in corpus_files(root) if not only or any(f.startswith(o) for o in only)]
+def run_corpus(root, jobs, timeout, only, files=None):
+    """Each file of the corpus (or of `files`, paths under `root`) not yet read (or changed since),
+    read in a process of its own (a file OCCT hangs on is given `timeout` seconds), into
+    `oracle/<path>.json` and its faces into `oracle/<path>.faces.tsv`."""
+    files = [f for f in (files if files is not None else corpus_files(root))
+             if not only or any(f.startswith(o) for o in only)]
     todo = []
     for f in files:
         js = os.path.join(root, "oracle", f + ".json")
