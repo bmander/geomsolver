@@ -30,6 +30,25 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   pencil's sign test on the noughts had put the root at whichever corner the rounding favoured,
   and the bull nose's sheet was reported fitting to 1.9.
 
+- **A class of faces takes the index of a surface given it is the same as, in any frame** (#880):
+  `meeting::Shared::class` takes the tolerance (breaking) and takes a given surface's index where
+  one of the class's surfaces is `ssi::same` to it, as `Shared::index` reads a face against it —
+  not only where it is that surface exactly — and only an index no other class has taken.  Since
+  0.21.0's phase 0 (`Arrangement::classed`) a ring's pose turned about its own axis lost the
+  meetings given it: the ring road's 80° tumbling torus was judged wrong with its start pose's
+  seam at −2.78, and its full turn refused at every end pose's seam but its own; both build again.
+
+## [0.21.0] - 2026-11-22
+
+- **An edge is read against what its faces are known to meet, by one rule** (#990): an edge lies in
+  each of its own faces' surfaces, so it meets another surface only where one of those faces meets
+  it.  New `meeting::Met` (the two surfaces are one, or meet on these curves and touch at these
+  points) and `meeting::Shared::known`, what an edge's faces are known to meet another surface on,
+  given (#880 Q1b) or in closed form (#962 item 7).  The arrangement reads an edge against those
+  meetings in closed form where both are lines or circles, tangencies among the crossings with no
+  search, in place of the given meetings' own path and a search a double root refused.  A vane
+  filled into a spherical crown builds with its four torus stretches (198988.300 mm³, 22 faces).
+
 - **Whether a standing ball's meeting comes back within the faces it ends on, read exactly**
   (#994, `fillet::dome_cut`): the meeting over the gap is split where it meets each end's surface
   (`query::curve_surface`) and read at one point of each piece, within by more than
