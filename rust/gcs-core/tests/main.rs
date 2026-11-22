@@ -215,6 +215,7 @@ mod millimetres;
 mod minimize;
 mod mixed_vertices;
 mod modules;
+mod module_search;
 mod motions;
 mod names;
 mod net_inverse;

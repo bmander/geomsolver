@@ -28,12 +28,48 @@ use std::collections::{BTreeSet, VecDeque};
 /// The most modules one document may link, transitively — the same kind of bound `MAX_STMTS` is.
 pub const MAX_MODULES: usize = 64;
 
-/// Candidate paths relative to a root model, nearest directory first. Looking in its
-/// ancestors lets a component opened directly keep the same project imports as its assembly.
+/// The extensions a module's file may carry, in the order a host tries them in one directory: a
+/// Solvent document, then an ISO 10303-21 exchange file that gives a body (#993 stage 2).
+pub const MODULE_EXTENSIONS: [&str; 3] = ["sv", "step", "stp"];
+
+/// The text of a module a host read as bytes (a file, a buffer handed over the ABI), told by its
+/// content as `is_step` tells it: UTF-8 as it stands; else, an exchange file read lossily — real
+/// Part 21 files carry Latin-1 bytes in their strings (a product's name, the header's author), and
+/// the geometry they give is all ASCII, so nothing a body is read from is touched; else refused,
+/// for a Solvent document that is not UTF-8 is not one to guess at.  Every host reads through
+/// this, so a module file that exists and does not read is said, never taken for no module.
+pub fn decode(bytes: Vec<u8>) -> Result<String, std::string::FromUtf8Error> {
+    String::from_utf8(bytes).or_else(|e| {
+        let head = &e.as_bytes()[..e.as_bytes().len().min(1024)];
+        match is_step(&String::from_utf8_lossy(head)) {
+            true => Ok(String::from_utf8_lossy(e.as_bytes()).into_owned()),
+            false => Err(e),
+        }
+    })
+}
+
+/// Candidate paths relative to a root model, nearest directory first, and in each directory
+/// `NAME.sv`, then `NAME.step`, then `NAME.stp`: a nearer file of any kind wins over a farther
+/// one, and in one directory the Solvent document wins.  Looking in its ancestors lets a component
+/// opened directly keep the same project imports as its assembly.  The host reads the first that
+/// exists and hands its text over; the library is asked only when none does.
 pub fn search_paths(name: &str, source: &str) -> Vec<String> {
-    let rel = format!("{}.sv", name.replace('.', "/"));
+    let rel = name.replace('.', "/");
     let depth = source.replace('\\', "/").split('/').count();
-    (0..depth).map(|n| format!("{}{rel}", "../".repeat(n))).collect()
+    (0..depth).flat_map(|n| {
+        let up = "../".repeat(n);
+        let rel = &rel;
+        MODULE_EXTENSIONS.iter().map(move |ext| format!("{up}{rel}.{ext}"))
+    }).collect()
+}
+
+/// Whether a module's text is an ISO 10303-21 exchange file rather than Solvent: its first token,
+/// after an optional UTF-8 byte-order mark and ASCII whitespace, is `ISO-10303-21;`.  Told by the
+/// content and not by a file's name, so every host — and a text a host was handed with no name —
+/// answers alike; a host asks it before putting a text through the Solvent parser.
+pub fn is_step(text: &str) -> bool {
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    text.trim_start_matches(|c: char| c.is_ascii_whitespace()).starts_with("ISO-10303-21;")
 }
 
 /// Resolve every `use` in `prog` through `resolve`, and every `use` inside what it brings in.

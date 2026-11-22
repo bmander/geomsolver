@@ -37,6 +37,7 @@ function served(asked: string[] = []) {
     { path: 'models', type: 'tree' },
     { path: 'models/part.sv', type: 'blob' },
     { path: 'models/part.svd', type: 'blob' },
+    { path: 'models/bracket.step', type: 'blob' },
     { path: 'models/notes.png', type: 'blob' },
     { path: 'other/x.sv', type: 'blob' },
   ];
@@ -55,7 +56,7 @@ function served(asked: string[] = []) {
   };
 }
 
-test('a repository opens on its default branch, its Solvent and text files in the tree',
+test('a repository opens on its default branch, its Solvent, exchange and text files in the tree',
   async (t) => {
     const asked: string[] = [];
     t.mock.method(globalThis, 'fetch', served(asked));
@@ -63,7 +64,8 @@ test('a repository opens on its default branch, its Solvent and text files in th
     assert.equal(asked.filter((url) => url.startsWith('https://api.github.com/')).length, 1);
     assert.equal(bundle.directory, 'r');
     assert.deepEqual(Object.keys(bundle.files).sort(),
-      ['r/README.md', 'r/models/part.sv', 'r/models/part.svd', 'r/other/x.sv']);
+      ['r/README.md', 'r/models/bracket.step', 'r/models/part.sv', 'r/models/part.svd',
+        'r/other/x.sv']);
     assert.equal(bundle.files['r/models/part.sv'], '// models/part.sv');
     assert.equal(bundle.source, '');
   });
@@ -74,7 +76,8 @@ test('a folder on a branch with a slash opens that folder; a file address select
     t.mock.method(globalThis, 'fetch', served(asked));
     const folder = await githubProject(parseGithub('github.com/o/r/tree/feat/x/models')!);
     assert.equal(folder.directory, 'models');
-    assert.deepEqual(Object.keys(folder.files).sort(), ['models/part.sv', 'models/part.svd']);
+    assert.deepEqual(Object.keys(folder.files).sort(),
+      ['models/bracket.step', 'models/part.sv', 'models/part.svd']);
     assert.ok(asked.includes('https://raw.githubusercontent.com/o/r/feat/x/models/part.sv'));
     const file = await githubProject(parseGithub('github.com/o/r/blob/main/models/part.svd')!);
     assert.equal(file.source, 'models/part.svd');

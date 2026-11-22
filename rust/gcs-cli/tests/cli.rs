@@ -2263,3 +2263,98 @@ part.band.near round(r: 2mm) part.band
         "{said}");
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+/// A `use` is looked for as `NAME.sv`, `NAME.step`, then `NAME.stp` in each directory, the
+/// document's own first and then its ancestors (#993 stage 2): in one directory the Solvent
+/// document wins, and a nearer exchange file wins over a farther document.
+#[test]
+fn a_use_is_looked_for_as_sv_then_step_then_stp_nearest_first() {
+    let dir = std::env::temp_dir().join(format!("solventc-step-order-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("parts")).unwrap();
+    let step = std::fs::read(PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../gcs-core/tests/step_file/drilled_ap214.step")).unwrap();
+    let doc = dir.join("parts/doc.sv");
+    std::fs::write(&doc, "unit mm\nuse dims\nw := dims.width\n").unwrap();
+    let args = [doc.to_str().unwrap(), "--json", "--where", "w"];
+    // the Solvent document beside, though an exchange file of the name lies beside it too
+    std::fs::write(dir.join("parts/dims.sv"), "width := 20mm\n").unwrap();
+    std::fs::write(dir.join("parts/dims.step"), &step).unwrap();
+    std::fs::write(dir.join("parts/dims.stp"), &step).unwrap();
+    let result = run(&args);
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stdout));
+    assert!(String::from_utf8_lossy(&result.stdout).contains("w = 20 mm"));
+    // the farther document does not stand in for the nearer exchange file: `dims` is the file's,
+    // which has no `width`
+    std::fs::remove_file(dir.join("parts/dims.sv")).unwrap();
+    std::fs::write(dir.join("dims.sv"), "width := 30mm\n").unwrap();
+    let result = run(&args);
+    let out = String::from_utf8_lossy(&result.stdout);
+    assert!(!result.status.success() && !out.contains("w = 30 mm"), "{out}");
+    assert!(!out.contains("no module `dims`"), "the exchange file was read: {out}");
+    // with no file of the name beside it, the ancestor's document is the module
+    std::fs::remove_file(dir.join("parts/dims.step")).unwrap();
+    std::fs::remove_file(dir.join("parts/dims.stp")).unwrap();
+    let result = run(&args);
+    assert!(String::from_utf8_lossy(&result.stdout).contains("w = 30 mm"));
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// An exchange file's bytes that are not UTF-8 (Latin-1 in a string, as real files carry) do not
+/// make it no module: its text is handed over lossily.  A module file that is there and does not
+/// read is said, in the system's words beside its path, and nothing farther stands in for it.
+#[test]
+fn a_module_file_is_read_lossily_if_an_exchange_file_and_said_if_it_does_not_read() {
+    let dir = std::env::temp_dir().join(format!("solventc-step-bytes-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("parts")).unwrap();
+    let mut step = std::fs::read(PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../gcs-core/tests/step_file/drilled_ap214.step")).unwrap();
+    // the header's author, as a vendor's file names one
+    let at = step.windows(8).position(|w| w == b"'Author'").unwrap();
+    step.splice(at..at + 8, b"'M\xfcller'".iter().copied());
+    std::fs::write(dir.join("parts/bracket.step"), &step).unwrap();
+    let doc = dir.join("parts/doc.sv");
+    std::fs::write(&doc, "unit mm\nuse bracket\n").unwrap();
+    let result = run(&[doc.to_str().unwrap(), "--json"]);
+    let out = String::from_utf8_lossy(&result.stdout);
+    assert!(!out.contains("no module `bracket`"), "{out}");
+    assert!(result.stderr.is_empty(), "{}", String::from_utf8_lossy(&result.stderr));
+
+    // a Solvent document that is not UTF-8 is said, and the ancestor's copy does not stand in
+    std::fs::write(dir.join("parts/dims.sv"), b"width := 20mm // M\xfcller\n").unwrap();
+    std::fs::write(dir.join("dims.sv"), "width := 30mm\n").unwrap();
+    std::fs::write(&doc, "unit mm\nuse dims\nw := dims.width\n").unwrap();
+    let result = run(&[doc.to_str().unwrap(), "--json", "--where", "w"]);
+    let (out, err) = (String::from_utf8_lossy(&result.stdout), String::from_utf8_lossy(&result.stderr));
+    assert!(!result.status.success() && out.contains("no module `dims`"), "{out}");
+    assert!(!out.contains("w = 30 mm"), "{out}");
+    assert!(err.contains("parts/dims.sv: ") && err.to_lowercase().contains("utf-8"), "{err}");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// **A document that only names a file exports its body** (#993 stage 2): `bracket.step` beside
+/// the document, `use bracket`, `part := solid(bracket)`, written as STEP; and a drawing over that
+/// model renders.  The hosts' half — finding the file and handing its text over — is this
+/// branch's; the body is the language's, so this waits on the merge.
+#[test]
+#[ignore = "needs the language's given module (#993 stage 2), merged by the orchestrator"]
+fn a_document_naming_a_step_file_beside_it_exports_its_body() {
+    let dir = std::env::temp_dir().join(format!("solventc-given-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::copy(PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../gcs-core/tests/step_file/drilled_ap214.step"), dir.join("bracket.step")).unwrap();
+    let doc = dir.join("doc.sv");
+    std::fs::write(&doc, "unit mm\nuse bracket\npart := solid(bracket)\n").unwrap();
+    let out = dir.join("out.step");
+    let result = run(&[doc.to_str().unwrap(), "--solid", "part", "--step", out.to_str().unwrap()]);
+    assert_eq!(result.status.code(), Some(0), "{}\n{}", String::from_utf8_lossy(&result.stdout),
+               String::from_utf8_lossy(&result.stderr));
+    assert!(std::fs::read_to_string(&out).unwrap().starts_with("ISO-10303-21;"));
+
+    let sheet = dir.join("doc.svd");
+    let svg = dir.join("doc.svg");
+    std::fs::write(&sheet, "model m from \"doc.sv\"\nsheet s { sketch v(m) at (30,40) }\n").unwrap();
+    let result = run(&[sheet.to_str().unwrap(), "--output", svg.to_str().unwrap()]);
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    assert!(std::fs::read_to_string(&svg).unwrap().starts_with("<svg"));
+    std::fs::remove_dir_all(dir).unwrap();
+}

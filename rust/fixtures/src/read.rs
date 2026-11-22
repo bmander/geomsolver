@@ -43,10 +43,29 @@ pub fn read(source: &str) -> program::Elaborated {
     e
 }
 
-/// The module `name` as the CLI resolves it: `<name>.sv` beside `base` (a dotted name in a
-/// subdirectory, `engine.parts` as `engine/parts.sv`), then the library.
+/// The module `name` as the CLI resolves it: `<name>.sv`, `<name>.step` or `<name>.stp` beside
+/// `base`, the first that is there (a dotted name in a subdirectory, `engine.parts` as
+/// `engine/parts.sv`), then the library.
 pub fn module(base: &Path,name: &str) -> Option<String> {
-    std::fs::read_to_string(base.join(format!("{}.sv",name.replace('.',"/")))).ok()
+    let rel = name.replace('.',"/");
+    gcs_core::modules::MODULE_EXTENSIONS.iter().map(|ext| base.join(format!("{rel}.{ext}")))
+        .find(|p| p.is_file()).map(|p| file(&p))
+        .or_else(|| gcs_core::library::resolve(name))
+}
+
+/// A module file's text as every host reads it (`modules::decode`): one that is there and does
+/// not read fails the test, rather than reading as no module.
+pub fn file(p: &Path) -> String {
+    let bytes = std::fs::read(p).unwrap_or_else(|e| panic!("{}: {e}",p.display()));
+    gcs_core::modules::decode(bytes).unwrap_or_else(|e| panic!("{}: {e}",p.display()))
+}
+
+/// The module `name` a document `source` (a path relative to `dir`, the directory it is in)
+/// `use`s, as solventc resolves it: the first of `modules::search_paths` that is a file, else the
+/// library.
+pub fn module_beside(dir: &Path,source: &str,name: &str) -> Option<String> {
+    gcs_core::modules::search_paths(name,source).iter().map(|rel| dir.join(rel))
+        .find(|p| p.is_file()).map(|p| file(&p))
         .or_else(|| gcs_core::library::resolve(name))
 }
 
@@ -106,11 +125,7 @@ pub fn example(name: &str) -> Option<program::Elaborated> {
     let (mut prog,errs) = syntax::parse(&text);
     if !errs.is_empty() { return None; }
     let dir = path.parent().unwrap().to_path_buf();
-    let mut resolve = |m: &str| -> Option<String> {
-        gcs_core::modules::search_paths(m,name).iter()
-            .find_map(|rel| std::fs::read_to_string(dir.join(rel)).ok())
-            .or_else(|| gcs_core::library::resolve(m))
-    };
+    let mut resolve = |m: &str| module_beside(&dir,name,m);
     let _ = gcs_core::modules::link(&mut prog,&mut resolve);
     Some(program::elaborate(&prog))
 }

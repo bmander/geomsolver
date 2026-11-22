@@ -1,8 +1,11 @@
 /* Modules a document `use`s, handed to the core by the host.
  *
  * The core takes text and has no filesystem: in the terminal `solventc` reads `engine.parts` as
- * `engine/parts.sv` beside the document and comes to the library compiled in second.  A browser
- * has no beside — unless its page has a server to ask.  `link` is that: it asks the core which
+ * `engine/parts.sv` (or `engine/parts.step`, `engine/parts.stp`: a file that gives a body, #993
+ * stage 2) beside the document and comes to the library compiled in second.  Which paths, in
+ * which order, is the core's answer (`searchPaths`), and so is whether a text is an exchange file
+ * (`isStep`): the binding carries the texts and decides neither.  A browser has no beside —
+ * unless its page has a server to ask.  `link` is that: it asks the core which
  * modules a text uses, fetches each through the function it is given, hands the text over, and
  * follows the fetched texts' own `use`s the same way.  What the host has not got is left to the
  * library, so a document of the compiled-in kind links as it always did.  No resolution happens
@@ -29,15 +32,27 @@ export function related(text: string): SourceFile[] {
     seen.add(name);
     const text = source(name);
     if (text === null) continue;
-    files.push({ name, path: pathOf(name), text, provided: provided(name) });
+    files.push({ name, path: pathOf(name, text), text, provided: provided(name) });
     queue.push(...uses(text));
   }
   return files;
 }
 
-/** The module names a text `use`s directly, as written (`engine.parts`). */
+/** The module names a text `use`s directly, as written (`engine.parts`).  An exchange file uses
+ *  none, and is not handed to the core to say so: it may be megabytes, and it is not Solvent. */
 export function uses(text: string): string[] {
+  if (isStep(text)) return [];
   return withStr(text, (p, n) => takeJson<string[]>(core().gcs_program_uses(p, n))) ?? [];
+}
+
+/** How much of a text the core is shown to tell an exchange file by: `modules::is_step` reads
+ *  the first token only, after a byte-order mark and white space. */
+const HEAD = 1024;
+
+/** Whether a module's text is an ISO 10303-21 exchange file, which gives a body, rather than
+ *  Solvent (#993 stage 2): the core's test, asked of the text's head alone. */
+export function isStep(text: string): boolean {
+  return withStr(text.slice(0, HEAD), (p, n) => core().gcs_text_is_step(p, n)) === 1;
 }
 
 /** Hand the core a module's text under its `use` name; it outranks the library's copy. */
@@ -68,16 +83,18 @@ export function forget(): void {
   core().gcs_module_forget();
 }
 
-/** A `use` name as the path beside the document: `engine.parts` is `engine/parts.sv`. */
-export function pathOf(name: string): string {
-  return name.split('.').join('/') + '.sv';
+/** A `use` name as the path beside the document: `engine.parts` is `engine/parts.sv`, or, for
+ *  a module whose `text` is an exchange file, `engine/parts.step`. */
+export function pathOf(name: string, text?: string): string {
+  return name.split('.').join('/') + (text !== undefined && isStep(text) ? '.step' : '.sv');
 }
 
-/** Project paths beside a root model, then its ancestors, nearest first. */
+/** Project paths a `use` of `name` in the model at `root` reads, the first the host has winning:
+ *  `name.sv`, `name.step`, `name.stp` beside the model, then in each of its ancestors, nearest
+ *  first (`modules::search_paths`, the CLI's order). */
 export function searchPaths(name: string, root: string): string[] {
-  const directories = root.split('/').slice(0, -1);
-  return Array.from({ length: directories.length + 1 }, (_, i) =>
-    [...directories.slice(0, directories.length - i), pathOf(name)].join('/'));
+  return withStr(name, (np, nn) => withStr(root, (sp, sn) =>
+    takeJson<string[]>(core().gcs_module_search_paths(np, nn, sp, sn)))) ?? [];
 }
 
 /** Provide current project texts when opening a model or an individual component. */
@@ -100,7 +117,8 @@ export function provideProject(root: string, files: Record<string, string>): voi
 
 /** Fetch and hand over every module `text` reaches, through `fetchText(path)` — `null` for one
  *  the host has not got, which is then the library's.  Each name is asked for once, however many
- *  texts use it.  Returns the names handed over. */
+ *  texts use it, at each of its paths beside the document (`searchPaths`) until one answers; an
+ *  exchange file is handed over as it came.  Returns the names handed over. */
 export async function link(
   text: string,
   fetchText: (path: string) => Promise<string | null>,
@@ -112,7 +130,8 @@ export async function link(
     const name = queue.shift()!;
     if (asked.has(name)) continue;
     asked.add(name);
-    const t = await fetchText(pathOf(name));
+    let t: string | null = null;
+    for (const path of searchPaths(name, '')) if ((t = await fetchText(path)) !== null) break;
     if (t === null) continue;
     provide(name, t);
     got.push(name);

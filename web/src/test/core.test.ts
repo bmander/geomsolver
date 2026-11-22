@@ -2721,7 +2721,8 @@ test('a module the host hands over resolves a use before the library', async () 
     return p === 'demo/parts.sv' ? mod : null;
   });
   assert.deepEqual(got, ['demo.parts']);
-  assert.deepEqual(asked, ['std.sv', 'demo/parts.sv']);
+  // each of a name's paths in turn, the CLI's order, until one answers
+  assert.deepEqual(asked, ['std.sv', 'std.step', 'std.stp', 'demo/parts.sv']);
   const linked = Document.read(doc);
   assert.ok(!linked.diagnostics.some((d) => d.code === 'E070'), 'the handed-over module links');
   linked.dispose();
@@ -2729,6 +2730,56 @@ test('a module the host hands over resolves a use before the library', async () 
   const again = Document.read(doc);
   assert.ok(again.diagnostics.some((d) => d.code === 'E070'), 'forgotten on request');
   again.dispose();
+});
+
+test('a use is looked for as .sv, .step then .stp in each directory, nearest first', () => {
+  // the core's answer (`modules::search_paths`), as paths in the project
+  assert.deepEqual(modules.searchPaths('bracket', 'parts/arm/model.sv'), [
+    'parts/arm/bracket.sv', 'parts/arm/bracket.step', 'parts/arm/bracket.stp',
+    'parts/bracket.sv', 'parts/bracket.step', 'parts/bracket.stp',
+    'bracket.sv', 'bracket.step', 'bracket.stp']);
+  assert.deepEqual(modules.searchPaths('vendor.bracket', 'model.sv'),
+    ['vendor/bracket.sv', 'vendor/bracket.step', 'vendor/bracket.stp']);
+  // a project's files: the first path it has wins — the Solvent document in one directory, and
+  // a nearer exchange file over a farther document
+  const step = 'ISO-10303-21;\nHEADER;\nENDSEC;\nDATA;\nENDSEC;\nEND-ISO-10303-21;\n';
+  const take = (files: Record<string, string>) => {
+    modules.provideProject('parts/model.sv', { 'parts/model.sv': 'use bracket\n', ...files });
+    try { return modules.source('bracket'); } finally { modules.forget(); }
+  };
+  assert.equal(take({ 'parts/bracket.stp': step, 'parts/bracket.sv': 'use std\n' }), 'use std\n');
+  assert.equal(take({ 'parts/bracket.stp': step, 'parts/bracket.step': step + ' ' }), step + ' ');
+  assert.equal(take({ 'bracket.sv': 'use std\n', 'parts/bracket.stp': step }), step);
+  assert.equal(take({ 'bracket.sv': 'use std\n' }), 'use std\n');
+});
+
+test('an exchange file is handed over as it came and never asked for its uses', async () => {
+  // a line `use demo.never` would be listed, were the file read as Solvent: it is not read so
+  const step = ' ISO-10303-21;\nuse demo.never\nHEADER;\nENDSEC;\nDATA;\nENDSEC;\n'
+    + 'END-ISO-10303-21;\n';
+  assert.deepEqual(modules.uses(step.slice(step.indexOf('use'))), ['demo.never']);
+  assert.ok(modules.isStep(step) && modules.isStep('\uFEFF' + step) && !modules.isStep('use b\n'));
+  assert.ok(modules.isStep('ISO-10303-21;' + ' '.repeat(1 << 20)), 'its head alone is read');
+  assert.deepEqual(modules.uses(step), []);
+  const asked: string[] = [];
+  const got = await modules.link('use vendor.bracket\n', async (p) => {
+    asked.push(p);
+    return p === 'vendor/bracket.step' ? step : null;
+  });
+  try {
+    assert.deepEqual(got, ['vendor.bracket']);
+    assert.deepEqual(asked, ['vendor/bracket.sv', 'vendor/bracket.step']);
+    assert.equal(modules.source('vendor.bracket'), step);
+    // what a worker is given is the file's text, unchanged, under its `use` name
+    const files = modules.related('use vendor.bracket\n');
+    assert.deepEqual(files.map((f) => [f.name, f.path, f.provided]),
+      [['vendor.bracket', 'vendor/bracket.step', true]]);
+    assert.deepEqual(modules.handed('use vendor.bracket\n'), [['vendor.bracket', step]]);
+    modules.install(modules.handed('use vendor.bracket\n'));
+    assert.equal(modules.source('vendor.bracket'), step);
+  } finally {
+    modules.forget();
+  }
 });
 
 test('related files include transitive libraries and host overrides without duplicates or cycles', () => {

@@ -1,7 +1,11 @@
-/** A file the tree shows: Solvent sources, and the plain text beside them (a README). */
-export const projectFile = (path: string): boolean => /\.(?:svd?|md|txt)$/.test(path);
+/** A file the tree shows: Solvent sources, the exchange files a `use` reads a body from, and
+ *  the plain text beside them (a README). */
+export const projectFile = (path: string): boolean => /\.(?:svd?|step|stp|md|txt)$/.test(path);
 /** A file the core reads.  Any other project file is text to show, never to elaborate. */
 export const sourceFile = (path: string): boolean => /\.svd?$/.test(path);
+/** An ISO 10303-21 exchange file (#993 stage 2): a body a document's `use` reads, carried to the
+ *  core as it is and never shown in the editor — it is not Solvent, and it may be megabytes. */
+export const givenFile = (path: string): boolean => /\.(?:step|stp)$/.test(path);
 
 /** The chevron a folder or an outline row opens by, pointing at what it opens to. */
 export function disclosure(): SVGSVGElement {
@@ -49,7 +53,7 @@ export class ProjectExplorer {
       button.type = 'button'; button.textContent = relative.slice(slash + 1);
       button.title = path; button.dataset.path = path;
       button.className = `project-file${path.endsWith('.svd') ? ' drawing-file'
-        : sourceFile(path) ? '' : ' text-file'}`;
+        : sourceFile(path) ? '' : givenFile(path) ? ' given-file' : ' text-file'}`;
       button.addEventListener('click', () => this.onSelect(path));
       folder(slash < 0 ? '' : relative.slice(0, slash)).append(button);
       this.buttons.set(path, button);
