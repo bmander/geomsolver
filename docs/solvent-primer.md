@@ -2550,7 +2550,13 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
   rounded pocket's rim) is rounded as one run. A run that ends on a face it does not round is
   carried on past its edge's end and cut off by that face, however the face stands. A slot that
   cuts the edge in pieces ends each piece on its walls (0.209: each point is read against the
-  piece nearest it), so a fillet stops flush either side of the slot.
+  piece nearest it), so a fillet stops flush either side of the slot. A face going on tangent
+  from the edge's face ends the run unless the round goes on round it (0.229): a deck's corner arc
+  running into a side flush with the block it stands on ends its foot's fill on the block's side.
+  A run going on across a seam ends where the tangent chain ends, so a boss or a hole there keeps
+  the round off it, and a boss's wall turning back over a run ends it. A round along one arc of a
+  chain of tangent arcs (one lobe of a drum) ends square in the plane through each seam and both
+  arcs' axes.
 
 - **Name a round to compose over it** (0.149): `bevel := plate.rim chamfer(d: 4mm) plate.far` puts
   its faces under the name (`plate.bevel.taken.flat`, `plate.bevel` every face it made), and a
@@ -2612,6 +2618,19 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
   statement is not built, and the refusal names the two faces that edge lies between
   ("where `rod.near` and `rod.rim` meet"); to leave it out, pick the edges by the faces they lie
   between (above). A chamfer of every edge at such a vertex is not said yet.
+
+  A round over a whole body walks its edges and corners (0.229), so it takes as long as its edges,
+  not the cube of its faces. `solventc --progress` says what it runs over as it starts — ``
+  expanded `round(r: 0.5mm) whole` over 10 faces of `whole`, of which 24 pairs meet and 16 threes
+  meet each other `` — and a statement that would pass the expansion's limit is refused at once,
+  saying so: `` E103: `repeat a in whole { …` over 22 faces of `whole`, of which 60 pairs meet and
+  40 threes meet each other, would make about … `` and "run it over fewer faces at once": a
+  feature's faces (`round(r: …) part.pocket`), or two faces' (`A round(r: …) B`).
+- **A corner too nearly tangent** — two faces meant tangent but drawn to coordinates rounded off
+  it, a few millionths to a few ten-thousandths of a radian apart — is refused by its faces, round
+  and chamfer alike: "too nearly tangent a corner for this kernel to chamfer at 2mm against …".
+  State the tangency (`a tangent b`, a chain's `-> tangent` joint), or make the corner plainly a
+  corner.
 - **The ball and the flat follow a face across a seam**: where the far face goes on tangent into
   a rim's round, a chamfer at a boss standing near the rim lands its leg on the round
   (`F.smooth`, a face's surface carried across its tangent seams). Where the leg or the ball
@@ -2630,7 +2649,7 @@ They are written in Solvent (`rust/lib/std/rounds.sv`), from region bodies you c
 | `distance(p, f1) + distance(p, f2) <= 10mm` | a bound on measurements (an ellipsoid by its foci) |
 | `crease := { q \| q coincident a; q coincident b }` | the edge where faces `a` and `b` meet |
 | `angle(a, b, at: p) <= 180deg` | at a convex edge (the material's angle there) |
-| `p in crease.ends` | stopped by the faces the edge ends on (none at a tangent seam; an edge in pieces, the nearest piece's) |
+| `p in crease.ends` | stopped by the faces the edge ends on (none at a tangent seam the round goes on across; an edge in pieces, the nearest piece's) |
 | `meeting := { q \| q in boundary(a.side); q in boundary(b.side); q in crease.ends }` | where the surfaces meet, short of where the edge ends |
 | `repeat a in A { repeat b in B { when b != a { … } } }` | a copy per pair of faces, each made where the two differ |
 | `when c in B and c != a { … }` | made where `c` is one of `B`'s faces and not `a` |
