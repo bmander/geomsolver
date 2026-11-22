@@ -2232,7 +2232,7 @@ impl Walk<'_> {
         if of != solid {
             return None;
         }
-        let layered = given.read.as_ref()?;
+        let layered = given.read.as_ref().ok()?;
         // the use a copy stands in is read off its prefix up to the block's own key (`use_key`),
         // so every copy reads its pair in the layer the first does
         let at = format!("{}0.", super::keys::block(sc.prefix(), p.st.id.0));
@@ -2277,7 +2277,7 @@ impl Walk<'_> {
         let faces = if n == 1 { "face".to_string() } else { format!("{n} faces") };
         let head = format!("`{text}` over {faces} of `{of}`");
         let meets = self.faces.given.get(solid).and_then(|g| {
-            let read = g.read.as_ref()?;
+            let read = g.read.as_ref().ok()?;
             let at = format!("{}0.", super::keys::block(self.pending_scope(p).prefix(), p.st.id.0));
             Some(read.meets(g.layers.layer(&at, &[])))
         });
