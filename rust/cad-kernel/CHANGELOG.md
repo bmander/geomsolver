@@ -17,9 +17,22 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   stretch before are fitted as one up to the point with the pair read as not yet born (new
   `rings::fitted_unborn`, `Fitted::unborn`: an instant whose shape is not the stretch's first read
   with the pair nearest the swallowtail point's angle not put in, the folds check passing over the
-  newborn pair's bridge as over any bridge), and the rest from the point. The pair's sliver before the point lies wholly in the tail
-  above the double curve, which the trim drops. The half turn: 20 faces, volume 12.2377154 (cadrs
+  newborn pair's bridge as over any bridge), and the rest from the point. The pair's sliver before
+  the point lies wholly in the tail above the double curve, which the trim drops. The half turn: 20 faces, volume 12.2377154 (cadrs
   12.2377), 5.9 s; `depth_probe` reads `sliver`.
+
+- **A double curve traced from a row's seed is joined to its swallowtail point; a tube's tail is read
+  from the depth** (#942 T1d-tori, `swept::rings`, `swept::closed`): the swallowtail points are
+  sought in every stretch (`rings::swallowtails`, kept as `Fitted::ends` where the rows also find a
+  seed), and the march toward the pair is joined to its point along the swallowtail's normal form
+  once every point of the join stands within the tolerance on outer leaves (`rings::joined`) —
+  beside the point the two leaves stand within the tolerance of one another over a band, the curve
+  fixed there to the tolerance alone, and the thin torus's march slid onto a fold's inner leaf 2e-3
+  short of its points and cut the roll at false apexes. A place of a tube is tail where an instant
+  other than its own covers it deeper than its fit (`depth::cover`), not where it stands above the
+  curve over its first preimage's angle, which the joined curve turns back over.
+  `tumbling-torus-thin` is refused later, on the row sewn at its first pair's birth, where the
+  second preimage dips below the row and comes back.
 
 - **A boundary read from the depth enters the ring road as a seam** (#942, `swept::depth`): new
   `depth::Covered`, the far cover's depth as a `zero_set::Field` over a ring's sheet (its gradient by
@@ -100,6 +113,7 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   its meetings with the ring and the tubes given by construction (`entered` returns the strips after
   the tubes). Arranged so the groove and the block are still one cell, at the end poses' corners, and
   the refusal stands.
+
 - **The zero set of a scalar function over a rectangle of parameters, traced** (#942, new
   `zero_set`): `trace` follows `f = 0` (a least value `min over s of g` with its minimiser, through
   the `Field` trait) by arclength in the caller's surface metric, cut at the corners where the

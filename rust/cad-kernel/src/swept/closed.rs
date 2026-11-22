@@ -1144,15 +1144,19 @@ pub fn ring_entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Re
     let last = fits.len()-1;
     let mut pieces = Vec::new();
     let mut given = Vec::new();
-    // (whether a pose holds a place of a tube more than the tolerance deep — a sheet on the boundary
-    // stands within its fit of it, a tenth of the tolerance — read where a double curve dips below a
-    // stretch and comes back, the tail between ending where the curve meets the tool at an end pose,
-    // #942 T1d-tori)
-    let inside = |x: V| ring.held(path,[a,b],x,tol);
+    // (whether an instant other than a tube's place's own `t` covers it: its far cover deeper than
+    // the fit the place stands off its sheet by, `depth::cover` — a narrow pair's tail, #942
+    // T1d-tori; read by its sign alone, the thin torus's piece beside its birth that only its own
+    // instant touches, its far cover 1e-12 either side of nought, was dropped)
+    let covered = |x: V,t: f64| match super::depth::cover(&ring,path,[a,b],x,t,K2_FIT*tol,tol) {
+        Ok(super::depth::Reading::Near) => true,
+        Ok(super::depth::Reading::Far(c)) => c.depth < -K2_FIT*tol,
+        _ => false,
+    };
     for (k,fit) in fits.iter().enumerate() {
         // (both end poses read on every stretch: a tube carried on can cross either far from it)
         let at = [Some((&start,poses[0])),Some((&end,poses[1]))];
-        let (s,g) = super::rings::entered_at(fit,&ring,at,[k == 0,k == last],&inside,tol)?;
+        let (s,g) = super::rings::entered_at(fit,&ring,at,[k == 0,k == last],&covered,tol)?;
         if crate::debug() { eprintln!("ring: stretch {k} over {:?}: pieces {}..{}, faces {:?}",fit.roll,pieces.len(),pieces.len()+s.len(),s.iter().map(|b: &Brep| b.faces.len()).collect::<Vec<_>>()) }
         phase(&format!("stretch {k} entered at the end poses"));
         pieces.extend(s);
@@ -1235,10 +1239,12 @@ pub fn ring_fitted(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64)
         if curves.iter().any(|c| super::rings::on_double_curve(&ring,path,c,apex.at,tol)) { continue }
         curves.push(super::rings::double_curve_from_apex(&ring,path,[a,b],apex,tol)?);
     }
+    // (each traced from a row's seed joined to its swallowtail point where a stretch finds both)
+    let ends: Vec<super::rings::Apex> = fits.iter().flat_map(|f| f.ends.clone()).collect();
     for seed in fits.iter().flat_map(|f| f.seeds.clone()) {
         // (a seed on a curve traced already: its point within the tolerance of it, #942 F6)
         if curves.iter().any(|c| super::rings::on_double_curve(&ring,path,c,seed[0],tol)) { continue }
-        curves.push(super::rings::double_curve(&ring,path,[a,b],seed,tol)?);
+        curves.push(super::rings::double_curve(&ring,path,[a,b],seed,&ends,tol)?);
     }
     phase(&format!("{} double curves traced",curves.len()));
     // (and the roll cut again at each swallowtail point, the contact's shape the same either side:
