@@ -2011,7 +2011,13 @@ pub fn entered_at(fit: &Fitted,ring: &Ring,at: [Option<(&Brep,Pose)>;2],rimmed: 
             // (a trace walked from both its ends — its far end matched to no rim crossing, the other
             // traced back along it — is one chord: two along one another split each other into a
             // thousand pieces, #880 T1d M2's ring beside its whole-touched meridian)
-            for (e,c) in (0..2).flat_map(|e| readings[e].as_ref().map_or(Vec::new(),traces).into_iter().map(move |c| (e,c))) {
+            // (where a curve cut into the face ends inside it on the tool — its corner where the
+            // covering instant reaches the roll's end, on that pose — a seed of a closed trace there,
+            // read within the tolerance of the tool)
+            let seeds: [Vec<P2>;2] = std::array::from_fn(|e| readings[e].as_ref().map_or(Vec::new(),|r| cuts_of[k].iter()
+                .flat_map(|c| [c[0],c[c.len()-1]]).filter(|p| p[0] > ON_SIDE && p[0] < 1.-ON_SIDE && p[1] > ON_SIDE && p[1] < 1.-ON_SIDE)
+                .filter(|p| r.f(p[0],p[1]).abs() <= tol).collect()));
+            for (e,c) in (0..2).flat_map(|e| readings[e].as_ref().map_or(Vec::new(),|r| traces(r,&seeds[e])).into_iter().map(move |c| (e,c))) {
                 // (a trace of no length — all its points within `ON_SIDE` of its first, one place on
                 // the face's square — bounds nothing: the tool touching the face there, not crossing
                 // it; the near-orthogonal tori's, two points 2.4e-13 apart on the rim where a crossing
@@ -2245,9 +2251,13 @@ const INWARD: [P2;4] = [[0.,1.],[-1.,0.],[0.,-1.],[1.,0.]];
 /// fold runs close beside the touch) and settled by bisection; from each, the zero set is traced
 /// across the face in its normalised domain — a step along it, then Newton back onto it along its
 /// gradient — until it leaves the face, where it is settled on the rim it crosses; each end met is
-/// used once. A closed curve inside the face, crossing no rim, is not read (the judge sees what it
-/// misses). Each curve's points in the normalised domain, from one rim to another.
-fn traces(r: &Reading) -> Vec<Vec<P2>> {
+/// used once. A closed curve inside the face, crossing no rim, is read only through a place of it
+/// the caller knows (`seeds`: where a curve cut into the face ends inside it on the tool, #942 the
+/// full turn — the end torus's trace across the tube in the middle of the roll, where the tube's
+/// crossing with itself ends), settled onto the zero set and traced round until it closes on it;
+/// any other is not read (the judge sees what it misses). Each curve's points in the normalised
+/// domain, from one rim to another, or round from a seed back to it.
+fn traces(r: &Reading,seeds: &[P2]) -> Vec<Vec<P2>> {
     let g = |x: f64,y: f64| r.g(x,y);
     let ye = r.end;
     // the gradient in the normalised domain, by differences
@@ -2301,13 +2311,22 @@ fn traces(r: &Reading) -> Vec<Vec<P2>> {
     let debug = std::env::var_os("SOLVENT_RING_DEBUG").is_some();
     if debug { eprintln!("met: face {:?} end {}: rim crossings {:?}",r.u,r.end,ends.iter().map(|e| e.0).collect::<Vec<_>>()) }
     let mut used = vec![false;ends.len()];
-    let mut out = Vec::new();
-    for start in 0..ends.len() {
-        if used[start] { continue }
-        used[start] = true;
-        let (p0,into) = ends[start];
+    let mut out: Vec<Vec<P2>> = Vec::new();
+    let tangent = |p: [f64;2]| { let d = grad(p[0],p[1]); let l = d[0].hypot(d[1]); [-d[1]/l,d[0]/l] };
+    for start in 0..ends.len()+seeds.len() {
+        // (past the rims' crossings, each seed inside the face: settled onto the zero set, unless a
+        // curve traced already passes within a step of it)
+        let seeded = start >= ends.len();
+        let (p0,into) = if seeded {
+            let Some(p) = settled(r,seeds[start-ends.len()]) else { continue };
+            if out.iter().flatten().any(|&q| apart(p,q) <= MET_STEP) { continue }
+            (p,tangent(p))
+        } else {
+            if used[start] { continue }
+            used[start] = true;
+            ends[start]
+        };
         let mut pts = vec![p0];
-        let tangent = |p: [f64;2]| { let d = grad(p[0],p[1]); let l = d[0].hypot(d[1]); [-d[1]/l,d[0]/l] };
         let t0 = tangent(p0);
         // the way along the zero set into the face
         let mut dir = if t0[0]*into[0]+t0[1]*into[1] >= 0. { t0 } else { [-t0[0],-t0[1]] };
@@ -2362,11 +2381,18 @@ fn traces(r: &Reading) -> Vec<Vec<P2>> {
             dir = if next[0]*dir[0]+next[1]*dir[1] >= 0. { next } else { [-next[0],-next[1]] };
             pts.push(q);
             p = q;
-            // back where it began: a loop through the rim at one point is not read
-            if pts.len() > 4 && apart(p,p0) < 0.5*MET_STEP { closed_at = Some(()); break }
+            // back where it began: a loop through the rim at one point is not read; a loop from a
+            // seed inside the face is the curve, closed on its first point (within the step ahead)
+            if seeded && pts.len() > 4 && apart(p,p0) <= MET_STEP && (p0[0]-p[0])*dir[0]+(p0[1]-p[1])*dir[1] >= 0. {
+                pts.push(p0);
+                closed_at = Some(());
+                break
+            }
+            if !seeded && pts.len() > 4 && apart(p,p0) < 0.5*MET_STEP { closed_at = Some(()); break }
         }
-        if debug { eprintln!("met:   traced {} points from {:?} to {:?}",pts.len(),pts[0],pts[pts.len()-1]) }
-        if closed_at.is_some() || pts.len() < 2 { continue }
+        if debug { eprintln!("met:   traced {} points from {:?} to {:?}{}",pts.len(),pts[0],pts[pts.len()-1],if seeded { ", seeded" } else { "" }) }
+        // (a seed's curve that leaves the face crosses a rim, and is traced from there)
+        if closed_at.is_some() != seeded || pts.len() < 2 { continue }
         // (a point within `G`'s carried reach of the rim settled again on the tool itself, across
         // the face at its own roll: `G` there is drawn on from just off the rim)
         for p in pts.iter_mut() { *p = polished(r,*p) }
@@ -2642,7 +2668,10 @@ fn split_chords(chords: &[(usize,Vec<P2>)]) -> Vec<(usize,Vec<P2>)> {
                 piece = vec![q];
                 at += 1;
             }
-            piece.push(pts[k+1]);
+            // (a cut at a point of the chord's own is that point once: no step of no length, whose
+            // way is none)
+            let last = piece[piece.len()-1];
+            if (pts[k+1][0]-last[0]).hypot(pts[k+1][1]-last[1]) > 1e-12 { piece.push(pts[k+1]) }
         }
         if piece.len() >= 2 { out.push((e,piece)) }
     }
@@ -2727,6 +2756,98 @@ fn pieces_among(chords: &[(usize,Vec<P2>)]) -> Result<Vec<Vec<Walk>>,Unbuilt> {
         }
     }
     Ok(pieces)
+}
+
+/// A way round a piece of a face's square as the places it passes, in order: along a side its ends
+/// and the corners between, along a chord its points.
+fn walk_points(walk: &[Walk],chords: &[(usize,Vec<P2>)]) -> Vec<P2> {
+    let mut out = Vec::new();
+    for w in walk {
+        match *w {
+            Walk::Side(s0,s1) => {
+                out.push(round_square(s0));
+                let mut c = s0.floor()+1.;
+                while c < s1 { out.push(round_square(c)); c += 1. }
+            }
+            Walk::Chord(i,forward) => {
+                let c = &chords[i].1;
+                if forward { out.extend(c.iter().copied()) } else { out.extend(c.iter().rev().copied()) }
+            }
+        }
+    }
+    out
+}
+
+/// The signed area a closed run of places encloses: above nought counter-clockwise.
+fn enclosed(pts: &[P2]) -> f64 {
+    0.5*(0..pts.len()).map(|i| { let (p,q) = (pts[i],pts[(i+1)%pts.len()]); p[0]*q[1]-q[0]*p[1] }).sum::<f64>()
+}
+
+/// Whether the place `x` is inside the closed run `pts` (by the crossings of a ray along `+x`).
+fn within(pts: &[P2],x: P2) -> bool {
+    let mut inside = false;
+    for i in 0..pts.len() {
+        let (p,q) = (pts[i],pts[(i+1)%pts.len()]);
+        if (p[1] > x[1]) != (q[1] > x[1]) && x[0] < p[0]+(q[0]-p[0])*(x[1]-p[1])/(q[1]-p[1]) { inside = !inside }
+    }
+    inside
+}
+
+/// **A face's pieces with their holes** (#942, the full turn): the planar graph's walks
+/// (`pieces_among`) go round each piece with it on their left, so a component of chords touching
+/// no side of the square — the end torus's closed trace across the tube in the middle of the roll,
+/// with the tube's crossing with itself ending on it — is walked once round its outside clockwise:
+/// the hole it makes in the piece about it. Each such walk (its enclosed area below nought) is
+/// given to the least piece walked counter-clockwise that holds it — larger than the hole (the
+/// component's own pieces are no larger together) and holding a place of it — as an inner loop.
+fn with_holes(walks: Vec<Vec<Walk>>,chords: &[(usize,Vec<P2>)]) -> Vec<(Vec<Walk>,Vec<Vec<Walk>>)> {
+    let pts: Vec<Vec<P2>> = walks.iter().map(|w| walk_points(w,chords)).collect();
+    let area: Vec<f64> = pts.iter().map(|p| enclosed(p)).collect();
+    let mut out: Vec<(Vec<Walk>,Vec<Vec<Walk>>)> = Vec::new();
+    let mut at: Vec<Option<usize>> = vec![None;walks.len()];
+    for (i,w) in walks.iter().enumerate() { if area[i] > 0. { at[i] = Some(out.len()); out.push((w.clone(),Vec::new())) } }
+    for (i,w) in walks.into_iter().enumerate() {
+        if area[i] > 0. { continue }
+        // (larger by more than the rounding of the sum of the component's pieces)
+        let hole = -area[i];
+        let holder = (0..pts.len()).filter(|&j| area[j] > hole*(1.+1e-9) && within(&pts[j],pts[i][0]))
+            .min_by(|&x,&y| area[x].total_cmp(&area[y]));
+        if let Some(j) = holder { out[at[j].unwrap()].1.push(w) }
+    }
+    out
+}
+
+/// **A face's normalised square cut by chords, as each piece's loops of places** (#942, the full
+/// turn): the chords split where they cross or one ends on another (`split_chords`), the planar
+/// graph's pieces walked (`pieces_among`) and each component touching no side given as a hole to
+/// the piece about it (`with_holes`) — per piece its outer loop, then its holes, each the places it
+/// passes. What the ring road's trim cuts a tube's face into, read alone.
+pub fn loops_of_square(chords: &[(usize,Vec<P2>)]) -> Result<Vec<Vec<Vec<P2>>>,Unbuilt> {
+    let split = split_chords(chords);
+    let walks = with_holes(pieces_among(&split)?,&split);
+    Ok(walks.iter().map(|(outer,holes)| std::iter::once(outer).chain(holes).map(|w| walk_points(w,&split)).collect()).collect())
+}
+
+/// A place just to the left of the longest chord of a piece walked with it on its left (`walk`),
+/// beside the chord's middle point: no farther from it than half the way to any other chord's or
+/// the square's side, nor than a thousandth of the square; none where the piece walks no chord.
+fn beside_chord(walk: &[Walk],chords: &[(usize,Vec<P2>)]) -> Option<P2> {
+    let long = |c: &[P2]| c.windows(2).map(|w| (w[1][0]-w[0][0]).hypot(w[1][1]-w[0][1])).sum::<f64>();
+    let (i,forward) = walk.iter().filter_map(|w| match *w { Walk::Chord(i,f) => Some((i,f)),_ => None })
+        .max_by(|x,y| long(&chords[x.0].1).total_cmp(&long(&chords[y.0].1)))?;
+    let c = &chords[i].1;
+    if c.len() < 2 { return None }
+    let j = (c.len()/2).min(c.len()-2);
+    let (p,q) = if forward { (c[j],c[j+1]) } else { (c[j+1],c[j]) };
+    let m = [0.5*(p[0]+q[0]),0.5*(p[1]+q[1])];
+    let l = (q[0]-p[0]).hypot(q[1]-p[1]);
+    if !(l > 0.) { return None }
+    let left = [-(q[1]-p[1])/l,(q[0]-p[0])/l];
+    let others = chords.iter().enumerate().filter(|&(k,_)| k != i).flat_map(|(_,c)| &c.1).map(|r| (r[0]-m[0]).hypot(r[1]-m[1]));
+    let side = m[0].min(1.-m[0]).min(m[1]).min(1.-m[1]);
+    let clear = others.fold(side,f64::min);
+    let depth = (0.5*clear).min(1e-3).min(0.25*l);
+    Some([m[0]+left[0]*depth,m[1]+left[1]*depth])
 }
 
 /// **A tube's net cut to where its faces stand outside the tool at both end poses**: each face's
@@ -2834,12 +2955,17 @@ fn trimmed(net: &Net,roll: [f64;2],mut faces: Vec<Trimmed>,tol: f64) -> Result<(
         // its pieces are the planar graph's too: no way round the square alone tells them apart)
         let ends: Vec<f64> = face.chords.iter().flat_map(|(_,c)| [perimeter(c[0]),perimeter(c[c.len()-1])]).collect();
         let shared = ends.iter().enumerate().any(|(i,a)| ends[i+1..].iter().any(|b| (a-b).abs() < ON_SIDE));
-        let simple = !shared && split.len() == face.chords.len() && split.iter().zip(&face.chords).all(|(x,y)| x.1.len() == y.1.len());
+        // (and a chord ending inside the square — a closed trace, or a curve ending on one — leaves
+        // the planar graph pieces with holes, which no way round the square finds)
+        let on_rim = |p: P2| p[0] <= ON_SIDE || p[0] >= 1.-ON_SIDE || p[1] <= ON_SIDE || p[1] >= 1.-ON_SIDE;
+        let rimmed = face.chords.iter().all(|(_,c)| on_rim(c[0]) && on_rim(c[c.len()-1]));
+        let simple = rimmed && !shared && split.len() == face.chords.len() && split.iter().zip(&face.chords).all(|(x,y)| x.1.len() == y.1.len());
         let told = |_: &Unbuilt| if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
             for (e,c) in &face.chords { eprintln!("ring: face {k} unsplit chord of kind {e} from {:?} to {:?}, {} points",c[0],c[c.len()-1],c.len()) }
         };
-        let walks = if simple { pieces_of_square(&face.chords).inspect_err(told)? } else { pieces_among(&split).inspect_err(told)? };
         let chords: &[(usize,Vec<P2>)] = if simple { &face.chords } else { &split };
+        let walks = if simple { pieces_of_square(&face.chords).inspect_err(told)? } else { pieces_among(&split).inspect_err(told)? };
+        let walks = with_holes(walks,chords);
         if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
             eprintln!("trim: face {k} over {roll:?} chords {:?}",chords.iter().map(|(e,c)| (*e,c[0],c[c.len()-1])).collect::<Vec<_>>());
             for w in &walks { eprintln!("trim:   walk {w:?}") }
@@ -2852,129 +2978,147 @@ fn trimmed(net: &Net,roll: [f64;2],mut faces: Vec<Trimmed>,tol: f64) -> Result<(
         let mut chord_pcurves: Vec<Option<Pcurve>> = vec![None;chords.len()];
         let mut rim_kept = [false;2];
         let mut kept_chords: [Vec<(Curve,Vec<V>)>;2] = [Vec::new(),Vec::new()];
-        for walk in walks {
-            // kept where it stands outside the tool at both ends: read just inside its longest side
-            let Some((s0,s1)) = walk.iter().filter_map(|w| match *w { Walk::Side(s0,s1) => Some((s0,s1)),_ => None })
-                .max_by(|x,y| (x.1-x.0).total_cmp(&(y.1-y.0))) else { continue };
-            let m = round_square(0.5*(s0+s1));
-            let into = INWARD[(s0.floor() as usize).min(3)];
-            // no farther in than half the way to the nearest chord
-            let clear = chords.iter().flat_map(|(_,c)| c).map(|p| (p[0]-m[0]).hypot(p[1]-m[1])).fold(f64::INFINITY,f64::min);
-            let depth = (0.5*clear).min(1e-3).min(0.25*(s1-s0));
-            let probe = [m[0]+into[0]*depth,m[1]+into[1]*depth];
+        for (walk,holes) in walks {
+            // kept where it stands outside the tool at both ends: read just inside its longest side,
+            // or, where it has none (a piece inside the face, among closed chords), just to the left
+            // of its longest chord's middle — each piece walked with it on its left
+            let probe = match walk.iter().filter_map(|w| match *w { Walk::Side(s0,s1) => Some((s0,s1)),_ => None })
+                .max_by(|x,y| (x.1-x.0).total_cmp(&(y.1-y.0))) {
+                Some((s0,s1)) => {
+                    let m = round_square(0.5*(s0+s1));
+                    let into = INWARD[(s0.floor() as usize).min(3)];
+                    // no farther in than half the way to the nearest chord
+                    let clear = chords.iter().flat_map(|(_,c)| c).map(|p| (p[0]-m[0]).hypot(p[1]-m[1])).fold(f64::INFINITY,f64::min);
+                    let depth = (0.5*clear).min(1e-3).min(0.25*(s1-s0));
+                    [m[0]+into[0]*depth,m[1]+into[1]*depth]
+                }
+                None => {
+                    let Some(p) = beside_chord(&walk,chords) else { continue };
+                    p
+                }
+            };
             if std::env::var_os("SOLVENT_RING_DEBUG").is_some() {
                 let x = net.point(k as f64+probe[0],roll[0]+(roll[1]-roll[0])*probe[1]);
-                eprintln!("trim:   probe {probe:?} at {x:?}: outside {}, tail {}",face.readings.iter().flatten().all(|r| r.outside(probe)),(face.tail)(probe));
+                eprintln!("trim:   probe {probe:?} at {x:?}: outside {}, tail {}, holes {}",face.readings.iter().flatten().all(|r| r.outside(probe)),
+                    (face.tail)(probe),holes.len());
             }
             if !face.readings.iter().flatten().all(|r| r.outside(probe)) || (face.tail)(probe) { continue }
-            let mut lp: Vec<Coedge> = Vec::new();
-            for w in walk {
-                match w {
-                    Walk::Side(s0,s1) => {
-                        let (p,q) = (round_square(s0),round_square(s1));
-                        let (vp,vq) = (vertex(&mut out,k,p)?,vertex(&mut out,k,q)?);
-                        match s0.floor() as usize {
-                            // along a rim: the iso-curve there, from one place to the other
-                            side @ (0|2) => {
-                                let e = side/2;
-                                let (lo,hi) = if p[0] <= q[0] { ((p,vp),(q,vq)) } else { ((q,vq),(p,vp)) };
-                                let edge = out.edge(EdgeCurve::Curve(rim[e].clone()),[u0+lo.0[0],u0+hi.0[0]],[lo.1,hi.1]);
-                                let t = t_of(e as f64);
-                                lp.push(Coedge {edge,reversed:p[0] > q[0],pcurve:Pcurve::Line {a:[u0+lo.0[0],t],b:[u0+hi.0[0],t]}});
-                                rim_kept[e] = true;
-                            }
-                            // along a seam: its edge between the two places, shared with the face beside
-                            side => {
-                                let (s,u) = if side == 1 { ((k+1)%pieces,u1) } else { (k,u0) };
-                                let (lo,hi) = if p[1] <= q[1] { ((p,vp),(q,vq)) } else { ((q,vq),(p,vp)) };
-                                let edge = match seam_edges.entry((s,place(s,lo.0[1])?)) {
-                                    std::collections::btree_map::Entry::Occupied(o) => *o.get(),
-                                    std::collections::btree_map::Entry::Vacant(v) => *v.insert(out.edge(EdgeCurve::Curve(seam_curve[s].clone()),
-                                        [t_of(lo.0[1]),t_of(hi.0[1])],[lo.1,hi.1])),
-                                };
-                                lp.push(Coedge {edge,reversed:p[1] > q[1],pcurve:Pcurve::Line {a:[u,t_of(lo.0[1])],b:[u,t_of(hi.0[1])]}});
+            // (its outer loop, then each hole in it)
+            let mut loops: Vec<Vec<Coedge>> = Vec::new();
+            for lw in std::iter::once(walk).chain(holes) {
+                let mut lp: Vec<Coedge> = Vec::new();
+                for w in lw {
+                    match w {
+                        Walk::Side(s0,s1) => {
+                            let (p,q) = (round_square(s0),round_square(s1));
+                            let (vp,vq) = (vertex(&mut out,k,p)?,vertex(&mut out,k,q)?);
+                            match s0.floor() as usize {
+                                // along a rim: the iso-curve there, from one place to the other
+                                side @ (0|2) => {
+                                    let e = side/2;
+                                    let (lo,hi) = if p[0] <= q[0] { ((p,vp),(q,vq)) } else { ((q,vq),(p,vp)) };
+                                    let edge = out.edge(EdgeCurve::Curve(rim[e].clone()),[u0+lo.0[0],u0+hi.0[0]],[lo.1,hi.1]);
+                                    let t = t_of(e as f64);
+                                    lp.push(Coedge {edge,reversed:p[0] > q[0],pcurve:Pcurve::Line {a:[u0+lo.0[0],t],b:[u0+hi.0[0],t]}});
+                                    rim_kept[e] = true;
+                                }
+                                // along a seam: its edge between the two places, shared with the face beside
+                                side => {
+                                    let (s,u) = if side == 1 { ((k+1)%pieces,u1) } else { (k,u0) };
+                                    let (lo,hi) = if p[1] <= q[1] { ((p,vp),(q,vq)) } else { ((q,vq),(p,vp)) };
+                                    let edge = match seam_edges.entry((s,place(s,lo.0[1])?)) {
+                                        std::collections::btree_map::Entry::Occupied(o) => *o.get(),
+                                        std::collections::btree_map::Entry::Vacant(v) => *v.insert(out.edge(EdgeCurve::Curve(seam_curve[s].clone()),
+                                            [t_of(lo.0[1]),t_of(hi.0[1])],[lo.1,hi.1])),
+                                    };
+                                    lp.push(Coedge {edge,reversed:p[1] > q[1],pcurve:Pcurve::Line {a:[u,t_of(lo.0[1])],b:[u,t_of(hi.0[1])]}});
+                                }
                             }
                         }
-                    }
-                    Walk::Chord(i,forward) => {
-                        let (e,pts) = &chords[i];
-                        let edge = match chord_edges[i] {
-                            Some(edge) => edge,
-                            None => {
-                                let (curve,xs) = match face.readings.get(*e).and_then(|r| r.as_ref()) {
-                                    Some(r) => {
-                                        let (curve,xs,on) = chord_curve(r,pts,tol)?;
-                                        // **its pcurve the places on the face it passes** (#942 F3, by
-                                        // construction): each at the curve's own parameter there, not the curve
-                                        // inverted onto the face from the line between its ends — beside a fold
-                                        // pair's birth the face's sheet folds back on itself within 2e-4, and the
-                                        // inverse landed on the other fold (the tumbling torus's half turn)
-                                        let uvs: Vec<V> = on.iter().map(|&(_,[x,y])| [u0+x,t_of(y),0.]).collect();
-                                        let ts: Vec<f64> = on.iter().map(|&(t,_)| t).collect();
-                                        // (the coarsest cubic through every so many of them — as the curve is
-                                        // drawn — whose image holds the curve's own bar, a quarter of `tol`, at
-                                        // each of them and at 64 places along it: beside the birth itself, where
-                                        // the leaf has no width, the places the trace passes are no guide, none
-                                        // holds, and the curve is inverted as before)
-                                        let holds = |pc: &crate::nurbs::BSpline| {
-                                            let at = |t: f64| { let q = pc.point(t); norm(crate::util::space::sub(surface.point([q[0],q[1]]),curve.point(t))) };
-                                            ts.iter().all(|&t| at(t) <= 0.25*tol) && (0..=64).all(|j| at(j as f64/64.) <= 0.25*tol)
-                                        };
-                                        let pc = ts.windows(2).all(|w| w[1] > w[0]).then(|| [64,32,16,8,4,2,1].into_iter().find_map(|stride: usize| {
-                                            let mut keep: Vec<usize> = (0..uvs.len()).step_by(stride).collect();
-                                            if *keep.last().unwrap() != uvs.len()-1 { keep.push(uvs.len()-1) }
-                                            if keep.len() < 2 { return None }
-                                            let pc = crate::nurbs::interpolate(&keep.iter().map(|&k| uvs[k]).collect::<Vec<_>>(),
-                                                &keep.iter().map(|&k| ts[k]).collect::<Vec<_>>(),3.min(keep.len()-1))?;
-                                            holds(&pc).then_some(pc)
-                                        })).flatten();
-                                        if let Some(pc) = pc { chord_pcurves[i] = Some(Pcurve::Curve(Arc::new(Curve::BSpline(Arc::new(pc))))) }
-                                        (curve,xs)
-                                    }
-                                    // (the double curve: through the net's points along it)
-                                    None => {
-                                        // (refined until the surface between each two points stands within a
-                                        // tenth of the tolerance of the chord between them: beside a fold the
-                                        // sheet bends sharply, and points 2e-4 radians apart sagged 3.6e-6)
-                                        let at = |p: P2| net.point(k as f64+p[0],a+(b-a)*p[1]);
-                                        let mut fine: Vec<P2> = vec![pts[0]];
-                                        for w in pts.windows(2) {
-                                            let mut todo = vec![(w[0],w[1],0)];
-                                            while let Some((p,q,depth)) = todo.pop() {
-                                                let m = [0.5*(p[0]+q[0]),0.5*(p[1]+q[1])];
-                                                let sag = norm(crate::util::space::sub(at(m),scale(add(at(p),at(q)),0.5)));
-                                                if sag > 0.1*tol && depth < 20 { todo.push((m,q,depth+1)); todo.push((p,m,depth+1)) } else { fine.push(q) }
-                                            }
+                        Walk::Chord(i,forward) => {
+                            let (e,pts) = &chords[i];
+                            let edge = match chord_edges[i] {
+                                Some(edge) => edge,
+                                None => {
+                                    let (curve,xs) = match face.readings.get(*e).and_then(|r| r.as_ref()) {
+                                        Some(r) => {
+                                            let (curve,xs,on) = chord_curve(r,pts,tol)?;
+                                            // **its pcurve the places on the face it passes** (#942 F3, by
+                                            // construction): each at the curve's own parameter there, not the curve
+                                            // inverted onto the face from the line between its ends — beside a fold
+                                            // pair's birth the face's sheet folds back on itself within 2e-4, and the
+                                            // inverse landed on the other fold (the tumbling torus's half turn)
+                                            let uvs: Vec<V> = on.iter().map(|&(_,[x,y])| [u0+x,t_of(y),0.]).collect();
+                                            let ts: Vec<f64> = on.iter().map(|&(t,_)| t).collect();
+                                            // (the coarsest cubic through every so many of them — as the curve is
+                                            // drawn — whose image holds the curve's own bar, a quarter of `tol`, at
+                                            // each of them and at 64 places along it: beside the birth itself, where
+                                            // the leaf has no width, the places the trace passes are no guide, none
+                                            // holds, and the curve is inverted as before)
+                                            let holds = |pc: &crate::nurbs::BSpline| {
+                                                let at = |t: f64| { let q = pc.point(t); norm(crate::util::space::sub(surface.point([q[0],q[1]]),curve.point(t))) };
+                                                ts.iter().all(|&t| at(t) <= 0.25*tol) && (0..=64).all(|j| at(j as f64/64.) <= 0.25*tol)
+                                            };
+                                            let pc = ts.windows(2).all(|w| w[1] > w[0]).then(|| [64,32,16,8,4,2,1].into_iter().find_map(|stride: usize| {
+                                                let mut keep: Vec<usize> = (0..uvs.len()).step_by(stride).collect();
+                                                if *keep.last().unwrap() != uvs.len()-1 { keep.push(uvs.len()-1) }
+                                                if keep.len() < 2 { return None }
+                                                let pc = crate::nurbs::interpolate(&keep.iter().map(|&k| uvs[k]).collect::<Vec<_>>(),
+                                                    &keep.iter().map(|&k| ts[k]).collect::<Vec<_>>(),3.min(keep.len()-1))?;
+                                                holds(&pc).then_some(pc)
+                                            })).flatten();
+                                            if std::env::var_os("SOLVENT_RING_DEBUG").is_some() && pc.is_none() {
+                                            eprintln!("trim:   chord {i} from {:?} to {:?}: no pcurve through its places holds, inverted",pts[0],pts[pts.len()-1])
                                         }
-                                        let pts = &fine;
-                                        let xs: Vec<V> = pts.iter().map(|&p| at(p)).collect();
-                                        let mut params = vec![0.];
-                                        for w in xs.windows(2) { params.push(params.last().unwrap()+norm(crate::util::space::sub(w[1],w[0])).max(1e-300)) }
-                                        let length = *params.last().unwrap();
-                                        let params: Vec<f64> = params.iter().map(|p| p/length.max(1e-300)).collect();
-                                        let uvs: Vec<V> = pts.iter().map(|&[x,y]| [u0+x,t_of(y),0.]).collect();
-                                        // (both through every point at one parameter, a polyline each: they agree at
-                                        // every point and part only by a chord's sag)
-                                        let (Some(pc),Some(c3)) = (crate::nurbs::interpolate(&uvs,&params,1),crate::nurbs::interpolate(&xs,&params,1))
-                                            else { return Err(Unbuilt::Failed("a ring's sheet's double curve could not be drawn".into())) };
-                                        chord_pcurves[i] = Some(Pcurve::Curve(Arc::new(Curve::BSpline(Arc::new(pc)))));
-                                        (Curve::BSpline(Arc::new(c3)),xs)
-                                    }
-                                };
-                                let (v0,v1) = (vertex(&mut out,k,pts[0])?,vertex(&mut out,k,pts[pts.len()-1])?);
-                                let edge = out.edge(EdgeCurve::Curve(curve.clone()),[0.,1.],[v0,v1]);
-                                if *e < 2 { kept_chords[*e].push((curve,xs)) }
-                                chord_edges[i] = Some(edge);
-                                edge
-                            }
-                        };
-                        let uv = |p: P2| [u0+p[0],t_of(p[1])];
-                        let pcurve = chord_pcurves[i].clone().unwrap_or(Pcurve::Inverse {a:uv(pts[0]),b:uv(pts[pts.len()-1])});
-                        lp.push(Coedge {edge,reversed:!forward,pcurve});
+                                        if let Some(pc) = pc { chord_pcurves[i] = Some(Pcurve::Curve(Arc::new(Curve::BSpline(Arc::new(pc))))) }
+                                            (curve,xs)
+                                        }
+                                        // (the double curve: through the net's points along it)
+                                        None => {
+                                            // (refined until the surface between each two points stands within a
+                                            // tenth of the tolerance of the chord between them: beside a fold the
+                                            // sheet bends sharply, and points 2e-4 radians apart sagged 3.6e-6)
+                                            let at = |p: P2| net.point(k as f64+p[0],a+(b-a)*p[1]);
+                                            let mut fine: Vec<P2> = vec![pts[0]];
+                                            for w in pts.windows(2) {
+                                                let mut todo = vec![(w[0],w[1],0)];
+                                                while let Some((p,q,depth)) = todo.pop() {
+                                                    let m = [0.5*(p[0]+q[0]),0.5*(p[1]+q[1])];
+                                                    let sag = norm(crate::util::space::sub(at(m),scale(add(at(p),at(q)),0.5)));
+                                                    if sag > 0.1*tol && depth < 20 { todo.push((m,q,depth+1)); todo.push((p,m,depth+1)) } else { fine.push(q) }
+                                                }
+                                            }
+                                            let pts = &fine;
+                                            let xs: Vec<V> = pts.iter().map(|&p| at(p)).collect();
+                                            let mut params = vec![0.];
+                                            for w in xs.windows(2) { params.push(params.last().unwrap()+norm(crate::util::space::sub(w[1],w[0])).max(1e-300)) }
+                                            let length = *params.last().unwrap();
+                                            let params: Vec<f64> = params.iter().map(|p| p/length.max(1e-300)).collect();
+                                            let uvs: Vec<V> = pts.iter().map(|&[x,y]| [u0+x,t_of(y),0.]).collect();
+                                            // (both through every point at one parameter, a polyline each: they agree at
+                                            // every point and part only by a chord's sag)
+                                            let (Some(pc),Some(c3)) = (crate::nurbs::interpolate(&uvs,&params,1),crate::nurbs::interpolate(&xs,&params,1))
+                                                else { return Err(Unbuilt::Failed("a ring's sheet's double curve could not be drawn".into())) };
+                                            chord_pcurves[i] = Some(Pcurve::Curve(Arc::new(Curve::BSpline(Arc::new(pc)))));
+                                            (Curve::BSpline(Arc::new(c3)),xs)
+                                        }
+                                    };
+                                    let (v0,v1) = (vertex(&mut out,k,pts[0])?,vertex(&mut out,k,pts[pts.len()-1])?);
+                                    let edge = out.edge(EdgeCurve::Curve(curve.clone()),[0.,1.],[v0,v1]);
+                                    if *e < 2 { kept_chords[*e].push((curve,xs)) }
+                                    chord_edges[i] = Some(edge);
+                                    edge
+                                }
+                            };
+                            let uv = |p: P2| [u0+p[0],t_of(p[1])];
+                            let pcurve = chord_pcurves[i].clone().unwrap_or(Pcurve::Inverse {a:uv(pts[0]),b:uv(pts[pts.len()-1])});
+                            lp.push(Coedge {edge,reversed:!forward,pcurve});
+                        }
                     }
                 }
+                loops.push(lp);
             }
-            out.faces.push(Face {surface:surface.clone(),reversed:false,loops:vec![lp],name:"sheet".into()});
+            out.faces.push(Face {surface:surface.clone(),reversed:false,loops,name:"sheet".into()});
         }
         cut.surfaces.push(surface);
         cut.rims.push(std::array::from_fn(|e| rim_kept[e].then(|| rim[e].clone())));

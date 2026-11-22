@@ -2271,13 +2271,25 @@ traced through there with no search (`depth::seams_through`), the runs an instan
 covers kept and ended at their corners where the covering instant reaches the roll's end
 (`depth::corner`), each with its partner on the covering sheet, as a double curve is laid
 (`swept_rings::the_full_turns_tube_passing_back_over_its_start_is_read_from_the_start_row`; 29 s,
-nearly all of it one long run). It is not yet entered: cut into the stretches with the double
-curves, the start torus closes and the end torus is refused next, at `(1.5930, 2.4883, −0.6496)`,
-its pieces' edges used three times about `(1.4737, 2.0732, −0.7994)`, and only with the run on the
-end tube's row at θ 0.48–1.17 (covered by the tube at τ ≈ −1.94…−2.09) left out — that run's
-partner ends on the end torus's trace across the mid-roll tube, a closed curve inside a face that
-`rings::traces` does not read (the meeting the trim's first round completes), and a face's walk
-(`pieces_of_square`) holds no piece with a hole. (The refusal names
+nearly all of it one long run). It is entered (`closed::ring_entered`), cut into the stretches
+with the double curves: the start torus closes, and the run on the end tube's row at θ 0.48–1.17
+(covered by the tube at τ ≈ −1.94…−2.09) has its partner end on the end torus's trace across the
+mid-roll tube, a closed curve inside a face. **A closed trace inside a face is read through a place
+the caller knows** (`rings::traces`' seeds): where a curve cut into the face ends inside it on the
+tool, settled onto the zero set and traced round until it closes on it. **A component of a face's
+chords touching no side is a hole** (`rings::with_holes`, `loops_of_square`): the planar graph's
+walks go round each piece with it on their left, so such a component is walked once clockwise
+round its outside, and that walk is given as an inner loop to the least counter-clockwise piece
+holding it; a piece touching no side is judged just left of its longest chord's middle (gated in
+`swept_rings::a_closed_chord_inside_a_faces_square_is_a_hole_in_the_piece_about_it` and
+`the_full_turns_tube_is_holed_where_the_end_torus_crosses_it`: the end torus's loop and the
+partner's chord bound the hole, the loop's inside and what the late tube covers beside it dropped).
+The trim's Boolean is then refused by the check: a double curve's edge where it runs into a fold
+at the cut where the contact changes shape (the roll 2.2318), merged from the stretch below the
+cut into the face above it, is inverted onto that face on the leaf past the fold, 1.3e-5 off at 5/8
+of it; the two stretches' drawings of the one curve part by 3.8e-4 along it there, both on the
+boundary to 7e-9 (carrying the face's own pcurve onto the merged edge, by its nearest points, held
+everywhere but beside that end). (The refusal names
 the start torus's piece: the tube is tangent to it along the rim, so the torus's point a hair across
 reads as on the kept tube.) The island's read point is uncovered, 0.122 clear
 of the end pose; the thin one beside the swallowtail point where its fold pair is born

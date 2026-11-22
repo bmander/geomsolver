@@ -8,15 +8,26 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A ring's tube cut where it passes back over itself, and holed where an end pose crosses it
+  inside a face** (#942, the full turn): `swept::closed::ring_entered` now enters
+  `depth::passed_back`'s runs with the fold pairs' double curves. `rings::traces` reads a closed
+  trace inside a face through a place the caller knows — where a curve cut into the face ends on
+  the tool inside it — and a face's pieces among its chords keep a component touching no side as a
+  hole (`rings::loops_of_square`, gated in
+  `swept_rings::a_closed_chord_inside_a_faces_square_is_a_hole_in_the_piece_about_it` and
+  `the_full_turns_tube_is_holed_where_the_end_torus_crosses_it`); a piece touching no side is judged
+  beside its longest chord. A chord cut at one of its own points no longer takes a step of no
+  length there. The full turn's trim is refused next by the check, at a double curve's edge merged
+  across the cut where the contact changes shape. Reading the end rows costs the half turn 7.5 s and
+  the thin torus 22 s, where they find nothing.
+
 - **Where a ring's sheet passes back over itself, read off the depth** (#942 T1d-tori, new
   `swept::depth::passed_back`, `seams_through`, `Seam::own`): over a whole turn the tube late in the
   roll sweeps across the tube where it began, a crossing no fold pair's double curve is. Each end row
   is read for where the far cover changes sign, the cover's boundary traced through there with no
   search (`zero_set::through`), and the runs an instant inside the roll covers kept, each ended at
   its corner on an end pose's trace and laid as a double curve is, with its partner
-  (`swept_rings::the_full_turns_tube_passing_back_over_its_start_is_read_from_the_start_row`). Not
-  yet entered by the road: one of the full turn's runs ends on a closed trace inside a face, which
-  `rings::traces` does not read.
+  (`swept_rings::the_full_turns_tube_passing_back_over_its_start_is_read_from_the_start_row`).
 
 - **Two given curves one operand holds as edges cross on a face of another at a vertex they
   share** (#942 T1d-tori, `boolean`'s new step `given_crossings`): a sweep's sheet passing back over

@@ -588,11 +588,11 @@ fn seamed(field: &Covered,traced: &crate::zero_set::Traced<Cover>,within: f64,fe
 /// the covering instant's preimages (`Seam::own`, `Seam::partner`) — unless it is a double curve
 /// the road traced (`known`: every point within the feature of one of its points, the spacing below
 /// which a trace tells nothing apart). Where its cover passes to an end pose, a run ends at its
-/// corner on that pose's trace (`corner`). **Not yet entered by the road**: cut into the stretches
-/// with the double curves (`rings::cut_along`), the full turn's run through the start rim closes
-/// the start torus, but another, on the end tube's row at θ 0.48–1.17 covered by the tube at
+/// corner on that pose's trace (`corner`). Entered by the road (`closed::ring_entered`), cut into the
+/// stretches with the double curves (`rings::cut_along`): the full turn's run through the start rim
+/// closes the start torus, and another, on the end tube's row at θ 0.48–1.17 covered by the tube at
 /// τ ≈ −1.94…−2.09, has its partner end on the end torus's trace across that tube, a closed curve
-/// inside a face, which `rings::traces` does not read; and a face's walk holds no piece with a hole.
+/// inside a face — read through those ends (`rings::traces`' seeds), a hole in the face's piece.
 pub fn passed_back(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],known: &[Vec<(f64,f64,f64)>],tol: f64)
     -> Result<Vec<Vec<(f64,f64,f64)>>,Unbuilt> {
     use crate::util::space::distance;
