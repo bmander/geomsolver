@@ -2,7 +2,9 @@
 //! ring road traces read under `swept::depth::cover` — its points' far depth, the instant that covers
 //! them against the partner's — and the far cover read about each swallowtail point.
 //!
-//! `cargo run --release -p cad-kernel --example depth_probe -- full-turn|half-turn|thin [curves|apex|map θ0 θ1 t0 t1 n|point x,y,z]`
+//! `cargo run --release -p cad-kernel --example depth_probe -- full-turn|half-turn|thin [curves|apex|map θ0 θ1 t0 t1 n|point x,y,z|sliver t…]`
+//! (`sliver`: at each roll, each narrow pair's folds, how far apart, and how deep the sweep holds
+//! the leaf between them — over the roll, and by the instants beside its own)
 use cad_kernel::swept::depth::{Reading,cover,far_depth,label_at,sheet};
 use cad_kernel::trajectory::{Screw,Trajectory};
 
@@ -81,6 +83,62 @@ fn main() {
             for &j in order.iter().take(4) { println!("a least of the depth {:+.3e} at {:.7}",ds[j],ts[j]) }
             for own in [roll[0],roll[1]] {
                 println!("as a point of the pose at {own}: {:?}",cover(&ring,&path,roll,x,own,0.,tol));
+            }
+            return
+        }
+        "sliver" => {
+            // at each roll given, each narrow pair's bridge: its angles, and the pair's sliver — the
+            // angles between its folds (`s''` below nought), the folds' distance apart in space, and
+            // how far the leaf between them stands from the chord joining them
+            for t in args[2..].iter().map(|v| v.parse::<f64>().unwrap()) {
+                let pieces = cad_kernel::swept::rings::pieces_at(&ring,&path,[t,roll[1]],t).unwrap();
+                for (ci,c) in pieces.iter().enumerate() {
+                    for &(from,to,l,side) in c {
+                        if side != cad_kernel::swept::rings::Side::Fold { continue }
+                        let n = 4000;
+                        let pts: Vec<(f64,[f64;3],f64)> = (0..=n).filter_map(|k| {
+                            let th = from+(to-from)*k as f64/n as f64;
+                            sheet(&ring,&path,roll,th,t,l).map(|(x,b)| (th,x,b))
+                        }).collect();
+                        let neg: Vec<&(f64,[f64;3],f64)> = pts.iter().filter(|p| p.2 < 0.).collect();
+                        let (Some(f0),Some(f1)) = (neg.first(),neg.last()) else { println!("t {t}: curve {ci} bridge [{from:.6}, {to:.6}], no fold"); continue };
+                        let chord = cad_kernel::util::space::sub(f1.1,f0.1);
+                        let len = cad_kernel::util::space::norm(chord);
+                        let off = neg.iter().map(|p| {
+                            let d = cad_kernel::util::space::sub(p.1,f0.1);
+                            let along = if len > 0. { cad_kernel::util::space::dot(d,chord)/len } else { 0. };
+                            (cad_kernel::util::space::dot(d,d)-along*along).max(0.).sqrt()
+                        }).fold(0f64,f64::max);
+                        println!("t {t}: curve {ci} bridge [{from:.6}, {to:.6}]; folds at {:.7} and {:.7} ({:.2e} apart), {:.3e} apart in space, the leaf {off:.3e} off their chord",
+                            f0.0,f1.0,f1.0-f0.0,len);
+                        // the sweep's depth at the leaf's points between the folds: the least over
+                        // the roll of the tool's signed distance (its own instant nought), read at
+                        // a twenty-thousandth of it about the instant and settled by golden sections
+                        let held = |x: [f64;3]| {
+                            let d = |tau: f64| cad_kernel::swept::depth::depths(&ring,&path,x,&[tau])[0];
+                            let n = 20_000;
+                            let ts: Vec<f64> = (0..=n).map(|k| roll[0]+(roll[1]-roll[0])*k as f64/n as f64).collect();
+                            let ds = cad_kernel::swept::depth::depths(&ring,&path,x,&ts);
+                            let k = (0..=n).min_by(|&i,&j| ds[i].total_cmp(&ds[j])).unwrap();
+                            let (mut lo,mut hi) = (ts[k.saturating_sub(1)],ts[(k+1).min(n)]);
+                            let g = 0.5*(5f64.sqrt()-1.);
+                            for _ in 0..80 { let (x1,x2) = (hi-g*(hi-lo),lo+g*(hi-lo)); if d(x1) < d(x2) { hi = x2 } else { lo = x1 } }
+                            let m = 0.5*(lo+hi);
+                            (d(m).min(ds[k]),m)
+                        };
+                        let deepest = neg.iter().step_by((neg.len()/16).max(1)).map(|p| { let (h,at) = held(p.1); (h,p.0,at) })
+                            .min_by(|a,b| a.0.total_cmp(&b.0)).unwrap();
+                        println!("    between the folds held {:.3e} deep at its deepest (θ {:.6}, by the pose at {:.7})",deepest.0,deepest.1,deepest.2);
+                        // and by the instants beside its own alone, within a hundredth of the roll
+                        // of it: the fold's own thickness
+                        let near = |x: [f64;3]| {
+                            let ts: Vec<f64> = (0..=4000).map(|k| t-0.01+0.02*k as f64/4000.).collect();
+                            cad_kernel::swept::depth::depths(&ring,&path,x,&ts).into_iter().fold(f64::INFINITY,f64::min)
+                        };
+                        let thick = neg.iter().map(|p| (near(p.1),p.0)).min_by(|a,b| a.0.total_cmp(&b.0)).unwrap();
+                        println!("    held by its neighbours {:.3e} deep at its deepest (θ {:.6})",thick.0,thick.1);
+                    }
+                }
             }
             return
         }

@@ -2221,13 +2221,8 @@ found by search seeded where an edge crosses it, misses an arc between those poi
 crosses (at `(2.356, 2.693, −0.273)`, the surfaces crossing at a sine of 0.6; the touches 0.15 off,
 the sine below 4e-3); the thin one beside the swallowtail point where its fold pair is born
 (above: its two tubes' meeting at under a hundredth of a degree was a seed off the other tube, no
-root); the half turn — its double curve built
-from the swallowtail point beside its pair's birth, cut into its three stretches and its tail
-dropped — where the trim finds the boundary open along an edge 8e-4 from the swallowtail point:
-along the kernel through it the sheet moves at the third order, the segment from the point back to
-the cut standing within some 1e-5 of the point's place, and the seam of the bridge between the cut
-and the point crosses it there 1.7e-6 from it (the tolerance 3.2e-6), so a sliver of the kept leaf
-between the double curve and that seam is narrower than the tolerance. A double curve's
+root). (The half turn, refused here where the trim found the boundary open 8e-4 from its
+swallowtail point, is built: its pair parted at the point, below.) A double curve's
 points are placed on a stretch by the seams' angles of the stretch's own net (`rings::cut_along`),
 not by an instant read for each (#942 F4: the turned torus refused in 32 s where it took 106, 74 of
 them reading instants; the thin one in 58 s where it took over forty minutes); what is left is the
@@ -2253,11 +2248,31 @@ instant's preimages `(θ′, τ, σ′)` where `τ` is inside the roll — `Seam
 stretches. On the half turn it traces the double curve from the cut where the pair is born to where
 the end pose covers it, one piece rim to rim, each partner point covered at its own point's instant
 (`swept_depth::the_cover_s_boundary_traced_from_the_depth_is_the_half_turn_s_double_curve`, 4 s).
-The half turn's refusal is no missing seam: the cut is where the pair's least `s''` passes nought,
+The half turn's refusal was no missing seam: the cut is where the pair's least `s''` passes nought,
 to 3e-7 of the roll; the band its far cover holds deeper than the tolerance before the cut is
 bounded by the double curve; and from its swallowtail point to where it crosses the cut the double
-curve stands 0.2e-6 to 3.03e-6 from the cut's contact in space (the tolerance 3.2e-6), so the
-arrangement cuts the cut's edge at the swallowtail point and leaves edges used four to six times.
+curve stood 0.2e-6 to 3.03e-6 from the cut's contact in space (the tolerance 3.2e-6), so the
+arrangement cut the cut's edge at the swallowtail point and left edges used four to six times.
+**A fold pair born partway is parted at its swallowtail point, not its birth** (#942 T1d-tori,
+`closed::ring_fitted`, `rings::fitted_unborn`): the birth's row is a construction line, the double
+curve geometry, and the line is moved off it. Where the stretch holding a swallowtail point begins at
+the cut where its pair is born (the stretch before has fewer bridges), the two are fitted as one up to
+the point, the pair read as not yet born — the stretch's pieces those at its start, and an instant
+whose shape is not theirs read with no narrow pair put in, one touching piece across the bridge,
+the folds check passing over the newborn pair's bridge as over any bridge — and the rest as one from
+the point; the row there crosses the double curve only where it ends. The sheet over the bridge is
+the sheet itself, folded back between the folds as a bridge's is, and that sliver lies wholly in the
+tail above the double curve, which the trim drops: at eight rolls between the half turn's birth and
+its point and 64 places across each bridge, every place between the folds (360) is held by a later
+instant (to 2.3e-4 deep) and every place the tail rule keeps is held no deeper than the rounding
+(`swept_depth::the_half_turns_fold_pair_bounds_nothing_the_trim_keeps_before_its_swallowtail_point`).
+The fold itself, held by the instants beside its own, is 4.9e-7 to 1.6e-6 thick there (`depth_probe
+sliver`), under the tolerance. A stretch whose start has another pair as well as the newborn one is
+refused as before (read unborn, both are gone and its shape is not its start's). brep-bench's
+`tumbling-torus-half-turn` is built, checked and judged as the bench calls it: 20 faces, volume
+12.2377154 (cadrs 12.2377), held to membership, 8 s in the test profile
+(`swept_rings::the_half_turn_is_built_closed`). A Monte Carlo count of the definition read 12.198 ±
+0.021, 1.9 of its deviations below.
 
 **A seam's crossing within the tolerance band of the rim is the tube's vertex** (`rings::traces`):
 where a touching piece's rim meets a dipped one's the relative curvature across the rim is nought

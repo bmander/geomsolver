@@ -1246,14 +1246,38 @@ pub fn ring_fitted(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64)
     // to itself along the crease — each stretch about it refitted in two)
     let apexes: Vec<f64> = curves.iter().flat_map(|c| c.iter().skip_while(|p| !p.0.is_nan()).skip(1).map(|p| p.1))
         .filter(|t| t.is_finite() && *t > a && *t < b).collect();
+    // **a pair born within a stretch is parted at its swallowtail point, not its birth** (#942
+    // T1d-tori): the birth's row is a construction line, and the double curve, which begins at the
+    // swallowtail point and runs back below it in the roll, stands within the tolerance of the
+    // birth's contact for a stretch of it (the half turn's 0.2e-6 to 3.03e-6 from the point down to
+    // where it crosses that row, over 8.6e-4 of it; the tolerance 3.2e-6), which no arrangement parts
+    // a face along. So where the stretch holding the point begins at the cut where its pair is born —
+    // the stretch before has fewer bridges — the two are one stretch up to the point, fitted with the
+    // pair read as not yet born (`rings::fitted_unborn`), and the rest one from it: the row there
+    // crosses the double curve only where it ends. Between the birth and the point the pair's sliver
+    // — the sheet folded back between its folds — lies wholly above the double curve, in the tail a
+    // later instant holds (the half turn's to 2.3e-4 deep), and the tail rule drops it: entered as
+    // one touching piece, it bounds nothing kept (gated in `swept_depth`, the sweep's depth read at
+    // every place of the bridges between birth and point)
+    let bridges = |f: &super::rings::Fitted| f.sides.iter().flatten().filter(|s| **s == super::rings::Side::Fold).count();
+    let mut parted = 0;
     for &t in &apexes {
         let Some(k) = fits.iter().position(|f| f.roll[0] < t && f.roll[1] > t) else { continue };
         let [lo,hi] = fits[k].roll;
-        let parts = [[lo,t],[t,hi]].map(|sp| super::rings::fitted_over(&ring,path,[a,b],sp,scale,K2_FIT*tol));
-        let [p0,p1] = parts;
-        fits.splice(k..=k,[p0?,p1?]);
+        if k > 0 && bridges(&fits[k-1]) < bridges(&fits[k]) {
+            let from = fits[k-1].roll[0];
+            let before = super::rings::fitted_unborn(&ring,path,[a,b],[from,t],scale,K2_FIT*tol,from)?;
+            let after = super::rings::fitted_over(&ring,path,[a,b],[t,hi],scale,K2_FIT*tol)?;
+            if crate::debug() { eprintln!("ring: a pair born at {} parted at its swallowtail point {t} instead",0.5*(fits[k-1].roll[1]+lo)) }
+            fits.splice(k-1..=k,[before,after]);
+        } else {
+            let parts = [[lo,t],[t,hi]].map(|sp| super::rings::fitted_over(&ring,path,[a,b],sp,scale,K2_FIT*tol));
+            let [p0,p1] = parts;
+            fits.splice(k..=k,[p0?,p1?]);
+        }
+        parted += 1;
     }
-    phase(&format!("{} stretches refitted about swallowtail points",2*apexes.len()));
+    phase(&format!("{parted} stretches parted at swallowtail points"));
     Ok((ring,scale,fits,curves,!cuts.is_empty()))
 }
 
