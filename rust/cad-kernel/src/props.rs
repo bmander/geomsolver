@@ -449,6 +449,13 @@ impl<'a> Iso<'a> {
 /// this angle (its cosine) of its first, so within twice it of the span's own chord.
 const SPAN_COS: f64 = 0.9659258262890683;
 
+/// Whether `integrated` reads `crossings` of use `c` on surface `s`: its use's parameters at
+/// sixteenths of its span are then read, where its face's box reads eighths.
+fn sixteenths(c: &super::topo::Coedge,e: &super::topo::Edge,s: &Surface) -> bool {
+    matches!(s,Surface::BSpline(..) | Surface::Torus(..) | Surface::Cone(..)) && !matches!(c.pcurve,Pcurve::Line {..})
+        && !matches!(e.curve,EdgeCurve::Degenerate) && !matches!((&e.curve,&c.pcurve),(EdgeCurve::Curve(Curve::Traced(_)),Pcurve::Inverse {..}))
+}
+
 /// **`∫ f(uv, uv') dt` along a traced edge inverted onto `surface`** (#798), `f` given the edge's
 /// parameters on the face and their rate. Green's integral does not depend on how its curve is
 /// parameterised, only on the curve, so it is read not by the edge's own parameter — which counts
@@ -673,7 +680,9 @@ impl<'a> Closed<'a> {
 /// rule's points need not meet), and cut only where it crosses a net's crease — a knot line of
 /// multiplicity the degree, the net joined in value only — where `g`, and so `G`, *jump* by
 /// `X · (S_u × ΔS_v)`, which no rule settles: in closed form, its parameter affine in the edge's.
-fn crossings(c: &super::topo::Coedge,e: &super::topo::Edge,s: &Surface,vertices: &[super::topo::Vertex]) -> Vec<f64> {
+/// `uvs` are the use's parameters at its sixteenths (`sixteenths`), read by the caller once for
+/// this and for the face's box.
+fn crossings(c: &super::topo::Coedge,e: &super::topo::Edge,s: &Surface,vertices: &[super::topo::Vertex],uvs: &[Uv]) -> Vec<f64> {
     // the values of parameter `k` in `[a, b]` the integrand kinks at
     let kinks = |k: usize,a: f64,b: f64| -> Vec<f64> {
         match *s {
@@ -716,7 +725,7 @@ fn crossings(c: &super::topo::Coedge,e: &super::topo::Edge,s: &Surface,vertices:
     let n = 16;
     let at = |t: f64| c.pcurve.at(t,e,s,vertices);
     let ts: Vec<f64> = (0..=n).map(|j| e.t[0]+(e.t[1]-e.t[0])*j as f64/n as f64).collect();
-    let uvs: Vec<Uv> = ts.iter().map(|&t| at(t)).collect();
+    if uvs.len() != ts.len() { return vec![] }
     let mut out = Vec::new();
     // (and on a net, where its normal turns over between two points of the use — its area factor
     // `|S_u × S_v|` through nought, a kink: a spindle torus's net crossing its axis, whose rows there
@@ -858,10 +867,15 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
         // (the least ratio of each derivative's length to the other's on the boundary: a sheet's
         // row or column all but collapsed there, a pole in all but name)
         let mut thin = [f64::INFINITY;2];
-        for c in f.loops.iter().flatten() {
+        // (each use's parameters at sixteenths of its span where `crossings` reads them, the
+        // box their even ones, at eighths otherwise: the same parameters)
+        let uvs: Vec<Vec<Vec<Uv>>> = f.loops.iter().map(|l| l.iter().map(|c| {
             let e = &b.edges[c.edge as usize];
-            for j in 0..=8 {
-                let q = c.pcurve.at(e.t[0]+(e.t[1]-e.t[0])*j as f64/8.,e,s,&b.vertices);
+            let n = if sixteenths(c,e,s) { 16 } else { 8 };
+            (0..=n).map(|j| c.pcurve.at(e.t[0]+(e.t[1]-e.t[0])*j as f64/n as f64,e,s,&b.vertices)).collect()
+        }).collect()).collect();
+        for at in uvs.iter().flatten() {
+            for &q in at.iter().step_by(if at.len() == 17 { 2 } else { 1 }) {
                 for k in 0..2 { lo[k] = lo[k].min(q[k]); hi[k] = hi[k].max(q[k]); }
                 folds |= sheet && s.area_factor(q) < ON_FOLD;
                 if matches!(s,Surface::BSpline(..)) {
@@ -951,9 +965,9 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
             (corners.iter().map(|&[u,v]| big_g(u,v).abs()).fold(0.,f64::max)*(hi[other]-lo[other]),size)
         } else { (0.,0.) };
         let floor = |tol: f64| scale*if size > 0. { (1e-4*tol/size).max(1e-13) } else { 1e-13 };
-        for l in &f.loops {
+        for (l,uvs) in f.loops.iter().zip(&uvs) {
             let mut row: Vec<(f64,f64)> = Vec::new();
-            for c in l {
+            for (c,uvs) in l.iter().zip(uvs) {
                 let e = &b.edges[c.edge as usize];
                 // a pole's degenerate edge counts by its line in the face's parameters: along `u` (a
                 // sphere's, a cone's) nothing in dv but its du, along `v` (a spline's collapsed row,
@@ -985,7 +999,7 @@ fn integrated(b: &Brep,f: &Face,what: What) -> Vec<Vec<(f64,f64)>> {
                 // where the edge's curve or its curve in the face's parameters may jump in a derivative
                 let mut breaks = if let EdgeCurve::Curve(c) = &e.curve { c.breaks(e.t) } else { vec![] };
                 if let Pcurve::Curve(p) = &c.pcurve { breaks.extend(p.breaks(e.t)); }
-                breaks.extend(crossings(c,e,s,&b.vertices));
+                breaks.extend(crossings(c,e,s,&b.vertices,uvs));
                 breaks.sort_by(f64::total_cmp);
                 breaks.dedup();
                 let line = if !breaks.is_empty() {
