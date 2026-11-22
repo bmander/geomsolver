@@ -993,6 +993,17 @@ fn band(st: &Setting,s: &Surface,periods: [Option<f64>;2],reversed: bool,(la,wa,
         l[i..].iter().map(|c| Coedge {pcurve:moved(&c.pcurve,dd),..c.clone()})
             .chain(l[..i].iter().map(|c| Coedge {pcurve:moved(&c.pcurve,late),..c.clone()})).collect()
     };
+    // on a surface closed round the other parameter too (a torus's band round its axis), how far
+    // the second loop is moved round it, by whole periods, from `y` where it meets the seam at
+    // `ya` on the first: onto the side of the first the face lies, its left as it runs (its right
+    // where the face's sense turns the surface's normal) — the seam then across the face and not
+    // round the rest of the tube, which the walks' branches, each its own, settle nothing of
+    let lift = |ya: f64,y: f64| -> f64 {
+        let Some(q) = periods[1-k] else { return 0. };
+        let left = wa.turn.signum()*if k == 0 { 1. } else { -1. }*if reversed { -1. } else { 1. };
+        let n = if left > 0. { ((ya-y)/q).floor()+1. } else { ((ya-y)/q).ceil()-1. };
+        if ((y-ya)/q-((y-ya)/q).round()).abs() <= 1e-12 { 0. } else { n*q }
+    };
     // the seam from `qa` (the first loop's vertex `va`) to `y` along the other parameter, at
     // vertex `vb`, and the loop joined round the second loop's uses `second`
     let join = |qa: Uv,va: u32,y: f64,vb: u32,first: Vec<Coedge>,second: Vec<Coedge>| -> Option<(Vec<Coedge>,Edge)> {
@@ -1013,9 +1024,13 @@ fn band(st: &Setting,s: &Surface,periods: [Option<f64>;2],reversed: bool,(la,wa,
             let mut at = qa;
             at[1-k] = qb[1-k];
             if distance(s.point(at),b.vertices[vb as usize].p) > st.within.max(b.vertices[vb as usize].tol) { continue }
-            if !clear(qa[k],qa[1-k],qb[1-k]) { continue }
-            let second = from(lb,ib,wb.turn,((qa[k]+wa.turn-qb[k])/p).round()*p);
-            let (lp,edge) = join(qa,va,qb[1-k],vb,from(la,ia,wa.turn,0.),second)?;
+            let up = lift(qa[1-k],qb[1-k]);
+            if !clear(qa[k],qa[1-k],qb[1-k]+up) { continue }
+            let mut second = from(lb,ib,wb.turn,((qa[k]+wa.turn-qb[k])/p).round()*p);
+            let mut dy = [0.;2];
+            dy[1-k] = up;
+            if up != 0. { for c in &mut second { c.pcurve = moved(&c.pcurve,dy); } }
+            let (lp,edge) = join(qa,va,qb[1-k]+up,vb,from(la,ia,wa.turn,0.),second)?;
             return Some(Joined {lp,laid:vec![edge],vertex:None,cut:None})
         }
     }
@@ -1039,7 +1054,8 @@ fn band(st: &Setting,s: &Surface,periods: [Option<f64>;2],reversed: bool,(la,wa,
             let t = 0.5*(lo+hi);
             if !(t > e.t[0] && t < e.t[1]) { continue }
             let m = g(t);
-            if !clear(qa[k],qa[1-k],m[1-k]) { continue }
+            let up = lift(qa[1-k],m[1-k]);
+            if !clear(qa[k],qa[1-k],m[1-k]+up) { continue }
             // the use's pieces before and after the cut along the loop; the far piece laid
             let (near,far) = cut_pcurve(&c.pcurve,m);
             let (piece0,piece1) = (Coedge {edge:ei as u32,reversed:rev,pcurve:near},Coedge {edge:laid-1,reversed:rev,pcurve:far});
@@ -1052,7 +1068,10 @@ fn band(st: &Setting,s: &Surface,periods: [Option<f64>;2],reversed: bool,(la,wa,
             second.extend(from(lb,j+1,0.,d).into_iter().take(lb.len()-j-1));
             second.extend(lb[..j].iter().map(|c| Coedge {pcurve:moved(&c.pcurve,late),..c.clone()}));
             second.push(Coedge {pcurve:moved(&before.pcurve,late),..before});
-            let Some((lp,edge)) = join(qa,va,m[1-k],pole,from(la,ia,wa.turn,0.),second) else { continue };
+            let mut dy = [0.;2];
+            dy[1-k] = up;
+            if up != 0. { for c in &mut second { c.pcurve = moved(&c.pcurve,dy); } }
+            let Some((lp,edge)) = join(qa,va,m[1-k]+up,pole,from(la,ia,wa.turn,0.),second) else { continue };
             let piece = Edge {curve:e.curve.clone(),t:[t,e.t[1]],v:[pole,e.v[1]],tol:0.};
             return Some(Joined {lp,laid:vec![edge,piece],vertex:Some(e.point(t,&b.vertices)),cut:Some(Cut {edge:ei,t,vertex:pole,laid:laid-1})})
         }
