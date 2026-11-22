@@ -73,6 +73,25 @@ fn rods_resting_on_one_another_or_apart_meet_in_no_curve() {
     assert!(matches!(intersect(&side(&a),&side(&b),TOL),Ssi::Curves(c) if c.len() == 2));
 }
 
+/// **Where two rods resting on one another lean too little to rest at a point** (`ssi::apart`):
+/// not at a degree, `SHALLOW`, as a rule of their own had it, but where the touch is no longer
+/// alone over its radius `2 SHALLOW (r + s) / sin² θ` — the rods part only linearly past
+/// `(r + s) / sin θ`, slower than its second order says from `2√2 (r + s) / sin θ` on — so at
+/// `sin θ = SHALLOW / √2`, 0.71°, whatever the radii: at 0.8° no curve, at 0.6° left to the trace.
+#[test]
+fn rods_rest_at_a_point_from_a_lean_of_shallow_over_root_two() {
+    use gcs_core::brep::ssi::{intersect,Ssi};
+    for (r,s) in RADII {
+        for (lean,alone) in [(0.8,true),(0.6,false)] {
+            let (a,b) = rods(r,s,[-3.,3.],[-3.,3.],lean,r+s);
+            for (x,y) in [(side(&a),side(&b)),(side(&b),side(&a))] {
+                let met = intersect(&x,&y,TOL);
+                assert_eq!(met == Ssi::Curves(vec![]),alone,"{r} on {s} at {lean}°: {met:?}");
+            }
+        }
+    }
+}
+
 #[test]
 fn rods_resting_on_one_another_are_their_own_volumes_under_every_boolean() {
     for (r,s) in RADII {

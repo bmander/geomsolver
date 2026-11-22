@@ -14,7 +14,7 @@
 //! such a pair is the operands' own volumes, the same pairs sunk into one another still cross, and
 //! a touch whose `Q` is indefinite still starts the curves through it.
 use gcs_core::brep::boolean::{boolean,Op};
-use gcs_core::brep::build::{cone,prism,sphere,torus,Profile,ProfileEdge};
+use gcs_core::brep::build::{block,cone,prism,sphere,torus,Profile,ProfileEdge};
 use gcs_core::brep::geom::{Frame,V};
 use gcs_core::brep::props::volume;
 use gcs_core::brep::topo::Brep;
@@ -144,6 +144,79 @@ fn a_ball_clear_of_a_cylinder_or_a_torus_meets_it_in_no_curve() {
     }
     // centred on the tube's axis, it meets it in circles, read about the axis as before
     assert!(matches!(intersect(&ball([0.,0.,1.],6.),&tube,TOL),Ssi::Curves(c) if c.len() == 2));
+}
+
+/// A ring of radius 8 and tube 1, its axis leaning `lean` degrees from z toward x, standing `sink`
+/// into the plane `z = 0` from above (`up`) or below: at no sink it rests on the plane at the one
+/// point under the lowest of its core circle, `(8 cos lean, 0, 0)`, where its centre is
+/// `8 sin lean + 1` from the plane.
+fn ring_on_plane(lean: f64,sink: f64,up: bool) -> Brep {
+    let (s,c) = lean.to_radians().sin_cos();
+    let side = if up { 1. } else { -1. };
+    torus([0.,0.,side*(8.*s+1.-sink)],[s,0.,side*c],8.,1.).unwrap()
+}
+
+#[test]
+fn a_ring_resting_aslant_on_a_plane_meets_it_in_no_curve() {
+    // the least distance of a plane and a torus in closed form (`ssi::apart`): resting, resting
+    // within the tolerance either way and clear meet in no curve, where before the pair was traced;
+    // sunk a hundredth they cross; and all but level, the two stand within the tolerance round
+    // an arc of the ring, a touch along a curve, never no curve
+    use gcs_core::brep::ssi::{intersect,Ssi};
+    let side = |b: &Brep,kind: &str| b.faces.iter().find(|f| f.surface.kind() == kind).unwrap().surface.clone();
+    // the plate's top, the plane z = 0
+    let top = block([-12.,-12.,-2.],[12.,12.,0.]).unwrap().faces.iter().map(|f| f.surface.clone())
+        .find(|s| s.kind() == "plane" && s.implicit([3.,4.,0.]).abs() <= 1e-12).unwrap();
+    for lean in [15.,30.,60.] {
+        for up in [true,false] {
+            for sink in [0.,0.5*TOL,-0.5*TOL,-1e-3,-1.] {
+                let ring = side(&ring_on_plane(lean,sink,up),"torus");
+                for (x,y) in [(top.clone(),ring.clone()),(ring.clone(),top.clone())] {
+                    assert_eq!(intersect(&x,&y,TOL),Ssi::Curves(vec![]),"a ring at {lean}°, {sink}, {up}");
+                }
+            }
+            let ring = side(&ring_on_plane(lean,1e-2,up),"torus");
+            assert_eq!(intersect(&top,&ring,TOL),Ssi::Traced,"a ring at {lean}° sunk in");
+        }
+    }
+    let ring = side(&ring_on_plane(1e-6,0.,true),"torus");
+    assert_ne!(intersect(&top,&ring,TOL),Ssi::Curves(vec![]),"a ring all but level on the plane");
+}
+
+#[test]
+fn a_ring_resting_aslant_on_a_plate_is_its_own_volume_under_every_boolean() {
+    let plate = block([-12.,-12.,-2.],[12.,12.,0.]).unwrap();
+    let (vp,vr) = (24.*24.*2.,2.*PI*PI*8.);
+    for lean in [15.,30.,60.] {
+        let ring = ring_on_plane(lean,0.,true);
+        let what = format!("a ring at {lean}° on a plate");
+        let [ab,ba] = booleans(&ring,&plate,&what);
+        let bar = 1e-9*(vp+vr);
+        for ([u,c,k],vx) in [(ab,vr),(ba,vp)] {
+            assert!((u-(vp+vr)).abs() <= bar,"{what}: union {u}");
+            assert!((c-vx).abs() <= bar,"{what}: cut {c} against {vx}");
+            assert!(k.abs() <= bar,"{what}: common {k}");
+        }
+    }
+}
+
+#[test]
+fn a_ball_a_hair_off_a_tubes_axis_is_never_read_as_meeting_it_in_no_curve() {
+    // a ball inside a tube of 5, its centre `e` off the axis and its radius `5 − e`: it touches the
+    // tube at one point, and stands within `2 e` of it all round the circle there — within the
+    // tolerance round the whole circle at `e = 2 tol`, a touch along a curve the closed form of
+    // their distance does not read as a point (before: no curve, the centre being off the axis by
+    // more than the tolerance); a millimetre off, the touch is a point, and the meeting none
+    use gcs_core::brep::ssi::{intersect,Ssi};
+    let side = |b: &Brep,kind: &str| b.faces.iter().find(|f| f.surface.kind() == kind).unwrap().surface.clone();
+    let tube = side(&rod([0.;3],[0.,0.,1.],5.,10.),"cylinder");
+    for (e,point) in [(2.*TOL,false),(10.*TOL,false),(1.,true)] {
+        let ball = side(&sphere([e,0.,0.],[0.,0.,1.],5.-e).unwrap(),"sphere");
+        for (x,y) in [(ball.clone(),tube.clone()),(tube.clone(),ball.clone())] {
+            let met = intersect(&x,&y,TOL);
+            assert_eq!(met == Ssi::Curves(vec![]),point,"a ball {e} off the axis: {met:?}");
+        }
+    }
 }
 
 /// **The document**: a hoop resting on a beam — a torus of tube `m` and radius `big` turned from

@@ -8,6 +8,18 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Two surfaces clear of one another, or resting on one another at a point alone, meet in no
+  curve by one rule** (#994): `ssi::apart` reads their least distance in closed form where it has
+  one (`ssi::least`: two cylinders leaning apart, a sphere and a plane, cylinder, sphere or torus,
+  and — new — a plane and a torus), and where it is within the tolerance asks the touch there the
+  question an arrangement asks a resting touch (`ssi::touch` definite, `ssi::alone_over`),
+  replacing `ssi::rods_apart` and `ssi::ball_clear` (below), each a rule of its own: the rods'
+  lean bound, borrowed from `SHALLOW`, now follows from the touch's own radius (`sin θ ≥
+  SHALLOW / √2`), and a ball a hair off a tube's axis — within the tolerance of it round a whole
+  circle — is no longer read as meeting it in no curve. A ring resting aslant on a plane meets it
+  in no curve in closed form, where it was traced. The plane–sphere arm `intersect` never reached
+  (the two meet about the sphere's own axis) is gone.
+
 - **A span of a meeting along a face's boundary is a rule of tolerant topology**
   (`tolerant::along_boundary`, `tolerant::ALONG`, new), and whether the edge it lies along was laid
   in the other face is phase 1's answer (`Meets::Along`), looked up, where it was read again from

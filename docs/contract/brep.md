@@ -1104,21 +1104,45 @@ and the cone its generator turns into about an axis along its own; a ball centre
 middle circle with its tube's radius lies in its solid and touches it round the meridian through
 its centre — where they were traced and refused as nearly touching
 (`swept_closed::round_tools_turned_part_of_a_turn_sweep_their_sections_by_pappus`). **Two
-cylinders whose axes lean apart and stand the sum of their radii apart meet in no curve** (#994
-item 5, `ssi::rods_apart`): each bounds a convex rod, the plane square to the axes' common normal
-between them keeps one rod on each side, and at the sum within the tolerance the two rest on one
-another at the one point where both touch it — read, as a ball resting on a plane is, as meeting in
-no curve, and never traced; farther apart they are clear in closed form. Traced, the search for a
+surfaces clear of one another, or resting on one another at a point alone, meet in no curve — one
+rule, whatever their kinds** (#994 item 5, `ssi::apart`): where their least distance, signed (less
+than nothing where they cross by so much), is more than the tolerance they are clear; within it
+either way they meet at most about the pair of points it is reached at, and the touch there is
+their whole meeting where it is alone by the very rule an arrangement reads a resting touch by
+(`ssi::touch` definite, and `ssi::alone_over` over its radius, below) — read, as a ball resting on
+a plane is, as meeting in no curve, and never traced. What is kind by kind is only the closed form
+of the least distance and where it is reached (`ssi::least`): two cylinders whose axes lean apart,
+the axes' gap less both radii (each bounds a convex rod, and the plane square to their common
+normal between them keeps one on each side); a sphere and a plane, a cylinder, a sphere or a torus,
+whose signed distance is the distance itself, that distance from the centre less the radius (it
+changes by no more than the distance moved, so nothing of the surface is nearer the centre); a
+plane and a torus, the core circle's least height less the tube's radius. Traced, the search for a
 meeting no edge crosses found a point beside the touch, the second-order reading took it as a touch
 alone only where its disc is small beside both faces, and the trace from it gave nothing (a blanket
 round over a clevis's top: "a cylinder and a cylinder meet at …, where no edge crosses, in a curve
-that could not be traced"). Only at a lean of `SHALLOW` (a degree) or more: the two stand within
-the tolerance over an ellipse about the touch `√(2 tol (r + s)) / sin θ` long, which at a lean of a
-millionth is the part's length, a touch along a curve the meeting's ridges read
-(`meeting::marched`) and the faces tangent there are laid along. Nearer, they cross and are traced
-as before (`cylinders_touching`: radii from 1 on 2 to 0.5 on 20 and of one radius, leans from 90°
-to 2°, whole or ending at the touch, each Boolean the rods' own volumes; under a degree left to the
-trace; sunk a tenth, still crossing). **Two cylinders whose axes lean apart meet in a graph over the
+that could not be traced"). **How far a near-touch may spread is derived, not borrowed**: the two
+stand within the tolerance over an ellipse about the touch `√(2 tol / λ)` long (`λ` the least size
+of their relative curvature: for rods leaning `θ`, `sin² θ / (r + s)`, the ellipse
+`√(2 tol (r + s)) / sin θ`), which at a lean of a millionth is the part's length, a touch along a
+curve the meeting's ridges read (`meeting::marched`) and the faces tangent there are laid along.
+`alone_over` holds the touch's distance to its second order out to its radius `2 SHALLOW / λ`, and
+two rods part only linearly past `(r + s) / sin θ` — slower than the second order says from
+`2√2 (r + s) / sin θ` on — so they rest alone exactly where `sin θ ≥ SHALLOW / √2` (0.71°),
+whatever their radii; where `λ` is too small beside the larger curvature to read (`touch`'s `1e-6`)
+there is no point touch at all. Before, two rods were read by a rule of their own, at a lean of
+`SHALLOW` (a degree, the sine below which a trace is ill-conditioned) or more, and a ball by one of
+its own, against a cylinder or a torus off their axes and core circle by more than the tolerance —
+so a ball `2 tol` off a tube's axis, within the tolerance of it round the whole circle, met it in no
+curve. Nearer, or sunk in, they cross and are traced as before (`cylinders_touching`: radii from 1
+on 2 to 0.5 on 20 and of one radius, leans from 90° to 2°, whole or ending at the touch, each
+Boolean the rods' own volumes; 0.5° and under left to the trace; sunk a tenth, still crossing;
+`resting_touches::a_ring_resting_aslant_on_a_plane_meets_it_in_no_curve`, a ring leaning 15° to
+60° on a plane or under it — resting, within the tolerance either way, and clear — in no curve,
+where it was traced, sunk a hundredth traced, all but level never no curve;
+`a_ring_resting_aslant_on_a_plate_is_its_own_volume_under_every_boolean`, built before by the
+general method and now in closed form; and
+`a_ball_a_hair_off_a_tubes_axis_is_never_read_as_meeting_it_in_no_curve`). **Two cylinders whose
+axes lean apart meet in a graph over the
 lesser's angle** (#994, fixture 146; `ssi::crossed_cylinders`, `cylinder_loops`): its point at angle
 `u` round the lesser is on the other where a quadratic in the height along the lesser's axis holds,
 whose roots `h± = (−B ± √D) / A` are the two branches. Three bands, for axes crossing (or passing a
@@ -1162,9 +1186,9 @@ against a rod, two vaults' crown) is two branches crossing at the point, which t
 from, as before. An edge whose search is refused where a surface of its own rests on the other (a
 blend's seam circle through the point where a torus rests on the blend) meets it there alone within
 the touch's radius, shown alone over it (`ssi::alone_over`), a touch, the rest of its stretch searched either side (`boolean::resting_on`). And in
-closed form, a ball whose centre stands its radius or more from a cylinder or a torus — their signed
-distances change by no more than the distance moved — meets it in no curve, off their axes and the
-torus's core circle (`ssi::ball_clear`). The gates are `resting_touches`: rods across and at 60°, a
+closed form, a ball whose centre stands its radius or more from a cylinder or a torus meets it in no
+curve where its touch is alone, by the one rule above (`ssi::apart`). The gates are
+`resting_touches`: rods across and at 60°, a
 ring and a ball resting on an R20 cylinder, an R20 torus and a frustum's side, every Boolean either
 way the operands' own volumes (read the old way, six of the twelve refused: "nearly touching",
 "a cylinder's pieces do not close", a seam circle "not proved"); the same sunk a tenth still

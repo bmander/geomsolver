@@ -1,12 +1,12 @@
 //! Where two surfaces meet, in closed form where it has one: two planes in a line; surfaces of
 //! revolution about one axis (a plane square to it, a cylinder, a cone, a sphere centred on it, a
 //! torus, a spline turned) in circles, found where their meridians cross in one half-plane; a plane and a cylinder
-//! in lines or an ellipse; a plane and a sphere in a circle; parallel cylinders in lines, and two
-//! leaning apart that cross nowhere or rest on one another in no curve (`rods_apart`); a
-//! spline extruded and a plane or a cylinder running its way in lines, and a cone about a line its
-//! way in the spline carried onto the cone (`extruded`). The rest is left to be traced
-//! (`Ssi::Traced`) from seeds, and between analytic surfaces a curve no seed reaches is searched
-//! for (`unseen`).
+//! in lines or an ellipse; a plane and a sphere in a circle; parallel cylinders in lines; any two
+//! whose least distance has a closed form, clear of one another or resting on one another at a
+//! point alone, in no curve (`apart`); a spline extruded and a plane or a cylinder running its way
+//! in lines, and a cone about a line its way in the spline carried onto the cone (`extruded`). The
+//! rest is left to be traced (`Ssi::Traced`) from seeds, and between analytic surfaces a curve no
+//! seed reaches is searched for (`unseen`).
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use super::geom::{Carry,Curve,Frame,Rigid,Surface,V};
@@ -630,16 +630,6 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             let sides: &[f64] = if big.abs() <= tol { &[0.] } else { &[1.,-1.] };
             Ssi::Curves(sides.iter().map(|&k| Curve::Circle(Frame::new(add(t.o,scale(w,k*big.abs())),pl.z,w),small.abs())).collect())
         }
-        (Surface::Plane(_),Surface::Sphere(..)) | (Surface::Sphere(..),Surface::Plane(_)) => {
-            let (pl,sp) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
-            let Surface::Sphere(c,r) = sp else { unreachable!() };
-            let dist = dot(pl.z,sub(c.o,pl.o));
-            // touching at a point, by the gap (the circle's radius is its square root)
-            let plane2::Chord::Cross(rho) = plane2::chord(dist,r,plane2::Touch::Gap(tol)) else {
-                return Ssi::Curves(vec![])
-            };
-            Ssi::Curves(vec![Curve::Circle(Frame::new(sub(c.o,scale(pl.z,dist)),pl.z,pl.x),rho)])
-        }
         (Surface::Plane(_),Surface::Cone(..)) | (Surface::Cone(..),Surface::Plane(_)) => {
             let (pl,co) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
             let Surface::Cone(c,r,half) = co else { unreachable!() };
@@ -746,11 +736,9 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             // turns into about an axis along its own, #721 X6); traced otherwise
             match parallel_touch(a,b,tol) { Some(line) => Ssi::Curves(vec![line]),None => Ssi::Traced }
         }
-        // two rods whose axes lean apart, clear of one another or resting on one another at a
-        // point: no curve (`rods_apart`)
-        (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) if rods_apart(&f,r,&g,s,tol) => Ssi::Curves(vec![]),
-        // a ball clear of a cylinder or a torus, or resting on it at a point: no curve (`ball_clear`)
-        (Surface::Sphere(c,r),ref x) | (ref x,Surface::Sphere(c,r)) if ball_clear(c.o,r,x,tol) => Ssi::Curves(vec![]),
+        // two surfaces clear of one another, or resting on one another at a point alone, whose
+        // least distance has a closed form: no curve (`apart`)
+        _ if apart(a,b,tol) => Ssi::Curves(vec![]),
         // two cylinders whose axes lean apart: of one radius with axes crossing, within the reach of
         // the singular case, two ellipses; else their loops, each point on both (`crossed_cylinders`)
         (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) if let Some(curves) = crossed_cylinders(a,&f,r,b,&g,s,tol) =>
@@ -1068,27 +1056,83 @@ fn radius_at(s: &Surface,h: f64) -> Option<f64> {
     }
 }
 
-/// **Two cylinders whose axes lean apart meet in no curve** where the axes stand at least the sum
-/// of their radii apart, less `tol` (#994): each cylinder bounds a convex rod, and the plane
-/// square to the common normal of the two axes, between them, keeps one rod on each side of it —
-/// a gap between the rods, or, at the sum within `tol`, the one point where both touch that plane
-/// (a rod resting across another, a round's cylinder resting on a blend of another radius where
-/// both are tangent to one face). Their meeting there is that point alone, as a ball's resting on
-/// a plane is (`plane2::Touch::Gap`), and no curve is traced through it — no trace can follow a
-/// meeting that is one point (`cylinders_touching`). Nearer than that the two cross in a quartic
-/// (`crossed_cylinders`; of one radius with axes crossing, `intersect`'s two ellipses).
-///
-/// **Only where the axes lean apart by `SHALLOW` or more.** Resting on one another, the two stand
-/// within `tol` over an ellipse about the touch whose long axis is `√(2 tol (r + s)) / sin θ`, `θ`
-/// their lean: at a lean of a degree or more a point at the tolerance's scale, as a ball's on a
-/// plane is, but at a lean of a millionth a stretch the length of the part, along which the two
-/// touch as two parallel rods do along a line, a touch along a curve the meeting's ridges read
-/// (`meeting::marched`) and the faces lying tangent there are laid along, which no curve would
-/// leave out.
-fn rods_apart(f: &Frame,r: f64,g: &Frame,s: f64,tol: f64) -> bool {
-    let n = cross(unit(f.z),unit(g.z));
-    if !(norm(n) >= SHALLOW) { return false }
-    dot(sub(g.o,f.o),unit(n)).abs() >= r.abs()+s.abs()-tol
+/// **Two surfaces meet in no curve where they stand clear of one another, or rest on one another
+/// at a point alone** (#994): where their least distance — signed, less than nothing where they
+/// cross — is more than `tol`, they are clear; within `tol` either way, they meet at most about
+/// the pair of points it is reached at, and the touch there is their whole meeting where it is
+/// alone by the one rule an arrangement reads a resting touch by (`touch` definite, and
+/// `alone_over`: its higher orders keep it so over the radius within which the two stand nearer
+/// parallel than a trace can follow); past `tol` into one another they cross, and are read on.
+/// What decides is the geometry any two surfaces have — their least distance, and how the set
+/// within the tolerance of the touch spreads — read at the point a closed form of that distance
+/// gives (`least`), the one thing that is kind by kind. So a rod resting across another, a ball
+/// on a cylinder or a torus or inside either, and a ring resting on a plane aslant meet in no
+/// curve and are never traced; and where the set within `tol` of the touch reaches out along a
+/// stretch — two rods leaning under `SHALLOW / √2` (at a lean `θ` the touch's radius is
+/// `2 SHALLOW (r + s) / sin² θ` and the rods part only linearly past `(r + s) / sin θ`, slower
+/// than its second order says from `2√2 (r + s) / sin θ` on), a ball a hair off a tube's axis, a
+/// ring all but level on a plane — it is not, and the meeting is read as a touch along a curve.
+fn apart(a: &Surface,b: &Surface,tol: f64) -> bool {
+    let Some((gap,[a,b],p)) = least(a,b) else { return false };
+    if gap > tol { return true }
+    if gap < -tol { return false }
+    touch(a,b,p).is_some_and(|t| alone_over(a,b,&t))
+}
+
+/// **The least distance between two surfaces, in closed form where it has one**: the distance,
+/// less than nothing where they cross by so much, the two in the order it is read (`[a, b]`), and
+/// the point of `a` it is reached at. Two cylinders whose axes lean apart: the axes' gap less both
+/// radii, at the foot of their common normal on the lesser — each bounds a convex rod, and the
+/// plane square to that normal between them keeps one on each side. A sphere and a surface whose
+/// signed distance (`Surface::implicit`) is the distance itself — a plane, a cylinder, a sphere,
+/// a torus — that distance from the centre, unsigned, less the radius, at its foot on the surface:
+/// a signed distance changes by no more than the distance moved and is nothing on the surface, so
+/// no point of the surface is nearer the centre than it says. A plane and a torus: the core
+/// circle's least height over the plane less the tube's radius, below its lowest point — none
+/// where the core circle crosses the plane. `None` for any other pair. (A ball reaching past the
+/// surface is less than nothing apart by how far it reaches, whether or not the surface crosses its
+/// sphere: a torus inside a ball may lie wholly within it, and is read on.)
+fn least<'s>(a: &'s Surface,b: &'s Surface) -> Option<(f64,[&'s Surface;2],V)> {
+    match (a,b) {
+        (Surface::Cylinder(f,r),Surface::Cylinder(g,s)) => {
+            let ((x,f,r),(y,g,s)) = if r.abs() <= s.abs() { ((a,f,r.abs()),(b,g,s.abs())) }
+                else { ((b,g,s.abs()),(a,f,r.abs())) };
+            let (za,zb) = (unit(f.z),unit(g.z));
+            let n = cross(za,zb);
+            if !(norm(n) > 1e-12) { return None }
+            let n = unit(n);
+            let w = sub(g.o,f.o);
+            let apart = dot(w,n);
+            // the foot of the common normal on the first's axis, and its point toward the other
+            let (k,d1,d2) = (dot(za,zb),dot(za,w),dot(zb,w));
+            let foot = add(f.o,scale(za,(d1-k*d2)/(1.-k*k)));
+            Some((apart.abs()-r-s,[x,y],add(foot,scale(n,r*apart.signum()))))
+        }
+        (Surface::Sphere(c,r),x @ (Surface::Plane(_) | Surface::Cylinder(..) | Surface::Sphere(..)
+            | Surface::Torus(..)))
+            | (x @ (Surface::Plane(_) | Surface::Cylinder(..) | Surface::Torus(..)),Surface::Sphere(c,r)) => {
+            let ball = if std::ptr::eq(x,a) { b } else { a };
+            let d = x.implicit(c.o);
+            Some((d.abs()-r.abs(),[x,ball],sub(c.o,scale(unit(x.gradient(c.o)),d))))
+        }
+        (Surface::Plane(pl),Surface::Torus(t,big,small))
+            | (Surface::Torus(t,big,small),Surface::Plane(pl)) => {
+            let plane = if matches!(a,Surface::Plane(_)) { a } else { b };
+            let torus = if std::ptr::eq(plane,a) { b } else { a };
+            let n = unit(pl.z);
+            let z = unit(t.z);
+            let level = dot(n,sub(t.o,pl.o));
+            let across = sub(n,scale(z,dot(n,z)));
+            let reach = big.abs()*norm(across);
+            if !(level.abs() > reach) { return None }
+            // the core circle's point nearest the plane, and the plane's point under it
+            let low = if norm(across) > 0. { sub(t.o,scale(unit(across),big.abs()*level.signum())) }
+                else { t.o };
+            let under = sub(low,scale(n,dot(n,sub(low,pl.o))));
+            Some((level.abs()-reach-small.abs(),[plane,torus],under))
+        }
+        _ => None,
+    }
 }
 
 /// **Where two cylinders whose axes lean apart meet, in closed form** (#994, fixture 146): the
@@ -1250,25 +1294,6 @@ impl crate::util::isolate::Formula for Discriminant {
         let cc = c[0]*c[0]+c[1]*c[1]+c[2]*c[2]-cw*cw-Jet::of(self.s*self.s);
         bb*bb-cc.times(self.aa)
     }
-}
-
-/// **A ball meets a cylinder or a torus in no curve** where its centre stands at least its radius
-/// from it, less `tol` (#994): their signed distances (`Surface::implicit`, `ρ − r` and
-/// `√((ρ − R)² + z²) − r`) change by no more than the distance moved and are nothing on the
-/// surface, so no point of the surface is nearer the centre than the distance read there, and the
-/// ball touches it at most where its sphere reaches that far — a point, but where the centre stands
-/// on the cylinder's axis, the torus's axis or its core circle (each read before, in circles about
-/// the axis or `ball_in_tube`), where it is a circle. Off those by more than `tol`, the touch is
-/// one point, or none: a ball resting on a ring, a cylinder, beside or inside it.
-fn ball_clear(c: V,r: f64,x: &Surface,tol: f64) -> bool {
-    let [lx,ly,lz] = x.frame().local(c);
-    let rho = lx.dhypot(ly);
-    let off = match *x {
-        Surface::Cylinder(..) => rho > tol,
-        Surface::Torus(_,big,_) => rho > tol && (rho-big).dhypot(lz) > tol,
-        _ => false,
-    };
-    off && x.implicit(c).abs() >= r.abs()-tol
 }
 
 /// **The line two cylinders or cones with parallel axes touch along**, where they do: at two
