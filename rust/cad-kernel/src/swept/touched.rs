@@ -73,6 +73,37 @@ fn contact(torus: &Torus,m: &crate::trajectory::Motion,theta: f64,a: f64,p: f64)
     }
 }
 
+/// `contact` and its rate by `ψ` off the meridian `θ`, for Newton's steps.
+fn contact_d(torus: &Torus,m: &crate::trajectory::Motion,theta: f64,a: f64,p: f64) -> (f64,f64) {
+    let [x,n,..] = torus.at(a,p);
+    let f = &torus.f;
+    let er = add(scale(f.x,a.cos()),scale(f.y,a.sin()));
+    let np = add(scale(er,-p.sin()),scale(f.z,p.cos()));
+    let v = m.velocity(x);
+    let nw = m.vector(n);
+    let s = (a-theta).sin();
+    let dv = crate::util::space::sub(m.velocity(add(x,scale(np,torus.small))),v);
+    (dot(nw,v)/s,(dot(m.vector(np),v)+dot(nw,dv))/s)
+}
+
+/// The contact's root off the meridian from `guess`: Newton's steps while each is under half the
+/// last, to where a step no longer moves it; the bracket's search (`root`) where they do not settle.
+fn contact_root(torus: &Torus,m: &crate::trajectory::Motion,theta: f64,a: f64,guess: f64) -> Option<f64> {
+    let mut p = guess;
+    let mut last = f64::INFINITY;
+    loop {
+        let (g,dg) = contact_d(torus,m,theta,a,p);
+        let step = g/dg;
+        if !(step.abs() < 0.5*last) { break }
+        let q = p-step;
+        if q == p { return Some(p) }
+        last = step.abs();
+        p = q;
+    }
+    if last <= 4.*f64::EPSILON*(1.+p.abs()) { return Some(p) }
+    root(&|q| contact(torus,m,theta,a,q),guess)
+}
+
 /// The root of `g` nearest `guess`: a bracket widened from a 64th of a turn about it (the scan the
 /// meridian's roots are first read at) until `g` changes sign, then halved to the rounding.
 fn root(g: &dyn Fn(f64) -> f64,guess: f64) -> Option<f64> {
@@ -140,14 +171,12 @@ fn fitted(columns: &[&dyn Fn(f64,&[f64]) -> Result<Vec<V>,Unbuilt>],us: &mut [Ve
             let poles: Vec<Vec<V>> = (0..cols[0].poles.len()).map(|i| cols.iter().map(|c| c.poles[i]).collect()).collect();
             let net = Net {du:cols[0].degree,dv:rows[0].degree,uknots:cols[0].knots.clone(),vknots:rows[0].knots.clone(),poles,weights:None};
             let mut split_u = vec![false;u.len()-1];
-            let mut worst = (0f64,0f64,0f64);
             // (a place halfway both ways off by more than `fit` splits the way its neighbours
             // halfway along one way say is off, both where neither is)
             let err: Vec<Vec<f64>> = vv.iter().enumerate().map(|(jj,&v)| uu.iter().enumerate()
                 .map(|(ii,&x)| if ii%2 == 0 && jj%2 == 0 { 0. } else { distance(net.point(x,v),grid[jj][ii]) }).collect()).collect();
             for jj in 0..vv.len() { for ii in 0..uu.len() {
                 let e = err[jj][ii];
-                if crate::debug() && e > worst.0 { worst = (e,uu[ii],vv[jj]) }
                 if !(e > fit) { continue }
                 match (ii%2,jj%2) {
                     (1,0) => split_u[ii/2] = true,
@@ -160,7 +189,6 @@ fn fitted(columns: &[&dyn Fn(f64,&[f64]) -> Result<Vec<V>,Unbuilt>],us: &mut [Ve
                     }
                 }
             } }
-            if crate::debug() { eprintln!("touched:   worst {worst:?}") }
             splits_u.push(split_u);
             nets.push(net);
         }
@@ -198,6 +226,8 @@ fn bspline(b: BSpline) -> Curve { Curve::BSpline(Arc::new(b)) }
 pub fn entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],looks: usize,bar: f64,fit: f64,tol: f64,blank: &Brep)
     -> Result<Option<Entered>,Unbuilt> {
     let ring = super::rings::Ring::read(tool)?;
+    let clock = crate::util::clock::Instant::now();
+    let lap = |what: &str| if crate::timing() { eprintln!("touched: {what} at {:?}",clock.elapsed()) };
     let touched: Vec<(f64,f64,usize)> = (0..=looks).map(|k| a+(b-a)*k as f64/looks as f64)
         .map(|t| Ok::<_,Unbuilt>((t,ring.touched_whole(&crate::trajectory::Twist::body(path.at(t)?)))))
         .filter_map(|r| match r { Ok((t,Some((theta,k)))) => Some(Ok((t,theta,k))),Ok(_) => None,Err(e) => Some(Err(e)) })
@@ -235,9 +265,12 @@ pub fn entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],looks: usize,bar: f6
     let on_meridian = |t: f64| -> Result<[f64;2],Unbuilt> {
         let m = motion(t)?;
         let p = parallels(&torus,&m,theta).ok_or_else(|| refused(path.pose(t).map_or(first,|p| p.point(torus.at(theta,0.)[0]))))?;
-        // (each branch the root nearest its start: the two stand half a turn apart)
-        let pick = |s: f64| { let d = |q: f64| (near(q,s)-s).abs(); if d(p[0]) <= d(p[1]) { near(p[0],s) } else { near(p[1],s) } };
-        Ok([pick(start[0]),pick(start[1])])
+        // (each branch the root nearest its start, the two taken by different branches: a parallel
+        // drifting a quarter turn from where it started is refused, not followed onto the other)
+        let pick = |s: f64| { let d = |q: f64| (near(q,s)-s).abs(); if d(p[0]) <= d(p[1]) { (0,near(p[0],s)) } else { (1,near(p[1],s)) } };
+        let ((i0,q0),(i1,q1)) = (pick(start[0]),pick(start[1]));
+        if i0 == i1 { return Err(refused(path.pose(t).map_or(first,|pose| pose.point(torus.at(theta,q0)[0])))) }
+        Ok([q0,q1])
     };
     // a leaf's points at one instant: branch `j`, on the side `side` of the meridian (+1 or −1),
     // at angles `us` from it, each root sought from the last
@@ -247,7 +280,7 @@ pub fn entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],looks: usize,bar: f6
         let mut p = on_meridian(t)?[j];
         us.iter().map(|&u| {
             let al = theta+side*u;
-            if u != 0. { p = root(&|q| contact(&torus,&m,theta,al,q),p).ok_or_else(|| refused(pose.point(torus.at(al,p)[0])))? }
+            if u != 0. { p = contact_root(&torus,&m,theta,al,p).ok_or_else(|| refused(pose.point(torus.at(al,p)[0])))? }
             Ok(pose.point(torus.at(al,p)[0]))
         }).collect()
     };
@@ -255,6 +288,7 @@ pub fn entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],looks: usize,bar: f6
     // a place is kept where nothing beyond its own instant holds it by more than the tolerance
     let kept = |x: V,t: f64| depth.cover(x,t).is_none_or(|c| c.depth >= -tol);
     let mid = 0.5*(a+b);
+    lap("the depth read");
     // **which leaf each branch keeps**: read halfway round to the equator, halfway along the roll
     let mut sides = [0f64;2];
     for j in 0..2 {
@@ -280,6 +314,7 @@ pub fn entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],looks: usize,bar: f6
         (0..=8).map(|i| i as f64/8.).collect()];
     let mut vs: Vec<f64> = (0..=16).map(|i| a+(b-a)*i as f64/16.).collect();
     let nets = fitted(&[&c0,&c1,&cs],&mut us,&mut vs,fit)?;
+    lap("the leaves and the strip fitted");
     // **each end piece of a leaf not kept**: from its rim at the end pose to where it crosses that
     // pose's tool again, read as a graph over the angle from the meridian
     let mut pieces: Vec<(usize,usize,Net)> = Vec::new();
@@ -291,7 +326,15 @@ pub fn entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],looks: usize,bar: f6
         let grain = super::closed::grain(tool,path,[a,b],bar)?;
         for j in 0..2 {
             let side = -sides[j];
-            let g = |u: f64,t: f64| leaf(j,side,t,&[u]).map(|x| torus.signed(back.point(x[0])));
+            // (the leaf's point near the end: its root sought from the branch's on the meridian there)
+            let rim = on_meridian(end)?[j];
+            let at = |u: f64,t: f64| -> Result<V,Unbuilt> {
+                let m = motion(t)?;
+                let al = theta+side*u;
+                let p = if u == 0. { rim } else { contact_root(&torus,&m,theta,al,rim).ok_or_else(|| refused(first))? };
+                Ok(path.pose(t)?.point(torus.at(al,p)[0]))
+            };
+            let g = |u: f64,t: f64| at(u,t).map(|x| torus.signed(back.point(x)));
             // where the leaf crosses the tool: the first place from the rim inside it, scanned at
             // the roll's grain, then the last outside before it halved toward the rim, then halved
             // (near the corner the crossing comes in linearly with the angle, `slope` read halfway
@@ -333,9 +376,12 @@ pub fn entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],looks: usize,bar: f6
                 let Some(tc) = crossing(u)? else { return Ok(f64::INFINITY) };
                 (1..8).map(|i| g(u,end+(tc-end)*i as f64/8.).map(f64::abs)).try_fold(0f64,|m,x| x.map(|x| m.max(x)))
             };
-            let (mut thin,mut thick_u) = (0.,0.25*PI);
+            let mut thick_u = 0.25*PI;
             if thick(thick_u)? <= fit { return Err(refused(leaf(j,side,tq,&[thick_u])?[0])) }
-            for _ in 0..64 {
+            // (halved toward the corner until it is thin, then halved between to an eighth of the way)
+            while thick(0.5*thick_u)? > fit { thick_u *= 0.5 }
+            let mut thin = 0.5*thick_u;
+            while thick_u-thin > 0.125*thick_u {
                 let m = 0.5*(thin+thick_u);
                 if thick(m)? <= fit { thin = m } else { thick_u = m }
             }
@@ -348,16 +394,15 @@ pub fn entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],looks: usize,bar: f6
             let crossing = |u: f64| -> Result<Option<f64>,Unbuilt> {
                 if u >= corner { return crossing(u) }
                 let t = model(u);
-                if !(g(u,t)?.abs() <= fit) { return Err(refused(leaf(j,side,t,&[u])?[0])) }
+                if !(g(u,t)?.abs() <= fit) { return Err(refused(at(u,t)?)) }
                 Ok(Some(t))
             };
             // kept halfway to the crossing, held just past it
-            let x = leaf(j,side,0.5*(end+tq),&[0.25*PI])?[0];
+            let x = at(0.25*PI,0.5*(end+tq))?;
             if !kept(x,0.5*(end+tq)) { continue }
             let column = |u: f64,ss: &[f64]| -> Result<Vec<V>,Unbuilt> {
                 let tc = crossing(u)?.ok_or_else(|| refused(leaf(j,side,end,&[u]).map_or(first,|x| x[0])))?;
-                if std::env::var_os("TOUCHED_TAU").is_some() && u < 3e-4 { eprintln!("tau {u:e} {:e}",tc-end) }
-                ss.iter().map(|&s| leaf(j,side,end+s*(tc-end),&[u]).map(|x| x[0])).collect()
+                ss.iter().map(|&s| at(u,end+s*(tc-end))).collect()
             };
             let mut uu = vec![(0..=8).map(|i| i as f64/8.).collect::<Vec<_>>()];
             let mut vv: Vec<f64> = (0..=8).map(|i| FRAC_PI_2*i as f64/8.).collect();
@@ -367,12 +412,13 @@ pub fn entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],looks: usize,bar: f6
                 let (s,u) = (0.05+0.9*i as f64/6.,FRAC_PI_2*(0.05+0.9*k as f64/6.));
                 let Some(tc) = crossing(u)? else { continue };
                 let t = end+s*(tc-end);
-                let x = leaf(j,side,t,&[u])?[0];
+                let x = at(u,t)?;
                 if within(x) && !kept(x,t) { return Err(refused(x)) }
             } }
             pieces.push((e,j,net));
         }
     }
+    lap("the end pieces fitted");
     // **every kept sheet read for depth**, inside and along its rims, and the equator and the far
     // meridian clear of the blank
     let read = |net: &Net,t_of: &dyn Fn(f64,f64) -> f64| -> Result<(),Unbuilt> {
@@ -394,6 +440,7 @@ pub fn entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],looks: usize,bar: f6
         let [[u0,u1],[_,v1]] = net.domain();
         for k in 0..=16 { let x = net.point(u0+(u1-u0)*k as f64/16.,v1); if within(x) { return Err(refused(x)) } }
     }
+    lap("the sheets read");
     // **the tool at either end**, its seam kept away from the rims laid on it
     let rims: [Vec<V>;2] = [0,1].map(|e| nets.iter().flat_map(|n| {
         let [[u0,u1],[v0,v1]] = n.domain();

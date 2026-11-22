@@ -2295,7 +2295,8 @@ K2 and the general road refuse it** (#942 T1d-ring, `closed::k2`): a tool of rev
 axis whose contact the road reads at the instants `rings::admits` asks is built on the ring road
 from `closed`/`cut_from`, judged as every road is, its own refusal standing where it cannot build
 it — the bench's ring along a spline, built by its runner through `cut_from`, ended at K2's
-`Curved` at the torus's rim, and is refused by name at its top meridian; any other tool keeps K2's
+`Curved` at the torus's rim, and was refused by name at its top meridian until the depth trim
+entered it (below); any other tool keeps K2's
 refusal (`swept_patches::a_tool_no_convex_revolution_under_any_motion_is_refused_by_name`'s ring,
 its two meridians square to the motion touched whole, is `Curved` so).
 
@@ -2316,8 +2317,49 @@ half held by no other basin at all, and the start pose keeping, besides the quad
 below the rim, a wedge in front of θ* beside the rim, held from beyond by tube 0 at an instant 0.12
 of its angle on, its width falling to nought at the corner — the corner one point all five pieces
 meet at (`swept_depth::a_rings_kept_pieces_bound_its_sweep_by_depth`,
-`swept_depth::the_start_wedges_seam_is_traced_into_its_corner_with_its_partner`). Not yet entered:
-the road still arranges whole tubes there and refuses by name.
+`swept_depth::the_start_wedges_seam_is_traced_into_its_corner_with_its_partner`).
+
+**A ring touching a meridian whole, entered by depth** (#942, the depth trim, `swept::touched`):
+cut from a blank its other whole-touched meridian sweeps clear of (`closed::ring_cut_from`, and so
+`cut_from`), a torus whose meridian the instants touch whole is entered over exactly what bounds
+its sweep, and never through the road's fitted tubes. There the contact off the meridian is one
+parallel each side, `n · v = 0` solved round the tube at each angle (divided by `sin(α − θ)`, its
+rate by `α` on the meridian itself), and each parallel's sheet folds exactly at the meridian — the
+road's reader labels a stretch 0.008 round it a fold by its `s''` threshold, `s''` being cubic
+there, which put one tube's touching faces on the wrong leaf and its kept leaf's edge 0.0114 off
+the strip's corner. Read for depth (`Depth::cover`, the roll sampled at the bar's grain — a cover
+whose basin is narrower than that can be missed, where a certified march along the roll could not):
+of each parallel's sheet one leaf is kept whole and taken from the meridian (its seam 6.9e-8 off
+the true edge of what is kept, against the bar); the meridian's half between the parallels that
+nothing beyond holds is the strip; and at each end of the roll the other leaf, where it stands
+outside every instant from its rim on the end pose's tool, is kept up to where it crosses that tool
+again (read as a graph over the angle: the crossing's partner is the end pose itself, measured at
+t = 0.01 – 0.05, so that curve is also the edge of the wedge the end pose keeps). Each is its own
+sheet over its closed form, fitted to `K2_FIT` of the tolerance: a leaf over the angle from the
+meridian to its equator and the roll, the strip over the fraction round the half and the roll —
+the leaves and the strip on one set of instants, so the strip's sides are the leaves' seams — and
+an end piece over the fraction from its rim to its crossing and the angle, its corner one point.
+Toward the corner the piece stands within the rounding of the tool all across and no sign places
+the crossing; below the angle where it stands within the fit of the tool all across, the crossing
+is taken on a quadratic in the angle through nought, each place of it held to the tool within the
+fit — where the seam lies there is the bar's question, its points on both faces the tolerance's.
+Every meeting is given: each sheet with the tool at either end in its rim, the strip with each leaf
+in its seam, an end piece with its tool in its rim and its crossing, and touching its leaf and the
+strip at its corner; so the arrangement seeks none between two sheets. Refused by name, `Curved`
+where it reads so, wherever this is not what depth says (the tool no torus, the far meridian or a
+leaf's equator in the blank, the contact not two parallels, a leaf kept on both sides or neither,
+any kept sheet's place held from beyond by more than the tolerance); with no blank, the road's
+refusal at a meridian touched whole stands. The bench's ring along a spline, its runner's frame,
+a bar of 0.005 and the tolerance of its size: built in 3.6 s (entered in 2.7 s, arranged in
+0.6 s), closed, volume 10696.461766 (the peer kernel's 10696.4618), five B-spline faces and the
+block's six planes, membership agreeing at seeded points over the groove and its volume counted
+by forty thousand of them within three standard errors
+(`swept_rings::a_ring_carried_along_a_spline_touching_its_meridians_whole_is_cut_from_a_block`,
+`swept_rings::the_rings_groove_counted_is_the_blocks_volume_less_the_cuts`). **Membership along a
+path that encloses nothing** (`Trajectory::General` whose `Path` gives no `stretch`, as the bench's
+runner's does) is read at the carried point's greatest sampled speed, `|v(M(t)⁻¹ x)|` over 4096
+equal steps, in place of a bound (`member::Swept::speed`): no proof, as the depth trim's own
+reading is none.
 
 **K2's patches: the closed class under any rigid motion (#780 L3, `brep::swept::patches`):** a
 sweep under a motion no constant twist takes, nor a path of pieces (`Trajectory::General`, a frame

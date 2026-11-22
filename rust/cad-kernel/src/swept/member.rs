@@ -22,6 +22,8 @@ use crate::util::space::{closest_on_triangle,cross,distance,dot,lerp,norm,sub};
 
 type V = [f64;3];
 
+/// The steps a path that encloses nothing is read at for its speed (`Swept::speed`): `closed::grain`'s.
+const SAMPLED: usize = 4096;
 /// The least stretch of the roll the bound halves to, as a part of the roll.
 const FINEST: f64 = 1e-9;
 /// The most stretches one point's test reads.
@@ -245,6 +247,28 @@ impl Swept<'_> {
         (0..3).any(|k| x[k] < l[k]-pad || x[k] > h[k]+pad)
     }
 
+    /// **How fast `x` carried back moves over the roll**: the trajectory's bound
+    /// (`Trajectory::inverse_point_speed_bound`) where it encloses its motion; where it is a path
+    /// read only by evaluating it (`Trajectory::General` whose `Path` gives no `stretch`, the bench's
+    /// runner's frame along its spline), the greatest of the carried point's own speed —
+    /// `|v(M(t)⁻¹ x)|`, the frame's velocity there — over `SAMPLED` equal steps of the roll. That is
+    /// no bound: membership along such a path is read as the depth trim reads it (#942), certain
+    /// only as far as the path's speed does not rise between two steps past the greatest read.
+    fn speed(&self,x: V,domain: Interval) -> Result<f64,Unsettled> {
+        if let Ok(s) = self.path.inverse_point_speed_bound(x,domain) { return Ok(s) }
+        let Trajectory::General(p) = self.path else { return Err(Unsettled::Unbounded) };
+        if p.stretch(domain.bounds()[0],domain.bounds()[1]).is_some() { return Err(Unsettled::Unbounded) }
+        let [a,b] = domain.bounds();
+        let mut most = 0f64;
+        for k in 0..=SAMPLED {
+            let t = a+(b-a)*k as f64/SAMPLED as f64;
+            let m = p.at(t).map_err(|e| Unsettled::Unread(e.msg))?;
+            let q = p.pose(t).map_err(|e| Unsettled::Unread(e.msg))?.inverse().point(x);
+            most = most.max(norm(m.velocity(q)));
+        }
+        if most.is_finite() { Ok(most) } else { Err(Unsettled::Unbounded) }
+    }
+
     /// **Whether `x` is in the swept solid**, or why that is not settled (`Unsettled`). A path of
     /// pieces (K1) is read piece by piece over the stretch of the roll each holds, the sweep of a
     /// path its pieces' sweeps united: a member of any is one, and it is settled out only where every
@@ -266,7 +290,7 @@ impl Swept<'_> {
         }
         let [a,b] = self.roll;
         let domain = Interval::new(a.min(b),a.max(b)).map_err(|_| Unsettled::Unbounded)?;
-        let speed = self.path.inverse_point_speed_bound(x,domain).map_err(|_| Unsettled::Unbounded)?;
+        let speed = self.speed(x,domain)?;
         let sag = self.tool.sag;
         let finest = FINEST*(b-a).abs().max(1e-300);
         // **best first** (#810): each stretch keyed by the least signed distance its parent's
@@ -325,7 +349,7 @@ impl Swept<'_> {
         }
         let [a,b] = self.roll;
         let domain = Interval::new(a.min(b),a.max(b)).map_err(|_| Unsettled::Unbounded)?;
-        let speed = self.path.inverse_point_speed_bound(x,domain).map_err(|_| Unsettled::Unbounded)?;
+        let speed = self.speed(x,domain)?;
         let sag = self.tool.sag;
         let mut frontier = std::collections::BinaryHeap::new();
         let mut pushed = 0u64;

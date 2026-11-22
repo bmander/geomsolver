@@ -339,32 +339,9 @@ fn along_a_spline() -> (Brep,Brep,Trajectory,f64) {
     (block,tool,path,1e-5)
 }
 
-/// **A ring carried along a spline touches its top and bottom meridians whole at every instant,
-/// and is refused by name** (#942 T1d-ring): along a path in a plane the torus's axis lies in, the
-/// velocity at each point of the meridian through the path's normal lies in the meridian's own
-/// plane, so `n · v` is nought all round it, at every instant. Each such meridian's sweep is a sheet
-/// of its own — at the bottom, the groove's floor, reaching 1.5 below the path where the deeper of
-/// the two contact curves' tubes reaches 1.098 — which no contact curve's tube holds: built from
-/// the tubes alone, the groove and the block beside it were one cell, and the block came back whole
-/// with two sheets in it. Refused at the first pose, at the top meridian's farthest point, before
-/// anything is fitted.
-#[test]
-fn a_ring_carried_along_a_spline_touching_its_meridians_whole_is_refused_by_name() {
-    let (block,tool,path,tol) = along_a_spline();
-    let ring = Ring::read(&tool).unwrap();
-    // the meridians touched whole at a pose: the top's and the bottom's, θ a quarter turn either way
-    // of the ring's first axis — its frame's `x` along `z` here, so read by the point it lifts
-    let w = gcs_core::brep::trajectory::Twist::body(path.at(0.37).unwrap());
-    let (theta,k) = ring.touched_whole(&w).expect("a meridian touched whole");
-    let top = ring.meridian_point(theta,k);
-    assert!((top[0].abs() < 1e-9 && top[1].abs() < 1e-9) && ((top[2]-2.5).abs() < 1e-9 || (top[2]+1.5).abs() < 1e-9),"{top:?}");
-    match gcs_core::brep::swept::closed::ring_cut_from(&block,&tool,&path,[0.,1.],0.01,tol) {
-        Err(Unbuilt::Curved {at}) => assert!(at[0].abs() < 1e-9 && at[1].abs() < 1e-9 && ((at[2]-2.5).abs() < 1e-9 || (at[2]+1.5).abs() < 1e-9),"{at:?}"),
-        other => panic!("{:?}",other.map(|b| gcs_core::brep::props::volume(&b))),
-    }
-    // and as the bench's runner builds it: `closed::cut_from` (K2 refusing a torus, the general road
-    // too, the ring road admitting it), the runner's own frame, a bar of 0.005, the tolerance of its
-    // size — refused so at once, where it ended at K2's `Curved` at the torus's rim
+/// The bench runner's frame along its cubic: its `x` along the curve's tangent, its `z` up; a path
+/// read only by evaluating it.
+fn runner() -> Trajectory {
     #[derive(Debug)]
     struct Runner(gcs_core::brep::nurbs::BSpline);
     impl gcs_core::brep::trajectory::Path for Runner {
@@ -379,12 +356,99 @@ fn a_ring_carried_along_a_spline_touching_its_meridians_whole_is_refused_by_name
         }
     }
     let curve = gcs_core::brep::nurbs::BSpline::new(3,vec![0.,0.,0.,0.,1.,1.,1.,1.],vec![[0.,0.,0.],[10.,0.,0.],[20.,20.,0.],[30.,20.,0.]]).unwrap();
-    let runner = Trajectory::General(std::sync::Arc::new(Runner(curve)));
-    let size = block.size().max(tool.size());
-    match gcs_core::brep::swept::closed::cut_from(&block,&tool,&runner,[0.,1.],0.005,gcs_core::brep::geom::tolerance(size)) {
+    Trajectory::General(std::sync::Arc::new(Runner(curve)))
+}
+
+/// The bench's ring along a spline as its runner builds it: `closed::cut_from`, the runner's own
+/// frame (its `x` along the curve's tangent, its `z` up), a bar of 0.005, the tolerance of its size;
+/// checked closed. The cut and its path.
+fn cut_by_the_runner() -> (Brep,Trajectory) {
+    let (block,tool,..) = along_a_spline();
+    let runner = runner();
+    let tol = gcs_core::brep::geom::tolerance(block.size().max(tool.size()));
+    let cut = gcs_core::brep::swept::closed::cut_from(&block,&tool,&runner,[0.,1.],0.005,tol).unwrap_or_else(|e| panic!("{e:?}"));
+    cut.check(tol).unwrap();
+    (cut,runner)
+}
+
+/// `n` seeded points over the box about the ring's groove read against the sweep's membership
+/// along the runner's frame: each settled point clear of the cut's boundary is a member exactly
+/// where the cut does not hold it (all of the box is in the block). Where `count` is given (the
+/// block's volume), the groove's volume — the box's share of members — is held within three
+/// standard errors of the block's less the cut's.
+fn groove_counted(cut: &Brep,n: usize,count: Option<f64>) {
+    let (_,tool,..) = along_a_spline();
+    let runner = runner();
+    let solid = gcs_core::brep::swept::member::Solid::new(&tool,0.002,1.).unwrap();
+    let swept = gcs_core::brep::swept::member::Swept {tool:&solid,path:&runner,roll:[0.,1.]};
+    let body = gcs_core::brep::swept::member::Solid::new(cut,0.002,1.).unwrap();
+    let (lo,hi) = ([-2.,-2.,-1.5],[32.,22.,0.]);
+    let mut rng = gcs_core::rng::Rng::new(9);
+    let (mut members,mut held) = (0usize,0usize);
+    for _ in 0..n {
+        let p: [f64;3] = std::array::from_fn(|k| rng.uniform(lo[k],hi[k]));
+        let Ok(member) = swept.member(p) else { continue };
+        held += 1;
+        if member { members += 1 }
+        let d = body.signed_distance(p);
+        if d.abs() < 0.01 { continue }
+        assert_eq!(member,d > 0.,"at {p:?}: membership {member}, the cut's distance {d}");
+    }
+    assert!(held+n/100 >= n,"{held} of {n} settled");
+    let Some(block) = count else { return };
+    let boxed = (0..3).map(|k| hi[k]-lo[k]).product::<f64>();
+    let f = members as f64/held as f64;
+    let (counted,error) = (boxed*f,boxed*(f*(1.-f)/held as f64).sqrt());
+    let groove = block-gcs_core::brep::props::volume(cut);
+    assert!((counted-groove).abs() <= 3.*error,"the groove counted {counted} ± {error}, against {groove}");
+    eprintln!("the groove counted {counted} ± {error}, against {groove}");
+}
+
+/// **The ring's groove counted** (#942, the depth trim): forty thousand seeded points over the box
+/// about the groove, each settled point a member of the sweep exactly where the cut does not hold
+/// it, the members' share of the box the groove's volume within three standard errors of the
+/// block's less the cut's.
+#[test]
+#[cfg_attr(not(feature = "slow"),ignore = "slow tier, about a minute: forty thousand points read for membership")]
+fn the_rings_groove_counted_is_the_blocks_volume_less_the_cuts() {
+    let (cut,_) = cut_by_the_runner();
+    groove_counted(&cut,40_000,Some(42.*32.*8.));
+}
+
+/// **A ring carried along a spline touches its top and bottom meridians whole at every instant,
+/// and is cut from a block as the bench builds it** (#942, the depth trim): along a path in a plane
+/// the torus's axis lies in, the velocity at each point of the meridian through the path's normal
+/// lies in the meridian's own plane, so `n · v` is nought all round it, at every instant. Its sweep
+/// is entered by depth (`swept::touched`): of each parallel's sheet the leaf depth keeps, cut at the
+/// meridian; the strip the bottom meridian's lower half sweeps; and where the roll starts and
+/// stops, the other leaf from its rim to where it crosses the tool again — every meeting given.
+/// Built through `closed::cut_from` with the runner's own frame, a bar of 0.005 and the tolerance
+/// of its size: closed, its volume 10696.461766 (the peer kernel's 10696.4618; the block alone is
+/// 10752), five B-spline faces and the block's six planes, and held to membership at points over
+/// the groove — each a member of the sweep exactly where it is in the block and not in the cut,
+/// and the groove's volume counted by them within three standard errors of the block's less the
+/// cut's. Without a blank to cut from it is still refused by name, at a meridian touched whole.
+#[test]
+fn a_ring_carried_along_a_spline_touching_its_meridians_whole_is_cut_from_a_block() {
+    let (block,tool,path,_) = along_a_spline();
+    let ring = Ring::read(&tool).unwrap();
+    // the meridians touched whole at a pose: the top's and the bottom's, θ a quarter turn either way
+    // of the ring's first axis — its frame's `x` along `z` here, so read by the point it lifts
+    let w = gcs_core::brep::trajectory::Twist::body(path.at(0.37).unwrap());
+    let (theta,k) = ring.touched_whole(&w).expect("a meridian touched whole");
+    let top = ring.meridian_point(theta,k);
+    assert!((top[0].abs() < 1e-9 && top[1].abs() < 1e-9) && ((top[2]-2.5).abs() < 1e-9 || (top[2]+1.5).abs() < 1e-9),"{top:?}");
+    // the closed sweep alone, no blank to cut it from: refused by name at a meridian touched whole
+    match gcs_core::brep::swept::closed::ring(&tool,&path,[0.,1.],0.01,1e-5) {
         Err(Unbuilt::Curved {at}) => assert!(at[0].abs() < 1e-9 && at[1].abs() < 1e-9 && ((at[2]-2.5).abs() < 1e-9 || (at[2]+1.5).abs() < 1e-9),"{at:?}"),
         other => panic!("{:?}",other.map(|b| gcs_core::brep::props::volume(&b))),
     }
+    let (cut,_) = cut_by_the_runner();
+    let v = gcs_core::brep::props::volume(&cut);
+    assert!((v-10696.461766).abs() < 1e-5,"volume {v}");
+    let kinds = |k: &str| cut.faces.iter().filter(|f| f.surface.kind() == k).count();
+    assert_eq!((kinds("bspline"),kinds("plane")),(5,6));
+    groove_counted(&cut,400,None);
     // a ring pushed in at a lean touches no meridian whole: its push leans to the meridians' planes
     let lean = 35f64.to_radians();
     let pushed = Ring::read(&gcs_core::brep::build::torus([0.,0.,4.],[lean.sin(),0.,lean.cos()],3.,1.).unwrap()).unwrap();
