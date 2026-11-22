@@ -937,3 +937,68 @@ fn a_band_round_a_torus_is_the_part_its_bounds_keep_left() {
         }
     }
 }
+
+/// An oblate spheroid — the ellipse of semi-axes 6 (along `x`) and 3 (along `z`) turned a whole
+/// turn about `z`, a surface covering each of its points twice, its normal turned on the second —
+/// as faces between meridians at the angles `cuts` (none: one face round a seam, kentron's), each
+/// face on its own surface of revolution, its profile's `x` direction `profile` (`-1.`: the same
+/// curve started half a turn on, the same surface) and of the sense `sense`.
+fn doubled(cuts: &[f64], profile: &[f64], sense: &[bool]) -> String {
+    let mut e = Ents::new();
+    let (bottom, top) = (e.vertex([0., 0., -3.]), e.vertex([0., 0., 3.]));
+    let mut meridian = |e: &mut Ents, phi: f64| {
+        let (x, z) = ([phi.cos(), phi.sin(), 0.], [phi.sin(), -phi.cos(), 0.]);
+        let a = e.place([0.; 3], z, x);
+        let c = e.add(format!("ELLIPSE('',#{a},6.,3.)"));
+        e.edge(bottom, top, c, true)
+    };
+    let edges: Vec<u32> = if cuts.is_empty() { vec![meridian(&mut e, 0.)] } else { cuts.iter().map(|&phi| meridian(&mut e, phi)).collect() };
+    let mut surface = |e: &mut Ents, sx: f64| {
+        let a = e.place([0.; 3], [0., -1., 0.], [sx, 0., 0.]);
+        let c = e.add(format!("ELLIPSE('',#{a},6.,3.)"));
+        let (o, z) = (e.point([0.; 3]), e.dir([0., 0., 1.]));
+        let axis = e.add(format!("AXIS1_PLACEMENT('',#{o},#{z})"));
+        e.add(format!("SURFACE_OF_REVOLUTION('',#{c},#{axis})"))
+    };
+    let n = edges.len();
+    // each face up its meridian and down the next one round (the cuts in decreasing angle: the face
+    // on the left of a meridian walked up lies toward the lesser angles)
+    let faces: Vec<u32> = (0..n).map(|k| {
+        let s = surface(&mut e, profile[k]);
+        e.face(&[(edges[k], true), (edges[(k + 1) % n], false)], false, s, sense[k])
+    }).collect();
+    e.file(&faces)
+}
+
+/// **A face on a surface covering its points twice is the one of its two readings the solid
+/// needs** (`topology::twice`; #993 stage 1). A whole ellipse turned a whole turn about an axis it
+/// is symmetric about covers each point of its spheroid twice, its normal turned on the second
+/// cover, so a face's sense says nothing of which way it faces and its bound reads two faces: the
+/// region on its left on one cover, the rest of the spheroid facing the other way on the other.
+/// The walk took whichever its first foot found: kentron's spheroid with its profile started half
+/// a turn on (the same surface) was refused inside out, and the spheroid cut by two meridians read
+/// as its small wedge twice, facing both ways — volume nought, read wrong. Each is the spheroid,
+/// each face its share of it, whatever each face's profile and sense.
+#[test]
+fn a_face_on_a_sheet_covering_its_points_twice_is_the_one_the_solid_needs() {
+    let (a, c) = (6f64, 3f64);
+    let e = (1. - c * c / (a * a)).sqrt();
+    let (v, s) = (4. / 3. * PI * a * a * c, TAU * a * a + PI * c * c / e * ((1. + e) / (1. - e)).ln());
+    for x in [1., -1.] { for sense in [true, false] {
+        // (one face round its seam: its sense, on such a surface, says nothing)
+        reads(&format!("a whole spheroid, profile x {x}, sense {sense}"), &doubled(&[], &[x], &[sense]), v, s, 1e-9);
+    } }
+    for (cuts, share) in [([0., -0.3], 0.3 / TAU), ([0., -1.], 1. / TAU)] {
+        for (px, py) in [(1., 1.), (1., -1.), (-1., 1.), (-1., -1.)] {
+            let what = format!("a spheroid cut at {cuts:?}, profiles {px} {py}");
+            let text = doubled(&cuts, &[px, py], &[true, true]);
+            reads(&what, &text, v, s, 1e-9);
+            let given = read(&text).unwrap();
+            let b = &given[0].brep;
+            // the wedge between the cuts (the first face, up the first cut and down the second)
+            // and the rest
+            close(&format!("{what}: the wedge"), area(b, &b.faces[0]), share * s, 1e-9);
+            close(&format!("{what}: the rest"), area(b, &b.faces[1]), (1. - share) * s, 1e-9);
+        }
+    }
+}
