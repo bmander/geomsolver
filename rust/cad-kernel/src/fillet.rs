@@ -1426,7 +1426,7 @@ fn holds_ball(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usiz
                 // band, how far that edge stands off the other face, and how far the ball touches)
                 let across = uses[e].iter().map(|u| u.0).find(|&f| f != fi).map(|f| b.faces[f].name.as_str());
                 let other = b.faces[sides_faces[o][0]].name.as_str();
-                let figure = |x: f64| { let p = 10f64.powi(6-x.abs().max(1e-300).log10().ceil() as i32); (x*p).round()/p };
+                let figure = |x: f64| crate::util::json::fmt_g(x,6);
                 return Err(match (band.deepest(gc,g.t,&skip),across) {
                     (Some((p,h,near)),Some(g)) => format!("the ball of {names}, of radius {}, is larger than `{}` can \
                         hold: `{}` ends at its edge with `{g}` {} off `{other}` at [{}, {}, {}], short of where the ball \
