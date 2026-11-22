@@ -459,15 +459,17 @@ every edge between them a seam or a crease convex from that side, and each face'
 every other's convex solid — one sheet (#994: a block's side flush with a deck's whose corner arc
 runs tangent into it is no sheet, the arc carried down through the block by its tangent planes
 where the block's side stands flat) — each face its own condition,
-its side carried on past its patch by its tangent planes at its seams (`BodyFaces::carried_side_grad`,
-the signed distance from the convex solid the patch and those planes bound), so the side is their
-common part and a point at least `d` inside it is at least `d` inside each — a pocket's walls
-seen from its air, a boss's from its material. **Past any edge but a seam a face's side is its own
-surface's** (#994): `F.smooth` is `F`'s side carried on across seams only, so past a crease or
-where another face cuts the face across, its whole surface's side goes on — an arm's rounded end
-half inside a hub, its cylinder carried past the hub's face by the plane tangent there, read the
-centres of a ball as wide as the end off its axis, the round a few tenths short of the ball beside
-the face (`tests/standing_ends.rs`). **Pieces of one plane are its half-space** (#994,
+its side carried on past its patch by its tangent planes at its seams
+(`BodyFaces::carried_side_grad`, the signed distance from the convex solid the patch and those
+planes bound), so the side is their common part and a point at least `d` inside it is at least `d`
+inside each — a pocket's walls seen from its air, a boss's from its material. **Past any edge but a
+seam a face's side is its own surface's** (#994): `F.smooth` is `F`'s side carried on across seams
+only, so past a crease or where another face cuts the face across, its whole surface's side goes on
+— an arm's rounded end half inside a hub, its cylinder carried past the hub's face by the plane
+tangent there, read the centres of a ball as wide as the end off its axis, the round a few tenths
+short of the ball beside the face (`tests/standing_ends.rs`). `BodyFaces::carried_past` carries the
+tangent plane past a seam only, a seam as near as the nearest edge (a patch's corner where a seam
+and a crease meet) still the one carried past. **Pieces of one plane are its half-space** (#994,
 `BodyFaces::bulging`): a face left in pieces by an operand crossing it (an arm's bottom either side
 of a hub) has no seam between its pieces, but is one plane's side, convex — read as no convex
 side, a projection onto it and a cylinder's offset as thin as a ball standing still alternated and
@@ -479,12 +481,12 @@ piece — each projection's active rows are chosen among every three (`project`)
 growing with the body made each reading of a round on that top cost the cube of the body's
 pockets (a plate of nine pockets rounded all over, the pockets' own edges first, built in a
 twentieth of the time, its volume the same to every digit); the rounds' gates are unchanged
-(`tests/tight_corners.rs`, `round_lowering`, `round_onto_round`). A torus's patch is so in a chain where it lies on
-the outer half of its tube with that side inside the tube, both its curvatures' centres there (a
-pocket's floor filled round its plan corners, seen from the air; `BodyFaces::outer_half`), never
-alone (its whole surface's side winds round the axis): a ball standing on a run's axis beside
-those stretches was read through the nearest face and the gate refused it
-(`round_onto_round::a_boss_across_a_trays_filled_wall_is_its_closed_form`).
+(`tests/tight_corners.rs`, `round_lowering`, `round_onto_round`). A torus's patch is so in a chain
+where it lies on the outer half of its tube with that side inside the tube, both its curvatures'
+centres there (a pocket's floor filled round its plan corners, seen from the air;
+`BodyFaces::outer_half`), never alone (its whole surface's side winds round the axis): a ball
+standing on a run's axis beside those stretches was read through the nearest face and the gate
+refused it (`round_onto_round::a_boss_across_a_trays_filled_wall_is_its_closed_form`).
 Read through the nearest face alone, a corner of the offset (an arc's offset closed onto its axis, a
 pocket's corner rounded to its own radius, or past it) is where the nearest face turns, and the
 steps never settled there. **A smooth chain turning both ways is read through its nearest face and
@@ -503,61 +505,60 @@ along the next face, read a ball's centre on that face's offset 1.35e-6 under th
 the face's own distance rounded a hair under it, past `nearest`'s bar: no centre, material read
 where the construction has none ("leaves out what the field reads beside its edge"); nothing
 past a seam into any other face (a reflex corner's arc or fill, whose
-tangent plane runs on through the pocket or the tab beyond it), which is nearer and says it; its
-tangent plane past any other edge only where the patch is nearer than the distance, and nothing
-where not.  A face whose box in space (`BodyFaces::patch_gap`), and every face it goes on into
-across a seam, is farther than twice the distance from the point says nothing without reading its
-patch
-(#994): where the set's point is, a face holding it back is within the distance, so the set is the
-same, and a chain grown with a body (a plate's top and its pockets' caps) is read only near the
-point. Each is under the distance only where the point is that near a patch of the chain, and
-every patch is of the chain's surface, so each says only what the distance from that surface says —
-however the nearest face is read, past the chain's rim too (`BodyFaces::nearest_face`, its nearest
-patch found among those whose box in space comes as near, `nearest_patch`, so a chain that grows
-with a body's pockets is measured where the point is, #994; a path's faces, caps taken in, read
-once a body, `BodyFaces::faces`) — and the
-points kept are the same; a chain that is no one sheet (`bulging`, a block's side flush with a
-deck's) is read this way as well; what the conditions add is every wall meeting at a corner of the
-offset in each step, where the closing axis (a floor or a rim rounded to a convex corner's own
-radius) is met as a corner of conditions, as in a convex chain. A condition holding with no gradient
-is no row of the step's program (`nearest`), so a step chooses among the faces near the point, not
-the whole chain. Read about the nearest face alone — that face and its bulging neighbours, slots
-changing with the face — a 56° corner as tight as the ball was still refused by the gate
-(`tests/tight_corners.rs`, six walls): which walls a step sees there hangs on which face the step
-stands nearest. A chain that bulges one way is read whole, as above. `tests/tight_corners.rs`,
-`tests/rim_over_rounds.rs` and `tests/rim_seams.rs` are the gate. **The steps stop at the first point keeping every condition
-where every condition is convex** (`Cond::convex`: a plane's side, a face's carried side held
-toward its solid): each step's linearisation then holds the whole set, so a point of it is the
-nearest; their own fixed point is not steady where a surface curves tightly about a point far
-off — a ball's centres a hair short of closing onto a corner's axis, seen from the corner, moved
-along it by the distance over the radius times any error in where the last step stood. A QP's
-active rows are chosen among every inequality, not the first ten (`project`).
-`tests/tight_corners.rs` is the gate. **Where the steps do not settle, the nearest point stood on
-that keeps every condition** (#994, `conditions::nearest`): a condition holding with no gradient is
-no row of a step, so a step from a point keeping it can land back where it fails, and the two
-alternate — a ball's centres beside a blend ended by a side an eye stands out past, the eye's patch
-beyond the blend's end holding a centre back only near it. The set was then read as empty, its
-distance past every number, so `Run` read every point there as one no ball covers. A point stood on
-that keeps every condition is of the set, and its distance no less than the nearest's; and where
-the conditions read where a step landed have no point in common (a chain read through another face
-a hair inside the body), the step is taken back half way, a few times, first. **A set stated as another's terms
-and more, measured less that one** (`d(p, E) − d(p, M)`, `E` within `M`: `std.rounds`' `rolled`
-within `centres`, [rounds.md](rounds.md); #994, `region::general`'s `measured`) is read as the
-distance from `M`'s point nearest `p` to `E`, at least the difference: nothing where that point is
-of `E` (a ball rolled along the edge), however each set's own nearest point is found, and nothing
-to say where `M`'s is found nowhere. Read as two projections, `E`'s a set of no inside — the
-centres of a ball touching both faces, two points where a boss crosses a filled edge — its own
-steps did not settle under a chain read through its faces' own surfaces past their creases (a
-fill's round cut across by the boss), and half the gate's probes of the boss's fill went wrong
-(`tests/round_onto_round.rs`). **A face
-standing between the point and the chain's nearest patch is gone round only where it bounds the
-chain nearer the point than any face not of the chain does** (#994, `BodyFaces::nearest_face`):
-past a band's floor's rim at its bowed side, the side bounds the clevis's eye 36 mm off at its far
-end, its own end and top nearer, so the floor's plane is read there, not the eye's cylinder, whose
-side, 36 off where the field is a hair past nothing, kept the gate's probe of the run's tangent line
-from being withdrawn ("disagrees with the field", `tests/resting_touches.rs`); a band's side on its
-plate bounds only faces of the chain, and reads as before (`tests/tapered_bands.rs`). `d(p, E) <= d(p, M)` with `E` on the
-patches of the faces `M` is on the surfaces of is read as `d(p, E) − d(p, rest)` (`Rest`: `M`'s
+tangent plane runs on through the pocket or the tab beyond it), which is nearer and says it; past
+any other edge — a crease, a face cutting it across — its own surface's side (`carried_past`
+carries a tangent plane past a seam only, below) only where the patch is nearer than the distance,
+and nothing where not. A face whose box in space (`BodyFaces::patch_gap`), and every face it goes on
+into across a seam, is farther than twice the distance from the point says nothing without reading
+its patch (#994): where the set's point is, a face holding it back is within the distance, so the
+set is the same, and a chain grown with a body (a plate's top and its pockets' caps) is read only
+near the point. Each is under the distance only where the point is that near a patch of the chain,
+and every patch is of the chain's surface, so each says only what the distance from that surface
+says — however the nearest face is read, past the chain's rim too (`BodyFaces::nearest_face`, its
+nearest patch found among those whose box in space comes as near, `nearest_patch`, so a chain that
+grows with a body's pockets is measured where the point is, #994; a path's faces, caps taken in,
+read once a body, `BodyFaces::faces`) — and the points kept are the same; a chain that is no one
+sheet (`bulging`, a block's side flush with a deck's) is read this way as well; what the conditions
+add is every wall meeting at a corner of the offset in each step, where the closing axis (a floor or
+a rim rounded to a convex corner's own radius) is met as a corner of conditions, as in a convex
+chain. A condition holding with no gradient is no row of the step's program (`nearest`), so a step
+chooses among the faces near the point, not the whole chain. Read about the nearest face alone —
+that face and its bulging neighbours, slots changing with the face — a 56° corner as tight as the
+ball was still refused by the gate (`tests/tight_corners.rs`, six walls): which walls a step sees
+there hangs on which face the step stands nearest. A chain that bulges one way is read whole, as
+above. `tests/tight_corners.rs`, `tests/rim_over_rounds.rs` and `tests/rim_seams.rs` are the gate.
+**The steps stop at the first point keeping every condition where every condition is convex**
+(`Cond::convex`: a plane's side, a face's carried side held toward its solid): each step's
+linearisation then holds the whole set, so a point of it is the nearest; their own fixed point is
+not steady where a surface curves tightly about a point far off — a ball's centres a hair short of
+closing onto a corner's axis, seen from the corner, moved along it by the distance over the radius
+times any error in where the last step stood. A QP's active rows are chosen among every inequality,
+not the first ten (`project`). `tests/tight_corners.rs` is the gate. **Where the steps do not
+settle, the nearest point stood on that keeps every condition** (#994, `conditions::nearest`): a
+condition holding with no gradient is no row of a step, so a step from a point keeping it can land
+back where it fails, and the two alternate — a ball's centres beside a blend ended by a side an eye
+stands out past, the eye's patch beyond the blend's end holding a centre back only near it. The set
+was then read as empty, its distance past every number, so `Run` read every point there as one no
+ball covers. A point stood on that keeps every condition is of the set, and its distance no less
+than the nearest's; and where the conditions read where a step landed have no point in common (a
+chain read through another face a hair inside the body), the step is taken back half way, a few
+times, first. **A set stated as another's terms and more, measured less that one** (`d(p, E) − d(p,
+M)`, `E` within `M`: `std.rounds`' `rolled` within `centres`, [rounds.md](rounds.md); #994,
+`region::general`'s `measured`) is read as the distance from `M`'s point nearest `p` to `E`, at
+least the difference: nothing where that point is of `E` (a ball rolled along the edge), however
+each set's own nearest point is found, and nothing to say where `M`'s is found nowhere. Read as two
+projections, `E`'s a set of no inside — the centres of a ball touching both faces, two points where
+a boss crosses a filled edge — its own steps did not settle under a chain read through its faces'
+own surfaces past their creases (a fill's round cut across by the boss), and half the gate's probes
+of the boss's fill went wrong (`tests/round_onto_round.rs`). **A face standing between the point and
+the chain's nearest patch is gone round only where it bounds the chain nearer the point than any
+face not of the chain does** (#994, `BodyFaces::nearest_face`): past a band's floor's rim at its
+bowed side, the side bounds the clevis's eye 36 mm off at its far end, its own end and top nearer,
+so the floor's plane is read there, not the eye's cylinder, whose side, 36 off where the field is a
+hair past nothing, kept the gate's probe of the run's tangent line from being withdrawn ("disagrees
+with the field", `tests/resting_touches.rs`); a band's side on its plate bounds only faces of the
+chain, and reads as before (`tests/tapered_bands.rs`). `d(p, E) <= d(p, M)` with `E` on the patches
+of the faces `M` is on the surfaces of is read as `d(p, E) − d(p, rest)` (`Rest`: `M`'s
 nearest point when off `E`, and where `E`'s run ends), the same points with a negative inside.
 `ends` is `max σ·side` over the faces at each end of the run (σ the side it runs on), a face
 carrying the run on none: one going on tangent from one of the run's faces across a seam
@@ -574,15 +575,16 @@ the run ends there square; another body's wall so is its end (`BodyFaces::anothe
 and with them where an edge a run-out at that end runs along ends, a face or the plane
 square to it (`BodyFaces::end_faces`, `faces::EndBy`, #952, [rounds.md](rounds.md)); a closed run
 ends nowhere. A run going on across a seam ends where its smooth chain ends, on each face there
-whose solid it is kept out of or that is another body's (`BodyFaces::chain_ends`, #994). Where `S`'s edges are in several runs (`BodyFaces::runs`; a crease a slot cuts
-across, #881, [0.209]), a point is held to the ends of the run nearest it (`EndRuns`: the run of
-the edge `nearest_edge` names), the run `lowering`'s piece beside it is built along: within every
-run's ends at once is within none where the runs either side of a slot end on its two sides, and
-within any run's (their union) is too much where a run ending on one post's side goes on past
-the next post. In a set measured from, `q inside S.ends` is one condition per such face (the
-`k`th the nearest run's `k`th face, nothing where it ends on fewer), and `Rest`
-keeps an end of `E` only where `M` carries on past it within them: std's `meeting` is cut so, and
-a run is carried past its edge's end and cut off by the face it ends on (#195). `edge` and `seam` are element keywords: a set may not be called so.
+whose solid it is kept out of or that is another body's (`BodyFaces::chain_ends`, #994). Where `S`'s
+edges are in several runs (`BodyFaces::runs`; a crease a slot cuts across, #881, [0.209]), a point
+is held to the ends of the run nearest it (`EndRuns`: the run of the edge `nearest_edge` names), the
+run `lowering`'s piece beside it is built along: within every run's ends at once is within none
+where the runs either side of a slot end on its two sides, and within any run's (their union) is too
+much where a run ending on one post's side goes on past the next post. In a set measured from, `q
+inside S.ends` is one condition per such face (the `k`th the nearest run's `k`th face, nothing where
+it ends on fewer), and `Rest` keeps an end of `E` only where `M` carries on past it within them:
+std's `meeting` is cut so, and a run is carried past its edge's end and cut off by the face it ends
+on (#195). `edge` and `seam` are element keywords: a set may not be called so.
 
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
 (`distance` is a set use, `may_use`), its bound `p distance(<= d, side: outside) S` and
