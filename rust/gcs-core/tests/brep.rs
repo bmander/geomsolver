@@ -2439,7 +2439,8 @@ fn a_slabs_top_rounded_from_both_edges_to_half_its_width_is_a_half_cylinder() {
 /// **A round as wide as both faces beside it** (brep-bench's fillet/l-block-inside-consumed): an
 /// L's inside edge filled 7, the ball touching both faces at their far edges, takes both: a quarter
 /// cylinder meeting the faces past them square, `10 (100 − 49π/4)` and `460 + 21π/2`. A ball of
-/// 7.5 would touch past them, and is refused.
+/// 7.5 would touch past them, and is refused by the face it overflows: where that face ends, 7
+/// off the other, against the ball's touch 7.5 off it (#994).
 #[test]
 fn an_l_blocks_inside_edge_filled_as_wide_as_its_faces_takes_both() {
     use crate::common::close;
@@ -2452,7 +2453,11 @@ fn an_l_blocks_inside_edge_filled_as_wide_as_its_faces_takes_both() {
     close(volume(&filled),10.*(100.-49.*PI/4.));
     close(total_area(&filled),460.+21.*PI/2.);
     assert!(filled.faces.iter().all(|f| f.name != "floor" && f.name != "wall"),"the faces it fills are gone");
-    too_large(rounded(&l,&[[3.,5.,3.]],7.5));
+    // (said by the face too short for it, where it ends, and how far off the ball touches it, #994)
+    let why = rounded(&l,&[[3.,5.,3.]],7.5).unwrap_err();
+    assert!(why.contains("of radius 7.5, is larger than `floor` can hold: `floor` ends at its edge with `end` 7 off `wall`")
+        || why.contains("of radius 7.5, is larger than `wall` can hold: `wall` ends at its edge with `top` 7 off `floor`"),"{why}");
+    assert!(why.contains("short of where the ball touches it, 7.5 off"),"{why}");
 }
 
 /// **A hole's rims rounded to meet at its waist** (brep-bench's fillet/hole-waist): a plate 2 thick

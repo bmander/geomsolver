@@ -1221,7 +1221,19 @@ fn holds_ball(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usiz
             let crossed = seam(e);
             let skip = |p: V| crossed && in_wedge(p) || far(p);
             if band.enters(gc,g.t,&skip,face_consumed(tol,g.tol)) {
-                return Err(format!("the ball of {names} is larger than `{}` can hold",b.faces[fi].name));
+                // (said by the face that bounds the ball there: the one across the edge entering the
+                // band, how far that edge stands off the other face, and how far the ball touches)
+                let across = uses[e].iter().map(|u| u.0).find(|&f| f != fi).map(|f| b.faces[f].name.as_str());
+                let other = b.faces[sides_faces[o][0]].name.as_str();
+                let figure = |x: f64| { let p = 10f64.powi(6-x.abs().max(1e-300).log10().ceil() as i32); (x*p).round()/p };
+                return Err(match (band.deepest(gc,g.t,&skip),across) {
+                    (Some((p,h,near)),Some(g)) => format!("the ball of {names}, of radius {}, is larger than `{}` can \
+                        hold: `{}` ends at its edge with `{g}` {} off `{other}` at [{}, {}, {}], short of where the ball \
+                        touches it, {} off `{other}`: no ball of that radius rolls against it there (make `{}` reach past \
+                        the ball's touch, or round it smaller than it reaches)",figure(r),b.faces[fi].name,b.faces[fi].name,
+                        figure(h),figure(p[0]),figure(p[1]),figure(p[2]),figure(near),b.faces[fi].name),
+                    _ => format!("the ball of {names} is larger than `{}` can hold",b.faces[fi].name),
+                });
             }
         }
     }
@@ -1317,6 +1329,16 @@ impl<'a> Band<'a> {
         let (lo,hi) = (i.saturating_sub(1) as f64/n as f64,(i+1).min(n) as f64/n as f64);
         let near = crate::util::roots::brent(&|u| distance_squared((self.contact)(u),p),lo,hi,1e-9,64,|_,_| false);
         self.height((self.contact)(near.at))
+    }
+
+    /// Where the curve `c` over `t` stands deepest inside the band, of `SAMPLES` points of it that
+    /// `skip` keeps: the point, its height off the other surface, and the contact's height beside
+    /// it — what a refusal of the ball says (`holds_ball`). None where no sample is inside.
+    fn deepest(&self,c: &Curve,t: [f64;2],skip: &dyn Fn(V) -> bool) -> Option<(V,f64,f64)> {
+        let n = Self::SAMPLES;
+        (0..=n).map(|i| c.point(t[0]+(t[1]-t[0])*i as f64/n as f64)).filter(|&p| !skip(p))
+            .map(|p| (p,self.height(p),self.height_near(p))).filter(|&(_,h,near)| h > self.tol && h < near)
+            .max_by(|x,y| (x.2-x.1).total_cmp(&(y.2-y.1)))
     }
 
     /// Whether the curve `c` over `t` reaches inside the band: somewhere off the other surface by
@@ -1706,7 +1728,66 @@ fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2
         };
         if !cuts.iter().any(|k| k.same(&cut,tol)) { cuts.push(cut); }
     }
+    // **an end of several faces** (#994): a face the run ends on shorter than the section is wide
+    // (a vane's toe cut by a slope a hair over the foot, leaving an upright end face 1e-4 tall)
+    // gives way, along its edge with a side, to the face beyond it, which cuts the section too —
+    // as it does the run where it stands at the vertex itself. Each edge an end face makes with a
+    // side, from a vertex of the end reached so far, is followed to its other vertex, and every
+    // face there besides the sides that faces on past the end (`faces_on`) cuts the run off, kept
+    // on its material's side — as `BodyFaces::end_faces` reads the field's end.
+    let along = |f: usize| (0..2).any(|k| 1.-dot(m[k],unit(b.faces[f].surface.gradient(p))).abs() <= 1e-9);
+    let mut ending: Vec<usize> = faces.iter().copied().filter(|&f| !along(f)).collect();
+    let mut beyond: Vec<usize> = Vec::new();
+    let mut reached: Vec<u32> = vec![v];
+    let mut k = 0;
+    while k < ending.len() {
+        let f = ending[k];
+        k += 1;
+        for e in 0..b.edges.len() {
+            let [x,y] = b.edges[e].v;
+            let side = |u: &(usize,usize,usize)| sides_faces.iter().flatten().any(|&s| s == u.0);
+            if !(uses[e].iter().any(|u| u.0 == f) && uses[e].iter().any(side)) { continue }
+            let w = match (reached.contains(&x),reached.contains(&y)) { (true,false) => y,(false,true) => x,_ => continue };
+            let q = b.vertices[w as usize].p;
+            reached.push(w);
+            let there: Vec<usize> = (0..b.edges.len()).filter(|&e| b.edges[e].v.contains(&w))
+                .flat_map(|e| uses[e].iter().map(|u| u.0)).filter(|g| !sides_faces.iter().any(|s| s.contains(g)))
+                .collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+            for g in there {
+                let face = &b.faces[g];
+                let out = scale(face.surface.gradient(q),if face.reversed { -1. } else { 1. });
+                if ending.contains(&g) || !faces_on(out,leaving) { continue }
+                // (facing on past the end, it holds the run behind it: on its material's side)
+                // (one no closed form reads, a sheet's, cuts nothing off beyond an end face, as the
+                // field reads it: `cuts_off`)
+                let cut = match face.surface {
+                    Surface::Plane(_) => Cut::Plane {o:q,keep:scale(unit(out),-1.)},
+                    _ if cuts_off(&face.surface) => Cut::Solid {surface:face.surface.clone(),inside:!face.reversed},
+                    _ => continue,
+                };
+                if !cuts.iter().any(|c| c.same(&cut,tol)) { cuts.push(cut); }
+                ending.push(g);
+                beyond.push(g);
+            }
+        }
+    }
+    let faces = faces.into_iter().chain(beyond).collect();
     Ok((Trim {vertex:v,o:p,cuts},faces))
+}
+
+/// **Whether a face beyond a run's end face cuts the run off** (#994): a face reached from the end
+/// face along the edges it makes with the run's faces cuts the run off where it faces on past the
+/// end as an end face does — its outward normal `out` turned more than `MIN_TURN` from square to
+/// the run, the way off the end (`leaving` is the way into the run). One lying alongside the run
+/// (a slope over a sliver of a vane's toe, along the toe's foot) is no end of it but the face beyond
+/// the one it rolls on, which must hold the ball (`holds_ball`, the lowering's `held`).
+pub fn faces_on(out: V,leaving: V) -> bool { dot(unit(out),leaving) < -MIN_TURN.dsin() }
+
+/// Whether a face on `s` beyond a run's end face cuts the run off (`faces_on`): a plane's
+/// half-space, or a cylinder's, a cone's or a sphere's solid (an affine image's too); a sheet's
+/// or any other surface read by no closed form cuts nothing there yet.
+pub fn cuts_off(s: &Surface) -> bool {
+    matches!(s,Surface::Plane(_) | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Affine(..))
 }
 
 /// Whether `contact` (where a ball or a flat meets the side `side` of a run, in the section through
@@ -1779,7 +1860,8 @@ impl Trim {
 }
 
 /// An end of a run that ends: where it is cut off, the spine's parameter at the ball over its
-/// vertex, and the faces there besides the run's two (all in one plane).
+/// vertex, and the faces there besides the run's two — and those beyond an end face shorter than
+/// the section (`end_at`).
 #[derive(Clone)]
 struct Stop { trim: Trim,t: f64,faces: Vec<usize> }
 

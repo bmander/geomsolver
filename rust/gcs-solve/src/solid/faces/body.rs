@@ -1056,7 +1056,8 @@ impl BodyFaces {
     /// further than that edge: where that edge's run ends further on, on the side it runs on, so
     /// does the run.  Each with the end it was read at where it stands elsewhere: none for a face
     /// at an end of the run, that end's point (model units) for where the edge a run-out there
-    /// runs along ends.
+    /// runs along ends.  Past an end face shorter than the section, a face beyond it facing on
+    /// past the end ends a run rolled along too, read at that end (`beyond_end`, #994).
     pub fn end_faces(&self, es: &[u32], faces: &[usize]) -> Vec<(EndBy, f64, Option<V>)> {
         self.end_faces_as(es, faces, es.iter().all(|&e| self.carried(e)))
     }
@@ -1084,6 +1085,15 @@ impl BodyFaces {
             // turn short of its own other end
             if at.is_empty() && plain && run.iter().all(|&e| self.segment(e).is_some()) {
                 sides.push((EndBy::Square { at: v, out: scale(d, -1.0) }, 1.0, None));
+            }
+            // a ball rolled along: past an end face shorter than its section, each face beyond it
+            // that faces on past the end cuts it off too, as the kernel reads it (#994)
+            if !plain {
+                for (x, sx) in self.beyond_end(&at, faces, vid, d) {
+                    if !sides.iter().any(|&(y, _, _)| y == EndBy::Face(x)) {
+                        sides.push((EndBy::Face(x), sx, Some(v)));
+                    }
+                }
             }
             for (c, sign) in at {
                 sides.push((EndBy::Face(c), sign, None));
@@ -1133,6 +1143,42 @@ impl BodyFaces {
             }
         }
         sides
+    }
+
+    /// **The faces beyond the end faces `at` of a run rolled along** (between `faces`, ending at
+    /// vertex `vid`, `d` the way it runs from there; #994), as `brep::fillet::end_at` reads them:
+    /// each edge an end face makes with one of `faces`, from a vertex of the end reached so far, is
+    /// followed to its other vertex, and every other face there that faces on past the end
+    /// (`brep::fillet::faces_on`) ends the run too — a slope over a sliver a cut left at a vane's
+    /// toe — each holding the run on its material's side, behind it.  One lying alongside the run
+    /// ends nothing.
+    fn beyond_end(&self, at: &[(usize, f64)], faces: &[usize], vid: u32, d: V) -> Vec<(usize, f64)> {
+        let mut ending: Vec<usize> = at.iter().map(|&(c, _)| c).collect();
+        let (mut reached, mut out) = (vec![vid], Vec::new());
+        let mut k = 0;
+        while k < ending.len() {
+            let c = ending[k];
+            k += 1;
+            for e in self.edges_between(&[c], faces) {
+                let [x, y] = self.ends(e);
+                let w = match (reached.contains(&x), reached.contains(&y)) {
+                    (true, false) => y,
+                    (false, true) => x,
+                    _ => continue,
+                };
+                reached.push(w);
+                let p = self.back(self.loc.b.vertices[w as usize].p);
+                for g in self.faces_at(w, faces) {
+                    if ending.contains(&g) || !crate::brep::fillet::cuts_off(&self.loc.b.faces[g].surface)
+                        || !crate::brep::fillet::faces_on(self.normal(g, p), d) {
+                        continue;
+                    }
+                    ending.push(g);
+                    out.push((g, 1.0));
+                }
+            }
+        }
+        out
     }
 
     /// The signed distance from what a run ends on, positive away from the material (a square

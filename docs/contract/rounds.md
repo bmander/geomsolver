@@ -1182,6 +1182,44 @@ refused as "larger than `disc.crown` can hold" for a 2 mm ball: the side's cylin
 ball's radius of the disc's rim across the disc (`brep::a_band_is_the_strip_its_ball_sweeps_not_all_the_face_as_near_the_other`,
 on a plate, Pappus; `sphere_rounds::a_vane_whose_sides_are_about_another_axis_rolls_its_balls`).
 
+**An end of several faces, and a face too short for its ball** (#994, fixture 147: a vane's toe
+cut by a slope `1e-4` over the crown, its upright face a sliver). A ball rolled along a run ends on
+the faces at its vertex, and, past an end face shorter than the section, on every face beyond it
+that faces on past the end: each edge an end face makes with the run's faces is followed to its
+other vertex, and a face there whose outward normal turns more than a degree from square to the
+run, off its end (`brep::fillet::faces_on`), cuts the run off too, kept on its material's side —
+one rule, read by the kernel (`fillet::end_at`, the face's edges none of the ball's band) and by
+the field (`BodyFaces::end_faces`'s `beyond_end`, a rolled run's alone) — a face no closed form
+reads (a sheet) cutting nothing there yet (`fillet::cuts_off`). A vane's side rounded
+there on the crown was refused as "larger than `vo0` can hold": the slope's edge with the side
+entered the band past an end that read the toe's face alone. A carried run (a line, a coaxial
+circle) is still cut by the faces at its vertices and where a run-out along them ends, and goes on
+under the slope to its toe's face. A face lying alongside the run (the slope along the toe's own
+foot) ends nothing: it is the face beyond the one the ball rolls on, and **the ball must stand on
+its face** — at sixteen stations along a carried run or ring its touch lies on the face, within
+its tolerance of its far boundary at most, or past an edge to a face of its surface, a seam, or a
+face that ends the run, or the face reaches as far off the other face as the touch somewhere (a
+crown whose rim a large ball's touch passes, read on its surface as the field reads it), or its
+corner at an end of the run does (a band tapering to nothing between its edges, its round running
+out with it, its ends' arcs running out tangent into the disc) (`lowering::piece::held`, as
+`holds_ball` for a rolled one). A strip nowhere that wide, its edges with the faces the run ends
+on in a corner with the other face lower than the touch too, holds no ball: the round standing
+past it all along stands past those corners, beside the corners' own rounds in the air. Refused by that face, the face it ends at, how far that edge stands off the other face and
+how far off the ball touches it, and what to do — the toe's foot rounded at 2
+under a face `h` tall is "its ball, of radius 2mm, is larger than `blade.vane.close1` can hold:
+`blade.vane.close1` ends at its edge with `blade.wedge.close2` 0.0001mm off `disc.close2` …, short
+of where the ball touches it, 2mm off", where it built pieces touching one another along a line in
+the air past the toe, or (rolled) named the vane's side. `holds_ball` says the same of a rolled
+ball (an L's inside edge at 7.5: "`floor` ends at its edge with `end` 7 off `wall` …, 7.5 off").
+Under the arrangement's reach the sliver is no face: the slope within it of the foot comes down
+onto it, and the round builds as with none
+(`sphere_rounds::a_vanes_side_rounded_runs_out_past_a_sliver_at_its_toe`, the closed form's on a
+flat disc, built on the crown and with arc sides;
+`a_sliver_at_a_vanes_toe_is_named_as_the_face_too_short_for_the_ball`, from `1e-4` to a quarter
+of the ball, on the flat disc and the crown, flat and arc sided;
+`a_sliver_under_the_reach_at_a_vanes_toe_is_no_face`;
+`brep::an_l_blocks_inside_edge_filled_as_wide_as_its_faces_takes_both`).
+
 **A flat as wide as its cylinder** (brep-bench's chamfer/cylinder-rim-to-point): a chamfer's leg is
 a set like the offset it is read from (`fillet::Leg`) — face `k`'s surface met with the other's
 offset by the leg, a curve, or, where that offset closes onto a curve (a cylinder's axis) or a point
