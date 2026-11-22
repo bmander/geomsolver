@@ -2,7 +2,8 @@
 
 A boundary-representation (B-rep) solid-modelling kernel in Rust. It builds solids from exact
 analytic and NURBS geometry, combines them with Booleans, meshes them to a stated tolerance and
-reads and writes STEP. It has no dependencies, and native and WebAssembly builds produce identical bits.
+reads and writes STEP. It has no dependencies, and native and WebAssembly builds produce identical
+bits.
 
 **Status: extracted, not yet shaped for general use.** The kernel was built inside
 [geomsolver](https://github.com/bmander/geomsolver), a geometric constraint solver, to make
