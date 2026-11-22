@@ -1610,8 +1610,7 @@ impl BodyFaces {
         // it meets in an edge at this vertex — one it meets at the vertex alone is no side of that
         // corner (#996) — and some patch of them reaching in behind it — not a plate a band tapers
         // onto, whose faces stand wholly on the plate's outside: that one bounds the run, #994)
-        let behind = |c: usize, f: usize| self.edges[f].iter()
-            .any(|&e| (0..=16).any(|k| { let x = self.along(e, k as f64 / 16.0); self.side(c, x) < -self.past(x) }));
+        let behind = |c: usize, f: usize| self.goes_across(c, -1.0, &self.edges[f]);
         let back = |c: usize| self.plane(c).is_some_and(|(n, _)| {
             faces.iter().any(|&f| dot(n, self.normal(f, v)) > 1e-9 && self.meet_at(c, f, vid))
                 && faces.iter().any(|&f| f != c && behind(c, f))
