@@ -173,6 +173,13 @@ so the survey's `--faces` listing and the oracle's join on the entity.
 
 ## What OCCT's reading is, and is not
 
+* **Its solids only.** Where OCCT reads solids, what it read beside them (a commercial file's
+  construction surfaces, its wireframe and curve sets) is set aside before anything is measured or
+  counted (`oracle.solids_of`): `BRepGProp` over the whole shape counted those faces' areas and
+  their open shells' "volumes" (stc_08: 23% in volume), and the reference is the solid's. The
+  oracle's readings made before (any file whose text holds a `SHELL_BASED_SURFACE_MODEL` or a
+  `GEOMETRIC_CURVE_SET` beside its solid: the 27 commercial files) are read again by removing
+  their `oracle/…json` first: the hash of the text alone does not say the oracle changed.
 * **Healing off.** `oracle.py` reads with `read.step.sequence` naming no sequence, so OCCT's
   shape processing (`FixShape` and the rest) does not run; it reads again with it on and records
   what changed (`healed`). The translation itself still fixes what it fixes (a vertex's tolerance

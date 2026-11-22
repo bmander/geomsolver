@@ -49,7 +49,12 @@ and `edit` (what was changed). What each must be read to (`ref_from`):
   moves nothing): a refusal, or a reading within the bar of either of OCCT's readings
   (`alt_volume`, `alt_area` the healed one);
 * `occt` / `occt?` — OCCT reads a valid solid and its healing changes nothing: its reading, at the
-  bar `table.own` gives a file read by one reader (its edges' slack, at least `table.ALONE`).
+  bar `table.own` gives a file read by one reader (its edges' slack, at least `table.ALONE`), and
+  never tighter than that rule gives with the tolerances OCCT's reading of the mutant ends with
+  (its edges' or its vertices', the larger: a vertex nudged within its edges' turn is covered by
+  raising that vertex's tolerance alone). Where OCCT raised a tolerance to read it, the unmutated
+  source's solid within that bar is a reading too (`alt_volume`, `alt_area`): the file's solid is
+  known no better than the slack OCCT needed.
 
 The gate is `step_mutants::no_mutant_is_read_wrong` (rust/gcs-core/tests/step_mutants.rs): every
 mutant refused, or read to its row's solid within the bar; never a panic, never past the time
@@ -564,6 +569,25 @@ def reference(m, o, src):
         # the tolerance is the file's own statement: no slack of the geometry's, the floor's bar
         bv, ba = max(table.ALONE, table.AGREE * o["spread_volume"]), max(table.ALONE, table.AGREE * o["spread_area"])
     bv, ba = max(bv, floor_v), max(ba, floor_a)
+    # and no tighter than the table's rule for a file one reader reads (`table.own`) gives with
+    # the tolerances OCCT's reading of the mutant ends with, a vertex's as well as an edge's: a
+    # vertex moved within its edges' turn is one OCCT covers by raising that vertex's tolerance,
+    # leaving the edges' as they were, and its reading is then no closer to the file's solid than
+    # that tolerance's slack
+    # (only where the edit raised it past the source's reading's and the file's statement; a
+    # slack past `table.CAP` widens nothing: such a reading is no reference, and the row is judged
+    # as it was)
+    ended = max(o["tol_edge"], o.get("tol_vertex", 0.0))
+    slack = table.SLACK * ended * o["area"] / o["volume"]
+    try:
+        so = json.load(open(os.path.join(CORPUS, "oracle", src["path"] + ".json")))
+        was = max(so["tol_edge"], so.get("tol_vertex", 0.0))
+    except (OSError, ValueError, KeyError):
+        was = float("inf")
+    widened = (ended > 1.001 * max(was, float(src["tol_edge"]), stated(o))
+               and slack > max(bv, ba) and slack <= table.CAP)
+    if widened:
+        bv, ba = max(bv, slack), max(ba, slack)
     near = table.rel(v, sv) <= bv and table.rel(a, sa) <= ba
     if raised and max(bv, ba) > table.CAP:
         return "refuse", None, None, None, None, None, \
@@ -577,8 +601,12 @@ def reference(m, o, src):
         if near:
             return "disputed", v, a, bv, ba, (hv, ha), "OCCT's analyzer finds it invalid, its measures the source's"
         return "refuse", None, None, None, None, None, "OCCT's analyzer finds it invalid, its measures moved"
-    tol = f"; OCCT's edges' tolerance raised to {o['tol_edge']:.3g}" if raised else ""
-    return frm, v, a, bv, ba, None, ("the source's solid" if near else "another solid") + tol
+    tol = (f"; OCCT's edges' tolerance raised to {o['tol_edge']:.3g}" if raised else
+           f"; OCCT's vertices' tolerance raised to {ended:.3g}" if widened else "")
+    # where OCCT had to raise its tolerances, the file's solid is no better known than their
+    # slack, and the unmutated source's within it is a reading of it as well as OCCT's
+    alt = (sv, sa) if (raised or widened) and near else None
+    return frm, v, a, bv, ba, alt, ("the source's solid" if near else "another solid") + tol
 
 
 def write_table():
