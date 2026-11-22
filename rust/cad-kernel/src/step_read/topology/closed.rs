@@ -152,7 +152,7 @@ fn whole_face(st: &Setting,s: &Surface,w: &Walked,lone: &[(u32,usize)]) -> Resul
         if s.periods()[k].is_some() { if let Some(x) = at.iter().find(|uv| pole(k,uv[k],first)) { from[k] = x[k]; } }
         let Some(d) = spans(from) else { continue };
         if !closes(c,d) || !pole(k,d[k][0],d) || !pole(k,d[k][1],d) { continue }
-        let ends = [s.point(if k == 1 { [d[0][0],d[1][0]] } else { [d[0][0],d[1][0]] }),s.point(if k == 1 { [d[0][0],d[1][1]] } else { [d[0][1],d[1][0]] })];
+        let ends = [s.point([d[0][0],d[1][0]]),s.point(if k == 1 { [d[0][0],d[1][1]] } else { [d[0][1],d[1][0]] })];
         let off: Vec<usize> = (0..vs.len()).filter(|&i| ends.iter().all(|&e| distance(e,vs[i].2) > within)).collect();
         let mut d = d;
         if let (Some(p),Some(&i)) = (s.periods()[c],off.first()) { d[c] = [at[i][c],at[i][c]+p]; }
@@ -212,12 +212,10 @@ fn sphere_like(st: &Setting,s: &Surface,w: &Walked,vs: &[(u32,usize,V)],c: usize
     let v1 = if same { v0 } else { v1.unwrap_or_else(|| lay(p1)) };
     let laid = pieces(&seam,d[k],cut,v0,v1);
     let line = |x: f64,e: &Edge| Pcurve::Line {a:uv(x,e.t[0]),b:uv(x,e.t[1])};
-    let n = laid.len() as u32;
     // closed round `u`: up its far side, down its near; round `v`: along its near side, back its far
     let (along,back) = if c == 0 { (d[c][1],d[c][0]) } else { (d[c][0],d[c][1]) };
     let mut l: Vec<Coedge> = laid.iter().enumerate().map(|(j,e)| Coedge {edge:LAID-j as u32,reversed:false,pcurve:line(along,e)}).collect();
     l.extend(laid.iter().enumerate().rev().map(|(j,e)| Coedge {edge:LAID-j as u32,reversed:true,pcurve:line(back,e)}));
-    debug_assert!(n > 0);
     if w.reversed { l = reverse_loop(l); }
     Ok(Built {face:Face {surface:s.clone(),reversed:w.reversed,loops:vec![l],name:w.name.clone()},laid,poles,cuts:Vec::new(),names:w.points.clone()})
 }
@@ -239,7 +237,7 @@ fn torus_like(st: &Setting,s: &Surface,w: &Walked,vs: &[(u32,usize,V)],d: [[f64;
     }
     let v0 = v0.unwrap_or_else(|| { poles.push(corner); LAID });
     let (la,lb) = (pieces(&a,d[1],ca,v0,v0),pieces(&bs,d[0],cb,v0,v0));
-    let (na,_) = (la.len() as u32,lb.len());
+    let na = la.len() as u32;
     let id = |j: usize,second: bool| LAID-(j as u32+if second { na } else { 0 });
     let line = |p: Uv,q: Uv| Pcurve::Line {a:p,b:q};
     let mut l = Vec::new();
