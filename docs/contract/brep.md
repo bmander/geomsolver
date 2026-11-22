@@ -1644,8 +1644,12 @@ solids and what the file holds beside them. OCCT is the oracle in tests only.
 
 **Every file the kernel writes reads back to the same solid**, stated as one property
 (`step_roundtrip::same`): every written face, edge and vertex read once from its own entity, of
-its kind and sense, each edge between its written vertices; nothing laid but the poles' degenerate
-edges and their vertices; each face's area and flux, the volume and the area within what the
+its kind and sense, each edge between its written vertices; nothing laid but a pole's degenerate
+edge where the surface its face is written on has that pole (a net's collapsed row, a cone's apex,
+a sphere's pole), one at the point of each the built solid holds there — a degenerate edge bounds
+nothing and has no length, so one the built solid keeps where its face is written on a surface with
+no pole there (a loft's side collapsed to a point, written as the plane triangle it is) is set aside
+on both sides, with the vertices only it ends at; each face's area and flux, the volume and the area within what the
 writer's own fits allow (`Bars`: rounding where a curve is written as itself, twice the fit times
 its length for a traced or fitted curve, a fitted surface's share, and 1e-6 of the area on a
 surface with no closed form, whose area rule is not exact where its flux's is); the solid read,
@@ -1656,7 +1660,8 @@ read to another solid, none a panic; the rest are named for their defect, most o
 writer's — a wall fitted too loosely to be written, a pcurve written as millions of points, a file
 stating 1e-7 over fits held to `FIT`. Gates: `step_roundtrip::the_sample_reads_back` (a sample
 taking every writer path a solid that reads back takes, `PATHS`, at 1e-7),
-`the_sample_reads_back_at_export_tolerances`; each known defect an ignored test named for it.
+`the_sample_reads_back_at_export_tolerances`, `a_nets_collapsed_side_reads_back` (`pyramid`); each
+known defect an ignored test named for it.
 
 **A STEP file's syntax is read as Part 21 means it, whatever the cores** (`step_file`). What
 writers write is read: a byte-order mark, comments wherever a token may stand, every kind of line
