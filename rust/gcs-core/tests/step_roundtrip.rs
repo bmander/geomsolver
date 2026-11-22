@@ -690,7 +690,10 @@ fn census() {
         let who = format!("{example} `{solid}`");
         let (outcome,found) = trip(&b,&who,tol,fit);
         let worst = found.worst.map_or("-".into(),|(r,fi,a,f)| format!("{r:.2} bars at face {fi} (area {a:.1e}, flux {f:.1e})"));
-        eprintln!("ROW\t{who}\t{}\t{}\t{worst}\t{:.0?}\t{:.0?}\t{:.0?}\t{}",b.faces.len(),outcome.label(),found.write,found.read,found.measure,outcome.detail());
+        let slack = format!("loose {} {:.1e}",found.loose.len()+found.loose_vertices.len(),
+            found.loose.iter().chain(&found.loose_vertices).map(|x| x.1).fold(0.,f64::max));
+        eprintln!("ROW\t{who}\t{}\t{}\t{worst}\t{:.0?}\t{:.0?}\t{:.0?}\t{slack}\t{}",b.faces.len(),outcome.label(),found.write,found.read,
+            found.measure,outcome.detail());
         if show_paths || matches!(outcome,Outcome::Same) {
             if let Ok(text) = write(&b,&who,tol,fit) {
                 for p in paths(&b,&text) { covered.entry(p).or_default().push(format!("{example}\t{solid}\t{}",b.faces.len())); }
