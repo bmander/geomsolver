@@ -84,6 +84,7 @@ impl Outcome {
             Outcome::SecondTrip(_) => "a second trip differs".into(),
             Outcome::Panicked(_) => "panicked".into(),
             Outcome::Slow(m) if m.starts_with("too large") => "written too large to read".into(),
+            Outcome::Slow(m) if m.starts_with("not written") => format!("not written within {BOUND:?}"),
             Outcome::Slow(_) => format!("not read within {BOUND:?}"),
             Outcome::Degenerate(..) => "same but for degenerate edges".into(),
         }
@@ -415,7 +416,18 @@ fn trip_in(b: &Brep,name: &str,tol: f64,fit: Fit,found: &mut Found) -> Outcome {
     let say = |what: &str| if std::env::var_os("STEP_ROUNDTRIP_VERBOSE").is_some() { eprintln!("  {name}: {what}") };
     say("writing");
     let started = Instant::now();
-    let text = match write(b,name,tol,fit) { Ok(t) => t,Err(e) => return Outcome::NotWritten(e) };
+    // (written on a thread of its own too, waited on no longer than `BOUND`)
+    let text = {
+        let (tx,rx) = std::sync::mpsc::channel();
+        let (owned,called) = (b.clone(),name.to_string());
+        std::thread::spawn(move || { let _ = tx.send(std::panic::catch_unwind(|| write(&owned,&called,tol,fit))); });
+        match rx.recv_timeout(BOUND) {
+            Ok(Ok(Ok(t))) => t,
+            Ok(Ok(Err(e))) => return Outcome::NotWritten(e),
+            Ok(Err(p)) => return Outcome::Panicked(format!("writing: {}",said(p))),
+            Err(_) => return Outcome::Slow(format!("not written within {BOUND:?}")),
+        }
+    };
     found.write = started.elapsed();
     say(&format!("written in {:?}, {} bytes; reading",found.write,text.len()));
     // (a file past `LARGEST` is said so and not read: a reader's time and memory grow with it, and
