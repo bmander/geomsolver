@@ -82,7 +82,8 @@ fn where_the_full_turns_end_poses_touch_both_are_buried() {
         other => panic!("the start pose at the touch: {other:?}"),
     }
     let end = at(roll[1],-2.355278,-1.567330);
-    assert!(gcs_core::brep::util::space::distance(start,end) < 1e-6,"the poses touch: {start:?} {end:?}");
+    // (the angles to six places: the two points within a few millionths of one another)
+    assert!(gcs_core::brep::util::space::distance(start,end) < 1e-5,"the poses touch: {start:?} {end:?}");
     assert!(matches!(cover(&ring,&path,roll,end,roll[1],tol).unwrap(),Reading::Near),"the end pose at the touch");
     let equator = at(roll[0],1.760338,-0.000259);
     assert!(matches!(cover(&ring,&path,roll,equator,roll[0],tol).unwrap(),Reading::Near),"the start pose's equator");
