@@ -182,7 +182,7 @@ fn field_of(sk: &Sketch, name: &str, terms: &[RegionTerm], bounded: bool,
                     return Err(format!("{name}: where an edge ends is read of a set"));
                 };
                 let set = crate::solid::conditions::SetDistance::of(sk, inner, read).map_err(named)?;
-                let within = crate::solid::conditions::ends(&set).map_err(named)?;
+                let within = crate::solid::conditions::ends(&set, section_size(sk, terms)).map_err(named)?;
                 reads_faces = true;
                 // a run that ends nowhere is cut off by nothing
                 let f = move |p: V| { let v = within(p); if v == f64::NEG_INFINITY { -GATE } else { v } };
@@ -522,3 +522,21 @@ fn never(of: &[(crate::model::Target, f64)],
 /// field reads it only by its sign.
 const GATE: f64 = 1e30;
 
+/// The size of the section a region over a body's faces rounds or cuts its edge by, where its terms
+/// state one (#994): a ball's radius (`distance(p, centres) >= r`), a flat's longer leg (`distance(p,
+/// a)/lb + distance(p, b)/la <= 1`) — how far past a run's end the faces beyond a short end face
+/// reach it (`BodyFaces::end_faces`), as the lowering reads it by its section.
+fn section_size(sk: &Sketch, terms: &[RegionTerm]) -> Option<f64> {
+    use crate::model::Target;
+    terms.iter().filter_map(|t| {
+        let RegionShape::Measured { of } = &t.shape else { return None };
+        let lo = t.lo.read(sk)?;
+        match (&of[..], t.cmp) {
+            ([(Target::Set { .. }, c)], Cmp::Ge) if *c > 0.0 => Some(lo / c),
+            ([(Target::Face(_), kx), (Target::Face(_), ky)], Cmp::Le) if *kx > 0.0 && *ky > 0.0 => {
+                Some((lo / kx).max(lo / ky))
+            }
+            _ => None,
+        }
+    }).fold(None, |a: Option<f64>, b| Some(a.map_or(b, |a| a.max(b))))
+}

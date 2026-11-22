@@ -91,7 +91,7 @@ pub(super) fn build(body: &crate::solid::faces::BodyFaces, f: &Faces, section: S
             let es = body.runs(&body.edges_between(&groups[i], &groups[j])).into_iter()
                 .find(|run| own.iter().any(|e| run.contains(e))).unwrap_or(own);
             let faces: Vec<usize> = groups[i].iter().chain(&groups[j]).copied().collect();
-            bounds.extend(ends_at_all(body, &body.end_faces(&es, &faces)));
+            bounds.extend(ends_at_all(body, &body.end_faces(&es, &faces, Some(section.size()))));
         }
         let runs: Vec<&Run> = pieces.iter().filter_map(|p| match p { Piece::Run(r) => Some(r), _ => None }).collect();
         let size = runs.iter().map(|r| r.span[1] - r.span[0]).fold(r, f64::max);
@@ -338,7 +338,7 @@ fn run(body: &crate::solid::faces::BodyFaces, ga: &[usize], gb: &[usize], within
         }).collect();
     }
     let all: Vec<usize> = ga.iter().chain(gb).copied().collect();
-    let ends = body.end_faces(&edges, &all);
+    let ends = body.end_faces(&edges, &all, Some(section.size()));
     // (the set's edges one run: a point is read against the meeting within that run's ends alone,
     // so where it comes back past an end is the set's own extent there; in several runs each point
     // is read against the ends of the run nearest it, #881)

@@ -1087,16 +1087,18 @@ impl BodyFaces {
     /// does the run.  Each with the end it was read at where it stands elsewhere: none for a face
     /// at an end of the run, that end's point (model units) for where the edge a run-out there
     /// runs along ends.  Past an end face shorter than the section, a face beyond it facing on
-    /// past the end ends a run rolled along too, read at that end (`beyond_end`, #994).
-    pub fn end_faces(&self, es: &[u32], faces: &[usize]) -> Vec<(EndBy, f64, Option<V>)> {
-        self.end_faces_as(es, faces, es.iter().all(|&e| self.carried(e)))
+    /// past the end ends a run rolled along too, read at that end (`beyond_end`, #994): along an
+    /// end face no longer than `reach`, the section's size, and nowhere where none is given.
+    pub fn end_faces(&self, es: &[u32], faces: &[usize], reach: Option<f64>)
+        -> Vec<(EndBy, f64, Option<V>)> {
+        self.end_faces_as(es, faces, es.iter().all(|&e| self.carried(e)), reach)
     }
 
     /// `end_faces`, the rules of a run's own ends (`goes_across`, a reflex corner's plane, where a
     /// run-out ends) read only where the lowering builds its runs and rings by them, every edge of
     /// the set `plain` (`carried`): a ball rolled along a traced run is cut where it ends by the
     /// kernel's own reading of the faces there (`fillet::end_at`).
-    fn end_faces_as(&self, es: &[u32], faces: &[usize], plain: bool)
+    fn end_faces_as(&self, es: &[u32], faces: &[usize], plain: bool, reach: Option<f64>)
         -> Vec<(EndBy, f64, Option<V>)> {
         let mut sides: Vec<(EndBy, f64, Option<V>)> = Vec::new();
         let runs = self.runs(es);
@@ -1123,8 +1125,8 @@ impl BodyFaces {
             }
             // a ball rolled along: past an end face shorter than its section, each face beyond it
             // that faces on past the end cuts it off too, as the kernel reads it (#994)
-            if !plain {
-                for (x, sx) in self.beyond_end(&at, faces, vid, d) {
+            if let (false, Some(reach)) = (plain, reach) {
+                for (x, sx) in self.beyond_end(&at, faces, vid, d, reach) {
                     if !sides.iter().any(|&(y, _, _)| y == EndBy::Face(x)) {
                         sides.push((EndBy::Face(x), sx, Some(v)));
                     }
@@ -1291,7 +1293,8 @@ impl BodyFaces {
     /// (`brep::fillet::faces_on`) ends the run too — a slope over a sliver a cut left at a vane's
     /// toe — each holding the run on its material's side, behind it.  One lying alongside the run
     /// ends nothing.
-    fn beyond_end(&self, at: &[(usize, f64)], faces: &[usize], vid: u32, d: V) -> Vec<(usize, f64)> {
+    fn beyond_end(&self, at: &[(usize, f64)], faces: &[usize], vid: u32, d: V, reach: f64)
+        -> Vec<(usize, f64)> {
         let mut ending: Vec<usize> = at.iter().map(|&(c, _)| c).collect();
         let (mut reached, mut out) = (vec![vid], Vec::new());
         let mut k = 0;
@@ -1305,6 +1308,14 @@ impl BodyFaces {
                     (false, true) => x,
                     _ => continue,
                 };
+                // (only along an end face shorter than the section: one as long is the run's whole
+                // end, and the faces past its far end stand beyond the section's reach — a hub's
+                // side a rounded arm ends on, a big end's half the fill along a rod's shank ends
+                // on, #994)
+                let [a, b] = [x, y].map(|u| self.back(self.loc.b.vertices[u as usize].p));
+                if norm(sub(a, b)) > reach {
+                    continue;
+                }
                 reached.push(w);
                 let p = self.back(self.loc.b.vertices[w as usize].p);
                 for g in self.faces_at(w, faces) {
@@ -1445,10 +1456,11 @@ impl BodyFaces {
     /// Edges `es` (between `faces`) in runs (`runs`), each with where it ends (`end_faces`): a
     /// crease a slot cuts across ends on the slot's sides once for each run (#881), and the ends
     /// of runs read as one run's are within none of them.
-    pub fn end_runs(&self, es: &[u32], faces: &[usize]) -> Vec<(Vec<u32>, Vec<(EndBy, f64)>)> {
+    pub fn end_runs(&self, es: &[u32], faces: &[usize], reach: Option<f64>)
+        -> Vec<(Vec<u32>, Vec<(EndBy, f64)>)> {
         let plain = es.iter().all(|&e| self.carried(e));
         self.runs(es).into_iter().map(|run| {
-            let sides = self.end_faces_as(&run, faces, plain).into_iter()
+            let sides = self.end_faces_as(&run, faces, plain, reach).into_iter()
                 .map(|(c, sign, _)| (c, sign)).collect();
             (run, sides)
         }).collect()

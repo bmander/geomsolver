@@ -429,7 +429,7 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, sides_of: &Sides,
             let Target::Set { terms: inner, .. } = edge.as_ref() else {
                 return Err("where an edge ends is read of a set".to_string());
             };
-            let runs = Arc::new(EndRuns::of(&SetDistance::of(sk, inner, read)?)?);
+            let runs = Arc::new(EndRuns::of(&SetDistance::of(sk, inner, read)?, None)?);
             let most = runs.runs.iter().map(|(_, sides)| sides.len()).max().unwrap_or(0);
             Ok(Some((0..most).map(|k| {
                 let runs = runs.clone();
@@ -770,8 +770,8 @@ impl Rest {
 /// side): the region within all of them, `max σ·side`.  A closed run ends nowhere.  Where the
 /// edges are in several runs (#881: a crease a slot cuts across), a point is within the ends of
 /// the run nearest it (`EndRuns`).
-pub fn ends(set: &SetDistance) -> Result<impl Fn(V) -> f64 + Send + Sync, String> {
-    let runs = EndRuns::of(set)?;
+pub fn ends(set: &SetDistance, reach: Option<f64>) -> Result<impl Fn(V) -> f64 + Send + Sync, String> {
+    let runs = EndRuns::of(set, reach)?;
     Ok(move |p: V| {
         runs.nearest(p).iter().map(|&(c, sign)| sign * runs.body.end_side(&c, p).0)
             .fold(f64::NEG_INFINITY, f64::max)
@@ -793,11 +793,11 @@ struct EndRuns {
 }
 
 impl EndRuns {
-    fn of(set: &SetDistance) -> Result<EndRuns, String> {
+    fn of(set: &SetDistance, reach: Option<f64>) -> Result<EndRuns, String> {
         let SetDistance::Edges { body, edges, faces } = set else {
             return Err("where a set ends is read of an edge: a set on two faces".to_string());
         };
-        Ok(EndRuns { body: body.clone(), runs: body.end_runs(edges, faces) })
+        Ok(EndRuns { body: body.clone(), runs: body.end_runs(edges, faces, reach) })
     }
 
     /// The faces the run nearest `p` ends on, and the side it runs on of each (none where the set
