@@ -8,6 +8,14 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **Two cylinders whose axes lean apart meet in closed-form loops** (#994, fixture 146): new
+  `ssi::crossed_cylinders`/`cylinder_loops`. Where the lesser goes right through the other, the
+  meeting is two closed traces whose points are the graph of the meeting over the lesser's angle,
+  sampled so no projection between two crosses a neck to the other loop — no march. The two
+  ellipses of one radius and crossing axes are kept within the tolerance, the axes' gap now read
+  by the axes' nearest points. A loop turning back, or a lean under `SHALLOW`, is traced as before.
+  Rods of radius 6 a micron apart crossing were refused ("a cylinder's pieces do not close").
+
 - **A run ends on every face beyond a short end face that faces on past it, and a ball too large
   for its face is said by that face** (#994, fixture 147's vane): `fillet::end_at` follows each
   edge an end face makes with the run's faces to its other vertex, and a face there that faces on

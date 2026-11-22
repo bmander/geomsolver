@@ -740,20 +740,10 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
         (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) if rods_apart(&f,r,&g,s,tol) => Ssi::Curves(vec![]),
         // a ball clear of a cylinder or a torus, or resting on it at a point: no curve (`ball_clear`)
         (Surface::Sphere(c,r),ref x) | (ref x,Surface::Sphere(c,r)) if ball_clear(c.o,r,x,tol) => Ssi::Curves(vec![]),
-        (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) if (r-s).abs() <= tol => {
-            // one radius, axes crossing at O: a point as far from both axes has
-            // ((p−O)·a₁)² = ((p−O)·a₂)², so the meeting is the first cylinder cut by the two planes
-            // through O square to a₁ − a₂ and a₁ + a₂: two ellipses, crossing where both touch
-            let axis = |c: &Frame| Curve::Line {p:c.o,d:c.z};
-            let all = [f64::NEG_INFINITY,f64::INFINITY];
-            let Some(&[(_,o)]) = super::query::curve_curve(&axis(&f),all,&axis(&g),all,tol).as_deref() else { return Ssi::Traced };
-            let mut out = Vec::new();
-            for m in [sub(f.z,g.z),add(f.z,g.z)] {
-                let m = unit(m);
-                out.extend(plane_cylinder(m,dot(m,o),&f,r,tol));
-            }
-            Ssi::Curves(out)
-        }
+        // two cylinders whose axes lean apart: of one radius with axes crossing, within the reach of
+        // the singular case, two ellipses; else their loops, each point on both (`crossed_cylinders`)
+        (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) if let Some(curves) = crossed_cylinders(a,&f,r,b,&g,s,tol) =>
+            Ssi::Curves(curves),
         (Surface::Plane(pl),Surface::Revolution(rf,c)) | (Surface::Revolution(rf,c),Surface::Plane(pl)) =>
             match plane_quadric(&pl,&rf,&c,tol) { Some(curves) => Ssi::Curves(curves),None => Ssi::Traced },
         (Surface::Blend(..),_) | (_,Surface::Blend(..)) => match screwed_meeting(a,b,tol) {
@@ -1092,6 +1082,148 @@ fn rods_apart(f: &Frame,r: f64,g: &Frame,s: f64,tol: f64) -> bool {
     let n = cross(unit(f.z),unit(g.z));
     if !(norm(n) >= SHALLOW) { return false }
     dot(sub(g.o,f.o),unit(n)).abs() >= r.abs()+s.abs()-tol
+}
+
+/// **Where two cylinders whose axes lean apart meet, in closed form** (#994, fixture 146): the
+/// curve is a graph over the angle `u` round the one of lesser radius, `r`. Its point at `u`,
+/// `p = o + r (cos u x + sin u y) + h z` (its frame `o, x, y, z`), is on the other, of radius `s`
+/// about the line through `q` along `w`, where `|c + h z|² − ((c + h z) · w)² = s²`, `c = p − h z − q`:
+/// a quadratic `A h² + 2 B h + C = 0`, `A = 1 − (z · w)²` (the lean's sine squared), whose roots
+/// `h± = (−B ± √D) / A`, `D = B² − A C`, are the two branches. Where `D` keeps above nothing all
+/// round, the lesser goes right through the other: two loops, `h+` and `h−`, each a whole turn.
+/// Where it falls below, each stretch of `u` between its roots is one loop, `h+` out and `h−`
+/// back, joined where `D` is nothing (where the curve turns back in `u`).
+///
+/// **Three bands** for axes crossing, or passing a hair apart, at radii equal or nearly (the
+/// Steinmetz case and those beside it). The two loops then come within `2 √(2 r δ)` of each other
+/// at two necks, `δ` the radii's difference, where the surfaces stand `δ` apart:
+/// * `δ` and the axes' gap within the tolerance: the singular case, the meeting the two ellipses
+///   crossing at the necks — the first cylinder cut by the planes through the axes' crossing
+///   square to `z − w` and `z + w` — exact for one radius and crossing axes, within `δ` of the
+///   other surface else. Not wider: a plane through the necks (a pocket's floor through a
+///   groove's axis) meets each cylinder in curves that, past the tolerance, miss one another by
+///   `δ`, and ellipses meeting at a neck there would join them;
+/// * past that, where `D` keeps above nothing (the lesser right through the other), the two loops
+///   however near their necks, never the ellipses: each a closed trace (`Traced`) whose points are
+///   the graph's — on both surfaces to rounding — sampled densely enough that a chord is no longer
+///   than a quarter of the branches' gap at its ends, so that the trace's projection between them
+///   (`Traced::at`) lands on its own branch and not on the other loop across a neck. Marched, the
+///   trace jumped from one loop to the other at a neck (`2.7e-3` apart for radii of 6 a micron
+///   apart), its polyline 1e-2 off the surfaces, and a cylinder's pieces did not close;
+/// * where `D` falls below nothing — a loop turning back, the lesser cutting into the other's side,
+///   or one neck closed by an axes' gap — and at a lean under `SHALLOW`: traced, as before.
+fn crossed_cylinders(a: &Surface,f: &Frame,r: f64,b: &Surface,g: &Frame,s: f64,tol: f64) -> Option<Vec<Curve>> {
+    let (za,zb) = (unit(f.z),unit(g.z));
+    let lean = cross(za,zb);
+    if !(norm(lean) >= SHALLOW) { return None }
+    let (r,s) = (r.abs(),s.abs());
+    // the axes' nearest points, their gap and its middle
+    let w = sub(g.o,f.o);
+    let (k,d1,d2) = (dot(za,zb),dot(za,w),dot(zb,w));
+    let den = 1.-k*k;
+    let (t1,t2) = ((d1-k*d2)/den,(k*d1-d2)/den);
+    let (p1,p2) = (add(f.o,scale(za,t1)),add(g.o,scale(zb,t2)));
+    if (r-s).abs() <= tol && distance(p1,p2) <= tol {
+        let o = scale(add(p1,p2),0.5);
+        let mut out = Vec::new();
+        for m in [sub(za,zb),add(za,zb)] {
+            let m = unit(m);
+            out.extend(plane_cylinder(m,dot(m,o),f,r,tol));
+        }
+        return Some(out)
+    }
+    // the graph over the lesser
+    let ((ga,fa,ra),(gb,fb,rb)) = if r <= s { ((a,f,r),(b,g,s)) } else { ((b,g,s),(a,f,r)) };
+    cylinder_loops(ga,fa,ra,gb,fb,rb,tol)
+}
+
+/// `crossed_cylinders`' loops: the graph of the meeting of cylinder `a` (frame `f`, radius `r`) with
+/// `b` (frame `g`, radius `s`) over the angle round `a`, as closed traces.
+fn cylinder_loops(a: &Surface,f: &Frame,r: f64,b: &Surface,g: &Frame,s: f64,tol: f64) -> Option<Vec<Curve>> {
+    use std::f64::consts::TAU;
+    let (z,wz) = (unit(f.z),unit(g.z));
+    let aa = 1.-dot(z,wz)*dot(z,wz);
+    let rim = |u: f64| { let (sn,cs) = u.dsin_cos(); add(f.o,add(scale(f.x,r*cs),scale(f.y,r*sn))) };
+    // B and D at u, the discriminant read as one product less another
+    let bd = |u: f64| {
+        let c = sub(rim(u),g.o);
+        let (cw,cz) = (dot(c,wz),dot(c,z));
+        let bb = cz-cw*dot(z,wz);
+        let cc = dot(c,c)-cw*cw-s*s;
+        (bb,bb*bb-aa*cc)
+    };
+    let at = |u: f64,side: f64| { let (bb,dd) = bd(u); add(rim(u),scale(z,(-bb+side*dd.max(0.).sqrt())/aa)) };
+    // the gap between the branches at u
+    let gap = |u: f64| 2.*bd(u).1.max(0.).sqrt()/aa;
+    // D's roots round the turn, each to the last bit
+    const M: usize = 4096;
+    let us: Vec<f64> = (0..=M).map(|j| TAU*j as f64/M as f64).collect();
+    let ds: Vec<f64> = us.iter().map(|&u| bd(u).1).collect();
+    let mut roots: Vec<f64> = Vec::new();
+    let root = |u0: f64,u1: f64| {
+        let below = bd(u0).1 < 0.;
+        let (x,y) = crate::util::roots::bisect(u0,u1,|x,y| 0.5*(x+y),|x,y| { let m = 0.5*(x+y); m != x && m != y },
+            |u| (bd(u).1 < 0.) == below);
+        0.5*(x+y)
+    };
+    for j in 0..M {
+        if (ds[j] >= 0.) != (ds[j+1] >= 0.) { roots.push(root(us[j],us[j+1])); continue }
+        // a dip below nothing narrower than the samples (a neck where the axes pass a hair apart:
+        // `√(2 e / r)` wide): D's least about each sample least among its neighbours, by golden
+        // section, and its two roots either side where it is below nothing
+        let (before,after) = (ds[(j+M-1)%M],ds[j+1]);
+        if !(ds[j] >= 0. && ds[j] <= before && ds[j] <= after) { continue }
+        let (mut lo,mut hi) = (us[j]-TAU/M as f64,us[j+1]);
+        for _ in 0..200 {
+            let (m1,m2) = (lo+(hi-lo)*0.381_966,lo+(hi-lo)*0.618_034);
+            if bd(m1).1 < bd(m2).1 { hi = m2 } else { lo = m1 }
+            if hi-lo <= 1e-15 { break }
+        }
+        let least = 0.5*(lo+hi);
+        if bd(least).1 < 0. {
+            let wrap = |u: f64| u.rem_euclid(TAU);
+            roots.push(wrap(root(us[j]-TAU/M as f64,least)));
+            roots.push(wrap(root(least,us[j+1])));
+        }
+    }
+    roots.sort_by(f64::total_cmp);
+    // one branch from `u0` to `u1`, its points, refined while a chord stands more than a quarter of
+    // the branches' gap at its ends, or an eighth of the radius, long — down to `16 tol`
+    let longest = r/8.;
+    let branch = |u0: f64,u1: f64,side: f64| -> Vec<V> {
+        let n = (((u1-u0)/TAU*64.).ceil() as usize).max(8);
+        let mut done: Vec<(f64,V)> = Vec::new();
+        let mut stack: Vec<(f64,f64)> = (0..n).rev().map(|j| (u0+(u1-u0)*j as f64/n as f64,u0+(u1-u0)*(j+1) as f64/n as f64)).collect();
+        while let Some((x,y)) = stack.pop() {
+            let (p,q) = (at(x,side),at(y,side));
+            let chord = distance(p,q);
+            let bar = longest.min(0.25*gap(x).min(gap(y)).max(0.));
+            if chord > bar && chord > 16.*tol && y-x > 1e-13 && done.len() < 200_000 {
+                let m = 0.5*(x+y);
+                stack.push((m,y));
+                stack.push((x,m));
+                continue
+            }
+            if done.is_empty() { done.push((x,p)) }
+            done.push((y,q));
+        }
+        done.into_iter().map(|(_,p)| p).collect()
+    };
+    let traced = |pts: Vec<V>| Curve::Traced(std::sync::Arc::new(super::geom::Traced {a:a.clone(),b:b.clone(),pts,closed:true}));
+    if roots.is_empty() {
+        if ds[0] < 0. { return Some(Vec::new()) }
+        // right through: two loops, each a whole turn
+        return Some([1.,-1.].map(|side| {
+            let mut pts = branch(0.,TAU,side);
+            pts.pop();
+            let first = pts[0];
+            pts.push(first);
+            traced(pts)
+        }).into_iter().collect())
+    }
+    // a loop that turns back where D is nothing (the lesser cutting into the other's side, or a
+    // neck the axes' gap closes): traced, as before
+    None
 }
 
 /// **A ball meets a cylinder or a torus in no curve** where its centre stands at least its radius
