@@ -582,6 +582,23 @@ fn crossings(c: &super::topo::Coedge,e: &super::topo::Edge,s: &Surface,vertices:
     let ts: Vec<f64> = (0..=n).map(|j| e.t[0]+(e.t[1]-e.t[0])*j as f64/n as f64).collect();
     let uvs: Vec<Uv> = ts.iter().map(|&t| at(t)).collect();
     let mut out = Vec::new();
+    // (and on a net, where its normal turns over between two points of the use — its area factor
+    // `|S_u × S_v|` through nought, a kink: a spindle torus's net crossing its axis, whose rows there
+    // are no knots)
+    if let Surface::BSpline(..) = s {
+        let normal = |uv: Uv| { let (_,su,sv) = s.d1(uv); cross(su,sv) };
+        let ns: Vec<V> = uvs.iter().map(|&q| normal(q)).collect();
+        for j in 0..n {
+            if !(dot(ns[j],ns[j+1]) < 0.) { continue }
+            let (mut lo,mut hi) = (ts[j],ts[j+1]);
+            for _ in 0..60 {
+                let m = 0.5*(lo+hi);
+                if dot(normal(at(m)),ns[j]) >= 0. { lo = m } else { hi = m }
+                if hi-lo <= 1e-12*(e.t[1]-e.t[0]).abs() { break }
+            }
+            out.push(0.5*(lo+hi));
+        }
+    }
     for j in 0..n {
         for k in 0..2 {
             let (a,b) = (uvs[j][k],uvs[j+1][k]);
