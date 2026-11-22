@@ -41,7 +41,7 @@ mod words;
 mod traced;
 
 pub use diagnostics::{Code, Diag, Severity};
-pub use refused::{refusal_cause, refusal_site, with_free};
+pub use refused::{refusal_cause, refusal_site, with_free, Free};
 pub use drift::{drift, DRIFT};
 pub use scenarios::{Line, Stated};
 pub use measures::MeasureStated;

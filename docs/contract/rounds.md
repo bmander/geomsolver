@@ -1153,11 +1153,14 @@ on from them: the body's own, whose late terms (a round's fills and cuts) are co
 with what the last Boolean knew of their faces (`brep::recipe::Stratum`, `boolean::Known`), and
 each round's `"lowered"` node, whose rolled runs roll against them.  Within one build the kernel
 keeps them by the terms they are made of (`recipe::Strata`, `StratumKey`: the ids, one node each,
-and the floor; `Node::built_among`); across builds, the stratum the rounds' reading made
-(`faces::cached`, `BodyFaces::stratum`, `exact::build_stratum`) is handed to a build only where it
-is made of the very B-reps that build made (`recipe::known_stratum`: the terms, the floor and a
-digest of every operand's `Debug` text, which writes each number to read back exactly;
-`faces::stratum_made` never builds).  Built again for the body and for each round that rolls,
+and the floor; `Node::built_among`) — only a body with late terms, a lowered node's stratum or one
+a build is asked to offer; any other body is built straight into its own B-rep; across builds, the
+stratum the reading of a body with rounds made is offered (`exact::build_stratum(…, offer)`,
+`recipe::Offered`, kept on its `faces::cached` reading) and taken by a build only where it is made
+of the very B-reps that build made (`recipe::known_stratum`: the terms, the floor and a digest of
+every operand's `Debug` text, which writes each number to read back exactly, hashed as it is
+written and read only where a stratum is offered or taken; `faces::stratum_made` never builds).
+Built again for the body and for each round that rolls,
 a round on a body of many terms cost the body's Booleans again, and a part's dozen rounds as many
 builds of it.  `tests/strata.rs` is the gate
 (`the_booleans_a_round_adds_do_not_grow_with_the_body_it_rounds`: counted by

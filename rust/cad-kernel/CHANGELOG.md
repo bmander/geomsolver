@@ -41,6 +41,12 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   document, cored and flanged as the fixture is, and every near-miss of its legs whatever is joined
   or cut after, build as the tangent turn.
 
+- **One area rule and one pole rule** (#996 cleanup): `topo::green_area` is the Simpson-on-Green
+  routine `Brep::loop_area` and a Boolean's cycles both read, its samples kept as the steps double;
+  `topo::near_pole` the one reading of a point within a tolerance of a pole, at every site that
+  asks. A piece's inside is read with its first bar and its finest outline drawn once, and a
+  meeting's touches read alone (`ssi::alone_over`) only where the search passes them.
+
 ## [0.20.0] - 2026-11-21
 
 - **A drafted corner where an arc meets a side at an angle is built** (#962 item 8b): `build::offset`

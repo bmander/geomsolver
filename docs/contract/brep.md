@@ -195,10 +195,13 @@ through a torus's axis meets it in its meridian either side**, two circles in cl
 (`ssi::intersect`, as a plane through a cone's axis holds its generators): a turn's caps stand in
 such planes, and traced, each cap took its circles in two marches of 100 000 points, a quarter
 elbow and its two legs 3.3 s, now some 20 ms. **A loop's area in its face's parameters is
-Simpson's** (`Brep::loop_area`): each curved use sampled, each pair of steps' bulge past its chord
-taken as a parabola's, the steps doubled until two readings agree within the area: a crescent
-between a turn's cap's rim and a leg's a thousandth inside it, 308° long, read as a polygon's area
-turned the wrong way. **A tube all but tangent to another at a seam is on it** (#996, `flush::tubes_flushed`, the
+Simpson's, by one rule** (`topo::green_area`, which `Brep::loop_area` and a Boolean's cycles'
+`fine_area` both read): Green's theorem, each curved use sampled at `n` steps and a straight one
+by its chord, each pair of steps' bulge past its chord taken as a parabola's, `n` doubled from 32
+— the samples kept, the new ones read between — until the readings at `n` and `n/2` agree to a
+thousandth, or 4096 steps a use. A polygon's area misses each arc's segments by more than a thin
+strip holds: a crescent between a turn's cap's rim and a leg's a thousandth inside it, 308° long,
+read so turned the wrong way, a loop refused and a Boolean's cycle dropped as a hole. **A tube all but tangent to another at a seam is on it** (#996, `flush::tubes_flushed`, the
 tube's sibling of an end all but flush with a plane): before a body's operand is combined with the
 solid (`boolean::combined_written`), a cylinder of either whose end circle stands concentric with
 and in the plane of a circle of the other — a leg on a turn's cap — with radii differing at all but
@@ -225,13 +228,7 @@ apart by more than the tolerance is kept; only one with no inside so is a sliver
 edge. Read by its outlines alone, the crescent between a turn's rim and a leg's twelve
 tolerances inside it was dropped while its two sides stayed two edges, and the turn's face hung by
 its rim ("a shell of the arrangement is kept on one side of a plane and dropped on another"). **A
-cycle's area in a Boolean is Simpson's** (`fine_area`, as `Brep::loop_area`): a polygon's misses
-each arc's segments by more than such a crescent holds, and its sense came out the wrong way, the
-crescent dropped as a hole. **An inverse pcurve ending within its edge's tolerance of a pole is at
-it** (`topo::on_pole`): the leg's circle standing for the turn's rim a tolerance outside it ends
-across the axis from the pole by as much, and read there its collapsed parameter came out half a
-turn round — the loop broke in the parameters, or, closed, enclosed the wrong side (a union 2.6
-times the solid). **A meeting the unseen search finds off either face is not traced**
+meeting the unseen search finds off either face is not traced**
 (`ssi::unseen_beside`): a curve through it lies outside the faces or crosses an edge into them,
 where that edge's crossing seeds it, and traced it was a march of a hundred thousand points no face
 kept (a tube a ten-thousandth inside its leg, crossing the leg's cylinder run on under the seam,
@@ -241,10 +238,16 @@ seconds a build). `brep_export::a_turn_a_near_miss_off_its_legs_is_the_tangent_t
 radius within the reach, the step past it, each to its closed form within the tolerance's band
 over its boundary) and `the_fixtures_elbow_cored_and_flanged_is_built` (the issue's document cored
 by a bent passage of radius 17 and flanged at each end, to its closed form) are the gate.
-**A use ending within its vertex's or its edge's tolerance of a pole is at the pole**, wherever
-the pole is read: an inverse pcurve's end (`topo::on_pole`), the corner a loop is closed at by a
-pole edge (`Brep::close_poles`, half a turn of the collapsed parameter moving a point no farther
-than π times that tolerance), and a half's points in a Boolean's face (`uv_seeded`); and **a pole's
+**A use ending within its vertex's or its edge's tolerance of a pole is at the pole**, by one
+reading wherever the pole is read (`topo::near_pole`: the point within that tolerance of the pole
+in space, half a turn of the collapsed parameter moving it no farther than π times it): an inverse
+pcurve's end (`topo::on_pole`, its edge's tolerance), the corner a loop is closed at by a pole edge
+(`Brep::close_poles`, its vertex's and its edges'), and in a Boolean an edge's end laid across a
+face (the arrangement's) and a half's points (`uv_seeded`, its edge's gap and its vertices'). Read
+on the surface's own inverse instead, the leg's circle standing for a turn's rim a tolerance
+outside it, ending across the axis from the pole by as much, came out half a turn round — the loop
+broke in its parameters, its piece read as a hole, or, closed, it enclosed the wrong side (a union
+2.6 times the solid). And **a pole's
 half runs along the parameter the pole collapses** (`pieces_of_face`'s ways), its ends' other
 parameter disagreeing by a node's width read as no way at all, where the pole's vanishing rate
 along the first had made that disagreement its whole way and tied it with a meridian there. And

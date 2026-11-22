@@ -2646,29 +2646,15 @@ fn derivative_bounds(s: &Surface,[v0,v1]: [f64;2]) -> Option<[f64;5]> {
         // pole (#996: read as the widest parallel's, a strip beside the pole, all one point, was
         // halved along `u` four million times)
         Surface::Torus(_,big,r) => {
-            let [lo,hi] = cos_range(v0,v1);
+            // cos over the strip, enclosed outward (a turn's worth or more: all of [−1, 1])
+            let [lo,hi] = crate::util::interval::Interval::new(v0.min(v1),v0.max(v1))
+                .and_then(|v| v.sin_cos_periodic()).map_or([-1.,1.],|(_,c)| c.bounds());
             let q = (big+r*lo).abs().max((big+r*hi).abs());
             Some([q,r.abs(),q,r.abs(),r.abs()])
         }
         Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..)
             | Surface::Offset(..) => None,
     }
-}
-
-/// The least and the greatest cosine over `[v0, v1]`: its ends', and ±1 where a multiple of `π`
-/// lies within.
-fn cos_range(v0: f64,v1: f64) -> [f64;2] {
-    let (a,b) = (v0.min(v1),v0.max(v1));
-    if b-a >= std::f64::consts::TAU { return [-1.,1.] }
-    let (ca,cb) = (a.dcos(),b.dcos());
-    let (mut lo,mut hi) = (ca.min(cb),ca.max(cb));
-    // the multiples of π within, each a peak (even) or a trough (odd)
-    let mut k = (a/std::f64::consts::PI).ceil();
-    while k*std::f64::consts::PI <= b {
-        if (k as i64).rem_euclid(2) == 0 { hi = 1. } else { lo = -1. }
-        k += 1.;
-    }
-    [lo,hi]
 }
 
 /// A bound on the size of an analytic surface's `implicit`'s Hessian over the ball about `p` of

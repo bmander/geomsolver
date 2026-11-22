@@ -74,7 +74,7 @@ pub struct BodyFaces {
     /// The written terms of the body as its build made them, where it was built so (#996): what
     /// the body's own build goes on from to make its rounds (`solid::exact`), rather than make
     /// the stratum again.
-    stratum: Option<std::sync::Arc<crate::brep::recipe::Stratum>>,
+    stratum: Option<crate::brep::recipe::Offered>,
 }
 
 impl BodyFaces {
@@ -82,9 +82,9 @@ impl BodyFaces {
     pub fn read(sk: &Sketch, body: usize) -> Result<BodyFaces, String> {
         let readers = readers_of(sk, body);
         if readers.is_empty() {
-            return BodyFaces::built(sk, body, false);
+            return BodyFaces::built(sk, body, false, false);
         }
-        BodyFaces::built(&without(sk, &readers)?, body, false)
+        BodyFaces::built(&without(sk, &readers)?, body, false, true)
     }
 
     /// Solid `body`'s faces as the drawing finishes it, the terms that read them made too (its
@@ -96,13 +96,14 @@ impl BodyFaces {
             return cached(sk, body);
         }
         let key = crate::solid::MemoKey::of(sk, body);
-        let build = || BodyFaces::built(sk, body, true).map(std::sync::Arc::new);
+        let build = || BodyFaces::built(sk, body, true, false).map(std::sync::Arc::new);
         sk.caches.whole.get_or(body, key, build)
     }
 
     /// Solid `body`'s faces in `from`, every term of it made: its B-rep `from`'s remembered one
-    /// where `remembered`, else built for this reading alone (a stratum's).
-    fn built(from: &Sketch, body: usize, remembered: bool) -> Result<BodyFaces, String> {
+    /// where `remembered`, else built for this reading alone (a stratum's) — its written terms
+    /// offered to the body's own build where `offer` (a stratum its rounds read, #996).
+    fn built(from: &Sketch, body: usize, remembered: bool, offer: bool) -> Result<BodyFaces, String> {
         let name = from.solids.get(body).ok_or("no such solid")?.name.clone();
         // each face named by its document path (`pocket.near`), as `solid::exact` names them —
         // a swept body's by its blank's primitives and the cutter's faces its cuts left (#212)
@@ -112,7 +113,7 @@ impl BodyFaces {
         } else if remembered {
             from.exact_preimage(body).map(|e| ((*e).clone(), None))
         } else {
-            crate::solid::exact::build_stratum(from, body)
+            crate::solid::exact::build_stratum(from, body, offer)
         }.map_err(|e| format!("`{name}`'s faces: {e}"))?;
         let routes = crate::solid::document::operand_paths(from, body);
         let paths = ex.named.iter().map(|(of, face)| {
@@ -121,8 +122,9 @@ impl BodyFaces {
         Ok(BodyFaces { stratum, ..BodyFaces::of(ex, paths) })
     }
 
-    /// The written terms of the body as its build made them (`stratum`), where it was built so.
-    pub(crate) fn stratum(&self) -> Option<&std::sync::Arc<crate::brep::recipe::Stratum>> {
+    /// The written terms of the body as its build made them, offered (`stratum`), where it was
+    /// built so.
+    pub(crate) fn stratum(&self) -> Option<&crate::brep::recipe::Offered> {
         self.stratum.as_ref()
     }
 

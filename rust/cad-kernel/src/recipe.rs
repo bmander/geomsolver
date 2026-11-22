@@ -56,44 +56,59 @@ pub fn node_named(n: &Node,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
 /// and cuts) and a lowered region's rolled runs read (#183 F6) — with what its last Boolean knows
 /// of its faces (`boolean::Known`), so the late terms go on from it as they would have.
 #[derive(Clone,Debug)]
-pub struct Stratum { solid: Brep,known: Option<super::boolean::Known>,key: StratumKey,made_of: u64 }
+pub struct Stratum { solid: Brep,known: Option<super::boolean::Known> }
 
-impl Stratum {
-    /// The body its written terms make.
-    pub fn solid(&self) -> &Brep { &self.solid }
+/// **A stratum one build made, offered to another** (#996): the stratum, the terms it is made of,
+/// and a digest of the B-reps it was made from (`made_of`), read once, as it leaves its build.
+#[derive(Clone,Debug)]
+pub struct Offered { stratum: std::sync::Arc<Stratum>,key: StratumKey,made_of: u64 }
+
+/// A `fmt::Write` that hashes what is written to it, so a value's `Debug` text is digested as it is
+/// written and never held.
+struct Hashing<'h>(&'h mut std::collections::hash_map::DefaultHasher);
+
+impl std::fmt::Write for Hashing<'_> {
+    fn write_str(&mut self,s: &str) -> std::fmt::Result {
+        std::hash::Hasher::write(self.0,s.as_bytes());
+        Ok(())
+    }
 }
 
 /// What body `n`'s written terms are made of, built as `built` holds them: a digest of every
-/// operand's B-rep (its `Debug` text, which writes each number so it reads back exactly), in the
-/// order the terms take them — so a stratum one build made is known for another's only where it
-/// is made of the same B-reps, whatever ids name them.
-fn made_of(n: &Body,built: &BTreeMap<i64,Brep>) -> u64 {
+/// operand's B-rep (its `Debug` text, which writes each number so it reads back exactly, hashed as
+/// it is written), in the order the terms take them — so a stratum one build made is known for
+/// another's only where it is made of the same B-reps, whatever ids name them.  Read only where a
+/// stratum leaves its build (`offered`) or is offered to one (`known_stratum`).
+pub fn made_of(n: &Body,built: &BTreeMap<i64,Brep>) -> u64 {
+    use std::fmt::Write;
     use std::hash::{Hash,Hasher};
     // SipHash under fixed keys: the same digest on every run and every core
     let mut h = std::collections::hash_map::DefaultHasher::new();
     for (k,id) in std::iter::once(&n.stock).chain(n.on.iter().chain(&n.cut).chain(&n.bound)).enumerate() {
         (k,id).hash(&mut h);
-        format!("{:?}",built.get(id)).hash(&mut h);
+        let _ = write!(Hashing(&mut h),"{:?}",built.get(id));
     }
     h.finish()
 }
 
-/// **A stratum another build made, known for this one's** (#996): `stratum`, the written terms of
-/// a body another build made (a round's reading of the body, `solid::faces`), left in `strata` for
-/// body `n`, built from `built` to `floor`, where it is that body's — the same terms, of the same
-/// B-reps, to the same floor — so the body's late terms go on from it rather than make it again.
-/// Whether it was.
-pub fn known_stratum(strata: &mut Strata,n: &Body,built: &BTreeMap<i64,Brep>,floor: f64,
-                     stratum: &std::sync::Arc<Stratum>) -> bool {
+/// **A stratum another build made, known for this one's** (#996): `offered`, the written terms of a
+/// body another build made (a round's reading of the body, `solid::faces`), left in `strata` for
+/// body `n`, built to `floor` from B-reps whose digest is `made_of` (this build's, `made_of`),
+/// where it is that body's — the same terms, of the same B-reps, to the same floor — so the body's
+/// late terms go on from it rather than make it again.  Whether it was.
+pub fn known_stratum(strata: &mut Strata,n: &Body,floor: f64,made_of: u64,offered: &Offered) -> bool {
     let key = StratumKey::of(n,floor);
-    if stratum.key != key || stratum.made_of != made_of(n,built) { return false }
-    strata.insert(key,stratum.clone());
+    if offered.key != key || offered.made_of != made_of { return false }
+    strata.insert(key,offered.stratum.clone());
     true
 }
 
-/// Body `n`'s written terms as `strata` holds them, built to `floor`.
-pub fn stratum_of(strata: &Strata,n: &Body,floor: f64) -> Option<std::sync::Arc<Stratum>> {
-    strata.get(&StratumKey::of(n,floor)).cloned()
+/// Body `n`'s written terms as `strata` holds them, built to `floor` from `built`, offered to
+/// another build (`known_stratum`): its digest read here, once.
+pub fn offered(strata: &Strata,n: &Body,built: &BTreeMap<i64,Brep>,floor: f64) -> Option<Offered> {
+    let key = StratumKey::of(n,floor);
+    let stratum = strata.get(&key)?.clone();
+    Some(Offered {stratum,key,made_of:made_of(n,built)})
 }
 
 /// The written terms a body's stratum is made of, as one recipe's nodes name them, and the floor
@@ -111,7 +126,8 @@ impl StratumKey {
 
 /// **The strata one build has made** (#996), by what each is made of: a body's written terms are
 /// built once for the build, however many of its rounds roll a ball against them and whether its
-/// own late terms go on from them — not once a round and once more for the body.
+/// own late terms go on from them — not once a round and once more for the body.  Only a body with
+/// late terms, a lowered region's stratum, or one a build is asked to offer (`written`) is kept.
 pub type Strata = BTreeMap<StratumKey,std::sync::Arc<Stratum>>;
 
 impl Node {
@@ -327,7 +343,7 @@ fn lowered_node(n: &Lowered,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i6
     let first_rolled = pieces.len();
     if !n.rolled.is_empty() {
         let stratum = written(n.stratum.as_ref().ok_or("recipe: no `stratum`")?,built,built_names,floor,strata)?;
-        let stratum = stratum.solid();
+        let stratum = &stratum.solid;
         let tol = tolerance_over(stratum.size(),floor);
         for k in &n.rolled {
             pieces.push(rolled_run(k,stratum,tol,floor)?);
@@ -469,37 +485,45 @@ fn beside(a: &Brep,b: &Brep,floor: f64) -> Built {
 /// bounds it — in that order, as the native host combines them; then what reads the faces that
 /// makes (a round's fills, then its cuts: the stratum, #183 F6), where `n` lists them.
 fn body(n: &Body,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64,strata: &mut Strata) -> Built {
+    // a body nothing goes on from is built straight into its own B-rep, kept nowhere
+    if n.on_late.is_empty() && n.cut_late.is_empty() && !strata.contains_key(&StratumKey::of(n,floor)) {
+        let mut solid = built.get(&n.stock).ok_or("recipe: `stock` not built before its user")?.clone();
+        combined_sets(n,false,&mut solid,&mut None,built,built_names,floor)?;
+        return Ok(solid)
+    }
     let stratum = written(n,built,built_names,floor,strata)?;
     let (mut solid,mut known) = (stratum.solid.clone(),stratum.known.clone());
-    combined_sets(n,3..5,&mut solid,&mut known,built,built_names,floor)?;
+    combined_sets(n,true,&mut solid,&mut known,built,built_names,floor)?;
     Ok(solid)
 }
 
 /// Body `n`'s written terms built (`Stratum`): `strata`'s where this build has made them, else made
-/// and left there.  A failure is said each time it is asked, as it was made.
-fn written(n: &Body,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64,strata: &mut Strata)
+/// and left there.  A failure is said each time it is asked, as it was made.  What a build asked to
+/// offer a body's stratum (`solid::exact`) builds it by.
+pub fn written(n: &Body,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64,strata: &mut Strata)
     -> Result<std::sync::Arc<Stratum>,KernelError> {
     let key = StratumKey::of(n,floor);
     if let Some(s) = strata.get(&key) { return Ok(s.clone()) }
     let mut solid = built.get(&n.stock).ok_or("recipe: `stock` not built before its user")?.clone();
     // what each step knows of the faces it hands the next (`boolean::Known`, #589)
     let mut known: Option<super::boolean::Known> = None;
-    combined_sets(n,0..3,&mut solid,&mut known,built,built_names,floor)?;
-    let stratum = std::sync::Arc::new(Stratum {solid,known,key:key.clone(),made_of:made_of(n,built)});
+    combined_sets(n,false,&mut solid,&mut known,built,built_names,floor)?;
+    let stratum = std::sync::Arc::new(Stratum {solid,known});
     strata.insert(key,stratum.clone());
     Ok(stratum)
 }
 
-/// Body `n`'s sets `which` (`Body::sets`' order) combined with `solid` in turn, `known` handed
-/// from each step to the next.
-fn combined_sets(n: &Body,which: std::ops::Range<usize>,solid: &mut Brep,known: &mut Option<super::boolean::Known>,
+/// Body `n`'s written sets (stock on, cut, bound), or its late ones (`late_sets`: what reads the
+/// faces the rest make, fills then cuts), combined with `solid` in turn, `known` handed from each
+/// step to the next.
+fn combined_sets(n: &Body,late_sets: bool,solid: &mut Brep,known: &mut Option<super::boolean::Known>,
                  built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Result<(),KernelError> {
-    let ops = [Op::Union,Op::Cut,Op::Common,Op::Union,Op::Cut];
+    let sets = n.sets();
+    let (sets,ops) = if late_sets { (&sets[3..],&[Op::Union,Op::Cut][..]) } else { (&sets[..3],&[Op::Union,Op::Cut,Op::Common][..]) };
     // the rounds and chamfers applied so far, for where one leaves the body touching itself
     let mut late: Vec<&Brep> = Vec::new();
-    for ((key,list),op) in n.sets().into_iter().zip(ops).take(which.end).skip(which.start) {
-        // the late sets (fills, then cuts) are what reads the faces the rest make
-        let written = !key.ends_with("_late");
+    for (&(key,list),&op) in sets.iter().zip(ops) {
+        let written = !late_sets;
         for x in list {
             let operand = built.get(x).ok_or(format!("recipe: an operand not built before its body"))?;
             // (as a failure calls it, `Named::called`)

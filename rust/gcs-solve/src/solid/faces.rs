@@ -297,7 +297,7 @@ pub fn cached(sk: &Sketch, body: usize) -> Result<std::sync::Arc<BodyFaces>, Str
 /// `cached` built, where it has built them for the drawing as it stands — never built here.  What
 /// the body's own build goes on from (`solid::exact`), where it is made of the same B-reps.
 pub(crate) fn stratum_made(sk: &Sketch, body: usize)
-    -> Option<std::sync::Arc<crate::brep::recipe::Stratum>> {
+    -> Option<crate::brep::recipe::Offered> {
     let key = super::MemoKey::except(sk, body, &|s| reads_faces_of(sk, s, body));
     sk.caches.faces.get(body, &key)?.ok()?.stratum().cloned()
 }
