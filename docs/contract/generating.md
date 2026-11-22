@@ -2160,17 +2160,36 @@ alone the groove and the block beside it were one cell, and the block came back 
 sheets in it. A meridian touched whole at two of the closed class's poses (`K2_POSES`) or more is
 `Curved` at its farthest point (`ring_entered`, before anything is fitted;
 `swept_rings::a_ring_carried_along_a_spline_touching_its_meridians_whole_is_refused_by_name`); an
-instant alone touching one whole (an end pose) is no sheet. **What builds it, measured**: a meridian
-touched whole is a circle whose `n · v` is nought all round, so it is the great circle square to
-its centre's velocity of the ball of its radius about its centre, and its sweep is that ball's tube
-(`canal::tube`: the bottom meridian's, a pipe of radius 0.5 about the path a unit below it); entered
-as a candidate, flat at its ends inside the ring where it starts and stops, its rims given there,
-it is arranged, but the arrangement seeks its meeting with the tubes' walls from no seed — at each
-instant the pipe and a tube both pass through the point where the meridian crosses the contact
-curve, both tangent to the ring there, so they touch along that point's path, which no search
-proves and the road must give (a 40 × 40 grid finds the pipe meeting the wall on its patch, its
-feet 1e-10 to 1e-8 off) — and the groove still leaks into the block; at the bench's own tolerance
-(5.3e-8) the fits are two hundred times finer besides. **A ring is the ring road's under any motion
+instant alone touching one whole (an end pose) is no sheet. **What builds it, measured**: along this path the contact
+is exact — the two parallels `ψ₀(t)`, `ψ₀ + π` (`s cos ψ + ωR sin ψ = 0`) and the two meridians
+`θ* = ±π/2` — and on a meridian `s''` changes sign exactly where a parallel crosses it, as it does on
+the parallel there, without its sheet folding: the parallel is touching on one side of the crossing
+right up to the meridian (`A`), and on the other a buried sliver runs out to a true fold `d_F` past it
+(0.0017 to 0.012 of a turn over the roll), past which the far leaf `B'` lies over the meridian's
+canal, crossing it at 0.03° and standing up to 5.8e-8 above it until `2 d_F` (`d_c = 2 d_F` to three
+digits: the section is a parabola through the crossing). So the bridge's old ends lay on the canal
+only to 1e-10 – 1e-8 and parted from it near the roll's ends; the crossing itself lies on it to the
+rounding. **The touching side is the sheet** (`rings`' reader, #942 T1d-ring): of a bridge holding
+the join where the label turns over, the piece on the side clear of the sliver's least is touching,
+its rim on the meridian the crossing, and the sliver's piece alone is dipped (`narrow` now asks a
+narrow pair's bridge to share its neighbours' branch). **The meridian's touching half is a sheet of
+its own** (`rings::Strip`, `fitted`'s `strips`): the arc between the two tubes' crossings on the
+side where its `s''` stands above nought, read at each roll (`Ring::touched_near`, the arc's roots a
+hair off the meridian, as the tubes read their seams), fitted as a tube is, its sides the tubes'
+seams within the fits
+(`swept_rings::a_whole_touched_meridians_touching_half_is_a_sheet_between_the_tubes_seams`). Entered
+(`rings::strip_entered`), its sides are the tubes' very seam curves, and what it meets is given by
+construction: the ring at either end in its rim, each tube's touching face in the seam, its dipped
+face in the seam and its far seam (the sliver's far side, on the strip within 2e-9), the leaf beyond
+in the far seam, every other face of the tube nothing; a far seam leaving the strip across its rim is
+cut there, and where it ends on the strip the dipped face's rim on the ring closes the strip's
+corner. **Not yet**: arranged so, the bench's case fits in 11 s and arranges in 41 s, and the
+groove and the block are still one cell, at 1e-5 as at 5.3e-8: at the end poses the ring where it
+stops lies on both sides of a tube's rim beside the strip's corner (its face's loop walking the
+touching rim, the dipped one and the leaf's out and back), where the ring, the strip, the tube's
+touching side and its dipped one all touch one another, and a far seam's crossing of the strip's rim
+3e-5 off the corner is taken for the corner by the reach of a meeting so shallow. The refusal stands
+before anything is fitted. **A ring is the ring road's under any motion
 K2 and the general road refuse it** (#942 T1d-ring, `closed::k2`): a tool of revolution clear of its
 axis whose contact the road reads at the instants `rings::admits` asks is built on the ring road
 from `closed`/`cut_from`, judged as every road is, its own refusal standing where it cannot build

@@ -289,8 +289,8 @@ fn a_tubes_chord_given_as_its_meeting_with_the_tool_is_its_own_edge_laid_once() 
     let ends = [0.,1.].map(|t| posed(&tool,&ring,&path,&fit,t).unwrap());
     let poses = [0.,1.].map(|t| path.pose(t).unwrap());
     let (tubes,given) = entered(&fit,&ring,[&ends[0],&ends[1]],poses,tol).unwrap();
-    assert_eq!(tubes.len(),2,"a tube for each contact curve");
-    for (k,tube) in tubes.iter().enumerate() {
+    assert_eq!(tubes.len(),4,"a tube for each contact curve, and a strip for each meridian touched whole after them");
+    for (k,tube) in tubes.iter().take(2).enumerate() {
         // a curve given is a span of several of a curve that is one of the tube's edges
         let own = |e: &gcs_core::brep::topo::Edge| given.iter().flat_map(|g| &g.curves)
             .any(|c| matches!(&e.curve,EdgeCurve::Curve(ec) if ec == c));
@@ -439,10 +439,11 @@ fn a_rings_tubes_beside_its_whole_touched_meridians_are_arranged_with_it_at_both
     let ends = [0.,1.].map(|t| posed(&tool,&ring,&path,&fit,t).unwrap());
     let poses = [0.,1.].map(|t| path.pose(t).unwrap());
     let (tubes,given) = entered(&fit,&ring,[&ends[0],&ends[1]],poses,tol).unwrap();
-    assert_eq!(tubes.len(),2);
+    // (the two tubes, and the two meridians' strips after them)
+    assert_eq!(tubes.len(),4);
     for (g,m) in given.iter().enumerate() {
         let torus = &m.surfaces[0];
-        assert_eq!(torus.kind(),"torus");
+        if torus.kind() != "torus" { continue }
         for c in &m.curves {
             let off = (0..=64).map(|k| { let gcs_core::brep::geom::Curve::BSpline(b) = c else { return 0. };
                 let [lo,hi] = b.domain(); torus.implicit(c.point(lo+(hi-lo)*k as f64/64.)).abs() }).fold(0.,f64::max);
@@ -452,6 +453,46 @@ fn a_rings_tubes_beside_its_whole_touched_meridians_are_arranged_with_it_at_both
     let complex = arrangement_given(&block,&[&ends[0],&ends[1],&tubes[0],&tubes[1]],&given,tol)
         .unwrap_or_else(|e| panic!("the tubes with the torus at both ends: {e}"));
     assert!(complex.cells().unwrap().len() >= 2);
+}
+
+/// **A whole-touched meridian's touching half is a sheet of its own, bounded by the tubes' seams on
+/// it** (#942 T1d-ring, `rings::Strip`): the ring along a spline crosses each contact curve over its
+/// top and bottom meridians, and there `s''` changes sign without the curve's sheet folding —
+/// touching up to the meridian on one side, the sliver out to a fold on the other. So each tube is
+/// entered touching up to its seam on the meridian and dipped across the sliver alone, and the
+/// meridian's own touching half, swept, is fitted between the two tubes' seams: its sides are those
+/// seams within the fits, its middle the canal's farthest point — the groove's floor, 1.5 below the
+/// path, and the top 2.5 above it — and what it meets of each tube is given by construction, the
+/// seam and the sliver's far seam, each the very curve the tube's faces are bounded by.
+#[test]
+fn a_whole_touched_meridians_touching_half_is_a_sheet_between_the_tubes_seams() {
+    let (_,tool,path,tol) = along_a_spline();
+    let ring = Ring::read(&tool).unwrap();
+    let fit = gcs_core::brep::swept::rings::fitted(&ring,&path,[0.,1.],0.1*tol).unwrap();
+    assert_eq!(fit.strips.len(),2);
+    let mut heights: Vec<f64> = Vec::new();
+    for strip in &fit.strips {
+        for (e,&(i,c)) in strip.sides.iter().enumerate() {
+            // (each tube touching on one side of its seam, dipped on the other)
+            let pieces = fit.sides[i].len();
+            let faces = [c.seam,(c.seam+pieces-1)%pieces].map(|k| fit.sides[i][k]);
+            assert!(faces.contains(&gcs_core::brep::swept::rings::Side::Touching) && faces.contains(&gcs_core::brep::swept::rings::Side::Fold),"{faces:?}");
+            let off = (0..=64).map(|j| { let t = j as f64/64.;
+                gcs_core::brep::util::space::distance(strip.net.point(e as f64,t),fit.nets[i].point(c.seam as f64,t)) }).fold(0.,f64::max);
+            assert!(off <= 0.25*tol,"side {e}: {off:e} off its tube's seam");
+        }
+        // (on the meridian's circle — the plane `x = 0` of the ring's pose, a tube's radius from its
+        // centre 1.5 below or above the ring's — and on its far side from the ring's centre)
+        for t in [0.,0.37,1.] {
+            let middle = path.pose(t).unwrap().inverse().point(strip.net.point(0.5,t));
+            let centre = if middle[2] < 0.5 { -1. } else { 2. };
+            heights.push(middle[2]);
+            assert!(middle[0].abs() <= 0.1*tol && (middle[1].hypot(middle[2]-centre)-0.5).abs() <= 0.1*tol,"{middle:?}");
+            assert!((middle[2]-centre)*(centre-0.5) > 0.,"{middle:?}");
+        }
+    }
+    heights.sort_by(f64::total_cmp);
+    assert!(heights[2] < -1. && heights[3] > 2.,"{heights:?}");
 }
 
 /// **The half turn's stretches are sewn across its cut into one tube a contact curve** (#942 F3,

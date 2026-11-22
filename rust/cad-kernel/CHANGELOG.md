@@ -28,7 +28,15 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   `Path::along`, `Guide::spline`), which F5's dump refused by name. `closed`/`cut_from` take a ring
   to the ring road where K2 and the general road refuse it as `Curved` and `rings::admits` reads it
   (`closed::k2`): the bench's runner, which ended at K2's `Curved` at the torus's rim, is refused by
-  name at the ring's top meridian.
+  name at the ring's top meridian. Where a contact curve crosses a meridian touched whole, `s''`
+  changes sign without its sheet folding: the bridge's piece on the side clear of the sliver is
+  touching, its rim on the meridian the crossing, and the sliver's piece alone is dipped (a narrow
+  pair's bridge now shares its neighbours' branch). The meridian's touching half is fitted as a sheet
+  of its own between the two tubes' crossings (new `rings::Strip`, `Crossing`, `Fitted::strips`,
+  `Fitted::crossings`, `Ring::touched_near`) and entered with its sides the tubes' own seam curves,
+  its meetings with the ring and the tubes given by construction (`entered` returns the strips after
+  the tubes). Arranged so the groove and the block are still one cell, at the end poses' corners, and
+  the refusal stands.
 
 - **The bench's cube tumbling 75° is built** (#942 T1d-cube, `swept::general`, `family`, `topo`):
   a fan's crossing with itself is built from the pinch it is born at — the runs' corner where the

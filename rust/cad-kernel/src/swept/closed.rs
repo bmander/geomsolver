@@ -1137,9 +1137,13 @@ pub fn ring_entered(tool: &Brep,path: &Trajectory,[a,b]: [f64;2],tol: f64) -> Re
     // **a meridian touched whole over a stretch of the roll is refused by name** (#942 T1d-ring): a
     // ring carried along a path in a plane its axis lies in (brep-bench's ring along a spline)
     // touches its top and bottom meridians whole at every instant, and the sweep of each is a sheet
-    // of its own — the groove's floor, 0.4 below either contact curve's tube — which no curve's tube
-    // holds: built from the tubes alone, the groove and the block beside it were one cell. Read at
-    // the closed class's poses (`K2_POSES`); an instant alone touching one whole (an end pose) is
+    // of its own — the groove's floor, 0.4 below either contact curve's tube. The fit enters it
+    // (`rings::Strip`, its sides the tubes' own seams on the meridian, its meetings given), but the
+    // corners at the end poses are not yet arranged: there the ring, the strip, a tube's touching
+    // side and the dipped stretch beyond all touch one another, and arranged so (at 1e-5 as at the
+    // bench's 5.3e-8) the ring where it stops lies on both sides of the tube's rim beside the strip's
+    // corner, and the groove and the block are one cell. Read at the closed class's poses
+    // (`K2_POSES`) before anything is fitted; an instant alone touching one whole (an end pose) is
     // no sheet
     let touched: Vec<(f64,f64,usize)> = (0..=K2_POSES).map(|k| a+(b-a)*k as f64/K2_POSES as f64)
         .map(|t| Ok::<_,Unbuilt>((t,ring.touched_whole(&crate::trajectory::Twist::body(path.at(t)?)))))
