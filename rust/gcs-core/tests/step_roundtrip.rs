@@ -193,7 +193,7 @@ fn surface_fit(b: &Brep,fi: usize) -> f64 {
 ///
 /// * the measure's own noise, 1e-9 of `A + L s` (the existing gate's bar where nothing is fitted;
 ///   `L s` so a sliver of a face is held to its solid's scale, not its own vanishing area), and
-///   for the area of a face on a surface of no closed form, 1e-7 of `A` (its rule is not exact;
+///   for the area of a face on a surface of no closed form, 1e-6 of `A` (its rule is not exact;
 ///   its flux's is, and holds it to 1e-9);
 /// * an edge whose written curve stands up to `δ` off the built one moves the face's trim by as
 ///   much along it: `2 δ L` (twice, as a fitted cubic's miss keeps its sign along a piece); and
@@ -251,10 +251,11 @@ fn bars(b: &Brep,m: &Measured,fit: Fit,tol: f64,polylines: &BTreeSet<usize>,poly
         let (a,l) = (m.area[fi].abs(),m.length[fi]);
         // (an area on a surface of no closed form is read by a fixed rule across columns of the
         // face, `props::by_columns`, not exactly as its flux is on a polynomial sheet: held to
-        // 1e-7 of itself, which solid_sweeps/creased.sv's net needs — read 2.9e-8 off while its
-        // flux, the same trims' measure by an exact rule, agrees to 3e-11)
+        // 1e-6 of itself — solid_sweeps/creased.sv's net read 2.9e-8 off and the sheared cylinder's
+        // at the fabrication tolerance 1.2e-7, while their fluxes, the same trims' measure by an
+        // exact rule, agree to 3e-11 and 2e-13)
         let rule = match f.surface { Surface::Plane(_) | Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..)
-            | Surface::Torus(..) => 1e-9,_ => 1e-7 };
+            | Surface::Torus(..) => 1e-9,_ => 1e-6 };
         let ba = rule*a+1e-9*l*s+2.*de*l+20.*ds*a/s;
         let bf = far*(1e-9*(a+l*s)+2.*de*l+20.*ds*a/s)+3.*ds*a;
         out.area.push(ba);
