@@ -242,6 +242,37 @@ fn the_thin_tori_double_curves_end_at_their_swallowtail_points_and_the_far_cover
     }
 }
 
+/// **A far cover past an own contact that barely climbs is read from its climb's top** (#942
+/// T1d-tori, `depth::cover`): beside the thin tumbling torus's second swallowtail point, a point of
+/// its fitted sheet in the lens the double curve's dip cuts off below the point's row — the place
+/// the trim probed that piece at, its own instant 1.1401698, standing off its sheet by the fit's
+/// tenth of the tolerance. Its distance from the tool climbs from its own instant to 3.1e-8, a hair
+/// past that, and falls slowly to 2.2e-6 inside the tool at an instant 0.018 of the roll on (seven
+/// tolerances): it is in the tail. Read against the sample before rather than the greatest so far,
+/// no two neighbours stood the rounding apart and it was read `Alone`, the boundary, and the lens
+/// was kept where the tail above the row was dropped.
+#[test]
+fn a_far_cover_past_an_own_contact_that_barely_climbs_is_read_from_its_climbs_top() {
+    use gcs_core::brep::trajectory::Screw;
+    let tool = gcs_core::brep::build::torus([3.,0.,2.],[0.,0.,1.],1.,0.015).unwrap();
+    let (sl,cl) = 45f64.to_radians().sin_cos();
+    let own = Trajectory::Twist(Screw {origin:[2.,0.,0.],axis:[0.,0.,1.],ratio:0.25,advance:0.});
+    let frame = Trajectory::Twist(Screw {origin:[0.,0.5f64.sqrt()*cl,0.5f64.sqrt()*sl],axis:[1.,0.,0.],
+        ratio:1.,advance:0.});
+    let path = Trajectory::Relative {source:Box::new(own),observer:Box::new(frame)};
+    let roll = [-75f64.to_radians(),75f64.to_radians()];
+    let tol = 0.015/50_000.;
+    let ring = Ring::read(&tool).unwrap();
+    let (x,t) = ([1.972716153444042,1.791053032761949,1.3022206590889487],1.1401698);
+    // (the climb's top within a few roundings of the fit's tenth of the tolerance it stands off by)
+    let ts: Vec<f64> = (0..=40).map(|k| t+0.001*k as f64).collect();
+    let ds = depths(&ring,&path,x,&ts);
+    let top = ds.iter().take_while(|d| **d > 0.).fold(0f64,|m,&d| m.max(d));
+    assert!(top > 0.1*tol && top < 0.2*tol,"the own contact climbs to {top:e}");
+    let Reading::Far(c) = cover(&ring,&path,roll,x,t,0.1*tol,tol).unwrap() else { panic!("the lens's point not read covered") };
+    assert!(c.depth < -5.*tol && (c.at-1.158).abs() < 2e-3,"held {:e} deep at {}",c.depth,c.at);
+}
+
 // **The ring along a spline read by sampling** (#942, the touched entry): its runner's frame
 // encloses nothing, so it is read by `Sampled`.
 

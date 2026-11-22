@@ -8,6 +8,16 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **A far cover is read from the top of its own contact's climb** (#942 T1d-tori,
+  `swept::depth::cover`): the end of a point's own contact is where its distance from the tool first
+  falls a rounding below the greatest sample so far, not below the sample before. Where the own
+  contact climbed barely past the rounding and the far instant then fell slowly, no two neighbours
+  stood a rounding apart and the point was read `Alone`: the thin tumbling torus's lens beside its
+  second swallowtail point (climbing to 3.1e-8 against 3e-8, held 2.2e-6 deep 0.018 of the roll
+  on) was kept as boundary where the tail above its row was dropped, and the boundary was left open
+  there. `depth_probe` reads `cover`, `pieces`, `edges`, `rowgap` and `fit t0 t1`, and `face` an
+  offset.
+
 - **brep-bench's `tumbling-torus-half-turn` is built** (#942 T1d-tori, `swept::rings`,
   `swept::closed`): a fold pair born partway is parted at its swallowtail point, not its birth. The
   birth's row is a construction line, and the pair's double curve, which begins at the swallowtail
