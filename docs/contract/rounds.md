@@ -811,8 +811,13 @@ statement) are built still and said by the export at the vertex. **Whose line it
 provenance**, never by where surfaces pass: the faces of the line's two edges, by the names the
 recipe gives each operand's faces and the Booleans keep (`recipe::NAMED`) — this term's where one of
 them is named as no face of the body before it is (a body touching itself already is the statement's
-that made it so), an earlier late term's where one is named as a face of that term. The check is a
-pass over the result's edges after each late term, and asks only a line's own faces;
+that made it so), an earlier late term's where one is named as a face of that term, or where the
+line lies within or on that term's own solid (`Located::solid_place` at its middle): a cut whose
+faces alone bound the line pinches what it takes between them, and what it pinches is a fill's
+where the line stands in the fill (`conrod::a_rim_beside_a_filled_corner_is_refused_by_name`: a
+pocket's rim rounded beside its corners' fills, said by the export). The check is a pass over the
+result's edges after each late term, and asks only a line's own faces, and an earlier term's solid
+only where they say nothing;
 `tests/mixed_vertices.rs`
 (`a_round_alone_touching_the_body_along_a_line_is_refused_by_its_name`: a plate's quarter taken by
 a late term diagonal to one its own cut took, refused by the round's name and the line; the two

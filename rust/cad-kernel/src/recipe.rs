@@ -540,17 +540,21 @@ fn combined_sets(n: &Body,which: std::ops::Range<usize>,solid: &mut Brep,known: 
 /// body `before` with a round or a chamfer applied, touches itself along a line (`Brep::self_touching`:
 /// the Boolean holds such a line twice, `Brep::unpinched`, read to the tolerance the export reads
 /// it to and each edge's own) that this one made, and no round or chamfer applied before it
-/// (`late`) made a face at that line, the line is between this one's material and the body's own:
+/// (`late`) has a part in that line, the line is between this one's material and the body's own:
 /// no reading of rounds of separate statements against each other makes it (#218, which the export
 /// says at the vertex), and no manifold solid is that, so it is refused here, at the statement,
 /// rather than built and handed on to a `--where`, a later Boolean or round, or an export.  What
-/// it says.  Read by provenance, the faces of the line's two edges by their names (`NAMED`, which
-/// the Booleans keep): the line is this one's where one of them is named as none of `before`'s
+/// it says.  Read by provenance: the faces of the line's two edges by their names (`NAMED`, which
+/// the Booleans keep) — the line is this one's where one of them is named as none of `before`'s
 /// faces is (a body that touches itself already is the statement's that made it so), and an
-/// earlier one's where one is named as a face of it.  Cheap: the lines are a pass over the edges,
-/// and only a line's own faces are asked.
+/// earlier one's where one is named as a face of it, or where the line lies within or on an earlier
+/// one's own solid (`Located::solid_place` at its middle): a cut whose faces alone bound the line
+/// pinches what it takes between them, and what it pinches is a fill's where the line stands in
+/// that fill (a pocket's rim rounded beside its corners' fills).  Cheap: the lines are a pass over
+/// the edges, only a line's own faces are asked, and an earlier term only where they say nothing.
 fn touching_alone(before: &Brep,after: &Brep,late: &[&Brep]) -> Option<String> {
     use std::collections::BTreeSet;
+    use super::query::{Located,Place};
     let tol = 1e-9*after.size().max(1.);
     let lines = after.self_touching_edges(tol);
     if lines.is_empty() { return None }
@@ -562,11 +566,13 @@ fn touching_alone(before: &Brep,after: &Brep,late: &[&Brep]) -> Option<String> {
         after.faces.iter().filter(|f| f.loops.iter().flatten().any(|c| es.contains(&c.edge)))
             .map(|f| f.name.as_str()).collect()
     };
-    let alone = |&es: &[u32;2]| {
-        let named = at(es);
-        named.iter().any(|n| !had.contains(n)) && !named.iter().any(|n| earlier.contains(n))
+    let alone = |&[e,f]: &[u32;2]| {
+        let named = at([e,f]);
+        if !named.iter().any(|n| !had.contains(n)) || named.iter().any(|n| earlier.contains(n)) { return false }
+        let edge = &after.edges[e as usize];
+        let middle = edge.point(0.5*(edge.t[0]+edge.t[1]),&after.vertices);
+        !late.iter().any(|&o| Located::new(o,tol).solid_place(middle) != Place::Out)
     };
-    for l in &lines { eprintln!("DEBUG line {:?} at {:?} had {:?} earlier {:?}", l, at(*l), had, earlier); }
     let [e,_] = lines.into_iter().find(alone)?;
     let [a,b] = after.edges[e as usize].v.map(|v| after.vertices[v as usize].p);
     Some(format!("it leaves the solid touching itself along a line from [{:.4}, {:.4}, {:.4}] to [{:.4}, {:.4}, {:.4}] mm, \
