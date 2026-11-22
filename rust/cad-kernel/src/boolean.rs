@@ -1381,7 +1381,7 @@ impl<'a> Arrangement<'a> {
             let mut region = super::geom::EMPTY;
             for &m in members { super::geom::widen(&mut region,faces[m].2); }
             let all: Vec<&Surface> = members.iter().map(|&m| surface(m)).collect();
-            let i = self.shared.class(surface(rep),&all,region);
+            let i = self.shared.class(surface(rep),&all,region,self.tol);
             for &m in members { self.surface_of.insert((faces[m].0,faces[m].1),i); }
         }
     }
