@@ -150,3 +150,225 @@ pub fn far_depth(ring: &Ring,path: &Trajectory,roll: [f64;2],theta: f64,t: f64,l
 pub fn depths(ring: &Ring,path: &Trajectory,x: V,ts: &[f64]) -> Vec<f64> {
     ts.iter().map(|&t| depth_at(ring,path,x,t).map_or(f64::NAN,|r| r.0)).collect()
 }
+
+/// **The far cover as a field over a ring's sheet** (#942, the depth-based trim): a sheet's points
+/// by `(θ, t)` on the contact `label`, each read by `cover` (`within` the tolerance) — the value the
+/// far cover's depth, what it was read at the `Cover` (the covering instant and the tool's point
+/// there: the partner). Where the sheet has no point, folds away (`s''` at or below nought: the far
+/// side of a fold, which its neighbours hold), or nothing else covers it (`Alone`), the field is not
+/// defined: `zero_set` reads that as outside its domain. Its gradient is the envelope theorem's
+/// (`gradient`).
+pub struct Covered<'a> { pub ring: &'a Ring,pub path: &'a Trajectory,pub roll: [f64;2],pub label: Label,pub within: f64 }
+
+impl Covered<'_> {
+    /// The sheet's point at `(θ, t)`, where it touches.
+    fn point(&self,[th,t]: [f64;2]) -> Option<V> {
+        let (x,bend) = sheet(self.ring,self.path,self.roll,th,t,self.label)?;
+        (bend > 0.).then_some(x)
+    }
+
+    /// The covering instant's preimage on the ring's sheet: the angle of the tool's point round the
+    /// ring's axis, the instant, and the place round the meridian of the root there nearest it.
+    /// `None` at an end of the roll (the pose there is the tool's own face, met by the Boolean) or
+    /// where no root stands within the tolerance of the point.
+    pub fn partner(&self,c: &Cover) -> Option<(f64,f64,f64)> {
+        let [a,b] = self.roll;
+        if !(c.at > a && c.at < b) { return None }
+        let l = self.ring.frame.local(c.point);
+        let th = l[1].atan2(l[0]).rem_euclid(std::f64::consts::TAU);
+        let w = Twist::body(self.path.at(c.at).ok()?);
+        self.ring.roots(&w,th).into_iter().map(|(_,r)| (crate::util::space::distance(r.x,c.point),r.sigma))
+            .filter(|p| p.0 <= self.within).min_by(|p,q| p.0.total_cmp(&q.0)).map(|p| (th,c.at,p.1))
+    }
+
+    /// **The far cover's gradient in `(θ, t)`** where its least is taken at the instant `at`: by
+    /// the envelope theorem the tool's signed distance's gradient there (its normal, read in the
+    /// tool by central differences a cube root of the rounding of its thickness apart, turned into
+    /// space) against the sheet's two rates. Differences of the depth itself, at the half digits
+    /// `zero_set` steps by, read the noise of the sheet's root (the half turn's chords accepted
+    /// 3.6e-5 off its zero set, eleven tolerances).
+    fn gradient(&self,uv: [f64;2],x: V,at: f64) -> Option<[f64;2]> {
+        let pose = self.path.pose(at).ok()?;
+        let p = pose.inverse().point(x);
+        let h = f64::EPSILON.powf(1./3.)*self.ring.thickness;
+        let n = [0,1,2].map(|k| {
+            let (mut a,mut b) = (p,p);
+            a[k] += h;
+            b[k] -= h;
+            (self.ring.signed(a).0-self.ring.signed(b).0)/(2.*h)
+        });
+        let n = pose.vector(n);
+        let (_,su,sv) = crate::zero_set::Field::surface(self,uv);
+        let g = [crate::util::space::dot(n,su),crate::util::space::dot(n,sv)];
+        g.iter().all(|v| v.is_finite()).then_some(g)
+    }
+
+    /// The place round the meridian of the sheet's own root at `(θ, t)`.
+    pub fn sigma(&self,[th,t]: [f64;2]) -> Option<f64> {
+        let w = Twist::body(self.path.at(t).ok()?);
+        Some(self.ring.root(&w,th.rem_euclid(std::f64::consts::TAU),self.label,false)?.sigma)
+    }
+}
+
+impl crate::zero_set::Field for Covered<'_> {
+    type At = Cover;
+    fn least(&self,uv: [f64;2]) -> Option<crate::zero_set::Value<Cover>> {
+        let x = self.point(uv)?;
+        match cover(self.ring,self.path,self.roll,x,uv[1],0.,self.within).ok()? {
+            Reading::Far(c) => Some(crate::zero_set::Value {f:c.depth,grad:self.gradient(uv,x,c.at),at:c}),
+            _ => None,
+        }
+    }
+
+    /// The least of the tool's depth at the point about the covering instant `from` names: over the
+    /// stretch of the roll a quarter of the ring's thickness long in the point's motion either side
+    /// of it (the feature `cover` steps by), within the roll and short of the point's own instant
+    /// by half the way to it (its own contact, nought there, is no cover).
+    fn along(&self,uv: [f64;2],from: &Cover) -> Option<crate::zero_set::Value<Cover>> {
+        let x = self.point(uv)?;
+        let [a,b] = self.roll;
+        let domain = crate::util::interval::Interval::new(a,b).ok()?;
+        let speed = self.path.inverse_point_speed_bound(x,domain).ok()?;
+        let reach = if speed > 0. { 0.25*self.ring.thickness/speed } else { b-a };
+        let (mut lo,mut hi) = ((from.at-reach).max(a),(from.at+reach).min(b));
+        let own = uv[1];
+        if own > lo && own < hi { if from.at > own { lo = 0.5*(own+from.at) } else { hi = 0.5*(own+from.at) } }
+        let d = |t: f64| depth_at(self.ring,self.path,x,t).map_or(f64::INFINITY,|r| r.0);
+        let t = if hi > lo { least(&d,lo,hi) } else { from.at };
+        let (depth,point,piece) = depth_at(self.ring,self.path,x,t)?;
+        Some(crate::zero_set::Value {f:depth,grad:self.gradient(uv,x,t),at:Cover {depth,at:t,point,piece}})
+    }
+
+    /// The sheet's point and its two rates, by central differences a cube root of the rounding of
+    /// an angle and of the roll apart (where the difference's rounding and its truncation balance).
+    fn surface(&self,[th,t]: [f64;2]) -> (V,V,V) {
+        let h = f64::EPSILON.powf(1./3.);
+        let ht = h*(self.roll[1]-self.roll[0]);
+        let at = |th: f64,t: f64| sheet(self.ring,self.path,self.roll,th,t,self.label).map_or([f64::NAN;3],|s| s.0);
+        let rate = |p: V,q: V,step: f64| crate::util::space::scale(crate::util::space::sub(p,q),0.5/step);
+        (at(th,t),rate(at(th+h,t),at(th-h,t),h),rate(at(th,t+ht),at(th,t-ht),ht))
+    }
+}
+
+/// **A boundary read from the depth, as a seam** (#942): one piece of the curve where another
+/// instant's cover of a sheet begins — its points on the sheet `(θ, t, σ)`, how its two ends end
+/// (`zero_set::End`), and its partner: the covering instant's preimages `(θ', τ, σ')`, run by run
+/// where the covering instant lies inside the roll (where it is an end of the roll the partner is
+/// the tool's own face posed there, which the Boolean meets).
+#[derive(Clone,Debug)]
+pub struct Seam { pub sheet: Vec<(f64,f64,f64)>,pub ends: [crate::zero_set::End;2],pub partner: Vec<Vec<(f64,f64,f64)>> }
+
+impl Seam {
+    /// Its curves as the ring road lays a double curve's (`rings::cut_along`): the sheet's, then
+    /// each run of its partner's.
+    pub fn curves(&self) -> Vec<Vec<(f64,f64,f64)>> {
+        std::iter::once(self.sheet.clone()).chain(self.partner.iter().cloned()).filter(|c| c.len() >= 2).collect()
+    }
+}
+
+/// **Where another instant's cover of a ring's sheet begins, traced as seams** (#942, the
+/// depth-based trim): the zero set of the far cover's depth (`Covered`) over the box `rect` of the
+/// sheet's `(θ, t)` on the contact `label`, by `zero_set::trace` to `within` (the tolerance) in space
+/// with `feature` its longest step and the spacing it samples at, from `seeds` (events the caller
+/// knows: a swallowtail point, a double curve's crossing of a stretch's end) — each piece with the
+/// covering instant's preimages, so both faces' parameters come by construction. A cell the search
+/// for closed curves left unresolved is refused by name, never dropped.
+#[allow(clippy::too_many_arguments)]
+pub fn seams(ring: &Ring,path: &Trajectory,roll: [f64;2],label: Label,rect: crate::zero_set::Rect,seeds: &[[f64;2]],within: f64,feature: f64)
+    -> Result<Vec<Seam>,Unbuilt> {
+    let field = Covered {ring,path,roll,label,within};
+    let q = crate::zero_set::Question {rect,edges:&[],seeds,tol:within,feature};
+    let traced = crate::zero_set::trace(&field,&q).map_err(|why| Unbuilt::Failed(format!("the cover's boundary on a sheet: {why}")))?;
+    if let Some(cell) = traced.search.unresolved.first() {
+        return Err(Unbuilt::Failed(format!("the cover's boundary on a sheet: the cell {cell:?} of its (θ, t) not resolved")))
+    }
+    let mut out = Vec::new();
+    for p in &traced.pieces {
+        let (uvs,ats) = refined(&field,&p.uv,&p.at)?;
+        let mut sheet = Vec::with_capacity(uvs.len());
+        for &uv in &uvs {
+            let Some(sg) = field.sigma(uv) else { return Err(Unbuilt::Failed(format!("the cover's boundary at {uv:?}: no root of the sheet"))) };
+            sheet.push((uv[0],uv[1],sg));
+        }
+        let mut partner: Vec<Vec<(f64,f64,f64)>> = vec![Vec::new()];
+        for c in &ats {
+            match field.partner(c) {
+                Some(q) => partner.last_mut().unwrap().push(q),
+                None => if !partner.last().unwrap().is_empty() { partner.push(Vec::new()) },
+            }
+        }
+        partner.retain(|r| r.len() >= 2);
+        // (a piece traced again from a seed on one already traced: its ends those of the earlier
+        // within twice the tolerance — each within it of the one end — and every point of it within
+        // the feature of the earlier's points, the spacing below which the trace tells nothing
+        // apart. Two traces of one curve beside a swallowtail point stand some 1e-5 apart between
+        // their points: along the kernel of the sheet's rates a chord's sagitta is not its depth's)
+        let on = |q: (f64,f64,f64)| field.point([q.0,q.1]);
+        let close = |a: (f64,f64,f64),b: (f64,f64,f64),r: f64| on(a).zip(on(b)).is_some_and(|(x,y)| crate::util::space::distance(x,y) <= r);
+        let near = |a: &Seam| {
+            let (n,m) = (sheet.len(),a.sheet.len());
+            let ends = (close(sheet[0],a.sheet[0],2.*within) && close(sheet[n-1],a.sheet[m-1],2.*within))
+                || (close(sheet[0],a.sheet[m-1],2.*within) && close(sheet[n-1],a.sheet[0],2.*within));
+            ends && sheet.iter().all(|&q| a.sheet.iter().any(|&r| close(q,r,feature)))
+        };
+        if out.iter().any(near) { continue }
+        out.push(Seam {sheet,ends:p.ends,partner});
+    }
+    Ok(out)
+}
+
+/// Newton's steps a point is pulled onto the zero set by: one started within a chord's sagitta
+/// converges quadratically in three or four, one that has not in sixteen is not converging
+/// (structural, as `zero_set`'s corrector).
+const PULLS: usize = 16;
+
+/// **A traced piece held to the tolerance in space** (#942): where a sheet's two rates are nearly
+/// one way (beside a swallowtail point, along the kernel of its rates) a first-order distance to
+/// the zero set through the inverse metric reads a point far off it as near — the half turn's
+/// double curve 0.05 from its swallowtail point, its chords accepted 3.6e-5 off. So each chord's
+/// middle in the parameters is pulled onto the zero set (Newton along the branch's gradient in the
+/// parameters) and, where that moves it more than the tolerance in space, put in and both halves
+/// read again; a middle that does not settle is refused by name.
+fn refined(field: &Covered,uv: &[[f64;2]],at: &[Cover]) -> Result<(Vec<[f64;2]>,Vec<Cover>),Unbuilt> {
+    use crate::zero_set::Field;
+    let pulled = |m: [f64;2],from: &Cover| -> Option<([f64;2],Cover)> {
+        let mut m = m;
+        let mut c = *from;
+        for _ in 0..PULLS {
+            let v = field.along(m,&c)?;
+            c = v.at;
+            let g = v.grad?;
+            let gg = g[0]*g[0]+g[1]*g[1];
+            if !(gg > 0.) { return None }
+            let step = [v.f*g[0]/gg,v.f*g[1]/gg];
+            m = [m[0]-step[0],m[1]-step[1]];
+            if step[0].abs() <= f64::EPSILON*m[0].abs().max(1.) && step[1].abs() <= f64::EPSILON*m[1].abs().max(1.) { break }
+        }
+        let v = field.along(m,&c)?;
+        let x = field.point(m)?;
+        // (settled where what is left of the depth is within the rounding of the point's place)
+        (v.f.abs() <= 16.*f64::EPSILON*(crate::util::space::norm(x)+field.ring.size)).then_some((m,v.at))
+    };
+    let (mut uvs,mut ats) = (vec![uv[0]],vec![at[0]]);
+    for k in 1..uv.len() {
+        let mut stack = vec![(uv[k],at[k])];
+        while let Some(&(q,cq)) = stack.last() {
+            let p = *uvs.last().unwrap();
+            let cp = *ats.last().unwrap();
+            let m = [0.5*(p[0]+q[0]),0.5*(p[1]+q[1])];
+            let Some((z,cz)) = pulled(m,&cp) else {
+                return Err(Unbuilt::Failed(format!("the cover's boundary on a sheet: the middle {m:?} of a chord not pulled onto it")))
+            };
+            let (Some(xm),Some(xz)) = (field.point(m),field.point(z)) else {
+                return Err(Unbuilt::Failed(format!("the cover's boundary on a sheet: no point of it at {m:?}")))
+            };
+            let _ = cq;
+            if crate::util::space::distance(xm,xz) <= field.within { uvs.push(q); ats.push(cq); stack.pop(); }
+            else if stack.len() > PULLS*4 { return Err(Unbuilt::Failed(format!("the cover's boundary on a sheet: a chord at {m:?} halved \
+                {} times and still off it",PULLS*4))) }
+            else { stack.push((z,cz)) }
+        }
+    }
+    Ok((uvs,ats))
+}
+

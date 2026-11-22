@@ -47,6 +47,27 @@ fn main() {
             for (c,e,kind,d) in &near.edges { println!("edge: candidate {c} edge {e} ({kind}) {d:e} away") }
             for (g,[a,b],kind,d) in &near.given { println!("given {g} ({a} × {b}): a {kind} {d:e} away") }
         }
+        "faces" => {
+            // each candidate's check, and the loops of its faces with an edge within `within` of `p`:
+            // each use's edge, its ends in space and in the face's parameters
+            let p = v3(args.get(2).map_or("",String::as_str));
+            let within = args.get(3).map_or(1e-3,|r| r.parse().expect("a distance"));
+            for (k,b) in t.candidates.iter().enumerate() {
+                println!("candidate {k}: {} faces, check {:?}",b.faces.len(),b.check(t.tol));
+                for (i,f) in b.faces.iter().enumerate() {
+                    let near = f.loops.iter().flatten().any(|c| { let e = &b.edges[c.edge as usize];
+                        matches!(&e.curve,cad_kernel::topo::EdgeCurve::Curve(cv) if (0..=64).any(|j| cad_kernel::util::space::distance(cv.point(e.t[0]+(e.t[1]-e.t[0])*j as f64/64.),p) <= within)) });
+                    if !near { continue }
+                    println!("  face {i} ({}):",f.surface.kind());
+                    for (li,l) in f.loops.iter().enumerate() { for c in l {
+                        let e = &b.edges[c.edge as usize];
+                        let ends = [c.pcurve.at(e.t[0],e,&f.surface,&b.vertices),c.pcurve.at(e.t[1],e,&f.surface,&b.vertices)];
+                        let (a,z) = (b.vertices[e.v[0] as usize].p,b.vertices[e.v[1] as usize].p);
+                        println!("    loop {li} edge {} reversed {} over {:?}: {a:.6?} to {z:.6?}, in the face {ends:.6?}",c.edge,c.reversed,e.t);
+                    } }
+                }
+            }
+        }
         _ => { eprintln!("{usage}"); std::process::exit(2) }
     }
 }
