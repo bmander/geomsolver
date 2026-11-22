@@ -542,6 +542,11 @@ pub fn combined_known(solid: &Brep,known: Option<&Known>,operand: &Brep,op: Op,f
 pub fn combined_written(solid: &Brep,known: Option<&Known>,operand: &Brep,op: Op,floor: f64)
     -> Result<(Brep,Known),super::KernelError> {
     let tol = super::geom::tolerance_over(solid.size().max(operand.size()),floor);
+    // a tube all but tangent to the other's at a seam on it (`flush::tubes_flushed`, #996): a solid
+    // so moved is no longer the one its faces' boxes were known for
+    let (tubed_solid,tubed) = super::flush::tubes_flushed(solid,operand,tol);
+    let (solid,known) = match &tubed_solid { Some(s) => (s,None),None => (solid,known) };
+    let operand = tubed.as_ref().unwrap_or(operand);
     let flush = super::flush::flushed(solid,operand,tol);
     combined_at(solid,known,flush.as_ref().unwrap_or(operand),op,tol)
 }

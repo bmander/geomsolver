@@ -34,7 +34,12 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   a pole is at it wherever the pole is read (`Brep::close_poles`, a half's points in a Boolean), a
   pole's half runs along the parameter the pole collapses, and two uses of one edge at one place,
   out and back, are a spur and not a seam: an axle and a slab through the near-miss turn's poles
-  build ("loop 0 breaks in parameters" at the pole before).
+  build ("loop 0 breaks in parameters" at the pole before). **A tube all but tangent to another at
+  a seam is on it**: `flush::tubes_flushed` (called by `boolean::combined_written`, as `flushed` is)
+  moves a cylinder whose end circle stands concentric with and in the plane of the other's circle,
+  its radius off by no more than `FLUSH` tolerances, onto that radius, exactly; the issue's
+  document, cored and flanged as the fixture is, and every near-miss of its legs whatever is joined
+  or cut after, build as the tangent turn.
 
 ## [0.20.0] - 2026-11-21
 
