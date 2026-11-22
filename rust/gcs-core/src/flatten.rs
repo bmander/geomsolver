@@ -500,8 +500,8 @@ pub struct Unmade {
 }
 
 /// What the `when`s under one statement read of faces and made (`Unmade`): the blocks over a
-/// solid's faces met under it, the pairs asked `meets` of, whether any read a face, whether any
-/// was made, and whether any was refused or read faces whose meeting no boundary says (faces of
+/// solid's faces met under it, the pairs asked `meets` of, whether any read a face, how many
+/// were made, and whether any was refused or read faces whose meeting no boundary says (faces of
 /// two solids, or of one not built where the drawing stands).
 #[derive(Default)]
 struct Selecting {
@@ -511,7 +511,6 @@ struct Selecting {
     /// How many copies' `when`s over faces held: made (#994).
     made: usize,
     asked: bool,
-    held: bool,
     unsure: bool,
 }
 
@@ -1301,7 +1300,7 @@ impl<'a> Walk<'a> {
             }
             // where no `when` paired two, one face, and no copy made
             let faces = || s.blocks.iter().flat_map(|b| &b.2).collect::<BTreeSet<_>>().len();
-            if s.pairs.is_empty() && s.pruned.is_empty() && (s.held || faces() != 1) {
+            if s.pairs.is_empty() && s.pruned.is_empty() && (s.made > 0 || faces() != 1) {
                 return None;
             }
             Some(Unmade {

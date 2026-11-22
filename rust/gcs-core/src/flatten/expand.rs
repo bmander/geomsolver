@@ -1159,7 +1159,6 @@ impl<'a> Walk<'a> {
             if let Some((pairs, fixed)) = faced {
                 let s = self.faces.selecting.entry(self.faces.at).or_default();
                 s.asked = true;
-                s.held |= matches!(decided, Ok(true));
                 s.made += usize::from(matches!(decided, Ok(true)));
                 s.unsure |= decided.is_err() || fixed;
                 s.pairs.extend(pairs);
