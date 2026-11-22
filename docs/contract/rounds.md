@@ -1072,11 +1072,12 @@ a straight band whose eye stands 2 out past its side (the configuration alone: 8
 without `rolled`), field and kernel over the whole body. The centres' projection there also never
 settled and the set was read as empty ([sets.md](sets.md), `conditions::nearest`). Still not the
 kernel's, with nothing refused: where the eye's end lies within the band rather than past its side —
-a straight band, the eye's end 5.8 inside it, rounded 2 (18 points of 4000, 28 without `rolled`),
-and the clevis bowed out 3 rounded 1 (16) — the fill where the floor meets the eye's end and the run
-along the far side read pockets at the eye's end whose nearest centre the projection does not find
-(a local nearest, the chain read through the eye's cylinder at its end). Refused: bowed out 3 and
-rounded 2, "disagrees with the field" at the far side's run; bowed out 1, "its ball, of radius 1mm,
+a straight band, the eye's end 5.8 inside it, rounded 2 (5 points of the 1294 read) — the fill
+where the floor meets the eye's end and the run along the far side read pockets at the eye's end
+whose nearest centre the projection does not find (a local nearest, the chain read through the eye's
+cylinder at its end). The clevis bowed out 3 and rounded 1 is the kernel's over the whole body, and
+held there. Refused: bowed out 3 and rounded 2, "disagrees with the field" at the far side's run
+(`taken[13]`, 2 of 578 probes); bowed out 1, "its ball, of radius 1mm,
 rolled against `part.plate.far` comes 0.242mm past `part.blend.filled.round`" — read against the
 round's side carried past its patch beyond the eye's end, where the floor runs on flat for less than
 a millimetre before the bowed side; whether the shape has that ball is open.

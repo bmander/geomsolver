@@ -291,6 +291,16 @@ fn a_rim_round_on_a_blend_bowed_in_by_3_is_the_fields() { rim_round_on_a_blend(-
 #[test]
 fn a_rim_round_on_a_blend_bowed_in_by_6_is_the_fields() { rim_round_on_a_blend(-6.) }
 
+/// Bowed out by 3 and rounded 1, the same: field and kernel over the whole body (rounded 2 it is
+/// refused, the far side's run disagreeing with the field: `docs/contract/rounds.md`).
+#[test]
+fn a_rim_round_on_a_blend_bowed_out_by_3_rounded_1_is_the_fields() {
+    let e = crate::common::text::solved(&clevis(1.,3.));
+    let read = crate::common::rounds::field_is_the_kernels(&e,"whole",[-5.,-60.,-15.],[70.,-30.,15.],
+                                                           0.2,2000);
+    assert!(read > 1000,"the clevis bowed out 3 rounded 1: {read} points read");
+}
+
 /// **The configuration alone** (#994): a straight band, the eye standing 2 out past its far side,
 /// so the blend at the band's floor is ended by that side and the eye goes on past it — the floor's
 /// chain parts about the side — and the floor's every edge rounded: field and kernel over the whole
