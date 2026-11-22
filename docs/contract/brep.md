@@ -1754,29 +1754,22 @@ pole, an edge two seams would cut, are refused `Unsupported` naming the entity. 
 `a_lens_whose_circle_passes_a_pole_reads_to_its_closed_form`,
 `an_edges_feet_off_its_face_run_at_their_own_rate`.
 
-**An edge is what its file says is its master, where its other curves follow it**
-(`geometry::master`, `topology::shown`, `Held`). A `SURFACE_CURVE`'s `master_representation`
-(ISO 10303-42: the representation preferred where a tolerant file's 3D curve and pcurves differ)
-is read, any word but `.CURVE_3D.`, `.PCURVE_S1.` or `.PCURVE_S2.` malformed. Where it names a
-pcurve on the surface of a face using the edge, that face is bounded by the file's curve itself —
-over the edge's parameter as the file runs it, or its knots moved by the affine map taking its
-points nearest the edge's vertices to the edge's ends (the same points) — and the edge's other
-faces by their own pcurves within the master's distance from the 3D curve, else by the 3D curve's
-foot; the edge keeps its file's 3D curve, its tolerance measuring the difference. The master is
-set aside, and the edge read by its 3D curve as where its master is that, where it stands past
-`sound::LOOSE` of the solid's size from the 3D curve or the vertices (another curve: a pcurve
-pointed at another surface, as the mutants make), where read at the edge's parameter it stands
-more than twice as far as its image does as a set (it runs at another parameter, and would be held
-only by a tolerance wider than the representations differ), or where it stands past the file's
-`near` and some other face of the edge holds no pcurve following it at least as closely as the 3D
-curve (a master its edge's other two curves both stand apart from, agreeing with each other —
-CADGenBench's `.PCURVE_S1.`, 201's edge #6220 6.7e-2 mm from a 3D curve and second pcurve 6.4e-4
-apart — would bound one face alone, the solid open by the difference: read by it, 201's face #6071
-fell a hundredth under both references, its bar widened by a tolerance only that reading made).
-Gates: `step_kinds::an_edge_is_what_its_master_says`,
-`a_master_its_edges_other_curves_stand_apart_from_is_set_aside`,
-`a_master_pcurve_on_another_surface_is_set_aside`; `step_corpus::nothing_is_read_wrong`,
-`step_mutants::no_mutant_is_read_wrong`.
+**A tolerant edge is read by its 3D curve, whatever its file names its master**
+(`topology::file_pcurve`). A `SURFACE_CURVE`'s `master_representation` (ISO 10303-42: the
+representation preferred where a tolerant file's 3D curve and pcurves differ) is not followed: the
+edge is its 3D curve, a face's own pcurve kept only where its image is that edge's (above), else
+the curve's foot. Followed — each face on the master pcurve's surface bounded by it, the others by
+their own pcurves where they follow it — the rule read the kernel's own thin lens 5.5e-6 under
+its volume (its `.PCURVE_S1.` pcurves fits within `step::EXACT`, agreeing with each other to
+6e-12 and 6.6e-9 off the 3D circle), read faces of OCCT's own files 3e-3 mm² off where OCCT and the
+measurer agree to 3e-7, put 212 and 229 further outside their rows' bars, and set apart from both
+references faces they agree on (CADGenBench's `.PCURVE_S1.`, 201's edge #6220 6.7e-2 mm off a 3D
+curve and second pcurve 6.4e-4 apart, read #6071 a hundredth under both): the writers that say
+`.PCURVE_S1.` (OCCT, CADGenBench's, the kernel's, arris's — 97,631 of the corpus's 118,648 surface
+curves) say it of every edge, of the pcurves they fitted. A pcurve said to lie on another surface
+than its face's is a curve of no face of the edge's. Gates:
+`step_kinds::a_tolerant_edge_is_read_by_its_3d_curve_whatever_its_master`,
+`a_master_pcurve_on_another_surface_is_set_aside`; `step_corpus::nothing_is_read_wrong`.
 
 **A face reaching a pole is integrated along the parameter the pole collapses**
 (`props::integrated`): where a degenerate edge lies in its loop, or a sheet's row is all but
