@@ -72,13 +72,16 @@ fn exact_radius(s: &Surface) -> Option<f64> {
 }
 
 /// How close two ways in may stand and still be one way, to be ordered by a step in: `TANGENT`
-/// where either surface is read approximately (its normal off by as much as its fit), else twice
+/// where both surfaces are read approximately (each normal off by as much as its fit), else twice
 /// what an edge's point read off its face within `8 tol` (`sew`'s, `tolerant`'s) turns an exact
-/// normal by at the smaller radius, `16 tol / ρ`, and no more than `TANGENT` — so two exact faces
-/// leaving an edge a millionth apart are ordered as they leave it, not by a step in.
+/// normal by at the smaller exact radius, `16 tol / ρ`, and no more than `TANGENT` — so two faces
+/// leaving an edge a millionth apart, one of them exact, are ordered as they leave it, not by a step
+/// in (#942: with an exact surface beside a fitted one tied so, and `TANGENT` itself at 1e-12, the
+/// fast suite and every slow tier of the arrangement, the kernel and the sweeps stand).
 fn tie_between(a: Option<f64>,b: Option<f64>,tol: f64) -> f64 {
     match (a,b) {
         (Some(a),Some(b)) => (16.*tol/a.min(b)).clamp(1e-12,TANGENT),
+        (Some(a),None) | (None,Some(a)) => (16.*tol/a).clamp(1e-12,TANGENT),
         _ => TANGENT,
     }
 }
@@ -296,6 +299,22 @@ impl Complex {
                 let g = (y.0-x.0).rem_euclid(TAU);
                 g <= tie_between(radii[x.2],radii[y.2],tol) || turned_back(g,wrapped(y.1-x.1),step,tol)
             };
+            if super::debug() {
+                // the pairs a fitted surface's tie (`TANGENT`) ties and `turned_back` does not:
+                // ordered by a step in on that tie alone (#942, the ring's ends kept), with the
+                // tolerance's tie at the exact radius beside it where one is exact
+                for i in 0..k {
+                    let (x,y) = (&round[i],&round[(i+1)%k]);
+                    let g = (y.0-x.0).rem_euclid(TAU);
+                    let h = wrapped(y.1-x.1);
+                    let (rx,ry) = (radii[x.2],radii[y.2]);
+                    if (rx.is_none() || ry.is_none()) && g <= TANGENT && !turned_back(g,h,step,tol) {
+                        let exact = rx.or(ry).map(|r| tie_between(Some(r),Some(r),tol));
+                        eprintln!("complex: edge {e} near {m:?} ties faces {} ({}) and {} ({}) by the fitted tie: {g:e} apart, {h:e} a step in; the exact tie {exact:?}",
+                            uses[e][x.2].0,b.faces[uses[e][x.2].0].surface.kind(),uses[e][y.2].0,b.faces[uses[e][y.2].0].surface.kind());
+                    }
+                }
+            }
             let Some(s) = (0..k).find(|&i| !tied(&round[i],&round[(i+1)%k])) else {
                 return Err(format!("edge {e} near {m:?}: every face round it is tangent to every other"))
             };

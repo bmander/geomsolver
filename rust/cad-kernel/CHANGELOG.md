@@ -119,6 +119,29 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   there. `depth_probe` reads `cover`, `pieces`, `edges`, `rowgap` and `fit t0 t1`, and `face` an
   offset.
 
+- **A ring touching a meridian whole enters only what depth keeps of the tool at either end**
+  (#942, `swept::touched`): the end poses' tori were entered whole, and beside the strip's rim the
+  part of the torus beyond the meridian stood tangent to the strip to second order — 1.3e-9 rad
+  apart at the edge, 6.5e-6 a full step in — so the build stood on the fitted tie reading them at
+  its farthest depth. Each end is now its kept part: the quadrant behind the meridian between the
+  strip's and the branches' rims and the equator's meridian, and the wedge between each end
+  piece's leaf rim and its crossing, its torus framed so neither seam crosses a face. The bench's
+  ring along a spline builds to the same volume (10696.461766118806 against …784) with the same
+  seventeen faces and no tie left for the fitted tie alone. `complex` says, under
+  `SOLVENT_BREP_DEBUG`, each pair of ways in a fitted surface's tie alone ties. A ring a hair off
+  the symmetric case (its centre moved 1e-9 along the path), still read touched whole within the
+  rounding, is refused `Curved` at the meridian rather than `Failed` in its fit.
+
+- **An edge leaving a point of a known meeting is read there by construction** (#942,
+  `boolean::on_known`): where its end lies on a given curve and it runs on hugging the face within
+  `ON_CURVE` tolerances, that run is the touch at the end, and the search reads only the rest. The
+  ring along a spline, whose kept wedge's rim hugs the end piece from their shared corner, built
+  in 8.7 s with five seconds an end in a refused search; now 3.5 s.
+
+- **An exact surface beside a fitted one is tied round an edge at the tolerance's angle** (#942,
+  `complex::tie_between`): `16 tol / ρ` of the exact surface's least radius, capped at `TANGENT`,
+  as two exact surfaces already were; `TANGENT` now decides only two fitted surfaces' ways.
+
 - **brep-bench's 80° tumbling torus is built at every spelling of its motion** (#942, `complex`):
   it built only where its observer's origin was (0, 0.5, 0.5) exactly. An end pose's seam stands
   in the widest gap among angles spaced evenly round it, so rounding chose the gap, and with the
