@@ -8,13 +8,6 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
-- **`topo`'s inverse pcurve beside a fold read as before** (#942): the thin tumbling torus's change
-  (a carried inverse foot off the edge sought again from the line; the rate by the feet's chord
-  where the sheet's rates lose half their digits) moved brep-bench's cube tumbling 75° by 6.7e-7 of
-  its volume, past its gate's ten-millionth, and on the head that holds `boolean`'s
-  `carried_pcurve` neither the thin torus nor the full turn needs it: both build alike without it
-  (0.6963028, 23.6738853), and every gate of `swept_rings` and `swept_depth` holds. Taken out.
-
 - **brep-bench's `tumbling-torus-full-turn` is built** (#942): 35 faces, volume 23.6738854 (the
   peer kernel cadrs's 23.6739), its check clean at the call's tolerance, in some 39 s
   (`swept_rings::the_full_turn_is_built_closed`, held to membership). Two last changes. A double
