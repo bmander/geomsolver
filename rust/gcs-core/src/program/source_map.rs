@@ -54,6 +54,9 @@ pub struct SourceMap {
     /// Every pair of faces a `when … meets …` read apart where the drawing is seeded (#625), to
     /// be read again where it is solved (`program::meets`).
     pub(crate) apart: Vec<crate::flatten::Apart>,
+    /// Every block over a solid's faces that copied only the faces meeting one (#994), with the
+    /// pairs it read apart: read again where it is solved as `apart` is.
+    pub(crate) pruned: Vec<crate::flatten::Pruned>,
     /// Every statement whose blocks over a solid's faces may have selected no edge (#962), to be
     /// read edge by edge where the drawing is solved (`program::at_solve::unmade`, W120).
     pub(crate) unmade: Vec<crate::flatten::Unmade>,
@@ -63,6 +66,9 @@ pub struct SourceMap {
     /// Every `when` that could not read a solid's faces where the drawing is seeded (#948), by
     /// where its E103 is said, to be read again where it is solved (`program::at_solve`).
     pub(crate) unread: std::collections::BTreeSet<crate::syntax::Span>,
+    /// Every statement whose `when a meets b` read a solid not built where the drawing stands
+    /// (#994): not built, as built on that body (`program::refused::solids`).
+    pub(crate) unbuilt: Vec<crate::flatten::Unbuilt>,
     /// Each number a `fix` held, with the path of the statement holding it: whose `fix` it was.
     /// A gauge makes no constraint, so no `of_constraint` site says so.
     pub holds: Vec<(u32, InstPath)>,
