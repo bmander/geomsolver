@@ -262,7 +262,20 @@ boundary that way is refused naming its face and the other's it touches. A piece
 point at all, its outline drawn as fine as it goes, has no inside: the sliver a surface touching
 the other solid only along an edge of it cuts off (a hyperboloid along the ruling a face of the
 other holds, #721 X6). It bounds nothing and is dropped; whether what is left closes is the
-result's check (`swept_closed::a_block_leaning_to_the_axis_turned_part_of_a_turn_is_its_slices_swept`). A fixed polygon of a
+result's check (`swept_closed::a_block_leaning_to_the_axis_turned_part_of_a_turn_is_its_slices_swept`). **A piece is read off its exact boundary where its outline cannot hold it** (#994,
+`reading::off_halves`): from a point of a half the piece uses once (its middle, then its quarters,
+the longest half first), square to it into the piece as far as the piece holds the way by the side
+of the half nearest each point — exact, no outline drawn — the point halfway across. A band a few
+tolerances wide between two curves is narrower than the sag of any outline the readings draw, and
+dropped as having no inside it left a hole: a boss a micron wider than the plate's lobe it stands
+on overhangs the plate's top along the lobe in a crescent that wide, and the boss's wall stood open
+along it ("a plane's pieces do not close", "a shell … kept on one side … and dropped on another").
+A piece under twice the pool's tolerance across has none, its edges merged; a loop of a seam or a
+slit alone, used each way, none either. **Two circles in one plane meet as far apart as they stand**
+(`query::curve_curve`, `plane2::circles`), not as the chord they share stands inside the first:
+that is half as deep where their radii are one, so a lens twice the reach deep read as a touch
+between the two crossings the cylinders through the circles meet in, a third vertex on the edge
+(`brep_lobes::two_circles_overlapping_a_few_tolerances_cross_twice`). A fixed polygon of a
 circle once cut its chords short by more than a narrow strip beside it is wide, and read the strip
 at the hole next to it (a turned rim's chamfer
 from 32 out, `round_lowering::a_wide_turned_rim_is_chamfered_and_rounded_exactly`).
@@ -701,7 +714,13 @@ box's: a drum screwed a short lead has rims' ramps thinner than a hundredth fold
 cylinders its side sweeps, a step of a thousandth of a box past them swapped a ramp with its
 cylinder, and as the box grew — a twentieth more room, or a slab a hundred times the sweep cut —
 the solid was judged wrong or the slab left whole
-(`swept_closed::a_drum_screwed_a_short_lead_cut_from_a_slab_a_hundred_times_its_sweep_takes_its_sweep`). **A2, the meeting** (`brep::meeting`):
+(`swept_closed::a_drum_screwed_a_short_lead_cut_from_a_slab_a_hundred_times_its_sweep_takes_its_sweep`). **The step is read from the face's own point at the edge, not the edge's** (#994): an edge lies
+within the reach of its faces (`ON_CURVE` tolerances), not on them — a meeting laid on a class of
+faces one surface lies on the class's surface — and a step sixty-four tolerances long read from a
+point standing eight off the face turns its way by an eighth of a radian: a boss a micron wider
+than the lobe of a plate it stood on, its wall one surface with the lobe's, was read 0.12 rad off
+its way where it touched the blend beside the lobe, ordered across it, and two cells joined
+(`brep_lobes::a_boss_or_a_bore_on_a_lobe_of_its_own_radius_builds`). **A2, the meeting** (`brep::meeting`):
 two surfaces' meeting over boxes of their parameters as branches (each crossing or touching all
 along), singular points (a touch alone, or branches crossing) and coincidence, complete — boundary
 crossings, every critical point of one's distance across the other's parameters (a closed branch
