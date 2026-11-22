@@ -2545,6 +2545,33 @@ checked at the call's tolerance) and refused `Folded` at 74.5°, its rows 0.026 
 already bending too sharply; the reverse is refused before its near miss and before its first fold
 pair is born (`Wrong` at a roll's end of 5°, a face's boundary through its own point at 6.5°,
 `Folded` from 24°), refusals of the trim and the arrangement of their own.
+**The collar about a meridian touched whole for an instant** (#880 T1f, `rings::Collar`): where the
+Jacobian of `(A, B)` by `(θ, t)` is regular at the instant (forward det −1.06, reverse 0.37),
+`(A, B)(θ, t) = ρ (−sin ψ, cos ψ)` is solved for `(θ, t)` by Newton's method given `(ψ, ρ)` and the
+contact there is the arc's point at `ψ`: one smooth annulus holding both tubes and the meridian about
+the instant (`ρ > 0` the branch `atan2(−A, B)`, `ρ < 0` the other, `ρ = 0` the meridian at `t*`, each
+place `(θ, t)` met once from either branch, its `ψ` turning once round as the place goes round the
+instant). It is cadrs's pinch chart (`pinch_at`). S, the surface the ring's core circle sweeps, is
+singular there (`S_t = μ S_θ`, μ 1.929 and 1.122) and a Whitney umbrella (`det(S_θ, g_uv, g_vv)` over
+its norms −0.278 and 0.412, its double line leaving the pinch toward a saddle's `ψ`). **Measured on it
+(`ring_profile collar`, and independently by the least over the roll of the core circle's
+closed-form distance), the boundary is one strip across the meridian**: on the meridian the arc
+between `ψ` 257.127° and 72.883° forward (175.333° to 337.210° reverse) where the far cover passes the
+tolerance below nought; each end a double curve's preimage crossing the meridian square-on, its `ψ`
+within a degree over `|ρ| ≤ 0.4`, covered beyond by an instant 0.06–0.4 of the roll away, the fold
+following it 2e-3 to 4e-3 further on and buried. Each double curve's two preimages are both on the
+collar, one curve through a swallowtail point off the meridian, where its partner's instant passes
+its own (forward `ρ` ≈ +0.07 and +0.09, the roll ≈ t* ± 0.03; reverse ≈ −0.22 and −0.135), the fold
+tangent to it there alone. So nothing of the boundary's structure stands at the event: the
+meridian's touching half, the two saddles and the instant lie inside one smooth piece of the collar,
+and the "fold and double curve through `(θ*, t*)`" a tube's `(θ, t)` shows are these two curves
+crossing the meridian, which that chart blows down to the point
+(`swept_rings::the_collar_about_a_meridian_touched_whole_charts_both_tubes_and_holds_one_strip_of_boundary`).
+**The face structure it asks** (not yet built): the collar a candidate sheet over
+`(ψ, ρ) ∈ [0, 2π) × [−ρ₀, ρ₀]`, `ρ₀` clear of the swallowtail points, its rims `ρ = ±ρ₀` closed
+curves inside one stretch's tubes, holes in them; the strip cut from it by its two double curves,
+each laid as a swallowtail's is and running out across the rims into the tubes' own; vertices at
+those crossings and at the swallowtail points; the meridian no edge.
 
 **A ring's sweep read for depth by sampling** (#942, the depth trim, `swept::depth::Sampled`:
 the reading for a path that encloses nothing, no proof; where the path encloses its motion,

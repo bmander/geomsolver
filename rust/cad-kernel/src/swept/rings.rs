@@ -3657,3 +3657,114 @@ pub fn meridian_read(ring: &Ring,path: &Trajectory,roll: [f64;2],t: f64,theta: f
     let pose = path.pose(t)?;
     Ok(psis.iter().filter_map(|&psi| ring.on_arc(theta,0,psi).map(|r| (psi,pose.point(r.x),dot(r.n,w.velocity(r.x)),ring.bend(&w,&dw,theta,&r)))).collect())
 }
+
+/// **The collar about a meridian touched whole for an instant** (#880 T1f, `Ring::touched_once`):
+/// the chart that holds both tubes and the meridian between them about the instant. On the arc `k`
+/// the contact is `A cos ψ + B sin ψ = 0`, `A` and `B` functions of the angle round the axis and the
+/// roll, both nought at the meridian's `(θ*, t*)` alone; where their Jacobian there is regular,
+/// `(A, B)(θ, t) = ρ (−sin ψ, cos ψ)` is solved for `(θ, t)` near `(θ*, t*)` given `(ψ, ρ)`, and the
+/// contact there is the arc's point at `ψ` — its normal `(cos ψ, sin ψ)` round the arc, square to
+/// `(A, B)`. So `(ψ, ρ)` charts the contact sheet as one smooth annulus: `ρ = 0` the meridian at
+/// `t*`, `ρ > 0` the branch `ψ = atan2(−A, B)` (`root`'s `branch`), `ρ < 0` the other, each
+/// branch's place `(θ, t)` met once, its `ψ` turning once round as the place goes once round the
+/// instant — which no chart over `(θ, t)` holds (cadrs's pinch chart, `pinch_at`, is this one).
+/// Read at finite size the collar is no Whitney umbrella's small picture: on the crossed tumbling
+/// tori the boundary on it is one strip across the meridian, between two double curves each
+/// crossing the meridian square-on and folding at a swallowtail point of its own off it
+/// (`collar_meridian`).
+pub struct Collar<'a> { pub ring: &'a Ring,pub path: &'a Trajectory,pub roll: [f64;2],pub arc: usize,
+    /// The instant and the meridian's angle, `(t*, θ*)`.
+    pub at: (f64,f64),
+    /// The Jacobian of `(A, B)` by `(θ, t)` there, and the terms' scale.
+    pub jacobian: [[f64;2];2],pub size: f64 }
+
+impl<'a> Collar<'a> {
+    /// The collar of the meridian `(t*, θ*, k)` `touched_once` found over `roll`; `None` where the
+    /// meridian is no arc's or `(A, B)` is not regular there (its determinant nought to the half
+    /// digits its differences keep).
+    pub fn new(ring: &'a Ring,path: &'a Trajectory,roll: [f64;2],(t,theta,k): (f64,f64,usize)) -> Option<Collar<'a>> {
+        let Element::Arc {c,..} = ring.elements[k] else { return None };
+        let size = ring.terms(&Twist::body(path.at(t).ok()?),c).3;
+        let mut collar = Collar {ring,path,roll,arc:k,at:(t,theta),jacobian:[[0.;2];2],size};
+        let j = collar.rates(theta,t)?;
+        let det = j[0][0]*j[1][1]-j[0][1]*j[1][0];
+        if !(det.abs() > HALF_READ*(j[0][0].abs()+j[0][1].abs())*(j[1][0].abs()+j[1][1].abs())) { return None }
+        collar.jacobian = j;
+        Some(collar)
+    }
+
+    /// `(A, B)` on the arc at the angle `θ` round the axis and the roll `t`: the arc's centre's
+    /// velocity there, outward and along the axis (`root`'s, read whole).
+    pub fn ab(&self,theta: f64,t: f64) -> Option<[f64;2]> {
+        let Element::Arc {c,..} = self.ring.elements[self.arc] else { return None };
+        let w = Twist::body(self.path.at(t).ok()?);
+        let u = w.velocity(self.ring.lift(theta,c));
+        let (er,_,ez) = self.ring.axes(theta);
+        Some([dot(er,u),dot(ez,u)])
+    }
+
+    /// The Jacobian of `(A, B)` by `(θ, t)`, by central differences at `ε^(1/3)` of the angle and
+    /// of the roll's extent, where their rounding and their truncation balance (`THIRD_READ`).
+    fn rates(&self,theta: f64,t: f64) -> Option<[[f64;2];2]> {
+        let (ht,hs) = (THIRD_READ,THIRD_READ*(self.roll[1]-self.roll[0]).abs());
+        let (p,m) = (self.ab(theta+ht,t)?,self.ab(theta-ht,t)?);
+        let (q,n) = (self.ab(theta,t+hs)?,self.ab(theta,t-hs)?);
+        Some([[(p[0]-m[0])/(2.*ht),(q[0]-n[0])/(2.*hs)],[(p[1]-m[1])/(2.*ht),(q[1]-n[1])/(2.*hs)]])
+    }
+
+    /// **The place `(θ, t)` of the collar's `(ψ, ρ)`**: Newton's method on
+    /// `(A, B) − ρ (−sin ψ, cos ψ)` from the instant's linear reading, its steps taken while they
+    /// shrink (to the rounding); continued from `ρ/2` where it does not settle within the half
+    /// digits the terms keep (`HALF_READ` of their scale). `None` where neither settles it.
+    pub fn place(&self,psi: f64,rho: f64) -> Option<[f64;2]> {
+        let (t0,th0) = self.at;
+        if rho == 0. { return Some([th0,t0]) }
+        let [[a,b],[c,d]] = self.jacobian;
+        let det = a*d-b*c;
+        let (sp,cp) = psi.dsin_cos();
+        let target = [-rho*sp,rho*cp];
+        let guess = [th0+(d*target[0]-b*target[1])/det,t0+(-c*target[0]+a*target[1])/det];
+        self.settled(target,guess).or_else(|| {
+            // (halving's own floor: a ρ the rounding of the terms' scale reads as nought is the
+            // instant's linear reading)
+            if rho.abs() <= HALF_READ*self.size { return None }
+            let half = self.place(psi,0.5*rho)?;
+            self.settled(target,half)
+        })
+    }
+
+    fn settled(&self,target: [f64;2],[mut th,mut t]: [f64;2]) -> Option<[f64;2]> {
+        let mut last = f64::INFINITY;
+        loop {
+            let f = self.ab(th,t)?;
+            let r = [f[0]-target[0],f[1]-target[1]];
+            let [[a,b],[c,d]] = self.rates(th,t)?;
+            let det = a*d-b*c;
+            if !(det != 0.) { return None }
+            let step = [(d*r[0]-b*r[1])/det,(-c*r[0]+a*r[1])/det];
+            let size = step[0].abs()+step[1].abs();
+            if !(size < last) { break }
+            (th,t,last) = (th-step[0],t-step[1],size);
+            if !(t >= self.roll[0].min(self.roll[1]) && t <= self.roll[0].max(self.roll[1])) { return None }
+        }
+        let f = self.ab(th,t)?;
+        ((f[0]-target[0]).dhypot(f[1]-target[1]) <= HALF_READ*self.size).then_some([th,t])
+    }
+
+    /// **The collar's point at `(ψ, ρ)`** in space, with its place `(θ, t)`.
+    pub fn point(&self,psi: f64,rho: f64) -> Option<(V,[f64;2])> {
+        let [th,t] = self.place(psi,rho)?;
+        let r = self.ring.on_arc(th.rem_euclid(TAU),self.arc,psi)?;
+        Some((self.path.pose(t).ok()?.point(r.x),[th,t]))
+    }
+}
+
+/// **How the collar's meridian stands under the sweep** (a probe and the gate's reading, #880 T1f):
+/// at each of `psis` round it, the meridian's point at `t*` read by `depth::cover` with its depth
+/// read to `within`.
+pub fn collar_meridian(collar: &Collar,psis: &[f64],within: f64) -> Result<Vec<(f64,V,super::depth::Reading)>,Unbuilt> {
+    psis.iter().map(|&psi| {
+        let (x,[_,t]) = collar.point(psi,0.).ok_or_else(|| Unbuilt::Failed("the collar's meridian not read".into()))?;
+        Ok((psi,x,super::depth::cover(collar.ring,collar.path,collar.roll,x,t,0.,within)?))
+    }).collect()
+}

@@ -8,6 +8,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
 
 ## Unreleased
 
+- **The collar about a meridian touched whole for an instant** (#880 T1f, `swept::rings::Collar`,
+  `rings::collar_meridian`): `(A, B)(θ, t) = ρ (−sin ψ, cos ψ)` solved by Newton's method charts both
+  tubes and the meridian about the instant as one smooth annulus; on the crossed tumbling tori the
+  sweep's boundary on it is one strip across the meridian between two double curves, nothing of it
+  at the event. A probe, `ring_profile collar`. Not yet built into the ring road.
 - **A ring's contact followed by its label, and a meridian touched whole for an instant refused
   by name** (#880 T1f): `Ring::instant` follows each contact from angle to angle by its label
   first (an arc's branch is continuous where `A` and `B` are not both nought), its place round

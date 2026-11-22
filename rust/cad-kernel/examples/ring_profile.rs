@@ -52,6 +52,7 @@ fn main() {
     }
     if args.first().map(String::as_str) == Some("shape") { return shape(&args[1..]) }
     if args.first().map(String::as_str) == Some("event-map") { return event_map(&args[1..]) }
+    if args.first().map(String::as_str) == Some("collar") { return collar(&args[1..]) }
     let (tube,(tool,path),half) = match args.first().map(String::as_str) {
         Some("full-turn") => (0.16,tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.),180.),
         Some("half-turn") => (0.16,tumbling([3.,0.,2.],2.,0.16,0.375,30.,20.,0.7071,1.),90.),
@@ -433,5 +434,56 @@ fn event_map(args: &[String]) {
             }).collect();
             println!("{t:+.5} {row}");
         }
+    }
+}
+
+/// **`collar crossed-forward|crossed-reverse ρ n m`: the sweep's boundary on the collar about the
+/// meridian touched whole** (#880 T1f, `rings::Collar`): over `ψ` round the meridian (`n` columns)
+/// and `ρ` in `±ρ` (`m` rows; `ρ > 0` the branch `atan2(−A, B)`), each point read by the depth —
+/// `#` far covered deeper than the tolerance, `n` held by the instants beside its own, `o` on the
+/// boundary, `?` the chart unread; then where along each of `m` rows the boundary ends (the far
+/// cover's depth through nought, halved to the rounding), its `ψ` and its covering instant less its
+/// own: a double curve's preimage, its partner the same curve where that passes nought (a
+/// swallowtail point).
+fn collar(args: &[String]) {
+    use cad_kernel::swept::{depth,rings};
+    use std::f64::consts::TAU;
+    let observer = if args[0] == "crossed-forward" { 1. } else { -1. };
+    let (tool,path) = bench::tumbling([3.,0.,2.],2.,0.22,0.7,45.,20.,0.7071,observer);
+    let rmax: f64 = args[1].parse().unwrap();
+    let (n,m): (usize,usize) = (args[2].parse().unwrap(),args[3].parse().unwrap());
+    let roll = [-100f64.to_radians(),100f64.to_radians()];
+    let tol = 0.22/50000.;
+    let ring = rings::Ring::read(&tool).unwrap();
+    let event = ring.touched_once(&path,roll).unwrap()[0];
+    let collar = rings::Collar::new(&ring,&path,roll,event).expect("a regular collar");
+    println!("event t* {:.12} θ* {:.9}; (A, B) by (θ, t) {:?}",event.0,event.1,collar.jacobian);
+    // (the far cover's depth at `(ψ, ρ)` and its instant less the point's own; `None` unread)
+    let read = |psi: f64,rho: f64| -> Option<(char,f64,f64)> {
+        let (x,[_,t]) = collar.point(psi,rho)?;
+        Some(match depth::cover(&ring,&path,roll,x,t,0.,tol).ok()? {
+            depth::Reading::Near => ('n',-1.,0.),
+            depth::Reading::Far(c) => (if c.depth < -tol { '#' } else { 'o' },c.depth,c.at-t),
+            depth::Reading::Alone => ('o',1.,f64::NAN),
+        })
+    };
+    let rows: Vec<f64> = (0..=m).map(|j| rmax-2.*rmax*j as f64/m.max(1) as f64).collect();
+    for &rho in &rows {
+        let line: String = (0..n).map(|i| read(TAU*i as f64/n as f64,rho).map_or('?',|r| r.0)).collect();
+        println!("{rho:+.4} {line}");
+    }
+    for &rho in &rows {
+        let mut out = format!("ρ {rho:+.4}:");
+        let kept = |psi: f64| read(psi,rho).is_some_and(|r| r.1 > -tol && r.0 != 'n');
+        for i in 0..n {
+            let (p,q) = (TAU*i as f64/n as f64,TAU*(i+1) as f64/n as f64);
+            if kept(p) == kept(q) { continue }
+            let (mut x,mut y) = (p,q);
+            loop { let h = 0.5*(x+y); if !(h > x && h < y) { break } if kept(h) == kept(p) { x = h } else { y = h } }
+            let held = if kept(p) { y } else { x };
+            let (Some((_,d,dt)),Some((pt,[th,t]))) = (read(held,rho),collar.point(held,rho)) else { out += " (unread)"; continue };
+            out += &format!("  ψ {:.6}° (θ {th:.6}, t {t:.6}) cover {d:+.1e} at own{dt:+.5} {pt:.5?}",held.to_degrees());
+        }
+        println!("{out}");
     }
 }

@@ -1256,6 +1256,62 @@ fn a_meridian_touched_whole_for_an_instant_is_found_exactly_and_refused_by_name(
     }
 }
 
+/// **The collar about a meridian touched whole for an instant** (#880 T1f, `rings::Collar`): where
+/// `(A, B)` is regular at `(θ*, t*)` — as it is on both crossed tori — `(A, B) = ρ (−sin ψ, cos ψ)`
+/// charts both tubes and the meridian about the instant as one annulus, `(ψ, ρ)` and `(ψ + π, −ρ)` one
+/// place of the two branches, the point there square to `(A, B)`. On it the sweep's boundary is one
+/// strip across the meridian: on the meridian itself the arc between two ends, each a double curve's
+/// preimage crossing it, covered beyond by an instant a tenth of the roll or more away (no `Near` at
+/// either end), the fold that follows it 2e-3 further on and buried (measured by `ring_profile
+/// collar`, and with an independent reading of the depth as the least over the roll of the core
+/// circle's closed-form distance: the ends at 72.833° and 257.162° where the depth crosses nought,
+/// 72.883° and 257.127° where it passes the tolerance below). Nothing of the boundary's structure
+/// stands at the event: the meridian's touching half, the two saddles and the instant lie inside one
+/// smooth piece of the collar.
+#[test]
+fn the_collar_about_a_meridian_touched_whole_charts_both_tubes_and_holds_one_strip_of_boundary() {
+    use gcs_core::brep::swept::{depth,rings};
+    use std::f64::consts::{PI,TAU};
+    for (observer,ends) in [(1.,[1.272051,4.487706]),(-1.,[3.060138,5.885428])] {
+        let (tool,path,roll,tol) = crossed(observer);
+        let ring = Ring::read(&tool).unwrap();
+        let once = ring.touched_once(&path,roll).unwrap();
+        let collar = rings::Collar::new(&ring,&path,roll,once[0]).expect("a regular collar");
+        // (each place read from either branch alike, its two points the tube's opposite sides)
+        for (psi,rho) in [(0.3,0.05),(2.,-0.08),(4.,0.02)] {
+            let (x,p) = collar.point(psi,rho).unwrap();
+            let (y,q) = collar.point(psi+PI,-rho).unwrap();
+            assert!((p[0]-q[0]).abs() < 1e-12 && (p[1]-q[1]).abs() < 1e-12,"{observer}: {p:?} {q:?}");
+            assert!(gcs_core::brep::util::space::distance(x,y) > 0.4,"{observer}: {x:?} {y:?}");
+            let ab = collar.ab(p[0],p[1]).unwrap();
+            assert!((ab[0]+rho*psi.sin()).abs() < 1e-9 && (ab[1]-rho*psi.cos()).abs() < 1e-9,"{observer}: {ab:?}");
+        }
+        // (the meridian at the instant: one arc of boundary, its ends halved to the rounding)
+        let kept = |psi: f64| match rings::collar_meridian(&collar,&[psi],tol).unwrap()[0].2 {
+            depth::Reading::Alone => true,
+            depth::Reading::Far(c) => c.depth > -tol,
+            depth::Reading::Near => false,
+        };
+        let psis: Vec<f64> = (0..72).map(|i| TAU*i as f64/72.).collect();
+        let flags: Vec<bool> = psis.iter().map(|&p| kept(p)).collect();
+        let turns: Vec<usize> = (0..72).filter(|&i| flags[i] != flags[(i+1)%72]).collect();
+        assert_eq!(turns.len(),2,"{observer}: {flags:?}");
+        for (k,&i) in turns.iter().enumerate() {
+            let (mut x,mut y) = (psis[i],psis[i]+TAU/72.);
+            loop { let h = 0.5*(x+y); if !(h > x && h < y) { break } if kept(h) == flags[i] { x = h } else { y = h } }
+            let end = if flags[i] { x } else { y };
+            let at = [ends[0],ends[1]].into_iter().find(|e| ((end-e+PI).rem_euclid(TAU)-PI).abs() < 1e-5);
+            assert!(at.is_some(),"{observer}: an end {k} at {end}");
+            // (covered beyond by a far instant)
+            let held = if flags[i] { y } else { x };
+            match rings::collar_meridian(&collar,&[held+if flags[i] { 1e-4 } else { -1e-4 }],tol).unwrap()[0].2 {
+                depth::Reading::Far(c) => assert!((c.at-once[0].0).abs() > 0.05,"{observer}: {c:?}"),
+                r => panic!("{observer}: beyond the end {end} read {r:?}"),
+            }
+        }
+    }
+}
+
 /// **The crossed tori are read at every roll by their contacts' labels** (#880 T1f, `Ring::instant`;
 /// the slow tier): each instant's contact followed from angle to angle by its label. Read by its
 /// place round the meridian alone, the crossed tori's contact, its `ψ` turning half a turn within a
