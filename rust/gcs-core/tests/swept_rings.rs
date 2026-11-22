@@ -760,16 +760,40 @@ fn the_full_turns_tube_is_holed_where_the_end_torus_crosses_it() {
 /// 2.2318 joined to it in chords straight in each leaf's parameters, and each leaf's drawing of it,
 /// merged into the other's by the arrangement, keeping its own pcurve carried onto the other
 /// (`boolean`'s `carried_pcurve`) — inverted, it landed on the leaf past the fold, 1.3e-5 off. Its
-/// volume 23.6738854, the peer kernel cadrs's 23.6739; held to the sweep's membership.
+/// volume 23.6738854, the peer kernel cadrs's 23.6739; held to the sweep's membership. And each face
+/// is the boundary by the depth: a place well inside it (the grid's place in its parameters farthest
+/// from its loops) is covered by no instant but its own deeper than the tolerance (`depth::cover`,
+/// its own instant the sheet's roll, or the end pose's whose torus it lies on).
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 60 s: the full turn built and held to membership")]
 fn the_full_turn_is_built_closed() {
+    use gcs_core::brep::swept::depth::{Reading,cover};
     let (tool,path,roll,tol) = full_turn();
     let built = gcs_core::brep::swept::closed::ring(&tool,&path,roll,0.16/250.,tol).unwrap_or_else(|u| panic!("{u:?}"));
     built.check(tol).unwrap();
     let v = gcs_core::brep::props::volume(&built);
     assert!((v-23.6738854384).abs() < 1e-7,"{v}");
     crate::swept_closed::agrees_over(&built,&tool,&path,roll);
+    let ring = Ring::read(&tool).unwrap();
+    let located = gcs_core::brep::query::Located::new(&built,tol);
+    let poses = roll.map(|t| path.pose(t).unwrap().inverse());
+    for (fi,f) in built.faces.iter().enumerate() {
+        let edges: Vec<[f64;2]> = f.loops.iter().flatten().flat_map(|c| built.uv_ends(f,c)).collect();
+        let [lo,hi] = located.parameter_box(fi);
+        let n = 64;
+        let uv = (0..=n*n).map(|k| [lo[0]+(hi[0]-lo[0])*(k%(n+1)) as f64/n as f64,lo[1]+(hi[1]-lo[1])*(k/(n+1)) as f64/n as f64])
+            .filter(|&uv| located.holds_parameters(fi,uv))
+            .max_by(|p,q| { let d = |x: [f64;2]| edges.iter().map(|e| (e[0]-x[0]).hypot(e[1]-x[1])).fold(f64::INFINITY,f64::min); d(*p).total_cmp(&d(*q)) })
+            .unwrap_or_else(|| panic!("face {fi}: no place inside it"));
+        let x = f.surface.point(uv);
+        // (a tube's sheet's parameters its roll; a torus the pose whose torus it lies on)
+        let own = if f.name == "sheet" { uv[1] } else if ring.signed(poses[0].point(x)).0.abs() <= tol { roll[0] } else { roll[1] };
+        match cover(&ring,&path,roll,x,own,tol,tol).unwrap() {
+            Reading::Far(c) => assert!(c.depth >= -tol,"face {fi} ({}) covered at {x:?} by the instant {}: {:e} deep",f.name,c.at,-c.depth),
+            Reading::Alone => {}
+            r => panic!("face {fi} ({}) held by its own instant's neighbours at {x:?}: {r:?}",f.name),
+        }
+    }
 }
 
 /// **The full turn's start and end tori meet on the boundary along two short arcs, given** (#942
