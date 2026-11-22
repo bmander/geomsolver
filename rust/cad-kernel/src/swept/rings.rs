@@ -1409,7 +1409,10 @@ fn strips(ring: &Ring,path: &Trajectory,[a,b]: [f64;2],nets: &[Net],crossings: &
             let (w,dw) = rates(path,t,[a,b])?;
             let curved = || Unbuilt::Curved {at:nets[x.0].point(x.1.seam as f64,t)};
             let (theta,k) = ring.touched_near(&w,x.1.theta).ok_or_else(curved)?;
-            let hair = 1e-10;
+            // (a hair off the meridian, where `root` reads the contact's terms in closed form: past
+            // the angle's rounding, so its way off is read, and within half its digits, `HALF_READ`,
+            // so the two roots stand where the meridian's own do to that)
+            let hair = HALF_READ;
             let roots: Vec<V> = [true,false].iter().filter_map(|&branch| ring.root(&w,theta+hair,Label {on:On::Face(k),branch},false)).map(|r| r.x).collect();
             if roots.len() != 2 { return Err(curved()) }
             let pose = path.pose(t)?;
@@ -2936,15 +2939,15 @@ fn split_chords(chords: &[(usize,Vec<P2>)]) -> Vec<(usize,Vec<P2>)> {
         for k in 0..pts.len()-1 {
             while at < c.len() && c[at].0 == k {
                 let q = c[at].2;
-                if crate::plane2::dist(q,piece[piece.len()-1]) > 1e-12 { piece.push(q) }
+                if crate::plane2::dist(q,piece[piece.len()-1]) > ON_SIDE { piece.push(q) }
                 if piece.len() >= 2 { out.push((e,std::mem::take(&mut piece))) }
                 piece = vec![q];
                 at += 1;
             }
             // (a cut at a point of the chord's own is that point once: no step of no length, whose
-            // way is none)
+            // way is none — two places within `ON_SIDE` one place, as `no_length` reads them)
             let last = piece[piece.len()-1];
-            if crate::plane2::dist(pts[k+1],last) > 1e-12 { piece.push(pts[k+1]) }
+            if crate::plane2::dist(pts[k+1],last) > ON_SIDE { piece.push(pts[k+1]) }
         }
         if piece.len() >= 2 { out.push((e,piece)) }
     }
@@ -3076,9 +3079,11 @@ fn with_holes(walks: Vec<Vec<Walk>>,chords: &[(usize,Vec<P2>)]) -> Vec<(Vec<Walk
     for (i,w) in walks.iter().enumerate() { if area[i] > 0. { at[i] = Some(out.len()); out.push((w.clone(),Vec::new())) } }
     for (i,w) in walks.into_iter().enumerate() {
         if area[i] > 0. { continue }
-        // (larger by more than the rounding of the sum of the component's pieces)
+        // (larger by more than the rounding of the two areas: each a sum of its places' cross
+        // products, each at most one in the unit square, so within `n ε` of its value for `n` places)
         let hole = -area[i];
-        let holder = (0..pts.len()).filter(|&j| area[j] > hole*(1.+1e-9) && within(&pts[j],pts[i][0]))
+        let rounding = |k: usize| pts[k].len() as f64*f64::EPSILON;
+        let holder = (0..pts.len()).filter(|&j| area[j] > hole+rounding(i)+rounding(j) && within(&pts[j],pts[i][0]))
             .min_by(|&x,&y| area[x].total_cmp(&area[y]));
         if let Some(j) = holder { out[at[j].unwrap()].1.push(w) }
     }
