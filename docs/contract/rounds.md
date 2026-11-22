@@ -392,7 +392,7 @@ there a point's distance from either face is its distance from the seam, so the 
 - **along a straight edge beside a seam crossing its footprint aslant** (#994, fixture 126: a foot
   standing upright against a drafted side, whose plane goes on into its corner's cone along a
   generator the foot's edge is not along; or a foot leaning against an upright side going on into
-  its corner's cylinder; `piece::seam_aslant`, `piece::aslant_pieces`): in the face's plane the
+  its corner's cylinder; `piece::seam_beside`, `piece::aslant_pieces`): in the face's plane the
   ball's touch runs along the edge in a line, so it crosses the seam once, where its side of the
   seam's normal plane changes — linear along the edge. Short of that section the ball touches
   the plane and the run's prism is the region's; past it the ball touches the next face, the
@@ -404,9 +404,13 @@ there a point's distance from either face is its distance from the seam, so the 
   run ends on, glued to the run on that section (`Piece::Along`'s run, `Partner::Run`). The
   crossing may lie past the end the run is carried from — then the piece beyond starts there,
   beyond that end's planes, which cut it, and there is no run — but not past the end the touch goes
-  on past, within the stretch carried past it (refused). Where the crossing is further off than
-  the edge's length and four sections' widths (a seam all but along the edge), the piece beyond
-  runs the edge's whole length as above, with a seam aslant (each cap's strip from where the seam
+  on past, within the stretch carried past it (refused). The seam is read once
+  (`piece::seam_beside`, its pieces one line, `seam_line`), and its crossing decides: at infinity
+  — the line leaving the edge's section by no more over its length than a billionth of its place
+  (`crosses_nowhere`) — the seam is along the edge, as above; where the crossing lies short of
+  where the seam's pieces begin along the edge (a seam all but along it, crossed only off the
+  body), the touch is past the seam wherever there is one and the piece beyond runs the edge's
+  whole length as above, with a seam aslant (each cap's strip from where the seam
   crosses it; `round_beyond` refuses a cap carried past the end that finds the touch back short of
   the seam rather than build it inside out). Refused by name: a chamfer's flat (its run changes face
   along a plane crossing its section aslant: no construction yet), from a face no plane, and a
