@@ -100,6 +100,11 @@ Write each change under **Unreleased** as it lands. `scripts/release-cad-kernel.
   overflows, the face it ends at, how far that edge stands off the other face and how far off the
   ball touches it.
 
+- **Whether a face goes on tangent from a run's side is one public test** (#994):
+  `fillet::tangent(n, m)`, new and public — two unit normals one either way, `1 - |n·m|` within
+  `1e-9` — is what `end_at` reads an end face going on by and what a standing ball's dome reads
+  an end no face goes on from by, so a caller predicting either reads it the same way.
+
 - **A standing ball's dome carried past an end a face cuts across** (#994): `fillet::roll`, where
   the ball stands still over a stretch of its loop and the stretch ends where a face cuts across
   it (a lid's chord, a hub's side across an arm's rounded end), no longer refuses ("no stretch of
