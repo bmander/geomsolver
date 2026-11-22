@@ -668,7 +668,8 @@ pub(crate) fn block(lo: V,hi: V) -> gcs_core::brep::topo::Brep {
     let p = Profile {names:vec![],origin:[0.,0.,0.],normal:XY,loops:vec![poly(&[[lo[0],lo[1],0.],[hi[0],lo[1],0.],[hi[0],hi[1],0.],[lo[0],hi[1],0.]])]};
     prism(&p,lo[2],hi[2]).unwrap()
 }
-fn rod(c: V,r: f64,z: [f64;2]) -> gcs_core::brep::topo::Brep {
+/// An upright rod of radius `r` about `(c[0], c[1])`, over the heights `z`.
+pub(crate) fn rod(c: V,r: f64,z: [f64;2]) -> gcs_core::brep::topo::Brep {
     prism(&Profile {names:vec![],origin:[0.,0.,0.],normal:XY,loops:vec![vec![arc([c[0],c[1],0.],r,XY,[1.,0.,0.],None)]]},z[0],z[1]).unwrap()
 }
 fn ball(c: V,r: f64) -> gcs_core::brep::topo::Brep {

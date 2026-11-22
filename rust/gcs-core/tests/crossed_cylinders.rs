@@ -18,7 +18,8 @@ use gcs_core::brep::props::volume;
 use gcs_core::brep::topo::Brep;
 use std::f64::consts::PI;
 
-const TOL: f64 = 1e-9;
+use crate::common::rounds::gauss_legendre;
+use crate::cylinders_touching::TOL;
 
 /// A rod of radius `r` about the line through `c` along `d` (unit), `half` either side.
 fn rod(c: V,d: V,r: f64,half: f64) -> Brep {
@@ -30,12 +31,11 @@ fn rod(c: V,d: V,r: f64,half: f64) -> Brep {
 
 /// `∫ f` over `[a, b]` by Gauss–Legendre, eight points on each of `n` panels.
 fn gauss(a: f64,b: f64,n: usize,f: impl Fn(f64) -> f64) -> f64 {
-    const X: [f64;4] = [0.1834346424956498,0.5255324099163290,0.7966664774136267,0.9602898564975363];
-    const W: [f64;4] = [0.3626837833783620,0.3137066458778873,0.2223810344533745,0.1012285362903763];
+    let rule = gauss_legendre(8);
     let h = (b-a)/n as f64;
     (0..n).map(|k| {
         let m = a+h*(k as f64+0.5);
-        (0..4).map(|i| W[i]*(f(m-0.5*h*X[i])+f(m+0.5*h*X[i]))).sum::<f64>()*0.5*h
+        rule.iter().map(|&(x,w)| w*f(m+0.5*h*x)).sum::<f64>()*0.5*h
     }).sum()
 }
 

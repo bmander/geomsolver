@@ -9,8 +9,9 @@ use gcs_core::brep::boolean::{combined_written,Op};
 use gcs_core::brep::build::{prism,Profile,ProfileEdge};
 use gcs_core::brep::geom::{tolerance,Curve,Frame,V};
 use gcs_core::brep::props::volume;
-use gcs_core::brep::topo::Brep;
 use std::f64::consts::{PI,TAU};
+
+use crate::brep::rod;
 
 const XY: V = [0.,0.,1.];
 
@@ -57,11 +58,6 @@ fn lobed(n: usize,p: f64,r: f64,rho: f64,hole: f64) -> (Profile,f64,Vec<[f64;2]>
     }
     (Profile {names:vec![],origin:[0.;3],normal:XY,loops},area,c)
 }
-fn rod(c: [f64;2],r: f64,z: [f64;2]) -> Brep {
-    let p = Profile {names:vec![],origin:[0.;3],normal:XY,loops:vec![vec![ProfileEdge::Arc {
-        frame:Frame::new([c[0],c[1],0.],XY,[1.,0.,0.]),r,span:None}]]};
-    prism(&p,z[0],z[1]).unwrap()
-}
 
 /// The cases: the plates (lobes, pitch, lobe and blend radii), and what stands on a lobe — the
 /// part of its height `[z0, z1]` and whether it is united or cut.
@@ -99,7 +95,7 @@ fn a_boss_or_a_bore_on_a_lobe_of_its_own_radius_builds() {
         assert!((v0-5.*area).abs() <= 1e-9*v0,"the plate of {n} lobes: {v0} against {}",5.*area);
         for k in [0,1] { for (what,z,op) in STANDS { for (dr,dc) in offs {
             let rr = r+dr;
-            let rod = rod([c[k][0]+0.6*dc,c[k][1]+0.8*dc],rr,z);
+            let rod = rod([c[k][0]+0.6*dc,c[k][1]+0.8*dc,0.],rr,z);
             let said = format!("{what} on lobe {k} of {n}, its radius {dr:e} off and its axis {dc:e}");
             let out = combined_written(&plate,None,&rod,op,0.).unwrap_or_else(|e| panic!("{said}: {e}")).0;
             out.check(10.*tolerance(plate.size().max(rod.size()))).unwrap_or_else(|e| panic!("{said}: {e}"));

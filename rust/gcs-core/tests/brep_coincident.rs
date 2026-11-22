@@ -14,19 +14,10 @@ use gcs_core::brep::ssi::{same,same_over};
 use gcs_core::brep::topo::Brep;
 use std::f64::consts::PI;
 
+use crate::brep::{block,rod};
+
 const XY: V = [0.,0.,1.];
 
-fn poly(pts: &[V]) -> Vec<ProfileEdge> {
-    (0..pts.len()).map(|i| ProfileEdge::Line {a:pts[i],b:pts[(i+1)%pts.len()]}).collect()
-}
-fn block(lo: V,hi: V) -> Brep {
-    let p = Profile {names:vec![],origin:[0.;3],normal:XY,loops:vec![poly(&[[lo[0],lo[1],0.],[hi[0],lo[1],0.],[hi[0],hi[1],0.],[lo[0],hi[1],0.]])]};
-    prism(&p,lo[2],hi[2]).unwrap()
-}
-fn rod(c: V,r: f64,z: [f64;2]) -> Brep {
-    let arc = ProfileEdge::Arc {frame:Frame::new([c[0],c[1],0.],XY,[1.,0.,0.]),r,span:None};
-    prism(&Profile {names:vec![],origin:[0.;3],normal:XY,loops:vec![vec![arc]]},z[0],z[1]).unwrap()
-}
 fn close(a: f64,b: f64,within: f64,what: &str) { assert!((a-b).abs() <= within,"{what}: {a} against {b}"); }
 
 /// How far a volume may move when a face of area `area` is read on another surface standing within

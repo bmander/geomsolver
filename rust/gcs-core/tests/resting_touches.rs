@@ -18,12 +18,11 @@ use gcs_core::brep::build::{cone,prism,sphere,torus,Profile,ProfileEdge};
 use gcs_core::brep::geom::{Frame,V};
 use gcs_core::brep::props::volume;
 use gcs_core::brep::topo::Brep;
-use gcs_core::space::{add,cross,norm,scale};
+use gcs_core::space::{add,cross,scale,unit};
 use std::f64::consts::PI;
 
-const TOL: f64 = 1e-9;
-
-fn unit(a: V) -> V { scale(a,1./norm(a)) }
+use crate::common::rounds::square_run;
+use crate::cylinders_touching::TOL;
 
 /// A rod of radius `r` about the line through `c` along `d`, `half` either side of `c`.
 fn rod(c: V,d: V,r: f64,half: f64) -> Brep {
@@ -206,7 +205,7 @@ fn rim_round_on_a_blend(bow: f64) {
         // the round takes from the blended band, and less than the rim's whole square would
         let before = volume(&crate::common::rounds::exported(&e,"part"));
         let taken = before-volume(&b);
-        assert!(taken > 0. && taken < (1.-PI/4.)*r*r*400.,"{what}: {taken}");
+        assert!(taken > 0. && taken < square_run(r)*400.,"{what}: {taken}");
     }
 }
 
@@ -233,7 +232,7 @@ fn a_rim_round_beside_a_blend_an_eye_stands_out_past_is_the_fields() {
                                                                0.2,2000);
         assert!(read > 1000,"{what}: {read} points read");
         let taken = volume(&crate::common::rounds::exported(&e,"part"))-volume(&b);
-        assert!(taken > 0. && taken < (1.-PI/4.)*r*r*2.*(55.75+13.7),"{what}: {taken}");
+        assert!(taken > 0. && taken < square_run(r)*2.*(55.75+13.7),"{what}: {taken}");
     }
 }
 

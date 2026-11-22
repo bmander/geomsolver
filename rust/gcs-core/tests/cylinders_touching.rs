@@ -14,7 +14,8 @@ use gcs_core::brep::props::volume;
 use gcs_core::brep::topo::Brep;
 use std::f64::consts::PI;
 
-const TOL: f64 = 1e-9;
+/// The Booleans' tolerance in the tests of surfaces meeting (`crossed_cylinders`, `resting_touches`).
+pub(crate) const TOL: f64 = 1e-9;
 
 /// A rod of radius `r` about the z axis over `z`, carried by `m`.
 fn rod(r: f64,z: [f64;2],m: &Rigid) -> Brep {
